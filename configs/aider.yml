@@ -1,0 +1,42 @@
+# Aider configuration for Squish local inference
+#
+# Install aider-chat:
+#   pip install aider-chat
+#
+# Usage (from any project directory):
+#   aider --config /path/to/squish/configs/aider.yml
+#
+# Or copy to your home directory:
+#   cp configs/aider.yml ~/.aider.conf.yml
+#
+# Squish must be running first:
+#   squish run 7b
+
+# Use OpenAI-compatible endpoint pointing at Squish
+openai-api-base: http://localhost:11435/v1
+openai-api-key: squish
+
+# Model to use (must match squish model name exactly)
+model: openai/Qwen2.5-7B-Instruct-bf16
+
+# Editor model for applying diffs (can use faster 1.5B)
+editor-model: openai/Qwen2.5-7B-Instruct-bf16
+
+# Architect model for high-level planning
+# architect: openai/Qwen2.5-7B-Instruct-bf16
+
+# Generation settings
+map-tokens: 1024
+max-chat-history-tokens: 8192
+
+# Output formatting
+dark-mode: true
+pretty: true
+stream: true
+
+# Safety: always show diffs before applying
+auto-commits: false
+dirty-commits: false
+
+# Disable sending analytics
+analytics: false

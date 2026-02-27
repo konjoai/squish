@@ -1,0 +1,47 @@
+# LiteLLM Proxy Configuration for Squish
+#
+# Usage:
+#   pip install litellm
+#   litellm --config configs/litellm.yaml --port 4000
+#
+# Then use standard OpenAI clients with:
+#   base_url = "http://localhost:4000"
+#   api_key  = "squish"
+#
+# This lets you route multiple LLM providers through one endpoint.
+
+model_list:
+  - model_name: squish-7b
+    litellm_params:
+      model: openai/Qwen2.5-7B-Instruct-bf16
+      api_base: http://localhost:11435/v1
+      api_key: squish
+      max_tokens: 4096
+
+  - model_name: squish-1.5b
+    litellm_params:
+      model: openai/Qwen2.5-1.5B-Instruct-bf16
+      api_base: http://localhost:11435/v1
+      api_key: squish
+      max_tokens: 2048
+
+  # Uncomment and set API keys to add cloud fallbacks:
+  # - model_name: gpt-4o
+  #   litellm_params:
+  #     model: gpt-4o
+  #     api_key: os.environ/OPENAI_API_KEY
+
+  # - model_name: claude-3-5-sonnet
+  #   litellm_params:
+  #     model: anthropic/claude-3-5-sonnet-20241022
+  #     api_key: os.environ/ANTHROPIC_API_KEY
+
+general_settings:
+  master_key: squish
+  database_connection_pool_limit: 10
+
+litellm_settings:
+  # Return the original provider's error instead of a generic one
+  return_response_headers: true
+  # Log to stdout
+  set_verbose: false

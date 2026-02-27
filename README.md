@@ -1,7 +1,8 @@
 # Squish
 
 > **Local LLM inference at sub-second load times.**  
-> **A direct drop-in for OpenAI, Anthropic, and Gemini APIs.**  
+> **Drop-in for OpenAI, Ollama, and any LLM client.**  
+> **Web chat UI · Tool calling · Batch scheduler · CLI**  
 > **No API key.  No cloud.  No data leaving your machine.**  
 > **Free.**
 
@@ -82,15 +83,15 @@ Winogrande improved by 1.5% — INT8 quantisation noise is uncorrelated with tas
 
 ```bash
 # Reproduce (10-30 min)
-python3 run_eval.py --tasks arc_easy,hellaswag,winogrande,piqa --limit 200
+python3 evals/run_eval.py --tasks arc_easy,hellaswag,winogrande,piqa --limit 200
 
 # Multi-seed (publication-quality mean ± std)
-python3 run_eval.py --tasks arc_easy,hellaswag,winogrande,piqa --runs 3 --limit 200
+python3 evals/run_eval.py --tasks arc_easy,hellaswag,winogrande,piqa --runs 3 --limit 200
 
 # Full dataset + extended tasks (overnight)
-python3 run_eval.py \
-    --tasks arc_easy,arc_challenge,hellaswag,winogrande,piqa,mmlu,gsm8k,truthfulqa_mc1 \
-    --runs 3 --no-limit
+python3 evals/run_eval.py \
+    --tasks arc_easy,arc_challenge,hellaswag,winogrande,piqa \
+    --no-limit
 ```
 
 ---
@@ -100,10 +101,14 @@ python3 run_eval.py \
 Replace every cloud API call today.  Start the server once; use it forever.
 
 ```bash
-python3 server.py \
-    --model-dir      ~/models/Qwen2.5-1.5B-Instruct-bf16 \
-    --compressed-dir ~/models/Qwen2.5-1.5B-Instruct-bf16-compressed \
-    --port 8000
+# Recommended: use the CLI
+squish run 7b           # port 11435 by default
+
+# Advanced: direct invocation
+python3 -m squish.server \
+    --model-dir      ~/models/Qwen2.5-7B-Instruct-bf16 \
+    --compressed-dir ~/models/Qwen2.5-7B-Instruct-bf16-compressed \
+    --port 11435
 ```
 
 Point **any OpenAI client** at it — no code changes:
@@ -112,7 +117,7 @@ Point **any OpenAI client** at it — no code changes:
 import openai
 
 client = openai.OpenAI(
-    base_url="http://localhost:8000/v1",
+    base_url="http://localhost:11435/v1",
     api_key="squish",   # value ignored; no auth locally
 )
 
@@ -132,34 +137,188 @@ any client that speaks the OpenAI wire protocol.
 
 | Endpoint | Status |
 |---|---|
-| `POST /v1/chat/completions` | ✅ streaming + non-streaming |
+| `POST /v1/chat/completions` | ✅ streaming + non-streaming + tool calls |
 | `POST /v1/completions` | ✅ legacy text completion |
 | `GET  /v1/models` | ✅ model listing |
 | `GET  /health` | ✅ liveness probe |
-| `POST /v1/embeddings` | 🔜 coming next |
+| `GET  /v1/metrics` | ✅ throughput · queue depth · memory |
+| `POST /v1/embeddings` | ✅ mean-pool L2-normalised |
+| `GET  /chat` | ✅ **Web chat UI** (browser) |
+| `POST /api/chat` | ✅ Ollama-compatible ndjson |
+| `POST /api/generate` | ✅ Ollama-compatible ndjson |
+| `GET  /api/tags` | ✅ Ollama model listing |
+| `GET  /api/version` | ✅ Ollama version handshake |
+| `POST /api/embeddings` | ✅ Ollama-compatible embeddings |
 
 ---
 
-## Quickstart
+## Web Chat UI
+
+Open `http://localhost:11435/chat` in any browser after starting the server.
+
+- Dark-themed, single-page app — no external services, works fully offline
+- Streaming responses with live token rendering (marked.js + highlight.js)
+- Conversation history persisted in `localStorage` (multi-session sidebar)
+- Model selector auto-populated from `/v1/models`
+- System prompt editor, settings panel (temp / top_p / max_tokens / seed)
+- Copy buttons on all code blocks
+
+```bash
+squish run 7b                     # defaults to port 11435
+# browser → http://localhost:11435/chat
+```
+
+---
+
+## Ollama Drop-In
+
+Squish mounts the full Ollama HTTP API at `/api/*`.  Any tool that speaks Ollama
+will work against Squish with a single env-var change and **zero code changes**.
+
+```bash
+# Point any Ollama client at Squish
+export OLLAMA_HOST=http://localhost:11435
+
+# Works with the official Ollama CLI
+ollama list
+ollama run squish   # uses /api/generate under the hood
+
+# Works with Continue.dev, Open WebUI, Enchanted, Msty, etc.
+```
+
+```python
+# Works with the official ollama Python library
+import ollama
+
+client = ollama.Client(host="http://localhost:11435")
+response = client.chat(
+    model="Qwen2.5-7B-Instruct-bf16",
+    messages=[{"role": "user", "content": "What is entropy coding?"}],
+)
+print(response["message"]["content"])
+```
+
+---
+
+## Tool / Function Calling
+
+`/v1/chat/completions` accepts OpenAI-format `tools` and returns `tool_calls`
+in the response.  Squish injects the JSON schema into the system prompt (Qwen2.5
+style) and parses the structured output automatically.
+
+```python
+import openai, json
+
+client = openai.OpenAI(base_url="http://localhost:11435/v1", api_key="squish")
+
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "City name"},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+            },
+            "required": ["city"],
+        },
+    },
+}]
+
+response = client.chat.completions.create(
+    model="Qwen2.5-7B-Instruct-bf16",
+    messages=[{"role": "user", "content": "What's the weather in Tokyo?"}],
+    tools=tools,
+)
+
+if response.choices[0].finish_reason == "tool_calls":
+    call = response.choices[0].message.tool_calls[0]
+    args = json.loads(call.function.arguments)
+    print(f"Tool: {call.function.name}, Args: {args}")
+    # → Tool: get_weather, Args: {'city': 'Tokyo', 'unit': 'celsius'}
+```
+
+---
+
+## Integrations
+
+Ready-made config templates live in `configs/`.  Start Squish once, then point
+any of these tools at it — **no cloud API key needed for any of them**.
+
+### Continue.dev (VS Code / JetBrains AI assistant)
+
+```bash
+# Copy config to Continue.dev's config directory
+cp configs/continue.json ~/.continue/config.json
+squish run 7b
+# Re-open VS Code → Continue sidebar → Squish model appears automatically
+```
+
+### aider (AI pair programming in the terminal)
+
+```bash
+pip install aider-chat
+squish run 7b
+
+# Use the bundled config
+aider --config configs/aider.yml
+
+# Or install globally
+cp configs/aider.yml ~/.aider.conf.yml
+aider   # picks up config automatically
+```
+
+### LiteLLM (unified proxy — route multiple providers through one endpoint)
+
+```bash
+pip install litellm
+squish run 7b
+
+litellm --config configs/litellm.yaml --port 4000
+# → all OpenAI clients pointing at localhost:4000 now use Squish
+```
+
+### Open WebUI / Enchanted / Msty (Ollama-compatible frontends)
+
+Set the Ollama host to `http://localhost:11435` — all Ollama-compatible UIs work
+out of the box with zero additional configuration.
+
+---
+
+
 
 ```bash
 # Install
+pip install squish
+# or from source:
+pip install -e '.[dev]'
+
+# Required extras
 pip install mlx-lm numpy transformers huggingface_hub safetensors \
-    fastapi 'uvicorn[standard]' lm-eval datasets zstandard
+    fastapi 'uvicorn[standard]' aiofiles lm-eval datasets zstandard
 
-# Run the automated PoC (downloads model, compresses, benchmarks everything)
-python3 run_poc.py
+# First-time compression (~19s, one-time per device)
+squish run 7b --compress-only
 
-# After first run, every load is 0.33s
-python3 run_poc.py --skip-download --skip-reference --skip-convert
+# Start server + open web UI
+squish run 7b
+# → http://localhost:11435/chat   (web UI)
+# → http://localhost:11435/v1     (OpenAI API)
+# → http://localhost:11435/api    (Ollama API)
 
-# Start the API server
-python3 server.py \
-    --model-dir      ~/models/Qwen2.5-1.5B-Instruct-bf16 \
-    --compressed-dir ~/models/Qwen2.5-1.5B-Instruct-bf16-compressed
+# Interactive terminal chat
+squish chat 7b
 
-# Benchmark accuracy
-python3 run_eval.py --tasks arc_easy,hellaswag,winogrande,piqa --limit 200
+# List available models
+squish models
+
+# Benchmark load times vs mlx_lm
+squish bench 7b
+
+# Benchmark accuracy (200-sample fast run)
+python3 evals/run_eval.py --tasks arc_easy,hellaswag,winogrande,piqa --limit 200
 ```
 
 ---
@@ -168,17 +327,30 @@ python3 run_eval.py --tasks arc_easy,hellaswag,winogrande,piqa --limit 200
 
 | File | Purpose |
 |---|---|
-| `server.py` | **OpenAI-compatible API server** — drop-in for any cloud API |
-| `run_poc.py` | 8-phase automated validation runner |
+| `squish/server.py` | **OpenAI + Ollama API server** — `/v1/*`, `/api/*`, `/chat` |
+| `squish/cli.py` | **CLI** — `squish run/chat/models/info/bench` |
+| `squish/ollama_compat.py` | Ollama HTTP API compatibility layer |
+| `squish/tool_calling.py` | Tool/function calling (schema injection + JSON parser) |
+| `squish/scheduler.py` | Batch scheduler — dynamic batching, priority queues |
+| `squish/static/index.html` | Web chat UI (dark theme, streaming, history) |
 | `compressed_loader.py` | Three-tier weight loader (INT8 → f16 → bf16 MLX) |
-| `squish_lm_eval.py` | lm-evaluation-harness wrapper (`SquishCompressedLM`) |
-| `run_eval.py` | Benchmark runner (multi-seed, full task suite) |
+| `squish/entropy.py` | zstd entropy compression/decompression helpers |
+| `squish/speculative.py` | Speculative decoding (target + draft model) |
+| `squish/awq.py` | AWQ activation-guided quantisation calibration |
+| `squish/kv_cache.py` | KIVI + SnapKV quantised KV cache |
+| `squish/prefix_cache.py` | Prompt prefix cache |
+| `evals/squish_lm_eval.py` | lm-evaluation-harness wrapper (`SquishCompressedLM`) |
+| `evals/run_eval.py` | Eval runner (multi-seed, full task suite) |
+| `evals/update_paper_v15.py` | Patches RESULTS.md with latest eval numbers |
+| `run_poc.py` | 8-phase automated validation runner |
 | `convert_weights.py` | `.safetensors` → Vectro INT8 conversion |
-| `run_inference.py` | Inference from compressed weights (standalone) |
 | `verify.py` | Token agreement + cosine similarity checker |
 | `benchmark.py` | Load-time three-strategy comparison table |
 | `ARCHITECTURE.md` | Technical deep-dive: why these numbers are real |
 | `RESULTS.md` | Every measured number with reproducibility commands |
+| `configs/continue.json` | Continue.dev config (VS Code / JetBrains AI) |
+| `configs/litellm.yaml` | LiteLLM proxy config (unified multi-provider endpoint) |
+| `configs/aider.yml` | aider config (AI pair programming CLI) |
 
 ---
 
@@ -186,6 +358,8 @@ python3 run_eval.py --tasks arc_easy,hellaswag,winogrande,piqa --limit 200
 
 - macOS · Apple Silicon (M1–M5)
 - Python 3.10+ (3.12 recommended)
+- `mlx-lm`, `numpy`, `transformers`, `fastapi`, `uvicorn[standard]`, `aiofiles`
+- `zstandard` (entropy compression), `lm-eval`, `datasets` (eval only)
 - [Vectro](https://github.com/wesleyscholl/vectro) at `~/vectro/` (or `VECTRO_DIR` env)
 
 ---

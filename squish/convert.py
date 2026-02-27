@@ -33,6 +33,25 @@ import numpy as np
 import os as _os
 
 # ---------------------------------------------------------------------------
+# AWQ scale application (imported lazily so convert.py works without awq.py)
+# ---------------------------------------------------------------------------
+def _apply_awq_single(name: str, arr_f32: np.ndarray, awq_scales: dict) -> np.ndarray:
+    """
+    Apply AWQ scale to a single weight tensor in-place (returns modified copy).
+    Wraps squish.awq.apply_awq_to_weights for single-tensor use.
+    """
+    if not awq_scales:
+        return arr_f32
+    try:
+        from squish.awq import apply_awq_to_weights
+        tmp = {name: arr_f32}
+        apply_awq_to_weights(tmp, awq_scales, verbose=False)
+        return tmp[name]
+    except ImportError:
+        return arr_f32
+
+
+# ---------------------------------------------------------------------------
 # Resolve the vectro source tree (VECTRO_DIR env var → sibling → ~/vectro)
 # ---------------------------------------------------------------------------
 def _find_vectro() -> str:
@@ -231,6 +250,7 @@ def process_weights_streaming(
     passthrough_patterns: list[str],
     outlier_threshold: float,
     verbose: bool,
+    awq_scales: dict | None = None,
 ) -> dict:
     """
     Streaming shard-by-shard compression — works for any model size.
@@ -268,6 +288,10 @@ def process_weights_streaming(
             sp.update(f"{tensor_idx}/{shard_tensors}  {name}")
             sk = safe_key(name)
             manifest[name] = sk
+
+            # ── Phase 1.2: Apply AWQ scales before quantization ───────────
+            if awq_scales:
+                arr_f32 = _apply_awq_single(name, arr_f32, awq_scales)
 
             sub = quantize_tensor(name, arr_f32, outlier_threshold, passthrough_patterns)
 
@@ -370,6 +394,14 @@ def main():
         default=20.0,
         help="Auto-passthrough if row max/mean ratio exceeds this (default: 20)",
     )
+    ap.add_argument(
+        "--awq-scales",
+        metavar="DIR",
+        default=None,
+        help="Directory of .awq.npy scale files produced by 'python3 -m squish.awq'. "
+             "When provided, AWQ scales are applied to each weight tensor before "
+             "quantization for improved INT8 accuracy.",
+    )
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -390,6 +422,18 @@ def main():
         # 16 GB unified-memory machines like M3 MacBook Pro).
         print(f"\nStreaming quantization → {output_path}/tensors/")
         print(f"  (CPU-only shard loading — no Metal GPU, works for any model size)")
+
+        # ── Load AWQ scales if provided ────────────────────────────────────
+        awq_scales: dict = {}
+        if args.awq_scales:
+            try:
+                from squish.awq import load_awq_scales
+                awq_scales = load_awq_scales(args.awq_scales)
+                n_awq = len(awq_scales)
+                print(f"  [AWQ] Loaded {n_awq} layer scales from {args.awq_scales}")
+            except Exception as e:
+                print(f"  [AWQ] Warning: could not load scales: {e}  (continuing without AWQ)")
+
         t0 = time.time()
         stats = process_weights_streaming(
             model_dir,
@@ -397,6 +441,7 @@ def main():
             args.passthrough,
             args.outlier_threshold,
             args.verbose,
+            awq_scales=awq_scales,
         )
         elapsed = time.time() - t0
 

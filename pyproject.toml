@@ -30,6 +30,7 @@ dependencies = [
     "huggingface-hub>=0.23",
     "transformers>=4.40",
     "zstandard>=0.22",      # transparent .npy.zst loading + compress_npy_dir()
+    "aiofiles>=23.0",       # static file serving via FastAPI StaticFiles
 ]
 
 [project.optional-dependencies]
@@ -49,7 +50,8 @@ dev = [
 "Bug Tracker" = "https://github.com/wesleyscholl/squish/issues"
 
 [project.scripts]
-squish = "cli:main"
+squish        = "squish.cli:main"
+squish-server = "squish.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

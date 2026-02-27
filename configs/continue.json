@@ -1,0 +1,89 @@
+{
+  "models": [
+    {
+      "title": "Squish (local)",
+      "provider": "openai",
+      "model": "Qwen2.5-7B-Instruct-bf16",
+      "apiBase": "http://localhost:11435/v1",
+      "apiKey": "squish",
+      "contextLength": 32768,
+      "completionOptions": {
+        "temperature": 0.2,
+        "maxTokens": 2048
+      }
+    },
+    {
+      "title": "Squish 1.5B (fast)",
+      "provider": "openai",
+      "model": "Qwen2.5-1.5B-Instruct-bf16",
+      "apiBase": "http://localhost:11435/v1",
+      "apiKey": "squish",
+      "contextLength": 32768,
+      "completionOptions": {
+        "temperature": 0.1,
+        "maxTokens": 1024
+      }
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Squish (autocomplete)",
+    "provider": "openai",
+    "model": "Qwen2.5-1.5B-Instruct-bf16",
+    "apiBase": "http://localhost:11435/v1",
+    "apiKey": "squish"
+  },
+  "embeddingsProvider": {
+    "provider": "openai",
+    "model": "Qwen2.5-7B-Instruct-bf16",
+    "apiBase": "http://localhost:11435/v1",
+    "apiKey": "squish"
+  },
+  "slashCommands": [
+    {
+      "name": "edit",
+      "description": "Edit highlighted code"
+    },
+    {
+      "name": "comment",
+      "description": "Write comments for the highlighted code"
+    },
+    {
+      "name": "share",
+      "description": "Export the current chat session to markdown"
+    },
+    {
+      "name": "cmd",
+      "description": "Generate a shell command"
+    }
+  ],
+  "contextProviders": [
+    {
+      "name": "code",
+      "params": {}
+    },
+    {
+      "name": "docs",
+      "params": {}
+    },
+    {
+      "name": "diff",
+      "params": {}
+    },
+    {
+      "name": "terminal",
+      "params": {}
+    },
+    {
+      "name": "problems",
+      "params": {}
+    },
+    {
+      "name": "folder",
+      "params": {}
+    },
+    {
+      "name": "codebase",
+      "params": {}
+    }
+  ]
+}

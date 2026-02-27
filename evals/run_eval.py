@@ -234,6 +234,83 @@ def run_multi_seed_eval(
     return merged
 
 
+# ── Per-task checkpointed eval (for long full-dataset runs) ──────────────────
+
+def run_lm_eval_with_checkpointing(
+    model_type: str,
+    model_args: str,
+    tasks: list,
+    limit: int | None,
+    out_dir: Path,
+    label: str,
+    random_seed: int = 42,
+) -> dict | None:
+    """
+    Run each task individually and cache the result to a per-task JSON file.
+    On resume, completed tasks are loaded from cache and skipped.
+    Results are merged into a single dict at the end.
+
+    This means a crash on task N loses only task N — all prior tasks are safe.
+    """
+    from copy import deepcopy
+
+    per_task_results: dict[str, dict] = {}
+    total_elapsed = 0.0
+
+    for task in tasks:
+        cache_path = out_dir / f"eval_{label}_{task}.json"
+        if cache_path.exists():
+            info(f"[checkpoint] Loading cached result for '{task}' …")
+            with open(cache_path) as f:
+                raw = json.load(f)
+            per_task_results[task] = raw
+            ok(f"  '{task}' loaded from cache")
+            continue
+
+        t0 = time.perf_counter()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        raw = run_lm_eval(
+            model_type  = model_type,
+            model_args  = model_args,
+            tasks       = [task],
+            limit       = limit,
+            num_fewshot = {},
+            output_path = cache_path,
+            label       = f"{label}-{task}",
+            random_seed = random_seed,
+        )
+        elapsed = time.perf_counter() - t0
+        total_elapsed += elapsed
+        if raw is None:
+            fail(f"Task '{task}' failed — continuing with remaining tasks")
+            continue
+        per_task_results[task] = raw
+        ok(f"  '{task}' complete in {elapsed/60:.1f} min  "
+           f"(total so far: {total_elapsed/60:.1f} min)")
+
+    if not per_task_results:
+        return None
+
+    # Merge: combine 'results' dicts from all per-task runs into one dict
+    # Use the first result as the base (it has all the config metadata)
+    first_key = next(iter(per_task_results))
+    merged = deepcopy(per_task_results[first_key])
+    for task, raw in per_task_results.items():
+        if task == first_key:
+            continue
+        merged["results"].update(raw.get("results", {}))
+        # Merge sample counts if present
+        if "n-shot" in raw:
+            merged.setdefault("n-shot", {}).update(raw["n-shot"])
+
+    # Save the merged file to the standard output path
+    merged_path = out_dir / f"eval_{label}.json"
+    with open(merged_path, "w") as f:
+        json.dump(merged, f, indent=2, default=str)
+    ok(f"Merged full-dataset results → {merged_path}")
+    return merged
+
+
 # ── Extract accuracy from lm-eval results dict ────────────────────────────────
 
 _TASK_METRIC = {
@@ -468,6 +545,8 @@ def main():
     ap.add_argument("--model-name",
                     default="Qwen2.5-1.5B-Instruct",
                     help="Display name for reports")
+    ap.add_argument("--batch-size", type=int, default=4,
+                    help="Inference batch size passed to the Squish lm-eval adapter (default 4)")
     args = ap.parse_args()
 
     tasks     = [t.strip() for t in args.tasks.split(",") if t.strip()]
@@ -599,7 +678,7 @@ def main():
             f"model_dir={model_dir},"
             f"compressed_dir={compressed_dir},"
             f"verbose=False,"
-            f"batch_size=4"
+            f"batch_size={args.batch_size}"
         )
         if args.runs > 1:
             comp_results = run_multi_seed_eval(
@@ -611,6 +690,20 @@ def main():
                 label       = "compressed",
                 runs        = args.runs,
             )
+        elif limit is None and len(tasks) > 1:
+            # Full-dataset run: use per-task checkpointing so a crash on task N
+            # does not discard results for tasks 0..N-1.
+            info("Full-dataset run: using per-task checkpointing for crash safety")
+            comp_results = run_lm_eval_with_checkpointing(
+                model_type  = "squish",
+                model_args  = comp_model_args,
+                tasks       = tasks,
+                limit       = None,
+                out_dir     = out_dir,
+                label       = "compressed",
+            )
+            # Point comp_out_path at the merged file so downstream code finds it
+            comp_out_path = out_dir / "eval_compressed.json"
         else:
             comp_results = run_lm_eval(
                 model_type  = "squish",

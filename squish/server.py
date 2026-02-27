@@ -56,8 +56,22 @@ _require("uvicorn", "uvicorn[standard]")
 
 from fastapi import FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+try:
+    from fastapi.staticfiles import StaticFiles as _StaticFiles
+    _STATIC_FILES_AVAILABLE = True
+except ImportError:
+    _STATIC_FILES_AVAILABLE = False
+
+# ── KV cache (Phase 1.3 — lazily imported to keep startup fast) ──────────────
+_kv_cache = None   # QuantizedKVCache | None — set in main() after model load
+
+# ── Batch scheduler (Phase 2.1 — continuous batching) ───────────────────────
+_scheduler = None  # BatchScheduler | None — set in main() when --batch-scheduler given
+
+# ── Tool calling + Ollama compat (Phase 2.2) ─────────────────────────────────
+# Imported lazily in endpoints — no startup cost when unused
 import uvicorn
 
 # ── Model state ──────────────────────────────────────────────────────────────
@@ -326,6 +340,22 @@ def _generate_tokens(
     stop_ids  = _get_stop_ids(stop)
     eos_id    = getattr(tokenizer, "eos_token_id", None) or 151645
 
+    # ── Batch scheduler dispatch (Phase 2.1) ──────────────────────────────────
+    # Route non-deterministic requests through the coalescing batch scheduler.
+    # submit_sync() is a plain blocking generator — compatible with this sync
+    # generator function without any async bridge required.
+    is_deterministic = (temperature == 0.0 or seed is not None)
+    if _scheduler is not None and not is_deterministic:
+        yield from _scheduler.submit_sync(
+            prompt,
+            max_tokens  = max_tokens,
+            temperature = temperature,
+            top_p       = top_p,
+            stop_ids    = _get_stop_ids(stop),
+            seed        = seed,
+        )
+        return
+
     # ── Prefix cache lookup (Phase 1.4) ──────────────────────────────────────
     # Only cache deterministic outputs (temp==0 or seed fixed) so non-
     # deterministic completions never return stale cached text.
@@ -508,6 +538,29 @@ app.add_middleware(
     allow_headers     = ["*"],
 )
 
+# ── Ollama compatibility layer (POST /api/chat etc.) ────────────────────────
+from squish.ollama_compat import mount_ollama as _mount_ollama
+_mount_ollama(
+    app,
+    get_state     = lambda: _state,
+    get_generate  = lambda: _generate_tokens,
+    get_tokenizer = lambda: _state.tokenizer,
+)
+
+# ── Web chat UI (/chat) ────────────────────────────────────────────────
+if _STATIC_FILES_AVAILABLE:
+    _static_dir = Path(__file__).parent / "static"
+    if _static_dir.exists():
+        app.mount("/static", _StaticFiles(directory=str(_static_dir)), name="static")
+
+@app.get("/chat")
+async def web_chat_ui():
+    """Serve the single-page web chat interface."""
+    html_path = Path(__file__).parent / "static" / "index.html"
+    if html_path.exists():
+        return FileResponse(str(html_path), media_type="text/html")
+    return JSONResponse({"error": "Web UI not found. Is squish/static/index.html present?"}, status_code=404)
+
 
 @app.get("/v1/models")
 async def list_models(creds: HTTPAuthorizationCredentials | None = Security(_bearer)):
@@ -587,9 +640,18 @@ async def chat_completions(
     stop        = body.get("stop", None)
     seed        = body.get("seed", None)
     model_id    = body.get("model", _state.model_name)
+    tools       = body.get("tools", [])
 
     if not messages:
         raise HTTPException(400, "'messages' must be a non-empty list")
+
+    # ── Tool calling: inject schema into system prompt ────────────────────
+    if tools:
+        from squish.tool_calling import format_tools_prompt
+        messages = format_tools_prompt(messages, tools)
+        # When tools are requested, force non-streaming so we can inspect
+        # the full output before deciding between text and tool_calls.
+        stream = False
 
     prompt         = _apply_chat_template(messages, _state.tokenizer)
     prompt_tokens  = _count_tokens(prompt)
@@ -664,6 +726,34 @@ async def chat_completions(
             _state.record_completion(n_comp, dur, ttft_s)
 
         comp_tokens = _count_tokens(full_text)
+
+        # ── Tool calling: detect function call in output ──────────────────────
+        if tools:
+            from squish.tool_calling import parse_tool_calls, build_tool_calls_response
+            raw_calls = parse_tool_calls(full_text)
+            if raw_calls is not None:
+                return JSONResponse({
+                    "id":                 cid,
+                    "object":             "chat.completion",
+                    "created":            int(time.time()),
+                    "model":              model_id,
+                    "system_fingerprint": _system_fingerprint(),
+                    "choices": [{
+                        "index":   0,
+                        "message": {
+                            "role":       "assistant",
+                            "content":    None,
+                            "tool_calls": build_tool_calls_response(raw_calls),
+                        },
+                        "finish_reason": "tool_calls",
+                        "logprobs":      None,
+                    }],
+                    "usage": {
+                        "prompt_tokens":     prompt_tokens,
+                        "completion_tokens": comp_tokens,
+                        "total_tokens":      prompt_tokens + comp_tokens,
+                    },
+                })
 
         return JSONResponse({
             "id":                 cid,
@@ -895,6 +985,12 @@ async def metrics():
         "# HELP squish_spec_draft_loaded Whether a draft model is loaded",
         "# TYPE squish_spec_draft_loaded gauge",
         f"squish_spec_draft_loaded {1 if _draft.generator is not None else 0}",
+        "# HELP squish_kv_cache_tokens Current KV cache token count",
+        "# TYPE squish_kv_cache_tokens gauge",
+        f"squish_kv_cache_tokens {_kv_cache.n_tokens if _kv_cache is not None else 0}",
+        "# HELP squish_kv_cache_memory_mb KV cache memory in MB",
+        "# TYPE squish_kv_cache_memory_mb gauge",
+        f"squish_kv_cache_memory_mb {_kv_cache.memory_mb if _kv_cache is not None else 0:.2f}",
     ]
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
@@ -976,6 +1072,27 @@ Examples:
                     help="Disable the prefix (exact-match) response cache")
     ap.add_argument("--prefix-cache-size", type=int, default=512,
                     help="LRU prefix cache capacity (default 512 entries)")
+    # ── Phase 1.3: KV cache quantization ─────────────────────────────────────
+    ap.add_argument("--kv-cache-mode",
+                    choices=["fp16", "int8", "snap"],
+                    default="fp16",
+                    help="KV cache compression mode:\n"
+                         "  fp16  — standard / no compression (default)\n"
+                         "  int8  — KIVI: INT8 older tokens, FP16 recent window\n"
+                         "  snap  — KIVI+SnapKV: INT8 + importance-based eviction")
+    ap.add_argument("--kv-cache-window", type=int, default=64,
+                    help="Recent-token FP16 window for int8/snap modes (default 64)")
+    ap.add_argument("--kv-cache-budget", type=int, default=4096,
+                    help="Max K/V positions in snap mode (default 4096)")
+    # ── Phase 2.1: Batch scheduler ────────────────────────────────────────────
+    ap.add_argument("--batch-scheduler", action="store_true", default=False,
+                    help="Enable continuous batching scheduler: collects concurrent\n"
+                         "requests within --batch-window-ms and runs them in one\n"
+                         "padded forward pass.  Improves throughput ~N× at moderate load.")
+    ap.add_argument("--batch-size", type=int, default=8,
+                    help="Max concurrent requests per batch (default 8)")
+    ap.add_argument("--batch-window-ms", type=float, default=20.0,
+                    help="Collect window in ms before starting a batch (default 20)")
     args = ap.parse_args()
 
     global _API_KEY
@@ -994,10 +1111,69 @@ Examples:
     if args.draft_model:
         print(f"  Draft model   : {args.draft_model}")
     print(f"  Prefix cache  : {'disabled' if args.no_prefix_cache else args.prefix_cache_size}")
+    if args.kv_cache_mode != "fp16":
+        print(f"  KV cache mode : {args.kv_cache_mode}  "
+              f"window={args.kv_cache_window}  budget={args.kv_cache_budget}")
     print(f"  Listen        : http://{args.host}:{args.port}")
     print()
 
     load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
+
+    # ── Phase 2.1C: CPU/GPU split loading (auto-activates if model > Metal budget) ──
+    if _state.model is not None:
+        try:
+            from squish.split_loader import SplitLayerLoader
+            _split_info = SplitLayerLoader.auto_split(_state.model, verbose=True)
+            if _split_info:
+                print(
+                    f"  CPU/GPU split   : {_split_info.cpu_count} layers offloaded  "
+                    f"GPU={_split_info.gpu_gb:.2f}GB  CPU={_split_info.cpu_gb:.2f}GB"
+                )
+        except Exception as e:
+            if args.verbose:
+                print(f"  [split_loader] Skipped: {e}")
+
+    # ── Phase 2.3: Flash Attention status check ──────────────────────────────
+    if _state.model is not None:
+        try:
+            from squish.flash_attention import patch_model_attention
+            patch_model_attention(_state.model, verbose=args.verbose)
+        except Exception as e:
+            if args.verbose:
+                print(f"  [flash_attention] Skipped: {e}")
+
+    # ── Phase 1.3: attach quantized KV cache if requested ─────────────
+    global _kv_cache
+    if args.kv_cache_mode != "fp16" and _state.model is not None:
+        try:
+            from squish.kv_cache import patch_model_kv_cache
+            _kv_cache = patch_model_kv_cache(
+                _state.model,
+                mode=args.kv_cache_mode,
+                window=args.kv_cache_window,
+                budget=args.kv_cache_budget,
+                verbose=True,
+            )
+            print(f"  KV cache ready ({args.kv_cache_mode})")
+        except Exception as e:
+            print(f"  [KV cache] Warning: could not attach ({e}) — using fp16")
+
+    # ── Phase 2.1: start batch scheduler if requested ────────────────────────
+    global _scheduler
+    if args.batch_scheduler and _state.model is not None:
+        try:
+            from squish.scheduler import BatchScheduler
+            _scheduler = BatchScheduler(
+                _state.model, _state.tokenizer,
+                max_batch_size  = args.batch_size,
+                batch_window_ms = args.batch_window_ms,
+            )
+            _scheduler.start()
+            print(f"  Batch scheduler : enabled  "
+                  f"(max_batch={args.batch_size}  window={args.batch_window_ms:.0f}ms)")
+        except Exception as e:
+            print(f"  [Scheduler] Warning: could not start ({e}) — sequential mode")
+            _scheduler = None
 
     if args.draft_model:
         print()
@@ -1005,6 +1181,8 @@ Examples:
 
     print()
     print(f"  Server ready → http://{args.host}:{args.port}/v1")
+    print(f"  Web chat UI  → http://{args.host}:{args.port}/chat")
+    print(f"  Ollama compat→ http://{args.host}:{args.port}/api/chat")
     print(f"  Set in clients:")
     print(f"    OPENAI_BASE_URL=http://{args.host}:{args.port}/v1")
     print(f"    OPENAI_API_KEY=squish")

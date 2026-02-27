@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Squish Chat</title>
+<!-- Marked.js — Markdown rendering -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<!-- Highlight.js — code syntax highlighting -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/highlight.min.js"></script>
+<style>
+  /* ── Reset / base ───────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:        #0d0f14;
+    --surface:   #161b22;
+    --surface2:  #1e2530;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --text-dim:  #8b949e;
+    --accent:    #58a6ff;
+    --accent-glow: rgba(88,166,255,.18);
+    --user-bg:   #1a2233;
+    --asst-bg:   #161b22;
+    --danger:    #f85149;
+    --success:   #3fb950;
+    --radius:    12px;
+    --font-sans: "Inter", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text);
+    font-family: var(--font-sans); font-size: 15px; line-height: 1.6; }
+
+  /* ── Layout ─────────────────────────────────────────────────────────────── */
+  #shell     { display: flex; height: 100vh; overflow: hidden; }
+  #sidebar   { width: 240px; min-width: 200px; max-width: 300px;
+    background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; transition: width .2s; }
+  #main      { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #header    { padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; background: var(--surface); }
+  #chat-area { flex: 1; overflow-y: auto; padding: 24px; scroll-behavior: smooth; }
+  #input-bar { padding: 12px 16px; border-top: 1px solid var(--border);
+    background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+
+  /* ── Sidebar ────────────────────────────────────────────────────────────── */
+  .sb-title  { padding: 14px 16px 10px; font-size: 12px; font-weight: 600;
+    color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; }
+  #new-chat  { margin: 0 10px 6px; padding: 7px 12px; border-radius: 8px;
+    border: 1px dashed var(--border); background: none; color: var(--text-dim);
+    cursor: pointer; text-align: left; font-size: 13px; transition: all .15s; }
+  #new-chat:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+  #history-list { flex: 1; overflow-y: auto; padding: 0 6px 6px; }
+  .hist-item { padding: 7px 10px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--text-dim); transition: all .15s; }
+  .hist-item:hover { background: var(--surface2); color: var(--text); }
+  .hist-item.active { background: var(--accent-glow); color: var(--accent); }
+  #sb-meta   { padding: 10px 16px; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-dim); }
+  #sb-meta a { color: var(--accent); text-decoration: none; }
+
+  /* ── Header ─────────────────────────────────────────────────────────────── */
+  #logo      { font-weight: 700; font-size: 17px; letter-spacing: -.4px; }
+  #logo span { color: var(--accent); }
+  .spacer    { flex: 1; }
+  #status-dot{ width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+  #status-dot.ok  { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  #status-dot.err { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+  #model-sel { background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 4px 10px; font-size: 13px;
+    cursor: pointer; }
+  #tok-counter { font-size: 11px; color: var(--text-dim); }
+  #settings-btn { background: none; border: none; cursor: pointer; color: var(--text-dim);
+    font-size: 20px; line-height: 1; padding: 0 4px; transition: color .15s; }
+  #settings-btn:hover { color: var(--text); }
+
+  /* ── Messages ───────────────────────────────────────────────────────────── */
+  .msg        { display: flex; gap: 14px; margin-bottom: 20px; animation: fadeIn .18s; }
+  @keyframes fadeIn { from { opacity:0; transform: translateY(6px) } }
+  .msg-avatar { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; }
+  .msg.user .msg-avatar   { background: #1c3c5e; color: var(--accent); align-self: flex-start; }
+  .msg.asst .msg-avatar   { background: #1e3a2e; color: var(--success); align-self: flex-start; }
+  .msg.system .msg-avatar { background: #3a1e1e; color: #ff9a3c; align-self: flex-start; }
+  .msg-body   { flex: 1; min-width: 0; }
+  .msg-meta   { font-size: 11px; color: var(--text-dim); margin-bottom: 4px;
+    display: flex; align-items: center; gap: 10px; }
+  .msg-content { line-height: 1.7; word-break: break-word; }
+  /* Markdown styles in messages */
+  .msg-content p     { margin-bottom: .75em; }
+  .msg-content p:last-child { margin-bottom: 0; }
+  .msg-content h1,.msg-content h2,.msg-content h3 { margin: 1em 0 .4em; font-weight: 600; line-height: 1.3; }
+  .msg-content h1 { font-size: 1.25em; }
+  .msg-content h2 { font-size: 1.1em; }
+  .msg-content h3 { font-size: 1em; }
+  .msg-content ul,.msg-content ol { padding-left: 1.5em; margin-bottom: .75em; }
+  .msg-content li { margin-bottom: .25em; }
+  .msg-content code { font-family: var(--font-mono); font-size: .88em;
+    background: var(--surface2); padding: .15em .4em; border-radius: 4px;
+    color: #ff9a3c; }
+  .msg-content pre  { background: #0d1117; border: 1px solid var(--border);
+    border-radius: var(--radius); overflow-x: auto; margin: .75em 0; position: relative; }
+  .msg-content pre code { background: none; padding: 1em; display: block;
+    font-size: .85em; color: var(--text); border-radius: 0; }
+  .msg-content blockquote { border-left: 3px solid var(--border); padding-left: 1em;
+    color: var(--text-dim); margin: .5em 0; }
+  .msg-content table { border-collapse: collapse; width: 100%; margin: .75em 0; font-size: .9em; }
+  .msg-content th, .msg-content td { border: 1px solid var(--border); padding: .4em .75em; text-align: left; }
+  .msg-content th { background: var(--surface2); }
+  .msg-content a { color: var(--accent); }
+  .copy-btn  { margin-left: auto; background: none; border: 1px solid var(--border);
+    color: var(--text-dim); border-radius: 6px; padding: 2px 9px; font-size: 11px;
+    cursor: pointer; transition: all .15s; }
+  .copy-btn:hover { background: var(--surface2); color: var(--text); }
+  .pre-copy  { position: absolute; top: 8px; right: 8px; }
+  /* Streaming cursor */
+  .cursor::after { content: "▋"; display: inline-block; animation: blink .9s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0 } }
+  .thinking { color: var(--text-dim); font-style: italic; font-size: .9em; }
+
+  /* ── Input area ─────────────────────────────────────────────────────────── */
+  .input-row  { display: flex; gap: 8px; }
+  #msg-input  { flex: 1; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius); padding: 10px 14px;
+    font-size: 14px; font-family: var(--font-sans); resize: none; min-height: 44px;
+    max-height: 200px; outline: none; transition: border-color .15s; line-height: 1.5; }
+  #msg-input:focus  { border-color: var(--accent); }
+  #send-btn   { background: var(--accent); border: none; border-radius: var(--radius);
+    color: #0d0f14; padding: 10px 18px; font-weight: 600; font-size: 14px;
+    cursor: pointer; transition: all .15s; white-space: nowrap; }
+  #send-btn:hover:not(:disabled)  { background: #79bbff; }
+  #send-btn:disabled { opacity: .5; cursor: not-allowed; }
+  #stop-btn   { background: var(--danger); border: none; border-radius: var(--radius);
+    color: #fff; padding: 10px 14px; font-weight: 600; font-size: 14px;
+    cursor: pointer; display: none; transition: all .15s; }
+  #stop-btn:hover { background: #ff6b64; }
+  .input-foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); }
+  #sys-toggle { background: none; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; transition: all .15s; }
+  #sys-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  #sys-input  { width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 8px 12px; font-size: 13px;
+    font-family: var(--font-sans); outline: none; display: none; }
+  #sys-input:focus { border-color: var(--accent); }
+  .hint       { margin-left: auto; font-size: 11px; color: var(--text-dim); }
+
+  /* ── Settings panel ─────────────────────────────────────────────────────── */
+  #settings-panel { position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: center; justify-content: center; z-index: 50; }
+  #settings-panel.open { display: flex; }
+  .sp-box  { background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; width: 400px; max-width: 95vw; }
+  .sp-box h2 { font-size: 15px; margin-bottom: 18px; }
+  .sp-row  { display: flex; align-items: center; margin-bottom: 14px; gap: 12px; }
+  .sp-row label { width: 100px; font-size: 13px; color: var(--text-dim); }
+  .sp-row input[type=range]  { flex: 1; accent-color: var(--accent); }
+  .sp-row input[type=number] { width: 70px; background: var(--surface2);
+    border: 1px solid var(--border); color: var(--text); border-radius: 6px;
+    padding: 3px 8px; font-size: 13px; text-align: right; }
+  .sp-row input[type=number]:focus { outline: none; border-color: var(--accent); }
+  .sp-val  { width: 46px; font-size: 12px; text-align: right; color: var(--text-dim); }
+  .sp-close { margin-top: 8px; background: var(--accent); border: none; border-radius: 8px;
+    color: #0d0f14; padding: 7px 18px; font-weight: 600; cursor: pointer; }
+  /* ── Empty state ─────────────────────────────────────────────────────────── */
+  #empty-state { display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; opacity: .4; gap: 10px; user-select: none; }
+  #empty-state .es-icon { font-size: 48px; }
+  #empty-state h2 { font-size: 18px; font-weight: 600; }
+  #empty-state p  { font-size: 13px; color: var(--text-dim); text-align: center; }
+  .tag-row { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; justify-content: center; }
+  .tag { background: var(--surface2); border: 1px solid var(--border); border-radius: 20px;
+    padding: 4px 12px; font-size: 12px; color: var(--text-dim); cursor: pointer; transition: all .15s; }
+  .tag:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+
+  /* ── Scrollbar styles ───────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<div id="shell">
+  <!-- ── Sidebar ─────────────────────────────────────────────── -->
+  <aside id="sidebar">
+    <div class="sb-title">Conversations</div>
+    <button id="new-chat" onclick="newChat()">＋ New chat</button>
+    <div id="history-list"></div>
+    <div id="sb-meta">
+      Squish v0.2 · <a href="/v1/metrics" target="_blank">metrics</a>
+    </div>
+  </aside>
+
+  <!-- ── Main ───────────────────────────────────────────────── -->
+  <div id="main">
+    <!-- Header -->
+    <div id="header">
+      <div id="logo">⚗️ <span>Squish</span> Chat</div>
+      <select id="model-sel" onchange="onModelChange(this.value)">
+        <option value="">Loading…</option>
+      </select>
+      <span id="tok-counter" title="Estimated tokens in context">0 tok</span>
+      <span class="spacer"></span>
+      <div id="status-dot" title="Server status"></div>
+      <button id="settings-btn" onclick="openSettings()" title="Settings">⚙</button>
+    </div>
+
+    <!-- Chat area -->
+    <div id="chat-area">
+      <div id="empty-state">
+        <div class="es-icon">⚗️</div>
+        <h2>What can I help with?</h2>
+        <p>Squish · fully local · private · fast</p>
+        <div class="tag-row">
+          <div class="tag" onclick="fillInput('Explain how vector embeddings work')">Vector embeddings</div>
+          <div class="tag" onclick="fillInput('Write a Python async HTTP client')">Python client</div>
+          <div class="tag" onclick="fillInput('Summarise this text: ')">Summarise…</div>
+          <div class="tag" onclick="fillInput('What is the capital of France?')">Quick fact</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input bar -->
+    <div id="input-bar">
+      <input id="sys-input" type="text" placeholder="System prompt…"
+        value="You are a helpful assistant." />
+      <div class="input-row">
+        <textarea id="msg-input" rows="1" placeholder="Message…"
+          onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button id="stop-btn" onclick="stopGeneration()">■ Stop</button>
+        <button id="send-btn" onclick="sendMessage()">Send ↑</button>
+      </div>
+      <div class="input-foot">
+        <button id="sys-toggle" onclick="toggleSysInput()">System</button>
+        <button id="clear-btn"  onclick="clearChat()"
+          style="background:none;border:1px solid var(--border);color:var(--text-dim);
+          border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Clear</button>
+        <span class="hint">Shift+Enter = new line · Enter = send</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Settings panel ─────────────────────────────────────────────────────── -->
+<div id="settings-panel">
+  <div class="sp-box">
+    <h2>⚙ Generation settings</h2>
+    <div class="sp-row">
+      <label>Temperature</label>
+      <input type="range" id="s-temp" min="0" max="2" step="0.05" value="0.7"
+        oninput="document.getElementById('s-temp-v').textContent=this.value" />
+      <span class="sp-val" id="s-temp-v">0.7</span>
+    </div>
+    <div class="sp-row">
+      <label>Top-p</label>
+      <input type="range" id="s-topp" min="0" max="1" step="0.02" value="0.9"
+        oninput="document.getElementById('s-topp-v').textContent=this.value" />
+      <span class="sp-val" id="s-topp-v">0.9</span>
+    </div>
+    <div class="sp-row">
+      <label>Max tokens</label>
+      <input type="number" id="s-maxt" value="1024" min="1" max="8192" />
+    </div>
+    <div class="sp-row">
+      <label>Seed</label>
+      <input type="number" id="s-seed" value="" placeholder="random" min="0" max="2147483647" />
+    </div>
+    <button class="sp-close" onclick="closeSettings()">Done</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ── Marked + highlight.js setup ─────────────────────────────────────────────
+marked.setOptions({
+  highlight: (code, lang) => {
+    if (lang && hljs.getLanguage(lang))
+      return hljs.highlight(code, { language: lang }).value;
+    return hljs.highlightAuto(code).value;
+  },
+  breaks: true, gfm: true,
+});
+const renderer = new marked.Renderer();
+const _origCode = renderer.code.bind(renderer);
+renderer.code = (code, lang) => {
+  const raw = _origCode(code, lang);
+  const id  = `code-${Math.random().toString(36).slice(2,8)}`;
+  return raw.replace(/<pre>/, `<pre><button class="copy-btn pre-copy" onclick="copyCode('${id}')">Copy</button>`).replace(/<code/, `<code id="${id}"`);
+};
+marked.setOptions({ renderer });
+
+// ── State ────────────────────────────────────────────────────────────────────
+const BASE_URL = window.location.origin;
+let sessions   = JSON.parse(localStorage.getItem("squish_sessions") || "[]");
+let activeIdx  = -1;
+let abortCtrl  = null;   // for fetch cancellation
+let isStreaming = false;
+
+function curSession() { return sessions[activeIdx] ?? null; }
+function saveLocal()  { localStorage.setItem("squish_sessions", JSON.stringify(sessions)); }
+
+// ── Model loading ─────────────────────────────────────────────────────────── 
+async function loadModels() {
+  const dot = document.getElementById("status-dot");
+  const sel = document.getElementById("model-sel");
+  try {
+    const r = await fetch(`${BASE_URL}/v1/models`);
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    dot.className = "ok";
+    sel.innerHTML = "";
+    for (const m of d.data) {
+      const o = document.createElement("option");
+      o.value = m.id; o.textContent = m.id;
+      sel.appendChild(o);
+    }
+  } catch {
+    dot.className = "err";
+    sel.innerHTML = `<option value="">Offline</option>`;
+  }
+}
+
+function onModelChange(val) {
+  if (curSession()) { curSession().model = val; saveLocal(); }
+}
+
+// ── Session management ────────────────────────────────────────────────────── 
+function newChat() {
+  const sess = {
+    id: Date.now(), title: "New chat", model: currentModel(),
+    messages: [], created: new Date().toISOString(),
+  };
+  sessions.unshift(sess);
+  activeIdx = 0;
+  saveLocal();
+  renderSidebar();
+  renderMessages();
+}
+
+function switchSession(idx) {
+  activeIdx = idx;
+  renderSidebar();
+  renderMessages();
+}
+
+function renderSidebar() {
+  const list = document.getElementById("history-list");
+  list.innerHTML = "";
+  sessions.forEach((s, i) => {
+    const d = document.createElement("div");
+    d.className = "hist-item" + (i === activeIdx ? " active" : "");
+    d.textContent = s.title;
+    d.onclick = () => switchSession(i);
+    list.appendChild(d);
+  });
+}
+
+function currentModel() {
+  const sel = document.getElementById("model-sel");
+  return sel.value || (curSession()?.model) || "squish";
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────── 
+function renderMessages() {
+  const area = document.getElementById("chat-area");
+  const empt = document.getElementById("empty-state");
+  const sess = curSession();
+  if (!sess || sess.messages.length === 0) {
+    area.innerHTML = "";
+    if (empt) area.appendChild(empt);
+    updateTokCounter(0);
+    return;
+  }
+  if (empt && empt.parentNode === area) area.removeChild(empt);
+  area.innerHTML = "";
+  for (const m of sess.messages) area.appendChild(buildMsgEl(m));
+  scrollToBottom();
+  updateTokCounter(estimateTokens(sess.messages));
+}
+
+function buildMsgEl(msg) {
+  const wrap = document.createElement("div");
+  wrap.className = `msg ${msg.role === "user" ? "user" : msg.role === "system" ? "system" : "asst"}`;
+  const avatarText = msg.role === "user" ? "U" : msg.role === "system" ? "S" : "A";
+  const time_ = msg.ts ? new Date(msg.ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
+  const rendered = msg.role === "user"
+    ? escapeHtml(msg.content)
+    : marked.parse(msg.content || "");
+  wrap.innerHTML = `
+    <div class="msg-avatar">${avatarText}</div>
+    <div class="msg-body">
+      <div class="msg-meta">
+        <b>${msg.role === "user" ? "You" : msg.role === "system" ? "System" : "Assistant"}</b>
+        <span>${time_}</span>
+        ${msg.role !== "user" ? `<button class="copy-btn" onclick="copyMsg(this)">Copy</button>` : ""}
+      </div>
+      <div class="msg-content">${rendered}</div>
+    </div>`;
+  return wrap;
+}
+
+function appendMsg(msg) {
+  const area = document.getElementById("chat-area");
+  const empt = document.getElementById("empty-state");
+  if (empt && empt.parentNode === area) area.removeChild(empt);
+  area.appendChild(buildMsgEl(msg));
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  const a = document.getElementById("chat-area");
+  a.scrollTop = a.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+          .replace(/"/g,"&quot;").replace(/\n/g,"<br/>");
+}
+
+// ── Token estimate ────────────────────────────────────────────────────────── 
+function estimateTokens(messages) {
+  return Math.round(messages.reduce((a,m) => a + (m.content||"").length, 0) / 3.5);
+}
+function updateTokCounter(n) {
+  document.getElementById("tok-counter").textContent = n > 0 ? `~${n} tok` : "";
+}
+
+// ── Send / stream ─────────────────────────────────────────────────────────── 
+async function sendMessage() {
+  if (isStreaming) return;
+  const input = document.getElementById("msg-input");
+  const text  = input.value.trim();
+  if (!text) return;
+
+  if (!curSession()) newChat();
+  const sess = curSession();
+
+  // Append user message
+  const userMsg = { role: "user", content: text, ts: new Date().toISOString() };
+  sess.messages.push(userMsg);
+  appendMsg(userMsg);
+  input.value = "";
+  autoResize(input);
+  saveLocal();
+
+  // Build request
+  const sysVal = document.getElementById("sys-input").value.trim();
+  const reqMsgs = sysVal
+    ? [{ role: "system", content: sysVal }, ...sess.messages.filter(m=>m.role!=="system")]
+    : sess.messages.filter(m=>m.role!=="system");
+
+  const temperature = parseFloat(document.getElementById("s-temp").value);
+  const top_p       = parseFloat(document.getElementById("s-topp").value);
+  const max_tokens  = parseInt(document.getElementById("s-maxt").value, 10);
+  const seedVal     = document.getElementById("s-seed").value;
+  const seed        = seedVal !== "" ? parseInt(seedVal, 10) : undefined;
+
+  // Streaming request
+  abortCtrl  = new AbortController();
+  isStreaming = true;
+  document.getElementById("send-btn").disabled = true;
+  document.getElementById("stop-btn").style.display = "inline-block";
+
+  // Create streaming placeholder message
+  const asstMsg = { role: "assistant", content: "", ts: new Date().toISOString() };
+  sess.messages.push(asstMsg);
+  const msgEl  = buildMsgEl(asstMsg);
+  const area   = document.getElementById("chat-area");
+  area.appendChild(msgEl);
+  const contentDiv = msgEl.querySelector(".msg-content");
+  contentDiv.classList.add("cursor");
+  scrollToBottom();
+
+  // Update session title from first user message
+  if (sess.messages.filter(m=>m.role==="user").length === 1) {
+    sess.title = text.slice(0, 36) + (text.length > 36 ? "…" : "");
+    renderSidebar();
+  }
+
+  try {
+    const body = {
+      model: currentModel(), messages: reqMsgs, stream: true,
+      temperature, top_p, max_tokens,
+    };
+    if (seed !== undefined) body.seed = seed;
+
+    const resp = await fetch(`${BASE_URL}/v1/chat/completions`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body), signal: abortCtrl.signal,
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${err}`);
+    }
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        const s = line.trim();
+        if (!s || s === "data: [DONE]") continue;
+        if (s.startsWith("data: ")) {
+          try {
+            const chunk = JSON.parse(s.slice(6));
+            const delta = chunk.choices?.[0]?.delta?.content ?? "";
+            if (delta) {
+              asstMsg.content += delta;
+              contentDiv.innerHTML = marked.parse(asstMsg.content);
+              scrollToBottom();
+            }
+          } catch { /* ignore malformed */ }
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") {
+      asstMsg.content += `\n\n*Error: ${e.message}*`;
+      contentDiv.innerHTML = marked.parse(asstMsg.content);
+    }
+  } finally {
+    contentDiv.classList.remove("cursor");
+    // Re-run hljs on code blocks
+    contentDiv.querySelectorAll("pre code").forEach(el => hljs.highlightElement(el));
+    isStreaming = false;
+    abortCtrl   = null;
+    document.getElementById("send-btn").disabled = false;
+    document.getElementById("stop-btn").style.display = "none";
+    saveLocal();
+    updateTokCounter(estimateTokens(sess.messages));
+    renderSidebar();
+  }
+}
+
+function stopGeneration() {
+  abortCtrl?.abort();
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────── 
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 200) + "px";
+}
+
+function clearChat() {
+  if (!curSession()) return;
+  curSession().messages = [];
+  saveLocal();
+  renderMessages();
+}
+
+function toggleSysInput() {
+  const el = document.getElementById("sys-input");
+  el.style.display = el.style.display === "none" ? "block" : "none";
+}
+
+function fillInput(text) {
+  const input = document.getElementById("msg-input");
+  input.value = text;
+  input.focus();
+  autoResize(input);
+}
+
+function copyMsg(btn) {
+  const content = btn.closest(".msg-body").querySelector(".msg-content").innerText;
+  navigator.clipboard.writeText(content).then(() => {
+    btn.textContent = "Copied!";
+    setTimeout(() => btn.textContent = "Copy", 1500);
+  });
+}
+
+function copyCode(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.innerText).then(() => {
+    const btn = el.closest("pre").querySelector(".copy-btn");
+    if (btn) { btn.textContent = "Copied!"; setTimeout(() => btn.textContent = "Copy", 1500); }
+  });
+}
+
+function openSettings()  { document.getElementById("settings-panel").classList.add("open"); }
+function closeSettings() { document.getElementById("settings-panel").classList.remove("open"); }
+
+// Close settings on backdrop click
+document.getElementById("settings-panel").addEventListener("click", e => {
+  if (e.target === e.currentTarget) closeSettings();
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────── 
+(async () => {
+  await loadModels();
+  // Restore last session
+  if (sessions.length > 0) {
+    activeIdx = 0;
+    renderSidebar();
+    renderMessages();
+  }
+  // Refresh server status every 30s
+  setInterval(loadModels, 30_000);
+})();
+</script>
+</body>
+</html>

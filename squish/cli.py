@@ -1,0 +1,601 @@
+#!/usr/bin/env python3
+"""
+squish/cli.py
+
+Entry point for the Squish local-inference CLI.
+
+Sub-commands
+───────────
+  squish run    [MODEL] [OPTIONS]   Start the inference server
+  squish chat   [MODEL] [OPTIONS]   Interactive terminal chat (no browser needed)
+  squish models                     List local models (auto-discovers ~/models/)
+  squish info                       System info: Metal, RAM, disk
+  squish bench  [MODEL] [OPTIONS]   Quick throughput/latency benchmark
+
+MODEL shorthand resolves as:
+  7b   → Qwen2.5-7B-Instruct-bf16
+  14b  → Qwen2.5-14B-Instruct-bf16
+  1.5b → Qwen2.5-1.5B-Instruct-bf16
+  72b  → Qwen2.5-72B-Instruct-bf16
+  Any path starting with ~ or / → used as-is
+
+Usage:
+    python3 -m squish.cli run 7b
+    python3 -m squish.cli chat 7b
+    python3 -m squish.cli models
+    python3 -m squish.cli info
+
+After `pip install -e .`:
+    squish run 7b
+    squish chat 7b
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+# ── Model registry ─────────────────────────────────────────────────────────── 
+
+_MODELS_DIR = Path.home() / "models"
+
+_MODEL_SHORTHAND = {
+    "1.5b": "Qwen2.5-1.5B-Instruct-bf16",
+    "7b":   "Qwen2.5-7B-Instruct-bf16",
+    "14b":  "Qwen2.5-14B-Instruct-bf16",
+    "32b":  "Qwen2.5-32B-Instruct-bf16",
+    "72b":  "Qwen2.5-72B-Instruct-bf16",
+}
+
+# Compressed dir naming convention
+_COMPRESSED_SUFFIX = "-compressed"
+
+# Default server port
+_DEFAULT_PORT = 11435
+
+
+def _resolve_model(name: str | None) -> tuple[Path, Path]:
+    """
+    Resolve MODEL shorthand / path to (model_dir, compressed_dir).
+    Raises SystemExit if the path doesn't exist.
+    """
+    if name is None:
+        # Auto-pick: prefer 7B if available, else first available
+        for shorthand in ("7b", "14b", "1.5b"):
+            candidate = _MODELS_DIR / _MODEL_SHORTHAND[shorthand]
+            if candidate.exists():
+                name = shorthand
+                break
+        if name is None:
+            _die("No model specified and no default found in ~/models/\n"
+                 "Usage: squish run 7b  or  squish run ~/models/my-model")
+
+    if name in _MODEL_SHORTHAND:
+        model_dir = _MODELS_DIR / _MODEL_SHORTHAND[name]
+    else:
+        model_dir = Path(name).expanduser()
+
+    if not model_dir.exists():
+        _die(f"Model directory not found: {model_dir}\n"
+             f"Run `squish models` to list available models.")
+
+    compressed_dir = Path(str(model_dir) + _COMPRESSED_SUFFIX)
+    if not compressed_dir.exists():
+        # Try squish_4bit subdir (mlx_lm native 4-bit)
+        squish4bit = model_dir.parent / (model_dir.name.replace("-bf16", "") + "-4bit")
+        if squish4bit.exists():
+            compressed_dir = squish4bit
+        else:
+            print(f"  ⚠  No compressed dir found at {compressed_dir}")
+            print(f"     To compress: python3 -m squish.convert --model-dir {model_dir} --output {compressed_dir}")
+            print(f"     Starting with uncompressed model (slower load)…")
+            compressed_dir = model_dir
+
+    return model_dir, compressed_dir
+
+
+def _die(msg: str) -> None:
+    print(f"\n  ✗  {msg}\n", file=sys.stderr)
+    sys.exit(1)
+
+
+def _box(lines: list[str]) -> None:
+    """Print a simple box around lines."""
+    width = max(len(l) for l in lines) + 4
+    print("┌" + "─" * width + "┐")
+    for l in lines:
+        print(f"│  {l:<{width-2}}│")
+    print("└" + "─" * width + "┘")
+
+
+# ── squish models ─────────────────────────────────────────────────────────────
+
+def cmd_models(args):
+    """List available local models."""
+    print()
+    print(f"  Local models in {_MODELS_DIR}:")
+    print()
+    if not _MODELS_DIR.exists():
+        print("  (directory not found)")
+        return
+
+    rows = []
+    for d in sorted(_MODELS_DIR.iterdir()):
+        if not d.is_dir():
+            continue
+        if d.name.startswith("."):
+            continue
+        compressed = Path(str(d) + _COMPRESSED_SUFFIX)
+        comp_str = "✓ compressed" if compressed.exists() else "  (raw only)"
+        # estimate disk size
+        try:
+            total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+            size_str = f"{total / 1e9:.1f} GB"
+        except Exception:
+            size_str = "?"
+        rows.append((d.name, size_str, comp_str))
+
+    if not rows:
+        print("  No model directories found.")
+        print(f"  Download a model with mlx_lm.convert or place in {_MODELS_DIR}")
+        return
+
+    # Column widths
+    w0 = max(len(r[0]) for r in rows) + 2
+    print(f"  {'Model':<{w0}} {'Disk':>8}  {'Compressed'}")
+    print(f"  {'─'*w0} {'─'*8}  {'─'*14}")
+    for name, size, comp in rows:
+        print(f"  {name:<{w0}} {size:>8}  {comp}")
+
+    print()
+    print("  Shorthand aliases: 1.5b, 7b, 14b, 32b, 72b")
+    print()
+
+
+# ── squish info ───────────────────────────────────────────────────────────────
+
+def cmd_info(args):
+    """Print system info relevant to local inference."""
+    import platform
+    import subprocess as sp
+
+    print()
+    _box(["Squish — System Info"])
+    print()
+
+    # macOS / chip info
+    print(f"  OS            : {platform.system()} {platform.release()}")
+    try:
+        chip = sp.check_output(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            text=True, stderr=sp.DEVNULL).strip()
+        print(f"  Chip          : {chip}")
+    except Exception:
+        pass
+
+    # Unified memory
+    try:
+        mem_bytes = int(sp.check_output(
+            ["sysctl", "-n", "hw.memsize"], text=True).strip())
+        mem_gb = mem_bytes / 1e9
+        print(f"  Unified RAM   : {mem_gb:.0f} GB")
+        print(f"  Metal budget  : {mem_gb * 0.90:.1f} GB  (90% of RAM — Phase 0.1)")
+    except Exception:
+        pass
+
+    # Disk space
+    m = _MODELS_DIR
+    if m.exists():
+        stat = shutil.disk_usage(m)
+        print(f"  Models dir    : {m}")
+        print(f"  Disk free     : {stat.free / 1e9:.1f} GB")
+        print(f"  Disk used     : {stat.used / 1e9:.1f} GB  (total: {stat.total / 1e9:.0f} GB)")
+
+    # Python / MLX
+    try:
+        import mlx.core as mx
+        print(f"  MLX           : v{mx.__version__}  (Metal backend active)")
+    except Exception:
+        print(f"  MLX           : not installed")
+    print(f"  Python        : {sys.version.split()[0]}")
+
+    # Models available
+    if m.exists():
+        n_models = sum(1 for d in m.iterdir() if d.is_dir() and not d.name.startswith("."))
+        n_comp   = sum(1 for d in m.iterdir() if d.is_dir() and (Path(str(d)+_COMPRESSED_SUFFIX).exists()))
+        print(f"  Local models  : {n_models} model(s),  {n_comp} compressed")
+
+    # Server status
+    import socket
+    s = socket.socket()
+    s.settimeout(0.5)
+    try:
+        s.connect(("127.0.0.1", _DEFAULT_PORT))
+        print(f"  Server        : ✓ running on :{_DEFAULT_PORT}")
+    except Exception:
+        print(f"  Server        : not running  (start with: squish run 7b)")
+    finally:
+        s.close()
+    print()
+
+
+# ── squish run ────────────────────────────────────────────────────────────────
+
+def cmd_run(args):
+    """Start the Squish inference server."""
+    model_dir, compressed_dir = _resolve_model(args.model)
+
+    server_script = Path(__file__).resolve().parent / "server.py"
+    if not server_script.exists():
+        _die(f"server.py not found at {server_script}")
+
+    port     = args.port or _DEFAULT_PORT
+    host     = args.host or "127.0.0.1"
+    api_key  = args.api_key or "squish"
+
+    print()
+    _box([
+        "  Squish — Local Inference Server  ",
+        f"  Model     : {model_dir.name}",
+        f"  Endpoint  : http://{host}:{port}/v1",
+        f"  Web UI    : http://{host}:{port}/chat",
+        f"  API key   : {api_key}",
+        "",
+        "  OpenAI drop-in:",
+        f"    OPENAI_BASE_URL=http://{host}:{port}/v1",
+        f"    OPENAI_API_KEY={api_key}",
+        "",
+        "  Ollama drop-in:",
+        f"    OLLAMA_HOST=http://{host}:{port}",
+        "",
+        "  Press Ctrl+C to stop",
+    ])
+    print()
+
+    cmd = [
+        sys.executable, str(server_script),
+        "--model-dir",      str(model_dir),
+        "--compressed-dir", str(compressed_dir),
+        "--port",           str(port),
+        "--host",           host,
+        "--api-key",        api_key,
+    ]
+    if args.draft_model:
+        cmd += ["--draft-model", args.draft_model]
+    if args.batch_scheduler:
+        cmd += ["--batch-scheduler", "--batch-size", str(args.batch_size)]
+    if args.kv_cache_mode and args.kv_cache_mode != "fp16":
+        cmd += ["--kv-cache-mode", args.kv_cache_mode]
+
+    try:
+        os.execv(sys.executable, cmd)  # replace this process — clean signals
+    except Exception as e:
+        _die(f"Failed to start server: {e}")
+
+
+# ── squish chat ───────────────────────────────────────────────────────────────
+
+def cmd_chat(args):
+    """
+    Interactive terminal chat against a running (or auto-started) server.
+
+    If no server is running, starts one in a subprocess first.
+    Uses Server-Sent Events streaming for real-time token display.
+    """
+    import socket
+    import threading
+    import urllib.request
+    import urllib.error
+
+    port    = args.port or _DEFAULT_PORT
+    host    = args.host or "127.0.0.1"
+    api_key = args.api_key or "squish"
+    base_url = f"http://{host}:{port}/v1"
+
+    # ── Auto-start server if not running ─────────────────────────────────────
+    _server_proc = None
+
+    def _server_up() -> bool:
+        s = socket.socket()
+        s.settimeout(1.0)
+        try:
+            s.connect((host, port))
+            s.close()
+            return True
+        except Exception:
+            return False
+
+    if not _server_up():
+        model_dir, compressed_dir = _resolve_model(args.model)
+        print(f"  Starting server for {model_dir.name} …")
+        server_script = Path(__file__).resolve().parent / "server.py"
+        _server_proc = subprocess.Popen([
+            sys.executable, str(server_script),
+            "--model-dir",      str(model_dir),
+            "--compressed-dir", str(compressed_dir),
+            "--port",           str(port),
+            "--host",           host,
+            "--api-key",        api_key,
+        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        # Wait (up to 30s) for server to come up
+        for _ in range(60):
+            time.sleep(0.5)
+            if _server_up():
+                break
+        else:
+            _server_proc.terminate()
+            _die(f"Server did not start within 30s. Check logs above.")
+
+        print(f"  ✓ Server ready on {base_url}")
+
+    # ── Chat loop ─────────────────────────────────────────────────────────────
+    messages = []
+    model    = args.chat_model or "squish"
+
+    SYSTEM = (args.system or
+              "You are a knowledgeable, concise assistant running entirely locally on "
+              "Apple Silicon. You have full privacy — nothing leaves this machine.")
+    if SYSTEM:
+        messages.append({"role": "system", "content": SYSTEM})
+
+    print()
+    print("  Squish Chat  (type /quit to exit, /clear to reset, /system to change system prompt)")
+    print("  ─────────────────────────────────────────────────────────────────")
+    print()
+
+    def _stream_chat(msgs: list) -> str:
+        """Send messages, stream tokens to stdout, return full response."""
+        payload = json.dumps({
+            "model":       model,
+            "messages":    msgs,
+            "max_tokens":  args.max_tokens,
+            "temperature": args.temperature,
+            "stream":      True,
+        }).encode()
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data    = payload,
+            headers = {
+                "Content-Type":  "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+        )
+        full = ""
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    payload_str = line[6:]
+                    if payload_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(payload_str)
+                        delta = chunk["choices"][0]["delta"].get("content", "")
+                        if delta:
+                            print(delta, end="", flush=True)
+                            full += delta
+                    except Exception:
+                        pass
+        except urllib.error.URLError as e:
+            print(f"\n  ✗ Request failed: {e}")
+        print()
+        return full
+
+    try:
+        while True:
+            try:
+                user_input = input("  You: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\n  Goodbye.")
+                break
+
+            if not user_input:
+                continue
+            if user_input.lower() in ("/quit", "/exit", "quit", "exit"):
+                print("  Goodbye.")
+                break
+            if user_input.lower() == "/clear":
+                messages = [m for m in messages if m["role"] == "system"]
+                print("  ✓ Conversation cleared.")
+                continue
+            if user_input.lower().startswith("/system "):
+                new_sys = user_input[8:].strip()
+                messages = [m for m in messages if m["role"] != "system"]
+                messages.insert(0, {"role": "system", "content": new_sys})
+                print(f"  ✓ System prompt updated.")
+                continue
+            if user_input.lower() == "/help":
+                print("  Commands: /quit  /clear  /system <text>  /help")
+                continue
+
+            messages.append({"role": "user", "content": user_input})
+            print(f"\n  Assistant: ", end="", flush=True)
+            reply = _stream_chat(messages)
+            if reply:
+                messages.append({"role": "assistant", "content": reply})
+            print()
+
+    finally:
+        if _server_proc is not None:
+            _server_proc.terminate()
+
+
+# ── squish bench ──────────────────────────────────────────────────────────────
+
+def cmd_bench(args):
+    """Quick throughput benchmark against a running server."""
+    import socket
+    import urllib.request
+
+    port    = args.port or _DEFAULT_PORT
+    host    = args.host or "127.0.0.1"
+    api_key = args.api_key or "squish"
+    base_url = f"http://{host}:{port}/v1"
+
+    # Check server up
+    s = socket.socket(); s.settimeout(1.0)
+    try:
+        s.connect((host, port))
+    except Exception:
+        _die(f"No server running on {host}:{port}. Start with: squish run 7b")
+    finally:
+        s.close()
+
+    prompts = [
+        "Explain quantum entanglement in two sentences.",
+        "What is the time complexity of quicksort?",
+        "Write a Python function that reverses a string.",
+        "What causes the Northern Lights?",
+    ]
+
+    print(f"\n  Squish bench — {len(prompts)} prompts, {args.max_tokens} max tokens")
+    print(f"  Server: {base_url}")
+    print()
+
+    results = []
+    for i, prompt in enumerate(prompts):
+        payload = json.dumps({
+            "model": "squish",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": args.max_tokens,
+            "temperature": 0.7,
+            "stream": True,
+        }).encode()
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions", data=payload,
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {api_key}"},
+        )
+        t0 = time.perf_counter()
+        ttft = None
+        n_toks = 0
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode().strip()
+                    if not line.startswith("data: "):
+                        continue
+                    s = line[6:]
+                    if s == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(s)
+                        delta = chunk["choices"][0]["delta"].get("content", "")
+                        if delta:
+                            if ttft is None:
+                                ttft = time.perf_counter() - t0
+                            n_toks += len(delta.split())  # approximate
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"  [{i+1}] ERROR: {e}")
+            continue
+
+        total = time.perf_counter() - t0
+        tps   = n_toks / total if total > 0 else 0
+        print(f"  [{i+1}] {prompt[:50]:<50}  TTFT={ttft*1000:.0f}ms  "
+              f"{n_toks:>4} tok  {tps:.1f} tok/s")
+        results.append({"ttft": ttft, "tps": tps, "n_toks": n_toks})
+
+    if results:
+        print()
+        avg_ttft = sum(r["ttft"] for r in results if r["ttft"]) / len(results)
+        avg_tps  = sum(r["tps"] for r in results) / len(results)
+        print(f"  Average TTFT: {avg_ttft*1000:.0f} ms")
+        print(f"  Average throughput: {avg_tps:.1f} tok/s (≈word/s)")
+    print()
+
+
+# ── CLI entry point ───────────────────────────────────────────────────────────
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="squish",
+        description="Squish — private local inference for Apple Silicon",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  squish run 7b                      Start 7B model server on :11435
+  squish run 7b --batch-scheduler    With continuous batching
+  squish chat 7b                     Interactive terminal chat
+  squish chat                        Chat against already-running server
+  squish models                      List local models
+  squish info                        System info + server status
+  squish bench                       Quick throughput benchmark
+
+OpenAI drop-in (after squish run):
+  export OPENAI_BASE_URL=http://localhost:11435/v1
+  export OPENAI_API_KEY=squish
+  # Any openai-compatible client/agent framework now works locally
+
+Ollama drop-in:
+  export OLLAMA_HOST=http://localhost:11435
+  ollama list    # or use any Ollama-compatible tool
+""",
+    )
+    sub = ap.add_subparsers(dest="command")
+
+    # ── run ──
+    p_run = sub.add_parser("run", help="Start the inference server")
+    p_run.add_argument("model", nargs="?", help="Model: 7b, 14b, 1.5b, or path")
+    p_run.add_argument("--port",    type=int, default=_DEFAULT_PORT)
+    p_run.add_argument("--host",    default="127.0.0.1",
+                       help="0.0.0.0 to expose on LAN")
+    p_run.add_argument("--api-key", default="squish")
+    p_run.add_argument("--draft-model",      default="",
+                       help="Path to draft model for speculative decoding")
+    p_run.add_argument("--batch-scheduler",  action="store_true",
+                       help="Enable continuous batching (improves concurrent throughput)")
+    p_run.add_argument("--batch-size",       type=int, default=8)
+    p_run.add_argument("--kv-cache-mode",    choices=["fp16", "int8", "snap"], default="fp16")
+    p_run.set_defaults(func=cmd_run)
+
+    # ── chat ──
+    p_chat = sub.add_parser("chat", help="Interactive terminal chat")
+    p_chat.add_argument("model", nargs="?", help="Model shorthand or path (auto-starts server if needed)")
+    p_chat.add_argument("--port",        type=int, default=_DEFAULT_PORT)
+    p_chat.add_argument("--host",        default="127.0.0.1")
+    p_chat.add_argument("--api-key",     default="squish")
+    p_chat.add_argument("--chat-model",  default="squish",
+                        help="Model ID to send in requests (default: squish)")
+    p_chat.add_argument("--system",      default="",
+                        help="System prompt (default: private local assistant)")
+    p_chat.add_argument("--max-tokens",  type=int, default=1024)
+    p_chat.add_argument("--temperature", type=float, default=0.7)
+    p_chat.set_defaults(func=cmd_chat)
+
+    # ── models ──
+    p_models = sub.add_parser("models", help="List local models")
+    p_models.set_defaults(func=cmd_models)
+
+    # ── info ──
+    p_info = sub.add_parser("info", help="System info")
+    p_info.set_defaults(func=cmd_info)
+
+    # ── bench ──
+    p_bench = sub.add_parser("bench", help="Quick throughput benchmark")
+    p_bench.add_argument("--port",       type=int, default=_DEFAULT_PORT)
+    p_bench.add_argument("--host",       default="127.0.0.1")
+    p_bench.add_argument("--api-key",    default="squish")
+    p_bench.add_argument("--max-tokens", type=int, default=128)
+    p_bench.set_defaults(func=cmd_bench)
+
+    args = ap.parse_args()
+
+    if not args.command:
+        ap.print_help()
+        sys.exit(0)
+
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
