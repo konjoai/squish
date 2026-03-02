@@ -2,29 +2,29 @@
   "results": {
     "arc_challenge": {
       "alias": "arc_challenge",
-      "acc,none": 0.608,
-      "acc_stderr,none": 0.015445859463771338,
-      "acc_norm,none": 0.604,
-      "acc_norm_stderr,none": 0.015473313265859495
+      "acc,none": 0.438,
+      "acc_stderr,none": 0.01569721001969466,
+      "acc_norm,none": 0.463,
+      "acc_norm_stderr,none": 0.015775927227262426
     },
     "hellaswag": {
       "alias": "hellaswag",
-      "acc,none": 0.565,
-      "acc_stderr,none": 0.015685057252717346,
-      "acc_norm,none": 0.749,
-      "acc_norm_stderr,none": 0.013718133516888775
+      "acc,none": 0.46,
+      "acc_stderr,none": 0.015768596914394403,
+      "acc_norm,none": 0.597,
+      "acc_norm_stderr,none": 0.015518757419066512
     },
     "piqa": {
       "alias": "piqa",
-      "acc,none": 0.799,
-      "acc_stderr,none": 0.012679107214617274,
-      "acc_norm,none": 0.812,
-      "acc_norm_stderr,none": 0.012361586015103758
+      "acc,none": 0.758,
+      "acc_stderr,none": 0.013550631705556003,
+      "acc_norm,none": 0.767,
+      "acc_norm_stderr,none": 0.01337497251921999
     },
     "winogrande": {
       "alias": "winogrande",
-      "acc,none": 0.756,
-      "acc_stderr,none": 0.013588548437881386
+      "acc,none": 0.63,
+      "acc_stderr,none": 0.015275252316519466
     }
   },
   "group_subtasks": {
@@ -83,10 +83,7 @@
       "doc_to_decontamination_query": "Question: {{question}}\nAnswer:",
       "metadata": {
         "version": 1.0,
-        "model_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16",
-        "compressed_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16-compressed",
-        "verbose": false,
-        "batch_size": 2
+        "model_dir": "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-bf16"
       }
     },
     "hellaswag": {
@@ -108,7 +105,7 @@
       "fewshot_config": {
         "sampler": "default",
         "split": null,
-        "process_docs": "<function process_docs at 0x4d7bbcb80>",
+        "process_docs": "<function process_docs at 0x3b28a1da0>",
         "fewshot_indices": null,
         "samples": null,
         "doc_to_text": "{{query}}",
@@ -136,10 +133,7 @@
       "should_decontaminate": false,
       "metadata": {
         "version": 1.0,
-        "model_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16",
-        "compressed_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16-compressed",
-        "verbose": false,
-        "batch_size": 2
+        "model_dir": "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-bf16"
       }
     },
     "piqa": {
@@ -186,10 +180,7 @@
       "doc_to_decontamination_query": "goal",
       "metadata": {
         "version": 1.0,
-        "model_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16",
-        "compressed_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16-compressed",
-        "verbose": false,
-        "batch_size": 2
+        "model_dir": "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-bf16"
       }
     },
     "winogrande": {
@@ -211,9 +202,9 @@
         "process_docs": null,
         "fewshot_indices": null,
         "samples": null,
-        "doc_to_text": "<function doc_to_text at 0x505112340>",
-        "doc_to_choice": "<function doc_to_choice at 0x505112980>",
-        "doc_to_target": "<function doc_to_target at 0x505112c00>",
+        "doc_to_text": "<function doc_to_text at 0x3c5d7ab60>",
+        "doc_to_choice": "<function doc_to_choice at 0x3c5d7b100>",
+        "doc_to_target": "<function doc_to_target at 0x3c5d7b420>",
         "gen_prefix": null,
         "fewshot_delimiter": "\n\n",
         "target_delimiter": " "
@@ -232,10 +223,7 @@
       "doc_to_decontamination_query": "sentence",
       "metadata": {
         "version": 1.0,
-        "model_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16",
-        "compressed_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16-compressed",
-        "verbose": false,
-        "batch_size": 2
+        "model_dir": "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-bf16"
       }
     }
   },
@@ -287,8 +275,8 @@
     }
   },
   "config": {
-    "model": "squish",
-    "model_args": "model_dir=/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16,compressed_dir=/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16-compressed,verbose=False,batch_size=2",
+    "model": "squish-reference",
+    "model_args": "model_dir=/Users/wscholl/models/Qwen2.5-1.5B-Instruct-bf16",
     "batch_size": null,
     "batch_sizes": [],
     "device": null,
@@ -301,9 +289,9 @@
     "torch_seed": 42,
     "fewshot_seed": 1234
   },
-  "git_hash": "e395524b5ee2111b2a20af394449f21b659a7e3f",
-  "date": 1772244500.976738,
-  "pretty_env_info": "PyTorch version: 2.8.0\nIs debug build: False\nCUDA used to build PyTorch: None\nROCM used to build PyTorch: N/A\n\nOS: macOS 15.7.4 (arm64)\nGCC version: Could not collect\nClang version: Could not collect\nCMake version: version 4.1.0\nLibc version: N/A\n\nPython version: 3.12.8 (v3.12.8:2dc476bcb91, Dec  3 2024, 14:43:19) [Clang 13.0.0 (clang-1300.0.29.30)] (64-bit runtime)\nPython platform: macOS-15.7.4-arm64-arm-64bit\nIs CUDA available: False\nCUDA runtime version: No CUDA\nCUDA_MODULE_LOADING set to: N/A\nGPU models and configuration: No CUDA\nNvidia driver version: No CUDA\ncuDNN version: No CUDA\nHIP runtime version: N/A\nMIOpen runtime version: N/A\nIs XNNPACK available: True\n\nCPU:\nApple M3\n\nVersions of relevant libraries:\n[pip3] numpy==2.3.3\n[pip3] torch==2.8.0\n[conda] Could not collect",
+  "git_hash": "e395524",
+  "date": 1772204588.142304,
+  "pretty_env_info": "PyTorch version: 2.8.0\nIs debug build: False\nCUDA used to build PyTorch: None\nROCM used to build PyTorch: N/A\n\nOS: macOS 15.7.4 (arm64)\nGCC version: Could not collect\nClang version: 17.0.0 (clang-1700.6.3.2)\nCMake version: version 4.1.0\nLibc version: N/A\n\nPython version: 3.12.8 (v3.12.8:2dc476bcb91, Dec  3 2024, 14:43:19) [Clang 13.0.0 (clang-1300.0.29.30)] (64-bit runtime)\nPython platform: macOS-15.7.4-arm64-arm-64bit\nIs CUDA available: False\nCUDA runtime version: No CUDA\nCUDA_MODULE_LOADING set to: N/A\nGPU models and configuration: No CUDA\nNvidia driver version: No CUDA\ncuDNN version: No CUDA\nHIP runtime version: N/A\nMIOpen runtime version: N/A\nIs XNNPACK available: True\n\nCPU:\nApple M3\n\nVersions of relevant libraries:\n[pip3] numpy==2.3.3\n[pip3] torch==2.8.0\n[conda] Could not collect",
   "transformers_version": "5.2.0",
   "lm_eval_version": "0.4.11",
   "upper_git_hash": null

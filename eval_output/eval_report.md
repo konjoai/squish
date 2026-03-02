@@ -2,19 +2,22 @@
 
 **Model**: Qwen2.5-1.5B-Instruct  
 **Evaluation**: EleutherAI lm-evaluation-harness (industry standard)  
-**Limit**: 50 examples per task (representative sample)  
+**Limit**: 1000 examples per task (representative sample)  
 
 ## Accuracy — Reference vs Compressed
 
 | Task | Reference | Compressed | Δ | Status |
 |------|----------:|-----------:|--:|--------|
-| ARC-Easy acc_norm | — | 70.0% | — | — |
-| HellaSwag acc_norm | — | 78.0% | — | — |
+| ARC-Chall acc_norm | 46.3% | 60.4% | +14.1% | ✅ |
+| HellaSwag acc_norm | 59.7% | 74.9% | +15.2% | ✅ |
+| Winogrande acc | 63.0% | 75.6% | +12.6% | ✅ |
+| PIQA acc_norm | 76.7% | 81.2% | +4.5% | ✅ |
 
 ## Load Time
 
 | Strategy | Load time |
 |----------|----------:|
+| Compressed (finalized⚡) | 4.09s |
 
 ## Methodology
 
@@ -27,5 +30,7 @@ original weight format. Large models use 4-bit MLX cache (squish_4bit);
 small models use INT8 Vectro npy-dir + MLX safetensors cache.
 
 Tasks:
-- **ARC-Easy acc_norm** (`arc_easy`)
+- **ARC-Chall acc_norm** (`arc_challenge`)
 - **HellaSwag acc_norm** (`hellaswag`)
+- **Winogrande acc** (`winogrande`)
+- **PIQA acc_norm** (`piqa`)

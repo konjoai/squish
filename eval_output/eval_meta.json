@@ -1,11 +1,13 @@
 {
   "tasks": [
-    "arc_easy",
-    "hellaswag"
+    "arc_challenge",
+    "hellaswag",
+    "winogrande",
+    "piqa"
   ],
-  "limit": 50,
+  "limit": 1000,
   "ref_load_time_s": null,
-  "comp_load_time_s": null,
-  "model_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-bf16",
-  "compressed_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-bf16-compressed"
+  "comp_load_time_s": 4.089732375010499,
+  "model_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16",
+  "compressed_dir": "/Users/wscholl/models/Qwen2.5-14B-Instruct-bf16-compressed"
 }
