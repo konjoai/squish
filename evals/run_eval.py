@@ -115,10 +115,11 @@ def run_lm_eval(
     model_args: str,
     tasks: list,
     limit: int | None,
-    num_fewshot: dict,
+    num_fewshot: int | None,
     output_path: Path,
     label: str,
     random_seed: int = 42,
+    extra_meta: dict | None = None,
 ) -> dict | None:
     """
     Run lm-eval programmatically (avoids subprocess overhead and gives us full
@@ -137,7 +138,7 @@ def run_lm_eval(
             model               = model_type,
             model_args          = model_args,
             tasks               = tasks,
-            num_fewshot         = None,         # use task defaults
+            num_fewshot         = num_fewshot,
             limit               = limit,
             log_samples         = False,
             verbosity           = "WARNING",
@@ -152,6 +153,12 @@ def run_lm_eval(
 
     elapsed = time.perf_counter() - t0
     info(f"Eval [{label}] completed in {elapsed/60:.1f} min")
+
+    # Inject provenance metadata so cached results can be validated later
+    if extra_meta:
+        if isinstance(results, dict):
+            results = dict(results)  # shallow copy to avoid mutating lm-eval internals
+            results.update(extra_meta)
 
     # Persist
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,6 +178,8 @@ def run_multi_seed_eval(
     label: str,
     runs: int = 3,
     base_seed: int = 42,
+    num_fewshot: int | None = None,
+    extra_meta: dict | None = None,
 ) -> dict | None:
     """
     Run the same model N times with different random seeds.
@@ -194,10 +203,11 @@ def run_multi_seed_eval(
                 model_args=model_args,
                 tasks=tasks,
                 limit=limit,
-                num_fewshot={},
+                num_fewshot=num_fewshot,
                 output_path=out_path,
                 label=f"{label}-seed{seed}",
                 random_seed=seed,
+                extra_meta=extra_meta,
             )
         if r is not None:
             all_results.append(r)
@@ -226,6 +236,10 @@ def run_multi_seed_eval(
                 merged["results"][task][metric_key] = mean
 
     merged["multi_seed_stats"] = stats
+    # Inject provenance into aggregated file too
+    if extra_meta:
+        merged.update(extra_meta)
+
     # Save aggregated results
     agg_path = out_dir / f"eval_{label}_aggregated.json"
     with open(agg_path, "w") as f:
@@ -244,6 +258,8 @@ def run_lm_eval_with_checkpointing(
     out_dir: Path,
     label: str,
     random_seed: int = 42,
+    num_fewshot: int | None = None,
+    extra_meta: dict | None = None,
 ) -> dict | None:
     """
     Run each task individually and cache the result to a per-task JSON file.
@@ -274,10 +290,11 @@ def run_lm_eval_with_checkpointing(
             model_args  = model_args,
             tasks       = [task],
             limit       = limit,
-            num_fewshot = {},
+            num_fewshot = num_fewshot,
             output_path = cache_path,
             label       = f"{label}-{task}",
             random_seed = random_seed,
+            extra_meta  = extra_meta,
         )
         elapsed = time.perf_counter() - t0
         total_elapsed += elapsed
@@ -302,6 +319,10 @@ def run_lm_eval_with_checkpointing(
         # Merge sample counts if present
         if "n-shot" in raw:
             merged.setdefault("n-shot", {}).update(raw["n-shot"])
+
+    # Inject provenance into merged file too
+    if extra_meta:
+        merged.update(extra_meta)
 
     # Save the merged file to the standard output path
     merged_path = out_dir / f"eval_{label}.json"
@@ -522,10 +543,10 @@ def main():
     ap = argparse.ArgumentParser(
         description="Run industry-standard benchmarks on reference and compressed models"
     )
-    ap.add_argument("--model-dir",
-                    default=str(Path.home() / "models" / "Qwen2.5-1.5B-Instruct-bf16"))
-    ap.add_argument("--compressed-dir",
-                    default=str(Path.home() / "models" / "Qwen2.5-1.5B-Instruct-bf16-compressed"))
+    ap.add_argument("--model-dir", default=None,
+                    help="Reference model dir.  Auto-derived from --compressed-dir when omitted.")
+    ap.add_argument("--compressed-dir", default=None,
+                    help="Squish compressed weights dir.  Auto-detected from --model-dir when omitted.")
     ap.add_argument("--tasks",
                     default="arc_easy,hellaswag",
                     help="Comma-separated lm-eval task names")
@@ -537,16 +558,24 @@ def main():
                     help="Number of evaluation runs with different seeds (≥3 for statistical confidence)")
     ap.add_argument("--skip-reference", action="store_true",
                     help="Skip reference model eval (use cached results if present)")
-    ap.add_argument("--skip-compressed", action="store_true",
-                    help="Skip compressed model eval (use cached results if present)")
+    ap.add_argument("--skip-compressed", "--reference-only", action="store_true",
+                    dest="skip_compressed",
+                    help="Skip compressed model eval (use cached results if present). "
+                         "--reference-only is an alias for this flag.")
     ap.add_argument("--output-dir",
                     default=str(POC_DIR / "eval_output"),
                     help="Directory to write eval JSON and reports")
     ap.add_argument("--model-name",
                     default="Qwen2.5-1.5B-Instruct",
                     help="Display name for reports")
-    ap.add_argument("--batch-size", type=int, default=4,
+    ap.add_argument("--batch-size", "--batch_size", type=int, default=4,
+                    dest="batch_size",
                     help="Inference batch size passed to the Squish lm-eval adapter (default 4)")
+    ap.add_argument("--seed", type=int, default=42,
+                    help="Random seed for reproducibility (default 42)")
+    ap.add_argument("--num-fewshot", "--num_fewshot", type=int, default=None,
+                    dest="num_fewshot",
+                    help="Number of few-shot examples (overrides task defaults; e.g. 25 for arc_challenge)")
     args = ap.parse_args()
 
     tasks     = [t.strip() for t in args.tasks.split(",") if t.strip()]
@@ -554,8 +583,119 @@ def main():
     out_dir   = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    model_dir      = Path(args.model_dir).expanduser()
-    compressed_dir = Path(args.compressed_dir).expanduser()
+    # ── Resolve model_dir ─────────────────────────────────────────────────────
+    # When --model-dir is omitted but --compressed-dir is given, derive the base
+    # model dir from the compressed dir by stripping the "-compressed" suffix.
+    # This prevents the hardcoded 1.5B default leaking into 14B+ eval runs.
+    _DEFAULT_MODEL = str(Path.home() / "models" / "Qwen2.5-1.5B-Instruct-bf16")
+    if args.model_dir is None:
+        if args.compressed_dir is not None:
+            _cdir  = Path(args.compressed_dir).expanduser().resolve()
+            _cname = _cdir.name
+            if _cname.endswith("-compressed"):
+                args.model_dir = str(_cdir.parent / _cname[: -len("-compressed")])
+            else:
+                args.model_dir = _DEFAULT_MODEL  # can't infer; keep default
+        else:
+            args.model_dir = _DEFAULT_MODEL
+
+    model_dir = Path(args.model_dir).expanduser().resolve()
+
+    # ── Auto-detect squish_4bit / compressed layout ──────────────────────────
+    # Supports multiple common calling patterns without requiring --compressed-dir:
+    #
+    #  Pattern A — parent dir has config.json (model dir was omitted, compressed passed):
+    #    --model-dir ~/models/Qwen2.5-7B-Instruct-bf16-compressed/npy_dir
+    #
+    #  Pattern B — sub-dir inside a *-compressed dir:
+    #    --model-dir ~/models/Qwen2.5-7B-Instruct-bf16-compressed/squish_4bit
+    #
+    #  Pattern C — the *-compressed dir itself passed as --model-dir:
+    #    --model-dir ~/models/Qwen2.5-7B-Instruct-bf16-compressed
+    #
+    #  Explicit — both dirs provided:
+    #    --model-dir ~/models/Qwen2.5-7B-Instruct-bf16
+    #    --compressed-dir ~/models/Qwen2.5-7B-Instruct-bf16-compressed
+    _explicit_compressed = args.compressed_dir is not None
+    if args.compressed_dir is not None:
+        compressed_dir = Path(args.compressed_dir).expanduser().resolve()
+    elif not (model_dir / "config.json").exists():
+        parent = model_dir.parent
+        grandparent = model_dir.parent.parent
+
+        # Pattern A: parent directory has config.json
+        if (parent / "config.json").exists():
+            compressed_dir = model_dir
+            model_dir      = parent
+            print(f"  [auto] Detected compressed dir as model-dir (Pattern A):")
+            print(f"         model_dir      = {model_dir}")
+            print(f"         compressed_dir = {compressed_dir}")
+
+        # Pattern B: squish_4bit (or similar) sub-dir inside a *-compressed dir
+        # e.g. --model-dir ~/models/Qwen2.5-7B-Instruct-bf16-compressed/squish_4bit
+        elif parent.name.endswith("-compressed"):
+            base_name = parent.name[: -len("-compressed")]
+            candidate_model = grandparent / base_name
+            compressed_dir  = parent
+            model_dir       = candidate_model
+            print(f"  [auto] Detected squish sub-dir inside compressed dir (Pattern B):")
+            print(f"         model_dir      = {model_dir}")
+            print(f"         compressed_dir = {compressed_dir}")
+
+        # Pattern C: the given path is itself named *-compressed
+        # e.g. --model-dir ~/models/Qwen2.5-7B-Instruct-bf16-compressed
+        elif model_dir.name.endswith("-compressed"):
+            base_name = model_dir.name[: -len("-compressed")]
+            candidate_model = parent / base_name
+            compressed_dir  = model_dir
+            model_dir       = candidate_model
+            print(f"  [auto] Detected *-compressed dir as model-dir (Pattern C):")
+            print(f"         model_dir      = {model_dir}")
+            print(f"         compressed_dir = {compressed_dir}")
+
+        # Pattern D: abbreviated name — neither path nor parent exists on disk
+        # e.g. models/Qwen2.5-7B-Instruct/squish_4bit
+        #      → glob grandparent for "Qwen2.5-7B-Instruct*" containing squish_4bit
+        elif not parent.exists() and grandparent.exists():
+            child_name  = model_dir.name    # e.g. "squish_4bit"
+            parent_stem = parent.name       # e.g. "Qwen2.5-7B-Instruct"
+            candidates  = sorted(grandparent.glob(parent_stem + "*"))
+
+            # Prefer dirs that end with '-compressed' and contain child_name
+            preferred   = [p for p in candidates
+                           if p.is_dir() and p.name.endswith("-compressed")
+                           and (p / child_name).exists()]
+            fallback    = [p for p in candidates
+                           if p.is_dir() and not p.name.endswith("-compressed")
+                           and (p / child_name).exists()]
+
+            pick = (preferred or fallback or [None])[0]
+            if pick is not None:
+                base_name      = pick.name[: -len("-compressed")] if pick.name.endswith("-compressed") else pick.name
+                compressed_dir = pick
+                model_dir      = grandparent / base_name
+                print(f"  [auto] Fuzzy-matched abbreviated model name (Pattern D):")
+                print(f"         model_dir      = {model_dir}")
+                print(f"         compressed_dir = {compressed_dir}")
+            else:
+                # Glob matched parent dirs but none contain child_name — try just the parent match
+                parent_match = (preferred + fallback + [c for c in candidates if c.is_dir()] + [None])[0]
+                if parent_match is not None:
+                    base_name      = parent_match.name[: -len("-compressed")] if parent_match.name.endswith("-compressed") else parent_match.name
+                    compressed_dir = parent_match
+                    model_dir      = grandparent / base_name
+                    print(f"  [auto] Fuzzy-matched parent dir (Pattern D fallback):")
+                    print(f"         model_dir      = {model_dir}")
+                    print(f"         compressed_dir = {compressed_dir}")
+                else:
+                    compressed_dir = Path(str(model_dir) + "-compressed")
+
+        else:
+            # Can't auto-detect; use default sibling
+            compressed_dir = Path(str(model_dir) + "-compressed")
+    else:
+        # model_dir has config.json — use sibling -compressed dir by convention
+        compressed_dir = Path(str(model_dir) + "-compressed")
 
     ref_out_path  = out_dir / "eval_reference.json"
     comp_out_path = out_dir / "eval_compressed.json"
@@ -566,6 +706,8 @@ def main():
     print(f"Tasks:      {', '.join(tasks)}")
     print(f"Limit:      {'none (full)' if limit is None else limit} examples/task")
     print(f"Runs:       {args.runs}{'  ← multi-seed (mean ± std reported)' if args.runs > 1 else ''}")
+    print(f"Seed:       {args.seed}")
+    print(f"Batch size: {args.batch_size}")
     print(f"Output dir: {out_dir}")
 
     # ── Install lm-eval ──────────────────────────────────────────────────────
@@ -591,6 +733,15 @@ def main():
             info("Loading cached reference results …")
             with open(ref_out_path) as f:
                 ref_results = json.load(f)
+            # ── Guard: refuse cached results that were produced by a different model ──
+            cached_model = ref_results.get("squish_model_dir")
+            if cached_model is not None and Path(cached_model).resolve() != model_dir:
+                fail("MISMATCHED CACHE — cached reference results are from a different model!")
+                fail(f"  Cached model : {cached_model}")
+                fail(f"  Current model: {model_dir}")
+                fail("Delete or move the stale cache file and re-run without --skip-reference:")
+                fail(f"  {ref_out_path}")
+                sys.exit(1)
             ok("Loaded reference results from cache")
         else:
             info("--skip-reference set and no cached results found — skipping reference eval entirely")
@@ -610,6 +761,7 @@ def main():
             info(f"Could not measure reference load time: {e}")
 
         ref_model_args = f"model_dir={model_dir}"
+        _ref_meta = {"squish_model_dir": str(model_dir)}
         if args.runs > 1:
             ref_results = run_multi_seed_eval(
                 model_type  = "squish-reference",
@@ -619,6 +771,9 @@ def main():
                 out_dir     = out_dir,
                 label       = "reference",
                 runs        = args.runs,
+                base_seed   = args.seed,
+                num_fewshot = args.num_fewshot,
+                extra_meta  = _ref_meta,
             )
         else:
             ref_results = run_lm_eval(
@@ -626,9 +781,11 @@ def main():
                 model_args  = ref_model_args,
                 tasks       = tasks,
                 limit       = limit,
-                num_fewshot = {},
+                num_fewshot = args.num_fewshot,
                 output_path = ref_out_path,
                 label       = "reference",
+                random_seed = args.seed,
+                extra_meta  = _ref_meta,
             )
 
     # ── Compressed eval ───────────────────────────────────────────────────────
@@ -689,6 +846,8 @@ def main():
                 out_dir     = out_dir,
                 label       = "compressed",
                 runs        = args.runs,
+                base_seed   = args.seed,
+                num_fewshot = args.num_fewshot,
             )
         elif limit is None and len(tasks) > 1:
             # Full-dataset run: use per-task checkpointing so a crash on task N
@@ -701,6 +860,8 @@ def main():
                 limit       = None,
                 out_dir     = out_dir,
                 label       = "compressed",
+                random_seed = args.seed,
+                num_fewshot = args.num_fewshot,
             )
             # Point comp_out_path at the merged file so downstream code finds it
             comp_out_path = out_dir / "eval_compressed.json"
@@ -710,9 +871,10 @@ def main():
                 model_args  = comp_model_args,
                 tasks       = tasks,
                 limit       = limit,
-                num_fewshot = {},
+                num_fewshot = args.num_fewshot,
                 output_path = comp_out_path,
                 label       = "compressed",
+                random_seed = args.seed,
             )
 
     # ── Results ───────────────────────────────────────────────────────────────

@@ -105,8 +105,8 @@ class SquishCompressedLM(LM):
         if not compressed_dir:
             compressed_dir = model_dir + "-compressed"
 
-        self._model_dir      = Path(model_dir).expanduser()
-        self._compressed_dir = Path(compressed_dir).expanduser()
+        self._model_dir      = Path(model_dir).expanduser().resolve()
+        self._compressed_dir = Path(compressed_dir).expanduser().resolve()
         self._batch_size     = int(batch_size)
         self._max_length     = max_length
         self._verbose        = verbose
@@ -431,7 +431,7 @@ class SquishReferenceLM(SquishCompressedLM):
         LM.__init__(self)
         if not model_dir:
             model_dir = str(Path.home() / "models" / "Qwen2.5-1.5B-Instruct-bf16")
-        self._model_dir      = Path(model_dir).expanduser()
+        self._model_dir      = Path(model_dir).expanduser().resolve()
         self._compressed_dir = None
         self._batch_size     = int(batch_size)
         self._max_length     = max_length
