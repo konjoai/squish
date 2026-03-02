@@ -5,12 +5,14 @@ Smoke test: save_int4_npy_dir + INT4 dequantize path in compressed_loader.
 Creates a minimal synthetic npy-dir, runs save_int4_npy_dir(), then calls
 _dequantize_npy_dir() and verifies INT4 round-trip cosine quality.
 """
-import sys, tempfile, json, shutil
+import sys, tempfile, json, shutil, os
 from pathlib import Path
 
 import numpy as np
-sys.path.insert(0, '/Users/wscholl/poc')
-sys.path.insert(0, '/Users/wscholl/vectro')
+# Vectro optional dependency — set VECTRO_DIR env var or place at ~/vectro
+_vectro = Path(os.environ.get("VECTRO_DIR", Path.home() / "vectro"))
+if _vectro.exists():
+    sys.path.insert(0, str(_vectro))
 
 from compressed_loader import save_int4_npy_dir, _dequantize_npy_dir, _INT4_READY
 
