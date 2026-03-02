@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Quick round-trip test for interface.py Rust paths + INT4 API."""
-import sys
-sys.path.insert(0, '/Users/wscholl/vectro')
+import sys, os
+from pathlib import Path
+# Vectro optional dependency — set VECTRO_DIR env var or place at ~/vectro
+_vectro = Path(os.environ.get("VECTRO_DIR", Path.home() / "vectro"))
+if _vectro.exists():
+    sys.path.insert(0, str(_vectro))
 
 import numpy as np
 from python.interface import (

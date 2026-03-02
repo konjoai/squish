@@ -1,161 +1,0 @@
-2026-02-26:14:41:04 WARNING  [evaluator:181] pretrained=model_dir=/Users/wscholl/models/Qwen2.5-7B-Instruct-bf16,compressed_dir=/Users/wscholl/models/Qwen2.5-7B-Instruct-bf16-compressed,verbose=False,batch_size=4
-        appears to be an instruct or chat variant but chat template is not applied. Recommend setting `apply_chat_template` (optionally
-        `fewshot_as_multiturn`).
-'[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1000)' thrown while requesting HEAD https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/ai2_arc.py
-Retrying in 1s [Retry 1/5].
-Using the latest cached version of the dataset since allenai/ai2_arc couldn't be found on the Hugging Face Hub
-Found the latest cached dataset configuration 'ARC-Easy' at /Users/wscholl/.cache/huggingface/datasets/allenai___ai2_arc/ARC-Easy/0.0.0/210d026faf9955653af8916fad021475a3f00453 (last modified on Tue Feb 24 17:34:03 2026).
-
-Squish Evaluation — Industry-Standard Benchmarks
-Model:      /Users/wscholl/models/Qwen2.5-7B-Instruct-bf16
-Compressed: /Users/wscholl/models/Qwen2.5-7B-Instruct-bf16-compressed
-Tasks:      arc_easy, arc_challenge, hellaswag, winogrande, piqa
-Limit:      none (full) examples/task
-Runs:       1
-Output dir: eval_output_7b_full
-
-════════════════════════════════════════════════════════════════
-  Step 1: Ensure lm-evaluation-harness is installed
-════════════════════════════════════════════════════════════════
-
-  ✓ lm-eval already installed
-  ✓ lm-eval version: 0.4.11
-
-════════════════════════════════════════════════════════════════
-  Step 2: Evaluate reference model (mlx_lm native)
-════════════════════════════════════════════════════════════════
-
-  → --skip-reference set and no cached results found — skipping reference eval entirely
-
-════════════════════════════════════════════════════════════════
-  Step 3: Evaluate compressed model (Squish npy-dir)
-════════════════════════════════════════════════════════════════
-
-  → Measuring compressed model load time …
-  ✓ Compressed load time: 5.47s  (loader: squish-4bit)
-  → Full-dataset run: using per-task checkpointing for crash safety
-  → Running lm-eval [compressed-arc_easy] on tasks: arc_easy (seed=42)
-  0%|          | 0/2376 [00:00<?, ?it/s]  7%|▋         | 176/2376 [00:00<00:01, 1758.31it/s] 15%|█▍        | 356/2376 [00:00<00:01, 1780.22it/s] 23%|██▎       | 535/2376 [00:00<00:01, 1754.46it/s] 30%|███       | 714/2376 [00:00<00:00, 1768.15it/s] 38%|███▊      | 892/2376 [00:00<00:00, 1769.14it/s] 45%|████▌     | 1071/2376 [00:00<00:00, 1775.08it/s] 53%|█████▎    | 1251/2376 [00:00<00:00, 1780.98it/s] 60%|██████    | 1430/2376 [00:00<00:00, 1778.14it/s] 68%|██████▊   | 1608/2376 [00:00<00:00, 1775.91it/s] 75%|███████▌  | 1786/2376 [00:01<00:00, 1774.00it/s] 83%|████████▎ | 1964/2376 [00:01<00:00, 1773.47it/s] 90%|█████████ | 2143/2376 [00:01<00:00, 1776.57it/s] 98%|█████████▊| 2321/2376 [00:01<00:00, 1773.38it/s]100%|██████████| 2376/2376 [00:01<00:00, 1761.42it/s]
-mx.metal.clear_cache is deprecated and will be removed in a future version. Use mx.clear_cache instead.
-loglikelihood: 500/9501 done  0.1 req/s  ETA 1430m
-loglikelihood: 1000/9501 done  0.2 req/s  ETA 858m
-loglikelihood: 1500/9501 done  0.2 req/s  ETA 556m
-loglikelihood: 2000/9501 done  0.3 req/s  ETA 410m
-loglikelihood: 2500/9501 done  0.4 req/s  ETA 318m
-loglikelihood: 3000/9501 done  0.4 req/s  ETA 254m
-loglikelihood: 3500/9501 done  0.5 req/s  ETA 208m
-loglikelihood: 4000/9501 done  0.5 req/s  ETA 172m
-loglikelihood: 4500/9501 done  0.6 req/s  ETA 144m
-loglikelihood: 5000/9501 done  0.6 req/s  ETA 120m
-loglikelihood: 5500/9501 done  0.6 req/s  ETA 104m
-loglikelihood: 6000/9501 done  0.6 req/s  ETA 95m
-loglikelihood: 6500/9501 done  0.6 req/s  ETA 78m
-loglikelihood: 7000/9501 done  0.7 req/s  ETA 63m
-loglikelihood: 7500/9501 done  0.7 req/s  ETA 50m
-loglikelihood: 8000/9501 done  0.6 req/s  ETA 40m
-loglikelihood: 8500/9501 done  0.7 req/s  ETA 26m
-loglikelihood: 9000/9501 done  0.7 req/s  ETA 12m
-loglikelihood: 9500/9501 done  0.7 req/s  ETA 0m
-loglikelihood: 9501/9501 done  0.7 req/s  ETA 0m
-Python(83417) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83419) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83420) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83421) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83422) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83423) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83424) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83432) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83433) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83434) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83439) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83440) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-Python(83441) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
-2026-02-26:20:15:53 WARNING  [evaluator:181] pretrained=model_dir=/Users/wscholl/models/Qwen2.5-7B-Instruct-bf16,compressed_dir=/Users/wscholl/models/Qwen2.5-7B-Instruct-bf16-compressed,verbose=False,batch_size=4
-        appears to be an instruct or chat variant but chat template is not applied. Recommend setting `apply_chat_template` (optionally
-        `fewshot_as_multiturn`).
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-  → Eval [compressed-arc_easy] completed in 226.7 min
-  ✓ Results saved → eval_output_7b_full/eval_compressed_arc_easy.json
-  ✓   'arc_easy' complete in 226.7 min  (total so far: 226.7 min)
-  → [checkpoint] Loading cached result for 'arc_challenge' …
-  ✓   'arc_challenge' loaded from cache
-  → Running lm-eval [compressed-hellaswag] on tasks: hellaswag (seed=42)
-  0%|          | 0/10042 [00:00<?, ?it/s]  3%|▎         | 262/10042 [00:00<00:03, 2619.19it/s]  5%|▌         | 524/10042 [00:00<00:04, 2002.82it/s]  7%|▋         | 733/10042 [00:00<00:05, 1725.63it/s]  9%|▉         | 914/10042 [00:00<00:05, 1750.75it/s] 11%|█▏        | 1141/10042 [00:00<00:04, 1912.44it/s] 14%|█▎        | 1377/10042 [00:00<00:04, 2048.63it/s] 16%|█▌        | 1619/10042 [00:00<00:03, 2161.89it/s] 19%|█▊        | 1871/10042 [00:00<00:03, 2268.82it/s] 21%|██        | 2123/10042 [00:01<00:03, 2343.54it/s] 24%|██▎       | 2360/10042 [00:01<00:03, 2277.94it/s] 26%|██▌       | 2590/10042 [00:01<00:03, 2147.61it/s] 28%|██▊       | 2808/10042 [00:01<00:03, 2130.00it/s] 30%|███       | 3023/10042 [00:01<00:03, 2127.20it/s] 33%|███▎      | 3272/10042 [00:01<00:03, 2229.74it/s] 35%|███▍      | 3503/10042 [00:01<00:02, 2250.82it/s] 37%|███▋      | 3730/10042 [00:01<00:02, 2228.07it/s] 39%|███▉      | 3955/10042 [00:01<00:02, 2234.48it/s] 42%|████▏     | 4183/10042 [00:01<00:02, 2245.60it/s] 44%|████▍     | 4438/10042 [00:02<00:02, 2333.68it/s] 47%|████▋     | 4672/10042 [00:02<00:05, 1066.43it/s] 48%|████▊     | 4850/10042 [00:02<00:05, 923.30it/s]  50%|█████     | 5023/10042 [00:02<00:04, 1046.74it/s] 52%|█████▏    | 5205/10042 [00:03<00:04, 1184.84it/s] 53%|█████▎    | 5367/10042 [00:04<00:15, 293.12it/s]  55%|█████▌    | 5570/10042 [00:04<00:11, 402.28it/s] 57%|█████▋    | 5744/10042 [00:04<00:08, 512.51it/s] 59%|█████▉    | 5923/10042 [00:05<00:06, 646.86it/s] 61%|██████    | 6100/10042 [00:05<00:04, 793.00it/s] 63%|██████▎   | 6318/10042 [00:05<00:03, 1010.45it/s] 65%|██████▍   | 6499/10042 [00:05<00:03, 1153.43it/s] 67%|██████▋   | 6679/10042 [00:05<00:02, 1282.55it/s] 69%|██████▊   | 6883/10042 [00:05<00:02, 1453.24it/s] 71%|███████   | 7096/10042 [00:05<00:01, 1617.36it/s] 73%|███████▎  | 7309/10042 [00:05<00:01, 1748.12it/s] 75%|███████▍  | 7522/10042 [00:05<00:01, 1850.11it/s] 77%|███████▋  | 7764/10042 [00:05<00:01, 2006.72it/s] 80%|███████▉  | 8015/10042 [00:06<00:00, 2149.27it/s] 82%|████████▏ | 8265/10042 [00:06<00:00, 2248.96it/s] 85%|████████▍ | 8518/10042 [00:06<00:00, 2330.72it/s] 87%|████████▋ | 8757/10042 [00:06<00:00, 2310.68it/s] 90%|████████▉ | 8993/10042 [00:06<00:00, 2255.13it/s] 92%|█████████▏| 9222/10042 [00:06<00:00, 2217.02it/s] 94%|█████████▍| 9460/10042 [00:06<00:00, 2261.47it/s] 97%|█████████▋| 9715/10042 [00:06<00:00, 2344.33it/s]100%|█████████▉| 10000/10042 [00:06<00:00, 2492.29it/s]100%|██████████| 10042/10042 [00:06<00:00, 1455.27it/s]
-loglikelihood: 500/40168 done  0.3 req/s  ETA 2291m
-loglikelihood: 1000/40168 done  0.5 req/s  ETA 1328m
-loglikelihood: 1500/40168 done  0.6 req/s  ETA 1000m
-loglikelihood: 2000/40168 done  0.8 req/s  ETA 834m
-loglikelihood: 2500/40168 done  0.9 req/s  ETA 737m
-loglikelihood: 3000/40168 done  0.4 req/s  ETA 1428m
-loglikelihood: 3500/40168 done  0.5 req/s  ETA 1309m
-loglikelihood: 4000/40168 done  0.5 req/s  ETA 1178m
-loglikelihood: 4500/40168 done  0.6 req/s  ETA 1072m
-loglikelihood: 5000/40168 done  0.6 req/s  ETA 986m
-loglikelihood: 5500/40168 done  0.6 req/s  ETA 917m
-loglikelihood: 6000/40168 done  0.7 req/s  ETA 857m
-loglikelihood: 6500/40168 done  0.7 req/s  ETA 808m
-loglikelihood: 7000/40168 done  0.7 req/s  ETA 763m
-loglikelihood: 7500/40168 done  0.8 req/s  ETA 726m
-loglikelihood: 8000/40168 done  0.8 req/s  ETA 690m
-loglikelihood: 8500/40168 done  0.8 req/s  ETA 659m
-loglikelihood: 9000/40168 done  0.8 req/s  ETA 630m
-loglikelihood: 9500/40168 done  0.8 req/s  ETA 602m
-loglikelihood: 10000/40168 done  0.9 req/s  ETA 577m
-loglikelihood: 10500/40168 done  0.9 req/s  ETA 554m
-loglikelihood: 11000/40168 done  0.9 req/s  ETA 535m
-loglikelihood: 11500/40168 done  0.9 req/s  ETA 517m
-loglikelihood: 12000/40168 done  0.9 req/s  ETA 498m
-loglikelihood: 12500/40168 done  1.0 req/s  ETA 480m
-loglikelihood: 13000/40168 done  1.0 req/s  ETA 464m
-loglikelihood: 13500/40168 done  1.0 req/s  ETA 458m
-loglikelihood: 14000/40168 done  1.0 req/s  ETA 452m
-loglikelihood: 14500/40168 done  1.0 req/s  ETA 445m
-loglikelihood: 15000/40168 done  1.0 req/s  ETA 439m
-loglikelihood: 15500/40168 done  0.9 req/s  ETA 433m
-loglikelihood: 16000/40168 done  0.9 req/s  ETA 428m
-loglikelihood: 16500/40168 done  0.9 req/s  ETA 423m
-loglikelihood: 17000/40168 done  0.9 req/s  ETA 418m
-loglikelihood: 17500/40168 done  0.9 req/s  ETA 413m
-loglikelihood: 18000/40168 done  0.9 req/s  ETA 406m
-loglikelihood: 18500/40168 done  0.9 req/s  ETA 400m
-loglikelihood: 19000/40168 done  0.9 req/s  ETA 393m
-loglikelihood: 19500/40168 done  0.9 req/s  ETA 387m
-loglikelihood: 20000/40168 done  0.9 req/s  ETA 380m
-loglikelihood: 20500/40168 done  0.9 req/s  ETA 373m
-loglikelihood: 21000/40168 done  0.9 req/s  ETA 366m
-loglikelihood: 21500/40168 done  0.9 req/s  ETA 358m
-loglikelihood: 22000/40168 done  0.9 req/s  ETA 350m
-loglikelihood: 22500/40168 done  0.9 req/s  ETA 342m
-loglikelihood: 23000/40168 done  0.9 req/s  ETA 334m
-loglikelihood: 23500/40168 done  0.9 req/s  ETA 326m
-loglikelihood: 24000/40168 done  0.8 req/s  ETA 318m
-loglikelihood: 24500/40168 done  0.8 req/s  ETA 308m
-loglikelihood: 25000/40168 done  0.8 req/s  ETA 300m
-loglikelihood: 25500/40168 done  0.8 req/s  ETA 291m
-loglikelihood: 26000/40168 done  0.8 req/s  ETA 283m
-loglikelihood: 26500/40168 done  0.8 req/s  ETA 275m
-loglikelihood: 27000/40168 done  0.8 req/s  ETA 266m
-loglikelihood: 27500/40168 done  0.8 req/s  ETA 257m
-loglikelihood: 28000/40168 done  0.8 req/s  ETA 247m
-loglikelihood: 28500/40168 done  0.8 req/s  ETA 237m
-/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
-  warnings.warn('resource_tracker: There appear to be %d '
- 7000/40168 done  1.1 req/s  ETA 485m
-loglikelihood: 7500/40168 done  1.2 req/s  ETA 468m
-loglikelihood: 8000/40168 done  1.2 req/s  ETA 453m
-loglikelihood: 8500/40168 done  1.2 req/s  ETA 440m
-loglikelihood: 9000/40168 done  1.2 req/s  ETA 427m
-loglikelihood: 9500/40168 done  1.2 req/s  ETA 412m
-loglikelihood: 10000/40168 done  1.3 req/s  ETA 399m
-loglikelihood: 10500/40168 done  1.3 req/s  ETA 388m
-loglikelihood: 11000/40168 done  1.3 req/s  ETA 379m
-loglikelihood: 11500/40168 done  1.3 req/s  ETA 368m
-loglikelihood: 12000/40168 done  1.3 req/s  ETA 358m
-loglikelihood: 12500/40168 done  1.3 req/s  ETA 347m
-loglikelihood: 13000/40168 done  1.3 req/s  ETA 339m
-loglikelihood: 13500/40168 done  1.0 req/s  ETA 447m
-loglikelihood: 14000/40168 done  0.8 req/s  ETA 552m
-loglikelihood: 14500/40168 done  0.7 req/s  ETA 644m
-loglikelihood: 15000/40168 done  0.6 req/s  ETA 724m
-loglikelihood: 15500/40168 done  0.5 req/s  ETA 792m
-loglikelihood: 16000/40168 done  0.5 req/s  ETA 854m

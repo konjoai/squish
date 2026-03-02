@@ -43,8 +43,7 @@ from dataclasses import dataclass, field
 
 # ── Ensure the squish package root is importable when run as a script ────────
 # cli.py launches this file directly with `python3 .../squish/server.py`, so
-# the parent directory (/Users/wscholl/squish) must be on sys.path for any
-# `from squish.*` imports to resolve.
+# the package parent directory must be on sys.path for `from squish.*` imports.
 _pkg_root = str(Path(__file__).resolve().parent.parent)
 if _pkg_root not in sys.path:
     sys.path.insert(0, _pkg_root)

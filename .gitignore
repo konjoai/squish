@@ -34,3 +34,9 @@ demos/squish_demo.cast
 .DS_Store
 .vscode/
 .idea/
+eval_output_7b_full/
+
+# Old paper draft files
+docs/Squish_Paper_arXiv*.docx
+"docs/Squish_Action_Plan*"
+docs/final/_media/

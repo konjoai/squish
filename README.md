@@ -291,6 +291,11 @@ git clone https://github.com/wesleyscholl/squish.git
 cd squish
 pip install -e '.[dev]'
 
+# Model weights are not included in the package.
+# Use squish pull to download a model (stored in ~/.squish/models/):
+squish pull 7b          # ~4 GB download (Q4 compressed)
+squish pull 1.5b        # ~1.5 GB download
+
 # First-time compression (~19s, one-time per device)
 squish run 7b --compress-only
 
