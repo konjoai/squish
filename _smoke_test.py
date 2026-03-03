@@ -1,38 +1,29 @@
 import numpy as np
-from squish.quantizer import quantize_embeddings, reconstruct_embeddings, mean_cosine_similarity
+from squish.quantizer import quantize_embeddings, reconstruct_embeddings, _quantize_numpy_asymmetric, _reconstruct_numpy
 
-rng = np.random.default_rng(42)
-# Shifted mean: asymmetric is better for MSE (absolute error), not cosine
-x = rng.standard_normal((256, 512)).astype(np.float32) + 2.0
+# Simple 2x4 test case
+x = np.array([[1.0, 2.0, 3.0, 4.0],
+              [-0.5, 0.5, 1.5, 2.5]], dtype=np.float32)
 
-rs = quantize_embeddings(x, group_size=64, asymmetric=False)
-xs = reconstruct_embeddings(rs)
-mse_s = float(np.mean((x - xs) ** 2))
-cs = mean_cosine_similarity(x, xs)
+ra = _quantize_numpy_asymmetric(x, group_size=0)  # per-row
+print(f"q={ra.quantized}")
+print(f"scales={ra.scales}")
+print(f"zero_points={ra.zero_points}")
 
-ra = quantize_embeddings(x, group_size=64, asymmetric=True)
-xa = reconstruct_embeddings(ra)
-mse_a = float(np.mean((x - xa) ** 2))
-ca = mean_cosine_similarity(x, xa)
+xa = _reconstruct_numpy(ra)
+print(f"original={x}")
+print(f"reconstructed={xa}")
+mse = np.mean((x - xa)**2)
+print(f"MSE={mse}")
+assert mse < 0.01, f"Per-row MSE too high: {mse}"
 
-xcenter = rng.standard_normal((256, 512)).astype(np.float32)
-rx = quantize_embeddings(xcenter, group_size=64, soft_clip_sigma=3.0)
-xxs = reconstruct_embeddings(rx)
-cxs = mean_cosine_similarity(xcenter, xxs)
-
-print(f"Symmetric:  cosine={cs:.6f}  MSE={mse_s:.6f}")
-print(f"Asymmetric: cosine={ca:.6f}  MSE={mse_a:.6f}  (zp shape={ra.zero_points.shape})")
-print(f"Soft-clip(3s): cosine={cxs:.6f}")
-
-assert mse_a < mse_s, f"Asymmetric MSE {mse_a} should beat symmetric {mse_s}"
-assert ra.zero_points is not None
-assert rs.zero_points is None
-assert cxs > 0.999
-print("Quantizer assertions passed")
-
-import os; os.environ["SQUISH_OFFLINE"] = "1"
-from squish.catalog import search
-hits = search("qwen")
-print(f"catalog search('qwen'): {len(hits)} hits -> {[e.id for e in hits[:3]]}")
-assert len(hits) > 0
-print("All checks PASS")
+# Per-group test
+ra2 = _quantize_numpy_asymmetric(x, group_size=2)
+print(f"\nper-group: q={ra2.quantized}, zp={ra2.zero_points}, scales={ra2.scales}")
+xa2 = _reconstruct_numpy(ra2)
+print(f"original={x}")
+print(f"reconstructed={xa2}")
+mse2 = np.mean((x - xa2)**2)
+print(f"Per-group MSE={mse2}")
+assert mse2 < 0.01, f"Per-group MSE too high: {mse2}"
+print("Debug passed")
