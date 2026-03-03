@@ -17,7 +17,7 @@
 
 ## Demo
 
-<img src="demos/squish_demo.gif" alt="Squish demo — pull, run, and chat" width="800"/>
+![](demos/squish_demo.gif)
 
 ## Install
 
