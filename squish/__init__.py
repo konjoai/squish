@@ -86,6 +86,15 @@ from squish.quantizer import (  # noqa: F401
     get_backend_info,
 )
 
+# Model catalog + pull (requires huggingface_hub for download)
+from squish.catalog import (  # noqa: F401
+    CatalogEntry,
+    load_catalog,
+    list_catalog,
+    resolve as resolve_model,
+    pull as pull_model,
+)
+
 __version__ = "0.2.0"
 __all__ = [
     "load_compressed_model",
@@ -130,6 +139,12 @@ __all__ = [
     "dequantize_int4",
     "mean_cosine_similarity",
     "get_backend_info",
+    # Catalog + pull
+    "CatalogEntry",
+    "load_catalog",
+    "list_catalog",
+    "resolve_model",
+    "pull_model",
     # Phase 2.1 — BatchScheduler  (import: from squish.scheduler import BatchScheduler)
     # Phase 2.2 — Tool calling    (import: from squish.tool_calling import ...)
     # Phase 2.2 — Ollama compat   (import: from squish.ollama_compat import mount_ollama)

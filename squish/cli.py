@@ -6,28 +6,32 @@ Entry point for the Squish local-inference CLI.
 
 Sub-commands
 ───────────
+  squish pull   MODEL               Download + compress a model
+  squish catalog                    Browse available models
   squish run    [MODEL] [OPTIONS]   Start the inference server
   squish chat   [MODEL] [OPTIONS]   Interactive terminal chat (no browser needed)
   squish models                     List local models (auto-discovers ~/models/)
   squish info                       System info: Metal, RAM, disk
   squish bench  [MODEL] [OPTIONS]   Quick throughput/latency benchmark
+  squish doctor                     Check all dependencies
+  squish daemon start|stop|status   Manage background server
+  squish compress MODEL             Compress a model to npy-dir format
 
-MODEL shorthand resolves as:
-  7b   → Qwen2.5-7B-Instruct-bf16
-  14b  → Qwen2.5-14B-Instruct-bf16
-  1.5b → Qwen2.5-1.5B-Instruct-bf16
-  72b  → Qwen2.5-72B-Instruct-bf16
+MODEL shorthand resolves via the Squish catalog:
+  qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b, phi4:14b …
+  Legacy aliases still work: 7b, 14b, 1.5b, 32b, 72b
   Any path starting with ~ or / → used as-is
 
 Usage:
+    python3 -m squish.cli pull qwen3:8b
     python3 -m squish.cli run 7b
     python3 -m squish.cli chat 7b
-    python3 -m squish.cli models
-    python3 -m squish.cli info
+    python3 -m squish.cli catalog
 
 After `pip install -e .`:
-    squish run 7b
-    squish chat 7b
+    squish pull qwen3:8b
+    squish run qwen3:8b
+    squish chat qwen3:8b
 """
 
 import argparse
@@ -39,17 +43,61 @@ import sys
 import time
 from pathlib import Path
 
+try:
+    from squish.catalog import (
+        resolve as _catalog_resolve,
+        list_catalog,
+        pull as _catalog_pull,
+    )
+    _CATALOG_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _CATALOG_AVAILABLE = False
+
 
 # ── Model registry ─────────────────────────────────────────────────────────── 
 
 _MODELS_DIR = Path.home() / "models"
 
+# Legacy shorthand → directory name (kept for backward compatibility).
+# New models should be added to squish/catalog.py instead.
 _MODEL_SHORTHAND = {
-    "1.5b": "Qwen2.5-1.5B-Instruct-bf16",
-    "7b":   "Qwen2.5-7B-Instruct-bf16",
-    "14b":  "Qwen2.5-14B-Instruct-bf16",
-    "32b":  "Qwen2.5-32B-Instruct-bf16",
-    "72b":  "Qwen2.5-72B-Instruct-bf16",
+    # Qwen 2.5
+    "1.5b":  "Qwen2.5-1.5B-Instruct-bf16",
+    "7b":    "Qwen2.5-7B-Instruct-bf16",
+    "14b":   "Qwen2.5-14B-Instruct-bf16",
+    "32b":   "Qwen2.5-32B-Instruct-bf16",
+    "72b":   "Qwen2.5-72B-Instruct-bf16",
+    # Qwen 3
+    "qwen3:0.6b":   "Qwen3-0.6B-bf16",
+    "qwen3:1.7b":   "Qwen3-1.7B-bf16",
+    "qwen3:4b":     "Qwen3-4B-bf16",
+    "qwen3:8b":     "Qwen3-8B-bf16",
+    "qwen3:14b":    "Qwen3-14B-bf16",
+    "qwen3:30b-a3b":"Qwen3-30B-A3B-bf16",
+    "qwen3:32b":    "Qwen3-32B-bf16",
+    # Llama 3.x
+    "llama3.2:1b":  "Llama-3.2-1B-Instruct-bf16",
+    "llama3.2:3b":  "Llama-3.2-3B-Instruct-bf16",
+    "llama3.1:8b":  "Meta-Llama-3.1-8B-Instruct-bf16",
+    # Gemma 3
+    "gemma3:1b":    "gemma-3-1b-it-bf16",
+    "gemma3:4b":    "gemma-3-4b-it-bf16",
+    "gemma3:12b":   "gemma-3-12b-it-bf16",
+    "gemma3:27b":   "gemma-3-27b-it-bf16",
+    # DeepSeek-R1
+    "deepseek-r1:7b":  "DeepSeek-R1-Distill-Qwen-7B-bf16",
+    "deepseek-r1:14b": "DeepSeek-R1-Distill-Qwen-14B-bf16",
+    "deepseek-r1:32b": "DeepSeek-R1-Distill-Qwen-32B-bf16",
+    "r1:7b":           "DeepSeek-R1-Distill-Qwen-7B-bf16",
+    "r1:14b":          "DeepSeek-R1-Distill-Qwen-14B-bf16",
+    # Phi-4
+    "phi4:14b":     "phi-4-bf16",
+    # Mistral
+    "mistral:7b":   "Mistral-7B-Instruct-v0.3-bf16",
+    # SmolLM2
+    "smollm2:135m": "SmolLM2-135M-Instruct-bf16",
+    "smollm2:360m": "SmolLM2-360M-Instruct-bf16",
+    "smollm2:1.7b": "SmolLM2-1.7B-Instruct-bf16",
 }
 
 # Compressed dir naming convention
@@ -77,6 +125,13 @@ def _resolve_model(name: str | None) -> tuple[Path, Path]:
 
     if name in _MODEL_SHORTHAND:
         model_dir = _MODELS_DIR / _MODEL_SHORTHAND[name]
+    elif _CATALOG_AVAILABLE:
+        # Try the dynamic catalog (handles qwen3:8b, gemma3:4b, etc.)
+        entry = _catalog_resolve(name)
+        if entry is not None:
+            model_dir = _MODELS_DIR / entry.dir_name
+        else:
+            model_dir = Path(name).expanduser()
     else:
         model_dir = Path(name).expanduser()
 
@@ -142,7 +197,8 @@ def cmd_models(args):
 
     if not rows:
         print("  No model directories found.")
-        print(f"  Download a model with mlx_lm.convert or place in {_MODELS_DIR}")
+        print(f"  Download a model with: squish pull qwen3:8b")
+        print(f"  Browse all models    : squish catalog")
         return
 
     # Column widths
@@ -153,7 +209,10 @@ def cmd_models(args):
         print(f"  {name:<{w0}} {size:>8}  {comp}")
 
     print()
-    print("  Shorthand aliases: 1.5b, 7b, 14b, 32b, 72b")
+    print("  Legacy aliases : 1.5b, 7b, 14b, 32b, 72b")
+    print("  Catalog IDs    : qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …")
+    print("  Browse catalog : squish catalog")
+    print("  Download model : squish pull qwen3:8b")
     print()
 
 
@@ -737,6 +796,12 @@ def cmd_compress(args):
     # Resolve model path (accept shorthand or full path)
     if args.model in _MODEL_SHORTHAND:
         model_dir = _MODELS_DIR / _MODEL_SHORTHAND[args.model]
+    elif _CATALOG_AVAILABLE:
+        entry = _catalog_resolve(args.model)
+        if entry is not None:
+            model_dir = _MODELS_DIR / entry.dir_name
+        else:
+            model_dir = Path(args.model).expanduser()
     else:
         model_dir = Path(args.model).expanduser()
 
@@ -772,6 +837,129 @@ def cmd_compress(args):
     print(f"     Run with: squish run {model_dir}\n")
 
 
+# ── squish pull ───────────────────────────────────────────────────────────────
+
+def cmd_pull(args):
+    """
+    Download and compress a model from the Squish catalog.
+
+    If pre-compressed Squish weights exist on HuggingFace they are downloaded
+    directly (no on-device compression needed).  Otherwise the bf16 MLX weights
+    are fetched and compressed locally.
+
+    Examples
+    --------
+      squish pull qwen3:8b
+      squish pull gemma3:4b --int4
+      squish pull deepseek-r1:7b --token hf_…
+      squish pull llama3.1:8b --models-dir /Volumes/SSD/models
+    """
+    if not _CATALOG_AVAILABLE:
+        _die("squish.catalog is not available. Ensure the package is properly installed.")
+
+    name = args.model
+    models_dir = Path(args.models_dir).expanduser() if args.models_dir else _MODELS_DIR
+    token = args.token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+
+    # Resolve first so we can print a clear error before any download starts
+    entry = _catalog_resolve(name)
+    if entry is None:
+        _die(
+            f"Unknown model: {name!r}\n"
+            f"Run `squish catalog` to browse available models."
+        )
+
+    quant_label = "INT4" if args.int4 else "INT8"
+    print()
+    _box([
+        "  squish pull",
+        f"  Model      : {entry.id}  —  {entry.name}",
+        f"  Parameters : {entry.params}",
+        f"  Raw size   : ~{entry.size_gb:.1f} GB",
+        f"  Compressed : ~{entry.squished_size_gb:.1f} GB  ({quant_label})",
+        f"  Context    : {entry.context:,} tokens",
+        f"  Dest       : {models_dir}",
+    ])
+    print()
+
+    try:
+        compressed_dir = _catalog_pull(
+            name=name,
+            models_dir=models_dir,
+            int4=args.int4,
+            token=token,
+            refresh_catalog=args.refresh_catalog,
+            verbose=args.verbose,
+        )
+    except ImportError as exc:
+        _die(str(exc))
+    except ValueError as exc:
+        _die(str(exc))
+    except RuntimeError as exc:
+        _die(str(exc))
+
+    print()
+    _box([
+        f"  ✓  {entry.id} ready!",
+        f"  Run  : squish run {entry.id}",
+        f"  Chat : squish chat {entry.id}",
+        f"  Path : {compressed_dir}",
+    ])
+    print()
+
+
+# ── squish catalog ────────────────────────────────────────────────────────────
+
+def cmd_catalog(args):
+    """Browse the Squish model catalog."""
+    if not _CATALOG_AVAILABLE:
+        _die("squish.catalog is not available. Ensure the package is properly installed.")
+
+    entries = list_catalog(
+        tag=args.tag or None,
+        refresh=args.refresh,
+    )
+
+    if not entries:
+        tag_msg = f" (tag: {args.tag})" if args.tag else ""
+        print(f"\n  No models found{tag_msg}.")
+        return
+
+    print()
+    _box([
+        "  Squish Model Catalog",
+        f"  {len(entries)} model(s) available",
+        "  Run `squish pull <id>` to download",
+    ])
+    print()
+
+    # Header
+    col_id   = max(len(e.id) for e in entries) + 2
+    print(f"  {'ID':<{col_id}} {'Params':>7}  {'Raw':>7}  {'Squished':>9}  {'Prebuilt':>9}  Notes")
+    print(f"  {'─'*col_id} {'─'*7}  {'─'*7}  {'─'*9}  {'─'*9}  {'─'*24}")
+
+    for e in entries:
+        prebuilt = "⚡ yes" if e.has_prebuilt else "compress"
+        notes = e.notes if e.notes else ", ".join(e.tags)
+        print(
+            f"  {e.id:<{col_id}} {e.params:>7}  "
+            f"{e.size_gb:>6.1f}G  {e.squished_size_gb:>8.1f}G  "
+            f"{prebuilt:>9}  {notes}"
+        )
+
+    print()
+    print("  Prebuilt ⚡ = pre-compressed weights on HuggingFace (instant download)")
+    print()
+
+    if args.tag:
+        print(f"  Showing tag: {args.tag!r}")
+        print("  Other tags: small, fast, balanced, large, reasoning, moe, edge")
+    else:
+        print("  Filter by tag: squish catalog --tag reasoning")
+        print("  Refresh list : squish catalog --refresh")
+    print()
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="squish",
@@ -779,18 +967,26 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  squish run 7b                      Start 7B model server on :11435
-  squish run 7b --batch-scheduler    With continuous batching
-  squish chat 7b                     Interactive terminal chat
+  squish catalog                     Browse available models
+  squish catalog --tag reasoning     Filter by tag (reasoning, small, large, moe…)
+  squish pull qwen3:8b               Download + compress Qwen3-8B
+  squish pull gemma3:4b --int4       Download with INT4 compression (½ disk)
+  squish run qwen3:8b                Start server on :11435
+  squish run 7b --batch-scheduler    Legacy shorthand, with continuous batching
+  squish chat qwen3:8b               Interactive terminal chat
   squish chat                        Chat against already-running server
   squish models                      List local models
   squish info                        System info + server status
   squish doctor                      Check all dependencies
-  squish daemon start 7b             Start persistent background server
+  squish daemon start qwen3:8b       Start persistent background server
   squish daemon status               Check daemon status
   squish daemon stop                 Stop daemon
   squish bench                       Quick throughput benchmark
-  squish compress ~/models/my-model  Compress model to INT8 npy-dir format
+  squish compress qwen3:8b           Compress a local model to INT8 npy-dir format
+
+Model IDs (sample):
+  qwen3:8b   gemma3:4b   deepseek-r1:7b   llama3.2:3b   phi4:14b
+  Legacy: 7b  14b  1.5b  32b  72b
 
 OpenAI drop-in (after squish run):
   export OPENAI_BASE_URL=http://localhost:11435/v1
@@ -878,6 +1074,41 @@ Ollama drop-in:
                                  "Requires squish_quant Rust ext. Recommended for 1.5B models.")
     p_compress.add_argument("--verbose",           action="store_true")
     p_compress.set_defaults(func=cmd_compress)
+
+    # ── pull ──
+    p_pull = sub.add_parser(
+        "pull",
+        help="Download + compress a model from the Squish catalog",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Download a model and compress it with Squish.\n\n"
+            "Pre-compressed weights are downloaded directly when available.\n"
+            "Otherwise the bf16 MLX variant is fetched and compressed locally.\n\n"
+            "Examples:\n"
+            "  squish pull qwen3:8b\n"
+            "  squish pull gemma3:4b --int4\n"
+            "  squish pull deepseek-r1:14b --token hf_…"
+        ),
+    )
+    p_pull.add_argument("model", help="Model ID (e.g. qwen3:8b, gemma3:4b, 7b)")
+    p_pull.add_argument("--int4", action="store_true",
+                        help="Use INT4 nibble-packed compression (~½ disk, ≤2%% accuracy delta)")
+    p_pull.add_argument("--token", default="",
+                        help="HuggingFace access token (or set $HF_TOKEN)")
+    p_pull.add_argument("--models-dir", default="",
+                        help=f"Override models directory (default: {_MODELS_DIR})")
+    p_pull.add_argument("--refresh-catalog", action="store_true",
+                        help="Force-refresh the online catalog before resolving")
+    p_pull.add_argument("--verbose", action="store_true")
+    p_pull.set_defaults(func=cmd_pull)
+
+    # ── catalog ──
+    p_catalog = sub.add_parser("catalog", help="Browse available models in the Squish catalog")
+    p_catalog.add_argument("--tag", default="",
+                           help="Filter by tag: small, fast, balanced, large, reasoning, moe, edge")
+    p_catalog.add_argument("--refresh", action="store_true",
+                           help="Force-refresh the catalog from HuggingFace")
+    p_catalog.set_defaults(func=cmd_catalog)
 
     args = ap.parse_args()
 
