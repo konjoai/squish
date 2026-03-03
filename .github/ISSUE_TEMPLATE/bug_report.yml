@@ -1,0 +1,109 @@
+name: Bug Report
+description: Something isn't working as expected
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill in as much detail as you can.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: "squish run 7b fails with..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands or code to reproduce the issue.
+      placeholder: |
+        1. `squish pull qwen3:8b`
+        2. `squish run qwen3:8b`
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      placeholder: Server should start on :11435
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: squish doctor output
+      description: Run `squish doctor` and paste the full output here.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: chip
+    attributes:
+      label: Apple Silicon chip
+      options:
+        - M1
+        - M1 Pro
+        - M1 Max
+        - M1 Ultra
+        - M2
+        - M2 Pro
+        - M2 Max
+        - M2 Ultra
+        - M3
+        - M3 Pro
+        - M3 Max
+        - M4
+        - M4 Pro
+        - M4 Max
+        - Other / unsure
+    validations:
+      required: true
+
+  - type: input
+    id: ram
+    attributes:
+      label: Unified memory (GB)
+      placeholder: "16"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.3 (Sequoia)"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12.4"
+    validations:
+      required: true
+
+  - type: input
+    id: squish_version
+    attributes:
+      label: Squish version
+      description: Run `python3 -c "import squish; print(squish.__version__)"`
+      placeholder: "0.2.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output / logs
+      description: Paste any error messages, stack traces, or server logs here.
+      render: text

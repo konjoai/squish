@@ -1,0 +1,59 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement! Please describe what you'd like to see.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Is your feature request related to a pain point? What workflow does it improve?
+      placeholder: "Right now I have to manually... It would be much easier if..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+      description: What would the feature look like? Ideal CLI flag, API, or behaviour.
+      placeholder: |
+        `squish pull --all` downloads and compresses every model in the catalog.
+        Or: `squish run` auto-pulls the model if it isn't already downloaded.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you've tried or alternative approaches.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature area
+      multiple: true
+      options:
+        - CLI (squish run / chat / pull / catalog)
+        - Model catalog / pull
+        - Inference server (OpenAI API)
+        - Ollama compatibility
+        - Web chat UI
+        - Quantization / compression
+        - Benchmarking
+        - Integrations (Continue.dev, LiteLLM, aider…)
+        - iOS / mobile
+        - Linux / Windows support
+        - Documentation
+        - Other
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, links, related issues, or anything else helpful.

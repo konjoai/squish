@@ -1,0 +1,29 @@
+name: Question / Help
+description: Ask a question or get help with Squish
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question? We're happy to help. For faster answers, try
+        [GitHub Discussions](https://github.com/wesleyscholl/squish/discussions) first.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      placeholder: "How do I run Squish with a model that isn't in the catalog?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Commands run, docs read, errors encountered.
+
+  - type: input
+    id: chip
+    attributes:
+      label: Machine (optional)
+      placeholder: "M2 Pro, 32 GB, macOS 15.3"

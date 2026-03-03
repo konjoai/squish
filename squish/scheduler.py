@@ -163,6 +163,13 @@ def _check_stop(req: _Request, next_id: int) -> bool:
 # BatchScheduler
 # ---------------------------------------------------------------------------
 
+class QueueFullError(RuntimeError):
+    """Raised when the pending request queue has reached ``max_pending`` capacity.
+
+    The server converts this to an HTTP 429 Too Many Requests response.
+    """
+
+
 class BatchScheduler:
     """
     Coalescing-window batch scheduler for autoregressive generation.
@@ -178,6 +185,8 @@ class BatchScheduler:
     model           : loaded mlx_lm model (already on Metal)
     tokenizer       : HuggingFace tokenizer matching the model
     max_batch_size  : hard cap on concurrent requests (default 8)
+    max_pending     : maximum pending queue depth before HTTP 429 is raised
+                      (0 = unlimited, default 64)
     batch_window_ms : how long to wait for more requests before starting
                       a batch (default 20 ms)
     pad_token_id    : padding token ID (auto-detected from tokenizer)
@@ -190,6 +199,7 @@ class BatchScheduler:
         max_batch_size:  int   = 8,
         batch_window_ms: float = 20.0,
         pad_token_id:    Optional[int] = None,
+        max_pending:     int   = 64,
     ):
         import mlx.core as mx  # noqa: F401 (validate import on init)
 
@@ -197,6 +207,7 @@ class BatchScheduler:
         self._tokenizer      = tokenizer
         self._max_batch      = max_batch_size
         self._window_ms      = batch_window_ms
+        self._max_pending    = max_pending
         self._pad_id         = (pad_token_id
                                 or getattr(tokenizer, "pad_token_id", None)
                                 or getattr(tokenizer, "eos_token_id", None)
@@ -289,6 +300,11 @@ class BatchScheduler:
         rid = request_id or _uuid.uuid4().hex[:8]
         req = self._make_request(rid, prompt, max_tokens, temperature, top_p,
                                  stop_ids or [], seed)
+        if self._max_pending and self._pending.qsize() >= self._max_pending:
+            raise QueueFullError(
+                f"Server is at capacity ({self._max_pending} pending requests). "
+                "Retry after a moment."
+            )
         self._pending.put(req)
         while True:
             item = req.out_queue.get()
@@ -313,6 +329,11 @@ class BatchScheduler:
         Compatible with FastAPI streaming responses.
         """
         import uuid as _uuid
+        if self._max_pending and self._pending.qsize() >= self._max_pending:
+            raise QueueFullError(
+                f"Batch scheduler queue full ({self._max_pending} pending). "
+                "Retry after a moment."
+            )
         rid = request_id or _uuid.uuid4().hex[:8]
         req = self._make_request(rid, prompt, max_tokens, temperature, top_p,
                                  stop_ids or [], seed)

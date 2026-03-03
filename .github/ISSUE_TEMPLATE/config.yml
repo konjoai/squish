@@ -1,0 +1,7 @@
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/wesleyscholl/squish/discussions
+    about: Ask questions, share benchmarks, and discuss the project
+  - name: Documentation
+    url: https://github.com/wesleyscholl/squish#readme
+    about: README, architecture docs, and benchmark results

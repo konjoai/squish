@@ -279,40 +279,76 @@ def _bundled_catalog() -> dict[str, CatalogEntry]:
 
 def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogEntry]:
     """
-    Fetch the remote catalog and merge it over the bundled one.
-    Silently returns the bundled catalog if the fetch fails or times out.
-    Cache TTL is CATALOG_TTL seconds.
-    """
-    if LOCAL_CATALOG_PATH.exists():
-        age = time.time() - LOCAL_CATALOG_PATH.stat().st_mtime
-        if age < CATALOG_TTL:
-            try:
-                data = json.loads(LOCAL_CATALOG_PATH.read_text())
-                for entry in data.get("models", []):
-                    try:
-                        catalog[entry["id"]] = _entry_from_dict(entry)
-                    except (KeyError, TypeError):
-                        pass
-                return catalog
-            except Exception:
-                pass
+    Merge the remote catalog over the bundled one.
 
-    try:
-        req = urllib.request.Request(
-            CATALOG_URL, headers={"User-Agent": "squish/0.2.0"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            raw = resp.read()
-        data = json.loads(raw)
-        SQUISH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        LOCAL_CATALOG_PATH.write_bytes(raw)
+    Behaviour:
+    • If the local cache is fresh (within CATALOG_TTL), load it synchronously
+      and return immediately — no network call, no blocking.
+    • If stale (or missing), return the bundled/cached catalog immediately and
+      launch a *daemon thread* to fetch + update in the background.  The next
+      process start will pick up the freshened catalog.
+
+    This design ensures ``import squish`` never blocks on a CDN timeout.
+    """
+    import threading as _threading
+
+    def _merge(data: dict) -> None:
         for entry in data.get("models", []):
             try:
                 catalog[entry["id"]] = _entry_from_dict(entry)
             except (KeyError, TypeError):
                 pass
-    except Exception:
-        pass  # Offline / unreachable — bundled catalog is sufficient.
+
+    # ── Offline mode: skip all network activity ───────────────────────────────
+    if os.environ.get("SQUISH_OFFLINE"):
+        if LOCAL_CATALOG_PATH.exists():
+            try:
+                _merge(json.loads(LOCAL_CATALOG_PATH.read_text()))
+            except Exception:
+                pass
+        return catalog
+
+    # ── Serve from warm local cache if fresh enough ───────────────────────────
+    if LOCAL_CATALOG_PATH.exists():
+        age = time.time() - LOCAL_CATALOG_PATH.stat().st_mtime
+        if age < CATALOG_TTL:
+            try:
+                _merge(json.loads(LOCAL_CATALOG_PATH.read_text()))
+                return catalog
+            except Exception:
+                pass
+
+    # ── Stale (or absent) — return now, refresh asynchronously ───────────────
+    def _background_fetch() -> None:
+        try:
+            import importlib.metadata as _imeta
+            try:
+                _ver = _imeta.version("squish")
+            except Exception:
+                _ver = "0.0.0"
+            req = urllib.request.Request(
+                CATALOG_URL, headers={"User-Agent": f"squish/{_ver}"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                raw = resp.read()
+            SQUISH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            # Atomic write: temp file + rename avoids partial reads on crash
+            tmp = LOCAL_CATALOG_PATH.with_suffix(".tmp")
+            tmp.write_bytes(raw)
+            tmp.rename(LOCAL_CATALOG_PATH)
+        except Exception:
+            pass  # Offline / unreachable — bundled catalog stays in effect.
+
+    t = _threading.Thread(target=_background_fetch, daemon=True,
+                          name="squish-catalog-refresh")
+    t.start()
+
+    # If a stale local cache exists, load it while the refresh runs
+    if LOCAL_CATALOG_PATH.exists():
+        try:
+            _merge(json.loads(LOCAL_CATALOG_PATH.read_text()))
+        except Exception:
+            pass
 
     return catalog
 
@@ -361,6 +397,27 @@ def list_catalog(
         return 9999.0
 
     return sorted(entries, key=_sort_key)
+
+
+def search(
+    query: str,
+    refresh: bool = False,
+) -> list[CatalogEntry]:
+    """
+    Search catalog entries whose ``id``, ``name``, ``tags``, or ``params``
+    contain *query* (case-insensitive substring match).
+
+    Returns entries sorted by parameter count ascending (same as
+    :func:`list_catalog`).
+    """
+    q = query.lower()
+    return [
+        e for e in list_catalog(refresh=refresh)
+        if q in e.id.lower()
+        or q in e.name.lower()
+        or any(q in t.lower() for t in e.tags)
+        or q in e.params.lower()
+    ]
 
 
 def resolve(name: str, refresh: bool = False) -> CatalogEntry | None:

@@ -90,9 +90,9 @@ def _load_npy_path(path: Path, mmap_mode: str | None = "r") -> np.ndarray:
                 f"Found {zst_path} but 'zstandard' is not installed. "
                 "Run: pip install zstandard"
             )
-        with open(zst_path, "rb") as f:
-            buf = io.BytesIO(dctx.decompress(f.read()))
-        return np.load(buf, allow_pickle=False)
+        with open(zst_path, "rb") as f, dctx.stream_reader(f) as reader:
+            # Pass stream reader directly to np.load — avoids BytesIO double-buffer
+            return np.load(reader, allow_pickle=False)
     raise FileNotFoundError(f"Neither {path} nor {zst_path} found")
 
 # ---------------------------------------------------------------------------
@@ -107,6 +107,24 @@ def _rss_mb() -> float:
     if _platform.system() == "Darwin":
         return ru / 1_048_576
     return ru / 1_024
+
+
+_rss_last_t: float = 0.0
+_rss_last_v: float = 0.0
+
+
+def _rss_mb_throttled(interval: float = 1.0) -> float:
+    """_rss_mb() sampled at most once per *interval* seconds.
+
+    Calling getrusage 200+ times during a single model load wastes ~1 ms
+    on syscall overhead.  This cache reduces it to ~1 call per second.
+    """
+    global _rss_last_t, _rss_last_v
+    now = time.perf_counter()
+    if now - _rss_last_t >= interval:
+        _rss_last_v = _rss_mb()
+        _rss_last_t = now
+    return _rss_last_v
 
 import os as _os
 
@@ -500,8 +518,8 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:
     original_shape = tuple(_load_npy_path(tensor_dir / f"{sk}__shape.npy").tolist())
 
     result = QuantizationResult(
-        quantized=np.array(q),   # bring int8 into RAM for Vectro
-        scales=np.array(s),
+        quantized=np.asarray(q),   # view mmap'd int8 — avoids a full tensor copy
+        scales=np.asarray(s),
         dims=q.shape[1],
         n=q.shape[0],
     )
@@ -878,11 +896,18 @@ def load_from_npy_dir(
     # ── Safety check: refuse to load large models as bf16 (would OOM/crash) ──
     _q8_gb      = sum(f.stat().st_size for f in tensor_dir.rglob("*") if f.is_file()) / 1e9
     _est_bf16_gb = _q8_gb * 2.0
-    _MAX_BF16_GB = 10.0
+    # Derive limit from actual system RAM instead of a hardcoded 10 GB cap so that
+    # Mac Studio / Mac Pro owners (48-192 GB) are not incorrectly blocked.
+    try:
+        import subprocess as _sp
+        _hw_bytes = int(_sp.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip())
+        _MAX_BF16_GB = _hw_bytes / 1e9 * 0.75   # allow up to 75% of unified memory
+    except Exception:
+        _MAX_BF16_GB = 10.0                      # safe fallback for non-macOS CI
     if _est_bf16_gb > _MAX_BF16_GB and auto_quantize_bits is None:
         raise RuntimeError(
             f"Model Q8→bf16 expansion ({_est_bf16_gb:.1f} GB) would exceed safe Metal "
-            f"limit ({_MAX_BF16_GB:.0f} GB) on a 16 GB device.\n"
+            f"limit ({_MAX_BF16_GB:.0f} GB — 75% of {_MAX_BF16_GB/0.75:.0f} GB RAM).\n"
             f"Run pull_model.py to build the 4-bit cache first:\n"
             f"  python3 pull_model.py <MODEL_ID> --skip-download --skip-compress"
         )
@@ -975,7 +1000,7 @@ def load_from_npy_dir(
             mlx_arr = mx.array(arr_f32).astype(mx.bfloat16)
             del arr_f32
             weight_tuples.append((original_name, mlx_arr))
-            cur_rss = _rss_mb()
+            cur_rss = _rss_mb_throttled()
             if cur_rss > rss_peak:
                 rss_peak = cur_rss
             # Determine mode label for verbose output
@@ -1013,7 +1038,7 @@ def load_from_npy_dir(
                 mlx_arr = mx.array(arr_f32).astype(mx.bfloat16)
                 del arr_f32
                 weight_tuples.append((original_name, mlx_arr))
-                cur_rss = _rss_mb()
+                cur_rss = _rss_mb_throttled()
                 if cur_rss > rss_peak:
                     rss_peak = cur_rss
                 if mode_str == "PT":
@@ -1181,8 +1206,8 @@ def load_compressed_model(
 
         weight_tuples.append((original_name, mlx_arr))
 
-        # track peak RSS as we load tensors one by one
-        cur_rss = _rss_mb()
+        # track peak RSS as we load tensors one by one (throttled: at most 1 syscall/s)
+        cur_rss = _rss_mb_throttled()
         if cur_rss > rss_peak_during:
             rss_peak_during = cur_rss
 

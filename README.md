@@ -5,11 +5,52 @@
 [![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/wesleyscholl/squish)
 [![Paper](https://img.shields.io/badge/paper-coming%20soon-lightgrey)](https://github.com/wesleyscholl/squish)
 
+[![Squish Logo](assets/squish_logo.png)](assets/squish_logo.png)
+
 > **Local LLM inference at sub-second load times.**  
 > **Drop-in for OpenAI, Ollama, and any LLM client.**  
 > **Web chat UI · Tool calling · Batch scheduler · CLI**  
 > **No API key.  No cloud.  No data leaving your machine.**  
 > **Free.**
+
+---
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wesleyscholl/squish/main/install.sh | bash
+```
+
+Or with pip:
+
+```bash
+pip install squish
+```
+
+## Quick Start
+
+```bash
+squish catalog              # browse 29 available models
+squish pull qwen3:8b        # download + compress once (~5 min)
+squish run  qwen3:8b        # start server on :11435
+```
+
+Then open **http://localhost:11435/chat** in any browser.
+
+Or chat in the terminal:
+
+```bash
+squish chat qwen3:8b
+```
+
+Drop-in for any OpenAI or Ollama client:
+
+```bash
+export OPENAI_BASE_URL=http://localhost:11435/v1
+export OPENAI_API_KEY=squish
+# or
+export OLLAMA_HOST=http://localhost:11435
+```
 
 ---
 
@@ -50,10 +91,10 @@ not needed after the first run.  Delete them.
 ## How It Works
 
 ```
-FIRST RUN (~19s — one-time per machine)
-Original safetensors ──► Vectro INT8 compress ──► npy-dir on disk
-                                 │
-                                 └──► squish_weights.safetensors  (bf16, MLX-native)
+FIRST RUN (~5-10 min — one-time per machine, done automatically by `squish pull`)
+HuggingFace MLX weights ──► Squish INT8 compress ──► npy-dir on disk
+                                      │
+                                      └──► squish_weights.safetensors  (bf16, MLX-native)
 
 ALL SUBSEQUENT RUNS (0.53s cold / 0.33s warm)
 squish_weights.safetensors ──► mx.load() ──► Metal GPU map ──► model ready
@@ -285,34 +326,30 @@ out of the box with zero additional configuration.
 
 ```bash
 # Install
-pip install squish
-# or from source:
-git clone https://github.com/wesleyscholl/squish.git
-cd squish
-pip install -e '.[dev]'
+curl -fsSL https://raw.githubusercontent.com/wesleyscholl/squish/main/install.sh | bash
+# or: pip install squish
 
-# Model weights are not included in the package.
-# Use squish pull to download a model (stored in ~/.squish/models/):
-squish pull 7b          # ~4 GB download (Q4 compressed)
-squish pull 1.5b        # ~1.5 GB download
-
-# First-time compression (~19s, one-time per device)
-squish run 7b --compress-only
+# Browse catalog and pull a model
+squish catalog              # see all 29 models
+squish pull qwen3:8b        # download + compress (once per machine)
+squish pull gemma3:4b       # or try Gemma 3
+squish pull deepseek-r1:7b  # or DeepSeek-R1
 
 # Start server + open web UI
-squish run 7b
+squish run qwen3:8b
 # → http://localhost:11435/chat   (web UI)
 # → http://localhost:11435/v1     (OpenAI API)
 # → http://localhost:11435/api    (Ollama API)
 
 # Interactive terminal chat
-squish chat 7b
+squish chat qwen3:8b
 
-# List available models
+# List local models and system info
 squish models
+squish info
 
-# Benchmark load times vs mlx_lm
-squish bench 7b
+# Benchmark load times
+squish bench --markdown --save bench_results.md
 ```
 
 ---
@@ -321,8 +358,11 @@ squish bench 7b
 
 | File | Purpose |
 |---|---|
+| `install.sh` | **One-command installer** — `curl -fsSL .../install.sh \| bash` |
 | `squish/server.py` | **OpenAI + Ollama API server** — `/v1/*`, `/api/*`, `/chat` |
-| `squish/cli.py` | **CLI** — `squish run/chat/models/info/bench` |
+| `squish/cli.py` | **CLI** — `squish pull/run/chat/catalog/models/info/bench/doctor/daemon` |
+| `squish/catalog.py` | **Model catalog** — 29 models, `squish pull`, HuggingFace hub integration |
+| `squish/quantizer.py` | **INT8/INT4 quantizer** — self-contained, Rust backend (6 GB/s) |
 | `squish/ollama_compat.py` | Ollama HTTP API compatibility layer |
 | `squish/tool_calling.py` | Tool/function calling (schema injection + JSON parser) |
 | `squish/scheduler.py` | Batch scheduler — dynamic batching, priority queues |
@@ -334,10 +374,10 @@ squish bench 7b
 | `squish/layerwise_loader.py` | Layer-wise weight streaming loader |
 | `squish/split_loader.py` | Sharded model loader (multi-file checkpoints) |
 | `compressed_loader.py` | Three-tier weight loader (INT8 → f16 → bf16 MLX) |
+| `scripts/upload_to_hub.py` | Batch compress + upload to squish-community HuggingFace org |
 | `demos/tool_calling_demo.py` | Tool calling walkthrough (full round-trip example) |
 | `demos/run_inference.py` | Minimal inference example (no server needed) |
-| `demos/squish_demo.gif` | Animated load-time demo |
-| `squish_quant_rs/` | Rust/PyO3 ARM NEON INT8 quantiser (optional) |
+| `squish_quant_rs/` | Rust/PyO3 ARM NEON INT8 quantiser (optional, 6 GB/s) |
 | `docs/ARCHITECTURE.md` | Technical deep-dive: why these numbers are real |
 | `docs/RESULTS.md` | Every measured number with reproducibility commands |
 | `docs/benchmark_multi_model.md` | Multi-model benchmark comparison table |
@@ -352,9 +392,9 @@ squish bench 7b
 - macOS · Apple Silicon (M1–M5)
 - Python 3.10+ (3.12 recommended)
 - Dependencies install automatically via `pip install squish`
-- Core: `mlx-lm`, `numpy`, `transformers`, `fastapi`, `uvicorn[standard]`, `safetensors`, `zstandard`, `aiofiles`
+- Core: `mlx-lm`, `numpy`, `transformers`, `fastapi`, `uvicorn[standard]`, `safetensors`, `zstandard`, `aiofiles`, `huggingface-hub`
 - Eval extras: `pip install squish[eval]` adds `lm-eval`, `datasets`, `accelerate`
-- [Vectro](https://github.com/wesleyscholl/vectro) at `~/vectro/` (or `VECTRO_DIR` env) for INT8 compression
+- Optional: Rust quantizer (`squish_quant_rs/`) for 4–6× faster compression throughput
 
 ---
 
