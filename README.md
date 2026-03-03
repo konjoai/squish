@@ -36,7 +36,7 @@ pip install squish
 ```bash
 squish catalog              # browse 29 available models
 squish pull qwen3:8b        # download + compress once (~5 min)
-squish run  qwen3:8b        # start server on :11435
+squish run qwen3:8b        # start server on :11435
 ```
 
 Then open **http://localhost:11435/chat** in any browser.
