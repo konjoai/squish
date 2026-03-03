@@ -17,7 +17,7 @@
 
 ## Demo
 
-![](demos/squish_demo.gif)
+![](demos/squish-demo.gif)
 
 ## Install
 
