@@ -135,9 +135,10 @@ def _quantize_numpy_asymmetric(embeddings: np.ndarray, group_size: int = 0) -> Q
     def _asym_scale_zero(xmin: np.ndarray, xmax: np.ndarray):
         scale = np.where(xmax == xmin, 1.0,
                          (xmax - xmin) / (_QMAX - _QMIN)).astype(np.float32)
-        # zero_point in quantised domain: round(-xmin / scale) + QMIN → clamped
+        # zero_point is an int32 offset — NOT constrained to [-128, 127].
+        # For xmin > 0 the unclipped zp will be < -128, which is correct and
+        # produces well-centred quantized values without any range loss.
         zp = np.round(-xmin / scale + _QMIN).astype(np.int32)
-        zp = np.clip(zp, _QMIN, _QMAX).astype(np.int32)
         return scale, zp
 
     if group_size <= 0 or group_size >= d:
