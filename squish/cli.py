@@ -216,6 +216,121 @@ def cmd_models(args):
     print()
 
 
+# ── squish rm ────────────────────────────────────────────────────────────────
+
+def cmd_rm(args):
+    """Remove a local model (raw weights and/or compressed dir)."""
+    import shutil
+
+    name = args.model
+
+    # Resolve directories without requiring them to exist
+    model_dir: Path | None = None
+    compressed_dir: Path | None = None
+
+    # Try catalog first (so short names like qwen3:8b work)
+    try:
+        from squish.catalog import list_catalog
+        entries = {e.id: e for e in list_catalog()}
+        if name in entries:
+            model_dir       = _MODELS_DIR / entries[name].dir_name
+            compressed_dir  = Path(str(model_dir) + _COMPRESSED_SUFFIX)
+        elif name in _MODEL_SHORTHAND:
+            model_dir       = _MODELS_DIR / _MODEL_SHORTHAND[name]
+            compressed_dir  = Path(str(model_dir) + _COMPRESSED_SUFFIX)
+        else:
+            p = Path(name).expanduser()
+            model_dir       = p if p.is_absolute() else _MODELS_DIR / name
+            compressed_dir  = Path(str(model_dir) + _COMPRESSED_SUFFIX)
+    except Exception:
+        p = Path(name).expanduser()
+        model_dir       = p if p.is_absolute() else _MODELS_DIR / name
+        compressed_dir  = Path(str(model_dir) + _COMPRESSED_SUFFIX)
+
+    has_raw  = model_dir.exists()
+    has_comp = compressed_dir.exists() and compressed_dir != model_dir
+
+    if not has_raw and not has_comp:
+        _die(f"No local files found for model '{name}'.\n"
+             f"  Expected raw dir : {model_dir}\n"
+             f"  Expected comp dir: {compressed_dir}")
+
+    # Build list of what will be removed
+    targets: list[tuple[str, Path]] = []
+    if has_raw and (args.compressed_only is False or not args.compressed_only):
+        targets.append(("raw weights", model_dir))
+    if has_comp and not args.raw_only:
+        targets.append(("compressed weights", compressed_dir))
+
+    if not targets:
+        print("Nothing to remove (flags excluded all targets).")
+        return
+
+    print()
+    print(f"  Will remove the following directories for '{name}':")
+    total_bytes = 0
+    for label, path in targets:
+        try:
+            sz = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+        except Exception:
+            sz = 0
+        total_bytes += sz
+        print(f"    [{label}]  {path}  ({sz / 1e9:.2f} GB)")
+    print(f"  Total: {total_bytes / 1e9:.2f} GB will be freed")
+    print()
+
+    if args.dry_run:
+        print("  --dry-run: no files removed.")
+        return
+
+    # Confirm unless --yes
+    if not args.yes:
+        ans = input("  Type 'yes' to confirm deletion: ").strip().lower()
+        if ans != "yes":
+            print("  Aborted.")
+            return
+
+    for label, path in targets:
+        print(f"  Removing {label}: {path} …", end=" ", flush=True)
+        try:
+            shutil.rmtree(path)
+            print("done.")
+        except Exception as exc:
+            print(f"ERROR: {exc}")
+
+    print()
+    print("  Done. Run 'squish models' to verify.")
+    print()
+
+
+# ── squish search ─────────────────────────────────────────────────────────────
+
+def cmd_search(args):
+    """Search the catalog for models matching a query string."""
+    from squish.catalog import search
+
+    hits = search(args.query)
+
+    if not hits:
+        print(f"  No catalog entries match '{args.query}'.")
+        return
+
+    print()
+    print(f"  Catalog search results for '{args.query}':")
+    print()
+    w_id   = max(len(e.id) for e in hits) + 2
+    w_para = max(len(str(getattr(e, 'params', ''))) for e in hits) + 2
+    print(f"  {'ID':<{w_id}} {'Params':>{w_para}}  Tags")
+    print(f"  {'─'*w_id} {'─'*max(w_para,6)}  {'─'*24}")
+    for e in hits:
+        tags_str = ", ".join(getattr(e, "tags", [])) or "—"
+        params   = str(getattr(e, "params", "—"))
+        print(f"  {e.id:<{w_id}} {params:>{w_para}}  {tags_str}")
+    print()
+    print(f"  Pull a model: squish pull <id>")
+    print()
+
+
 # ── squish info ───────────────────────────────────────────────────────────────
 
 def cmd_info(args):
@@ -322,8 +437,10 @@ def cmd_run(args):
         "--compressed-dir", str(compressed_dir),
         "--port",           str(port),
         "--host",           host,
-        "--api-key",        api_key,
+        # API key is passed via env var to avoid exposure in `ps aux`
     ]
+    # Inject into the environ that execv will inherit
+    os.environ.setdefault("SQUISH_API_KEY", api_key)
     if args.draft_model:
         cmd += ["--draft-model", args.draft_model]
     if args.batch_scheduler:
@@ -379,8 +496,9 @@ def cmd_chat(args):
             "--compressed-dir", str(compressed_dir),
             "--port",           str(port),
             "--host",           host,
-            "--api-key",        api_key,
-        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            # API key via env var — keeps it out of `ps aux`
+        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+           env={**os.environ, "SQUISH_API_KEY": api_key})
 
         # Wait (up to 30s) for server to come up
         for _ in range(60):
@@ -480,6 +598,12 @@ def cmd_chat(args):
             reply = _stream_chat(messages)
             if reply:
                 messages.append({"role": "assistant", "content": reply})
+            # Rolling context window — keeps non-system messages within limit
+            max_hist = getattr(args, "max_history", 40)
+            non_sys = [m for m in messages if m["role"] != "system"]
+            if len(non_sys) > max_hist:
+                system_msgs = [m for m in messages if m["role"] == "system"]
+                messages = system_msgs + non_sys[-max_hist:]
             print()
 
     finally:
@@ -520,6 +644,7 @@ def cmd_bench(args):
     print()
 
     results = []
+    prompted = []
     for i, prompt in enumerate(prompts):
         payload = json.dumps({
             "model": "squish",
@@ -542,11 +667,11 @@ def cmd_bench(args):
                     line = raw_line.decode().strip()
                     if not line.startswith("data: "):
                         continue
-                    s = line[6:]
-                    if s == "[DONE]":
+                    payload_str = line[6:]
+                    if payload_str == "[DONE]":
                         break
                     try:
-                        chunk = json.loads(s)
+                        chunk = json.loads(payload_str)
                         delta = chunk["choices"][0]["delta"].get("content", "")
                         if delta:
                             if ttft is None:
@@ -563,6 +688,7 @@ def cmd_bench(args):
         print(f"  [{i+1}] {prompt[:50]:<50}  TTFT={ttft*1000:.0f}ms  "
               f"{n_toks:>4} tok  {tps:.1f} tok/s")
         results.append({"ttft": ttft, "tps": tps, "n_toks": n_toks})
+        prompted.append(prompt)
 
     if results:
         print()
@@ -570,6 +696,46 @@ def cmd_bench(args):
         avg_tps  = sum(r["tps"] for r in results) / len(results)
         print(f"  Average TTFT: {avg_ttft*1000:.0f} ms")
         print(f"  Average throughput: {avg_tps:.1f} tok/s (≈word/s)")
+
+        if getattr(args, "markdown", False) or getattr(args, "save", None):
+            import platform as _plat
+            try:
+                chip = subprocess.check_output(
+                    ["sysctl", "-n", "machdep.cpu.brand_string"],
+                    text=True, stderr=subprocess.DEVNULL,
+                ).strip()
+            except Exception:
+                chip = _plat.machine()
+            try:
+                mem_bytes = int(subprocess.check_output(
+                    ["sysctl", "-n", "hw.memsize"], text=True,
+                ).strip())
+                mem_gb = f"{mem_bytes/1e9:.0f} GB"
+            except Exception:
+                mem_gb = "?"
+            lines = [
+                f"## Squish Benchmark — {time.strftime('%Y-%m-%d')}",
+                f"",
+                f"> Hardware: {chip} · {mem_gb} unified memory",
+                f"> Server: {base_url} · {args.max_tokens} max tokens",
+                f"",
+                f"| Prompt | TTFT (ms) | Tokens | Tok/s |",
+                f"|--------|----------:|-------:|------:|",
+            ]
+            for prompt, r in zip(prompted, results):
+                lines.append(
+                    f"| {prompt[:55]:<55} | "
+                    f"{r['ttft']*1000:.0f} | {r['n_toks']} | {r['tps']:.1f} |"
+                )
+            lines += [
+                f"| **Average** | **{avg_ttft*1000:.0f}** | — | **{avg_tps:.1f}** |",
+                f"",
+                f"_Reproduced with: `squish bench --markdown`_",
+            ]
+            md = "\n".join(lines)
+            save_path = Path(getattr(args, "save", None) or "squish_bench.md")
+            save_path.write_text(md)
+            print(f"\n  Markdown table saved to {save_path}")
     print()
 
 
@@ -600,39 +766,58 @@ def cmd_doctor(args):
            _platform.system() == "Darwin" and _platform.machine() == "arm64",
            "squish requires macOS on Apple Silicon (M-series)")
 
+    def _ver_ok(found: str, required: str) -> bool:
+        """Return True if found >= required using tuple comparison."""
+        try:
+            def _to_tuple(v: str):
+                return tuple(int(x) for x in v.split("+")[0].split(".") if x.isdigit())
+            return _to_tuple(found) >= _to_tuple(required)
+        except Exception:
+            return True  # unknown format → assume ok
+
     # MLX
     try:
         import mlx.core as mx
-        _check(f"mlx ≥ 0.18  (found {mx.__version__})", True)
+        _check(f"mlx ≥ 0.18  (found {mx.__version__})",
+               _ver_ok(mx.__version__, "0.18"),
+               "pip install --upgrade mlx")
     except ImportError:
         _check("mlx", False, "pip install mlx")
 
     # mlx-lm
     try:
         import mlx_lm
-        version = getattr(mlx_lm, "__version__", "?")
-        _check(f"mlx-lm ≥ 0.19  (found {version})", True)
+        version = getattr(mlx_lm, "__version__", "0")
+        _check(f"mlx-lm ≥ 0.19  (found {version})",
+               _ver_ok(version, "0.19"),
+               "pip install --upgrade mlx-lm")
     except ImportError:
         _check("mlx-lm", False, "pip install mlx-lm")
 
     # numpy
     try:
         import numpy as np
-        _check(f"numpy ≥ 1.26  (found {np.__version__})", True)
+        _check(f"numpy ≥ 1.26  (found {np.__version__})",
+               _ver_ok(np.__version__, "1.26"),
+               "pip install --upgrade numpy")
     except ImportError:
         _check("numpy", False, "pip install numpy")
 
     # transformers
     try:
         import transformers
-        _check(f"transformers ≥ 4.40  (found {transformers.__version__})", True)
+        _check(f"transformers ≥ 4.40  (found {transformers.__version__})",
+               _ver_ok(transformers.__version__, "4.40"),
+               "pip install --upgrade transformers")
     except ImportError:
         _check("transformers", False, "pip install transformers")
 
     # zstandard
     try:
         import zstandard
-        _check(f"zstandard ≥ 0.22  (found {zstandard.__version__})", True)
+        _check(f"zstandard ≥ 0.22  (found {zstandard.__version__})",
+               _ver_ok(zstandard.__version__, "0.22"),
+               "pip install --upgrade zstandard")
     except ImportError:
         _check("zstandard (optional zstd entropy layer)", False, "pip install zstandard")
 
@@ -764,12 +949,13 @@ def cmd_daemon(args):
                     "--compressed-dir", str(compressed_dir),
                     "--port",           str(port),
                     "--host",           host,
-                    "--api-key",        api_key,
+                    # API key via env var — keeps it out of `ps aux`
                 ],
                 stdout=log,
                 stderr=log,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
+                env={**os.environ, "SQUISH_API_KEY": api_key},
             )
 
         pid_file.write_text(str(proc.pid))
@@ -1027,6 +1213,9 @@ Ollama drop-in:
                         help="System prompt (default: private local assistant)")
     p_chat.add_argument("--max-tokens",  type=int, default=1024)
     p_chat.add_argument("--temperature", type=float, default=0.7)
+    p_chat.add_argument("--max-history", type=int, default=40,
+                        help="Keep at most this many non-system messages in context "
+                             "(prevents unbounded token growth; default 40)")
     p_chat.set_defaults(func=cmd_chat)
 
     # ── models ──
@@ -1043,6 +1232,11 @@ Ollama drop-in:
     p_bench.add_argument("--host",       default="127.0.0.1")
     p_bench.add_argument("--api-key",    default="squish")
     p_bench.add_argument("--max-tokens", type=int, default=128)
+    p_bench.add_argument("--markdown",   action="store_true",
+                         help="Print a markdown table after benchmarking")
+    p_bench.add_argument("--save",       default="", metavar="FILE",
+                         help="Save markdown table to FILE (implies --markdown; "
+                              "default: squish_bench.md)")
     p_bench.set_defaults(func=cmd_bench)
 
     # ── doctor ──
@@ -1109,6 +1303,22 @@ Ollama drop-in:
     p_catalog.add_argument("--refresh", action="store_true",
                            help="Force-refresh the catalog from HuggingFace")
     p_catalog.set_defaults(func=cmd_catalog)
+
+    p_rm = sub.add_parser("rm", help="Remove a local model (frees disk space)")
+    p_rm.add_argument("model", help="Model ID, alias, or path (e.g. qwen3:8b, 7b, ~/models/Llama-3)")
+    p_rm.add_argument("--compressed-only", action="store_true",
+                      help="Remove only the compressed (-compressed) directory")
+    p_rm.add_argument("--raw-only", action="store_true",
+                      help="Remove only the raw weights directory")
+    p_rm.add_argument("--dry-run", action="store_true",
+                      help="Show what would be removed without deleting anything")
+    p_rm.add_argument("-y", "--yes", action="store_true",
+                      help="Skip confirmation prompt")
+    p_rm.set_defaults(func=cmd_rm, compressed_only=False, raw_only=False)
+
+    p_search = sub.add_parser("search", help="Search the model catalog")
+    p_search.add_argument("query", help="Search query (matched against ID, tags, params, description)")
+    p_search.set_defaults(func=cmd_search)
 
     args = ap.parse_args()
 

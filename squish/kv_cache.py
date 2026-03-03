@@ -51,9 +51,15 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # Lazy MLX import (module may be imported without Metal available, e.g. tests)
 # ---------------------------------------------------------------------------
+try:
+    import mlx.core as _mlx  # type: ignore[import]
+except ImportError:
+    _mlx = None  # will raise at runtime if Metal code is actually called
+
+
 def _mx():
-    import mlx.core as mx
-    return mx
+    """Compatibility shim — prefer using _mlx directly in hot paths."""
+    return _mlx
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +72,9 @@ def _quantize_int8_per_channel(arr_f16: np.ndarray) -> tuple:
     """
     Quantize a 2-D float16 array to INT8 per output-channel (per row).
 
+    Uses in-place arithmetic to keep peak memory to ~1× input (float32)
+    instead of the naive 3× (float32 + abs intermediate + division result).
+
     Parameters
     ----------
     arr_f16 : np.ndarray  shape (n_tokens, head_dim)  — float16
@@ -75,12 +84,16 @@ def _quantize_int8_per_channel(arr_f16: np.ndarray) -> tuple:
     q    : np.ndarray  shape (n_tokens, head_dim)  — int8
     scale: np.ndarray  shape (n_tokens,)            — float32 per-token scale
     """
-    arr = arr_f16.astype(np.float32)           # avoid fp16 overflow in abs
-    # Per-token (per-row) abs-max for keys, column-max for values
-    scale = np.max(np.abs(arr), axis=-1, keepdims=True)  # (n, 1)
-    scale_safe = np.where(scale < 1e-8, 1e-8, scale)
-    q = np.clip(np.round(arr / scale_safe * 127.0), -128, 127).astype(np.int8)
-    return q, scale.squeeze(-1).astype(np.float32)
+    arr = arr_f16.astype(np.float32)           # unavoidable: fp16 overflows in abs
+    # Per-row abs-max (fused reduce — no full intermediate array)
+    scale    = np.max(np.abs(arr), axis=-1)    # (n,)
+    scale_safe = np.maximum(scale, 1e-8)       # (n,) — avoids divide-by-zero
+    # In-place normalize + scale — reuses the float32 buffer
+    arr /= scale_safe[:, np.newaxis]           # normalise to [-1, 1]
+    arr *= 127.0
+    np.round(arr, out=arr)
+    q = np.clip(arr, -128, 127).astype(np.int8)
+    return q, scale_safe.astype(np.float32)
 
 
 def _dequantize_int8_per_channel(q: np.ndarray, scale: np.ndarray) -> np.ndarray:

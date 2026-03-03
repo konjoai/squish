@@ -84,14 +84,19 @@ def _quantize_numpy(embeddings: np.ndarray, group_size: int = 0) -> Quantization
     group_size=0  → 1 scale per row   (classic approach, smallest scale overhead)
     group_size=N  → 1 scale per group of N columns (better accuracy, more scales)
     """
-    emb = np.ascontiguousarray(embeddings, dtype=np.float32)
+    # np.array() with the default copy=True always returns an owned, writable
+    # contiguous buffer — required for the safe in-place operations below.
+    emb = np.array(embeddings, dtype=np.float32, order="C")
     n, d = emb.shape
 
     if group_size <= 0 or group_size >= d:
         # ── per-row ────────────────────────────────────────────────────────
         row_max = np.max(np.abs(emb), axis=1)                              # (n,)
         scales  = np.where(row_max == 0, 1.0, row_max / 127.0).astype(np.float32)
-        q = np.clip(np.round(emb / scales[:, None]), -127, 127).astype(np.int8)
+        # In-place division re-uses the buffer from np.ascontiguousarray above
+        emb /= scales[:, None]
+        np.round(emb, out=emb)
+        q = np.clip(emb, -127, 127).astype(np.int8)
         return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
     else:
         # ── per-group ─────────────────────────────────────────────────────
@@ -101,9 +106,10 @@ def _quantize_numpy(embeddings: np.ndarray, group_size: int = 0) -> Quantization
         grouped  = emb_pad.reshape(n * n_groups, group_size)              # (n*G, group_size)
         gmax   = np.max(np.abs(grouped), axis=1)                          # (n*G,)
         gscale = np.where(gmax == 0, 1.0, gmax / 127.0).astype(np.float32)
-        q_groups = np.clip(
-            np.round(grouped / gscale[:, None]), -127, 127
-        ).astype(np.int8)
+        # In-place: reuse grouped buffer — safe because grouped is a reshaped copy
+        grouped /= gscale[:, None]
+        np.round(grouped, out=grouped)
+        q_groups = np.clip(grouped, -127, 127).astype(np.int8)
         q      = q_groups.reshape(n, -1)[:, :d]                           # trim pad
         scales = gscale.reshape(n, n_groups).astype(np.float32)
         return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
@@ -115,16 +121,18 @@ def _reconstruct_numpy(result: QuantizationResult) -> np.ndarray:
     scales = np.asarray(result.scales, dtype=np.float32)
     if scales.ndim == 1:
         return q * scales[:, None]
-    # grouped: scales is (n, n_groups), q is (n, d) — expand groups
+    # grouped: scales is (n, n_groups), q is (n, d) — broadcast without np.repeat
     n, d = q.shape
     n_groups = scales.shape[1]
     group_size = result.dims // n_groups
     pad = (-d) % group_size
+    full_cols = n_groups * group_size
     if pad:
         q = np.pad(q, ((0, 0), (0, pad)))
-    expanded_scales = np.repeat(scales, group_size, axis=1)[:, :d + pad]
-    recon = (q * expanded_scales)[:, :d]
-    return recon.astype(np.float32)
+    # Reshape to (n, n_groups, group_size) then broadcast scales (n, n_groups, 1)
+    recon = (q[:, :full_cols].reshape(n, n_groups, group_size)
+             * scales[:, :, np.newaxis]).reshape(n, full_cols)
+    return recon[:, :d]
 
 
 # ---------------------------------------------------------------------------
@@ -245,22 +253,27 @@ def dequantize_int4(
 
 
 def mean_cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Compute mean cosine similarity between corresponding rows of a and b."""
-    a = a.astype(np.float32)
-    b = b.astype(np.float32)
+    """Compute mean cosine similarity between corresponding rows of a and b.
+
+    Single-pass einsum implementation: avoids 3 separate matrix traversals
+    (norms_a, norms_b, dot products) by computing dots and norms together.
+    """
+    a = np.asarray(a, dtype=np.float32)
+    b = np.asarray(b, dtype=np.float32)
     if a.shape != b.shape:
         raise ValueError(f"Shape mismatch: {a.shape} vs {b.shape}")
-    norms_a = np.linalg.norm(a, axis=1)
-    norms_b = np.linalg.norm(b, axis=1)
-    # Safe normalise — avoid division by zero
-    a_safe = a / np.where(norms_a == 0, 1.0, norms_a)[:, None]
-    b_safe = b / np.where(norms_b == 0, 1.0, norms_b)[:, None]
-    dots = np.sum(a_safe * b_safe, axis=1)
+    # Row-wise dot products and squared norms in one einsum pass each
+    dots   = np.einsum("ij,ij->i", a, b)                   # (n,)
+    norms_a = np.sqrt(np.einsum("ij,ij->i", a, a))         # (n,)
+    norms_b = np.sqrt(np.einsum("ij,ij->i", b, b))         # (n,)
+    denom  = norms_a * norms_b
+    # Handle zero-norm vectors
     both_zero = (norms_a == 0) & (norms_b == 0)
     one_zero  = (norms_a == 0) ^ (norms_b == 0)
-    dots[both_zero] = 1.0
-    dots[one_zero]  = 0.0
-    return float(np.mean(dots))
+    cosines   = np.where(denom > 0, dots / denom, 0.0)
+    cosines[both_zero] = 1.0
+    cosines[one_zero]  = 0.0
+    return float(np.mean(cosines))
 
 
 if __name__ == "__main__":

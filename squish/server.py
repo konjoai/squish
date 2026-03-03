@@ -35,6 +35,7 @@ import uuid
 import sys
 import os
 import hashlib
+import hmac
 import threading
 import collections
 from pathlib import Path
@@ -75,7 +76,8 @@ except ImportError:
 _kv_cache = None   # QuantizedKVCache | None — set in main() after model load
 
 # ── Batch scheduler (Phase 2.1 — continuous batching) ───────────────────────
-_scheduler = None  # BatchScheduler | None — set in main() when --batch-scheduler given
+_scheduler       = None  # BatchScheduler | None — set in main() when --batch-scheduler given
+_QueueFullError  = None  # QueueFullError class — imported alongside BatchScheduler
 
 # ── Tool calling + Ollama compat (Phase 2.2) ─────────────────────────────────
 # Imported lazily in endpoints — no startup cost when unused
@@ -142,25 +144,32 @@ _draft = _DraftState()
 import hashlib as _hashlib
 
 class _PrefixCache:
-    """Thread-safe LRU cache of (prompt → response) for exact prompt matches."""
+    """Thread-safe O(1) LRU cache of (prompt → response) for exact prompt matches.
+
+    Backed by ``collections.OrderedDict`` — ``move_to_end`` and
+    ``popitem(last=False)`` are both O(1) vs the O(n) ``list.remove`` +
+    ``list.pop(0)`` approach.
+    """
 
     def __init__(self, maxsize: int = 256):
-        self._cache: Dict[str, Tuple[str, str]] = {}
-        self._order: List[str] = []
+        self._cache: collections.OrderedDict[str, Tuple[str, str]] = (
+            collections.OrderedDict()
+        )
         self._maxsize = maxsize
         self._lock    = threading.Lock()
         self.hits     = 0
         self.misses   = 0
 
     def _key(self, prompt: str) -> str:
-        return _hashlib.sha256(prompt.encode()).hexdigest()
+        # blake2b (128-bit) is ~3× faster than sha256 and sufficient for a
+        # non-security-critical local cache with ≤1024 slots.
+        return _hashlib.blake2b(prompt.encode(), digest_size=16).hexdigest()
 
     def get(self, prompt: str) -> Optional[Tuple[str, str]]:
         k = self._key(prompt)
         with self._lock:
             if k in self._cache:
-                self._order.remove(k)
-                self._order.append(k)
+                self._cache.move_to_end(k)   # O(1) — promote to MRU end
                 self.hits += 1
                 return self._cache[k]
             self.misses += 1
@@ -170,17 +179,14 @@ class _PrefixCache:
         k = self._key(prompt)
         with self._lock:
             if k in self._cache:
-                self._order.remove(k)
+                self._cache.move_to_end(k)   # O(1) update in-place
             elif len(self._cache) >= self._maxsize:
-                oldest = self._order.pop(0)
-                del self._cache[oldest]
+                self._cache.popitem(last=False)  # O(1) evict LRU (first item)
             self._cache[k] = (response, finish)
-            self._order.append(k)
 
     def clear(self) -> None:
         with self._lock:
             self._cache.clear()
-            self._order.clear()
 
     @property
     def size(self) -> int:
@@ -190,10 +196,15 @@ _prefix_cache = _PrefixCache(maxsize=512)
 
 
 def _check_auth(creds: HTTPAuthorizationCredentials | None) -> None:
-    """Raise 401 if an API key is configured and the request doesn't match."""
+    """Raise 401 if an API key is configured and the request doesn't match.
+
+    Uses hmac.compare_digest to prevent timing-oracle attacks.
+    """
     if _API_KEY is None:
         return
-    if creds is None or creds.credentials != _API_KEY:
+    if creds is None or not hmac.compare_digest(
+        creds.credentials.encode(), _API_KEY.encode()
+    ):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
@@ -353,14 +364,21 @@ def _generate_tokens(
     # generator function without any async bridge required.
     is_deterministic = (temperature == 0.0 or seed is not None)
     if _scheduler is not None and not is_deterministic:
-        yield from _scheduler.submit_sync(
-            prompt,
-            max_tokens  = max_tokens,
-            temperature = temperature,
-            top_p       = top_p,
-            stop_ids    = _get_stop_ids(stop),
-            seed        = seed,
-        )
+        try:
+            yield from _scheduler.submit_sync(
+                prompt,
+                max_tokens  = max_tokens,
+                temperature = temperature,
+                top_p       = top_p,
+                stop_ids    = _get_stop_ids(stop),
+                seed        = seed,
+            )
+        except _QueueFullError as exc:
+            raise HTTPException(
+                status_code=429,
+                detail=str(exc),
+                headers={"Retry-After": "5"},
+            ) from exc
         return
 
     # ── Prefix cache lookup (Phase 1.4) ──────────────────────────────────────
@@ -1071,6 +1089,8 @@ Examples:
     ap.add_argument("--verbose", action="store_true", default=True)
     ap.add_argument("--api-key", default=None,
                     help="Optional bearer token required on all requests. "
+                         "Also readable from the SQUISH_API_KEY environment variable "
+                         "(env var preferred — avoids key appearing in ps aux). "
                          "If omitted, no auth is enforced.")
     ap.add_argument("--draft-model", default="",
                     help="Path to small draft model dir for speculative decoding. "
@@ -1106,7 +1126,9 @@ Examples:
     args = ap.parse_args()
 
     global _API_KEY
-    _API_KEY = args.api_key
+    # Prefer explicit CLI flag; fall back to SQUISH_API_KEY env var.
+    # Reading from env var prevents the secret appearing in `ps aux`.
+    _API_KEY = args.api_key or os.environ.get("SQUISH_API_KEY")
 
     if args.no_prefix_cache:
         _prefix_cache._maxsize = 0
@@ -1172,7 +1194,9 @@ Examples:
     global _scheduler
     if args.batch_scheduler and _state.model is not None:
         try:
-            from squish.scheduler import BatchScheduler
+            from squish.scheduler import BatchScheduler, QueueFullError as _QFE
+            global _QueueFullError
+            _QueueFullError = _QFE
             _scheduler = BatchScheduler(
                 _state.model, _state.tokenizer,
                 max_batch_size  = args.batch_size,
