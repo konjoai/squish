@@ -5,7 +5,7 @@
 [![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/wesleyscholl/squish)
 [![Paper](https://img.shields.io/badge/paper-coming%20soon-lightgrey)](https://github.com/wesleyscholl/squish)
 
-![Squish Logo](assets/squish_logo.png)
+![Squish Logo](assets/squish-logo.png)
 
 > **Local LLM inference at sub-second load times.**  
 > **Drop-in for OpenAI, Ollama, and any LLM client.**  
