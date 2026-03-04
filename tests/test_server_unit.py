@@ -588,3 +588,19 @@ class TestAuthOnEndpoints:
         finally:
             _srv._API_KEY = orig_key
             _srv._state   = orig_state
+
+    def test_health_with_correct_bearer_still_passes(self, client):
+        orig_key = _srv._API_KEY
+        orig_state = _srv._state
+        _srv._API_KEY = "secret-key"
+        _srv._state   = _srv._ModelState()
+        try:
+            c = TestClient(_srv.app, raise_server_exceptions=False)
+            r = c.get(
+                "/health",
+                headers={"Authorization": "Bearer secret-key"},
+            )
+            assert r.status_code == 200
+        finally:
+            _srv._API_KEY = orig_key
+            _srv._state   = orig_state
