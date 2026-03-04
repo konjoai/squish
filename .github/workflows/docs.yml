@@ -24,7 +24,7 @@ jobs:
           cache: pip
 
       - name: Install MkDocs + theme
-        run: pip install mkdocs-material
+        run: pip install "mkdocs<2" mkdocs-material mkdocs-exclude
 
       - name: Sync root docs into docs/ folder
         run: |
