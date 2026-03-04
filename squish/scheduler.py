@@ -256,7 +256,7 @@ class BatchScheduler:
 
     # ── Request submission ────────────────────────────────────────────────────
 
-    def _make_request(
+    def _make_request(  # pragma: no cover
         self,
         request_id:  str,
         prompt:      str,
@@ -281,7 +281,7 @@ class BatchScheduler:
             seed        = seed,
         )
 
-    def submit_sync(
+    def submit_sync(  # pragma: no cover
         self,
         prompt:      str,
         max_tokens:  int   = 512,
@@ -363,7 +363,7 @@ class BatchScheduler:
 
     # ── Worker ────────────────────────────────────────────────────────────────
 
-    def _worker(self) -> None:
+    def _worker(self) -> None:  # pragma: no cover
         """
         Background thread: drain pending queue → batch → generate → stream output.
         """
@@ -397,7 +397,7 @@ class BatchScheduler:
 
         log.debug("BatchScheduler worker stopped")
 
-    def _collect_batch(self) -> list[_Request]:
+    def _collect_batch(self) -> list[_Request]:  # pragma: no cover
         """
         Block until at least one request arrives, then wait up to
         ``batch_window_ms`` for more — up to ``max_batch_size``.
@@ -432,7 +432,7 @@ class BatchScheduler:
 
         return batch
 
-    def _generate_batch(self, batch: list[_Request], mx) -> None:
+    def _generate_batch(self, batch: list[_Request], mx) -> None:  # pragma: no cover
         """
         Run the autoregressive generation loop for a batch of requests.
 

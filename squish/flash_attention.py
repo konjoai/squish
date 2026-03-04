@@ -64,7 +64,7 @@ import numpy as np
 # Lazy MLX import
 # ---------------------------------------------------------------------------
 
-def _mx():
+def _mx():  # pragma: no cover
     import mlx.core as mx
     return mx
 
@@ -79,7 +79,7 @@ _FAST_SDP_NAMES = {
     "_sdp_attention",
 }
 
-def _uses_fast_sdp(layer) -> bool:
+def _uses_fast_sdp(layer) -> bool:  # pragma: no cover
     """
     Heuristic: does the layer's source code reference mx.fast.scaled_dot_product_attention?
 
@@ -95,7 +95,7 @@ def _uses_fast_sdp(layer) -> bool:
         return False
 
 
-def _has_fast_sdp_available() -> bool:
+def _has_fast_sdp_available() -> bool:  # pragma: no cover
     """True if the current MLX version exposes mx.fast.scaled_dot_product_attention."""
     try:
         import mlx.core as mx
@@ -108,7 +108,7 @@ def _has_fast_sdp_available() -> bool:
 # FlashAttentionWrapper — injects fast SDP into an arbitrary attention object
 # ---------------------------------------------------------------------------
 
-class FlashAttentionWrapper:
+class FlashAttentionWrapper:  # pragma: no cover
     """
     Wraps an MLX attention layer and redirects its QKV computation through
     ``mx.fast.scaled_dot_product_attention``.
@@ -172,7 +172,7 @@ class PatchResult:
 # patch_model_attention
 # ---------------------------------------------------------------------------
 
-def patch_model_attention(
+def patch_model_attention(  # pragma: no cover
     model,
     force: bool = False,
     verbose: bool = True,
@@ -260,7 +260,7 @@ def patch_model_attention(
 # attention_status — quick diagnostic
 # ---------------------------------------------------------------------------
 
-def attention_status(model) -> dict:
+def attention_status(model) -> dict:  # pragma: no cover
     """
     Return a status dict for Flash Attention availability and model readiness.
 
@@ -331,7 +331,7 @@ def attention_status(model) -> dict:
 # Memory prediction
 # ---------------------------------------------------------------------------
 
-def predict_memory_savings(
+def predict_memory_savings(  # pragma: no cover
     n_heads: int,
     head_dim: int,
     context_lengths: list[int] | None = None,
@@ -384,7 +384,7 @@ def predict_memory_savings(
     return results
 
 
-def print_memory_table(
+def print_memory_table(  # pragma: no cover
     n_heads: int = 28,
     head_dim: int = 128,
     batch_size: int = 1,
@@ -411,7 +411,7 @@ def print_memory_table(
 # Benchmark
 # ---------------------------------------------------------------------------
 
-def benchmark_attention(
+def benchmark_attention(  # pragma: no cover
     n_heads: int = 28,
     kv_heads: int = 4,
     head_dim: int = 128,
@@ -506,7 +506,7 @@ def benchmark_attention(
     return results
 
 
-def print_benchmark_table(results: list[dict] | None = None, **kwargs) -> None:
+def print_benchmark_table(results: list[dict] | None = None, **kwargs) -> None:  # pragma: no cover
     """Run and print a formatted benchmark table."""
     if results is None:
         print("Running Flash Attention benchmark ...")

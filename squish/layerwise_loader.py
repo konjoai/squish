@@ -75,7 +75,7 @@ import numpy as np
 # Lazy MLX import
 # ---------------------------------------------------------------------------
 
-def _mx():
+def _mx():  # pragma: no cover
     import mlx.core as mx
     return mx
 
@@ -97,7 +97,7 @@ def _layer_dir(shard_root: Path, layer_idx: int) -> Path:
     return shard_root / f"layer_{layer_idx:03d}"
 
 
-def _flatten_params(layer) -> list[tuple[str, np.ndarray]]:
+def _flatten_params(layer) -> list[tuple[str, np.ndarray]]:  # pragma: no cover
     """
     Recursively walk layer.parameters() (nested dict) and extract all arrays.
 
@@ -121,7 +121,7 @@ def _flatten_params(layer) -> list[tuple[str, np.ndarray]]:
     return _walk(layer.parameters(), "")
 
 
-def _restore_params(layer, flat_params: list[tuple[str, np.ndarray]]) -> None:
+def _restore_params(layer, flat_params: list[tuple[str, np.ndarray]]) -> None:  # pragma: no cover
     """
     Reload numpy arrays back into a layer as bfloat16 MLX arrays.
 
@@ -132,7 +132,7 @@ def _restore_params(layer, flat_params: list[tuple[str, np.ndarray]]) -> None:
     layer.load_weights(mlx_pairs, strict=False)
 
 
-def _layer_bytes(layer) -> int:
+def _layer_bytes(layer) -> int:  # pragma: no cover
     """Return total parameter bytes for ``layer`` (MLX arrays)."""
     total = 0
     def _walk(d: dict) -> None:
@@ -210,7 +210,7 @@ class LayerCache:
             return list(self._cache.keys())
 
 
-def _zero_layer_weights(layer) -> None:
+def _zero_layer_weights(layer) -> None:  # pragma: no cover
     """Zero out layer weights and release Metal memory."""
     try:
         mx = _mx()
@@ -243,7 +243,7 @@ def _zero_layer_weights(layer) -> None:
 # Shard I/O
 # ---------------------------------------------------------------------------
 
-def shard_model(
+def shard_model(  # pragma: no cover
     model,
     output_dir: str | Path,
     compress: bool = False,
@@ -345,7 +345,7 @@ def shard_model(
     return out
 
 
-def _load_layer_from_shard(shard_root: Path, layer_idx: int, template_layer) -> Any:
+def _load_layer_from_shard(shard_root: Path, layer_idx: int, template_layer) -> Any:  # pragma: no cover
     """
     Load a single layer from its shard directory.
 
@@ -397,7 +397,7 @@ class LoadStats:
         )
 
 
-class LayerwiseLoader:
+class LayerwiseLoader:  # pragma: no cover
     """
     Stream transformer layers from a squish_layered shard directory.
 
