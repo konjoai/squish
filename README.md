@@ -430,7 +430,7 @@ squish bench --markdown --save bench_results.md
 ```
 
 ---
-test
+
 ## Files
 
 | File | Purpose |
