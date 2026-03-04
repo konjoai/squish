@@ -416,3 +416,18 @@ class TestOllamaForLoopExhaustion:
         lines = [line for line in resp.text.strip().splitlines() if line]
         last = json.loads(lines[-1])
         assert last["done"] is True
+
+    def test_chat_streaming_natural_exhaust_with_template(self):
+        """Streaming chat with template: for-loop exits by exhaustion (branch [344,360])."""
+        gen = _exhaust_generate(["response"])
+        mock_tok = MagicMock()
+        mock_tok.apply_chat_template.return_value = "<prompt>"
+        client, _ = _make_client(mock_generate=gen, mock_tokenizer=mock_tok)
+        resp = client.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        })
+        assert resp.status_code == 200
+        lines = [line for line in resp.text.strip().splitlines() if line]
+        last = json.loads(lines[-1])
+        assert last["done"] is True
