@@ -57,12 +57,12 @@ import numpy as np
 # Lazy MLX import (module imported in unit tests without Metal GPU)
 # ---------------------------------------------------------------------------
 
-def _mx():
+def _mx():  # pragma: no cover
     import mlx.core as mx
     return mx
 
 
-def _nn():
+def _nn():  # pragma: no cover
     import mlx.nn as nn
     return nn
 
@@ -71,7 +71,7 @@ def _nn():
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_metal_limit_bytes() -> int:
+def _get_metal_limit_bytes() -> int:  # pragma: no cover
     """Return the Metal allocator ceiling in bytes.  Falls back to 16 GB."""
     try:
         import mlx.core as mx
@@ -98,7 +98,7 @@ def _total_ram_bytes() -> int:
         return 16 * 1024 ** 3
 
 
-def _layer_weight_bytes(layer) -> int:
+def _layer_weight_bytes(layer) -> int:  # pragma: no cover
     """
     Return the total byte footprint of all parameters in ``layer``.
 
@@ -123,7 +123,7 @@ def _layer_weight_bytes(layer) -> int:
     return _walk(params)
 
 
-def _flatten_params(layer) -> list[tuple[str, np.ndarray]]:
+def _flatten_params(layer) -> list[tuple[str, np.ndarray]]:  # pragma: no cover
     """
     Flatten all MLX parameters of ``layer`` into (dotted_name, numpy_array)
     pairs — ready for CPU storage.
@@ -149,7 +149,7 @@ def _flatten_params(layer) -> list[tuple[str, np.ndarray]]:
     return results
 
 
-def _restore_params(layer, flat_params: list[tuple[str, np.ndarray]]) -> None:
+def _restore_params(layer, flat_params: list[tuple[str, np.ndarray]]) -> None:  # pragma: no cover
     """Re-load CPU numpy params back into ``layer`` as MLX bfloat16 arrays."""
     import mlx.core as mx
     mlx_weights = [(name, mx.array(arr).astype(mx.bfloat16)) for name, arr in flat_params]
@@ -161,7 +161,7 @@ def _restore_params(layer, flat_params: list[tuple[str, np.ndarray]]) -> None:
 # OffloadedLayer — CPU-resident wrapper
 # ---------------------------------------------------------------------------
 
-class OffloadedLayer:
+class OffloadedLayer:  # pragma: no cover
     """
     Wraps a single transformer layer whose weights live in CPU numpy arrays.
 
@@ -280,7 +280,7 @@ class SplitInfo:
 # SplitLayerLoader
 # ---------------------------------------------------------------------------
 
-class SplitLayerLoader:
+class SplitLayerLoader:  # pragma: no cover
     """
     Applies CPU/GPU layer splitting to a loaded MLX model.
 
@@ -439,7 +439,7 @@ class SplitLayerLoader:
 # Standalone profiling utility
 # ---------------------------------------------------------------------------
 
-def profile_model_layers(model) -> list[dict]:
+def profile_model_layers(model) -> list[dict]:  # pragma: no cover
     """
     Return per-layer memory statistics without modifying the model.
 
@@ -459,7 +459,7 @@ def profile_model_layers(model) -> list[dict]:
     return results
 
 
-def print_layer_profile(model) -> None:
+def print_layer_profile(model) -> None:  # pragma: no cover
     """Print a formatted layer-by-layer memory table."""
     rows   = profile_model_layers(model)
     total  = sum(r["bytes"] for r in rows)
