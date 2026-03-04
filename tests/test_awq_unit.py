@@ -8,10 +8,7 @@ Does NOT require MLX, activation hooks, or a real model.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
-import pytest
 
 from squish.awq import (
     _preceding_norm_name,
@@ -19,7 +16,6 @@ from squish.awq import (
     load_awq_scales,
     save_awq_scales,
 )
-
 
 # ── save_awq_scales / load_awq_scales roundtrip ───────────────────────────────
 

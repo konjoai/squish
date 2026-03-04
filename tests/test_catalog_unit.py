@@ -10,13 +10,12 @@ from __future__ import annotations
 import pytest
 
 from squish.catalog import (
-    CatalogEntry,
     _ALIASES,
+    CatalogEntry,
     _entry_from_dict,
     list_catalog,
     resolve,
 )
-
 
 # ── CatalogEntry properties ────────────────────────────────────────────────────
 

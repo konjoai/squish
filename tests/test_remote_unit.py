@@ -26,7 +26,6 @@ from squish.remote import (
     build_manifest,
 )
 
-
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _make_safetensors_file(path: Path, tensors: dict) -> None:

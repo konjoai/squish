@@ -7,7 +7,6 @@ _Request dataclass, and QueueFullError.
 """
 from __future__ import annotations
 
-import dataclasses
 import queue as _queue
 
 import numpy as np
@@ -15,13 +14,12 @@ import pytest
 
 from squish.scheduler import (
     QueueFullError,
-    _Request,
     _check_stop,
+    _Request,
     _sample_token,
     _softmax_f32,
     _top_p_filter,
 )
-
 
 # ── _softmax_f32 ──────────────────────────────────────────────────────────────
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import io
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -21,7 +20,6 @@ from squish.loader_utils import (
     _load_npy_path,
     _safe_key_to_original,
 )
-
 
 # ── _load_npy_path ─────────────────────────────────────────────────────────────
 # Signature: _load_npy_path(path: Path, mmap_mode='r') -> np.ndarray

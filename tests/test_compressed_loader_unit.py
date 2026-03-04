@@ -6,9 +6,7 @@ Does NOT require MLX, model files, or hardware.
 """
 from __future__ import annotations
 
-import io
 import json
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -24,7 +22,6 @@ from squish.compressed_loader import (
     _safe_key_to_original,
     _unique_base_keys,
 )
-
 
 # ── _get_zstd_dctx ────────────────────────────────────────────────────────────
 

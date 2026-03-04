@@ -14,7 +14,6 @@ Actual API:
 from __future__ import annotations
 
 import argparse
-import sys
 from unittest.mock import patch
 
 import pytest

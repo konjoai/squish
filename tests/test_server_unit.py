@@ -9,8 +9,7 @@ are called directly. Tests for auth use _API_KEY patching.
 """
 from __future__ import annotations
 
-import hashlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -18,7 +17,6 @@ from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
 
 import squish.server as _srv
-
 
 # ── TestClient fixture (no model) ────────────────────────────────────────────
 

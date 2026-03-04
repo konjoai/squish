@@ -11,12 +11,10 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from squish.ollama_compat import mount_ollama
-
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
@@ -361,3 +359,60 @@ class TestOllamaChat:
             "stream": False,
         })
         assert resp.status_code == 200
+
+
+# ── For-loop exhaustion (branches [289,296], [378,385], [254,270], [344,360]) ─
+
+def _exhaust_generate(tokens):
+    """Generator that yields tokens with finish=None, exhausting naturally (no break)."""
+    def _gen(prompt, max_tokens, temperature, top_p, stop, seed):
+        for tok in tokens:
+            yield tok, None  # never sets finish → loop exhausts naturally
+    return _gen
+
+
+class TestOllamaForLoopExhaustion:
+    def test_generate_non_streaming_natural_exhaust(self):
+        """Non-streaming generate: for-loop exits by exhaustion, not break (branch [289,296])."""
+        gen = _exhaust_generate(["hi", " there"])
+        client, _ = _make_client(mock_generate=gen)
+        resp = client.post("/api/generate", json={"prompt": "hello", "stream": False})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["response"] == "hi there"
+
+    def test_generate_streaming_natural_exhaust(self):
+        """Streaming generate: for-loop exits by exhaustion (branch [254,270])."""
+        gen = _exhaust_generate(["tok1", "tok2"])
+        client, _ = _make_client(mock_generate=gen)
+        resp = client.post("/api/generate", json={"prompt": "hello", "stream": True})
+        assert resp.status_code == 200
+        # Streaming response: last line should have done=True
+        lines = [line for line in resp.text.strip().splitlines() if line]
+        last = json.loads(lines[-1])
+        assert last["done"] is True
+
+    def test_chat_non_streaming_natural_exhaust(self):
+        """Non-streaming chat: for-loop exits by exhaustion (branch [378,385])."""
+        gen = _exhaust_generate(["hello"])
+        client, _ = _make_client(mock_generate=gen)
+        resp = client.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": False,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["message"]["content"] == "hello"
+
+    def test_chat_streaming_natural_exhaust(self):
+        """Streaming chat: for-loop exits by exhaustion (branch [344,360])."""
+        gen = _exhaust_generate(["tok"])
+        client, _ = _make_client(mock_generate=gen)
+        resp = client.post("/api/chat", json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        })
+        assert resp.status_code == 200
+        lines = [line for line in resp.text.strip().splitlines() if line]
+        last = json.loads(lines[-1])
+        assert last["done"] is True

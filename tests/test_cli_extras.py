@@ -11,10 +11,8 @@ Extra coverage for squish/cli.py:
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -152,7 +150,6 @@ class TestCmdSearch:
 class TestCmdDoctorFailing:
     def test_failing_check_prints_some_checks_failed(self, capsys, monkeypatch: pytest.MonkeyPatch):
         """When a check fails, 'Some checks failed' is printed (line 960)."""
-        import platform as _platform
         cli = _import_cli()
 
         # Make the macOS/ARM check fail by pretending we're on x86_64

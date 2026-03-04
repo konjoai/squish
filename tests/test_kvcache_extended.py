@@ -13,7 +13,6 @@ import pytest
 
 from squish.kv_cache import KVLayerCache, QuantizedKVCache, _snap_evict
 
-
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _rand_kv(n_heads=4, head_dim=8, dtype=np.float16):
@@ -160,7 +159,7 @@ class TestSnapEviction:
             n_layers=1, mode="snap", window=2, budget=budget, snap_window=2,
         )
         rng = np.random.default_rng(42)
-        for i in range(budget + 3):
+        for _i in range(budget + 3):
             k = rng.standard_normal((n_heads, head_dim)).astype(np.float16)
             v = rng.standard_normal((n_heads, head_dim)).astype(np.float16)
             cache.update(0, k, v)

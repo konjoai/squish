@@ -7,12 +7,10 @@ Extra coverage for squish/loader_utils.py:
 """
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 import numpy as np
 import pytest
-
 
 # ── _reconstruct_numpy with __pt but no __shape ───────────────────────────────
 
@@ -92,7 +90,7 @@ class TestDequantizeNpyInt4:
 class TestGetZstdDctxCached:
     def test_second_call_returns_cached_dctx(self):
         """Second call to _get_zstd_dctx() hits the cached path (line 39 → 45)."""
-        zstd = pytest.importorskip("zstandard")
+        pytest.importorskip("zstandard")
         import squish.loader_utils as _lu
 
         # Reset the module-level cache so first call initializes it

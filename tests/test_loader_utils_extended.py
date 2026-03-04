@@ -10,11 +10,8 @@ Covers:
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
-from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 from squish.loader_utils import (
     _build_model_args,
@@ -24,7 +21,6 @@ from squish.quantizer import (
     QuantizationResult,
     _reconstruct_numpy,
 )
-
 
 # ── _build_model_args ──────────────────────────────────────────────────────
 
@@ -112,7 +108,7 @@ class TestReconstructNumpyGrouped:
     """Test the grouped-symmetric branch (scales.ndim == 2, no zero_points)."""
 
     def _make_grouped_result(self, n=4, d=16, n_groups=2):
-        group_size = d // n_groups
+        d // n_groups
         rng = np.random.default_rng(0)
         q = rng.integers(-127, 128, size=(n, d), dtype=np.int8)
         # 2-D scales: (n, n_groups)
@@ -157,7 +153,7 @@ class TestReconstructNumpyAsymmetricGrouped:
     """Test the asymmetric-grouped branch (zero_points not None, scales.ndim == 2)."""
 
     def _make_asym_grouped_result(self, n=4, d=16, n_groups=2):
-        group_size = d // n_groups
+        d // n_groups
         rng = np.random.default_rng(7)
         q = rng.integers(0, 16, size=(n, d), dtype=np.int8)
         scales = rng.uniform(0.005, 0.05, size=(n, n_groups)).astype(np.float32)

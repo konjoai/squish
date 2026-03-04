@@ -107,7 +107,7 @@ exclude_lines = [
     "\\.\\.\\.",
     "pass",
 ]
-fail_under = 45
+fail_under = 100
 
 [tool.mypy]
 python_version    = "3.10"

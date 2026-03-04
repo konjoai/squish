@@ -12,8 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from squish.quantizer import QuantizationResult, quantize_embeddings, reconstruct_embeddings
-
+from squish.quantizer import quantize_embeddings, reconstruct_embeddings
 
 # ── quantize_embeddings with non-2D input ─────────────────────────────────────
 

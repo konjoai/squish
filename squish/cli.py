@@ -35,18 +35,6 @@ After `pip install -e .`:
     squish chat qwen3:8b
 """
 
-# When running as `python3 squish/cli.py` (not via `-m`), the repo root is NOT
-# on sys.path, which breaks `from squish.X import ...` inside subcommands like
-# compress (AWQ path) and convert.  Inject the repo root so the package is
-# always importable regardless of invocation style.
-import sys as _sys
-import os as _os
-_cli_dir  = _os.path.dirname(_os.path.abspath(__file__))   # …/squish/squish
-_repo_root = _os.path.dirname(_cli_dir)                     # …/squish
-if _repo_root not in _sys.path:  # pragma: no cover
-    _sys.path.insert(0, _repo_root)
-del _cli_dir, _repo_root
-
 import argparse
 import json
 import os
@@ -55,6 +43,16 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+# When running as `python3 squish/cli.py` (not via `-m`), the repo root is NOT
+# on sys.path, which breaks `from squish.X import ...` inside subcommands like
+# compress (AWQ path) and convert.  Inject the repo root so the package is
+# always importable regardless of invocation style.
+_cli_dir = os.path.dirname(os.path.abspath(__file__))   # …/squish/squish
+_repo_root = os.path.dirname(_cli_dir)                   # …/squish
+if _repo_root not in sys.path:  # pragma: no cover
+    sys.path.insert(0, _repo_root)
+del _cli_dir, _repo_root
 
 try:
     from squish.catalog import (

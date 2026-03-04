@@ -55,7 +55,7 @@ class TestBenchmarkCompression:
 
         cctx = _zstd.ZstdCompressor(level=1)
         arr = np.random.default_rng(0).standard_normal((8, 16)).astype(np.float32)
-        npy_bytes = arr.tobytes()
+        arr.tobytes()
         # Write a fake .npy.zst (just compressed raw bytes — not a real .npy header)
         # The function reads .npy.zst via load_npy_zst which expects full npy format
         # So write a proper .npy file first, compress it
@@ -66,7 +66,7 @@ class TestBenchmarkCompression:
         npy_data = buf.read()
 
         zst_path = tensors / "layer_0.npy.zst"
-        orig_size = len(npy_data)
+        len(npy_data)
         with open(zst_path, "wb") as f:
             f.write(cctx.compress(npy_data))
 

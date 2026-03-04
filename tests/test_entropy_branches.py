@@ -13,12 +13,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-
 # ── compress_npy_dir: sentinel already present ───────────────────────────────
 
 class TestCompressNpyDirSentinel:
     def test_sentinel_present_verbose_prints_skip(self, tmp_path: Path, capsys):
-        zstd = pytest.importorskip("zstandard")
+        pytest.importorskip("zstandard")
         from squish.entropy import compress_npy_dir
 
         # Write at least one .npy file so the dir check passes
@@ -37,7 +36,7 @@ class TestCompressNpyDirSentinel:
         assert "Already compressed" in captured.out or "skipping" in captured.out.lower()
 
     def test_sentinel_present_silent(self, tmp_path: Path):
-        zstd = pytest.importorskip("zstandard")
+        pytest.importorskip("zstandard")
         from squish.entropy import compress_npy_dir
 
         arr = np.array([1.0], dtype=np.float32)
@@ -57,7 +56,7 @@ class TestCompressNpyDirSentinel:
 class TestBenchmarkCompression:
     def test_runs_with_npy_files(self, tmp_path: Path, capsys):
         """benchmark_compression on a dir with .npy files produces output."""
-        zstd = pytest.importorskip("zstandard")
+        pytest.importorskip("zstandard")
         from squish.entropy import benchmark_compression
 
         arr = np.zeros((4, 4), dtype=np.float32)
@@ -78,8 +77,9 @@ class TestDecompressNpyDirNoSentinel:
         When sentinel file does NOT exist, the unlink step is skipped and
         execution continues to the verbose print  (line 152→155).
         """
-        zstd = pytest.importorskip("zstandard")
+        pytest.importorskip("zstandard")
         import zstandard
+
         from squish.entropy import decompress_npy_dir
 
         # Create a .npy.zst file

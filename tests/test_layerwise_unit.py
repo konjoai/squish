@@ -6,6 +6,8 @@ Covers LayerCache (no eviction), LoadStats, _layer_dir, recommend_cache_size.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from squish.layerwise_loader import (
@@ -14,7 +16,6 @@ from squish.layerwise_loader import (
     _layer_dir,
     recommend_cache_size,
 )
-from pathlib import Path
 
 
 class TestLayerDir:

@@ -10,10 +10,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from squish.tool_calling import _extract_json_objects, _is_tool_call, build_tool_calls_response
-
 
 # ── _extract_json_objects with escape sequences ───────────────────────────────
 

@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import json
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 import squish.server as _srv
-
 
 # ── _ModelState.record_completion ────────────────────────────────────────────
 
@@ -156,7 +155,6 @@ class TestTokenizeWithModel:
 class TestEmbeddingsZeroNorm:
     def test_zero_norm_embedding_not_normalized(self):
         """When model outputs all-zeros, norm=0 → skip normalization (line 1047→1050)."""
-        import numpy as np
         mx = pytest.importorskip("mlx.core")
         from fastapi.testclient import TestClient
 

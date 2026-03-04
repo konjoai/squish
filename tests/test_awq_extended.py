@@ -10,10 +10,8 @@ Extended tests for squish/awq.py covering:
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from squish.awq import _ActivationHook, apply_awq_to_weights
-
 
 # ── _ActivationHook ───────────────────────────────────────────────────────────
 

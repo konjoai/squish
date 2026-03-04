@@ -21,7 +21,6 @@ from squish.quantizer import (
     reconstruct_embeddings,
 )
 
-
 RNG = np.random.default_rng(42)
 
 

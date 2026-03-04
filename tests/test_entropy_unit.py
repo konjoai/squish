@@ -6,8 +6,6 @@ Tests compress/decompress/load_npy_zst without external hardware.
 """
 from __future__ import annotations
 
-import io
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +14,6 @@ import pytest
 # ── skip if zstandard not available ────────────────────────────────────────
 zstd = pytest.importorskip("zstandard", reason="zstandard not installed")
 from squish import entropy  # noqa: E402
-
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,7 +105,7 @@ class TestLoadNpyZst:
 class TestCompressNpyDir:
     def test_creates_zst_files(self, tmp_path):
         tensors_dir = _make_npy_dir(tmp_path, n=2)
-        stats = entropy.compress_npy_dir(tensors_dir, verbose=False)
+        entropy.compress_npy_dir(tensors_dir, verbose=False)
         zst_files = list(tensors_dir.glob("*.npy.zst"))
         assert len(zst_files) == 2
 

@@ -20,7 +20,6 @@ from squish.catalog import (
     search,
 )
 
-
 # ── shared fixtures ────────────────────────────────────────────────────────────
 
 def _make_entry(**kwargs) -> CatalogEntry:
@@ -224,7 +223,7 @@ class TestResolve:
             _make_entry(id="qwen2.5:7b", params="7B", size_gb=4.0, squished_size_gb=2.0),
         )
         with patch("squish.catalog.load_catalog", return_value=catalog):
-            entry = resolve("7b")
+            resolve("7b")
         # Either resolves via alias or prefix — should not raise
         # If alias resolves to a non-existent key, it falls through to prefix match
 
