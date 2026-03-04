@@ -245,6 +245,13 @@ def quantize_embeddings(
     if embeddings.ndim != 2:
         raise ValueError(f"embeddings must be 2-D, got shape {embeddings.shape}")
 
+    d = embeddings.shape[1]
+    if group_size > 0 and group_size < d and d % group_size != 0:
+        raise ValueError(
+            f"n_cols ({d}) must be divisible by group_size ({group_size}). "
+            f"Got remainder {d % group_size}."
+        )
+
     work = embeddings
     if soft_clip_sigma > 0.0:
         # Clip each row to [mean - k*std, mean + k*std] to suppress outliers
