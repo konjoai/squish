@@ -24,3 +24,16 @@ class TestTotalRamBytes:
         result = _total_ram_bytes()
         # No machine has more than 16 TB RAM in 2025
         assert result < 16 * 1024 ** 4
+
+    def test_consistent_results(self):
+        result1 = _total_ram_bytes()
+        result2 = _total_ram_bytes()
+        assert result1 == result2, f"Expected consistent results, got {result1} and {result2}"
+    
+    def test_non_integer_result(self):
+        result = _total_ram_bytes()
+        assert isinstance(result, int), f"Expected int result, got {type(result)}"
+
+    def test_non_positive_result(self):
+        result = _total_ram_bytes()
+        assert result > 0, f"Expected positive RAM bytes, got {result}"
