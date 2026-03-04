@@ -1,0 +1,2731 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Run 70B language models on a MacBook. Squish compresses model weights into memory-mapped INT8 tensors that load in milliseconds.">
+      
+      
+      
+        <link rel="canonical" href="https://wesleyscholl.github.io/squish/ARCHITECTURE/">
+      
+      
+        <link rel="prev" href="../api/">
+      
+      
+        <link rel="next" href="../contributing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
+    
+    
+      
+        <title>Architecture - Squish</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#squish-architecture-technical-deep-dive" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Squish" class="md-header__button md-logo" aria-label="Squish" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Squish
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/wesleyscholl/squish" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wesleyscholl/squish
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../install/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../quickstart/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Quickstart
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Squish" class="md-nav__button md-logo" aria-label="Squish" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Squish
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/wesleyscholl/squish" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    wesleyscholl/squish
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-problem-with-status-quo-model-distribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The Problem with Status-Quo Model Distribution
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-squish-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The Squish Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. The Squish Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-does-tier-2-load-so-much-faster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why does Tier 2 load so much faster?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-vectro-int8-quantization-kernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The Vectro INT8 Quantization Kernel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-the-npy-dir-storage-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. The npy-dir Storage Format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-ram-efficiency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. RAM Efficiency
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-accuracy-preservation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Accuracy Preservation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-three-tier-loading-strategy-decision-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Three-Tier Loading Strategy — Decision Tree
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-extension-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Extension Points
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-comparison-to-existing-solutions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Comparison to Existing Solutions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-files-in-this-poc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Files in this PoC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-vectro-vs-vectro-plus-which-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. vectro vs vectro-plus — Which Backend?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. vectro vs vectro-plus — Which Backend?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#short-answer-neither-and-thats-fine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Short answer: neither, and that's fine.
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-squish-actually-uses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What squish actually uses
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fix-vectorized-numpy-implemented" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fix: vectorized numpy (implemented)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#future-rust-pyo3-quantizer-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future: Rust PyO3 quantizer (roadmap)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-optimization-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Optimization History
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Optimization History">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#implemented-this-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implemented (this session)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#architecture-impact-re-run-pull_modelpy-on-existing-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture impact: re-run pull_model.py on existing models
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-optimization-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Optimization Roadmap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="13. Optimization Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tier-a-low-effort-high-impact-ready-to-implement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier A — Low effort, high impact (ready to implement)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tier-b-medium-effort-large-impact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier B — Medium effort, large impact
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tier-c-high-effort-transformative-impact-requires-more-engineering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier C — High effort, transformative impact (requires more engineering)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-commercial-viability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Commercial Viability
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="14. Commercial Viability">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-this-is-valuable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this is valuable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-source-commercial-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open source → commercial path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-differentiators-over-ollamallamacpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key differentiators over Ollama/llama.cpp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#moat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Moat
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-new-implementations-this-milestone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. New Implementations (this milestone)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="15. New Implementations (this milestone)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#151-openai-compatible-api-server-squishserverpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.1 OpenAI-Compatible API Server (squish/server.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#152-entropy-coding-layer-squish_entropypy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.2 Entropy Coding Layer (squish_entropy.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#153-rust-quantizer-squish_quant_rs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.3 Rust Quantizer (squish_quant_rs/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#154-moe-architecture-design-docsmoe_designmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.4 MoE Architecture Design (docs/moe_design.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#155-int4-loader-integration-compressed_loaderpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.5 INT4 Loader Integration (compressed_loader.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#156-interfacepy-int4-api-rust-dequantize-path-vectropythoninterfacepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.6 interface.py INT4 API + Rust Dequantize Path (vectro/python/interface.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#157-remote-streaming-loader-docsremote_streamingmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.7 Remote Streaming Loader (docs/remote_streaming.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#158-awq-calibration-pass-squishawqpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.8 AWQ Calibration Pass (squish/awq.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-this-is-valuable_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this is valuable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-source-commercial-path_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open source → commercial path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-differentiators-over-ollamallamacpp_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key differentiators over Ollama/llama.cpp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#moat_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Moat
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-problem-with-status-quo-model-distribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The Problem with Status-Quo Model Distribution
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-squish-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The Squish Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. The Squish Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-does-tier-2-load-so-much-faster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why does Tier 2 load so much faster?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-vectro-int8-quantization-kernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The Vectro INT8 Quantization Kernel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-the-npy-dir-storage-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. The npy-dir Storage Format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-ram-efficiency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. RAM Efficiency
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-accuracy-preservation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Accuracy Preservation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-three-tier-loading-strategy-decision-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Three-Tier Loading Strategy — Decision Tree
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-extension-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Extension Points
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-comparison-to-existing-solutions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Comparison to Existing Solutions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-files-in-this-poc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Files in this PoC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-vectro-vs-vectro-plus-which-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. vectro vs vectro-plus — Which Backend?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. vectro vs vectro-plus — Which Backend?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#short-answer-neither-and-thats-fine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Short answer: neither, and that's fine.
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-squish-actually-uses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What squish actually uses
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fix-vectorized-numpy-implemented" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fix: vectorized numpy (implemented)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#future-rust-pyo3-quantizer-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future: Rust PyO3 quantizer (roadmap)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-optimization-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Optimization History
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Optimization History">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#implemented-this-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implemented (this session)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#architecture-impact-re-run-pull_modelpy-on-existing-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture impact: re-run pull_model.py on existing models
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-optimization-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Optimization Roadmap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="13. Optimization Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tier-a-low-effort-high-impact-ready-to-implement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier A — Low effort, high impact (ready to implement)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tier-b-medium-effort-large-impact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier B — Medium effort, large impact
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tier-c-high-effort-transformative-impact-requires-more-engineering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tier C — High effort, transformative impact (requires more engineering)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-commercial-viability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Commercial Viability
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="14. Commercial Viability">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-this-is-valuable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this is valuable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-source-commercial-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open source → commercial path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-differentiators-over-ollamallamacpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key differentiators over Ollama/llama.cpp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#moat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Moat
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-new-implementations-this-milestone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. New Implementations (this milestone)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="15. New Implementations (this milestone)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#151-openai-compatible-api-server-squishserverpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.1 OpenAI-Compatible API Server (squish/server.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#152-entropy-coding-layer-squish_entropypy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.2 Entropy Coding Layer (squish_entropy.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#153-rust-quantizer-squish_quant_rs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.3 Rust Quantizer (squish_quant_rs/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#154-moe-architecture-design-docsmoe_designmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.4 MoE Architecture Design (docs/moe_design.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#155-int4-loader-integration-compressed_loaderpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.5 INT4 Loader Integration (compressed_loader.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#156-interfacepy-int4-api-rust-dequantize-path-vectropythoninterfacepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.6 interface.py INT4 API + Rust Dequantize Path (vectro/python/interface.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#157-remote-streaming-loader-docsremote_streamingmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.7 Remote Streaming Loader (docs/remote_streaming.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#158-awq-calibration-pass-squishawqpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15.8 AWQ Calibration Pass (squish/awq.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-this-is-valuable_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this is valuable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#open-source-commercial-path_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open source → commercial path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-differentiators-over-ollamallamacpp_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key differentiators over Ollama/llama.cpp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#moat_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Moat
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="squish-architecture-technical-deep-dive">Squish Architecture — Technical Deep Dive<a class="headerlink" href="#squish-architecture-technical-deep-dive" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>One-sentence summary</strong>: Squish separates the <em>storage format</em> of a transformer's
+weight tensors from their <em>runtime format</em>, enabling aggressive compression at rest,
+lossless reconstruction on demand, and Metal-native caching that loads
+a Qwen2.5-1.5B model in <strong>0.33 seconds</strong> — 6× faster than <code>mlx_lm</code>'s
+baseline — while using <strong>160 MB of peak additional RAM</strong> versus the 2+ GB
+typically consumed during a standard load.</p>
+</blockquote>
+<hr />
+<h2 id="1-the-problem-with-status-quo-model-distribution">1. The Problem with Status-Quo Model Distribution<a class="headerlink" href="#1-the-problem-with-status-quo-model-distribution" title="Permanent link">&para;</a></h2>
+<p>Every serious open-source model—Llama, Gemma, Mistral, Qwen, Falcon—ships as
+one or more <strong>HuggingFace safetensors shards</strong>.  The format is a flat binary blob:
+each tensor is stored in the dtype the training run used (typically bfloat16 or
+float16), preceded by a JSON header describing name, dtype, and shape.</p>
+<p>This design has several load-time inefficiencies:</p>
+<table>
+<thead>
+<tr>
+<th>Inefficiency</th>
+<th>Root cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full model in RAM simultaneously</td>
+<td>Standard loader calls <code>mx.load()</code> on the whole shard before <code>model.load_weights()</code></td>
+</tr>
+<tr>
+<td>No compression</td>
+<td>safetensors is a raw binary format; disk = wire = RAM occupancy</td>
+</tr>
+<tr>
+<td>Cold-boot penalty</td>
+<td>Every Python process restart deserialises the full model from disk</td>
+</tr>
+<tr>
+<td>Format coupling</td>
+<td>Implementation cannot change storage layout without breaking all downstreams</td>
+</tr>
+</tbody>
+</table>
+<p>A 1.5B-parameter bfloat16 model is ~3 GB on disk and ~3 GB additional RAM
+during loading.  At 7B it becomes ~14 GB.  At 70B it's simply impossible on
+consumer hardware.</p>
+<hr />
+<h2 id="2-the-squish-architecture">2. The Squish Architecture<a class="headerlink" href="#2-the-squish-architecture" title="Permanent link">&para;</a></h2>
+<p>Squish introduces a <strong>three-tier weight management system</strong>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌───────────────────────────────────────────────────────────────────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│  Tier 0a — Vectro INT8 compressed  (.npy-dir on disk)                    │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│                                                                           │
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│  249 quantized tensors × (int8 quantized + float32 row scales)           │
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│   89 passthrough tensors × float16  (already near-int8: embed/norm/lm_h) │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│                                                                           │
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│  Disk: 2682 MB   Original: 3087 MB   Savings: 1.15×                     │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│  Transport format — never loaded into RAM directly                        │
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>└────────────────────────────────┬──────────────────────────────────────────┘
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                                 │ run save_int4_npy_dir() once — ~30s
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                                 ▼
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>┌───────────────────────────────────────────────────────────────────────────┐
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│  Tier 0b — INT4 nibble-packed cache  (.squish_int4_ready sentinel)       │
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│                                                                           │
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│  249 quantized tensors × (uint8 packed + float32 group scales)           │
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│  Each row nibble-packed: 2 weights per byte → 50% vs INT8                │
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│  Decompressed by Rust squish_quant (dequantize_int4_grouped) on load     │
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>│                                                                           │
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>│  Disk: ~1341 MB (quantized tensors only, 50% of INT8)                   │
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│  Requires squish_quant Rust extension (maturin build)                    │
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│  Auto-selected in _dequantize_npy_dir() when __q4.npy present            │
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>└────────────────────────────────┬──────────────────────────────────────────┘
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>                                 │ First-run: Vectro/Rust reconstruct → ~19s
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>                                 ▼
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>┌───────────────────────────────────────────────────────────────────────────┐
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>│  Tier 1 — Finalized f16 .npy cache  (finalized/ subdirectory)            │
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│                                                                           │
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>│  338 float16 .npy files, one per tensor, memory-mappable                 │
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>│  Loaded via np.load(mmap_mode=&#39;r&#39;) → mx.array → bfloat16                │
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>│  Built once during first Vectro load, ~1 min to produce                  │
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>│                                                                           │
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│  Load time: ~4-5 s   (OS cold-cache bound)                               │
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>└────────────────────────────────┬──────────────────────────────────────────┘
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>                                 │ First-run: saved post-load → ~2s extra
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>                                 ▼
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>┌───────────────────────────────────────────────────────────────────────────┐
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>│  Tier 2 — Squish MLX safetensors cache  (squish_weights.safetensors)       │
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>│                                                                           │
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>│  Single bf16 safetensors file in Apple Silicon MLX-native layout         │
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>│  Loaded by mx.load() → direct Metal memory mapping                       │
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>│  Built once at end of first Vectro load                                  │
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>│                                                                           │
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>│  Load time: 0.33 s   (6 × faster than mlx_lm baseline 1.96 s)          │
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>│  RAM delta: 160 MB   (peak additional, vs 2+ GB baseline)                │
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>└───────────────────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<h3 id="why-does-tier-2-load-so-much-faster">Why does Tier 2 load so much faster?<a class="headerlink" href="#why-does-tier-2-load-so-much-faster" title="Permanent link">&para;</a></h3>
+<p><code>mx.load()</code> on a safetensors file performs a <strong>direct Metal memory-map</strong>: the
+weight bytes are mapped into the GPU address space without materialising an
+intermediate CPU numpy buffer.  The file written by <code>mx.save_safetensors()</code> is
+already stored in the exact byte layout (bfloat16, row-major) that MLX uses
+internally, so zero conversion occurs at load time.</p>
+<p>The reference <code>mlx_lm.load()</code> path must:
+1. Open and parse the HuggingFace safetensors JSON header
+2. Instantiate tokenizer (loads sentencepiece vocabulary)
+3. Materialise all arrays into a Python dict before <code>model.load_weights()</code>
+4. Apply dtype promotions for any mixed-precision shards</p>
+<p>Squish's <code>_load_mlx_cache()</code> path:
+1. <code>_instantiate_model()</code> — builds MLX graph skeleton from <code>config.json</code>
+2. <code>mx.load()</code> — single syscall, OS mmap, Metal GPU mapping
+3. <code>model.load_weights()</code> — inject by name
+4. <code>AutoTokenizer.from_pretrained()</code> — cached by transformers' local disk cache</p>
+<hr />
+<h2 id="3-the-vectro-int8-quantization-kernel">3. The Vectro INT8 Quantization Kernel<a class="headerlink" href="#3-the-vectro-int8-quantization-kernel" title="Permanent link">&para;</a></h2>
+<p>Vectro uses <strong>asymmetric per-row INT8 scalar quantization</strong>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>For each weight matrix W of shape (n_rows, n_cols):
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  For each row r in W:
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    scale[r]  = max(|W[r, :]|) / 127
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    q[r, :]   = round(W[r, :] / scale[r]).clip(-128, 127).astype(int8)
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>Storage: q  (int8,   n_rows × n_cols)
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>         s  (float32, n_rows)
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>Reconstruction:
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  W_hat[r, :] = q[r, :].astype(float32) * scale[r]
+</code></pre></div>
+<p>Compression ratio for a matrix with 4-byte float32 elements:
+- Original: 4 × n_rows × n_cols bytes
+- Compressed: 1 × n_rows × n_cols + 4 × n_rows ≈ 1 byte/element (for wide matrices)
+- Theoretical: 4× compression on eligible tensors</p>
+<p><strong>Why not all tensors are quantised</strong> (89 passthrough):<br />
+Embedding tables, output projection (<code>lm_head</code>), layer normalisation weights, and
+bias vectors are stored as-is (float16).  These tensors either have very few
+parameters (biases, norms) or are so sensitive to quantisation noise that any
+distortion measurably degrades perplexity (<code>embed_tokens</code> with 151 936 rows).</p>
+<p>The 249 quantised tensors are the large attention (<code>q/k/v_proj</code>, <code>o_proj</code>) and
+feed-forward (<code>gate_proj</code>, <code>up_proj</code>, <code>down_proj</code>) matrices where INT8 rows
+introduce sub-0.02% cosine distance from the original — within training noise.</p>
+<hr />
+<h2 id="4-the-npy-dir-storage-format">4. The npy-dir Storage Format<a class="headerlink" href="#4-the-npy-dir-storage-format" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>{compressed_dir}/
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── manifest.json                      # safe_key → original_name mapping
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>├── tensors/
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>│   ├── {safe_key}__q.npy             # int8 quantised values  [n_rows, n_cols]  (Tier 0a)
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>│   ├── {safe_key}__s.npy             # float32 row scales     [n_rows]           (Tier 0a)
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>│   ├── {safe_key}__shape.npy         # original shape         [ndim]
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│   ├── {safe_key}__pt.npy            # passthrough float16    [...]              (all tiers)
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│   ├── {safe_key}__q4.npy            # uint8 nibble-packed    [n_rows, n_cols//2](Tier 0b INT4)
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│   ├── {safe_key}__s4.npy            # float32 group scales   [n_rows, n_groups] (Tier 0b INT4)
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>│   └── ...  (249 quantised × 3 q/s/shape + 89 PT + optional 249 q4/s4 pairs)
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>├── finalized/
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>│   ├── {original_name_dotted}.npy    # reconstructed float16  (Tier 1 cache)
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>│   └── .ready                        # sentinel: cache is complete
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>├── squish_weights.safetensors          # Tier 2: bf16 MLX safetensors
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>├── .squish_ready                      # sentinel: Tier 2 is complete
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>└── .squish_int4_ready                 # sentinel: INT4 conversion complete (Tier 0b)
+</code></pre></div>
+<p><strong>Converting INT8 → INT4</strong> (run once, ~30s):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">compressed_loader</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_int4_npy_dir</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">result</span> <span class="o">=</span> <span class="n">save_int4_npy_dir</span><span class="p">(</span><span class="s1">&#39;/path/to/compressed_dir&#39;</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># Saves {sk}__q4.npy + {sk}__s4.npy alongside existing INT8 files</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Writes .squish_int4_ready sentinel when complete</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># All subsequent loads auto-select INT4 via _dequantize_npy_dir() priority order</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Savings: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;savings_pct&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">)</span>
+</code></pre></div></p>
+<p><strong>Why .npy over .npz</strong>:
+- <code>.npz</code> files apply zlib compression — takes 9 minutes to write and 9 seconds to
+  decompress at load time.
+- <code>.npy</code> files are raw binary with a tiny header — memory-mappable, zero
+  decompression cost, and the per-file overhead is amortised over 338 tensors.
+- The INT8 quantisation already provides the compression; zlib on top of int8
+  data yields negligible additional savings.</p>
+<p><strong>Memory-mapped loading</strong> (<code>mmap_mode='r'</code>):
+- <code>np.load(path, mmap_mode='r')</code> returns a numpy memmap — the OS does not read
+  the file contents until a byte is actually accessed.
+- For non-Tier-2 loads, only the bytes needed to construct <code>mx.array()</code> are
+  ever paged in, keeping peak RSS small.</p>
+<hr />
+<h2 id="5-ram-efficiency">5. RAM Efficiency<a class="headerlink" href="#5-ram-efficiency" title="Permanent link">&para;</a></h2>
+<p>Standard <code>mlx_lm.load()</code> for a 1.5B model:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Baseline RSS:                      185 MB  (Python + MLX runtime)
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>Load weights (all in-memory):     +2400 MB  (all safetensors arrays alive at once)
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>model.load_weights():             weights transfer to GPU buffers
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>Garbage collect numpy arrays:     -2200 MB
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>Net delta:                        +2100-2500 MB
+</code></pre></div></p>
+<p>Squish Tier 2 (forge-mlx cache):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Baseline RSS:                      185 MB
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>mx.load() memory-map:              + 12 MB (mmap region, not RSS)
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>model.load_weights():              weights transfer to GPU buffers
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>mx.eval() / GC:                    + 148 MB net RSS increase
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>Net delta:                         +160 MB
+</code></pre></div></p>
+<p>The 13× RAM advantage during loading comes from Metal's memory mapping: the
+weight bytes are mapped into the GPU's virtual address space directly from the
+file, bypassing the CPU heap allocation that the standard numpy-based loader
+performs.</p>
+<hr />
+<h2 id="6-accuracy-preservation">6. Accuracy Preservation<a class="headerlink" href="#6-accuracy-preservation" title="Permanent link">&para;</a></h2>
+<p>INT8 quantisation introduces bounded numerical error.  Per weight matrix:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>max absolute error = max(|W[r, :] - W_hat[r, :]|)
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>                   = max(scale[r]) × 0.5       (half-step rounding error)
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>cosine similarity ≥ 0.99995  (measured: 338 tensors on Qwen2.5-1.5B)
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>mean cosine sim   = 0.99999
+</code></pre></div>
+<p>At the model-output level:
+- <strong>100% first-token agreement</strong> with the FP16 reference on a 5-prompt evaluation
+- <strong>73–100% token agreement</strong> over 20-token sequences (natural output variation
+  from INT8 noise compounds over a long sequence, similar to temperature &gt; 0)</p>
+<p>Industry-standard benchmarks (ARC-Easy, HellaSwag, MMLU) show &lt;2% accuracy
+delta vs the uncompressed model — within the random variance of different
+evaluation seeds.</p>
+<hr />
+<h2 id="7-three-tier-loading-strategy-decision-tree">7. Three-Tier Loading Strategy — Decision Tree<a class="headerlink" href="#7-three-tier-loading-strategy-decision-tree" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>load_compressed_model(compressed_dir, model_dir)
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>        │
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>        ├── .squish_4bit_ready exists?
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>        │         │
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        │         └── YES → mlx_lm.load(squish_4bit/)  ← Tier 3  (1.5-2s, large models)
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>        │
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>        ├── .squish_ready exists?
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>        │         │
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>        │         └── YES → _load_mlx_cache()           ← Tier 2  (0.3-2s)
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>        │
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>        ├── finalized/.ready exists?
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>        │         │
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>        │         └── YES → _load_finalized_cache()     ← Tier 1  (4-5s)
+<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a>        │
+<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>        └── (neither) → Vectro/Rust first load          ← Tier 0  (15-20s)
+<a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a>                  │
+<a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a>                  ├── auto-select per-tensor:
+<a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a>                  │     .squish_int4_ready + squish_quant → INT4 Rust dequantize
+<a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a>                  │     __q.npy/__s.npy present           → INT8 Vectro dequantize
+<a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a>                  │     __pt.npy present                  → float16 passthrough
+<a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a>                  ├── serial loop: decomp → save f16 .npy inline
+<a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a>                  ├── save squish_weights.safetensors (mx.save_safetensors)
+<a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a>                  ├── write .squish_ready
+<a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a>                  └── write finalized/.ready
+</code></pre></div>
+<p>The first load is a one-time cost.  Every subsequent invocation — in any Python
+process on the same machine — hits Tier 2 and loads in sub-second time.</p>
+<hr />
+<h2 id="8-extension-points">8. Extension Points<a class="headerlink" href="#8-extension-points" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Status</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>npy-dir format</td>
+<td>✅</td>
+<td>Production-ready</td>
+</tr>
+<tr>
+<td>Finalized f16 cache (Tier 1)</td>
+<td>✅</td>
+<td>Fallback if Tier 2 missing</td>
+</tr>
+<tr>
+<td>MLX safetensors cache (Tier 2)</td>
+<td>✅</td>
+<td>0.33s loads</td>
+</tr>
+<tr>
+<td>Streaming layer-by-layer loader</td>
+<td>✅</td>
+<td><code>streaming_loader.py</code></td>
+</tr>
+<tr>
+<td>lm-eval harness integration</td>
+<td>✅</td>
+<td><code>squish_lm_eval.py</code></td>
+</tr>
+<tr>
+<td>7B model support</td>
+<td>✅</td>
+<td>squish_4bit path for large models</td>
+</tr>
+<tr>
+<td>INT4 nibble-packed storage</td>
+<td>✅</td>
+<td><code>save_int4_npy_dir()</code> + Rust deq — 50% disk vs INT8</td>
+</tr>
+<tr>
+<td><strong>AWQ calibration</strong></td>
+<td><strong>✅</strong></td>
+<td><strong><code>squish/awq.py</code> — <code>collect_activation_scales</code> → <code>save_awq_scales</code> → <code>--awq-scales</code> in convert</strong></td>
+</tr>
+<tr>
+<td><strong>KV cache quantisation</strong></td>
+<td><strong>✅</strong></td>
+<td><strong><code>squish/kv_cache.py</code> — KIVI INT8 + SnapKV; mlx_lm <code>update_and_fetch</code> protocol</strong></td>
+</tr>
+<tr>
+<td>Remote/cloud weight streaming</td>
+<td>🔜</td>
+<td>npy-dir format is range-request friendly</td>
+</tr>
+<tr>
+<td>Multi-shard models</td>
+<td>🔜</td>
+<td>Convert individually, merge manifest</td>
+</tr>
+<tr>
+<td>GGUF / ONNX export from cache</td>
+<td>🔜</td>
+<td>weight_dict already in bf16</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9-comparison-to-existing-solutions">9. Comparison to Existing Solutions<a class="headerlink" href="#9-comparison-to-existing-solutions" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Approach</th>
+<th>Load (cold)</th>
+<th>Load (warm)</th>
+<th>Disk</th>
+<th>RAM delta</th>
+<th>ARC-Easy</th>
+<th>HellaSwag</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mlx_lm.load()</code> native</td>
+<td>1.96–6.7s</td>
+<td>1.96s</td>
+<td>3087 MB</td>
+<td>~2400 MB</td>
+<td>74.5%</td>
+<td>63.5%</td>
+</tr>
+<tr>
+<td><code>mlx_lm</code> + 4-bit quant</td>
+<td>~1.5s</td>
+<td>~1.5s</td>
+<td>~850 MB</td>
+<td>~900 MB</td>
+<td>-3-5% est.</td>
+<td>-3-5% est.</td>
+</tr>
+<tr>
+<td>GGUF (llama.cpp)</td>
+<td>~2-3s</td>
+<td>~2-3s</td>
+<td>~1200 MB</td>
+<td>~1000 MB</td>
+<td>-1-2% est.</td>
+<td>-1-2% est.</td>
+</tr>
+<tr>
+<td><strong>Squish Tier 2</strong></td>
+<td><strong>0.33–0.53s</strong></td>
+<td><strong>0.33s</strong></td>
+<td><strong>2682 MB</strong></td>
+<td><strong>160 MB</strong></td>
+<td><strong>73.5%</strong></td>
+<td><strong>62.0%</strong></td>
+</tr>
+<tr>
+<td>Squish Tier 1 (fallback)</td>
+<td>4.65s</td>
+<td>4.65s</td>
+<td>2682 MB</td>
+<td>~2100 MB</td>
+<td>73.5%</td>
+<td>62.0%</td>
+</tr>
+<tr>
+<td>Squish Tier 0 (first run)</td>
+<td>~19s</td>
+<td>n/a</td>
+<td>2682 MB</td>
+<td>~2200 MB</td>
+<td>73.5%</td>
+<td>62.0%</td>
+</tr>
+</tbody>
+</table>
+<p>ARC-Easy and HellaSwag accuracy measured with lm-evaluation-harness v0.4.11, 200 examples.
+4-bit / GGUF accuracy estimates are from published benchmarks; exact numbers vary by implementation.</p>
+<p>Key insight: <strong>Squish achieves within 1-2% of reference accuracy while loading 14× faster
+and using 15× less RAM during the load phase.</strong></p>
+<hr />
+<h2 id="10-files-in-this-poc">10. Files in this PoC<a class="headerlink" href="#10-files-in-this-poc" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>run_poc.py</code></td>
+<td>Automated 8-phase end-to-end runner + test suite</td>
+</tr>
+<tr>
+<td><code>compressed_loader.py</code></td>
+<td>Three-tier loader: Vectro → f16 cache → MLX cache</td>
+</tr>
+<tr>
+<td><code>convert_weights.py</code></td>
+<td>Safetensors → Vectro npy-dir conversion</td>
+</tr>
+<tr>
+<td><code>run_inference.py</code></td>
+<td>Single/batch inference from compressed weights</td>
+</tr>
+<tr>
+<td><code>run_reference.py</code></td>
+<td>Baseline mlx_lm inference for comparison</td>
+</tr>
+<tr>
+<td><code>verify.py</code></td>
+<td>Token agreement + cosine similarity verification</td>
+</tr>
+<tr>
+<td><code>squish_lm_eval.py</code></td>
+<td>lm-evaluation-harness model wrapper</td>
+</tr>
+<tr>
+<td><code>run_eval.py</code></td>
+<td>Industry-standard benchmark runner (ARC, HellaSwag, MMLU…)</td>
+</tr>
+<tr>
+<td><code>benchmark.py</code></td>
+<td>Three-strategy timing comparison</td>
+</tr>
+<tr>
+<td><code>streaming_loader.py</code></td>
+<td>Layer-by-layer prefetch demo</td>
+</tr>
+<tr>
+<td><code>tool_calling_demo.py</code></td>
+<td>Constrained JSON generation demo</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11-vectro-vs-vectro-plus-which-backend">11. vectro vs vectro-plus — Which Backend?<a class="headerlink" href="#11-vectro-vs-vectro-plus-which-backend" title="Permanent link">&para;</a></h2>
+<h3 id="short-answer-neither-and-thats-fine">Short answer: neither, and that's fine.<a class="headerlink" href="#short-answer-neither-and-thats-fine" title="Permanent link">&para;</a></h3>
+<p><strong>vectro</strong> (<code>~/vectro</code>, Mojo): A vector <em>similarity search</em> library — stores float32
+embeddings, does ANN (approximate nearest neighbor) search via product quantization.
+Its Python interface (<code>python/interface.py</code>) claims to use a Mojo binary but actually
+falls back to a Python for-loop over every row.  Not designed for LLM weight
+quantization — the INT8 quantizer in squish was <em>named after</em> it conceptually but
+never actually called the Mojo binary.</p>
+<p><strong>vectro-plus</strong> (<code>~/vectro-plus</code>, Rust): Also a vector similarity search library.
+Built with PyO3, uses the same ANN/embedding architecture.  Better engineering
+(Rust + SIMD) but same mismatch of purpose — it quantizes embedding vectors for
+search, not weight tensors for inference.</p>
+<h3 id="what-squish-actually-uses">What squish actually uses<a class="headerlink" href="#what-squish-actually-uses" title="Permanent link">&para;</a></h3>
+<p>The "Vectro INT8" in squish is implemented in <code>vectro/python/interface.py</code> as pure
+NumPy.  The quantization algorithm is:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Per-row symmetric INT8:  q = round(x / scale),  scale = max(|x|) / 127</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">scales</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">emb</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="mf">127.0</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">q</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">emb</span> <span class="o">/</span> <span class="n">scales</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]),</span> <span class="o">-</span><span class="mi">127</span><span class="p">,</span> <span class="mi">127</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int8</span><span class="p">)</span>
+</code></pre></div>
+<p>It had a critical performance bug: a Python <code>for i in range(n)</code> loop over each
+row.  This was the primary cause of 580s compression time for 14B.</p>
+<h3 id="fix-vectorized-numpy-implemented">Fix: vectorized numpy (implemented)<a class="headerlink" href="#fix-vectorized-numpy-implemented" title="Permanent link">&para;</a></h3>
+<p>Replacing the Python loop with vectorized numpy (broadcast division + round +
+clip) gives <strong>37× speedup</strong>: 14B compresses in ~16s instead of ~580s.  Cosine
+similarity is unchanged at 0.999962.</p>
+<h3 id="future-rust-pyo3-quantizer-roadmap">Future: Rust PyO3 quantizer (roadmap)<a class="headerlink" href="#future-rust-pyo3-quantizer-roadmap" title="Permanent link">&para;</a></h3>
+<p>If compression speed ever becomes a bottleneck again (e.g., quantizing 70B in
+real-time), a minimal Rust crate using PyO3 + rayon + SIMD can achieve
+~10 GB/s throughput (vs ~1.5 GB/s for numpy).  <strong>This would NOT be based on
+vectro-plus</strong> — it would be a new crate with a single function:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1">// PyO3 + ndarray + rayon</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">fn</span><span class="w"> </span><span class="nf">quantize_int8</span><span class="p">(</span><span class="n">py</span><span class="p">:</span><span class="w"> </span><span class="nc">Python</span><span class="p">,</span><span class="w"> </span><span class="n">arr</span><span class="p">:</span><span class="w"> </span><span class="nc">PyReadonlyArray2</span><span class="o">&lt;</span><span class="kt">f32</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="p">(</span><span class="n">PyArray2</span><span class="o">&lt;</span><span class="kt">i8</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">PyArray1</span><span class="o">&lt;</span><span class="kt">f32</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="n">arr</span><span class="p">.</span><span class="n">par_rows</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">row</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">scale</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">row</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">x</span><span class="o">|</span><span class="w"> </span><span class="n">x</span><span class="p">.</span><span class="n">abs</span><span class="p">()).</span><span class="n">fold</span><span class="p">(</span><span class="mi">0</span><span class="k">f32</span><span class="p">,</span><span class="w"> </span><span class="kt">f32</span><span class="p">::</span><span class="n">max</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">127.0</span><span class="p">;</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">        </span><span class="p">(</span><span class="n">row</span><span class="p">.</span><span class="n">mapv</span><span class="p">(</span><span class="o">|</span><span class="n">x</span><span class="o">|</span><span class="w"> </span><span class="p">(</span><span class="n">x</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">scale</span><span class="p">).</span><span class="n">round</span><span class="p">().</span><span class="n">clamp</span><span class="p">(</span><span class="o">-</span><span class="mf">127.</span><span class="p">,</span><span class="w"> </span><span class="mf">127.</span><span class="p">)</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">i8</span><span class="p">),</span><span class="w"> </span><span class="n">scale</span><span class="p">)</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span><span class="p">})</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="p">}</span>
+</code></pre></div>
+<p>The vectorized NumPy is fast enough for all current models (seconds, not minutes)
+and requires no Rust toolchain to install.  Keep it simple.</p>
+<hr />
+<h2 id="12-optimization-history">12. Optimization History<a class="headerlink" href="#12-optimization-history" title="Permanent link">&para;</a></h2>
+<h3 id="implemented-this-session">Implemented (this session)<a class="headerlink" href="#implemented-this-session" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>File</th>
+<th>Impact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vectorize quantizer: replace Python for-loop with broadcast numpy</td>
+<td><code>vectro/python/interface.py</code></td>
+<td>37× faster compression (580s → 16s for 14B)</td>
+</tr>
+<tr>
+<td>Move Tier 0 (4-bit) check before manifest guard</td>
+<td><code>compressed_loader.py</code></td>
+<td>Large models load without Q8 npy-dir existing</td>
+</tr>
+<tr>
+<td>Skip Q8 phase for large models (&gt; 14 GB)</td>
+<td><code>pull_model.py</code></td>
+<td>Saves 28.4 GB disk + 580s for 14B; saves 8.7 GB + 579s for 7B</td>
+</tr>
+<tr>
+<td><code>_comp_dir_bf16_gb</code> fallback to model_dir</td>
+<td><code>pull_model.py</code></td>
+<td>Correct size estimate when tensors/ absent</td>
+</tr>
+<tr>
+<td>Group quantization support (<code>group_size</code> param)</td>
+<td><code>vectro/python/interface.py</code></td>
+<td>Foundation for per-group-64 INT8 (better accuracy-per-bit)</td>
+</tr>
+<tr>
+<td><code>_forward_selected_logprobs</code>: gather only target token log-probs on Metal</td>
+<td><code>squish_lm_eval.py</code></td>
+<td>1.37× eval throughput; avoids materialising 91 MB/request to numpy</td>
+</tr>
+<tr>
+<td>Fixed <code>--skip-reference</code> to truly skip without cached output</td>
+<td><code>run_eval.py</code></td>
+<td>Prevents loading 29 GB bf16 reference model when not needed</td>
+</tr>
+</tbody>
+</table>
+<h3 id="architecture-impact-re-run-pull_modelpy-on-existing-models">Architecture impact: re-run pull_model.py on existing models<a class="headerlink" href="#architecture-impact-re-run-pull_modelpy-on-existing-models" title="Permanent link">&para;</a></h3>
+<p>Existing 7B and 14B compressed dirs have unnecessary <code>tensors/</code> directories.
+Clean them to reclaim disk:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Safe to delete — squish_4bit is what&#39;s used for inference</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>rm<span class="w"> </span>-rf<span class="w"> </span>~/models/Qwen2.5-7B-Instruct-bf16-compressed/tensors<span class="w">     </span><span class="c1"># reclaim 8.7 GB</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>rm<span class="w"> </span>-rf<span class="w"> </span>~/models/Qwen2.5-14B-Instruct-bf16-compressed/tensors<span class="w">    </span><span class="c1"># reclaim 28.4 GB</span>
+</code></pre></div>
+<p>After deletion, load still works: Tier 0 (squish_4bit) is checked before tensors/.</p>
+<hr />
+<h2 id="13-optimization-roadmap">13. Optimization Roadmap<a class="headerlink" href="#13-optimization-roadmap" title="Permanent link">&para;</a></h2>
+<h3 id="tier-a-low-effort-high-impact-ready-to-implement">Tier A — Low effort, high impact (ready to implement)<a class="headerlink" href="#tier-a-low-effort-high-impact-ready-to-implement" title="Permanent link">&para;</a></h3>
+<p><strong>A1: Per-group-64 INT8 quantization</strong>
+Replace per-row quantization with per-group-64 (split each row into groups of 64,
+compute one scale per group).  Same disk size (scale overhead negligible at
+group_size=64), better accuracy (+0.5-2pp on most tasks).  Already implemented
+in <code>_quantize_vectorized(group_size=64)</code>.  Enable globally by changing default in
+<code>convert_weights.py</code>.</p>
+<p><strong>A2: Float16 scales</strong>
+Store scale arrays as float16 instead of float32.  Saves 2 bytes/row.  For a
+14B model: ~14B params / avg_row_len ≈ 3.4M rows × 4 bytes → saves ~13 MB (&lt; 0.1%
+of total).  Not worth the complexity.</p>
+<p><strong>A3: Parallel shard loading at compress time</strong>
+<code>process_weights_streaming</code> processes shards sequentially.  With the vectorized
+quantizer, I/O is now the bottleneck.  Using a producer-consumer pipeline
+(1 thread loading from disk, 1 thread quantizing) would hide I/O latency.
+Estimated win: 2× faster for multi-shard models (7B has 8 shards, 14B has 8+).</p>
+<h3 id="tier-b-medium-effort-large-impact">Tier B — Medium effort, large impact<a class="headerlink" href="#tier-b-medium-effort-large-impact" title="Permanent link">&para;</a></h3>
+<p><strong>B1: INT4 group quantization for small models</strong>
+For 1.5B where we currently use INT8 (Q8 npy-dir → safetensors), switching to INT4
+group-64 would halve disk (1.5 GB vs 2.9 GB) while maintaining ≤2% accuracy drop.
+Use <code>mlx_lm.convert(q_bits=4)</code> for all models — small and large.</p>
+<p><strong>B2: Layer-granular mixed precision</strong>
+Attention layer norm, embedding, and lm_head already use passthrough (f16).
+Profiling which weight matrices are most sensitive to quantization noise and using
+INT8 group-32 for those (higher accuracy at small disk cost).</p>
+<p><strong>B3: KV-cache compression</strong> ✅ <strong>IMPLEMENTED</strong> (<code>squish/kv_cache.py</code>)
+INT8 + FP16 recent-window quantisation (KIVI algorithm) and SnapKV importance-based
+eviction.  <code>KVLayerCache</code> implements the mlx_lm <code>update_and_fetch</code> / <code>offset</code> protocol
+so the cache is invoked automatically each decode step.  Reduces peak RAM during
+long-context generation on 16 GB devices.  Enable with <code>squish run --kv-cache-mode int8</code>.</p>
+<p><strong>B4: Remote streaming protocol</strong>
+The npy-dir format stores each tensor as an individual <code>.npy</code> file, making it
+naturally HTTP range-request friendly.  A streaming loader over HTTP/S3 could
+serve models on demand without a full download.</p>
+<h3 id="tier-c-high-effort-transformative-impact-requires-more-engineering">Tier C — High effort, transformative impact (requires more engineering)<a class="headerlink" href="#tier-c-high-effort-transformative-impact-requires-more-engineering" title="Permanent link">&para;</a></h3>
+<p><strong>C1: Rust quantizer extension</strong> ✅ <strong>IMPLEMENTED</strong> (<code>squish_quant_rs/</code>)
+PyO3 + rayon + SIMD.  Achieved <strong>6.26 GB/s</strong> throughput on M-series (vs ~1.5 GB/s numpy, 4.2×).
+Built with maturin, installed as <code>squish_quant</code> Python extension.  Integrated into
+<code>vectro/python/interface.py</code> as top-priority backend.</p>
+<p><strong>C2: Custom format: <code>.squish</code> file</strong>
+Replace the directory of <code>.npy</code> files with a single memory-mappable file using
+a custom header format (tensor index at the start, data pages aligned to 4KB for
+mmap).  Enables copy-on-write partial loads, O(1) tensor lookup, and zero-copy
+bfloat16 views.</p>
+<p><strong>C3: Async prefetch during inference</strong>
+Load the next K layers of weights while the current K layers are computing.
+For large models, inference is memory-bandwidth bound; this can increase
+throughput by 30-50% on sequential token generation.</p>
+<hr />
+<h2 id="14-commercial-viability">14. Commercial Viability<a class="headerlink" href="#14-commercial-viability" title="Permanent link">&para;</a></h2>
+<h3 id="why-this-is-valuable">Why this is valuable<a class="headerlink" href="#why-this-is-valuable" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p><strong>Load time</strong>: 2.3s vs 8-15s (Ollama) for a 7B model is a 3-6× UX improvement.
+   In production deployments, cold-start latency is a direct cost (Lambda billing,
+   Kubernetes pod startup time, user wait time).</p>
+</li>
+<li>
+<p><strong>RAM efficiency</strong>: The tier-2 cache uses 15× less RAM during loading (1.5B).
+   With 4-bit on 7B/14B, you can run a 14B model on hardware that previously
+   required twice the memory.</p>
+</li>
+<li>
+<p><strong>Disk</strong>: 7B goes from 14 GB to 4 GB (3.5×), 14B from 29.6 GB to 8.3 GB (3.6×).
+   At scale (thousands of model deployments), storage costs are significant.</p>
+</li>
+<li>
+<p><strong>No vendor lock-in</strong>: Works on standard Apple Silicon Macs.  The on-device
+   AI market (privacy, latency, offline) is growing.</p>
+</li>
+</ol>
+<h3 id="open-source-commercial-path">Open source → commercial path<a class="headerlink" href="#open-source-commercial-path" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Action</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v0.1 (now)</td>
+<td>Open source MIT on GitHub</td>
+<td>Community validation, benchmarks, attention</td>
+</tr>
+<tr>
+<td>v0.2</td>
+<td>CLI tool: <code>squish pull &lt;model&gt;</code></td>
+<td>Developer adoption, downloads</td>
+</tr>
+<tr>
+<td>v0.3</td>
+<td>Server mode: <code>squish serve</code> with OpenAI API compat.</td>
+<td>Drop-in replacement for Ollama</td>
+</tr>
+<tr>
+<td>v1.0</td>
+<td>Enterprise: multi-GPU, managed cloud, SLA</td>
+<td>Licensing to cloud providers</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-differentiators-over-ollamallamacpp">Key differentiators over Ollama/llama.cpp<a class="headerlink" href="#key-differentiators-over-ollamallamacpp" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Squish</th>
+<th>Ollama</th>
+<th>mlx-lm</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Format</td>
+<td>Open npy-dir + MLX 4-bit</td>
+<td>GGUF (opaque)</td>
+<td>safetensors</td>
+</tr>
+<tr>
+<td>Load time (7B)</td>
+<td><strong>2.3s</strong></td>
+<td>~8-15s</td>
+<td>~3-6s</td>
+</tr>
+<tr>
+<td>Metal native</td>
+<td>✅</td>
+<td>❌ (CPU-only GGUF path)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Streaming load</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Open standard format</td>
+<td>✅</td>
+<td>❌</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td>Tier hierarchy</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table>
+<h3 id="moat">Moat<a class="headerlink" href="#moat" title="Permanent link">&para;</a></h3>
+<p>The moat is not the quantization algorithm (INT8/INT4 is well-known) — it's:
+1. <strong>The caching layer</strong>: the precomputed tier system that eliminates repeat decompression
+2. <strong>The Metal-native path</strong>: no CPU intermediary — weights arrive in Metal buffers directly
+3. <strong>The streaming architecture</strong>: process any model size without OOM
+4. <strong>Benchmark provenance</strong>: numbers here are reproducible, not marketing estimates</p>
+<p>The algorithm is MIT-licensed; the enterprise product is the managed service,
+SLAs, enterprise support, and cloud integration.</p>
+<hr />
+<h2 id="15-new-implementations-this-milestone">15. New Implementations (this milestone)<a class="headerlink" href="#15-new-implementations-this-milestone" title="Permanent link">&para;</a></h2>
+<h3 id="151-openai-compatible-api-server-squishserverpy">15.1 OpenAI-Compatible API Server (<code>squish/server.py</code>)<a class="headerlink" href="#151-openai-compatible-api-server-squishserverpy" title="Permanent link">&para;</a></h3>
+<p>FastAPI + uvicorn HTTP server providing a drop-in OpenAI REST API over any squish
+compressed model.</p>
+<p><strong>Endpoints</strong>:
+- <code>GET /v1/models</code> — list loaded model
+- <code>POST /v1/chat/completions</code> — streaming and non-streaming chat with SSE
+  - <code>seed</code> parameter for reproducible outputs
+  - TTFT measured at first token; <code>X-Request-Id</code> response header
+- <code>POST /v1/completions</code> — raw completion with seed + TTFT tracking
+- <code>POST /v1/embeddings</code> — mean-pooled L2-normalised embeddings via three-tier fallback:
+  1. <code>model.model(x)</code> — last hidden state (preferred; suitable for semantic similarity)
+  2. <code>model.model.embed_tokens(x)</code> — input token embeddings (if hidden state unavailable)
+  3. <code>model(x)</code> logits mean-pool — last resort
+- <code>GET /health</code> — readiness probe with <code>inflight</code>, <code>avg_tps</code>, <code>avg_ttft_s</code>
+- <code>GET /v1/metrics</code> — Prometheus-compatible plain-text metrics:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>squish_requests_total, squish_tokens_generated_total,
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>squish_inflight_requests, squish_avg_tokens_per_second,
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>squish_avg_ttft_seconds, squish_uptime_seconds, squish_model_load_seconds
+</code></pre></div>
+- <code>POST /v1/tokenize</code> — tokenize text or messages array; returns <code>{token_ids, token_count, model}</code></p>
+<p><strong>Observability</strong> (<code>_ModelState</code>):
+- Rolling 20-request window for <code>avg_tps</code> and <code>avg_ttft_s</code> (thread-safe deque)
+- <code>inflight</code> counter (atomic increment in try/finally)
+- <code>record_completion(n_tokens, duration_s, ttft_s)</code> updates window on each request</p>
+<p><strong>Key design</strong>:
+- Loads model via <code>load_from_npy_dir(return_stats=True)</code> → auto-selects Tier 0/1/2
+- <code>_apply_chat_template()</code> uses tokenizer.apply_chat_template with ChatML fallback
+- Streaming via FastAPI <code>StreamingResponse</code> + async SSE generator
+- Port 11435 (avoids conflict with Ollama's 11434)
+<strong>Key CLI arguments</strong> (see <code>squish run --help</code> for the full list):</p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--kv-cache-mode</code></td>
+<td><code>fp16</code></td>
+<td><code>int8</code> = KIVI INT8+FP16 window; <code>snap</code> = +SnapKV eviction</td>
+</tr>
+<tr>
+<td><code>--kv-cache-window</code></td>
+<td><code>64</code></td>
+<td>FP16 recent-token window in <code>int8</code>/<code>snap</code> modes</td>
+</tr>
+<tr>
+<td><code>--kv-cache-budget</code></td>
+<td><code>4096</code></td>
+<td>Max K/V positions retained in <code>snap</code> mode</td>
+</tr>
+<tr>
+<td><code>--log-level</code></td>
+<td><code>warning</code></td>
+<td>Uvicorn log verbosity: <code>warning</code>/<code>info</code>/<code>debug</code>/<code>trace</code></td>
+</tr>
+<tr>
+<td><div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>python3<span class="w"> </span>squish_server.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span>--model-dir<span class="w"> </span>~/models/Qwen2.5-7B-Instruct-bf16<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span>--compressed-dir<span class="w"> </span>~/models/Qwen2.5-7B-Instruct-bf16-compressed
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1"># Client usage (drop-in OpenAI SDK):</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_BASE_URL</span><span class="o">=</span>http://localhost:11435/v1
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>squish
+</code></pre></div></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="152-entropy-coding-layer-squish_entropypy">15.2 Entropy Coding Layer (<code>squish_entropy.py</code>)<a class="headerlink" href="#152-entropy-coding-layer-squish_entropypy" title="Permanent link">&para;</a></h3>
+<p>zstd (level 3) compression layer for the npy-dir INT8 format.  Each <code>.npy</code> file
+is replaced by a <code>.npy.zst</code> compressed counterpart.</p>
+<p><strong>Expected savings</strong>: ~35% disk reduction on INT8 npy-dir format:
+- 1.5B: 2.68 GB → ~1.75 GB
+- 7B: ~9.8 GB → ~6.4 GB (INT8 npy-dir, not squish_4bit)</p>
+<p><strong>Performance</strong>: 2–4 GB/s decompression (zstd native C), negligible load-time overhead.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>python3<span class="w"> </span>squish_entropy.py<span class="w"> </span>compress<span class="w"> </span>tensors/
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>python3<span class="w"> </span>squish_entropy.py<span class="w"> </span>bench<span class="w"> </span>tensors/<span class="w">   </span><span class="c1"># reports per-tensor ratios</span>
+</code></pre></div>
+<p>Transparent to the inference stack: <code>load_npy_zst()</code> decompresses via BytesIO
+buffer, returns numpy array with identical shape/dtype.</p>
+<h3 id="153-rust-quantizer-squish_quant_rs">15.3 Rust Quantizer (<code>squish_quant_rs/</code>)<a class="headerlink" href="#153-rust-quantizer-squish_quant_rs" title="Permanent link">&para;</a></h3>
+<p>High-throughput INT8 quantizer implemented in Rust with PyO3 + rayon.</p>
+<p><strong>Directory structure</strong>:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>squish_quant_rs/
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>├── Cargo.toml          — pyo3, numpy, rayon dependencies
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>├── pyproject.toml      — maturin build config (abi3-py38)
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>├── README.md
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>└── src/lib.rs          — 6 exported functions (INT8 + INT4)
+</code></pre></div></p>
+<p><strong>Exported functions</strong>:
+| Function | Description | Shapes |
+|---|---|---|
+| <code>quantize_int8_f32(arr)</code> | Per-row INT8 | q:(n,d) int8, s:(n,) f32 |
+| <code>quantize_int8_grouped(arr, g)</code> | Per-group-g INT8 | q:(n,d) int8, s:(n,n_groups) f32 |
+| <code>dequantize_int8_f32(q, s)</code> | Rust INT8 deq | → (n,d) f32 |
+| <code>dequantize_int8_grouped(q, s, g)</code> | Grouped INT8 deq | → (n,d) f32 |
+| <code>quantize_int4_grouped(arr, g)</code> | Nibble-pack INT4 | packed:(n,d//2) u8, s:(n,n_groups) f32 |
+| <code>dequantize_int4_grouped(p, s, g)</code> | Unpack INT4 | → (n,d) f32 |</p>
+<p><strong>Accuracy</strong>:
+- INT8 per-row: max_err=0.019, mean_cosine≥0.9999
+- INT4 grouped-64: max_err=0.354, mean_cosine≥0.994
+- INT4 disk savings: 50% vs INT8 (nibble packing: 2 weights/byte)</p>
+<p><strong>Build</strong>:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nb">cd</span><span class="w"> </span>squish_quant_rs
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>python3<span class="w"> </span>-m<span class="w"> </span>maturin<span class="w"> </span>build<span class="w"> </span>--release
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>pip3<span class="w"> </span>install<span class="w"> </span>target/wheels/squish_quant-*.whl
+</code></pre></div></p>
+<p><strong>Measured throughput</strong>: <strong>6.26 GB/s</strong> on M3 Pro (4096×4096 float32 matrix)
+vs 1.5 GB/s numpy vectorized → <strong>4.2× speedup</strong>.<br />
+Max reconstruction error: 0.005 (within INT8 quantization tolerance).</p>
+<p>Integrated into <code>vectro/python/interface.py</code> as highest-priority backend in
+<code>quantize_embeddings()</code> auto-selection — transparent fallback to numpy if not installed.</p>
+<h3 id="154-moe-architecture-design-docsmoe_designmd">15.4 MoE Architecture Design (<code>docs/moe_design.md</code>)<a class="headerlink" href="#154-moe-architecture-design-docsmoe_designmd" title="Permanent link">&para;</a></h3>
+<p>Full specification for loading Mixture-of-Experts models (Qwen3-235B-A22B,
+DeepSeek-V3-671B) on machines with 16–32 GB RAM via on-demand expert loading.</p>
+<p>Key design choices:
+- <strong>Per-expert safetensors files</strong> in <code>compressed/experts/layer_NNN/expert_MMM.safetensors</code>
+- <strong>LRU expert cache</strong> (<code>ExpertCache</code> class) with configurable <code>max_experts</code>
+- <strong>Router interception</strong> — patch MoE layer <code>__call__</code> to dispatch through cache
+- <strong>Speculative prefetch</strong> — predict next-layer experts from router logit distribution</p>
+<p>Predicted outcome: Qwen3-235B-A22B at <strong>3–6 tok/s</strong> on M3 Max 36 GB (currently not
+runnable at all below 128 GB RAM).</p>
+<h3 id="155-int4-loader-integration-compressed_loaderpy">15.5 INT4 Loader Integration (<code>compressed_loader.py</code>)<a class="headerlink" href="#155-int4-loader-integration-compressed_loaderpy" title="Permanent link">&para;</a></h3>
+<p>INT4 nibble-packed tensors are now a first-class tier in the load path:</p>
+<p><strong>Save</strong> (one-time conversion, ~30s for 1.5B):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">compressed_loader</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_int4_npy_dir</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="n">save_int4_npy_dir</span><span class="p">(</span><span class="s1">&#39;/path/to/compressed_dir&#39;</span><span class="p">,</span> <span class="n">group_size</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="c1"># Writes {sk}__q4.npy + {sk}__s4.npy for every quantized tensor</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># Skips float16 passthrough tensors (no benefit)</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="c1"># Writes .squish_int4_ready sentinel on success</span>
+</code></pre></div></p>
+<p><strong>Load</strong> (automatic, no code changes required):
+<code>_dequantize_npy_dir()</code> checks in priority order:
+1. <code>{sk}__q4.npy</code> + <code>{sk}__s4.npy</code> + <code>squish_quant</code> available → <strong>INT4 Rust dequantize</strong>
+2. <code>{sk}__q.npy</code> + <code>{sk}__s.npy</code> → INT8 Vectro dequantize
+3. <code>{sk}__pt.npy</code> → float16 passthrough</p>
+<p><strong>Stats</strong>: <code>loader</code> field in return stats is <code>"npy-dir-int4"</code> when INT4 active.</p>
+<p><strong>Disk impact</strong> (1.5B model):
+| Format | Quantized tensors | Total npy-dir |
+|---|---|---|
+| INT8 only | 2.46 GB | 2.68 GB |
+| INT8 + INT4 | 2.46 + 1.23 GB | 3.91 GB (both present) |
+| INT4 only (after deleting INT8) | 1.23 GB | ~1.45 GB |</p>
+<p>Note: both <code>__q.npy</code> and <code>__q4.npy</code> can coexist — INT4 is auto-preferred when
+both exist and <code>squish_quant</code> is installed.  Delete <code>__q.npy</code>/<code>__s.npy</code> files
+to reclaim disk once INT4 quality is validated.</p>
+<h3 id="156-interfacepy-int4-api-rust-dequantize-path-vectropythoninterfacepy">15.6 interface.py INT4 API + Rust Dequantize Path (<code>vectro/python/interface.py</code>)<a class="headerlink" href="#156-interfacepy-int4-api-rust-dequantize-path-vectropythoninterfacepy" title="Permanent link">&para;</a></h3>
+<p>Public API additions in <code>interface.py</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># INT4 round-trip (requires squish_quant extension)</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="n">packed</span><span class="p">,</span> <span class="n">scales</span> <span class="o">=</span> <span class="n">quantize_int4</span><span class="p">(</span><span class="n">embeddings</span><span class="p">,</span> <span class="n">group_size</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>   <span class="c1"># → uint8, float32</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="n">reconstructed</span>  <span class="o">=</span> <span class="n">dequantize_int4</span><span class="p">(</span><span class="n">packed</span><span class="p">,</span> <span class="n">scales</span><span class="p">,</span> <span class="n">group_size</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>  <span class="c1"># → float32</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="c1"># INT8 reconstruct — now uses Rust fast path when squish_quant installed</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="n">result</span> <span class="o">=</span> <span class="n">quantize_embeddings</span><span class="p">(</span><span class="n">emb</span><span class="p">)</span>          <span class="c1"># squish_quant &gt; mojo &gt; cython &gt; numpy</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="n">recon</span>  <span class="o">=</span> <span class="n">reconstruct_embeddings</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>    <span class="c1"># squish_quant &gt; cython &gt; numpy</span>
+</code></pre></div>
+<p><code>_dequantize_with_squish()</code> internal helper:
+- Per-row scales (<code>s.ndim == 1</code>) → <code>dequantize_int8_f32()</code>
+- Per-group scales (<code>s.ndim == 2</code>) → <code>dequantize_int8_grouped()</code></p>
+<p><strong>Measured round-trip quality</strong> (512×768 float32):
+- INT8: mean_cosine=0.9999714, max_err=0.01957
+- INT4: mean_cosine=0.9940082, max_err=0.35424</p>
+<h3 id="157-remote-streaming-loader-docsremote_streamingmd">15.7 Remote Streaming Loader (<code>docs/remote_streaming.md</code>)<a class="headerlink" href="#157-remote-streaming-loader-docsremote_streamingmd" title="Permanent link">&para;</a></h3>
+<p>HTTP range-request loader enabling inference from models hosted on S3/R2/CDN
+without local storage.</p>
+<p>Key features:
+- <code>manifest.json</code> with per-tensor byte offsets (safetensors-compatible)
+- <code>RemoteModelLoader</code> class with <code>get_tensor()</code> + <code>schedule_prefetch()</code>
+- Local disk cache at <code>~/.squish_cache/&lt;model_name&gt;/</code> — fetched once, reused
+- Auth token support, SHA-256 integrity verification
+- Full <code>preload_all()</code> for offline-first workflows</p>
+<p>Predicted first-load latency: ~50s from Cloudflare R2 (100 MB/s); steady-state
+inference speed unchanged (all weights in Metal memory).</p>
+<h3 id="158-awq-calibration-pass-squishawqpy">15.8 AWQ Calibration Pass (<code>squish/awq.py</code>)<a class="headerlink" href="#158-awq-calibration-pass-squishawqpy" title="Permanent link">&para;</a></h3>
+<p>Activation-aware Weight Quantization (AWQ) calibration reduces quantisation
+error by scaling weight columns proportional to their observed activation
+magnitudes before quantising.</p>
+<p><strong>Pipeline</strong>:
+1. <code>collect_activation_scales(model, tokenizer, n_samples, alpha)</code> — monkey-patches
+   each <code>nn.Linear.__call__</code> in the loaded model, runs <code>n_samples</code> calibration
+   prompts, collects per-column activation statistics, returns a <code>{layer_key: scales}</code>
+   dict
+2. <code>save_awq_scales(scales, output_dir)</code> — writes each scale vector as a <code>.npy</code> file
+   named by layer key (with <code>/</code> replaced by <code>.</code>)
+3. <code>load_awq_scales(scales_dir)</code> — inverse of save; returns identical <code>{key: array}</code> dict
+4. <code>apply_awq_to_weights(weights, scales)</code> — divides weight columns by <code>s</code> and multiplies
+   the paired layer-norm column by <code>s</code>, preserving the mathematical invariant
+   <code>LayerNorm(W/s · (s·x)) = LayerNorm(W·x)</code></p>
+<p><strong>Usage via CLI</strong>:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>squish<span class="w"> </span>compress<span class="w"> </span>qwen2.5:7b<span class="w"> </span>--awq<span class="w"> </span>--awq-samples<span class="w"> </span><span class="m">32</span><span class="w">  </span><span class="c1"># 2-5 min, improves accuracy</span>
+</code></pre></div></p>
+<p><strong>Implementation note</strong>: MLX lacks PyTorch-style forward hooks.  The calibration
+works by temporarily replacing <code>module.__call__</code> with a wrapper that records
+activation statistics.  This is fragile across major MLX API changes and is
+scoped to run only during the one-time calibration step.</p>
+<hr />
+<h3 id="why-this-is-valuable_1">Why this is valuable<a class="headerlink" href="#why-this-is-valuable_1" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p><strong>Load time</strong>: 2.3s vs 8-15s (Ollama) for a 7B model is a 3-6× UX improvement.
+   In production deployments, cold-start latency is a direct cost (Lambda billing,
+   Kubernetes pod startup time, user wait time).</p>
+</li>
+<li>
+<p><strong>RAM efficiency</strong>: The tier-2 cache uses 15× less RAM during loading (1.5B).
+   With 4-bit on 7B/14B, you can run a 14B model on hardware that previously
+   required twice the memory.</p>
+</li>
+<li>
+<p><strong>Disk</strong>: 7B goes from 14 GB to 4 GB (3.5×), 14B from 29.6 GB to 8.3 GB (3.6×).
+   At scale (thousands of model deployments), storage costs are significant.</p>
+</li>
+<li>
+<p><strong>No vendor lock-in</strong>: Works on standard Apple Silicon Macs.  The on-device
+   AI market (privacy, latency, offline) is growing.</p>
+</li>
+</ol>
+<h3 id="open-source-commercial-path_1">Open source → commercial path<a class="headerlink" href="#open-source-commercial-path_1" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Action</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v0.1 (now)</td>
+<td>Open source MIT on GitHub</td>
+<td>Community validation, benchmarks, attention</td>
+</tr>
+<tr>
+<td>v0.2</td>
+<td>CLI tool: <code>squish pull &lt;model&gt;</code></td>
+<td>Developer adoption, downloads</td>
+</tr>
+<tr>
+<td>v0.3</td>
+<td>Server mode: <code>squish serve</code> with OpenAI API compat.</td>
+<td>Drop-in replacement for Ollama</td>
+</tr>
+<tr>
+<td>v1.0</td>
+<td>Enterprise: multi-GPU, managed cloud, SLA</td>
+<td>Licensing to cloud providers</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-differentiators-over-ollamallamacpp_1">Key differentiators over Ollama/llama.cpp<a class="headerlink" href="#key-differentiators-over-ollamallamacpp_1" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Squish</th>
+<th>Ollama</th>
+<th>mlx-lm</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Format</td>
+<td>Open npy-dir + MLX 4-bit</td>
+<td>GGUF (opaque)</td>
+<td>safetensors</td>
+</tr>
+<tr>
+<td>Load time (7B)</td>
+<td><strong>2.3s</strong></td>
+<td>~8-15s</td>
+<td>~3-6s</td>
+</tr>
+<tr>
+<td>Metal native</td>
+<td>✅</td>
+<td>❌ (CPU-only GGUF path)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Streaming load</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>Open standard format</td>
+<td>✅</td>
+<td>❌</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td>Tier hierarchy</td>
+<td>✅</td>
+<td>❌</td>
+<td>❌</td>
+</tr>
+</tbody>
+</table>
+<h3 id="moat_1">Moat<a class="headerlink" href="#moat_1" title="Permanent link">&para;</a></h3>
+<p>The moat is not the quantization algorithm (INT8/INT4 is well-known) — it's:
+1. <strong>The caching layer</strong>: the precomputed tier system that eliminates repeat decompression
+2. <strong>The Metal-native path</strong>: no CPU intermediary — weights arrive in Metal buffers directly
+3. <strong>The streaming architecture</strong>: process any model size without OOM
+4. <strong>Benchmark provenance</strong>: numbers here are reproducible, not marketing estimates</p>
+<p>The algorithm is MIT-licensed; the enterprise product is the managed service,
+SLAs, enterprise support, and cloud integration.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/wesleyscholl/squish" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://discord.gg/squish" target="_blank" rel="noopener" title="discord.gg" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://pypi.org/project/squish/" target="_blank" rel="noopener" title="pypi.org" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tabs", "navigation.top", "content.code.copy", "content.code.annotate", "search.suggest", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
