@@ -289,3 +289,19 @@ class TestBuildManifest:
         result_str = json.dumps(result)
         import re  # noqa: PLC0415
         assert re.search(r"[0-9a-f]{64}", result_str), "No SHA-256 hashes found"
+
+    def test_sha256_not_included_when_false(self, tmp_path, capsys):
+        model_dir = self._setup_safetensors_dir(tmp_path)
+        result = build_manifest(model_dir, "http://example.com/model",
+                                include_sha256=False)
+        result_str = json.dumps(result)
+        import re  # noqa: PLC0415
+        assert not re.search(r"[0-9a-f]{64}", result_str), "Unexpected SHA-256 hashes found"
+
+    def test_files_have_urls(self, tmp_path, capsys):
+        model_dir = self._setup_npy_dir(tmp_path)
+        result = build_manifest(model_dir, "http://example.com/model",
+                                include_sha256=False)
+        for file_entry in result["files"]:
+            assert "url" in file_entry
+            assert file_entry["url"].startswith("http://example.com/model/")

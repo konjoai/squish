@@ -37,3 +37,7 @@ class TestTotalRamBytes:
     def test_non_positive_result(self):
         result = _total_ram_bytes()
         assert result > 0, f"Expected positive RAM bytes, got {result}"
+
+    def test_extremely_large_result(self):
+        result = _total_ram_bytes()
+        assert result < 128 * 1024 ** 4, f"Expected less than 128 TB RAM, got {result}"

@@ -604,3 +604,20 @@ class TestAuthOnEndpoints:
         finally:
             _srv._API_KEY = orig_key
             _srv._state   = orig_state
+
+    def test_chat_with_no_bearer_returns_401_when_key_set(self):
+        orig_key   = _srv._API_KEY
+        orig_state = _srv._state
+        _srv._API_KEY = "secret-key"
+        _srv._state   = _srv._ModelState()
+        try:
+            c = TestClient(_srv.app, raise_server_exceptions=False)
+            r = c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+                headers={},  # no Authorization header
+            )
+            assert r.status_code == 401
+        finally:
+            _srv._API_KEY = orig_key
+            _srv._state   = orig_state
