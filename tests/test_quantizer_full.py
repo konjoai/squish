@@ -13,12 +13,18 @@ import pytest
 
 from squish.quantizer import (
     QuantizationResult,
+    _squish_quant,
     dequantize_int4,
     get_backend_info,
     mean_cosine_similarity,
     quantize_embeddings,
     quantize_int4,
     reconstruct_embeddings,
+)
+
+_needs_squish_quant = pytest.mark.skipif(
+    _squish_quant is None,
+    reason="squish_quant Rust extension not installed",
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -188,6 +194,7 @@ class TestAsymmetricQuantization:
 
 # ── INT4 quantization ─────────────────────────────────────────────────────────
 
+@_needs_squish_quant
 class TestInt4:
     def test_basic_shape(self):
         arr = _rand(4, 32)
