@@ -810,7 +810,7 @@
 <li><strong>Instant load</strong> — memory-mapped weights skip all decoding overhead</li>
 <li><strong>OpenAI-compatible API</strong> — <code>/v1/chat/completions</code>, <code>/v1/models</code>, <code>/v1/completions</code></li>
 <li><strong>Batch inference</strong> — parallel requests in a single call</li>
-<li><strong>INT8 + INT4</strong> — two quantisation tiers for accuracy vs. size trade-offs</li>
+<li><strong>INT8 + INT4</strong> — two quantisation tiers for accuracy vs. size trade-offs (INT4 not recommended for models &lt; 3B)</li>
 <li><strong>Zero-copy mmap</strong> — model data never fully loaded into RAM</li>
 <li><strong>CLI first</strong> — <code>squish pull</code>, <code>squish run</code>, <code>squish serve</code>, <code>squish rm</code>, <code>squish search</code></li>
 </ul>
