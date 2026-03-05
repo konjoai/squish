@@ -5,7 +5,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [1.0.1] — 2026-03-04
 
 ### Fixed
 
@@ -35,6 +35,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   and passes `--awq-scales` to the conversion subprocess automatically.
 - **`cli.py run/serve --log-level`** — Log-level argument forwarded from `squish run` /
   `squish serve` to the server process.
+- **`cli.py compress/pull --int4` help text** — Corrected disk-savings claim from “~50%” to
+  “~44%” and replaced “Recommended for 1.5B models” with an explicit warning: INT4
+  quantization produces degenerate output on models smaller than 3B parameters.
+  Use INT8 (`--int8`, the default) for 1.5B models.
 
 ---
 

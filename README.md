@@ -220,7 +220,7 @@ python3 -m squish.server \
 |---|---|---|
 | `--awq` | off | Run AWQ activation calibration before INT8/INT4 compression |
 | `--awq-samples N` | `20` | Calibration samples for AWQ (more → better accuracy, slower) |
-| `--int4` | off | INT4 nibble-packed output (~50% disk vs INT8) |
+| `--int4` | off | INT4 nibble-packed output (~44% disk savings vs INT8). ⚠ Not recommended for models < 3B — use INT8 for best quality on small models. |
 | `--zstd-level N` | `0` | Optional zstd entropy pass after quantisation (level 3 recommended) |
 
 Point **any OpenAI client** at it — no code changes:

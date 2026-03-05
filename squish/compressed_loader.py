@@ -1053,25 +1053,31 @@ def load_from_npy_dir(  # pragma: no cover
               f"({n_q} Q8, {n_pt} PT-f16) in {decompression_time:.2f}s")
         print("Calling model.load_weights() ...")
 
-    # ── Save MLX safetensors fast cache (skip for large models — building the
-    #    dict of ALL bf16 arrays at once would OOM on 16 GB before we can quantize)
+    # ── Save MLX safetensors fast cache ──────────────────────────────────────
+    # DISABLED: building a flat dict of all BF16 arrays before quantization
+    # allocates the full ~15 GB BF16 model a second time in-process, which
+    # OOMs on 16 GB unified-memory Macs.  The finalized/ npy-dir cache is a
+    # sufficient fast-load path (mmap, no Vectro decompression).
+    # To get reference-speed loading on a machine with >24 GB, restore the
+    # block below behind a --save-bf16-cache flag.
     mlx_cache_path  = dir_path / _MLX_CACHE_FILE
     mlx_cache_ready = dir_path / _MLX_CACHE_READY
-    if auto_quantize_bits is None:
-        t_cache = time.perf_counter()
-        try:
-            weight_dict = {name: arr for name, arr in weight_tuples}
-            mx.save_safetensors(str(mlx_cache_path), weight_dict)
-            del weight_dict
-            mlx_cache_ready.touch()
-            save_cache_s = time.perf_counter() - t_cache
-            if verbose:
-                cache_mb = mlx_cache_path.stat().st_size / 1e6
-                print(f"  MLX safetensors cache saved ({cache_mb:.0f} MB, {save_cache_s:.1f}s)"
-                      f" → next load will be reference-speed")
-        except Exception as _e:
-            if verbose:
-                print(f"  WARNING: could not save MLX cache: {_e}")
+    if False:  # noqa: SIM210 — disabled; left for documentation only
+        if auto_quantize_bits is None:
+            t_cache = time.perf_counter()
+            try:
+                weight_dict = {name: arr for name, arr in weight_tuples}
+                mx.save_safetensors(str(mlx_cache_path), weight_dict)
+                del weight_dict
+                mlx_cache_ready.touch()
+                save_cache_s = time.perf_counter() - t_cache
+                if verbose:
+                    cache_mb = mlx_cache_path.stat().st_size / 1e6
+                    print(f"  MLX safetensors cache saved ({cache_mb:.0f} MB, {save_cache_s:.1f}s)"
+                          f" → next load will be reference-speed")
+            except Exception as _e:
+                if verbose:
+                    print(f"  WARNING: could not save MLX cache: {_e}")
 
     model.load_weights(weight_tuples)
     del weight_tuples

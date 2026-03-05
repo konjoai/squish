@@ -1083,7 +1083,7 @@ def cmd_compress(args):  # pragma: no cover
 
     output_dir = Path(args.output).expanduser() if args.output else Path(str(model_dir) + _COMPRESSED_SUFFIX)
 
-    quant_label = "INT4 (½ disk, ≤2% accuracy delta)" if getattr(args, "int4", False) else "INT8 group-64"
+    quant_label = "INT4 (~44% disk savings, ≤2% accuracy delta)" if getattr(args, "int4", False) else "INT8 group-64"
     print(f"\n  Compressing: {model_dir}")
     print(f"  Quantization: {quant_label}")
     print(f"  Output:      {output_dir}\n")
@@ -1151,8 +1151,14 @@ def cmd_compress(args):  # pragma: no cover
 
     _hb_thread = _threading.Thread(target=_heartbeat, daemon=True)
     _hb_thread.start()
+    # Inherit the environment and inject the repo root into PYTHONPATH so that
+    # the subprocess can always find squish.convert regardless of whether squish
+    # is pip-installed in sys.executable's site-packages.
+    _repo_root_str = str(Path(__file__).parent.parent)
+    _env = os.environ.copy()
+    _env["PYTHONPATH"] = _repo_root_str + os.pathsep + _env.get("PYTHONPATH", "")
     try:
-        result = subprocess.run(cmd, cwd=Path(__file__).parent.parent)
+        result = subprocess.run(cmd, cwd=_repo_root_str, env=_env)
     finally:
         _compress_done = True
 
@@ -1312,7 +1318,7 @@ Examples:
   squish catalog                     Browse available models
   squish catalog --tag reasoning     Filter by tag (reasoning, small, large, moe…)
   squish pull qwen3:8b               Download + compress Qwen3-8B
-  squish pull gemma3:4b --int4       Download with INT4 compression (½ disk)
+  squish pull gemma3:4b --int4       Download with INT4 compression (~44% disk savings)
   squish run qwen3:8b                Start server on :11435
   squish run 7b --batch-scheduler    Legacy shorthand, with continuous batching
   squish chat qwen3:8b               Interactive terminal chat
@@ -1344,7 +1350,7 @@ Ollama drop-in:
 
     ap.add_argument(
         "--version", action="version",
-        version="squish 1.0.0",
+        version="squish 1.0.1",
         help="Show squish version and exit",
     )
 
@@ -1449,8 +1455,9 @@ Ollama drop-in:
                             help="Tensor substrings to keep as float32 (e.g. embed lm_head)")
     p_compress.add_argument("--outlier-threshold", type=float, default=20.0)
     p_compress.add_argument("--int4",    action="store_true",
-                            help="INT4 nibble-packed (~1.5 GB for 1.5B, half the INT8 disk). "
-                                 "Requires squish_quant Rust ext. Recommended for 1.5B models.")
+                            help="INT4 nibble-packed (~44%% disk savings vs INT8). "
+                                 "Requires squish_quant Rust ext. "
+                                 "⚠ Not recommended for models < 3B — use INT8 for best quality.")
     p_compress.add_argument("--zstd-level", type=int, default=0, metavar="N",
                             help="Apply zstd entropy compression at level N (1-22) after "
                                  "quantization.  Level 3 is a good default; 0 = skip (default). "
@@ -1481,7 +1488,8 @@ Ollama drop-in:
     )
     p_pull.add_argument("model", help="Model ID (e.g. qwen3:8b, gemma3:4b, 7b)")
     p_pull.add_argument("--int4", action="store_true",
-                        help="Use INT4 nibble-packed compression (~½ disk, ≤2%% accuracy delta)")
+                        help="Use INT4 nibble-packed compression (~44%% disk savings, ≤2%% accuracy delta). "
+                             "⚠ Not recommended for models < 3B.")
     p_pull.add_argument("--token", default="",
                         help="HuggingFace access token (or set $HF_TOKEN)")
     p_pull.add_argument("--models-dir", default="",

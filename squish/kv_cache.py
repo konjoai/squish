@@ -44,6 +44,7 @@ Low-level: create a cache and pass to generate():
     # Pass cache as kv_cache argument to mlx_lm generate functions
 """
 import threading
+from pathlib import Path
 
 import numpy as np
 
@@ -140,6 +141,11 @@ class KVLayerCache:
         "values_old_q", "values_old_s",
         "n_heads", "head_dim",
         "_lock",
+        # disk overflow tier (Item 4 — long-context NVMe spill)
+        "_disk_threshold", "_disk_dir",
+        "_disk_map_k",  "_disk_map_v",
+        "_disk_scales_k", "_disk_scales_v",
+        "_disk_n",
     )
 
     def __init__(self, window: int = 64):
@@ -153,6 +159,14 @@ class KVLayerCache:
         self.n_heads       = None
         self.head_dim      = None
         self._lock         = threading.RLock()   # re-entrant: _snap_evict calls get_full_kv under the lock
+        # disk overflow tier — all None / 0 when disabled
+        self._disk_threshold = None   # int: spill old_q rows beyond this count
+        self._disk_dir       = None
+        self._disk_map_k     = None   # np.memmap (n_heads, max_disk, head_dim) int8
+        self._disk_map_v     = None
+        self._disk_scales_k  = None   # np.ndarray (n_heads, max_disk) f32
+        self._disk_scales_v  = None
+        self._disk_n         = 0      # rows currently written to disk
 
     # ── Main cache update ─────────────────────────────────────────────────────
 
@@ -203,6 +217,8 @@ class KVLayerCache:
                     self.keys_old_s   = np.concatenate([self.keys_old_s,   slot_ks], axis=1)
                     self.values_old_q = np.concatenate([self.values_old_q, slot_vq], axis=1)
                     self.values_old_s = np.concatenate([self.values_old_s, slot_vs], axis=1)
+            # Spill oldest INT8 entries to NVMe disk tier if enabled
+            self._maybe_spill_to_disk()
 
     def get_full_kv(self) -> tuple:
         """
@@ -214,7 +230,10 @@ class KVLayerCache:
         values : (n_heads, n_total, head_dim)  float16
         """
         with self._lock:
-            # Reconstruct old portion
+            # Reconstruct disk tier (oldest, spilled to NVMe memmap)
+            disk_k, disk_v = self._disk_full_kv()
+
+            # Reconstruct RAM INT8 portion
             if self.keys_old_q is not None:
                 # Dequantize per head
                 old_k_list, old_v_list = [], []
@@ -239,14 +258,15 @@ class KVLayerCache:
             else:
                 rec_k = rec_v = None
 
-            if old_k is not None and rec_k is not None:
-                full_k = np.concatenate([old_k, rec_k], axis=1)
-                full_v = np.concatenate([old_v, rec_v], axis=1)
-            elif old_k is not None:
-                full_k, full_v = old_k, old_v
-            else:
-                full_k, full_v = rec_k, rec_v
-
+            # Combine: disk || RAM int8 || FP16 recent
+            parts_k = [p for p in (disk_k, old_k, rec_k) if p is not None]
+            parts_v = [p for p in (disk_v, old_v, rec_v) if p is not None]
+            if not parts_k:
+                return None, None
+            if len(parts_k) == 1:
+                return parts_k[0], parts_v[0]
+            full_k = np.concatenate(parts_k, axis=1)
+            full_v = np.concatenate(parts_v, axis=1)
             return full_k, full_v
 
     def get_as_mlx(self):
@@ -281,6 +301,127 @@ class KVLayerCache:
             self.values_recent.clear()
             self.keys_old_q = self.keys_old_s = None
             self.values_old_q = self.values_old_s = None
+            self._disk_n = 0
+            # Delete memmap files if they exist
+            self._disk_map_k = None
+            self._disk_map_v = None
+            self._disk_scales_k = None
+            self._disk_scales_v = None
+            for attr in ("_disk_path_k", "_disk_path_v"):
+                p = getattr(self, attr, None)
+                if p is not None:
+                    try:
+                        import pathlib
+                        pathlib.Path(p).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+    # ── Disk overflow tier (Item 4) ───────────────────────────────────────────
+
+    def enable_disk_tier(
+        self,
+        threshold: int,
+        max_disk_tokens: int,
+        cache_dir,          # str | Path
+        n_heads: int,
+        head_dim: int,
+    ) -> None:
+        """
+        Enable disk-backed overflow for old INT8 K/V entries.
+
+        When the number of INT8-quantized positions (``keys_old_q.shape[1]``)
+        exceeds ``threshold``, the oldest ``(n_old - threshold)`` rows are
+        spilled to a ``numpy.memmap`` file on the NVMe mount at ``cache_dir``.
+
+        OS page-fault semantics keep hot pages in the unified memory file-cache
+        while cold pages stay on disk — effectively using the SSD as a
+        transparent third tier, behind Metal (FP16 recent window) and CPU RAM
+        (INT8 ring buffer).
+
+        Parameters
+        ----------
+        threshold        : int — rows to keep in RAM before spilling
+        max_disk_tokens  : int — pre-allocated memmap size (rows)
+        cache_dir        : directory for temp memmap files (e.g. /tmp/squish_kv)
+        n_heads, head_dim : model dimensions (required to size the memmap
+                            before the first append, because __slots__ prevent
+                            lazy init once n_heads is known).
+        """
+        import pathlib, tempfile
+        cache_dir = pathlib.Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        self._disk_threshold = threshold
+        self._disk_dir       = cache_dir
+        self.n_heads  = n_heads
+        self.head_dim = head_dim
+        uid = id(self)
+        path_k = cache_dir / f"kv_{uid}_k.bin"
+        path_v = cache_dir / f"kv_{uid}_v.bin"
+        self._disk_map_k = np.memmap(
+            path_k, dtype=np.int8, mode="w+",
+            shape=(n_heads, max_disk_tokens, head_dim))
+        self._disk_map_v = np.memmap(
+            path_v, dtype=np.int8, mode="w+",
+            shape=(n_heads, max_disk_tokens, head_dim))
+        self._disk_scales_k = np.zeros((n_heads, max_disk_tokens), dtype=np.float32)
+        self._disk_scales_v = np.zeros((n_heads, max_disk_tokens), dtype=np.float32)
+        self._disk_n = 0
+
+    def _maybe_spill_to_disk(self) -> None:
+        """
+        If the INT8 RAM buffer exceeds ``_disk_threshold``, spill the oldest
+        tokens to the memmap tier.
+
+        Called inside the ``_lock`` from ``append()``.
+        """
+        if (self._disk_threshold is None
+                or self._disk_map_k is None
+                or self.keys_old_q is None):
+            return
+        n_old = self.keys_old_q.shape[1]
+        if n_old <= self._disk_threshold:
+            return
+        n_spill = n_old - self._disk_threshold
+        disk_end = self._disk_n + n_spill
+        if disk_end > self._disk_map_k.shape[1]:
+            # Disk tier full — silently keep RAM tier only (graceful degrade)
+            return
+        # Write oldest n_spill rows to memmap.
+        # shapes: keys_old_q (n_heads, n_old, head_dim)
+        self._disk_map_k[:, self._disk_n:disk_end, :] = \
+            self.keys_old_q[:, :n_spill, :]
+        self._disk_map_v[:, self._disk_n:disk_end, :] = \
+            self.values_old_q[:, :n_spill, :]
+        self._disk_scales_k[:, self._disk_n:disk_end] = \
+            self.keys_old_s[:, :n_spill]
+        self._disk_scales_v[:, self._disk_n:disk_end] = \
+            self.values_old_s[:, :n_spill]
+        self._disk_n = disk_end
+        # Trim RAM buffer
+        self.keys_old_q   = self.keys_old_q[:, n_spill:, :]
+        self.keys_old_s   = self.keys_old_s[:, n_spill:]
+        self.values_old_q = self.values_old_q[:, n_spill:, :]
+        self.values_old_s = self.values_old_s[:, n_spill:]
+
+    def _disk_full_kv(self) -> tuple:
+        """
+        Reconstruct the disk-tier portion as FP16 numpy arrays.
+
+        Returns (keys, values) each shape (n_heads, _disk_n, head_dim) float16,
+        or (None, None) if the disk tier is empty.
+        """
+        if self._disk_n == 0 or self._disk_map_k is None:
+            return None, None
+        old_k_list, old_v_list = [], []
+        for h in range(self.n_heads):
+            old_k_list.append(_dequantize_int8_per_channel(
+                np.array(self._disk_map_k[h, :self._disk_n, :]),
+                self._disk_scales_k[h, :self._disk_n]))
+            old_v_list.append(_dequantize_int8_per_channel(
+                np.array(self._disk_map_v[h, :self._disk_n, :]),
+                self._disk_scales_v[h, :self._disk_n]))
+        return (np.stack(old_k_list, axis=0),   # (n_heads, _disk_n, head_dim)
+                np.stack(old_v_list, axis=0))
 
     # ── mlx_lm KVCache protocol (offset + update_and_fetch) ──────────────────
 
@@ -543,6 +684,25 @@ class QuantizedKVCache:
             "budget":    self.budget,
         }
 
+    def restore_from(self, src: "QuantizedKVCache") -> None:
+        """
+        Copy all layer data from *src* into this cache in-place.
+
+        Used by the disk-prompt-cache path: the disk-loaded cache is
+        deserialised into a temporary object, then its state is copied
+        into the model-patched layers so the existing object references
+        remain valid.
+        """
+        for dst_lay, src_lay in zip(self._layers, src._layers):
+            dst_lay.keys_old_q   = src_lay.keys_old_q
+            dst_lay.keys_old_s   = src_lay.keys_old_s
+            dst_lay.values_old_q = src_lay.values_old_q
+            dst_lay.values_old_s = src_lay.values_old_s
+            dst_lay.keys_recent   = list(src_lay.keys_recent)
+            dst_lay.values_recent = list(src_lay.values_recent)
+            dst_lay.n_heads  = src_lay.n_heads
+            dst_lay.head_dim = src_lay.head_dim
+
 
 class _LayerCacheView:
     """
@@ -710,3 +870,177 @@ def generate_step_with_quantized_cache(  # pragma: no cover
     probs = np.exp(next_logits - np.max(next_logits))
     probs /= probs.sum()
     return int(np.random.choice(len(probs), p=probs))
+
+
+# ---------------------------------------------------------------------------
+# DiskKVCache — persistent cross-request prompt cache backed by NVMe
+# ---------------------------------------------------------------------------
+
+class DiskKVCache:
+    """
+    Cross-request disk-backed prompt cache for QuantizedKVCache.
+
+    Serialises full KV state to per-entry ``.npz`` files keyed by the
+    SHA-256 of the input token-id sequence.  On a cache hit, prefill is
+    skipped entirely.
+
+    Parameters
+    ----------
+    cache_dir : str | Path
+        Directory on fast NVMe where entry files are stored.  Created if it
+        does not exist.
+    max_entries : int
+        Maximum number of entries; LRU eviction by mtime when exceeded.
+    """
+
+    def __init__(self, cache_dir, max_entries: int = 64):
+        import threading as _threading
+        self._dir = Path(cache_dir)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._max   = max_entries
+        self._lock  = _threading.Lock()
+
+    # ── public API ──────────────────────────────────────────────────────────
+
+    def lookup(self, input_ids: list[int]) -> "tuple[QuantizedKVCache, np.ndarray] | None":
+        """
+        Return ``(qkv_cache, last_logit_f32)`` on a cache hit, or ``None``.
+
+        *last_logit_f32* is the prefill's final-position raw logit vector so
+        the caller can sample the first generated token without re-running
+        the model.
+        """
+        entry = self._dir / (self._key(input_ids) + ".npz")
+        if not entry.exists():
+            return None
+        try:
+            data = np.load(entry, allow_pickle=False)
+            qkv       = self._deserialise(data)
+            last_logit = data["last_logit"].astype(np.float32) if "last_logit" in data else None
+            if last_logit is None:
+                return None  # legacy entry without logit — treat as miss
+            # Touch mtime for LRU ordering
+            entry.touch()
+            return qkv, last_logit
+        except Exception:  # corrupted or schema mismatch — treat as miss
+            try:
+                entry.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return None
+
+    def store(
+        self,
+        input_ids: list[int],
+        qkv_cache: "QuantizedKVCache",
+        last_logit_np: "np.ndarray | None" = None,
+    ) -> None:
+        """
+        Persist *qkv_cache* (and optionally *last_logit_np*) to disk in a
+        background thread.  Returns immediately; silently drops on error.
+        """
+        import threading as _threading
+
+        def _worker():
+            try:
+                arrays = self._serialise(qkv_cache)
+                if arrays is None:
+                    return
+                if last_logit_np is not None:
+                    arrays["last_logit"] = last_logit_np.astype(np.float32)
+                entry = self._dir / (self._key(input_ids) + ".npz")
+                np.savez_compressed(str(entry), **arrays)
+                self._evict_if_needed()
+            except Exception:
+                pass
+
+        _threading.Thread(target=_worker, daemon=True).start()
+
+    # ── internals ───────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _key(input_ids: list[int]) -> str:
+        import hashlib
+        raw = np.array(input_ids, dtype=np.int32).tobytes()
+        return hashlib.sha256(raw).hexdigest()
+
+    @staticmethod
+    def _serialise(qkv_cache: "QuantizedKVCache") -> "dict | None":
+        """
+        Pack all layers into a flat dict of numpy arrays.
+
+        Keys:
+          ``n_layers``           — int scalar
+          ``L{i}_n_heads``       — int scalar
+          ``L{i}_head_dim``      — int scalar
+          ``L{i}_keys_old_q``    — (n_heads, n_old, head_dim) int8 or missing
+          ``L{i}_keys_old_s``    — (n_heads, n_old) f32        or missing
+          ``L{i}_vals_old_q``    — (n_heads, n_old, head_dim) int8 or missing
+          ``L{i}_vals_old_s``    — (n_heads, n_old) f32        or missing
+          ``L{i}_n_recent``      — int scalar
+          ``L{i}_keys_recent``   — (n_heads, n_rec, head_dim) f16 or missing
+          ``L{i}_vals_recent``   — (n_heads, n_rec, head_dim) f16 or missing
+        """
+        layers = qkv_cache._layers
+        out: dict[str, np.ndarray] = {
+            "n_layers": np.array(len(layers), dtype=np.int32),
+        }
+        for i, lay in enumerate(layers):
+            if lay.n_heads is None:
+                return None  # layer not yet populated — skip whole entry
+            out[f"L{i}_n_heads"]  = np.array(lay.n_heads,  dtype=np.int32)
+            out[f"L{i}_head_dim"] = np.array(lay.head_dim, dtype=np.int32)
+            if lay.keys_old_q is not None:
+                out[f"L{i}_keys_old_q"] = lay.keys_old_q
+                out[f"L{i}_keys_old_s"] = lay.keys_old_s
+                out[f"L{i}_vals_old_q"] = lay.values_old_q
+                out[f"L{i}_vals_old_s"] = lay.values_old_s
+            n_rec = len(lay.keys_recent)
+            out[f"L{i}_n_recent"] = np.array(n_rec, dtype=np.int32)
+            if n_rec > 0:
+                out[f"L{i}_keys_recent"] = np.stack(lay.keys_recent, axis=1)   # (H, n_rec, D)
+                out[f"L{i}_vals_recent"] = np.stack(lay.values_recent, axis=1)
+        return out
+
+    @staticmethod
+    def _deserialise(data) -> "QuantizedKVCache":
+        """Reconstruct a QuantizedKVCache from a loaded npz dict."""
+        n_layers = int(data["n_layers"])
+        # Build a shell QuantizedKVCache with the right layer count
+        # We bypass patch_model_kv_cache and construct layers directly.
+        layers: list[KVLayerCache] = []
+        for i in range(n_layers):
+            lay = KVLayerCache()
+            lay.n_heads  = int(data[f"L{i}_n_heads"])
+            lay.head_dim = int(data[f"L{i}_head_dim"])
+            if f"L{i}_keys_old_q" in data:
+                lay.keys_old_q   = data[f"L{i}_keys_old_q"]
+                lay.keys_old_s   = data[f"L{i}_keys_old_s"]
+                lay.values_old_q = data[f"L{i}_vals_old_q"]
+                lay.values_old_s = data[f"L{i}_vals_old_s"]
+            n_rec = int(data[f"L{i}_n_recent"])
+            if n_rec > 0:
+                k_rec = data[f"L{i}_keys_recent"]   # (H, n_rec, D)
+                v_rec = data[f"L{i}_vals_recent"]
+                for t in range(n_rec):
+                    lay.keys_recent.append(k_rec[:, t, :])
+                    lay.values_recent.append(v_rec[:, t, :])
+            layers.append(lay)
+
+        qkv = object.__new__(QuantizedKVCache)
+        qkv._layers = layers
+        # Restore public config attributes with safe defaults
+        qkv.mode   = getattr(layers[0], "_mode", "int8") if layers else "int8"
+        qkv.window = getattr(layers[0], "_window", 64)   if layers else 64
+        qkv.budget = getattr(layers[0], "_budget", 4096) if layers else 4096
+        return qkv
+
+    def _evict_if_needed(self) -> None:
+        """Remove the oldest (by mtime) entries when over the size cap."""
+        with self._lock:
+            entries = sorted(self._dir.glob("*.npz"), key=lambda p: p.stat().st_mtime)
+            while len(entries) > self._max:
+                try:
+                    entries.pop(0).unlink(missing_ok=True)
+                except Exception:
+                    pass

@@ -119,6 +119,105 @@ def _get_all_logits(model, ids: list[int], n_positions: int) -> np.ndarray:
     return np.array(rows, dtype=np.float32)         # (n_positions, vocab)
 
 
+# ── Stateful (KV-cached) helpers ──────────────────────────────────────────────
+# These replace the stateless helpers above when mlx_lm's KV cache is
+# available.  The stateless path is kept as a fallback.
+
+def _try_make_model_cache(model):
+    """
+    Create an mlx_lm KV prompt-cache for *model*.
+
+    Tries the public API (mlx_lm >= 0.18) first, then an older internal path.
+    Returns ``None`` when neither is available OR when the model uses
+    ``RotatingKVCache`` (whose internal state cannot be safely truncated by
+    simply setting ``.offset``).
+    """
+    cache = None
+    try:
+        from mlx_lm.models.cache import make_prompt_cache
+        cache = make_prompt_cache(model)
+    except Exception:
+        pass
+    if cache is None:
+        try:
+            import mlx_lm.utils as _u
+            cache = _u.make_kv_caches(model)
+        except Exception:
+            pass
+    if cache is None:
+        return None
+    # RotatingKVCache wraps around — offset truncation would corrupt state.
+    try:
+        for c in cache:
+            if "rotating" in type(c).__name__.lower():
+                return None
+    except Exception:
+        return None
+    return cache
+
+
+def _cache_offset(cache) -> int:
+    """Current token offset of the first cache entry (0 if unavailable)."""
+    try:
+        return cache[0].offset
+    except Exception:
+        return 0
+
+
+def _cache_set_offset(cache, offset: int) -> None:
+    """
+    Roll back all cache entries to *offset* tokens.
+
+    mlx_lm's ``KVCache`` stores K/V arrays and tracks position via
+    ``.offset``.  Setting it back to a prior value causes the next forward
+    pass to overwrite the rejected suffix — correct and allocation-free.
+    """
+    if cache is None:
+        return
+    try:
+        for c in cache:
+            c.offset = offset
+    except Exception:
+        pass
+
+
+def _prefill_cached(model, cache, ids: list[int]) -> np.ndarray:
+    """
+    Prefill *model*'s KV cache with *ids*.
+
+    Returns last-row logits (shape: ``vocab_size``) as float32 numpy —
+    the prediction for the very next token.
+    """
+    x   = mx.array(ids, dtype=mx.int32)[None]   # (1, seq_len)
+    out = model(x, cache=cache)                  # (1, seq_len, vocab)
+    last = out[0, -1]
+    mx.eval(last)
+    return np.array(last, dtype=np.float32)
+
+
+def _decode_step_cached(model, cache, token_id: int) -> np.ndarray:
+    """Single-token incremental decode.  Returns next-token logits (vocab_size,)."""
+    x   = mx.array([[token_id]], dtype=mx.int32)  # (1, 1)
+    out = model(x, cache=cache)                   # (1, 1, vocab)
+    last = out[0, -1]
+    mx.eval(last)
+    return np.array(last, dtype=np.float32)
+
+
+def _decode_multi_cached(model, cache, token_ids: list[int]) -> np.ndarray:
+    """
+    Multi-token incremental decode with KV cache.
+
+    Returns ALL output logit rows — shape ``(len(token_ids), vocab_size)``.
+    Row ``j`` is the prediction for what follows ``token_ids[j]``.
+    """
+    x   = mx.array(token_ids, dtype=mx.int32)[None]  # (1, T)
+    out = model(x, cache=cache)                       # (1, T, vocab)
+    rows = out[0]
+    mx.eval(rows)
+    return np.array(rows, dtype=np.float32)
+
+
 # ── Draft model loader ────────────────────────────────────────────────────────
 
 def load_draft_model(
@@ -180,6 +279,24 @@ class SpeculativeGenerator:
         self.proposed_total  = 0
         self.steps           = 0
 
+        # ── Stateful KV caches ────────────────────────────────────────────────
+        # Created once at init; reset (offset → 0) at the start of each
+        # stream() call.  Both are None when mlx_lm's cache API is unavailable
+        # or when the model uses RotatingKVCache — the stateless path is used
+        # transparently in those cases.
+        self._target_cache = _try_make_model_cache(target_model)
+        self._draft_cache  = (
+            _try_make_model_cache(draft_model) if draft_model is not None else None
+        )
+        _use_stateful = (
+            self._target_cache is not None
+            and (draft_model is None or self._draft_cache is not None)
+        )
+        logger.debug(
+            "speculative: %s KV caches",
+            "stateful" if _use_stateful else "stateless (fallback)",
+        )
+
     @property
     def acceptance_rate(self) -> float:
         return (self.accepted_total / self.proposed_total
@@ -189,6 +306,11 @@ class SpeculativeGenerator:
         self.accepted_total = 0
         self.proposed_total = 0
         self.steps = 0
+
+    def _reset_caches(self) -> None:
+        """Roll both KV caches back to position 0 (start of new request)."""
+        _cache_set_offset(self._target_cache, 0)
+        _cache_set_offset(self._draft_cache, 0)
 
     # ── main streaming API ────────────────────────────────────────────────────
 
@@ -230,9 +352,177 @@ class SpeculativeGenerator:
             input_ids, max_tokens, temperature, top_p, stop_ids, eos_id
         )
 
-    # ── speculative inner loop ────────────────────────────────────────────────
+    # ── speculative dispatch ──────────────────────────────────────────────────
 
     def _speculative_stream(
+        self,
+        ids: list[int],
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        stop_ids: list[list[int]],
+        eos_id: int,
+    ) -> Iterator[tuple[str, str | None]]:
+        """Dispatch to stateful (fast) or stateless (fallback) path."""
+        if self._draft_cache is not None and self._target_cache is not None:
+            yield from self._stateful_spec_stream(
+                ids, max_tokens, temperature, top_p, stop_ids, eos_id
+            )
+        else:
+            yield from self._stateless_spec_stream(
+                ids, max_tokens, temperature, top_p, stop_ids, eos_id
+            )
+
+    # ── stateful speculative inner loop ──────────────────────────────────────
+
+    def _stateful_spec_stream(
+        self,
+        ids: list[int],
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        stop_ids: list[list[int]],
+        eos_id: int,
+    ) -> Iterator[tuple[str, str | None]]:
+        """
+        Speculative decoding with incremental KV caches.
+
+        Each cycle costs:
+          • Draft:  k × O(1) forward passes  (1 token each, cache grows)
+          • Target: 1 × O(k) forward pass    (k tokens, cache rolled back then refilled)
+
+        vs. the stateless path where both models re-scan the full growing context
+        on every step — O(context_len²) total vs O(context_len) here.
+
+        Cache consistency rule
+        ----------------------
+        After every accepted sequence of n tokens, both caches sit at
+        ``base + n``.  A single forward of the ''final'' token (correction or
+        bonus) advances both to ``base + n + 1``, ready for the next cycle.
+        """
+        self._reset_caches()
+
+        # Prefill both models; keep their last-row logits as the starting
+        # prediction for the first draft token.
+        d_last = _prefill_cached(self._draft,  self._draft_cache,  ids)
+        t_last = _prefill_cached(self._target, self._target_cache, ids)
+
+        generated  = 0
+        stop_buf: list[int] = []
+
+        while generated < max_tokens:
+            base = _cache_offset(self._target_cache)
+
+            # ── Step 1: draft proposes k tokens (stateful, 1 token/pass) ──────
+            draft_ids  : list[int]        = []
+            draft_probs: list[np.ndarray] = []
+            cur_d_logits = d_last
+
+            for _ in range(self._k):
+                probs = _softmax_np(cur_d_logits, temperature)
+                probs = _top_p_filter(probs, top_p)
+                tok   = _sample(probs)
+                draft_ids.append(tok)
+                draft_probs.append(probs)
+                if tok == eos_id:
+                    break
+                cur_d_logits = _decode_step_cached(
+                    self._draft, self._draft_cache, tok)
+
+            self.proposed_total += len(draft_ids)
+            self.steps += 1
+
+            # ── Step 2: target verifies (1 pass, k tokens) ────────────────────
+            # Roll target cache back to before draft tokens.
+            _cache_set_offset(self._target_cache, base)
+
+            # Forward all draft tokens through target.
+            # target_fwd[j] = prediction AFTER draft_ids[j]
+            #               = verification logit for draft_ids[j+1]  (j < k-1)
+            #               = bonus token logit                       (j == k-1)
+            target_fwd = _decode_multi_cached(
+                self._target, self._target_cache, draft_ids)
+
+            # Prepend t_last (prediction for draft_ids[0], from the prior round)
+            # to form the complete verification window.
+            # target_rows[i] predicts draft_ids[i]:
+            #   target_rows[0] = t_last          (no extra forward needed)
+            #   target_rows[1] = target_fwd[0]
+            #   ...
+            #   target_rows[k] = target_fwd[k-1]  (bonus)
+            target_rows = np.concatenate(
+                [t_last[np.newaxis], target_fwd], axis=0)  # (k+1, vocab)
+
+            # ── Step 3: sequential accept / reject ────────────────────────────
+            new_tokens: list[int] = []
+            accepted = 0
+            for i, (d_tok, d_probs) in enumerate(
+                    zip(draft_ids, draft_probs, strict=False)):
+                t_probs  = _softmax_np(target_rows[i], temperature)
+                t_probs  = _top_p_filter(t_probs, top_p)
+                p_target = float(t_probs[d_tok])
+                p_draft  = float(d_probs[d_tok])
+
+                if np.random.random() < min(1.0, p_target / max(p_draft, 1e-12)):
+                    new_tokens.append(d_tok)
+                    accepted += 1
+                else:
+                    adjusted = np.maximum(0.0, t_probs - d_probs)
+                    s = adjusted.sum()
+                    if s > 0:
+                        adjusted /= s
+                        fallback = _sample(adjusted)
+                    else:
+                        fallback = _greedy(target_rows[i])
+                    new_tokens.append(fallback)
+                    break
+
+            self.accepted_total += accepted
+
+            # ── Step 4: bonus token (all k accepted) ──────────────────────────
+            if accepted == len(draft_ids):
+                bonus_probs = _softmax_np(target_rows[len(draft_ids)], temperature)
+                bonus_probs = _top_p_filter(bonus_probs, top_p)
+                new_tokens.append(_sample(bonus_probs))
+
+            # ── Step 5: advance caches to end of accepted sequence ────────────
+            # n_acc tokens before the "final" token (correction or bonus).
+            n_acc     = len(new_tokens) - 1
+            final_tok = new_tokens[-1]
+            # Trim both caches to base + n_acc, then run final_tok once
+            # so both sit at base + n_acc + 1 for the next cycle.
+            _cache_set_offset(self._draft_cache,  base + n_acc)
+            _cache_set_offset(self._target_cache, base + n_acc)
+            d_last = _decode_step_cached(self._draft,  self._draft_cache,  final_tok)
+            t_last = _decode_step_cached(self._target, self._target_cache, final_tok)
+
+            # ── Step 6: yield accepted + final token ──────────────────────────
+            for tok in new_tokens:
+                if tok == eos_id:
+                    yield self._tok_text(tok), "stop"
+                    return
+                tok_text = self._tok_text(tok)
+                generated += 1
+                stop_buf.append(tok)
+                for seq in stop_ids:
+                    if stop_buf[-len(seq):] == seq:
+                        yield tok_text, "stop"
+                        return
+                if len(stop_buf) > 64:
+                    stop_buf = stop_buf[-64:]
+                if generated >= max_tokens:
+                    yield tok_text, "length"
+                    return
+                yield tok_text, None
+
+        logger.debug(
+            "stateful spec: %d steps, %.1f%% acceptance, %d tokens",
+            self.steps, self.acceptance_rate * 100, generated,
+        )
+
+    # ── stateless speculative inner loop (fallback) ───────────────────────────
+
+    def _stateless_spec_stream(
         self,
         ids: list[int],
         max_tokens: int,
@@ -354,7 +644,7 @@ class SpeculativeGenerator:
         except Exception:
             return ""
 
-    # ── plain fallback ────────────────────────────────────────────────────────
+    # ── plain stream (no draft model) ────────────────────────────────────────
 
     def _plain_stream(
         self,
@@ -365,7 +655,70 @@ class SpeculativeGenerator:
         stop_ids: list[list[int]],
         eos_id: int,
     ) -> Iterator[tuple[str, str | None]]:
-        """Plain auto-regressive sampling — used when no draft model is available."""
+        """Dispatch to stateful (KV-cached) or stateless auto-regressive path."""
+        if self._target_cache is not None:
+            yield from self._stateful_plain_stream(
+                ids, max_tokens, temperature, top_p, stop_ids, eos_id)
+        else:
+            yield from self._stateless_plain_stream(
+                ids, max_tokens, temperature, top_p, stop_ids, eos_id)
+
+    def _stateful_plain_stream(
+        self,
+        ids: list[int],
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        stop_ids: list[list[int]],
+        eos_id: int,
+    ) -> Iterator[tuple[str, str | None]]:
+        """Plain auto-regressive with stateful KV cache — O(1) per token."""
+        _cache_set_offset(self._target_cache, 0)
+        last_logits = _prefill_cached(self._target, self._target_cache, ids)
+        stop_buf: list[int] = []
+        generated = 0
+
+        for _ in range(max_tokens):
+            if temperature == 0.0:
+                tok = _greedy(last_logits)
+            else:
+                probs = _softmax_np(last_logits, temperature)
+                probs = _top_p_filter(probs, top_p)
+                tok   = _sample(probs)
+
+            if tok == eos_id:
+                yield self._tok_text(tok), "stop"
+                return
+
+            tok_text = self._tok_text(tok)
+            generated += 1
+            stop_buf.append(tok)
+
+            for seq in stop_ids:
+                if stop_buf[-len(seq):] == seq:
+                    yield tok_text, "stop"
+                    return
+            if len(stop_buf) > 64:
+                stop_buf = stop_buf[-64:]
+
+            if generated >= max_tokens:
+                yield tok_text, "length"
+                return
+            yield tok_text, None
+            last_logits = _decode_step_cached(self._target, self._target_cache, tok)
+
+        yield "", "stop"
+
+    def _stateless_plain_stream(
+        self,
+        ids: list[int],
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        stop_ids: list[list[int]],
+        eos_id: int,
+    ) -> Iterator[tuple[str, str | None]]:
+        """Plain auto-regressive sampling — stateless fallback (O(n²) in context)."""
         context    = list(ids)
         stop_buf   : list[int] = []
         generated  = 0

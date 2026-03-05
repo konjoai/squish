@@ -25,7 +25,7 @@ Squish compresses model weights into memory-mapped INT8 tensors that load in **m
 - **Instant load** — memory-mapped weights skip all decoding overhead
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/models`, `/v1/completions`
 - **Batch inference** — parallel requests in a single call
-- **INT8 + INT4** — two quantisation tiers for accuracy vs. size trade-offs
+- **INT8 + INT4** — two quantisation tiers for accuracy vs. size trade-offs (INT4 not recommended for models &lt; 3B)
 - **Zero-copy mmap** — model data never fully loaded into RAM
 - **CLI first** — `squish pull`, `squish run`, `squish serve`, `squish rm`, `squish search`
 

@@ -56,7 +56,7 @@ def _require(pkg: str, install: str | None = None) -> None:
         __import__(pkg)
     except ImportError:  # pragma: no cover
         hint = install or pkg
-        print(f"Missing dependency: {pkg}.  Install with:  pip install {hint}")
+        print(f"  {_C.PK}✗  Missing dependency:{_C.R}  {_C.W}{pkg}{_C.R}  {_C.DIM}→  pip install {hint}{_C.R}")
         sys.exit(1)
 
 _require("fastapi")
@@ -75,10 +75,186 @@ except ImportError:  # pragma: no cover
 
 # ── KV cache (Phase 1.3 — lazily imported to keep startup fast) ──────────────
 _kv_cache = None   # QuantizedKVCache | None — set in main() after model load
+_disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-prompt-cache given
+_lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
 
 # ── Batch scheduler (Phase 2.1 — continuous batching) ───────────────────────
 _scheduler       = None  # BatchScheduler | None — set in main() when --batch-scheduler given
 _QueueFullError  = None  # QueueFullError class — imported alongside BatchScheduler
+
+# ── Terminal colours & ASCII art ──────────────────────────────────────────────
+_TTY: bool = sys.stdout.isatty()
+_TTY_ERR: bool = sys.stderr.isatty()
+
+# True only when the terminal reliably renders 24-bit (true) colour.
+# Terminals that remap the ANSI palette via a colour profile will corrupt
+# 24-bit codes that get quantised down to palette indices.  We guard against
+# this by requiring an explicit true-colour signal (COLORTERM env-var or a
+# known terminal program) before emitting gradient escape sequences.
+# Respects the NO_COLOR convention (https://no-color.org).
+_TRUE_COLOR: bool = (
+    _TTY
+    and "NO_COLOR" not in os.environ
+    and (
+        os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit")
+        or os.environ.get("TERM_PROGRAM", "") in (
+            "iTerm.app", "WezTerm", "Ghostty", "Hyper", "vscode", "warp",
+            "Apple_Terminal",
+        )
+        or "kitty" in os.environ.get("TERM", "")
+        or "direct" in os.environ.get("TERM", "")
+        or bool(os.environ.get("FORCE_COLOR", ""))
+    )
+)
+
+
+class _C:
+    """ANSI 24-bit colour constants.  Empty strings when stdout is not a TTY."""
+    _k = lambda s: s if sys.stdout.isatty() else ""  # noqa: E731
+    DP  = _k("\033[38;2;88;28;135m")    # deep purple   #581C87
+    P   = _k("\033[38;2;124;58;237m")   # purple        #7C3AED
+    V   = _k("\033[38;2;139;92;246m")   # violet        #8B5CF6
+    L   = _k("\033[38;2;167;139;250m")  # lilac         #A78BFA
+    MG  = _k("\033[38;2;192;132;252m")  # med-purple    #C084FC
+    PK  = _k("\033[38;2;236;72;153m")   # pink          #EC4899
+    LPK = _k("\033[38;2;249;168;212m")  # light pink    #F9A8D4
+    T   = _k("\033[38;2;34;211;238m")   # teal          #22D3EE
+    LT  = _k("\033[38;2;165;243;252m")  # light teal    #A5F3FC
+    G   = _k("\033[38;2;52;211;153m")   # mint green    #34D399
+    W   = _k("\033[38;2;248;250;252m")  # near-white    #F8FAFC
+    SIL = _k("\033[38;2;180;185;210m")  # silver        #B4B9D2
+    DIM = _k("\033[38;2;100;116;139m")  # dim slate     #64748B
+    B   = _k("\033[1m")                 # bold
+    R   = _k("\033[0m")                 # reset all
+
+
+def _gradient(text: str, stops: list) -> str:
+    """Interpolate a left-to-right RGB gradient across *text* (true-colour TTY only)."""
+    if not _TRUE_COLOR or not text:
+        return text
+    n = len(text)
+    k = len(stops) - 1
+    out: list[str] = []
+    for i, ch in enumerate(text):
+        t = i / max(n - 1, 1)
+        seg = min(int(t * k), k - 1)
+        frac = t * k - seg
+        r1, g1, b1 = stops[seg]
+        r2, g2, b2 = stops[seg + 1]
+        r = int(r1 + (r2 - r1) * frac)
+        g = int(g1 + (g2 - g1) * frac)
+        b = int(b1 + (b2 - b1) * frac)
+        out.append(f"\033[38;2;{r};{g};{b}m{ch}")
+    out.append("\033[0m")
+    return "".join(out)
+
+
+# Purple → pink → teal gradient used for the big logo and accent lines
+_LOGO_GRAD = [
+    ( 88,  28, 135),   # deep purple
+    (124,  58, 237),   # purple
+    (139,  92, 246),   # violet
+    (192, 100, 220),   # lavender-pink
+    (236,  72, 153),   # pink
+    ( 34, 211, 238),   # teal
+]
+
+
+def _cprint(color: str, label: str, value: str = "", end: str = "\n") -> None:
+    """Print a coloured label + plain value line."""
+    R = _C.R
+    if value:
+        print(f"  {color}{label}{R}  {_C.W}{value}{R}", end=end)
+    else:
+        print(f"  {color}{label}{R}", end=end)
+
+
+def _ok(msg: str) -> None:
+    """Print a success tick line."""
+    print(f"  {_C.G}✓{_C.R}  {_C.W}{msg}{_C.R}")
+
+
+def _info(label: str, value: str) -> None:
+    """Print a key → value config line."""
+    print(f"  {_C.L}◈{_C.R}  {_C.DIM}{label:<18}{_C.R}{_C.W}{value}{_C.R}")
+
+
+def _warn(msg: str) -> None:
+    """Print a yellow-ish warning line."""
+    print(f"  {_C.PK}⚠{_C.R}  {_C.LPK}{msg}{_C.R}")
+
+
+def _section(title: str) -> None:
+    """Print a dimmed section divider."""
+    print(f"  {_C.DIM}{'─' * 52}{_C.R}")
+    if title:
+        print(f"  {_C.MG}{title}{_C.R}")
+
+
+def _print_banner() -> None:
+    """Print the full ASCII-art startup banner."""
+    R  = _C.R;  B  = _C.B
+    V  = _C.V;  L  = _C.L;  MG = _C.MG
+    T  = _C.T;  PK = _C.PK; LPK = _C.LPK
+    W  = _C.W;  SIL = _C.SIL; DIM = _C.DIM
+
+    print()
+
+    if _TTY:
+        # ── Squished character (clamp pressing cube flat — 1-row body = max squish) ──
+        # Left connector bars = teal (inputs), right = pink (outputs), body = violet
+        print(f"        {SIL}           ╤           {R}")
+        print(f"        {SIL}   ╔═══════╧═══════╗   {R}")
+        print(f"       {T}════{R}{V}╫{R}{W}   ◕  {R}{MG}˶‿˶{R}{W}  ◕   {R}{V}╫{R}{PK}════{R}")
+        print(f"        {V}   ╚═══════════════╝{R}")
+        print(f"            {DIM}═══════════════{R}")
+        print(f"              {L}✦{R}    {PK}✦{R}    {L}✦{R}")
+        print()
+
+        # ── SQUISH gradient logo (box-drawing block font) ─────────────────────
+        logo_lines = [
+            " ██████╗   ██████╗  ██╗   ██╗  ██╗   ██████╗  ██╗  ██╗",
+            "██╔════╝  ██╔═══██╗ ██║   ██║  ██║  ██╔════╝  ██║  ██║",
+            "╚█████╗   ██║   ██║ ██║   ██║  ██║  ╚█████╗   ███████║",
+            " ╚═══██╗  ██║▄▄ ██║ ██║   ██║  ██║   ╚═══██╗  ██╔══██║",
+            "██████╔╝  ╚██████╔╝ ╚██████╔╝  ██║  ██████╔╝  ██║  ██║",
+            "╚═════╝    ╚══▀▀═╝   ╚═════╝   ╚═╝  ╚═════╝   ╚═╝  ╚═╝",
+        ]
+        for line in logo_lines:
+            print(f"  {_gradient(line, _LOGO_GRAD)}{R}")
+        print()
+
+        sub = "✦  Squish it. Run it. Go. &   ✦"
+        print(f"            {_gradient(sub, _LOGO_GRAD)}{R}")
+        print(f"  {DIM}{'─' * 56}{R}")
+    else:
+        # Plain-text fallback for non-TTY environments
+        print("*** SQUISH — Squish it. Run it. Go. &   ***")
+        print("-" * 48)
+
+    print()
+
+
+# ── Verbose inference tracing ─────────────────────────────────────────────────
+_trace: bool       = False   # set True by --trace in main()
+_trace_tokens: bool = False  # set True by --trace-tokens in main()
+_trace_file = None           # IO | None — file handle opened by --trace-file
+
+
+def _tlog(msg: str) -> None:
+    """Write a timestamped trace line to stderr (and _trace_file when set)."""
+    _ke = lambda s: s if _TTY_ERR else ""  # noqa: E731
+    ts  = f"{_ke(_C.MG)}[{time.strftime('%H:%M:%S')}]{_ke(_C.R)}"
+    tag = f"{_ke(_C.V)}SQUISH{_ke(_C.R)}"
+    line_color = f"{ts} {tag}  {_ke(_C.W)}{msg}{_ke(_C.R)}"
+    line_plain = f"[SQUISH {time.strftime('%H:%M:%S')}] {msg}"
+    print(line_color, file=sys.stderr, flush=True)
+    if _trace_file is not None:
+        try:
+            _trace_file.write(line_plain + "\n")
+            _trace_file.flush()
+        except Exception:
+            pass
 
 # ── Tool calling + Ollama compat (Phase 2.2) ─────────────────────────────────
 # Imported lazily in endpoints — no startup cost when unused
@@ -259,7 +435,7 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
 
     t0 = time.perf_counter()
     if verbose:
-        print(f"  Loading model: {compressed_dir}")
+        print(f"  {_C.L}⟳{_C.R}  {_C.DIM}Loading model:{_C.R}  {_C.W}{compressed_dir}{_C.R}")
 
     model, tokenizer, stats = load_from_npy_dir(
         model_dir  = model_dir,
@@ -277,7 +453,74 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
     _state.load_time_s = elapsed
     _state.loader_tag  = stats.get("loader", "squish")
     if verbose:
-        print(f"  ✓ Model ready  ({elapsed:.2f}s, loader={_state.loader_tag})")
+        _ok(f"Model ready  ({elapsed:.2f}s  loader={_state.loader_tag})")
+
+    _cap_metal_cache(verbose=verbose)
+
+
+def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma: no cover
+    """
+    Load a native mlx_lm model directory directly via ``mlx_lm.load()``.
+
+    This is the memory-efficient path: INT4/INT8 quantized mlx_lm models
+    keep weights quantized in Metal (≈4-5 GB for 8B INT4) rather than
+    dequantizing to BF16 at load time (≈15 GB).
+
+    Use after converting with::
+
+        python3 -m mlx_lm.convert \\
+            --hf-path  <bf16-model-dir> \\
+            --mlx-path <mlx-int4-model-dir> \\
+            -q --q-bits 4
+
+    Parameters
+    ----------
+    mlx_model_dir : path to the mlx_lm-format quantized model directory
+    """
+    import mlx_lm
+    t0 = time.perf_counter()
+    if verbose:
+        print(f"  {_C.L}⟳{_C.R}  {_C.DIM}Loading mlx_lm model:{_C.R}  {_C.W}{mlx_model_dir}{_C.R}")
+
+    model, tokenizer = mlx_lm.load(mlx_model_dir)
+    elapsed = time.perf_counter() - t0
+
+    _state.model      = model
+    _state.tokenizer  = tokenizer
+    _state.model_name = Path(mlx_model_dir).name
+    _state.loaded_at  = time.time()
+    _state.load_time_s = elapsed
+    _state.loader_tag  = "mlx_lm"
+    if verbose:
+        _ok(f"Model ready  ({elapsed:.2f}s  loader=mlx_lm)")
+
+    _cap_metal_cache(verbose=verbose)
+
+
+def _cap_metal_cache(verbose: bool = False, limit_mb: int = 256) -> None:  # pragma: no cover
+    """
+    Cap the MLX Metal allocator's buffer pool after model load.
+
+    By default MLX keeps an unbounded Metal buffer cache for reuse.  After
+    the model is fully loaded and eval'd, this cache can hold gigabytes of
+    stale buffers.  Capping it to ``limit_mb`` MB frees that memory back to
+    the OS without affecting inference performance (the cache is only used
+    for *new* allocations, not existing model weights).
+    """
+    try:
+        import gc
+        import mlx.core as mx
+        gc.collect()
+        # eval outstanding lazy ops so nothing is unexpectedly freed
+        mx.eval(())
+        limit_bytes = limit_mb * 1024 * 1024
+        if hasattr(mx, "metal") and hasattr(mx.metal, "set_cache_limit"):
+            mx.metal.set_cache_limit(limit_bytes)
+            if verbose:
+                print(f"  {_C.DIM}◈  Metal buffer cache capped at {limit_mb} MB{_C.R}")
+        gc.collect()
+    except Exception:
+        pass
 
 
 def load_draft_model(draft_model_dir: str, draft_compressed_dir: str = "",  # pragma: no cover
@@ -286,7 +529,7 @@ def load_draft_model(draft_model_dir: str, draft_compressed_dir: str = "",  # pr
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from squish.speculative import load_draft_model as _load_draft
     if verbose:
-        print(f"  Loading draft model: {draft_model_dir}")
+        print(f"  {_C.L}⟳{_C.R}  {_C.DIM}Loading draft model:{_C.R}  {_C.W}{draft_model_dir}{_C.R}")
     draft_m, draft_tok = _load_draft(
         draft_model_dir,
         draft_compressed_dir or (draft_model_dir + "-compressed"),
@@ -296,7 +539,7 @@ def load_draft_model(draft_model_dir: str, draft_compressed_dir: str = "",  # pr
     _draft.tokenizer = draft_tok
     _draft.model_dir = draft_model_dir
     if verbose:
-        print("  ✓ Draft model ready")
+        _ok("Draft model ready")
 
     # Build the SpeculativeGenerator now that both models are loaded
     _rebuild_spec_gen()
@@ -393,12 +636,27 @@ def _generate_tokens(  # pragma: no cover
     stop_ids  = _get_stop_ids(stop)
     eos_id    = getattr(tokenizer, "eos_token_id", None) or 151645
 
+    # ── Trace: log request entry ───────────────────────────────────────────────
+    _rid = uuid.uuid4().hex[:8]          # short per-request ID for log correlation
+    if _trace:
+        _prompt_tokens_approx = len(prompt.split())
+        _prompt_preview = prompt[:400].replace("\n", "↵") + ("…" if len(prompt) > 400 else "")
+        _tlog(f"REQ {_rid}  max_tokens={max_tokens}  temp={temperature}  "
+              f"top_p={top_p}  seed={seed}  prompt_words≈{_prompt_tokens_approx}")
+        _tlog(f"REQ {_rid}  prompt: {_prompt_preview}")
+
+    # Reset LazyLLM pruning state for this request (Item 3)
+    if _lazy_llm_state is not None:
+        _lazy_llm_state.active_mask = None
+
     # ── Batch scheduler dispatch (Phase 2.1) ──────────────────────────────────
     # Route non-deterministic requests through the coalescing batch scheduler.
     # submit_sync() is a plain blocking generator — compatible with this sync
     # generator function without any async bridge required.
     is_deterministic = (temperature == 0.0 or seed is not None)
     if _scheduler is not None and not is_deterministic:
+        if _trace:
+            _tlog(f"REQ {_rid}  dispatch → batch-scheduler")
         try:
             yield from _scheduler.submit_sync(
                 prompt,
@@ -424,6 +682,9 @@ def _generate_tokens(  # pragma: no cover
         cached = _prefix_cache.get(prompt)
         if cached is not None:
             full_text, finish_reason = cached
+            if _trace:
+                _tlog(f"REQ {_rid}  dispatch → prefix-cache HIT  "
+                      f"({len(full_text)} chars, finish={finish_reason})")
             for char in full_text:
                 yield char, None
             yield "", finish_reason
@@ -445,6 +706,8 @@ def _generate_tokens(  # pragma: no cover
     # Use when a draft model is loaded AND temperature > 0 (greedy draft on
     # temp==0 benchmarks offers less benefit and adds overhead).
     if _draft.generator is not None and temperature > 0.0:
+        if _trace:
+            _tlog(f"REQ {_rid}  dispatch → speculative-decoding")
         try:
             gen = _draft.generator.stream(
                 prompt,
@@ -458,8 +721,14 @@ def _generate_tokens(  # pragma: no cover
                 if cache_eligible:
                     _cache_buf.append(tok_text)
                     _last_finish = finish or _last_finish
+                if _trace_tokens and tok_text:
+                    _tlog(f"REQ {_rid}  tok={tok_text!r}")
                 yield tok_text, finish
                 if finish is not None:
+                    if _trace:
+                        _n_spec = len(_cache_buf) if _cache_buf else 0
+                        _tlog(f"REQ {_rid}  DONE  path=speculative  "
+                              f"tokens={_n_spec}  finish={finish}")
                     break
             if cache_eligible and _cache_buf:
                 _prefix_cache.put(prompt, "".join(_cache_buf), _last_finish)
@@ -471,20 +740,65 @@ def _generate_tokens(  # pragma: no cover
 
     # ── Quantized KV cache generation path ─────────────────────────────────────
     if _kv_cache is not None:
+        if _trace:
+            _tlog(f"REQ {_rid}  dispatch → kv-cache ({_kv_cache.__class__.__name__})")
         _kv_cache.reset()
         try:
             import mlx.core as mx
+            import numpy as np
             input_ids = (
                 tokenizer.encode(prompt)
                 if hasattr(tokenizer, "encode")
                 else tokenizer(prompt, return_tensors="np")["input_ids"][0].tolist()
             )
             layer_caches = _kv_cache._layers
-            x = mx.array(input_ids, dtype=mx.int32)[None]
-            logits = model(x, cache=layer_caches)
-            mx.eval(logits)
-            next_id = _sample_mx(logits[0, -1], temperature, top_p)
+            # ── Disk prompt-cache lookup (Item 2) ──────────────────────────────
+            # On a hit, restore KV state from NVMe and skip prefill (O(n) → O(1))
+            _disk_hit_logit = None
+            if _disk_prompt_cache is not None:
+                try:
+                    _disk_result = _disk_prompt_cache.lookup(input_ids)
+                    if _disk_result is not None:
+                        _disk_qkv, _disk_last_logit = _disk_result
+                        _kv_cache.restore_from(_disk_qkv)
+                        _disk_hit_logit = _disk_last_logit
+                        if _trace:
+                            _tlog(f"REQ {_rid}  disk-prompt-cache HIT  "
+                                  f"tokens={len(input_ids)}  → skipped prefill")
+                    elif _trace:
+                        _tlog(f"REQ {_rid}  disk-prompt-cache MISS  tokens={len(input_ids)}")
+                except Exception:
+                    pass  # disk lookup error — fall through to normal prefill
+
+            if _disk_hit_logit is not None:
+                # Cache hit: use stored logit to sample first token; no prefill needed
+                last_logit_mlx = mx.array(_disk_hit_logit, dtype=mx.float32)
+                next_id = _sample_mx(last_logit_mlx, temperature, top_p)
+            else:
+                # Cache miss: run full prefill
+                x = mx.array(input_ids, dtype=mx.int32)[None]
+                logits = model(x, cache=layer_caches)
+                mx.eval(logits)
+                next_id = _sample_mx(logits[0, -1], temperature, top_p)
+                # Persist for future requests in background
+                if _disk_prompt_cache is not None:
+                    try:
+                        _last_logit_np = np.array(logits[0, -1].astype(mx.float32))
+                        _disk_prompt_cache.store(input_ids, _kv_cache, _last_logit_np)
+                    except Exception:
+                        pass
             stop_buf = [next_id]
+            # Compile the single-token decode step for faster subsequent calls.
+            # layer_caches is captured as a constant closure; the list reference
+            # never changes, so mx.compile reuses the compiled graph every step.
+            _decode_fn = None
+            if not getattr(_state, "_no_compile", False):
+                try:
+                    _decode_fn = mx.compile(
+                        lambda tok_x: model(tok_x, cache=layer_caches)
+                    )
+                except Exception:
+                    pass  # mx.compile unavailable or incompatible — use plain call
             for step in range(max_tokens):
                 tok_text = (
                     tokenizer.decode([next_id])
@@ -494,6 +808,8 @@ def _generate_tokens(  # pragma: no cover
                 if next_id == eos_id:
                     if cache_eligible and _cache_buf:
                         _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+                    if _trace:
+                        _tlog(f"REQ {_rid}  DONE  path=kv-cache  tokens={step}  finish=stop(eos)")
                     yield tok_text, "stop"
                     return
                 if stop_ids:
@@ -501,6 +817,9 @@ def _generate_tokens(  # pragma: no cover
                         if stop_buf[-len(seq):] == seq:
                             if cache_eligible and _cache_buf:
                                 _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+                            if _trace:
+                                _tlog(f"REQ {_rid}  DONE  path=kv-cache  "
+                                      f"tokens={step}  finish=stop(stop-seq)")
                             yield tok_text, "stop"
                             return
                     if len(stop_buf) > 64:
@@ -508,13 +827,17 @@ def _generate_tokens(  # pragma: no cover
                 if step == max_tokens - 1:
                     if cache_eligible and _cache_buf:
                         _prefix_cache.put(prompt, "".join(_cache_buf), "length")
+                    if _trace:
+                        _tlog(f"REQ {_rid}  DONE  path=kv-cache  tokens={step + 1}  finish=length")
                     yield tok_text, "length"
                     return
                 if cache_eligible:
                     _cache_buf.append(tok_text)
+                if _trace_tokens:
+                    _tlog(f"REQ {_rid}  tok={tok_text!r}")
                 yield tok_text, None
                 x = mx.array([[next_id]], dtype=mx.int32)
-                logits = model(x, cache=layer_caches)
+                logits = _decode_fn(x) if _decode_fn is not None else model(x, cache=layer_caches)
                 mx.eval(logits)
                 next_id = _sample_mx(logits[0, -1], temperature, top_p)
                 stop_buf.append(next_id)
@@ -533,6 +856,8 @@ def _generate_tokens(  # pragma: no cover
     # ── mlx_lm.stream_generate (preferred, available mlx_lm >= 0.12) ────────
     try:
         import mlx_lm
+        if _trace:
+            _tlog(f"REQ {_rid}  dispatch → mlx_lm.stream_generate")
         gen = mlx_lm.stream_generate(
             model,
             tokenizer,
@@ -564,6 +889,9 @@ def _generate_tokens(  # pragma: no cover
                     if cache_eligible:
                         _cache_buf.append(tok_text)
                         _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+                    if _trace:
+                        _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  "
+                              f"finish=stop(stop-seq)")
                     yield tok_text, "stop"
                     return
                 if len(stop_buf) > 64:
@@ -573,13 +901,19 @@ def _generate_tokens(  # pragma: no cover
                 if cache_eligible:
                     _cache_buf.append(tok_text)
                     _prefix_cache.put(prompt, "".join(_cache_buf), "length")
+                if _trace:
+                    _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  finish=length")
                 yield tok_text, "length"
                 return
             if cache_eligible:
                 _cache_buf.append(tok_text)
+            if _trace_tokens:
+                _tlog(f"REQ {_rid}  tok={tok_text!r}")
             yield tok_text, None
         if cache_eligible and _cache_buf:
             _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+        if _trace:
+            _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  finish=stop(eos)")
         yield "", "stop"
         return
     except (AttributeError, TypeError):
@@ -589,6 +923,8 @@ def _generate_tokens(  # pragma: no cover
     import mlx.core as mx
     import numpy as np
 
+    if _trace:
+        _tlog(f"REQ {_rid}  dispatch → manual-sampling-loop (fallback)")
     input_ids = tokenizer.encode(prompt) if hasattr(tokenizer, "encode") else \
                 tokenizer(prompt, return_tensors="np")["input_ids"][0].tolist()
 
@@ -614,6 +950,8 @@ def _generate_tokens(  # pragma: no cover
         logits  = model(x)
         next_id = _sample(logits[0, -1], temperature, top_p)
         if next_id == eos_id:
+            if _trace:
+                _tlog(f"REQ {_rid}  DONE  path=manual  tokens={step}  finish=stop(eos)")
             yield "", "stop"
             return
         ids.append(next_id)
@@ -623,6 +961,9 @@ def _generate_tokens(  # pragma: no cover
             stop_buf.append(next_id)
             for seq in stop_ids:
                 if stop_buf[-len(seq):] == seq:
+                    if _trace:
+                        _tlog(f"REQ {_rid}  DONE  path=manual  tokens={step}  "
+                              f"finish=stop(stop-seq)")
                     yield tok_text, "stop"
                     return
             if len(stop_buf) > 64:
@@ -631,14 +972,20 @@ def _generate_tokens(  # pragma: no cover
         if step == max_tokens - 1:
             if cache_eligible and _cache_buf:
                 _prefix_cache.put(prompt, "".join(_cache_buf), "length")
+            if _trace:
+                _tlog(f"REQ {_rid}  DONE  path=manual  tokens={step + 1}  finish=length")
             yield tok_text, "length"
             return
         if cache_eligible:
             _cache_buf.append(tok_text)
+        if _trace_tokens:
+            _tlog(f"REQ {_rid}  tok={tok_text!r}")
         yield tok_text, None
 
     if cache_eligible and _cache_buf:
         _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+    if _trace:
+        _tlog(f"REQ {_rid}  DONE  path=manual  tokens={max_tokens}  finish=stop")
     yield "", "stop"
 
 
@@ -769,6 +1116,14 @@ async def chat_completions(  # pragma: no cover
     if not messages:
         raise HTTPException(400, "'messages' must be a non-empty list")
 
+    # ── Trace: log incoming messages ────────────────────────────────────────
+    if _trace:
+        for _mi, _m in enumerate(messages):
+            _role    = _m.get("role", "?")
+            _content = str(_m.get("content", ""))
+            _preview = _content[:300].replace("\n", "↵") + ("…" if len(_content) > 300 else "")
+            _tlog(f"CHAT [{_role}] msg[{_mi}]: {_preview}")
+
     # ── Tool calling: inject schema into system prompt ────────────────────
     if tools:
         from squish.tool_calling import format_tools_prompt
@@ -816,6 +1171,11 @@ async def chat_completions(  # pragma: no cover
                 _state.inflight -= 1
                 dur = time.perf_counter() - req_start
                 _state.record_completion(n_comp, dur, ttft_s)
+                if _trace:
+                    _tps = n_comp / dur if dur > 0 else 0.0
+                    _tlog(f"CHAT stream DONE  id={cid}  tokens={n_comp}  "
+                          f"ttft={ttft_s:.3f}s  total={dur:.3f}s  tps={_tps:.1f}  "
+                          f"finish={last_finish}")
             yield _make_chunk("", model_id, cid, finish_reason=last_finish)
             yield "data: [DONE]\n\n"
 
@@ -848,6 +1208,14 @@ async def chat_completions(  # pragma: no cover
             _state.inflight -= 1
             dur = time.perf_counter() - req_start
             _state.record_completion(n_comp, dur, ttft_s)
+            if _trace:
+                _tps = n_comp / dur if dur > 0 else 0.0
+                _tlog(f"CHAT  DONE  id={cid}  tokens={n_comp}  "
+                      f"ttft={ttft_s:.3f}s  total={dur:.3f}s  tps={_tps:.1f}  "
+                      f"finish={last_finish}")
+                _resp_preview = full_text[:400].replace("\n", "↵") + (
+                    "…" if len(full_text) > 400 else "")
+                _tlog(f"CHAT  resp: {_resp_preview}")
 
         comp_tokens = _count_tokens(full_text)
 
@@ -951,8 +1319,14 @@ async def completions(  # pragma: no cover
                         last_finish = finish
                         break
             finally:
+                _dur = time.perf_counter() - req_start
                 _state.inflight -= 1
-                _state.record_completion(n_comp, time.perf_counter() - req_start, ttft_s)
+                _state.record_completion(n_comp, _dur, ttft_s)
+                if _trace:
+                    _tps = n_comp / _dur if _dur > 0 else 0.0
+                    _tlog(f"CMPL stream DONE  id={cid}  tokens={n_comp}  "
+                          f"ttft={ttft_s:.3f}s  total={_dur:.3f}s  tps={_tps:.1f}  "
+                          f"finish={last_finish}")
             yield _comp_chunk("", finish_reason=last_finish)
             yield "data: [DONE]\n\n"
 
@@ -974,8 +1348,14 @@ async def completions(  # pragma: no cover
                     last_finish = finish
                     break
         finally:
+            _dur = time.perf_counter() - req_start
             _state.inflight -= 1
-            _state.record_completion(n_comp, time.perf_counter() - req_start, ttft_s)
+            _state.record_completion(n_comp, _dur, ttft_s)
+            if _trace:
+                _tps = n_comp / _dur if _dur > 0 else 0.0
+                _tlog(f"CMPL  DONE  id={cid}  tokens={n_comp}  "
+                      f"ttft={ttft_s:.3f}s  total={_dur:.3f}s  tps={_tps:.1f}  "
+                      f"finish={last_finish}")
 
         prompt_tokens = _count_tokens(prompt)
         comp_tokens   = _count_tokens(full_text)
@@ -1185,6 +1565,14 @@ Examples:
                     default=str(Path.home() / "models" / "Qwen2.5-7B-Instruct-bf16"))
     ap.add_argument("--compressed-dir",
                     default=str(Path.home() / "models" / "Qwen2.5-7B-Instruct-bf16-compressed"))
+    ap.add_argument("--mlx-model-dir", default="",
+                    metavar="DIR",
+                    help="Load a native mlx_lm model directory directly (INT4/INT8 quantized).\n"
+                         "Keeps weights quantized in Metal (~4-5 GB for 8B INT4) instead of\n"
+                         "dequantizing to BF16 (~15 GB via --compressed-dir).\n"
+                         "Create with: python3 -m mlx_lm.convert --hf-path <bf16-dir> \\\n"
+                         "  --mlx-path <output-dir> -q --q-bits 4\n"
+                         "When set, --model-dir and --compressed-dir are ignored.")
     ap.add_argument("--port",    type=int, default=11435)
     ap.add_argument("--host",    default="127.0.0.1", help="Bind address (use 0.0.0.0 for LAN)")
     ap.add_argument("--verbose", action="store_true", default=True)
@@ -1228,6 +1616,43 @@ Examples:
                     help="Max concurrent requests per batch (default 8)")
     ap.add_argument("--batch-window-ms", type=float, default=20.0,
                     help="Collect window in ms before starting a batch (default 20)")
+    ap.add_argument("--no-compile", action="store_true", default=False,
+                    help="Disable mx.compile for the single-token decode step\n"
+                         "(useful for debugging or models incompatible with tracing)")
+    ap.add_argument("--disk-prompt-cache", default="",
+                    metavar="DIR",
+                    help="Enable persistent cross-request KV-state prompt cache stored\n"
+                         "as compressed .npz files under DIR (on SSD/NVMe).  Repeated\n"
+                         "identical prompts skip prefill entirely.  64-entry LRU default.")
+    ap.add_argument("--disk-prompt-cache-size", type=int, default=64,
+                    metavar="N",
+                    help="Max entries in the disk prompt cache (default 64)")
+    # ── Item 3: LazyLLM token pruning ─────────────────────────────────────────
+    ap.add_argument("--lazy-llm", action="store_true", default=False,
+                    help="Enable LazyLLM dynamic token pruning during prefill.\n"
+                         "Skips low-importance positions in later transformer layers,\n"
+                         "reducing TTFT by ~20-35%% on long prompts.")
+    ap.add_argument("--lazy-llm-keep-ratio", type=float, default=0.70,
+                    metavar="F",
+                    help="Fraction of tokens to keep per layer (default 0.70)")
+    ap.add_argument("--lazy-llm-start-layer", type=int, default=2,
+                    metavar="N",
+                    help="First layer index where pruning is applied (default 2)")
+    ap.add_argument("--lazy-llm-revive-window", type=int, default=4,
+                    metavar="N",
+                    help="Always keep the N most recent tokens active (default 4)")
+    # ── Verbose inference tracing ─────────────────────────────────────────────
+    ap.add_argument("--trace", action="store_true", default=False,
+                    help="Log full per-request detail to stderr: prompt, dispatch path, "
+                         "finish reason, TTFT, TPS, and cache hit/miss status.")
+    ap.add_argument("--trace-tokens", action="store_true", default=False,
+                    help="Also log every generated token text (implies --trace; "
+                         "very verbose — useful for debugging output corruption).")
+    ap.add_argument("--trace-file", default="",
+                    metavar="FILE",
+                    help="Append trace output to FILE in addition to stderr. "
+                         "Useful when the server stdout/stderr is not visible "
+                         "(e.g. when launched by _run_all.py).")
     args = ap.parse_args()
 
     global _API_KEY
@@ -1235,40 +1660,91 @@ Examples:
     # Reading from env var prevents the secret appearing in `ps aux`.
     _API_KEY = args.api_key or os.environ.get("SQUISH_API_KEY")
 
+    # ── Tracing globals ───────────────────────────────────────────────────────
+    global _trace, _trace_tokens, _trace_file
+    _trace        = args.trace or args.trace_tokens
+    _trace_tokens = args.trace_tokens
+    if args.trace_file:
+        try:
+            _trace_file = open(args.trace_file, "a", buffering=1)  # noqa: WPS515
+        except OSError as _tf_err:
+            _warn(f"[trace] Could not open trace file {args.trace_file!r}: {_tf_err}")
+
     if args.no_prefix_cache:
         _prefix_cache._maxsize = 0
     elif args.prefix_cache_size != 512:
         _prefix_cache._maxsize = args.prefix_cache_size
 
-    print("╔══════════════════════════════════════════════╗")
-    print("║       Squish OpenAI-compatible Server        ║")
-    print("╚══════════════════════════════════════════════╝")
-    print(f"  Model dir     : {args.model_dir}")
-    print(f"  Compressed dir: {args.compressed_dir}")
+    _print_banner()
+
+    if getattr(args, "mlx_model_dir", ""):
+        _info("model", f"{args.mlx_model_dir}  {_C.DIM}(mlx_lm INT4){_C.R}")
+    else:
+        _info("model-dir", args.model_dir)
+        _info("compressed", args.compressed_dir)
     if args.draft_model:
-        print(f"  Draft model   : {args.draft_model}")
-    print(f"  Prefix cache  : {'disabled' if args.no_prefix_cache else args.prefix_cache_size}")
+        _info("draft-model", args.draft_model)
+    _info("prefix-cache", "disabled" if args.no_prefix_cache else str(args.prefix_cache_size))
     if args.kv_cache_mode != "fp16":
-        print(f"  KV cache mode : {args.kv_cache_mode}  "
-              f"window={args.kv_cache_window}  budget={args.kv_cache_budget}")
-    print(f"  Listen        : http://{args.host}:{args.port}")
+        _info("kv-cache", f"{args.kv_cache_mode}  window={args.kv_cache_window}  budget={args.kv_cache_budget}")
+    _info("listen", f"http://{args.host}:{args.port}")
+    if _trace:
+        _info("trace", f"ON  tokens={'yes' if _trace_tokens else 'no'}"
+              f"{'  file=' + args.trace_file if args.trace_file else ''}")
     print()
 
-    load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
+    if getattr(args, "mlx_model_dir", ""):
+        load_mlx_model(args.mlx_model_dir, verbose=args.verbose)
+    else:
+        load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
+    _state._no_compile = args.no_compile  # propagate --no-compile flag
 
-    # ── Phase 2.1C: CPU/GPU split loading (auto-activates if model > Metal budget) ──
+    # ── Disk prompt-cache init (Item 2) ──────────────────────────────────────
+    global _disk_prompt_cache
+    if getattr(args, "disk_prompt_cache", ""):
+        try:
+            from squish.kv_cache import DiskKVCache as _DiskKVCache
+        except ImportError:
+            from kv_cache import DiskKVCache as _DiskKVCache  # direct run
+        _disk_prompt_cache = _DiskKVCache(
+            cache_dir   = args.disk_prompt_cache,
+            max_entries = args.disk_prompt_cache_size,
+        )
+        if args.verbose:
+            _info("disk-cache", f"{args.disk_prompt_cache}  {_C.DIM}(max {args.disk_prompt_cache_size} entries){_C.R}")
+
+    # ── LazyLLM token-pruning init (Item 3) ──────────────────────────────────
+    global _lazy_llm_state
+    if getattr(args, "lazy_llm", False) and _state.model is not None:
+        try:
+            try:
+                from squish.lazy_llm import patch_model_lazy_llm as _patch_llm, LazyLLMConfig
+            except ImportError:
+                from lazy_llm import patch_model_lazy_llm as _patch_llm, LazyLLMConfig
+            _lazy_llm_cfg = LazyLLMConfig(
+                keep_ratio    = args.lazy_llm_keep_ratio,
+                start_layer   = args.lazy_llm_start_layer,
+                revive_window = args.lazy_llm_revive_window,
+                verbose       = _trace,   # tie to --trace flag
+            )
+            _lazy_llm_state = _patch_llm(_state.model, _lazy_llm_cfg)
+            if args.verbose:
+                _info("lazy-llm", f"keep={args.lazy_llm_keep_ratio}  "
+                      f"start_layer={args.lazy_llm_start_layer}  "
+                      f"revive={args.lazy_llm_revive_window}")
+        except Exception as _llm_err:
+            _warn(f"[lazy_llm] Skipped: {_llm_err}")
+
     if _state.model is not None:
         try:
             from squish.split_loader import SplitLayerLoader
             _split_info = SplitLayerLoader.auto_split(_state.model, verbose=True)
             if _split_info:
-                print(
-                    f"  CPU/GPU split   : {_split_info.cpu_count} layers offloaded  "
-                    f"GPU={_split_info.gpu_gb:.2f}GB  CPU={_split_info.cpu_gb:.2f}GB"
-                )
+                _info("cpu/gpu split", f"{_split_info.cpu_count} layers offloaded  "
+                      f"GPU={_split_info.gpu_gb:.2f}GB  CPU={_split_info.cpu_gb:.2f}GB")
         except Exception as e:
             if args.verbose:
-                print(f"  [split_loader] Skipped: {e}")
+                _warn(f"[split_loader] Skipped: {e}")
 
     # ── Phase 2.3: Flash Attention status check ──────────────────────────────
     if _state.model is not None:
@@ -1277,7 +1753,7 @@ Examples:
             patch_model_attention(_state.model, verbose=args.verbose)
         except Exception as e:
             if args.verbose:
-                print(f"  [flash_attention] Skipped: {e}")
+                _warn(f"[flash_attention] Skipped: {e}")
 
     # ── Phase 1.3: attach quantized KV cache if requested ─────────────
     global _kv_cache
@@ -1291,7 +1767,7 @@ Examples:
                 budget=args.kv_cache_budget,
                 verbose=True,
             )
-            print(f"  KV cache ready ({args.kv_cache_mode})")
+            _info("kv-cache", f"ready ({args.kv_cache_mode})")
         except Exception as e:
             import logging as _logging
             _logging.getLogger(__name__).warning(
@@ -1312,8 +1788,7 @@ Examples:
                 batch_window_ms = args.batch_window_ms,
             )
             _scheduler.start()
-            print(f"  Batch scheduler : enabled  "
-                  f"(max_batch={args.batch_size}  window={args.batch_window_ms:.0f}ms)")
+            _info("batch-scheduler", f"enabled  max_batch={args.batch_size}  window={args.batch_window_ms:.0f}ms")
         except Exception as e:
             import logging as _logging
             _logging.getLogger(__name__).warning(
@@ -1326,12 +1801,16 @@ Examples:
         load_draft_model(args.draft_model, args.draft_compressed, verbose=args.verbose)
 
     print()
-    print(f"  Server ready → http://{args.host}:{args.port}/v1")
-    print(f"  Web chat UI  → http://{args.host}:{args.port}/chat")
-    print(f"  Ollama compat→ http://{args.host}:{args.port}/api/chat")
-    print("  Set in clients:")
-    print(f"    OPENAI_BASE_URL=http://{args.host}:{args.port}/v1")
-    print("    OPENAI_API_KEY=squish")
+    _section("")
+    print(f"  {_C.B}{_gradient('  Server ready!', _LOGO_GRAD)}{_C.R}")
+    print()
+    _info("API endpoint",  f"{_C.T}http://{args.host}:{args.port}/v1{_C.R}")
+    _info("Web chat UI",   f"{_C.T}http://{args.host}:{args.port}/chat{_C.R}")
+    _info("Ollama compat", f"{_C.T}http://{args.host}:{args.port}/api/chat{_C.R}")
+    print()
+    print(f"  {_C.DIM}Set in any OpenAI client:{_C.R}")
+    print(f"    {_C.MG}OPENAI_BASE_URL{_C.R}=http://{args.host}:{args.port}/v1")
+    print(f"    {_C.MG}OPENAI_API_KEY{_C.R}=squish")
     print()
 
     uvicorn.run(
