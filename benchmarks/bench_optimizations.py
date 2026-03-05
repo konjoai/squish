@@ -337,16 +337,16 @@ def bench_server_ttft(port: int, model: str) -> None:
              f"≈ {avg_tps:.0f} tok/s")
 
 
-def bench_mx_compile(port: int, model: str) -> None:
+def bench_mx_compile(port: int, model: str, no_compile_port: int = 0) -> None:
     _hdr("5. mx.compile decode step — tokens/s measurement")
-    print(f"  {D}Requires squish running with --kv-cache-mode int8{NC}\n")
 
     msgs = [{"role": "user", "content": "Count to 20 in a comma-separated list."}]
+    REPS = 3
 
-    # ── measure with compile (server default) ────────────────────────────────
+    # ── measure with compile (server default — compile=ON) ──────────────────────────
     times_c = []
-    for _ in range(3):
-        _chat(msgs, port, model, max_tokens=1)   # warm
+    for _ in range(REPS):
+        _chat(msgs, port, model, max_tokens=1)   # JIT warmup
         t0 = time.perf_counter()
         text, _ = _chat(msgs, port, model, max_tokens=64)
         t_total = time.perf_counter() - t0
@@ -354,9 +354,25 @@ def bench_mx_compile(port: int, model: str) -> None:
         times_c.append(est_toks / t_total)
 
     avg_c = sum(times_c) / len(times_c)
-    _row("Decode throughput (compile=ON, default)", f"≈ {avg_c:.1f} tok/s", "")
-    print(f"\n  {D}Note: use --no-compile flag to compare without compile{NC}")
-    print(f"  {D}      (re-run server with `squish serve ... --no-compile`){NC}")
+    _row("Decode throughput (compile=ON)", f"≈ {avg_c:.1f} tok/s", "")
+
+    # ── measure without compile (companion --no-compile server) ───────────────
+    if no_compile_port > 0 and _server_alive(no_compile_port):
+        times_nc = []
+        for _ in range(REPS):
+            _chat(msgs, no_compile_port, model, max_tokens=1)   # warmup
+            t0 = time.perf_counter()
+            text, _ = _chat(msgs, no_compile_port, model, max_tokens=64)
+            t_total = time.perf_counter() - t0
+            est_toks = max(1, len(text) // 4)
+            times_nc.append(est_toks / t_total)
+
+        avg_nc = sum(times_nc) / len(times_nc)
+        speedup = avg_c / avg_nc if avg_nc > 0 else 0.0
+        _row("Decode throughput (compile=OFF)", f"≈ {avg_nc:.1f} tok/s", "")
+        _row("mx.compile speedup", f"{speedup:.2f}×", "")
+    else:
+        print(f"  {D}compile=OFF comparison unavailable — pass --no-compile-port to enable{NC}")
 
 
 # ── ════════════════════════════════════════════════════════════════════════ ──
@@ -373,6 +389,10 @@ def main() -> int:  # pragma: no cover
     ap.add_argument("--suite",      choices=["local", "server", "all"], default="all")
     ap.add_argument("--local-only", action="store_true",
                     help="Skip server benchmarks even if a server is reachable")
+    ap.add_argument("--no-compile-port", type=int, default=0,
+                    metavar="N",
+                    help="Port of a companion --no-compile server for compile=ON/OFF "
+                         "comparison (default 0 = no comparison)")
     args = ap.parse_args()
 
     print(f"\n{W}{'═' * 60}{NC}")
@@ -401,7 +421,8 @@ def main() -> int:  # pragma: no cover
                 print(f"  {D}Start with: squish serve qwen3:8b{NC}")
             else:
                 bench_server_ttft(args.port, args.model)
-                bench_mx_compile(args.port, args.model)
+                bench_mx_compile(args.port, args.model,
+                                 no_compile_port=args.no_compile_port)
 
     print(f"\n{W}{'═' * 60}{NC}")
     print(f"{G}  Benchmarks complete.{NC}")

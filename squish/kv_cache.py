@@ -113,6 +113,11 @@ def _dequantize_int8_per_channel(q: np.ndarray, scale: np.ndarray) -> np.ndarray
     return arr.astype(np.float16)
 
 
+# Number of tokens to collect before fitting the per-layer SVD basis.
+# 64 tokens provide a stable subspace for head_dim=128 models.
+_SVD_INIT_TOKENS: int = 64
+
+
 # ---------------------------------------------------------------------------
 # KVLayerCache — per-layer KV buffer with optional INT8 compression
 # ---------------------------------------------------------------------------
@@ -146,13 +151,24 @@ class KVLayerCache:
         "_disk_map_k",  "_disk_map_v",
         "_disk_scales_k", "_disk_scales_v",
         "_disk_n",
+        # Phase 1: SVD KV compression
+        "_svd_rank",      # int: 0 = off; rank < head_dim when enabled
+        "_svd_Vk",        # np.ndarray (n_heads, rank, head_dim) float16 or None
+        "_svd_Vv",        # same shape as _svd_Vk
+        "_svd_buf_k",     # list[np.ndarray] calibration buffer (FP16), or None
+        "_svd_buf_v",     # same
+        # Phase 2: HNSW retrieval index
+        "_retrieval_top_k",  # int: 0 = off; >0 enables HNSW for disk-tier retrieval
+        "_hnsw",             # HNSWIndex | None
+        # Phase 0C: async CPU dequant pre-fetch (prevents GPU ↔ dequant contention)
+        "_prefetch_future",  # Future[tuple] | None
     )
 
     def __init__(self, window: int = 64):
         self.window        = window
         self.keys_recent   = []     # list of (n_heads, head_dim) f16 arrays
         self.values_recent = []
-        self.keys_old_q    = None   # (n_heads, n_old, head_dim) int8
+        self.keys_old_q    = None   # (n_heads, n_old, head_dim_or_rank) int8
         self.keys_old_s    = None   # (n_heads, n_old) f32
         self.values_old_q  = None
         self.values_old_s  = None
@@ -167,6 +183,17 @@ class KVLayerCache:
         self._disk_scales_k  = None   # np.ndarray (n_heads, max_disk) f32
         self._disk_scales_v  = None
         self._disk_n         = 0      # rows currently written to disk
+        # Phase 1: SVD KV compression
+        self._svd_rank   = 0     # 0 = off; set to rank < head_dim to enable
+        self._svd_Vk     = None  # (n_heads, rank, head_dim) float16 — fitted once, then frozen
+        self._svd_Vv     = None
+        self._svd_buf_k  = None  # list[np.ndarray] calibration buffer (FP16), cleared after fit
+        self._svd_buf_v  = None
+        # Phase 2: HNSW retrieval index
+        self._retrieval_top_k = 0     # 0 = off; set via enable_disk_tier
+        self._hnsw            = None  # HNSWIndex, lazily created on first disk spill
+        # Phase 0C: async CPU dequant pre-fetch
+        self._prefetch_future = None  # concurrent.futures.Future | None
 
     # ── Main cache update ─────────────────────────────────────────────────────
 
@@ -187,6 +214,23 @@ class KVLayerCache:
             while len(self.keys_recent) > self.window:
                 oldest_k = self.keys_recent.pop(0)    # (n_heads, head_dim)
                 oldest_v = self.values_recent.pop(0)
+
+                # ── Phase 1: SVD calibration phase ──────────────────────────────────
+                # Buffer tokens in FP16 until we have enough to fit the SVD basis.
+                # Once fitted, all subsequent tokens are projected before INT8 quant.
+                if self._svd_rank > 0 and self._svd_Vk is None:
+                    if self._svd_buf_k is None:
+                        self._svd_buf_k, self._svd_buf_v = [], []
+                    self._svd_buf_k.append(oldest_k)
+                    self._svd_buf_v.append(oldest_v)
+                    if len(self._svd_buf_k) >= _SVD_INIT_TOKENS:
+                        self._svd_fit_and_flush()
+                    continue  # token is buffered; skip normal quantization
+
+                # ── Apply SVD projection if basis is ready ────────────────────────
+                if self._svd_Vk is not None:
+                    oldest_k = self._svd_project(oldest_k, self._svd_Vk)
+                    oldest_v = self._svd_project(oldest_v, self._svd_Vv)
 
                 # Quantize per-head per-token
                 new_kq_list, new_ks_list = [], []
@@ -238,14 +282,20 @@ class KVLayerCache:
                 # Dequantize per head
                 old_k_list, old_v_list = [], []
                 for h in range(self.n_heads):
-                    old_k_list.append(
-                        _dequantize_int8_per_channel(
-                            self.keys_old_q[h],      # (n_old, head_dim)
-                            self.keys_old_s[h]))     # (n_old,)
-                    old_v_list.append(
-                        _dequantize_int8_per_channel(
-                            self.values_old_q[h],
-                            self.values_old_s[h]))
+                    k_deq = _dequantize_int8_per_channel(
+                        self.keys_old_q[h],      # (n_old, rank_or_head_dim)
+                        self.keys_old_s[h])      # (n_old,)
+                    v_deq = _dequantize_int8_per_channel(
+                        self.values_old_q[h],
+                        self.values_old_s[h])
+                    # Phase 1: back-project SVD-compressed tokens to full head_dim
+                    if self._svd_Vk is not None:
+                        Vk_h = self._svd_Vk[h].astype(np.float32)  # (rank, head_dim)
+                        Vv_h = self._svd_Vv[h].astype(np.float32)
+                        k_deq = (k_deq.astype(np.float32) @ Vk_h).astype(np.float16)
+                        v_deq = (v_deq.astype(np.float32) @ Vv_h).astype(np.float16)
+                    old_k_list.append(k_deq)
+                    old_v_list.append(v_deq)
                 old_k = np.stack(old_k_list, axis=0)   # (n_heads, n_old, head_dim)
                 old_v = np.stack(old_v_list, axis=0)
             else:
@@ -268,6 +318,59 @@ class KVLayerCache:
             full_k = np.concatenate(parts_k, axis=1)
             full_v = np.concatenate(parts_v, axis=1)
             return full_k, full_v
+
+    # ── Phase 0C: async CPU dequant pre-fetch ─────────────────────────────────
+    # During the token-sampling step (which is CPU-bound) we overlap the
+    # INT8→FP16 dequantization of the *next* decode step on a background thread.
+    # This hides the O(n_old_tokens) numpy work behind the sampler, preventing
+    # ≥30 % slowdown from blocking the generation loop on large KV caches.
+    #
+    # Usage in the decode loop:
+    #   layer_cache.start_prefetch()      # fire-and-forget at end of step N
+    #   ...sample token N...
+    #   k, v = layer_cache.get_full_kv_prefetched()   # ready at step N+1
+
+    _THREAD_POOL: "concurrent.futures.ThreadPoolExecutor | None" = None
+
+    @classmethod
+    def _get_pool(cls) -> "concurrent.futures.ThreadPoolExecutor":
+        if cls._THREAD_POOL is None:
+            import concurrent.futures
+            # One worker is enough: dequant is sequential per layer; we want
+            # CPU—not Metal—so we keep the thread off the main queue.
+            cls._THREAD_POOL = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="squish-kv-deq"
+            )
+        return cls._THREAD_POOL
+
+    def start_prefetch(self) -> None:
+        """
+        Submit the dequantization work for the *current* cache state to a
+        background CPU thread.  Call this immediately after sampling a token
+        so the work overlaps with the next-step setup.
+        """
+        if self._prefetch_future is not None:
+            return  # already in-flight
+        if self.keys_old_q is None:
+            return  # nothing to prefetch — recent window only, no INT8 tier
+        try:
+            self._prefetch_future = self._get_pool().submit(self.get_full_kv)
+        except Exception:
+            self._prefetch_future = None  # never block generation
+
+    def get_full_kv_prefetched(self) -> tuple:
+        """
+        Return the pre-fetched ``(keys, values)`` numpy arrays if available,
+        otherwise fall back to a synchronous ``get_full_kv()`` call.
+        """
+        future = self._prefetch_future
+        self._prefetch_future = None  # consume the future
+        if future is None:
+            return self.get_full_kv()
+        try:
+            return future.result(timeout=0.5)
+        except Exception:
+            return self.get_full_kv()
 
     def get_as_mlx(self):
         """Return (keys, values) as MLX bfloat16 arrays for use in attention."""
@@ -295,7 +398,7 @@ class KVLayerCache:
         return b
 
     def reset(self):
-        """Clear all cached K/V state."""
+        """Clear all cached K/V state (SVD basis is preserved across conversations)."""
         with self._lock:
             self.keys_recent.clear()
             self.values_recent.clear()
@@ -315,6 +418,88 @@ class KVLayerCache:
                         pathlib.Path(p).unlink(missing_ok=True)
                     except Exception:
                         pass
+            # Clear SVD calibration buffer but keep the fitted basis
+            self._svd_buf_k = None
+            self._svd_buf_v = None
+            # Reset HNSW retrieval index (token positions change each conversation)
+            self._hnsw = None
+
+    # ── Phase 1: SVD KV compression helpers ───────────────────────────────────
+
+    def _svd_project(self, x: np.ndarray, V: np.ndarray) -> np.ndarray:
+        """
+        Project one token's K or V from full head_dim to SVD rank.
+
+        Parameters
+        ----------
+        x : (n_heads, head_dim)          float16
+        V : (n_heads, rank, head_dim)    float16  — right singular vectors
+
+        Returns
+        -------
+        (n_heads, rank)  float16
+        """
+        x_f32 = x.astype(np.float32)       # (n_heads, head_dim)
+        V_f32 = V.astype(np.float32)       # (n_heads, rank, head_dim)
+        # result[h] = x[h] @ V[h].T  → (rank,) per head
+        out = np.einsum("hd,hrd->hr", x_f32, V_f32)
+        return out.astype(np.float16)
+
+    def _svd_fit_and_flush(self) -> None:
+        """
+        Fit per-head SVD bases from the calibration buffer, then quantize all
+        buffered tokens to INT8 using the fitted projection.
+
+        Called once when ``len(_svd_buf_k) >= _SVD_INIT_TOKENS``.
+        After this call ``_svd_Vk/Vv`` are set and ``_svd_buf_k/v`` are cleared.
+        """
+        Vk_list, Vv_list = [], []
+        for h in range(self.n_heads):
+            K = np.stack([t[h] for t in self._svd_buf_k], axis=0).astype(np.float32)
+            _, _, Vt = np.linalg.svd(K, full_matrices=False)   # Vt: (min(n_init,dim), dim)
+            Vk_list.append(Vt[:self._svd_rank, :])              # (rank, head_dim)
+
+            V_mat = np.stack([t[h] for t in self._svd_buf_v], axis=0).astype(np.float32)
+            _, _, Vt = np.linalg.svd(V_mat, full_matrices=False)
+            Vv_list.append(Vt[:self._svd_rank, :])
+
+        # Store as float16 to save memory; cast to float32 only on projection
+        self._svd_Vk = np.stack(Vk_list, axis=0).astype(np.float16)  # (n_heads, rank, head_dim)
+        self._svd_Vv = np.stack(Vv_list, axis=0).astype(np.float16)
+
+        # Flush the calibration buffer: project + quantize each buffered token
+        for k_f16, v_f16 in zip(self._svd_buf_k, self._svd_buf_v):
+            k_proj = self._svd_project(k_f16, self._svd_Vk)   # (n_heads, rank)
+            v_proj = self._svd_project(v_f16, self._svd_Vv)
+
+            new_kq_list, new_ks_list = [], []
+            new_vq_list, new_vs_list = [], []
+            for h in range(self.n_heads):
+                kq, ks = _quantize_int8_per_channel(k_proj[h:h+1, :])
+                vq, vs = _quantize_int8_per_channel(v_proj[h:h+1, :])
+                new_kq_list.append(kq)
+                new_ks_list.append(ks)
+                new_vq_list.append(vq)
+                new_vs_list.append(vs)
+
+            slot_kq = np.stack(new_kq_list, axis=0)
+            slot_ks = np.stack(new_ks_list, axis=0)
+            slot_vq = np.stack(new_vq_list, axis=0)
+            slot_vs = np.stack(new_vs_list, axis=0)
+
+            if self.keys_old_q is None:
+                self.keys_old_q   = slot_kq
+                self.keys_old_s   = slot_ks
+                self.values_old_q = slot_vq
+                self.values_old_s = slot_vs
+            else:
+                self.keys_old_q   = np.concatenate([self.keys_old_q,   slot_kq], axis=1)
+                self.keys_old_s   = np.concatenate([self.keys_old_s,   slot_ks], axis=1)
+                self.values_old_q = np.concatenate([self.values_old_q, slot_vq], axis=1)
+                self.values_old_s = np.concatenate([self.values_old_s, slot_vs], axis=1)
+
+        self._svd_buf_k = None
+        self._svd_buf_v = None
 
     # ── Disk overflow tier (Item 4) ───────────────────────────────────────────
 
@@ -325,6 +510,7 @@ class KVLayerCache:
         cache_dir,          # str | Path
         n_heads: int,
         head_dim: int,
+        retrieval_top_k: int = 0,  # Phase 2: >0 enables HNSW retrieval index
     ) -> None:
         """
         Enable disk-backed overflow for old INT8 K/V entries.
@@ -346,6 +532,8 @@ class KVLayerCache:
         n_heads, head_dim : model dimensions (required to size the memmap
                             before the first append, because __slots__ prevent
                             lazy init once n_heads is known).
+        retrieval_top_k  : int — Phase 2: if >0 build an HNSW index on spilled
+                            key vectors to support get_relevant_kv().
         """
         import pathlib, tempfile
         cache_dir = pathlib.Path(cache_dir)
@@ -354,6 +542,7 @@ class KVLayerCache:
         self._disk_dir       = cache_dir
         self.n_heads  = n_heads
         self.head_dim = head_dim
+        self._retrieval_top_k = retrieval_top_k
         uid = id(self)
         path_k = cache_dir / f"kv_{uid}_k.bin"
         path_v = cache_dir / f"kv_{uid}_v.bin"
@@ -366,6 +555,7 @@ class KVLayerCache:
         self._disk_scales_k = np.zeros((n_heads, max_disk_tokens), dtype=np.float32)
         self._disk_scales_v = np.zeros((n_heads, max_disk_tokens), dtype=np.float32)
         self._disk_n = 0
+        # HNSW index is created lazily on first spill (dim may change with SVD)
 
     def _maybe_spill_to_disk(self) -> None:
         """
@@ -397,11 +587,154 @@ class KVLayerCache:
         self._disk_scales_v[:, self._disk_n:disk_end] = \
             self.values_old_s[:, :n_spill]
         self._disk_n = disk_end
+
+        # Phase 2: update HNSW retrieval index with the spilled key vectors
+        if self._retrieval_top_k > 0:
+            self._update_hnsw_index(
+                keys_int8=self.keys_old_q[:, :n_spill, :],
+                scales=self.keys_old_s[:, :n_spill],
+                start_pos=self._disk_n - n_spill,
+            )
+
         # Trim RAM buffer
         self.keys_old_q   = self.keys_old_q[:, n_spill:, :]
         self.keys_old_s   = self.keys_old_s[:, n_spill:]
         self.values_old_q = self.values_old_q[:, n_spill:, :]
         self.values_old_s = self.values_old_s[:, n_spill:]
+
+    def _update_hnsw_index(
+        self,
+        keys_int8: np.ndarray,   # (n_heads, n, rank_or_head_dim) int8
+        scales: np.ndarray,      # (n_heads, n) float32
+        start_pos: int,
+    ) -> None:
+        """
+        Add spilled key vectors to the HNSW retrieval index.
+
+        Uses head 0 as the representative head for indexing.  HNSW is
+        lazily created on the first call so the correct dimension is known
+        (after SVD fitting if active).
+
+        Parameters
+        ----------
+        keys_int8 : (n_heads, n, dim) int8 — spilled key vectors
+        scales    : (n_heads, n) float32   — per-token scales
+        start_pos : int — disk position offset for these tokens
+        """
+        h = 0   # representative head
+        n = keys_int8.shape[1]
+        # Dequantize head-0 keys
+        k_deq = _dequantize_int8_per_channel(
+            keys_int8[h], scales[h])  # (n, rank_or_head_dim) float16
+        # Back-project SVD if active (so index is in full head_dim space)
+        if self._svd_Vk is not None:
+            k_deq = (k_deq.astype(np.float32) @ self._svd_Vk[h].astype(np.float32)).astype(np.float16)
+        k_f32 = k_deq.astype(np.float32)  # (n, head_dim)
+        dim = k_f32.shape[-1]
+        # Lazy HNSW init: dim is now known
+        if self._hnsw is None:
+            try:
+                try:
+                    from squish.vector_index import HNSWIndex
+                except ImportError:
+                    from vector_index import HNSWIndex  # direct run
+                max_elem = int(self._disk_map_k.shape[1]) if self._disk_map_k is not None else 500_000
+                self._hnsw = HNSWIndex(dim=dim, max_elements=max_elem)
+            except ImportError:
+                return  # hnswlib not installed — silently skip
+        ids = np.arange(start_pos, start_pos + n, dtype=np.int64)
+        self._hnsw.add(k_f32, ids)
+
+    def get_relevant_kv(
+        self,
+        query_key_fp16: np.ndarray,   # (n_heads, head_dim) float16
+        top_k: int,
+        hot_window: int = 256,
+    ) -> tuple:
+        """
+        Return a *sparse* K/V context composed of ANNS-retrieved disk tokens
+        plus a guaranteed hot-window of the most recent RAM tokens.
+
+        Falls back to ``get_full_kv()`` when no HNSW index is available.
+
+        Parameters
+        ----------
+        query_key_fp16 : (n_heads, head_dim) float16 — current decode step key
+        top_k          : int — number of disk tokens to retrieve per query
+        hot_window     : int — number of most-recent RAM tokens always included
+
+        Returns
+        -------
+        (keys, values) : (n_heads, n_ctx, head_dim) float16 each
+        """
+        if self._hnsw is None or self._disk_n == 0:
+            return self.get_full_kv()
+        with self._lock:
+            h = 0  # representative head for ANNS query
+            # Build query vector (back-project SVD if active)
+            q_fp16 = query_key_fp16[h]
+            if self._svd_Vk is not None:
+                q_fp16 = (q_fp16.astype(np.float32) @ self._svd_Vk[h].astype(np.float32)).astype(np.float16)
+            q_f32 = q_fp16.astype(np.float32)
+
+            # ANNS search over disk-tier keys
+            retrieved_ids, _ = self._hnsw.search(q_f32, top_k=top_k)
+
+            if len(retrieved_ids) == 0:
+                return self.get_full_kv()
+
+            # Gather retrieved disk rows
+            retrieved_k_list, retrieved_v_list = [], []
+            for hh in range(self.n_heads):
+                k_rows = _dequantize_int8_per_channel(
+                    np.array(self._disk_map_k[hh, retrieved_ids, :]),
+                    self._disk_scales_k[hh, retrieved_ids])
+                v_rows = _dequantize_int8_per_channel(
+                    np.array(self._disk_map_v[hh, retrieved_ids, :]),
+                    self._disk_scales_v[hh, retrieved_ids])
+                retrieved_k_list.append(k_rows)
+                retrieved_v_list.append(v_rows)
+            disk_k = np.stack(retrieved_k_list, axis=0)   # (n_heads, top_k, dim)
+            disk_v = np.stack(retrieved_v_list, axis=0)
+
+            # RAM INT8 tier (most recent hot_window entries)
+            if self.keys_old_q is not None:
+                n_old = self.keys_old_q.shape[1]
+                hot_start = max(0, n_old - hot_window)
+                old_k_list, old_v_list = [], []
+                for hh in range(self.n_heads):
+                    k_deq = _dequantize_int8_per_channel(
+                        self.keys_old_q[hh, hot_start:, :],
+                        self.keys_old_s[hh, hot_start:])
+                    v_deq = _dequantize_int8_per_channel(
+                        self.values_old_q[hh, hot_start:, :],
+                        self.values_old_s[hh, hot_start:])
+                    if self._svd_Vk is not None:
+                        Vk_h = self._svd_Vk[hh].astype(np.float32)
+                        Vv_h = self._svd_Vv[hh].astype(np.float32)
+                        k_deq = (k_deq.astype(np.float32) @ Vk_h).astype(np.float16)
+                        v_deq = (v_deq.astype(np.float32) @ Vv_h).astype(np.float16)
+                    old_k_list.append(k_deq)
+                    old_v_list.append(v_deq)
+                hot_k = np.stack(old_k_list, axis=0)
+                hot_v = np.stack(old_v_list, axis=0)
+            else:
+                hot_k = hot_v = None
+
+            # FP16 recent window (always included)
+            if self.keys_recent:
+                rec_k = np.stack(self.keys_recent, axis=1)
+                rec_v = np.stack(self.values_recent, axis=1)
+            else:
+                rec_k = rec_v = None
+
+            # Concatenate: retrieved disk || hot RAM || recent FP16
+            parts_k = [p for p in (disk_k, hot_k, rec_k) if p is not None]
+            parts_v = [p for p in (disk_v, hot_v, rec_v) if p is not None]
+            if not parts_k:
+                return None, None
+            return (np.concatenate(parts_k, axis=1),
+                    np.concatenate(parts_v, axis=1))
 
     def _disk_full_kv(self) -> tuple:
         """
@@ -601,6 +934,7 @@ class QuantizedKVCache:
         mode: str = "int8",                 # "fp16" | "int8" | "snap"
         budget: int = 4096,
         snap_window: int = 32,
+        svd_rank: int = 0,                  # Phase 1: 0 = off; set to rank < head_dim
     ):
         """
         Parameters
@@ -610,6 +944,7 @@ class QuantizedKVCache:
         mode        : "fp16" (no compression) | "int8" (KIVI) | "snap" (KIVI+SnapKV)
         budget      : max K/V positions to retain per layer (SnapKV only)
         snap_window : attention window for importance scoring (SnapKV)
+        svd_rank    : Phase 1 — project head_dim → rank before INT8 quant (0 = off)
         """
         if mode not in ("fp16", "int8", "snap"):
             raise ValueError(f"mode must be fp16, int8, or snap — got {mode!r}")
@@ -618,10 +953,14 @@ class QuantizedKVCache:
         self.window      = window
         self.budget      = budget
         self.snap_window = snap_window
+        self.svd_rank    = svd_rank
         self.n_layers    = n_layers
         self._layers: list[KVLayerCache] = [
             KVLayerCache(window=window) for _ in range(n_layers)
         ]
+        if svd_rank > 0:
+            for layer in self._layers:
+                layer._svd_rank = svd_rank
         self._snapped = [False] * n_layers   # has SnapKV eviction been applied?
 
     # ── Compatibility shims for mlx_lm cache list API ────────────────────────
@@ -702,6 +1041,12 @@ class QuantizedKVCache:
             dst_lay.values_recent = list(src_lay.values_recent)
             dst_lay.n_heads  = src_lay.n_heads
             dst_lay.head_dim = src_lay.head_dim
+            # Phase 1: carry SVD basis across (calibration buffer is per-request)
+            dst_lay._svd_Vk   = src_lay._svd_Vk
+            dst_lay._svd_Vv   = src_lay._svd_Vv
+            dst_lay._svd_rank = src_lay._svd_rank
+            dst_lay._svd_buf_k = None
+            dst_lay._svd_buf_v = None
 
 
 class _LayerCacheView:
@@ -754,6 +1099,7 @@ def make_quantized_cache(  # pragma: no cover
     window: int = 64,
     budget: int = 4096,
     snap_window: int = 32,
+    svd_rank: int = 0,
 ) -> QuantizedKVCache:
     """
     Create a :class:`QuantizedKVCache` sized correctly for ``model``.
@@ -765,11 +1111,13 @@ def make_quantized_cache(  # pragma: no cover
     window      : FP16 residual window (KIVI)
     budget      : max K/V positions (SnapKV only)
     snap_window : attention window for importance (SnapKV)
+    svd_rank    : Phase 1 — SVD projection rank (0 = off)
     """
     n = _n_layers(model)
     return QuantizedKVCache(
         n_layers=n, window=window, mode=mode,
         budget=budget, snap_window=snap_window,
+        svd_rank=svd_rank,
     )
 
 
@@ -779,6 +1127,7 @@ def patch_model_kv_cache(  # pragma: no cover
     window: int = 64,
     budget: int = 4096,
     snap_window: int = 32,
+    svd_rank: int = 0,
     verbose: bool = True,
 ) -> QuantizedKVCache:
     """
@@ -805,13 +1154,15 @@ def patch_model_kv_cache(  # pragma: no cover
     cache = make_quantized_cache(
         model, mode=mode, window=window,
         budget=budget, snap_window=snap_window,
+        svd_rank=svd_rank,
     )
     n = _n_layers(model)
 
     if verbose:
+        svd_info = f"  svd_rank={svd_rank}" if svd_rank > 0 else ""
         print(f"  [KV cache] mode={mode}  window={window}  "
               f"budget={budget if mode == 'snap' else '—'}  "
-              f"layers={n}")
+              f"layers={n}{svd_info}")
 
     # Store on the model so server.py can retrieve it
     model._squish_kv_cache = cache
@@ -1000,6 +1351,11 @@ class DiskKVCache:
             if n_rec > 0:
                 out[f"L{i}_keys_recent"] = np.stack(lay.keys_recent, axis=1)   # (H, n_rec, D)
                 out[f"L{i}_vals_recent"] = np.stack(lay.values_recent, axis=1)
+            # Phase 1: persist SVD basis so subsequent requests skip refitting
+            if lay._svd_Vk is not None:
+                out[f"L{i}_svd_rank"] = np.array(lay._svd_rank, dtype=np.int32)
+                out[f"L{i}_svd_Vk"]   = lay._svd_Vk   # (n_heads, rank, head_dim) f16
+                out[f"L{i}_svd_Vv"]   = lay._svd_Vv
         return out
 
     @staticmethod
@@ -1025,6 +1381,11 @@ class DiskKVCache:
                 for t in range(n_rec):
                     lay.keys_recent.append(k_rec[:, t, :])
                     lay.values_recent.append(v_rec[:, t, :])
+            # Phase 1: restore SVD basis if persisted
+            if f"L{i}_svd_Vk" in data:
+                lay._svd_rank = int(data[f"L{i}_svd_rank"])
+                lay._svd_Vk   = data[f"L{i}_svd_Vk"]
+                lay._svd_Vv   = data[f"L{i}_svd_Vv"]
             layers.append(lay)
 
         qkv = object.__new__(QuantizedKVCache)
@@ -1044,3 +1405,119 @@ class DiskKVCache:
                     entries.pop(0).unlink(missing_ok=True)
                 except Exception:
                     pass
+
+
+# ---------------------------------------------------------------------------
+# SessionKVCache — persistent cross-session KV state (Phase 3)
+# ---------------------------------------------------------------------------
+
+class SessionKVCache:
+    """
+    Persistent KV-state cache keyed by a SHA-256 hash of the last 8 message 
+    contents in a conversation.
+
+    Unlike :class:`DiskKVCache` (which is keyed by raw token IDs), this cache
+    is keyed by the *conversation context*, allowing the server to resume KV
+    state across restarts without requiring identical tokenization.
+
+    Session files are stored as compressed ``.npz`` under ``cache_dir``.
+    Writes are non-blocking (background thread).
+
+    Parameters
+    ----------
+    cache_dir   : str | Path — directory for session files (created if needed)
+    max_entries : int        — LRU cap; oldest evicted when exceeded
+    """
+
+    def __init__(self, cache_dir, max_entries: int = 128):
+        import threading as _threading
+        self._dir  = Path(cache_dir)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._max  = max_entries
+        self._lock = _threading.Lock()
+
+    # ── Public API ──────────────────────────────────────────────────────────
+
+    def session_key(self, messages: "list[dict]") -> str:
+        """
+        Derive a stable session key from the last 8 message contents.
+
+        Parameters
+        ----------
+        messages : list of OpenAI-style message dicts with ``"content"`` keys
+
+        Returns
+        -------
+        32-hex-char string (SHA-256 truncated to 128 bits)
+        """
+        import hashlib
+        tail = messages[-8:] if len(messages) > 8 else messages
+        raw  = "\n".join(str(m.get("content", "")) for m in tail).encode("utf-8")
+        return hashlib.sha256(raw).hexdigest()[:32]
+
+    def load_session(self, key: str) -> "QuantizedKVCache | None":
+        """
+        Return a :class:`QuantizedKVCache` for a prior session, or ``None`` on miss.
+
+        Parameters
+        ----------
+        key : session key from :meth:`session_key`
+        """
+        entry = self._dir / (key + ".npz")
+        if not entry.exists():
+            return None
+        try:
+            data = np.load(entry, allow_pickle=False)
+            qkv  = DiskKVCache._deserialise(data)
+            entry.touch()   # update mtime for LRU ordering
+            return qkv
+        except Exception:
+            try:
+                entry.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return None
+
+    def save_session(
+        self,
+        key: str,
+        qkv_cache: "QuantizedKVCache",
+    ) -> None:
+        """
+        Persist *qkv_cache* under *key* in a background thread.
+
+        Returns immediately; silently drops on serialisation error.
+        """
+        import threading as _threading
+
+        def _worker():
+            try:
+                arrays = DiskKVCache._serialise(qkv_cache)
+                if arrays is None:
+                    return
+                entry = self._dir / (key + ".npz")
+                np.savez_compressed(str(entry), **arrays)
+                self._evict_if_needed()
+            except Exception:
+                pass
+
+        _threading.Thread(target=_worker, daemon=True).start()
+
+    def list_sessions(self) -> "list[str]":
+        """Return sorted list of active session keys (file stems)."""
+        return sorted(p.stem for p in self._dir.glob("*.npz"))
+
+    # ── internals ───────────────────────────────────────────────────────────
+
+    def _evict_if_needed(self) -> None:
+        with self._lock:
+            entries = sorted(
+                self._dir.glob("*.npz"),
+                key=lambda p: p.stat().st_mtime,
+            )
+            while len(entries) > self._max:
+                try:
+                    entries.pop(0).unlink(missing_ok=True)
+                except Exception:
+                    pass
+

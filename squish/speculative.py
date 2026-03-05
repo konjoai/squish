@@ -36,6 +36,7 @@ Standalone test:
 
 import logging
 import time
+from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -218,6 +219,287 @@ def _decode_multi_cached(model, cache, token_ids: list[int]) -> np.ndarray:
     return np.array(rows, dtype=np.float32)
 
 
+# ── Phase 1A: N-gram in-context draft table ───────────────────────────────────
+
+class NgramTable:
+    """
+    In-context n-gram draft table for zero-cost speculative proposals.
+
+    Built from prompt tokens at the start of each decode cycle and extended
+    incrementally as new tokens are generated.  When a suffix of the live
+    context matches a known n-gram prefix the continuation is used as a free
+    draft proposal instead of running the neural draft model.
+
+    Benefits vs. neural draft
+    ─────────────────────────
+    • No forward pass — effectively zero latency overhead.
+    • ~100 % acceptance on exact repetitions (code blocks, lists, copied quotes).
+    • Falls through to neural draft on misses — no regression.
+
+    Complexity: build O(max_n × seq_len) · update O(max_n) · lookup O(max_n)
+    Space: O(max_n × unique_ngrams) — bounded by context length.
+    """
+
+    def __init__(self, max_n: int = 8):
+        self._max_n = max_n
+        # prefix_tuple → {next_token_id: count}
+        self._table: dict[tuple, dict[int, int]] = {}
+
+    def build(self, ids: list[int]) -> None:
+        """Build the full n-gram table from a token sequence (typically the prompt)."""
+        self._table.clear()
+        for n in range(2, min(self._max_n + 1, len(ids) + 1)):
+            for i in range(len(ids) - n + 1):
+                prefix   = tuple(ids[i : i + n - 1])
+                next_tok = ids[i + n - 1]
+                tbl = self._table.setdefault(prefix, {})
+                tbl[next_tok] = tbl.get(next_tok, 0) + 1
+
+    def update(self, new_tok: int, context_before: list[int]) -> None:
+        """
+        Extend the table after generating *new_tok*.
+
+        *context_before* is the sequence immediately BEFORE *new_tok* was added;
+        the longest prefix used is ``context_before[-(max_n-1):]``.
+        """
+        for prefix_len in range(1, min(self._max_n, len(context_before) + 1)):
+            prefix = tuple(context_before[-prefix_len:])
+            tbl = self._table.setdefault(prefix, {})
+            tbl[new_tok] = tbl.get(new_tok, 0) + 1
+
+    def lookup_k(self, context: list[int], k: int) -> list[int]:
+        """
+        Greedily extend *context* by up to *k* tokens using n-gram lookups.
+        Returns a (possibly shorter) list of proposed token IDs.
+        """
+        result: list[int] = []
+        ctx = list(context)
+        for _ in range(k):
+            tok = self._lookup_one(ctx)
+            if tok is None:
+                break
+            result.append(tok)
+            ctx.append(tok)
+        return result
+
+    def _lookup_one(self, context: list[int]) -> int | None:
+        """Return the most-common next token for the longest matching prefix."""
+        for n in range(min(self._max_n, len(context)), 0, -1):
+            prefix     = tuple(context[-n:])
+            candidates = self._table.get(prefix)
+            if candidates:
+                return max(candidates, key=candidates.__getitem__)
+        return None
+
+
+# ── Phase 1B: Hidden-state capture shim ──────────────────────────────────────
+
+class HiddenStateCapture:
+    """
+    Thin wrapper around a mlx_lm model that captures the final hidden states
+    (BEFORE the lm_head projection) after each forward pass.
+
+    Required by the EAGLE-3 draft head, which conditions on the target
+    model's internal representations rather than its output logits.
+
+    Usage
+    ─────
+        capture = HiddenStateCapture(target_model)
+        logits  = capture(x, cache=kv_cache)
+        hidden  = capture.last_hidden  # (1, seq_len, hidden_dim) or None
+    """
+
+    def __init__(self, model):
+        self._m           = model
+        # Standard mlx_lm layout: model.model → inner transformer,
+        #                          model.lm_head → final linear projection.
+        self._can_capture = (
+            hasattr(model, "model") and hasattr(model, "lm_head")
+        )
+        self.last_hidden: "mx.array | None" = None
+
+    @property
+    def can_capture(self) -> bool:
+        return self._can_capture
+
+    def __call__(self, x, cache=None):
+        if self._can_capture:
+            h = self._m.model(x, cache=cache)
+            self.last_hidden = h
+            return self._m.lm_head(h)
+        self.last_hidden = None
+        return self._m(x, cache=cache)
+
+    def __getattr__(self, name: str):
+        return getattr(self._m, name)
+
+
+# ── Phase 1B: EAGLE-3 draft head ─────────────────────────────────────────────
+
+class EagleDraftHead:
+    """
+    EAGLE-3 lightweight draft head.
+
+    The head is a small transformer (1-2 decoder layers) that conditions on
+    the *target* model's last hidden state and autoregressively produces k
+    draft tokens using its own internal KV cache.  Because it sees the
+    target's full internal representation it achieves much higher acceptance
+    rates than a separate small model (typically 75-85 % vs 55-65 %).
+
+    Architecture  (EAGLE-3 paper: Chen et al., 2025)
+    ─────────────────────────────────────────────────
+      fc        : Linear(2 × hidden_dim → hidden_dim)   [fuse hidden + embed]
+      layers[i] : 1-2 decoder layers  (same config as target)
+      norm      : RMSNorm(hidden_dim)
+      lm_head   : Linear(hidden_dim → vocab_size)       [tied to target weights]
+
+    Weight source
+    ─────────────
+    Download with:
+        squish pull-head qwen3:8b          # auto-resolve
+        squish pull-head --repo yuhuili/EAGLE3-Qwen3-Instruct-8B
+    Weights are stored in ~/.squish/eagle-heads/<model-name>/ by default.
+    """
+
+    def __init__(
+        self,
+        eagle_model,
+        lm_head_weight: "mx.array",
+        embed_weight:   "mx.array",
+    ):
+        self._model      = eagle_model
+        self._lm_head_w  = lm_head_weight   # (vocab_size, hidden_dim)
+        self._embed_w    = embed_weight      # (vocab_size, hidden_dim)
+        self._cache      = _try_make_model_cache(eagle_model)
+        # Detect whether inner model has the fc fusion layer
+        self._has_fc = (
+            hasattr(eagle_model, "model")
+            and hasattr(getattr(eagle_model, "model", None), "fc")
+        )
+
+    @classmethod
+    def from_dir(
+        cls,
+        head_dir: str,
+        target_model,
+        verbose: bool = False,
+    ) -> "EagleDraftHead":
+        """
+        Load an EAGLE-3 head from *head_dir*.
+
+        lm_head and embed_tokens weights are shared with the target model
+        (standard EAGLE protocol).  Target weights are preferred; if absent
+        they are loaded from the head checkpoint.
+        """
+        from mlx_lm import load as _mlx_load
+
+        head_dir_p = Path(head_dir).expanduser()
+        if not head_dir_p.exists():
+            raise FileNotFoundError(
+                f"EAGLE head directory not found: {head_dir_p}\n"
+                "  → Run: squish pull-head <model>"
+            )
+        if verbose:
+            logger.info("Loading EAGLE-3 head from %s", head_dir_p)
+
+        eagle_model, _ = _mlx_load(str(head_dir_p))
+
+        # Shared weight resolution: target > eagle checkpoint
+        lm_head_w = getattr(getattr(target_model, "lm_head", None), "weight", None)
+        embed_w   = getattr(
+            getattr(getattr(target_model, "model", None), "embed_tokens", None),
+            "weight", None,
+        )
+        if lm_head_w is None:
+            lm_head_w = getattr(
+                getattr(eagle_model, "lm_head", None), "weight", None
+            )
+        if embed_w is None:
+            embed_w = getattr(
+                getattr(getattr(eagle_model, "model", None), "embed_tokens", None),
+                "weight", None,
+            )
+        if lm_head_w is None or embed_w is None:
+            raise RuntimeError(
+                "Cannot locate lm_head / embed_tokens weights in target or EAGLE head. "
+                "Ensure the EAGLE head was downloaded with `squish pull-head`."
+            )
+
+        if verbose:
+            logger.info("EAGLE-3 head loaded (vocab=%d, hidden=%d)",
+                        embed_w.shape[0], embed_w.shape[1])
+        return cls(eagle_model, lm_head_w, embed_w)
+
+    def reset_cache(self) -> None:
+        """Roll back the EAGLE KV cache to position 0 (start of new request)."""
+        _cache_set_offset(self._cache, 0)
+
+    def draft_k(
+        self,
+        target_hidden: "mx.array",  # (1, T, hidden_dim) — from HiddenStateCapture
+        k: int,
+        prev_token_id: int,
+        temperature: float,
+        top_p: float,
+        eos_id: int,
+    ) -> tuple[list[int], list[np.ndarray]]:
+        """
+        Produce up to *k* draft tokens conditioned on *target_hidden*.
+
+        Step 0 — fuse the target's last hidden state with the previous token
+        embedding via the ``fc`` projection and run through EAGLE's layers.
+        Steps 1..k-1 — standard autoregressive decode with EAGLE KV cache.
+
+        Returns ``(draft_ids, draft_probs)`` for the standard
+        accept/reject verification loop.
+        """
+        self.reset_cache()
+        draft_ids:   list[int]        = []
+        draft_probs: list[np.ndarray] = []
+
+        prev_embed = self._embed_w[prev_token_id]   # (hidden_dim,)
+        h_last     = target_hidden[0, -1]            # (hidden_dim,)
+
+        # ── Step 0: first draft token via fc fusion ───────────────────────────
+        if self._has_fc:
+            fused = mx.concatenate([h_last, prev_embed], axis=-1)[None, None]  # (1,1,2H)
+            h = self._model.model.fc(fused)
+            for i, layer in enumerate(self._model.model.layers):
+                c = self._cache[i] if self._cache is not None else None
+                h = layer(h, cache=c)
+            h = self._model.model.norm(h)
+            logit0 = (h[0, -1] @ self._lm_head_w.T)
+        else:
+            # Fallback: run eagle model with target hidden as plain input
+            x_in   = mx.array([[prev_token_id]], dtype=mx.int32)
+            logit0 = self._model(x_in, cache=self._cache)[0, -1]
+
+        mx.eval(logit0)
+        probs0 = _top_p_filter(_softmax_np(np.array(logit0, dtype=np.float32), temperature), top_p)
+        tok0   = _sample(probs0)
+        draft_ids.append(tok0)
+        draft_probs.append(probs0)
+        if tok0 == eos_id or k == 1:
+            return draft_ids, draft_probs
+
+        # ── Steps 1..k-1: autoregressive via EAGLE KV cache ─────────────────
+        cur_tok = tok0
+        for _ in range(k - 1):
+            x_in = mx.array([[cur_tok]], dtype=mx.int32)
+            logits = self._model(x_in, cache=self._cache)
+            mx.eval(logits)
+            logit_np = np.array(logits[0, -1], dtype=np.float32)
+            probs = _top_p_filter(_softmax_np(logit_np, temperature), top_p)
+            tok   = _sample(probs)
+            draft_ids.append(tok)
+            draft_probs.append(probs)
+            if tok == eos_id:
+                break
+            cur_tok = tok
+
+        return draft_ids, draft_probs
+
+
 # ── Draft model loader ────────────────────────────────────────────────────────
 
 def load_draft_model(
@@ -267,6 +549,8 @@ class SpeculativeGenerator:
         draft_model             = None,
         draft_tokenizer         = None,
         k: int                  = _DEFAULT_K,
+        eagle_head: "EagleDraftHead | None" = None,
+        ngram_max_n: int        = 8,
     ):
         self._target  = target_model
         self._ttok    = target_tokenizer
@@ -274,17 +558,36 @@ class SpeculativeGenerator:
         self._dtok    = draft_tokenizer or target_tokenizer
         self._k       = min(max(1, k), _MAX_SPEC_TOKENS)
 
+        # Phase 1B: EAGLE-3 head + hidden-state capture
+        self._eagle_head    = eagle_head
+        self._target_capture: HiddenStateCapture | None = None
+        if eagle_head is not None:
+            self._target_capture = HiddenStateCapture(target_model)
+            if not self._target_capture.can_capture:
+                logger.warning(
+                    "EAGLE-3: target model does not expose model.model/lm_head "
+                    "— EAGLE disabled, falling back to standard spec decode"
+                )
+                self._eagle_head    = None
+                self._target_capture = None
+
+        # Phase 1A: n-gram table (one per stream() call, created in _reset_caches)
+        self._ngram_max_n = ngram_max_n
+        self._ngram: NgramTable | None = None   # built at stream() start
+
         # Acceptance stats (reset per stream() call)
         self.accepted_total  = 0
         self.proposed_total  = 0
         self.steps           = 0
 
         # ── Stateful KV caches ────────────────────────────────────────────────
-        # Created once at init; reset (offset → 0) at the start of each
-        # stream() call.  Both are None when mlx_lm's cache API is unavailable
-        # or when the model uses RotatingKVCache — the stateless path is used
-        # transparently in those cases.
-        self._target_cache = _try_make_model_cache(target_model)
+        # When EAGLE is active we use target_capture as the model object so that
+        # hidden states are captured automatically; otherwise use target directly.
+        _target_for_cache = (
+            self._target_capture if self._target_capture is not None
+            else target_model
+        )
+        self._target_cache = _try_make_model_cache(_target_for_cache)
         self._draft_cache  = (
             _try_make_model_cache(draft_model) if draft_model is not None else None
         )
@@ -293,8 +596,10 @@ class SpeculativeGenerator:
             and (draft_model is None or self._draft_cache is not None)
         )
         logger.debug(
-            "speculative: %s KV caches",
+            "speculative: %s KV caches  eagle=%s  ngram_max_n=%d",
             "stateful" if _use_stateful else "stateless (fallback)",
+            eagle_head is not None,
+            ngram_max_n,
         )
 
     @property
@@ -341,7 +646,11 @@ class SpeculativeGenerator:
         input_ids = list(self._ttok.encode(prompt))
         stop_ids  = stop_ids or []
 
-        if self._draft is None:
+        # Phase 1A: build n-gram table from prompt tokens for this request
+        self._ngram = NgramTable(self._ngram_max_n)
+        self._ngram.build(input_ids)
+
+        if self._draft is None and self._eagle_head is None:
             # No draft model — plain auto-regressive
             yield from self._plain_stream(
                 input_ids, max_tokens, temperature, top_p, stop_ids, eos_id
@@ -363,7 +672,15 @@ class SpeculativeGenerator:
         stop_ids: list[list[int]],
         eos_id: int,
     ) -> Iterator[tuple[str, str | None]]:
-        """Dispatch to stateful (fast) or stateless (fallback) path."""
+        """Dispatch to stateful / EAGLE / stateless path per capability."""
+        # Phase 1B: prefer EAGLE head when hidden-state capture is available
+        if self._eagle_head is not None and self._target_capture is not None:
+            if self._target_cache is not None:
+                yield from self._eagle_spec_stream(
+                    ids, max_tokens, temperature, top_p, stop_ids, eos_id
+                )
+                return
+        # Standard speculative: prefer stateful (KV-cached) path
         if self._draft_cache is not None and self._target_cache is not None:
             yield from self._stateful_spec_stream(
                 ids, max_tokens, temperature, top_p, stop_ids, eos_id
@@ -409,16 +726,37 @@ class SpeculativeGenerator:
 
         generated  = 0
         stop_buf: list[int] = []
+        # Phase 1A: track live context for n-gram updates
+        context = list(ids)
 
         while generated < max_tokens:
-            base = _cache_offset(self._target_cache)
+            base      = _cache_offset(self._target_cache)
+            vocab_sz  = len(d_last)
 
-            # ── Step 1: draft proposes k tokens (stateful, 1 token/pass) ──────
+            # ── Step 1: draft proposes k tokens ───────────────────────────────
+            # Phase 1A: fill as many slots as possible from the n-gram table
+            # (zero cost — no forward pass) then fall back to neural draft.
             draft_ids  : list[int]        = []
             draft_probs: list[np.ndarray] = []
-            cur_d_logits = d_last
 
-            for _ in range(self._k):
+            if self._ngram is not None:
+                ngram_toks = self._ngram.lookup_k(context, self._k)
+                for tok in ngram_toks:
+                    # One-hot distribution: n-gram was certain about this token.
+                    # Acceptance probability = min(1, p_target / 1.0) = p_target.
+                    probs = np.zeros(vocab_sz, dtype=np.float32)
+                    probs[tok] = 1.0
+                    draft_ids.append(tok)
+                    draft_probs.append(probs)
+                    if tok == eos_id:
+                        break
+
+            # Neural draft fills remaining slots
+            cur_d_logits = d_last
+            n_neural     = self._k - len(draft_ids)
+            for _ in range(n_neural):
+                if draft_ids and draft_ids[-1] == eos_id:
+                    break
                 probs = _softmax_np(cur_d_logits, temperature)
                 probs = _top_p_filter(probs, top_p)
                 tok   = _sample(probs)
@@ -504,6 +842,10 @@ class SpeculativeGenerator:
                 tok_text = self._tok_text(tok)
                 generated += 1
                 stop_buf.append(tok)
+                # Phase 1A: update n-gram table and live context
+                if self._ngram is not None:
+                    self._ngram.update(tok, context)
+                context.append(tok)
                 for seq in stop_ids:
                     if stop_buf[-len(seq):] == seq:
                         yield tok_text, "stop"
@@ -517,6 +859,155 @@ class SpeculativeGenerator:
 
         logger.debug(
             "stateful spec: %d steps, %.1f%% acceptance, %d tokens",
+            self.steps, self.acceptance_rate * 100, generated,
+        )
+
+    # ── Phase 1B: EAGLE-3 speculative inner loop ──────────────────────────────
+
+    def _eagle_spec_stream(
+        self,
+        ids: list[int],
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        stop_ids: list[list[int]],
+        eos_id: int,
+    ) -> Iterator[tuple[str, str | None]]:
+        """
+        EAGLE-3 speculative decode.
+
+        Uses the target model's last hidden state (captured via
+        ``HiddenStateCapture``) to drive the EAGLE head for draft proposals
+        instead of a separate small model.  Typically achieves 75-85 %
+        acceptance rates vs. 55-65 % for a separate draft model.
+
+        Each cycle:
+        • Target capture: 1 forward pass (prefill or single token) → hidden + logit
+        • EAGLE head: k autoregressive steps (light, 1-2 layers each)
+        • Target verify: 1 forward pass over k positions
+        """
+        assert self._eagle_head is not None
+        assert self._target_capture is not None
+        assert self._target_cache is not None
+
+        self._reset_caches()
+        self._eagle_head.reset_cache()
+
+        # Prefill target (via capture shim so we get the hidden state)
+        t_capture = self._target_capture
+        t_last    = _prefill_cached(t_capture, self._target_cache, ids)
+        target_hidden = t_capture.last_hidden   # (1, T, hidden_dim)
+
+        generated  = 0
+        stop_buf: list[int] = []
+        context    = list(ids)
+        prev_tok   = ids[-1] if ids else 0
+
+        while generated < max_tokens:
+            base = _cache_offset(self._target_cache)
+
+            # ── Step 1: EAGLE head proposes k draft tokens ────────────────────
+            if target_hidden is not None:
+                draft_ids, draft_probs = self._eagle_head.draft_k(
+                    target_hidden, self._k, prev_tok,
+                    temperature, top_p, eos_id,
+                )
+            else:
+                # No hidden states — fall back to using target logits for greedy
+                probs  = _top_p_filter(_softmax_np(t_last, temperature), top_p)
+                draft_ids   = [_sample(probs)]
+                draft_probs = [probs]
+
+            # Phase 1A: supplement with n-gram proposals if EAGLE proposed fewer
+            if self._ngram is not None and len(draft_ids) < self._k:
+                ngram_extra = self._ngram.lookup_k(
+                    context + draft_ids, self._k - len(draft_ids)
+                )
+                vocab_sz = len(t_last)
+                for tok in ngram_extra:
+                    probs = np.zeros(vocab_sz, dtype=np.float32)
+                    probs[tok] = 1.0
+                    draft_ids.append(tok)
+                    draft_probs.append(probs)
+                    if tok == eos_id:
+                        break
+
+            self.proposed_total += len(draft_ids)
+            self.steps          += 1
+
+            # ── Step 2: target verifies k draft tokens ────────────────────────
+            _cache_set_offset(self._target_cache, base)
+            target_fwd = _decode_multi_cached(
+                t_capture, self._target_cache, draft_ids
+            )
+            # Capture hidden states for next EAGLE step
+            target_hidden = t_capture.last_hidden
+
+            target_rows = np.concatenate(
+                [t_last[np.newaxis], target_fwd], axis=0  # (k+1, vocab)
+            )
+
+            # ── Step 3: sequential accept / reject ───────────────────────────
+            new_tokens: list[int] = []
+            accepted = 0
+            for i, (d_tok, d_probs) in enumerate(
+                    zip(draft_ids, draft_probs, strict=False)):
+                t_probs  = _softmax_np(target_rows[i], temperature)
+                t_probs  = _top_p_filter(t_probs, top_p)
+                p_target = float(t_probs[d_tok])
+                p_draft  = float(d_probs[d_tok])
+                if np.random.random() < min(1.0, p_target / max(p_draft, 1e-12)):
+                    new_tokens.append(d_tok)
+                    accepted += 1
+                else:
+                    adjusted = np.maximum(0.0, t_probs - d_probs)
+                    s = adjusted.sum()
+                    new_tokens.append(
+                        _sample(adjusted / s) if s > 0 else _greedy(target_rows[i])
+                    )
+                    break
+
+            self.accepted_total += accepted
+
+            # ── Step 4: bonus token ───────────────────────────────────────────
+            if accepted == len(draft_ids):
+                bonus_probs = _top_p_filter(
+                    _softmax_np(target_rows[len(draft_ids)], temperature), top_p
+                )
+                new_tokens.append(_sample(bonus_probs))
+
+            # ── Step 5: advance target cache ─────────────────────────────────
+            n_acc     = len(new_tokens) - 1
+            final_tok = new_tokens[-1]
+            _cache_set_offset(self._target_cache, base + n_acc)
+            t_last = _decode_step_cached(t_capture, self._target_cache, final_tok)
+            target_hidden = t_capture.last_hidden
+            prev_tok = final_tok
+
+            # ── Step 6: yield ─────────────────────────────────────────────────
+            for tok in new_tokens:
+                if tok == eos_id:
+                    yield self._tok_text(tok), "stop"
+                    return
+                tok_text = self._tok_text(tok)
+                generated += 1
+                stop_buf.append(tok)
+                if self._ngram is not None:
+                    self._ngram.update(tok, context)
+                context.append(tok)
+                for seq in stop_ids:
+                    if stop_buf[-len(seq):] == seq:
+                        yield tok_text, "stop"
+                        return
+                if len(stop_buf) > 64:
+                    stop_buf = stop_buf[-64:]
+                if generated >= max_tokens:
+                    yield tok_text, "length"
+                    return
+                yield tok_text, None
+
+        logger.debug(
+            "eagle spec: %d steps, %.1f%% acceptance, %d tokens",
             self.steps, self.acceptance_rate * 100, generated,
         )
 

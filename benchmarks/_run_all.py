@@ -18,10 +18,11 @@ import time
 import urllib.request
 import urllib.error
 
-ROOT        = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_DIR   = os.path.join(ROOT, "models", "Qwen3-8B-mlx-int4")
-PORT        = 11435
-API_KEY     = "squish"
+ROOT              = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_DIR         = os.path.join(ROOT, "models", "Qwen3-8B-mlx-int4")
+PORT              = 11435
+NO_COMPILE_PORT   = PORT + 1   # companion server for compile=ON vs OFF comparison
+API_KEY           = "squish"
 LOG_FILE    = "/tmp/squish_bench_results.txt"
 
 SQUISH_DIR  = os.path.expanduser("~/.squish")
@@ -37,11 +38,11 @@ def tee(msg: str) -> None:
     with open(LOG_FILE, "a") as f:
         f.write(msg + "\n")
 
-def wait_for_server(timeout: int = 120) -> bool:
+def wait_for_server(timeout: int = 120, port: int = PORT) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            r = urllib.request.urlopen(f"http://localhost:{PORT}/health", timeout=3)
+            r = urllib.request.urlopen(f"http://localhost:{port}/health", timeout=3)
             if r.status == 200:
                 return True
         except Exception:
@@ -81,7 +82,6 @@ def main() -> None:
         sys.executable, "-u", "-m", "squish.server",
         "--mlx-model-dir", MODEL_DIR,
         "--port", str(PORT),
-        "--no-compile",   # safer for first JIT on 16 GB
         "--kv-cache-mode", "fp16",
         "--log-level", "info",
     ]
@@ -175,6 +175,37 @@ def main() -> None:
     except Exception as e:
         tee(f"Warmup failed: {e}")
 
+    # Start no-compile companion server for compile=ON vs OFF comparison (Phase 0)
+    no_compile_srv = None
+    _nc_log_path = os.path.join(SQUISH_DIR, "squish_nc.log")
+    try:
+        tee(f"\n-- Starting no-compile companion server on port {NO_COMPILE_PORT} --")
+        nc_env = os.environ.copy()
+        nc_env["SQUISH_API_KEY"] = API_KEY
+        nc_env["PYTHONUNBUFFERED"] = "1"
+        nc_cmd = [
+            sys.executable, "-u", "-m", "squish.server",
+            "--mlx-model-dir", MODEL_DIR,
+            "--port", str(NO_COMPILE_PORT),
+            "--no-compile",
+            "--kv-cache-mode", "fp16",
+            "--log-level", "warning",
+        ]
+        _nc_log_f = open(_nc_log_path, "w", buffering=1)
+        no_compile_srv = subprocess.Popen(
+            nc_cmd, cwd=ROOT, env=nc_env,
+            stdout=_nc_log_f, stderr=_nc_log_f,
+        )
+        if wait_for_server(timeout=120, port=NO_COMPILE_PORT):
+            tee(f"No-compile server ready on port {NO_COMPILE_PORT}.")
+        else:
+            tee("Warning: no-compile server did not start in time — compile comparison skipped.")
+            no_compile_srv.terminate()
+            no_compile_srv = None
+    except Exception as _nc_err:
+        tee(f"Warning: could not start no-compile server: {_nc_err}")
+        no_compile_srv = None
+
     # 3. Agent capability benchmark (tools + reasoning + agentic)
     results["bench_agent_8b"] = run_bench(
         "bench_agent_8b.py",
@@ -190,9 +221,12 @@ def main() -> None:
     )
 
     # 5. Server-side optimization benchmarks (requires running server)
+    _opt_server_args = ["--port", str(PORT), "--suite", "server"]
+    if no_compile_srv is not None:
+        _opt_server_args += ["--no-compile-port", str(NO_COMPILE_PORT)]
     results["bench_optimizations_server"] = run_bench(
         "bench_optimizations.py",
-        ["--port", str(PORT), "--suite", "server"],
+        _opt_server_args,
     )
 
     # ── Summary ───────────────────────────────────────────────────────────────
@@ -203,6 +237,14 @@ def main() -> None:
         status = "OK" if rc == 0 else f"FAILED (rc={rc})"
         tee(f"  {name:<40} {status}")
     tee(f"\nFull output: {LOG_FILE}")
+
+    if no_compile_srv is not None:
+        tee("Stopping no-compile companion server…")
+        no_compile_srv.terminate()
+        try:
+            no_compile_srv.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            no_compile_srv.kill()
 
     tee("\nStopping server…")
     srv.terminate()

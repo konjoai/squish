@@ -77,6 +77,32 @@ except ImportError:  # pragma: no cover
 _kv_cache = None   # QuantizedKVCache | None — set in main() after model load
 _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-prompt-cache given
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
+# Phase 3: cross-session persistent KV cache
+_session_kv_cache    = None   # SessionKVCache | None — set in main() when --session-cache-dir given
+# Phase 4: prompt compression settings (active when --compress-prompt is set)
+_compress_enabled         = False
+_compress_ratio           = 0.5
+_compress_min_tokens      = 512
+_compress_preserve_tokens = 0   # protect first N words from compression (RadixAttention synergy)
+
+# ── Conflict-Resolution Routing (Phase 0) ────────────────────────────────────
+# Two exclusive request paths prevent incompatible optimizations firing together:
+#
+#   COMPRESS_PATH  — word count > _compress_threshold AND compress enabled
+#       Uses: LLMLingua → chunked prefill → LazyLLM → EAGLE-3/N-gram draft
+#       Skips: exact-match prefix cache (compressed text never matches cache)
+#       Cache key: pre-compression token hash (future identical calls still hit)
+#
+#   PREFIX_PATH    — short or previously-cached prompts (default path)
+#       Uses: RadixAttention → EAGLE-3/N-gram → LazyLLM (prefill-only mode)
+#       Skips: LLMLingua (would invalidate cache keys)
+#
+# _inference_backend controls Phase 4 hardware dispatch (mutually exclusive):
+#   'mlx-eager'    — standard MLX path (default)
+#   'mlx-compiled' — mx.compile fused draft+verify decode kernel (Phase 4A)
+#   'ane-disagg'   — Core ML ANE prefill + MLX decode (Phase 4B)
+_compress_threshold  = 512          # word-count proxy above which COMPRESS_PATH fires
+_inference_backend   = "mlx-eager"  # overridden by --inference-backend in main()
 
 # ── Batch scheduler (Phase 2.1 — continuous batching) ───────────────────────
 _scheduler       = None  # BatchScheduler | None — set in main() when --batch-scheduler given
@@ -229,7 +255,7 @@ def _print_banner() -> None:
         print(f"  {DIM}{'─' * 56}{R}")
     else:
         # Plain-text fallback for non-TTY environments
-        print("*** SQUISH — Squish it. Run it. Go. &   ***")
+        print("*** SQUISH — Squish it. Run it. Go.   ***")
         print("-" * 48)
 
     print()
@@ -310,6 +336,7 @@ class _DraftState:
     tokenizer  = None
     model_dir  = ""
     generator  = None   # SpeculativeGenerator instance (created after both models load)
+    eagle_head = None   # EagleDraftHead instance (Phase 1B)
 
 _draft = _DraftState()
 
@@ -545,15 +572,31 @@ def load_draft_model(draft_model_dir: str, draft_compressed_dir: str = "",  # pr
     _rebuild_spec_gen()
 
 
+def load_eagle_head(head_dir: str, verbose: bool = True) -> None:  # pragma: no cover
+    """Load an EAGLE-3 draft head and wire it into the SpeculativeGenerator."""
+    from squish.speculative import EagleDraftHead
+    if verbose:
+        print(f"  {_C.L}⟳{_C.R}  {_C.DIM}Loading EAGLE-3 head:{_C.R}  {_C.W}{head_dir}{_C.R}")
+    _draft.eagle_head = EagleDraftHead.from_dir(head_dir, _state.model, verbose=verbose)
+    if verbose:
+        _ok("EAGLE-3 head ready")
+    _rebuild_spec_gen()
+
+
 def _rebuild_spec_gen() -> None:  # pragma: no cover
     """(Re-)create the SpeculativeGenerator from current target + draft state."""
-    if _state.model is None or _draft.model is None:
+    if _state.model is None:
+        _draft.generator = None
+        return
+    # Require at least one draft source (neural draft model OR EAGLE head)
+    if _draft.model is None and _draft.eagle_head is None:
         _draft.generator = None
         return
     from squish.speculative import SpeculativeGenerator
     _draft.generator = SpeculativeGenerator(
         _state.model, _state.tokenizer,
         draft_model=_draft.model, draft_tokenizer=_draft.tokenizer,
+        eagle_head=_draft.eagle_head,
     )
 
 
@@ -636,6 +679,36 @@ def _generate_tokens(  # pragma: no cover
     stop_ids  = _get_stop_ids(stop)
     eos_id    = getattr(tokenizer, "eos_token_id", None) or 151645
 
+    # ── Phase 4: prompt compression ───────────────────────────────────────────
+    # Compress long prompts before tokenization to reduce prefill cost.
+    # Only applied when --compress-prompt is set and the prompt meets the
+    # minimum length threshold.
+    #
+    # CONFLICT RESOLUTION (LLMLingua ↔ DiskKVCache / prefix cache):
+    # Cache keys must use the *original* (pre-compression) prompt so that a
+    # future identical request hits the cache even when compression was applied.
+    # We capture _orig_prompt NOW, then route based on prompt length.
+    _orig_prompt = prompt         # pre-compression canonical text for all cache keys
+    _on_compress_path = False     # True → COMPRESS_PATH; False → PREFIX_PATH
+
+    if _compress_enabled:
+        _word_count = len(prompt.split())
+        if _word_count >= _compress_min_tokens:
+            _on_compress_path = True
+            try:
+                from squish.prompt_compressor import compress as _compress_fn
+                prompt = _compress_fn(
+                    prompt,
+                    ratio=_compress_ratio,
+                    # preserve_tokens protects the fixed system-prompt prefix from
+                    # compression so that RadixAttention still hits on that prefix
+                    # for PREFIX_PATH requests (LLMLingua ↔ RadixAttention synergy).
+                    # Controlled by --compress-preserve-tokens (default 0 = disabled).
+                    preserve_tokens=_compress_preserve_tokens,
+                )
+            except Exception:
+                pass  # never block generation on compression failure
+
     # ── Trace: log request entry ───────────────────────────────────────────────
     _rid = uuid.uuid4().hex[:8]          # short per-request ID for log correlation
     if _trace:
@@ -677,9 +750,18 @@ def _generate_tokens(  # pragma: no cover
     # ── Prefix cache lookup (Phase 1.4) ──────────────────────────────────────
     # Only cache deterministic outputs (temp==0 or seed fixed) so non-
     # deterministic completions never return stale cached text.
-    cache_eligible = use_cache and (temperature == 0.0 or seed is not None)
+    #
+    # CONFLICT RESOLUTION (LLMLingua ↔ prefix cache):
+    # Requests on COMPRESS_PATH have a stochastically-compressed prompt whose
+    # token sequence differs on every call — prefix caching would never hit.
+    # Skip the prefix cache entirely for COMPRESS_PATH requests.
+    # Keys always use _orig_prompt so a future identical *uncompressed* request
+    # still matches a response that was generated after compression.
+    cache_eligible = (use_cache
+                      and (temperature == 0.0 or seed is not None)
+                      and not _on_compress_path)
     if cache_eligible:
-        cached = _prefix_cache.get(prompt)
+        cached = _prefix_cache.get(_orig_prompt)
         if cached is not None:
             full_text, finish_reason = cached
             if _trace:
@@ -731,7 +813,7 @@ def _generate_tokens(  # pragma: no cover
                               f"tokens={_n_spec}  finish={finish}")
                     break
             if cache_eligible and _cache_buf:
-                _prefix_cache.put(prompt, "".join(_cache_buf), _last_finish)
+                _prefix_cache.put(_orig_prompt, "".join(_cache_buf), _last_finish)
             return
         except Exception as _spec_err:
             import logging as _log
@@ -746,27 +828,55 @@ def _generate_tokens(  # pragma: no cover
         try:
             import mlx.core as mx
             import numpy as np
+            # Tokenize the *original* (pre-compression) prompt for KV/disk cache
+            # key derivation, then re-tokenize the (possibly compressed) prompt for
+            # the actual model forward pass.  This ensures the disk cache key is
+            # stable even when LLMLingua produces a different compressed form.
+            _orig_input_ids = (
+                tokenizer.encode(_orig_prompt)
+                if hasattr(tokenizer, "encode")
+                else tokenizer(_orig_prompt, return_tensors="np")["input_ids"][0].tolist()
+            )
             input_ids = (
                 tokenizer.encode(prompt)
                 if hasattr(tokenizer, "encode")
                 else tokenizer(prompt, return_tensors="np")["input_ids"][0].tolist()
             )
             layer_caches = _kv_cache._layers
+            # ── Phase 3: session KV cache lookup ───────────────────────────────
+            # Restore KV state from a prior conversation if a matching session
+            # exists.  Key is SHA-256 of the first 2 KB of the ORIGINAL prompt.
+            _session_key = None
+            if _session_kv_cache is not None:
+                try:
+                    import hashlib as _hl
+                    _session_key = _hl.sha256(_orig_prompt[:2048].encode()).hexdigest()[:32]
+                    _sess_result = _session_kv_cache.load_session(_session_key)
+                    if _sess_result is not None:
+                        _kv_cache.restore_from(_sess_result)
+                        if _trace:
+                            _tlog(f"REQ {_rid}  session-cache HIT  key={_session_key}")
+                    elif _trace:
+                        _tlog(f"REQ {_rid}  session-cache MISS  key={_session_key}")
+                except Exception:
+                    _session_key = None  # never block generation on session error
             # ── Disk prompt-cache lookup (Item 2) ──────────────────────────────
             # On a hit, restore KV state from NVMe and skip prefill (O(n) → O(1))
             _disk_hit_logit = None
             if _disk_prompt_cache is not None:
                 try:
-                    _disk_result = _disk_prompt_cache.lookup(input_ids)
+                    # Key by the original (pre-compression) token IDs so that
+                    # different LLMLingua compressions of the same prompt still hit.
+                    _disk_result = _disk_prompt_cache.lookup(_orig_input_ids)
                     if _disk_result is not None:
                         _disk_qkv, _disk_last_logit = _disk_result
                         _kv_cache.restore_from(_disk_qkv)
                         _disk_hit_logit = _disk_last_logit
                         if _trace:
                             _tlog(f"REQ {_rid}  disk-prompt-cache HIT  "
-                                  f"tokens={len(input_ids)}  → skipped prefill")
+                                  f"orig_tokens={len(_orig_input_ids)}  → skipped prefill")
                     elif _trace:
-                        _tlog(f"REQ {_rid}  disk-prompt-cache MISS  tokens={len(input_ids)}")
+                        _tlog(f"REQ {_rid}  disk-prompt-cache MISS  orig_tokens={len(_orig_input_ids)}")
                 except Exception:
                     pass  # disk lookup error — fall through to normal prefill
 
@@ -784,7 +894,8 @@ def _generate_tokens(  # pragma: no cover
                 if _disk_prompt_cache is not None:
                     try:
                         _last_logit_np = np.array(logits[0, -1].astype(mx.float32))
-                        _disk_prompt_cache.store(input_ids, _kv_cache, _last_logit_np)
+                        # Store under original token IDs for stable cache keys
+                        _disk_prompt_cache.store(_orig_input_ids, _kv_cache, _last_logit_np)
                     except Exception:
                         pass
             stop_buf = [next_id]
@@ -807,7 +918,7 @@ def _generate_tokens(  # pragma: no cover
                 )
                 if next_id == eos_id:
                     if cache_eligible and _cache_buf:
-                        _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+                        _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=kv-cache  tokens={step}  finish=stop(eos)")
                     yield tok_text, "stop"
@@ -816,7 +927,7 @@ def _generate_tokens(  # pragma: no cover
                     for seq in stop_ids:
                         if stop_buf[-len(seq):] == seq:
                             if cache_eligible and _cache_buf:
-                                _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+                                _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
                             if _trace:
                                 _tlog(f"REQ {_rid}  DONE  path=kv-cache  "
                                       f"tokens={step}  finish=stop(stop-seq)")
@@ -826,7 +937,7 @@ def _generate_tokens(  # pragma: no cover
                         stop_buf = stop_buf[-64:]
                 if step == max_tokens - 1:
                     if cache_eligible and _cache_buf:
-                        _prefix_cache.put(prompt, "".join(_cache_buf), "length")
+                        _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "length")
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=kv-cache  tokens={step + 1}  finish=length")
                     yield tok_text, "length"
@@ -841,8 +952,20 @@ def _generate_tokens(  # pragma: no cover
                 mx.eval(logits)
                 next_id = _sample_mx(logits[0, -1], temperature, top_p)
                 stop_buf.append(next_id)
+                # Phase 0C: fire async CPU dequant for next step while we set up
+                # the token embedding — hides O(n_old_tokens) numpy cost behind
+                # the model's token-embedding + layernorm overhead.
+                for _lc in layer_caches:
+                    if hasattr(_lc, "start_prefetch"):
+                        _lc.start_prefetch()
             if cache_eligible and _cache_buf:
-                _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+                _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
+            # Phase 3: persist KV state for future sessions (background thread)
+            if _session_kv_cache is not None and _session_key is not None:
+                try:
+                    _session_kv_cache.save_session(_session_key, _kv_cache)
+                except Exception:
+                    pass
             yield "", "stop"
             return
         except Exception as _kv_err:
@@ -888,7 +1011,7 @@ def _generate_tokens(  # pragma: no cover
                 if hit:
                     if cache_eligible:
                         _cache_buf.append(tok_text)
-                        _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+                        _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  "
                               f"finish=stop(stop-seq)")
@@ -900,7 +1023,7 @@ def _generate_tokens(  # pragma: no cover
             if emitted >= max_tokens:
                 if cache_eligible:
                     _cache_buf.append(tok_text)
-                    _prefix_cache.put(prompt, "".join(_cache_buf), "length")
+                    _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "length")
                 if _trace:
                     _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  finish=length")
                 yield tok_text, "length"
@@ -911,7 +1034,7 @@ def _generate_tokens(  # pragma: no cover
                 _tlog(f"REQ {_rid}  tok={tok_text!r}")
             yield tok_text, None
         if cache_eligible and _cache_buf:
-            _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+            _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
         if _trace:
             _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  finish=stop(eos)")
         yield "", "stop"
@@ -971,7 +1094,7 @@ def _generate_tokens(  # pragma: no cover
 
         if step == max_tokens - 1:
             if cache_eligible and _cache_buf:
-                _prefix_cache.put(prompt, "".join(_cache_buf), "length")
+                _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "length")
             if _trace:
                 _tlog(f"REQ {_rid}  DONE  path=manual  tokens={step + 1}  finish=length")
             yield tok_text, "length"
@@ -983,7 +1106,7 @@ def _generate_tokens(  # pragma: no cover
         yield tok_text, None
 
     if cache_eligible and _cache_buf:
-        _prefix_cache.put(prompt, "".join(_cache_buf), "stop")
+        _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
     if _trace:
         _tlog(f"REQ {_rid}  DONE  path=manual  tokens={max_tokens}  finish=stop")
     yield "", "stop"
@@ -1587,6 +1710,10 @@ Examples:
                          "with Qwen2.5-7B). Enables 1.8-2.5× throughput.")
     ap.add_argument("--draft-compressed", default="",
                     help="Compressed dir for the draft model (default: <draft-model>-compressed)")
+    ap.add_argument("--eagle-head-dir", default="",
+                    help="Path to EAGLE-3 draft head directory (from `squish pull-head`). "
+                         "Enables EAGLE-3 speculative decoding (~75-85%% acceptance rate). "
+                         "Incompatible with --draft-model.")
     ap.add_argument("--no-prefix-cache", action="store_true", default=False,
                     help="Disable the prefix (exact-match) response cache")
     ap.add_argument("--prefix-cache-size", type=int, default=512,
@@ -1603,6 +1730,24 @@ Examples:
                     help="Recent-token FP16 window for int8/snap modes (default 64)")
     ap.add_argument("--kv-cache-budget", type=int, default=4096,
                     help="Max K/V positions in snap mode (default 4096)")
+    # Phase 1 SVD compression
+    ap.add_argument("--kv-cache-svd-rank", type=int, default=0,
+                    metavar="N",
+                    help="SVD rank for KV compression: project head_dim → N before INT8.\n"
+                         "0 = off (default).  Recommended: 64 for head_dim=128 models.\n"
+                         "Requires --kv-cache-mode int8 or snap.")
+    # Phase 2 retrieval attention
+    ap.add_argument("--retrieval-attention", action="store_true", default=False,
+                    help="Enable retrieval attention: fetch only the top-k most relevant\n"
+                         "disk-tier tokens via HNSW ANNS search instead of scanning all\n"
+                         "disk tokens.  Requires --disk-prompt-cache.  Needs hnswlib.")
+    ap.add_argument("--retrieval-top-k", type=int, default=32,
+                    metavar="N",
+                    help="ANNS top-k tokens to retrieve from disk tier (default 32)")
+    ap.add_argument("--retrieval-hot-window", type=int, default=256,
+                    metavar="N",
+                    help="Number of most-recent RAM INT8 tokens always returned\n"
+                         "(hot window guarantee, default 256)")
     ap.add_argument("--log-level",
                     choices=["critical", "error", "warning", "info", "debug", "trace"],
                     default="warning",
@@ -1627,6 +1772,41 @@ Examples:
     ap.add_argument("--disk-prompt-cache-size", type=int, default=64,
                     metavar="N",
                     help="Max entries in the disk prompt cache (default 64)")
+    # Phase 3: persistent cross-session KV cache
+    ap.add_argument("--session-cache-dir", default="",
+                    metavar="DIR",
+                    help="Enable persistent cross-session KV state cache under DIR.\\n"
+                         "The session key is auto-derived from the last 8 message\\n"
+                         "contents (SHA-256), so no client changes are needed.\\n"
+                         "Surviving a server restart resumes generation from the\\n"
+                         "cached KV state.")
+    # Phase 4: prompt compression
+    ap.add_argument("--compress-prompt", action="store_true", default=False,
+                    help="Enable prompt compression before prefill.\\n"
+                         "Uses TF-IDF sentence scoring by default; delegates to\\n"
+                         "LLMLingua if installed (pip install squish[llmlingua]).")
+    ap.add_argument("--compress-ratio", type=float, default=0.5,
+                    metavar="F",
+                    help="Target compression fraction: 0.5 = compress to half the\\n"
+                         "token count (default 0.5).  Range: (0, 1).")
+    ap.add_argument("--compress-min-tokens", type=int, default=512,
+                    metavar="N",
+                    help="Only compress prompts longer than N tokens (default 512).")
+    ap.add_argument("--compress-preserve-tokens", type=int, default=0,
+                    metavar="N",
+                    help="Protect the first N words of each prompt from compression.\n"
+                         "Set to the typical system-prompt length to keep the prefix\n"
+                         "identical across requests for RadixAttention cache hits.")
+    # ── Phase 4: hardware inference backend ──────────────────────────────────
+    ap.add_argument("--inference-backend",
+                    choices=["mlx-eager", "mlx-compiled", "ane-disagg"],
+                    default="mlx-eager",
+                    metavar="BACKEND",
+                    help="Hardware dispatch strategy (default: mlx-eager):\n"
+                         "  mlx-eager    — standard MLX Metal execution (safest)\n"
+                         "  mlx-compiled — mx.compile fused decode (lower GPU overhead)\n"
+                         "  ane-disagg   — Apple Neural Engine prefill + GPU decode\n"
+                         "mlx-compiled and ane-disagg are mutually exclusive.")
     # ── Item 3: LazyLLM token pruning ─────────────────────────────────────────
     ap.add_argument("--lazy-llm", action="store_true", default=False,
                     help="Enable LazyLLM dynamic token pruning during prefill.\n"
@@ -1684,6 +1864,8 @@ Examples:
         _info("compressed", args.compressed_dir)
     if args.draft_model:
         _info("draft-model", args.draft_model)
+    if getattr(args, "eagle_head_dir", ""):
+        _info("eagle-head", args.eagle_head_dir)
     _info("prefix-cache", "disabled" if args.no_prefix_cache else str(args.prefix_cache_size))
     if args.kv_cache_mode != "fp16":
         _info("kv-cache", f"{args.kv_cache_mode}  window={args.kv_cache_window}  budget={args.kv_cache_budget}")
@@ -1765,6 +1947,7 @@ Examples:
                 mode=args.kv_cache_mode,
                 window=args.kv_cache_window,
                 budget=args.kv_cache_budget,
+                svd_rank=getattr(args, "kv_cache_svd_rank", 0),
                 verbose=True,
             )
             _info("kv-cache", f"ready ({args.kv_cache_mode})")
@@ -1773,6 +1956,33 @@ Examples:
             _logging.getLogger(__name__).warning(
                 "[KV cache] could not attach (%s) — running without KV quantisation", e
             )
+
+    # ── Phase 3: persistent cross-session KV cache ────────────────────────────
+    global _session_kv_cache
+    _session_cache_dir = getattr(args, "session_cache_dir", "")
+    if _session_cache_dir:
+        try:
+            from squish.kv_cache import SessionKVCache as _SessionKVCache
+            _session_kv_cache = _SessionKVCache(cache_dir=_session_cache_dir)
+            _info("session-cache", f"{_session_cache_dir}")
+        except Exception as _e:
+            _warn(f"[session-cache] Could not enable: {_e}")
+
+    # ── Phase 4: prompt compression settings ─────────────────────────────────
+    global _compress_enabled, _compress_ratio, _compress_min_tokens, _compress_preserve_tokens
+    _compress_enabled        = getattr(args, "compress_prompt", False)
+    _compress_ratio          = getattr(args, "compress_ratio", 0.5)
+    _compress_min_tokens     = getattr(args, "compress_min_tokens", 512)
+    _compress_preserve_tokens = getattr(args, "compress_preserve_tokens", 0)
+    if _compress_enabled:
+        _info("compress", f"ratio={_compress_ratio}  min_tokens={_compress_min_tokens}"
+              + (f"  preserve_tokens={_compress_preserve_tokens}" if _compress_preserve_tokens else ""))
+
+    # ── Phase 0C: hardware inference backend ─────────────────────────────────
+    global _inference_backend
+    _inference_backend = getattr(args, "inference_backend", "mlx-eager")
+    if _inference_backend != "mlx-eager":
+        _info("inference-backend", _inference_backend)
 
     # ── Phase 2.1: start batch scheduler if requested ────────────────────────
     global _scheduler
@@ -1799,6 +2009,10 @@ Examples:
     if args.draft_model:
         print()
         load_draft_model(args.draft_model, args.draft_compressed, verbose=args.verbose)
+
+    if getattr(args, "eagle_head_dir", ""):
+        print()
+        load_eagle_head(args.eagle_head_dir, verbose=args.verbose)
 
     print()
     _section("")

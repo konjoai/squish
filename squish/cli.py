@@ -1308,6 +1308,116 @@ def cmd_catalog(args):
     print()
 
 
+# ── EAGLE-3 head download (Phase 1B) ─────────────────────────────────────────
+
+_EAGLE_HEAD_CATALOG: dict[str, str] = {
+    # model-alias → HuggingFace repo for the EAGLE-3 head
+    "qwen3:8b":       "yuhuili/EAGLE3-Qwen3-Instruct-8B",
+    "qwen3:4b":       "yuhuili/EAGLE3-Qwen3-Instruct-4B",
+    "qwen3:14b":      "yuhuili/EAGLE3-Qwen3-Instruct-14B",
+    "qwen3:30b-a3b":  "yuhuili/EAGLE3-Qwen3-Instruct-30B-A3B",
+    "qwen2.5:7b":     "yuhuili/EAGLE3-Qwen2.5-Instruct-7B",
+    "qwen2.5:14b":    "yuhuili/EAGLE3-Qwen2.5-Instruct-14B",
+    "llama3.1:8b":    "yuhuili/EAGLE3-LLaMA3.1-Instruct-8B",
+    "llama3.2:3b":    "yuhuili/EAGLE3-Llama-3.2-Instruct-3B",
+}
+
+
+def cmd_pull_head(args):  # pragma: no cover
+    """
+    Download an EAGLE-3 draft head from HuggingFace and convert it to MLX format.
+
+    Examples
+    --------
+      squish pull-head qwen3:8b
+      squish pull-head yuhuili/EAGLE3-Qwen3-Instruct-8B --output ~/.squish/heads/qwen3-8b
+      squish pull-head qwen3:8b --token hf_…
+    """
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        _die(
+            "huggingface_hub is required for pull-head.\n"
+            "Install it with: pip install huggingface-hub"
+        )
+
+    model_arg = args.model
+    token = args.token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+
+    # Resolve alias → HF repo
+    hf_repo = _EAGLE_HEAD_CATALOG.get(model_arg.lower(), model_arg)
+    if "/" not in hf_repo:
+        _die(
+            f"Unknown model alias {model_arg!r}.\n"
+            f"Pass a full HuggingFace repo (e.g. yuhuili/EAGLE3-Qwen3-Instruct-8B) "
+            f"or one of: {', '.join(_EAGLE_HEAD_CATALOG)}"
+        )
+
+    # Determine output directory
+    if args.output:
+        out_dir = Path(args.output).expanduser()
+    else:
+        slug = hf_repo.split("/")[-1].lower()
+        out_dir = Path.home() / ".squish" / "eagle-heads" / slug
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print()
+    _box([
+        "  squish pull-head",
+        f"  HF repo    : {hf_repo}",
+        f"  Output dir : {out_dir}",
+    ])
+    print()
+
+    # Download from HuggingFace Hub
+    print(f"  Downloading {hf_repo} …")
+    raw_dir = snapshot_download(
+        repo_id=hf_repo,
+        local_dir=str(out_dir / "_raw"),
+        token=token or None,
+        ignore_patterns=["*.bin"],  # prefer safetensors / MLX
+    )
+
+    # If weights are already in MLX format (config.json + *.safetensors),
+    # just symlink / copy; otherwise convert via mlx_lm.
+    import shutil, json as _json
+    raw_path = Path(raw_dir)
+    has_mlx = (raw_path / "config.json").exists() and any(raw_path.glob("*.safetensors"))
+
+    if has_mlx:
+        mlx_dir = out_dir
+        for f in raw_path.iterdir():
+            dst = mlx_dir / f.name
+            if not dst.exists():
+                shutil.copy2(f, dst)
+        print("  Weights already in MLX safetensors format — no conversion needed.")
+    else:
+        # Convert PyTorch / BF16 safetensors to MLX
+        print("  Converting to MLX format …")
+        try:
+            from mlx_lm import convert as _mlx_convert  # type: ignore
+            _mlx_convert(
+                hf_path=raw_dir,
+                mlx_path=str(out_dir),
+                quantize=False,  # EAGLE heads are already compact; keep fp16
+            )
+        except ImportError:
+            _die("mlx_lm is required for conversion. Install with: pip install mlx-lm")
+        except Exception as exc:
+            _die(f"Conversion failed: {exc}")
+
+    # Clean up raw download directory
+    shutil.rmtree(out_dir / "_raw", ignore_errors=True)
+
+    print()
+    print(f"  EAGLE-3 head saved to: {out_dir}")
+    print()
+    print("  Start with EAGLE-3 speculative decoding:")
+    print(f"    squish run --model <your-model> --eagle-head-dir {out_dir}")
+    print()
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="squish",
@@ -1498,6 +1608,31 @@ Ollama drop-in:
                         help="Force-refresh the online catalog before resolving")
     p_pull.add_argument("--verbose", action="store_true")
     p_pull.set_defaults(func=cmd_pull)
+
+    # ── pull-head (EAGLE-3) ──
+    p_head = sub.add_parser(
+        "pull-head",
+        help="Download an EAGLE-3 draft head for speculative decoding",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Download an EAGLE-3 draft head and convert it to MLX format.\n\n"
+            "An EAGLE head pairs with a specific target model and typically\n"
+            "achieves 75-85%% draft acceptance versus 55-65%% for a separate\n"
+            "draft model, at a fraction of the memory cost.\n\n"
+            "Examples:\n"
+            "  squish pull-head qwen3:8b\n"
+            "  squish pull-head yuhuili/EAGLE3-Qwen3-Instruct-8B --output ./my-head\n"
+            "  squish pull-head qwen3:8b --token hf_…"
+        ),
+    )
+    p_head.add_argument("model",
+                        help="Model alias (e.g. qwen3:8b) or full HF repo "
+                             "(e.g. yuhuili/EAGLE3-Qwen3-Instruct-8B)")
+    p_head.add_argument("--output", default="",
+                        help="Output directory (default: ~/.squish/eagle-heads/<slug>)")
+    p_head.add_argument("--token", default="",
+                        help="HuggingFace API token (or set HF_TOKEN env var)")
+    p_head.set_defaults(func=cmd_pull_head)
 
     # ── catalog ──
     p_catalog = sub.add_parser("catalog", help="Browse available models in the Squish catalog")

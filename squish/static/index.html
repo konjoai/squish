@@ -161,6 +161,10 @@
     border: 1px solid var(--border); color: var(--text); border-radius: 6px;
     padding: 3px 8px; font-size: 13px; text-align: right; }
   .sp-row input[type=number]:focus { outline: none; border-color: var(--accent); }
+  .sp-row input[type=text]  { flex: 1; background: var(--surface2);
+    border: 1px solid var(--border); color: var(--text); border-radius: 6px;
+    padding: 3px 8px; font-size: 13px; }
+  .sp-row input[type=text]:focus { outline: none; border-color: var(--accent); }
   .sp-val  { width: 46px; font-size: 12px; text-align: right; color: var(--text-dim); }
   .sp-close { margin-top: 8px; background: var(--accent); border: none; border-radius: 8px;
     color: #0d0f14; padding: 7px 18px; font-weight: 600; cursor: pointer; }
@@ -269,6 +273,11 @@
       <label>Seed</label>
       <input type="number" id="s-seed" value="" placeholder="random" min="0" max="2147483647" />
     </div>
+    <div class="sp-row">
+      <label>API Key</label>
+      <input type="text" id="s-apikey" placeholder="leave blank if none"
+        oninput="saveApiKey(this.value)" />
+    </div>
     <button class="sp-close" onclick="closeSettings()">Done</button>
   </div>
 </div>
@@ -300,6 +309,15 @@ let sessions   = JSON.parse(localStorage.getItem("squish_sessions") || "[]");
 let activeIdx  = -1;
 let abortCtrl  = null;   // for fetch cancellation
 let isStreaming = false;
+let apiKey     = localStorage.getItem("squish_api_key") ?? "";
+
+function authHeaders() {
+  return apiKey ? { "Authorization": `Bearer ${apiKey}` } : {};
+}
+function saveApiKey(val) {
+  apiKey = val.trim();
+  localStorage.setItem("squish_api_key", apiKey);
+}
 
 function curSession() { return sessions[activeIdx] ?? null; }
 function saveLocal()  { localStorage.setItem("squish_sessions", JSON.stringify(sessions)); }
@@ -322,7 +340,7 @@ async function loadModels() {
   const dot = document.getElementById("status-dot");
   const sel = document.getElementById("model-sel");
   try {
-    const r = await fetch(`${BASE_URL}/v1/models`);
+    const r = await fetch(`${BASE_URL}/v1/models`, { headers: authHeaders() });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
     dot.className = "ok";
@@ -520,7 +538,7 @@ async function sendMessage() {
     if (seed !== undefined) body.seed = seed;
 
     const resp = await fetch(`${BASE_URL}/v1/chat/completions`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(body), signal: abortCtrl.signal,
     });
 
@@ -634,6 +652,9 @@ document.getElementById("settings-panel").addEventListener("click", e => {
 
 // ── Init ──────────────────────────────────────────────────────────────────── 
 (async () => {
+  // Restore saved API key into the settings input
+  const apikeyEl = document.getElementById("s-apikey");
+  if (apikeyEl && apiKey) apikeyEl.value = apiKey;
   await loadModels();
   loadVersion();   // non-blocking — updates sidebar version tag
   // Restore last session

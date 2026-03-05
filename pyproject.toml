@@ -38,6 +38,12 @@ dependencies = [
 [project.optional-dependencies]
 quant = []  # AWQ calibration uses only mlx+numpy (core deps); no extra packages needed.
             # Rust quantizer (squish_quant_rs/) must be built separately: maturin build
+retrieval = [
+    "hnswlib>=0.8",   # ANNS retrieval attention (Phase 2)
+]
+llmlingua = [
+    "llmlingua>=0.2", # LLMLingua-2 prompt compression (Phase 4)
+]
 eval = [
     "lm-eval>=0.4",
     "datasets>=2.18",
