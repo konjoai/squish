@@ -74,7 +74,8 @@ except ImportError:  # pragma: no cover
     _STATIC_FILES_AVAILABLE = False
 
 # ── KV cache (Phase 1.3 — lazily imported to keep startup fast) ──────────────
-_kv_cache = None   # QuantizedKVCache | None — set in main() after model load
+_kv_cache = None         # QuantizedKVCache | None — set in main() after model load
+_paged_kv_cache = None   # PagedKVCache | None — set in main() when --paged-attention
 _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-prompt-cache given
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
 # Phase 3: cross-session persistent KV cache
@@ -340,64 +341,16 @@ class _DraftState:
 
 _draft = _DraftState()
 
-# ── Prefix cache (Phase 1.4) ─────────────────────────────────────────────────
-# Maps SHA-256(prompt) → (full_response_text, finish_reason).
-# Exact-match cache with a fixed capacity — avoids re-running the model for
-# repeated identical prompts (e.g. benchmark harnesses, agent tool loops).
+# ── Prefix cache + RadixTree (Phase 1.4 / Phase 2B) ─────────────────────────
+# Exact-match text response cache backed by RadixTree.
+# RadixTree is a drop-in replacement for the old _PrefixCache:
+#   • get() / put() / hits / size / _maxsize / clear() — same interface
+#   • find_prefix(token_ids) / insert_prefix(token_ids, block_refs) — new (Phase 2B)
+# When --paged-attention is enabled the server also records KV block refs so
+# future requests with matching token prefixes can skip prefill entirely.
+from squish.radix_cache import RadixTree as _RadixTree  # noqa: E402
 
-import hashlib as _hashlib  # noqa: E402
-
-
-class _PrefixCache:
-    """Thread-safe O(1) LRU cache of (prompt → response) for exact prompt matches.
-
-    Backed by ``collections.OrderedDict`` — ``move_to_end`` and
-    ``popitem(last=False)`` are both O(1) vs the O(n) ``list.remove`` +
-    ``list.pop(0)`` approach.
-    """
-
-    def __init__(self, maxsize: int = 256):
-        self._cache: collections.OrderedDict[str, tuple[str, str]] = (
-            collections.OrderedDict()
-        )
-        self._maxsize = maxsize
-        self._lock    = threading.Lock()
-        self.hits     = 0
-        self.misses   = 0
-
-    def _key(self, prompt: str) -> str:
-        # blake2b (128-bit) is ~3× faster than sha256 and sufficient for a
-        # non-security-critical local cache with ≤1024 slots.
-        return _hashlib.blake2b(prompt.encode(), digest_size=16).hexdigest()
-
-    def get(self, prompt: str) -> tuple[str, str] | None:
-        k = self._key(prompt)
-        with self._lock:
-            if k in self._cache:
-                self._cache.move_to_end(k)   # O(1) — promote to MRU end
-                self.hits += 1
-                return self._cache[k]
-            self.misses += 1
-            return None
-
-    def put(self, prompt: str, response: str, finish: str) -> None:
-        k = self._key(prompt)
-        with self._lock:
-            if k in self._cache:
-                self._cache.move_to_end(k)   # O(1) update in-place
-            elif len(self._cache) >= self._maxsize:
-                self._cache.popitem(last=False)  # O(1) evict LRU (first item)
-            self._cache[k] = (response, finish)
-
-    def clear(self) -> None:
-        with self._lock:
-            self._cache.clear()
-
-    @property
-    def size(self) -> int:
-        return len(self._cache)
-
-_prefix_cache = _PrefixCache(maxsize=512)
+_prefix_cache = _RadixTree(maxsize=512)
 
 
 def _sample_mx(logits_row, temperature: float, top_p: float) -> int:  # pragma: no cover
@@ -1614,6 +1567,15 @@ async def metrics():
         "# HELP squish_prefix_cache_size Current entries in prefix cache",
         "# TYPE squish_prefix_cache_size gauge",
         f"squish_prefix_cache_size {_prefix_cache.size}",
+        "# HELP squish_radix_prefix_hits_total RadixTree token-prefix KV reuse hits",
+        "# TYPE squish_radix_prefix_hits_total counter",
+        f"squish_radix_prefix_hits_total {_prefix_cache.prefix_hits}",
+        "# HELP squish_paged_kv_free_blocks Paged KV cache free block count",
+        "# TYPE squish_paged_kv_free_blocks gauge",
+        f"squish_paged_kv_free_blocks {_paged_kv_cache.stats()['free_blocks'] if _paged_kv_cache is not None else -1}",
+        "# HELP squish_paged_kv_used_blocks Paged KV cache used block count",
+        "# TYPE squish_paged_kv_used_blocks gauge",
+        f"squish_paged_kv_used_blocks {_paged_kv_cache.stats()['used_blocks'] if _paged_kv_cache is not None else -1}",
         "# HELP squish_spec_draft_loaded Whether a draft model is loaded",
         "# TYPE squish_spec_draft_loaded gauge",
         f"squish_spec_draft_loaded {1 if _draft.generator is not None else 0}",
@@ -1718,6 +1680,13 @@ Examples:
                     help="Disable the prefix (exact-match) response cache")
     ap.add_argument("--prefix-cache-size", type=int, default=512,
                     help="LRU prefix cache capacity (default 512 entries)")
+    ap.add_argument("--paged-attention", action="store_true", default=False,
+                    help="Enable PagedAttention block table for KV prefix reuse. "
+                         "Pre-allocates a fixed KV block pool from unified memory.")
+    ap.add_argument("--paged-attention-fraction", type=float, default=0.25,
+                    help="Fraction of total RAM to allocate for paged KV blocks "
+                         "(default 0.25 = 25%%).  Ignored when --paged-attention "
+                         "is not set.")
     # ── Phase 1.3: KV cache quantization ─────────────────────────────────────
     ap.add_argument("--kv-cache-mode",
                     choices=["fp16", "int8", "snap"],
@@ -1854,6 +1823,27 @@ Examples:
         _prefix_cache._maxsize = 0
     elif args.prefix_cache_size != 512:
         _prefix_cache._maxsize = args.prefix_cache_size
+
+    # ── Phase 2A/2B: PagedKVCache + RadixTree prefix trie ────────────────────
+    global _paged_kv_cache
+    if getattr(args, "paged_attention", False) and _state.model is not None:
+        try:
+            from squish.paged_attention import PagedKVCache as _PagedKVCache
+            _paged_kv_cache = _PagedKVCache.from_model(
+                _state.model,
+                metal_fraction=getattr(args, "paged_attention_fraction", 0.25),
+            )
+            s = _paged_kv_cache.stats()
+            _ok("Paged KV cache ready")
+            _info("paged-kv-blocks",
+                  f"{s['total_blocks']} blocks  "
+                  f"({s['memory_mb']} MB  page={s['page_size']}tok  "
+                  f"{s['n_layers']}L×{s['n_kv_heads']}H×{s['head_dim']}d)")
+        except Exception as _paged_err:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "[paged-attention] could not initialise (%s) — disabled", _paged_err
+            )
 
     _print_banner()
 
