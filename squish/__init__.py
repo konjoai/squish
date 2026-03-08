@@ -89,6 +89,48 @@ from .compressed_loader import (  # noqa: F401
     save_int4_npy_dir,
 )
 
+# Final-pass technique 15 — DFloat11 lossless weight compression (NeurIPS 2025)
+from squish.dfloat11 import (  # noqa: F401
+    CompressedBlock,
+    CompressedModel,
+    DFloat11Compressor,
+    DFloat11Config,
+    HuffmanCodec,
+    compress_model,
+)
+
+# Final-pass technique 16 — ShadowKV low-rank key cache + CPU value shadow (arXiv:2410.21465)
+from squish.shadow_kv import (  # noqa: F401
+    LandmarkSelector,
+    LowRankKeyCache,
+    ShadowKVCache,
+    ShadowKVConfig,
+)
+
+# Final-pass technique 17 — PIPO pipelined offloading with INT4 bypass kernel
+from squish.pipo import (  # noqa: F401
+    INT4BypassKernel,
+    LayerWeightBuffer,
+    PIPOConfig,
+    PIPOScheduler,
+)
+
+# Final-pass technique 18 — VPTQ vector post-training quantization (NeurIPS 2025)
+from squish.vptq import (  # noqa: F401
+    VPTQCodebook,
+    VPTQConfig,
+    VPTQLayer,
+    VPTQQuantizer,
+)
+
+# Final-pass technique 19 — SqueezeLLM dense-and-sparse quantization (ICML 2024)
+from squish.squeeze_llm import (  # noqa: F401
+    OutlierDetector,
+    SqueezeLLMConfig,
+    SqueezeLLMLayer,
+    SqueezeLLMQuantizer,
+)
+
 __version__ = "1.0.0"
 __all__ = [
     "load_compressed_model",
@@ -139,6 +181,33 @@ __all__ = [
     "list_catalog",
     "resolve_model",
     "pull_model",
+    # DFloat11 — lossless weight compression
+    "DFloat11Config",
+    "HuffmanCodec",
+    "DFloat11Compressor",
+    "CompressedBlock",
+    "CompressedModel",
+    "compress_model",
+    # ShadowKV — low-rank key cache + CPU value shadow
+    "ShadowKVConfig",
+    "LowRankKeyCache",
+    "LandmarkSelector",
+    "ShadowKVCache",
+    # PIPO — pipelined offloading with INT4 bypass
+    "PIPOConfig",
+    "LayerWeightBuffer",
+    "INT4BypassKernel",
+    "PIPOScheduler",
+    # VPTQ — vector post-training quantization
+    "VPTQConfig",
+    "VPTQCodebook",
+    "VPTQLayer",
+    "VPTQQuantizer",
+    # SqueezeLLM — dense-and-sparse quantization
+    "SqueezeLLMConfig",
+    "OutlierDetector",
+    "SqueezeLLMLayer",
+    "SqueezeLLMQuantizer",
     # Phase 2.1 — BatchScheduler  (import: from squish.scheduler import BatchScheduler)
     # Phase 2.2 — Tool calling    (import: from squish.tool_calling import ...)
     # Phase 2.2 — Ollama compat   (import: from squish.ollama_compat import mount_ollama)
