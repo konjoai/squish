@@ -70,6 +70,7 @@ Standalone test:
 import asyncio
 import dataclasses
 import logging
+import hashlib
 import queue
 import threading
 import time
@@ -217,6 +218,11 @@ class BatchScheduler:
         # Pending requests submitted by callers (thread-safe queue)
         self._pending: queue.Queue = queue.Queue()
 
+        # ── Phase D: Double-buffer queues ─────────────────────────────────────
+        # _prepare_worker fills prepared batches; _worker consumes them.
+        self._prepared_queue: queue.Queue = queue.Queue(maxsize=1)
+        self._prepare_thread: threading.Thread | None = None
+
         # Worker thread
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -233,10 +239,15 @@ class BatchScheduler:
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def start(self) -> "BatchScheduler":
-        """Start the background worker thread."""
+        """Start the prepare-worker and GPU-worker background threads."""
         if self._thread is not None and self._thread.is_alive():
             return self
         self._stop_event.clear()
+        self._prepare_thread = threading.Thread(
+            target=self._prepare_worker, daemon=True,
+            name="squish-prepare-worker",
+        )
+        self._prepare_thread.start()
         self._thread = threading.Thread(target=self._worker, daemon=True,
                                         name="squish-batch-worker")
         self._thread.start()
@@ -245,14 +256,19 @@ class BatchScheduler:
         return self
 
     def stop(self, timeout: float = 5.0) -> None:
-        """Signal the worker to stop and wait for it to finish."""
+        """Signal both threads to stop and wait for them to finish."""
         self._stop_event.set()
+        if self._prepare_thread is not None:
+            self._prepare_thread.join(timeout=timeout)
+        self._prepare_thread = None
         if self._thread is not None:
             self._thread.join(timeout=timeout)
         self._thread = None
 
     def is_running(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        t1 = self._thread is not None and self._thread.is_alive()
+        t2 = self._prepare_thread is not None and self._prepare_thread.is_alive()
+        return t1 and t2
 
     # ── Request submission ────────────────────────────────────────────────────
 
@@ -357,23 +373,56 @@ class BatchScheduler:
                 "total_tokens_gen": self.total_tokens_gen,
                 "total_requests":   self.total_requests,
                 "pending_queue":    self._pending.qsize(),
+                "prepared_queue":   self._prepared_queue.qsize(),
                 "max_batch_size":   self._max_batch,
                 "batch_window_ms":  self._window_ms,
             }
 
     # ── Worker ────────────────────────────────────────────────────────────────
 
+    def _prepare_worker(self) -> None:  # pragma: no cover
+        """
+        CPU-side prepare thread: collect + group + order batches, then hand
+        them to the GPU worker via *_prepared_queue*.
+        """
+        log.debug("BatchScheduler prepare-worker started")
+        while not self._stop_event.is_set():
+            # Collect up to 2× max_batch_size requests for prefix grouping.
+            pool = self._collect_batch(limit=self._max_batch * 2)
+            if not pool:
+                continue
+
+            # D2: prefer same-prefix cohorts; put extras back for next window.
+            batch, leftovers = self._group_by_prefix(pool)
+            for req in leftovers:
+                self._pending.put(req)
+
+            # D3: decode requests execute before prefill in the same batch.
+            batch = self._sort_decode_first(batch)
+
+            # Hand off to GPU worker (blocks until worker consumes prev batch).
+            while not self._stop_event.is_set():
+                try:
+                    self._prepared_queue.put(batch, timeout=0.05)
+                    break
+                except queue.Full:
+                    continue
+
+        log.debug("BatchScheduler prepare-worker stopped")
+
     def _worker(self) -> None:  # pragma: no cover
         """
-        Background thread: drain pending queue → batch → generate → stream output.
+        GPU thread: consume prepared batches from *_prepared_queue* and run
+        the autoregressive generation loop.
         """
         import mlx.core as mx
 
         log.debug("BatchScheduler worker started")
         while not self._stop_event.is_set():
-            # ── Collect a batch ──────────────────────────────────────────────
-            batch = self._collect_batch()
-            if not batch:
+            # ── Consume a prepared batch ──────────────────────────────────────
+            try:
+                batch = self._prepared_queue.get(timeout=0.05)
+            except queue.Empty:
                 continue
 
             with self._lock:
@@ -397,11 +446,12 @@ class BatchScheduler:
 
         log.debug("BatchScheduler worker stopped")
 
-    def _collect_batch(self) -> list[_Request]:  # pragma: no cover
+    def _collect_batch(self, limit: int | None = None) -> list[_Request]:  # pragma: no cover
         """
         Block until at least one request arrives, then wait up to
-        ``batch_window_ms`` for more — up to ``max_batch_size``.
+        ``batch_window_ms`` for more — up to *limit* (default ``max_batch_size``).
         """
+        _limit = limit if limit is not None else self._max_batch
         batch: list[_Request] = []
         deadline = None
 
@@ -420,7 +470,7 @@ class BatchScheduler:
             return batch
 
         # Collect additional requests until the window closes or batch is full
-        while (len(batch) < self._max_batch
+        while (len(batch) < _limit
                and time.perf_counter() < deadline):
             try:
                 req = self._pending.get_nowait()
@@ -431,6 +481,63 @@ class BatchScheduler:
                     time.sleep(min(remaining_ms / 1000, 0.002))
 
         return batch
+
+    def _group_by_prefix(
+        self, pool: list["_Request"]
+    ) -> tuple[list["_Request"], list["_Request"]]:
+        """Reorder *pool* to prefer batching requests with a shared 64-token prefix.
+
+        Groups are formed by hashing the first 64 input-token IDs; the largest
+        cohort is selected first to maximise KV-cache warm hits.  FIFO order is
+        preserved within each group.  Requests that exceed ``max_batch_size``
+        are returned as *leftovers* so the caller can re-enqueue them.
+
+        Returns
+        -------
+        (selected, leftovers)
+            *selected*  : up to ``max_batch_size`` requests, prefix-grouped.
+            *leftovers* : remaining requests to return to the pending queue.
+        """
+        if len(pool) <= self._max_batch:
+            return pool, []
+
+        # Build per-prefix groups preserving original FIFO insertion order.
+        groups: dict[str, list["_Request"]] = {}
+        order:  list[str] = []
+        for req in pool:
+            key = hashlib.sha256(
+                np.array(req.input_ids[:64], dtype=np.int32).tobytes()
+            ).hexdigest()[:8]
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(req)
+
+        # Sort groups by descending size — largest cohort fills the batch first.
+        sorted_keys = sorted(order, key=lambda k: -len(groups[k]))
+
+        selected:  list["_Request"] = []
+        leftovers: list["_Request"] = []
+        for key in sorted_keys:
+            group = groups[key]
+            remaining_slots = self._max_batch - len(selected)
+            if remaining_slots > 0:
+                selected.extend(group[:remaining_slots])
+                leftovers.extend(group[remaining_slots:])
+            else:
+                leftovers.extend(group)
+
+        return selected, leftovers
+
+    def _sort_decode_first(self, batch: list["_Request"]) -> list["_Request"]:
+        """Sort *batch* so decode requests (those with generated tokens) run first.
+
+        Decode requests have ``generated_ids`` populated; prefill requests do not.
+        Prioritising decode prevents GPU starvation by long prefill passes.
+        """
+        decode  = [r for r in batch if r.generated_ids]
+        prefill = [r for r in batch if not r.generated_ids]
+        return decode + prefill
 
     def _generate_batch(self, batch: list[_Request], mx) -> None:  # pragma: no cover
         """
@@ -509,6 +616,409 @@ class BatchScheduler:
                 req.out_queue.put(("", "length"))
                 req.out_queue.put(_DONE)
                 req.done = True
+
+
+# ---------------------------------------------------------------------------
+# BucketServe — output-length bucket scheduling
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass
+class BucketBounds:
+    """Defines a single output-length bucket."""
+    min_tokens: int
+    max_tokens: int
+    label:      str = ""
+
+    def __post_init__(self) -> None:
+        if self.min_tokens < 0:
+            raise ValueError("min_tokens must be ≥ 0")
+        if self.max_tokens < self.min_tokens:
+            raise ValueError("max_tokens must be ≥ min_tokens")
+
+    def contains(self, length: int) -> bool:
+        return self.min_tokens <= length <= self.max_tokens
+
+
+def build_default_buckets() -> list[BucketBounds]:
+    """Return the default BucketServe output-length buckets."""
+    return [
+        BucketBounds(0,    63,   "xs"),
+        BucketBounds(64,   127,  "s"),
+        BucketBounds(128,  255,  "m"),
+        BucketBounds(256,  511,  "l"),
+        BucketBounds(512,  1023, "xl"),
+        BucketBounds(1024, 4095, "xxl"),
+    ]
+
+
+def assign_bucket(
+    predicted_length: int,
+    buckets: list[BucketBounds] | None = None,
+) -> BucketBounds:
+    """
+    Assign a request to the appropriate output-length bucket.
+
+    Parameters
+    ----------
+    predicted_length : int — predicted output token count
+    buckets          : list of BucketBounds (defaults to :func:`build_default_buckets`)
+
+    Returns
+    -------
+    BucketBounds — the matching bucket (or the last bucket as fallback)
+    """
+    _buckets = buckets or build_default_buckets()
+    for b in _buckets:
+        if b.contains(predicted_length):
+            return b
+    return _buckets[-1]
+
+
+# ---------------------------------------------------------------------------
+# Argus — lightweight output-length predictor
+# ---------------------------------------------------------------------------
+
+class OutputLengthPredictor:
+    """
+    Lightweight linear regression model that predicts the output token count
+    from request features.
+
+    Based on:
+      "Argus: Efficient LLM Serving via Output Length Prediction"
+      (Systems for ML Workshop, NeurIPS 2024)
+
+    Features used (all scalar, computed from the request):
+      [1, prompt_length, log(prompt_length+1), task_type_id]
+
+    where ``task_type_id`` is derived from a keyword scan of the prompt text.
+
+    Parameters
+    ----------
+    default_output_length : int
+        Fallback prediction when no prior data is available.
+    alpha : float
+        L2 regularisation factor for the online linear update.
+    """
+
+    _TASK_KEYWORDS: dict[str, int] = {
+        "summarize":   0,
+        "summarise":   0,
+        "summary":     0,
+        "compare":     1,
+        "explain":     2,
+        "translate":   3,
+        "code":        4,
+        "generate":    5,
+        "list":        6,
+        "answer":      7,
+        "question":    7,
+        "what":        7,
+        "why":         7,
+        "how":         7,
+    }
+    _N_FEATURES: int = 4   # bias, prompt_len, log_prompt_len, task_id_norm
+
+    def __init__(
+        self,
+        default_output_length: int = 256,
+        alpha:                 float = 1e-4,
+    ) -> None:
+        if default_output_length < 1:
+            raise ValueError("default_output_length must be ≥ 1")
+        self._default    = default_output_length
+        self._alpha      = alpha
+        # Weights: [w_bias, w_prompt_len, w_log_prompt_len, w_task_id]
+        self._weights    = np.array([float(default_output_length), 0.0, 0.0, 0.0],
+                                    dtype=np.float64)
+        self._n_samples  = 0
+
+    def _featurize(self, prompt: str) -> np.ndarray:
+        """Convert a prompt string into a feature vector."""
+        prompt_len     = len(prompt.split())
+        log_prompt_len = float(np.log(prompt_len + 1))
+        task_id        = self._detect_task(prompt)
+        task_id_norm   = task_id / max(len(self._TASK_KEYWORDS), 1)
+        return np.array([1.0, float(prompt_len), log_prompt_len, task_id_norm],
+                        dtype=np.float64)
+
+    @classmethod
+    def _detect_task(cls, prompt: str) -> int:
+        """Return an integer task-type ID based on keyword matching."""
+        lower = prompt.lower()
+        for kw, tid in cls._TASK_KEYWORDS.items():
+            if kw in lower:
+                return tid
+        return 8   # "other"
+
+    def predict(self, prompt: str) -> int:
+        """
+        Predict the output token count for *prompt*.
+
+        Returns
+        -------
+        int — predicted token count (≥ 1)
+        """
+        features = self._featurize(prompt)
+        raw      = float(features @ self._weights)
+        return max(1, round(raw))
+
+    def update(self, prompt: str, actual_length: int) -> None:
+        """
+        Online update (SGD + L2) given the observed output length.
+
+        Parameters
+        ----------
+        prompt        : str — the original request text
+        actual_length : int — observed number of output tokens
+        """
+        x        = self._featurize(prompt)
+        y_hat    = float(x @ self._weights)
+        error    = float(actual_length) - y_hat
+        lr       = 1.0 / (self._n_samples + 1.0)
+        self._weights = (
+            self._weights * (1.0 - lr * self._alpha)
+            + lr * error * x
+        )
+        self._n_samples += 1
+
+    @property
+    def n_samples(self) -> int:
+        """Number of training samples seen so far."""
+        return self._n_samples
+
+    @property
+    def weights(self) -> np.ndarray:
+        """Current regression weights (copy)."""
+        return self._weights.copy()
+
+
+# ── ORCA: Iteration-level continuous batching scheduler ───────────────────────
+#
+# Based on:
+#   "Orca: A Distributed Serving System for Transformer-Based Generative Models"
+#   — Yu et al., OSDI 2022
+#
+# Key insight
+# -----------
+# Traditional LLM serving batches requests at the *request* level: all requests
+# in a batch must finish before new ones can enter.  ORCA batches at the
+# *iteration* level: at every single decode step, the scheduler can add new
+# requests (if memory permits) or preempt overrunning ones.  This dramatically
+# reduces head-of-line blocking and improves GPU utilisation.
+#
+# This module provides a simulation layer:
+#   OrcaConfig            — token budget and preemption mode.
+#   RequestState          — per-request tracking (prompt + generated so far).
+#   IterationLevelScheduler — at each step, decides which requests to run.
+#   SelectivePreemption   — selects which running request to preempt.
+
+from dataclasses import dataclass as _orca_dc, field as _orca_field
+
+
+@_orca_dc
+class OrcaConfig:
+    """Configuration for ORCA iteration-level continuous batching.
+
+    Parameters
+    ----------
+    max_batch_tokens : int
+        Maximum total tokens (prompt + generated so far) across all concurrently
+        running requests.  New requests are admitted only when they fit.
+    preemption_mode : str
+        ``"swap"`` — preempted request state is swapped to CPU memory and can
+        resume later.
+        ``"recompute"`` — preempted request is evicted; if retried it is
+        recomputed from scratch.
+    max_waiting : int
+        Maximum number of requests allowed in the waiting queue (0 = unlimited).
+    """
+
+    max_batch_tokens: int = 2048
+    preemption_mode:  str = "swap"
+    max_waiting:      int = 0
+
+    def __post_init__(self) -> None:
+        if self.max_batch_tokens < 1:
+            raise ValueError("max_batch_tokens must be >= 1")
+        if self.preemption_mode not in ("swap", "recompute"):
+            raise ValueError("preemption_mode must be 'swap' or 'recompute'")
+        if self.max_waiting < 0:
+            raise ValueError("max_waiting must be >= 0")
+
+
+@_orca_dc
+class RequestState:
+    """Track the current state of a single inference request.
+
+    Parameters
+    ----------
+    request_id : str
+    prompt_len : int
+        Number of prompt tokens (fixed at admission).
+    max_new_tokens : int
+        Maximum tokens to generate.
+    generated : int
+        Tokens generated so far (starts at 0).
+    preempted : bool
+        True if this request was previously preempted (swap or recompute).
+    """
+
+    request_id:     str = ""
+    prompt_len:     int = 0
+    max_new_tokens: int = 128
+    generated:      int = 0
+    preempted:      bool = False
+
+    @property
+    def total_tokens(self) -> int:
+        """Total tokens currently occupying KV cache."""
+        return self.prompt_len + self.generated
+
+    @property
+    def is_finished(self) -> bool:
+        return self.generated >= self.max_new_tokens
+
+
+class SelectivePreemption:
+    """Selects which running request to preempt when the batch is over-budget.
+
+    Strategy: preempt the request with the *most* total tokens (longest KV
+    cache footprint), as evicting it frees the most memory per preemption event.
+
+    Parameters
+    ----------
+    mode : str — ``"swap"`` or ``"recompute"`` (informational; affects the
+        ``preempted`` flag on the returned request).
+    """
+
+    def __init__(self, mode: str = "swap") -> None:
+        if mode not in ("swap", "recompute"):
+            raise ValueError("mode must be 'swap' or 'recompute'")
+        self._mode = mode
+
+    def select_victim(self, running: "list[RequestState]") -> "RequestState | None":
+        """Return the request to preempt, or None if the list is empty."""
+        if not running:
+            return None
+        victim = max(running, key=lambda r: r.total_tokens)
+        return victim
+
+    def preempt(
+        self,
+        victim: RequestState,
+        running: "list[RequestState]",
+        waiting: "list[RequestState]",
+    ) -> None:
+        """Remove ``victim`` from ``running`` and re-queue in ``waiting``.
+
+        In ``'recompute'`` mode the generated count is reset to 0 (request
+        starts over).  In ``'swap'`` mode progress is preserved.
+        """
+        running.remove(victim)
+        if self._mode == "recompute":
+            victim.generated  = 0
+        victim.preempted = True
+        waiting.insert(0, victim)   # re-queue at the front
+
+
+class IterationLevelScheduler:
+    """ORCA iteration-level scheduler.
+
+    Maintains two queues:
+    * ``running`` — requests currently occupying GPU memory (active decode step).
+    * ``waiting`` — requests queued for admission.
+
+    At each :meth:`step` the scheduler:
+    1. Computes the current token budget consumption of all running requests.
+    2. Admits waiting requests that fit within ``max_batch_tokens``.
+    3. If a running request exceeds the budget (after a long prompt is added),
+       invokes :class:`SelectivePreemption` to free space.
+    4. Returns the current ``(to_run, to_admit, to_preempt)`` decision.
+
+    Parameters
+    ----------
+    config : OrcaConfig
+    """
+
+    def __init__(self, config: OrcaConfig) -> None:
+        self._cfg       = config
+        self._preempt   = SelectivePreemption(config.preemption_mode)
+        self._running:  list[RequestState] = []
+        self._waiting:  list[RequestState] = []
+        self._step_num: int                = 0
+
+    @property
+    def running(self) -> "list[RequestState]":
+        return list(self._running)
+
+    @property
+    def waiting(self) -> "list[RequestState]":
+        return list(self._waiting)
+
+    def add_request(self, req: RequestState) -> None:
+        """Enqueue a new request.  Rejects if waiting queue is full."""
+        if self._cfg.max_waiting > 0 and len(self._waiting) >= self._cfg.max_waiting:
+            raise RuntimeError(
+                f"Waiting queue full ({self._cfg.max_waiting}); "
+                f"cannot admit request {req.request_id!r}"
+            )
+        self._waiting.append(req)
+
+    def _token_budget_used(self) -> int:
+        return sum(r.total_tokens for r in self._running)
+
+    def step(self) -> "tuple[list[RequestState], list[RequestState], list[RequestState]]":
+        """Execute one iteration-level scheduling step.
+
+        Returns
+        -------
+        ``(to_run, newly_admitted, preempted)``
+
+        * ``to_run`` — all requests that should receive one decode step this
+          iteration (running after admission/preemption).
+        * ``newly_admitted`` — requests moved from waiting → running this step.
+        * ``preempted`` — requests moved from running → waiting this step.
+        """
+        self._step_num += 1
+        newly_admitted: list[RequestState] = []
+        preempted:      list[RequestState] = []
+
+        # Admit waiting requests that fit within the budget
+        i = 0
+        while i < len(self._waiting):
+            req    = self._waiting[i]
+            needed = req.total_tokens
+            if self._token_budget_used() + needed <= self._cfg.max_batch_tokens:
+                self._running.append(req)
+                self._waiting.pop(i)
+                newly_admitted.append(req)
+            else:
+                i += 1
+
+        # If over budget, preempt until we fit
+        while self._token_budget_used() > self._cfg.max_batch_tokens and self._running:
+            victim = self._preempt.select_victim(self._running)
+            if victim is None:  # pragma: no cover
+                break
+            preempted.append(victim)
+            self._preempt.preempt(victim, self._running, self._waiting)
+
+        # Mark finished requests for removal (they consumed their last step)
+        finished = [r for r in self._running if r.is_finished]
+        for r in finished:
+            self._running.remove(r)
+
+        to_run = list(self._running)
+        return to_run, newly_admitted, preempted
+
+    def tick(self, tokens_per_request: int = 1) -> None:
+        """Advance all running requests by ``tokens_per_request`` generated tokens."""
+        for r in self._running:
+            r.generated = min(r.generated + tokens_per_request, r.max_new_tokens)
+
+    @property
+    def step_number(self) -> int:
+        return self._step_num
 
 
 # ---------------------------------------------------------------------------

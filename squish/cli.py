@@ -1484,6 +1484,227 @@ def cmd_convert_model(args):
     print(f"  Load with: squish run --mlx-model-dir {output_path}")
 
 
+# ── squish train-adapter ───────────────────────────────────────────────────────
+
+def _apply_dare_sparsification(
+    adapter_dir: Path,
+    sparsity_ratio: float = 0.9,
+) -> None:
+    """DARE sparsification: zero out *sparsity_ratio* fraction of each delta weight.
+
+    Surviving weights are rescaled by ``1/(1 - sparsity_ratio)`` to preserve
+    expected magnitude.  Operates in-place on all ``adapter_model*.safetensors``
+    files in *adapter_dir*.
+
+    Does nothing (with a warning) when ``safetensors`` is not installed.
+    """
+    import numpy as np
+
+    try:
+        from safetensors.numpy import load_file, save_file  # noqa: PLC0415
+    except ImportError:
+        print("  [warn] safetensors not available — skipping DARE sparsification")
+        return
+
+    rescale = 1.0 / (1.0 - sparsity_ratio)
+    rng = np.random.default_rng(42)
+
+    for st_file in sorted(adapter_dir.glob("adapter_model*.safetensors")):
+        orig_size = st_file.stat().st_size
+        weights = load_file(str(st_file))
+        sparsified = {}
+        for key, arr in weights.items():
+            mask = (rng.random(arr.shape) > sparsity_ratio).astype(arr.dtype)
+            sparsified[key] = (arr * mask * rescale).astype(arr.dtype)
+        save_file(sparsified, str(st_file))
+        new_size = st_file.stat().st_size
+        print(
+            f"  DARE: {st_file.name}: {orig_size // 1024} KB → {new_size // 1024} KB"
+        )
+
+
+def cmd_train_adapter(args):
+    """Train a LoRA adapter using mlx_lm's built-in LoRA training pipeline.
+
+    After training, applies DARE sparsification to the saved adapter weights
+    (sets a random 90% of delta-weight values to zero and rescales the rest).
+
+    Usage::
+
+        squish train-adapter qwen3:8b \\
+          --dataset ./data/train.jsonl \\
+          --domain legal \\
+          --rank 8 --epochs 3 \\
+          --output-dir ~/.squish/adapters/legal
+    """
+    dataset_path = Path(args.dataset).expanduser().resolve()
+    if not dataset_path.exists():
+        _die(f"Dataset not found: {dataset_path}")
+
+    output_dir = Path(args.output_dir).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import mlx_lm as _mlx_lm  # noqa: F401,PLC0415
+    except ImportError:
+        _die(
+            "mlx_lm is required for train-adapter. "
+            "Install with: pip install mlx-lm>=0.19"
+        )
+
+    print(f"  Training LoRA adapter on {args.model!r} …")
+    print(f"  Dataset : {dataset_path}")
+    print(f"  Domain  : {args.domain}")
+    print(f"  Rank    : {args.rank}   Epochs: {args.epochs}")
+
+    try:
+        _mlx_lm.lora.train(
+            model=args.model,
+            dataset=str(dataset_path),
+            output_dir=str(output_dir),
+            rank=args.rank,
+            num_epochs=args.epochs,
+            gradient_checkpointing=True,
+        )
+    except Exception as exc:
+        _die(f"LoRA training failed: {exc}")
+
+    # Apply DARE sparsification to the produced adapter weights
+    print("  Applying DARE sparsification (0.9 drop rate) …")
+    _apply_dare_sparsification(output_dir, sparsity_ratio=0.9)
+
+    print(f"\n  Adapter saved to: {output_dir}")
+    print(f"  Run with: squish run {args.model} (load adapter via server API)")
+
+
+# ── squish merge-model ────────────────────────────────────────────────────────
+
+def _find_adapter_safetensors(path: Path) -> Path:
+    """Return the first ``*.safetensors`` file in *path*, or *path* itself if it is one.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no ``.safetensors`` file is found.
+    """
+    if path.is_file() and path.suffix == ".safetensors":
+        return path
+    files = sorted(path.glob("*.safetensors"))
+    if not files:
+        raise FileNotFoundError(f"No .safetensors files found in: {path}")
+    return files[0]
+
+
+def cmd_merge_model(args):
+    """Offline DARE+TIES multi-adapter merge.
+
+    Merges one or more LoRA adapters into a single flat safetensors file via
+    one of three methods:
+
+    - ``dare``       — DARE sparsification (99% drop) then simple average
+    - ``ties``       — TIES sign-conflict resolution then average (no DARE)
+    - ``dare-ties``  — DARE sparsification then TIES sign resolution (default)
+
+    Produces ``adapter_model.safetensors`` in ``--output-path``.
+
+    Usage::
+
+        squish merge-model qwen3:8b \\
+          --adapters legal:~/.squish/adapters/legal code:~/.squish/adapters/code \\
+          --method dare-ties \\
+          --output-path ~/.squish/models/qwen3-8b-merged
+    """
+    import numpy as np
+
+    output_path = Path(args.output_path).expanduser().resolve()
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Parse "domain:path" adapter specs
+    adapter_specs: list[tuple[str, Path]] = []
+    for spec in args.adapters:
+        if ":" not in spec:
+            _die(
+                f"Invalid adapter spec {spec!r}. "
+                "Expected format: 'domain:path/to/adapter'"
+            )
+        domain, path_str = spec.split(":", 1)
+        adapter_path = Path(path_str).expanduser().resolve()
+        if not adapter_path.exists():
+            _die(f"Adapter path not found: {adapter_path}")
+        adapter_specs.append((domain, adapter_path))
+
+    try:
+        from safetensors.numpy import load_file, save_file  # noqa: PLC0415
+    except ImportError:
+        _die(
+            "safetensors is required for merge-model. "
+            "Install with: pip install safetensors"
+        )
+
+    print(
+        f"  Merging {len(adapter_specs)} adapter(s) "
+        f"using method={args.method!r} …"
+    )
+
+    # Load all adapter weights (flat dict per adapter)
+    all_weights: list[dict] = []
+    for domain, ap in adapter_specs:
+        try:
+            st_path = _find_adapter_safetensors(ap)
+            w = load_file(str(st_path))
+        except Exception as exc:
+            _die(f"Failed to load adapter {domain!r}: {exc}")
+        all_weights.append(w)
+
+    rng = np.random.default_rng(0)
+    merged: dict = {}
+    all_keys: set = set()
+    for w in all_weights:
+        all_keys |= set(w.keys())
+
+    sign_conflicts = 0
+    total_keys = len(all_keys)
+
+    for key in sorted(all_keys):
+        deltas = [w[key] for w in all_weights if key in w]
+
+        # ── DARE: sparsify each delta at 99% drop rate ────────────────────────
+        if args.method in ("dare", "dare-ties"):
+            sparsified = []
+            rescale = 1.0 / (1.0 - 0.99)
+            for d in deltas:
+                mask = (rng.random(d.shape) > 0.99).astype(d.dtype)
+                sparsified.append(d * mask * rescale)
+            deltas = sparsified
+
+        # ── TIES: majority-sign vote, keep only aligned contributions ─────────
+        if args.method in ("ties", "dare-ties") and len(deltas) > 1:
+            stacked = np.stack(deltas, axis=0)
+            majority_sign = np.sign(np.sign(stacked).sum(axis=0))
+            aligned = [d * (np.sign(d) == majority_sign) for d in deltas]
+            conflicts = int(
+                (np.sign(stacked) != majority_sign[None]).any(axis=0).sum()
+            )
+            sign_conflicts += conflicts
+            merged_delta = np.stack(aligned, axis=0).mean(axis=0)
+        else:
+            merged_delta = np.stack(deltas, axis=0).mean(axis=0)
+
+        merged[key] = merged_delta.astype(deltas[0].dtype)
+
+    if total_keys:
+        conflict_rate = sign_conflicts / total_keys
+        print(
+            f"  Sign conflict rate: {conflict_rate:.3f} "
+            f"({sign_conflicts}/{total_keys})"
+        )
+
+    out_file = output_path / "adapter_model.safetensors"
+    save_file(merged, str(out_file))
+    print(f"\n  Merged adapter saved to: {out_file}")
+    print(f"  Load with: squish run {args.base_model}")
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="squish",
@@ -1751,6 +1972,67 @@ Ollama drop-in:
     p_convert.add_argument("--dry-run", action="store_true", default=False,
                            help="Print what would be done without converting")
     p_convert.set_defaults(func=cmd_convert_model)
+
+    # ── train-adapter ──
+    p_train = sub.add_parser(
+        "train-adapter",
+        help="Train a LoRA adapter using mlx_lm (E2)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Fine-tune a LoRA adapter on a JSONL chat dataset using mlx_lm.\n\n"
+            "After training, DARE sparsification is applied:\n"
+            "  90%% of delta weights are zeroed and the remainder rescaled.\n\n"
+            "Example:\n"
+            "  squish train-adapter qwen3:8b \\\n"
+            "    --dataset ./data/legal.jsonl \\\n"
+            "    --domain legal \\\n"
+            "    --rank 8 --epochs 3 \\\n"
+            "    --output-dir ~/.squish/adapters/legal\n"
+        ),
+    )
+    p_train.add_argument("model", help="Base model ID (e.g. qwen3:8b)")
+    p_train.add_argument("--dataset", required=True, metavar="PATH",
+                         help="JSONL dataset path with {\"messages\":[...]} records")
+    p_train.add_argument("--domain", required=True, metavar="NAME",
+                         help="Domain identifier for the adapter (e.g. 'legal')")
+    p_train.add_argument("--rank", type=int, default=8, metavar="N",
+                         help="LoRA rank (default: 8)")
+    p_train.add_argument("--epochs", type=int, default=3, metavar="N",
+                         help="Training epochs (default: 3)")
+    p_train.add_argument("--output-dir", default="~/.squish/adapters", metavar="PATH",
+                         help="Output directory for the adapter weights")
+    p_train.set_defaults(func=cmd_train_adapter)
+
+    # ── merge-model ──
+    p_merge = sub.add_parser(
+        "merge-model",
+        help="Offline DARE+TIES multi-adapter merge (E3)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Merge one or more LoRA adapters into a single flat model via\n"
+            "DARE sparsification and/or TIES sign-conflict resolution.\n\n"
+            "Methods:\n"
+            "  dare       — DARE sparsification then simple average\n"
+            "  ties       — TIES sign resolution (no DARE)\n"
+            "  dare-ties  — DARE then TIES (default)\n\n"
+            "Example:\n"
+            "  squish merge-model qwen3:8b \\\n"
+            "    --adapters legal:~/.squish/adapters/legal \\\n"
+            "               code:~/.squish/adapters/code \\\n"
+            "    --method dare-ties \\\n"
+            "    --output-path ~/.squish/models/qwen3-merged\n"
+        ),
+    )
+    p_merge.add_argument("base_model", help="Base model ID (e.g. qwen3:8b)")
+    p_merge.add_argument("--adapters", required=True, nargs="+", metavar="DOMAIN:PATH",
+                         help="One or more 'domain:path' adapter specs")
+    p_merge.add_argument("--method",
+                         choices=["dare-ties", "dare", "ties"],
+                         default="dare-ties",
+                         help="Merge method (default: dare-ties)")
+    p_merge.add_argument("--output-path", required=True, metavar="PATH",
+                         help="Output directory for the merged adapter")
+    p_merge.set_defaults(func=cmd_merge_model)
 
     args = ap.parse_args()
 

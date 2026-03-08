@@ -90,8 +90,8 @@ class TestBatchSchedulerStats:
         s = sched.stats()
         expected_keys = {
             "running", "total_batches", "total_tokens_gen",
-            "total_requests", "pending_queue", "max_batch_size",
-            "batch_window_ms",
+            "total_requests", "pending_queue", "prepared_queue",
+            "max_batch_size", "batch_window_ms",
         }
         assert expected_keys == set(s.keys())
 

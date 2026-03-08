@@ -44,6 +44,9 @@ retrieval = [
 llmlingua = [
     "llmlingua>=0.2", # LLMLingua-2 prompt compression (Phase 4)
 ]
+grammar = [
+    "xgrammar>=0.1",  # XGrammar structured output engine (Phase B)
+]
 eval = [
     "lm-eval>=0.4",
     "datasets>=2.18",

@@ -239,3 +239,42 @@ def build_tool_calls_response(raw_calls: list[dict]) -> list[dict]:
             },
         })
     return result
+
+
+# ── Grammar-assisted parsing ───────────────────────────────────────────────────
+
+def parse_tool_calls_with_grammar(
+    text: str,
+    grammar_engine: Any | None = None,
+) -> list[dict] | None:
+    """
+    Parse tool calls from *text*, leveraging the grammar engine when available.
+
+    When *grammar_engine* is provided and grammar-constrained sampling was used,
+    the model output should already be valid JSON.  This function attempts a
+    direct ``json.loads`` parse first (trusting the grammar guarantee) before
+    falling back to the heuristic :func:`parse_tool_calls` approach.
+
+    Parameters
+    ----------
+    text:
+        Raw model output string.
+    grammar_engine:
+        A ``GrammarEngine`` instance, or ``None`` to use heuristic parsing only.
+
+    Returns
+    -------
+    list[dict] | None
+        Same semantics as :func:`parse_tool_calls`: a list of raw tool-call
+        dicts ``{"name": ..., "arguments": ...}``, or ``None`` if no valid
+        tool call is found.
+    """
+    if grammar_engine is not None and grammar_engine.is_available():
+        # Grammar-constrained output should be well-formed JSON; try direct parse.
+        try:
+            obj = json.loads(text.strip())
+            if _is_tool_call(obj):
+                return _normalise(obj)
+        except json.JSONDecodeError:
+            pass
+    return parse_tool_calls(text)

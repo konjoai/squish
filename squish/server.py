@@ -106,6 +106,13 @@ _CONCISION_PREFIX = (
     "Respond with only the requested output. "
     "No preamble, no explanation, no apologies.\n\n"
 )
+# ── Phase B: Structured output (XGrammar) ────────────────────────────────────
+_grammar_engine: "Any | None" = None       # GrammarEngine instance, set at startup
+_structured_output_mode: str = "none"      # "none" | "json" | "json-schema"
+_structured_output_schema: "dict | None" = None  # parsed JSON schema (json-schema mode)
+# ── Phase C: Power & Energy Modes ────────────────────────────────────────────
+_power_monitor: "Any | None" = None        # PowerMonitor instance (auto mode only)
+_power_mode: str = "performance"           # current effective mode name
 
 # ── Conflict-Resolution Routing (Phase 0) ────────────────────────────────────
 # Two exclusive request paths prevent incompatible optimizations firing together:
@@ -125,6 +132,60 @@ _CONCISION_PREFIX = (
 #   'ane-disagg'   — Core ML ANE prefill + MLX decode (Phase 4B)
 _compress_threshold  = 512          # word-count proxy above which COMPRESS_PATH fires
 _inference_backend   = "mlx-eager"  # overridden by --inference-backend in main()
+
+# ── Phase F: Inference Backend Abstraction ───────────────────────────────────
+
+class _InferenceBackend:
+    """Base shim for inference backend dispatch.
+
+    Concrete subclasses override ``generate_stream``.  All generation paths
+    are hardware-bound and marked ``# pragma: no cover``.  The ``__init__``
+    constructors are testable (no hardware required).
+    """
+
+    def generate_stream(self, *args, **kwargs):  # pragma: no cover
+        raise NotImplementedError
+
+
+class _MLXEagerBackend(_InferenceBackend):
+    """Standard MLX Metal eager execution path.
+
+    Stores a reference to the loaded model and tokenizer so the dispatch
+    layer can route ``generate_stream`` calls without global lookups.
+    """
+
+    def __init__(self, model: "Any", tokenizer: "Any") -> None:
+        self._model = model
+        self._tokenizer = tokenizer
+
+    def generate_stream(self, *args, **kwargs):  # pragma: no cover
+        raise NotImplementedError("Route through _generate_tokens instead")
+
+
+class _MLCBackend(_InferenceBackend):
+    """MLC-LLM engine path for large-context requests.
+
+    Probes for ``mlc_llm`` at construction time and sets
+    :meth:`is_available` accordingly so callers can gate on its presence.
+    """
+
+    def __init__(self, model_path: str) -> None:
+        self._model_path = model_path
+        try:
+            import mlc_llm as _mlc  # noqa: F401,PLC0415
+            self._available = True
+        except ImportError:
+            self._available = False
+
+    def is_available(self) -> bool:
+        """Return ``True`` when ``mlc_llm`` was importable at construction time."""
+        return self._available
+
+    def generate_stream(self, *args, **kwargs):  # pragma: no cover
+        raise NotImplementedError("MLC backend not yet wired")
+
+
+_active_backend: "_InferenceBackend | None" = None  # set in main() when dispatching
 
 # ── Batch scheduler (Phase 2.1 — continuous batching) ───────────────────────
 _scheduler       = None  # BatchScheduler | None — set in main() when --batch-scheduler given
@@ -977,6 +1038,13 @@ def _generate_tokens(  # pragma: no cover
             # Phase A1: thinking budget tracking state
             _in_think_block = False
             _think_step_count = 0
+            # Phase B: initialise grammar FSM state for this request
+            _grammar_state = None
+            if _grammar_engine is not None:
+                if _structured_output_mode == "json":
+                    _grammar_state = _grammar_engine.json_object_grammar()
+                elif _structured_output_mode == "json-schema" and _structured_output_schema is not None:
+                    _grammar_state = _grammar_engine.json_schema_grammar(_structured_output_schema)
             for step in range(max_tokens):
                 tok_text = (
                     tokenizer.decode([next_id])
@@ -1039,7 +1107,13 @@ def _generate_tokens(  # pragma: no cover
                     _lg_np = np.array(_logit_vec.astype(mx.float32))
                     _lg_np[eos_id] += 8.0
                     _logit_vec = mx.array(_lg_np)
+                # Phase B: grammar-constrained logits
+                if _grammar_engine is not None and _grammar_state is not None:
+                    _logit_vec = _grammar_engine.constrain_logits(_logit_vec, _grammar_state)
                 next_id = _sample_mx(_logit_vec, temperature, top_p)
+                # Phase B: advance grammar FSM after sampling
+                if _grammar_engine is not None and _grammar_state is not None:
+                    _grammar_state = _grammar_engine.advance(_grammar_state, next_id)
                 stop_buf.append(next_id)
                 # Phase 0C: fire async CPU dequant for next step while we set up
                 # the token embedding — hides O(n_old_tokens) numpy cost behind
@@ -1687,6 +1761,9 @@ async def embeddings(
 
 @app.get("/health")
 async def health():
+    _battery_level: float | None = None
+    if _power_monitor is not None:
+        _battery_level = round(_power_monitor.get_battery_level(), 2)
     return {
         "status":       "ok" if _state.model is not None else "no_model",
         "model":        _state.model_name,
@@ -1699,6 +1776,8 @@ async def health():
         "avg_tps":      round(_state.avg_tps, 1),
         "avg_ttft_s":   round(_state.avg_ttft, 3),
         "uptime_s":     round(time.time() - _state.loaded_at, 1) if _state.loaded_at else 0,
+        "power_mode":   _power_mode,
+        "battery_level": _battery_level,
     }
 
 
@@ -1894,6 +1973,30 @@ Examples:
     ap.add_argument("--concise-responses", action="store_true", default=False,
                     help="Prepend a concision directive to every system message and apply\n"
                          "+8.0 EOS logit bias after 20 tokens to reduce verbosity.")
+    # ── Phase B: Structured output (XGrammar) ─────────────────────────────────
+    ap.add_argument("--structured-output",
+                    choices=["none", "json", "json-schema"],
+                    default="none",
+                    metavar="MODE",
+                    help="Constrain model output to structured formats via XGrammar:\n"
+                         "  none        — unconstrained (default)\n"
+                         "  json        — constrain to any valid JSON object\n"
+                         "  json-schema — constrain to the schema given by --structured-output-schema\n"
+                         "Requires: pip install 'squish[grammar]'")
+    ap.add_argument("--structured-output-schema", type=str, default=None,
+                    metavar="PATH",
+                    help="Path to a JSON file containing the JSON-schema used when\n"
+                         "--structured-output json-schema is set.")
+    # ── Phase C: Power & Energy Modes ─────────────────────────────────────────
+    ap.add_argument("--power-mode",
+                    choices=["performance", "balanced", "battery", "auto"],
+                    default="performance",
+                    metavar="MODE",
+                    help="Inference resource profile:\n"
+                         "  performance — maximum throughput (default)\n"
+                         "  balanced    — moderate resource use\n"
+                         "  battery     — minimal resource use\n"
+                         "  auto        — poll pmset every 30 s and switch automatically")
     # ── Phase 1.3: KV cache quantization ─────────────────────────────────────
     ap.add_argument("--kv-cache-mode",
                     choices=["fp16", "int8", "snap"],
@@ -1975,13 +2078,14 @@ Examples:
                          "identical across requests for RadixAttention cache hits.")
     # ── Phase 4: hardware inference backend ──────────────────────────────────
     ap.add_argument("--inference-backend",
-                    choices=["mlx-eager", "mlx-compiled", "ane-disagg"],
+                    choices=["mlx-eager", "mlx-compiled", "ane-disagg", "mlc"],
                     default="mlx-eager",
                     metavar="BACKEND",
                     help="Hardware dispatch strategy (default: mlx-eager):\n"
                          "  mlx-eager    — standard MLX Metal execution (safest)\n"
                          "  mlx-compiled — mx.compile fused decode (lower GPU overhead)\n"
                          "  ane-disagg   — Apple Neural Engine prefill + GPU decode\n"
+                         "  mlc          — MLC-LLM engine (large-context requests)\n"
                          "mlx-compiled and ane-disagg are mutually exclusive.")
     # ── Item 3: LazyLLM token pruning ─────────────────────────────────────────
     ap.add_argument("--lazy-llm", action="store_true", default=False,
@@ -2219,6 +2323,58 @@ Examples:
     _concise_responses = getattr(args, "concise_responses", False)
     if _concise_responses:
         _info("concise-responses", "enabled")
+
+    # ── Phase B: Structured output (XGrammar) ─────────────────────────────────
+    global _grammar_engine, _structured_output_mode, _structured_output_schema
+    _structured_output_mode = getattr(args, "structured_output", "none")
+    if _structured_output_mode != "none" and _state.tokenizer is not None:
+        from squish.grammar_engine import GrammarEngine  # noqa: PLC0415
+        if GrammarEngine.is_available():
+            _grammar_engine = GrammarEngine(_state.tokenizer)
+            if _structured_output_mode == "json-schema":
+                _schema_path = getattr(args, "structured_output_schema", None)
+                if _schema_path:
+                    import json as _json  # noqa: PLC0415
+                    with open(_schema_path) as _sf:
+                        _structured_output_schema = _json.load(_sf)
+            _info("structured-output", f"mode={_structured_output_mode}")
+        else:
+            _warn("[structured-output] xgrammar not installed; "
+                  "falling back to unconstrained generation. "
+                  "Install: pip install 'squish[grammar]'")
+
+    # ── Phase C: Power & Energy Modes ─────────────────────────────────────────
+    global _power_monitor, _power_mode
+    _power_mode = getattr(args, "power_mode", "performance")
+    if _power_mode == "auto":
+        from squish.power_monitor import PowerMonitor, apply_mode  # noqa: PLC0415
+        _power_monitor = PowerMonitor()
+        _initial_mode = _power_monitor.get_recommended_mode()
+        apply_mode(_initial_mode, globals())
+        _power_mode = _initial_mode
+        _info("power-mode", f"auto  initial={_initial_mode}")
+        # Background timer: re-evaluate and apply every 30 s
+        import threading as _threading  # noqa: PLC0415
+        def _power_auto_tick() -> None:
+            global _power_mode
+            if _power_monitor is None:
+                return
+            _new_mode = _power_monitor.get_recommended_mode()
+            if _new_mode != _power_mode:
+                from squish.power_monitor import apply_mode as _am  # noqa: PLC0415
+                _am(_new_mode, globals())
+                _power_mode = _new_mode
+                _info("power-mode", f"switched → {_new_mode}")
+            _t = _threading.Timer(30.0, _power_auto_tick)
+            _t.daemon = True
+            _t.start()
+        _pt = _threading.Timer(30.0, _power_auto_tick)
+        _pt.daemon = True
+        _pt.start()
+    elif _power_mode != "performance":
+        from squish.power_monitor import apply_mode  # noqa: PLC0415
+        apply_mode(_power_mode, globals())
+        _info("power-mode", _power_mode)
 
     # ── Phase 0C: hardware inference backend ─────────────────────────────────
     _inference_backend = getattr(args, "inference_backend", "mlx-eager")
