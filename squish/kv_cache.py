@@ -1521,3 +1521,163 @@ class SessionKVCache:
                 except Exception:  # pragma: no cover
                     pass
 
+
+# ── H2O: Heavy-Hitter Oracle KV-cache eviction ───────────────────────────────
+#
+# Based on:
+#   "H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large
+#    Language Models" — Zhang et al., NeurIPS 2023  (arXiv:2306.14048)
+#
+# Key idea: accumulate per-token cumulative attention scores; keep the
+# top ``heavy_ratio`` fraction ("heavy hitters") plus the ``recent_window``
+# most-recent positions; evict the rest.  Unlike pure sliding-window
+# approaches, H2O retains tokens the model actually attends to, even if
+# they are no longer recent.
+
+import heapq as _h2o_heapq
+from dataclasses import dataclass as _h2o_dc
+
+
+@_h2o_dc
+class H2OConfig:
+    """Configuration for H2O heavy-hitter KV-cache eviction.
+
+    Parameters
+    ----------
+    heavy_ratio : float
+        Fraction of the cache budget reserved for heavy hitters (0 < x < 1).
+        The remaining fraction is used for the recency window.
+    recent_window : int
+        Minimum number of most-recent positions always kept in the cache.
+    max_seq_len : int
+        Trigger automatic eviction when cached length exceeds this value.
+        Set ``0`` to disable automatic eviction (call
+        :meth:`H2OEvictionPolicy.evict_to_budget` manually).
+    """
+
+    heavy_ratio:   float = 0.1
+    recent_window: int   = 128
+    max_seq_len:   int   = 0
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.heavy_ratio < 1.0:
+            raise ValueError("heavy_ratio must be in (0, 1)")
+        if self.recent_window < 0:
+            raise ValueError("recent_window must be >= 0")
+        if self.max_seq_len < 0:
+            raise ValueError("max_seq_len must be >= 0")
+
+
+class H2OEvictionPolicy:
+    """Per-head policy: accumulate attention scores and evict KV positions.
+
+    Tracks cumulative attention received by each cached position across all
+    forward passes.  When the cache is full, positions with the lowest
+    accumulated scores (that are not in the recency window) are evicted.
+
+    Parameters
+    ----------
+    config : H2OConfig
+    """
+
+    def __init__(self, config: H2OConfig) -> None:
+        self._cfg       = config
+        self._scores:    dict[int, float] = {}   # position → cumulative score
+        self._positions: list[int]        = []   # ordered cached positions
+        self._next_pos:  int              = 0
+
+    # ── observation ─────────────────────────────────────────────────────────
+
+    def add_token(self, init_score: float = 0.0) -> int:
+        """Register a new token and return its position index.
+
+        Parameters
+        ----------
+        init_score : float — initial score assigned to this position (default 0).
+        """
+        pos = self._next_pos
+        self._next_pos += 1
+        self._scores[pos]   = float(init_score)
+        self._positions.append(pos)
+        if self._cfg.max_seq_len > 0 and len(self._positions) > self._cfg.max_seq_len:
+            self.evict_to_budget(self._cfg.max_seq_len)
+        return pos
+
+    def record_attention(self, attn_row: np.ndarray) -> None:
+        """Accumulate one row of attention weights over cached positions.
+
+        Parameters
+        ----------
+        attn_row : (n_cached,) float array — attention weights for the current
+            query over all currently cached positions (same order as
+            :attr:`positions`).
+        """
+        row = np.asarray(attn_row, dtype=np.float64)
+        n   = min(len(row), len(self._positions))
+        for i in range(n):
+            pos = self._positions[i]
+            self._scores[pos] = self._scores.get(pos, 0.0) + float(row[i])
+
+    # ── eviction ────────────────────────────────────────────────────────────
+
+    def evict_to_budget(self, budget: int) -> list[int]:
+        """Evict positions until the cache contains at most ``budget`` entries.
+
+        Heavy hitters (top-scoring non-recent positions) and the most-recent
+        window are retained; lower-scoring older positions are evicted.
+
+        Parameters
+        ----------
+        budget : int — maximum positions to retain after eviction.
+
+        Returns
+        -------
+        Sorted list of evicted position indices.
+        """
+        if budget < 1:
+            raise ValueError("budget must be >= 1")
+        positions = self._positions
+        if len(positions) <= budget:
+            return []
+
+        cfg      = self._cfg
+        n_recent = min(cfg.recent_window, budget)
+        n_heavy  = max(0, budget - n_recent)
+
+        recent_set = set(positions[-n_recent:]) if n_recent > 0 else set()
+        candidates = [
+            (pos, self._scores.get(pos, 0.0))
+            for pos in positions if pos not in recent_set
+        ]
+        heavy_pos = {
+            pos for pos, _ in
+            _h2o_heapq.nlargest(n_heavy, candidates, key=lambda x: x[1])
+        }
+
+        keep    = recent_set | heavy_pos
+        evicted = sorted(p for p in positions if p not in keep)
+        for p in evicted:
+            self._scores.pop(p, None)
+        self._positions = [p for p in positions if p in keep]
+        return evicted
+
+    # ── introspection ───────────────────────────────────────────────────────
+
+    @property
+    def positions(self) -> list[int]:
+        """Ordered list of currently cached position indices."""
+        return list(self._positions)
+
+    @property
+    def num_cached(self) -> int:
+        """Number of currently cached positions."""
+        return len(self._positions)
+
+    def top_heavy_hitters(self, k: int = 10) -> list[tuple[int, float]]:
+        """Return the top-``k`` positions by cumulative attention score.
+
+        Returns list of ``(position, score)`` pairs, highest score first.
+        """
+        items = [(p, self._scores.get(p, 0.0)) for p in self._positions]
+        return _h2o_heapq.nlargest(k, items, key=lambda x: x[1])
+

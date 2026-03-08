@@ -1247,6 +1247,262 @@ class SpeculativeGenerator:
         yield "", "stop"
 
 
+# ── Medusa: multi-head speculative decoding ───────────────────────────────────
+#
+# Based on:
+#   "Medusa: Simple LLM Inference Acceleration Framework with Multiple
+#    Decoding Heads" — Cai et al., Together AI 2024  (arXiv:2401.10774)
+#
+# Key idea: attach K lightweight prediction heads to the final hidden state of
+# the target model.  Each head independently predicts one future token
+# (head k predicts token at offset k+1).  The K-head proposals are arranged
+# into a tree of candidates and verified by the target model in a single
+# batched forward pass, accepting the longest valid prefix.
+#
+# This module provides a numpy-only simulation layer:
+#   MedusaConfig  — number of heads, top-k per head, acceptance threshold.
+#   MedusaHead    — lightweight linear head that maps hidden_dim → vocab_size.
+#   MedusaTreeDraft — assembles per-head top-k candidates into candidate chains.
+#   MedusaGenerator — drives the tree-speculative decode loop.
+
+from dataclasses import dataclass as _mdc
+
+
+@_mdc
+class MedusaConfig:
+    """Configuration for Medusa multi-head speculative decoding.
+
+    Parameters
+    ----------
+    num_heads : int
+        Number of Medusa heads (speculative look-ahead distance).
+    top_k : int
+        Number of candidate tokens considered per head per step.
+    hidden_dim : int
+        Dimensionality of the hidden state fed into each head.
+    vocab_size : int
+        Vocabulary size (output dimension of each head).
+    acceptance_threshold : float
+        Minimum probability ratio for accepting a speculative token
+        (if the target model assigns probability ≥ threshold × draft_prob,
+        the token is accepted).  Set to 0.0 for greedy acceptance.
+    """
+
+    num_heads:            int   = 3
+    top_k:                int   = 5
+    hidden_dim:           int   = 4096
+    vocab_size:           int   = 32000
+    acceptance_threshold: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.num_heads < 1:
+            raise ValueError("num_heads must be >= 1")
+        if self.top_k < 1:
+            raise ValueError("top_k must be >= 1")
+        if self.hidden_dim < 1:
+            raise ValueError("hidden_dim must be >= 1")
+        if self.vocab_size < 1:
+            raise ValueError("vocab_size must be >= 1")
+        if not 0.0 <= self.acceptance_threshold <= 1.0:
+            raise ValueError("acceptance_threshold must be in [0, 1]")
+
+
+class MedusaHead:
+    """Single Medusa prediction head: a linear projection hidden → vocab.
+
+    Parameters
+    ----------
+    hidden_dim : int
+    vocab_size : int
+    rng : np.random.Generator | None
+        If provided, weights are initialised randomly (for tests/simulation).
+        Pass ``None`` to initialise to zeros and set weights manually.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        vocab_size: int,
+        rng: "np.random.Generator | None" = None,
+    ) -> None:
+        if hidden_dim < 1 or vocab_size < 1:
+            raise ValueError("hidden_dim and vocab_size must be >= 1")
+        if rng is not None:
+            scale       = (2.0 / hidden_dim) ** 0.5
+            self.weight = rng.standard_normal((vocab_size, hidden_dim)).astype(np.float32) * scale
+            self.bias   = np.zeros(vocab_size, dtype=np.float32)
+        else:
+            self.weight = np.zeros((vocab_size, hidden_dim), dtype=np.float32)
+            self.bias   = np.zeros(vocab_size, dtype=np.float32)
+
+    def logits(self, hidden: np.ndarray) -> np.ndarray:
+        """Forward pass.
+
+        Parameters
+        ----------
+        hidden : (hidden_dim,) float array — last hidden state from the model.
+
+        Returns
+        -------
+        (vocab_size,) float array — raw logits.
+        """
+        h = np.asarray(hidden, dtype=np.float32)
+        if h.shape != (self.weight.shape[1],):
+            raise ValueError(
+                f"hidden shape {h.shape} does not match hidden_dim {self.weight.shape[1]}"
+            )
+        return self.weight @ h + self.bias
+
+    def top_k_tokens(self, hidden: np.ndarray, k: int) -> np.ndarray:
+        """Return the top-``k`` token ids (highest logit) as a 1-D array."""
+        raw = self.logits(hidden)
+        return np.argpartition(raw, -k)[-k:].astype(np.int32)
+
+
+class MedusaTreeDraft:
+    """Build a tree of speculative candidates from K Medusa heads.
+
+    Each head proposes ``top_k`` candidates for its offset position.
+    The tree is the Cartesian product limited by ``max_candidates`` paths.
+
+    Parameters
+    ----------
+    config : MedusaConfig
+    heads  : list[MedusaHead] — must have len == config.num_heads.
+    """
+
+    def __init__(self, config: MedusaConfig, heads: "list[MedusaHead]") -> None:
+        if len(heads) != config.num_heads:
+            raise ValueError(
+                f"Expected {config.num_heads} heads, got {len(heads)}"
+            )
+        self._cfg   = config
+        self._heads = heads
+
+    def draft(
+        self,
+        hidden: np.ndarray,
+        max_candidates: int = 16,
+    ) -> "list[list[int]]":
+        """Generate speculative candidate sequences.
+
+        Parameters
+        ----------
+        hidden : (hidden_dim,) float — current last hidden state.
+        max_candidates : int — cap the returned candidate list.
+
+        Returns
+        -------
+        List of candidate token sequences (each of length num_heads),
+        sorted by descending joint logit sum.
+        """
+        h   = np.asarray(hidden, dtype=np.float32)
+        k   = self._cfg.top_k
+        per_head: list[np.ndarray] = [head.top_k_tokens(h, k) for head in self._heads]
+
+        # Build candidate paths: start from head-0 candidates
+        candidates: list[list[int]] = [[int(t)] for t in per_head[0]]
+        for head_toks in per_head[1:]:
+            new_cands: list[list[int]] = []
+            for path in candidates:
+                for t in head_toks:
+                    new_cands.append(path + [int(t)])
+            # Prune early to avoid combinatorial explosion
+            if len(new_cands) > max_candidates * 4:
+                new_cands = new_cands[:max_candidates * 4]
+            candidates = new_cands
+
+        return candidates[:max_candidates]
+
+
+class MedusaGenerator:
+    """Drive inference with Medusa tree-speculative decoding.
+
+    Parameters
+    ----------
+    hidden_forward : callable
+        ``hidden_forward(ids) -> (np.ndarray, np.ndarray)``
+        Returns ``(hidden_state, logits)`` where ``hidden_state`` is
+        ``(hidden_dim,)`` and ``logits`` is ``(vocab_size,)``.
+    verify_forward : callable
+        ``verify_forward(ids) -> np.ndarray`` of shape ``(vocab_size,)``
+        — used to verify a single speculative token.
+    config : MedusaConfig
+    heads : list[MedusaHead]
+    """
+
+    def __init__(
+        self,
+        hidden_forward: "callable",
+        verify_forward: "callable",
+        config: MedusaConfig,
+        heads: "list[MedusaHead]",
+    ) -> None:
+        self._hfwd   = hidden_forward
+        self._vfwd   = verify_forward
+        self._cfg    = config
+        self._tree   = MedusaTreeDraft(config, heads)
+        self._n_acc  = 0
+        self._n_rej  = 0
+
+    @property
+    def acceptance_rate(self) -> float:
+        total = self._n_acc + self._n_rej
+        return self._n_acc / total if total > 0 else 0.0
+
+    def generate(
+        self,
+        input_ids: "list[int]",
+        max_new_tokens: int = 64,
+    ) -> "list[int]":
+        """Generate tokens using tree-speculative Medusa decoding.
+
+        Parameters
+        ----------
+        input_ids : list[int] — prompt token ids.
+        max_new_tokens : int.
+
+        Returns
+        -------
+        input_ids + generated token ids.
+        """
+        ids       = list(input_ids)
+        generated = 0
+
+        while generated < max_new_tokens:
+            # -- Draft phase --
+            hidden, base_logits = self._hfwd(ids)
+            candidates = self._tree.draft(hidden, max_candidates=16)
+
+            if not candidates:
+                # Fallback: greedy from base logits
+                tok = int(np.argmax(base_logits))
+                ids.append(tok)
+                generated += 1
+                continue
+
+            # -- Verify phase: accept longest valid prefix from first candidate --
+            best = candidates[0]
+            accepted: list[int] = []
+            ctx = list(ids)
+            for d_tok in best:
+                v_logits = self._vfwd(ctx)
+                v_tok    = int(np.argmax(v_logits))
+                if v_tok == d_tok:
+                    accepted.append(d_tok)
+                    ctx.append(d_tok)
+                    self._n_acc += 1
+                else:
+                    accepted.append(v_tok)
+                    self._n_rej += 1
+                    break
+
+            ids.extend(accepted)
+            generated += len(accepted)
+
+        return ids
+
+
 # ── Standalone test ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

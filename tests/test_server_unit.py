@@ -59,6 +59,27 @@ class TestHealthEndpoint:
         r = client.get("/health")
         assert r.json()["uptime_s"] == 0
 
+    def test_health_exposes_power_mode(self, client):
+        """Phase C: /health includes power_mode and battery_level fields."""
+        r = client.get("/health")
+        data = r.json()
+        assert "power_mode" in data
+        # battery_level is None when _power_monitor is None
+        assert "battery_level" in data
+
+    def test_health_battery_level_when_monitor_active(self, client):
+        """Phase C: when _power_monitor is set, battery_level is included."""
+        orig_monitor = _srv._power_monitor
+        mock_monitor = MagicMock()
+        mock_monitor.get_battery_level.return_value = 0.73
+        _srv._power_monitor = mock_monitor
+        try:
+            r = client.get("/health")
+            data = r.json()
+            assert data["battery_level"] == 0.73
+        finally:
+            _srv._power_monitor = orig_monitor
+
 
 # ── /v1/metrics ───────────────────────────────────────────────────────────────
 
