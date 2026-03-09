@@ -54,8 +54,8 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from dataclasses import dataclass, field
-from typing import Callable, Iterable, List, Optional, Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -114,7 +114,7 @@ class FreqTokenSubset:
         Sorted array of token IDs in the frequent subset (shape ``(k,)``).
     """
 
-    def __init__(self, indices: "np.ndarray | Sequence[int]") -> None:
+    def __init__(self, indices: np.ndarray | Sequence[int]) -> None:
         arr = np.asarray(indices, dtype=np.int64)
         if arr.ndim != 1:
             raise ValueError("indices must be a 1-D array")
@@ -145,11 +145,11 @@ class FreqTokenSubset:
     # Persistence helpers
     # ------------------------------------------------------------------
 
-    def to_list(self) -> List[int]:
+    def to_list(self) -> list[int]:
         return self._indices.tolist()
 
     @classmethod
-    def from_list(cls, data: List[int]) -> "FreqTokenSubset":
+    def from_list(cls, data: list[int]) -> FreqTokenSubset:
         return cls(np.array(data, dtype=np.int64))
 
 
@@ -251,7 +251,7 @@ class FRSpecHead:
             full = np.full((batch, self._full_vocab_size), -np.inf, dtype=compressed_logits.dtype)
             full[:, self._subset.indices] = compressed_logits
         else:
-            k = compressed_logits.shape[0]
+            compressed_logits.shape[0]
             full = np.full(self._full_vocab_size, -np.inf, dtype=compressed_logits.dtype)
             full[self._subset.indices] = compressed_logits
         return full
@@ -299,7 +299,7 @@ class FRSpecCalibrator:
         ``min_frequent_tokens`` are used here.
     """
 
-    def __init__(self, config: Optional[FRSpecConfig] = None) -> None:
+    def __init__(self, config: FRSpecConfig | None = None) -> None:
         self._config = config or FRSpecConfig()
         self._counter: Counter[int] = Counter()
         self._n_samples: int = 0
@@ -323,7 +323,7 @@ class FRSpecCalibrator:
         self._counter.update(tokens)
         self._n_samples += 1
 
-    def most_common(self, n: Optional[int] = None) -> List[tuple[int, int]]:
+    def most_common(self, n: int | None = None) -> list[tuple[int, int]]:
         """Return the ``n`` most frequent (token_id, count) pairs."""
         return self._counter.most_common(n)
 

@@ -17,12 +17,8 @@ from __future__ import annotations
 
 import io
 import sys
-import time
-
-import pytest
 
 import squish.server as srv
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

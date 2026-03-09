@@ -49,7 +49,6 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -127,7 +126,7 @@ class BlockScoreTracker:
         self._block_size = block_size
         self._top_k      = top_k
         # block_id -> float (cumulative attention mass)
-        self._scores: Dict[int, float] = {}
+        self._scores: dict[int, float] = {}
         self._step_count = 0
 
     def record(self, attn_scores: np.ndarray) -> None:
@@ -161,7 +160,7 @@ class BlockScoreTracker:
 
         self._step_count += 1
 
-    def get_scores(self) -> Dict[int, float]:
+    def get_scores(self) -> dict[int, float]:
         """Return accumulated attention scores per block (copy)."""
         return dict(self._scores)
 
@@ -189,14 +188,14 @@ class InMemoryBlockStore:
 
     def __init__(self, block_size: int = 64) -> None:
         self.block_size = block_size
-        self._blocks: Dict[int, object] = {}
-        self._prefetched: Set[int] = set()
+        self._blocks: dict[int, object] = {}
+        self._prefetched: set[int] = set()
 
     def store(self, block_id: int, data: object) -> None:
         """Store a block."""
         self._blocks[block_id] = data
 
-    def load(self, block_id: int) -> Optional[object]:
+    def load(self, block_id: int) -> object | None:
         """Load a block by ID (returns None if not present)."""
         return self._blocks.get(block_id)
 
@@ -248,7 +247,7 @@ class SpeCachePrefetcher:
         with self._lock:
             self._tracker.record(attn_scores)
 
-    def predict_next_turn_blocks(self, total_blocks: int) -> List[int]:
+    def predict_next_turn_blocks(self, total_blocks: int) -> list[int]:
         """
         Predict which blocks to prefetch for the next turn.
 
@@ -273,7 +272,7 @@ class SpeCachePrefetcher:
             attn_scores = self._tracker.get_scores()
 
         # Candidate blocks: all blocks in [0, total_blocks)
-        candidates: List[Tuple[float, int]] = []
+        candidates: list[tuple[float, int]] = []
         for block_id in range(total_blocks):
             recency   = block_id / max(total_blocks - 1, 1)
             attn_mass = attn_scores.get(block_id, 0.0)
@@ -287,8 +286,8 @@ class SpeCachePrefetcher:
         candidates.sort(reverse=True)
 
         # Select top budget, ensuring sinks are always included
-        selected: List[int] = []
-        seen: Set[int] = set()
+        selected: list[int] = []
+        seen: set[int] = set()
 
         for bid in sink_set:
             if bid < total_blocks:  # pragma: no cover
@@ -308,12 +307,12 @@ class SpeCachePrefetcher:
         """Trigger prefetch of a single block via the store."""
         self._store.prefetch(block_id)
 
-    def prefetch_batch(self, block_ids: List[int]) -> None:
+    def prefetch_batch(self, block_ids: list[int]) -> None:
         """Prefetch a list of blocks (optionally in background thread)."""
         for bid in block_ids:
             self._store.prefetch(bid)
 
-    def end_of_turn(self, total_blocks: int) -> List[int]:
+    def end_of_turn(self, total_blocks: int) -> list[int]:
         """
         Convenience method: predict, prefetch, and reset tracker.
 

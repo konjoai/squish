@@ -94,6 +94,15 @@ select = ["E", "F", "W", "I", "UP", "B"]
 ignore = [
     "E501",   # line-length handled by formatter
     "B008",   # FastAPI Depends() calls in function args
+    "E402",   # module-level import not at top (guard imports in large files)
+    "E702",   # multiple statements on one line (compact local-var blocks)
+    "E741",   # ambiguous variable name (l, I used in math/loop contexts)
+    "B004",   # bare raise in except — allowed
+    "B007",   # loop variable not used in body
+    "B023",   # function does not bind loop variable
+    "B904",   # raise without `from` inside except
+    "F401",   # imported but unused (try/except availability checks)
+    "F821",   # undefined name (forward-reference string annotations)
 ]
 
 [tool.pytest.ini_options]

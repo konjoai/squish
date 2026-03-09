@@ -148,8 +148,8 @@ class GrammarEngine:
         if not self._available or state is None:
             return logits_mx
         try:
-            import mlx.core as mx   # noqa: PLC0415
-            import numpy as np      # noqa: PLC0415
+            import mlx.core as mx  # noqa: PLC0415
+            import numpy as np  # noqa: PLC0415
             logits_np = np.array(logits_mx.astype(mx.float32))
             bitmask = self._xgr.allocate_token_bitmask(1, self._tok_info.vocab_size)
             state.fill_next_token_bitmask(bitmask, 0)
@@ -254,7 +254,7 @@ class DOMINOConstraint:
             except Exception:
                 self._deny_sets.append(set())
 
-    def apply(self, logits_np: "Any") -> "Any":
+    def apply(self, logits_np: Any) -> Any:
         """
         Apply DOMINO subword masking to a (vocab,) float logits array.
 

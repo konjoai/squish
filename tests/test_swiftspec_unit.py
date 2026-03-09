@@ -1,10 +1,7 @@
 """tests/test_swiftspec_unit.py — 100% line and branch coverage for squish/swiftspec.py"""
-import numpy as np
 import pytest
-import threading
 
 from squish.swiftspec import SwiftSpecConfig, SwiftSpecDecoder, SwiftSpecStats
-
 
 # ---------------------------------------------------------------------------
 # SwiftSpecConfig

@@ -9,12 +9,9 @@ Coverage for squish/chunked_prefill.py:
 """
 from __future__ import annotations
 
-import pytest
-
 import mlx.core as mx
 
 from squish.chunked_prefill import ChunkedPrefillConfig, chunk_prefill
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

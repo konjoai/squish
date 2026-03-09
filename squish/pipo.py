@@ -56,12 +56,11 @@ Usage::
 
 from __future__ import annotations
 
-import queue
 import threading
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -141,9 +140,9 @@ class LayerWeightBuffer:
         if n_slots < 1:
             raise ValueError(f"n_slots must be ≥ 1, got {n_slots}")
         self._n_slots  = n_slots
-        self._slots: Dict[int, Optional[Tuple[np.ndarray, np.ndarray]]] = {}
+        self._slots: dict[int, tuple[np.ndarray, np.ndarray] | None] = {}
         self._lock = threading.Lock()
-        self._ready: Dict[int, threading.Event] = {}
+        self._ready: dict[int, threading.Event] = {}
 
     def begin_load(
         self,
@@ -169,7 +168,7 @@ class LayerWeightBuffer:
         self,
         layer_idx: int,
         timeout: float = 60.0,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Block until ``layer_idx`` weights are ready and return them.
 
@@ -344,7 +343,7 @@ class PIPOScheduler:
     def __init__(
         self,
         config: PIPOConfig,
-        weight_loader: Callable[[int], Tuple[np.ndarray, np.ndarray]],
+        weight_loader: Callable[[int], tuple[np.ndarray, np.ndarray]],
         n_layers: int,
     ) -> None:
         self.config   = config
@@ -358,7 +357,7 @@ class PIPOScheduler:
         )
         self._total_tokens:  int   = 0
         self._total_time_s:  float = 0.0
-        self._prefetch_thread: Optional[threading.Thread] = None
+        self._prefetch_thread: threading.Thread | None = None
 
     # ------------------------------------------------------------------
 

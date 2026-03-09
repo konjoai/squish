@@ -4,7 +4,6 @@ import pytest
 
 from squish.comm_vq import CommVQCodebook, MultiCodebookVQ, fit_kv_codebooks
 
-
 RNG = np.random.default_rng(7)
 
 

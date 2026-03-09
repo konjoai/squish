@@ -339,9 +339,9 @@ def _section(title: str) -> None:
 
 def _print_banner() -> None:
     """Print the full ASCII-art startup banner."""
-    R  = _C.R;  B  = _C.B
+    R  = _C.R
     V  = _C.V;  L  = _C.L;  MG = _C.MG
-    T  = _C.T;  PK = _C.PK; LPK = _C.LPK
+    T  = _C.T;  PK = _C.PK
     W  = _C.W;  SIL = _C.SIL; DIM = _C.DIM
 
     print()
@@ -683,6 +683,7 @@ def _cap_metal_cache(verbose: bool = False, limit_mb: int = 256) -> None:  # pra
     """
     try:
         import gc
+
         import mlx.core as mx
         gc.collect()
         # eval outstanding lazy ops so nothing is unexpectedly freed
@@ -1064,6 +1065,8 @@ def _generate_tokens(  # pragma: no cover
                     try:
                         from squish.minference_patch import (
                             patch_model_minference as _patch_minf,
+                        )
+                        from squish.minference_patch import (
                             select_pattern_for_sequence as _minf_pattern,
                         )
                         _pattern = _minf_pattern(len(input_ids))
@@ -1092,8 +1095,10 @@ def _generate_tokens(  # pragma: no cover
                         and len(input_ids) > _chunk_prefill_threshold):
                     try:
                         from squish.chunked_prefill import (
-                            chunk_prefill as _chunk_prefill_fn,
                             ChunkedPrefillConfig as _CPFConfig,
+                        )
+                        from squish.chunked_prefill import (
+                            chunk_prefill as _chunk_prefill_fn,
                         )
                         _cpf_cfg = _CPFConfig(chunk_size=_chunk_prefill_size)
                         if _trace:
@@ -2443,9 +2448,11 @@ Examples:
     if getattr(args, "lazy_llm", False) and _state.model is not None:
         try:
             try:
-                from squish.lazy_llm import patch_model_lazy_llm as _patch_llm, LazyLLMConfig
+                from squish.lazy_llm import LazyLLMConfig
+                from squish.lazy_llm import patch_model_lazy_llm as _patch_llm
             except ImportError:
-                from lazy_llm import patch_model_lazy_llm as _patch_llm, LazyLLMConfig
+                from lazy_llm import LazyLLMConfig
+                from lazy_llm import patch_model_lazy_llm as _patch_llm
             _lazy_llm_cfg = LazyLLMConfig(
                 keep_ratio    = args.lazy_llm_keep_ratio,
                 start_layer   = args.lazy_llm_start_layer,

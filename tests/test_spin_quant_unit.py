@@ -3,25 +3,23 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
 
 from squish.spin_quant import (
-    _random_orthogonal,
-    _quantize_fake_int8,
-    _quantize_fake_int4,
-    _quant_error,
-    _riemannian_grad,
+    _apply_rotations,
+    _build_rotation_matrices,
     _cayley_update,
     _load_safetensors_numpy,
+    _quant_error,
+    _quantize_fake_int4,
+    _quantize_fake_int8,
+    _random_orthogonal,
+    _riemannian_grad,
     _save_safetensors_or_npz,
-    _build_rotation_matrices,
-    _apply_rotations,
     run_rotation,
 )
-
 
 # ---------------------------------------------------------------------------
 # _random_orthogonal

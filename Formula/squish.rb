@@ -1,11 +1,8 @@
 class Squish < Formula
   desc "Run 70B language models on a MacBook — memory-mapped INT8 inference via Apple MLX"
   homepage "https://wesleyscholl.github.io/squish"
-  # HEAD-only until the v1.0.0 release tag is pushed.
-  # Install with: brew install --HEAD wesleyscholl/squish/squish
-  # Once v1.0.0 is tagged, uncomment and fill:
-  #   url "https://github.com/wesleyscholl/squish/archive/refs/tags/v1.0.0.tar.gz"
-  #   sha256 "<sha256-of-release-tarball>"
+  url "https://github.com/wesleyscholl/squish/archive/refs/tags/v1.0.1.tar.gz"
+  sha256 "fdcf43e456e9b128f924a81f454c7a925c103201268697683a4ecdc7a4a9ff14"
   license "MIT"
   head "https://github.com/wesleyscholl/squish.git", branch: "main"
 
@@ -17,6 +14,8 @@ class Squish < Formula
     venv = virtualenv_create(libexec, "python3.12")
     venv.pip_install_and_link buildpath
     bin.install_symlink libexec/"bin/squish"
+    bin.install_symlink libexec/"bin/squish-server"
+    bin.install_symlink libexec/"bin/squish-convert"
   end
 
   def caveats
@@ -36,6 +35,6 @@ class Squish < Formula
   end
 
   test do
-    assert_match "squish 1.0.0", shell_output("#{bin}/squish --version")
+    assert_match "squish 1.0.1", shell_output("#{bin}/squish --version")
   end
 end

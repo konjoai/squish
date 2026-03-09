@@ -4,7 +4,6 @@ import pytest
 
 from squish.knapspec import KnapSpecConfig, KnapSpecSelector
 
-
 # ---------------------------------------------------------------------------
 # KnapSpecConfig
 # ---------------------------------------------------------------------------

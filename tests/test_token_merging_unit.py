@@ -1,21 +1,21 @@
 """tests/test_token_merging_unit.py — 100% coverage for squish/token_merging.py"""
 import sys
+from unittest.mock import patch
+
 import numpy as np
 import pytest
-from unittest.mock import patch
 
 from squish.token_merging import (
     TokenMergingConfig,
     TokenMergingState,
-    bipartite_merge,
-    unmerge_tokens,
-    patch_model_tome,
-    unpatch_model_tome,
     _cosine_similarity_bipartite,
-    _ToMeLayerWrapper,
     _get_layers,
+    _ToMeLayerWrapper,
+    bipartite_merge,
+    patch_model_tome,
+    unmerge_tokens,
+    unpatch_model_tome,
 )
-
 
 # ---------------------------------------------------------------------------
 # TokenMergingConfig
@@ -173,7 +173,7 @@ class TestUnmergeTokens:
         # Non-merged positions (keep_mask) should be exactly preserved
         keep_mask = np.ones(8, dtype=bool)
         keep_mask[s] = False
-        for orig_idx in np.where(keep_mask)[0]:
+        for _orig_idx in np.where(keep_mask)[0]:
             pass  # just verify no exception
 
     def test_dimension_mismatch_fallback(self):
@@ -359,7 +359,7 @@ class TestToMeLayerWrapper:
         w      = _ToMeLayerWrapper(orig, layer_idx=1, config=cfg, state=state)
         x_np   = np.ones((1, 8, 4), dtype=np.float32)
         x      = mx.array(x_np)
-        result = w(x)
+        w(x)
         assert state.n_merges == 0  # idx=1 > end_layer=0 → pass-through
 
     def test_call_with_merging_verbose(self):
@@ -376,7 +376,7 @@ class TestToMeLayerWrapper:
         # 8-token batch with identical rows → high similarity, merges occur
         x_np   = np.ones((1, 8, 4), dtype=np.float32)
         x      = mx.array(x_np)
-        result = w(x)
+        w(x)
         assert state.n_merge_layers >= 1
 
     def test_call_with_merging_silent(self):
@@ -392,7 +392,7 @@ class TestToMeLayerWrapper:
         w      = _ToMeLayerWrapper(orig, layer_idx=0, config=cfg, state=state)
         x_np   = np.ones((1, 8, 4), dtype=np.float32)
         x      = mx.array(x_np)
-        result = w(x)
+        w(x)
         assert state.n_merge_layers >= 1
 
     def test_call_no_merges_low_similarity(self):
@@ -410,5 +410,5 @@ class TestToMeLayerWrapper:
         x_np   = np.eye(8, 8, dtype=np.float32)[:8]  # shape (8,8)
         x_np   = x_np.reshape(1, 8, 8)
         x      = mx.array(x_np)
-        result = w(x)
+        w(x)
         assert state.n_merges == 0

@@ -48,7 +48,6 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
 import numpy as np
 
@@ -161,7 +160,7 @@ class ParisKVCodebook:
         self,
         dim:     int,
         n_codes: int  = 16,
-        config:  Optional[ParisKVConfig] = None,
+        config:  ParisKVConfig | None = None,
     ) -> None:
         if dim < 1:
             raise ValueError("dim must be ≥ 1")
@@ -170,7 +169,7 @@ class ParisKVCodebook:
         self._dim      = dim
         self._n_codes  = n_codes
         self._cfg      = config or ParisKVConfig()
-        self._centroids: Optional[np.ndarray] = None   # (K, D) float32
+        self._centroids: np.ndarray | None = None   # (K, D) float32
         self._is_fitted = False
 
         # Drift tracking
@@ -182,7 +181,7 @@ class ParisKVCodebook:
         self,
         vectors: np.ndarray,
         seed:    int = 42,
-    ) -> "ParisKVCodebook":
+    ) -> ParisKVCodebook:
         """
         Fit the initial codebook via k-means.
 
@@ -326,7 +325,7 @@ class ParisKVCodebook:
         return self._is_fitted
 
     @property
-    def centroids(self) -> Optional[np.ndarray]:
+    def centroids(self) -> np.ndarray | None:
         """(K, D) float32 centroid array, or None if not fitted."""
         return self._centroids
 

@@ -1,5 +1,4 @@
 """tests/test_dfloat11_unit.py — 100% coverage for squish/dfloat11.py"""
-import struct
 
 import numpy as np
 import pytest

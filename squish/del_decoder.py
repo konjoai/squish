@@ -36,8 +36,8 @@ Provides
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
@@ -146,7 +146,7 @@ class DELDecoder:
 
     def __init__(
         self,
-        forward_fn: Callable[[List[int], Optional[int]], np.ndarray],
+        forward_fn: Callable[[list[int], int | None], np.ndarray],
         config: DELConfig,
         rng_seed: int = 0,
     ) -> None:
@@ -161,7 +161,7 @@ class DELDecoder:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _shadow_analysis(self, ids: List[int]) -> int:
+    def _shadow_analysis(self, ids: list[int]) -> int:
         """Run each candidate exit layer and return the one with best TPL.
 
         In a production system this is zero-overhead because intermediate
@@ -208,9 +208,9 @@ class DELDecoder:
 
     def _draft_dynamic(
         self,
-        ids: List[int],
+        ids: list[int],
         exit_layer: int,
-    ) -> Tuple[List[int], List[np.ndarray]]:
+    ) -> tuple[list[int], list[np.ndarray]]:
         """Draft up to *gamma* tokens, stopping early on low confidence.
 
         Returns
@@ -219,8 +219,8 @@ class DELDecoder:
         distributions.  May be shorter than *gamma* if dynamic exit fires.
         """
         cfg       = self._cfg
-        draft_ids:   List[int]        = []
-        draft_probs: List[np.ndarray] = []
+        draft_ids:   list[int]        = []
+        draft_probs: list[np.ndarray] = []
         ctx = list(ids)
 
         for _ in range(cfg.gamma):
@@ -242,9 +242,9 @@ class DELDecoder:
 
     def generate(
         self,
-        input_ids: List[int],
+        input_ids: list[int],
         max_new_tokens: int = 64,
-    ) -> Tuple[List[int], DELStats]:
+    ) -> tuple[list[int], DELStats]:
         """Generate up to *max_new_tokens* tokens using DEL.
 
         Parameters
@@ -277,10 +277,10 @@ class DELDecoder:
 
             # Verify each draft token with the full model
             ctx      = list(ids)
-            accepted: List[int] = []
+            accepted: list[int] = []
             rejected  = False
 
-            for d_tok, d_probs in zip(draft_ids, draft_probs):
+            for d_tok, d_probs in zip(draft_ids, draft_probs, strict=False):
                 full_logits = self._fwd(ctx, None)
                 full_probs  = _softmax(full_logits)
                 v_tok       = int(np.argmax(full_logits))

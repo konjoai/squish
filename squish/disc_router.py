@@ -46,10 +46,10 @@ Integration::
 from __future__ import annotations
 
 import enum
-import re
 import textwrap
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 __all__ = [
     "TaskType",
@@ -100,11 +100,11 @@ class SubTask:
     task_id:     str
     task_type:   TaskType
     prompt:      str
-    inputs:      List[str] = field(default_factory=list)
+    inputs:      list[str] = field(default_factory=list)
     output_var:  str       = ""
-    depends_on:  List[str] = field(default_factory=list)
-    context_key: Optional[str] = None
-    metadata:    Dict[str, Any] = field(default_factory=dict)
+    depends_on:  list[str] = field(default_factory=list)
+    context_key: str | None = None
+    metadata:    dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.task_id:
@@ -122,13 +122,13 @@ class DISCPlan:
     ----------
     tasks : list of SubTask (in execution order after topological sort)
     """
-    tasks: List[SubTask] = field(default_factory=list)
+    tasks: list[SubTask] = field(default_factory=list)
 
     def add(self, task: SubTask) -> None:
         """Append a sub-task to the plan."""
         self.tasks.append(task)
 
-    def topological_order(self) -> List[SubTask]:
+    def topological_order(self) -> list[SubTask]:
         """
         Return tasks in topological execution order.
 
@@ -138,15 +138,15 @@ class DISCPlan:
         ------
         ValueError if there is a dependency cycle.
         """
-        task_map: Dict[str, SubTask]  = {t.task_id: t for t in self.tasks}
-        in_deg:   Dict[str, int]      = {t.task_id: 0 for t in self.tasks}
+        task_map: dict[str, SubTask]  = {t.task_id: t for t in self.tasks}
+        in_deg:   dict[str, int]      = {t.task_id: 0 for t in self.tasks}
         for t in self.tasks:
             for dep in t.depends_on:
                 if dep in in_deg:
                     in_deg[t.task_id] += 1
 
         queue  = [tid for tid, deg in in_deg.items() if deg == 0]
-        result: List[SubTask] = []
+        result: list[SubTask] = []
 
         while queue:
             tid = queue.pop(0)
@@ -188,7 +188,7 @@ class DISCRouterConfig:
     """
     max_subtasks:          int  = 12
     parallel_execution:    bool = False
-    task_prompt_templates: Dict[str, str] = field(default_factory=dict)
+    task_prompt_templates: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.max_subtasks < 1:
@@ -201,7 +201,7 @@ class DISCRouterConfig:
         return _DEFAULT_SYSTEM_PROMPTS.get(task_type, "")
 
 
-_DEFAULT_SYSTEM_PROMPTS: Dict[TaskType, str] = {
+_DEFAULT_SYSTEM_PROMPTS: dict[TaskType, str] = {
     TaskType.SUMMARIZE: "You are a summarization assistant. Be concise.",
     TaskType.COMPARE:   "You are a comparison assistant. List differences clearly.",
     TaskType.RETRIEVE:  "You are a retrieval assistant. Find relevant excerpts.",
@@ -231,7 +231,7 @@ class DISCRouter:
     def __init__(
         self,
         llm_fn: Callable[[str, str, str], str],
-        config: Optional[DISCRouterConfig] = None,
+        config: DISCRouterConfig | None = None,
     ) -> None:
         self._llm    = llm_fn
         self._cfg    = config or DISCRouterConfig()
@@ -270,7 +270,7 @@ class DISCRouter:
         self,
         user_request: str,
         context:      str = "",
-        plan:         Optional[DISCPlan] = None,
+        plan:         DISCPlan | None = None,
     ) -> str:
         """
         Plan (if not provided) and execute a DISC decomposition.
@@ -289,7 +289,7 @@ class DISCRouter:
             plan = self.plan(user_request, context)
 
         ordered        = plan.topological_order()
-        variables: Dict[str, str] = {}   # output_var -> result string
+        variables: dict[str, str] = {}   # output_var -> result string
 
         for task in ordered:
             result = self._execute_task(task, variables, context)
@@ -304,7 +304,7 @@ class DISCRouter:
         self,
         plan:     DISCPlan,
         context:  str = "",
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """
         Execute a pre-built plan and return all output variables.
 
@@ -313,7 +313,7 @@ class DISCRouter:
         dict mapping output_var name -> result string
         """
         ordered        = plan.topological_order()
-        variables: Dict[str, str] = {}
+        variables: dict[str, str] = {}
         for task in ordered:
             result = self._execute_task(task, variables, context)
             variables[task.output_var] = result
@@ -324,7 +324,7 @@ class DISCRouter:
     def _execute_task(
         self,
         task:      SubTask,
-        variables: Dict[str, str],
+        variables: dict[str, str],
         context:   str,
     ) -> str:
         """Execute a single sub-task and return its string output."""

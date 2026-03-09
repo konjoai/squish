@@ -9,8 +9,6 @@ Coverage tests for squish/diffusion_draft.py — Phase G1.
 
 from __future__ import annotations
 
-import pytest
-
 from squish.diffusion_draft import DiffusionDraftModel
 
 
