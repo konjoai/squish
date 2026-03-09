@@ -68,7 +68,7 @@ class LoRAManager:
 
     # ── Registry ─────────────────────────────────────────────────────────────
 
-    def register(self, domain: str, path: "str | Path") -> None:
+    def register(self, domain: str, path: str | Path) -> None:
         """Register an adapter directory path for *domain*."""
         self._registry[domain] = Path(path)
 
@@ -312,7 +312,7 @@ class DareTiesConfig:
     """
 
     sparsity:        float         = 0.9
-    top_k_fraction:  "float | None" = None
+    top_k_fraction:  float | None = None
     scale:           float         = 1.0
     seed:            int           = 42
 
@@ -342,7 +342,7 @@ class DareTiesMerger:
     def sparsify_dare(
         self,
         delta: np.ndarray,
-        rng: "np.random.Generator | None" = None,
+        rng: np.random.Generator | None = None,
     ) -> np.ndarray:
         """Apply DARE: randomly drop ``sparsity`` fraction of delta, then rescale.
 
@@ -364,7 +364,7 @@ class DareTiesMerger:
 
     # ── TIES steps ──────────────────────────────────────────────────────────
 
-    def trim(self, deltas: "list[np.ndarray]") -> "list[np.ndarray]":
+    def trim(self, deltas: list[np.ndarray]) -> list[np.ndarray]:
         """TIES trim: zero entries with magnitudes below the top-k threshold.
 
         If ``top_k_fraction`` is None, returns deltas unchanged.
@@ -391,7 +391,7 @@ class DareTiesMerger:
             trimmed.append(t)
         return trimmed
 
-    def elect_sign(self, deltas: "list[np.ndarray]") -> np.ndarray:
+    def elect_sign(self, deltas: list[np.ndarray]) -> np.ndarray:
         """TIES elect sign: return +1/-1 per element by majority sign vote.
 
         For each parameter, count how many deltas are positive vs negative;
@@ -410,7 +410,7 @@ class DareTiesMerger:
         neg_vote = (stacked < 0).sum(axis=0)
         return np.where(pos_vote >= neg_vote, 1.0, -1.0).astype(np.float32)
 
-    def ties_merge(self, deltas: "list[np.ndarray]") -> np.ndarray:
+    def ties_merge(self, deltas: list[np.ndarray]) -> np.ndarray:
         """Run the full TIES merge pipeline (trim → elect sign → average).
 
         Parameters
@@ -428,7 +428,7 @@ class DareTiesMerger:
         # Keep only deltas that agree with the elected sign
         agreed = []
         for d in trimmed:
-            d_signed = d * np.sign(d)   # magnitude
+            d * np.sign(d)   # magnitude
             # Zero out entries where sign disagrees
             agrees   = (np.sign(d) == sign_mask) | (d == 0.0)
             agreed.append(d * agrees)
@@ -437,7 +437,7 @@ class DareTiesMerger:
 
     # ── Combined DARE → TIES ─────────────────────────────────────────────────
 
-    def merge(self, deltas: "list[np.ndarray]") -> np.ndarray:
+    def merge(self, deltas: list[np.ndarray]) -> np.ndarray:
         """Full pipeline: DARE sparsify each delta, then TIES merge.
 
         Parameters

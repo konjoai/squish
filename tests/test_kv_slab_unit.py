@@ -1,10 +1,9 @@
 """tests/test_kv_slab_unit.py — 100% coverage for squish/kv_slab.py"""
 import threading
+
 import numpy as np
-import pytest
 
 from squish.kv_slab import KVPage, KVSlabAllocator
-
 
 # ---------------------------------------------------------------------------
 # KVPage
@@ -90,7 +89,7 @@ class TestKVSlabAllocator:
     def test_free_returns_page_to_pool(self):
         slab = self._make_slab(n_pages=2)
         p1 = slab.alloc()
-        p2 = slab.alloc()
+        slab.alloc()
         slab.free(p1)
         assert slab.n_free() == 1
         assert slab.n_used() == 1

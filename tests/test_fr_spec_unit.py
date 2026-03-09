@@ -3,11 +3,11 @@ import numpy as np
 import pytest
 
 from squish.fr_spec import (
+    FreqTokenSubset,
     FRSpecCalibrator,
     FRSpecConfig,
     FRSpecHead,
     FRSpecStats,
-    FreqTokenSubset,
 )
 
 RNG = np.random.default_rng(42)

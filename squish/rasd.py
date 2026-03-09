@@ -59,8 +59,8 @@ Provides
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 __all__ = [
     "RASDConfig",
@@ -126,8 +126,8 @@ class CorpusIndex:
         self._min_prefix_len = min_prefix_len
         self._max_sequences = max_sequences
         # prefix_tup → list of full sequences
-        self._index: Dict[tuple, List[List[int]]] = defaultdict(list)
-        self._insertion_order: List[tuple] = []  # tracks first-insertion prefix keys
+        self._index: dict[tuple, list[list[int]]] = defaultdict(list)
+        self._insertion_order: list[tuple] = []  # tracks first-insertion prefix keys
         self._total: int = 0
 
     @property
@@ -173,7 +173,7 @@ class CorpusIndex:
 
     def search(
         self, prefix: Sequence[int], top_k: int = 8
-    ) -> List[List[int]]:
+    ) -> list[list[int]]:
         """Return up to ``top_k`` sequences whose stored prefix extends *prefix*.
 
         Searches from longest possible prefix down to ``min_prefix_len``,
@@ -215,7 +215,7 @@ class _DraftNode:
 
     def __init__(self, token_id: int, prob: float = 1.0) -> None:
         self.token_id: int = token_id
-        self.children: Dict[int, "_DraftNode"] = {}
+        self.children: dict[int, _DraftNode] = {}
         self.prob: float = prob
 
 
@@ -242,7 +242,7 @@ class DraftTree:
     def add_path(
         self,
         tokens: Sequence[int],
-        probs: Optional[Sequence[float]] = None,
+        probs: Sequence[float] | None = None,
     ) -> None:
         """Insert a token path into the tree.
 
@@ -264,17 +264,17 @@ class DraftTree:
                 node.children[tid] = _DraftNode(tid, prob)
             node = node.children[tid]
 
-    def all_paths(self) -> List[List[int]]:
+    def all_paths(self) -> list[list[int]]:
         """Return all root-to-leaf paths as lists of token IDs."""
-        paths: List[List[int]] = []
+        paths: list[list[int]] = []
         self._dfs(self._root, [], paths)
         return paths
 
     def _dfs(
         self,
         node: _DraftNode,
-        path: List[int],
-        out: List[List[int]],
+        path: list[int],
+        out: list[list[int]],
     ) -> None:
         if not node.children:
             if path:
@@ -309,14 +309,14 @@ class RASDBatcher:
         RASD configuration parameters.
     """
 
-    def __init__(self, config: Optional[RASDConfig] = None) -> None:
+    def __init__(self, config: RASDConfig | None = None) -> None:
         self._config = config or RASDConfig()
 
     def prune_tree(
         self,
         tree: DraftTree,
-        draft_probs: Optional[Dict[int, float]] = None,
-        beam_width: Optional[int] = None,
+        draft_probs: dict[int, float] | None = None,
+        beam_width: int | None = None,
     ) -> DraftTree:
         """Prune *tree* to at most *beam_width* branches.
 
@@ -346,7 +346,7 @@ class RASDBatcher:
         self,
         src: _DraftNode,
         dst: _DraftNode,
-        probs: Dict[int, float],
+        probs: dict[int, float],
         beam_width: int,
         depth: int,
     ) -> None:

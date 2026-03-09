@@ -53,25 +53,22 @@ from __future__ import annotations
 import json
 import sys
 import types
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import mlx.core as mx
 import numpy as np
-import pytest
 
-import squish.grammar_engine as _ge_mod
-import squish.tool_calling as _tc_mod
 from squish.grammar_engine import GrammarEngine
 from squish.tool_calling import parse_tool_calls_with_grammar
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _make_mock_tokenizer(vocab=["a", "b", "c", "{", "}"]):
+def _make_mock_tokenizer(vocab=None):
     """Return a minimal HuggingFace-like tokenizer mock."""
+    if vocab is None:
+        vocab = ["a", "b", "c", "{", "}"]
     tok = MagicMock()
     tok.encode.return_value = [0, 1, 2]
     tok.get_vocab.return_value = {t: i for i, t in enumerate(vocab)}

@@ -1,15 +1,15 @@
 """tests/test_scheduler_bucket_argus_unit.py — 100% coverage for BucketServe/Argus additions in squish/scheduler.py"""
 import math
+
 import numpy as np
 import pytest
 
 from squish.scheduler import (
     BucketBounds,
-    build_default_buckets,
-    assign_bucket,
     OutputLengthPredictor,
+    assign_bucket,
+    build_default_buckets,
 )
-
 
 # ---------------------------------------------------------------------------
 # BucketBounds

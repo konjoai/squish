@@ -50,10 +50,8 @@ from __future__ import annotations
 
 import threading
 from collections import deque
-from typing import Optional
 
 import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # KVPage — a single fixed-size block of K and V storage
@@ -163,7 +161,7 @@ class KVSlabAllocator:
 
     # ── Allocation interface ──────────────────────────────────────────────────
 
-    def alloc(self) -> Optional[KVPage]:
+    def alloc(self) -> KVPage | None:
         """
         Pop a free page from the slab and return it.
 
@@ -187,7 +185,7 @@ class KVSlabAllocator:
             self._free.appendleft(page)
             self._free_count += 1
 
-    def free_many(self, pages: "list[KVPage]") -> None:
+    def free_many(self, pages: list[KVPage]) -> None:
         """Return a batch of pages to the free-list atomically."""
         with self._lock:
             for page in pages:

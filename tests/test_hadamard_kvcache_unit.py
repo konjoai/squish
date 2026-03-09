@@ -8,7 +8,6 @@ import pytest
 
 from squish.kv_cache import HadamardKVCache
 
-
 N_HEADS  = 2
 HEAD_DIM = 4   # power-of-two for default tests
 

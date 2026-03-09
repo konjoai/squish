@@ -55,11 +55,9 @@ Usage
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 import platform
+import subprocess
 from pathlib import Path
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Hardware profiling helpers
@@ -146,7 +144,7 @@ def _detect_chip() -> tuple[str, float, float]:
 # Model parameter counting
 # ---------------------------------------------------------------------------
 
-def _count_model_params(model_dir: Optional[str]) -> float:
+def _count_model_params(model_dir: str | None) -> float:
     """
     Return the model's total parameter count in billions.
 
@@ -184,7 +182,7 @@ def _count_model_params(model_dir: Optional[str]) -> float:
     return 7.0
 
 
-def _quant_bytes_per_param(model_dir: Optional[str]) -> float:
+def _quant_bytes_per_param(model_dir: str | None) -> float:
     """
     Return effective bytes-per-parameter based on the quantization detected
     in *model_dir*.  Uses the ``quantization`` key in ``config.json`` or
@@ -222,7 +220,7 @@ def _quant_bytes_per_param(model_dir: Optional[str]) -> float:
 # ---------------------------------------------------------------------------
 
 def _kv_memory_gb(
-    model_dir:  Optional[str],
+    model_dir:  str | None,
     seq_len:    int,
     output_len: int,
     batch_size: int,
@@ -255,7 +253,7 @@ def _kv_memory_gb(
 # ---------------------------------------------------------------------------
 
 def predict(
-    model_dir:  Optional[str] = None,
+    model_dir:  str | None = None,
     batch_size: int   = 1,
     seq_len:    int   = 512,
     output_len: int   = 128,

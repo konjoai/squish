@@ -60,6 +60,7 @@ def _tfidf_compress(text: str, ratio: float, preserve_tokens: int = 0) -> str:
     Compressed str; returns *text* unchanged if fewer than 2 sentences.
     """
     import math
+
     import numpy as np
 
     # Split off an immutable prefix (system prompt) to protect it from pruning

@@ -52,20 +52,15 @@ power_monitor.py — 100%
 """
 from __future__ import annotations
 
-import threading
-import time
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-import squish.power_monitor as pm_mod
 from squish.power_monitor import (
     POWER_CONFIGS,
-    PowerModeConfig,
     PowerMonitor,
     apply_mode,
 )
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # POWER_CONFIGS + PowerModeConfig

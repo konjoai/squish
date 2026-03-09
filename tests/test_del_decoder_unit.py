@@ -4,7 +4,6 @@ import pytest
 
 from squish.del_decoder import DELConfig, DELDecoder, DELStats, _softmax
 
-
 # ---------------------------------------------------------------------------
 # _softmax helper
 # ---------------------------------------------------------------------------
@@ -110,7 +109,6 @@ def _make_forward_confident_at_layer(vocab=10, confident_layer=8, strong_tok=2, 
 
 def _make_rejecting_forward(vocab=10, draft_tok=1, verify_tok=2):
     """Draft always produces `draft_tok`; full model always prefers `verify_tok`."""
-    call_count = [0]
 
     def forward_fn(ids, layer_limit=None):
         logits = np.full(vocab, -10.0, dtype=np.float32)

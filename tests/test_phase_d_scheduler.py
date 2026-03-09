@@ -13,10 +13,7 @@ from __future__ import annotations
 import queue
 from unittest.mock import MagicMock
 
-import pytest
-
 from squish.scheduler import BatchScheduler, _Request
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -228,8 +225,8 @@ class TestGroupByPrefix:
         """First request for a prefix creates a new group (branch: key not in groups)."""
         sched = _make_scheduler(max_batch_size=4)
         # Two different prefixes — each creates a new group on first occurrence.
-        req_x = _req("x", list(range(64)))
-        req_y = _req("y", list(range(64, 128)))
+        _req("x", list(range(64)))
+        _req("y", list(range(64, 128)))
         # Pool equal to max_batch — early return, no grouping needed.
         # Use 5 to force grouping: 3 of x, 2 of y.
         pool_x = [_req(f"x{i}", list(range(64))) for i in range(3)]

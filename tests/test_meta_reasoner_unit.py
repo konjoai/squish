@@ -4,7 +4,6 @@ import pytest
 
 from squish.meta_reasoner import MetaReasoner, MetaReasonerConfig
 
-
 # ---------------------------------------------------------------------------
 # MetaReasonerConfig tests
 # ---------------------------------------------------------------------------

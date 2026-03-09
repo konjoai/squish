@@ -12,13 +12,12 @@ import json
 import threading
 import types
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
 from squish.lora_manager import LoRAManager
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

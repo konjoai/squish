@@ -35,6 +35,16 @@ from squish.catalog import (
     resolve as resolve_model,
 )
 
+# Final-pass technique 15 — DFloat11 lossless weight compression (NeurIPS 2025)
+from squish.dfloat11 import (  # noqa: F401
+    CompressedBlock,
+    CompressedModel,
+    DFloat11Compressor,
+    DFloat11Config,
+    HuffmanCodec,
+    compress_model,
+)
+
 # Entropy compression helpers (optional zstandard dep)
 from squish.entropy import compress_npy_dir, decompress_npy_dir  # noqa: F401
 
@@ -72,6 +82,14 @@ try:
 except (ImportError, OSError):
     pass
 
+# Final-pass technique 17 — PIPO pipelined offloading with INT4 bypass kernel
+from squish.pipo import (  # noqa: F401
+    INT4BypassKernel,
+    LayerWeightBuffer,
+    PIPOConfig,
+    PIPOScheduler,
+)
+
 # Quantizer public API (self-contained, no external deps beyond numpy)
 from squish.quantizer import (  # noqa: F401
     QuantizationResult,
@@ -81,6 +99,14 @@ from squish.quantizer import (  # noqa: F401
     quantize_embeddings,
     quantize_int4,
     reconstruct_embeddings,
+)
+
+# Final-pass technique 16 — ShadowKV low-rank key cache + CPU value shadow (arXiv:2410.21465)
+from squish.shadow_kv import (  # noqa: F401
+    LandmarkSelector,
+    LowRankKeyCache,
+    ShadowKVCache,
+    ShadowKVConfig,
 )
 
 # Speculative decoding (requires both target + draft model)
@@ -134,6 +160,12 @@ from squish.pipo import (  # noqa: F401
     LayerWeightBuffer,
     PIPOConfig,
     PIPOScheduler,
+# Final-pass technique 19 — SqueezeLLM dense-and-sparse quantization (ICML 2024)
+from squish.squeeze_llm import (  # noqa: F401
+    OutlierDetector,
+    SqueezeLLMConfig,
+    SqueezeLLMLayer,
+    SqueezeLLMQuantizer,
 )
 
 # Final-pass technique 18 — VPTQ vector post-training quantization (NeurIPS 2025)
@@ -144,12 +176,10 @@ from squish.vptq import (  # noqa: F401
     VPTQQuantizer,
 )
 
-# Final-pass technique 19 — SqueezeLLM dense-and-sparse quantization (ICML 2024)
-from squish.squeeze_llm import (  # noqa: F401
-    OutlierDetector,
-    SqueezeLLMConfig,
-    SqueezeLLMLayer,
-    SqueezeLLMQuantizer,
+from .compressed_loader import (  # noqa: F401
+    load_compressed_model,
+    load_from_npy_dir,
+    save_int4_npy_dir,
 )
 
 # Sixth Wave — SubSpec: NVMe-offload speculative decoding (NeurIPS 2025)

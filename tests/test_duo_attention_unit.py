@@ -9,12 +9,11 @@ import pytest
 
 from squish.duo_attention import (
     DuoAttentionConfig,
+    DuoKVManager,
     HeadCalibration,
     HeadClassifier,
     StreamingKVWindow,
-    DuoKVManager,
 )
-
 
 # ---------------------------------------------------------------------------
 # DuoAttentionConfig
@@ -68,7 +67,7 @@ class TestHeadCalibration:
     def test_record_and_classify_basic(self):
         cfg = self._make_cfg()
         cal = HeadCalibration(cfg)
-        rng = np.random.default_rng(0)
+        np.random.default_rng(0)
         # 4 heads, 3 queries, 10 keys
         # Heads 0,1: all attention in out-of-window zone → high score → retrieval
         # Heads 2,3: all attention in sink/window → low score → streaming

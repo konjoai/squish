@@ -41,9 +41,8 @@ Usage::
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any
 
 import numpy as np
 
@@ -87,7 +86,7 @@ class TokenMergingConfig:
     """
     r:                    int   = 16
     start_layer:          int   = 4
-    end_layer:            Optional[int] = None   # None → merge in all layers ≥ start_layer
+    end_layer:            int | None = None   # None → merge in all layers ≥ start_layer
     similarity_threshold: float = 0.5
     verbose:              bool  = False
 
@@ -121,7 +120,7 @@ class TokenMergingState:
     """
     # Stack of merge maps: each entry is (src_indices, dst_indices, T_before)
     # where src_indices were merged INTO dst_indices.
-    _merge_maps: List[tuple] = field(default_factory=list)
+    _merge_maps: list[tuple] = field(default_factory=list)
 
     def reset(self) -> None:
         """Clear merge maps between requests."""

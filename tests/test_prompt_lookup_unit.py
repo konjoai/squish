@@ -8,12 +8,11 @@ import numpy as np
 import pytest
 
 from squish.prompt_lookup import (
-    PromptLookupConfig,
     NGramIndex,
+    PromptLookupConfig,
     PromptLookupDecoder,
     PromptLookupStats,
 )
-
 
 # ---------------------------------------------------------------------------
 # PromptLookupConfig

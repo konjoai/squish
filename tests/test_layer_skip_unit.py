@@ -8,12 +8,11 @@ import numpy as np
 import pytest
 
 from squish.layer_skip import (
-    EarlyExitConfig,
     ConfidenceEstimator,
+    EarlyExitConfig,
     EarlyExitDecoder,
     EarlyExitStats,
 )
-
 
 # ---------------------------------------------------------------------------
 # EarlyExitConfig

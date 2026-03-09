@@ -11,11 +11,10 @@ import pytest
 
 from squish.speculative import (
     MedusaConfig,
+    MedusaGenerator,
     MedusaHead,
     MedusaTreeDraft,
-    MedusaGenerator,
 )
-
 
 # ---------------------------------------------------------------------------
 # MedusaConfig

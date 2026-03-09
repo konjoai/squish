@@ -10,7 +10,6 @@ import pytest
 
 from squish.lora_manager import DareTiesConfig, DareTiesMerger
 
-
 # ---------------------------------------------------------------------------
 # DareTiesConfig
 # ---------------------------------------------------------------------------
@@ -82,7 +81,7 @@ class TestDareTiesMergerDare:
     def test_sparsify_custom_rng(self):
         cfg  = DareTiesConfig(sparsity=0.5)
         m    = DareTiesMerger(cfg)
-        rng  = np.random.default_rng(123)
+        np.random.default_rng(123)
         d    = np.ones(100)
         out1 = m.sparsify_dare(d, rng=np.random.default_rng(123))
         out2 = m.sparsify_dare(d, rng=np.random.default_rng(123))

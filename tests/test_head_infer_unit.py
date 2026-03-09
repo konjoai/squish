@@ -3,13 +3,12 @@ import numpy as np
 import pytest
 
 from squish.head_infer import (
-    HeadType,
-    HeadInferConfig,
-    HeadClassifier,
     HeadAwareKVStore,
+    HeadClassifier,
+    HeadInferConfig,
+    HeadType,
     _HeadBuffer,
 )
-
 
 # ---------------------------------------------------------------------------
 # HeadInferConfig
@@ -202,7 +201,7 @@ class TestHeadBuffer:
 
     def test_get_retrieval_with_query(self):
         buf = _HeadBuffer(HeadType.RETRIEVAL, window=4, sinks=1, max_entries=100)
-        for i in range(5):
+        for _i in range(5):
             buf.put(np.random.rand(4).astype(np.float32),
                     np.random.rand(4).astype(np.float32))
         q = np.ones(4, dtype=np.float32)

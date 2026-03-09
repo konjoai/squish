@@ -69,8 +69,8 @@ Standalone test:
 """
 import asyncio
 import dataclasses
-import logging
 import hashlib
+import logging
 import queue
 import threading
 import time
@@ -502,7 +502,7 @@ class BatchScheduler:
             return pool, []
 
         # Build per-prefix groups preserving original FIFO insertion order.
-        groups: dict[str, list["_Request"]] = {}
+        groups: dict[str, list[_Request]] = {}
         order:  list[str] = []
         for req in pool:
             key = hashlib.sha256(
@@ -516,8 +516,8 @@ class BatchScheduler:
         # Sort groups by descending size — largest cohort fills the batch first.
         sorted_keys = sorted(order, key=lambda k: -len(groups[k]))
 
-        selected:  list["_Request"] = []
-        leftovers: list["_Request"] = []
+        selected:  list[_Request] = []
+        leftovers: list[_Request] = []
         for key in sorted_keys:
             group = groups[key]
             remaining_slots = self._max_batch - len(selected)
@@ -978,7 +978,7 @@ class OutputLengthPredictor:
 #   IterationLevelScheduler — at each step, decides which requests to run.
 #   SelectivePreemption   — selects which running request to preempt.
 
-from dataclasses import dataclass as _orca_dc, field as _orca_field
+from dataclasses import dataclass as _orca_dc
 
 
 @_orca_dc

@@ -204,7 +204,7 @@ class MRLIndex:
             norms = np.linalg.norm(vecs, axis=1, keepdims=True).clip(1e-12)
             vecs  = vecs / norms
 
-        for v, item_id in zip(vecs, ids_):
+        for v, item_id in zip(vecs, ids_, strict=False):
             self._full_vecs.append(v)
             self._ids.append(int(item_id))
         self._count += len(ids_)

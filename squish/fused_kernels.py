@@ -39,7 +39,6 @@ so the server never fails to start.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -159,7 +158,7 @@ class FusedAttention:
         Attention scale factor.  If ``None``, uses ``1 / sqrt(head_dim)``.
     """
 
-    def __init__(self, scale: Optional[float] = None) -> None:
+    def __init__(self, scale: float | None = None) -> None:
         self._scale  = scale
         self._kernel: object = None  # compiled Metal kernel (lazy)
 
@@ -177,11 +176,11 @@ class FusedAttention:
 
     def __call__(
         self,
-        queries:  "mx.array",
-        keys:     "mx.array",
-        values:   "mx.array",
-        mask:     "Optional[mx.array]" = None,
-    ) -> "mx.array":
+        queries:  mx.array,
+        keys:     mx.array,
+        values:   mx.array,
+        mask:     mx.array | None = None,
+    ) -> mx.array:
         """
         Compute attention output.
 
@@ -247,9 +246,9 @@ class FusedFFNGate:
 
     def __call__(
         self,
-        gate: "mx.array",
-        up:   "mx.array",
-    ) -> "mx.array":
+        gate: mx.array,
+        up:   mx.array,
+    ) -> mx.array:
         """
         Return ``silu(gate) * up`` via fused Metal kernel.
 
@@ -305,7 +304,7 @@ def patch_model(model) -> int:  # pragma: no cover
     if not _HAS_MLX:
         return 0
 
-    fused_attn = FusedAttention()
+    FusedAttention()
     fused_gate = FusedFFNGate()
     patched    = 0
 

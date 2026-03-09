@@ -468,7 +468,7 @@ class KVLayerCache:
         self._svd_Vv = np.stack(Vv_list, axis=0).astype(np.float16)
 
         # Flush the calibration buffer: project + quantize each buffered token
-        for k_f16, v_f16 in zip(self._svd_buf_k, self._svd_buf_v):
+        for k_f16, v_f16 in zip(self._svd_buf_k, self._svd_buf_v, strict=False):
             k_proj = self._svd_project(k_f16, self._svd_Vk)   # (n_heads, rank)
             v_proj = self._svd_project(v_f16, self._svd_Vv)
 
@@ -535,7 +535,7 @@ class KVLayerCache:
         retrieval_top_k  : int — Phase 2: if >0 build an HNSW index on spilled
                             key vectors to support get_relevant_kv().
         """
-        import pathlib, tempfile
+        import pathlib
         cache_dir = pathlib.Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
         self._disk_threshold = threshold
@@ -1032,7 +1032,7 @@ class QuantizedKVCache:
         into the model-patched layers so the existing object references
         remain valid.
         """
-        for dst_lay, src_lay in zip(self._layers, src._layers):
+        for dst_lay, src_lay in zip(self._layers, src._layers, strict=False):
             dst_lay.keys_old_q   = src_lay.keys_old_q
             dst_lay.keys_old_s   = src_lay.keys_old_s
             dst_lay.values_old_q = src_lay.values_old_q
@@ -1603,7 +1603,7 @@ class DiskKVCache:
 
 class SessionKVCache:
     """
-    Persistent KV-state cache keyed by a SHA-256 hash of the last 8 message 
+    Persistent KV-state cache keyed by a SHA-256 hash of the last 8 message
     contents in a conversation.
 
     Unlike :class:`DiskKVCache` (which is keyed by raw token IDs), this cache

@@ -10,7 +10,6 @@ import pytest
 
 from squish.kv_cache import H2OConfig, H2OEvictionPolicy
 
-
 # ---------------------------------------------------------------------------
 # H2OConfig
 # ---------------------------------------------------------------------------
@@ -77,7 +76,7 @@ class TestH2OEvictionPolicy:
         pol = self._pol(heavy_ratio=0.1, recent_window=3)
         for _ in range(10):
             pol.add_token()
-        evicted = pol.evict_to_budget(5)
+        pol.evict_to_budget(5)
         assert pol.num_cached == 5
         # Last 3 positions must be kept (recency window)
         kept = set(pol.positions)
@@ -99,11 +98,11 @@ class TestH2OEvictionPolicy:
 
     def test_evict_respects_high_scorers(self):
         pol = self._pol(heavy_ratio=0.5, recent_window=0)
-        for i in range(6):
+        for _i in range(6):
             pol.add_token()
         # Give positions 0 and 1 very high scores
         pol.record_attention(np.array([10.0, 10.0, 0.0, 0.0, 0.0, 0.0]))
-        evicted = pol.evict_to_budget(3)
+        pol.evict_to_budget(3)
         assert pol.num_cached == 3
         kept = set(pol.positions)
         # positions 0 and 1 should be kept (heavy hitters)

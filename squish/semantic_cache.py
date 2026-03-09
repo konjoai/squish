@@ -36,7 +36,6 @@ import pathlib
 import sqlite3
 import struct
 import time
-from typing import Optional
 
 import numpy as np
 
@@ -55,7 +54,7 @@ def _word_hash_embed(text: str, dim: int = _EMBED_DIM) -> np.ndarray:
     vec = np.zeros(dim, dtype=np.float64)
     words = text.lower().split()
     # unigrams + bigrams for richer overlap
-    ngrams = words + [f"{a}_{b}" for a, b in zip(words, words[1:])]
+    ngrams = words + [f"{a}_{b}" for a, b in zip(words, words[1:], strict=False)]
     for gram in ngrams:
         digest = hashlib.md5(gram.encode(), usedforsecurity=False).digest()
         # Use two 32-bit slices to pick two indices → double-count each gram
@@ -110,8 +109,8 @@ class SquishSemanticCache:
 
     def __init__(
         self,
-        db_path: "str | pathlib.Path" = "",
-        config: Optional[dict] = None,
+        db_path: str | pathlib.Path = "",
+        config: dict | None = None,
     ) -> None:
         try:
             import sqlite_vec as _sqlite_vec  # type: ignore[import]
@@ -162,7 +161,7 @@ class SquishSemanticCache:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def lookup(self, query: str, task_type: str = "default") -> Optional[str]:
+    def lookup(self, query: str, task_type: str = "default") -> str | None:
         """
         Return a cached response string if a semantically similar entry
         exists and has not yet expired; otherwise return ``None``.

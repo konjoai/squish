@@ -48,7 +48,6 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -61,7 +60,7 @@ __all__ = [
 ]
 
 HeadLabel = str          # "retrieval" or "streaming"
-HeadKey   = Tuple[int, int]  # (layer_idx, head_idx)
+HeadKey   = tuple[int, int]  # (layer_idx, head_idx)
 
 
 # ---------------------------------------------------------------------------
@@ -135,8 +134,8 @@ class HeadCalibration:
 
     def __init__(self, config: DuoAttentionConfig) -> None:
         self._cfg     = config
-        self._sum:   Dict[HeadKey, float] = {}
-        self._count: Dict[HeadKey, int]   = {}
+        self._sum:   dict[HeadKey, float] = {}
+        self._count: dict[HeadKey, int]   = {}
 
     def record(self, layer_idx: int, attn_weights: np.ndarray) -> None:
         """Record one attention tensor for calibration.
@@ -170,11 +169,11 @@ class HeadCalibration:
             self._sum[key]   = self._sum.get(key, 0.0) + out_mass_avg
             self._count[key] = self._count.get(key, 0) + 1
 
-    def mean_scores(self) -> Dict[HeadKey, float]:
+    def mean_scores(self) -> dict[HeadKey, float]:
         """Return mean out-of-window attention score per head."""
         return {k: self._sum[k] / self._count[k] for k in self._sum}
 
-    def classify(self) -> Dict[HeadKey, HeadLabel]:
+    def classify(self) -> dict[HeadKey, HeadLabel]:
         """Return head labels from accumulated data.
 
         Returns
@@ -197,7 +196,7 @@ class HeadCalibration:
                 break
             retrieval_set.add(k)
 
-        labels: Dict[HeadKey, HeadLabel] = {}
+        labels: dict[HeadKey, HeadLabel] = {}
         for layer in range(cfg.num_layers):
             for h in range(cfg.num_heads):
                 key = (layer, h)
@@ -221,7 +220,7 @@ class HeadClassifier:
         """Forward to :meth:`HeadCalibration.record`."""
         self._cal.record(layer_idx, attn_weights)
 
-    def classify(self) -> Dict[HeadKey, HeadLabel]:
+    def classify(self) -> dict[HeadKey, HeadLabel]:
         """Return head labels; see :meth:`HeadCalibration.classify`."""
         return self._cal.classify()
 
@@ -262,10 +261,10 @@ class StreamingKVWindow:
         self._sink  = sink_tokens
         self._win   = window
         self._dim   = head_dim
-        self._sink_k: List[np.ndarray] = []
-        self._sink_v: List[np.ndarray] = []
-        self._buf_k: List[Optional[np.ndarray]] = [None] * window
-        self._buf_v: List[Optional[np.ndarray]] = [None] * window
+        self._sink_k: list[np.ndarray] = []
+        self._sink_v: list[np.ndarray] = []
+        self._buf_k: list[np.ndarray | None] = [None] * window
+        self._buf_v: list[np.ndarray | None] = [None] * window
         self._ptr:   int = 0
         self._n_rec: int = 0   # number of recent tokens stored (≤ window)
 
@@ -288,7 +287,7 @@ class StreamingKVWindow:
             self._ptr   = (self._ptr + 1) % self._win
             self._n_rec = min(self._n_rec + 1, self._win)
 
-    def get_kv(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_kv(self) -> tuple[np.ndarray, np.ndarray]:
         """Return all cached (keys, values) as ``(n_cached, head_dim)`` arrays."""
         all_k = list(self._sink_k)
         all_v = list(self._sink_v)
@@ -329,14 +328,14 @@ class DuoKVManager:
     def __init__(
         self,
         config: DuoAttentionConfig,
-        labels: Optional[Dict[HeadKey, HeadLabel]] = None,
+        labels: dict[HeadKey, HeadLabel] | None = None,
     ) -> None:
         self._cfg    = config
         self._labels = labels or {}
         # retrieval: (layer, head) → ([keys…], [values…])
-        self._full: Dict[HeadKey, Tuple[List[np.ndarray], List[np.ndarray]]] = {}
+        self._full: dict[HeadKey, tuple[list[np.ndarray], list[np.ndarray]]] = {}
         # streaming: (layer, head) → StreamingKVWindow
-        self._win: Dict[HeadKey, StreamingKVWindow] = {}
+        self._win: dict[HeadKey, StreamingKVWindow] = {}
 
     def _label(self, layer: int, head: int) -> HeadLabel:
         return self._labels.get((layer, head), "retrieval")
@@ -369,7 +368,7 @@ class DuoKVManager:
                 self._win[hk] = StreamingKVWindow(c.sink_tokens, c.local_window, c.head_dim)
             self._win[hk].push(pos, key, value)
 
-    def load_kv(self, layer: int, head: int) -> Tuple[np.ndarray, np.ndarray]:
+    def load_kv(self, layer: int, head: int) -> tuple[np.ndarray, np.ndarray]:
         """Return (keys, values) shaped ``(n_cached, head_dim)`` for the head."""
         hk  = (layer, head)
         dim = self._cfg.head_dim
@@ -384,7 +383,7 @@ class DuoKVManager:
                 return empty, empty.copy()
             return self._win[hk].get_kv()
 
-    def cache_size_tokens(self) -> Dict[str, int]:
+    def cache_size_tokens(self) -> dict[str, int]:
         """Return total cached tokens per head type."""
         ret_total = sum(len(v[0]) for v in self._full.values())
         str_total = sum(len(w) for w in self._win.values())

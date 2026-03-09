@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import time
-import threading
 
 import numpy as np
 import pytest
@@ -29,7 +28,6 @@ from squish.kv_cache import (
     KVLayerCache,
     QuantizedKVCache,
 )
-
 
 # ── test fixtures / helpers ───────────────────────────────────────────────────
 
@@ -50,7 +48,7 @@ def _populated_layer(n_tokens: int, window: int = 64,
     """Return a KVLayerCache with *n_tokens* appended."""
     layer = KVLayerCache(window=window)
     rng = np.random.default_rng(seed)
-    for t in range(n_tokens):
+    for _t in range(n_tokens):
         k = rng.standard_normal((N_HEADS, HEAD_DIM)).astype(np.float16)
         v = rng.standard_normal((N_HEADS, HEAD_DIM)).astype(np.float16)
         layer.append(k, v)
@@ -349,7 +347,9 @@ class TestSerialisationRoundtrip:
         arrays = DiskKVCache._serialise(cache)
         assert arrays is not None
         # Save and reload via npz
-        import io, numpy as np_
+        import io
+
+        import numpy as np_
         buf = io.BytesIO()
         np_.savez(buf, **arrays)
         buf.seek(0)
@@ -558,7 +558,7 @@ class TestDiskKVCacheEviction:
 class TestDiskKVCacheInit:
     def test_creates_directory(self, tmp_path):
         sub = tmp_path / "new_dir"
-        dc = DiskKVCache(cache_dir=sub, max_entries=10)
+        DiskKVCache(cache_dir=sub, max_entries=10)
         assert sub.is_dir()
 
     def test_default_max_entries(self, tmp_path):

@@ -41,11 +41,9 @@ Implementation note — special method dispatch
 """
 from __future__ import annotations
 
-import functools
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
-
 
 # ── Sparse mask builders ──────────────────────────────────────────────────────
 

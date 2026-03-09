@@ -50,12 +50,8 @@ Usage
 """
 from __future__ import annotations
 
-import json
-import os
-import random
 import shutil
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
@@ -100,7 +96,7 @@ def _quantize_fake_int4(W: np.ndarray, group_size: int = 32) -> np.ndarray:
     Returns the dequantized float32 representation.
     """
     orig_shape = W.shape
-    d_out, d_in = W.shape[0], W.shape[1] if W.ndim > 1 else W.shape[0]
+    _d_out, _d_in = W.shape[0], W.shape[1] if W.ndim > 1 else W.shape[0]
     flat = W.reshape(-1, group_size)
     scale = np.max(np.abs(flat), axis=-1, keepdims=True) / 7.0
     scale = np.where(scale == 0, 1e-8, scale)
@@ -412,7 +408,7 @@ def run_rotation(
         return
 
     if verbose:
-        print(f"[SpinQuant] Applying rotations to weights ...")
+        print("[SpinQuant] Applying rotations to weights ...")
     rotated_weights = _apply_rotations(weights, rotations)
 
     if verbose:

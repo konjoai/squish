@@ -23,8 +23,9 @@ CRITICAL conflict rule (plan §3):
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     import mlx.core as mx
@@ -52,7 +53,7 @@ def chunk_prefill(
     input_ids: list[int],
     layer_caches,
     config: ChunkedPrefillConfig | None = None,
-) -> Iterator[tuple["mx.array", bool]]:
+) -> Iterator[tuple[mx.array, bool]]:
     """Yield ``(last_token_logit, is_final_chunk)`` for each prefill chunk.
 
     Parameters

@@ -14,8 +14,6 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 def _import_server():
     import squish.server as srv  # noqa: PLC0415
@@ -116,7 +114,6 @@ class TestActiveBackendGlobal:
 class TestInferenceBackendArgChoice:
     def test_mlc_choice_accepted(self):
         """squish run --inference-backend mlc should not fail argparse validation."""
-        import argparse  # noqa: PLC0415
         srv = _import_server()
         # Reconstruct just the parser to check choices without running main()
         # We probe the server's argparse choices via a patched sys.argv call
@@ -125,7 +122,7 @@ class TestInferenceBackendArgChoice:
         # The safest approach is a direct grep of the choices in server._active_backend
         # but since we modified the argparse setup we verify via the help string.
         import subprocess  # noqa: PLC0415
-        result = subprocess.run(
+        subprocess.run(
             [sys.executable, "-c",
              "import squish.server as s; "
              "import argparse; "

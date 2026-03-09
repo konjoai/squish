@@ -3,14 +3,13 @@ import numpy as np
 import pytest
 
 from squish.quant_spec import (
-    QuantSpecConfig,
     DraftQuantizer,
+    QuantSpecConfig,
     QuantSpecDecoder,
+    _sample,
     _softmax,
     _top_p_filter,
-    _sample,
 )
-
 
 # ---------------------------------------------------------------------------
 # QuantSpecConfig
@@ -231,7 +230,6 @@ class TestAllAcceptedOneDimLogits:
     def test_all_accepted_with_1d_logits_no_bonus(self):
         """Branch 356→364: all drafts accepted AND all_logits is 1-D
         → elif skipped → return directly."""
-        vocab = 4
         # Draft always generates token 0 (overwhelmingly peaked on token 0).
         peaked = np.array([100.0, 0.0, 0.0, 0.0], dtype=np.float32)
 

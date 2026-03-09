@@ -46,8 +46,7 @@ Usage::
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -138,7 +137,7 @@ class HeadClassifier:
     def __init__(self, config: HeadInferConfig) -> None:
         self._cfg = config
         # head_types[layer][head] -> HeadType
-        self.head_types: List[List[HeadType]] = [
+        self.head_types: list[list[HeadType]] = [
             [HeadType.UNKNOWN] * config.n_heads
             for _ in range(config.n_layers)
         ]
@@ -147,7 +146,7 @@ class HeadClassifier:
 
     def calibrate(
         self,
-        attn_weights: List[np.ndarray],
+        attn_weights: list[np.ndarray],
         *,
         verbose: bool = False,
     ) -> None:
@@ -280,8 +279,8 @@ class _HeadBuffer:
         self._window    = window
         self._sinks     = sinks
         self._max       = max_entries
-        self._keys:   List[np.ndarray] = []
-        self._vals:   List[np.ndarray] = []
+        self._keys:   list[np.ndarray] = []
+        self._vals:   list[np.ndarray] = []
 
     def put(self, key: np.ndarray, value: np.ndarray) -> None:
         """Append one token's key/value vectors."""
@@ -291,9 +290,9 @@ class _HeadBuffer:
 
     def get(
         self,
-        query:  Optional[np.ndarray] = None,
+        query:  np.ndarray | None = None,
         top_k:  int = 0,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Retrieve key/value arrays.
 
@@ -354,11 +353,11 @@ class HeadAwareKVStore:
     def __init__(
         self,
         config:     HeadInferConfig,
-        head_types: Optional[List[List[HeadType]]] = None,
+        head_types: list[list[HeadType]] | None = None,
     ) -> None:
         self._cfg = config
         max_ret   = max(config.window_size * 4, 4096)  # generous cap
-        self._buffers: Dict[Tuple[int, int], _HeadBuffer] = {}
+        self._buffers: dict[tuple[int, int], _HeadBuffer] = {}
 
         for l in range(config.n_layers):
             for h in range(config.n_heads):
@@ -394,8 +393,8 @@ class HeadAwareKVStore:
         self,
         layer_idx: int,
         head_idx:  int,
-        query:     Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        query:     np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Retrieve KV for the given (layer, head), optionally query-filtered.
 

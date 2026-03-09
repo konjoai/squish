@@ -16,24 +16,21 @@ Covers:
 """
 from __future__ import annotations
 
-import math
 import types
 
 import numpy as np
 import pytest
 
 # ── import under test ─────────────────────────────────────────────────────────
-
 from squish.lazy_llm import (
     LazyLLMConfig,
-    _PruneState,
     _build_keep_mask,
     _get_layers,
     _LazyLLMLayerWrapper,
+    _PruneState,
     patch_model_lazy_llm,
     unpatch_model_lazy_llm,
 )
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -104,6 +101,7 @@ def _patch_mx_for_lazy_llm(monkeypatch):
     without a real MLX installation.
     """
     import sys
+
     import squish.lazy_llm as mod
 
     # Only patch if mlx is not present
@@ -596,7 +594,8 @@ class TestLayerWrapperNonTupleAndVerbose:
 
         wrapper = _LazyLLMLayerWrapper(_EchoTupleLayer(), 3, cfg, state)
         x = _fake_hidden(T=8)
-        import io, sys
+        import io
+        import sys
         buf = io.StringIO()
         old_stdout = sys.stdout
         sys.stdout = buf

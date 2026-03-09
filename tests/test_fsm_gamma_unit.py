@@ -7,8 +7,7 @@ import types
 
 import pytest
 
-from squish.speculative import FSMGammaController, SpeculativeGenerator, _MAX_SPEC_TOKENS
-
+from squish.speculative import _MAX_SPEC_TOKENS, FSMGammaController, SpeculativeGenerator
 
 # ---------------------------------------------------------------------------
 # FSMGammaController — __init__

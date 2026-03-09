@@ -30,8 +30,8 @@ import pytest
 
 from squish.semantic_cache import (
     _EMBED_DIM,
-    _word_hash_embed,
     SquishSemanticCache,
+    _word_hash_embed,
 )
 
 # Keep a reference to the real sqlite3.connect so _FakeSqliteConn can use it

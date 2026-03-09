@@ -44,8 +44,8 @@ Provides
 from __future__ import annotations
 
 import concurrent.futures
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, List, Tuple
 
 __all__ = [
     "SwiftSpecConfig",
@@ -126,8 +126,8 @@ class SwiftSpecDecoder:
 
     def __init__(
         self,
-        draft_fn:  Callable[[List[int], int], List[int]],
-        verify_fn: Callable[[List[int], List[int]], Tuple[List[int], object]],
+        draft_fn:  Callable[[list[int], int], list[int]],
+        verify_fn: Callable[[list[int], list[int]], tuple[list[int], object]],
         config:    SwiftSpecConfig,
     ) -> None:
         self._draft  = draft_fn
@@ -138,9 +138,9 @@ class SwiftSpecDecoder:
 
     def generate(
         self,
-        input_ids: List[int],
+        input_ids: list[int],
         max_new_tokens: int = 64,
-    ) -> Tuple[List[int], SwiftSpecStats]:
+    ) -> tuple[list[int], SwiftSpecStats]:
         """Generate up to *max_new_tokens* tokens with async overlap.
 
         The pipeline:

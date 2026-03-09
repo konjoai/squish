@@ -1,21 +1,18 @@
 """tests/test_life_model_unit.py — 100% coverage for squish/life_model.py"""
 import json
-import platform
-from pathlib import Path
 from unittest import mock
 
 import pytest
 
 from squish.life_model import (
-    _detect_chip,
-    _count_model_params,
-    _quant_bytes_per_param,
-    _kv_memory_gb,
-    predict,
     _DEFAULT_BW_GB_S,
     _DEFAULT_TFLOPS,
+    _count_model_params,
+    _detect_chip,
+    _kv_memory_gb,
+    _quant_bytes_per_param,
+    predict,
 )
-
 
 # ---------------------------------------------------------------------------
 # _detect_chip

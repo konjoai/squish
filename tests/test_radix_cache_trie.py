@@ -20,10 +20,7 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from squish.radix_cache import RadixNode, RadixTree
-
 
 # ── RadixNode.touch ───────────────────────────────────────────────────────────
 

@@ -1,15 +1,15 @@
 """tests/test_spe_cache_unit.py — 100% coverage for squish/spe_cache.py"""
 import threading
+
 import numpy as np
 import pytest
 
 from squish.spe_cache import (
-    SpeCacheConfig,
     BlockScoreTracker,
-    SpeCachePrefetcher,
     InMemoryBlockStore,
+    SpeCacheConfig,
+    SpeCachePrefetcher,
 )
-
 
 # ---------------------------------------------------------------------------
 # SpeCacheConfig

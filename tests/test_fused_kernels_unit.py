@@ -11,7 +11,6 @@ import pytest
 import squish.fused_kernels as fk
 from squish.fused_kernels import FusedAttention, FusedFFNGate
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

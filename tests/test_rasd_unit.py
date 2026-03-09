@@ -4,12 +4,11 @@ import pytest
 from squish.rasd import (
     CorpusIndex,
     DraftTree,
+    RASDBatcher,
     RASDConfig,
     RASDStats,
-    RASDBatcher,
     _DraftNode,
 )
-
 
 # ---------------------------------------------------------------------------
 # RASDConfig

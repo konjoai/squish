@@ -60,8 +60,7 @@ Provides
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Deque, List, Optional, Tuple
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -123,7 +122,7 @@ class OnlineTraceBuffer:
         if capacity < 1:
             raise ValueError(f"capacity must be >= 1, got {capacity}")
         self._capacity = capacity
-        self._buffer: Deque[Tuple[np.ndarray, int]] = deque(maxlen=capacity)
+        self._buffer: deque[tuple[np.ndarray, int]] = deque(maxlen=capacity)
 
     @property
     def capacity(self) -> int:
@@ -148,7 +147,7 @@ class OnlineTraceBuffer:
         """
         self._buffer.append((hidden.copy(), int(accepted_token)))
 
-    def get_batch(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_batch(self) -> tuple[np.ndarray, np.ndarray]:
         """Return all buffered samples as stacked arrays.
 
         Returns
@@ -190,7 +189,7 @@ class OnlineDraftUpdater:
 
     def __init__(
         self,
-        config: Optional[OnlineSDConfig] = None,
+        config: OnlineSDConfig | None = None,
         hidden_dim: int = 4096,
         vocab_size: int = 151_936,
     ) -> None:
@@ -323,7 +322,7 @@ class OnlineDraftUpdater:
         self._total_updates += 1
         return updated
 
-    def lora_delta(self) -> Optional[np.ndarray]:
+    def lora_delta(self) -> np.ndarray | None:
         """Compute the current LoRA correction matrix.
 
         Returns

@@ -44,8 +44,8 @@ Usage::
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -118,10 +118,10 @@ class NGramIndex:
         self._max = ngram_max
         self._max_cont = max_continuations
         # n-gram → list of (start_pos_after_match, token_sequence)
-        self._table: Dict[Tuple[int, ...], List[List[int]]] = {}
-        self._tokens: List[int] = []
+        self._table: dict[tuple[int, ...], list[list[int]]] = {}
+        self._tokens: list[int] = []
 
-    def build(self, token_ids: List[int]) -> None:
+    def build(self, token_ids: list[int]) -> None:
         """(Re)build the full index from ``token_ids``."""
         self._table = {}
         self._tokens = list(token_ids)
@@ -153,7 +153,7 @@ class NGramIndex:
                 self._table[ng] = []
             self._table[ng].append(list(cont))
 
-    def find(self, query: List[int]) -> List[List[int]]:
+    def find(self, query: list[int]) -> list[list[int]]:
         """Return continuations matching any n-gram suffix of ``query``.
 
         Parameters
@@ -166,7 +166,7 @@ class NGramIndex:
         List of candidate continuation sequences, longest n-gram match first.
         Returns empty list when no match found.
         """
-        results: List[List[int]] = []
+        results: list[list[int]] = []
         for n in range(min(self._max, len(query)), self._min - 1, -1):
             ng = tuple(query[-n:])
             if ng in self._table:
@@ -222,7 +222,7 @@ class PromptLookupDecoder:
 
     def __init__(
         self,
-        full_forward: Callable[[List[int]], np.ndarray],
+        full_forward: Callable[[list[int]], np.ndarray],
         config: PromptLookupConfig,
     ) -> None:
         self._fwd  = full_forward
@@ -239,9 +239,9 @@ class PromptLookupDecoder:
 
     def generate(
         self,
-        input_ids: List[int],
+        input_ids: list[int],
         max_new_tokens: int = 128,
-    ) -> Tuple[List[int], PromptLookupStats]:
+    ) -> tuple[list[int], PromptLookupStats]:
         """Generate tokens appended to ``input_ids``.
 
         Parameters
@@ -267,7 +267,7 @@ class PromptLookupDecoder:
             candidates = [c[:cfg.max_speculative] for c in candidates if c]
             # Deduplicate and pick best (longest first)
             seen: set = set()
-            unique_cands: List[List[int]] = []
+            unique_cands: list[list[int]] = []
             for c in candidates:
                 key = tuple(c)
                 if key not in seen:
@@ -292,7 +292,7 @@ class PromptLookupDecoder:
 
             # Verify draft tokens greedily
             ctx       = list(ids)
-            accepted_toks: List[int] = []
+            accepted_toks: list[int] = []
             for d_tok in draft:
                 logits   = self._fwd(ctx)
                 v_tok    = self._top_token(logits)
