@@ -160,6 +160,7 @@ from squish.pipo import (  # noqa: F401
     LayerWeightBuffer,
     PIPOConfig,
     PIPOScheduler,
+)
 # Final-pass technique 19 — SqueezeLLM dense-and-sparse quantization (ICML 2024)
 from squish.squeeze_llm import (  # noqa: F401
     OutlierDetector,
