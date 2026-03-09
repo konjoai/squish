@@ -52,7 +52,6 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -126,7 +125,7 @@ class PQCodebook:
         self._n_codes  = n_codes
         self._n_iters  = n_iters
         self._seed     = seed
-        self._centroids: Optional[np.ndarray] = None
+        self._centroids: np.ndarray | None = None
 
     def fit(self, sub_vecs: np.ndarray) -> None:
         """
@@ -226,7 +225,7 @@ class PQKeyIndex:
     config : PQCacheConfig
     """
 
-    def __init__(self, dim: int, config: Optional[PQCacheConfig] = None) -> None:
+    def __init__(self, dim: int, config: PQCacheConfig | None = None) -> None:
         cfg = config or PQCacheConfig()
         if dim % cfg.n_subvectors != 0:
             raise ValueError(
@@ -235,14 +234,14 @@ class PQKeyIndex:
         self._dim        = dim
         self._cfg        = cfg
         self._sub_dim    = dim // cfg.n_subvectors
-        self._codebooks: List[PQCodebook] = [
+        self._codebooks: list[PQCodebook] = [
             PQCodebook(self._sub_dim, cfg.n_codes, cfg.train_iters, cfg.seed + i)
             for i in range(cfg.n_subvectors)
         ]
         self._is_fitted  = False
         # code storage: list of (M,) uint16 arrays, one per token in cache
-        self._codes:    List[np.ndarray] = []
-        self._seq_pos:  List[int]        = []   # token positions (for retrieval)
+        self._codes:    list[np.ndarray] = []
+        self._seq_pos:  list[int]        = []   # token positions (for retrieval)
 
     # ── Fitting ───────────────────────────────────────────────────────────────
 
@@ -287,7 +286,7 @@ class PQKeyIndex:
         self,
         query: np.ndarray,
         top_k: int = 64,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Retrieve top-K approximately nearest keys via ADC.
 
@@ -347,7 +346,7 @@ class PQValueStore:
     """
 
     def __init__(self) -> None:
-        self._values: Dict[int, Tuple[np.ndarray, float, float]] = {}
+        self._values: dict[int, tuple[np.ndarray, float, float]] = {}
         # seq_pos → (int8_vec, scale, zero_point)
 
     def add(self, seq_pos: int, value: np.ndarray) -> None:
@@ -369,7 +368,7 @@ class PQValueStore:
         q        = np.round((v - zero_pt) / scale).clip(-127, 127).astype(np.int8)
         self._values[seq_pos] = (q, scale, zero_pt)
 
-    def get(self, seq_pos: int) -> Optional[np.ndarray]:
+    def get(self, seq_pos: int) -> np.ndarray | None:
         """
         Dequantize and return the value vector for *seq_pos*.
 
@@ -415,7 +414,7 @@ def retrieve(
     key_index: PQKeyIndex,
     val_store: PQValueStore,
     top_k:     int = 64,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Retrieve top-K (key, value) pairs for a query via PQ ADC.
 

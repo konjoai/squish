@@ -36,8 +36,7 @@ Provides
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -150,7 +149,7 @@ class KnapSpecSelector:
     def select(
         self,
         context_len: int,
-        quality_weights: Optional[np.ndarray] = None,
+        quality_weights: np.ndarray | None = None,
     ) -> tuple[list[int], list[int]]:
         """Select which blocks to keep in the draft model.
 

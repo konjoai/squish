@@ -32,7 +32,6 @@ import threading
 import time
 from dataclasses import dataclass
 
-
 # ── Per-mode resource profiles ────────────────────────────────────────────────
 
 @dataclass(frozen=True)

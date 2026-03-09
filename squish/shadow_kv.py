@@ -61,7 +61,6 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -136,9 +135,9 @@ class LowRankKeyCache:
         self.n_heads  = n_heads
         self.head_dim = head_dim
         self.rank     = rank
-        self._V: Optional[np.ndarray] = None  # (n_heads, rank, head_dim) float32
+        self._V: np.ndarray | None = None  # (n_heads, rank, head_dim) float32
         # Dense storage: list of (n_heads, rank) rows — one per stored token
-        self._projections: List[np.ndarray] = []
+        self._projections: list[np.ndarray] = []
 
     # ------------------------------------------------------------------
 
@@ -335,7 +334,7 @@ class ShadowKVCache:
         n_layers: int,
         n_heads:  int,
         head_dim: int,
-        config:   Optional[ShadowKVConfig] = None,
+        config:   ShadowKVConfig | None = None,
     ) -> None:
         cfg = config or ShadowKVConfig()
         self.n_layers  = n_layers
@@ -344,14 +343,14 @@ class ShadowKVCache:
         self.config    = cfg
 
         # Per-layer key cache (GPU-side, low-rank projections)
-        self._key_caches: List[LowRankKeyCache] = [
+        self._key_caches: list[LowRankKeyCache] = [
             LowRankKeyCache(n_heads, head_dim, cfg.svd_rank)
             for _ in range(n_layers)
         ]
         # CPU value shadow: (layer_id, token_pos) → (n_heads, head_dim) float16
-        self._value_shadow: Dict[Tuple[int, int], np.ndarray] = {}
+        self._value_shadow: dict[tuple[int, int], np.ndarray] = {}
         # Per-layer token count
-        self._n_tokens: List[int] = [0] * n_layers
+        self._n_tokens: list[int] = [0] * n_layers
         # Landmark selector (shared across layers)
         self._selector = LandmarkSelector(cfg.n_landmarks)
 
@@ -397,8 +396,8 @@ class ShadowKVCache:
         self,
         layer_id: int,
         query:    np.ndarray,
-        top_k:    Optional[int] = None,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        top_k:    int | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Recall the top-K key/value pairs for a query at one layer.
 
@@ -466,7 +465,7 @@ class ShadowKVCache:
         """Return the number of token positions stored for a layer."""
         return self._n_tokens[layer_id]
 
-    def clear(self, layer_id: Optional[int] = None) -> None:
+    def clear(self, layer_id: int | None = None) -> None:
         """
         Clear cached data.
 

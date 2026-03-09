@@ -1,7 +1,7 @@
 """tests/test_swift_unit.py — 100% line and branch coverage for squish/swift.py"""
-import json
-import tempfile
 import os
+import tempfile
+
 import numpy as np
 import pytest
 
@@ -11,7 +11,6 @@ from squish.swift import (
     SWIFTDecoder,
     SWIFTLayerConfig,
 )
-
 
 # ---------------------------------------------------------------------------
 # SWIFTConfig
@@ -192,7 +191,9 @@ def _make_swift_forward(vocab=10, draft_tok=1, verify_tok=1):
 
 
 class TestSWIFTDecoder:
-    def _make_cfgs(self, task="qa", skip=[1, 3]):
+    def _make_cfgs(self, task="qa", skip=None):
+        if skip is None:
+            skip = [1, 3]
         return {task: SWIFTLayerConfig(task, list(skip), 0.9)}
 
     def test_generates_correct_length(self):

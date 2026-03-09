@@ -47,7 +47,6 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
 import numpy as np
 
@@ -115,7 +114,7 @@ def _kmeans(
     n_clusters: int,
     n_iters: int,
     seed: int,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Simple k-means with k-means++ initialisation.
 
@@ -200,7 +199,7 @@ class VPTQCodebook:
         self.n_codebook_entries = n_codebook_entries
         self.n_fit_iters        = n_fit_iters
         self.seed               = seed
-        self._centroids: Optional[np.ndarray] = None  # (n_entries, group_size)
+        self._centroids: np.ndarray | None = None  # (n_entries, group_size)
 
     @property
     def is_fitted(self) -> bool:
@@ -285,11 +284,11 @@ class VPTQLayer:
         Per-column L2 scale used during compression (applied during decompress).
     """
     primary_indices:  np.ndarray
-    residual_indices: Optional[np.ndarray]
+    residual_indices: np.ndarray | None
     primary_cb:       VPTQCodebook
-    residual_cb:      Optional[VPTQCodebook]
+    residual_cb:      VPTQCodebook | None
     original_shape:   tuple
-    col_scales:       Optional[np.ndarray] = None
+    col_scales:       np.ndarray | None = None
 
     # ------------------------------------------------------------------
 
@@ -323,7 +322,7 @@ class VPTQLayer:
         return np.asarray(x, dtype=np.float32) @ W.T
 
 
-def decompress_layer(layer: "VPTQLayer") -> np.ndarray:
+def decompress_layer(layer: VPTQLayer) -> np.ndarray:
     """
     Reconstruct the approximate weight matrix from a ``VPTQLayer``.
 
@@ -372,7 +371,7 @@ class VPTQQuantizer:
     config : VPTQConfig
     """
 
-    def __init__(self, config: Optional[VPTQConfig] = None) -> None:
+    def __init__(self, config: VPTQConfig | None = None) -> None:
         self.config = config or VPTQConfig()
 
     # ------------------------------------------------------------------
@@ -381,7 +380,7 @@ class VPTQQuantizer:
         self,
         weight: np.ndarray,
         gs: int,
-    ) -> Tuple[np.ndarray, int]:
+    ) -> tuple[np.ndarray, int]:
         """
         Flatten a weight matrix and split into (group_size,) vectors.
 
@@ -429,8 +428,8 @@ class VPTQQuantizer:
         primary_idx = primary_cb.encode(groups)
 
         # Residual stage
-        residual_cb:  Optional[VPTQCodebook]  = None
-        residual_idx: Optional[np.ndarray]    = None
+        residual_cb:  VPTQCodebook | None  = None
+        residual_idx: np.ndarray | None    = None
         if cfg.n_residual_entries > 0:
             residuals = groups - primary_cb.decode(primary_idx)  # (n_groups, gs)
             residual_cb = VPTQCodebook(

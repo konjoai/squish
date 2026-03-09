@@ -48,8 +48,6 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 
 __all__ = [
@@ -86,7 +84,7 @@ class CommVQCodebook:
         self.dim     = dim
         self.n_codes = n_codes
         # Codebook centroids: (n_codes, dim) float32
-        self.centroids: Optional[np.ndarray] = None
+        self.centroids: np.ndarray | None = None
         self._bits = int(np.log2(n_codes))   # bits per index
 
     # ── Fitting (offline calibration) ─────────────────────────────────────────
@@ -96,7 +94,7 @@ class CommVQCodebook:
         vectors: np.ndarray,          # (N, dim) float32 or float16
         n_iters: int = 20,
         seed: int = 42,
-    ) -> "CommVQCodebook":
+    ) -> CommVQCodebook:
         """
         Fit codebook centroids via k-means on *vectors*.
 
@@ -309,7 +307,7 @@ class MultiCodebookVQ:
         vectors: np.ndarray,   # (N, dim)
         n_iters: int = 20,
         seed: int = 42,
-    ) -> "MultiCodebookVQ":
+    ) -> MultiCodebookVQ:
         """Fit all sub-codebooks from *vectors*."""
         vecs = np.asarray(vectors, dtype=np.float32)
         for i, cb in enumerate(self._codebooks):

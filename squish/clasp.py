@@ -44,8 +44,8 @@ Provides
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -133,13 +133,13 @@ class CLaSPSkipOptimizer:
         if not 0.0 < similarity_threshold <= 1.0:
             raise ValueError("similarity_threshold must be in (0, 1]")
         self._threshold  = similarity_threshold
-        self._importances: List[float] = []
+        self._importances: list[float] = []
 
     # ------------------------------------------------------------------
 
     def update_from_hidden_states(
         self,
-        hidden_states: List[np.ndarray],
+        hidden_states: list[np.ndarray],
     ) -> None:
         """Compute per-layer importance from consecutive hidden-state pairs.
 
@@ -153,7 +153,7 @@ class CLaSPSkipOptimizer:
             self._importances = []
             return
 
-        importances: List[float] = []
+        importances: list[float] = []
         for i in range(1, len(hidden_states)):
             h_prev = np.asarray(hidden_states[i - 1], dtype=np.float64)
             h_cur  = np.asarray(hidden_states[i],     dtype=np.float64)
@@ -161,7 +161,7 @@ class CLaSPSkipOptimizer:
             importances.append(1.0 - sim)
         self._importances = importances
 
-    def layer_importances(self) -> List[float]:
+    def layer_importances(self) -> list[float]:
         """Return per-layer importance scores (layer 1 … N−1).
 
         Higher score → the layer changed the representation more → keep it.
@@ -169,7 +169,7 @@ class CLaSPSkipOptimizer:
         """
         return list(self._importances)
 
-    def select_skip_set(self, max_skip: int) -> List[int]:
+    def select_skip_set(self, max_skip: int) -> list[int]:
         """Return the *max_skip* lowest-importance layer indices to skip.
 
         Layer index here is 1-based (layer 1 is the second transformer layer,
@@ -235,7 +235,7 @@ class CLaSPDecoder:
 
     def __init__(
         self,
-        forward_fn: Callable[..., Tuple[np.ndarray, List[np.ndarray]]],
+        forward_fn: Callable[..., tuple[np.ndarray, list[np.ndarray]]],
         config: CLaSPConfig,
         rng_seed: int = 0,
     ) -> None:
@@ -248,9 +248,9 @@ class CLaSPDecoder:
 
     def generate(
         self,
-        input_ids: List[int],
+        input_ids: list[int],
         max_new_tokens: int = 64,
-    ) -> Tuple[List[int], CLaSPStats]:
+    ) -> tuple[list[int], CLaSPStats]:
         """Generate tokens with adaptive CLaSp layer-skip feedback.
 
         Parameters
@@ -266,13 +266,13 @@ class CLaSPDecoder:
         stats = CLaSPStats()
         ids   = list(input_ids)
         generated = 0
-        skip_set: List[int] = []   # start with no skipping
-        verify_hidden: Optional[List[np.ndarray]] = None
+        skip_set: list[int] = []   # start with no skipping
+        verify_hidden: list[np.ndarray] | None = None
 
         while generated < max_new_tokens:
             # ── Draft with current skip set ───────────────────────────────────
-            draft_ids:   List[int]        = []
-            draft_probs: List[np.ndarray] = []
+            draft_ids:   list[int]        = []
+            draft_probs: list[np.ndarray] = []
             ctx = list(ids)
 
             for _ in range(cfg.draft_gamma):
@@ -287,10 +287,10 @@ class CLaSPDecoder:
 
             # ── Verify with full model (no skipping) ─────────────────────────
             ctx_v    = list(ids)
-            accepted: List[int] = []
+            accepted: list[int] = []
             rejected  = False
 
-            for d_tok, d_probs in zip(draft_ids, draft_probs):
+            for d_tok, d_probs in zip(draft_ids, draft_probs, strict=False):
                 full_logits, hidden_states = self._fwd(ctx_v, [])
                 verify_hidden = hidden_states
                 full_probs    = _softmax(full_logits)

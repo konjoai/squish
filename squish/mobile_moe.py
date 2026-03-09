@@ -69,8 +69,8 @@ Provides
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Sequence
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -205,8 +205,8 @@ class MoBiLERouter:
 
     def __init__(
         self,
-        config: Optional[MoBiLEConfig] = None,
-        scorer: Optional[ExpertImportanceScorer] = None,
+        config: MoBiLEConfig | None = None,
+        scorer: ExpertImportanceScorer | None = None,
     ) -> None:
         self._config = config or MoBiLEConfig()
         self._scorer = scorer or ExpertImportanceScorer(
@@ -238,7 +238,7 @@ class MoBiLERouter:
             return self._config.n_experts_min
         return self._config.n_experts_active
 
-    def route_batch(self, gate_matrix: np.ndarray) -> List[int]:
+    def route_batch(self, gate_matrix: np.ndarray) -> list[int]:
         """Route a batch of tokens.
 
         Parameters
@@ -278,8 +278,8 @@ class MoBiLELayer:
     def __init__(
         self,
         expert_fn: Callable[[np.ndarray, np.ndarray], np.ndarray],
-        config: Optional[MoBiLEConfig] = None,
-        router: Optional[MoBiLERouter] = None,
+        config: MoBiLEConfig | None = None,
+        router: MoBiLERouter | None = None,
     ) -> None:
         self._config = config or MoBiLEConfig()
         self._router = router or MoBiLERouter(self._config)

@@ -51,9 +51,9 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -128,7 +128,7 @@ class SWIFTLayerConfig:
     """
 
     task_type:          str
-    skip_layers:        List[int]
+    skip_layers:        list[int]
     calibration_score:  float = 0.0
 
     def to_dict(self) -> dict:
@@ -139,7 +139,7 @@ class SWIFTLayerConfig:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "SWIFTLayerConfig":
+    def from_dict(cls, d: dict) -> SWIFTLayerConfig:
         return cls(
             task_type         = d["task_type"],
             skip_layers       = [int(x) for x in d["skip_layers"]],
@@ -169,7 +169,7 @@ class SWIFTCalibrator:
     def calibrate(
         self,
         task_type: str,
-        score_fn: Callable[[List[int]], float],
+        score_fn: Callable[[list[int]], float],
     ) -> SWIFTLayerConfig:
         """Run simulated annealing to find the best skip set for *task_type*.
 
@@ -241,7 +241,7 @@ class SWIFTCalibrator:
 
     def save(
         self,
-        configs: List[SWIFTLayerConfig],
+        configs: list[SWIFTLayerConfig],
         path: str,
     ) -> None:
         """Serialise *configs* to a JSON file at *path*."""
@@ -249,7 +249,7 @@ class SWIFTCalibrator:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
-    def load(self, path: str) -> List[SWIFTLayerConfig]:
+    def load(self, path: str) -> list[SWIFTLayerConfig]:
         """Deserialise configs from the JSON file at *path*.
 
         Returns an empty list if the file does not exist.
@@ -272,7 +272,7 @@ class SWIFTStats:
     total_tokens:   int = 0
     accepted_draft: int = 0
     rejected_draft: int = 0
-    skip_layers:    List[int] = field(default_factory=list)
+    skip_layers:    list[int] = field(default_factory=list)
 
     @property
     def acceptance_rate(self) -> float:
@@ -304,7 +304,7 @@ class SWIFTDecoder:
     def __init__(
         self,
         forward_fn: Callable[..., np.ndarray],
-        configs: Dict[str, SWIFTLayerConfig],
+        configs: dict[str, SWIFTLayerConfig],
         config: SWIFTConfig,
         gamma: int = 4,
         rng_seed: int = 0,
@@ -319,10 +319,10 @@ class SWIFTDecoder:
 
     def generate(
         self,
-        input_ids: List[int],
+        input_ids: list[int],
         max_new_tokens: int = 64,
         task_type: str = "default",
-    ) -> Tuple[List[int], SWIFTStats]:
+    ) -> tuple[list[int], SWIFTStats]:
         """Generate *max_new_tokens* tokens using the SWIFT speculative loop.
 
         If no config exists for *task_type* the decoder falls back to an
@@ -339,7 +339,7 @@ class SWIFTDecoder:
         (output_ids, stats)
         """
         layer_cfg  = self._configs.get(task_type)
-        skip_layers: List[int] = (
+        skip_layers: list[int] = (
             list(layer_cfg.skip_layers) if layer_cfg is not None else []
         )
 
@@ -349,8 +349,8 @@ class SWIFTDecoder:
 
         while generated < max_new_tokens:
             # ── Draft with skip set ───────────────────────────────────────────
-            draft_ids:   List[int]        = []
-            draft_probs: List[np.ndarray] = []
+            draft_ids:   list[int]        = []
+            draft_probs: list[np.ndarray] = []
             ctx = list(ids)
 
             for _ in range(self._gamma):
@@ -363,10 +363,10 @@ class SWIFTDecoder:
 
             # ── Verify with full model ────────────────────────────────────────
             ctx_v    = list(ids)
-            accepted: List[int] = []
+            accepted: list[int] = []
             rejected  = False
 
-            for d_tok, d_probs in zip(draft_ids, draft_probs):
+            for d_tok, d_probs in zip(draft_ids, draft_probs, strict=False):
                 full_logits = self._fwd(ctx_v, skip_layers=[])
                 full_probs  = _softmax(full_logits)
                 v_tok       = int(np.argmax(full_logits))

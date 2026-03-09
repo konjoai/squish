@@ -54,8 +54,7 @@ Provides
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
 
 __all__ = [
     "CopySpecConfig",
@@ -117,12 +116,12 @@ class _SuffixAutomaton:
     """
 
     def __init__(self) -> None:
-        self._states: List[_SAMState] = [_SAMState(0)]  # initial state at index 0
+        self._states: list[_SAMState] = [_SAMState(0)]  # initial state at index 0
         self._last: int = 0
-        self._history: List[int] = []  # tokens appended so far
+        self._history: list[int] = []  # tokens appended so far
 
     @property
-    def history(self) -> List[int]:
+    def history(self) -> list[int]:
         return self._history
 
     def extend(self, token: int) -> None:
@@ -158,7 +157,7 @@ class _SuffixAutomaton:
 
         self._last = cur
 
-    def longest_match(self, query: List[int]) -> tuple[int, int]:
+    def longest_match(self, query: list[int]) -> tuple[int, int]:
         """Find the longest prefix of *query* that appears in the automaton.
 
         Returns
@@ -209,7 +208,7 @@ class CopySpecDrafter:
             ...
     """
 
-    def __init__(self, config: Optional[CopySpecConfig] = None) -> None:
+    def __init__(self, config: CopySpecConfig | None = None) -> None:
         self._config = config or CopySpecConfig()
         self._sam = _SuffixAutomaton()
         self._n_tokens: int = 0
@@ -220,7 +219,7 @@ class CopySpecDrafter:
         return self._n_tokens
 
     @property
-    def history(self) -> List[int]:
+    def history(self) -> list[int]:
         """The full generation history (read-only view)."""
         return self._sam.history
 
@@ -243,7 +242,7 @@ class CopySpecDrafter:
         for tok in keep:
             self._sam.extend(tok)
 
-    def draft(self, max_n: Optional[int] = None) -> Optional[List[int]]:
+    def draft(self, max_n: int | None = None) -> list[int] | None:
         """Propose up to *max_n* draft tokens via copy-and-paste.
 
         Searches the generation history for the longest match to the current

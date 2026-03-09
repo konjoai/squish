@@ -136,7 +136,7 @@ class SoupOfExperts:
 
     def reset_weights(self) -> None:
         """Reset all mixing weights to their registered defaults."""
-        for domain, (path, default_weight) in self._experts.items():
+        for domain, (_path, default_weight) in self._experts.items():
             self._weights[domain] = default_weight
 
     # ── Domain detection ──────────────────────────────────────────────────────

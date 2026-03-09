@@ -22,7 +22,6 @@ import types
 import numpy as np
 import pytest
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _mlx_available() -> bool:
@@ -45,7 +44,6 @@ from squish.speculative import (
     _cache_set_offset,
     _try_make_model_cache,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _cache_offset
@@ -158,7 +156,6 @@ class TestTryMakeModelCache:
         When the cache contains any entry whose type name includes 'rotating',
         _try_make_model_cache must return None.
         """
-        import squish.speculative as spec_mod
 
         # Inject a fake make_prompt_cache that returns a rotating entry
         class _FakeRot:
@@ -306,6 +303,7 @@ class TestResetCaches:
 class TestPrefillCached:
     def test_returns_float32_numpy_array(self):
         import mlx.core as mx
+
         from squish.speculative import _prefill_cached
 
         VOCAB = 32
@@ -322,6 +320,7 @@ class TestPrefillCached:
 
     def test_last_row_selected(self):
         import mlx.core as mx
+
         from squish.speculative import _prefill_cached
 
         VOCAB = 8
@@ -348,6 +347,7 @@ class TestPrefillCached:
 class TestDecodeStepCached:
     def test_returns_float32_vector(self):
         import mlx.core as mx
+
         from squish.speculative import _decode_step_cached
 
         VOCAB = 16
@@ -361,6 +361,7 @@ class TestDecodeStepCached:
 
     def test_single_token_input(self):
         import mlx.core as mx
+
         from squish.speculative import _decode_step_cached
 
         VOCAB = 8
@@ -382,6 +383,7 @@ class TestDecodeStepCached:
 class TestDecodeMultiCached:
     def test_returns_all_rows(self):
         import mlx.core as mx
+
         from squish.speculative import _decode_multi_cached
 
         VOCAB = 12
@@ -398,6 +400,7 @@ class TestDecodeMultiCached:
 
     def test_row_values_correct(self):
         import mlx.core as mx
+
         from squish.speculative import _decode_multi_cached
 
         VOCAB = 4

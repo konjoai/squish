@@ -3,11 +3,11 @@ import numpy as np
 import pytest
 
 from squish.paris_kv import (
-    ParisKVConfig,
     ParisKVCodebook,
-    ema_update_centroids,
+    ParisKVConfig,
     _kmeans_plus_plus,
     _pairwise_sq_dist,
+    ema_update_centroids,
 )
 
 RNG = np.random.default_rng(0)

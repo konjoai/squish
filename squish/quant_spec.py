@@ -40,9 +40,9 @@ Integration with squish server::
 
 from __future__ import annotations
 
-import math
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Iterator, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -131,7 +131,7 @@ class DraftQuantizer:
     def quantize(
         self,
         tensor: np.ndarray,
-    ) -> Tuple[np.ndarray, float, float]:
+    ) -> tuple[np.ndarray, float, float]:
         """
         Quantize *tensor* to integer representation.
 
@@ -243,7 +243,7 @@ class QuantSpecDecoder:
         self,
         draft_fn:  Callable,
         config:    QuantSpecConfig,
-        verify_fn: Optional[Callable] = None,
+        verify_fn: Callable | None = None,
         seed:      int = 42,
     ) -> None:
         self._draft_fn  = draft_fn
@@ -269,7 +269,7 @@ class QuantSpecDecoder:
         self,
         context_ids: np.ndarray,
         kv_state:    Any,
-    ) -> Tuple[List[int], Any]:
+    ) -> tuple[list[int], Any]:
         """
         Execute one speculative step: draft ``gamma`` tokens then verify.
 
@@ -285,8 +285,8 @@ class QuantSpecDecoder:
         """
         cfg  = self._cfg
         ids  = list(context_ids)
-        draft_tokens:  List[int]              = []
-        draft_probs:   List[np.ndarray]       = []
+        draft_tokens:  list[int]              = []
+        draft_probs:   list[np.ndarray]       = []
 
         # ── Draft phase ────────────────────────────────────────────────────
         draft_kv = kv_state  # draft operates on a copy conceptually
@@ -322,9 +322,9 @@ class QuantSpecDecoder:
             ]
 
         # ── Speculative rejection sampling ─────────────────────────────────
-        accepted: List[int] = []
-        for i, (t, p_draft, p_target) in enumerate(
-            zip(draft_tokens, draft_probs, target_probs_list)
+        accepted: list[int] = []
+        for _i, (t, p_draft, p_target) in enumerate(
+            zip(draft_tokens, draft_probs, target_probs_list, strict=False)
         ):
             acceptance_prob = float(p_target[t]) / (float(p_draft[t]) + 1e-12)
             acceptance_prob = min(1.0, acceptance_prob)

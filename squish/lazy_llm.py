@@ -32,8 +32,7 @@ Limitations
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Callable, List
+from dataclasses import dataclass
 
 __all__ = ["LazyLLMConfig", "patch_model_lazy_llm", "unpatch_model_lazy_llm"]
 
@@ -92,7 +91,7 @@ class _PruneState:
 # Core helpers
 # ---------------------------------------------------------------------------
 
-def _importance_scores(hidden: "mx.array") -> "np.ndarray":
+def _importance_scores(hidden: mx.array) -> np.ndarray:
     """
     Compute per-token importance as the L2-norm of the hidden-state vector.
 
@@ -118,10 +117,10 @@ def _importance_scores(hidden: "mx.array") -> "np.ndarray":
 
 
 def _build_keep_mask(
-    scores: "np.ndarray",
+    scores: np.ndarray,
     keep_ratio: float,
     revive_window: int,
-) -> "np.ndarray":
+) -> np.ndarray:
     """
     Build a boolean keep-mask (T,) from importance *scores*.
 
@@ -155,9 +154,9 @@ def _build_keep_mask(
 
 
 def _apply_mask_to_hidden(
-    hidden: "mx.array",
-    mask: "np.ndarray",
-) -> "mx.array":
+    hidden: mx.array,
+    mask: np.ndarray,
+) -> mx.array:
     """
     Zero out pruned positions in *hidden* via element-wise multiply.
 
@@ -200,7 +199,6 @@ class _LazyLLMLayerWrapper:
         self._state   = state
 
     def __call__(self, x, *args, **kwargs):
-        import mlx.core as mx
 
         # Pass-through for decode steps (single token)
         if x.shape[1] <= 1:
@@ -263,7 +261,7 @@ def _get_layers(model) -> list | None:
 def patch_model_lazy_llm(
     model,
     config: LazyLLMConfig | None = None,
-) -> "_PruneState | None":
+) -> _PruneState | None:
     """
     Patch *model* in-place with LazyLLM token pruning.
 

@@ -17,15 +17,15 @@ Coverage booster for squish/kv_cache.py paths not hit by the existing suites:
 from __future__ import annotations
 
 import time
+
 import numpy as np
-import pytest
 
 from squish.kv_cache import (
+    _SVD_INIT_TOKENS,
+    DiskKVCache,
     KVLayerCache,
     QuantizedKVCache,
-    DiskKVCache,
     SessionKVCache,
-    _SVD_INIT_TOKENS,
 )
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ def _make_svd_layer(svd_rank: int = 4, window: int = 1) -> KVLayerCache:
     layer._svd_rank = svd_rank
     rng = np.random.default_rng(42)
     # One extra token triggers the flush; one more triggers svd_project path
-    for i in range(_SVD_INIT_TOKENS + 2):
+    for _i in range(_SVD_INIT_TOKENS + 2):
         k = rng.standard_normal((N_HEADS, HEAD_DIM)).astype(np.float16)
         v = rng.standard_normal((N_HEADS, HEAD_DIM)).astype(np.float16)
         layer.append(k, v)
@@ -87,7 +87,7 @@ class TestSVDPath:
         rng = np.random.default_rng(0)
         # Append exactly _SVD_INIT_TOKENS + 1 tokens — the 65th eviction
         # fills the buffer to 64, triggering _svd_fit_and_flush().
-        for i in range(_SVD_INIT_TOKENS + 1):
+        for _i in range(_SVD_INIT_TOKENS + 1):
             k = rng.standard_normal((N_HEADS, HEAD_DIM)).astype(np.float16)
             v = rng.standard_normal((N_HEADS, HEAD_DIM)).astype(np.float16)
             layer.append(k, v)
@@ -322,7 +322,7 @@ class TestSessionKVCache:
     def test_init_creates_directory(self, tmp_path):
         """__init__ creates the cache directory if it does not exist."""
         sdir = tmp_path / "sessions"
-        sc   = SessionKVCache(cache_dir=sdir)
+        SessionKVCache(cache_dir=sdir)
         assert sdir.is_dir()
 
     def test_session_key_deterministic(self, tmp_path):

@@ -1383,7 +1383,7 @@ def cmd_pull_head(args):  # pragma: no cover
 
     # If weights are already in MLX format (config.json + *.safetensors),
     # just symlink / copy; otherwise convert via mlx_lm.
-    import shutil, json as _json
+    import shutil
     raw_path = Path(raw_dir)
     has_mlx = (raw_path / "config.json").exists() and any(raw_path.glob("*.safetensors"))
 
@@ -1730,7 +1730,7 @@ def cmd_rotate(args):  # pragma: no cover
     model_dir = _resolve_model(args.model)
     output_dir = args.output_dir or str(Path(model_dir).parent / (Path(model_dir).name + "-rotated"))
 
-    print(f"\n  SpinQuant rotation calibration")
+    print("\n  SpinQuant rotation calibration")
     print(f"  Model      : {model_dir}")
     print(f"  Output     : {output_dir}")
     print(f"  Steps      : {args.steps}")

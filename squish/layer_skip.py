@@ -51,8 +51,8 @@ Usage::
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -242,7 +242,7 @@ class EarlyExitDecoder:
 
     def __init__(
         self,
-        full_forward: Callable[[List[int], Optional[int]], np.ndarray],
+        full_forward: Callable[[list[int], int | None], np.ndarray],
         config: EarlyExitConfig,
     ) -> None:
         self._fwd   = full_forward
@@ -255,9 +255,9 @@ class EarlyExitDecoder:
 
     def generate(
         self,
-        input_ids: List[int],
+        input_ids: list[int],
         max_new_tokens: int = 64,
-    ) -> Tuple[List[int], EarlyExitStats]:
+    ) -> tuple[list[int], EarlyExitStats]:
         """Generate tokens using the configured strategy.
 
         Parameters
@@ -281,9 +281,9 @@ class EarlyExitDecoder:
 
     def _generate_early_exit(
         self,
-        ids: List[int],
+        ids: list[int],
         max_new: int,
-    ) -> Tuple[List[int], EarlyExitStats]:
+    ) -> tuple[list[int], EarlyExitStats]:
         stats = EarlyExitStats()
         for _ in range(max_new):
             # Try early-exit first
@@ -306,9 +306,9 @@ class EarlyExitDecoder:
 
     def _generate_self_speculative(
         self,
-        ids: List[int],
+        ids: list[int],
         max_new: int,
-    ) -> Tuple[List[int], EarlyExitStats]:
+    ) -> tuple[list[int], EarlyExitStats]:
         stats = EarlyExitStats()
         generated = 0
 
@@ -316,8 +316,8 @@ class EarlyExitDecoder:
             gamma = min(self._cfg.gamma, max_new - generated)
 
             # --- Draft phase (early-exit forward) ---
-            draft_ids: List[int] = []
-            draft_logits: List[np.ndarray] = []
+            draft_ids: list[int] = []
+            draft_logits: list[np.ndarray] = []
             ctx = list(ids)
             for _ in range(gamma):
                 logits = self._fwd(ctx, self._cfg.exit_layer)
@@ -329,8 +329,8 @@ class EarlyExitDecoder:
             # --- Verify phase (full forward over draft sequence) ---
             # For simplicity: verify each draft token sequentially using full model.
             ctx_verify = list(ids)
-            accepted: List[int] = []
-            for di, d_tok in enumerate(draft_ids):
+            accepted: list[int] = []
+            for _di, d_tok in enumerate(draft_ids):
                 verify_logits = self._fwd(ctx_verify, None)
                 verify_tok    = self._conf.top_token(verify_logits)
                 if verify_tok == d_tok:

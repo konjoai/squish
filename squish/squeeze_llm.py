@@ -53,8 +53,7 @@ Usage::
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -139,7 +138,7 @@ class OutlierDetector:
     def identify(
         self,
         weight: np.ndarray,
-    ) -> Tuple[np.ndarray, Dict[Tuple[int, int], float]]:
+    ) -> tuple[np.ndarray, dict[tuple[int, int], float]]:
         """
         Identify outlier weights.
 
@@ -168,9 +167,9 @@ class OutlierDetector:
         dense[outlier_mask] = 0.0
 
         rows, cols = np.where(outlier_mask)
-        outliers: Dict[Tuple[int, int], float] = {
+        outliers: dict[tuple[int, int], float] = {
             (int(r), int(c)): float(W[r, c])
-            for r, c in zip(rows, cols)
+            for r, c in zip(rows, cols, strict=False)
         }
         return dense, outliers
 
@@ -184,7 +183,7 @@ def _nonuniform_quantize(
     n_bins: int,
     n_iters: int,
     seed: int,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Quantize 1-D float32 values using k-means to find non-uniform bin centres.
 
@@ -250,8 +249,8 @@ class SqueezeLLMLayer:
     """
     quant_indices:  np.ndarray
     bin_centres:    np.ndarray                    # (n_groups, n_bins) float32
-    outliers:       Dict[Tuple[int, int], float]
-    original_shape: Tuple[int, ...]
+    outliers:       dict[tuple[int, int], float]
+    original_shape: tuple[int, ...]
     group_size:     int
 
     # ------------------------------------------------------------------
@@ -288,7 +287,7 @@ class SqueezeLLMLayer:
         return np.asarray(x, dtype=np.float32) @ W.T
 
 
-def decompress_layer_sq(layer: "SqueezeLLMLayer") -> np.ndarray:
+def decompress_layer_sq(layer: SqueezeLLMLayer) -> np.ndarray:
     """
     Reconstruct the approximate weight matrix from a ``SqueezeLLMLayer``.
 
@@ -334,7 +333,7 @@ class SqueezeLLMQuantizer:
     config : SqueezeLLMConfig
     """
 
-    def __init__(self, config: Optional[SqueezeLLMConfig] = None) -> None:
+    def __init__(self, config: SqueezeLLMConfig | None = None) -> None:
         self.config   = config or SqueezeLLMConfig()
         self._detector = OutlierDetector(self.config.sparsity_ratio)
 

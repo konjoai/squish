@@ -1,14 +1,13 @@
 """tests/test_disc_router_unit.py — 100% coverage for squish/disc_router.py"""
 import pytest
-from squish.disc_router import (
-    TaskType,
-    SubTask,
-    DISCPlan,
-    DISCRouterConfig,
-    DISCRouter,
-    _DEFAULT_SYSTEM_PROMPTS,
-)
 
+from squish.disc_router import (
+    DISCPlan,
+    DISCRouter,
+    DISCRouterConfig,
+    SubTask,
+    TaskType,
+)
 
 # ---------------------------------------------------------------------------
 # TaskType
@@ -318,7 +317,8 @@ class TestTopologicalEdgeCases:
 
     def test_execute_empty_plan_returns_empty_string(self):
         """Line 301: ordered is empty → execute returns ''."""
-        llm    = lambda prompt, system, context: "x"
+        def llm(prompt, system, context):
+            return "x"
         plan   = DISCPlan()          # no tasks
         router = DISCRouter(llm)
         result = router.execute("", plan=plan, context="anything")

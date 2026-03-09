@@ -36,7 +36,6 @@ Standalone test:
 
 import logging
 import time
-from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -386,7 +385,7 @@ class HiddenStateCapture:
         self._can_capture = (
             hasattr(model, "model") and hasattr(model, "lm_head")
         )
-        self.last_hidden: "mx.array | None" = None
+        self.last_hidden: mx.array | None = None
 
     @property
     def can_capture(self) -> bool:

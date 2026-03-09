@@ -159,14 +159,13 @@ class DiffusionDraftModel:
         mask_token_id = self._tokenizer.mask_token_id or 126336
 
         # Initialise all output positions as masked
-        batch_size = 1
         output_ids = [mask_token_id] * max_tokens
         generated: list[int] = []
 
         max_passes = max_tokens
         for _pass in range(max_passes):
             # Build full sequence: prompt + current output
-            seq = list(input_ids[0]) + output_ids
+            list(input_ids[0]) + output_ids
             # (In a real implementation this calls model.forward() and
             # decodes the logits — omitted here as it requires GPU tensors.)
             # Confidence-aware unmasking: if max softmax > threshold, unmask.

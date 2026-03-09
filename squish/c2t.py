@@ -62,8 +62,8 @@ Provides
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -258,8 +258,8 @@ class AdaptiveTreeBuilder:
 
     def __init__(
         self,
-        config: Optional[C2TConfig] = None,
-        classifier: Optional[C2TClassifier] = None,
+        config: C2TConfig | None = None,
+        classifier: C2TClassifier | None = None,
     ) -> None:
         self._config = config or C2TConfig()
         self._classifier = classifier or C2TClassifier(
@@ -289,10 +289,10 @@ class AdaptiveTreeBuilder:
 
     def build(
         self,
-        draft_fn: Callable[[np.ndarray], Tuple[np.ndarray, np.ndarray]],
+        draft_fn: Callable[[np.ndarray], tuple[np.ndarray, np.ndarray]],
         root_hidden: np.ndarray,
-        forced_narrow: Optional[Sequence[bool]] = None,
-    ) -> List[List[int]]:
+        forced_narrow: Sequence[bool] | None = None,
+    ) -> list[list[int]]:
         """Construct the adaptive draft tree.
 
         Parameters
@@ -317,11 +317,11 @@ class AdaptiveTreeBuilder:
 
         # BFS expansion
         # Each entry: (hidden_state, prefix_so_far)
-        queue: List[Tuple[np.ndarray, List[int]]] = [(root_hidden, [])]
-        paths: List[List[int]] = []
+        queue: list[tuple[np.ndarray, list[int]]] = [(root_hidden, [])]
+        paths: list[list[int]] = []
 
         for d in range(depth):
-            next_queue: List[Tuple[np.ndarray, List[int]]] = []
+            next_queue: list[tuple[np.ndarray, list[int]]] = []
             for hidden, prefix in queue:
                 logits, next_hidden = draft_fn(hidden)
                 # Determine branch width
@@ -366,7 +366,7 @@ class C2TTrainer:
     def __init__(
         self,
         classifier: C2TClassifier,
-        config: Optional[C2TConfig] = None,
+        config: C2TConfig | None = None,
     ) -> None:
         self._classifier = classifier
         self._config = config or C2TConfig()

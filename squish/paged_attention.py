@@ -28,11 +28,12 @@ prefix tokens are loaded back into the ``QuantizedKVCache`` layers via
 
 from __future__ import annotations
 
-import time
 import threading
-import numpy as np
+import time
 from collections import deque
 from dataclasses import dataclass, field
+
+import numpy as np
 
 __all__ = [
     "PAGE_SIZE",
@@ -503,7 +504,7 @@ class PagedKVCache:
         model,
         metal_fraction: float = 0.25,
         dtype: np.dtype = np.float16,
-    ) -> "PagedKVCache":
+    ) -> PagedKVCache:
         """
         Construct a ``PagedKVCache`` sized to *metal_fraction* of available
         unified memory by introspecting the model config.

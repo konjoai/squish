@@ -9,12 +9,11 @@ squish/scheduler.py — 100% coverage of:
 import pytest
 
 from squish.scheduler import (
+    IterationLevelScheduler,
     OrcaConfig,
     RequestState,
     SelectivePreemption,
-    IterationLevelScheduler,
 )
-
 
 # ---------------------------------------------------------------------------
 # OrcaConfig

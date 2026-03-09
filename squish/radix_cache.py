@@ -40,8 +40,8 @@ from __future__ import annotations
 
 import collections
 import hashlib
-import time
 import threading
+import time
 
 __all__ = ["RadixNode", "RadixTree"]
 
@@ -62,7 +62,7 @@ class RadixNode:
 
     def __init__(self, edge_tokens: list[int] | None = None) -> None:
         self.edge_tokens: list[int]          = edge_tokens or []
-        self.children:    dict[int, "RadixNode"] = {}
+        self.children:    dict[int, RadixNode] = {}
         self.block_refs:  list[int]          = []
         self.last_access: float              = time.monotonic()
         self.ref_count:   int                = 0
@@ -228,10 +228,10 @@ class RadixTree:
                 return new_node
 
             edge   = child.edge_tokens
-            common = sum(1 for a, b in zip(remaining, edge) if a == b)
+            common = sum(1 for a, b in zip(remaining, edge, strict=False) if a == b)
             # Calculate common length properly (stop at first mismatch)
             common = 0
-            for a, b in zip(remaining, edge):
+            for a, b in zip(remaining, edge, strict=False):
                 if a != b:
                     break
                 common += 1
@@ -279,7 +279,7 @@ class RadixTree:
 
             edge   = child.edge_tokens
             common = 0
-            for a, b in zip(remaining, edge):
+            for a, b in zip(remaining, edge, strict=False):
                 if a != b:
                     break
                 common += 1

@@ -2,8 +2,7 @@
 import numpy as np
 import pytest
 
-from squish.grammar_engine import DOMINOConstraint, DCCDDecoder
-
+from squish.grammar_engine import DCCDDecoder, DOMINOConstraint
 
 # ---------------------------------------------------------------------------
 # Minimal fake tokenizer for DOMINOConstraint tests

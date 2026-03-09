@@ -55,7 +55,6 @@ from __future__ import annotations
 import heapq
 import struct
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -116,16 +115,16 @@ class HuffmanCodec:
         symbol must have a non-zero count.
     """
 
-    def __init__(self, freq: Dict[int, int]) -> None:
-        self._codes: Dict[int, str] = {}   # symbol → bit-string e.g. "1010"
-        self._decode_table: Dict[str, int] = {}
+    def __init__(self, freq: dict[int, int]) -> None:
+        self._codes: dict[int, str] = {}   # symbol → bit-string e.g. "1010"
+        self._decode_table: dict[str, int] = {}
         self._build(freq)
 
     # ------------------------------------------------------------------
     # Build
     # ------------------------------------------------------------------
 
-    def _build(self, freq: Dict[int, int]) -> None:
+    def _build(self, freq: dict[int, int]) -> None:
         """Build Huffman code from a frequency table."""
         symbols = [(cnt, sym) for sym, cnt in freq.items() if cnt > 0]
         if not symbols:
@@ -140,7 +139,7 @@ class HuffmanCodec:
 
         # Build min-heap of (freq, id, subtree)
         _id = 0
-        heap: List[Tuple[int, int, object]] = []
+        heap: list[tuple[int, int, object]] = []
         for cnt, sym in symbols:
             heapq.heappush(heap, (cnt, _id, sym))
             _id += 1
@@ -240,12 +239,12 @@ class HuffmanCodec:
     # Serialise / deserialise
     # ------------------------------------------------------------------
 
-    def to_dict(self) -> Dict[int, str]:
+    def to_dict(self) -> dict[int, str]:
         """Return a copy of the symbol → code mapping (for serialisation)."""
         return dict(self._codes)
 
     @classmethod
-    def from_code_dict(cls, codes: Dict[int, str]) -> "HuffmanCodec":
+    def from_code_dict(cls, codes: dict[int, str]) -> HuffmanCodec:
         """
         Reconstruct a HuffmanCodec from a pre-built code dict (e.g. loaded
         from a ``CompressedBlock``).  Does not re-run ``_build``.
@@ -280,7 +279,7 @@ class CompressedBlock:
     """
     exponent_data:  bytes
     sign_mantissa:  bytes
-    codes:          Dict[int, str]
+    codes:          dict[int, str]
     n_values:       int
     dtype_str:      str = "float16"
 
@@ -328,7 +327,7 @@ class DFloat11Compressor:
         # treat as raw uint16 pairs → still works for compression purposes
     """
 
-    def __init__(self, config: Optional[DFloat11Config] = None) -> None:
+    def __init__(self, config: DFloat11Config | None = None) -> None:
         self.config = config or DFloat11Config()
 
     # ------------------------------------------------------------------
@@ -364,7 +363,7 @@ class DFloat11Compressor:
         low_bytes  = raw[0::2].copy()   # (n,) — mantissa low
 
         # Build Huffman codec on high_bytes
-        freq: Dict[int, int] = {}
+        freq: dict[int, int] = {}
         for b in high_bytes:
             freq[int(b)] = freq.get(int(b), 0) + 1
 
@@ -402,7 +401,7 @@ class DFloat11Compressor:
         raw[1::2] = high_bytes
         return raw.view(np.float16).copy()
 
-    def compress_array(self, arr: np.ndarray) -> List[CompressedBlock]:
+    def compress_array(self, arr: np.ndarray) -> list[CompressedBlock]:
         """
         Compress a weight array by splitting it into ``config.block_size``
         chunks and compressing each independently.
@@ -419,7 +418,7 @@ class DFloat11Compressor:
             blocks.append(self.compress_block(chunk))
         return blocks
 
-    def decompress_array(self, blocks: List[CompressedBlock]) -> np.ndarray:
+    def decompress_array(self, blocks: list[CompressedBlock]) -> np.ndarray:
         """
         Decompress a list of ``CompressedBlock`` objects (from ``compress_array``)
         back to a float16 1-D array.
@@ -445,8 +444,8 @@ class CompressedModel:
     config : DFloat11Config
         The config used to compress this model.
     """
-    layers: Dict[str, List[CompressedBlock]] = field(default_factory=dict)
-    shapes: Dict[str, tuple]                 = field(default_factory=dict)
+    layers: dict[str, list[CompressedBlock]] = field(default_factory=dict)
+    shapes: dict[str, tuple]                 = field(default_factory=dict)
     config: DFloat11Config                   = field(default_factory=DFloat11Config)
 
     # ------------------------------------------------------------------
@@ -474,11 +473,11 @@ class CompressedModel:
         """overall original_size / compressed_size."""
         return self.original_size / max(self.compressed_size, 1)
 
-    def layer_names(self) -> List[str]:
+    def layer_names(self) -> list[str]:
         """Return list of compressed layer names."""
         return list(self.layers.keys())
 
-    def decompressed_layer(self, name: str, compressor: "DFloat11Compressor") -> np.ndarray:
+    def decompressed_layer(self, name: str, compressor: DFloat11Compressor) -> np.ndarray:
         """
         Decompress a single layer and return it as a float16 ndarray
         reshaped to its original shape.
@@ -488,8 +487,8 @@ class CompressedModel:
 
 
 def compress_model(
-    state_dict: Dict[str, np.ndarray],
-    config: Optional[DFloat11Config] = None,
+    state_dict: dict[str, np.ndarray],
+    config: DFloat11Config | None = None,
 ) -> CompressedModel:
     """
     Convenience: compress an entire model state dict.
