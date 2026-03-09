@@ -1483,6 +1483,7 @@ class DiskKVCache:
         import threading as _threading
 
         def _worker():
+            import os as _os
             try:
                 arrays = self._serialise(qkv_cache)
                 if arrays is None:
@@ -1490,7 +1491,9 @@ class DiskKVCache:
                 if last_logit_np is not None:
                     arrays["last_logit"] = last_logit_np.astype(np.float32)
                 entry = self._dir / (self._key(input_ids) + ".npz")
-                np.savez_compressed(str(entry), **arrays)
+                tmp   = entry.with_suffix(".tmp")
+                np.savez_compressed(str(tmp), **arrays)
+                _os.replace(str(tmp), str(entry))
                 self._evict_if_needed()
             except Exception:  # pragma: no cover
                 pass
@@ -1681,12 +1684,15 @@ class SessionKVCache:
         import threading as _threading
 
         def _worker():
+            import os as _os
             try:
                 arrays = DiskKVCache._serialise(qkv_cache)
                 if arrays is None:
                     return
                 entry = self._dir / (key + ".npz")
-                np.savez_compressed(str(entry), **arrays)
+                tmp   = entry.with_suffix(".tmp")
+                np.savez_compressed(str(tmp), **arrays)
+                _os.replace(str(tmp), str(entry))
                 self._evict_if_needed()
             except Exception:  # pragma: no cover
                 pass

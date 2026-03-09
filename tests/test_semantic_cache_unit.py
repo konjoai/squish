@@ -38,6 +38,20 @@ from squish.semantic_cache import (
 # even when squish.semantic_cache.sqlite3.connect is patched.
 _REAL_CONNECT = _stdlib_sqlite3.connect
 
+# ── Module-level autouse fixture: provide a fake sqlite_vec ──────────────────
+# sqlite_vec is an optional C extension unavailable in stock CI environments.
+# All tests in this module need sqlite_vec importable so SquishSemanticCache
+# can be constructed; individual tests that test the ImportError path override
+# this with their own mock.patch.dict(sys.modules, {"sqlite_vec": None}).
+_FAKE_SQLITE_VEC = mock.MagicMock()
+
+
+@pytest.fixture(autouse=True)
+def _patch_sqlite_vec():
+    """Make sqlite_vec importable for every test in this module."""
+    with mock.patch.dict(sys.modules, {"sqlite_vec": _FAKE_SQLITE_VEC}):
+        yield _FAKE_SQLITE_VEC
+
 
 # ── Fake sqlite3 infrastructure ───────────────────────────────────────────────
 
