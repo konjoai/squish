@@ -41,10 +41,34 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
+
+# Guard: detect a broken Python stdlib before going any further.
+# This happens when an unrelated virtualenv/pixi/conda env is active and its
+# Python is missing C extensions (e.g. _posixsubprocess).  Give a clear,
+# actionable error instead of a confusing traceback.
+try:
+    import subprocess
+except (ImportError, ModuleNotFoundError) as _stdlib_err:
+    print(
+        f"\n  ✗  squish: Python stdlib is broken in the current environment.\n"
+        f"     Cause   : {_stdlib_err}\n"
+        f"     Python  : {sys.executable}\n"
+        f"\n"
+        f"     This usually means an unrelated virtualenv, pixi, or conda\n"
+        f"     environment is active and its Python is missing C extensions.\n"
+        f"\n"
+        f"     Fix options:\n"
+        f"       1. Deactivate the foreign environment then re-run squish.\n"
+        f"       2. Run squish via its own Python:\n"
+        f"            python3 -c \"from squish.cli import main; main()\" -- <args>\n"
+        f"       3. Install squish inside the active environment:\n"
+        f"            pip install -e /path/to/squish\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 # When running as `python3 squish/cli.py` (not via `-m`), the repo root is NOT
 # on sys.path, which breaks `from squish.X import ...` inside subcommands like
