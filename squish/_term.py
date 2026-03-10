@@ -87,13 +87,27 @@ LOGO_GRAD: list[tuple[int, int, int]] = [
 ]
 
 
-def gradient(text: str, stops: list[tuple[int, int, int]]) -> str:
+def gradient(
+    text: str,
+    stops: list[tuple[int, int, int]],
+    *,
+    force_color: bool | None = None,
+) -> str:
     """Interpolate a left-to-right RGB gradient across *text*.
 
-    Only emits escape codes when stdout is a true-colour TTY; otherwise
-    returns *text* unchanged so plain-terminal output stays readable.
+    Only emits escape codes when stdout is a true-colour TTY (or when
+    *force_color* is explicitly ``True``); otherwise returns *text* unchanged
+    so plain-terminal output stays readable.
+
+    Parameters
+    ----------
+    force_color : bool | None
+        Override the module-level TTY detection.  ``True`` forces ANSI output;
+        ``False`` forces plain text; ``None`` (default) uses the autodetected
+        ``_TC`` flag.
     """
-    if not _TC or not text:
+    use_color = _TC if force_color is None else force_color
+    if not use_color or not text:
         return text
     n = len(text)
     k = len(stops) - 1

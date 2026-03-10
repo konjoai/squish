@@ -202,7 +202,10 @@ class BatchScheduler:
         pad_token_id:    int | None = None,
         max_pending:     int   = 64,
     ):
-        import mlx.core as mx  # noqa: F401 (validate import on init)
+        try:
+            import mlx.core as mx  # noqa: F401 (validate import on init)
+        except ImportError:
+            pass
 
         self._model          = model
         self._tokenizer      = tokenizer
@@ -415,7 +418,10 @@ class BatchScheduler:
         GPU thread: consume prepared batches from *_prepared_queue* and run
         the autoregressive generation loop.
         """
-        import mlx.core as mx
+        try:
+            import mlx.core as mx
+        except ImportError:
+            return  # MLX not available on this platform — thread exits cleanly
 
         log.debug("BatchScheduler worker started")
         while not self._stop_event.is_set():
@@ -662,7 +668,10 @@ class NestedWaitScheduler(BatchScheduler):
         """
         GPU thread: run continuous-batching decode with inter-step Nested WAIT merges.
         """
-        import mlx.core as mx
+        try:
+            import mlx.core as mx
+        except ImportError:
+            return  # MLX not available on this platform — thread exits cleanly
 
         log.debug("NestedWaitScheduler worker started")
         while not self._stop_event.is_set():

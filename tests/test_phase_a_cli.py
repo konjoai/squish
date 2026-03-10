@@ -38,6 +38,19 @@ def _ns(source, output, ffn_bits=4, embed_bits=6, dry_run=False):
 
 
 class TestCmdConvertModel:
+    @pytest.fixture(autouse=True)
+    def _ensure_mlx_lm_importable(self, monkeypatch):
+        """Install a MagicMock for mlx_lm when the real package is absent or
+        broken (e.g. libmlx.so not found on Linux).
+
+        Tests that need mlx_lm to be *missing* override via
+        patch.dict(sys.modules, {'mlx_lm': None}) which takes precedence.
+        """
+        try:
+            import mlx_lm  # noqa: F401
+        except Exception:
+            from unittest.mock import MagicMock
+            monkeypatch.setitem(sys.modules, "mlx_lm", MagicMock())
 
     def test_source_not_found_exits(self, tmp_path: Path):
         """Source path missing → _die() → SystemExit(1)."""

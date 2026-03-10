@@ -11,6 +11,12 @@ from squish.kv_cache import HadamardKVCache
 N_HEADS  = 2
 HEAD_DIM = 4   # power-of-two for default tests
 
+try:
+    import mlx.core  # noqa: F401
+    _HAS_MLX = True
+except Exception:
+    _HAS_MLX = False
+
 
 def _rand_kv(n_heads=N_HEADS, head_dim=HEAD_DIM, seed=0):
     rng = np.random.default_rng(seed)
@@ -135,6 +141,11 @@ class TestHadamardKVCacheUpdate:
 # ---------------------------------------------------------------------------
 
 class TestHadamardKVCacheGetKvMlx:
+    pytestmark = pytest.mark.skipif(
+        not _HAS_MLX,
+        reason="requires mlx (Apple Silicon only)",
+    )
+
     def test_returns_correct_shape(self):
         """After update, get_kv_mlx returns un-rotated MLX arrays."""
         cache = HadamardKVCache(n_layers=1, window=64, mode="int8", seed=42)

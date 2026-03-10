@@ -75,6 +75,7 @@ class TestSplitLoaderHelpers:
     """Pure-numpy helpers that don't touch Metal."""
 
     def test_layer_weight_bytes_counts_all_params(self):
+        pytest.importorskip("mlx.core", reason="requires mlx (Apple Silicon only)", exc_type=ImportError)
         from squish.split_loader import _layer_weight_bytes
 
         layer = MagicMock()

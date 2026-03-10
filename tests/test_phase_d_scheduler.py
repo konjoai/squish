@@ -13,7 +13,20 @@ from __future__ import annotations
 import queue
 from unittest.mock import MagicMock
 
+import pytest
+
 from squish.scheduler import BatchScheduler, _Request
+
+try:
+    import mlx.core  # noqa: F401
+    _HAS_MLX = True
+except Exception:
+    _HAS_MLX = False
+
+_skip_no_mlx = pytest.mark.skipif(
+    not _HAS_MLX,
+    reason="requires mlx (Apple Silicon only) — worker thread needs libmlx.so",
+)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -92,6 +105,7 @@ class TestDoubleBufferLifecycle:
         assert sched._thread is not None
         assert sched._thread.is_alive()
         sched.stop(timeout=2.0)
+    test_worker_thread_started_after_start = _skip_no_mlx(test_worker_thread_started_after_start)
 
     def test_is_running_requires_both_threads(self):
         """is_running() should only be True when both threads are alive."""
@@ -100,6 +114,7 @@ class TestDoubleBufferLifecycle:
         assert sched.is_running() is True
         sched.stop(timeout=2.0)
         assert sched.is_running() is False
+    test_is_running_requires_both_threads = _skip_no_mlx(test_is_running_requires_both_threads)
 
     def test_prepare_thread_none_after_stop(self):
         sched = _make_scheduler()

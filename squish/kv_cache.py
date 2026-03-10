@@ -1491,7 +1491,7 @@ class DiskKVCache:
                 if last_logit_np is not None:
                     arrays["last_logit"] = last_logit_np.astype(np.float32)
                 entry = self._dir / (self._key(input_ids) + ".npz")
-                tmp   = entry.with_suffix(".tmp")
+                tmp   = entry.with_name(entry.stem + ".tmp.npz")
                 np.savez_compressed(str(tmp), **arrays)
                 _os.replace(str(tmp), str(entry))
                 self._evict_if_needed()
@@ -1592,7 +1592,10 @@ class DiskKVCache:
     def _evict_if_needed(self) -> None:
         """Remove the oldest (by mtime) entries when over the size cap."""
         with self._lock:
-            entries = sorted(self._dir.glob("*.npz"), key=lambda p: p.stat().st_mtime)
+            entries = sorted(
+                (p for p in self._dir.glob("*.npz") if not p.stem.endswith(".tmp")),
+                key=lambda p: p.stat().st_mtime,
+            )
             while len(entries) > self._max:
                 try:
                     entries.pop(0).unlink(missing_ok=True)
@@ -1690,7 +1693,7 @@ class SessionKVCache:
                 if arrays is None:
                     return
                 entry = self._dir / (key + ".npz")
-                tmp   = entry.with_suffix(".tmp")
+                tmp   = entry.with_name(entry.stem + ".tmp.npz")
                 np.savez_compressed(str(tmp), **arrays)
                 _os.replace(str(tmp), str(entry))
                 self._evict_if_needed()
@@ -1701,14 +1704,17 @@ class SessionKVCache:
 
     def list_sessions(self) -> "list[str]":
         """Return sorted list of active session keys (file stems)."""
-        return sorted(p.stem for p in self._dir.glob("*.npz"))
+        return sorted(
+            p.stem for p in self._dir.glob("*.npz")
+            if not p.stem.endswith(".tmp")
+        )
 
     # ── internals ───────────────────────────────────────────────────────────
 
     def _evict_if_needed(self) -> None:
         with self._lock:
             entries = sorted(
-                self._dir.glob("*.npz"),
+                (p for p in self._dir.glob("*.npz") if not p.stem.endswith(".tmp")),
                 key=lambda p: p.stat().st_mtime,
             )
             while len(entries) > self._max:

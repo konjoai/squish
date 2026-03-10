@@ -265,13 +265,18 @@ _QueueFullError  = None  # QueueFullError class — imported alongside BatchSche
 # ── Terminal colours & ASCII art ─────────────────────────────────────────────
 from squish._term import LOGO_GRAD as _LOGO_GRAD
 from squish._term import C as _C  # noqa: E402
-from squish._term import gradient as _gradient
+from squish._term import gradient as _term_gradient
 from squish._term import has_truecolor as _has_truecolor  # noqa: E402
 
 _TTY:           bool = sys.stdout.isatty()
 _TTY_ERR:       bool = sys.stderr.isatty()
 _TRUE_COLOR:     bool = _has_truecolor(sys.stdout.fileno() if hasattr(sys.stdout, "fileno") else 1)
 _TRUE_COLOR_ERR: bool = _has_truecolor(sys.stderr.fileno() if hasattr(sys.stderr, "fileno") else 2)
+
+
+def _gradient(text: str, stops: list[tuple[int, int, int]]) -> str:
+    """Thin wrapper so tests can monkeypatch _TRUE_COLOR to control output."""
+    return _term_gradient(text, stops, force_color=_TRUE_COLOR)
 
 
 def _cprint(color: str, label: str, value: str = "", end: str = "\n") -> None:
