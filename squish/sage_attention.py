@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import numpy as np
 
@@ -313,3 +313,30 @@ class SageAttentionKernel:
 
     def reset_smoother(self) -> None:
         self._smoother.reset()
+
+
+def patch_model_sage_attention(model: Any, kernel: SageAttentionKernel) -> None:  # pragma: no cover
+    """Annotate model with a SageAttention kernel reference.
+
+    Records *kernel* on the model object so downstream code can retrieve it via
+    ``getattr(model, '_sage_attn_kernel', None)`` without modifying the forward
+    graph.  On real Apple-Silicon hardware the INT8 QK^T path requires a
+    custom Metal kernel; this function marks the model as opted-in.
+
+    Args:
+        model: Loaded MLX / PyTorch model object.
+        kernel: Initialised :class:`SageAttentionKernel` instance.
+    """
+    object.__setattr__(model, "_sage_attn_kernel", kernel) if hasattr(model, "__dict__") else None
+    try:
+        model._sage_attn_kernel = kernel  # type: ignore[attr-defined]
+    except (AttributeError, TypeError):
+        pass
+
+
+def unpatch_model_sage_attention(model: Any) -> None:  # pragma: no cover
+    """Remove the SageAttention annotation from *model*."""
+    try:
+        del model._sage_attn_kernel  # type: ignore[attr-defined]
+    except AttributeError:
+        pass

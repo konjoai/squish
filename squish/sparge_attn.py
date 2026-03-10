@@ -24,7 +24,7 @@ the within-block quantized matmul to that module's algorithms.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 
@@ -336,3 +336,29 @@ class SpargeAttnEngine:
 
     def reset_stats(self) -> None:
         self._cumulative_stats = SpargeAttnStats()
+
+
+def patch_model_sparge_attn(model: Any, engine: SpargeAttnEngine) -> None:  # pragma: no cover
+    """Annotate model with a SpargeAttn engine reference.
+
+    Records *engine* on the model object so downstream code can retrieve it via
+    ``getattr(model, '_sparge_engine', None)`` without modifying the forward
+    graph.  On real Apple-Silicon hardware the sparse+quantised path requires
+    custom Metal dispatch; this function marks the model as opted-in.
+
+    Args:
+        model: Loaded MLX / PyTorch model object.
+        engine: Initialised :class:`SpargeAttnEngine` instance.
+    """
+    try:
+        model._sparge_engine = engine  # type: ignore[attr-defined]
+    except (AttributeError, TypeError):
+        pass
+
+
+def unpatch_model_sparge_attn(model: Any) -> None:  # pragma: no cover
+    """Remove the SpargeAttn annotation from *model*."""
+    try:
+        del model._sparge_engine  # type: ignore[attr-defined]
+    except AttributeError:
+        pass

@@ -112,6 +112,12 @@ _layer_skip_config      = None  # EarlyExitConfig         — --layer-skip
 _long_spec_config       = None  # LongSpecConfig          — --long-spec
 _fr_spec_config         = None  # FRSpecConfig            — --fr-spec
 _diffusion_draft_model  = None  # DiffusionDraftModel     — --diffusion-draft
+# ── Wave 12: Reasoning-aware KV + Async I/O + MoE compression ──────────────
+_pm_kvq_scheduler       = None  # PMKVQScheduler          — --pm-kvq
+_mix_kvq_quantizer      = None  # MixKVQQuantizer         — --mix-kvq
+_cocktail_kv_store      = None  # CocktailKVStore         — --cocktail-kv
+_agile_io_manager       = None  # AgileIOManager          — --agile-io
+_milo_quantizer         = None  # MiLoQuantizer           — --milo
 # Phase 3: cross-session persistent KV cache
 _session_kv_cache    = None   # SessionKVCache | None — set in main() when --session-cache-dir given
 # Phase 4: prompt compression settings (active when --compress-prompt is set)
@@ -1287,6 +1293,12 @@ def _generate_tokens(  # pragma: no cover
                         except AttributeError:
                             pass  # xgrammar version without is_terminated()
                 stop_buf.append(next_id)
+                # Wave 12: advance PM-KVQ scheduler each decode step
+                if _pm_kvq_scheduler is not None:
+                    try:
+                        _pm_kvq_scheduler.advance()
+                    except Exception:
+                        pass
                 # Phase 0C: fire async CPU dequant for next step while we set up
                 # the token embedding — hides O(n_old_tokens) numpy cost behind
                 # the model's token-embedding + layernorm overhead.
@@ -2810,6 +2822,8 @@ Examples:
     global _gemfilter_config, _svdq_config, _sparse_spec_config, _sparse_verify_config
     global _trail_config, _specontext_config, _forelen_config, _ipw_config
     global _layer_skip_config, _long_spec_config, _fr_spec_config, _diffusion_draft_model
+    global _pm_kvq_scheduler, _mix_kvq_quantizer, _cocktail_kv_store
+    global _agile_io_manager, _milo_quantizer
 
     if getattr(args, "prompt_lookup", False):
         try:
@@ -2918,6 +2932,7 @@ Examples:
             _la_cfg = LookaheadConfig(lookahead_k=getattr(args, "lookahead_k", 4))
             # draft_fn is wired to the actual model at inference time; store config only
             _la_cfg._server_enabled = True  # marker checked during generation
+            _lookahead_engine = _la_cfg  # type: ignore[assignment]  # full engine per-request
             _info("lookahead", f"k={_la_cfg.lookahead_k}  family={_la_cfg.model_family}")
         except Exception as _e:
             _warn(f"[lookahead] Skipped: {_e}")
@@ -2927,6 +2942,7 @@ Examples:
             from squish.spec_reason import SpecReasonConfig
             _sr_cfg = SpecReasonConfig()
             _sr_cfg._server_enabled = True  # marker checked during generation
+            _spec_reason_orch = _sr_cfg  # type: ignore[assignment]  # full orch per-request
             _info("spec-reason", f"min_score={_sr_cfg.min_acceptance_score}  max_draft={_sr_cfg.max_draft_steps}")
         except Exception as _e:
             _warn(f"[spec-reason] Skipped: {_e}")
@@ -3124,6 +3140,65 @@ Examples:
             _info("lora-adapter", f"{args.lora_adapter}")
         except Exception as _e:
             _warn(f"[lora-adapter] Skipped: {_e}")
+
+    # ── Wave 12: Reasoning-aware KV quantisation ─────────────────────────────
+    if getattr(args, "pm_kvq", False):
+        try:
+            from squish.pm_kvq import PMKVQConfig, PMKVQScheduler
+            _pm_cfg = PMKVQConfig(
+                n_blocks=getattr(args, "pm_kvq_blocks", 32),
+            )
+            _pm_kvq_scheduler = PMKVQScheduler(_pm_cfg)
+            _info("pm-kvq", f"progressive KV quant  bits={_pm_cfg.min_bits_sensitive}→{_pm_cfg.min_bits}  "
+                  f"blocks={_pm_cfg.n_blocks}")
+        except Exception as _e:
+            _warn(f"[pm-kvq] Skipped: {_e}")
+
+    if getattr(args, "mix_kvq", False):
+        try:
+            from squish.mix_kvq import MixKVQConfig, MixKVQQuantizer
+            _mx_cfg = MixKVQConfig()
+            _mix_kvq_quantizer = MixKVQQuantizer(_mx_cfg)
+            _info("mix-kvq", f"query-aware mixed-precision KV  "
+                  f"fp16_ratio={_mx_cfg.fp16_channel_ratio}")
+        except Exception as _e:
+            _warn(f"[mix-kvq] Skipped: {_e}")
+
+    if getattr(args, "cocktail_kv", False):
+        try:
+            from squish.cocktail_kv import CocktailConfig, CocktailKVStore
+            _ck_cfg = CocktailConfig()
+            _cocktail_kv_store = CocktailKVStore(_ck_cfg)
+            _info("cocktail-kv", f"chunk-similarity adaptive KV  "
+                  f"chunk_size={_ck_cfg.chunk_size}  fp16_fraction={_ck_cfg.fp16_fraction}")
+        except Exception as _e:
+            _warn(f"[cocktail-kv] Skipped: {_e}")
+
+    if getattr(args, "agile_io", False):
+        try:
+            from squish.agile_io import AgileIOConfig, AgileIOManager
+            _aio_cfg = AgileIOConfig(
+                n_worker_threads=getattr(args, "agile_io_threads", 4),
+                cache_size_mb=getattr(args, "agile_io_cache_mb", 256),
+            )
+            _agile_io_manager = AgileIOManager(_aio_cfg)
+            _info("agile-io", f"async NVMe prefetch  threads={_aio_cfg.n_worker_threads}  "
+                  f"cache={_aio_cfg.cache_size_mb}MB")
+        except Exception as _e:
+            _warn(f"[agile-io] Skipped: {_e}")
+
+    if getattr(args, "milo", False):
+        try:
+            from squish.milo_quant import MiLoConfig, MiLoQuantizer
+            _ml_cfg = MiLoConfig(
+                target_bits=getattr(args, "milo_bits", 3),
+                max_rank=getattr(args, "milo_rank", 16),
+            )
+            _milo_quantizer = MiLoQuantizer(_ml_cfg)
+            _info("milo", f"INT{_ml_cfg.target_bits}+low-rank compensator  "
+                  f"max_rank={_ml_cfg.max_rank}  snr≥{_ml_cfg.snr_threshold_db}dB")
+        except Exception as _e:
+            _warn(f"[milo] Skipped: {_e}")
 
     print()
     _section("")
