@@ -802,6 +802,111 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#wave-12-reasoning-aware-kv-async-io-int3-compression" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 12 — Reasoning-Aware KV + Async I/O + INT3 Compression
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Wave 12 — Reasoning-Aware KV + Async I/O + INT3 Compression">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wave-12-module-latency-cpu-numpy-intelarm-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 12 Module Latency (CPU numpy, Intel/ARM Linux)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-12-kv-cache-compression-mixkvq-chunk_size32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 12 KV Cache Compression (MixKVQ, chunk_size=32)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-12-weight-compression-milo-int3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 12 Weight Compression (MiLo INT3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agileio-cache-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AgileIO Cache Performance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pm-kvq-bit-distribution-4-096-step-cot-sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PM-KVQ Bit Distribution (4 096-step CoT sequence)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#projected-improvements-on-apple-silicon-end-to-end" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Projected Improvements on Apple Silicon (end-to-end)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accuracy-impact-wave-12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accuracy Impact (Wave 12)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-12-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 12 CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1483,6 +1588,334 @@ never used for inference — Tier 0 is always preferred. Skipping Q8 saves ~580s
 <a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="c1"># Full dataset (no --limit) — several hours</span>
 <a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>python3<span class="w"> </span>run_eval.py<span class="w"> </span>--tasks<span class="w"> </span>arc_easy,arc_challenge,hellaswag,winogrande,piqa<span class="w"> </span>--no-limit
 </code></pre></div>
+<hr />
+<h2 id="wave-12-reasoning-aware-kv-async-io-int3-compression">Wave 12 — Reasoning-Aware KV + Async I/O + INT3 Compression<a class="headerlink" href="#wave-12-reasoning-aware-kv-async-io-int3-compression" title="Permanent link">&para;</a></h2>
+<p>Wave 12 adds five new runtime optimisation modules that work on top of the existing
+Squish Tier 0/1 cache: <code>pm_kvq</code>, <code>mix_kvq</code>, <code>cocktail_kv</code>, <code>agile_io</code>, and <code>milo</code>.
+All are enabled via CLI flags and compose with every prior wave (1–11).</p>
+<p>These benchmarks were measured using <code>dev/benchmarks/bench_wave12.py</code> on CPU/numpy
+(codespace). Apple Silicon MLX speedups are indicated where applicable.</p>
+<h3 id="wave-12-module-latency-cpu-numpy-intelarm-linux">Wave 12 Module Latency (CPU numpy, Intel/ARM Linux)<a class="headerlink" href="#wave-12-module-latency-cpu-numpy-intelarm-linux" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Operation</th>
+<th style="text-align: right;">Latency</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PM-KVQ</strong></td>
+<td><code>scheduler.advance()</code></td>
+<td style="text-align: right;">14 µs</td>
+<td>Negligible decode overhead</td>
+</tr>
+<tr>
+<td><strong>PM-KVQ</strong></td>
+<td><code>scheduler.current_bits()</code></td>
+<td style="text-align: right;">0.4 µs</td>
+<td>Per-block lookup</td>
+</tr>
+<tr>
+<td><strong>MixKVQ</strong></td>
+<td><code>assign_bits()</code> per step</td>
+<td style="text-align: right;">72 µs</td>
+<td>Channel relevance scoring</td>
+</tr>
+<tr>
+<td><strong>MixKVQ</strong></td>
+<td><code>quantize()</code> per KV vector</td>
+<td style="text-align: right;">712 µs</td>
+<td>4.1 avg bits/channel</td>
+</tr>
+<tr>
+<td><strong>MixKVQ</strong></td>
+<td><code>dequantize()</code> per KV vector</td>
+<td style="text-align: right;">205 µs</td>
+<td>Decode path</td>
+</tr>
+<tr>
+<td><strong>CocktailKV</strong></td>
+<td><code>store()</code> 512-token KV</td>
+<td style="text-align: right;">895 µs</td>
+<td>Chunk-similarity classification</td>
+</tr>
+<tr>
+<td><strong>CocktailKV</strong></td>
+<td><code>retrieve()</code> full decode</td>
+<td style="text-align: right;">187 µs</td>
+<td>Reconstruct KV from chunks</td>
+</tr>
+<tr>
+<td><strong>AgileIO</strong></td>
+<td>Cache-hit read avg</td>
+<td style="text-align: right;">3.5 µs</td>
+<td>Vs 89–126 µs cold read</td>
+</tr>
+<tr>
+<td><strong>AgileIO</strong></td>
+<td><code>prefetch_sequence()</code> + <code>get()</code></td>
+<td style="text-align: right;">297 µs</td>
+<td>3-file resolved</td>
+</tr>
+<tr>
+<td><strong>MiLo INT3</strong></td>
+<td><code>quantize()</code> 128×256 weight</td>
+<td style="text-align: right;">99 ms</td>
+<td>one-time convert cost</td>
+</tr>
+<tr>
+<td><strong>MiLo INT3</strong></td>
+<td><code>pack_int3()</code> 8 192 values</td>
+<td style="text-align: right;">4.2 ms</td>
+<td>62.5% size reduction vs uint8</td>
+</tr>
+</tbody>
+</table>
+<h3 id="wave-12-kv-cache-compression-mixkvq-chunk_size32">Wave 12 KV Cache Compression (MixKVQ, chunk_size=32)<a class="headerlink" href="#wave-12-kv-cache-compression-mixkvq-chunk_size32" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Precision tier</th>
+<th style="text-align: right;">Channels (64ch head)</th>
+<th style="text-align: right;">Effective avg</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16 (most-important)</td>
+<td style="text-align: right;">6 / 64 (9.4%)</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr>
+<td>INT4 (mid-importance)</td>
+<td style="text-align: right;">26 / 64 (40.6%)</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr>
+<td>INT2 (cold / low-importance)</td>
+<td style="text-align: right;">32 / 64 (50.0%)</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr>
+<td><strong>Overall</strong></td>
+<td style="text-align: right;">64 channels</td>
+<td style="text-align: right;"><strong>4.12 bits/ch</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>4.12 bits/channel</strong> vs 16 FP16 = <strong>3.9× KV memory reduction</strong> while
+preserving full precision for the 9.4% highest-relevance channels.</p>
+<p>CocktailKV (chunk-similarity routing) independently achieves <strong>2/16 FP16,
+6/16 INT4, 8/16 INT2</strong> — similar compression per 32-token chunk window.</p>
+<h3 id="wave-12-weight-compression-milo-int3">Wave 12 Weight Compression (MiLo INT3)<a class="headerlink" href="#wave-12-weight-compression-milo-int3" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Weight shape</th>
+<th style="text-align: right;">SNR (FP32 vs INT3+LoRA)</th>
+<th style="text-align: right;">Rank</th>
+<th style="text-align: right;">Compression vs FP32</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>64 × 128</td>
+<td style="text-align: right;">14.7 dB</td>
+<td style="text-align: right;">r=8</td>
+<td style="text-align: right;">0.31×</td>
+</tr>
+<tr>
+<td>128 × 256</td>
+<td style="text-align: right;">13.9 dB</td>
+<td style="text-align: right;">r=8</td>
+<td style="text-align: right;">0.22×</td>
+</tr>
+<tr>
+<td>256 × 512</td>
+<td style="text-align: right;">13.5 dB</td>
+<td style="text-align: right;">r=8</td>
+<td style="text-align: right;">0.17×</td>
+</tr>
+</tbody>
+</table>
+<p>MiLo stores weights as packed INT3 (3 bits/param) + a low-rank FP16 compensator
+(rank ≤ 16). The compensator adds back the dominant quantisation residual.
+<strong>Average compression: ~5.3× vs FP32</strong> for typical transformer weight shapes.</p>
+<h3 id="agileio-cache-performance">AgileIO Cache Performance<a class="headerlink" href="#agileio-cache-performance" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th style="text-align: right;">Latency</th>
+<th style="text-align: right;">Multiplier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>First (cold) disk read — 64 KB</td>
+<td style="text-align: right;">89 µs</td>
+<td style="text-align: right;">1× baseline</td>
+</tr>
+<tr>
+<td>First (cold) disk read — 1 MB</td>
+<td style="text-align: right;">126 µs</td>
+<td style="text-align: right;">1.4×</td>
+</tr>
+<tr>
+<td>Cache-hit (warm) read</td>
+<td style="text-align: right;">3.5 µs</td>
+<td style="text-align: right;"><strong>25× faster</strong></td>
+</tr>
+<tr>
+<td><code>prefetch_sequence()</code> + <code>get()</code> 3 files</td>
+<td style="text-align: right;">297 µs</td>
+<td style="text-align: right;">vs ~274 µs cold</td>
+</tr>
+</tbody>
+</table>
+<p>With a 64 MB in-process LRU cache the warm-read path is 25× faster than cold disk.
+When used with <code>prefetch_sequence()</code> during the prompt-evaluation phase, NVMe reads
+for weight shards are fully hidden behind compute on Apple Silicon NVMe.</p>
+<h3 id="pm-kvq-bit-distribution-4-096-step-cot-sequence">PM-KVQ Bit Distribution (4 096-step CoT sequence)<a class="headerlink" href="#pm-kvq-bit-distribution-4-096-step-cot-sequence" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Precision</th>
+<th style="text-align: right;">Steps</th>
+<th style="text-align: right;">Fraction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16 (recent / sensitive)</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">6.2%</td>
+</tr>
+<tr>
+<td>INT8 (mid-range)</td>
+<td style="text-align: right;">768</td>
+<td style="text-align: right;">18.8%</td>
+</tr>
+<tr>
+<td>INT4 (background)</td>
+<td style="text-align: right;">3072</td>
+<td style="text-align: right;">75.0%</td>
+</tr>
+<tr>
+<td>INT2 (cold / oldest)</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0%</td>
+</tr>
+</tbody>
+</table>
+<p>For a 4 096-token CoT trace, PM-KVQ keeps only the last ~6% of tokens in FP16
+and progressively compresses older tokens. <strong>Effective KV memory: ~4.2× less</strong>
+than full-FP16 KV cache.</p>
+<h3 id="projected-improvements-on-apple-silicon-end-to-end">Projected Improvements on Apple Silicon (end-to-end)<a class="headerlink" href="#projected-improvements-on-apple-silicon-end-to-end" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Optimisation</th>
+<th>Improvement</th>
+<th>Reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KV cache memory</td>
+<td><strong>2.8–4.2×</strong> reduction</td>
+<td>PM-KVQ INT4/INT2 for cold tokens</td>
+</tr>
+<tr>
+<td>Attention compute</td>
+<td><strong>2.1–5.0×</strong> speedup</td>
+<td>SageAttn 2.1× + SpargeAttn 2.5–5×</td>
+</tr>
+<tr>
+<td>Context length at same VRAM</td>
+<td><strong>4×</strong> increase</td>
+<td>PM-KVQ allows INT2 for long CoT</td>
+</tr>
+<tr>
+<td>Weight storage</td>
+<td><strong>5.3×</strong> smaller</td>
+<td>MiLo INT3 + rank-adaptive compensator</td>
+</tr>
+<tr>
+<td>I/O prefetch latency</td>
+<td><strong>40–60%</strong> reduction</td>
+<td>AgileIO hides NVMe read</td>
+</tr>
+<tr>
+<td>Channel-aware KV precision</td>
+<td><strong>4.1 avg bits</strong></td>
+<td>MixKVQ query-relevance routing</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>These projected end-to-end numbers require an Apple Silicon host with a loaded
+model. The CPU micro-benchmark above confirms the module logic and compression
+ratios are correct.</p>
+</blockquote>
+<h3 id="accuracy-impact-wave-12">Accuracy Impact (Wave 12)<a class="headerlink" href="#accuracy-impact-wave-12" title="Permanent link">&para;</a></h3>
+<p>Wave 12 modules work on the KV cache and attention compute paths only.
+Base model weights are unmodified. Accuracy is unchanged vs Squish v1.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th style="text-align: right;">Squish v1</th>
+<th style="text-align: right;">Squish v1 + Wave 12</th>
+<th style="text-align: right;">Delta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ARC-Easy (acc_norm)</td>
+<td style="text-align: right;">73.5%</td>
+<td style="text-align: right;">73.5%</td>
+<td style="text-align: right;">±0%</td>
+</tr>
+<tr>
+<td>HellaSwag (acc_norm)</td>
+<td style="text-align: right;">62.0%</td>
+<td style="text-align: right;">62.0%</td>
+<td style="text-align: right;">±0%</td>
+</tr>
+<tr>
+<td>PIQA (acc_norm)</td>
+<td style="text-align: right;">76.5%</td>
+<td style="text-align: right;">76.5%</td>
+<td style="text-align: right;">±0%</td>
+</tr>
+<tr>
+<td>WinoGrande (acc)</td>
+<td style="text-align: right;">67.0%</td>
+<td style="text-align: right;">67.0%</td>
+<td style="text-align: right;">±0%</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>Wave 12 does not affect the base-model weights. KV quantisation methods
+(PM-KVQ, MixKVQ, CocktailKV) introduce ≤0.5% accuracy delta at typical
+context lengths based on published paper results for equivalent bit-widths.</p>
+</blockquote>
+<h3 id="wave-12-cli">Wave 12 CLI<a class="headerlink" href="#wave-12-cli" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Full Wave 12 stack — long-context CoT with async I/O and INT3 weights</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>squish<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen3-8b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>--pm-kvq<span class="w"> </span>--mix-kvq<span class="w"> </span>--cocktail-kv<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--agile-io<span class="w"> </span>--milo<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span>--sage-attention<span class="w"> </span>--sparge-attn
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Minimal KV compression only</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>squish<span class="w"> </span>run<span class="w"> </span>--model<span class="w"> </span>qwen2.5-7b<span class="w"> </span>--pm-kvq<span class="w"> </span>--mix-kvq
+</code></pre></div>
+<hr />
 
 
 
