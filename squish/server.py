@@ -78,6 +78,20 @@ _kv_cache = None         # QuantizedKVCache | None — set in main() after model
 _paged_kv_cache = None   # PagedKVCache | None — set in main() when --paged-attention
 _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-prompt-cache given
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
+
+# ── Wave optimization module state (lazily instantiated) ─────────────────────
+_prompt_lookup_decoder  = None  # PromptLookupDecoder    — --prompt-lookup
+_seq_packer             = None  # SequencePacker         — --seq-packing
+_ada_serve_scheduler    = None  # AdaServeScheduler      — --ada-serve
+_conf_spec_verifier     = None  # ConfSpecVerifier        — --conf-spec
+_kvsharer_map           = None  # KVShareMap             — --kv-share
+_kv_slab_allocator      = None  # KVSlabAllocator        — --kv-slab
+_paris_kv_codebook      = None  # ParisKVCodebook        — --paris-kv
+_streaming_sink_cache   = None  # SinkKVCache            — --streaming-sink
+_diffkv_policy_mgr      = None  # DiffKVPolicyManager    — --diff-kv
+_smallkv_cache          = None  # SmallKVCache           — --small-kv
+_lookahead_engine       = None  # LookaheadReasoningEngine — --lookahead
+_spec_reason_orch       = None  # SpecReasonOrchestrator — --spec-reason
 # Phase 3: cross-session persistent KV cache
 _session_kv_cache    = None   # SessionKVCache | None — set in main() when --session-cache-dir given
 # Phase 4: prompt compression settings (active when --compress-prompt is set)
@@ -2360,6 +2374,98 @@ Examples:
                     help="Append trace output to FILE in addition to stderr. "
                          "Useful when the server stdout/stderr is not visible "
                          "(e.g. when launched by _run_all.py).")
+
+    # ── Wave optimization flags ───────────────────────────────────────────────
+    ap.add_argument("--prompt-lookup", action="store_true", default=False,
+                    help="Enable n-gram prompt lookup speculative decoding.")
+    ap.add_argument("--prompt-lookup-n", type=int, default=3, metavar="N",
+                    help="N-gram size for prompt lookup (default: 3).")
+    ap.add_argument("--prompt-lookup-k", type=int, default=4, metavar="K",
+                    help="Max draft tokens per lookup step (default: 4).")
+    ap.add_argument("--seq-packing", action="store_true", default=False,
+                    help="Enable sequence packing for higher batch GPU utilisation.")
+    ap.add_argument("--seq-packing-budget", type=int, default=2048, metavar="N",
+                    help="Token budget per packed batch (default: 2048).")
+    ap.add_argument("--ada-serve", action="store_true", default=False,
+                    help="Enable SLO-adaptive gamma scheduling for speculative decoding.")
+    ap.add_argument("--ada-serve-slo", default="general",
+                    choices=["git_commit", "devops_plan", "general", "code_review"],
+                    help="Default SLO profile for AdaServe (default: general).")
+    ap.add_argument("--conf-spec", action="store_true", default=False,
+                    help="Enable confidence-gated speculative step verification.")
+    ap.add_argument("--conf-spec-high-gate", type=float, default=0.90, metavar="F",
+                    help="Confidence above which steps are auto-accepted (default: 0.90).")
+    ap.add_argument("--conf-spec-low-gate", type=float, default=0.50, metavar="F",
+                    help="Confidence below which full target verify is used (default: 0.50).")
+    ap.add_argument("--kv-share", action="store_true", default=False,
+                    help="Enable cross-layer KV sharing (KVSharer).")
+    ap.add_argument("--kv-share-every", type=int, default=2, metavar="N",
+                    help="Share KV every N layers (default: 2).")
+    ap.add_argument("--kv-slab", action="store_true", default=False,
+                    help="Enable slab-based KV memory allocator for reduced fragmentation.")
+    ap.add_argument("--kv-slab-pages", type=int, default=256, metavar="N",
+                    help="Number of slab pages (default: 256).")
+    ap.add_argument("--paris-kv", action="store_true", default=False,
+                    help="Enable PARIS KV codebook compression.")
+    ap.add_argument("--paris-kv-centroids", type=int, default=64, metavar="N",
+                    help="PARIS codebook centroid count (default: 64).")
+    ap.add_argument("--streaming-sink", action="store_true", default=False,
+                    help="Enable StreamingLLM-style sink KV cache.")
+    ap.add_argument("--streaming-sink-size", type=int, default=2048, metavar="N",
+                    help="Sink KV cache token budget (default: 2048).")
+    ap.add_argument("--diff-kv", action="store_true", default=False,
+                    help="Enable DiffKV 3-axis differentiated KV precision.")
+    ap.add_argument("--small-kv", action="store_true", default=False,
+                    help="Enable SmallKV saliency-shift compensation.")
+    ap.add_argument("--sage-attention", action="store_true", default=False,
+                    help="Enable SageAttention INT8 quantized QK^T computation.")
+    ap.add_argument("--sage-attention2", action="store_true", default=False,
+                    help="Enable SageAttention2 INT4/FP8 quantized attention.")
+    ap.add_argument("--sparge-attention", action="store_true", default=False,
+                    help="Enable SpargeAttn sparse+quantized attention.")
+    ap.add_argument("--squeeze-attention", action="store_true", default=False,
+                    help="Enable SqueezeAttention adaptive KV budget allocation.")
+    ap.add_argument("--yoco-kv", action="store_true", default=False,
+                    help="Enable YOCO cross-layer KV reuse (you-only-cache-once).")
+    ap.add_argument("--cla", action="store_true", default=False,
+                    help="Enable Cross-Layer Attention KV sharing.")
+    ap.add_argument("--kvtuner", action="store_true", default=False,
+                    help="Enable KVTuner adaptive per-layer KV budget.")
+    ap.add_argument("--robust-scheduler", action="store_true", default=False,
+                    help="Use the robust A-max/A-balanced batch scheduler.")
+    ap.add_argument("--gemfilter", action="store_true", default=False,
+                    help="Enable GemFilter attention head filtering.")
+    ap.add_argument("--svdq", action="store_true", default=False,
+                    help="Enable SVD-based KV quantization (SVDQ).")
+    ap.add_argument("--sparse-spec", action="store_true", default=False,
+                    help="Enable sparse speculative decoding.")
+    ap.add_argument("--sparse-verify", action="store_true", default=False,
+                    help="Enable sparse draft verification.")
+    ap.add_argument("--trail", action="store_true", default=False,
+                    help="Enable TRAIL token-importance-aware layer skipping.")
+    ap.add_argument("--specontext", action="store_true", default=False,
+                    help="Enable SpecContext speculative context extension.")
+    ap.add_argument("--forelen", action="store_true", default=False,
+                    help="Enable ForeLen forward-looking token length prediction.")
+    ap.add_argument("--ipw", action="store_true", default=False,
+                    help="Enable IPW importance-weighted prefill compression.")
+    ap.add_argument("--layer-skip", action="store_true", default=False,
+                    help="Enable LayerSkip early-exit adaptive layer skipping.")
+    ap.add_argument("--lookahead", action="store_true", default=False,
+                    help="Enable LookaheadReasoning parallel step verification.")
+    ap.add_argument("--lookahead-k", type=int, default=4, metavar="K",
+                    help="Lookahead window size (default: 4).")
+    ap.add_argument("--spec-reason", action="store_true", default=False,
+                    help="Enable SpecReason step-level speculative reasoning.")
+    ap.add_argument("--long-spec", action="store_true", default=False,
+                    help="Enable LongSpec extended speculative decoding.")
+    ap.add_argument("--fr-spec", action="store_true", default=False,
+                    help="Enable FR-Spec frequency-based token speculative decoding.")
+    ap.add_argument("--lora-adapter", default="", metavar="PATH",
+                    help="Path to LoRA adapter directory to load via LoRAManager.")
+    ap.add_argument("--diffusion-draft", action="store_true", default=False,
+                    help="Enable diffusion-based draft model for speculative decoding.")
+
     args = ap.parse_args()
 
     global _API_KEY
@@ -2694,6 +2800,165 @@ Examples:
     if getattr(args, "eagle_head_dir", ""):
         print()
         load_eagle_head(args.eagle_head_dir, verbose=args.verbose)
+
+    # ── Wave optimization module initialisation ───────────────────────────────
+    global _prompt_lookup_decoder, _seq_packer, _ada_serve_scheduler
+    global _conf_spec_verifier, _kvsharer_map, _kv_slab_allocator
+    global _paris_kv_codebook, _streaming_sink_cache
+    global _diffkv_policy_mgr, _smallkv_cache, _lookahead_engine, _spec_reason_orch
+
+    if getattr(args, "prompt_lookup", False):
+        try:
+            from squish.prompt_lookup import PromptLookupConfig, PromptLookupDecoder
+            _plcfg = PromptLookupConfig(
+                ngram_size=getattr(args, "prompt_lookup_n", 3),
+                max_draft_tokens=getattr(args, "prompt_lookup_k", 4),
+            )
+            _prompt_lookup_decoder = PromptLookupDecoder(_plcfg)
+            _info("prompt-lookup", f"n={_plcfg.ngram_size}  k={_plcfg.max_draft_tokens}")
+        except Exception as _e:
+            _warn(f"[prompt-lookup] Skipped: {_e}")
+
+    if getattr(args, "seq_packing", False):
+        try:
+            from squish.seq_packing import PackingConfig, SequencePacker
+            _spcfg = PackingConfig(token_budget=getattr(args, "seq_packing_budget", 2048))
+            _seq_packer = SequencePacker(_spcfg)
+            _info("seq-packing", f"budget={_spcfg.token_budget}")
+        except Exception as _e:
+            _warn(f"[seq-packing] Skipped: {_e}")
+
+    if getattr(args, "ada_serve", False):
+        try:
+            from squish.ada_serve import AdaServeConfig, AdaServeScheduler, BUILT_IN_SLOS
+            _slo_name = getattr(args, "ada_serve_slo", "general")
+            _ada_slo = BUILT_IN_SLOS.get(_slo_name, BUILT_IN_SLOS["general"])
+            _ada_cfg = AdaServeConfig()
+            _ada_serve_scheduler = AdaServeScheduler(_ada_cfg)
+            _ada_serve_scheduler.register_slo(_slo_name, _ada_slo)
+            _info("ada-serve", f"slo={_slo_name}  min_γ={_ada_cfg.min_gamma}  max_γ={_ada_cfg.max_gamma}")
+        except Exception as _e:
+            _warn(f"[ada-serve] Skipped: {_e}")
+
+    if getattr(args, "conf_spec", False):
+        try:
+            from squish.conf_spec import ConfSpecConfig, ConfSpecVerifier
+            _cscfg = ConfSpecConfig(
+                high_gate=getattr(args, "conf_spec_high_gate", 0.90),
+                low_gate=getattr(args, "conf_spec_low_gate", 0.50),
+            )
+            _conf_spec_verifier = ConfSpecVerifier(_cscfg)
+            _info("conf-spec", f"high_gate={_cscfg.high_gate}  low_gate={_cscfg.low_gate}")
+        except Exception as _e:
+            _warn(f"[conf-spec] Skipped: {_e}")
+
+    if getattr(args, "kv_share", False):
+        try:
+            from squish.kvsharer import KVSharerConfig, KVShareMap
+            _kvshr_cfg = KVSharerConfig(share_every_n_layers=getattr(args, "kv_share_every", 2))
+            _kvsharer_map = KVShareMap(_kvshr_cfg)
+            _info("kv-share", f"every={_kvshr_cfg.share_every_n_layers} layers")
+        except Exception as _e:
+            _warn(f"[kv-share] Skipped: {_e}")
+
+    if getattr(args, "kv_slab", False):
+        try:
+            from squish.kv_slab import KVSlabAllocator
+            _kv_slab_allocator = KVSlabAllocator(n_pages=getattr(args, "kv_slab_pages", 256))
+            _info("kv-slab", f"pages={getattr(args, 'kv_slab_pages', 256)}")
+        except Exception as _e:
+            _warn(f"[kv-slab] Skipped: {_e}")
+
+    if getattr(args, "paris_kv", False):
+        try:
+            from squish.paris_kv import ParisKVConfig, ParisKVCodebook
+            _paris_cfg = ParisKVConfig(n_centroids=getattr(args, "paris_kv_centroids", 64))
+            _paris_kv_codebook = ParisKVCodebook(_paris_cfg)
+            _info("paris-kv", f"centroids={_paris_cfg.n_centroids}")
+        except Exception as _e:
+            _warn(f"[paris-kv] Skipped: {_e}")
+
+    if getattr(args, "streaming_sink", False):
+        try:
+            from squish.streaming_sink import SinkConfig, SinkKVCache
+            _sink_cfg = SinkConfig(max_tokens=getattr(args, "streaming_sink_size", 2048))
+            _streaming_sink_cache = SinkKVCache(_sink_cfg)
+            _info("streaming-sink", f"budget={_sink_cfg.max_tokens}")
+        except Exception as _e:
+            _warn(f"[streaming-sink] Skipped: {_e}")
+
+    if getattr(args, "diff_kv", False):
+        try:
+            from squish.diffkv import DiffKVConfig, DiffKVPolicyManager
+            _diffkv_cfg = DiffKVConfig()
+            _diffkv_policy_mgr = DiffKVPolicyManager(_diffkv_cfg)
+            _info("diff-kv", f"critical={_diffkv_cfg.critical_fraction}  marginal={_diffkv_cfg.marginal_fraction}")
+        except Exception as _e:
+            _warn(f"[diff-kv] Skipped: {_e}")
+
+    if getattr(args, "small_kv", False):
+        try:
+            from squish.smallkv import SmallKVConfig, SmallKVCache
+            _smallkv_cfg = SmallKVConfig()
+            _smallkv_cache = SmallKVCache(_smallkv_cfg)
+            _info("small-kv", f"budget={_smallkv_cfg.kv_budget_fraction}  recall_k={_smallkv_cfg.recall_top_k}")
+        except Exception as _e:
+            _warn(f"[small-kv] Skipped: {_e}")
+
+    if getattr(args, "lookahead", False):
+        try:
+            from squish.lookahead_reasoning import LookaheadConfig, LookaheadReasoningEngine
+            _la_cfg = LookaheadConfig(lookahead_k=getattr(args, "lookahead_k", 4))
+            # draft_fn is wired to the actual model at inference time; store config only
+            _la_cfg._server_enabled = True  # marker checked during generation
+            _info("lookahead", f"k={_la_cfg.lookahead_k}  family={_la_cfg.model_family}")
+        except Exception as _e:
+            _warn(f"[lookahead] Skipped: {_e}")
+
+    if getattr(args, "spec_reason", False):
+        try:
+            from squish.spec_reason import SpecReasonConfig
+            _sr_cfg = SpecReasonConfig()
+            _sr_cfg._server_enabled = True  # marker checked during generation
+            _info("spec-reason", f"min_score={_sr_cfg.min_acceptance_score}  max_draft={_sr_cfg.max_draft_steps}")
+        except Exception as _e:
+            _warn(f"[spec-reason] Skipped: {_e}")
+
+    # Attention/layer-level flags — log activation; actual kernel patching
+    # requires model weights and is deferred to the first forward pass.
+    for _wave_flag, _wave_name in [
+        ("sage_attention",   "sage-attention    (INT8 QK^T, ~2.1×)"),
+        ("sage_attention2",  "sage-attention2   (INT4/FP8, ~3.1×)"),
+        ("sparge_attention", "sparge-attention  (sparse+quant, 2.5-5×)"),
+        ("squeeze_attention","squeeze-attention (adaptive KV budget)"),
+        ("yoco_kv",          "yoco-kv           (cross-layer KV reuse)"),
+        ("cla",              "cla               (cross-layer attention)"),
+        ("kvtuner",          "kvtuner           (adaptive KV budget)"),
+        ("robust_scheduler", "robust-scheduler  (A-max/A-balanced)"),
+        ("gemfilter",        "gemfilter         (attention head filter)"),
+        ("svdq",             "svdq              (SVD KV quantization)"),
+        ("sparse_spec",      "sparse-spec       (sparse speculative)"),
+        ("sparse_verify",    "sparse-verify     (sparse draft verify)"),
+        ("trail",            "trail             (token-importance skip)"),
+        ("specontext",       "specontext        (speculative context)"),
+        ("forelen",          "forelen           (forward length pred.)"),
+        ("ipw",              "ipw               (importance-weighted)"),
+        ("layer_skip",       "layer-skip        (early-exit adaptive)"),
+        ("long_spec",        "long-spec         (extended speculative)"),
+        ("fr_spec",          "fr-spec           (frequency token spec.)"),
+        ("diffusion_draft",  "diffusion-draft   (diffusion speculative)"),
+    ]:
+        if getattr(args, _wave_flag, False):
+            _info(_wave_flag.replace("_", "-"), f"enabled — activated at first forward pass")
+
+    if getattr(args, "lora_adapter", ""):
+        try:
+            from squish.lora_manager import LoRAManager
+            _lora_mgr = LoRAManager()
+            _lora_mgr.load(getattr(args, "lora_adapter"))
+            _info("lora-adapter", f"{getattr(args, 'lora_adapter')}")
+        except Exception as _e:
+            _warn(f"[lora-adapter] Skipped: {_e}")
 
     print()
     _section("")

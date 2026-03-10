@@ -521,6 +521,158 @@ from squish.squeeze_attention import (  # noqa: F401
     SqueezeStats,
 )
 
+# Tenth Wave — SageAttention
+try:
+    from .sage_attention import (  # noqa: F401
+        SageAttentionConfig, KSmoother, SageAttentionStats, SageAttentionKernel,
+    )
+except (ImportError, OSError):
+    pass
+
+# Tenth Wave — SageAttention2
+try:
+    from .sage_attention2 import (  # noqa: F401
+        SageAttention2Config, WarpQuantResult, SageAttention2Stats, SageAttention2Kernel,
+    )
+except (ImportError, OSError):
+    pass
+
+# Tenth Wave — SpargeAttn
+try:
+    from .sparge_attn import (  # noqa: F401
+        SpargeAttnConfig, BlockMask, SpargeAttnStats, SpargeAttnEngine,
+    )
+except (ImportError, OSError):
+    pass
+
+# Tenth Wave — DiffKV
+try:
+    from .diffkv import (  # noqa: F401
+        DiffKVConfig, HeadSparsityProfile, TokenImportanceTier, DiffKVPolicy,
+        DiffKVPolicyManager, CompactedKVSlot, DiffKVStats,
+    )
+except (ImportError, OSError):
+    pass
+
+# Tenth Wave — SmallKV
+try:
+    from .smallkv import (  # noqa: F401
+        SmallKVConfig, SaliencyTracker, MarginalVCache, SmallKVCache, SmallKVStats,
+    )
+except (ImportError, OSError):
+    pass
+
+# Tenth Wave — SpecReason
+try:
+    from .spec_reason import (  # noqa: F401
+        ReasoningStep, SpecReasonConfig, SpecReasonStats, SpecReasonOrchestrator, StepVerdict,
+    )
+except (ImportError, OSError):
+    pass
+
+# Tenth Wave — LookaheadReasoning
+try:
+    from .lookahead_reasoning import (  # noqa: F401
+        LookaheadConfig, LookaheadStep, LookaheadBatch, LookaheadStats,
+        LookaheadReasoningEngine,
+    )
+except (ImportError, OSError):
+    pass
+
+# Tenth Wave — AdaServe
+try:
+    from .ada_serve import (  # noqa: F401
+        SLOTarget, AdaServeConfig, AdaServeRequest, AdaServeStats, AdaServeScheduler,
+    )
+except (ImportError, OSError):
+    pass
+
+# Tenth Wave — ConfSpec
+try:
+    from .conf_spec import (  # noqa: F401
+        ConfSpecConfig, ConfSpecDecision, ConfSpecStats, ConfSpecVerifier,
+    )
+except (ImportError, OSError):
+    pass
+
+# Tier C — previously missing from __all__
+
+# Tier C — paged_attention and radix_cache (server imports directly; add to __all__)
+try:
+    from .paged_attention import (  # noqa: F401
+        PagedKVCache, PageBlockTable, BlockAllocator,
+    )
+except (ImportError, OSError):
+    pass
+
+try:
+    from .radix_cache import (  # noqa: F401
+        RadixTree, RadixNode,
+    )
+except (ImportError, OSError):
+    pass
+
+try:
+    from .layer_skip import (  # noqa: F401
+        EarlyExitConfig, EarlyExitDecoder, EarlyExitStats, ConfidenceEstimator,
+    )
+except (ImportError, OSError):
+    pass
+
+try:
+    from .diffusion_draft import DiffusionDraftModel  # noqa: F401
+except (ImportError, OSError):
+    pass
+
+try:
+    from .fr_spec import (  # noqa: F401
+        FRSpecConfig, FreqTokenSubset, FRSpecHead, FRSpecCalibrator, FRSpecStats,
+    )
+except (ImportError, OSError):
+    pass
+
+try:
+    from .kv_slab import (  # noqa: F401
+        KVPage, KVSlabAllocator,
+    )
+except (ImportError, OSError):
+    pass
+
+try:
+    from .lora_manager import (  # noqa: F401
+        LoRAManager, DareTiesConfig, DareTiesMerger,
+    )
+except (ImportError, OSError):
+    pass
+
+try:
+    from .paris_kv import (  # noqa: F401
+        ParisKVConfig, ParisKVCodebook,
+    )
+except (ImportError, OSError):
+    pass
+
+try:
+    from .prompt_lookup import (  # noqa: F401
+        PromptLookupConfig, NGramIndex, PromptLookupStats, PromptLookupDecoder,
+    )
+except (ImportError, OSError):
+    pass
+
+try:
+    from .seq_packing import (  # noqa: F401
+        PackingConfig, PackedBatch, SequencePacker, PackingStats,
+    )
+except (ImportError, OSError):
+    pass
+
+try:
+    from .streaming_sink import (  # noqa: F401
+        SinkConfig, SinkKVCache, SinkStats,
+    )
+except (ImportError, OSError):
+    pass
+
 __version__ = "1.0.0"
 __all__ = [
     "load_compressed_model",
@@ -732,6 +884,41 @@ __all__ = [
     "BudgetAllocator",
     "SqueezeKVCache",
     "SqueezeStats",
+    # Tenth Wave — SageAttention
+    "SageAttentionConfig", "KSmoother", "SageAttentionStats", "SageAttentionKernel",
+    # Tenth Wave — SageAttention2
+    "SageAttention2Config", "WarpQuantResult", "SageAttention2Stats", "SageAttention2Kernel",
+    # Tenth Wave — SpargeAttn
+    "SpargeAttnConfig", "BlockMask", "SpargeAttnStats", "SpargeAttnEngine",
+    # Tenth Wave — DiffKV
+    "DiffKVConfig", "HeadSparsityProfile", "TokenImportanceTier", "DiffKVPolicy",
+    "DiffKVPolicyManager", "CompactedKVSlot", "DiffKVStats",
+    # Tenth Wave — SmallKV
+    "SmallKVConfig", "SaliencyTracker", "MarginalVCache", "SmallKVCache", "SmallKVStats",
+    # Tenth Wave — SpecReason
+    "ReasoningStep", "SpecReasonConfig", "SpecReasonStats", "SpecReasonOrchestrator",
+    "StepVerdict",
+    # Tenth Wave — LookaheadReasoning
+    "LookaheadConfig", "LookaheadStep", "LookaheadBatch", "LookaheadStats",
+    "LookaheadReasoningEngine",
+    # Tenth Wave — AdaServe
+    "SLOTarget", "AdaServeConfig", "AdaServeRequest", "AdaServeStats", "AdaServeScheduler",
+    # Tenth Wave — ConfSpec
+    "ConfSpecConfig", "ConfSpecDecision", "ConfSpecStats", "ConfSpecVerifier",
+    # Tier C — paged_attention, radix_cache, layer_skip
+    "PagedKVCache", "PageBlockTable", "BlockAllocator",
+    "RadixTree", "RadixNode",
+    "EarlyExitConfig", "EarlyExitDecoder", "EarlyExitStats", "ConfidenceEstimator",
+    # Tier C — diffusion_draft, fr_spec, kv_slab, lora_manager, paris_kv,
+    #           prompt_lookup, seq_packing, streaming_sink
+    "DiffusionDraftModel",
+    "FRSpecConfig", "FreqTokenSubset", "FRSpecHead", "FRSpecCalibrator", "FRSpecStats",
+    "KVPage", "KVSlabAllocator",
+    "LoRAManager", "DareTiesConfig", "DareTiesMerger",
+    "ParisKVConfig", "ParisKVCodebook",
+    "PromptLookupConfig", "NGramIndex", "PromptLookupStats", "PromptLookupDecoder",
+    "PackingConfig", "PackedBatch", "SequencePacker", "PackingStats",
+    "SinkConfig", "SinkKVCache", "SinkStats",
     # Phase 2.1 — BatchScheduler  (import: from squish.scheduler import BatchScheduler)
     # Phase 2.2 — Tool calling    (import: from squish.tool_calling import ...)
     # Phase 2.2 — Ollama compat   (import: from squish.ollama_compat import mount_ollama)
