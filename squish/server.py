@@ -92,6 +92,26 @@ _diffkv_policy_mgr      = None  # DiffKVPolicyManager    — --diff-kv
 _smallkv_cache          = None  # SmallKVCache           — --small-kv
 _lookahead_engine       = None  # LookaheadReasoningEngine — --lookahead
 _spec_reason_orch       = None  # SpecReasonOrchestrator — --spec-reason
+_sage_attn_kernel       = None  # SageAttentionKernel     — --sage-attention
+_sage_attn2_kernel      = None  # SageAttention2Kernel    — --sage-attention2
+_sparge_engine          = None  # SpargeAttnEngine        — --sparge-attention
+_squeeze_cache          = None  # SqueezeKVCache          — --squeeze-attention
+_yoco_config            = None  # YOCOConfig              — --yoco-kv
+_cla_config             = None  # CLAConfig               — --cla
+_kvtuner_config         = None  # KVTunerConfig           — --kvtuner
+_robust_sched           = None  # AMaxScheduler           — --robust-scheduler
+_gemfilter_config       = None  # GemFilterConfig         — --gemfilter
+_svdq_config            = None  # SVDqConfig              — --svdq
+_sparse_spec_config     = None  # SparseSpecConfig        — --sparse-spec
+_sparse_verify_config   = None  # SparseVerifyConfig      — --sparse-verify
+_trail_config           = None  # TrailConfig             — --trail
+_specontext_config      = None  # SpeContextConfig        — --specontext
+_forelen_config         = None  # ForelenConfig           — --forelen
+_ipw_config             = None  # IPWConfig               — --ipw
+_layer_skip_config      = None  # EarlyExitConfig         — --layer-skip
+_long_spec_config       = None  # LongSpecConfig          — --long-spec
+_fr_spec_config         = None  # FRSpecConfig            — --fr-spec
+_diffusion_draft_model  = None  # DiffusionDraftModel     — --diffusion-draft
 # Phase 3: cross-session persistent KV cache
 _session_kv_cache    = None   # SessionKVCache | None — set in main() when --session-cache-dir given
 # Phase 4: prompt compression settings (active when --compress-prompt is set)
@@ -2463,10 +2483,42 @@ Examples:
                     help="Enable FR-Spec frequency-based token speculative decoding.")
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
-    ap.add_argument("--diffusion-draft", action="store_true", default=False,
-                    help="Enable diffusion-based draft model for speculative decoding.")
+    ap.add_argument("--diffusion-draft", default="", metavar="PATH",
+                    help="Path to a diffusion-based draft model directory for speculative decoding.")
+    ap.add_argument(
+        "--all-optimizations", action="store_true", default=False,
+        help=(
+            "Enable ALL built-in optimization modules at once. "
+            "Activates every attention kernel, KV cache strategy, speculative "
+            "decoding variant, and adaptive-layer technique. Equivalent to "
+            "passing every --sage-attention, --sparge-attention, --yoco-kv, "
+            "--squeeze-attention, --kvtuner, --robust-scheduler, --gemfilter, "
+            "--svdq, --sparse-spec, --sparse-verify, --trail, --specontext, "
+            "--forelen, --ipw, --layer-skip, --long-spec, --fr-spec, --cla, "
+            "--prompt-lookup, --seq-packing, --conf-spec, --kv-share, --kv-slab, "
+            "--paris-kv, --streaming-sink, --diff-kv, --small-kv, --lookahead, "
+            "--spec-reason flags simultaneously. "
+            "Useful for local testing. Modules that fail to init are skipped."
+        ),
+    )
 
     args = ap.parse_args()
+
+    # ── Expand --all-optimizations into individual flags ─────────────────────
+    if getattr(args, "all_optimizations", False):
+        _bool_wave_flags = [
+            "sage_attention", "sage_attention2", "sparge_attention",
+            "squeeze_attention", "yoco_kv", "cla", "kvtuner",
+            "robust_scheduler", "gemfilter", "svdq",
+            "sparse_spec", "sparse_verify", "trail", "specontext",
+            "forelen", "ipw", "layer_skip", "long_spec", "fr_spec",
+            "prompt_lookup", "seq_packing", "ada_serve", "conf_spec",
+            "kv_share", "kv_slab", "paris_kv", "streaming_sink",
+            "diff_kv", "small_kv", "lookahead", "spec_reason",
+        ]
+        for _f in _bool_wave_flags:
+            if not getattr(args, _f, False):
+                setattr(args, _f, True)
 
     global _API_KEY
     # Prefer explicit CLI flag; fall back to SQUISH_API_KEY env var.
@@ -2806,25 +2858,33 @@ Examples:
     global _conf_spec_verifier, _kvsharer_map, _kv_slab_allocator
     global _paris_kv_codebook, _streaming_sink_cache
     global _diffkv_policy_mgr, _smallkv_cache, _lookahead_engine, _spec_reason_orch
+    global _sage_attn_kernel, _sage_attn2_kernel, _sparge_engine, _squeeze_cache
+    global _yoco_config, _cla_config, _kvtuner_config, _robust_sched
+    global _gemfilter_config, _svdq_config, _sparse_spec_config, _sparse_verify_config
+    global _trail_config, _specontext_config, _forelen_config, _ipw_config
+    global _layer_skip_config, _long_spec_config, _fr_spec_config, _diffusion_draft_model
 
     if getattr(args, "prompt_lookup", False):
         try:
             from squish.prompt_lookup import PromptLookupConfig, PromptLookupDecoder
             _plcfg = PromptLookupConfig(
-                ngram_size=getattr(args, "prompt_lookup_n", 3),
-                max_draft_tokens=getattr(args, "prompt_lookup_k", 4),
+                ngram_min=2,
+                ngram_max=getattr(args, "prompt_lookup_n", 3),
+                max_speculative=getattr(args, "prompt_lookup_k", 4),
             )
-            _prompt_lookup_decoder = PromptLookupDecoder(_plcfg)
-            _info("prompt-lookup", f"n={_plcfg.ngram_size}  k={_plcfg.max_draft_tokens}")
+            # PromptLookupDecoder needs the forward callable; defer full init to inference.
+            # Store config now; decoder is instantiated on first generation call.
+            _prompt_lookup_decoder = _plcfg  # type: ignore[assignment]
+            _info("prompt-lookup", f"ngram_max={_plcfg.ngram_max}  max_speculative={_plcfg.max_speculative}")
         except Exception as _e:
             _warn(f"[prompt-lookup] Skipped: {_e}")
 
     if getattr(args, "seq_packing", False):
         try:
             from squish.seq_packing import PackingConfig, SequencePacker
-            _spcfg = PackingConfig(token_budget=getattr(args, "seq_packing_budget", 2048))
+            _spcfg = PackingConfig(max_packed_length=getattr(args, "seq_packing_budget", 2048))
             _seq_packer = SequencePacker(_spcfg)
-            _info("seq-packing", f"budget={_spcfg.token_budget}")
+            _info("seq-packing", f"max_packed_length={_spcfg.max_packed_length}")
         except Exception as _e:
             _warn(f"[seq-packing] Skipped: {_e}")
 
@@ -2924,32 +2984,190 @@ Examples:
         except Exception as _e:
             _warn(f"[spec-reason] Skipped: {_e}")
 
-    # Attention/layer-level flags — log activation; actual kernel patching
-    # requires model weights and is deferred to the first forward pass.
-    for _wave_flag, _wave_name in [
-        ("sage_attention",   "sage-attention    (INT8 QK^T, ~2.1×)"),
-        ("sage_attention2",  "sage-attention2   (INT4/FP8, ~3.1×)"),
-        ("sparge_attention", "sparge-attention  (sparse+quant, 2.5-5×)"),
-        ("squeeze_attention","squeeze-attention (adaptive KV budget)"),
-        ("yoco_kv",          "yoco-kv           (cross-layer KV reuse)"),
-        ("cla",              "cla               (cross-layer attention)"),
-        ("kvtuner",          "kvtuner           (adaptive KV budget)"),
-        ("robust_scheduler", "robust-scheduler  (A-max/A-balanced)"),
-        ("gemfilter",        "gemfilter         (attention head filter)"),
-        ("svdq",             "svdq              (SVD KV quantization)"),
-        ("sparse_spec",      "sparse-spec       (sparse speculative)"),
-        ("sparse_verify",    "sparse-verify     (sparse draft verify)"),
-        ("trail",            "trail             (token-importance skip)"),
-        ("specontext",       "specontext        (speculative context)"),
-        ("forelen",          "forelen           (forward length pred.)"),
-        ("ipw",              "ipw               (importance-weighted)"),
-        ("layer_skip",       "layer-skip        (early-exit adaptive)"),
-        ("long_spec",        "long-spec         (extended speculative)"),
-        ("fr_spec",          "fr-spec           (frequency token spec.)"),
-        ("diffusion_draft",  "diffusion-draft   (diffusion speculative)"),
-    ]:
-        if getattr(args, _wave_flag, False):
-            _info(_wave_flag.replace("_", "-"), f"enabled — activated at first forward pass")
+    # ── Attention and KV kernels ─────────────────────────────────────────────
+    if getattr(args, "sage_attention", False):
+        try:
+            from squish.sage_attention import SageAttentionConfig, SageAttentionKernel
+            _sage_attn_kernel = SageAttentionKernel(SageAttentionConfig())
+            _info("sage-attention", "INT8 QK^T kernel ready  (~2.1× attention speedup)")
+        except Exception as _e:
+            _warn(f"[sage-attention] Skipped: {_e}")
+
+    if getattr(args, "sage_attention2", False):
+        try:
+            from squish.sage_attention2 import SageAttention2Config, SageAttention2Kernel
+            _sage_attn2_kernel = SageAttention2Kernel(SageAttention2Config())
+            _info("sage-attention2", "INT4/FP8 kernel ready  (~3.1× attention speedup)")
+        except Exception as _e:
+            _warn(f"[sage-attention2] Skipped: {_e}")
+
+    if getattr(args, "sparge_attention", False):
+        try:
+            from squish.sparge_attn import SpargeAttnConfig, SpargeAttnEngine
+            _sparge_engine = SpargeAttnEngine(SpargeAttnConfig())
+            _info("sparge-attention", "sparse+quantized attention engine ready  (2.5–5× speedup)")
+        except Exception as _e:
+            _warn(f"[sparge-attention] Skipped: {_e}")
+
+    if getattr(args, "squeeze_attention", False):
+        try:
+            from squish.squeeze_attention import SqueezeConfig, SqueezeKVCache, LayerKVBudget
+            _sq_cfg = SqueezeConfig()
+            _sq_budgets = [
+                LayerKVBudget(layer_idx=i, token_budget=_sq_cfg.total_kv_budget // _sq_cfg.n_layers)
+                for i in range(_sq_cfg.n_layers)
+            ]
+            _squeeze_cache = SqueezeKVCache(budgets=_sq_budgets, config=_sq_cfg)
+            _info("squeeze-attention", f"adaptive KV budget: {_sq_cfg.total_kv_budget} total tokens across {_sq_cfg.n_layers} layers")
+        except Exception as _e:
+            _warn(f"[squeeze-attention] Skipped: {_e}")
+
+    # ── KV cache strategies ──────────────────────────────────────────────────
+    if getattr(args, "yoco_kv", False):
+        try:
+            from squish.yoco import YOCOConfig
+            _yoco_config = YOCOConfig()
+            _yoco_config._server_enabled = True
+            _info("yoco-kv", f"cross-layer KV reuse enabled  (self_attn_layers={_yoco_config.n_self_attn_layers})")
+        except Exception as _e:
+            _warn(f"[yoco-kv] Skipped: {_e}")
+
+    if getattr(args, "cla", False):
+        try:
+            from squish.cla import CLAConfig
+            _cla_config = CLAConfig()
+            _cla_config._server_enabled = True
+            _info("cla", f"cross-layer attention enabled  (sharing_factor={_cla_config.sharing_factor})")
+        except Exception as _e:
+            _warn(f"[cla] Skipped: {_e}")
+
+    if getattr(args, "kvtuner", False):
+        try:
+            from squish.kvtuner import KVTunerConfig
+            _kvtuner_config = KVTunerConfig()
+            _kvtuner_config._server_enabled = True
+            _info("kvtuner", f"adaptive KV budget  (target_avg_bits={_kvtuner_config.target_avg_bits})")
+        except Exception as _e:
+            _warn(f"[kvtuner] Skipped: {_e}")
+
+    if getattr(args, "robust_scheduler", False):
+        try:
+            from squish.robust_scheduler import RobustSchedulerConfig, AMaxScheduler
+            _robust_sched = AMaxScheduler(RobustSchedulerConfig())
+            _info("robust-scheduler", f"A-max scheduling enabled  (max_batch_tokens={_robust_sched.config.max_batch_tokens})")
+        except Exception as _e:
+            _warn(f"[robust-scheduler] Skipped: {_e}")
+
+    if getattr(args, "gemfilter", False):
+        try:
+            from squish.gemfilter import GemFilterConfig
+            _gemfilter_config = GemFilterConfig()
+            _gemfilter_config._server_enabled = True
+            _info("gemfilter", f"attention head filter  (top_k_tokens={_gemfilter_config.top_k_tokens})")
+        except Exception as _e:
+            _warn(f"[gemfilter] Skipped: {_e}")
+
+    if getattr(args, "svdq", False):
+        try:
+            from squish.svdq import SVDqConfig
+            _svdq_config = SVDqConfig()
+            _svdq_config._server_enabled = True
+            _info("svdq", f"SVD KV quantization  (target_avg_bits={_svdq_config.target_avg_bits})")
+        except Exception as _e:
+            _warn(f"[svdq] Skipped: {_e}")
+
+    # ── Speculative decoding variants ─────────────────────────────────────────
+    if getattr(args, "sparse_spec", False):
+        try:
+            from squish.sparse_spec import SparseSpecConfig
+            _sparse_spec_config = SparseSpecConfig()
+            _sparse_spec_config._server_enabled = True
+            _info("sparse-spec", f"sparse speculative decoding  (gamma={_sparse_spec_config.gamma}  top_k_ratio={_sparse_spec_config.top_k_ratio})")
+        except Exception as _e:
+            _warn(f"[sparse-spec] Skipped: {_e}")
+
+    if getattr(args, "sparse_verify", False):
+        try:
+            from squish.sparse_verify import SparseVerifyConfig
+            _sparse_verify_config = SparseVerifyConfig()
+            _sparse_verify_config._server_enabled = True
+            _info("sparse-verify", f"sparse draft verification  (attn_sparsity={_sparse_verify_config.attn_sparsity})")
+        except Exception as _e:
+            _warn(f"[sparse-verify] Skipped: {_e}")
+
+    if getattr(args, "long_spec", False):
+        try:
+            from squish.long_spec import LongSpecConfig
+            _long_spec_config = LongSpecConfig()
+            _long_spec_config._server_enabled = True
+            _info("long-spec", f"extended speculative decoding  (gamma={_long_spec_config.gamma}  max_context={_long_spec_config.max_context_len})")
+        except Exception as _e:
+            _warn(f"[long-spec] Skipped: {_e}")
+
+    if getattr(args, "fr_spec", False):
+        try:
+            from squish.fr_spec import FRSpecConfig
+            _fr_spec_config = FRSpecConfig()
+            _fr_spec_config._server_enabled = True
+            _info("fr-spec", f"frequency-token speculative  (top_k_fraction={_fr_spec_config.top_k_fraction})")
+        except Exception as _e:
+            _warn(f"[fr-spec] Skipped: {_e}")
+
+    if getattr(args, "diffusion_draft", ""):
+        try:
+            from squish.diffusion_draft import DiffusionDraftModel
+            _diffusion_draft_model = DiffusionDraftModel(
+                model_path=getattr(args, "diffusion_draft"),
+            )
+            _info("diffusion-draft", f"diffusion speculative model: {getattr(args, 'diffusion_draft')}")
+        except Exception as _e:
+            _warn(f"[diffusion-draft] Skipped: {_e}")
+
+    # ── Token-importance / adaptive-layer strategies ──────────────────────────
+    if getattr(args, "trail", False):
+        try:
+            from squish.trail import TrailConfig
+            _trail_config = TrailConfig()
+            _trail_config._server_enabled = True
+            _info("trail", f"token-importance layer skipping  (probe_layer={_trail_config.probe_layer})")
+        except Exception as _e:
+            _warn(f"[trail] Skipped: {_e}")
+
+    if getattr(args, "specontext", False):
+        try:
+            from squish.specontext import SpeContextConfig
+            _specontext_config = SpeContextConfig()
+            _specontext_config._server_enabled = True
+            _info("specontext", f"speculative context retrieval  (topk={_specontext_config.retrieval_topk})")
+        except Exception as _e:
+            _warn(f"[specontext] Skipped: {_e}")
+
+    if getattr(args, "forelen", False):
+        try:
+            from squish.forelen import ForelenConfig
+            _forelen_config = ForelenConfig()
+            _forelen_config._server_enabled = True
+            _info("forelen", f"forward length prediction  (buckets={_forelen_config.n_length_buckets})")
+        except Exception as _e:
+            _warn(f"[forelen] Skipped: {_e}")
+
+    if getattr(args, "ipw", False):
+        try:
+            from squish.ipw import IPWConfig
+            _ipw_config = IPWConfig()
+            _ipw_config._server_enabled = True
+            _info("ipw", f"importance-weighted prefill  (quality_weight={_ipw_config.quality_weight})")
+        except Exception as _e:
+            _warn(f"[ipw] Skipped: {_e}")
+
+    if getattr(args, "layer_skip", False):
+        try:
+            from squish.layer_skip import EarlyExitConfig
+            _layer_skip_config = EarlyExitConfig()
+            _layer_skip_config._server_enabled = True
+            _info("layer-skip", f"early-exit adaptive decoding  (exit_layer={_layer_skip_config.exit_layer}  threshold={_layer_skip_config.confidence_threshold})")
+        except Exception as _e:
+            _warn(f"[layer-skip] Skipped: {_e}")
 
     if getattr(args, "lora_adapter", ""):
         try:
