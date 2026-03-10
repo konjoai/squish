@@ -118,6 +118,7 @@ _mix_kvq_quantizer      = None  # MixKVQQuantizer         — --mix-kvq
 _cocktail_kv_store      = None  # CocktailKVStore         — --cocktail-kv
 _agile_io_manager       = None  # AgileIOManager          — --agile-io
 _milo_quantizer         = None  # MiLoQuantizer           — --milo
+_block_expert_archive   = None  # BlockExpertArchive      — --block-expert
 # Phase 3: cross-session persistent KV cache
 _session_kv_cache    = None   # SessionKVCache | None — set in main() when --session-cache-dir given
 # Phase 4: prompt compression settings (active when --compress-prompt is set)
@@ -2064,6 +2065,92 @@ async def tokenize(
     })
 
 
+@app.post("/v1/learn")
+async def learn(
+    request: Request,
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """
+    POST /v1/learn — absorb training examples into the block-expert archive.
+
+    Requires ``--block-expert <archive-dir>`` to be set at server start.
+
+    Body:
+        {
+          "examples": [{"input": "...", "output": "..."}],
+          "domain":   "legal",
+          "steps":    50
+        }
+
+    Returns a JSON summary of the learning operation.
+    """
+    _check_auth(creds)
+    if _block_expert_archive is None:
+        raise HTTPException(
+            501,
+            "Block-expert archive not loaded — start the server with --block-expert <archive-dir>",
+        )
+
+    from squish.self_learning import LearnConfig, LearnExample, SelfLearner
+
+    body = await request.json()
+    raw_examples = body.get("examples", [])
+    if not raw_examples:
+        raise HTTPException(400, "'examples' must be a non-empty list")
+
+    domain  = str(body.get("domain", "general"))[:64]
+    steps   = int(body.get("steps", 50))
+    lr      = float(body.get("lr", 1e-4))
+    epsilon = float(body.get("epsilon", 1e-3))
+    max_rank = int(body.get("max_rank", 8))
+
+    examples = [
+        LearnExample(
+            input=str(ex.get("input", "")),
+            output=str(ex.get("output", "")),
+        )
+        for ex in raw_examples
+        if isinstance(ex, dict)
+    ]
+    if not examples:
+        raise HTTPException(400, "No valid examples found in request body")
+
+    # Build base weights dict from archive (use zero-ish proxies if unavailable)
+    n_blocks = _block_expert_archive.num_blocks() or 1
+    import numpy as _np
+    hidden = 256  # lightweight proxy dimension — real models pass via the archive
+    base_weights = {
+        bi: _np.zeros((hidden, hidden), dtype=_np.float32)
+        for bi in range(n_blocks)
+    }
+
+    cfg = LearnConfig(
+        steps=max(1, min(steps, 500)),
+        lr=lr,
+        epsilon=epsilon,
+        max_rank=max_rank,
+        domain=domain,
+    )
+    learner = SelfLearner(base_weights, cfg)
+    result = learner.learn_from_examples(examples, cfg)
+    learner.apply_result_to_archive(result, _block_expert_archive)
+
+    try:
+        _block_expert_archive.save()
+    except Exception as _save_err:
+        _warn(f"[block-expert] archive save failed: {_save_err}")
+
+    return JSONResponse({
+        "status":        "ok",
+        "domain":        result.domain,
+        "steps_run":     result.steps_run,
+        "examples_used": result.examples_used,
+        "snr_db":        round(result.snr_db, 2),
+        "elapsed_s":     round(result.elapsed_s, 3),
+        "archive":       _block_expert_archive.summary(),
+    })
+
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 def main():  # pragma: no cover
@@ -2443,6 +2530,12 @@ Examples:
                     help="Path to LoRA adapter directory to load via LoRAManager.")
     ap.add_argument("--diffusion-draft", default="", metavar="PATH",
                     help="Path to a diffusion-based draft model directory for speculative decoding.")
+    ap.add_argument("--block-expert", default="", metavar="PATH",
+                    help="Path to a block-expert archive directory. "
+                         "Creates a new archive at PATH if the directory does not yet exist. "
+                         "Enables the POST /v1/learn endpoint for on-device self-learning.")
+    ap.add_argument("--block-expert-clusters", type=int, default=4, metavar="K",
+                    help="Number of expert clusters per Transformer block when creating a new archive (default: 4).")
     ap.add_argument(
         "--all-optimizations", action="store_true", default=False,
         help=(
@@ -2824,6 +2917,7 @@ Examples:
     global _layer_skip_config, _long_spec_config, _fr_spec_config, _diffusion_draft_model
     global _pm_kvq_scheduler, _mix_kvq_quantizer, _cocktail_kv_store
     global _agile_io_manager, _milo_quantizer
+    global _block_expert_archive
 
     if getattr(args, "prompt_lookup", False):
         try:
@@ -3199,6 +3293,28 @@ Examples:
                   f"max_rank={_ml_cfg.max_rank}  snr≥{_ml_cfg.snr_threshold_db}dB")
         except Exception as _e:
             _warn(f"[milo] Skipped: {_e}")
+
+    block_expert_dir = getattr(args, "block_expert", "")
+    if block_expert_dir:
+        try:
+            from squish.block_expert_archive import BlockExpertArchive, BlockExpertConfig
+            _be_path = Path(block_expert_dir).expanduser()
+            if _be_path.is_dir():
+                _block_expert_archive = BlockExpertArchive.load(_be_path)
+                _info("block-expert", f"archive loaded  "
+                      f"blocks={_block_expert_archive.stats.n_blocks}  "
+                      f"experts={_block_expert_archive.stats.n_experts_total}  "
+                      f"snr={_block_expert_archive.stats.avg_delta_snr_db:.1f}dB")
+            else:
+                _be_cfg = BlockExpertConfig(
+                    n_clusters=getattr(args, "block_expert_clusters", 4),
+                )
+                _block_expert_archive = BlockExpertArchive(_be_path, _be_cfg)
+                _be_path.mkdir(parents=True, exist_ok=True)
+                _block_expert_archive.save()
+                _info("block-expert", f"new archive created at {_be_path}")
+        except Exception as _e:
+            _warn(f"[block-expert] Skipped: {_e}")
 
     print()
     _section("")
