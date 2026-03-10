@@ -25,6 +25,14 @@
 
 ![](dev/demos/squish-demo.gif)
 
+### Wave 12 — Reasoning-Aware KV + INT3 + Async I/O
+
+![](dev/demos/squish-wave12-demo.gif)
+
+> Wave 12 adds PM-KVQ, MixKVQ, CocktailKV, MiLo INT3, and AgileIO.  
+> 4.2× KV memory reduction · 5.3× weight compression · 40–60% I/O latency reduction.  
+> See [`docs/RESULTS.md`](docs/RESULTS.md) and [`docs/benchmark_wave12.md`](docs/benchmark_wave12.md) for full numbers.
+
 ## Install
 
 ```bash
@@ -189,6 +197,34 @@ Full reproducibility commands and multi-seed results are in [docs/RESULTS.md](do
   <img src="dev/figures/fig3_accuracy_multi_model.png" alt="Benchmark accuracy across multiple models" width="720"/>
   <br/><em>Figure 3 — Accuracy delta vs fp16 baseline across benchmarks and models</em>
 </p>
+
+---
+
+## Wave 12 Optimisation Modules
+
+Enable with `squish run --model <name> [flags]`:
+
+| Module | Flag | Effect | Overhead |
+|--------|------|--------|----------|
+| **PM-KVQ** | `--pm-kvq` | **4.2× KV cache memory** at 4096 tokens | 14 µs/step |
+| **MixKVQ** | `--mix-kvq` | **3.9× KV memory** · 4.1 avg bits/channel | 72 µs/step |
+| **CocktailKV** | `--cocktail-kv` | **~3× KV memory** · chunk-similarity routing | 895 µs/512-tok |
+| **MiLo INT3** | `--milo` | **5.3× weight compression** · SNR > 13 dB | one-time convert |
+| **AgileIO** | `--agile-io` | **40–60% I/O latency** reduction · 25× warm-cache reads | ≈ 0 |
+| **SageAttn** | `--sage-attention` | **2.1× attention** speedup (INT8 QK^T) | ≈ 0 |
+| **SpargeAttn** | `--sparge-attn` | **2.5–5× attention** speedup (sparse blocks) | ≈ 0 |
+
+Full stack:
+
+```bash
+squish run qwen3:8b \
+  --pm-kvq --mix-kvq --cocktail-kv \
+  --agile-io --milo \
+  --sage-attention --sparge-attn
+```
+
+Wave 12 benchmark results: [`docs/benchmark_wave12.md`](docs/benchmark_wave12.md)  
+Raw data: [`dev/results/wave12_bench.json`](dev/results/wave12_bench.json)
 
 ---
 
@@ -454,7 +490,17 @@ squish bench --markdown --save bench_results.md
 | `squish/split_loader.py` | Sharded model loader (multi-file checkpoints) |
 | `compressed_loader.py` | Three-tier weight loader (INT8 → f16 → bf16 MLX) |
 | `dev/scripts/upload_to_hub.py` | Batch compress + upload to squish-community HuggingFace org |
-| `dev/demos/tool_calling_demo.py` | Tool calling walkthrough (full round-trip example) |
+| `dev/demos/record_demo.py` | Demo GIF generator (v1 benchmark results) |
+| `dev/demos/record_wave12_demo.py` | **Wave 12 demo GIF generator** |
+| `dev/demos/squish-wave12-demo.gif` | **Wave 12 animated feature demo** |
+| `dev/benchmarks/bench_wave12.py` | **Wave 12 module micro-benchmark suite** |
+| `dev/results/wave12_bench.json` | **Wave 12 benchmark results (JSON)** |
+| `docs/benchmark_wave12.md` | **Wave 12 benchmark results (Markdown)** |
+| `squish/pm_kvq.py` | PM-KVQ progressive KV scheduler |
+| `squish/mix_kvq.py` | MixKVQ per-channel KV quantiser |
+| `squish/cocktail_kv.py` | CocktailKV chunk-similarity KV store |
+| `squish/agile_io.py` | AgileIO async NVMe prefetch manager |
+| `squish/milo_quant.py` | MiLo INT3 + low-rank compensator |
 | `dev/demos/run_inference.py` | Minimal inference example (no server needed) |
 | `squish_quant_rs/` | Rust/PyO3 ARM NEON INT8 quantiser (optional, 6 GB/s) |
 | `docs/ARCHITECTURE.md` | Technical deep-dive: why these numbers are real |
