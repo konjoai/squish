@@ -499,6 +499,8 @@ def cmd_run(args):  # pragma: no cover
         cmd += ["--kv-cache-mode", args.kv_cache_mode]
     if getattr(args, "log_level", "warning") != "warning":
         cmd += ["--log-level", args.log_level]
+    if getattr(args, "all_optimizations", False):
+        cmd += ["--all-optimizations"]
 
     try:
         os.execv(sys.executable, cmd)  # replace this process — clean signals
@@ -1865,6 +1867,8 @@ Ollama drop-in:
                        choices=["critical", "error", "warning", "info", "debug", "trace"],
                        default="warning",
                        help="Server log verbosity (default: warning)")
+    p_run.add_argument("--all-optimizations", action="store_true", default=False,
+                       help="Enable ALL built-in optimization modules at once")
     p_run.set_defaults(func=cmd_run)
 
     # ── serve (alias for run) ──
@@ -1882,6 +1886,8 @@ Ollama drop-in:
                          choices=["critical", "error", "warning", "info", "debug", "trace"],
                          default="warning",
                          help="Server log verbosity (default: warning)")
+    p_serve.add_argument("--all-optimizations", action="store_true", default=False,
+                         help="Enable ALL built-in optimization modules at once")
     p_serve.set_defaults(func=cmd_run)
 
     # ── chat ──

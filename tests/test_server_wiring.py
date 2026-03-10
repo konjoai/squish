@@ -487,6 +487,32 @@ class TestServerArgparse:
         )
         assert "--squeeze-attention" in result.stdout
 
+    def test_cli_run_all_optimizations_in_help(self):
+        """squish run --help must also show --all-optimizations."""
+        import shutil
+        squish_bin = shutil.which("squish")
+        if not squish_bin:
+            pytest.skip("squish entry point not installed")
+        result = __import__("subprocess").run(
+            [squish_bin, "run", "--help"],
+            capture_output=True, text=True, timeout=10
+        )
+        assert result.returncode == 0
+        assert "--all-optimizations" in result.stdout
+
+    def test_cli_serve_all_optimizations_in_help(self):
+        """squish serve --help must also show --all-optimizations."""
+        import shutil
+        squish_bin = shutil.which("squish")
+        if not squish_bin:
+            pytest.skip("squish entry point not installed")
+        result = __import__("subprocess").run(
+            [squish_bin, "serve", "--help"],
+            capture_output=True, text=True, timeout=10
+        )
+        assert result.returncode == 0
+        assert "--all-optimizations" in result.stdout
+
 
 # ===========================================================================
 # Group 7 — squish.backend shim (new file from Linux port)
