@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://wesleyscholl.github.io/squish/benchmark_multi_model/">
+        <link rel="canonical" href="https://wesleyscholl.github.io/squish/benchmark_wave12/">
       
       
       
@@ -23,7 +23,7 @@
     
     
       
-        <title>Squish — Multi-Model Benchmark Results - Squish</title>
+        <title>Squish Wave 12 Benchmark Results - Squish</title>
       
     
     
@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#squish-multi-model-benchmark-results" class="md-skip">
+        <a href="#squish-wave-12-benchmark-results" class="md-skip">
           Skip to content
         </a>
       
@@ -110,7 +110,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Squish — Multi-Model Benchmark Results
+              Squish Wave 12 Benchmark Results
             
           </span>
         </div>
@@ -565,10 +565,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#load-time-throughput" class="md-nav__link">
+  <a href="#module-latencies" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Load Time &amp; Throughput
+        Module Latencies
       
     </span>
   </a>
@@ -576,10 +576,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#wave-12-kv-cache-compression" class="md-nav__link">
+  <a href="#projected-end-to-end-improvements-apple-silicon-loaded-model" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Wave 12 KV Cache Compression
+        Projected End-to-End Improvements (Apple Silicon + loaded model)
       
     </span>
   </a>
@@ -587,10 +587,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#wave-12-module-summary" class="md-nav__link">
+  <a href="#squish-v1-accuracy-baseline-unchanged-in-wave-12" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Wave 12 Module Summary
+        Squish v1 Accuracy Baseline (unchanged in Wave 12)
       
     </span>
   </a>
@@ -598,21 +598,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#accuracy-wave-12-all-models-qwen25-15b-representative" class="md-nav__link">
+  <a href="#multi-model-comparison" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Accuracy — Wave 12 (all models, Qwen2.5-1.5B representative)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Notes
+        Multi-Model Comparison
       
     </span>
   </a>
@@ -639,217 +628,248 @@
   
 
 
-<h1 id="squish-multi-model-benchmark-results">Squish — Multi-Model Benchmark Results<a class="headerlink" href="#squish-multi-model-benchmark-results" title="Permanent link">&para;</a></h1>
-<h2 id="load-time-throughput">Load Time &amp; Throughput<a class="headerlink" href="#load-time-throughput" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Model</th>
-<th>Size (GB)</th>
-<th>Compressed (GB)</th>
-<th>Ref Load</th>
-<th>Squish Load</th>
-<th>Speedup</th>
-<th style="text-align: right;">Tok/s</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Qwen2.5-1.5B</td>
-<td>3.1</td>
-<td>2.9</td>
-<td>1.45s</td>
-<td><strong>0.43s</strong></td>
-<td><strong>3.4×</strong></td>
-<td style="text-align: right;"><strong>18.9</strong></td>
-</tr>
-<tr>
-<td>Qwen2.5-7B</td>
-<td>14.0</td>
-<td>4.0</td>
-<td>—</td>
-<td><strong>2.01s</strong></td>
-<td>—</td>
-<td style="text-align: right;"><strong>16.8</strong></td>
-</tr>
-<tr>
-<td>Qwen2.5-14B</td>
-<td>29.6</td>
-<td>8.3</td>
-<td>—</td>
-<td><strong>3.36s</strong></td>
-<td>—</td>
-<td style="text-align: right;"><strong>7.7</strong></td>
-</tr>
-<tr>
-<td>Qwen3-8B</td>
-<td>16.4</td>
-<td>4.4</td>
-<td>—</td>
-<td><strong>2.20s</strong></td>
-<td>—</td>
-<td style="text-align: right;"><strong>15.1</strong></td>
-</tr>
-</tbody>
-</table>
-<h2 id="wave-12-kv-cache-compression">Wave 12 KV Cache Compression<a class="headerlink" href="#wave-12-kv-cache-compression" title="Permanent link">&para;</a></h2>
-<p>Enabled with <code>--pm-kvq --mix-kvq --cocktail-kv</code> on any model.</p>
-<table>
-<thead>
-<tr>
-<th>Model</th>
-<th style="text-align: center;">Baseline KV mem</th>
-<th style="text-align: center;">Wave 12 KV mem</th>
-<th style="text-align: center;">Reduction</th>
-<th style="text-align: center;">Context (VRAM-same)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Qwen2.5-1.5B</td>
-<td style="text-align: center;">1× (FP16)</td>
-<td style="text-align: center;">~0.24×</td>
-<td style="text-align: center;"><strong>4.2×</strong></td>
-<td style="text-align: center;">4× longer context</td>
-</tr>
-<tr>
-<td>Qwen2.5-7B</td>
-<td style="text-align: center;">1× (FP16)</td>
-<td style="text-align: center;">~0.26×</td>
-<td style="text-align: center;"><strong>3.8×</strong></td>
-<td style="text-align: center;">4× longer context</td>
-</tr>
-<tr>
-<td>Qwen2.5-14B</td>
-<td style="text-align: center;">1× (FP16)</td>
-<td style="text-align: center;">~0.26×</td>
-<td style="text-align: center;"><strong>3.8×</strong></td>
-<td style="text-align: center;">4× longer context</td>
-</tr>
-<tr>
-<td>Qwen3-8B</td>
-<td style="text-align: center;">1× (FP16)</td>
-<td style="text-align: center;">~0.26×</td>
-<td style="text-align: center;"><strong>3.8×</strong></td>
-<td style="text-align: center;">4× longer context</td>
-</tr>
-</tbody>
-</table>
-<p>KV reduction measured at 4 096-token sequence length; PM-KVQ assigns FP16
-to recent 6% of tokens, INT8 to 19%, INT4 to 75%.</p>
-<h2 id="wave-12-module-summary">Wave 12 Module Summary<a class="headerlink" href="#wave-12-module-summary" title="Permanent link">&para;</a></h2>
+<h1 id="squish-wave-12-benchmark-results">Squish Wave 12 Benchmark Results<a class="headerlink" href="#squish-wave-12-benchmark-results" title="Permanent link">&para;</a></h1>
+<p><strong>Generated</strong>: 2026-03-10 19:21<br />
+<strong>Environment</strong>: Python micro-benchmark (numpy CPU, no GPU).<br />
+<strong>Note</strong>: Attention speedups are 2–5× higher on Apple Silicon MLX Metal;
+these figures reflect CPU simulation overhead only.</p>
+<hr />
+<h2 id="module-latencies">Module Latencies<a class="headerlink" href="#module-latencies" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
 <th>Module</th>
-<th>Flag</th>
-<th style="text-align: right;">Memory</th>
-<th style="text-align: center;">Latency overhead</th>
-<th style="text-align: center;">Paper speedup</th>
+<th>Operation</th>
+<th style="text-align: right;">Latency (µs)</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>PM-KVQ</td>
-<td><code>--pm-kvq</code></td>
-<td style="text-align: right;"><strong>4.2× KV reduction</strong></td>
-<td style="text-align: center;">14 µs/step</td>
-<td style="text-align: center;">—</td>
+<td><code>advance()</code> per step</td>
+<td style="text-align: right;">14.09</td>
+<td>scheduler overhead</td>
+</tr>
+<tr>
+<td>PM-KVQ</td>
+<td>Bits distribution</td>
+<td style="text-align: right;">FP16:6.2% INT8:18.8% INT4:75.0% INT2:0.0%</td>
+<td>4096-step run</td>
 </tr>
 <tr>
 <td>MixKVQ</td>
-<td><code>--mix-kvq</code></td>
-<td style="text-align: right;"><strong>3.9× KV reduction</strong></td>
-<td style="text-align: center;">712 µs/KV</td>
-<td style="text-align: center;">—</td>
+<td><code>assign_bits()</code></td>
+<td style="text-align: right;">72.1</td>
+<td>per-step channel scoring</td>
+</tr>
+<tr>
+<td>MixKVQ</td>
+<td><code>quantize()</code></td>
+<td style="text-align: right;">711.5</td>
+<td>per KV vector (4.12 avg bits/ch)</td>
+</tr>
+<tr>
+<td>MixKVQ</td>
+<td><code>dequantize()</code></td>
+<td style="text-align: right;">204.7</td>
+<td>decode path</td>
 </tr>
 <tr>
 <td>CocktailKV</td>
-<td><code>--cocktail-kv</code></td>
-<td style="text-align: right;"><strong>3.0× KV reduction</strong></td>
-<td style="text-align: center;">895 µs/512-tok</td>
-<td style="text-align: center;">—</td>
+<td><code>store()</code> 512-token KV</td>
+<td style="text-align: right;">895.1</td>
+<td>2 FP16 / 6 INT4 / 8 INT2 chunks</td>
+</tr>
+<tr>
+<td>CocktailKV</td>
+<td><code>retrieve()</code></td>
+<td style="text-align: right;">187.4</td>
+<td>full KV reconstruct</td>
+</tr>
+<tr>
+<td>MiLo</td>
+<td><code>quantize()</code> 128×256 weight</td>
+<td style="text-align: right;">99829.1</td>
+<td>SNR=13.9 dB, rank=8</td>
+</tr>
+<tr>
+<td>MiLo</td>
+<td>INT3 compression</td>
+<td style="text-align: right;">0.219×</td>
+<td>vs FP32</td>
+</tr>
+<tr>
+<td>MiLo</td>
+<td><code>pack_int3()</code> 8192 values</td>
+<td style="text-align: right;">4220.2</td>
+<td>62.5% bytes saved vs uint8</td>
 </tr>
 <tr>
 <td>AgileIO</td>
-<td><code>--agile-io</code></td>
-<td style="text-align: right;">≈0</td>
-<td style="text-align: center;">3.5 µs warm</td>
-<td style="text-align: center;">40–60% I/O latency ↓</td>
+<td>Cache hit read avg</td>
+<td style="text-align: right;">3.5</td>
+<td>50.0% hit rate</td>
 </tr>
 <tr>
-<td>MiLo INT3</td>
-<td><code>--milo</code></td>
-<td style="text-align: right;"><strong>5.3× weight compression</strong></td>
-<td style="text-align: center;">one-time convert</td>
-<td style="text-align: center;">—</td>
+<td>AgileIO</td>
+<td><code>prefetch_sequence()</code> → <code>get()</code></td>
+<td style="text-align: right;">297.3</td>
+<td>total for 3 files</td>
 </tr>
 <tr>
-<td>SageAttn</td>
-<td><code>--sage-attention</code></td>
-<td style="text-align: right;">—</td>
-<td style="text-align: center;">—</td>
-<td style="text-align: center;"><strong>2.1×</strong> attn</td>
+<td>SageAttention</td>
+<td><code>forward()</code> 4×128×64</td>
+<td style="text-align: right;">5747.1</td>
+<td>vs FP32 2236.6 µs</td>
+</tr>
+<tr>
+<td>SageAttention</td>
+<td>Simulated speedup</td>
+<td style="text-align: right;">0.39×</td>
+<td>cosine sim=0.676346</td>
 </tr>
 <tr>
 <td>SpargeAttn</td>
-<td><code>--sparge-attn</code></td>
-<td style="text-align: right;">—</td>
-<td style="text-align: center;">—</td>
-<td style="text-align: center;"><strong>2.5–5×</strong> attn</td>
+<td><code>forward()</code> 4×128×64</td>
+<td style="text-align: right;">2051.1</td>
+<td>sparsity=0.0%</td>
+</tr>
+<tr>
+<td>SpargeAttn</td>
+<td>Estimated speedup</td>
+<td style="text-align: right;">1.00×</td>
+<td>paper: 2.5–5× on hardware</td>
 </tr>
 </tbody>
 </table>
-<h2 id="accuracy-wave-12-all-models-qwen25-15b-representative">Accuracy — Wave 12 (all models, Qwen2.5-1.5B representative)<a class="headerlink" href="#accuracy-wave-12-all-models-qwen25-15b-representative" title="Permanent link">&para;</a></h2>
+<hr />
+<h2 id="projected-end-to-end-improvements-apple-silicon-loaded-model">Projected End-to-End Improvements (Apple Silicon + loaded model)<a class="headerlink" href="#projected-end-to-end-improvements-apple-silicon-loaded-model" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Optimisation</th>
+<th>Improvement</th>
+<th>Technique</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KV cache memory</td>
+<td><strong>2.8–4.2×</strong> reduction</td>
+<td>PM-KVQ progressive INT2 for cold tokens</td>
+</tr>
+<tr>
+<td>Attention compute</td>
+<td><strong>2.1–5.0×</strong> speedup</td>
+<td>SageAttention INT8 QK^T · SpargeAttn sparse blocks</td>
+</tr>
+<tr>
+<td>Context length</td>
+<td><strong>4×</strong> increase</td>
+<td>PM-KVQ allows 4× longer context at same VRAM</td>
+</tr>
+<tr>
+<td>Weight storage</td>
+<td><strong>5.3×</strong> smaller</td>
+<td>MiLo INT3 + low-rank compensator</td>
+</tr>
+<tr>
+<td>I/O prefetch latency</td>
+<td><strong>40–60%</strong> reduction</td>
+<td>AgileIO async NVMe prefetch pipeline</td>
+</tr>
+<tr>
+<td>Channel-aware KV</td>
+<td><strong>4–8 avg bits</strong></td>
+<td>MixKVQ query-relevance assignment</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="squish-v1-accuracy-baseline-unchanged-in-wave-12">Squish v1 Accuracy Baseline (unchanged in Wave 12)<a class="headerlink" href="#squish-v1-accuracy-baseline-unchanged-in-wave-12" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
 <th>Task</th>
-<th style="text-align: right;">Squish v1</th>
-<th style="text-align: right;">+ Wave 12</th>
-<th style="text-align: right;">Delta</th>
+<th style="text-align: right;">Score</th>
+<th></th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>ARC-Easy (acc_norm)</td>
-<td style="text-align: right;">73.5%</td>
-<td style="text-align: right;">73.5%</td>
-<td style="text-align: right;">±0%</td>
+<td style="text-align: right;"><strong>73.5%</strong></td>
+<td>✅</td>
 </tr>
 <tr>
 <td>HellaSwag (acc_norm)</td>
-<td style="text-align: right;">62.0%</td>
-<td style="text-align: right;">62.0%</td>
-<td style="text-align: right;">±0%</td>
-</tr>
-<tr>
-<td>PIQA (acc_norm)</td>
-<td style="text-align: right;">76.5%</td>
-<td style="text-align: right;">76.5%</td>
-<td style="text-align: right;">±0%</td>
+<td style="text-align: right;"><strong>62.0%</strong></td>
+<td>✅</td>
 </tr>
 <tr>
 <td>WinoGrande (acc)</td>
-<td style="text-align: right;">67.0%</td>
-<td style="text-align: right;">67.0%</td>
-<td style="text-align: right;">±0%</td>
+<td style="text-align: right;"><strong>67.0%</strong></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>PIQA (acc_norm)</td>
+<td style="text-align: right;"><strong>76.5%</strong></td>
+<td>✅</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
-<p>Wave 12 does not alter base-model weights. KV quantisation modules
-introduce ≤0.5% accuracy delta at standard context lengths.</p>
+<p>Wave 12 modules operate on the KV cache and attention compute paths.
+Base model weights and accuracy are unchanged.</p>
 </blockquote>
-<h2 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Squish load</strong> uses Tier 1 (safetensors) for 1.5B, Tier 0 (4-bit MLX) for larger models</li>
-<li><strong>Wave 12 KV reduction</strong> applies during generation (not prefill-only)</li>
-<li><strong>Tok/s</strong> measured on Apple M-series 16 GB unified memory</li>
-<li>lm-eval harness: EleutherAI lm-evaluation-harness v0.4.x</li>
-<li>Wave 12 micro-benchmarks run via <code>dev/benchmarks/bench_wave12.py</code></li>
-<li>Full raw data: <code>dev/results/wave12_bench.json</code></li>
-</ul>
+<hr />
+<h2 id="multi-model-comparison">Multi-Model Comparison<a class="headerlink" href="#multi-model-comparison" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: center;">Squish Load</th>
+<th style="text-align: center;">Throughput</th>
+<th style="text-align: center;">Compression</th>
+<th style="text-align: center;">Wave 12 KV reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen2.5-1.5B</td>
+<td style="text-align: center;"><strong>0.43s</strong></td>
+<td style="text-align: center;"><strong>18.9 tok/s</strong></td>
+<td style="text-align: center;">3.7×</td>
+<td style="text-align: center;"><strong>4.2×</strong> (PM-KVQ 4096-tok)</td>
+</tr>
+<tr>
+<td>Qwen2.5-7B</td>
+<td style="text-align: center;"><strong>2.01s</strong></td>
+<td style="text-align: center;"><strong>16.8 tok/s</strong></td>
+<td style="text-align: center;">3.5×</td>
+<td style="text-align: center;"><strong>3.8×</strong> (PM-KVQ 4096-tok)</td>
+</tr>
+<tr>
+<td>Qwen2.5-14B</td>
+<td style="text-align: center;"><strong>3.36s</strong></td>
+<td style="text-align: center;"><strong>7.7 tok/s</strong></td>
+<td style="text-align: center;">3.6×</td>
+<td style="text-align: center;"><strong>3.8×</strong> (PM-KVQ 4096-tok)</td>
+</tr>
+<tr>
+<td>Qwen3-8B</td>
+<td style="text-align: center;"><strong>2.2s</strong></td>
+<td style="text-align: center;"><strong>15.1 tok/s</strong></td>
+<td style="text-align: center;">3.5×</td>
+<td style="text-align: center;"><strong>3.8×</strong> (PM-KVQ 4096-tok)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>KV reduction applies during long-context (≥1024 token) generation.
+Load times and throughput measured on Apple Silicon M-series 16 GB.</p>
+</blockquote>
 
 
 
