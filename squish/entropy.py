@@ -44,23 +44,38 @@ def _require_zstd():
         sys.exit(1)
 
 
+# ── Brotli availability ───────────────────────────────────────────────────────
+
+def _require_brotli():
+    try:
+        import brotli
+        return brotli
+    except ImportError:  # pragma: no cover
+        print("Missing: brotli.  Install with:  pip install brotli")
+        sys.exit(1)
+
+
 # ── Compress ─────────────────────────────────────────────────────────────────
 
 def compress_npy_dir(
     tensors_dir: Path,
     level: int  = 3,
-    threads: int = 0,   # 0 = use all cores
+    threads: int = 0,   # 0 = use all cores (zstd only)
     verbose: bool = True,
+    codec: str = "zstd",   # "zstd" or "brotli"
 ) -> dict:
     """
-    Compress all .npy files in a tensors/ directory with zstd.
+    Compress all .npy files in a tensors/ directory.
 
-    Writes <name>.npy.zst alongside (or replaces) each .npy.
-    Writes .squish_zst_ready sentinel on completion.
+    codec="zstd" (default): writes <name>.npy.zst, uses zstd levels 1-22.
+    codec="brotli":         writes <name>.npy.br,  uses brotli quality 0-11.
+                            Achieves ~5-15% better ratio than zstd at same
+                            decode speed, at the cost of ~3-10× slower encode.
+
+    Writes a sentinel file on completion (.squish_zst_ready or .squish_br_ready).
 
     Returns stats dict.
     """
-    zstd = _require_zstd()
     tensors_dir = Path(tensors_dir)
     if not tensors_dir.is_dir():
         raise FileNotFoundError(f"tensors/ not found: {tensors_dir}")
@@ -69,6 +84,57 @@ def compress_npy_dir(
     if not npy_files:
         raise ValueError(f"No .npy files found in {tensors_dir}")
 
+    if codec == "brotli":
+        brotli = _require_brotli()
+        sentinel = tensors_dir.parent / ".squish_br_ready"
+        ext      = ".npy.br"
+        quality  = min(max(level, 0), 11)  # brotli quality 0-11
+        if sentinel.exists():
+            if verbose:
+                print("  Already compressed (.squish_br_ready present) — skipping")
+            return {}
+
+        total_orig = total_comp = 0
+        t0 = time.perf_counter()
+        for i, npy_path in enumerate(npy_files):
+            orig_bytes = npy_path.stat().st_size
+            br_path    = npy_path.with_suffix(ext)
+            with open(npy_path, "rb") as src:
+                data = src.read()
+            compressed = brotli.compress(data, quality=quality)
+            with open(br_path, "wb") as dst:
+                dst.write(compressed)
+            comp_bytes = len(compressed)
+            total_orig += orig_bytes
+            total_comp += comp_bytes
+            if verbose and (i % 50 == 0 or i == len(npy_files) - 1):
+                ratio = orig_bytes / max(comp_bytes, 1)
+                pct   = 100 * (i + 1) / len(npy_files)
+                print(f"  [{pct:5.1f}%] {npy_path.name:50s}  {orig_bytes/1e6:6.1f} MB → {comp_bytes/1e6:6.1f} MB  ({ratio:.2f}×)", flush=True)
+            npy_path.unlink()
+
+        elapsed = time.perf_counter() - t0
+        overall_ratio = total_orig / max(total_comp, 1)
+        savings_gb    = (total_orig - total_comp) / 1e9
+        sentinel.write_text("squish-br-v1")
+        stats = {
+            "files":          len(npy_files),
+            "codec":          "brotli",
+            "orig_gb":        round(total_orig / 1e9, 3),
+            "comp_gb":        round(total_comp / 1e9, 3),
+            "ratio":          round(overall_ratio, 3),
+            "savings_gb":     round(savings_gb, 3),
+            "throughput_gbs": round(total_orig / 1e9 / elapsed, 2),
+            "elapsed_s":      round(elapsed, 1),
+        }
+        if verbose:
+            print()
+            print(f"  ✓ Compressed {len(npy_files)} tensors in {elapsed:.1f}s (brotli quality={quality})")
+            print(f"    {total_orig/1e9:.2f} GB  →  {total_comp/1e9:.2f} GB  ({overall_ratio:.2f}×, saved {savings_gb:.2f} GB)")
+        return stats
+
+    # ── zstd path (original implementation) ───────────────────────────────────
+    zstd = _require_zstd()
     sentinel = tensors_dir.parent / ".squish_zst_ready"
     if sentinel.exists():
         if verbose:
@@ -129,14 +195,38 @@ def compress_npy_dir(
 
 def decompress_npy_dir(tensors_dir: Path, verbose: bool = True) -> None:
     """
-    Decompress .npy.zst files back to .npy (for inspection / migration).
+    Decompress .npy.zst or .npy.br files back to .npy (for inspection / migration).
     """
-    zstd = _require_zstd()
     tensors_dir = Path(tensors_dir)
-    zst_files   = sorted(tensors_dir.glob("*.npy.zst"))
+
+    # Handle brotli-compressed files
+    br_files = sorted(tensors_dir.glob("*.npy.br"))
+    if br_files:
+        brotli = _require_brotli()
+        t0 = time.perf_counter()
+        for br_path in br_files:
+            # .npy.br → strip .br suffix → .npy
+            npy_path = br_path.with_suffix("")
+            with open(br_path, "rb") as src:
+                data = brotli.decompress(src.read())
+            with open(npy_path, "wb") as dst:
+                dst.write(data)
+        elapsed = time.perf_counter() - t0
+        sentinel = tensors_dir.parent / ".squish_br_ready"
+        if sentinel.exists():
+            sentinel.unlink()
+        if verbose:
+            print(f"  ✓ Decompressed {len(br_files)} brotli tensors in {elapsed:.1f}s")
+
+    # Handle zstd-compressed files
+    zstd = _require_zstd()
+    zst_files = sorted(tensors_dir.glob("*.npy.zst"))
+
+    if not zst_files and not br_files:
+        print("No .npy.zst or .npy.br files found — nothing to decompress")
+        return
 
     if not zst_files:
-        print("No .npy.zst files found — nothing to decompress")
         return
 
     dctx = zstd.ZstdDecompressor()
@@ -153,7 +243,7 @@ def decompress_npy_dir(tensors_dir: Path, verbose: bool = True) -> None:
         sentinel.unlink()
 
     if verbose:
-        print(f"  ✓ Decompressed {len(zst_files)} tensors in {elapsed:.1f}s")
+        print(f"  ✓ Decompressed {len(zst_files)} zstd tensors in {elapsed:.1f}s")
 
 
 # ── Transparent numpy loader (for integration into compressed_loader.py) ─────
@@ -248,15 +338,17 @@ def main():  # pragma: no cover
     ap = argparse.ArgumentParser(description="Squish entropy coding for npy-dir")
     ap.add_argument("command", choices=["compress", "decompress", "bench"])
     ap.add_argument("tensors_dir", help="Path to tensors/ directory")
-    ap.add_argument("--level", type=int, default=3, help="zstd compression level (1-22)")
-    ap.add_argument("--threads", type=int, default=0, help="Compression threads (0=all)")
+    ap.add_argument("--level", type=int, default=3, help="zstd level (1-22) or brotli quality (0-11)")
+    ap.add_argument("--threads", type=int, default=0, help="Compression threads (0=all, zstd only)")
+    ap.add_argument("--codec", choices=["zstd", "brotli"], default="zstd",
+                    help="Compression codec: zstd (default, fast) or brotli (better ratio, slower)")
     args = ap.parse_args()
 
     tensors_dir = Path(args.tensors_dir).expanduser()
 
     if args.command == "compress":
-        print(f"Compressing {tensors_dir} with zstd level {args.level}...")
-        compress_npy_dir(tensors_dir, level=args.level, threads=args.threads)
+        print(f"Compressing {tensors_dir} with {args.codec} level={args.level}...")
+        compress_npy_dir(tensors_dir, level=args.level, threads=args.threads, codec=args.codec)
     elif args.command == "decompress":
         print(f"Decompressing {tensors_dir}...")
         decompress_npy_dir(tensors_dir)

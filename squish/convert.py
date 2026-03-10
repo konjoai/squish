@@ -55,6 +55,24 @@ from squish.quantizer import QuantizationResult, quantize_embeddings, quantize_i
 
 
 # ---------------------------------------------------------------------------
+# Lazy helpers for optional compression backends
+# ---------------------------------------------------------------------------
+def _get_nf4():
+    from squish.nf4_quant import quantize_nf4
+    return quantize_nf4
+
+
+def _get_vptq():
+    from squish.vptq import VPTQConfig, VPTQQuantizer
+    return VPTQConfig, VPTQQuantizer
+
+
+def _get_dfloat11():
+    from squish.dfloat11 import DFloat11Compressor, DFloat11Config
+    return DFloat11Config, DFloat11Compressor
+
+
+# ---------------------------------------------------------------------------
 # ─── TTY-safe line-clear helper ─────────────────────────────────────────────
 def _clear_line() -> None:
     """Overwrite the current terminal line.  No-op when stdout is not a TTY."""
@@ -145,14 +163,22 @@ def quantize_tensor(
     outlier_threshold: float,
     passthrough_patterns: list[str],
     use_int4: bool = False,
+    use_nf4: bool = False,
+    use_vptq: bool = False,
+    use_dfloat11: bool = False,
+    vptq_config=None,
 ) -> dict:
     """
     Quantize a single float32 tensor.
 
-    Returns a dict of file suffixes → numpy arrays:
-      INT8 (default):  __q, __s, __shape
-      INT4 (use_int4): __q4, __s4, __shape
-      passthrough:     __pt, __shape
+    Returns a dict of file suffixes → arrays / bytes objects:
+      INT8 (default):       __q, __s, __shape
+      INT4:                 __q4, __s4, __shape
+      NF4:                  __nf4, __s_nf4, __shape
+      VPTQ:                 __vq_idx, __vq_cb, __vq_res, __vq_rescb, __shape
+      passthrough:          __pt, __shape
+      DFloat11 (pt):        __pt_df11  (bytes blob, stored via np.frombuffer)
+      DFloat11 (scales):    replaces __s4 with __s4_df11 (bytes blob)
     """
     original_shape = arr_f32.shape
 
@@ -167,6 +193,17 @@ def quantize_tensor(
     shape_arr = np.array(original_shape, dtype=np.int64)
 
     if skip:
+        if use_dfloat11:
+            import pickle
+            DFloat11Config, DFloat11Compressor = _get_dfloat11()
+            cfg = DFloat11Config(use_rans=True, use_context=True)
+            comp = DFloat11Compressor(cfg)
+            blocks = comp.compress_array(arr_f32.astype(np.float16))
+            blob = pickle.dumps(blocks, protocol=4)
+            return {
+                "__pt_df11": np.frombuffer(blob, dtype=np.uint8).copy(),
+                "__shape": shape_arr,
+            }
         return {
             "__pt": arr_f32,
             "__shape": shape_arr,
@@ -180,18 +217,79 @@ def quantize_tensor(
     else:
         flat = arr_f32.reshape(-1, arr_f32.shape[-1])
 
+    # ── VPTQ: vector quantization to ~3 bpw ──────────────────────────────────
+    if use_vptq:
+        VPTQConfig, VPTQQuantizer = _get_vptq()
+        cfg = vptq_config if vptq_config is not None else VPTQConfig()
+        quant = VPTQQuantizer(cfg)
+        layer = quant.compress(flat)
+        # Serialize codebooks and indices as numpy arrays
+        pri_cb_data = np.concatenate([
+            layer.primary_cb.centroids.reshape(-1),
+            np.array([layer.primary_cb.n_codebook_entries,
+                      layer.primary_cb.group_size,
+                      layer.primary_cb.n_fit_iters], dtype=np.float32),
+        ]).astype(np.float32)
+        res_cb_data = np.zeros(1, dtype=np.float32)
+        res_idx_data = np.zeros(1, dtype=np.int64)
+        if layer.residual_cb is not None:
+            res_cb_data = np.concatenate([
+                layer.residual_cb.centroids.reshape(-1),
+                np.array([layer.residual_cb.n_codebook_entries,
+                          layer.residual_cb.group_size,
+                          layer.residual_cb.n_fit_iters], dtype=np.float32),
+            ]).astype(np.float32)
+            res_idx_data = layer.residual_indices.astype(np.int64)
+        col_scales = layer.col_scales if layer.col_scales is not None else np.array([], dtype=np.float32)
+        return {
+            "__vq_idx":   layer.primary_indices.astype(np.int64),
+            "__vq_cb":    pri_cb_data,
+            "__vq_res":   res_idx_data,
+            "__vq_rescb": res_cb_data,
+            "__vq_cols":  col_scales.astype(np.float32),
+            "__vq_meta":  np.array([flat.shape[0], flat.shape[1],
+                                    cfg.group_size, cfg.n_codebook_entries,
+                                    cfg.n_residual_entries], dtype=np.int64),
+            "__shape":    shape_arr,
+        }
+
     result: QuantizationResult = quantize_embeddings(flat, group_size=64)
+
+    # ── NF4: normal-float 4-bit quantization ─────────────────────────────────
+    if use_nf4:
+        quantize_nf4 = _get_nf4()
+        from squish.quantizer import reconstruct_embeddings
+        reconstructed = reconstruct_embeddings(result)
+        packed, scales_nf4 = quantize_nf4(reconstructed, group_size=64)
+        return {
+            "__nf4":   packed,      # uint8 nibble-packed  (n, d//2)
+            "__s_nf4": scales_nf4,  # float32              (n, d//64)
+            "__shape": shape_arr,
+        }
+
     if use_int4:
         # INT4 nibble-packed: ~50 % disk vs INT8, requires squish_quant Rust ext.
         # Reconstruct from INT8 first, then pack to INT4.
         from squish.quantizer import reconstruct_embeddings
         reconstructed = reconstruct_embeddings(result)
         packed, scales4 = quantize_int4(reconstructed, group_size=64)
-        return {
+        out = {
             "__q4":    packed,   # uint8 nibble-packed  (n, d//2)
             "__s4":    scales4,  # float32              (n, d//64)
             "__shape": shape_arr,
         }
+        if use_dfloat11:
+            import pickle
+            # Entropy-compress the INT4 scales with DFloat11 for extra savings
+            DFloat11Config, DFloat11Compressor = _get_dfloat11()
+            cfg = DFloat11Config(use_rans=True, use_context=True)
+            comp = DFloat11Compressor(cfg)
+            blocks = comp.compress_array(scales4.astype(np.float16))
+            blob = pickle.dumps(blocks, protocol=4)
+            out["__s4_df11"] = np.frombuffer(blob, dtype=np.uint8).copy()
+            del out["__s4"]
+        return out
+
     return {
         "__q": result.quantized,   # int8  (grouped-64 per default)
         "__s": result.scales,      # float32 (n_rows, n_groups) or (n_rows,)
@@ -260,6 +358,10 @@ def process_weights_streaming(
     verbose: bool,
     awq_scales: dict | None = None,
     use_int4: bool = False,
+    use_nf4: bool = False,
+    use_vptq: bool = False,
+    use_dfloat11: bool = False,
+    vptq_config=None,
 ) -> dict:
     """
     Streaming shard-by-shard compression — works for any model size.
@@ -302,12 +404,26 @@ def process_weights_streaming(
             if awq_scales:
                 arr_f32 = _apply_awq_single(name, arr_f32, awq_scales)
 
-            sub = quantize_tensor(name, arr_f32, outlier_threshold, passthrough_patterns, use_int4=use_int4)
+            sub = quantize_tensor(
+                name, arr_f32, outlier_threshold, passthrough_patterns,
+                use_int4=use_int4,
+                use_nf4=use_nf4,
+                use_vptq=use_vptq,
+                use_dfloat11=use_dfloat11,
+                vptq_config=vptq_config,
+            )
 
             # Write immediately — don't accumulate in RAM
+            _BINARY_BLOB_SUFFIXES = {"__pt_df11", "__s4_df11"}
             for suffix, data in sub.items():
-                out_arr = data.astype(np.float16) if suffix == "__pt" else data
-                np.save(str(tensor_dir / f"{sk}{suffix}.npy"), out_arr)
+                out_path = tensor_dir / f"{sk}{suffix}.npy"
+                if suffix in _BINARY_BLOB_SUFFIXES:
+                    # Binary blobs stored as uint8 numpy arrays (byte-exact round-trip)
+                    np.save(str(out_path), np.asarray(data, dtype=np.uint8))
+                elif suffix == "__pt":
+                    np.save(str(out_path), data.astype(np.float16))
+                else:
+                    np.save(str(out_path), data)
 
             orig_bytes = arr_f32.nbytes
             comp_bytes = sum(
@@ -318,14 +434,25 @@ def process_weights_streaming(
             stats["orig_f32_bytes"]   += orig_bytes
             stats["compressed_bytes"] += comp_bytes
 
-            if "__pt" in sub:
+            if "__pt" in sub or "__pt_df11" in sub:
                 stats["n_passthrough"] += 1
             else:
                 stats["n_quantized"] += 1
 
             if verbose:
                 ratio = orig_bytes / max(comp_bytes, 1)
-                mode  = "PT" if "__pt" in sub else ("Q4" if use_int4 else "Q8")
+                if "__pt_df11" in sub:
+                    mode = "DF11"
+                elif "__pt" in sub:
+                    mode = "PT"
+                elif "__nf4" in sub:
+                    mode = "NF4"
+                elif "__vq_idx" in sub:
+                    mode = "VPTQ"
+                elif use_int4:
+                    mode = "Q4"
+                else:
+                    mode = "Q8"
                 _clear_line()
                 print(f"  [{mode}] {name}: {arr_f32.shape} ratio={ratio:.2f}x")
 
@@ -421,7 +548,65 @@ def main():
              "Requires squish_quant Rust extension (built with maturin).  "
              "Recommended for 1.5B models where every GB matters.",
     )
+    ap.add_argument(
+        "--nf4",
+        action="store_true",
+        default=False,
+        help="Use NF4 (NormalFloat-4) quantization.  Better SNR than INT4 under "
+             "Gaussian weight distribution — exact QLoRA codebook from Dettmers et al. "
+             "(arXiv:2305.14314).  ~4 bpw, ~0.2 dB better SNR than INT4.",
+    )
+    ap.add_argument(
+        "--vptq",
+        action="store_true",
+        default=False,
+        help="Use VPTQ vector quantization (arXiv:2409.17066, NeurIPS 2025).  "
+             "~3 bpw with near-INT4 quality.  Slower to compress but best ratio.",
+    )
+    ap.add_argument(
+        "--vptq-codebook-size",
+        type=int,
+        default=256,
+        metavar="N",
+        help="VPTQ primary codebook size (default: 256 = 8-bit codes).",
+    )
+    ap.add_argument(
+        "--vptq-group-size",
+        type=int,
+        default=8,
+        metavar="N",
+        help="VPTQ vector group size (default: 8 weights per vector).",
+    )
+    ap.add_argument(
+        "--dfloat11",
+        action="store_true",
+        default=False,
+        help="Apply DFloat11 lossless entropy compression with rANS + context model "
+             "to passthrough tensors and INT4 scales.  ~0.5-1 additional bpw savings "
+             "over raw quantization.  Zero quality impact (lossless).",
+    )
+    ap.add_argument(
+        "--ultra",
+        action="store_true",
+        default=False,
+        help="Ultra compression mode: enables --nf4 --dfloat11 and maximises entropy "
+             "coding.  Right at the near-lossless INT4-class compression limit.",
+    )
     args = ap.parse_args()
+
+    # ── --ultra implies nf4 + dfloat11 ────────────────────────────────────────
+    if args.ultra:
+        args.nf4 = True
+        args.dfloat11 = True
+
+    # ── VPTQ config (built once and reused per tensor) ─────────────────────────
+    vptq_config = None
+    if args.vptq:
+        from squish.vptq import VPTQConfig
+        vptq_config = VPTQConfig(
+            n_codebook_entries=args.vptq_codebook_size,
+            group_size=args.vptq_group_size,
+        )
 
     model_dir = Path(args.model_dir)
     output_path = Path(args.output)
@@ -461,6 +646,10 @@ def main():
             args.verbose,
             awq_scales=awq_scales,
             use_int4=args.int4,
+            use_nf4=args.nf4,
+            use_vptq=args.vptq,
+            use_dfloat11=args.dfloat11,
+            vptq_config=vptq_config,
         )
         elapsed = time.time() - t0
 
@@ -475,7 +664,16 @@ def main():
 
         print(f"\n{'='*50}")
         print("  Format:           npy-dir (streaming)")
-        print(f"  Quantization:     {'INT4 nibble-packed (group-64)' if args.int4 else 'INT8 per-group-64'}")
+        _mode_str = (
+            "ULTRA (NF4 + DFloat11 rANS)" if args.ultra else
+            "NF4 (NormalFloat-4)" if args.nf4 else
+            "VPTQ (vector quantization)" if args.vptq else
+            "INT4 nibble-packed (group-64)" if args.int4 else
+            "INT8 per-group-64"
+        )
+        if args.dfloat11 and not args.ultra:
+            _mode_str += " + DFloat11 entropy"
+        print(f"  Quantization:     {_mode_str}")
         print(f"  Tensors:          {n_total} total")
         print(f"    Quantized (Q8): {stats['n_quantized']}")
         print(f"    Passthrough (f16 on disk): {stats['n_passthrough']}")

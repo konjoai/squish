@@ -2193,6 +2193,13 @@ Examples:
                     help="SVD rank for KV compression: project head_dim → N before INT8.\n"
                          "0 = off (default).  Recommended: 64 for head_dim=128 models.\n"
                          "Requires --kv-cache-mode int8 or snap.")
+    ap.add_argument("--kv-commvq-bits", type=int, default=0,
+                    metavar="N",
+                    choices=[0, 2, 4],
+                    help="CommVQ vector-quantization for old KV tokens (arXiv:2506.18879).\n"
+                         "0 = off (default); 2 = 2-bit (8× vs FP16); 4 = 4-bit (4× vs FP16).\n"
+                         "Replaces INT8 for old tokens; recent window stays FP16.\n"
+                         "Fits codebook online from the first 64 evicted tokens per layer.")
     # Phase 2 retrieval attention
     ap.add_argument("--retrieval-attention", action="store_true", default=False,
                     help="Enable retrieval attention: fetch only the top-k most relevant\n"
@@ -2595,6 +2602,7 @@ Examples:
                 window=args.kv_cache_window,
                 budget=args.kv_cache_budget,
                 svd_rank=getattr(args, "kv_cache_svd_rank", 0),
+                comm_vq_bits=getattr(args, "kv_commvq_bits", 0),
                 verbose=True,
             )
             _info("kv-cache", f"ready ({args.kv_cache_mode})")

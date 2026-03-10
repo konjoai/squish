@@ -28,6 +28,24 @@ import numpy as np
 
 from squish.quantizer import QuantizationResult, dequantize_int4, reconstruct_embeddings
 
+
+# ---------------------------------------------------------------------------
+# Lazy loaders for optional compression backends
+# ---------------------------------------------------------------------------
+def _get_dequantize_nf4():
+    from squish.nf4_quant import dequantize_nf4
+    return dequantize_nf4
+
+
+def _get_dfloat11():
+    from squish.dfloat11 import DFloat11Compressor, DFloat11Config
+    return DFloat11Config, DFloat11Compressor
+
+
+def _get_vptq():
+    from squish.vptq import VPTQCodebook, VPTQConfig, VPTQLayer, VPTQQuantizer
+    return VPTQConfig, VPTQCodebook, VPTQLayer, VPTQQuantizer
+
 # ---------------------------------------------------------------------------
 # Optional zstd decompression
 # ---------------------------------------------------------------------------
@@ -46,7 +64,7 @@ def _get_zstd_dctx():
 
 
 def _load_npy_path(path: Path, mmap_mode: str | None = "r") -> np.ndarray:
-    """Load a .npy or .npy.zst file with transparent decompression."""
+    """Load a .npy, .npy.zst, or .npy.br file with transparent decompression."""
     if path.exists():
         return np.load(str(path), mmap_mode=mmap_mode)
     zst_path = Path(str(path) + ".zst")
@@ -60,7 +78,19 @@ def _load_npy_path(path: Path, mmap_mode: str | None = "r") -> np.ndarray:
         with open(zst_path, "rb") as f:
             buf = io.BytesIO(dctx.decompress(f.read()))
         return np.load(buf, allow_pickle=False)
-    raise FileNotFoundError(f"Neither {path} nor {zst_path} found")
+    br_path = Path(str(path) + ".br")
+    if br_path.exists():
+        try:
+            import brotli as _brotli
+        except ImportError:  # pragma: no cover
+            raise RuntimeError(
+                f"Found {br_path} but 'brotli' is not installed.\n"
+                "  Run: pip install brotli"
+            )
+        with open(br_path, "rb") as f:
+            buf = io.BytesIO(_brotli.decompress(f.read()))
+        return np.load(buf, allow_pickle=False)
+    raise FileNotFoundError(f"Neither {path} nor {zst_path} nor {br_path} found")
 
 
 # ---------------------------------------------------------------------------
@@ -198,17 +228,121 @@ def _dequantize_npy(tensor_dir: Path, sk: str) -> np.ndarray:
     Returns:
         float32 numpy array with the original shape.
     """
-    pt_path = tensor_dir / f"{sk}__pt.npy"
-    q_path  = tensor_dir / f"{sk}__q.npy"
-    q4_path = tensor_dir / f"{sk}__q4.npy"
-    s4_path = tensor_dir / f"{sk}__s4.npy"
+    pt_path      = tensor_dir / f"{sk}__pt.npy"
+    q_path       = tensor_dir / f"{sk}__q.npy"
+    q4_path      = tensor_dir / f"{sk}__q4.npy"
+    s4_path      = tensor_dir / f"{sk}__s4.npy"
+    nf4_path     = tensor_dir / f"{sk}__nf4.npy"
+    s_nf4_path   = tensor_dir / f"{sk}__s_nf4.npy"
+    vq_idx_path  = tensor_dir / f"{sk}__vq_idx.npy"
+    pt_df11_path = tensor_dir / f"{sk}__pt_df11.npy"
+    s4_df11_path = tensor_dir / f"{sk}__s4_df11.npy"
+
+    # ── DFloat11-compressed passthrough ──────────────────────────────────────
+    pt_df11_exists = pt_df11_path.exists() or Path(str(pt_df11_path) + ".zst").exists() or Path(str(pt_df11_path) + ".br").exists()
+    if pt_df11_exists:
+        import pickle
+        _, DFloat11Compressor = _get_dfloat11()
+        blob = _load_npy_path(pt_df11_path, mmap_mode=None).tobytes()
+        blocks = pickle.loads(blob)
+        comp = DFloat11Compressor()
+        arr = comp.decompress_array(blocks)
+        shape_path = tensor_dir / f"{sk}__shape.npy"
+        if shape_path.exists() or Path(str(shape_path) + ".zst").exists():
+            original_shape = tuple(int(x) for x in _load_npy_path(shape_path, mmap_mode=None).tolist())
+            return arr.astype(np.float32).reshape(original_shape)
+        return arr.astype(np.float32)
+
+    # ── NF4 nibble-packed ─────────────────────────────────────────────────────
+    nf4_exists   = nf4_path.exists() or Path(str(nf4_path) + ".zst").exists()
+    s_nf4_exists = s_nf4_path.exists() or Path(str(s_nf4_path) + ".zst").exists()
+    if nf4_exists and s_nf4_exists:
+        dequantize_nf4 = _get_dequantize_nf4()
+        packed = np.ascontiguousarray(_load_npy_path(nf4_path, mmap_mode=None), dtype=np.uint8)
+        scales = np.ascontiguousarray(_load_npy_path(s_nf4_path, mmap_mode=None), dtype=np.float32)
+        arr = dequantize_nf4(packed, scales, group_size=64)
+        shape_path = tensor_dir / f"{sk}__shape.npy"
+        if shape_path.exists() or Path(str(shape_path) + ".zst").exists():
+            original_shape = tuple(int(x) for x in _load_npy_path(shape_path, mmap_mode=None).tolist())
+            return arr.reshape(original_shape)
+        return arr
+
+    # ── VPTQ vector-quantized ─────────────────────────────────────────────────
+    vq_idx_exists = vq_idx_path.exists() or Path(str(vq_idx_path) + ".zst").exists()
+    if vq_idx_exists:
+        VPTQConfig, VPTQCodebook, VPTQLayer, VPTQQuantizer = _get_vptq()
+        idx       = _load_npy_path(vq_idx_path, mmap_mode=None).astype(np.int64)
+        cb_data   = _load_npy_path(tensor_dir / f"{sk}__vq_cb.npy", mmap_mode=None).astype(np.float32)
+        res_data  = _load_npy_path(tensor_dir / f"{sk}__vq_res.npy", mmap_mode=None).astype(np.int64)
+        rescb_data = _load_npy_path(tensor_dir / f"{sk}__vq_rescb.npy", mmap_mode=None).astype(np.float32)
+        col_scales_path = tensor_dir / f"{sk}__vq_cols.npy"
+        meta_path = tensor_dir / f"{sk}__vq_meta.npy"
+        meta      = _load_npy_path(meta_path, mmap_mode=None).astype(np.int64)
+        n_rows, n_cols, group_size, n_cb, n_res_cb = int(meta[0]), int(meta[1]), int(meta[2]), int(meta[3]), int(meta[4])
+
+        # Reconstruct primary codebook
+        cb_centroids = cb_data[:-3].reshape(-1, group_size).astype(np.float32)
+        primary_cb   = VPTQCodebook.__new__(VPTQCodebook)
+        primary_cb._centroids          = cb_centroids
+        primary_cb.n_codebook_entries  = n_cb
+        primary_cb.group_size          = group_size
+        primary_cb.n_fit_iters         = int(cb_data[-1])
+
+        # Reconstruct residual codebook if present
+        residual_cb  = None
+        residual_idx = None
+        if n_res_cb > 0 and res_data.size > 1:
+            rescb_centroids = rescb_data[:-3].reshape(-1, group_size).astype(np.float32)
+            residual_cb = VPTQCodebook.__new__(VPTQCodebook)
+            residual_cb._centroids          = rescb_centroids
+            residual_cb.n_codebook_entries  = n_res_cb
+            residual_cb.group_size          = group_size
+            residual_cb.n_fit_iters         = int(rescb_data[-1])
+            residual_idx = res_data
+
+        col_scales = None
+        if col_scales_path.exists() or Path(str(col_scales_path) + ".zst").exists():
+            cs = _load_npy_path(col_scales_path, mmap_mode=None).astype(np.float32)
+            if cs.size > 0:
+                col_scales = cs
+
+        layer = VPTQLayer(
+            primary_indices  = idx,
+            residual_indices = residual_idx,
+            primary_cb       = primary_cb,
+            residual_cb      = residual_cb,
+            original_shape   = (n_rows, n_cols),
+            col_scales       = col_scales,
+        )
+        quant = VPTQQuantizer.__new__(VPTQQuantizer)
+        quant.config = VPTQConfig(
+            n_codebook_entries=n_cb,
+            group_size=group_size,
+            n_residual_entries=n_res_cb,
+        )
+        arr = quant.decompress(layer)
+        shape_path = tensor_dir / f"{sk}__shape.npy"
+        if shape_path.exists() or Path(str(shape_path) + ".zst").exists():
+            original_shape = tuple(int(x) for x in _load_npy_path(shape_path, mmap_mode=None).tolist())
+            return arr.reshape(original_shape)
+        return arr
 
     # ── INT4 nibble-packed (highest compression, requires squish_quant) ───────
     q4_exists = q4_path.exists() or Path(str(q4_path) + ".zst").exists()
     s4_exists = s4_path.exists() or Path(str(s4_path) + ".zst").exists()
-    if q4_exists and s4_exists:
+    # Also check for DFloat11-compressed scales
+    s4_df11_exists = s4_df11_path.exists() or Path(str(s4_df11_path) + ".zst").exists()
+    if q4_exists and (s4_exists or s4_df11_exists):
         packed = np.ascontiguousarray(_load_npy_path(q4_path, mmap_mode=None), dtype=np.uint8)
-        scales = np.ascontiguousarray(_load_npy_path(s4_path, mmap_mode=None), dtype=np.float32)
+        if s4_df11_exists:
+            import pickle
+            _, DFloat11Compressor = _get_dfloat11()
+            blob   = _load_npy_path(s4_df11_path, mmap_mode=None).tobytes()
+            blocks = pickle.loads(blob)
+            comp   = DFloat11Compressor()
+            scales = comp.decompress_array(blocks).astype(np.float32)
+        else:
+            scales = np.ascontiguousarray(_load_npy_path(s4_path, mmap_mode=None), dtype=np.float32)
         return dequantize_int4(packed, scales, group_size=64)
 
     # ── Passthrough (float16) ─────────────────────────────────────────────

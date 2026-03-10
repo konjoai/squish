@@ -162,6 +162,14 @@ class KVLayerCache:
         "_hnsw",             # HNSWIndex | None
         # Phase 0C: async CPU dequant pre-fetch (prevents GPU ↔ dequant contention)
         "_prefetch_future",  # Future[tuple] | None
+        # CommVQ vector quantization for old KV tokens
+        "_comm_vq_bits",       # int: 0 = off; 2 or 4 for CommVQ compression
+        "_comm_vq_k",          # CommVQCodebook | None  — key codebook
+        "_comm_vq_v",          # CommVQCodebook | None  — value codebook
+        "_comm_vq_calib_k",    # list[np.ndarray] | None — calibration buffer keys
+        "_comm_vq_calib_v",    # list[np.ndarray] | None — calibration buffer values
+        "_comm_vq_old_k",      # np.ndarray | None  (n_heads, n_old) uint16 indices
+        "_comm_vq_old_v",      # np.ndarray | None  (n_heads, n_old) uint16 indices
     )
 
     def __init__(self, window: int = 64):
@@ -194,6 +202,14 @@ class KVLayerCache:
         self._hnsw            = None  # HNSWIndex, lazily created on first disk spill
         # Phase 0C: async CPU dequant pre-fetch
         self._prefetch_future = None  # concurrent.futures.Future | None
+        # CommVQ vector quantization
+        self._comm_vq_bits   = 0     # 0 = off; 2 or 4 to enable CommVQ
+        self._comm_vq_k      = None  # CommVQCodebook — fitted on 1st calibration
+        self._comm_vq_v      = None
+        self._comm_vq_calib_k = None  # list or None — buffer until codebook fitted
+        self._comm_vq_calib_v = None
+        self._comm_vq_old_k  = None  # (n_heads, n_old) uint16 indices
+        self._comm_vq_old_v  = None
 
     # ── Main cache update ─────────────────────────────────────────────────────
 
@@ -231,6 +247,58 @@ class KVLayerCache:
                 if self._svd_Vk is not None:
                     oldest_k = self._svd_project(oldest_k, self._svd_Vk)
                     oldest_v = self._svd_project(oldest_v, self._svd_Vv)
+
+                # ── CommVQ vector quantization path ──────────────────────────────
+                if self._comm_vq_bits > 0:
+                    # Each oldest_k/v has shape (n_heads, head_dim).
+                    # Flatten per-head to (n_heads, head_dim) float32 for codebook.
+                    # On first _SVD_INIT_TOKENS tokens, buffer for codebook fitting.
+                    vecs_k = oldest_k.astype(np.float32)  # (n_heads, head_dim)
+                    vecs_v = oldest_v.astype(np.float32)
+                    if self._comm_vq_k is None:
+                        # Accumulate calibration buffer
+                        if self._comm_vq_calib_k is None:
+                            self._comm_vq_calib_k = []
+                            self._comm_vq_calib_v = []
+                        self._comm_vq_calib_k.append(vecs_k)
+                        self._comm_vq_calib_v.append(vecs_v)
+                        if len(self._comm_vq_calib_k) >= _SVD_INIT_TOKENS:
+                            # Fit codebooks: one per head dimension; use all heads
+                            from squish.comm_vq import CommVQCodebook
+                            n_codes = 2 ** self._comm_vq_bits  # 4 for 2-bit, 16 for 4-bit
+                            head_dim = self.head_dim
+                            calib_k = np.concatenate(self._comm_vq_calib_k, axis=0)  # (N*n_heads, head_dim)
+                            calib_v = np.concatenate(self._comm_vq_calib_v, axis=0)
+                            cb_k = CommVQCodebook(dim=head_dim, n_codes=n_codes)
+                            cb_v = CommVQCodebook(dim=head_dim, n_codes=n_codes)
+                            cb_k.fit(calib_k)
+                            cb_v.fit(calib_v)
+                            self._comm_vq_k = cb_k
+                            self._comm_vq_v = cb_v
+                            # Now encode all buffered tokens
+                            for buf_k, buf_v in zip(self._comm_vq_calib_k, self._comm_vq_calib_v, strict=False):
+                                idx_k = self._comm_vq_k.encode(buf_k).reshape(self.n_heads, 1)  # (n_heads, 1)
+                                idx_v = self._comm_vq_v.encode(buf_v).reshape(self.n_heads, 1)
+                                if self._comm_vq_old_k is None:
+                                    self._comm_vq_old_k = idx_k
+                                    self._comm_vq_old_v = idx_v
+                                else:
+                                    self._comm_vq_old_k = np.concatenate([self._comm_vq_old_k, idx_k], axis=1)
+                                    self._comm_vq_old_v = np.concatenate([self._comm_vq_old_v, idx_v], axis=1)
+                            self._comm_vq_calib_k = None
+                            self._comm_vq_calib_v = None
+                        continue  # token buffered; will be encoded after fitting
+                    else:
+                        # Codebook already fitted — encode directly (n_heads, 1) indices
+                        idx_k = self._comm_vq_k.encode(vecs_k).reshape(self.n_heads, 1)
+                        idx_v = self._comm_vq_v.encode(vecs_v).reshape(self.n_heads, 1)
+                        if self._comm_vq_old_k is None:
+                            self._comm_vq_old_k = idx_k
+                            self._comm_vq_old_v = idx_v
+                        else:
+                            self._comm_vq_old_k = np.concatenate([self._comm_vq_old_k, idx_k], axis=1)
+                            self._comm_vq_old_v = np.concatenate([self._comm_vq_old_v, idx_v], axis=1)
+                    continue  # CommVQ path done — skip INT8 quantization
 
                 # Quantize per-head per-token
                 new_kq_list, new_ks_list = [], []
@@ -294,6 +362,19 @@ class KVLayerCache:
                         Vv_h = self._svd_Vv[h].astype(np.float32)
                         k_deq = (k_deq.astype(np.float32) @ Vk_h).astype(np.float16)
                         v_deq = (v_deq.astype(np.float32) @ Vv_h).astype(np.float16)
+                    old_k_list.append(k_deq)
+                    old_v_list.append(v_deq)
+                old_k = np.stack(old_k_list, axis=0)   # (n_heads, n_old, head_dim)
+                old_v = np.stack(old_v_list, axis=0)
+            elif self._comm_vq_bits > 0 and self._comm_vq_old_k is not None:
+                # CommVQ: decode vector-quantized tokens per head
+                cb_k = self._comm_vq_k
+                cb_v = self._comm_vq_v
+                old_k_list, old_v_list = [], []
+                for h in range(self.n_heads):
+                    # indices shape: (n_old,)
+                    k_deq = cb_k.decode(self._comm_vq_old_k[h]).astype(np.float16)  # (n_old, head_dim)
+                    v_deq = cb_v.decode(self._comm_vq_old_v[h]).astype(np.float16)
                     old_k_list.append(k_deq)
                     old_v_list.append(v_deq)
                 old_k = np.stack(old_k_list, axis=0)   # (n_heads, n_old, head_dim)
@@ -935,16 +1016,18 @@ class QuantizedKVCache:
         budget: int = 4096,
         snap_window: int = 32,
         svd_rank: int = 0,                  # Phase 1: 0 = off; set to rank < head_dim
+        comm_vq_bits: int = 0,              # CommVQ: 0 = off; 2 for 2-bit, 4 for 4-bit
     ):
         """
         Parameters
         ----------
-        n_layers    : number of transformer layers
-        window      : recent FP16 window size (KIVI parameter)
-        mode        : "fp16" (no compression) | "int8" (KIVI) | "snap" (KIVI+SnapKV)
-        budget      : max K/V positions to retain per layer (SnapKV only)
-        snap_window : attention window for importance scoring (SnapKV)
-        svd_rank    : Phase 1 — project head_dim → rank before INT8 quant (0 = off)
+        n_layers      : number of transformer layers
+        window        : recent FP16 window size (KIVI parameter)
+        mode          : "fp16" (no compression) | "int8" (KIVI) | "snap" (KIVI+SnapKV)
+        budget        : max K/V positions to retain per layer (SnapKV only)
+        snap_window   : attention window for importance scoring (SnapKV)
+        svd_rank      : Phase 1 — project head_dim → rank before INT8 quant (0 = off)
+        comm_vq_bits  : CommVQ bits per index — 2 (4×4=16 codes) or 4 (16 codes) or 0 off
         """
         if mode not in ("fp16", "int8", "snap"):
             raise ValueError(f"mode must be fp16, int8, or snap — got {mode!r}")
@@ -954,6 +1037,7 @@ class QuantizedKVCache:
         self.budget      = budget
         self.snap_window = snap_window
         self.svd_rank    = svd_rank
+        self.comm_vq_bits = comm_vq_bits
         self.n_layers    = n_layers
         self._layers: list[KVLayerCache] = [
             KVLayerCache(window=window) for _ in range(n_layers)
@@ -961,6 +1045,9 @@ class QuantizedKVCache:
         if svd_rank > 0:
             for layer in self._layers:
                 layer._svd_rank = svd_rank
+        if comm_vq_bits > 0:
+            for layer in self._layers:
+                layer._comm_vq_bits = comm_vq_bits
         self._snapped = [False] * n_layers   # has SnapKV eviction been applied?
 
     # ── Compatibility shims for mlx_lm cache list API ────────────────────────
@@ -1290,24 +1377,26 @@ def make_quantized_cache(  # pragma: no cover
     budget: int = 4096,
     snap_window: int = 32,
     svd_rank: int = 0,
+    comm_vq_bits: int = 0,
 ) -> QuantizedKVCache:
     """
     Create a :class:`QuantizedKVCache` sized correctly for ``model``.
 
     Parameters
     ----------
-    model       : mlx_lm model (already loaded)
-    mode        : "fp16" | "int8" | "snap"
-    window      : FP16 residual window (KIVI)
-    budget      : max K/V positions (SnapKV only)
-    snap_window : attention window for importance (SnapKV)
-    svd_rank    : Phase 1 — SVD projection rank (0 = off)
+    model         : mlx_lm model (already loaded)
+    mode          : "fp16" | "int8" | "snap"
+    window        : FP16 residual window (KIVI)
+    budget        : max K/V positions (SnapKV only)
+    snap_window   : attention window for importance (SnapKV)
+    svd_rank      : Phase 1 — SVD projection rank (0 = off)
+    comm_vq_bits  : CommVQ bits per KV token (0 = off; 2 or 4)
     """
     n = _n_layers(model)
     return QuantizedKVCache(
         n_layers=n, window=window, mode=mode,
         budget=budget, snap_window=snap_window,
-        svd_rank=svd_rank,
+        svd_rank=svd_rank, comm_vq_bits=comm_vq_bits,
     )
 
 
@@ -1318,6 +1407,7 @@ def patch_model_kv_cache(  # pragma: no cover
     budget: int = 4096,
     snap_window: int = 32,
     svd_rank: int = 0,
+    comm_vq_bits: int = 0,
     verbose: bool = True,
 ) -> QuantizedKVCache:
     """
@@ -1344,15 +1434,16 @@ def patch_model_kv_cache(  # pragma: no cover
     cache = make_quantized_cache(
         model, mode=mode, window=window,
         budget=budget, snap_window=snap_window,
-        svd_rank=svd_rank,
+        svd_rank=svd_rank, comm_vq_bits=comm_vq_bits,
     )
     n = _n_layers(model)
 
     if verbose:
-        svd_info = f"  svd_rank={svd_rank}" if svd_rank > 0 else ""
+        svd_info   = f"  svd_rank={svd_rank}" if svd_rank > 0 else ""
+        commvq_info = f"  commvq_bits={comm_vq_bits}" if comm_vq_bits > 0 else ""
         print(f"  [KV cache] mode={mode}  window={window}  "
               f"budget={budget if mode == 'snap' else '—'}  "
-              f"layers={n}{svd_info}")
+              f"layers={n}{svd_info}{commvq_info}")
 
     # Store on the model so server.py can retrieve it
     model._squish_kv_cache = cache
