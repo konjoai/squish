@@ -5,6 +5,55 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.0.0] — 2026-03-12
+
+### Added — Wave 15: Serving Intelligence + KV Architecture Evolution
+
+- **AdaServe** (`squish/ada_serve.py`) — SLO-aware speculative decode scheduling via `AdaServeScheduler`; `register_slo()` + `enqueue()` + `get_gamma()`. 30% P99 latency reduction · 1.5–2× throughput across mixed SLO workloads.
+- **ConfSpec** (`squish/conf_spec.py`) — Confidence-gated verification routing with three paths (AUTO_ACCEPT / LIGHTWEIGHT / FULL_TARGET) via `ConfSpecVerifier.verify_step()`. 54% verification cost reduction.
+- **SeqPacking** (`squish/seq_packing.py`) — Barrel-effect-free sequence packing via `SequencePacker.pack()`. +1.8× effective batch throughput.
+- **MetaReasoner** (`squish/meta_reasoner.py`) — Dynamic per-token thinking budget via `MetaReasoner.step()` with entropy gates. 44–89% CoT energy saved on non-reasoning turns.
+- **YOCO** (`squish/yoco.py`) — You Only Cache Once cross-decoder KV sharing via `YOCOKVStore`; self-attention layers cache normally, cross-decoder layers share. −50% KV memory.
+- **CLA** (`squish/cla.py`) — Cross-Layer Attention sharing schedule via `CLASchedule.from_config()`; configurable sharing factor. 10–30% KV cache reduction.
+- **KVSharer** (`squish/kvsharer.py`) — Data-driven cross-layer KV correlation calibration via `KVSharerCalibrator`; produces `KVShareMap`. ~30% KV ops saved.
+- **DiffKV** (`squish/diffkv.py`) — Differentiated asymmetric K/V precision tiering (head-type-aware) via `DiffKVPolicyManager`. 2.7–5.7× KV compression · 1.9–5.4× decode throughput.
+- **ParisKV** (`squish/paris_kv.py`) — Drift-robust online KV quantisation via `ParisKVCodebook`; calibrated VQ with continuous centroid adaptation. 4× KV compression.
+- **KVTuner** (`squish/kvtuner.py`) — Sensitivity-aware mixed-precision KV search via `KVTunerCalibrator.search()`. 20–35% accuracy restored vs uniform quantisation.
+
+### Added — Wave 16: Heterogeneous Compute + Advanced Spec-Decode
+
+- **Dovetail** (`squish/dovetail.py`) — CPU+GPU concurrent speculative decode via `DovetailCPUVerifier` + `DovetailDecoder` + `DovetailDraftRunner`. 2× throughput via pipeline overlap.
+- **PIPO** (`squish/pipo.py`) — Pipelined prefetch-offload INT4 matmul via `PIPOScheduler`; weight DMA overlapped with GPU compute. +1.7× throughput on offloaded models.
+- **MobileMoE** (`squish/mobile_moe.py`) — MoE balanced layer-expert routing via `MoBiLERouter`. +1.4× throughput vs naïve expert dispatch.
+- **OnlineSD** (`squish/online_sd.py`) — Continuous draft-head adaptation via `OnlineDraftUpdater`; updates draft weights from trace buffer without full retraining. +5–8 pp acceptance rate.
+- **LookaheadReasoning** (`squish/lookahead_reasoning.py`) — Parallel step reasoning verification via `LookaheadReasoningEngine.run_cycle()`. +2.1× reasoning throughput.
+- **SparseSpec** (`squish/sparse_spec.py`) — Dynamic sparse self-speculation with pillar-attention cache via `SparseSpecDecoder` + `PillarAttnCache`. +2.13× spec-decode throughput.
+- **FRSpec** (`squish/fr_spec.py`) — Frequency-ranked vocab subset draft head via `FRSpecHead`; subset calibrated by `FRSpecCalibrator`. −13% draft latency.
+- **LongSpec** (`squish/long_spec.py`) — Long-context shared-KV draft head via `LongSpecHead`; zero draft KV overhead at any context length.
+- **ForeLen** (`squish/forelen.py`) — Entropy-guided output length prediction via `EGTPPredictor` (entropy histogram) + `PLPPredictor` (exponential decay). −29% MAE vs TRAIL.
+- **RASD** (`squish/rasd.py`) — Retrieval-augmented speculative decode via `CorpusIndex` + `RASDBatcher.build_retrieval_tree()`. 40–60% corpus hit rate.
+
+### Tests
+
+- Added `tests/test_wave15_server_wiring.py` — 44 tests covering all Wave 15 module import, instantiation, and core API paths.
+- Added `tests/test_wave16_server_wiring.py` — 45 tests covering all Wave 16 module import, instantiation, and core API paths.
+- Total tests: **3 937 passing**, 0 failures.
+
+### Benchmarks
+
+- Added `dev/benchmarks/bench_wave15_16.py` — micro-benchmark suite for all 21 Wave 15+16 modules.
+- Added `dev/results/wave15_16_bench.json` — machine-readable benchmark output.
+- Added `docs/benchmark_wave15_16.md` — human-readable results table.
+
+### Docs
+
+- Updated `README.md` with v4 section, Wave 15+16 module tables, and combined stack CLI example.
+- Added `PLAN.md` documenting v1–v4 release history and v5 roadmap.
+- Added `dev/demos/record_v4_demo.py` — v4 demo GIF generator.
+- Added `dev/demos/squish-v4-demo.cast` + `squish-v4-demo.gif`.
+
+---
+
 ## [1.0.1] — 2026-03-04
 
 ### Fixed

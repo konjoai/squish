@@ -25,6 +25,16 @@
 
 ![](dev/demos/squish-demo.gif)
 
+### v4 — Serving Intelligence · KV Architecture · Heterogeneous Compute · Spec-Decode
+
+![](dev/demos/squish-v4-demo.gif)
+
+> v4 adds 21 new modules across Wave 15 and Wave 16.  
+> Wave 15 (Serving Intelligence + KV Architecture): AdaServe, ConfSpec, SeqPacking, MetaReasoner, YOCO, CLA, KVSharer, DiffKV, ParisKV, KVTuner.  
+> Wave 16 (Heterogeneous Compute + Advanced Spec-Decode): Dovetail, PIPO, MobileMoE, OnlineSD, LookaheadReasoning, SparseSpec, FRSpec, LongSpec, ForeLen, RASD.  
+> −80% KV memory · +2.13× spec-decode · +1.8× batch throughput · 44–89% CoT energy saved.  
+> See [`docs/benchmark_wave15_16.md`](docs/benchmark_wave15_16.md) and [`dev/results/wave15_16_bench.json`](dev/results/wave15_16_bench.json) for full numbers.
+
 ### v3 — Ultra-Long Context · Adaptive Spec-Decode · Quantisation
 
 ![](dev/demos/squish-v3-demo.gif)
@@ -298,6 +308,65 @@ squish run qwen3:8b \
   --dfloat11 --rans-codec --head-infer \
   --soup-experts --vision-cache --vector-index --life-model
 ```
+
+---
+
+## v4 — Optimisation Modules: Serving Intelligence
+
+v4 (Wave 15) focuses on **SLO-aware inference scheduling**, **confidence-gated verification**, and **KV architecture evolution**, shipping 10 new modules:
+
+| Module | Flag | Problem Solved | Key Number |
+|--------|------|----------------|------------|
+| **AdaServe** | `--ada-serve` | Fixed gamma wastes draft budget on low-SLO requests | **30% P99 latency ↓** · 1.5–2× throughput |
+| **ConfSpec** | `--conf-spec` | Always running full verification wastes compute | **54% verification cost ↓** via confidence gating |
+| **SeqPacking** | `--seq-packing` | Varying sequence lengths cause barrel effect padding waste | **+1.8× batch throughput** |
+| **MetaReasoner** | `--meta-reasoner` | CoT thinking on every token wastes energy on easy prompts | **44–89% CoT energy saved** |
+| **YOCO** | `--yoco` | Cross-decoder layers duplicate KV across decoding passes | **−50% KV memory** via shared cross-decoder KV |
+| **CLA** | `--cla` | Adjacent transformer layers learn nearly identical KV | **10–30% KV reduction** via cross-layer sharing schedule |
+| **KVSharer** | `--kv-sharer` | No data-driven way to measure actual KV layer redundancy | **~30% KV ops saved** via calibration-based share map |
+| **DiffKV** | `--diffkv` | Uniform K/V precision ignores asymmetric sensitivity | **2.7–5.7× KV compression** · 1.9–5.4× throughput |
+| **ParisKV** | `--paris-kv` | Online KV quantisation codebooks drift without correction | **4× KV compression** with drift-robust adaptation |
+| **KVTuner** | `--kvtuner` | Naive mixed-precision quant loses 20–35% accuracy | **20–35% accuracy restored** vs uniform quant |
+
+Full v4 (Wave 15) stack (serving intelligence + KV architecture):
+
+```bash
+squish run qwen3:8b \
+  --ada-serve --conf-spec --seq-packing --meta-reasoner \
+  --yoco --cla --kv-sharer \
+  --diffkv --paris-kv --kvtuner
+```
+
+## v4 — Optimisation Modules: Heterogeneous Compute + Advanced Spec-Decode
+
+v4 (Wave 16) focuses on **heterogeneous CPU+GPU execution**, **pipelined weight offloading**, and **advanced speculative decoding**, shipping 11 new modules:
+
+| Module | Flag | Problem Solved | Key Number |
+|--------|------|----------------|------------|
+| **Dovetail** | `--dovetail` | CPU idle during GPU draft wastes heterogeneous compute | **2× throughput** via concurrent CPU verify + GPU draft |
+| **PIPO** | `--pipo` | Sequential weight offload causes GPU idle stalls | **+1.7× throughput** via pipelined prefetch overlap |
+| **MobileMoE** | `--mobile-moe` | MoE expert dispatch ignores device balance | **+1.4× throughput** via balanced layer-expert routing |
+| **OnlineSD** | `--online-sd` | Frozen draft heads degrade after fine-tuning | **+5–8 pp acceptance rate** via continuous adaptation |
+| **LookaheadReasoning** | `--lookahead-reasoning` | Sequential reasoning steps serialise all verification | **+2.1× throughput** via parallel step verification |
+| **SparseSpec** | `--sparse-spec` | Static speculation ignores dynamic attention patterns | **+2.13× spec throughput** via adaptive pillar cache |
+| **FRSpec** | `--fr-spec` | Full-vocab draft head is expensive at inference | **−13% draft latency** via frequency-ranked subset head |
+| **LongSpec** | `--long-spec` | Draft KV grows with context → memory ceiling for long gen | **Zero draft KV overhead** via shared-KV draft head |
+| **ForeLen** | `--forelen` | Output length prediction is inaccurate, causing early truncation | **−29% MAE** vs TRAIL baseline |
+| **RASD** | `--rasd` | Draft models unfamiliar with corpus vocab fail spec decode | **40–60% hit rate** via retrieval-augmented draft tree |
+
+Full v4 (Wave 16) stack (heterogeneous compute + spec-decode):
+
+```bash
+squish run qwen3:8b \
+  --dovetail --pipo \
+  --mobile-moe --online-sd \
+  --lookahead-reasoning --sparse-spec \
+  --fr-spec --long-spec \
+  --forelen --rasd
+```
+
+v4 benchmark results: [`docs/benchmark_wave15_16.md`](docs/benchmark_wave15_16.md)  
+Raw data: [`dev/results/wave15_16_bench.json`](dev/results/wave15_16_bench.json)
 
 ---
 
@@ -600,6 +669,26 @@ squish bench --markdown --save bench_results.md
 | `squish/hetero_vocab_sd.py` | **v3** HeteroVocabDecoder mismatched-vocabulary spec-decode |
 | `squish/head_infer.py` | **v3** HeadAwareKVStore head-type-aware KV separation |
 | `squish/life_model.py` | **v3** model lifecycle predictor for cache eviction guidance |
+| `squish/ada_serve.py` | **v4** AdaServe SLO-aware speculative decode scheduler |
+| `squish/conf_spec.py` | **v4** ConfSpec confidence-gated verification routing |
+| `squish/seq_packing.py` | **v4** SequencePacker barrel-effect-free bin-packed batching |
+| `squish/meta_reasoner.py` | **v4** MetaReasoner dynamic per-token thinking budget |
+| `squish/yoco.py` | **v4** YOCOKVStore cross-decoder shared KV (50% memory) |
+| `squish/cla.py` | **v4** CLASchedule cross-layer attention sharing schedule |
+| `squish/kvsharer.py` | **v4** KVSharerCalibrator data-driven cross-layer KV share map |
+| `squish/diffkv.py` | **v4** DiffKVPolicyManager asymmetric K/V precision tiering |
+| `squish/paris_kv.py` | **v4** ParisKVCodebook drift-robust online KV quantisation |
+| `squish/kvtuner.py` | **v4** KVTunerCalibrator sensitivity-aware mixed-precision KV |
+| `squish/dovetail.py` | **v4** DovetailCPUVerifier CPU+GPU concurrent spec-decode |
+| `squish/pipo.py` | **v4** PIPOScheduler pipelined prefetch-offload INT4 matmul |
+| `squish/mobile_moe.py` | **v4** MoBiLERouter MoE balanced layer-expert routing |
+| `squish/online_sd.py` | **v4** OnlineDraftUpdater continuous draft-head adaptation |
+| `squish/lookahead_reasoning.py` | **v4** LookaheadReasoningEngine parallel step verification |
+| `squish/sparse_spec.py` | **v4** SparseSpecDecoder dynamic pillar-attention sparse cache |
+| `squish/fr_spec.py` | **v4** FRSpecHead frequency-ranked vocab subset draft head |
+| `squish/long_spec.py` | **v4** LongSpecHead long-context zero-KV-overhead draft head |
+| `squish/forelen.py` | **v4** EGTPPredictor + PLPPredictor entropy-guided length pred |
+| `squish/rasd.py` | **v4** RASDBatcher retrieval-augmented speculative decode |
 | `dev/demos/run_inference.py` | Minimal inference example (no server needed) |
 | `squish_quant_rs/` | Rust/PyO3 ARM NEON INT8 quantiser (optional, 6 GB/s) |
 | `docs/ARCHITECTURE.md` | Technical deep-dive: why these numbers are real |
