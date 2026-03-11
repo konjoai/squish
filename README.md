@@ -25,20 +25,20 @@
 
 ![](dev/demos/squish-demo.gif)
 
-### Wave 13+14 — Ultra-Long Context · Adaptive Spec-Decode · Quantisation
+### v3 — Ultra-Long Context · Adaptive Spec-Decode · Quantisation
 
-![](dev/demos/squish-wave13-14-demo.gif)
+![](dev/demos/squish-v3-demo.gif)
 
-> Waves 13+14 add 25 new modules: DuoAttention, ShadowKV, PQCache, KnapSpec, TokenMerging,
+> v3 adds 25 new modules: DuoAttention, ShadowKV, PQCache, KnapSpec, TokenMerging,
 > DFloat11, SqueezeLLM, NF4, QSpec, CopySpec, VisionPrefixCache, and more.  
 > 10–30× KV memory reduction · 55% draft acceptance · 5–10× weight compression · 13.5× vision cache speedup.  
 > See [`docs/benchmark_wave13_14.md`](docs/benchmark_wave13_14.md) and [`dev/results/wave13_14_bench.json`](dev/results/wave13_14_bench.json) for full numbers.
 
-### Wave 12 — Reasoning-Aware KV + INT3 + Async I/O
+### v2 — Reasoning-Aware KV + INT3 + Async I/O
 
-![](dev/demos/squish-wave12-demo.gif)
+![](dev/demos/squish-v2-demo.gif)
 
-> Wave 12 adds PM-KVQ, MixKVQ, CocktailKV, MiLo INT3, and AgileIO.  
+> v2 adds PM-KVQ, MixKVQ, CocktailKV, MiLo INT3, and AgileIO.  
 > 4.2× KV memory reduction · 5.3× weight compression · 40–60% I/O latency reduction.  
 > See [`docs/RESULTS.md`](docs/RESULTS.md) and [`docs/benchmark_wave12.md`](docs/benchmark_wave12.md) for full numbers.
 
@@ -209,7 +209,7 @@ Full reproducibility commands and multi-seed results are in [docs/RESULTS.md](do
 
 ---
 
-## Wave 12 Optimisation Modules
+## v2 — Optimisation Modules
 
 Enable with `squish run --model <name> [flags]`:
 
@@ -232,14 +232,14 @@ squish run qwen3:8b \
   --sage-attention --sparge-attn
 ```
 
-Wave 12 benchmark results: [`docs/benchmark_wave12.md`](docs/benchmark_wave12.md)  
+v2 benchmark results: [`docs/benchmark_wave12.md`](docs/benchmark_wave12.md)  
 Raw data: [`dev/results/wave12_bench.json`](dev/results/wave12_bench.json)
 
 ---
 
-## Wave 13 Optimisation Modules
+## v3 — Optimisation Modules: Ultra-Long Context
 
-Wave 13 focuses on **ultra-long context** (128K+ tokens) and **adaptive speculative decoding**, shipping 10 new modules:
+v3 (Wave 13) focuses on **ultra-long context** (128K+ tokens) and **adaptive speculative decoding**, shipping 10 new modules:
 
 | Module | Flag | Problem Solved | Key Number |
 |--------|------|----------------|------------|
@@ -254,7 +254,7 @@ Wave 13 focuses on **ultra-long context** (128K+ tokens) and **adaptive speculat
 | **C2T** | `--c2t` | Uniform draft tree wastes budget at confident positions | **+0.8 tokens/step** accepted |
 | **CLaSp** | `--clasp` | Layer-skip selection is static; ignores hidden-state feedback | **Adaptive skip** · DP-optimal per step |
 
-Full Wave 13 stack (ultra-long context):
+Full v3 (Wave 13) stack (ultra-long context):
 
 ```bash
 squish run qwen3:8b \
@@ -265,9 +265,9 @@ squish run qwen3:8b \
 
 ---
 
-## Wave 14 Optimisation Modules
+## v3 — Optimisation Modules: Quantisation & Spec-Decode
 
-Wave 14 focuses on **quantisation methods**, **vocabulary-adaptive speculative decoding**, and **expert mixing**, shipping 16 new modules:
+v3 (Wave 14) focuses on **quantisation methods**, **vocabulary-adaptive speculative decoding**, and **expert mixing**, shipping 16 new modules:
 
 | Module | Flag | Problem Solved | Key Number |
 |--------|------|----------------|------------|
@@ -288,7 +288,7 @@ Wave 14 focuses on **quantisation methods**, **vocabulary-adaptive speculative d
 | **HeadInfer** | `--head-infer` | Uniform KV policy wastes memory on non-retrieval heads | **Head-type-aware** KV store: retrieval vs. streaming |
 | **Life Model** | `--life-model` | Cache eviction is LRU-blind to access patterns | **Lifecycle predictor** → model-aware eviction signals |
 
-Full Wave 14 stack (quantisation + adaptive spec-decode):
+Full v3 (Wave 14) stack (quantisation + adaptive spec-decode):
 
 ```bash
 squish run qwen3:8b \
@@ -564,42 +564,42 @@ squish bench --markdown --save bench_results.md
 | `compressed_loader.py` | Three-tier weight loader (INT8 → f16 → bf16 MLX) |
 | `dev/scripts/upload_to_hub.py` | Batch compress + upload to squish-community HuggingFace org |
 | `dev/demos/record_demo.py` | Demo GIF generator (v1 benchmark results) |
-| `dev/demos/record_wave12_demo.py` | **Wave 12 demo GIF generator** |
-| `dev/demos/squish-wave12-demo.gif` | **Wave 12 animated feature demo** |
-| `dev/benchmarks/bench_wave12.py` | **Wave 12 module micro-benchmark suite** |
-| `dev/results/wave12_bench.json` | **Wave 12 benchmark results (JSON)** |
-| `docs/benchmark_wave12.md` | **Wave 12 benchmark results (Markdown)** |
+| `dev/demos/record_wave12_demo.py` | **v2 demo GIF generator** |
+| `dev/demos/squish-v2-demo.gif` | **v2 animated feature demo** |
+| `dev/benchmarks/bench_wave12.py` | **v2 module micro-benchmark suite** |
+| `dev/results/wave12_bench.json` | **v2 benchmark results (JSON)** |
+| `docs/benchmark_wave12.md` | **v2 benchmark results (Markdown)** |
 | `squish/pm_kvq.py` | PM-KVQ progressive KV scheduler |
 | `squish/mix_kvq.py` | MixKVQ per-channel KV quantiser |
 | `squish/cocktail_kv.py` | CocktailKV chunk-similarity KV store |
 | `squish/agile_io.py` | AgileIO async NVMe prefetch manager |
 | `squish/milo_quant.py` | MiLo INT3 + low-rank compensator |
-| `squish/duo_attention.py` | **Wave 13** DuoAttention retrieval/streaming head separation |
-| `squish/shadow_kv.py` | **Wave 13** ShadowKV low-rank pre-RoPE key cache + CPU value shadow |
-| `squish/pq_cache.py` | **Wave 13** PQCache product-quantization KV ANN retrieval |
-| `squish/spe_cache.py` | **Wave 13** SpeCache speculative KV-cache prefetch for multi-turn |
-| `squish/duo_decoding.py` | **Wave 13** DuoDecoding hardware-aware dynamic multi-sequence spec-decode |
-| `squish/knapspec.py` | **Wave 13** KnapSpec knapsack-optimal self-speculative layer selection |
-| `squish/token_merging.py` | **Wave 13** Token Merging (ToMe) prefill sequence-length reduction |
-| `squish/token_swift.py` | **Wave 13** TokenSwift multi-token draft heads + partial KV reuse |
-| `squish/c2t.py` | **Wave 13** C2T classifier-based adaptive speculative candidate tree |
-| `squish/clasp.py` | **Wave 13** CLaSp in-context layer-skip with DP adaptive feedback |
-| `squish/soup_experts.py` | **Wave 14** SoupOfExperts sparse LoRA-expert adapter blending |
-| `squish/vision_cache.py` | **Wave 14** VisionPrefixCache SHA-256 dedup for vision encoder outputs |
-| `squish/vector_index.py` | **Wave 14** MRLIndex + HNSWIndex Matryoshka repr + ANN semantic retrieval |
-| `squish/sub_spec.py` | **Wave 14** SubSpec quantized-substitute speculative decoding |
-| `squish/del_decoder.py` | **Wave 14** DELDecoder dynamic early-layer exit spec-decode |
-| `squish/dfloat11.py` | **Wave 14** DFloat11 block-float compression codec for model weights |
-| `squish/rans_codec.py` | **Wave 14** rANS entropy codec for near-optimal KV/weight compression |
-| `squish/qspec.py` | **Wave 14** QSpecDecoder quantisation-aware W4A8/W4A16 spec-decode |
-| `squish/quant_spec.py` | **Wave 14** QuantSpecDecoder draft-quantised speculative decoding |
-| `squish/copy_spec.py` | **Wave 14** CopySpecDrafter copy-based spec-decode from token history |
-| `squish/squeeze_llm.py` | **Wave 14** SqueezeLLM sparse + dense mixed-precision weight quantisation |
-| `squish/nf4_quant.py` | **Wave 14** NF4 normal-float 4-bit quantisation (QLoRA-style) |
-| `squish/spin_quant.py` | **Wave 14** SpinQuant Hadamard rotation for quantisation-friendly layout |
-| `squish/hetero_vocab_sd.py` | **Wave 14** HeteroVocabDecoder mismatched-vocabulary spec-decode |
-| `squish/head_infer.py` | **Wave 14** HeadAwareKVStore head-type-aware KV separation |
-| `squish/life_model.py` | **Wave 14** model lifecycle predictor for cache eviction guidance |
+| `squish/duo_attention.py` | **v3** DuoAttention retrieval/streaming head separation |
+| `squish/shadow_kv.py` | **v3** ShadowKV low-rank pre-RoPE key cache + CPU value shadow |
+| `squish/pq_cache.py` | **v3** PQCache product-quantization KV ANN retrieval |
+| `squish/spe_cache.py` | **v3** SpeCache speculative KV-cache prefetch for multi-turn |
+| `squish/duo_decoding.py` | **v3** DuoDecoding hardware-aware dynamic multi-sequence spec-decode |
+| `squish/knapspec.py` | **v3** KnapSpec knapsack-optimal self-speculative layer selection |
+| `squish/token_merging.py` | **v3** Token Merging (ToMe) prefill sequence-length reduction |
+| `squish/token_swift.py` | **v3** TokenSwift multi-token draft heads + partial KV reuse |
+| `squish/c2t.py` | **v3** C2T classifier-based adaptive speculative candidate tree |
+| `squish/clasp.py` | **v3** CLaSp in-context layer-skip with DP adaptive feedback |
+| `squish/soup_experts.py` | **v3** SoupOfExperts sparse LoRA-expert adapter blending |
+| `squish/vision_cache.py` | **v3** VisionPrefixCache SHA-256 dedup for vision encoder outputs |
+| `squish/vector_index.py` | **v3** MRLIndex + HNSWIndex Matryoshka repr + ANN semantic retrieval |
+| `squish/sub_spec.py` | **v3** SubSpec quantized-substitute speculative decoding |
+| `squish/del_decoder.py` | **v3** DELDecoder dynamic early-layer exit spec-decode |
+| `squish/dfloat11.py` | **v3** DFloat11 block-float compression codec for model weights |
+| `squish/rans_codec.py` | **v3** rANS entropy codec for near-optimal KV/weight compression |
+| `squish/qspec.py` | **v3** QSpecDecoder quantisation-aware W4A8/W4A16 spec-decode |
+| `squish/quant_spec.py` | **v3** QuantSpecDecoder draft-quantised speculative decoding |
+| `squish/copy_spec.py` | **v3** CopySpecDrafter copy-based spec-decode from token history |
+| `squish/squeeze_llm.py` | **v3** SqueezeLLM sparse + dense mixed-precision weight quantisation |
+| `squish/nf4_quant.py` | **v3** NF4 normal-float 4-bit quantisation (QLoRA-style) |
+| `squish/spin_quant.py` | **v3** SpinQuant Hadamard rotation for quantisation-friendly layout |
+| `squish/hetero_vocab_sd.py` | **v3** HeteroVocabDecoder mismatched-vocabulary spec-decode |
+| `squish/head_infer.py` | **v3** HeadAwareKVStore head-type-aware KV separation |
+| `squish/life_model.py` | **v3** model lifecycle predictor for cache eviction guidance |
 | `dev/demos/run_inference.py` | Minimal inference example (no server needed) |
 | `squish_quant_rs/` | Rust/PyO3 ARM NEON INT8 quantiser (optional, 6 GB/s) |
 | `docs/ARCHITECTURE.md` | Technical deep-dive: why these numbers are real |

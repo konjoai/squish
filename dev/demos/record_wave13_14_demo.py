@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-record_wave13_14_demo.py — Wave 13+14 full feature demo GIF generator.
+record_wave13_14_demo.py — v3 full feature demo GIF generator.
 
-Generates an asciinema v2 .cast file showcasing all Squish Wave 13 and Wave 14
+Generates an asciinema v2 .cast file showcasing all Squish v3 (Wave 13 + Wave 14)
 optimisation modules, then converts to GIF using ``agg``.
 
-Wave 13 modules shown
+v3 modules shown (Wave 13)
 ---------------------
   DuoAttention   — retrieval/streaming head KV separation
   ShadowKV       — SVD low-rank key cache + CPU offload
@@ -17,7 +17,7 @@ Wave 13 modules shown
   C2T            — confidence-to-tree adaptive draft builder
   CLaSP          — layer-skip adaptive speculative decoding
 
-Wave 14 modules shown
+v3 modules (Wave 14)
 ---------------------
   DFloat11         — Huffman entropy coding for BF16 weights
   RANSCodec        — rANS entropy codec
@@ -35,7 +35,7 @@ Usage
 -----
     python3 dev/demos/record_wave13_14_demo.py
     python3 dev/demos/record_wave13_14_demo.py --cast-only
-    python3 dev/demos/record_wave13_14_demo.py --out dev/demos/squish-wave13-14-demo.gif
+    python3 dev/demos/record_wave13_14_demo.py --out dev/demos/squish-v3-demo.gif
     python3 dev/demos/record_wave13_14_demo.py --agg /tmp/agg
 """
 
@@ -78,7 +78,7 @@ H = 30   # terminal height
 
 class Cast:
     def __init__(self, width: int = W, height: int = H,
-                 title: str = "Squish Wave 13+14 Demo"):
+                 title: str = "Squish v3 Demo"):
         self.width  = width
         self.height = height
         self.title  = title
@@ -163,7 +163,7 @@ def scene_title(c: Cast) -> None:
 
     c.println()
     c.println(
-        f"  {B}{WHT}W A V E S   1 3   +   1 4{R}"
+        f"  {B}{WHT}v 3 . 0{R}"
         f"  {DIM}—  Ultra-Long Context · Adaptive Spec-Decode · Quantisation{R}",
         dt=0.08,
     )
@@ -188,12 +188,12 @@ def scene_title(c: Cast) -> None:
         (BMAG, "HeteroVocab",   "Cross-vocabulary speculative decoding"),
     ]
 
-    c.println(f"  {B}{BCY}Wave 13{R}  {DIM}(9 modules){R}", dt=0.06)
+    c.println(f"  {B}{BCY}v3 · Wave 13{R}  {DIM}(9 modules){R}", dt=0.06)
     for colour, name, desc in wave13:
-        c.println(f"    {B}{colour}{name:<16}{R}  {DIM}{desc}{R}", dt=0.09)
+        c.println(f"    {B}{colour}{name:<16}{R}  {DIM}{desc}{R}", dt=0.3)
 
     c.println()
-    c.println(f"  {B}{BMAG}Wave 14{R}  {DIM}(16 modules){R}", dt=0.06)
+    c.println(f"  {B}{BMAG}v3 · Wave 14{R}  {DIM}(16 modules){R}", dt=0.06)
     for colour, name, desc in wave14:
         c.println(f"    {B}{colour}{name:<16}{R}  {DIM}{desc}{R}", dt=0.09)
 
@@ -208,7 +208,7 @@ def scene_title(c: Cast) -> None:
 # ── Scene 2: Wave 13 KV Memory Compression ───────────────────────────────────
 
 def scene_wave13_kv(c: Cast) -> None:
-    _section(c, "Wave 13 — KV Cache Memory Compression", colour=BCY)
+    _section(c, "v3 — KV Cache Memory Compression", colour=BCY)
 
     c.typeout(
         "  $ squish run --model qwen3-8b "
@@ -271,7 +271,7 @@ def scene_wave13_kv(c: Cast) -> None:
 # ── Scene 3: Wave 13 Speculative Decoding ────────────────────────────────────
 
 def scene_wave13_spec(c: Cast) -> None:
-    _section(c, "Wave 13 — Adaptive Speculative Decoding", colour=BCY)
+    _section(c, "v3 — Adaptive Speculative Decoding", colour=BCY)
 
     c.typeout(
         "  $ squish run --model qwen3-8b "
@@ -341,7 +341,7 @@ def scene_wave13_spec(c: Cast) -> None:
 # ── Scene 4: Wave 14 Quantisation ─────────────────────────────────────────────
 
 def scene_wave14_quant(c: Cast) -> None:
-    _section(c, "Wave 14 — Weight Quantisation + Entropy Coding", colour=BMAG)
+    _section(c, "v3 — Weight Quantisation + Entropy Coding", colour=BMAG)
 
     c.typeout(
         "  $ squish it qwen3-8b "
@@ -422,7 +422,7 @@ def scene_wave14_quant(c: Cast) -> None:
 # ── Scene 5: Wave 14 Speculative Decoding ─────────────────────────────────────
 
 def scene_wave14_spec(c: Cast) -> None:
-    _section(c, "Wave 14 — Specialised Speculative Decoding", colour=BMAG)
+    _section(c, "v3 — Specialised Speculative Decoding", colour=BMAG)
 
     c.typeout(
         "  $ squish run --model qwen3-8b "
@@ -473,7 +473,7 @@ def scene_wave14_spec(c: Cast) -> None:
     c.println()
 
     # SubSpec / DEL / HeteroVocab
-    c.println(f"  {B}{BMAG}More Wave 14 spec-decode modules{R}", dt=0.1)
+    c.println(f"  {B}{BMAG}More v3 spec-decode modules{R}", dt=0.1)
     c.println()
     more = [
         ("SubSpec",      "draft from frozen sub-model layers",       "γ=4 acceptance"),
@@ -500,7 +500,7 @@ def scene_wave14_spec(c: Cast) -> None:
 # ── Scene 6: Compound stack + summary ────────────────────────────────────────
 
 def scene_full_stack(c: Cast) -> None:
-    _section(c, "Full Wave 13+14 Stack — All 25 modules active", colour=BGN)
+    _section(c, "Full v3 Stack — All 25 modules active", colour=BGN)
 
     c.typeout(
         "  $ squish run --model qwen3-8b \\",
@@ -564,7 +564,7 @@ def scene_full_stack(c: Cast) -> None:
         ("Token sequence reduction",   "3–12%",   "TokenMerging r=16",              BCY),
         ("Compound stack overhead",    "~1.0×",   "virtually free on Apple Silicon", BGN),
     ]
-    c.println(f"  {B}Wave 13+14 improvements vs Squish v1:{R}", dt=0.1)
+    c.println(f"  {B}v3 improvements vs v1:{R}", dt=0.1)
     c.println()
     for label, val, note, col in summary:
         c.println(
@@ -679,7 +679,7 @@ def scene_closing(c: Cast) -> None:
     c.pause(0.2)
     c.hbar()
     c.println()
-    c.println(f"  {B}{CYN}Squish{R}  {DIM}Waves 1–14  ·  61 optimisation modules  ·  3 848 tests{R}", dt=0.1)
+    c.println(f"  {B}{CYN}Squish{R}  {DIM}v1–v3  ·  61 optimisation modules  ·  3 848 tests{R}", dt=0.1)
     c.println()
 
     links = [
@@ -717,8 +717,8 @@ def build_cast() -> Cast:
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Generate Squish Wave 13+14 demo GIF")
-    ap.add_argument("--out",       default="dev/demos/squish-wave13-14-demo.gif",
+    ap = argparse.ArgumentParser(description="Generate Squish v3 demo GIF")
+    ap.add_argument("--out",       default="dev/demos/squish-v3-demo.gif",
                     help="Output GIF path")
     ap.add_argument("--cast-only", action="store_true",
                     help="Write .cast file only (skip GIF conversion)")

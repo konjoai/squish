@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-record_wave12_demo.py — Wave 12 feature demo GIF generator.
+record_wave12_demo.py — v2 feature demo GIF generator.
 
-Generates an asciinema v2 .cast file showcasing all Squish Wave 12 optimisation
+Generates an asciinema v2 .cast file showcasing all Squish v2 optimisation
 modules, then converts to GIF using `agg`.
 
-Wave 12 modules shown
+v2 modules shown
 ---------------------
   PM-KVQ     — progressive mixed-precision KV quantisation scheduler
   MixKVQ     — query-aware per-channel KV quantisation
@@ -17,7 +17,7 @@ Usage
 -----
     python3 dev/demos/record_wave12_demo.py
     python3 dev/demos/record_wave12_demo.py --cast-only
-    python3 dev/demos/record_wave12_demo.py --out dev/demos/squish-wave12-demo.gif
+    python3 dev/demos/record_wave12_demo.py --out dev/demos/squish-v2-demo.gif
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ H = 28   # terminal height
 # ── Cast builder (same API as record_demo.py) ─────────────────────────────────
 
 class Cast:
-    def __init__(self, width: int = W, height: int = H, title: str = "Squish Wave 12 Demo"):
+    def __init__(self, width: int = W, height: int = H, title: str = "Squish v2 Demo"):
         self.width  = width
         self.height = height
         self.title  = title
@@ -146,7 +146,7 @@ def scene_title(c: Cast) -> None:
         c.println(f"{B}{colour}{line}{R}", dt=0.1)
     c.println()
     c.println(
-        f"  {B}{WHT}W A V E  1 2{R}  "
+        f"  {B}{WHT}v 2 . 0{R}  "
         f"{DIM}—  Reasoning-Aware KV · INT3 · Async I/O{R}",
         dt=0.06,
     )
@@ -380,7 +380,7 @@ def scene_milo(c: Cast) -> None:
 # ── Scene 7: Full stack demo ──────────────────────────────────────────────────
 
 def scene_full_stack(c: Cast) -> None:
-    _section(c, "Full Wave 12 Stack", "All five modules together")
+    _section(c, "Full v2 Stack", "All five modules together")
 
     c.typeout(
         "  $ squish run --model qwen3-8b \\",
@@ -419,7 +419,7 @@ def scene_full_stack(c: Cast) -> None:
     c.pause(0.4)
 
     # Performance summary
-    c.println(f"  {B}Wave 12 improvements vs Squish v1:{R}", dt=0.1)
+    c.println(f"  {B}v2 improvements vs v1:{R}", dt=0.1)
     c.println()
 
     summary = [
@@ -443,10 +443,10 @@ def scene_full_stack(c: Cast) -> None:
 # ── Scene 8: Accuracy table ──────────────────────────────────────────────────
 
 def scene_accuracy(c: Cast) -> None:
-    _section(c, "Accuracy — Wave 12 is lossless on base weights",
+    _section(c, "Accuracy — v2 is lossless on base weights",
              "lm-evaluation-harness v0.4.x, Qwen2.5-1.5B")
 
-    c.println(f"  {'Task':<22}  {'Squish v1':>10}  {'+ Wave 12':>10}  {'Delta':>7}  {'Pass'}", dt=0.1)
+    c.println(f"  {'Task':<22}  {'Squish v1':>10}  {'+ v2':>10}  {'Delta':>7}  {'Pass'}", dt=0.1)
     c.println(f"  {'─' * 64}")
 
     tasks = [
@@ -462,10 +462,10 @@ def scene_accuracy(c: Cast) -> None:
         )
 
     c.println(f"  {'─' * 64}", dt=0.1)
-    c.println(f"  {DIM}Wave 12 operates on KV cache and attention paths only.{R}", dt=0.1)
+    c.println(f"  {DIM}v2 operates on KV cache and attention paths only.{R}", dt=0.1)
     c.println(f"  {DIM}Base weights unchanged — accuracy identical to Squish v1.{R}", dt=0.08)
     c.println()
-    c.println(f"  {B}{BGN}✓  ALL BENCHMARKS PASS — Squish Wave 12{R}", dt=0.15)
+    c.println(f"  {B}{BGN}✓  ALL BENCHMARKS PASS — Squish v2{R}", dt=0.15)
     c.pause(2.0)
 
 
@@ -475,7 +475,7 @@ def scene_closing(c: Cast) -> None:
     c.pause(0.5)
     c.hbar()
     c.println()
-    c.println(f"  {B}{CYN}  Squish Wave 12{R}  {DIM}— ship it.{R}", dt=0.1)
+    c.println(f"  {B}{CYN}  Squish v2{R}  {DIM}— ship it.{R}", dt=0.1)
     c.println()
 
     links = [
@@ -511,10 +511,10 @@ def build_cast() -> Cast:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Generate Squish Wave 12 demo GIF")
-    ap.add_argument("--out",       default="dev/demos/squish-wave12-demo.gif",
+    ap = argparse.ArgumentParser(description="Generate Squish v2 demo GIF")
+    ap.add_argument("--out",       default="dev/demos/squish-v2-demo.gif",
                     help="Output GIF path")
-    ap.add_argument("--cast-out",  default="dev/demos/squish-wave12-demo.cast",
+    ap.add_argument("--cast-out",  default="dev/demos/squish-v2-demo.cast",
                     help="Output .cast path")
     ap.add_argument("--cast-only", action="store_true",
                     help="Write .cast only, skip GIF conversion")
@@ -547,7 +547,7 @@ def main() -> None:
     if not agg_bin:
         print("agg not found — install from https://github.com/asciinema/agg")
         print(f"  Cast file written: {cast_out}")
-        print("  Convert manually:  agg --speed 1.4 squish-wave12-demo.cast squish-wave12-demo.gif")
+        print("  Convert manually:  agg --speed 1.4 squish-v2-demo.cast squish-v2-demo.gif")
         sys.exit(0)
 
     cmd = [
