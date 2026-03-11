@@ -565,6 +565,78 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#300-2026-03-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [3.0.0] — 2026-03-11
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[3.0.0] — 2026-03-11">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-17-attention-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 17: Attention Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-18-adaptive-compute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 18: Adaptive Compute
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Benchmarks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#200-2026-03-12" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -599,7 +671,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests" class="md-nav__link">
+  <a href="#tests_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -610,7 +682,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#benchmarks" class="md-nav__link">
+  <a href="#benchmarks_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Benchmarks
@@ -621,7 +693,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#docs" class="md-nav__link">
+  <a href="#docs_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Docs
@@ -727,6 +799,60 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="300-2026-03-11">[3.0.0] — 2026-03-11<a class="headerlink" href="#300-2026-03-11" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-17-attention-architecture">Added — Wave 17: Attention Architecture<a class="headerlink" href="#added-wave-17-attention-architecture" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>SageAttention2</strong> (<code>squish/sage_attention2.py</code>) — INT4/INT8 warp-tile quantised attention via <code>SageAttention2Kernel.forward()</code> + <code>warp_quantize_int4()</code>. 672 µs forward (4 heads, seq=32, d=64); bandwidth-optimal for long sequences.</li>
+<li><strong>StreamingSink</strong> (<code>squish/streaming_sink.py</code>) — Attention-sink KV eviction cache via <code>StreamingSinkCache</code>. Keeps <code>num_sinks</code> initial tokens + a sliding window; bounded memory at any context length.</li>
+<li><strong>KVSlab</strong> (<code>squish/kv_slab.py</code>) — Pre-allocated slab page allocator for KV via <code>KVSlabAllocator</code>. 0.87 µs alloc+free round-trip; eliminates per-token malloc fragmentation.</li>
+<li><strong>SqueezeAttention</strong> (<code>squish/squeeze_attention.py</code>) — Joint 2D KV budget allocation (token × layer axes) via <code>BudgetAllocator.allocate()</code> + <code>SqueezeKVCache</code>. Pareto-optimal vs. independent axis compression.</li>
+<li><strong>SmallKV</strong> (<code>squish/smallkv.py</code>) — Saliency-compensated KV recall for small models via <code>SmallKVStore</code>. 39 µs ingest, 8 µs check-and-recall; protects quality under aggressive KV budgets.</li>
+<li><strong>SpeContext</strong> (<code>squish/specontext.py</code>) — Speculative-decode context retrieval cache via <code>SpeContextCache</code>. Cosine-similarity top-k retrieve at 3.3 ms; eliminates context re-fetch per draft step.</li>
+<li><strong>SVDq</strong> (<code>squish/svdq.py</code>) — Head-wise SVD low-rank K quantisation via <code>SVDqCalibrator.search()</code>. 62 ms one-time calibration; mixed-precision K across layers and heads.</li>
+<li><strong>CommVQ</strong> (<code>squish/comm_vq.py</code>) — Communal vector-quantised KV codebook via <code>CommVQCodebook</code>. 55 µs encode, 68 µs decode; shared codebook eliminates per-layer redundancy.</li>
+<li><strong>ChunkedPrefill</strong> (<code>squish/chunked_prefill.py</code>) — Interleaved chunked prefill iterator via <code>ChunkedPrefillIterator</code>. Bounded per-chunk latency; prevents decoding stalls during long prefills.</li>
+<li><strong>GemFilter</strong> (<code>squish/gemfilter.py</code>) — Attention-score KV token selector via <code>GemSelector.select()</code> + <code>AttentionScoreBuffer</code>. 0.90× compression ratio, 50 µs selection for 512-token contexts.</li>
+<li><strong>MInferencePatch</strong> (<code>squish/minference_patch.py</code>) — Dynamic sparse attention patcher via <code>patch_model_minference()</code>. Sub-quadratic attention for 1M+ token contexts via vertical/diagonal/slash patterns.</li>
+<li><strong>PromptCompressor</strong> (<code>squish/prompt_compressor.py</code>) — TF-IDF sentence-level prompt compression via <code>PromptCompressor.compress()</code>. 686 µs for 50 sentences at ratio=0.3; preserves query-relevant content.</li>
+<li><strong>PromptLookup</strong> (<code>squish/prompt_lookup.py</code>) — N-gram speculative draft generator via <code>PromptLookupBuffer</code>. 0.8 µs find, 3.3 µs push; zero-model spec-decode from prompt n-grams.</li>
+<li><strong>TRAIL</strong> (<code>squish/trail.py</code>) — Output-length linear-probe predictor via <code>TrailLinearProbe.predict()</code> + <code>TrailPredictor.srpt_priority()</code>. 10 µs predict; feeds SRPT scheduling queue.</li>
+</ul>
+<h3 id="added-wave-18-adaptive-compute">Added — Wave 18: Adaptive Compute<a class="headerlink" href="#added-wave-18-adaptive-compute" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>VPTQ</strong> (<code>squish/vptq.py</code>) — Vector-product tree quantisation via <code>VPTQCodebook</code> + <code>VPTQQuantizer</code>. 15 µs decode, 133 ms one-time compress (W=32×32); captures intra-vector correlations.</li>
+<li><strong>LayerSkip</strong> (<code>squish/layer_skip.py</code>) — Confidence-gated early exit via <code>LayerSkipEstimator</code>. 266 µs estimate; exits before <code>lm_head</code> when token confidence exceeds threshold=0.85.</li>
+<li><strong>SWIFT</strong> (<code>squish/swift.py</code>) — Weight-irrelevant FFN layer skip via <code>SWIFTCalibrator.calibrate()</code>. 162 µs calibrate; identifies and skips 34% of functionally redundant FFN layers.</li>
+<li><strong>SpecReason</strong> (<code>squish/spec_reason.py</code>) — Speculative reasoning step orchestrator via <code>SpecReasonOrchestrator.generate_step()</code>. 6.6 µs per step; pipelines draft+target verification.</li>
+<li><strong>MirrorSD</strong> (<code>squish/mirror_sd.py</code>) — Mirror speculative decode pipeline via <code>MirrorDraftPipeline.step()</code>. 867 µs step (vocab=32k); runs parallel draft branches to capture acceptance bursts.</li>
+<li><strong>SparseVerify</strong> (<code>squish/sparse_verify.py</code>) — Inter-draft KV reuse cache via <code>InterDraftReuseCache</code>. 0.28 µs <code>query_reuse()</code>; near-zero overhead for skipping re-verified identical KV slices.</li>
+<li><strong>RobustScheduler</strong> (<code>squish/robust_scheduler.py</code>) — A-balanced SRPT request scheduler via <code>RobustScheduler.schedule_batch()</code>. 3.7 µs schedule 32 requests; prevents priority inversions under bursty workloads.</li>
+<li><strong>BlockExpertArchive</strong> (<code>squish/block_expert_archive.py</code>) — Block-expert weight archive and router via <code>ExpertRouter.route()</code>. 73 µs route 8 experts; enables offline expert delta caching.</li>
+<li><strong>DISCRouter</strong> (<code>squish/disc_router.py</code>) — Decomposed inference sub-task planner via <code>DISCRouter.plan()</code> + <code>execute_plan()</code>. 22.9 µs plan, 3.1 µs execute; parallelises independent sub-tasks.</li>
+<li><strong>SelfLearning</strong> (<code>squish/self_learning.py</code>) — LoRA-free online domain adaptation via <code>SelfLearner.learn_from_examples()</code>. 6 ms per 4-example step; absorbs domain examples without full fine-tuning.</li>
+<li><strong>SemanticCache</strong> (<code>squish/semantic_cache.py</code>) — sqlite-vec semantic response cache via <code>SemanticCache</code>. Cosine-similarity hit short-circuits full inference for semantically equivalent queries.</li>
+<li><strong>IPW</strong> (<code>squish/ipw.py</code>) — Inference performance-per-watt tracker via <code>IPWTracker</code>. 0.16 µs record, 4.6 ms <code>summary()</code>; tracks tokens/watt across workloads.</li>
+<li><strong>PowerMonitor</strong> (<code>squish/power_monitor.py</code>) — Apple Silicon power source advisor via <code>PowerMonitor</code>. 0.5 µs <code>get_power_source()</code> + <code>get_recommended_mode()</code>; adjusts compute policy for battery vs. AC.</li>
+<li><strong>DiffusionDraft</strong> (<code>squish/diffusion_draft.py</code>) — Diffusion-model draft head capability gate via <code>DiffusionDraftHead</code>. <code>is_available()</code> + <code>is_suitable_for_task()</code>; enables parallel diffusion-based speculation.</li>
+</ul>
+<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added <code>tests/test_wave17_server_wiring.py</code> — 56 tests covering all 14 Wave 17 module import, instantiation, and core API paths.</li>
+<li>Added <code>tests/test_wave18_server_wiring.py</code> — 56 tests covering all 14 Wave 18 module import, instantiation, and core API paths.</li>
+<li>Total tests: <strong>4 166 passing</strong>, 16 skipped, 0 failures.</li>
+</ul>
+<h3 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added <code>dev/benchmarks/bench_wave17_18.py</code> — micro-benchmark suite for all 28 Wave 17+18 modules.</li>
+<li>Added <code>dev/results/wave17_18_bench.json</code> — machine-readable benchmark output.</li>
+<li>Added <code>docs/benchmark_wave17_18.md</code> — human-readable results table.</li>
+</ul>
+<h3 id="docs">Docs<a class="headerlink" href="#docs" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Updated <code>README.md</code> with v5 section, Wave 17+18 module tables, and combined stack CLI examples.</li>
+<li>Updated <code>PLAN.md</code> to mark v5 complete and note v6 roadmap.</li>
+<li>Added <code>dev/demos/record_v5_demo.py</code> — v5 demo GIF generator.</li>
+</ul>
+<hr />
 <h2 id="200-2026-03-12">[2.0.0] — 2026-03-12<a class="headerlink" href="#200-2026-03-12" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-15-serving-intelligence-kv-architecture-evolution">Added — Wave 15: Serving Intelligence + KV Architecture Evolution<a class="headerlink" href="#added-wave-15-serving-intelligence-kv-architecture-evolution" title="Permanent link">&para;</a></h3>
 <ul>
@@ -754,19 +880,19 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>ForeLen</strong> (<code>squish/forelen.py</code>) — Entropy-guided output length prediction via <code>EGTPPredictor</code> (entropy histogram) + <code>PLPPredictor</code> (exponential decay). −29% MAE vs TRAIL.</li>
 <li><strong>RASD</strong> (<code>squish/rasd.py</code>) — Retrieval-augmented speculative decode via <code>CorpusIndex</code> + <code>RASDBatcher.build_retrieval_tree()</code>. 40–60% corpus hit rate.</li>
 </ul>
-<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<h3 id="tests_1">Tests<a class="headerlink" href="#tests_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>tests/test_wave15_server_wiring.py</code> — 44 tests covering all Wave 15 module import, instantiation, and core API paths.</li>
 <li>Added <code>tests/test_wave16_server_wiring.py</code> — 45 tests covering all Wave 16 module import, instantiation, and core API paths.</li>
 <li>Total tests: <strong>3 937 passing</strong>, 0 failures.</li>
 </ul>
-<h3 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h3>
+<h3 id="benchmarks_1">Benchmarks<a class="headerlink" href="#benchmarks_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>dev/benchmarks/bench_wave15_16.py</code> — micro-benchmark suite for all 21 Wave 15+16 modules.</li>
 <li>Added <code>dev/results/wave15_16_bench.json</code> — machine-readable benchmark output.</li>
 <li>Added <code>docs/benchmark_wave15_16.md</code> — human-readable results table.</li>
 </ul>
-<h3 id="docs">Docs<a class="headerlink" href="#docs" title="Permanent link">&para;</a></h3>
+<h3 id="docs_1">Docs<a class="headerlink" href="#docs_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Updated <code>README.md</code> with v4 section, Wave 15+16 module tables, and combined stack CLI example.</li>
 <li>Added <code>PLAN.md</code> documenting v1–v4 release history and v5 roadmap.</li>
