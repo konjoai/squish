@@ -162,15 +162,16 @@ def bench_shadow_kv(results: dict) -> None:
     vals = RNG.standard_normal((n_tokens, n_heads, head_dim)).astype(np.float32)
 
     mean_s, _, _ = _timeit(
-        lambda: cache.store(layer_idx=0, keys=keys, values=vals), n=20, warmup=3
+        lambda: cache.store(layer_id=0, keys=keys, values=vals), n=20, warmup=3
     )
     _row("store() latency (128 tokens × 8 heads × 64 dim)", f"{mean_s:.1f} µs")
 
-    cache.store(layer_idx=0, keys=keys, values=vals)
-    mean_r, _, _ = _timeit(lambda: cache.retrieve(layer_idx=0), n=50, warmup=5)
-    _row("retrieve() latency", f"{mean_r:.1f} µs")
+    cache.store(layer_id=0, keys=keys, values=vals)
+    query = RNG.standard_normal((n_heads, head_dim)).astype(np.float32)
+    mean_r, _, _ = _timeit(lambda: cache.recall(layer_id=0, query=query, top_k=32), n=50, warmup=5)
+    _row("recall() latency", f"{mean_r:.1f} µs")
 
-    k_ret, _ = cache.retrieve(layer_idx=0)
+    k_ret, _ = cache.recall(layer_id=0, query=query, top_k=32)
     # Rank compression ratio
     full_key_bytes  = n_tokens * n_heads * head_dim * 4  # float32
     proj_key_bytes  = n_tokens * n_heads * svd_rank * 4  # projected rank
@@ -243,38 +244,32 @@ def bench_pq_cache(results: dict) -> None:
 def bench_spe_cache(results: dict) -> None:
     _hdr("SpeCache — Speculative KV Block Prefetcher")
 
-    from squish.spe_cache import SpeCacheConfig, SpeCachePrefetcher
+    from squish.spe_cache import SpeCacheConfig, SpeCachePrefetcher, InMemoryBlockStore
 
-    cfg = SpeCacheConfig(block_size=64, prefetch_budget=8, sink_blocks=1)
-    pf  = SpeCachePrefetcher(cfg)
+    cfg   = SpeCacheConfig(block_size=64, prefetch_budget=8, sink_blocks=1)
+    store = InMemoryBlockStore(block_size=64)
+    pf    = SpeCachePrefetcher(cfg, store)
 
-    # Simulate 512-token attention trace with localised access pattern
-    trace = []
-    for i in range(512):
-        # mostly recent, with occasional far-back retrieval
-        if RNG.random() < 0.1:
-            pos = int(RNG.integers(0, max(1, i - 100)))
-        else:
-            pos = i
-        trace.append(pos)
+    # Simulate 512-token attention trace — record_attention takes a (seq_len,) ndarray
+    attn_scores = RNG.standard_normal(512).astype(np.float32)
+    attn_scores = np.abs(attn_scores)
+    attn_scores /= attn_scores.sum() + 1e-9
 
     t0 = time.perf_counter()
-    for pos in trace:
-        pf.record_attention(pos)
+    for i in range(512):
+        pf.record_attention(attn_scores[:max(1, i)])
     record_ms = (time.perf_counter() - t0) * 1e3
     _row("record_attention() 512 steps", f"{record_ms:.1f} ms")
 
-    mean_p, _, _ = _timeit(pf.prefetch_plan, n=200, warmup=20)
-    plan = pf.prefetch_plan()
-    _row("prefetch_plan() latency", f"{mean_p:.1f} µs")
+    mean_p, _, _ = _timeit(lambda: pf.predict_next_turn_blocks(total_blocks=32), n=200, warmup=20)
+    plan = pf.predict_next_turn_blocks(total_blocks=32)
+    _row("predict_next_turn_blocks() latency", f"{mean_p:.1f} µs")
     _row("Blocks in plan", f"{len(plan)}", f"budget={cfg.prefetch_budget}")
-    _row("Cache hit rate (posterior)", f"{pf.hit_rate:.1%}")
 
     results["spe_cache"] = {
         "record_512_steps_ms":  round(record_ms, 3),
-        "prefetch_plan_us":     round(mean_p, 3),
+        "predict_blocks_us":    round(mean_p, 3),
         "plan_blocks":          len(plan),
-        "hit_rate":             round(pf.hit_rate, 4),
     }
 
 
@@ -297,16 +292,16 @@ def bench_knapspec(results: dict) -> None:
     # Solve for different context lengths
     for ctx in [128, 512, 2048]:
         mean_s, _, _ = _timeit(lambda: sel.select(context_len=ctx), n=20, warmup=3)
-        plan = sel.select(context_len=ctx)
-        n_attn_skipped = sum(1 for b in plan if b.block_type == "attention" and b.skipped)
-        n_mlp_skipped  = sum(1 for b in plan if b.block_type == "mlp"       and b.skipped)
+        attn_keep, mlp_keep = sel.select(context_len=ctx)
+        n_attn_skipped = n_layers - len(attn_keep)
+        n_mlp_skipped  = n_layers - len(mlp_keep)
         skip_frac = (n_attn_skipped + n_mlp_skipped) / (2 * n_layers)
         _row(f"select() ctx={ctx}", f"{mean_s:.1f} µs")
         _row(f"  → attn skipped / mlp skipped", f"{n_attn_skipped} / {n_mlp_skipped}",
              f"{skip_frac:.0%} of all blocks skipped")
 
-    plan_2k = sel.select(context_len=2048)
-    n_sel = sum(1 for b in plan_2k if not b.skipped)
+    attn_keep_2k, mlp_keep_2k = sel.select(context_len=2048)
+    n_sel = len(attn_keep_2k) + len(mlp_keep_2k)
     _row("Selected blocks (ctx=2048)", f"{n_sel}/{2*n_layers}")
 
     results["knapspec"] = {
@@ -321,24 +316,28 @@ def bench_knapspec(results: dict) -> None:
 def bench_token_merging(results: dict) -> None:
     _hdr("TokenMerging — ToMe Token-Pair Bipartite Merging")
 
-    from squish.token_merging import TokenMergingConfig, TokenMergingReducer
+    from squish.token_merging import TokenMergingConfig, bipartite_merge, unmerge_tokens
 
     cfg = TokenMergingConfig(r=16, start_layer=0, similarity_threshold=-1.0)
-    red = TokenMergingReducer(cfg)
 
+    mean_m = mean_u = final_reduction = 0.0
+    merged_512 = 0
     for seq_len in [128, 512, 1024]:
         tokens = RNG.standard_normal((seq_len, 64)).astype(np.float32)
-        mean_m, _, _ = _timeit(lambda: red.merge(tokens, layer_idx=0), n=50, warmup=5)
-        merged, mapping = red.merge(tokens, layer_idx=0)
+        mean_m, _, _ = _timeit(
+            lambda: bipartite_merge(tokens, r=cfg.r, similarity_threshold=cfg.similarity_threshold),
+            n=50, warmup=5,
+        )
+        merged, src_idx, dst_idx = bipartite_merge(tokens, r=cfg.r, similarity_threshold=cfg.similarity_threshold)
         reduction = 1.0 - merged.shape[0] / seq_len
         _row(f"merge() seq={seq_len}", f"{mean_m:.1f} µs",
              f"→ {merged.shape[0]} tokens ({reduction:.0%} reduction)")
 
     seq_len = 512
     tokens  = RNG.standard_normal((seq_len, 64)).astype(np.float32)
-    merged, mapping = red.merge(tokens, layer_idx=0)
+    merged, src_idx, dst_idx = bipartite_merge(tokens, r=cfg.r, similarity_threshold=cfg.similarity_threshold)
     mean_u, _, _ = _timeit(
-        lambda: red.unmerge(merged, mapping, original_len=seq_len), n=50, warmup=5
+        lambda: unmerge_tokens(merged, src_idx, dst_idx, t_original=seq_len), n=50, warmup=5
     )
     _row("unmerge() seq=512", f"{mean_u:.1f} µs")
 
@@ -357,33 +356,35 @@ def bench_token_merging(results: dict) -> None:
 def bench_duo_decoding(results: dict) -> None:
     _hdr("DuoDecoding — Dual-Sequence Speculative Decoding")
 
-    from squish.duo_decoding import DuoDecodingConfig, DuoDecodingDecoder
+    from squish.duo_decoding import (
+        DuoDecodingConfig, DuoDecodingDecoder,
+        DuoScheduler, DuoCPUVerifier,
+    )
 
     vocab  = 512
-    cfg    = DuoDecodingConfig(n_sequences=2, gamma=4)
+    cfg    = DuoDecodingConfig(k_max=2, gamma=4)
 
-    def draft_fn(tokens, n):
-        return RNG.standard_normal((n, vocab)).astype(np.float32)
+    def draft_fn(tokens):
+        return RNG.standard_normal(vocab).astype(np.float32)
 
-    def verify_fn(tokens):
-        return RNG.standard_normal((len(tokens), vocab)).astype(np.float32)
+    def target_fn(tokens):
+        return RNG.standard_normal(vocab).astype(np.float32)
 
-    dec = DuoDecodingDecoder(draft_fn, verify_fn, cfg)
+    sched = DuoScheduler(draft_fn, cfg)
+    verif = DuoCPUVerifier(target_fn, cfg)
+    dec   = DuoDecodingDecoder(sched, verif, cfg)
 
     # Time end-to-end generation (20 output tokens)
     mean_g, _, _ = _timeit(
-        lambda: dec.generate(prompt=[1, 2, 3], max_new_tokens=20), n=10, warmup=2
+        lambda: dec.generate(input_ids=[1, 2, 3], max_new_tokens=20), n=10, warmup=2
     )
-    tokens = dec.generate(prompt=[1, 2, 3], max_new_tokens=20)
-    n_out  = len(tokens)
-    stats  = dec.stats()
+    tokens, stats = dec.generate(input_ids=[1, 2, 3], max_new_tokens=20)
+    n_out  = len(tokens) - 3  # generated tokens (exclude prompt)
 
     _row("generate() 20 tokens", f"{mean_g:.1f} µs")
     _row("Output tokens generated", f"{n_out}")
     if hasattr(stats, "acceptance_rate"):
         _row("Draft acceptance rate", f"{stats.acceptance_rate:.1%}")
-    if hasattr(stats, "mean_accepted_per_step"):
-        _row("Mean tokens accepted/step", f"{stats.mean_accepted_per_step:.2f}")
 
     results["duo_decoding"] = {
         "generate_20tok_us":  round(mean_g, 3),
@@ -396,21 +397,25 @@ def bench_c2t(results: dict) -> None:
 
     from squish.c2t import C2TConfig, AdaptiveTreeBuilder
 
-    vocab = 256
-    cfg   = C2TConfig(tree_depth=4, wide_branches=3, narrow_branches=1)
+    vocab  = 256
+    hidden = 64
+    cfg    = C2TConfig(tree_depth=4, wide_branches=3, narrow_branches=1)
     builder = AdaptiveTreeBuilder(cfg)
+    root_h  = RNG.standard_normal(hidden).astype(np.float32)
 
     call_count = [0]
 
-    def draft_fn(prefix):
+    def draft_fn(h):
         call_count[0] += 1
-        return RNG.standard_normal(vocab).astype(np.float32)
+        logits     = RNG.standard_normal(vocab).astype(np.float32)
+        next_hidden = RNG.standard_normal(hidden).astype(np.float32)
+        return logits, next_hidden
 
     mean_b, _, _ = _timeit(
-        lambda: builder.build(prefix=[1, 2, 3, 4], draft_fn=draft_fn), n=30, warmup=5
+        lambda: builder.build(draft_fn=draft_fn, root_hidden=root_h), n=30, warmup=5
     )
-    tree = builder.build(prefix=[1, 2, 3, 4], draft_fn=draft_fn)
-    n_leaves = len(tree.leaves()) if hasattr(tree, "leaves") else getattr(tree, "n_leaves", None)
+    tree     = builder.build(draft_fn=draft_fn, root_hidden=root_h)
+    n_leaves = len(tree) if isinstance(tree, list) else None
 
     _row("build() tree depth=4", f"{mean_b:.1f} µs")
     if n_leaves is not None:
@@ -425,26 +430,27 @@ def bench_c2t(results: dict) -> None:
 def bench_clasp(results: dict) -> None:
     _hdr("CLaSP — Layer-Skip Adaptive Speculative Decoding")
 
+    vocab  = 256
+    n_lay  = 16
     from squish.clasp import CLaSPConfig, CLaSPDecoder
-
-    vocab = 256
-    cfg   = CLaSPConfig(num_layers=16, max_skip_layers=6, draft_gamma=4)
+    cfg    = CLaSPConfig(num_layers=n_lay, max_skip_layers=6, draft_gamma=4)
 
     def model_fn(token_ids, skip_mask=None):
-        return RNG.standard_normal((len(token_ids), vocab)).astype(np.float32)
+        logits  = RNG.standard_normal(vocab).astype(np.float32)
+        hiddens = [RNG.standard_normal(64).astype(np.float32) for _ in range(n_lay)]
+        return logits, hiddens
 
     dec = CLaSPDecoder(model_fn, cfg)
 
     mean_g, _, _ = _timeit(
-        lambda: dec.generate(prompt=[1, 2, 3], max_new_tokens=20), n=10, warmup=2
+        lambda: dec.generate(input_ids=[1, 2, 3], max_new_tokens=20), n=10, warmup=2
     )
-    tokens = dec.generate(prompt=[1, 2, 3], max_new_tokens=20)
-    stats  = dec.stats()
+    tokens, stats = dec.generate(input_ids=[1, 2, 3], max_new_tokens=20)
 
     _row("generate() 20 tokens", f"{mean_g:.1f} µs")
     _row("Output tokens", f"{len(tokens)}")
-    if hasattr(stats, "skip_rate"):
-        _row("Layer skip rate", f"{stats.skip_rate:.1%}")
+    if hasattr(stats, "total_skip_applications"):
+        _row("Total skip applications", f"{stats.total_skip_applications}")
     if hasattr(stats, "acceptance_rate"):
         _row("Draft acceptance rate", f"{stats.acceptance_rate:.1%}")
 
@@ -471,16 +477,22 @@ def bench_dfloat11(results: dict) -> None:
         weights = RNG.standard_normal(n_weights).astype(np.float16)
 
         t0 = time.perf_counter()
-        compressed = comp.compress(weights)
+        block = comp.compress_block(weights)
         compress_ms = (time.perf_counter() - t0) * 1e3
 
         t0 = time.perf_counter()
-        restored = comp.decompress(compressed)
+        restored = comp.decompress_block(block)
         decompress_ms = (time.perf_counter() - t0) * 1e3
 
         orig_bytes  = weights.nbytes
-        comp_bytes  = sum(len(c) for c in compressed) if isinstance(compressed, list) \
-                      else (compressed.nbytes if hasattr(compressed, "nbytes") else orig_bytes)
+        comp_bytes  = block.compressed_size if hasattr(block, 'compressed_size') else len(block.__repr__())
+        try:
+            comp_bytes = block.compressed_size()
+        except Exception:
+            try:
+                comp_bytes = block.high_bytes.nbytes + block.low_bytes_raw.nbytes
+            except Exception:
+                comp_bytes = orig_bytes
         ratio       = comp_bytes / orig_bytes
 
         _row(f"compress()   {n_weights//1024}K BF16 weights", f"{compress_ms:.1f} ms",
@@ -513,18 +525,18 @@ def bench_rans_codec(results: dict) -> None:
 
     data_sizes = [256, 1024, 4096]
     for n in data_sizes:
-        data = list(RNG.choice(n_symbols, size=n, p=probs))
+        data_arr = np.array(RNG.choice(n_symbols, size=n, p=probs), dtype=np.uint8)
 
         t0 = time.perf_counter()
-        state = codec.encode(data)
+        encoded = codec.encode(data_arr)
         encode_us = (time.perf_counter() - t0) * 1e6
 
         t0 = time.perf_counter()
-        decoded = codec.decode(state, n)
+        decoded = codec.decode(encoded, n)
         decode_us = (time.perf_counter() - t0) * 1e6
 
-        assert decoded == data, "rANS roundtrip failed"
-        state_bytes = len(state) if isinstance(state, (bytes, bytearray)) else 8
+        assert np.array_equal(decoded, data_arr), "rANS roundtrip failed"
+        state_bytes = len(encoded) if isinstance(encoded, (bytes, bytearray)) else 8
         ratio = state_bytes / n
 
         _row(f"encode()  n={n}", f"{encode_us:.1f} µs")
@@ -556,14 +568,15 @@ def bench_squeeze_llm(results: dict) -> None:
         W = RNG.standard_normal((128, 128)).astype(np.float32) * 0.02
 
         t0 = time.perf_counter()
-        layer = quant.quantize(W)
+        layer = quant.compress(W)
         q_ms  = (time.perf_counter() - t0) * 1e3
 
         x   = RNG.standard_normal(128).astype(np.float32)
         mean_f, _, _ = _timeit(lambda: layer.forward(x), n=500, warmup=20)
 
         orig_bytes = W.nbytes
-        comp_bytes = layer.memory_bytes()
+        # Compute compressed size from numpy arrays in the layer
+        comp_bytes = layer.quant_indices.nbytes + layer.bin_centres.nbytes
         ratio      = comp_bytes / orig_bytes
         fp32_out   = W @ x
         sq_out     = layer.forward(x)
@@ -592,14 +605,14 @@ def bench_nf4_quant(results: dict) -> None:
 
     _row("NF4_LEVELS count", f"{len(NF4_LEVELS)}", "must be 16")
 
-    sizes = [(64, 128), (128, 256), (256, 512)]
+    sizes = [(64, 64), (128, 64), (128, 128)]
     for shape in sizes:
         W = RNG.standard_normal(shape).astype(np.float32)
 
         mean_q, _, _ = _timeit(lambda: quantize_nf4(W), n=50, warmup=5)
         q, scales = quantize_nf4(W)
-        mean_dq, _, _ = _timeit(lambda: dequantize_nf4(q, scales, W.shape), n=50, warmup=5)
-        restored = dequantize_nf4(q, scales, W.shape)
+        mean_dq, _, _ = _timeit(lambda: dequantize_nf4(q, scales), n=50, warmup=5)
+        restored = dequantize_nf4(q, scales)
 
         mse  = float(np.mean((W - restored) ** 2))
         snr  = float(10 * np.log10(np.mean(W ** 2) / (mse + 1e-12)))
@@ -613,10 +626,10 @@ def bench_nf4_quant(results: dict) -> None:
     _row("NF4 bits/weight",                  "4.0 bits", "+ blockwise scale ≈ 4.5 bits/wt")
 
     results["nf4_quant"] = {
-        "quantize_256x512_us":   round(mean_q, 3),
-        "dequantize_256x512_us": round(mean_dq, 3),
-        "mse_256x512":           round(float(mse), 6),
-        "snr_db_256x512":        round(float(snr), 2),
+        "quantize_128x128_us":   round(mean_q, 3),
+        "dequantize_128x128_us": round(mean_dq, 3),
+        "mse_128x128":           round(float(mse), 6),
+        "snr_db_128x128":        round(float(snr), 2),
         "compression_ratio":     round(float(comp), 4),
     }
 
@@ -630,17 +643,16 @@ def bench_qspec(results: dict) -> None:
     cfg   = QSpecConfig(gamma=4, draft_act_bits=8, verify_act_bits=16)
 
     def w4a8_fn(token_ids):
-        return RNG.standard_normal((len(token_ids), vocab)).astype(np.float32)
+        return RNG.standard_normal(vocab).astype(np.float32)  # (vocab,)
 
     def w4a16_fn(token_ids):
-        return RNG.standard_normal((len(token_ids), vocab)).astype(np.float32)
+        return RNG.standard_normal(vocab).astype(np.float32)  # (vocab,)
 
     dec = QSpecDecoder(w4a8_fn, w4a16_fn, cfg)
     mean_g, _, _ = _timeit(
-        lambda: dec.generate(prompt=[1, 2, 3], max_new_tokens=20), n=10, warmup=2
+        lambda: dec.generate(input_ids=[1, 2, 3], max_new_tokens=20), n=10, warmup=2
     )
-    tokens = dec.generate(prompt=[1, 2, 3], max_new_tokens=20)
-    stats  = dec.stats()
+    tokens, stats = dec.generate(input_ids=[1, 2, 3], max_new_tokens=20)
 
     _row("generate() 20 tokens (γ=4)", f"{mean_g:.1f} µs")
     _row("Output tokens", f"{len(tokens)}")
@@ -665,27 +677,24 @@ def bench_copy_spec(results: dict) -> None:
     cfg     = CopySpecConfig(min_match_len=3, max_draft_len=8)
     drafter = CopySpecDrafter(cfg)
 
-    # Build a realistic history with repetitions (simulates code / structured text)
-    template   = [10, 20, 30, 40, 50, 60, 70, 80] * 16  # 128-token repeating pattern
-    history    = template + [99, 100, 10, 20, 30]         # recent context ends with known prefix
-    for i in range(1, len(history)):
-        drafter.extend_history(history[:i])
+    # Build a realistic history with repetitions via add_token
+    template = [10, 20, 30, 40, 50, 60, 70, 80] * 16  # 128-token repeating pattern
+    history  = template + [99, 100, 10, 20, 30]         # recent context ends with known prefix
+    for tok in history:
+        drafter.add_token(tok)
 
-    # Propose draft from last few tokens
-    context = history[-3:]
-    mean_p, _, _ = _timeit(lambda: drafter.propose(context), n=500, warmup=20)
-    draft    = drafter.propose(context)
-    hit_rate = drafter.stats().copy_rate
+    # Propose draft from accumulated history
+    mean_p, _, _ = _timeit(lambda: drafter.draft(max_n=cfg.max_draft_len), n=500, warmup=20)
+    draft = drafter.draft(max_n=cfg.max_draft_len)
+    draft_len = len(draft) if draft is not None else 0
 
-    _row("propose() latency (repetitive history)", f"{mean_p:.1f} µs")
-    _row("Draft tokens proposed", f"{len(draft)}", f"(max={cfg.max_draft_len})")
-    _row("Copy hit rate", f"{hit_rate:.1%}")
+    _row("draft() latency (repetitive history)", f"{mean_p:.1f} µs")
+    _row("Draft tokens proposed", f"{draft_len}", f"(max={cfg.max_draft_len})")
 
     results["copy_spec"] = {
         "propose_mean_us": round(mean_p, 3),
-        "draft_len":       len(draft),
+        "draft_len":       draft_len,
         "max_draft_len":   cfg.max_draft_len,
-        "copy_rate":       round(hit_rate, 4),
     }
 
 
@@ -717,7 +726,7 @@ def bench_vision_prefix_cache(results: dict) -> None:
         cache.get_or_encode(img, encoder)
     hit_ms = (time.perf_counter() - t0) * 1e3
 
-    hit_rate = cache.hit_rate
+    hit_rate = cache.stats()["hit_rate"]
     speedup  = miss_ms / hit_ms if hit_ms > 0 else float("inf")
 
     _row(f"16-image encode (cold)", f"{miss_ms:.1f} ms")
@@ -785,7 +794,7 @@ def bench_wave13_14_compound(results: dict) -> None:
         retrieve(k_tok, pq_idx, pq_st, top_k=8)
         # 3. DFloat11: compress a small weight block
         mini_w = RNG.standard_normal(256).astype(np.float16)
-        fl_comp.compress(mini_w)
+        fl_comp.compress_block(mini_w)
 
     mean_c, _, _ = _timeit(compound_decode_step, n=50, warmup=5)
     _row("Compound decode step (Duo+PQ+DFloat11)", f"{mean_c:.1f} µs")
@@ -864,12 +873,12 @@ def print_comparison_table(results: dict) -> None:
              f"INT{r['bits']} + sparse FP16 outliers")
     if "nf4_quant" in results:
         r = results["nf4_quant"]
-        _row("NF4 SNR vs FP32", f"{r['snr_db_256x512']:.1f} dB",
-             f"MSE={r['mse_256x512']:.5f}")
+        _row("NF4 SNR vs FP32", f"{r['snr_db_128x128']:.1f} dB",
+             f"MSE={r['mse_128x128']:.5f}")
     if "copy_spec" in results:
         r = results["copy_spec"]
-        _row("CopySpec hit rate", f"{r['copy_rate']:.1%}",
-             f"propose() in {r['propose_mean_us']:.1f} µs")
+        _row("CopySpec draft length", f"{r['draft_len']}/{r['max_draft_len']}",
+             f"draft() in {r['propose_mean_us']:.1f} µs")
     if "vision_prefix_cache" in results:
         r = results["vision_prefix_cache"]
         _row("VisionCache hit rate", f"{r['hit_rate']:.1%}",
@@ -970,14 +979,14 @@ def to_markdown(results: dict) -> str:
     if "nf4_quant" in results:
         r = results["nf4_quant"]
         lines += [
-            f"| NF4 | quantize_nf4() 256×512 | {r['quantize_256x512_us']:.1f} µs | "
-            f"MSE={r['mse_256x512']:.5f} · SNR={r['snr_db_256x512']:.1f} dB |",
+            f"| NF4 | quantize_nf4() 128×128 | {r['quantize_128x128_us']:.1f} µs | "
+            f"MSE={r['mse_128x128']:.5f} · SNR={r['snr_db_128x128']:.1f} dB |",
         ]
     if "copy_spec" in results:
         r = results["copy_spec"]
         lines += [
-            f"| CopySpec | `propose()` latency | {r['propose_mean_us']:.1f} µs | "
-            f"hit rate={r['copy_rate']:.1%} · draft_len={r['draft_len']} |",
+            f"| CopySpec | `draft()` latency | {r['propose_mean_us']:.1f} µs | "
+            f"draft_len={r['draft_len']}/{r['max_draft_len']} |",
         ]
     if "vision_prefix_cache" in results:
         r = results["vision_prefix_cache"]
