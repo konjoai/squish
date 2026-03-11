@@ -228,6 +228,34 @@ Raw data: [`dev/results/wave12_bench.json`](dev/results/wave12_bench.json)
 
 ---
 
+## Wave 13 Optimisation Modules
+
+Wave 13 focuses on **ultra-long context** (128K+ tokens) and **adaptive speculative decoding**, shipping 10 new modules:
+
+| Module | Flag | Problem Solved | Key Number |
+|--------|------|----------------|------------|
+| **DuoAttention** | `--duo-attention` | Long-context KV blowup: separates 30–40% retrieval heads from streaming heads | **~2× KV memory** saved at 32K tokens |
+| **ShadowKV** | `--shadow-kv` | 128K+ KV cache → CPU offload with low-rank pre-RoPE key projection | **6–10× KV compression** on long contexts |
+| **PQCache** | `--pq-cache` | ANN-based KV retrieval for retrieval heads via product quantisation | **4–8× key memory** · sub-ms lookup |
+| **SpeCache** | `--spe-cache` | Multi-turn KV reload stalls: speculatively prefetches prior-turn KV | **40–60% KV reload** latency eliminated |
+| **DuoDecoding** | `--duo-decoding` | Fixed draft-sequence count wastes ANE cycles on M3 | **1.5–2.3× decode** throughput |
+| **KnapSpec** | `--knapspec` | Choosing which layers to skip for self-spec-decode is NP-hard | **Optimal skip schedule** in O(NL) |
+| **Token Merging** | `--token-merging` | Similar tokens waste prefill FLOPs | **1.4–1.8× prefill** speedup |
+| **TokenSwift** | `--token-swift` | Long outputs (20K–100K tokens) hit KV bandwidth ceiling | **2–3× throughput** on ultra-long gen |
+| **C2T** | `--c2t` | Uniform draft tree wastes budget at confident positions | **+0.8 tokens/step** accepted |
+| **CLaSp** | `--clasp` | Layer-skip selection is static; ignores hidden-state feedback | **Adaptive skip** · DP-optimal per step |
+
+Full Wave 13 stack (ultra-long context):
+
+```bash
+squish run qwen3:8b \
+  --duo-attention --shadow-kv --pq-cache --spe-cache \
+  --duo-decoding --knapspec --token-merging \
+  --token-swift --c2t --clasp
+```
+
+---
+
 ## Drop-In API Server
 
 Replace every cloud API call today.  Start the server once; use it forever.
@@ -501,6 +529,16 @@ squish bench --markdown --save bench_results.md
 | `squish/cocktail_kv.py` | CocktailKV chunk-similarity KV store |
 | `squish/agile_io.py` | AgileIO async NVMe prefetch manager |
 | `squish/milo_quant.py` | MiLo INT3 + low-rank compensator |
+| `squish/duo_attention.py` | **Wave 13** DuoAttention retrieval/streaming head separation |
+| `squish/shadow_kv.py` | **Wave 13** ShadowKV low-rank pre-RoPE key cache + CPU value shadow |
+| `squish/pq_cache.py` | **Wave 13** PQCache product-quantization KV ANN retrieval |
+| `squish/spe_cache.py` | **Wave 13** SpeCache speculative KV-cache prefetch for multi-turn |
+| `squish/duo_decoding.py` | **Wave 13** DuoDecoding hardware-aware dynamic multi-sequence spec-decode |
+| `squish/knapspec.py` | **Wave 13** KnapSpec knapsack-optimal self-speculative layer selection |
+| `squish/token_merging.py` | **Wave 13** Token Merging (ToMe) prefill sequence-length reduction |
+| `squish/token_swift.py` | **Wave 13** TokenSwift multi-token draft heads + partial KV reuse |
+| `squish/c2t.py` | **Wave 13** C2T classifier-based adaptive speculative candidate tree |
+| `squish/clasp.py` | **Wave 13** CLaSp in-context layer-skip with DP adaptive feedback |
 | `dev/demos/run_inference.py` | Minimal inference example (no server needed) |
 | `squish_quant_rs/` | Rust/PyO3 ARM NEON INT8 quantiser (optional, 6 GB/s) |
 | `docs/ARCHITECTURE.md` | Technical deep-dive: why these numbers are real |

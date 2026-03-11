@@ -119,6 +119,27 @@ _cocktail_kv_store      = None  # CocktailKVStore         — --cocktail-kv
 _agile_io_manager       = None  # AgileIOManager          — --agile-io
 _milo_quantizer         = None  # MiLoQuantizer           — --milo
 _block_expert_archive   = None  # BlockExpertArchive      — --block-expert
+# ── Wave 13: Vector Quantization + Adaptive Speculative Decoding ─────────────
+_commvq_codebook        = None  # MultiCodebookVQ         — --commvq
+_vptq_quantizer         = None  # VPTQQuantizer           — --vptq
+_online_sd_updater      = None  # OnlineDraftUpdater      — --online-sd
+_rasd_batcher           = None  # RASDBatcher             — --rasd
+_dovetail_config        = None  # DovetailConfig          — --dovetail
+_pipo_scheduler         = None  # PIPOScheduler           — --pipo
+_disc_router            = None  # DISCRouter              — --disc-router
+_mobile_moe_router      = None  # MoBiLERouter            — --mobile-moe
+_meta_reasoner          = None  # MetaReasoner            — --meta-reasoner
+# ── Wave 13b: Ultra-Long Context + Adaptive Speculative Decoding ─────────────
+_duo_attn_manager       = None  # DuoKVManager            — --duo-attention
+_shadow_kv_cache        = None  # ShadowKVCache           — --shadow-kv
+_pq_cache_index         = None  # PQKeyIndex              — --pq-cache
+_spe_cache_prefetcher   = None  # SpeCachePrefetcher      — --spe-cache
+_duo_decoding_decoder   = None  # DuoDecodingDecoder      — --duo-decoding
+_knapspec_selector      = None  # KnapSpecSelector        — --knapspec
+_token_merging_cfg      = None  # TokenMergingConfig      — --token-merging
+_token_swift_decoder    = None  # TokenSwiftDecoder       — --token-swift
+_c2t_tree_builder       = None  # AdaptiveTreeBuilder     — --c2t
+_clasp_decoder          = None  # CLaSPDecoder            — --clasp
 # Phase 3: cross-session persistent KV cache
 _session_kv_cache    = None   # SessionKVCache | None — set in main() when --session-cache-dir given
 # Phase 4: prompt compression settings (active when --compress-prompt is set)
@@ -2536,6 +2557,79 @@ Examples:
                          "Enables the POST /v1/learn endpoint for on-device self-learning.")
     ap.add_argument("--block-expert-clusters", type=int, default=4, metavar="K",
                     help="Number of expert clusters per Transformer block when creating a new archive (default: 4).")
+    # ── Wave 13b: Ultra-Long Context + Adaptive Speculative Decoding ─────────
+    ap.add_argument("--duo-attention", action="store_true", default=False,
+                    help="Enable DuoAttention retrieval/streaming head separation for long-context inference.")
+    ap.add_argument("--duo-attention-layers", type=int, default=32, metavar="N",
+                    help="Number of Transformer layers (default: 32).")
+    ap.add_argument("--duo-attention-heads", type=int, default=32, metavar="N",
+                    help="Number of attention heads (default: 32).")
+    ap.add_argument("--duo-attention-head-dim", type=int, default=128, metavar="D",
+                    help="Per-head dimension (default: 128).")
+    ap.add_argument("--duo-attention-window", type=int, default=512, metavar="W",
+                    help="Streaming-head local window size in tokens (default: 512).")
+    ap.add_argument("--shadow-kv", action="store_true", default=False,
+                    help="Enable ShadowKV low-rank pre-RoPE key cache + CPU value shadow for 128K+ contexts.")
+    ap.add_argument("--shadow-kv-rank", type=int, default=128, metavar="R",
+                    help="SVD rank for low-rank key projection (default: 128).")
+    ap.add_argument("--shadow-kv-landmarks", type=int, default=64, metavar="M",
+                    help="Number of landmark tokens for sparse key retrieval (default: 64).")
+    ap.add_argument("--pq-cache", action="store_true", default=False,
+                    help="Enable PQCache product-quantization KV ANN retrieval for retrieval heads.")
+    ap.add_argument("--pq-cache-subvectors", type=int, default=8, metavar="M",
+                    help="Number of PQ sub-vectors (default: 8).")
+    ap.add_argument("--pq-cache-codes", type=int, default=256, metavar="K",
+                    help="Number of PQ codes per sub-vector (default: 256).")
+    ap.add_argument("--spe-cache", action="store_true", default=False,
+                    help="Enable SpeCache speculative KV-cache prefetching for multi-turn dialogue.")
+    ap.add_argument("--spe-cache-block-size", type=int, default=16, metavar="B",
+                    help="KV block granularity for prefetching (default: 16).")
+    ap.add_argument("--spe-cache-budget", type=int, default=8, metavar="N",
+                    help="Number of blocks to prefetch speculatively (default: 8).")
+    ap.add_argument("--duo-decoding", action="store_true", default=False,
+                    help="Enable DuoDecoding hardware-aware dynamic multi-sequence speculative decoding.")
+    ap.add_argument("--duo-decoding-gamma", type=int, default=4, metavar="G",
+                    help="Base number of draft tokens per step (default: 4).")
+    ap.add_argument("--duo-decoding-kmax", type=int, default=8, metavar="K",
+                    help="Maximum draft sequences in parallel (default: 8).")
+    ap.add_argument("--knapspec", action="store_true", default=False,
+                    help="Enable KnapSpec training-free self-speculative decoding via knapsack layer selection.")
+    ap.add_argument("--knapspec-layers", type=int, default=32, metavar="N",
+                    help="Total number of model layers (default: 32).")
+    ap.add_argument("--knapspec-budget", type=float, default=0.7, metavar="F",
+                    help="Fraction of total layer latency to use as draft budget (default: 0.7).")
+    ap.add_argument("--token-merging", action="store_true", default=False,
+                    help="Enable Token Merging (ToMe) to reduce sequence length during prefill.")
+    ap.add_argument("--token-merging-r", type=int, default=8, metavar="R",
+                    help="Tokens to merge per layer (default: 8).")
+    ap.add_argument("--token-merging-start", type=int, default=4, metavar="L",
+                    help="First layer to apply ToMe (default: 4).")
+    ap.add_argument("--token-merging-end", type=int, default=-1, metavar="L",
+                    help="Last layer for ToMe, -1 = all remaining (default: -1).")
+    ap.add_argument("--token-swift", action="store_true", default=False,
+                    help="Enable TokenSwift multi-token draft heads + partial KV reuse for ultra-long generation.")
+    ap.add_argument("--token-swift-heads", type=int, default=4, metavar="N",
+                    help="Number of TokenSwift draft heads (default: 4).")
+    ap.add_argument("--token-swift-window", type=int, default=512, metavar="W",
+                    help="KV reuse window size in tokens (default: 512).")
+    ap.add_argument("--token-swift-vocab", type=int, default=151936, metavar="V",
+                    help="Vocabulary size (default: 151936 for Qwen).")
+    ap.add_argument("--c2t", action="store_true", default=False,
+                    help="Enable C2T classifier-based adaptive candidate tree for speculative decoding.")
+    ap.add_argument("--c2t-depth", type=int, default=4, metavar="D",
+                    help="Tree depth for speculative candidates (default: 4).")
+    ap.add_argument("--c2t-wide", type=int, default=3, metavar="B",
+                    help="Wide-branch fan-out at uncertain positions (default: 3).")
+    ap.add_argument("--c2t-narrow", type=int, default=1, metavar="B",
+                    help="Narrow-branch fan-out at confident positions (default: 1).")
+    ap.add_argument("--clasp", action="store_true", default=False,
+                    help="Enable CLaSp in-context layer-skip with adaptive DP feedback for spec-decode.")
+    ap.add_argument("--clasp-layers", type=int, default=32, metavar="N",
+                    help="Total number of model layers (default: 32).")
+    ap.add_argument("--clasp-max-skip", type=int, default=8, metavar="K",
+                    help="Maximum consecutive layers to skip in the draft pass (default: 8).")
+    ap.add_argument("--clasp-gamma", type=int, default=4, metavar="G",
+                    help="Speculative draft tokens per verification step (default: 4).")
     ap.add_argument(
         "--all-optimizations", action="store_true", default=False,
         help=(
@@ -2566,6 +2660,10 @@ Examples:
             "prompt_lookup", "seq_packing", "ada_serve", "conf_spec",
             "kv_share", "kv_slab", "paris_kv", "streaming_sink",
             "diff_kv", "small_kv", "lookahead", "spec_reason",
+            # Wave 13b
+            "duo_attention", "shadow_kv", "pq_cache", "spe_cache",
+            "duo_decoding", "knapspec", "token_merging",
+            "token_swift", "c2t", "clasp",
         ]
         for _f in _bool_wave_flags:
             if not getattr(args, _f, False):
@@ -2918,6 +3016,12 @@ Examples:
     global _pm_kvq_scheduler, _mix_kvq_quantizer, _cocktail_kv_store
     global _agile_io_manager, _milo_quantizer
     global _block_expert_archive
+    global _commvq_codebook, _vptq_quantizer, _online_sd_updater, _rasd_batcher
+    global _dovetail_config, _pipo_scheduler, _disc_router, _mobile_moe_router
+    global _meta_reasoner
+    global _duo_attn_manager, _shadow_kv_cache, _pq_cache_index, _spe_cache_prefetcher
+    global _duo_decoding_decoder, _knapspec_selector, _token_merging_cfg
+    global _token_swift_decoder, _c2t_tree_builder, _clasp_decoder
 
     if getattr(args, "prompt_lookup", False):
         try:
@@ -3315,6 +3419,146 @@ Examples:
                 _info("block-expert", f"new archive created at {_be_path}")
         except Exception as _e:
             _warn(f"[block-expert] Skipped: {_e}")
+
+    # ── Wave 13b: Ultra-Long Context + Adaptive Speculative Decoding ─────────
+    if getattr(args, "duo_attention", False):
+        try:
+            from squish.duo_attention import DuoAttentionConfig, DuoKVManager
+            _da_cfg = DuoAttentionConfig(
+                num_layers=getattr(args, "duo_attention_layers", 32),
+                num_heads=getattr(args, "duo_attention_heads", 32),
+                head_dim=getattr(args, "duo_attention_head_dim", 128),
+                local_window=getattr(args, "duo_attention_window", 512),
+            )
+            _duo_attn_manager = DuoKVManager(_da_cfg)
+            _info("duo-attention", f"retrieval+streaming head separation  "
+                  f"layers={_da_cfg.num_layers}  heads={_da_cfg.num_heads}  "
+                  f"window={_da_cfg.local_window}")
+        except Exception as _e:
+            _warn(f"[duo-attention] Skipped: {_e}")
+
+    if getattr(args, "shadow_kv", False):
+        try:
+            from squish.shadow_kv import ShadowKVCache, ShadowKVConfig
+            _skv_cfg = ShadowKVConfig(
+                svd_rank=getattr(args, "shadow_kv_rank", 128),
+                n_landmarks=getattr(args, "shadow_kv_landmarks", 64),
+            )
+            _shadow_kv_cache = ShadowKVCache(_skv_cfg)
+            _info("shadow-kv", f"low-rank pre-RoPE key cache + CPU value shadow  "
+                  f"svd_rank={_skv_cfg.svd_rank}  landmarks={_skv_cfg.n_landmarks}")
+        except Exception as _e:
+            _warn(f"[shadow-kv] Skipped: {_e}")
+
+    if getattr(args, "pq_cache", False):
+        try:
+            from squish.pq_cache import PQCacheConfig, PQKeyIndex
+            _pq_cfg = PQCacheConfig(
+                n_subvectors=getattr(args, "pq_cache_subvectors", 8),
+                n_codes=getattr(args, "pq_cache_codes", 256),
+            )
+            _pq_cache_index = PQKeyIndex(_pq_cfg)
+            _info("pq-cache", f"product-quantized KV ANN retrieval  "
+                  f"subvectors={_pq_cfg.n_subvectors}  codes={_pq_cfg.n_codes}")
+        except Exception as _e:
+            _warn(f"[pq-cache] Skipped: {_e}")
+
+    if getattr(args, "spe_cache", False):
+        try:
+            from squish.spe_cache import SpeCacheConfig, SpeCachePrefetcher
+            _sc_cfg = SpeCacheConfig(
+                block_size=getattr(args, "spe_cache_block_size", 16),
+                prefetch_budget=getattr(args, "spe_cache_budget", 8),
+            )
+            _spe_cache_prefetcher = SpeCachePrefetcher(_sc_cfg)
+            _info("spe-cache", f"speculative KV-cache prefetch for multi-turn  "
+                  f"block={_sc_cfg.block_size}  budget={_sc_cfg.prefetch_budget}")
+        except Exception as _e:
+            _warn(f"[spe-cache] Skipped: {_e}")
+
+    if getattr(args, "duo_decoding", False):
+        try:
+            from squish.duo_decoding import DuoDecodingConfig, DuoDecodingDecoder
+            _dd_cfg = DuoDecodingConfig(
+                gamma=getattr(args, "duo_decoding_gamma", 4),
+                k_max=getattr(args, "duo_decoding_kmax", 8),
+            )
+            _duo_decoding_decoder = DuoDecodingDecoder(_dd_cfg)
+            _info("duo-decoding", f"hardware-aware dynamic multi-sequence spec-decode  "
+                  f"gamma={_dd_cfg.gamma}  k_max={_dd_cfg.k_max}")
+        except Exception as _e:
+            _warn(f"[duo-decoding] Skipped: {_e}")
+
+    if getattr(args, "knapspec", False):
+        try:
+            from squish.knapspec import KnapSpecConfig, KnapSpecSelector
+            _ks_cfg = KnapSpecConfig(
+                num_layers=getattr(args, "knapspec_layers", 32),
+                budget_fraction=getattr(args, "knapspec_budget", 0.7),
+            )
+            _knapspec_selector = KnapSpecSelector(_ks_cfg)
+            _info("knapspec", f"knapsack-optimal self-speculative layer selection  "
+                  f"layers={_ks_cfg.num_layers}  budget={_ks_cfg.budget_fraction:.0%}")
+        except Exception as _e:
+            _warn(f"[knapspec] Skipped: {_e}")
+
+    if getattr(args, "token_merging", False):
+        try:
+            from squish.token_merging import TokenMergingConfig
+            _tm_cfg = TokenMergingConfig(
+                r=getattr(args, "token_merging_r", 8),
+                start_layer=getattr(args, "token_merging_start", 4),
+                end_layer=getattr(args, "token_merging_end", -1),
+            )
+            _token_merging_cfg = _tm_cfg
+            _info("token-merging", f"ToMe prefill token dedup  "
+                  f"r={_tm_cfg.r}  layers={_tm_cfg.start_layer}→{_tm_cfg.end_layer}")
+        except Exception as _e:
+            _warn(f"[token-merging] Skipped: {_e}")
+
+    if getattr(args, "token_swift", False):
+        try:
+            from squish.token_swift import TokenSwiftConfig, TokenSwiftDecoder
+            _ts_cfg = TokenSwiftConfig(
+                n_heads=getattr(args, "token_swift_heads", 4),
+                window_size=getattr(args, "token_swift_window", 512),
+                vocab_size=getattr(args, "token_swift_vocab", 151936),
+            )
+            _token_swift_decoder = TokenSwiftDecoder(_ts_cfg)
+            _info("token-swift", f"multi-token draft heads + partial KV reuse  "
+                  f"heads={_ts_cfg.n_heads}  window={_ts_cfg.window_size}")
+        except Exception as _e:
+            _warn(f"[token-swift] Skipped: {_e}")
+
+    if getattr(args, "c2t", False):
+        try:
+            from squish.c2t import AdaptiveTreeBuilder, C2TConfig
+            _c2t_cfg = C2TConfig(
+                tree_depth=getattr(args, "c2t_depth", 4),
+                wide_branches=getattr(args, "c2t_wide", 3),
+                narrow_branches=getattr(args, "c2t_narrow", 1),
+            )
+            _c2t_tree_builder = AdaptiveTreeBuilder(_c2t_cfg)
+            _info("c2t", f"classifier-based candidate tree  "
+                  f"depth={_c2t_cfg.tree_depth}  wide={_c2t_cfg.wide_branches}  "
+                  f"narrow={_c2t_cfg.narrow_branches}")
+        except Exception as _e:
+            _warn(f"[c2t] Skipped: {_e}")
+
+    if getattr(args, "clasp", False):
+        try:
+            from squish.clasp import CLaSPConfig, CLaSPDecoder
+            _cl_cfg = CLaSPConfig(
+                num_layers=getattr(args, "clasp_layers", 32),
+                max_skip_layers=getattr(args, "clasp_max_skip", 8),
+                draft_gamma=getattr(args, "clasp_gamma", 4),
+            )
+            _clasp_decoder = CLaSPDecoder(_cl_cfg)
+            _info("clasp", f"in-context layer-skip adaptive spec-decode  "
+                  f"layers={_cl_cfg.num_layers}  max_skip={_cl_cfg.max_skip_layers}  "
+                  f"gamma={_cl_cfg.draft_gamma}")
+        except Exception as _e:
+            _warn(f"[clasp] Skipped: {_e}")
 
     print()
     _section("")
