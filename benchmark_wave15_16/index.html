@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://wesleyscholl.github.io/squish/changelog/">
+        <link rel="canonical" href="https://wesleyscholl.github.io/squish/benchmark_wave15_16/">
       
       
       
@@ -23,7 +23,7 @@
     
     
       
-        <title>Changelog - Squish</title>
+        <title>Squish v4 — Wave 15+16 Benchmark Results - Squish</title>
       
     
     
@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#changelog" class="md-skip">
+        <a href="#squish-v4-wave-1516-benchmark-results" class="md-skip">
           Skip to content
         </a>
       
@@ -110,7 +110,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Changelog
+              Squish v4 — Wave 15+16 Benchmark Results
             
           </span>
         </div>
@@ -565,141 +565,46 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#200-2026-03-12" class="md-nav__link">
+  <a href="#wave-15-serving-intelligence-kv-architecture-evolution" class="md-nav__link">
     <span class="md-ellipsis">
       
-        [2.0.0] — 2026-03-12
+        Wave 15 — Serving Intelligence + KV Architecture Evolution
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="[2.0.0] — 2026-03-12">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#added-wave-15-serving-intelligence-kv-architecture-evolution" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Added — Wave 15: Serving Intelligence + KV Architecture Evolution
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#added-wave-16-heterogeneous-compute-advanced-spec-decode" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Added — Wave 16: Heterogeneous Compute + Advanced Spec-Decode
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tests" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tests
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#benchmarks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Benchmarks
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#docs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Docs
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#101-2026-03-04" class="md-nav__link">
+  <a href="#wave-16-heterogeneous-compute-advanced-spec-decode" class="md-nav__link">
     <span class="md-ellipsis">
       
-        [1.0.1] — 2026-03-04
+        Wave 16 — Heterogeneous Compute + Advanced Spec-Decode
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="[1.0.1] — 2026-03-04">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#fixed" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Fixed
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#100-2026-03-03" class="md-nav__link">
+  <a href="#projected-end-to-end-improvements-apple-silicon-qwen3-8b" class="md-nav__link">
     <span class="md-ellipsis">
       
-        [1.0.0] — 2026-03-03
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="[1.0.0] — 2026-03-03">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#added" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Added
+        Projected End-to-End Improvements (Apple Silicon + Qwen3-8B)
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#benchmark-qwen25-15b-instruct-apple-silicon-m-series" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#accuracy-baseline-unchanged-v4-operates-on-kv-serving-paths" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Benchmark (Qwen2.5-1.5B-Instruct, Apple Silicon M-series)
+        Accuracy Baseline (unchanged — v4 operates on KV / serving paths)
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -723,139 +628,335 @@
   
 
 
-<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
-<p>All notable changes to Squish are documented here.
-This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<h1 id="squish-v4-wave-1516-benchmark-results">Squish v4 — Wave 15+16 Benchmark Results<a class="headerlink" href="#squish-v4-wave-1516-benchmark-results" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>CPU/numpy micro-benchmarks — pure Python, no GPU required.
+Measured on Apple Silicon M-series (or equivalent CPU).</p>
+</blockquote>
 <hr />
-<h2 id="200-2026-03-12">[2.0.0] — 2026-03-12<a class="headerlink" href="#200-2026-03-12" title="Permanent link">&para;</a></h2>
-<h3 id="added-wave-15-serving-intelligence-kv-architecture-evolution">Added — Wave 15: Serving Intelligence + KV Architecture Evolution<a class="headerlink" href="#added-wave-15-serving-intelligence-kv-architecture-evolution" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>AdaServe</strong> (<code>squish/ada_serve.py</code>) — SLO-aware speculative decode scheduling via <code>AdaServeScheduler</code>; <code>register_slo()</code> + <code>enqueue()</code> + <code>get_gamma()</code>. 30% P99 latency reduction · 1.5–2× throughput across mixed SLO workloads.</li>
-<li><strong>ConfSpec</strong> (<code>squish/conf_spec.py</code>) — Confidence-gated verification routing with three paths (AUTO_ACCEPT / LIGHTWEIGHT / FULL_TARGET) via <code>ConfSpecVerifier.verify_step()</code>. 54% verification cost reduction.</li>
-<li><strong>SeqPacking</strong> (<code>squish/seq_packing.py</code>) — Barrel-effect-free sequence packing via <code>SequencePacker.pack()</code>. +1.8× effective batch throughput.</li>
-<li><strong>MetaReasoner</strong> (<code>squish/meta_reasoner.py</code>) — Dynamic per-token thinking budget via <code>MetaReasoner.step()</code> with entropy gates. 44–89% CoT energy saved on non-reasoning turns.</li>
-<li><strong>YOCO</strong> (<code>squish/yoco.py</code>) — You Only Cache Once cross-decoder KV sharing via <code>YOCOKVStore</code>; self-attention layers cache normally, cross-decoder layers share. −50% KV memory.</li>
-<li><strong>CLA</strong> (<code>squish/cla.py</code>) — Cross-Layer Attention sharing schedule via <code>CLASchedule.from_config()</code>; configurable sharing factor. 10–30% KV cache reduction.</li>
-<li><strong>KVSharer</strong> (<code>squish/kvsharer.py</code>) — Data-driven cross-layer KV correlation calibration via <code>KVSharerCalibrator</code>; produces <code>KVShareMap</code>. ~30% KV ops saved.</li>
-<li><strong>DiffKV</strong> (<code>squish/diffkv.py</code>) — Differentiated asymmetric K/V precision tiering (head-type-aware) via <code>DiffKVPolicyManager</code>. 2.7–5.7× KV compression · 1.9–5.4× decode throughput.</li>
-<li><strong>ParisKV</strong> (<code>squish/paris_kv.py</code>) — Drift-robust online KV quantisation via <code>ParisKVCodebook</code>; calibrated VQ with continuous centroid adaptation. 4× KV compression.</li>
-<li><strong>KVTuner</strong> (<code>squish/kvtuner.py</code>) — Sensitivity-aware mixed-precision KV search via <code>KVTunerCalibrator.search()</code>. 20–35% accuracy restored vs uniform quantisation.</li>
-</ul>
-<h3 id="added-wave-16-heterogeneous-compute-advanced-spec-decode">Added — Wave 16: Heterogeneous Compute + Advanced Spec-Decode<a class="headerlink" href="#added-wave-16-heterogeneous-compute-advanced-spec-decode" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Dovetail</strong> (<code>squish/dovetail.py</code>) — CPU+GPU concurrent speculative decode via <code>DovetailCPUVerifier</code> + <code>DovetailDecoder</code> + <code>DovetailDraftRunner</code>. 2× throughput via pipeline overlap.</li>
-<li><strong>PIPO</strong> (<code>squish/pipo.py</code>) — Pipelined prefetch-offload INT4 matmul via <code>PIPOScheduler</code>; weight DMA overlapped with GPU compute. +1.7× throughput on offloaded models.</li>
-<li><strong>MobileMoE</strong> (<code>squish/mobile_moe.py</code>) — MoE balanced layer-expert routing via <code>MoBiLERouter</code>. +1.4× throughput vs naïve expert dispatch.</li>
-<li><strong>OnlineSD</strong> (<code>squish/online_sd.py</code>) — Continuous draft-head adaptation via <code>OnlineDraftUpdater</code>; updates draft weights from trace buffer without full retraining. +5–8 pp acceptance rate.</li>
-<li><strong>LookaheadReasoning</strong> (<code>squish/lookahead_reasoning.py</code>) — Parallel step reasoning verification via <code>LookaheadReasoningEngine.run_cycle()</code>. +2.1× reasoning throughput.</li>
-<li><strong>SparseSpec</strong> (<code>squish/sparse_spec.py</code>) — Dynamic sparse self-speculation with pillar-attention cache via <code>SparseSpecDecoder</code> + <code>PillarAttnCache</code>. +2.13× spec-decode throughput.</li>
-<li><strong>FRSpec</strong> (<code>squish/fr_spec.py</code>) — Frequency-ranked vocab subset draft head via <code>FRSpecHead</code>; subset calibrated by <code>FRSpecCalibrator</code>. −13% draft latency.</li>
-<li><strong>LongSpec</strong> (<code>squish/long_spec.py</code>) — Long-context shared-KV draft head via <code>LongSpecHead</code>; zero draft KV overhead at any context length.</li>
-<li><strong>ForeLen</strong> (<code>squish/forelen.py</code>) — Entropy-guided output length prediction via <code>EGTPPredictor</code> (entropy histogram) + <code>PLPPredictor</code> (exponential decay). −29% MAE vs TRAIL.</li>
-<li><strong>RASD</strong> (<code>squish/rasd.py</code>) — Retrieval-augmented speculative decode via <code>CorpusIndex</code> + <code>RASDBatcher.build_retrieval_tree()</code>. 40–60% corpus hit rate.</li>
-</ul>
-<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
-<ul>
-<li>Added <code>tests/test_wave15_server_wiring.py</code> — 44 tests covering all Wave 15 module import, instantiation, and core API paths.</li>
-<li>Added <code>tests/test_wave16_server_wiring.py</code> — 45 tests covering all Wave 16 module import, instantiation, and core API paths.</li>
-<li>Total tests: <strong>3 937 passing</strong>, 0 failures.</li>
-</ul>
-<h3 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h3>
-<ul>
-<li>Added <code>dev/benchmarks/bench_wave15_16.py</code> — micro-benchmark suite for all 21 Wave 15+16 modules.</li>
-<li>Added <code>dev/results/wave15_16_bench.json</code> — machine-readable benchmark output.</li>
-<li>Added <code>docs/benchmark_wave15_16.md</code> — human-readable results table.</li>
-</ul>
-<h3 id="docs">Docs<a class="headerlink" href="#docs" title="Permanent link">&para;</a></h3>
-<ul>
-<li>Updated <code>README.md</code> with v4 section, Wave 15+16 module tables, and combined stack CLI example.</li>
-<li>Added <code>PLAN.md</code> documenting v1–v4 release history and v5 roadmap.</li>
-<li>Added <code>dev/demos/record_v4_demo.py</code> — v4 demo GIF generator.</li>
-<li>Added <code>dev/demos/squish-v4-demo.cast</code> + <code>squish-v4-demo.gif</code>.</li>
-</ul>
-<hr />
-<h2 id="101-2026-03-04">[1.0.1] — 2026-03-04<a class="headerlink" href="#101-2026-03-04" title="Permanent link">&para;</a></h2>
-<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong><code>eval_output/eval_report.md</code></strong> — Replaced physically impossible benchmark numbers
-  (+14.1% ARC, +15.2% HellaSwag after lossy compression) with validated results from a
-  clean re-run; added a clearly labelled validity-notice header.</li>
-<li><strong><code>KVLayerCache.update_and_fetch</code> / <code>.offset</code></strong> — Added the <code>update_and_fetch(keys, values)</code>
-  method and read-only <code>offset</code> property required by the mlx_lm per-layer cache protocol.
-  Without these, <code>--kv-cache-mode int8/snap</code> silently had no effect on generation.</li>
-<li><strong><code>QuantizedKVCache.__getitem__</code></strong> — Now returns <code>self._layers[idx]</code> (a <code>KVLayerCache</code>
-  with <code>update_and_fetch</code>) instead of a <code>_LayerCacheView</code> wrapper that lacked the protocol
-  method.</li>
-<li><strong><code>server.py</code> <code>_sample_mx()</code></strong> — Added module-level temperature + nucleus-sampling helper
-  used by the quantized KV cache generation path.</li>
-<li><strong><code>server.py</code> KV cache generation path</strong> — Wired the quantized cache into <code>_stream_tokens</code>;
-  <code>--kv-cache-mode int8/snap</code> now routes through <code>model(x, cache=layer_caches)</code> per decode
-  step with graceful fallback to <code>mlx_lm.stream_generate</code> on error.</li>
-<li><strong><code>server.py</code> <code>/v1/embeddings</code></strong> — Semantic embeddings now use <code>model.model(x)</code> (last
-  hidden state) as the preferred path, falling back to <code>embed_tokens</code> then logits mean-pool.
-  The previous behaviour always returned input-token embeddings, which are unsuitable for
-  semantic similarity.</li>
-<li><strong><code>server.py</code> <code>--log-level</code></strong> — Added argument to control uvicorn log verbosity
-  (choices: <code>critical</code> / <code>error</code> / <code>warning</code> / <code>info</code> / <code>debug</code> / <code>trace</code>; default:
-  <code>warning</code>).  Previously hardcoded.</li>
-<li><strong><code>cli.py compress --awq / --awq-samples</code></strong> — AWQ activation-calibration pass now exposed
-  on the <code>squish compress</code> subcommand.  Loads the full model, collects activation scales,
-  and passes <code>--awq-scales</code> to the conversion subprocess automatically.</li>
-<li><strong><code>cli.py run/serve --log-level</code></strong> — Log-level argument forwarded from <code>squish run</code> /
-  <code>squish serve</code> to the server process.</li>
-<li><strong><code>cli.py compress/pull --int4</code> help text</strong> — Corrected disk-savings claim from “~50%” to
-  “~44%” and replaced “Recommended for 1.5B models” with an explicit warning: INT4
-  quantization produces degenerate output on models smaller than 3B parameters.
-  Use INT8 (<code>--int8</code>, the default) for 1.5B models.</li>
-</ul>
-<hr />
-<h2 id="100-2026-03-03">[1.0.0] — 2026-03-03<a class="headerlink" href="#100-2026-03-03" title="Permanent link">&para;</a></h2>
-<p><strong>Initial public release</strong>, accompanying the research paper.</p>
-<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Three-tier compressed weight loader</strong> — INT8 Vectro → float16 npy → bf16 MLX safetensors</li>
-<li><strong>OpenAI-compatible API server</strong> (<code>/v1/chat/completions</code>, <code>/v1/completions</code>, <code>/v1/embeddings</code>, <code>/v1/models</code>)</li>
-<li><strong>Ollama drop-in compatibility</strong> (<code>/api/generate</code>, <code>/api/chat</code>, <code>/api/tags</code>, <code>/api/embeddings</code>)</li>
-<li><strong>Web chat UI</strong> at <code>/chat</code> — dark-themed, streaming, multi-session history, offline</li>
-<li><strong>CLI</strong> — <code>squish run</code> / <code>squish serve</code>, <code>squish chat</code>, <code>squish models</code>, <code>squish bench</code>, <code>squish info</code>, <code>squish rm</code>, <code>squish search</code>, <code>squish pull</code>, <code>squish --version</code></li>
-<li><strong>Speculative decoding</strong> — target + draft model acceleration</li>
-<li><strong>Batch scheduler</strong> — dynamic batching with priority queues</li>
-<li><strong>KV cache quantisation</strong> — KIVI INT8 + SnapKV compression</li>
-<li><strong>Prefix cache</strong> — prompt prefix reuse across requests</li>
-<li><strong>Tool / function calling</strong> — OpenAI-format <code>tools</code> → <code>tool_calls</code> round-trip</li>
-<li><strong>Rust/PyO3 INT8 quantiser</strong> (<code>squish_quant_rs</code>) — ARM NEON SIMD vectorised</li>
-<li><strong>AWQ calibration</strong> pass for activation-guided mixed-precision</li>
-<li>Integrations: Continue.dev, aider, LiteLLM (config templates in <code>configs/</code>)</li>
-<li>Evaluation harness wrapper (<code>squish[eval]</code>) — lm-evaluation-harness compatible</li>
-</ul>
-<h3 id="benchmark-qwen25-15b-instruct-apple-silicon-m-series">Benchmark (Qwen2.5-1.5B-Instruct, Apple Silicon M-series)<a class="headerlink" href="#benchmark-qwen25-15b-instruct-apple-silicon-m-series" title="Permanent link">&para;</a></h3>
+<h2 id="wave-15-serving-intelligence-kv-architecture-evolution">Wave 15 — Serving Intelligence + KV Architecture Evolution<a class="headerlink" href="#wave-15-serving-intelligence-kv-architecture-evolution" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Metric</th>
-<th style="text-align: right;">mlx_lm (cold)</th>
-<th style="text-align: right;">Squish (cached)</th>
-<th style="text-align: right;">Improvement</th>
+<th>Module</th>
+<th>Operation</th>
+<th style="text-align: center;">Latency (µs)</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Load time</td>
-<td style="text-align: right;">28.81 s</td>
-<td style="text-align: right;">0.53 s</td>
-<td style="text-align: right;"><strong>54×</strong></td>
+<td>AdaServe</td>
+<td><code>get_gamma()</code> tight SLO</td>
+<td style="text-align: center;">1.99</td>
+<td>SLO-customized gamma selection</td>
 </tr>
 <tr>
-<td>Peak load RAM</td>
-<td style="text-align: right;">~2600 MB</td>
-<td style="text-align: right;">402 MB</td>
-<td style="text-align: right;"><strong>6×</strong></td>
+<td>AdaServe</td>
+<td><code>get_gamma()</code> relaxed SLO</td>
+<td style="text-align: center;">1.82</td>
+<td></td>
 </tr>
 <tr>
-<td>Accuracy delta</td>
-<td style="text-align: right;">—</td>
-<td style="text-align: right;">≤1.5% on all tasks</td>
-<td style="text-align: right;">✅</td>
+<td>ConfSpec</td>
+<td><code>verify_step()</code> flat logits</td>
+<td style="text-align: center;">100.21</td>
+<td>Full verification path</td>
+</tr>
+<tr>
+<td>ConfSpec</td>
+<td><code>verify_step()</code> peaked logits</td>
+<td style="text-align: center;">78.46</td>
+<td>Auto-accept path (high confidence)</td>
+</tr>
+<tr>
+<td>SeqPacking</td>
+<td><code>pack()</code> 32 short seqs</td>
+<td style="text-align: center;">2521.5</td>
+<td>8–64 token sequences</td>
+</tr>
+<tr>
+<td>SeqPacking</td>
+<td><code>pack()</code> 8 long seqs</td>
+<td style="text-align: center;">43959.5</td>
+<td>128–512 token sequences</td>
+</tr>
+<tr>
+<td>MetaReasoner</td>
+<td><code>compute_entropy()</code> 32k</td>
+<td style="text-align: center;">500.74</td>
+<td>Static method</td>
+</tr>
+<tr>
+<td>MetaReasoner</td>
+<td><code>step()</code> 32k vocab</td>
+<td style="text-align: center;">0.23</td>
+<td>Per-token thinking budget decision</td>
+</tr>
+<tr>
+<td>YOCO</td>
+<td><code>append()</code> seq=64 dim=128</td>
+<td style="text-align: center;">1.11</td>
+<td>KV append to shared store</td>
+</tr>
+<tr>
+<td>YOCO</td>
+<td><code>get_shared_kv()</code></td>
+<td style="text-align: center;">6473.63</td>
+<td>Retrieve cached KV for cross-decoder layers</td>
+</tr>
+<tr>
+<td>DiffKV</td>
+<td><code>get_policy()</code></td>
+<td style="text-align: center;">1.59</td>
+<td>Per-head precision policy lookup</td>
+</tr>
+<tr>
+<td>DiffKV</td>
+<td><code>record_attention()</code> 4×4</td>
+<td style="text-align: center;">6.33</td>
+<td>Attention pattern accumulation</td>
+</tr>
+<tr>
+<td>ParisKV</td>
+<td><code>encode()</code> batch=32 dim=128</td>
+<td style="text-align: center;">34.4</td>
+<td>Online codebook assignment</td>
+</tr>
+<tr>
+<td>ParisKV</td>
+<td><code>decode()</code> batch=32</td>
+<td style="text-align: center;">4.2</td>
+<td>Codebook reconstruction</td>
+</tr>
+<tr>
+<td>ParisKV</td>
+<td><code>online_update()</code> batch=8</td>
+<td style="text-align: center;">129.4</td>
+<td>Drift-corrected centroid update</td>
+</tr>
+<tr>
+<td>KVTuner</td>
+<td><code>search()</code> 32 layers</td>
+<td style="text-align: center;">3815.4</td>
+<td>Sensitivity-aware bit assignment</td>
+</tr>
+<tr>
+<td>CLA</td>
+<td><code>CLASchedule.from_config()</code></td>
+<td style="text-align: center;">27.56</td>
+<td>Cross-layer attention schedule gen</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="wave-16-heterogeneous-compute-advanced-spec-decode">Wave 16 — Heterogeneous Compute + Advanced Spec-Decode<a class="headerlink" href="#wave-16-heterogeneous-compute-advanced-spec-decode" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Operation</th>
+<th style="text-align: center;">Latency (µs)</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dovetail</td>
+<td><code>verify_one()</code> vocab=32k</td>
+<td style="text-align: center;">384.8</td>
+<td>CPU target verification</td>
+</tr>
+<tr>
+<td>PIPO</td>
+<td><code>run_layer()</code> in=out=4096</td>
+<td style="text-align: center;">1785.8</td>
+<td>INT4 dequant + matmul w/ prefetch</td>
+</tr>
+<tr>
+<td>MobileMoE</td>
+<td><code>route()</code> single 128 experts</td>
+<td style="text-align: center;">27.19</td>
+<td>Expert selection</td>
+</tr>
+<tr>
+<td>MobileMoE</td>
+<td><code>route_batch()</code> 32 tokens</td>
+<td style="text-align: center;">490.2</td>
+<td></td>
+</tr>
+<tr>
+<td>OnlineSD</td>
+<td><code>record()</code> hidden=4096</td>
+<td style="text-align: center;">2.30</td>
+<td>Trace buffer append</td>
+</tr>
+<tr>
+<td>LookaheadReasoning</td>
+<td><code>run_cycle()</code> k=4</td>
+<td style="text-align: center;">15.5</td>
+<td>Parallel step verification cycle</td>
+</tr>
+<tr>
+<td>SparseSpec</td>
+<td><code>PillarAttnCache.update()</code> cap=4096</td>
+<td style="text-align: center;">1.3</td>
+<td>Attention pillar accumulation</td>
+</tr>
+<tr>
+<td>SparseSpec</td>
+<td><code>top_k_indices()</code> k=205</td>
+<td style="text-align: center;">13.9</td>
+<td>Sparse position selection</td>
+</tr>
+<tr>
+<td>FRSpec</td>
+<td><code>head.forward()</code> top-25% vocab</td>
+<td style="text-align: center;">3881.7</td>
+<td>Compressed draft logits</td>
+</tr>
+<tr>
+<td>FRSpec</td>
+<td><code>compress_logits()</code> 32k→subset</td>
+<td style="text-align: center;">13.8</td>
+<td>Vocab projection</td>
+</tr>
+<tr>
+<td>FRSpec</td>
+<td><code>expand_logits()</code> subset→32k</td>
+<td style="text-align: center;">25.3</td>
+<td>Full-vocab restore</td>
+</tr>
+<tr>
+<td>LongSpec</td>
+<td><code>LongSpecHead.forward()</code> h=4096</td>
+<td style="text-align: center;">19966.0</td>
+<td>Shared-KV draft head</td>
+</tr>
+<tr>
+<td>ForeLen</td>
+<td><code>EGTPPredictor.predict()</code></td>
+<td style="text-align: center;">109.92</td>
+<td>Entropy histogram → length</td>
+</tr>
+<tr>
+<td>ForeLen</td>
+<td><code>PLPPredictor.update()</code></td>
+<td style="text-align: center;">0.89</td>
+<td>Exponential decay estimate</td>
+</tr>
+<tr>
+<td>RASD</td>
+<td><code>CorpusIndex.search()</code> 1k seqs</td>
+<td style="text-align: center;">0.6</td>
+<td>Prefix-tree lookup</td>
+</tr>
+<tr>
+<td>RASD</td>
+<td><code>build_retrieval_tree()</code></td>
+<td style="text-align: center;">2.0</td>
+<td>Draft tree construction</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="projected-end-to-end-improvements-apple-silicon-qwen3-8b">Projected End-to-End Improvements (Apple Silicon + Qwen3-8B)<a class="headerlink" href="#projected-end-to-end-improvements-apple-silicon-qwen3-8b" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th style="text-align: center;">Improvement</th>
+<th>Module</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KV memory (YOCO)</td>
+<td style="text-align: center;"><strong>50%</strong> reduction</td>
+<td>YOCO — only cross-decoder layers use KV</td>
+</tr>
+<tr>
+<td>KV memory (DiffKV)</td>
+<td style="text-align: center;"><strong>2.7–5.7×</strong> compression</td>
+<td>DiffKV asymmetric K/V precision</td>
+</tr>
+<tr>
+<td>KV memory (KVTuner)</td>
+<td style="text-align: center;"><strong>2×</strong> vs naive quant</td>
+<td>KVTuner mixed-precision calibration</td>
+</tr>
+<tr>
+<td>CoT decode energy</td>
+<td style="text-align: center;"><strong>44–89%</strong> saving</td>
+<td>MetaReasoner dynamic thinking budget</td>
+</tr>
+<tr>
+<td>Batch throughput</td>
+<td style="text-align: center;"><strong>1.8×</strong> effective</td>
+<td>SeqPacking barrel-effect elimination</td>
+</tr>
+<tr>
+<td>Spec decode throughput</td>
+<td style="text-align: center;"><strong>2.13×</strong></td>
+<td>SparseSpec dynamic sparse self-speculation</td>
+</tr>
+<tr>
+<td>Reasoning throughput</td>
+<td style="text-align: center;"><strong>2.1×</strong></td>
+<td>LookaheadReasoning parallel step verification</td>
+</tr>
+<tr>
+<td>Offloaded model throughput</td>
+<td style="text-align: center;"><strong>1.7×</strong></td>
+<td>PIPO pipelined prefetch offloading</td>
+</tr>
+<tr>
+<td>Heterogeneous throughput</td>
+<td style="text-align: center;"><strong>2×</strong></td>
+<td>Dovetail CPU+GPU spec decode</td>
+</tr>
+<tr>
+<td>Draft acceptance</td>
+<td style="text-align: center;"><strong>+5–8 pp</strong></td>
+<td>OnlineSD continuous adaptation</td>
+</tr>
+<tr>
+<td>Length prediction (MAE)</td>
+<td style="text-align: center;"><strong>29% ↓</strong> vs TRAIL</td>
+<td>ForeLen entropy-guided prediction</td>
+</tr>
+<tr>
+<td>Corpus hit rate</td>
+<td style="text-align: center;"><strong>40–60%</strong></td>
+<td>RASD retrieval-augmented spec decode</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="accuracy-baseline-unchanged-v4-operates-on-kv-serving-paths">Accuracy Baseline (unchanged — v4 operates on KV / serving paths)<a class="headerlink" href="#accuracy-baseline-unchanged-v4-operates-on-kv-serving-paths" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th style="text-align: right;">Score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ARC-Easy (acc_norm)</td>
+<td style="text-align: right;"><strong>73.5%</strong></td>
+</tr>
+<tr>
+<td>HellaSwag (acc_norm)</td>
+<td style="text-align: right;"><strong>62.0%</strong></td>
+</tr>
+<tr>
+<td>WinoGrande (acc)</td>
+<td style="text-align: right;"><strong>67.0%</strong></td>
+</tr>
+<tr>
+<td>PIQA (acc_norm)</td>
+<td style="text-align: right;"><strong>76.5%</strong></td>
 </tr>
 </tbody>
 </table>
