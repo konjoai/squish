@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-11 (v6 complete)
+> Last updated: 2026-03-12 (v7 planning)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -15,6 +15,8 @@ This document tracks completed waves, the current release, and the next phase.
 | **v3** | 13–14 | Ultra-Long Context · Adaptive Spec-Decode · Quantisation |
 | **v4** | 15–16 | Serving Intelligence · KV Architecture Evolution · Heterogeneous Compute |
 | **v5** | 17–18 | Attention Architecture · Memory Management · Adaptive Compute · Model Intelligence |
+| **v6** | 19–20 | Next-Gen Precision · Serving Infrastructure · Intelligence |
+| **v7** | 21–22 | Advanced Decode · Production Serving · Observability |
 
 ---
 
@@ -260,3 +262,85 @@ power profiling, multi-modal efficiency, and knowledge distillation for spec hea
 | Total modules after v6 | **138** |
 | Expected new tests | **~112** (4 per module × 28) |
 | Expected total tests after v6 | **4 278** |
+
+---
+
+## ✅ v7 — Waves 21+22 (Released 2026-03-12)
+
+Theme: **Advanced Decode · Production Serving · Observability**
+
+28 new modules across two waves.
+
+---
+
+### Wave 21 — Advanced Memory & Decode (14 modules)
+
+Focus: Tree-parallel speculative verification, online KV compression, mixed-precision
+KV per head, pipeline-parallel decode, learned KV codecs, retention-style recurrent
+attention, and context-length-adaptive RoPE scaling.
+
+| Module | File | Key Classes | Flag | Key Result |
+|--------|------|-------------|------|-----------|\
+| **TreeVerifier** | `tree_verifier.py` | `TreeVerifier`, `TokenTree` | `--tree-verify` | Batched tree-parallel speculative verification → **structured multi-token acceptance** |
+| **KVCompress** | `kv_compress.py` | `KVCompressor`, `KVCompressConfig` | `--kv-compress` | Online KV quantisation + pruning during generation → **adaptive old-context compression** |
+| **DynamicNTK** | `dynamic_ntk.py` | `DynamicNTKScaler`, `NTKState` | `--dynamic-ntk` | Per-request runtime RoPE base auto-scaling → **auto-extends at 80% context fill** |
+| **QuantSpecDecode** | `quant_spec_decode.py` | `QuantSpecDecoder`, `QSDConfig` | `--quant-spec-decode` | INT4 draft + FP16 verify → **draft memory ↓ 4× vs FP16** |
+| **SparseAttnIndex** | `sparse_attn_index.py` | `SparseAttnIndex`, `ANCandidates` | `--sparse-attn-index` | ANN KV retrieval index → **sub-linear attention cost at very long context** |
+| **MixedPrecisionKV** | `mixed_precision_kv.py` | `MixedPrecisionKVCache`, `HeadPrecision` | `--mp-kv` | Per-head INT8/INT4/FP16 KV via sensitivity analysis → **2–4× KV memory at iso-quality** |
+| **PipelineBubble** | `pipeline_bubble.py` | `BubbleEliminator`, `StageSchedule` | `--pipeline-bubble` | Overlapped prefill + decode across pipeline stages → **bubble-free pipeline utilisation** |
+| **LayerwiseDecode** | `layerwise_decode.py` | `LayerwiseDecoder`, `LayerStream` | `--layerwise-decode` | Layer-by-layer early-exit decode with multi-stream output → **configurable exit-layer latency** |
+| **CodecKV** | `codec_kv.py` | `KVCodec`, `CodecConfig` | `--codec-kv` | Learned encode/decode KV codec → **2–4× KV compression via latent reconstruction** |
+| **DedupeAttn** | `dedupe_attn.py` | `AttentionDeduplicator`, `DedupStats` | `--dedupe-attn` | Near-duplicate Q/K detection + output reuse → **attention FLOPs ↓ on repetitive context** |
+| **FlashPrefill** | `flash_prefill.py` | `FlashPrefillKernel`, `PrefillConfig` | `--flash-prefill` | Chunked flash attention for prefill with causal mask → **O(chunk²) not O(seq²) memory** |
+| **BudgetSpec** | `budget_spec.py` | `BudgetSpecDecoder`, `BudgetConfig` | `--budget-spec` | Token-budget-aware speculative decode → **exits drafting when budget threshold hit** |
+| **RetentionAttn** | `retention_attn.py` | `RetentionState`, `RetentionKernel` | `--retention-attn` | Retention-style recurrent state → **O(1) per-step memory, linear recurrence** |
+| **KVRouter** | `kv_router.py` | `KVRouter`, `KVRouteTable` | `--kv-router` | Cross-instance KV routing for disaggregated prefill/decode → **KV transfer without recomputation** |
+
+### Wave 22 — Production Serving & Observability (14 modules)
+
+Focus: Multi-tenant fair scheduling, intelligent load-balanced request routing,
+predictive KV pre-warming, token budget enforcement, OpenTelemetry-compatible
+tracing, request coalescing, adaptive quantisation, health monitoring, and
+cost-aware serving.
+
+| Module | File | Key Classes | Flag | Key Result |
+|--------|------|-------------|------|-----------|\
+| **MultiTenantSched** | `multi_tenant_sched.py` | `TenantScheduler`, `TenantConfig` | `--multi-tenant` | Fair per-tenant QoS scheduling → **SLO-isolated multi-tenant serving** |
+| **RequestRouter** | `request_router.py` | `RequestRouter`, `ReplicaRegistry` | `--request-router` | Load-aware request routing across replicas → **consistent-hash + least-loaded** |
+| **CacheWarmup** | `cache_warmup.py` | `CacheWarmupPredictor`, `WarmupConfig` | `--cache-warmup` | Predictive KV cache pre-warming from patterns → **TTFT ↓ on hot prefix paths** |
+| **TokenBudgetGate** | `token_budget_gate.py` | `TokenBudgetGate`, `BudgetPolicy` | `--token-budget` | Hard per-request token budget with graceful truncation → **deterministic cost control** |
+| **ObservabilityHook** | `observability_hook.py` | `InferenceTracer`, `SpanCollector` | `--observability` | Zero-overhead per-step inference tracing → **OpenTelemetry-compatible spans** |
+| **RequestCoalesce** | `request_coalesce.py` | `PrefixCoalescer`, `CoalesceStats` | `--req-coalesce` | Merge requests sharing long common prefixes → **shared prefill forward pass** |
+| **AdaptiveQuantize** | `adaptive_quantize.py` | `AdaptiveQuantizer`, `PressureMonitor` | `--adaptive-quant` | Runtime precision switching under memory pressure → **auto INT8/INT4 under OOM** |
+| **HealthCheck** | `health_check.py` | `InferenceHealthMonitor`, `HealthState` | `--health-check` | Degradation-aware server health monitoring → **automatic quality regression alerting** |
+| **FaultTolerance** | `fault_tolerance.py` | `FaultHandler`, `FaultPolicy` | `--fault-tolerance` | Graceful OOM degradation → **auto KV eviction + draft disable + SLO re-negotiation** |
+| **ModelPool** | `model_pool.py` | `ModelPool`, `PoolEntry` | `--model-pool` | Hot model pool with lazy-load + LRU eviction → **multi-model serving without reload latency** |
+| **StreamingChunk** | `streaming_chunk.py` | `ChunkedStreamer`, `BackpressureBuffer` | `--streaming-chunk` | Sub-token-latency chunked streaming with backpressure → **first-chunk latency ↓** |
+| **CostEstimator** | `cost_estimator.py` | `RequestCostEstimator`, `CostModel` | `--cost-estimate` | Per-request compute cost estimation → **supports billing and priority queuing** |
+| **SLAMonitor** | `sla_monitor.py` | `SLAMonitor`, `ViolationPolicy` | `--sla-monitor` | Real-time SLA violation detection + remediation → **auto-escalation on breach** |
+| **ContextCache** | `context_cache.py` | `PersistentContextCache`, `CacheEntry` | `--context-cache` | Persistent cross-session context cache with TTL → **zero re-encode on repeated context** |
+
+### v7 Deliverables checklist
+
+- [x] All 28 modules implemented in `squish/`
+- [x] `tests/test_wave21_server_wiring.py` — import + instantiation tests for 14 modules
+- [x] `tests/test_wave22_server_wiring.py` — import + instantiation tests for 14 modules
+- [x] `dev/benchmarks/bench_wave21_22.py` — micro-benchmark suite
+- [x] `dev/results/wave21_22_bench.json` — benchmark results
+- [x] `docs/benchmark_wave21_22.md` — human-readable results table
+- [x] `dev/demos/record_v7_demo.py` — v7 demo GIF generator
+- [x] `dev/demos/squish-v7-demo.gif` — demo GIF rendered
+- [x] README.md — v7 module sections, Wave 21+22 tables, CLI examples
+- [x] CHANGELOG.md — `[5.0.0]` entry
+- [x] PLAN.md updated to mark v7 complete
+
+### v7 Module Count Summary
+
+| Scope | Count |
+|-------|------:|
+| Wave 21 (Advanced Memory + Decode) | 14 |
+| Wave 22 (Production Serving + Observability) | 14 |
+| Total new v7 modules | **28** |
+| Total modules after v7 | **166** |
+| Expected new tests | **~112** (4 per module × 28) |
+| Expected total tests after v7 | **~4 390** |

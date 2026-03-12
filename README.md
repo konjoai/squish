@@ -25,6 +25,16 @@
 
 ![](dev/demos/squish-demo.gif)
 
+### v7 — Advanced Decode · Production Serving · Observability
+
+![](dev/demos/squish-v7-demo.gif)
+
+> v7 adds 28 new modules across Wave 21 and Wave 22.
+> Wave 21 (Advanced Memory & Decode): TreeVerifier, KVCompress, DynamicNTK, QuantSpecDecode, SparseAttnIndex, MixedPrecisionKV, PipelineBubble, LayerwiseDecode, CodecKV, DedupeAttn, FlashPrefill, BudgetSpec, RetentionAttn, KVRouter.
+> Wave 22 (Production Serving & Observability): MultiTenantSched, RequestRouter, CacheWarmup, TokenBudgetGate, ObservabilityHook, RequestCoalesce, AdaptiveQuantize, HealthCheck, FaultTolerance, ModelPool, StreamingChunk, CostEstimator, SLAMonitor, ContextCache.
+> 204× KV codec compression · INT4 draft memory · O(1) retention attention · multi-tenant QoS · OTel tracing · SLA violation detection.
+> See [`docs/benchmark_wave21_22.md`](docs/benchmark_wave21_22.md) and [`dev/results/wave21_22_bench.json`](dev/results/wave21_22_bench.json) for full numbers.
+
 ### v6 — Next-Gen Precision · Serving Infrastructure
 
 ![](dev/demos/squish-v6-demo.gif)
@@ -526,6 +536,77 @@ v6 benchmark results: [`docs/benchmark_wave19_20.md`](docs/benchmark_wave19_20.m
 
 ---
 
+## v7 — Optimisation Modules: Advanced Memory & Decode
+
+v7 (Wave 21) focuses on **tree-parallel speculative verification**, **online KV compression**, **mixed-precision per-head KV**, **pipeline bubble elimination**, **learned KV codecs**, and **retention-style recurrent attention**, shipping 14 new modules:
+
+| Module | Flag | Problem Solved | Key Number |
+|--------|------|---------------|-----------|
+| TreeVerifier | `--tree-verify` | Speculative tree acceptance | Structured multi-token acceptance |
+| KVCompress | `--kv-compress` | KV memory growth during generation | Online prune + INT8 quant |
+| DynamicNTK | `--dynamic-ntk` | Context extension without retraining | Auto-extends at 80% context fill |
+| QuantSpecDecode | `--quant-spec-decode` | Draft memory overhead | 4× draft memory reduction vs FP16 |
+| SparseAttnIndex | `--sparse-attn-index` | Attention cost at very long context | Sub-linear KV attention cost |
+| MixedPrecisionKV | `--mp-kv` | KV memory at iso-quality | 2–4× KV reduction via per-head precision |
+| PipelineBubble | `--pipeline-bubble` | Pipeline stage idle time | 1F1B near-zero bubble fraction |
+| LayerwiseDecode | `--layerwise-decode` | Full-depth decode latency | Early-exit at configurable layer |
+| CodecKV | `--codec-kv` | KV cache memory | 204× compression via learned codebook |
+| DedupeAttn | `--dedupe-attn` | Attention FLOPs on repetitive context | Near-duplicate Q/K output reuse |
+| FlashPrefill | `--flash-prefill` | Prefill memory on long sequences | O(seq × chunk) not O(seq²) |
+| BudgetSpec | `--budget-spec` | Draft compute near token budget | Ramp-down to 1 draft near limit |
+| RetentionAttn | `--retention-attn` | KV cache memory for recurrent inference | O(1) per-step linear recurrence |
+| KVRouter | `--kv-router` | KV recomputation in disaggregated serving | Zero-recompute cross-instance routing |
+
+Full v7 (Wave 21) stack (advanced decode + memory):
+```bash
+squish serve ./model \
+  --tree-verify --kv-compress \
+  --dynamic-ntk \
+  --quant-spec-decode \
+  --sparse-attn-index --mp-kv \
+  --pipeline-bubble --layerwise-decode \
+  --codec-kv --dedupe-attn \
+  --flash-prefill --budget-spec \
+  --retention-attn --kv-router
+```
+
+## v7 — Optimisation Modules: Production Serving & Observability
+
+v7 (Wave 22) focuses on **multi-tenant fair scheduling**, **load-balanced request routing**, **predictive KV pre-warming**, **OpenTelemetry-compatible tracing**, **adaptive quantisation under pressure**, and **SLA violation detection**, shipping 14 new modules:
+
+| Module | Flag | Problem Solved | Key Number |
+|--------|------|---------------|-----------|
+| MultiTenantSched | `--multi-tenant` | Per-tenant QoS isolation | 0.65 µs scheduler overhead |
+| RequestRouter | `--request-router` | Load balancing across replicas | Least-loaded routing |
+| CacheWarmup | `--cache-warmup` | Cold TTFT on hot paths | Predictive KV pre-warming |
+| TokenBudgetGate | `--token-budget` | Request cost determinism | Hard budget with graceful truncation |
+| ObservabilityHook | `--observability` | Inference step visibility | OpenTelemetry-compatible spans |
+| RequestCoalesce | `--req-coalesce` | Redundant prefill forward passes | Shared prefill for common prefixes |
+| AdaptiveQuantize | `--adaptive-quant` | Memory pressure OOM risk | Auto INT8/INT4 under pressure |
+| HealthCheck | `--health-check` | Quality regression detection | p50/p99 latency + error rate |
+| FaultTolerance | `--fault-tolerance` | OOM crash risk | Progressive evict→disable→reduce |
+| ModelPool | `--model-pool` | Multi-model reload latency | Hot pool with LRU eviction |
+| StreamingChunk | `--streaming-chunk` | First-chunk streaming latency | Sub-token chunked streaming |
+| CostEstimator | `--cost-estimate` | Request billing and prioritisation | Per-request compute cost |
+| SLAMonitor | `--sla-monitor` | SLA breach detection | Auto-escalation on consecutive breach |
+| ContextCache | `--context-cache` | Cross-session context re-encoding | Persistent TTL cache, 100% hit rate |
+
+Full v7 (Wave 22) stack (production serving + observability):
+```bash
+squish serve ./model \
+  --multi-tenant --request-router \
+  --cache-warmup --token-budget \
+  --observability --req-coalesce \
+  --adaptive-quant --health-check \
+  --fault-tolerance --model-pool \
+  --streaming-chunk --cost-estimate \
+  --sla-monitor --context-cache
+```
+
+v7 benchmark results: [`docs/benchmark_wave21_22.md`](docs/benchmark_wave21_22.md)
+
+---
+
 ## Drop-In API Server
 
 Replace every cloud API call today.  Start the server once; use it forever.
@@ -905,6 +986,38 @@ squish bench --markdown --save bench_results.md
 | `dev/results/wave19_20_bench.json` | **v6 benchmark results** (machine-readable JSON) |
 | `docs/benchmark_wave19_20.md` | **v6 benchmark results** (human-readable Markdown table) |
 | `dev/demos/record_v6_demo.py` | **v6 demo GIF generator** |
+| `squish/tree_verifier.py` | **v7** TreeVerifier + TokenTree batched tree-parallel speculative verification |
+| `squish/kv_compress.py` | **v7** KVCompressor online KV quantisation + pruning during generation |
+| `squish/dynamic_ntk.py` | **v7** DynamicNTKScaler per-request runtime RoPE base auto-scaling |
+| `squish/quant_spec_decode.py` | **v7** QuantSpecDecoder INT4 draft + FP16 verify speculative decode |
+| `squish/sparse_attn_index.py` | **v7** SparseAttnIndex ANN KV retrieval for sub-linear attention |
+| `squish/mixed_precision_kv.py` | **v7** MixedPrecisionKVCache per-head INT4/INT8/FP16 KV |
+| `squish/pipeline_bubble.py` | **v7** BubbleEliminator 1F1B pipeline schedule with bubble elimination |
+| `squish/layerwise_decode.py` | **v7** LayerwiseDecoder layer-by-layer early-exit decode |
+| `squish/codec_kv.py` | **v7** KVCodec learned k-means++ encode/decode KV codec |
+| `squish/dedupe_attn.py` | **v7** AttentionDeduplicator near-duplicate Q/K detection + output reuse |
+| `squish/flash_prefill.py` | **v7** FlashPrefillKernel chunked causal flash attention for prefill |
+| `squish/budget_spec.py` | **v7** BudgetSpecDecoder token-budget-aware speculative decode |
+| `squish/retention_attn.py` | **v7** RetentionKernel + RetentionState O(1) recurrent retention attention |
+| `squish/kv_router.py` | **v7** KVRouter cross-instance KV routing for disaggregated serving |
+| `squish/multi_tenant_sched.py` | **v7** TenantScheduler fair per-tenant QoS scheduling |
+| `squish/request_router.py` | **v7** RequestRouter load-aware request routing across replicas |
+| `squish/cache_warmup.py` | **v7** CacheWarmupPredictor predictive KV cache pre-warming |
+| `squish/token_budget_gate.py` | **v7** TokenBudgetGate hard per-request token budget gate |
+| `squish/observability_hook.py` | **v7** InferenceTracer + SpanCollector OpenTelemetry-compatible inference tracing |
+| `squish/request_coalesce.py` | **v7** PrefixCoalescer merge requests sharing long common prefixes |
+| `squish/adaptive_quantize.py` | **v7** AdaptiveQuantizer runtime precision switching under memory pressure |
+| `squish/health_check.py` | **v7** InferenceHealthMonitor degradation-aware server health monitoring |
+| `squish/fault_tolerance.py` | **v7** FaultHandler graceful OOM degradation policy |
+| `squish/model_pool.py` | **v7** ModelPool hot model pool with lazy-load + LRU eviction |
+| `squish/streaming_chunk.py` | **v7** ChunkedStreamer sub-token-latency chunked streaming with backpressure |
+| `squish/cost_estimator.py` | **v7** RequestCostEstimator per-request compute cost estimation |
+| `squish/sla_monitor.py` | **v7** SLAMonitor real-time SLA violation detection + escalation |
+| `squish/context_cache.py` | **v7** PersistentContextCache persistent cross-session context cache with TTL |
+| `dev/benchmarks/bench_wave21_22.py` | **v7 micro-benchmark suite** for all 28 Wave 21+22 modules |
+| `dev/results/wave21_22_bench.json` | **v7 benchmark results** (machine-readable JSON) |
+| `docs/benchmark_wave21_22.md` | **v7 benchmark results** (human-readable Markdown table) |
+| `dev/demos/record_v7_demo.py` | **v7 demo GIF generator** |
 | `dev/benchmarks/bench_wave17_18.py` | **v5 micro-benchmark suite** for all 28 Wave 17+18 modules |
 | `dev/results/wave17_18_bench.json` | **v5 benchmark results** (machine-readable JSON) |
 | `docs/benchmark_wave17_18.md` | **v5 benchmark results** (human-readable Markdown table) |
