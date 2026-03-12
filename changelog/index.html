@@ -565,6 +565,67 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#400-2026-03-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [4.0.0] — 2026-03-11
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[4.0.0] — 2026-03-11">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-19-next-gen-attention-precision-14-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 19: Next-Gen Attention &amp; Precision (14 modules)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-20-serving-infrastructure-intelligence-14-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 20: Serving Infrastructure &amp; Intelligence (14 modules)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Benchmarks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#300-2026-03-11" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -599,7 +660,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests" class="md-nav__link">
+  <a href="#tests_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -610,7 +671,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#benchmarks" class="md-nav__link">
+  <a href="#benchmarks_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Benchmarks
@@ -671,7 +732,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_1" class="md-nav__link">
+  <a href="#tests_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -682,7 +743,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#benchmarks_1" class="md-nav__link">
+  <a href="#benchmarks_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Benchmarks
@@ -799,6 +860,54 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="400-2026-03-11">[4.0.0] — 2026-03-11<a class="headerlink" href="#400-2026-03-11" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-19-next-gen-attention-precision-14-modules">Added — Wave 19: Next-Gen Attention &amp; Precision (14 modules)<a class="headerlink" href="#added-wave-19-next-gen-attention-precision-14-modules" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>FP8Quant</strong> (<code>squish/fp8_quant.py</code>) — FP8 E4M3/E5M2 weight and activation quantisation; ~60% storage reduction vs BF16</li>
+<li><strong>MXQuant</strong> (<code>squish/mx_quant.py</code>) — OCP MX4/MX6/MX9 microscaling; 32-element tiles with shared E8M0 exponent; better quality than INT4</li>
+<li><strong>FlashDecode</strong> (<code>squish/flash_decode.py</code>) — Split-KV parallel decode; n_splits chunks, log-sum-exp merge; O(1) memory overhead</li>
+<li><strong>PagedKV</strong> (<code>squish/paged_kv.py</code>) — vLLM-style paged KV cache; virtual block table; zero KV fragmentation across requests</li>
+<li><strong>GQA</strong> (<code>squish/gqa.py</code>) — Grouped Query Attention; n_kv_heads &lt;&lt; n_q_heads expansion; 4–8× KV memory reduction vs MHA</li>
+<li><strong>SlidingWindowAttn</strong> (<code>squish/sliding_window_attn.py</code>) — Ring-buffer sliding window KV cache; O(window_size) memory at any context length</li>
+<li><strong>RoPEScaling</strong> (<code>squish/rope_scaling.py</code>) — NTK-aware, YaRN, and LongRoPE position encoding scalers; 4–32× context extension</li>
+<li><strong>ActSparsity</strong> (<code>squish/act_sparsity.py</code>) — Activation sparsity gating for FFN layers; 30–60% FFN compute saved</li>
+<li><strong>FusedRMSNorm</strong> (<code>squish/fused_rmsnorm.py</code>) — Fused RMSNorm + residual add; single kernel pass, reduced memory bandwidth</li>
+<li><strong>LoRAInference</strong> (<code>squish/lora_inference.py</code>) — Zero-copy LoRA delta inference; adapter switching without re-quantising base model</li>
+<li><strong>MEDUSA</strong> (<code>squish/medusa.py</code>) — Multi-head tree speculative decoding (Cai et al., ICML 2024); 2–3× decode throughput</li>
+<li><strong>EAGLE3</strong> (<code>squish/eagle3.py</code>) — Feature-level draft head; predicts hidden-state features; 3.5× accept rate vs token-prediction</li>
+<li><strong>PrefixPool</strong> (<code>squish/prefix_pool.py</code>) — Cross-request KV prefix sharing; LRU/LFU eviction; 40–80% KV savings on shared prompts</li>
+<li><strong>TokenHealer</strong> (<code>squish/token_healer.py</code>) — Boundary-aware token healing; eliminates prefix-artifact generation</li>
+</ul>
+<h3 id="added-wave-20-serving-infrastructure-intelligence-14-modules">Added — Wave 20: Serving Infrastructure &amp; Intelligence (14 modules)<a class="headerlink" href="#added-wave-20-serving-infrastructure-intelligence-14-modules" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>ModelMerge</strong> (<code>squish/model_merge.py</code>) — SLERP/DARE/TIES model weight merging; combine domains without retraining</li>
+<li><strong>LoRACompose</strong> (<code>squish/lora_compose.py</code>) — Multi-LoRA adapter composition with learnable mixture coefficients</li>
+<li><strong>ContinuousBatching</strong> (<code>squish/continuous_batching.py</code>) — Mid-generation request insertion; FIFO + SJF policies; max GPU utilization</li>
+<li><strong>MatryoshkaEmb</strong> (<code>squish/matryoshka_emb.py</code>) — Nested MRL embeddings; truncate to any dimension from a single forward pass</li>
+<li><strong>ANEProfiler</strong> (<code>squish/ane_profiler.py</code>) — Apple Neural Engine op-level profiling; ANE vs GPU vs CPU breakdown</li>
+<li><strong>SpecBench</strong> (<code>squish/spec_bench.py</code>) — SpecBench CI evaluation harness; 6-task acceptance rate + throughput suite</li>
+<li><strong>PPLTracker</strong> (<code>squish/ppl_tracker.py</code>) — Rolling perplexity window; geometric-mean PPL with configurable alert threshold</li>
+<li><strong>GrammarCache</strong> (<code>squish/grammar_cache.py</code>) — FSM-based constrained decoding; pre-cached allowed-token masks; O(1) per step</li>
+<li><strong>QuantAware</strong> (<code>squish/quant_aware.py</code>) — Activation-range calibration; MinMax/Percentile/MSE scale selection per channel</li>
+<li><strong>AdaptiveBudget</strong> (<code>squish/adaptive_budget.py</code>) — PI-controller joint KV budget + layer-skip SLO management</li>
+<li><strong>VisionTokens</strong> (<code>squish/vision_tokens.py</code>) — Attention/magnitude/clustering-based visual token pruning; 50–80% reduction</li>
+<li><strong>ToolCache</strong> (<code>squish/tool_cache.py</code>) — SHA-256-keyed tool schema cache + cached router; zero parse overhead on repeats</li>
+<li><strong>DistilSpec</strong> (<code>squish/distil_spec.py</code>) — KL-divergence draft-head calibration; estimates +10–15 pp acceptance gain</li>
+<li><strong>BatchEmbed</strong> (<code>squish/batch_embed.py</code>) — Dynamic pooling (mean/max/cls/weighted) for batch embeddings in a single pass</li>
+</ul>
+<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>tests/test_wave19_server_wiring.py</code> — 56 tests, 56 passing</li>
+<li><code>tests/test_wave20_server_wiring.py</code> — 56 tests, 56 passing</li>
+<li><strong>Total tests: 4 278</strong> (56 Wave 19 + 56 Wave 20 new; 0 failures)</li>
+</ul>
+<h3 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>dev/benchmarks/bench_wave19_20.py</code> — micro-benchmark suite for all 28 modules</li>
+<li><code>dev/results/wave19_20_bench.json</code> — machine-readable results</li>
+<li><code>docs/benchmark_wave19_20.md</code> — human-readable results table</li>
+</ul>
+<hr />
 <h2 id="300-2026-03-11">[3.0.0] — 2026-03-11<a class="headerlink" href="#300-2026-03-11" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-17-attention-architecture">Added — Wave 17: Attention Architecture<a class="headerlink" href="#added-wave-17-attention-architecture" title="Permanent link">&para;</a></h3>
 <ul>
@@ -834,13 +943,13 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>PowerMonitor</strong> (<code>squish/power_monitor.py</code>) — Apple Silicon power source advisor via <code>PowerMonitor</code>. 0.5 µs <code>get_power_source()</code> + <code>get_recommended_mode()</code>; adjusts compute policy for battery vs. AC.</li>
 <li><strong>DiffusionDraft</strong> (<code>squish/diffusion_draft.py</code>) — Diffusion-model draft head capability gate via <code>DiffusionDraftHead</code>. <code>is_available()</code> + <code>is_suitable_for_task()</code>; enables parallel diffusion-based speculation.</li>
 </ul>
-<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<h3 id="tests_1">Tests<a class="headerlink" href="#tests_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>tests/test_wave17_server_wiring.py</code> — 56 tests covering all 14 Wave 17 module import, instantiation, and core API paths.</li>
 <li>Added <code>tests/test_wave18_server_wiring.py</code> — 56 tests covering all 14 Wave 18 module import, instantiation, and core API paths.</li>
 <li>Total tests: <strong>4 166 passing</strong>, 16 skipped, 0 failures.</li>
 </ul>
-<h3 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h3>
+<h3 id="benchmarks_1">Benchmarks<a class="headerlink" href="#benchmarks_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>dev/benchmarks/bench_wave17_18.py</code> — micro-benchmark suite for all 28 Wave 17+18 modules.</li>
 <li>Added <code>dev/results/wave17_18_bench.json</code> — machine-readable benchmark output.</li>
@@ -880,13 +989,13 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>ForeLen</strong> (<code>squish/forelen.py</code>) — Entropy-guided output length prediction via <code>EGTPPredictor</code> (entropy histogram) + <code>PLPPredictor</code> (exponential decay). −29% MAE vs TRAIL.</li>
 <li><strong>RASD</strong> (<code>squish/rasd.py</code>) — Retrieval-augmented speculative decode via <code>CorpusIndex</code> + <code>RASDBatcher.build_retrieval_tree()</code>. 40–60% corpus hit rate.</li>
 </ul>
-<h3 id="tests_1">Tests<a class="headerlink" href="#tests_1" title="Permanent link">&para;</a></h3>
+<h3 id="tests_2">Tests<a class="headerlink" href="#tests_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>tests/test_wave15_server_wiring.py</code> — 44 tests covering all Wave 15 module import, instantiation, and core API paths.</li>
 <li>Added <code>tests/test_wave16_server_wiring.py</code> — 45 tests covering all Wave 16 module import, instantiation, and core API paths.</li>
 <li>Total tests: <strong>3 937 passing</strong>, 0 failures.</li>
 </ul>
-<h3 id="benchmarks_1">Benchmarks<a class="headerlink" href="#benchmarks_1" title="Permanent link">&para;</a></h3>
+<h3 id="benchmarks_2">Benchmarks<a class="headerlink" href="#benchmarks_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>dev/benchmarks/bench_wave15_16.py</code> — micro-benchmark suite for all 21 Wave 15+16 modules.</li>
 <li>Added <code>dev/results/wave15_16_bench.json</code> — machine-readable benchmark output.</li>
