@@ -5,6 +5,56 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [5.0.0] — 2026-03-12
+
+### Added — Wave 21: Advanced Memory & Decode (14 modules)
+
+- **TreeVerifier** (`squish/tree_verifier.py`) — Batched tree-parallel speculative verification; rejection-sampling branch-by-branch; returns longest accepted token prefix
+- **KVCompress** (`squish/kv_compress.py`) — Online KV quantisation + pruning; global quantile key-norm pruning + symmetric INT8 compression during generation
+- **DynamicNTK** (`squish/dynamic_ntk.py`) — Per-request runtime RoPE base auto-scaling; NTK-aware formula; auto-extends at 80% context fill without retraining
+- **QuantSpecDecode** (`squish/quant_spec_decode.py`) — INT4 draft + FP16 verify speculative decode; 4× draft memory reduction vs FP16; per-channel INT4 sym quant
+- **SparseAttnIndex** (`squish/sparse_attn_index.py`) — ANN KV retrieval index; L2-normalised cosine similarity with np.argpartition O(n) top-k; sub-linear attention cost
+- **MixedPrecisionKV** (`squish/mixed_precision_kv.py`) — Per-head INT4/INT8/FP16 KV via variance-based sensitivity; 2–4× KV memory reduction at iso-quality
+- **PipelineBubble** (`squish/pipeline_bubble.py`) — 1F1B pipeline schedule with bubble elimination; overlapped prefill + decode across stages
+- **LayerwiseDecode** (`squish/layerwise_decode.py`) — Layer-by-layer early-exit decode; probe-vocab confidence check; exits when softmax max > threshold
+- **CodecKV** (`squish/codec_kv.py`) — Learned k-means++ KV codec; independent key + value codebooks; 204× compression ratio
+- **DedupeAttn** (`squish/dedupe_attn.py`) — Near-duplicate Q/K detection + output reuse; per-head FIFO cosine similarity cache
+- **FlashPrefill** (`squish/flash_prefill.py`) — Chunked causal flash attention; O(seq × chunk) memory vs O(seq²) naive; eliminates OOM on long context
+- **BudgetSpec** (`squish/budget_spec.py`) — Token-budget-aware speculative decode; linear ramp-down from full n_draft to 1 near budget limit
+- **RetentionAttn** (`squish/retention_attn.py`) — Retention-style recurrent state (RetNet); S = γ·S + kᵀ·v; O(1) per-step memory
+- **KVRouter** (`squish/kv_router.py`) — Cross-instance KV routing for disaggregated prefill/decode; SHA-256 consistent hash; zero-recompute transfer
+
+### Added — Wave 22: Production Serving & Observability (14 modules)
+
+- **MultiTenantSched** (`squish/multi_tenant_sched.py`) — Fair per-tenant QoS scheduling; weighted fair queuing; SLO-isolated multi-tenant serving; 0.65 µs overhead
+- **RequestRouter** (`squish/request_router.py`) — Load-aware request routing across replicas; least-loaded policy; 2.1 µs route + complete round-trip
+- **CacheWarmup** (`squish/cache_warmup.py`) — Predictive KV cache pre-warming; access-count × recency scoring; reduces cold TTFT on hot prefix paths
+- **TokenBudgetGate** (`squish/token_budget_gate.py`) — Hard per-request token budget with graceful truncation; tick(n) → bool; 0.30 µs overhead
+- **ObservabilityHook** (`squish/observability_hook.py`) — Zero-overhead per-step inference tracing; OpenTelemetry-compatible JSON span export; 3.6 µs per span
+- **RequestCoalesce** (`squish/request_coalesce.py`) — Merge requests sharing long common prefixes; LCP grouping; shared prefill forward pass
+- **AdaptiveQuantize** (`squish/adaptive_quantize.py`) — Runtime precision switching under memory pressure; auto INT8/INT4 at configurable used/capacity thresholds
+- **HealthCheck** (`squish/health_check.py`) — Degradation-aware server health monitoring; p50/p99 latency + error rate via deque(maxlen=1000) rolling windows
+- **FaultTolerance** (`squish/fault_tolerance.py`) — Graceful OOM degradation; ordered actions: evict_kv → disable_draft → reduce_batch; 0.50 µs evaluate overhead
+- **ModelPool** (`squish/model_pool.py`) — Hot model pool with lazy-load + LRU eviction; 0.58 µs acquire + release; zero-reload latency for hot models
+- **StreamingChunk** (`squish/streaming_chunk.py`) — Sub-token-latency chunked streaming with backpressure; push() → bool; 3.2 µs for 64-token chunk
+- **CostEstimator** (`squish/cost_estimator.py`) — Per-request compute cost estimation; prefill + decode + KV·duration multi-factor model; 1.1 µs estimate
+- **SLAMonitor** (`squish/sla_monitor.py`) — Real-time SLA violation detection + escalation; warning → critical severity tiers; 0.26 µs record, 41.3 µs check
+- **ContextCache** (`squish/context_cache.py`) — Persistent cross-session context cache with TTL; hashlib.md5 token fingerprint; 1.9 µs get, 100% hit rate on repeat
+
+### Tests
+
+- `tests/test_wave21_server_wiring.py` — 56 tests, 56 passing
+- `tests/test_wave22_server_wiring.py` — 56 tests, 56 passing
+- **Total tests: 4 390** (56 Wave 21 + 56 Wave 22 new; 0 failures)
+
+### Benchmarks
+
+- `dev/benchmarks/bench_wave21_22.py` — micro-benchmark suite for all 28 modules
+- `dev/results/wave21_22_bench.json` — machine-readable results
+- `docs/benchmark_wave21_22.md` — human-readable results table
+
+---
+
 ## [4.0.0] — 2026-03-11
 
 ### Added — Wave 19: Next-Gen Attention & Precision (14 modules)
