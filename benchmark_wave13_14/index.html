@@ -637,7 +637,7 @@ these figures reflect pure-numpy CPU overhead only.</p>
 <tr>
 <td>DuoAttention</td>
 <td><code>store_kv()</code> latency</td>
-<td>0.89 µs</td>
+<td>0.72 µs</td>
 <td>per token</td>
 </tr>
 <tr>
@@ -649,7 +649,7 @@ these figures reflect pure-numpy CPU overhead only.</p>
 <tr>
 <td>ShadowKV</td>
 <td><code>store()</code> 128 tokens</td>
-<td>2440.8 µs</td>
+<td>751.4 µs</td>
 <td>16/64 rank</td>
 </tr>
 <tr>
@@ -661,7 +661,7 @@ these figures reflect pure-numpy CPU overhead only.</p>
 <tr>
 <td>PQCache</td>
 <td>retrieve top-32 (256 tok)</td>
-<td>348.0 µs</td>
+<td>300.6 µs</td>
 <td>ADC search</td>
 </tr>
 <tr>
@@ -673,7 +673,7 @@ these figures reflect pure-numpy CPU overhead only.</p>
 <tr>
 <td>TokenMerging</td>
 <td><code>merge()</code> seq=512</td>
-<td>748.0 µs</td>
+<td>593.3 µs</td>
 <td>r=16 pairs</td>
 </tr>
 <tr>
@@ -704,38 +704,38 @@ these figures reflect pure-numpy CPU overhead only.</p>
 <tr>
 <td>DFloat11</td>
 <td>compress 65K BF16 wts</td>
-<td>48.6 ms</td>
+<td>30.7 ms</td>
 <td>1.000× (16.00 bits/wt)</td>
 </tr>
 <tr>
 <td>RANSCodec</td>
 <td>encode/decode n=4096</td>
-<td>2887.6/4223.9 µs</td>
+<td>2035.8/2515.1 µs</td>
 <td>0.485 bytes/sym (entropy=1.846 bits)</td>
 </tr>
 <tr>
 <td>SqueezeLLM</td>
 <td>INT3 128×128 quant</td>
-<td>372.5 ms</td>
+<td>289.8 ms</td>
 <td>0.312× · SNR=15.8 dB</td>
 </tr>
 <tr>
 <td>NF4</td>
 <td>quantize_nf4() 128×128</td>
-<td>788.8 µs</td>
+<td>653.5 µs</td>
 <td>MSE=0.00835 · SNR=20.7 dB</td>
 </tr>
 <tr>
 <td>CopySpec</td>
 <td><code>draft()</code> latency</td>
-<td>2.8 µs</td>
+<td>2.0 µs</td>
 <td>draft_len=1/8</td>
 </tr>
 <tr>
 <td>VisionPrefixCache</td>
 <td>Cache hit (16 imgs)</td>
 <td>0.0 ms</td>
-<td>hit rate=50.0% · 13.5× speedup</td>
+<td>hit rate=50.0% · 10.0× speedup</td>
 </tr>
 </tbody>
 </table>

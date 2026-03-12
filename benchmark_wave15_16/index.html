@@ -648,103 +648,103 @@ Measured on Apple Silicon M-series (or equivalent CPU).</p>
 <tr>
 <td>AdaServe</td>
 <td><code>get_gamma()</code> tight SLO</td>
-<td style="text-align: center;">1.99</td>
+<td style="text-align: center;">0.91</td>
 <td>SLO-customized gamma selection</td>
 </tr>
 <tr>
 <td>AdaServe</td>
 <td><code>get_gamma()</code> relaxed SLO</td>
-<td style="text-align: center;">1.82</td>
+<td style="text-align: center;">0.83</td>
 <td></td>
 </tr>
 <tr>
 <td>ConfSpec</td>
 <td><code>verify_step()</code> flat logits</td>
-<td style="text-align: center;">100.21</td>
+<td style="text-align: center;">131.89</td>
 <td>Full verification path</td>
 </tr>
 <tr>
 <td>ConfSpec</td>
 <td><code>verify_step()</code> peaked logits</td>
-<td style="text-align: center;">78.46</td>
+<td style="text-align: center;">127.56</td>
 <td>Auto-accept path (high confidence)</td>
 </tr>
 <tr>
 <td>SeqPacking</td>
 <td><code>pack()</code> 32 short seqs</td>
-<td style="text-align: center;">2521.5</td>
+<td style="text-align: center;">2754.3</td>
 <td>8–64 token sequences</td>
 </tr>
 <tr>
 <td>SeqPacking</td>
 <td><code>pack()</code> 8 long seqs</td>
-<td style="text-align: center;">43959.5</td>
+<td style="text-align: center;">43442.3</td>
 <td>128–512 token sequences</td>
 </tr>
 <tr>
 <td>MetaReasoner</td>
 <td><code>compute_entropy()</code> 32k</td>
-<td style="text-align: center;">500.74</td>
+<td style="text-align: center;">448.64</td>
 <td>Static method</td>
 </tr>
 <tr>
 <td>MetaReasoner</td>
 <td><code>step()</code> 32k vocab</td>
-<td style="text-align: center;">0.23</td>
+<td style="text-align: center;">0.12</td>
 <td>Per-token thinking budget decision</td>
 </tr>
 <tr>
 <td>YOCO</td>
 <td><code>append()</code> seq=64 dim=128</td>
-<td style="text-align: center;">1.11</td>
+<td style="text-align: center;">0.59</td>
 <td>KV append to shared store</td>
 </tr>
 <tr>
 <td>YOCO</td>
 <td><code>get_shared_kv()</code></td>
-<td style="text-align: center;">6473.63</td>
+<td style="text-align: center;">2230.51</td>
 <td>Retrieve cached KV for cross-decoder layers</td>
 </tr>
 <tr>
 <td>DiffKV</td>
 <td><code>get_policy()</code></td>
-<td style="text-align: center;">1.59</td>
+<td style="text-align: center;">1.37</td>
 <td>Per-head precision policy lookup</td>
 </tr>
 <tr>
 <td>DiffKV</td>
 <td><code>record_attention()</code> 4×4</td>
-<td style="text-align: center;">6.33</td>
+<td style="text-align: center;">5.66</td>
 <td>Attention pattern accumulation</td>
 </tr>
 <tr>
 <td>ParisKV</td>
 <td><code>encode()</code> batch=32 dim=128</td>
-<td style="text-align: center;">34.4</td>
+<td style="text-align: center;">29.4</td>
 <td>Online codebook assignment</td>
 </tr>
 <tr>
 <td>ParisKV</td>
 <td><code>decode()</code> batch=32</td>
-<td style="text-align: center;">4.2</td>
+<td style="text-align: center;">3.9</td>
 <td>Codebook reconstruction</td>
 </tr>
 <tr>
 <td>ParisKV</td>
 <td><code>online_update()</code> batch=8</td>
-<td style="text-align: center;">129.4</td>
+<td style="text-align: center;">107.2</td>
 <td>Drift-corrected centroid update</td>
 </tr>
 <tr>
 <td>KVTuner</td>
 <td><code>search()</code> 32 layers</td>
-<td style="text-align: center;">3815.4</td>
+<td style="text-align: center;">4212.2</td>
 <td>Sensitivity-aware bit assignment</td>
 </tr>
 <tr>
 <td>CLA</td>
 <td><code>CLASchedule.from_config()</code></td>
-<td style="text-align: center;">27.56</td>
+<td style="text-align: center;">19.49</td>
 <td>Cross-layer attention schedule gen</td>
 </tr>
 </tbody>
@@ -764,97 +764,97 @@ Measured on Apple Silicon M-series (or equivalent CPU).</p>
 <tr>
 <td>Dovetail</td>
 <td><code>verify_one()</code> vocab=32k</td>
-<td style="text-align: center;">384.8</td>
+<td style="text-align: center;">602.4</td>
 <td>CPU target verification</td>
 </tr>
 <tr>
 <td>PIPO</td>
 <td><code>run_layer()</code> in=out=4096</td>
-<td style="text-align: center;">1785.8</td>
+<td style="text-align: center;">1376.2</td>
 <td>INT4 dequant + matmul w/ prefetch</td>
 </tr>
 <tr>
 <td>MobileMoE</td>
 <td><code>route()</code> single 128 experts</td>
-<td style="text-align: center;">27.19</td>
+<td style="text-align: center;">14.88</td>
 <td>Expert selection</td>
 </tr>
 <tr>
 <td>MobileMoE</td>
 <td><code>route_batch()</code> 32 tokens</td>
-<td style="text-align: center;">490.2</td>
+<td style="text-align: center;">486.7</td>
 <td></td>
 </tr>
 <tr>
 <td>OnlineSD</td>
 <td><code>record()</code> hidden=4096</td>
-<td style="text-align: center;">2.30</td>
+<td style="text-align: center;">1.40</td>
 <td>Trace buffer append</td>
 </tr>
 <tr>
 <td>LookaheadReasoning</td>
 <td><code>run_cycle()</code> k=4</td>
-<td style="text-align: center;">15.5</td>
+<td style="text-align: center;">13.7</td>
 <td>Parallel step verification cycle</td>
 </tr>
 <tr>
 <td>SparseSpec</td>
 <td><code>PillarAttnCache.update()</code> cap=4096</td>
-<td style="text-align: center;">1.3</td>
+<td style="text-align: center;">1.20</td>
 <td>Attention pillar accumulation</td>
 </tr>
 <tr>
 <td>SparseSpec</td>
 <td><code>top_k_indices()</code> k=205</td>
-<td style="text-align: center;">13.9</td>
+<td style="text-align: center;">24.4</td>
 <td>Sparse position selection</td>
 </tr>
 <tr>
 <td>FRSpec</td>
 <td><code>head.forward()</code> top-25% vocab</td>
-<td style="text-align: center;">3881.7</td>
+<td style="text-align: center;">4095.0</td>
 <td>Compressed draft logits</td>
 </tr>
 <tr>
 <td>FRSpec</td>
 <td><code>compress_logits()</code> 32k→subset</td>
-<td style="text-align: center;">13.8</td>
+<td style="text-align: center;">12.6</td>
 <td>Vocab projection</td>
 </tr>
 <tr>
 <td>FRSpec</td>
 <td><code>expand_logits()</code> subset→32k</td>
-<td style="text-align: center;">25.3</td>
+<td style="text-align: center;">21.8</td>
 <td>Full-vocab restore</td>
 </tr>
 <tr>
 <td>LongSpec</td>
 <td><code>LongSpecHead.forward()</code> h=4096</td>
-<td style="text-align: center;">19966.0</td>
+<td style="text-align: center;">12434.7</td>
 <td>Shared-KV draft head</td>
 </tr>
 <tr>
 <td>ForeLen</td>
 <td><code>EGTPPredictor.predict()</code></td>
-<td style="text-align: center;">109.92</td>
+<td style="text-align: center;">99.12</td>
 <td>Entropy histogram → length</td>
 </tr>
 <tr>
 <td>ForeLen</td>
 <td><code>PLPPredictor.update()</code></td>
-<td style="text-align: center;">0.89</td>
+<td style="text-align: center;">1.42</td>
 <td>Exponential decay estimate</td>
 </tr>
 <tr>
 <td>RASD</td>
 <td><code>CorpusIndex.search()</code> 1k seqs</td>
-<td style="text-align: center;">0.6</td>
+<td style="text-align: center;">0.72</td>
 <td>Prefix-tree lookup</td>
 </tr>
 <tr>
 <td>RASD</td>
 <td><code>build_retrieval_tree()</code></td>
-<td style="text-align: center;">2.0</td>
+<td style="text-align: center;">1.83</td>
 <td>Draft tree construction</td>
 </tr>
 </tbody>
