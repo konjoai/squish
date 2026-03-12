@@ -29,6 +29,7 @@ Dependencies:
     pip install fastapi "uvicorn[standard]"
 """
 import argparse
+import asyncio
 import collections
 import hashlib
 import hmac
@@ -1710,6 +1711,9 @@ async def chat_completions(  # pragma: no cover
                 "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
             }
             yield f"data: {json.dumps(role_chunk)}\n\n"
+            # Yield to the event loop so the opening chunk is flushed to the
+            # client before the first (synchronous, blocking) inference call.
+            await asyncio.sleep(0)
 
             gen = _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed)
             n_comp   = 0
@@ -1722,6 +1726,10 @@ async def chat_completions(  # pragma: no cover
                             ttft_s = time.perf_counter() - req_start
                         n_comp += 1
                         yield _make_chunk(tok_text, model_id, cid)
+                        # Drain the asyncio transport write buffer before the
+                        # next blocking MLX inference call so each SSE chunk
+                        # reaches the client immediately (real per-token TTFT).
+                        await asyncio.sleep(0)
                     if finish is not None:
                         last_finish = finish
                         break
@@ -1876,6 +1884,7 @@ async def completions(  # pragma: no cover
                             ttft_s = time.perf_counter() - req_start
                         n_comp += 1
                         yield _comp_chunk(tok_text)
+                        await asyncio.sleep(0)
                     if finish is not None:
                         last_finish = finish
                         break
@@ -2295,6 +2304,11 @@ Examples:
     ap.add_argument("--no-compile", action="store_true", default=False,
                     help="Disable mx.compile for the single-token decode step\n"
                          "(useful for debugging or models incompatible with tracing)")
+    ap.add_argument("--no-warmup", action="store_true", default=False,
+                    help="Skip the Metal JIT warmup pass that runs one silent generation\n"
+                         "after model load.  Warmup is on by default: it compiles Metal\n"
+                         "kernels and the mx.compile graph once so the first real request\n"
+                         "experiences full throughput.  Disable for fastest cold start.")
     ap.add_argument("--disk-prompt-cache", default="",
                     metavar="DIR",
                     help="Enable persistent cross-request KV-state prompt cache stored\n"
@@ -2588,6 +2602,28 @@ Examples:
     else:
         load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
     _state._no_compile = args.no_compile  # propagate --no-compile flag
+
+    # ── Metal JIT warmup (Phase 5B Opt 2) ────────────────────────────────────
+    # Run one silent max_tokens=1 generation immediately after model load to
+    # trigger Metal kernel compilation and mx.compile graph tracing.  Without
+    # this, the *first real request* pays a 2-5 s JIT penalty; with warmup that
+    # cost is paid here, at startup, and every subsequent request uses the
+    # pre-compiled kernels (full throughput from token 1).
+    if not getattr(args, "no_warmup", False) and _state.model is not None:
+        _wu_t0 = time.perf_counter()
+        if args.verbose:
+            _info("warmup", "compiling Metal kernels …")
+        try:
+            for _wu_tok, _wu_fin in _generate_tokens(
+                "hello", max_tokens=1, temperature=0.0, top_p=1.0,
+                stop=None, seed=0, use_cache=False,
+            ):
+                pass  # consume the generator; side-effect compiles the graph
+        except Exception:  # pragma: no cover
+            pass  # warmup failures are non-fatal; real inference will surface any real errors
+        _wu_elapsed = time.perf_counter() - _wu_t0
+        if args.verbose:
+            _ok(f"Metal kernels warmed  ({_wu_elapsed:.2f}s)  Ready for requests.")
 
     # ── Disk prompt-cache init (Item 2) ──────────────────────────────────────
     global _disk_prompt_cache

@@ -30,6 +30,7 @@ References:
     https://github.com/ollama/ollama/blob/main/docs/api.md
 """
 
+import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
@@ -261,6 +262,7 @@ def mount_ollama(
                                 "response":   tok_text,
                                 "done":       False,
                             })
+                            await asyncio.sleep(0)
                         if finish is not None:
                             break
                 except Exception as exc:  # pragma: no cover
@@ -352,6 +354,7 @@ def mount_ollama(
                                 "message":    {"role": "assistant", "content": tok_text},
                                 "done":       False,
                             })
+                            await asyncio.sleep(0)
                         if finish is not None:
                             break
                 except Exception as exc:  # pragma: no cover

@@ -1,0 +1,15 @@
+# .cargo/config.toml — Squish Rust extension build configuration
+#
+# target-cpu=native tells rustc / LLVM to emit code optimised for the exact
+# CPU that is running the build.  On Apple Silicon this enables:
+#   • AMX (Apple Matrix multiply Extension) coprocessor instructions
+#   • All NEON / AdvSIMD variants present on the host die
+#   • Any SVE2 extensions available on the chip
+#
+# The resulting .dylib is NOT portable — it cannot run on an older or different
+# Apple Silicon chip.  That is intentional: squish_quant_rs is always built
+# locally by the user (via `maturin develop --release` or `pip install -e .`),
+# so the build machine IS the runtime machine.
+
+[profile.release]
+rustflags = ["-C", "target-cpu=native"]
