@@ -504,52 +504,6 @@ class TestAdaptiveBudgetWiring:
 
 
 # ---------------------------------------------------------------------------
-# VisionTokens
-# ---------------------------------------------------------------------------
-
-
-class TestVisionTokensWiring:
-    def test_import(self):
-        from squish.vision_tokens import VTConfig, VisionTokenCompressor
-
-        cfg        = VTConfig(method="magnitude", keep_ratio=0.5)
-        compressor = VisionTokenCompressor(cfg)
-        assert compressor is not None
-
-    def test_config_defaults(self):
-        from squish.vision_tokens import VTConfig
-
-        cfg = VTConfig()
-        assert hasattr(cfg, "keep_ratio")
-        assert hasattr(cfg, "method")
-        assert 0.0 < cfg.keep_ratio <= 1.0
-        assert cfg.method in ("attention", "magnitude", "clustering")
-
-    def test_compress_reduces_tokens(self):
-        from squish.vision_tokens import VTConfig, VisionTokenCompressor
-
-        rng    = np.random.default_rng(0)
-        cfg    = VTConfig(method="magnitude", keep_ratio=0.25, min_tokens=4)
-        comp   = VisionTokenCompressor(cfg)
-        tokens = rng.standard_normal((32, 64)).astype(np.float32)
-        kept   = comp.compress(tokens)
-        assert kept.shape[1] == 64          # feature dim preserved
-        assert kept.shape[0] < tokens.shape[0]  # fewer tokens
-
-    def test_stats(self):
-        from squish.vision_tokens import VTConfig, VisionTokenCompressor
-
-        rng    = np.random.default_rng(1)
-        cfg    = VTConfig(method="magnitude", keep_ratio=0.5, min_tokens=4)
-        comp   = VisionTokenCompressor(cfg)
-        tokens = rng.standard_normal((20, 32)).astype(np.float32)
-        comp.compress(tokens)
-        stats = comp.stats()
-        assert stats.n_calls == 1
-        assert stats.total_tokens_input == 20
-
-
-# ---------------------------------------------------------------------------
 # ToolCache
 # ---------------------------------------------------------------------------
 

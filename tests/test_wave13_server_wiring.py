@@ -366,57 +366,6 @@ class TestC2TWiring:
 
 
 # ---------------------------------------------------------------------------
-# CLaSP
-# ---------------------------------------------------------------------------
-
-class TestCLaSPWiring:
-    def test_import(self):
-        from squish.clasp import CLaSPConfig, CLaSPDecoder
-        rng    = np.random.default_rng(0)
-        vocab  = 16
-        n_lay  = 4
-        cfg    = CLaSPConfig(num_layers=n_lay, max_skip_layers=2, draft_gamma=2)
-
-        def model_fn(token_ids, skip_mask=None):
-            logits  = rng.standard_normal(vocab).astype(np.float32)
-            hiddens = [rng.standard_normal(8).astype(np.float32) for _ in range(n_lay)]
-            return logits, hiddens
-
-        dec = CLaSPDecoder(model_fn, cfg)
-        assert dec is not None
-
-    def test_config_defaults(self):
-        from squish.clasp import CLaSPConfig
-        cfg = CLaSPConfig()
-        assert cfg.num_layers >= 2
-        assert cfg.max_skip_layers >= 0
-        assert cfg.max_skip_layers < cfg.num_layers
-        assert cfg.draft_gamma >= 1
-        assert 0.0 < cfg.similarity_threshold <= 1.0
-
-    def test_config_rejects_bad_skip(self):
-        from squish.clasp import CLaSPConfig
-        with pytest.raises(ValueError):
-            CLaSPConfig(num_layers=4, max_skip_layers=4)  # must be < num_layers
-
-    def test_generate_returns_tokens(self):
-        from squish.clasp import CLaSPConfig, CLaSPDecoder
-        rng    = np.random.default_rng(3)
-        vocab  = 16
-        n_lay  = 4
-        cfg    = CLaSPConfig(num_layers=n_lay, max_skip_layers=2, draft_gamma=2)
-
-        def model_fn(token_ids, skip_mask=None):
-            logits  = rng.standard_normal(vocab).astype(np.float32)
-            hiddens = [rng.standard_normal(8).astype(np.float32) for _ in range(n_lay)]
-            return logits, hiddens
-
-        dec           = CLaSPDecoder(model_fn, cfg)
-        tokens, stats = dec.generate(input_ids=[1, 2, 3], max_new_tokens=4)
-        assert len(tokens) > 0
-
-
-# ---------------------------------------------------------------------------
 # Integration — all Wave 13 modules are importable
 # ---------------------------------------------------------------------------
 
@@ -433,7 +382,6 @@ class TestWave13AllImportable:
         ("token_merging",  ["TokenMergingConfig", "TokenMergingState", "bipartite_merge"]),
         ("token_swift",    ["TokenSwiftConfig", "TokenSwiftDecoder"]),
         ("c2t",            ["C2TConfig", "AdaptiveTreeBuilder"]),
-        ("clasp",          ["CLaSPConfig", "CLaSPDecoder"]),
     ])
     def test_module_importable(self, module, symbols):
         import importlib

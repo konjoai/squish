@@ -59,7 +59,6 @@ CATALOGUE = [
     ("long_spec",           "LongSpecConfig",          "--long-spec",              "B"),
     ("fr_spec",             "FRSpecConfig",            "--fr-spec",                "B"),
     ("lora_manager",        "LoRAManager",             "--lora-adapter",           "B"),
-    ("diffusion_draft",     "DiffusionDraftModel",     "--diffusion-draft",        "B"),
     # ── Tier C: exported, no dedicated server flag ───────────────────────────
     ("kvsharer",            "KVSharerConfig",          None,                       "C"),
     ("diffkv",              "DiffKVConfig",            None,                       "C"),

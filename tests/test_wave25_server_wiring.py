@@ -399,45 +399,6 @@ def test_seq_compact_compact_indices():
     assert mapping[5] == -1
 
 
-# ── LatencyPredictor ──────────────────────────────────────────────────────────
-
-def test_latency_predictor_import():
-    from squish.latency_predictor import LatencyPredictor, LatencyModel
-    lp = LatencyPredictor(n_heads=4, head_dim=32)
-    assert lp.n_samples == 0
-
-
-def test_latency_predictor_record_and_fit():
-    from squish.latency_predictor import LatencyPredictor
-    lp = LatencyPredictor(n_heads=4, head_dim=32)
-    for n_p in range(10, 60, 10):
-        lp.record(n_p, 20, n_p * 0.05 + 5.0)
-    model = lp.fit()
-    assert lp.n_samples == 5
-    assert model.base_latency != 0.0 or model.prefill_coeff != 0.0
-
-
-def test_latency_predictor_predict():
-    from squish.latency_predictor import LatencyPredictor
-    lp = LatencyPredictor(n_heads=2, head_dim=16)
-    for i in range(5):
-        lp.record(i * 10 + 10, 5, i * 0.5 + 2.0)
-    lp.fit()
-    pred = lp.predict(50, 10)
-    assert pred.total_ms >= 0.0
-    assert 0.0 <= pred.confidence <= 1.0
-
-
-def test_latency_predictor_low_confidence():
-    from squish.latency_predictor import LatencyPredictor
-    lp = LatencyPredictor(n_heads=2, head_dim=16)
-    # fewer than 3 samples → confidence 0.0
-    lp.record(10, 5, 2.0)
-    lp.record(20, 5, 3.0)
-    pred = lp.predict(15, 5)
-    assert pred.confidence == pytest.approx(0.0)
-
-
 # ── ParallelSampler ───────────────────────────────────────────────────────────
 
 def test_parallel_sampler_import():
@@ -523,55 +484,6 @@ def test_context_summarizer_recency():
     assert len(compressed) == budget
     # recency keeps the most recent tokens
     np.testing.assert_array_equal(compressed, tokens[seq - budget:])
-
-
-# ── TokenWatermark ────────────────────────────────────────────────────────────
-
-def test_token_watermark_import():
-    from squish.token_watermark import TokenWatermarker, WatermarkConfig
-    cfg = WatermarkConfig(vocab_size=1000, delta=2.0, seed=42)
-    wm = TokenWatermarker(cfg)
-    assert wm is not None
-
-
-def test_token_watermark_mark():
-    from squish.token_watermark import TokenWatermarker, WatermarkConfig
-    vocab = 500
-    cfg = WatermarkConfig(vocab_size=vocab, delta=3.0, seed=7)
-    wm = TokenWatermarker(cfg)
-    logits = np.zeros(vocab, dtype=np.float32)
-    marked = wm.mark(logits)
-    assert marked.shape == (vocab,)
-    assert marked.dtype == np.float32
-    assert marked.max() == pytest.approx(3.0)
-
-
-def test_token_watermark_green_list():
-    from squish.token_watermark import TokenWatermarker, WatermarkConfig
-    vocab = 200
-    cfg = WatermarkConfig(vocab_size=vocab, green_list_fraction=0.5, seed=0)
-    wm = TokenWatermarker(cfg)
-    gl = wm.green_list()
-    assert gl.shape == (vocab,)
-    assert gl.dtype == bool
-    # Approximately half should be green
-    n_green = gl.sum()
-    assert abs(n_green - vocab // 2) <= 2
-
-
-def test_token_watermark_detect():
-    from squish.token_watermark import TokenWatermarker, WatermarkConfig
-    vocab = 1000
-    cfg = WatermarkConfig(vocab_size=vocab, delta=5.0, green_list_fraction=0.5, seed=1)
-    wm = TokenWatermarker(cfg)
-    # No tokens → safe
-    result = wm.detect(np.zeros(0, dtype=np.int32))
-    assert result.z_score == pytest.approx(0.0)
-    # Some tokens
-    tokens = np.arange(10, dtype=np.int32)
-    result2 = wm.detect(tokens)
-    assert isinstance(result2.is_watermarked, bool)
-    assert 0 <= result2.n_green_tokens <= 10
 
 
 # ── SchemaGen ─────────────────────────────────────────────────────────────────

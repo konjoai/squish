@@ -41,34 +41,10 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
-
-# Guard: detect a broken Python stdlib before going any further.
-# This happens when an unrelated virtualenv/pixi/conda env is active and its
-# Python is missing C extensions (e.g. _posixsubprocess).  Give a clear,
-# actionable error instead of a confusing traceback.
-try:
-    import subprocess
-except (ImportError, ModuleNotFoundError) as _stdlib_err:
-    print(
-        f"\n  ✗  squish: Python stdlib is broken in the current environment.\n"
-        f"     Cause   : {_stdlib_err}\n"
-        f"     Python  : {sys.executable}\n"
-        f"\n"
-        f"     This usually means an unrelated virtualenv, pixi, or conda\n"
-        f"     environment is active and its Python is missing C extensions.\n"
-        f"\n"
-        f"     Fix options:\n"
-        f"       1. Deactivate the foreign environment then re-run squish.\n"
-        f"       2. Run squish via its own Python:\n"
-        f"            python3 -c \"from squish.cli import main; main()\" -- <args>\n"
-        f"       3. Install squish inside the active environment:\n"
-        f"            pip install -e /path/to/squish\n",
-        file=sys.stderr,
-    )
-    sys.exit(1)
 
 # When running as `python3 squish/cli.py` (not via `-m`), the repo root is NOT
 # on sys.path, which breaks `from squish.X import ...` inside subcommands like
@@ -96,7 +72,52 @@ except Exception:  # pragma: no cover
 
 
 # ── Terminal colours ─────────────────────────────────────────────────────────
-from squish._term import C as _C  # noqa: E402
+# 24-bit ANSI RGB codes bypass the terminal's colour theme palette entirely —
+# theme profiles only remap the 16 named ANSI indices, not direct RGB.  So the
+# squish brand colours always render correctly on any true-colour terminal,
+# regardless of theme.  On terminals without true-colour support we fall back
+# to no colour at all — clean and compatible.  Respects NO_COLOR convention.
+_CLI_TTY: bool = sys.stdout.isatty()
+
+
+def _has_truecolor_cli() -> bool:
+    return (
+        _CLI_TTY
+        and "NO_COLOR" not in os.environ
+        and (
+            os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit")
+            or os.environ.get("TERM_PROGRAM", "") in (
+                "iTerm.app", "WezTerm", "Ghostty", "Hyper", "vscode", "warp",
+                "Apple_Terminal",
+            )
+            or "kitty" in os.environ.get("TERM", "")
+            or "direct" in os.environ.get("TERM", "")
+            or bool(os.environ.get("FORCE_COLOR", ""))
+        )
+    )
+
+
+_CLI_TRUE_COLOR: bool = _has_truecolor_cli()
+
+
+class _C:  # noqa: N801
+    """ANSI 24-bit colour constants.  Empty strings on non-true-colour TTYs."""
+    _k = lambda s: s if _CLI_TRUE_COLOR else ""  # noqa: E731
+    DP  = _k("\033[38;2;88;28;135m")   # deep purple  #581C87
+    P   = _k("\033[38;2;124;58;237m")  # purple       #7C3AED
+    V   = _k("\033[38;2;139;92;246m")  # violet       #8B5CF6
+    L   = _k("\033[38;2;167;139;250m") # lilac        #A78BFA
+    MG  = _k("\033[38;2;192;132;252m") # med-purple   #C084FC
+    PK  = _k("\033[38;2;236;72;153m")  # pink         #EC4899
+    LPK = _k("\033[38;2;249;168;212m") # light pink   #F9A8D4
+    T   = _k("\033[38;2;34;211;238m")  # teal         #22D3EE
+    G   = _k("\033[38;2;52;211;153m")  # mint green   #34D399
+    W   = _k("\033[38;2;248;250;252m") # near-white   #F8FAFC
+    SIL = _k("\033[38;2;180;185;210m") # silver       #B4B9D2
+    DIM = _k("\033[38;2;100;116;139m") # dim slate    #64748B
+    B   = _k("\033[1m")                # bold
+    R   = _k("\033[0m")                # reset all
+
 
 # ── Model registry ───────────────────────────────────────────────────────────
 
@@ -1737,333 +1758,6 @@ def cmd_merge_model(args):
     print(f"  Load with: squish run {args.base_model}")
 
 
-# ── squish model pack ──────────────────────────────────────────────────────────
-
-def cmd_model_pack(args):
-    """
-    Build a Block-Expert Archive from a model directory.
-
-    Clusters each Transformer block's weight matrix into K expert centroids
-    using K-means (cosine similarity).  The resulting archive is a directory
-    bundle containing packed delta weights and a routing index that can be
-    served with ``squish model run`` and updated incrementally via
-    ``squish model learn`` or the POST /v1/learn API endpoint.
-
-    Example::
-
-        squish model pack ~/.squish/models/qwen3-8b \\
-            --experts 4 \\
-            --out ~/.squish/archives/qwen3-8b-experts
-    """
-    import re as _re
-    from pathlib import Path as _Path
-
-    import numpy as _np
-
-    try:
-        from squish.block_expert_archive import (
-            BlockExpertArchive,
-            BlockExpertConfig,
-        )
-    except ImportError as exc:
-        print(f"\n  Error: {exc}")
-        sys.exit(1)
-
-    model_dir = _Path(args.model_dir).expanduser()
-    if not model_dir.exists():
-        print(f"\n  Error: model directory not found: {model_dir}")
-        sys.exit(1)
-
-    n_experts = max(1, int(args.experts))
-    out_dir = _Path(args.out).expanduser() if args.out else (
-        _Path.home() / ".squish" / "archives" / (model_dir.name + f"-experts{n_experts}")
-    )
-
-    print("\n  Squish Block-Expert Archive Packer")
-    print(f"  Model : {model_dir}")
-    print(f"  Output: {out_dir}")
-    print(f"  K     : {n_experts} clusters per block")
-    print()
-
-    weight_files = (
-        sorted(model_dir.glob("*.safetensors"))
-        or sorted(model_dir.glob("*.npy"))
-        or sorted(model_dir.glob("*.npz"))
-    )
-    if not weight_files:
-        print("  Warning: no weight files found — creating empty archive.")
-        cfg = BlockExpertConfig(n_clusters=n_experts)
-        archive = BlockExpertArchive(out_dir, cfg)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        archive.save()
-        print(f"  Empty archive created at: {out_dir}")
-        return
-
-    all_weights: dict[str, _np.ndarray] = {}
-    for wf in weight_files[:8]:
-        if wf.suffix == ".safetensors":
-            try:
-                from safetensors.numpy import load_file as _stload
-                all_weights.update(_stload(str(wf)))
-            except ImportError:
-                print("  Warning: safetensors not installed — skipping shard")
-        elif wf.suffix in (".npy", ".npz"):
-            try:
-                data = _np.load(str(wf), allow_pickle=False)
-                if hasattr(data, "files"):
-                    all_weights.update({k: data[k] for k in data.files})
-                else:
-                    all_weights[wf.stem] = data
-            except Exception as _e:
-                print(f"  Warning: could not load {wf.name}: {_e}")
-
-    if not all_weights:
-        print("  Warning: no tensors loaded — creating empty archive.")
-        cfg = BlockExpertConfig(n_clusters=n_experts)
-        archive = BlockExpertArchive(out_dir, cfg)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        archive.save()
-        print(f"  Empty archive created at: {out_dir}")
-        return
-
-    block_map: dict[int, list[_np.ndarray]] = {}
-    for key, tensor in all_weights.items():
-        m = _re.search(r"layers?[._](\d+)", key)
-        if m is None:
-            continue
-        bi = int(m.group(1))
-        t = tensor.astype(_np.float32)
-        block_map.setdefault(bi, []).append(
-            t.reshape(-1, t.shape[-1]) if t.ndim > 1 else t.reshape(1, -1)
-        )
-
-    if not block_map:
-        for idx, (key, tensor) in enumerate(all_weights.items()):
-            t = tensor.astype(_np.float32)
-            block_map[idx] = [t.reshape(-1, t.shape[-1]) if t.ndim > 1 else t.reshape(1, -1)]
-
-    block_snapshots: dict[int, list[_np.ndarray]] = {}
-    base_weights_map: dict[int, _np.ndarray] = {}
-    for bi, tensors in block_map.items():
-        snapshots = tensors[:n_experts * 2] if len(tensors) >= n_experts else \
-                    tensors * (n_experts // max(1, len(tensors)) + 1)
-        block_snapshots[bi] = snapshots
-        base_weights_map[bi] = tensors[0]
-
-    print(f"  Packing {len(block_snapshots)} blocks …")
-    cfg = BlockExpertConfig(
-        n_clusters=n_experts,
-        n_iter=getattr(args, "iter", 20),
-        similarity_metric=getattr(args, "metric", "cosine"),
-        delta_bits=getattr(args, "bits", 8),
-    )
-
-    archive = BlockExpertArchive.create(
-        bundle_dir=out_dir,
-        block_weights=block_snapshots,
-        base_weights=base_weights_map,
-        config=cfg,
-    )
-    archive.save()
-
-    s = archive.stats
-    print("\n  Archive stats:")
-    print(f"    Blocks packed  : {s.n_blocks}")
-    print(f"    Total experts  : {s.n_experts_total}")
-    print(f"    Avg delta SNR  : {s.avg_delta_snr_db:.1f} dB")
-    print(f"    Archive size   : {s.archive_size_mb:.2f} MB")
-    print(f"\n  Saved to: {out_dir}")
-    print(f"  Serve  : squish model run {out_dir}")
-    print(f"  Learn  : squish model learn {out_dir} --domain <domain> --examples <file.jsonl>")
-
-
-# ── squish model learn ─────────────────────────────────────────────────────────
-
-def cmd_model_learn(args):
-    """
-    Run an on-device self-learning step on a Block-Expert Archive.
-
-    Loads (input, output) training pairs from a JSONL file and runs a
-    gradient-free finite-difference loop that produces a small weight delta.
-    The delta is absorbed as a new (or updated) expert cluster in the archive.
-
-    Example::
-
-        squish model learn ~/.squish/archives/qwen3-8b-experts \\
-            --domain legal \\
-            --examples legal_qa.jsonl \\
-            --steps 50
-    """
-    from pathlib import Path as _Path
-
-    import numpy as _np
-
-    try:
-        from squish.block_expert_archive import BlockExpertArchive
-        from squish.self_learning import (
-            LearnConfig,
-            SelfLearner,
-            examples_from_jsonl,
-        )
-    except ImportError as exc:
-        print(f"\n  Error: {exc}")
-        sys.exit(1)
-
-    archive_dir = _Path(args.archive_dir).expanduser()
-    if not (archive_dir / "manifest.json").is_file():
-        print(f"\n  Error: not a valid archive (no manifest.json): {archive_dir}")
-        sys.exit(1)
-
-    archive = BlockExpertArchive.load(archive_dir)
-
-    examples_path = _Path(args.examples).expanduser() if getattr(args, "examples", None) else None
-    if examples_path:
-        examples = examples_from_jsonl(examples_path)
-    elif getattr(args, "example_text", None):
-        from squish.self_learning import LearnExample
-        pairs = [p.split("->", 1) for p in args.example_text if "->" in p]
-        examples = [LearnExample(input=p[0].strip(), output=p[1].strip()) for p in pairs]
-    else:
-        print("\n  Error: provide --examples <file.jsonl> or --example-text 'input->output'")
-        sys.exit(1)
-
-    if not examples:
-        print("\n  Error: no examples loaded.")
-        sys.exit(1)
-
-    domain = getattr(args, "domain", None) or "general"
-    steps  = max(1, min(int(getattr(args, "steps", 50)), 500))
-
-    print("\n  Squish Self-Learning")
-    print(f"  Archive : {archive_dir}")
-    print(f"  Domain  : {domain}")
-    print(f"  Steps   : {steps}")
-    print(f"  Examples: {len(examples)}")
-    print()
-
-    n_blocks = archive.num_blocks() or 1
-    hidden   = 256
-    base_weights = {bi: _np.zeros((hidden, hidden), dtype=_np.float32) for bi in range(n_blocks)}
-
-    cfg = LearnConfig(
-        steps=steps,
-        lr=float(getattr(args, "lr", 1e-4)),
-        epsilon=float(getattr(args, "epsilon", 1e-3)),
-        max_rank=int(getattr(args, "max_rank", 8)),
-        domain=domain,
-    )
-    learner  = SelfLearner(base_weights, cfg)
-    result   = learner.learn_from_examples(examples, cfg)
-    clusters = learner.apply_result_to_archive(result, archive)
-    archive.save()
-
-    print(f"  Learning complete in {result.elapsed_s:.2f}s")
-    print(f"  Delta SNR       : {result.snr_db:.1f} dB")
-    print(f"  Clusters updated: {clusters}")
-    print(f"  Archive saved   : {archive_dir}")
-
-
-# ── squish model merge-archive ─────────────────────────────────────────────────
-
-def cmd_model_merge_archive(args):
-    """
-    Merge two Block-Expert Archives into a single combined archive.
-
-    All expert clusters from *archive2* are absorbed into *archive1*
-    (EMA-update for matching blocks, appended for new blocks) and written to
-    *--out*.
-
-    Example::
-
-        squish model merge-archive \\
-            ~/.squish/archives/qwen3-legal \\
-            ~/.squish/archives/qwen3-code \\
-            --out ~/.squish/archives/qwen3-combined
-    """
-    from pathlib import Path as _Path
-
-    import numpy as _np
-
-    try:
-        from squish.block_expert_archive import BlockExpertArchive, unpack_expert_delta
-    except ImportError as exc:
-        print(f"\n  Error: {exc}")
-        sys.exit(1)
-
-    path1 = _Path(args.archive1).expanduser()
-    path2 = _Path(args.archive2).expanduser()
-    out   = _Path(args.out).expanduser() if getattr(args, "out", None) else path1
-
-    for p in (path1, path2):
-        if not (p / "manifest.json").is_file():
-            print(f"\n  Error: not a valid archive: {p}")
-            sys.exit(1)
-
-    print("\n  Squish Archive Merge")
-    print(f"  Base  : {path1}")
-    print(f"  Other : {path2}")
-    print(f"  Output: {out}")
-    print()
-
-    arc1 = BlockExpertArchive.load(path1)
-    arc2 = BlockExpertArchive.load(path2)
-
-    experts_merged = 0
-    for bi in sorted(arc2._experts.keys()):
-        for k, (delta_q, scales, zeros, orig_nc) in arc2._experts[bi].items():
-            base_dummy = _np.zeros((delta_q.shape[0], orig_nc), dtype=_np.float32)
-            expert_w = unpack_expert_delta(delta_q, scales, zeros, base_dummy,
-                                           bits=arc2.config.delta_bits,
-                                           original_ncols=orig_nc)
-            arc1.absorb_snapshot(bi, expert_w, base_dummy)
-            experts_merged += 1
-
-    arc1._dir = out
-    arc1.save()
-
-    s = arc1.stats
-    print(f"  Experts merged : {experts_merged}")
-    print(f"  Total experts  : {s.n_experts_total}")
-    print(f"  Saved to       : {out}")
-
-
-# ── squish model run ───────────────────────────────────────────────────────────
-
-def cmd_model_run(args):  # pragma: no cover
-    """
-    Start the Squish inference server with a Block-Expert Archive loaded.
-
-    Delegates to the standard server startup code but automatically sets
-    ``--block-expert <archive-dir>``.  All other flags are forwarded verbatim.
-
-    Example::
-
-        squish model run ~/.squish/archives/qwen3-8b-experts \\
-            --model-dir ~/.squish/models/qwen3-8b
-    """
-    import subprocess
-    from pathlib import Path as _Path
-
-    archive_dir = _Path(args.archive_dir).expanduser()
-    if not archive_dir.is_dir():
-        print(f"\n  Error: archive directory not found: {archive_dir}")
-        sys.exit(1)
-
-    cmd = [sys.executable, "-m", "squish.server",
-           "--block-expert", str(archive_dir)]
-
-    if getattr(args, "model_dir", None):
-        cmd += ["--model-dir", args.model_dir]
-    if getattr(args, "port", None):
-        cmd += ["--port", str(args.port)]
-    if getattr(args, "host", None):
-        cmd += ["--host", args.host]
-
-    print(f"\n  Launching server with archive: {archive_dir}")
-    print(f"  Command: {' '.join(cmd)}\n")
-    subprocess.run(cmd)
-
-
 # ── squish rotate ──────────────────────────────────────────────────────────────
 
 def cmd_rotate(args):  # pragma: no cover
@@ -2302,11 +1996,7 @@ Ollama drop-in:
     p_daemon.set_defaults(func=cmd_daemon)
 
     # ── compress ──
-    p_compress = sub.add_parser(
-        "compress",
-        aliases=["it"],
-        help="Compress a model to squished (INT8/INT4) npy-dir format",
-    )
+    p_compress = sub.add_parser("it", help="Compress (squish) a model to INT8 npy-dir format")
     p_compress.add_argument("model", help="Model path (e.g. ~/.squish/models/llama3.1-8b-4bit) or shorthand (7b, 14b)")
     p_compress.add_argument("--output",            default=None,
                             help="Output directory (default: <model>-compressed)")
@@ -2495,111 +2185,6 @@ Ollama drop-in:
     p_merge.add_argument("--output-path", required=True, metavar="PATH",
                          help="Output directory for the merged adapter")
     p_merge.set_defaults(func=cmd_merge_model)
-
-    # ── squish model pack ──────────────────────────────────────────────────────
-    p_mpack = sub.add_parser(
-        "model-pack",
-        help="Build a Block-Expert Archive from a model directory",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=(
-            "Cluster each Transformer block's weights into K expert centroids\n"
-            "using K-means and store them as a .squish/ bundle archive.\n\n"
-            "Example:\n"
-            "  squish model-pack ~/.squish/models/qwen3-8b \\\n"
-            "      --experts 4 --out ~/.squish/archives/qwen3-experts\n"
-        ),
-    )
-    p_mpack.add_argument("model_dir", metavar="MODEL_DIR",
-                         help="Path to the model directory to cluster.")
-    p_mpack.add_argument("--experts", type=int, default=4, metavar="K",
-                         help="Number of expert clusters per block (default: 4).")
-    p_mpack.add_argument("--out", default="", metavar="PATH",
-                         help="Output archive directory (default: ~/.squish/archives/<model>-expertsK).")
-    p_mpack.add_argument("--bits", type=int, default=8, choices=[4, 8],
-                         help="Delta quantisation bit-width (4 or 8, default: 8).")
-    p_mpack.add_argument("--metric", default="cosine", choices=["cosine", "l2"],
-                         help="Similarity metric for K-means (default: cosine).")
-    p_mpack.add_argument("--iter", type=int, default=20, metavar="N",
-                         help="K-means iterations (default: 20).")
-    p_mpack.set_defaults(func=cmd_model_pack)
-
-    # ── squish model learn ─────────────────────────────────────────────────────
-    p_mlearn = sub.add_parser(
-        "model-learn",
-        help="On-device self-learning: absorb examples into a Block-Expert Archive",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=(
-            "Run a gradient-free finite-difference learning loop on a\n"
-            "Block-Expert Archive, creating or updating expert clusters from\n"
-            "user-provided (input, output) examples.\n\n"
-            "Example:\n"
-            "  squish model-learn ~/.squish/archives/qwen3-experts \\\n"
-            "      --domain legal --examples legal_qa.jsonl --steps 50\n"
-        ),
-    )
-    p_mlearn.add_argument("archive_dir", metavar="ARCHIVE_DIR",
-                          help="Path to the Block-Expert Archive directory.")
-    p_mlearn.add_argument("--domain", default="general", metavar="DOMAIN",
-                          help="Domain tag for the learned expert (e.g. 'legal', 'code').")
-    p_mlearn.add_argument("--examples", default="", metavar="FILE",
-                          help="Path to a JSONL file with {input, output} training pairs.")
-    p_mlearn.add_argument("--example-text", nargs="+", default=[], metavar="INPUT->OUTPUT",
-                          help="Inline training pairs in 'input->output' format.")
-    p_mlearn.add_argument("--steps", type=int, default=50, metavar="N",
-                          help="Optimisation steps (default: 50, max: 500).")
-    p_mlearn.add_argument("--lr", type=float, default=1e-4,
-                          help="Learning rate (default: 1e-4).")
-    p_mlearn.add_argument("--epsilon", type=float, default=1e-3,
-                          help="Finite-difference perturbation scale (default: 1e-3).")
-    p_mlearn.add_argument("--max-rank", type=int, default=8, dest="max_rank",
-                          help="Low-rank truncation rank for delta (default: 8, 0=off).")
-    p_mlearn.set_defaults(func=cmd_model_learn)
-
-    # ── squish model merge-archive ─────────────────────────────────────────────
-    p_marcmerge = sub.add_parser(
-        "model-merge-archive",
-        help="Merge two Block-Expert Archives into one combined archive",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=(
-            "Absorb all expert clusters from ARCHIVE2 into ARCHIVE1\n"
-            "and write the result to --out.\n\n"
-            "Example:\n"
-            "  squish model-merge-archive \\\n"
-            "      ~/.squish/archives/qwen3-legal \\\n"
-            "      ~/.squish/archives/qwen3-code \\\n"
-            "      --out ~/.squish/archives/qwen3-combined\n"
-        ),
-    )
-    p_marcmerge.add_argument("archive1", metavar="ARCHIVE1",
-                              help="Base archive directory (receives merged experts).")
-    p_marcmerge.add_argument("archive2", metavar="ARCHIVE2",
-                              help="Archive to absorb into ARCHIVE1.")
-    p_marcmerge.add_argument("--out", default="", metavar="PATH",
-                              help="Output directory (default: overwrites ARCHIVE1).")
-    p_marcmerge.set_defaults(func=cmd_model_merge_archive)
-
-    # ── squish model run ───────────────────────────────────────────────────────
-    p_mrun = sub.add_parser(
-        "model-run",
-        help="Serve a Block-Expert Archive with the Squish inference server",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=(
-            "Start the Squish inference server with --block-expert set to the\n"
-            "given archive directory, enabling expert routing and /v1/learn.\n\n"
-            "Example:\n"
-            "  squish model-run ~/.squish/archives/qwen3-experts \\\n"
-            "      --model-dir ~/.squish/models/qwen3-8b\n"
-        ),
-    )
-    p_mrun.add_argument("archive_dir", metavar="ARCHIVE_DIR",
-                        help="Path to the Block-Expert Archive directory.")
-    p_mrun.add_argument("--model-dir", default="", metavar="PATH", dest="model_dir",
-                        help="Base model directory (forwarded to server as --model-dir).")
-    p_mrun.add_argument("--port", type=int, default=None,
-                        help="Server port (default: 11435).")
-    p_mrun.add_argument("--host", default=None,
-                        help="Bind address (default: 127.0.0.1).")
-    p_mrun.set_defaults(func=cmd_model_run)
 
     # ── squish rotate ──────────────────────────────────────────────────────────
     p_rotate = sub.add_parser(

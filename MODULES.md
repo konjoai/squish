@@ -1,8 +1,20 @@
 # Squish — Optimisation Module Reference
 
-> Complete per-module flag, problem statement, and benchmark reference for all v2–v9 release waves.
+> Complete per-module flag, problem statement, and benchmark reference.
 > All benchmarks are CPU/numpy micro-benchmarks on Apple Silicon M-series unless otherwise noted.
 > End-to-end hardware benchmarks: run `python3 dev/benchmarks/bench_eoe.py`.
+
+## Feature Stability Tiers
+
+| Tier | Waves | Description |
+|------|-------|-------------|
+| **Stable** | 1–12 | Core compression, KV cache, speculative decode, AWQ, prefill/radix cache. Validated on hardware. |
+| **Beta** | 13–18 | Advanced KV compression, additional spec-decode variants, attention architectures. Functionally complete, hardware validation in progress. |
+| **Experimental** | 19–26 | Cutting-edge attention, extended quantisation, long-context, production reliability. Proof-of-concept; may change. |
+
+Flags for Experimental modules are labelled `[Experimental]` in `squish serve --help`.
+
+---
 
 ---
 
@@ -49,7 +61,6 @@ v3 (Wave 13) focuses on **ultra-long context** (128K+ tokens) and **adaptive spe
 | **Token Merging** | `--token-merging` | Similar tokens waste prefill FLOPs | **1.4–1.8× prefill** speedup |
 | **TokenSwift** | `--token-swift` | Long outputs (20K–100K tokens) hit KV bandwidth ceiling | **2–3× throughput** on ultra-long gen |
 | **C2T** | `--c2t` | Uniform draft tree wastes budget at confident positions | **+0.8 tokens/step** accepted |
-| **CLaSp** | `--clasp` | Layer-skip selection is static; ignores hidden-state feedback | **Adaptive skip** · DP-optimal per step |
 
 Full stack:
 
@@ -57,7 +68,7 @@ Full stack:
 squish run qwen3:8b \
   --duo-attention --shadow-kv --pq-cache --spe-cache \
   --duo-decoding --knapspec --token-merging \
-  --token-swift --c2t --clasp
+  --token-swift --c2t
 ```
 
 ---
@@ -81,19 +92,16 @@ v3 (Wave 14) focuses on **quantisation methods**, **vocabulary-adaptive speculat
 | **SqueezeLLM** | `--squeeze-llm` | Uniform quantisation crushes outlier weights | **Sparse + dense** mixed-precision: 4× smaller, 0.5 ppl loss |
 | **NF4 Quant** | `--nf4-quant` | Uniform quantisation misaligns to weight distributions | **Normal Float 4-bit** levels → best quality per bit for LLMs |
 | **SpinQuant** | `--spin-quant` | Weight outliers defeat quantisation | **Hadamard rotation** → 1.5 ppl improvement at INT4 |
-| **HeteroVocab SD** | `--hetero-vocab-sd` | Draft/target vocab mismatch prevents cross-model spec-decode | **Token-map projection** → any draft × any target |
 | **HeadInfer** | `--head-infer` | Uniform KV policy wastes memory on non-retrieval heads | **Head-type-aware** KV store: retrieval vs. streaming |
-| **Life Model** | `--life-model` | Cache eviction is LRU-blind to access patterns | **Lifecycle predictor** → model-aware eviction signals |
 
 Full stack:
 
 ```bash
 squish run qwen3:8b \
   --squeeze-llm --nf4-quant --spin-quant \
-  --copy-spec --sub-spec --del-decoder \
-  --qspec --quant-spec --hetero-vocab-sd \
-  --dfloat11 --rans-codec --head-infer \
-  --soup-experts --vision-cache --vector-index --life-model
+  --copy-spec --sub-spec \
+  --qspec --quant-spec \
+  --dfloat11 --rans-codec --head-infer
 ```
 
 Benchmark results: [`docs/benchmark_wave13_14.md`](docs/benchmark_wave13_14.md)
@@ -209,13 +217,9 @@ v5 (Wave 18) focuses on **vector-product quantisation**, **confidence-gated earl
 | **MirrorSD** | `--mirror-sd` | Single-draft spec-decode misses acceptance bursts | **Mirror pipeline** (parallel draft branches) · 867 µs step vocab=32k |
 | **SparseVerify** | `--sparse-verify` | Re-verifying identical KV slices across draft iterations wastes compute | **Inter-draft KV reuse cache** · 0.28 µs query · near-zero overhead |
 | **RobustScheduler** | `--robust-sched` | Priority inversions under bursty load hurt P99 latency | **A-balanced SRPT scheduler** · 3.7 µs schedule 32 requests |
-| **BlockExpertArchive** | `--block-expert` | MoE expert routing is static and disk-bandwidth-bound | **Archived block-expert router** · 73 µs route 8 experts |
-| **DISCRouter** | `--disc-router` | Monolithic inference ignores sub-task decomposition opportunities | **Decomposed sub-task planner** · 22.9 µs plan · 3.1 µs execute |
-| **SelfLearning** | `--self-learning` | Domain adaptation requires expensive LoRA fine-tuning runs | **LoRA-free online delta absorption** · 6 ms per 4-example learn step |
 | **SemanticCache** | `--semantic-cache` | Repeated semantically-equivalent queries re-run full inference | **sqlite-vec semantic cache** · short-circuit on cosine similarity hit |
 | **IPW** | `--ipw` | No per-inference energy accounting available on-device | **Perf-per-watt tracker** · 0.16 µs record · 4.6 ms full summary |
 | **PowerMonitor** | `--power-monitor` | Compute policy ignores battery vs. AC power state | **Apple Silicon power advisor** · 0.5 µs get recommended mode |
-| **DiffusionDraft** | `--diffusion-draft` | AR draft models cannot exploit diffusion-model parallel generation | **Diffusion draft head** · availability gate for suitable tasks |
 
 Full stack:
 
@@ -223,9 +227,8 @@ Full stack:
 squish run qwen3:8b \
   --vptq --layer-skip --swift \
   --spec-reason --mirror-sd --sparse-verify \
-  --robust-sched --block-expert --disc-router \
-  --self-learning --semantic-cache \
-  --ipw --power-monitor --diffusion-draft
+  --robust-sched --semantic-cache \
+  --ipw --power-monitor
 ```
 
 Benchmark results: [`docs/benchmark_wave17_18.md`](docs/benchmark_wave17_18.md)
@@ -283,7 +286,6 @@ v6 (Wave 20) focuses on **model merging**, **multi-LoRA composition**, **continu
 | GrammarCache | `--grammar-cache` | Per-token FSM rebuild overhead | Zero rebuild on cached grammars |
 | QuantAware | `--quant-aware` | Scale selection for quantisation | Per-channel optimal scales |
 | AdaptiveBudget | `--adaptive-budget` | Joint KV + layer skip SLO control | SLO-aware compute budget |
-| VisionTokens | `--vision-tokens` | Visual token overhead in VLMs | 50–80% vision token reduction |
 | ToolCache | `--tool-cache` | Tool schema parse overhead | Zero parse overhead on repeats |
 | DistilSpec | `--distil-spec` | Draft head acceptance rate | +10–15 pp from calibration |
 | BatchEmbed | `--batch-embed` | Embedding pooling strategy | mean/max/cls/weighted in one pass |
@@ -294,7 +296,6 @@ squish serve ./model \
   --continuous-batching \
   --grammar-cache \
   --adaptive-budget \
-  --vision-tokens \
   --tool-cache \
   --distil-spec \
   --batch-embed mean
@@ -323,7 +324,6 @@ v7 (Wave 21) focuses on **tree-parallel speculative verification**, **online KV 
 | FlashPrefill | `--flash-prefill` | Prefill memory on long sequences | O(seq × chunk) not O(seq²) |
 | BudgetSpec | `--budget-spec` | Draft compute near token budget | Ramp-down to 1 draft near limit |
 | RetentionAttn | `--retention-attn` | KV cache memory for recurrent inference | O(1) per-step linear recurrence |
-| KVRouter | `--kv-router` | KV recomputation in disaggregated serving | Zero-recompute cross-instance routing |
 
 Full stack:
 ```bash
@@ -335,7 +335,7 @@ squish serve ./model \
   --pipeline-bubble --layerwise-decode \
   --codec-kv --dedupe-attn \
   --flash-prefill --budget-spec \
-  --retention-attn --kv-router
+  --retention-attn
 ```
 
 ---
@@ -346,55 +346,48 @@ v7 (Wave 22) focuses on **multi-tenant fair scheduling**, **load-balanced reques
 
 | Module | Flag | Problem Solved | Key Number |
 |--------|------|---------------|-----------|
-| MultiTenantSched | `--multi-tenant` | Per-tenant QoS isolation | 0.65 µs scheduler overhead |
-| RequestRouter | `--request-router` | Load balancing across replicas | Least-loaded routing |
 | CacheWarmup | `--cache-warmup` | Cold TTFT on hot paths | Predictive KV pre-warming |
 | TokenBudgetGate | `--token-budget` | Request cost determinism | Hard budget with graceful truncation |
-| ObservabilityHook | `--observability` | Inference step visibility | OpenTelemetry-compatible spans |
 | RequestCoalesce | `--req-coalesce` | Redundant prefill forward passes | Shared prefill for common prefixes |
 | AdaptiveQuantize | `--adaptive-quant` | Memory pressure OOM risk | Auto INT8/INT4 under pressure |
 | HealthCheck | `--health-check` | Quality regression detection | p50/p99 latency + error rate |
 | FaultTolerance | `--fault-tolerance` | OOM crash risk | Progressive evict→disable→reduce |
 | ModelPool | `--model-pool` | Multi-model reload latency | Hot pool with LRU eviction |
 | StreamingChunk | `--streaming-chunk` | First-chunk streaming latency | Sub-token chunked streaming |
-| CostEstimator | `--cost-estimate` | Request billing and prioritisation | Per-request compute cost |
-| SLAMonitor | `--sla-monitor` | SLA breach detection | Auto-escalation on consecutive breach |
 | ContextCache | `--context-cache` | Cross-session context re-encoding | Persistent TTL cache, 100% hit rate |
 
 Full stack:
 ```bash
 squish serve ./model \
-  --multi-tenant --request-router \
   --cache-warmup --token-budget \
-  --observability --req-coalesce \
+  --req-coalesce \
   --adaptive-quant --health-check \
   --fault-tolerance --model-pool \
-  --streaming-chunk --cost-estimate \
-  --sla-monitor --context-cache
+  --streaming-chunk --context-cache
 ```
 
 Benchmark results: [`docs/benchmark_wave21_22.md`](docs/benchmark_wave21_22.md)
 
 ---
 
-## v8 — Wave 23: Multi-Modal & Long Context Intelligence
+## v8 — Wave 23: Long Context & RAG Intelligence
 
-Wave 23 ships 14 new modules covering vision KV fusion, image/video token pruning, RAG prefetching, CoT compression, cross-modal attention, and hierarchical KV caching:
+Wave 23 focuses on **long-context efficiency**, **RAG-aware serving**, **CoT compression**, and **hierarchical KV tiering**. Multi-modal (vision/video) modules were removed from this wave as out of scope for a text LLM server.
 
-VisionKVFuse · ImageTokenPrune · RAGPrefetch · CoTCompress · MultiModalBatch · ContextualRerank · CrossModalAttn · HierarchicalKV · StreamRAG · CrossDocAttn · VideoFramePrune · EmbeddingGate · LongContextChunk · ModalityRouter
+RAGPrefetch · CoTCompress · ContextualRerank · HierarchicalKV · StreamRAG · CrossDocAttn · LongContextChunk
 
-Key numbers: 50–70% image token pruning · 60–80% video token pruning · 30–50% CoT reduction.
+Key numbers: 30–50% CoT token reduction · predictive RAG doc KV prefetch · 1M+ token semantic chunking.
 
 Benchmark results: [`docs/benchmark_wave23_24.md`](docs/benchmark_wave23_24.md)
 Raw data: [`dev/results/wave23_24_bench.json`](dev/results/wave23_24_bench.json)
 
 ---
 
-## v8 — Wave 24: Quantisation Evolution & Model Surgery
+## v8 — Wave 24: Quantisation Evolution & Structured Pruning
 
-Wave 24 ships 14 new modules covering ternary/binary quantisation, structured pruning, layer fusion, weight sharing, and model surgery:
+Wave 24 focuses on **ternary/sub-bit quantisation**, **structured sparsity**, **cross-layer weight sharing**, and **second-order calibration**.
 
-TernaryQuant · BinaryAttn · StructuredPrune · LayerFusion · WeightSharing · QuantCalib · SparseWeight · DeltaCompress · ModelSurgery · ZeroQuantV2 · GPTQLayer · SparseMoE · AWQv2 · IterPrune
+TernaryQuant · StructuredPrune · LayerFusion · WeightSharing · QuantCalib · SparseWeight · DeltaCompress · ZeroQuantV2 · GPTQLayer · SparseMoE · AWQv2
 
 Key numbers: 1.58-bit ternary weights · 2:4 structured sparsity · 7.98× SVD delta compression.
 
@@ -402,9 +395,9 @@ Key numbers: 1.58-bit ternary weights · 2:4 structured sparsity · 7.98× SVD d
 
 ## v9 — Wave 25: Cutting-Edge Attention Variants & Compute Fusion
 
-Wave 25 ships 14 new modules covering FlashMLA, native sparse attention, fused sampling, KV defragmentation, dual-chunk attention, activation offload, morphing attention, hydra-speculation, sequence compaction, and hardware-aware scheduling:
+Wave 25 focuses on **DeepSeek-V2/V3 attention patterns**, **fused compute kernels**, **KV defragmentation**, **long-context attention**, and **multi-draft speculation**.
 
-FlashMLA · NativeSparseAttn · FusedSampler · KVDefrag · DualChunkAttn · ActivationOffload · MorphAttn · HydraSpec · SeqCompact · LatencyPredictor · ParallelSampler · ContextSummarizer · TokenWatermark · SchemaGen
+FlashMLA · NativeSparseAttn · FusedSampler · KVDefrag · DualChunkAttn · ActivationOffload · MorphAttn · HydraSpec · SeqCompact · ParallelSampler · ContextSummarizer · SchemaGen
 
 Key numbers: FlashMLA 4× KV compression · NSA ~87% attention sparsity · HydraSpec multi-draft speculation.
 
@@ -413,10 +406,10 @@ Raw data: [`dev/results/wave25_26_bench.json`](dev/results/wave25_26_bench.json)
 
 ---
 
-## v9 — Wave 26: Distributed Inference & Production Reliability
+## v9 — Wave 26: Production Reliability & Safety
 
-Wave 26 ships 14 new modules covering tensor parallelism, sequence parallelism, KV migration, disaggregated prefill/decode, request preemption, inference gateway, model version swapping, production profiling, adaptive batching, safety layer, semantic response cache, rate limiting, schema validation, and audit logging:
+Wave 26 focuses on **production-grade monitoring**, **adaptive batching**, **safety classification**, **semantic response caching**, and **rate limiting**. Distributed multi-node infrastructure modules (tensor/sequence parallelism, KV migration, disaggregated prefill, request preemption, inference gateway, model version swap, audit logging) were removed as out of scope for single-device local inference.
 
-TensorParallel · SequenceParallel · KVMigrate · DisaggPrefill · RequestPreempt · InferGateway · ModelVersionSwap · ProductionProfiler · AdaptiveBatcher · SafetyLayer · SemanticResponseCache · RateLimiter · SchemaValidator · AuditLogger
+ProductionProfiler · AdaptiveBatcher · SafetyLayer · SemanticResponseCache · RateLimiter · SchemaValidator
 
-Key numbers: disaggregated prefill/decode · SHA-256 audit log · sub-200ns APM record.
+Key numbers: sub-200ns APM record · safety classification · semantic response deduplication.

@@ -717,7 +717,36 @@ These are the original Phase 4 items from the plan. They require real hardware a
 
 ---
 
-## Phase 6 — Feature Reliability & Ecosystem Hardening
+## Phase 8 — Experimental Module Removal & Codebase Solidification
+
+> Started: 2026-03-12
+> **Remove all modules that don't materially improve load time, inference speed, memory, or context length for a single-device Apple Silicon user. The goal is a codebase where every shipped module is defensible.**
+
+### 8A — Modules Removed
+
+The following 38 modules were removed because they fell into one or more disqualifying categories: multi-modal vision/video (no benefit for text LLM), multi-tenant cloud infrastructure (not relevant to local single-device use), research-only stubs (no practical inference benefit), or training-time operations.
+
+| Category | Removed modules |
+|----------|----------------|
+| Multi-modal / vision | `vision_cache`, `vision_kv_fuse`, `vision_tokens`, `image_token_prune`, `multimodal_batch`, `cross_modal_attn`, `video_frame_prune`, `embedding_gate`, `modality_router` |
+| Multi-tenant cloud infra | `multi_tenant_sched`, `request_router`, `kv_router`, `kv_migrate`, `disagg_prefill`, `request_preempt`, `infer_gateway`, `model_version_swap`, `observability_hook`, `cost_estimator`, `sla_monitor`, `sequence_parallel`, `tensor_parallel`, `audit_logger` |
+| Research / academic stubs | `clasp`, `del_decoder`, `hetero_vocab_sd`, `life_model`, `soup_experts`, `vector_index`, `disc_router`, `block_expert_archive`, `self_learning`, `diffusion_draft` |
+| Training-time operations | `iter_prune`, `model_surgery`, `binary_attn` |
+| Non-performance utility | `token_watermark`, `latency_predictor` |
+
+### 8B — Changes Made
+
+- [ ] Delete 38 module files from `squish/`
+- [ ] Delete 11 dedicated test files (`test_clasp_unit.py`, `test_del_decoder_unit.py`, etc.)
+- [ ] Edit 10 wave wiring test files to remove test classes for deleted modules
+- [ ] Edit `server.py` to remove globals + flag wiring for all 38 modules
+- [ ] Edit `squish/__init__.py` — remove deleted imports, fix `__version__` to `"9.0.0"`, deduplicate 19 repeated imports
+- [ ] Edit `cli.py` — remove argparse flags for deleted modules
+- [ ] Update `README.md` — remove duplicate bash block, remove Files table, add Advanced Features stability section
+- [ ] Update `MODULES.md` — remove deleted module entries, add stability tier table
+
+---
+
 
 > Last updated: 2026-03-12
 > Addresses scope-creep risk, ecosystem blockers, CI correctness, and documentation quality.

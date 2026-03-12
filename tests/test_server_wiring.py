@@ -50,7 +50,6 @@ def _make_args(**overrides) -> argparse.Namespace:
         sparse_verify=False,
         long_spec=False,
         fr_spec=False,
-        diffusion_draft="",
         # Token-importance / adaptive-layer
         trail=False,
         specontext=False,
@@ -444,15 +443,6 @@ class TestAllOptimizationsFlag:
         """Ensure our canonical list matches the implementation list exactly."""
         assert len(self._ALL_BOOL_FLAGS) == 31
 
-    def test_diffusion_draft_not_in_bool_flags(self):
-        """diffusion_draft is a path string, not a bool — must NOT be in the bool expansion."""
-        args = _make_args(all_optimizations=True)
-        args = self._expand(args)
-        # diffusion_draft should still be empty string, not True
-        assert getattr(args, "diffusion_draft", "") == "", (
-            "--all-optimizations must not set diffusion_draft (it requires a path)"
-        )
-
     def test_lora_adapter_not_in_bool_flags(self):
         """lora_adapter is a path string — must NOT be in the bool expansion."""
         args = _make_args(all_optimizations=True)
@@ -693,7 +683,7 @@ class TestAlreadyWiredTierB:
 class TestIntegrationReportAllWired:
     """Re-run the integration status check to confirm every module is wired."""
 
-    def test_all_35_modules_wired(self):
+    def test_all_34_modules_wired(self):
         """Every Tier A and Tier B module must have a 'from squish.X import' in server.py."""
         import re
         server_src = (Path(__file__).parent.parent / "squish" / "server.py").read_text()
@@ -707,7 +697,7 @@ class TestIntegrationReportAllWired:
             "robust_scheduler", "gemfilter", "svdq", "sparse_spec",
             "sparse_verify", "trail", "specontext", "forelen", "ipw",
             "layer_skip", "lookahead_reasoning", "spec_reason", "long_spec",
-            "fr_spec", "lora_manager", "diffusion_draft",
+            "fr_spec", "lora_manager",
         ]
         unwired = []
         for mod in tier_a + tier_b:
@@ -720,8 +710,8 @@ class TestIntegrationReportAllWired:
             "Each must have a 'from squish.X import' statement in main()."
         )
 
-    def test_all_61_modules_wired(self):
-        """Waves 1-14: all 61 modules must have a 'from squish.X import' in server.py."""
+    def test_all_53_modules_wired(self):
+        """Waves 1-14: all 53 remaining modules must have a 'from squish.X import' in server.py."""
         import re
         server_src = (Path(__file__).parent.parent / "squish" / "server.py").read_text()
 
@@ -734,21 +724,20 @@ class TestIntegrationReportAllWired:
             "robust_scheduler", "gemfilter", "svdq", "sparse_spec",
             "sparse_verify", "trail", "specontext", "forelen", "ipw",
             "layer_skip", "lookahead_reasoning", "spec_reason", "long_spec",
-            "fr_spec", "lora_manager", "diffusion_draft",
+            "fr_spec", "lora_manager",
         ]
         wave_13 = [
             "duo_attention", "shadow_kv", "pq_cache", "spe_cache",
             "duo_decoding", "knapspec", "token_merging", "token_swift",
-            "c2t", "clasp",
+            "c2t",
         ]
         wave_14 = [
-            "soup_experts", "vision_cache", "vector_index", "sub_spec",
-            "del_decoder", "dfloat11", "rans_codec", "qspec", "quant_spec",
+            "sub_spec", "dfloat11", "rans_codec", "qspec", "quant_spec",
             "copy_spec", "squeeze_llm", "nf4_quant", "spin_quant",
-            "hetero_vocab_sd", "head_infer", "life_model",
+            "head_infer",
         ]
         all_modules = wave_1_12 + wave_13 + wave_14
-        assert len(all_modules) == 61, f"Expected 61 modules, got {len(all_modules)}"
+        assert len(all_modules) == 53, f"Expected 53 modules, got {len(all_modules)}"
 
         unwired = []
         for mod in all_modules:
