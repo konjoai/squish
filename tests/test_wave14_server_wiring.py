@@ -14,118 +14,6 @@ import numpy as np
 import pytest
 
 # ---------------------------------------------------------------------------
-# SoupOfExperts
-# ---------------------------------------------------------------------------
-
-class TestSoupOfExpertsWiring:
-    def test_import(self):
-        from squish.soup_experts import SoupOfExperts
-        soe = SoupOfExperts(tolerance=0.01)
-        assert soe is not None
-
-    def test_register_expert(self):
-        from squish.soup_experts import SoupOfExperts
-        soe = SoupOfExperts()
-        soe.register_expert("code", "/tmp/code.safetensors", default_weight=0.5)
-        assert "code" in soe._experts
-
-    def test_detect_domain(self):
-        from squish.soup_experts import SoupOfExperts
-        soe = SoupOfExperts()
-        soe.register_expert("legal", "/tmp/legal.safetensors", default_weight=0.0)
-        soe.register_expert("code", "/tmp/code.safetensors", default_weight=0.0)
-        weights = soe.detect_domain("Write a Python function that parses JSON")
-        assert isinstance(weights, dict)
-        assert sum(weights.values()) == pytest.approx(1.0, abs=0.02)
-
-    def test_set_mixing_weights_validates_sum(self):
-        from squish.soup_experts import SoupOfExperts
-        soe = SoupOfExperts(tolerance=0.01)
-        soe.register_expert("a", "/tmp/a.st", 0.5)
-        soe.register_expert("b", "/tmp/b.st", 0.5)
-        with pytest.raises(ValueError):
-            soe.set_mixing_weights({"a": 0.4, "b": 0.4})  # sum = 0.8 < 1.0
-
-
-# ---------------------------------------------------------------------------
-# VisionPrefixCache
-# ---------------------------------------------------------------------------
-
-class TestVisionPrefixCacheWiring:
-    def test_import(self):
-        from squish.vision_cache import VisionPrefixCache
-        cache = VisionPrefixCache(max_entries=4)
-        assert cache is not None
-
-    def test_cache_miss_then_hit(self):
-        from squish.vision_cache import VisionPrefixCache
-        cache = VisionPrefixCache(max_entries=4)
-        image_bytes = b"\x00" * 64
-
-        encoded_calls = []
-
-        def encoder(b):
-            encoded_calls.append(True)
-            return np.zeros(16)
-
-        result1 = cache.get_or_encode(image_bytes, encoder)
-        result2 = cache.get_or_encode(image_bytes, encoder)
-        assert len(encoded_calls) == 1   # second call should be a cache hit
-        assert np.allclose(result1, result2)
-
-    def test_stats_hit_rate(self):
-        from squish.vision_cache import VisionPrefixCache
-        cache = VisionPrefixCache(max_entries=4)
-        img = b"\x00" * 8
-        cache.get_or_encode(img, lambda b: np.zeros(4))
-        cache.get_or_encode(img, lambda b: np.zeros(4))  # triggers a hit
-        assert 0.0 <= cache.stats()["hit_rate"] <= 1.0
-
-    def test_lru_eviction(self):
-        from squish.vision_cache import VisionPrefixCache
-        cache = VisionPrefixCache(max_entries=2)
-        for i in range(3):
-            img = bytes([i] * 8)
-            cache.get_or_encode(img, lambda b: np.array([float(b[0])]))
-        # Cache held only 2 entries; size must not exceed max
-        assert len(cache._cache) <= 2
-
-
-# ---------------------------------------------------------------------------
-# MRLIndex (vector_index)
-# ---------------------------------------------------------------------------
-
-class TestMRLIndexWiring:
-    def test_import(self):
-        from squish.vector_index import MRLIndex
-        idx = MRLIndex(full_dim=64, coarse_dim=16)
-        assert idx is not None
-
-    def test_add_and_search(self):
-        from squish.vector_index import MRLIndex
-        rng = np.random.default_rng(0)
-        idx = MRLIndex(full_dim=32, coarse_dim=8)
-        vecs = rng.standard_normal((20, 32)).astype(np.float32)
-        ids  = np.arange(20)
-        idx.add(vecs, ids)
-        query = rng.standard_normal(32).astype(np.float32)
-        result_ids, dists = idx.search(query, top_k=5)
-        assert len(result_ids) <= 5
-
-    def test_empty_search_returns_empty(self):
-        from squish.vector_index import MRLIndex
-        idx = MRLIndex(full_dim=16, coarse_dim=8)
-        rng = np.random.default_rng(1)
-        ids, dists = idx.search(rng.standard_normal(16).astype(np.float32), top_k=3)
-        assert len(ids) == 0
-
-    def test_invalid_dims_raise(self):
-        from squish.vector_index import MRLIndex
-        with pytest.raises(ValueError):
-            MRLIndex(full_dim=16, coarse_dim=32)  # coarse > full
-
-
-# ---------------------------------------------------------------------------
 # SubSpec
 # ---------------------------------------------------------------------------
 
@@ -174,50 +62,6 @@ class TestSubSpecWiring:
             return rng.standard_normal(vocab).astype(np.float32)  # (vocab,)
 
         dec           = SubSpecDecoder(draft_fn, target_fn, cfg)
-        tokens, stats = dec.generate(input_ids=[1, 2, 3], max_new_tokens=4)
-        assert len(tokens) > 0
-
-
-# ---------------------------------------------------------------------------
-# DELDecoder (Dynamic Exit Layer)
-# ---------------------------------------------------------------------------
-
-class TestDELDecoderWiring:
-    def test_import(self):
-        from squish.del_decoder import DELConfig, DELDecoder
-        cfg  = DELConfig(num_layers=8, min_exit_layer=2, max_exit_layer=6, gamma=3)
-        rng  = np.random.default_rng(0)
-        vocab = 16
-
-        def forward_fn(token_ids, exit_layer=None):
-            return rng.standard_normal((len(token_ids), vocab)).astype(np.float32)
-
-        dec = DELDecoder(forward_fn, cfg)
-        assert dec is not None
-
-    def test_config_defaults(self):
-        from squish.del_decoder import DELConfig
-        cfg = DELConfig()
-        assert cfg.num_layers >= 2
-        assert cfg.min_exit_layer >= 1
-        assert cfg.max_exit_layer <= cfg.num_layers
-        assert cfg.gamma >= 1
-
-    def test_config_rejects_bad_exit_range(self):
-        from squish.del_decoder import DELConfig
-        with pytest.raises(ValueError):
-            DELConfig(num_layers=8, min_exit_layer=7, max_exit_layer=4)
-
-    def test_generate_returns_tokens(self):
-        from squish.del_decoder import DELConfig, DELDecoder
-        cfg  = DELConfig(num_layers=8, min_exit_layer=2, max_exit_layer=6, gamma=2)
-        rng  = np.random.default_rng(3)
-        vocab = 16
-
-        def forward_fn(token_ids, exit_layer=None):
-            return rng.standard_normal(vocab).astype(np.float32)  # (vocab,)
-
-        dec           = DELDecoder(forward_fn, cfg)
         tokens, stats = dec.generate(input_ids=[1, 2, 3], max_new_tokens=4)
         assert len(tokens) > 0
 
@@ -499,64 +343,6 @@ class TestSpinQuantWiring:
 
 
 # ---------------------------------------------------------------------------
-# HeteroVocabSD
-# ---------------------------------------------------------------------------
-
-class TestHeteroVocabSDWiring:
-    def test_import(self):
-        from squish.hetero_vocab_sd import (
-            HeteroVocabConfig,
-            HeteroVocabDecoder,
-            HeteroVocabDrafter,
-            VocabMapper,
-        )
-        d_vocab, t_vocab = 16, 32
-        cfg     = HeteroVocabConfig(gamma=2, draft_vocab_size=d_vocab, target_vocab_size=t_vocab)
-        rng     = np.random.default_rng(0)
-        mapper  = VocabMapper(draft_vocab_size=d_vocab, target_vocab_size=t_vocab)
-
-        def draft_fn(token_ids):
-            return rng.standard_normal(d_vocab).astype(np.float32)  # (draft_vocab,)
-
-        def target_fn(token_ids):
-            return rng.standard_normal(t_vocab).astype(np.float32)  # (target_vocab,)
-
-        drafter = HeteroVocabDrafter(draft_fn, mapper, cfg)
-        dec     = HeteroVocabDecoder(drafter, target_fn, cfg)
-        assert dec is not None
-
-    def test_config_defaults(self):
-        from squish.hetero_vocab_sd import HeteroVocabConfig
-        cfg = HeteroVocabConfig()
-        assert cfg.gamma >= 1
-        assert cfg.draft_vocab_size >= 2
-        assert cfg.target_vocab_size >= 2
-
-    def test_generate_returns_tokens(self):
-        from squish.hetero_vocab_sd import (
-            HeteroVocabConfig,
-            HeteroVocabDecoder,
-            HeteroVocabDrafter,
-            VocabMapper,
-        )
-        d_vocab = t_vocab = 16
-        cfg     = HeteroVocabConfig(gamma=2, draft_vocab_size=d_vocab, target_vocab_size=t_vocab)
-        rng     = np.random.default_rng(6)
-        mapper  = VocabMapper(draft_vocab_size=d_vocab, target_vocab_size=t_vocab)
-
-        def draft_fn(token_ids):
-            return rng.standard_normal(d_vocab).astype(np.float32)
-
-        def target_fn(token_ids):
-            return rng.standard_normal(t_vocab).astype(np.float32)
-
-        drafter       = HeteroVocabDrafter(draft_fn, mapper, cfg)
-        dec           = HeteroVocabDecoder(drafter, target_fn, cfg)
-        tokens, stats = dec.generate(input_ids=[1, 2], max_new_tokens=4)
-        assert len(tokens) > 0
-
-
-# ---------------------------------------------------------------------------
 # HeadInfer
 # ---------------------------------------------------------------------------
 
@@ -595,34 +381,6 @@ class TestHeadInferWiring:
 
 
 # ---------------------------------------------------------------------------
-# LifeModel (LIFE estimator)
-# ---------------------------------------------------------------------------
-
-class TestLifeModelWiring:
-    def test_import(self):
-        from squish.life_model import predict
-        assert callable(predict)
-
-    def test_predict_returns_dict(self):
-        from squish.life_model import predict
-        result = predict(model_dir=None, batch_size=1, seq_len=512, output_len=128)
-        assert isinstance(result, dict)
-
-    def test_predict_has_expected_keys(self):
-        from squish.life_model import predict
-        result = predict(model_dir=None, batch_size=1, seq_len=512, output_len=128)
-        assert "ttft_s" in result or "tpot_ms" in result or "tokens_per_s" in result
-
-    def test_predict_positive_throughput(self):
-        from squish.life_model import predict
-        result = predict(model_dir=None, batch_size=1, seq_len=128, output_len=64)
-        # At least one throughput-like key should be positive
-        throughput_keys = [k for k in result if "tok" in k.lower() or "throughput" in k.lower()]
-        if throughput_keys:
-            assert result[throughput_keys[0]] > 0
-
-
-# ---------------------------------------------------------------------------
 # Integration — all Wave 14 modules are importable
 # ---------------------------------------------------------------------------
 
@@ -630,11 +388,7 @@ class TestWave14AllImportable:
     """Smoke test: verify every Wave 14 module can be imported."""
 
     @pytest.mark.parametrize("module,symbols", [
-        ("soup_experts",   ["SoupOfExperts"]),
-        ("vision_cache",   ["VisionPrefixCache"]),
-        ("vector_index",   ["MRLIndex"]),
         ("sub_spec",       ["SubSpecConfig", "SubSpecDecoder"]),
-        ("del_decoder",    ["DELConfig", "DELDecoder"]),
         ("dfloat11",       ["DFloat11Config", "DFloat11Compressor"]),
         ("rans_codec",     ["RANSCodec"]),
         ("qspec",          ["QSpecConfig", "QSpecDecoder"]),
@@ -643,9 +397,7 @@ class TestWave14AllImportable:
         ("squeeze_llm",    ["SqueezeLLMConfig", "SqueezeLLMQuantizer"]),
         ("nf4_quant",      ["NF4_LEVELS", "quantize_nf4", "dequantize_nf4"]),
         ("spin_quant",     ["run_rotation"]),
-        ("hetero_vocab_sd",["HeteroVocabConfig", "HeteroVocabDecoder"]),
         ("head_infer",     ["HeadInferConfig", "HeadAwareKVStore"]),
-        ("life_model",     ["predict"]),
     ])
     def test_module_importable(self, module, symbols):
         import importlib

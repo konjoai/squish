@@ -58,46 +58,6 @@ class TestTernaryQuant:
 
 
 # ---------------------------------------------------------------------------
-# 2. binary_attn
-# ---------------------------------------------------------------------------
-
-class TestBinaryAttn:
-    def test_imports(self):
-        from squish.binary_attn import BinaryConfig, BinaryAttention, BinaryStats
-        assert BinaryConfig is not None
-        assert BinaryAttention is not None
-        assert BinaryStats is not None
-
-    def test_forward_shape(self):
-        from squish.binary_attn import BinaryConfig, BinaryAttention
-        cfg = BinaryConfig(n_heads=2, head_dim=8)
-        attn = BinaryAttention(cfg)
-        q = RNG.random((2, 4, 8)).astype(np.float32)
-        k = RNG.random((2, 4, 8)).astype(np.float32)
-        v = RNG.random((2, 4, 8)).astype(np.float32)
-        out = attn.forward(q, k, v)
-        assert out.shape == q.shape
-
-    def test_effective_scale_property(self):
-        from squish.binary_attn import BinaryConfig
-        cfg = BinaryConfig(n_heads=2, head_dim=64)
-        scale = cfg.effective_scale
-        assert abs(scale - 1.0 / 8.0) < 1e-6  # 1/sqrt(64)
-
-    def test_stats(self):
-        from squish.binary_attn import BinaryConfig, BinaryAttention
-        cfg = BinaryConfig(n_heads=2, head_dim=8)
-        attn = BinaryAttention(cfg)
-        q = RNG.random((2, 4, 8)).astype(np.float32)
-        k = RNG.random((2, 4, 8)).astype(np.float32)
-        v = RNG.random((2, 4, 8)).astype(np.float32)
-        attn.forward(q, k, v)
-        stats = attn.stats
-        assert stats.total_forward_calls == 1
-        assert stats.total_tokens_processed == 4
-
-
-# ---------------------------------------------------------------------------
 # 3. structured_prune
 # ---------------------------------------------------------------------------
 
@@ -329,45 +289,6 @@ class TestDeltaCompress:
 
 
 # ---------------------------------------------------------------------------
-# 9. model_surgery
-# ---------------------------------------------------------------------------
-
-class TestModelSurgery:
-    def test_imports(self):
-        from squish.model_surgery import SurgeryPlan, SurgeryResult, ModelSurgeon, SurgeryStats
-        assert SurgeryPlan is not None
-        assert SurgeryResult is not None
-        assert ModelSurgeon is not None
-        assert SurgeryStats is not None
-
-    def test_plan(self):
-        from squish.model_surgery import ModelSurgeon, SurgeryPlan
-        surgeon = ModelSurgeon()
-        plan = surgeon.plan(n_layers=8, n_heads=4, head_dim=32)
-        assert isinstance(plan, SurgeryPlan)
-        assert plan.n_layers == 8
-
-    def test_estimate_reduction_static(self):
-        from squish.model_surgery import ModelSurgeon, SurgeryPlan
-        plan = SurgeryPlan(
-            layers_to_remove=[0, 1],
-            heads_to_prune={},
-            n_layers=8,
-            n_heads=4,
-            head_dim=32,
-        )
-        reduction = ModelSurgeon.estimate_reduction(plan)
-        assert 0.0 < reduction < 1.0
-
-    def test_stats(self):
-        from squish.model_surgery import ModelSurgeon
-        surgeon = ModelSurgeon()
-        surgeon.plan(n_layers=8, n_heads=4, head_dim=32)
-        stats = surgeon.stats
-        assert stats.total_plan_calls == 1
-
-
-# ---------------------------------------------------------------------------
 # 10. zero_quant_v2
 # ---------------------------------------------------------------------------
 
@@ -532,41 +453,3 @@ class TestAWQv2:
         assert stats.total_calibrations == 1
 
 
-# ---------------------------------------------------------------------------
-# 14. iter_prune
-# ---------------------------------------------------------------------------
-
-class TestIterPrune:
-    def test_imports(self):
-        from squish.iter_prune import PruneSchedule, IterativePruner, IterPruneStats
-        assert PruneSchedule is not None
-        assert IterativePruner is not None
-        assert IterPruneStats is not None
-
-    def test_prune_step_returns_tuple(self):
-        from squish.iter_prune import PruneSchedule, IterativePruner
-        schedule = PruneSchedule(initial_sparsity=0.0, target_sparsity=0.7, n_steps=10)
-        pruner = IterativePruner(schedule)
-        weights = RNG.standard_normal((16, 16)).astype(np.float32)
-        pruned, sparsity = pruner.prune_step(weights, step=5)
-        assert pruned.shape == weights.shape
-        assert 0.0 <= sparsity <= 1.0
-
-    def test_current_sparsity_increases(self):
-        from squish.iter_prune import PruneSchedule, IterativePruner
-        schedule = PruneSchedule(initial_sparsity=0.0, target_sparsity=0.7, n_steps=10)
-        pruner = IterativePruner(schedule)
-        s0 = pruner.current_sparsity(0)
-        s5 = pruner.current_sparsity(5)
-        s10 = pruner.current_sparsity(10)
-        assert s0 <= s5 <= s10
-
-    def test_stats(self):
-        from squish.iter_prune import PruneSchedule, IterativePruner
-        schedule = PruneSchedule(initial_sparsity=0.0, target_sparsity=0.7, n_steps=10)
-        pruner = IterativePruner(schedule)
-        weights = RNG.standard_normal((16, 16)).astype(np.float32)
-        pruner.prune_step(weights, step=5)
-        stats = pruner.stats
-        assert stats.total_steps == 1
-        assert 0.0 <= stats.avg_sparsity <= 1.0

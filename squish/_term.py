@@ -47,7 +47,11 @@ def has_truecolor(fd: int = 1) -> bool:
 
 
 # Palette — computed once at import time against stdout
-_TC = has_truecolor(sys.stdout.fileno() if hasattr(sys.stdout, "fileno") else 1)
+try:
+    _stdout_fd = sys.stdout.fileno() if hasattr(sys.stdout, "fileno") else 1
+except Exception:
+    _stdout_fd = 1
+_TC = has_truecolor(_stdout_fd)
 
 
 def _k(s: str) -> str:

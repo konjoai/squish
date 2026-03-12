@@ -111,49 +111,6 @@ _ipw_config             = None  # IPWConfig               — --ipw
 _layer_skip_config      = None  # EarlyExitConfig         — --layer-skip
 _long_spec_config       = None  # LongSpecConfig          — --long-spec
 _fr_spec_config         = None  # FRSpecConfig            — --fr-spec
-_diffusion_draft_model  = None  # DiffusionDraftModel     — --diffusion-draft
-# ── Wave 12: Reasoning-aware KV + Async I/O + MoE compression ──────────────
-_pm_kvq_scheduler       = None  # PMKVQScheduler          — --pm-kvq
-_mix_kvq_quantizer      = None  # MixKVQQuantizer         — --mix-kvq
-_cocktail_kv_store      = None  # CocktailKVStore         — --cocktail-kv
-_agile_io_manager       = None  # AgileIOManager          — --agile-io
-_milo_quantizer         = None  # MiLoQuantizer           — --milo
-_block_expert_archive   = None  # BlockExpertArchive      — --block-expert
-# ── Wave 13: Vector Quantization + Adaptive Speculative Decoding ─────────────
-_commvq_codebook        = None  # MultiCodebookVQ         — --commvq
-_vptq_quantizer         = None  # VPTQQuantizer           — --vptq
-_online_sd_updater      = None  # OnlineDraftUpdater      — --online-sd
-_rasd_batcher           = None  # RASDBatcher             — --rasd
-_dovetail_config        = None  # DovetailConfig          — --dovetail
-_pipo_scheduler         = None  # PIPOScheduler           — --pipo
-_disc_router            = None  # DISCRouter              — --disc-router
-_mobile_moe_router      = None  # MoBiLERouter            — --mobile-moe
-_meta_reasoner          = None  # MetaReasoner            — --meta-reasoner
-# ── Wave 13b: Ultra-Long Context + Adaptive Speculative Decoding ─────────────
-_duo_attn_manager       = None  # DuoKVManager            — --duo-attention
-_shadow_kv_cache        = None  # ShadowKVCache           — --shadow-kv
-_pq_cache_index         = None  # PQKeyIndex              — --pq-cache
-_spe_cache_prefetcher   = None  # SpeCachePrefetcher      — --spe-cache
-_duo_decoding_decoder   = None  # DuoDecodingDecoder      — --duo-decoding
-_knapspec_selector      = None  # KnapSpecSelector        — --knapspec
-_token_merging_cfg      = None  # TokenMergingConfig      — --token-merging
-_token_swift_decoder    = None  # TokenSwiftDecoder       — --token-swift
-_c2t_tree_builder       = None  # AdaptiveTreeBuilder     — --c2t
-_clasp_decoder          = None  # CLaSPDecoder            — --clasp
-# ── Wave 14: Quantization + Vocabulary-Adaptive Spec-Decode + Expert Mixing ──
-_soup_experts_mixer     = None  # SoupOfExperts           — --soup-experts
-_vision_prefix_cache    = None  # VisionPrefixCache       — --vision-cache
-_vector_index           = None  # MRLIndex                — --vector-index
-_sub_spec_decoder       = None  # SubSpecDecoder          — --sub-spec
-_del_decoder_inst       = None  # DELDecoder              — --del-decoder
-_dfloat11_cfg           = None  # DFloat11Config          — --dfloat11
-_rans_codec_inst        = None  # RANSCodec               — --rans-codec
-_qspec_decoder          = None  # QSpecDecoder            — --qspec
-_quant_spec_decoder     = None  # QuantSpecDecoder        — --quant-spec
-_copy_spec_drafter      = None  # CopySpecDrafter         — --copy-spec
-_squeeze_llm_quant      = None  # SqueezeLLMQuantizer     — --squeeze-llm
-_hetero_vocab_decoder   = None  # HeteroVocabDecoder      — --hetero-vocab-sd
-_head_aware_kv_store    = None  # HeadAwareKVStore        — --head-infer
 # Phase 3: cross-session persistent KV cache
 _session_kv_cache    = None   # SessionKVCache | None — set in main() when --session-cache-dir given
 # Phase 4: prompt compression settings (active when --compress-prompt is set)
@@ -276,10 +233,10 @@ class _MLXEagerBackend(_InferenceBackend):
 
 
 class _MLCBackend(_InferenceBackend):
-    """MLC-LLM engine path — planned for a future release.
+    """MLC-LLM engine path for large-context requests.
 
-    Not yet exposed via the CLI.  Probes for ``mlc_llm`` at construction
-    time so the wiring can be validated before the backend is promoted.
+    Probes for ``mlc_llm`` at construction time and sets
+    :meth:`is_available` accordingly so callers can gate on its presence.
     """
 
     def __init__(self, model_path: str) -> None:
@@ -295,10 +252,7 @@ class _MLCBackend(_InferenceBackend):
         return self._available
 
     def generate_stream(self, *args, **kwargs):  # pragma: no cover
-        raise NotImplementedError(
-            "MLC backend is not yet available.  "
-            "Use --inference-backend mlx-eager (default)."
-        )
+        raise NotImplementedError("MLC backend not yet wired")
 
 
 _active_backend: "_InferenceBackend | None" = None  # set in main() when dispatching
@@ -307,21 +261,87 @@ _active_backend: "_InferenceBackend | None" = None  # set in main() when dispatc
 _scheduler       = None  # BatchScheduler | None — set in main() when --batch-scheduler given
 _QueueFullError  = None  # QueueFullError class — imported alongside BatchScheduler
 
-# ── Terminal colours & ASCII art ─────────────────────────────────────────────
-from squish._term import LOGO_GRAD as _LOGO_GRAD
-from squish._term import C as _C  # noqa: E402
-from squish._term import gradient as _term_gradient
-from squish._term import has_truecolor as _has_truecolor  # noqa: E402
+# ── Terminal colours & ASCII art ──────────────────────────────────────────────
+_TTY: bool = sys.stdout.isatty()
+_TTY_ERR: bool = sys.stderr.isatty()
 
-_TTY:           bool = sys.stdout.isatty()
-_TTY_ERR:       bool = sys.stderr.isatty()
-_TRUE_COLOR:     bool = _has_truecolor(sys.stdout.fileno() if hasattr(sys.stdout, "fileno") else 1)
-_TRUE_COLOR_ERR: bool = _has_truecolor(sys.stderr.fileno() if hasattr(sys.stderr, "fileno") else 2)
+# True only when the terminal reliably renders 24-bit (true) colour.
+# Terminals that remap the ANSI palette via a colour profile will corrupt
+# 24-bit codes that get quantised down to palette indices.  We guard against
+# this by requiring an explicit true-colour signal (COLORTERM env-var or a
+# known terminal program) before emitting gradient escape sequences.
+# Respects the NO_COLOR convention (https://no-color.org).
+def _has_truecolor(tty: bool) -> bool:
+    """Return True when the terminal reliably renders 24-bit RGB escape codes."""
+    return (
+        tty
+        and "NO_COLOR" not in os.environ
+        and (
+            os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit")
+            or os.environ.get("TERM_PROGRAM", "") in (
+                "iTerm.app", "WezTerm", "Ghostty", "Hyper", "vscode", "warp",
+                "Apple_Terminal",
+            )
+            or "kitty" in os.environ.get("TERM", "")
+            or "direct" in os.environ.get("TERM", "")
+            or bool(os.environ.get("FORCE_COLOR", ""))
+        )
+    )
+
+_TRUE_COLOR:     bool = _has_truecolor(_TTY)
+_TRUE_COLOR_ERR: bool = _has_truecolor(_TTY_ERR)
 
 
-def _gradient(text: str, stops: list[tuple[int, int, int]]) -> str:
-    """Thin wrapper so tests can monkeypatch _TRUE_COLOR to control output."""
-    return _term_gradient(text, stops, force_color=_TRUE_COLOR)
+class _C:
+    """ANSI 24-bit colour constants.  Empty strings on non-true-colour TTYs."""
+    _k = lambda s: s if _TRUE_COLOR else ""  # noqa: E731
+    DP  = _k("\033[38;2;88;28;135m")    # deep purple   #581C87
+    P   = _k("\033[38;2;124;58;237m")   # purple        #7C3AED
+    V   = _k("\033[38;2;139;92;246m")   # violet        #8B5CF6
+    L   = _k("\033[38;2;167;139;250m")  # lilac         #A78BFA
+    MG  = _k("\033[38;2;192;132;252m")  # med-purple    #C084FC
+    PK  = _k("\033[38;2;236;72;153m")   # pink          #EC4899
+    LPK = _k("\033[38;2;249;168;212m")  # light pink    #F9A8D4
+    T   = _k("\033[38;2;34;211;238m")   # teal          #22D3EE
+    LT  = _k("\033[38;2;165;243;252m")  # light teal    #A5F3FC
+    G   = _k("\033[38;2;52;211;153m")   # mint green    #34D399
+    W   = _k("\033[38;2;248;250;252m")  # near-white    #F8FAFC
+    SIL = _k("\033[38;2;180;185;210m")  # silver        #B4B9D2
+    DIM = _k("\033[38;2;100;116;139m")  # dim slate     #64748B
+    B   = _k("\033[1m")                 # bold
+    R   = _k("\033[0m")                 # reset all
+
+
+def _gradient(text: str, stops: list) -> str:
+    """Interpolate a left-to-right RGB gradient across *text* (true-colour TTY only)."""
+    if not _TRUE_COLOR or not text:
+        return text
+    n = len(text)
+    k = len(stops) - 1
+    out: list[str] = []
+    for i, ch in enumerate(text):
+        t = i / max(n - 1, 1)
+        seg = min(int(t * k), k - 1)
+        frac = t * k - seg
+        r1, g1, b1 = stops[seg]
+        r2, g2, b2 = stops[seg + 1]
+        r = int(r1 + (r2 - r1) * frac)
+        g = int(g1 + (g2 - g1) * frac)
+        b = int(b1 + (b2 - b1) * frac)
+        out.append(f"\033[38;2;{r};{g};{b}m{ch}")
+    out.append("\033[0m")
+    return "".join(out)
+
+
+# Purple → pink → teal gradient used for the big logo and accent lines
+_LOGO_GRAD = [
+    ( 88,  28, 135),   # deep purple
+    (124,  58, 237),   # purple
+    (139,  92, 246),   # violet
+    (192, 100, 220),   # lavender-pink
+    (236,  72, 153),   # pink
+    ( 34, 211, 238),   # teal
+]
 
 
 def _cprint(color: str, label: str, value: str = "", end: str = "\n") -> None:
@@ -1332,12 +1352,6 @@ def _generate_tokens(  # pragma: no cover
                         except AttributeError:
                             pass  # xgrammar version without is_terminated()
                 stop_buf.append(next_id)
-                # Wave 12: advance PM-KVQ scheduler each decode step
-                if _pm_kvq_scheduler is not None:
-                    try:
-                        _pm_kvq_scheduler.advance()
-                    except Exception:
-                        pass
                 # Phase 0C: fire async CPU dequant for next step while we set up
                 # the token embedding — hides O(n_old_tokens) numpy cost behind
                 # the model's token-embedding + layernorm overhead.
@@ -2103,92 +2117,6 @@ async def tokenize(
     })
 
 
-@app.post("/v1/learn")
-async def learn(
-    request: Request,
-    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
-):
-    """
-    POST /v1/learn — absorb training examples into the block-expert archive.
-
-    Requires ``--block-expert <archive-dir>`` to be set at server start.
-
-    Body:
-        {
-          "examples": [{"input": "...", "output": "..."}],
-          "domain":   "legal",
-          "steps":    50
-        }
-
-    Returns a JSON summary of the learning operation.
-    """
-    _check_auth(creds)
-    if _block_expert_archive is None:
-        raise HTTPException(
-            501,
-            "Block-expert archive not loaded — start the server with --block-expert <archive-dir>",
-        )
-
-    from squish.self_learning import LearnConfig, LearnExample, SelfLearner
-
-    body = await request.json()
-    raw_examples = body.get("examples", [])
-    if not raw_examples:
-        raise HTTPException(400, "'examples' must be a non-empty list")
-
-    domain  = str(body.get("domain", "general"))[:64]
-    steps   = int(body.get("steps", 50))
-    lr      = float(body.get("lr", 1e-4))
-    epsilon = float(body.get("epsilon", 1e-3))
-    max_rank = int(body.get("max_rank", 8))
-
-    examples = [
-        LearnExample(
-            input=str(ex.get("input", "")),
-            output=str(ex.get("output", "")),
-        )
-        for ex in raw_examples
-        if isinstance(ex, dict)
-    ]
-    if not examples:
-        raise HTTPException(400, "No valid examples found in request body")
-
-    # Build base weights dict from archive (use zero-ish proxies if unavailable)
-    n_blocks = _block_expert_archive.num_blocks() or 1
-    import numpy as _np
-    hidden = 256  # lightweight proxy dimension — real models pass via the archive
-    base_weights = {
-        bi: _np.zeros((hidden, hidden), dtype=_np.float32)
-        for bi in range(n_blocks)
-    }
-
-    cfg = LearnConfig(
-        steps=max(1, min(steps, 500)),
-        lr=lr,
-        epsilon=epsilon,
-        max_rank=max_rank,
-        domain=domain,
-    )
-    learner = SelfLearner(base_weights, cfg)
-    result = learner.learn_from_examples(examples, cfg)
-    learner.apply_result_to_archive(result, _block_expert_archive)
-
-    try:
-        _block_expert_archive.save()
-    except Exception as _save_err:
-        _warn(f"[block-expert] archive save failed: {_save_err}")
-
-    return JSONResponse({
-        "status":        "ok",
-        "domain":        result.domain,
-        "steps_run":     result.steps_run,
-        "examples_used": result.examples_used,
-        "snr_db":        round(result.snr_db, 2),
-        "elapsed_s":     round(result.elapsed_s, 3),
-        "archive":       _block_expert_archive.summary(),
-    })
-
-
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 def main():  # pragma: no cover
@@ -2330,13 +2258,6 @@ Examples:
                     help="SVD rank for KV compression: project head_dim → N before INT8.\n"
                          "0 = off (default).  Recommended: 64 for head_dim=128 models.\n"
                          "Requires --kv-cache-mode int8 or snap.")
-    ap.add_argument("--kv-commvq-bits", type=int, default=0,
-                    metavar="N",
-                    choices=[0, 2, 4],
-                    help="CommVQ vector-quantization for old KV tokens (arXiv:2506.18879).\n"
-                         "0 = off (default); 2 = 2-bit (8× vs FP16); 4 = 4-bit (4× vs FP16).\n"
-                         "Replaces INT8 for old tokens; recent window stays FP16.\n"
-                         "Fits codebook online from the first 64 evicted tokens per layer.")
     # Phase 2 retrieval attention
     ap.add_argument("--retrieval-attention", action="store_true", default=False,
                     help="Enable retrieval attention: fetch only the top-k most relevant\n"
@@ -2442,13 +2363,14 @@ Examples:
                          "(default: ~/.squish/response_cache.db).")
     # ── Phase 4: hardware inference backend ──────────────────────────────────
     ap.add_argument("--inference-backend",
-                    choices=["mlx-eager", "mlx-compiled", "ane-disagg"],
+                    choices=["mlx-eager", "mlx-compiled", "ane-disagg", "mlc"],
                     default="mlx-eager",
                     metavar="BACKEND",
                     help="Hardware dispatch strategy (default: mlx-eager):\n"
                          "  mlx-eager    — standard MLX Metal execution (safest)\n"
                          "  mlx-compiled — mx.compile fused decode (lower GPU overhead)\n"
                          "  ane-disagg   — Apple Neural Engine prefill + GPU decode\n"
+                         "  mlc          — MLC-LLM engine (large-context requests)\n"
                          "mlx-compiled and ane-disagg are mutually exclusive.")
     # ── Item 3: LazyLLM token pruning ─────────────────────────────────────────
     ap.add_argument("--lazy-llm", action="store_true", default=False,
@@ -2565,168 +2487,6 @@ Examples:
                     help="Enable FR-Spec frequency-based token speculative decoding.")
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
-    ap.add_argument("--diffusion-draft", default="", metavar="PATH",
-                    help="Path to a diffusion-based draft model directory for speculative decoding.")
-    ap.add_argument("--block-expert", default="", metavar="PATH",
-                    help="Path to a block-expert archive directory. "
-                         "Creates a new archive at PATH if the directory does not yet exist. "
-                         "Enables the POST /v1/learn endpoint for on-device self-learning.")
-    ap.add_argument("--block-expert-clusters", type=int, default=4, metavar="K",
-                    help="Number of expert clusters per Transformer block when creating a new archive (default: 4).")
-    # ── Wave 13b: Ultra-Long Context + Adaptive Speculative Decoding ─────────
-    ap.add_argument("--duo-attention", action="store_true", default=False,
-                    help="Enable DuoAttention retrieval/streaming head separation for long-context inference.")
-    ap.add_argument("--duo-attention-layers", type=int, default=32, metavar="N",
-                    help="Number of Transformer layers (default: 32).")
-    ap.add_argument("--duo-attention-heads", type=int, default=32, metavar="N",
-                    help="Number of attention heads (default: 32).")
-    ap.add_argument("--duo-attention-head-dim", type=int, default=128, metavar="D",
-                    help="Per-head dimension (default: 128).")
-    ap.add_argument("--duo-attention-window", type=int, default=512, metavar="W",
-                    help="Streaming-head local window size in tokens (default: 512).")
-    ap.add_argument("--shadow-kv", action="store_true", default=False,
-                    help="Enable ShadowKV low-rank pre-RoPE key cache + CPU value shadow for 128K+ contexts.")
-    ap.add_argument("--shadow-kv-rank", type=int, default=128, metavar="R",
-                    help="SVD rank for low-rank key projection (default: 128).")
-    ap.add_argument("--shadow-kv-landmarks", type=int, default=64, metavar="M",
-                    help="Number of landmark tokens for sparse key retrieval (default: 64).")
-    ap.add_argument("--pq-cache", action="store_true", default=False,
-                    help="Enable PQCache product-quantization KV ANN retrieval for retrieval heads.")
-    ap.add_argument("--pq-cache-subvectors", type=int, default=8, metavar="M",
-                    help="Number of PQ sub-vectors (default: 8).")
-    ap.add_argument("--pq-cache-codes", type=int, default=256, metavar="K",
-                    help="Number of PQ codes per sub-vector (default: 256).")
-    ap.add_argument("--spe-cache", action="store_true", default=False,
-                    help="Enable SpeCache speculative KV-cache prefetching for multi-turn dialogue.")
-    ap.add_argument("--spe-cache-block-size", type=int, default=16, metavar="B",
-                    help="KV block granularity for prefetching (default: 16).")
-    ap.add_argument("--spe-cache-budget", type=int, default=8, metavar="N",
-                    help="Number of blocks to prefetch speculatively (default: 8).")
-    ap.add_argument("--duo-decoding", action="store_true", default=False,
-                    help="Enable DuoDecoding hardware-aware dynamic multi-sequence speculative decoding.")
-    ap.add_argument("--duo-decoding-gamma", type=int, default=4, metavar="G",
-                    help="Base number of draft tokens per step (default: 4).")
-    ap.add_argument("--duo-decoding-kmax", type=int, default=8, metavar="K",
-                    help="Maximum draft sequences in parallel (default: 8).")
-    ap.add_argument("--knapspec", action="store_true", default=False,
-                    help="Enable KnapSpec training-free self-speculative decoding via knapsack layer selection.")
-    ap.add_argument("--knapspec-layers", type=int, default=32, metavar="N",
-                    help="Total number of model layers (default: 32).")
-    ap.add_argument("--knapspec-budget", type=float, default=0.7, metavar="F",
-                    help="Fraction of total layer latency to use as draft budget (default: 0.7).")
-    ap.add_argument("--token-merging", action="store_true", default=False,
-                    help="Enable Token Merging (ToMe) to reduce sequence length during prefill.")
-    ap.add_argument("--token-merging-r", type=int, default=8, metavar="R",
-                    help="Tokens to merge per layer (default: 8).")
-    ap.add_argument("--token-merging-start", type=int, default=4, metavar="L",
-                    help="First layer to apply ToMe (default: 4).")
-    ap.add_argument("--token-merging-end", type=int, default=-1, metavar="L",
-                    help="Last layer for ToMe, -1 = all remaining (default: -1).")
-    ap.add_argument("--token-swift", action="store_true", default=False,
-                    help="Enable TokenSwift multi-token draft heads + partial KV reuse for ultra-long generation.")
-    ap.add_argument("--token-swift-heads", type=int, default=4, metavar="N",
-                    help="Number of TokenSwift draft heads (default: 4).")
-    ap.add_argument("--token-swift-window", type=int, default=512, metavar="W",
-                    help="KV reuse window size in tokens (default: 512).")
-    ap.add_argument("--token-swift-vocab", type=int, default=151936, metavar="V",
-                    help="Vocabulary size (default: 151936 for Qwen).")
-    ap.add_argument("--c2t", action="store_true", default=False,
-                    help="Enable C2T classifier-based adaptive candidate tree for speculative decoding.")
-    ap.add_argument("--c2t-depth", type=int, default=4, metavar="D",
-                    help="Tree depth for speculative candidates (default: 4).")
-    ap.add_argument("--c2t-wide", type=int, default=3, metavar="B",
-                    help="Wide-branch fan-out at uncertain positions (default: 3).")
-    ap.add_argument("--c2t-narrow", type=int, default=1, metavar="B",
-                    help="Narrow-branch fan-out at confident positions (default: 1).")
-    ap.add_argument("--clasp", action="store_true", default=False,
-                    help="Enable CLaSp in-context layer-skip with adaptive DP feedback for spec-decode.")
-    ap.add_argument("--clasp-layers", type=int, default=32, metavar="N",
-                    help="Total number of model layers (default: 32).")
-    ap.add_argument("--clasp-max-skip", type=int, default=8, metavar="K",
-                    help="Maximum consecutive layers to skip in the draft pass (default: 8).")
-    ap.add_argument("--clasp-gamma", type=int, default=4, metavar="G",
-                    help="Speculative draft tokens per verification step (default: 4).")
-    # ── Wave 14: Quantization + Vocabulary-Adaptive Spec-Decode + Expert Mixing ─
-    ap.add_argument("--soup-experts", action="store_true", default=False,
-                    help="Enable SoupOfExperts sparse LoRA-expert adapter blending.")
-    ap.add_argument("--soup-experts-tolerance", type=float, default=0.01, metavar="T",
-                    help="Coefficient tolerance for expert blending (default: 0.01).")
-    ap.add_argument("--vision-cache", action="store_true", default=False,
-                    help="Enable VisionPrefixCache SHA-256 dedup for vision encoder outputs.")
-    ap.add_argument("--vision-cache-max-entries", type=int, default=64, metavar="N",
-                    help="Maximum cached vision prefix entries (default: 64).")
-    ap.add_argument("--vector-index", action="store_true", default=False,
-                    help="Enable MRLIndex + HNSWIndex for semantic KV retrieval.")
-    ap.add_argument("--vector-index-dim", type=int, default=512, metavar="D",
-                    help="Full representation dimension for MRL index (default: 512).")
-    ap.add_argument("--vector-index-coarse-dim", type=int, default=64, metavar="D",
-                    help="Coarse representation dimension for MRL index (default: 64).")
-    ap.add_argument("--sub-spec", action="store_true", default=False,
-                    help="Enable SubSpecDecoder speculative decoding via quantized substitute layers.")
-    ap.add_argument("--sub-spec-gamma", type=int, default=4, metavar="G",
-                    help="SubSpec draft tokens per step (default: 4).")
-    ap.add_argument("--sub-spec-gpu-layers", type=int, default=16, metavar="N",
-                    help="SubSpec number of GPU layers for the substitute model (default: 16).")
-    ap.add_argument("--del-decoder", action="store_true", default=False,
-                    help="Enable DELDecoder dynamic early-layer exit speculative decoding.")
-    ap.add_argument("--del-decoder-gamma", type=int, default=4, metavar="G",
-                    help="DEL draft tokens per verification step (default: 4).")
-    ap.add_argument("--del-decoder-min-exit", type=int, default=4, metavar="L",
-                    help="Minimum exit layer for dynamic early-exit (default: 4).")
-    ap.add_argument("--del-decoder-max-exit", type=int, default=8, metavar="L",
-                    help="Maximum exit layer for dynamic early-exit (default: 8).")
-    ap.add_argument("--dfloat11", action="store_true", default=False,
-                    help="Enable DFloat11 block-float compression for model weights.")
-    ap.add_argument("--dfloat11-block-size", type=int, default=256, metavar="B",
-                    help="DFloat11 block size for entropy coding (default: 256).")
-    ap.add_argument("--rans-codec", action="store_true", default=False,
-                    help="Enable rANS entropy codec for KV/weight compression.")
-    ap.add_argument("--rans-codec-mbits", type=int, default=14, metavar="M",
-                    help="rANS codec precision in bits (default: 14).")
-    ap.add_argument("--qspec", action="store_true", default=False,
-                    help="Enable QSpecDecoder quantisation-aware speculative decoding.")
-    ap.add_argument("--qspec-gamma", type=int, default=4, metavar="G",
-                    help="QSpec draft tokens per step (default: 4).")
-    ap.add_argument("--qspec-draft-bits", type=int, default=4, metavar="B",
-                    help="Quantisation bits for QSpec draft activations (default: 4).")
-    ap.add_argument("--qspec-verify-bits", type=int, default=8, metavar="B",
-                    help="Quantisation bits for QSpec verify activations (default: 8).")
-    ap.add_argument("--quant-spec", action="store_true", default=False,
-                    help="Enable QuantSpecDecoder draft-quantised speculative decoding.")
-    ap.add_argument("--quant-spec-gamma", type=int, default=4, metavar="G",
-                    help="QuantSpec draft tokens per step (default: 4).")
-    ap.add_argument("--quant-spec-bits", type=int, default=4, metavar="B",
-                    help="QuantSpec draft quantisation bits (default: 4).")
-    ap.add_argument("--copy-spec", action="store_true", default=False,
-                    help="Enable CopySpecDrafter copy-based speculative decoding from history.")
-    ap.add_argument("--copy-spec-max-draft", type=int, default=8, metavar="K",
-                    help="CopySpec maximum draft length per step (default: 8).")
-    ap.add_argument("--copy-spec-history-len", type=int, default=2048, metavar="N",
-                    help="CopySpec token history window size (default: 2048).")
-    ap.add_argument("--squeeze-llm", action="store_true", default=False,
-                    help="Enable SqueezeLLM sparse + dense mixed-precision weight quantisation.")
-    ap.add_argument("--squeeze-llm-bits", type=int, default=4, metavar="B",
-                    help="SqueezeLLM quantisation bits (default: 4).")
-    ap.add_argument("--squeeze-llm-sparsity", type=float, default=0.45, metavar="S",
-                    help="SqueezeLLM sparsity ratio for sensitive weight extraction (default: 0.45).")
-    ap.add_argument("--hetero-vocab-sd", action="store_true", default=False,
-                    help="Enable HeteroVocabDecoder spec-decode with mismatched draft/target vocabularies.")
-    ap.add_argument("--hetero-vocab-gamma", type=int, default=4, metavar="G",
-                    help="HeteroVocab draft tokens per step (default: 4).")
-    ap.add_argument("--hetero-vocab-draft-size", type=int, default=32000, metavar="V",
-                    help="HeteroVocab draft model vocabulary size (default: 32000).")
-    ap.add_argument("--head-infer", action="store_true", default=False,
-                    help="Enable HeadAwareKVStore head-level inference KV separation.")
-    ap.add_argument("--head-infer-layers", type=int, default=32, metavar="N",
-                    help="Number of transformer layers for head-infer (default: 32).")
-    ap.add_argument("--head-infer-heads", type=int, default=32, metavar="H",
-                    help="Number of attention heads for head-infer (default: 32).")
-    ap.add_argument("--nf4-quant", action="store_true", default=False,
-                    help="Enable NF4 (Normal Float 4-bit) quantisation for weights.")
-    ap.add_argument("--spin-quant", action="store_true", default=False,
-                    help="Enable SpinQuant Hadamard rotation for quantisation-friendly weight layout.")
-    ap.add_argument("--life-model", action="store_true", default=False,
-                    help="Enable model lifecycle predictor for cache eviction guidance.")
     ap.add_argument(
         "--all-optimizations", action="store_true", default=False,
         help=(
@@ -2757,15 +2517,6 @@ Examples:
             "prompt_lookup", "seq_packing", "ada_serve", "conf_spec",
             "kv_share", "kv_slab", "paris_kv", "streaming_sink",
             "diff_kv", "small_kv", "lookahead", "spec_reason",
-            # Wave 13b
-            "duo_attention", "shadow_kv", "pq_cache", "spe_cache",
-            "duo_decoding", "knapspec", "token_merging",
-            "token_swift", "c2t", "clasp",
-            # Wave 14
-            "soup_experts", "vision_cache", "vector_index", "sub_spec",
-            "del_decoder", "dfloat11", "rans_codec", "qspec", "quant_spec",
-            "copy_spec", "squeeze_llm", "hetero_vocab_sd", "head_infer",
-            "nf4_quant", "spin_quant", "life_model",
         ]
         for _f in _bool_wave_flags:
             if not getattr(args, _f, False):
@@ -2907,7 +2658,6 @@ Examples:
                 window=args.kv_cache_window,
                 budget=args.kv_cache_budget,
                 svd_rank=getattr(args, "kv_cache_svd_rank", 0),
-                comm_vq_bits=getattr(args, "kv_commvq_bits", 0),
                 verbose=True,
             )
             _info("kv-cache", f"ready ({args.kv_cache_mode})")
@@ -3114,20 +2864,7 @@ Examples:
     global _yoco_config, _cla_config, _kvtuner_config, _robust_sched
     global _gemfilter_config, _svdq_config, _sparse_spec_config, _sparse_verify_config
     global _trail_config, _specontext_config, _forelen_config, _ipw_config
-    global _layer_skip_config, _long_spec_config, _fr_spec_config, _diffusion_draft_model
-    global _pm_kvq_scheduler, _mix_kvq_quantizer, _cocktail_kv_store
-    global _agile_io_manager, _milo_quantizer
-    global _block_expert_archive
-    global _commvq_codebook, _vptq_quantizer, _online_sd_updater, _rasd_batcher
-    global _dovetail_config, _pipo_scheduler, _disc_router, _mobile_moe_router
-    global _meta_reasoner
-    global _duo_attn_manager, _shadow_kv_cache, _pq_cache_index, _spe_cache_prefetcher
-    global _duo_decoding_decoder, _knapspec_selector, _token_merging_cfg
-    global _token_swift_decoder, _c2t_tree_builder, _clasp_decoder
-    global _soup_experts_mixer, _vision_prefix_cache, _vector_index
-    global _sub_spec_decoder, _del_decoder_inst, _dfloat11_cfg, _rans_codec_inst
-    global _qspec_decoder, _quant_spec_decoder, _copy_spec_drafter
-    global _squeeze_llm_quant, _hetero_vocab_decoder, _head_aware_kv_store
+    global _layer_skip_config, _long_spec_config, _fr_spec_config
 
     if getattr(args, "prompt_lookup", False):
         try:
@@ -3155,7 +2892,7 @@ Examples:
 
     if getattr(args, "ada_serve", False):
         try:
-            from squish.ada_serve import BUILT_IN_SLOS, AdaServeConfig, AdaServeScheduler
+            from squish.ada_serve import AdaServeConfig, AdaServeScheduler, BUILT_IN_SLOS
             _slo_name = getattr(args, "ada_serve_slo", "general")
             _ada_slo = BUILT_IN_SLOS.get(_slo_name, BUILT_IN_SLOS["general"])
             _ada_cfg = AdaServeConfig()
@@ -3179,7 +2916,7 @@ Examples:
 
     if getattr(args, "kv_share", False):
         try:
-            from squish.kvsharer import KVShareMap, KVSharerConfig
+            from squish.kvsharer import KVSharerConfig, KVShareMap
             _kvshr_cfg = KVSharerConfig(share_every_n_layers=getattr(args, "kv_share_every", 2))
             _kvsharer_map = KVShareMap(_kvshr_cfg)
             _info("kv-share", f"every={_kvshr_cfg.share_every_n_layers} layers")
@@ -3196,7 +2933,7 @@ Examples:
 
     if getattr(args, "paris_kv", False):
         try:
-            from squish.paris_kv import ParisKVCodebook, ParisKVConfig
+            from squish.paris_kv import ParisKVConfig, ParisKVCodebook
             _paris_cfg = ParisKVConfig(n_centroids=getattr(args, "paris_kv_centroids", 64))
             _paris_kv_codebook = ParisKVCodebook(_paris_cfg)
             _info("paris-kv", f"centroids={_paris_cfg.n_centroids}")
@@ -3223,7 +2960,7 @@ Examples:
 
     if getattr(args, "small_kv", False):
         try:
-            from squish.smallkv import SmallKVCache, SmallKVConfig
+            from squish.smallkv import SmallKVConfig, SmallKVCache
             _smallkv_cfg = SmallKVConfig()
             _smallkv_cache = SmallKVCache(_smallkv_cfg)
             _info("small-kv", f"budget={_smallkv_cfg.kv_budget_fraction}  recall_k={_smallkv_cfg.recall_top_k}")
@@ -3236,7 +2973,6 @@ Examples:
             _la_cfg = LookaheadConfig(lookahead_k=getattr(args, "lookahead_k", 4))
             # draft_fn is wired to the actual model at inference time; store config only
             _la_cfg._server_enabled = True  # marker checked during generation
-            _lookahead_engine = _la_cfg  # type: ignore[assignment]  # full engine per-request
             _info("lookahead", f"k={_la_cfg.lookahead_k}  family={_la_cfg.model_family}")
         except Exception as _e:
             _warn(f"[lookahead] Skipped: {_e}")
@@ -3246,7 +2982,6 @@ Examples:
             from squish.spec_reason import SpecReasonConfig
             _sr_cfg = SpecReasonConfig()
             _sr_cfg._server_enabled = True  # marker checked during generation
-            _spec_reason_orch = _sr_cfg  # type: ignore[assignment]  # full orch per-request
             _info("spec-reason", f"min_score={_sr_cfg.min_acceptance_score}  max_draft={_sr_cfg.max_draft_steps}")
         except Exception as _e:
             _warn(f"[spec-reason] Skipped: {_e}")
@@ -3278,7 +3013,7 @@ Examples:
 
     if getattr(args, "squeeze_attention", False):
         try:
-            from squish.squeeze_attention import LayerKVBudget, SqueezeConfig, SqueezeKVCache
+            from squish.squeeze_attention import SqueezeConfig, SqueezeKVCache, LayerKVBudget
             _sq_cfg = SqueezeConfig()
             _sq_budgets = [
                 LayerKVBudget(layer_idx=i, token_budget=_sq_cfg.total_kv_budget // _sq_cfg.n_layers)
@@ -3319,7 +3054,7 @@ Examples:
 
     if getattr(args, "robust_scheduler", False):
         try:
-            from squish.robust_scheduler import AMaxScheduler, RobustSchedulerConfig
+            from squish.robust_scheduler import RobustSchedulerConfig, AMaxScheduler
             _robust_sched = AMaxScheduler(RobustSchedulerConfig())
             _info("robust-scheduler", f"A-max scheduling enabled  (max_batch_tokens={_robust_sched.config.max_batch_tokens})")
         except Exception as _e:
@@ -3380,16 +3115,6 @@ Examples:
         except Exception as _e:
             _warn(f"[fr-spec] Skipped: {_e}")
 
-    if getattr(args, "diffusion_draft", ""):
-        try:
-            from squish.diffusion_draft import DiffusionDraftModel
-            _diffusion_draft_model = DiffusionDraftModel(
-                model_path=args.diffusion_draft,
-            )
-            _info("diffusion-draft", f"diffusion speculative model: {args.diffusion_draft}")
-        except Exception as _e:
-            _warn(f"[diffusion-draft] Skipped: {_e}")
-
     # ── Token-importance / adaptive-layer strategies ──────────────────────────
     if getattr(args, "trail", False):
         try:
@@ -3440,91 +3165,10 @@ Examples:
         try:
             from squish.lora_manager import LoRAManager
             _lora_mgr = LoRAManager()
-            _lora_mgr.load(args.lora_adapter)
-            _info("lora-adapter", f"{args.lora_adapter}")
+            _lora_mgr.load(getattr(args, "lora_adapter"))
+            _info("lora-adapter", f"{getattr(args, 'lora_adapter')}")
         except Exception as _e:
             _warn(f"[lora-adapter] Skipped: {_e}")
-
-    # ── Wave 12: Reasoning-aware KV quantisation ─────────────────────────────
-    if getattr(args, "pm_kvq", False):
-        try:
-            from squish.pm_kvq import PMKVQConfig, PMKVQScheduler
-            _pm_cfg = PMKVQConfig(
-                n_blocks=getattr(args, "pm_kvq_blocks", 32),
-            )
-            _pm_kvq_scheduler = PMKVQScheduler(_pm_cfg)
-            _info("pm-kvq", f"progressive KV quant  bits={_pm_cfg.min_bits_sensitive}→{_pm_cfg.min_bits}  "
-                  f"blocks={_pm_cfg.n_blocks}")
-        except Exception as _e:
-            _warn(f"[pm-kvq] Skipped: {_e}")
-
-    if getattr(args, "mix_kvq", False):
-        try:
-            from squish.mix_kvq import MixKVQConfig, MixKVQQuantizer
-            _mx_cfg = MixKVQConfig()
-            _mix_kvq_quantizer = MixKVQQuantizer(_mx_cfg)
-            _info("mix-kvq", f"query-aware mixed-precision KV  "
-                  f"fp16_ratio={_mx_cfg.fp16_channel_ratio}")
-        except Exception as _e:
-            _warn(f"[mix-kvq] Skipped: {_e}")
-
-    if getattr(args, "cocktail_kv", False):
-        try:
-            from squish.cocktail_kv import CocktailConfig, CocktailKVStore
-            _ck_cfg = CocktailConfig()
-            _cocktail_kv_store = CocktailKVStore(_ck_cfg)
-            _info("cocktail-kv", f"chunk-similarity adaptive KV  "
-                  f"chunk_size={_ck_cfg.chunk_size}  fp16_fraction={_ck_cfg.fp16_fraction}")
-        except Exception as _e:
-            _warn(f"[cocktail-kv] Skipped: {_e}")
-
-    if getattr(args, "agile_io", False):
-        try:
-            from squish.agile_io import AgileIOConfig, AgileIOManager
-            _aio_cfg = AgileIOConfig(
-                n_worker_threads=getattr(args, "agile_io_threads", 4),
-                cache_size_mb=getattr(args, "agile_io_cache_mb", 256),
-            )
-            _agile_io_manager = AgileIOManager(_aio_cfg)
-            _info("agile-io", f"async NVMe prefetch  threads={_aio_cfg.n_worker_threads}  "
-                  f"cache={_aio_cfg.cache_size_mb}MB")
-        except Exception as _e:
-            _warn(f"[agile-io] Skipped: {_e}")
-
-    if getattr(args, "milo", False):
-        try:
-            from squish.milo_quant import MiLoConfig, MiLoQuantizer
-            _ml_cfg = MiLoConfig(
-                target_bits=getattr(args, "milo_bits", 3),
-                max_rank=getattr(args, "milo_rank", 16),
-            )
-            _milo_quantizer = MiLoQuantizer(_ml_cfg)
-            _info("milo", f"INT{_ml_cfg.target_bits}+low-rank compensator  "
-                  f"max_rank={_ml_cfg.max_rank}  snr≥{_ml_cfg.snr_threshold_db}dB")
-        except Exception as _e:
-            _warn(f"[milo] Skipped: {_e}")
-
-    block_expert_dir = getattr(args, "block_expert", "")
-    if block_expert_dir:
-        try:
-            from squish.block_expert_archive import BlockExpertArchive, BlockExpertConfig
-            _be_path = Path(block_expert_dir).expanduser()
-            if _be_path.is_dir():
-                _block_expert_archive = BlockExpertArchive.load(_be_path)
-                _info("block-expert", f"archive loaded  "
-                      f"blocks={_block_expert_archive.stats.n_blocks}  "
-                      f"experts={_block_expert_archive.stats.n_experts_total}  "
-                      f"snr={_block_expert_archive.stats.avg_delta_snr_db:.1f}dB")
-            else:
-                _be_cfg = BlockExpertConfig(
-                    n_clusters=getattr(args, "block_expert_clusters", 4),
-                )
-                _block_expert_archive = BlockExpertArchive(_be_path, _be_cfg)
-                _be_path.mkdir(parents=True, exist_ok=True)
-                _block_expert_archive.save()
-                _info("block-expert", f"new archive created at {_be_path}")
-        except Exception as _e:
-            _warn(f"[block-expert] Skipped: {_e}")
 
     # ── Wave 13b: Ultra-Long Context + Adaptive Speculative Decoding ─────────
     if getattr(args, "duo_attention", False):
@@ -3651,75 +3295,7 @@ Examples:
         except Exception as _e:
             _warn(f"[c2t] Skipped: {_e}")
 
-    if getattr(args, "clasp", False):
-        try:
-            from squish.clasp import CLaSPConfig, CLaSPDecoder
-            _cl_cfg = CLaSPConfig(
-                num_layers=getattr(args, "clasp_layers", 32),
-                max_skip_layers=getattr(args, "clasp_max_skip", 8),
-                draft_gamma=getattr(args, "clasp_gamma", 4),
-            )
-            _clasp_decoder = CLaSPDecoder(_cl_cfg)
-            _info("clasp", f"in-context layer-skip adaptive spec-decode  "
-                  f"layers={_cl_cfg.num_layers}  max_skip={_cl_cfg.max_skip_layers}  "
-                  f"gamma={_cl_cfg.draft_gamma}")
-        except Exception as _e:
-            _warn(f"[clasp] Skipped: {_e}")
-
-    # ── Wave 14: Quantization + Vocabulary-Adaptive Spec-Decode + Expert Mixing ─
-
-    if getattr(args, "soup_experts", False):
-        try:
-            from squish.soup_experts import SoupOfExperts
-            _soup_experts_mixer = SoupOfExperts(
-                tolerance=getattr(args, "soup_experts_tolerance", 0.01),
-            )
-            _info("soup-experts", f"sparse LoRA-expert blending  "
-                  f"tolerance={_soup_experts_mixer.tolerance}")
-        except Exception as _e:
-            _warn(f"[soup-experts] Skipped: {_e}")
-
-    if getattr(args, "vision_cache", False):
-        try:
-            from squish.vision_cache import VisionPrefixCache
-            _vision_prefix_cache = VisionPrefixCache(
-                max_entries=getattr(args, "vision_cache_max_entries", 64),
-            )
-            _info("vision-cache", f"SHA-256 vision prefix dedup  "
-                  f"max_entries={_vision_prefix_cache.max_entries}")
-        except Exception as _e:
-            _warn(f"[vision-cache] Skipped: {_e}")
-
-    if getattr(args, "vector_index", False):
-        try:
-            from squish.vector_index import MRLIndex
-            _full_dim   = getattr(args, "vector_index_dim", 512)
-            _coarse_dim = getattr(args, "vector_index_coarse_dim", 64)
-            _vector_index = MRLIndex(full_dim=_full_dim, coarse_dim=_coarse_dim)
-            _info("vector-index", f"Matryoshka repr learning + HNSW ANN  "
-                  f"full_dim={_full_dim}  coarse_dim={_coarse_dim}")
-        except Exception as _e:
-            _warn(f"[vector-index] Skipped: {_e}")
-
-    if getattr(args, "del_decoder", False):
-        try:
-            from squish.del_decoder import DELConfig, DELDecoder
-            _del_cfg = DELConfig(
-                num_layers=32,
-                min_exit_layer=getattr(args, "del_decoder_min_exit", 4),
-                max_exit_layer=getattr(args, "del_decoder_max_exit", 8),
-                gamma=getattr(args, "del_decoder_gamma", 4),
-            )
-            _del_decoder_inst = DELDecoder(
-                forward_fn=lambda toks, layer=None: __import__("numpy").zeros((len(toks), 1)),
-                config=_del_cfg,
-            )
-            _info("del-decoder", f"dynamic early-layer exit spec-decode  "
-                  f"exit=[{_del_cfg.min_exit_layer},{_del_cfg.max_exit_layer}]  "
-                  f"gamma={_del_cfg.gamma}")
-        except Exception as _e:
-            _warn(f"[del-decoder] Skipped: {_e}")
-
+    # ── Wave 14: Quantization + Vocabulary-Adaptive Spec-Decode ──────────────
     if getattr(args, "dfloat11", False):
         try:
             from squish.dfloat11 import DFloat11Config
@@ -3825,27 +3401,6 @@ Examples:
         except Exception as _e:
             _warn(f"[squeeze-llm] Skipped: {_e}")
 
-    if getattr(args, "hetero_vocab_sd", False):
-        try:
-            from squish.hetero_vocab_sd import (
-                HeteroVocabConfig,
-                HeteroVocabDecoder,
-                HeteroVocabDrafter,
-            )
-            _hv_cfg = HeteroVocabConfig(
-                gamma=getattr(args, "hetero_vocab_gamma", 4),
-                draft_vocab_size=getattr(args, "hetero_vocab_draft_size", 32000),
-            )
-            _hetero_vocab_decoder = HeteroVocabDecoder(
-                drafter=HeteroVocabDrafter(config=_hv_cfg),
-                target_fn=lambda toks: __import__("numpy").zeros((len(toks), 1)),
-                config=_hv_cfg,
-            )
-            _info("hetero-vocab-sd", f"mismatched-vocab spec-decode  "
-                  f"gamma={_hv_cfg.gamma}  draft_vocab={_hv_cfg.draft_vocab_size}")
-        except Exception as _e:
-            _warn(f"[hetero-vocab-sd] Skipped: {_e}")
-
     if getattr(args, "head_infer", False):
         try:
             from squish.head_infer import HeadAwareKVStore, HeadInferConfig
@@ -3873,13 +3428,6 @@ Examples:
             _info("spin-quant", "SpinQuant Hadamard rotation for quantisation-friendly layout")
         except Exception as _e:
             _warn(f"[spin-quant] Skipped: {_e}")
-
-    if getattr(args, "life_model", False):
-        try:
-            from squish.life_model import predict  # noqa: F401
-            _info("life-model", "model lifecycle predictor for cache eviction guidance")
-        except Exception as _e:
-            _warn(f"[life-model] Skipped: {_e}")
 
     print()
     _section("")

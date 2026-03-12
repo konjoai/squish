@@ -9,20 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from squish.scheduler import BatchScheduler
-
-try:
-    import mlx.core  # noqa: F401
-    _HAS_MLX = True
-except Exception:
-    _HAS_MLX = False
-
-_skip_no_mlx = pytest.mark.skipif(
-    not _HAS_MLX,
-    reason="requires mlx (Apple Silicon only) — worker thread needs libmlx.so",
-)
 
 
 def _make_scheduler(**kwargs) -> BatchScheduler:
@@ -78,7 +65,6 @@ class TestBatchSchedulerLifecycle:
         sched.start()
         assert sched.is_running() is True
         sched.stop(timeout=1.0)
-    test_is_running_true_after_start = _skip_no_mlx(test_is_running_true_after_start)
 
     def test_start_twice_is_idempotent(self):
         sched = _make_scheduler()
@@ -86,7 +72,6 @@ class TestBatchSchedulerLifecycle:
         sched.start()  # second call — thread already alive
         assert sched.is_running() is True
         sched.stop(timeout=1.0)
-    test_start_twice_is_idempotent = _skip_no_mlx(test_start_twice_is_idempotent)
 
     def test_stop_sets_not_running(self):
         sched = _make_scheduler()
@@ -121,7 +106,6 @@ class TestBatchSchedulerStats:
         s = sched.stats()
         assert s["running"] is True
         sched.stop(timeout=1.0)
-    test_stats_running_true_after_start = _skip_no_mlx(test_stats_running_true_after_start)
 
     def test_stats_pending_queue_zero_initially(self):
         sched = _make_scheduler()
