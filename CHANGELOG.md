@@ -5,6 +5,60 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [6.0.0] — 2026-03-12
+
+### Added — Wave 23: Multi-Modal & Long Context Intelligence (14 modules)
+
+- **VisionKVFuse** (`squish/vision_kv_fuse.py`) — Fused vision+text KV cache with independent modality eviction; 1.43 µs append, 1.37 µs get
+- **ImageTokenPrune** (`squish/image_token_prune.py`) — Attention entropy image token pruning; 50–70% image token reduction; 1070 µs for h=8, n=196
+- **RAGPrefetch** (`squish/rag_prefetch.py`) — Predictive doc KV prefetch via access-count × recency scoring; reduces cold TTFT on repeated RAG docs
+- **CoTCompress** (`squish/cot_compress.py`) — CoT trace pruning via token saliency scoring; 30–50% reasoning token reduction; 75.8 µs for 256-token traces
+- **MultiModalBatch** (`squish/multimodal_batch.py`) — Shape-aware heterogeneous text+vision batcher; 0.67 µs add, 0.28 µs next_batch
+- **ContextualRerank** (`squish/contextual_rerank.py`) — Context-aware KV token importance re-ranking via query-key dot product; 87.9 µs for h=8, seq=16
+- **CrossModalAttn** (`squish/cross_modal_attn.py`) — Efficient cross-attention between text queries and vision keys/values; (n_heads, seq, head_dim) convention; 455 µs forward
+- **HierarchicalKV** (`squish/hierarchical_kv.py`) — Hot/warm/cold KV tier management with transparent O(1) promotion; 1.74 µs put, 0.72 µs get hit
+- **StreamRAG** (`squish/stream_rag.py`) — Streaming mid-generation document injection; zero-restart RAG updates; 3.47 µs inject, 21.4 µs retrieve
+- **CrossDocAttn** (`squish/cross_doc_attn.py`) — Chunked cross-document attention; multi-document QA without full concatenation; 548 µs for 4 docs
+- **VideoFramePrune** (`squish/video_frame_prune.py`) — Temporal frame token pruning for video-LMs; 60–80% video token reduction; 32.2 µs temporal, 28.1 µs spatial
+- **EmbeddingGate** (`squish/embedding_gate.py`) — Gated modality-conditional embedding router; sigmoid bypass; 37.3 µs for 32-token batches
+- **LongContextChunk** (`squish/long_context_chunk.py`) — Semantic-boundary chunking for 1M+ token contexts; entropy boundary detection; 207 µs for 2048 tokens
+- **ModalityRouter** (`squish/modality_router.py`) — Per-modality SLO request dispatcher; text/vision/audio priority lanes; 0.65 µs route + complete
+
+### Added — Wave 24: Quantisation Evolution & Model Surgery (14 modules)
+
+- **TernaryQuant** (`squish/ternary_quant.py`) — BitNet-style ternary {−1, 0, +1} weights; 1.58-bit effective storage; 719 µs quantize 256×256
+- **BinaryAttn** (`squish/binary_attn.py`) — Sign-binarised attention approximation; sign(Q)·sign(K)ᵀ/√d; 224 µs for h=8, seq=64
+- **StructuredPrune** (`squish/structured_prune.py`) — 2:4 N:M magnitude pruning; 50% weight sparsity; 2× hardware throughput on sparse Tensor Cores; 1255 µs 512×512
+- **LayerFusion** (`squish/layer_fuse.py`) — Adjacent transformer layer weight fusion via cosine similarity gating; 20.1 µs similarity, 109 µs fuse 512×512
+- **WeightSharing** (`squish/weight_sharing.py`) — Cross-layer weight tying with low-rank delta residuals (W_eff = W_base + U·Vᵀ); 0.25× memory ratio; 25.3 µs get
+- **QuantCalib** (`squish/quant_calib.py`) — Unified MinMax/Percentile/MSE/GPTQ calibration pipeline; 606 µs minmax calibration
+- **SparseWeight** (`squish/sparse_weight.py`) — CSR-format 2:4 pruned weight storage; 1.33× compression ratio; 1316 µs compress, 152 µs decompress
+- **DeltaCompress** (`squish/delta_compress.py`) — Rank-k SVD delta compression for fine-tuned weights; 7.98× compression ratio at rank=16; 9087 µs compress, 23.8 µs decompress
+- **ModelSurgery** (`squish/model_surgery.py`) — In-place layer removal + head pruning; plan → estimate → apply; 0.59 µs plan, 0.45 µs estimate_reduction
+- **ZeroQuantV2** (`squish/zero_quant_v2.py`) — Groupwise quantisation with FP16 residual for outliers; W8A8 + outlier preservation; 233 µs quantize, 66.0 µs dequantize
+- **GPTQLayer** (`squish/gptq_layer.py`) — Hessian-weighted second-order rounding; column-wise Cholesky OBQ; 1053 µs calibrate 64×64 4-bit
+- **SparseMoE** (`squish/sparse_moe.py`) — Top-k sparse expert routing with load-balance auxiliary loss; 58.3 µs route, returns (indices, weights, aux_loss)
+- **AWQv2** (`squish/awq_v2.py`) — Activation-aware scale+shift per-channel quantisation; analytical solve, no grid search; 73402 µs calibrate 128×256, 64.4 µs quantize
+- **IterPrune** (`squish/iter_prune.py`) — Iterative magnitude pruning with configurable sparsity ramp schedule; 0% → 70% over n_steps; 956 µs prune_step
+
+### Tests
+
+- `tests/test_wave23_server_wiring.py` — 56 tests, 56 passing
+- `tests/test_wave24_server_wiring.py` — 56 tests, 56 passing
+- **Total tests: 4 764** (56 Wave 23 + 56 Wave 24 new; 0 failures)
+
+### Benchmarks
+
+- `dev/benchmarks/bench_wave23_24.py` — micro-benchmark suite for all 28 modules
+- `dev/results/wave23_24_bench.json` — machine-readable results (28/28 modules)
+
+### Demo
+
+- `dev/demos/record_v8_demo.py` — v8 demo GIF generator (10 scenes, Wave 23+24 benchmarks)
+- `dev/demos/squish-v8-demo.gif` — 1624 KB animated demo
+
+---
+
 ## [5.0.0] — 2026-03-12
 
 ### Added — Wave 21: Advanced Memory & Decode (14 modules)

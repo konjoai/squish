@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-12 (v7 planning)
+> Last updated: 2026-03-12 (v8 planning)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -17,6 +17,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v5** | 17–18 | Attention Architecture · Memory Management · Adaptive Compute · Model Intelligence |
 | **v6** | 19–20 | Next-Gen Precision · Serving Infrastructure · Intelligence |
 | **v7** | 21–22 | Advanced Decode · Production Serving · Observability |
+| **v8** | 23–24 | Multi-Modal & Long Context · Quantisation Evolution & Model Surgery |
 
 ---
 
@@ -344,3 +345,85 @@ cost-aware serving.
 | Total modules after v7 | **166** |
 | Expected new tests | **~112** (4 per module × 28) |
 | Expected total tests after v7 | **~4 390** |
+
+---
+
+## ✅ v8 — Waves 23+24 — Released 2026-03-12
+
+Theme: **Multi-Modal & Long Context · Quantisation Evolution & Model Surgery**
+
+28 new modules across two waves.
+
+---
+
+### Wave 23 — Multi-Modal & Long Context Intelligence (14 modules)
+
+Focus: Vision-language model efficiency, RAG-aware serving patterns, reasoning trace
+compression, cross-modal attention, hierarchical KV management, and 1M+ token context
+indexing.
+
+| Module | File | Key Classes | Flag | Key Result |
+|--------|------|-------------|------|-----------|\
+| **VisionKVFuse** | `vision_kv_fuse.py` | `VisionKVFuseCache`, `ModalityConfig` | `--vision-kv-fuse` | Fused vision+text KV with separate modality eviction → **modality-aware KV compression** |
+| **ImageTokenPrune** | `image_token_prune.py` | `ImageTokenPruner`, `PruneConfig` | `--image-token-prune` | Attention entropy image token pruning → **50–70% image token reduction** |
+| **RAGPrefetch** | `rag_prefetch.py` | `RAGPrefetcher`, `RAGConfig` | `--rag-prefetch` | Predictive doc KV prefetch→ **cold TTFT↓ on repeated RAG docs** |
+| **CoTCompress** | `cot_compress.py` | `CoTCompressor`, `CoTConfig` | `--cot-compress` | CoT trace pruning via saliency → **30–50% reasoning token reduction** |
+| **MultiModalBatch** | `multimodal_batch.py` | `MultiModalBatcher`, `BatchSlot` | `--multimodal-batch` | Shape-aware heterogeneous text+vision batcher → **minimise padding waste** |
+| **ContextualRerank** | `contextual_rerank.py` | `ContextualReranker`, `RerankConfig` | `--ctx-rerank` | Context-aware KV token importance re-ranking → **preserves top-k salient positions** |
+| **CrossModalAttn** | `cross_modal_attn.py` | `CrossModalAttention`, `CrossModalConfig` | `--cross-modal-attn` | Efficient cross-attention between text + vision features → **modality fusion** |
+| **HierarchicalKV** | `hierarchical_kv.py` | `HierarchicalKVStore`, `TierConfig` | `--hierarchical-kv` | Hot/warm/cold KV tier management → **transparent KV tiering with O(1) promotion** |
+| **StreamRAG** | `stream_rag.py` | `StreamRAGInjector`, `StreamRAGConfig` | `--stream-rag` | Streaming mid-generation document injection → **zero-restart RAG updates** |
+| **CrossDocAttn** | `cross_doc_attn.py` | `CrossDocAttention`, `CrossDocConfig` | `--cross-doc-attn` | Chunked cross-document attention → **multi-document QA without full concatenation** |
+| **VideoFramePrune** | `video_frame_prune.py` | `VideoFramePruner`, `FrameConfig` | `--video-frame-prune` | Temporal frame token pruning for video-LMs → **60–80% video token reduction** |
+| **EmbeddingGate** | `embedding_gate.py` | `EmbeddingGate`, `GateConfig` | `--embedding-gate` | Gated modality-conditional embedding router → **zero-cost modality bypass** |
+| **LongContextChunk** | `long_context_chunk.py` | `LongContextChunker`, `ChunkConfig` | `--long-context-chunk` | Semantic-boundary chunking for 1M+ token contexts → **boundary-aware chunk splits** |
+| **ModalityRouter** | `modality_router.py` | `ModalityRouter`, `ModalityPolicy` | `--modality-router` | Per-modality SLO request dispatcher → **text vs vision vs audio routing** |
+
+### Wave 24 — Quantisation Evolution & Model Surgery (14 modules)
+
+Focus: Ternary and binary quantisation, N:M structured sparsity, cross-layer weight
+sharing, second-order GPTQ-style calibration, sparse MoE routing, iterative pruning,
+and surgical model architecture patching.
+
+| Module | File | Key Classes | Flag | Key Result |
+|--------|------|-------------|------|-----------|\
+| **TernaryQuant** | `ternary_quant.py` | `TernaryQuantizer`, `TernaryConfig` | `--ternary-quant` | BitNet-style ternary {−1, 0, +1} weights → **1.58-bit effective storage** |
+| **BinaryAttn** | `binary_attn.py` | `BinaryAttention`, `BinaryConfig` | `--binary-attn` | Sign-binarised attention approximation → **ultra-low attention memory** |
+| **StructuredPrune** | `structured_prune.py` | `StructuredPruner`, `PruneConfig` | `--structured-prune` | 2:4 N:M magnitude pruning → **50% weight sparsity at 2× hardware throughput** |
+| **LayerFusion** | `layer_fuse.py` | `LayerFuser`, `FusionConfig` | `--layer-fuse` | Adjacent transformer layer weight fusion → **reduced bandwidth on similar layers** |
+| **WeightSharing** | `weight_sharing.py` | `WeightSharer`, `SharingConfig` | `--weight-share` | Cross-layer weight tying with delta residuals → **memory ↓ at iso-quality** |
+| **QuantCalib** | `quant_calib.py` | `QuantCalibrator`, `CalibConfig` | `--quant-calib` | Unified MinMax/Percentile/MSE/GPTQ calibration pipeline → **optimal scale per method** |
+| **SparseWeight** | `sparse_weight.py` | `SparseWeightStore`, `SparsityConfig` | `--sparse-weight` | CSR-format 2:4 pruned weight storage → **2× memory vs dense at 50% sparsity** |
+| **DeltaCompress** | `delta_compress.py` | `DeltaCompressor`, `DeltaConfig` | `--delta-compress` | Rank-k SVD delta compression for fine-tuned weights → **fine-tune deltas at 10–50× reduction** |
+| **ModelSurgery** | `model_surgery.py` | `ModelSurgeon`, `SurgeryPlan` | `--model-surgery` | In-place layer removal + head pruning → **architecture patching without retraining** |
+| **ZeroQuantV2** | `zero_quant_v2.py` | `ZeroQuantV2`, `ZQConfig` | `--zero-quant-v2` | Groupwise quantisation with FP16 residual for outliers → **W8A8 with outlier preservation** |
+| **GPTQLayer** | `gptq_layer.py` | `GPTQCalibrator`, `GPTQConfig` | `--gptq-layer` | Hessian-weighted second-order rounding → **group-wise optimal quant error** |
+| **SparseMoE** | `sparse_moe.py` | `SparseMoERouter`, `MoEConfig` | `--sparse-moe` | Top-k sparse expert routing with load-balance loss → **efficient MoE inference** |
+| **AWQv2** | `awq_v2.py` | `AWQv2Calibrator`, `AWQv2Config` | `--awq-v2` | Activation-aware scale+shift per-channel quant → **AWQ without grid search** |
+| **IterPrune** | `iter_prune.py` | `IterativePruner`, `PruneSchedule` | `--iter-prune` | Iterative magnitude pruning with sparsity ramp schedule → **gradual 0→70% sparsity** |
+
+### v8 Deliverables checklist
+
+- [x] All 28 modules implemented in `squish/`
+- [x] `tests/test_wave23_server_wiring.py` — import + instantiation tests for 14 modules
+- [x] `tests/test_wave24_server_wiring.py` — import + instantiation tests for 14 modules
+- [x] `dev/benchmarks/bench_wave23_24.py` — micro-benchmark suite
+- [x] `dev/results/wave23_24_bench.json` — benchmark results
+- [x] `docs/benchmark_wave23_24.md` — human-readable results table
+- [x] `dev/demos/record_v8_demo.py` — v8 demo GIF generator
+- [x] `dev/demos/squish-v8-demo.gif` — demo GIF rendered
+- [x] README.md — v8 module sections, Wave 23+24 tables, CLI examples
+- [x] CHANGELOG.md — `[6.0.0]` entry
+- [x] PLAN.md updated to mark v8 complete
+
+### v8 Module Count Summary
+
+| Scope | Count |
+|-------|------:|
+| Wave 23 (Multi-Modal + Long Context Intelligence) | 14 |
+| Wave 24 (Quantisation Evolution + Model Surgery) | 14 |
+| Total new v8 modules | **28** |
+| Total modules after v8 | **194** |
+| Expected new tests | **~112** (4 per module × 28) |
+| Expected total tests after v8 | **~4 502** |
+

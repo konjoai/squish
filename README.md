@@ -25,6 +25,16 @@
 
 ![](dev/demos/squish-demo.gif)
 
+### v8 — Multi-Modal & Long Context · Quantisation Evolution & Model Surgery
+
+![](dev/demos/squish-v8-demo.gif)
+
+> v8 adds 28 new modules across Wave 23 and Wave 24.
+> Wave 23 (Multi-Modal & Long Context Intelligence): VisionKVFuse, ImageTokenPrune, RAGPrefetch, CoTCompress, MultiModalBatch, ContextualRerank, CrossModalAttn, HierarchicalKV, StreamRAG, CrossDocAttn, VideoFramePrune, EmbeddingGate, LongContextChunk, ModalityRouter.
+> Wave 24 (Quantisation Evolution & Model Surgery): TernaryQuant, BinaryAttn, StructuredPrune, LayerFusion, WeightSharing, QuantCalib, SparseWeight, DeltaCompress, ModelSurgery, ZeroQuantV2, GPTQLayer, SparseMoE, AWQv2, IterPrune.
+> 50–70% image token pruning · 60–80% video token pruning · 30–50% CoT reduction · 1.58-bit ternary weights · 2:4 structured sparsity · 7.98× SVD delta compression.
+> See [`dev/results/wave23_24_bench.json`](dev/results/wave23_24_bench.json) for full numbers.
+
 ### v7 — Advanced Decode · Production Serving · Observability
 
 ![](dev/demos/squish-v7-demo.gif)
