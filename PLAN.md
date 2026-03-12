@@ -570,3 +570,147 @@ Theme: **GitHub release, community templates, benchmark refresh, bench_eoe harde
 - [ ] Push pre-squished weights to HF Hub via `dev/publish_hf.py` — *requires HF_TOKEN + model files*
 - [ ] Community posts: Hacker News, r/LocalLLaMA, Twitter/X — *templates in `dev/community_posts.md`*
 - [ ] arXiv submission — refine `docs/paper.md` into LaTeX, fill real numbers from Phase 4, submit
+
+---
+
+## Phase 5 — Pre-Launch Blockers & Performance Hardening
+
+> Last updated: 2026-03-12
+> **These must be resolved before Phase 4 hardware measurements are done and before any public post goes out.**
+
+---
+
+### 5A — Critical Bug Fixes (block everything else)
+
+#### Bug 1: Server streaming is broken — TTFT equals total generation time
+
+**Evidence**: `dev/results/eoe_bench.json` note field states *"server currently sends tokens in trailing chunks (ttft_ms~=total_s×1000)"*. Measured TTFT is 48,064 ms = the total generation time for 201 tokens. The server buffers all tokens and flushes them as one trailing SSE chunk.
+
+**Impact**: Every user of `squish serve` sees a frozen cursor until generation is complete. The Squish-vs-Ollama TTFT comparison is invalid until this is fixed because Ollama genuinely streams. The `bench_eoe.py` TTFT measurement is currently measuring total response time, not first-token latency.
+
+**Fix**: Audit `server.py` `_generate_tokens()` and the SSE streaming path. Ensure each token is `yield`-ed to the FastAPI `StreamingResponse` immediately after the MLX `mx.eval()` call, not after the generation loop completes. Verify with `curl -N` that chunks arrive incrementally.
+
+**Files**: `squish/server.py` — `_stream_chat_response()`, `_generate_tokens()`, and the `StreamingResponse` wrapper.
+
+- [ ] Fix token streaming so each token is yielded immediately after generation
+- [ ] Verify with `curl -N http://localhost:11434/v1/chat/completions -d '...'` that chunks arrive one-by-one
+- [ ] Re-run `bench_eoe.py` and confirm `ttft_ms << total_s` in the JSON output
+
+#### Bug 2: `eval_output/eval_report.md` shows impossible accuracy numbers
+
+**Evidence**: Compressed Qwen2.5-1.5B shows ARC-Challenge **+14.1pp**, HellaSwag **+15.2pp**, Winogrande **+12.6pp** vs reference. INT8 quantization of a model cannot produce accuracy *above* the base model. This is a measurement artifact — most likely different n-shot settings, a wrong reference model path, or mismatched task splits between the two eval runs.
+
+**Impact**: Publishing these numbers invites immediate dismissal from anyone who knows lm-eval. The RESULTS.md claim of "≤2% accuracy delta" is defensible; the +14% delta is not.
+
+**Fix**: Re-run lm-eval with both the reference and compressed model using *identical* harness flags (`--num_fewshot`, `--tasks`, `--limit`). Record the commands used in `eval_output/eval_meta.json`. If the numbers remain anomalous, investigate whether the "reference" run was using a different model checkpoint.
+
+- [ ] Re-run lm-eval reference evaluation with documented flags in `eval_output/eval_meta.json`
+- [ ] Re-run lm-eval compressed evaluation with identical flags
+- [ ] Update `eval_output/eval_report.md` and `docs/RESULTS.md` with corrected numbers
+- [ ] Confirm delta is ≤ ±3pp across all tasks (suspicious if compressed beats reference)
+
+#### Bug 3: `squish/__init__.py` — version mismatch and duplicate imports
+
+**Evidence**:
+- Line 729: `__version__ = "1.0.0"` — should be `"9.0.0"` to match `pyproject.toml`
+- At least 15 modules are imported twice: `dfloat11` (lines 39, 140), `pipo` (86, 211), `shadow_kv` (104, 235), `seq_packing` (228, 441, 711), `streaming_sink` (277, 720), `sub_spec` (481, 325), `long_spec` (193, 404), `mirror_sd` (202, 412), `qspec` (220, 422), `token_swift` (291, 497), `trail` (300, 506), `specontext` (260, 465), `sparse_spec` (243, 448), `sparse_verify` (252, 457), `dovetail` (150, 334), `duo_decoding` (158, 342), `hetero_vocab_sd` (175, 369), `ipw` (185, 378), `forelen` (168, 353)
+
+**Impact**: Inflated import time; `squish.__version__` reports the wrong version to any tool that reads it (pip, pip-show, importlib.metadata).
+
+**Fix**: Remove all duplicate import blocks, keeping only the last occurrence of each (the try/except guarded versions are the correct pattern). Update `__version__` to `"9.0.0"`. Add a CI test: `assert squish.__version__ == importlib.metadata.version("squish")`.
+
+- [ ] Deduplicate all repeat imports in `squish/__init__.py`
+- [ ] Fix `__version__` to `"9.0.0"`
+- [ ] Add version consistency test in `tests/test_version.py`
+
+---
+
+### 5B — Load-Time Optimizations
+
+#### Opt 1: Lazy imports for wave modules in `__init__.py`
+
+`import squish` currently eagerly imports 100+ modules including `TensorParallel`, `VisionKVFuse`, `VideoFramePrune`, etc. A user running `squish --help` or `squish doctor` pays this cost. Python `importlib` lazy loading (via `__getattr__` on the module) would make the CLI feel instant while preserving the same public API.
+
+- [ ] Replace direct wave-module imports in `__init__.py` with `__getattr__`-based lazy loading
+- [ ] Measure `python -c "import squish"` time before and after; target < 50 ms
+- [ ] Ensure existing tests still pass (they import from `squish` directly)
+
+#### Opt 2: Metal JIT warmup integrated into server startup
+
+`dev/benchmarks/bench_eoe.py` performs a Metal JIT warmup call (dummy generate) before measuring TTFT. This warm-up is only present in the benchmark helper, not in `squish serve`. Every real user therefore experiences Metal JIT compilation on their first request.
+
+- [ ] Add `--warmup` flag to `squish serve` (or enable by default, configurable via `--no-warmup`)
+- [ ] On model load, run a single short generation through the model with `max_tokens=1` to trigger Metal kernel compilation
+- [ ] Log "Metal kernels warmed. Ready for requests." after warmup completes
+
+#### Opt 3: Manifest-driven batched file open in npy-dir loader
+
+The npy-dir loader in `compressed_loader.py` opens each `.npy` file individually in the tensor loop — O(n_tensors) sequential syscalls. For a 7B model (~500 tensors), this adds 10–50 ms of pure filesystem overhead on cold load.
+
+- [ ] Pre-read `manifest.json`, sort tensors by anticipated load order (attention weights first, then MLP, then embeddings)
+- [ ] Use `os.scandir` to collect all file stats in one pass before opening any
+- [ ] Measure load time improvement on a real 7B model
+
+#### Opt 4: Rust build with `target-cpu=native` for Apple Silicon
+
+The `squish_quant_rs` crate has a `simd-neon` feature flag but no explicit `RUSTFLAGS` forcing the compiler to use all available Apple Silicon NEON instructions. Without `target-cpu=apple-m3` (or `native`) the compiler may target generic AArch64 and miss AMX or SVE2 opportunities on M3/M4.
+
+- [ ] Add `.cargo/config.toml` with `[profile.release] rustflags = ["-C", "target-cpu=native"]`
+- [ ] Re-benchmark `squish_quant.quantize_int8_f32` on a 4096×4096 matrix before and after
+- [ ] Verify the `simd-neon` feature is explicitly listed in the maturin build matrix in `pyproject.toml`
+
+---
+
+### 5C — Memory & Inference Optimizations
+
+#### Opt 5: Scale array quantization in npy-dir (3–5% disk reduction)
+
+INT4 quantization stores `float32` scale arrays alongside nibble-packed weights. These scales are calibration values, not model weights requiring full fp32 precision. Converting them to `bfloat16` at save time and restoring to fp32 at load time would reduce total disk usage 3–5% for INT4 models with no accuracy impact.
+
+- [ ] Modify `squish_quant_rs/src/lib.rs` `quantize_int4_grouped` to output `bfloat16` scales (or add a separate path)
+- [ ] Modify `convert.py` to use bf16 scales when `--int4` is active
+- [ ] Update `compressed_loader.py` to upcast bf16 scales to fp32 before dequantization
+- [ ] Add unit tests and verify round-trip dequantization error is unchanged
+
+#### Opt 6: Configurable zstd compression level in `squish compress`
+
+`entropy.py` uses zstd level 3 by default. For models on NVMe where decompression speed matters more than compression ratio, level 1 achieves ~80% of level 3's compression at 3× faster decompression. For archival/HF upload, level 15 compresses 15% more. Exposing `--compress-level` gives users control.
+
+- [ ] Add `--compress-level INT` flag to `squish compress` CLI (default: 3, range: 1–19)
+- [ ] Pass level through to `compress_npy_dir()` in `entropy.py`
+- [ ] Document fast-decompression recommendation in `squish compress --help`
+
+#### Opt 7: Unified KV budget controller
+
+`--squeeze-attn` (`SqueezeKVCache`) and `--small-kv` (`SmallKVCache`) both allocate KV budgets independently. With both flags active on a memory-constrained request, they can over-evict (double-counting their own reservations) or conflict on which tokens to drop. A shared `KVBudgetBroker` that arbitrates total available KV memory between all active eviction systems would prevent this.
+
+- [ ] Audit which KV cache classes register against a global budget tracker (if any)
+- [ ] Identify all budget-allocating modules: `SqueezeKVCache`, `SmallKVCache`, `YOCO`, `DiffKV`, `KVTuner`, `KVSharer`, `AdaptiveBudget`
+- [ ] Design a `KVBudgetBroker` singleton in `kv_cache.py` that each system registers with at startup
+- [ ] Write unit tests covering the case where three budget systems are simultaneously active
+
+---
+
+### 5D — Phase 4 Hardware Work (after Bugs 1–3 are fixed)
+
+These are the original Phase 4 items from the plan. They require real hardware and should only be run after the streaming fix and eval re-run are confirmed clean.
+
+| Task | Prerequisite | Notes |
+|------|-------------|-------|
+| Run bench_eoe.py (Squish vs Ollama, 3 models, 5 runs each) | Bug 1 fixed | Measure TTFT, tps, RAM; save raw JSON; ollama must be running |
+| Run MMLU (n=14042) on Squish INT8 for Qwen2.5-1.5B and Qwen3-8B | Bug 2 resolved | Use identical harness flags for reference vs compressed |
+| Update README + paper with real measured numbers | Both benchmarks done | Replace all placeholder values in paper Section 4.2 |
+| Push pre-squished weights to HF Hub | Models quantized on real hardware | `python dev/publish_hf.py --model-dir ... --repo squish-community/...` |
+| Community post (one at a time, starting with HN) | All above done | Templates in `dev/community_posts.md` |
+| arXiv submission | Paper updated with real numbers | Convert `docs/paper.md` to LaTeX; use researcher friend for endorsement |
+
+- [ ] Fix streaming (Bug 1) and verify
+- [ ] Re-run lm-eval (Bug 2) and verify
+- [ ] Fix `__init__.py` (Bug 3)
+- [ ] Run bench_eoe.py with Ollama running; export raw JSON
+- [ ] Run MMLU evaluation
+- [ ] Update README + paper numbers
+- [ ] Push HF weights
+- [ ] Post to Hacker News first (quietest audience, most technical)
+- [ ] Post to r/LocalLLaMA after HN feedback is addressed
+- [ ] arXiv submit
