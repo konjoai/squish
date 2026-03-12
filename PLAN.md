@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-12 (v9 complete + pre-launch hardening)
+> Last updated: 2026-03-12 (v9 complete + pre-launch hardening phase 1+2)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -532,3 +532,25 @@ Theme: **Credibility, correctness, and real-hardware accountability**
 - `bench_eoe.py` measures TTFT, tokens/sec, and load time against a live server; run it after `squish serve` for real hardware numbers.
 - Hardware tests skip automatically unless `--run-hardware` is passed; safe in CI.
 - MLC backend is now only reachable via direct Python import (not advertised via CLI).
+
+---
+
+## ✅ Pre-Launch Hardening Phase 2 — 2026-03-12
+
+Theme: **Complete documentation, HuggingFace distribution, and arXiv paper**
+
+| Task | Status | File(s) changed |
+|------|--------|-----------------|
+| Wave 23+24 benchmark docs | ✅ done | `docs/benchmark_wave23_24.md` |
+| Wave 25+26 benchmark docs | ✅ done | `docs/benchmark_wave25_26.md` |
+| HuggingFace upload script | ✅ done | `dev/publish_hf.py` |
+| arXiv paper draft | ✅ done | `docs/paper.md` |
+
+### Remaining (Phase 3+4)
+
+- [ ] Run `bench_eoe.py` on real hardware; fill actual TTFT/tok-s numbers into README + paper
+- [ ] Run MMLU on Squish INT8 (n=14042); add to RESULTS.md + paper Section 4.2
+- [ ] Push pre-squished weights to HF Hub: `dev/publish_hf.py --repo squish-community/...`
+- [ ] GitHub release — tag v9.0.0, write release notes from CHANGELOG
+- [ ] Community: post to Hacker News, r/LocalLLaMA, Twitter/X
+- [ ] arXiv submission — refine paper.md into LaTeX, fill in citations, submit
