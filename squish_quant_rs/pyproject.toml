@@ -10,5 +10,8 @@ description     = "High-throughput INT8 quantizer for Squish LLM compression"
 readme          = "README.md"
 
 [tool.maturin]
-features       = ["pyo3/extension-module"]
+# pyo3/extension-module: builds a native Python extension (.so/.dylib)
+# simd-neon: enables explicit ARM NEON SIMD paths on Apple Silicon
+# Both must be present; simd-neon is gated on the target arch at compile time
+features       = ["pyo3/extension-module", "simd-neon"]
 module-name    = "squish_quant"

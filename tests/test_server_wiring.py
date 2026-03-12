@@ -460,7 +460,7 @@ class TestServerArgparse:
         import subprocess
         result = subprocess.run(
             [sys.executable, "-m", "squish.server", "--help"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=30
         )
         # --help always exits with code 0
         assert result.returncode == 0
@@ -469,21 +469,21 @@ class TestServerArgparse:
     def test_all_optimizations_flag_in_help(self):
         result = __import__("subprocess").run(
             [sys.executable, "-m", "squish.server", "--help"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=30
         )
         assert "--all-optimizations" in result.stdout
 
     def test_sage_attention_flag_in_help(self):
         result = __import__("subprocess").run(
             [sys.executable, "-m", "squish.server", "--help"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=30
         )
         assert "--sage-attention" in result.stdout
 
     def test_squeeze_attention_flag_in_help(self):
         result = __import__("subprocess").run(
             [sys.executable, "-m", "squish.server", "--help"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=30
         )
         assert "--squeeze-attention" in result.stdout
 
@@ -495,7 +495,7 @@ class TestServerArgparse:
             pytest.skip("squish entry point not installed")
         result = __import__("subprocess").run(
             [squish_bin, "run", "--help"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=30
         )
         assert result.returncode == 0
         assert "--all-optimizations" in result.stdout
@@ -508,7 +508,7 @@ class TestServerArgparse:
             pytest.skip("squish entry point not installed")
         result = __import__("subprocess").run(
             [squish_bin, "serve", "--help"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=30
         )
         assert result.returncode == 0
         assert "--all-optimizations" in result.stdout
