@@ -714,3 +714,167 @@ These are the original Phase 4 items from the plan. They require real hardware a
 - [ ] Post to Hacker News first (quietest audience, most technical)
 - [ ] Post to r/LocalLLaMA after HN feedback is addressed
 - [ ] arXiv submit
+
+---
+
+## Phase 6 — Feature Reliability & Ecosystem Hardening
+
+> Last updated: 2026-03-12
+> Addresses scope-creep risk, ecosystem blockers, CI correctness, and documentation quality.
+
+---
+
+### 6A — Feature Gating: Core vs Experimental
+
+The v1 public launch should market **core stability**, not the full 222-module catalogue. Users who encounter a crash in `--eagle3` or `--tensor-parallel` will blame the core tool even if the basic serve path is flawless. Feature tiers must be communicated explicitly.
+
+**Proposed tiers:**
+
+| Tier | Waves | Flags | Label in docs |
+|------|-------|-------|---------------|
+| Stable | 1–12 | No flag or widely-used flags (`--int8`, `--int4`, `--kv-cache`) | (no label) |
+| Beta | 13–18 | Speculative decode, advanced KV compression | `[Beta]` |
+| Experimental | 19–26 | Tensor parallel, disaggregated prefill, binary attention, ternary quant, multi-modal | `[Experimental]` |
+
+- [ ] Audit every CLI flag in `cli.py` and `server.py` and assign a tier to each
+- [ ] Add `[Beta]` / `[Experimental]` annotations to flag `--help` text and `MODULES.md`
+- [ ] Add a `# Experimental` warning block at the top of each v19–v26 module file (do not hide the code, just label it)
+- [ ] Update README Quick-Start to show only Stable flags; link to `MODULES.md` for the full list
+- [ ] Add a note in `squish serve --help` output: "Experimental flags (v19–v26) are proof-of-concept implementations. Stable flags (v1–v12) are validated on hardware."
+
+---
+
+### 6B — HuggingFace Model Ecosystem
+
+The threshold for widespread adoption is a zero-friction first run: `pip install squish` → `squish run qwen3-8b` → running in under a second. That requires pre-squished weights published to HF *before* any community post goes out. If users have to compress their own models on first run, the 54× faster load-time story is obscured by a one-time 30-minute compression step.
+
+**Minimum model matrix for launch (all INT4, Qwen2.5-1.5B also INT8):**
+
+| Model | Base size | Squish size (INT4) | Priority |
+|-------|-----------|-------------------|----------|
+| Qwen2.5-1.5B | ~3 GB | ~0.9 GB | P0 — used in all existing benchmarks |
+| Qwen3-8B | ~16 GB | ~5 GB | P0 — most popular current model |
+| Llama-3.2-3B | ~6 GB | ~2 GB | P0 — referenced in original plan |
+| Qwen2.5-7B | ~14 GB | ~4.5 GB | P1 |
+| Phi-4 (14B) | ~28 GB | ~9 GB | P1 |
+| Mistral-Nemo-12B | ~24 GB | ~7.5 GB | P1 |
+| Llama-3.1-8B | ~16 GB | ~5 GB | P1 |
+| DeepSeek-R1-Distill-7B | ~14 GB | ~4.5 GB | P2 |
+| Gemma-3-4B | ~8 GB | ~2.5 GB | P2 |
+| SmolLM2-1.7B | ~3.4 GB | ~1 GB | P2 — fits 8 GB Macs |
+
+**Each model card must include:** hardware used, `squish compress` command, measured load time (M3), measured RAM, lm-eval accuracy (compressed vs base, identical flags).
+
+- [ ] Create `squish-community` organization on HuggingFace
+- [ ] Compress and upload P0 models (3 models) with full model cards
+- [ ] Compress and upload P1 models (4 models) after P0 is verified
+- [ ] Compress and upload P2 models (3 models) before soft launch
+- [ ] Verify each uploaded model with `squish run <model>` → coherent output on clean install
+- [ ] Add `--hf-model-card` flag to `dev/publish_hf.py` that auto-generates the model card from eval JSON
+
+---
+
+### 6C — CI/CD: Apple Silicon Test Coverage
+
+GitHub Actions `macos-14` runners are Apple M1. MLX runs on them. However, the current CI excludes `test_int4_loader.py` and `test_git_integration.py` without explanation in `ci.yml`. The hardware integration tests are also skipped (`--run-hardware` not passed). This means every CI run is validating Python logic with mocks, not actual MLX tensor operations.
+
+**Gaps:**
+
+1. `test_int4_loader.py` is excluded from CI — why? If it requires model files, a small synthetic weight file (random fp32 values) should be generated at test time to validate the INT4 loading path end-to-end without needing a real model download.
+2. The `test_hardware_integration.py` harness exists but is never run in CI. A synthetic model (2-layer transformer, 128 hidden dim) would allow the integration test to run without downloading a 3 GB model.
+3. `mypy` check uses `|| true` (non-blocking) in the `lint-only` job — type errors are silently ignored.
+
+- [ ] Investigate why `test_int4_loader.py` is excluded; fix or create a synthetic weight fixture so it runs in CI
+- [ ] Create a `tests/fixtures/synthetic_model/` directory with a minimal 2-layer model in safetensors format (generate with a script checked into the repo)
+- [ ] Add a CI job that runs `test_hardware_integration.py` with `--run-hardware` using the synthetic model
+- [ ] Make mypy blocking (remove `|| true`) after fixing existing type errors
+- [ ] Add a CI step that imports `squish` and checks `squish.__version__ == importlib.metadata.version("squish")`
+
+---
+
+### 6D — Documentation: README Focus
+
+The current README covers three separate audiences (practitioners, researchers, and contributors) simultaneously. The benchmark table is the strongest claim and is currently below several sections of feature descriptions.
+
+**Target README structure:**
+
+```
+1. Problem statement (2 sentences)
+2. The proof — load-time comparison table (Squish vs Ollama, three models)
+3. Install (one-liner)
+4. Quickstart (one command)
+5. Core features (5 bullets max — fast load, OpenAI compatible, Web UI, INT4/INT8, Apple Silicon)
+6. Links → full docs, MODULES.md, paper, HuggingFace models
+```
+
+Everything else (wave tables, per-module details, accuracy benchmarks, developer docs) lives in the MkDocs site or `MODULES.md`.
+
+- [ ] Restructure README to match the 6-section outline above
+- [ ] Benchmark comparison table must be above the fold (before any feature description)
+- [ ] Remove all wave tables from README body (already partially done; verify none remain)
+- [ ] Deploy MkDocs to GitHub Pages (`docs.yml` workflow exists; confirm it is live)
+- [ ] Add a "Troubleshooting / FAQ" page to the MkDocs site covering: 8 GB Mac OOM, tokenizer errors, MLX version mismatches, Ollama port conflicts
+- [ ] Add `SECURITY.md` documenting responsible disclosure process
+- [ ] Ensure `CONTRIBUTING.md` has a step-by-step local dev setup that works on a blank Mac (Xcode CLT, Rust/maturin, uv)
+- [ ] Test `pip install squish` from a clean virtualenv with no dev tools pre-installed to catch missing wheel/compiler issues
+
+---
+
+## Phase 7 — Staged Public Launch
+
+> Execute after Phase 5 bugs are fixed and Phase 6 ecosystem items are done.
+> Do not compress all three stages into one week.
+
+---
+
+### 7A — Soft Launch (Beta Cohort)
+
+Before any public post, validate with a small audience who will give honest technical feedback and whose issues you can resolve quickly.
+
+- [ ] Identify 5–10 people currently running local LLMs on Apple Silicon (MLX Discord, people who have filed MLX issues on GitHub) and send direct invitations
+- [ ] Set up a GitHub Discussion category "Beta Feedback" for structured input
+- [ ] Pay attention to OOM reports on 8 GB and 16 GB Macs — `--fault-tolerance` and `--adaptive-quant` exist but need real-hardware validation on memory-constrained devices
+- [ ] Produce a 60-second screen recording: cold start Squish vs Ollama side-by-side for Qwen3-8B. No narration needed — the numbers speak. Post to the GitHub Release as an asset.
+- [ ] Address all beta feedback before hard launch; do not proceed to 7B if any P0 crash bugs are open
+
+---
+
+### 7B — Hacker News (Show HN)
+
+HN is the right first public venue: technical audience, good faith engagement, time-boxed attention window (front-page day, then archived). Get it right here before the higher-noise Reddit blast.
+
+**Post structure:**
+
+- **Title**: `Show HN: Squish – Sub-second model loads on Apple Silicon (54× faster than Ollama cold-start)`
+- **First comment** (post immediately after submitting): 3 short paragraphs. (1) The problem: Ollama cold-start on M3 is 8–25 seconds. (2) The solution: INT8/INT4 compression + mmap + Metal kernel pre-warm. (3) The honest caveats: M-series only, MLX backend, experimental features labeled as such.
+- Be present for the first 2 hours. Answer every question directly and technically.
+- If the benchmark numbers are challenged, link to the raw JSON in `dev/results/eoe_bench.json` and the lm-eval output in `eval_output/`. Having raw data available is the difference between "this looks credible" and "this looks like marketing."
+
+- [ ] Draft HN Show post text in `dev/community_posts.md` (template exists — refine with real numbers)
+- [ ] Confirm raw benchmark JSON is publicly accessible in the repo before posting
+- [ ] Confirm MkDocs site is live and the paper is linked
+- [ ] Do not submit on a Friday or Saturday (low traffic)
+- [ ] Respond to every comment within 4 hours on day one
+
+---
+
+### 7C — r/LocalLLaMA and Twitter/X
+
+Only proceed here after HN feedback has been reviewed and any correction to claims has been made.
+
+**r/LocalLLaMA post:**
+- Post type: "I built X" (not "What do you think of X?")
+- Lead with the side-by-side GIF demo, then the number
+- Keep body under 300 words; link to README and HN thread for depth
+- Post from an account with karma — if your account is new, post a few helpful comments in the subreddit first
+
+**Twitter/X thread:**
+- Tag Awni Hannun (MLX creator), not as a promotional move but because the work directly builds on MLX and he has flagged Apple Silicon inference optimization as a priority area
+- Thread structure: tweet 1 = the claim with GIF, tweets 2–5 = how it works (mmap, INT4 nibble pack, KV compression, streaming fix), tweet 6 = benchmark methodology, tweet 7 = "try it" CTA with install command
+
+- [ ] Post to r/LocalLLaMA after HN settles (48 hours post-HN)
+- [ ] Post Twitter/X thread same day as r/LocalLLaMA
+- [ ] Monitor both for 72 hours; update README FAQ with any common questions that emerge
+- [ ] arXiv submit in the same week as the public launch — establishes timestamp and gives researchers something to cite
+
+---
