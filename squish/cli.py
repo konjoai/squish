@@ -2302,7 +2302,11 @@ Ollama drop-in:
     p_daemon.set_defaults(func=cmd_daemon)
 
     # ── compress ──
-    p_compress = sub.add_parser("it", help="Compress (squish) a model to INT8 npy-dir format")
+    p_compress = sub.add_parser(
+        "compress",
+        aliases=["it"],
+        help="Compress a model to squished (INT8/INT4) npy-dir format",
+    )
     p_compress.add_argument("model", help="Model path (e.g. ~/.squish/models/llama3.1-8b-4bit) or shorthand (7b, 14b)")
     p_compress.add_argument("--output",            default=None,
                             help="Output directory (default: <model>-compressed)")

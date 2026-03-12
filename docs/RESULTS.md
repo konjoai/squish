@@ -364,7 +364,10 @@ For a 4 096-token CoT trace, PM-KVQ keeps only the last ~6% of tokens in FP16
 and progressively compresses older tokens. **Effective KV memory: ~4.2× less**
 than full-FP16 KV cache.
 
-### Projected Improvements on Apple Silicon (end-to-end)
+### Reference: Paper-Reported Technique Estimates
+> **Note:** These are technique-level estimates from published papers.
+> Not yet measured end-to-end in Squish.
+
 
 | Optimisation | Improvement | Reference |
 |---|---|---|
@@ -375,9 +378,8 @@ than full-FP16 KV cache.
 | I/O prefetch latency | **40–60%** reduction | AgileIO hides NVMe read |
 | Channel-aware KV precision | **4.1 avg bits** | MixKVQ query-relevance routing |
 
-> These projected end-to-end numbers require an Apple Silicon host with a loaded
-> model. The CPU micro-benchmark above confirms the module logic and compression
-> ratios are correct.
+> The CPU micro-benchmark above confirms module logic and compression ratios.
+> Run `python3 dev/benchmarks/bench_eoe.py` on Apple Silicon to measure real end-to-end numbers.
 
 ### Accuracy Impact (Wave 12)
 

@@ -62,7 +62,12 @@
 
 ---
 
-## Projected End-to-End Improvements (Apple Silicon + Qwen3-8B)
+## Reference: Paper-Reported Technique Improvements
+> **Note:** These are technique-level estimates derived from published papers.
+> End-to-end validation on Squish with a loaded model on Apple Silicon
+> has not yet been run for this wave.
+> See `dev/benchmarks/bench_eoe.py` for the real-hardware benchmark harness.
+
 
 | Technique | Improvement | Module |
 |-----------|:-----------:|--------|

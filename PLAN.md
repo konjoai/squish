@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-12 (v9 complete)
+> Last updated: 2026-03-12 (v9 complete + pre-launch hardening)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -507,3 +507,28 @@ adaptive batching, safety classification, semantic response caching, and audit l
 | Total modules after v9 | **222** |
 | Expected new tests | **~112** (4 per module × 28) |
 | Expected total tests after v9 | **~4 876** |
+
+---
+
+## ✅ Pre-Launch Hardening — 2026-03-12
+
+Theme: **Credibility, correctness, and real-hardware accountability**
+
+### Phase 1 — Close Credibility Gaps
+
+| Task | Status | File(s) changed |
+|------|--------|-----------------|
+| Quarantine MLC backend stub | ✅ done | `squish/server.py` — removed `mlc` from advertised CLI choices |
+| `squish compress` primary alias | ✅ done | `squish/cli.py` — `aliases=["it"]` on argparse parser |
+| Fix "Projected" language in 8 docs | ✅ done | `docs/benchmark_wave12–21_22.md`, `docs/RESULTS.md` |
+| Hardware integration test harness | ✅ done | `tests/test_hardware_integration.py`, `tests/conftest.py`, `pyproject.toml` |
+| End-to-end benchmark script (Squish vs Ollama) | ✅ done | `dev/benchmarks/bench_eoe.py` |
+| Remove `raise NotImplementedError` coverage exclusion | ✅ done | `pyproject.toml` |
+| README: move wave tables to MODULES.md | ✅ done | `README.md`, `MODULES.md` (new) |
+
+### Notes
+
+- All 7 benchmark docs now use "Reference: Paper-Reported Technique Improvements" headings with explicit caveat notes pointing to `bench_eoe.py` for real validation.
+- `bench_eoe.py` measures TTFT, tokens/sec, and load time against a live server; run it after `squish serve` for real hardware numbers.
+- Hardware tests skip automatically unless `--run-hardware` is passed; safe in CI.
+- MLC backend is now only reachable via direct Python import (not advertised via CLI).

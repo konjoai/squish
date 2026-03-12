@@ -34,7 +34,12 @@ these figures reflect pure-numpy CPU overhead only.
 
 ---
 
-## Projected End-to-End Improvements (Apple Silicon + loaded model)
+## Reference: Paper-Reported Technique Improvements
+> **Note:** These are technique-level estimates derived from published papers.
+> End-to-end validation on Squish with a loaded model on Apple Silicon
+> has not yet been run for this wave.
+> See `dev/benchmarks/bench_eoe.py` for the real-hardware benchmark harness.
+
 
 | Optimisation | Improvement | Technique |
 |---|---|---|

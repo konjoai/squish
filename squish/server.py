@@ -276,10 +276,10 @@ class _MLXEagerBackend(_InferenceBackend):
 
 
 class _MLCBackend(_InferenceBackend):
-    """MLC-LLM engine path for large-context requests.
+    """MLC-LLM engine path — planned for a future release.
 
-    Probes for ``mlc_llm`` at construction time and sets
-    :meth:`is_available` accordingly so callers can gate on its presence.
+    Not yet exposed via the CLI.  Probes for ``mlc_llm`` at construction
+    time so the wiring can be validated before the backend is promoted.
     """
 
     def __init__(self, model_path: str) -> None:
@@ -295,7 +295,10 @@ class _MLCBackend(_InferenceBackend):
         return self._available
 
     def generate_stream(self, *args, **kwargs):  # pragma: no cover
-        raise NotImplementedError("MLC backend not yet wired")
+        raise NotImplementedError(
+            "MLC backend is not yet available.  "
+            "Use --inference-backend mlx-eager (default)."
+        )
 
 
 _active_backend: "_InferenceBackend | None" = None  # set in main() when dispatching
@@ -2439,14 +2442,13 @@ Examples:
                          "(default: ~/.squish/response_cache.db).")
     # ── Phase 4: hardware inference backend ──────────────────────────────────
     ap.add_argument("--inference-backend",
-                    choices=["mlx-eager", "mlx-compiled", "ane-disagg", "mlc"],
+                    choices=["mlx-eager", "mlx-compiled", "ane-disagg"],
                     default="mlx-eager",
                     metavar="BACKEND",
                     help="Hardware dispatch strategy (default: mlx-eager):\n"
                          "  mlx-eager    — standard MLX Metal execution (safest)\n"
                          "  mlx-compiled — mx.compile fused decode (lower GPU overhead)\n"
                          "  ane-disagg   — Apple Neural Engine prefill + GPU decode\n"
-                         "  mlc          — MLC-LLM engine (large-context requests)\n"
                          "mlx-compiled and ane-disagg are mutually exclusive.")
     # ── Item 3: LazyLLM token pruning ─────────────────────────────────────────
     ap.add_argument("--lazy-llm", action="store_true", default=False,

@@ -120,6 +120,9 @@ ignore = [
 testpaths  = ["tests"]
 pythonpath = ["."]
 addopts    = "-q --tb=short"
+markers = [
+    "hardware: require Apple Silicon + MLX + a cached model (skipped in CI unless --run-hardware is set)",
+]
 
 [tool.coverage.run]
 source = ["squish"]
@@ -140,7 +143,6 @@ skip_empty = true
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
-    "raise NotImplementedError",
     "\\.\\.\\.",
     "pass",
 ]
