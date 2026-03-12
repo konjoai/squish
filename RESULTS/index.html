@@ -870,10 +870,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#projected-improvements-on-apple-silicon-end-to-end" class="md-nav__link">
+  <a href="#reference-paper-reported-technique-estimates" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Projected Improvements on Apple Silicon (end-to-end)
+        Reference: Paper-Reported Technique Estimates
       
     </span>
   </a>
@@ -1814,7 +1814,11 @@ for weight shards are fully hidden behind compute on Apple Silicon NVMe.</p>
 <p>For a 4 096-token CoT trace, PM-KVQ keeps only the last ~6% of tokens in FP16
 and progressively compresses older tokens. <strong>Effective KV memory: ~4.2× less</strong>
 than full-FP16 KV cache.</p>
-<h3 id="projected-improvements-on-apple-silicon-end-to-end">Projected Improvements on Apple Silicon (end-to-end)<a class="headerlink" href="#projected-improvements-on-apple-silicon-end-to-end" title="Permanent link">&para;</a></h3>
+<h3 id="reference-paper-reported-technique-estimates">Reference: Paper-Reported Technique Estimates<a class="headerlink" href="#reference-paper-reported-technique-estimates" title="Permanent link">&para;</a></h3>
+<blockquote>
+<p><strong>Note:</strong> These are technique-level estimates from published papers.
+Not yet measured end-to-end in Squish.</p>
+</blockquote>
 <table>
 <thead>
 <tr>
@@ -1857,9 +1861,8 @@ than full-FP16 KV cache.</p>
 </tbody>
 </table>
 <blockquote>
-<p>These projected end-to-end numbers require an Apple Silicon host with a loaded
-model. The CPU micro-benchmark above confirms the module logic and compression
-ratios are correct.</p>
+<p>The CPU micro-benchmark above confirms module logic and compression ratios.
+Run <code>python3 dev/benchmarks/bench_eoe.py</code> on Apple Silicon to measure real end-to-end numbers.</p>
 </blockquote>
 <h3 id="accuracy-impact-wave-12">Accuracy Impact (Wave 12)<a class="headerlink" href="#accuracy-impact-wave-12" title="Permanent link">&para;</a></h3>
 <p>Wave 12 modules work on the KV cache and attention compute paths only.
