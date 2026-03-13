@@ -314,7 +314,7 @@ _MLX_CACHE_READY  = ".squish_ready"         # sentinel alongside the safetensors
 
 # Matches the suffix that identifies a quantised-tensor component file.
 # Groups: __q.npy, __s.npy, __shape.npy, __pt.npy, and their .zst variants.
-_TENSOR_SUFFIX_RE = re.compile(r'__(q\d?|s|shape|pt)\.npy(?:\.zst)?$')
+_TENSOR_SUFFIX_RE = re.compile(r'__(q\d?|s|shape|pt|quip_e8|quip_res|quip_rot)\.npy(?:\.zst)?$')
 
 # Regexes for assigning load-order priority.
 _ATTN_RE  = re.compile(r'self_attn|(?:^|__)(?:q|k|v|o)_proj|attn_(?:q|k|v|o)|_attention|mha_')
@@ -573,6 +573,33 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
         arr_f32 = _squish_quant.dequantize_int4_grouped(
             packed, scales, _INT4_GROUP_SIZE,
         )
+        return arr_f32.reshape(original_shape)
+
+    # ── QuIP# E8 trellis-coded quantization ──────────────────────────────────
+    e8_path  = tensor_dir / f"{sk}__quip_e8.npy"
+    res_path = tensor_dir / f"{sk}__quip_res.npy"
+    rot_path = tensor_dir / f"{sk}__quip_rot.npy"
+    if _npy_exists(e8_path) and _npy_exists(res_path):
+        from squish.quip_sharp import QuIPSharpConfig, QuIPSharpLayer, quip_dequantize
+        e8_indices      = np.array(_load_npy_path(e8_path, mmap_mode=None),  dtype=np.uint8)
+        residual_scales = np.array(_load_npy_path(res_path, mmap_mode=None), dtype=np.float16)
+        rotation_matrix = (
+            np.array(_load_npy_path(rot_path, mmap_mode=None), dtype=np.float16)
+            if _npy_exists(rot_path)
+            else None
+        )
+        # Empty rotation array (saved when no rotation was used) → None
+        if rotation_matrix is not None and rotation_matrix.size == 0:
+            rotation_matrix = None
+        original_shape = tuple(int(x) for x in _load_npy_path(shape_path).tolist())
+        layer = QuIPSharpLayer(
+            e8_indices=e8_indices,
+            residual_scales=residual_scales,
+            rotation_matrix=rotation_matrix,
+            original_shape=original_shape,
+            config=QuIPSharpConfig(),
+        )
+        arr_f32 = quip_dequantize(layer).astype(np.float32)
         return arr_f32.reshape(original_shape)
 
     pt_path = tensor_dir / f"{sk}__pt.npy"
