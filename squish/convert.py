@@ -38,12 +38,12 @@ import numpy as np
 def _apply_awq_single(name: str, arr_f32: np.ndarray, awq_scales: dict) -> np.ndarray:
     """
     Apply AWQ scale to a single weight tensor in-place (returns modified copy).
-    Wraps squish.awq.apply_awq_to_weights for single-tensor use.
+    Wraps squish.quant.awq.apply_awq_to_weights for single-tensor use.
     """
     if not awq_scales:
         return arr_f32
     try:
-        from squish.awq import apply_awq_to_weights
+        from squish.quant.awq import apply_awq_to_weights
         tmp = {name: arr_f32}
         apply_awq_to_weights(tmp, awq_scales, verbose=False)
         return tmp[name]
@@ -51,29 +51,29 @@ def _apply_awq_single(name: str, arr_f32: np.ndarray, awq_scales: dict) -> np.nd
         return arr_f32
 
 
-from squish.quantizer import QuantizationResult, quantize_embeddings, quantize_int4  # noqa: E402
+from squish.quant.quantizer import QuantizationResult, quantize_embeddings, quantize_int4  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Lazy helpers for optional compression backends
 # ---------------------------------------------------------------------------
 def _get_nf4():
-    from squish.nf4_quant import quantize_nf4
+    from squish.quant.nf4_quant import quantize_nf4
     return quantize_nf4
 
 
 def _get_vptq():
-    from squish.vptq import VPTQConfig, VPTQQuantizer
+    from squish.quant.vptq import VPTQConfig, VPTQQuantizer
     return VPTQConfig, VPTQQuantizer
 
 
 def _get_dfloat11():
-    from squish.dfloat11 import DFloat11Compressor, DFloat11Config
+    from squish.quant.dfloat11 import DFloat11Compressor, DFloat11Config
     return DFloat11Config, DFloat11Compressor
 
 
 def _get_quip():
-    from squish.quip_sharp import QuIPSharpConfig, QuIPSharpQuantizer
+    from squish.quant.quip_sharp import QuIPSharpConfig, QuIPSharpQuantizer
     return QuIPSharpConfig, QuIPSharpQuantizer
 
 
@@ -281,7 +281,7 @@ def quantize_tensor(
     # ── NF4: normal-float 4-bit quantization ─────────────────────────────────
     if use_nf4:
         quantize_nf4 = _get_nf4()
-        from squish.quantizer import reconstruct_embeddings
+        from squish.quant.quantizer import reconstruct_embeddings
         reconstructed = reconstruct_embeddings(result)
         packed, scales_nf4 = quantize_nf4(reconstructed, group_size=64)
         return {
@@ -293,7 +293,7 @@ def quantize_tensor(
     if use_int4:
         # INT4 nibble-packed: ~50 % disk vs INT8, requires squish_quant Rust ext.
         # Reconstruct from INT8 first, then pack to INT4.
-        from squish.quantizer import reconstruct_embeddings
+        from squish.quant.quantizer import reconstruct_embeddings
         reconstructed = reconstruct_embeddings(result)
         packed, scales4 = quantize_int4(reconstructed, group_size=64)
         out = {
@@ -569,7 +569,7 @@ def main():
         "--awq-scales",
         metavar="DIR",
         default=None,
-        help="Directory of .awq.npy scale files produced by 'python3 -m squish.awq'. "
+        help="Directory of .awq.npy scale files produced by 'python3 -m squish.quant.awq'. "
              "When provided, AWQ scales are applied to each weight tensor before "
              "quantization for improved INT8 accuracy.",
     )
@@ -654,7 +654,7 @@ def main():
     # ── VPTQ config (built once and reused per tensor) ─────────────────────────
     vptq_config = None
     if args.vptq:
-        from squish.vptq import VPTQConfig
+        from squish.quant.vptq import VPTQConfig
         vptq_config = VPTQConfig(
             n_codebook_entries=args.vptq_codebook_size,
             group_size=args.vptq_group_size,
@@ -682,7 +682,7 @@ def main():
         awq_scales: dict = {}
         if args.awq_scales:
             try:
-                from squish.awq import load_awq_scales
+                from squish.quant.awq import load_awq_scales
                 awq_scales = load_awq_scales(args.awq_scales)
                 n_awq = len(awq_scales)
                 print(f"  [AWQ] Loaded {n_awq} layer scales from {args.awq_scales}")
