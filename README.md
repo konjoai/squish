@@ -67,6 +67,9 @@ export OPENAI_API_KEY=squish
 export OLLAMA_HOST=http://localhost:11435
 ```
 
+All flags above are **Stable** (Waves 1–12). For advanced optimization flags
+(`[Beta]` Waves 13–18 and `[Experimental]` Waves 19+), see [MODULES.md](MODULES.md).
+
 ---
 
 ## Why Not Ollama or LM Studio?

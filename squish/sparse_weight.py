@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """SparseWeight — CSR-style 2:4 pruned weight matrix storage.
 
 Stores the non-zero values from a 2:4 (N:M) structured-sparse weight matrix

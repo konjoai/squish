@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """RetentionAttn — Retention-style recurrent attention for O(1) per-step inference.
 
 RetNet (Sun et al., 2023) replaces softmax attention with a linear recurrent

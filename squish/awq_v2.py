@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """AWQv2 — Activation-Aware Weight Quantization v2 with per-channel scale and shift.
 
 AWQ v2 extends the original AWQ algorithm by additionally learning a per-channel

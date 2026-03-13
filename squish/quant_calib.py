@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """QuantCalib — Unified activation-range calibration for post-training quantisation.
 
 Before deploying a quantised model it is necessary to determine per-channel (or

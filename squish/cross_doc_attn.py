@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """CrossDocAttn — Chunked cross-document attention for multi-document QA.
 
 Enables a query to attend over multiple document key-value chunks *without*

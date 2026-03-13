@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """FP8Quant — FP8 E4M3 / E5M2 weight and activation quantisation.
 
 Implements the two FP8 formats standardised by NVIDIA / ARM / Intel for

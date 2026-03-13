@@ -765,10 +765,10 @@ The v1 public launch should market **core stability**, not the full 222-module c
 | Beta | 13–18 | Speculative decode, advanced KV compression | `[Beta]` |
 | Experimental | 19–26 | Tensor parallel, disaggregated prefill, binary attention, ternary quant, multi-modal | `[Experimental]` |
 
-- [ ] Audit every CLI flag in `cli.py` and `server.py` and assign a tier to each
-- [ ] Add `[Beta]` / `[Experimental]` annotations to flag `--help` text and `MODULES.md`
-- [ ] Add a `# Experimental` warning block at the top of each v19–v26 module file (do not hide the code, just label it)
-- [ ] Update README Quick-Start to show only Stable flags; link to `MODULES.md` for the full list
+- [x] Audit every CLI flag in `cli.py` and `server.py` and assign a tier to each
+- [x] Add `[Beta]` / `[Experimental]` annotations to flag `--help` text and `MODULES.md`
+- [x] Add a `# Experimental` warning block at the top of each v19–v26 module file (do not hide the code, just label it)
+- [x] Update README Quick-Start to show only Stable flags; link to `MODULES.md` for the full list
 - [x] Add stability tiers note in `squish serve --help` epilog: Stable (v1-12), [Beta] (v13-18), [Experimental] (v19+)
 
 ---

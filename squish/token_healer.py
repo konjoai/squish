@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """TokenHealer — Token boundary healing for prefix-aware generation.
 
 When a completion prompt ends mid-token (e.g. "def calc_va" where "va" is the

@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """QuantSpecDecode — INT4 draft + FP16 verify speculative decoding.
 
 The draft model runs in INT4 to reduce memory 4× vs FP16, while verification

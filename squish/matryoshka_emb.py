@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """MatryoshkaEmb — Matryoshka Representation Learning (MRL) embedding adapter.
 
 MRL (Kusupati et al., NeurIPS 2022) trains nested embeddings such that any

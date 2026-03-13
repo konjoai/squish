@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """DeltaCompress — SVD-based delta compression for fine-tuned model weights.
 
 Fine-tuning a large model produces weight deltas ΔW = W_ft − W_base that are

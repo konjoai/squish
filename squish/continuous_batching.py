@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """ContinuousBatching — Continuous batching scheduler with mid-generation insertion.
 
 Standard static batching waits for all requests in a batch to finish before

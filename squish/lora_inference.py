@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """LoRAInference — Zero-copy LoRA delta inference (no weight merge required).
 
 Low-Rank Adaptation (LoRA) decomposes weight updates into two small matrices

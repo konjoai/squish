@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """GPTQLayer — GPTQ-style second-order quantisation calibration.
 
 Approximates the Hessian of quantisation error using input activation

@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """MixedPrecisionKV — Per-head INT8/INT4/FP16 KV cache via sensitivity analysis.
 
 Different attention heads exhibit different sensitivity to KV quantisation.

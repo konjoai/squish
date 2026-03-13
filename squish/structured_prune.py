@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """StructuredPrune — 2:4 (N:M) structured magnitude-based weight pruning.
 
 For every group of *M* adjacent weights along the last axis of a weight matrix,

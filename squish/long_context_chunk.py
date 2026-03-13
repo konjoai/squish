@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """LongContextChunk — Semantic-boundary chunking for 1M+ token contexts.
 
 Splits a very long token-embedding sequence into non-overlapping chunks at

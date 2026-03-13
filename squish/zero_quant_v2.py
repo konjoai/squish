@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """ZeroQuantV2 — Groupwise weight quantisation with FP16 outlier residuals.
 
 ZeroQuant-V2 quantises weights in groups of ``group_size`` elements using

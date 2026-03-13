@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """DedupeAttn — Attention deduplication for repetitive context.
 
 In repetitive context (e.g., repeated system prompts, long documents with

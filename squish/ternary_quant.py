@@ -1,3 +1,6 @@
+# [Experimental] This module is part of Squish v6+ (Waves 19–26).
+# Proof-of-concept quality: API and behaviour may change without notice.
+# For stable core functionality see Waves 1–12 in MODULES.md.
 """TernaryQuant — BitNet-style ternary weight quantisation ({-1, 0, +1}).
 
 Maps floating-point weights to the ternary alphabet {−1, 0, +1} following the

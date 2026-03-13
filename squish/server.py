@@ -2199,7 +2199,7 @@ Feature stability tiers
                     help="Enable chunked prefill for long COMPRESS_PATH requests.\n"
                          "Splits the prompt into chunks and interleaves one greedy\n"
                          "decode token between chunks to minimise TTFT.\n"
-                         "Only activates on the COMPRESS_PATH (--compress-prompt).")
+                         "Only activates on the COMPRESS_PATH (--compress-prompt). [Beta]")
     ap.add_argument("--chunk-prefill-threshold", type=int, default=512,
                     metavar="N",
                     help="Minimum prompt token count to trigger chunked prefill\n"
@@ -2214,7 +2214,7 @@ Feature stability tiers
                          "Reduces attention cost from O(n²) to O(n·k) for prompts\n"
                          "longer than --minference-threshold.\n"
                          "Automatically selects the best sparsity pattern.\n"
-                         "Incompatible with --inference-backend ane-disagg.")
+                         "Incompatible with --inference-backend ane-disagg. [Beta]")
     ap.add_argument("--minference-threshold", type=int, default=1024,
                     metavar="N",
                     help="Minimum sequence length to activate sparse attention\n"
@@ -2337,7 +2337,7 @@ Feature stability tiers
     ap.add_argument("--compress-prompt", action="store_true", default=False,
                     help="Enable prompt compression before prefill.\\n"
                          "Uses TF-IDF sentence scoring by default; delegates to\\n"
-                         "LLMLingua if installed (pip install squish[llmlingua]).")
+                         "LLMLingua if installed (pip install squish[llmlingua]). [Beta]")
     ap.add_argument("--compress-ratio", type=float, default=0.5,
                     metavar="F",
                     help="Target compression fraction: 0.5 = compress to half the\\n"
@@ -2376,7 +2376,7 @@ Feature stability tiers
     ap.add_argument("--semantic-cache", action="store_true", default=False,
                     help="Enable semantic response caching. Semantically similar prompts "
                          "(cosine distance < task threshold) return a cached response, "
-                         "delivering 25-250× latency reduction for warm repeat patterns.")
+                         "delivering 25-250× latency reduction for warm repeat patterns. [Beta]")
     ap.add_argument("--no-semantic-cache", dest="semantic_cache", action="store_false",
                     help="Disable semantic response cache.")
     ap.add_argument("--semantic-cache-db", default="",
@@ -2423,90 +2423,90 @@ Feature stability tiers
 
     # ── Wave optimization flags ───────────────────────────────────────────────
     ap.add_argument("--prompt-lookup", action="store_true", default=False,
-                    help="Enable n-gram prompt lookup speculative decoding.")
+                    help="Enable n-gram prompt lookup speculative decoding. [Beta]")
     ap.add_argument("--prompt-lookup-n", type=int, default=3, metavar="N",
                     help="N-gram size for prompt lookup (default: 3).")
     ap.add_argument("--prompt-lookup-k", type=int, default=4, metavar="K",
                     help="Max draft tokens per lookup step (default: 4).")
     ap.add_argument("--seq-packing", action="store_true", default=False,
-                    help="Enable sequence packing for higher batch GPU utilisation.")
+                    help="Enable sequence packing for higher batch GPU utilisation. [Beta]")
     ap.add_argument("--seq-packing-budget", type=int, default=2048, metavar="N",
                     help="Token budget per packed batch (default: 2048).")
     ap.add_argument("--ada-serve", action="store_true", default=False,
-                    help="Enable SLO-adaptive gamma scheduling for speculative decoding.")
+                    help="Enable SLO-adaptive gamma scheduling for speculative decoding. [Beta]")
     ap.add_argument("--ada-serve-slo", default="general",
                     choices=["git_commit", "devops_plan", "general", "code_review"],
                     help="Default SLO profile for AdaServe (default: general).")
     ap.add_argument("--conf-spec", action="store_true", default=False,
-                    help="Enable confidence-gated speculative step verification.")
+                    help="Enable confidence-gated speculative step verification. [Beta]")
     ap.add_argument("--conf-spec-high-gate", type=float, default=0.90, metavar="F",
                     help="Confidence above which steps are auto-accepted (default: 0.90).")
     ap.add_argument("--conf-spec-low-gate", type=float, default=0.50, metavar="F",
                     help="Confidence below which full target verify is used (default: 0.50).")
     ap.add_argument("--kv-share", action="store_true", default=False,
-                    help="Enable cross-layer KV sharing (KVSharer).")
+                    help="Enable cross-layer KV sharing (KVSharer). [Beta]")
     ap.add_argument("--kv-share-every", type=int, default=2, metavar="N",
                     help="Share KV every N layers (default: 2).")
     ap.add_argument("--kv-slab", action="store_true", default=False,
-                    help="Enable slab-based KV memory allocator for reduced fragmentation.")
+                    help="Enable slab-based KV memory allocator for reduced fragmentation. [Beta]")
     ap.add_argument("--kv-slab-pages", type=int, default=256, metavar="N",
                     help="Number of slab pages (default: 256).")
     ap.add_argument("--paris-kv", action="store_true", default=False,
-                    help="Enable PARIS KV codebook compression.")
+                    help="Enable PARIS KV codebook compression. [Beta]")
     ap.add_argument("--paris-kv-centroids", type=int, default=64, metavar="N",
                     help="PARIS codebook centroid count (default: 64).")
     ap.add_argument("--streaming-sink", action="store_true", default=False,
-                    help="Enable StreamingLLM-style sink KV cache.")
+                    help="Enable StreamingLLM-style sink KV cache. [Beta]")
     ap.add_argument("--streaming-sink-size", type=int, default=2048, metavar="N",
                     help="Sink KV cache token budget (default: 2048).")
     ap.add_argument("--diff-kv", action="store_true", default=False,
-                    help="Enable DiffKV 3-axis differentiated KV precision.")
+                    help="Enable DiffKV 3-axis differentiated KV precision. [Beta]")
     ap.add_argument("--small-kv", action="store_true", default=False,
-                    help="Enable SmallKV saliency-shift compensation.")
+                    help="Enable SmallKV saliency-shift compensation. [Beta]")
     ap.add_argument("--sage-attention", action="store_true", default=False,
                     help="Enable SageAttention INT8 quantized QK^T computation.")
     ap.add_argument("--sage-attention2", action="store_true", default=False,
-                    help="Enable SageAttention2 INT4/FP8 quantized attention.")
+                    help="Enable SageAttention2 INT4/FP8 quantized attention. [Beta]")
     ap.add_argument("--sparge-attention", action="store_true", default=False,
                     help="Enable SpargeAttn sparse+quantized attention.")
     ap.add_argument("--squeeze-attention", action="store_true", default=False,
-                    help="Enable SqueezeAttention adaptive KV budget allocation.")
+                    help="Enable SqueezeAttention adaptive KV budget allocation. [Beta]")
     ap.add_argument("--yoco-kv", action="store_true", default=False,
-                    help="Enable YOCO cross-layer KV reuse (you-only-cache-once).")
+                    help="Enable YOCO cross-layer KV reuse (you-only-cache-once). [Beta]")
     ap.add_argument("--cla", action="store_true", default=False,
-                    help="Enable Cross-Layer Attention KV sharing.")
+                    help="Enable Cross-Layer Attention KV sharing. [Beta]")
     ap.add_argument("--kvtuner", action="store_true", default=False,
-                    help="Enable KVTuner adaptive per-layer KV budget.")
+                    help="Enable KVTuner adaptive per-layer KV budget. [Beta]")
     ap.add_argument("--robust-scheduler", action="store_true", default=False,
-                    help="Use the robust A-max/A-balanced batch scheduler.")
+                    help="Use the robust A-max/A-balanced batch scheduler. [Beta]")
     ap.add_argument("--gemfilter", action="store_true", default=False,
-                    help="Enable GemFilter attention head filtering.")
+                    help="Enable GemFilter attention head filtering. [Beta]")
     ap.add_argument("--svdq", action="store_true", default=False,
-                    help="Enable SVD-based KV quantization (SVDQ).")
+                    help="Enable SVD-based KV quantization (SVDQ). [Beta]")
     ap.add_argument("--sparse-spec", action="store_true", default=False,
-                    help="Enable sparse speculative decoding.")
+                    help="Enable sparse speculative decoding. [Beta]")
     ap.add_argument("--sparse-verify", action="store_true", default=False,
-                    help="Enable sparse draft verification.")
+                    help="Enable sparse draft verification. [Beta]")
     ap.add_argument("--trail", action="store_true", default=False,
-                    help="Enable TRAIL token-importance-aware layer skipping.")
+                    help="Enable TRAIL token-importance-aware layer skipping. [Beta]")
     ap.add_argument("--specontext", action="store_true", default=False,
-                    help="Enable SpecContext speculative context extension.")
+                    help="Enable SpecContext speculative context extension. [Beta]")
     ap.add_argument("--forelen", action="store_true", default=False,
-                    help="Enable ForeLen forward-looking token length prediction.")
+                    help="Enable ForeLen forward-looking token length prediction. [Beta]")
     ap.add_argument("--ipw", action="store_true", default=False,
-                    help="Enable IPW importance-weighted prefill compression.")
+                    help="Enable IPW importance-weighted prefill compression. [Beta]")
     ap.add_argument("--layer-skip", action="store_true", default=False,
-                    help="Enable LayerSkip early-exit adaptive layer skipping.")
+                    help="Enable LayerSkip early-exit adaptive layer skipping. [Beta]")
     ap.add_argument("--lookahead", action="store_true", default=False,
-                    help="Enable LookaheadReasoning parallel step verification.")
+                    help="Enable LookaheadReasoning parallel step verification. [Beta]")
     ap.add_argument("--lookahead-k", type=int, default=4, metavar="K",
                     help="Lookahead window size (default: 4).")
     ap.add_argument("--spec-reason", action="store_true", default=False,
-                    help="Enable SpecReason step-level speculative reasoning.")
+                    help="Enable SpecReason step-level speculative reasoning. [Beta]")
     ap.add_argument("--long-spec", action="store_true", default=False,
-                    help="Enable LongSpec extended speculative decoding.")
+                    help="Enable LongSpec extended speculative decoding. [Beta]")
     ap.add_argument("--fr-spec", action="store_true", default=False,
-                    help="Enable FR-Spec frequency-based token speculative decoding.")
+                    help="Enable FR-Spec frequency-based token speculative decoding. [Beta]")
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
     ap.add_argument(
