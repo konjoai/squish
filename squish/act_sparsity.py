@@ -49,9 +49,12 @@ __all__ = [
 ]
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, Union
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from squish.neuron_profile import NeuronProfile, NeuronProfileConfig
 
 
 @dataclass(frozen=True)
@@ -111,6 +114,9 @@ class ActSparsityPredictor:
         self._config = config
         self._total: Dict[int, int] = {}
         self._zeros: Dict[int, int] = {}
+        # Per-neuron activation frequency: layer_idx → float64 array of shape (hidden_dim,)
+        # Counts how many times each neuron exceeded the threshold across all recorded steps.
+        self._act_counts: Dict[int, np.ndarray] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -143,6 +149,12 @@ class ActSparsityPredictor:
         )
         self._total[layer_idx] = self._total.get(layer_idx, 0) + n_total
         self._zeros[layer_idx] = self._zeros.get(layer_idx, 0) + n_zeros
+        # Per-neuron activation frequency — shape: (hidden_dim,)
+        col_counts = (np.abs(activations) >= self._config.threshold).sum(axis=0).astype(np.int64)
+        if layer_idx in self._act_counts:
+            self._act_counts[layer_idx] += col_counts
+        else:
+            self._act_counts[layer_idx] = col_counts.copy()
 
     def get_sparsity(self, layer_idx: int) -> float:
         """Return fraction of near-zero activations seen for *layer_idx*.
@@ -160,14 +172,56 @@ class ActSparsityPredictor:
         """Return ``True`` if recorded sparsity for *layer_idx* exceeds 50%."""
         return self.get_sparsity(layer_idx) > 0.5
 
-    def calibrate(self) -> Dict[int, float]:
-        """Return ``{layer_idx: sparsity_fraction}`` for all recorded layers."""
-        return {idx: self.get_sparsity(idx) for idx in sorted(self._total)}
+    def calibrate(
+        self,
+        emit_profile: bool = False,
+        profile_config: "Optional[NeuronProfileConfig]" = None,
+    ) -> "Union[Dict[int, float], Tuple[Dict[int, float], NeuronProfile]]":
+        """Return sparsity map; optionally also emit a NeuronProfile.
+
+        Args:
+            emit_profile: When ``True`` returns a ``(sparsity_map, NeuronProfile)``
+                tuple instead of just the sparsity map.  The ``NeuronProfile``
+                is built from per-neuron activation frequency accumulated by
+                :meth:`record` and can be persisted to ``neuron_profile.json``
+                for use with :mod:`squish.neuron_router`.
+            profile_config: Optional :class:`squish.neuron_profile.NeuronProfileConfig`
+                controlling ``hot_fraction`` and ``n_calib_samples``.  Defaults
+                to ``NeuronProfileConfig()`` if not provided.
+
+        Returns:
+            ``{layer_idx: sparsity_fraction}`` when ``emit_profile=False``
+            (default), or ``(sparsity_map, NeuronProfile)`` when ``True``.
+        """
+        sparsity_map: Dict[int, float] = {
+            idx: self.get_sparsity(idx) for idx in sorted(self._total)
+        }
+        if not emit_profile:
+            return sparsity_map
+
+        from squish.neuron_profile import NeuronProfileConfig, NeuronProfiler  # noqa: PLC0415
+
+        n_layers = self._config.n_layers
+        hidden_dim = self._config.hidden_dim
+        act_counts_list = []
+        for idx in range(n_layers):
+            if idx in self._act_counts:
+                counts = self._act_counts[idx].astype(np.float64)
+            else:
+                counts = np.zeros(hidden_dim, dtype=np.float64)
+            act_counts_list.append(counts)
+
+        if profile_config is None:
+            profile_config = NeuronProfileConfig()
+        profiler = NeuronProfiler(profile_config)
+        neuron_profile = profiler.calibrate(act_counts_list)
+        return sparsity_map, neuron_profile
 
     def reset(self) -> None:
         """Clear all accumulated statistics."""
         self._total.clear()
         self._zeros.clear()
+        self._act_counts.clear()
 
 
 class SparseFFNGate:
