@@ -24,7 +24,7 @@ RNG = np.random.default_rng(0xABCD_1234)
 class TestGQABranches:
     def test_config_explicit_softmax_scale_false_branch(self):
         """GQAConfig with explicit softmax_scale skips the None-assignment branch."""
-        from squish.gqa import GQAConfig
+        from squish.attention.gqa import GQAConfig
 
         cfg = GQAConfig(n_q_heads=4, n_kv_heads=2, head_dim=16, softmax_scale=0.25)
         # softmax_scale should remain at the explicit value (not overwritten).
@@ -32,7 +32,7 @@ class TestGQABranches:
 
     def test_grouped_query_attention_gqa_expansion(self):
         """grouped_query_attention with n_kv_heads < n_q_heads triggers GQA expansion."""
-        from squish.gqa import GQAConfig, GQACache, grouped_query_attention
+        from squish.attention.gqa import GQAConfig, GQACache, grouped_query_attention
 
         cfg = GQAConfig(n_q_heads=4, n_kv_heads=2, head_dim=8, max_seq_len=16)
         cache = GQACache(cfg)
@@ -56,8 +56,8 @@ class TestGQABranches:
 class TestSlidingWindowAttnBranches:
     def test_attention_empty_cache_returns_zeros(self):
         """sliding_window_attention with an empty cache returns a zeros tensor."""
-        from squish.sliding_window_attn import SWAConfig, SlidingWindowKVCache
-        from squish.sliding_window_attn import sliding_window_attention
+        from squish.attention.sliding_window_attn import SWAConfig, SlidingWindowKVCache
+        from squish.attention.sliding_window_attn import sliding_window_attention
 
         cfg = SWAConfig(window_size=8, n_heads=4, head_dim=16)
         cache = SlidingWindowKVCache(cfg)  # no appends → window_used == 0
@@ -70,8 +70,8 @@ class TestSlidingWindowAttnBranches:
 
     def test_attention_gqa_expansion(self):
         """sliding_window_attention with kv_n_heads < n_heads triggers GQA expansion."""
-        from squish.sliding_window_attn import SWAConfig, SlidingWindowKVCache
-        from squish.sliding_window_attn import sliding_window_attention
+        from squish.attention.sliding_window_attn import SWAConfig, SlidingWindowKVCache
+        from squish.attention.sliding_window_attn import sliding_window_attention
 
         cfg = SWAConfig(window_size=8, n_heads=4, head_dim=16, kv_n_heads=2)
         assert cfg.kv_n_heads == 2  # explicit, not defaulted
@@ -95,7 +95,7 @@ class TestSlidingWindowAttnBranches:
 class TestRopeScalingBranches:
     def test_longrope_scaler_head_dim_2_half_equals_1(self):
         """LongRoPEScaler.get_freqs: head_dim=2 → half=1 → else branch (not half>1)."""
-        from squish.rope_scaling import RoPEConfig, create_rope_scaler
+        from squish.attention.rope_scaling import RoPEConfig, create_rope_scaler
 
         # head_dim=2 is the smallest even value; half = head_dim // 2 = 1
         # This forces the else-branch of `if half > 1:` in get_freqs.
@@ -117,7 +117,7 @@ class TestRopeScalingBranches:
 
     def test_rope_config_explicit_scale_factor_false_branch(self):
         """RoPEConfig with explicit scale_factor skips the None-assignment branch."""
-        from squish.rope_scaling import RoPEConfig
+        from squish.attention.rope_scaling import RoPEConfig
 
         cfg = RoPEConfig(
             head_dim=64,
@@ -138,7 +138,7 @@ class TestRopeScalingBranches:
 class TestFusedRMSNormBranches:
     def test_rms_norm_explicit_weight(self):
         """FusedRMSNorm with an explicit weight uses it (weight is not None branch)."""
-        from squish.fused_rmsnorm import FusedNormConfig, FusedRMSNorm
+        from squish.hardware.fused_rmsnorm import FusedNormConfig, FusedRMSNorm
 
         dim = 16
         cfg = FusedNormConfig(hidden_dim=dim, eps=1e-6, elementwise_scale=True)
@@ -149,7 +149,7 @@ class TestFusedRMSNormBranches:
 
     def test_rms_norm_elementwise_scale_false(self):
         """FusedRMSNorm.forward with elementwise_scale=False skips the scale branch."""
-        from squish.fused_rmsnorm import FusedNormConfig, FusedRMSNorm
+        from squish.hardware.fused_rmsnorm import FusedNormConfig, FusedRMSNorm
 
         dim = 16
         cfg = FusedNormConfig(hidden_dim=dim, eps=1e-6, elementwise_scale=False)
@@ -161,7 +161,7 @@ class TestFusedRMSNormBranches:
 
     def test_layer_norm_explicit_weight_and_bias(self):
         """FusedLayerNorm with explicit weight and bias uses both (not-None branches)."""
-        from squish.fused_rmsnorm import FusedNormConfig, FusedLayerNorm
+        from squish.hardware.fused_rmsnorm import FusedNormConfig, FusedLayerNorm
 
         dim = 16
         cfg = FusedNormConfig(hidden_dim=dim, eps=1e-5, elementwise_scale=True)
@@ -174,7 +174,7 @@ class TestFusedRMSNormBranches:
 
     def test_layer_norm_elementwise_scale_false(self):
         """FusedLayerNorm.forward with elementwise_scale=False skips the scale branch."""
-        from squish.fused_rmsnorm import FusedNormConfig, FusedLayerNorm
+        from squish.hardware.fused_rmsnorm import FusedNormConfig, FusedLayerNorm
 
         dim = 16
         cfg = FusedNormConfig(hidden_dim=dim, eps=1e-5, elementwise_scale=False)
@@ -193,7 +193,7 @@ class TestFusedRMSNormBranches:
 class TestPagedKVBranches:
     def test_block_table_free_nonexistent_seq_noop(self):
         """BlockTable.free with an unknown seq_id is a no-op (early return branch)."""
-        from squish.paged_kv import BlockTable
+        from squish.kv.paged_kv import BlockTable
 
         bt = BlockTable(n_blocks=8, block_size=4)
         # free a seq_id that was never allocated → should be a no-op
@@ -202,7 +202,7 @@ class TestPagedKVBranches:
 
     def test_paged_kv_cache_free_nonexistent_seq_noop(self):
         """PagedKVCache.free with an unknown seq_id is a no-op (early return branch)."""
-        from squish.paged_kv import PagedKVConfig, PagedKVCache
+        from squish.kv.paged_kv import PagedKVConfig, PagedKVCache
 
         cfg = PagedKVConfig(block_size=4, n_blocks=8, n_heads=2, head_dim=16)
         cache = PagedKVCache(cfg)
@@ -218,14 +218,14 @@ class TestPagedKVBranches:
 class TestLoRAInferenceBranches:
     def test_config_explicit_target_modules_false_branch(self):
         """LoRAConfig with explicit target_modules skips the None-assignment branch."""
-        from squish.lora_inference import LoRAConfig
+        from squish.lora.lora_inference import LoRAConfig
 
         cfg = LoRAConfig(rank=8, alpha=16.0, target_modules=("q_proj", "k_proj"))
         assert cfg.target_modules == ("q_proj", "k_proj")
 
     def test_apply_unregistered_module_returns_base(self):
         """LoRAInferenceAdapter.apply with an unregistered module returns base unchanged."""
-        from squish.lora_inference import LoRAConfig, LoRAInferenceAdapter
+        from squish.lora.lora_inference import LoRAConfig, LoRAInferenceAdapter
 
         cfg = LoRAConfig(rank=4, alpha=8.0)
         adapter = LoRAInferenceAdapter(cfg)
@@ -246,21 +246,21 @@ class TestLoRAInferenceBranches:
 class TestFlashDecodeBranches:
     def test_config_explicit_softmax_scale_false_branch(self):
         """FlashDecodeConfig with explicit softmax_scale skips the None-assignment."""
-        from squish.flash_decode import FlashDecodeConfig
+        from squish.attention.flash_decode import FlashDecodeConfig
 
         cfg = FlashDecodeConfig(n_heads=4, head_dim=64, n_splits=4, softmax_scale=0.1)
         assert cfg.softmax_scale == pytest.approx(0.1)
 
     def test_config_explicit_kv_n_heads_false_branch(self):
         """FlashDecodeConfig with explicit kv_n_heads skips the None-assignment."""
-        from squish.flash_decode import FlashDecodeConfig
+        from squish.attention.flash_decode import FlashDecodeConfig
 
         cfg = FlashDecodeConfig(n_heads=8, head_dim=64, n_splits=4, kv_n_heads=2)
         assert cfg.kv_n_heads == 2
 
     def test_decode_break_when_split_start_exceeds_seq_len(self):
         """FlashDecodeAttention.decode triggers break when start >= seq_len."""
-        from squish.flash_decode import FlashDecodeConfig, FlashDecodeAttention
+        from squish.attention.flash_decode import FlashDecodeConfig, FlashDecodeAttention
 
         # With seq_len=5 and n_splits=4, split_len=ceil(5/4)=2.
         # Splits: start=0 (ok), start=2 (ok), start=4 (ok), start=6 >= 5 → break.
@@ -286,7 +286,7 @@ class TestFlashDecodeBranches:
 class TestFlashPrefillBranches:
     def test_config_explicit_softmax_scale_false_branch(self):
         """PrefillConfig with explicit softmax_scale skips the None-assignment."""
-        from squish.flash_prefill import PrefillConfig
+        from squish.attention.flash_prefill import PrefillConfig
 
         cfg = PrefillConfig(n_heads=4, head_dim=64, softmax_scale=0.2)
         assert cfg.softmax_scale == pytest.approx(0.2)
@@ -300,7 +300,7 @@ class TestFlashPrefillBranches:
 class TestPrefixPoolBranches:
     def test_config_explicit_kv_n_heads_elif_branch(self):
         """PrefixPoolConfig with explicit valid kv_n_heads takes the elif-else path."""
-        from squish.prefix_pool import PrefixPoolConfig
+        from squish.kv.prefix_pool import PrefixPoolConfig
 
         # kv_n_heads is not None (skip if-branch) and > 0 (skip elif raise-branch).
         cfg = PrefixPoolConfig(
@@ -310,7 +310,7 @@ class TestPrefixPoolBranches:
 
     def test_prefix_entry_explicit_last_used_skips_assignment(self):
         """PrefixEntry with explicit non-zero last_used skips the assignment branch."""
-        from squish.prefix_pool import PrefixEntry
+        from squish.kv.prefix_pool import PrefixEntry
         import numpy as np
 
         keys = np.zeros((1, 4, 8), dtype=np.float32)
@@ -333,7 +333,7 @@ class TestPrefixPoolBranches:
 class TestKVDefragBranches:
     def test_defrag_empty_pool_n_alloc_zero_branch(self):
         """KVDefragmenter.defrag() with no allocations takes the n_alloc==0 path."""
-        from squish.kv_defrag import KVDefragmenter
+        from squish.kv.kv_defrag import KVDefragmenter
 
         d = KVDefragmenter(page_size=4, n_heads=2, head_dim=4)
         # No allocations → n_alloc == 0 → early return with zeroed DefragStats.
@@ -350,7 +350,7 @@ class TestKVDefragBranches:
 class TestSparseWeightBranches:
     def test_memory_bytes_before_compress_returns_zero(self):
         """SparseWeightStore.memory_bytes() before compress() returns 0."""
-        from squish.sparse_weight import SparsityConfig, SparseWeightStore
+        from squish.moe.sparse_weight import SparsityConfig, SparseWeightStore
 
         cfg = SparsityConfig(N=2, M=4)
         store = SparseWeightStore(cfg)
@@ -366,7 +366,7 @@ class TestSparseWeightBranches:
 class TestMixKVQBranches:
     def test_channel_scorer_difficulty_empty(self):
         """ChannelScorer.difficulty before any record → returns zeros (not filled)."""
-        from squish.mix_kvq import MixKVQConfig, ChannelScorer
+        from squish.kv.mix_kvq import MixKVQConfig, ChannelScorer
 
         n_ch = 8
         scorer = ChannelScorer(n_channels=n_ch, config=MixKVQConfig())
@@ -377,7 +377,7 @@ class TestMixKVQBranches:
 
     def test_channel_scorer_assign_bits_empty_key_matrix(self):
         """ChannelScorer.assign_bits with 0-row key matrix → returns zeros."""
-        from squish.mix_kvq import MixKVQConfig, ChannelScorer
+        from squish.kv.mix_kvq import MixKVQConfig, ChannelScorer
 
         n_ch = 8
         cfg_obj = MixKVQConfig()
@@ -396,7 +396,7 @@ class TestMixKVQBranches:
 class TestParallelSamplerBranches:
     def test_diversity_score_single_sample(self):
         """ParallelSampler._diversity_score with a single sample → returns zeros."""
-        from squish.parallel_sampler import ParallelSampler, DiversityConfig
+        from squish.hardware.parallel_sampler import ParallelSampler, DiversityConfig
 
         cfg = DiversityConfig(n_samples=1, temperature=1.0, seed=0)
         ps = ParallelSampler(cfg)
@@ -415,7 +415,7 @@ class TestParallelSamplerBranches:
 class TestMxQuantBranches:
     def test_quantize_all_zero_tile(self):
         """MXQuantizer._encode_tile with all-zero tile hits the amax==0 guard."""
-        from squish.mx_quant import MXConfig, MXQuantizer
+        from squish.quant.mx_quant import MXConfig, MXQuantizer
 
         cfg = MXConfig(tile_size=4)  # tile_size must be a power of 2
         quantizer = MXQuantizer(cfg)
@@ -433,7 +433,7 @@ class TestMxQuantBranches:
 class TestQuantSpecBranches:
     def test_quantize_uniform_range(self):
         """DraftQuantizer.quantize with t_min==t_max → all-zero codes + scale=1."""
-        from squish.quant_spec import DraftQuantizer
+        from squish.speculative.quant_spec import DraftQuantizer
 
         quantizer = DraftQuantizer(bits=8)
         uniform = np.ones(8, dtype=np.float32) * 3.14
@@ -451,7 +451,7 @@ class TestQuantSpecBranches:
 class TestLoRAComposeBranches:
     def test_compose_weights_none_guard(self):
         """LoRAComposer.forward with no adapters loaded returns zeros early."""
-        from squish.lora_compose import LoRAComposer
+        from squish.lora.lora_compose import LoRAComposer
 
         composer = LoRAComposer(hidden_dim=8)
         x = RNG.standard_normal((2, 8)).astype(np.float32)
@@ -469,7 +469,7 @@ class TestLoRAComposeBranches:
 class TestShadowKVBranches:
     def test_recall_empty_sequence_guard(self):
         """ShadowKVCache.recall with no stored data returns empty arrays."""
-        from squish.shadow_kv import ShadowKVCache, ShadowKVConfig
+        from squish.kv.shadow_kv import ShadowKVCache, ShadowKVConfig
 
         cfg = ShadowKVConfig(svd_rank=4, n_landmarks=8)
         cache = ShadowKVCache(n_layers=2, n_heads=2, head_dim=8, config=cfg)
@@ -487,7 +487,7 @@ class TestShadowKVBranches:
 class TestAdaServeBranches:
     def test_goodput_rate_zero_tokens_returns_one(self):
         """AdaServeStats.goodput_rate with zero tokens returns 1.0 (not excluded)."""
-        from squish.ada_serve import AdaServeStats
+        from squish.serving.ada_serve import AdaServeStats
 
         stats = AdaServeStats()
         # total_tokens_generated == 0 → return 1.0 (NOT 0.0, so NOT excluded)
@@ -495,7 +495,7 @@ class TestAdaServeBranches:
 
     def test_goodput_rate_false_branch_with_tokens(self):
         """AdaServeStats.goodput_rate False branch: total_tokens_generated > 0."""
-        from squish.ada_serve import AdaServeStats
+        from squish.serving.ada_serve import AdaServeStats
 
         stats = AdaServeStats()
         # slo_met=True → goodput_tokens incremented (True branch of record_request)
@@ -505,7 +505,7 @@ class TestAdaServeBranches:
 
     def test_record_request_slo_not_met_increments_violations(self):
         """AdaServeStats.record_request with slo_met=False covers the else branch."""
-        from squish.ada_serve import AdaServeStats
+        from squish.serving.ada_serve import AdaServeStats
 
         stats = AdaServeStats()
         # slo_met=False → total_slo_violations incremented (False branch)
@@ -516,7 +516,7 @@ class TestAdaServeBranches:
 
     def test_estimated_goodput_improvement_empty_histogram(self):
         """AdaServeStats.estimated_goodput_improvement_vs_fixed with empty histogram."""
-        from squish.ada_serve import AdaServeStats
+        from squish.serving.ada_serve import AdaServeStats
 
         stats = AdaServeStats()
         # gamma_histogram is empty → return 1.0 (NOT 0.0, so NOT excluded)
@@ -524,7 +524,7 @@ class TestAdaServeBranches:
 
     def test_estimated_goodput_improvement_multiple_gammas(self):
         """AdaServeStats.estimated_goodput_improvement_vs_fixed False branch."""
-        from squish.ada_serve import AdaServeStats
+        from squish.serving.ada_serve import AdaServeStats
 
         stats = AdaServeStats()
         stats.record_request(gamma_used=2, tokens_generated=5, slo_met=True)
@@ -534,7 +534,7 @@ class TestAdaServeBranches:
 
     def test_mean_gamma_non_empty_histogram(self):
         """AdaServeStats.mean_gamma with non-empty histogram covers the False branch."""
-        from squish.ada_serve import AdaServeStats
+        from squish.serving.ada_serve import AdaServeStats
 
         stats = AdaServeStats()
         stats.record_request(gamma_used=4, tokens_generated=10, slo_met=True)
@@ -550,7 +550,7 @@ class TestAdaServeBranches:
 class TestDistilSpecBranches:
     def test_stats_with_empty_history(self):
         """DistilSpecCalibrator.stats() with no recorded steps returns DistilStats(n_steps=0)."""
-        from squish.distil_spec import DistilConfig, DistilSpecCalibrator
+        from squish.speculative.distil_spec import DistilConfig, DistilSpecCalibrator
 
         cfg = DistilConfig()
         spec = DistilSpecCalibrator(cfg)
@@ -561,7 +561,7 @@ class TestDistilSpecBranches:
 
     def test_mean_kl_with_history(self):
         """DistilSpecCalibrator.mean_kl with non-empty history covers the False branch."""
-        from squish.distil_spec import DistilConfig, DistilSpecCalibrator
+        from squish.speculative.distil_spec import DistilConfig, DistilSpecCalibrator
 
         cfg = DistilConfig()
         spec = DistilSpecCalibrator(cfg)
@@ -582,7 +582,7 @@ class TestDistilSpecBranches:
 class TestPipelineBubbleBranches:
     def test_n_slots_empty_schedule_returns_zero(self):
         """StageSchedule.n_slots with empty schedule returns 0 (int, not excluded)."""
-        from squish.pipeline_bubble import StageSchedule
+        from squish.hardware.pipeline_bubble import StageSchedule
 
         sched = StageSchedule(schedule=[])
         # n_slots: if not self.schedule: return 0 (int, NOT excluded by return 0.0 rule)
@@ -590,7 +590,7 @@ class TestPipelineBubbleBranches:
 
     def test_n_slots_nonempty_schedule_false_branch(self):
         """StageSchedule.n_slots with a non-empty schedule takes the False branch."""
-        from squish.pipeline_bubble import BubbleEliminator, StageConfig
+        from squish.hardware.pipeline_bubble import BubbleEliminator, StageConfig
 
         cfg = StageConfig(n_stages=2, n_microbatches=4, stage_latency_ms=1.0)
         elim = BubbleEliminator(cfg)
@@ -607,7 +607,7 @@ class TestPipelineBubbleBranches:
 class TestBudgetSpecBranches:
     def test_budget_next_draft_exhausted_returns_zero(self):
         """BudgetSpecDecoder.effective_draft_len with exhausted budget returns 0."""
-        from squish.budget_spec import BudgetConfig, BudgetSpecDecoder
+        from squish.serving.budget_spec import BudgetConfig, BudgetSpecDecoder
 
         cfg = BudgetConfig(total_budget=4, n_draft=2)
         ctrl = BudgetSpecDecoder(cfg)
@@ -626,7 +626,7 @@ class TestBudgetSpecBranches:
 class TestSparseVerifyBranches:
     def test_estimated_reuse_single_draft(self):
         """SparseVerifyPass._simulate_reuse with n_draft<=1 returns 0."""
-        from squish.sparse_verify import SparseVerifyConfig, SparseVerifyPass
+        from squish.speculative.sparse_verify import SparseVerifyConfig, SparseVerifyPass
 
         cfg = SparseVerifyConfig()
         svp = SparseVerifyPass(

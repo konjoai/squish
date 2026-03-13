@@ -13,37 +13,37 @@ import pytest
 # Module imports
 # ---------------------------------------------------------------------------
 
-from squish.context_cache import (
+from squish.kv.context_cache import (
     CacheEntry,
     ContextCacheStats,
     PersistentContextCache,
     _hash_tokens,
 )
-from squish.fused_sampler import FusedSampler, SamplerConfig
-from squish.layerwise_decode import (
+from squish.hardware.fused_sampler import FusedSampler, SamplerConfig
+from squish.token.layerwise_decode import (
     DecodeStats,
     LayerwiseConfig,
     LayerwiseDecoder,
     LayerStream,
 )
-from squish.distil_spec import DistilConfig, DistilSpecCalibrator, DistilStats
-from squish.stream_rag import (
+from squish.speculative.distil_spec import DistilConfig, DistilSpecCalibrator, DistilStats
+from squish.streaming.stream_rag import (
     RAGDocument,
     StreamRAGConfig,
     StreamRAGInjector,
     StreamRAGStats,
 )
-from squish.kv_compress import KVCompressConfig, KVCompressor
-from squish.batch_embed import BatchEmbedder, EmbeddingStats, PoolingConfig
-from squish.token_healer import HealerConfig, HealerStats, TokenHealer
-from squish.adaptive_quantize import (
+from squish.kv.kv_compress import KVCompressConfig, KVCompressor
+from squish.serving.batch_embed import BatchEmbedder, EmbeddingStats, PoolingConfig
+from squish.token.token_healer import HealerConfig, HealerStats, TokenHealer
+from squish.quant.adaptive_quantize import (
     AdaptiveQuantizer,
     AdaptiveQuantStats,
     PressureMonitor,
     PressureThresholds,
     QuantPrecision,
 )
-from squish.mirror_sd import (
+from squish.speculative.mirror_sd import (
     MirrorDraftPipeline,
     MirrorFuture,
     MirrorSDConfig,
@@ -53,14 +53,14 @@ from squish.mirror_sd import (
     _softmax,
     _top_p_filter,
 )
-from squish.medusa import (
+from squish.speculative.medusa import (
     MedusaConfig,
     MedusaDecoder,
     MedusaDraftTree,
     MedusaHead,
     MedusaStats,
 )
-from squish.mixed_precision_kv import (
+from squish.kv.mixed_precision_kv import (
     HeadPrecision,
     HeadPrecisionMap,
     MixedPrecisionKVCache,
@@ -69,15 +69,15 @@ from squish.mixed_precision_kv import (
     _dequantize_symmetric,
     _quantize_symmetric,
 )
-from squish.sparse_spec import (
+from squish.speculative.sparse_spec import (
     PillarAttnCache,
     SparseSpecConfig,
     SparseSpecDecoder,
     SparseSpecDrafter,
     SparseSpecStats,
 )
-from squish.sparse_attn_index import ANCandidates, IndexConfig, IndexStats, SparseAttnIndex
-from squish.token_budget_gate import BudgetGateStats, BudgetPolicy, TokenBudgetGate
+from squish.attention.sparse_attn_index import ANCandidates, IndexConfig, IndexStats, SparseAttnIndex
+from squish.token.token_budget_gate import BudgetGateStats, BudgetPolicy, TokenBudgetGate
 
 
 # ===========================================================================

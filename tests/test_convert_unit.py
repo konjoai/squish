@@ -86,11 +86,11 @@ class TestApplyAwqSingle:
         np.testing.assert_array_equal(result, arr)
 
     def test_import_error_falls_back(self):
-        """When squish.awq is unavailable, returns arr_f32 unchanged."""
+        """When squish.quant.awq is unavailable, returns arr_f32 unchanged."""
         from squish.convert import _apply_awq_single
         arr = np.ones((4, 4), dtype=np.float32)
         scales = {"weight": np.ones(4, dtype=np.float32)}  # non-empty
-        with patch.dict(__import__('sys').modules, {"squish.awq": None}):
+        with patch.dict(__import__('sys').modules, {"squish.quant.awq": None}):
             result = _apply_awq_single("weight", arr, scales)
         assert result is arr or np.array_equal(result, arr)
 

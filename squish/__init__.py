@@ -19,18 +19,18 @@ __version__ = "9.0.0"
 # Every public name is loaded on first access via __getattr__.
 # This keeps `import squish` fast regardless of how many wave modules exist.
 _LAZY_IMPORTS: dict[str, str] = {
-    # squish.ada_serve
-    "AdaServeConfig":            "squish.ada_serve",
-    "AdaServeRequest":           "squish.ada_serve",
-    "AdaServeScheduler":         "squish.ada_serve",
-    "AdaServeStats":             "squish.ada_serve",
-    "SLOTarget":                 "squish.ada_serve",
+    # squish.serving.ada_serve
+    "AdaServeConfig":            "squish.serving.ada_serve",
+    "AdaServeRequest":           "squish.serving.ada_serve",
+    "AdaServeScheduler":         "squish.serving.ada_serve",
+    "AdaServeStats":             "squish.serving.ada_serve",
+    "SLOTarget":                 "squish.serving.ada_serve",
 
-    # squish.awq
-    "apply_awq_to_weights":      "squish.awq",
-    "collect_activation_scales": "squish.awq",
-    "load_awq_scales":           "squish.awq",
-    "save_awq_scales":           "squish.awq",
+    # squish.quant.awq
+    "apply_awq_to_weights":      "squish.quant.awq",
+    "collect_activation_scales": "squish.quant.awq",
+    "load_awq_scales":           "squish.quant.awq",
+    "save_awq_scales":           "squish.quant.awq",
 
     # squish.catalog
     "CatalogEntry":              "squish.catalog",
@@ -39,333 +39,333 @@ _LAZY_IMPORTS: dict[str, str] = {
     "pull_model":                "squish.catalog",
     "resolve_model":             "squish.catalog",
 
-    # squish.cla
-    "CLAConfig":                 "squish.cla",
-    "CLALayerSpec":              "squish.cla",
-    "CLASchedule":               "squish.cla",
-    "CLAStats":                  "squish.cla",
+    # squish.attention.cla
+    "CLAConfig":                 "squish.attention.cla",
+    "CLALayerSpec":              "squish.attention.cla",
+    "CLASchedule":               "squish.attention.cla",
+    "CLAStats":                  "squish.attention.cla",
 
-    # squish.compressed_loader
-    "load_compressed_model":     "squish.compressed_loader",
-    "load_from_npy_dir":         "squish.compressed_loader",
-    "save_int4_npy_dir":         "squish.compressed_loader",
+    # squish.quant.compressed_loader
+    "load_compressed_model":     "squish.quant.compressed_loader",
+    "load_from_npy_dir":         "squish.quant.compressed_loader",
+    "save_int4_npy_dir":         "squish.quant.compressed_loader",
 
-    # squish.conf_spec
-    "ConfSpecConfig":            "squish.conf_spec",
-    "ConfSpecDecision":          "squish.conf_spec",
-    "ConfSpecStats":             "squish.conf_spec",
-    "ConfSpecVerifier":          "squish.conf_spec",
+    # squish.speculative.conf_spec
+    "ConfSpecConfig":            "squish.speculative.conf_spec",
+    "ConfSpecDecision":          "squish.speculative.conf_spec",
+    "ConfSpecStats":             "squish.speculative.conf_spec",
+    "ConfSpecVerifier":          "squish.speculative.conf_spec",
 
-    # squish.dfloat11
-    "CompressedBlock":           "squish.dfloat11",
-    "CompressedModel":           "squish.dfloat11",
-    "DFloat11Compressor":        "squish.dfloat11",
-    "DFloat11Config":            "squish.dfloat11",
-    "HuffmanCodec":              "squish.dfloat11",
-    "compress_model":            "squish.dfloat11",
+    # squish.quant.dfloat11
+    "CompressedBlock":           "squish.quant.dfloat11",
+    "CompressedModel":           "squish.quant.dfloat11",
+    "DFloat11Compressor":        "squish.quant.dfloat11",
+    "DFloat11Config":            "squish.quant.dfloat11",
+    "HuffmanCodec":              "squish.quant.dfloat11",
+    "compress_model":            "squish.quant.dfloat11",
 
-    # squish.diffkv
-    "CompactedKVSlot":           "squish.diffkv",
-    "DiffKVConfig":              "squish.diffkv",
-    "DiffKVPolicy":              "squish.diffkv",
-    "DiffKVPolicyManager":       "squish.diffkv",
-    "DiffKVStats":               "squish.diffkv",
-    "HeadSparsityProfile":       "squish.diffkv",
-    "TokenImportanceTier":       "squish.diffkv",
+    # squish.kv.diffkv
+    "CompactedKVSlot":           "squish.kv.diffkv",
+    "DiffKVConfig":              "squish.kv.diffkv",
+    "DiffKVPolicy":              "squish.kv.diffkv",
+    "DiffKVPolicyManager":       "squish.kv.diffkv",
+    "DiffKVStats":               "squish.kv.diffkv",
+    "HeadSparsityProfile":       "squish.kv.diffkv",
+    "TokenImportanceTier":       "squish.kv.diffkv",
 
-    # squish.dovetail
-    "DovetailCPUVerifier":       "squish.dovetail",
-    "DovetailConfig":            "squish.dovetail",
-    "DovetailDecoder":           "squish.dovetail",
-    "DovetailDraftRunner":       "squish.dovetail",
-    "DovetailStats":             "squish.dovetail",
+    # squish.speculative.dovetail
+    "DovetailCPUVerifier":       "squish.speculative.dovetail",
+    "DovetailConfig":            "squish.speculative.dovetail",
+    "DovetailDecoder":           "squish.speculative.dovetail",
+    "DovetailDraftRunner":       "squish.speculative.dovetail",
+    "DovetailStats":             "squish.speculative.dovetail",
 
-    # squish.duo_decoding
-    "DuoCandidate":              "squish.duo_decoding",
-    "DuoCPUVerifier":            "squish.duo_decoding",
-    "DuoDecodingConfig":         "squish.duo_decoding",
-    "DuoDecodingDecoder":        "squish.duo_decoding",
-    "DuoDecodingStats":          "squish.duo_decoding",
-    "DuoScheduler":              "squish.duo_decoding",
+    # squish.attention.duo_decoding
+    "DuoCandidate":              "squish.attention.duo_decoding",
+    "DuoCPUVerifier":            "squish.attention.duo_decoding",
+    "DuoDecodingConfig":         "squish.attention.duo_decoding",
+    "DuoDecodingDecoder":        "squish.attention.duo_decoding",
+    "DuoDecodingStats":          "squish.attention.duo_decoding",
+    "DuoScheduler":              "squish.attention.duo_decoding",
 
-    # squish.entropy
-    "compress_npy_dir":          "squish.entropy",
-    "decompress_npy_dir":        "squish.entropy",
+    # squish.io.entropy
+    "compress_npy_dir":          "squish.io.entropy",
+    "decompress_npy_dir":        "squish.io.entropy",
 
-    # squish.flash_attention
-    "PatchResult":               "squish.flash_attention",
-    "attention_status":          "squish.flash_attention",
-    "patch_model_attention":     "squish.flash_attention",
-    "predict_memory_savings":    "squish.flash_attention",
-    "print_memory_table":        "squish.flash_attention",
+    # squish.attention.flash_attention
+    "PatchResult":               "squish.attention.flash_attention",
+    "attention_status":          "squish.attention.flash_attention",
+    "patch_model_attention":     "squish.attention.flash_attention",
+    "predict_memory_savings":    "squish.attention.flash_attention",
+    "print_memory_table":        "squish.attention.flash_attention",
 
-    # squish.forelen
-    "EGTPPredictor":             "squish.forelen",
-    "ForelenConfig":             "squish.forelen",
-    "ForelenStats":              "squish.forelen",
-    "PLPPredictor":              "squish.forelen",
+    # squish.token.forelen
+    "EGTPPredictor":             "squish.token.forelen",
+    "ForelenConfig":             "squish.token.forelen",
+    "ForelenStats":              "squish.token.forelen",
+    "PLPPredictor":              "squish.token.forelen",
 
-    # squish.fr_spec
-    "FRSpecCalibrator":          "squish.fr_spec",
-    "FRSpecConfig":              "squish.fr_spec",
-    "FRSpecHead":                "squish.fr_spec",
-    "FRSpecStats":               "squish.fr_spec",
-    "FreqTokenSubset":           "squish.fr_spec",
+    # squish.speculative.fr_spec
+    "FRSpecCalibrator":          "squish.speculative.fr_spec",
+    "FRSpecConfig":              "squish.speculative.fr_spec",
+    "FRSpecHead":                "squish.speculative.fr_spec",
+    "FRSpecStats":               "squish.speculative.fr_spec",
+    "FreqTokenSubset":           "squish.speculative.fr_spec",
 
-    # squish.gemfilter
-    "AttentionScoreBuffer":      "squish.gemfilter",
-    "GemFilterConfig":           "squish.gemfilter",
-    "GemFilterStats":            "squish.gemfilter",
-    "GemSelector":               "squish.gemfilter",
+    # squish.token.gemfilter
+    "AttentionScoreBuffer":      "squish.token.gemfilter",
+    "GemFilterConfig":           "squish.token.gemfilter",
+    "GemFilterStats":            "squish.token.gemfilter",
+    "GemSelector":               "squish.token.gemfilter",
 
-    # squish.ipw
-    "IPWConfig":                 "squish.ipw",
-    "IPWMeasurement":            "squish.ipw",
-    "IPWSummary":                "squish.ipw",
-    "IPWTracker":                "squish.ipw",
+    # squish.token.ipw
+    "IPWConfig":                 "squish.token.ipw",
+    "IPWMeasurement":            "squish.token.ipw",
+    "IPWSummary":                "squish.token.ipw",
+    "IPWTracker":                "squish.token.ipw",
 
-    # squish.kv_cache
-    "DiskKVCache":               "squish.kv_cache",
-    "KVBudgetBroker":            "squish.kv_cache",
-    "QuantizedKVCache":          "squish.kv_cache",
-    "make_quantized_cache":      "squish.kv_cache",
-    "patch_model_kv_cache":      "squish.kv_cache",
+    # squish.kv.kv_cache
+    "DiskKVCache":               "squish.kv.kv_cache",
+    "KVBudgetBroker":            "squish.kv.kv_cache",
+    "QuantizedKVCache":          "squish.kv.kv_cache",
+    "make_quantized_cache":      "squish.kv.kv_cache",
+    "patch_model_kv_cache":      "squish.kv.kv_cache",
 
-    # squish.kv_slab
-    "KVPage":                    "squish.kv_slab",
-    "KVSlabAllocator":           "squish.kv_slab",
+    # squish.kv.kv_slab
+    "KVPage":                    "squish.kv.kv_slab",
+    "KVSlabAllocator":           "squish.kv.kv_slab",
 
-    # squish.kvsharer
-    "KVLayerCache":              "squish.kvsharer",
-    "KVShareMap":                "squish.kvsharer",
-    "KVSharerCalibrator":        "squish.kvsharer",
-    "KVSharerConfig":            "squish.kvsharer",
-    "KVSharerStats":             "squish.kvsharer",
+    # squish.kv.kvsharer
+    "KVLayerCache":              "squish.kv.kvsharer",
+    "KVShareMap":                "squish.kv.kvsharer",
+    "KVSharerCalibrator":        "squish.kv.kvsharer",
+    "KVSharerConfig":            "squish.kv.kvsharer",
+    "KVSharerStats":             "squish.kv.kvsharer",
 
-    # squish.kvtuner
-    "KVQuantConfig":             "squish.kvtuner",
-    "KVTunerCalibrator":         "squish.kvtuner",
-    "KVTunerConfig":             "squish.kvtuner",
-    "KVTunerStats":              "squish.kvtuner",
-    "LayerSensitivity":          "squish.kvtuner",
+    # squish.kv.kvtuner
+    "KVQuantConfig":             "squish.kv.kvtuner",
+    "KVTunerCalibrator":         "squish.kv.kvtuner",
+    "KVTunerConfig":             "squish.kv.kvtuner",
+    "KVTunerStats":              "squish.kv.kvtuner",
+    "LayerSensitivity":          "squish.kv.kvtuner",
 
-    # squish.layer_skip
-    "ConfidenceEstimator":       "squish.layer_skip",
-    "EarlyExitConfig":           "squish.layer_skip",
-    "EarlyExitDecoder":          "squish.layer_skip",
-    "EarlyExitStats":            "squish.layer_skip",
+    # squish.token.layer_skip
+    "ConfidenceEstimator":       "squish.token.layer_skip",
+    "EarlyExitConfig":           "squish.token.layer_skip",
+    "EarlyExitDecoder":          "squish.token.layer_skip",
+    "EarlyExitStats":            "squish.token.layer_skip",
 
-    # squish.layerwise_loader
-    "LayerCache":                "squish.layerwise_loader",
-    "LayerwiseLoader":           "squish.layerwise_loader",
-    "LoadStats":                 "squish.layerwise_loader",
-    "recommend_cache_size":      "squish.layerwise_loader",
-    "shard_model":               "squish.layerwise_loader",
+    # squish.hardware.layerwise_loader
+    "LayerCache":                "squish.hardware.layerwise_loader",
+    "LayerwiseLoader":           "squish.hardware.layerwise_loader",
+    "LoadStats":                 "squish.hardware.layerwise_loader",
+    "recommend_cache_size":      "squish.hardware.layerwise_loader",
+    "shard_model":               "squish.hardware.layerwise_loader",
 
-    # squish.long_spec
-    "LongSpecConfig":            "squish.long_spec",
-    "LongSpecDecoder":           "squish.long_spec",
-    "LongSpecHead":              "squish.long_spec",
-    "LongSpecStats":             "squish.long_spec",
+    # squish.speculative.long_spec
+    "LongSpecConfig":            "squish.speculative.long_spec",
+    "LongSpecDecoder":           "squish.speculative.long_spec",
+    "LongSpecHead":              "squish.speculative.long_spec",
+    "LongSpecStats":             "squish.speculative.long_spec",
 
-    # squish.lookahead_reasoning
-    "LookaheadBatch":            "squish.lookahead_reasoning",
-    "LookaheadConfig":           "squish.lookahead_reasoning",
-    "LookaheadReasoningEngine":  "squish.lookahead_reasoning",
-    "LookaheadStats":            "squish.lookahead_reasoning",
-    "LookaheadStep":             "squish.lookahead_reasoning",
+    # squish.token.lookahead_reasoning
+    "LookaheadBatch":            "squish.token.lookahead_reasoning",
+    "LookaheadConfig":           "squish.token.lookahead_reasoning",
+    "LookaheadReasoningEngine":  "squish.token.lookahead_reasoning",
+    "LookaheadStats":            "squish.token.lookahead_reasoning",
+    "LookaheadStep":             "squish.token.lookahead_reasoning",
 
-    # squish.lora_manager
-    "DareTiesConfig":            "squish.lora_manager",
-    "DareTiesMerger":            "squish.lora_manager",
-    "LoRAManager":               "squish.lora_manager",
+    # squish.lora.lora_manager
+    "DareTiesConfig":            "squish.lora.lora_manager",
+    "DareTiesMerger":            "squish.lora.lora_manager",
+    "LoRAManager":               "squish.lora.lora_manager",
 
-    # squish.mirror_sd
-    "MirrorDraftPipeline":       "squish.mirror_sd",
-    "MirrorFuture":              "squish.mirror_sd",
-    "MirrorSDConfig":            "squish.mirror_sd",
-    "MirrorSDDecoder":           "squish.mirror_sd",
-    "MirrorSDStats":             "squish.mirror_sd",
-    "MirrorVerifyPipeline":      "squish.mirror_sd",
+    # squish.speculative.mirror_sd
+    "MirrorDraftPipeline":       "squish.speculative.mirror_sd",
+    "MirrorFuture":              "squish.speculative.mirror_sd",
+    "MirrorSDConfig":            "squish.speculative.mirror_sd",
+    "MirrorSDDecoder":           "squish.speculative.mirror_sd",
+    "MirrorSDStats":             "squish.speculative.mirror_sd",
+    "MirrorVerifyPipeline":      "squish.speculative.mirror_sd",
 
-    # squish.paged_attention
-    "BlockAllocator":            "squish.paged_attention",
-    "PageBlockTable":            "squish.paged_attention",
-    "PagedKVCache":              "squish.paged_attention",
+    # squish.kv.paged_attention
+    "BlockAllocator":            "squish.kv.paged_attention",
+    "PageBlockTable":            "squish.kv.paged_attention",
+    "PagedKVCache":              "squish.kv.paged_attention",
 
-    # squish.paris_kv
-    "ParisKVCodebook":           "squish.paris_kv",
-    "ParisKVConfig":             "squish.paris_kv",
+    # squish.kv.paris_kv
+    "ParisKVCodebook":           "squish.kv.paris_kv",
+    "ParisKVConfig":             "squish.kv.paris_kv",
 
-    # squish.pipo
-    "INT4BypassKernel":          "squish.pipo",
-    "LayerWeightBuffer":         "squish.pipo",
-    "PIPOConfig":                "squish.pipo",
-    "PIPOScheduler":             "squish.pipo",
+    # squish.moe.pipo
+    "INT4BypassKernel":          "squish.moe.pipo",
+    "LayerWeightBuffer":         "squish.moe.pipo",
+    "PIPOConfig":                "squish.moe.pipo",
+    "PIPOScheduler":             "squish.moe.pipo",
 
-    # squish.prompt_lookup
-    "NGramIndex":                "squish.prompt_lookup",
-    "PromptLookupConfig":        "squish.prompt_lookup",
-    "PromptLookupDecoder":       "squish.prompt_lookup",
-    "PromptLookupStats":         "squish.prompt_lookup",
+    # squish.speculative.prompt_lookup
+    "NGramIndex":                "squish.speculative.prompt_lookup",
+    "PromptLookupConfig":        "squish.speculative.prompt_lookup",
+    "PromptLookupDecoder":       "squish.speculative.prompt_lookup",
+    "PromptLookupStats":         "squish.speculative.prompt_lookup",
 
-    # squish.qspec
-    "ActivationQuantizer":       "squish.qspec",
-    "QSpecConfig":               "squish.qspec",
-    "QSpecDecoder":              "squish.qspec",
-    "QSpecStats":                "squish.qspec",
+    # squish.speculative.qspec
+    "ActivationQuantizer":       "squish.speculative.qspec",
+    "QSpecConfig":               "squish.speculative.qspec",
+    "QSpecDecoder":              "squish.speculative.qspec",
+    "QSpecStats":                "squish.speculative.qspec",
 
-    # squish.quantizer
-    "QuantizationResult":        "squish.quantizer",
-    "dequantize_int4":           "squish.quantizer",
-    "get_backend_info":          "squish.quantizer",
-    "mean_cosine_similarity":    "squish.quantizer",
-    "quantize_embeddings":       "squish.quantizer",
-    "quantize_int4":             "squish.quantizer",
-    "reconstruct_embeddings":    "squish.quantizer",
+    # squish.quant.quantizer
+    "QuantizationResult":        "squish.quant.quantizer",
+    "dequantize_int4":           "squish.quant.quantizer",
+    "get_backend_info":          "squish.quant.quantizer",
+    "mean_cosine_similarity":    "squish.quant.quantizer",
+    "quantize_embeddings":       "squish.quant.quantizer",
+    "quantize_int4":             "squish.quant.quantizer",
+    "reconstruct_embeddings":    "squish.quant.quantizer",
 
-    # squish.radix_cache
-    "RadixNode":                 "squish.radix_cache",
-    "RadixTree":                 "squish.radix_cache",
+    # squish.kv.radix_cache
+    "RadixNode":                 "squish.kv.radix_cache",
+    "RadixTree":                 "squish.kv.radix_cache",
 
-    # squish.robust_scheduler
-    "ABalancedScheduler":        "squish.robust_scheduler",
-    "AMaxScheduler":             "squish.robust_scheduler",
-    "LengthInterval":            "squish.robust_scheduler",
-    "Request":                   "squish.robust_scheduler",
-    "RobustSchedulerConfig":     "squish.robust_scheduler",
-    "RobustSchedulerStats":      "squish.robust_scheduler",
+    # squish.serving.robust_scheduler
+    "ABalancedScheduler":        "squish.serving.robust_scheduler",
+    "AMaxScheduler":             "squish.serving.robust_scheduler",
+    "LengthInterval":            "squish.serving.robust_scheduler",
+    "Request":                   "squish.serving.robust_scheduler",
+    "RobustSchedulerConfig":     "squish.serving.robust_scheduler",
+    "RobustSchedulerStats":      "squish.serving.robust_scheduler",
 
-    # squish.sage_attention
-    "KSmoother":                 "squish.sage_attention",
-    "SageAttentionConfig":       "squish.sage_attention",
-    "SageAttentionKernel":       "squish.sage_attention",
-    "SageAttentionStats":        "squish.sage_attention",
+    # squish.attention.sage_attention
+    "KSmoother":                 "squish.attention.sage_attention",
+    "SageAttentionConfig":       "squish.attention.sage_attention",
+    "SageAttentionKernel":       "squish.attention.sage_attention",
+    "SageAttentionStats":        "squish.attention.sage_attention",
 
-    # squish.sage_attention2
-    "SageAttention2Config":      "squish.sage_attention2",
-    "SageAttention2Kernel":      "squish.sage_attention2",
-    "SageAttention2Stats":       "squish.sage_attention2",
-    "WarpQuantResult":           "squish.sage_attention2",
+    # squish.attention.sage_attention2
+    "SageAttention2Config":      "squish.attention.sage_attention2",
+    "SageAttention2Kernel":      "squish.attention.sage_attention2",
+    "SageAttention2Stats":       "squish.attention.sage_attention2",
+    "WarpQuantResult":           "squish.attention.sage_attention2",
 
-    # squish.seq_packing
-    "PackedBatch":               "squish.seq_packing",
-    "PackingConfig":             "squish.seq_packing",
-    "PackingStats":              "squish.seq_packing",
-    "SequencePacker":            "squish.seq_packing",
+    # squish.streaming.seq_packing
+    "PackedBatch":               "squish.streaming.seq_packing",
+    "PackingConfig":             "squish.streaming.seq_packing",
+    "PackingStats":              "squish.streaming.seq_packing",
+    "SequencePacker":            "squish.streaming.seq_packing",
 
-    # squish.shadow_kv
-    "LandmarkSelector":          "squish.shadow_kv",
-    "LowRankKeyCache":           "squish.shadow_kv",
-    "ShadowKVCache":             "squish.shadow_kv",
-    "ShadowKVConfig":            "squish.shadow_kv",
+    # squish.kv.shadow_kv
+    "LandmarkSelector":          "squish.kv.shadow_kv",
+    "LowRankKeyCache":           "squish.kv.shadow_kv",
+    "ShadowKVCache":             "squish.kv.shadow_kv",
+    "ShadowKVConfig":            "squish.kv.shadow_kv",
 
-    # squish.smallkv
-    "MarginalVCache":            "squish.smallkv",
-    "SaliencyTracker":           "squish.smallkv",
-    "SmallKVCache":              "squish.smallkv",
-    "SmallKVConfig":             "squish.smallkv",
-    "SmallKVStats":              "squish.smallkv",
+    # squish.kv.smallkv
+    "MarginalVCache":            "squish.kv.smallkv",
+    "SaliencyTracker":           "squish.kv.smallkv",
+    "SmallKVCache":              "squish.kv.smallkv",
+    "SmallKVConfig":             "squish.kv.smallkv",
+    "SmallKVStats":              "squish.kv.smallkv",
 
-    # squish.sparge_attn
-    "BlockMask":                 "squish.sparge_attn",
-    "SpargeAttnConfig":          "squish.sparge_attn",
-    "SpargeAttnEngine":          "squish.sparge_attn",
-    "SpargeAttnStats":           "squish.sparge_attn",
+    # squish.attention.sparge_attn
+    "BlockMask":                 "squish.attention.sparge_attn",
+    "SpargeAttnConfig":          "squish.attention.sparge_attn",
+    "SpargeAttnEngine":          "squish.attention.sparge_attn",
+    "SpargeAttnStats":           "squish.attention.sparge_attn",
 
-    # squish.sparse_spec
-    "PillarAttnCache":           "squish.sparse_spec",
-    "SparseSpecConfig":          "squish.sparse_spec",
-    "SparseSpecDecoder":         "squish.sparse_spec",
-    "SparseSpecDrafter":         "squish.sparse_spec",
-    "SparseSpecStats":           "squish.sparse_spec",
+    # squish.speculative.sparse_spec
+    "PillarAttnCache":           "squish.speculative.sparse_spec",
+    "SparseSpecConfig":          "squish.speculative.sparse_spec",
+    "SparseSpecDecoder":         "squish.speculative.sparse_spec",
+    "SparseSpecDrafter":         "squish.speculative.sparse_spec",
+    "SparseSpecStats":           "squish.speculative.sparse_spec",
 
-    # squish.sparse_verify
-    "InterDraftReuseCache":      "squish.sparse_verify",
-    "SparseVerifyConfig":        "squish.sparse_verify",
-    "SparseVerifyPass":          "squish.sparse_verify",
-    "SparseVerifyStats":         "squish.sparse_verify",
+    # squish.speculative.sparse_verify
+    "InterDraftReuseCache":      "squish.speculative.sparse_verify",
+    "SparseVerifyConfig":        "squish.speculative.sparse_verify",
+    "SparseVerifyPass":          "squish.speculative.sparse_verify",
+    "SparseVerifyStats":         "squish.speculative.sparse_verify",
 
-    # squish.spec_reason
-    "ReasoningStep":             "squish.spec_reason",
-    "SpecReasonConfig":          "squish.spec_reason",
-    "SpecReasonOrchestrator":    "squish.spec_reason",
-    "SpecReasonStats":           "squish.spec_reason",
-    "StepVerdict":               "squish.spec_reason",
+    # squish.speculative.spec_reason
+    "ReasoningStep":             "squish.speculative.spec_reason",
+    "SpecReasonConfig":          "squish.speculative.spec_reason",
+    "SpecReasonOrchestrator":    "squish.speculative.spec_reason",
+    "SpecReasonStats":           "squish.speculative.spec_reason",
+    "StepVerdict":               "squish.speculative.spec_reason",
 
-    # squish.specontext
-    "DistilledRetrievalHead":    "squish.specontext",
-    "SpeContextCache":           "squish.specontext",
-    "SpeContextConfig":          "squish.specontext",
-    "SpeContextStats":           "squish.specontext",
+    # squish.speculative.specontext
+    "DistilledRetrievalHead":    "squish.speculative.specontext",
+    "SpeContextCache":           "squish.speculative.specontext",
+    "SpeContextConfig":          "squish.speculative.specontext",
+    "SpeContextStats":           "squish.speculative.specontext",
 
-    # squish.speculative
-    "SpeculativeGenerator":      "squish.speculative",
-    "load_draft_model":          "squish.speculative",
+    # squish.speculative.speculative
+    "SpeculativeGenerator":      "squish.speculative.speculative",
+    "load_draft_model":          "squish.speculative.speculative",
 
-    # squish.split_loader
-    "OffloadedLayer":            "squish.split_loader",
-    "SplitInfo":                 "squish.split_loader",
-    "SplitLayerLoader":          "squish.split_loader",
-    "print_layer_profile":       "squish.split_loader",
-    "profile_model_layers":      "squish.split_loader",
+    # squish.io.split_loader
+    "OffloadedLayer":            "squish.io.split_loader",
+    "SplitInfo":                 "squish.io.split_loader",
+    "SplitLayerLoader":          "squish.io.split_loader",
+    "print_layer_profile":       "squish.io.split_loader",
+    "profile_model_layers":      "squish.io.split_loader",
 
-    # squish.squeeze_attention
-    "BudgetAllocator":           "squish.squeeze_attention",
-    "LayerKVBudget":             "squish.squeeze_attention",
-    "SqueezeConfig":             "squish.squeeze_attention",
-    "SqueezeKVCache":            "squish.squeeze_attention",
-    "SqueezeStats":              "squish.squeeze_attention",
+    # squish.attention.squeeze_attention
+    "BudgetAllocator":           "squish.attention.squeeze_attention",
+    "LayerKVBudget":             "squish.attention.squeeze_attention",
+    "SqueezeConfig":             "squish.attention.squeeze_attention",
+    "SqueezeKVCache":            "squish.attention.squeeze_attention",
+    "SqueezeStats":              "squish.attention.squeeze_attention",
 
-    # squish.squeeze_llm
-    "OutlierDetector":           "squish.squeeze_llm",
-    "SqueezeLLMConfig":          "squish.squeeze_llm",
-    "SqueezeLLMLayer":           "squish.squeeze_llm",
-    "SqueezeLLMQuantizer":       "squish.squeeze_llm",
+    # squish.quant.squeeze_llm
+    "OutlierDetector":           "squish.quant.squeeze_llm",
+    "SqueezeLLMConfig":          "squish.quant.squeeze_llm",
+    "SqueezeLLMLayer":           "squish.quant.squeeze_llm",
+    "SqueezeLLMQuantizer":       "squish.quant.squeeze_llm",
 
-    # squish.streaming_sink
-    "SinkConfig":                "squish.streaming_sink",
-    "SinkKVCache":               "squish.streaming_sink",
-    "SinkStats":                 "squish.streaming_sink",
+    # squish.streaming.streaming_sink
+    "SinkConfig":                "squish.streaming.streaming_sink",
+    "SinkKVCache":               "squish.streaming.streaming_sink",
+    "SinkStats":                 "squish.streaming.streaming_sink",
 
-    # squish.sub_spec
-    "SubSpecConfig":             "squish.sub_spec",
-    "SubSpecDecoder":            "squish.sub_spec",
-    "SubSpecStats":              "squish.sub_spec",
-    "SubstituteLayerProxy":      "squish.sub_spec",
+    # squish.speculative.sub_spec
+    "SubSpecConfig":             "squish.speculative.sub_spec",
+    "SubSpecDecoder":            "squish.speculative.sub_spec",
+    "SubSpecStats":              "squish.speculative.sub_spec",
+    "SubstituteLayerProxy":      "squish.speculative.sub_spec",
 
-    # squish.svdq
-    "HeadSVDProfile":            "squish.svdq",
-    "SVDqCalibrator":            "squish.svdq",
-    "SVDqConfig":                "squish.svdq",
-    "SVDqPrecisionMap":          "squish.svdq",
-    "SVDqStats":                 "squish.svdq",
+    # squish.quant.svdq
+    "HeadSVDProfile":            "squish.quant.svdq",
+    "SVDqCalibrator":            "squish.quant.svdq",
+    "SVDqConfig":                "squish.quant.svdq",
+    "SVDqPrecisionMap":          "squish.quant.svdq",
+    "SVDqStats":                 "squish.quant.svdq",
 
-    # squish.token_swift
-    "MultiTokenHead":            "squish.token_swift",
-    "PartialKVManager":          "squish.token_swift",
-    "TokenSwiftConfig":          "squish.token_swift",
-    "TokenSwiftDecoder":         "squish.token_swift",
-    "TokenSwiftStats":           "squish.token_swift",
+    # squish.token.token_swift
+    "MultiTokenHead":            "squish.token.token_swift",
+    "PartialKVManager":          "squish.token.token_swift",
+    "TokenSwiftConfig":          "squish.token.token_swift",
+    "TokenSwiftDecoder":         "squish.token.token_swift",
+    "TokenSwiftStats":           "squish.token.token_swift",
 
-    # squish.trail
-    "TrailConfig":               "squish.trail",
-    "TrailLinearProbe":          "squish.trail",
-    "TrailPredictor":            "squish.trail",
-    "TrailStats":                "squish.trail",
+    # squish.speculative.trail
+    "TrailConfig":               "squish.speculative.trail",
+    "TrailLinearProbe":          "squish.speculative.trail",
+    "TrailPredictor":            "squish.speculative.trail",
+    "TrailStats":                "squish.speculative.trail",
 
-    # squish.vptq
-    "VPTQCodebook":              "squish.vptq",
-    "VPTQConfig":                "squish.vptq",
-    "VPTQLayer":                 "squish.vptq",
-    "VPTQQuantizer":             "squish.vptq",
+    # squish.quant.vptq
+    "VPTQCodebook":              "squish.quant.vptq",
+    "VPTQConfig":                "squish.quant.vptq",
+    "VPTQLayer":                 "squish.quant.vptq",
+    "VPTQQuantizer":             "squish.quant.vptq",
 
-    # squish.yoco
-    "YOCOConfig":                "squish.yoco",
-    "YOCOKVStore":               "squish.yoco",
-    "YOCOLayerSpec":             "squish.yoco",
-    "YOCOSchedule":              "squish.yoco",
-    "YOCOStats":                 "squish.yoco",
+    # squish.attention.yoco
+    "YOCOConfig":                "squish.attention.yoco",
+    "YOCOKVStore":               "squish.attention.yoco",
+    "YOCOLayerSpec":             "squish.attention.yoco",
+    "YOCOSchedule":              "squish.attention.yoco",
+    "YOCOStats":                 "squish.attention.yoco",
 }
 
 _lazy_cache: dict[str, object] = {}

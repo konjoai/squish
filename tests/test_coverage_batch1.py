@@ -3,24 +3,24 @@ long_context_chunk, adaptive_batcher, schema_validator, prefix_pool."""
 import pytest
 import numpy as np
 
-from squish.mix_kvq import (
+from squish.kv.mix_kvq import (
     MixKVQConfig,
     ChannelScorer,
     MixKVQQuantizer,
     MixKVQStats,
 )
-from squish.quant_aware import (
+from squish.quant.quant_aware import (
     QAConfig,
     QuantAwareCalibrator,
     QAStats,
 )
-from squish.quant_calib import (
+from squish.quant.quant_calib import (
     CalibConfig,
     CalibResult,
     QuantCalibrator,
     CalibStats,
 )
-from squish.fp8_quant import (
+from squish.quant.fp8_quant import (
     FP8Config,
     FP8Tensor,
     FP8Quantizer,
@@ -28,21 +28,21 @@ from squish.fp8_quant import (
     fp8_encode_e5m2,
     fp8_decode,
 )
-from squish.long_context_chunk import (
+from squish.streaming.long_context_chunk import (
     ChunkConfig,
     LongContextChunker,
     ChunkStats,
 )
-from squish.adaptive_batcher import (
+from squish.serving.adaptive_batcher import (
     BatchObjective,
     BatchDecision,
     AdaptiveBatchController,
 )
-from squish.schema_validator import (
+from squish.grammar.schema_validator import (
     ValidationResult,
     SchemaValidator,
 )
-from squish.prefix_pool import (
+from squish.kv.prefix_pool import (
     PrefixPoolConfig,
     PrefixEntry,
     PrefixPool,

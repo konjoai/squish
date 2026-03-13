@@ -1043,11 +1043,11 @@ def cmd_doctor(args):
         _check("squish_quant Rust extension (optional — 4× faster quantization)", False,
                "cd squish_quant_rs && python3 -m maturin build --release && pip install .")
 
-    # squish.quantizer self-test
+    # squish.quant.quantizer self-test
     try:
         import numpy as np
 
-        from squish.quantizer import (
+        from squish.quant.quantizer import (
             mean_cosine_similarity,
             quantize_embeddings,
             reconstruct_embeddings,
@@ -1057,10 +1057,10 @@ def cmd_doctor(args):
         r   = quantize_embeddings(emb, group_size=64)
         rec = reconstruct_embeddings(r)
         sim = mean_cosine_similarity(emb, rec)
-        _check(f"squish.quantizer round-trip  (cosine={sim:.5f})", sim > 0.999,
-               "Run: python3 -m squish.quantizer")
+        _check(f"squish.quant.quantizer round-trip  (cosine={sim:.5f})", sim > 0.999,
+               "Run: python3 -m squish.quant.quantizer")
     except Exception as e:  # pragma: no cover
-        _check(f"squish.quantizer self-test: {e}", False)
+        _check(f"squish.quant.quantizer self-test: {e}", False)
 
     # Models directory
     models_dir = _MODELS_DIR
@@ -1244,7 +1244,7 @@ def cmd_compress(args):  # pragma: no cover
 
             import mlx_lm
             model_awq, tokenizer_awq = mlx_lm.load(str(model_dir))
-            from squish.awq import collect_activation_scales, save_awq_scales
+            from squish.quant.awq import collect_activation_scales, save_awq_scales
             scales = collect_activation_scales(
                 model_awq, tokenizer_awq,
                 n_samples=n_samples, verbose=True,
@@ -1318,7 +1318,7 @@ def cmd_compress(args):  # pragma: no cover
         if tensors_dir.exists():
             print(f"  Applying zstd entropy compression at level {zstd_level} …")
             try:
-                from squish.entropy import compress_npy_dir
+                from squish.io.entropy import compress_npy_dir
                 compress_npy_dir(tensors_dir, level=zstd_level, verbose=True)
                 print("  ✓  Entropy compression complete.")
             except ImportError:
@@ -1861,12 +1861,12 @@ def cmd_rotate(args):  # pragma: no cover
     After rotation the model is functionally identical but quantizes ~1.5–3×
     more accurately than the unrotated version.
 
-    Under the hood this calls :mod:`squish.spin_quant.run_rotation`.
+    Under the hood this calls :mod:`squish.quant.spin_quant.run_rotation`.
     """
     try:
-        from squish.spin_quant import run_rotation  # type: ignore[import]
+        from squish.quant.spin_quant import run_rotation  # type: ignore[import]
     except ImportError as exc:
-        print(f"\n  Error: could not import squish.spin_quant — {exc}")
+        print(f"\n  Error: could not import squish.quant.spin_quant — {exc}")
         print("  Make sure the squish package is installed.")
         sys.exit(1)
 
