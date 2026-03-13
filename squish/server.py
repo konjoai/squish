@@ -29,7 +29,6 @@ Dependencies:
     pip install fastapi "uvicorn[standard]"
 """
 import argparse
-import asyncio
 import collections
 import hashlib
 import hmac
@@ -245,7 +244,7 @@ class _MLCBackend(_InferenceBackend):
         try:
             import mlc_llm as _mlc  # noqa: F401,PLC0415
             self._available = True
-        except ImportError:  # pragma: no cover
+        except ImportError:
             self._available = False
 
     def is_available(self) -> bool:
@@ -409,7 +408,7 @@ def _print_banner() -> None:
             print(f"  {_gradient(line, _LOGO_GRAD)}{R}")
         print()
 
-        sub = "✦  Squish it. Run it. Go. &   ✦"
+        sub = "✦  Squish it. Run it. Go.  ✦"
         print(f"            {_gradient(sub, _LOGO_GRAD)}{R}")
         print(f"  {DIM}{'─' * 56}{R}")
     else:
@@ -728,7 +727,9 @@ def _cap_metal_cache(verbose: bool = False, limit_mb: int = 256) -> None:  # pra
         # eval outstanding lazy ops so nothing is unexpectedly freed
         mx.eval(())
         limit_bytes = limit_mb * 1024 * 1024
-        if hasattr(mx, "metal") and hasattr(mx.metal, "set_cache_limit"):
+        if hasattr(mx, "set_cache_limit"):
+            mx.set_cache_limit(limit_bytes)
+        elif hasattr(mx, "metal") and hasattr(mx.metal, "set_cache_limit"):
             mx.metal.set_cache_limit(limit_bytes)
             if verbose:
                 print(f"  {_C.DIM}◈  Metal buffer cache capped at {limit_mb} MB{_C.R}")
@@ -1711,9 +1712,6 @@ async def chat_completions(  # pragma: no cover
                 "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
             }
             yield f"data: {json.dumps(role_chunk)}\n\n"
-            # Yield to the event loop so the opening chunk is flushed to the
-            # client before the first (synchronous, blocking) inference call.
-            await asyncio.sleep(0)
 
             gen = _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed)
             n_comp   = 0
@@ -1726,10 +1724,6 @@ async def chat_completions(  # pragma: no cover
                             ttft_s = time.perf_counter() - req_start
                         n_comp += 1
                         yield _make_chunk(tok_text, model_id, cid)
-                        # Drain the asyncio transport write buffer before the
-                        # next blocking MLX inference call so each SSE chunk
-                        # reaches the client immediately (real per-token TTFT).
-                        await asyncio.sleep(0)
                     if finish is not None:
                         last_finish = finish
                         break
@@ -1884,7 +1878,6 @@ async def completions(  # pragma: no cover
                             ttft_s = time.perf_counter() - req_start
                         n_comp += 1
                         yield _comp_chunk(tok_text)
-                        await asyncio.sleep(0)
                     if finish is not None:
                         last_finish = finish
                         break
@@ -2143,14 +2136,6 @@ Examples:
   export OPENAI_BASE_URL=http://localhost:11435/v1
   export OPENAI_API_KEY=squish
   python3 -c "from openai import OpenAI; c=OpenAI(); print(c.chat.completions.create(model='squish', messages=[{'role':'user','content':'hello'}]).choices[0].message.content)"
-
-Feature stability tiers
------------------------
-  Stable       (Waves 1-12)  Core inference flags. Validated on Apple Silicon M-series.
-  [Beta]       (Waves 13-18) Advanced KV compression, speculative dec. variants. Well-tested
-                              but not yet fully characterized on all model sizes.
-  [Experimental] (Waves 19+) Cutting-edge research features. Proof-of-concept implementations
-                              that may change API or be removed in future releases.
 """
     )
     ap.add_argument("--model-dir",
@@ -2199,7 +2184,7 @@ Feature stability tiers
                     help="Enable chunked prefill for long COMPRESS_PATH requests.\n"
                          "Splits the prompt into chunks and interleaves one greedy\n"
                          "decode token between chunks to minimise TTFT.\n"
-                         "Only activates on the COMPRESS_PATH (--compress-prompt). [Beta]")
+                         "Only activates on the COMPRESS_PATH (--compress-prompt).")
     ap.add_argument("--chunk-prefill-threshold", type=int, default=512,
                     metavar="N",
                     help="Minimum prompt token count to trigger chunked prefill\n"
@@ -2214,7 +2199,7 @@ Feature stability tiers
                          "Reduces attention cost from O(n²) to O(n·k) for prompts\n"
                          "longer than --minference-threshold.\n"
                          "Automatically selects the best sparsity pattern.\n"
-                         "Incompatible with --inference-backend ane-disagg. [Beta]")
+                         "Incompatible with --inference-backend ane-disagg.")
     ap.add_argument("--minference-threshold", type=int, default=1024,
                     metavar="N",
                     help="Minimum sequence length to activate sparse attention\n"
@@ -2312,11 +2297,6 @@ Feature stability tiers
     ap.add_argument("--no-compile", action="store_true", default=False,
                     help="Disable mx.compile for the single-token decode step\n"
                          "(useful for debugging or models incompatible with tracing)")
-    ap.add_argument("--no-warmup", action="store_true", default=False,
-                    help="Skip the Metal JIT warmup pass that runs one silent generation\n"
-                         "after model load.  Warmup is on by default: it compiles Metal\n"
-                         "kernels and the mx.compile graph once so the first real request\n"
-                         "experiences full throughput.  Disable for fastest cold start.")
     ap.add_argument("--disk-prompt-cache", default="",
                     metavar="DIR",
                     help="Enable persistent cross-request KV-state prompt cache stored\n"
@@ -2337,7 +2317,7 @@ Feature stability tiers
     ap.add_argument("--compress-prompt", action="store_true", default=False,
                     help="Enable prompt compression before prefill.\\n"
                          "Uses TF-IDF sentence scoring by default; delegates to\\n"
-                         "LLMLingua if installed (pip install squish[llmlingua]). [Beta]")
+                         "LLMLingua if installed (pip install squish[llmlingua]).")
     ap.add_argument("--compress-ratio", type=float, default=0.5,
                     metavar="F",
                     help="Target compression fraction: 0.5 = compress to half the\\n"
@@ -2376,7 +2356,7 @@ Feature stability tiers
     ap.add_argument("--semantic-cache", action="store_true", default=False,
                     help="Enable semantic response caching. Semantically similar prompts "
                          "(cosine distance < task threshold) return a cached response, "
-                         "delivering 25-250× latency reduction for warm repeat patterns. [Beta]")
+                         "delivering 25-250× latency reduction for warm repeat patterns.")
     ap.add_argument("--no-semantic-cache", dest="semantic_cache", action="store_false",
                     help="Disable semantic response cache.")
     ap.add_argument("--semantic-cache-db", default="",
@@ -2423,90 +2403,90 @@ Feature stability tiers
 
     # ── Wave optimization flags ───────────────────────────────────────────────
     ap.add_argument("--prompt-lookup", action="store_true", default=False,
-                    help="Enable n-gram prompt lookup speculative decoding. [Beta]")
+                    help="Enable n-gram prompt lookup speculative decoding.")
     ap.add_argument("--prompt-lookup-n", type=int, default=3, metavar="N",
                     help="N-gram size for prompt lookup (default: 3).")
     ap.add_argument("--prompt-lookup-k", type=int, default=4, metavar="K",
                     help="Max draft tokens per lookup step (default: 4).")
     ap.add_argument("--seq-packing", action="store_true", default=False,
-                    help="Enable sequence packing for higher batch GPU utilisation. [Beta]")
+                    help="Enable sequence packing for higher batch GPU utilisation.")
     ap.add_argument("--seq-packing-budget", type=int, default=2048, metavar="N",
                     help="Token budget per packed batch (default: 2048).")
     ap.add_argument("--ada-serve", action="store_true", default=False,
-                    help="Enable SLO-adaptive gamma scheduling for speculative decoding. [Beta]")
+                    help="Enable SLO-adaptive gamma scheduling for speculative decoding.")
     ap.add_argument("--ada-serve-slo", default="general",
                     choices=["git_commit", "devops_plan", "general", "code_review"],
                     help="Default SLO profile for AdaServe (default: general).")
     ap.add_argument("--conf-spec", action="store_true", default=False,
-                    help="Enable confidence-gated speculative step verification. [Beta]")
+                    help="Enable confidence-gated speculative step verification.")
     ap.add_argument("--conf-spec-high-gate", type=float, default=0.90, metavar="F",
                     help="Confidence above which steps are auto-accepted (default: 0.90).")
     ap.add_argument("--conf-spec-low-gate", type=float, default=0.50, metavar="F",
                     help="Confidence below which full target verify is used (default: 0.50).")
     ap.add_argument("--kv-share", action="store_true", default=False,
-                    help="Enable cross-layer KV sharing (KVSharer). [Beta]")
+                    help="Enable cross-layer KV sharing (KVSharer).")
     ap.add_argument("--kv-share-every", type=int, default=2, metavar="N",
                     help="Share KV every N layers (default: 2).")
     ap.add_argument("--kv-slab", action="store_true", default=False,
-                    help="Enable slab-based KV memory allocator for reduced fragmentation. [Beta]")
+                    help="Enable slab-based KV memory allocator for reduced fragmentation.")
     ap.add_argument("--kv-slab-pages", type=int, default=256, metavar="N",
                     help="Number of slab pages (default: 256).")
     ap.add_argument("--paris-kv", action="store_true", default=False,
-                    help="Enable PARIS KV codebook compression. [Beta]")
+                    help="Enable PARIS KV codebook compression.")
     ap.add_argument("--paris-kv-centroids", type=int, default=64, metavar="N",
                     help="PARIS codebook centroid count (default: 64).")
     ap.add_argument("--streaming-sink", action="store_true", default=False,
-                    help="Enable StreamingLLM-style sink KV cache. [Beta]")
+                    help="Enable StreamingLLM-style sink KV cache.")
     ap.add_argument("--streaming-sink-size", type=int, default=2048, metavar="N",
                     help="Sink KV cache token budget (default: 2048).")
     ap.add_argument("--diff-kv", action="store_true", default=False,
-                    help="Enable DiffKV 3-axis differentiated KV precision. [Beta]")
+                    help="Enable DiffKV 3-axis differentiated KV precision.")
     ap.add_argument("--small-kv", action="store_true", default=False,
-                    help="Enable SmallKV saliency-shift compensation. [Beta]")
+                    help="Enable SmallKV saliency-shift compensation.")
     ap.add_argument("--sage-attention", action="store_true", default=False,
                     help="Enable SageAttention INT8 quantized QK^T computation.")
     ap.add_argument("--sage-attention2", action="store_true", default=False,
-                    help="Enable SageAttention2 INT4/FP8 quantized attention. [Beta]")
+                    help="Enable SageAttention2 INT4/FP8 quantized attention.")
     ap.add_argument("--sparge-attention", action="store_true", default=False,
                     help="Enable SpargeAttn sparse+quantized attention.")
     ap.add_argument("--squeeze-attention", action="store_true", default=False,
-                    help="Enable SqueezeAttention adaptive KV budget allocation. [Beta]")
+                    help="Enable SqueezeAttention adaptive KV budget allocation.")
     ap.add_argument("--yoco-kv", action="store_true", default=False,
-                    help="Enable YOCO cross-layer KV reuse (you-only-cache-once). [Beta]")
+                    help="Enable YOCO cross-layer KV reuse (you-only-cache-once).")
     ap.add_argument("--cla", action="store_true", default=False,
-                    help="Enable Cross-Layer Attention KV sharing. [Beta]")
+                    help="Enable Cross-Layer Attention KV sharing.")
     ap.add_argument("--kvtuner", action="store_true", default=False,
-                    help="Enable KVTuner adaptive per-layer KV budget. [Beta]")
+                    help="Enable KVTuner adaptive per-layer KV budget.")
     ap.add_argument("--robust-scheduler", action="store_true", default=False,
-                    help="Use the robust A-max/A-balanced batch scheduler. [Beta]")
+                    help="Use the robust A-max/A-balanced batch scheduler.")
     ap.add_argument("--gemfilter", action="store_true", default=False,
-                    help="Enable GemFilter attention head filtering. [Beta]")
+                    help="Enable GemFilter attention head filtering.")
     ap.add_argument("--svdq", action="store_true", default=False,
-                    help="Enable SVD-based KV quantization (SVDQ). [Beta]")
+                    help="Enable SVD-based KV quantization (SVDQ).")
     ap.add_argument("--sparse-spec", action="store_true", default=False,
-                    help="Enable sparse speculative decoding. [Beta]")
+                    help="Enable sparse speculative decoding.")
     ap.add_argument("--sparse-verify", action="store_true", default=False,
-                    help="Enable sparse draft verification. [Beta]")
+                    help="Enable sparse draft verification.")
     ap.add_argument("--trail", action="store_true", default=False,
-                    help="Enable TRAIL token-importance-aware layer skipping. [Beta]")
+                    help="Enable TRAIL token-importance-aware layer skipping.")
     ap.add_argument("--specontext", action="store_true", default=False,
-                    help="Enable SpecContext speculative context extension. [Beta]")
+                    help="Enable SpecContext speculative context extension.")
     ap.add_argument("--forelen", action="store_true", default=False,
-                    help="Enable ForeLen forward-looking token length prediction. [Beta]")
+                    help="Enable ForeLen forward-looking token length prediction.")
     ap.add_argument("--ipw", action="store_true", default=False,
-                    help="Enable IPW importance-weighted prefill compression. [Beta]")
+                    help="Enable IPW importance-weighted prefill compression.")
     ap.add_argument("--layer-skip", action="store_true", default=False,
-                    help="Enable LayerSkip early-exit adaptive layer skipping. [Beta]")
+                    help="Enable LayerSkip early-exit adaptive layer skipping.")
     ap.add_argument("--lookahead", action="store_true", default=False,
-                    help="Enable LookaheadReasoning parallel step verification. [Beta]")
+                    help="Enable LookaheadReasoning parallel step verification.")
     ap.add_argument("--lookahead-k", type=int, default=4, metavar="K",
                     help="Lookahead window size (default: 4).")
     ap.add_argument("--spec-reason", action="store_true", default=False,
-                    help="Enable SpecReason step-level speculative reasoning. [Beta]")
+                    help="Enable SpecReason step-level speculative reasoning.")
     ap.add_argument("--long-spec", action="store_true", default=False,
-                    help="Enable LongSpec extended speculative decoding. [Beta]")
+                    help="Enable LongSpec extended speculative decoding.")
     ap.add_argument("--fr-spec", action="store_true", default=False,
-                    help="Enable FR-Spec frequency-based token speculative decoding. [Beta]")
+                    help="Enable FR-Spec frequency-based token speculative decoding.")
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
     ap.add_argument(
@@ -2610,28 +2590,6 @@ Feature stability tiers
     else:
         load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
     _state._no_compile = args.no_compile  # propagate --no-compile flag
-
-    # ── Metal JIT warmup (Phase 5B Opt 2) ────────────────────────────────────
-    # Run one silent max_tokens=1 generation immediately after model load to
-    # trigger Metal kernel compilation and mx.compile graph tracing.  Without
-    # this, the *first real request* pays a 2-5 s JIT penalty; with warmup that
-    # cost is paid here, at startup, and every subsequent request uses the
-    # pre-compiled kernels (full throughput from token 1).
-    if not getattr(args, "no_warmup", False) and _state.model is not None:
-        _wu_t0 = time.perf_counter()
-        if args.verbose:
-            _info("warmup", "compiling Metal kernels …")
-        try:
-            for _wu_tok, _wu_fin in _generate_tokens(
-                "hello", max_tokens=1, temperature=0.0, top_p=1.0,
-                stop=None, seed=0, use_cache=False,
-            ):
-                pass  # consume the generator; side-effect compiles the graph
-        except Exception:  # pragma: no cover
-            pass  # warmup failures are non-fatal; real inference will surface any real errors
-        _wu_elapsed = time.perf_counter() - _wu_t0
-        if args.verbose:
-            _ok(f"Metal kernels warmed  ({_wu_elapsed:.2f}s)  Ready for requests.")
 
     # ── Disk prompt-cache init (Item 2) ──────────────────────────────────────
     global _disk_prompt_cache
@@ -3213,265 +3171,6 @@ Feature stability tiers
             _info("lora-adapter", f"{getattr(args, 'lora_adapter')}")
         except Exception as _e:
             _warn(f"[lora-adapter] Skipped: {_e}")
-
-    # ── Wave 13b: Ultra-Long Context + Adaptive Speculative Decoding ─────────
-    if getattr(args, "duo_attention", False):
-        try:
-            from squish.duo_attention import DuoAttentionConfig, DuoKVManager
-            _da_cfg = DuoAttentionConfig(
-                num_layers=getattr(args, "duo_attention_layers", 32),
-                num_heads=getattr(args, "duo_attention_heads", 32),
-                head_dim=getattr(args, "duo_attention_head_dim", 128),
-                local_window=getattr(args, "duo_attention_window", 512),
-            )
-            _duo_attn_manager = DuoKVManager(_da_cfg)
-            _info("duo-attention", f"retrieval+streaming head separation  "
-                  f"layers={_da_cfg.num_layers}  heads={_da_cfg.num_heads}  "
-                  f"window={_da_cfg.local_window}")
-        except Exception as _e:
-            _warn(f"[duo-attention] Skipped: {_e}")
-
-    if getattr(args, "shadow_kv", False):
-        try:
-            from squish.shadow_kv import ShadowKVCache, ShadowKVConfig
-            _skv_cfg = ShadowKVConfig(
-                svd_rank=getattr(args, "shadow_kv_rank", 128),
-                n_landmarks=getattr(args, "shadow_kv_landmarks", 64),
-            )
-            _shadow_kv_cache = ShadowKVCache(_skv_cfg)
-            _info("shadow-kv", f"low-rank pre-RoPE key cache + CPU value shadow  "
-                  f"svd_rank={_skv_cfg.svd_rank}  landmarks={_skv_cfg.n_landmarks}")
-        except Exception as _e:
-            _warn(f"[shadow-kv] Skipped: {_e}")
-
-    if getattr(args, "pq_cache", False):
-        try:
-            from squish.pq_cache import PQCacheConfig, PQKeyIndex
-            _pq_cfg = PQCacheConfig(
-                n_subvectors=getattr(args, "pq_cache_subvectors", 8),
-                n_codes=getattr(args, "pq_cache_codes", 256),
-            )
-            _pq_cache_index = PQKeyIndex(_pq_cfg)
-            _info("pq-cache", f"product-quantized KV ANN retrieval  "
-                  f"subvectors={_pq_cfg.n_subvectors}  codes={_pq_cfg.n_codes}")
-        except Exception as _e:
-            _warn(f"[pq-cache] Skipped: {_e}")
-
-    if getattr(args, "spe_cache", False):
-        try:
-            from squish.spe_cache import SpeCacheConfig, SpeCachePrefetcher
-            _sc_cfg = SpeCacheConfig(
-                block_size=getattr(args, "spe_cache_block_size", 16),
-                prefetch_budget=getattr(args, "spe_cache_budget", 8),
-            )
-            _spe_cache_prefetcher = SpeCachePrefetcher(_sc_cfg)
-            _info("spe-cache", f"speculative KV-cache prefetch for multi-turn  "
-                  f"block={_sc_cfg.block_size}  budget={_sc_cfg.prefetch_budget}")
-        except Exception as _e:
-            _warn(f"[spe-cache] Skipped: {_e}")
-
-    if getattr(args, "duo_decoding", False):
-        try:
-            from squish.duo_decoding import DuoDecodingConfig, DuoDecodingDecoder
-            _dd_cfg = DuoDecodingConfig(
-                gamma=getattr(args, "duo_decoding_gamma", 4),
-                k_max=getattr(args, "duo_decoding_kmax", 8),
-            )
-            _duo_decoding_decoder = DuoDecodingDecoder(_dd_cfg)
-            _info("duo-decoding", f"hardware-aware dynamic multi-sequence spec-decode  "
-                  f"gamma={_dd_cfg.gamma}  k_max={_dd_cfg.k_max}")
-        except Exception as _e:
-            _warn(f"[duo-decoding] Skipped: {_e}")
-
-    if getattr(args, "knapspec", False):
-        try:
-            from squish.knapspec import KnapSpecConfig, KnapSpecSelector
-            _ks_cfg = KnapSpecConfig(
-                num_layers=getattr(args, "knapspec_layers", 32),
-                budget_fraction=getattr(args, "knapspec_budget", 0.7),
-            )
-            _knapspec_selector = KnapSpecSelector(_ks_cfg)
-            _info("knapspec", f"knapsack-optimal self-speculative layer selection  "
-                  f"layers={_ks_cfg.num_layers}  budget={_ks_cfg.budget_fraction:.0%}")
-        except Exception as _e:
-            _warn(f"[knapspec] Skipped: {_e}")
-
-    if getattr(args, "token_merging", False):
-        try:
-            from squish.token_merging import TokenMergingConfig
-            _tm_cfg = TokenMergingConfig(
-                r=getattr(args, "token_merging_r", 8),
-                start_layer=getattr(args, "token_merging_start", 4),
-                end_layer=getattr(args, "token_merging_end", -1),
-            )
-            _token_merging_cfg = _tm_cfg
-            _info("token-merging", f"ToMe prefill token dedup  "
-                  f"r={_tm_cfg.r}  layers={_tm_cfg.start_layer}→{_tm_cfg.end_layer}")
-        except Exception as _e:
-            _warn(f"[token-merging] Skipped: {_e}")
-
-    if getattr(args, "token_swift", False):
-        try:
-            from squish.token_swift import TokenSwiftConfig, TokenSwiftDecoder
-            _ts_cfg = TokenSwiftConfig(
-                n_heads=getattr(args, "token_swift_heads", 4),
-                window_size=getattr(args, "token_swift_window", 512),
-                vocab_size=getattr(args, "token_swift_vocab", 151936),
-            )
-            _token_swift_decoder = TokenSwiftDecoder(_ts_cfg)
-            _info("token-swift", f"multi-token draft heads + partial KV reuse  "
-                  f"heads={_ts_cfg.n_heads}  window={_ts_cfg.window_size}")
-        except Exception as _e:
-            _warn(f"[token-swift] Skipped: {_e}")
-
-    if getattr(args, "c2t", False):
-        try:
-            from squish.c2t import AdaptiveTreeBuilder, C2TConfig
-            _c2t_cfg = C2TConfig(
-                tree_depth=getattr(args, "c2t_depth", 4),
-                wide_branches=getattr(args, "c2t_wide", 3),
-                narrow_branches=getattr(args, "c2t_narrow", 1),
-            )
-            _c2t_tree_builder = AdaptiveTreeBuilder(_c2t_cfg)
-            _info("c2t", f"classifier-based candidate tree  "
-                  f"depth={_c2t_cfg.tree_depth}  wide={_c2t_cfg.wide_branches}  "
-                  f"narrow={_c2t_cfg.narrow_branches}")
-        except Exception as _e:
-            _warn(f"[c2t] Skipped: {_e}")
-
-    # ── Wave 14: Quantization + Vocabulary-Adaptive Spec-Decode ──────────────
-    if getattr(args, "dfloat11", False):
-        try:
-            from squish.dfloat11 import DFloat11Config
-            _dfloat11_cfg = DFloat11Config(
-                block_size=getattr(args, "dfloat11_block_size", 256),
-            )
-            _info("dfloat11", f"DFloat11 block-float compression  "
-                  f"block_size={_dfloat11_cfg.block_size}  "
-                  f"use_rans={_dfloat11_cfg.use_rans}")
-        except Exception as _e:
-            _warn(f"[dfloat11] Skipped: {_e}")
-
-    if getattr(args, "rans_codec", False):
-        try:
-            from squish.rans_codec import RANSCodec
-            _rans_codec_inst = RANSCodec(
-                freq={},
-                m_bits=getattr(args, "rans_codec_mbits", 14),
-            )
-            _info("rans-codec", f"rANS entropy codec for KV/weight compression  "
-                  f"m_bits={_rans_codec_inst.m_bits}")
-        except Exception as _e:
-            _warn(f"[rans-codec] Skipped: {_e}")
-
-    if getattr(args, "qspec", False):
-        try:
-            from squish.qspec import QSpecConfig, QSpecDecoder
-            _qs_cfg = QSpecConfig(
-                gamma=getattr(args, "qspec_gamma", 4),
-                draft_act_bits=getattr(args, "qspec_draft_bits", 4),
-                verify_act_bits=getattr(args, "qspec_verify_bits", 8),
-            )
-            _qspec_decoder = QSpecDecoder(
-                w4a8_fn=lambda toks: __import__("numpy").zeros((len(toks), 1)),
-                w4a16_fn=lambda toks: __import__("numpy").zeros((len(toks), 1)),
-                config=_qs_cfg,
-            )
-            _info("qspec", f"quantisation-aware spec-decode  "
-                  f"gamma={_qs_cfg.gamma}  draft={_qs_cfg.draft_act_bits}b  "
-                  f"verify={_qs_cfg.verify_act_bits}b")
-        except Exception as _e:
-            _warn(f"[qspec] Skipped: {_e}")
-
-    if getattr(args, "quant_spec", False):
-        try:
-            from squish.quant_spec import QuantSpecConfig, QuantSpecDecoder
-            _qts_cfg = QuantSpecConfig(
-                gamma=getattr(args, "quant_spec_gamma", 4),
-                draft_quant_bits=getattr(args, "quant_spec_bits", 4),
-            )
-            _quant_spec_decoder = QuantSpecDecoder(
-                draft_fn=lambda toks: __import__("numpy").zeros((len(toks), 1)),
-                config=_qts_cfg,
-            )
-            _info("quant-spec", f"draft-quantised spec-decode  "
-                  f"gamma={_qts_cfg.gamma}  bits={_qts_cfg.draft_quant_bits}")
-        except Exception as _e:
-            _warn(f"[quant-spec] Skipped: {_e}")
-
-    if getattr(args, "copy_spec", False):
-        try:
-            from squish.copy_spec import CopySpecConfig, CopySpecDrafter
-            _cs_cfg = CopySpecDrafter(
-                config=CopySpecConfig(
-                    max_draft_len=getattr(args, "copy_spec_max_draft", 8),
-                    max_history_len=getattr(args, "copy_spec_history_len", 2048),
-                ),
-            )
-            _copy_spec_drafter = _cs_cfg
-            _info("copy-spec", f"copy-based spec-decode from history  "
-                  f"max_draft={_copy_spec_drafter.config.max_draft_len}  "
-                  f"history={_copy_spec_drafter.config.max_history_len}")
-        except Exception as _e:
-            _warn(f"[copy-spec] Skipped: {_e}")
-
-    if getattr(args, "sub_spec", False):
-        try:
-            from squish.sub_spec import SubSpecConfig, SubSpecDecoder
-            _ss_cfg = SubSpecConfig(
-                gamma=getattr(args, "sub_spec_gamma", 4),
-                n_gpu_layers=getattr(args, "sub_spec_gpu_layers", 16),
-            )
-            _sub_spec_decoder = SubSpecDecoder(
-                draft_fn=lambda toks: __import__("numpy").zeros((len(toks), 1)),
-                target_fn=lambda toks: __import__("numpy").zeros((len(toks), 1)),
-                config=_ss_cfg,
-            )
-            _info("sub-spec", f"quantized-substitute spec-decode  "
-                  f"gamma={_ss_cfg.gamma}  gpu_layers={_ss_cfg.n_gpu_layers}")
-        except Exception as _e:
-            _warn(f"[sub-spec] Skipped: {_e}")
-
-    if getattr(args, "squeeze_llm", False):
-        try:
-            from squish.squeeze_llm import SqueezeLLMConfig, SqueezeLLMQuantizer
-            _sq_cfg = SqueezeLLMConfig(
-                quant_bits=getattr(args, "squeeze_llm_bits", 4),
-                sparsity_ratio=getattr(args, "squeeze_llm_sparsity", 0.45),
-            )
-            _squeeze_llm_quant = SqueezeLLMQuantizer(config=_sq_cfg)
-            _info("squeeze-llm", f"sparse+dense mixed-precision quantisation  "
-                  f"bits={_sq_cfg.quant_bits}  sparsity={_sq_cfg.sparsity_ratio}")
-        except Exception as _e:
-            _warn(f"[squeeze-llm] Skipped: {_e}")
-
-    if getattr(args, "head_infer", False):
-        try:
-            from squish.head_infer import HeadAwareKVStore, HeadInferConfig
-            _hi_cfg = HeadInferConfig(
-                n_layers=getattr(args, "head_infer_layers", 32),
-                n_heads=getattr(args, "head_infer_heads", 32),
-            )
-            _head_aware_kv_store = HeadAwareKVStore(config=_hi_cfg)
-            _info("head-infer", f"head-level KV separation  "
-                  f"layers={_hi_cfg.n_layers}  heads={_hi_cfg.n_heads}")
-        except Exception as _e:
-            _warn(f"[head-infer] Skipped: {_e}")
-
-    if getattr(args, "nf4_quant", False):
-        try:
-            from squish.nf4_quant import NF4_LEVELS  # noqa: F401
-            _info("nf4-quant", f"NF4 normal-float 4-bit quantisation  "
-                  f"levels={len(NF4_LEVELS)}")
-        except Exception as _e:
-            _warn(f"[nf4-quant] Skipped: {_e}")
-
-    if getattr(args, "spin_quant", False):
-        try:
-            from squish.spin_quant import run_rotation  # noqa: F401
-            _info("spin-quant", "SpinQuant Hadamard rotation for quantisation-friendly layout")
-        except Exception as _e:
-            _warn(f"[spin-quant] Skipped: {_e}")
 
     print()
     _section("")

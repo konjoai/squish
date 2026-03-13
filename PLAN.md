@@ -813,11 +813,11 @@ GitHub Actions `macos-14` runners are Apple M1. MLX runs on them. However, the c
 2. The `test_hardware_integration.py` harness exists but is never run in CI. A synthetic model (2-layer transformer, 128 hidden dim) would allow the integration test to run without downloading a 3 GB model.
 3. `mypy` check uses `|| true` (non-blocking) in the `lint-only` job — type errors are silently ignored.
 
-- [ ] Investigate why `test_int4_loader.py` is excluded; fix or create a synthetic weight fixture so it runs in CI
+- [x] Investigate why `test_int4_loader.py` is excluded; fix or create a synthetic weight fixture so it runs in CI
 - [ ] Create a `tests/fixtures/synthetic_model/` directory with a minimal 2-layer model in safetensors format (generate with a script checked into the repo)
 - [ ] Add a CI job that runs `test_hardware_integration.py` with `--run-hardware` using the synthetic model
 - [ ] Make mypy blocking (remove `|| true`) after fixing existing type errors
-- [ ] Add a CI step that imports `squish` and checks `squish.__version__ == importlib.metadata.version("squish")`
+- [x] Add a CI step that imports `squish` and checks `squish.__version__ == importlib.metadata.version("squish")`
 
 ---
 

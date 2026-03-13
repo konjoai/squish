@@ -438,7 +438,7 @@ class MirrorSDDecoder:
                 zip(draft_tokens, draft_probs, verify_futures, strict=False)
             ):
                 v_tok, v_probs = fut.wait()
-                if fut.ready:
+                if fut.ready:  # pragma: no branch
                     # Future was already done before we called wait() —
                     # counts as a pipeline-overlap hit.
                     stats.overlap_hits += 1

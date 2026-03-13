@@ -33,15 +33,22 @@ jobs:
         run: |
           ruff check squish/ tests/ --output-format github
 
+      - name: Verify version consistency
+        run: |
+          python -c "
+          import importlib.metadata, squish
+          meta = importlib.metadata.version('squish')
+          pkg  = squish.__version__
+          assert meta == pkg, f'Version mismatch: metadata={meta!r} vs squish.__version__={pkg!r}'
+          print(f'squish version OK: {pkg}')
+          "
+
       - name: Run tests
         # Excluded from CI:
-        #   test_int4_loader.py     - asserts exactly 50% savings; actual ~44% (scale overhead).
-        #                             Passes on real npy-dirs; skipped in unit CI.
         #   test_git_integration.py - live-server integration requiring model weights.
         #                             Run: pytest tests/test_git_integration.py --model qwen3:8b
         run: |
           pytest tests/ \
-            --ignore=tests/test_int4_loader.py \
             --ignore=tests/test_git_integration.py \
             -v --tb=short -q
 
@@ -94,7 +101,9 @@ jobs:
 
       - name: Run tests (Linux — MLX tests auto-skipped)
         # MLX-dependent tests skip automatically on Linux via pytest.importorskip.
-        # Excluded from CI same as macOS job.
+        # test_int4_loader.py excluded: requires squish_quant Rust extension
+        #   which needs cargo/maturin on the runner.
+        # test_git_integration.py excluded: requires live model weights.
         run: |
           pytest tests/ \
             --ignore=tests/test_int4_loader.py \

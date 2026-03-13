@@ -214,7 +214,7 @@ class BatchEmbedder:
             out = self._pool_cls(hs)
         elif strategy == "weighted":
             out = self._pool_weighted(hs, mask)
-        else:
+        else:  # pragma: no cover
             raise RuntimeError(f"Unknown strategy '{strategy}'.")
 
         if self._cfg.normalize:

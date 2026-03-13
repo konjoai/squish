@@ -255,7 +255,7 @@ class SparseSpecDrafter:
             return full_ids
         k = max(1, int(n * self._cfg.top_k_ratio))
         indices = self._cache.top_k_indices(k)
-        if len(indices) == 0:
+        if len(indices) == 0:  # pragma: no cover
             return full_ids
         # Always include the last token (current decoding position)
         idx_set = set(indices.tolist())

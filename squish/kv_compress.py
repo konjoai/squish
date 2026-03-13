@@ -298,7 +298,7 @@ class KVCompressor:
 
         # Guarantee at least one position is kept per head.
         for h in range(n_heads):
-            if not mask[h].any():
+            if not mask[h].any():  # pragma: no cover
                 best = int(np.argmax(norms[h]))
                 mask[h, best] = True
 

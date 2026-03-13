@@ -1501,7 +1501,7 @@ def cmd_convert_model(args):
 
     try:
         import mlx_lm as _mlx_lm
-    except ImportError:  # pragma: no cover
+    except ImportError:
         _die("mlx_lm is required for convert-model. Install with: pip install mlx-lm>=0.19")
 
     print(f"  Quantizing FFN layers to {args.ffn_bits}-bit …")
@@ -1555,7 +1555,7 @@ def _apply_dare_sparsification(
 
     try:
         from safetensors.numpy import load_file, save_file  # noqa: PLC0415
-    except ImportError:  # pragma: no cover
+    except ImportError:
         print("  [warn] safetensors not available — skipping DARE sparsification")
         return
 
@@ -1599,7 +1599,7 @@ def cmd_train_adapter(args):
 
     try:
         import mlx_lm as _mlx_lm  # noqa: F401,PLC0415
-    except ImportError:  # pragma: no cover
+    except ImportError:
         _die(
             "mlx_lm is required for train-adapter. "
             "Install with: pip install mlx-lm>=0.19"
@@ -1688,7 +1688,7 @@ def cmd_merge_model(args):
 
     try:
         from safetensors.numpy import load_file, save_file  # noqa: PLC0415
-    except ImportError:  # pragma: no cover
+    except ImportError:
         _die(
             "safetensors is required for merge-model. "
             "Install with: pip install safetensors"
@@ -1801,6 +1801,57 @@ def cmd_rotate(args):  # pragma: no cover
 
 
 # ── squish predict ─────────────────────────────────────────────────────────────
+
+def cmd_predict(args):  # pragma: no cover
+    """
+    Run the LIFE analytical performance predictor.
+
+    Prints predicted TTFT, TPOT, and throughput for the given model and
+    hardware configuration, derived from the LIFE analytical model
+    (memory-bandwidth, compute, and overhead terms).
+
+    Under the hood this calls :mod:`squish.life_model.predict`.
+    """
+    try:
+        from squish.life_model import predict as _life_predict  # type: ignore[import]
+    except ImportError as exc:
+        print(f"\n  Error: could not import squish.life_model — {exc}")
+        print("  Make sure the squish package is installed.")
+        sys.exit(1)
+
+    model_arg  = args.model or ""
+    model_dir  = _resolve_model(model_arg) if model_arg else None
+
+    result = _life_predict(
+        model_dir  = model_dir,
+        batch_size = args.batch_size,
+        seq_len    = args.seq_len,
+        output_len = args.output_len,
+    )
+
+    if args.json_output:
+        print(json.dumps(result, indent=2))
+        return
+
+    w = 28
+    print()
+    print(f"  {'LIFE Performance Prediction':^{w}}")
+    print(f"  {'─' * w}")
+    if model_dir:
+        print(f"  {'Model':<16}: {Path(model_dir).name}")
+    print(f"  {'Batch size':<16}: {args.batch_size}")
+    print(f"  {'Seq len (input)':<16}: {args.seq_len}")
+    print(f"  {'Output len':<16}: {args.output_len}")
+    print(f"  {'─' * w}")
+    print(f"  {'TTFT (prefill)':<16}: {result.get('ttft_ms', 0):.1f} ms")
+    print(f"  {'TPOT (per tok)':<16}: {result.get('tpot_ms', 0):.2f} ms")
+    print(f"  {'Throughput':<16}: {result.get('tokens_per_sec', 0):.1f} tok/s")
+    print(f"  {'Memory (KV)':<16}: {result.get('kv_memory_gb', 0):.2f} GB")
+    print()
+    if result.get("bottleneck"):
+        print(f"  Bottleneck: {result['bottleneck']}")
+        print()
+
 
 def main():
     ap = argparse.ArgumentParser(
@@ -2152,6 +2203,25 @@ Ollama drop-in:
     p_rotate.add_argument("--seed", type=int, default=42,
                           help="Random seed for calibration (default 42).")
     p_rotate.set_defaults(func=cmd_rotate)
+
+    # ── squish predict ─────────────────────────────────────────────────────────
+    p_predict = sub.add_parser(
+        "predict",
+        help="Run the LIFE analytical performance predictor on a model / hardware combo",
+    )
+    p_predict.add_argument("model", nargs="?", default="",
+                           metavar="MODEL",
+                           help="Model directory or shorthand (optional; uses running "
+                                "server config when omitted).")
+    p_predict.add_argument("--batch-size", type=int, default=1, metavar="N",
+                           help="Concurrent request count to model (default 1).")
+    p_predict.add_argument("--seq-len", type=int, default=512, metavar="N",
+                           help="Input sequence length for TTFT estimate (default 512).")
+    p_predict.add_argument("--output-len", type=int, default=128, metavar="N",
+                           help="Output token count for TPOT estimate (default 128).")
+    p_predict.add_argument("--json", action="store_true", dest="json_output",
+                           help="Print results as JSON instead of a human-readable table.")
+    p_predict.set_defaults(func=cmd_predict)
 
     args = ap.parse_args()
 

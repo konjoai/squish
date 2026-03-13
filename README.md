@@ -67,9 +67,6 @@ export OPENAI_API_KEY=squish
 export OLLAMA_HOST=http://localhost:11435
 ```
 
-All flags above are **Stable** (Waves 1–12). For advanced optimization flags
-(`[Beta]` Waves 13–18 and `[Experimental]` Waves 19+), see [MODULES.md](MODULES.md).
-
 ---
 
 ## Why Not Ollama or LM Studio?
@@ -280,6 +277,11 @@ Open `http://localhost:11435/chat` in any browser after starting the server.
 - System prompt editor, settings panel (temp / top_p / max_tokens / seed)
 - Copy buttons on all code blocks
 
+```bash
+squish run 7b                     # defaults to port 11435
+# browser → http://localhost:11435/chat
+```
+
 ---
 
 ## Ollama Drop-In
@@ -402,12 +404,6 @@ out of the box with zero additional configuration.
 ## Advanced Features
 
 Beyond the core stable feature set, Squish includes a large library of inference optimisations.
-
-| Tier | Description | Label |
-|------|-------------|-------|
-| Stable | Core inference (Waves 1–12). All flags validated on Apple Silicon M-series. | (no label) |
-| Beta | Advanced KV compression, speculative decoding variants (Waves 13–18). Functionally complete; hardware validation in progress. | `[Beta]` |
-| Experimental | Cutting-edge research features (Waves 19+). Proof-of-concept implementations; may change. | `[Experimental]` |
 
 **Stable (validated on hardware):** INT8/INT4 compression, KV cache compression (KIVI + SnapKV),
 speculative decoding, AWQ calibration, prefix/radix cache, batch scheduler, streaming, paged attention,

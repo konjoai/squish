@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "squish"
-version = "9.0.0"
+version = "1.0.1"
 description = "Fast compressed model loader and OpenAI-compatible inference server for Apple Silicon"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -131,16 +131,6 @@ exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
-    "raise ValueError",
-    "raise TypeError",
-    "raise OverflowError",
-    "raise MemoryError",
-    "raise KeyError",
-    "raise RuntimeError",
-    "raise AssertionError",
-    "raise AttributeError",
-    "raise IndexError",
-    "return 0.0",
     "\\.\\.\\.",
     "pass",
 ]
