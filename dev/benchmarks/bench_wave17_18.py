@@ -509,7 +509,7 @@ def bench_trail(results: dict) -> None:
 def bench_vptq(results: dict) -> None:
     _hdr("VPTQ — Vector-Product Tree Quantisation")
     try:
-        from squish.vptq import VPTQCodebook, VPTQConfig, VPTQQuantizer
+        from squish.quant.vptq import VPTQCodebook, VPTQConfig, VPTQQuantizer
 
         import time as _time
 

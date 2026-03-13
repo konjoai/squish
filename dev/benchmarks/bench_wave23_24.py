@@ -967,7 +967,7 @@ def bench_sparse_moe(results: dict) -> None:
 def bench_awq_v2(results: dict) -> None:
     _hdr("AWQv2Calibrator — Activation-Aware Scale & Shift Search")
     try:
-        from squish.awq_v2 import AWQv2Config, AWQv2Calibrator
+        from squish.quant.awq_v2 import AWQv2Config, AWQv2Calibrator
 
         # W: (out_features, in_features); act_scales: (in_features,) = W.shape[1]
         out_features, in_features = 128, 256

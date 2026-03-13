@@ -24,49 +24,73 @@ import pytest
 CATALOGUE = [
     # (module,              key_export,               server_flag,                tier)
     # ── Tier A: actively wired + called at runtime ──────────────────────────
-    ("paged_attention",     "PagedKVCache",            "--paged-attention",        "A"),
-    ("radix_cache",         "RadixTree",               "--no-prefix-cache",        "A"),
+    ("kv.paged_attention",     "PagedKVCache",            "--paged-attention",        "A"),
+    ("kv.radix_cache",         "RadixTree",               "--no-prefix-cache",        "A"),
     # ── Tier B: flag registered, lazy init in main() ────────────────────────
-    ("prompt_lookup",       "PromptLookupDecoder",     "--prompt-lookup",          "B"),
-    ("seq_packing",         "SequencePacker",          "--seq-packing",            "B"),
-    ("ada_serve",           "AdaServeScheduler",       "--ada-serve",              "B"),
-    ("conf_spec",           "ConfSpecVerifier",        "--conf-spec",              "B"),
-    ("kvsharer",            "KVShareMap",              "--kv-share",               "B"),
-    ("kv_slab",             "KVSlabAllocator",         "--kv-slab",                "B"),
-    ("paris_kv",            "ParisKVCodebook",         "--paris-kv",               "B"),
-    ("streaming_sink",      "SinkKVCache",             "--streaming-sink",         "B"),
-    ("diffkv",              "DiffKVPolicyManager",     "--diff-kv",                "B"),
-    ("smallkv",             "SmallKVCache",            "--small-kv",               "B"),
-    ("sage_attention",      "SageAttentionKernel",     "--sage-attention",         "B"),
-    ("sage_attention2",     "SageAttention2Kernel",    "--sage-attention2",        "B"),
-    ("sparge_attn",         "SpargeAttnEngine",        "--sparge-attention",       "B"),
-    ("squeeze_attention",   "SqueezeKVCache",          "--squeeze-attention",      "B"),
-    ("yoco",                "YOCOConfig",              "--yoco-kv",                "B"),
-    ("cla",                 "CLAConfig",               "--cla",                    "B"),
-    ("kvtuner",             "KVTunerConfig",           "--kvtuner",                "B"),
-    ("robust_scheduler",    "AMaxScheduler",           "--robust-scheduler",       "B"),
-    ("gemfilter",           "GemFilterConfig",         "--gemfilter",              "B"),
-    ("svdq",                "SVDqConfig",              "--svdq",                   "B"),
-    ("sparse_spec",         "SparseSpecConfig",        "--sparse-spec",            "B"),
-    ("sparse_verify",       "SparseVerifyConfig",      "--sparse-verify",          "B"),
-    ("trail",               "TrailConfig",             "--trail",                  "B"),
-    ("specontext",          "SpeContextConfig",        "--specontext",             "B"),
-    ("forelen",             "ForelenConfig",           "--forelen",                "B"),
-    ("ipw",                 "IPWConfig",               "--ipw",                    "B"),
-    ("layer_skip",          "EarlyExitConfig",         "--layer-skip",             "B"),
-    ("lookahead_reasoning", "LookaheadReasoningEngine","--lookahead",              "B"),
-    ("spec_reason",         "SpecReasonOrchestrator",  "--spec-reason",            "B"),
-    ("long_spec",           "LongSpecConfig",          "--long-spec",              "B"),
-    ("fr_spec",             "FRSpecConfig",            "--fr-spec",                "B"),
-    ("lora_manager",        "LoRAManager",             "--lora-adapter",           "B"),
+    ("speculative.prompt_lookup",       "PromptLookupDecoder",     "--prompt-lookup",          "B"),
+    ("streaming.seq_packing",         "SequencePacker",          "--seq-packing",            "B"),
+    ("serving.ada_serve",           "AdaServeScheduler",       "--ada-serve",              "B"),
+    ("speculative.conf_spec",           "ConfSpecVerifier",        "--conf-spec",              "B"),
+    ("kv.kvsharer",            "KVShareMap",              "--kv-share",               "B"),
+    ("kv.kv_slab",             "KVSlabAllocator",         "--kv-slab",                "B"),
+    ("kv.paris_kv",            "ParisKVCodebook",         "--paris-kv",               "B"),
+    ("streaming.streaming_sink",      "SinkKVCache",             "--streaming-sink",         "B"),
+    ("kv.diffkv",              "DiffKVPolicyManager",     "--diff-kv",                "B"),
+    ("kv.smallkv",             "SmallKVCache",            "--small-kv",               "B"),
+    ("attention.sage_attention",      "SageAttentionKernel",     "--sage-attention",         "B"),
+    ("attention.sage_attention2",     "SageAttention2Kernel",    "--sage-attention2",        "B"),
+    ("attention.sparge_attn",         "SpargeAttnEngine",        "--sparge-attention",       "B"),
+    ("attention.squeeze_attention",   "SqueezeKVCache",          "--squeeze-attention",      "B"),
+    ("attention.yoco",                "YOCOConfig",              "--yoco-kv",                "B"),
+    ("attention.cla",                 "CLAConfig",               "--cla",                    "B"),
+    ("kv.kvtuner",             "KVTunerConfig",           "--kvtuner",                "B"),
+    ("serving.robust_scheduler",    "AMaxScheduler",           "--robust-scheduler",       "B"),
+    ("token.gemfilter",           "GemFilterConfig",         "--gemfilter",              "B"),
+    ("quant.svdq",                "SVDqConfig",              "--svdq",                   "B"),
+    ("speculative.sparse_spec",         "SparseSpecConfig",        "--sparse-spec",            "B"),
+    ("speculative.sparse_verify",       "SparseVerifyConfig",      "--sparse-verify",          "B"),
+    ("speculative.trail",               "TrailConfig",             "--trail",                  "B"),
+    ("speculative.specontext",          "SpeContextConfig",        "--specontext",             "B"),
+    ("token.forelen",             "ForelenConfig",           "--forelen",                "B"),
+    ("token.ipw",                 "IPWConfig",               "--ipw",                    "B"),
+    ("token.layer_skip",          "EarlyExitConfig",         "--layer-skip",             "B"),
+    ("token.lookahead_reasoning", "LookaheadReasoningEngine","--lookahead",              "B"),
+    ("speculative.spec_reason",         "SpecReasonOrchestrator",  "--spec-reason",            "B"),
+    ("speculative.long_spec",           "LongSpecConfig",          "--long-spec",              "B"),
+    ("speculative.fr_spec",             "FRSpecConfig",            "--fr-spec",                "B"),
+    ("lora.lora_manager",        "LoRAManager",             "--lora-adapter",           "B"),
     # ── Tier C: exported, no dedicated server flag ───────────────────────────
-    ("kvsharer",            "KVSharerConfig",          None,                       "C"),
-    ("diffkv",              "DiffKVConfig",            None,                       "C"),
-    ("smallkv",             "SmallKVConfig",           None,                       "C"),
+    ("kv.kvsharer",            "KVSharerConfig",          None,                       "C"),
+    ("kv.diffkv",              "DiffKVConfig",            None,                       "C"),
+    ("kv.smallkv",             "SmallKVConfig",           None,                       "C"),
 ]
 
 # Deduplicate to unique modules
 MODULES = sorted({row[0] for row in CATALOGUE})
+
+# Subpackage mapping — updated for reorganized layout
+_MOD_PKG: dict[str, str] = {
+    "ada_serve": "serving", "cla": "attention", "conf_spec": "speculative",
+    "diffkv": "kv", "forelen": "token", "fr_spec": "speculative",
+    "gemfilter": "token", "ipw": "token", "kv_slab": "kv",
+    "kvsharer": "kv", "kvtuner": "kv", "layer_skip": "token",
+    "long_spec": "speculative", "lookahead_reasoning": "token",
+    "lora_manager": "lora", "paged_attention": "kv", "paris_kv": "kv",
+    "prompt_lookup": "speculative", "radix_cache": "kv",
+    "robust_scheduler": "serving", "sage_attention": "attention",
+    "sage_attention2": "attention", "seq_packing": "streaming",
+    "smallkv": "kv", "sparge_attn": "attention", "sparse_spec": "speculative",
+    "sparse_verify": "speculative", "spec_reason": "speculative",
+    "specontext": "speculative", "squeeze_attention": "attention",
+    "streaming_sink": "streaming", "svdq": "quant", "trail": "speculative",
+    "yoco": "attention",
+}
+
+
+def _full_mod_path(mod: str) -> str:
+    pkg = _MOD_PKG.get(mod, "")
+    return f"squish.{pkg}.{mod}" if pkg else f"squish.{mod}"
+
 
 SERVER_PY = Path(__file__).parent.parent.parent / "squish" / "server.py"
 _server_src = SERVER_PY.read_text()
@@ -86,8 +110,9 @@ def _server_has_flag(flag: str) -> bool:
 
 
 def _server_imports_module(mod: str) -> bool:
+    full = _full_mod_path(mod)
     pat = re.compile(
-        r'from\s+squish\.' + re.escape(mod) + r'\s+import'
+        r'from\s+' + re.escape(full) + r'\s+import'
         r'|from\s+\.' + re.escape(mod) + r'\s+import'
     )
     return bool(pat.search(_server_src))
@@ -100,7 +125,7 @@ def _server_imports_module(mod: str) -> bool:
 class TestModuleImportable:
     @pytest.mark.parametrize("mod", MODULES)
     def test_module_importable(self, mod):
-        m = importlib.import_module(f"squish.{mod}")
+        m = importlib.import_module(_full_mod_path(mod))
         assert m is not None, f"squish.{mod} could not be imported"
 
 
@@ -111,9 +136,9 @@ class TestModuleImportable:
 class TestKeyExportsExist:
     @pytest.mark.parametrize("mod,export,_flag,_tier", CATALOGUE)
     def test_export_exists(self, mod, export, _flag, _tier):
-        m = importlib.import_module(f"squish.{mod}")
+        m = importlib.import_module(_full_mod_path(mod))
         assert hasattr(m, export), (
-            f"squish.{mod} is missing attribute '{export}'"
+            f"{_full_mod_path(mod)} is missing attribute '{export}'"
         )
 
 
@@ -323,7 +348,7 @@ def _report():
         seen.add(mod)
         importable = True
         try:
-            importlib.import_module(f"squish.{mod}")
+            importlib.import_module(_full_mod_path(mod))
         except Exception:
             importable = False
         in_all = export in all_exports

@@ -467,7 +467,7 @@ def bench_clasp(results: dict) -> None:
 def bench_dfloat11(results: dict) -> None:
     _hdr("DFloat11 — Huffman Entropy Coding for BF16 Weights")
 
-    from squish.dfloat11 import DFloat11Config, DFloat11Compressor
+    from squish.quant.dfloat11 import DFloat11Config, DFloat11Compressor
 
     cfg  = DFloat11Config(block_size=1024, use_rans=False)
     comp = DFloat11Compressor(cfg)
@@ -514,7 +514,7 @@ def bench_dfloat11(results: dict) -> None:
 def bench_rans_codec(results: dict) -> None:
     _hdr("RANSCodec — rANS Entropy Codec")
 
-    from squish.rans_codec import RANSCodec
+    from squish.quant.rans_codec import RANSCodec
 
     # Simulate a typical symbol distribution over 4 symbol alphabet
     n_symbols = 4
@@ -601,7 +601,7 @@ def bench_squeeze_llm(results: dict) -> None:
 def bench_nf4_quant(results: dict) -> None:
     _hdr("NF4 Quantisation — NormalFloat4 Weight Encoding")
 
-    from squish.nf4_quant import NF4_LEVELS, quantize_nf4, dequantize_nf4
+    from squish.quant.nf4_quant import NF4_LEVELS, quantize_nf4, dequantize_nf4
 
     _row("NF4_LEVELS count", f"{len(NF4_LEVELS)}", "must be 16")
 
@@ -753,7 +753,7 @@ def bench_wave13_14_compound(results: dict) -> None:
 
     from squish.duo_attention import DuoAttentionConfig, DuoKVManager
     from squish.shadow_kv import ShadowKVConfig, ShadowKVCache
-    from squish.dfloat11 import DFloat11Config, DFloat11Compressor
+    from squish.quant.dfloat11 import DFloat11Config, DFloat11Compressor
     from squish.pq_cache import PQCacheConfig, PQKeyIndex, PQValueStore, retrieve
 
     n_layers, n_heads, head_dim = 4, 8, 64

@@ -441,7 +441,7 @@ def main():
             if flat_ref in text:
                 # Check whether every occurrence of flat_ref is already the
                 # prefix of the new_ref (i.e. "squish.quant.awq" contains
-                # "squish.awq" only if pkg == stem, which never happens here).
+                # "squish.quant.awq" only if pkg == stem, which never happens here).
                 # Simpler: if flat_ref still appears and new_ref does not replace
                 # all of them, flag it.
                 import re as _re

@@ -388,16 +388,16 @@ class TestWave14AllImportable:
     """Smoke test: verify every Wave 14 module can be imported."""
 
     @pytest.mark.parametrize("module,symbols", [
-        ("sub_spec",       ["SubSpecConfig", "SubSpecDecoder"]),
-        ("dfloat11",       ["DFloat11Config", "DFloat11Compressor"]),
-        ("rans_codec",     ["RANSCodec"]),
-        ("qspec",          ["QSpecConfig", "QSpecDecoder"]),
-        ("quant_spec",     ["QuantSpecConfig", "QuantSpecDecoder"]),
-        ("copy_spec",      ["CopySpecConfig", "CopySpecDrafter"]),
-        ("squeeze_llm",    ["SqueezeLLMConfig", "SqueezeLLMQuantizer"]),
-        ("nf4_quant",      ["NF4_LEVELS", "quantize_nf4", "dequantize_nf4"]),
-        ("spin_quant",     ["run_rotation"]),
-        ("head_infer",     ["HeadInferConfig", "HeadAwareKVStore"]),
+        ("speculative.sub_spec",       ["SubSpecConfig", "SubSpecDecoder"]),
+        ("quant.dfloat11",       ["DFloat11Config", "DFloat11Compressor"]),
+        ("quant.rans_codec",     ["RANSCodec"]),
+        ("speculative.qspec",          ["QSpecConfig", "QSpecDecoder"]),
+        ("speculative.quant_spec",     ["QuantSpecConfig", "QuantSpecDecoder"]),
+        ("speculative.copy_spec",      ["CopySpecConfig", "CopySpecDrafter"]),
+        ("quant.squeeze_llm",    ["SqueezeLLMConfig", "SqueezeLLMQuantizer"]),
+        ("quant.nf4_quant",      ["NF4_LEVELS", "quantize_nf4", "dequantize_nf4"]),
+        ("quant.spin_quant",     ["run_rotation"]),
+        ("speculative.head_infer",     ["HeadInferConfig", "HeadAwareKVStore"]),
     ])
     def test_module_importable(self, module, symbols):
         import importlib

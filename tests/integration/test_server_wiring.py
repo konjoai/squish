@@ -701,7 +701,7 @@ class TestIntegrationReportAllWired:
         ]
         unwired = []
         for mod in tier_a + tier_b:
-            pat = re.compile(r'from\s+squish\.' + re.escape(mod) + r'\s+import')
+            pat = re.compile(r'from\s+squish(?:\.[a-z_]+)*\.' + re.escape(mod) + r'\s+import')
             if not pat.search(server_src):
                 unwired.append(mod)
 
@@ -741,7 +741,7 @@ class TestIntegrationReportAllWired:
 
         unwired = []
         for mod in all_modules:
-            pat = re.compile(r'from\s+squish\.' + re.escape(mod) + r'\s+import')
+            pat = re.compile(r'from\s+squish(?:\.[a-z_]+)*\.' + re.escape(mod) + r'\s+import')
             if not pat.search(server_src):
                 unwired.append(mod)
 

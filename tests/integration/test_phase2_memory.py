@@ -471,13 +471,13 @@ class TestLoadStatsStr:
 class TestModuleImports:
 
     def test_split_loader_importable(self):
-        from squish import split_loader  # noqa: F401
+        from squish.io import split_loader  # noqa: F401
 
     def test_flash_attention_importable(self):
-        from squish import flash_attention  # noqa: F401
+        from squish.attention import flash_attention  # noqa: F401
 
     def test_layerwise_loader_importable(self):
-        from squish import layerwise_loader  # noqa: F401
+        from squish.hardware import layerwise_loader  # noqa: F401
 
     def test_split_loader_public_api(self):
         pass

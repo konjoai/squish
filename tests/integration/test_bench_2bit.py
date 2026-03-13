@@ -335,11 +335,11 @@ class TestBenchAqlm:
         fake_quant.compress.return_value  = fake_layer
         fake_quant.decompress.return_value = np.zeros_like(_W_SMALL)
 
-        fake_aqlm = types.ModuleType("squish.aqlm")
+        fake_aqlm = types.ModuleType("squish.quant.aqlm")
         fake_aqlm.AQLMConfig = MagicMock(return_value=MagicMock())
         fake_aqlm.AQLMQuantizer = MagicMock(return_value=fake_quant)
 
-        with patch.dict(sys.modules, {"squish.aqlm": fake_aqlm}):
+        with patch.dict(sys.modules, {"squish.quant.aqlm": fake_aqlm}):
             r = bench_2bit.bench_aqlm(_W_SMALL)
 
         rows, cols = _W_SMALL.shape

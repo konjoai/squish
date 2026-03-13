@@ -80,10 +80,6 @@ _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-pr
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
 # Phase 13A: asymmetric INT2 KV cache (agent-kv)
 _agent_kv_config: "Any | None" = None   # AgentKVConfig | None — set in main() when --agent-kv
-# Phase 10A: hot/cold neuron routing
-_neuron_router: "Any | None" = None        # NeuronRouter | None — set in main() when --neuron-routing
-# Phase 10B: Metal kernel fusion
-_metal_fusion_kernels: "Any | None" = None  # MetalFusionKernels | None — set in main() when --metal-fusion
 
 # ── Wave optimization module state (lazily instantiated) ─────────────────────
 _prompt_lookup_decoder  = None  # PromptLookupDecoder    — --prompt-lookup
@@ -1120,25 +1116,6 @@ def _generate_tokens(  # pragma: no cover
                 except Exception:
                     pass  # disk lookup error — fall through to normal prefill
 
-            # ── Phase 13C: RadixTree token-prefix lookup ──────────────────────
-            # Checks whether a previously processed token prefix is stored in
-            # the trie. Tracks prefix_hits for /metrics; the full delta-only
-            # forward path (fork_sequence) requires PagedKVCache integration —
-            # see PLAN.md §13C.
-            _radix_prefix_len: int = 0
-            _radix_block_refs: list = []
-            if _paged_kv_cache is not None and input_ids:
-                try:
-                    _radix_prefix_len, _radix_block_refs = _prefix_cache.find_prefix(
-                        list(input_ids)
-                    )
-                    if _radix_prefix_len > 0 and _trace:
-                        _tlog(f"REQ {_rid}  radix-prefix HIT  "
-                              f"prefix_len={_radix_prefix_len}  "
-                              f"delta_tokens={len(input_ids) - _radix_prefix_len}")
-                except Exception:
-                    _radix_prefix_len = 0
-
             if _disk_hit_logit is not None:
                 # Cache hit: use stored logit to sample first token; no prefill needed
                 last_logit_mlx = mx.array(_disk_hit_logit, dtype=mx.float32)
@@ -1227,17 +1204,6 @@ def _generate_tokens(  # pragma: no cover
                     logits_full = model(x, cache=layer_caches)
                     mx.eval(logits_full)
                     _last_logit_vec = logits_full[0, -1]
-
-                # ── Phase 13C: RadixTree prefix insert ────────────────────────
-                # Record the token sequence so future requests with a matching
-                # prefix are detected by find_prefix() above. block_refs are []
-                # on the QuantizedKVCache path; PagedKVCache path will populate
-                # them once fork_sequence is implemented (PLAN.md §13C).
-                if _paged_kv_cache is not None and input_ids:
-                    try:
-                        _prefix_cache.insert_prefix(list(input_ids), [])
-                    except Exception:
-                        pass  # never block generation on trie insert failure
 
                 # ── Phase 3C: restore dense attention after prefill ────────────
                 if _minf_restore is not None:
@@ -2661,28 +2627,6 @@ Examples:
             "running long tool-call agent loops."
         ),
     )
-    # ── Phase 10A: Neuron routing ─────────────────────────────────────────────
-    ap.add_argument(
-        "--neuron-routing", action="store_true", default=False,
-        help=(
-            "[Experimental] Enable hot/cold neuron routing for MLP layers.  "
-            "Requires a neuron_profile.json produced by squish profile-neurons "
-            "in the same directory as --model-dir.  Splits each MLP layer into "
-            "hot neurons (GPU path) and cold neurons (CPU path), reducing "
-            "effective DRAM bandwidth by ~3-4x on typical 20/80 hot/cold "
-            "splits.  Automatically disabled if neuron_profile.json is absent."
-        ),
-    )
-    # ── Phase 10B: Metal kernel fusion ───────────────────────────────────────
-    ap.add_argument(
-        "--metal-fusion", action="store_true", default=False,
-        help=(
-            "[Experimental] Enable Apple Metal kernel fusion for RoPE-QK, "
-            "SwiGLU, and INT8 KV attention.  Requires MLX 0.18+ with "
-            "mx.metal.kernel.  Automatically detected and skipped gracefully "
-            "when Metal is unavailable."
-        ),
-    )
 
     args = ap.parse_args()
 
@@ -2728,42 +2672,6 @@ Examples:
         _info("agent-preset",
               f"active  agent-kv=True  chunk-prefill=True"
               f"  batch={args.batch_size}  max-kv={args.max_kv_size}")
-
-    # ── Phase 10A: Hot/cold neuron routing ────────────────────────────────────
-    global _neuron_router
-    if getattr(args, "neuron_routing", False):
-        try:
-            import os as _os
-            _profile_path = _os.path.join(
-                getattr(args, "model_dir", "") or getattr(args, "compressed_dir", ""),
-                "neuron_profile.json",
-            )
-            if _os.path.isfile(_profile_path):
-                from squish.hardware.neuron_profile import load_profile as _load_profile  # noqa: PLC0415
-                from squish.hardware.neuron_router import NeuronRouterConfig, NeuronRouter   # noqa: PLC0415
-                _nr_profile = _load_profile(_profile_path)
-                _neuron_router = NeuronRouter(NeuronRouterConfig(profile=_nr_profile))
-                _info("neuron-routing",
-                      f"loaded {_nr_profile.layer_count} layers from {_profile_path!r}")
-            else:
-                _info("neuron-routing",
-                      f"profile not found at {_profile_path!r} — routing disabled")
-        except Exception as _nr_exc:  # noqa: BLE001
-            _info("neuron-routing", f"unavailable ({_nr_exc})")
-
-    # ── Phase 10B: Metal kernel fusion ────────────────────────────────────────
-    global _metal_fusion_kernels
-    if getattr(args, "metal_fusion", False):
-        try:
-            from squish.hardware.metal_fusion import MetalFusionConfig, MetalFusionKernels  # noqa: PLC0415
-            _metal_fusion_kernels = MetalFusionKernels(MetalFusionConfig(require_metal=False))
-            _info("metal-fusion",
-                  f"{'enabled' if _metal_fusion_kernels.available else 'fallback (no Metal)'}  "
-                  f"rope={_metal_fusion_kernels.rope_enabled}  "
-                  f"swiglu={_metal_fusion_kernels.swiglu_enabled}  "
-                  f"int8_attn={_metal_fusion_kernels.int8_attn_enabled}")
-        except Exception as _mf_exc:  # noqa: BLE001
-            _info("metal-fusion", f"unavailable ({_mf_exc})")
 
     global _API_KEY
     # Prefer explicit CLI flag; fall back to SQUISH_API_KEY env var.

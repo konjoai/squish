@@ -373,15 +373,15 @@ class TestWave13AllImportable:
     """Smoke test: verify every Wave 13 module can be imported."""
 
     @pytest.mark.parametrize("module,symbols", [
-        ("duo_attention",  ["DuoAttentionConfig", "DuoKVManager"]),
-        ("shadow_kv",      ["ShadowKVConfig", "ShadowKVCache"]),
-        ("pq_cache",       ["PQCacheConfig", "PQKeyIndex", "PQValueStore"]),
-        ("spe_cache",      ["SpeCacheConfig", "SpeCachePrefetcher"]),
-        ("duo_decoding",   ["DuoDecodingConfig", "DuoDecodingDecoder"]),
-        ("knapspec",       ["KnapSpecConfig", "KnapSpecSelector"]),
-        ("token_merging",  ["TokenMergingConfig", "TokenMergingState", "bipartite_merge"]),
-        ("token_swift",    ["TokenSwiftConfig", "TokenSwiftDecoder"]),
-        ("c2t",            ["C2TConfig", "AdaptiveTreeBuilder"]),
+        ("attention.duo_attention",  ["DuoAttentionConfig", "DuoKVManager"]),
+        ("kv.shadow_kv",      ["ShadowKVConfig", "ShadowKVCache"]),
+        ("kv.pq_cache",       ["PQCacheConfig", "PQKeyIndex", "PQValueStore"]),
+        ("kv.spe_cache",      ["SpeCacheConfig", "SpeCachePrefetcher"]),
+        ("attention.duo_decoding",   ["DuoDecodingConfig", "DuoDecodingDecoder"]),
+        ("token.knapspec",       ["KnapSpecConfig", "KnapSpecSelector"]),
+        ("token.token_merging",  ["TokenMergingConfig", "TokenMergingState", "bipartite_merge"]),
+        ("token.token_swift",    ["TokenSwiftConfig", "TokenSwiftDecoder"]),
+        ("token.c2t",            ["C2TConfig", "AdaptiveTreeBuilder"]),
     ])
     def test_module_importable(self, module, symbols):
         import importlib

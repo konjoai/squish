@@ -305,9 +305,9 @@ def bench_int4(W: np.ndarray) -> MethodResult:
 def bench_vptq(W: np.ndarray) -> MethodResult:
     """Benchmark VPTQ vector quantisation (primary + residual codebooks)."""
     try:
-        from squish.vptq import VPTQConfig, VPTQQuantizer
+        from squish.quant.vptq import VPTQConfig, VPTQQuantizer
     except ImportError as exc:
-        return MethodResult(status="skip", reason=f"squish.vptq unavailable: {exc}")
+        return MethodResult(status="skip", reason=f"squish.quant.vptq unavailable: {exc}")
 
     W = np.asarray(W, dtype=np.float32)
     rows, cols = W.shape
@@ -347,11 +347,11 @@ def bench_aqlm(W: np.ndarray) -> MethodResult:
     Returns a SKIP result until squish/aqlm.py is implemented.
     """
     try:
-        from squish.aqlm import AQLMConfig, AQLMQuantizer  # type: ignore[import]
+        from squish.quant.aqlm import AQLMConfig, AQLMQuantizer  # type: ignore[import]
     except ImportError:
         return MethodResult(
             status="skip",
-            reason="squish.aqlm not yet implemented (Phase 9A)",
+            reason="squish.quant.aqlm not yet implemented (Phase 9A)",
         )
 
     W = np.asarray(W, dtype=np.float32)
@@ -384,7 +384,7 @@ def bench_quip(W: np.ndarray) -> MethodResult:
     the ``compress`` / ``decompress`` convention of the other methods.
     """
     try:
-        from squish.quip_sharp import (  # type: ignore[import]
+        from squish.quant.quip_sharp import (  # type: ignore[import]
             QuIPSharpConfig,
             QuIPSharpQuantizer,
             quip_dequantize,
@@ -392,7 +392,7 @@ def bench_quip(W: np.ndarray) -> MethodResult:
     except ImportError:
         return MethodResult(
             status="skip",
-            reason="squish.quip_sharp not available",
+            reason="squish.quant.quip_sharp not available",
         )
 
     W = np.asarray(W, dtype=np.float32)
