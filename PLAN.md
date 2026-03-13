@@ -1137,10 +1137,10 @@ New files: `squish/neuron_profile.py`, `squish/neuron_router.py`
 (Runs `NeuronProfiler` after quantization and writes `neuron_profile.json` into the npy-dir)
 
 **Deliverables:**
-- [ ] `squish/neuron_profile.py` — NeuronProfileConfig, NeuronProfiler, NeuronProfile, load_profile
-- [ ] `squish/neuron_router.py` — NeuronRouterConfig, NeuronRouter, patch_model_neuron_routing
-- [ ] `tests/test_neuron_profile_unit.py` — 12+ tests: profiler on random activations, hot/cold split at correct fraction, JSON round-trip, load_profile
-- [ ] `tests/test_neuron_router_unit.py` — 8+ tests: router construction, hot/cold dispatch logic, forward pass shape consistency, patch_model_neuron_routing
+- [x] `squish/neuron_profile.py` — NeuronProfileConfig, NeuronProfiler, NeuronProfile, load_profile
+- [x] `squish/neuron_router.py` — NeuronRouterConfig, NeuronRouter, patch_model_neuron_routing
+- [x] `tests/test_neuron_profile_unit.py` — 12+ tests: profiler on random activations, hot/cold split at correct fraction, JSON round-trip, load_profile
+- [x] `tests/test_neuron_router_unit.py` — 8+ tests: router construction, hot/cold dispatch logic, forward pass shape consistency, patch_model_neuron_routing
 - [ ] `squish/act_sparsity.py` — extend `ActSparsityPredictor.calibrate()` to optionally emit a `NeuronProfile` alongside the existing `sparsity_map`
 - [ ] `squish/server.py` — `--neuron-routing` flag wiring (Experimental tier); load neuron_profile.json if present alongside model weights
 - [ ] `dev/benchmarks/bench_neuron_routing.py` — memory bandwidth measurement (using `psutil` + `time`) with/without neuron routing on Qwen2.5-1.5B; Tokens/sec + peak DRAM bytes read
@@ -1185,8 +1185,8 @@ def fused_rope_qk(q, k, cos, sin):
 ```
 
 **Deliverables:**
-- [ ] `squish/metal_fusion.py` — MetalFusionConfig, MetalFusionKernels, fused_rope_qk, fused_swiglu, fused_int8_kv_attn; graceful fallback to existing `fused_kernels.py` ops on pre-0.18 MLX or non-Metal hardware
-- [ ] `tests/test_metal_fusion_unit.py` — 10+ tests: output equivalence between fused and reference implementations on random inputs, shape invariance, fallback path coverage (marked `# pragma: no cover` for Metal-execution paths)
+- [x] `squish/metal_fusion.py` — MetalFusionConfig, MetalFusionKernels, fused_rope_qk, fused_swiglu, fused_int8_kv_attn; graceful fallback to existing `fused_kernels.py` ops on pre-0.18 MLX or non-Metal hardware
+- [x] `tests/test_metal_fusion_unit.py` — 10+ tests: output equivalence between fused and reference implementations on random inputs, shape invariance, fallback path coverage (marked `# pragma: no cover` for Metal-execution paths)
 - [ ] `squish/server.py` — `--metal-fusion` flag (Experimental tier); auto-detects MLX version and skips gracefully if `mx.metal.kernel` unavailable
 - [ ] `squish/fused_kernels.py` — add `_METAL_FUSION_AVAILABLE` sentinel; `fused_kernels.py` prefers `metal_fusion.py` ops when `--metal-fusion` is active
 - [ ] `dev/benchmarks/bench_metal_fusion.py` — microbenchmark comparing fused vs unfused dispatch latency for RoPE, SwiGLU, and INT8 KV attn on M3 at seq_len ∈ {128, 1024, 8192}; save to `dev/results/metal_fusion_bench.json`
