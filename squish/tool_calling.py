@@ -41,7 +41,9 @@ reinforces behaviour for models that haven't seen a tool-calling system prompt.
 
 import json
 import re
+import time
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 # ── Prompt formatting ──────────────────────────────────────────────────────────
@@ -239,6 +241,91 @@ def build_tool_calls_response(raw_calls: list[dict]) -> list[dict]:
             },
         })
     return result
+
+
+async def stream_tool_calls_response(
+    cid: str,
+    model_id: str,
+    raw_calls: list[dict],
+    chunk_size: int = 8,
+) -> AsyncIterator[str]:
+    """
+    Yield SSE ``data:`` lines that replay a tool-call response in the OpenAI
+    streaming (``chat.completion.chunk``) format.
+
+    The function generates tool calls in full non-streaming mode internally,
+    then emits the result as a structured sequence of delta chunks so that
+    streaming-aware agent frameworks (LangChain, pydantic-ai, llama-index …)
+    receive the proper ``delta.tool_calls`` events.
+
+    Chunk sequence per tool call
+    ----------------------------
+    1. Opening role chunk: ``delta = {"role": "assistant", "content": null}``
+    2. Per tool call — start chunk: announces ``name`` and ``id``; ``arguments`` is ``""``
+    3. Per tool call — argument chunks: ``arguments`` text in ``chunk_size``-character pieces
+    4. Final chunk: ``delta = {}``, ``finish_reason = "tool_calls"``
+    5. ``data: [DONE]``
+
+    Parameters
+    ----------
+    cid : str
+        Chat completion ID to embed in every chunk.
+    model_id : str
+        Model name string to embed in every chunk.
+    raw_calls : list[dict]
+        Parsed tool calls as returned by :func:`parse_tool_calls`.
+    chunk_size : int
+        Number of argument characters per streaming chunk (default 8).
+    """
+
+    def _make_chunk(delta: dict, finish_reason: Any = None) -> str:
+        payload = {
+            "id":      cid,
+            "object":  "chat.completion.chunk",
+            "created": int(time.time()),
+            "model":   model_id,
+            "choices": [{
+                "index":         0,
+                "delta":         delta,
+                "finish_reason": finish_reason,
+            }],
+        }
+        return f"data: {json.dumps(payload)}\n\n"
+
+    tc_list = build_tool_calls_response(raw_calls)
+
+    # 1. Opening role chunk
+    yield _make_chunk({"role": "assistant", "content": None})
+
+    for i, tc in enumerate(tc_list):
+        # 2. Tool call start: announce id, name, empty arguments
+        yield _make_chunk({
+            "tool_calls": [{
+                "index":    i,
+                "id":       tc["id"],
+                "type":     "function",
+                "function": {
+                    "name":      tc["function"]["name"],
+                    "arguments": "",
+                },
+            }],
+        })
+        # 3. Stream arguments in small chunks
+        args_str = tc["function"]["arguments"]
+        for j in range(0, len(args_str), chunk_size):
+            yield _make_chunk({
+                "tool_calls": [{
+                    "index":    i,
+                    "function": {
+                        "arguments": args_str[j : j + chunk_size],
+                    },
+                }],
+            })
+
+    # 4. Final stop chunk
+    yield _make_chunk({}, finish_reason="tool_calls")
+    # 5. SSE terminator
+    yield "data: [DONE]\n\n"
 
 
 # ── Grammar-assisted parsing ───────────────────────────────────────────────────

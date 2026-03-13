@@ -72,6 +72,11 @@ def _get_dfloat11():
     return DFloat11Config, DFloat11Compressor
 
 
+def _get_quip():
+    from squish.quip_sharp import QuIPSharpConfig, QuIPSharpQuantizer
+    return QuIPSharpConfig, QuIPSharpQuantizer
+
+
 # ---------------------------------------------------------------------------
 # ─── TTY-safe line-clear helper ─────────────────────────────────────────────
 def _clear_line() -> None:
@@ -167,6 +172,8 @@ def quantize_tensor(
     use_vptq: bool = False,
     use_dfloat11: bool = False,
     vptq_config=None,
+    use_quip: bool = False,
+    quip_quantizer=None,
 ) -> dict:
     """
     Quantize a single float32 tensor.
@@ -176,6 +183,7 @@ def quantize_tensor(
       INT4:                 __q4, __s4, __shape
       NF4:                  __nf4, __s_nf4, __shape
       VPTQ:                 __vq_idx, __vq_cb, __vq_res, __vq_rescb, __shape
+      QuIP# E8:             __quip_e8, __quip_res, __quip_rot, __shape
       passthrough:          __pt, __shape
       DFloat11 (pt):        __pt_df11  (bytes blob, stored via np.frombuffer)
       DFloat11 (scales):    replaces __s4 with __s4_df11 (bytes blob)
@@ -250,6 +258,21 @@ def quantize_tensor(
             "__vq_meta":  np.array([flat.shape[0], flat.shape[1],
                                     cfg.group_size, cfg.n_codebook_entries,
                                     cfg.n_residual_entries], dtype=np.int64),
+            "__shape":    shape_arr,
+        }
+
+    # ── QuIP# E8 lattice quantization ────────────────────────────────────────
+    if use_quip and quip_quantizer is not None:
+        layer = quip_quantizer.quantize(flat)
+        rot = (
+            layer.rotation_matrix
+            if layer.rotation_matrix is not None
+            else np.zeros((0,), dtype=np.float16)
+        )
+        return {
+            "__quip_e8":  layer.e8_indices,          # uint8  (N,)
+            "__quip_res": layer.residual_scales,      # float16 (N,)
+            "__quip_rot": rot,                        # float16 (d_in, d_in) or empty
             "__shape":    shape_arr,
         }
 
@@ -362,6 +385,8 @@ def process_weights_streaming(
     use_vptq: bool = False,
     use_dfloat11: bool = False,
     vptq_config=None,
+    use_quip: bool = False,
+    quip_bits: int = 2,
 ) -> dict:
     """
     Streaming shard-by-shard compression — works for any model size.
@@ -389,6 +414,12 @@ def process_weights_streaming(
 
     print(f"\n  Processing {len(shard_files)} shard(s) …  (streaming — peak RAM ≈ 1 shard)")
 
+    # ── Build QuIP# quantizer once; shared RNG advances across all tensors ───
+    quip_quantizer = None
+    if use_quip:
+        QuIPSharpConfig, QuIPSharpQuantizer = _get_quip()
+        quip_quantizer = QuIPSharpQuantizer(QuIPSharpConfig(scalar_bits=quip_bits), seed=42)
+
     for shard_idx, shard in enumerate(shard_files, 1):
         print(f"\n  [{shard_idx}/{len(shard_files)}] {shard.name}")
         shard_weights = load_mlx_weights_shard(shard)
@@ -411,6 +442,8 @@ def process_weights_streaming(
                 use_vptq=use_vptq,
                 use_dfloat11=use_dfloat11,
                 vptq_config=vptq_config,
+                use_quip=use_quip,
+                quip_quantizer=quip_quantizer,
             )
 
             # Write immediately — don't accumulate in RAM
@@ -449,6 +482,8 @@ def process_weights_streaming(
                     mode = "NF4"
                 elif "__vq_idx" in sub:
                     mode = "VPTQ"
+                elif "__quip_e8" in sub:
+                    mode = "QUIP"
                 elif use_int4:
                     mode = "Q4"
                 else:
@@ -592,6 +627,23 @@ def main():
         help="Ultra compression mode: enables --nf4 --dfloat11 and maximises entropy "
              "coding.  Right at the near-lossless INT4-class compression limit.",
     )
+    ap.add_argument(
+        "--quip",
+        action="store_true",
+        default=False,
+        help="Use QuIP# trellis-coded E8 lattice quantization (arXiv:2402.04396).  "
+             "Each 8-D weight block is projected onto one of 256 unit-sphere E8 "
+             "codewords plus a per-block float16 scale.  Enables incoherence "
+             "preprocessing via random Hadamard rotation.  ~2-3 bpw effective.",
+    )
+    ap.add_argument(
+        "--quip-bits",
+        type=int,
+        default=2,
+        choices=[2, 3],
+        metavar="N",
+        help="QuIP# scalar bits for residual scale representation (2 or 3, default: 2).",
+    )
     args = ap.parse_args()
 
     # ── --ultra implies nf4 + dfloat11 ────────────────────────────────────────
@@ -650,6 +702,8 @@ def main():
             use_vptq=args.vptq,
             use_dfloat11=args.dfloat11,
             vptq_config=vptq_config,
+            use_quip=args.quip,
+            quip_bits=args.quip_bits,
         )
         elapsed = time.time() - t0
 
@@ -666,6 +720,7 @@ def main():
         print("  Format:           npy-dir (streaming)")
         _mode_str = (
             "ULTRA (NF4 + DFloat11 rANS)" if args.ultra else
+            "QuIP# E8 trellis-coded" if args.quip else
             "NF4 (NormalFloat-4)" if args.nf4 else
             "VPTQ (vector quantization)" if args.vptq else
             "INT4 nibble-packed (group-64)" if args.int4 else

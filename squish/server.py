@@ -180,6 +180,7 @@ _CONCISION_PREFIX = (
 _grammar_engine: "Any | None" = None       # GrammarEngine instance, set at startup
 _structured_output_mode: str = "none"      # "none" | "json" | "json-schema"
 _structured_output_schema: "dict | None" = None  # parsed JSON schema (json-schema mode)
+_req_tool_schema: "dict | None" = None     # per-request override: tool_choice-activated schema
 # ── Phase C: Power & Energy Modes ────────────────────────────────────────────
 _power_monitor: "Any | None" = None        # PowerMonitor instance (auto mode only)
 _power_mode: str = "performance"           # current effective mode name
@@ -842,6 +843,30 @@ def _get_stop_ids(stop: list[str] | str | None) -> list[list[int]]:
     return result
 
 
+def _build_tool_union_schema(tools: list[dict]) -> dict:
+    """Build a minimal JSON schema that enforces a valid tool call object.
+
+    Used by tool_choice="required" or tool_choice={"type":"function","function":{"name":X}}
+    to grammar-constrain generation to syntactically valid JSON tool call payloads.
+    """
+    names = [
+        t.get("function", {}).get("name", "")
+        for t in tools
+        if t.get("function", {}).get("name")
+    ]
+    return {
+        "type": "object",
+        "properties": {
+            "name": (
+                {"type": "string", "enum": names}
+                if names else {"type": "string"}
+            ),
+            "parameters": {"type": "object"},
+        },
+        "required": ["name"],
+    }
+
+
 def _generate_tokens(  # pragma: no cover
     prompt: str,
     max_tokens: int    = 512,
@@ -1216,7 +1241,10 @@ def _generate_tokens(  # pragma: no cover
             # Phase B: initialise grammar FSM state for this request
             _grammar_state = None
             if _grammar_engine is not None:
-                if _structured_output_mode == "json":
+                if _req_tool_schema is not None:
+                    # tool_choice enforcement: use request-specific tool schema
+                    _grammar_state = _grammar_engine.json_schema_grammar(_req_tool_schema)
+                elif _structured_output_mode == "json":
                     _grammar_state = _grammar_engine.json_object_grammar()
                 elif _structured_output_mode == "json-schema" and _structured_output_schema is not None:
                     _grammar_state = _grammar_engine.json_schema_grammar(_structured_output_schema)
@@ -1272,7 +1300,7 @@ def _generate_tokens(  # pragma: no cover
                             if _trace:
                                 _tlog(f"REQ {_rid}  DONE  path=kv-cache  "
                                       f"tokens={step}  finish=stop(stop-seq)")
-                            yield tok_text, "stop"
+                            yield "", "stop"
                             return
                     if len(stop_buf) > 64:
                         stop_buf = stop_buf[-64:]
@@ -1427,7 +1455,7 @@ def _generate_tokens(  # pragma: no cover
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  "
                               f"finish=stop(stop-seq)")
-                    yield tok_text, "stop"
+                    yield "", "stop"
                     return
                 if len(stop_buf) > 64:
                     stop_buf = stop_buf[-64:]
@@ -1499,7 +1527,7 @@ def _generate_tokens(  # pragma: no cover
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=manual  tokens={step}  "
                               f"finish=stop(stop-seq)")
-                    yield tok_text, "stop"
+                    yield "", "stop"
                     return
             if len(stop_buf) > 64:
                 stop_buf = stop_buf[-64:]
@@ -1647,6 +1675,11 @@ async def chat_completions(  # pragma: no cover
     seed        = body.get("seed", None)
     model_id    = body.get("model", _state.model_name)
     tools       = body.get("tools", [])
+    tool_choice = body.get("tool_choice", "auto")
+
+    # tool_choice == "none": agent explicitly disables tools for this turn
+    if tool_choice == "none":
+        tools = []
 
     # ── Phase A1: /no_think mode (thinking_budget == 0) ──────────────────────
     if _thinking_budget == 0:
@@ -1688,12 +1721,39 @@ async def chat_completions(  # pragma: no cover
             _tlog(f"CHAT [{_role}] msg[{_mi}]: {_preview}")
 
     # ── Tool calling: inject schema into system prompt ────────────────────
+    global _req_tool_schema, _grammar_engine
+    _req_tool_schema = None  # cleared per-request
+    _client_stream = stream  # remember original before tools forces stream=False
     if tools:
         from squish.tool_calling import format_tools_prompt
         messages = format_tools_prompt(messages, tools)
         # When tools are requested, force non-streaming so we can inspect
         # the full output before deciding between text and tool_calls.
         stream = False
+
+        # tool_choice grammar enforcement ─────────────────────────────────
+        # "required": force model to output a valid tool call JSON object
+        # {"type":"function","function":{"name":"X"}}: force schema for X only
+        _tc_schema: "dict | None" = None
+        if tool_choice == "required":
+            _tc_schema = _build_tool_union_schema(tools)
+        elif isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
+            _forced_name = tool_choice.get("function", {}).get("name", "")
+            _match = next(
+                (t for t in tools if t.get("function", {}).get("name") == _forced_name),
+                None,
+            )
+            if _match:
+                _tc_schema = _match.get("function", {}).get("parameters") or {}
+
+        if _tc_schema is not None:
+            # Lazily initialise grammar engine if not already active
+            if _grammar_engine is None:
+                from squish.grammar_engine import GrammarEngine  # noqa: PLC0415
+                if GrammarEngine.is_available() and _state.tokenizer is not None:
+                    _grammar_engine = GrammarEngine(_state.tokenizer)
+            if _grammar_engine is not None:
+                _req_tool_schema = _tc_schema
 
     prompt         = _apply_chat_template(messages, _state.tokenizer)
     prompt_tokens  = _count_tokens(prompt)
@@ -1768,6 +1828,7 @@ async def chat_completions(  # pragma: no cover
                     last_finish = finish
                     break
         finally:
+            _req_tool_schema = None  # clear per-request tool schema override
             _state.inflight -= 1
             dur = time.perf_counter() - req_start
             _state.record_completion(n_comp, dur, ttft_s)
@@ -1784,9 +1845,24 @@ async def chat_completions(  # pragma: no cover
 
         # ── Tool calling: detect function call in output ──────────────────────
         if tools:
-            from squish.tool_calling import build_tool_calls_response, parse_tool_calls
+            from squish.tool_calling import (  # noqa: PLC0415
+                build_tool_calls_response,
+                parse_tool_calls,
+                stream_tool_calls_response,
+            )
             raw_calls = parse_tool_calls(full_text)
             if raw_calls is not None:
+                if _client_stream:
+                    # Client requested streaming: replay tool call as SSE deltas
+                    return StreamingResponse(
+                        stream_tool_calls_response(cid, model_id, raw_calls),
+                        media_type="text/event-stream",
+                        headers={
+                            "Cache-Control":     "no-cache",
+                            "X-Accel-Buffering": "no",
+                            "X-Request-Id":      cid,
+                        },
+                    )
                 return JSONResponse({
                     "id":                 cid,
                     "object":             "chat.completion",
@@ -2489,6 +2565,16 @@ Examples:
                     help="Enable FR-Spec frequency-based token speculative decoding.")
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
+    ap.add_argument(
+        "--quip",
+        action="store_true",
+        default=False,
+        help="[Experimental] Signal that the loaded model was compressed with QuIP# "
+             "E8 trellis-coded quantization (squish compress --quip).  "
+             "The compressed_loader auto-detects quip_e8.npy files; this flag "
+             "disables the finalized-cache write-back to avoid expanding the "
+             "QuIP# format into a larger float16 cache on first load.",
+    )
     ap.add_argument(
         "--all-optimizations", action="store_true", default=False,
         help=(
