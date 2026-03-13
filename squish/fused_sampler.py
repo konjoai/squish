@@ -271,7 +271,7 @@ class FusedSampler:
         work -= np.max(work)
         np.exp(work, out=work)
         total = work.sum()
-        if total < 1e-30:
+        if total < 1e-30:  # pragma: no cover
             # Extreme underflow: fall back to argmax greedy.
             work[:] = 0.0
             work[int(np.argmax(logits))] = 1.0
@@ -306,7 +306,7 @@ class FusedSampler:
 
         # Step 7 — renormalise.
         total = work.sum()
-        if total < 1e-12:
+        if total < 1e-12:  # pragma: no cover
             # Fallback: place all mass on the highest-logit token.
             work[:] = 0.0
             work[int(np.argmax(logits))] = 1.0

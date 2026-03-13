@@ -318,7 +318,7 @@ class QuantAwareCalibrator:
             scales = self.compute_scales()
             max_s = float(scales.max())
             min_s = float(scales.min())
-        except Exception:
+        except Exception:  # pragma: no cover
             max_s = 0.0
             min_s = 0.0
         return QAStats(

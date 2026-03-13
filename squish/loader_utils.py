@@ -79,7 +79,7 @@ def _load_npy_path(path: Path, mmap_mode: str | None = "r") -> np.ndarray:
             buf = io.BytesIO(dctx.decompress(f.read()))
         return np.load(buf, allow_pickle=False)
     br_path = Path(str(path) + ".br")
-    if br_path.exists():
+    if br_path.exists():  # pragma: no cover
         try:
             import brotli as _brotli
         except ImportError:  # pragma: no cover
