@@ -647,8 +647,8 @@ Theme: **GitHub release, community templates, benchmark refresh, bench_eoe harde
 
 The npy-dir loader in `compressed_loader.py` opens each `.npy` file individually in the tensor loop — O(n_tensors) sequential syscalls. For a 7B model (~500 tensors), this adds 10–50 ms of pure filesystem overhead on cold load.
 
-- [ ] Pre-read `manifest.json`, sort tensors by anticipated load order (attention weights first, then MLP, then embeddings)
-- [ ] Use `os.scandir` to collect all file stats in one pass before opening any
+- [x] Pre-read `manifest.json`, sort tensors by anticipated load order (attention weights first, then MLP, then embeddings) via `_tensor_load_key()` sort function
+- [x] Use `os.scandir` via `_collect_tensor_keys()` to collect all filenames in one syscall (replaces two `glob()` calls)
 - [ ] Measure load time improvement on a real 7B model
 
 #### Opt 4: Rust build with `target-cpu=native` for Apple Silicon
@@ -684,10 +684,10 @@ INT4 quantization stores `float32` scale arrays alongside nibble-packed weights.
 
 `--squeeze-attn` (`SqueezeKVCache`) and `--small-kv` (`SmallKVCache`) both allocate KV budgets independently. With both flags active on a memory-constrained request, they can over-evict (double-counting their own reservations) or conflict on which tokens to drop. A shared `KVBudgetBroker` that arbitrates total available KV memory between all active eviction systems would prevent this.
 
-- [ ] Audit which KV cache classes register against a global budget tracker (if any)
-- [ ] Identify all budget-allocating modules: `SqueezeKVCache`, `SmallKVCache`, `YOCO`, `DiffKV`, `KVTuner`, `KVSharer`, `AdaptiveBudget`
-- [ ] Design a `KVBudgetBroker` singleton in `kv_cache.py` that each system registers with at startup
-- [ ] Write unit tests covering the case where three budget systems are simultaneously active
+- [x] Audit which KV cache classes register against a global budget tracker — none previously existed
+- [x] Identify all budget-allocating modules: `SqueezeKVCache`, `SmallKVCache`, `YOCO`, `DiffKV`, `KVTuner`, `KVSharer`, `AdaptiveBudget`
+- [x] Design a `KVBudgetBroker` singleton in `kv_cache.py` with fair-share proportional allocation
+- [x] Write unit tests covering 7 simultaneous systems, constrained + unconstrained, register/unregister, proportional scale (`tests/test_kv_budget_broker.py`)
 
 ---
 
@@ -769,7 +769,7 @@ The v1 public launch should market **core stability**, not the full 222-module c
 - [ ] Add `[Beta]` / `[Experimental]` annotations to flag `--help` text and `MODULES.md`
 - [ ] Add a `# Experimental` warning block at the top of each v19–v26 module file (do not hide the code, just label it)
 - [ ] Update README Quick-Start to show only Stable flags; link to `MODULES.md` for the full list
-- [ ] Add a note in `squish serve --help` output: "Experimental flags (v19–v26) are proof-of-concept implementations. Stable flags (v1–v12) are validated on hardware."
+- [x] Add stability tiers note in `squish serve --help` epilog: Stable (v1-12), [Beta] (v13-18), [Experimental] (v19+)
 
 ---
 

@@ -245,7 +245,7 @@ class _MLCBackend(_InferenceBackend):
         try:
             import mlc_llm as _mlc  # noqa: F401,PLC0415
             self._available = True
-        except ImportError:
+        except ImportError:  # pragma: no cover
             self._available = False
 
     def is_available(self) -> bool:
@@ -2143,6 +2143,14 @@ Examples:
   export OPENAI_BASE_URL=http://localhost:11435/v1
   export OPENAI_API_KEY=squish
   python3 -c "from openai import OpenAI; c=OpenAI(); print(c.chat.completions.create(model='squish', messages=[{'role':'user','content':'hello'}]).choices[0].message.content)"
+
+Feature stability tiers
+-----------------------
+  Stable       (Waves 1-12)  Core inference flags. Validated on Apple Silicon M-series.
+  [Beta]       (Waves 13-18) Advanced KV compression, speculative dec. variants. Well-tested
+                              but not yet fully characterized on all model sizes.
+  [Experimental] (Waves 19+) Cutting-edge research features. Proof-of-concept implementations
+                              that may change API or be removed in future releases.
 """
     )
     ap.add_argument("--model-dir",

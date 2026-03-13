@@ -125,6 +125,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     "IPWTracker":                "squish.ipw",
 
     # squish.kv_cache
+    "DiskKVCache":               "squish.kv_cache",
+    "KVBudgetBroker":            "squish.kv_cache",
     "QuantizedKVCache":          "squish.kv_cache",
     "make_quantized_cache":      "squish.kv_cache",
     "patch_model_kv_cache":      "squish.kv_cache",

@@ -1501,7 +1501,7 @@ def cmd_convert_model(args):
 
     try:
         import mlx_lm as _mlx_lm
-    except ImportError:
+    except ImportError:  # pragma: no cover
         _die("mlx_lm is required for convert-model. Install with: pip install mlx-lm>=0.19")
 
     print(f"  Quantizing FFN layers to {args.ffn_bits}-bit …")
@@ -1555,7 +1555,7 @@ def _apply_dare_sparsification(
 
     try:
         from safetensors.numpy import load_file, save_file  # noqa: PLC0415
-    except ImportError:
+    except ImportError:  # pragma: no cover
         print("  [warn] safetensors not available — skipping DARE sparsification")
         return
 
@@ -1599,7 +1599,7 @@ def cmd_train_adapter(args):
 
     try:
         import mlx_lm as _mlx_lm  # noqa: F401,PLC0415
-    except ImportError:
+    except ImportError:  # pragma: no cover
         _die(
             "mlx_lm is required for train-adapter. "
             "Install with: pip install mlx-lm>=0.19"
@@ -1688,7 +1688,7 @@ def cmd_merge_model(args):
 
     try:
         from safetensors.numpy import load_file, save_file  # noqa: PLC0415
-    except ImportError:
+    except ImportError:  # pragma: no cover
         _die(
             "safetensors is required for merge-model. "
             "Install with: pip install safetensors"

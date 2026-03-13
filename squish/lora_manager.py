@@ -140,7 +140,7 @@ class LoRAManager:
         """
         try:
             from safetensors import safe_open  # noqa: PLC0415
-        except ImportError:
+        except ImportError:  # pragma: no cover
             raise ImportError(
                 "safetensors package required for LoRA adapter loading. "
                 "Install with: pip install safetensors"

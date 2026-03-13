@@ -13,13 +13,16 @@ import numpy as np
 import pytest
 
 from squish.compressed_loader import (
+    _collect_tensor_keys,
     _dequantize,
+    _get_auto_tokenizer,
     _get_zstd_dctx,
     _load_npy_path,
     _npy_exists,
     _rss_mb,
     _rss_mb_throttled,
     _safe_key_to_original,
+    _tensor_load_key,
     _unique_base_keys,
 )
 
@@ -244,3 +247,151 @@ class TestDequantize:
         result = _dequantize(npz, sk)
         assert result.shape == (2, 2)
         np.testing.assert_allclose(result, arr, rtol=1e-5)
+
+
+# ── _collect_tensor_keys ───────────────────────────────────────────────────────
+
+class TestCollectTensorKeys:
+    def _make_tensor_dir(self, tmp_path: Path, filenames: list[str]) -> Path:
+        d = tmp_path / "tensors"
+        d.mkdir()
+        for name in filenames:
+            (d / name).write_bytes(b"")
+        return d
+
+    def test_discovers_q_suffix(self, tmp_path):
+        d = self._make_tensor_dir(tmp_path, ["layer_0__q.npy", "layer_0__s.npy"])
+        keys = _collect_tensor_keys(d)
+        assert "layer_0" in keys
+
+    def test_discovers_pt_suffix(self, tmp_path):
+        d = self._make_tensor_dir(tmp_path, ["embed__pt.npy"])
+        keys = _collect_tensor_keys(d)
+        assert "embed" in keys
+
+    def test_discovers_shape_suffix(self, tmp_path):
+        d = self._make_tensor_dir(tmp_path, ["layer_1__shape.npy"])
+        keys = _collect_tensor_keys(d)
+        assert "layer_1" in keys
+
+    def test_discovers_zst_suffix(self, tmp_path):
+        d = self._make_tensor_dir(tmp_path, ["layer_2__q.npy.zst", "layer_2__s.npy.zst"])
+        keys = _collect_tensor_keys(d)
+        assert "layer_2" in keys
+
+    def test_ignores_non_tensor_files(self, tmp_path):
+        d = self._make_tensor_dir(tmp_path, ["manifest.json", "config.txt", "README.md"])
+        keys = _collect_tensor_keys(d)
+        assert len(keys) == 0
+
+    def test_unique_keys_only(self, tmp_path):
+        d = self._make_tensor_dir(tmp_path, [
+            "attn__q.npy", "attn__s.npy", "attn__shape.npy",
+            "mlp__q.npy",  "mlp__s.npy",
+        ])
+        keys = _collect_tensor_keys(d)
+        assert keys == {"attn", "mlp"}
+
+    def test_mixed_zst_and_plain(self, tmp_path):
+        d = self._make_tensor_dir(tmp_path, [
+            "layer_3__q.npy",
+            "layer_4__q.npy.zst",
+        ])
+        keys = _collect_tensor_keys(d)
+        assert "layer_3" in keys
+        assert "layer_4" in keys
+
+    def test_empty_directory(self, tmp_path):
+        d = self._make_tensor_dir(tmp_path, [])
+        keys = _collect_tensor_keys(d)
+        assert keys == set()
+
+    def test_subdirectories_ignored(self, tmp_path):
+        d = tmp_path / "tensors"
+        d.mkdir()
+        (d / "subdir").mkdir()
+        # scandir should not yield the subdirectory as a tensor key
+        keys = _collect_tensor_keys(d)
+        assert len(keys) == 0
+
+
+# ── _tensor_load_key ──────────────────────────────────────────────────────────
+
+class TestTensorLoadKey:
+    def test_attention_before_mlp(self):
+        attn_key = _tensor_load_key("layers_0__self_attn__q_proj")
+        mlp_key  = _tensor_load_key("layers_0__mlp__gate_proj")
+        assert attn_key < mlp_key
+
+    def test_mlp_before_embed(self):
+        mlp_key   = _tensor_load_key("layers_0__mlp__up_proj")
+        embed_key = _tensor_load_key("embed_tokens__weight")
+        assert mlp_key < embed_key
+
+    def test_same_group_sorted_by_layer(self):
+        k0 = _tensor_load_key("layers_0__self_attn__q_proj")
+        k5 = _tensor_load_key("layers_5__self_attn__q_proj")
+        assert k0 < k5
+
+    def test_returns_tuple(self):
+        key = _tensor_load_key("layers_0__self_attn__q_proj")
+        assert isinstance(key, tuple)
+        assert len(key) == 3
+
+    def test_other_group_for_norm(self):
+        # Layer norms should be in group 2 (not attn=0, mlp=1, embed=3)
+        group, _, _ = _tensor_load_key("layers_0__input_layernorm")
+        assert group == 2
+
+    def test_embed_group_is_last(self):
+        embed_group, _, _ = _tensor_load_key("model__embed_tokens__weight")
+        attn_group, _, _  = _tensor_load_key("model__layers_0__self_attn__q_proj")
+        mlp_group, _, _   = _tensor_load_key("model__layers_0__mlp__gate_proj")
+        assert embed_group > attn_group
+        assert embed_group > mlp_group
+
+    def test_q_proj_in_attention_group(self):
+        group, _, _ = _tensor_load_key("layers_7__q_proj")
+        assert group == 0
+
+    def test_k_proj_in_attention_group(self):
+        group, _, _ = _tensor_load_key("layers_7__k_proj")
+        assert group == 0
+
+    def test_v_proj_in_attention_group(self):
+        group, _, _ = _tensor_load_key("layers_7__v_proj")
+        assert group == 0
+
+    def test_o_proj_in_attention_group(self):
+        group, _, _ = _tensor_load_key("layers_7__o_proj")
+        assert group == 0
+
+    def test_gate_proj_in_mlp_group(self):
+        group, _, _ = _tensor_load_key("layers_7__gate_proj")
+        assert group == 1
+
+    def test_down_proj_in_mlp_group(self):
+        group, _, _ = _tensor_load_key("layers_7__down_proj")
+        assert group == 1
+
+    def test_up_proj_in_mlp_group(self):
+        group, _, _ = _tensor_load_key("layers_7__up_proj")
+        assert group == 1
+
+    def test_no_layer_number_uses_9999(self):
+        # lm_head has no layer number; should sort after all numbered layers
+        no_layer_group, no_layer_num, _ = _tensor_load_key("lm_head__weight")
+        with_layer_group, with_layer_num, _ = _tensor_load_key("layers_99__mlp__gate_proj")
+        assert no_layer_num > with_layer_num  # both use layer 9999 or large number
+
+
+# ── _get_auto_tokenizer ────────────────────────────────────────────────────────
+
+class TestGetAutoTokenizer:
+    def test_returns_auto_tokenizer_class(self):
+        """_get_auto_tokenizer() should return the AutoTokenizer class (lazy import)."""
+        try:
+            cls = _get_auto_tokenizer()
+            assert hasattr(cls, "from_pretrained")
+        except ImportError:
+            pytest.skip("transformers not installed")

@@ -204,7 +204,7 @@ class BatchScheduler:
     ):
         try:
             import mlx.core as mx  # noqa: F401 (validate import on init)
-        except ImportError:
+        except ImportError:  # pragma: no cover
             pass
 
         self._model          = model

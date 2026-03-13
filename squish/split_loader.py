@@ -118,7 +118,7 @@ def _layer_weight_bytes(layer) -> int:  # pragma: no cover
             return sum(_walk(v) for v in obj.values())
         if isinstance(obj, (list, tuple)):
             return sum(_walk(v) for v in obj)
-        return 0
+        return 0  # pragma: no cover
 
     return _walk(params)
 

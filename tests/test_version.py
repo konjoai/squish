@@ -61,3 +61,68 @@ class TestVersionConsistency:
             assert part.isdigit(), (
                 f"Version component {part!r} is not an integer in {squish.__version__!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# squish.__getattr__ — lazy import machinery (Phase 5A Bug 3 / __init__.py)
+# ---------------------------------------------------------------------------
+
+class TestLazyImport:
+    """Exercise the module-level __getattr__ in squish/__init__.py."""
+
+    def test_lazy_load_returns_class(self):
+        """Accessing a registered name triggers lazy import and returns the class."""
+        import squish
+        cls = squish.QuantizedKVCache
+        assert cls is not None
+        assert hasattr(cls, "__init__")
+
+    def test_lazy_load_caches_result(self):
+        """Second access should return the same cached object (no re-import)."""
+        import squish
+        a = squish.QuantizedKVCache
+        b = squish.QuantizedKVCache
+        assert a is b
+
+    def test_lazy_load_pull_model_alias(self):
+        """pull_model is the catalog.pull alias — exercises the special-case path."""
+        import squish
+        fn = squish.pull_model
+        # Should resolve to a callable (the pull function from squish.catalog)
+        assert callable(fn)
+
+    def test_lazy_load_resolve_model_alias(self):
+        """resolve_model is the catalog.resolve alias."""
+        import squish
+        fn = squish.resolve_model
+        assert callable(fn)
+
+    def test_attribute_error_for_unknown_name(self):
+        """Accessing a name not in _LAZY_IMPORTS raises AttributeError."""
+        import squish
+        with pytest.raises(AttributeError, match="has no attribute"):
+            _ = squish._totally_nonexistent_squish_attr_xyz
+
+    def test_all_list_includes_version(self):
+        """__all__ must include __version__."""
+        import squish
+        assert "__version__" in squish.__all__
+
+    def test_all_list_includes_lazy_names(self):
+        """__all__ must include all lazily-importable names."""
+        import squish
+        from squish import _LAZY_IMPORTS
+        for name in _LAZY_IMPORTS:
+            assert name in squish.__all__, f"{name!r} missing from __all__"
+
+    def test_kv_budget_broker_exported(self):
+        """KVBudgetBroker must be reachable via squish.KVBudgetBroker."""
+        import squish
+        cls = squish.KVBudgetBroker
+        assert hasattr(cls, "instance")
+
+    def test_disk_kv_cache_exported(self):
+        """DiskKVCache must be reachable via squish.DiskKVCache."""
+        import squish
+        cls = squish.DiskKVCache
+        assert hasattr(cls, "__init__")

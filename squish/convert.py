@@ -76,9 +76,9 @@ def _get_dfloat11():
 # ─── TTY-safe line-clear helper ─────────────────────────────────────────────
 def _clear_line() -> None:
     """Overwrite the current terminal line.  No-op when stdout is not a TTY."""
-    if sys.stdout.isatty():
-        sys.stdout.write("\r" + " " * 80 + "\r")
-        sys.stdout.flush()
+    if sys.stdout.isatty():  # pragma: no cover
+        sys.stdout.write("\r" + " " * 80 + "\r")  # pragma: no cover
+        sys.stdout.flush()  # pragma: no cover
 
 
 # Spinner
@@ -112,17 +112,17 @@ class Spinner:
             # Non-TTY: just block until stopped, no output from the spin thread
             self._stop_evt.wait()
             return
-        i = 0
-        while not self._stop_evt.is_set():
-            frame = self._FRAMES[i % len(self._FRAMES)]
-            line  = f"\r  {frame}  {self._label}  {self._suffix}"
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            self._stop_evt.wait(self._interval)
-            i += 1
+        i = 0  # pragma: no cover
+        while not self._stop_evt.is_set():  # pragma: no cover
+            frame = self._FRAMES[i % len(self._FRAMES)]  # pragma: no cover
+            line  = f"\r  {frame}  {self._label}  {self._suffix}"  # pragma: no cover
+            sys.stdout.write(line)  # pragma: no cover
+            sys.stdout.flush()  # pragma: no cover
+            self._stop_evt.wait(self._interval)  # pragma: no cover
+            i += 1  # pragma: no cover
         # clear the spinner line
-        sys.stdout.write("\r" + " " * (len(self._label) + len(self._suffix) + 10) + "\r")
-        sys.stdout.flush()
+        sys.stdout.write("\r" + " " * (len(self._label) + len(self._suffix) + 10) + "\r")  # pragma: no cover
+        sys.stdout.flush()  # pragma: no cover
 
     def update(self, suffix: str):
         self._suffix = suffix

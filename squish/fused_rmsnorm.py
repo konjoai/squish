@@ -195,7 +195,7 @@ class FusedLayerNorm:
                     f"bias must have shape ({config.hidden_dim},), "
                     f"got {bias.shape}"
                 )
-            self._bias: Optional[np.ndarray] = bias.astype(
+            self._bias: np.ndarray = bias.astype(
                 np.float32, copy=False
             )
         else:
@@ -207,8 +207,8 @@ class FusedLayerNorm:
         return self._weight
 
     @property
-    def bias(self) -> Optional[np.ndarray]:
-        """The element-wise shift (beta) vector, or ``None`` if not set."""
+    def bias(self) -> np.ndarray:
+        """The element-wise shift (beta) vector."""
         return self._bias
 
     def forward(
@@ -239,8 +239,7 @@ class FusedLayerNorm:
 
         if self._config.elementwise_scale:
             x_norm = x_norm * self._weight
-            if self._bias is not None:
-                x_norm = x_norm + self._bias
+            x_norm = x_norm + self._bias
 
         return x_norm, residual_out
 

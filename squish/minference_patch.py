@@ -143,12 +143,7 @@ def _iter_attention_modules(model):
         if not isinstance(obj, nn.Module):
             return
 
-        for attr_name in vars(obj):
-            if attr_name.startswith("_"):
-                continue
-            child = getattr(obj, attr_name, None)
-            if child is None:
-                continue
+        for attr_name, child in dict(obj).items():
 
             if isinstance(child, nn.Module):
                 name_lower = attr_name.lower()

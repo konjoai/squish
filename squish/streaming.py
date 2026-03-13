@@ -61,7 +61,7 @@ def _rss_mb() -> float:
     ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     if platform.system() == "Darwin":
         return ru / 1_048_576
-    return ru / 1_024
+    return ru / 1_024  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------

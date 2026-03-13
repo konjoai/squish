@@ -180,3 +180,128 @@ class TestEmbeddingsZeroNorm:
             assert all(v == 0.0 for v in emb)
         finally:
             _srv._state = orig
+
+
+# ── /v1/embeddings additional branch coverage ─────────────────────────────────
+
+
+class TestEmbeddingsAdditionalBranches:
+    """Cover remaining branches in the embeddings endpoint handler."""
+
+    def setup_method(self):
+        """Install a mock model into server state."""
+        self._orig = _srv._state
+        _srv._state = _srv._ModelState()
+        _srv._state.model_name = "test-branch-embed"
+
+    def teardown_method(self):
+        _srv._state = self._orig
+
+    def test_list_input_multiple_items(self):
+        """isinstance(inputs, str) → False when input is a list."""
+        import numpy as np
+        mx = pytest.importorskip("mlx.core")
+        from fastapi.testclient import TestClient
+
+        mock_model = MagicMock()
+        mock_model.model.return_value = mx.zeros([1, 3, 16])
+        mock_tok = MagicMock()
+        mock_tok.encode.return_value = [1, 2, 3]
+        _srv._state.model = mock_model
+        _srv._state.tokenizer = mock_tok
+
+        client = TestClient(_srv.app, raise_server_exceptions=False)
+        resp = client.post("/v1/embeddings", json={"input": ["hello", "world"]})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["data"]) == 2
+
+    def test_nonzero_norm_embedding_is_normalized(self):
+        """norm > 0 branch → embedding is L2-normalised to unit length."""
+        import numpy as np
+        mx = pytest.importorskip("mlx.core")
+        from fastapi.testclient import TestClient
+
+        mock_model = MagicMock()
+        # Return all-ones → norm > 0 → normalisation applied
+        mock_model.model.return_value = mx.array(
+            np.ones([1, 3, 16], dtype=np.float32)
+        )
+        mock_tok = MagicMock()
+        mock_tok.encode.return_value = [1, 2, 3]
+        _srv._state.model = mock_model
+        _srv._state.tokenizer = mock_tok
+
+        client = TestClient(_srv.app, raise_server_exceptions=False)
+        resp = client.post("/v1/embeddings", json={"input": "hello"})
+        assert resp.status_code == 200
+        emb = resp.json()["data"][0]["embedding"]
+        norm = np.linalg.norm(emb)
+        assert abs(norm - 1.0) < 1e-4
+
+    def test_tokenizer_without_encode_uses_callable_path(self):
+        """hasattr(tokenizer, 'encode') → False: callable tokenizer used."""
+        import numpy as np
+        mx = pytest.importorskip("mlx.core")
+        from fastapi.testclient import TestClient
+
+        class _CallableTok:
+            def __call__(self, text, return_tensors="np", **kwargs):
+                return {"input_ids": [np.array([1, 2, 3])]}
+
+        mock_model = MagicMock()
+        mock_model.model.return_value = mx.zeros([1, 3, 16])
+        _srv._state.model = mock_model
+        _srv._state.tokenizer = _CallableTok()
+
+        client = TestClient(_srv.app, raise_server_exceptions=False)
+        resp = client.post("/v1/embeddings", json={"input": "hello"})
+        assert resp.status_code == 200
+
+    def test_empty_list_input(self):
+        """Empty list → for-loop body never executes → returns empty data list."""
+        mx = pytest.importorskip("mlx.core")
+        from fastapi.testclient import TestClient
+
+        mock_model = MagicMock()
+        mock_tok = MagicMock()
+        _srv._state.model = mock_model
+        _srv._state.tokenizer = mock_tok
+
+        client = TestClient(_srv.app, raise_server_exceptions=False)
+        resp = client.post("/v1/embeddings", json={"input": []})
+        assert resp.status_code == 200
+        assert resp.json()["data"] == []
+
+
+# ── /v1/tokenize tokenizer-without-encode branch ──────────────────────────────
+
+
+class TestTokenizeWithoutEncode:
+    """Cover hasattr(tok, 'encode') → False branch in tokenize endpoint."""
+
+    def setup_method(self):
+        self._orig = _srv._state
+        _srv._state = _srv._ModelState()
+        _srv._state.model_name = "test-tokenize-noencode"
+        _srv._state.model = MagicMock()
+
+    def teardown_method(self):
+        _srv._state = self._orig
+
+    def test_callable_tokenizer_without_encode(self):
+        """tok has no encode attribute → uses tok(text, return_tensors='np')."""
+        import numpy as np
+        from fastapi.testclient import TestClient
+
+        class _CallableTok:
+            def __call__(self, text, return_tensors="np", **kwargs):
+                return {"input_ids": [np.array([1, 2, 3, 4])]}
+
+        _srv._state.tokenizer = _CallableTok()
+        client = TestClient(_srv.app, raise_server_exceptions=False)
+        resp = client.post("/v1/tokenize", json={"text": "hello world"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["token_count"] == 4
+

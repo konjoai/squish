@@ -163,6 +163,7 @@ def _lloyd_kmeans(
         centroid_mat = np.array(centroids, dtype=np.float32)  # (i, dim)
         dists_sq = _pairwise_sq_dist(data, centroid_mat)       # (n, i)
         min_dists = dists_sq.min(axis=1)                       # (n,)
+        min_dists = np.maximum(min_dists, 0.0)                # guard against fp rounding
         probs = min_dists / (min_dists.sum() + 1e-30)
         chosen = int(rng.choice(n_samples, p=probs))
         centroids.append(data[chosen].copy())

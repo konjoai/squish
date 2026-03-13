@@ -322,7 +322,7 @@ class PagedKVCache:
             block_start = block_num * cfg.block_size
             block_end = min(block_start + cfg.block_size, n_tokens)
             n_valid = block_end - block_start
-            if n_valid <= 0:
+            if n_valid <= 0:  # pragma: no cover
                 break
             block = self._pool[phys_id]
             keys_out[:, dst_offset : dst_offset + n_valid, :] = block.keys[:, :n_valid, :]

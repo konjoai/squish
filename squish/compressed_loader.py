@@ -26,6 +26,7 @@ import dataclasses
 import importlib
 import json
 import os
+import re
 import resource
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -306,6 +307,67 @@ def _dequantize(npz, sk: str) -> np.ndarray:
 _FINALIZED_DIR    = "finalized"            # sub-dir: per-tensor float16 .npy files
 _MLX_CACHE_FILE   = "squish_weights.safetensors"  # combined bf16 MLX safetensors (fastest)
 _MLX_CACHE_READY  = ".squish_ready"         # sentinel alongside the safetensors file
+
+# ---------------------------------------------------------------------------
+# Tensor discovery and load-order helpers (Phase 5B Opt 3)
+# ---------------------------------------------------------------------------
+
+# Matches the suffix that identifies a quantised-tensor component file.
+# Groups: __q.npy, __s.npy, __shape.npy, __pt.npy, and their .zst variants.
+_TENSOR_SUFFIX_RE = re.compile(r'__(q\d?|s|shape|pt)\.npy(?:\.zst)?$')
+
+# Regexes for assigning load-order priority.
+_ATTN_RE  = re.compile(r'self_attn|(?:^|__)(?:q|k|v|o)_proj|attn_(?:q|k|v|o)|_attention|mha_')
+_MLP_RE   = re.compile(r'(?:^|__|/)mlp__|gate_proj|up_proj|down_proj|fc\d?__|dense_')
+_EMBED_RE = re.compile(r'embed')
+_LAYER_RE = re.compile(r'layers?[._](\d+)')
+
+
+def _collect_tensor_keys(tensor_dir: Path) -> set:
+    """
+    Single-pass ``os.scandir()`` replacement for the two ``glob()`` calls
+    previously used to discover tensor base-keys.
+
+    Uses ``os.scandir()`` instead of ``Path.glob()`` to collect all filenames
+    in one directory read (one syscall) rather than two separate glob passes.
+    Returns the set of base-keys (suffixes stripped).
+    """
+    base_keys: set = set()
+    with os.scandir(tensor_dir) as it:
+        for entry in it:
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            name = entry.name
+            m = _TENSOR_SUFFIX_RE.search(name)
+            if m:
+                base_keys.add(name[: m.start()])
+    return base_keys
+
+
+def _tensor_load_key(safe_key: str) -> tuple:
+    """
+    Sort key for loading tensors in optimal order on Apple Silicon:
+
+      0 — attention weights   (q/k/v/o_proj — accessed every decode step)
+      1 — MLP weights         (gate/up/down_proj)
+      2 — everything else     (layer norms, biases, lm_head, etc.)
+      3 — embeddings          (large tables; acessed only at first/last layer)
+
+    Within each group tensors are further sorted by layer index then name so
+    each model layer's weights land contiguously in the Metal buffer.
+    """
+    layer_m   = _LAYER_RE.search(safe_key)
+    layer_num = int(layer_m.group(1)) if layer_m else 9_999
+
+    if _ATTN_RE.search(safe_key):
+        group = 0
+    elif _MLP_RE.search(safe_key):
+        group = 1
+    elif _EMBED_RE.search(safe_key):
+        group = 3
+    else:
+        group = 2
+    return (group, layer_num, safe_key)
 
 
 def _save_finalized_cache(dir_path: Path, base_keys: list[str],  # pragma: no cover
@@ -711,7 +773,7 @@ def compress_npy_dir(  # pragma: no cover
     """
     try:
         import zstandard as _zstd
-    except ImportError:
+    except ImportError:  # pragma: no cover
         raise ImportError(
             "zstandard is required for weight compression.  "
             "Install with: pip install zstandard"
@@ -955,17 +1017,11 @@ def load_from_npy_dir(  # pragma: no cover
         manifest = json.load(f)
     safe_to_original = {v: k for k, v in manifest.items()}
 
-    suffix_re = __import__("re").compile(r'__(q|s|shape|pt)\.npy$')
-    base_keys = sorted({
-        suffix_re.sub('', p.name)
-        for p in tensor_dir.glob("*.npy")
-        if suffix_re.search(p.name)
-    } | {
-        # Also include zstd-compressed tensors (.npy.zst → strip .zst first)
-        suffix_re.sub('', p.name[:-4])   # p.name[:-4] strips ".zst"
-        for p in tensor_dir.glob("*.npy.zst")
-        if suffix_re.search(p.name[:-4])
-    })
+    # ── Single-pass tensor discovery (Phase 5B Opt 3) ─────────────────────────
+    # os.scandir() collects all filenames in one syscall; tensors are then
+    # sorted by _tensor_load_key so attention weights load before MLP weights
+    # before embeddings — matching Apple Silicon's decode-access pattern.
+    base_keys = sorted(_collect_tensor_keys(tensor_dir), key=_tensor_load_key)
 
     # Check whether INT4 packed files are available (written by save_int4_npy_dir)
     _int4_ready = (dir_path / _INT4_READY).exists() and _squish_quant is not None

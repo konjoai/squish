@@ -16,9 +16,7 @@ Flags for Experimental modules are labelled `[Experimental]` in `squish serve --
 
 ---
 
----
-
-## v2 — Wave 12: Core KV + Weight Compression
+## v2 — Wave 12 [Stable]: Core KV + Weight Compression
 
 Enable with `squish run --model <name> [flags]`:
 
@@ -46,7 +44,7 @@ Raw data: [`dev/results/wave12_bench.json`](dev/results/wave12_bench.json)
 
 ---
 
-## v3 — Wave 13: Ultra-Long Context
+## v3 — Wave 13 [Beta]: Ultra-Long Context
 
 v3 (Wave 13) focuses on **ultra-long context** (128K+ tokens) and **adaptive speculative decoding**, shipping 10 new modules:
 
@@ -73,17 +71,13 @@ squish run qwen3:8b \
 
 ---
 
-## v3 — Wave 14: Quantisation & Spec-Decode
+## v3 — Wave 14 [Beta]: Quantisation & Spec-Decode
 
 v3 (Wave 14) focuses on **quantisation methods**, **vocabulary-adaptive speculative decoding**, and **expert mixing**, shipping 16 new modules:
 
 | Module | Flag | Problem Solved | Key Number |
 |--------|------|----------------|------------|
-| **SoupOfExperts** | `--soup-experts` | Sparse LoRA expert blending uses redundant coefficients | **Greedy tolerance** pruning with zero accuracy drop |
-| **VisionPrefixCache** | `--vision-cache` | Vision encoder re-runs for identical images | **SHA-256 dedup** → 0 encoder FLOPs on cache hit |
-| **Vector Index** | `--vector-index` | Brute-force KV retrieval is O(n) | **MRL + HNSW** → sub-ms ANN retrieval |
 | **SubSpec** | `--sub-spec` | Offloaded models have no fast draft path | **Quantised substitute** layers as draft → full spec-decode |
-| **DEL Decoder** | `--del-decoder` | Static exit layer wastes compute on easy tokens | **Dynamic early-exit** layer selected per token |
 | **DFloat11** | `--dfloat11` | BF16 weights have poor entropy-coding compressibility | **DFloat11** block-float: >30% size reduction vs BF16 |
 | **rANS Codec** | `--rans-codec` | Huffman coding leaves 5–15% entropy on the table | **rANS** → near-optimal entropy coding for KV/weights |
 | **QSpec** | `--qspec` | Draft and verify share the same quantisation level | **W4A8 draft / W4A16 verify** → 1.8× throughput |
@@ -109,7 +103,7 @@ Raw data: [`dev/results/wave13_14_bench.json`](dev/results/wave13_14_bench.json)
 
 ---
 
-## v4 — Wave 15: Serving Intelligence + KV Architecture
+## v4 — Wave 15 [Beta]: Serving Intelligence + KV Architecture
 
 v4 (Wave 15) focuses on **SLO-aware inference scheduling**, **confidence-gated verification**, and **KV architecture evolution**, shipping 10 new modules:
 
@@ -137,7 +131,7 @@ squish run qwen3:8b \
 
 ---
 
-## v4 — Wave 16: Heterogeneous Compute + Advanced Spec-Decode
+## v4 — Wave 16 [Beta]: Heterogeneous Compute + Advanced Spec-Decode
 
 v4 (Wave 16) focuses on **heterogeneous CPU+GPU execution**, **pipelined weight offloading**, and **advanced speculative decoding**, shipping 11 new modules:
 
@@ -170,7 +164,7 @@ Raw data: [`dev/results/wave15_16_bench.json`](dev/results/wave15_16_bench.json)
 
 ---
 
-## v5 — Wave 17: Attention Architecture
+## v5 — Wave 17 [Beta]: Attention Architecture
 
 v5 (Wave 17) focuses on **INT4/INT8 attention kernels**, **slab-allocated KV storage**, **joint 2D KV budget management**, and **context-aware speculative prefetching**, shipping 14 new modules:
 
@@ -204,7 +198,7 @@ squish run qwen3:8b \
 
 ---
 
-## v5 — Wave 18: Adaptive Compute
+## v5 — Wave 18 [Beta]: Adaptive Compute
 
 v5 (Wave 18) focuses on **vector-product quantisation**, **confidence-gated early exit**, **online domain adaptation**, and **energy-aware scheduling**, shipping 14 new modules:
 
@@ -236,7 +230,7 @@ Raw data: [`dev/results/wave17_18_bench.json`](dev/results/wave17_18_bench.json)
 
 ---
 
-## v6 — Wave 19: Next-Gen Attention & Precision
+## v6 — Wave 19 [Experimental]: Next-Gen Attention & Precision
 
 v6 (Wave 19) focuses on **FP8/MX microscaling quantisation**, **paged KV caching**, **GQA and sliding window attention**, **RoPE context extension**, and **multi-head speculative decoding (MEDUSA, EAGLE-3)**, shipping 14 new modules:
 
@@ -270,7 +264,7 @@ squish serve ./model \
 
 ---
 
-## v6 — Wave 20: Serving Infrastructure & Intelligence
+## v6 — Wave 20 [Experimental]: Serving Infrastructure & Intelligence
 
 v6 (Wave 20) focuses on **model merging**, **multi-LoRA composition**, **continuous batching**, **constrained decoding**, and **vision token compression**, shipping 14 new modules:
 
@@ -305,7 +299,7 @@ Benchmark results: [`docs/benchmark_wave19_20.md`](docs/benchmark_wave19_20.md)
 
 ---
 
-## v7 — Wave 21: Advanced Memory & Decode
+## v7 — Wave 21 [Experimental]: Advanced Memory & Decode
 
 v7 (Wave 21) focuses on **tree-parallel speculative verification**, **online KV compression**, **mixed-precision per-head KV**, **pipeline bubble elimination**, **learned KV codecs**, and **retention-style recurrent attention**, shipping 14 new modules:
 
@@ -340,7 +334,7 @@ squish serve ./model \
 
 ---
 
-## v7 — Wave 22: Production Serving & Observability
+## v7 — Wave 22 [Experimental]: Production Serving & Observability
 
 v7 (Wave 22) focuses on **multi-tenant fair scheduling**, **load-balanced request routing**, **predictive KV pre-warming**, **OpenTelemetry-compatible tracing**, **adaptive quantisation under pressure**, and **SLA violation detection**, shipping 14 new modules:
 
@@ -370,7 +364,7 @@ Benchmark results: [`docs/benchmark_wave21_22.md`](docs/benchmark_wave21_22.md)
 
 ---
 
-## v8 — Wave 23: Long Context & RAG Intelligence
+## v8 — Wave 23 [Experimental]: Long Context & RAG Intelligence
 
 Wave 23 focuses on **long-context efficiency**, **RAG-aware serving**, **CoT compression**, and **hierarchical KV tiering**. Multi-modal (vision/video) modules were removed from this wave as out of scope for a text LLM server.
 
@@ -383,7 +377,7 @@ Raw data: [`dev/results/wave23_24_bench.json`](dev/results/wave23_24_bench.json)
 
 ---
 
-## v8 — Wave 24: Quantisation Evolution & Structured Pruning
+## v8 — Wave 24 [Experimental]: Quantisation Evolution & Structured Pruning
 
 Wave 24 focuses on **ternary/sub-bit quantisation**, **structured sparsity**, **cross-layer weight sharing**, and **second-order calibration**.
 
@@ -393,7 +387,7 @@ Key numbers: 1.58-bit ternary weights · 2:4 structured sparsity · 7.98× SVD d
 
 ---
 
-## v9 — Wave 25: Cutting-Edge Attention Variants & Compute Fusion
+## v9 — Wave 25 [Experimental]: Cutting-Edge Attention Variants & Compute Fusion
 
 Wave 25 focuses on **DeepSeek-V2/V3 attention patterns**, **fused compute kernels**, **KV defragmentation**, **long-context attention**, and **multi-draft speculation**.
 
@@ -406,7 +400,7 @@ Raw data: [`dev/results/wave25_26_bench.json`](dev/results/wave25_26_bench.json)
 
 ---
 
-## v9 — Wave 26: Production Reliability & Safety
+## v9 — Wave 26 [Experimental]: Production Reliability & Safety
 
 Wave 26 focuses on **production-grade monitoring**, **adaptive batching**, **safety classification**, **semantic response caching**, and **rate limiting**. Distributed multi-node infrastructure modules (tensor/sequence parallelism, KV migration, disaggregated prefill, request preemption, inference gateway, model version swap, audit logging) were removed as out of scope for single-device local inference.
 

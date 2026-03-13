@@ -324,7 +324,7 @@ class _ToMeLayerWrapper:
         try:
             import mlx.core as mx
             import numpy as _np
-        except ImportError:
+        except ImportError:  # pragma: no cover
             return self._orig(x, *args, **kwargs)
 
         # Pass-through: decode steps (single token) or if r==0

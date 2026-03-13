@@ -46,8 +46,10 @@ if sys.platform == "darwin":
         import mlx.core as _mlx_probe  # noqa: F401
         _mlx_probe.array([0], dtype=_mlx_probe.int32)  # ensure Metal is live
         _IS_APPLE = True
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
+else:  # pragma: no cover
+    pass  # non-macOS platform — _IS_APPLE stays False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -100,14 +102,14 @@ class _AppleBackend:
 
     # ── Model loading ─────────────────────────────────────────────────────────
 
-    def load_model(self, path: str, **kwargs):
+    def load_model(self, path: str, **kwargs):  # pragma: no cover
         """Load model + tokenizer; returns (model, tokenizer)."""
         import mlx_lm
         return mlx_lm.load(path)
 
     # ── Streaming inference ───────────────────────────────────────────────────
 
-    def stream_generate(
+    def stream_generate(  # pragma: no cover
         self,
         model,
         tokenizer,
@@ -365,7 +367,7 @@ class _StubBackend:
 
 if _IS_APPLE:
     BE = _AppleBackend()
-else:
+else:  # pragma: no cover
     try:
         BE = _TorchBackend()
     except ImportError:

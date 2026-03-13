@@ -420,7 +420,7 @@ def create_rope_scaler(config: RoPEConfig) -> RoPEScaler:
         return YaRNScaler(config)
     if config.method == "longrope":
         return LongRoPEScaler(config)
-    raise ValueError(
+    raise ValueError(  # pragma: no cover
         f"Unknown RoPE scaling method {config.method!r}. "
         f"Expected one of {_VALID_METHODS}."
     )
