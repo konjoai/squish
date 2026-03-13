@@ -1142,7 +1142,7 @@ New files: `squish/neuron_profile.py`, `squish/neuron_router.py`
 - [x] `tests/test_neuron_profile_unit.py` — 12+ tests: profiler on random activations, hot/cold split at correct fraction, JSON round-trip, load_profile
 - [x] `tests/test_neuron_router_unit.py` — 8+ tests: router construction, hot/cold dispatch logic, forward pass shape consistency, patch_model_neuron_routing
 - [ ] `squish/act_sparsity.py` — extend `ActSparsityPredictor.calibrate()` to optionally emit a `NeuronProfile` alongside the existing `sparsity_map`
-- [ ] `squish/server.py` — `--neuron-routing` flag wiring (Experimental tier); load neuron_profile.json if present alongside model weights
+- [x] `squish/server.py` — `--neuron-routing` flag wiring (Experimental tier); load neuron_profile.json if present alongside model weights
 - [ ] `dev/benchmarks/bench_neuron_routing.py` — memory bandwidth measurement (using `psutil` + `time`) with/without neuron routing on Qwen2.5-1.5B; Tokens/sec + peak DRAM bytes read
 
 ---
@@ -1187,8 +1187,8 @@ def fused_rope_qk(q, k, cos, sin):
 **Deliverables:**
 - [x] `squish/metal_fusion.py` — MetalFusionConfig, MetalFusionKernels, fused_rope_qk, fused_swiglu, fused_int8_kv_attn; graceful fallback to existing `fused_kernels.py` ops on pre-0.18 MLX or non-Metal hardware
 - [x] `tests/test_metal_fusion_unit.py` — 10+ tests: output equivalence between fused and reference implementations on random inputs, shape invariance, fallback path coverage (marked `# pragma: no cover` for Metal-execution paths)
-- [ ] `squish/server.py` — `--metal-fusion` flag (Experimental tier); auto-detects MLX version and skips gracefully if `mx.metal.kernel` unavailable
-- [ ] `squish/fused_kernels.py` — add `_METAL_FUSION_AVAILABLE` sentinel; `fused_kernels.py` prefers `metal_fusion.py` ops when `--metal-fusion` is active
+- [x] `squish/server.py` — `--metal-fusion` flag (Experimental tier); auto-detects MLX version and skips gracefully if `mx.metal.kernel` unavailable
+- [x] `squish/fused_kernels.py` — add `_METAL_FUSION_AVAILABLE` sentinel; `fused_kernels.py` prefers `metal_fusion.py` ops when `--metal-fusion` is active
 - [ ] `dev/benchmarks/bench_metal_fusion.py` — microbenchmark comparing fused vs unfused dispatch latency for RoPE, SwiGLU, and INT8 KV attn on M3 at seq_len ∈ {128, 1024, 8192}; save to `dev/results/metal_fusion_bench.json`
 
 **Key design constraints:**
@@ -2090,9 +2090,9 @@ MLX's `mx.compile` traces a Python function's MLX operations into a reusable com
 **Fix:** Identify the FFN forward function in the model architecture and wrap it. Since MLX models are loaded from HuggingFace transformers, the FFN is in the loaded model's Python graph. The correct hook is to add a `mx.compile` wrapper at the model-patch level, not by modifying the transformers architecture files.
 
 **Deliverables:**
-- [ ] `squish/fused_kernels.py` — add `patch_model_compiled_ffn(model)`: iterates model layers, wraps each layer's `mlp.forward` (or equivalent) in `mx.compile`; returns a `remove()` handle
+- [x] `squish/fused_kernels.py` — add `patch_model_compiled_ffn(model)`: iterates model layers, wraps each layer's `mlp.forward` (or equivalent) in `mx.compile`; returns a `remove()` handle
 - [ ] `squish/server.py` — call `patch_model_compiled_ffn(model)` during model load when `--fused-norm` or `--metal-fusion` is active (not breaking existing `mx.compile` decode path)
-- [ ] `tests/test_compiled_ffn_unit.py` — 6+ tests: patched model output numerically identical to unpatched, remove() restores originals, mx.compile fallback if unavailable
+- [x] `tests/test_compiled_ffn_unit.py` — 6+ tests: patched model output numerically identical to unpatched, remove() restores originals, mx.compile fallback if unavailable
 - [ ] `dev/benchmarks/bench_mxcompile_ffn.py` — TPS with and without FFN compile at bs=1 on Qwen2.5-7B; save to `dev/results/mxcompile_ffn_bench.json`
 
 ---

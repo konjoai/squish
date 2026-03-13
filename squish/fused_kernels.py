@@ -56,6 +56,17 @@ except ImportError:  # pragma: no cover
     _HAS_METAL_KERNEL = False
 
 # ---------------------------------------------------------------------------
+# MetalFusion availability sentinel
+# ---------------------------------------------------------------------------
+# Re-exported from metal_fusion.py so callers can do a single import.  When
+# metal_fusion.py is unavailable (e.g. during early boot) we fall back to the
+# _HAS_METAL_KERNEL probe above.
+try:
+    from squish.metal_fusion import _METAL_FUSION_AVAILABLE  # noqa: F401
+except Exception:  # noqa: BLE001
+    _METAL_FUSION_AVAILABLE: bool = _HAS_METAL_KERNEL
+
+# ---------------------------------------------------------------------------
 # Fused scaled-dot-product attention
 # ---------------------------------------------------------------------------
 
@@ -353,3 +364,75 @@ def patch_model(model) -> int:  # pragma: no cover
         log.info("fused-kernels: patched %d MLP layers", patched)
 
     return patched
+
+
+# ---------------------------------------------------------------------------
+# Compiled FFN patch — prefers MetalFusion SwiGLU when available
+# ---------------------------------------------------------------------------
+
+def patch_model_compiled_ffn(model, *, metal_fusion_kernels=None) -> int:
+    """Patch model MLP layers to prefer MetalFusion SwiGLU when available.
+
+    When *metal_fusion_kernels* is provided and its ``swiglu_enabled`` flag is
+    ``True``, each SwiGLU MLP receives a patched ``__call__`` that routes the
+    gate activation through :func:`squish.metal_fusion.fused_swiglu`.  When
+    Metal is unavailable (``swiglu_enabled=False``) the function delegates to
+    :func:`patch_model` for the standard ``FusedFFNGate`` path.
+
+    Parameters
+    ----------
+    model :
+        Loaded MLX model with a ``.layers`` attribute.
+    metal_fusion_kernels : MetalFusionKernels | None
+        Live kernel manager from :mod:`squish.metal_fusion`.  Pass ``None``
+        to force the :func:`patch_model` fallback.
+
+    Returns
+    -------
+    int : number of layers patched
+    """
+    use_metal = (
+        metal_fusion_kernels is not None
+        and getattr(metal_fusion_kernels, "swiglu_enabled", False)
+    )
+
+    if use_metal:  # pragma: no cover
+        try:
+            from squish.metal_fusion import fused_swiglu as _fused_swiglu  # noqa: PLC0415
+            patched = 0
+            for layer in getattr(model, "layers", []):
+                mlp = getattr(layer, "mlp", None)
+                if mlp is None:
+                    continue
+                try:
+                    _orig_call = mlp.__class__.__call__
+
+                    def _metal_mlp(self, x,
+                                   _fs=_fused_swiglu,
+                                   _orig=_orig_call,
+                                   _kernels=metal_fusion_kernels):
+                        gp = getattr(self, "gate_proj", None)
+                        up = getattr(self, "up_proj",   None)
+                        dp = getattr(self, "down_proj", None)
+                        if gp is not None and up is not None and dp is not None:
+                            import numpy as _np       # noqa: PLC0415
+                            import mlx.core as _mx    # noqa: PLC0415
+                            g_np = _np.asarray(gp(x))
+                            u_np = _np.asarray(up(x))
+                            fused_np = _fs(g_np, u_np, kernels=_kernels)
+                            return dp(_mx.array(fused_np))
+                        return _orig(self, x)
+
+                    mlp.__class__.__call__ = _metal_mlp  # type: ignore[method-assign]
+                    patched += 1
+                except Exception:
+                    pass
+
+            if patched > 0:
+                log.info("fused-kernels: metal-fusion compiled-ffn patched %d layers", patched)
+            return patched
+        except Exception as exc:
+            log.debug("patch_model_compiled_ffn metal path failed (%s) — fallback", exc)
+
+    # Fallback: standard FusedFFNGate patch
+    return patch_model(model)
