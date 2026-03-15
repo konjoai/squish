@@ -80,6 +80,8 @@ _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-pr
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
 # Phase 13A: asymmetric INT2 KV cache (agent-kv)
 _agent_kv_config: "Any | None" = None   # AgentKVConfig | None — set in main() when --agent-kv
+# Phase 3: Q-Filters geometric KV eviction
+_qfilter_active: bool = False  # True when --qfilter is passed
 
 # ── Wave optimization module state (lazily instantiated) ─────────────────────
 _prompt_lookup_decoder  = None  # PromptLookupDecoder    — --prompt-lookup
@@ -495,11 +497,13 @@ _bearer  = HTTPBearer(auto_error=False)
 # ── Draft model state (speculative decoding) ─────────────────────────────────
 
 class _DraftState:
-    model      = None
-    tokenizer  = None
-    model_dir  = ""
-    generator  = None   # SpeculativeGenerator instance (created after both models load)
-    eagle_head = None   # EagleDraftHead instance (Phase 1B)
+    model          = None
+    tokenizer      = None
+    model_dir      = ""
+    generator      = None   # SpeculativeGenerator instance (created after both models load)
+    eagle_head     = None   # EagleDraftHead instance (Phase 1B)
+    redrafter_head = None   # ReDrafterHead instance (Phase 4)
+    ssd_predictor  = None   # SSDPredictor instance (Phase 4)
 
 _draft = _DraftState()
 
@@ -776,13 +780,41 @@ def load_eagle_head(head_dir: str, verbose: bool = True) -> None:  # pragma: no 
     _rebuild_spec_gen()
 
 
+def load_redrafter_head(  # pragma: no cover
+    head_dir:      str,
+    ssd_threshold: float = 0.0,
+    verbose:       bool  = True,
+) -> None:
+    """Load a ReDrafter GRU draft head and wire it into the SpeculativeGenerator.
+
+    Parameters
+    ----------
+    head_dir      : Directory containing ``redrafter.npz``.
+    ssd_threshold : SSD acceptance-predictor threshold.  0.0 disables SSD.
+    """
+    from squish.speculative.redrafter import ReDrafterHead
+    if verbose:
+        print(f"  {_C.L}⟳{_C.R}  {_C.DIM}Loading ReDrafter head:{_C.R}  {_C.W}{head_dir}{_C.R}")
+    _draft.redrafter_head = ReDrafterHead.from_dir(head_dir, _state.model, verbose=verbose)
+    if ssd_threshold > 0.0:
+        from squish.speculative.ssd import SSDConfig, SSDPredictor
+        ssd_cfg = SSDConfig(threshold=ssd_threshold)
+        hidden_dim = _draft.redrafter_head.config.hidden_dim
+        _draft.ssd_predictor = SSDPredictor.init_random(hidden_dim, threshold=ssd_threshold)
+        if verbose:
+            _ok(f"SSD predictor ready (threshold={ssd_threshold})")
+    if verbose:
+        _ok("ReDrafter head ready")
+    _rebuild_spec_gen()
+
+
 def _rebuild_spec_gen() -> None:  # pragma: no cover
     """(Re-)create the SpeculativeGenerator from current target + draft state."""
     if _state.model is None:
         _draft.generator = None
         return
-    # Require at least one draft source (neural draft model OR EAGLE head)
-    if _draft.model is None and _draft.eagle_head is None:
+    # Require at least one draft source (neural draft model, EAGLE head, or ReDrafter)
+    if _draft.model is None and _draft.eagle_head is None and _draft.redrafter_head is None:
         _draft.generator = None
         return
     from squish.speculative.speculative import SpeculativeGenerator
@@ -790,6 +822,8 @@ def _rebuild_spec_gen() -> None:  # pragma: no cover
         _state.model, _state.tokenizer,
         draft_model=_draft.model, draft_tokenizer=_draft.tokenizer,
         eagle_head=_draft.eagle_head,
+        redrafter_head=_draft.redrafter_head,
+        ssd_predictor=_draft.ssd_predictor,
     )
 
 
@@ -1325,6 +1359,9 @@ def _generate_tokens(  # pragma: no cover
                 x = mx.array([[next_id]], dtype=mx.int32)
                 logits = _decode_fn(x) if _decode_fn is not None else model(x, cache=layer_caches)
                 mx.eval(logits)
+                # Phase 3: Q-Filter geometric KV eviction (runs every evict_every steps)
+                if _qfilter_active and _kv_cache is not None:
+                    _kv_cache.tick_qfilter(step)
                 # Phase A1/A3: apply logit biases before sampling
                 _logit_vec = logits[0, -1]
                 if (_thinking_budget > 0
@@ -2255,6 +2292,15 @@ Examples:
                     help="Path to EAGLE-3 draft head directory (from `squish pull-head`). "
                          "Enables EAGLE-3 speculative decoding (~75-85%% acceptance rate). "
                          "Incompatible with --draft-model.")
+    ap.add_argument("--redrafter-head-dir", default="",
+                    help="Path to ReDrafter GRU head directory (redrafter.npz). "
+                         "Enables ReDrafter speculative decoding (~60-75%% acceptance rate). "
+                         "Lower quality than EAGLE-3 but trains from scratch without a "
+                         "target-model-specific checkpoint.")
+    ap.add_argument("--ssd-threshold", type=float, default=0.0,
+                    help="SSD acceptance-predictor threshold in [0, 1]. "
+                         "Filters draft tokens before the target verify pass. "
+                         "0.0 (default) disables SSD. Only used with --redrafter-head-dir.")
     ap.add_argument("--no-prefix-cache", action="store_true", default=False,
                     help="Disable the prefix (exact-match) response cache")
     ap.add_argument("--prefix-cache-size", type=int, default=512,
@@ -2347,6 +2393,36 @@ Examples:
                     help="SVD rank for KV compression: project head_dim → N before INT8.\n"
                          "0 = off (default).  Recommended: 64 for head_dim=128 models.\n"
                          "Requires --kv-cache-mode int8 or snap.")
+    # ── Phase 3: Q-Filters — geometric KV eviction ───────────────────────────
+    ap.add_argument("--qfilter", action="store_true", default=False,
+                    help="Enable Q-Filter geometric KV cache eviction (Phase 3).\n"
+                         "Fits a per-layer SVD basis from the first 64 key vectors, then\n"
+                         "evicts KV tokens whose projected keys are geometrically distant\n"
+                         "from recent query directions.  Keeps context within --qfilter-budget\n"
+                         "positions without relying on attention-score heuristics.\n"
+                         "Combine with --kv-cache-mode int8 for maximum compression.")
+    ap.add_argument("--qfilter-rank", type=int, default=32, metavar="N",
+                    help="SVD projection rank for Q-Filters (default 32).\n"
+                         "Higher rank = more precise eviction, higher calibration cost.\n"
+                         "Typical range: 16–64 for head_dim=128 models.")
+    ap.add_argument("--qfilter-budget", type=int, default=2048, metavar="N",
+                    help="Max KV positions to retain per layer after Q-filter eviction\n"
+                         "(default 2048).  Similar role to --kv-cache-budget for SnapKV.")
+    ap.add_argument("--qfilter-anchor", type=int, default=64, metavar="N",
+                    help="Recent tokens always preserved by Q-filter (default 64).\n"
+                         "These cover the immediate local context that attention always needs.")
+    ap.add_argument("--qfilter-evict-every", type=int, default=16, metavar="N",
+                    help="Run Q-filter eviction every N decode steps (default 16).\n"
+                         "Lower = more aggressive; 0 = every step.")
+    # ── Phase 5: TTT Fast Weights ─────────────────────────────────────────────
+    ap.add_argument("--fast-weight-lr", type=float, default=0.0, metavar="LR",
+                    help="Phase 5: TTT Fast Weight learning rate (default 0.0 = off).\n"
+                         "When > 0, tokens evicted by --qfilter are absorbed into a per-layer\n"
+                         "outer-product memory matrix W_f before removal, preserving their\n"
+                         "information as compressed linear-attention history.")
+    ap.add_argument("--fast-weight-decay", type=float, default=0.999, metavar="D",
+                    help="Per-absorption W_f decay factor (default 0.999). "
+                         "Range [0, 1]; 1.0 = no forgetting.")
     # ── Phase 13A: Asymmetric INT2 KV Cache ──────────────────────────────────
     ap.add_argument("--agent-kv", action="store_true", default=False,
                     help="Enable the asymmetric INT2 KV cache (AgentKV):\n"
@@ -2799,18 +2875,37 @@ Examples:
                 _warn(f"[flash_attention] Skipped: {e}")
 
     # ── Phase 1.3: attach quantized KV cache if requested ─────────────
-    global _kv_cache
+    global _kv_cache, _qfilter_active
     if args.kv_cache_mode != "fp16" and _state.model is not None:
         try:
             from squish.kv.kv_cache import patch_model_kv_cache
+            _qf_rank = getattr(args, "qfilter_rank", 32) if getattr(args, "qfilter", False) else 0
             _kv_cache = patch_model_kv_cache(
                 _state.model,
                 mode=args.kv_cache_mode,
                 window=args.kv_cache_window,
                 budget=args.kv_cache_budget,
                 svd_rank=getattr(args, "kv_cache_svd_rank", 0),
+                qfilter_rank=_qf_rank,
+                qfilter_budget=getattr(args, "qfilter_budget", 2048),
+                qfilter_anchor=getattr(args, "qfilter_anchor", 64),
+                qfilter_evict_every=getattr(args, "qfilter_evict_every", 16),
+                fast_weight_lr=getattr(args, "fast_weight_lr", 0.0),
+                fast_weight_decay=getattr(args, "fast_weight_decay", 0.999),
                 verbose=True,
             )
+            _qfilter_active = _qf_rank > 0
+            if _qfilter_active:
+                _info("qfilter",
+                      f"enabled  rank={_qf_rank}"
+                      f"  budget={getattr(args, 'qfilter_budget', 2048)}"
+                      f"  anchor={getattr(args, 'qfilter_anchor', 64)}"
+                      f"  evict_every={getattr(args, 'qfilter_evict_every', 16)}")
+            _fw_lr = getattr(args, "fast_weight_lr", 0.0)
+            if _fw_lr > 0.0:
+                _info("fast-weight",
+                      f"enabled  lr={_fw_lr}"
+                      f"  decay={getattr(args, 'fast_weight_decay', 0.999)}")
             _info("kv-cache", f"ready ({args.kv_cache_mode})")
         except Exception as e:
             import logging as _logging
@@ -3033,6 +3128,14 @@ Examples:
     if getattr(args, "eagle_head_dir", ""):
         print()
         load_eagle_head(args.eagle_head_dir, verbose=args.verbose)
+
+    if getattr(args, "redrafter_head_dir", ""):
+        print()
+        load_redrafter_head(
+            args.redrafter_head_dir,
+            ssd_threshold=getattr(args, "ssd_threshold", 0.0),
+            verbose=args.verbose,
+        )
 
     # ── Wave optimization module initialisation ───────────────────────────────
     global _prompt_lookup_decoder, _seq_packer, _ada_serve_scheduler

@@ -622,6 +622,8 @@ class SpeculativeGenerator:
         draft_tokenizer         = None,
         k: int                  = _DEFAULT_K,
         eagle_head: "EagleDraftHead | None" = None,
+        redrafter_head          = None,   # ReDrafterHead | None
+        ssd_predictor           = None,   # SSDPredictor | None
         ngram_max_n: int        = 8,
         fsm_gamma:   bool       = False,
         fsm_min:     int        = 2,
@@ -651,6 +653,22 @@ class SpeculativeGenerator:
                 )
                 self._eagle_head    = None
                 self._target_capture = None
+
+        # Phase 4: ReDrafter GRU head + SSD acceptance predictor
+        self._redrafter_head = redrafter_head
+        self._ssd_predictor  = ssd_predictor
+        if redrafter_head is not None and self._target_capture is None:
+            # Share the HiddenStateCapture shim with EAGLE if not already created
+            _cap = HiddenStateCapture(target_model)
+            if _cap.can_capture:
+                self._target_capture = _cap
+            else:
+                logger.warning(
+                    "ReDrafter: target model does not expose model.model/lm_head "
+                    "— ReDrafter disabled, falling back to standard spec decode"
+                )
+                self._redrafter_head = None
+                self._ssd_predictor  = None
 
         # Phase 1A: n-gram table (one per stream() call, created in _reset_caches)
         self._ngram_max_n = ngram_max_n
@@ -697,6 +715,8 @@ class SpeculativeGenerator:
         """Roll both KV caches back to position 0 (start of new request)."""
         _cache_set_offset(self._target_cache, 0)
         _cache_set_offset(self._draft_cache, 0)
+        if self._redrafter_head is not None:
+            self._redrafter_head.reset_state()
 
     def _update_fsm(self, n_accepted: int, n_proposed: int) -> None:
         """Update the FSM gamma controller and sync ``self._k``."""
@@ -737,7 +757,7 @@ class SpeculativeGenerator:
         self._ngram = NgramTable(self._ngram_max_n)
         self._ngram.build(input_ids)
 
-        if self._draft is None and self._eagle_head is None:
+        if self._draft is None and self._eagle_head is None and self._redrafter_head is None:
             # No draft model — plain auto-regressive
             yield from self._plain_stream(
                 input_ids, max_tokens, temperature, top_p, stop_ids, eos_id
@@ -759,11 +779,18 @@ class SpeculativeGenerator:
         stop_ids: list[list[int]],
         eos_id: int,
     ) -> Iterator[tuple[str, str | None]]:
-        """Dispatch to stateful / EAGLE / stateless path per capability."""
+        """Dispatch to stateful / EAGLE / ReDrafter / stateless path per capability."""
         # Phase 1B: prefer EAGLE head when hidden-state capture is available
         if self._eagle_head is not None and self._target_capture is not None:
             if self._target_cache is not None:
                 yield from self._eagle_spec_stream(
+                    ids, max_tokens, temperature, top_p, stop_ids, eos_id
+                )
+                return
+        # Phase 4: ReDrafter GRU head (lower priority than EAGLE)
+        if self._redrafter_head is not None and self._target_capture is not None:
+            if self._target_cache is not None:
+                yield from self._redrafter_spec_stream(
                     ids, max_tokens, temperature, top_p, stop_ids, eos_id
                 )
                 return
@@ -1097,6 +1124,164 @@ class SpeculativeGenerator:
 
         logger.debug(
             "eagle spec: %d steps, %.1f%% acceptance, %d tokens",
+            self.steps, self.acceptance_rate * 100, generated,
+        )
+
+    # ── Phase 4: ReDrafter speculative inner loop ─────────────────────────────
+
+    def _redrafter_spec_stream(
+        self,
+        ids: list[int],
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        stop_ids: list[list[int]],
+        eos_id: int,
+    ) -> Iterator[tuple[str, str | None]]:
+        """
+        ReDrafter speculative decode.
+
+        Uses the target model's last hidden state (via HiddenStateCapture) to
+        condition the ReDrafter GRU head for the first draft token, then
+        continues autoregressively through the GRU's own recurrent state.
+
+        Optionally, an :class:`~squish.speculative.ssd.SSDPredictor` filters
+        the draft sequence before the target verify pass to reduce verify-batch
+        length when acceptance is expected to be low.
+
+        Each cycle:
+        • Target capture: 1 forward pass → hidden + logit
+        • ReDrafter head: k GRU steps (very fast, no KV cache)
+        • SSD filter: optional truncation of draft sequence
+        • Target verify: 1 forward pass over (filtered) k positions
+        """
+        assert self._redrafter_head is not None
+        assert self._target_capture is not None
+        assert self._target_cache is not None
+
+        self._reset_caches()
+
+        # Prefill target (via capture shim so we get the hidden state)
+        t_capture = self._target_capture
+        t_last    = _prefill_cached(t_capture, self._target_cache, ids)
+        target_hidden = t_capture.last_hidden   # (1, T, hidden_dim)
+
+        generated  = 0
+        stop_buf: list[int] = []
+        context    = list(ids)
+        prev_tok   = ids[-1] if ids else 0
+
+        while generated < max_tokens:
+            base = _cache_offset(self._target_cache)
+
+            # ── Step 1: ReDrafter head proposes k draft tokens ────────────────
+            if target_hidden is not None:
+                draft_ids, draft_probs = self._redrafter_head.draft_k(
+                    target_hidden, self._k, prev_tok,
+                    temperature, top_p, eos_id,
+                )
+            else:
+                probs      = _top_p_filter(_softmax_np(t_last, temperature), top_p)
+                draft_ids  = [_sample(probs)]
+                draft_probs = [probs]
+
+            # Phase 1A: supplement with n-gram proposals if drafter produced fewer
+            if self._ngram is not None and len(draft_ids) < self._k:
+                ngram_extra = self._ngram.lookup_k(
+                    context + draft_ids, self._k - len(draft_ids)
+                )
+                vocab_sz = len(t_last)
+                for tok in ngram_extra:
+                    probs = np.zeros(vocab_sz, dtype=np.float32)
+                    probs[tok] = 1.0
+                    draft_ids.append(tok)
+                    draft_probs.append(probs)
+                    if tok == eos_id:
+                        break
+
+            # ── Step 1B: SSD pre-filter (optional) ───────────────────────────
+            if self._ssd_predictor is not None:
+                hiddens = self._redrafter_head.draft_hiddens
+                draft_ids, draft_probs = self._ssd_predictor.filter_drafts(
+                    hiddens, draft_ids, draft_probs,
+                )
+
+            self.proposed_total += len(draft_ids)
+            self.steps          += 1
+
+            # ── Step 2: target verifies draft tokens ──────────────────────────
+            _cache_set_offset(self._target_cache, base)
+            target_fwd = _decode_multi_cached(
+                t_capture, self._target_cache, draft_ids
+            )
+            target_hidden = t_capture.last_hidden
+
+            target_rows = np.concatenate(
+                [t_last[np.newaxis], target_fwd], axis=0  # (k+1, vocab)
+            )
+
+            # ── Step 3: sequential accept / reject ───────────────────────────
+            new_tokens: list[int] = []
+            accepted = 0
+            for i, (d_tok, d_probs) in enumerate(
+                    zip(draft_ids, draft_probs, strict=False)):
+                t_probs  = _softmax_np(target_rows[i], temperature)
+                t_probs  = _top_p_filter(t_probs, top_p)
+                p_target = float(t_probs[d_tok])
+                p_draft  = float(d_probs[d_tok])
+                if np.random.random() < min(1.0, p_target / max(p_draft, 1e-12)):
+                    new_tokens.append(d_tok)
+                    accepted += 1
+                else:
+                    adjusted = np.maximum(0.0, t_probs - d_probs)
+                    s = adjusted.sum()
+                    new_tokens.append(
+                        _sample(adjusted / s) if s > 0 else _greedy(target_rows[i])
+                    )
+                    break
+
+            self.accepted_total += accepted
+            self._update_fsm(accepted, len(draft_ids))
+
+            # ── Step 4: bonus token ───────────────────────────────────────────
+            if accepted == len(draft_ids):
+                bonus_probs = _top_p_filter(
+                    _softmax_np(target_rows[len(draft_ids)], temperature), top_p
+                )
+                new_tokens.append(_sample(bonus_probs))
+
+            # ── Step 5: advance target cache ─────────────────────────────────
+            n_acc     = len(new_tokens) - 1
+            final_tok = new_tokens[-1]
+            _cache_set_offset(self._target_cache, base + n_acc)
+            t_last = _decode_step_cached(t_capture, self._target_cache, final_tok)
+            target_hidden = t_capture.last_hidden
+            prev_tok = final_tok
+
+            # ── Step 6: yield ─────────────────────────────────────────────────
+            for tok in new_tokens:
+                if tok == eos_id:
+                    yield self._tok_text(tok), "stop"
+                    return
+                tok_text = self._tok_text(tok)
+                generated += 1
+                stop_buf.append(tok)
+                if self._ngram is not None:
+                    self._ngram.update(tok, context)
+                context.append(tok)
+                for seq in stop_ids:
+                    if stop_buf[-len(seq):] == seq:
+                        yield tok_text, "stop"
+                        return
+                if len(stop_buf) > 64:
+                    stop_buf = stop_buf[-64:]
+                if generated >= max_tokens:
+                    yield tok_text, "length"
+                    return
+                yield tok_text, None
+
+        logger.debug(
+            "redrafter spec: %d steps, %.1f%% acceptance, %d tokens",
             self.steps, self.acceptance_rate * 100, generated,
         )
 

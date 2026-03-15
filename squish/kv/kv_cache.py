@@ -170,6 +170,8 @@ class KVLayerCache:
         "_comm_vq_calib_v",    # list[np.ndarray] | None — calibration buffer values
         "_comm_vq_old_k",      # np.ndarray | None  (n_heads, n_old) uint16 indices
         "_comm_vq_old_v",      # np.ndarray | None  (n_heads, n_old) uint16 indices
+        # Phase 3: Q-Filters geometric KV eviction
+        "_qfilter",            # QFilterState | None — set by QuantizedKVCache when qfilter_rank > 0
     )
 
     def __init__(self, window: int = 64):
@@ -210,6 +212,8 @@ class KVLayerCache:
         self._comm_vq_calib_v = None
         self._comm_vq_old_k  = None  # (n_heads, n_old) uint16 indices
         self._comm_vq_old_v  = None
+        # Phase 3: Q-Filters geometric KV eviction
+        self._qfilter        = None  # QFilterState | None
 
     # ── Main cache update ─────────────────────────────────────────────────────
 
@@ -225,6 +229,10 @@ class KVLayerCache:
 
             self.keys_recent.append(key_np.astype(np.float16))
             self.values_recent.append(value_np.astype(np.float16))
+
+            # Phase 3: Q-Filters — record incoming key in geometric filter
+            if self._qfilter is not None:
+                self._qfilter.append_key(key_np)
 
             # Evict the oldest recent slot to INT8 when window fills
             while len(self.keys_recent) > self.window:
@@ -1017,6 +1025,14 @@ class QuantizedKVCache:
         snap_window: int = 32,
         svd_rank: int = 0,                  # Phase 1: 0 = off; set to rank < head_dim
         comm_vq_bits: int = 0,              # CommVQ: 0 = off; 2 for 2-bit, 4 for 4-bit
+        # Phase 3: Q-Filters geometric KV eviction
+        qfilter_rank: int = 0,              # 0 = off; SVD projection rank (e.g. 32)
+        qfilter_budget: int = 2048,         # max tokens to retain per layer
+        qfilter_anchor: int = 64,           # recent tokens always preserved
+        qfilter_evict_every: int = 16,      # run eviction every N decode steps
+        # Phase 5: TTT Fast Weights — absorb evicted KVs into outer-product memory
+        fast_weight_lr: float = 0.0,        # 0.0 = off; learning rate > 0 enables
+        fast_weight_decay: float = 0.999,   # per-absorption W_f decay factor
     ):
         """
         Parameters
@@ -1028,6 +1044,12 @@ class QuantizedKVCache:
         snap_window   : attention window for importance scoring (SnapKV)
         svd_rank      : Phase 1 — project head_dim → rank before INT8 quant (0 = off)
         comm_vq_bits  : CommVQ bits per index — 2 (4×4=16 codes) or 4 (16 codes) or 0 off
+        qfilter_rank  : Phase 3 — SVD rank for geometric KV eviction (0 = off)
+        qfilter_budget: Phase 3 — max tokens to keep per layer after eviction
+        qfilter_anchor: Phase 3 — recent tokens never evicted (recency anchor)
+        qfilter_evict_every: Phase 3 — eviction interval in decode steps
+        fast_weight_lr    : Phase 5 — learning rate for fast-weight absorption (0 = off)
+        fast_weight_decay : Phase 5 — per-absorption W_f decay factor
         """
         if mode not in ("fp16", "int8", "snap"):
             raise ValueError(f"mode must be fp16, int8, or snap — got {mode!r}")
@@ -1049,6 +1071,27 @@ class QuantizedKVCache:
             for layer in self._layers:
                 layer._comm_vq_bits = comm_vq_bits
         self._snapped = [False] * n_layers   # has SnapKV eviction been applied?
+        # Phase 3: Q-Filters
+        self._qfilter_cfg = None
+        if qfilter_rank > 0:
+            from squish.kv.q_filters import QFilterConfig, QFilterState  # noqa: PLC0415
+            self._qfilter_cfg = QFilterConfig(
+                rank=qfilter_rank,
+                budget=qfilter_budget,
+                anchor=qfilter_anchor,
+                evict_every=qfilter_evict_every,
+                min_tokens=max(qfilter_rank, 64),
+            )
+            for layer in self._layers:
+                layer._qfilter = QFilterState(self._qfilter_cfg)
+        # Phase 5: TTT Fast Weights
+        self._fw_manager = None
+        if fast_weight_lr > 0.0:
+            from squish.kv.fast_weights import FastWeightConfig, FastWeightManager  # noqa: PLC0415
+            self._fw_manager = FastWeightManager(
+                FastWeightConfig(lr=fast_weight_lr, decay=fast_weight_decay),
+                n_layers=n_layers,
+            )
 
     # ── Compatibility shims for mlx_lm cache list API ────────────────────────
 
@@ -1088,6 +1131,70 @@ class QuantizedKVCache:
         for layer in self._layers:
             layer.reset()
         self._snapped = [False] * self.n_layers
+        # Phase 3: reset Q-filter per-request state (basis preserved across requests)
+        if self._qfilter_cfg is not None:
+            for layer in self._layers:
+                if layer._qfilter is not None:
+                    layer._qfilter.reset()
+        # Phase 5: reset fast weight matrices for new request
+        if self._fw_manager is not None:
+            self._fw_manager.reset()
+
+    def tick_qfilter(self, step: int) -> None:
+        """
+        Phase 3 + 5 — Run Q-filter geometric eviction across all layers for ``step``.
+
+        Call once per decode step, immediately after ``mx.eval(logits)``.
+        No-op if Q-filters are not configured (``qfilter_rank == 0``).
+
+        When Phase 5 fast weights are also enabled (``fast_weight_lr > 0``),
+        evicted tokens are absorbed into the fast-weight memory before removal.
+
+        The eviction fires when *all* of these are true for a layer:
+        • ``n_tokens > qfilter_budget``
+        • ``step % qfilter_evict_every == 0``  (or evict_every == 0)
+        • The layer's SVD basis has been calibrated
+        """
+        if self._qfilter_cfg is None:
+            return
+        from squish.kv.q_filters import _qfilter_evict  # noqa: PLC0415
+        cfg = self._qfilter_cfg
+        import numpy as _np  # noqa: PLC0415
+        for layer_idx, layer in enumerate(self._layers):
+            if layer._qfilter is None:
+                continue
+            n = layer.n_tokens
+            if n <= cfg.budget:
+                continue
+            if cfg.evict_every > 0 and step % cfg.evict_every != 0:
+                continue
+            if not layer._qfilter.is_calibrated:
+                continue
+            full_k, full_v = layer.get_full_kv()
+            if full_k is None:
+                continue
+            anchor  = min(cfg.anchor, n)
+            recent  = full_k[:, -anchor:, :]               # (n_heads, anchor, head_dim)
+            scores  = layer._qfilter.score_recent(recent)
+            if scores is None or len(scores) != n:
+                continue
+            masked          = scores.copy()
+            masked[-anchor:] = _np.inf
+            keep = _np.sort(_np.argsort(-masked)[: cfg.budget])
+
+            # Phase 5: absorb evicted tokens into fast weights before dropping
+            if self._fw_manager is not None and full_v is not None:
+                keep_set  = set(keep.tolist())
+                evict_idx = _np.array(
+                    [i for i in range(n) if i not in keep_set], dtype=_np.int64
+                )
+                if len(evict_idx) > 0:
+                    evict_k = full_k[:, evict_idx, :]
+                    evict_v = full_v[:, evict_idx, :]
+                    self._fw_manager.absorb_layer(layer_idx, evict_k, evict_v)
+
+            _qfilter_evict(layer, keep)
+            layer._qfilter.rebuild_after_eviction(keep)
 
     @property
     def n_tokens(self) -> int:
@@ -1101,7 +1208,7 @@ class QuantizedKVCache:
         return total / 1_048_576
 
     def stats(self) -> dict:
-        return {
+        d = {
             "mode":      self.mode,
             "n_layers":  self.n_layers,
             "n_tokens":  self.n_tokens,
@@ -1109,6 +1216,18 @@ class QuantizedKVCache:
             "window":    self.window,
             "budget":    self.budget,
         }
+        if self._qfilter_cfg is not None:
+            calibrated = sum(
+                1 for l in self._layers if l._qfilter is not None and l._qfilter.is_calibrated
+            )
+            d["qfilter_rank"]        = self._qfilter_cfg.rank
+            d["qfilter_budget"]      = self._qfilter_cfg.budget
+            d["qfilter_calibrated"]  = calibrated
+        if self._fw_manager is not None:
+            fw_stats = self._fw_manager.stats()
+            d["fast_weight_lr"]       = fw_stats["fast_weight_lr"]
+            d["fast_weight_absorbed"] = fw_stats["fast_weight_total_absorbed"]
+        return d
 
     def restore_from(self, src: "QuantizedKVCache") -> None:
         """
@@ -1378,25 +1497,40 @@ def make_quantized_cache(  # pragma: no cover
     snap_window: int = 32,
     svd_rank: int = 0,
     comm_vq_bits: int = 0,
+    qfilter_rank: int = 0,
+    qfilter_budget: int = 2048,
+    qfilter_anchor: int = 64,
+    qfilter_evict_every: int = 16,
+    fast_weight_lr: float = 0.0,
+    fast_weight_decay: float = 0.999,
 ) -> QuantizedKVCache:
     """
     Create a :class:`QuantizedKVCache` sized correctly for ``model``.
 
     Parameters
     ----------
-    model         : mlx_lm model (already loaded)
-    mode          : "fp16" | "int8" | "snap"
-    window        : FP16 residual window (KIVI)
-    budget        : max K/V positions (SnapKV only)
-    snap_window   : attention window for importance (SnapKV)
-    svd_rank      : Phase 1 — SVD projection rank (0 = off)
-    comm_vq_bits  : CommVQ bits per KV token (0 = off; 2 or 4)
+    model             : mlx_lm model (already loaded)
+    mode              : "fp16" | "int8" | "snap"
+    window            : FP16 residual window (KIVI)
+    budget            : max K/V positions (SnapKV only)
+    snap_window       : attention window for importance (SnapKV)
+    svd_rank          : Phase 1 — SVD projection rank (0 = off)
+    comm_vq_bits      : CommVQ bits per KV token (0 = off; 2 or 4)
+    qfilter_rank      : Phase 3 — SVD rank for geometric eviction (0 = off)
+    qfilter_budget    : Phase 3 — max tokens per layer after eviction
+    qfilter_anchor    : Phase 3 — recent tokens never evicted
+    qfilter_evict_every: Phase 3 — eviction interval in decode steps
+    fast_weight_lr    : Phase 5 — learning rate for fast-weight absorption (0 = off)
+    fast_weight_decay : Phase 5 — per-absorption decay factor
     """
     n = _n_layers(model)
     return QuantizedKVCache(
         n_layers=n, window=window, mode=mode,
         budget=budget, snap_window=snap_window,
         svd_rank=svd_rank, comm_vq_bits=comm_vq_bits,
+        qfilter_rank=qfilter_rank, qfilter_budget=qfilter_budget,
+        qfilter_anchor=qfilter_anchor, qfilter_evict_every=qfilter_evict_every,
+        fast_weight_lr=fast_weight_lr, fast_weight_decay=fast_weight_decay,
     )
 
 
@@ -1408,6 +1542,12 @@ def patch_model_kv_cache(  # pragma: no cover
     snap_window: int = 32,
     svd_rank: int = 0,
     comm_vq_bits: int = 0,
+    qfilter_rank: int = 0,
+    qfilter_budget: int = 2048,
+    qfilter_anchor: int = 64,
+    qfilter_evict_every: int = 16,
+    fast_weight_lr: float = 0.0,
+    fast_weight_decay: float = 0.999,
     verbose: bool = True,
 ) -> QuantizedKVCache:
     """
@@ -1435,15 +1575,22 @@ def patch_model_kv_cache(  # pragma: no cover
         model, mode=mode, window=window,
         budget=budget, snap_window=snap_window,
         svd_rank=svd_rank, comm_vq_bits=comm_vq_bits,
+        qfilter_rank=qfilter_rank, qfilter_budget=qfilter_budget,
+        qfilter_anchor=qfilter_anchor, qfilter_evict_every=qfilter_evict_every,
+        fast_weight_lr=fast_weight_lr, fast_weight_decay=fast_weight_decay,
     )
     n = _n_layers(model)
 
     if verbose:
-        svd_info   = f"  svd_rank={svd_rank}" if svd_rank > 0 else ""
-        commvq_info = f"  commvq_bits={comm_vq_bits}" if comm_vq_bits > 0 else ""
+        svd_info      = f"  svd_rank={svd_rank}" if svd_rank > 0 else ""
+        commvq_info   = f"  commvq_bits={comm_vq_bits}" if comm_vq_bits > 0 else ""
+        qfilter_info  = (f"  qfilter_rank={qfilter_rank}  qfilter_budget={qfilter_budget}"
+                         if qfilter_rank > 0 else "")
+        fw_info       = (f"  fast_weight_lr={fast_weight_lr}"
+                         if fast_weight_lr > 0.0 else "")
         print(f"  [KV cache] mode={mode}  window={window}  "
               f"budget={budget if mode == 'snap' else '—'}  "
-              f"layers={n}{svd_info}{commvq_info}")
+              f"layers={n}{svd_info}{commvq_info}{qfilter_info}{fw_info}")
 
     # Store on the model so server.py can retrieve it
     model._squish_kv_cache = cache
