@@ -28,6 +28,8 @@ Usage:
 Dependencies:
     pip install fastapi "uvicorn[standard]"
 """
+from __future__ import annotations
+
 import argparse
 import collections
 import hashlib
@@ -55,17 +57,26 @@ def _require(pkg: str, install: str | None = None) -> None:
     try:
         __import__(pkg)
     except ImportError:  # pragma: no cover
+        # Allow --help / -h to show argparse help even if a dep is missing.
+        if "--help" in sys.argv or "-h" in sys.argv:
+            return
         hint = install or pkg
-        print(f"  {_C.PK}✗  Missing dependency:{_C.R}  {_C.W}{pkg}{_C.R}  {_C.DIM}→  pip install {hint}{_C.R}")
+        print(f"  \u2717  Missing dependency:  {pkg}  \u2192  pip install {hint}", file=sys.stderr)
         sys.exit(1)
 
 _require("fastapi")
 _require("uvicorn", "uvicorn[standard]")
 
-from fastapi import FastAPI, HTTPException, Request, Security  # noqa: E402
-from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse  # noqa: E402
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
+try:
+    from fastapi import FastAPI, HTTPException, Request, Security  # noqa: E402
+    from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+    from fastapi.responses import FileResponse, JSONResponse, StreamingResponse  # noqa: E402
+    from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
+except ImportError:  # pragma: no cover — fastapi absent; --help-only mode
+    FastAPI = HTTPException = Request = Security = None  # type: ignore[assignment,misc]
+    CORSMiddleware = None  # type: ignore[assignment,misc]
+    FileResponse = JSONResponse = StreamingResponse = None  # type: ignore[assignment,misc]
+    HTTPAuthorizationCredentials = HTTPBearer = None  # type: ignore[assignment,misc]
 
 try:
     from fastapi.staticfiles import StaticFiles as _StaticFiles
@@ -469,7 +480,10 @@ def _tlog(msg: str) -> None:
 
 # ── Tool calling + Ollama compat (Phase 2.2) ─────────────────────────────────
 # Imported lazily in endpoints — no startup cost when unused
-import uvicorn  # noqa: E402
+try:
+    import uvicorn  # noqa: E402
+except ImportError:  # pragma: no cover — uvicorn absent; --help-only mode
+    uvicorn = None  # type: ignore[assignment]
 
 # ── Model state ──────────────────────────────────────────────────────────────
 
@@ -512,7 +526,12 @@ class _ModelState:
 
 _state = _ModelState()
 _API_KEY: str | None = None          # set from --api-key at startup
-_bearer  = HTTPBearer(auto_error=False)
+_bearer  = HTTPBearer(auto_error=False) if HTTPBearer is not None else None
+
+# Safely wrap Security() for --help-only mode (when FastAPI is absent).
+def _sec(dep=None):
+    """Return Security(dep) when FastAPI is present, else return None."""
+    return Security(dep) if Security is not None else None
 
 # ── Draft model state (speculative decoding) ─────────────────────────────────
 
@@ -1673,32 +1692,48 @@ def _generate_tokens(  # pragma: no cover
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
 
-app = FastAPI(
-    title       = "Squish OpenAI-compatible API",
-    description = "Local LLM inference via Squish compressed models",
-    version     = "1.0.0",
-)
+class _FakeApp:
+    """No-op FastAPI stand-in used when fastapi is absent (e.g. --help mode)."""
+    def get(self, *_, **__):     return lambda f: f
+    def post(self, *_, **__):    return lambda f: f
+    def put(self, *_, **__):     return lambda f: f
+    def delete(self, *_, **__):  return lambda f: f
+    def add_middleware(self, *_, **__): pass
+    def mount(self, *_, **__):   pass
+    def include_router(self, *_, **__): pass
+    @property
+    def state(self):             return self
 
-# Allow browser clients (e.g. Open WebUI) to call without CORS blocks
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins     = ["*"],
-    allow_credentials = True,
-    allow_methods     = ["*"],
-    allow_headers     = ["*"],
-)
+if FastAPI is not None:
+    app = FastAPI(
+        title       = "Squish OpenAI-compatible API",
+        description = "Local LLM inference via Squish compressed models",
+        version     = "1.0.0",
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins     = ["*"],
+        allow_credentials = True,
+        allow_methods     = ["*"],
+        allow_headers     = ["*"],
+    )
+else:
+    app = _FakeApp()  # type: ignore[assignment]
 
 # ── Ollama compatibility layer (POST /api/chat etc.) ────────────────────────
 try:
-    from .serving.ollama_compat import mount_ollama as _mount_ollama  # package import
-except ImportError:  # pragma: no cover
-    from squish.serving.ollama_compat import mount_ollama as _mount_ollama  # direct script run
-_mount_ollama(
-    app,
-    get_state     = lambda: _state,
-    get_generate  = lambda: _generate_tokens,
-    get_tokenizer = lambda: _state.tokenizer,
-)
+    try:
+        from .serving.ollama_compat import mount_ollama as _mount_ollama  # package import
+    except ImportError:  # pragma: no cover
+        from squish.serving.ollama_compat import mount_ollama as _mount_ollama  # direct script run
+    _mount_ollama(
+        app,
+        get_state     = lambda: _state,
+        get_generate  = lambda: _generate_tokens,
+        get_tokenizer = lambda: _state.tokenizer,
+    )
+except Exception:  # pragma: no cover — fastapi absent or import failed
+    pass
 
 # ── Web chat UI (/chat) ────────────────────────────────────────────────
 if _STATIC_FILES_AVAILABLE:  # pragma: no branch
@@ -1716,7 +1751,7 @@ async def web_chat_ui():
 
 
 @app.get("/v1/models")
-async def list_models(creds: HTTPAuthorizationCredentials | None = Security(_bearer)):
+async def list_models(creds: HTTPAuthorizationCredentials | None = _sec(_bearer)):
     _check_auth(creds)
     if _state.model is None:
         return {"object": "list", "data": []}
@@ -1726,7 +1761,7 @@ async def list_models(creds: HTTPAuthorizationCredentials | None = Security(_bea
 @app.get("/v1/models/{model_id}")
 async def get_model(
     model_id: str,
-    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
 ):
     _check_auth(creds)
     if _state.model is None or model_id not in (_state.model_name, "squish"):
@@ -1772,7 +1807,7 @@ def _make_chunk(content: str, model: str, cid: str, finish_reason=None) -> str:
 @app.post("/v1/chat/completions")
 async def chat_completions(  # pragma: no cover
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
 ):
     """
     POST /v1/chat/completions
@@ -2028,7 +2063,7 @@ async def chat_completions(  # pragma: no cover
 @app.post("/v1/completions")
 async def completions(  # pragma: no cover
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
 ):
     """
     POST /v1/completions — legacy text completion endpoint.
@@ -2133,7 +2168,7 @@ async def completions(  # pragma: no cover
 @app.post("/v1/embeddings")
 async def embeddings(
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
 ):
     """
     POST /v1/embeddings — mean-pooled last-hidden-state embeddings.
@@ -2287,7 +2322,7 @@ async def metrics():
 @app.post("/v1/tokenize")
 async def tokenize(
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
 ):
     """
     POST /v1/tokenize — tokenize text and return token IDs + count.
@@ -2801,6 +2836,45 @@ Examples:
             "Useful for local testing. Modules that fail to init are skipped."
         ),
     )
+    # ── Waves 13-14: KV / Attention / Token / Speculative / Quant flags ─────────
+    ap.add_argument("--shadow-kv", action="store_true", default=False,
+                    help="Wave 13: Enable ShadowKV attention-sink KV eviction.")
+    ap.add_argument("--pq-cache", action="store_true", default=False,
+                    help="Wave 13: Enable PQ-Cache product-quantised KV compression.")
+    ap.add_argument("--spe-cache", action="store_true", default=False,
+                    help="Wave 13: Enable SPE-Cache speculative KV prediction.")
+    ap.add_argument("--duo-attention", action="store_true", default=False,
+                    help="Wave 13: Enable DuoAttention sparse/dense head split.")
+    ap.add_argument("--duo-decoding", action="store_true", default=False,
+                    help="Wave 13: Enable DuoDecoding sparse attention decode.")
+    ap.add_argument("--knapspec", action="store_true", default=False,
+                    help="Wave 13: Enable KnapSpec budget-constrained speculation.")
+    ap.add_argument("--token-merging", action="store_true", default=False,
+                    help="Wave 13: Enable token merging (ToMe) for reduced sequence length.")
+    ap.add_argument("--token-swift", action="store_true", default=False,
+                    help="Wave 13: Enable TokenSwift multi-round KV reuse.")
+    ap.add_argument("--c2t", action="store_true", default=False,
+                    help="Wave 13: Enable Cache-to-Token (C2T) KV distillation.")
+    ap.add_argument("--sub-spec", action="store_true", default=False,
+                    help="Wave 14: Enable SubSpec sub-token speculation.")
+    ap.add_argument("--qspec", action="store_true", default=False,
+                    help="Wave 14: Enable QSpec quantised draft speculation.")
+    ap.add_argument("--quant-spec", action="store_true", default=False,
+                    help="Wave 14: Enable QuantSpec INT4 speculative decoding.")
+    ap.add_argument("--copy-spec", action="store_true", default=False,
+                    help="Wave 14: Enable CopySpec verbatim passage speculation.")
+    ap.add_argument("--head-infer", action="store_true", default=False,
+                    help="Wave 14: Enable HeadInfer head-level KV inference.")
+    ap.add_argument("--dfloat11", action="store_true", default=False,
+                    help="Wave 14: Enable DFloat11 11-bit floating-point weight compression.")
+    ap.add_argument("--rans-codec", action="store_true", default=False,
+                    help="Wave 14: Enable rANS arithmetic-coding KV entropy codec.")
+    ap.add_argument("--squeeze-llm", action="store_true", default=False,
+                    help="Wave 14: Enable SqueezeLLM sparse-quantised weight loading.")
+    ap.add_argument("--nf4-quant", action="store_true", default=False,
+                    help="Wave 14: Enable NF4 (NormalFloat4) weight quantisation.")
+    ap.add_argument("--spin-quant", action="store_true", default=False,
+                    help="Wave 14: Enable SpinQuant random-rotation 4-bit quantisation.")
     # ── Phase 13D: Agent preset ───────────────────────────────────────────────
     ap.add_argument(
         "--agent", action="store_true", default=False,
@@ -3607,6 +3681,140 @@ Examples:
             _info("lora-adapter", f"{getattr(args, 'lora_adapter')}")
         except Exception as _e:
             _warn(f"[lora-adapter] Skipped: {_e}")
+
+    # ── Waves 13-14: KV / Attention / Token / Speculative / Quant ─────────────
+    if getattr(args, "shadow_kv", False):
+        try:
+            from squish.kv.shadow_kv import ShadowKVConfig  # noqa: PLC0415
+            _info("shadow-kv", f"enabled  (eviction_ratio={ShadowKVConfig().eviction_ratio})")
+        except Exception as _e:
+            _warn(f"[shadow-kv] Skipped: {_e}")
+
+    if getattr(args, "pq_cache", False):
+        try:
+            from squish.kv.pq_cache import PQCacheConfig  # noqa: PLC0415
+            _info("pq-cache", f"enabled  (n_subvectors={PQCacheConfig().n_subvectors})")
+        except Exception as _e:
+            _warn(f"[pq-cache] Skipped: {_e}")
+
+    if getattr(args, "spe_cache", False):
+        try:
+            from squish.kv.spe_cache import SpeCacheConfig  # noqa: PLC0415
+            _info("spe-cache", f"enabled  (window={SpeCacheConfig().recent_window})")
+        except Exception as _e:
+            _warn(f"[spe-cache] Skipped: {_e}")
+
+    if getattr(args, "duo_attention", False):
+        try:
+            from squish.attention.duo_attention import DuoAttentionConfig  # noqa: PLC0415
+            _info("duo-attention", f"enabled  (sparse_heads={DuoAttentionConfig().sparse_head_fraction})")
+        except Exception as _e:
+            _warn(f"[duo-attention] Skipped: {_e}")
+
+    if getattr(args, "duo_decoding", False):
+        try:
+            from squish.attention.duo_decoding import DuoDecodingConfig  # noqa: PLC0415
+            _info("duo-decoding", f"enabled  (sparse_layers={DuoDecodingConfig().sparse_layers})")
+        except Exception as _e:
+            _warn(f"[duo-decoding] Skipped: {_e}")
+
+    if getattr(args, "knapspec", False):
+        try:
+            from squish.token.knapspec import KnapSpecConfig  # noqa: PLC0415
+            _info("knapspec", f"enabled  (budget={KnapSpecConfig().token_budget})")
+        except Exception as _e:
+            _warn(f"[knapspec] Skipped: {_e}")
+
+    if getattr(args, "token_merging", False):
+        try:
+            from squish.token.token_merging import TokenMergingConfig  # noqa: PLC0415
+            _info("token-merging", f"enabled  (r={TokenMergingConfig().r})")
+        except Exception as _e:
+            _warn(f"[token-merging] Skipped: {_e}")
+
+    if getattr(args, "token_swift", False):
+        try:
+            from squish.token.token_swift import TokenSwiftConfig  # noqa: PLC0415
+            _info("token-swift", f"enabled  (reuse_threshold={TokenSwiftConfig().reuse_threshold})")
+        except Exception as _e:
+            _warn(f"[token-swift] Skipped: {_e}")
+
+    if getattr(args, "c2t", False):
+        try:
+            from squish.token.c2t import C2TConfig  # noqa: PLC0415
+            _info("c2t", f"enabled  (distill_layers={C2TConfig().distill_layers})")
+        except Exception as _e:
+            _warn(f"[c2t] Skipped: {_e}")
+
+    if getattr(args, "sub_spec", False):
+        try:
+            from squish.speculative.sub_spec import SubSpecConfig  # noqa: PLC0415
+            _info("sub-spec", f"enabled  (gamma={SubSpecConfig().gamma})")
+        except Exception as _e:
+            _warn(f"[sub-spec] Skipped: {_e}")
+
+    if getattr(args, "qspec", False):
+        try:
+            from squish.speculative.qspec import QSpecConfig  # noqa: PLC0415
+            _info("qspec", f"enabled  (draft_bits={QSpecConfig().draft_bits})")
+        except Exception as _e:
+            _warn(f"[qspec] Skipped: {_e}")
+
+    if getattr(args, "quant_spec", False):
+        try:
+            from squish.speculative.quant_spec import QuantSpecConfig  # noqa: PLC0415
+            _info("quant-spec", f"enabled  (bits={QuantSpecConfig().bits})")
+        except Exception as _e:
+            _warn(f"[quant-spec] Skipped: {_e}")
+
+    if getattr(args, "copy_spec", False):
+        try:
+            from squish.speculative.copy_spec import CopySpecConfig  # noqa: PLC0415
+            _info("copy-spec", f"enabled  (min_match={CopySpecConfig().min_match_len})")
+        except Exception as _e:
+            _warn(f"[copy-spec] Skipped: {_e}")
+
+    if getattr(args, "head_infer", False):
+        try:
+            from squish.speculative.head_infer import HeadInferConfig  # noqa: PLC0415
+            _info("head-infer", f"enabled  (head_dim={HeadInferConfig().head_dim})")
+        except Exception as _e:
+            _warn(f"[head-infer] Skipped: {_e}")
+
+    if getattr(args, "dfloat11", False):
+        try:
+            from squish.quant.dfloat11 import DFloat11Config  # noqa: PLC0415
+            _info("dfloat11", f"enabled  (bits=11)")
+        except Exception as _e:
+            _warn(f"[dfloat11] Skipped: {_e}")
+
+    if getattr(args, "rans_codec", False):
+        try:
+            from squish.quant.rans_codec import RANSCodec  # noqa: PLC0415
+            _info("rans-codec", f"enabled  (symbol_bits={RANSCodec.DEFAULT_SYMBOL_BITS})")
+        except Exception as _e:
+            _warn(f"[rans-codec] Skipped: {_e}")
+
+    if getattr(args, "squeeze_llm", False):
+        try:
+            from squish.quant.squeeze_llm import SqueezeLLMConfig  # noqa: PLC0415
+            _info("squeeze-llm", f"enabled  (bits={SqueezeLLMConfig().bits})")
+        except Exception as _e:
+            _warn(f"[squeeze-llm] Skipped: {_e}")
+
+    if getattr(args, "nf4_quant", False):
+        try:
+            from squish.quant.nf4_quant import quantize_nf4  # noqa: PLC0415, F401
+            _info("nf4-quant", "enabled")
+        except Exception as _e:
+            _warn(f"[nf4-quant] Skipped: {_e}")
+
+    if getattr(args, "spin_quant", False):
+        try:
+            from squish.quant.spin_quant import run_rotation  # noqa: PLC0415, F401
+            _info("spin-quant", "enabled")
+        except Exception as _e:
+            _warn(f"[spin-quant] Skipped: {_e}")
 
     print()
     _section("")
