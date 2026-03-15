@@ -132,6 +132,12 @@ _rep_penalty_factor: float = 1.0        # 1.0 = off; > 1.0 penalises recent toke
 _rep_penalty_window_size: int = 64      # number of most-recent tokens in the window
 _llm42_default_seed: "int | None" = None  # global default seed (None = non-deterministic)
 
+# ── Phase 13: RadixTree KV prefix reuse ──────────────────────────────────────
+# PrefixKVStore wraps the RadixTree trie with an in-memory LRU dict of
+# post-prefill QuantizedKVCache snapshots.  On a prefix hit the decode loop
+# restores the snapshot and only runs prefill on the delta (new) tokens.
+_prefix_kv_store = None  # PrefixKVStore | None — set in main() when --prefix-kv-store > 0
+
 # LLM-42 verified speculation: DeterministicSampler + TokenVerifier instances.
 # Both are None when --deterministic is not set.
 _det_sampler:  "DeterministicSampler | None" = None  # type: ignore[name-defined]
@@ -1177,7 +1183,29 @@ def _generate_tokens(  # pragma: no cover
                 if _rep_penalty_factor > 1.0:
                     _rep_window_local.append(next_id)
             else:
-                # Cache miss: run full prefill
+                # Cache miss: run full prefill (or delta prefill via prefix-kv-store)
+                # ── Phase 13: RadixTree KV prefix reuse ────────────────────────
+                # If a prior request shared the same prompt prefix, restore its
+                # post-prefill KV snapshot and only run the model on the delta
+                # (new) tokens — converting O(n_prefix) → O(n_delta) prefill.
+                _pkv_prefix_len: int = 0
+                _pkv_snap_id: "int | None" = None
+                if _prefix_kv_store is not None:
+                    try:
+                        _pkv_prefix_len, _pkv_snap_id = _prefix_kv_store.find(input_ids)
+                        if _pkv_prefix_len > 0 and _pkv_snap_id is not None:
+                            if _prefix_kv_store.restore(_pkv_snap_id, _kv_cache):
+                                if _trace:
+                                    _tlog(f"REQ {_rid}  prefix-kv-store HIT  "
+                                          f"prefix={_pkv_prefix_len}/{len(input_ids)}"
+                                          f"  snap_id={_pkv_snap_id}")
+                            else:
+                                # Snapshot was evicted between find() and restore()
+                                _pkv_prefix_len = 0
+                                _pkv_snap_id = None
+                    except Exception:
+                        _pkv_prefix_len = 0
+                        _pkv_snap_id = None
                 # ── Phase 3C: patch sparse attention for long sequences ────────
                 # Applied BEFORE prefill; must be unpatched after regardless of
                 # the prefill path taken (standard or chunked).
@@ -1214,10 +1242,12 @@ def _generate_tokens(  # pragma: no cover
                 # CRITICAL: spec decode starts only after is_final_chunk=True.
                 # Interleaved greedy tokens emitted on non-final chunks DO count
                 # toward the output but bypass the speculative decode path.
+                # Phase 13: use only delta tokens when a prefix snapshot was restored.
+                _pfill_ids = input_ids[_pkv_prefix_len:] if _pkv_prefix_len > 0 else input_ids
                 _last_logit_vec = None   # [vocab_size] mlx array
                 if (_on_compress_path
                         and _chunk_prefill_enabled
-                        and len(input_ids) > _chunk_prefill_threshold):
+                        and len(_pfill_ids) > _chunk_prefill_threshold):
                     try:
                         from squish.streaming.chunked_prefill import (
                             ChunkedPrefillConfig as _CPFConfig,
@@ -1228,10 +1258,10 @@ def _generate_tokens(  # pragma: no cover
                         _cpf_cfg = _CPFConfig(chunk_size=_chunk_prefill_size)
                         if _trace:
                             _tlog(f"REQ {_rid}  chunked-prefill START  "
-                                  f"tokens={len(input_ids)}  "
+                                  f"tokens={len(_pfill_ids)}  "
                                   f"chunk={_chunk_prefill_size}")
                         for _clogit, _is_fin in _chunk_prefill_fn(
-                                model, input_ids, layer_caches, _cpf_cfg):
+                                model, _pfill_ids, layer_caches, _cpf_cfg):
                             if _is_fin:
                                 _last_logit_vec = _clogit
                             elif _cpf_cfg.interleave_decode:
@@ -1261,7 +1291,7 @@ def _generate_tokens(  # pragma: no cover
 
                 if _last_logit_vec is None:
                     # Standard single-shot prefill (non-compress path or fallback)
-                    x = mx.array(input_ids, dtype=mx.int32)[None]
+                    x = mx.array(_pfill_ids, dtype=mx.int32)[None]
                     logits_full = model(x, cache=layer_caches)
                     mx.eval(logits_full)
                     _last_logit_vec = logits_full[0, -1]
@@ -1289,6 +1319,12 @@ def _generate_tokens(  # pragma: no cover
                         _last_logit_np = np.array(_last_logit_vec.astype(mx.float32))
                         # Store under original token IDs for stable cache keys
                         _disk_prompt_cache.store(_orig_input_ids, _kv_cache, _last_logit_np)
+                    except Exception:
+                        pass
+                # Phase 13: store post-prefill KV snapshot for future prefix reuse
+                if _prefix_kv_store is not None:
+                    try:
+                        _prefix_kv_store.store(input_ids, _kv_cache)
                     except Exception:
                         pass
             stop_buf = [next_id]
@@ -2490,6 +2526,14 @@ Examples:
     ap.add_argument("--rep-penalty-window", type=int, default=64, metavar="N",
                     help="Number of most-recent tokens tracked for repetition penalty "
                          "(default 64).  0 = entire context window.")
+    # ── Phase 13: RadixTree KV prefix reuse ──────────────────────────────────
+    ap.add_argument("--prefix-kv-store", type=int, default=0, metavar="N",
+                    help="Phase 13: Keep up to N post-prefill KV snapshots in memory for\n"
+                         "prefix reuse (default 0 = off).  When a new request's prompt shares\n"
+                         "a prefix with a stored snapshot, only the delta (new) tokens are\n"
+                         "run through the model — reducing prefill cost for repeated system\n"
+                         "prompts, few-shot examples, or shared conversation histories.\n"
+                         "Recommended: 4–16.  Each snapshot ≈ n_layers × n_tokens × 2 B RAM.")
     # ── Phase 13A: Asymmetric INT2 KV Cache ──────────────────────────────────
     ap.add_argument("--agent-kv", action="store_true", default=False,
                     help="Enable the asymmetric INT2 KV cache (AgentKV):\n"
@@ -3026,6 +3070,19 @@ Examples:
                   f"  window={_agent_kv_config.window_tokens}")
         except Exception as _akv_exc:  # noqa: BLE001
             _info("agent-kv", f"unavailable ({_akv_exc})")
+
+    # ── Phase 13: RadixTree KV prefix reuse ──────────────────────────────────
+    global _prefix_kv_store
+    _pkv_n = getattr(args, "prefix_kv_store", 0)
+    if _pkv_n > 0 and _kv_cache is not None:
+        try:
+            from squish.kv.prefix_kv_store import PrefixKVStore as _PrefixKVStore  # noqa: PLC0415
+            _prefix_kv_store = _PrefixKVStore(_prefix_cache, max_snapshots=_pkv_n)
+            _info("prefix-kv-store",
+                  f"enabled  max_snapshots={_pkv_n}"
+                  f"  min_prefix_tokens={_prefix_kv_store._min_prefix}")
+        except Exception as _pkv_exc:  # noqa: BLE001
+            _info("prefix-kv-store", f"unavailable ({_pkv_exc})")
 
     # ── Phase 3: persistent cross-session KV cache ────────────────────────────
     global _session_kv_cache
