@@ -1,0 +1,56 @@
+{
+  "squish_port": 11435,
+  "squish_model": "squish",
+  "ollama_port": 0,
+  "ollama_model": "qwen2.5:1.5b",
+  "runs": 5,
+  "max_tokens": 60,
+  "results": {
+    "Squish": [
+      {
+        "ttft_ms": 896.1866669999381,
+        "total_s": 93.6838540839999,
+        "total_toks": 59,
+        "tps": 0.6358603642318784,
+        "text": "It seems you've misunderstood the question and the environment. A transformer model's unique wording and aeronchen26 TheAREDABUMBACHTRAINCESSCHECKLISTCHECKOVEERYIFYINGWORKINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFY"
+      },
+      {
+        "ttft_ms": 1219.7867500001394,
+        "total_s": 90.2010915840001,
+        "total_toks": 59,
+        "tps": 0.6630606295341263,
+        "text": "It seems you've misunderstood the question and the environment. A transformer model's unique wording and aeronchen26 TheAREDABUMBACHTRAINCESSCHECKLISTCHECKOVEERYIFYINGWORKINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFY"
+      },
+      {
+        "ttft_ms": 1100.550457999816,
+        "total_s": 78.46044633299994,
+        "total_toks": 59,
+        "tps": 0.7626690720387413,
+        "text": "It seems you've misunderstood the question and the environment. A transformer model's unique wording and aeronchen26 TheAREDABUMBACHTRAINCESSCHECKLISTCHECKOVEERYIFYINGWORKINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFY"
+      },
+      {
+        "ttft_ms": 1048.096833000045,
+        "total_s": 136.34606787500002,
+        "total_toks": 59,
+        "tps": 0.43607453641477656,
+        "text": "It seems you've misunderstood the question and the environment. A transformer model's unique wording and aeronchen26 TheAREDABUMBACHTRAINCESSCHECKLISTCHECKOVEERYIFYINGWORKINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFY"
+      },
+      {
+        "ttft_ms": 2459.9389160000555,
+        "total_s": 166.14187625,
+        "total_toks": 59,
+        "tps": 0.36045516665414334,
+        "text": "It seems you've misunderstood the question and the environment. A transformer model's unique wording and aeronchen26 TheAREDABUMBACHTRAINCESSCHECKLISTCHECKOVEERYIFYINGWORKINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFYINGIFY"
+      }
+    ]
+  },
+  "summary": {
+    "Squish": {
+      "ttft_mean_ms": 1344.9,
+      "ttft_stdev_ms": 634.1,
+      "tps_mean": 0.57,
+      "tps_stdev": 0.17,
+      "n_runs": 5
+    }
+  }
+}

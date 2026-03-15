@@ -20,6 +20,7 @@ _All v9 numbers measured live on Apple M3, macOS 24.6, 16 GB unified memory, Mar
 | TTFT (1.5B) | 668 ms† | **148 ms** ✅ | streaming fix confirmed |
 | TTFT (7B) | N/A | **533 ms** | live measurement |
 | TTFT (14B) | N/A | **1,008 ms** | live measurement |
+| TTFT (14B INT2) | N/A | 1,345 ms‡ | 4.3 GB; coherence collapse |
 | Decode throughput (1.5B) | 18.9 tok/s | **7.5 tok/s§** | memory-constrained run |
 | KV cache RAM | unbounded | 4× compressed | SnapKV + KIVI |
 | Grammar constrain latency | N/A | 5.5 μs/tok | new in v9 |
@@ -31,6 +32,7 @@ _All v9 numbers measured live on Apple M3, macOS 24.6, 16 GB unified memory, Mar
 
 † v1 streaming had a trailing-chunk bug — model output arrived all-at-once after 48 s rather than streaming
 § Measured under memory pressure (~7 GB available RAM on a loaded system). Dedicated use would be higher.
+‡ 2-bit quantization of a pre-trained BF16 checkpoint causes coherence collapse; INT2 only viable for natively-ternary models like BitNet b1.58.
 
 ---
 
@@ -149,6 +151,27 @@ No measurable accuracy degradation from `mlx_lm.convert` 4-bit quantisation.
 Consistent with published Qwen2.5 scaling results: 14B meaningfully outperforms
 7B on reasoning tasks (ARC-Easy, WinoGrande). PIQA shows expected slight regression
 within measurement variance. Both models maintain full accuracy under squish 4-bit quantisation.
+
+### INT2 Experiment (14B — 2.501 bits/weight, 4.3 GB)
+
+Attempted further compression to 2-bit (`mlx_lm.convert --q-bits 2`) from the BF16
+source to fit more comfortably on 16 GB M3. The resulting model loads in 3.25 s
+(vs 5.93 s for INT4) but produces **incoherent output** — repetitive token loops
+(`IFYINGIFYINGIFYINGIFYIN...`) indicating quantization collapse at 2 bits.
+
+| Metric | INT4 (baseline) | INT2 (experiment) |
+|--------|----------------:|------------------:|
+| Disk size | 7.7 GB | **4.3 GB** |
+| Load time | 5.93 s | **3.25 s** |
+| TTFT (mean) | 1,008 ms | 1,345 ms |
+| Decode throughput | 1.2 tok/s | 0.6 tok/s |
+| Output quality | Coherent | **Incoherent (loops)** |
+
+**Conclusion:** 2-bit post-training quantization of a pre-trained BF16 checkpoint
+destroys coherence. The INT2 format is only viable for models trained natively at
+2 bits (e.g. BitNet b1.58). INT4 remains the practical lower bound for post-training
+quantization without fine-tuning. Results saved to `dev/results/eoe_v9_14b_int2.json`.
+
 ---
 
 ## 7B Model — Qwen2.5-7B-Instruct

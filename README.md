@@ -225,6 +225,7 @@ Accuracy is unchanged — every optimization preserves the ≤2% delta criterion
 | TTFT (1.5B) | ~668 ms† | **148 ms** ✅ | streaming fixed; radix prefix reuse |
 | TTFT (7B) | N/A | **533 ms** | measured live on M3 |
 | TTFT (14B) | N/A | **1,008 ms** | measured live on M3 |
+| TTFT (14B INT2) | N/A | 1,345 ms‡ | 4.3 GB; coherence collapse |
 | Decode throughput (1.5B) | 18.9 tok/s | **7.5 tok/s**§ | measured under memory pressure |
 | KV cache — compression | none | 4× (KIVI INT8) | SnapKV + KIVI KV compression |
 | KV cache — prefix reuse | none | delta-only prefill | RadixTree reuse across turns |
@@ -240,6 +241,7 @@ Accuracy is unchanged — every optimization preserves the ≤2% delta criterion
 
 † v1 streaming had a trailing-chunk artifact — all tokens arrived after ~48 s wall-clock; TTFT via `/health` was already 668 ms.
 § Measured on M3 under real system load (7 GB available RAM). Cold-dedicted-hardware throughput will be higher; spec-decode gains require a second draft model to be loaded.
+‡ 2-bit post-training quantization of a pre-trained BF16 checkpoint causes coherence collapse (repetitive token loops). INT2 requires native ternary training (e.g. BitNet b1.58); INT4 is the practical PTQ lower bound.
 
 **Six phases of optimization added between v1 and v9:**
 
