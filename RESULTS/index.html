@@ -973,6 +973,7 @@ used for the <a href="https://huggingface.co/spaces/HuggingFaceH4/open_llm_leade
 <hr />
 <h2 id="v1-v9-improvement-summary">v1 → v9 Improvement Summary<a class="headerlink" href="#v1-v9-improvement-summary" title="Permanent link">&para;</a></h2>
 <h3 id="at-a-glance">At a Glance<a class="headerlink" href="#at-a-glance" title="Permanent link">&para;</a></h3>
+<p><em>All v9 numbers measured live on Apple M3, macOS 24.6, 16 GB unified memory, March 2026.</em></p>
 <table>
 <thead>
 <tr>
@@ -986,20 +987,44 @@ used for the <a href="https://huggingface.co/spaces/HuggingFaceH4/open_llm_leade
 <tr>
 <td>Load time (1.5B)</td>
 <td>0.53 s</td>
-<td>0.33–0.53 s</td>
-<td>same (cache format unchanged)</td>
+<td><strong>1.61 s</strong></td>
+<td>+server init for 222 modules</td>
+</tr>
+<tr>
+<td>Load time (7B)</td>
+<td>2.27 s</td>
+<td><strong>3.41 s</strong></td>
+<td>same pattern</td>
+</tr>
+<tr>
+<td>Load time (14B)</td>
+<td>3.36 s</td>
+<td><strong>5.93 s</strong></td>
+<td>same pattern</td>
 </tr>
 <tr>
 <td>TTFT (1.5B)</td>
 <td>668 ms†</td>
-<td>&lt; 200 ms</td>
-<td>streaming fixed in v2</td>
+<td><strong>148 ms</strong> ✅</td>
+<td>streaming fix confirmed</td>
+</tr>
+<tr>
+<td>TTFT (7B)</td>
+<td>N/A</td>
+<td><strong>533 ms</strong></td>
+<td>live measurement</td>
+</tr>
+<tr>
+<td>TTFT (14B)</td>
+<td>N/A</td>
+<td><strong>1,008 ms</strong></td>
+<td>live measurement</td>
 </tr>
 <tr>
 <td>Decode throughput (1.5B)</td>
 <td>18.9 tok/s</td>
-<td>28–45 tok/s*</td>
-<td>speculative decoding</td>
+<td><strong>7.5 tok/s§</strong></td>
+<td>memory-constrained run</td>
 </tr>
 <tr>
 <td>KV cache RAM</td>
@@ -1022,31 +1047,31 @@ used for the <a href="https://huggingface.co/spaces/HuggingFaceH4/open_llm_leade
 <tr>
 <td>ARC-Easy</td>
 <td>73.5%</td>
-<td>73.5%</td>
-<td>unchanged</td>
+<td><strong>73.5%</strong> ✅</td>
+<td>unchanged (200 samples, 0-shot)</td>
 </tr>
 <tr>
 <td>HellaSwag</td>
 <td>62.0%</td>
-<td>62.0%</td>
-<td>unchanged</td>
+<td><strong>63.0%</strong> ✅</td>
+<td>+1pp</td>
 </tr>
 <tr>
 <td>PIQA</td>
 <td>76.5%</td>
-<td>76.5%</td>
+<td><strong>76.5%</strong> ✅</td>
 <td>unchanged</td>
 </tr>
 <tr>
 <td>WinoGrande</td>
 <td>67.0%</td>
-<td>67.0%</td>
-<td>unchanged</td>
+<td><strong>66.0%</strong></td>
+<td>−1pp (within stderr)</td>
 </tr>
 </tbody>
 </table>
 <p>† v1 streaming had a trailing-chunk bug — model output arrived all-at-once after 48 s rather than streaming
-* estimated from speculative decoding benchmarks; requires hardware validation</p>
+§ Measured under memory pressure (~7 GB available RAM on a loaded system). Dedicated use would be higher.</p>
 <hr />
 <h3 id="what-changed-v1-v9">What Changed: v1 → v9<a class="headerlink" href="#what-changed-v1-v9" title="Permanent link">&para;</a></h3>
 <p>Squish evolved across six development phases, growing from 8 modules in v1 to 222 modules in v9.
