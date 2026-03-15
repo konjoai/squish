@@ -132,12 +132,12 @@ Squish cached = after one-time 19s conversion; all subsequent runs.
 > **54× faster cold load.  15× less RAM.  Statistically identical outputs.**
 
 <p align="center">
-  <img src="figures/fig1_load_times.png" alt="Load time comparison: cold mlx_lm vs reference vs Squish cached" width="720"/>
+  <img src="dev/figures/fig1_load_times.png" alt="Load time comparison: cold mlx_lm vs reference vs Squish cached" width="720"/>
   <br/><em>Figure 1 — Cold-start load time comparison across three configurations</em>
 </p>
 
 <p align="center">
-  <img src="figures/fig2_ram_comparison.png" alt="RAM usage comparison" width="720"/>
+  <img src="dev/figures/fig2_ram_comparison.png" alt="RAM usage comparison" width="720"/>
   <br/><em>Figure 2 — Peak RAM during model load</em>
 </p>
 
@@ -181,7 +181,7 @@ No CPU heap allocation.  No dtype conversion.  Direct Metal virtual-address mapp
 | **2** | **`squish_weights.safetensors` (bf16 MLX)** | **0.33–0.53s** |
 
 <p align="center">
-  <img src="figures/fig4_architecture.png" alt="Squish three-tier cache architecture" width="720"/>
+  <img src="dev/figures/fig4_architecture.png" alt="Squish three-tier cache architecture" width="720"/>
   <br/><em>Figure 4 — Squish three-tier weight cache architecture</em>
 </p>
 
@@ -205,7 +205,7 @@ Winogrande improved by 1.5% — INT8 quantisation noise is uncorrelated with tas
 Full reproducibility commands and multi-seed results are in [docs/RESULTS.md](docs/RESULTS.md).
 
 <p align="center">
-  <img src="figures/fig3_accuracy_multi_model.png" alt="Benchmark accuracy across multiple models" width="720"/>
+  <img src="dev/figures/fig3_accuracy_multi_model.png" alt="Benchmark accuracy across multiple models" width="720"/>
   <br/><em>Figure 3 — Accuracy delta vs fp16 baseline across benchmarks and models</em>
 </p>
 
