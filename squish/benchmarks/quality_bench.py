@@ -115,6 +115,6 @@ class QualityBenchRunner(BenchmarkRunner):
             return {f"{task}_error": "lm_eval not installed"}
 
     def output_path_for(self, engine: str, model: str) -> Path:
-        ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
         safe_model = model.replace("/", "_").replace(":", "_")
         return Path(self._config.output_dir) / f"quality_{safe_model}_{engine}_{ts}.json"
