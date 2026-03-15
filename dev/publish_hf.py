@@ -190,7 +190,7 @@ def _build_card_from_eval(repo: str, base_model: str, eval_json_path: Path) -> s
     return base_card
 
 
-
+def _collect_files(model_dir: Path) -> list[tuple[Path, str]]:
     """
     Return list of (local_path, path_in_repo) pairs to upload.
 
@@ -209,11 +209,14 @@ def _build_card_from_eval(repo: str, base_model: str, eval_json_path: Path) -> s
         )
     uploads.append((weights, _SAFETENSORS_NAME))
 
-    # 2. Tokenizer + config files (optional — present in most squish dirs)
+    # 2. Tokenizer + config files — check compressed dir first, then parent (base model dir)
+    search_dirs = [model_dir, model_dir.parent]
     for name in _TOKENIZER_GLOBS:
-        p = model_dir / name
-        if p.exists():
-            uploads.append((p, name))
+        for search_dir in search_dirs:
+            p = search_dir / name
+            if p.exists():
+                uploads.append((p, name))
+                break  # found in first available dir, stop searching
 
     # 3. Any remaining .json files not already included
     included = {path_in_repo for _, path_in_repo in uploads}
