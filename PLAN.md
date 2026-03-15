@@ -706,7 +706,7 @@ These are the original Phase 4 items from the plan. They require real hardware a
 
 - [ ] Fix streaming (Bug 1) and verify
 - [ ] Re-run lm-eval (Bug 2) and verify
-- [ ] Fix `__init__.py` (Bug 3)
+- [x] Fix `__init__.py` (Bug 3)
 - [ ] Run bench_eoe.py with Ollama running; export raw JSON
 - [ ] Run MMLU evaluation
 - [ ] Update README + paper numbers
@@ -799,7 +799,7 @@ The threshold for widespread adoption is a zero-friction first run: `pip install
 - [ ] Compress and upload P1 models (4 models) after P0 is verified
 - [ ] Compress and upload P2 models (3 models) before soft launch
 - [ ] Verify each uploaded model with `squish run <model>` → coherent output on clean install
-- [ ] Add `--hf-model-card` flag to `dev/publish_hf.py` that auto-generates the model card from eval JSON
+- [x] Add `--hf-model-card` flag to `dev/publish_hf.py` that auto-generates the model card from eval JSON
 
 ---
 
@@ -2294,8 +2294,8 @@ MIT license. OpenAI + Ollama drop-in compatible. Zero code changes to existing a
 | HN post template | `dev/demos/hn_first_comment.md` | Launch narrative ready to ship |
 
 **Phase 16 verification:**
-- [ ] `model_pipeline.py --job watch --dry-run` outputs at least 3 candidate models without network errors
-- [ ] `model_pipeline.py --job compress --validate --dry-run` runs through the compress+validate flow on a cached model without uploading
+- [x] `model_pipeline.py --job watch --dry-run` outputs at least 3 candidate models without network errors
+- [x] `model_pipeline.py --job compress --validate --dry-run` runs through the compress+validate flow on a cached model without uploading
 - [ ] `pytest tests/test_openai_compat.py --run-integration` passes 10/11 tests with squish serve running (1 may skip for LangChain version)
 - [ ] Demo recording completes 20-turn OpenClaw session; `vm_stat` free pages remain above 1 GB throughout
 
