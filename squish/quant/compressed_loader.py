@@ -314,7 +314,7 @@ _MLX_CACHE_READY  = ".squish_ready"         # sentinel alongside the safetensors
 
 # Matches the suffix that identifies a quantised-tensor component file.
 # Groups: __q.npy, __s.npy, __shape.npy, __pt.npy, and their .zst variants.
-_TENSOR_SUFFIX_RE = re.compile(r'__(q\d?|s|shape|pt|quip_e8|quip_res|quip_rot)\.npy(?:\.zst)?$')
+_TENSOR_SUFFIX_RE = re.compile(r'__(q\d?|s|shape|pt|quip_e8|quip_res|quip_rot|aqlm_idx|aqlm_cb)\.npy(?:\.zst)?$')
 
 # Regexes for assigning load-order priority.
 _ATTN_RE  = re.compile(r'self_attn|(?:^|__)(?:q|k|v|o)_proj|attn_(?:q|k|v|o)|_attention|mha_')
@@ -601,6 +601,43 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
         )
         arr_f32 = quip_dequantize(layer).astype(np.float32)
         return arr_f32.reshape(original_shape)
+
+    # ── AQLM: additive codebook quantization ─────────────────────────────────
+    aqlm_idx_path = tensor_dir / f"{sk}__aqlm_idx.npy"
+    aqlm_cb_path  = tensor_dir / f"{sk}__aqlm_cb.npy"
+    if _npy_exists(aqlm_idx_path) and _npy_exists(aqlm_cb_path):
+        try:
+            from squish.quant.aqlm import AQLMConfig, AQLMLayer, aqlm_dequantize
+            aqlm_idx = np.array(_load_npy_path(aqlm_idx_path, mmap_mode=None))
+            aqlm_cb  = np.array(_load_npy_path(aqlm_cb_path,  mmap_mode=None), dtype=np.float32)
+            # aqlm_idx shape: (out_features, n_groups, n_codebooks)
+            # aqlm_cb layout: [scale, float(codebook_size), float(group_size), ...cb_vectors...]
+            out_features, n_groups, n_codebooks = aqlm_idx.shape
+            scale         = float(aqlm_cb[0])
+            codebook_size = int(aqlm_cb[1])
+            group_size    = int(aqlm_cb[2])
+            in_features   = n_groups * group_size
+            cb_vectors    = aqlm_cb[3:].reshape(n_codebooks, codebook_size, group_size)
+            original_shape_path = tensor_dir / f"{sk}__shape.npy"
+            if _npy_exists(original_shape_path):
+                original_shape = tuple(int(x) for x in _load_npy_path(original_shape_path).tolist())
+            else:
+                original_shape = (out_features, in_features)
+            cfg   = AQLMConfig(n_codebooks=n_codebooks, codebook_size=codebook_size,
+                               group_size=group_size)
+            layer = AQLMLayer(
+                out_features,
+                original_shape[-1] if len(original_shape) >= 2 else in_features,
+                cfg,
+            )
+            layer.scale   = scale
+            layer.indices = aqlm_idx
+            for m in range(n_codebooks):
+                layer.codebooks[m].vectors = cb_vectors[m]
+            arr_f32 = aqlm_dequantize(layer).astype(np.float32)
+            return arr_f32.reshape(original_shape)
+        except Exception:
+            pass  # fall through to other loaders if AQLM decode fails
 
     pt_path = tensor_dir / f"{sk}__pt.npy"
     if _npy_exists(pt_path):

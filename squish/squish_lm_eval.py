@@ -57,6 +57,8 @@ except ImportError:
     # Graceful stub so the file can be imported even without lm-eval installed.
     class LM:                      # type: ignore[no-redef]
         pass
+    class Instance:                # type: ignore[no-redef]
+        pass
     def register_model(*a, **kw):  # type: ignore[misc]
         def _dec(cls):
             return cls

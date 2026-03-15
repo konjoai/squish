@@ -1275,6 +1275,10 @@ def cmd_compress(args):  # pragma: no cover
         cmd += ["--outlier-threshold", str(args.outlier_threshold)]
     if getattr(args, "int4", False):
         cmd.append("--int4")
+    if getattr(args, "aqlm", False):
+        cmd.append("--aqlm")
+        cmd += ["--aqlm-codebooks", str(getattr(args, "aqlm_codebooks", 2))]
+        cmd += ["--aqlm-cbsize",    str(getattr(args, "aqlm_cbsize",    16))]
     if awq_scales_dir:
         cmd += ["--awq-scales", awq_scales_dir]
     if args.verbose:
@@ -1434,6 +1438,14 @@ def cmd_catalog(args):
     for e in entries:
         prebuilt = "⚡ yes" if e.has_prebuilt else "compress"
         notes = e.notes if e.notes else ", ".join(e.tags)
+        # Phase 14B: add MoE badge when moe=True
+        if getattr(e, "moe", False):
+            active = getattr(e, "active_params_b", None)
+            if active is not None:
+                moe_badge = f"[MoE: {e.params} total / {active:.1f}B active]"
+            else:
+                moe_badge = "[MoE]"
+            notes = f"{moe_badge}  {notes}" if notes else moe_badge
         print(
             f"  {e.id:<{col_id}} {e.params:>7}  "
             f"{e.size_gb:>6.1f}G  {e.squished_size_gb:>8.1f}G  "
@@ -2017,6 +2029,11 @@ Ollama drop-in:
                             "and auto-sizes context from available UMA memory.\n"
                             "Designed for 16 GB M-series running 7–14 B models in "
                             "long agent loops.")
+    # ── Phase 14: MoE Expert Lookahead ──
+    p_run.add_argument("--moe-lookahead", action="store_true", default=False,
+                       help="[Experimental] Enable MoE expert lookahead router. "
+                            "Automatically set when --agent is active and the model "
+                            "is a MoE catalog entry (e.g. DeepSeek-Coder-V2-Lite).")
     p_run.set_defaults(func=cmd_run)
 
     # ── serve (alias for run) ──
@@ -2043,6 +2060,11 @@ Ollama drop-in:
                               "and auto-sizes context from available UMA memory.\n"
                               "Designed for 16 GB M-series running 7–14 B models in "
                               "long agent loops.")
+    # ── Phase 14: MoE Expert Lookahead ──
+    p_serve.add_argument("--moe-lookahead", action="store_true", default=False,
+                         help="[Experimental] Enable MoE expert lookahead router. "
+                              "Automatically set when --agent is active and the model "
+                              "is a MoE catalog entry.")
     p_serve.set_defaults(func=cmd_run)
 
     # ── chat ──
@@ -2129,6 +2151,14 @@ Ollama drop-in:
                             help="INT4 nibble-packed (~44%% disk savings vs INT8). "
                                  "Requires squish_quant Rust ext. "
                                  "⚠ Not recommended for models < 3B — use INT8 for best quality.")
+    p_compress.add_argument("--aqlm",    action="store_true", default=False,
+                            help="AQLM additive codebook quantization (ICML 2024). "
+                                 "~2-bit effective precision via additive codebook lookup. "
+                                 "Pure numpy, no GPU required.")
+    p_compress.add_argument("--aqlm-codebooks", type=int, default=2, metavar="M",
+                            help="Number of additive codebooks for AQLM (default: 2).")
+    p_compress.add_argument("--aqlm-cbsize", type=int, default=16, metavar="K",
+                            help="Number of codewords per AQLM codebook (default: 16).")
     p_compress.add_argument("--zstd-level", type=int, default=0, metavar="N",
                             help="Apply zstd entropy compression at level N (1-22) after "
                                  "quantization.  Level 3 is a good default; 0 = skip (default). "

@@ -91,6 +91,8 @@ _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-pr
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
 # Phase 13A: asymmetric INT2 KV cache (agent-kv)
 _agent_kv_config: "Any | None" = None   # AgentKVConfig | None — set in main() when --agent-kv
+# Phase 14: MoE expert lookahead router
+_moe_lookahead_router: "Any | None" = None  # MoELookaheadRouter | None — set in main() when --moe-lookahead
 # Phase 3: Q-Filters geometric KV eviction
 _qfilter_active: bool = False  # True when --qfilter is passed
 
@@ -216,6 +218,7 @@ _grammar_engine: "Any | None" = None       # GrammarEngine instance, set at star
 _structured_output_mode: str = "none"      # "none" | "json" | "json-schema"
 _structured_output_schema: "dict | None" = None  # parsed JSON schema (json-schema mode)
 _req_tool_schema: "dict | None" = None     # per-request override: tool_choice-activated schema
+_req_grammar_state: "Any | None" = None   # per-request pre-built TagDispatch or grammar state
 # ── Phase C: Power & Energy Modes ────────────────────────────────────────────
 _power_monitor: "Any | None" = None        # PowerMonitor instance (auto mode only)
 _power_mode: str = "performance"           # current effective mode name
@@ -1363,7 +1366,10 @@ def _generate_tokens(  # pragma: no cover
             _think_step_count = 0
             # Phase B: initialise grammar FSM state for this request
             _grammar_state = None
-            if _grammar_engine is not None:
+            if _req_grammar_state is not None:
+                # Phase 15E: pre-built TagDispatch (deferred FSM activation)
+                _grammar_state = _req_grammar_state
+            elif _grammar_engine is not None:
                 if _req_tool_schema is not None:
                     # tool_choice enforcement: use request-specific tool schema
                     _grammar_state = _grammar_engine.json_schema_grammar(_req_tool_schema)
@@ -1407,7 +1413,7 @@ def _generate_tokens(  # pragma: no cover
                             pass
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=kv-cache  tokens={step}  finish=stop(eos)")
-                    yield tok_text, "stop"
+                    yield "", "stop"
                     return
                 if stop_ids:
                     for seq in stop_ids:
@@ -1875,8 +1881,9 @@ async def chat_completions(  # pragma: no cover
             _tlog(f"CHAT [{_role}] msg[{_mi}]: {_preview}")
 
     # ── Tool calling: inject schema into system prompt ────────────────────
-    global _req_tool_schema, _grammar_engine
-    _req_tool_schema = None  # cleared per-request
+    global _req_tool_schema, _req_grammar_state, _grammar_engine
+    _req_tool_schema   = None  # cleared per-request
+    _req_grammar_state = None  # cleared per-request (Phase 15E TagDispatch)
     _client_stream = stream  # remember original before tools forces stream=False
     if tools:
         from squish.serving.tool_calling import format_tools_prompt
@@ -1907,7 +1914,23 @@ async def chat_completions(  # pragma: no cover
                 if GrammarEngine.is_available() and _state.tokenizer is not None:
                     _grammar_engine = GrammarEngine(_state.tokenizer)
             if _grammar_engine is not None:
-                _req_tool_schema = _tc_schema
+                # Phase 15E: use TagDispatch with model-specific trigger if available
+                _grammar_trigger: "str | None" = None
+                try:
+                    from squish.catalog import resolve as _catalog_resolve  # noqa: PLC0415
+                    _cat_entry = _catalog_resolve(_state.model_name)
+                    if _cat_entry is not None:
+                        _grammar_trigger = _cat_entry.grammar_trigger
+                except Exception:
+                    pass
+                if _grammar_trigger:
+                    # Deferred FSM: activate only after trigger token is seen
+                    _req_grammar_state = _grammar_engine.tag_dispatch_for_schema(
+                        _grammar_trigger, _tc_schema
+                    )
+                else:
+                    # No trigger configured (e.g. Llama-style): activate from token 0
+                    _req_tool_schema = _tc_schema
 
     prompt         = _apply_chat_template(messages, _state.tokenizer)
     prompt_tokens  = _count_tokens(prompt)
@@ -1982,7 +2005,8 @@ async def chat_completions(  # pragma: no cover
                     last_finish = finish
                     break
         finally:
-            _req_tool_schema = None  # clear per-request tool schema override
+            _req_tool_schema   = None  # clear per-request tool schema override
+            _req_grammar_state = None  # clear per-request TagDispatch (Phase 15E)
             _state.inflight -= 1
             dur = time.perf_counter() - req_start
             _state.record_completion(n_comp, dur, ttft_s)
@@ -2488,6 +2512,13 @@ Examples:
                          "  balanced    — moderate resource use\n"
                          "  battery     — minimal resource use\n"
                          "  auto        — poll pmset every 30 s and switch automatically")
+    # ── Phase 15G: Kernel fusion flags ────────────────────────────────────────
+    ap.add_argument("--fused-norm", action="store_true", default=False,
+                    help="Phase 15G: patch FFN/SwiGLU with mx.compile for fused dispatch "
+                         "(reduces dispatch overhead on Apple Silicon)")
+    ap.add_argument("--metal-fusion", action="store_true", default=False,
+                    help="Phase 15G: enable Metal custom kernels (fused RoPE/QKV/SwiGLU). "
+                         "Requires --fused-norm; implies it.")
     # ── Phase 1.3: KV cache quantization ─────────────────────────────────────
     ap.add_argument("--kv-cache-mode",
                     choices=["fp16", "int8", "snap"],
@@ -2581,6 +2612,15 @@ Examples:
                     help="Number of FP32 attention-sink tokens to preserve (default 4)")
     ap.add_argument("--agent-kv-window", type=int, default=64, metavar="N",
                     help="FP32 local-window token count for AgentKV (default 64)")
+    # ── Phase 14: MoE Expert Lookahead Router ────────────────────────────────
+    ap.add_argument("--moe-lookahead", action="store_true", default=False,
+                    help="[Experimental] Enable MoE expert lookahead router (Phase 14):\n"
+                         "  Predicts which experts will be active in the next decode step\n"
+                         "  using an EMA of hidden-state deltas; prefetches expert weights\n"
+                         "  to reduce MoE gather latency by ~65–75%% on DeepSeek-family models.\n"
+                         "  Automatically enabled by --agent preset for MoE catalog entries.")
+    ap.add_argument("--moe-lookahead-steps", type=int, default=3, metavar="K",
+                    help="Lookahead horizon: steps to predict ahead (default 3)")
     # Phase 2 retrieval attention
     ap.add_argument("--retrieval-attention", action="store_true", default=False,
                     help="Enable retrieval attention: fetch only the top-k most relevant\n"
@@ -2933,6 +2973,16 @@ Examples:
         _info("agent-preset",
               f"active  agent-kv=True  chunk-prefill=True"
               f"  batch={args.batch_size}  max-kv={args.max_kv_size}")
+        # Phase 14: auto-enable --moe-lookahead for MoE catalog entries
+        if not getattr(args, "moe_lookahead", False):
+            try:
+                from squish.catalog import resolve as _cat_resolve  # noqa: PLC0415
+                _cat_e = _cat_resolve(_state.model_name)
+                if _cat_e is not None and _cat_e.moe:
+                    args.moe_lookahead = True
+                    _info("agent-preset", "auto-enabled moe-lookahead (catalog moe=True)")
+            except Exception:
+                pass
 
     global _API_KEY
     # Prefer explicit CLI flag; fall back to SQUISH_API_KEY env var.
@@ -3059,6 +3109,25 @@ Examples:
             if args.verbose:
                 _warn(f"[flash_attention] Skipped: {e}")
 
+    # ── Phase 15G: mx.compile FFN fusion when --fused-norm or --metal-fusion ─
+    _use_metal_fusion  = getattr(args, "metal_fusion",  False)
+    _use_fused_norm    = getattr(args, "fused_norm",    False) or _use_metal_fusion
+    if _use_fused_norm and _state.model is not None:
+        try:
+            from squish.hardware.fused_kernels import patch_model_compiled_ffn
+            _metal_kw = {}
+            if _use_metal_fusion:
+                try:
+                    from squish.hardware.metal_fusion import MetalFusion as _MF
+                    _metal_kw["metal_fusion_kernels"] = _MF()
+                except Exception:
+                    pass
+            _n_patched = patch_model_compiled_ffn(_state.model, **_metal_kw)
+            _info("compiled-ffn", f"patched {_n_patched} FFN layer(s) with mx.compile")
+        except Exception as _e:
+            if args.verbose:
+                _warn(f"[compiled-ffn] Skipped: {_e}")
+
     # ── Phase 1.3: attach quantized KV cache if requested ─────────────
     global _kv_cache, _qfilter_active
     if args.kv_cache_mode != "fp16" and _state.model is not None:
@@ -3144,6 +3213,25 @@ Examples:
                   f"  window={_agent_kv_config.window_tokens}")
         except Exception as _akv_exc:  # noqa: BLE001
             _info("agent-kv", f"unavailable ({_akv_exc})")
+
+    # ── Phase 14: MoE Expert Lookahead Router ────────────────────────────────
+    global _moe_lookahead_router
+    if getattr(args, "moe_lookahead", False):
+        try:
+            from squish.moe.moe_lookahead import (  # noqa: PLC0415
+                MoELookaheadConfig,
+                MoELookaheadRouter,
+            )
+            _lh_cfg = MoELookaheadConfig(
+                lookahead_steps=getattr(args, "moe_lookahead_steps", 3),
+            )
+            _moe_lookahead_router = MoELookaheadRouter(_lh_cfg)
+            _info("moe-lookahead",
+                  f"enabled  steps={_lh_cfg.lookahead_steps}"
+                  f"  alpha={_lh_cfg.ema_alpha}"
+                  f"  n_experts={_lh_cfg.n_experts}")
+        except Exception as _moe_exc:  # noqa: BLE001
+            _info("moe-lookahead", f"unavailable ({_moe_exc})")
 
     # ── Phase 13: RadixTree KV prefix reuse ──────────────────────────────────
     global _prefix_kv_store
