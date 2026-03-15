@@ -31,6 +31,7 @@ Dependencies:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import collections
 import hashlib
 import hmac
@@ -1961,6 +1962,7 @@ async def chat_completions(  # pragma: no cover
                             ttft_s = time.perf_counter() - req_start
                         n_comp += 1
                         yield _make_chunk(tok_text, model_id, cid)
+                        await asyncio.sleep(0)  # flush chunk to TCP buffer
                     if finish is not None:
                         last_finish = finish
                         break

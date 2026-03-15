@@ -1,0 +1,56 @@
+{
+  "squish_port": 11435,
+  "squish_model": "squish",
+  "ollama_port": 0,
+  "ollama_model": "qwen2.5:1.5b",
+  "runs": 5,
+  "max_tokens": 200,
+  "results": {
+    "Squish": [
+      {
+        "ttft_ms": 141.50416699703783,
+        "total_s": 22.339712957997108,
+        "total_toks": 192,
+        "tps": 8.649346521951966,
+        "text": "A transformer and an RNN are both types of neural networks used for sequence processing tasks, but they differ in their architecture and how they handle sequential data. An RNN, or recurrent neural network, has a looped structure that allows it to maintain information from previous time steps, making it suitable for tasks that require sequential processing, such as language modeling and speech recognition. In contrast, a transformer uses a self-attention mechanism to process sequential data, which allows it to focus on relevant information from different parts of the input sequence, making it more efficient and capable of handling long sequences. Additionally, transformers do not have loops, which allows them to be faster and more memory-efficient than RNNs."
+      },
+      {
+        "ttft_ms": 146.29441700526513,
+        "total_s": 24.597624249989167,
+        "total_toks": 192,
+        "tps": 7.85233364857724,
+        "text": "A transformer and an RNN are both types of neural networks used for sequence processing tasks, but they differ in their architecture and how they handle sequential data. An RNN, or recurrent neural network, has a looped structure that allows it to maintain information from previous time steps, making it suitable for tasks that require sequential processing, such as language modeling and speech recognition. In contrast, a transformer uses a self-attention mechanism to process sequential data, which allows it to focus on relevant information from different parts of the input sequence, making it more efficient and capable of handling long sequences. Additionally, transformers do not have loops, which allows them to be faster and more memory-efficient than RNNs."
+      },
+      {
+        "ttft_ms": 151.25891598290764,
+        "total_s": 25.297817207989283,
+        "total_toks": 192,
+        "tps": 7.635239692464524,
+        "text": "A transformer and an RNN are both types of neural networks used for sequence processing tasks, but they differ in their architecture and how they handle sequential data. An RNN, or recurrent neural network, has a looped structure that allows it to maintain information from previous time steps, making it suitable for tasks that require sequential processing, such as language modeling and speech recognition. In contrast, a transformer uses a self-attention mechanism to process sequential data, which allows it to focus on relevant information from different parts of the input sequence, making it more efficient and capable of handling long sequences. Additionally, transformers do not have loops, which allows them to be faster and more memory-efficient than RNNs."
+      },
+      {
+        "ttft_ms": 160.75987499789335,
+        "total_s": 26.345714499999303,
+        "total_toks": 192,
+        "tps": 7.332454944057008,
+        "text": "A transformer and an RNN are both types of neural networks used for sequence processing tasks, but they differ in their architecture and how they handle sequential data. An RNN, or recurrent neural network, has a looped structure that allows it to maintain information from previous time steps, making it suitable for tasks that require sequential processing, such as language modeling and speech recognition. In contrast, a transformer uses a self-attention mechanism to process sequential data, which allows it to focus on relevant information from different parts of the input sequence, making it more efficient and capable of handling long sequences. Additionally, transformers do not have loops, which allows them to be faster and more memory-efficient than RNNs."
+      },
+      {
+        "ttft_ms": 138.83695800905116,
+        "total_s": 30.767477582994616,
+        "total_toks": 192,
+        "tps": 6.268642554229927,
+        "text": "A transformer and an RNN are both types of neural networks used for sequence processing tasks, but they differ in their architecture and how they handle sequential data. An RNN, or recurrent neural network, has a looped structure that allows it to maintain information from previous time steps, making it suitable for tasks that require sequential processing, such as language modeling and speech recognition. In contrast, a transformer uses a self-attention mechanism to process sequential data, which allows it to focus on relevant information from different parts of the input sequence, making it more efficient and capable of handling long sequences. Additionally, transformers do not have loops, which allows them to be faster and more memory-efficient than RNNs."
+      }
+    ]
+  },
+  "summary": {
+    "Squish": {
+      "ttft_mean_ms": 147.7,
+      "ttft_stdev_ms": 8.7,
+      "tps_mean": 7.55,
+      "tps_stdev": 0.87,
+      "n_runs": 5
+    }
+  }
+}

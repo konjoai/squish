@@ -1,0 +1,56 @@
+{
+  "squish_port": 11435,
+  "squish_model": "squish",
+  "ollama_port": 0,
+  "ollama_model": "qwen2.5:1.5b",
+  "runs": 5,
+  "max_tokens": 40,
+  "results": {
+    "Squish": [
+      {
+        "ttft_ms": 813.2250419876073,
+        "total_s": 38.18187733300147,
+        "total_toks": 56,
+        "tps": 1.4985822759646719,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used extensively in processing sequential data, but they operate on fundamentally different principles. RNNs process sequences by"
+      },
+      {
+        "ttft_ms": 902.6349170017056,
+        "total_s": 59.52340525001637,
+        "total_toks": 56,
+        "tps": 0.9552928029071179,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used extensively in processing sequential data, but they operate on fundamentally different principles. RNNs process sequences by"
+      },
+      {
+        "ttft_ms": 1256.3706249929965,
+        "total_s": 49.026794082979904,
+        "total_toks": 56,
+        "tps": 1.1722734685249512,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used extensively in processing sequential data, but they operate on fundamentally different principles. RNNs process sequences by"
+      },
+      {
+        "ttft_ms": 1000.9469159995206,
+        "total_s": 49.51725258299848,
+        "total_toks": 56,
+        "tps": 1.1542511168176492,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used extensively in processing sequential data, but they operate on fundamentally different principles. RNNs process sequences by"
+      },
+      {
+        "ttft_ms": 1064.4267080060672,
+        "total_s": 50.94868729199516,
+        "total_toks": 56,
+        "tps": 1.1225985780768257,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used extensively in processing sequential data, but they operate on fundamentally different principles. RNNs process sequences by"
+      }
+    ]
+  },
+  "summary": {
+    "Squish": {
+      "ttft_mean_ms": 1007.5,
+      "ttft_stdev_ms": 168.8,
+      "tps_mean": 1.18,
+      "tps_stdev": 0.2,
+      "n_runs": 5
+    }
+  }
+}

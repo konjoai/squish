@@ -120,7 +120,7 @@ class SquishCompressedLM(LM):
         auto-selects the best available tier: squish_4bit > mlx_cache > finalized > npy-dir.
         Using a unified path avoids duplicating the tier-detection logic here.
         """
-        from .compressed_loader import load_compressed_model
+        from .quant.compressed_loader import load_compressed_model
 
         self._model, self._tokenizer, stats = load_compressed_model(
             model_dir    = str(self._model_dir),

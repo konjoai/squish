@@ -1,0 +1,56 @@
+{
+  "squish_port": 11435,
+  "squish_model": "squish",
+  "ollama_port": 0,
+  "ollama_model": "qwen2.5:1.5b",
+  "runs": 5,
+  "max_tokens": 60,
+  "results": {
+    "Squish": [
+      {
+        "ttft_ms": 441.8164580129087,
+        "total_s": 31.810544916021172,
+        "total_toks": 77,
+        "tps": 2.45467393117563,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used for processing sequential data, but they differ in their approach and efficiency. RNNs process input sequences in a sequential manner, where the output at each time step is fed back into the network as input"
+      },
+      {
+        "ttft_ms": 483.8955829909537,
+        "total_s": 36.545879000012064,
+        "total_toks": 77,
+        "tps": 2.135212561926261,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used for processing sequential data, but they differ in their approach and efficiency. RNNs process input sequences in a sequential manner, where the output at each time step is fed back into the network as input"
+      },
+      {
+        "ttft_ms": 606.7463750077877,
+        "total_s": 50.15499804200954,
+        "total_toks": 77,
+        "tps": 1.554040705966637,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used for processing sequential data, but they differ in their approach and efficiency. RNNs process input sequences in a sequential manner, where the output at each time step is fed back into the network as input"
+      },
+      {
+        "ttft_ms": 562.6850420085248,
+        "total_s": 40.255157000006875,
+        "total_toks": 77,
+        "tps": 1.939914452329389,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used for processing sequential data, but they differ in their approach and efficiency. RNNs process input sequences in a sequential manner, where the output at each time step is fed back into the network as input"
+      },
+      {
+        "ttft_ms": 570.1191669795662,
+        "total_s": 42.462027375004254,
+        "total_toks": 77,
+        "tps": 1.8380638002364884,
+        "text": "Transformers and Recurrent Neural Networks (RNNs) are both types of neural network architectures used for processing sequential data, but they differ in their approach and efficiency. RNNs process input sequences in a sequential manner, where the output at each time step is fed back into the network as input"
+      }
+    ]
+  },
+  "summary": {
+    "Squish": {
+      "ttft_mean_ms": 533.1,
+      "ttft_stdev_ms": 67.9,
+      "tps_mean": 1.98,
+      "tps_stdev": 0.34,
+      "n_runs": 5
+    }
+  }
+}
