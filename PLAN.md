@@ -571,6 +571,21 @@ Theme: **GitHub release, community templates, benchmark refresh, bench_eoe harde
 - [ ] Community posts: Hacker News, r/LocalLLaMA, Twitter/X — *templates in `dev/community_posts.md`*
 - [ ] arXiv submission — refine `docs/paper.md` into LaTeX, fill real numbers from Phase 4, submit
 
+## ✅ Pre-Launch Hardening Phase 4 — 2026-03-15
+
+Theme: **v1 baseline documentation, v1→v9 comparison benchmark, pipeline hardening**
+
+| Task | Status | File(s) changed |
+|------|--------|-----------------|
+| v1 baseline JSON (structured v1 measured numbers) | ✅ done | `dev/results/v1_baseline.json` |
+| v1→v9 comparison benchmark script | ✅ done | `dev/benchmarks/bench_v9_vs_v1.py` |
+| v1→v9 comparison tests (33 tests) | ✅ done | `tests/benchmarks/test_bench_v1_compare.py` |
+| README "v1 → v9: What Changed" comparison table | ✅ done | `README.md` |
+| RESULTS.md v1→v9 improvement summary | ✅ done | `docs/RESULTS.md` |
+| model_pipeline.py accuracy gate + rejection log | ✅ done | `dev/scripts/model_pipeline.py` |
+| model_pipeline.yml daily cron + manual trigger | ✅ done | `.github/workflows/model_pipeline.yml` |
+| pipeline + openai_compat unit tests | ✅ done | `tests/test_model_pipeline_unit.py`, `tests/test_openai_compat.py` |
+
 ---
 
 ## Phase 5 — Pre-Launch Blockers & Performance Hardening
