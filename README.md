@@ -7,7 +7,7 @@
 [![Discord](https://img.shields.io/badge/Discord-join%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/squish)
 [![HuggingFace](https://img.shields.io/badge/🤗%20Models-squish--community-yellow)](https://huggingface.co/squish-community)
 
-<img src="assets/squish-logo-1.png" height="500" alt="Squish Logo"/>
+<img src="dev/assets/squish-logo-1.png" height="500" alt="Squish Logo"/>
 
 > Every model you download ships in a format designed for training clusters, not laptops.
 > Squish converts it once into a Metal-native format that maps directly into unified memory — **sub-second cold loads, every time.**
