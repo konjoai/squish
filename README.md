@@ -219,9 +219,13 @@ Accuracy is unchanged — every optimization preserves the ≤2% delta criterion
 
 | Metric | Squish v1 | Squish v9 | Change |
 |---|---:|---:|:---|
-| Load time (1.5B) | 0.53 s | 0.33–0.53 s | same — cache format unchanged |
-| TTFT (1.5B) | ~668 ms† | < 200 ms | streaming fixed; radix prefix reuse |
-| Decode throughput (1.5B) | 18.9 tok/s | 28–45 tok/s‡ | speculative decoding (ReDrafter/Hydra) |
+| Load time (1.5B, cached) | 0.53 s | **1.61 s** | server init overhead from 222 modules |
+| Load time (7B, cached) | 2.27 s | **3.41 s** | same pattern |
+| Load time (14B, cached) | 3.36 s | **5.93 s** | same pattern |
+| TTFT (1.5B) | ~668 ms† | **148 ms** ✅ | streaming fixed; radix prefix reuse |
+| TTFT (7B) | N/A | **533 ms** | measured live on M3 |
+| TTFT (14B) | N/A | **1,008 ms** | measured live on M3 |
+| Decode throughput (1.5B) | 18.9 tok/s | **7.5 tok/s**§ | measured under memory pressure |
 | KV cache — compression | none | 4× (KIVI INT8) | SnapKV + KIVI KV compression |
 | KV cache — prefix reuse | none | delta-only prefill | RadixTree reuse across turns |
 | Grammar constrain/token | N/A | 5.5 μs | tool calling is now zero-overhead |
@@ -229,13 +233,13 @@ Accuracy is unchanged — every optimization preserves the ≤2% delta criterion
 | Concurrent requests | limited | ✅ continuous batching | PagedKV + adaptive batcher |
 | Max context (7B, 16 GB) | ~8K tokens | 32K+ tokens | KV eviction + compression |
 | Total modules | 8 | 222 | 6 phases, 26 waves |
-| ARC-Easy accuracy | 73.5% | 73.5% | unchanged |
-| HellaSwag accuracy | 62.0% | 62.0% | unchanged |
-| PIQA accuracy | 76.5% | 76.5% | unchanged |
-| WinoGrande accuracy | 67.0% | 67.0% | unchanged |
+| ARC-Easy accuracy | 73.5% | **73.5%** ✅ | unchanged |
+| HellaSwag accuracy | 62.0% | **63.0%** ✅ | +1pp |
+| PIQA accuracy | 76.5% | **76.5%** ✅ | unchanged |
+| WinoGrande accuracy | 67.0% | **66.0%** | −1pp (within stderr) |
 
 † v1 streaming had a trailing-chunk artifact — all tokens arrived after ~48 s wall-clock; TTFT via `/health` was already 668 ms.
-‡ Estimated from speculative decoding benchmarks; hardware validation run required to confirm exact numbers. See [`docs/RESULTS.md`](docs/RESULTS.md).
+§ Measured on M3 under real system load (7 GB available RAM). Cold-dedicted-hardware throughput will be higher; spec-decode gains require a second draft model to be loaded.
 
 **Six phases of optimization added between v1 and v9:**
 

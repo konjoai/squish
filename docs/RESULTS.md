@@ -10,21 +10,27 @@ used for the [Open LLM Leaderboard](https://huggingface.co/spaces/HuggingFaceH4/
 
 ### At a Glance
 
+_All v9 numbers measured live on Apple M3, macOS 24.6, 16 GB unified memory, March 2026._
+
 | Metric | Squish v1 | Squish v9 | Note |
 |---|---|---|---|
-| Load time (1.5B) | 0.53 s | 0.33–0.53 s | same (cache format unchanged) |
-| TTFT (1.5B) | 668 ms† | < 200 ms | streaming fixed in v2 |
-| Decode throughput (1.5B) | 18.9 tok/s | 28–45 tok/s* | speculative decoding |
+| Load time (1.5B) | 0.53 s | **1.61 s** | +server init for 222 modules |
+| Load time (7B) | 2.27 s | **3.41 s** | same pattern |
+| Load time (14B) | 3.36 s | **5.93 s** | same pattern |
+| TTFT (1.5B) | 668 ms† | **148 ms** ✅ | streaming fix confirmed |
+| TTFT (7B) | N/A | **533 ms** | live measurement |
+| TTFT (14B) | N/A | **1,008 ms** | live measurement |
+| Decode throughput (1.5B) | 18.9 tok/s | **7.5 tok/s§** | memory-constrained run |
 | KV cache RAM | unbounded | 4× compressed | SnapKV + KIVI |
 | Grammar constrain latency | N/A | 5.5 μs/tok | new in v9 |
 | MoE routing overhead | N/A | 570 μs | lookahead, 91% hit rate |
-| ARC-Easy | 73.5% | 73.5% | unchanged |
-| HellaSwag | 62.0% | 62.0% | unchanged |
-| PIQA | 76.5% | 76.5% | unchanged |
-| WinoGrande | 67.0% | 67.0% | unchanged |
+| ARC-Easy | 73.5% | **73.5%** ✅ | unchanged (200 samples, 0-shot) |
+| HellaSwag | 62.0% | **63.0%** ✅ | +1pp |
+| PIQA | 76.5% | **76.5%** ✅ | unchanged |
+| WinoGrande | 67.0% | **66.0%** | −1pp (within stderr) |
 
 † v1 streaming had a trailing-chunk bug — model output arrived all-at-once after 48 s rather than streaming
-\* estimated from speculative decoding benchmarks; requires hardware validation
+§ Measured under memory pressure (~7 GB available RAM on a loaded system). Dedicated use would be higher.
 
 ---
 
