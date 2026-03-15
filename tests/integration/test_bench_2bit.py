@@ -322,8 +322,9 @@ class TestBenchVptq:
 
 class TestBenchAqlm:
     def test_skip_when_module_missing(self):
-        """squish.aqlm does not exist yet → always SKIP."""
-        r = bench_2bit.bench_aqlm(_W_SMALL)
+        """When squish.quant.aqlm is unavailable, bench_aqlm returns SKIP."""
+        with patch.dict(sys.modules, {"squish.quant.aqlm": None}):
+            r = bench_2bit.bench_aqlm(_W_SMALL)
         assert r.status == "skip"
         assert "Phase 9A" in r.reason
 
@@ -595,8 +596,9 @@ class TestRunBenchmark:
         assert mr["vptq"].status == "ok"
 
     def test_aqlm_status_skip(self):
+        # Phase 9A is now implemented; AQLM should succeed for synthetic weights.
         _, mr = bench_2bit.run_benchmark(dry_run=True)
-        assert mr["aqlm"].status == "skip"
+        assert mr["aqlm"].status == "ok"
 
     def test_quip_status_ok(self):
         _, mr = bench_2bit.run_benchmark(dry_run=True)

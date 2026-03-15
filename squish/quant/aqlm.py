@@ -246,6 +246,17 @@ class AQLMLayer:
 
         return (flat * self.scale).astype(np.float32)
 
+    @property
+    def compressed_bits(self) -> int:
+        """Total storage bits: index array + codebook vectors (float16)."""
+        bits_per_index = 16 if self.indices.dtype == np.uint16 else 8
+        index_bits = int(np.prod(self.indices.shape)) * bits_per_index
+        codebook_bits = sum(
+            int(np.prod(cb.vectors.shape)) * 16  # float16
+            for cb in self.codebooks
+        )
+        return index_bits + codebook_bits
+
 
 # ---------------------------------------------------------------------------
 # Quantizer
@@ -338,6 +349,18 @@ class AQLMQuantizer:
                     residuals[i, j] -= cb.vectors[best_idx]
 
         return layer
+
+    # ------------------------------------------------------------------
+    # Convenience aliases expected by bench_2bit and convert.py
+    # ------------------------------------------------------------------
+
+    def compress(self, weight: np.ndarray) -> "AQLMLayer":
+        """Alias for :meth:`calibrate`.  Returns a compressed ``AQLMLayer``."""
+        return self.calibrate(weight)
+
+    def decompress(self, layer: "AQLMLayer") -> np.ndarray:
+        """Dequantize *layer* back to a float32 numpy array."""
+        return layer.dequantize()
 
 
 # ---------------------------------------------------------------------------
