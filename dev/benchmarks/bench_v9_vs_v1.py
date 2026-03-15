@@ -200,7 +200,7 @@ def build_comparison(live_v9: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "_meta": {
             "description": "Squish v1 → v9 benchmark comparison",
-            "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "v1_source": str(_V1_FILE),
             "notes": [
                 "v1 numbers are from measured hardware runs (RESULTS.md, eoe_bench.json).",
