@@ -123,6 +123,20 @@ _compress_ratio           = 0.5
 _compress_min_tokens      = 512
 _compress_preserve_tokens = 0   # protect first N words from compression (RadixAttention synergy)
 
+# ── Phase 6: LLM-42 Determinism + Repetition Penalty ────────────────────────
+# Repetition penalty (Keskar et al. 2019): positive logits of recent tokens are
+# divided by the factor; negative logits are multiplied.  _rep_penalty_factor=1.0
+# disables the feature.  _llm42_default_seed is the per-server default seed for
+# deterministic generation (the name "LLM-42" refers to seed value 42).
+_rep_penalty_factor: float = 1.0        # 1.0 = off; > 1.0 penalises recent tokens
+_rep_penalty_window_size: int = 64      # number of most-recent tokens in the window
+_llm42_default_seed: "int | None" = None  # global default seed (None = non-deterministic)
+
+# LLM-42 verified speculation: DeterministicSampler + TokenVerifier instances.
+# Both are None when --deterministic is not set.
+_det_sampler:  "DeterministicSampler | None" = None  # type: ignore[name-defined]
+_det_verifier: "TokenVerifier | None"        = None  # type: ignore[name-defined]
+
 # ── Phase E1: Babbling Suppression (February 2026) ───────────────────────────
 # Qwen3 architecture is a confirmed "babbler" — emits filler content after the
 # task is complete, wasting 44–89% of decode energy.  Three complementary guards:
@@ -1046,13 +1060,18 @@ def _generate_tokens(  # pragma: no cover
     _sc_buf:    list[str] = []  # Phase E3: full response text for semantic cache
     _last_finish = "stop"
 
-    # Apply optional seed for reproducible generation
-    if seed is not None:
+    # Apply optional seed for reproducible generation (Phase 6: LLM-42 determinism).
+    # Per-request seed takes precedence; if absent, fall back to the global default.
+    _effective_seed = seed if seed is not None else _llm42_default_seed
+    if _effective_seed is not None:
         try:
             import mlx.core as mx
-            mx.random.seed(seed)
+            mx.random.seed(_effective_seed)
         except Exception:
             pass
+
+    # Phase 6: per-request repetition-penalty tracking window (cleared each call)
+    _rep_window_local: list[int] = []
 
     # ── Speculative decoding (Phase 0.2) ─────────────────────────────────────
     # Use when a draft model is loaded AND temperature > 0 (greedy draft on
@@ -1154,6 +1173,9 @@ def _generate_tokens(  # pragma: no cover
                 # Cache hit: use stored logit to sample first token; no prefill needed
                 last_logit_mlx = mx.array(_disk_hit_logit, dtype=mx.float32)
                 next_id = _sample_mx(last_logit_mlx, temperature, top_p)
+                # Phase 6: seed the rep-penalty window with the first sampled token
+                if _rep_penalty_factor > 1.0:
+                    _rep_window_local.append(next_id)
             else:
                 # Cache miss: run full prefill
                 # ── Phase 3C: patch sparse attention for long sequences ────────
@@ -1222,6 +1244,11 @@ def _generate_tokens(  # pragma: no cover
                                 )
                                 if cache_eligible:
                                     _cache_buf.append(_il_tok)
+                                # Phase 6: track interleaved-decode tokens in rep window
+                                if _rep_penalty_factor > 1.0:
+                                    _rep_window_local.append(_il_id)
+                                    if _rep_penalty_window_size > 0 and len(_rep_window_local) > _rep_penalty_window_size:
+                                        _rep_window_local = _rep_window_local[-_rep_penalty_window_size:]
                                 yield _il_tok, None
                         if _trace:
                             _tlog(f"REQ {_rid}  chunked-prefill DONE")
@@ -1253,6 +1280,9 @@ def _generate_tokens(  # pragma: no cover
                     _minf_restore = None
 
                 next_id = _sample_mx(_last_logit_vec, temperature, top_p)
+                # Phase 6: seed the rep-penalty window with the first sampled token
+                if _rep_penalty_factor > 1.0:
+                    _rep_window_local.append(next_id)
                 # Persist for future requests in background
                 if _disk_prompt_cache is not None:
                     try:
@@ -1400,7 +1430,19 @@ def _generate_tokens(  # pragma: no cover
                 # Phase B: grammar-constrained logits
                 if _grammar_engine is not None and _grammar_state is not None:
                     _logit_vec = _grammar_engine.constrain_logits(_logit_vec, _grammar_state)
+                # Phase 6: repetition penalty — penalise recent tokens before sampling
+                if _rep_penalty_factor > 1.0 and _rep_window_local:
+                    import numpy as _np_rp
+                    from squish.sampling.sampler import _apply_rep_penalty as _rp_fn
+                    _rp_np = _np_rp.array(_logit_vec.astype(mx.float32))
+                    _rp_np = _rp_fn(_rp_np, _rep_window_local, _rep_penalty_factor)
+                    _logit_vec = mx.array(_rp_np)
                 next_id = _sample_mx(_logit_vec, temperature, top_p)
+                # Phase 6: update repetition-penalty window after sampling
+                if _rep_penalty_factor > 1.0:
+                    _rep_window_local.append(next_id)
+                    if _rep_penalty_window_size > 0 and len(_rep_window_local) > _rep_penalty_window_size:
+                        _rep_window_local = _rep_window_local[-_rep_penalty_window_size:]
                 # Phase B: advance grammar FSM after sampling
                 if _grammar_engine is not None and _grammar_state is not None:
                     _grammar_state = _grammar_engine.advance(_grammar_state, next_id)
@@ -2423,6 +2465,31 @@ Examples:
     ap.add_argument("--fast-weight-decay", type=float, default=0.999, metavar="D",
                     help="Per-absorption W_f decay factor (default 0.999). "
                          "Range [0, 1]; 1.0 = no forgetting.")
+    # ── Phase 6: LLM-42 Determinism + Repetition Penalty ──────────────────────
+    ap.add_argument("--seed", type=int, default=None, metavar="N",
+                    help="Phase 6: Global default RNG seed for deterministic generation.\n"
+                         "Seed 42 = *LLM-42* convention (default None = non-deterministic).\n"
+                         "A per-request seed field in the API body overrides this value.")
+    ap.add_argument("--deterministic", action="store_true", default=False,
+                    help="Phase 6: Enable LLM-42 deterministic inference with TokenVerifier.\n"
+                         "Uses DeterministicSampler (seeded multinomial) instead of the default\n"
+                         "sampler.  TokenVerifier re-samples buffered logits every\n"
+                         "--det-verify-every steps to detect and roll back Metal GPU\n"
+                         "non-determinism.  Use with --seed (or --det-seed) to fix the sequence.")
+    ap.add_argument("--det-seed", type=int, default=None, metavar="N",
+                    help="Phase 6: Seed for DeterministicSampler / TokenVerifier.  "
+                         "Overrides --seed when both are provided.  Default: same as --seed.")
+    ap.add_argument("--det-verify-every", type=int, default=8, metavar="N",
+                    help="Phase 6: TokenVerifier check interval — verify every N decode steps "
+                         "(default 8).  0 = verify on every step.  Higher = lower CPU overhead.")
+    ap.add_argument("--rep-penalty", type=float, default=1.0, metavar="P",
+                    help="Phase 6: Repetition penalty factor ≥ 1.0 (default 1.0 = off).\n"
+                         "Penalises tokens that have appeared recently in the context:\n"
+                         "  positive logits are divided by P; negative logits are multiplied by P\n"
+                         "(Keskar et al. 2019 convention).")
+    ap.add_argument("--rep-penalty-window", type=int, default=64, metavar="N",
+                    help="Number of most-recent tokens tracked for repetition penalty "
+                         "(default 64).  0 = entire context window.")
     # ── Phase 13A: Asymmetric INT2 KV Cache ──────────────────────────────────
     ap.add_argument("--agent-kv", action="store_true", default=False,
                     help="Enable the asymmetric INT2 KV cache (AgentKV):\n"
@@ -2912,6 +2979,38 @@ Examples:
             _logging.getLogger(__name__).warning(
                 "[KV cache] could not attach (%s) — running without KV quantisation", e
             )
+
+    # ── Phase 6: LLM-42 Determinism + Repetition Penalty ────────────────────
+    global _rep_penalty_factor, _rep_penalty_window_size, _llm42_default_seed
+    global _det_sampler, _det_verifier
+    _rep_penalty_factor      = getattr(args, "rep_penalty", 1.0)
+    _rep_penalty_window_size = getattr(args, "rep_penalty_window", 64)
+    _llm42_default_seed      = getattr(args, "seed", None)
+    if _rep_penalty_factor > 1.0:
+        _info("rep-penalty",
+              f"enabled  factor={_rep_penalty_factor}"
+              f"  window={_rep_penalty_window_size}")
+    if _llm42_default_seed is not None:
+        _info("llm42-seed", f"global default seed={_llm42_default_seed}")
+
+    if getattr(args, "deterministic", False):
+        from squish.core.determinism import (  # noqa: PLC0415
+            DeterminismConfig,
+            DeterministicSampler,
+            TokenVerifier,
+        )
+        det_seed = getattr(args, "det_seed", None) or _llm42_default_seed or 42
+        det_cfg  = DeterminismConfig(
+            seed         = det_seed,
+            verify_every = getattr(args, "det_verify_every", 8),
+            enabled      = True,
+        )
+        _det_sampler  = DeterministicSampler(det_cfg)
+        _det_verifier = TokenVerifier(det_cfg, _det_sampler)
+        _info("llm42-deterministic",
+              f"enabled  seed={det_seed}"
+              f"  verify_every={det_cfg.verify_every}"
+              f"  buffer_size={det_cfg.buffer_size}")
 
     # ── Phase 13A: Asymmetric INT2 KV cache (AgentKV) ────────────────────────
     global _agent_kv_config
