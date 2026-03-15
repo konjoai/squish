@@ -44,7 +44,8 @@ from __future__ import annotations
 
 __all__ = ["MoELookaheadConfig", "MoELookaheadRouter"]
 
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
@@ -77,6 +78,12 @@ class MoELookaheadConfig:
     lookahead_steps:     int   = 3
     ema_alpha:           float = 0.1
     load_balance_weight: float = 0.01
+
+    # Watchdog: auto-disable lookahead when rolling hit rate is persistently low.
+    # Set watchdog_window=0 to disable the watchdog entirely.
+    watchdog_window:             int   = 50    # rolling window size (route steps)
+    watchdog_disable_threshold:  float = 0.40  # disable when rolling hit rate < this
+    watchdog_enable_threshold:   float = 0.60  # re-enable when rolling hit rate >= this
 
     def __post_init__(self) -> None:
         if self.top_k < 1:
@@ -149,6 +156,12 @@ class MoELookaheadRouter:
         self._prefetch_set_sum: int = 0
         self._prefetch_calls:   int = 0
 
+        # Watchdog: rolling window of per-step hit fractions (0.0–1.0 each)
+        _w = config.watchdog_window
+        self._watchdog_window: deque[float] = deque(maxlen=_w) if _w > 0 else deque(maxlen=1)
+        self._watchdog_active: bool = _w > 0   # False when window=0 means watchdog off
+        self._lookahead_disabled: bool = False  # toggled by watchdog
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -219,6 +232,18 @@ class MoELookaheadRouter:
             self._prefetch_hits  += hits
             self._prefetch_total += total
             self._pending_prefetch = None
+
+            # Watchdog: record per-step hit fraction and check rolling mean
+            if self._watchdog_active and total > 0:
+                step_rate = hits / total
+                self._watchdog_window.append(step_rate)
+                cfg = self._config
+                if len(self._watchdog_window) >= cfg.watchdog_window:
+                    rolling_mean = sum(self._watchdog_window) / len(self._watchdog_window)
+                    if not self._lookahead_disabled and rolling_mean < cfg.watchdog_disable_threshold:
+                        self._lookahead_disabled = True
+                    elif self._lookahead_disabled and rolling_mean >= cfg.watchdog_enable_threshold:
+                        self._lookahead_disabled = False
 
         # --- Update EMA state -----------------------------------------------
         h_mean = arr_2d.mean(axis=0)  # (hidden_dim,)
@@ -293,7 +318,11 @@ class MoELookaheadRouter:
         """
         lookahead = self.predict_lookahead(hidden_states, steps=steps)
         # lookahead shape: (steps, batch, top_k)
-        pset: frozenset = frozenset(int(x) for x in lookahead.flatten().tolist())
+        pset: frozenset
+        if self._lookahead_disabled:
+            # Watchdog has disabled lookahead — return empty set, don't record
+            return frozenset()
+        pset = frozenset(int(x) for x in lookahead.flatten().tolist())
 
         self._pending_prefetch = pset
         self._prefetch_set_sum += len(pset)
@@ -305,11 +334,29 @@ class MoELookaheadRouter:
         """Reset EMA state and pending prefetch.
 
         The route-call statistics (total_route_calls, total_tokens) and
-        hit-rate counters are preserved across resets.
+        hit-rate counters are preserved across resets.  The watchdog state
+        (rolling window, disabled flag) is also preserved across resets so
+        that repeated context resets don't re-enable a legitimately disabled
+        lookahead.  Call :meth:`reset_watchdog` to explicitly clear watchdog
+        state.
         """
         self._prev_h           = None
         self._ema_delta        = None
         self._pending_prefetch = None
+
+    def reset_watchdog(self) -> None:
+        """Clear watchdog state and re-enable lookahead.
+
+        Call this after a routing-quality improvement (e.g. load a new model,
+        change task distribution) to give the watchdog a fresh start.
+        """
+        self._watchdog_window.clear()
+        self._lookahead_disabled = False
+
+    @property
+    def lookahead_disabled(self) -> bool:
+        """True when the watchdog has disabled lookahead due to low hit rate."""
+        return self._lookahead_disabled
 
     def stats(self) -> dict:
         """Return a snapshot of routing and prefetch-hit statistics.
@@ -344,6 +391,11 @@ class MoELookaheadRouter:
             avg_prefetch_set_size = self._prefetch_set_sum / self._prefetch_calls
 
         sparse_stats = self._router.stats
+        rolling_mean: float
+        if len(self._watchdog_window) == 0:
+            rolling_mean = -1.0
+        else:
+            rolling_mean = sum(self._watchdog_window) / len(self._watchdog_window)
         return {
             "hit_rate":              hit_rate,
             "prefetch_hits":         self._prefetch_hits,
@@ -352,4 +404,6 @@ class MoELookaheadRouter:
             "prefetch_calls":        self._prefetch_calls,
             "total_route_calls":     sparse_stats.total_route_calls,
             "total_tokens":          sparse_stats.total_tokens,
+            "watchdog_rolling_hit_rate": rolling_mean,
+            "lookahead_disabled":    self._lookahead_disabled,
         }
