@@ -109,6 +109,7 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts   = "-q --tb=short"
 
 [tool.coverage.run]

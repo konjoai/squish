@@ -1254,6 +1254,41 @@ class QuantizedKVCache:
             dst_lay._svd_buf_k = None
             dst_lay._svd_buf_v = None
 
+    def clone_snapshot(self) -> "QuantizedKVCache":
+        """
+        Create an independent point-in-time snapshot of the current cache state.
+
+        The snapshot is a lightweight copy: numpy arrays in the INT8 compressed
+        tier are reference-shared (they are never mutated after being stored),
+        while the recent-window list is a new list object.  This is safe because
+        the source cache will be ``reset()`` at the start of the next request,
+        replacing its own references without touching the snapshotted arrays.
+
+        Used by :class:`squish.kv.prefix_kv_store.PrefixKVStore` to save the
+        post-prefill cache for later prefix reuse — allowing subsequent requests
+        whose prompt shares the same prefix to restore the KV state and skip
+        re-running those tokens through the model.
+
+        Returns
+        -------
+        QuantizedKVCache
+            A new cache object containing the same KV data as *self* at the
+            moment of the call.  No Q-filter or fast-weight state is carried
+            over (irrelevant for a static snapshot).
+        """
+        snap = QuantizedKVCache(
+            n_layers=self.n_layers,
+            window=self.window,
+            mode="int8",        # snapshot stores raw INT8 KV — no active eviction
+            budget=self.budget,
+            snap_window=self.snap_window,
+            svd_rank=self.svd_rank,
+            comm_vq_bits=0,     # CommVQ state is not snapshotted
+        )
+        snap.restore_from(self)
+        snap._snapped = list(self._snapped)
+        return snap
+
 
 # ---------------------------------------------------------------------------
 # HadamardKVCache — QuaRot-style Hadamard rotation before quantization
