@@ -35,12 +35,14 @@ Usage::
 from __future__ import annotations
 
 __all__ = [
+    "AsymmetricTernaryQuantizer",
+    "AsymmetricTernaryResult",
     "TernaryConfig",
     "TernaryQuantizer",
     "TernaryStats",
 ]
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -177,3 +179,124 @@ class TernaryQuantizer:
     def stats(self) -> TernaryStats:
         """Cumulative quantisation statistics for this instance."""
         return self._stats
+
+
+# ── Asymmetric result ─────────────────────────────────────────────────────────
+
+
+@dataclass
+class AsymmetricTernaryResult:
+    """Result of :meth:`AsymmetricTernaryQuantizer.quantize`.
+
+    Attributes:
+        ternary: int8 2-D array (n_rows × n_cols) with protected columns zeroed.
+        preserved_fp16: float16 2-D array (n_rows × n_protected), one column per
+            protected weight column.
+        preserved_cols: sorted int32 1-D array of protected column indices.
+        scale: float scalar = mean(|W_unprotected|); used for dequantisation.
+        original_shape: original shape of the input weight tensor.
+    """
+
+    ternary:        np.ndarray
+    preserved_fp16: np.ndarray
+    preserved_cols: np.ndarray
+    scale:          float
+    original_shape: tuple
+
+
+# ── Asymmetric quantizer ──────────────────────────────────────────────────────
+
+
+class AsymmetricTernaryQuantizer:
+    """Ternary quantiser with FP16 preservation for super-weight columns.
+
+    Protected columns are stored at FP16 precision while all other columns
+    are quantised to {-1, 0, +1}.  The scale is computed from the unprotected
+    columns only, preventing super-weight outliers from inflating the scale.
+
+    Args:
+        config: :class:`TernaryConfig` controlling the dead-zone threshold.
+    """
+
+    def __init__(self, config: TernaryConfig) -> None:
+        self.config = config
+
+    def quantize(
+        self,
+        weights: np.ndarray,
+        protected_cols: list[int] | None = None,
+    ) -> AsymmetricTernaryResult:
+        """Quantise *weights* with optional FP16-preserved columns.
+
+        Args:
+            weights: Float32 array; non-2-D inputs are handled via internal
+                reshaping to ``(n_rows, last_dim)``.
+            protected_cols: Column indices to keep at FP16.  Out-of-range,
+                negative, and duplicate indices are silently dropped.  Pass
+                ``None`` or ``[]`` for pure ternary output.
+
+        Returns:
+            :class:`AsymmetricTernaryResult`.
+        """
+        weights = np.asarray(weights, dtype=np.float32)
+        original_shape = weights.shape
+        # Internal 2-D view: (n_rows, n_cols)
+        w2d = weights.reshape(-1, original_shape[-1]) if weights.ndim > 1 else weights.reshape(1, -1)
+        n_rows, n_cols = w2d.shape
+
+        # Sanitise protected columns: deduplicate, sort, drop out-of-range
+        if protected_cols is not None and len(protected_cols) > 0:
+            valid = sorted(set(int(c) for c in protected_cols if 0 <= int(c) < n_cols))
+        else:
+            valid = []
+
+        # Build unprotected mask for scale computation
+        unprotected_mask = np.ones(n_cols, dtype=bool)
+        for c in valid:
+            unprotected_mask[c] = False
+
+        # Scale from unprotected columns only (prevents outlier inflation)
+        if unprotected_mask.any():
+            scale = float(np.mean(np.abs(w2d[:, unprotected_mask])))
+        else:
+            scale = float(np.mean(np.abs(w2d)))
+
+        threshold = self.config.zero_threshold * scale
+
+        # Ternary codes
+        ternary = np.zeros(w2d.shape, dtype=np.int8)
+        ternary[w2d >  threshold] =  1
+        ternary[w2d < -threshold] = -1
+        for c in valid:
+            ternary[:, c] = 0   # protected columns are zeroed in ternary
+
+        # Preserved FP16 columns
+        if valid:
+            preserved_fp16 = w2d[:, valid].astype(np.float16)
+        else:
+            preserved_fp16 = np.empty((n_rows, 0), dtype=np.float16)
+
+        return AsymmetricTernaryResult(
+            ternary=ternary,
+            preserved_fp16=preserved_fp16,
+            preserved_cols=np.array(valid, dtype=np.int32),
+            scale=scale,
+            original_shape=original_shape,
+        )
+
+    def dequantize(self, result: AsymmetricTernaryResult) -> np.ndarray:
+        """Reconstruct a float32 tensor from an :class:`AsymmetricTernaryResult`.
+
+        Ternary columns → ``ternary × scale``; protected columns → FP16 values.
+
+        Args:
+            result: Output of a previous :meth:`quantize` call.
+
+        Returns:
+            Float32 array with shape ``result.original_shape``.
+        """
+        recon = result.ternary.astype(np.float32) * result.scale
+        # Restore protected columns from stored FP16
+        for i, col in enumerate(result.preserved_cols):
+            recon[:, int(col)] = result.preserved_fp16[:, i].astype(np.float32)
+        return recon.reshape(result.original_shape)
