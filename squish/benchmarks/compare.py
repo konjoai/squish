@@ -61,7 +61,7 @@ class ResultComparator:
         lines = [
             f"# Squish Cross-Engine Benchmark Comparison",
             f"",
-            f"Generated: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+            f"Generated: {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
             f"",
         ]
 
@@ -120,7 +120,7 @@ class ResultComparator:
         csv_str = self.to_csv(results)
 
         if write_files:
-            ts = datetime.datetime.utcnow().strftime("%Y%m%d")
+            ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
             out_dir = Path(self.config.output_dir)
             out_dir.mkdir(parents=True, exist_ok=True)
             (out_dir / f"comparison_{ts}.md").write_text(md)

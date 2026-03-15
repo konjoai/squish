@@ -92,7 +92,7 @@ class ResultRecord:
     engine: str
     model: str
     timestamp: str = field(
-        default_factory=lambda: datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
     metrics: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -278,7 +278,7 @@ class BenchmarkRunner(abc.ABC):
 
     def output_path(self, engine: str, model: str, base_dir: str = "eval_output") -> Path:
         """Return the canonical output file path for this (engine, model) combination."""
-        ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
         safe_model = model.replace("/", "_").replace(":", "_")
         fname = f"{self.track_name}_{safe_model}_{engine}_{ts}.json"
         return Path(base_dir) / fname
