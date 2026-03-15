@@ -1,36 +1,55 @@
 name: Model Compression Pipeline
 
+# Daily run at 06:00 UTC and manual trigger via the GitHub UI.
 on:
   schedule:
-    - cron: '0 6 * * *'  # 6am UTC daily
-  workflow_dispatch:     # manual trigger
+    - cron: '0 6 * * *'
+  workflow_dispatch:
     inputs:
-      job:
-        description: 'Pipeline job to run'
-        required: true
-        default: 'watch'
-        type: choice
-        options: [watch, compress, publish]
       dry_run:
-        description: 'Dry run (no external calls)'
+        description: 'Dry run (no external calls, no writes)'
         type: boolean
         default: true
 
 jobs:
   pipeline:
     runs-on: macos-14
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
+      # ── Checkout ─────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Python ───────────────────────────────────────────────────────────────
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # ── Install ──────────────────────────────────────────────────────────────
       - name: Install squish
         run: pip install -e ".[dev]"
-      - name: Run pipeline
+
+      # ── Job 1: watch ─────────────────────────────────────────────────────────
+      # Poll HuggingFace for new candidate models and write models.json.
+      # Always run with --dry-run in CI so no HF_TOKEN is required.
+      - name: Watch — discover candidate models
         run: |
           python dev/scripts/model_pipeline.py \
-            --job ${{ github.event.inputs.job || 'watch' }} \
-            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+            --job watch \
+            --dry-run
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+      # ── Job 2: compress + validate ───────────────────────────────────────────
+      # Compress each candidate (INT4) and run the accuracy gate.
+      # --validate enables the manifest check; --dry-run skips real subprocess
+      # calls so no GPU or large downloads are needed in CI.
+      - name: Compress and validate — accuracy gate
+        run: |
+          python dev/scripts/model_pipeline.py \
+            --job compress \
+            --validate \
+            --dry-run
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

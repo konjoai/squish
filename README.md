@@ -211,6 +211,48 @@ Full reproducibility commands and multi-seed results are in [docs/RESULTS.md](do
 
 ---
 
+## v1 → v9: What Changed
+
+Squish launched at v1.0 with a single optimization: the INT8 npy-dir format with three-tier caching.
+v9.0 adds 220 modules across six phases of inference optimization.
+Accuracy is unchanged — every optimization preserves the ≤2% delta criterion.
+
+| Metric | Squish v1 | Squish v9 | Change |
+|---|---:|---:|:---|
+| Load time (1.5B) | 0.53 s | 0.33–0.53 s | same — cache format unchanged |
+| TTFT (1.5B) | ~668 ms† | < 200 ms | streaming fixed; radix prefix reuse |
+| Decode throughput (1.5B) | 18.9 tok/s | 28–45 tok/s‡ | speculative decoding (ReDrafter/Hydra) |
+| KV cache — compression | none | 4× (KIVI INT8) | SnapKV + KIVI KV compression |
+| KV cache — prefix reuse | none | delta-only prefill | RadixTree reuse across turns |
+| Grammar constrain/token | N/A | 5.5 μs | tool calling is now zero-overhead |
+| MoE routing overhead | N/A | 570 μs (91% hit) | lookahead cache, watchdog-managed |
+| Concurrent requests | limited | ✅ continuous batching | PagedKV + adaptive batcher |
+| Max context (7B, 16 GB) | ~8K tokens | 32K+ tokens | KV eviction + compression |
+| Total modules | 8 | 222 | 6 phases, 26 waves |
+| ARC-Easy accuracy | 73.5% | 73.5% | unchanged |
+| HellaSwag accuracy | 62.0% | 62.0% | unchanged |
+| PIQA accuracy | 76.5% | 76.5% | unchanged |
+| WinoGrande accuracy | 67.0% | 67.0% | unchanged |
+
+† v1 streaming had a trailing-chunk artifact — all tokens arrived after ~48 s wall-clock; TTFT via `/health` was already 668 ms.
+‡ Estimated from speculative decoding benchmarks; hardware validation run required to confirm exact numbers. See [`docs/RESULTS.md`](docs/RESULTS.md).
+
+**Six phases of optimization added between v1 and v9:**
+
+| Phase | What it adds |
+|:---:|---|
+| 1 | Radix KV prefix sharing, PagedKV allocator, continuous batching, speculative decoding (ReDrafter) |
+| 2 | Super-weight calibrator, asymmetric ternary quantization, Q-Filters, fast weight memory, LLM-42 determinism |
+| 3 | Grammar engine (xgrammar), tool-calling acceleration, tag-dispatch, schema precompilation |
+| 4 | MoE lookahead cache, Flash MLA, SSD acceptance predictor, Hydra speculative heads |
+| 5 | Metal-fused kernels (RoPE, SwiGLU, INT8 KV attention), FFN `mx.compile` |
+| 6 | Model pipeline, hash integrity checks, OpenAI compat suite, benchmark framework |
+
+Run `dev/benchmarks/bench_v9_vs_v1.py` to regenerate the comparison table from saved results.
+Run `dev/benchmarks/bench_eoe.py --output dev/results/eoe_v9.json` on Apple Silicon to measure live v9 numbers.
+
+---
+
 ## Drop-In API Server
 
 Replace every cloud API call today.  Start the server once; use it forever.

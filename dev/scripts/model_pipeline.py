@@ -303,6 +303,19 @@ class CompressJob:
                       file=sys.stderr)
                 continue
 
+            # Accuracy gate: verify perplexity delta vs FP16 baseline
+            delta = self._measure_perplexity_delta(candidate, out_dir)
+
+            def _retry_int8(
+                _c=candidate, _d=out_dir, _cfg=config
+            ) -> float:
+                return self._compress_and_measure_int8(_c, _d, _cfg)
+
+            passed, final_delta = self._accuracy_gate(candidate.name, delta, _retry_int8)
+            if not passed:
+                self._write_rejection(candidate, final_delta, config)
+                continue
+
             if config.validate:
                 ok = self._validate(out_dir)
                 if ok:

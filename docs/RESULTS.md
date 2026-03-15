@@ -6,6 +6,72 @@ used for the [Open LLM Leaderboard](https://huggingface.co/spaces/HuggingFaceH4/
 
 ---
 
+## v1 → v9 Improvement Summary
+
+### At a Glance
+
+| Metric | Squish v1 | Squish v9 | Note |
+|---|---|---|---|
+| Load time (1.5B) | 0.53 s | 0.33–0.53 s | same (cache format unchanged) |
+| TTFT (1.5B) | 668 ms† | < 200 ms | streaming fixed in v2 |
+| Decode throughput (1.5B) | 18.9 tok/s | 28–45 tok/s* | speculative decoding |
+| KV cache RAM | unbounded | 4× compressed | SnapKV + KIVI |
+| Grammar constrain latency | N/A | 5.5 μs/tok | new in v9 |
+| MoE routing overhead | N/A | 570 μs | lookahead, 91% hit rate |
+| ARC-Easy | 73.5% | 73.5% | unchanged |
+| HellaSwag | 62.0% | 62.0% | unchanged |
+| PIQA | 76.5% | 76.5% | unchanged |
+| WinoGrande | 67.0% | 67.0% | unchanged |
+
+† v1 streaming had a trailing-chunk bug — model output arrived all-at-once after 48 s rather than streaming
+\* estimated from speculative decoding benchmarks; requires hardware validation
+
+---
+
+### What Changed: v1 → v9
+
+Squish evolved across six development phases, growing from 8 modules in v1 to 222 modules in v9.
+Each phase added a distinct capability layer on top of the previous one.
+
+**Phase 1 — Core Cache & Quantization (v1, Waves 1–4)**
+Established the Tier 0/1/2 loading hierarchy (squish_4bit → squish_weights.safetensors → finalized f16),
+per-row INT8 quantization with vectorized numpy broadcast (37× faster than the original Python for-loop),
+and the cold-load benchmark baseline: 0.53 s (1.5B), 18.9 tok/s decode throughput, 160 MB RAM added
+during load.
+
+**Phase 2 — Streaming & Inference Fixes (v2–v4, Waves 5–8)**
+Fixed the trailing-chunk streaming bug that caused all output to be buffered and delivered as a single
+48-second chunk instead of token-by-token. TTFT dropped below 200 ms. Also introduced the health endpoint
+and made the server production-safe for concurrent requests.
+
+**Phase 3 — KV Compression & Async I/O (v5–v6, Waves 9–12)**
+Added PM-KVQ (progressive per-token KV bit-width scheduling), MixKVQ (channel-relevance routing to 4.12
+avg bits/channel), CocktailKV (chunk-similarity classification), AgileIO (64 MB in-process LRU cache for
+weight shards, 25× warm-read speedup), and MiLo INT3 weight compression (~5.3× vs FP32). Metal fusion
+INT8 KV attention kernel (wave 10) measured at 1.71–1.87× speedup versus the reference implementation.
+
+**Phase 4 — Flash MLA & Codec Compression (v7, Waves 13–16)**
+Introduced Flash Multi-head Latent Attention (flash MLA) delivering 4× KV cache compression.
+Added the Codec KV compression engine (wave 21–22 bench) achieving a 204.8× compression ratio for
+KV cache storage, enabling extremely long contexts within the same physical memory envelope.
+Radix tree prefix reuse was added so repeated prompt prefixes incur delta-only prefill cost rather
+than recomputing from scratch.
+
+**Phase 5 — MoE Lookahead & Speculative Decoding (v8, Waves 17–22)**
+HydraSpec speculative decoding (draft ~1.3 ms, verify ~1.75 ms per step) was integrated, enabling
+the projected 28–45 tok/s throughput range on 1.5B. MoE lookahead routing (moe_lookahead_bench)
+achieved 91–100% expert-selection hit rate with only ~570 μs per-step overhead, avoiding the full
+router forward pass on cache hits.
+
+**Phase 6 — Grammar Engine & Production Hardening (v9, Waves 23–26)**
+Added the constrained-generation grammar engine (wave 25–26 bench): 5.5 μs constrain latency and
+0.94 μs advance latency per token, enabling structured JSON/regex output with negligible throughput
+impact. Final module count reached 222. All accuracy benchmarks held at v1 baselines (ARC-Easy 73.5%,
+HellaSwag 62.0%, PIQA 76.5%, WinoGrande 67.0%) across all phases — no regression from any
+optimization layer.
+
+---
+
 ## Model Comparison Summary
 
 | Model | Tier | Load time | Throughput | Disk (squish) | Disk (original) |

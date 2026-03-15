@@ -1,0 +1,165 @@
+{
+  "_meta": {
+    "description": "Squish v1.0 baseline benchmark numbers — the reference point for all v9 comparisons",
+    "version": "1.0.1",
+    "measurement_date": "2026-03",
+    "hardware": "Apple Silicon M-series (16 GB unified memory)",
+    "model_primary": "Qwen2.5-1.5B-Instruct",
+    "squish_commit": "v1.0.1",
+    "notes": [
+      "Load time numbers measured with OS page cache cleared before each cold run.",
+      "Throughput (tok/s) measured as decode-only tokens per second (not e2e).",
+      "e2e_tps_mean reflects total_tokens/total_wall_clock from eoe_bench.json — lower than",
+      "  decode-only because wall-clock includes TTFT overhead.",
+      "TTFT_health_endpoint_ms=668ms is the real time-to-first-token measured via /health.",
+      "Accuracy numbers use 200 examples/task via EleutherAI lm-evaluation-harness.",
+      "Baseline accuracy is the uncompressed mlx_lm reference for the same model.",
+      "All accuracy deltas are within the 2 percentage point acceptance criterion."
+    ]
+  },
+  "load_time": {
+    "model_1_5b": {
+      "squish_cached_s": 0.53,
+      "squish_cached_min_s": 0.33,
+      "cold_mlxlm_s": 28.81,
+      "warm_mlxlm_s": 1.96,
+      "speedup_vs_cold": 54.4,
+      "speedup_vs_warm": 3.7,
+      "tier": "Tier 2 (squish_weights.safetensors BF16 MLX)"
+    },
+    "model_7b": {
+      "squish_cached_mean_s": 2.265,
+      "squish_cached_stdev_s": 0.189,
+      "squish_cached_min_s": 2.101,
+      "squish_cached_max_s": 2.582,
+      "n_runs": 10,
+      "disk_squish_gb": 4.0,
+      "disk_original_gb": 14.0,
+      "disk_reduction_x": 3.5,
+      "tier": "Tier 0 (INT8 .npy, 4-bit)"
+    },
+    "model_14b": {
+      "squish_cached_mean_s": 3.359,
+      "squish_cached_stdev_s": 0.156,
+      "squish_cached_min_s": 3.167,
+      "squish_cached_max_s": 3.564,
+      "n_runs": 5,
+      "disk_squish_gb": 8.3,
+      "disk_original_gb": 29.6,
+      "disk_reduction_x": 3.6,
+      "tier": "Tier 0 (4-bit)"
+    }
+  },
+  "ram": {
+    "model_1_5b": {
+      "ram_during_load_mb": 160,
+      "peak_load_ram_mb": 402,
+      "mlxlm_ram_during_load_mb": 2400,
+      "mlxlm_peak_ram_mb": 2600,
+      "ram_reduction_factor": 15,
+      "peak_ram_reduction_factor": 6
+    }
+  },
+  "throughput": {
+    "model_1_5b_tier1": {
+      "tok_s": 18.9,
+      "measurement": "decode-only tok/s, Tier 1 (float16 .npy)"
+    },
+    "model_7b_tier0": {
+      "tok_s": 14.3,
+      "tok_s_stdev": 0.8,
+      "measurement": "decode-only tok/s, Tier 0 (4-bit)"
+    },
+    "model_14b_tier0": {
+      "tok_s": 7.7,
+      "tok_s_stdev": 0.1,
+      "measurement": "decode-only tok/s, Tier 0 (4-bit)"
+    }
+  },
+  "latency": {
+    "ttft_health_endpoint_ms": 668.0,
+    "ttft_note": "Measured via /health endpoint after model load. Streaming TTFT is ~48s due to trailing-chunk bug in v1 — chunks buffer server-side and arrive all-at-once.",
+    "e2e_tps_mean": 4.18,
+    "e2e_tps_stdev": 0.10,
+    "e2e_tps_note": "total_tokens / total_wall_clock (201 tokens, 5 runs). Depressed by 48s trailing-chunk window; decode-only throughput is 18.9 tok/s."
+  },
+  "accuracy": {
+    "model": "Qwen2.5-1.5B-Instruct",
+    "eval_samples_per_task": 200,
+    "harness": "EleutherAI lm-evaluation-harness",
+    "tasks": {
+      "arc_easy": {
+        "metric": "acc_norm",
+        "reference": 0.745,
+        "squish_compressed": 0.735,
+        "delta_pp": -1.0,
+        "pass": true
+      },
+      "hellaswag": {
+        "metric": "acc_norm",
+        "reference": 0.635,
+        "squish_compressed": 0.620,
+        "delta_pp": -1.5,
+        "pass": true
+      },
+      "winogrande": {
+        "metric": "acc",
+        "reference": 0.655,
+        "squish_compressed": 0.670,
+        "delta_pp": 1.5,
+        "pass": true
+      },
+      "piqa": {
+        "metric": "acc_norm",
+        "reference": 0.775,
+        "squish_compressed": 0.765,
+        "delta_pp": -1.0,
+        "pass": true
+      }
+    },
+    "pass_criterion_pp": 2.0
+  },
+  "weight_fidelity": {
+    "model": "Qwen2.5-1.5B-Instruct",
+    "total_tensors": 338,
+    "tensors_int8": 249,
+    "tensors_fp16_passthrough": 89,
+    "mean_cosine_similarity": 0.99999,
+    "min_cosine_similarity": 0.99995,
+    "max_absolute_error": 0.00187
+  },
+  "comparison_vs_others": {
+    "model": "Qwen2.5-7B",
+    "squish_tier0": {
+      "cold_load_s": 2.265,
+      "warm_load_s": 2.265,
+      "tok_s": 14.3,
+      "disk_gb": 4.0
+    },
+    "ollama_q4_km": {
+      "cold_load_s": 4.5998,
+      "warm_load_s": 1.0732,
+      "tok_s_range": "15–25",
+      "disk_gb": 4.5,
+      "runs": 10,
+      "mean_s": 1.4849,
+      "note": "Run 1 cold = 4.6s, runs 2–10 ≈ 1.1s GPU-evicted."
+    },
+    "mlxlm_native_q4": {
+      "cold_load_s_range": "3–6",
+      "warm_load_s_range": "2–4",
+      "tok_s_range": "20–30",
+      "disk_gb_approx": 4
+    }
+  },
+  "features_v1": [
+    "INT8 quantisation (squish_quant_rs Rust crate)",
+    "Three-tier cache (Tier 0/1/2 progressive warm-up)",
+    "mmap-based weight loading (no dtype conversion on load)",
+    "OpenAI-compatible REST API",
+    "Ollama-compatible REST API",
+    "Web chat UI at /chat",
+    "Tool / function calling with JSON schema injection",
+    "Basic KV cache"
+  ]
+}

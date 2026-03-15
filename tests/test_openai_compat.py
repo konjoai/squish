@@ -17,8 +17,12 @@ from __future__ import annotations
 
 import os
 
-import httpx
 import pytest
+
+httpx = pytest.importorskip(
+    "httpx",
+    reason="httpx package not installed; pip install httpx",
+)
 
 # ---------------------------------------------------------------------------
 # Module-level constants
