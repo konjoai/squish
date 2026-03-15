@@ -565,6 +565,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#v1-v9-improvement-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1 → v9 Improvement Summary
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1 → v9 Improvement Summary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        At a Glance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-changed-v1-v9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Changed: v1 → v9
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#model-comparison-summary" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -931,6 +970,118 @@
 <p>All results measured on <strong>Apple Silicon M-series, 16 GB unified memory, macOS, MLX framework</strong>.<br />
 Evaluation with <strong>EleutherAI lm-evaluation-harness v0.4.11</strong> — the same framework
 used for the <a href="https://huggingface.co/spaces/HuggingFaceH4/open_llm_leaderboard">Open LLM Leaderboard</a>.</p>
+<hr />
+<h2 id="v1-v9-improvement-summary">v1 → v9 Improvement Summary<a class="headerlink" href="#v1-v9-improvement-summary" title="Permanent link">&para;</a></h2>
+<h3 id="at-a-glance">At a Glance<a class="headerlink" href="#at-a-glance" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Squish v1</th>
+<th>Squish v9</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Load time (1.5B)</td>
+<td>0.53 s</td>
+<td>0.33–0.53 s</td>
+<td>same (cache format unchanged)</td>
+</tr>
+<tr>
+<td>TTFT (1.5B)</td>
+<td>668 ms†</td>
+<td>&lt; 200 ms</td>
+<td>streaming fixed in v2</td>
+</tr>
+<tr>
+<td>Decode throughput (1.5B)</td>
+<td>18.9 tok/s</td>
+<td>28–45 tok/s*</td>
+<td>speculative decoding</td>
+</tr>
+<tr>
+<td>KV cache RAM</td>
+<td>unbounded</td>
+<td>4× compressed</td>
+<td>SnapKV + KIVI</td>
+</tr>
+<tr>
+<td>Grammar constrain latency</td>
+<td>N/A</td>
+<td>5.5 μs/tok</td>
+<td>new in v9</td>
+</tr>
+<tr>
+<td>MoE routing overhead</td>
+<td>N/A</td>
+<td>570 μs</td>
+<td>lookahead, 91% hit rate</td>
+</tr>
+<tr>
+<td>ARC-Easy</td>
+<td>73.5%</td>
+<td>73.5%</td>
+<td>unchanged</td>
+</tr>
+<tr>
+<td>HellaSwag</td>
+<td>62.0%</td>
+<td>62.0%</td>
+<td>unchanged</td>
+</tr>
+<tr>
+<td>PIQA</td>
+<td>76.5%</td>
+<td>76.5%</td>
+<td>unchanged</td>
+</tr>
+<tr>
+<td>WinoGrande</td>
+<td>67.0%</td>
+<td>67.0%</td>
+<td>unchanged</td>
+</tr>
+</tbody>
+</table>
+<p>† v1 streaming had a trailing-chunk bug — model output arrived all-at-once after 48 s rather than streaming
+* estimated from speculative decoding benchmarks; requires hardware validation</p>
+<hr />
+<h3 id="what-changed-v1-v9">What Changed: v1 → v9<a class="headerlink" href="#what-changed-v1-v9" title="Permanent link">&para;</a></h3>
+<p>Squish evolved across six development phases, growing from 8 modules in v1 to 222 modules in v9.
+Each phase added a distinct capability layer on top of the previous one.</p>
+<p><strong>Phase 1 — Core Cache &amp; Quantization (v1, Waves 1–4)</strong>
+Established the Tier 0/1/2 loading hierarchy (squish_4bit → squish_weights.safetensors → finalized f16),
+per-row INT8 quantization with vectorized numpy broadcast (37× faster than the original Python for-loop),
+and the cold-load benchmark baseline: 0.53 s (1.5B), 18.9 tok/s decode throughput, 160 MB RAM added
+during load.</p>
+<p><strong>Phase 2 — Streaming &amp; Inference Fixes (v2–v4, Waves 5–8)</strong>
+Fixed the trailing-chunk streaming bug that caused all output to be buffered and delivered as a single
+48-second chunk instead of token-by-token. TTFT dropped below 200 ms. Also introduced the health endpoint
+and made the server production-safe for concurrent requests.</p>
+<p><strong>Phase 3 — KV Compression &amp; Async I/O (v5–v6, Waves 9–12)</strong>
+Added PM-KVQ (progressive per-token KV bit-width scheduling), MixKVQ (channel-relevance routing to 4.12
+avg bits/channel), CocktailKV (chunk-similarity classification), AgileIO (64 MB in-process LRU cache for
+weight shards, 25× warm-read speedup), and MiLo INT3 weight compression (~5.3× vs FP32). Metal fusion
+INT8 KV attention kernel (wave 10) measured at 1.71–1.87× speedup versus the reference implementation.</p>
+<p><strong>Phase 4 — Flash MLA &amp; Codec Compression (v7, Waves 13–16)</strong>
+Introduced Flash Multi-head Latent Attention (flash MLA) delivering 4× KV cache compression.
+Added the Codec KV compression engine (wave 21–22 bench) achieving a 204.8× compression ratio for
+KV cache storage, enabling extremely long contexts within the same physical memory envelope.
+Radix tree prefix reuse was added so repeated prompt prefixes incur delta-only prefill cost rather
+than recomputing from scratch.</p>
+<p><strong>Phase 5 — MoE Lookahead &amp; Speculative Decoding (v8, Waves 17–22)</strong>
+HydraSpec speculative decoding (draft ~1.3 ms, verify ~1.75 ms per step) was integrated, enabling
+the projected 28–45 tok/s throughput range on 1.5B. MoE lookahead routing (moe_lookahead_bench)
+achieved 91–100% expert-selection hit rate with only ~570 μs per-step overhead, avoiding the full
+router forward pass on cache hits.</p>
+<p><strong>Phase 6 — Grammar Engine &amp; Production Hardening (v9, Waves 23–26)</strong>
+Added the constrained-generation grammar engine (wave 25–26 bench): 5.5 μs constrain latency and
+0.94 μs advance latency per token, enabling structured JSON/regex output with negligible throughput
+impact. Final module count reached 222. All accuracy benchmarks held at v1 baselines (ARC-Easy 73.5%,
+HellaSwag 62.0%, PIQA 76.5%, WinoGrande 67.0%) across all phases — no regression from any
+optimization layer.</p>
 <hr />
 <h2 id="model-comparison-summary">Model Comparison Summary<a class="headerlink" href="#model-comparison-summary" title="Permanent link">&para;</a></h2>
 <table>
