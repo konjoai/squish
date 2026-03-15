@@ -676,6 +676,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#int2-experiment-14b-2501-bitsweight-43-gb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        INT2 Experiment (14B — 2.501 bits/weight, 4.3 GB)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1021,6 +1032,12 @@ used for the <a href="https://huggingface.co/spaces/HuggingFaceH4/open_llm_leade
 <td>live measurement</td>
 </tr>
 <tr>
+<td>TTFT (14B INT2)</td>
+<td>N/A</td>
+<td>1,345 ms‡</td>
+<td>4.3 GB; coherence collapse</td>
+</tr>
+<tr>
 <td>Decode throughput (1.5B)</td>
 <td>18.9 tok/s</td>
 <td><strong>7.5 tok/s§</strong></td>
@@ -1071,7 +1088,8 @@ used for the <a href="https://huggingface.co/spaces/HuggingFaceH4/open_llm_leade
 </tbody>
 </table>
 <p>† v1 streaming had a trailing-chunk bug — model output arrived all-at-once after 48 s rather than streaming
-§ Measured under memory pressure (~7 GB available RAM on a loaded system). Dedicated use would be higher.</p>
+§ Measured under memory pressure (~7 GB available RAM on a loaded system). Dedicated use would be higher.
+‡ 2-bit quantization of a pre-trained BF16 checkpoint causes coherence collapse; INT2 only viable for natively-ternary models like BitNet b1.58.</p>
 <hr />
 <h3 id="what-changed-v1-v9">What Changed: v1 → v9<a class="headerlink" href="#what-changed-v1-v9" title="Permanent link">&para;</a></h3>
 <p>Squish evolved across six development phases, growing from 8 modules in v1 to 222 modules in v9.
@@ -1316,6 +1334,51 @@ No measurable accuracy degradation from <code>mlx_lm.convert</code> 4-bit quanti
 <p>Consistent with published Qwen2.5 scaling results: 14B meaningfully outperforms
 7B on reasoning tasks (ARC-Easy, WinoGrande). PIQA shows expected slight regression
 within measurement variance. Both models maintain full accuracy under squish 4-bit quantisation.</p>
+<h3 id="int2-experiment-14b-2501-bitsweight-43-gb">INT2 Experiment (14B — 2.501 bits/weight, 4.3 GB)<a class="headerlink" href="#int2-experiment-14b-2501-bitsweight-43-gb" title="Permanent link">&para;</a></h3>
+<p>Attempted further compression to 2-bit (<code>mlx_lm.convert --q-bits 2</code>) from the BF16
+source to fit more comfortably on 16 GB M3. The resulting model loads in 3.25 s
+(vs 5.93 s for INT4) but produces <strong>incoherent output</strong> — repetitive token loops
+(<code>IFYINGIFYINGIFYINGIFYIN...</code>) indicating quantization collapse at 2 bits.</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th style="text-align: right;">INT4 (baseline)</th>
+<th style="text-align: right;">INT2 (experiment)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Disk size</td>
+<td style="text-align: right;">7.7 GB</td>
+<td style="text-align: right;"><strong>4.3 GB</strong></td>
+</tr>
+<tr>
+<td>Load time</td>
+<td style="text-align: right;">5.93 s</td>
+<td style="text-align: right;"><strong>3.25 s</strong></td>
+</tr>
+<tr>
+<td>TTFT (mean)</td>
+<td style="text-align: right;">1,008 ms</td>
+<td style="text-align: right;">1,345 ms</td>
+</tr>
+<tr>
+<td>Decode throughput</td>
+<td style="text-align: right;">1.2 tok/s</td>
+<td style="text-align: right;">0.6 tok/s</td>
+</tr>
+<tr>
+<td>Output quality</td>
+<td style="text-align: right;">Coherent</td>
+<td style="text-align: right;"><strong>Incoherent (loops)</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Conclusion:</strong> 2-bit post-training quantization of a pre-trained BF16 checkpoint
+destroys coherence. The INT2 format is only viable for models trained natively at
+2 bits (e.g. BitNet b1.58). INT4 remains the practical lower bound for post-training
+quantization without fine-tuning. Results saved to <code>dev/results/eoe_v9_14b_int2.json</code>.</p>
 <hr />
 <h2 id="7b-model-qwen25-7b-instruct">7B Model — Qwen2.5-7B-Instruct<a class="headerlink" href="#7b-model-qwen25-7b-instruct" title="Permanent link">&para;</a></h2>
 <p>The 7B bf16 model (14 GB) exceeds the 16 GB Metal budget.  Squish detects this and builds
