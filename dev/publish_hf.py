@@ -31,6 +31,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -120,7 +121,76 @@ def _build_card(repo: str, base_model: str) -> str:
     )
 
 
-def _collect_files(model_dir: Path) -> list[tuple[Path, str]]:
+def _build_card_from_eval(repo: str, base_model: str, eval_json_path: Path) -> str:
+    """
+    Generate a model card README.md enriched with accuracy benchmarks
+    parsed from an eval JSON file produced by `squish bench`.
+
+    The eval JSON is expected to contain a list of task result objects with at
+    least ``{"task": str, "metric": str, "score": float}`` entries.  Any
+    well-formed squish eval JSON (mmlu, hellaswag, humaneval …) is accepted;
+    unknown keys are silently ignored.
+    """
+    model_name = repo.split("/")[-1]
+
+    # ── Parse eval JSON ────────────────────────────────────────────────────
+    try:
+        with open(eval_json_path, encoding="utf-8") as fh:
+            eval_data = json.load(fh)
+    except Exception as exc:
+        print(f"  WARN: could not parse eval JSON {eval_json_path}: {exc}",
+              file=sys.stderr)
+        # Fall back to generic card
+        return _build_card(repo, base_model)
+
+    # Normalise to a flat list of {"task", "metric", "score"} dicts
+    results: list[dict] = []
+    if isinstance(eval_data, list):
+        results = eval_data
+    elif isinstance(eval_data, dict):
+        # Support {"results": [...]} or {"tasks": [...]} wrapper formats
+        for key in ("results", "tasks", "benchmarks"):
+            if key in eval_data and isinstance(eval_data[key], list):
+                results = eval_data[key]
+                break
+
+    # Build benchmark table rows
+    rows: list[str] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        task   = item.get("task") or item.get("name") or item.get("benchmark", "")
+        metric = item.get("metric") or item.get("type", "score")
+        score  = item.get("score") or item.get("value") or item.get("result")
+        if task and score is not None:
+            try:
+                score_str = f"{float(score):.4f}"
+            except (TypeError, ValueError):
+                score_str = str(score)
+            rows.append(f"| {task} | {metric} | {score_str} |")
+
+    if rows:
+        bench_section = (
+            "## Accuracy Benchmarks\n\n"
+            "Evaluated with `squish bench`.\n\n"
+            "| Task | Metric | Score |\n"
+            "|------|--------|------:|\n"
+            + "\n".join(rows)
+            + "\n"
+        )
+    else:
+        bench_section = ""
+
+    base_card = _build_card(repo, base_model)
+    # Insert benchmark section just before the final "## Squish" section
+    marker = "## Squish\n"
+    if marker in base_card and bench_section:
+        base_card = base_card.replace(marker, bench_section + "\n" + marker, 1)
+
+    return base_card
+
+
+
     """
     Return list of (local_path, path_in_repo) pairs to upload.
 
@@ -181,6 +251,13 @@ def main() -> None:
                     help="Show what would be uploaded without pushing to HF")
     ap.add_argument("--commit-message", default="",
                     help="Custom commit message for the HF push")
+    ap.add_argument("--hf-model-card", action="store_true", default=False,
+                    help="Auto-generate a model card README.md from eval JSON and upload it.\n"
+                         "Looks for eval JSON in dev/results/ (most-recently modified *.json)\n"
+                         "or uses the path supplied via --eval-json.")
+    ap.add_argument("--eval-json", default="",
+                    help="Path to a squish bench eval JSON file used to enrich the model card\n"
+                         "with accuracy benchmarks when --hf-model-card is active.")
     args = ap.parse_args()
 
     model_dir = Path(args.model_dir).expanduser().resolve()
@@ -249,7 +326,34 @@ def main() -> None:
         sys.exit(1)
 
     # ── Upload model card ───────────────────────────────────────────────────
-    card_text = _build_card(args.repo, args.base_model or args.repo.split("/")[-1])
+    if args.hf_model_card:
+        # Resolve eval JSON path
+        eval_json_path: Path | None = None
+        if args.eval_json:
+            eval_json_path = Path(args.eval_json).expanduser().resolve()
+            if not eval_json_path.is_file():
+                print(f"  WARN: --eval-json path not found: {eval_json_path}", file=sys.stderr)
+                eval_json_path = None
+        if eval_json_path is None:
+            # Auto-discover: most recently modified *.json in dev/results/
+            results_dir = Path(__file__).resolve().parent / "results"
+            if results_dir.is_dir():
+                candidates = sorted(results_dir.glob("*.json"),
+                                    key=lambda p: p.stat().st_mtime, reverse=True)
+                if candidates:
+                    eval_json_path = candidates[0]
+                    print(f"  Using eval JSON : {eval_json_path}")
+
+        if eval_json_path is not None:
+            card_text = _build_card_from_eval(
+                args.repo,
+                args.base_model or args.repo.split("/")[-1],
+                eval_json_path,
+            )
+        else:
+            card_text = _build_card(args.repo, args.base_model or args.repo.split("/")[-1])
+    else:
+        card_text = _build_card(args.repo, args.base_model or args.repo.split("/")[-1])
     try:
         api.upload_file(
             path_or_fileobj=card_text.encode(),

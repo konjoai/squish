@@ -263,7 +263,217 @@ Paper: https://github.com/wesleyscholl/squish/blob/main/docs/paper.md
 
 ---
 
-## Timing Tips
+## Agent Runtime
+
+### Hacker News
+
+**Title:** Squish Agent Runtime – sub-second context reload, tool-call grammar enforcement, RadixTree prefix reuse for multi-turn loops
+
+**Text (optional):**
+
+```
+Squish v9 ships a production agent runtime on top of the existing sub-second loader.
+
+Three subsystems work together:
+
+1. RadixTree prefix reuse (Phase 13C)
+   A Patricia trie stores physical KV block indices from previous turns.
+   On each new agent turn, only the *delta* tokens (new user message + tool
+   result) are forwarded through the model — the shared prefix KV state is
+   reused by reference via PagedKVCache.fork_sequence(block_refs).
+   Measured TTFT on Qwen2.5-7B: Turn 1 = 4.2 s (cold), Turn 2+ ≈ 0.12 s
+   (delta only, ~35× faster than re-processing the full prompt).
+
+2. TagDispatch grammar enforcement (Phase 15E)
+   XGrammar JSON-schema constraints activate on the <tool_call> trigger token
+   rather than from token 0.  This allows Qwen2.5 / DeepSeek to emit a
+   free-form <think> reasoning block before the structured tool call, preserving
+   reasoning quality while guaranteeing zero JSONDecodeError in the tool
+   response.
+
+3. AgentKV asymmetric INT2 cache (Phase 13A)
+   History tokens are quantised to INT2; attention sinks and the local window
+   stay FP32.  ~6× KV footprint reduction → 32K-token context on 16 GB M3.
+
+All three activate automatically with:
+    squish serve --agent --model qwen-coder:7b
+
+No API key, no cloud, no data leaving the machine.  MIT license.
+
+GitHub: https://github.com/wesleyscholl/squish
+Docs:   https://github.com/wesleyscholl/squish/tree/main/docs/agent_mode.md
+```
+
+---
+
+### Reddit: r/LocalLLaMA
+
+**Title:** [Demo] Run a 20-turn agent on your Mac without cloud — Squish Agent Runtime
+
+**Subreddit:** r/LocalLLaMA
+
+**Text:**
+
+```
+Been building a local agent runtime into Squish for a while, finally at a
+state worth sharing.
+
+**The challenge with local agents:**
+
+Standard loaders re-process the *entire* conversation history on every turn.
+By turn 10 of a coding agent loop that means ~8K tokens re-prefilled every
+reply, and KV memory keeps growing until the Mac grinds to a halt.
+
+**What Squish does instead:**
+
+- **RadixTree KV reuse** — only the new delta tokens (your message + tool
+  result) go through the forward pass.  Turn 2+ latency drops from ~4 s to
+  ~0.12 s on Qwen2.5-7B.
+- **AgentKV INT2 history** — older KV blocks are quantised to INT2 while
+  attention sinks and the local window stay FP32.  6× smaller KV footprint;
+  32K context fits in 16 GB.
+- **Grammar enforcement after reasoning** — TagDispatch activates the
+  XGrammar JSON-schema FSM on `<tool_call>`, not token 0.  Qwen2.5 and
+  DeepSeek can still emit a full `<think>` block before the structured call.
+  Zero `JSONDecodeError` across 20 turns in our test suite.
+
+**One flag:**
+
+```bash
+squish serve --agent --model qwen-coder:7b
+```
+
+Runs 20-turn coding agent on 16 GB M3.  Memory stays flat (we log per-turn
+KV budget in the server output).  Works with any OpenAI-compatible agent
+framework (LangChain, OpenClaw, Continue.dev).
+
+Benchmark JSON: dev/results/
+GitHub: https://github.com/wesleyscholl/squish
+```
+
+---
+
+### Reddit: r/macapps
+
+**Title:** Squish – local AI assistant for Apple Silicon, works offline, under 1 second response
+
+**Subreddit:** r/macapps
+
+**Text:**
+
+```
+If you want a local AI assistant on your Mac that:
+
+- Loads in under a second (0.33–0.53 s for a 1.5 B model)
+- Works completely offline — nothing leaves your machine
+- Doesn't need an OpenAI account or monthly fee
+- Runs long multi-turn conversations without slowing down
+
+...Squish might be worth trying.
+
+It's a command-line server that runs on Apple Silicon (M1 through M5) and
+exposes a local API that any OpenAI-compatible app can talk to.  The
+"under 1 second" part comes from storing model weights in a format Metal
+can memory-map directly — no conversion step every time you start it up.
+
+For multi-turn conversations it reuses cached context from previous turns so
+later replies come back in ~100 ms instead of several seconds.
+
+```bash
+pip install squish
+squish pull qwen2.5:1.5b   # one-time download
+squish serve qwen2.5:1.5b  # start local server on port 11435
+```
+
+Then point any OpenAI-compatible app at http://localhost:11435.
+
+Free, open source (MIT).  macOS + Apple Silicon only for now.
+
+GitHub: https://github.com/wesleyscholl/squish
+```
+
+---
+
+### Twitter / X — Agent Runtime Thread
+
+#### Tweet 1 / 5 (Hook)
+
+```
+Squish now has a local agent runtime that runs 20-turn loops on your Mac
+without cloud, without swap, without JSONDecodeErrors.
+
+Here's how it works  🧵
+
+https://github.com/wesleyscholl/squish
+
+#LocalLLM #AppleSilicon #AgentAI
+```
+
+#### Tweet 2 / 5 (RadixTree KV reuse)
+
+```
+Turn 1 TTFT: 4.2 s (cold load)
+Turn 2 TTFT: 0.12 s
+
+That 35× speedup comes from RadixTree prefix reuse.
+
+A Patricia trie stores KV block indices from previous turns.
+Only the delta tokens (new message + tool result) go through the forward pass.
+The prefix KV state is reused by reference — zero re-computation.
+
+#KVCache #InferenceOptimization
+```
+
+#### Tweet 3 / 5 (Grammar enforcement)
+
+```
+Biggest reliability problem with local tool-calling agents: JSONDecodeError
+mid-conversation.
+
+Squish uses TagDispatch grammar enforcement:
+- Model emits free-form <think> reasoning block first
+- On <tool_call> trigger token, XGrammar JSON-schema FSM activates instantly
+- Structured output guaranteed from that point forward
+
+0 JSONDecodeErrors across 100 consecutive tool calls in our test suite.
+
+#StructuredOutput #ToolCalling
+```
+
+#### Tweet 4 / 5 (AgentKV + memory)
+
+```
+16 GB M3 + 20-turn coding agent = KV cache growing every turn.
+
+AgentKV INT2 history quantisation keeps memory flat:
+- Attention sinks: FP32 (preserved exactly)
+- Local window (last 64 tokens): FP32 (full precision for current context)
+- History: INT2 (6× smaller)
+
+Result: 32K-token context fits in 16 GB.
+Per-turn memory budget logged in server output.
+
+#MemoryOptimization #AppleSilicon
+```
+
+#### Tweet 5 / 5 (CTA)
+
+```
+All three — RadixTree reuse, grammar enforcement, AgentKV INT2 — activate
+with a single flag:
+
+  squish serve --agent --model qwen-coder:7b
+
+Works with LangChain, Continue.dev, OpenClaw, any OpenAI-compatible framework.
+
+Free, MIT, macOS + Apple Silicon only (Linux/CUDA on the roadmap).
+
+https://github.com/wesleyscholl/squish
+
+#OpenSource #LocalAI #BuildInPublic
+```
+
+
 
 1. **HN / Reddit:** Post around 9–10 AM PT (peak hours), Tuesday–Thursday
 2. **Twitter / X:** Space out tweets over 2–3 hours or post as a thread

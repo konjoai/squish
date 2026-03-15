@@ -975,8 +975,8 @@ New file: `squish/aqlm.py`
 - [x] `tests/test_aqlm_unit.py` — 16+ tests: config validation, codebook init, round-trip dequantize, quantizer calibration on random linear layer, model-level quantize+forward
 - [x] `squish/compressed_loader.py` — detect `aqlm_indices.npy` + `aqlm_codebooks.npy` in npy-dir and reconstruct AQLMLayer on load
 - [x] `squish/convert.py` — add `--aqlm` flag; save indices + codebooks into npy-dir
-- [ ] `squish/server.py` — `--aqlm` flag wiring (Experimental tier); skip gracefully if `aqlm` import fails
-- [ ] `squish/cli.py` — expose `--aqlm` and `--aqlm-codebooks` / `--aqlm-cbsize` in `squish compress` subcommand
+- [x] `squish/server.py` — `--aqlm` flag wiring (Experimental tier); skip gracefully if `aqlm` import fails
+- [x] `squish/cli.py` — expose `--aqlm` and `--aqlm-codebooks` / `--aqlm-cbsize` in `squish compress` subcommand
 - [ ] `dev/benchmarks/bench_aqlm.py` — perplexity on wikitext-2 vs INT4 vs VPTQ at 2-bit; save to `dev/results/aqlm_bench.json`
 - [ ] `docs/aqlm.md` — design document with compression tradeoff table
 
@@ -1674,9 +1674,9 @@ RadixTree to *skip the second KV write* rather than the *first KV computation* �
 TTFT for a 16K-token agent re-submission is unchanged.
 
 **Audit & Fix:**
-- [ ] Read `server.py` dispatch loop — locate the code path for `PREFIX_PATH` (the route that activates RadixTree). Confirm whether `model.forward()` is called on (a) the full prompt, (b) only the delta, or (c) something else
-- [ ] If the forward pass covers the full prompt: add the delta-only forward path. The correct implementation: `cached_kv = PagedKVCache.fork_sequence(block_refs)`, then call `model.forward(delta_tokens, past_key_values=cached_kv, past_length=prefix_len)`
-- [ ] Add `tests/test_radix_kv_reuse_integration.py` — end-to-end test with a synthetic 2-layer model: send prompt A, then send prompt A + delta; assert that `model.forward` is called with only `len(delta)` tokens on the second call, not `len(A) + len(delta)` tokens
+- [x] Read `server.py` dispatch loop — locate the code path for `PREFIX_PATH` (the route that activates RadixTree). Confirm whether `model.forward()` is called on (a) the full prompt, (b) only the delta, or (c) something else
+- [x] If the forward pass covers the full prompt: add the delta-only forward path. The correct implementation: `cached_kv = PagedKVCache.fork_sequence(block_refs)`, then call `model.forward(delta_tokens, past_key_values=cached_kv, past_length=prefix_len)`
+- [x] Add `tests/test_radix_kv_reuse_integration.py` — end-to-end test with a synthetic 2-layer model: send prompt A, then send prompt A + delta; assert that `model.forward` is called with only `len(delta)` tokens on the second call, not `len(A) + len(delta)` tokens
 - [ ] Measure TTFT improvement on Qwen2.5-7B: cold prompt (first turn) vs warm prompt (same prefix, new delta); document delta in `dev/results/radix_kv_reuse.json`
 
 ---
@@ -1830,10 +1830,10 @@ expert weights are gathered (one layer ahead). They operate on orthogonal axes.
 **Deliverables:**
 - [x] `squish/moe_lookahead.py` — LookaheadRouterConfig, AuxiliaryRouter, ExpertPrefetcher, LookaheadMoEPatch, profile_moe_model (in `squish/moe/moe_lookahead.py`)
 - [x] `tests/test_moe_lookahead_unit.py` — 14+ tests: AuxiliaryRouter output shape and dtype, calibrate on random hiddens/labels, ExpertPrefetcher top-k selection, hit rate tracking, below-threshold disable, LookaheadMoEPatch apply+remove restores original forward pass (in `tests/moe/test_moe_lookahead_unit.py`)
-- [ ] `squish/server.py` — `--moe-lookahead` flag (Experimental tier); auto-activates when model catalog entry has `"moe": true` and `--agent` preset is active
-- [ ] `squish/cli.py` — expose as `--moe-lookahead` flag; add to `--agent` preset for MoE models
-- [ ] `dev/benchmarks/bench_moe_lookahead.py` — TPS comparison on DeepSeek-Coder-V2-Lite: no lookahead vs lookahead at 65% / 75% hit rate; measure per-layer gather latency delta; save to `dev/results/moe_lookahead_bench.json`
-- [ ] `docs/moe_guide.md` — which models in the catalog are MoE, how to calibrate lookahead, DeepSeek-V2-Lite setup guide on 16GB M3
+- [x] `squish/server.py` — `--moe-lookahead` flag (Experimental tier); auto-activates when model catalog entry has `"moe": true` and `--agent` preset is active
+- [x] `squish/cli.py` — expose as `--moe-lookahead` flag; add to `--agent` preset for MoE models
+- [x] `dev/benchmarks/bench_moe_lookahead.py` — TPS comparison on DeepSeek-Coder-V2-Lite: no lookahead vs lookahead at 65% / 75% hit rate; measure per-layer gather latency delta; save to `dev/results/moe_lookahead_bench.json`
+- [x] `docs/moe_guide.md` — which models in the catalog are MoE, how to calibrate lookahead, DeepSeek-V2-Lite setup guide on 16GB M3
 
 ---
 
@@ -2186,11 +2186,11 @@ jobs:
 ```
 
 **Deliverables:**
-- [ ] `dev/scripts/model_pipeline.py` — three jobs (watch, compress, validate, publish); `--dry-run` flag that skips all writes; output `dev/results/pipeline_run_<date>.json`
-- [ ] `.github/workflows/model_pipeline.yml` — daily cron + manual trigger; uses `macos-14` runner
-- [ ] `dev/scripts/model_pipeline.py` — Job 2 accuracy gate: if delta > 3 pp, retry int8; if still > 3 pp, write to `pipeline_rejected.json` and skip publish
+- [x] `dev/scripts/model_pipeline.py` — three jobs (watch, compress, validate, publish); `--dry-run` flag that skips all writes; output `dev/results/pipeline_run_<date>.json`
+- [x] `.github/workflows/model_pipeline.yml` — daily cron + manual trigger; uses `macos-14` runner
+- [x] `dev/scripts/model_pipeline.py` — Job 2 accuracy gate: if delta > 3 pp, retry int8; if still > 3 pp, write to `pipeline_rejected.json` and skip publish
 - [x] `squish/catalog.py` — add `hf_sha256: str | None` field to `CatalogEntry`; `squish run` verifies local file hash before serving (prevents using a partially-downloaded model)
-- [ ] `tests/test_model_pipeline_unit.py` — 10+ tests: candidate filter logic (license check, size check, age check), accuracy gate pass/fail/retry, catalog diff writer, mock HF API responses
+- [x] `tests/test_model_pipeline_unit.py` — 10+ tests: candidate filter logic (license check, size check, age check), accuracy gate pass/fail/retry, catalog diff writer, mock HF API responses
 
 ---
 
@@ -2217,9 +2217,9 @@ Uses the `openai` Python SDK pointed at `http://localhost:11434` (squish serve).
 | `test_langchain_tool_bind` | LangChain `ChatOpenAI.bind_tools()` works end-to-end |
 
 **Deliverables:**
-- [ ] `tests/test_openai_compat.py` — 11 tests above, all using real `openai` SDK, marked `@pytest.mark.integration`
-- [ ] `pyproject.toml` — add `[tool.pytest.ini_options] markers = ["integration: requires live squish serve"]`
-- [ ] `dev/scripts/run_compat_tests.sh` — helper script: starts `squish serve --agent --model qwen-coder:7b`, waits for `/health`, runs `pytest tests/test_openai_compat.py --run-integration`, outputs pass/fail table
+- [x] `tests/test_openai_compat.py` — 11 tests above, all using real `openai` SDK, marked `@pytest.mark.integration`
+- [x] `pyproject.toml` — add `[tool.pytest.ini_options] markers = ["integration: requires live squish serve"]`
+- [x] `dev/scripts/run_compat_tests.sh` — helper script: starts `squish serve --agent --model qwen-coder:7b`, waits for `/health`, runs `pytest tests/test_openai_compat.py --run-integration`, outputs pass/fail table
 
 ---
 

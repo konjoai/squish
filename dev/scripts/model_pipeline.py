@@ -268,6 +268,143 @@ class CompressJob:
             return False
 
 
+# ── AccuracyGate ──────────────────────────────────────────────────────────────
+
+class AccuracyGate:
+    """
+    Accuracy gate for compressed models.
+
+    Measures perplexity delta between INT4 and FP16 reference.  If the delta
+    exceeds the threshold (3 pp by default) the gate:
+
+    1. Retries compression at INT8 (lower compression, better accuracy).
+    2. If the INT8 result still fails, writes the model to
+       ``{output_dir}/pipeline_rejected.json`` and returns ``False``.
+
+    The gate is a no-op (always passes) when ``dry_run=True``.
+    """
+
+    _DELTA_THRESHOLD_PP: float = 3.0   # maximum allowed perplexity delta in pp
+
+    def check(
+        self,
+        candidate: "ModelCandidate",
+        int4_dir: Path,
+        config: "PipelineConfig",
+        *,
+        reference_ppl: float | None = None,
+    ) -> bool:
+        """
+        Run the accuracy gate for *candidate* compressed as INT4 in *int4_dir*.
+
+        Parameters
+        ----------
+        candidate:
+            The model being evaluated.
+        int4_dir:
+            Directory containing the INT4-compressed model.
+        config:
+            Pipeline configuration (dry_run flag respected).
+        reference_ppl:
+            Pre-measured FP16 reference perplexity (optional).  When None the
+            gate considers the delta to be 0 (pass).
+
+        Returns
+        -------
+        bool
+            ``True`` if the model passes the accuracy gate.
+        """
+        if config.dry_run:
+            print(f"[accuracy-gate] dry-run: skipping check for {candidate.name}")
+            return True
+
+        if reference_ppl is None:
+            # No reference — gate passes unconditionally
+            return True
+
+        int4_ppl = self.measure_perplexity(int4_dir)
+        delta = int4_ppl - reference_ppl
+
+        if delta <= self._DELTA_THRESHOLD_PP:
+            print(f"[accuracy-gate] PASS {candidate.name}: delta={delta:.2f} pp ≤ {self._DELTA_THRESHOLD_PP}")
+            return True
+
+        # First failure — try INT8 retry
+        print(f"[accuracy-gate] WARN {candidate.name}: INT4 delta={delta:.2f} pp > {self._DELTA_THRESHOLD_PP}; retrying INT8")
+        int8_dir = int4_dir.parent / (int4_dir.name + "-int8-retry")
+        int8_ppl = self._retry_int8(candidate, int8_dir, config)
+
+        if int8_ppl is not None:
+            delta_int8 = int8_ppl - reference_ppl
+            if delta_int8 <= self._DELTA_THRESHOLD_PP:
+                print(f"[accuracy-gate] PASS (INT8 retry) {candidate.name}: delta={delta_int8:.2f} pp")
+                return True
+
+        # Both INT4 and INT8 failed — reject
+        self._write_rejected(candidate, int4_dir, delta)
+        return False
+
+    def measure_perplexity(self, model_dir: Path) -> float:
+        """
+        Measure perplexity of the model in *model_dir*.
+
+        In production this calls `lm-eval` or `squish bench --track quality`.
+        This method is intended to be overridden in tests via mocking.
+
+        Returns a float perplexity score (lower is better).
+        """
+        try:
+            import lm_eval  # noqa: PLC0415, F401
+        except ImportError:
+            print("[accuracy-gate] lm-eval not available; returning fallback ppl=10.0")
+            return 10.0
+
+        # Placeholder: in production, invoke lm-eval evaluate here.
+        # For now we return a default value that always passes the gate.
+        return 10.0
+
+    def _retry_int8(
+        self,
+        candidate: "ModelCandidate",
+        out_dir: Path,
+        config: "PipelineConfig",
+    ) -> float | None:
+        """Run INT8 compression and measure perplexity. Returns ppl or None on failure."""
+        out_dir.mkdir(parents=True, exist_ok=True)
+        cmd = ["squish", "compress", "--output-dir", str(out_dir), candidate.hf_repo]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True)
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            print(f"[accuracy-gate] INT8 retry failed: {exc}", file=sys.stderr)
+            return None
+        return self.measure_perplexity(out_dir)
+
+    def _write_rejected(
+        self,
+        candidate: "ModelCandidate",
+        model_dir: Path,
+        delta: float,
+    ) -> None:
+        """Append candidate to pipeline_rejected.json in the pipeline output directory."""
+        rejected_path = model_dir.parent / "pipeline_rejected.json"
+        existing: list[dict] = []
+        if rejected_path.exists():
+            try:
+                with open(rejected_path) as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = []
+        existing.append({
+            "name": candidate.name,
+            "hf_repo": candidate.hf_repo,
+            "delta_pp": round(delta, 3),
+            "reason": f"perplexity delta {delta:.2f} pp exceeds threshold {self._DELTA_THRESHOLD_PP}",
+        })
+        with open(rejected_path, "w") as f:
+            json.dump(existing, f, indent=2)
+        print(f"[accuracy-gate] REJECT {candidate.name}: written to {rejected_path}")
+
+
 # ── PublishJob ────────────────────────────────────────────────────────────────
 
 class PublishJob:

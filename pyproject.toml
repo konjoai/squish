@@ -112,7 +112,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 addopts   = "-q --tb=short --import-mode=importlib"
 markers   = [
-    "integration: requires a live squish serve instance (set SQUISH_TEST_BASE_URL)",
+    "integration: requires live squish serve",
 ]
 
 [tool.coverage.run]

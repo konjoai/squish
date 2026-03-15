@@ -2861,6 +2861,12 @@ Examples:
              "QuIP# format into a larger float16 cache on first load.",
     )
     ap.add_argument(
+        "--aqlm",
+        action="store_true",
+        default=False,
+        help="Enable AQLM 2-bit quantised weights (Experimental)",
+    )
+    ap.add_argument(
         "--all-optimizations", action="store_true", default=False,
         help=(
             "Enable ALL built-in optimization modules at once. "
@@ -3903,6 +3909,13 @@ Examples:
             _info("spin-quant", "enabled")
         except Exception as _e:
             _warn(f"[spin-quant] Skipped: {_e}")
+
+    if getattr(args, "aqlm", False):
+        try:
+            from squish.quant.aqlm import AQLMConfig  # noqa: PLC0415, F401
+            _info("aqlm", "enabled (additive codebook quantization — auto-detected by loader)")
+        except Exception as _e:
+            _warn(f"[aqlm] Skipped: {_e}")
 
     print()
     _section("")
