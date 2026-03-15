@@ -19,6 +19,7 @@ Dry-run mode completes without any external calls (no HF_TOKEN, no real models n
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import subprocess
@@ -76,6 +77,15 @@ _SYNTHETIC_CANDIDATES = [
         priority="P1",
     ),
 ]
+
+
+# ── Pipeline constants ────────────────────────────────────────────────────────
+
+_PP_THRESHOLD: float = 3.0        # max allowed perplexity delta (pp) vs FP16 baseline
+_MAX_AGE_DAYS: float = 180.0      # models older than this are de-prioritised
+_REJECTED_JSON: Path = (
+    Path(__file__).resolve().parent.parent / "results" / "pipeline_rejected.json"
+)
 
 
 # ── WatchJob ─────────────────────────────────────────────────────────────────
@@ -144,6 +154,10 @@ class WatchJob:
                 if model_name in published:
                     continue
 
+                # Licence filter: skip non-commercial / research-only models
+                if not self._is_open_license(m):
+                    continue
+
                 # Size filter: 1B-15B (use tags or safetensors metadata)
                 size_gb = self._estimate_size_gb(m)
                 if not (1.0 <= size_gb <= 60.0):
@@ -154,6 +168,15 @@ class WatchJob:
                     continue
 
                 priority = "P0" if size_gb <= 4.0 else ("P1" if size_gb <= 10.0 else "P2")
+
+                # De-prioritise models older than _MAX_AGE_DAYS
+                age_days = self._estimate_age_days(m)
+                if age_days > _MAX_AGE_DAYS:
+                    if priority == "P0":
+                        priority = "P1"
+                    elif priority == "P1":
+                        priority = "P2"
+
                 candidates.append(ModelCandidate(
                     name=model_name,
                     hf_repo=m.id,
@@ -188,6 +211,53 @@ class WatchJob:
                         pass
         # Default: unknown size — assume fits
         return 7.0
+
+    def _is_open_license(self, model_info) -> bool:
+        """Return True if the model has an open/permissive licence.
+
+        Non-commercial (-nc) and research-only licences are rejected.
+        Models with no detectable licence string default to allowed.
+        """
+        card = getattr(model_info, "cardData", None) or {}
+        license_val: str = card.get("license", "") if isinstance(card, dict) else ""
+        if not license_val:
+            for tag in getattr(model_info, "tags", []) or []:
+                if isinstance(tag, str) and tag.startswith("license:"):
+                    license_val = tag.split(":", 1)[1]
+                    break
+        license_val = (license_val or "").lower()
+        nc_markers = ("non-commercial", "-nc", "research-only")
+        return not any(marker in license_val for marker in nc_markers)
+
+    def _estimate_age_days(self, model_info) -> float:
+        """Return age of model in days since lastModified. Returns 0.0 if unknown."""
+        last_modified = getattr(model_info, "lastModified", None)
+        if last_modified is None:
+            return 0.0
+        if isinstance(last_modified, str):
+            try:
+                dt = datetime.datetime.fromisoformat(
+                    last_modified.replace("Z", "+00:00")
+                )
+            except ValueError:
+                return 0.0
+        elif isinstance(last_modified, datetime.datetime):
+            dt = last_modified
+        else:
+            return 0.0
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return (now - dt).total_seconds() / 86400.0
+
+    def _catalog_diff(
+        self,
+        candidates: list[ModelCandidate],
+        previous_names: list[str],
+    ) -> list[ModelCandidate]:
+        """Return candidates whose names do not appear in *previous_names*."""
+        prev_set = set(previous_names)
+        return [c for c in candidates if c.name not in prev_set]
 
 
 # ── CompressJob ───────────────────────────────────────────────────────────────
@@ -266,6 +336,144 @@ class CompressJob:
             return isinstance(data, dict) and len(data) > 0
         except Exception:
             return False
+
+    # ── Accuracy gate ─────────────────────────────────────────────────────────
+
+    def _accuracy_gate(
+        self,
+        model_id: str,
+        delta_pp: float,
+        retry_fn,
+    ) -> tuple[bool, float]:
+        """Accuracy gate: ensure perplexity delta vs FP16 is within _PP_THRESHOLD.
+
+        If *delta_pp* > _PP_THRESHOLD, calls *retry_fn* (expected to run int8
+        compression and return the new delta).  Returns ``(passed, final_delta)``.
+
+        Parameters
+        ----------
+        model_id:
+            Human-readable identifier used in log messages.
+        delta_pp:
+            Perplexity delta of the INT4 model vs FP16 baseline (in perplexity
+            points, pp).  Lower is better.
+        retry_fn:
+            Zero-argument callable that re-compresses with int8 and returns the
+            new ``delta_pp`` as a float.
+        """
+        if delta_pp <= _PP_THRESHOLD:
+            return True, delta_pp
+
+        print(
+            f"[compress] accuracy-gate WARN: {model_id} int4 delta={delta_pp:.2f}pp "
+            f"> {_PP_THRESHOLD:.1f}pp — retrying with int8"
+        )
+        retry_delta: float = retry_fn()
+        if retry_delta <= _PP_THRESHOLD:
+            print(
+                f"[compress] accuracy-gate OK: {model_id} int8 delta={retry_delta:.2f}pp"
+            )
+            return True, retry_delta
+
+        print(
+            f"[compress] accuracy-gate FAIL: {model_id} int8 delta={retry_delta:.2f}pp "
+            f"> {_PP_THRESHOLD:.1f}pp — REJECTED"
+        )
+        return False, retry_delta
+
+    def _measure_perplexity_delta(
+        self,
+        candidate: ModelCandidate,
+        out_dir: Path,
+    ) -> float:
+        """Measure perplexity delta (pp) of compressed model vs FP16 baseline.
+
+        Calls ``squish eval --perplexity`` and parses the ``perplexity_delta:``
+        line from stdout.  Returns 0.0 on any error (conservative: gate passes).
+        """
+        cmd = [
+            "squish", "eval",
+            "--perplexity",
+            "--baseline-model", candidate.hf_repo,
+            "--output-dir", str(out_dir),
+        ]
+        try:
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            for line in result.stdout.splitlines():
+                if "perplexity_delta:" in line.lower():
+                    parts = line.split(":", 1)
+                    if len(parts) == 2:
+                        return float(parts[1].strip())
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            pass
+        return 0.0
+
+    def _compress_and_measure_int8(
+        self,
+        candidate: ModelCandidate,
+        out_dir: Path,
+        config: PipelineConfig,
+    ) -> float:
+        """Re-compress *candidate* with --int8 into *out_dir* and return delta."""
+        cmd = [
+            "squish", "compress",
+            "--int8",
+            "--output-dir", str(out_dir),
+            candidate.hf_repo,
+        ]
+        print(f"[compress] accuracy-gate retry: {candidate.name} with int8")
+        try:
+            subprocess.run(cmd, check=True, capture_output=False)
+        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+            print(
+                f"[compress] ERROR: int8 retry failed for {candidate.name}: {exc}",
+                file=sys.stderr,
+            )
+            return float("inf")
+        return self._measure_perplexity_delta(candidate, out_dir)
+
+    def _write_rejection(
+        self,
+        candidate: ModelCandidate,
+        delta_pp: float,
+        config: PipelineConfig,
+    ) -> None:
+        """Append a rejection record to *_REJECTED_JSON*.
+
+        In dry-run mode only prints a message; the filesystem is not touched.
+        """
+        if config.dry_run:
+            print(
+                f"[compress] DRY-RUN would write rejection: {candidate.name} "
+                f"delta={delta_pp:.2f}pp"
+            )
+            return
+
+        _REJECTED_JSON.parent.mkdir(parents=True, exist_ok=True)
+        existing: list[dict] = []
+        if _REJECTED_JSON.exists():
+            try:
+                with open(_REJECTED_JSON) as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = []
+
+        existing.append({
+            "model_id": candidate.hf_repo,
+            "model_name": candidate.name,
+            "delta_pp": delta_pp,
+            "threshold_pp": _PP_THRESHOLD,
+            "quant_attempted": "int8",
+            "rejected_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        })
+        with open(_REJECTED_JSON, "w") as f:
+            json.dump(existing, f, indent=2)
+        print(f"[compress] Rejection written → {_REJECTED_JSON}: {candidate.name}")
 
 
 # ── AccuracyGate ──────────────────────────────────────────────────────────────

@@ -1307,7 +1307,7 @@ enhancement for a future wave.
 **Deliverables:**
 - [x] `squish/benchmarks/code_bench.py` — CodeBenchConfig (includes `sandbox: bool = False`), CodeBenchRunner
 - [x] `tests/test_bench_code.py` — 6+ tests: config, sandbox gate logic, output schema
-- [ ] Warning message when `--sandbox` is not passed: "Code generation benchmarks produce output to JSON but will not execute generated code. Pass --sandbox to run HumanEval/MBPP execution."
+- [x] Warning message when `--sandbox` is not passed: "Code generation benchmarks produce output to JSON but will not execute generated code. Pass --sandbox to run HumanEval/MBPP execution."
 
 ---
 
@@ -1346,7 +1346,7 @@ evaluates the response against ground truth using existing `tool_calling.py` par
 
 **Deliverables:**
 - [x] `squish/benchmarks/tool_bench.py` — ToolBenchConfig, ToolBenchRunner, EngineClient
-- [ ] `squish/benchmarks/data/tool_schemas.json` — 20 canonical schemas covering: calculator, file_read, web_search, json_parse, send_email, calendar_lookup, code_interpreter, weather, translate, summarize — and 10 more covering complex nested arg types
+- [x] `squish/benchmarks/data/tool_schemas.json` — 20 canonical schemas covering: calculator, file_read, web_search, json_parse, send_email, calendar_lookup, code_interpreter, weather, translate, summarize — and 10 more covering complex nested arg types
 - [x] `tests/test_bench_tool.py` — 10+ tests: EngineClient mock, schema compliance scoring, exact match scoring, compare flag parsing
 - [x] `squish/benchmarks/compare.py` — reads eval_output/*.json, generates cross-engine markdown + CSV table
 
@@ -1389,7 +1389,7 @@ Each scenario defines:
 
 **Deliverables:**
 - [x] `squish/benchmarks/agent_bench.py` — AgentBenchConfig, AgentScenario, ToolFixtureReplay, AgentBenchRunner
-- [ ] `squish/benchmarks/data/agent_scenarios.json` — 20 hand-authored scenarios (4 × 5; described above)
+- [x] `squish/benchmarks/data/agent_scenarios.json` — 20 hand-authored scenarios (4 × 5; described above)
 - [x] `tests/test_bench_agent.py` — 12+ tests: scenario loader, fixture replay correctness, step efficiency calculation, completion rate scoring, turn limit enforcement
 
 ---
@@ -1859,9 +1859,9 @@ deepseek-coder-v2-lite  [MoE: 16B total / 2.4B active]  INT4: 3.3 GB  ✓ agent-
 ```
 
 **Deliverables:**
-- [ ] `squish/catalog.py` — add `moe: bool`, `active_params_b: float | None` fields to `CatalogEntry`; populate for all known MoE models in the bundled catalog
-- [ ] `squish/cli.py` — update `squish models` display to show `[MoE: X total / Y active]` badge when `moe=True`
-- [ ] `squish/server.py` — when `--agent` is active and catalog entry has `moe=True`, auto-add `--moe-lookahead` to the preset
+- [x] `squish/catalog.py` — add `moe: bool`, `active_params_b: float | None` fields to `CatalogEntry`; populate for all known MoE models in the bundled catalog
+- [x] `squish/cli.py` — update `squish models` display to show `[MoE: X total / Y active]` badge when `moe=True`
+- [x] `squish/server.py` — when `--agent` is active and catalog entry has `moe=True`, auto-add `--moe-lookahead` to the preset
 
 ---
 
@@ -1998,7 +1998,7 @@ The forced-function path must: (1) look up tool X's JSON schema from the `tools`
 
 **Deliverables:**
 - [x] `squish/server.py` — parse `tool_choice` field; add `_resolve_tool_choice(tool_choice, tools)` that returns `(mode, active_schema | None)`; wire result to grammar engine activation in the generation pre-loop
-- [ ] `tests/test_tool_choice_unit.py` — 10+ tests: `"none"` disables grammar, `"auto"` defers to model, `"required"` forces grammar from token 0, named function forces single-schema grammar, unknown function name returns 400
+- [x] `tests/test_tool_choice_unit.py` — 10+ tests: `"none"` disables grammar, `"auto"` defers to model, `"required"` forces grammar from token 0, named function forces single-schema grammar, unknown function name returns 400
 
 ---
 
@@ -2010,7 +2010,7 @@ The forced-function path must: (1) look up tool X's JSON schema from the `tools`
 
 **Deliverables:**
 - [x] `squish/server.py` — refactor `_generate_tokens()` stop-sequence check: move the `stop_ids` comparison to run before yielding `tok_text`; when a stop sequence is matched, yield `("", "stop")` (empty content, signal only) and return
-- [ ] `tests/test_stop_token_suppression.py` — 8+ tests: stop token NOT in final output text, stop reason = `"stop"` in response, multi-token stop sequences, stop sequence at position 0 (empty response)
+- [x] `tests/test_stop_token_suppression.py` — 8+ tests: stop token NOT in final output text, stop reason = `"stop"` in response, multi-token stop sequences, stop sequence at position 0 (empty response)
 
 ---
 
@@ -2028,7 +2028,7 @@ Implementation approach:
 
 **Deliverables:**
 - [x] `squish/grammar_engine.py` — add `_schema_hash(schema_dict) → str`; wire to `GrammarCache` check before `compiler.compile_json_schema()`
-- [ ] `squish/grammar_cache.py` — verify `GrammarCache` supports schema-keyed storage (not just FSM-state storage); add `get_compiled(schema_hash)` and `put_compiled(schema_hash, matcher)` methods if missing
+- [x] `squish/grammar_cache.py` — verify `GrammarCache` supports schema-keyed storage (not just FSM-state storage); add `get_compiled(schema_hash)` and `put_compiled(schema_hash, matcher)` methods if missing
 - [x] `tests/test_grammar_schema_cache.py` — 8+ tests: second request with same schema skips recompilation, different schemas compile independently, LRU eviction at capacity-32, hash collision probability negligible
 
 ---
@@ -2057,8 +2057,8 @@ A new `TagDispatch` mechanism in `grammar_engine.py`:
 
 **Deliverables:**
 - [x] `squish/grammar_engine.py` — add `TagDispatchConfig(trigger_token: str | None, constrain_after_trigger: bool = True)`, `GrammarDispatchState(PASSTHROUGH / CONSTRAINED)`, `TagDispatch` wrapper around `SquishGrammarEngine`
-- [ ] `squish/catalog.py` — add `grammar_trigger: str | None` field to `CatalogEntry`; populate for Qwen2.5, DeepSeek, and Llama families
-- [ ] `squish/server.py` — when `tools` is non-empty, construct `TagDispatch(trigger=catalog_entry.grammar_trigger)` instead of activating the grammar engine from token 0
+- [x] `squish/catalog.py` — add `grammar_trigger: str | None` field to `CatalogEntry`; populate for Qwen2.5, DeepSeek, and Llama families
+- [x] `squish/server.py` — when `tools` is non-empty, construct `TagDispatch(trigger=catalog_entry.grammar_trigger)` instead of activating the grammar engine from token 0
 - [x] `tests/test_tag_dispatch_unit.py` — 10+ tests: passthrough mode logits unchanged pre-trigger, constrained mode activates immediately post-trigger, trigger detection on multi-token trigger sequences, no trigger (Llama-style) = immediate activation
 
 ---
@@ -2076,9 +2076,9 @@ Split the vocabulary into two sets at schema compilation time:
 Precompute the context-independent invalid bitmask once per schema at compile time. At each decode step, start with that precomputed mask and only evaluate context-dependent tokens against the current FSM state. Reduces per-step vocabulary traversal by ~40–60% on typical schemas.
 
 **Deliverables:**
-- [ ] `squish/grammar_engine.py` — add `_precompute_independent_mask(tokenizer_info, schema) → mx.array` that runs once during schema compilation; add `_apply_combined_mask(logits, independent_mask, context_mask)` that performs a single vectorized `mx.where` on both masks; wire into `constrain_logits()`
-- [ ] `tests/test_grammar_independent_mask.py` — 8+ tests: precomputed mask is identical across requests for same schema, combined mask is subset of full per-step mask, performance: per-step mask application < 3 ms on vocabulary of 128K
-- [ ] `dev/benchmarks/bench_grammar_engine.py` — measure per-token mask latency (ms) with / without precomputed independent mask on 3 schemas (single-function, 5-function, complex nested); save to `dev/results/grammar_engine_bench.json`
+- [x] `squish/grammar_engine.py` — add `_precompute_independent_mask(tokenizer_info, schema) → mx.array` that runs once during schema compilation; add `_apply_combined_mask(logits, independent_mask, context_mask)` that performs a single vectorized `mx.where` on both masks; wire into `constrain_logits()`
+- [x] `tests/test_grammar_independent_mask.py` — 8+ tests: precomputed mask is identical across requests for same schema, combined mask is subset of full per-step mask, performance: per-step mask application < 3 ms on vocabulary of 128K
+- [x] `dev/benchmarks/bench_grammar_engine.py` — measure per-token mask latency (ms) with / without precomputed independent mask on 3 schemas (single-function, 5-function, complex nested); save to `dev/results/grammar_engine_bench.json`
 
 ---
 
@@ -2092,9 +2092,9 @@ MLX's `mx.compile` traces a Python function's MLX operations into a reusable com
 
 **Deliverables:**
 - [x] `squish/fused_kernels.py` — add `patch_model_compiled_ffn(model)`: iterates model layers, wraps each layer's `mlp.forward` (or equivalent) in `mx.compile`; returns a `remove()` handle
-- [ ] `squish/server.py` — call `patch_model_compiled_ffn(model)` during model load when `--fused-norm` or `--metal-fusion` is active (not breaking existing `mx.compile` decode path)
+- [x] `squish/server.py` — call `patch_model_compiled_ffn(model)` during model load when `--fused-norm` or `--metal-fusion` is active (not breaking existing `mx.compile` decode path)
 - [x] `tests/test_compiled_ffn_unit.py` — 6+ tests: patched model output numerically identical to unpatched, remove() restores originals, mx.compile fallback if unavailable
-- [ ] `dev/benchmarks/bench_mxcompile_ffn.py` — TPS with and without FFN compile at bs=1 on Qwen2.5-7B; save to `dev/results/mxcompile_ffn_bench.json`
+- [x] `dev/benchmarks/bench_mxcompile_ffn.py` — TPS with and without FFN compile at bs=1 on Qwen2.5-7B; save to `dev/results/mxcompile_ffn_bench.json`
 
 ---
 
