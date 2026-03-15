@@ -80,6 +80,17 @@ class CatalogEntry:
     # notes shown in squish models --catalog
     notes: str = ""
 
+    # Phase 14: True when this is an MoE (Mixture-of-Experts) model
+    moe: bool = False
+
+    # Phase 14: active parameter count in billions (sparse MoE only, else None)
+    active_params_b: float | None = None
+
+    # Phase 15E: trigger token string for TagDispatch grammar activation;
+    # set to the tool-call opening tag for models that use one (e.g. Qwen2.5,
+    # DeepSeek), or None for models without a grammar-gated tool-call format.
+    grammar_trigger: str | None = None
+
     @property
     def dir_name(self) -> str:
         """Filesystem directory name derived from hf_mlx_repo."""
@@ -107,56 +118,57 @@ _BUNDLED: list[dict] = [
          hf_mlx_repo="mlx-community/Qwen2.5-1.5B-Instruct-bf16",
          squish_repo="squish-community/Qwen2.5-1.5B-Instruct-squished",
          size_gb=3.1, squished_size_gb=0.9, params="1.5B", context=32768,
-         tags=["small", "fast"]),
+         tags=["small", "fast"], grammar_trigger="<tool_call>"),
     dict(id="qwen2.5:7b", name="Qwen2.5-7B-Instruct",
          hf_mlx_repo="mlx-community/Qwen2.5-7B-Instruct-bf16",
          squish_repo="squish-community/Qwen2.5-7B-Instruct-squished",
          size_gb=14.4, squished_size_gb=3.9, params="7B", context=131072,
-         tags=["balanced"]),
+         tags=["balanced"], grammar_trigger="<tool_call>"),
     dict(id="qwen2.5:14b", name="Qwen2.5-14B-Instruct",
          hf_mlx_repo="mlx-community/Qwen2.5-14B-Instruct-bf16",
          squish_repo="squish-community/Qwen2.5-14B-Instruct-squished",
          size_gb=28.2, squished_size_gb=7.5, params="14B", context=131072,
-         tags=["balanced"]),
+         tags=["balanced"], grammar_trigger="<tool_call>"),
     dict(id="qwen2.5:32b", name="Qwen2.5-32B-Instruct",
          hf_mlx_repo="mlx-community/Qwen2.5-32B-Instruct-bf16",
          size_gb=64.4, squished_size_gb=17.1, params="32B", context=131072,
-         tags=["large"]),
+         tags=["large"], grammar_trigger="<tool_call>"),
     dict(id="qwen2.5:72b", name="Qwen2.5-72B-Instruct",
          hf_mlx_repo="mlx-community/Qwen2.5-72B-Instruct-bf16",
          size_gb=144.0, squished_size_gb=38.2, params="72B", context=131072,
-         tags=["large"]),
+         tags=["large"], grammar_trigger="<tool_call>"),
 
     # ── Qwen 3 ────────────────────────────────────────────────────────────────
     dict(id="qwen3:0.6b", name="Qwen3-0.6B",
          hf_mlx_repo="mlx-community/Qwen3-0.6B-bf16",
          size_gb=1.3, squished_size_gb=0.4, params="0.6B", context=32768,
-         tags=["small", "fast"]),
+         tags=["small", "fast"], grammar_trigger="<tool_call>"),
     dict(id="qwen3:1.7b", name="Qwen3-1.7B",
          hf_mlx_repo="mlx-community/Qwen3-1.7B-bf16",
          size_gb=3.5, squished_size_gb=1.0, params="1.7B", context=32768,
-         tags=["small", "fast"]),
+         tags=["small", "fast"], grammar_trigger="<tool_call>"),
     dict(id="qwen3:4b", name="Qwen3-4B",
          hf_mlx_repo="mlx-community/Qwen3-4B-bf16",
          size_gb=8.2, squished_size_gb=2.2, params="4B", context=32768,
-         tags=["small", "fast"]),
+         tags=["small", "fast"], grammar_trigger="<tool_call>"),
     dict(id="qwen3:8b", name="Qwen3-8B",
          hf_mlx_repo="mlx-community/Qwen3-8B-bf16",
          size_gb=16.4, squished_size_gb=4.4, params="8B", context=131072,
-         tags=["balanced"]),
+         tags=["balanced"], grammar_trigger="<tool_call>"),
     dict(id="qwen3:14b", name="Qwen3-14B",
          hf_mlx_repo="mlx-community/Qwen3-14B-bf16",
          size_gb=28.7, squished_size_gb=7.6, params="14B", context=131072,
-         tags=["balanced"]),
+         tags=["balanced"], grammar_trigger="<tool_call>"),
     dict(id="qwen3:30b-a3b", name="Qwen3-30B-A3B (MoE)",
          hf_mlx_repo="mlx-community/Qwen3-30B-A3B-bf16",
          size_gb=18.5, squished_size_gb=5.0, params="30B", context=131072,
          tags=["moe", "balanced"],
-         notes="MoE — only 3B active params per token"),
+         notes="MoE — only 3B active params per token",
+         moe=True, active_params_b=3.0, grammar_trigger="<tool_call>"),
     dict(id="qwen3:32b", name="Qwen3-32B",
          hf_mlx_repo="mlx-community/Qwen3-32B-bf16",
          size_gb=64.0, squished_size_gb=17.0, params="32B", context=131072,
-         tags=["large"]),
+         tags=["large"], grammar_trigger="<tool_call>"),
 
     # ── Llama 3.x ─────────────────────────────────────────────────────────────
     dict(id="llama3.2:1b", name="Llama-3.2-1B-Instruct",
@@ -198,15 +210,15 @@ _BUNDLED: list[dict] = [
     dict(id="deepseek-r1:7b", name="DeepSeek-R1-Distill-Qwen-7B",
          hf_mlx_repo="mlx-community/DeepSeek-R1-Distill-Qwen-7B-bf16",
          size_gb=14.4, squished_size_gb=3.9, params="7B", context=131072,
-         tags=["reasoning"]),
+         tags=["reasoning"], grammar_trigger="<tool_call>"),
     dict(id="deepseek-r1:14b", name="DeepSeek-R1-Distill-Qwen-14B",
          hf_mlx_repo="mlx-community/DeepSeek-R1-Distill-Qwen-14B-bf16",
          size_gb=28.2, squished_size_gb=7.5, params="14B", context=131072,
-         tags=["reasoning"]),
+         tags=["reasoning"], grammar_trigger="<tool_call>"),
     dict(id="deepseek-r1:32b", name="DeepSeek-R1-Distill-Qwen-32B",
          hf_mlx_repo="mlx-community/DeepSeek-R1-Distill-Qwen-32B-bf16",
          size_gb=64.0, squished_size_gb=17.1, params="32B", context=131072,
-         tags=["reasoning", "large"]),
+         tags=["reasoning", "large"], grammar_trigger="<tool_call>"),
 
     # ── Phi-4 ─────────────────────────────────────────────────────────────────
     dict(id="phi4:14b", name="Phi-4",
@@ -268,6 +280,9 @@ def _entry_from_dict(d: dict) -> CatalogEntry:
         squish_repo=d.get("squish_repo"),
         tags=d.get("tags", []),
         notes=d.get("notes", ""),
+        moe=d.get("moe", False),
+        active_params_b=d.get("active_params_b"),
+        grammar_trigger=d.get("grammar_trigger"),
     )
 
 

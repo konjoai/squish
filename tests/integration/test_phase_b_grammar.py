@@ -106,8 +106,9 @@ def _make_xgrammar_mock():
     mock_matcher.find_jump_forward_string.return_value = ""
     xgr.GrammarMatcher = MagicMock(return_value=mock_matcher)
 
-    # Bitmask functions
-    mock_bitmask = np.ones(32000, dtype=np.float32)  # allow everything
+    # Bitmask functions — shape (1, ceil(vocab/32)) uint32 matches xgrammar layout
+    _n_words = (32000 + 31) // 32  # = 1000 for vocab 32000
+    mock_bitmask = np.full((1, _n_words), fill_value=np.uint32(0xFFFFFFFF), dtype=np.uint32)
     xgr.allocate_token_bitmask = MagicMock(return_value=mock_bitmask)
     xgr.apply_token_bitmask_inplace = MagicMock()
 
@@ -261,6 +262,9 @@ class TestConstrainLogits:
         # Real bitmask that apply_token_bitmask_inplace doesn't mutate (mock)
         with patch.dict(sys.modules, {"xgrammar": xgr}):
             engine = GrammarEngine(tok)
+        # Phase 15F: _precompute_independent_mask calls allocate_token_bitmask
+        # during __init__; reset so we only count the constrain_logits call.
+        xgr.allocate_token_bitmask.reset_mock()
         logits = self._logits()
         state = MagicMock()
         result = engine.constrain_logits(logits, state=state)

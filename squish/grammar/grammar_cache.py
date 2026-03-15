@@ -28,8 +28,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -172,7 +173,7 @@ class GrammarCache:
         Size of the vocabulary (default: 32 000).
     """
 
-    def __init__(self, vocab_size: int = 32_000) -> None:
+    def __init__(self, vocab_size: int = 32_000, compiled_maxsize: int = 64) -> None:
         if vocab_size < 1:
             raise ValueError(
                 f"vocab_size must be >= 1; got {vocab_size}"
@@ -189,6 +190,9 @@ class GrammarCache:
         self._total_lookups: int = 0
         self._cache_hits: int = 0
         self._n_transitions: int = 0
+        # Phase 15D: compiled grammar store (schema_hash -> xgrammar compiled grammar)
+        self._compiled_maxsize: int = max(1, compiled_maxsize)
+        self._compiled_grammars: OrderedDict[str, Any] = OrderedDict()
 
     # ------------------------------------------------------------------
     # Registration
@@ -375,3 +379,61 @@ class GrammarCache:
             cache_hits=self._cache_hits,
             n_transitions=self._n_transitions,
         )
+
+    # ------------------------------------------------------------------
+    # Compiled-grammar store (Phase 15D)
+    # ------------------------------------------------------------------
+
+    def get_compiled(self, schema_hash: str) -> Any:
+        """Return the cached compiled grammar for *schema_hash*, or ``None``.
+
+        Compiled grammars are objects returned by xgrammar's
+        ``GrammarCompiler.compile_json_schema()`` (or equivalent).
+        They are stored here so that the expensive compilation step is only
+        done once per unique schema across the lifetime of the server.
+
+        Parameters
+        ----------
+        schema_hash : str
+            Hex-encoded hash string (e.g. 16-char SHA-256 prefix) used as
+            the cache key. Callers should use a *stable* hash such as
+            ``hashlib.sha256(json.dumps(schema, sort_keys=True)).hexdigest()[:16]``.
+
+        Returns
+        -------
+        compiled grammar or None
+            The previously stored compiled grammar, or ``None`` on a miss.
+        """
+        return self._compiled_grammars.get(schema_hash)
+
+    def put_compiled(self, schema_hash: str, compiled: Any) -> None:
+        """Store a compiled grammar under *schema_hash*.
+
+        Inserts *compiled* into the LRU compiled-grammar store.  When the
+        store exceeds :attr:`compiled_maxsize` entries the oldest entry is
+        evicted.
+
+        Parameters
+        ----------
+        schema_hash : str
+            Stable hex-encoded hash (e.g. 16-char SHA-256 prefix).
+        compiled : object
+            A compiled grammar object (e.g. from xgrammar's
+            ``GrammarCompiler.compile_json_schema()``).  Any non-None value
+            is accepted.
+
+        Raises
+        ------
+        ValueError
+            If *schema_hash* is empty.
+        """
+        if not schema_hash:
+            raise ValueError("schema_hash must not be empty.")
+        if schema_hash in self._compiled_grammars:
+            # Move to end (most-recently-used position)
+            self._compiled_grammars.move_to_end(schema_hash)
+            self._compiled_grammars[schema_hash] = compiled
+            return
+        self._compiled_grammars[schema_hash] = compiled
+        if len(self._compiled_grammars) > self._compiled_maxsize:
+            self._compiled_grammars.popitem(last=False)

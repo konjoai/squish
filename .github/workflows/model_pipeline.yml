@@ -1,0 +1,36 @@
+name: Model Compression Pipeline
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 6am UTC daily
+  workflow_dispatch:     # manual trigger
+    inputs:
+      job:
+        description: 'Pipeline job to run'
+        required: true
+        default: 'watch'
+        type: choice
+        options: [watch, compress, publish]
+      dry_run:
+        description: 'Dry run (no external calls)'
+        type: boolean
+        default: true
+
+jobs:
+  pipeline:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install squish
+        run: pip install -e ".[dev]"
+      - name: Run pipeline
+        run: |
+          python dev/scripts/model_pipeline.py \
+            --job ${{ github.event.inputs.job || 'watch' }} \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}

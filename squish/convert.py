@@ -77,6 +77,11 @@ def _get_quip():
     return QuIPSharpConfig, QuIPSharpQuantizer
 
 
+def _get_aqlm():
+    from squish.quant.aqlm import AQLMConfig, AQLMQuantizer
+    return AQLMConfig, AQLMQuantizer
+
+
 # ---------------------------------------------------------------------------
 # ─── TTY-safe line-clear helper ─────────────────────────────────────────────
 def _clear_line() -> None:
@@ -174,6 +179,8 @@ def quantize_tensor(
     vptq_config=None,
     use_quip: bool = False,
     quip_quantizer=None,
+    use_aqlm: bool = False,
+    aqlm_config=None,
 ) -> dict:
     """
     Quantize a single float32 tensor.
@@ -184,6 +191,7 @@ def quantize_tensor(
       NF4:                  __nf4, __s_nf4, __shape
       VPTQ:                 __vq_idx, __vq_cb, __vq_res, __vq_rescb, __shape
       QuIP# E8:             __quip_e8, __quip_res, __quip_rot, __shape
+      AQLM:                 __aqlm_idx, __aqlm_cb, __shape
       passthrough:          __pt, __shape
       DFloat11 (pt):        __pt_df11  (bytes blob, stored via np.frombuffer)
       DFloat11 (scales):    replaces __s4 with __s4_df11 (bytes blob)
@@ -275,6 +283,38 @@ def quantize_tensor(
             "__quip_rot": rot,                        # float16 (d_in, d_in) or empty
             "__shape":    shape_arr,
         }
+
+    # ── AQLM: additive codebook quantization ─────────────────────────────────
+    if use_aqlm:
+        try:
+            AQLMConfig, AQLMQuantizer = _get_aqlm()
+            cfg = aqlm_config if aqlm_config is not None else AQLMConfig()
+            quantizer = AQLMQuantizer(cfg)
+            aqlm_layer = quantizer.calibrate(flat)
+            # Serialise indices: (out_features, n_groups, n_codebooks)
+            aqlm_idx = aqlm_layer.indices.astype(np.uint16)
+            # Serialise codebooks: flat array with header
+            # Layout: [scale, float(codebook_size), float(group_size), cb0_vectors..., cb1_vectors..., ...]
+            n_codebooks = cfg.n_codebooks
+            cb_size     = cfg.codebook_size
+            gs          = cfg.group_size
+            header_size = 3  # scale, codebook_size, group_size
+            cb_flat = np.empty(header_size + n_codebooks * cb_size * gs, dtype=np.float32)
+            cb_flat[0] = aqlm_layer.scale
+            cb_flat[1] = float(cb_size)
+            cb_flat[2] = float(gs)
+            offset = header_size
+            for m in range(n_codebooks):
+                vecs = aqlm_layer.codebooks[m].vectors.reshape(-1)  # (cb_size * gs,)
+                cb_flat[offset: offset + len(vecs)] = vecs
+                offset += len(vecs)
+            return {
+                "__aqlm_idx": aqlm_idx,    # uint16 (out, n_groups, n_codebooks)
+                "__aqlm_cb":  cb_flat,     # float32 (1 + n_codebooks*cb_size*gs,)
+                "__shape":    shape_arr,
+            }
+        except Exception as _e:  # pragma: no cover
+            print(f"    [AQLM] Warning: failed on {name}: {_e} — falling back to INT8")
 
     result: QuantizationResult = quantize_embeddings(flat, group_size=64)
 
@@ -387,6 +427,8 @@ def process_weights_streaming(
     vptq_config=None,
     use_quip: bool = False,
     quip_bits: int = 2,
+    use_aqlm: bool = False,
+    aqlm_config=None,
 ) -> dict:
     """
     Streaming shard-by-shard compression — works for any model size.
@@ -444,6 +486,8 @@ def process_weights_streaming(
                 vptq_config=vptq_config,
                 use_quip=use_quip,
                 quip_quantizer=quip_quantizer,
+                use_aqlm=use_aqlm,
+                aqlm_config=aqlm_config,
             )
 
             # Write immediately — don't accumulate in RAM
@@ -484,6 +528,8 @@ def process_weights_streaming(
                     mode = "VPTQ"
                 elif "__quip_e8" in sub:
                     mode = "QUIP"
+                elif "__aqlm_idx" in sub:
+                    mode = "AQLM"
                 elif use_int4:
                     mode = "Q4"
                 else:
@@ -644,6 +690,28 @@ def main():
         metavar="N",
         help="QuIP# scalar bits for residual scale representation (2 or 3, default: 2).",
     )
+    ap.add_argument(
+        "--aqlm",
+        action="store_true",
+        default=False,
+        help="Use AQLM (Additive Quantization of Language Models, ICML 2024).  "
+             "Additive codebook lookup achieves ~2-bit effective precision with "
+             "beam-search calibration.  Pure numpy — no GPU required.",
+    )
+    ap.add_argument(
+        "--aqlm-codebooks",
+        type=int,
+        default=2,
+        metavar="M",
+        help="Number of additive codebooks for AQLM (default: 2).",
+    )
+    ap.add_argument(
+        "--aqlm-cbsize",
+        type=int,
+        default=16,
+        metavar="K",
+        help="Number of codewords per AQLM codebook (default: 16).",
+    )
     args = ap.parse_args()
 
     # ── --ultra implies nf4 + dfloat11 ────────────────────────────────────────
@@ -659,6 +727,19 @@ def main():
             n_codebook_entries=args.vptq_codebook_size,
             group_size=args.vptq_group_size,
         )
+
+    # ── AQLM config (built once and reused per tensor) ─────────────────────────
+    aqlm_config = None
+    if args.aqlm:
+        try:
+            AQLMConfig, _ = _get_aqlm()
+            aqlm_config = AQLMConfig(
+                n_codebooks=args.aqlm_codebooks,
+                codebook_size=args.aqlm_cbsize,
+            )
+        except ImportError:  # pragma: no cover
+            print("  [AQLM] Warning: squish.quant.aqlm not found — falling back to INT8")
+            args.aqlm = False
 
     model_dir = Path(args.model_dir)
     output_path = Path(args.output)
@@ -704,6 +785,8 @@ def main():
             vptq_config=vptq_config,
             use_quip=args.quip,
             quip_bits=args.quip_bits,
+            use_aqlm=args.aqlm,
+            aqlm_config=aqlm_config,
         )
         elapsed = time.time() - t0
 
@@ -721,6 +804,7 @@ def main():
         _mode_str = (
             "ULTRA (NF4 + DFloat11 rANS)" if args.ultra else
             "QuIP# E8 trellis-coded" if args.quip else
+            "AQLM additive codebook" if args.aqlm else
             "NF4 (NormalFloat-4)" if args.nf4 else
             "VPTQ (vector quantization)" if args.vptq else
             "INT4 nibble-packed (group-64)" if args.int4 else
