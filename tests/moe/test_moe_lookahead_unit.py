@@ -377,6 +377,8 @@ class TestMoELookaheadRouterStats(unittest.TestCase):
             "prefetch_calls",
             "total_route_calls",
             "total_tokens",
+            "watchdog_rolling_hit_rate",
+            "lookahead_disabled",
         }
         self.assertEqual(set(s.keys()), expected_keys)
 
@@ -481,6 +483,150 @@ class TestMoELookaheadHitRateIntegration(unittest.TestCase):
         # have absorbed a non-trivial direction (practically never all-zeros).
         self.assertIsNotNone(router._ema_delta)
         self.assertFalse(np.all(router._ema_delta == 0.0))
+
+
+# ---------------------------------------------------------------------------
+# Watchdog (rolling hit-rate auto-disable)
+# ---------------------------------------------------------------------------
+
+class TestWatchdog(unittest.TestCase):
+    """Tests for the watchdog that auto-disables lookahead on low hit rates."""
+
+    def _make_router(self, window: int = 5) -> MoELookaheadRouter:
+        cfg = MoELookaheadConfig(
+            n_experts=_N_EXPERTS,
+            top_k=_TOP_K,
+            hidden_dim=_HIDDEN_DIM,
+            watchdog_window=window,
+            watchdog_disable_threshold=0.40,
+            watchdog_enable_threshold=0.60,
+        )
+        return MoELookaheadRouter(cfg)
+
+    def _run_cycles_with_empty_prefetch(self, router: MoELookaheadRouter, n: int) -> None:
+        """Force n prefetch+route cycles with 0% hit rate (empty prefetch set)."""
+        for _ in range(n):
+            h = _make_hidden()
+            # Manually set an empty pending prefetch so hit fraction = 0/total
+            router._pending_prefetch = frozenset()
+            router.route(h)
+
+    def test_initial_state_not_disabled(self):
+        router = self._make_router()
+        self.assertFalse(router.lookahead_disabled)
+
+    def test_lookahead_disabled_property(self):
+        router = self._make_router(window=3)
+        self._run_cycles_with_empty_prefetch(router, 3)
+        # After 3 cycles of 0% hit rate the watchdog should have fired
+        self.assertTrue(router.lookahead_disabled)
+
+    def test_watchdog_disables_after_window_of_low_hit_rate(self):
+        router = self._make_router(window=5)
+        self._run_cycles_with_empty_prefetch(router, 5)
+        self.assertTrue(router.lookahead_disabled)
+
+    def test_prefetch_set_returns_empty_when_disabled(self):
+        router = self._make_router(window=3)
+        self._run_cycles_with_empty_prefetch(router, 3)
+        self.assertTrue(router.lookahead_disabled)
+        # Once disabled, prefetch_set should return empty frozenset
+        pset = router.prefetch_set(_make_hidden())
+        self.assertEqual(pset, frozenset())
+
+    def test_prefetch_calls_not_incremented_when_disabled(self):
+        router = self._make_router(window=3)
+        self._run_cycles_with_empty_prefetch(router, 3)
+        calls_before = router.stats()["prefetch_calls"]
+        router.prefetch_set(_make_hidden())
+        calls_after = router.stats()["prefetch_calls"]
+        self.assertEqual(calls_before, calls_after)
+
+    def test_watchdog_reenables_after_high_hit_rate_recovery(self):
+        router = self._make_router(window=5)
+        # Disable first
+        self._run_cycles_with_empty_prefetch(router, 5)
+        self.assertTrue(router.lookahead_disabled)
+        # Now inject 5 cycles with 100% hit rate
+        for _ in range(5):
+            h = _make_hidden()
+            router._pending_prefetch = frozenset(range(_N_EXPERTS))  # all experts
+            router.route(h)
+        self.assertFalse(router.lookahead_disabled)
+
+    def test_watchdog_disabled_when_window_zero(self):
+        """watchdog_window=0 should never disable lookahead."""
+        cfg = MoELookaheadConfig(
+            n_experts=_N_EXPERTS, top_k=_TOP_K, hidden_dim=_HIDDEN_DIM,
+            watchdog_window=0,
+        )
+        router = MoELookaheadRouter(cfg)
+        self._run_cycles_with_empty_prefetch(router, 20)
+        self.assertFalse(router.lookahead_disabled)
+
+    def test_reset_watchdog_clears_state(self):
+        router = self._make_router(window=3)
+        self._run_cycles_with_empty_prefetch(router, 3)
+        self.assertTrue(router.lookahead_disabled)
+        router.reset_watchdog()
+        self.assertFalse(router.lookahead_disabled)
+
+    def test_reset_watchdog_clears_rolling_window(self):
+        router = self._make_router(window=3)
+        self._run_cycles_with_empty_prefetch(router, 3)
+        router.reset_watchdog()
+        # After reset the watchdog_rolling_hit_rate should be -1.0 (no data)
+        self.assertEqual(router.stats()["watchdog_rolling_hit_rate"], -1.0)
+
+    def test_stats_includes_watchdog_keys(self):
+        router = self._make_router()
+        s = router.stats()
+        self.assertIn("watchdog_rolling_hit_rate", s)
+        self.assertIn("lookahead_disabled", s)
+
+    def test_stats_rolling_hit_rate_minus_one_before_any_data(self):
+        router = self._make_router()
+        self.assertEqual(router.stats()["watchdog_rolling_hit_rate"], -1.0)
+
+    def test_stats_rolling_hit_rate_after_cycle(self):
+        router = self._make_router(window=5)
+        # One cycle with 100% hit (universe prefetch)
+        h = _make_hidden()
+        router._pending_prefetch = frozenset(range(_N_EXPERTS))
+        router.route(h)
+        rate = router.stats()["watchdog_rolling_hit_rate"]
+        self.assertGreater(rate, 0.0)
+        self.assertLessEqual(rate, 1.0)
+
+    def test_lookahead_disabled_false_in_stats_initially(self):
+        router = self._make_router()
+        self.assertFalse(router.stats()["lookahead_disabled"])
+
+    def test_reset_does_not_clear_watchdog(self):
+        """reset() preserves watchdog state so context resets don't re-enable bad lookahead."""
+        router = self._make_router(window=3)
+        self._run_cycles_with_empty_prefetch(router, 3)
+        self.assertTrue(router.lookahead_disabled)
+        router.reset()               # EMA reset only
+        self.assertTrue(router.lookahead_disabled)  # watchdog state preserved
+
+    def test_watchdog_does_not_fire_before_window_full(self):
+        """Watchdog must not disable lookahead until the window is full."""
+        router = self._make_router(window=10)
+        # Run fewer cycles than the window
+        self._run_cycles_with_empty_prefetch(router, 5)
+        self.assertFalse(router.lookahead_disabled)
+
+    def test_watchdog_config_fields_accessible(self):
+        cfg = MoELookaheadConfig(
+            n_experts=4, top_k=1, hidden_dim=16,
+            watchdog_window=20,
+            watchdog_disable_threshold=0.3,
+            watchdog_enable_threshold=0.7,
+        )
+        self.assertEqual(cfg.watchdog_window, 20)
+        self.assertAlmostEqual(cfg.watchdog_disable_threshold, 0.3)
+        self.assertAlmostEqual(cfg.watchdog_enable_threshold, 0.7)
 
 
 if __name__ == "__main__":

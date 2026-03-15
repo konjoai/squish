@@ -742,8 +742,8 @@ The following 38 modules were removed because they fell into one or more disqual
 - [x] Edit `server.py` to remove globals + flag wiring for all 38 modules
 - [x] Edit `squish/__init__.py` — removed deleted imports, fixed `__version__` to `"9.0.0"`, fully lazy-loaded via `__getattr__`
 - [x] Edit `cli.py` — removed `predict` subcommand (used deleted `life_model`)
-- [ ] Update `README.md` — remove duplicate bash block, remove Files table, add Advanced Features stability section
-- [ ] Update `MODULES.md` — remove deleted module entries, add stability tier table
+- [x] Update `README.md` — remove duplicate bash block, remove Files table, add Advanced Features stability section
+- [x] Update `MODULES.md` — remove deleted module entries, add stability tier table
 
 ---
 
@@ -838,9 +838,9 @@ The current README covers three separate audiences (practitioners, researchers, 
 
 Everything else (wave tables, per-module details, accuracy benchmarks, developer docs) lives in the MkDocs site or `MODULES.md`.
 
-- [ ] Restructure README to match the 6-section outline above
-- [ ] Benchmark comparison table must be above the fold (before any feature description)
-- [ ] Remove all wave tables from README body (already partially done; verify none remain)
+- [x] Restructure README to match the 6-section outline above
+- [x] Benchmark comparison table must be above the fold (before any feature description)
+- [x] Remove all wave tables from README body (already partially done; verify none remain)
 - [ ] Deploy MkDocs to GitHub Pages (`docs.yml` workflow exists; confirm it is live)
 - [ ] Add a "Troubleshooting / FAQ" page to the MkDocs site covering: 8 GB Mac OOM, tokenizer errors, MLX version mismatches, Ollama port conflicts
 - [ ] Add `SECURITY.md` documenting responsible disclosure process
@@ -971,10 +971,10 @@ New file: `squish/aqlm.py`
 **Flag in server**: `--aqlm` (Experimental tier)
 
 **Deliverables:**
-- [ ] `squish/aqlm.py` — AQLMConfig, AQLMCodebook, AQLMLayer, AQLMQuantizer, aqlm_dequantize, quantize_model_aqlm
-- [ ] `tests/test_aqlm_unit.py` — 16+ tests: config validation, codebook init, round-trip dequantize, quantizer calibration on random linear layer, model-level quantize+forward
-- [ ] `squish/compressed_loader.py` — detect `aqlm_indices.npy` + `aqlm_codebooks.npy` in npy-dir and reconstruct AQLMLayer on load
-- [ ] `squish/convert.py` — add `--aqlm` flag; save indices + codebooks into npy-dir
+- [x] `squish/aqlm.py` — AQLMConfig, AQLMCodebook, AQLMLayer, AQLMQuantizer, aqlm_dequantize, quantize_model_aqlm
+- [x] `tests/test_aqlm_unit.py` — 16+ tests: config validation, codebook init, round-trip dequantize, quantizer calibration on random linear layer, model-level quantize+forward
+- [x] `squish/compressed_loader.py` — detect `aqlm_indices.npy` + `aqlm_codebooks.npy` in npy-dir and reconstruct AQLMLayer on load
+- [x] `squish/convert.py` — add `--aqlm` flag; save indices + codebooks into npy-dir
 - [ ] `squish/server.py` — `--aqlm` flag wiring (Experimental tier); skip gracefully if `aqlm` import fails
 - [ ] `squish/cli.py` — expose `--aqlm` and `--aqlm-codebooks` / `--aqlm-cbsize` in `squish compress` subcommand
 - [ ] `dev/benchmarks/bench_aqlm.py` — perplexity on wikitext-2 vs INT4 vs VPTQ at 2-bit; save to `dev/results/aqlm_bench.json`
@@ -1011,8 +1011,8 @@ preprocessing). Adds Step 2: E8 lattice quantization and trellis decoding.
 **Deliverables:**
 - [x] `squish/quip_sharp.py` — E8Lattice, QuIPSharpConfig, QuIPSharpQuantizer, QuIPSharpLayer, quip_dequantize, quantize_model_quip
 - [x] `tests/test_quip_unit.py` — 12+ tests: E8 codebook integrity (all 256 vectors distinct), round-trip quantize/dequantize on 8-D vectors, QuIPSharp layer forward pass, model-level integration
-- [ ] `squish/convert.py` — add `--quip` flag; save e8_indices + residual_scales into npy-dir
-- [ ] `squish/compressed_loader.py` — detect `quip_e8.npy` + `quip_res.npy` and reconstruct QuIPSharpLayer
+- [x] `squish/convert.py` — add `--quip` flag; save e8_indices + residual_scales into npy-dir
+- [x] `squish/compressed_loader.py` — detect `quip_e8.npy` + `quip_res.npy` and reconstruct QuIPSharpLayer
 - [ ] Benchmark: perplexity vs AQLM vs INT4 on Qwen2.5-1.5B; save to `dev/results/quip_bench.json`
 
 **Key design constraints:**
@@ -1279,10 +1279,10 @@ Uses the existing `squish_lm_eval.py` backend (registered as `@register_model("s
 **CLI**: `squish bench --track quality [--model qwen3:8b] [--quant int8] [--limit 200]`
 
 **Deliverables:**
-- [ ] `squish/benchmarks/quality_bench.py` — QualityBenchConfig, QualityBenchRunner; wraps squish_lm_eval.py backend
-- [ ] `squish/benchmarks/base.py` — BenchmarkRunner ABC, ResultRecord, cross-engine HTTP client
-- [ ] `tests/test_bench_quality.py` — 8+ tests: config dataclass, output file path logic, result record schema, lm-eval integration (mocked)
-- [ ] `squish/squish_lm_eval.py` — verify `generate_until` is implemented for code gen tasks (needed by Track B); add if missing
+- [x] `squish/benchmarks/quality_bench.py` — QualityBenchConfig, QualityBenchRunner; wraps squish_lm_eval.py backend
+- [x] `squish/benchmarks/base.py` — BenchmarkRunner ABC, ResultRecord, cross-engine HTTP client
+- [x] `tests/test_bench_quality.py` — 8+ tests: config dataclass, output file path logic, result record schema, lm-eval integration (mocked)
+- [x] `squish/squish_lm_eval.py` — verify `generate_until` is implemented for code gen tasks (needed by Track B); add if missing
 
 ---
 
@@ -1305,8 +1305,8 @@ enhancement for a future wave.
 **Output**: `eval_output/code_<model>_<quant>_<date>.json`
 
 **Deliverables:**
-- [ ] `squish/benchmarks/code_bench.py` — CodeBenchConfig (includes `sandbox: bool = False`), CodeBenchRunner
-- [ ] `tests/test_bench_code.py` — 6+ tests: config, sandbox gate logic, output schema
+- [x] `squish/benchmarks/code_bench.py` — CodeBenchConfig (includes `sandbox: bool = False`), CodeBenchRunner
+- [x] `tests/test_bench_code.py` — 6+ tests: config, sandbox gate logic, output schema
 - [ ] Warning message when `--sandbox` is not passed: "Code generation benchmarks produce output to JSON but will not execute generated code. Pass --sandbox to run HumanEval/MBPP execution."
 
 ---
@@ -1345,10 +1345,10 @@ evaluates the response against ground truth using existing `tool_calling.py` par
 **CLI**: `squish bench --track tools [--model qwen3:8b] [--compare ollama,lmstudio] [--limit 200]`
 
 **Deliverables:**
-- [ ] `squish/benchmarks/tool_bench.py` — ToolBenchConfig, ToolBenchRunner, EngineClient
+- [x] `squish/benchmarks/tool_bench.py` — ToolBenchConfig, ToolBenchRunner, EngineClient
 - [ ] `squish/benchmarks/data/tool_schemas.json` — 20 canonical schemas covering: calculator, file_read, web_search, json_parse, send_email, calendar_lookup, code_interpreter, weather, translate, summarize — and 10 more covering complex nested arg types
-- [ ] `tests/test_bench_tool.py` — 10+ tests: EngineClient mock, schema compliance scoring, exact match scoring, compare flag parsing
-- [ ] `squish/benchmarks/compare.py` — reads eval_output/*.json, generates cross-engine markdown + CSV table
+- [x] `tests/test_bench_tool.py` — 10+ tests: EngineClient mock, schema compliance scoring, exact match scoring, compare flag parsing
+- [x] `squish/benchmarks/compare.py` — reads eval_output/*.json, generates cross-engine markdown + CSV table
 
 ---
 
@@ -1388,9 +1388,9 @@ Each scenario defines:
 **CLI**: `squish bench --track agent [--model qwen3:8b] [--compare ollama]`
 
 **Deliverables:**
-- [ ] `squish/benchmarks/agent_bench.py` — AgentBenchConfig, AgentScenario, ToolFixtureReplay, AgentBenchRunner
+- [x] `squish/benchmarks/agent_bench.py` — AgentBenchConfig, AgentScenario, ToolFixtureReplay, AgentBenchRunner
 - [ ] `squish/benchmarks/data/agent_scenarios.json` — 20 hand-authored scenarios (4 × 5; described above)
-- [ ] `tests/test_bench_agent.py` — 12+ tests: scenario loader, fixture replay correctness, step efficiency calculation, completion rate scoring, turn limit enforcement
+- [x] `tests/test_bench_agent.py` — 12+ tests: scenario loader, fixture replay correctness, step efficiency calculation, completion rate scoring, turn limit enforcement
 
 ---
 
@@ -1423,11 +1423,11 @@ Squish, Ollama, LM Studio, MLX-LM, llama.cpp, Jan
 **CLI**: `squish bench --track perf [--model qwen3:8b] [--compare all] [--context 1k,8k]`
 
 **Deliverables:**
-- [ ] `squish/benchmarks/perf_bench.py` — PerfBenchConfig, PerfBenchRunner; migrates and extends bench_eoe.py logic
+- [x] `squish/benchmarks/perf_bench.py` — PerfBenchConfig, PerfBenchRunner; migrates and extends bench_eoe.py logic
 - [ ] Cold-start measurement: uses `subprocess.Popen(..., stdout=PIPE)` + SSE first-line detection
 - [ ] Tokens/watt: macOS `powermetrics` subprocess with `--samplers cpu_power -i 500`, averaged; skip block guarded by `sys.platform == "darwin"` check
 - [ ] Batch throughput: `asyncio.gather` of N concurrent HTTP requests; P50/P99 latency measured via `time.perf_counter`
-- [ ] `tests/test_bench_perf.py` — 10+ tests: config validation, TPS calculation, TTFT parsing from SSE stream, tokens/watt skip on non-macOS, cold-start subprocess mock
+- [x] `tests/test_bench_perf.py` — 10+ tests: config validation, TPS calculation, TTFT parsing from SSE stream, tokens/watt skip on non-macOS, cold-start subprocess mock
 - [ ] `dev/benchmarks/bench_eoe.py` — add deprecation notice pointing to `squish bench --track perf`
 
 ---
@@ -1612,7 +1612,7 @@ These are not duplicates — AgentKV is the combination that uniquely targets ag
 - [x] `squish/agent_kv.py` — AgentKVConfig, AgentKVTier, AgentKVCache, AgentKVQuantizer, patch_model_agent_kv
 - [x] `tests/test_agent_kv_unit.py` — 18+ tests: config validation, tier labelling for various context lengths, push/get round-trip precision preservation (sink and window FP16, history INT2), dequantize correctness on random values, entropy layer toggle, patch_model shape consistency
 - [x] `squish/server.py` — `--agent-kv` flag; enable when `--agent` preset is active
-- [ ] `dev/benchmarks/bench_agent_kv.py` — peak RAM measurement on Qwen2.5-14B at context 4K / 8K / 16K / 32K with agent_kv vs default FP16 KV cache; save to `dev/results/agent_kv_bench.json`
+- [x] `dev/benchmarks/bench_agent_kv.py` — peak RAM measurement on Qwen2.5-14B at context 4K / 8K / 16K / 32K with agent_kv vs default FP16 KV cache; save to `dev/results/agent_kv_bench.json`
 
 ---
 
@@ -1652,7 +1652,7 @@ as `"Memory governor: platform is not macOS — no-op mode"`.
 **Deliverables:**
 - [x] `squish/memory_governor.py` — MemPressureLevel, VMStatSnapshot, VMStatReader, MemoryGovernorConfig, MemoryGovernor, apply_default_handlers
 - [x] `tests/test_memory_governor_unit.py` — 14+ tests: VMStatReader parse on synthetic `vm_stat` output strings, level transition logic at configurable thresholds, handler registration, no-op on non-macOS (patched via `sys.platform`), apply_default_handlers callback ordering
-- [ ] `squish/server.py` — start `MemoryGovernor` during server startup when `sys.platform == "darwin"` (always-on, no flag needed — zero cost in no-op mode on other platforms)
+- [x] `squish/server.py` — start `MemoryGovernor` during server startup when `sys.platform == "darwin"` (always-on, no flag needed — zero cost in no-op mode on other platforms)
 - [x] `squish/fault_tolerance.py` — import `MemPressureLevel` and log governor level in `FaultEvent` for correlation
 
 ---
@@ -1724,7 +1724,7 @@ Recommended 16GB-M3 agent models:
 - [x] `squish/cli.py` — add `--agent` flag to `squish serve`; wire expansion to the 9-flag combination above
 - [x] `squish/server.py` — agent-mode startup logic: auto INT4, max_batch_size=1, dynamic context_length, per-turn memory log
 - [x] `tests/test_agent_preset_unit.py` — 10+ tests: flag expansion correctness, dynamic context_length formula, memory log message format, agent preset compatibility with individual flag overrides
-- [ ] `docs/agent_mode.md` — the definitive guide: hardware requirements, recommended models, example OpenClaw integration, Continue.dev config snippet, LangChain example
+- [x] `docs/agent_mode.md` — the definitive guide: hardware requirements, recommended models, example OpenClaw integration, Continue.dev config snippet, LangChain example
 
 ---
 
@@ -1742,7 +1742,7 @@ Recommended 16GB-M3 agent models:
 - [ ] Send a 16K-token prompt followed by a 100-token delta; confirm TTFT on delta turn is < 300 ms (RadixTree reuse working)
 - [ ] Run Qwen2.5-14B INT4 with `--agent-kv` at 32K tokens context; confirm peak RAM ≤ 13 GB (no swap)
 - [ ] Run a 100-turn tool-call loop via the OpenAI API (`tools=[...]`); confirm zero JSON parse errors (grammar_engine.py already present; confirm it fires in --agent mode)
-- [ ] `MemoryGovernor` CAUTION callback fires when `vm_stat` free pages drops below caution threshold (unit test with mocked vm_stat output)
+- [x] `MemoryGovernor` CAUTION callback fires when `vm_stat` free pages drops below caution threshold (unit test with mocked vm_stat output)
 
 ---
 
@@ -1828,8 +1828,8 @@ activated per token (k reduction for background tokens). `moe_lookahead.py` cont
 expert weights are gathered (one layer ahead). They operate on orthogonal axes.
 
 **Deliverables:**
-- [ ] `squish/moe_lookahead.py` — LookaheadRouterConfig, AuxiliaryRouter, ExpertPrefetcher, LookaheadMoEPatch, profile_moe_model
-- [ ] `tests/test_moe_lookahead_unit.py` — 14+ tests: AuxiliaryRouter output shape and dtype, calibrate on random hiddens/labels, ExpertPrefetcher top-k selection, hit rate tracking, below-threshold disable, LookaheadMoEPatch apply+remove restores original forward pass
+- [x] `squish/moe_lookahead.py` — LookaheadRouterConfig, AuxiliaryRouter, ExpertPrefetcher, LookaheadMoEPatch, profile_moe_model (in `squish/moe/moe_lookahead.py`)
+- [x] `tests/test_moe_lookahead_unit.py` — 14+ tests: AuxiliaryRouter output shape and dtype, calibrate on random hiddens/labels, ExpertPrefetcher top-k selection, hit rate tracking, below-threshold disable, LookaheadMoEPatch apply+remove restores original forward pass (in `tests/moe/test_moe_lookahead_unit.py`)
 - [ ] `squish/server.py` — `--moe-lookahead` flag (Experimental tier); auto-activates when model catalog entry has `"moe": true` and `--agent` preset is active
 - [ ] `squish/cli.py` — expose as `--moe-lookahead` flag; add to `--agent` preset for MoE models
 - [ ] `dev/benchmarks/bench_moe_lookahead.py` — TPS comparison on DeepSeek-Coder-V2-Lite: no lookahead vs lookahead at 65% / 75% hit rate; measure per-layer gather latency delta; save to `dev/results/moe_lookahead_bench.json`
@@ -1877,7 +1877,7 @@ deepseek-coder-v2-lite  [MoE: 16B total / 2.4B active]  INT4: 3.3 GB  ✓ agent-
 - [ ] `squish serve --agent --model deepseek-v2-lite` starts without error
 - [ ] `bench_moe_lookahead.py` shows ≥ 10% TPS improvement vs no-lookahead at 65% hit rate
 - [ ] `squish models` correctly displays `[MoE]` badge for DeepSeek-Coder-V2-Lite and Qwen1.5-MoE
-- [ ] Rolling hit-rate watchdog: if calibration data is unrepresentative and hit rate drops below 40%, lookahead silently disables without crashing the server
+- [x] Rolling hit-rate watchdog: if calibration data is unrepresentative and hit rate drops below 40%, lookahead silently disables without crashing the server
 
 ---
 
@@ -2189,7 +2189,7 @@ jobs:
 - [ ] `dev/scripts/model_pipeline.py` — three jobs (watch, compress, validate, publish); `--dry-run` flag that skips all writes; output `dev/results/pipeline_run_<date>.json`
 - [ ] `.github/workflows/model_pipeline.yml` — daily cron + manual trigger; uses `macos-14` runner
 - [ ] `dev/scripts/model_pipeline.py` — Job 2 accuracy gate: if delta > 3 pp, retry int8; if still > 3 pp, write to `pipeline_rejected.json` and skip publish
-- [ ] `squish/catalog.py` — add `hf_sha256: str | None` field to `CatalogEntry`; `squish run` verifies local file hash before serving (prevents using a partially-downloaded model)
+- [x] `squish/catalog.py` — add `hf_sha256: str | None` field to `CatalogEntry`; `squish run` verifies local file hash before serving (prevents using a partially-downloaded model)
 - [ ] `tests/test_model_pipeline_unit.py` — 10+ tests: candidate filter logic (license check, size check, age check), accuracy gate pass/fail/retry, catalog diff writer, mock HF API responses
 
 ---

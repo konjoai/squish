@@ -91,6 +91,11 @@ class CatalogEntry:
     # DeepSeek), or None for models without a grammar-gated tool-call format.
     grammar_trigger: str | None = None
 
+    # Phase 16A: SHA-256 hex digest of the squish_repo weights archive;
+    # when set, `squish run` verifies the local file hash before serving
+    # to prevent using a partially-downloaded or corrupted model.
+    hf_sha256: str | None = None
+
     @property
     def dir_name(self) -> str:
         """Filesystem directory name derived from hf_mlx_repo."""
@@ -283,6 +288,7 @@ def _entry_from_dict(d: dict) -> CatalogEntry:
         moe=d.get("moe", False),
         active_params_b=d.get("active_params_b"),
         grammar_trigger=d.get("grammar_trigger"),
+        hf_sha256=d.get("hf_sha256"),
     )
 
 
@@ -464,6 +470,52 @@ def resolve(name: str, refresh: bool = False) -> CatalogEntry | None:
 
 # ── Download helpers ──────────────────────────────────────────────────────────
 
+# Sentinel file that records the SHA-256 of the downloaded squish weights
+# written by ``pull()`` after a successful squish_repo download.
+SQUISH_HASH_SENTINEL = ".squish_hash"
+
+
+def write_hash_sentinel(compressed_dir: Path, sha256: str) -> None:
+    """Write *sha256* to ``{compressed_dir}/.squish_hash`` for later verification."""
+    (compressed_dir / SQUISH_HASH_SENTINEL).write_text(sha256.strip())
+
+
+def verify_hash(entry: "CatalogEntry", compressed_dir: Path) -> tuple[bool, str]:
+    """
+    Verify the local squish weights against the catalog-supplied SHA-256.
+
+    Returns ``(ok, message)`` where:
+
+    * ``(True,  "")``         — hash matches or no hash in catalog entry.
+    * ``(True,  info_msg)``   — catalog has a hash but no sentinel file was
+                                written (model may have been manually compressed).
+    * ``(False, warn_msg)``   — sentinel exists but hash doesn't match
+                                (model may be corrupted or partially downloaded).
+    """
+    expected = entry.hf_sha256
+    if not expected:
+        return True, ""
+
+    sentinel = compressed_dir / SQUISH_HASH_SENTINEL
+    if not sentinel.exists():
+        return True, (
+            f"[hash] No {SQUISH_HASH_SENTINEL} in {compressed_dir.name}; "
+            "skipping integrity check (manually compressed models are exempt)."
+        )
+
+    actual = sentinel.read_text().strip()
+    if actual == expected:
+        return True, ""
+
+    return False, (
+        f"[hash] WARNING: model hash mismatch for {entry.id}!\n"
+        f"  Expected : {expected}\n"
+        f"  Actual   : {actual}\n"
+        f"  The model at {compressed_dir} may be corrupted or partially downloaded.\n"
+        f"  Run `squish pull {entry.id}` to re-download."
+    )
+
+
 def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None:  # pragma: no cover
     """
     Download a HuggingFace repo to ``local_dir``.
@@ -601,6 +653,8 @@ def pull(  # pragma: no cover
                     squish_local.rename(compressed_dir)
 
                 print(f"  ✓  Pre-compressed {entry.id} ready at {compressed_dir}")
+                if entry.hf_sha256:
+                    write_hash_sentinel(compressed_dir, entry.hf_sha256)
                 return compressed_dir
         except Exception as exc:
             if verbose:

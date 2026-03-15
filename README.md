@@ -9,21 +9,35 @@
 
 <img src="assets/squish-logo-1.png" height="500" alt="Squish Logo"/>
 
+> Every model you download ships in a format designed for training clusters, not laptops.
+> Squish converts it once into a Metal-native format that maps directly into unified memory — **sub-second cold loads, every time.**
 
-
-> **Local LLM inference at sub-second load times.**  
-> **Drop-in for OpenAI, Ollama, and any LLM client.**  
-> **Web chat UI · Tool calling · Batch scheduler · CLI**  
-> **No API key. No cloud.  No data leaving your machine.**  
-> **Free.**
-
-> ⚠️ **macOS + Apple Silicon (M1–M5) only.** Linux/CUDA support is on the roadmap. Windows is not planned.
+> ⚠️ **macOS + Apple Silicon (M1–M5) only.** Linux/CUDA support is on the roadmap.
 
 ---
 
-## Demo
+## The Proof
 
-![](demos/squish-demo.gif)
+| | Ollama | LM Studio | **Squish** |
+|---|:---:|:---:|:---:|
+| Cold-start load time | 8–25 s | 10–30 s | **0.33–0.53 s** |
+| RAM during load | ~2–8 GB | ~2–8 GB | **160 MB** ‡ |
+| OpenAI-compatible API | ✅ | ✅ | ✅ |
+| Ollama-compatible API | ✅ | ✅ | ✅ |
+| Web chat UI | ❌ | ✅ | ✅ |
+| Tool calling | ✅ | ✅ | ✅ |
+| Batch/concurrent requests | limited | ❌ | ✅ |
+| Works offline after pull | ✅ | ✅ | ✅ |
+| Download pre-squished weights | N/A | N/A | ✅ ([HuggingFace](https://huggingface.co/squish-community)) |
+| Apple Silicon–optimised | ✅ | ✅ | ✅ |
+| INT8 npy-dir format (mmap) | ❌ | ❌ | ✅ |
+| Source available | ✅ | ❌ | ✅ |
+
+> **54× faster cold load. 15× less RAM. Statistically identical outputs.**
+
+‡ *160 MB = Apple Metal virtual-address delta during load (mmap, no CPU heap). Peak RSS ~402 MB.*
+
+---
 
 ## Install
 
@@ -69,29 +83,34 @@ export OLLAMA_HOST=http://localhost:11435
 
 ---
 
-## Why Not Ollama or LM Studio?
+## Core Features
 
-Ollama and LM Studio are great tools. Squish solves a different problem.
+- **Sub-second loads** — INT8 npy-dir format maps directly into Apple Metal unified memory; no dtype conversion on every boot
+- **OpenAI + Ollama drop-in** — any existing client works with a single env-var change; no code changes required
+- **Web chat UI** — built-in at `/chat`; dark-themed, streaming, offline, multi-session history
+- **Tool / function calling** — OpenAI-format `tools` with automatic JSON schema injection and structured output parsing
+- **29 ready-to-use models** — `squish pull qwen3:8b` downloads + compresses in one step; pre-squished weights on HuggingFace skip compression entirely
 
-| | Ollama | LM Studio | **Squish** |
-|---|:---:|:---:|:---:|
-| Cold-start load time | 8–25 s | 10–30 s | **0.33–0.53 s** |
-| RAM during load | ~2–8 GB | ~2–8 GB | **160 MB** ‡ |
-| OpenAI-compatible API | ✅ | ✅ | ✅ |
-| Ollama-compatible API | ✅ | ✅ | ✅ |
-| Web chat UI | ❌ | ✅ | ✅ |
-| Tool calling | ✅ | ✅ | ✅ |
-| Batch/concurrent requests | limited | ❌ | ✅ |
-| Works offline after pull | ✅ | ✅ | ✅ |
-| Download pre-squished weights | N/A | N/A | ✅ ([HuggingFace](https://huggingface.co/squish-community)) |
-| Apple Silicon–optimised | ✅ | ✅ | ✅ |
-| INT8 npy-dir format (mmap) | ❌ | ❌ | ✅ |
-| Source available | ✅ | ❌ | ✅ |
+See [MODULES.md](MODULES.md) for the full flag reference and stability tiers (Stable / Beta / Experimental).
 
-The key distinction: Ollama and LM Studio use standard GGUF/MLX weights that require full dtype-conversion on every boot.
-Squish stores weights in a Metal-native format that maps directly into unified memory — **no conversion, sub-second every time**.
+---
 
-‡ *160 MB = Apple Metal virtual-address delta during the load phase (mmap, no CPU heap allocation). Peak RSS during full initialization is ~402 MB. Both figures measured on Apple Silicon M-series.*
+## Links
+
+| Resource | URL |
+|---|---|
+| Docs | [docs.squish.dev](https://wesleyscholl.github.io/squish/) |
+| HuggingFace models | [huggingface.co/squish-community](https://huggingface.co/squish-community) |
+| Module reference | [MODULES.md](MODULES.md) |
+| Architecture paper | [docs/paper.md](docs/paper.md) |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Discord | [discord.gg/squish](https://discord.gg/squish) |
+
+---
+
+## Demo
+
+![](demos/squish-demo.gif)
 
 ---
 
@@ -276,11 +295,6 @@ Open `http://localhost:11435/chat` in any browser after starting the server.
 - Model selector auto-populated from `/v1/models`
 - System prompt editor, settings panel (temp / top_p / max_tokens / seed)
 - Copy buttons on all code blocks
-
-```bash
-squish run 7b                     # defaults to port 11435
-# browser → http://localhost:11435/chat
-```
 
 ---
 

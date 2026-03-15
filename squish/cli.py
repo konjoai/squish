@@ -493,6 +493,18 @@ def cmd_run(args):  # pragma: no cover
     """Start the Squish inference server."""
     model_dir, compressed_dir = _resolve_model(args.model)
 
+    # Phase 16A: verify model hash integrity before serving
+    if _CATALOG_AVAILABLE and args.model:
+        _entry = _catalog_resolve(args.model)
+        if _entry is not None:
+            from squish.catalog import verify_hash as _verify_hash
+            _ok, _msg = _verify_hash(_entry, compressed_dir)
+            if _msg:
+                _sym = "⚠" if not _ok else "ℹ"
+                print(f"\n  {_sym}  {_msg}")
+            if not _ok:
+                print("  Continuing anyway — run `squish pull` to re-download.")
+
     server_script = Path(__file__).resolve().parent / "server.py"
     if not server_script.exists():
         _die(f"server.py not found at {server_script}")
