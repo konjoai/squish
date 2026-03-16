@@ -171,6 +171,20 @@ def has_outliers(arr_f32: np.ndarray, threshold: float) -> bool:
     return float(ratio.max()) > threshold
 
 
+def _pick_int4_group_size(n_cols: int) -> int:
+    """Return the largest group_size ≤ 32 that evenly divides n_cols.
+
+    Prefers group_size=32 (the Q4_K_M community standard) for higher per-group
+    accuracy vs the old group_size=64; falls back through smaller powers of two
+    for oddly-dimensioned tensors.  Returning n_cols as a last resort (= one
+    group = per-row scale) handles degenerate edge cases.
+    """
+    for gs in (32, 16, 8, 4):
+        if n_cols >= gs * 2 and n_cols % gs == 0:
+            return gs
+    return n_cols  # one group covering the whole row
+
+
 def quantize_tensor(
     name: str,
     arr_f32: np.ndarray,
@@ -185,6 +199,7 @@ def quantize_tensor(
     quip_quantizer=None,
     use_aqlm: bool = False,
     aqlm_config=None,
+    super_weight_passthrough: bool = False,
 ) -> dict:
     """
     Quantize a single float32 tensor.
@@ -203,10 +218,13 @@ def quantize_tensor(
     original_shape = arr_f32.shape
 
     # --- decide whether to pass through ---
-    skip = any(p in name for p in passthrough_patterns)
+    # INT4 is more sensitive to outlier rows than INT8; tighten the threshold
+    # to passthrough more edge-case tensors in FP16 rather than absorbing error.
+    effective_threshold = min(outlier_threshold, 12.0) if use_int4 else outlier_threshold
+    skip = super_weight_passthrough or any(p in name for p in passthrough_patterns)
     if not skip and arr_f32.ndim >= 2:
         flat = arr_f32.reshape(-1, arr_f32.shape[-1])
-        skip = has_outliers(flat, outlier_threshold)
+        skip = has_outliers(flat, effective_threshold)
         if skip:
             print(f"    [outlier passthrough] {name}")
 
@@ -320,29 +338,28 @@ def quantize_tensor(
         except Exception as _e:  # pragma: no cover
             print(f"    [AQLM] Warning: failed on {name}: {_e} — falling back to INT8")
 
-    result: QuantizationResult = quantize_embeddings(flat, group_size=64)
-
-    # ── NF4: normal-float 4-bit quantization ─────────────────────────────────
+    # ── NF4: quantize directly from FP32 (no INT8 intermediate step) ──────────
     if use_nf4:
         quantize_nf4 = _get_nf4()
-        from squish.quant.quantizer import reconstruct_embeddings
-        reconstructed = reconstruct_embeddings(result)
-        packed, scales_nf4 = quantize_nf4(reconstructed, group_size=64)
+        gs_nf4 = _pick_int4_group_size(flat.shape[1])
+        packed, scales_nf4 = quantize_nf4(flat, group_size=gs_nf4)
         return {
             "__nf4":   packed,      # uint8 nibble-packed  (n, d//2)
-            "__s_nf4": scales_nf4,  # float32              (n, d//64)
+            "__s_nf4": scales_nf4,  # float32              (n, d//gs_nf4)
             "__shape": shape_arr,
         }
 
     if use_int4:
-        # INT4 nibble-packed: ~50 % disk vs INT8, requires squish_quant Rust ext.
-        # Reconstruct from INT8 first, then pack to INT4.
-        from squish.quant.quantizer import reconstruct_embeddings
-        reconstructed = reconstruct_embeddings(result)
-        packed, scales4 = quantize_int4(reconstructed, group_size=64)
+        # INT4 nibble-packed: quantize directly from FP32 — eliminates the
+        # INT8→reconstruct→INT4 double-quantization error present in the old code.
+        # group_size=32 (Q4_K_M standard) gives more per-group scale resolution
+        # than 64 at ~3% storage overhead; _pick_int4_group_size() handles
+        # divisibility for oddly-shaped tensors.
+        gs = _pick_int4_group_size(flat.shape[1])
+        packed, scales4 = quantize_int4(flat, group_size=gs)
         out = {
             "__q4":    packed,   # uint8 nibble-packed  (n, d//2)
-            "__s4":    scales4,  # float32              (n, d//64)
+            "__s4":    scales4,  # float32              (n, d//gs)
             "__shape": shape_arr,
         }
         if use_dfloat11:
@@ -357,6 +374,8 @@ def quantize_tensor(
             del out["__s4"]
         return out
 
+    # ── INT8 (default) ────────────────────────────────────────────────────────
+    result: QuantizationResult = quantize_embeddings(flat, group_size=64)
     return {
         "__q": result.quantized,   # int8  (grouped-64 per default)
         "__s": result.scales,      # float32 (n_rows, n_groups) or (n_rows,)
@@ -433,6 +452,7 @@ def process_weights_streaming(
     quip_bits: int = 2,
     use_aqlm: bool = False,
     aqlm_config=None,
+    use_super_weight: bool = False,
 ) -> dict:
     """
     Streaming shard-by-shard compression — works for any model size.
@@ -466,10 +486,29 @@ def process_weights_streaming(
         QuIPSharpConfig, QuIPSharpQuantizer = _get_quip()
         quip_quantizer = QuIPSharpQuantizer(QuIPSharpConfig(scalar_bits=quip_bits), seed=42)
 
+    # ── Initialise super-weight calibrator once (reused per shard) ───────────
+    _sw_calibrator = None
+    if use_super_weight:
+        from squish.quant.super_weight_calibrator import (
+            SuperWeightCalibrator, SuperWeightConfig,
+        )
+        _sw_calibrator = SuperWeightCalibrator(SuperWeightConfig(threshold=100.0))
+
     for shard_idx, shard in enumerate(shard_files, 1):
         print(f"\n  [{shard_idx}/{len(shard_files)}] {shard.name}")
         shard_weights = load_mlx_weights_shard(shard)
         shard_tensors = len(shard_weights)
+
+        # ── Scan for super weights within this shard ──────────────────────────
+        sw_tensor_names: set[str] = set()
+        if _sw_calibrator is not None:
+            coords = _sw_calibrator.scan_weights(shard_weights)
+            sw_tensor_names = {c.tensor_name for c in coords}
+            if sw_tensor_names:
+                n_sw = len(sw_tensor_names)
+                listed = ", ".join(sorted(sw_tensor_names)[:4])
+                overflow = f" (+{n_sw-4} more)" if n_sw > 4 else ""
+                print(f"    [super-weight] protecting {n_sw} tensor(s) as FP16: {listed}{overflow}")
 
         sp = Spinner(f"Shard {shard_idx}/{len(shard_files)}  ({shard_tensors} tensors)").start()
         for tensor_idx, (name, arr_f32) in enumerate(shard_weights.items(), 1):
@@ -492,6 +531,7 @@ def process_weights_streaming(
                 quip_quantizer=quip_quantizer,
                 use_aqlm=use_aqlm,
                 aqlm_config=aqlm_config,
+                super_weight_passthrough=(name in sw_tensor_names),
             )
 
             # Write immediately — don't accumulate in RAM
@@ -716,6 +756,16 @@ def main():
         metavar="K",
         help="Number of codewords per AQLM codebook (default: 16).",
     )
+    ap.add_argument(
+        "--super-weight",
+        action="store_true",
+        default=False,
+        help="Protect super-weight tensors as FP16 passthrough during INT4/NF4 "
+             "compression.  Scans each shard for extreme outlier elements "
+             "(element/row-mean ratio > 100) before quantizing; tensors containing "
+             "super-weights are stored losslessly to prevent coherence collapse.  "
+             "Recommended for all INT4 conversions.",
+    )
     args = ap.parse_args()
 
     # ── --ultra implies nf4 + dfloat11 ────────────────────────────────────────
@@ -791,6 +841,7 @@ def main():
             quip_bits=args.quip_bits,
             use_aqlm=args.aqlm,
             aqlm_config=aqlm_config,
+            use_super_weight=args.super_weight,
         )
         elapsed = time.time() - t0
 
@@ -811,7 +862,7 @@ def main():
             "AQLM additive codebook" if args.aqlm else
             "NF4 (NormalFloat-4)" if args.nf4 else
             "VPTQ (vector quantization)" if args.vptq else
-            "INT4 nibble-packed (group-64)" if args.int4 else
+            "INT4 nibble-packed (group-32)" if args.int4 else
             "INT8 per-group-64"
         )
         if args.dfloat11 and not args.ultra:

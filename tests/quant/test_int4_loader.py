@@ -72,7 +72,9 @@ def test_int4_conversion_and_round_trip():
         assert result["n_converted"] == 2, f"Expected 2 converted, got {result['n_converted']}"
         assert result["n_skipped"]   == 1, f"Expected 1 skipped (bias), got {result['n_skipped']}"
         savings = result["savings_pct"]
-        assert 40 < savings < 60, f"Expected ~50% savings, got {savings:.1f}%"
+        # group_size=32 uses 2× as many scale values as group_size=64, reducing
+        # raw byte savings from ~50% to ~38%.  The accuracy improvement is worth it.
+        assert 32 < savings < 60, f"Expected ~38-50% savings, got {savings:.1f}%"
 
         # Step 2: verify INT4 round-trip quality
         tensor_dir = root / "tensors"

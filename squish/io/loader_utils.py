@@ -260,7 +260,11 @@ def _dequantize_npy(tensor_dir: Path, sk: str) -> np.ndarray:
         dequantize_nf4 = _get_dequantize_nf4()
         packed = np.ascontiguousarray(_load_npy_path(nf4_path, mmap_mode=None), dtype=np.uint8)
         scales = np.ascontiguousarray(_load_npy_path(s_nf4_path, mmap_mode=None), dtype=np.float32)
-        arr = dequantize_nf4(packed, scales, group_size=64)
+        # Infer group_size from tensor shapes: n_cols = packed.shape[1]*2, n_groups = scales.shape[1]
+        n_cols_nf4 = packed.shape[1] * 2
+        n_groups_nf4 = scales.shape[1]
+        gs_nf4 = n_cols_nf4 // n_groups_nf4
+        arr = dequantize_nf4(packed, scales, group_size=gs_nf4)
         shape_path = tensor_dir / f"{sk}__shape.npy"
         if shape_path.exists() or Path(str(shape_path) + ".zst").exists():
             original_shape = tuple(int(x) for x in _load_npy_path(shape_path, mmap_mode=None).tolist())
@@ -347,7 +351,11 @@ def _dequantize_npy(tensor_dir: Path, sk: str) -> np.ndarray:
             )
         else:
             scales = np.ascontiguousarray(_load_npy_path(s4_path, mmap_mode=None), dtype=np.float32)
-        return dequantize_int4(packed, scales, group_size=64)
+        # Infer group_size from tensor shapes: n_cols = packed.shape[1]*2, n_groups = scales.shape[1]
+        n_cols_int4 = packed.shape[1] * 2
+        n_groups_int4 = scales.shape[1]
+        gs_int4 = n_cols_int4 // n_groups_int4
+        return dequantize_int4(packed, scales, group_size=gs_int4)
 
     # ── Passthrough (float16) ─────────────────────────────────────────────
     pt_exists = pt_path.exists() or Path(str(pt_path) + ".zst").exists()

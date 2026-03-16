@@ -4,7 +4,7 @@ Squish — fast compressed model loader and OpenAI-compatible server for Apple S
 Public API:
     load_compressed_model(model_dir, npz_path_or_dir, ...)
     load_from_npy_dir(dir_path, model_dir, ...)
-    save_int4_npy_dir(npy_dir, group_size=64, verbose=True)
+    save_int4_npy_dir(npy_dir, group_size=32, verbose=True)
 
     compress_npy_dir(tensors_dir, level=3, ...)  # zstd entropy compression
     decompress_npy_dir(tensors_dir, ...)

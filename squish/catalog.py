@@ -349,18 +349,18 @@ _BUNDLED: list[dict] = [
 
     # ── SmolLM2 ───────────────────────────────────────────────────────────────
     dict(id="smollm2:135m", name="SmolLM2-135M-Instruct",
-         hf_mlx_repo="mlx-community/SmolLM2-135M-Instruct-bf16",
-         squish_repo="squishai/SmolLM2-135M-Instruct-bf16-squished",
+         hf_mlx_repo="mlx-community/SmolLM2-135M-Instruct",
+         squish_repo="squishai/SmolLM2-135M-Instruct-squished",
          size_gb=0.3, squished_size_gb=0.2, params="135M", context=8192,
          tags=["small", "fast", "edge"]),
     dict(id="smollm2:360m", name="SmolLM2-360M-Instruct",
-         hf_mlx_repo="mlx-community/SmolLM2-360M-Instruct-bf16",
-         squish_repo="squishai/SmolLM2-360M-Instruct-bf16-squished",
+         hf_mlx_repo="mlx-community/SmolLM2-360M-Instruct",
+         squish_repo="squishai/SmolLM2-360M-Instruct-squished",
          size_gb=0.7, squished_size_gb=0.5, params="360M", context=8192,
          tags=["small", "fast", "edge"]),
     dict(id="smollm2:1.7b", name="SmolLM2-1.7B-Instruct",
-         hf_mlx_repo="mlx-community/SmolLM2-1.7B-Instruct-bf16",
-         squish_repo="squishai/SmolLM2-1.7B-Instruct-bf16-squished",
+         hf_mlx_repo="mlx-community/SmolLM2-1.7B-Instruct",
+         squish_repo="squishai/SmolLM2-1.7B-Instruct-squished",
          size_gb=3.5, squished_size_gb=2.3, params="1.7B", context=8192,
          tags=["small", "fast"]),
 ]
@@ -387,7 +387,7 @@ def _entry_from_dict(d: dict) -> CatalogEntry:
         name=d["name"],
         hf_mlx_repo=d["hf_mlx_repo"],
         size_gb=d["size_gb"],
-        squished_size_gb=d.get("squished_size_gb", d["size_gb"] / 1.5),
+        squished_size_gb=d.get("squished_size_gb", d["size_gb"] / 3.8),
         params=d["params"],
         context=d["context"],
         squish_repo=d.get("squish_repo"),
@@ -828,7 +828,7 @@ def pull(  # pragma: no cover
         "--format",    "npy-dir",
     ]
     if int4:
-        cmd.append("--int4")
+        cmd.extend(["--int4", "--super-weight", "--outlier-threshold", "12.0"])
     if verbose:
         cmd.append("--verbose")
 

@@ -571,8 +571,10 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
         scales = np.ascontiguousarray(
             _load_npy_path(s4_path), dtype=np.float32)    # (n, n_groups)
         original_shape = tuple(_load_npy_path(shape_path).tolist())
+        # Infer group_size from shapes: n_cols = packed.shape[1]*2, n_groups = scales.shape[1]
+        _gs = (packed.shape[1] * 2) // scales.shape[1]
         arr_f32 = _squish_quant.dequantize_int4_grouped(
-            packed, scales, _INT4_GROUP_SIZE,
+            packed, scales, _gs,
         )
         return arr_f32.reshape(original_shape)
 
@@ -666,7 +668,7 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
 
 def save_int4_npy_dir(  # pragma: no cover
     npy_dir: str,
-    group_size: int = _INT4_GROUP_SIZE,
+    group_size: int = 32,
     verbose: bool = True,
 ) -> dict:
     """
@@ -681,11 +683,12 @@ def save_int4_npy_dir(  # pragma: no cover
 
     Requires ``squish_quant`` Rust extension.  Run once per model; subsequent
     loads auto-detect the INT4 files and use them without re-quantizing.
+    The group_size is stored implicitly in the scales tensor shape and inferred
+    automatically on load — no caller coordination required.
 
     Args:
         npy_dir:    Path to the npy-dir root (contains manifest.json + tensors/).
-        group_size: Nibble-pack group width (default 64 — must stay constant
-                    between save and load).
+        group_size: Nibble-pack group width (default 32 — Q4_K_M standard).
         verbose:    Print per-tensor progress.
 
     Returns:

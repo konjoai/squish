@@ -48,6 +48,7 @@ class TestNF4RoundTrip:
             assert "__s_nf4" in sub
             recon = _write_and_reload(sub, Path(tmpdir))
             snr = _snr_db(arr.reshape(recon.shape), recon)
+            # Direct FP32→NF4 path (no INT8 intermediate) should achieve good SNR
             assert snr > 20.0, f"NF4 SNR={snr:.1f} dB too low"
 
     def test_nf4_shape_preserved(self):
@@ -148,7 +149,38 @@ class TestINT4DFloat11ScalesRoundTrip:
             assert "__s4" not in sub
             recon = _write_and_reload(sub, Path(tmpdir))
             snr = _snr_db(arr.reshape(recon.shape), recon)
-            assert snr > 15.0, f"INT4+DFloat11 SNR={snr:.1f} dB too low"
+            # Direct FP32→INT4 path raises SNR floor
+            assert snr > 18.0, f"INT4+DFloat11 SNR={snr:.1f} dB too low"
+
+    def test_int4_direct_fp32_path_better_than_int8_intermediate(self):
+        """Direct FP32→INT4 should have strictly better SNR than old INT8→reconstruct→INT4."""
+        arr = RNG.standard_normal((32, 128)).astype(np.float32)
+        with tempfile.TemporaryDirectory() as d_direct:
+            sub_direct = quantize_tensor("w", arr, 20.0, [], use_int4=True)
+            recon_direct = _write_and_reload(sub_direct, Path(d_direct))
+            snr_direct = _snr_db(arr.reshape(recon_direct.shape), recon_direct)
+            # Simulate the old INT8-intermediate path manually
+            from squish.quant.quantizer import quantize_embeddings, reconstruct_embeddings, quantize_int4
+            flat = arr.reshape(-1, arr.shape[-1])
+            r8 = quantize_embeddings(flat, group_size=64)
+            recon8 = reconstruct_embeddings(r8)
+            packed_old, scales_old = quantize_int4(recon8, group_size=64)
+            # Dequantize old path for comparison
+            from squish.quant.quantizer import dequantize_int4
+            recon_old = dequantize_int4(packed_old, scales_old, group_size=64)
+            snr_old = _snr_db(arr.reshape(recon_old.shape), recon_old)
+            assert snr_direct >= snr_old, (
+                f"Direct INT4 SNR {snr_direct:.1f} dB should be ≥ INT8-intermediate "
+                f"SNR {snr_old:.1f} dB"
+            )
+
+    def test_int4_super_weight_passthrough(self):
+        """super_weight_passthrough=True must produce __pt (FP16 passthrough), not INT4."""
+        arr = RNG.standard_normal((8, 64)).astype(np.float32)
+        sub = quantize_tensor("layer.weight", arr, 20.0, [], use_int4=True,
+                              super_weight_passthrough=True)
+        assert "__pt" in sub, "super_weight_passthrough should produce FP16 passthrough"
+        assert "__q4" not in sub, "super_weight_passthrough should not produce INT4"
 
 
 # ---------------------------------------------------------------------------
