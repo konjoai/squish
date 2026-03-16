@@ -218,9 +218,12 @@ def quantize_tensor(
     original_shape = arr_f32.shape
 
     # --- decide whether to pass through ---
-    # INT4 is more sensitive to outlier rows than INT8; tighten the threshold
-    # to passthrough more edge-case tensors in FP16 rather than absorbing error.
-    effective_threshold = min(outlier_threshold, 12.0) if use_int4 else outlier_threshold
+    # Use the caller-supplied threshold for outlier detection.
+    # Super-weight protection (threshold=100.0 via --super-weight) already guards
+    # against the truly catastrophic outlier tensors; a separate row-max/mean cap
+    # at 12.0 was too aggressive and caused ~70% of LLM weight matrices to pass
+    # through as FP16, negating the INT4 compression benefit.
+    effective_threshold = outlier_threshold
     skip = super_weight_passthrough or any(p in name for p in passthrough_patterns)
     if not skip and arr_f32.ndim >= 2:
         flat = arr_f32.reshape(-1, arr_f32.shape[-1])
@@ -492,7 +495,10 @@ def process_weights_streaming(
         from squish.quant.super_weight_calibrator import (
             SuperWeightCalibrator, SuperWeightConfig,
         )
-        _sw_calibrator = SuperWeightCalibrator(SuperWeightConfig(threshold=100.0))
+        _sw_calibrator = SuperWeightCalibrator(SuperWeightConfig(
+            threshold=100.0,
+            threshold_1d=1e9,   # 1D tensors (biases, layernorms) don't need INT4 super-weight protection
+        ))
 
     for shard_idx, shard in enumerate(shard_files, 1):
         print(f"\n  [{shard_idx}/{len(shard_files)}] {shard.name}")
