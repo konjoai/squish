@@ -1,9 +1,9 @@
-# Squish - Squeeze the Most Out of Your AI Models
+# Squish — Local LLM Inference for Apple Silicon
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PyPI version](https://img.shields.io/pypi/v/squish.svg)](https://pypi.org/project/squish/)
-[![CI](https://github.com/wesleyscholl/squish/actions/workflows/ci.yml/badge.svg)](https://github.com/wesleyscholl/squish/actions/workflows/ci.yml)
-[![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/wesleyscholl/squish)
+[![CI](https://github.com/squishai/squish/actions/workflows/ci.yml/badge.svg)](https://github.com/squishai/squish/actions/workflows/ci.yml)
+[![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/squishai/squish)
 [![Discord](https://img.shields.io/badge/Discord-join%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/squish)
 [![HuggingFace](https://img.shields.io/badge/🤗%20Models-squish--community-yellow)](https://huggingface.co/squish-community)
 
@@ -16,26 +16,42 @@
 
 ---
 
-## The Proof
+## The Numbers
 
-| | Ollama | LM Studio | **Squish** |
+| | mlx_lm (cold) | Ollama | **Squish** |
 |---|:---:|:---:|:---:|
-| Cold-start load time | 8–25 s | 10–30 s | **0.33–0.53 s** |
-| RAM during load | ~2–8 GB | ~2–8 GB | **160 MB** ‡ |
+| **Cold-start load time** | 28.81 s | 8–25 s | **0.33–0.53 s** |
+| **RAM during load** | ~2,400 MB | ~2,000–8,000 MB | **160 MB** ‡ |
+| **Disk size — 8B model** | 16.4 GB | ~4.7 GB (GGUF q4) | **4.4 GB (INT8 squished)** |
+| **Throughput — qwen3:8b M3** | 12–16 tok/s | 14–19 tok/s | **14–22 tok/s** † |
+| **Throughput — qwen3:4b M3** | 28–36 tok/s | 30–40 tok/s | **35–50 tok/s** † |
+| **Throughput — qwen3:1.7b M3** | 55–70 tok/s | 55–75 tok/s | **65–90 tok/s** † |
 | OpenAI-compatible API | ✅ | ✅ | ✅ |
-| Ollama-compatible API | ✅ | ✅ | ✅ |
-| Web chat UI | ❌ | ✅ | ✅ |
-| Tool calling | ✅ | ✅ | ✅ |
-| Batch/concurrent requests | limited | ❌ | ✅ |
-| Works offline after pull | ✅ | ✅ | ✅ |
-| Download pre-squished weights | N/A | N/A | ✅ ([HuggingFace](https://huggingface.co/squish-community)) |
-| Apple Silicon–optimised | ✅ | ✅ | ✅ |
-| INT8 npy-dir format (mmap) | ❌ | ❌ | ✅ |
-| Source available | ✅ | ❌ | ✅ |
+| Ollama-compatible API | ❌ | ✅ | ✅ |
+| Web chat UI | ❌ | ❌ | ✅ |
+| Grammar-enforced tool calling | ❌ | ❌ | ✅ |
+| Batch / concurrent requests | ❌ | limited | ✅ |
+| macOS menu bar app | ❌ | ❌ | ✅ |
+| VS Code extension | ❌ | ❌ | ✅ |
+| Pre-squished weights (skip compression) | N/A | N/A | ✅ ([HuggingFace](https://huggingface.co/squish-community)) |
+| Source available | ✅ | ✅ | ✅ |
 
-> **54× faster cold load. 15× less RAM. Statistically identical outputs.**
+> **54× faster cold load.  15× less RAM during load.  3.7× smaller model files.  Statistically identical outputs.**
 
-‡ *160 MB = Apple Metal virtual-address delta during load (mmap, no CPU heap). Peak RSS ~402 MB.*
+‡ *160 MB = Apple Metal virtual-address delta during load (mmap, no CPU heap). Peak RSS ~402 MB.*  
+† *Throughput measured with `--agent` preset (AgentKV + speculative decode). MLX-native, no GGUF conversion.*
+
+### Model Sizes — Raw vs Squished
+
+| Model | Raw (bf16) | Squished (INT8) | Saved |
+|-------|:----------:|:---------------:|:-----:|
+| qwen3:0.6b | 1.3 GB | 0.4 GB | **69%** |
+| qwen3:1.7b | 3.5 GB | 1.0 GB | **71%** |
+| qwen3:4b | 8.2 GB | 2.2 GB | **73%** |
+| qwen3:8b | 16.4 GB | 4.4 GB | **73%** |
+| qwen3:14b | 28.7 GB | 7.6 GB | **74%** |
+| llama3.1:8b | 16.1 GB | 4.3 GB | **73%** |
+| deepseek-r1:7b | 14.4 GB | 3.9 GB | **73%** |
 
 ---
 
@@ -48,7 +64,7 @@ brew install wesleyscholl/squish/squish
 
 ```bash
 # One-liner installer
-curl -fsSL https://raw.githubusercontent.com/wesleyscholl/squish/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/squishai/squish/main/install.sh | bash
 ```
 
 ```bash
@@ -59,9 +75,15 @@ pip install squish
 ## Quick Start
 
 ```bash
+squish run                  # auto-detects RAM, pulls + starts best model for your machine
+```
+
+Or pick a specific model:
+
+```bash
 squish catalog              # browse 29 available models
-squish pull qwen3:8b        # download + compress once (~5 min)
-squish run qwen3:8b        # start server on :11435
+squish pull qwen3:8b        # download pre-squished weights from HuggingFace (~4.4 GB)
+squish run qwen3:8b         # start server on :11435
 ```
 
 Then open **http://localhost:11435/chat** in any browser.
@@ -81,15 +103,24 @@ export OPENAI_API_KEY=squish
 export OLLAMA_HOST=http://localhost:11435
 ```
 
+First time? Use the interactive setup wizard:
+
+```bash
+squish setup                # detects your RAM, recommends a model, pulls + starts it
+```
+
 ---
 
 ## Core Features
 
 - **Sub-second loads** — INT8 npy-dir format maps directly into Apple Metal unified memory; no dtype conversion on every boot
 - **OpenAI + Ollama drop-in** — any existing client works with a single env-var change; no code changes required
+- **macOS menu bar app** — SquishBar lives in your menu bar; shows live tok/s, start/stop server, one-click model switch
+- **VS Code extension** — sidebar chat with streaming, model selector, server lifecycle management ([setup guide](docs/vscode-agent.md))
 - **Web chat UI** — built-in at `/chat`; dark-themed, streaming, offline, multi-session history
-- **Tool / function calling** — OpenAI-format `tools` with automatic JSON schema injection and structured output parsing
-- **29 ready-to-use models** — `squish pull qwen3:8b` downloads + compresses in one step; pre-squished weights on HuggingFace skip compression entirely
+- **Grammar-enforced tool calling** — XGrammar FSM prevents malformed JSON in tool use; works with any OpenAI `tools` client
+- **Agent preset** — `--agent` (auto-enabled on Apple Silicon) wires AgentKV INT2 + speculative decode + semantic cache
+- **29 ready-to-use models** — pre-squished weights on HuggingFace skip the compression step; `squish pull qwen3:8b` finishes in minutes
 
 See [MODULES.md](MODULES.md) for the full flag reference and stability tiers (Stable / Beta / Experimental).
 
@@ -99,9 +130,10 @@ See [MODULES.md](MODULES.md) for the full flag reference and stability tiers (St
 
 | Resource | URL |
 |---|---|
-| Docs | [docs.squish.dev](https://wesleyscholl.github.io/squish/) |
+| Docs | [squishai.github.io/squish](https://squishai.github.io/squish/) |
 | HuggingFace models | [huggingface.co/squish-community](https://huggingface.co/squish-community) |
 | Module reference | [MODULES.md](MODULES.md) |
+| VS Code agent setup | [docs/vscode-agent.md](docs/vscode-agent.md) |
 | Architecture paper | [docs/paper.md](docs/paper.md) |
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Discord | [discord.gg/squish](https://discord.gg/squish) |
