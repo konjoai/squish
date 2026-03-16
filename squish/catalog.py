@@ -263,6 +263,7 @@ _BUNDLED: list[dict] = [
          tags=["small", "fast"]),
     dict(id="llama3.2:3b", name="Llama-3.2-3B-Instruct",
          hf_mlx_repo="mlx-community/Llama-3.2-3B-Instruct-bf16",
+         squish_repo="squishai/Llama-3.2-3B-Instruct-bf16-squished",
          size_gb=6.4, squished_size_gb=4.3, params="3B", context=128000,
          tags=["small"]),
     dict(id="llama3.1:8b", name="Llama-3.1-8B-Instruct",
