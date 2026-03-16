@@ -339,13 +339,13 @@ def _dequantize_npy(tensor_dir: Path, sk: str) -> np.ndarray:
     s4a_exists = s4a_path.exists() or Path(str(s4a_path) + ".zst").exists()
     z4a_exists = z4a_path.exists() or Path(str(z4a_path) + ".zst").exists()
     if q4a_exists and s4a_exists and z4a_exists:
-        packed      = np.ascontiguousarray(_load_npy_path(q4a_path, mmap_mode=None), dtype=np.uint8)
-        scales      = np.ascontiguousarray(_load_npy_path(s4a_path, mmap_mode=None), dtype=np.float32)
-        zero_points = np.ascontiguousarray(_load_npy_path(z4a_path, mmap_mode=None), dtype=np.uint8)
+        packed   = np.ascontiguousarray(_load_npy_path(q4a_path, mmap_mode=None), dtype=np.uint8)
+        scales   = np.ascontiguousarray(_load_npy_path(s4a_path, mmap_mode=None), dtype=np.float32)
+        offsets  = np.ascontiguousarray(_load_npy_path(z4a_path, mmap_mode=None), dtype=np.float32)
         n_cols_q4a   = packed.shape[1] * 2
         gs_q4a       = n_cols_q4a // scales.shape[1]
         shape_path = tensor_dir / f"{sk}__shape.npy"
-        arr = dequantize_int4_asymmetric(packed, scales, zero_points, group_size=gs_q4a)
+        arr = dequantize_int4_asymmetric(packed, scales, offsets, group_size=gs_q4a)
         if shape_path.exists() or Path(str(shape_path) + ".zst").exists():
             original_shape = tuple(int(x) for x in _load_npy_path(shape_path, mmap_mode=None).tolist())
             return arr.reshape(original_shape)

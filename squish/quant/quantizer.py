@@ -365,10 +365,12 @@ def quantize_int4_asymmetric(
     Requires squish_quant Rust extension.
 
     Returns:
-        (packed_uint8, scales_float32, zero_points_uint8)
-        packed has shape      (n, d//2)
-        scales has shape      (n, d//group_size)
-        zero_points has shape (n, d//group_size), values in [0, 15]
+        (packed_uint8, scales_float32, offsets_float32)
+        packed  has shape (n, d//2)          — nibble-packed uint8
+        scales  has shape (n, d//group_size) — step size per group
+        offsets has shape (n, d//group_size) — gmin per group (float32)
+
+    Decode: x_hat = offsets + q * scales   (q ∈ [0, 15])
     """
     if _squish_quant is None:  # pragma: no cover
         raise RuntimeError(
@@ -383,19 +385,19 @@ def quantize_int4_asymmetric(
 def dequantize_int4_asymmetric(
     packed: np.ndarray,
     scales: np.ndarray,
-    zero_points: np.ndarray,
+    offsets: np.ndarray,
     group_size: int = 64,
 ) -> np.ndarray:
     """Reconstruct float32 from asymmetric nibble-packed INT4 weights.
 
     Args:
-        packed:      (n, d//2)          uint8  — from quantize_int4_asymmetric().
-        scales:      (n, d//group_size) float32.
-        zero_points: (n, d//group_size) uint8, values in [0, 15].
-        group_size:  Must match the value used during quantize_int4_asymmetric().
+        packed:   (n, d//2)          uint8   — from quantize_int4_asymmetric().
+        scales:   (n, d//group_size) float32 — step size per group.
+        offsets:  (n, d//group_size) float32 — gmin per group.
+        group_size: Must match the value used during quantize_int4_asymmetric().
 
     Returns:
-        (n, d) float32.
+        (n, d) float32.   Decode: x_hat = offsets + q * scales.
     """
     if _squish_quant is None:  # pragma: no cover
         raise RuntimeError(
@@ -404,9 +406,9 @@ def dequantize_int4_asymmetric(
             "  Or:    pip install squish[quant]"
         )
     return _squish_quant.dequantize_int4_asymmetric_grouped(
-        np.ascontiguousarray(packed,      dtype=np.uint8),
-        np.ascontiguousarray(scales,      dtype=np.float32),
-        np.ascontiguousarray(zero_points, dtype=np.uint8),
+        np.ascontiguousarray(packed,  dtype=np.uint8),
+        np.ascontiguousarray(scales,  dtype=np.float32),
+        np.ascontiguousarray(offsets, dtype=np.float32),
         group_size,
     )
 
@@ -457,6 +459,14 @@ def quantize_int4_asymmetric_mse(
     assert d % group_size == 0, f"d={d} not divisible by group_size={group_size}"
     n_groups_total = n * (d // group_size)
 
+    # For 1D tensors (n == 1, e.g. LayerNorm weights, 1-D biases) the groups
+    # are arbitrary slices of a conceptually flat vector.  Outliers in those
+    # groups are semantically important (they control per-dimension scales),
+    # so MSE-optimal clipping must NOT be applied — it would corrupt the
+    # model's internal scale invariance.  Fall back to plain asymmetric INT4.
+    if n == 1:
+        return _squish_quant.quantize_int4_asymmetric_grouped(emb, group_size)
+
     # Reshape: (n*n_groups, group_size)
     groups = emb.reshape(n_groups_total, group_size)  # contiguous float32
 
@@ -484,15 +494,15 @@ def quantize_int4_asymmetric_mse(
         g_clipped = np.clip(groups, c_lo, c_hi)   # (G, gs)
 
         # Asymmetric quantize-dequantize in numpy (mirrors Rust logic exactly)
-        c_min = c_lo.squeeze(1)   # (G,)  = clip_lo after clamp
-        c_max = c_hi.squeeze(1)   # (G,)  = clip_hi after clamp
+        # Decode: x_hat = c_lo + q * scale  (offset = c_lo = clipped gmin)
+        c_min = c_lo.squeeze(1)   # (G,)  = clip_lo / offset
+        c_max = c_hi.squeeze(1)   # (G,)  = clip_hi
         c_rng = c_max - c_min     # (G,)
         scale = np.where(c_rng > 0, c_rng / 15.0, 1.0).astype(np.float32)
-        zp    = np.clip(np.round(-c_min / scale), 0, 15).astype(np.float32)
 
-        # q = clamp(round(x / scale + zp), 0, 15)
-        q_f   = np.clip(np.round(g_clipped / scale[:, None] + zp[:, None]), 0, 15)
-        x_hat = (q_f - zp[:, None]) * scale[:, None]   # dequantize
+        # q = clamp(round((x - offset) / scale), 0, 15)
+        q_f   = np.clip(np.round((g_clipped - c_lo) / scale[:, None]), 0, 15)
+        x_hat = c_lo + q_f * scale[:, None]   # dequantize: offset + q * scale
 
         # MSE of ORIGINAL (unclipped) vs reconstructed — penalises both
         # quantisation error and clipping error

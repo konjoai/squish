@@ -363,11 +363,11 @@ def quantize_tensor(
         # spike to the nibble boundary.  Net gain: +0.4–1.2 dB SNR on top of
         # plain asymmetric INT4 (+1.6 dB over old symmetric INT4).
         gs = _pick_int4_group_size(flat.shape[1])
-        packed, scales4, zero_points4 = quantize_int4_asymmetric_mse(flat, group_size=gs)
+        packed, scales4, offsets4 = quantize_int4_asymmetric_mse(flat, group_size=gs)
         return {
-            "__q4a":   packed,        # uint8 nibble-packed      (n, d//2)
-            "__s4a":   scales4,       # float32                  (n, d//gs)
-            "__z4a":   zero_points4,  # uint8 zero-points [0,15] (n, d//gs)
+            "__q4a":   packed,    # uint8 nibble-packed      (n, d//2)
+            "__s4a":   scales4,   # float32 step size        (n, d//gs)
+            "__z4a":   offsets4,  # float32 gmin offsets     (n, d//gs)
             "__shape": shape_arr,
         }
 
