@@ -2444,10 +2444,75 @@ MIT license. OpenAI + Ollama drop-in compatible. Zero code changes to existing a
 | Storage overhead (zero_points array) | +5.0% vs symmetric |
 | Test suite | 5874 passed, 7 skipped, 0 failures |
 
-### Next steps
-- [ ] Re-compress Qwen2.5-1.5B with asymmetric INT4 and run 500-sample benchmarks
-- [ ] Target: hellaswag ≥ 0.600 (vs 0.570 with symmetric, 0.635 BF16 reference)
+### Next steps (at time of initial asymmetric implementation)
+- [x] Re-compress Qwen2.5-1.5B with asymmetric INT4 and run 500-sample benchmarks
+- [x] Target: hellaswag ≥ 0.600 (vs 0.570 with symmetric, 0.635 BF16 reference)
 - [ ] Compress remaining catalog models (Qwen3-8B, Llama-3.2-3B)
 - [ ] Upload compressed models to HuggingFace squishai org
+
+---
+
+## ✅ INT4 MSE Clipping + Float32 Offset Fix (2026-03-17)
+> Goal: Further improve INT4 accuracy via per-group MSE-optimal inward clipping, and
+> fix a critical bug in the Rust asymmetric quantizer where uint8 zero-point clamping
+> caused systematically under-represented all-positive groups.
+
+### Optimization: Per-group MSE-optimal inward clipping
+
+**Function**: `quantize_int4_asymmetric_mse(embeddings, group_size)` in `squish/quant/quantizer.py`
+
+- Grid search 8 beta values β ∈ {0, 1.4%, 2.9%, 4.3%, 5.7%, 7.1%, 8.6%, 10%}
+- For each beta, clip group range to `[gmin + β·span, gmax − β·span]`, quantize, and
+  compute reconstruction MSE
+- Select the clipping that minimizes reconstruction MSE for that group
+- **Fast path**: For n=1 tensors (layernorm/bias weights with semantically important
+  outliers), bypass MSE search and use plain asymmetric quantization
+
+### Bug fix: uint8 zero-point → float32 gmin offset
+
+**Root cause**: Old Rust formula `zp = clamp(round(−gmin/scale), 0, 15)` clamped
+`zp` to [0, 15]. For groups with `gmin > 0` (all-positive, common in layernorm
+weights), `zp` should be negative but was clamped to 0. This meant nibble 15
+decoded as `15 × scale = gmax − gmin < gmax`, silently under-representing the
+maximum value.
+
+**Concrete impact**: `model.norm.weight` (shape `(1536,)`, all-positive, max=8.875)
+was decoded with max≈6.52 instead of 8.875 — a 26% error on the final normalization
+layer, causing catastrophic downstream logit corruption (cosine similarity 0.68).
+
+**Fix** (`squish_quant_rs/src/lib.rs`):
+- Store `gmin` directly as float32 offset instead of a clamped uint8 zero-point
+- Quantize: `q = clamp(round((x − gmin) / scale), 0, 15)`
+- Dequantize: `x_hat = gmin + q × scale`
+- `__z4a` array type changed from `uint8` to `float32` (+~3 bytes/group overhead)
+
+**Updated files**:
+- [x] `squish_quant_rs/src/lib.rs` — new Rust encode/decode formulas
+- [x] `squish/quant/quantizer.py` — updated Python wrappers + fixed numpy MSE simulation
+- [x] `squish/convert.py` — stores float32 offsets as `__z4a`
+- [x] `squish/io/loader_utils.py` — loads `__z4a` as `dtype=np.float32`
+- [x] `squish/quant/compressed_loader.py` — same float32 load fix
+- [x] `tests/quant/test_int4_loader.py` — updated savings assertion (26–60%)
+
+### Benchmark results (Qwen2.5-1.5B-Instruct, 500 samples, 0-shot)
+
+| Task       | Sym INT4 | Asym+MSE INT4 | Delta   |
+|------------|----------|---------------|---------|
+| arc_easy   | 0.730    | 0.712         | −0.018  |
+| hellaswag  | 0.572    | **0.600**     | **+0.028** |
+| piqa       | 0.766    | **0.774**     | +0.008  |
+| winogrande | 0.628    | 0.628         | ±0      |
+
+Compressed model: `~/models/Qwen2.5-1.5B-Instruct-squished-int4-mse`
+Disk size: 2.579 GB (2.39× compression ratio), 249 INT4A + 89 passthrough layers, 38.8s
+
+### Commits
+- `6491044` — feat(int4): add per-group MSE-optimal inward clipping for asymmetric INT4
+- `78694b9` — fix(int4): replace uint8 zero_point with float32 gmin offset in asymmetric INT4
+
+### Next steps
+- [ ] Compress remaining catalog models (Qwen3-8B, Llama-3.2-3B) with asym+MSE INT4
+- [ ] Upload compressed models to HuggingFace squishai org
+- [ ] Run BF16 reference benchmarks for complete delta table
 
 ---
