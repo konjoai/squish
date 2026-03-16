@@ -1,8 +1,8 @@
 site_name: Squish
 site_description: "Run 70B language models on a MacBook. Squish compresses model weights into memory-mapped INT8 tensors that load in milliseconds."
-site_url: https://wesleyscholl.github.io/squish
-repo_url: https://github.com/wesleyscholl/squish
-repo_name: wesleyscholl/squish
+site_url: https://squishai.github.io/squish
+repo_url: https://github.com/squishai/squish
+repo_name: squishai/squish
 
 theme:
   name: material

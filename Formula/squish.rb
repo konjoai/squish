@@ -1,12 +1,12 @@
 class Squish < Formula
   desc "Fast compressed model loader and OpenAI-compatible inference server for Apple Silicon"
-  homepage "https://wesleyscholl.github.io/squish"
-  url "https://github.com/wesleyscholl/squish/archive/refs/tags/v9.0.0.tar.gz"
+  homepage "https://squishai.github.io/squish"
+  url "https://github.com/squishai/squish/archive/refs/tags/v9.0.0.tar.gz"
   # sha256 — update after `gh release create v9.0.0` with:
-  #   curl -sL https://github.com/wesleyscholl/squish/archive/refs/tags/v9.0.0.tar.gz | sha256sum
+  #   curl -sL https://github.com/squishai/squish/archive/refs/tags/v9.0.0.tar.gz | sha256sum
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "MIT"
-  head "https://github.com/wesleyscholl/squish.git", branch: "main"
+  head "https://github.com/squishai/squish.git", branch: "main"
 
   livecheck do
     url :stable

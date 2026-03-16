@@ -856,10 +856,10 @@ Everything else (wave tables, per-module details, accuracy benchmarks, developer
 - [x] Restructure README to match the 6-section outline above
 - [x] Benchmark comparison table must be above the fold (before any feature description)
 - [x] Remove all wave tables from README body (already partially done; verify none remain)
-- [ ] Deploy MkDocs to GitHub Pages (`docs.yml` workflow exists; confirm it is live)
-- [ ] Add a "Troubleshooting / FAQ" page to the MkDocs site covering: 8 GB Mac OOM, tokenizer errors, MLX version mismatches, Ollama port conflicts
-- [ ] Add `SECURITY.md` documenting responsible disclosure process
-- [ ] Ensure `CONTRIBUTING.md` has a step-by-step local dev setup that works on a blank Mac (Xcode CLT, Rust/maturin, uv)
+- [x] Deploy MkDocs to GitHub Pages (`docs.yml` workflow exists; confirm it is live)
+- [x] Add a "Troubleshooting / FAQ" page to the MkDocs site covering: 8 GB Mac OOM, tokenizer errors, MLX version mismatches, Ollama port conflicts
+- [x] Add `SECURITY.md` documenting responsible disclosure process
+- [x] Ensure `CONTRIBUTING.md` has a step-by-step local dev setup that works on a blank Mac (Xcode CLT, Rust/maturin, uv)
 - [ ] Test `pip install squish` from a clean virtualenv with no dev tools pre-installed to catch missing wheel/compiler issues
 
 ---
