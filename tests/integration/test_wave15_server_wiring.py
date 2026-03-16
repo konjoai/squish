@@ -33,7 +33,12 @@ class TestAdaServeWiring:
         assert 0.0 < cfg.goodput_weight < 1.0
 
     def test_register_slo_and_get_gamma(self):
-        from squish.serving.ada_serve import AdaServeConfig, AdaServeRequest, AdaServeScheduler, SLOTarget
+        from squish.serving.ada_serve import (
+            AdaServeConfig,
+            AdaServeRequest,
+            AdaServeScheduler,
+            SLOTarget,
+        )
         cfg  = AdaServeConfig(min_gamma=1, max_gamma=8)
         slo  = SLOTarget(task_type="chat", time_to_first_token_ms=200.0)
         sched = AdaServeScheduler(cfg)
@@ -44,7 +49,12 @@ class TestAdaServeWiring:
         assert cfg.min_gamma <= gamma <= cfg.max_gamma
 
     def test_complete_and_stats(self):
-        from squish.serving.ada_serve import AdaServeConfig, AdaServeRequest, AdaServeScheduler, SLOTarget
+        from squish.serving.ada_serve import (
+            AdaServeConfig,
+            AdaServeRequest,
+            AdaServeScheduler,
+            SLOTarget,
+        )
         cfg  = AdaServeConfig()
         slo  = SLOTarget(task_type="code")
         sched = AdaServeScheduler(cfg)
@@ -82,7 +92,11 @@ class TestConfSpecWiring:
         assert cfg.metric in ("top_prob", "entropy", "margin")
 
     def test_verify_step_returns_decision(self):
-        from squish.speculative.conf_spec import ConfSpecConfig, ConfSpecVerifier, VerificationRouting
+        from squish.speculative.conf_spec import (
+            ConfSpecConfig,
+            ConfSpecVerifier,
+            VerificationRouting,
+        )
         rng = np.random.default_rng(0)
         cfg  = ConfSpecConfig(high_gate=0.9, low_gate=0.5, vocab_size=64)
         verifier = ConfSpecVerifier(cfg)

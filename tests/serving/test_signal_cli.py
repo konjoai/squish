@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import io
 import json
-import time
 import threading
+import time
 import unittest.mock as mock
 
 import pytest
@@ -23,8 +23,6 @@ from squish.serving.signal_cli import (
     _DEFAULT_SYSTEM_PROMPT,
     _MAX_HISTORY,
     _SESSION_TIMEOUT,
-    _SignalBot,
-    _SignalRPC,
     _apply_max_history,
     _expire_old_sessions,
     _get_or_create_session,
@@ -32,9 +30,10 @@ from squish.serving.signal_cli import (
     _sessions,
     _sessions_lock,
     _sessions_ts,
+    _SignalBot,
+    _SignalRPC,
     mount_signal,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers

@@ -157,7 +157,7 @@ class BatchEmbedder:
     def pool(
         self,
         hidden_states: np.ndarray,
-        attention_mask: Optional[np.ndarray] = None,
+        attention_mask: np.ndarray | None = None,
     ) -> np.ndarray:
         """Pool token-level hidden states into batch embeddings.
 
@@ -229,7 +229,7 @@ class BatchEmbedder:
     def pool_single(
         self,
         hidden_states: np.ndarray,
-        attention_mask: Optional[np.ndarray] = None,
+        attention_mask: np.ndarray | None = None,
     ) -> np.ndarray:
         """Pool a single sequence (no batch dimension).
 

@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 from squish.benchmarks.base import BenchmarkRunner, EngineClient, EngineConfig, ResultRecord
 
 
-def _load_scenarios(path: Optional[str] = None) -> List[Dict[str, Any]]:
+def _load_scenarios(path: str | None = None) -> list[dict[str, Any]]:
     if path is None:
         path = str(Path(__file__).parent / "data" / "agent_scenarios.json")
     with open(path) as f:
@@ -34,13 +34,13 @@ class AgentScenario:
     id: str
     category: str
     goal: str
-    tools: List[Dict[str, Any]]
-    tool_fixtures: Dict[str, Any]      # {tool_name: {call_sig_tuple: response}}
-    expected_sequence: List[str]       # ordered list of expected tool names
+    tools: list[dict[str, Any]]
+    tool_fixtures: dict[str, Any]      # {tool_name: {call_sig_tuple: response}}
+    expected_sequence: list[str]       # ordered list of expected tool names
     expected_final_answer: str         # regex or substring to match
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "AgentScenario":
+    def from_dict(cls, d: dict[str, Any]) -> AgentScenario:
         return cls(
             id=d["id"],
             category=d["category"],
@@ -55,10 +55,10 @@ class AgentScenario:
 class ToolFixtureReplay:
     """Replays tool call responses from a fixture dict."""
 
-    def __init__(self, fixtures: Dict[str, Any]) -> None:
+    def __init__(self, fixtures: dict[str, Any]) -> None:
         self._fixtures = fixtures
 
-    def call(self, tool_name: str, args: Dict[str, Any]) -> Any:
+    def call(self, tool_name: str, args: dict[str, Any]) -> Any:
         """Return the fixture response for (tool_name, args), or a default."""
         tool_fixtures = self._fixtures.get(tool_name, {})
         # Try exact arg match first
@@ -74,10 +74,10 @@ class ToolFixtureReplay:
 @dataclass
 class AgentBenchConfig:
     """Configuration for Track D agent benchmark."""
-    scenarios_path: Optional[str] = None
+    scenarios_path: str | None = None
     max_turns: int = 10
     max_tokens_per_turn: int = 512
-    limit: Optional[int] = None
+    limit: int | None = None
     output_dir: str = "eval_output"
 
 
@@ -96,7 +96,7 @@ class AgentBenchRunner(BenchmarkRunner):
         engine: EngineConfig,
         model: str,
         *,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> ResultRecord:
         scenarios_data = _load_scenarios(self._config.scenarios_path)
         effective_limit = limit if limit is not None else self._config.limit
@@ -142,16 +142,16 @@ class AgentBenchRunner(BenchmarkRunner):
         client: EngineClient,
         model: str,
         scenario: AgentScenario,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run one scenario; returns result dict."""
         replay = ToolFixtureReplay(scenario.tool_fixtures)
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "system", "content": "You are a helpful assistant. Use the available tools to complete the task."},
             {"role": "user", "content": scenario.goal},
         ]
         tools = [{"type": "function", "function": t} for t in scenario.tools]
 
-        actual_sequence: List[str] = []
+        actual_sequence: list[str] = []
         tokens_consumed = 0
         final_answer = ""
         completed = False

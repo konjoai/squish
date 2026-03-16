@@ -6,23 +6,22 @@
 import numpy as np
 import pytest
 
-from squish.quant.ternary_quant import TernaryConfig, TernaryQuantizer, TernaryStats
+from squish.attention.flash_mla import FlashMLACache, MLAConfig
 from squish.attention.retention_attn import (
     RetentionConfig,
     RetentionKernel,
     RetentionState,
     RetentionStats,
 )
-from squish.context.cot_compress import CoTConfig, CoTCompressor, CoTStats
+from squish.context.cot_compress import CoTCompressor, CoTConfig, CoTStats
+from squish.context.delta_compress import DeltaCompressor, DeltaConfig, DeltaStats
+from squish.quant.ternary_quant import TernaryConfig, TernaryQuantizer, TernaryStats
 from squish.token.act_sparsity import (
-    SparsityConfig,
     ActSparsityPredictor,
-    SparseFFNGate,
     ActSparsityStats,
+    SparseFFNGate,
+    SparsityConfig,
 )
-from squish.context.delta_compress import DeltaConfig, DeltaCompressor, DeltaStats
-from squish.attention.flash_mla import MLAConfig, FlashMLACache
-
 
 # ---------------------------------------------------------------------------
 # TernaryQuant

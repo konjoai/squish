@@ -141,14 +141,14 @@ def test_safety_layer_update_threshold():
 # ── SemanticResponseCache ─────────────────────────────────────────────────────
 
 def test_semantic_response_cache_import():
-    from squish.kv.semantic_response_cache import SemanticResponseCache, CacheConfig
+    from squish.kv.semantic_response_cache import CacheConfig, SemanticResponseCache
     cfg = CacheConfig(capacity=16, similarity_threshold=0.95, embedding_dim=8)
     cache = SemanticResponseCache(cfg)
     assert cache.size == 0
 
 
 def test_semantic_response_cache_store_lookup_hit():
-    from squish.kv.semantic_response_cache import SemanticResponseCache, CacheConfig
+    from squish.kv.semantic_response_cache import CacheConfig, SemanticResponseCache
     dim = 8
     cfg = CacheConfig(capacity=16, similarity_threshold=0.9, embedding_dim=dim)
     cache = SemanticResponseCache(cfg)
@@ -161,7 +161,7 @@ def test_semantic_response_cache_store_lookup_hit():
 
 
 def test_semantic_response_cache_miss():
-    from squish.kv.semantic_response_cache import SemanticResponseCache, CacheConfig
+    from squish.kv.semantic_response_cache import CacheConfig, SemanticResponseCache
     dim = 8
     cfg = CacheConfig(capacity=16, similarity_threshold=0.995, embedding_dim=dim)
     cache = SemanticResponseCache(cfg)
@@ -176,7 +176,7 @@ def test_semantic_response_cache_miss():
 
 
 def test_semantic_response_cache_eviction():
-    from squish.kv.semantic_response_cache import SemanticResponseCache, CacheConfig
+    from squish.kv.semantic_response_cache import CacheConfig, SemanticResponseCache
     dim = 4
     cfg = CacheConfig(capacity=3, similarity_threshold=0.99, embedding_dim=dim)
     cache = SemanticResponseCache(cfg)
@@ -190,18 +190,17 @@ def test_semantic_response_cache_eviction():
 # Need math for test above
 import math
 
-
 # ── RateLimiter ───────────────────────────────────────────────────────────────
 
 def test_rate_limiter_import():
-    from squish.serving.rate_limiter import TokenBucketRateLimiter, RateLimitConfig
+    from squish.serving.rate_limiter import RateLimitConfig, TokenBucketRateLimiter
     cfg = RateLimitConfig(rate=100.0, burst=50)
     rl = TokenBucketRateLimiter(cfg)
     assert rl is not None
 
 
 def test_rate_limiter_consume_allowed():
-    from squish.serving.rate_limiter import TokenBucketRateLimiter, RateLimitConfig
+    from squish.serving.rate_limiter import RateLimitConfig, TokenBucketRateLimiter
     cfg = RateLimitConfig(rate=1000.0, burst=100)
     rl = TokenBucketRateLimiter(cfg)
     result = rl.consume("tenant-1", n_tokens=10, now=0.0)
@@ -211,7 +210,7 @@ def test_rate_limiter_consume_allowed():
 
 
 def test_rate_limiter_consume_denied():
-    from squish.serving.rate_limiter import TokenBucketRateLimiter, RateLimitConfig
+    from squish.serving.rate_limiter import RateLimitConfig, TokenBucketRateLimiter
     cfg = RateLimitConfig(rate=1.0, burst=5)
     rl = TokenBucketRateLimiter(cfg)
     # drain the bucket
@@ -223,7 +222,7 @@ def test_rate_limiter_consume_denied():
 
 
 def test_rate_limiter_refill():
-    from squish.serving.rate_limiter import TokenBucketRateLimiter, RateLimitConfig
+    from squish.serving.rate_limiter import RateLimitConfig, TokenBucketRateLimiter
     cfg = RateLimitConfig(rate=10.0, burst=20)
     rl = TokenBucketRateLimiter(cfg)
     rl.consume("t1", n_tokens=20, now=0.0)

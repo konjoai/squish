@@ -70,7 +70,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # FSM state constants (stack element values)
 # ---------------------------------------------------------------------------
@@ -195,7 +194,7 @@ class SchemaGenEngine:
     def __init__(
         self,
         vocab_size: int,
-        special_tokens: Optional[dict[str, int]] = None,
+        special_tokens: dict[str, int] | None = None,
     ) -> None:
         if vocab_size < 1:
             raise ValueError(f"vocab_size must be >= 1, got {vocab_size}")

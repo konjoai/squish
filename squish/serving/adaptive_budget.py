@@ -213,7 +213,7 @@ class AdaptiveBudgetController:
         kv_mid = (config.kv_budget_min + config.kv_budget_max) // 2
         self._kv_budget: float = float(kv_mid)
         self._integral: float = 0.0
-        self._latency_history: List[float] = []
+        self._latency_history: list[float] = []
         self._n_steps: int = 0
         self._slo_violations: int = 0
 
@@ -317,7 +317,7 @@ class AdaptiveBudgetController:
         )
 
     @property
-    def latency_history(self) -> List[float]:
+    def latency_history(self) -> list[float]:
         """List of all observed latencies in order of arrival."""
         return list(self._latency_history)
 

@@ -25,16 +25,15 @@ if str(_PIPELINE_PATH) not in sys.path:
     sys.path.insert(0, str(_PIPELINE_PATH))
 
 from model_pipeline import (  # noqa: E402
+    _KNOWN_ARCHITECTURES,
+    _SYNTHETIC_CANDIDATES,
     CompressJob,
     ModelCandidate,
     PipelineConfig,
     PublishJob,
     WatchJob,
     main,
-    _KNOWN_ARCHITECTURES,
-    _SYNTHETIC_CANDIDATES,
 )
-
 
 # ── TestModelCandidate ────────────────────────────────────────────────────────
 

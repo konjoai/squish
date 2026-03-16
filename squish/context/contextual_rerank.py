@@ -53,7 +53,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -138,7 +137,7 @@ class ContextualReranker:
     def rerank(
         self,
         keys: np.ndarray,
-        query: Optional[np.ndarray] = None,
+        query: np.ndarray | None = None,
     ) -> np.ndarray:
         """Score and rank all key positions, returning the top-k indices.
 

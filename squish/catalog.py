@@ -18,7 +18,7 @@ Public API
     entry.squish_repo    # "squish-community/Qwen3-8B-squished", or None
     entry.size_gb        # raw model disk footprint (float)
 
-    pull("qwen3:8b", models_dir=Path("~/models"), int4=False)
+    pull("qwen3:8b", models_dir=Path("~/models"))
 """
 
 from __future__ import annotations
@@ -592,7 +592,7 @@ def write_hash_sentinel(compressed_dir: Path, sha256: str) -> None:
     (compressed_dir / SQUISH_HASH_SENTINEL).write_text(sha256.strip())
 
 
-def verify_hash(entry: "CatalogEntry", compressed_dir: Path) -> tuple[bool, str]:
+def verify_hash(entry: CatalogEntry, compressed_dir: Path) -> tuple[bool, str]:
     """
     Verify the local squish weights against the catalog-supplied SHA-256.
 
@@ -725,7 +725,7 @@ def _has_squish_weights(repo: str, token: str | None = None) -> bool:
 def pull(  # pragma: no cover
     name: str,
     models_dir: Path | None = None,
-    int4: bool = False,
+    int4: bool = True,
     token: str | None = None,
     refresh_catalog: bool = False,
     verbose: bool = False,
@@ -744,7 +744,7 @@ def pull(  # pragma: no cover
     ----------
     name        : squish model id, e.g. ``"qwen3:8b"``
     models_dir  : base directory for models (default: ``~/.squish/models``)
-    int4        : use INT4 nibble-packed compression instead of INT8
+    int4        : use INT4 nibble-packed compression (default: True). Pass False for INT8.
     token       : HuggingFace user access token (for gated models)
     verbose     : pass ``--verbose`` to the underlying compress step
     """

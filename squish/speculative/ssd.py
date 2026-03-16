@@ -54,7 +54,6 @@ import numpy as np
 
 from squish.speculative.redrafter import _sigmoid  # reuse numpy sigmoid
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -228,7 +227,7 @@ class SSDPredictor:
         np.savez(path, **arrays)
 
     @classmethod
-    def load(cls, path: str) -> "SSDPredictor":
+    def load(cls, path: str) -> SSDPredictor:
         """Load predictor from .npz produced by :meth:`save`."""
         d      = np.load(path)
         config = SSDConfig(
@@ -252,7 +251,7 @@ class SSDPredictor:
         feature_dim:    int             = 32,
         threshold:      float           = 0.3,
         rng:            np.random.Generator | None = None,
-    ) -> "SSDPredictor":
+    ) -> SSDPredictor:
         """
         Create a randomly-initialised predictor for tests / cold-start.
 

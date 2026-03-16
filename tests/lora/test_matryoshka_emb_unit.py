@@ -9,8 +9,7 @@ import math
 import numpy as np
 import pytest
 
-from squish.lora.matryoshka_emb import MRLConfig, MRLStats, MatryoshkaEmbedding
-
+from squish.lora.matryoshka_emb import MatryoshkaEmbedding, MRLConfig, MRLStats
 
 # ---------------------------------------------------------------------------
 # MRLConfig

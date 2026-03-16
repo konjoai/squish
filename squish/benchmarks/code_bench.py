@@ -29,9 +29,9 @@ CODE_TASKS = {
 @dataclass
 class CodeBenchConfig:
     """Configuration for Track B code generation benchmark."""
-    tasks: List[str] = field(default_factory=lambda: list(CODE_TASKS.keys()))
+    tasks: list[str] = field(default_factory=lambda: list(CODE_TASKS.keys()))
     sandbox: bool = False          # must be explicitly True to execute code
-    limit: Optional[int] = None
+    limit: int | None = None
     output_dir: str = "eval_output"
     seed: int = 42
 
@@ -51,7 +51,7 @@ class CodeBenchRunner(BenchmarkRunner):
         engine: EngineConfig,
         model: str,
         *,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> ResultRecord:
         effective_limit = limit if limit is not None else self._config.limit
 
@@ -59,7 +59,7 @@ class CodeBenchRunner(BenchmarkRunner):
             import warnings
             warnings.warn(SANDBOX_WARNING, UserWarning, stacklevel=2)
 
-        metrics: Dict[str, Any] = {
+        metrics: dict[str, Any] = {
             "sandbox_enabled": self._config.sandbox,
         }
 
@@ -88,13 +88,13 @@ class CodeBenchRunner(BenchmarkRunner):
         engine: EngineConfig,
         model: str,
         task: str,
-        limit: Optional[int],
-    ) -> Dict[str, Any]:
+        limit: int | None,
+    ) -> dict[str, Any]:
         """Run a single code generation task via lm-eval."""
         try:
             import lm_eval  # noqa: PLC0415
 
-            eval_kwargs: Dict[str, Any] = {
+            eval_kwargs: dict[str, Any] = {
                 "model": "local-completions",
                 "model_args": (
                     f"base_url={engine.base_url}/v1,"
@@ -113,7 +113,7 @@ class CodeBenchRunner(BenchmarkRunner):
 
             results = lm_eval.simple_evaluate(**eval_kwargs)
             task_results = results.get("results", {}).get(task, {})
-            metric_key = CODE_TASKS.get(task, {}).get("metric", "pass@1")
+            metric_key = str(CODE_TASKS.get(task, {}).get("metric", "pass@1"))
             value = task_results.get(metric_key) or task_results.get(metric_key + ",none", 0.0)
             return {f"{task}_{metric_key.replace('@', '_at_')}": round(float(value), 4)}
 

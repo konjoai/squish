@@ -590,7 +590,7 @@ def cmd_setup(args):  # pragma: no cover
                 if answer in ("", "y", "yes"):
                     import argparse as _ap2
                     _pull_args = _ap2.Namespace(
-                        model=recommended, int4=False, token=None,
+                        model=recommended, int4=False, int8=False, token=None,
                         models_dir=None, refresh_catalog=False, verbose=True,
                     )
                     cmd_pull(_pull_args)
@@ -649,7 +649,7 @@ def cmd_run(args):  # pragma: no cover
                   f"for your {ram_gb:.0f} GB machine…")
             import argparse as _ap2
             _pull_args = _ap2.Namespace(
-                model=default, int4=False, token=None,
+                model=default, int4=False, int8=False, token=None,
                 models_dir=None, refresh_catalog=False, verbose=True,
             )
             cmd_pull(_pull_args)
@@ -1569,7 +1569,7 @@ def cmd_pull(args):  # pragma: no cover
     Examples
     --------
       squish pull qwen3:8b
-      squish pull gemma3:4b --int4
+      squish pull gemma3:4b --int8
       squish pull deepseek-r1:7b --token hf_…
       squish pull llama3.1:8b --models-dir /Volumes/SSD/models
     """
@@ -1588,7 +1588,7 @@ def cmd_pull(args):  # pragma: no cover
             f"Run `squish catalog` to browse available models."
         )
 
-    quant_label = "INT4" if args.int4 else "INT8"
+    quant_label = "INT8" if args.int8 else "INT4"
     print()
     _box([
         "  squish pull",
@@ -1605,7 +1605,7 @@ def cmd_pull(args):  # pragma: no cover
         compressed_dir = _catalog_pull(
             name=name,
             models_dir=models_dir,
-            int4=args.int4,
+            int4=not args.int8,
             token=token,
             refresh_catalog=args.refresh_catalog,
             verbose=args.verbose,
@@ -2190,8 +2190,8 @@ def main():
 Examples:
   squish catalog                     Browse available models
   squish catalog --tag reasoning     Filter by tag (reasoning, small, large, moe…)
-  squish pull qwen3:8b               Download + compress Qwen3-8B
-  squish pull gemma3:4b --int4       Download with INT4 compression (~44% disk savings)
+  squish pull qwen3:8b               Download + compress Qwen3-8B (INT4 by default)
+  squish pull gemma3:4b --int8       Download with INT8 compression (larger, marginally higher accuracy)
   squish run qwen3:8b                Start server on :11435
   squish run 7b --batch-scheduler    Legacy shorthand, with continuous batching
   squish chat qwen3:8b               Interactive terminal chat
@@ -2464,14 +2464,14 @@ Ollama drop-in:
             "Otherwise the bf16 MLX variant is fetched and compressed locally.\n\n"
             "Examples:\n"
             "  squish pull qwen3:8b\n"
-            "  squish pull gemma3:4b --int4\n"
             "  squish pull deepseek-r1:14b --token hf_…"
         ),
     )
     p_pull.add_argument("model", help="Model ID (e.g. qwen3:8b, gemma3:4b, 7b)")
+    p_pull.add_argument("--int8", action="store_true",
+                        help="Use INT8 group-64 compression instead of INT4 (default is INT4).")
     p_pull.add_argument("--int4", action="store_true",
-                        help="Use INT4 nibble-packed compression (~44%% disk savings, ≤2%% accuracy delta). "
-                             "⚠ Not recommended for models < 3B.")
+                        help="Use INT4 nibble-packed compression (default; flag kept for backward compatibility).")
     p_pull.add_argument("--token", default="",
                         help="HuggingFace access token (or set $HF_TOKEN)")
     p_pull.add_argument("--models-dir", default="",

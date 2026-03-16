@@ -11,13 +11,12 @@ not covered by test_compression_pipeline.py:
 """
 from __future__ import annotations
 
-import time
 import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # safe_key

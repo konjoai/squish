@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -227,7 +228,7 @@ class SpeCachePrefetcher:
     def __init__(
         self,
         config: SpeCacheConfig,
-        store:  object,
+        store:  Any,
     ) -> None:
         self._cfg     = config
         self._store   = store

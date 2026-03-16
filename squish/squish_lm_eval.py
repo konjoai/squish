@@ -44,6 +44,7 @@ Architecture:
 import logging
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -107,8 +108,8 @@ class SquishCompressedLM(LM):
         self._batch_size     = int(batch_size)
         self._max_length     = max_length
         self._verbose        = verbose
-        self._model          = None
-        self._tokenizer      = None
+        self._model:          Any = None
+        self._tokenizer:      Any = None
 
         logger.info("SquishCompressedLM: loading model …")
         t0 = time.perf_counter()
@@ -432,8 +433,8 @@ class SquishReferenceLM(SquishCompressedLM):
         self._batch_size     = int(batch_size)
         self._max_length     = max_length
         self._verbose        = verbose
-        self._model          = None
-        self._tokenizer      = None
+        self._model:          Any = None
+        self._tokenizer:      Any = None
 
         logger.info("SquishReferenceLM: loading reference model …")
         t0 = time.perf_counter()

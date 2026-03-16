@@ -13,7 +13,7 @@ from squish.benchmarks.agent_bench import (
     AgentScenario,
     ToolFixtureReplay,
 )
-from squish.benchmarks.base import ResultRecord, SQUISH_ENGINE
+from squish.benchmarks.base import SQUISH_ENGINE, ResultRecord
 
 
 def _make_scenario(**kwargs) -> AgentScenario:

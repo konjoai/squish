@@ -21,7 +21,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ── Import server functions directly ─────────────────────────────────────────
 # We import only pure-logic helpers that don't require a loaded model.
 # squish.server calls _require("fastapi") at module level; when fastapi is

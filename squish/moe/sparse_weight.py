@@ -52,7 +52,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ── Config ────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -125,8 +124,8 @@ class SparseWeightStore:
     def __init__(self, config: SparsityConfig) -> None:
         self.config = config
 
-        self._values: Optional[np.ndarray] = None       # float32 (rows, nnz_per_row)
-        self._col_indices: Optional[np.ndarray] = None  # int16   (rows, nnz_per_row)
+        self._values: np.ndarray | None = None       # float32 (rows, nnz_per_row)
+        self._col_indices: np.ndarray | None = None  # int16   (rows, nnz_per_row)
         self._rows: int = 0
         self._cols: int = 0
 

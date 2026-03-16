@@ -63,7 +63,7 @@ class TestTernaryQuant:
 
 class TestStructuredPrune:
     def test_imports(self):
-        from squish.moe.structured_prune import PruneConfig, StructuredPruner, PruneStats
+        from squish.moe.structured_prune import PruneConfig, PruneStats, StructuredPruner
         assert PruneConfig is not None
         assert StructuredPruner is not None
         assert PruneStats is not None
@@ -104,7 +104,7 @@ class TestStructuredPrune:
 
 class TestLayerFuse:
     def test_imports(self):
-        from squish.token.layer_fuse import FusionConfig, LayerFuser, FusionStats
+        from squish.token.layer_fuse import FusionConfig, FusionStats, LayerFuser
         assert FusionConfig is not None
         assert LayerFuser is not None
         assert FusionStats is not None
@@ -142,7 +142,7 @@ class TestLayerFuse:
 
 class TestWeightSharing:
     def test_imports(self):
-        from squish.lora.weight_sharing import SharingConfig, WeightSharer, SharingStats
+        from squish.lora.weight_sharing import SharingConfig, SharingStats, WeightSharer
         assert SharingConfig is not None
         assert WeightSharer is not None
         assert SharingStats is not None
@@ -177,14 +177,14 @@ class TestWeightSharing:
 
 class TestQuantCalib:
     def test_imports(self):
-        from squish.quant.quant_calib import CalibConfig, CalibResult, QuantCalibrator, CalibStats
+        from squish.quant.quant_calib import CalibConfig, CalibResult, CalibStats, QuantCalibrator
         assert CalibConfig is not None
         assert CalibResult is not None
         assert QuantCalibrator is not None
         assert CalibStats is not None
 
     def test_calibrate_returns_result(self):
-        from squish.quant.quant_calib import CalibConfig, QuantCalibrator, CalibResult
+        from squish.quant.quant_calib import CalibConfig, CalibResult, QuantCalibrator
         cfg = CalibConfig(method="minmax", n_bits=8, per_channel=True)
         calibrator = QuantCalibrator(cfg)
         activations = RNG.standard_normal((64, 16)).astype(np.float32)
@@ -216,13 +216,13 @@ class TestQuantCalib:
 
 class TestSparseWeight:
     def test_imports(self):
-        from squish.moe.sparse_weight import SparsityConfig, SparseWeightStore, SparseStats
+        from squish.moe.sparse_weight import SparseStats, SparseWeightStore, SparsityConfig
         assert SparsityConfig is not None
         assert SparseWeightStore is not None
         assert SparseStats is not None
 
     def test_compress_and_decompress(self):
-        from squish.moe.sparse_weight import SparsityConfig, SparseWeightStore
+        from squish.moe.sparse_weight import SparseWeightStore, SparsityConfig
         cfg = SparsityConfig(N=2, M=4)
         store = SparseWeightStore(cfg)
         dense = RNG.standard_normal((8, 8)).astype(np.float32)
@@ -231,7 +231,7 @@ class TestSparseWeight:
         assert recovered.shape == dense.shape
 
     def test_memory_savings(self):
-        from squish.moe.sparse_weight import SparsityConfig, SparseWeightStore
+        from squish.moe.sparse_weight import SparseWeightStore, SparsityConfig
         cfg = SparsityConfig(N=2, M=4)
         store = SparseWeightStore(cfg)
         dense = RNG.standard_normal((32, 32)).astype(np.float32)
@@ -239,7 +239,7 @@ class TestSparseWeight:
         assert store.memory_bytes() < store.dense_memory_bytes()
 
     def test_stats(self):
-        from squish.moe.sparse_weight import SparsityConfig, SparseWeightStore
+        from squish.moe.sparse_weight import SparseWeightStore, SparsityConfig
         cfg = SparsityConfig(N=2, M=4)
         store = SparseWeightStore(cfg)
         dense = RNG.standard_normal((8, 8)).astype(np.float32)
@@ -256,13 +256,13 @@ class TestSparseWeight:
 
 class TestDeltaCompress:
     def test_imports(self):
-        from squish.context.delta_compress import DeltaConfig, DeltaCompressor, DeltaStats
+        from squish.context.delta_compress import DeltaCompressor, DeltaConfig, DeltaStats
         assert DeltaConfig is not None
         assert DeltaCompressor is not None
         assert DeltaStats is not None
 
     def test_compress_and_decompress(self):
-        from squish.context.delta_compress import DeltaConfig, DeltaCompressor
+        from squish.context.delta_compress import DeltaCompressor, DeltaConfig
         cfg = DeltaConfig(rank=4)
         compressor = DeltaCompressor(cfg)
         base = RNG.standard_normal((16, 16)).astype(np.float32)
@@ -277,7 +277,7 @@ class TestDeltaCompress:
         assert ratio > 1.0
 
     def test_stats(self):
-        from squish.context.delta_compress import DeltaConfig, DeltaCompressor
+        from squish.context.delta_compress import DeltaCompressor, DeltaConfig
         cfg = DeltaConfig(rank=4)
         compressor = DeltaCompressor(cfg)
         base = RNG.standard_normal((16, 16)).astype(np.float32)
@@ -294,13 +294,13 @@ class TestDeltaCompress:
 
 class TestZeroQuantV2:
     def test_imports(self):
-        from squish.quant.zero_quant_v2 import ZQConfig, ZeroQuantV2, ZQStats
+        from squish.quant.zero_quant_v2 import ZeroQuantV2, ZQConfig, ZQStats
         assert ZQConfig is not None
         assert ZeroQuantV2 is not None
         assert ZQStats is not None
 
     def test_quantize_returns_triple(self):
-        from squish.quant.zero_quant_v2 import ZQConfig, ZeroQuantV2
+        from squish.quant.zero_quant_v2 import ZeroQuantV2, ZQConfig
         cfg = ZQConfig(n_bits=8, group_size=16)
         zq = ZeroQuantV2(cfg)
         weights = RNG.standard_normal((16, 32)).astype(np.float32)
@@ -309,7 +309,7 @@ class TestZeroQuantV2:
         assert scales.shape[0] == weights.shape[0]
 
     def test_dequantize_shape(self):
-        from squish.quant.zero_quant_v2 import ZQConfig, ZeroQuantV2
+        from squish.quant.zero_quant_v2 import ZeroQuantV2, ZQConfig
         cfg = ZQConfig(n_bits=8, group_size=16)
         zq = ZeroQuantV2(cfg)
         weights = RNG.standard_normal((16, 32)).astype(np.float32)
@@ -318,7 +318,7 @@ class TestZeroQuantV2:
         assert recovered.shape == weights.shape
 
     def test_stats(self):
-        from squish.quant.zero_quant_v2 import ZQConfig, ZeroQuantV2
+        from squish.quant.zero_quant_v2 import ZeroQuantV2, ZQConfig
         cfg = ZQConfig(n_bits=8, group_size=16)
         zq = ZeroQuantV2(cfg)
         weights = RNG.standard_normal((16, 32)).astype(np.float32)
@@ -334,13 +334,13 @@ class TestZeroQuantV2:
 
 class TestGPTQLayer:
     def test_imports(self):
-        from squish.quant.gptq_layer import GPTQConfig, GPTQCalibrator, GPTQStats
+        from squish.quant.gptq_layer import GPTQCalibrator, GPTQConfig, GPTQStats
         assert GPTQConfig is not None
         assert GPTQCalibrator is not None
         assert GPTQStats is not None
 
     def test_calibrate_shape(self):
-        from squish.quant.gptq_layer import GPTQConfig, GPTQCalibrator
+        from squish.quant.gptq_layer import GPTQCalibrator, GPTQConfig
         cfg = GPTQConfig(n_bits=4, block_size=8)
         calibrator = GPTQCalibrator(cfg)
         W = RNG.standard_normal((16, 16)).astype(np.float32)
@@ -349,7 +349,7 @@ class TestGPTQLayer:
         assert quantized.shape == W.shape
 
     def test_calibrate_dtype(self):
-        from squish.quant.gptq_layer import GPTQConfig, GPTQCalibrator
+        from squish.quant.gptq_layer import GPTQCalibrator, GPTQConfig
         cfg = GPTQConfig(n_bits=4, block_size=8)
         calibrator = GPTQCalibrator(cfg)
         W = RNG.standard_normal((16, 16)).astype(np.float32)
@@ -359,7 +359,7 @@ class TestGPTQLayer:
         assert quantized.dtype == np.float32
 
     def test_stats(self):
-        from squish.quant.gptq_layer import GPTQConfig, GPTQCalibrator
+        from squish.quant.gptq_layer import GPTQCalibrator, GPTQConfig
         cfg = GPTQConfig(n_bits=4, block_size=8)
         calibrator = GPTQCalibrator(cfg)
         W = RNG.standard_normal((16, 16)).astype(np.float32)
@@ -376,7 +376,7 @@ class TestGPTQLayer:
 
 class TestSparseMoE:
     def test_imports(self):
-        from squish.moe.sparse_moe import MoEConfig, SparseMoERouter, MoEStats
+        from squish.moe.sparse_moe import MoEConfig, MoEStats, SparseMoERouter
         assert MoEConfig is not None
         assert SparseMoERouter is not None
         assert MoEStats is not None
@@ -417,13 +417,13 @@ class TestSparseMoE:
 
 class TestAWQv2:
     def test_imports(self):
-        from squish.quant.awq_v2 import AWQv2Config, AWQv2Calibrator, AWQv2Stats
+        from squish.quant.awq_v2 import AWQv2Calibrator, AWQv2Config, AWQv2Stats
         assert AWQv2Config is not None
         assert AWQv2Calibrator is not None
         assert AWQv2Stats is not None
 
     def test_calibrate_returns_scales_shifts(self):
-        from squish.quant.awq_v2 import AWQv2Config, AWQv2Calibrator
+        from squish.quant.awq_v2 import AWQv2Calibrator, AWQv2Config
         cfg = AWQv2Config(n_bits=4, group_size=8, n_search_steps=5)
         calibrator = AWQv2Calibrator(cfg)
         W = RNG.standard_normal((16, 16)).astype(np.float32)
@@ -433,7 +433,7 @@ class TestAWQv2:
         assert opt_shifts.shape == (16,)
 
     def test_quantize_shape(self):
-        from squish.quant.awq_v2 import AWQv2Config, AWQv2Calibrator
+        from squish.quant.awq_v2 import AWQv2Calibrator, AWQv2Config
         cfg = AWQv2Config(n_bits=4, group_size=8, n_search_steps=5)
         calibrator = AWQv2Calibrator(cfg)
         W = RNG.standard_normal((16, 16)).astype(np.float32)
@@ -443,7 +443,7 @@ class TestAWQv2:
         assert quantized.shape == W.shape
 
     def test_stats(self):
-        from squish.quant.awq_v2 import AWQv2Config, AWQv2Calibrator
+        from squish.quant.awq_v2 import AWQv2Calibrator, AWQv2Config
         cfg = AWQv2Config(n_bits=4, group_size=8, n_search_steps=5)
         calibrator = AWQv2Calibrator(cfg)
         W = RNG.standard_normal((16, 16)).astype(np.float32)

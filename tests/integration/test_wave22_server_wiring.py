@@ -16,7 +16,6 @@ import time
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # CacheWarmup
 # ---------------------------------------------------------------------------
@@ -186,7 +185,11 @@ class TestAdaptiveQuantizeWiring:
         assert QuantPrecision.INT4 == "int4"
 
     def test_pressure_monitor_update_and_precision(self):
-        from squish.quant.adaptive_quantize import PressureMonitor, PressureThresholds, QuantPrecision
+        from squish.quant.adaptive_quantize import (
+            PressureMonitor,
+            PressureThresholds,
+            QuantPrecision,
+        )
 
         t = PressureThresholds(int8_threshold=0.75, int4_threshold=0.90)
         cap = 4 * 1024 ** 3  # 4 GiB

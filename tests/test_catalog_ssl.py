@@ -14,12 +14,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from squish.catalog import (
-    _SSLError,
     _apply_ssl_env,
     _is_ssl_error,
     _ssl_verify,
+    _SSLError,
 )
-
 
 # ── _ssl_verify ───────────────────────────────────────────────────────────────
 

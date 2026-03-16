@@ -53,7 +53,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -195,7 +194,7 @@ class PersistentContextCache:
         self,
         tokens: list[int],
         kv_data: np.ndarray,
-        ttl_s: Optional[float] = None,
+        ttl_s: float | None = None,
     ) -> str:
         """Store a pre-computed KV tensor for *tokens*.
 
@@ -248,7 +247,7 @@ class PersistentContextCache:
         self._stats.total_puts += 1
         return entry_id
 
-    def get(self, tokens: list[int]) -> Optional[np.ndarray]:
+    def get(self, tokens: list[int]) -> np.ndarray | None:
         """Retrieve the cached KV tensor for *tokens*, if present and live.
 
         Args:

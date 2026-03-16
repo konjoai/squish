@@ -20,16 +20,15 @@ import numpy as np
 import pytest
 
 from squish.sampling.sampler import (
+    _SENTINEL,
     SamplerConfig,
     StructuredSampler,
-    _SENTINEL,
-    _SentinelType,
     _apply_rep_penalty,
     _apply_top_k,
     _apply_top_p,
+    _SentinelType,
     _softmax_f32,
 )
-
 
 # ---------------------------------------------------------------------------
 # SamplerConfig — validation

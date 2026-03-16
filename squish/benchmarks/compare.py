@@ -25,8 +25,8 @@ class CompareConfig:
     """Configuration for the comparison table generator."""
     input_dir: str = "eval_output"
     output_dir: str = "docs"
-    tracks: List[str] = field(default_factory=lambda: ["quality", "code", "tools", "agent", "perf"])
-    engines: List[str] = field(default_factory=list)   # empty = all found
+    tracks: list[str] = field(default_factory=lambda: ["quality", "code", "tools", "agent", "perf"])
+    engines: list[str] = field(default_factory=list)   # empty = all found
     date_filter: str = ""                               # prefix-match on timestamp
 
 
@@ -36,7 +36,7 @@ class ResultComparator:
     def __init__(self, config: CompareConfig) -> None:
         self.config = config
 
-    def load_results(self) -> List[ResultRecord]:
+    def load_results(self) -> list[ResultRecord]:
         """Load all JSON result files from input_dir."""
         results = []
         for p in Path(self.config.input_dir).glob("*.json"):
@@ -53,16 +53,16 @@ class ResultComparator:
                 continue
         return results
 
-    def to_markdown(self, results: List[ResultRecord]) -> str:
+    def to_markdown(self, results: list[ResultRecord]) -> str:
         """Build a markdown comparison table from results."""
         if not results:
             return "<!-- No benchmark results found -->\n"
 
         lines = [
-            f"# Squish Cross-Engine Benchmark Comparison",
-            f"",
+            "# Squish Cross-Engine Benchmark Comparison",
+            "",
             f"Generated: {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
-            f"",
+            "",
         ]
 
         for track in self.config.tracks:
@@ -90,7 +90,7 @@ class ResultComparator:
 
         return "\n".join(lines)
 
-    def to_csv(self, results: List[ResultRecord]) -> str:
+    def to_csv(self, results: list[ResultRecord]) -> str:
         """Build a CSV string from results."""
         if not results:
             return "track,engine,model,timestamp\n"
@@ -110,7 +110,7 @@ class ResultComparator:
             writer.writerow(row)
         return out.getvalue()
 
-    def generate(self, *, write_files: bool = True) -> Dict[str, str]:
+    def generate(self, *, write_files: bool = True) -> dict[str, str]:
         """Load results and generate comparison outputs.
 
         Returns dict with 'markdown' and 'csv' keys.

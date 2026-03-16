@@ -40,7 +40,6 @@ import pytest
 from squish.kv.prefix_kv_store import PrefixKVStore
 from squish.kv.radix_cache import RadixTree
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

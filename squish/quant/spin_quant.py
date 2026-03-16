@@ -217,7 +217,7 @@ def _save_safetensors_or_npz(
         return
     except ImportError:  # pragma: no cover
         pass
-    np.savez(str(output_dir / "model.npz"), **weights)
+    np.savez(str(output_dir / "model.npz"), **weights)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

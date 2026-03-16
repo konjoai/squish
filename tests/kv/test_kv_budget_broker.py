@@ -12,7 +12,6 @@ import pytest
 
 from squish.kv.kv_cache import KVBudgetBroker
 
-
 # ---------------------------------------------------------------------------
 # Fixture: fresh broker for every test (via singleton reset)
 # ---------------------------------------------------------------------------

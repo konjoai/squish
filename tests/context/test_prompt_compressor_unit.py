@@ -19,7 +19,6 @@ import pytest
 
 from squish.context.prompt_compressor import _sentence_split, _tfidf_compress, compress
 
-
 # ---------------------------------------------------------------------------
 # _sentence_split
 # ---------------------------------------------------------------------------

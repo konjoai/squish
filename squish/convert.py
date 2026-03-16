@@ -51,7 +51,11 @@ def _apply_awq_single(name: str, arr_f32: np.ndarray, awq_scales: dict) -> np.nd
         return arr_f32
 
 
-from squish.quant.quantizer import QuantizationResult, quantize_embeddings, quantize_int4  # noqa: E402
+from squish.quant.quantizer import (  # noqa: E402
+    QuantizationResult,
+    quantize_embeddings,
+    quantize_int4,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -381,12 +385,12 @@ def load_mlx_weights_shard(shard_path: Path) -> dict:
         # Metal GPU command-buffer timeout that occurs on large shards.
         import mlx.core as mx
         _prev_device = mx.default_device()
-        mx.set_default_device(mx.cpu)
+        mx.set_default_device(mx.cpu)  # type: ignore[arg-type]
         try:
             shard_weights = mx.load(str(shard_path))
             return {
                 name: np.array(arr.astype(mx.float32))
-                for name, arr in shard_weights.items()
+                for name, arr in shard_weights.items()  # type: ignore[union-attr]
             }
         finally:
             mx.set_default_device(_prev_device)

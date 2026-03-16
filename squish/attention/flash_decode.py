@@ -53,8 +53,8 @@ class FlashDecodeConfig:
     n_heads: int = 32
     head_dim: int = 128
     n_splits: int = 8
-    softmax_scale: Optional[float] = None
-    kv_n_heads: Optional[int] = None
+    softmax_scale: float | None = None
+    kv_n_heads: int | None = None
 
     def __post_init__(self) -> None:
         if self.n_heads < 1:

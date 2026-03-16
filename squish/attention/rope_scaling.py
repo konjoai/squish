@@ -105,7 +105,7 @@ class RoPEConfig:
     original_max_len: int = 4096
     target_max_len: int = 32768
     method: str = "ntk"
-    scale_factor: Optional[float] = None
+    scale_factor: float | None = None
 
     def __post_init__(self) -> None:
         if self.head_dim < 2 or self.head_dim % 2 != 0:
@@ -263,6 +263,7 @@ class NTKScaler(RoPEScaler):
     def get_freqs(self, seq_len: int) -> np.ndarray:
         cfg = self.config
         dim = cfg.head_dim
+        assert cfg.scale_factor is not None  # resolved in RoPEConfig.__post_init__
 
         # Rescale base theta via the NTK formula.
         scaled_base = cfg.base_theta * (cfg.scale_factor ** (dim / (dim - 2)))
@@ -381,6 +382,7 @@ class LongRoPEScaler(RoPEScaler):
     def get_freqs(self, seq_len: int) -> np.ndarray:
         cfg = self.config
         half = cfg.head_dim // 2
+        assert cfg.scale_factor is not None  # resolved in RoPEConfig.__post_init__
         original_freqs = self._unscaled_base_freqs()  # (half,)
 
         # Per-dimension scale factors: linear ramp from 1 → scale_factor.

@@ -35,7 +35,6 @@ from squish.hardware.fused_kernels import (
     patch_model_compiled_ffn,
 )
 
-
 # ---------------------------------------------------------------------------
 # _METAL_FUSION_AVAILABLE sentinel
 # ---------------------------------------------------------------------------

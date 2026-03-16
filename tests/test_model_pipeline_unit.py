@@ -54,17 +54,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "dev" / "scripts"))
 
 from model_pipeline import (  # noqa: E402
+    _PP_THRESHOLD,
+    _REJECTED_JSON,
+    _SYNTHETIC_CANDIDATES,
     AccuracyGate,
     CompressJob,
     ModelCandidate,
     PipelineConfig,
     PublishJob,
     WatchJob,
-    _PP_THRESHOLD,
-    _REJECTED_JSON,
-    _SYNTHETIC_CANDIDATES,
 )
-
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 

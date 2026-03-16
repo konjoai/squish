@@ -21,7 +21,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -71,6 +70,7 @@ class TestRequireBrotli:
         with patch.dict(sys.modules, {"brotli": mock_brotli}):
             # Force re-import of the function so it sees the patched module
             import importlib
+
             import squish.io.entropy as entropy_mod
             importlib.reload(entropy_mod)
             result = entropy_mod._require_brotli()

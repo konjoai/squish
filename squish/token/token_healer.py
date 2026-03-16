@@ -47,7 +47,6 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -104,7 +103,7 @@ class TokenHealer:
     def __init__(
         self,
         config: HealerConfig,
-        vocab_list: Optional[List[str]] = None,
+        vocab_list: list[str] | None = None,
     ) -> None:
         """
         Args:
@@ -123,9 +122,9 @@ class TokenHealer:
 
     def find_suffix_overlap(
         self,
-        tokens: List[int],
-        vocab_list: Optional[List[str]] = None,
-    ) -> Tuple[int, str]:
+        tokens: list[int],
+        vocab_list: list[str] | None = None,
+    ) -> tuple[int, str]:
         """Find how many trailing tokens form an incomplete word boundary.
 
         Iterates from one trailing token up to ``max_healing_tokens``,
@@ -182,9 +181,9 @@ class TokenHealer:
 
     def heal(
         self,
-        tokens: List[int],
-        completions: List[List[int]],
-    ) -> List[int]:
+        tokens: list[int],
+        completions: list[list[int]],
+    ) -> list[int]:
         """Return the healed token sequence.
 
         Removes the last *n_overlap* tokens from *tokens* and concatenates
@@ -219,8 +218,8 @@ class TokenHealer:
 
     def needs_healing(
         self,
-        tokens: List[int],
-        vocab_list: Optional[List[str]] = None,
+        tokens: list[int],
+        vocab_list: list[str] | None = None,
     ) -> bool:
         """Return ``True`` if the last token is an incomplete word prefix.
 
@@ -247,7 +246,7 @@ class TokenHealer:
             return 0.0
         return self._total_overlap_tokens / self._n_healed
 
-    def get_stats(self) -> "HealerStats":
+    def get_stats(self) -> HealerStats:
         """Return a snapshot of current healing statistics."""
         # zero_overlap_cases: completions where heal() found n_overlap == 0
         # (the caller would need to track these externally; we report what we have)

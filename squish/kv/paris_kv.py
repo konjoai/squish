@@ -238,6 +238,7 @@ class ParisKVCodebook:
         indices : (N,) uint16
         """
         self._require_fitted()
+        assert self._centroids is not None
         vecs  = np.asarray(vectors, dtype=np.float32)
         dists = _pairwise_sq_dist(vecs, self._centroids)
         return dists.argmin(axis=1).astype(np.uint16)
@@ -255,6 +256,7 @@ class ParisKVCodebook:
         vectors : (N, D) float32
         """
         self._require_fitted()
+        assert self._centroids is not None
         idx = np.asarray(indices, dtype=np.int64).flatten()
         return self._centroids[idx].astype(np.float32)
 
@@ -276,6 +278,7 @@ class ParisKVCodebook:
         float — mean quantization error *before* the update (for drift tracking)
         """
         self._require_fitted()
+        assert self._centroids is not None
         vecs        = np.asarray(vectors, dtype=np.float32)
         assignments = self.encode(vecs).astype(np.int64)
 

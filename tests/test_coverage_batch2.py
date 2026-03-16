@@ -9,39 +9,48 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from squish.attention.sparse_attn_index import (
+    ANCandidates,
+    IndexConfig,
+    IndexStats,
+    SparseAttnIndex,
+)
+from squish.hardware.fused_sampler import FusedSampler, SamplerConfig
+
 # ---------------------------------------------------------------------------
 # Module imports
 # ---------------------------------------------------------------------------
-
 from squish.kv.context_cache import (
     CacheEntry,
     ContextCacheStats,
     PersistentContextCache,
     _hash_tokens,
 )
-from squish.hardware.fused_sampler import FusedSampler, SamplerConfig
-from squish.token.layerwise_decode import (
-    DecodeStats,
-    LayerwiseConfig,
-    LayerwiseDecoder,
-    LayerStream,
-)
-from squish.speculative.distil_spec import DistilConfig, DistilSpecCalibrator, DistilStats
-from squish.streaming.stream_rag import (
-    RAGDocument,
-    StreamRAGConfig,
-    StreamRAGInjector,
-    StreamRAGStats,
-)
 from squish.kv.kv_compress import KVCompressConfig, KVCompressor
-from squish.serving.batch_embed import BatchEmbedder, EmbeddingStats, PoolingConfig
-from squish.token.token_healer import HealerConfig, HealerStats, TokenHealer
+from squish.kv.mixed_precision_kv import (
+    HeadPrecision,
+    HeadPrecisionMap,
+    MixedPrecisionKVCache,
+    MPKVConfig,
+    MPKVStats,
+    _dequantize_symmetric,
+    _quantize_symmetric,
+)
 from squish.quant.adaptive_quantize import (
     AdaptiveQuantizer,
     AdaptiveQuantStats,
     PressureMonitor,
     PressureThresholds,
     QuantPrecision,
+)
+from squish.serving.batch_embed import BatchEmbedder, EmbeddingStats, PoolingConfig
+from squish.speculative.distil_spec import DistilConfig, DistilSpecCalibrator, DistilStats
+from squish.speculative.medusa import (
+    MedusaConfig,
+    MedusaDecoder,
+    MedusaDraftTree,
+    MedusaHead,
+    MedusaStats,
 )
 from squish.speculative.mirror_sd import (
     MirrorDraftPipeline,
@@ -53,22 +62,6 @@ from squish.speculative.mirror_sd import (
     _softmax,
     _top_p_filter,
 )
-from squish.speculative.medusa import (
-    MedusaConfig,
-    MedusaDecoder,
-    MedusaDraftTree,
-    MedusaHead,
-    MedusaStats,
-)
-from squish.kv.mixed_precision_kv import (
-    HeadPrecision,
-    HeadPrecisionMap,
-    MixedPrecisionKVCache,
-    MPKVConfig,
-    MPKVStats,
-    _dequantize_symmetric,
-    _quantize_symmetric,
-)
 from squish.speculative.sparse_spec import (
     PillarAttnCache,
     SparseSpecConfig,
@@ -76,9 +69,20 @@ from squish.speculative.sparse_spec import (
     SparseSpecDrafter,
     SparseSpecStats,
 )
-from squish.attention.sparse_attn_index import ANCandidates, IndexConfig, IndexStats, SparseAttnIndex
+from squish.streaming.stream_rag import (
+    RAGDocument,
+    StreamRAGConfig,
+    StreamRAGInjector,
+    StreamRAGStats,
+)
+from squish.token.layerwise_decode import (
+    DecodeStats,
+    LayerStream,
+    LayerwiseConfig,
+    LayerwiseDecoder,
+)
 from squish.token.token_budget_gate import BudgetGateStats, BudgetPolicy, TokenBudgetGate
-
+from squish.token.token_healer import HealerConfig, HealerStats, TokenHealer
 
 # ===========================================================================
 # 1. context_cache.py

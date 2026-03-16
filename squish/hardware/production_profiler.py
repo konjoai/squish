@@ -47,7 +47,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -123,7 +122,7 @@ class ProductionProfiler:
                 Defaults to ``ProfilerWindow()`` (window_size=1000).
     """
 
-    def __init__(self, config: Optional[ProfilerWindow] = None) -> None:
+    def __init__(self, config: ProfilerWindow | None = None) -> None:
         self._cfg: ProfilerWindow = config if config is not None else ProfilerWindow()
         # Maps operation name to its rolling sample window.
         self._windows: dict[str, collections.deque] = {}
@@ -184,7 +183,7 @@ class ProductionProfiler:
             for name, window in self._windows.items()
         }
 
-    def reset(self, operation: Optional[str] = None) -> None:
+    def reset(self, operation: str | None = None) -> None:
         """Clear recorded samples.
 
         Args:

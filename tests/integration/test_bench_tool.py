@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from squish.benchmarks.base import EngineConfig, ResultRecord, SQUISH_ENGINE
+from squish.benchmarks.base import SQUISH_ENGINE, EngineConfig, ResultRecord
 from squish.benchmarks.tool_bench import (
     ToolBenchConfig,
     ToolBenchRunner,

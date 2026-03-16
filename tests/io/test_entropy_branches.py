@@ -105,8 +105,8 @@ class TestDecompressNpyDirNoSentinel:
 
 # ── Brotli paths (mocked — brotli is an optional dependency) ─────────────────
 
-import sys
 import io
+import sys
 import types
 from unittest.mock import patch as _mock_patch
 

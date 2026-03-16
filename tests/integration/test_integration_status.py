@@ -296,7 +296,11 @@ class TestIntegrationSmoke:
         assert batch.n_steps == 2
 
     def test_spec_reason_smoke(self):
-        from squish.speculative.spec_reason import ReasoningStep, SpecReasonConfig, SpecReasonOrchestrator
+        from squish.speculative.spec_reason import (
+            ReasoningStep,
+            SpecReasonConfig,
+            SpecReasonOrchestrator,
+        )
         def _draft(ctx):
             return ReasoningStep(text="draft answer", source="draft",
                                  confidence=0.9, tokens_used=10, step_idx=0)

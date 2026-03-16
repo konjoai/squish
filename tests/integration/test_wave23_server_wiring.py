@@ -63,13 +63,13 @@ class TestRAGPrefetch:
 
 class TestCoTCompress:
     def test_imports(self):
-        from squish.context.cot_compress import CoTConfig, CoTCompressor, CoTStats
+        from squish.context.cot_compress import CoTCompressor, CoTConfig, CoTStats
         assert CoTConfig is not None
         assert CoTCompressor is not None
         assert CoTStats is not None
 
     def test_compress_reduces_tokens(self):
-        from squish.context.cot_compress import CoTConfig, CoTCompressor
+        from squish.context.cot_compress import CoTCompressor, CoTConfig
         cfg = CoTConfig(compress_ratio=0.5, min_tokens=4)
         compressor = CoTCompressor(cfg)
         token_ids = RNG.integers(0, 1000, size=(100,)).astype(np.int32)
@@ -77,7 +77,7 @@ class TestCoTCompress:
         assert len(compressed) < len(token_ids)
 
     def test_compress_respects_min_tokens(self):
-        from squish.context.cot_compress import CoTConfig, CoTCompressor
+        from squish.context.cot_compress import CoTCompressor, CoTConfig
         cfg = CoTConfig(compress_ratio=0.9, min_tokens=10)
         compressor = CoTCompressor(cfg)
         token_ids = RNG.integers(0, 1000, size=(12,)).astype(np.int32)
@@ -85,7 +85,7 @@ class TestCoTCompress:
         assert len(compressed) >= 10
 
     def test_stats(self):
-        from squish.context.cot_compress import CoTConfig, CoTCompressor
+        from squish.context.cot_compress import CoTCompressor, CoTConfig
         cfg = CoTConfig(compress_ratio=0.5, min_tokens=4)
         compressor = CoTCompressor(cfg)
         token_ids = RNG.integers(0, 1000, size=(100,)).astype(np.int32)
@@ -101,13 +101,13 @@ class TestCoTCompress:
 
 class TestContextualRerank:
     def test_imports(self):
-        from squish.context.contextual_rerank import RerankConfig, ContextualReranker, RerankStats
+        from squish.context.contextual_rerank import ContextualReranker, RerankConfig, RerankStats
         assert RerankConfig is not None
         assert ContextualReranker is not None
         assert RerankStats is not None
 
     def test_rerank_shape(self):
-        from squish.context.contextual_rerank import RerankConfig, ContextualReranker
+        from squish.context.contextual_rerank import ContextualReranker, RerankConfig
         cfg = RerankConfig(n_heads=2, head_dim=8, top_k=8)
         reranker = ContextualReranker(cfg)
         # keys shape: (n_heads, seq_len, head_dim)
@@ -116,7 +116,7 @@ class TestContextualRerank:
         assert indices.shape[0] <= 8
 
     def test_rerank_with_query(self):
-        from squish.context.contextual_rerank import RerankConfig, ContextualReranker
+        from squish.context.contextual_rerank import ContextualReranker, RerankConfig
         cfg = RerankConfig(n_heads=2, head_dim=8, top_k=4)
         reranker = ContextualReranker(cfg)
         keys = RNG.random((2, 16, 8)).astype(np.float32)
@@ -125,7 +125,7 @@ class TestContextualRerank:
         assert len(indices) <= 4
 
     def test_stats(self):
-        from squish.context.contextual_rerank import RerankConfig, ContextualReranker
+        from squish.context.contextual_rerank import ContextualReranker, RerankConfig
         cfg = RerankConfig(n_heads=2, head_dim=8, top_k=4)
         reranker = ContextualReranker(cfg)
         keys = RNG.random((2, 16, 8)).astype(np.float32)
@@ -141,13 +141,13 @@ class TestContextualRerank:
 
 class TestHierarchicalKV:
     def test_imports(self):
-        from squish.kv.hierarchical_kv import TierConfig, HierarchicalKVStore, HierarchicalKVStats
+        from squish.kv.hierarchical_kv import HierarchicalKVStats, HierarchicalKVStore, TierConfig
         assert TierConfig is not None
         assert HierarchicalKVStore is not None
         assert HierarchicalKVStats is not None
 
     def test_put_and_get(self):
-        from squish.kv.hierarchical_kv import TierConfig, HierarchicalKVStore
+        from squish.kv.hierarchical_kv import HierarchicalKVStore, TierConfig
         cfg = TierConfig(hot_capacity=4, warm_capacity=16, cold_capacity=64, n_heads=2, head_dim=8)
         store = HierarchicalKVStore(cfg)
         k = RNG.random((2, 8)).astype(np.float32)
@@ -159,13 +159,13 @@ class TestHierarchicalKV:
         assert rk.shape == k.shape
 
     def test_miss_returns_none(self):
-        from squish.kv.hierarchical_kv import TierConfig, HierarchicalKVStore
+        from squish.kv.hierarchical_kv import HierarchicalKVStore, TierConfig
         cfg = TierConfig(hot_capacity=4, warm_capacity=16, cold_capacity=64, n_heads=2, head_dim=8)
         store = HierarchicalKVStore(cfg)
         assert store.get(999) is None
 
     def test_stats_hit_rate(self):
-        from squish.kv.hierarchical_kv import TierConfig, HierarchicalKVStore
+        from squish.kv.hierarchical_kv import HierarchicalKVStore, TierConfig
         cfg = TierConfig(hot_capacity=4, warm_capacity=16, cold_capacity=64, n_heads=2, head_dim=8)
         store = HierarchicalKVStore(cfg)
         k = RNG.random((2, 8)).astype(np.float32)
@@ -183,7 +183,12 @@ class TestHierarchicalKV:
 
 class TestStreamRAG:
     def test_imports(self):
-        from squish.streaming.stream_rag import StreamRAGConfig, RAGDocument, StreamRAGInjector, StreamRAGStats
+        from squish.streaming.stream_rag import (
+            RAGDocument,
+            StreamRAGConfig,
+            StreamRAGInjector,
+            StreamRAGStats,
+        )
         assert StreamRAGConfig is not None
         assert RAGDocument is not None
         assert StreamRAGInjector is not None
@@ -232,13 +237,13 @@ class TestStreamRAG:
 
 class TestCrossDocAttn:
     def test_imports(self):
-        from squish.attention.cross_doc_attn import CrossDocConfig, CrossDocAttention, CrossDocStats
+        from squish.attention.cross_doc_attn import CrossDocAttention, CrossDocConfig, CrossDocStats
         assert CrossDocConfig is not None
         assert CrossDocAttention is not None
         assert CrossDocStats is not None
 
     def test_forward_shape(self):
-        from squish.attention.cross_doc_attn import CrossDocConfig, CrossDocAttention
+        from squish.attention.cross_doc_attn import CrossDocAttention, CrossDocConfig
         cfg = CrossDocConfig(n_heads=2, head_dim=8, max_docs=4)
         attn = CrossDocAttention(cfg)
         # query: (n_heads, seq_q, head_dim)
@@ -249,7 +254,7 @@ class TestCrossDocAttn:
         assert out.shape == query.shape
 
     def test_forward_dtype(self):
-        from squish.attention.cross_doc_attn import CrossDocConfig, CrossDocAttention
+        from squish.attention.cross_doc_attn import CrossDocAttention, CrossDocConfig
         cfg = CrossDocConfig(n_heads=2, head_dim=8, max_docs=4)
         attn = CrossDocAttention(cfg)
         query = RNG.random((2, 4, 8)).astype(np.float32)
@@ -259,7 +264,7 @@ class TestCrossDocAttn:
         assert out.dtype == np.float32
 
     def test_stats(self):
-        from squish.attention.cross_doc_attn import CrossDocConfig, CrossDocAttention
+        from squish.attention.cross_doc_attn import CrossDocAttention, CrossDocConfig
         cfg = CrossDocConfig(n_heads=2, head_dim=8, max_docs=4)
         attn = CrossDocAttention(cfg)
         query = RNG.random((2, 4, 8)).astype(np.float32)
@@ -277,7 +282,7 @@ class TestCrossDocAttn:
 
 class TestLongContextChunk:
     def test_imports(self):
-        from squish.streaming.long_context_chunk import ChunkConfig, LongContextChunker, ChunkStats
+        from squish.streaming.long_context_chunk import ChunkConfig, ChunkStats, LongContextChunker
         assert ChunkConfig is not None
         assert LongContextChunker is not None
         assert ChunkStats is not None

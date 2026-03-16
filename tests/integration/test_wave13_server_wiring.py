@@ -256,7 +256,11 @@ class TestKnapSpecWiring:
 
 class TestTokenMergingWiring:
     def test_import(self):
-        from squish.token.token_merging import TokenMergingConfig, TokenMergingState, bipartite_merge
+        from squish.token.token_merging import (
+            TokenMergingConfig,
+            TokenMergingState,
+            bipartite_merge,
+        )
         cfg   = TokenMergingConfig(r=4)
         state = TokenMergingState()
         assert cfg is not None

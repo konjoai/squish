@@ -49,12 +49,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
 # Reuse the same sampling helpers from the parent speculative module
 from squish.speculative.speculative import (
-    _greedy,           # noqa: PLC2701
-    _sample,           # noqa: PLC2701
-    _softmax_np,       # noqa: PLC2701
-    _top_p_filter,     # noqa: PLC2701
+    _greedy,  # noqa: PLC2701
+    _sample,  # noqa: PLC2701
+    _softmax_np,  # noqa: PLC2701
+    _top_p_filter,  # noqa: PLC2701
 )
-
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -170,7 +169,7 @@ class ReDrafterGRU:
         input_dim:  int,
         hidden_dim: int,
         rng: np.random.Generator | None = None,
-    ) -> "ReDrafterGRU":
+    ) -> ReDrafterGRU:
         """Kaiming-uniform initialisation (for tests / from-scratch training)."""
         rng = rng or np.random.default_rng(0)
         scale_W = np.sqrt(2.0 / input_dim)
@@ -394,7 +393,7 @@ class ReDrafterHead:
         path: str,
         lm_head_w: np.ndarray,
         embed_w:   np.ndarray,
-    ) -> "ReDrafterHead":
+    ) -> ReDrafterHead:
         """
         Load a :class:`ReDrafterHead` from a .npz file and attach
         the target model's shared weights.
@@ -435,7 +434,7 @@ class ReDrafterHead:
         hidden_dim:        int           = 512,
         n_layers:          int           = 1,
         rng:               np.random.Generator | None = None,
-    ) -> "ReDrafterHead":
+    ) -> ReDrafterHead:
         """
         Create a randomly-initialised :class:`ReDrafterHead` for testing
         or bootstrapping training.
@@ -473,7 +472,7 @@ class ReDrafterHead:
         head_dir:     str,
         target_model,
         verbose: bool = False,
-    ) -> "ReDrafterHead":
+    ) -> ReDrafterHead:
         """
         Load a :class:`ReDrafterHead` from *head_dir*.
 
@@ -538,7 +537,7 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
     return (np.float32(1.0) / (np.float32(1.0) + np.exp(-x_c))).astype(np.float32)
 
 
-def _resolve_weight(model, dotted_attr: str) -> "np.ndarray | None":
+def _resolve_weight(model, dotted_attr: str) -> np.ndarray | None:
     """
     Walk a dotted attribute path on *model* and return the weight as numpy,
     or None if any part of the path is absent.

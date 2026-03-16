@@ -209,7 +209,7 @@ class MemoryGovernor:
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
-    def start(self) -> "MemoryGovernor":
+    def start(self) -> MemoryGovernor:
         """Start the background polling thread.
 
         Returns *self* for chaining::

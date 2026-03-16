@@ -26,7 +26,6 @@ import pytest
 
 from squish.kv.fast_weights import FastWeightConfig, FastWeightLayer, FastWeightManager
 
-
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------

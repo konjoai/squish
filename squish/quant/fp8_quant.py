@@ -104,7 +104,7 @@ class FP8Tensor:
     data: np.ndarray     # dtype uint8, shape=flat blocks
     scales: np.ndarray   # dtype float32
     shape: tuple[int, ...]
-    fmt: str
+    fmt: Literal["e4m3", "e5m2"]
     bits_per_element: int = 8
 
     @property
@@ -164,7 +164,7 @@ def _dequantize_from_fp8(codes: np.ndarray, max_val: float,
     return (signs * abs_vals).astype(np.float32)
 
 
-def fp8_encode_e4m3(x: np.ndarray, scale: Optional[float] = None) -> tuple[np.ndarray, float]:
+def fp8_encode_e4m3(x: np.ndarray, scale: float | None = None) -> tuple[np.ndarray, float]:
     """Encode a float32 array to E4M3 FP8 codes.
 
     Args:
@@ -183,7 +183,7 @@ def fp8_encode_e4m3(x: np.ndarray, scale: Optional[float] = None) -> tuple[np.nd
     return codes, float(scale)
 
 
-def fp8_encode_e5m2(x: np.ndarray, scale: Optional[float] = None) -> tuple[np.ndarray, float]:
+def fp8_encode_e5m2(x: np.ndarray, scale: float | None = None) -> tuple[np.ndarray, float]:
     """Encode a float32 array to E5M2 FP8 codes."""
     x = np.asarray(x, dtype=np.float32)
     if scale is None:

@@ -28,7 +28,6 @@ import pytest
 
 from squish.serving.tool_calling import stream_tool_calls_response
 
-
 # ---------------------------------------------------------------------------
 # Async helpers
 # ---------------------------------------------------------------------------

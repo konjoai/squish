@@ -14,7 +14,6 @@ Wave 20 modules (Model Merging + Composability + Batching + Calibration):
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # ModelMerge
 # ---------------------------------------------------------------------------
@@ -183,7 +182,7 @@ class TestContinuousBatchingWiring:
 
 class TestMatryoshkaEmbWiring:
     def test_import(self):
-        from squish.lora.matryoshka_emb import MRLConfig, MatryoshkaEmbedding
+        from squish.lora.matryoshka_emb import MatryoshkaEmbedding, MRLConfig
 
         cfg = MRLConfig(full_dim=256, nested_dims=[64, 128, 256])
         emb = MatryoshkaEmbedding(cfg)
@@ -198,7 +197,7 @@ class TestMatryoshkaEmbWiring:
         assert all(d <= cfg.full_dim for d in dims)
 
     def test_embed_shape(self):
-        from squish.lora.matryoshka_emb import MRLConfig, MatryoshkaEmbedding
+        from squish.lora.matryoshka_emb import MatryoshkaEmbedding, MRLConfig
 
         rng      = np.random.default_rng(0)
         full_dim = 128
@@ -209,7 +208,7 @@ class TestMatryoshkaEmbWiring:
         assert out.shape == (full_dim,)
 
     def test_truncate(self):
-        from squish.lora.matryoshka_emb import MRLConfig, MatryoshkaEmbedding
+        from squish.lora.matryoshka_emb import MatryoshkaEmbedding, MRLConfig
 
         rng      = np.random.default_rng(1)
         full_dim = 128

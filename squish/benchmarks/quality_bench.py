@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional
 
 from squish.benchmarks.base import BenchmarkRunner, EngineConfig, ResultRecord
 
-
 QUALITY_TASKS = {
     "mmlu":           {"n_shot": 5,  "metric": "acc"},
     "arc_challenge":  {"n_shot": 25, "metric": "acc_norm"},
@@ -30,8 +29,8 @@ QUALITY_TASKS = {
 @dataclass
 class QualityBenchConfig:
     """Configuration for Track A quality benchmark."""
-    tasks: List[str] = field(default_factory=lambda: list(QUALITY_TASKS.keys()))
-    limit: Optional[int] = None          # per-task sample cap (None = full)
+    tasks: list[str] = field(default_factory=lambda: list(QUALITY_TASKS.keys()))
+    limit: int | None = None          # per-task sample cap (None = full)
     output_dir: str = "eval_output"
     seed: int = 42
     batch_size: int = 1
@@ -52,11 +51,11 @@ class QualityBenchRunner(BenchmarkRunner):
         engine: EngineConfig,
         model: str,
         *,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> ResultRecord:
         """Run quality benchmarks; returns ResultRecord with per-task metrics."""
         effective_limit = limit if limit is not None else self._config.limit
-        metrics: Dict[str, Any] = {}
+        metrics: dict[str, Any] = {}
 
         for task in self._config.tasks:
             try:
@@ -83,14 +82,14 @@ class QualityBenchRunner(BenchmarkRunner):
         engine: EngineConfig,
         model: str,
         task: str,
-        limit: Optional[int],
-    ) -> Dict[str, Any]:
+        limit: int | None,
+    ) -> dict[str, Any]:
         """Run a single lm-eval task; returns {task_metric_name: value}."""
         try:
             import lm_eval  # noqa: PLC0415
 
             # Build evaluator kwargs
-            eval_kwargs: Dict[str, Any] = {
+            eval_kwargs: dict[str, Any] = {
                 "model": "local-completions",
                 "model_args": (
                     f"base_url={engine.base_url}/v1,"
@@ -107,7 +106,7 @@ class QualityBenchRunner(BenchmarkRunner):
 
             results = lm_eval.simple_evaluate(**eval_kwargs)
             task_results = results.get("results", {}).get(task, {})
-            metric_key = QUALITY_TASKS.get(task, {}).get("metric", "acc")
+            metric_key = str(QUALITY_TASKS.get(task, {}).get("metric", "acc"))
             value = task_results.get(metric_key) or task_results.get(metric_key + ",none", 0.0)
             return {f"{task}_{metric_key}": round(float(value), 4)}
 

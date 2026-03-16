@@ -75,7 +75,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 
@@ -163,14 +163,14 @@ class MirrorFuture:
         Zero-argument callable whose return value is stored as the result.
     """
 
-    def __init__(self, fn: Callable[[], object]) -> None:
-        self._result: object = None
+    def __init__(self, fn: Callable[[], Any]) -> None:
+        self._result: Any = None
         self._exc: BaseException | None = None
         self._done = threading.Event()
         self._thread = threading.Thread(target=self._run, args=(fn,), daemon=True)
         self._thread.start()
 
-    def _run(self, fn: Callable[[], object]) -> None:
+    def _run(self, fn: Callable[[], Any]) -> None:
         try:
             self._result = fn()
         except BaseException as exc:  # noqa: BLE001
@@ -178,7 +178,7 @@ class MirrorFuture:
         finally:
             self._done.set()
 
-    def wait(self) -> object:
+    def wait(self) -> Any:
         """Block until the future completes and return its result."""
         self._done.wait()
         if self._exc is not None:

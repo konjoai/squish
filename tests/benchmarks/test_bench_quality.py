@@ -12,7 +12,6 @@ from squish.benchmarks.quality_bench import (
     QualityBenchRunner,
 )
 
-
 _ENGINE = EngineConfig("squish", "http://localhost:11434")
 
 

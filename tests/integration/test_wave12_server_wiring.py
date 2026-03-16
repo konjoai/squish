@@ -158,7 +158,10 @@ class TestMiLoWiring:
 
 class TestSageAttentionPatchFn:
     def test_patch_model_sage_attention_importable(self):
-        from squish.attention.sage_attention import patch_model_sage_attention, unpatch_model_sage_attention
+        from squish.attention.sage_attention import (
+            patch_model_sage_attention,
+            unpatch_model_sage_attention,
+        )
         assert callable(patch_model_sage_attention)
         assert callable(unpatch_model_sage_attention)
 

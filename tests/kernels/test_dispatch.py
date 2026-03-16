@@ -22,14 +22,13 @@ import numpy as np
 import pytest
 
 from squish.kernels.dispatch import (
+    _AUTO_ORDER,
     KernelBackend,
     KernelRegistry,
-    _AUTO_ORDER,
     dispatch,
     kernel_registry,
     register_kernel,
 )
-
 
 # ---------------------------------------------------------------------------
 # KernelBackend enum

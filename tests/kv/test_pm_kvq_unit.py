@@ -22,7 +22,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -331,7 +330,7 @@ class TestPMKVQCalibrator:
         assert cal.n_samples == 2
 
     def test_compute_block_sensitivity_shape(self):
-        from squish.kv.pm_kvq import PMKVQConfig, PMKVQCalibrator
+        from squish.kv.pm_kvq import PMKVQCalibrator, PMKVQConfig
         cfg = PMKVQConfig(n_blocks=4)
         cal = PMKVQCalibrator(cfg)
         keys = np.abs(np.random.default_rng(0).standard_normal((8, 16))).astype(np.float32)
@@ -344,7 +343,7 @@ class TestPMKVQCalibrator:
 
     def test_compute_block_sensitivity_no_data(self):
         """Empty calibrator returns zero scores."""
-        from squish.kv.pm_kvq import PMKVQConfig, PMKVQCalibrator
+        from squish.kv.pm_kvq import PMKVQCalibrator, PMKVQConfig
         cal = PMKVQCalibrator(PMKVQConfig(n_blocks=4))
         scores = cal.compute_block_sensitivity()
         assert scores.shape == (4,)
@@ -352,7 +351,7 @@ class TestPMKVQCalibrator:
 
     def test_compute_block_sensitivity_all_zero_key_states(self):
         """All-zero keys → max_s == 0 → scores stay 0 (no divide by zero)."""
-        from squish.kv.pm_kvq import PMKVQConfig, PMKVQCalibrator
+        from squish.kv.pm_kvq import PMKVQCalibrator, PMKVQConfig
         cal = PMKVQCalibrator(PMKVQConfig(n_blocks=2))
         keys = np.zeros((4, 16), dtype=np.float32)
         cal.record(keys, block_idx=0)

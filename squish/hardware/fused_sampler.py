@@ -66,7 +66,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -101,7 +100,7 @@ class SamplerConfig:
     top_p:              float         = 1.0
     min_p:              float         = 0.0
     repetition_penalty: float         = 1.0
-    seed:               Optional[int] = None
+    seed:               int | None = None
 
     def __post_init__(self) -> None:
         if self.temperature <= 0.0:
@@ -150,7 +149,7 @@ class FusedSampler:
     def sample(
         self,
         logits: np.ndarray,
-        input_ids: Optional[np.ndarray] = None,
+        input_ids: np.ndarray | None = None,
     ) -> int:
         """Sample a single token from the logit distribution.
 
@@ -177,7 +176,7 @@ class FusedSampler:
     def sample_batch(
         self,
         logits: np.ndarray,
-        input_ids: Optional[np.ndarray] = None,
+        input_ids: np.ndarray | None = None,
     ) -> np.ndarray:
         """Sample one token per row in a batch of logit vectors.
 
@@ -205,7 +204,7 @@ class FusedSampler:
         output     = np.empty(batch_size, dtype=np.int64)
 
         for b in range(batch_size):
-            row_ids: Optional[np.ndarray] = None
+            row_ids: np.ndarray | None = None
             if input_ids is not None:
                 ids_arr = np.asarray(input_ids)
                 row_ids = ids_arr[b] if ids_arr.ndim == 2 else ids_arr
@@ -234,7 +233,7 @@ class FusedSampler:
     def _compute_probs(
         self,
         logits: np.ndarray,
-        input_ids: Optional[np.ndarray],
+        input_ids: np.ndarray | None,
     ) -> np.ndarray:
         """Apply all sampling filters and return a normalised probability vector.
 

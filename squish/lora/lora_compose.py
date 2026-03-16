@@ -62,7 +62,7 @@ class AdapterConfig:
     rank: int = 16
     alpha: float = 32.0
     hidden_dim: int = 4096
-    out_dim: Optional[int] = None
+    out_dim: int | None = None
     # Computed field — not accepted as a constructor argument.
     scaling: float = field(init=False, default=0.0)
 
@@ -188,12 +188,12 @@ class LoRAComposer:
     >>> delta = composer.forward(x, weights={"code": 0.7, "chat": 0.3})
     """
 
-    def __init__(self, hidden_dim: int, out_dim: Optional[int] = None) -> None:
+    def __init__(self, hidden_dim: int, out_dim: int | None = None) -> None:
         if hidden_dim <= 0:
             raise ValueError(f"hidden_dim must be > 0; got {hidden_dim}")
         self._hidden_dim = hidden_dim
         self._out_dim = out_dim if out_dim is not None else hidden_dim
-        self._adapters: Dict[str, AdapterStack] = {}
+        self._adapters: dict[str, AdapterStack] = {}
         self._n_forward_calls: int = 0
         self._adapters_used_total: int = 0
 
@@ -270,7 +270,7 @@ class LoRAComposer:
     def forward(
         self,
         x: np.ndarray,
-        weights: Optional[Dict[str, float]] = None,
+        weights: dict[str, float] | None = None,
     ) -> np.ndarray:
         """Compute the weighted sum of adapter deltas for input ``x``.
 
@@ -323,7 +323,7 @@ class LoRAComposer:
     # ── Properties ───────────────────────────────────────────────────────────
 
     @property
-    def adapter_names(self) -> List[str]:
+    def adapter_names(self) -> list[str]:
         """Names of all currently registered adapters (insertion order)."""
         return list(self._adapters.keys())
 

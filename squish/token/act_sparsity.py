@@ -112,11 +112,11 @@ class ActSparsityPredictor:
 
     def __init__(self, config: SparsityConfig) -> None:
         self._config = config
-        self._total: Dict[int, int] = {}
-        self._zeros: Dict[int, int] = {}
+        self._total: dict[int, int] = {}
+        self._zeros: dict[int, int] = {}
         # Per-neuron activation frequency: layer_idx → float64 array of shape (hidden_dim,)
         # Counts how many times each neuron exceeded the threshold across all recorded steps.
-        self._act_counts: Dict[int, np.ndarray] = {}
+        self._act_counts: dict[int, np.ndarray] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -175,8 +175,8 @@ class ActSparsityPredictor:
     def calibrate(
         self,
         emit_profile: bool = False,
-        profile_config: "Optional[NeuronProfileConfig]" = None,
-    ) -> "Union[Dict[int, float], Tuple[Dict[int, float], NeuronProfile]]":
+        profile_config: NeuronProfileConfig | None = None,
+    ) -> dict[int, float] | tuple[dict[int, float], NeuronProfile]:
         """Return sparsity map; optionally also emit a NeuronProfile.
 
         Args:
@@ -193,13 +193,16 @@ class ActSparsityPredictor:
             ``{layer_idx: sparsity_fraction}`` when ``emit_profile=False``
             (default), or ``(sparsity_map, NeuronProfile)`` when ``True``.
         """
-        sparsity_map: Dict[int, float] = {
+        sparsity_map: dict[int, float] = {
             idx: self.get_sparsity(idx) for idx in sorted(self._total)
         }
         if not emit_profile:
             return sparsity_map
 
-        from squish.hardware.neuron_profile import NeuronProfileConfig, NeuronProfiler  # noqa: PLC0415
+        from squish.hardware.neuron_profile import (  # noqa: PLC0415
+            NeuronProfileConfig,
+            NeuronProfiler,
+        )
 
         n_layers = self._config.n_layers
         hidden_dim = self._config.hidden_dim
@@ -239,7 +242,7 @@ class SparseFFNGate:
             )
         self._config = config
         self._layer_idx = layer_idx
-        self._last_mask: Optional[np.ndarray] = None
+        self._last_mask: np.ndarray | None = None
 
     def apply(self, activations: np.ndarray) -> np.ndarray:
         """Return a masked copy of *activations* with sub-threshold values zeroed.

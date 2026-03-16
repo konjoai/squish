@@ -118,9 +118,9 @@ class InFlightRequest:
     """
 
     request_id: str
-    prompt_tokens: List[int]
+    prompt_tokens: list[int]
     max_new_tokens: int
-    generated_tokens: List[int] = field(default_factory=list)
+    generated_tokens: list[int] = field(default_factory=list)
     state: RequestState = RequestState.WAITING
     priority: int = 0
 
@@ -216,14 +216,14 @@ class CBScheduler:
     def __init__(self, config: CBConfig) -> None:
         self._config = config
         # Authoritative store: request_id → request
-        self._requests: Dict[str, InFlightRequest] = {}
+        self._requests: dict[str, InFlightRequest] = {}
         # Ordered waiting queue (insertion order preserved for FIFO)
-        self._waiting: List[str] = []
+        self._waiting: list[str] = []
         # Currently running request ids
-        self._running: List[str] = []
+        self._running: list[str] = []
         # Terminal-state request ids
-        self._finished: List[str] = []
-        self._preempted: List[str] = []
+        self._finished: list[str] = []
+        self._preempted: list[str] = []
         # Counters
         self._n_steps: int = 0
         self._total_tokens_generated: int = 0
@@ -257,7 +257,7 @@ class CBScheduler:
 
     # ── Step ─────────────────────────────────────────────────────────────────
 
-    def step_batch(self) -> List[InFlightRequest]:
+    def step_batch(self) -> list[InFlightRequest]:
         """Advance the scheduler by one decode step.
 
         Promotes waiting requests into the running state up to

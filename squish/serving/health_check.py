@@ -52,7 +52,6 @@ from typing import List
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Internal constants
 # ---------------------------------------------------------------------------
@@ -276,7 +275,7 @@ class InferenceHealthMonitor:
             return HealthState.DEGRADED
         return HealthState.OK
 
-    def get_metrics(self) -> List[HealthMetric]:
+    def get_metrics(self) -> list[HealthMetric]:
         """Return the current set of tracked health metrics.
 
         Metrics are computed from the rolling request window so that they

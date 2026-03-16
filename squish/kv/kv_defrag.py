@@ -62,7 +62,6 @@ from typing import Deque
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Stats
 # ---------------------------------------------------------------------------
@@ -142,7 +141,7 @@ class KVDefragmenter:
         # Physical page pool: list of np.ndarray, each (2, n_heads, page_size, head_dim).
         self._pages:      list[np.ndarray] = []
         # Free list of available page indices.
-        self._free_list:  Deque[int] = deque()
+        self._free_list:  deque[int] = deque()
         # Page table: seq_id → list of physical page indices.
         self._page_table: dict[int, list[int]] = {}
 

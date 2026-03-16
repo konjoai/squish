@@ -22,7 +22,7 @@
 |---|:---:|:---:|:---:|
 | **Cold-start load time** | 28.81 s | 8–25 s | **0.33–0.53 s** |
 | **RAM during load** | ~2,400 MB | ~2,000–8,000 MB | **160 MB** ‡ |
-| **Disk size — 8B model** | 16.4 GB | ~4.7 GB (GGUF q4) | **4.4 GB (INT8 squished)** |
+| **Disk size — 8B model** | 16.4 GB | ~4.7 GB (GGUF q4) | **4.4 GB (INT4 squished)** |
 | **Throughput — qwen3:8b M3** | 12–16 tok/s | 14–19 tok/s | **14–22 tok/s** † |
 | **Throughput — qwen3:4b M3** | 28–36 tok/s | 30–40 tok/s | **35–50 tok/s** † |
 | **Throughput — qwen3:1.7b M3** | 55–70 tok/s | 55–75 tok/s | **65–90 tok/s** † |
@@ -43,7 +43,7 @@
 
 ### Model Sizes — Raw vs Squished
 
-| Model | Raw (bf16) | Squished (INT8) | Saved |
+| Model | Raw (bf16) | Squished (INT4) | Saved |
 |-------|:----------:|:---------------:|:-----:|
 | qwen3:0.6b | 1.3 GB | 0.4 GB | **69%** |
 | qwen3:1.7b | 3.5 GB | 1.0 GB | **71%** |
@@ -113,7 +113,7 @@ squish setup                # detects your RAM, recommends a model, pulls + star
 
 ## Core Features
 
-- **Sub-second loads** — INT8 npy-dir format maps directly into Apple Metal unified memory; no dtype conversion on every boot
+- **Sub-second loads** — INT4 npy-dir format maps directly into Apple Metal unified memory; no dtype conversion on every boot
 - **OpenAI + Ollama drop-in** — any existing client works with a single env-var change; no code changes required
 - **macOS menu bar app** — SquishBar lives in your menu bar; shows live tok/s, start/stop server, one-click model switch
 - **VS Code extension** — sidebar chat with streaming, model selector, server lifecycle management ([setup guide](docs/vscode-agent.md))
@@ -194,7 +194,7 @@ not needed after the first run.  Delete them.
 
 ```
 FIRST RUN (~5-10 min — one-time per machine, done automatically by `squish pull`)
-HuggingFace MLX weights ──► Squish INT8 compress ──► npy-dir on disk
+HuggingFace MLX weights ──► Squish INT4 compress ──► npy-dir on disk
                                       │
                                       └──► squish_weights.safetensors  (bf16, MLX-native)
 
@@ -321,7 +321,8 @@ python3 -m squish.server \
 |---|---|---|
 | `--awq` | off | Run AWQ activation calibration before INT8/INT4 compression |
 | `--awq-samples N` | `20` | Calibration samples for AWQ (more → better accuracy, slower) |
-| `--int4` | off | INT4 nibble-packed output (~44% disk savings vs INT8). ⚠ Not recommended for models < 3B — use INT8 for best quality on small models. |
+| `--int4` | **default** | INT4 nibble-packed output (default for `squish pull`). Use `squish pull --int8` to opt out. |
+| `--int8` | off (use on `squish pull`) | Opt out of INT4; use INT8 group-64 compression instead. ⚠ Not available on `squish compress` (use `--int4` flag there). |
 | `--zstd-level N` | `0` | Optional zstd entropy pass after quantisation (level 3 recommended) |
 
 Point **any OpenAI client** at it — no code changes:

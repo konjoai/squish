@@ -52,7 +52,7 @@ def _server_is_alive() -> bool:
         return False
 
 
-def _client() -> "openai.OpenAI":  # type: ignore[name-defined]
+def _client() -> openai.OpenAI:  # type: ignore[name-defined]
     """Return a configured OpenAI client pointed at the local squish server."""
     return openai.OpenAI(base_url=f"{BASE_URL}/v1", api_key="squish")
 

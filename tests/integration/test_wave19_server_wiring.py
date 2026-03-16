@@ -13,7 +13,6 @@ Wave 19 modules (Quantization + Attention + Norm + SpecDecode + Serving):
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # FP8Quant
 # ---------------------------------------------------------------------------
@@ -318,7 +317,7 @@ class TestSlidingWindowAttnWiring:
         assert cfg_gqa.kv_n_heads == 2
 
     def test_cache_append_fill_ratio_and_eviction(self):
-        from squish.attention.sliding_window_attn import SWAConfig, SlidingWindowKVCache
+        from squish.attention.sliding_window_attn import SlidingWindowKVCache, SWAConfig
         rng = np.random.default_rng(15)
         cfg = SWAConfig(window_size=8, n_heads=2, head_dim=16)
         cache = SlidingWindowKVCache(cfg)
@@ -333,8 +332,8 @@ class TestSlidingWindowAttnWiring:
 
     def test_sliding_window_attention_output_shape(self):
         from squish.attention.sliding_window_attn import (
-            SWAConfig,
             SlidingWindowKVCache,
+            SWAConfig,
             sliding_window_attention,
         )
         rng = np.random.default_rng(16)
@@ -350,7 +349,7 @@ class TestSlidingWindowAttnWiring:
         assert np.all(np.isfinite(out))
 
     def test_swa_stats_eviction_rate_and_reset(self):
-        from squish.attention.sliding_window_attn import SWAConfig, SlidingWindowKVCache, SWAStats
+        from squish.attention.sliding_window_attn import SlidingWindowKVCache, SWAConfig, SWAStats
         rng = np.random.default_rng(17)
         cfg = SWAConfig(window_size=4, n_heads=2, head_dim=8)
         cache = SlidingWindowKVCache(cfg)

@@ -64,7 +64,7 @@ class PPLWindow:
     """
 
     window_size: int
-    values: List[float] = field(default_factory=list)
+    values: list[float] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.window_size < 1:
@@ -216,7 +216,7 @@ class PPLTracker:
         self,
         window_size: int = 100,
         alert_threshold: float = 1.5,
-        baseline_ppl: Optional[float] = None,
+        baseline_ppl: float | None = None,
     ) -> None:
         if window_size < 1:
             raise ValueError(f"window_size must be >= 1; got {window_size}")
@@ -230,8 +230,8 @@ class PPLTracker:
             )
         self._window = PPLWindow(window_size=window_size)
         self._alert_threshold = alert_threshold
-        self._baseline_ppl: Optional[float] = baseline_ppl
-        self._alerts: List[PPLAlert] = []
+        self._baseline_ppl: float | None = baseline_ppl
+        self._alerts: list[PPLAlert] = []
         self._step: int = 0
         # For PPLStats
         self._total_tokens: int = 0
@@ -324,7 +324,7 @@ class PPLTracker:
         return rp > self._baseline_ppl * self._alert_threshold
 
     @property
-    def alerts(self) -> List[PPLAlert]:
+    def alerts(self) -> list[PPLAlert]:
         """All :class:`PPLAlert` instances fired since construction or last
         :meth:`reset`."""
         return list(self._alerts)
@@ -336,7 +336,7 @@ class PPLTracker:
 
     # ── Baseline management ───────────────────────────────────────────────────
 
-    def set_baseline(self, ppl: Optional[float] = None) -> None:
+    def set_baseline(self, ppl: float | None = None) -> None:
         """Set the reference baseline PPL for degradation detection.
 
         Parameters

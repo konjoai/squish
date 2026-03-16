@@ -261,7 +261,7 @@ from squish.sampling.sampler import (  # noqa: E402
 
 
 @register_kernel("softmax", KernelBackend.NUMPY)
-def _numpy_softmax(logits: "_np.ndarray", temperature: float = 1.0) -> "_np.ndarray":
+def _numpy_softmax(logits: _np.ndarray, temperature: float = 1.0) -> _np.ndarray:
     """Temperature-scaled softmax → float32 probabilities."""
     logits = _np.asarray(logits, dtype=_np.float32)
     if temperature != 1.0 and temperature > 0.0:
@@ -270,31 +270,31 @@ def _numpy_softmax(logits: "_np.ndarray", temperature: float = 1.0) -> "_np.ndar
 
 
 @register_kernel("top_k", KernelBackend.NUMPY)
-def _numpy_top_k(logits: "_np.ndarray", k: int) -> "_np.ndarray":
+def _numpy_top_k(logits: _np.ndarray, k: int) -> _np.ndarray:
     """Top-k logit masking → float32."""
     return _apply_top_k(_np.asarray(logits, dtype=_np.float32), k)
 
 
 @register_kernel("top_p", KernelBackend.NUMPY)
-def _numpy_top_p(probs: "_np.ndarray", top_p: float) -> "_np.ndarray":
+def _numpy_top_p(probs: _np.ndarray, top_p: float) -> _np.ndarray:
     """Nucleus (top-p) probability filtering → float32."""
     return _apply_top_p(_np.asarray(probs, dtype=_np.float32), top_p)
 
 
 @register_kernel("rep_penalty", KernelBackend.NUMPY)
 def _numpy_rep_penalty(
-    logits:  "_np.ndarray",
-    window:  "list[int]",
+    logits:  _np.ndarray,
+    window:  list[int],
     penalty: float,
-) -> "_np.ndarray":
+) -> _np.ndarray:
     """Repetition penalty on logits."""
     return _apply_rep_penalty(_np.asarray(logits, dtype=_np.float32), window, penalty)
 
 
 @register_kernel("int8_quantize", KernelBackend.NUMPY)
 def _numpy_int8_quantize(
-    x: "_np.ndarray",
-) -> "tuple[_np.ndarray, _np.ndarray]":
+    x: _np.ndarray,
+) -> tuple[_np.ndarray, _np.ndarray]:
     """
     Per-channel INT8 symmetric quantization.
 
@@ -315,9 +315,9 @@ def _numpy_int8_quantize(
 
 @register_kernel("int8_dequantize", KernelBackend.NUMPY)
 def _numpy_int8_dequantize(
-    q: "_np.ndarray",
-    s: "_np.ndarray",
-) -> "_np.ndarray":
+    q: _np.ndarray,
+    s: _np.ndarray,
+) -> _np.ndarray:
     """
     Inverse of ``int8_quantize``.
 
@@ -339,10 +339,10 @@ def _numpy_int8_dequantize(
 
 @register_kernel("svd_score", KernelBackend.NUMPY)
 def _numpy_svd_score(
-    kproj:  "_np.ndarray",
-    recent: "_np.ndarray",
-    basis:  "_np.ndarray",
-) -> "_np.ndarray":
+    kproj:  _np.ndarray,
+    recent: _np.ndarray,
+    basis:  _np.ndarray,
+) -> _np.ndarray:
     """
     Compute per-token geometric relevance scores for Q-Filter eviction.
 
@@ -383,7 +383,7 @@ def _numpy_svd_score(
 # Phase 4 — ReDrafter GRU step kernel
 # ---------------------------------------------------------------------------
 
-def _numpy_sigmoid(x: "_np.ndarray") -> "_np.ndarray":
+def _numpy_sigmoid(x: _np.ndarray) -> _np.ndarray:
     """Numerically stable float32 sigmoid (clip-based, avoids overflow)."""
     x_c = _np.clip(_np.asarray(x, dtype=_np.float32), -88.0, 88.0)
     return (_np.float32(1.0) / (_np.float32(1.0) + _np.exp(-x_c))).astype(_np.float32)
@@ -391,12 +391,12 @@ def _numpy_sigmoid(x: "_np.ndarray") -> "_np.ndarray":
 
 @register_kernel("gru_step", KernelBackend.NUMPY)
 def _numpy_gru_step(
-    x: "_np.ndarray",
-    h: "_np.ndarray",
-    W: "_np.ndarray",
-    U: "_np.ndarray",
-    b: "_np.ndarray",
-) -> "_np.ndarray":
+    x: _np.ndarray,
+    h: _np.ndarray,
+    W: _np.ndarray,
+    U: _np.ndarray,
+    b: _np.ndarray,
+) -> _np.ndarray:
     """
     Single GRU recurrent cell step.
 
@@ -441,12 +441,12 @@ def _numpy_gru_step(
 
 @register_kernel("outer_product_update", KernelBackend.NUMPY)
 def _numpy_outer_product_update(
-    W_f:    "_np.ndarray",
-    keys:   "_np.ndarray",
-    values: "_np.ndarray",
+    W_f:    _np.ndarray,
+    keys:   _np.ndarray,
+    values: _np.ndarray,
     lr:     float,
     decay:  float,
-) -> "_np.ndarray":
+) -> _np.ndarray:
     """
     In-place outer-product fast-weight update (returns updated W_f).
 
@@ -478,9 +478,9 @@ def _numpy_outer_product_update(
 
 @register_kernel("fast_weight_query", KernelBackend.NUMPY)
 def _numpy_fast_weight_query(
-    W_f:     "_np.ndarray",
-    queries: "_np.ndarray",
-) -> "_np.ndarray":
+    W_f:     _np.ndarray,
+    queries: _np.ndarray,
+) -> _np.ndarray:
     """
     Query compressed fast-weight memory.
 

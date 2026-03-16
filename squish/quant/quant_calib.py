@@ -47,7 +47,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 _VALID_METHODS   = frozenset({"minmax", "percentile", "mse"})

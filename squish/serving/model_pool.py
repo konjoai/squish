@@ -46,7 +46,6 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-
 # ---------------------------------------------------------------------------
 # Pool entry
 # ---------------------------------------------------------------------------
@@ -259,7 +258,7 @@ class ModelPool:
             )
         self._active_refs[model_id] = refs - 1
 
-    def evict_lru(self) -> Optional[str]:
+    def evict_lru(self) -> str | None:
         """Evict the least recently used idle model from the hot pool.
 
         Only models with an active reference count of zero are eligible.

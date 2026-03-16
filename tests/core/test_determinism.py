@@ -23,12 +23,11 @@ from squish.core.determinism import (
     DeterminismConfig,
     DeterministicSampler,
     TokenVerifier,
-    VerifyStatus,
     VerifierResult,
+    VerifyStatus,
     _apply_top_p,
     _softmax_f32,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

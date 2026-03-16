@@ -21,7 +21,13 @@ import pytest
 
 class TestTreeVerifierWiring:
     def test_import(self):
-        from squish.speculative.tree_verifier import VerifyConfig, TokenTree, VerifyResult, TreeVerifier, VerifyStats
+        from squish.speculative.tree_verifier import (
+            TokenTree,
+            TreeVerifier,
+            VerifyConfig,
+            VerifyResult,
+            VerifyStats,
+        )
         cfg = VerifyConfig(n_draft_tokens=4, n_branches=3, temperature=1.0)
         verifier = TreeVerifier(cfg)
         assert verifier is not None
@@ -34,7 +40,12 @@ class TestTreeVerifierWiring:
         assert cfg.temperature > 0.0
 
     def test_verify_returns_result(self):
-        from squish.speculative.tree_verifier import VerifyConfig, TokenTree, VerifyResult, TreeVerifier
+        from squish.speculative.tree_verifier import (
+            TokenTree,
+            TreeVerifier,
+            VerifyConfig,
+            VerifyResult,
+        )
         rng = np.random.default_rng(0)
         vocab = 64
         n_branches, n_draft = 3, 4
@@ -51,7 +62,12 @@ class TestTreeVerifierWiring:
         assert 0.0 <= result.acceptance_rate <= 1.0
 
     def test_stats_and_reset(self):
-        from squish.speculative.tree_verifier import VerifyConfig, TokenTree, TreeVerifier, VerifyStats
+        from squish.speculative.tree_verifier import (
+            TokenTree,
+            TreeVerifier,
+            VerifyConfig,
+            VerifyStats,
+        )
         rng = np.random.default_rng(1)
         vocab = 64
         n_branches, n_draft = 2, 3
@@ -78,7 +94,12 @@ class TestTreeVerifierWiring:
 
 class TestKVCompressWiring:
     def test_import(self):
-        from squish.kv.kv_compress import KVCompressConfig, CompressedKVEntry, KVCompressor, CompressStats
+        from squish.kv.kv_compress import (
+            CompressedKVEntry,
+            CompressStats,
+            KVCompressConfig,
+            KVCompressor,
+        )
         cfg = KVCompressConfig(compress_after=256, quant_bits=8, prune_ratio=0.1,
                                n_heads=4, head_dim=32)
         comp = KVCompressor(cfg)
@@ -95,7 +116,7 @@ class TestKVCompressWiring:
         assert cfg.quant_max > 0
 
     def test_compress_decompress_roundtrip(self):
-        from squish.kv.kv_compress import KVCompressConfig, CompressedKVEntry, KVCompressor
+        from squish.kv.kv_compress import CompressedKVEntry, KVCompressConfig, KVCompressor
         rng = np.random.default_rng(0)
         n_heads, seq_len, head_dim = 4, 32, 16
         # prune_ratio=0.0 keeps all positions uniformly, avoiding the unequal-
@@ -114,7 +135,7 @@ class TestKVCompressWiring:
         assert v_back.shape == k_back.shape
 
     def test_stats_and_reset(self):
-        from squish.kv.kv_compress import KVCompressConfig, KVCompressor, CompressStats
+        from squish.kv.kv_compress import CompressStats, KVCompressConfig, KVCompressor
         rng = np.random.default_rng(2)
         # prune_ratio=0.0 avoids the unequal-count-per-head issue
         cfg = KVCompressConfig(compress_after=8, quant_bits=8, prune_ratio=0.0,
@@ -139,7 +160,7 @@ class TestKVCompressWiring:
 
 class TestDynamicNTKWiring:
     def test_import(self):
-        from squish.attention.dynamic_ntk import DynamicNTKConfig, NTKState, DynamicNTKScaler
+        from squish.attention.dynamic_ntk import DynamicNTKConfig, DynamicNTKScaler, NTKState
         cfg = DynamicNTKConfig(base_theta=10000.0, max_trained_len=4096,
                                trigger_ratio=0.8, alpha=8.0, head_dim=64)
         scaler = DynamicNTKScaler(cfg)
@@ -166,7 +187,7 @@ class TestDynamicNTKWiring:
         assert freqs.dtype == np.float32
 
     def test_scaling_triggered(self):
-        from squish.attention.dynamic_ntk import DynamicNTKConfig, NTKState, DynamicNTKScaler
+        from squish.attention.dynamic_ntk import DynamicNTKConfig, DynamicNTKScaler, NTKState
         # max_trained_len=512; trigger_len=256 (50 %); seq_len=600 > max_trained_len
         # ensures scale_factor = alpha*(600/512) - (alpha-1) > 1, so new_base > base_theta
         cfg = DynamicNTKConfig(base_theta=10000.0, max_trained_len=512,
@@ -185,7 +206,12 @@ class TestDynamicNTKWiring:
 
 class TestQuantSpecDecodeWiring:
     def test_import(self):
-        from squish.speculative.quant_spec_decode import QSDConfig, DraftStep, QuantSpecDecoder, QSDStats
+        from squish.speculative.quant_spec_decode import (
+            DraftStep,
+            QSDConfig,
+            QSDStats,
+            QuantSpecDecoder,
+        )
         cfg = QSDConfig(n_draft_tokens=4, vocab_size=128, temperature=1.0)
         decoder = QuantSpecDecoder(cfg)
         assert decoder is not None
@@ -200,7 +226,7 @@ class TestQuantSpecDecodeWiring:
         assert cfg.quant_max == 7
 
     def test_quantize_draft(self):
-        from squish.speculative.quant_spec_decode import QSDConfig, DraftStep, QuantSpecDecoder
+        from squish.speculative.quant_spec_decode import DraftStep, QSDConfig, QuantSpecDecoder
         rng = np.random.default_rng(0)
         vocab = 128
         n_draft = 4
@@ -214,7 +240,7 @@ class TestQuantSpecDecodeWiring:
         assert step.scale > 0.0
 
     def test_verify_and_stats(self):
-        from squish.speculative.quant_spec_decode import QSDConfig, QuantSpecDecoder, QSDStats
+        from squish.speculative.quant_spec_decode import QSDConfig, QSDStats, QuantSpecDecoder
         rng = np.random.default_rng(1)
         vocab = 128
         n_draft = 4
@@ -241,7 +267,12 @@ class TestQuantSpecDecodeWiring:
 
 class TestSparseAttnIndexWiring:
     def test_import(self):
-        from squish.attention.sparse_attn_index import IndexConfig, ANCandidates, SparseAttnIndex, IndexStats
+        from squish.attention.sparse_attn_index import (
+            ANCandidates,
+            IndexConfig,
+            IndexStats,
+            SparseAttnIndex,
+        )
         cfg = IndexConfig(top_k=8, head_dim=16, n_heads=4, n_probe=4)
         index = SparseAttnIndex(cfg)
         assert index is not None
@@ -255,7 +286,7 @@ class TestSparseAttnIndexWiring:
         assert cfg.n_probe >= 1
 
     def test_build_and_query(self):
-        from squish.attention.sparse_attn_index import IndexConfig, ANCandidates, SparseAttnIndex
+        from squish.attention.sparse_attn_index import ANCandidates, IndexConfig, SparseAttnIndex
         rng = np.random.default_rng(0)
         n_heads, seq_len, head_dim, top_k = 4, 64, 16, 8
         cfg = IndexConfig(top_k=top_k, head_dim=head_dim, n_heads=n_heads)
@@ -296,8 +327,11 @@ class TestSparseAttnIndexWiring:
 class TestMixedPrecisionKVWiring:
     def test_import(self):
         from squish.kv.mixed_precision_kv import (
-            HeadPrecision, MPKVConfig, HeadPrecisionMap,
-            MixedPrecisionKVCache, MPKVStats,
+            HeadPrecision,
+            HeadPrecisionMap,
+            MixedPrecisionKVCache,
+            MPKVConfig,
+            MPKVStats,
         )
         cfg = MPKVConfig(n_heads=8, head_dim=32,
                          int4_threshold=0.3, int8_threshold=0.7)
@@ -305,7 +339,7 @@ class TestMixedPrecisionKVWiring:
         assert cache is not None
 
     def test_config_defaults(self):
-        from squish.kv.mixed_precision_kv import MPKVConfig, HeadPrecision
+        from squish.kv.mixed_precision_kv import HeadPrecision, MPKVConfig
         cfg = MPKVConfig()
         assert cfg.n_heads >= 1
         assert cfg.head_dim >= 1
@@ -316,7 +350,7 @@ class TestMixedPrecisionKVWiring:
         assert HeadPrecision.FP16 == "fp16"
 
     def test_assign_precisions(self):
-        from squish.kv.mixed_precision_kv import MPKVConfig, HeadPrecisionMap, MixedPrecisionKVCache
+        from squish.kv.mixed_precision_kv import HeadPrecisionMap, MixedPrecisionKVCache, MPKVConfig
         rng = np.random.default_rng(0)
         n_heads = 8
         cfg = MPKVConfig(n_heads=n_heads, head_dim=16,
@@ -329,7 +363,12 @@ class TestMixedPrecisionKVWiring:
         assert prec_map.n_int4 + prec_map.n_int8 + prec_map.n_fp16 == n_heads
 
     def test_store_load_and_stats(self):
-        from squish.kv.mixed_precision_kv import MPKVConfig, HeadPrecision, MixedPrecisionKVCache, MPKVStats
+        from squish.kv.mixed_precision_kv import (
+            HeadPrecision,
+            MixedPrecisionKVCache,
+            MPKVConfig,
+            MPKVStats,
+        )
         rng = np.random.default_rng(1)
         n_heads, head_dim = 4, 16
         cfg = MPKVConfig(n_heads=n_heads, head_dim=head_dim,
@@ -359,7 +398,12 @@ class TestMixedPrecisionKVWiring:
 
 class TestPipelineBubbleWiring:
     def test_import(self):
-        from squish.hardware.pipeline_bubble import StageConfig, StageSchedule, BubbleEliminator, BubbleStats
+        from squish.hardware.pipeline_bubble import (
+            BubbleEliminator,
+            BubbleStats,
+            StageConfig,
+            StageSchedule,
+        )
         cfg = StageConfig(n_stages=4, n_microbatches=8, stage_latency_ms=10.0)
         elim = BubbleEliminator(cfg)
         assert elim is not None
@@ -374,7 +418,7 @@ class TestPipelineBubbleWiring:
         assert 0.0 <= frac <= 1.0
 
     def test_build_schedule(self):
-        from squish.hardware.pipeline_bubble import StageConfig, StageSchedule, BubbleEliminator
+        from squish.hardware.pipeline_bubble import BubbleEliminator, StageConfig, StageSchedule
         cfg = StageConfig(n_stages=4, n_microbatches=8, stage_latency_ms=5.0)
         elim = BubbleEliminator(cfg)
         sched = elim.build_schedule()
@@ -384,7 +428,7 @@ class TestPipelineBubbleWiring:
         assert 0.0 <= sched.bubble_fraction <= 1.0
 
     def test_simulate_and_stats(self):
-        from squish.hardware.pipeline_bubble import StageConfig, BubbleEliminator, BubbleStats
+        from squish.hardware.pipeline_bubble import BubbleEliminator, BubbleStats, StageConfig
         cfg = StageConfig(n_stages=4, n_microbatches=8, stage_latency_ms=5.0)
         elim = BubbleEliminator(cfg)
         sched = elim.build_schedule()
@@ -407,7 +451,12 @@ class TestPipelineBubbleWiring:
 
 class TestLayerwiseDecodeWiring:
     def test_import(self):
-        from squish.token.layerwise_decode import LayerwiseConfig, LayerStream, LayerwiseDecoder, DecodeStats
+        from squish.token.layerwise_decode import (
+            DecodeStats,
+            LayerStream,
+            LayerwiseConfig,
+            LayerwiseDecoder,
+        )
         cfg = LayerwiseConfig(n_layers=8, hidden_dim=64, exit_threshold=0.9,
                               min_exit_layer=4, probe_vocab=32)
         decoder = LayerwiseDecoder(cfg)
@@ -423,7 +472,7 @@ class TestLayerwiseDecodeWiring:
         assert cfg.probe_vocab >= 2
 
     def test_process_layer(self):
-        from squish.token.layerwise_decode import LayerwiseConfig, LayerStream, LayerwiseDecoder
+        from squish.token.layerwise_decode import LayerStream, LayerwiseConfig, LayerwiseDecoder
         rng = np.random.default_rng(0)
         hidden_dim = 32
         cfg = LayerwiseConfig(n_layers=4, hidden_dim=hidden_dim,
@@ -439,7 +488,12 @@ class TestLayerwiseDecodeWiring:
         assert decoder.stats.total_layers_run == 1
 
     def test_record_token_stats(self):
-        from squish.token.layerwise_decode import LayerwiseConfig, LayerStream, LayerwiseDecoder, DecodeStats
+        from squish.token.layerwise_decode import (
+            DecodeStats,
+            LayerStream,
+            LayerwiseConfig,
+            LayerwiseDecoder,
+        )
         rng = np.random.default_rng(1)
         hidden_dim = 32
         cfg = LayerwiseConfig(n_layers=4, hidden_dim=hidden_dim,
@@ -463,7 +517,7 @@ class TestLayerwiseDecodeWiring:
 
 class TestCodecKVWiring:
     def test_import(self):
-        from squish.kv.codec_kv import CodecConfig, KVCodec, CodecStats
+        from squish.kv.codec_kv import CodecConfig, CodecStats, KVCodec
         cfg = CodecConfig(n_codebook=16, head_dim=8, n_heads=2, n_fit_samples=32)
         codec = KVCodec(cfg)
         assert codec is not None
@@ -503,7 +557,7 @@ class TestCodecKVWiring:
         assert k_hat.shape == (16, head_dim)
 
     def test_stats_and_compression_ratio(self):
-        from squish.kv.codec_kv import CodecConfig, KVCodec, CodecStats
+        from squish.kv.codec_kv import CodecConfig, CodecStats, KVCodec
         rng = np.random.default_rng(2)
         n_codebook, head_dim = 4, 8
         cfg = CodecConfig(n_codebook=n_codebook, head_dim=head_dim, n_heads=2, n_fit_samples=32)
@@ -535,7 +589,7 @@ class TestCodecKVWiring:
 
 class TestDedupeAttnWiring:
     def test_import(self):
-        from squish.attention.dedupe_attn import DedupConfig, AttentionDeduplicator, DedupStats
+        from squish.attention.dedupe_attn import AttentionDeduplicator, DedupConfig, DedupStats
         cfg = DedupConfig(sim_threshold=0.99, max_cache=64, n_heads=4, head_dim=16)
         dedup = AttentionDeduplicator(cfg)
         assert dedup is not None
@@ -549,7 +603,7 @@ class TestDedupeAttnWiring:
         assert cfg.head_dim >= 1
 
     def test_store_and_lookup_hit(self):
-        from squish.attention.dedupe_attn import DedupConfig, AttentionDeduplicator
+        from squish.attention.dedupe_attn import AttentionDeduplicator, DedupConfig
         rng = np.random.default_rng(0)
         head_dim = 16
         cfg = DedupConfig(sim_threshold=0.95, max_cache=32, n_heads=2, head_dim=head_dim)
@@ -565,7 +619,7 @@ class TestDedupeAttnWiring:
         assert dedup.stats.n_stores == 1
 
     def test_stats_and_reset(self):
-        from squish.attention.dedupe_attn import DedupConfig, AttentionDeduplicator, DedupStats
+        from squish.attention.dedupe_attn import AttentionDeduplicator, DedupConfig, DedupStats
         rng = np.random.default_rng(1)
         head_dim = 16
         cfg = DedupConfig(sim_threshold=0.99, max_cache=8, n_heads=2, head_dim=head_dim)
@@ -592,7 +646,7 @@ class TestDedupeAttnWiring:
 
 class TestFlashPrefillWiring:
     def test_import(self):
-        from squish.attention.flash_prefill import PrefillConfig, PrefillStats, FlashPrefillKernel
+        from squish.attention.flash_prefill import FlashPrefillKernel, PrefillConfig, PrefillStats
         cfg = PrefillConfig(chunk_size=64, n_heads=4, head_dim=16)
         kernel = FlashPrefillKernel(cfg)
         assert kernel is not None
@@ -606,7 +660,7 @@ class TestFlashPrefillWiring:
         assert cfg.effective_scale > 0.0
 
     def test_prefill_output_shape(self):
-        from squish.attention.flash_prefill import PrefillConfig, FlashPrefillKernel
+        from squish.attention.flash_prefill import FlashPrefillKernel, PrefillConfig
         rng = np.random.default_rng(0)
         n_heads, seq_len, head_dim = 4, 64, 16
         cfg = PrefillConfig(chunk_size=32, n_heads=n_heads, head_dim=head_dim)
@@ -619,7 +673,7 @@ class TestFlashPrefillWiring:
         assert output.dtype == np.float32
 
     def test_stats_and_reset(self):
-        from squish.attention.flash_prefill import PrefillConfig, PrefillStats, FlashPrefillKernel
+        from squish.attention.flash_prefill import FlashPrefillKernel, PrefillConfig, PrefillStats
         rng = np.random.default_rng(1)
         n_heads, seq_len, head_dim = 2, 32, 8
         cfg = PrefillConfig(chunk_size=16, n_heads=n_heads, head_dim=head_dim)
@@ -645,7 +699,12 @@ class TestFlashPrefillWiring:
 
 class TestBudgetSpecWiring:
     def test_import(self):
-        from squish.serving.budget_spec import BudgetConfig, BudgetState, BudgetSpecDecoder, BudgetStats
+        from squish.serving.budget_spec import (
+            BudgetConfig,
+            BudgetSpecDecoder,
+            BudgetState,
+            BudgetStats,
+        )
         cfg = BudgetConfig(total_budget=64, n_draft=5, ramp_down_at=0.8)
         decoder = BudgetSpecDecoder(cfg)
         assert decoder is not None
@@ -666,7 +725,12 @@ class TestBudgetSpecWiring:
         assert not decoder.is_exhausted()
 
     def test_step_exhaustion_and_stats(self):
-        from squish.serving.budget_spec import BudgetConfig, BudgetState, BudgetSpecDecoder, BudgetStats
+        from squish.serving.budget_spec import (
+            BudgetConfig,
+            BudgetSpecDecoder,
+            BudgetState,
+            BudgetStats,
+        )
         cfg = BudgetConfig(total_budget=10, n_draft=3, ramp_down_at=0.8)
         decoder = BudgetSpecDecoder(cfg)
         while not decoder.is_exhausted():
@@ -693,7 +757,12 @@ class TestBudgetSpecWiring:
 
 class TestRetentionAttnWiring:
     def test_import(self):
-        from squish.attention.retention_attn import RetentionConfig, RetentionState, RetentionKernel, RetentionStats
+        from squish.attention.retention_attn import (
+            RetentionConfig,
+            RetentionKernel,
+            RetentionState,
+            RetentionStats,
+        )
         cfg = RetentionConfig(hidden_dim=64, n_heads=4, gamma=0.9)
         kernel = RetentionKernel(cfg)
         assert kernel is not None
@@ -708,7 +777,7 @@ class TestRetentionAttnWiring:
         assert cfg.head_dim == cfg.hidden_dim // cfg.n_heads
 
     def test_step_shape(self):
-        from squish.attention.retention_attn import RetentionConfig, RetentionState, RetentionKernel
+        from squish.attention.retention_attn import RetentionConfig, RetentionKernel, RetentionState
         rng = np.random.default_rng(0)
         hidden_dim, n_heads = 32, 4
         head_dim = hidden_dim // n_heads

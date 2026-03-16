@@ -111,7 +111,7 @@ class StageSchedule:
                   number of time slots required to drain the pipeline.
     """
 
-    schedule: List[List[int]]
+    schedule: list[list[int]]
 
     @property
     def bubble_fraction(self) -> float:
@@ -249,7 +249,7 @@ class BubbleEliminator:
 
         return result
 
-    def simulate(self, schedule: StageSchedule) -> Dict[str, float]:
+    def simulate(self, schedule: StageSchedule) -> dict[str, float]:
         """Simulate the wall-clock performance of a pipeline schedule.
 
         Args:

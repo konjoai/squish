@@ -67,7 +67,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -187,7 +186,7 @@ class DualChunkAttention:
         q: np.ndarray,
         k: np.ndarray,
         v: np.ndarray,
-        past_chunks: Optional[list[np.ndarray]] = None,
+        past_chunks: list[np.ndarray] | None = None,
     ) -> np.ndarray:
         """Compute dual-chunk attention output for the current chunk.
 

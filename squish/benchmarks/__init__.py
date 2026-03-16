@@ -17,16 +17,16 @@ Usage::
 from __future__ import annotations
 
 from squish.benchmarks.base import (
+    ENGINE_REGISTRY,
+    LLAMACPP_ENGINE,
+    LMSTUDIO_ENGINE,
+    MLXLM_ENGINE,
+    OLLAMA_ENGINE,
+    SQUISH_ENGINE,
     BenchmarkRunner,
     EngineClient,
     EngineConfig,
     ResultRecord,
-    SQUISH_ENGINE,
-    OLLAMA_ENGINE,
-    LMSTUDIO_ENGINE,
-    MLXLM_ENGINE,
-    LLAMACPP_ENGINE,
-    ENGINE_REGISTRY,
     parse_engines,
 )
 

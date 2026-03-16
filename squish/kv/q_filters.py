@@ -295,9 +295,9 @@ class QFilterManager:
     def maybe_evict(
         self,
         layer_idx:  int,
-        layer_cache: "KVLayerCache",
+        layer_cache: KVLayerCache,
         step:        int,
-        fw_manager:  "FastWeightManager | None" = None,
+        fw_manager:  FastWeightManager | None = None,
     ) -> bool:
         """
         Run geometric eviction for one layer if conditions are met.
@@ -366,7 +366,7 @@ class QFilterManager:
 # KVLayerCache eviction helper
 # ---------------------------------------------------------------------------
 
-def _qfilter_evict(layer_cache: "KVLayerCache", keep_indices: np.ndarray) -> None:
+def _qfilter_evict(layer_cache: KVLayerCache, keep_indices: np.ndarray) -> None:
     """
     Rebuild ``layer_cache`` retaining only the positions in ``keep_indices``.
 
