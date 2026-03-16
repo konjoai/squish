@@ -372,20 +372,25 @@ pub fn dequantize_int4_grouped<'py>(
 /// quantization error for LLM weight matrices whose distribution is skewed.
 ///
 /// Algorithm (per group of `group_size` elements):
-///   scale = (gmax − gmin) / 15.0    (or 1.0 if gmax == gmin)
-///   zero_point = clamp(round(−gmin / scale), 0, 15)  stored as u8
-///   q = clamp(round(x / scale) + zero_point, 0, 15)
+///   scale  = (gmax − gmin) / 15.0    (or 1.0 if gmax == gmin)
+///   offset = gmin                    stored as f32  ← replaces uint8 zero_point
+///   q = clamp(round((x − offset) / scale), 0, 15)
+///   decode: x_hat = offset + q * scale
+///
+/// This formulation correctly covers any [gmin, gmax] range including
+/// all-positive groups (gmin > 0), where the old uint8 zero_point was
+/// clamped to 0 and caused `gmax` to be under-represented.
 ///
 /// Returns:
-///   packed:      (N, D/2)            uint8  — low nibble = even index, high = odd
-///   scales:      (N, D/group_size)   float32
-///   zero_points: (N, D/group_size)   uint8  — values in [0, 15]
+///   packed:  (N, D/2)            uint8   — low nibble = even index, high = odd
+///   scales:  (N, D/group_size)   float32 — step size per group
+///   offsets: (N, D/group_size)   float32 — gmin per group  (was uint8 zero_points)
 #[pyfunction]
 pub fn quantize_int4_asymmetric_grouped<'py>(
     py: Python<'py>,
     arr: PyReadonlyArray2<'py, f32>,
     group_size: usize,
-) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray2<f32>>, Bound<'py, PyArray2<u8>>)> {
+) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray2<f32>>, Bound<'py, PyArray2<f32>>)> {
     let arr_view = arr.as_array();
     let (n_rows, n_cols) = arr_view.dim();
 
@@ -403,20 +408,20 @@ pub fn quantize_int4_asymmetric_grouped<'py>(
     let n_groups = n_cols / group_size;
     let n_packed = n_cols / 2;
 
-    let mut packed_out: Vec<u8>  = vec![0u8; n_rows * n_packed];
-    let mut scales_out: Vec<f32> = vec![0f32; n_rows * n_groups];
-    let mut zp_out:     Vec<u8>  = vec![0u8; n_rows * n_groups];
+    let mut packed_out:  Vec<u8>  = vec![0u8;  n_rows * n_packed];
+    let mut scales_out:  Vec<f32> = vec![0f32; n_rows * n_groups];
+    let mut offsets_out: Vec<f32> = vec![0f32; n_rows * n_groups];  // gmin per group
 
     packed_out
         .par_chunks_mut(n_packed)
         .zip(scales_out.par_chunks_mut(n_groups))
-        .zip(zp_out.par_chunks_mut(n_groups))
+        .zip(offsets_out.par_chunks_mut(n_groups))
         .enumerate()
-        .for_each(|(row_idx, ((p_row, s_row), z_row))| {
+        .for_each(|(row_idx, ((p_row, s_row), o_row))| {
             let row       = arr_view.row(row_idx);
             let row_slice = row.as_slice().expect("non-contiguous");
 
-            // Per-group scale + zero-point
+            // Per-group scale + offset (gmin)
             for g in 0..n_groups {
                 let start = g * group_size;
                 let end   = start + group_size;
@@ -429,10 +434,9 @@ pub fn quantize_int4_asymmetric_grouped<'py>(
                     .cloned()
                     .fold(f32::NEG_INFINITY, f32::max);
                 let scale = if gmax == gmin { 1.0f32 } else { (gmax - gmin) / 15.0 };
-                // zero_point: shift so that gmin quantizes to 0
-                let zp_f  = (-gmin / scale).round().clamp(0.0, 15.0);
-                s_row[g]  = scale;
-                z_row[g]  = zp_f as u8;
+                // offset = gmin: q encodes (x - gmin) / scale ∈ [0, 15]
+                s_row[g] = scale;
+                o_row[g] = gmin;
             }
 
             // Quantize + pack nibbles
@@ -441,42 +445,45 @@ pub fn quantize_int4_asymmetric_grouped<'py>(
                 let j1 = j0 + 1;
                 let g0 = j0 / group_size;
                 let g1 = j1 / group_size;
-                let q0 = (row_slice[j0] / s_row[g0] + z_row[g0] as f32)
+                // q = round((x - offset) / scale), clamped to [0, 15]
+                let q0 = ((row_slice[j0] - o_row[g0]) / s_row[g0])
                     .round().clamp(0.0, 15.0) as u8;
-                let q1 = (row_slice[j1] / s_row[g1] + z_row[g1] as f32)
+                let q1 = ((row_slice[j1] - o_row[g1]) / s_row[g1])
                     .round().clamp(0.0, 15.0) as u8;
                 p_row[i] = (q0 & 0x0F) | ((q1 & 0x0F) << 4);
             }
         });
 
-    let packed_arr = Array2::from_shape_vec((n_rows, n_packed), packed_out)
+    let packed_arr  = Array2::from_shape_vec((n_rows, n_packed), packed_out)
         .expect("shape").into_pyarray_bound(py);
-    let scales_arr = Array2::from_shape_vec((n_rows, n_groups), scales_out)
+    let scales_arr  = Array2::from_shape_vec((n_rows, n_groups), scales_out)
         .expect("shape").into_pyarray_bound(py);
-    let zp_arr     = Array2::from_shape_vec((n_rows, n_groups), zp_out)
+    let offsets_arr = Array2::from_shape_vec((n_rows, n_groups), offsets_out)
         .expect("shape").into_pyarray_bound(py);
 
-    Ok((packed_arr, scales_arr, zp_arr))
+    Ok((packed_arr, scales_arr, offsets_arr))
 }
 
 
 /// Unpack asymmetric nibble-packed INT4 weights back to float32.
 ///
-/// packed:      (N, D/2)          uint8
-/// scales:      (N, D/group_size) float32
-/// zero_points: (N, D/group_size) uint8   — values in [0, 15]
-/// Returns:     (N, D)            float32
+/// packed:  (N, D/2)          uint8
+/// scales:  (N, D/group_size) float32  — step size per group
+/// offsets: (N, D/group_size) float32  — gmin per group
+/// Returns: (N, D)            float32
+///
+/// Decode: x_hat = offsets + q * scales
 #[pyfunction]
 pub fn dequantize_int4_asymmetric_grouped<'py>(
     py: Python<'py>,
-    packed:      PyReadonlyArray2<'py, u8>,
-    scales:      PyReadonlyArray2<'py, f32>,
-    zero_points: PyReadonlyArray2<'py, u8>,
+    packed:  PyReadonlyArray2<'py, u8>,
+    scales:  PyReadonlyArray2<'py, f32>,
+    offsets: PyReadonlyArray2<'py, f32>,   // was zero_points: u8
     group_size:  usize,
 ) -> PyResult<Bound<'py, PyArray2<f32>>> {
     let p_view  = packed.as_array();
     let s_view  = scales.as_array();
-    let z_view  = zero_points.as_array();
+    let o_view  = offsets.as_array();
     let (n_rows, n_packed) = p_view.dim();
     let n_cols   = n_packed * 2;
     let n_groups = n_cols / group_size;
@@ -487,10 +494,10 @@ pub fn dequantize_int4_asymmetric_grouped<'py>(
             s_view.dim()
         )));
     }
-    if z_view.dim() != (n_rows, n_groups) {
+    if o_view.dim() != (n_rows, n_groups) {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "zero_points shape {:?} does not match expected ({n_rows}, {n_groups})",
-            z_view.dim()
+            "offsets shape {:?} does not match expected ({n_rows}, {n_groups})",
+            o_view.dim()
         )));
     }
 
@@ -506,11 +513,11 @@ pub fn dequantize_int4_asymmetric_grouped<'py>(
                 let j1   = j0 + 1;
                 let g0   = j0 / group_size;
                 let g1   = j1 / group_size;
-                // x = (q - zero_point) * scale
+                // x_hat = offset + q * scale
                 let q0 = (byte & 0x0F) as f32;
                 let q1 = ((byte >> 4) & 0x0F) as f32;
-                out_row[j0] = (q0 - z_view[[row_idx, g0]] as f32) * s_view[[row_idx, g0]];
-                out_row[j1] = (q1 - z_view[[row_idx, g1]] as f32) * s_view[[row_idx, g1]];
+                out_row[j0] = o_view[[row_idx, g0]] + q0 * s_view[[row_idx, g0]];
+                out_row[j1] = o_view[[row_idx, g1]] + q1 * s_view[[row_idx, g1]];
             }
         });
 

@@ -571,11 +571,11 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
             and _squish_quant is not None):
         packed      = np.ascontiguousarray(_load_npy_path(q4a_path), dtype=np.uint8)
         scales      = np.ascontiguousarray(_load_npy_path(s4a_path), dtype=np.float32)
-        zero_points = np.ascontiguousarray(_load_npy_path(z4a_path), dtype=np.uint8)
+        offsets     = np.ascontiguousarray(_load_npy_path(z4a_path), dtype=np.float32)
         original_shape = tuple(_load_npy_path(shape_path).tolist())
         _gs = (packed.shape[1] * 2) // scales.shape[1]
         arr_f32 = _squish_quant.dequantize_int4_asymmetric_grouped(
-            packed, scales, zero_points, _gs,
+            packed, scales, offsets, _gs,
         )
         return arr_f32.reshape(original_shape)
 
