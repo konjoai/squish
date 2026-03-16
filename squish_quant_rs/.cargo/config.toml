@@ -11,5 +11,5 @@
 # locally by the user (via `maturin develop --release` or `pip install -e .`),
 # so the build machine IS the runtime machine.
 
-[profile.release]
+[build]
 rustflags = ["-C", "target-cpu=native"]

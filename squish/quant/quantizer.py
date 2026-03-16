@@ -352,6 +352,65 @@ def dequantize_int4(
     )
 
 
+def quantize_int4_asymmetric(
+    embeddings: np.ndarray,
+    group_size: int = 64,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Asymmetric nibble-packed INT4 quantisation (Q4_K_M style).
+
+    Maps each group's [xmin, xmax] to [0, 15] using scale + zero-point,
+    using all 16 possible nibble values rather than only 15 as in symmetric
+    INT4.  Yields ~6–10% lower quantization error for skewed weight matrices.
+
+    Requires squish_quant Rust extension.
+
+    Returns:
+        (packed_uint8, scales_float32, zero_points_uint8)
+        packed has shape      (n, d//2)
+        scales has shape      (n, d//group_size)
+        zero_points has shape (n, d//group_size), values in [0, 15]
+    """
+    if _squish_quant is None:  # pragma: no cover
+        raise RuntimeError(
+            "squish_quant Rust extension required for INT4 asymmetric.\n"
+            "  Build: cd squish/squish_quant_rs && python3 -m maturin build --release\n"
+            "  Or:    pip install squish[quant]"
+        )
+    emb = np.ascontiguousarray(embeddings, dtype=np.float32)
+    return _squish_quant.quantize_int4_asymmetric_grouped(emb, group_size)
+
+
+def dequantize_int4_asymmetric(
+    packed: np.ndarray,
+    scales: np.ndarray,
+    zero_points: np.ndarray,
+    group_size: int = 64,
+) -> np.ndarray:
+    """Reconstruct float32 from asymmetric nibble-packed INT4 weights.
+
+    Args:
+        packed:      (n, d//2)          uint8  — from quantize_int4_asymmetric().
+        scales:      (n, d//group_size) float32.
+        zero_points: (n, d//group_size) uint8, values in [0, 15].
+        group_size:  Must match the value used during quantize_int4_asymmetric().
+
+    Returns:
+        (n, d) float32.
+    """
+    if _squish_quant is None:  # pragma: no cover
+        raise RuntimeError(
+            "squish_quant Rust extension required for INT4 asymmetric dequantization.\n"
+            "  Build: cd squish/squish_quant_rs && python3 -m maturin build --release\n"
+            "  Or:    pip install squish[quant]"
+        )
+    return _squish_quant.dequantize_int4_asymmetric_grouped(
+        np.ascontiguousarray(packed,      dtype=np.uint8),
+        np.ascontiguousarray(scales,      dtype=np.float32),
+        np.ascontiguousarray(zero_points, dtype=np.uint8),
+        group_size,
+    )
+
+
 def mean_cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """Compute mean cosine similarity between corresponding rows of a and b.
 

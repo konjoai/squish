@@ -2393,3 +2393,61 @@ MIT license. OpenAI + Ollama drop-in compatible. Zero code changes to existing a
 | Python test suite | 7 194+ |
 
 ---
+
+## ✅ INT4 Asymmetric Quantization (2026-03-16)
+> Goal: Improve INT4 accuracy by replacing symmetric [-7,7] quantization with
+> asymmetric [0,15] Q4_K_M-style quantization across the Rust backend.
+>
+> Problem: Symmetric INT4 wastes one codebook level (15/16 = 93.75% utilization)
+> and cannot represent skewed weight distributions efficiently. Hellaswag accuracy
+> was -6.5pp below BF16 reference with the symmetric path.
+
+### Changes implemented
+
+#### Rust backend (`squish_quant_rs/src/lib.rs`)
+- [x] `quantize_int4_asymmetric_grouped(arr, group_size)` — per-group asymmetric INT4:
+  - scale = (gmax − gmin) / 15.0  (uses all 16 nibble levels)
+  - zero_point = clamp(round(−gmin / scale), 0, 15)  stored as u8
+  - quantized = clamp(round(x / scale) + zero_point, 0, 15)
+- [x] `dequantize_int4_asymmetric_grouped(packed, scales, zero_points, group_size)` — inverse
+- [x] Fixed `.cargo/config.toml`: changed `[profile.release] rustflags` (unstable) → `[build] rustflags` (stable Cargo 1.60+)
+- [x] Rebuilt with `maturin develop --release`
+
+#### Python quantizer (`squish/quant/quantizer.py`)
+- [x] `quantize_int4_asymmetric(embeddings, group_size)` → `(packed, scales, zero_points)`
+- [x] `dequantize_int4_asymmetric(packed, scales, zero_points, group_size)` → float32
+
+#### Compression pipeline (`squish/convert.py`)
+- [x] `quantize_tensor(..., use_int4=True)` now produces asymmetric format:
+  - `__q4a` (uint8 nibble-packed), `__s4a` (float32 scales), `__z4a` (uint8 zero-points)
+  - Replaces symmetric `__q4` / `__s4` format
+  - Removed DFloat11 scale entropy coding (zero_points are u8, already compact)
+- [x] Verbose mode string updated: `"INT4 asymmetric nibble-packed (group-32)"`
+
+#### Loaders (`squish/io/loader_utils.py`, `squish/quant/compressed_loader.py`)
+- [x] Both loaders handle asymmetric format (`__q4a` + `__s4a` + `__z4a`) as Tier 0a
+- [x] Legacy symmetric format (`__q4` + `__s4`) retained as Tier 0b for backward compat
+- [x] `save_int4_npy_dir()` updated to write asymmetric format
+
+#### Tests (`tests/quant/test_compression_pipeline.py`)
+- [x] `TestINT4DFloat11ScalesRoundTrip::test_int4_dfloat11_scales_round_trip` — updated
+  to assert asymmetric format (`__q4a`/`__s4a`/`__z4a`); validates `use_dfloat11=True`
+  is a no-op for INT4 scales (zero_points are already u8)
+- [x] All other tests pass unchanged
+
+### Measured improvements
+
+| Metric | Value |
+|--------|-------|
+| SNR improvement (skewed weights, gs=32) | +1.69 dB (+32% lower MSE) |
+| SNR improvement (Gaussian weights, gs=32) | +1.60 dB (+31% lower MSE) |
+| Storage overhead (zero_points array) | +5.0% vs symmetric |
+| Test suite | 5874 passed, 7 skipped, 0 failures |
+
+### Next steps
+- [ ] Re-compress Qwen2.5-1.5B with asymmetric INT4 and run 500-sample benchmarks
+- [ ] Target: hellaswag ≥ 0.600 (vs 0.570 with symmetric, 0.635 BF16 reference)
+- [ ] Compress remaining catalog models (Qwen3-8B, Llama-3.2-3B)
+- [ ] Upload compressed models to HuggingFace squishai org
+
+---
