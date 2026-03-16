@@ -54,6 +54,12 @@ _cli_dir = os.path.dirname(os.path.abspath(__file__))   # …/squish/squish
 _repo_root = os.path.dirname(_cli_dir)                   # …/squish
 if _repo_root not in sys.path:  # pragma: no cover
     sys.path.insert(0, _repo_root)
+# Remove the package directory itself from sys.path.  Python inserts the
+# script's own directory as sys.path[0] when running a .py file directly,
+# which causes squish sub-packages (squish/token/, squish/grammar/, …)
+# to shadow stdlib modules of the same name (token, grammar, …).
+while _cli_dir in sys.path:  # pragma: no cover
+    sys.path.remove(_cli_dir)
 del _cli_dir, _repo_root
 
 try:
