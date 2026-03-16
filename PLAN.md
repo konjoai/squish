@@ -992,8 +992,8 @@ New file: `squish/aqlm.py`
 - [x] `squish/convert.py` — add `--aqlm` flag; save indices + codebooks into npy-dir
 - [x] `squish/server.py` — `--aqlm` flag wiring (Experimental tier); skip gracefully if `aqlm` import fails
 - [x] `squish/cli.py` — expose `--aqlm` and `--aqlm-codebooks` / `--aqlm-cbsize` in `squish compress` subcommand
-- [ ] `dev/benchmarks/bench_aqlm.py` — perplexity on wikitext-2 vs INT4 vs VPTQ at 2-bit; save to `dev/results/aqlm_bench.json`
-- [ ] `docs/aqlm.md` — design document with compression tradeoff table
+- [x] `dev/benchmarks/bench_aqlm.py` — perplexity on wikitext-2 vs INT4 vs VPTQ at 2-bit; save to `dev/results/aqlm_bench.json`
+- [x] `docs/aqlm.md` — design document with compression tradeoff table
 
 **Key design constraints:**
 - NumPy/Rust reference path for calibration (offline, not latency-sensitive); MLX path for inference
