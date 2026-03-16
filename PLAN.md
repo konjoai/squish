@@ -829,7 +829,7 @@ GitHub Actions `macos-14` runners are Apple M1. MLX runs on them. However, the c
 3. `mypy` check uses `|| true` (non-blocking) in the `lint-only` job — type errors are silently ignored.
 
 - [x] Investigate why `test_int4_loader.py` is excluded; fix or create a synthetic weight fixture so it runs in CI
-- [ ] Create a `tests/fixtures/synthetic_model/` directory with a minimal 2-layer model in safetensors format (generate with a script checked into the repo)
+- [x] Create a `tests/fixtures/synthetic_model/` directory with a minimal 2-layer model in safetensors format (generate with a script checked into the repo)
 - [ ] Add a CI job that runs `test_hardware_integration.py` with `--run-hardware` using the synthetic model
 - [ ] Make mypy blocking (remove `|| true`) after fixing existing type errors
 - [x] Add a CI step that imports `squish` and checks `squish.__version__ == importlib.metadata.version("squish")`

@@ -194,3 +194,147 @@ class TestMain:
             with patch("sys.argv", ["squish", "--help"]):
                 cli.main()
         assert exc.value.code == 0
+
+
+# ── _detect_ram_gb ────────────────────────────────────────────────────────────
+
+class TestDetectRamGb:
+    def test_parses_sysctl_bytes(self):
+        cli = _import_cli()
+        fn = getattr(cli, "_detect_ram_gb", None)
+        if fn is None:
+            pytest.skip("_detect_ram_gb not found")
+        with patch("subprocess.check_output", return_value=b"17179869184\n"):
+            result = fn()
+        assert abs(result - 17.179869184) < 0.01
+
+    def test_returns_zero_on_subprocess_error(self):
+        cli = _import_cli()
+        fn = getattr(cli, "_detect_ram_gb", None)
+        if fn is None:
+            pytest.skip("_detect_ram_gb not found")
+        import subprocess
+        with patch("subprocess.check_output", side_effect=subprocess.CalledProcessError(1, "sysctl")):
+            result = fn()
+        assert result == 0.0
+
+    def test_returns_zero_on_generic_exception(self):
+        cli = _import_cli()
+        fn = getattr(cli, "_detect_ram_gb", None)
+        if fn is None:
+            pytest.skip("_detect_ram_gb not found")
+        with patch("subprocess.check_output", side_effect=FileNotFoundError("sysctl not found")):
+            result = fn()
+        assert result == 0.0
+
+    def test_returns_float(self):
+        cli = _import_cli()
+        fn = getattr(cli, "_detect_ram_gb", None)
+        if fn is None:
+            pytest.skip("_detect_ram_gb not found")
+        with patch("subprocess.check_output", return_value=b"8589934592\n"):
+            result = fn()
+        assert isinstance(result, float)
+
+
+# ── _recommend_model ──────────────────────────────────────────────────────────
+
+class TestRecommendModel:
+    def _fn(self):
+        cli = _import_cli()
+        fn = getattr(cli, "_recommend_model", None)
+        if fn is None:
+            pytest.skip("_recommend_model not found")
+        return fn
+
+    def test_under_16gb(self):
+        fn = self._fn()
+        assert fn(8.0) == "qwen3:1.7b"
+
+    def test_exactly_16gb(self):
+        fn = self._fn()
+        assert fn(16.0) == "qwen3:8b"
+
+    def test_between_16_and_32(self):
+        fn = self._fn()
+        assert fn(24.0) == "qwen3:8b"
+
+    def test_exactly_32gb(self):
+        fn = self._fn()
+        assert fn(32.0) == "qwen3:14b"
+
+    def test_between_32_and_64(self):
+        fn = self._fn()
+        assert fn(48.0) == "qwen3:14b"
+
+    def test_exactly_64gb(self):
+        fn = self._fn()
+        assert fn(64.0) == "qwen3:32b"
+
+    def test_above_64gb(self):
+        fn = self._fn()
+        assert fn(128.0) == "qwen3:32b"
+
+    def test_zero_ram(self):
+        fn = self._fn()
+        assert fn(0.0) == "qwen3:1.7b"
+
+    def test_returns_string(self):
+        fn = self._fn()
+        result = fn(16.0)
+        assert isinstance(result, str)
+        assert ":" in result  # catalog format  <name>:<tag>
+
+
+# ── cmd_doctor --report ───────────────────────────────────────────────────────
+
+class TestCmdDoctorReport:
+    def test_report_creates_json_file(self, tmp_path, monkeypatch):
+        cli = _import_cli()
+        fn = getattr(cli, "cmd_doctor", None)
+        if fn is None:
+            pytest.skip("cmd_doctor not found")
+        monkeypatch.setattr(
+            "pathlib.Path.home", lambda: tmp_path
+        )
+        ns = argparse.Namespace(report=True)
+        try:
+            fn(ns)
+        except SystemExit:
+            pass
+        reports = list(tmp_path.glob("**/*.json"))
+        assert len(reports) >= 1, "Expected at least one JSON report file"
+
+    def test_report_json_has_required_keys(self, tmp_path, monkeypatch):
+        cli = _import_cli()
+        fn = getattr(cli, "cmd_doctor", None)
+        if fn is None:
+            pytest.skip("cmd_doctor not found")
+        import json as _json
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        ns = argparse.Namespace(report=True)
+        try:
+            fn(ns)
+        except SystemExit:
+            pass
+        reports = list(tmp_path.glob("**/*.json"))
+        if not reports:
+            pytest.skip("No report file generated")
+        data = _json.loads(reports[0].read_text())
+        assert "checks" in data
+        assert isinstance(data["checks"], list)
+
+    def test_report_false_does_not_create_file(self, tmp_path, monkeypatch):
+        cli = _import_cli()
+        fn = getattr(cli, "cmd_doctor", None)
+        if fn is None:
+            pytest.skip("cmd_doctor not found")
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        ns = argparse.Namespace(report=False)
+        before = set(tmp_path.glob("**/*.json"))
+        try:
+            fn(ns)
+        except SystemExit:
+            pass
+        after = set(tmp_path.glob("**/*.json"))
+        assert after == before, "No JSON files should be created when report=False"

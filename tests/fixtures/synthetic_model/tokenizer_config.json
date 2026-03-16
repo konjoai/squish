@@ -1,0 +1,8 @@
+{
+  "model_type": "qwen2",
+  "tokenizer_class": "Qwen2Tokenizer",
+  "bos_token": "<|endoftext|>",
+  "eos_token": "<|endoftext|>",
+  "pad_token": "<|endoftext|>",
+  "unk_token": "<|endoftext|>"
+}

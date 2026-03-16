@@ -26,6 +26,8 @@ squish_quant_rs/target/
 models/
 *.npy
 *.safetensors
+# Exception: tiny test fixtures (< 1 MB, committed for deterministic CI)
+!tests/fixtures/**/*.safetensors
 squish_4bit/
 squish_int8/
 squish_fp16/
