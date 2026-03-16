@@ -828,7 +828,7 @@ def pull(  # pragma: no cover
         "--format",    "npy-dir",
     ]
     if int4:
-        cmd.extend(["--int4", "--super-weight", "--outlier-threshold", "12.0"])
+        cmd.extend(["--int4", "--super-weight"])
     if verbose:
         cmd.append("--verbose")
 

@@ -5,23 +5,23 @@
   "num_fewshot": 0,
   "results": {
     "arc_easy": {
-      "acc": 0.735,
-      "stderr": 0.0313,
+      "acc": 0.715,
+      "stderr": 0.032,
       "metric": "acc_norm"
     },
     "hellaswag": {
-      "acc": 0.63,
-      "stderr": 0.0342,
+      "acc": 0.56,
+      "stderr": 0.0352,
       "metric": "acc_norm"
     },
     "piqa": {
-      "acc": 0.765,
-      "stderr": 0.0301,
+      "acc": 0.775,
+      "stderr": 0.0296,
       "metric": "acc_norm"
     },
     "winogrande": {
-      "acc": 0.66,
-      "stderr": 0.0336,
+      "acc": 0.63,
+      "stderr": 0.0342,
       "metric": "acc"
     }
   }
