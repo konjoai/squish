@@ -62,7 +62,7 @@ import numpy as np
 def _probe_metal_fusion() -> bool:
     """Return True only when MLX 0.18+ ``mx.metal.kernel`` is available."""
     try:
-        import mlx.core as mx  # type: ignore[import]
+        import mlx.core as mx
         return hasattr(mx, "metal") and hasattr(mx.metal, "kernel")
     except Exception:  # noqa: BLE001
         return False

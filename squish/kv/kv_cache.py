@@ -52,7 +52,7 @@ import numpy as np
 # Lazy MLX import (module may be imported without Metal available, e.g. tests)
 # ---------------------------------------------------------------------------
 try:
-    import mlx.core as _mlx  # type: ignore[import]
+    import mlx.core as _mlx
 except ImportError:  # pragma: no cover
     _mlx = None  # will raise at runtime if Metal code is actually called
 
@@ -1393,7 +1393,7 @@ class HadamardKVCache(QuantizedKVCache):
 
     # ── Override update to pre-rotate before quantization ────────────────────
 
-    def update(   # type: ignore[override]
+    def update(
         self, layer_idx: int, key_np: np.ndarray, value_np: np.ndarray
     ) -> None:
         """

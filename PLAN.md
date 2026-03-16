@@ -1891,7 +1891,7 @@ deepseek-coder-v2-lite  [MoE: 16B total / 2.4B active]  INT4: 3.3 GB  ✓ agent-
 **Phase 14 verification checklist:**
 - [ ] `squish serve --agent --model deepseek-v2-lite` starts without error
 - [ ] `bench_moe_lookahead.py` shows ≥ 10% TPS improvement vs no-lookahead at 65% hit rate
-- [ ] `squish models` correctly displays `[MoE]` badge for DeepSeek-Coder-V2-Lite and Qwen1.5-MoE
+- [x] `squish models` correctly displays `[MoE]` badge for DeepSeek-Coder-V2-Lite and Qwen1.5-MoE
 - [x] Rolling hit-rate watchdog: if calibration data is unrepresentative and hit rate drops below 40%, lookahead silently disables without crashing the server
 
 ---

@@ -33,7 +33,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 _squish_quant = None
 try:
-    import squish_quant as _squish_quant  # type: ignore[import]
+    import squish_quant as _squish_quant
 except ImportError:  # pragma: no cover
     pass
 

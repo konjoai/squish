@@ -14,7 +14,8 @@ Actual API:
 from __future__ import annotations
 
 import argparse
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -140,6 +141,99 @@ class TestCmdModels:
             pass
         captured = capsys.readouterr()
         assert isinstance(captured.out + captured.err, str)
+
+    def test_moe_badge_shown_for_moe_model(self, tmp_path, capsys):
+        """cmd_models shows [MoE] badge when catalog entry has moe=True."""
+        cli = _import_cli()
+        fn = getattr(cli, "cmd_models", None)
+        if fn is None:
+            pytest.skip("cmd_models not found")
+
+        # Create a fake model directory whose name matches our mocked catalog entry
+        model_dir = tmp_path / "Qwen3-30B-A3B-bf16"
+        model_dir.mkdir()
+
+        # Build a minimal fake CatalogEntry-like object
+        fake_entry = MagicMock()
+        fake_entry.dir_name = "Qwen3-30B-A3B-bf16"
+        fake_entry.moe = True
+        fake_entry.active_params_b = 3.0
+        fake_entry.params = "30B"
+
+        ns = argparse.Namespace()
+        with patch.object(cli, "_MODELS_DIR", tmp_path), \
+             patch("squish.catalog.list_catalog", return_value=[fake_entry]):
+            fn(ns)
+
+        captured = capsys.readouterr()
+        assert "[MoE" in captured.out
+
+    def test_no_moe_badge_for_regular_model(self, tmp_path, capsys):
+        """cmd_models does not show [MoE] for non-MoE catalog entries."""
+        cli = _import_cli()
+        fn = getattr(cli, "cmd_models", None)
+        if fn is None:
+            pytest.skip("cmd_models not found")
+
+        model_dir = tmp_path / "Qwen2.5-7B-Instruct-4bit"
+        model_dir.mkdir()
+
+        fake_entry = MagicMock()
+        fake_entry.dir_name = "Qwen2.5-7B-Instruct-4bit"
+        fake_entry.moe = False
+        fake_entry.active_params_b = None
+        fake_entry.params = "7B"
+
+        ns = argparse.Namespace()
+        with patch.object(cli, "_MODELS_DIR", tmp_path), \
+             patch("squish.catalog.list_catalog", return_value=[fake_entry]):
+            fn(ns)
+
+        captured = capsys.readouterr()
+        assert "[MoE" not in captured.out
+
+    def test_moe_badge_without_active_params(self, tmp_path, capsys):
+        """[MoE] badge shown without active-params when active_params_b is None."""
+        cli = _import_cli()
+        fn = getattr(cli, "cmd_models", None)
+        if fn is None:
+            pytest.skip("cmd_models not found")
+
+        model_dir = tmp_path / "SomeMoE-bf16"
+        model_dir.mkdir()
+
+        fake_entry = MagicMock()
+        fake_entry.dir_name = "SomeMoE-bf16"
+        fake_entry.moe = True
+        fake_entry.active_params_b = None
+        fake_entry.params = "60B"
+
+        ns = argparse.Namespace()
+        with patch.object(cli, "_MODELS_DIR", tmp_path), \
+             patch("squish.catalog.list_catalog", return_value=[fake_entry]):
+            fn(ns)
+
+        captured = capsys.readouterr()
+        assert "[MoE]" in captured.out
+
+    def test_catalog_failure_does_not_crash_models(self, tmp_path, capsys):
+        """If catalog import fails, cmd_models still works without badge."""
+        cli = _import_cli()
+        fn = getattr(cli, "cmd_models", None)
+        if fn is None:
+            pytest.skip("cmd_models not found")
+
+        model_dir = tmp_path / "some-model"
+        model_dir.mkdir()
+
+        ns = argparse.Namespace()
+        with patch.object(cli, "_MODELS_DIR", tmp_path), \
+             patch("squish.catalog.list_catalog", side_effect=ImportError("no catalog")):
+            fn(ns)
+
+        captured = capsys.readouterr()
+        assert "some-model" in captured.out
+        assert "[MoE" not in captured.out
 
 
 # ── cmd_doctor ────────────────────────────────────────────────────────────────

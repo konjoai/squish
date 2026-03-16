@@ -225,6 +225,23 @@ _BUNDLED: list[dict] = [
          size_gb=64.0, squished_size_gb=17.1, params="32B", context=131072,
          tags=["reasoning", "large"], grammar_trigger="<tool_call>"),
 
+    # ── DeepSeek-Coder-V2-Lite (MoE) ─────────────────────────────────────────
+    dict(id="deepseek-coder:v2-lite", name="DeepSeek-Coder-V2-Lite (MoE)",
+         hf_mlx_repo="mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit-mlx",
+         size_gb=9.5, squished_size_gb=3.3, params="16B", context=163840,
+         tags=["moe", "code", "agent"],
+         notes="MoE — 16B total / 2.4B active params per token; coding-optimised",
+         moe=True, active_params_b=2.4, grammar_trigger="<tool_call>"),
+
+    # ── Qwen1.5-MoE ───────────────────────────────────────────────────────────
+    dict(id="qwen1.5-moe:a2.7b", name="Qwen1.5-MoE-A2.7B-Chat (MoE)",
+         hf_mlx_repo="mlx-community/Qwen1.5-MoE-A2.7B-Chat-4bit",
+         size_gb=8.2, squished_size_gb=3.1, params="14.3B", context=32768,
+         tags=["moe", "balanced"],
+         notes="MoE — 14.3B total / 2.7B active params per token",
+         moe=True, active_params_b=2.7),
+
+
     # ── Phi-4 ─────────────────────────────────────────────────────────────────
     dict(id="phi4:14b", name="Phi-4",
          hf_mlx_repo="mlx-community/phi-4-bf16",
@@ -524,7 +541,7 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
     otherwise raises ImportError with an install hint.
     """
     try:
-        from huggingface_hub import snapshot_download  # type: ignore[import]
+        from huggingface_hub import snapshot_download
         snapshot_download(
             repo_id=repo,
             local_dir=str(local_dir),
@@ -543,7 +560,7 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
                        token: str | None = None) -> Path:
     """Download a single file from a HuggingFace repo."""
     try:
-        from huggingface_hub import hf_hub_download  # type: ignore[import]
+        from huggingface_hub import hf_hub_download
         dest = hf_hub_download(
             repo_id=repo,
             filename=filename,
@@ -561,7 +578,7 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
 def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma: no cover
     """Return all filenames in a HuggingFace repo (returns [] on error)."""
     try:
-        from huggingface_hub import list_repo_files  # type: ignore[import]
+        from huggingface_hub import list_repo_files
         return list(list_repo_files(repo, token=token))
     except Exception:
         return []

@@ -69,7 +69,7 @@ except ImportError:  # pragma: no cover
     _FASTAPI = False
     Request = Any  # type: ignore[assignment,misc]
     Response = Any  # type: ignore[assignment,misc]
-    Query = Any  # type: ignore[assignment,misc]
+    Query = Any
 
 # ── Conversation store ───────────────────────────────────────────────────────
 # Keyed by the sender's E.164 phone number as returned by Meta (e.g. "15551234567")

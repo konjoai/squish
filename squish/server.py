@@ -1725,7 +1725,7 @@ if FastAPI is not None:
         allow_headers     = ["*"],
     )
 else:
-    app = _FakeApp()  # type: ignore[assignment]
+    app = _FakeApp()
 
 # ── Ollama compatibility layer (POST /api/chat etc.) ────────────────────────
 try:
@@ -3524,7 +3524,7 @@ Examples:
             )
             # PromptLookupDecoder needs the forward callable; defer full init to inference.
             # Store config now; decoder is instantiated on first generation call.
-            _prompt_lookup_decoder = _plcfg  # type: ignore[assignment]
+            _prompt_lookup_decoder = _plcfg
             _info("prompt-lookup", f"ngram_max={_plcfg.ngram_max}  max_speculative={_plcfg.max_speculative}")
         except Exception as _e:
             _warn(f"[prompt-lookup] Skipped: {_e}")

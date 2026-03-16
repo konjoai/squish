@@ -355,7 +355,7 @@ def patch_model(model) -> int:  # pragma: no cover
                         return down_proj(_fused(gate_proj(x), up_proj(x)))
                     return _orig(self, x)
 
-                mlp.__class__.__call__ = _patched_mlp_call  # type: ignore[method-assign]
+                mlp.__class__.__call__ = _patched_mlp_call
                 patched += 1
             except Exception:
                 pass
@@ -423,7 +423,7 @@ def patch_model_compiled_ffn(model, *, metal_fusion_kernels=None) -> int:
                             return dp(_mx.array(fused_np))
                         return _orig(self, x)
 
-                    mlp.__class__.__call__ = _metal_mlp  # type: ignore[method-assign]
+                    mlp.__class__.__call__ = _metal_mlp
                     patched += 1
                 except Exception:
                     pass

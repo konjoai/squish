@@ -113,7 +113,7 @@ class SquishSemanticCache:
         config: dict | None = None,
     ) -> None:
         try:
-            import sqlite_vec as _sqlite_vec  # type: ignore[import]
+            import sqlite_vec as _sqlite_vec
             self._sqlite_vec = _sqlite_vec
         except ImportError as exc:
             raise ImportError(

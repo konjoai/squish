@@ -205,7 +205,7 @@ class QuantAwareCalibrator:
         if self._cfg.method in ("percentile", "mse"):
             self._percentile_buf.append(abs_flat)
         # Accumulate sum of squares for MSE method.
-        self._sum_sq += (abs_flat ** 2).sum(axis=0)  # type: ignore[operator]
+        self._sum_sq += (abs_flat ** 2).sum(axis=0)
         self._n_samples += n
         self._n_batches += 1
 

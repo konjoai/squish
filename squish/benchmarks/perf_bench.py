@@ -316,7 +316,7 @@ def _cold_start_ttft_ms(
 
     health_url = f"http://127.0.0.1:{port}/health"
     chat_url = f"http://127.0.0.1:{port}/v1/chat/completions"
-    proc: subprocess.Popen | None = None  # type: ignore[type-arg]
+    proc: subprocess.Popen | None = None
 
     try:
         proc = subprocess.Popen(

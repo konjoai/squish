@@ -94,7 +94,7 @@ class PrefixPoolConfig:
             )
         if self.kv_n_heads is None:
             object.__setattr__(self, "kv_n_heads", self.n_heads)
-        elif self.kv_n_heads <= 0:  # type: ignore[operator]
+        elif self.kv_n_heads <= 0:
             raise ValueError(
                 f"kv_n_heads must be a positive integer, got {self.kv_n_heads}"
             )

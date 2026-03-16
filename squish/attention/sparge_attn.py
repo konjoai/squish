@@ -351,7 +351,7 @@ def patch_model_sparge_attn(model: Any, engine: SpargeAttnEngine) -> None:  # pr
         engine: Initialised :class:`SpargeAttnEngine` instance.
     """
     try:
-        model._sparge_engine = engine  # type: ignore[attr-defined]
+        model._sparge_engine = engine
     except (AttributeError, TypeError):
         pass
 
@@ -359,6 +359,6 @@ def patch_model_sparge_attn(model: Any, engine: SpargeAttnEngine) -> None:  # pr
 def unpatch_model_sparge_attn(model: Any) -> None:  # pragma: no cover
     """Remove the SpargeAttn annotation from *model*."""
     try:
-        del model._sparge_engine  # type: ignore[attr-defined]
+        del model._sparge_engine
     except AttributeError:
         pass
