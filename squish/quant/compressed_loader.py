@@ -552,7 +552,8 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
     actually touched when building the MLX array are paged in.
 
     Priority:
-      1. INT4 packed (``__q4.npy`` + ``__s4.npy``)  — 50 % disk vs INT8, Rust deq
+      1. Asymmetric INT4 (``__q4a.npy`` + ``__s4a.npy`` + ``__z4a.npy``) — Q4_K_M style
+      1b. Legacy symmetric INT4 (``__q4.npy`` + ``__s4.npy``) — backward compat
       2. INT8 quantized (``__q.npy`` + ``__s.npy``)  — Vectro / NumPy
       3. Passthrough float16 (``__pt.npy``)
 
@@ -562,7 +563,23 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
     """
     shape_path = tensor_dir / f"{sk}__shape.npy"
 
-    # ── Tier 0: INT4 nibble-packed (requires squish_quant Rust extension) ────
+    # ── Tier 0a: asymmetric INT4 nibble-packed (Q4_K_M style) ───────────────
+    q4a_path = tensor_dir / f"{sk}__q4a.npy"
+    s4a_path = tensor_dir / f"{sk}__s4a.npy"
+    z4a_path = tensor_dir / f"{sk}__z4a.npy"
+    if (_npy_exists(q4a_path) and _npy_exists(s4a_path) and _npy_exists(z4a_path)
+            and _squish_quant is not None):
+        packed      = np.ascontiguousarray(_load_npy_path(q4a_path), dtype=np.uint8)
+        scales      = np.ascontiguousarray(_load_npy_path(s4a_path), dtype=np.float32)
+        zero_points = np.ascontiguousarray(_load_npy_path(z4a_path), dtype=np.uint8)
+        original_shape = tuple(_load_npy_path(shape_path).tolist())
+        _gs = (packed.shape[1] * 2) // scales.shape[1]
+        arr_f32 = _squish_quant.dequantize_int4_asymmetric_grouped(
+            packed, scales, zero_points, _gs,
+        )
+        return arr_f32.reshape(original_shape)
+
+    # ── Tier 0b: symmetric INT4 nibble-packed (legacy format) ────────────────
     q4_path = tensor_dir / f"{sk}__q4.npy"
     s4_path = tensor_dir / f"{sk}__s4.npy"
     if _npy_exists(q4_path) and _npy_exists(s4_path) and _squish_quant is not None:
@@ -678,7 +695,8 @@ def save_int4_npy_dir(  # pragma: no cover
     then re-quantizes with INT4 grouped packing (50 % disk vs INT8).  Passthrough
     float16 tensors are skipped — they are already near-lossless.
 
-    Writes ``{sk}__q4.npy`` and ``{sk}__s4.npy`` alongside the existing files.
+    Writes ``{sk}__q4a.npy``, ``{sk}__s4a.npy``, and ``{sk}__z4a.npy`` alongside
+    the existing files.
     Touches ``.squish_int4_ready`` in the npy-dir root when complete.
 
     Requires ``squish_quant`` Rust extension.  Run once per model; subsequent
@@ -763,22 +781,23 @@ def save_int4_npy_dir(  # pragma: no cover
         )
         arr_f32 = reconstruct_embeddings(result_obj)     # (n_rows, n_cols)
 
-        # Re-quantize to INT4 nibble-packed
-        packed, scales4 = _squish_quant.quantize_int4_grouped(
+        # Re-quantize to asymmetric INT4 nibble-packed (Q4_K_M style)
+        packed, scales4, zero_points4 = _squish_quant.quantize_int4_asymmetric_grouped(
             np.ascontiguousarray(arr_f32, dtype=np.float32), group_size
         )
         del arr_f32
 
         bytes_before += q8.nbytes + s8.nbytes
-        bytes_after  += packed.nbytes + scales4.nbytes
+        bytes_after  += packed.nbytes + scales4.nbytes + zero_points4.nbytes
 
-        np.save(str(tensor_dir / f"{sk}__q4.npy"), packed)
-        np.save(str(tensor_dir / f"{sk}__s4.npy"), scales4)
+        np.save(str(tensor_dir / f"{sk}__q4a.npy"), packed)
+        np.save(str(tensor_dir / f"{sk}__s4a.npy"), scales4)
+        np.save(str(tensor_dir / f"{sk}__z4a.npy"), zero_points4)
         n_converted += 1
 
         if verbose:
             pct = packed.nbytes / q8.nbytes * 100
-            print(f"  [INT4] {sk}: {q8.shape} → packed{packed.shape}  "
+            print(f"  [Q4A] {sk}: {q8.shape} → packed{packed.shape}  "
                   f"({pct:.0f}% of INT8 size)")
 
     ready_flag.touch()
@@ -917,9 +936,12 @@ def _decomp_task(  # pragma: no cover
     Runs in a ThreadPoolExecutor thread — reconstruct_embeddings is a native
     C extension that releases the GIL, so threads run in true parallel.
     """
-    q4_path = tensor_dir / f"{sk}__q4.npy"
-    pt_path = tensor_dir / f"{sk}__pt.npy"
-    if _npy_exists(q4_path) and _squish_quant is not None:
+    q4a_path = tensor_dir / f"{sk}__q4a.npy"
+    q4_path  = tensor_dir / f"{sk}__q4.npy"
+    pt_path  = tensor_dir / f"{sk}__pt.npy"
+    if _npy_exists(q4a_path) and _squish_quant is not None:
+        mode = "Q4A"
+    elif _npy_exists(q4_path) and _squish_quant is not None:
         mode = "INT4"
     elif _npy_exists(pt_path):
         mode = "PT"
@@ -1094,11 +1116,11 @@ def load_from_npy_dir(  # pragma: no cover
     # Check whether INT4 packed files are available (written by save_int4_npy_dir)
     _int4_ready = (dir_path / _INT4_READY).exists() and _squish_quant is not None
     mode_label = f"pipeline ({workers}T)" if workers > 1 else "serial"
-    quant_label = "INT4 Rust" if _int4_ready else "INT8 Vectro"
+    quant_label = "Q4A asymmetric Rust" if _int4_ready else "INT8 Vectro"
     if verbose:
         print(f"  {len(base_keys)} tensors  →  {quant_label} decomp ({mode_label})")
         if _int4_ready:
-            print("  ⚡ INT4 nibble-packed cache active (50% disk vs INT8)")
+            print("  ⚡ Q4A asymmetric nibble-packed cache active (50% disk vs INT8)")
 
     # ── Prepare finalized cache directory ─────────────────────────────────────
     # Skip for large models that will be 4-bit quantized — the f16 cache
@@ -1138,8 +1160,10 @@ def load_from_npy_dir(  # pragma: no cover
             if cur_rss > rss_peak:
                 rss_peak = cur_rss
             # Determine mode label for verbose output
-            if _npy_exists(tensor_dir / f"{sk}__q4.npy") and _squish_quant is not None:
-                mode_str = "INT4"
+            if (_npy_exists(tensor_dir / f"{sk}__q4a.npy")
+                    or _npy_exists(tensor_dir / f"{sk}__q4.npy"))\
+                    and _squish_quant is not None:
+                mode_str = "Q4A"
                 n_q += 1
             elif _npy_exists(tensor_dir / f"{sk}__pt.npy"):
                 mode_str = "PT"

@@ -26,7 +26,7 @@ from typing import Any
 
 import numpy as np
 
-from squish.quant.quantizer import QuantizationResult, dequantize_int4, reconstruct_embeddings
+from squish.quant.quantizer import QuantizationResult, dequantize_int4, dequantize_int4_asymmetric, reconstruct_embeddings
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +230,9 @@ def _dequantize_npy(tensor_dir: Path, sk: str) -> np.ndarray:
     """
     pt_path      = tensor_dir / f"{sk}__pt.npy"
     q_path       = tensor_dir / f"{sk}__q.npy"
+    q4a_path     = tensor_dir / f"{sk}__q4a.npy"
+    s4a_path     = tensor_dir / f"{sk}__s4a.npy"
+    z4a_path     = tensor_dir / f"{sk}__z4a.npy"
     q4_path      = tensor_dir / f"{sk}__q4.npy"
     s4_path      = tensor_dir / f"{sk}__s4.npy"
     nf4_path     = tensor_dir / f"{sk}__nf4.npy"
@@ -331,7 +334,24 @@ def _dequantize_npy(tensor_dir: Path, sk: str) -> np.ndarray:
             return arr.reshape(original_shape)
         return arr
 
-    # ── INT4 nibble-packed (highest compression, requires squish_quant) ───────
+    # ── Asymmetric INT4 nibble-packed (Q4_K_M style, requires squish_quant) ──
+    q4a_exists = q4a_path.exists() or Path(str(q4a_path) + ".zst").exists()
+    s4a_exists = s4a_path.exists() or Path(str(s4a_path) + ".zst").exists()
+    z4a_exists = z4a_path.exists() or Path(str(z4a_path) + ".zst").exists()
+    if q4a_exists and s4a_exists and z4a_exists:
+        packed      = np.ascontiguousarray(_load_npy_path(q4a_path, mmap_mode=None), dtype=np.uint8)
+        scales      = np.ascontiguousarray(_load_npy_path(s4a_path, mmap_mode=None), dtype=np.float32)
+        zero_points = np.ascontiguousarray(_load_npy_path(z4a_path, mmap_mode=None), dtype=np.uint8)
+        n_cols_q4a   = packed.shape[1] * 2
+        gs_q4a       = n_cols_q4a // scales.shape[1]
+        shape_path = tensor_dir / f"{sk}__shape.npy"
+        arr = dequantize_int4_asymmetric(packed, scales, zero_points, group_size=gs_q4a)
+        if shape_path.exists() or Path(str(shape_path) + ".zst").exists():
+            original_shape = tuple(int(x) for x in _load_npy_path(shape_path, mmap_mode=None).tolist())
+            return arr.reshape(original_shape)
+        return arr
+
+    # ── Symmetric INT4 nibble-packed (legacy, requires squish_quant) ─────────
     q4_exists = q4_path.exists() or Path(str(q4_path) + ".zst").exists()
     s4_exists = s4_path.exists() or Path(str(s4_path) + ".zst").exists()
     # Also check for DFloat11-compressed scales

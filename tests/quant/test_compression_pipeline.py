@@ -141,16 +141,24 @@ class TestDFloat11PassthroughRoundTrip:
 @pytest.mark.skipif(not _HAS_INT4, reason="squish_quant Rust extension not built")
 class TestINT4DFloat11ScalesRoundTrip:
     def test_int4_dfloat11_scales_round_trip(self):
+        """Asymmetric INT4 produces __q4a/__s4a/__z4a.
+        DFloat11 no longer compresses INT4 scales (zero_points are u8 = already compact);
+        passing use_dfloat11=True with use_int4=True is a no-op for INT4 tensors."""
         arr = RNG.standard_normal((16, 128)).astype(np.float32)
         with tempfile.TemporaryDirectory() as tmpdir:
             sub = quantize_tensor("w", arr, 20.0, [], use_int4=True, use_dfloat11=True)
-            # When dfloat11 is used with int4, __s4 is replaced by __s4_df11
-            assert "__s4_df11" in sub
-            assert "__s4" not in sub
+            # Asymmetric INT4 format: packed + scales + zero_points
+            assert "__q4a" in sub, f"Expected __q4a in {list(sub)}"
+            assert "__s4a" in sub, f"Expected __s4a in {list(sub)}"
+            assert "__z4a" in sub, f"Expected __z4a in {list(sub)}"
+            # DFloat11 scale compression is no longer applied to INT4 (zero_points are u8)
+            assert "__s4_df11" not in sub
+            assert "__s4"     not in sub
+            assert "__q4"     not in sub
             recon = _write_and_reload(sub, Path(tmpdir))
             snr = _snr_db(arr.reshape(recon.shape), recon)
-            # Direct FP32→INT4 path raises SNR floor
-            assert snr > 18.0, f"INT4+DFloat11 SNR={snr:.1f} dB too low"
+            # Asymmetric INT4 exceeds previous symmetric INT4 floor (~18 dB)
+            assert snr > 20.0, f"Asymmetric INT4 SNR={snr:.1f} dB too low"
 
     def test_int4_direct_fp32_path_better_than_int8_intermediate(self):
         """Direct FP32→INT4 should have strictly better SNR than old INT8→reconstruct→INT4."""
