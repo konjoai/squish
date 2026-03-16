@@ -38,11 +38,11 @@ export class SquishClient {
         const body = await this._get('/health');
         const parsed = JSON.parse(body);
         return {
-            loaded: parsed.status === 'ok' && (parsed.model != null),
+            loaded: parsed.loaded === true,
             model: parsed.model ?? undefined,
             tps: parsed.avg_tps ?? undefined,
             requests: parsed.requests ?? undefined,
-            uptime: parsed.uptime ?? undefined,
+            uptime: parsed.uptime_s ?? undefined,
         };
     }
 
@@ -63,11 +63,12 @@ export class SquishClient {
         messages: ChatMessage[],
         maxTokens: number,
         temperature: number,
+        model: string,
         onChunk: (chunk: ChatChunk) => void,
         onError: (err: Error) => void,
     ): void {
         const payload = JSON.stringify({
-            model: 'squish',
+            model,
             messages,
             stream: true,
             max_tokens: maxTokens,
@@ -88,6 +89,12 @@ export class SquishClient {
 
         const req = http.request(options, (res) => {
             let buffer = '';
+            let finished = false;
+            const emitDone = () => {
+                if (finished) { return; }
+                finished = true;
+                onChunk({ delta: '', done: true });
+            };
             res.setEncoding('utf8');
 
             res.on('data', (chunk: string) => {
@@ -102,7 +109,7 @@ export class SquishClient {
                     }
                     const data = trimmed.slice(5).trim();
                     if (data === '[DONE]') {
-                        onChunk({ delta: '', done: true });
+                        emitDone();
                         return;
                     }
                     try {
@@ -113,6 +120,7 @@ export class SquishClient {
                             parsed.choices?.[0]?.finish_reason ?? null;
                         const done = finishReason != null;
                         onChunk({ delta, done, finishReason });
+                        if (done) { finished = true; }
                     } catch {
                         // malformed SSE line — ignore
                     }
@@ -120,7 +128,7 @@ export class SquishClient {
             });
 
             res.on('end', () => {
-                onChunk({ delta: '', done: true });
+                emitDone();
             });
 
             res.on('error', onError);

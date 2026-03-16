@@ -66,6 +66,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const host: string = cfg.get('host', '127.0.0.1');
         const port: number = cfg.get('port', 11435);
         const apiKey: string = cfg.get('apiKey', 'squish');
+        const model: string = cfg.get('model', '7b');
         const maxTokens: number = cfg.get('maxTokens', 1024);
         const temperature: number = cfg.get('temperature', 0.7);
         const systemPrompt: string = cfg.get('systemPrompt', '');
@@ -91,6 +92,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             messages,
             maxTokens,
             temperature,
+            model,
             (chunk) => {
                 if (chunk.delta) {
                     assistantReply += chunk.delta;

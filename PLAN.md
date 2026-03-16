@@ -2341,3 +2341,55 @@ MIT license. OpenAI + Ollama drop-in compatible. Zero code changes to existing a
 | **Total** | | **8 new modules** (squish/ count: 188 → 196) |
 
 ---
+
+## ✅ v9.0.0 Public Beta Launch Integrations (2026-03-15/16)
+
+> Last updated: 2026-03-16
+
+### Session work completed
+
+#### Version alignment
+- [x] `squish/cli.py` — `version="squish 9.0.0"` (was 1.0.1)
+- [x] `squish/server.py` — `version = "9.0.0"`, `/health` endpoint returns `"version": "9.0.0"` field
+- [x] `Formula/squish.rb` — Rewritten: URL → v9.0.0, `livecheck` block, updated caveats, test → `squish 9.0.0`
+
+#### CLI UX improvements
+- [x] `squish run` smart defaults: RAM detection → model recommendation → auto-pull when no local models
+- [x] `squish run` Apple Silicon auto-agent: `--agent` enabled automatically on arm64
+- [x] `squish setup` interactive wizard: hardware detect → recommend → pull → optional server start
+- [x] `squish doctor --report`: tracks results in `_results[]`, dumps JSON to `~/.squish/doctor-report-<ts>.json`
+
+#### macOS menu bar app
+- [x] `apps/macos/SquishBar/` — SwiftUI `MenuBarExtra` app (macOS 13+)
+  - SPM with embedded Info.plist via linker `unsafeFlags`
+  - `SquishEngine.swift`: health polling every 5s, server spawn/kill, `@AppStorage` settings
+  - `SquishMenuView.swift`: model info, start/stop, settings link, open web chat
+  - `Makefile`: builds `.app` bundle via `swift build -c release`
+  - Swift build: `Build complete!` ✅
+
+#### Web chat UI polish
+- [x] Empty state: `<span id="es-model">` populated with first loaded model name
+- [x] `#first-run-tip` div shown when `sessions.length === 0`
+- [x] `loadModels()` auto-dismisses offline banner on reconnect
+
+#### WhatsApp + Signal integrations
+- [x] `squish/serving/whatsapp.py` — Meta Cloud API webhook: verify + message handler, conversation history, TwiML-free JSON reply
+- [x] Signal integration — `squish/serving/signal_bot.py`
+
+#### VS Code extension
+- [x] `media/icon.svg` — flask shape in squish brand violet (#8B5CF6)
+- [x] `src/squishClient.ts` — Fixed: `health()` uses `parsed.loaded === true`; `streamChat()` accepts explicit `model` param; `uptime_s` field name; `finished` guard prevents multiple `done: true` emissions
+- [x] `src/chatPanel.ts` — passes `model` config value to `streamChat()`
+- [x] `__mocks__/vscode.ts` — Full VS Code API mock for Jest
+- [x] `__tests__/squishClient.test.ts` — 10 tests
+- [x] `__tests__/serverManager.test.ts` — 9 tests
+- [x] `__tests__/chatPanel.test.ts` — 7 tests
+- [x] **26/26 tests passing, TypeScript compiles clean**
+
+### Test counts
+| Scope | Tests |
+|-------|------:|
+| VS Code extension (Jest) | 26 |
+| Python test suite | 7 194+ |
+
+---

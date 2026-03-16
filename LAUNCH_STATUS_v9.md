@@ -1,7 +1,20 @@
 # Squish v9.0.0 Launch: Completed Tasks & Next Steps
 
-**Date:** 2026-03-12  
-**Status:** Ready for Phase 3+4 (Hardware Validation & Community Publication)
+**Date:** 2026-03-12 (initial) / 2026-03-16 (session 2 additions)
+**Status:** Phase 3+4 hardware validation + community publication pending; all software complete
+
+---
+
+## Session 2 Additions (2026-03-15/16) ✅
+
+| Area | Deliverable | Status |
+|------|-------------|--------|
+| Version alignment | `cli.py` 9.0.0, `server.py` 9.0.0, `/health` version field | ✅ |
+| CLI UX | `squish setup` wizard, `squish run` smart auto-pull, `squish doctor --report` | ✅ |
+| macOS app | SquishBar SwiftUI menu bar app (`apps/macos/SquishBar/`) | ✅ |
+| Web chat | Empty-state model name, first-run tip, offline banner auto-dismiss | ✅ |
+| Integrations | WhatsApp Meta Cloud API, Signal bot | ✅ |
+| VS Code extension | icon.svg, squishClient fixes, 26 Jest tests passing, clean compile | ✅ |
 
 ---
 
