@@ -218,7 +218,13 @@
       <div id="empty-state">
         <div class="es-icon">⚗️</div>
         <h2>What can I help with?</h2>
-        <p>Squish · fully local · private · fast</p>
+        <p><span id="es-model">Squish</span> · fully local · private · fast</p>
+        <div id="first-run-tip" style="display:none;margin-top:6px;padding:8px 16px;
+          background:var(--surface2);border:1px solid var(--border);border-radius:10px;
+          font-size:12px;color:var(--text-dim);text-align:center;opacity:1;">
+          First time? Type a message below — or run <code style="background:var(--bg);
+          padding:1px 5px;border-radius:4px;font-size:11px;">squish setup</code> in your terminal.
+        </div>
         <div class="tag-row">
           <div class="tag" onclick="fillInput('Explain how vector embeddings work')">Vector embeddings</div>
           <div class="tag" onclick="fillInput('Write a Python async HTTP client')">Python client</div>
@@ -350,6 +356,12 @@ async function loadModels() {
       o.value = m.id; o.textContent = m.id;
       sel.appendChild(o);
     }
+    // Update empty-state model hint
+    const esModel = document.getElementById("es-model");
+    if (esModel && d.data.length > 0) esModel.textContent = d.data[0].id;
+    // Remove offline banner if visible
+    const ob = document.getElementById("offline-banner");
+    if (ob) ob.remove();
   } catch {
     dot.className = "err";
     sel.innerHTML = `<option value="">Offline</option>`;
@@ -650,7 +662,7 @@ document.getElementById("settings-panel").addEventListener("click", e => {
   if (e.target === e.currentTarget) closeSettings();
 });
 
-// ── Init ──────────────────────────────────────────────────────────────────── 
+// ── Init ────────────────────────────────────────────────────────────────────
 (async () => {
   // Restore saved API key into the settings input
   const apikeyEl = document.getElementById("s-apikey");
@@ -662,6 +674,10 @@ document.getElementById("settings-panel").addEventListener("click", e => {
     activeIdx = 0;
     renderSidebar();
     renderMessages();
+  } else {
+    // First-run: show helpful tip in the empty state
+    const tip = document.getElementById("first-run-tip");
+    if (tip) tip.style.display = "block";
   }
   // Refresh server status every 30s
   setInterval(loadModels, 30_000);
