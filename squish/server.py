@@ -2937,18 +2937,44 @@ Examples:
         ),
     )
 
-    # ── WhatsApp / Twilio integration ────────────────────────────────────────
+    # ── WhatsApp / Meta Cloud API integration ────────────────────────────────
     ap.add_argument("--whatsapp", action="store_true", default=False,
-                    help="Enable WhatsApp webhook endpoints at /webhook/whatsapp. "
-                         "Requires a publicly reachable URL (e.g. ngrok) and Twilio credentials.")
-    ap.add_argument("--twilio-account-sid", default="",
-                    help="Twilio Account SID (or TWILIO_ACCOUNT_SID env var).")
-    ap.add_argument("--twilio-auth-token", default="",
-                    help="Twilio Auth Token for HMAC-SHA1 signature validation "
-                         "(or TWILIO_AUTH_TOKEN env var). "
-                         "When omitted, signature validation is skipped.")
+                    help="Enable WhatsApp webhook endpoints at /webhook/whatsapp "
+                         "using the Meta (WhatsApp Business) Cloud API. "
+                         "The server must be publicly reachable via a reverse proxy "
+                         "(Caddy/nginx on a VPS) or Tailscale Funnel. "
+                         "No extra Python packages required.")
+    ap.add_argument("--whatsapp-verify-token", default="",
+                    help="Verify token you set in the Meta Developer Dashboard "
+                         "to confirm webhook ownership. "
+                         "Also readable from WHATSAPP_VERIFY_TOKEN env var.")
+    ap.add_argument("--whatsapp-app-secret", default="",
+                    help="Meta App Secret for HMAC-SHA256 webhook signature validation "
+                         "(App Settings → Basic in the Meta Developer Dashboard). "
+                         "Also readable from WHATSAPP_APP_SECRET env var.")
+    ap.add_argument("--whatsapp-access-token", default="",
+                    help="Meta access token for sending replies via the Graph API "
+                         "(WhatsApp → API Setup in the Meta Developer Dashboard). "
+                         "Also readable from WHATSAPP_ACCESS_TOKEN env var.")
+    ap.add_argument("--whatsapp-phone-number-id", default="",
+                    help="Meta Phone Number ID (WhatsApp → API Setup). "
+                         "Also readable from WHATSAPP_PHONE_NUMBER_ID env var.")
     ap.add_argument("--system-prompt", default="",
-                    help="Custom system prompt injected at the start of every WhatsApp session.")
+                    help="Custom system prompt injected at the start of every "
+                         "WhatsApp or Signal session.")
+    # ── Signal / signal-cli integration ───────────────────────────────────────
+    ap.add_argument("--signal", action="store_true", default=False,
+                    help="Enable Signal bot via a running signal-cli daemon. "
+                         "Requires --signal-account and a signal-cli daemon listening "
+                         "on --signal-socket (no internet tunnel needed — runs entirely "
+                         "on-device or within your private network).")
+    ap.add_argument("--signal-account", default="",
+                    help="E.164 phone number registered in signal-cli "
+                         "(e.g. +15551234567). Also readable from SIGNAL_ACCOUNT env var.")
+    ap.add_argument("--signal-socket", default="127.0.0.1:7583",
+                    help="signal-cli JSON-RPC daemon address: "
+                         "host:port (e.g. 127.0.0.1:7583) or UNIX socket path "
+                         "(e.g. /tmp/signal-cli.sock). Default: 127.0.0.1:7583.")
 
     args = ap.parse_args()
 
@@ -3955,15 +3981,37 @@ Examples:
             import os as _os
             _mount_whatsapp(
                 app,
-                get_state     = lambda: _state,
-                get_generate  = lambda: _generate_tokens,
-                get_tokenizer = lambda: _state.tokenizer,
-                account_sid   = args.twilio_account_sid or _os.environ.get("TWILIO_ACCOUNT_SID", ""),
-                auth_token    = args.twilio_auth_token  or _os.environ.get("TWILIO_AUTH_TOKEN",  ""),
-                system_prompt = args.system_prompt or "",
+                get_state        = lambda: _state,
+                get_generate     = lambda: _generate_tokens,
+                get_tokenizer    = lambda: _state.tokenizer,
+                verify_token     = args.whatsapp_verify_token     or _os.environ.get("WHATSAPP_VERIFY_TOKEN",     ""),
+                app_secret       = args.whatsapp_app_secret       or _os.environ.get("WHATSAPP_APP_SECRET",       ""),
+                access_token     = args.whatsapp_access_token     or _os.environ.get("WHATSAPP_ACCESS_TOKEN",     ""),
+                phone_number_id  = args.whatsapp_phone_number_id  or _os.environ.get("WHATSAPP_PHONE_NUMBER_ID",  ""),
+                system_prompt    = args.system_prompt or "",
             )
         except Exception as _wa_err:
             print(f"[squish] WhatsApp mount failed: {_wa_err}", flush=True)
+
+    # ── Signal integration (--signal flag) ────────────────────────────────────
+    if getattr(args, "signal", False):
+        try:
+            try:
+                from .serving.signal_cli import mount_signal as _mount_signal
+            except ImportError:
+                from squish.serving.signal_cli import mount_signal as _mount_signal
+            import os as _os
+            _mount_signal(
+                app,
+                get_state     = lambda: _state,
+                get_generate  = lambda: _generate_tokens,
+                get_tokenizer = lambda: _state.tokenizer,
+                account       = args.signal_account or _os.environ.get("SIGNAL_ACCOUNT", ""),
+                socket_addr   = args.signal_socket or "127.0.0.1:7583",
+                system_prompt = args.system_prompt or "",
+            )
+        except Exception as _sg_err:
+            print(f"[squish] Signal mount failed: {_sg_err}", flush=True)
 
     uvicorn.run(
         app,

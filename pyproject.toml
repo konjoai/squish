@@ -50,9 +50,8 @@ grammar = [
 cache = [
     "sqlite-vec>=0.1",  # SquishSemanticCache sqlite-vec backend (Phase E3)
 ]
-whatsapp = [
-    "twilio>=8",        # Twilio SDK for HMAC-SHA1 webhook signature validation
-]
+whatsapp = []  # Meta WhatsApp Cloud API uses stdlib only (hmac + hashlib + urllib)
+               # signal-cli (Java binary) needed for --signal; no Python packages required
 eval = [
     "lm-eval>=0.4",
     "datasets>=2.18",
