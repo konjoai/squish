@@ -2937,6 +2937,19 @@ Examples:
         ),
     )
 
+    # ── WhatsApp / Twilio integration ────────────────────────────────────────
+    ap.add_argument("--whatsapp", action="store_true", default=False,
+                    help="Enable WhatsApp webhook endpoints at /webhook/whatsapp. "
+                         "Requires a publicly reachable URL (e.g. ngrok) and Twilio credentials.")
+    ap.add_argument("--twilio-account-sid", default="",
+                    help="Twilio Account SID (or TWILIO_ACCOUNT_SID env var).")
+    ap.add_argument("--twilio-auth-token", default="",
+                    help="Twilio Auth Token for HMAC-SHA1 signature validation "
+                         "(or TWILIO_AUTH_TOKEN env var). "
+                         "When omitted, signature validation is skipped.")
+    ap.add_argument("--system-prompt", default="",
+                    help="Custom system prompt injected at the start of every WhatsApp session.")
+
     args = ap.parse_args()
 
     # ── Expand --all-optimizations into individual flags ─────────────────────
@@ -3931,6 +3944,26 @@ Examples:
     print(f"    {_C.MG}OPENAI_BASE_URL{_C.R}=http://{args.host}:{args.port}/v1")
     print(f"    {_C.MG}OPENAI_API_KEY{_C.R}=squish")
     print()
+
+    # ── WhatsApp integration (--whatsapp flag) ──────────────────────────────
+    if getattr(args, "whatsapp", False):
+        try:
+            try:
+                from .serving.whatsapp import mount_whatsapp as _mount_whatsapp
+            except ImportError:
+                from squish.serving.whatsapp import mount_whatsapp as _mount_whatsapp
+            import os as _os
+            _mount_whatsapp(
+                app,
+                get_state     = lambda: _state,
+                get_generate  = lambda: _generate_tokens,
+                get_tokenizer = lambda: _state.tokenizer,
+                account_sid   = args.twilio_account_sid or _os.environ.get("TWILIO_ACCOUNT_SID", ""),
+                auth_token    = args.twilio_auth_token  or _os.environ.get("TWILIO_AUTH_TOKEN",  ""),
+                system_prompt = args.system_prompt or "",
+            )
+        except Exception as _wa_err:
+            print(f"[squish] WhatsApp mount failed: {_wa_err}", flush=True)
 
     uvicorn.run(
         app,

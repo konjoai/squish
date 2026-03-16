@@ -50,6 +50,9 @@ grammar = [
 cache = [
     "sqlite-vec>=0.1",  # SquishSemanticCache sqlite-vec backend (Phase E3)
 ]
+whatsapp = [
+    "twilio>=8",        # Twilio SDK for HMAC-SHA1 webhook signature validation
+]
 eval = [
     "lm-eval>=0.4",
     "datasets>=2.18",

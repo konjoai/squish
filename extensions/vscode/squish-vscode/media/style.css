@@ -1,0 +1,150 @@
+/* squish-vscode/media/style.css
+ *
+ * Uses VS Code CSS variables so the extension respects whatever theme the
+ * user has active (dark, light, high-contrast).
+ */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    font-family: var(--vscode-font-family, sans-serif);
+    font-size: var(--vscode-font-size, 13px);
+    color: var(--vscode-foreground);
+    background: var(--vscode-sideBar-background, transparent);
+    overflow: hidden;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+#toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+    flex-shrink: 0;
+}
+
+/* ── Messages ────────────────────────────────────────────────────────────── */
+
+#messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.message {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 100%;
+}
+
+.message .label {
+    font-size: 0.75em;
+    font-weight: 600;
+    opacity: 0.6;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.message .content {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.5;
+}
+
+.message.user .label {
+    color: var(--vscode-textLink-foreground, #4ec9b0);
+}
+
+.message.user .content {
+    background: var(--vscode-input-background, rgba(255,255,255,0.05));
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+
+.message.assistant .label {
+    color: var(--vscode-charts-purple, #b180d7);
+}
+
+.message.assistant .content {
+    padding: 6px 0;
+}
+
+.message.error .content {
+    color: var(--vscode-errorForeground, #f44747);
+}
+
+/* ── Input area ──────────────────────────────────────────────────────────── */
+
+#input-area {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+    flex-shrink: 0;
+}
+
+#user-input {
+    flex: 1;
+    resize: none;
+    padding: 6px 8px;
+    border: 1px solid var(--vscode-input-border, transparent);
+    border-radius: 4px;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    font-family: inherit;
+    font-size: inherit;
+    outline: none;
+    line-height: 1.4;
+}
+
+#user-input:focus {
+    border-color: var(--vscode-focusBorder, #007acc);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+button {
+    padding: 4px 10px;
+    border: 1px solid var(--vscode-button-border, transparent);
+    border-radius: 4px;
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #fff);
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+button:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#btn-clear {
+    background: var(--vscode-button-secondaryBackground, transparent);
+    color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+    border-color: var(--vscode-button-secondaryBorder, var(--vscode-foreground));
+    font-size: 0.8em;
+}
+
+#btn-clear:hover {
+    background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.1));
+}

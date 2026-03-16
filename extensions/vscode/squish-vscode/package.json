@@ -1,0 +1,120 @@
+{
+  "name": "squish-vscode",
+  "displayName": "Squish — Local AI Chat",
+  "description": "Chat with a locally running Squish model from VS Code. Streams tokens in real-time via the OpenAI-compatible API.",
+  "version": "0.1.0",
+  "publisher": "squishai",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/squishai/squish"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["AI", "Chat"],
+  "keywords": ["ai", "llm", "local", "mlx", "apple-silicon", "chat"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "squish.openChat",
+        "title": "Squish: Open Chat Panel"
+      },
+      {
+        "command": "squish.startServer",
+        "title": "Squish: Start Server"
+      },
+      {
+        "command": "squish.stopServer",
+        "title": "Squish: Stop Server"
+      },
+      {
+        "command": "squish.selectModel",
+        "title": "Squish: Select Model"
+      },
+      {
+        "command": "squish.clearHistory",
+        "title": "Squish: Clear Chat History"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "squish",
+          "title": "Squish AI",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "squish": [
+        {
+          "type": "webview",
+          "id": "squish.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Squish",
+      "properties": {
+        "squish.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Hostname or IP of the Squish server."
+        },
+        "squish.port": {
+          "type": "number",
+          "default": 11435,
+          "description": "Port of the Squish server."
+        },
+        "squish.apiKey": {
+          "type": "string",
+          "default": "squish",
+          "description": "Bearer token for the Squish server API."
+        },
+        "squish.model": {
+          "type": "string",
+          "default": "7b",
+          "description": "Model shorthand or path to start (e.g. 7b, 14b, 1.5b)."
+        },
+        "squish.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start the Squish server when VS Code opens."
+        },
+        "squish.maxTokens": {
+          "type": "number",
+          "default": 1024,
+          "description": "Maximum tokens per response."
+        },
+        "squish.temperature": {
+          "type": "number",
+          "default": 0.7,
+          "description": "Sampling temperature (0 = deterministic, 1 = creative)."
+        },
+        "squish.systemPrompt": {
+          "type": "string",
+          "default": "",
+          "description": "Optional system prompt prepended to every conversation."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.0"
+  }
+}
