@@ -15,6 +15,7 @@ Metrics collected
   batch_p99_ms        P99 end-to-end latency for N=8 concurrent requests (ms)
   batch_throughput_tps  Total TPS across all concurrent requests
   tokens_per_watt     Tokens/joule via macOS powermetrics (darwin only; 0.0 on other OS)
+  cold_start_ms       Time-to-first-token after a cold server spawn (0.0 if not configured)
 """
 from __future__ import annotations
 
@@ -44,7 +45,7 @@ __all__ = ["PerfBenchConfig", "PerfBenchRunner"]
 # Warm prompts used for latency / TPS measurement
 # ---------------------------------------------------------------------------
 
-_WARM_PROMPTS: List[str] = [
+_WARM_PROMPTS: list[str] = [
     "Explain the concept of entropy in one sentence.",
     "What is the capital of Japan?",
     "Write a Python one-liner that squares all even numbers in a list.",
@@ -66,6 +67,9 @@ class PerfBenchConfig:
     temperature: float = 0.0
     powermetrics_sample_ms: int = 500
     powermetrics_duration_s: float = 5.0
+    cold_start_cmd: list[str] = field(default_factory=list)
+    cold_start_port: int = 11436
+    cold_start_timeout_s: float = 60.0
 
 
 # ---------------------------------------------------------------------------
@@ -94,10 +98,10 @@ def _warm_ttft_and_tps(
     client: EngineClient,
     model: str,
     config: PerfBenchConfig,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Measure warm TTFT and TPS over _WARM_PROMPTS × warm_reps."""
-    ttfts: List[float] = []
-    tps_vals: List[float] = []
+    ttfts: list[float] = []
+    tps_vals: list[float] = []
 
     for rep in range(config.warm_reps):
         prompt = _WARM_PROMPTS[rep % len(_WARM_PROMPTS)]
@@ -155,10 +159,10 @@ def _batch_throughput(
     engine: EngineConfig,
     model: str,
     config: PerfBenchConfig,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Fire N concurrent requests and compute P50/P99 latency + batch TPS."""
 
-    async def _single(session_model: str) -> Dict[str, float]:
+    async def _single(session_model: str) -> dict[str, float]:
         prompt = _WARM_PROMPTS[0]
         payload = json.dumps({
             "model": session_model,
@@ -191,7 +195,7 @@ def _batch_throughput(
             elapsed_ms = (time.perf_counter() - t0) * 1000
             return {"latency_ms": elapsed_ms, "n_tokens": 0}
 
-    async def _run_all() -> List[Dict[str, float]]:
+    async def _run_all() -> list[dict[str, float]]:
         tasks = [_single(model) for _ in range(config.batch_concurrency)]
         return await asyncio.gather(*tasks)
 
@@ -287,6 +291,107 @@ def _tokens_per_watt(
     return round(tps / watts, 4)  # tokens per watt
 
 
+def _cold_start_ttft_ms(
+    cmd: list[str],
+    port: int,
+    max_tokens: int,
+    timeout_s: float = 60.0,
+) -> float:
+    """Spawn a fresh server process and measure time-to-first-SSE-token.
+
+    Starts the server given by *cmd*, waits until its ``/health`` endpoint
+    responds 200 (polling every 200 ms), fires a single streaming
+    ``/v1/chat/completions`` request, and returns elapsed ms from request
+    start to the first non-empty delta chunk.
+
+    Returns 0.0 if:
+    - *cmd* is empty (cold-start measurement disabled).
+    - The server does not become ready within *timeout_s* seconds.
+    - Any network or parse error occurs.
+
+    The spawned subprocess is always terminated in the ``finally`` block.
+    """
+    if not cmd:
+        return 0.0
+
+    health_url = f"http://127.0.0.1:{port}/health"
+    chat_url = f"http://127.0.0.1:{port}/v1/chat/completions"
+    proc: subprocess.Popen | None = None  # type: ignore[type-arg]
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+
+        # Poll /health until ready or timeout
+        deadline = time.perf_counter() + timeout_s
+        ready = False
+        while time.perf_counter() < deadline:
+            try:
+                req = urllib.request.Request(health_url, method="GET")
+                with urllib.request.urlopen(req, timeout=1):
+                    ready = True
+                    break
+            except Exception:  # noqa: BLE001
+                time.sleep(0.2)
+
+        if not ready:
+            return 0.0
+
+        # Send streaming request; measure time to first delta
+        payload = json.dumps({
+            "model": "default",
+            "messages": [{"role": "user", "content": _WARM_PROMPTS[0]}],
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "stream": True,
+        }).encode()
+        req = urllib.request.Request(
+            chat_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        t0 = time.perf_counter()
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                body = line[5:].strip()
+                if body == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(body)
+                    delta = (
+                        chunk.get("choices", [{}])[0]
+                        .get("delta", {})
+                        .get("content")
+                    )
+                    if delta:
+                        return round((time.perf_counter() - t0) * 1000, 2)
+                except Exception:  # noqa: BLE001
+                    continue
+
+        return 0.0
+
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+    finally:
+        if proc is not None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception:  # noqa: BLE001
+                try:
+                    proc.kill()
+                except Exception:  # noqa: BLE001
+                    pass
+
+
 # ---------------------------------------------------------------------------
 # PerfBenchRunner
 # ---------------------------------------------------------------------------
@@ -294,7 +399,7 @@ def _tokens_per_watt(
 class PerfBenchRunner(BenchmarkRunner):
     """Track E: performance benchmark — latency, throughput, efficiency."""
 
-    def __init__(self, config: Optional[PerfBenchConfig] = None) -> None:
+    def __init__(self, config: PerfBenchConfig | None = None) -> None:
         self._config = config or PerfBenchConfig()
 
     @property
@@ -306,7 +411,7 @@ class PerfBenchRunner(BenchmarkRunner):
         engine: EngineConfig,
         model: str,
         *,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> ResultRecord:
         """Run the performance track and return a ResultRecord.
 
@@ -338,12 +443,21 @@ class PerfBenchRunner(BenchmarkRunner):
         # Tokens/watt (darwin only)
         tpw = _tokens_per_watt(client, model, config)
 
-        metrics: Dict[str, Any] = {
+        # Cold-start TTFT (only if cold_start_cmd is configured)
+        cold_ms = _cold_start_ttft_ms(
+            config.cold_start_cmd,
+            config.cold_start_port,
+            config.max_tokens,
+            config.cold_start_timeout_s,
+        )
+
+        metrics: dict[str, Any] = {
             **warm,
             "ram_delta_mb":         round(ram_delta, 2),
             "long_ctx_tps":         lc_tps,
             **batch,
             "tokens_per_watt":      tpw,
+            "cold_start_ms":        cold_ms,
         }
 
         return ResultRecord(
