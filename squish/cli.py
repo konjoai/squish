@@ -572,12 +572,22 @@ def cmd_run(args):  # pragma: no cover
         cmd += ["--agent"]
     if getattr(args, "whatsapp", False):
         cmd += ["--whatsapp"]
-    if getattr(args, "twilio_account_sid", ""):
-        cmd += ["--twilio-account-sid", args.twilio_account_sid]
-    if getattr(args, "twilio_auth_token", ""):
-        cmd += ["--twilio-auth-token", args.twilio_auth_token]
+    if getattr(args, "whatsapp_verify_token", ""):
+        cmd += ["--whatsapp-verify-token", args.whatsapp_verify_token]
+    if getattr(args, "whatsapp_app_secret", ""):
+        cmd += ["--whatsapp-app-secret", args.whatsapp_app_secret]
+    if getattr(args, "whatsapp_access_token", ""):
+        cmd += ["--whatsapp-access-token", args.whatsapp_access_token]
+    if getattr(args, "whatsapp_phone_number_id", ""):
+        cmd += ["--whatsapp-phone-number-id", args.whatsapp_phone_number_id]
     if getattr(args, "system_prompt", ""):
         cmd += ["--system-prompt", args.system_prompt]
+    if getattr(args, "signal", False):
+        cmd += ["--signal"]
+    if getattr(args, "signal_account", ""):
+        cmd += ["--signal-account", args.signal_account]
+    if getattr(args, "signal_socket", "") and args.signal_socket != "127.0.0.1:7583":
+        cmd += ["--signal-socket", args.signal_socket]
 
     try:
         os.execv(sys.executable, cmd)  # replace this process — clean signals
@@ -2060,15 +2070,30 @@ Ollama drop-in:
                        help="[Experimental] Enable MoE expert lookahead router. "
                             "Automatically set when --agent is active and the model "
                             "is a MoE catalog entry (e.g. DeepSeek-Coder-V2-Lite).")
-    # ── WhatsApp / Twilio ────────────────────────────────────────────────────
+    # ── WhatsApp / Meta Cloud API ─────────────────────────────────────────────
     p_run.add_argument("--whatsapp", action="store_true", default=False,
-                       help="Enable WhatsApp webhook at /webhook/whatsapp (Twilio).")
-    p_run.add_argument("--twilio-account-sid", default="",
-                       help="Twilio Account SID (or TWILIO_ACCOUNT_SID env var).")
-    p_run.add_argument("--twilio-auth-token", default="",
-                       help="Twilio Auth Token (or TWILIO_AUTH_TOKEN env var).")
+                       help="Enable WhatsApp webhook at /webhook/whatsapp (Meta Cloud API).")
+    p_run.add_argument("--whatsapp-verify-token", default="",
+                       help="Webhook verify token set in Meta Developer Dashboard "
+                            "(or WHATSAPP_VERIFY_TOKEN env var).")
+    p_run.add_argument("--whatsapp-app-secret", default="",
+                       help="Meta App Secret for signature validation "
+                            "(or WHATSAPP_APP_SECRET env var).")
+    p_run.add_argument("--whatsapp-access-token", default="",
+                       help="Meta access token for sending replies "
+                            "(or WHATSAPP_ACCESS_TOKEN env var).")
+    p_run.add_argument("--whatsapp-phone-number-id", default="",
+                       help="Meta Phone Number ID "
+                            "(or WHATSAPP_PHONE_NUMBER_ID env var).")
     p_run.add_argument("--system-prompt", default="",
-                       help="Custom system prompt for the WhatsApp bot.")
+                       help="Custom system prompt for WhatsApp/Signal bot sessions.")
+    # ── Signal / signal-cli ───────────────────────────────────────────────────
+    p_run.add_argument("--signal", action="store_true", default=False,
+                       help="Enable Signal bot (requires signal-cli daemon).")
+    p_run.add_argument("--signal-account", default="",
+                       help="E.164 number registered in signal-cli (or SIGNAL_ACCOUNT env var).")
+    p_run.add_argument("--signal-socket", default="127.0.0.1:7583",
+                       help="signal-cli daemon address: host:port or UNIX socket path.")
     p_run.set_defaults(func=cmd_run)
 
     # ── serve (alias for run) ──
@@ -2100,15 +2125,28 @@ Ollama drop-in:
                          help="[Experimental] Enable MoE expert lookahead router. "
                               "Automatically set when --agent is active and the model "
                               "is a MoE catalog entry.")
-    # ── WhatsApp / Twilio ────────────────────────────────────────────────────
+    # ── WhatsApp / Meta Cloud API ─────────────────────────────────────────────
     p_serve.add_argument("--whatsapp", action="store_true", default=False,
-                         help="Enable WhatsApp webhook at /webhook/whatsapp (Twilio).")
-    p_serve.add_argument("--twilio-account-sid", default="",
-                         help="Twilio Account SID (or TWILIO_ACCOUNT_SID env var).")
-    p_serve.add_argument("--twilio-auth-token", default="",
-                         help="Twilio Auth Token (or TWILIO_AUTH_TOKEN env var).")
+                         help="Enable WhatsApp webhook at /webhook/whatsapp (Meta Cloud API).")
+    p_serve.add_argument("--whatsapp-verify-token", default="",
+                         help="Webhook verify token (or WHATSAPP_VERIFY_TOKEN env var).")
+    p_serve.add_argument("--whatsapp-app-secret", default="",
+                         help="Meta App Secret for signature validation "
+                              "(or WHATSAPP_APP_SECRET env var).")
+    p_serve.add_argument("--whatsapp-access-token", default="",
+                         help="Meta access token for sending replies "
+                              "(or WHATSAPP_ACCESS_TOKEN env var).")
+    p_serve.add_argument("--whatsapp-phone-number-id", default="",
+                         help="Meta Phone Number ID (or WHATSAPP_PHONE_NUMBER_ID env var).")
     p_serve.add_argument("--system-prompt", default="",
-                         help="Custom system prompt for the WhatsApp bot.")
+                         help="Custom system prompt for WhatsApp/Signal bot sessions.")
+    # ── Signal / signal-cli ───────────────────────────────────────────────────
+    p_serve.add_argument("--signal", action="store_true", default=False,
+                         help="Enable Signal bot (requires signal-cli daemon).")
+    p_serve.add_argument("--signal-account", default="",
+                         help="E.164 number registered in signal-cli (or SIGNAL_ACCOUNT env var).")
+    p_serve.add_argument("--signal-socket", default="127.0.0.1:7583",
+                         help="signal-cli daemon address: host:port or UNIX socket path.")
     p_serve.set_defaults(func=cmd_run)
 
     # ── chat ──

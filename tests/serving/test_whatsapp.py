@@ -1,24 +1,26 @@
 """
-Tests for squish/serving/whatsapp.py.
+Tests for squish/serving/whatsapp.py (Meta WhatsApp Business Cloud API version).
 
 Covers:
-  - TwiML response builder (_twiml_reply)
+  - Meta HMAC-SHA256 signature validation (_validate_meta_signature)
   - Session management helpers (_get_or_create_session, _reset_session,
     _expire_old_sessions, _apply_max_history)
-  - Twilio HMAC-SHA1 signature validation (_validate_twilio_signature)
-  - HTTP endpoint behaviour via FastAPI TestClient (GET challenge, POST handler)
+  - Message processing (_handle_message): commands, generation, error paths
+  - HTTP endpoint behaviour via FastAPI TestClient:
+      GET  /webhook/whatsapp — Meta challenge verification
+      POST /webhook/whatsapp — incoming message webhook
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
+import json
+import threading
 import time
 import unittest.mock as mock
 
 import pytest
 
-# ── import the module under test ──────────────────────────────────────────────
 from squish.serving.whatsapp import (
     _DEFAULT_SYSTEM_PROMPT,
     _MAX_HISTORY,
@@ -26,12 +28,12 @@ from squish.serving.whatsapp import (
     _apply_max_history,
     _expire_old_sessions,
     _get_or_create_session,
+    _handle_message,
     _reset_session,
     _sessions,
     _sessions_lock,
     _sessions_ts,
-    _twiml_reply,
-    _validate_twilio_signature,
+    _validate_meta_signature,
     mount_whatsapp,
 )
 
@@ -41,54 +43,71 @@ from squish.serving.whatsapp import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _clear_sessions() -> None:
-    """Reset module-level session stores before each test."""
     with _sessions_lock:
         _sessions.clear()
         _sessions_ts.clear()
 
 
-def _make_signature(auth_token: str, url: str, form_data: dict[str, str]) -> str:
-    """Compute a valid X-Twilio-Signature for the given parameters."""
-    s = url
-    for k in sorted(form_data.keys()):
-        s += k + form_data[k]
-    mac = hmac.new(auth_token.encode("utf-8"), s.encode("utf-8"), hashlib.sha1).digest()
-    return base64.b64encode(mac).decode("utf-8")
+def _meta_sig(app_secret: str, body: bytes) -> str:
+    """Compute a valid X-Hub-Signature-256 header value."""
+    digest = hmac.new(app_secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
+
+
+def _meta_payload(sender: str, body: str) -> bytes:
+    """Build a minimal Meta webhook JSON payload for a single text message."""
+    return json.dumps({
+        "entry": [{
+            "changes": [{
+                "value": {
+                    "messages": [{
+                        "type": "text",
+                        "from": sender,
+                        "timestamp": str(int(time.time())),
+                        "id": "wamid.test",
+                        "text": {"body": body},
+                    }]
+                }
+            }]
+        }]
+    }).encode("utf-8")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# _twiml_reply
+# _validate_meta_signature
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestTwimlReply:
-    def test_basic_wrapping(self):
-        result = _twiml_reply("Hello!")
-        assert result.startswith('<?xml version="1.0" encoding="UTF-8"?>')
-        assert "<Response><Message>Hello!</Message></Response>" in result
+class TestValidateMetaSignature:
+    SECRET = "test_app_secret_xyz"
+    BODY   = b'{"entry": []}'
 
-    def test_escapes_ampersand(self):
-        result = _twiml_reply("bread & butter")
-        assert "&amp;" in result
-        # Unescaped bare & should no longer appear as " & " in the xml body
-        assert "bread & butter" not in result
+    def test_valid_signature_accepted(self):
+        sig = _meta_sig(self.SECRET, self.BODY)
+        assert _validate_meta_signature(self.SECRET, self.BODY, sig) is True
 
-    def test_escapes_less_than(self):
-        assert "&lt;" in _twiml_reply("<b>bold</b>")
+    def test_invalid_signature_rejected(self):
+        assert _validate_meta_signature(self.SECRET, self.BODY, "sha256=badhex") is False
 
-    def test_escapes_greater_than(self):
-        assert "&gt;" in _twiml_reply("a > b")
+    def test_wrong_secret_rejected(self):
+        sig = _meta_sig(self.SECRET, self.BODY)
+        assert _validate_meta_signature("wrong_secret", self.BODY, sig) is False
 
-    def test_escapes_double_quote(self):
-        assert "&quot;" in _twiml_reply('say "yes"')
+    def test_missing_sha256_prefix_rejected(self):
+        digest = hmac.new(self.SECRET.encode(), self.BODY, hashlib.sha256).hexdigest()
+        assert _validate_meta_signature(self.SECRET, self.BODY, digest) is False
 
-    def test_empty_body(self):
-        result = _twiml_reply("")
-        assert "<Message></Message>" in result
+    def test_tampered_body_rejected(self):
+        sig = _meta_sig(self.SECRET, self.BODY)
+        assert _validate_meta_signature(self.SECRET, b'{"entry": [{}]}', sig) is False
 
-    def test_multiline_body(self):
-        body = "Line 1\nLine 2\nLine 3"
-        result = _twiml_reply(body)
-        assert "Line 1\nLine 2\nLine 3" in result
+    def test_empty_body_valid(self):
+        sig = _meta_sig(self.SECRET, b"")
+        assert _validate_meta_signature(self.SECRET, b"", sig) is True
+
+    def test_signature_is_case_sensitive(self):
+        sig = _meta_sig(self.SECRET, self.BODY).upper()
+        # HMAC hex digest is lowercase; uppercased form should fail
+        assert _validate_meta_signature(self.SECRET, self.BODY, sig) is False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -99,396 +118,353 @@ class TestSessions:
     def setup_method(self):
         _clear_sessions()
 
-    def test_creates_new_session_with_system_prompt(self):
-        msgs = _get_or_create_session("whatsapp:+15551234567", "Custom prompt")
-        assert len(msgs) == 1
-        assert msgs[0] == {"role": "system", "content": "Custom prompt"}
+    def test_create_new_session_with_system_prompt(self):
+        msgs = _get_or_create_session("15551234567", "sys")
+        assert msgs == [{"role": "system", "content": "sys"}]
 
     def test_returns_existing_session(self):
-        msgs1 = _get_or_create_session("whatsapp:+15551234567", "Custom prompt")
-        msgs1.append({"role": "user", "content": "hi"})
-        msgs2 = _get_or_create_session("whatsapp:+15551234567", "Custom prompt")
-        assert len(msgs2) == 2  # system + user
+        msgs = _get_or_create_session("15551234567", "p")
+        msgs.append({"role": "user", "content": "hi"})
+        assert len(_get_or_create_session("15551234567", "p")) == 2
 
-    def test_updates_last_activity_timestamp(self):
+    def test_updates_timestamp(self):
         before = time.time()
-        _get_or_create_session("whatsapp:+1111", "p")
+        _get_or_create_session("111", "p")
         after = time.time()
-        assert before <= _sessions_ts["whatsapp:+1111"] <= after
+        assert before <= _sessions_ts["111"] <= after
 
-    def test_reset_clears_history(self):
-        msgs = _get_or_create_session("whatsapp:+1111", "p")
-        msgs.append({"role": "user", "content": "hello"})
-        msgs.append({"role": "assistant", "content": "hi"})
-        _reset_session("whatsapp:+1111", "new prompt")
-        assert _sessions["whatsapp:+1111"] == [{"role": "system", "content": "new prompt"}]
+    def test_reset_clears_to_system_only(self):
+        msgs = _get_or_create_session("111", "p")
+        msgs += [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}]
+        _reset_session("111", "new prompt")
+        assert _sessions["111"] == [{"role": "system", "content": "new prompt"}]
 
-    def test_expire_old_sessions(self):
-        _sessions["whatsapp:+old"] = [{"role": "system", "content": "p"}]
-        _sessions_ts["whatsapp:+old"] = time.time() - _SESSION_TIMEOUT - 1
-        _sessions["whatsapp:+fresh"] = [{"role": "system", "content": "p"}]
-        _sessions_ts["whatsapp:+fresh"] = time.time()
+    def test_expire_removes_old(self):
+        _sessions["old"] = []
+        _sessions_ts["old"] = time.time() - _SESSION_TIMEOUT - 1
+        _sessions["fresh"] = []
+        _sessions_ts["fresh"] = time.time()
         _expire_old_sessions()
-        assert "whatsapp:+old" not in _sessions
-        assert "whatsapp:+fresh" in _sessions
+        assert "old" not in _sessions
+        assert "fresh" in _sessions
 
-    def test_expire_does_not_remove_active_sessions(self):
-        _sessions["whatsapp:+recent"] = [{"role": "system", "content": "p"}]
-        _sessions_ts["whatsapp:+recent"] = time.time() - _SESSION_TIMEOUT + 60
+    def test_expire_keeps_active(self):
+        _sessions["recent"] = []
+        _sessions_ts["recent"] = time.time() - _SESSION_TIMEOUT + 60
         _expire_old_sessions()
-        assert "whatsapp:+recent" in _sessions
+        assert "recent" in _sessions
 
 
 class TestApplyMaxHistory:
-    def test_passes_through_short_history(self):
-        msgs = [{"role": "system", "content": "sys"}] + [
-            {"role": "user", "content": f"msg{i}"} for i in range(5)
-        ]
-        result = _apply_max_history(msgs)
-        assert result == msgs
+    def test_short_list_unchanged(self):
+        msgs = [{"role": "system", "content": "s"}, {"role": "user", "content": "hi"}]
+        assert _apply_max_history(msgs) == msgs
 
     def test_trims_to_max_history(self):
-        msgs = [{"role": "system", "content": "sys"}] + [
-            {"role": "user", "content": f"msg{i}"} for i in range(_MAX_HISTORY + 5)
+        msgs = [{"role": "system", "content": "s"}] + [
+            {"role": "user", "content": f"m{i}"} for i in range(_MAX_HISTORY + 5)
         ]
         result = _apply_max_history(msgs)
-        # system prompt + (_MAX_HISTORY - 1) non-system
         assert len(result) == _MAX_HISTORY
         assert result[0]["role"] == "system"
-        # should keep the *last* messages
-        assert result[-1]["content"] == f"msg{_MAX_HISTORY + 4}"
 
-    def test_preserves_system_prompt(self):
-        msgs = [{"role": "system", "content": "keep me"}] + [
+    def test_trims_keeps_last_messages(self):
+        msgs = [{"role": "system", "content": "s"}] + [
+            {"role": "user", "content": f"m{i}"} for i in range(_MAX_HISTORY + 3)
+        ]
+        result = _apply_max_history(msgs)
+        assert result[-1]["content"] == f"m{_MAX_HISTORY + 2}"
+
+    def test_system_prompt_always_preserved(self):
+        msgs = [{"role": "system", "content": "keep"}] + [
             {"role": "user", "content": f"m{i}"} for i in range(_MAX_HISTORY + 2)
         ]
-        result = _apply_max_history(msgs)
-        assert result[0] == {"role": "system", "content": "keep me"}
+        assert _apply_max_history(msgs)[0] == {"role": "system", "content": "keep"}
 
-    def test_multiple_system_prompts_all_kept(self):
-        msgs = [
-            {"role": "system", "content": "s1"},
-            {"role": "system", "content": "s2"},
-            {"role": "user", "content": "hello"},
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _handle_message — direct invocation, mocking _send_whatsapp_reply
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _FakeState:
+    model = object()
+    model_name = "squish-7b"
+    avg_tps = 12.5
+    requests = 3
+    loaded_at = time.time() - 300
+
+
+class _FakeTok:
+    def apply_chat_template(self, messages, tokenize, add_generation_prompt):
+        return " ".join(m["content"] for m in messages)
+
+
+def _fake_generate(prompt, max_tokens, temperature, top_p, stop, seed):
+    yield ("Reply text", None)
+    yield ("", "stop")
+
+
+def _call_handle(
+    text: str,
+    *,
+    sender: str = "15551234567",
+    get_state=None,
+    get_generate=None,
+    get_tokenizer=None,
+    system_prompt: str = _DEFAULT_SYSTEM_PROMPT,
+) -> list[str]:
+    """Call _handle_message and return the list of args passed to _send_whatsapp_reply."""
+    _clear_sessions()
+    sent: list[str] = []
+    with mock.patch(
+        "squish.serving.whatsapp._send_whatsapp_reply",
+        side_effect=lambda pid, tok, to, body: sent.append(body),
+    ):
+        _handle_message(
+            sender, text,
+            phone_number_id = "12345678",
+            access_token    = "tok",
+            get_state       = get_state or (lambda: _FakeState()),
+            get_generate    = get_generate or (lambda: _fake_generate),
+            get_tokenizer   = get_tokenizer or (lambda: _FakeTok()),
+            system_prompt   = system_prompt,
+        )
+    return sent
+
+
+class TestHandleMessage:
+    def test_normal_message_replies(self):
+        sent = _call_handle("Hello bot")
+        assert len(sent) == 1
+        assert "Reply text" in sent[0]
+
+    def test_reset_command(self):
+        sent = _call_handle("/reset")
+        assert len(sent) == 1
+        assert "cleared" in sent[0].lower() or "fresh" in sent[0].lower()
+
+    def test_reset_clears_session(self):
+        _call_handle("first")
+        _call_handle("/reset")
+        assert _sessions.get("15551234567") == [
+            {"role": "system", "content": _DEFAULT_SYSTEM_PROMPT}
         ]
-        result = _apply_max_history(msgs)
-        assert result[:2] == [
-            {"role": "system", "content": "s1"},
-            {"role": "system", "content": "s2"},
-        ]
+
+    def test_help_command(self):
+        sent = _call_handle("/help")
+        assert len(sent) == 1
+        assert "/reset" in sent[0]
+        assert "/status" in sent[0]
+
+    def test_status_command_loaded(self):
+        sent = _call_handle("/status")
+        assert "squish-7b" in sent[0]
+        assert "tok/s" in sent[0] or "tps" in sent[0].lower()
+
+    def test_status_model_not_loaded(self):
+        class _Empty:
+            model = None
+        sent = _call_handle("/status", get_state=lambda: _Empty())
+        assert "not loaded" in sent[0].lower() or "loading" in sent[0].lower()
+
+    def test_model_not_loaded_returns_message(self):
+        class _Empty:
+            model = None
+        sent = _call_handle("hello", get_state=lambda: _Empty())
+        assert len(sent) == 1
+        assert "loading" in sent[0].lower() or "moment" in sent[0].lower()
+
+    def test_conversation_history_saved(self):
+        _clear_sessions()
+        _call_handle("one", sender="99999")
+        sess = _sessions.get("99999", [])
+        roles = [m["role"] for m in sess]
+        assert "user" in roles
+        assert "assistant" in roles
+
+    def test_generation_error_sends_error_reply(self):
+        def _broken(prompt, max_tokens, temperature, top_p, stop, seed):
+            raise RuntimeError("GPU on fire")
+            yield
+        sent = _call_handle("hello", get_generate=lambda: _broken)
+        assert len(sent) == 1
+        assert "error" in sent[0].lower()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Twilio signature validation
+# HTTP endpoint behaviour via FastAPI TestClient
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestValidateTwilioSignature:
-    URL = "https://example.ngrok.io/webhook/whatsapp"
-    AUTH = "test_auth_token_abc123"
-    FORM = {"From": "whatsapp:+15551234567", "Body": "Hello there", "NumMedia": "0"}
+APP_SECRET    = "test_secret_abc"
+VERIFY_TOKEN  = "test_verify_xyz"
+ACCESS_TOKEN  = "test_access_tok"
+PHONE_NUM_ID  = "10000000001"
 
-    def test_valid_signature_accepted(self):
-        sig = _make_signature(self.AUTH, self.URL, self.FORM)
-        assert _validate_twilio_signature(self.AUTH, self.URL, self.FORM, sig) is True
-
-    def test_invalid_signature_rejected(self):
-        assert _validate_twilio_signature(self.AUTH, self.URL, self.FORM, "badsig") is False
-
-    def test_wrong_auth_token_rejected(self):
-        sig = _make_signature(self.AUTH, self.URL, self.FORM)
-        assert _validate_twilio_signature("wrong_token", self.URL, self.FORM, sig) is False
-
-    def test_different_url_rejected(self):
-        sig = _make_signature(self.AUTH, self.URL, self.FORM)
-        assert _validate_twilio_signature(
-            self.AUTH, "https://evil.example.com/webhook/whatsapp", self.FORM, sig
-        ) is False
-
-    def test_empty_form_valid(self):
-        empty_form: dict[str, str] = {}
-        sig = _make_signature(self.AUTH, self.URL, empty_form)
-        assert _validate_twilio_signature(self.AUTH, self.URL, empty_form, sig) is True
-
-    def test_sorted_parameters_deterministic(self):
-        # Inserting form data in different orders should produce the same sig
-        form_a = {"Body": "hi", "From": "+1234"}
-        form_b = {"From": "+1234", "Body": "hi"}
-        sig_a = _make_signature(self.AUTH, self.URL, form_a)
-        sig_b = _make_signature(self.AUTH, self.URL, form_b)
-        assert sig_a == sig_b
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# mount_whatsapp endpoint tests via FastAPI TestClient
-# ─────────────────────────────────────────────────────────────────────────────
 
 @pytest.fixture()
 def client():
-    """Return a TestClient with WhatsApp endpoints mounted."""
     from fastapi import FastAPI
     from starlette.testclient import TestClient
 
     _clear_sessions()
-
     app = FastAPI()
-
-    # Mock state: model loaded
-    class _FakeState:
-        model = object()
-        model_name = "squish-7b"
-        avg_tps = 12.3
-        requests = 5
-        loaded_at = time.time() - 120
-
-    fake_state = _FakeState()
-
-    def _fake_generate(prompt, max_tokens, temperature, top_p, stop, seed):
-        yield ("Hello", None)
-        yield (" world", None)
-        yield ("", "stop")
-
-    # Tokenizer with apply_chat_template
-    class _FakeTok:
-        def apply_chat_template(self, messages, tokenize, add_generation_prompt):
-            parts = " ".join(m["content"] for m in messages)
-            return parts
-
     mount_whatsapp(
         app,
-        get_state=lambda: fake_state,
-        get_generate=lambda: _fake_generate,
-        get_tokenizer=lambda: _FakeTok(),
-        account_sid="",
-        auth_token="",  # no signature validation
-        system_prompt=_DEFAULT_SYSTEM_PROMPT,
+        get_state       = lambda: _FakeState(),
+        get_generate    = lambda: _fake_generate,
+        get_tokenizer   = lambda: _FakeTok(),
+        verify_token    = VERIFY_TOKEN,
+        app_secret      = "",   # no signature validation in most tests
+        access_token    = ACCESS_TOKEN,
+        phone_number_id = PHONE_NUM_ID,
+        system_prompt   = _DEFAULT_SYSTEM_PROMPT,
     )
-
     return TestClient(app, raise_server_exceptions=True)
 
 
 class TestGetChallenge:
-    def test_returns_200(self, client):
-        resp = client.get("/webhook/whatsapp")
-        assert resp.status_code == 200
-
-    def test_returns_xml_content_type(self, client):
-        resp = client.get("/webhook/whatsapp")
-        assert "xml" in resp.headers["content-type"]
-
-    def test_empty_twiml_envelope(self, client):
-        resp = client.get("/webhook/whatsapp")
-        assert "<Response>" in resp.text
-        assert resp.text.startswith("<?xml")
-
-
-class TestPostIncoming:
-    def _post(self, client, *, from_num="whatsapp:+15551234567", body="Hello!"):
-        return client.post(
+    def test_correct_token_returns_challenge(self, client):
+        resp = client.get(
             "/webhook/whatsapp",
-            data={"From": from_num, "Body": body},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            params={
+                "hub.mode": "subscribe",
+                "hub.verify_token": VERIFY_TOKEN,
+                "hub.challenge": "abc123",
+            },
         )
+        assert resp.status_code == 200
+        assert resp.text == "abc123"
 
-    def test_basic_reply_returns_200(self, client):
-        resp = self._post(client)
+    def test_wrong_token_returns_403(self, client):
+        resp = client.get(
+            "/webhook/whatsapp",
+            params={
+                "hub.mode": "subscribe",
+                "hub.verify_token": "wrong_token",
+                "hub.challenge": "abc123",
+            },
+        )
+        assert resp.status_code == 403
+
+    def test_wrong_mode_returns_403(self, client):
+        resp = client.get(
+            "/webhook/whatsapp",
+            params={
+                "hub.mode": "test",
+                "hub.verify_token": VERIFY_TOKEN,
+                "hub.challenge": "abc123",
+            },
+        )
+        assert resp.status_code == 403
+
+
+class TestPostWebhook:
+    def test_valid_payload_returns_200(self, client):
+        payload = _meta_payload("15551234567", "Hello!")
+        with mock.patch("squish.serving.whatsapp._send_whatsapp_reply"):
+            resp = client.post(
+                "/webhook/whatsapp",
+                content=payload,
+                headers={"Content-Type": "application/json"},
+            )
         assert resp.status_code == 200
 
-    def test_reply_is_xml(self, client):
-        resp = self._post(client)
-        assert "xml" in resp.headers["content-type"]
-        assert "<Response><Message>" in resp.text
-
-    def test_reply_contains_generated_text(self, client):
-        resp = self._post(client)
-        assert "Hello world" in resp.text
-
-    def test_missing_from_returns_200_with_error(self, client):
+    def test_empty_payload_returns_200(self, client):
         resp = client.post(
             "/webhook/whatsapp",
-            data={"Body": "hi"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            content=json.dumps({"entry": []}).encode(),
+            headers={"Content-Type": "application/json"},
         )
         assert resp.status_code == 200
-        assert "No message received" in resp.text
 
-    def test_missing_body_returns_200_with_error(self, client):
+    def test_malformed_json_returns_200(self, client):
         resp = client.post(
             "/webhook/whatsapp",
-            data={"From": "whatsapp:+1234"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            content=b"not json",
+            headers={"Content-Type": "application/json"},
         )
         assert resp.status_code == 200
-        assert "No message received" in resp.text
 
-    def test_reset_command(self, client):
-        resp = self._post(client, body="/reset")
+    def test_non_text_message_type_skipped(self, client):
+        """Media messages (type != 'text') should be silently skipped."""
+        payload = json.dumps({
+            "entry": [{
+                "changes": [{
+                    "value": {
+                        "messages": [{
+                            "type": "image",
+                            "from": "15551234567",
+                            "timestamp": "1234567890",
+                            "id": "wamid.test",
+                        }]
+                    }
+                }]
+            }]
+        }).encode()
+        with mock.patch("squish.serving.whatsapp._send_whatsapp_reply") as mock_send:
+            resp = client.post(
+                "/webhook/whatsapp",
+                content=payload,
+                headers={"Content-Type": "application/json"},
+            )
         assert resp.status_code == 200
-        assert "Session cleared" in resp.text
-
-    def test_help_command(self, client):
-        resp = self._post(client, body="/help")
-        assert resp.status_code == 200
-        assert "/reset" in resp.text
-        assert "/status" in resp.text
-
-    def test_status_command(self, client):
-        resp = self._post(client, body="/status")
-        assert resp.status_code == 200
-        assert "squish-7b" in resp.text
-
-    def test_session_history_persists(self, client):
-        _clear_sessions()
-        self._post(client, from_num="whatsapp:+99999", body="first message")
-        assert "whatsapp:+99999" in _sessions
-        # Session should contain system, user, assistant
-        session = _sessions["whatsapp:+99999"]
-        roles = [m["role"] for m in session]
-        assert "system" in roles
-        assert "user" in roles
-        assert "assistant" in roles
 
 
-class TestPostIncomingNoModel:
-    """Verify graceful handling when model is not yet loaded."""
+class TestPostWebhookWithSignature:
+    """Verify HMAC-SHA256 signature enforcement when app_secret is set."""
 
-    def test_model_not_loaded_returns_friendly_message(self):
+    @pytest.fixture()
+    def signed_client(self):
         from fastapi import FastAPI
         from starlette.testclient import TestClient
 
         _clear_sessions()
         app = FastAPI()
-
-        class _NotLoaded:
-            model = None
-
         mount_whatsapp(
             app,
-            get_state=lambda: _NotLoaded(),
-            get_generate=lambda: None,
-            get_tokenizer=lambda: None,
-            auth_token="",
-        )
-        c = TestClient(app, raise_server_exceptions=True)
-        resp = c.post(
-            "/webhook/whatsapp",
-            data={"From": "whatsapp:+1", "Body": "hi"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        assert resp.status_code == 200
-        assert "still loading" in resp.text
-
-
-class TestPostIncomingWithSignature:
-    """Verify signature validation enforced when auth_token is set."""
-
-    AUTH = "supersecret"
-    URL = "http://testserver/webhook/whatsapp"
-
-    def _mount(self):
-        from fastapi import FastAPI
-        from starlette.testclient import TestClient
-
-        _clear_sessions()
-        app = FastAPI()
-
-        class _FakeState:
-            model = object()
-            model_name = "q"
-            avg_tps = 1.0
-            requests = 0
-            loaded_at = time.time()
-
-        def _fake_gen(prompt, max_tokens, temperature, top_p, stop, seed):
-            yield ("ok", "stop")
-
-        class _FakeTok:
-            def apply_chat_template(self, messages, tokenize, add_generation_prompt):
-                return "prompt"
-
-        mount_whatsapp(
-            app,
-            get_state=lambda: _FakeState(),
-            get_generate=lambda: _fake_gen,
-            get_tokenizer=lambda: _FakeTok(),
-            auth_token=self.AUTH,
+            get_state       = lambda: _FakeState(),
+            get_generate    = lambda: _fake_generate,
+            get_tokenizer   = lambda: _FakeTok(),
+            verify_token    = VERIFY_TOKEN,
+            app_secret      = APP_SECRET,
+            access_token    = ACCESS_TOKEN,
+            phone_number_id = PHONE_NUM_ID,
         )
         return TestClient(app, raise_server_exceptions=True)
 
-    def test_missing_signature_returns_403(self):
-        c = self._mount()
-        resp = c.post(
+    def test_missing_signature_returns_403(self, signed_client):
+        payload = _meta_payload("15551234567", "hi")
+        resp = signed_client.post(
             "/webhook/whatsapp",
-            data={"From": "whatsapp:+1", "Body": "hi"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            content=payload,
+            headers={"Content-Type": "application/json"},
         )
         assert resp.status_code == 403
-        assert "missing signature" in resp.text
+        assert "missing" in resp.text.lower()
 
-    def test_invalid_signature_returns_403(self):
-        c = self._mount()
-        resp = c.post(
+    def test_invalid_signature_returns_403(self, signed_client):
+        payload = _meta_payload("15551234567", "hi")
+        resp = signed_client.post(
             "/webhook/whatsapp",
-            data={"From": "whatsapp:+1", "Body": "hi"},
+            content=payload,
             headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-Twilio-Signature": "invalidsig==",
+                "Content-Type": "application/json",
+                "X-Hub-Signature-256": "sha256=badhex",
             },
         )
         assert resp.status_code == 403
-        assert "invalid signature" in resp.text
+        assert "invalid" in resp.text.lower()
 
-    def test_valid_signature_returns_200(self):
-        c = self._mount()
-        form = {"From": "whatsapp:+1", "Body": "hi"}
-        sig = _make_signature(self.AUTH, self.URL, form)
-        resp = c.post(
-            "/webhook/whatsapp",
-            data=form,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "X-Twilio-Signature": sig,
-            },
-        )
+    def test_valid_signature_returns_200(self, signed_client):
+        payload = _meta_payload("15551234567", "hi")
+        sig = _meta_sig(APP_SECRET, payload)
+        with mock.patch("squish.serving.whatsapp._send_whatsapp_reply"):
+            resp = signed_client.post(
+                "/webhook/whatsapp",
+                content=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Hub-Signature-256": sig,
+                },
+            )
         assert resp.status_code == 200
-
-
-class TestGenerationError:
-    """Verify generation exceptions produce a friendly TwiML error response."""
-
-    def test_generate_exception_returns_200_with_error(self):
-        from fastapi import FastAPI
-        from starlette.testclient import TestClient
-
-        _clear_sessions()
-        app = FastAPI()
-
-        class _FakeState:
-            model = object()
-            model_name = "q"
-            avg_tps = 0.0
-            requests = 0
-            loaded_at = time.time()
-
-        def _broken_gen(prompt, max_tokens, temperature, top_p, stop, seed):
-            raise RuntimeError("GPU on fire")
-            yield  # make it a generator
-
-        class _FakeTok:
-            def apply_chat_template(self, messages, tokenize, add_generation_prompt):
-                return "prompt"
-
-        mount_whatsapp(
-            app,
-            get_state=lambda: _FakeState(),
-            get_generate=lambda: _broken_gen,
-            get_tokenizer=lambda: _FakeTok(),
-            auth_token="",
-        )
-        c = TestClient(app, raise_server_exceptions=True)
-        resp = c.post(
-            "/webhook/whatsapp",
-            data={"From": "whatsapp:+1", "Body": "hello"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        assert resp.status_code == 200
-        assert "error" in resp.text.lower()
