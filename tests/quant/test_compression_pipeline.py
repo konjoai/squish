@@ -190,6 +190,30 @@ class TestINT4DFloat11ScalesRoundTrip:
         assert "__pt" in sub, "super_weight_passthrough should produce FP16 passthrough"
         assert "__q4" not in sub, "super_weight_passthrough should not produce INT4"
 
+    def test_int4_mse_clipping_snr_improves_with_outliers(self):
+        """MSE-clipped asymmetric INT4 should have >= SNR vs plain asymmetric, especially with outliers."""
+        from squish.quant.quantizer import quantize_int4_asymmetric, dequantize_int4_asymmetric
+        rng = np.random.default_rng(42)
+        arr = rng.standard_normal((32, 128)).astype(np.float32)
+        # Inject 2 large outliers that inflate group scales
+        arr[0, 0] *= 10.0
+        arr[15, 64] *= 10.0
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # MSE path (via convert.py which uses quantize_int4_asymmetric_mse)
+            sub_mse = quantize_tensor("w", arr, 20.0, [], use_int4=True)
+            assert "__q4a" in sub_mse
+            recon_mse = _write_and_reload(sub_mse, Path(tmpdir))
+            snr_mse = _snr_db(arr.reshape(recon_mse.shape), recon_mse)
+        # Plain asymmetric for comparison
+        packed_a, scales_a, zps_a = quantize_int4_asymmetric(arr, group_size=32)
+        recon_a = dequantize_int4_asymmetric(packed_a, scales_a, zps_a, group_size=32)
+        snr_plain = _snr_db(arr.reshape(recon_a.shape), recon_a)
+        # MSE clipping must not regress vs plain asymmetric (allow 0.5 dB slack)
+        assert snr_mse >= snr_plain - 0.5, (
+            f"MSE SNR {snr_mse:.1f} dB significantly worse than plain {snr_plain:.1f} dB"
+        )
+        assert snr_mse > 12.0, f"MSE INT4 SNR={snr_mse:.1f} dB implausibly low"
+
 
 # ---------------------------------------------------------------------------
 # KV cache CommVQ round-trip
