@@ -182,7 +182,7 @@ class LayerwiseDecoder:
     def __init__(
         self,
         config: LayerwiseConfig,
-        rng: Optional[np.random.Generator] = None,
+        rng: np.random.Generator | None = None,
     ) -> None:
         self.config = config
         if rng is None:

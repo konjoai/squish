@@ -27,8 +27,8 @@ Audit confirmation (documented in PLAN.md §13C):
 from __future__ import annotations
 
 import pytest
-from squish.kv.radix_cache import RadixTree
 
+from squish.kv.radix_cache import RadixTree
 
 # ---------------------------------------------------------------------------
 # Fixtures

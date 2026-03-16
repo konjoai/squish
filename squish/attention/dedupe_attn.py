@@ -143,7 +143,7 @@ class AttentionDeduplicator:
     # Public API
     # ------------------------------------------------------------------
 
-    def lookup(self, q: np.ndarray, head_idx: int) -> Optional[np.ndarray]:
+    def lookup(self, q: np.ndarray, head_idx: int) -> np.ndarray | None:
         """Return a cached attention output for a near-duplicate query.
 
         Args:

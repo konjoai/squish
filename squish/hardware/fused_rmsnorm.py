@@ -84,7 +84,7 @@ class FusedRMSNorm:
     def __init__(
         self,
         config: FusedNormConfig,
-        weight: Optional[np.ndarray] = None,
+        weight: np.ndarray | None = None,
     ) -> None:
         """
         Args:
@@ -119,8 +119,8 @@ class FusedRMSNorm:
     def forward(
         self,
         x: np.ndarray,
-        residual: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        residual: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray | None]:
         """Fused residual add + RMS normalization + optional element-wise scale.
 
         Args:
@@ -138,7 +138,7 @@ class FusedRMSNorm:
         """
         if self._config.add_residual and residual is not None:
             x_proc = x + residual
-            residual_out: Optional[np.ndarray] = x_proc
+            residual_out: np.ndarray | None = x_proc
         else:
             x_proc = x
             residual_out = None
@@ -166,8 +166,8 @@ class FusedLayerNorm:
     def __init__(
         self,
         config: FusedNormConfig,
-        weight: Optional[np.ndarray] = None,
-        bias: Optional[np.ndarray] = None,
+        weight: np.ndarray | None = None,
+        bias: np.ndarray | None = None,
     ) -> None:
         """
         Args:
@@ -214,8 +214,8 @@ class FusedLayerNorm:
     def forward(
         self,
         x: np.ndarray,
-        residual: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        residual: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray | None]:
         """Fused residual add + LayerNorm + optional element-wise affine.
 
         Args:
@@ -228,7 +228,7 @@ class FusedLayerNorm:
         """
         if self._config.add_residual and residual is not None:
             x_proc = x + residual
-            residual_out: Optional[np.ndarray] = x_proc
+            residual_out: np.ndarray | None = x_proc
         else:
             x_proc = x
             residual_out = None
@@ -253,7 +253,7 @@ def fused_add_rms_norm(
     residual: np.ndarray,
     weight: np.ndarray,
     eps: float,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Fused residual add + RMS normalization (standalone function).
 
     Computes ``new_residual = x + residual``, then normalizes by the

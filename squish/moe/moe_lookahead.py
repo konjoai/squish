@@ -52,7 +52,6 @@ import numpy as np
 
 from squish.moe.sparse_moe import MoEConfig, SparseMoERouter
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -144,11 +143,11 @@ class MoELookaheadRouter:
         self._router = SparseMoERouter(sparse_cfg)
 
         # EMA state — None until the first route() call has been made
-        self._prev_h:    Optional[np.ndarray] = None   # shape (hidden_dim,)
-        self._ema_delta: Optional[np.ndarray] = None   # shape (hidden_dim,)
+        self._prev_h:    np.ndarray | None = None   # shape (hidden_dim,)
+        self._ema_delta: np.ndarray | None = None   # shape (hidden_dim,)
 
         # Pending prefetch set — set by prefetch_set(), consumed by route()
-        self._pending_prefetch: Optional[frozenset] = None
+        self._pending_prefetch: frozenset | None = None
 
         # Hit-rate and prefetch-size counters
         self._prefetch_hits:    int = 0
@@ -257,7 +256,7 @@ class MoELookaheadRouter:
     def predict_lookahead(
         self,
         hidden_states: np.ndarray,
-        steps: Optional[int] = None,
+        steps: int | None = None,
     ) -> np.ndarray:
         """Predict expert indices for the next *steps* forward passes.
 
@@ -300,7 +299,7 @@ class MoELookaheadRouter:
     def prefetch_set(
         self,
         hidden_states: np.ndarray,
-        steps: Optional[int] = None,
+        steps: int | None = None,
     ) -> frozenset:
         """Return the union of all expert indices predicted across all steps.
 

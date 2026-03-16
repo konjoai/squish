@@ -16,7 +16,6 @@ import pytest
 
 from squish.context.context_summarizer import ContextSummarizer, SummaryConfig, SummaryStats
 
-
 # ---------------------------------------------------------------------------
 # SummaryConfig
 # ---------------------------------------------------------------------------

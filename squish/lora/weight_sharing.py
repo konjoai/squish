@@ -49,7 +49,6 @@ from typing import List, Tuple
 
 import numpy as np
 
-
 # ── Config ────────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -160,7 +159,7 @@ class WeightSharer:
 
         # Per-layer low-rank deltas: list of (U_i, V_i) tuples.
         # U_i: (hidden_dim, rank),  V_i: (rank, hidden_dim)
-        self._deltas: List[Tuple[np.ndarray, np.ndarray]] = [
+        self._deltas: list[tuple[np.ndarray, np.ndarray]] = [
             (
                 rng.normal(0.0, 0.01, (hd, r)).astype(np.float32),
                 rng.normal(0.0, 0.01, (r, hd)).astype(np.float32),

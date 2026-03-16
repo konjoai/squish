@@ -12,7 +12,7 @@ import json
 import statistics
 import sys
 import time
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -20,14 +20,13 @@ from squish.benchmarks.base import EngineConfig, ResultRecord
 from squish.benchmarks.perf_bench import (
     PerfBenchConfig,
     PerfBenchRunner,
-    _count_tokens,
-    _rss_mb,
-    _warm_ttft_and_tps,
-    _long_ctx_tps,
     _batch_throughput,
+    _count_tokens,
+    _long_ctx_tps,
+    _rss_mb,
     _tokens_per_watt,
+    _warm_ttft_and_tps,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers

@@ -53,7 +53,6 @@ from typing import List, Tuple
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -195,8 +194,8 @@ class MedusaDraftTree:
         depth: Number of draft heads (equals ``len(tokens)``).
     """
 
-    tokens: List[List[int]]
-    probs: List[float]
+    tokens: list[list[int]]
+    probs: list[float]
     depth: int
 
 
@@ -247,8 +246,8 @@ class MedusaDecoder:
                 f"got {hidden_states.shape}"
             )
 
-        top_tokens: List[int] = []
-        top_probs: List[float] = []
+        top_tokens: list[int] = []
+        top_probs: list[float] = []
 
         for head in self._heads:
             logits = head.forward(hidden_states)
@@ -257,8 +256,8 @@ class MedusaDecoder:
             top_tokens.append(token)
             top_probs.append(float(probs[token]))
 
-        paths: List[List[int]] = []
-        path_probs: List[float] = []
+        paths: list[list[int]] = []
+        path_probs: list[float] = []
         for i in range(self._config.n_heads):
             path = list(top_tokens[: i + 1])
             # Joint probability is the product of individual head probabilities
@@ -280,9 +279,9 @@ class MedusaDecoder:
 
     def verify(
         self,
-        draft_tokens: List[int],
-        target_logits: List[np.ndarray],
-    ) -> Tuple[List[int], int]:
+        draft_tokens: list[int],
+        target_logits: list[np.ndarray],
+    ) -> tuple[list[int], int]:
         """Greedily verify draft tokens against the target model's logits.
 
         Acceptance criterion: ``argmax(target_logits[i]) == draft_tokens[i]``.
@@ -304,7 +303,7 @@ class MedusaDecoder:
                 f"target_logits length ({len(target_logits)})"
             )
 
-        accepted: List[int] = []
+        accepted: list[int] = []
         for token, logits in zip(draft_tokens, target_logits):
             if int(np.argmax(logits)) == token:
                 accepted.append(token)
@@ -338,7 +337,7 @@ class MedusaDecoder:
         """
         return 1.0 + self.acceptance_rate * self._config.n_heads
 
-    def get_stats(self) -> "MedusaStats":
+    def get_stats(self) -> MedusaStats:
         """Return a snapshot of current decoding statistics."""
         return MedusaStats(
             total_drafts=self._total_drafts,

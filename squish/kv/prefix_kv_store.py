@@ -74,7 +74,7 @@ class PrefixKVStore:
 
     def __init__(
         self,
-        radix_tree: "RadixTree",
+        radix_tree: RadixTree,
         max_snapshots: int = 8,
         min_prefix_tokens: int = _MIN_PREFIX_TOKENS,
     ) -> None:
@@ -82,7 +82,7 @@ class PrefixKVStore:
         self._max = max(1, max_snapshots)
         self._min_prefix = max(1, min_prefix_tokens)
         # snapshot_id → QuantizedKVCache clone
-        self._store:   dict[int, "QuantizedKVCache"] = {}
+        self._store:   dict[int, QuantizedKVCache] = {}
         # LRU order: _order[0] is oldest
         self._order:   list[int] = []
         self._next_id: int = 0
@@ -117,7 +117,7 @@ class PrefixKVStore:
                 self._order.append(snap_id)
         return prefix_len, snap_id
 
-    def restore(self, snapshot_id: int, target: "QuantizedKVCache") -> bool:
+    def restore(self, snapshot_id: int, target: QuantizedKVCache) -> bool:
         """
         Copy the snapshot identified by *snapshot_id* into *target* in-place.
 
@@ -133,7 +133,7 @@ class PrefixKVStore:
         target.restore_from(snap)
         return True
 
-    def store(self, input_ids: list[int], cache: "QuantizedKVCache") -> int | None:
+    def store(self, input_ids: list[int], cache: QuantizedKVCache) -> int | None:
         """
         Clone *cache* and register the snapshot keyed by *input_ids*.
 

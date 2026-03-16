@@ -151,9 +151,9 @@ class DistilSpecCalibrator:
     def __init__(self, config: DistilConfig) -> None:
         self._cfg = config
         self._n_steps: int = 0
-        self._accumulated_grad: Optional[np.ndarray] = None  # (vocab_size,) or (S, V)
+        self._accumulated_grad: np.ndarray | None = None  # (vocab_size,) or (S, V)
         self._kl_history: list[float] = []
-        self._vocab_size: Optional[int] = None
+        self._vocab_size: int | None = None
 
     # ------------------------------------------------------------------
     # Private helpers

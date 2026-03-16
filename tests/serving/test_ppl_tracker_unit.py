@@ -11,7 +11,6 @@ import pytest
 
 from squish.serving.ppl_tracker import PPLAlert, PPLStats, PPLTracker, PPLWindow
 
-
 # ---------------------------------------------------------------------------
 # PPLWindow
 # ---------------------------------------------------------------------------

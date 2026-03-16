@@ -53,7 +53,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -147,7 +146,7 @@ class SemanticResponseCache:
     # Public API
     # ------------------------------------------------------------------
 
-    def lookup(self, embedding: np.ndarray) -> Optional[str]:
+    def lookup(self, embedding: np.ndarray) -> str | None:
         """Find and return a cached response for *embedding*.
 
         Performs a linear cosine-similarity scan.  The entry with the highest
@@ -168,7 +167,7 @@ class SemanticResponseCache:
             self._n_misses += 1
             return None
 
-        best_key: Optional[int] = None
+        best_key: int | None = None
         best_sim: float = -2.0
 
         for key, (stored_emb, _) in self._store.items():

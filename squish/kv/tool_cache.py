@@ -59,7 +59,7 @@ class ToolSchema:
     """
 
     name: str
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
     description: str = ""
     handler_id: str = ""
     schema_hash: str = ""
@@ -78,7 +78,7 @@ class ToolSchema:
         return len(self.parameters)
 
     @property
-    def required_params(self) -> List[str]:
+    def required_params(self) -> list[str]:
         """List of parameter names (all parameters are treated as required)."""
         return list(self.parameters.keys())
 
@@ -138,8 +138,8 @@ class ToolSchemaCache:
                 f"max_entries must be >= 1; got {max_entries}."
             )
         self._max_entries = max_entries
-        self._by_name: Dict[str, ToolSchema] = {}
-        self._by_hash: Dict[str, ToolSchema] = {}
+        self._by_name: dict[str, ToolSchema] = {}
+        self._by_hash: dict[str, ToolSchema] = {}
         self._hits: int = 0
         self._misses: int = 0
         self._n_registrations: int = 0
@@ -151,12 +151,12 @@ class ToolSchemaCache:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _make_hash(name: str, param_keys: List[str]) -> str:
+    def _make_hash(name: str, param_keys: list[str]) -> str:
         """Compute a deterministic hex hash from the tool name and sorted param keys."""
         raw = name + "|" + ",".join(sorted(param_keys))
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
-    def register(self, schema_dict: Dict[str, Any]) -> str:
+    def register(self, schema_dict: dict[str, Any]) -> str:
         """Parse *schema_dict* into a :class:`ToolSchema` and cache it.
 
         Parameters
@@ -182,7 +182,7 @@ class ToolSchemaCache:
             raise ValueError("schema_dict must contain a 'parameters' key.")
 
         name: str = str(schema_dict["name"])
-        parameters: Dict[str, Any] = dict(schema_dict["parameters"])
+        parameters: dict[str, Any] = dict(schema_dict["parameters"])
         description: str = str(schema_dict.get("description", ""))
         handler_id: str = str(schema_dict.get("handler_id", ""))
 
@@ -217,7 +217,7 @@ class ToolSchemaCache:
     # Lookup
     # ------------------------------------------------------------------
 
-    def get(self, name: str) -> Optional[ToolSchema]:
+    def get(self, name: str) -> ToolSchema | None:
         """Look up a schema by tool name.
 
         Parameters
@@ -237,7 +237,7 @@ class ToolSchemaCache:
             self._misses += 1
         return schema
 
-    def get_by_hash(self, schema_hash: str) -> Optional[ToolSchema]:
+    def get_by_hash(self, schema_hash: str) -> ToolSchema | None:
         """Look up a schema by its hash.
 
         Parameters
@@ -263,8 +263,8 @@ class ToolSchemaCache:
     def validate_call(
         self,
         tool_name: str,
-        arguments: Dict[str, Any],
-    ) -> Tuple[bool, str]:
+        arguments: dict[str, Any],
+    ) -> tuple[bool, str]:
         """Check that *arguments* satisfies the schema for *tool_name*.
 
         All keys in the schema's ``parameters`` dict are treated as required.
@@ -348,8 +348,8 @@ class ToolRouter:
     def route(
         self,
         tool_name: str,
-        arguments: Dict[str, Any],
-        handlers: Dict[str, Callable[..., Any]],
+        arguments: dict[str, Any],
+        handlers: dict[str, Callable[..., Any]],
     ) -> Any:
         """Validate and dispatch a tool call.
 

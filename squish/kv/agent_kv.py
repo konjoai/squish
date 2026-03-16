@@ -226,7 +226,7 @@ class Int2Block:
         return _dequantise_int2(self.packed, self.scales)
 
     @staticmethod
-    def from_float32(x: np.ndarray) -> "Int2Block":
+    def from_float32(x: np.ndarray) -> Int2Block:
         """Compress *x* (shape ``(n_heads, n_tokens, head_dim)``) to INT2."""
         packed, scales = _quantise_int2(x)
         return Int2Block(packed=packed, scales=scales)
@@ -241,12 +241,12 @@ class Int2Block:
 class _LayerKV:
     """Internal per-layer KV storage in three zones."""
 
-    sink_k:    Optional[np.ndarray] = None   # (H, sink, D)
-    sink_v:    Optional[np.ndarray] = None
-    hist_k:    Optional[Int2Block]  = None   # compressed history
-    hist_v:    Optional[Int2Block]  = None
-    window_k:  Optional[np.ndarray] = None   # (H, W, D) — most recent
-    window_v:  Optional[np.ndarray] = None
+    sink_k:    np.ndarray | None = None   # (H, sink, D)
+    sink_v:    np.ndarray | None = None
+    hist_k:    Int2Block | None  = None   # compressed history
+    hist_v:    Int2Block | None  = None
+    window_k:  np.ndarray | None = None   # (H, W, D) — most recent
+    window_v:  np.ndarray | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -362,6 +362,7 @@ class AgentKVCache:
         lkv = self._layers[layer_idx]
         if lkv.window_k is None:
             return
+        assert lkv.window_v is not None  # always set together with window_k
 
         window_len = lkv.window_k.shape[1]
         overflow   = window_len - self._cfg.window_tokens
@@ -404,6 +405,7 @@ class AgentKVCache:
             lkv.hist_k = new_hist_k
             lkv.hist_v = new_hist_v
         else:
+            assert lkv.hist_v is not None  # always set together with hist_k
             # Merge by decompressing, concatenating, recompressing
             # (avoids unbounded block fragmentation)
             merged_k = np.concatenate(

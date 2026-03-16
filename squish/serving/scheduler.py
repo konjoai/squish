@@ -459,7 +459,7 @@ class BatchScheduler:
         """
         _limit = limit if limit is not None else self._max_batch
         batch: list[_Request] = []
-        deadline = None
+        deadline: float = 0.0
 
         # Block waiting for the first request (with a short timeout so we can
         # check the stop event periodically).

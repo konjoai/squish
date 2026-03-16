@@ -9,7 +9,6 @@ import pytest
 
 from squish.server import _build_tool_union_schema
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -105,7 +104,7 @@ class TestToolChoiceLogic:
         if tool_choice == "none":
             tools = []
 
-        _tc_schema: "dict | None" = None
+        _tc_schema: dict | None = None
 
         if tools:  # only evaluate choice when tools are present
             if tool_choice == "required":

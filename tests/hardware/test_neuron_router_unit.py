@@ -34,7 +34,11 @@ import numpy as np
 import pytest
 
 from squish.hardware.neuron_profile import NeuronProfile, NeuronProfileConfig, NeuronProfiler
-from squish.hardware.neuron_router import NeuronRouter, NeuronRouterConfig, patch_model_neuron_routing
+from squish.hardware.neuron_router import (
+    NeuronRouter,
+    NeuronRouterConfig,
+    patch_model_neuron_routing,
+)
 
 RNG = np.random.default_rng(7)
 

@@ -26,7 +26,6 @@ import pytest
 
 from squish.speculative.eagle3 import Eagle3Config, Eagle3Decoder, Eagle3Stats
 
-
 # ---------------------------------------------------------------------------
 # Eagle3Config validation
 # ---------------------------------------------------------------------------

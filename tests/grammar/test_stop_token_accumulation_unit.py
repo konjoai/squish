@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import sys
 
-
 # ---------------------------------------------------------------------------
 # Import _get_stop_ids from squish.server without a live fastapi install.
 # ---------------------------------------------------------------------------

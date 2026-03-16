@@ -18,10 +18,9 @@ from squish.quant.quip_sharp import (
     QuIPSharpConfig,
     QuIPSharpLayer,
     QuIPSharpQuantizer,
-    quip_dequantize,
     quantize_model_quip,
+    quip_dequantize,
 )
-
 
 # ---------------------------------------------------------------------------
 # E8Lattice codebook integrity

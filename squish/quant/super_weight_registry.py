@@ -113,7 +113,7 @@ class SuperWeightRegistry:
         coords,   # list[SuperWeightCoord] — imported lazily to avoid circular
         model_dir: str | Path,
         threshold: float = 100.0,
-    ) -> "SuperWeightRegistry":
+    ) -> SuperWeightRegistry:
         """Build a registry from a list of calibration coordinates.
 
         Args:
@@ -173,7 +173,7 @@ class SuperWeightRegistry:
 
     def protected_mask(
         self, tensor_name: str, shape: tuple
-    ) -> "np.ndarray":
+    ) -> np.ndarray:
         """Return a boolean numpy mask of shape *shape* where ``True`` marks
         positions that must be preserved at FP16.
 

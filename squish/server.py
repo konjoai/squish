@@ -28,10 +28,7 @@ Usage:
 Dependencies:
     pip install fastapi "uvicorn[standard]"
 """
-from __future__ import annotations
-
 import argparse
-import asyncio
 import collections
 import hashlib
 import hmac
@@ -58,26 +55,17 @@ def _require(pkg: str, install: str | None = None) -> None:
     try:
         __import__(pkg)
     except ImportError:  # pragma: no cover
-        # Allow --help / -h to show argparse help even if a dep is missing.
-        if "--help" in sys.argv or "-h" in sys.argv:
-            return
         hint = install or pkg
-        print(f"  \u2717  Missing dependency:  {pkg}  \u2192  pip install {hint}", file=sys.stderr)
+        print(f"  {_C.PK}✗  Missing dependency:{_C.R}  {_C.W}{pkg}{_C.R}  {_C.DIM}→  pip install {hint}{_C.R}")
         sys.exit(1)
 
 _require("fastapi")
 _require("uvicorn", "uvicorn[standard]")
 
-try:
-    from fastapi import FastAPI, HTTPException, Request, Security  # noqa: E402
-    from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-    from fastapi.responses import FileResponse, JSONResponse, StreamingResponse  # noqa: E402
-    from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
-except ImportError:  # pragma: no cover — fastapi absent; --help-only mode
-    FastAPI = HTTPException = Request = Security = None  # type: ignore[assignment,misc]
-    CORSMiddleware = None  # type: ignore[assignment,misc]
-    FileResponse = JSONResponse = StreamingResponse = None  # type: ignore[assignment,misc]
-    HTTPAuthorizationCredentials = HTTPBearer = None  # type: ignore[assignment,misc]
+from fastapi import FastAPI, HTTPException, Request, Security  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse  # noqa: E402
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
 
 try:
     from fastapi.staticfiles import StaticFiles as _StaticFiles
@@ -92,10 +80,6 @@ _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-pr
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
 # Phase 13A: asymmetric INT2 KV cache (agent-kv)
 _agent_kv_config: "Any | None" = None   # AgentKVConfig | None — set in main() when --agent-kv
-# Phase 14: MoE expert lookahead router
-_moe_lookahead_router: "Any | None" = None  # MoELookaheadRouter | None — set in main() when --moe-lookahead
-# Phase 3: Q-Filters geometric KV eviction
-_qfilter_active: bool = False  # True when --qfilter is passed
 
 # ── Wave optimization module state (lazily instantiated) ─────────────────────
 _prompt_lookup_decoder  = None  # PromptLookupDecoder    — --prompt-lookup
@@ -136,26 +120,6 @@ _compress_enabled         = False
 _compress_ratio           = 0.5
 _compress_min_tokens      = 512
 _compress_preserve_tokens = 0   # protect first N words from compression (RadixAttention synergy)
-
-# ── Phase 6: LLM-42 Determinism + Repetition Penalty ────────────────────────
-# Repetition penalty (Keskar et al. 2019): positive logits of recent tokens are
-# divided by the factor; negative logits are multiplied.  _rep_penalty_factor=1.0
-# disables the feature.  _llm42_default_seed is the per-server default seed for
-# deterministic generation (the name "LLM-42" refers to seed value 42).
-_rep_penalty_factor: float = 1.0        # 1.0 = off; > 1.0 penalises recent tokens
-_rep_penalty_window_size: int = 64      # number of most-recent tokens in the window
-_llm42_default_seed: "int | None" = None  # global default seed (None = non-deterministic)
-
-# ── Phase 13: RadixTree KV prefix reuse ──────────────────────────────────────
-# PrefixKVStore wraps the RadixTree trie with an in-memory LRU dict of
-# post-prefill QuantizedKVCache snapshots.  On a prefix hit the decode loop
-# restores the snapshot and only runs prefill on the delta (new) tokens.
-_prefix_kv_store = None  # PrefixKVStore | None — set in main() when --prefix-kv-store > 0
-
-# LLM-42 verified speculation: DeterministicSampler + TokenVerifier instances.
-# Both are None when --deterministic is not set.
-_det_sampler:  "DeterministicSampler | None" = None  # type: ignore[name-defined]
-_det_verifier: "TokenVerifier | None"        = None  # type: ignore[name-defined]
 
 # ── Phase E1: Babbling Suppression (February 2026) ───────────────────────────
 # Qwen3 architecture is a confirmed "babbler" — emits filler content after the
@@ -219,7 +183,6 @@ _grammar_engine: "Any | None" = None       # GrammarEngine instance, set at star
 _structured_output_mode: str = "none"      # "none" | "json" | "json-schema"
 _structured_output_schema: "dict | None" = None  # parsed JSON schema (json-schema mode)
 _req_tool_schema: "dict | None" = None     # per-request override: tool_choice-activated schema
-_req_grammar_state: "Any | None" = None   # per-request pre-built TagDispatch or grammar state
 # ── Phase C: Power & Energy Modes ────────────────────────────────────────────
 _power_monitor: "Any | None" = None        # PowerMonitor instance (auto mode only)
 _power_mode: str = "performance"           # current effective mode name
@@ -484,10 +447,7 @@ def _tlog(msg: str) -> None:
 
 # ── Tool calling + Ollama compat (Phase 2.2) ─────────────────────────────────
 # Imported lazily in endpoints — no startup cost when unused
-try:
-    import uvicorn  # noqa: E402
-except ImportError:  # pragma: no cover — uvicorn absent; --help-only mode
-    uvicorn = None  # type: ignore[assignment]
+import uvicorn  # noqa: E402
 
 # ── Model state ──────────────────────────────────────────────────────────────
 
@@ -530,23 +490,16 @@ class _ModelState:
 
 _state = _ModelState()
 _API_KEY: str | None = None          # set from --api-key at startup
-_bearer  = HTTPBearer(auto_error=False) if HTTPBearer is not None else None
-
-# Safely wrap Security() for --help-only mode (when FastAPI is absent).
-def _sec(dep=None):
-    """Return Security(dep) when FastAPI is present, else return None."""
-    return Security(dep) if Security is not None else None
+_bearer  = HTTPBearer(auto_error=False)
 
 # ── Draft model state (speculative decoding) ─────────────────────────────────
 
 class _DraftState:
-    model          = None
-    tokenizer      = None
-    model_dir      = ""
-    generator      = None   # SpeculativeGenerator instance (created after both models load)
-    eagle_head     = None   # EagleDraftHead instance (Phase 1B)
-    redrafter_head = None   # ReDrafterHead instance (Phase 4)
-    ssd_predictor  = None   # SSDPredictor instance (Phase 4)
+    model      = None
+    tokenizer  = None
+    model_dir  = ""
+    generator  = None   # SpeculativeGenerator instance (created after both models load)
+    eagle_head = None   # EagleDraftHead instance (Phase 1B)
 
 _draft = _DraftState()
 
@@ -693,7 +646,7 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
         from .compressed_loader import load_compressed_model as _load_compressed_model
     except ImportError:
         # server.py launched directly (not as package) — use absolute import
-        from squish.quant.compressed_loader import load_compressed_model as _load_compressed_model
+        from squish.compressed_loader import load_compressed_model as _load_compressed_model
     # Keep backward-compat shim
     load_from_npy_dir = _load_compressed_model
 
@@ -794,7 +747,7 @@ def load_draft_model(draft_model_dir: str, draft_compressed_dir: str = "",  # pr
                      verbose: bool = True) -> None:
     """Load the small draft model used for speculative decoding."""
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from squish.speculative.speculative import load_draft_model as _load_draft
+    from squish.speculative import load_draft_model as _load_draft
     if verbose:
         print(f"  {_C.L}⟳{_C.R}  {_C.DIM}Loading draft model:{_C.R}  {_C.W}{draft_model_dir}{_C.R}")
     draft_m, draft_tok = _load_draft(
@@ -814,7 +767,7 @@ def load_draft_model(draft_model_dir: str, draft_compressed_dir: str = "",  # pr
 
 def load_eagle_head(head_dir: str, verbose: bool = True) -> None:  # pragma: no cover
     """Load an EAGLE-3 draft head and wire it into the SpeculativeGenerator."""
-    from squish.speculative.speculative import EagleDraftHead
+    from squish.speculative import EagleDraftHead
     if verbose:
         print(f"  {_C.L}⟳{_C.R}  {_C.DIM}Loading EAGLE-3 head:{_C.R}  {_C.W}{head_dir}{_C.R}")
     _draft.eagle_head = EagleDraftHead.from_dir(head_dir, _state.model, verbose=verbose)
@@ -823,50 +776,20 @@ def load_eagle_head(head_dir: str, verbose: bool = True) -> None:  # pragma: no 
     _rebuild_spec_gen()
 
 
-def load_redrafter_head(  # pragma: no cover
-    head_dir:      str,
-    ssd_threshold: float = 0.0,
-    verbose:       bool  = True,
-) -> None:
-    """Load a ReDrafter GRU draft head and wire it into the SpeculativeGenerator.
-
-    Parameters
-    ----------
-    head_dir      : Directory containing ``redrafter.npz``.
-    ssd_threshold : SSD acceptance-predictor threshold.  0.0 disables SSD.
-    """
-    from squish.speculative.redrafter import ReDrafterHead
-    if verbose:
-        print(f"  {_C.L}⟳{_C.R}  {_C.DIM}Loading ReDrafter head:{_C.R}  {_C.W}{head_dir}{_C.R}")
-    _draft.redrafter_head = ReDrafterHead.from_dir(head_dir, _state.model, verbose=verbose)
-    if ssd_threshold > 0.0:
-        from squish.speculative.ssd import SSDConfig, SSDPredictor
-        ssd_cfg = SSDConfig(threshold=ssd_threshold)
-        hidden_dim = _draft.redrafter_head.config.hidden_dim
-        _draft.ssd_predictor = SSDPredictor.init_random(hidden_dim, threshold=ssd_threshold)
-        if verbose:
-            _ok(f"SSD predictor ready (threshold={ssd_threshold})")
-    if verbose:
-        _ok("ReDrafter head ready")
-    _rebuild_spec_gen()
-
-
 def _rebuild_spec_gen() -> None:  # pragma: no cover
     """(Re-)create the SpeculativeGenerator from current target + draft state."""
     if _state.model is None:
         _draft.generator = None
         return
-    # Require at least one draft source (neural draft model, EAGLE head, or ReDrafter)
-    if _draft.model is None and _draft.eagle_head is None and _draft.redrafter_head is None:
+    # Require at least one draft source (neural draft model OR EAGLE head)
+    if _draft.model is None and _draft.eagle_head is None:
         _draft.generator = None
         return
-    from squish.speculative.speculative import SpeculativeGenerator
+    from squish.speculative import SpeculativeGenerator
     _draft.generator = SpeculativeGenerator(
         _state.model, _state.tokenizer,
         draft_model=_draft.model, draft_tokenizer=_draft.tokenizer,
         eagle_head=_draft.eagle_head,
-        redrafter_head=_draft.redrafter_head,
-        ssd_predictor=_draft.ssd_predictor,
     )
 
 
@@ -1008,7 +931,7 @@ def _generate_tokens(  # pragma: no cover
         if _word_count >= _compress_min_tokens:
             _on_compress_path = True
             try:
-                from squish.context.prompt_compressor import compress as _compress_fn
+                from squish.prompt_compressor import compress as _compress_fn
                 prompt = _compress_fn(
                     prompt,
                     ratio=_compress_ratio,
@@ -1089,18 +1012,13 @@ def _generate_tokens(  # pragma: no cover
     _sc_buf:    list[str] = []  # Phase E3: full response text for semantic cache
     _last_finish = "stop"
 
-    # Apply optional seed for reproducible generation (Phase 6: LLM-42 determinism).
-    # Per-request seed takes precedence; if absent, fall back to the global default.
-    _effective_seed = seed if seed is not None else _llm42_default_seed
-    if _effective_seed is not None:
+    # Apply optional seed for reproducible generation
+    if seed is not None:
         try:
             import mlx.core as mx
-            mx.random.seed(_effective_seed)
+            mx.random.seed(seed)
         except Exception:
             pass
-
-    # Phase 6: per-request repetition-penalty tracking window (cleared each call)
-    _rep_window_local: list[int] = []
 
     # ── Speculative decoding (Phase 0.2) ─────────────────────────────────────
     # Use when a draft model is loaded AND temperature > 0 (greedy draft on
@@ -1202,33 +1120,8 @@ def _generate_tokens(  # pragma: no cover
                 # Cache hit: use stored logit to sample first token; no prefill needed
                 last_logit_mlx = mx.array(_disk_hit_logit, dtype=mx.float32)
                 next_id = _sample_mx(last_logit_mlx, temperature, top_p)
-                # Phase 6: seed the rep-penalty window with the first sampled token
-                if _rep_penalty_factor > 1.0:
-                    _rep_window_local.append(next_id)
             else:
-                # Cache miss: run full prefill (or delta prefill via prefix-kv-store)
-                # ── Phase 13: RadixTree KV prefix reuse ────────────────────────
-                # If a prior request shared the same prompt prefix, restore its
-                # post-prefill KV snapshot and only run the model on the delta
-                # (new) tokens — converting O(n_prefix) → O(n_delta) prefill.
-                _pkv_prefix_len: int = 0
-                _pkv_snap_id: "int | None" = None
-                if _prefix_kv_store is not None:
-                    try:
-                        _pkv_prefix_len, _pkv_snap_id = _prefix_kv_store.find(input_ids)
-                        if _pkv_prefix_len > 0 and _pkv_snap_id is not None:
-                            if _prefix_kv_store.restore(_pkv_snap_id, _kv_cache):
-                                if _trace:
-                                    _tlog(f"REQ {_rid}  prefix-kv-store HIT  "
-                                          f"prefix={_pkv_prefix_len}/{len(input_ids)}"
-                                          f"  snap_id={_pkv_snap_id}")
-                            else:
-                                # Snapshot was evicted between find() and restore()
-                                _pkv_prefix_len = 0
-                                _pkv_snap_id = None
-                    except Exception:
-                        _pkv_prefix_len = 0
-                        _pkv_snap_id = None
+                # Cache miss: run full prefill
                 # ── Phase 3C: patch sparse attention for long sequences ────────
                 # Applied BEFORE prefill; must be unpatched after regardless of
                 # the prefill path taken (standard or chunked).
@@ -1239,10 +1132,10 @@ def _generate_tokens(  # pragma: no cover
                         and len(input_ids) > _minference_threshold
                         and _inference_backend != "ane-disagg"):
                     try:
-                        from squish.attention.minference_patch import (
+                        from squish.minference_patch import (
                             patch_model_minference as _patch_minf,
                         )
-                        from squish.attention.minference_patch import (
+                        from squish.minference_patch import (
                             select_pattern_for_sequence as _minf_pattern,
                         )
                         _pattern = _minf_pattern(len(input_ids))
@@ -1265,26 +1158,24 @@ def _generate_tokens(  # pragma: no cover
                 # CRITICAL: spec decode starts only after is_final_chunk=True.
                 # Interleaved greedy tokens emitted on non-final chunks DO count
                 # toward the output but bypass the speculative decode path.
-                # Phase 13: use only delta tokens when a prefix snapshot was restored.
-                _pfill_ids = input_ids[_pkv_prefix_len:] if _pkv_prefix_len > 0 else input_ids
                 _last_logit_vec = None   # [vocab_size] mlx array
                 if (_on_compress_path
                         and _chunk_prefill_enabled
-                        and len(_pfill_ids) > _chunk_prefill_threshold):
+                        and len(input_ids) > _chunk_prefill_threshold):
                     try:
-                        from squish.streaming.chunked_prefill import (
+                        from squish.chunked_prefill import (
                             ChunkedPrefillConfig as _CPFConfig,
                         )
-                        from squish.streaming.chunked_prefill import (
+                        from squish.chunked_prefill import (
                             chunk_prefill as _chunk_prefill_fn,
                         )
                         _cpf_cfg = _CPFConfig(chunk_size=_chunk_prefill_size)
                         if _trace:
                             _tlog(f"REQ {_rid}  chunked-prefill START  "
-                                  f"tokens={len(_pfill_ids)}  "
+                                  f"tokens={len(input_ids)}  "
                                   f"chunk={_chunk_prefill_size}")
                         for _clogit, _is_fin in _chunk_prefill_fn(
-                                model, _pfill_ids, layer_caches, _cpf_cfg):
+                                model, input_ids, layer_caches, _cpf_cfg):
                             if _is_fin:
                                 _last_logit_vec = _clogit
                             elif _cpf_cfg.interleave_decode:
@@ -1297,11 +1188,6 @@ def _generate_tokens(  # pragma: no cover
                                 )
                                 if cache_eligible:
                                     _cache_buf.append(_il_tok)
-                                # Phase 6: track interleaved-decode tokens in rep window
-                                if _rep_penalty_factor > 1.0:
-                                    _rep_window_local.append(_il_id)
-                                    if _rep_penalty_window_size > 0 and len(_rep_window_local) > _rep_penalty_window_size:
-                                        _rep_window_local = _rep_window_local[-_rep_penalty_window_size:]
                                 yield _il_tok, None
                         if _trace:
                             _tlog(f"REQ {_rid}  chunked-prefill DONE")
@@ -1314,7 +1200,7 @@ def _generate_tokens(  # pragma: no cover
 
                 if _last_logit_vec is None:
                     # Standard single-shot prefill (non-compress path or fallback)
-                    x = mx.array(_pfill_ids, dtype=mx.int32)[None]
+                    x = mx.array(input_ids, dtype=mx.int32)[None]
                     logits_full = model(x, cache=layer_caches)
                     mx.eval(logits_full)
                     _last_logit_vec = logits_full[0, -1]
@@ -1322,7 +1208,7 @@ def _generate_tokens(  # pragma: no cover
                 # ── Phase 3C: restore dense attention after prefill ────────────
                 if _minf_restore is not None:
                     try:
-                        from squish.attention.minference_patch import (
+                        from squish.minference_patch import (
                             unpatch_model_minference as _unpatch_minf,
                         )
                         _unpatch_minf(model, _minf_restore)
@@ -1333,21 +1219,12 @@ def _generate_tokens(  # pragma: no cover
                     _minf_restore = None
 
                 next_id = _sample_mx(_last_logit_vec, temperature, top_p)
-                # Phase 6: seed the rep-penalty window with the first sampled token
-                if _rep_penalty_factor > 1.0:
-                    _rep_window_local.append(next_id)
                 # Persist for future requests in background
                 if _disk_prompt_cache is not None:
                     try:
                         _last_logit_np = np.array(_last_logit_vec.astype(mx.float32))
                         # Store under original token IDs for stable cache keys
                         _disk_prompt_cache.store(_orig_input_ids, _kv_cache, _last_logit_np)
-                    except Exception:
-                        pass
-                # Phase 13: store post-prefill KV snapshot for future prefix reuse
-                if _prefix_kv_store is not None:
-                    try:
-                        _prefix_kv_store.store(input_ids, _kv_cache)
                     except Exception:
                         pass
             stop_buf = [next_id]
@@ -1367,10 +1244,7 @@ def _generate_tokens(  # pragma: no cover
             _think_step_count = 0
             # Phase B: initialise grammar FSM state for this request
             _grammar_state = None
-            if _req_grammar_state is not None:
-                # Phase 15E: pre-built TagDispatch (deferred FSM activation)
-                _grammar_state = _req_grammar_state
-            elif _grammar_engine is not None:
+            if _grammar_engine is not None:
                 if _req_tool_schema is not None:
                     # tool_choice enforcement: use request-specific tool schema
                     _grammar_state = _grammar_engine.json_schema_grammar(_req_tool_schema)
@@ -1414,7 +1288,7 @@ def _generate_tokens(  # pragma: no cover
                             pass
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=kv-cache  tokens={step}  finish=stop(eos)")
-                    yield "", "stop"
+                    yield tok_text, "stop"
                     return
                 if stop_ids:
                     for seq in stop_ids:
@@ -1451,9 +1325,6 @@ def _generate_tokens(  # pragma: no cover
                 x = mx.array([[next_id]], dtype=mx.int32)
                 logits = _decode_fn(x) if _decode_fn is not None else model(x, cache=layer_caches)
                 mx.eval(logits)
-                # Phase 3: Q-Filter geometric KV eviction (runs every evict_every steps)
-                if _qfilter_active and _kv_cache is not None:
-                    _kv_cache.tick_qfilter(step)
                 # Phase A1/A3: apply logit biases before sampling
                 _logit_vec = logits[0, -1]
                 if (_thinking_budget > 0
@@ -1492,19 +1363,7 @@ def _generate_tokens(  # pragma: no cover
                 # Phase B: grammar-constrained logits
                 if _grammar_engine is not None and _grammar_state is not None:
                     _logit_vec = _grammar_engine.constrain_logits(_logit_vec, _grammar_state)
-                # Phase 6: repetition penalty — penalise recent tokens before sampling
-                if _rep_penalty_factor > 1.0 and _rep_window_local:
-                    import numpy as _np_rp
-                    from squish.sampling.sampler import _apply_rep_penalty as _rp_fn
-                    _rp_np = _np_rp.array(_logit_vec.astype(mx.float32))
-                    _rp_np = _rp_fn(_rp_np, _rep_window_local, _rep_penalty_factor)
-                    _logit_vec = mx.array(_rp_np)
                 next_id = _sample_mx(_logit_vec, temperature, top_p)
-                # Phase 6: update repetition-penalty window after sampling
-                if _rep_penalty_factor > 1.0:
-                    _rep_window_local.append(next_id)
-                    if _rep_penalty_window_size > 0 and len(_rep_window_local) > _rep_penalty_window_size:
-                        _rep_window_local = _rep_window_local[-_rep_penalty_window_size:]
                 # Phase B: advance grammar FSM after sampling
                 if _grammar_engine is not None and _grammar_state is not None:
                     _grammar_state = _grammar_engine.advance(_grammar_state, next_id)
@@ -1699,48 +1558,32 @@ def _generate_tokens(  # pragma: no cover
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
 
-class _FakeApp:
-    """No-op FastAPI stand-in used when fastapi is absent (e.g. --help mode)."""
-    def get(self, *_, **__):     return lambda f: f
-    def post(self, *_, **__):    return lambda f: f
-    def put(self, *_, **__):     return lambda f: f
-    def delete(self, *_, **__):  return lambda f: f
-    def add_middleware(self, *_, **__): pass
-    def mount(self, *_, **__):   pass
-    def include_router(self, *_, **__): pass
-    @property
-    def state(self):             return self
+app = FastAPI(
+    title       = "Squish OpenAI-compatible API",
+    description = "Local LLM inference via Squish compressed models",
+    version     = "1.0.0",
+)
 
-if FastAPI is not None:
-    app = FastAPI(
-        title       = "Squish OpenAI-compatible API",
-        description = "Local LLM inference via Squish compressed models",
-        version     = "9.0.0",
-    )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins     = ["*"],
-        allow_credentials = True,
-        allow_methods     = ["*"],
-        allow_headers     = ["*"],
-    )
-else:
-    app = _FakeApp()
+# Allow browser clients (e.g. Open WebUI) to call without CORS blocks
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins     = ["*"],
+    allow_credentials = True,
+    allow_methods     = ["*"],
+    allow_headers     = ["*"],
+)
 
 # ── Ollama compatibility layer (POST /api/chat etc.) ────────────────────────
 try:
-    try:
-        from .serving.ollama_compat import mount_ollama as _mount_ollama  # package import
-    except ImportError:  # pragma: no cover
-        from squish.serving.ollama_compat import mount_ollama as _mount_ollama  # direct script run
-    _mount_ollama(
-        app,
-        get_state     = lambda: _state,
-        get_generate  = lambda: _generate_tokens,
-        get_tokenizer = lambda: _state.tokenizer,
-    )
-except Exception:  # pragma: no cover — fastapi absent or import failed
-    pass
+    from .serving.ollama_compat import mount_ollama as _mount_ollama  # package import
+except ImportError:  # pragma: no cover
+    from serving.ollama_compat import mount_ollama as _mount_ollama  # direct script run
+_mount_ollama(
+    app,
+    get_state     = lambda: _state,
+    get_generate  = lambda: _generate_tokens,
+    get_tokenizer = lambda: _state.tokenizer,
+)
 
 # ── Web chat UI (/chat) ────────────────────────────────────────────────
 if _STATIC_FILES_AVAILABLE:  # pragma: no branch
@@ -1758,7 +1601,7 @@ async def web_chat_ui():
 
 
 @app.get("/v1/models")
-async def list_models(creds: HTTPAuthorizationCredentials | None = _sec(_bearer)):
+async def list_models(creds: HTTPAuthorizationCredentials | None = Security(_bearer)):
     _check_auth(creds)
     if _state.model is None:
         return {"object": "list", "data": []}
@@ -1768,7 +1611,7 @@ async def list_models(creds: HTTPAuthorizationCredentials | None = _sec(_bearer)
 @app.get("/v1/models/{model_id}")
 async def get_model(
     model_id: str,
-    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
 ):
     _check_auth(creds)
     if _state.model is None or model_id not in (_state.model_name, "squish"):
@@ -1814,7 +1657,7 @@ def _make_chunk(content: str, model: str, cid: str, finish_reason=None) -> str:
 @app.post("/v1/chat/completions")
 async def chat_completions(  # pragma: no cover
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
 ):
     """
     POST /v1/chat/completions
@@ -1882,12 +1725,11 @@ async def chat_completions(  # pragma: no cover
             _tlog(f"CHAT [{_role}] msg[{_mi}]: {_preview}")
 
     # ── Tool calling: inject schema into system prompt ────────────────────
-    global _req_tool_schema, _req_grammar_state, _grammar_engine
-    _req_tool_schema   = None  # cleared per-request
-    _req_grammar_state = None  # cleared per-request (Phase 15E TagDispatch)
+    global _req_tool_schema, _grammar_engine
+    _req_tool_schema = None  # cleared per-request
     _client_stream = stream  # remember original before tools forces stream=False
     if tools:
-        from squish.serving.tool_calling import format_tools_prompt
+        from squish.tool_calling import format_tools_prompt
         messages = format_tools_prompt(messages, tools)
         # When tools are requested, force non-streaming so we can inspect
         # the full output before deciding between text and tool_calls.
@@ -1896,7 +1738,7 @@ async def chat_completions(  # pragma: no cover
         # tool_choice grammar enforcement ─────────────────────────────────
         # "required": force model to output a valid tool call JSON object
         # {"type":"function","function":{"name":"X"}}: force schema for X only
-        _tc_schema: "dict | None" = None
+        _tc_schema: dict | None = None
         if tool_choice == "required":
             _tc_schema = _build_tool_union_schema(tools)
         elif isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
@@ -1911,27 +1753,11 @@ async def chat_completions(  # pragma: no cover
         if _tc_schema is not None:
             # Lazily initialise grammar engine if not already active
             if _grammar_engine is None:
-                from squish.grammar.grammar_engine import GrammarEngine  # noqa: PLC0415
+                from squish.grammar_engine import GrammarEngine  # noqa: PLC0415
                 if GrammarEngine.is_available() and _state.tokenizer is not None:
                     _grammar_engine = GrammarEngine(_state.tokenizer)
             if _grammar_engine is not None:
-                # Phase 15E: use TagDispatch with model-specific trigger if available
-                _grammar_trigger: "str | None" = None
-                try:
-                    from squish.catalog import resolve as _catalog_resolve  # noqa: PLC0415
-                    _cat_entry = _catalog_resolve(_state.model_name)
-                    if _cat_entry is not None:
-                        _grammar_trigger = _cat_entry.grammar_trigger
-                except Exception:
-                    pass
-                if _grammar_trigger:
-                    # Deferred FSM: activate only after trigger token is seen
-                    _req_grammar_state = _grammar_engine.tag_dispatch_for_schema(
-                        _grammar_trigger, _tc_schema
-                    )
-                else:
-                    # No trigger configured (e.g. Llama-style): activate from token 0
-                    _req_tool_schema = _tc_schema
+                _req_tool_schema = _tc_schema
 
     prompt         = _apply_chat_template(messages, _state.tokenizer)
     prompt_tokens  = _count_tokens(prompt)
@@ -1962,7 +1788,6 @@ async def chat_completions(  # pragma: no cover
                             ttft_s = time.perf_counter() - req_start
                         n_comp += 1
                         yield _make_chunk(tok_text, model_id, cid)
-                        await asyncio.sleep(0)  # flush chunk to TCP buffer
                     if finish is not None:
                         last_finish = finish
                         break
@@ -2007,8 +1832,7 @@ async def chat_completions(  # pragma: no cover
                     last_finish = finish
                     break
         finally:
-            _req_tool_schema   = None  # clear per-request tool schema override
-            _req_grammar_state = None  # clear per-request TagDispatch (Phase 15E)
+            _req_tool_schema = None  # clear per-request tool schema override
             _state.inflight -= 1
             dur = time.perf_counter() - req_start
             _state.record_completion(n_comp, dur, ttft_s)
@@ -2025,7 +1849,7 @@ async def chat_completions(  # pragma: no cover
 
         # ── Tool calling: detect function call in output ──────────────────────
         if tools:
-            from squish.serving.tool_calling import (  # noqa: PLC0415
+            from squish.tool_calling import (  # noqa: PLC0415
                 build_tool_calls_response,
                 parse_tool_calls,
                 stream_tool_calls_response,
@@ -2089,7 +1913,7 @@ async def chat_completions(  # pragma: no cover
 @app.post("/v1/completions")
 async def completions(  # pragma: no cover
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
 ):
     """
     POST /v1/completions — legacy text completion endpoint.
@@ -2194,7 +2018,7 @@ async def completions(  # pragma: no cover
 @app.post("/v1/embeddings")
 async def embeddings(
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
 ):
     """
     POST /v1/embeddings — mean-pooled last-hidden-state embeddings.
@@ -2271,7 +2095,6 @@ async def health():
         _mem_available = round(_memory_governor.available_gb, 2)
         _mem_pressure  = _memory_governor.pressure_level
     return {
-        "version":      "9.0.0",
         "status":       "ok" if _state.model is not None else "no_model",
         "model":        _state.model_name,
         "loaded":       _state.model is not None,
@@ -2349,7 +2172,7 @@ async def metrics():
 @app.post("/v1/tokenize")
 async def tokenize(
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = _sec(_bearer),
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
 ):
     """
     POST /v1/tokenize — tokenize text and return token IDs + count.
@@ -2432,15 +2255,6 @@ Examples:
                     help="Path to EAGLE-3 draft head directory (from `squish pull-head`). "
                          "Enables EAGLE-3 speculative decoding (~75-85%% acceptance rate). "
                          "Incompatible with --draft-model.")
-    ap.add_argument("--redrafter-head-dir", default="",
-                    help="Path to ReDrafter GRU head directory (redrafter.npz). "
-                         "Enables ReDrafter speculative decoding (~60-75%% acceptance rate). "
-                         "Lower quality than EAGLE-3 but trains from scratch without a "
-                         "target-model-specific checkpoint.")
-    ap.add_argument("--ssd-threshold", type=float, default=0.0,
-                    help="SSD acceptance-predictor threshold in [0, 1]. "
-                         "Filters draft tokens before the target verify pass. "
-                         "0.0 (default) disables SSD. Only used with --redrafter-head-dir.")
     ap.add_argument("--no-prefix-cache", action="store_true", default=False,
                     help="Disable the prefix (exact-match) response cache")
     ap.add_argument("--prefix-cache-size", type=int, default=512,
@@ -2515,13 +2329,6 @@ Examples:
                          "  balanced    — moderate resource use\n"
                          "  battery     — minimal resource use\n"
                          "  auto        — poll pmset every 30 s and switch automatically")
-    # ── Phase 15G: Kernel fusion flags ────────────────────────────────────────
-    ap.add_argument("--fused-norm", action="store_true", default=False,
-                    help="Phase 15G: patch FFN/SwiGLU with mx.compile for fused dispatch "
-                         "(reduces dispatch overhead on Apple Silicon)")
-    ap.add_argument("--metal-fusion", action="store_true", default=False,
-                    help="Phase 15G: enable Metal custom kernels (fused RoPE/QKV/SwiGLU). "
-                         "Requires --fused-norm; implies it.")
     # ── Phase 1.3: KV cache quantization ─────────────────────────────────────
     ap.add_argument("--kv-cache-mode",
                     choices=["fp16", "int8", "snap"],
@@ -2540,69 +2347,6 @@ Examples:
                     help="SVD rank for KV compression: project head_dim → N before INT8.\n"
                          "0 = off (default).  Recommended: 64 for head_dim=128 models.\n"
                          "Requires --kv-cache-mode int8 or snap.")
-    # ── Phase 3: Q-Filters — geometric KV eviction ───────────────────────────
-    ap.add_argument("--qfilter", action="store_true", default=False,
-                    help="Enable Q-Filter geometric KV cache eviction (Phase 3).\n"
-                         "Fits a per-layer SVD basis from the first 64 key vectors, then\n"
-                         "evicts KV tokens whose projected keys are geometrically distant\n"
-                         "from recent query directions.  Keeps context within --qfilter-budget\n"
-                         "positions without relying on attention-score heuristics.\n"
-                         "Combine with --kv-cache-mode int8 for maximum compression.")
-    ap.add_argument("--qfilter-rank", type=int, default=32, metavar="N",
-                    help="SVD projection rank for Q-Filters (default 32).\n"
-                         "Higher rank = more precise eviction, higher calibration cost.\n"
-                         "Typical range: 16–64 for head_dim=128 models.")
-    ap.add_argument("--qfilter-budget", type=int, default=2048, metavar="N",
-                    help="Max KV positions to retain per layer after Q-filter eviction\n"
-                         "(default 2048).  Similar role to --kv-cache-budget for SnapKV.")
-    ap.add_argument("--qfilter-anchor", type=int, default=64, metavar="N",
-                    help="Recent tokens always preserved by Q-filter (default 64).\n"
-                         "These cover the immediate local context that attention always needs.")
-    ap.add_argument("--qfilter-evict-every", type=int, default=16, metavar="N",
-                    help="Run Q-filter eviction every N decode steps (default 16).\n"
-                         "Lower = more aggressive; 0 = every step.")
-    # ── Phase 5: TTT Fast Weights ─────────────────────────────────────────────
-    ap.add_argument("--fast-weight-lr", type=float, default=0.0, metavar="LR",
-                    help="Phase 5: TTT Fast Weight learning rate (default 0.0 = off).\n"
-                         "When > 0, tokens evicted by --qfilter are absorbed into a per-layer\n"
-                         "outer-product memory matrix W_f before removal, preserving their\n"
-                         "information as compressed linear-attention history.")
-    ap.add_argument("--fast-weight-decay", type=float, default=0.999, metavar="D",
-                    help="Per-absorption W_f decay factor (default 0.999). "
-                         "Range [0, 1]; 1.0 = no forgetting.")
-    # ── Phase 6: LLM-42 Determinism + Repetition Penalty ──────────────────────
-    ap.add_argument("--seed", type=int, default=None, metavar="N",
-                    help="Phase 6: Global default RNG seed for deterministic generation.\n"
-                         "Seed 42 = *LLM-42* convention (default None = non-deterministic).\n"
-                         "A per-request seed field in the API body overrides this value.")
-    ap.add_argument("--deterministic", action="store_true", default=False,
-                    help="Phase 6: Enable LLM-42 deterministic inference with TokenVerifier.\n"
-                         "Uses DeterministicSampler (seeded multinomial) instead of the default\n"
-                         "sampler.  TokenVerifier re-samples buffered logits every\n"
-                         "--det-verify-every steps to detect and roll back Metal GPU\n"
-                         "non-determinism.  Use with --seed (or --det-seed) to fix the sequence.")
-    ap.add_argument("--det-seed", type=int, default=None, metavar="N",
-                    help="Phase 6: Seed for DeterministicSampler / TokenVerifier.  "
-                         "Overrides --seed when both are provided.  Default: same as --seed.")
-    ap.add_argument("--det-verify-every", type=int, default=8, metavar="N",
-                    help="Phase 6: TokenVerifier check interval — verify every N decode steps "
-                         "(default 8).  0 = verify on every step.  Higher = lower CPU overhead.")
-    ap.add_argument("--rep-penalty", type=float, default=1.0, metavar="P",
-                    help="Phase 6: Repetition penalty factor ≥ 1.0 (default 1.0 = off).\n"
-                         "Penalises tokens that have appeared recently in the context:\n"
-                         "  positive logits are divided by P; negative logits are multiplied by P\n"
-                         "(Keskar et al. 2019 convention).")
-    ap.add_argument("--rep-penalty-window", type=int, default=64, metavar="N",
-                    help="Number of most-recent tokens tracked for repetition penalty "
-                         "(default 64).  0 = entire context window.")
-    # ── Phase 13: RadixTree KV prefix reuse ──────────────────────────────────
-    ap.add_argument("--prefix-kv-store", type=int, default=0, metavar="N",
-                    help="Phase 13: Keep up to N post-prefill KV snapshots in memory for\n"
-                         "prefix reuse (default 0 = off).  When a new request's prompt shares\n"
-                         "a prefix with a stored snapshot, only the delta (new) tokens are\n"
-                         "run through the model — reducing prefill cost for repeated system\n"
-                         "prompts, few-shot examples, or shared conversation histories.\n"
-                         "Recommended: 4–16.  Each snapshot ≈ n_layers × n_tokens × 2 B RAM.")
     # ── Phase 13A: Asymmetric INT2 KV Cache ──────────────────────────────────
     ap.add_argument("--agent-kv", action="store_true", default=False,
                     help="Enable the asymmetric INT2 KV cache (AgentKV):\n"
@@ -2615,15 +2359,6 @@ Examples:
                     help="Number of FP32 attention-sink tokens to preserve (default 4)")
     ap.add_argument("--agent-kv-window", type=int, default=64, metavar="N",
                     help="FP32 local-window token count for AgentKV (default 64)")
-    # ── Phase 14: MoE Expert Lookahead Router ────────────────────────────────
-    ap.add_argument("--moe-lookahead", action="store_true", default=False,
-                    help="[Experimental] Enable MoE expert lookahead router (Phase 14):\n"
-                         "  Predicts which experts will be active in the next decode step\n"
-                         "  using an EMA of hidden-state deltas; prefetches expert weights\n"
-                         "  to reduce MoE gather latency by ~65–75%% on DeepSeek-family models.\n"
-                         "  Automatically enabled by --agent preset for MoE catalog entries.")
-    ap.add_argument("--moe-lookahead-steps", type=int, default=3, metavar="K",
-                    help="Lookahead horizon: steps to predict ahead (default 3)")
     # Phase 2 retrieval attention
     ap.add_argument("--retrieval-attention", action="store_true", default=False,
                     help="Enable retrieval attention: fetch only the top-k most relevant\n"
@@ -2864,12 +2599,6 @@ Examples:
              "QuIP# format into a larger float16 cache on first load.",
     )
     ap.add_argument(
-        "--aqlm",
-        action="store_true",
-        default=False,
-        help="Enable AQLM 2-bit quantised weights (Experimental)",
-    )
-    ap.add_argument(
         "--all-optimizations", action="store_true", default=False,
         help=(
             "Enable ALL built-in optimization modules at once. "
@@ -2885,45 +2614,6 @@ Examples:
             "Useful for local testing. Modules that fail to init are skipped."
         ),
     )
-    # ── Waves 13-14: KV / Attention / Token / Speculative / Quant flags ─────────
-    ap.add_argument("--shadow-kv", action="store_true", default=False,
-                    help="Wave 13: Enable ShadowKV attention-sink KV eviction.")
-    ap.add_argument("--pq-cache", action="store_true", default=False,
-                    help="Wave 13: Enable PQ-Cache product-quantised KV compression.")
-    ap.add_argument("--spe-cache", action="store_true", default=False,
-                    help="Wave 13: Enable SPE-Cache speculative KV prediction.")
-    ap.add_argument("--duo-attention", action="store_true", default=False,
-                    help="Wave 13: Enable DuoAttention sparse/dense head split.")
-    ap.add_argument("--duo-decoding", action="store_true", default=False,
-                    help="Wave 13: Enable DuoDecoding sparse attention decode.")
-    ap.add_argument("--knapspec", action="store_true", default=False,
-                    help="Wave 13: Enable KnapSpec budget-constrained speculation.")
-    ap.add_argument("--token-merging", action="store_true", default=False,
-                    help="Wave 13: Enable token merging (ToMe) for reduced sequence length.")
-    ap.add_argument("--token-swift", action="store_true", default=False,
-                    help="Wave 13: Enable TokenSwift multi-round KV reuse.")
-    ap.add_argument("--c2t", action="store_true", default=False,
-                    help="Wave 13: Enable Cache-to-Token (C2T) KV distillation.")
-    ap.add_argument("--sub-spec", action="store_true", default=False,
-                    help="Wave 14: Enable SubSpec sub-token speculation.")
-    ap.add_argument("--qspec", action="store_true", default=False,
-                    help="Wave 14: Enable QSpec quantised draft speculation.")
-    ap.add_argument("--quant-spec", action="store_true", default=False,
-                    help="Wave 14: Enable QuantSpec INT4 speculative decoding.")
-    ap.add_argument("--copy-spec", action="store_true", default=False,
-                    help="Wave 14: Enable CopySpec verbatim passage speculation.")
-    ap.add_argument("--head-infer", action="store_true", default=False,
-                    help="Wave 14: Enable HeadInfer head-level KV inference.")
-    ap.add_argument("--dfloat11", action="store_true", default=False,
-                    help="Wave 14: Enable DFloat11 11-bit floating-point weight compression.")
-    ap.add_argument("--rans-codec", action="store_true", default=False,
-                    help="Wave 14: Enable rANS arithmetic-coding KV entropy codec.")
-    ap.add_argument("--squeeze-llm", action="store_true", default=False,
-                    help="Wave 14: Enable SqueezeLLM sparse-quantised weight loading.")
-    ap.add_argument("--nf4-quant", action="store_true", default=False,
-                    help="Wave 14: Enable NF4 (NormalFloat4) weight quantisation.")
-    ap.add_argument("--spin-quant", action="store_true", default=False,
-                    help="Wave 14: Enable SpinQuant random-rotation 4-bit quantisation.")
     # ── Phase 13D: Agent preset ───────────────────────────────────────────────
     ap.add_argument(
         "--agent", action="store_true", default=False,
@@ -2937,45 +2627,6 @@ Examples:
             "running long tool-call agent loops."
         ),
     )
-
-    # ── WhatsApp / Meta Cloud API integration ────────────────────────────────
-    ap.add_argument("--whatsapp", action="store_true", default=False,
-                    help="Enable WhatsApp webhook endpoints at /webhook/whatsapp "
-                         "using the Meta (WhatsApp Business) Cloud API. "
-                         "The server must be publicly reachable via a reverse proxy "
-                         "(Caddy/nginx on a VPS) or Tailscale Funnel. "
-                         "No extra Python packages required.")
-    ap.add_argument("--whatsapp-verify-token", default="",
-                    help="Verify token you set in the Meta Developer Dashboard "
-                         "to confirm webhook ownership. "
-                         "Also readable from WHATSAPP_VERIFY_TOKEN env var.")
-    ap.add_argument("--whatsapp-app-secret", default="",
-                    help="Meta App Secret for HMAC-SHA256 webhook signature validation "
-                         "(App Settings → Basic in the Meta Developer Dashboard). "
-                         "Also readable from WHATSAPP_APP_SECRET env var.")
-    ap.add_argument("--whatsapp-access-token", default="",
-                    help="Meta access token for sending replies via the Graph API "
-                         "(WhatsApp → API Setup in the Meta Developer Dashboard). "
-                         "Also readable from WHATSAPP_ACCESS_TOKEN env var.")
-    ap.add_argument("--whatsapp-phone-number-id", default="",
-                    help="Meta Phone Number ID (WhatsApp → API Setup). "
-                         "Also readable from WHATSAPP_PHONE_NUMBER_ID env var.")
-    ap.add_argument("--system-prompt", default="",
-                    help="Custom system prompt injected at the start of every "
-                         "WhatsApp or Signal session.")
-    # ── Signal / signal-cli integration ───────────────────────────────────────
-    ap.add_argument("--signal", action="store_true", default=False,
-                    help="Enable Signal bot via a running signal-cli daemon. "
-                         "Requires --signal-account and a signal-cli daemon listening "
-                         "on --signal-socket (no internet tunnel needed — runs entirely "
-                         "on-device or within your private network).")
-    ap.add_argument("--signal-account", default="",
-                    help="E.164 phone number registered in signal-cli "
-                         "(e.g. +15551234567). Also readable from SIGNAL_ACCOUNT env var.")
-    ap.add_argument("--signal-socket", default="127.0.0.1:7583",
-                    help="signal-cli JSON-RPC daemon address: "
-                         "host:port (e.g. 127.0.0.1:7583) or UNIX socket path "
-                         "(e.g. /tmp/signal-cli.sock). Default: 127.0.0.1:7583.")
 
     args = ap.parse_args()
 
@@ -3009,7 +2660,7 @@ Examples:
             try:
                 import sys as _sys
                 if _sys.platform == "darwin":
-                    from squish.serving.memory_governor import MemoryGovernor as _MG  # noqa: PLC0415
+                    from squish.memory_governor import MemoryGovernor as _MG  # noqa: PLC0415
                     _mg_tmp = _MG(poll_interval=60.0).start()
                     _free_gb = _mg_tmp.available_gb
                     _mg_tmp.stop()
@@ -3021,16 +2672,6 @@ Examples:
         _info("agent-preset",
               f"active  agent-kv=True  chunk-prefill=True"
               f"  batch={args.batch_size}  max-kv={args.max_kv_size}")
-        # Phase 14: auto-enable --moe-lookahead for MoE catalog entries
-        if not getattr(args, "moe_lookahead", False):
-            try:
-                from squish.catalog import resolve as _cat_resolve  # noqa: PLC0415
-                _cat_e = _cat_resolve(_state.model_name)
-                if _cat_e is not None and _cat_e.moe:
-                    args.moe_lookahead = True
-                    _info("agent-preset", "auto-enabled moe-lookahead (catalog moe=True)")
-            except Exception:
-                pass
 
     global _API_KEY
     # Prefer explicit CLI flag; fall back to SQUISH_API_KEY env var.
@@ -3056,7 +2697,7 @@ Examples:
     global _paged_kv_cache
     if getattr(args, "paged_attention", False) and _state.model is not None:
         try:
-            from squish.kv.paged_attention import PagedKVCache as _PagedKVCache
+            from squish.paged_attention import PagedKVCache as _PagedKVCache
             _paged_kv_cache = _PagedKVCache.from_model(
                 _state.model,
                 metal_fraction=getattr(args, "paged_attention_fraction", 0.25),
@@ -3103,7 +2744,7 @@ Examples:
     global _disk_prompt_cache
     if getattr(args, "disk_prompt_cache", ""):
         try:
-            from squish.kv.kv_cache import DiskKVCache as _DiskKVCache
+            from squish.kv_cache import DiskKVCache as _DiskKVCache
         except ImportError:
             from kv_cache import DiskKVCache as _DiskKVCache  # direct run
         _disk_prompt_cache = _DiskKVCache(
@@ -3118,8 +2759,8 @@ Examples:
     if getattr(args, "lazy_llm", False) and _state.model is not None:
         try:
             try:
-                from squish.context.lazy_llm import LazyLLMConfig
-                from squish.context.lazy_llm import patch_model_lazy_llm as _patch_llm
+                from squish.lazy_llm import LazyLLMConfig
+                from squish.lazy_llm import patch_model_lazy_llm as _patch_llm
             except ImportError:
                 from lazy_llm import LazyLLMConfig
                 from lazy_llm import patch_model_lazy_llm as _patch_llm
@@ -3139,7 +2780,7 @@ Examples:
 
     if _state.model is not None:
         try:
-            from squish.io.split_loader import SplitLayerLoader
+            from squish.split_loader import SplitLayerLoader
             _split_info = SplitLayerLoader.auto_split(_state.model, verbose=True)
             if _split_info:
                 _info("cpu/gpu split", f"{_split_info.cpu_count} layers offloaded  "
@@ -3151,63 +2792,25 @@ Examples:
     # ── Phase 2.3: Flash Attention status check ──────────────────────────────
     if _state.model is not None:
         try:
-            from squish.attention.flash_attention import patch_model_attention
+            from squish.flash_attention import patch_model_attention
             patch_model_attention(_state.model, verbose=args.verbose)
         except Exception as e:
             if args.verbose:
                 _warn(f"[flash_attention] Skipped: {e}")
 
-    # ── Phase 15G: mx.compile FFN fusion when --fused-norm or --metal-fusion ─
-    _use_metal_fusion  = getattr(args, "metal_fusion",  False)
-    _use_fused_norm    = getattr(args, "fused_norm",    False) or _use_metal_fusion
-    if _use_fused_norm and _state.model is not None:
-        try:
-            from squish.hardware.fused_kernels import patch_model_compiled_ffn
-            _metal_kw = {}
-            if _use_metal_fusion:
-                try:
-                    from squish.hardware.metal_fusion import MetalFusion as _MF
-                    _metal_kw["metal_fusion_kernels"] = _MF()
-                except Exception:
-                    pass
-            _n_patched = patch_model_compiled_ffn(_state.model, **_metal_kw)
-            _info("compiled-ffn", f"patched {_n_patched} FFN layer(s) with mx.compile")
-        except Exception as _e:
-            if args.verbose:
-                _warn(f"[compiled-ffn] Skipped: {_e}")
-
     # ── Phase 1.3: attach quantized KV cache if requested ─────────────
-    global _kv_cache, _qfilter_active
+    global _kv_cache
     if args.kv_cache_mode != "fp16" and _state.model is not None:
         try:
-            from squish.kv.kv_cache import patch_model_kv_cache
-            _qf_rank = getattr(args, "qfilter_rank", 32) if getattr(args, "qfilter", False) else 0
+            from squish.kv_cache import patch_model_kv_cache
             _kv_cache = patch_model_kv_cache(
                 _state.model,
                 mode=args.kv_cache_mode,
                 window=args.kv_cache_window,
                 budget=args.kv_cache_budget,
                 svd_rank=getattr(args, "kv_cache_svd_rank", 0),
-                qfilter_rank=_qf_rank,
-                qfilter_budget=getattr(args, "qfilter_budget", 2048),
-                qfilter_anchor=getattr(args, "qfilter_anchor", 64),
-                qfilter_evict_every=getattr(args, "qfilter_evict_every", 16),
-                fast_weight_lr=getattr(args, "fast_weight_lr", 0.0),
-                fast_weight_decay=getattr(args, "fast_weight_decay", 0.999),
                 verbose=True,
             )
-            _qfilter_active = _qf_rank > 0
-            if _qfilter_active:
-                _info("qfilter",
-                      f"enabled  rank={_qf_rank}"
-                      f"  budget={getattr(args, 'qfilter_budget', 2048)}"
-                      f"  anchor={getattr(args, 'qfilter_anchor', 64)}"
-                      f"  evict_every={getattr(args, 'qfilter_evict_every', 16)}")
-            _fw_lr = getattr(args, "fast_weight_lr", 0.0)
-            if _fw_lr > 0.0:
-                _info("fast-weight",
-                      f"enabled  lr={_fw_lr}"
-                      f"  decay={getattr(args, 'fast_weight_decay', 0.999)}")
             _info("kv-cache", f"ready ({args.kv_cache_mode})")
         except Exception as e:
             import logging as _logging
@@ -3215,43 +2818,11 @@ Examples:
                 "[KV cache] could not attach (%s) — running without KV quantisation", e
             )
 
-    # ── Phase 6: LLM-42 Determinism + Repetition Penalty ────────────────────
-    global _rep_penalty_factor, _rep_penalty_window_size, _llm42_default_seed
-    global _det_sampler, _det_verifier
-    _rep_penalty_factor      = getattr(args, "rep_penalty", 1.0)
-    _rep_penalty_window_size = getattr(args, "rep_penalty_window", 64)
-    _llm42_default_seed      = getattr(args, "seed", None)
-    if _rep_penalty_factor > 1.0:
-        _info("rep-penalty",
-              f"enabled  factor={_rep_penalty_factor}"
-              f"  window={_rep_penalty_window_size}")
-    if _llm42_default_seed is not None:
-        _info("llm42-seed", f"global default seed={_llm42_default_seed}")
-
-    if getattr(args, "deterministic", False):
-        from squish.core.determinism import (  # noqa: PLC0415
-            DeterminismConfig,
-            DeterministicSampler,
-            TokenVerifier,
-        )
-        det_seed = getattr(args, "det_seed", None) or _llm42_default_seed or 42
-        det_cfg  = DeterminismConfig(
-            seed         = det_seed,
-            verify_every = getattr(args, "det_verify_every", 8),
-            enabled      = True,
-        )
-        _det_sampler  = DeterministicSampler(det_cfg)
-        _det_verifier = TokenVerifier(det_cfg, _det_sampler)
-        _info("llm42-deterministic",
-              f"enabled  seed={det_seed}"
-              f"  verify_every={det_cfg.verify_every}"
-              f"  buffer_size={det_cfg.buffer_size}")
-
     # ── Phase 13A: Asymmetric INT2 KV cache (AgentKV) ────────────────────────
     global _agent_kv_config
     if getattr(args, "agent_kv", False):
         try:
-            from squish.kv.agent_kv import AgentKVConfig  # noqa: PLC0415
+            from squish.agent_kv import AgentKVConfig  # noqa: PLC0415
             _agent_kv_config = AgentKVConfig(
                 sink_tokens=getattr(args, "agent_kv_sink", 4),
                 window_tokens=getattr(args, "agent_kv_window", 64),
@@ -3262,44 +2833,12 @@ Examples:
         except Exception as _akv_exc:  # noqa: BLE001
             _info("agent-kv", f"unavailable ({_akv_exc})")
 
-    # ── Phase 14: MoE Expert Lookahead Router ────────────────────────────────
-    global _moe_lookahead_router
-    if getattr(args, "moe_lookahead", False):
-        try:
-            from squish.moe.moe_lookahead import (  # noqa: PLC0415
-                MoELookaheadConfig,
-                MoELookaheadRouter,
-            )
-            _lh_cfg = MoELookaheadConfig(
-                lookahead_steps=getattr(args, "moe_lookahead_steps", 3),
-            )
-            _moe_lookahead_router = MoELookaheadRouter(_lh_cfg)
-            _info("moe-lookahead",
-                  f"enabled  steps={_lh_cfg.lookahead_steps}"
-                  f"  alpha={_lh_cfg.ema_alpha}"
-                  f"  n_experts={_lh_cfg.n_experts}")
-        except Exception as _moe_exc:  # noqa: BLE001
-            _info("moe-lookahead", f"unavailable ({_moe_exc})")
-
-    # ── Phase 13: RadixTree KV prefix reuse ──────────────────────────────────
-    global _prefix_kv_store
-    _pkv_n = getattr(args, "prefix_kv_store", 0)
-    if _pkv_n > 0 and _kv_cache is not None:
-        try:
-            from squish.kv.prefix_kv_store import PrefixKVStore as _PrefixKVStore  # noqa: PLC0415
-            _prefix_kv_store = _PrefixKVStore(_prefix_cache, max_snapshots=_pkv_n)
-            _info("prefix-kv-store",
-                  f"enabled  max_snapshots={_pkv_n}"
-                  f"  min_prefix_tokens={_prefix_kv_store._min_prefix}")
-        except Exception as _pkv_exc:  # noqa: BLE001
-            _info("prefix-kv-store", f"unavailable ({_pkv_exc})")
-
     # ── Phase 3: persistent cross-session KV cache ────────────────────────────
     global _session_kv_cache
     _session_cache_dir = getattr(args, "session_cache_dir", "")
     if _session_cache_dir:
         try:
-            from squish.kv.kv_cache import SessionKVCache as _SessionKVCache
+            from squish.kv_cache import SessionKVCache as _SessionKVCache
             _session_kv_cache = _SessionKVCache(cache_dir=_session_cache_dir)
             _info("session-cache", f"{_session_cache_dir}")
         except Exception as _e:
@@ -3336,7 +2875,7 @@ Examples:
     global _semantic_cache
     if getattr(args, "semantic_cache", False):
         try:
-            from squish.kv.semantic_cache import SquishSemanticCache  # noqa: PLC0415
+            from squish.semantic_cache import SquishSemanticCache  # noqa: PLC0415
             _sc_db = getattr(args, "semantic_cache_db", "") or \
                      str(Path.home() / ".squish" / "response_cache.db")
             _semantic_cache = SquishSemanticCache(db_path=_sc_db)
@@ -3394,7 +2933,7 @@ Examples:
     global _grammar_engine, _structured_output_mode, _structured_output_schema
     _structured_output_mode = getattr(args, "structured_output", "none")
     if _structured_output_mode != "none" and _state.tokenizer is not None:
-        from squish.grammar.grammar_engine import GrammarEngine  # noqa: PLC0415
+        from squish.grammar_engine import GrammarEngine  # noqa: PLC0415
         if GrammarEngine.is_available():
             _grammar_engine = GrammarEngine(_state.tokenizer)
             if _structured_output_mode == "json-schema":
@@ -3413,7 +2952,7 @@ Examples:
     global _power_monitor, _power_mode
     _power_mode = getattr(args, "power_mode", "performance")
     if _power_mode == "auto":
-        from squish.serving.power_monitor import PowerMonitor, apply_mode  # noqa: PLC0415
+        from squish.power_monitor import PowerMonitor, apply_mode  # noqa: PLC0415
         _power_monitor = PowerMonitor()
         _initial_mode = _power_monitor.get_recommended_mode()
         apply_mode(_initial_mode, globals())
@@ -3427,7 +2966,7 @@ Examples:
                 return
             _new_mode = _power_monitor.get_recommended_mode()
             if _new_mode != _power_mode:
-                from squish.serving.power_monitor import apply_mode as _am  # noqa: PLC0415
+                from squish.power_monitor import apply_mode as _am  # noqa: PLC0415
                 _am(_new_mode, globals())
                 _power_mode = _new_mode
                 _info("power-mode", f"switched → {_new_mode}")
@@ -3438,7 +2977,7 @@ Examples:
         _pt.daemon = True
         _pt.start()
     elif _power_mode != "performance":
-        from squish.serving.power_monitor import apply_mode  # noqa: PLC0415
+        from squish.power_monitor import apply_mode  # noqa: PLC0415
         apply_mode(_power_mode, globals())
         _info("power-mode", _power_mode)
 
@@ -3447,7 +2986,7 @@ Examples:
     if _sys.platform == "darwin":
         global _memory_governor
         try:
-            from squish.serving.memory_governor import MemoryGovernor  # noqa: PLC0415
+            from squish.memory_governor import MemoryGovernor  # noqa: PLC0415
             _memory_governor = MemoryGovernor(poll_interval=5.0).start()
             _info("memory-governor",
                   f"started  available={_memory_governor.available_gb:.1f} GB"
@@ -3464,8 +3003,8 @@ Examples:
     global _scheduler
     if args.batch_scheduler and _state.model is not None:
         try:
-            from squish.serving.scheduler import BatchScheduler, NestedWaitScheduler
-            from squish.serving.scheduler import QueueFullError as _QFE
+            from squish.scheduler import BatchScheduler, NestedWaitScheduler
+            from squish.scheduler import QueueFullError as _QFE
             global _QueueFullError
             _QueueFullError = _QFE
             _sched_cls = (BatchScheduler
@@ -3495,14 +3034,6 @@ Examples:
         print()
         load_eagle_head(args.eagle_head_dir, verbose=args.verbose)
 
-    if getattr(args, "redrafter_head_dir", ""):
-        print()
-        load_redrafter_head(
-            args.redrafter_head_dir,
-            ssd_threshold=getattr(args, "ssd_threshold", 0.0),
-            verbose=args.verbose,
-        )
-
     # ── Wave optimization module initialisation ───────────────────────────────
     global _prompt_lookup_decoder, _seq_packer, _ada_serve_scheduler
     global _conf_spec_verifier, _kvsharer_map, _kv_slab_allocator
@@ -3516,7 +3047,7 @@ Examples:
 
     if getattr(args, "prompt_lookup", False):
         try:
-            from squish.speculative.prompt_lookup import PromptLookupConfig, PromptLookupDecoder
+            from squish.prompt_lookup import PromptLookupConfig, PromptLookupDecoder
             _plcfg = PromptLookupConfig(
                 ngram_min=2,
                 ngram_max=getattr(args, "prompt_lookup_n", 3),
@@ -3524,14 +3055,14 @@ Examples:
             )
             # PromptLookupDecoder needs the forward callable; defer full init to inference.
             # Store config now; decoder is instantiated on first generation call.
-            _prompt_lookup_decoder = _plcfg
+            _prompt_lookup_decoder = _plcfg  # type: ignore[assignment]
             _info("prompt-lookup", f"ngram_max={_plcfg.ngram_max}  max_speculative={_plcfg.max_speculative}")
         except Exception as _e:
             _warn(f"[prompt-lookup] Skipped: {_e}")
 
     if getattr(args, "seq_packing", False):
         try:
-            from squish.streaming.seq_packing import PackingConfig, SequencePacker
+            from squish.seq_packing import PackingConfig, SequencePacker
             _spcfg = PackingConfig(max_packed_length=getattr(args, "seq_packing_budget", 2048))
             _seq_packer = SequencePacker(_spcfg)
             _info("seq-packing", f"max_packed_length={_spcfg.max_packed_length}")
@@ -3540,7 +3071,7 @@ Examples:
 
     if getattr(args, "ada_serve", False):
         try:
-            from squish.serving.ada_serve import AdaServeConfig, AdaServeScheduler, BUILT_IN_SLOS
+            from squish.ada_serve import BUILT_IN_SLOS, AdaServeConfig, AdaServeScheduler
             _slo_name = getattr(args, "ada_serve_slo", "general")
             _ada_slo = BUILT_IN_SLOS.get(_slo_name, BUILT_IN_SLOS["general"])
             _ada_cfg = AdaServeConfig()
@@ -3552,7 +3083,7 @@ Examples:
 
     if getattr(args, "conf_spec", False):
         try:
-            from squish.speculative.conf_spec import ConfSpecConfig, ConfSpecVerifier
+            from squish.conf_spec import ConfSpecConfig, ConfSpecVerifier
             _cscfg = ConfSpecConfig(
                 high_gate=getattr(args, "conf_spec_high_gate", 0.90),
                 low_gate=getattr(args, "conf_spec_low_gate", 0.50),
@@ -3564,7 +3095,7 @@ Examples:
 
     if getattr(args, "kv_share", False):
         try:
-            from squish.kv.kvsharer import KVSharerConfig, KVShareMap
+            from squish.kvsharer import KVShareMap, KVSharerConfig
             _kvshr_cfg = KVSharerConfig(share_every_n_layers=getattr(args, "kv_share_every", 2))
             _kvsharer_map = KVShareMap(_kvshr_cfg)
             _info("kv-share", f"every={_kvshr_cfg.share_every_n_layers} layers")
@@ -3573,7 +3104,7 @@ Examples:
 
     if getattr(args, "kv_slab", False):
         try:
-            from squish.kv.kv_slab import KVSlabAllocator
+            from squish.kv_slab import KVSlabAllocator
             _kv_slab_allocator = KVSlabAllocator(n_pages=getattr(args, "kv_slab_pages", 256))
             _info("kv-slab", f"pages={getattr(args, 'kv_slab_pages', 256)}")
         except Exception as _e:
@@ -3581,7 +3112,7 @@ Examples:
 
     if getattr(args, "paris_kv", False):
         try:
-            from squish.kv.paris_kv import ParisKVConfig, ParisKVCodebook
+            from squish.paris_kv import ParisKVCodebook, ParisKVConfig
             _paris_cfg = ParisKVConfig(n_centroids=getattr(args, "paris_kv_centroids", 64))
             _paris_kv_codebook = ParisKVCodebook(_paris_cfg)
             _info("paris-kv", f"centroids={_paris_cfg.n_centroids}")
@@ -3590,7 +3121,7 @@ Examples:
 
     if getattr(args, "streaming_sink", False):
         try:
-            from squish.streaming.streaming_sink import SinkConfig, SinkKVCache
+            from squish.streaming_sink import SinkConfig, SinkKVCache
             _sink_cfg = SinkConfig(max_tokens=getattr(args, "streaming_sink_size", 2048))
             _streaming_sink_cache = SinkKVCache(_sink_cfg)
             _info("streaming-sink", f"budget={_sink_cfg.max_tokens}")
@@ -3599,7 +3130,7 @@ Examples:
 
     if getattr(args, "diff_kv", False):
         try:
-            from squish.kv.diffkv import DiffKVConfig, DiffKVPolicyManager
+            from squish.diffkv import DiffKVConfig, DiffKVPolicyManager
             _diffkv_cfg = DiffKVConfig()
             _diffkv_policy_mgr = DiffKVPolicyManager(_diffkv_cfg)
             _info("diff-kv", f"critical={_diffkv_cfg.critical_fraction}  marginal={_diffkv_cfg.marginal_fraction}")
@@ -3608,7 +3139,7 @@ Examples:
 
     if getattr(args, "small_kv", False):
         try:
-            from squish.kv.smallkv import SmallKVConfig, SmallKVCache
+            from squish.smallkv import SmallKVCache, SmallKVConfig
             _smallkv_cfg = SmallKVConfig()
             _smallkv_cache = SmallKVCache(_smallkv_cfg)
             _info("small-kv", f"budget={_smallkv_cfg.kv_budget_fraction}  recall_k={_smallkv_cfg.recall_top_k}")
@@ -3617,7 +3148,7 @@ Examples:
 
     if getattr(args, "lookahead", False):
         try:
-            from squish.token.lookahead_reasoning import LookaheadConfig, LookaheadReasoningEngine
+            from squish.lookahead_reasoning import LookaheadConfig, LookaheadReasoningEngine
             _la_cfg = LookaheadConfig(lookahead_k=getattr(args, "lookahead_k", 4))
             # draft_fn is wired to the actual model at inference time; store config only
             _la_cfg._server_enabled = True  # marker checked during generation
@@ -3627,7 +3158,7 @@ Examples:
 
     if getattr(args, "spec_reason", False):
         try:
-            from squish.speculative.spec_reason import SpecReasonConfig
+            from squish.spec_reason import SpecReasonConfig
             _sr_cfg = SpecReasonConfig()
             _sr_cfg._server_enabled = True  # marker checked during generation
             _info("spec-reason", f"min_score={_sr_cfg.min_acceptance_score}  max_draft={_sr_cfg.max_draft_steps}")
@@ -3637,7 +3168,7 @@ Examples:
     # ── Attention and KV kernels ─────────────────────────────────────────────
     if getattr(args, "sage_attention", False):
         try:
-            from squish.attention.sage_attention import SageAttentionConfig, SageAttentionKernel
+            from squish.sage_attention import SageAttentionConfig, SageAttentionKernel
             _sage_attn_kernel = SageAttentionKernel(SageAttentionConfig())
             _info("sage-attention", "INT8 QK^T kernel ready  (~2.1× attention speedup)")
         except Exception as _e:
@@ -3645,7 +3176,7 @@ Examples:
 
     if getattr(args, "sage_attention2", False):
         try:
-            from squish.attention.sage_attention2 import SageAttention2Config, SageAttention2Kernel
+            from squish.sage_attention2 import SageAttention2Config, SageAttention2Kernel
             _sage_attn2_kernel = SageAttention2Kernel(SageAttention2Config())
             _info("sage-attention2", "INT4/FP8 kernel ready  (~3.1× attention speedup)")
         except Exception as _e:
@@ -3653,7 +3184,7 @@ Examples:
 
     if getattr(args, "sparge_attention", False):
         try:
-            from squish.attention.sparge_attn import SpargeAttnConfig, SpargeAttnEngine
+            from squish.sparge_attn import SpargeAttnConfig, SpargeAttnEngine
             _sparge_engine = SpargeAttnEngine(SpargeAttnConfig())
             _info("sparge-attention", "sparse+quantized attention engine ready  (2.5–5× speedup)")
         except Exception as _e:
@@ -3661,7 +3192,7 @@ Examples:
 
     if getattr(args, "squeeze_attention", False):
         try:
-            from squish.attention.squeeze_attention import SqueezeConfig, SqueezeKVCache, LayerKVBudget
+            from squish.squeeze_attention import LayerKVBudget, SqueezeConfig, SqueezeKVCache
             _sq_cfg = SqueezeConfig()
             _sq_budgets = [
                 LayerKVBudget(layer_idx=i, token_budget=_sq_cfg.total_kv_budget // _sq_cfg.n_layers)
@@ -3675,7 +3206,7 @@ Examples:
     # ── KV cache strategies ──────────────────────────────────────────────────
     if getattr(args, "yoco_kv", False):
         try:
-            from squish.attention.yoco import YOCOConfig
+            from squish.yoco import YOCOConfig
             _yoco_config = YOCOConfig()
             _yoco_config._server_enabled = True
             _info("yoco-kv", f"cross-layer KV reuse enabled  (self_attn_layers={_yoco_config.n_self_attn_layers})")
@@ -3684,7 +3215,7 @@ Examples:
 
     if getattr(args, "cla", False):
         try:
-            from squish.attention.cla import CLAConfig
+            from squish.cla import CLAConfig
             _cla_config = CLAConfig()
             _cla_config._server_enabled = True
             _info("cla", f"cross-layer attention enabled  (sharing_factor={_cla_config.sharing_factor})")
@@ -3693,7 +3224,7 @@ Examples:
 
     if getattr(args, "kvtuner", False):
         try:
-            from squish.kv.kvtuner import KVTunerConfig
+            from squish.kvtuner import KVTunerConfig
             _kvtuner_config = KVTunerConfig()
             _kvtuner_config._server_enabled = True
             _info("kvtuner", f"adaptive KV budget  (target_avg_bits={_kvtuner_config.target_avg_bits})")
@@ -3702,7 +3233,7 @@ Examples:
 
     if getattr(args, "robust_scheduler", False):
         try:
-            from squish.serving.robust_scheduler import RobustSchedulerConfig, AMaxScheduler
+            from squish.robust_scheduler import AMaxScheduler, RobustSchedulerConfig
             _robust_sched = AMaxScheduler(RobustSchedulerConfig())
             _info("robust-scheduler", f"A-max scheduling enabled  (max_batch_tokens={_robust_sched.config.max_batch_tokens})")
         except Exception as _e:
@@ -3710,7 +3241,7 @@ Examples:
 
     if getattr(args, "gemfilter", False):
         try:
-            from squish.token.gemfilter import GemFilterConfig
+            from squish.gemfilter import GemFilterConfig
             _gemfilter_config = GemFilterConfig()
             _gemfilter_config._server_enabled = True
             _info("gemfilter", f"attention head filter  (top_k_tokens={_gemfilter_config.top_k_tokens})")
@@ -3719,7 +3250,7 @@ Examples:
 
     if getattr(args, "svdq", False):
         try:
-            from squish.quant.svdq import SVDqConfig
+            from squish.svdq import SVDqConfig
             _svdq_config = SVDqConfig()
             _svdq_config._server_enabled = True
             _info("svdq", f"SVD KV quantization  (target_avg_bits={_svdq_config.target_avg_bits})")
@@ -3729,7 +3260,7 @@ Examples:
     # ── Speculative decoding variants ─────────────────────────────────────────
     if getattr(args, "sparse_spec", False):
         try:
-            from squish.speculative.sparse_spec import SparseSpecConfig
+            from squish.sparse_spec import SparseSpecConfig
             _sparse_spec_config = SparseSpecConfig()
             _sparse_spec_config._server_enabled = True
             _info("sparse-spec", f"sparse speculative decoding  (gamma={_sparse_spec_config.gamma}  top_k_ratio={_sparse_spec_config.top_k_ratio})")
@@ -3738,7 +3269,7 @@ Examples:
 
     if getattr(args, "sparse_verify", False):
         try:
-            from squish.speculative.sparse_verify import SparseVerifyConfig
+            from squish.sparse_verify import SparseVerifyConfig
             _sparse_verify_config = SparseVerifyConfig()
             _sparse_verify_config._server_enabled = True
             _info("sparse-verify", f"sparse draft verification  (attn_sparsity={_sparse_verify_config.attn_sparsity})")
@@ -3747,7 +3278,7 @@ Examples:
 
     if getattr(args, "long_spec", False):
         try:
-            from squish.speculative.long_spec import LongSpecConfig
+            from squish.long_spec import LongSpecConfig
             _long_spec_config = LongSpecConfig()
             _long_spec_config._server_enabled = True
             _info("long-spec", f"extended speculative decoding  (gamma={_long_spec_config.gamma}  max_context={_long_spec_config.max_context_len})")
@@ -3756,7 +3287,7 @@ Examples:
 
     if getattr(args, "fr_spec", False):
         try:
-            from squish.speculative.fr_spec import FRSpecConfig
+            from squish.fr_spec import FRSpecConfig
             _fr_spec_config = FRSpecConfig()
             _fr_spec_config._server_enabled = True
             _info("fr-spec", f"frequency-token speculative  (top_k_fraction={_fr_spec_config.top_k_fraction})")
@@ -3766,7 +3297,7 @@ Examples:
     # ── Token-importance / adaptive-layer strategies ──────────────────────────
     if getattr(args, "trail", False):
         try:
-            from squish.speculative.trail import TrailConfig
+            from squish.trail import TrailConfig
             _trail_config = TrailConfig()
             _trail_config._server_enabled = True
             _info("trail", f"token-importance layer skipping  (probe_layer={_trail_config.probe_layer})")
@@ -3775,7 +3306,7 @@ Examples:
 
     if getattr(args, "specontext", False):
         try:
-            from squish.speculative.specontext import SpeContextConfig
+            from squish.specontext import SpeContextConfig
             _specontext_config = SpeContextConfig()
             _specontext_config._server_enabled = True
             _info("specontext", f"speculative context retrieval  (topk={_specontext_config.retrieval_topk})")
@@ -3784,7 +3315,7 @@ Examples:
 
     if getattr(args, "forelen", False):
         try:
-            from squish.token.forelen import ForelenConfig
+            from squish.forelen import ForelenConfig
             _forelen_config = ForelenConfig()
             _forelen_config._server_enabled = True
             _info("forelen", f"forward length prediction  (buckets={_forelen_config.n_length_buckets})")
@@ -3793,7 +3324,7 @@ Examples:
 
     if getattr(args, "ipw", False):
         try:
-            from squish.token.ipw import IPWConfig
+            from squish.ipw import IPWConfig
             _ipw_config = IPWConfig()
             _ipw_config._server_enabled = True
             _info("ipw", f"importance-weighted prefill  (quality_weight={_ipw_config.quality_weight})")
@@ -3802,7 +3333,7 @@ Examples:
 
     if getattr(args, "layer_skip", False):
         try:
-            from squish.token.layer_skip import EarlyExitConfig
+            from squish.layer_skip import EarlyExitConfig
             _layer_skip_config = EarlyExitConfig()
             _layer_skip_config._server_enabled = True
             _info("layer-skip", f"early-exit adaptive decoding  (exit_layer={_layer_skip_config.exit_layer}  threshold={_layer_skip_config.confidence_threshold})")
@@ -3811,153 +3342,12 @@ Examples:
 
     if getattr(args, "lora_adapter", ""):
         try:
-            from squish.lora.lora_manager import LoRAManager
+            from squish.lora_manager import LoRAManager
             _lora_mgr = LoRAManager()
-            _lora_mgr.load(getattr(args, "lora_adapter"))
-            _info("lora-adapter", f"{getattr(args, 'lora_adapter')}")
+            _lora_mgr.load(args.lora_adapter)
+            _info("lora-adapter", f"{args.lora_adapter}")
         except Exception as _e:
             _warn(f"[lora-adapter] Skipped: {_e}")
-
-    # ── Waves 13-14: KV / Attention / Token / Speculative / Quant ─────────────
-    if getattr(args, "shadow_kv", False):
-        try:
-            from squish.kv.shadow_kv import ShadowKVConfig  # noqa: PLC0415
-            _info("shadow-kv", f"enabled  (eviction_ratio={ShadowKVConfig().eviction_ratio})")
-        except Exception as _e:
-            _warn(f"[shadow-kv] Skipped: {_e}")
-
-    if getattr(args, "pq_cache", False):
-        try:
-            from squish.kv.pq_cache import PQCacheConfig  # noqa: PLC0415
-            _info("pq-cache", f"enabled  (n_subvectors={PQCacheConfig().n_subvectors})")
-        except Exception as _e:
-            _warn(f"[pq-cache] Skipped: {_e}")
-
-    if getattr(args, "spe_cache", False):
-        try:
-            from squish.kv.spe_cache import SpeCacheConfig  # noqa: PLC0415
-            _info("spe-cache", f"enabled  (window={SpeCacheConfig().recent_window})")
-        except Exception as _e:
-            _warn(f"[spe-cache] Skipped: {_e}")
-
-    if getattr(args, "duo_attention", False):
-        try:
-            from squish.attention.duo_attention import DuoAttentionConfig  # noqa: PLC0415
-            _info("duo-attention", f"enabled  (sparse_heads={DuoAttentionConfig().sparse_head_fraction})")
-        except Exception as _e:
-            _warn(f"[duo-attention] Skipped: {_e}")
-
-    if getattr(args, "duo_decoding", False):
-        try:
-            from squish.attention.duo_decoding import DuoDecodingConfig  # noqa: PLC0415
-            _info("duo-decoding", f"enabled  (sparse_layers={DuoDecodingConfig().sparse_layers})")
-        except Exception as _e:
-            _warn(f"[duo-decoding] Skipped: {_e}")
-
-    if getattr(args, "knapspec", False):
-        try:
-            from squish.token.knapspec import KnapSpecConfig  # noqa: PLC0415
-            _info("knapspec", f"enabled  (budget={KnapSpecConfig().token_budget})")
-        except Exception as _e:
-            _warn(f"[knapspec] Skipped: {_e}")
-
-    if getattr(args, "token_merging", False):
-        try:
-            from squish.token.token_merging import TokenMergingConfig  # noqa: PLC0415
-            _info("token-merging", f"enabled  (r={TokenMergingConfig().r})")
-        except Exception as _e:
-            _warn(f"[token-merging] Skipped: {_e}")
-
-    if getattr(args, "token_swift", False):
-        try:
-            from squish.token.token_swift import TokenSwiftConfig  # noqa: PLC0415
-            _info("token-swift", f"enabled  (reuse_threshold={TokenSwiftConfig().reuse_threshold})")
-        except Exception as _e:
-            _warn(f"[token-swift] Skipped: {_e}")
-
-    if getattr(args, "c2t", False):
-        try:
-            from squish.token.c2t import C2TConfig  # noqa: PLC0415
-            _info("c2t", f"enabled  (distill_layers={C2TConfig().distill_layers})")
-        except Exception as _e:
-            _warn(f"[c2t] Skipped: {_e}")
-
-    if getattr(args, "sub_spec", False):
-        try:
-            from squish.speculative.sub_spec import SubSpecConfig  # noqa: PLC0415
-            _info("sub-spec", f"enabled  (gamma={SubSpecConfig().gamma})")
-        except Exception as _e:
-            _warn(f"[sub-spec] Skipped: {_e}")
-
-    if getattr(args, "qspec", False):
-        try:
-            from squish.speculative.qspec import QSpecConfig  # noqa: PLC0415
-            _info("qspec", f"enabled  (draft_bits={QSpecConfig().draft_bits})")
-        except Exception as _e:
-            _warn(f"[qspec] Skipped: {_e}")
-
-    if getattr(args, "quant_spec", False):
-        try:
-            from squish.speculative.quant_spec import QuantSpecConfig  # noqa: PLC0415
-            _info("quant-spec", f"enabled  (bits={QuantSpecConfig().bits})")
-        except Exception as _e:
-            _warn(f"[quant-spec] Skipped: {_e}")
-
-    if getattr(args, "copy_spec", False):
-        try:
-            from squish.speculative.copy_spec import CopySpecConfig  # noqa: PLC0415
-            _info("copy-spec", f"enabled  (min_match={CopySpecConfig().min_match_len})")
-        except Exception as _e:
-            _warn(f"[copy-spec] Skipped: {_e}")
-
-    if getattr(args, "head_infer", False):
-        try:
-            from squish.speculative.head_infer import HeadInferConfig  # noqa: PLC0415
-            _info("head-infer", f"enabled  (head_dim={HeadInferConfig().head_dim})")
-        except Exception as _e:
-            _warn(f"[head-infer] Skipped: {_e}")
-
-    if getattr(args, "dfloat11", False):
-        try:
-            from squish.quant.dfloat11 import DFloat11Config  # noqa: PLC0415
-            _info("dfloat11", f"enabled  (bits=11)")
-        except Exception as _e:
-            _warn(f"[dfloat11] Skipped: {_e}")
-
-    if getattr(args, "rans_codec", False):
-        try:
-            from squish.quant.rans_codec import RANSCodec  # noqa: PLC0415
-            _info("rans-codec", f"enabled  (symbol_bits={RANSCodec.DEFAULT_SYMBOL_BITS})")
-        except Exception as _e:
-            _warn(f"[rans-codec] Skipped: {_e}")
-
-    if getattr(args, "squeeze_llm", False):
-        try:
-            from squish.quant.squeeze_llm import SqueezeLLMConfig  # noqa: PLC0415
-            _info("squeeze-llm", f"enabled  (bits={SqueezeLLMConfig().bits})")
-        except Exception as _e:
-            _warn(f"[squeeze-llm] Skipped: {_e}")
-
-    if getattr(args, "nf4_quant", False):
-        try:
-            from squish.quant.nf4_quant import quantize_nf4  # noqa: PLC0415, F401
-            _info("nf4-quant", "enabled")
-        except Exception as _e:
-            _warn(f"[nf4-quant] Skipped: {_e}")
-
-    if getattr(args, "spin_quant", False):
-        try:
-            from squish.quant.spin_quant import run_rotation  # noqa: PLC0415, F401
-            _info("spin-quant", "enabled")
-        except Exception as _e:
-            _warn(f"[spin-quant] Skipped: {_e}")
-
-    if getattr(args, "aqlm", False):
-        try:
-            from squish.quant.aqlm import AQLMConfig  # noqa: PLC0415, F401
-            _info("aqlm", "enabled (additive codebook quantization — auto-detected by loader)")
-        except Exception as _e:
-            _warn(f"[aqlm] Skipped: {_e}")
 
     print()
     _section("")
@@ -3971,48 +3361,6 @@ Examples:
     print(f"    {_C.MG}OPENAI_BASE_URL{_C.R}=http://{args.host}:{args.port}/v1")
     print(f"    {_C.MG}OPENAI_API_KEY{_C.R}=squish")
     print()
-
-    # ── WhatsApp integration (--whatsapp flag) ──────────────────────────────
-    if getattr(args, "whatsapp", False):
-        try:
-            try:
-                from .serving.whatsapp import mount_whatsapp as _mount_whatsapp
-            except ImportError:
-                from squish.serving.whatsapp import mount_whatsapp as _mount_whatsapp
-            import os as _os
-            _mount_whatsapp(
-                app,
-                get_state        = lambda: _state,
-                get_generate     = lambda: _generate_tokens,
-                get_tokenizer    = lambda: _state.tokenizer,
-                verify_token     = args.whatsapp_verify_token     or _os.environ.get("WHATSAPP_VERIFY_TOKEN",     ""),
-                app_secret       = args.whatsapp_app_secret       or _os.environ.get("WHATSAPP_APP_SECRET",       ""),
-                access_token     = args.whatsapp_access_token     or _os.environ.get("WHATSAPP_ACCESS_TOKEN",     ""),
-                phone_number_id  = args.whatsapp_phone_number_id  or _os.environ.get("WHATSAPP_PHONE_NUMBER_ID",  ""),
-                system_prompt    = args.system_prompt or "",
-            )
-        except Exception as _wa_err:
-            print(f"[squish] WhatsApp mount failed: {_wa_err}", flush=True)
-
-    # ── Signal integration (--signal flag) ────────────────────────────────────
-    if getattr(args, "signal", False):
-        try:
-            try:
-                from .serving.signal_cli import mount_signal as _mount_signal
-            except ImportError:
-                from squish.serving.signal_cli import mount_signal as _mount_signal
-            import os as _os
-            _mount_signal(
-                app,
-                get_state     = lambda: _state,
-                get_generate  = lambda: _generate_tokens,
-                get_tokenizer = lambda: _state.tokenizer,
-                account       = args.signal_account or _os.environ.get("SIGNAL_ACCOUNT", ""),
-                socket_addr   = args.signal_socket or "127.0.0.1:7583",
-                system_prompt = args.system_prompt or "",
-            )
-        except Exception as _sg_err:
-            print(f"[squish] Signal mount failed: {_sg_err}", flush=True)
 
     uvicorn.run(
         app,

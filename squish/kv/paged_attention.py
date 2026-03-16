@@ -285,7 +285,7 @@ class PagedKVCache:
         n_layers: int,
         n_kv_heads: int,
         head_dim: int,
-        dtype: np.dtype = np.float16,
+        dtype: np.dtype = np.float16,  # type: ignore[assignment]
     ) -> None:
         self._allocator  = BlockAllocator(num_blocks)
         self._n_layers   = n_layers
@@ -503,7 +503,7 @@ class PagedKVCache:
         cls,
         model,
         metal_fraction: float = 0.25,
-        dtype: np.dtype = np.float16,
+        dtype: np.dtype = np.float16,  # type: ignore[assignment]
     ) -> PagedKVCache:
         """
         Construct a ``PagedKVCache`` sized to *metal_fraction* of available

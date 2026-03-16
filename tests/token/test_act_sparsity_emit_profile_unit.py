@@ -18,9 +18,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from squish.token.act_sparsity import ActSparsityPredictor, SparsityConfig
 from squish.hardware.neuron_profile import NeuronProfile, NeuronProfileConfig
-
+from squish.token.act_sparsity import ActSparsityPredictor, SparsityConfig
 
 RNG = np.random.default_rng(0)
 

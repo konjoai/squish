@@ -271,13 +271,13 @@ class AQLMQuantizer:
     ``calib_inputs`` is accepted for API compatibility).
     """
 
-    def __init__(self, config: Optional[AQLMConfig] = None) -> None:
+    def __init__(self, config: AQLMConfig | None = None) -> None:
         self.config = config if config is not None else AQLMConfig()
 
     def calibrate(
         self,
         weight: np.ndarray,
-        calib_inputs: Optional[np.ndarray] = None,  # noqa: ARG002  (reserved for future use)
+        calib_inputs: np.ndarray | None = None,  # noqa: ARG002  (reserved for future use)
     ) -> AQLMLayer:
         """
         Compress a 2-D weight matrix with AQLM.
@@ -354,11 +354,11 @@ class AQLMQuantizer:
     # Convenience aliases expected by bench_2bit and convert.py
     # ------------------------------------------------------------------
 
-    def compress(self, weight: np.ndarray) -> "AQLMLayer":
+    def compress(self, weight: np.ndarray) -> AQLMLayer:
         """Alias for :meth:`calibrate`.  Returns a compressed ``AQLMLayer``."""
         return self.calibrate(weight)
 
-    def decompress(self, layer: "AQLMLayer") -> np.ndarray:
+    def decompress(self, layer: AQLMLayer) -> np.ndarray:
         """Dequantize *layer* back to a float32 numpy array."""
         return layer.dequantize()
 
@@ -387,7 +387,7 @@ def aqlm_dequantize(layer: AQLMLayer) -> np.ndarray:
 
 def quantize_model_aqlm(
     model_weights: dict,
-    config: Optional[AQLMConfig] = None,
+    config: AQLMConfig | None = None,
 ) -> dict:
     """
     Walk a dict of model weight tensors and compress every 2-D weight matrix

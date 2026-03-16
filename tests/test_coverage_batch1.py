@@ -1,54 +1,53 @@
 """Coverage tests for batch 1 modules: mix_kvq, quant_aware, quant_calib, fp8_quant,
 long_context_chunk, adaptive_batcher, schema_validator, prefix_pool."""
-import pytest
 import numpy as np
+import pytest
 
+from squish.grammar.schema_validator import (
+    SchemaValidator,
+    ValidationResult,
+)
 from squish.kv.mix_kvq import (
-    MixKVQConfig,
     ChannelScorer,
+    MixKVQConfig,
     MixKVQQuantizer,
     MixKVQStats,
 )
+from squish.kv.prefix_pool import (
+    PrefixEntry,
+    PrefixPool,
+    PrefixPoolConfig,
+    PrefixPoolStats,
+)
+from squish.quant.fp8_quant import (
+    FP8Config,
+    FP8Quantizer,
+    FP8Tensor,
+    fp8_decode,
+    fp8_encode_e4m3,
+    fp8_encode_e5m2,
+)
 from squish.quant.quant_aware import (
     QAConfig,
-    QuantAwareCalibrator,
     QAStats,
+    QuantAwareCalibrator,
 )
 from squish.quant.quant_calib import (
     CalibConfig,
     CalibResult,
-    QuantCalibrator,
     CalibStats,
+    QuantCalibrator,
 )
-from squish.quant.fp8_quant import (
-    FP8Config,
-    FP8Tensor,
-    FP8Quantizer,
-    fp8_encode_e4m3,
-    fp8_encode_e5m2,
-    fp8_decode,
+from squish.serving.adaptive_batcher import (
+    AdaptiveBatchController,
+    BatchDecision,
+    BatchObjective,
 )
 from squish.streaming.long_context_chunk import (
     ChunkConfig,
-    LongContextChunker,
     ChunkStats,
+    LongContextChunker,
 )
-from squish.serving.adaptive_batcher import (
-    BatchObjective,
-    BatchDecision,
-    AdaptiveBatchController,
-)
-from squish.grammar.schema_validator import (
-    ValidationResult,
-    SchemaValidator,
-)
-from squish.kv.prefix_pool import (
-    PrefixPoolConfig,
-    PrefixEntry,
-    PrefixPool,
-    PrefixPoolStats,
-)
-
 
 # ===========================================================================
 # mix_kvq

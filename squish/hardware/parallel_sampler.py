@@ -45,7 +45,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -71,7 +70,7 @@ class DiversityConfig:
     n_samples:        int            = 8
     temperature:      float          = 0.8
     diversity_weight: float          = 0.1
-    seed:             Optional[int]  = None
+    seed:             int | None  = None
 
     def __post_init__(self) -> None:
         if self.n_samples < 1:

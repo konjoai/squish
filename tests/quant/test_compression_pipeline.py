@@ -12,9 +12,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from squish.quant import quantizer as _qmod
 from squish.convert import quantize_tensor
 from squish.io.loader_utils import _dequantize_npy
+from squish.quant import quantizer as _qmod
 
 _HAS_INT4 = getattr(_qmod, "_squish_quant", None) is not None
 

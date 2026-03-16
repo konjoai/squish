@@ -49,7 +49,6 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -71,7 +70,7 @@ class PrefixPoolConfig:
     max_entries: int = 256
     n_heads: int = 32
     head_dim: int = 128
-    kv_n_heads: Optional[int] = None
+    kv_n_heads: int | None = None
     eviction_policy: str = "lru"
 
     def __post_init__(self) -> None:
@@ -147,7 +146,7 @@ class PrefixPool:
 
     def __init__(self, config: PrefixPoolConfig) -> None:
         self._config = config
-        self._entries: Dict[str, PrefixEntry] = {}
+        self._entries: dict[str, PrefixEntry] = {}
         self._n_hits: int = 0
         self._n_misses: int = 0
         self._n_evictions: int = 0
@@ -209,7 +208,7 @@ class PrefixPool:
 
     def get(
         self, prefix_tokens: list
-    ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    ) -> tuple[np.ndarray, np.ndarray] | None:
         """Return cached ``(keys, values)`` for *prefix_tokens*, or ``None``.
 
         Updates *hit_count* and *last_used* on a cache hit.
@@ -286,7 +285,7 @@ class PrefixPool:
         """
         return self._total_kv_saved
 
-    def get_stats(self) -> "PrefixPoolStats":
+    def get_stats(self) -> PrefixPoolStats:
         """Return a snapshot of current pool statistics."""
         return PrefixPoolStats(
             n_hits=self._n_hits,

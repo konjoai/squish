@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from squish.benchmarks.base import EngineConfig, ResultRecord
 from squish.benchmarks.agent_bench import (
     AgentBenchConfig,
     AgentBenchRunner,
@@ -16,6 +15,7 @@ from squish.benchmarks.agent_bench import (
     ToolFixtureReplay,
     _load_scenarios,
 )
+from squish.benchmarks.base import EngineConfig, ResultRecord
 
 _ENGINE = EngineConfig("squish", "http://localhost:11434")
 

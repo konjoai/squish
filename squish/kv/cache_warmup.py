@@ -51,7 +51,6 @@ from typing import Optional
 
 import numpy as np  # noqa: F401  — imported for dtype compatibility in future extensions
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------

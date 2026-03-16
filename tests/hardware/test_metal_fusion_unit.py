@@ -49,9 +49,9 @@ import numpy as np
 import pytest
 
 from squish.hardware.metal_fusion import (
+    _METAL_FUSION_AVAILABLE,
     MetalFusionConfig,
     MetalFusionKernels,
-    _METAL_FUSION_AVAILABLE,
     _rope_numpy,
     fused_int8_kv_attn,
     fused_rope_qk,

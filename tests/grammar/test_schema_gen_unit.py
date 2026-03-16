@@ -17,7 +17,6 @@ import pytest
 
 from squish.grammar.schema_gen import SchemaGenEngine, SchemaState
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

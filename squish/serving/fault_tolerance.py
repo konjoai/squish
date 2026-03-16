@@ -183,7 +183,7 @@ class FaultStats:
     kv_evictions: int = 0
     draft_disables: int = 0
     batch_reductions: int = 0
-    last_governor_level: "int | None" = None
+    last_governor_level: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +291,7 @@ class FaultHandler:
 
     def evaluate_from_governor(
         self,
-        governor: "MemoryGovernor",
+        governor: MemoryGovernor,
         current_batch_size: int,
     ) -> list[str]:
         """Evaluate using a live :class:`~squish.serving.memory_governor.MemoryGovernor`.

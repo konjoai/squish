@@ -63,7 +63,7 @@ class ReportGenerator:
         except Exception:
             return "dev"
 
-    def load_results(self, date_prefix: str = "") -> List[ResultRecord]:
+    def load_results(self, date_prefix: str = "") -> list[ResultRecord]:
         results = []
         for p in Path(self.config.input_dir).glob("*.json"):
             if p.name.startswith("comparison_") or p.name == "eval_meta.json":
@@ -79,7 +79,7 @@ class ReportGenerator:
 
     def generate(
         self,
-        results: Optional[List[ResultRecord]] = None,
+        results: list[ResultRecord] | None = None,
         *,
         write_file: bool = True,
     ) -> str:
@@ -91,16 +91,16 @@ class ReportGenerator:
         now = datetime.datetime.utcnow()
 
         lines = [
-            f"# Squish Benchmark Report",
-            f"",
+            "# Squish Benchmark Report",
+            "",
             f"**Date**: {now.strftime('%Y-%m-%d %H:%M UTC')}  ",
             f"**Squish version**: {ver}  ",
             f"**Hardware**: {hw}  ",
-            f"",
-            f"---",
-            f"",
-            f"## Summary",
-            f"",
+            "",
+            "---",
+            "",
+            "## Summary",
+            "",
         ]
 
         # Headline numbers per engine

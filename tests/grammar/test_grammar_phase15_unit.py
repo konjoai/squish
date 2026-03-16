@@ -40,11 +40,10 @@ import numpy as np
 import pytest
 
 from squish.grammar.grammar_engine import (
+    _SCHEMA_CACHE_MAXSIZE,
     GrammarEngine,
     TagDispatch,
-    _SCHEMA_CACHE_MAXSIZE,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers: build a mock xgrammar + GrammarEngine in "available" mode

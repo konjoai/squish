@@ -222,12 +222,12 @@ class KVCodec:
     def __init__(
         self,
         config: CodecConfig,
-        rng: Optional[np.random.Generator] = None,
+        rng: np.random.Generator | None = None,
     ) -> None:
         self.config = config
         self._rng = rng if rng is not None else np.random.default_rng(42)
-        self._key_codebook: Optional[np.ndarray] = None  # (n_codebook, head_dim)
-        self._val_codebook: Optional[np.ndarray] = None  # (n_codebook, head_dim)
+        self._key_codebook: np.ndarray | None = None  # (n_codebook, head_dim)
+        self._val_codebook: np.ndarray | None = None  # (n_codebook, head_dim)
         self._stats = CodecStats()
 
     # ------------------------------------------------------------------

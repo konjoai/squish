@@ -16,7 +16,6 @@ from squish.benchmarks.tool_bench import (
     _load_schemas,
 )
 
-
 _ENGINE = EngineConfig("squish", "http://localhost:11434")
 
 

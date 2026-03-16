@@ -16,13 +16,12 @@ from __future__ import annotations
 import pytest
 
 from squish.grammar.grammar_cache import (
+    _FSM_DEPTH_LIMIT,
     FSMState,
     FSMTransition,
     GrammarCache,
     GrammarStats,
-    _FSM_DEPTH_LIMIT,
 )
-
 
 # ---------------------------------------------------------------------------
 # FSMState

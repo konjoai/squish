@@ -188,7 +188,11 @@ class TestKVSlabWiring:
 
 class TestSqueezeAttentionWiring:
     def test_import(self):
-        from squish.attention.squeeze_attention import BudgetAllocator, SqueezeConfig, SqueezeKVCache
+        from squish.attention.squeeze_attention import (
+            BudgetAllocator,
+            SqueezeConfig,
+            SqueezeKVCache,
+        )
         cfg   = SqueezeConfig(n_layers=4, total_kv_budget=1024,
                                min_tokens_per_layer=16, max_tokens_per_layer=512)
         alloc = BudgetAllocator(cfg)
@@ -205,7 +209,11 @@ class TestSqueezeAttentionWiring:
         assert cfg.avg_tokens_per_layer <= cfg.max_tokens_per_layer
 
     def test_append_and_get_kv(self):
-        from squish.attention.squeeze_attention import BudgetAllocator, SqueezeConfig, SqueezeKVCache
+        from squish.attention.squeeze_attention import (
+            BudgetAllocator,
+            SqueezeConfig,
+            SqueezeKVCache,
+        )
         rng     = np.random.default_rng(0)
         cfg     = SqueezeConfig(n_layers=2, total_kv_budget=128,
                                  min_tokens_per_layer=8, max_tokens_per_layer=64)
@@ -219,7 +227,11 @@ class TestSqueezeAttentionWiring:
         assert k_out.shape[0] >= 1
 
     def test_total_size_and_stats(self):
-        from squish.attention.squeeze_attention import BudgetAllocator, SqueezeConfig, SqueezeKVCache
+        from squish.attention.squeeze_attention import (
+            BudgetAllocator,
+            SqueezeConfig,
+            SqueezeKVCache,
+        )
         rng     = np.random.default_rng(1)
         n       = 4
         cfg     = SqueezeConfig(n_layers=n, total_kv_budget=64,
@@ -293,7 +305,11 @@ class TestSmallKVWiring:
 
 class TestSpeContextWiring:
     def test_import(self):
-        from squish.speculative.specontext import DistilledRetrievalHead, SpeContextCache, SpeContextConfig
+        from squish.speculative.specontext import (
+            DistilledRetrievalHead,
+            SpeContextCache,
+            SpeContextConfig,
+        )
         cfg    = SpeContextConfig(retrieval_topk=8, head_dim=16, n_retrieval_heads=2)
         head   = DistilledRetrievalHead(cfg)
         cache  = SpeContextCache(head, cfg)
@@ -307,7 +323,11 @@ class TestSpeContextWiring:
         assert cfg.n_retrieval_heads >= 1
 
     def test_append_and_retrieve(self):
-        from squish.speculative.specontext import DistilledRetrievalHead, SpeContextCache, SpeContextConfig
+        from squish.speculative.specontext import (
+            DistilledRetrievalHead,
+            SpeContextCache,
+            SpeContextConfig,
+        )
         rng   = np.random.default_rng(0)
         dim   = 16
         t     = 32
@@ -580,7 +600,11 @@ class TestPromptCompressorWiring:
 
 class TestPromptLookupWiring:
     def test_import(self):
-        from squish.speculative.prompt_lookup import NGramIndex, PromptLookupConfig, PromptLookupDecoder
+        from squish.speculative.prompt_lookup import (
+            NGramIndex,
+            PromptLookupConfig,
+            PromptLookupDecoder,
+        )
         cfg   = PromptLookupConfig(ngram_min=2, ngram_max=4, max_speculative=4)
         rng   = np.random.default_rng(0)
         index = NGramIndex(ngram_min=2, ngram_max=4)
@@ -610,7 +634,11 @@ class TestPromptLookupWiring:
         assert isinstance(results, list)
 
     def test_decoder_generate(self):
-        from squish.speculative.prompt_lookup import PromptLookupConfig, PromptLookupDecoder, PromptLookupStats
+        from squish.speculative.prompt_lookup import (
+            PromptLookupConfig,
+            PromptLookupDecoder,
+            PromptLookupStats,
+        )
         rng   = np.random.default_rng(0)
         vocab = 32
         cfg   = PromptLookupConfig(ngram_min=2, ngram_max=3, max_speculative=3)

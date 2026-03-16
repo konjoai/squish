@@ -53,7 +53,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -76,7 +75,7 @@ class PagedKVConfig:
     n_blocks: int = 512
     n_heads: int = 32
     head_dim: int = 128
-    kv_n_heads: Optional[int] = None
+    kv_n_heads: int | None = None
 
     def __post_init__(self) -> None:
         if self.kv_n_heads is None:
@@ -239,6 +238,7 @@ class PagedKVCache:
 
     def __init__(self, config: PagedKVConfig) -> None:
         self._cfg = config
+        assert config.kv_n_heads is not None  # resolved in PagedKVConfig.__post_init__
         self._block_table = BlockTable(config.n_blocks, config.block_size)
         # Pre-allocate the entire physical pool up front to avoid GC pressure.
         self._pool: list[KVBlock] = [
@@ -316,6 +316,7 @@ class PagedKVCache:
 
         n_tokens = self._seq_len[seq_id]
         cfg = self._cfg
+        assert cfg.kv_n_heads is not None  # resolved in PagedKVConfig.__post_init__
         keys_out = np.empty((cfg.kv_n_heads, n_tokens, cfg.head_dim), dtype=np.float32)
         vals_out = np.empty((cfg.kv_n_heads, n_tokens, cfg.head_dim), dtype=np.float32)
 

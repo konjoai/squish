@@ -85,7 +85,7 @@ class MergeConfig:
     t: float = 0.5
     dare_density: float = 0.5
     ties_k: float = 0.2
-    base_weights: Optional[Dict[str, np.ndarray]] = None
+    base_weights: dict[str, np.ndarray] | None = None
 
     def __post_init__(self) -> None:
         if self.method not in ("slerp", "dare", "ties"):
@@ -199,7 +199,7 @@ def dare_merge(
     density: float,
     t: float,
     *,
-    seed: Optional[int] = None,
+    seed: int | None = None,
 ) -> np.ndarray:
     """DARE (Drop And REscale) merge of two fine-tuned delta tensors.
 
@@ -243,7 +243,7 @@ def dare_merge(
 
 def ties_merge(
     base: np.ndarray,
-    deltas: List[Tuple[np.ndarray, np.ndarray]],
+    deltas: list[tuple[np.ndarray, np.ndarray]],
     k: float,
 ) -> np.ndarray:
     """TIES (TrIm, Elect Sign and Merge) weight merging.
@@ -279,12 +279,12 @@ def ties_merge(
     base_f = base.astype(np.float32)
 
     # Step 0: compute per-model deltas.
-    raw_deltas: List[np.ndarray] = [
+    raw_deltas: list[np.ndarray] = [
         ft.astype(np.float32) - bw.astype(np.float32) for bw, ft in deltas
     ]
 
     # Step 1: Trim each delta to the top-k fraction by absolute magnitude.
-    trimmed: List[np.ndarray] = []
+    trimmed: list[np.ndarray] = []
     for d in raw_deltas:
         flat_abs = np.abs(d).ravel()
         n_total = len(flat_abs)
@@ -341,14 +341,14 @@ class ModelMerger:
         self._config = config
         self._n_merged: int = 0
         self._total_keys: int = 0
-        self._last_stats: Optional[Dict] = None
+        self._last_stats: dict | None = None
 
     def merge(
         self,
-        weights_a: Dict[str, np.ndarray],
-        weights_b: Dict[str, np.ndarray],
-        base_weights: Optional[Dict[str, np.ndarray]] = None,
-    ) -> Dict[str, np.ndarray]:
+        weights_a: dict[str, np.ndarray],
+        weights_b: dict[str, np.ndarray],
+        base_weights: dict[str, np.ndarray] | None = None,
+    ) -> dict[str, np.ndarray]:
         """Merge two weight dictionaries.
 
         Keys present in *both* dicts are merged with the configured algorithm.
@@ -375,7 +375,7 @@ class ModelMerger:
         )
 
         common_keys = sorted(set(weights_a.keys()) & set(weights_b.keys()))
-        merged: Dict[str, np.ndarray] = {}
+        merged: dict[str, np.ndarray] = {}
 
         for key in common_keys:
             a = weights_a[key]
@@ -422,7 +422,7 @@ class ModelMerger:
         return self._n_merged
 
     @property
-    def last_merge_stats(self) -> Optional[Dict]:
+    def last_merge_stats(self) -> dict | None:
         """Stats dict for the most recent merge, or ``None`` before first call.
 
         Keys: ``keys_merged`` (int), ``method`` (str), ``t`` (float).

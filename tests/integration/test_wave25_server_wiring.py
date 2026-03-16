@@ -8,6 +8,7 @@ Each test covers: import, instantiation, core method invocation, and stats/prope
 from __future__ import annotations
 
 import math
+
 import numpy as np
 import pytest
 
@@ -144,7 +145,7 @@ def test_fused_sampler_batch():
 # ── KVDefrag ──────────────────────────────────────────────────────────────────
 
 def test_kv_defrag_import():
-    from squish.kv.kv_defrag import KVDefragmenter, DefragStats
+    from squish.kv.kv_defrag import DefragStats, KVDefragmenter
     d = KVDefragmenter(page_size=8, n_heads=2, head_dim=4)
     assert d is not None
 
@@ -181,13 +182,13 @@ def test_kv_defrag_fragmentation_ratio():
 # ── DualChunkAttn ─────────────────────────────────────────────────────────────
 
 def test_dual_chunk_attn_import():
-    from squish.attention.dual_chunk_attn import DualChunkAttention, DCAConfig
+    from squish.attention.dual_chunk_attn import DCAConfig, DualChunkAttention
     cfg = DCAConfig(n_heads=2, head_dim=8, chunk_size=16, inter_chunk_top_k=2)
     assert cfg.chunk_size == 16
 
 
 def test_dual_chunk_attn_encode_chunk():
-    from squish.attention.dual_chunk_attn import DualChunkAttention, DCAConfig
+    from squish.attention.dual_chunk_attn import DCAConfig, DualChunkAttention
     n_heads, head_dim, chunk_size = 2, 8, 16
     cfg = DCAConfig(n_heads=n_heads, head_dim=head_dim, chunk_size=chunk_size)
     attn = DualChunkAttention(cfg)
@@ -199,7 +200,7 @@ def test_dual_chunk_attn_encode_chunk():
 
 
 def test_dual_chunk_attn_forward_intra_only():
-    from squish.attention.dual_chunk_attn import DualChunkAttention, DCAConfig
+    from squish.attention.dual_chunk_attn import DCAConfig, DualChunkAttention
     n_heads, head_dim = 2, 8
     cfg = DCAConfig(n_heads=n_heads, head_dim=head_dim, chunk_size=16)
     attn = DualChunkAttention(cfg)
@@ -212,7 +213,7 @@ def test_dual_chunk_attn_forward_intra_only():
 
 
 def test_dual_chunk_attn_forward_with_past():
-    from squish.attention.dual_chunk_attn import DualChunkAttention, DCAConfig
+    from squish.attention.dual_chunk_attn import DCAConfig, DualChunkAttention
     n_heads, head_dim, chunk_size = 2, 8, 16
     cfg = DCAConfig(n_heads=n_heads, head_dim=head_dim, chunk_size=chunk_size, inter_chunk_top_k=2)
     attn = DualChunkAttention(cfg)
@@ -310,14 +311,14 @@ def test_morph_attn_flops_reduction():
 # ── HydraSpec ─────────────────────────────────────────────────────────────────
 
 def test_hydra_spec_import():
-    from squish.speculative.hydra_spec import HydraSpecDecoder, HydraConfig
+    from squish.speculative.hydra_spec import HydraConfig, HydraSpecDecoder
     cfg = HydraConfig(n_heads=3, n_draft=4, hidden_dim=32, vocab_size=100)
     decoder = HydraSpecDecoder(cfg)
     assert decoder is not None
 
 
 def test_hydra_spec_draft_shape():
-    from squish.speculative.hydra_spec import HydraSpecDecoder, HydraConfig
+    from squish.speculative.hydra_spec import HydraConfig, HydraSpecDecoder
     n_heads, n_draft, hidden_dim, vocab = 3, 4, 32, 100
     cfg = HydraConfig(n_heads=n_heads, n_draft=n_draft, hidden_dim=hidden_dim, vocab_size=vocab)
     decoder = HydraSpecDecoder(cfg)
@@ -329,7 +330,7 @@ def test_hydra_spec_draft_shape():
 
 
 def test_hydra_spec_verify():
-    from squish.speculative.hydra_spec import HydraSpecDecoder, HydraConfig
+    from squish.speculative.hydra_spec import HydraConfig, HydraSpecDecoder
     n_heads, n_draft, hidden_dim, vocab = 2, 3, 16, 50
     cfg = HydraConfig(n_heads=n_heads, n_draft=n_draft, hidden_dim=hidden_dim, vocab_size=vocab)
     decoder = HydraSpecDecoder(cfg)
@@ -343,7 +344,7 @@ def test_hydra_spec_verify():
 
 
 def test_hydra_spec_acceptance_rate():
-    from squish.speculative.hydra_spec import HydraSpecDecoder, HydraConfig
+    from squish.speculative.hydra_spec import HydraConfig, HydraSpecDecoder
     cfg = HydraConfig(n_heads=2, n_draft=3, hidden_dim=16, vocab_size=50)
     decoder = HydraSpecDecoder(cfg)
     history = np.array([True, False, True, True, False], dtype=bool)
@@ -354,7 +355,7 @@ def test_hydra_spec_acceptance_rate():
 # ── SeqCompact ────────────────────────────────────────────────────────────────
 
 def test_seq_compact_import():
-    from squish.streaming.seq_compact import SequenceCompactor, CompactStats
+    from squish.streaming.seq_compact import CompactStats, SequenceCompactor
     sc = SequenceCompactor(n_heads=2, head_dim=8)
     assert sc is not None
 
@@ -402,14 +403,14 @@ def test_seq_compact_compact_indices():
 # ── ParallelSampler ───────────────────────────────────────────────────────────
 
 def test_parallel_sampler_import():
-    from squish.hardware.parallel_sampler import ParallelSampler, DiversityConfig
+    from squish.hardware.parallel_sampler import DiversityConfig, ParallelSampler
     cfg = DiversityConfig(n_samples=4, temperature=0.8, seed=0)
     ps = ParallelSampler(cfg)
     assert ps is not None
 
 
 def test_parallel_sampler_sample_result():
-    from squish.hardware.parallel_sampler import ParallelSampler, DiversityConfig, SampleResult
+    from squish.hardware.parallel_sampler import DiversityConfig, ParallelSampler, SampleResult
     vocab = 100
     cfg = DiversityConfig(n_samples=8, temperature=1.0, seed=42)
     ps = ParallelSampler(cfg)
@@ -423,7 +424,7 @@ def test_parallel_sampler_sample_result():
 
 
 def test_parallel_sampler_batch():
-    from squish.hardware.parallel_sampler import ParallelSampler, DiversityConfig
+    from squish.hardware.parallel_sampler import DiversityConfig, ParallelSampler
     vocab, batch = 50, 4
     cfg = DiversityConfig(n_samples=4, seed=1)
     ps = ParallelSampler(cfg)
@@ -434,7 +435,7 @@ def test_parallel_sampler_batch():
 
 
 def test_parallel_sampler_best_in_candidates():
-    from squish.hardware.parallel_sampler import ParallelSampler, DiversityConfig
+    from squish.hardware.parallel_sampler import DiversityConfig, ParallelSampler
     vocab = 100
     cfg = DiversityConfig(n_samples=16, seed=3)
     ps = ParallelSampler(cfg)

@@ -52,7 +52,6 @@ from typing import Any
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # E8 codebook construction (once at import, deterministic, ~4 KB)
 # ---------------------------------------------------------------------------
@@ -400,7 +399,7 @@ def quip_dequantize(layer: QuIPSharpLayer) -> np.ndarray:
         R = layer.rotation_matrix.astype(np.float32)   # (d_in, d_in)
         W = W_rot @ R
     else:
-        W = W_rot
+        W = W_rot  # type: ignore[assignment]
 
     return W.astype(np.float16)
 

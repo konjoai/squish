@@ -50,7 +50,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # EMA smoothing factor for latency model updates.
 _EMA_ALPHA: float = 0.3
 

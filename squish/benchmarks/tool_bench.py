@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from squish.benchmarks.base import BenchmarkRunner, EngineClient, EngineConfig, ResultRecord
 
 
-def _load_schemas(path: Optional[str] = None) -> List[Dict[str, Any]]:
+def _load_schemas(path: str | None = None) -> list[dict[str, Any]]:
     """Load canonical tool schemas from data/tool_schemas.json."""
     if path is None:
         path = str(Path(__file__).parent / "data" / "tool_schemas.json")
@@ -27,8 +27,8 @@ def _load_schemas(path: Optional[str] = None) -> List[Dict[str, Any]]:
 @dataclass
 class ToolBenchConfig:
     """Configuration for Track C tool-use benchmark."""
-    schemas_path: Optional[str] = None   # None = use bundled data/tool_schemas.json
-    limit: Optional[int] = None          # cap on BFCL cases (None = up to 200)
+    schemas_path: str | None = None   # None = use bundled data/tool_schemas.json
+    limit: int | None = None          # cap on BFCL cases (None = up to 200)
     output_dir: str = "eval_output"
     use_bfcl: bool = False               # True = also fetch BFCL v3 from HuggingFace
     bfcl_limit: int = 200
@@ -38,7 +38,7 @@ class ToolEvaluator:
     """Scores tool-call responses against ground-truth schemas."""
 
     @staticmethod
-    def schema_compliance(response: Dict[str, Any]) -> bool:
+    def schema_compliance(response: dict[str, Any]) -> bool:
         """Return True if response contains a valid tool_calls list."""
         choices = response.get("choices", [])
         if not choices:
@@ -61,7 +61,7 @@ class ToolEvaluator:
         return True
 
     @staticmethod
-    def function_name_match(response: Dict[str, Any], expected_name: str) -> bool:
+    def function_name_match(response: dict[str, Any], expected_name: str) -> bool:
         """Return True if the response tool call function name matches expected."""
         choices = response.get("choices", [])
         if not choices:
@@ -74,8 +74,8 @@ class ToolEvaluator:
 
     @staticmethod
     def argument_match(
-        response: Dict[str, Any], expected_args: Dict[str, Any]
-    ) -> Tuple[int, int]:
+        response: dict[str, Any], expected_args: dict[str, Any]
+    ) -> tuple[int, int]:
         """Return (matched_required_args, total_required_args) for the first tool call."""
         choices = response.get("choices", [])
         if not choices:
@@ -92,7 +92,7 @@ class ToolEvaluator:
         return matched, len(expected_args)
 
     @staticmethod
-    def exact_match(response: Dict[str, Any], expected_call: Dict[str, Any]) -> bool:
+    def exact_match(response: dict[str, Any], expected_call: dict[str, Any]) -> bool:
         """Return True if tool call matches name AND all expected args."""
         if not ToolEvaluator.function_name_match(response, expected_call.get("name", "")):
             return False
@@ -118,7 +118,7 @@ class ToolBenchRunner(BenchmarkRunner):
         engine: EngineConfig,
         model: str,
         *,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> ResultRecord:
         effective_limit = limit if limit is not None else self._config.limit
         client = EngineClient(engine)
@@ -159,10 +159,10 @@ class ToolBenchRunner(BenchmarkRunner):
         self,
         client: EngineClient,
         model: str,
-        schemas: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        schemas: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Run each canonical schema as a single-turn tool call."""
-        case_results = []
+        case_results: list[dict[str, Any]] = []
         for schema in schemas:
             tool_def = schema.get("tool", {})
             prompt = schema.get("prompt", "Call the appropriate function.")

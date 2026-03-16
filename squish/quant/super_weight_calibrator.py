@@ -54,7 +54,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # SuperWeightCoord — a single identified super weight
 # ---------------------------------------------------------------------------
@@ -383,11 +382,11 @@ def _load_shard_f32(shard_path: Path) -> dict[str, np.ndarray]:
 
     import mlx.core as mx
     prev = mx.default_device()
-    mx.set_default_device(mx.cpu)
+    mx.set_default_device(mx.cpu)  # type: ignore[arg-type]
     try:
-        raw = mx.load(str(shard_path))
+        raw = mx.load(str(shard_path))  # type: ignore[assignment]
         return {
-            name: np.array(arr.astype(mx.float32))
+            name: np.array(arr.astype(mx.float32))  # type: ignore[call-overload]
             for name, arr in raw.items()
         }
     finally:

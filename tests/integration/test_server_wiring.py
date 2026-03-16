@@ -279,7 +279,11 @@ class TestSparseSpecOps:
         """SparseSpecDecoder requires a drafter and target_fn."""
         import inspect
 
-        from squish.speculative.sparse_spec import SparseSpecConfig, SparseSpecDecoder, SparseSpecDrafter
+        from squish.speculative.sparse_spec import (
+            SparseSpecConfig,
+            SparseSpecDecoder,
+            SparseSpecDrafter,
+        )
         # Verify the constructor signature (drafter, target_fn, config)
         sig = inspect.signature(SparseSpecDecoder.__init__)
         assert "drafter" in sig.parameters

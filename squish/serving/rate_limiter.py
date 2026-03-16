@@ -48,7 +48,6 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -151,7 +150,7 @@ class TokenBucketRateLimiter:
     def register_tenant(
         self,
         tenant_id: str,
-        config: Optional[RateLimitConfig] = None,
+        config: RateLimitConfig | None = None,
     ) -> None:
         """Register a tenant with an optional custom rate configuration.
 
@@ -169,7 +168,7 @@ class TokenBucketRateLimiter:
         self,
         tenant_id: str,
         n_tokens: int = 1,
-        now: Optional[float] = None,
+        now: float | None = None,
     ) -> LimitResult:
         """Attempt to consume *n_tokens* for *tenant_id*.
 
@@ -221,7 +220,7 @@ class TokenBucketRateLimiter:
             wait_ms=wait_s * 1000.0,
         )
 
-    def refill(self, tenant_id: str, now: Optional[float] = None) -> float:
+    def refill(self, tenant_id: str, now: float | None = None) -> float:
         """Trigger a manual refill for *tenant_id*.
 
         Args:
@@ -254,8 +253,8 @@ class TokenBucketRateLimiter:
     def _ensure_tenant(
         self,
         tenant_id: str,
-        config: Optional[RateLimitConfig] = None,
-        now: Optional[float] = None,
+        config: RateLimitConfig | None = None,
+        now: float | None = None,
     ) -> None:
         """Register *tenant_id* if not already known.
 

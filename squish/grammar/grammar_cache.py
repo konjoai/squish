@@ -180,13 +180,13 @@ class GrammarCache:
             )
         self._vocab_size: int = vocab_size
         # pattern_name -> compiled regex
-        self._patterns: Dict[str, re.Pattern[str]] = {}
+        self._patterns: dict[str, re.Pattern[str]] = {}
         # pattern_name -> int hash used for mask generation
-        self._pattern_hashes: Dict[str, int] = {}
+        self._pattern_hashes: dict[str, int] = {}
         # (state_id, pattern_name) -> bool np.ndarray mask
-        self._mask_cache: Dict[Tuple[int, str], np.ndarray] = {}
+        self._mask_cache: dict[tuple[int, str], np.ndarray] = {}
         # (from_state_id, pattern_name, token_id) -> FSMState
-        self._transition_cache: Dict[Tuple[int, str, int], FSMState] = {}
+        self._transition_cache: dict[tuple[int, str, int], FSMState] = {}
         self._total_lookups: int = 0
         self._cache_hits: int = 0
         self._n_transitions: int = 0
@@ -288,7 +288,7 @@ class GrammarCache:
         np.ndarray
             Shape ``(vocab_size,)`` boolean array; ``True`` = token permitted.
         """
-        key: Tuple[int, str] = (state.state_id, state.pattern_name)
+        key: tuple[int, str] = (state.state_id, state.pattern_name)
         self._total_lookups += 1
         cached = self._mask_cache.get(key)
         if cached is not None:
@@ -325,7 +325,7 @@ class GrammarCache:
             raise ValueError(
                 f"token_id {token_id} out of range [0, {self._vocab_size})."
             )
-        t_key: Tuple[int, str, int] = (
+        t_key: tuple[int, str, int] = (
             state.state_id,
             state.pattern_name,
             token_id,

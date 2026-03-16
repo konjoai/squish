@@ -370,7 +370,7 @@ class DFloat11Compressor:
     # Public API
     # ------------------------------------------------------------------
 
-    def _build_codec(self, freq: dict[int, int]) -> object:
+    def _build_codec(self, freq: dict[int, int]) -> Any:
         """Build either a RANSCodec or HuffmanCodec based on config."""
         if self.config.use_rans or self.config.use_context:
             RANSCodec = _get_rans_codec_class()
@@ -424,7 +424,7 @@ class DFloat11Compressor:
             context_codecs = {}
 
             unique_highs = np.unique(high_bytes)
-            ctx_codec_map: dict[int, object] = {}
+            ctx_codec_map: dict[int, Any] = {}
             for h in unique_highs.tolist():
                 mask      = high_bytes == h
                 low_group = low_bytes[mask]
@@ -485,7 +485,7 @@ class DFloat11Compressor:
         """
         # ── Decode high bytes (exponent/sign stream) ─────────────────────
         codes = block.codes
-        if isinstance(codes, dict) and codes.get("type") == "rans":
+        if isinstance(codes, dict) and codes.get("type") == "rans":  # type: ignore[call-overload]
             RANSCodec = _get_rans_codec_class()
             if RANSCodec is None:  # pragma: no cover
                 raise RuntimeError(
@@ -506,7 +506,7 @@ class DFloat11Compressor:
             data = block.sign_mantissa
             n_contexts, = struct.unpack_from("<H", data, 0)
             offset = 2
-            ctx_streams: dict[int, tuple[object, bytes]] = {}
+            ctx_streams: dict[int, tuple[Any, bytes]] = {}
 
             RANSCodec = _get_rans_codec_class()
 

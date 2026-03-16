@@ -200,6 +200,8 @@ class OnlineDraftUpdater:
         self._samples_since_update: int = 0
         self._total_updates: int = 0
         # LoRA adapter matrices (A: hidden→rank, B: rank→vocab)
+        self._lora_a: np.ndarray | None
+        self._lora_b: np.ndarray | None
         if self._config.lora_rank > 0:
             r = self._config.lora_rank
             self._lora_a = np.zeros((hidden_dim, r), dtype=np.float32)
@@ -339,6 +341,7 @@ class OnlineDraftUpdater:
         self._samples_since_update = 0
         self._total_updates = 0
         if self._lora_a is not None:
+            assert self._lora_b is not None  # always set together with lora_a
             self._lora_a[:] = 0.0
             self._lora_b[:] = 0.0
 

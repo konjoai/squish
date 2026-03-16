@@ -64,7 +64,7 @@ class LoRAConfig:
     rank: int = 16
     alpha: float = 32.0
     dropout: float = 0.0
-    target_modules: Optional[Tuple[str, ...]] = None
+    target_modules: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if self.rank <= 0:
@@ -131,7 +131,7 @@ class LoRAInferenceAdapter:
 
     def __init__(self, config: LoRAConfig) -> None:
         self._config = config
-        self._layers: Dict[str, LoRALayer] = {}
+        self._layers: dict[str, LoRALayer] = {}
         self._stats = LoRAStats()
 
     # ------------------------------------------------------------------
@@ -217,7 +217,7 @@ class LoRAInferenceAdapter:
     # Merge
     # ------------------------------------------------------------------
 
-    def merge_into(self, weights_dict: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def merge_into(self, weights_dict: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """Return a new weight dict with each LoRA delta permanently merged.
 
         For each registered adapter the weight delta ``A @ B * scaling`` (shape
@@ -232,7 +232,7 @@ class LoRAInferenceAdapter:
             New dict with merged weights; unregistered keys are preserved
             unchanged.
         """
-        result: Dict[str, np.ndarray] = dict(weights_dict)
+        result: dict[str, np.ndarray] = dict(weights_dict)
         for name, layer in self._layers.items():
             # Weight delta: equivalent to applying LoRA to an identity input
             delta = layer.A @ layer.B * layer.scaling  # (in_features, out_features)
@@ -247,7 +247,7 @@ class LoRAInferenceAdapter:
     # ------------------------------------------------------------------
 
     @property
-    def adapter_names(self) -> List[str]:
+    def adapter_names(self) -> list[str]:
         """Names of all registered LoRA modules."""
         return list(self._layers.keys())
 
@@ -257,7 +257,7 @@ class LoRAInferenceAdapter:
         return sum(layer.n_params for layer in self._layers.values())
 
     @property
-    def stats(self) -> "LoRAStats":
+    def stats(self) -> LoRAStats:
         """Running inference statistics."""
         return self._stats
 

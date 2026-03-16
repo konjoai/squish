@@ -14,7 +14,6 @@ from squish.benchmarks.code_bench import (
     CodeBenchRunner,
 )
 
-
 _ENGINE = EngineConfig("squish", "http://localhost:11434")
 
 

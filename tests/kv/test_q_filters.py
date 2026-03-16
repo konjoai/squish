@@ -17,13 +17,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from squish.kv.kv_cache import KVLayerCache, QuantizedKVCache
 from squish.kv.q_filters import (
     QFilterConfig,
     QFilterManager,
     QFilterState,
     _qfilter_evict,
 )
-from squish.kv.kv_cache import KVLayerCache, QuantizedKVCache
 
 # ---------------------------------------------------------------------------
 # Test helpers

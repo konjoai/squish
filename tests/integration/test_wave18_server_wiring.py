@@ -194,7 +194,11 @@ class TestSWIFTWiring:
 
 class TestSpecReasonWiring:
     def test_import(self):
-        from squish.speculative.spec_reason import ReasoningStep, SpecReasonConfig, SpecReasonOrchestrator
+        from squish.speculative.spec_reason import (
+            ReasoningStep,
+            SpecReasonConfig,
+            SpecReasonOrchestrator,
+        )
 
         call_n = [0]
 
@@ -242,7 +246,11 @@ class TestSpecReasonWiring:
         assert verdict in (StepVerdict.ACCEPT, StepVerdict.REJECT, StepVerdict.PARTIAL)
 
     def test_stats_and_reset(self):
-        from squish.speculative.spec_reason import ReasoningStep, SpecReasonConfig, SpecReasonOrchestrator
+        from squish.speculative.spec_reason import (
+            ReasoningStep,
+            SpecReasonConfig,
+            SpecReasonOrchestrator,
+        )
 
         def draft_fn(ctx):
             return ReasoningStep(text="a", source="draft", confidence=0.9, tokens_used=1)
@@ -327,7 +335,11 @@ class TestMirrorSDWiring:
 
 class TestSparseVerifyWiring:
     def test_import(self):
-        from squish.speculative.sparse_verify import InterDraftReuseCache, SparseVerifyConfig, SparseVerifyPass
+        from squish.speculative.sparse_verify import (
+            InterDraftReuseCache,
+            SparseVerifyConfig,
+            SparseVerifyPass,
+        )
 
         cfg  = SparseVerifyConfig(attn_sparsity=0.5, reuse_budget=32)
         cache = InterDraftReuseCache(budget=32)

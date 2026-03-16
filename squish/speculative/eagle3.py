@@ -48,7 +48,6 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -74,7 +73,7 @@ class Eagle3Config:
     draft_layers: int = 1
     max_draft_len: int = 5
     acceptance_threshold: float = 0.7
-    feature_dim: Optional[int] = None
+    feature_dim: int | None = None
 
     def __post_init__(self) -> None:
         if self.hidden_dim <= 0:
@@ -160,7 +159,7 @@ class Eagle3DraftHead:
 
     def forward(
         self, hidden: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Run full feature prediction and token logit computation.
 
         Args:
@@ -192,7 +191,7 @@ class Eagle3Decoder:
     def __init__(self, config: Eagle3Config) -> None:
         self._config = config
         self._head = Eagle3DraftHead(config)
-        self._last_draft_features: Optional[np.ndarray] = None
+        self._last_draft_features: np.ndarray | None = None
         self._n_accepted: int = 0
         self._n_total: int = 0
         self._feature_sim_sum: float = 0.0
@@ -205,7 +204,7 @@ class Eagle3Decoder:
         self,
         hidden: np.ndarray,
         n_steps: int,
-    ) -> List[Tuple[np.ndarray, np.ndarray]]:
+    ) -> list[tuple[np.ndarray, np.ndarray]]:
         """Run *n_steps* speculative draft iterations.
 
         The first step uses *hidden* as input; subsequent steps reuse the
@@ -224,7 +223,7 @@ class Eagle3Decoder:
         if n_steps <= 0:
             return []
 
-        results: List[Tuple[np.ndarray, np.ndarray]] = []
+        results: list[tuple[np.ndarray, np.ndarray]] = []
         current: np.ndarray = hidden.copy()
         for _ in range(n_steps):
             features, logits = self._head.forward(current)
@@ -241,9 +240,9 @@ class Eagle3Decoder:
 
     def verify_step(
         self,
-        draft_tokens: List[int],
+        draft_tokens: list[int],
         target_hidden: np.ndarray,
-    ) -> Tuple[bool, int]:
+    ) -> tuple[bool, int]:
         """Verify the draft against the target model's hidden state.
 
         Computes target features from *target_hidden* and measures cosine
@@ -315,7 +314,7 @@ class Eagle3Decoder:
             return 0.0
         return self._n_accepted / self._n_total
 
-    def get_stats(self) -> "Eagle3Stats":
+    def get_stats(self) -> Eagle3Stats:
         """Return a snapshot of current decoding statistics."""
         return Eagle3Stats(
             total_draft_steps=self._n_total,

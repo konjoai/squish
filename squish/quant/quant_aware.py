@@ -144,11 +144,11 @@ class QuantAwareCalibrator:
     def __init__(self, config: QAConfig) -> None:
         self._cfg = config
         self._n_batches: int = 0
-        self._channels: Optional[int] = None
+        self._channels: int | None = None
         # Per-channel running statistics.
-        self._running_max: Optional[np.ndarray] = None   # shape (C,)
-        self._percentile_buf: List[np.ndarray] = []      # list of (N*T, C) abs values
-        self._sum_sq: Optional[np.ndarray] = None        # shape (C,)
+        self._running_max: np.ndarray | None = None   # shape (C,)
+        self._percentile_buf: list[np.ndarray] = []      # list of (N*T, C) abs values
+        self._sum_sq: np.ndarray | None = None        # shape (C,)
         self._n_samples: int = 0  # total activation samples seen
 
     # ------------------------------------------------------------------
@@ -226,6 +226,7 @@ class QuantAwareCalibrator:
             raise RuntimeError(
                 "No activations recorded.  Call record() before compute_scales()."
             )
+        assert self._running_max is not None  # set in _init_buffers when _channels is set
 
         q_max = float(2 ** (self._cfg.n_bits - 1) - 1)  # e.g. 127 for INT8
 
@@ -263,7 +264,7 @@ class QuantAwareCalibrator:
                         best_mse = mse
                         best_s = s
                 best_scales[c_idx] = best_s
-            scales = best_scales
+            scales = best_scales  # type: ignore[assignment]
         else:
             raise RuntimeError(f"Unknown method '{self._cfg.method}'.")
 
@@ -295,7 +296,7 @@ class QuantAwareCalibrator:
         return self._n_batches
 
     @property
-    def channels(self) -> Optional[int]:
+    def channels(self) -> int | None:
         """Detected channel count, or ``None`` before the first :meth:`record`."""
         return self._channels
 

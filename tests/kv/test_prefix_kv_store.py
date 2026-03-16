@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Minimal stubs so the module can be imported without MLX
 # ---------------------------------------------------------------------------

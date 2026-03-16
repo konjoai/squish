@@ -58,7 +58,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -78,7 +77,7 @@ class SWAConfig:
     window_size: int = 4096
     n_heads: int = 32
     head_dim: int = 128
-    kv_n_heads: Optional[int] = None
+    kv_n_heads: int | None = None
 
     def __post_init__(self) -> None:
         if self.kv_n_heads is None:
@@ -121,6 +120,7 @@ class SlidingWindowKVCache:
 
     def __init__(self, config: SWAConfig) -> None:
         self._cfg = config
+        assert config.kv_n_heads is not None  # resolved in SWAConfig.__post_init__
         w = config.window_size
         h = config.kv_n_heads
         d = config.head_dim
@@ -266,6 +266,7 @@ def sliding_window_attention(
     if window_used == 0:
         return np.zeros((config.n_heads, config.head_dim), dtype=q.dtype)
 
+    assert config.kv_n_heads is not None  # resolved in SWAConfig.__post_init__
     group_size = config.n_heads // config.kv_n_heads
 
     # Expand KV heads to match query heads (GQA → MHA-equivalent view).

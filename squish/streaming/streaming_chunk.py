@@ -51,7 +51,6 @@ __all__ = [
 from dataclasses import dataclass
 from typing import List
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -200,7 +199,7 @@ class ChunkedStreamer:
     # Public API
     # ------------------------------------------------------------------
 
-    def stream(self, token_ids: List[int]) -> List[List[int]]:
+    def stream(self, token_ids: list[int]) -> list[list[int]]:
         """Split *token_ids* into sequential chunks.
 
         Args:

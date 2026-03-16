@@ -33,6 +33,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import mlx.core as mx
+    import numpy as np
 
 __all__ = ["LazyLLMConfig", "patch_model_lazy_llm", "unpatch_model_lazy_llm"]
 

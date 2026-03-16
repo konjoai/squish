@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from squish.benchmarks.base import EngineConfig, ResultRecord, SQUISH_ENGINE
+from squish.benchmarks.base import SQUISH_ENGINE, EngineConfig, ResultRecord
 from squish.benchmarks.code_bench import (
-    SANDBOX_WARNING,
     CODE_TASKS,
+    SANDBOX_WARNING,
     CodeBenchConfig,
     CodeBenchRunner,
 )

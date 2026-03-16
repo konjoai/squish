@@ -142,7 +142,7 @@ class _AppleBackend:
     def load_tensors(self, path: str) -> dict:
         """Returns dict of {name → mlx.array}."""
         import mlx.core as mx
-        return mx.load(str(path))
+        return mx.load(str(path))  # type: ignore[return-value]
 
     # ── Memory management ─────────────────────────────────────────────────────
 
@@ -165,7 +165,7 @@ class _AppleBackend:
                 None, 0,
             )
             if ret == 0:
-                mx.metal.set_memory_limit(int(memsize.value * fraction), relaxed=True)
+                mx.metal.set_memory_limit(int(memsize.value * fraction), relaxed=True)  # type: ignore[call-arg]
         except Exception:
             pass  # non-fatal
 
@@ -369,6 +369,6 @@ if _IS_APPLE:
     BE = _AppleBackend()
 else:  # pragma: no cover
     try:
-        BE = _TorchBackend()
+        BE = _TorchBackend()  # type: ignore[assignment]
     except ImportError:
         BE = _StubBackend()  # type: ignore[assignment]

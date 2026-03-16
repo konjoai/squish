@@ -26,7 +26,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-
 # ---------------------------------------------------------------------------
 # Engine configuration
 # ---------------------------------------------------------------------------
@@ -55,7 +54,7 @@ LMSTUDIO_ENGINE = EngineConfig("lmstudio", "http://localhost:1234")
 MLXLM_ENGINE    = EngineConfig("mlxlm",    "http://localhost:8080")
 LLAMACPP_ENGINE = EngineConfig("llamacpp", "http://localhost:8080")
 
-ENGINE_REGISTRY: Dict[str, EngineConfig] = {
+ENGINE_REGISTRY: dict[str, EngineConfig] = {
     "squish":   SQUISH_ENGINE,
     "ollama":   OLLAMA_ENGINE,
     "lmstudio": LMSTUDIO_ENGINE,
@@ -64,7 +63,7 @@ ENGINE_REGISTRY: Dict[str, EngineConfig] = {
 }
 
 
-def parse_engines(spec: str) -> List[EngineConfig]:
+def parse_engines(spec: str) -> list[EngineConfig]:
     """Parse a comma-separated engine spec like 'squish,ollama' into EngineConfig list."""
     names = [n.strip() for n in spec.split(",") if n.strip()]
     result = []
@@ -94,10 +93,10 @@ class ResultRecord:
     timestamp: str = field(
         default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "track":     self.track,
             "engine":    self.engine,
@@ -113,7 +112,7 @@ class ResultRecord:
         p.write_text(json.dumps(self.to_dict(), indent=2))
 
     @classmethod
-    def load(cls, path: str | Path) -> "ResultRecord":
+    def load(cls, path: str | Path) -> ResultRecord:
         d = json.loads(Path(path).read_text())
         return cls(
             track=d["track"],
@@ -155,15 +154,15 @@ class EngineClient:
     def chat(
         self,
         model: str,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         *,
-        tools: Optional[list] = None,
+        tools: list | None = None,
         max_tokens: int = 256,
         temperature: float = 0.0,
         stream: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Send a chat completion request; return the parsed JSON response."""
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "max_tokens": max_tokens,
@@ -200,7 +199,7 @@ class EngineClient:
     def chat_stream(
         self,
         model: str,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         *,
         max_tokens: int = 256,
         temperature: float = 0.0,
@@ -272,7 +271,7 @@ class BenchmarkRunner(abc.ABC):
         engine: EngineConfig,
         model: str,
         *,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> ResultRecord:
         """Execute the benchmark and return a ResultRecord."""
 

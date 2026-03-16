@@ -132,10 +132,10 @@ def build_manifest(
         print(f"  scanning {len(npy_files)} .npy files ...")
         npy_entries = _npy_dir_tensors(tensors_dir, f"{base_url}/tensors")
         for entry in npy_entries:
-            sz = (model_dir / "tensors" / entry["filename"]).stat().st_size
+            sz = (model_dir / "tensors" / str(entry["filename"])).stat().st_size
             total_bytes += sz
             if include_sha256:
-                entry["sha256"] = _sha256(model_dir / "tensors" / entry["filename"])
+                entry["sha256"] = _sha256(model_dir / "tensors" / str(entry["filename"]))
         files.append({
             "filename": "tensors/",
             "url":      f"{base_url}/tensors/",

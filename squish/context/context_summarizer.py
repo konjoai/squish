@@ -55,7 +55,6 @@ from typing import Optional
 
 import numpy as np
 
-
 _VALID_METHODS: frozenset[str] = frozenset({"importance", "stride", "recency"})
 
 
@@ -154,7 +153,7 @@ class ContextSummarizer:
     def summarize(
         self,
         token_ids: np.ndarray,
-        embeddings: Optional[np.ndarray] = None,
+        embeddings: np.ndarray | None = None,
     ) -> tuple[np.ndarray, SummaryStats]:
         """Compress *token_ids* to at most ``config.budget`` tokens.
 
@@ -260,7 +259,7 @@ class ContextSummarizer:
     def _select_importance(
         self,
         seq_len: int,
-        embeddings: Optional[np.ndarray],
+        embeddings: np.ndarray | None,
     ) -> np.ndarray:
         """Keep highest embedding-norm tokens from the non-recent prefix, plus
         the most-recent tokens.

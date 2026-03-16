@@ -31,6 +31,7 @@ import resource
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 
@@ -77,7 +78,7 @@ def _load_npy_path(path: Path, mmap_mode: str | None = "r") -> np.ndarray:
     Raises ``RuntimeError`` if the .zst file exists but zstandard is not installed.
     """
     if path.exists():
-        return np.load(str(path), mmap_mode=mmap_mode)
+        return np.load(str(path), mmap_mode=mmap_mode)  # type: ignore[arg-type]
     zst_path = Path(str(path) + ".zst")
     if zst_path.exists():  # pragma: no cover
         dctx = _get_zstd_dctx()
@@ -173,7 +174,7 @@ def _configure_metal_memory() -> None:  # pragma: no cover
         if ret != 0:
             return
         limit = int(memsize.value * fraction)
-        mx.metal.set_memory_limit(limit, relaxed=True)
+        mx.metal.set_memory_limit(limit, relaxed=True)  # type: ignore[call-arg]
     except Exception:
         pass   # non-fatal: non-Apple hardware or old MLX build
 
@@ -510,7 +511,7 @@ def _load_mlx_cache(  # pragma: no cover
     load_time = time.perf_counter() - t0
 
     # mx.load returns a flat dict; convert to list[tuple] for load_weights
-    weight_list = list(weights.items())
+    weight_list = list(weights.items())  # type: ignore[union-attr]
     del weights
 
     rss_peak = _rss_mb()
@@ -625,16 +626,16 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
                 original_shape = (out_features, in_features)
             cfg   = AQLMConfig(n_codebooks=n_codebooks, codebook_size=codebook_size,
                                group_size=group_size)
-            layer = AQLMLayer(
+            aqlm_layer = AQLMLayer(
                 out_features,
                 original_shape[-1] if len(original_shape) >= 2 else in_features,
                 cfg,
             )
-            layer.scale   = scale
-            layer.indices = aqlm_idx
+            aqlm_layer.scale   = scale
+            aqlm_layer.indices = aqlm_idx
             for m in range(n_codebooks):
-                layer.codebooks[m].vectors = cb_vectors[m]
-            arr_f32 = aqlm_dequantize(layer).astype(np.float32)
+                aqlm_layer.codebooks[m].vectors = cb_vectors[m]
+            arr_f32 = aqlm_dequantize(aqlm_layer).astype(np.float32)
             return arr_f32.reshape(original_shape)
         except Exception:
             pass  # fall through to other loaders if AQLM decode fails
@@ -951,7 +952,7 @@ def load_from_npy_dir(  # pragma: no cover
     # Serial is faster: Vectro is GIL-bound; threading adds overhead with no benefit.
     if workers <= 0:
         workers = 1
-    dir_path   = Path(dir_path)
+    dir_path: Path = Path(dir_path)  # type: ignore[no-redef]  # widen str→Path
     tensor_dir = dir_path / "tensors"
     manifest_path_obj = dir_path / "manifest.json"
 
@@ -968,7 +969,7 @@ def load_from_npy_dir(  # pragma: no cover
         import mlx_lm as _mlx_lm_native
         _rss0 = _rss_mb()
         _t0   = time.perf_counter()
-        _model, _tok = _mlx_lm_native.load(str(dir_path))
+        _model, _tok, *_ = _mlx_lm_native.load(str(dir_path))
         _load_s = time.perf_counter() - _t0
         _rss1   = _rss_mb()
         if verbose:
@@ -1001,7 +1002,7 @@ def load_from_npy_dir(  # pragma: no cover
         import mlx_lm as _mlx_lm_4bit
         _rss0 = _rss_mb()
         _t0   = time.perf_counter()
-        _model, _tok = _mlx_lm_4bit.load(str(_four_bit_dir))
+        _model, _tok, *_ = _mlx_lm_4bit.load(str(_four_bit_dir))
         _load_s = time.perf_counter() - _t0
         _rss1   = _rss_mb()
         if verbose:
@@ -1224,7 +1225,7 @@ def load_from_npy_dir(  # pragma: no cover
             print(f"  → Quantizing to {auto_quantize_bits}-bit via nn.quantize() …")
         # Run quantize graph on CPU so the bf16 intermediate stays in system RAM,
         # not Metal — preventing the OOM that would otherwise occur during eval.
-        with mx.stream(mx.cpu):
+        with mx.stream(mx.cpu):  # type: ignore[arg-type]
             _nn.quantize(model, bits=auto_quantize_bits, group_size=64)
         mx.eval(model.parameters())
         q_s = time.perf_counter() - t_q

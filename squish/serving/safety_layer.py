@@ -47,7 +47,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # Default category labels in slot order.
 _DEFAULT_CATEGORIES: list[str] = ["safe", "violent", "sexual", "hate"]
 

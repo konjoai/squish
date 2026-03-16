@@ -32,6 +32,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 # ── zstandard availability ───────────────────────────────────────────────────
 
@@ -282,7 +283,7 @@ def benchmark_compression(tensors_dir: Path) -> None:
     cctx = zstd.ZstdCompressor(level=3)
     dctx = zstd.ZstdDecompressor()
 
-    npy_files = sorted(Path(tensors_dir).glob("*.npy"))[:20]
+    npy_files: list[Any] = sorted(Path(tensors_dir).glob("*.npy"))[:20]
     if not npy_files:
         zst_files = sorted(Path(tensors_dir).glob("*.npy.zst"))[:20]
         if not zst_files:

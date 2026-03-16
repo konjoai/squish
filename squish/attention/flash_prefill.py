@@ -66,7 +66,7 @@ class PrefillConfig:
     chunk_size: int = 512
     n_heads: int = 8
     head_dim: int = 64
-    softmax_scale: Optional[float] = None
+    softmax_scale: float | None = None
 
     def __post_init__(self) -> None:
         if self.chunk_size < 1:

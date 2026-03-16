@@ -48,7 +48,6 @@ from typing import List
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -104,8 +103,8 @@ class NeuronProfile:
         hot_fraction: The hot fraction used when this profile was created.
     """
 
-    hot_indices: List[np.ndarray] = field(default_factory=list)
-    cold_indices: List[np.ndarray] = field(default_factory=list)
+    hot_indices: list[np.ndarray] = field(default_factory=list)
+    cold_indices: list[np.ndarray] = field(default_factory=list)
     hot_fraction: float = 0.20
 
     # ------------------------------------------------------------------
@@ -140,7 +139,7 @@ class NeuronProfile:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "NeuronProfile":
+    def from_dict(cls, d: dict) -> NeuronProfile:
         """Deserialise from a dict (inverse of :meth:`to_dict`)."""
         return cls(
             hot_fraction=float(d.get("hot_fraction", 0.20)),
@@ -163,7 +162,7 @@ class NeuronProfile:
         p.write_text(json.dumps(self.to_dict(), indent=2))
 
     @classmethod
-    def load(cls, path: str) -> "NeuronProfile":
+    def load(cls, path: str) -> NeuronProfile:
         """Load profile from a JSON file.
 
         Args:

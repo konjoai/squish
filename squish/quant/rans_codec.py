@@ -33,6 +33,7 @@ References:
 from __future__ import annotations
 
 import struct
+from typing import Any
 
 import numpy as np
 
@@ -314,7 +315,7 @@ class RANSCodec:
         }
 
     @classmethod
-    def from_code_dict(cls, d: dict[str, object]) -> RANSCodec:
+    def from_code_dict(cls, d: dict[str, Any]) -> RANSCodec:
         """
         Reconstruct an ``RANSCodec`` from a serialized dict.
 

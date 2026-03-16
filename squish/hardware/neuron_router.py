@@ -46,7 +46,6 @@ import numpy as np
 
 from squish.hardware.neuron_profile import NeuronProfile
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------

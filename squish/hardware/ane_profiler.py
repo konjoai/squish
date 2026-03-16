@@ -173,7 +173,7 @@ class ANEProfiler:
                 f"got {ane_threshold_elements}"
             )
         self._threshold = ane_threshold_elements
-        self._records: List[ANEOpRecord] = []
+        self._records: list[ANEOpRecord] = []
 
     # ── Recording ─────────────────────────────────────────────────────────────
 
@@ -246,7 +246,7 @@ class ANEProfiler:
             ane_latency_us=ane_latency,
         )
 
-    def op_breakdown(self) -> Dict[str, Dict[str, Any]]:
+    def op_breakdown(self) -> dict[str, dict[str, Any]]:
         """Return per-op-name statistics.
 
         Returns
@@ -256,7 +256,7 @@ class ANEProfiler:
             "device": str}`` where ``device`` reflects the classification of
             the *last* recorded call for that op name.
         """
-        breakdown: Dict[str, Dict[str, Any]] = {}
+        breakdown: dict[str, dict[str, Any]] = {}
         for rec in self._records:
             if rec.op_name not in breakdown:
                 breakdown[rec.op_name] = {
@@ -309,9 +309,9 @@ class ANEProfilingSession:
 
     def __init__(self, profiler: ANEProfiler) -> None:
         self._profiler = profiler
-        self.metrics: Optional[ANEMetrics] = None
+        self.metrics: ANEMetrics | None = None
 
-    def __enter__(self) -> "ANEProfilingSession":
+    def __enter__(self) -> ANEProfilingSession:
         self._profiler.reset()
         return self
 

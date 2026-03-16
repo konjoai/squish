@@ -305,7 +305,7 @@ class GrammarEngine:
         self,
         trigger: str,
         schema: dict,
-    ) -> "TagDispatch":
+    ) -> TagDispatch:
         """
         Return a :class:`TagDispatch` that activates ``json_schema_grammar(schema)``
         the moment *trigger* is seen in the token stream.
@@ -373,7 +373,7 @@ class TagDispatch:
 
     def __init__(
         self,
-        engine: "GrammarEngine",
+        engine: GrammarEngine,
         grammar_fn: Any,
         trigger_ids: list[int],
     ) -> None:

@@ -9,7 +9,6 @@ import pytest
 
 from squish.lora.lora_compose import AdapterConfig, AdapterStack, CompositionStats, LoRAComposer
 
-
 # ---------------------------------------------------------------------------
 # AdapterConfig
 # ---------------------------------------------------------------------------

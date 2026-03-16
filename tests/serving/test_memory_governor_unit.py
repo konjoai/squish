@@ -52,18 +52,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from squish.serving.memory_governor import (
+    _DEFAULT_AVAILABLE_GB,
     LEVEL_CRITICAL,
     LEVEL_NORMAL,
     LEVEL_URGENT,
     LEVEL_WARNING,
     MemoryGovernor,
     MemorySnapshot,
-    _DEFAULT_AVAILABLE_GB,
     _read_pressure_level,
     _read_vm_stat,
     _run,
 )
-
 
 # ---------------------------------------------------------------------------
 # _run

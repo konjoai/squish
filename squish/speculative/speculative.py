@@ -36,8 +36,9 @@ Standalone test:
 
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 try:
     import mlx.core as mx
@@ -474,7 +475,7 @@ class EagleDraftHead:
         if verbose:
             logger.info("Loading EAGLE-3 head from %s", head_dir_p)
 
-        eagle_model, _ = _mlx_load(str(head_dir_p))
+        eagle_model, *_ = _mlx_load(str(head_dir_p))
 
         # Shared weight resolution: target > eagle checkpoint
         lm_head_w = getattr(getattr(target_model, "lm_head", None), "weight", None)
@@ -1708,8 +1709,8 @@ class MedusaGenerator:
 
     def __init__(
         self,
-        hidden_forward: "callable",
-        verify_forward: "callable",
+        hidden_forward: "Callable[..., Any]",
+        verify_forward: "Callable[..., Any]",
         config: MedusaConfig,
         heads: "list[MedusaHead]",
     ) -> None:

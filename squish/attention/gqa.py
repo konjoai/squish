@@ -59,7 +59,6 @@ from typing import Optional
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -81,7 +80,7 @@ class GQAConfig:
     n_kv_heads: int = 8
     head_dim: int = 128
     max_seq_len: int = 4096
-    softmax_scale: Optional[float] = None
+    softmax_scale: float | None = None
 
     def __post_init__(self) -> None:
         if self.n_q_heads < 1:

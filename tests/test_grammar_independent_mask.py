@@ -35,7 +35,6 @@ import pytest
 from squish.grammar.grammar_cache import GrammarCache
 from squish.grammar.grammar_engine import GrammarEngine
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

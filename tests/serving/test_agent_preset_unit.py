@@ -26,7 +26,6 @@ import pytest
 
 from squish.kv.agent_kv import AgentKVConfig
 
-
 # ---------------------------------------------------------------------------
 # Dynamic context_length formula (independent of server.py)
 # ---------------------------------------------------------------------------

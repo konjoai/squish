@@ -56,7 +56,7 @@ class SpecBenchTask:
     """
 
     task_name: str
-    prompts: List[str]
+    prompts: list[str]
     category: str = "general"
 
     def __post_init__(self) -> None:
@@ -169,8 +169,8 @@ class SpecBenchStats:
 # ---------------------------------------------------------------------------
 
 # Type aliases for the draft and target callables.
-DraftFn = Callable[[str], List[int]]
-TargetFn = Callable[[str, List[int]], List[bool]]
+DraftFn = Callable[[str], list[int]]
+TargetFn = Callable[[str, list[int]], list[bool]]
 
 
 class SpecBenchRunner:
@@ -251,8 +251,8 @@ class SpecBenchRunner:
         t_start = time.perf_counter()
 
         for prompt in task.prompts:
-            draft_tokens: List[int] = draft_fn(prompt)
-            accepted: List[bool] = target_fn(prompt, draft_tokens)
+            draft_tokens: list[int] = draft_fn(prompt)
+            accepted: list[bool] = target_fn(prompt, draft_tokens)
 
             n_draft = len(draft_tokens)
             n_accepted = sum(1 for a in accepted if a)
@@ -275,7 +275,7 @@ class SpecBenchRunner:
     # ── Default task suite ────────────────────────────────────────────────────
 
     @staticmethod
-    def default_tasks() -> List[SpecBenchTask]:
+    def default_tasks() -> list[SpecBenchTask]:
         """Return the canonical 6-task SpecBench suite with synthetic prompts.
 
         Returns
@@ -354,7 +354,7 @@ class SpecBenchRunner:
         self,
         draft_fn: DraftFn,
         target_fn: TargetFn,
-    ) -> Dict[str, SpecBenchResult]:
+    ) -> dict[str, SpecBenchResult]:
         """Run all default tasks and return results keyed by task name.
 
         Parameters
@@ -369,13 +369,13 @@ class SpecBenchRunner:
         dict[str, SpecBenchResult]
             Mapping from task name to its :class:`SpecBenchResult`.
         """
-        results: Dict[str, SpecBenchResult] = {}
+        results: dict[str, SpecBenchResult] = {}
         for task in self.default_tasks():
             results[task.task_name] = self.run_task(task, draft_fn, target_fn)
         return results
 
     @staticmethod
-    def overall_acceptance_rate(results: Dict[str, SpecBenchResult]) -> float:
+    def overall_acceptance_rate(results: dict[str, SpecBenchResult]) -> float:
         """Compute the token-weighted mean acceptance rate across all results.
 
         Parameters
@@ -397,7 +397,7 @@ class SpecBenchRunner:
 
     def suite_stats(
         self,
-        results: Dict[str, SpecBenchResult],
+        results: dict[str, SpecBenchResult],
     ) -> SpecBenchStats:
         """Build a :class:`SpecBenchStats` summary from a suite run.
 

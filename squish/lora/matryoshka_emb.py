@@ -62,7 +62,7 @@ class MRLConfig:
     """
 
     full_dim: int = 1536
-    nested_dims: Optional[List[int]] = None
+    nested_dims: list[int] | None = None
     normalize: bool = True
 
     def __post_init__(self) -> None:
@@ -70,7 +70,7 @@ class MRLConfig:
             raise ValueError(f"full_dim must be > 0; got {self.full_dim}")
 
         # Resolve default nested_dims.
-        resolved: List[int] = (
+        resolved: list[int] = (
             list(self.nested_dims)
             if self.nested_dims is not None
             else [d for d in _DEFAULT_NESTED_DIMS if d <= self.full_dim]
@@ -112,10 +112,10 @@ class MRLStats:
     """
 
     n_embeds: int
-    dims_used: Dict[int, int] = field(default_factory=dict)
+    dims_used: dict[int, int] = field(default_factory=dict)
 
     @property
-    def most_used_dim(self) -> Optional[int]:
+    def most_used_dim(self) -> int | None:
         """The target dimension requested most often, or ``None`` if no calls."""
         if not self.dims_used:
             return None
@@ -152,14 +152,14 @@ class MatryoshkaEmbedding:
     def __init__(self, config: MRLConfig) -> None:
         self._config = config
         self._n_embeds: int = 0
-        self._dims_used: Dict[int, int] = {d: 0 for d in config.nested_dims}
+        self._dims_used: dict[int, int] = {d: 0 for d in config.nested_dims}  # type: ignore[union-attr]
 
     # ── Core embedding ────────────────────────────────────────────────────────
 
     def embed(
         self,
         x: np.ndarray,
-        target_dim: Optional[int] = None,
+        target_dim: int | None = None,
     ) -> np.ndarray:
         """Truncate (and optionally L2-normalise) an embedding.
 
@@ -188,7 +188,7 @@ class MatryoshkaEmbedding:
         if target_dim is None:
             target_dim = cfg.full_dim
 
-        if target_dim not in cfg.nested_dims:
+        if target_dim not in cfg.nested_dims:  # type: ignore[operator]
             raise ValueError(
                 f"target_dim {target_dim} is not in nested_dims {cfg.nested_dims}."
             )
@@ -221,7 +221,7 @@ class MatryoshkaEmbedding:
     def batch_embed(
         self,
         xs: np.ndarray,
-        target_dim: Optional[int] = None,
+        target_dim: int | None = None,
     ) -> np.ndarray:
         """Embed a batch of vectors.
 
@@ -249,7 +249,7 @@ class MatryoshkaEmbedding:
         self,
         a: np.ndarray,
         b: np.ndarray,
-        dim: Optional[int] = None,
+        dim: int | None = None,
     ) -> float:
         """Cosine similarity between two raw embeddings at a given dimension.
 
@@ -297,10 +297,10 @@ class MatryoshkaEmbedding:
             Smallest element of ``config.nested_dims`` that is >=
             ``desired_dim``, or the largest element if none qualifies.
         """
-        candidates = [d for d in self._config.nested_dims if d >= desired_dim]
+        candidates = [d for d in self._config.nested_dims if d >= desired_dim]  # type: ignore[union-attr]
         if candidates:
             return min(candidates)
-        return max(self._config.nested_dims)
+        return max(self._config.nested_dims)  # type: ignore[arg-type]
 
     # ── Stats ─────────────────────────────────────────────────────────────────
 

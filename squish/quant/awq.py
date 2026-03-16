@@ -203,7 +203,7 @@ def collect_activation_scales(  # pragma: no cover
             return _patched
 
         originals[name] = orig_call
-        module.__call__ = _make_patched(orig_call, hook)
+        module.__call__ = _make_patched(orig_call, hook)  # type: ignore[method-assign]
 
     if verbose:
         print(f"  Running {n_samples} calibration forward passes ...")
@@ -230,7 +230,7 @@ def collect_activation_scales(  # pragma: no cover
     # Restore original __call__
     for name, module in linear_layers.items():
         if name in originals:
-            module.__call__ = originals[name]
+            module.__call__ = originals[name]  # type: ignore[method-assign]
 
     # Compute AWQ scales from collected statistics
     scales = {}

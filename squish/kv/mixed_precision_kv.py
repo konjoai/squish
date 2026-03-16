@@ -151,7 +151,7 @@ class HeadPrecisionMap:
                     :attr:`HeadPrecision.FP16`.
     """
 
-    precisions: List[str]
+    precisions: list[str]
 
     def __post_init__(self) -> None:
         for p in self.precisions:

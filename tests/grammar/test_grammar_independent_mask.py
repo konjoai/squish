@@ -30,7 +30,6 @@ import pytest
 from squish.grammar.grammar_cache import FSMState, GrammarCache
 from squish.grammar.grammar_engine import GrammarEngine
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

@@ -32,7 +32,7 @@ class TestGQABranches:
 
     def test_grouped_query_attention_gqa_expansion(self):
         """grouped_query_attention with n_kv_heads < n_q_heads triggers GQA expansion."""
-        from squish.attention.gqa import GQAConfig, GQACache, grouped_query_attention
+        from squish.attention.gqa import GQACache, GQAConfig, grouped_query_attention
 
         cfg = GQAConfig(n_q_heads=4, n_kv_heads=2, head_dim=8, max_seq_len=16)
         cache = GQACache(cfg)
@@ -56,8 +56,11 @@ class TestGQABranches:
 class TestSlidingWindowAttnBranches:
     def test_attention_empty_cache_returns_zeros(self):
         """sliding_window_attention with an empty cache returns a zeros tensor."""
-        from squish.attention.sliding_window_attn import SWAConfig, SlidingWindowKVCache
-        from squish.attention.sliding_window_attn import sliding_window_attention
+        from squish.attention.sliding_window_attn import (
+            SlidingWindowKVCache,
+            SWAConfig,
+            sliding_window_attention,
+        )
 
         cfg = SWAConfig(window_size=8, n_heads=4, head_dim=16)
         cache = SlidingWindowKVCache(cfg)  # no appends → window_used == 0
@@ -70,8 +73,11 @@ class TestSlidingWindowAttnBranches:
 
     def test_attention_gqa_expansion(self):
         """sliding_window_attention with kv_n_heads < n_heads triggers GQA expansion."""
-        from squish.attention.sliding_window_attn import SWAConfig, SlidingWindowKVCache
-        from squish.attention.sliding_window_attn import sliding_window_attention
+        from squish.attention.sliding_window_attn import (
+            SlidingWindowKVCache,
+            SWAConfig,
+            sliding_window_attention,
+        )
 
         cfg = SWAConfig(window_size=8, n_heads=4, head_dim=16, kv_n_heads=2)
         assert cfg.kv_n_heads == 2  # explicit, not defaulted
@@ -161,7 +167,7 @@ class TestFusedRMSNormBranches:
 
     def test_layer_norm_explicit_weight_and_bias(self):
         """FusedLayerNorm with explicit weight and bias uses both (not-None branches)."""
-        from squish.hardware.fused_rmsnorm import FusedNormConfig, FusedLayerNorm
+        from squish.hardware.fused_rmsnorm import FusedLayerNorm, FusedNormConfig
 
         dim = 16
         cfg = FusedNormConfig(hidden_dim=dim, eps=1e-5, elementwise_scale=True)
@@ -174,7 +180,7 @@ class TestFusedRMSNormBranches:
 
     def test_layer_norm_elementwise_scale_false(self):
         """FusedLayerNorm.forward with elementwise_scale=False skips the scale branch."""
-        from squish.hardware.fused_rmsnorm import FusedNormConfig, FusedLayerNorm
+        from squish.hardware.fused_rmsnorm import FusedLayerNorm, FusedNormConfig
 
         dim = 16
         cfg = FusedNormConfig(hidden_dim=dim, eps=1e-5, elementwise_scale=False)
@@ -202,7 +208,7 @@ class TestPagedKVBranches:
 
     def test_paged_kv_cache_free_nonexistent_seq_noop(self):
         """PagedKVCache.free with an unknown seq_id is a no-op (early return branch)."""
-        from squish.kv.paged_kv import PagedKVConfig, PagedKVCache
+        from squish.kv.paged_kv import PagedKVCache, PagedKVConfig
 
         cfg = PagedKVConfig(block_size=4, n_blocks=8, n_heads=2, head_dim=16)
         cache = PagedKVCache(cfg)
@@ -260,7 +266,7 @@ class TestFlashDecodeBranches:
 
     def test_decode_break_when_split_start_exceeds_seq_len(self):
         """FlashDecodeAttention.decode triggers break when start >= seq_len."""
-        from squish.attention.flash_decode import FlashDecodeConfig, FlashDecodeAttention
+        from squish.attention.flash_decode import FlashDecodeAttention, FlashDecodeConfig
 
         # With seq_len=5 and n_splits=4, split_len=ceil(5/4)=2.
         # Splits: start=0 (ok), start=2 (ok), start=4 (ok), start=6 >= 5 → break.
@@ -310,8 +316,9 @@ class TestPrefixPoolBranches:
 
     def test_prefix_entry_explicit_last_used_skips_assignment(self):
         """PrefixEntry with explicit non-zero last_used skips the assignment branch."""
-        from squish.kv.prefix_pool import PrefixEntry
         import numpy as np
+
+        from squish.kv.prefix_pool import PrefixEntry
 
         keys = np.zeros((1, 4, 8), dtype=np.float32)
         vals = np.zeros((1, 4, 8), dtype=np.float32)
@@ -350,7 +357,7 @@ class TestKVDefragBranches:
 class TestSparseWeightBranches:
     def test_memory_bytes_before_compress_returns_zero(self):
         """SparseWeightStore.memory_bytes() before compress() returns 0."""
-        from squish.moe.sparse_weight import SparsityConfig, SparseWeightStore
+        from squish.moe.sparse_weight import SparseWeightStore, SparsityConfig
 
         cfg = SparsityConfig(N=2, M=4)
         store = SparseWeightStore(cfg)
@@ -366,7 +373,7 @@ class TestSparseWeightBranches:
 class TestMixKVQBranches:
     def test_channel_scorer_difficulty_empty(self):
         """ChannelScorer.difficulty before any record → returns zeros (not filled)."""
-        from squish.kv.mix_kvq import MixKVQConfig, ChannelScorer
+        from squish.kv.mix_kvq import ChannelScorer, MixKVQConfig
 
         n_ch = 8
         scorer = ChannelScorer(n_channels=n_ch, config=MixKVQConfig())
@@ -377,7 +384,7 @@ class TestMixKVQBranches:
 
     def test_channel_scorer_assign_bits_empty_key_matrix(self):
         """ChannelScorer.assign_bits with 0-row key matrix → returns zeros."""
-        from squish.kv.mix_kvq import MixKVQConfig, ChannelScorer
+        from squish.kv.mix_kvq import ChannelScorer, MixKVQConfig
 
         n_ch = 8
         cfg_obj = MixKVQConfig()
@@ -396,7 +403,7 @@ class TestMixKVQBranches:
 class TestParallelSamplerBranches:
     def test_diversity_score_single_sample(self):
         """ParallelSampler._diversity_score with a single sample → returns zeros."""
-        from squish.hardware.parallel_sampler import ParallelSampler, DiversityConfig
+        from squish.hardware.parallel_sampler import DiversityConfig, ParallelSampler
 
         cfg = DiversityConfig(n_samples=1, temperature=1.0, seed=0)
         ps = ParallelSampler(cfg)

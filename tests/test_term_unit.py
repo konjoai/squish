@@ -13,8 +13,7 @@ import os
 
 import pytest
 
-from squish._term import C, LOGO_GRAD, _Palette, gradient, has_truecolor
-
+from squish._term import LOGO_GRAD, C, _Palette, gradient, has_truecolor
 
 # ---------------------------------------------------------------------------
 # has_truecolor

@@ -173,8 +173,9 @@ class TestGeneration:
     def test_output_contains_word_characters(self, loaded_model):
         """Model must produce at least some alphanumeric characters."""
         model, tokenizer, _ = loaded_model
-        from squish.backend import BE
         import re
+
+        from squish.backend import BE
 
         chunks = list(BE.stream_generate(
             model, tokenizer, _PROBE_PROMPT,

@@ -415,8 +415,8 @@ def patch_model_compiled_ffn(model, *, metal_fusion_kernels=None) -> int:
                         up = getattr(self, "up_proj",   None)
                         dp = getattr(self, "down_proj", None)
                         if gp is not None and up is not None and dp is not None:
-                            import numpy as _np       # noqa: PLC0415
-                            import mlx.core as _mx    # noqa: PLC0415
+                            import mlx.core as _mx  # noqa: PLC0415
+                            import numpy as _np  # noqa: PLC0415
                             g_np = _np.asarray(gp(x))
                             u_np = _np.asarray(up(x))
                             fused_np = _fs(g_np, u_np, kernels=_kernels)
