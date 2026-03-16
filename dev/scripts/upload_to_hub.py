@@ -2,7 +2,7 @@
 """
 scripts/upload_to_hub.py  —  Compress models and upload pre-squished weights to HuggingFace.
 
-This script is the one-time batch job for populating the squish-community org.
+This script is the one-time batch job for populating the squishai org.
 Run it on any machine with enough disk and RAM (or a Hetzner AX102 for 70B+).
 
 Usage
@@ -26,8 +26,8 @@ Prerequisites
 
 HuggingFace repo naming convention
 ------------------------------------
-  squish-community/<dir_name>-squished        (INT8)
-  squish-community/<dir_name>-squished-int4   (INT4)
+  squishai/<dir_name>-squished        (INT8)
+  squishai/<dir_name>-squished-int4   (INT4)
 """
 
 from __future__ import annotations
@@ -77,11 +77,11 @@ def _compress(entry, models_dir: Path, int4: bool, token: str | None) -> Path:
 
 
 def _upload(entry, compressed_dir: Path, int4: bool, token: str | None, dry_run: bool) -> str:
-    """Upload npy-dir to squish-community HuggingFace org. Returns repo URL."""
+    """Upload npy-dir to squishai HuggingFace org. Returns repo URL."""
     from huggingface_hub import HfApi, create_repo, upload_folder  # type: ignore[import]
 
     suffix = "-squished-int4" if int4 else "-squished"
-    repo_id = f"squish-community/{entry.dir_name}{suffix}"
+    repo_id = f"squishai/{entry.dir_name}{suffix}"
     repo_url = f"https://huggingface.co/{repo_id}"
 
     if dry_run:
@@ -123,7 +123,7 @@ base_model: {entry.hf_mlx_repo}
 # {entry.dir_name}{suffix}
 
 Pre-compressed weights for **[{entry.name}]({f"https://huggingface.co/{entry.hf_mlx_repo}"})** 
-using [Squish](https://github.com/wesleyscholl/squish) {quant_label}.
+using [Squish](https://github.com/squishai/squish) {quant_label}.
 
 Squish achieves 54× faster cold-load times on Apple Silicon (M1–M5) compared to 
 standard safetensors loading, using Metal-native memory mapping.
@@ -197,7 +197,7 @@ Squish compression code: MIT.
 
 def _write_report(results: list[dict], output: Path) -> None:
     report_lines = [
-        "# squish-community Prebuilt Weight Upload Report",
+        "# squishai Prebuilt Weight Upload Report",
         "",
         f"Generated: {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}",
         "",
@@ -281,7 +281,7 @@ def main() -> None:
     results = []
     for entry in entries:
         suffix = "-squished-int4" if args.int4 else "-squished"
-        repo_id = f"squish-community/{entry.dir_name}{suffix}"
+        repo_id = f"squishai/{entry.dir_name}{suffix}"
         try:
             compressed_dir = _compress(entry, models_dir, args.int4, token)
             disk_gb = sum(
