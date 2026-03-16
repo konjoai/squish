@@ -46,6 +46,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import NoReturn
 
 # When running as `python3 squish/cli.py` (not via `-m`), the repo root is NOT
 # on sys.path, which breaks `from squish.X import ...` inside subcommands like
@@ -270,7 +271,7 @@ def _resolve_model(name: str | None) -> tuple[Path, Path]:  # pragma: no cover
     return model_dir, compressed_dir
 
 
-def _die(msg: str) -> None:
+def _die(msg: str) -> NoReturn:
     print(f"\n  {_C.PK}✗{_C.R}  {_C.W}{msg}{_C.R}\n", file=sys.stderr)
     sys.exit(1)
 
@@ -1614,6 +1615,8 @@ def cmd_pull(args):  # pragma: no cover
     except ValueError as exc:
         _die(str(exc))
     except RuntimeError as exc:
+        # _SSLError (subclass of RuntimeError) and other runtime errors get a
+        # clean, actionable message rather than a full traceback.
         _die(str(exc))
 
     print()
