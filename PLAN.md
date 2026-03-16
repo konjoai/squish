@@ -830,7 +830,7 @@ GitHub Actions `macos-14` runners are Apple M1. MLX runs on them. However, the c
 
 - [x] Investigate why `test_int4_loader.py` is excluded; fix or create a synthetic weight fixture so it runs in CI
 - [x] Create a `tests/fixtures/synthetic_model/` directory with a minimal 2-layer model in safetensors format (generate with a script checked into the repo)
-- [ ] Add a CI job that runs `test_hardware_integration.py` with `--run-hardware` using the synthetic model
+- [x] Add a CI job that runs `test_hardware_integration.py` with `--run-hardware` using the synthetic model
 - [ ] Make mypy blocking (remove `|| true`) after fixing existing type errors
 - [x] Add a CI step that imports `squish` and checks `squish.__version__ == importlib.metadata.version("squish")`
 
@@ -1439,11 +1439,11 @@ Squish, Ollama, LM Studio, MLX-LM, llama.cpp, Jan
 
 **Deliverables:**
 - [x] `squish/benchmarks/perf_bench.py` — PerfBenchConfig, PerfBenchRunner; migrates and extends bench_eoe.py logic
-- [ ] Cold-start measurement: uses `subprocess.Popen(..., stdout=PIPE)` + SSE first-line detection
-- [ ] Tokens/watt: macOS `powermetrics` subprocess with `--samplers cpu_power -i 500`, averaged; skip block guarded by `sys.platform == "darwin"` check
-- [ ] Batch throughput: `asyncio.gather` of N concurrent HTTP requests; P50/P99 latency measured via `time.perf_counter`
-- [x] `tests/test_bench_perf.py` — 10+ tests: config validation, TPS calculation, TTFT parsing from SSE stream, tokens/watt skip on non-macOS, cold-start subprocess mock
-- [ ] `dev/benchmarks/bench_eoe.py` — add deprecation notice pointing to `squish bench --track perf`
+- [x] Cold-start measurement: uses `subprocess.Popen(..., stdout=PIPE)` + SSE first-line detection
+- [x] Tokens/watt: macOS `powermetrics` subprocess with `--samplers cpu_power -i 500`, averaged; skip block guarded by `sys.platform == "darwin"` check
+- [x] Batch throughput: `asyncio.gather` of N concurrent HTTP requests; P50/P99 latency measured via `time.perf_counter`
+- [x] `tests/benchmarks/test_bench_perf.py` — 10+ tests: config validation, TPS calculation, TTFT parsing from SSE stream, tokens/watt skip on non-macOS, cold-start subprocess mock
+- [x] `dev/benchmarks/bench_eoe.py` — add deprecation notice pointing to `squish bench --track perf`
 
 ---
 
@@ -2292,10 +2292,10 @@ MIT license. OpenAI + Ollama drop-in compatible. Zero code changes to existing a
 ```
 
 **Deliverables:**
-- [ ] `dev/demos/agent_demo_guide.md` — full recording guide (steps, tools, checklist)
-- [ ] `dev/demos/hn_first_comment.md` — HN title + first comment text, finalized with real measured numbers
-- [ ] `dev/demos/record_agent_demo.py` — automated `asciinema` recorder script that scripts the terminal commands (echo delays, simulated agent output from fixture data)
-- [ ] `dev/community_posts.md` — add "Agent Runtime" section with platform-specific variants: HN (technical), r/LocalLLaMA (demo-first), r/macapps (user-facing), X/Twitter (thread format)
+- [x] `dev/demos/agent_demo_guide.md` — full recording guide (steps, tools, checklist)
+- [x] `dev/demos/hn_first_comment.md` — HN title + first comment text, finalized with real measured numbers
+- [x] `dev/demos/record_agent_demo.py` — automated `asciinema` recorder script that scripts the terminal commands (echo delays, simulated agent output from fixture data)
+- [x] `dev/community_posts.md` — add "Agent Runtime" section with platform-specific variants: HN (technical), r/LocalLLaMA (demo-first), r/macapps (user-facing), X/Twitter (thread format)
 
 ---
 

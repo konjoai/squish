@@ -5,6 +5,16 @@ on:
     branches: [main, "feat/**", "fix/**"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_hardware:
+        description: "Run hardware integration tests (requires macos-14 Apple Silicon)"
+        type: boolean
+        default: false
+      hardware_model:
+        description: "HuggingFace model ID for hardware tests"
+        type: string
+        default: "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
 
 jobs:
   test:
@@ -109,3 +119,43 @@ jobs:
             --ignore=tests/test_int4_loader.py \
             --ignore=tests/test_git_integration.py \
             -v --tb=short -q
+
+  # ---------------------------------------------------------------------------
+  # Hardware integration tests — runs only on manual workflow_dispatch when
+  # run_hardware == true.  Requires Apple Silicon (macos-14) and will download
+  # ~900 MB of model weights from HuggingFace.
+  # ---------------------------------------------------------------------------
+  hardware-integration:
+    name: Hardware Integration (Apple Silicon)
+    runs-on: macos-14
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_hardware == true }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies (including MLX)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install mlx mlx-lm
+
+      - name: Cache HuggingFace model weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-model-${{ inputs.hardware_model || 'mlx-community/Qwen2.5-1.5B-Instruct-4bit' }}
+
+      - name: Run hardware integration tests
+        env:
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+        run: |
+          pytest tests/integration/test_hardware_integration.py \
+            --run-hardware \
+            --model "${{ inputs.hardware_model || 'mlx-community/Qwen2.5-1.5B-Instruct-4bit' }}" \
+            -v --tb=short
