@@ -26,8 +26,8 @@ Prerequisites
 
 HuggingFace repo naming convention
 ------------------------------------
-  squishai/<dir_name>-squished        (INT8)
-  squishai/<dir_name>-squished-int4   (INT4)
+  squishai/<dir_name>-squished        (INT4, default)
+  squishai/<dir_name>-squished-int8   (INT8)
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ def _upload(entry, compressed_dir: Path, int4: bool, token: str | None, dry_run:
     """Upload npy-dir to squishai HuggingFace org. Returns repo URL."""
     from huggingface_hub import HfApi, create_repo, upload_folder  # type: ignore[import]
 
-    suffix = "-squished-int4" if int4 else "-squished"
+    suffix = "-squished" if int4 else "-squished-int8"
     repo_id = f"squishai/{entry.dir_name}{suffix}"
     repo_url = f"https://huggingface.co/{repo_id}"
 
@@ -226,8 +226,8 @@ def main() -> None:
                          "Omit to process all models matching --tag.")
     ap.add_argument("--tag",      default="",
                     help="Process all catalog models with this tag (small, fast, balanced, etc.)")
-    ap.add_argument("--int4",     action="store_true",
-                    help="Use INT4 nibble-packed compression instead of INT8")
+    ap.add_argument("--int8",     action="store_true",
+                    help="Use INT8 per-group compression instead of INT4 (default)")
     ap.add_argument("--token",    default="",
                     help="HuggingFace access token (or set $HF_TOKEN env var)")
     ap.add_argument("--models-dir", default="",
@@ -273,21 +273,22 @@ def main() -> None:
         print("\n  Specify at least one model ID or --tag.")
         sys.exit(1)
 
-    quant_label = "INT4" if args.int4 else "INT8"
+    quant_label = "INT8" if args.int8 else "INT4"
     print(f"\n  Processing {len(entries)} model(s) with {quant_label} compression")
     if args.dry_run:
         print("  [dry-run mode — no HuggingFace uploads]")
 
     results = []
     for entry in entries:
-        suffix = "-squished-int4" if args.int4 else "-squished"
+        int4 = not args.int8
+        suffix = "-squished" if int4 else "-squished-int8"
         repo_id = f"squishai/{entry.dir_name}{suffix}"
         try:
-            compressed_dir = _compress(entry, models_dir, args.int4, token)
+            compressed_dir = _compress(entry, models_dir, int4, token)
             disk_gb = sum(
                 f.stat().st_size for f in compressed_dir.rglob("*") if f.is_file()
             ) / 1e9
-            url = _upload(entry, compressed_dir, args.int4, token, args.dry_run)
+            url = _upload(entry, compressed_dir, int4, token, args.dry_run)
             results.append({
                 "id": entry.id, "params": entry.params, "quant": quant_label,
                 "size": f"{disk_gb:.1f} GB", "ok": True,

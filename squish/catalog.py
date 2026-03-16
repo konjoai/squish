@@ -259,6 +259,7 @@ _BUNDLED: list[dict] = [
     # ── Llama 3.x ─────────────────────────────────────────────────────────────
     dict(id="llama3.2:1b", name="Llama-3.2-1B-Instruct",
          hf_mlx_repo="mlx-community/Llama-3.2-1B-Instruct-bf16",
+         squish_repo="squishai/Llama-3.2-1B-Instruct-bf16-squished",
          size_gb=2.5, squished_size_gb=1.7, params="1B", context=128000,
          tags=["small", "fast"]),
     dict(id="llama3.2:3b", name="Llama-3.2-3B-Instruct",
@@ -279,10 +280,12 @@ _BUNDLED: list[dict] = [
     # ── Gemma 3 ───────────────────────────────────────────────────────────────
     dict(id="gemma3:1b", name="Gemma-3-1B-Instruct",
          hf_mlx_repo="mlx-community/gemma-3-1b-it-bf16",
+         squish_repo="squishai/gemma-3-1b-it-bf16-squished",
          size_gb=2.0, squished_size_gb=1.3, params="1B", context=32768,
          tags=["small", "fast"]),
     dict(id="gemma3:4b", name="Gemma-3-4B-Instruct",
          hf_mlx_repo="mlx-community/gemma-3-4b-it-bf16",
+         squish_repo="squishai/gemma-3-4b-it-bf16-squished",
          size_gb=8.1, squished_size_gb=5.4, params="4B", context=131072,
          tags=["small"]),
     dict(id="gemma3:12b", name="Gemma-3-12B-Instruct",
@@ -347,14 +350,17 @@ _BUNDLED: list[dict] = [
     # ── SmolLM2 ───────────────────────────────────────────────────────────────
     dict(id="smollm2:135m", name="SmolLM2-135M-Instruct",
          hf_mlx_repo="mlx-community/SmolLM2-135M-Instruct-bf16",
+         squish_repo="squishai/SmolLM2-135M-Instruct-bf16-squished",
          size_gb=0.3, squished_size_gb=0.2, params="135M", context=8192,
          tags=["small", "fast", "edge"]),
     dict(id="smollm2:360m", name="SmolLM2-360M-Instruct",
          hf_mlx_repo="mlx-community/SmolLM2-360M-Instruct-bf16",
+         squish_repo="squishai/SmolLM2-360M-Instruct-bf16-squished",
          size_gb=0.7, squished_size_gb=0.5, params="360M", context=8192,
          tags=["small", "fast", "edge"]),
     dict(id="smollm2:1.7b", name="SmolLM2-1.7B-Instruct",
          hf_mlx_repo="mlx-community/SmolLM2-1.7B-Instruct-bf16",
+         squish_repo="squishai/SmolLM2-1.7B-Instruct-bf16-squished",
          size_gb=3.5, squished_size_gb=2.3, params="1.7B", context=8192,
          tags=["small", "fast"]),
 ]
