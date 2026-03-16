@@ -44,6 +44,81 @@ LOCAL_CATALOG_PATH = SQUISH_CACHE_DIR / "catalog.json"
 CATALOG_TTL = int(os.environ.get("SQUISH_CATALOG_TTL", str(24 * 3600)))
 
 
+# ── SSL verification helper ───────────────────────────────────────────────────
+# On networks that intercept HTTPS with a self-signed certificate (corporate
+# proxies, university VPNs, etc.) the default SSL verification will fail.
+# Users can override this with:
+#
+#   SQUISH_VERIFY_SSL=false          — disable verification entirely (not recommended)
+#   REQUESTS_CA_BUNDLE=/path/cert.pem — trust a custom CA bundle (preferred)
+#   CURL_CA_BUNDLE=/path/cert.pem    — same, curl-style name (also honoured)
+#   HF_HUB_DISABLE_SSL_VERIFICATION=1 — huggingface_hub's own flag
+#
+# These follow the same conventions used by requests, httpx, and the HF hub.
+
+def _ssl_verify() -> bool | str:
+    """
+    Return the value to pass as ``verify=`` to httpx / huggingface_hub calls.
+
+    Returns one of:
+    - ``False``          — SSL disabled (SQUISH_VERIFY_SSL=false or HF_HUB_DISABLE_SSL_VERIFICATION=1)
+    - ``"/path/ca.pem"`` — custom CA bundle path (REQUESTS_CA_BUNDLE or CURL_CA_BUNDLE)
+    - ``True``           — default (system CAs)
+    """
+    # Explicit squish flag takes top priority
+    squish_flag = os.environ.get("SQUISH_VERIFY_SSL", "").strip().lower()
+    if squish_flag in ("0", "false", "no", "off"):
+        return False
+    if squish_flag in ("1", "true", "yes", "on"):
+        return True
+    # huggingface_hub's own flag
+    if os.environ.get("HF_HUB_DISABLE_SSL_VERIFICATION", "").strip() in ("1", "true"):
+        return False
+    # Custom CA bundle (respects both requests and curl conventions)
+    ca_bundle = (
+        os.environ.get("REQUESTS_CA_BUNDLE", "")
+        or os.environ.get("CURL_CA_BUNDLE", "")
+    ).strip()
+    if ca_bundle:
+        return ca_bundle
+    return True
+
+
+def _apply_ssl_env() -> None:
+    """
+    Push squish SSL settings into the env vars that huggingface_hub / httpx
+    read natively, so library internals also honour the same configuration.
+    Called once at the start of any download function.
+    """
+    verify = _ssl_verify()
+    if verify is False:
+        os.environ.setdefault("HF_HUB_DISABLE_SSL_VERIFICATION", "1")
+        # httpx reads this env var directly
+        os.environ.setdefault("HTTPX_VERIFY", "0")
+    elif isinstance(verify, str):
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", verify)
+        os.environ.setdefault("SSL_CERT_FILE", verify)
+
+
+class _SSLError(RuntimeError):
+    """Raised instead of the deep httpx/httpcore SSL traceback."""
+
+
+def _is_ssl_error(exc: BaseException) -> bool:
+    """Return True if the exception chain contains an SSL verification failure."""
+    msg = ""
+    e: BaseException | None = exc
+    while e is not None:
+        msg += str(type(e).__name__) + " " + str(e) + " "
+        e = e.__cause__ or e.__context__
+    return (
+        "CERTIFICATE_VERIFY_FAILED" in msg
+        or "SSLError" in msg
+        or "ssl.SSLCertVerificationError" in msg
+        or "ConnectError" in msg and "SSL" in msg
+    )
+
+
 # ── CatalogEntry ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -367,6 +442,7 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
     def _background_fetch() -> None:  # pragma: no cover
         try:
             import importlib.metadata as _imeta
+            import ssl as _ssl
             try:
                 _ver = _imeta.version("squish")
             except Exception:
@@ -374,7 +450,17 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
             req = urllib.request.Request(
                 CATALOG_URL, headers={"User-Agent": f"squish/{_ver}"}
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            # Build an SSL context that respects squish SSL env vars
+            _verify = _ssl_verify()
+            if _verify is False:
+                _ctx = _ssl.create_default_context()
+                _ctx.check_hostname = False
+                _ctx.verify_mode = _ssl.CERT_NONE
+            elif isinstance(_verify, str):
+                _ctx = _ssl.create_default_context(cafile=_verify)
+            else:
+                _ctx = None  # use urllib default (system CAs)
+            with urllib.request.urlopen(req, timeout=5, context=_ctx) as resp:
                 raw = resp.read()
             SQUISH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
             # Atomic write: temp file + rename avoids partial reads on crash
@@ -548,16 +634,35 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
 
     Prefers ``huggingface_hub.snapshot_download`` when available,
     otherwise raises ImportError with an install hint.
+
+    Respects SQUISH_VERIFY_SSL / REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE for
+    networks with self-signed certificates.
     """
+    _apply_ssl_env()
     try:
         from huggingface_hub import snapshot_download
-        snapshot_download(
-            repo_id=repo,
-            local_dir=str(local_dir),
-            token=token,
-            ignore_patterns=["*.msgpack", "*.h5", "flax_model*", "tf_model*",
-                             "rust_model.ot", "*.ot"],
-        )
+        try:
+            snapshot_download(
+                repo_id=repo,
+                local_dir=str(local_dir),
+                token=token,
+                ignore_patterns=["*.msgpack", "*.h5", "flax_model*", "tf_model*",
+                                 "rust_model.ot", "*.ot"],
+            )
+        except Exception as exc:
+            if _is_ssl_error(exc):
+                raise _SSLError(
+                    f"SSL certificate verification failed while downloading {repo!r}.\n\n"
+                    "This usually means your network uses a self-signed or corporate CA.\n"
+                    "Fix one of:\n"
+                    "  1. Provide your CA bundle:  "
+                    "REQUESTS_CA_BUNDLE=/path/to/ca.pem squish pull ...\n"
+                    "  2. Trust system keychain cert (run once per CA install).\n"
+                    "  3. Disable verification (insecure):  "
+                    "SQUISH_VERIFY_SSL=false squish pull ...\n"
+                    "  4. Set HF_HUB_DISABLE_SSL_VERIFICATION=1 (huggingface_hub flag)"
+                ) from exc
+            raise
     except ImportError:
         raise ImportError(
             "huggingface_hub is required for `squish pull`.\n"
@@ -568,15 +673,24 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
 def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no cover
                        token: str | None = None) -> Path:
     """Download a single file from a HuggingFace repo."""
+    _apply_ssl_env()
     try:
         from huggingface_hub import hf_hub_download
-        dest = hf_hub_download(
-            repo_id=repo,
-            filename=filename,
-            local_dir=str(local_dir),
-            token=token,
-        )
-        return Path(dest)
+        try:
+            dest = hf_hub_download(
+                repo_id=repo,
+                filename=filename,
+                local_dir=str(local_dir),
+                token=token,
+            )
+            return Path(dest)
+        except Exception as exc:
+            if _is_ssl_error(exc):
+                raise _SSLError(
+                    f"SSL certificate verification failed while downloading {filename!r} from {repo!r}.\n"
+                    "Set REQUESTS_CA_BUNDLE=/path/ca.pem or SQUISH_VERIFY_SSL=false"
+                ) from exc
+            raise
     except ImportError:
         raise ImportError(
             "huggingface_hub is required for `squish pull`.\n"
@@ -586,6 +700,7 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
 
 def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma: no cover
     """Return all filenames in a HuggingFace repo (returns [] on error)."""
+    _apply_ssl_env()
     try:
         from huggingface_hub import list_repo_files
         return list(list_repo_files(repo, token=token))
@@ -682,6 +797,8 @@ def pull(  # pragma: no cover
                 if entry.hf_sha256:
                     write_hash_sentinel(compressed_dir, entry.hf_sha256)
                 return compressed_dir
+        except _SSLError:
+            raise  # re-raise with the clear user-facing message — do not swallow
         except Exception as exc:
             if verbose:
                 print(f"  ⚠  Pre-compressed download failed ({exc}); falling back …")
