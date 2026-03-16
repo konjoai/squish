@@ -1715,7 +1715,7 @@ if FastAPI is not None:
     app = FastAPI(
         title       = "Squish OpenAI-compatible API",
         description = "Local LLM inference via Squish compressed models",
-        version     = "1.0.0",
+        version     = "9.0.0",
     )
     app.add_middleware(
         CORSMiddleware,
@@ -2271,6 +2271,7 @@ async def health():
         _mem_available = round(_memory_governor.available_gb, 2)
         _mem_pressure  = _memory_governor.pressure_level
     return {
+        "version":      "9.0.0",
         "status":       "ok" if _state.model is not None else "no_model",
         "model":        _state.model_name,
         "loaded":       _state.model is not None,

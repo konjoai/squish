@@ -11,10 +11,11 @@ Sub-commands
   squish run    [MODEL] [OPTIONS]   Start the inference server
   squish serve  [MODEL] [OPTIONS]   Alias for `squish run`
   squish chat   [MODEL] [OPTIONS]   Interactive terminal chat (no browser needed)
+  squish setup                      Interactive setup wizard (detect hw, pull, start)
   squish models                     List local models (auto-discovers ~/.squish/models/)
   squish info                       System info: Metal, RAM, disk
   squish bench  [MODEL] [OPTIONS]   Quick throughput/latency benchmark
-  squish doctor                     Check all dependencies
+  squish doctor [--report]          Check all dependencies
   squish daemon start|stop|status   Manage background server
   squish it MODEL                   Compress a model to npy-dir format
   squish rotate MODEL               SpinQuant Cayley-SGD rotation calibration
@@ -195,6 +196,27 @@ _COMPRESSED_SUFFIX = "-compressed"
 
 # Default server port
 _DEFAULT_PORT = 11435
+
+
+def _detect_ram_gb() -> float:
+    """Return total UMA memory in GB (macOS sysctl hw.memsize)."""
+    try:
+        import subprocess as _sp
+        out = _sp.check_output(["sysctl", "-n", "hw.memsize"], stderr=_sp.DEVNULL)
+        return int(out.strip()) / 1e9
+    except Exception:
+        return 0.0
+
+
+def _recommend_model(ram_gb: float) -> str:
+    """Return catalog model ID best suited for available UMA RAM."""
+    if ram_gb >= 64:
+        return "qwen3:32b"
+    if ram_gb >= 32:
+        return "qwen3:14b"
+    if ram_gb >= 16:
+        return "qwen3:8b"
+    return "qwen3:1.7b"
 
 
 def _resolve_model(name: str | None) -> tuple[Path, Path]:  # pragma: no cover
@@ -493,10 +515,132 @@ def cmd_info(args):  # pragma: no cover
     print()
 
 
+# ── squish setup ─────────────────────────────────────────────────────────────
+
+def cmd_setup(args):  # pragma: no cover
+    """Interactive setup wizard: detect hardware, recommend + pull model, start server."""
+    import platform as _platform
+
+    print()
+    _box(["  squish setup — Interactive Setup Wizard"])
+    print()
+
+    # 1. Hardware detection
+    is_apple_silicon = _platform.system() == "Darwin" and _platform.machine() == "arm64"
+    ram_gb = _detect_ram_gb()
+    chip = "Apple Silicon" if is_apple_silicon else _platform.machine()
+    ok_sym  = f"{_C.G}✓{_C.R}"
+    err_sym = f"{_C.PK}✗{_C.R}"
+
+    print(f"  {ok_sym if is_apple_silicon else err_sym}  Platform    : {_platform.system()} {chip}")
+    print(f"  {ok_sym}  RAM         : {ram_gb:.0f} GB")
+
+    if not is_apple_silicon:
+        print(f"\n  {_C.PK}squish requires Apple Silicon (M1–M5). Aborting.{_C.R}\n")
+        sys.exit(1)
+
+    # 2. Recommend a model
+    recommended = _recommend_model(ram_gb)
+    try:
+        import shutil as _shutil
+        disk_free_gb = _shutil.disk_usage(Path.home()).free / 1e9
+    except Exception:
+        disk_free_gb = 999.0
+    print(f"  {ok_sym}  Disk free   : {disk_free_gb:.1f} GB")
+    print(f"  {ok_sym}  Recommended : {recommended}")
+    print()
+
+    # 3. Check / pull the recommended model
+    if _CATALOG_AVAILABLE:
+        entry = _catalog_resolve(recommended)
+        if entry is not None:
+            local_dir = _MODELS_DIR / entry.dir_name
+            local_comp = Path(str(local_dir) + _COMPRESSED_SUFFIX)
+            already_local = local_comp.exists() or local_dir.exists()
+            if already_local:
+                print(f"  {ok_sym}  {recommended} already downloaded.\n")
+            else:
+                try:
+                    answer = input(
+                        f"  Pull {recommended} now?  [{_C.G}Y{_C.R}/n] "
+                    ).strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    answer = "n"
+                if answer in ("", "y", "yes"):
+                    import argparse as _ap2
+                    _pull_args = _ap2.Namespace(
+                        model=recommended, int4=False, token=None,
+                        models_dir=None, refresh_catalog=False, verbose=True,
+                    )
+                    cmd_pull(_pull_args)
+                else:
+                    print(f"\n  Skipped. Run `squish pull {recommended}` whenever you're ready.\n")
+                    return
+    else:
+        print(f"  Catalog unavailable. Run `squish pull {recommended}` manually.\n")
+        return
+
+    # 4. Offer to start the server
+    try:
+        answer = input(f"\n  Start server now?  [{_C.G}Y{_C.R}/n] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = "n"
+    if answer in ("", "y", "yes"):
+        import argparse as _ap2  # noqa: F811
+        run_args = _ap2.Namespace(
+            model=recommended,
+            port=_DEFAULT_PORT, host="127.0.0.1", api_key="squish",
+            draft_model="", batch_scheduler=False, batch_size=8,
+            kv_cache_mode="fp16", log_level="warning",
+            all_optimizations=False,
+            agent=True,          # Auto-enable agent preset on Apple Silicon
+            moe_lookahead=False,
+            whatsapp=False, whatsapp_verify_token="",
+            whatsapp_app_secret="", whatsapp_access_token="",
+            whatsapp_phone_number_id="",
+            system_prompt="",
+            signal=False, signal_account="", signal_socket="127.0.0.1:7583",
+        )
+        cmd_run(run_args)
+    else:
+        print(f"\n  Run when ready:  squish run {recommended}\n")
+
+
 # ── squish run ────────────────────────────────────────────────────────────────
 
 def cmd_run(args):  # pragma: no cover
     """Start the Squish inference server."""
+
+    # ── Smart defaults ────────────────────────────────────────────────────────
+    # No model specified + no local models → auto-pull the RAM-appropriate default
+    if not args.model and _CATALOG_AVAILABLE:
+        has_local = (
+            _MODELS_DIR.exists()
+            and any(
+                d.is_dir() and not d.name.startswith(".")
+                for d in _MODELS_DIR.iterdir()
+            )
+        )
+        if not has_local:
+            ram_gb  = _detect_ram_gb()
+            default = _recommend_model(ram_gb)
+            print(f"\n  No local models found — auto-pulling {default} "
+                  f"for your {ram_gb:.0f} GB machine…")
+            import argparse as _ap2
+            _pull_args = _ap2.Namespace(
+                model=default, int4=False, token=None,
+                models_dir=None, refresh_catalog=False, verbose=True,
+            )
+            cmd_pull(_pull_args)
+            args.model = default
+
+    # Apple Silicon auto-agent: enable --agent by default when no explicit flag
+    import platform as _platform
+    if (not getattr(args, "agent", False)
+            and _platform.system() == "Darwin"
+            and _platform.machine() == "arm64"):
+        args.agent = True
+
     model_dir, compressed_dir = _resolve_model(args.model)
 
     # Phase 16A: verify model hash integrity before serving
@@ -1001,6 +1145,7 @@ def cmd_doctor(args):
     print()
 
     ok = True
+    _results: list[dict] = []
 
     def _check(label: str, passed: bool, fix: str = "") -> None:
         nonlocal ok
@@ -1010,6 +1155,7 @@ def cmd_doctor(args):
             ok = False
             if fix:
                 print(f"       {_C.DIM}Fix:{_C.R} {fix}")
+        _results.append({"label": label, "passed": passed, "fix": fix})
 
     # OS
     _check("macOS / Apple Silicon",
@@ -1137,6 +1283,25 @@ def cmd_doctor(args):
         print("  All checks passed. squish is ready.\n")
     else:
         print("  Some checks failed. See fixes above.\n")
+
+    # ── --report: write shareable JSON snapshot ───────────────────────────────
+    if getattr(args, "report", False):
+        import datetime as _dt
+        import platform as _plat
+        _report_dir = Path.home() / ".squish"
+        _report_dir.mkdir(parents=True, exist_ok=True)
+        _ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        _report_path = _report_dir / f"doctor-report-{_ts}.json"
+        _report = {
+            "squish_version": "9.0.0",
+            "timestamp": _ts,
+            "platform": _plat.platform(),
+            "python": _plat.python_version(),
+            "overall": "pass" if ok else "fail",
+            "checks": _results,
+        }
+        _report_path.write_text(json.dumps(_report, indent=2))
+        print(f"  Report saved to: {_report_path}\n")
 
 
 def cmd_daemon(args):  # pragma: no cover
@@ -2035,7 +2200,7 @@ Ollama drop-in:
 
     ap.add_argument(
         "--version", action="version",
-        version="squish 1.0.1",
+        version="squish 9.0.0",
         help="Show squish version and exit",
     )
 
@@ -2170,6 +2335,13 @@ Ollama drop-in:
     p_models = sub.add_parser("models", help="List local models")
     p_models.set_defaults(func=cmd_models)
 
+    # ── setup ──
+    p_setup = sub.add_parser(
+        "setup",
+        help="Interactive setup wizard: detect hardware, recommend + pull model, start server",
+    )
+    p_setup.set_defaults(func=cmd_setup)
+
     # ── info ──
     p_info = sub.add_parser("info", help="System info")
     p_info.set_defaults(func=cmd_info)
@@ -2207,6 +2379,10 @@ Ollama drop-in:
 
     # ── doctor ──
     p_doctor = sub.add_parser("doctor", help="Check all dependencies and system requirements")
+    p_doctor.add_argument(
+        "--report", action="store_true", default=False,
+        help="Write a shareable JSON diagnostic report to ~/.squish/doctor-report-<ts>.json",
+    )
     p_doctor.set_defaults(func=cmd_doctor)
 
     # ── daemon ──
