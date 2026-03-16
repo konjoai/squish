@@ -59,7 +59,7 @@ except ImportError:
         pass
     class Instance:                # type: ignore[no-redef]
         pass
-    def register_model(*a, **kw):  # type: ignore[misc]
+    def register_model(*a, **kw):
         def _dec(cls):
             return cls
         return _dec

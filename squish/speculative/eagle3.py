@@ -101,7 +101,7 @@ class Eagle3Config:
         # Set feature_dim to hidden_dim if not provided
         if self.feature_dim is None:
             object.__setattr__(self, "feature_dim", self.hidden_dim)
-        elif self.feature_dim <= 0:  # type: ignore[operator]
+        elif self.feature_dim <= 0:
             raise ValueError(
                 f"feature_dim must be a positive integer, got {self.feature_dim}"
             )

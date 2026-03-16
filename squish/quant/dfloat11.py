@@ -520,7 +520,7 @@ class DFloat11Compressor:
                 if isinstance(ctx_d, dict) and ctx_d.get("type") == "rans" and RANSCodec is not None:
                     ctx_codec = RANSCodec.from_code_dict(ctx_d)
                 else:
-                    ctx_codec = HuffmanCodec.from_code_dict(ctx_d)  # type: ignore[arg-type]
+                    ctx_codec = HuffmanCodec.from_code_dict(ctx_d)
                 ctx_streams[h] = (ctx_codec, stream)
 
             # Decode each position using its high-byte context

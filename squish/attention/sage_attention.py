@@ -329,7 +329,7 @@ def patch_model_sage_attention(model: Any, kernel: SageAttentionKernel) -> None:
     """
     object.__setattr__(model, "_sage_attn_kernel", kernel) if hasattr(model, "__dict__") else None
     try:
-        model._sage_attn_kernel = kernel  # type: ignore[attr-defined]
+        model._sage_attn_kernel = kernel
     except (AttributeError, TypeError):
         pass
 
@@ -337,6 +337,6 @@ def patch_model_sage_attention(model: Any, kernel: SageAttentionKernel) -> None:
 def unpatch_model_sage_attention(model: Any) -> None:  # pragma: no cover
     """Remove the SageAttention annotation from *model*."""
     try:
-        del model._sage_attn_kernel  # type: ignore[attr-defined]
+        del model._sage_attn_kernel
     except AttributeError:
         pass

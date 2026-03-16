@@ -162,7 +162,7 @@ def compress(
 
     # Try LLMLingua first (higher quality)
     try:
-        from llmlingua import PromptCompressor as _LLC  # type: ignore[import]
+        from llmlingua import PromptCompressor as _LLC
         _compressor = _LLC(
             model_name="microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank",
             use_llmlingua2=True,

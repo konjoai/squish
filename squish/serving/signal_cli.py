@@ -441,7 +441,7 @@ def mount_signal(
 
     # ── GET /signal/status ────────────────────────────────────────────────────
     @app.get("/signal/status")
-    async def signal_status() -> _JSONResponse:  # type: ignore[return]
+    async def signal_status() -> _JSONResponse:
         """Return Signal bot connection state."""
         return _JSONResponse({
             "running":      _bot.is_running() if _bot else False,

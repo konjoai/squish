@@ -297,6 +297,15 @@ def cmd_models(args):
         return
 
     rows = []
+    # Build catalog lookup so we can annotate MoE models in the listing
+    _catalog_by_dir: dict = {}
+    try:
+        from squish.catalog import list_catalog
+        for _ce in list_catalog():
+            _catalog_by_dir[_ce.dir_name] = _ce
+    except Exception:  # noqa: BLE001
+        pass
+
     for d in sorted(_MODELS_DIR.iterdir()):
         if not d.is_dir():
             continue
@@ -310,7 +319,18 @@ def cmd_models(args):
             size_str = f"{total / 1e9:.1f} GB"
         except Exception:
             size_str = "?"
-        rows.append((d.name, size_str, comp_str))
+        # MoE badge from catalog metadata
+        _entry = _catalog_by_dir.get(d.name)
+        if _entry is not None and getattr(_entry, "moe", False):
+            _active = getattr(_entry, "active_params_b", None)
+            badge = (
+                f"  [MoE: {_entry.params} / {_active:.1f}B active]"
+                if _active is not None
+                else "  [MoE]"
+            )
+        else:
+            badge = ""
+        rows.append((d.name, size_str, comp_str, badge))
 
     if not rows:
         print("  No model directories found.")
@@ -322,8 +342,8 @@ def cmd_models(args):
     w0 = max(len(r[0]) for r in rows) + 2
     print(f"  {'Model':<{w0}} {'Disk':>8}  {'Compressed'}")
     print(f"  {'─'*w0} {'─'*8}  {'─'*14}")
-    for name, size, comp in rows:
-        print(f"  {name:<{w0}} {size:>8}  {comp}")
+    for name, size, comp, badge in rows:
+        print(f"  {name:<{w0}} {size:>8}  {comp}{badge}")
 
     print()
     print("  Legacy aliases : 1.5b, 7b, 14b, 32b, 72b")
@@ -1754,7 +1774,7 @@ def cmd_pull_head(args):  # pragma: no cover
         # Convert PyTorch / BF16 safetensors to MLX
         print("  Converting to MLX format …")
         try:
-            from mlx_lm import convert as _mlx_convert  # type: ignore
+            from mlx_lm import convert as _mlx_convert
             _mlx_convert(
                 hf_path=raw_dir,
                 mlx_path=str(out_dir),
@@ -2077,7 +2097,7 @@ def cmd_rotate(args):  # pragma: no cover
     Under the hood this calls :mod:`squish.quant.spin_quant.run_rotation`.
     """
     try:
-        from squish.quant.spin_quant import run_rotation  # type: ignore[import]
+        from squish.quant.spin_quant import run_rotation
     except ImportError as exc:
         print(f"\n  Error: could not import squish.quant.spin_quant — {exc}")
         print("  Make sure the squish package is installed.")
@@ -2118,7 +2138,7 @@ def cmd_predict(args):  # pragma: no cover
     Under the hood this calls :mod:`squish.life_model.predict`.
     """
     try:
-        from squish.life_model import predict as _life_predict  # type: ignore[import]
+        from squish.life_model import predict as _life_predict
     except ImportError as exc:
         print(f"\n  Error: could not import squish.life_model — {exc}")
         print("  Make sure the squish package is installed.")
