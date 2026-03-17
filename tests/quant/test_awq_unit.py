@@ -124,10 +124,10 @@ class TestApplyAwqToWeights:
         }
         scales  = {"model.layers.0.self_attn.q_proj": s}
         apply_awq_to_weights(weights, scales, verbose=False)
-        # Each column should be halved: 1.0 / 2.0 = 0.5
+        # AWQ paper direction: W *= s (amplify), so 1.0 * 2.0 = 2.0
         np.testing.assert_allclose(
             weights["model.layers.0.self_attn.q_proj.weight"],
-            np.full((4, 8), 0.5),
+            np.full((4, 8), 2.0),
             rtol=1e-5,
         )
 
@@ -141,10 +141,10 @@ class TestApplyAwqToWeights:
         }
         scales = {"model.layers.0.self_attn.q_proj": s}
         apply_awq_to_weights(weights, scales, verbose=False)
-        # Norm should be multiplied by scale: 1.0 * 2.0 = 2.0
+        # AWQ paper: gamma /= s (attenuate), so 1.0 / 2.0 = 0.5
         np.testing.assert_allclose(
             weights["model.layers.0.input_layernorm.weight"],
-            np.full(8, 2.0),
+            np.full(8, 0.5),
             rtol=1e-5,
         )
 
@@ -178,7 +178,8 @@ class TestApplyAwqToWeights:
         }
         scales  = {"model.layers.0.mlp.gate_proj": s}
         apply_awq_to_weights(weights, scales, verbose=False)
-        expected = np.full((32, 16), 0.25)
+        # AWQ: W *= s, so 1.0 * 4.0 = 4.0
+        expected = np.full((32, 16), 4.0)
         np.testing.assert_allclose(
             weights["model.layers.0.mlp.gate_proj.weight"], expected, rtol=1e-5
         )
@@ -213,8 +214,7 @@ class TestApplyAwqToWeights:
         """
         Regression: when q_proj, k_proj, v_proj all share the same
         input_layernorm the LayerNorm must be updated EXACTLY ONCE using
-        the group-average scale — not once per projection (which was the
-        bug that produced near-random outputs: gamma *= s^3 instead of s).
+        the group-average scale.  With AWQ paper direction: gamma /= s.
         """
         rng = np.random.default_rng(42)
         W = rng.standard_normal((8, 8)).astype(np.float32)
@@ -231,16 +231,16 @@ class TestApplyAwqToWeights:
             "model.layers.0.self_attn.v_proj": s.copy(),
         }
         apply_awq_to_weights(weights, scales, verbose=False)
-        # LN updated once: gamma * 2.0 = 2.0, NOT gamma * 2^3 = 8.0
+        # LN updated once: gamma / 2.0 = 0.5, NOT gamma / 2^3 = 0.125
         np.testing.assert_allclose(
             weights["model.layers.0.input_layernorm.weight"],
-            np.full(8, 2.0),
+            np.full(8, 0.5),
             rtol=1e-5,
         )
         for proj in ("q_proj", "k_proj", "v_proj"):
             np.testing.assert_allclose(
                 weights[f"model.layers.0.self_attn.{proj}.weight"],
-                W / 2.0,
+                W * 2.0,
                 rtol=1e-5,
             )
 

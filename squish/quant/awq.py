@@ -358,10 +358,15 @@ def apply_awq_to_weights(
     to float32 numpy arrays.
 
     For each matched linear layer weight W (shape out × in), the scale is
-    applied column-wise:  ``W[:, c] /= s[c]``
+    applied column-wise per the AWQ paper (Lin et al., 2023 §3.2)::
 
-    The corresponding inverse scale on the input side is absorbed into the
-    preceding LayerNorm gamma (``input_layernorm.weight`` or ``norm.weight``).
+        W_awq[:, c] = W[:, c] * s[c]         (multiply  — weight channel amplified)
+        gamma_awq[c] = gamma[c] / s[c]       (divide    — LN gamma attenuated)
+
+    This preserves the mathematical identity  ``(X / s) @ (W * s).T = X @ W.T``
+    while improving INT4 precision: salient input channels (large ``s[c]``) get
+    larger weight values → occupy more of the INT4 quantization range → smaller
+    relative quantization error where it matters most.
 
     **Grouping rule**: only layers whose input is DIRECTLY a LayerNorm output
     are processed (q/k/v projections and gate/up MLP projections).  Layers
@@ -373,7 +378,7 @@ def apply_awq_to_weights(
     ``input_layernorm``), a SINGLE group scale is computed as the channel-wise
     mean across all members.  The LayerNorm is updated exactly once with this
     group scale, guaranteeing the identity
-    ``(X · s) @ (W / s).T = X @ W.T`` for every member.
+    ``(X / s) @ (W * s).T = X @ W.T`` for every member.
 
     Parameters
     ----------
@@ -461,14 +466,15 @@ def apply_awq_to_weights(
     for norm_name, tensor_names in ln_groups.items():
         group_s = ln_group_scales[norm_name]
 
-        # Absorb inverse scale into the LayerNorm: gamma_awq[c] = gamma[c] * s[c]
-        weights[norm_name] = weights[norm_name] * group_s
+        # Attenuate LN gamma: gamma_awq[c] = gamma[c] / s[c]
+        # (the input X is effectively divided by s, balancing the weight amplification)
+        weights[norm_name] = weights[norm_name] / group_s
 
         for tensor_name in tensor_names:
             arr = weights[tensor_name]
             W = arr.reshape(-1, arr.shape[-1])
-            # Scale weight columns: W_awq[:, c] = W[:, c] / s[c]
-            weights[tensor_name] = (W / group_s[np.newaxis, :]).reshape(arr.shape)
+            # Amplify salient weight columns: W_awq[:, c] = W[:, c] * s[c]
+            weights[tensor_name] = (W * group_s[np.newaxis, :]).reshape(arr.shape)
             if verbose:
                 print(f"  [AWQ] {tensor_name}  s̄={group_s.mean():.4f}  "
                       f"s_max={group_s.max():.4f}")
@@ -491,16 +497,19 @@ def prepare_awq_application(awq_scales: dict) -> tuple[dict, dict]:
 
     proj_apply : layer_path → group_scale  (np.ndarray)
         For each linear projection weight (q/k/v, gate/up):
-        ``W_awq[:, c] = W[:, c] / group_scale[c]``
+        ``W_awq[:, c] = W[:, c] * group_scale[c]``   ← MULTIPLY (amplify salient channels)
 
     ln_apply   : full_tensor_name → group_scale  (np.ndarray)
         For the LayerNorm that feeds each group:
-        ``gamma_awq = gamma * group_scale``
+        ``gamma_awq[c] = gamma[c] / group_scale[c]``  ← DIVIDE  (attenuate LN output)
         Each LayerNorm name appears at most once.
 
     The two operations together preserve the identity
-    ``(X · s) @ (W / s).T = X @ W.T`` for every member, so the model
-    output is mathematically equivalent after applying both dicts.
+    ``(X / s) @ (W * s).T = X @ W.T`` for every member, so the model
+    output is mathematically equivalent in BF16.  Under INT4 quantization,
+    salient channels (large ``s``) now have large weight values that occupy
+    more of the quantization range  → smaller relative quantization error
+    for the channels that matter most.
 
     Note: o_proj and down_proj are intentionally excluded — their inputs
     are not LayerNorm outputs, so no inverse compensation is possible.

@@ -100,11 +100,11 @@ class TestApplyAwqFuzzyMatch:
         }
         scales = {"model.layers.0.self_attn.q_proj": np.full(8, 2.0, dtype=np.float32)}
         result = apply_awq_to_weights(weights, scales, verbose=False)
-        # weight should be divided by scale
+        # weight should be multiplied by scale (AWQ paper: W *= s)
         assert "model.layers.0.self_attn.q_proj.weight" in result
-        # 1.0 / 2.0 = 0.5 per column
+        # 1.0 * 2.0 = 2.0 per column
         np.testing.assert_allclose(result["model.layers.0.self_attn.q_proj.weight"].reshape(-1, 8),
-                                   np.full((4, 8), 0.5), rtol=1e-5)
+                                   np.full((4, 8), 2.0), rtol=1e-5)
 
     def test_fuzzy_suffix_match(self):
         """Fuzzy match: scale key is a suffix of the layer path."""
@@ -117,8 +117,9 @@ class TestApplyAwqFuzzyMatch:
         scales = {"self_attn.q_proj": np.full(8, 2.0, dtype=np.float32)}
         result = apply_awq_to_weights(weights, scales, verbose=False)
         assert "model.layers.0.self_attn.q_proj.weight" in result
+        # AWQ paper: W *= s, so 1.0 * 2.0 = 2.0
         np.testing.assert_allclose(result["model.layers.0.self_attn.q_proj.weight"].reshape(-1, 8),
-                                   np.full((4, 8), 0.5), rtol=1e-5)
+                                   np.full((4, 8), 2.0), rtol=1e-5)
 
     def test_no_matching_scale_key_skipped(self):
         """Weight with no matching scale key should be left unchanged."""
@@ -165,8 +166,8 @@ class TestApplyAwqFuzzyLoopFalseBranch:
         }
         result = apply_awq_to_weights(weights, scales, verbose=False)
         result_w = result["model.layers.0.self_attn.q_proj.weight"]
-        # Divided by 2.0 from the second key
-        np.testing.assert_allclose(result_w.reshape(-1, 8), np.full((4, 8), 0.5), rtol=1e-5)
+        # AWQ paper: W *= s from the second key
+        np.testing.assert_allclose(result_w.reshape(-1, 8), np.full((4, 8), 2.0), rtol=1e-5)
 
 
 # ── _preceding_norm_name: no '.weight' suffix [428, 432] ─────────────────────

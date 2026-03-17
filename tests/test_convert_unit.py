@@ -84,20 +84,20 @@ class TestApplyAwqSingle:
         np.testing.assert_array_equal(result, arr)
 
     def test_proj_apply_divides_columns(self):
-        """When the layer_path is in proj_apply, weight columns are divided."""
+        """When the layer_path is in proj_apply, weight columns are multiplied (AWQ: W *= s)."""
         from squish.convert import _apply_awq_single
         arr = np.ones((4, 8), dtype=np.float32)
         proj_apply = {"model.layers.0.self_attn.q_proj": np.full(8, 2.0, dtype=np.float32)}
         result = _apply_awq_single("model.layers.0.self_attn.q_proj.weight", arr, proj_apply, {})
-        np.testing.assert_allclose(result, np.full((4, 8), 0.5), rtol=1e-5)
+        np.testing.assert_allclose(result, np.full((4, 8), 2.0), rtol=1e-5)
 
     def test_ln_apply_multiplies_gamma(self):
-        """When the full tensor name is in ln_apply, the gamma is multiplied."""
+        """When the full tensor name is in ln_apply, the gamma is divided (AWQ: gamma /= s)."""
         from squish.convert import _apply_awq_single
         arr = np.ones(8, dtype=np.float32)
         ln_apply = {"model.layers.0.input_layernorm.weight": np.full(8, 3.0, dtype=np.float32)}
         result = _apply_awq_single("model.layers.0.input_layernorm.weight", arr, {}, ln_apply)
-        np.testing.assert_allclose(result, np.full(8, 3.0), rtol=1e-5)
+        np.testing.assert_allclose(result, np.full(8, 1.0 / 3.0), rtol=1e-5)
 
     def test_unrelated_tensor_unchanged(self):
         """Tensors absent from both lookup dicts are returned unchanged."""

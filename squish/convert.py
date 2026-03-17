@@ -65,33 +65,37 @@ def _apply_awq_single(
     Apply the pre-computed AWQ transformation to a single tensor.
 
     - If ``name`` (without ``.weight`` suffix) is in ``proj_apply``:
-      divide the weight matrix columns by the group scale.
+      multiply the weight matrix columns by the group scale (W *= s,
+      amplifying salient channels for better INT4 precision).
     - If ``name`` is in ``ln_apply``:
-      multiply the LayerNorm gamma element-wise by the group scale.
+      divide the LayerNorm gamma element-wise by the group scale (gamma /= s,
+      attenuating the LN output to preserve mathematical equivalence).
     - Otherwise return ``arr_f32`` unchanged.
 
+    Together the two operations preserve ``(X / s) @ (W * s).T = X @ W.T``
+    (mathematical identity), while improving INT4 quantization where it
+    matters most.
+
     The two tables are produced by :func:`_build_awq_lookup`.
-    Together they ensure (X · s) @ (W / s).T = X @ W.T (identity),
-    so no accuracy is lost purely from the AWQ transformation itself.
     """
     if not proj_apply and not ln_apply:
         return arr_f32
 
     import numpy as _np
 
-    # Projection weight: divide columns by group scale
+    # Projection weight: amplify columns by group scale (AWQ paper: W *= s)
     layer_path = name[: name.rfind(".")] if "." in name else name
     if layer_path in proj_apply:
         s = proj_apply[layer_path]
         W = arr_f32.reshape(-1, arr_f32.shape[-1])
         if s.shape[0] == W.shape[1]:
-            return (W / s[_np.newaxis, :]).reshape(arr_f32.shape)
+            return (W * s[_np.newaxis, :]).reshape(arr_f32.shape)
 
-    # LayerNorm gamma: multiply by group scale
+    # LayerNorm gamma: attenuate by group scale (AWQ paper: gamma /= s)
     if name in ln_apply:
         s = ln_apply[name]
         if s.shape[0] == arr_f32.shape[0]:
-            return arr_f32 * s
+            return arr_f32 / s
 
     return arr_f32
 
