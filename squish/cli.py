@@ -1455,6 +1455,211 @@ def cmd_compress(args):  # pragma: no cover
     # AWQ runs automatically with --int4 unless --no-awq is passed.
     # Can also be forced on for INT8 with explicit --awq.
     _run_awq   = (not _no_awq and _use_int4) or getattr(args, "awq", False)
+
+    # ── Lock file — prevent two concurrent compressions to the same output ───
+    _lock_path = output_dir.parent / f".squish_compress_{output_dir.name}.lock"
+    if _lock_path.exists():
+        try:
+            _lock_pid = int(_lock_path.read_text().strip())
+            # Check if that PID is still alive
+            import signal as _signal
+            os.kill(_lock_pid, 0)  # raises if dead
+            _die(
+                f"Compression already running (PID {_lock_pid}) for {output_dir.name}.\n"
+                f"  If that process is gone, delete: {_lock_path}"
+            )
+        except (ValueError, ProcessLookupError, PermissionError):
+            _lock_path.unlink(missing_ok=True)  # stale lock — clean it up
+
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    _lock_path.write_text(str(os.getpid()))
+
+    try:
+        _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_awq)
+    finally:
+        _lock_path.unlink(missing_ok=True)
+
+
+def _ram_available_gb() -> tuple[float, float]:
+    """Return (total_ram_gb, free_ram_gb) without requiring psutil.
+
+    On macOS uses sysctl hw.memsize for total and vm_stat for free.
+    On Linux falls back to /proc/meminfo.
+    Returns (0.0, 0.0) if detection fails — callers must handle gracefully.
+    """
+    import ctypes, ctypes.util, subprocess as _sp
+    total = 0.0
+    free  = 0.0
+    try:
+        if sys.platform == "darwin":
+            _libc = ctypes.CDLL(ctypes.util.find_library("c"))
+            _buf  = ctypes.c_uint64(0)
+            _sz   = ctypes.c_size_t(8)
+            _libc.sysctlbyname(b"hw.memsize", ctypes.byref(_buf), ctypes.byref(_sz), None, 0)
+            total = _buf.value / 1e9
+            _vm = _sp.check_output(["vm_stat"], text=True)
+            _page = 16384  # Apple Silicon / Intel page size
+            _pages: dict[str, int] = {}
+            for _line in _vm.splitlines()[1:]:
+                if ":" in _line:
+                    _k, _v = _line.split(":", 1)
+                    try:
+                        _pages[_k.strip().rstrip(".")] = int(_v.strip().rstrip("."))
+                    except ValueError:
+                        pass
+            free = (_pages.get("Pages free", 0)
+                    + _pages.get("Pages inactive", 0)
+                    + _pages.get("Pages speculative", 0)) * _page / 1e9
+        elif sys.platform.startswith("linux"):
+            with open("/proc/meminfo") as _f:
+                _info = {l.split(":")[0]: int(l.split()[1]) for l in _f if ":" in l}
+            total = _info.get("MemTotal", 0) / 1e6
+            free  = (_info.get("MemFree", 0) + _info.get("MemAvailable", 0)) / 2e6
+    except Exception:
+        pass
+    return total, free
+
+
+def _bf16_native_available() -> bool:
+    """Return True if the Rust extension's BF16-native quantization functions are available."""
+    try:
+        import squish_quant  # noqa: PLC0415
+        return hasattr(squish_quant, "quantize_int8_bf16")
+    except ImportError:
+        return False
+
+
+def _max_tensor_gb_from_shards(shard_files: list) -> float:
+    """
+    Scan safetensors shard metadata (header only — no data loaded) to find
+    the largest single tensor size in GB.  Falls back to shard-level size
+    if the safetensors API is unavailable.
+    """
+    try:
+        from safetensors import safe_open  # noqa: PLC0415
+    except ImportError:
+        # Fallback: assume largest tensor is ~25% of the largest shard
+        return max(f.stat().st_size for f in shard_files) / 1e9 * 0.25
+
+    max_bytes = 0
+    _dtype_bytes = {"BF16": 2, "F16": 2, "F32": 4, "F64": 8, "I8": 1, "I32": 4, "I64": 8}
+    for shard in shard_files:
+        try:
+            with safe_open(str(shard), framework="numpy") as f:
+                for key in f.keys():
+                    sl = f.get_slice(key)
+                    shape = sl.get_shape()
+                    nbytes = 1
+                    for dim in shape:
+                        nbytes *= dim
+                    dtype_str = str(sl.get_dtype()).upper()
+                    nbytes *= _dtype_bytes.get(dtype_str, 2)
+                    if nbytes > max_bytes:
+                        max_bytes = nbytes
+        except Exception:
+            pass
+    if max_bytes == 0:
+        return max(f.stat().st_size for f in shard_files) / 1e9 * 0.25
+    return max_bytes / 1e9
+
+
+def _peak_ram_estimate_gb(model_dir: "Path", run_awq: bool) -> "tuple[float, float, float]":
+    """
+    Compute (model_size_gb, peak_gb, max_tensor_or_shard_gb) for RAM pre-flight checks.
+
+    AWQ path   — mlx_lm.load loads the entire model as BF16 (+activations)
+                  → peak = model_size × 2.0
+
+    No-AWQ path — iter_shard_tensors() (Phase 2) streams one tensor at a time via
+                  safetensors safe_open (OS demand-paged mmap).  The peak is
+                  determined by the largest single tensor, not the full shard:
+
+                  With BF16-native Rust quantization (Phase 3, no f32 copy needed):
+                    → peak ≈ max_tensor_size × 1.5  (BF16 + INT4/INT8 output)
+
+                  Without BF16-native (legacy f32 cast path):
+                    → peak ≈ max_tensor_size × 3.5  (BF16 + f32 copy + output)
+
+                  Headroom: 1.0 GB (model config files, tokenizer, Python overhead)
+    """
+    shard_files = sorted(model_dir.glob("*.safetensors"))
+    model_size_gb = sum(
+        f.stat().st_size for f in model_dir.rglob("*") if f.is_file()
+    ) / 1e9
+    if shard_files and not run_awq:
+        max_tensor_gb = _max_tensor_gb_from_shards(shard_files)
+        # BF16-native path (Phase 3): no f32 intermediate, 1× BF16 + 0.5× output
+        # Legacy f32 path: 1× BF16 + 2× f32 + 0.5× output = 3.5× BF16 size
+        multiplier = 1.5 if _bf16_native_available() else 3.5
+        peak_gb = max_tensor_gb * multiplier + 1.0
+        max_shard_or_tensor_gb = max_tensor_gb
+    else:
+        # AWQ loads the full model via mlx_lm.load (BF16) + activation buffers
+        peak_gb = model_size_gb * 2.0 + 2.0
+        max_shard_or_tensor_gb = model_size_gb
+    return model_size_gb, peak_gb, max_shard_or_tensor_gb
+
+
+def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_awq):
+    """Inner body of compression — called after the lock is acquired."""
+    # ── Memory safety pre-flight ─────────────────────────────────────────────
+    HEADROOM_GB = 2.0
+    model_size_gb, peak_gb, max_shard_gb = _peak_ram_estimate_gb(model_dir, _run_awq)
+    total_ram_gb, free_ram_gb = _ram_available_gb()
+
+    if total_ram_gb > 0:
+        if peak_gb > total_ram_gb:
+            # Hard block — will definitely OOM the machine
+            if _run_awq:
+                detail = "AWQ calibration loads full BF16 model + activation buffers"
+            else:
+                _mult = "1.5" if _bf16_native_available() else "3.5"
+                detail = f"streaming compress: largest tensor ({max_shard_gb:.2f} GB) × {_mult} + headroom"
+            msg = (
+                f"\n  ✗  Not enough RAM to compress this model safely.\n"
+                f"\n"
+                f"     Model size  : {model_size_gb:.1f} GB\n"
+                f"     Peak needed : ~{peak_gb:.1f} GB  ({detail})\n"
+                f"     Total RAM   : {total_ram_gb:.1f} GB\n"
+            )
+            if _run_awq:
+                # Compute no-AWQ peak (shard-based) to see if that fits
+                _, no_awq_peak, _ = _peak_ram_estimate_gb(model_dir, run_awq=False)
+                if no_awq_peak <= total_ram_gb:
+                    msg += (
+                        f"\n  Try:  squish it {args.model} --int4 --no-awq"
+                        f"\n        (skips AWQ calibration; peak ~{no_awq_peak:.1f} GB, slight accuracy cost)\n"
+                    )
+                else:
+                    msg += (
+                        f"\n  Options:\n"
+                        f"     1. Use INT8 (larger group-64 quant, ~same accuracy):\n"
+                        f"        squish it {args.model} --no-awq\n"
+                        f"     2. Use a smaller model:\n"
+                        f"        squish it qwen3:4b --int4\n"
+                        f"        squish it qwen3:1.7b --int4\n"
+                    )
+            else:
+                msg += (
+                    f"\n  Options:\n"
+                    f"     1. Use a smaller model whose shards fit in available RAM:\n"
+                    f"        squish it qwen3:4b --int4   (largest shard ~2 GB, peak ~{2*3+HEADROOM_GB:.0f} GB)\n"
+                    f"        squish it qwen3:1.7b --int4  (largest shard ~0.9 GB, peak ~{0.9*3+HEADROOM_GB:.0f} GB)\n"
+                    f"     2. Run on a machine with more RAM (Kaggle CPU: 30 GB free)\n"
+                )
+            _die(msg)
+        elif peak_gb > free_ram_gb + 1.0:
+            # Soft warning — might work but will cause heavy swapping
+            print(
+                f"\n  ⚠  Low free RAM warning:\n"
+                f"     Peak needed : ~{peak_gb:.1f} GB\n"
+                f"     Free RAM    : {free_ram_gb:.1f} GB  (of {total_ram_gb:.1f} GB total)\n"
+                f"     Compression will proceed but may be slow due to memory pressure.\n"
+                f"     Close other apps to free up RAM before continuing.\n"
+            )
+            import time as _time
+            _time.sleep(3)  # Give user a moment to read and Ctrl+C if desired
+
     awq_suffix = " + AWQ" if _run_awq else ""
     quant_label = (
         f"INT4{awq_suffix} (~44% disk savings, ≤2% accuracy delta)"
@@ -1848,8 +2053,8 @@ def cmd_convert_model(args):
             mlx_path=str(output_path),
             quantize=True,
             q_bits=args.ffn_bits,
-            linear_class_predicate=lambda m: (
-                "lm_head" not in m.name and "embed_tokens" not in m.name
+            quant_predicate=lambda path, m, _: (
+                "lm_head" not in path and "embed_tokens" not in path
             ),
         )
     except Exception as exc:
@@ -1863,8 +2068,8 @@ def cmd_convert_model(args):
                 mlx_path=str(output_path),
                 quantize=True,
                 q_bits=args.embed_bits,
-                linear_class_predicate=lambda m: (
-                    "lm_head" in m.name or "embed_tokens" in m.name
+                quant_predicate=lambda path, m, _: (
+                    "lm_head" in path or "embed_tokens" in path
                 ),
             )
         except Exception as exc:

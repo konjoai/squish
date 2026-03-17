@@ -77,6 +77,79 @@ def _reconstruct_rust(result: QuantizationResult) -> np.ndarray:
     return _squish_quant.dequantize_int8_grouped(q, s, group_size)
 
 
+# BF16 dtype sentinel: numpy doesn't have a native bf16 dtype, so safetensors
+# returns BF16 tensors as uint16 arrays (raw bit patterns).  We detect this by
+# checking dtype.  The Rust path handles the conversion internally per-element.
+def _is_bf16_array(arr: np.ndarray) -> bool:
+    """Return True when arr is a uint16 array carrying BF16 bit patterns."""
+    return arr.dtype == np.uint16
+
+
+def quantize_bf16_native(
+    arr_bf16: np.ndarray,
+    group_size: int = 64,
+    use_int4: bool = False,
+) -> "dict":
+    """
+    Quantize a BF16 weight array WITHOUT first casting to float32.
+
+    ``arr_bf16`` must be a uint16 numpy array (BF16 raw bits as returned
+    by ``safetensors.safe_open().get_tensor()`` when the model was saved in
+    BF16).  The Rust extension converts per-element inside the Rayon loop,
+    so peak RAM = input array (1×) + output (0.25–0.5×) instead of the
+    usual input + float32 cast + output (2.25–2.5×).
+
+    Falls back to float32 cast + regular path when ``squish_quant`` is not
+    built or when the dtype is already float32.
+
+    Returns a dict of suffix → array matching the format expected by
+    ``quantize_tensor()`` (``__q4a``/``__s4a``/``__z4a`` for INT4,
+    ``__q``/``__s`` for INT8).  Returns None when the BF16 path is
+    unavailable so the caller can fall back to the standard path.
+    """
+    if _squish_quant is None or not _is_bf16_array(arr_bf16):
+        return None  # caller must fall back
+
+    arr = np.ascontiguousarray(arr_bf16, dtype=np.uint16)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    elif arr.ndim > 2:
+        arr = arr.reshape(-1, arr.shape[-1])
+    n, d = arr.shape
+
+    has_int4_bf16 = hasattr(_squish_quant, "quantize_int4_asymmetric_bf16")
+    has_int8_bf16 = hasattr(_squish_quant, "quantize_int8_bf16")
+
+    if use_int4 and has_int4_bf16:
+        # Determine group size (must divide d evenly)
+        gs = group_size
+        while gs > 1 and d % gs != 0:
+            gs //= 2
+        if d % 2 != 0:
+            return None  # packing requires even column count; fall back
+        packed, scales, offsets = _squish_quant.quantize_int4_asymmetric_bf16(arr, gs)
+        return {
+            "__q4a": packed,
+            "__s4a": scales,
+            "__z4a": offsets,
+            "__shape": np.array([n, d], dtype=np.int64),
+        }
+    elif not use_int4 and has_int8_bf16:
+        gs = group_size
+        while gs > 1 and d % gs != 0:
+            gs //= 2
+        if gs > 1 and d % gs == 0:
+            q, scales = _squish_quant.quantize_int8_grouped_bf16(arr, gs)
+        else:
+            q, scales = _squish_quant.quantize_int8_bf16(arr)
+        return {
+            "__q": q,
+            "__s": scales,
+            "__shape": np.array([n, d], dtype=np.int64),
+        }
+    return None  # requested mode not available in this build
+
+
 # ---------------------------------------------------------------------------
 # Pure-NumPy vectorised paths
 # ---------------------------------------------------------------------------

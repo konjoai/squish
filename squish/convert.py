@@ -102,6 +102,7 @@ def _apply_awq_single(
 
 from squish.quant.quantizer import (  # noqa: E402
     QuantizationResult,
+    quantize_bf16_native,
     quantize_embeddings,
     quantize_int4,
     quantize_int4_asymmetric,
@@ -261,7 +262,13 @@ def quantize_tensor(
     int4_group_size: int | None = None,
 ) -> dict:
     """
-    Quantize a single float32 tensor.
+    Quantize a single tensor (float32 or BF16-as-uint16).
+
+    When ``arr_f32`` is a uint16 array (BF16 raw bits from ``iter_shard_tensors``)
+    and the squish_quant Rust extension is available, the BF16-native path is
+    tried first for INT8 and INT4 modes.  This avoids the float32 cast that
+    doubles peak RAM per tensor.  For any mode requiring f32 (NF4, VPTQ,
+    AQLM, QuIP, outlier detection, AWQ) the array is cast lazily on first use.
 
     Returns a dict of file suffixes → arrays / bytes objects:
       INT8 (default):       __q, __s, __shape
@@ -273,6 +280,27 @@ def quantize_tensor(
       passthrough:          __pt, __shape
       DFloat11 (pt):        __pt_df11  (bytes blob, stored via np.frombuffer)
     """
+    # ── BF16-native fast path (avoids float32 intermediate copy) ─────────────
+    # Only valid for the standard INT8/INT4 paths. Any mode that needs float32
+    # values (outlier detection, NF4, VPTQ, AQLM, QuIP, AWQ, super-weight) will
+    # fall through and cast below.
+    _is_bf16 = arr_f32.dtype == np.uint16
+    if _is_bf16 and not (use_nf4 or use_vptq or use_aqlm or use_quip or
+                          super_weight_passthrough or any(p in name for p in passthrough_patterns)):
+        _bf16_gs = int4_group_size or 32
+        _result = quantize_bf16_native(arr_f32, group_size=_bf16_gs, use_int4=use_int4)
+        if _result is not None:
+            # BF16 path succeeded — add __shape from the uint16 dimensions
+            n_rows = arr_f32.shape[0] if arr_f32.ndim > 1 else 1
+            n_cols = arr_f32.shape[-1]
+            _result["__shape"] = np.array(arr_f32.shape, dtype=np.int64)
+            return _result
+        # BF16 path unavailable for this config — fall through to f32 path
+
+    # ── Ensure float32 for all remaining paths ────────────────────────────────
+    if _is_bf16:
+        arr_f32 = arr_f32.view(np.uint16).astype(np.float32)  # lazy cast
+
     original_shape = arr_f32.shape
 
     # --- decide whether to pass through ---
@@ -437,19 +465,66 @@ def quantize_tensor(
     }
 
 
+def iter_shard_tensors(shard_path: Path):
+    """
+    Yield (name, arr) for each tensor in a safetensors shard.
+
+    Uses safetensors ``safe_open`` for tensor-level demand-paged access:
+    each tensor is deserialized individually, so peak RAM per shard =
+    largest_single_tensor × 2  (raw BF16 + f32 cast or BF16 + output)
+    rather than the full shard size × 2.
+
+    BF16 tensors are yielded as uint16 numpy arrays (raw bit patterns) so
+    that ``quantize_tensor`` can use the BF16-native Rust path and avoid
+    the float32 cast entirely.  Float16 and float32 tensors are yielded
+    as float32 (they're already at most 32-bit, so the cast is cheap).
+
+    Falls back to the bulk loader when ``safe_open`` is unavailable.
+    The OS demand-pages only the bytes actually touched by each
+    ``get_tensor()`` call — unread tensors cost no physical RAM.
+    """
+    try:
+        from safetensors import safe_open
+        with safe_open(str(shard_path), framework="numpy") as f:
+            for name in f.keys():
+                arr = f.get_tensor(name)
+                # Preserve BF16 as uint16 — Rust bf16 path avoids f32 copy.
+                # Float16 and float32 are cast to float32 immediately.
+                if arr.dtype.kind == 'u' and arr.itemsize == 2:
+                    # Already uint16 (edge case — pass through as f32)
+                    yield name, arr.astype(np.float32)
+                elif str(arr.dtype) in ('bfloat16',):
+                    # numpy doesn't have bf16; safetensors returns it as a
+                    # custom dtype — view as uint16 for the Rust path.
+                    yield name, arr.view(np.uint16)
+                else:
+                    yield name, arr.astype(np.float32)
+                del arr
+        return
+    except (ImportError, AttributeError):
+        pass
+    except Exception as _e:
+        import warnings
+        warnings.warn(f"safe_open failed ({_e}), falling back to bulk shard loader")
+
+    # ── Bulk fallback (full shard loaded at once) ─────────────────────────────
+    yield from load_mlx_weights_shard(shard_path).items()
+
+
 def load_mlx_weights_shard(shard_path: Path) -> dict:
     """
     Load a single safetensors shard as float32 numpy arrays.
-    Uses safetensors.numpy directly (CPU only — no Metal, no MLX).
-    Avoids the Metal GPU timeout that occurs when loading 7B+ models.
+
+    Prefer ``iter_shard_tensors()`` for compression — it yields one tensor at
+    a time (tensor-level demand paging via ``safe_open``) so peak RAM is the
+    largest single tensor rather than the full shard.  This function is kept
+    for callers that need the full dict (e.g. AWQ calibration hooks).
     """
     try:
         from safetensors.numpy import load_file as st_load_numpy
         raw = st_load_numpy(str(shard_path))
-        # safetensors.numpy returns {name: np.ndarray} — may be float16 or bfloat16
         out = {}
         for name, arr in raw.items():
-            # Convert to float32 for Vectro quantization
             out[name] = arr.astype(np.float32)
         return out
     except Exception:
@@ -566,14 +641,31 @@ def process_weights_streaming(
 
     for shard_idx, shard in enumerate(shard_files, 1):
         print(f"\n  [{shard_idx}/{len(shard_files)}] {shard.name}")
-        shard_weights = load_mlx_weights_shard(shard)
-        shard_tensors = len(shard_weights)
 
-        # ── Scan for super weights within this shard ──────────────────────────
+        # ── Tensor count + super-weight scan (single cheap pass over keys only) ─
+        # We need the tensor count for the spinner and super-weight names before
+        # the streaming pass. Use safetensors metadata (no data loaded) when
+        # available; fall back to a bulk load only when needed.
         sw_tensor_names: set[str] = set()
+        shard_tensor_names: list[str] = []
+        try:
+            from safetensors import safe_open
+            with safe_open(str(shard), framework="numpy") as _f:
+                shard_tensor_names = list(_f.keys())
+        except Exception:
+            # Bulk load needed for key enumeration (shouldn't happen with >=0.3)
+            shard_tensor_names = list(load_mlx_weights_shard(shard).keys())
+
+        shard_tensors = len(shard_tensor_names)
+
         if _sw_calibrator is not None:
-            coords = _sw_calibrator.scan_weights(shard_weights)
+            # Super-weight scan: we need float32 values — load shard fully for scan
+            # then discard.  This is a one-time worst-case shard load; the main
+            # quantization loop below uses the tensor-level iterator.
+            _sw_weights = load_mlx_weights_shard(shard)
+            coords = _sw_calibrator.scan_weights(_sw_weights)
             sw_tensor_names = {c.tensor_name for c in coords}
+            del _sw_weights
             if sw_tensor_names:
                 n_sw = len(sw_tensor_names)
                 listed = ", ".join(sorted(sw_tensor_names)[:4])
@@ -581,13 +673,15 @@ def process_weights_streaming(
                 print(f"    [super-weight] protecting {n_sw} tensor(s) as FP16: {listed}{overflow}")
 
         sp = Spinner(f"Shard {shard_idx}/{len(shard_files)}  ({shard_tensors} tensors)").start()
-        for tensor_idx, (name, arr_f32) in enumerate(shard_weights.items(), 1):
+        for tensor_idx, (name, arr_f32) in enumerate(iter_shard_tensors(shard), 1):
             sp.update(f"{tensor_idx}/{shard_tensors}  {name}")
             sk = safe_key(name)
             manifest[name] = sk
 
-            # ── Phase 1.2: Apply AWQ scales before quantization ───────────
+            # AWQ scales must be applied to float32 — cast BF16 lazily here
             if _awq_proj or _awq_ln:
+                if arr_f32.dtype == np.uint16:
+                    arr_f32 = arr_f32.view(np.uint16).astype(np.float32)
                 arr_f32 = _apply_awq_single(name, arr_f32, _awq_proj, _awq_ln)
 
             sub = quantize_tensor(
@@ -621,7 +715,9 @@ def process_weights_streaming(
                 else:
                     np.save(str(out_path), data)
 
-            orig_bytes = arr_f32.nbytes
+            # orig_bytes: BF16 tensors are uint16 view (2B/elem); f32 are 4B/elem
+            _elem_bytes = 2 if arr_f32.dtype == np.uint16 else arr_f32.itemsize
+            orig_bytes = arr_f32.size * _elem_bytes
             comp_bytes = sum(
                 (tensor_dir / f"{sk}{sfx}.npy").stat().st_size
                 for sfx in sub
@@ -660,7 +756,6 @@ def process_weights_streaming(
             del arr_f32
 
         sp.stop(f"Shard {shard_idx} done  ({shard_tensors} tensors written)")
-        del shard_weights
 
     # Write manifest
     with open(output_path / "manifest.json", "w") as f:

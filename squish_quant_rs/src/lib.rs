@@ -24,12 +24,23 @@
 //! # scales: (N,)   float32 — per-row scale factors
 //! ```
 
+use half::bf16;
 use numpy::{
     ndarray::{Array1, Array2},
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2,
 };
 use pyo3::prelude::*;
 use rayon::prelude::*;
+
+// ── BF16 → f32 helper ───────────────────────────────────────────────────────
+// safetensors returns BF16 weights as raw u16 bytes.  numpy views them as
+// uint16.  We convert per-element inside the Rayon loop to avoid the Python-
+// side `.astype(np.float32)` copy that currently doubles peak RAM per shard.
+
+#[inline(always)]
+fn bf16_to_f32(bits: u16) -> f32 {
+    bf16::from_bits(bits).to_f32()
+}
 
 // ── Per-row symmetric INT8 quantization (float32 input) ─────────────────────
 
@@ -527,6 +538,201 @@ pub fn dequantize_int4_asymmetric_grouped<'py>(
 }
 
 
+// ── BF16-native INT8 quantization ───────────────────────────────────────────
+//
+// Accepts uint16 arrays (numpy view of BF16 safetensors bytes) and converts
+// per-element inside the Rayon loop.  Avoids the Python-side float32 cast that
+// doubles peak RAM: instead of (shard_BF16 + shard_F32 + output), peak is
+// (shard_BF16 + output) — roughly half the RAM of the f32 path.
+//
+// Python usage:
+//   # arr_bf16 is a numpy uint16 view of the raw BF16 safetensors bytes
+//   q, scales = quantize_int8_bf16(arr_bf16)
+
+/// INT8 quantization of a BF16 weight matrix supplied as uint16 (raw bit pattern).
+///
+/// Input:  (N, D) uint16  — raw BF16 bits from safetensors  
+/// Output: ((N, D) int8, (N,) float32)
+#[pyfunction]
+pub fn quantize_int8_bf16<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, u16>,
+) -> PyResult<(Bound<'py, PyArray2<i8>>, Bound<'py, PyArray1<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+
+    let mut q_out:      Vec<i8>  = vec![0i8;  n_rows * n_cols];
+    let mut scales_out: Vec<f32> = vec![0f32; n_rows];
+
+    q_out
+        .par_chunks_mut(n_cols)
+        .zip(scales_out.par_iter_mut())
+        .enumerate()
+        .for_each(|(row_idx, (q_row, scale))| {
+            let row = arr_view.row(row_idx);
+            let row_slice = row.as_slice().expect("non-contiguous row");
+
+            // Pass 1: abs-max in f32
+            let row_max = row_slice
+                .iter()
+                .map(|&bits| bf16_to_f32(bits).abs())
+                .fold(0.0f32, f32::max);
+
+            let s = if row_max == 0.0 { 1.0f32 } else { row_max / 127.0 };
+            *scale = s;
+            let inv_s = 1.0 / s;
+
+            // Pass 2: quantize
+            for (q_val, &bits) in q_row.iter_mut().zip(row_slice.iter()) {
+                let x = bf16_to_f32(bits);
+                *q_val = (x * inv_s).round().clamp(-127.0, 127.0) as i8;
+            }
+        });
+
+    let q_arr = Array2::from_shape_vec((n_rows, n_cols), q_out)
+        .expect("shape").into_pyarray_bound(py);
+    let s_arr = Array1::from_vec(scales_out).into_pyarray_bound(py);
+    Ok((q_arr, s_arr))
+}
+
+/// Per-group INT8 quantization of a BF16 weight matrix supplied as uint16.
+///
+/// Input:  (N, D) uint16, group_size  
+/// Output: ((N, D) int8, (N, D/group_size) float32)
+#[pyfunction]
+pub fn quantize_int8_grouped_bf16<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, u16>,
+    group_size: usize,
+) -> PyResult<(Bound<'py, PyArray2<i8>>, Bound<'py, PyArray2<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+
+    if n_cols % group_size != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "n_cols ({n_cols}) must be divisible by group_size ({group_size})"
+        )));
+    }
+    let n_groups = n_cols / group_size;
+
+    let mut q_out:      Vec<i8>  = vec![0i8;  n_rows * n_cols];
+    let mut scales_out: Vec<f32> = vec![0f32; n_rows * n_groups];
+
+    q_out
+        .par_chunks_mut(n_cols)
+        .zip(scales_out.par_chunks_mut(n_groups))
+        .enumerate()
+        .for_each(|(row_idx, (q_row, s_row))| {
+            let row = arr_view.row(row_idx);
+            let row_slice = row.as_slice().expect("non-contiguous");
+
+            for g in 0..n_groups {
+                let start = g * group_size;
+                let end   = start + group_size;
+                let gmax  = row_slice[start..end]
+                    .iter()
+                    .map(|&bits| bf16_to_f32(bits).abs())
+                    .fold(0.0f32, f32::max);
+                let s    = if gmax == 0.0 { 1.0 } else { gmax / 127.0 };
+                s_row[g] = s;
+                let inv_s = 1.0 / s;
+                for (q_val, &bits) in q_row[start..end].iter_mut().zip(row_slice[start..end].iter()) {
+                    let x = bf16_to_f32(bits);
+                    *q_val = (x * inv_s).round().clamp(-127.0, 127.0) as i8;
+                }
+            }
+        });
+
+    let q_arr = Array2::from_shape_vec((n_rows, n_cols), q_out)
+        .expect("shape").into_pyarray_bound(py);
+    let s_arr = Array2::from_shape_vec((n_rows, n_groups), scales_out)
+        .expect("shape").into_pyarray_bound(py);
+    Ok((q_arr, s_arr))
+}
+
+/// Per-group asymmetric INT4 quantization of a BF16 weight matrix as uint16.
+///
+/// Avoids the float32 intermediate copy: BF16 bits are converted per-element
+/// inside the Rayon loop.  Peak RAM = shard_BF16 (1×) + nibble output (0.25×).
+///
+/// Input:  (N, D) uint16, group_size  
+/// Output: ((N, D/2) uint8 packed, (N, D/gs) float32 scales, (N, D/gs) float32 offsets)
+#[pyfunction]
+pub fn quantize_int4_asymmetric_bf16<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, u16>,
+    group_size: usize,
+) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray2<f32>>, Bound<'py, PyArray2<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+
+    if n_cols % group_size != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "n_cols ({n_cols}) must be divisible by group_size ({group_size})"
+        )));
+    }
+    if n_cols % 2 != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_cols must be even for INT4 packing"
+        ));
+    }
+
+    let n_groups = n_cols / group_size;
+    let n_packed = n_cols / 2;
+
+    let mut packed_out:  Vec<u8>  = vec![0u8;  n_rows * n_packed];
+    let mut scales_out:  Vec<f32> = vec![0f32; n_rows * n_groups];
+    let mut offsets_out: Vec<f32> = vec![0f32; n_rows * n_groups];
+
+    packed_out
+        .par_chunks_mut(n_packed)
+        .zip(scales_out.par_chunks_mut(n_groups))
+        .zip(offsets_out.par_chunks_mut(n_groups))
+        .enumerate()
+        .for_each(|(row_idx, ((p_row, s_row), o_row))| {
+            let row       = arr_view.row(row_idx);
+            let row_slice = row.as_slice().expect("non-contiguous");
+
+            // Per-group scale + gmin offset
+            for g in 0..n_groups {
+                let start = g * group_size;
+                let end   = start + group_size;
+                let mut gmin = f32::INFINITY;
+                let mut gmax = f32::NEG_INFINITY;
+                for &bits in &row_slice[start..end] {
+                    let v = bf16_to_f32(bits);
+                    if v < gmin { gmin = v; }
+                    if v > gmax { gmax = v; }
+                }
+                let scale = if gmax == gmin { 1.0f32 } else { (gmax - gmin) / 15.0 };
+                s_row[g] = scale;
+                o_row[g] = gmin;
+            }
+
+            // Quantize + pack nibbles
+            for i in 0..n_packed {
+                let j0 = i * 2;
+                let j1 = j0 + 1;
+                let g0 = j0 / group_size;
+                let g1 = j1 / group_size;
+                let x0 = bf16_to_f32(row_slice[j0]);
+                let x1 = bf16_to_f32(row_slice[j1]);
+                let q0 = ((x0 - o_row[g0]) / s_row[g0]).round().clamp(0.0, 15.0) as u8;
+                let q1 = ((x1 - o_row[g1]) / s_row[g1]).round().clamp(0.0, 15.0) as u8;
+                p_row[i] = (q0 & 0x0F) | ((q1 & 0x0F) << 4);
+            }
+        });
+
+    let packed_arr  = Array2::from_shape_vec((n_rows, n_packed), packed_out)
+        .expect("shape").into_pyarray_bound(py);
+    let scales_arr  = Array2::from_shape_vec((n_rows, n_groups), scales_out)
+        .expect("shape").into_pyarray_bound(py);
+    let offsets_arr = Array2::from_shape_vec((n_rows, n_groups), offsets_out)
+        .expect("shape").into_pyarray_bound(py);
+    Ok((packed_arr, scales_arr, offsets_arr))
+}
+
+
 // ── PyO3 module registration ─────────────────────────────────────────────────
 
 #[pymodule]
@@ -539,5 +745,10 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(dequantize_int4_grouped,             m)?)?;
     m.add_function(wrap_pyfunction!(quantize_int4_asymmetric_grouped,    m)?)?;
     m.add_function(wrap_pyfunction!(dequantize_int4_asymmetric_grouped,  m)?)?;
+    // BF16-native paths (accept uint16 numpy arrays — raw bf16 bits from safetensors)
+    // These avoid the Python-side .astype(float32) copy, halving peak RAM per shard.
+    m.add_function(wrap_pyfunction!(quantize_int8_bf16,                  m)?)?;
+    m.add_function(wrap_pyfunction!(quantize_int8_grouped_bf16,          m)?)?;
+    m.add_function(wrap_pyfunction!(quantize_int4_asymmetric_bf16,       m)?)?;
     Ok(())
 }
