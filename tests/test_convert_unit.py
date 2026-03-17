@@ -175,3 +175,41 @@ class TestSpinner:
         captured = capsys.readouterr()
         # No spinner frames should appear in stdout
         assert "⠋" not in captured.out
+
+
+class TestPickInt4GroupSize:
+    """Unit tests for the _pick_int4_group_size helper."""
+
+    def test_default_prefers_32(self):
+        from squish.convert import _pick_int4_group_size
+        # 1536 is divisible by 32
+        assert _pick_int4_group_size(1536) == 32
+
+    def test_max_group_size_16_returns_16(self):
+        from squish.convert import _pick_int4_group_size
+        assert _pick_int4_group_size(1536, max_group_size=16) == 16
+
+    def test_max_group_size_8_returns_8(self):
+        from squish.convert import _pick_int4_group_size
+        assert _pick_int4_group_size(1536, max_group_size=8) == 8
+
+    def test_falls_back_when_not_divisible(self):
+        from squish.convert import _pick_int4_group_size
+        # 48 is not divisible by 32 evenly with 48 >= 64 check, but 48 >= 32*2=64 fails
+        # 48 / 16 = 3 and 48 >= 16*2=32 → should return 16
+        assert _pick_int4_group_size(48) == 16
+
+    def test_small_dim_falls_back_to_n_cols(self):
+        from squish.convert import _pick_int4_group_size
+        # 7 is too small to fit any group (7 >= 4*2=8 fails)
+        assert _pick_int4_group_size(7) == 7
+
+    def test_max_group_size_respects_divisibility(self):
+        from squish.convert import _pick_int4_group_size
+        # 1536 % 32 == 0 but max_group_size=16 → largest valid ≤16 is 16
+        assert _pick_int4_group_size(1536, max_group_size=16) == 16
+
+    def test_max_group_size_32_matches_default(self):
+        from squish.convert import _pick_int4_group_size
+        for n in (1536, 8960, 256, 512):
+            assert _pick_int4_group_size(n, max_group_size=32) == _pick_int4_group_size(n)

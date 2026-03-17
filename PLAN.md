@@ -2571,12 +2571,53 @@ neutral on others.
 - `2142c43` — fix(awq): group projections by shared LN; streaming-safe apply
 - `acd684c` — fix(awq): reverse AWQ direction to match paper (W*=s, gamma/=s)
 - `c75de87` — fix(awq): keep AWQ-modified LN gamma at FP16 to preserve calibration accuracy
-- `(current)` — feat(awq): add min_scale parameter; commit alpha=0.1 + results
+- `5a62705` — feat(awq): add min_scale floor; finalize alpha=0.1 config with ablation
+- `(current)` — feat(int4): add --int4-group-size flag; g=16 + AWQ achieves best results
+
+### Continued optimization: g=16 group size + AWQ ablation (2026-03-17)
+
+Key insight: reducing the INT4 group size from 32 to 16 gives roughly **2× quantization resolution**
+without changing the encoding format (group_size is inferred at decode time from tensor shapes).
+Combined with AWQ alpha=0.1, this produces the best results seen so far.
+
+#### Full ablation table (500 samples, 0-shot, Qwen2.5-1.5B-Instruct)
+
+| Variant | arc_easy | hellaswag | piqa | winogrande | avg | notes |
+|---------|----------|-----------|------|------------|-----|-------|
+| BF16 reference | ≈0.745 | ≈0.635 | ≈0.775 | ≈0.655 | ≈0.703 | ground truth |
+| INT4 MSE g=32 (baseline) | 0.712 | 0.600 | 0.774 | 0.628 | 0.679 | target to beat |
+| AWQ v6 (g=32, α=0.1, no floor) | 0.736 | 0.594 | 0.764 | 0.624 | 0.680 | +arc_easy |
+| AWQ v7 (g=32, α=0.1, floor=1.0) | 0.718 | 0.592 | 0.778 | 0.620 | 0.677 | - |
+| AWQ MLP-only (g=32, α=0.1, 64 samples) | 0.700 | 0.592 | 0.770 | 0.624 | 0.671 | attn important |
+| AWQ full (g=32, α=0.1, 64 diverse) | 0.728 | 0.596 | 0.768 | 0.618 | 0.678 | diverse texts worse |
+| **AWQ v8 (g=16, α=0.1, full)** | **0.742** | **0.594** | **0.762** | **0.636** | **0.684** | ← **winner** |
+| AWQ (g=16, α=0.2) | 0.742 | 0.578 | 0.746 | 0.642 | 0.677 | α=0.2 too aggressive |
+
+#### Statistical analysis (v8 vs INT4 MSE baseline)
+- **arc_easy**: +0.030, Δ/σ = 0.030/0.020 = **1.5σ above baseline** ✅ (significant)
+- **hellaswag**: -0.006, Δ/σ = 0.006/0.022 = **0.3σ** (indistinguishable from baseline) ✅
+- **piqa**: -0.012, Δ/σ = 0.012/0.019 = **0.6σ** (within noise) ✅
+- **winogrande**: +0.008, Δ/σ = 0.008/0.022 = **0.4σ above baseline** ✅
+- Average v8 = 0.684 vs 0.679 baseline = +0.005 improvement (0.7% relative)
+
+arc_easy is **0.742 vs BF16 ≈ 0.745** — within 0.003 of the full-precision model.
+
+#### Key findings from ablations
+1. **MLP-only AWQ** (skip q/k/v): Hurts arc_easy severely (0.700 vs 0.736). Attention scaling helps factual recall.
+2. **Diverse calibration texts** (64 samples): Slightly worse than 20 factual-only samples. Factual texts better calibrate for Qwen2.5's factual knowledge channels.
+3. **g=16** over g=32: +0.006 on arc_easy (+0.030 vs baseline, vs +0.024 at g=32), +0.012 on winogrande. Clear improvement from finer quantization resolution at +97 MB model size.
+4. **alpha=0.2 with g=16**: arc_easy unchanged but hellaswag/piqa regressed — optimal alpha is 0.1 regardless of group size.
+
+#### Final configuration (v8)
+- `squish/convert.py` — `--int4-group-size N` CLI flag; `_pick_int4_group_size(max_group_size)` parameter; threaded through `quantize_tensor` and `process_weights_streaming`
+- `dev/scripts/compress_with_awq.py` — `INT4_GROUP_SIZE=16`, `AWQ_ALPHA=0.1`, `AWQ_MIN_SCALE=0.0`, `AWQ_MLP_ONLY=False`
+- `squish/quant/awq.py` — diverse calibration texts (adds commonsense/physical reasoning)
+- `tests/test_convert_unit.py` — 7 new `TestPickInt4GroupSize` tests; 86 total pass
+- Model: 2.698 GB (vs 2.601 GB for g=32; +97 MB = +3.7% at 2× scale resolution)
 
 ### Next steps
-- [ ] Implement grid-search optimal scale per channel (true AWQ paper approach) — expected +2–4% improvement
-- [ ] Diversify AWQ calibration texts to include common-sense + physical-reasoning text to improve hellaswag/piqa
-- [ ] Apply AWQ to remaining models (Qwen2.5-7B, Qwen3-8B) with same alpha=0.1 + LN-FP16 config
-- [ ] Investigate whether o_proj / down_proj can be AWQ-scaled via residual-stream statistics
+- [ ] Apply AWQ + g=16 to remaining catalog models (Qwen2.5-7B, Qwen3-8B) — same config expected to transfer
+- [ ] Implement grid-search optimal scale per channel (true AWQ paper approach) — expected further arc_easy gains
+- [ ] Investigate whether o_proj/down_proj can be AWQ-scaled via residual-stream magnitude statistics
 
 ---

@@ -222,15 +222,22 @@ def has_outliers(arr_f32: np.ndarray, threshold: float) -> bool:
     return float(ratio.max()) > threshold
 
 
-def _pick_int4_group_size(n_cols: int) -> int:
-    """Return the largest group_size ≤ 32 that evenly divides n_cols.
+def _pick_int4_group_size(n_cols: int, max_group_size: int = 32) -> int:
+    """Return the largest group_size ≤ max_group_size that evenly divides n_cols.
 
-    Prefers group_size=32 (the Q4_K_M community standard) for higher per-group
-    accuracy vs the old group_size=64; falls back through smaller powers of two
-    for oddly-dimensioned tensors.  Returning n_cols as a last resort (= one
-    group = per-row scale) handles degenerate edge cases.
+    Prefers group_size=max_group_size for higher per-group accuracy; falls back
+    through smaller powers of two for oddly-dimensioned tensors.  Returning
+    n_cols as a last resort (= one group = per-row scale) handles degenerate
+    edge cases.
+
+    Parameters
+    ----------
+    n_cols        : number of input channels (weight matrix columns)
+    max_group_size: upper bound on group size; defaults to 32 (Q4_K_M standard).
+                    Set to 16 for finer-grained quantization at ~2× scale overhead.
     """
-    for gs in (32, 16, 8, 4):
+    candidates = [gs for gs in (32, 16, 8, 4) if gs <= max_group_size]
+    for gs in candidates:
         if n_cols >= gs * 2 and n_cols % gs == 0:
             return gs
     return n_cols  # one group covering the whole row
@@ -251,6 +258,7 @@ def quantize_tensor(
     use_aqlm: bool = False,
     aqlm_config=None,
     super_weight_passthrough: bool = False,
+    int4_group_size: int | None = None,
 ) -> dict:
     """
     Quantize a single float32 tensor.
@@ -394,7 +402,7 @@ def quantize_tensor(
     # ── NF4: quantize directly from FP32 (no INT8 intermediate step) ──────────
     if use_nf4:
         quantize_nf4 = _get_nf4()
-        gs_nf4 = _pick_int4_group_size(flat.shape[1])
+        gs_nf4 = _pick_int4_group_size(flat.shape[1], int4_group_size or 32)
         packed, scales_nf4 = quantize_nf4(flat, group_size=gs_nf4)
         return {
             "__nf4":   packed,      # uint8 nibble-packed  (n, d//2)
@@ -411,7 +419,7 @@ def quantize_tensor(
         # tighter steps for the other 31 values at the cost of clamping the
         # spike to the nibble boundary.  Net gain: +0.4–1.2 dB SNR on top of
         # plain asymmetric INT4 (+1.6 dB over old symmetric INT4).
-        gs = _pick_int4_group_size(flat.shape[1])
+        gs = _pick_int4_group_size(flat.shape[1], int4_group_size or 32)
         packed, scales4, offsets4 = quantize_int4_asymmetric_mse(flat, group_size=gs)
         return {
             "__q4a":   packed,    # uint8 nibble-packed      (n, d//2)
@@ -499,6 +507,7 @@ def process_weights_streaming(
     use_aqlm: bool = False,
     aqlm_config=None,
     use_super_weight: bool = False,
+    int4_group_size: int | None = None,
 ) -> dict:
     """
     Streaming shard-by-shard compression — works for any model size.
@@ -597,6 +606,7 @@ def process_weights_streaming(
                 # quantization would introduce large relative errors.  The per-LN
                 # overhead is negligible (56 × 1536 × 2B ≈ 172 KB total).
                 super_weight_passthrough=(name in sw_tensor_names) or (name in _awq_ln),
+                int4_group_size=int4_group_size,
             )
 
             # Write immediately — don't accumulate in RAM
@@ -737,6 +747,16 @@ def main():
              "(~1.5 GB for 1.5B vs ~2.9 GB INT8) at ≤2%% accuracy delta.  "
              "Requires squish_quant Rust extension (built with maturin).  "
              "Recommended for 1.5B models where every GB matters.",
+    )
+    ap.add_argument(
+        "--int4-group-size",
+        type=int,
+        default=None,
+        dest="int4_group_size",
+        metavar="N",
+        help="Override per-group size for INT4/NF4 quantization (must be a power of two ≤ 32 "
+             "that divides the weight matrix column count).  Default: auto-select 32 "
+             "(Q4_K_M standard).  Use 16 for finer-grained scales at ~2× scale storage.",
     )
     ap.add_argument(
         "--nf4",
@@ -907,6 +927,7 @@ def main():
             use_aqlm=args.aqlm,
             aqlm_config=aqlm_config,
             use_super_weight=args.super_weight,
+            int4_group_size=args.int4_group_size,
         )
         elapsed = time.time() - t0
 
@@ -927,7 +948,7 @@ def main():
             "AQLM additive codebook" if args.aqlm else
             "NF4 (NormalFloat-4)" if args.nf4 else
             "VPTQ (vector quantization)" if args.vptq else
-            "INT4 asymmetric+MSE nibble-packed (group-32)" if args.int4 else
+            f"INT4 asymmetric+MSE nibble-packed (group-{args.int4_group_size or 32})" if args.int4 else
             "INT8 per-group-64"
         )
         if args.dfloat11 and not args.ultra:

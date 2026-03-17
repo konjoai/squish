@@ -18,6 +18,13 @@ AWQ_ALPHA    = 0.1
 # unchanged, but benchmarking shows alpha=0.1 with no floor gives the best
 # average accuracy (especially arc_easy +2.6% over INT4 MSE).
 AWQ_MIN_SCALE = 0.0
+# MLP-only: apply AWQ only to gate_proj/up_proj, skip q/k/v/o.
+AWQ_MLP_ONLY = False
+# INT4 group size: 16 gives finer per-group scale resolution with ~2× scale
+# storage overhead (+~115 MB) but measurably better quantization precision.
+INT4_GROUP_SIZE = 16
+
+_MLP_LEAVES = frozenset({"gate_proj", "up_proj", "fc1", "dense_h_to_4h"})
 
 # ── Step 1: AWQ calibration ──────────────────────────────────────────────────
 print("Step 1: AWQ calibration...")
@@ -29,6 +36,12 @@ print(f"  Loading {MODEL_DIR.name} ...")
 model, tokenizer = mlx_lm.load(str(MODEL_DIR))
 print(f"  Collecting activation scales (n={N_SAMPLES}, alpha={AWQ_ALPHA}, min_scale={AWQ_MIN_SCALE})...")
 scales = collect_activation_scales(model, tokenizer, n_samples=N_SAMPLES, alpha=AWQ_ALPHA, min_scale=AWQ_MIN_SCALE, verbose=True)
+
+if AWQ_MLP_ONLY:
+    before = len(scales)
+    scales = {k: v for k, v in scales.items() if k.split(".")[-1] in _MLP_LEAVES}
+    print(f"  MLP-only filter: {before} → {len(scales)} layers (skipped attn q/k/v/o)")
+
 awq_dir = tempfile.mkdtemp(prefix="squish_awq_")
 save_awq_scales(scales, awq_dir, verbose=False)
 print(f"  ✓  AWQ scales → {awq_dir}  ({len(scales)} layers)")
@@ -46,6 +59,7 @@ result = subprocess.run([
     "--output",      str(OUTPUT_DIR),
     "--format",      "npy-dir",
     "--int4",
+    "--int4-group-size", str(INT4_GROUP_SIZE),
     "--super-weight",
     "--awq-scales",  awq_dir,
     "--verbose",
