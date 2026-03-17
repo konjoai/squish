@@ -55,6 +55,7 @@ import numpy as np
 # so activation statistics cover the full distribution of real usage.
 # ---------------------------------------------------------------------------
 _DEFAULT_CALIBRATION_TEXTS = [
+    # Factual knowledge (arc_easy style)
     "The capital of France is Paris, which is also the largest city in the country.",
     "Machine learning models learn patterns from data by adjusting internal parameters.",
     "In 1969, NASA's Apollo 11 mission successfully landed astronauts on the Moon.",
@@ -75,6 +76,28 @@ _DEFAULT_CALIBRATION_TEXTS = [
     "Photosynthesis converts carbon dioxide and water into glucose using sunlight.",
     "Neural networks are inspired by the structure of the human brain.",
     "The Theory of Relativity was developed by Albert Einstein in the early 1900s.",
+    # Commonsense reasoning (hellaswag/winogrande style)
+    "She put on her coat before going outside because it was cold and snowing heavily.",
+    "The dog wagged its tail when its owner came home after a long day at work.",
+    "After mixing flour, eggs, and butter, she put the dough in the oven to bake.",
+    "He drove carefully on the icy road because he did not want to skid off the path.",
+    "The children laughed loudly when the clown pretended to fall off his tiny bicycle.",
+    "She looked both ways before crossing the street to make sure no cars were coming.",
+    "The library was quiet because everyone was trying to concentrate on their books.",
+    "He turned off the lights and locked the door before leaving for his vacation.",
+    "The cat knocked the glass off the table and watched it shatter on the floor.",
+    "After the storm, the streets were flooded and the power lines had fallen down.",
+    # Physical / procedural reasoning (piqa style)
+    "To sharpen a pencil, you insert the blunt end into the sharpener and rotate it gently.",
+    "To open a jar with a tight lid, run warm water over the lid and try turning it again.",
+    "When hammering a nail, hold it steady with your fingers then strike the head firmly.",
+    "To remove a splinter, sterilize a needle with alcohol and gently lift the skin edge.",
+    "To fold a paper airplane, crease the paper down the middle and fold the wings evenly.",
+    "She filled the kettle with cold water before placing it on the stove to boil.",
+    "He sanded the wooden surface smooth before applying a coat of paint to it.",
+    "To unstick a zip, rub a candle or bar of soap along the teeth of the fastener.",
+    "Rolling out dough requires sprinkling flour on the surface so it does not stick.",
+    "You can test if an egg is fresh by placing it in a glass of cold water to see if it floats.",
 ]
 
 
