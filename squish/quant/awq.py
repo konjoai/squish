@@ -132,6 +132,7 @@ def collect_activation_scales(  # pragma: no cover
     alpha: float = 0.5,
     seq_len: int = 512,
     verbose: bool = True,
+    min_scale: float = 0.0,
 ) -> dict:
     """
     Run calibration data through ``model`` and compute per-layer AWQ scales.
@@ -146,6 +147,10 @@ def collect_activation_scales(  # pragma: no cover
                   0.5 is the default recommended in the AWQ paper
     seq_len     : max token length per sample (truncated / padded)
     verbose     : print progress
+    min_scale   : floor for computed scales (default 0.0 = no floor).
+                  Set to 1.0 to only amplify salient channels and never
+                  attenuate less-active ones, which avoids reducing weight
+                  values for channels whose mean activation < 1.0.
 
     Returns
     -------
@@ -268,6 +273,8 @@ def collect_activation_scales(  # pragma: no cover
             continue
         # s[c] = mean_act[c]^alpha  (clipped to ≥ 1e-4 to avoid div-by-zero)
         s = np.clip(mean_act, 1e-4, None) ** alpha
+        if min_scale > 0.0:
+            s = np.maximum(s, min_scale)
         scales[name] = s.astype(np.float32)
 
     if verbose:

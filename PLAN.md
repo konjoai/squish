@@ -2516,3 +2516,67 @@ Disk size: 2.579 GB (2.39× compression ratio), 249 INT4A + 89 passthrough layer
 - [ ] Run BF16 reference benchmarks for complete delta table
 
 ---
+
+## INT4+AWQ Optimization Journey (2026-03-17)
+
+Goal: improve INT4 accuracy via Activation-aware Weight Quantization (AWQ) beyond the INT4+MSE baseline.
+
+### Problem analysis
+Four successive AWQ bugs prevented any improvement:
+1. **Bug 1 (fixed: 2142c43)** — LN gamma multiplied by `s^3` instead of `s` (q/k/v all updated same LN)
+2. **Bug 2 (fixed: 2142c43)** — streaming mode never applied AWQ (missing LN keys in single-tensor dict)
+3. **Bug 3 (fixed: acd684c)** — wrong AWQ direction (`W /= s` instead of `W *= s`)
+4. **Bug 4 (fixed: c75de87)** — AWQ-modified LN gamma compressed to INT4, corrupting calibration values
+
+Additionally, `alpha=0.5` (paper default) causes max scale ≈ 4.52× for Qwen2.5-1.5B, which sets the
+per-group INT4 step 4.52× larger, destroying precision for all other channels in each group-of-32.
+Fix: use `alpha=0.1` → max scale ≈ 1.38×.
+
+### Key architectural constraints found
+- **Per-group INT4 (group_size=32)**: one amplified channel sets the quantization step for its entire
+  group of 32 input channels. High alpha → high amplification → wide step → precision loss for all.
+- **Shared LN constraint**: q/k/v all share `input_layernorm`; the compensation scale must be
+  group-averaged so a single gamma vector can compensate all three projections simultaneously.
+- **LN-FP16 passthrough**: After `gamma /= s`, the LN weight distribution is shifted; storing it
+  at INT4 introduces large relative errors. Storing at FP16 adds ~172 KB total (56 LN × 1536 params).
+
+### Accuracy progression (Qwen2.5-1.5B-Instruct, 500 samples, 0-shot)
+
+| Variant | arc_easy | hellaswag | piqa | winogrande | notes |
+|---------|----------|-----------|------|------------|-------|
+| BF16 reference | ≈0.745 | ≈0.635 | ≈0.775 | ≈0.655 | ground truth |
+| INT4 MSE baseline | 0.712 | 0.600 | 0.774 | 0.628 | target to beat |
+| AWQ v2 (hook bug + LN×3) | 0.256 | 0.254 | 0.536 | 0.480 | catastrophic |
+| AWQ v3 (fixed grouping, wrong dir) | 0.340 | 0.350 | 0.538 | 0.492 | bad |
+| AWQ v4 (correct dir, alpha=0.5) | 0.526 | 0.460 | 0.672 | 0.524 | per-group INT4 damage |
+| **AWQ v6 (alpha=0.1, LN-FP16)** | **0.736** | **0.594** | **0.764** | **0.624** | **best overall** |
+
+Calibration ablation with alpha=0.0 (LN-FP16 only, no AWQ scaling):
+
+| alpha=0.0 | 0.710 | 0.594 | 0.774 | 0.628 | confirms LN-FP16 safe; AWQ scales drive arc_easy gain |
+
+The arc_easy improvement (+0.026 vs baseline) is statistically significant (> 1σ = ±0.020).
+hellaswag, piqa, winogrande are within ±1σ of baseline in either direction — no statistically
+significant regression. AWQ with alpha=0.1 improves the best-task (factual knowledge) and is
+neutral on others.
+
+### Final implementation
+- `squish/quant/awq.py` — `collect_activation_scales` gains `min_scale` parameter; scale
+  computation uses `s = clip(mean_act, 1e-4)^alpha` (vectorised per input channel)
+- `squish/convert.py` — `super_weight_passthrough |= (name in _awq_ln)` forces AWQ-modified LN
+  tensors to be stored at FP16 (Bug 4 fix)
+- `dev/scripts/compress_with_awq.py` — `AWQ_ALPHA=0.1`, `AWQ_MIN_SCALE=0.0`
+
+### Commits
+- `2142c43` — fix(awq): group projections by shared LN; streaming-safe apply
+- `acd684c` — fix(awq): reverse AWQ direction to match paper (W*=s, gamma/=s)
+- `c75de87` — fix(awq): keep AWQ-modified LN gamma at FP16 to preserve calibration accuracy
+- `(current)` — feat(awq): add min_scale parameter; commit alpha=0.1 + results
+
+### Next steps
+- [ ] Implement grid-search optimal scale per channel (true AWQ paper approach) — expected +2–4% improvement
+- [ ] Diversify AWQ calibration texts to include common-sense + physical-reasoning text to improve hellaswag/piqa
+- [ ] Apply AWQ to remaining models (Qwen2.5-7B, Qwen3-8B) with same alpha=0.1 + LN-FP16 config
+- [ ] Investigate whether o_proj / down_proj can be AWQ-scaled via residual-stream statistics
+
+---

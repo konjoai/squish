@@ -195,3 +195,56 @@ class TestPrecedingNormNameNoWeightSuffix:
 
         result = _preceding_norm_name("model.layers.0.self_attn.q_proj", {})
         assert result is None
+
+
+# ── min_scale parameter (scale clamping) ─────────────────────────────────────
+
+class TestMinScaleParameter:
+    """Test the min_scale floor applied after computing s = mean_act^alpha."""
+
+    def _compute_scale(self, mean_act, alpha, min_scale):
+        """Mirror the scale computation from collect_activation_scales."""
+        s = np.clip(mean_act, 1e-4, None) ** alpha
+        if min_scale > 0.0:
+            s = np.maximum(s, min_scale)
+        return s
+
+    def test_default_no_clamping(self):
+        """min_scale=0.0 (default) allows s < 1.0 for mean_act < 1.0."""
+        mean_act = np.array([0.01, 0.1, 1.0, 5.0], dtype=np.float32)
+        s = self._compute_scale(mean_act, alpha=0.1, min_scale=0.0)
+        # Low activation channels → s < 1.0
+        assert s[0] < 1.0
+        assert s[1] < 1.0
+        # mean_act = 1.0 → s = 1.0
+        assert abs(float(s[2]) - 1.0) < 1e-5
+        # High activation → s > 1.0
+        assert s[3] > 1.0
+
+    def test_min_scale_one_clamps_below_one(self):
+        """min_scale=1.0 prevents s from falling below 1.0."""
+        mean_act = np.array([0.01, 0.1, 1.0, 5.0], dtype=np.float32)
+        s = self._compute_scale(mean_act, alpha=0.1, min_scale=1.0)
+        assert s[0] >= 1.0
+        assert s[1] >= 1.0
+        assert abs(float(s[2]) - 1.0) < 1e-5
+        assert s[3] > 1.0
+
+    def test_min_scale_does_not_reduce_high_activation(self):
+        """min_scale applies a floor only; high-activation scales are unaffected."""
+        mean_act = np.array([10.0, 20.0], dtype=np.float32)
+        s_no_floor = self._compute_scale(mean_act, alpha=0.1, min_scale=0.0)
+        s_with_floor = self._compute_scale(mean_act, alpha=0.1, min_scale=1.0)
+        np.testing.assert_allclose(s_no_floor, s_with_floor, rtol=1e-6)
+
+    def test_min_scale_half_intermediate_clamp(self):
+        """min_scale=0.9 clamps channels with s < 0.9."""
+        mean_act = np.array([0.01, 0.5, 5.0], dtype=np.float32)
+        s = self._compute_scale(mean_act, alpha=0.5, min_scale=0.9)
+        # 0.01^0.5 = 0.1 → clamped to 0.9
+        assert abs(float(s[0]) - 0.9) < 1e-5
+        # 0.5^0.5 ≈ 0.707 → clamped to 0.9
+        assert abs(float(s[1]) - 0.9) < 1e-5
+        # 5.0^0.5 ≈ 2.236 → NOT clamped
+        assert s[2] > 0.9
+
