@@ -74,24 +74,38 @@ class TestApplyAwqSingle:
     def test_empty_scales_returns_original(self):
         from squish.convert import _apply_awq_single
         arr = np.ones((4, 4), dtype=np.float32)
-        result = _apply_awq_single("weight", arr, {})
+        result = _apply_awq_single("weight", arr, {}, {})
         assert result is arr  # same object (no copy)
 
-    def test_none_scales_returns_original(self):
+    def test_empty_proj_and_ln_returns_original(self):
         from squish.convert import _apply_awq_single
         arr = np.ones((4, 4), dtype=np.float32)
-        # Empty dict is falsy, so None or {} both return early
-        result = _apply_awq_single("weight", arr, {})
+        result = _apply_awq_single("model.layers.0.self_attn.q_proj.weight", arr, {}, {})
         np.testing.assert_array_equal(result, arr)
 
-    def test_import_error_falls_back(self):
-        """When squish.quant.awq is unavailable, returns arr_f32 unchanged."""
+    def test_proj_apply_divides_columns(self):
+        """When the layer_path is in proj_apply, weight columns are divided."""
+        from squish.convert import _apply_awq_single
+        arr = np.ones((4, 8), dtype=np.float32)
+        proj_apply = {"model.layers.0.self_attn.q_proj": np.full(8, 2.0, dtype=np.float32)}
+        result = _apply_awq_single("model.layers.0.self_attn.q_proj.weight", arr, proj_apply, {})
+        np.testing.assert_allclose(result, np.full((4, 8), 0.5), rtol=1e-5)
+
+    def test_ln_apply_multiplies_gamma(self):
+        """When the full tensor name is in ln_apply, the gamma is multiplied."""
+        from squish.convert import _apply_awq_single
+        arr = np.ones(8, dtype=np.float32)
+        ln_apply = {"model.layers.0.input_layernorm.weight": np.full(8, 3.0, dtype=np.float32)}
+        result = _apply_awq_single("model.layers.0.input_layernorm.weight", arr, {}, ln_apply)
+        np.testing.assert_allclose(result, np.full(8, 3.0), rtol=1e-5)
+
+    def test_unrelated_tensor_unchanged(self):
+        """Tensors absent from both lookup dicts are returned unchanged."""
         from squish.convert import _apply_awq_single
         arr = np.ones((4, 4), dtype=np.float32)
-        scales = {"weight": np.ones(4, dtype=np.float32)}  # non-empty
-        with patch.dict(__import__('sys').modules, {"squish.quant.awq": None}):
-            result = _apply_awq_single("weight", arr, scales)
-        assert result is arr or np.array_equal(result, arr)
+        proj = {"other.proj": np.full(4, 2.0, dtype=np.float32)}
+        result = _apply_awq_single("model.embed_tokens.weight", arr, proj, {})
+        np.testing.assert_array_equal(result, arr)
 
 
 # ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@ from squish.quant.awq import (
     _preceding_norm_name,
     apply_awq_to_weights,
     load_awq_scales,
+    prepare_awq_application,
     save_awq_scales,
 )
 
@@ -104,7 +105,10 @@ class TestApplyAwqToWeights:
 
     def test_scale_ones_leaves_weights_unchanged(self):
         W = self._linear_weight(16, 8)
-        weights = {"model.layers.0.self_attn.q_proj.weight": W.copy()}
+        weights = {
+            "model.layers.0.self_attn.q_proj.weight": W.copy(),
+            "model.layers.0.input_layernorm.weight": np.ones(8, dtype=np.float32),
+        }
         scales  = {"model.layers.0.self_attn.q_proj": np.ones(8, dtype=np.float32)}
         apply_awq_to_weights(weights, scales, verbose=False)
         np.testing.assert_allclose(
@@ -114,7 +118,10 @@ class TestApplyAwqToWeights:
     def test_scale_applied_column_wise(self):
         W = np.ones((4, 8), dtype=np.float32)
         s = np.full(8, 2.0, dtype=np.float32)
-        weights = {"model.layers.0.self_attn.q_proj.weight": W.copy()}
+        weights = {
+            "model.layers.0.self_attn.q_proj.weight": W.copy(),
+            "model.layers.0.input_layernorm.weight": np.ones(8, dtype=np.float32),
+        }
         scales  = {"model.layers.0.self_attn.q_proj": s}
         apply_awq_to_weights(weights, scales, verbose=False)
         # Each column should be halved: 1.0 / 2.0 = 0.5
@@ -165,7 +172,10 @@ class TestApplyAwqToWeights:
     def test_mlp_weights_also_adjusted(self):
         W = np.ones((32, 16), dtype=np.float32)
         s = np.full(16, 4.0, dtype=np.float32)
-        weights = {"model.layers.0.mlp.gate_proj.weight": W.copy()}
+        weights = {
+            "model.layers.0.mlp.gate_proj.weight": W.copy(),
+            "model.layers.0.post_attention_layernorm.weight": np.ones(16, dtype=np.float32),
+        }
         scales  = {"model.layers.0.mlp.gate_proj": s}
         apply_awq_to_weights(weights, scales, verbose=False)
         expected = np.full((32, 16), 0.25)
@@ -190,11 +200,67 @@ class TestApplyAwqToWeights:
 
     def test_verbose_prints_info(self, capsys):
         W = np.ones((4, 8), dtype=np.float32)
-        weights = {"model.layers.0.self_attn.q_proj.weight": W.copy()}
+        weights = {
+            "model.layers.0.self_attn.q_proj.weight": W.copy(),
+            "model.layers.0.input_layernorm.weight": np.ones(8, dtype=np.float32),
+        }
         scales  = {"model.layers.0.self_attn.q_proj": np.ones(8, dtype=np.float32)}
         apply_awq_to_weights(weights, scales, verbose=True)
         captured = capsys.readouterr()
         assert "AWQ" in (captured.out + captured.err)
+
+    def test_multiple_projections_share_ln_updated_once(self):
+        """
+        Regression: when q_proj, k_proj, v_proj all share the same
+        input_layernorm the LayerNorm must be updated EXACTLY ONCE using
+        the group-average scale — not once per projection (which was the
+        bug that produced near-random outputs: gamma *= s^3 instead of s).
+        """
+        rng = np.random.default_rng(42)
+        W = rng.standard_normal((8, 8)).astype(np.float32)
+        s = np.full(8, 2.0, dtype=np.float32)
+        weights = {
+            "model.layers.0.self_attn.q_proj.weight": W.copy(),
+            "model.layers.0.self_attn.k_proj.weight": W.copy(),
+            "model.layers.0.self_attn.v_proj.weight": W.copy(),
+            "model.layers.0.input_layernorm.weight": np.ones(8, dtype=np.float32),
+        }
+        scales = {
+            "model.layers.0.self_attn.q_proj": s.copy(),
+            "model.layers.0.self_attn.k_proj": s.copy(),
+            "model.layers.0.self_attn.v_proj": s.copy(),
+        }
+        apply_awq_to_weights(weights, scales, verbose=False)
+        # LN updated once: gamma * 2.0 = 2.0, NOT gamma * 2^3 = 8.0
+        np.testing.assert_allclose(
+            weights["model.layers.0.input_layernorm.weight"],
+            np.full(8, 2.0),
+            rtol=1e-5,
+        )
+        for proj in ("q_proj", "k_proj", "v_proj"):
+            np.testing.assert_allclose(
+                weights[f"model.layers.0.self_attn.{proj}.weight"],
+                W / 2.0,
+                rtol=1e-5,
+            )
+
+    def test_o_proj_not_scaled(self):
+        """
+        o_proj receives concatenated attention heads, NOT a LayerNorm output.
+        Scaling it without absorbing the inverse into the input would distort
+        the model — it must be skipped entirely.
+        """
+        W = np.ones((8, 8), dtype=np.float32)
+        weights = {
+            "model.layers.0.self_attn.o_proj.weight": W.copy(),
+            "model.layers.0.input_layernorm.weight": np.ones(8, dtype=np.float32),
+        }
+        scales = {"model.layers.0.self_attn.o_proj": np.full(8, 2.0, dtype=np.float32)}
+        apply_awq_to_weights(weights, scales, verbose=False)
+        # o_proj suffix is not in _LN_INPUT_SUFFIXES — weight must be unchanged
+        np.testing.assert_allclose(
+            weights["model.layers.0.self_attn.o_proj.weight"], W, rtol=1e-5
+        )
 
 
 # ── _preceding_norm_name ──────────────────────────────────────────────────────
@@ -246,3 +312,107 @@ class TestPrecedingNormName:
         weights = {"transformer.h.3.ln_2.weight": np.ones(16)}
         result = _preceding_norm_name("transformer.h.3.mlp.gate_proj.weight", weights)
         assert result == "transformer.h.3.ln_2.weight"
+
+
+# ── prepare_awq_application ───────────────────────────────────────────────────
+
+class TestPrepareAwqApplication:
+    """Unit tests for the streaming-safe AWQ pre-computation step."""
+
+    def _qkv_scales(self, layer: int = 0, d: int = 8):
+        s = np.full(d, 2.0, dtype=np.float32)
+        return {
+            f"model.layers.{layer}.self_attn.q_proj": s.copy(),
+            f"model.layers.{layer}.self_attn.k_proj": s.copy(),
+            f"model.layers.{layer}.self_attn.v_proj": s.copy(),
+        }
+
+    def _gate_up_scales(self, layer: int = 0, d: int = 8):
+        s = np.full(d, 3.0, dtype=np.float32)
+        return {
+            f"model.layers.{layer}.mlp.gate_proj": s.copy(),
+            f"model.layers.{layer}.mlp.up_proj":   s.copy(),
+        }
+
+    def test_empty_scales_returns_empty_dicts(self):
+        proj, ln = prepare_awq_application({})
+        assert proj == {}
+        assert ln == {}
+
+    def test_attn_group_creates_proj_and_ln_entries(self):
+        scales = self._qkv_scales(layer=0, d=8)
+        proj, ln = prepare_awq_application(scales)
+        # proj_apply has entries for q, k, v
+        assert "model.layers.0.self_attn.q_proj" in proj
+        assert "model.layers.0.self_attn.k_proj" in proj
+        assert "model.layers.0.self_attn.v_proj" in proj
+        # ln_apply has ONE entry for input_layernorm
+        assert "model.layers.0.input_layernorm.weight" in ln
+
+    def test_mlp_group_creates_proj_and_ln_entries(self):
+        scales = self._gate_up_scales(layer=1, d=8)
+        proj, ln = prepare_awq_application(scales)
+        assert "model.layers.1.mlp.gate_proj" in proj
+        assert "model.layers.1.mlp.up_proj" in proj
+        assert "model.layers.1.post_attention_layernorm.weight" in ln
+
+    def test_proj_scale_is_group_average(self):
+        """When q/k/v have identical individual scales, group scale == each individual."""
+        scales = self._qkv_scales(layer=0, d=8)
+        proj, _ = prepare_awq_application(scales)
+        # All three proj entries should share the same (averaged) scale = 2.0
+        np.testing.assert_allclose(proj["model.layers.0.self_attn.q_proj"],
+                                   np.full(8, 2.0), rtol=1e-5)
+
+    def test_proj_scale_is_mean_when_group_differ(self):
+        """Group average across q(=1) and k(=3): expected mean = 2."""
+        scales = {
+            "model.layers.0.self_attn.q_proj": np.full(4, 1.0, dtype=np.float32),
+            "model.layers.0.self_attn.k_proj": np.full(4, 3.0, dtype=np.float32),
+        }
+        proj, _ = prepare_awq_application(scales)
+        np.testing.assert_allclose(proj["model.layers.0.self_attn.q_proj"],
+                                   np.full(4, 2.0), rtol=1e-5)
+        np.testing.assert_allclose(proj["model.layers.0.self_attn.k_proj"],
+                                   np.full(4, 2.0), rtol=1e-5)
+
+    def test_ln_scale_matches_proj_scale(self):
+        """LN scale equals the group-average proj scale."""
+        scales = self._qkv_scales(layer=0, d=8)
+        proj, ln = prepare_awq_application(scales)
+        np.testing.assert_allclose(
+            ln["model.layers.0.input_layernorm.weight"],
+            proj["model.layers.0.self_attn.q_proj"],
+            rtol=1e-5,
+        )
+
+    def test_multiple_layers_independent(self):
+        """Scales for layer 0 and layer 2 do not cross-contaminate."""
+        scales = {
+            **self._qkv_scales(layer=0, d=4),
+            **self._gate_up_scales(layer=2, d=4),
+        }
+        proj, ln = prepare_awq_application(scales)
+        assert "model.layers.0.self_attn.q_proj" in proj
+        assert "model.layers.2.mlp.gate_proj" in proj
+        assert "model.layers.0.input_layernorm.weight" in ln
+        assert "model.layers.2.post_attention_layernorm.weight" in ln
+        # Layer 0's attn and layer 2's mlp should be independent
+        assert "model.layers.2.input_layernorm.weight" not in ln
+        assert "model.layers.0.post_attention_layernorm.weight" not in ln
+
+    def test_o_proj_excluded_from_proj_apply(self):
+        """o_proj is not a LayerNorm-following layer — must be absent from proj_apply."""
+        scales = {
+            "model.layers.0.self_attn.o_proj": np.full(8, 2.0, dtype=np.float32),
+        }
+        proj, ln = prepare_awq_application(scales)
+        assert "model.layers.0.self_attn.o_proj" not in proj
+
+    def test_down_proj_excluded(self):
+        """down_proj is not a LayerNorm-following layer — must be absent."""
+        scales = {
+            "model.layers.0.mlp.down_proj": np.full(8, 2.0, dtype=np.float32),
+        }
+        proj, ln = prepare_awq_application(scales)
+        assert "model.layers.0.mlp.down_proj" not in proj

@@ -35,20 +35,65 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # AWQ scale application (imported lazily so convert.py works without awq.py)
 # ---------------------------------------------------------------------------
-def _apply_awq_single(name: str, arr_f32: np.ndarray, awq_scales: dict) -> np.ndarray:
+def _build_awq_lookup(awq_scales: dict) -> "tuple[dict, dict]":
     """
-    Apply AWQ scale to a single weight tensor in-place (returns modified copy).
-    Wraps squish.quant.awq.apply_awq_to_weights for single-tensor use.
+    Pre-compute per-tensor AWQ lookup tables from the full scales dict.
+
+    Returns ``(proj_apply, ln_apply)`` — two flat dicts mapping tensor names
+    to numpy scale vectors.  Call this ONCE before the streaming loop, then
+    pass the result to :func:`_apply_awq_single` for each tensor.
+
+    ``proj_apply``  : layer_path → scale   (divide weight columns)
+    ``ln_apply``    : LN_tensor_name → scale (multiply LayerNorm gamma)
     """
     if not awq_scales:
-        return arr_f32
+        return {}, {}
     try:
-        from squish.quant.awq import apply_awq_to_weights
-        tmp = {name: arr_f32}
-        apply_awq_to_weights(tmp, awq_scales, verbose=False)
-        return tmp[name]
+        from squish.quant.awq import prepare_awq_application
+        return prepare_awq_application(awq_scales)
     except ImportError:
+        return {}, {}
+
+
+def _apply_awq_single(
+    name: str,
+    arr_f32: np.ndarray,
+    proj_apply: dict,
+    ln_apply: dict,
+) -> np.ndarray:
+    """
+    Apply the pre-computed AWQ transformation to a single tensor.
+
+    - If ``name`` (without ``.weight`` suffix) is in ``proj_apply``:
+      divide the weight matrix columns by the group scale.
+    - If ``name`` is in ``ln_apply``:
+      multiply the LayerNorm gamma element-wise by the group scale.
+    - Otherwise return ``arr_f32`` unchanged.
+
+    The two tables are produced by :func:`_build_awq_lookup`.
+    Together they ensure (X · s) @ (W / s).T = X @ W.T (identity),
+    so no accuracy is lost purely from the AWQ transformation itself.
+    """
+    if not proj_apply and not ln_apply:
         return arr_f32
+
+    import numpy as _np
+
+    # Projection weight: divide columns by group scale
+    layer_path = name[: name.rfind(".")] if "." in name else name
+    if layer_path in proj_apply:
+        s = proj_apply[layer_path]
+        W = arr_f32.reshape(-1, arr_f32.shape[-1])
+        if s.shape[0] == W.shape[1]:
+            return (W / s[_np.newaxis, :]).reshape(arr_f32.shape)
+
+    # LayerNorm gamma: multiply by group scale
+    if name in ln_apply:
+        s = ln_apply[name]
+        if s.shape[0] == arr_f32.shape[0]:
+            return arr_f32 * s
+
+    return arr_f32
 
 
 from squish.quant.quantizer import (  # noqa: E402
@@ -495,6 +540,17 @@ def process_weights_streaming(
             threshold_1d=1e9,   # 1D tensors (biases, layernorms) don't need INT4 super-weight protection
         ))
 
+    # ── Pre-compute AWQ lookup tables ONCE (projection weights + LayerNorms) ─
+    # Both tables are derived from the same awq_scales dict. Processing them
+    # once before the streaming loop guarantees:
+    #   (a) Each LayerNorm is updated exactly once (not once per projection).
+    #   (b) Only layers that directly follow a LayerNorm are scaled.
+    #   (c) Group-average scale is used → identity (X·s)@(W/s).T = X@W.T.
+    _awq_proj, _awq_ln = _build_awq_lookup(awq_scales or {})
+    if _awq_proj:
+        print(f"  [AWQ] Pre-computed scales for {len(_awq_proj)} projection tensors "
+              f"and {len(_awq_ln)} LayerNorm tensors")
+
     for shard_idx, shard in enumerate(shard_files, 1):
         print(f"\n  [{shard_idx}/{len(shard_files)}] {shard.name}")
         shard_weights = load_mlx_weights_shard(shard)
@@ -518,8 +574,8 @@ def process_weights_streaming(
             manifest[name] = sk
 
             # ── Phase 1.2: Apply AWQ scales before quantization ───────────
-            if awq_scales:
-                arr_f32 = _apply_awq_single(name, arr_f32, awq_scales)
+            if _awq_proj or _awq_ln:
+                arr_f32 = _apply_awq_single(name, arr_f32, _awq_proj, _awq_ln)
 
             sub = quantize_tensor(
                 name, arr_f32, outlier_threshold, passthrough_patterns,

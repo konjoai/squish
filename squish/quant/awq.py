@@ -363,6 +363,18 @@ def apply_awq_to_weights(
     The corresponding inverse scale on the input side is absorbed into the
     preceding LayerNorm gamma (``input_layernorm.weight`` or ``norm.weight``).
 
+    **Grouping rule**: only layers whose input is DIRECTLY a LayerNorm output
+    are processed (q/k/v projections and gate/up MLP projections).  Layers
+    whose input comes from something else (o_proj receives attention output;
+    down_proj receives gate*up) are skipped because their scale cannot be
+    absorbed into a preceding norm without distorting the output.
+
+    For each LayerNorm that feeds multiple projections (e.g. q, k, v all share
+    ``input_layernorm``), a SINGLE group scale is computed as the channel-wise
+    mean across all members.  The LayerNorm is updated exactly once with this
+    group scale, guaranteeing the identity
+    ``(X · s) @ (W / s).T = X @ W.T`` for every member.
+
     Parameters
     ----------
     weights     : flat dict of {tensor_name: np.ndarray(float32)}
@@ -374,70 +386,191 @@ def apply_awq_to_weights(
     -------
     Modified weight dict (modifies in-place and returns same dict).
     """
-    # Target linear layers — the projection weights that follow attention norms
-    _PROJ_SUFFIXES = (
+    # Only layers whose input is directly a LayerNorm output.
+    # o_proj input = concatenated attention heads (NOT a LayerNorm).
+    # down_proj input = gate * up after SiLU  (NOT a LayerNorm).
+    # Including those would corrupt the model because their scale can't be
+    # absorbed anywhere.
+    _LN_INPUT_SUFFIXES = (
         "q_proj.weight", "k_proj.weight", "v_proj.weight",
-        "o_proj.weight",
-        "gate_proj.weight", "up_proj.weight", "down_proj.weight",
-        "fc1.weight", "fc2.weight",
-        "dense.weight", "dense_h_to_4h.weight", "dense_4h_to_h.weight",
+        "gate_proj.weight", "up_proj.weight",
+        "fc1.weight",
+        "dense_h_to_4h.weight",
     )
 
-    n_applied = 0
+    def _find_scale(layer_path: str) -> "np.ndarray | None":
+        if layer_path in awq_scales:
+            return awq_scales[layer_path]
+        best, best_len = "", 0
+        for k in awq_scales:
+            if layer_path.endswith(k) and len(k) > best_len:
+                best, best_len = k, len(k)
+        return awq_scales[best] if best else None
 
-    for tensor_name, arr in list(weights.items()):
+    # ------------------------------------------------------------------
+    # Step 1: group tensors by their preceding LayerNorm.
+    # ------------------------------------------------------------------
+    # ln_groups:     norm_name → [tensor_name, ...]
+    # tensor_scales: tensor_name → individual per-channel scale
+    ln_groups: dict[str, list[str]] = {}
+    tensor_scales: dict[str, np.ndarray] = {}
+
+    for tensor_name, arr in weights.items():
         if arr.ndim < 2:
             continue
-        if not any(tensor_name.endswith(sfx) for sfx in _PROJ_SUFFIXES):
+        if not any(tensor_name.endswith(sfx) for sfx in _LN_INPUT_SUFFIXES):
             continue
 
-        # Derive the layer's linear-module path from the tensor name:
-        # e.g.  "model.layers.0.self_attn.q_proj.weight"
-        #    →  "model.layers.0.self_attn.q_proj"
         layer_path = tensor_name[: tensor_name.rfind(".")]
-
-        # Find the best matching scale key (exact → prefix match)
-        scale = None
-        if layer_path in awq_scales:
-            scale = awq_scales[layer_path]
-        else:
-            # Fuzzy match: find the longest key that is a suffix of layer_path
-            best = ""
-            for k in awq_scales:
-                if layer_path.endswith(k) and len(k) > len(best):
-                    best = k
-            if best:
-                scale = awq_scales[best]
-
+        scale = _find_scale(layer_path)
         if scale is None:
             continue
 
-        # W shape: (out_features, in_features)  → scale is (in_features,)
-        W = arr.reshape(-1, arr.shape[-1])          # ensure 2D
+        W = arr.reshape(-1, arr.shape[-1])
         if scale.shape[0] != W.shape[1]:
-            continue   # shape mismatch — skip silently
+            continue  # shape mismatch — skip
 
-        # Apply: W_awq[:, c] /= s[c]
-        weights[tensor_name] = (W / scale[np.newaxis, :]).reshape(arr.shape)
-
-        # Absorb inverse into the PRECEDING LayerNorm if available
-        # Standard name patterns for the norm that feeds this projection:
         norm_name = _preceding_norm_name(tensor_name, weights)
-        if norm_name and norm_name in weights:
-            weights[norm_name] = weights[norm_name] * scale
+        if not norm_name or norm_name not in weights:
+            continue  # can't absorb scale anywhere — skip
 
-        if verbose:
-            print(f"  [AWQ] {tensor_name}  s̄={scale.mean():.4f}  "
-                  f"s_max={scale.max():.4f}")
-        n_applied += 1
+        tensor_scales[tensor_name] = scale
+        ln_groups.setdefault(norm_name, []).append(tensor_name)
 
-    if n_applied == 0 and awq_scales:
-        print("  [AWQ] Warning: no scales matched any weight tensors. "
-              "Check that layer names in awq_scales match model weight names.")
-    elif verbose or n_applied > 0:
-        print(f"  [AWQ] Applied scales to {n_applied} weight tensors")
+    if not ln_groups:
+        if awq_scales:
+            print("  [AWQ] Warning: no scales matched any weight tensors. "
+                  "Check that layer names in awq_scales match model weight names.")
+        return weights
+
+    # ------------------------------------------------------------------
+    # Step 2: for each LN group, compute ONE group scale (channel-wise
+    # arithmetic mean across all member layers).  Using a single scale for
+    # both the LN update and all member weight updates guarantees exact
+    # mathematical equivalence: (X · s) @ (W / s).T == X @ W.T
+    # ------------------------------------------------------------------
+    ln_group_scales: dict[str, np.ndarray] = {
+        norm_name: np.stack([tensor_scales[t] for t in tensor_names]).mean(axis=0)
+        for norm_name, tensor_names in ln_groups.items()
+    }
+
+    # ------------------------------------------------------------------
+    # Step 3: apply — update each LayerNorm EXACTLY ONCE, then scale weights.
+    # ------------------------------------------------------------------
+    n_applied = 0
+    for norm_name, tensor_names in ln_groups.items():
+        group_s = ln_group_scales[norm_name]
+
+        # Absorb inverse scale into the LayerNorm: gamma_awq[c] = gamma[c] * s[c]
+        weights[norm_name] = weights[norm_name] * group_s
+
+        for tensor_name in tensor_names:
+            arr = weights[tensor_name]
+            W = arr.reshape(-1, arr.shape[-1])
+            # Scale weight columns: W_awq[:, c] = W[:, c] / s[c]
+            weights[tensor_name] = (W / group_s[np.newaxis, :]).reshape(arr.shape)
+            if verbose:
+                print(f"  [AWQ] {tensor_name}  s̄={group_s.mean():.4f}  "
+                      f"s_max={group_s.max():.4f}")
+            n_applied += 1
+
+    print(f"  [AWQ] Applied group scales to {n_applied} weight tensors "
+          f"across {len(ln_groups)} LayerNorm groups")
 
     return weights
+
+
+def prepare_awq_application(awq_scales: dict) -> tuple[dict, dict]:
+    """
+    Pre-compute per-tensor AWQ operations from calibration scales.
+
+    This is the **streaming-safe** entry point for AWQ application.  It
+    groups per-layer activation scales into attention and MLP blocks,
+    computes one group-average scale per block, and returns two lookup
+    tables that can be applied one tensor at a time:
+
+    proj_apply : layer_path → group_scale  (np.ndarray)
+        For each linear projection weight (q/k/v, gate/up):
+        ``W_awq[:, c] = W[:, c] / group_scale[c]``
+
+    ln_apply   : full_tensor_name → group_scale  (np.ndarray)
+        For the LayerNorm that feeds each group:
+        ``gamma_awq = gamma * group_scale``
+        Each LayerNorm name appears at most once.
+
+    The two operations together preserve the identity
+    ``(X · s) @ (W / s).T = X @ W.T`` for every member, so the model
+    output is mathematically equivalent after applying both dicts.
+
+    Note: o_proj and down_proj are intentionally excluded — their inputs
+    are not LayerNorm outputs, so no inverse compensation is possible.
+
+    Parameters
+    ----------
+    awq_scales  : output of :func:`collect_activation_scales` / :func:`load_awq_scales`
+                  Keys are layer paths, e.g. ``"model.layers.0.self_attn.q_proj"``.
+
+    Returns
+    -------
+    (proj_apply, ln_apply) — both dicts map string keys to float32 np.ndarray.
+    """
+    # Layers that directly follow a LayerNorm and can be grouped.
+    _ATTN_LEAVES = frozenset({"q_proj", "k_proj", "v_proj"})
+    _MLP_LEAVES  = frozenset({"gate_proj", "up_proj", "fc1", "dense_h_to_4h"})
+
+    # Group per-layer scales by their block root (everything above the component).
+    # Example: "model.layers.3.self_attn.q_proj"
+    #    component parent = "model.layers.3.self_attn"  → leaf = "q_proj"
+    #    block root        = "model.layers.3"
+    attn_groups: dict[str, list[tuple[str, np.ndarray]]] = {}
+    mlp_groups:  dict[str, list[tuple[str, np.ndarray]]] = {}
+
+    for layer_key, scale in awq_scales.items():
+        dot = layer_key.rfind(".")
+        if dot == -1:
+            continue
+        leaf   = layer_key[dot + 1:]
+        parent = layer_key[:dot]
+        dot2   = parent.rfind(".")
+        root   = parent[:dot2] if dot2 != -1 else parent
+
+        if leaf in _ATTN_LEAVES:
+            attn_groups.setdefault(root, []).append((layer_key, scale))
+        elif leaf in _MLP_LEAVES:
+            mlp_groups.setdefault(root, []).append((layer_key, scale))
+
+    proj_apply: dict[str, np.ndarray] = {}
+    ln_apply:   dict[str, np.ndarray] = {}
+
+    # Standard LN name candidates (in order of preference) per architecture family.
+    # The first name is used for ln_apply; callers should check whether the tensor
+    # actually exists and skip silently if not.
+    _ATTN_LN_NAMES = (
+        "{root}.input_layernorm.weight",
+        "{root}.ln_1.weight",
+        "{root}.layer_norm1.weight",
+    )
+    _MLP_LN_NAMES = (
+        "{root}.post_attention_layernorm.weight",
+        "{root}.ln_2.weight",
+        "{root}.layer_norm2.weight",
+        "{root}.ffn_norm.weight",
+    )
+
+    for root, members in attn_groups.items():
+        group_s = np.stack([s for _, s in members]).mean(axis=0)
+        for lk, _ in members:
+            proj_apply[lk] = group_s
+        # Use first LN name candidate — compress.py verifies existence at apply time.
+        ln_apply[_ATTN_LN_NAMES[0].format(root=root)] = group_s
+
+    for root, members in mlp_groups.items():
+        group_s = np.stack([s for _, s in members]).mean(axis=0)
+        for lk, _ in members:
+            proj_apply[lk] = group_s
+        ln_apply[_MLP_LN_NAMES[0].format(root=root)] = group_s
+
+    return proj_apply, ln_apply
 
 
 def _preceding_norm_name(weight_name: str, weights: dict) -> str | None:

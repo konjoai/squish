@@ -94,7 +94,10 @@ class TestApplyAwqFuzzyMatch:
     def test_exact_key_match(self):
         """Exact match: scale key equals layer path."""
         W = np.ones((4, 8), dtype=np.float32)
-        weights = {"model.layers.0.self_attn.q_proj.weight": W.copy()}
+        weights = {
+            "model.layers.0.self_attn.q_proj.weight": W.copy(),
+            "model.layers.0.input_layernorm.weight": np.ones(8, dtype=np.float32),
+        }
         scales = {"model.layers.0.self_attn.q_proj": np.full(8, 2.0, dtype=np.float32)}
         result = apply_awq_to_weights(weights, scales, verbose=False)
         # weight should be divided by scale
@@ -106,7 +109,10 @@ class TestApplyAwqFuzzyMatch:
     def test_fuzzy_suffix_match(self):
         """Fuzzy match: scale key is a suffix of the layer path."""
         W = np.ones((4, 8), dtype=np.float32)
-        weights = {"model.layers.0.self_attn.q_proj.weight": W.copy()}
+        weights = {
+            "model.layers.0.self_attn.q_proj.weight": W.copy(),
+            "model.layers.0.input_layernorm.weight": np.ones(8, dtype=np.float32),
+        }
         # scale keyed by suffix only
         scales = {"self_attn.q_proj": np.full(8, 2.0, dtype=np.float32)}
         result = apply_awq_to_weights(weights, scales, verbose=False)
@@ -146,11 +152,13 @@ class TestApplyAwqFuzzyLoopFalseBranch:
     def test_fuzzy_with_non_matching_key_continues_loop(self):
         """
         Two scale keys: first doesn't endswith(layer_path), second does.
-        → line 379 condition is False for first key, loop continues to second.
-        Covers branch [379, 378].
+        Covers the fuzzy-match loop fallback path.
         """
         W = np.ones((4, 8), dtype=np.float32)
-        weights = {"model.layers.0.self_attn.q_proj.weight": W.copy()}
+        weights = {
+            "model.layers.0.self_attn.q_proj.weight": W.copy(),
+            "model.layers.0.input_layernorm.weight": np.ones(8, dtype=np.float32),
+        }
         scales = {
             "some.unrelated.key": np.full(8, 1.0, dtype=np.float32),  # won't match
             "self_attn.q_proj":   np.full(8, 2.0, dtype=np.float32),  # will match
