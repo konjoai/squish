@@ -1450,14 +1450,23 @@ def cmd_compress(args):  # pragma: no cover
 
     output_dir = Path(args.output).expanduser() if args.output else Path(str(model_dir) + _COMPRESSED_SUFFIX)
 
-    quant_label = "INT4 (~44% disk savings, ≤2% accuracy delta)" if getattr(args, "int4", False) else "INT8 group-64"
+    _use_int4  = getattr(args, "int4", False)
+    _no_awq    = getattr(args, "no_awq", False)
+    # AWQ runs automatically with --int4 unless --no-awq is passed.
+    # Can also be forced on for INT8 with explicit --awq.
+    _run_awq   = (not _no_awq and _use_int4) or getattr(args, "awq", False)
+    awq_suffix = " + AWQ" if _run_awq else ""
+    quant_label = (
+        f"INT4{awq_suffix} (~44% disk savings, ≤2% accuracy delta)"
+        if _use_int4 else f"INT8{awq_suffix} group-64"
+    )
     print(f"\n  Compressing: {model_dir}")
     print(f"  Quantization: {quant_label}")
     print(f"  Output:      {output_dir}\n")
 
-    # ── Optional AWQ calibration pass ────────────────────────────────────────
+    # ── AWQ calibration pass (auto for --int4, optional for --int8) ──────────
     awq_scales_dir = None
-    if getattr(args, "awq", False):
+    if _run_awq:
         n_samples = getattr(args, "awq_samples", 20)
         print(f"  Running AWQ calibration ({n_samples} samples)...")
         print("  Note: loads full model in memory — may take 2–5 min for large models.")
@@ -2444,10 +2453,12 @@ Ollama drop-in:
                             help="Apply zstd entropy compression at level N (1-22) after "
                                  "quantization.  Level 3 is a good default; 0 = skip (default). "
                                  "Requires: pip install zstandard")
+    p_compress.add_argument("--no-awq", action="store_true", default=False,
+                            help="Disable AWQ calibration (auto-enabled when --int4 is used). "
+                                 "Use this to skip the ~2–5 min calibration step.")
     p_compress.add_argument("--awq", action="store_true", default=False,
-                            help="Run Activation-aware Weight Quantization (AWQ) calibration "
-                                 "before INT8/INT4 compression. Improves accuracy at the cost "
-                                 "of ~2-5 min extra calibration time.")
+                            help="Force AWQ calibration even without --int4 (INT8). "
+                                 "When --int4 is used AWQ runs automatically unless --no-awq is passed.")
     p_compress.add_argument("--awq-samples", type=int, default=20, metavar="N",
                             help="Number of calibration samples for AWQ (default: 20)")
     p_compress.add_argument("--verbose",           action="store_true")
