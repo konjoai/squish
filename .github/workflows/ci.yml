@@ -66,6 +66,47 @@ jobs:
             --timeout=60 \
             -v --tb=short -q
 
+  # ---------------------------------------------------------------------------
+  # Rust extension build + full test suite (including test_int4_loader.py)
+  # Runs on macOS-14 (Apple Silicon) with Python 3.12 only.
+  # ---------------------------------------------------------------------------
+  test-rust:
+    name: Test Rust extension (macOS + Python 3.12)
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install Python dependencies + maturin
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pytest-timeout maturin
+
+      - name: Build squish_quant_rs Rust extension
+        working-directory: squish_quant_rs
+        run: maturin develop --release
+
+      - name: Run full test suite (Rust extension available)
+        # test_int4_loader.py is now included — requires squish_quant built above.
+        # test_git_integration.py still excluded (needs live model weights).
+        run: |
+          pytest tests/ \
+            --ignore=tests/test_git_integration.py \
+            --timeout=120 \
+            -v --tb=short -q
+
   lint-only:
     # Runs on Linux for fast feedback on PRs from forks (no Apple Silicon needed)
     name: Lint (ubuntu)

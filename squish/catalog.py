@@ -821,6 +821,40 @@ def pull(  # pragma: no cover
     # ── Compress ──────────────────────────────────────────────────────────────
     est_size = entry.squished_size_gb
     print(f"\n  Compressing with Squish  ({quant_label}, ~{est_size:.1f} GB output) …")
+
+    # AWQ calibration: load the FP16 model, collect per-channel activation
+    # magnitudes, then pass scales to squish.convert.  This runs automatically
+    # for INT4 and is skipped gracefully when mlx-lm is unavailable.
+    awq_scales_dir = None
+    if int4:
+        try:
+            import tempfile
+
+            import mlx_lm
+
+            from squish.quant.awq import collect_activation_scales, save_awq_scales
+            print("  Running AWQ calibration (20 samples) — protects salient channels …")
+            model_awq, tokenizer_awq = mlx_lm.load(str(raw_dir))
+            scales = collect_activation_scales(
+                model_awq, tokenizer_awq,
+                n_samples=20, verbose=verbose,
+            )
+            awq_scales_dir = tempfile.mkdtemp(prefix="squish_awq_")
+            save_awq_scales(scales, awq_scales_dir, verbose=False)
+            print("  ✓  AWQ scales collected")
+            del model_awq
+            try:
+                import mlx.core as mx
+                mx.clear_cache()
+            except Exception:
+                pass
+        except ImportError:
+            # mlx-lm not installed — skip AWQ silently
+            pass
+        except Exception as exc:
+            if verbose:
+                print(f"  ⚠  AWQ skipped — {exc}. Continuing without AWQ.")
+
     cmd = [
         sys.executable, "-m", "squish.convert",
         "--model-dir", str(raw_dir),
@@ -829,6 +863,8 @@ def pull(  # pragma: no cover
     ]
     if int4:
         cmd.extend(["--int4", "--super-weight"])
+    if awq_scales_dir:
+        cmd.extend(["--awq-scales", awq_scales_dir])
     if verbose:
         cmd.append("--verbose")
 
