@@ -1711,6 +1711,8 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         cmd += ["--outlier-threshold", str(args.outlier_threshold)]
     if getattr(args, "int4", False):
         cmd.append("--int4")
+    if getattr(args, "int4_group_size", None):
+        cmd += ["--int4-group-size", str(args.int4_group_size)]
     if getattr(args, "aqlm", False):
         cmd.append("--aqlm")
         cmd += ["--aqlm-codebooks", str(getattr(args, "aqlm_codebooks", 2))]
@@ -2667,6 +2669,16 @@ Ollama drop-in:
     p_compress.add_argument("--awq-samples", type=int, default=20, metavar="N",
                             help="Number of calibration samples for AWQ (default: 20)")
     p_compress.add_argument("--verbose",           action="store_true")
+    p_compress.add_argument(
+        "--int4-group-size",
+        type=int,
+        default=None,
+        dest="int4_group_size",
+        metavar="N",
+        help="Override per-group size for INT4 quantization (power of two ≤ 32 "
+             "that divides the weight matrix column count). Default: auto-select 32. "
+             "Use 16 for finer-grained scales at ~2× scale storage overhead.",
+    )
     p_compress.set_defaults(func=cmd_compress)
 
     # ── pull ──

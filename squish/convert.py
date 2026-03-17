@@ -35,78 +35,26 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # AWQ scale application (imported lazily so convert.py works without awq.py)
 # ---------------------------------------------------------------------------
-def _build_awq_lookup(awq_scales: dict) -> "tuple[dict, dict]":
+def _apply_awq_single(name: str, arr_f32: np.ndarray, awq_scales: dict) -> np.ndarray:
     """
-    Pre-compute per-tensor AWQ lookup tables from the full scales dict.
-
-    Returns ``(proj_apply, ln_apply)`` — two flat dicts mapping tensor names
-    to numpy scale vectors.  Call this ONCE before the streaming loop, then
-    pass the result to :func:`_apply_awq_single` for each tensor.
-
-    ``proj_apply``  : layer_path → scale   (divide weight columns)
-    ``ln_apply``    : LN_tensor_name → scale (multiply LayerNorm gamma)
+    Apply AWQ scale to a single weight tensor in-place (returns modified copy).
+    Wraps squish.quant.awq.apply_awq_to_weights for single-tensor use.
     """
     if not awq_scales:
-        return {}, {}
-    try:
-        from squish.quant.awq import prepare_awq_application
-        return prepare_awq_application(awq_scales)
-    except ImportError:
-        return {}, {}
-
-
-def _apply_awq_single(
-    name: str,
-    arr_f32: np.ndarray,
-    proj_apply: dict,
-    ln_apply: dict,
-) -> np.ndarray:
-    """
-    Apply the pre-computed AWQ transformation to a single tensor.
-
-    - If ``name`` (without ``.weight`` suffix) is in ``proj_apply``:
-      multiply the weight matrix columns by the group scale (W *= s,
-      amplifying salient channels for better INT4 precision).
-    - If ``name`` is in ``ln_apply``:
-      divide the LayerNorm gamma element-wise by the group scale (gamma /= s,
-      attenuating the LN output to preserve mathematical equivalence).
-    - Otherwise return ``arr_f32`` unchanged.
-
-    Together the two operations preserve ``(X / s) @ (W * s).T = X @ W.T``
-    (mathematical identity), while improving INT4 quantization where it
-    matters most.
-
-    The two tables are produced by :func:`_build_awq_lookup`.
-    """
-    if not proj_apply and not ln_apply:
         return arr_f32
-
-    import numpy as _np
-
-    # Projection weight: amplify columns by group scale (AWQ paper: W *= s)
-    layer_path = name[: name.rfind(".")] if "." in name else name
-    if layer_path in proj_apply:
-        s = proj_apply[layer_path]
-        W = arr_f32.reshape(-1, arr_f32.shape[-1])
-        if s.shape[0] == W.shape[1]:
-            return (W * s[_np.newaxis, :]).reshape(arr_f32.shape)
-
-    # LayerNorm gamma: attenuate by group scale (AWQ paper: gamma /= s)
-    if name in ln_apply:
-        s = ln_apply[name]
-        if s.shape[0] == arr_f32.shape[0]:
-            return arr_f32 / s
-
-    return arr_f32
+    try:
+        from squish.quant.awq import apply_awq_to_weights
+        tmp = {name: arr_f32}
+        apply_awq_to_weights(tmp, awq_scales, verbose=False)
+        return tmp[name]
+    except ImportError:
+        return arr_f32
 
 
 from squish.quant.quantizer import (  # noqa: E402
     QuantizationResult,
-    quantize_bf16_native,
     quantize_embeddings,
     quantize_int4,
-    quantize_int4_asymmetric,
-    quantize_int4_asymmetric_mse,
 )
 
 
@@ -226,20 +174,13 @@ def has_outliers(arr_f32: np.ndarray, threshold: float) -> bool:
 def _pick_int4_group_size(n_cols: int, max_group_size: int = 32) -> int:
     """Return the largest group_size ≤ max_group_size that evenly divides n_cols.
 
-    Prefers group_size=max_group_size for higher per-group accuracy; falls back
-    through smaller powers of two for oddly-dimensioned tensors.  Returning
-    n_cols as a last resort (= one group = per-row scale) handles degenerate
-    edge cases.
-
-    Parameters
-    ----------
-    n_cols        : number of input channels (weight matrix columns)
-    max_group_size: upper bound on group size; defaults to 32 (Q4_K_M standard).
-                    Set to 16 for finer-grained quantization at ~2× scale overhead.
+    Prefers group_size=max_group_size (the Q4_K_M standard) for higher per-group
+    accuracy vs the old group_size=64; falls back through smaller powers of two
+    for oddly-dimensioned tensors.  Returning n_cols as a last resort (= one
+    group = per-row scale) handles degenerate edge cases.
     """
-    candidates = [gs for gs in (32, 16, 8, 4) if gs <= max_group_size]
-    for gs in candidates:
-        if n_cols >= gs * 2 and n_cols % gs == 0:
+    for gs in (32, 16, 8, 4):
+        if gs <= max_group_size and n_cols >= gs * 2 and n_cols % gs == 0:
             return gs
     return n_cols  # one group covering the whole row
 
@@ -262,45 +203,19 @@ def quantize_tensor(
     int4_group_size: int | None = None,
 ) -> dict:
     """
-    Quantize a single tensor (float32 or BF16-as-uint16).
-
-    When ``arr_f32`` is a uint16 array (BF16 raw bits from ``iter_shard_tensors``)
-    and the squish_quant Rust extension is available, the BF16-native path is
-    tried first for INT8 and INT4 modes.  This avoids the float32 cast that
-    doubles peak RAM per tensor.  For any mode requiring f32 (NF4, VPTQ,
-    AQLM, QuIP, outlier detection, AWQ) the array is cast lazily on first use.
+    Quantize a single float32 tensor.
 
     Returns a dict of file suffixes → arrays / bytes objects:
       INT8 (default):       __q, __s, __shape
-      INT4 (asymmetric+MSE):  __q4a, __s4a, __z4a, __shape
+      INT4:                 __q4, __s4, __shape
       NF4:                  __nf4, __s_nf4, __shape
       VPTQ:                 __vq_idx, __vq_cb, __vq_res, __vq_rescb, __shape
       QuIP# E8:             __quip_e8, __quip_res, __quip_rot, __shape
       AQLM:                 __aqlm_idx, __aqlm_cb, __shape
       passthrough:          __pt, __shape
       DFloat11 (pt):        __pt_df11  (bytes blob, stored via np.frombuffer)
+      DFloat11 (scales):    replaces __s4 with __s4_df11 (bytes blob)
     """
-    # ── BF16-native fast path (avoids float32 intermediate copy) ─────────────
-    # Only valid for the standard INT8/INT4 paths. Any mode that needs float32
-    # values (outlier detection, NF4, VPTQ, AQLM, QuIP, AWQ, super-weight) will
-    # fall through and cast below.
-    _is_bf16 = arr_f32.dtype == np.uint16
-    if _is_bf16 and not (use_nf4 or use_vptq or use_aqlm or use_quip or
-                          super_weight_passthrough or any(p in name for p in passthrough_patterns)):
-        _bf16_gs = int4_group_size or 32
-        _result = quantize_bf16_native(arr_f32, group_size=_bf16_gs, use_int4=use_int4)
-        if _result is not None:
-            # BF16 path succeeded — add __shape from the uint16 dimensions
-            n_rows = arr_f32.shape[0] if arr_f32.ndim > 1 else 1
-            n_cols = arr_f32.shape[-1]
-            _result["__shape"] = np.array(arr_f32.shape, dtype=np.int64)
-            return _result
-        # BF16 path unavailable for this config — fall through to f32 path
-
-    # ── Ensure float32 for all remaining paths ────────────────────────────────
-    if _is_bf16:
-        arr_f32 = arr_f32.view(np.uint16).astype(np.float32)  # lazy cast
-
     original_shape = arr_f32.shape
 
     # --- decide whether to pass through ---
@@ -430,7 +345,7 @@ def quantize_tensor(
     # ── NF4: quantize directly from FP32 (no INT8 intermediate step) ──────────
     if use_nf4:
         quantize_nf4 = _get_nf4()
-        gs_nf4 = _pick_int4_group_size(flat.shape[1], int4_group_size or 32)
+        gs_nf4 = _pick_int4_group_size(flat.shape[1])
         packed, scales_nf4 = quantize_nf4(flat, group_size=gs_nf4)
         return {
             "__nf4":   packed,      # uint8 nibble-packed  (n, d//2)
@@ -439,22 +354,29 @@ def quantize_tensor(
         }
 
     if use_int4:
-        # Asymmetric INT4 nibble-packed with per-group MSE-optimal clipping.
-        # For each group of group_size elements, a grid search over 8 clip
-        # fractions β ∈ [0, 0.10] selects the inward clip that minimises
-        # quantize-dequantize reconstruction MSE.  Groups with no outliers
-        # select β=0 (no clipping); groups with a spike select β>0, giving
-        # tighter steps for the other 31 values at the cost of clamping the
-        # spike to the nibble boundary.  Net gain: +0.4–1.2 dB SNR on top of
-        # plain asymmetric INT4 (+1.6 dB over old symmetric INT4).
+        # INT4 nibble-packed: quantize directly from FP32 — eliminates the
+        # INT8→reconstruct→INT4 double-quantization error present in the old code.
+        # group_size=32 (Q4_K_M standard) gives more per-group scale resolution
+        # than 64 at ~3% storage overhead; _pick_int4_group_size() handles
+        # divisibility for oddly-shaped tensors.
         gs = _pick_int4_group_size(flat.shape[1], int4_group_size or 32)
-        packed, scales4, offsets4 = quantize_int4_asymmetric_mse(flat, group_size=gs)
-        return {
-            "__q4a":   packed,    # uint8 nibble-packed      (n, d//2)
-            "__s4a":   scales4,   # float32 step size        (n, d//gs)
-            "__z4a":   offsets4,  # float32 gmin offsets     (n, d//gs)
+        packed, scales4 = quantize_int4(flat, group_size=gs)
+        out = {
+            "__q4":    packed,   # uint8 nibble-packed  (n, d//2)
+            "__s4":    scales4,  # float32              (n, d//gs)
             "__shape": shape_arr,
         }
+        if use_dfloat11:
+            import pickle
+            # Entropy-compress the INT4 scales with DFloat11 for extra savings
+            DFloat11Config, DFloat11Compressor = _get_dfloat11()
+            cfg = DFloat11Config(use_rans=True, use_context=True)
+            comp = DFloat11Compressor(cfg)
+            blocks = comp.compress_array(scales4.astype(np.float16))
+            blob = pickle.dumps(blocks, protocol=4)
+            out["__s4_df11"] = np.frombuffer(blob, dtype=np.uint8).copy()
+            del out["__s4"]
+        return out
 
     # ── INT8 (default) ────────────────────────────────────────────────────────
     result: QuantizationResult = quantize_embeddings(flat, group_size=64)
@@ -465,66 +387,19 @@ def quantize_tensor(
     }
 
 
-def iter_shard_tensors(shard_path: Path):
-    """
-    Yield (name, arr) for each tensor in a safetensors shard.
-
-    Uses safetensors ``safe_open`` for tensor-level demand-paged access:
-    each tensor is deserialized individually, so peak RAM per shard =
-    largest_single_tensor × 2  (raw BF16 + f32 cast or BF16 + output)
-    rather than the full shard size × 2.
-
-    BF16 tensors are yielded as uint16 numpy arrays (raw bit patterns) so
-    that ``quantize_tensor`` can use the BF16-native Rust path and avoid
-    the float32 cast entirely.  Float16 and float32 tensors are yielded
-    as float32 (they're already at most 32-bit, so the cast is cheap).
-
-    Falls back to the bulk loader when ``safe_open`` is unavailable.
-    The OS demand-pages only the bytes actually touched by each
-    ``get_tensor()`` call — unread tensors cost no physical RAM.
-    """
-    try:
-        from safetensors import safe_open
-        with safe_open(str(shard_path), framework="numpy") as f:
-            for name in f.keys():
-                arr = f.get_tensor(name)
-                # Preserve BF16 as uint16 — Rust bf16 path avoids f32 copy.
-                # Float16 and float32 are cast to float32 immediately.
-                if arr.dtype.kind == 'u' and arr.itemsize == 2:
-                    # Already uint16 (edge case — pass through as f32)
-                    yield name, arr.astype(np.float32)
-                elif str(arr.dtype) in ('bfloat16',):
-                    # numpy doesn't have bf16; safetensors returns it as a
-                    # custom dtype — view as uint16 for the Rust path.
-                    yield name, arr.view(np.uint16)
-                else:
-                    yield name, arr.astype(np.float32)
-                del arr
-        return
-    except (ImportError, AttributeError):
-        pass
-    except Exception as _e:
-        import warnings
-        warnings.warn(f"safe_open failed ({_e}), falling back to bulk shard loader")
-
-    # ── Bulk fallback (full shard loaded at once) ─────────────────────────────
-    yield from load_mlx_weights_shard(shard_path).items()
-
-
 def load_mlx_weights_shard(shard_path: Path) -> dict:
     """
     Load a single safetensors shard as float32 numpy arrays.
-
-    Prefer ``iter_shard_tensors()`` for compression — it yields one tensor at
-    a time (tensor-level demand paging via ``safe_open``) so peak RAM is the
-    largest single tensor rather than the full shard.  This function is kept
-    for callers that need the full dict (e.g. AWQ calibration hooks).
+    Uses safetensors.numpy directly (CPU only — no Metal, no MLX).
+    Avoids the Metal GPU timeout that occurs when loading 7B+ models.
     """
     try:
         from safetensors.numpy import load_file as st_load_numpy
         raw = st_load_numpy(str(shard_path))
+        # safetensors.numpy returns {name: np.ndarray} — may be float16 or bfloat16
         out = {}
         for name, arr in raw.items():
+            # Convert to float32 for Vectro quantization
             out[name] = arr.astype(np.float32)
         return out
     except Exception:
@@ -620,52 +495,23 @@ def process_weights_streaming(
     _sw_calibrator = None
     if use_super_weight:
         from squish.quant.super_weight_calibrator import (
-            SuperWeightCalibrator,
-            SuperWeightConfig,
+            SuperWeightCalibrator, SuperWeightConfig,
         )
         _sw_calibrator = SuperWeightCalibrator(SuperWeightConfig(
             threshold=100.0,
             threshold_1d=1e9,   # 1D tensors (biases, layernorms) don't need INT4 super-weight protection
         ))
 
-    # ── Pre-compute AWQ lookup tables ONCE (projection weights + LayerNorms) ─
-    # Both tables are derived from the same awq_scales dict. Processing them
-    # once before the streaming loop guarantees:
-    #   (a) Each LayerNorm is updated exactly once (not once per projection).
-    #   (b) Only layers that directly follow a LayerNorm are scaled.
-    #   (c) Group-average scale is used → identity (X·s)@(W/s).T = X@W.T.
-    _awq_proj, _awq_ln = _build_awq_lookup(awq_scales or {})
-    if _awq_proj:
-        print(f"  [AWQ] Pre-computed scales for {len(_awq_proj)} projection tensors "
-              f"and {len(_awq_ln)} LayerNorm tensors")
-
     for shard_idx, shard in enumerate(shard_files, 1):
         print(f"\n  [{shard_idx}/{len(shard_files)}] {shard.name}")
+        shard_weights = load_mlx_weights_shard(shard)
+        shard_tensors = len(shard_weights)
 
-        # ── Tensor count + super-weight scan (single cheap pass over keys only) ─
-        # We need the tensor count for the spinner and super-weight names before
-        # the streaming pass. Use safetensors metadata (no data loaded) when
-        # available; fall back to a bulk load only when needed.
+        # ── Scan for super weights within this shard ──────────────────────────
         sw_tensor_names: set[str] = set()
-        shard_tensor_names: list[str] = []
-        try:
-            from safetensors import safe_open
-            with safe_open(str(shard), framework="numpy") as _f:
-                shard_tensor_names = list(_f.keys())
-        except Exception:
-            # Bulk load needed for key enumeration (shouldn't happen with >=0.3)
-            shard_tensor_names = list(load_mlx_weights_shard(shard).keys())
-
-        shard_tensors = len(shard_tensor_names)
-
         if _sw_calibrator is not None:
-            # Super-weight scan: we need float32 values — load shard fully for scan
-            # then discard.  This is a one-time worst-case shard load; the main
-            # quantization loop below uses the tensor-level iterator.
-            _sw_weights = load_mlx_weights_shard(shard)
-            coords = _sw_calibrator.scan_weights(_sw_weights)
+            coords = _sw_calibrator.scan_weights(shard_weights)
             sw_tensor_names = {c.tensor_name for c in coords}
-            del _sw_weights
             if sw_tensor_names:
                 n_sw = len(sw_tensor_names)
                 listed = ", ".join(sorted(sw_tensor_names)[:4])
@@ -673,16 +519,14 @@ def process_weights_streaming(
                 print(f"    [super-weight] protecting {n_sw} tensor(s) as FP16: {listed}{overflow}")
 
         sp = Spinner(f"Shard {shard_idx}/{len(shard_files)}  ({shard_tensors} tensors)").start()
-        for tensor_idx, (name, arr_f32) in enumerate(iter_shard_tensors(shard), 1):
+        for tensor_idx, (name, arr_f32) in enumerate(shard_weights.items(), 1):
             sp.update(f"{tensor_idx}/{shard_tensors}  {name}")
             sk = safe_key(name)
             manifest[name] = sk
 
-            # AWQ scales must be applied to float32 — cast BF16 lazily here
-            if _awq_proj or _awq_ln:
-                if arr_f32.dtype == np.uint16:
-                    arr_f32 = arr_f32.view(np.uint16).astype(np.float32)
-                arr_f32 = _apply_awq_single(name, arr_f32, _awq_proj, _awq_ln)
+            # ── Phase 1.2: Apply AWQ scales before quantization ───────────
+            if awq_scales:
+                arr_f32 = _apply_awq_single(name, arr_f32, awq_scales)
 
             sub = quantize_tensor(
                 name, arr_f32, outlier_threshold, passthrough_patterns,
@@ -695,11 +539,7 @@ def process_weights_streaming(
                 quip_quantizer=quip_quantizer,
                 use_aqlm=use_aqlm,
                 aqlm_config=aqlm_config,
-                # Force FP16 passthrough for AWQ-modified LayerNorm weights: their
-                # distribution is shifted by the calibration scales, so INT4
-                # quantization would introduce large relative errors.  The per-LN
-                # overhead is negligible (56 × 1536 × 2B ≈ 172 KB total).
-                super_weight_passthrough=(name in sw_tensor_names) or (name in _awq_ln),
+                super_weight_passthrough=(name in sw_tensor_names),
                 int4_group_size=int4_group_size,
             )
 
@@ -715,9 +555,7 @@ def process_weights_streaming(
                 else:
                     np.save(str(out_path), data)
 
-            # orig_bytes: BF16 tensors are uint16 view (2B/elem); f32 are 4B/elem
-            _elem_bytes = 2 if arr_f32.dtype == np.uint16 else arr_f32.itemsize
-            orig_bytes = arr_f32.size * _elem_bytes
+            orig_bytes = arr_f32.nbytes
             comp_bytes = sum(
                 (tensor_dir / f"{sk}{sfx}.npy").stat().st_size
                 for sfx in sub
@@ -745,8 +583,8 @@ def process_weights_streaming(
                     mode = "QUIP"
                 elif "__aqlm_idx" in sub:
                     mode = "AQLM"
-                elif "__q4a" in sub:
-                    mode = "Q4A"
+                elif use_int4:
+                    mode = "Q4"
                 else:
                     mode = "Q8"
                 _clear_line()
@@ -756,6 +594,7 @@ def process_weights_streaming(
             del arr_f32
 
         sp.stop(f"Shard {shard_idx} done  ({shard_tensors} tensors written)")
+        del shard_weights
 
     # Write manifest
     with open(output_path / "manifest.json", "w") as f:
@@ -842,16 +681,6 @@ def main():
              "(~1.5 GB for 1.5B vs ~2.9 GB INT8) at ≤2%% accuracy delta.  "
              "Requires squish_quant Rust extension (built with maturin).  "
              "Recommended for 1.5B models where every GB matters.",
-    )
-    ap.add_argument(
-        "--int4-group-size",
-        type=int,
-        default=None,
-        dest="int4_group_size",
-        metavar="N",
-        help="Override per-group size for INT4/NF4 quantization (must be a power of two ≤ 32 "
-             "that divides the weight matrix column count).  Default: auto-select 32 "
-             "(Q4_K_M standard).  Use 16 for finer-grained scales at ~2× scale storage.",
     )
     ap.add_argument(
         "--nf4",
@@ -946,6 +775,15 @@ def main():
              "super-weights are stored losslessly to prevent coherence collapse.  "
              "Recommended for all INT4 conversions.",
     )
+    ap.add_argument(
+        "--int4-group-size",
+        type=int,
+        default=None,
+        dest="int4_group_size",
+        metavar="N",
+        help="Override per-group size for INT4 quantization (must be a power of two "
+             "that divides the weight matrix column count). Default: auto-select 32.",
+    )
     args = ap.parse_args()
 
     # ── --ultra implies nf4 + dfloat11 ────────────────────────────────────────
@@ -1037,20 +875,22 @@ def main():
 
         print(f"\n{'='*50}")
         print("  Format:           npy-dir (streaming)")
+        _int4_gs = getattr(args, "int4_group_size", None) or 32
         _mode_str = (
             "ULTRA (NF4 + DFloat11 rANS)" if args.ultra else
             "QuIP# E8 trellis-coded" if args.quip else
             "AQLM additive codebook" if args.aqlm else
             "NF4 (NormalFloat-4)" if args.nf4 else
             "VPTQ (vector quantization)" if args.vptq else
-            f"INT4 asymmetric+MSE nibble-packed (group-{args.int4_group_size or 32})" if args.int4 else
+            f"INT4 nibble-packed (group-{_int4_gs})" if args.int4 else
             "INT8 per-group-64"
         )
         if args.dfloat11 and not args.ultra:
             _mode_str += " + DFloat11 entropy"
         print(f"  Quantization:     {_mode_str}")
+        _quant_label = "INT4" if args.int4 else "INT8"
         print(f"  Tensors:          {n_total} total")
-        print(f"    Quantized (Q8): {stats['n_quantized']}")
+        print(f"    Quantized ({_quant_label}): {stats['n_quantized']}")
         print(f"    Passthrough (f16 on disk): {stats['n_passthrough']}")
         print(f"  Original (f32):   {orig_gb:.3f} GB")
         print(f"  Quantized raw:    {comp_gb:.3f} GB  ({ratio:.2f}x ratio)")
