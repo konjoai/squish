@@ -168,7 +168,11 @@ class TestINT4DFloat11ScalesRoundTrip:
             recon_direct = _write_and_reload(sub_direct, Path(d_direct))
             snr_direct = _snr_db(arr.reshape(recon_direct.shape), recon_direct)
             # Simulate the old INT8-intermediate path manually
-            from squish.quant.quantizer import quantize_embeddings, reconstruct_embeddings, quantize_int4
+            from squish.quant.quantizer import (
+                quantize_embeddings,
+                quantize_int4,
+                reconstruct_embeddings,
+            )
             flat = arr.reshape(-1, arr.shape[-1])
             r8 = quantize_embeddings(flat, group_size=64)
             recon8 = reconstruct_embeddings(r8)
@@ -192,7 +196,7 @@ class TestINT4DFloat11ScalesRoundTrip:
 
     def test_int4_mse_clipping_snr_improves_with_outliers(self):
         """MSE-clipped asymmetric INT4 should have >= SNR vs plain asymmetric, especially with outliers."""
-        from squish.quant.quantizer import quantize_int4_asymmetric, dequantize_int4_asymmetric
+        from squish.quant.quantizer import dequantize_int4_asymmetric, quantize_int4_asymmetric
         rng = np.random.default_rng(42)
         arr = rng.standard_normal((32, 128)).astype(np.float32)
         # Inject 2 large outliers that inflate group scales
