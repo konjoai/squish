@@ -487,7 +487,8 @@ def process_weights_streaming(
     _sw_calibrator = None
     if use_super_weight:
         from squish.quant.super_weight_calibrator import (
-            SuperWeightCalibrator, SuperWeightConfig,
+            SuperWeightCalibrator,
+            SuperWeightConfig,
         )
         _sw_calibrator = SuperWeightCalibrator(SuperWeightConfig(
             threshold=100.0,

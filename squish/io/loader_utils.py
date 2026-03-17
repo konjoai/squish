@@ -26,7 +26,12 @@ from typing import Any
 
 import numpy as np
 
-from squish.quant.quantizer import QuantizationResult, dequantize_int4, dequantize_int4_asymmetric, reconstruct_embeddings
+from squish.quant.quantizer import (
+    QuantizationResult,
+    dequantize_int4,
+    dequantize_int4_asymmetric,
+    reconstruct_embeddings,
+)
 
 
 # ---------------------------------------------------------------------------
