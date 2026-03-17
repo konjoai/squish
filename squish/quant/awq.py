@@ -166,20 +166,35 @@ def collect_activation_scales(  # pragma: no cover
     # Collect all nn.Linear modules and attach hooks
     hooks   = {}      # layer_name → _ActivationHook
 
-    # MLX modules don't have PyTorch-style forward hooks; instead we monkey-
-    # patch __call__ temporarily on each nn.Linear.
+    # MLX module interception via __class__ swizzling.
+    #
+    # Python's special-method dispatch for obj(x) always resolves __call__
+    # through the TYPE (type(obj).__call__), not the instance dict, so simple
+    # instance-level monkey-patching of __call__ is silently ignored.
+    #
+    # The correct approach is to dynamically create a per-instance subclass
+    # that overrides __call__ at the type level, then swap the instance's
+    # __class__ to that subclass ("class swizzling").  This is safe because
+    # both the original and the new class share the same memory layout (same
+    # __slots__, same underlying C struct) — Python 3 allows the assignment
+    # when layout-compatible.
     import mlx.nn as nn
 
     linear_layers = {}
-    for name, module in model.named_modules() if hasattr(model, 'named_modules') else []:
+    for name, module in (model.named_modules()
+                         if hasattr(model, "named_modules") else []):
         if isinstance(module, nn.Linear):
             linear_layers[name] = module
 
-    # Fallback: traverse via named_children recursively
+    # Fallback: recursive children() traversal
     if not linear_layers:
         def _collect(mod, prefix=""):
-            for child_name, child in (mod.children().items()
-                                      if hasattr(mod, 'children') else {}.items()):
+            children = mod.children() if hasattr(mod, "children") else {}
+            if isinstance(children, dict):
+                items = children.items()
+            else:
+                items = []
+            for child_name, child in items:
                 full = f"{prefix}.{child_name}" if prefix else child_name
                 if isinstance(child, nn.Linear):
                     linear_layers[full] = child
@@ -189,21 +204,31 @@ def collect_activation_scales(  # pragma: no cover
     if verbose:
         print(f"  Found {len(linear_layers)} linear layers to calibrate")
 
-    # Monkey-patch each module's __call__ to intercept inputs
-    originals = {}
+    # Instrument each module via class swizzling
+    orig_classes: dict[str, type] = {}
     for name, module in linear_layers.items():
         hook = _ActivationHook()
         hooks[name] = hook
-        orig_call = module.__call__
+        orig_cls = type(module)
+        orig_classes[name] = orig_cls
 
-        def _make_patched(orig, h):
-            def _patched(x, *a, **kw):
-                h(None, (x,), None)
-                return orig(x, *a, **kw)
-            return _patched
+        # Create a unique subclass that captures input activations
+        def _make_hooked_cls(base_cls, h: "_ActivationHook") -> type:
+            class _Hooked(base_cls):  # type: ignore[valid-type]
+                _awq_hook = h
+                def __call__(self, x, *args, **kwargs):
+                    self._awq_hook(None, (x,), None)
+                    return super().__call__(x, *args, **kwargs)
+            _Hooked.__name__ = f"_Hooked_{base_cls.__name__}"
+            _Hooked.__qualname__ = _Hooked.__name__
+            return _Hooked
 
-        originals[name] = orig_call
-        module.__call__ = _make_patched(orig_call, hook)  # type: ignore[method-assign]
+        try:
+            module.__class__ = _make_hooked_cls(orig_cls, hook)
+        except TypeError:
+            # Fallback for C-backed types that disallow __class__ swizzling:
+            # fall through without instrumentation for this layer.
+            pass
 
     if verbose:
         print(f"  Running {n_samples} calibration forward passes ...")
@@ -215,8 +240,8 @@ def collect_activation_scales(  # pragma: no cover
             continue
         x = mx.array([ids], dtype=mx.int32)
         try:
-            _ = model(x)
-            mx.eval(x)          # ensure Metal execution completes
+            out = model(x)
+            mx.eval(out)        # materialise lazy graph so hooks complete
         except Exception:
             pass                # some models need kv_cache — skip on error
 
@@ -227,10 +252,13 @@ def collect_activation_scales(  # pragma: no cover
     if verbose:
         print(f"  Calibration done in {elapsed:.1f}s")
 
-    # Restore original __call__
+    # Restore original classes
     for name, module in linear_layers.items():
-        if name in originals:
-            module.__call__ = originals[name]  # type: ignore[method-assign]
+        if name in orig_classes:
+            try:
+                module.__class__ = orig_classes[name]
+            except TypeError:
+                pass
 
     # Compute AWQ scales from collected statistics
     scales = {}
