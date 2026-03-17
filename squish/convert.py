@@ -592,7 +592,11 @@ def process_weights_streaming(
                 quip_quantizer=quip_quantizer,
                 use_aqlm=use_aqlm,
                 aqlm_config=aqlm_config,
-                super_weight_passthrough=(name in sw_tensor_names),
+                # Force FP16 passthrough for AWQ-modified LayerNorm weights: their
+                # distribution is shifted by the calibration scales, so INT4
+                # quantization would introduce large relative errors.  The per-LN
+                # overhead is negligible (56 × 1536 × 2B ≈ 172 KB total).
+                super_weight_passthrough=(name in sw_tensor_names) or (name in _awq_ln),
             )
 
             # Write immediately — don't accumulate in RAM
