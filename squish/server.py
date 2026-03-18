@@ -2670,7 +2670,9 @@ Examples:
             try:
                 import sys as _sys
                 if _sys.platform == "darwin":
-                    from squish.serving.memory_governor import MemoryGovernor as _MG  # noqa: PLC0415
+                    from squish.serving.memory_governor import (
+                        MemoryGovernor as _MG,  # noqa: PLC0415
+                    )
                     _mg_tmp = _MG(poll_interval=60.0).start()
                     _free_gb = _mg_tmp.available_gb
                     _mg_tmp.stop()

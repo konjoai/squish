@@ -89,7 +89,7 @@ def quantize_bf16_native(
     arr_bf16: np.ndarray,
     group_size: int = 64,
     use_int4: bool = False,
-) -> "dict":
+) -> dict:
     """
     Quantize a BF16 weight array WITHOUT first casting to float32.
 

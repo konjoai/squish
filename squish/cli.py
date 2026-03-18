@@ -1503,7 +1503,9 @@ def _ram_available_gb() -> tuple[float, float]:
     On Linux falls back to /proc/meminfo.
     Returns (0.0, 0.0) if detection fails — callers must handle gracefully.
     """
-    import ctypes, ctypes.util, subprocess as _sp
+    import ctypes
+    import ctypes.util
+    import subprocess as _sp
     total = 0.0
     free  = 0.0
     try:
