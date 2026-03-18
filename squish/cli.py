@@ -680,6 +680,17 @@ def cmd_run(args):  # pragma: no cover
     if not server_script.exists():
         _die(f"server.py not found at {server_script}")
 
+    # Ensure the repo root (parent of this package) is in PYTHONPATH so that
+    # squish.server (and any subprocess it spawns) can always import squish.*
+    # without the squish/squish/ directory landing on sys.path and shadowing
+    # stdlib modules like 'token' (squish/token/__init__.py) or 'grammar'.
+    _repo_root_str = str(Path(__file__).resolve().parent.parent)
+    _env_pythonpath = os.environ.get("PYTHONPATH", "")
+    if _repo_root_str not in _env_pythonpath.split(os.pathsep):
+        os.environ["PYTHONPATH"] = _repo_root_str + (
+            os.pathsep + _env_pythonpath if _env_pythonpath else ""
+        )
+
     port     = args.port or _DEFAULT_PORT
     host     = args.host or "127.0.0.1"
     api_key  = args.api_key or "squish"
@@ -714,7 +725,7 @@ def cmd_run(args):  # pragma: no cover
     print()
 
     cmd = [
-        sys.executable, str(server_script),
+        sys.executable, "-m", "squish.server",
         "--model-dir",      str(model_dir),
         "--compressed-dir", str(compressed_dir),
         "--port",           str(port),
@@ -794,16 +805,19 @@ def cmd_chat(args):  # pragma: no cover
     if not _server_up():
         model_dir, compressed_dir = _resolve_model(args.model)
         print(f"  Starting server for {model_dir.name} …")
-        server_script = Path(__file__).resolve().parent / "server.py"
+        _repo_root_str = str(Path(__file__).resolve().parent.parent)
+        _cur_pp = os.environ.get("PYTHONPATH", "")
+        _pythonpath = _repo_root_str + (os.pathsep + _cur_pp if _cur_pp else "")
         _server_proc = subprocess.Popen([
-            sys.executable, str(server_script),
+            sys.executable, "-m", "squish.server",
             "--model-dir",      str(model_dir),
             "--compressed-dir", str(compressed_dir),
             "--port",           str(port),
             "--host",           host,
             # API key via env var — keeps it out of `ps aux`
         ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-           env={**os.environ, "SQUISH_API_KEY": api_key})
+           cwd=_repo_root_str,
+           env={**os.environ, "SQUISH_API_KEY": api_key, "PYTHONPATH": _pythonpath})
 
         # Wait (up to 30s) for server to come up
         for _ in range(60):
@@ -1383,10 +1397,6 @@ def cmd_daemon(args):  # pragma: no cover
             return
 
         model_dir, compressed_dir = _resolve_model(args.model)
-        server_script = Path(__file__).resolve().parent / "server.py"
-        if not server_script.exists():
-            _die(f"server.py not found at {server_script}")
-
         port    = args.port
         host    = args.host
         api_key = args.api_key
@@ -1395,10 +1405,13 @@ def cmd_daemon(args):  # pragma: no cover
         print(f"  Endpoint : http://{host}:{port}/v1")
         print(f"  Log      : {log_file}\n")
 
+        _repo_root_str = str(Path(__file__).resolve().parent.parent)
+        _cur_pp = os.environ.get("PYTHONPATH", "")
+        _pythonpath = _repo_root_str + (os.pathsep + _cur_pp if _cur_pp else "")
         with open(log_file, "a") as log:
             proc = subprocess.Popen(
                 [
-                    sys.executable, str(server_script),
+                    sys.executable, "-m", "squish.server",
                     "--model-dir",      str(model_dir),
                     "--compressed-dir", str(compressed_dir),
                     "--port",           str(port),
@@ -1409,7 +1422,8 @@ def cmd_daemon(args):  # pragma: no cover
                 stderr=log,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
-                env={**os.environ, "SQUISH_API_KEY": api_key},
+                cwd=_repo_root_str,
+                env={**os.environ, "SQUISH_API_KEY": api_key, "PYTHONPATH": _pythonpath},
             )
 
         pid_file.write_text(str(proc.pid))

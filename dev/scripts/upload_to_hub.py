@@ -147,14 +147,16 @@ squish run {entry.id}
 
 ## Accuracy
 
-| Task | Reference | Squish | Δ |
+| Task | Reference | Squish INT4 | Δ |
 |---|---:|---:|---:|
-| ARC-Easy | 74.5% | 73.5% | -1.0% |
-| HellaSwag | 63.5% | 62.0% | -1.5% |
-| Winogrande | 65.5% | 67.0% | +1.5% |
-| PIQA | 77.5% | 76.5% | -1.0% |
+| ARC-Easy | 74.5% | 72.4% | -2.1% |
+| HellaSwag | 63.5% | 57.0% | -6.5% |
+| Winogrande | 65.5% | 62.0% | -3.5% |
+| PIQA | 77.5% | 77.0% | -0.5% |
 
-Max delta ≤ 2% across all benchmarks. Statistically within measurement noise.
+Evaluated with 500 samples per task (0-shot). Hellaswag delta reflects the inherent
+precision trade-off of symmetric INT4 vs BF16; all other tasks within ~3%.
+For maximum accuracy, use the INT8 variant: `{entry.id}` with `--int8` flag.
 
 ## License
 
@@ -168,16 +170,27 @@ Squish compression code: MIT.
     npy_upload_dir = compressed_dir
     folder_in_repo = "squish_npy"
 
-    # Copy npy files into a squish_npy/ subfolder for clarity
+    # Stage the npy-dir for upload:
+    #   squish_npy/manifest.json
+    #   squish_npy/tensors/<safe_key>__q4.npy  (or __q.npy/__s.npy etc.)
+    #   README.md
     staging = compressed_dir.parent / f"_upload_staging_{entry.dir_name}"
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir()
-    (staging / "squish_npy").mkdir()
+    staging_npy = staging / "squish_npy"
+    staging_npy.mkdir()
 
+    # Root-level files (manifest.json, README.md, sentinel files)
     for f in compressed_dir.iterdir():
         if f.is_file():
-            shutil.copy2(f, staging / "squish_npy" / f.name)
+            shutil.copy2(f, staging_npy / f.name)
+
+    # tensors/ subdirectory — must be included for npy-dir format
+    tensors_src = compressed_dir / "tensors"
+    if tensors_src.exists():
+        shutil.copytree(tensors_src, staging_npy / "tensors")
+
     shutil.copy2(card_path, staging / "README.md")
 
     print(f"  ▸ Uploading {sum(1 for _ in (staging/'squish_npy').iterdir())} files …")

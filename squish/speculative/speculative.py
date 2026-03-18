@@ -586,9 +586,7 @@ def load_draft_model(
     Returns (model, tokenizer).  Vocabulary must be compatible with the target
     (same tokeniser family — e.g. both Qwen2.5, both Llama…).
     """
-    from .compressed_loader import load_compressed_model
-
-    model_dir_p = Path(model_dir).expanduser()
+    from squish.quant.compressed_loader import load_compressed_model
     comp_dir_p  = Path(compressed_dir).expanduser() if compressed_dir else \
                   Path(model_dir_p.parent / (model_dir_p.name + "-compressed"))
 
@@ -1795,7 +1793,7 @@ if __name__ == "__main__":
     ap.add_argument("--temperature",      type=float, default=0.0)
     args = ap.parse_args()
 
-    from .compressed_loader import load_compressed_model
+    from squish.quant.compressed_loader import load_compressed_model
 
     print("Loading target model …")
     t0 = time.perf_counter()

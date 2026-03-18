@@ -643,10 +643,10 @@ def _apply_fast_gelu(model_dir: str) -> None:  # pragma: no cover
 def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> None:  # pragma: no cover
     """Load the Squish compressed model into global state."""
     try:
-        from .compressed_loader import load_compressed_model as _load_compressed_model
+        from .quant.compressed_loader import load_compressed_model as _load_compressed_model
     except ImportError:
         # server.py launched directly (not as package) — use absolute import
-        from squish.compressed_loader import load_compressed_model as _load_compressed_model
+        from squish.quant.compressed_loader import load_compressed_model as _load_compressed_model
     # Keep backward-compat shim
     load_from_npy_dir = _load_compressed_model
 

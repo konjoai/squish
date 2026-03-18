@@ -1056,23 +1056,31 @@ def load_from_npy_dir(  # pragma: no cover
         )
 
     # ── Safety check: refuse to load large models as bf16 (would OOM/crash) ──
-    _q8_gb      = sum(f.stat().st_size for f in tensor_dir.rglob("*") if f.is_file()) / 1e9
-    _est_bf16_gb = _q8_gb * 2.0
-    # Derive limit from actual system RAM instead of a hardcoded 10 GB cap so that
-    # Mac Studio / Mac Pro owners (48-192 GB) are not incorrectly blocked.
-    try:
-        import subprocess as _sp
-        _hw_bytes = int(_sp.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip())
-        _MAX_BF16_GB = _hw_bytes / 1e9 * 0.75   # allow up to 75% of unified memory
-    except Exception:
-        _MAX_BF16_GB = 10.0                      # safe fallback for non-macOS CI
-    if _est_bf16_gb > _MAX_BF16_GB and auto_quantize_bits is None:
-        raise RuntimeError(
-            f"Model Q8→bf16 expansion ({_est_bf16_gb:.1f} GB) would exceed safe Metal "
-            f"limit ({_MAX_BF16_GB:.0f} GB — 75% of {_MAX_BF16_GB/0.75:.0f} GB RAM).\n"
-            f"Run pull_model.py to build the 4-bit cache first:\n"
-            f"  python3 pull_model.py <MODEL_ID> --skip-download --skip-compress"
-        )
+    # INT4 tensors (__q4.npy / __q4a.npy) are decompressed layer-by-layer with
+    # no full BF16 expansion — skip the guard for those models.
+    _has_int4 = any(
+        "__q4" in f.name
+        for f in tensor_dir.iterdir()
+        if f.name.endswith(".npy") and "__q4" in f.name
+    )
+    if not _has_int4:
+        _q8_gb      = sum(f.stat().st_size for f in tensor_dir.rglob("*") if f.is_file()) / 1e9
+        _est_bf16_gb = _q8_gb * 2.0
+        # Derive limit from actual system RAM instead of a hardcoded 10 GB cap so that
+        # Mac Studio / Mac Pro owners (48-192 GB) are not incorrectly blocked.
+        try:
+            import subprocess as _sp
+            _hw_bytes = int(_sp.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip())
+            _MAX_BF16_GB = _hw_bytes / 1e9 * 0.75   # allow up to 75% of unified memory
+        except Exception:
+            _MAX_BF16_GB = 10.0                      # safe fallback for non-macOS CI
+        if _est_bf16_gb > _MAX_BF16_GB and auto_quantize_bits is None:
+            raise RuntimeError(
+                f"Model Q8→bf16 expansion ({_est_bf16_gb:.1f} GB) would exceed safe Metal "
+                f"limit ({_MAX_BF16_GB:.0f} GB — 75% of {_MAX_BF16_GB/0.75:.0f} GB RAM).\n"
+                f"Run pull_model.py to build the 4-bit cache first:\n"
+                f"  python3 pull_model.py <MODEL_ID> --skip-download --skip-compress"
+            )
 
     # ── Tier 1: MLX safetensors fast cache (bf16, sub-2s loads) ─────────────
     finalized_dir   = dir_path / _FINALIZED_DIR
