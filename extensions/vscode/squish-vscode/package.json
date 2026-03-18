@@ -104,6 +104,11 @@
           "type": "number",
           "default": 0,
           "description": "Qwen3 chain-of-thought budget. 0 = disable thinking for fast responses (recommended for coding/chat). -1 = unlimited. Any positive integer caps reasoning at that many tokens."
+        },
+        "squish.venvPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the squish binary or its virtualenv directory. Example: /Users/you/squish/.venv  or  /Users/you/squish/.venv/bin/squish. Leave empty to auto-detect."
         }
       }
     }

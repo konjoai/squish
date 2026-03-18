@@ -2,17 +2,23 @@
  * __tests__/serverManager.test.ts
  *
  * Unit tests for ServerManager.
- * Mocks vscode (via __mocks__/vscode.ts), child_process, and net.
+ * Mocks vscode (via __mocks__/vscode.ts), child_process, net, and fs.
  */
 import * as child_process from 'child_process';
 import * as net from 'net';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as vscode from 'vscode';
 
 jest.mock('child_process');
 jest.mock('net');
+jest.mock('fs');
+jest.mock('os');
 
 const mockCp = child_process as jest.Mocked<typeof child_process>;
 const mockNet = net as jest.Mocked<typeof net>;
+const mockFs = fs as jest.Mocked<typeof fs>;
+const mockOs = os as jest.Mocked<typeof os>;
 
 // Import AFTER mocks are set up
 import { ServerManager } from '../src/serverManager';
@@ -86,9 +92,24 @@ function makeSpawnMock(): {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+// Default fs/os stubs — no files exist, homedir is /home/test
+function stubFsDefault(): void {
+    mockFs.existsSync.mockReturnValue(false);
+    mockFs.statSync.mockReturnValue({ isDirectory: () => false } as fs.Stats);
+    mockOs.homedir.mockReturnValue('/home/test');
+}
+
 describe('ServerManager.start()', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        stubFsDefault();
+        (vscode.workspace as unknown as {
+            _setConfig: (k: string, v: unknown) => void;
+            _setWorkspaceFolders: (f: Array<{ uri: { fsPath: string } }>) => void;
+        })._setConfig('venvPath', '');
+        (vscode.workspace as unknown as {
+            _setWorkspaceFolders: (f: Array<{ uri: { fsPath: string } }>) => void;
+        })._setWorkspaceFolders([]);
     });
 
     test('shows "already running" when port is open', async () => {
@@ -108,6 +129,7 @@ describe('ServerManager.start()', () => {
         await mgr.start('7b');
         expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
             expect.stringContaining('not found'),
+            expect.anything(),
             expect.anything(),
         );
     });
@@ -185,7 +207,17 @@ describe('ServerManager.start()', () => {
 });
 
 describe('ServerManager.stop()', () => {
-    beforeEach(() => { jest.clearAllMocks(); });
+    beforeEach(() => {
+        jest.clearAllMocks();
+        stubFsDefault();
+        (vscode.workspace as unknown as {
+            _setConfig: (k: string, v: unknown) => void;
+            _setWorkspaceFolders: (f: Array<{ uri: { fsPath: string } }>) => void;
+        })._setConfig('venvPath', '');
+        (vscode.workspace as unknown as {
+            _setWorkspaceFolders: (f: Array<{ uri: { fsPath: string } }>) => void;
+        })._setWorkspaceFolders([]);
+    });
 
     test('kills process and shows message', async () => {
         stubPortClosed();
@@ -219,5 +251,213 @@ describe('ServerManager.stop()', () => {
         await mgr.start('7b');
         await mgr.stop();
         expect(mgr.isRunning()).toBe(false);
+    });
+});
+
+// ── _findSquishBin() ──────────────────────────────────────────────────────────
+
+type WorkspaceMock = {
+    _setConfig: (k: string, v: unknown) => void;
+    _setWorkspaceFolders: (f: Array<{ uri: { fsPath: string } }>) => void;
+};
+
+describe('_findSquishBin() — tier 1: squish.venvPath setting', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        stubFsDefault();
+        mockCp.execSync.mockImplementation(() => { throw new Error('not found'); });
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([]);
+    });
+
+    test('uses path directly when venvPath is an executable file', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const binPath = '/custom/bin/squish';
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', binPath);
+        mockFs.existsSync.mockImplementation((p) => p === binPath);
+        mockFs.statSync.mockImplementation(() => ({ isDirectory: () => false } as fs.Stats));
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            binPath,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('resolves bin/squish inside venvPath directory', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const venvDir = '/Users/wscholl/squish/.venv';
+        const expectedBin = '/Users/wscholl/squish/.venv/bin/squish';
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', venvDir);
+        mockFs.existsSync.mockImplementation((p) => p === venvDir || p === expectedBin);
+        mockFs.statSync.mockImplementation((p) => ({
+            isDirectory: () => p === venvDir,
+        } as fs.Stats));
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('falls through to PATH when venvPath file does not exist', async () => {
+        stubPortClosed();
+        stubExecSync(true);
+        makeSpawnMock();
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', '/nonexistent/squish');
+        mockFs.existsSync.mockReturnValue(false);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        // Should fall through to which/squish found via execSync
+        expect(mockCp.spawn).toHaveBeenCalled();
+        expect(vscode.window.showErrorMessage).not.toHaveBeenCalled();
+    });
+});
+
+describe('_findSquishBin() — tier 3: workspace venv paths', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        stubFsDefault();
+        mockCp.execSync.mockImplementation(() => { throw new Error('not found'); });
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', '');
+    });
+
+    test('finds .venv/bin/squish in workspace folder', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const wsRoot = '/Users/wscholl/squish';
+        const expectedBin = `${wsRoot}/.venv/bin/squish`;
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([
+            { uri: { fsPath: wsRoot } },
+        ]);
+        mockFs.existsSync.mockImplementation((p) => p === expectedBin);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('finds venv/bin/squish when .venv absent', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const wsRoot = '/project';
+        const expectedBin = `${wsRoot}/venv/bin/squish`;
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([
+            { uri: { fsPath: wsRoot } },
+        ]);
+        mockFs.existsSync.mockImplementation((p) => p === expectedBin);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('skips workspace tier when no workspace folders open', async () => {
+        stubPortClosed();
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([]);
+        mockFs.existsSync.mockReturnValue(false);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+            expect.stringContaining('not found'),
+            expect.anything(),
+            expect.anything(),
+        );
+    });
+});
+
+describe('_findSquishBin() — tier 4: global install paths', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        stubFsDefault();
+        mockCp.execSync.mockImplementation(() => { throw new Error('not found'); });
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', '');
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([]);
+        mockOs.homedir.mockReturnValue('/home/user');
+    });
+
+    test('finds pip --user install at ~/.local/bin/squish', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const expectedBin = '/home/user/.local/bin/squish';
+        mockFs.existsSync.mockImplementation((p) => p === expectedBin);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('finds pipx install at ~/.local/pipx/venvs/squish/bin/squish', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const expectedBin = '/home/user/.local/pipx/venvs/squish/bin/squish';
+        mockFs.existsSync.mockImplementation((p) => p === expectedBin);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('finds homebrew install at /opt/homebrew/bin/squish', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const expectedBin = '/opt/homebrew/bin/squish';
+        mockFs.existsSync.mockImplementation((p) => p === expectedBin);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('shows error with settings action when all tiers exhausted', async () => {
+        stubPortClosed();
+        mockFs.existsSync.mockReturnValue(false);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+            expect.stringContaining('not found'),
+            'Open Settings',
+            'Copy pip command',
+        );
+        expect(mockCp.spawn).not.toHaveBeenCalled();
     });
 });
