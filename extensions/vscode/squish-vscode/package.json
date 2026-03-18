@@ -87,7 +87,7 @@
         },
         "squish.maxTokens": {
           "type": "number",
-          "default": 1024,
+          "default": 2048,
           "description": "Maximum tokens per response."
         },
         "squish.temperature": {
