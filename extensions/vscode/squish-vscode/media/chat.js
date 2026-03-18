@@ -196,7 +196,12 @@
         _flushQueue();
         if (_currentIndicatorEl) { _currentIndicatorEl.style.display = 'none'; }
         if (_currentAckEl)       { _currentAckEl.remove(); _currentAckEl = null; }
-        if (_currentContentEl)   { _currentContentEl.classList.remove('streaming'); }
+        if (_currentContentEl)   {
+            _currentContentEl.classList.remove('streaming');
+            // Re-render the accumulated plain text as inline markdown
+            const plain = _currentContentEl.textContent || '';
+            _currentContentEl.innerHTML = _renderMarkdown(plain);
+        }
         _finalizeTurn();
     }
 
@@ -230,6 +235,37 @@
         _currentIndicatorEl = null;
         _currentAckEl       = null;
         _realStarted        = false;
+    }
+
+    // ── Inline markdown renderer ───────────────────────────────────────────
+    // Supports: **bold**, *italic*, `code`, and paragraph breaks (blank lines).
+    // All text is HTML-escaped before processing to prevent XSS.
+
+    function _esc(s) {
+        return s
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function _renderMarkdown(text) {
+        // Split into paragraphs on blank lines
+        const paragraphs = text.split(/\n{2,}/);
+        return paragraphs.map((para) => {
+            // Escape the raw paragraph text
+            let s = _esc(para.trim());
+            if (!s) { return ''; }
+            // Bold: **...**  (must come before italic)
+            s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            // Italic: *...*  (single asterisk, non-greedy)
+            s = s.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+            // Inline code: `...`
+            s = s.replace(/`([^`]+?)`/g, '<code>$1</code>');
+            // Preserve single newlines as <br>
+            s = s.replace(/\n/g, '<br>');
+            return '<p>' + s + '</p>';
+        }).filter(Boolean).join('');
     }
 
     // ── Acknowledgement phrase generator ─────────────────────────────────
