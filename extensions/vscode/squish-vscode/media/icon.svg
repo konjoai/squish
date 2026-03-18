@@ -1,19 +1,12 @@
-<svg viewBox="12 23 104 94" xmlns="http://www.w3.org/2000/svg">
-  <ellipse cx="22" cy="65" rx="8" ry="12" fill="#9146FF" stroke="#1A0B40" stroke-width="3" transform="rotate(15 22 65)"/>
-  <ellipse cx="108" cy="65" rx="8" ry="12" fill="#9146FF" stroke="#1A0B40" stroke-width="3" transform="rotate(-15 108 65)"/>
-  
-  <ellipse cx="45" cy="105" rx="6" ry="10" fill="#9146FF" stroke="#1A0B40" stroke-width="3"/>
-  <ellipse cx="85" cy="105" rx="6" ry="10" fill="#9146FF" stroke="#1A0B40" stroke-width="3"/>
-
-  <path d="M35 25C25 25 20 35 20 45V85C20 95 25 105 35 105H95C105 105 110 95 110 85V45C110 35 105 25 95 25H35Z" fill="#9146FF" stroke="#1A0B40" stroke-width="4" stroke-linejoin="round"/>
-  
-  <circle cx="48" cy="55" r="6" fill="black"/>
-  <circle cx="46" cy="53" r="2" fill="white"/>
-  <circle cx="80" cy="55" r="6" fill="black"/>
-  <circle cx="78" cy="53" r="2" fill="white"/>
-
-  <path d="M58 70C58 75 70 75 70 70H58Z" fill="#FF8A8A" stroke="#1A0B40" stroke-width="2"/>
-
-  <circle cx="40" cy="68" r="4" fill="#FFBABA" opacity="0.6"/>
-  <circle cx="88" cy="68" r="4" fill="#FFBABA" opacity="0.6"/>
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- left arm -->
+  <ellipse cx="13" cy="56" rx="9" ry="14" fill="white" transform="rotate(15 13 56)"/>
+  <!-- right arm -->
+  <ellipse cx="87" cy="56" rx="9" ry="14" fill="white" transform="rotate(-15 87 56)"/>
+  <!-- left foot -->
+  <ellipse cx="35" cy="90" rx="13" ry="8" fill="white"/>
+  <!-- right foot -->
+  <ellipse cx="65" cy="90" rx="13" ry="8" fill="white"/>
+  <!-- body -->
+  <rect x="20" y="22" width="60" height="66" rx="18" fill="white"/>
 </svg>
