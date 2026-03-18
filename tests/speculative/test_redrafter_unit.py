@@ -183,11 +183,13 @@ class TestReDrafterHeadLifecycle:
     def test_draft_hiddens_cleared_on_new_draft(self):
         head = _make_head()
         tgt  = _fake_hidden()
-        head.draft_k(tgt, k=2, prev_token_id=0, temperature=1.0, top_p=1.0, eos_id=1)
+        # Use eos_id=VOCAB (outside [0, VOCAB-1]) so early termination never triggers;
+        # both calls must always produce exactly k=2 hiddens regardless of RNG state.
+        head.draft_k(tgt, k=2, prev_token_id=0, temperature=1.0, top_p=1.0, eos_id=VOCAB)
         first_len = len(head.draft_hiddens)
-        # A second call should reset
-        head.draft_k(tgt, k=2, prev_token_id=0, temperature=1.0, top_p=1.0, eos_id=1)
-        assert len(head.draft_hiddens) == first_len  # same k → same length (unless eos)
+        # A second call should reset draft_hiddens, not accumulate
+        head.draft_k(tgt, k=2, prev_token_id=0, temperature=1.0, top_p=1.0, eos_id=VOCAB)
+        assert len(head.draft_hiddens) == first_len  # same k → same length (eos never sampled)
 
     def test_mismatched_n_layers_raises(self):
         gru_layers = [
