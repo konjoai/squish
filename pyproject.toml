@@ -111,6 +111,7 @@ ignore = [
     "F821",   # undefined name (forward-reference string annotations)
     "F841",   # unused local variable — pre-existing; side-effect or debug assignments
     "UP035",  # deprecated typing imports (dead after UP006/UP045 auto-fix; kept for compat)
+    "I001",   # import sort order — not enforced; try/except stubs use logical not alphabetical order
 ]
 
 [tool.pytest.ini_options]
