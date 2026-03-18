@@ -58,11 +58,11 @@ jobs:
         # Excluded from CI:
         #   test_git_integration.py - live-server integration requiring model weights.
         #                             Run: pytest tests/test_git_integration.py --model qwen3:8b
-        #   test_int4_loader.py     - requires squish_quant Rust extension (cargo/maturin).
+        #   tests/quant/test_int4_loader.py - requires squish_quant Rust extension (cargo/maturin).
         run: |
           pytest tests/ \
             --ignore=tests/test_git_integration.py \
-            --ignore=tests/test_int4_loader.py \
+            --ignore=tests/quant/test_int4_loader.py \
             --timeout=60 \
             -v --tb=short -q
 
@@ -164,7 +164,7 @@ jobs:
         # test_git_integration.py excluded: requires live model weights.
         run: |
           pytest tests/ \
-            --ignore=tests/test_int4_loader.py \
+            --ignore=tests/quant/test_int4_loader.py \
             --ignore=tests/test_git_integration.py \
             --timeout=60 \
             -v --tb=short -q
