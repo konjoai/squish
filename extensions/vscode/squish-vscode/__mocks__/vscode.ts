@@ -19,7 +19,10 @@ const _config: Record<string, unknown> = {
     'squish.temperature':     0.7,
     'squish.systemPrompt':    '',
     'squish.thinkingBudget':  0,
+    'squish.venvPath':        '',
 };
+
+let _workspaceFolders: Array<{ uri: { fsPath: string } }> = [];
 
 const _mockConfig = {
     get: jest.fn((key: string, defaultVal?: unknown) => {
@@ -32,6 +35,10 @@ const _mockConfig = {
 export const workspace = {
     getConfiguration: jest.fn().mockReturnValue(_mockConfig),
     _setConfig: (key: string, val: unknown) => { _config[`squish.${key}`] = val; },
+    get workspaceFolders() { return _workspaceFolders; },
+    _setWorkspaceFolders: (folders: Array<{ uri: { fsPath: string } }>) => {
+        _workspaceFolders = folders;
+    },
     _mockConfig,
 };
 

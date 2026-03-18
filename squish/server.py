@@ -2670,7 +2670,7 @@ Examples:
             try:
                 import sys as _sys
                 if _sys.platform == "darwin":
-                    from squish.memory_governor import MemoryGovernor as _MG  # noqa: PLC0415
+                    from squish.serving.memory_governor import MemoryGovernor as _MG  # noqa: PLC0415
                     _mg_tmp = _MG(poll_interval=60.0).start()
                     _free_gb = _mg_tmp.available_gb
                     _mg_tmp.stop()
@@ -2790,7 +2790,7 @@ Examples:
 
     if _state.model is not None:
         try:
-            from squish.split_loader import SplitLayerLoader
+            from squish.io.split_loader import SplitLayerLoader
             _split_info = SplitLayerLoader.auto_split(_state.model, verbose=True)
             if _split_info:
                 _info("cpu/gpu split", f"{_split_info.cpu_count} layers offloaded  "
@@ -2802,7 +2802,7 @@ Examples:
     # ── Phase 2.3: Flash Attention status check ──────────────────────────────
     if _state.model is not None:
         try:
-            from squish.flash_attention import patch_model_attention
+            from squish.attention.flash_attention import patch_model_attention
             patch_model_attention(_state.model, verbose=args.verbose)
         except Exception as e:
             if args.verbose:
@@ -2832,7 +2832,7 @@ Examples:
     global _agent_kv_config
     if getattr(args, "agent_kv", False):
         try:
-            from squish.agent_kv import AgentKVConfig  # noqa: PLC0415
+            from squish.kv.agent_kv import AgentKVConfig  # noqa: PLC0415
             _agent_kv_config = AgentKVConfig(
                 sink_tokens=getattr(args, "agent_kv_sink", 4),
                 window_tokens=getattr(args, "agent_kv_window", 64),
@@ -2996,7 +2996,7 @@ Examples:
     if _sys.platform == "darwin":
         global _memory_governor
         try:
-            from squish.memory_governor import MemoryGovernor  # noqa: PLC0415
+            from squish.serving.memory_governor import MemoryGovernor  # noqa: PLC0415
             _memory_governor = MemoryGovernor(poll_interval=5.0).start()
             _info("memory-governor",
                   f"started  available={_memory_governor.available_gb:.1f} GB"
