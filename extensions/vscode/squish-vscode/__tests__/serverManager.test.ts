@@ -130,6 +130,23 @@ describe('ServerManager.start()', () => {
         );
     });
 
+    test('passes --thinking-budget from config', async () => {
+        stubPortClosed();
+        stubExecSync(true);
+        makeSpawnMock();
+        (vscode.workspace as unknown as { _setConfig: (k: string, v: unknown) => void })
+            ._setConfig('thinkingBudget', 0);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('qwen3:8b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expect.stringMatching(/squish/),
+            expect.arrayContaining(['--thinking-budget', '0']),
+            expect.anything(),
+        );
+    });
+
     test('isRunning() reflects active process', async () => {
         stubPortClosed();
         stubExecSync(true);

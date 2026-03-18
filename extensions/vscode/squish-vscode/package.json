@@ -99,6 +99,11 @@
           "type": "string",
           "default": "",
           "description": "Optional system prompt prepended to every conversation."
+        },
+        "squish.thinkingBudget": {
+          "type": "number",
+          "default": 0,
+          "description": "Qwen3 chain-of-thought budget. 0 = disable thinking for fast responses (recommended for coding/chat). -1 = unlimited. Any positive integer caps reasoning at that many tokens."
         }
       }
     }

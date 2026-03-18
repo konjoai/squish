@@ -21,6 +21,7 @@ export class ServerManager {
         const cfg = vscode.workspace.getConfiguration('squish');
         const host: string = cfg.get('host', '127.0.0.1');
         const port: number = cfg.get('port', 11435);
+        const thinkingBudget: number = cfg.get('thinkingBudget', 0);
 
         if (await this._portOpen(host, port)) {
             vscode.window.showInformationMessage(
@@ -46,6 +47,7 @@ export class ServerManager {
             'run', model,
             '--host', host,
             '--port', String(port),
+            '--thinking-budget', String(thinkingBudget),
         ];
 
         this._proc = child_process.spawn(squishBin, args, {

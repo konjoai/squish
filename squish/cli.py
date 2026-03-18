@@ -758,6 +758,8 @@ def cmd_run(args):  # pragma: no cover
         cmd += ["--whatsapp-phone-number-id", args.whatsapp_phone_number_id]
     if getattr(args, "system_prompt", ""):
         cmd += ["--system-prompt", args.system_prompt]
+    if getattr(args, "thinking_budget", -1) >= 0:
+        cmd += ["--thinking-budget", str(args.thinking_budget)]
     if getattr(args, "signal", False):
         cmd += ["--signal"]
     if getattr(args, "signal_account", ""):
@@ -2512,6 +2514,10 @@ Ollama drop-in:
                        help="E.164 number registered in signal-cli (or SIGNAL_ACCOUNT env var).")
     p_run.add_argument("--signal-socket", default="127.0.0.1:7583",
                        help="signal-cli daemon address: host:port or UNIX socket path.")
+    p_run.add_argument("--thinking-budget", type=int, default=-1, metavar="N",
+                       help="Qwen3 chain-of-thought budget: -1=unlimited (default), "
+                            "0=disable thinking (/no_think mode, fastest), "
+                            ">0=cap reasoning at N tokens.")
     p_run.set_defaults(func=cmd_run)
 
     # ── serve (alias for run) ──
@@ -2565,6 +2571,10 @@ Ollama drop-in:
                          help="E.164 number registered in signal-cli (or SIGNAL_ACCOUNT env var).")
     p_serve.add_argument("--signal-socket", default="127.0.0.1:7583",
                          help="signal-cli daemon address: host:port or UNIX socket path.")
+    p_serve.add_argument("--thinking-budget", type=int, default=-1, metavar="N",
+                         help="Qwen3 chain-of-thought budget: -1=unlimited (default), "
+                              "0=disable thinking (/no_think mode, fastest), "
+                              ">0=cap reasoning at N tokens.")
     p_serve.set_defaults(func=cmd_run)
 
     # ── chat ──

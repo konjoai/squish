@@ -10,14 +10,15 @@ export const ConfigurationTarget = { Global: 1, Workspace: 2, WorkspaceFolder: 3
 export class ThemeColor { constructor(public id: string) {} }
 
 const _config: Record<string, unknown> = {
-    'squish.host':         '127.0.0.1',
-    'squish.port':         11435,
-    'squish.apiKey':       'squish',
-    'squish.model':        '7b',
-    'squish.autoStart':    false,
-    'squish.maxTokens':    1024,
-    'squish.temperature':  0.7,
-    'squish.systemPrompt': '',
+    'squish.host':            '127.0.0.1',
+    'squish.port':            11435,
+    'squish.apiKey':          'squish',
+    'squish.model':           '7b',
+    'squish.autoStart':       false,
+    'squish.maxTokens':       1024,
+    'squish.temperature':     0.7,
+    'squish.systemPrompt':    '',
+    'squish.thinkingBudget':  0,
 };
 
 const _mockConfig = {
