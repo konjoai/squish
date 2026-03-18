@@ -20,7 +20,7 @@ function mockGetResponse(body: string, statusCode = 200): void {
     );
     const mockReq = Object.assign(
         Object.create(require('events').EventEmitter.prototype),
-        { end: jest.fn(), write: jest.fn() },
+        { end: jest.fn(), write: jest.fn(), setTimeout: jest.fn() },
     );
     mockedHttp.request.mockImplementation((_opts: unknown, cb?: unknown) => {
         if (typeof cb === 'function') {
@@ -60,7 +60,7 @@ describe('SquishClient.health()', () => {
     test('rejects on network error', async () => {
         const mockReq = Object.assign(
             Object.create(require('events').EventEmitter.prototype),
-            { end: jest.fn(), write: jest.fn() },
+            { end: jest.fn(), write: jest.fn(), setTimeout: jest.fn() },
         );
         mockedHttp.request.mockImplementation(() => {
             setTimeout(() => mockReq.emit('error', new Error('ECONNREFUSED')), 0);

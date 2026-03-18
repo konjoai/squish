@@ -16,6 +16,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private _history: ChatMessage[] = [];
 
+    // State for filtering <think>...</think> blocks out of the stream
+    private _inThink = false;
+    private _thinkBuf = '';
+
     constructor(private readonly _extensionUri: vscode.Uri) {}
 
     // ── WebviewViewProvider ───────────────────────────────────────────────
@@ -85,6 +89,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const client = new SquishClient(host, port, apiKey);
         let assistantReply = '';
 
+        // Reset think-block filter state for this turn
+        this._inThink = false;
+        this._thinkBuf = '';
+
         // Signal start of assistant turn
         this._view.webview.postMessage({ type: 'streamStart' });
 
@@ -95,13 +103,23 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             model,
             (chunk) => {
                 if (chunk.delta) {
-                    assistantReply += chunk.delta;
-                    this._view?.webview.postMessage({
-                        type: 'streamChunk',
-                        delta: chunk.delta,
-                    });
+                    const visible = this._filterThink(chunk.delta);
+                    assistantReply += visible;
+                    if (visible) {
+                        this._view?.webview.postMessage({
+                            type: 'streamChunk',
+                            delta: visible,
+                        });
+                    }
                 }
                 if (chunk.done) {
+                    // Flush remaining buffered content (no trimming — whitespace is intentional)
+                    const flushed = this._thinkBuf;
+                    if (!this._inThink && flushed) {
+                        assistantReply += flushed;
+                        this._view?.webview.postMessage({ type: 'streamChunk', delta: flushed });
+                    }
+                    this._thinkBuf = '';
                     this._view?.webview.postMessage({ type: 'streamEnd' });
                     if (assistantReply) {
                         this._history.push({ role: 'assistant', content: assistantReply });
@@ -115,6 +133,48 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                 });
             },
         );
+    }
+
+    /**
+     * Strip <think>...</think> blocks from streaming delta text.
+     * Buffers up to the tag length so splits across chunks are handled correctly.
+     */
+    private _filterThink(delta: string): string {
+        this._thinkBuf += delta;
+        let out = '';
+        const OPEN = '<think>';
+        const CLOSE = '</think>';
+
+        while (this._thinkBuf.length > 0) {
+            if (this._inThink) {
+                const ci = this._thinkBuf.indexOf(CLOSE);
+                if (ci >= 0) {
+                    this._inThink = false;
+                    // Skip whitespace immediately after closing tag
+                    this._thinkBuf = this._thinkBuf.slice(ci + CLOSE.length).replace(/^\n+/, '');
+                } else {
+                    // Inside think block — discard but keep tail in case CLOSE is split
+                    if (this._thinkBuf.length > CLOSE.length) {
+                        this._thinkBuf = this._thinkBuf.slice(-CLOSE.length);
+                    }
+                    break;
+                }
+            } else {
+                const oi = this._thinkBuf.indexOf(OPEN);
+                if (oi >= 0) {
+                    out += this._thinkBuf.slice(0, oi);
+                    this._inThink = true;
+                    this._thinkBuf = this._thinkBuf.slice(oi + OPEN.length);
+                } else {
+                    // No open tag — emit safely, hold tail in case OPEN is split
+                    const safe = Math.max(0, this._thinkBuf.length - OPEN.length);
+                    out += this._thinkBuf.slice(0, safe);
+                    this._thinkBuf = this._thinkBuf.slice(safe);
+                    break;
+                }
+            }
+        }
+        return out;
     }
 
     private _buildHtml(webview: vscode.Webview): string {

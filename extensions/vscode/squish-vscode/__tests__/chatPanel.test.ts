@@ -178,4 +178,67 @@ describe('ChatPanel', () => {
         const panel = new ChatPanel(extUri);
         expect(() => panel.clearHistory()).not.toThrow();
     });
+
+    test('think blocks are filtered from streamed response', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                // Simulate: think block first, then real content
+                onChunk({ delta: '<think>some reasoning</think>', done: false, finishReason: null });
+                onChunk({ delta: 'Actual answer', done: false, finishReason: null });
+                onChunk({ delta: '', done: true, finishReason: 'stop' });
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'hi' });
+        await new Promise(r => setTimeout(r, 10));
+
+        const chunks = postMessage.mock.calls
+            .filter(([m]: [{ type: string }]) => m.type === 'streamChunk')
+            .map(([m]: [{ type: string; delta: string }]) => m.delta);
+        const combined = chunks.join('');
+        expect(combined).not.toContain('<think>');
+        expect(combined).not.toContain('some reasoning');
+        expect(combined).toContain('Actual answer');
+    });
+
+    test('split think tag across chunk boundary is handled', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                // Split '<think>' across two chunks
+                onChunk({ delta: '<thi', done: false, finishReason: null });
+                onChunk({ delta: 'nk>hidden</think>visible', done: false, finishReason: null });
+                onChunk({ delta: '', done: true, finishReason: 'stop' });
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'hi' });
+        await new Promise(r => setTimeout(r, 10));
+
+        const chunks = postMessage.mock.calls
+            .filter(([m]: [{ type: string }]) => m.type === 'streamChunk')
+            .map(([m]: [{ type: string; delta: string }]) => m.delta);
+        const combined = chunks.join('');
+        expect(combined).not.toContain('hidden');
+        expect(combined).toContain('visible');
+    });
 });

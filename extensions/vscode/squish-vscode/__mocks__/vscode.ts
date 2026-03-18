@@ -15,7 +15,7 @@ const _config: Record<string, unknown> = {
     'squish.apiKey':          'squish',
     'squish.model':           '7b',
     'squish.autoStart':       false,
-    'squish.maxTokens':       1024,
+    'squish.maxTokens':       2048,
     'squish.temperature':     0.7,
     'squish.systemPrompt':    '',
     'squish.thinkingBudget':  0,

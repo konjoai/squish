@@ -141,7 +141,7 @@ export class SquishClient {
 
     // ── Internal ──────────────────────────────────────────────────────────
 
-    private _get(path: string): Promise<string> {
+    private _get(path: string, timeoutMs = 3000): Promise<string> {
         return new Promise((resolve, reject) => {
             const options: http.RequestOptions = {
                 hostname: this.host,
@@ -158,6 +158,9 @@ export class SquishClient {
                 res.on('data', (chunk: string) => { body += chunk; });
                 res.on('end', () => resolve(body));
                 res.on('error', reject);
+            });
+            req.setTimeout(timeoutMs, () => {
+                req.destroy(new Error(`Health check timed out after ${timeoutMs}ms`));
             });
             req.on('error', reject);
             req.end();
