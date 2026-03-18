@@ -101,6 +101,15 @@ function _startHealthPoll(context: vscode.ExtensionContext): void {
         const host: string = cfg.get('host', '127.0.0.1');
         const port: number = cfg.get('port', 11435);
         const apiKey: string = cfg.get('apiKey', 'squish');
+
+        // Fast TCP check first — if port is closed the server is definitely offline
+        const portUp = await serverManager.portOpen(host, port);
+        if (!portUp) {
+            statusBar.text = '$(error) squish: offline';
+            statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+            return;
+        }
+
         const client = new SquishClient(host, port, apiKey);
         try {
             const info = await client.health();
@@ -111,13 +120,20 @@ function _startHealthPoll(context: vscode.ExtensionContext): void {
                 statusBar.text = '$(loading~spin) squish: loading…';
                 statusBar.backgroundColor = undefined;
             }
-        } catch {
-            statusBar.text = '$(error) squish: offline';
-            statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+        } catch (err: unknown) {
+            // Port is open but HTTP timed out — server is running but busy with inference
+            const code = (err as NodeJS.ErrnoException)?.code ?? (err as Error)?.message ?? '';
+            if (code.includes('ETIMEDOUT') || code.includes('timed out')) {
+                statusBar.text = '$(sync~spin) squish: busy…';
+                statusBar.backgroundColor = undefined;
+            } else {
+                statusBar.text = '$(error) squish: offline';
+                statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+            }
         }
     };
 
     _poll();
-    pollTimer = setInterval(_poll, 5000);
+    pollTimer = setInterval(_poll, 8000);
     context.subscriptions.push({ dispose: () => clearInterval(pollTimer!) });
 }

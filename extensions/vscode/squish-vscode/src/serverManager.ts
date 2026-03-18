@@ -23,7 +23,7 @@ export class ServerManager {
         const port: number = cfg.get('port', 11435);
         const thinkingBudget: number = cfg.get('thinkingBudget', 0);
 
-        if (await this._portOpen(host, port)) {
+        if (await this.portOpen(host, port)) {
             vscode.window.showInformationMessage(
                 `Squish server already running on ${host}:${port}.`,
             );
@@ -102,7 +102,7 @@ export class ServerManager {
         return undefined;
     }
 
-    private _portOpen(host: string, port: number): Promise<boolean> {
+    portOpen(host: string, port: number): Promise<boolean> {
         return new Promise((resolve) => {
             const sock = new net.Socket();
             sock.setTimeout(1000);
