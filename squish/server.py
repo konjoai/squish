@@ -1424,13 +1424,23 @@ def _generate_tokens(  # pragma: no cover
         _sg_kwargs = {}
         if _max_kv_size is not None:
             _sg_kwargs["max_kv_size"] = _max_kv_size
+        # mlx_lm >= 0.21 replaced temp/top_p kwargs with a `sampler` callable.
+        # Passing temp/top_p directly causes a TypeError in generate_step, which
+        # would be silently caught below and fall through to the no-cache manual
+        # loop (O(n²) — catastrophically slow).  Always use make_sampler when
+        # available; fall back to legacy kwargs only for older mlx_lm.
+        try:
+            from mlx_lm.sample_utils import make_sampler as _make_sampler
+            _sg_kwargs["sampler"] = _make_sampler(temp=temperature, top_p=top_p)
+        except (ImportError, TypeError):
+            # Older mlx_lm that accepted temp/top_p directly
+            _sg_kwargs["temp"]   = temperature
+            _sg_kwargs["top_p"]  = top_p
         gen = mlx_lm.stream_generate(
             model,
             tokenizer,
             prompt     = prompt,
             max_tokens = max_tokens,
-            temp       = temperature,
-            top_p      = top_p,
             **_sg_kwargs,
         )
         emitted = 0
