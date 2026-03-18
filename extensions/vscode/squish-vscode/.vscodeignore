@@ -1,8 +1,10 @@
-out/
+out/**/*.map
 node_modules/
 .vscode-test/
 *.vsix
-*.map
 src/
 tsconfig.json
 .eslintrc*
+__tests__/
+__mocks__/
+jest.config*
