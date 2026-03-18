@@ -1,4 +1,22 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Activity bar icon: flat monochrome silhouette so VS Code theme-masking works -->
+  <!-- Body -->
+  <rect x="28" y="8" width="72" height="88" rx="24" fill="white"/>
+  <!-- Left arm -->
+  <ellipse cx="18" cy="56" rx="14" ry="20" fill="white" transform="rotate(-10 18 56)"/>
+  <!-- Right arm -->
+  <ellipse cx="110" cy="56" rx="14" ry="20" fill="white" transform="rotate(10 110 56)"/>
+  <!-- Left foot -->
+  <ellipse cx="44" cy="108" rx="16" ry="10" fill="white"/>
+  <!-- Right foot -->
+  <ellipse cx="84" cy="108" rx="16" ry="10" fill="white"/>
+  <!-- Eyes (cut-out effect via background rect masked below) -->
+  <circle cx="48" cy="50" r="10" fill="black"/>
+  <circle cx="80" cy="50" r="10" fill="black"/>
+  <!-- Smile -->
+  <path d="M42 72 Q64 86 86 72" fill="none" stroke="black" stroke-width="5" stroke-linecap="round"/>
+</svg>
+
   <path d="M35 25C25 25 20 35 20 45V85C20 95 25 105 35 105H95C105 105 110 95 110 85V45C110 35 105 25 95 25H35Z" fill="#9146FF" stroke="#1A0B40" stroke-width="4" stroke-linejoin="round"/>
   
   <ellipse cx="22" cy="65" rx="8" ry="12" fill="#9146FF" stroke="#1A0B40" stroke-width="3" transform="rotate(15 22 65)"/>

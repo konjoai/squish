@@ -12,6 +12,7 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "icon": "media/icon.png",
   "categories": ["AI", "Chat"],
   "keywords": ["ai", "llm", "local", "mlx", "apple-silicon", "chat"],
   "activationEvents": ["onStartupFinished"],
