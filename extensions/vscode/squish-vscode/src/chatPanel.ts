@@ -202,7 +202,33 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   <title>Squish Chat</title>
 </head>
 <body>
-  <div id="toolbar">
+  <div id="header">
+    <div class="header-brand">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+        <defs>
+          <linearGradient id="sq-hd" x1="20%" y1="0%" x2="80%" y2="100%">
+            <stop offset="0%" stop-color="#C4B5FD"/>
+            <stop offset="100%" stop-color="#7C3AED"/>
+          </linearGradient>
+        </defs>
+        <ellipse cx="3.8" cy="12.5" rx="2.5" ry="3.5" fill="url(#sq-hd)" stroke="#3730A3" stroke-width="0.8" transform="rotate(-12,3.8,12.5)"/>
+        <ellipse cx="20.2" cy="12.5" rx="2.5" ry="3.5" fill="url(#sq-hd)" stroke="#3730A3" stroke-width="0.8" transform="rotate(12,20.2,12.5)"/>
+        <rect x="5.5" y="1.5" width="13" height="17" rx="4.5" fill="url(#sq-hd)" stroke="#3730A3" stroke-width="1.2"/>
+        <ellipse cx="9" cy="21.2" rx="3" ry="2" fill="url(#sq-hd)" stroke="#3730A3" stroke-width="0.8"/>
+        <ellipse cx="15" cy="21.2" rx="3" ry="2" fill="url(#sq-hd)" stroke="#3730A3" stroke-width="0.8"/>
+        <circle cx="9.5" cy="9" r="2.1" fill="white"/>
+        <circle cx="14.5" cy="9" r="2.1" fill="white"/>
+        <circle cx="10" cy="9.6" r="1.2" fill="#1E1B4B"/>
+        <circle cx="15" cy="9.6" r="1.2" fill="#1E1B4B"/>
+        <circle cx="10.6" cy="8.8" r="0.45" fill="white"/>
+        <circle cx="15.6" cy="8.8" r="0.45" fill="white"/>
+        <circle cx="7.8" cy="12.5" r="1.4" fill="#FB7185" fill-opacity="0.55"/>
+        <circle cx="16.2" cy="12.5" r="1.4" fill="#FB7185" fill-opacity="0.55"/>
+        <path d="M8.5 13.5 Q12 16.2 15.5 13.5" fill="none" stroke="#1E1B4B" stroke-width="1.1" stroke-linecap="round"/>
+        <path d="M8 4 Q12 2.5 16 5" fill="none" stroke="white" stroke-width="0.8" stroke-linecap="round" stroke-opacity="0.45"/>
+      </svg>
+      <span class="header-name">Squish AI</span>
+    </div>
     <button id="btn-clear" title="Clear history">Clear</button>
   </div>
   <div id="messages" aria-live="polite"></div>
