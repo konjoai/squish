@@ -543,7 +543,9 @@ class PagedKVCache:
         budget_bytes    = int(ram_bytes * metal_fraction)
         bytes_per_block = (PAGE_SIZE * n_layers * 2 * n_heads * head_dim
                            * np.dtype(dtype).itemsize)
-        num_blocks      = max(64, budget_bytes // bytes_per_block)
+        # Cap at 65536 to bound initialisation time and peak memory consumption.
+        _MAX_BLOCKS = 65536
+        num_blocks      = max(64, min(budget_bytes // max(1, bytes_per_block), _MAX_BLOCKS))
 
         return cls(
             num_blocks=num_blocks,

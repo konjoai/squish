@@ -96,9 +96,9 @@ jobs:
           .venv/bin/pip install pytest-timeout maturin
 
       - name: Build squish_quant_rs Rust extension
-        # maturin develop requires a virtualenv; it auto-discovers ../.venv
+        # maturin develop requires a virtualenv; use the venv's maturin directly.
         working-directory: squish_quant_rs
-        run: maturin develop --release
+        run: ../.venv/bin/maturin develop --release
 
       - name: Run full test suite (Rust extension available)
         # test_int4_loader.py is now included — requires squish_quant built above.

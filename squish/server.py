@@ -2709,7 +2709,7 @@ Examples:
     global _paged_kv_cache
     if getattr(args, "paged_attention", False) and _state.model is not None:
         try:
-            from squish.paged_attention import PagedKVCache as _PagedKVCache
+            from squish.kv.paged_attention import PagedKVCache as _PagedKVCache
             _paged_kv_cache = _PagedKVCache.from_model(
                 _state.model,
                 metal_fraction=getattr(args, "paged_attention_fraction", 0.25),
@@ -3354,12 +3354,92 @@ Examples:
 
     if getattr(args, "lora_adapter", ""):
         try:
-            from squish.lora_manager import LoRAManager
+            from squish.lora.lora_manager import LoRAManager
             _lora_mgr = LoRAManager()
             _lora_mgr.load(args.lora_adapter)
             _info("lora-adapter", f"{args.lora_adapter}")
         except Exception as _e:
             _warn(f"[lora-adapter] Skipped: {_e}")
+
+    # ── Wave 13 — Attention/KV/Token innovations (lazy stubs) ────────────────
+    try:
+        from squish.attention.duo_attention import DuoAttentionConfig as _DuoAttentionConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.attention.duo_decoding import DuoDecodingConfig as _DuoDecodingConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.kv.shadow_kv import ShadowKVConfig as _ShadowKVConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.kv.pq_cache import PQCacheConfig as _PQCacheConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.kv.spe_cache import SpeCacheConfig as _SpeCacheConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.token.knapspec import KnapSpecConfig as _KnapSpecConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.token.token_merging import TokenMergingConfig as _TokenMergingConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.token.token_swift import TokenSwiftConfig as _TokenSwiftConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.token.c2t import C2TConfig as _C2TConfig  # noqa: F401
+    except ImportError:
+        pass
+
+    # ── Wave 14 — Quantisation/Speculative extensions (lazy stubs) ───────────
+    try:
+        from squish.speculative.sub_spec import SubSpecConfig as _SubSpecConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.quant.dfloat11 import DFloat11Config as _DFloat11Config  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.quant.rans_codec import RANSCodec as _RANSCodec  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.speculative.qspec import QSpecConfig as _QSpecConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.speculative.quant_spec import QuantSpecConfig as _QuantSpecConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.speculative.copy_spec import CopySpecConfig as _CopySpecConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.quant.squeeze_llm import SqueezeLLMConfig as _SqueezeLLMConfig  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.quant.nf4_quant import quantize_nf4 as _quantize_nf4  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.quant.spin_quant import run_rotation as _spin_run_rotation  # noqa: F401
+    except ImportError:
+        pass
+    try:
+        from squish.speculative.head_infer import HeadType as _HeadType  # noqa: F401
+    except ImportError:
+        pass
 
     print()
     _section("")

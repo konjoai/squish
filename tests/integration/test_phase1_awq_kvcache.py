@@ -32,15 +32,15 @@ def test_awq_apply_weights():
     out = apply_awq_to_weights(weights, scales, verbose=False)
     s = scales["model.layers.0.self_attn.q_proj"]
 
-    # W[:, c] should have been divided by s[c]
+    # W[:, c] should have been multiplied by s[c] (AWQ: amplify salient channels)
     W_awq = out["model.layers.0.self_attn.q_proj.weight"]
-    expected = W / s[np.newaxis, :]
+    expected = W * s[np.newaxis, :]
     np.testing.assert_allclose(W_awq, expected, rtol=1e-5,
                                err_msg="W_awq col scaling mismatch")
 
-    # gamma should have been multiplied by s
+    # gamma should have been divided by s (AWQ: attenuate LN output)
     gamma_awq = out["model.layers.0.input_layernorm.weight"]
-    np.testing.assert_allclose(gamma_awq, gamma * s, rtol=1e-5,
+    np.testing.assert_allclose(gamma_awq, gamma / s, rtol=1e-5,
                                err_msg="gamma awq scale absorption mismatch")
 
 

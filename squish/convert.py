@@ -35,20 +35,30 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # AWQ scale application (imported lazily so convert.py works without awq.py)
 # ---------------------------------------------------------------------------
-def _apply_awq_single(name: str, arr_f32: np.ndarray, awq_scales: dict) -> np.ndarray:
+def _apply_awq_single(
+    name: str,
+    arr_f32: np.ndarray,
+    proj_apply: dict,
+    ln_apply: dict,
+) -> np.ndarray:
     """
-    Apply AWQ scale to a single weight tensor in-place (returns modified copy).
-    Wraps squish.quant.awq.apply_awq_to_weights for single-tensor use.
+    Apply pre-computed AWQ group scales to a single weight tensor.
+
+    proj_apply : layer_path → group_scale
+        For linear projections: ``W_awq[:, c] = W[:, c] * group_scale[c]``
+    ln_apply   : full_tensor_name → group_scale
+        For LayerNorm weights: ``gamma_awq[c] = gamma[c] / group_scale[c]``
     """
-    if not awq_scales:
+    if not proj_apply and not ln_apply:
         return arr_f32
-    try:
-        from squish.quant.awq import apply_awq_to_weights
-        tmp = {name: arr_f32}
-        apply_awq_to_weights(tmp, awq_scales, verbose=False)
-        return tmp[name]
-    except ImportError:
-        return arr_f32
+    layer = name.removesuffix(".weight")
+    if layer in proj_apply:
+        s = proj_apply[layer]
+        return arr_f32 * s[np.newaxis, :]
+    if name in ln_apply:
+        s = ln_apply[name]
+        return arr_f32 / s
+    return arr_f32
 
 
 from squish.quant.quantizer import (  # noqa: E402
@@ -485,6 +495,16 @@ def process_weights_streaming(
 
     print(f"\n  Processing {len(shard_files)} shard(s) …  (streaming — peak RAM ≈ 1 shard)")
 
+    # ── Pre-compute AWQ group scales once (streaming-safe, per-tensor lookup) ─
+    _awq_proj_apply: dict = {}
+    _awq_ln_apply: dict = {}
+    if awq_scales:
+        try:
+            from squish.quant.awq import prepare_awq_application
+            _awq_proj_apply, _awq_ln_apply = prepare_awq_application(awq_scales)
+        except ImportError:
+            pass
+
     # ── Build QuIP# quantizer once; shared RNG advances across all tensors ───
     quip_quantizer = None
     if use_quip:
@@ -527,7 +547,7 @@ def process_weights_streaming(
 
             # ── Phase 1.2: Apply AWQ scales before quantization ───────────
             if awq_scales:
-                arr_f32 = _apply_awq_single(name, arr_f32, awq_scales)
+                arr_f32 = _apply_awq_single(name, arr_f32, _awq_proj_apply, _awq_ln_apply)
 
             sub = quantize_tensor(
                 name, arr_f32, outlier_threshold, passthrough_patterns,
