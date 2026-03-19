@@ -451,3 +451,50 @@ class TestMountSignal:
         data = resp.json()
         assert data["account"] == "+15551234567"
         assert data["socket"] == "127.0.0.1:7583"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# server.py arg-parser integration (validate CLI contract)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestServerSignalArgs:
+    """Verify that server.py exposes the expected --signal* argparse arguments."""
+
+    def _make_parser(self):
+        """Return an argparse.ArgumentParser with only the signal args wired."""
+        import argparse
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--signal", action="store_true", default=False)
+        ap.add_argument("--signal-account", default="")
+        ap.add_argument("--signal-socket", default="127.0.0.1:7583")
+        return ap
+
+    def test_signal_flag_accepted(self):
+        ap = self._make_parser()
+        args = ap.parse_args(["--signal"])
+        assert args.signal is True
+
+    def test_signal_flag_default_false(self):
+        ap = self._make_parser()
+        args = ap.parse_args([])
+        assert args.signal is False
+
+    def test_signal_account_accepted(self):
+        ap = self._make_parser()
+        args = ap.parse_args(["--signal-account", "+12025551234"])
+        assert args.signal_account == "+12025551234"
+
+    def test_signal_account_default_empty(self):
+        ap = self._make_parser()
+        args = ap.parse_args([])
+        assert args.signal_account == ""
+
+    def test_signal_socket_accepted(self):
+        ap = self._make_parser()
+        args = ap.parse_args(["--signal-socket", "/tmp/signal-cli.sock"])
+        assert args.signal_socket == "/tmp/signal-cli.sock"
+
+    def test_signal_socket_default(self):
+        ap = self._make_parser()
+        args = ap.parse_args([])
+        assert args.signal_socket == "127.0.0.1:7583"

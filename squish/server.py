@@ -2715,6 +2715,26 @@ Examples:
              "Fallback: WHATSAPP_PHONE_NUMBER_ID env var.",
     )
 
+    # ── Signal / signal-cli integration ──────────────────────────────────────
+    ap.add_argument(
+        "--signal", action="store_true", default=False,
+        help=(
+            "Enable the Signal bot (GET /signal/status). "
+            "Requires a running signal-cli JSON-RPC daemon and --signal-account. "
+            "Also reads SIGNAL_ACCOUNT / SIGNAL_SOCKET env vars as fallback."
+        ),
+    )
+    ap.add_argument(
+        "--signal-account", default="",
+        help="E.164 phone number registered in signal-cli (e.g. +12025551234). "
+             "Fallback: SIGNAL_ACCOUNT env var.",
+    )
+    ap.add_argument(
+        "--signal-socket", default="127.0.0.1:7583",
+        help="signal-cli JSON-RPC daemon address: host:port or UNIX socket path. "
+             "Fallback: SIGNAL_SOCKET env var. Default: 127.0.0.1:7583.",
+    )
+
     args = ap.parse_args()
 
     # ── Expand --all-optimizations into individual flags ─────────────────────
@@ -3518,8 +3538,27 @@ Examples:
     except ImportError:
         pass
 
-    # ── WhatsApp webhook ──────────────────────────────────────────────────────
+    # ── Signal bot ────────────────────────────────────────────────────────────
     import os as _os
+    _signal_enabled = getattr(args, "signal", False)
+    if _signal_enabled:
+        _signal_account = getattr(args, "signal_account", "") or _os.environ.get("SIGNAL_ACCOUNT", "")
+        _signal_socket  = getattr(args, "signal_socket",  "127.0.0.1:7583") or _os.environ.get("SIGNAL_SOCKET", "127.0.0.1:7583")
+        try:
+            from .serving.signal_cli import mount_signal as _mount_signal  # package import
+        except ImportError:  # pragma: no cover
+            from serving.signal_cli import mount_signal as _mount_signal    # direct script run
+        _mount_signal(
+            app,
+            get_state     = lambda: _state,
+            get_generate  = lambda: _generate_tokens,
+            get_tokenizer = lambda: _state.tokenizer,
+            account       = _signal_account,
+            socket_addr   = _signal_socket,
+            system_prompt = "",
+        )
+
+    # ── WhatsApp webhook ──────────────────────────────────────────────────────
     _wa_enabled = getattr(args, "whatsapp", False)
     if _wa_enabled:
         _wa_verify_token    = getattr(args, "whatsapp_verify_token",    "") or _os.environ.get("WHATSAPP_VERIFY_TOKEN",    "")
@@ -3551,6 +3590,8 @@ Examples:
     _info("Ollama compat", f"{_C.T}http://{args.host}:{args.port}/api/chat{_C.R}")
     if _wa_enabled:
         _info("WhatsApp",     f"{_C.T}http://{args.host}:{args.port}/webhook/whatsapp{_C.R}")
+    if _signal_enabled:
+        _info("Signal",       f"{_C.T}http://{args.host}:{args.port}/signal/status{_C.R}")
     print()
     print(f"  {_C.DIM}Set in any OpenAI client:{_C.R}")
     print(f"    {_C.MG}OPENAI_BASE_URL{_C.R}=http://{args.host}:{args.port}/v1")
