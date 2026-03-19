@@ -65,6 +65,7 @@ from squish.quant.quantizer import (  # noqa: E402
     QuantizationResult,
     quantize_embeddings,
     quantize_int4,
+    quantize_int4_asymmetric_mse,
 )
 
 
@@ -217,14 +218,13 @@ def quantize_tensor(
 
     Returns a dict of file suffixes → arrays / bytes objects:
       INT8 (default):       __q, __s, __shape
-      INT4:                 __q4, __s4, __shape
+      INT4 (asymmetric):    __q4a, __s4a, __z4a, __shape
       NF4:                  __nf4, __s_nf4, __shape
       VPTQ:                 __vq_idx, __vq_cb, __vq_res, __vq_rescb, __shape
       QuIP# E8:             __quip_e8, __quip_res, __quip_rot, __shape
       AQLM:                 __aqlm_idx, __aqlm_cb, __shape
       passthrough:          __pt, __shape
       DFloat11 (pt):        __pt_df11  (bytes blob, stored via np.frombuffer)
-      DFloat11 (scales):    replaces __s4 with __s4_df11 (bytes blob)
     """
     original_shape = arr_f32.shape
 
@@ -364,34 +364,26 @@ def quantize_tensor(
         }
 
     if use_int4:
-        # INT4 nibble-packed: quantize directly from FP32 — eliminates the
-        # INT8→reconstruct→INT4 double-quantization error present in the old code.
-        # group_size=32 (Q4_K_M standard) gives more per-group scale resolution
-        # than 64 at ~3% storage overhead; _pick_int4_group_size() handles
-        # divisibility for oddly-shaped tensors.
+        # Asymmetric MSE INT4 nibble-packed: quantize directly from FP32.
+        # Uses per-group (min, scale) asymmetric quantization with MSE-clipped
+        # scales for better SNR with outlier weights (Q4_K_M style).
+        # group_size=32 gives better per-group scale resolution than 64 at ~3%
+        # storage overhead; _pick_int4_group_size() handles divisibility.
         # Guard: nibble-packing requires an even number of columns.
         # Tensors with odd n_cols (e.g. some vision-tower projection heads) are
         # stored as FP16 passthrough rather than crashing the whole compression.
         if flat.shape[1] % 2 != 0:
             return {"__pt": arr_f32, "__shape": shape_arr}
         gs = _pick_int4_group_size(flat.shape[1], int4_group_size or 32)
-        packed, scales4 = quantize_int4(flat, group_size=gs)
-        out = {
-            "__q4":    packed,   # uint8 nibble-packed  (n, d//2)
-            "__s4":    scales4,  # float32              (n, d//gs)
+        packed, scales4, zero_points = quantize_int4_asymmetric_mse(flat, group_size=gs)
+        # use_dfloat11 is a no-op for asymmetric INT4: zero_points are already
+        # compact (per-group float32) and DFloat11 adds negligible benefit.
+        return {
+            "__q4a":   packed,       # uint8 nibble-packed  (n, d//2)
+            "__s4a":   scales4,      # float32 per-group scales  (n, d//gs)
+            "__z4a":   zero_points,  # float32 per-group zero-points (n, d//gs)
             "__shape": shape_arr,
         }
-        if use_dfloat11:
-            import pickle
-            # Entropy-compress the INT4 scales with DFloat11 for extra savings
-            DFloat11Config, DFloat11Compressor = _get_dfloat11()
-            cfg = DFloat11Config(use_rans=True, use_context=True)
-            comp = DFloat11Compressor(cfg)
-            blocks = comp.compress_array(scales4.astype(np.float16))
-            blob = pickle.dumps(blocks, protocol=4)
-            out["__s4_df11"] = np.frombuffer(blob, dtype=np.uint8).copy()
-            del out["__s4"]
-        return out
 
     # ── INT8 (default) ────────────────────────────────────────────────────────
     result: QuantizationResult = quantize_embeddings(flat, group_size=64)
