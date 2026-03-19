@@ -14,15 +14,46 @@ export interface HealthInfo {
     uptime?: number;
 }
 
+// ── Tool calling types (OpenAI-compatible) ─────────────────────────────────
+
+export interface ToolParameterSchema {
+    type: string;
+    properties?: Record<string, { type: string; description?: string; enum?: string[] }>;
+    required?: string[];
+}
+
+export interface ToolDefinition {
+    type: 'function';
+    function: {
+        name: string;
+        description: string;
+        parameters: ToolParameterSchema;
+    };
+}
+
+export interface ToolCall {
+    id: string;
+    type: 'function';
+    function: {
+        name: string;
+        arguments: string;   // JSON string
+    };
+}
+
 export interface ChatMessage {
-    role: 'system' | 'user' | 'assistant';
-    content: string;
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content: string | null;
+    tool_calls?: ToolCall[];
+    tool_call_id?: string;   // required when role === 'tool'
+    name?: string;
 }
 
 export interface ChatChunk {
     delta: string;
     done: boolean;
     finishReason?: string | null;
+    // Set when the model wants to call tools instead of producing text
+    toolCalls?: ToolCall[];
 }
 
 export class SquishClient {
@@ -58,6 +89,8 @@ export class SquishClient {
     /**
      * Stream a chat completion.
      * Calls `onChunk` for each streamed delta, then once more with `done: true`.
+     * When the model invokes tools, `chunk.toolCalls` is populated and
+     * `chunk.done` is `true` with `finishReason === 'tool_calls'`.
      */
     streamChat(
         messages: ChatMessage[],
@@ -66,6 +99,7 @@ export class SquishClient {
         model: string,
         onChunk: (chunk: ChatChunk) => void,
         onError: (err: Error) => void,
+        tools?: ToolDefinition[],
     ): void {
         const payload = JSON.stringify({
             model,
@@ -73,6 +107,7 @@ export class SquishClient {
             stream: true,
             max_tokens: maxTokens,
             temperature,
+            ...(tools && tools.length > 0 ? { tools, tool_choice: 'auto' } : {}),
         });
 
         const options: http.RequestOptions = {
@@ -90,11 +125,27 @@ export class SquishClient {
         const req = http.request(options, (res) => {
             let buffer = '';
             let finished = false;
-            const emitDone = () => {
+
+            // Accumulate streaming tool call fragments across SSE chunks.
+            // tool_calls arrive as delta patches: [{index, id?, type?, function:{name?,arguments?}}]
+            const pendingToolCalls: Record<number, {
+                id: string;
+                type: 'function';
+                function: { name: string; arguments: string };
+            }> = {};
+
+            const emitDone = (finishReason?: string | null) => {
                 if (finished) { return; }
                 finished = true;
-                onChunk({ delta: '', done: true });
+                const toolCallList = Object.values(pendingToolCalls);
+                onChunk({
+                    delta: '',
+                    done: true,
+                    finishReason: finishReason ?? null,
+                    toolCalls: toolCallList.length > 0 ? toolCallList as ToolCall[] : undefined,
+                });
             };
+
             res.setEncoding('utf8');
 
             res.on('data', (chunk: string) => {
@@ -114,13 +165,41 @@ export class SquishClient {
                     }
                     try {
                         const parsed = JSON.parse(data);
-                        const delta: string =
-                            parsed.choices?.[0]?.delta?.content ?? '';
-                        const finishReason: string | null =
-                            parsed.choices?.[0]?.finish_reason ?? null;
-                        const done = finishReason != null;
-                        onChunk({ delta, done, finishReason });
-                        if (done) { finished = true; }
+                        const delta   = parsed.choices?.[0]?.delta ?? {};
+                        const finish  = parsed.choices?.[0]?.finish_reason ?? null;
+
+                        // Accumulate streamed tool call fragments
+                        if (delta.tool_calls) {
+                            for (const tc of delta.tool_calls as Array<{
+                                index: number;
+                                id?: string;
+                                type?: string;
+                                function?: { name?: string; arguments?: string };
+                            }>) {
+                                const idx = tc.index ?? 0;
+                                if (!pendingToolCalls[idx]) {
+                                    pendingToolCalls[idx] = {
+                                        id: tc.id ?? `call_${idx}`,
+                                        type: 'function',
+                                        function: { name: '', arguments: '' },
+                                    };
+                                }
+                                const p = pendingToolCalls[idx];
+                                if (tc.id)                        { p.id = tc.id; }
+                                if (tc.function?.name)            { p.function.name += tc.function.name; }
+                                if (tc.function?.arguments)       { p.function.arguments += tc.function.arguments; }
+                            }
+                        }
+
+                        const content: string = delta.content ?? '';
+                        if (finish != null) {
+                            if (content) {
+                                onChunk({ delta: content, done: false });
+                            }
+                            emitDone(finish);
+                        } else if (content) {
+                            onChunk({ delta: content, done: false });
+                        }
                     } catch {
                         // malformed SSE line — ignore
                     }

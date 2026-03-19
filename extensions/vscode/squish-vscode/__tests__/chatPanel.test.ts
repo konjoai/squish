@@ -241,4 +241,179 @@ describe('ChatPanel', () => {
         expect(combined).not.toContain('hidden');
         expect(combined).toContain('visible');
     });
+
+    // ── Tool calling loop ──────────────────────────────────────────────────
+
+    test('tool call loop: toolCallStart/End messages posted on tool invocation', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        // First streamChat call returns tool_calls, second returns final answer
+        let callCount = 0;
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                callCount++;
+                if (callCount === 1) {
+                    // Model wants to call read_file
+                    onChunk({
+                        delta: '',
+                        done: true,
+                        finishReason: 'tool_calls',
+                        toolCalls: [{
+                            id: 'call_abc',
+                            type: 'function',
+                            function: { name: 'read_file', arguments: '{"path":"README.md"}' },
+                        }],
+                    });
+                } else {
+                    // Final answer after tool result
+                    onChunk({ delta: 'File read done.', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                }
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'read README.md' });
+
+        // Wait for async tool execution and second streamChat call
+        await new Promise(r => setTimeout(r, 50));
+
+        const types = postMessage.mock.calls.map(([m]: [{ type: string }]) => m.type);
+        expect(types).toContain('toolCallStart');
+        expect(types).toContain('toolCallEnd');
+        expect(types).toContain('streamEnd');
+
+        const startMsg = postMessage.mock.calls.find(([m]: [{ type: string }]) => m.type === 'toolCallStart');
+        expect(startMsg![0]).toMatchObject({ type: 'toolCallStart', id: 'call_abc', name: 'read_file' });
+    });
+
+    test('tool call loop: passes tools array to streamChat', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                onChunk({ delta: 'ok', done: false, finishReason: null });
+                onChunk({ delta: '', done: true, finishReason: 'stop' });
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'hi' });
+        await new Promise(r => setTimeout(r, 20));
+
+        const call = (MockSquishClient.prototype.streamChat as jest.Mock).mock.calls[0];
+        // 7th argument (index 6) should be the tools array
+        const tools = call[6];
+        expect(Array.isArray(tools)).toBe(true);
+        expect(tools.length).toBeGreaterThan(0);
+        expect(tools[0]).toMatchObject({ type: 'function' });
+    });
+
+    test('tool call loop: tool result appended to messages on second call', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        let callCount = 0;
+        let secondCallMessages: unknown[] = [];
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (msgs, _max, _temp, _model, onChunk, _onError) => {
+                callCount++;
+                if (callCount === 1) {
+                    onChunk({
+                        delta: '',
+                        done: true,
+                        finishReason: 'tool_calls',
+                        toolCalls: [{
+                            id: 'call_xyz',
+                            type: 'function',
+                            function: { name: 'get_selection', arguments: '{}' },
+                        }],
+                    });
+                } else {
+                    secondCallMessages = msgs as unknown[];
+                    onChunk({ delta: 'done', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                }
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'get selection' });
+        await new Promise(r => setTimeout(r, 50));
+
+        // Second call should include the assistant tool_calls message + tool result
+        const assistantMsg = secondCallMessages.find(
+            (m: unknown) => (m as { role: string }).role === 'assistant'
+        ) as { role: string; tool_calls: unknown[] } | undefined;
+        expect(assistantMsg).toBeDefined();
+        expect(assistantMsg!.tool_calls).toBeDefined();
+
+        const toolMsg = secondCallMessages.find(
+            (m: unknown) => (m as { role: string }).role === 'tool'
+        ) as { role: string; tool_call_id: string } | undefined;
+        expect(toolMsg).toBeDefined();
+        expect(toolMsg!.tool_call_id).toBe('call_xyz');
+    });
+
+    test('tool call loop: stops after max rounds to prevent infinite loop', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        // Always return tool_calls — should stop at MAX_TOOL_ROUNDS (10)
+        let callCount = 0;
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                callCount++;
+                onChunk({
+                    delta: '',
+                    done: true,
+                    finishReason: 'tool_calls',
+                    toolCalls: [{
+                        id: `call_${callCount}`,
+                        type: 'function',
+                        function: { name: 'get_selection', arguments: '{}' },
+                    }],
+                });
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'loop test' });
+
+        // Give generous time for all rounds
+        await new Promise(r => setTimeout(r, 200));
+
+        // Should have stopped — MAX_TOOL_ROUNDS is 10, so 11 calls total (1 initial + 10 rounds)
+        expect(callCount).toBeLessThanOrEqual(11);
+
+        // streamEnd should have been posted (loop terminated)
+        const types = postMessage.mock.calls.map(([m]: [{ type: string }]) => m.type);
+        expect(types).toContain('streamEnd');
+    });
 });

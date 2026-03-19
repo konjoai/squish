@@ -5,7 +5,7 @@
  * Mocks Node http so we never open a real socket.
  */
 import * as http from 'http';
-import { SquishClient, ChatChunk } from '../src/squishClient';
+import { SquishClient, ChatChunk, ToolDefinition } from '../src/squishClient';
 
 jest.mock('http');
 
@@ -225,4 +225,176 @@ describe('SquishClient.streamChat()', () => {
             (err) => done(err),
         );
     });
+
+    // ── Tool calling ───────────────────────────────────────────────────────
+
+    test('includes tools array in POST body when provided', (done) => {
+        const sse = 'data: [DONE]\n';
+        const mockRes = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { setEncoding: jest.fn() },
+        );
+        let written = '';
+        const mockReq = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { end: jest.fn(), write: jest.fn((d: string) => { written += d; }) },
+        );
+        mockedHttp.request.mockImplementation((_opts: unknown, cb?: unknown) => {
+            if (typeof cb === 'function') {
+                setTimeout(() => {
+                    cb(mockRes as http.IncomingMessage);
+                    mockRes.emit('data', sse);
+                    mockRes.emit('end');
+                }, 0);
+            }
+            return mockReq as unknown as http.ClientRequest;
+        });
+
+        const tools: ToolDefinition[] = [{
+            type: 'function',
+            function: {
+                name: 'read_file',
+                description: 'Read a file',
+                parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+            },
+        }];
+
+        client.streamChat(
+            [{ role: 'user', content: 'read src/index.ts' }],
+            256, 0.5, 'qwen3:8b',
+            (c) => { if (c.done) {
+                const body = JSON.parse(written);
+                expect(body.tools).toBeDefined();
+                expect(body.tools).toHaveLength(1);
+                expect(body.tools[0].function.name).toBe('read_file');
+                expect(body.tool_choice).toBe('auto');
+                done();
+            }},
+            (err) => done(err),
+            tools,
+        );
+    });
+
+    test('omits tools from body when empty array provided', (done) => {
+        const sse = 'data: [DONE]\n';
+        const mockRes = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { setEncoding: jest.fn() },
+        );
+        let written = '';
+        const mockReq = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { end: jest.fn(), write: jest.fn((d: string) => { written += d; }) },
+        );
+        mockedHttp.request.mockImplementation((_opts: unknown, cb?: unknown) => {
+            if (typeof cb === 'function') {
+                setTimeout(() => {
+                    cb(mockRes as http.IncomingMessage);
+                    mockRes.emit('data', sse);
+                    mockRes.emit('end');
+                }, 0);
+            }
+            return mockReq as unknown as http.ClientRequest;
+        });
+
+        client.streamChat(
+            [{ role: 'user', content: 'hi' }],
+            128, 0.7, '7b',
+            (c) => { if (c.done) {
+                const body = JSON.parse(written);
+                expect(body.tools).toBeUndefined();
+                expect(body.tool_choice).toBeUndefined();
+                done();
+            }},
+            (err) => done(err),
+            [],
+        );
+    });
+
+    test('accumulates streamed tool_calls across SSE chunks and emits on finish', (done) => {
+        // Simulate a model that emits tool_calls spread across multiple SSE events
+        const sse = [
+            `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '' } }] }, finish_reason: null }] })}\n`,
+            `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"path":' } }] }, finish_reason: null }] })}\n`,
+            `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"src/index.ts"}' } }] }, finish_reason: 'tool_calls' }] })}\n`,
+            'data: [DONE]\n',
+        ].join('\n');
+        mockStreamResponse(sse);
+
+        client.streamChat(
+            [{ role: 'user', content: 'read the file' }],
+            128, 0.7, '7b',
+            (c) => { if (c.done) {
+                expect(c.finishReason).toBe('tool_calls');
+                expect(c.toolCalls).toBeDefined();
+                expect(c.toolCalls).toHaveLength(1);
+                const tc = c.toolCalls![0];
+                expect(tc.id).toBe('call_1');
+                expect(tc.function.name).toBe('read_file');
+                expect(tc.function.arguments).toBe('{"path":"src/index.ts"}');
+                done();
+            }},
+            (err) => done(err),
+        );
+    });
+
+    test('tool_calls is undefined when model produces only text', (done) => {
+        const sse = sseLines([
+            { choices: [{ delta: { content: 'Just text' }, finish_reason: 'stop' }] },
+        ]);
+        mockStreamResponse(sse);
+
+        client.streamChat(
+            [{ role: 'user', content: 'hi' }],
+            128, 0.7, '7b',
+            (c) => { if (c.done) {
+                expect(c.toolCalls).toBeUndefined();
+                done();
+            }},
+            (err) => done(err),
+        );
+    });
+
+    test('tool message role is accepted in messages array', (done) => {
+        const sse = 'data: [DONE]\n';
+        const mockRes = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { setEncoding: jest.fn() },
+        );
+        let written = '';
+        const mockReq = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { end: jest.fn(), write: jest.fn((d: string) => { written += d; }) },
+        );
+        mockedHttp.request.mockImplementation((_opts: unknown, cb?: unknown) => {
+            if (typeof cb === 'function') {
+                setTimeout(() => {
+                    cb(mockRes as http.IncomingMessage);
+                    mockRes.emit('data', sse);
+                    mockRes.emit('end');
+                }, 0);
+            }
+            return mockReq as unknown as http.ClientRequest;
+        });
+
+        client.streamChat(
+            [
+                { role: 'user', content: 'read src/index.ts' },
+                { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{"path":"src/index.ts"}' } }] },
+                { role: 'tool', content: 'file contents here', tool_call_id: 'call_1', name: 'read_file' },
+            ],
+            128, 0.7, '7b',
+            (c) => { if (c.done) {
+                const body = JSON.parse(written);
+                const msgs = body.messages;
+                expect(msgs[1].role).toBe('assistant');
+                expect(msgs[1].tool_calls).toBeDefined();
+                expect(msgs[2].role).toBe('tool');
+                expect(msgs[2].tool_call_id).toBe('call_1');
+                done();
+            }},
+            (err) => done(err),
+        );
+    });
 });
+
