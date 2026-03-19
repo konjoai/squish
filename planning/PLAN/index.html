@@ -2691,6 +2691,34 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#cli-revamp-tui-phase-2026-03-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ CLI Revamp (TUI Phase) — 2026-03-17
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ CLI Revamp (TUI Phase) — 2026-03-17">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -4896,6 +4924,34 @@
     <span class="md-ellipsis">
       
         Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-revamp-tui-phase-2026-03-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ CLI Revamp (TUI Phase) — 2026-03-17
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ CLI Revamp (TUI Phase) — 2026-03-17">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
       
     </span>
   </a>
@@ -9403,6 +9459,92 @@ Combined with AWQ alpha=0.1, this produces the best results seen so far.</p>
 <li>[ ] Profile MiLo compression bottleneck (SVD per tensor) — consider batching or approximating for 7B+</li>
 </ul>
 <hr />
+<h2 id="cli-revamp-tui-phase-2026-03-17">✅ CLI Revamp (TUI Phase) — 2026-03-17<a class="headerlink" href="#cli-revamp-tui-phase-2026-03-17" title="Permanent link">&para;</a></h2>
+<p>Theme: <strong>Discoverable CLI, rich terminal output, persistent config</strong></p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Status</th>
+<th>File(s) changed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>squish/ui.py</code> — Rich TUI helper module</td>
+<td>✅ done</td>
+<td><code>squish/ui.py</code> (new)</td>
+</tr>
+<tr>
+<td><code>rich&gt;=13.0</code> dependency</td>
+<td>✅ done</td>
+<td><code>pyproject.toml</code>, <code>requirements.txt</code></td>
+</tr>
+<tr>
+<td><code>squish/config.py</code> — <code>~/.squish/config.json</code> config system</td>
+<td>✅ done</td>
+<td><code>squish/config.py</code> (new)</td>
+</tr>
+<tr>
+<td>Rename <code>it</code> → <code>compress</code> (with <code>it</code> hidden alias)</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code></td>
+</tr>
+<tr>
+<td>Rename <code>convert-model</code> → <code>quantize</code> (with <code>convert-model</code> hidden alias)</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code></td>
+</tr>
+<tr>
+<td>Add <code>train</code> alias for <code>train-adapter</code></td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code></td>
+</tr>
+<tr>
+<td>Add <code>merge</code> alias for <code>merge-model</code></td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code></td>
+</tr>
+<tr>
+<td><code>squish</code> no-args → welcome banner + RAM-aware recommendation</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code> — <code>cmd_welcome()</code></td>
+</tr>
+<tr>
+<td><code>squish config show/get/set</code> subcommand</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code> — <code>cmd_config()</code></td>
+</tr>
+<tr>
+<td><code>squish models</code> → Rich table with MoE badges and status</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code> — <code>cmd_models()</code></td>
+</tr>
+<tr>
+<td><code>tests/test_ui_unit.py</code> — 30+ tests for <code>squish/ui.py</code></td>
+<td>✅ done</td>
+<td><code>tests/test_ui_unit.py</code> (new)</td>
+</tr>
+<tr>
+<td><code>tests/test_config_unit.py</code> — 35+ tests for <code>squish/config.py</code></td>
+<td>✅ done</td>
+<td><code>tests/test_config_unit.py</code> (new)</td>
+</tr>
+<tr>
+<td>CLI unit tests updated for new command names</td>
+<td>✅ done</td>
+<td><code>tests/test_cli_unit.py</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Total tests: 7,552 passed, 33 skipped (added 65 new tests, 0 regressions)</li>
+<li><code>squish compress</code> is now the canonical command; <code>squish it</code> still works as a legacy alias</li>
+<li><code>squish quantize</code> replaces <code>squish convert-model</code>; <code>squish train</code> replaces <code>squish train-adapter</code></li>
+<li>Running <code>squish</code> with no arguments shows a welcome banner with RAM-aware model recommendation</li>
+<li><code>squish config set default_model qwen3:8b</code> persists to <code>~/.squish/config.json</code></li>
+</ul>
 
 
 
