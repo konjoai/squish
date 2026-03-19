@@ -461,3 +461,253 @@ describe('_findSquishBin() — tier 4: global install paths', () => {
         expect(mockCp.spawn).not.toHaveBeenCalled();
     });
 });
+
+// ── Windows cross-platform tests ──────────────────────────────────────────────
+// Note: path.join() uses POSIX separators on macOS/Linux regardless of platform
+// mock, so these tests use forward-slash paths that are consistent with what
+// path.join() produces at runtime on this machine.
+
+describe('_findSquishBin() — Windows tier 1: venvPath Scripts layout', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        stubFsDefault();
+        mockCp.execSync.mockImplementation(() => { throw new Error('not found'); });
+        mockOs.platform.mockReturnValue('win32');
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([]);
+    });
+
+    test('resolves Scripts/squish.exe inside venvPath on Windows', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const venvDir = '/fake/win/venv';
+        // path.join(venvDir, 'Scripts', 'squish.exe') on POSIX → /fake/win/venv/Scripts/squish.exe
+        const expectedBin = `${venvDir}/Scripts/squish.exe`;
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', venvDir);
+        mockFs.existsSync.mockImplementation((p) => p === venvDir || p === expectedBin);
+        mockFs.statSync.mockImplementation((p) => ({
+            isDirectory: () => p === venvDir,
+        } as fs.Stats));
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('resolves Scripts/squish.cmd inside venvPath on Windows (.exe absent)', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const venvDir = '/fake/win/venv';
+        const exeBin  = `${venvDir}/Scripts/squish.exe`;
+        const cmdBin  = `${venvDir}/Scripts/squish.cmd`;
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', venvDir);
+        // .exe does not exist, .cmd does
+        mockFs.existsSync.mockImplementation((p) => p === venvDir || p === cmdBin);
+        mockFs.statSync.mockImplementation((p) => ({
+            isDirectory: () => p === venvDir,
+        } as fs.Stats));
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            cmdBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+        // .exe was checked first, then .cmd
+        expect(mockFs.existsSync).toHaveBeenCalledWith(exeBin);
+        expect(mockFs.existsSync).toHaveBeenCalledWith(cmdBin);
+    });
+});
+
+describe('_findSquishBin() — Windows tier 2: PATH via where', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        stubFsDefault();
+        mockOs.platform.mockReturnValue('win32');
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', '');
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([]);
+    });
+
+    test('uses "where squish.exe" instead of "which" on Windows', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        mockCp.execSync.mockImplementation((cmd: string) => {
+            if (cmd === 'where squish.exe') { return Buffer.from('C:\\Python312\\Scripts\\squish.exe\n'); }
+            throw new Error('not found');
+        });
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.execSync).toHaveBeenCalledWith('where squish.exe', expect.anything());
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            'squish.exe',
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('falls back to squish.cmd when squish.exe not on PATH', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        mockCp.execSync.mockImplementation((cmd: string) => {
+            if (cmd === 'where squish.cmd') { return Buffer.from('C:\\Scripts\\squish.cmd\n'); }
+            throw new Error('not found');
+        });
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.execSync).toHaveBeenCalledWith('where squish.exe', expect.anything());
+        expect(mockCp.execSync).toHaveBeenCalledWith('where squish.cmd', expect.anything());
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            'squish.cmd',
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+});
+
+describe('_findSquishBin() — Windows tier 3: workspace venv Scripts layout', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        stubFsDefault();
+        mockCp.execSync.mockImplementation(() => { throw new Error('not found'); });
+        mockOs.platform.mockReturnValue('win32');
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', '');
+    });
+
+    test('finds .venv/Scripts/squish.exe in workspace on Windows', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const wsRoot = '/ws/myproject';
+        const expectedBin = `${wsRoot}/.venv/Scripts/squish.exe`;
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([
+            { uri: { fsPath: wsRoot } },
+        ]);
+        mockFs.existsSync.mockImplementation((p) => p === expectedBin);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('finds venv/Scripts/squish.cmd in workspace (.exe absent)', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const wsRoot = '/ws/myproject';
+        const expectedBin = `${wsRoot}/venv/Scripts/squish.cmd`;
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([
+            { uri: { fsPath: wsRoot } },
+        ]);
+        mockFs.existsSync.mockImplementation((p) => p === expectedBin);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+});
+
+describe('_findSquishBin() — Windows tier 4: global install paths', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        stubFsDefault();
+        mockCp.execSync.mockImplementation(() => { throw new Error('not found'); });
+        mockOs.platform.mockReturnValue('win32');
+        mockOs.homedir.mockReturnValue('/home/winuser');
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', '');
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([]);
+    });
+
+    test('finds pip --user install at AppData/Roaming/Python/Scripts/squish.exe', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const expectedBin = '/home/winuser/AppData/Roaming/Python/Scripts/squish.exe';
+        mockFs.existsSync.mockImplementation((p) => p === expectedBin);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+
+    test('finds pipx install at AppData/Local/pipx/venvs/squish/Scripts/squish.exe', async () => {
+        stubPortClosed();
+        makeSpawnMock();
+        const expectedBin = '/home/winuser/AppData/Local/pipx/venvs/squish/Scripts/squish.exe';
+        mockFs.existsSync.mockImplementation((p) => p === expectedBin);
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expectedBin,
+            expect.arrayContaining(['run', '7b']),
+            expect.anything(),
+        );
+    });
+});
+
+describe('ServerManager.stop() — Windows', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        stubFsDefault();
+        mockOs.platform.mockReturnValue('win32');
+        (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', '');
+        (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([]);
+    });
+
+    test('calls kill() without signal on Windows', async () => {
+        stubPortClosed();
+        mockCp.execSync.mockImplementation((cmd: string) => {
+            if (cmd === 'where squish.exe') { return Buffer.from('squish.exe\n'); }
+            throw new Error('not found');
+        });
+        const { proc } = makeSpawnMock();
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+        await mgr.stop();
+
+        expect(proc.kill).toHaveBeenCalledWith();
+        expect(proc.kill).not.toHaveBeenCalledWith('SIGTERM');
+    });
+
+    test('spawn includes shell: true on Windows', async () => {
+        stubPortClosed();
+        mockCp.execSync.mockImplementation((cmd: string) => {
+            if (cmd === 'where squish.exe') { return Buffer.from('squish.exe\n'); }
+            throw new Error('not found');
+        });
+        makeSpawnMock();
+
+        const mgr = new ServerManager(makeContext());
+        await mgr.start('7b');
+
+        expect(mockCp.spawn).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            expect.objectContaining({ shell: true }),
+        );
+    });
+});
