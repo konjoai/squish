@@ -369,6 +369,11 @@ def quantize_tensor(
         # group_size=32 (Q4_K_M standard) gives more per-group scale resolution
         # than 64 at ~3% storage overhead; _pick_int4_group_size() handles
         # divisibility for oddly-shaped tensors.
+        # Guard: nibble-packing requires an even number of columns.
+        # Tensors with odd n_cols (e.g. some vision-tower projection heads) are
+        # stored as FP16 passthrough rather than crashing the whole compression.
+        if flat.shape[1] % 2 != 0:
+            return {"__pt": arr_f32, "__shape": shape_arr}
         gs = _pick_int4_group_size(flat.shape[1], int4_group_size or 32)
         packed, scales4 = quantize_int4(flat, group_size=gs)
         out = {

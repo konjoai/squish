@@ -343,28 +343,31 @@ def compress_int3(model_dir: Path, output_dir: Path) -> CompressionResult:
 
         for shard_path in shard_files:
             try:
-                from safetensors import safe_open
-                with safe_open(str(shard_path), framework="numpy") as f:
-                    output_tensors: dict[str, Any] = {}
-                    for key in f.keys():
-                        arr = f.get_tensor(key)
-                        if arr.ndim == 2 and "weight" in key and arr.shape[0] >= 16:
-                            arr_f32 = arr.astype(np.float32)
-                            result = quantizer.quantize(arr_f32)
-                            # Store as packed INT3 bytes (3/8 bytes per param)
-                            total_params += arr_f32.size
-                            total_compressed_bytes += result.q_packed.nbytes
-                            # Save q_packed + scales + zeros + compensator
-                            stem = key.replace(".", "_")
-                            np.save(output_dir / f"{stem}__q3.npy",     result.q_packed)
-                            np.save(output_dir / f"{stem}__sc.npy",     result.scales)
-                            np.save(output_dir / f"{stem}__zp.npy",     result.zeros)
-                            np.save(output_dir / f"{stem}__lrA.npy",    result.compensator.A)
-                            np.save(output_dir / f"{stem}__lrB.npy",    result.compensator.B)
-                        else:
-                            # passthrough: store as BF16
-                            np.save(output_dir / f"{key.replace('.', '_')}__pt.npy", arr)
-                            total_compressed_bytes += arr.nbytes
+                # Use safetensors.torch backend so bfloat16 tensors are handled
+                # correctly (the numpy backend raises "not understood" for bf16).
+                # Then convert to float32 numpy for the quantizer.
+                from safetensors.torch import load_file as st_load_torch_file
+                shard_data = st_load_torch_file(str(shard_path))
+                for key, tensor in shard_data.items():
+                    arr = tensor.float().numpy()           # always float32 numpy
+                    if arr.ndim == 2 and "weight" in key and arr.shape[0] >= 16:
+                        arr_f32 = arr
+                        q_packed, scales, zeros, comp = quantizer.quantize(arr_f32)
+                        # Store as packed INT3 bytes (3/8 bytes per param)
+                        total_params += arr_f32.size
+                        total_compressed_bytes += q_packed.nbytes
+                        # Save q_packed + scales + zeros + low-rank compensator
+                        stem = key.replace(".", "_")
+                        np.save(output_dir / f"{stem}__q3.npy",  q_packed)
+                        np.save(output_dir / f"{stem}__sc.npy",  scales)
+                        np.save(output_dir / f"{stem}__zp.npy",  zeros)
+                        np.save(output_dir / f"{stem}__lrA.npy", comp.a)
+                        np.save(output_dir / f"{stem}__lrB.npy", comp.b)
+                    else:
+                        # passthrough: store as float16
+                        np.save(output_dir / f"{key.replace('.', '_')}__pt.npy",
+                                arr.astype(np.float16))
+                        total_compressed_bytes += arr.astype(np.float16).nbytes
             except Exception as e:
                 return CompressionResult(
                     bits=3, method="milo_int3", bpw_approx=3.75,
@@ -429,28 +432,32 @@ def compress_int2(model_dir: Path, output_dir: Path) -> CompressionResult:
 
         for shard_path in shard_files:
             try:
-                from safetensors import safe_open
-                with safe_open(str(shard_path), framework="numpy") as f:
-                    for key in f.keys():
-                        arr = f.get_tensor(key)
-                        if arr.ndim == 2 and "weight" in key and arr.shape[0] >= 16:
-                            arr_f32 = arr.astype(np.float32)
-                            quantizer = AQLMQuantizer(config)
-                            layer = quantizer.calibrate(arr_f32)
-                            total_params += arr_f32.size
-                            # AQLM serialization: indices (uint16) + codebooks
-                            idx_bytes = layer.indices.nbytes
-                            cb_bytes = sum(cb.nbytes for cb in layer.codebooks)
-                            total_compressed_bytes += idx_bytes + cb_bytes
-                            stem = key.replace(".", "_")
-                            np.save(output_dir / f"{stem}__aqlm_idx.npy", layer.indices)
-                            for i, cb in enumerate(layer.codebooks):
-                                np.save(output_dir / f"{stem}__aqlm_cb{i}.npy", cb)
-                            np.save(output_dir / f"{stem}__aqlm_scale.npy",
-                                    np.array([layer.scale], dtype=np.float32))
-                        else:
-                            np.save(output_dir / f"{key.replace('.', '_')}__pt.npy", arr)
-                            total_compressed_bytes += arr.nbytes
+                # Use safetensors.torch to handle bfloat16 correctly
+                from safetensors.torch import load_file as st_load_torch_file
+                shard_data = st_load_torch_file(str(shard_path))
+                for key, tensor in shard_data.items():
+                    arr = tensor.float().numpy()
+                    if arr.ndim == 2 and "weight" in key and arr.shape[0] >= 16:
+                        arr_f32 = arr
+                        quantizer = AQLMQuantizer(config)
+                        layer = quantizer.calibrate(arr_f32)
+                        total_params += arr_f32.size
+                        # AQLM serialization: indices (uint8) + codebook vectors
+                        # layer.codebooks is a list of AQLMCodebook objects;
+                        # the numpy array is at AQLMCodebook.vectors.
+                        idx_bytes = layer.indices.nbytes
+                        cb_bytes = sum(cb.vectors.nbytes for cb in layer.codebooks)
+                        total_compressed_bytes += idx_bytes + cb_bytes
+                        stem = key.replace(".", "_")
+                        np.save(output_dir / f"{stem}__aqlm_idx.npy", layer.indices)
+                        for i, cb in enumerate(layer.codebooks):
+                            np.save(output_dir / f"{stem}__aqlm_cb{i}.npy", cb.vectors)
+                        np.save(output_dir / f"{stem}__aqlm_scale.npy",
+                                np.array([layer.scale], dtype=np.float32))
+                    else:
+                        pt_arr = arr.astype(np.float16)
+                        np.save(output_dir / f"{key.replace('.', '_')}__pt.npy", pt_arr)
+                        total_compressed_bytes += pt_arr.nbytes
             except Exception as e:
                 return CompressionResult(
                     bits=2, method="aqlm_int2", bpw_approx=2.0,
@@ -477,6 +484,97 @@ def compress_int2(model_dir: Path, output_dir: Path) -> CompressionResult:
         compressed_gb=compressed_gb,
         size_ratio=compressed_gb / original_gb if original_gb > 0 else 0.0,
     )
+
+
+# ── Memory helpers ────────────────────────────────────────────────────────────
+
+# On a unified-memory Apple Silicon Mac, leave at least this much headroom
+# (OS + system processes) before deciding the full BF16 model fits.
+_MEM_HEADROOM_GB = 4.5
+
+def _available_ram_gb() -> float:
+    """Return total system RAM in GB (coarse estimate)."""
+    import resource
+    try:
+        import psutil
+        return psutil.virtual_memory().total / 1e9
+    except ImportError:
+        pass
+    # Fallback: sysctl on macOS
+    try:
+        result = subprocess.run(
+            ["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            return int(result.stdout.strip()) / 1e9
+    except Exception:
+        pass
+    return 16.0  # conservative default
+
+
+def _ensure_mlx_q4_model(model_dir: Path, workdir: Path) -> Path:
+    """
+    Ensure an MLX-format INT4 quantized copy of *model_dir* exists at
+    *workdir/mlx_q4*. Creates it via `mlx_lm convert` CLI if absent.
+    Returns the path to the quantized MLX model directory, or *model_dir*
+    if conversion fails.
+    """
+    q4_path = workdir / "mlx_q4"
+    if q4_path.exists() and any(q4_path.glob("*.safetensors")):
+        return q4_path
+
+    # Remove partial/empty directory so mlx_lm convert doesn't refuse to write
+    if q4_path.exists():
+        shutil.rmtree(q4_path, ignore_errors=True)
+    # Do NOT pre-create q4_path — mlx_lm convert requires the destination
+    # to not exist yet.
+
+    print(f"  {C}→ Converting to MLX INT4 (model too large for BF16 inference on this machine)…{NC}")
+
+    cmd = [
+        _python(), "-m", "mlx_lm", "convert",
+        "--hf-path",    str(model_dir),
+        "--mlx-path",   str(q4_path),
+        "--quantize",
+        "--q-bits",     "4",
+        "--q-group-size", "64",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=False,
+            cwd=str(_REPO_ROOT),
+            timeout=3600,   # 1 hour max for very large models
+        )
+        if proc.returncode != 0:
+            print(f"  {Y}⚠ mlx_lm convert returned exit code {proc.returncode} — using BF16 (may OOM){NC}")
+            return model_dir
+    except subprocess.TimeoutExpired:
+        print(f"  {Y}⚠ mlx_lm convert timed out — using BF16 (may OOM){NC}")
+        return model_dir
+    except FileNotFoundError:
+        print(f"  {Y}⚠ mlx_lm CLI not found — using BF16 (may OOM){NC}")
+        return model_dir
+
+    if not any(q4_path.glob("*.safetensors")):
+        print(f"  {Y}⚠ mlx_lm convert produced no safetensors — using BF16{NC}")
+        return model_dir
+
+    print(f"  {G}✓{NC} MLX INT4 model ready: {q4_path}")
+    return q4_path
+
+
+def _inference_model_path(model_dir: Path, workdir: Path) -> Path:
+    """
+    Return a model path suitable for mlx_lm inference on the current machine.
+    For models whose BF16 size exceeds available RAM minus headroom, returns an
+    MLX INT4 quantized copy so Metal does not run out of memory.
+    """
+    model_gb = _dir_gb(model_dir)
+    available = _available_ram_gb()
+    if model_gb > (available - _MEM_HEADROOM_GB):
+        return _ensure_mlx_q4_model(model_dir, workdir)
+    return model_dir
 
 
 # ── Stage T1: throughput benchmark ────────────────────────────────────────────
@@ -729,12 +827,12 @@ def run_model_benchmark(
                     f"{comp.compressed_gb:.2f} GB",
                     f"{comp.size_ratio:.2%} of BF16 | {comp.compress_s:.1f}s | {comp.bpw_approx:.2f} bpw")
 
-            # For eval stages: use original BF16 model with mlx_lm (mlx_lm
-            # does its own INT4 quantization internally for speed; a full
-            # compressed-model eval path requires squish's custom loader).
-            # When squish's compressed_loader is wired into mlx_lm this can be
-            # replaced with compressed_path.  Marked as TODO below.
-            eval_model_path = model_dir  # TODO: use compressed path when loader is wired
+            # For eval stages: use an MLX-format model that fits in available RAM.
+            # On 16 GB machines, 7B+ BF16 models exceed Metal memory; we convert
+            # to MLX INT4 first so mlx_lm can load without OOM.
+            # When squish's compressed_loader is wired into mlx_lm this logic can
+            # be replaced with the squish npy-dir compressed path.
+            eval_model_path = _inference_model_path(model_dir, workdir)
 
             # ── T1: throughput ────────────────────────────────────────────────
             if eval_tps:

@@ -46,6 +46,7 @@ _BF16_REFERENCE: dict[str, dict[str, Any]] = {
     "Mistral-7B-v0.3":         {"tps_bf16": None, "ppl_bf16": None, "arc_easy_bf16": None,  "hellaswag_bf16": None,  "bf16_gb": 14.5},
     "Phi-4":                   {"tps_bf16": None, "ppl_bf16": None, "arc_easy_bf16": None,  "hellaswag_bf16": None,  "bf16_gb": 29.4},
     "Gemma-3-4B":              {"tps_bf16": None, "ppl_bf16": None, "arc_easy_bf16": None,  "hellaswag_bf16": None,  "bf16_gb": 8.6},
+    "gemma-3-4b-it":           {"tps_bf16": None, "ppl_bf16": None, "arc_easy_bf16": None,  "hellaswag_bf16": None,  "bf16_gb": 10.0},
     "DeepSeek-R1-Distill-7B":  {"tps_bf16": None, "ppl_bf16": None, "arc_easy_bf16": None,  "hellaswag_bf16": None,  "bf16_gb": 15.2},
 }
 
