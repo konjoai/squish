@@ -365,6 +365,42 @@ class _StubBackend:
 
 # ── Module-level singleton ────────────────────────────────────────────────────
 
+def create_backend(
+    device: str | None = None,
+) -> "_AppleBackend | _TorchBackend | _StubBackend":
+    """Factory that returns the best available backend for this machine.
+
+    Parameters
+    ----------
+    device:
+        Optional override: ``"cuda"``, ``"cpu"``, or ``None`` (auto-detect).
+        On macOS with MLX the Apple backend is always returned regardless of
+        *device* because MLX controls Metal directly.
+
+    Returns
+    -------
+    One of :class:`_AppleBackend`, :class:`_TorchBackend`, or
+    :class:`_StubBackend` (last resort when neither MLX nor torch is installed).
+    """
+    if _IS_APPLE:
+        return _AppleBackend()
+    try:
+        tb = _TorchBackend()
+        if device == "cpu":
+            import torch
+            tb._device = torch.device("cpu")
+            tb.device  = "cpu"
+        elif device == "cuda":
+            import torch
+            if not torch.cuda.is_available():
+                raise RuntimeError("cuda requested but torch.cuda.is_available() is False")
+            tb._device = torch.device("cuda")
+            tb.device  = "cuda"
+        return tb
+    except ImportError:
+        return _StubBackend()
+
+
 if _IS_APPLE:
     BE = _AppleBackend()
 else:  # pragma: no cover

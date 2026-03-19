@@ -68,9 +68,18 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# ── Import MLX early so we fail loudly if it's missing ───────────────────────
-import mlx.core as mx  # noqa: E402
-import mlx.nn as mx_nn  # noqa: E402
+# ── Platform-conditional MLX import ──────────────────────────────────────────
+# SquishCompressedLM is Apple-only.  On Linux, callers should use the torch
+# equivalent in squish._eval_torch or the squish.eval platform router.
+# Guard here so `import squish.squish_lm_eval` does not crash on Linux.
+import sys as _sys
+_IS_APPLE = _sys.platform == "darwin"
+if _IS_APPLE:
+    import mlx.core as mx  # noqa: E402
+    import mlx.nn as mx_nn  # noqa: E402
+else:
+    mx = None     # type: ignore[assignment]
+    mx_nn = None  # type: ignore[assignment]
 
 # ─────────────────────────────────────────────────────────────────────────────
 

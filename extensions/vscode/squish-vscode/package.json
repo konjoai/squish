@@ -119,7 +119,10 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
-    "test": "jest --testPathPattern=__tests__"
+    "test": "jest --testPathPattern=__tests__",
+    "package": "npx vsce package --no-dependencies",
+    "install:ext": "code --install-extension squish-vscode-0.1.0.vsix --force",
+    "deploy": "npm run package && npm run install:ext"
   },
   "jest": {
     "preset": "ts-jest",

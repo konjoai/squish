@@ -641,25 +641,67 @@ def _apply_fast_gelu(model_dir: str) -> None:  # pragma: no cover
 
 
 def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> None:  # pragma: no cover
-    """Load the Squish compressed model into global state."""
-    try:
-        from .quant.compressed_loader import load_compressed_model as _load_compressed_model
-    except ImportError:
-        # server.py launched directly (not as package) — use absolute import
-        from squish.quant.compressed_loader import load_compressed_model as _load_compressed_model
-    # Keep backward-compat shim
-    load_from_npy_dir = _load_compressed_model
+    """Load the Squish compressed model into global state.
+
+    On Apple Silicon (macOS + MLX) the existing MLX-backed compressed_loader
+    is used.  On Linux / CUDA / CPU the new PyTorch compressed loader is used
+    when the compressed_dir contains a npy-dir (``tensors/`` sub-directory),
+    otherwise ``transformers.AutoModelForCausalLM.from_pretrained`` is called
+    directly for uncompressed BF16 models.
+    """
+    import sys as _sys
 
     t0 = time.perf_counter()
     if verbose:
         print(f"  {_C.L}⟳{_C.R}  {_C.DIM}Loading model:{_C.R}  {_C.W}{compressed_dir}{_C.R}")
 
-    model, tokenizer, stats = load_from_npy_dir(
-        model_dir  = model_dir,
-        npz_path   = compressed_dir,
-        verbose    = verbose,
-        return_stats = True,
-    )
+    if _sys.platform == "darwin":
+        # ── Apple Silicon path: MLX compressed loader ─────────────────────
+        try:
+            from .quant.compressed_loader import load_compressed_model as _load_compressed_model
+        except ImportError:
+            from squish.quant.compressed_loader import load_compressed_model as _load_compressed_model
+
+        model, tokenizer, stats = _load_compressed_model(
+            model_dir    = model_dir,
+            npz_path     = compressed_dir,
+            verbose      = verbose,
+            return_stats = True,
+        )
+        loader_tag = stats.get("loader", "squish")
+    else:
+        # ── Linux / CUDA / CPU path ────────────────────────────────────────
+        compressed_path = Path(compressed_dir)
+        _is_npy_dir = (
+            compressed_path.is_dir()
+            and (
+                (compressed_path / "tensors").is_dir()
+                or any(compressed_path.glob("*__q4a.npy"))
+                or any(compressed_path.glob("*__pt.npy"))
+            )
+        )
+
+        if _is_npy_dir:
+            # Load squish npy-dir via the torch loader
+            try:
+                from .compressed_loader_torch import load_compressed_model_torch
+            except ImportError:
+                from squish.compressed_loader_torch import load_compressed_model_torch
+
+            from squish.backend import BE
+            model, tokenizer = load_compressed_model_torch(
+                npy_dir   = compressed_dir,
+                model_dir = model_dir,
+                device    = BE.device,
+                verbose   = verbose,
+            )
+            loader_tag = "squish-torch"
+        else:
+            # Fall back: load BF16 / FP16 model directly via transformers
+            from squish.backend import BE
+            model, tokenizer = BE.load_model(model_dir)
+            loader_tag = "transformers"
+
     elapsed = time.perf_counter() - t0
 
     _state.model      = model
@@ -668,9 +710,9 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
     _state.loaded_at  = time.time()
 
     _state.load_time_s = elapsed
-    _state.loader_tag  = stats.get("loader", "squish")
+    _state.loader_tag  = loader_tag
     if verbose:
-        _ok(f"Model ready  ({elapsed:.2f}s  loader={_state.loader_tag})")
+        _ok(f"Model ready  ({elapsed:.2f}s  loader={loader_tag})")
 
     _cap_metal_cache(verbose=verbose)
 

@@ -399,6 +399,9 @@ def load_mlx_weights_shard(shard_path: Path) -> dict:
     Load a single safetensors shard as float32 numpy arrays.
     Uses safetensors.numpy directly (CPU only — no Metal, no MLX).
     Avoids the Metal GPU timeout that occurs when loading 7B+ models.
+
+    Fallback: on macOS uses mlx on CPU to handle bfloat16/other dtypes that
+    safetensors.numpy cannot parse; on Linux uses safetensors.torch instead.
     """
     try:
         from safetensors.numpy import load_file as st_load_numpy
@@ -406,24 +409,35 @@ def load_mlx_weights_shard(shard_path: Path) -> dict:
         # safetensors.numpy returns {name: np.ndarray} — may be float16 or bfloat16
         out = {}
         for name, arr in raw.items():
-            # Convert to float32 for Vectro quantization
+            # Convert to float32 for quantization
             out[name] = arr.astype(np.float32)
         return out
     except Exception:
-        # Fallback: use mlx on CPU (not Metal) to handle bfloat16 and other dtypes
-        # that safetensors.numpy cannot parse.  Forcing mx.cpu avoids the
-        # Metal GPU command-buffer timeout that occurs on large shards.
-        import mlx.core as mx
-        _prev_device = mx.default_device()
-        mx.set_default_device(mx.cpu)  # type: ignore[arg-type]
-        try:
-            shard_weights = mx.load(str(shard_path))
+        if sys.platform == "darwin":
+            # macOS fallback: use mlx on CPU to handle bfloat16 and other dtypes
+            # that safetensors.numpy cannot parse.  Forcing mx.cpu avoids the
+            # Metal GPU command-buffer timeout that occurs on large shards.
+            import mlx.core as mx
+            _prev_device = mx.default_device()
+            mx.set_default_device(mx.cpu)  # type: ignore[arg-type]
+            try:
+                shard_weights = mx.load(str(shard_path))
+                return {
+                    name: np.array(arr.astype(mx.float32))
+                    for name, arr in shard_weights.items()  # type: ignore[union-attr]
+                }
+            finally:
+                mx.set_default_device(_prev_device)
+        else:
+            # Linux fallback: use safetensors.torch which handles bfloat16 natively.
+            # torch is available in the [linux] extras; convert to float32 numpy.
+            import torch
+            from safetensors.torch import load_file as st_load_torch
+            raw_torch = st_load_torch(str(shard_path))
             return {
-                name: np.array(arr.astype(mx.float32))
-                for name, arr in shard_weights.items()  # type: ignore[union-attr]
+                name: t.to(torch.float32).numpy()
+                for name, t in raw_torch.items()
             }
-        finally:
-            mx.set_default_device(_prev_device)
 
 
 def load_mlx_weights(model_dir: Path) -> dict:

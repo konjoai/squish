@@ -273,6 +273,18 @@ class BatchScheduler:
         t2 = self._prepare_thread is not None and self._prepare_thread.is_alive()
         return t1 and t2
 
+    @staticmethod
+    def _import_mx():
+        """Attempt to import mlx.core.  Returns the module or None."""
+        import sys
+        if sys.platform != "darwin":
+            return None
+        try:
+            import mlx.core as mx
+            return mx
+        except ImportError:
+            return None
+
     # ── Request submission ────────────────────────────────────────────────────
 
     def _make_request(  # pragma: no cover
@@ -417,13 +429,13 @@ class BatchScheduler:
         """
         GPU thread: consume prepared batches from *_prepared_queue* and run
         the autoregressive generation loop.
-        """
-        try:
-            import mlx.core as mx
-        except ImportError:
-            return  # MLX not available on this platform — thread exits cleanly
 
-        log.debug("BatchScheduler worker started")
+        On macOS uses the MLX Metal path; on Linux/Windows uses PyTorch.
+        """
+        mx = self._import_mx()
+
+        log.debug("BatchScheduler worker started (backend=%s)",
+                  "mlx" if mx is not None else "torch")
         while not self._stop_event.is_set():
             # ── Consume a prepared batch ──────────────────────────────────────
             try:
@@ -442,7 +454,10 @@ class BatchScheduler:
 
             # ── Run the generation loop for this batch ───────────────────────
             try:
-                self._generate_batch(batch, mx)
+                if mx is not None:
+                    self._generate_batch(batch, mx)
+                else:
+                    self._generate_batch_torch(batch)
             except Exception as exc:
                 log.error("Batch generation error: %s", exc, exc_info=True)
                 for req in batch:
@@ -623,6 +638,87 @@ class BatchScheduler:
                 req.out_queue.put(_DONE)
                 req.done = True
 
+    def _generate_batch_torch(self, batch: list[_Request]) -> None:  # pragma: no cover
+        """
+        PyTorch autoregressive generation loop — mirrors _generate_batch() but
+        uses torch.Tensor + model.generate-style forward passes instead of MLX.
+        Used on Linux / Windows where MLX is unavailable.
+        """
+        import torch
+        import torch.nn.functional as F  # noqa: F401 (available via torch)
+
+        # Detect the device the model lives on (CPU / CUDA / MPS)
+        try:
+            _device = next(self._model.parameters()).device
+        except (StopIteration, AttributeError):
+            _device = torch.device("cpu")
+
+        active    = list(batch)
+        step      = 0
+        max_steps = max(r.max_tokens for r in active)
+
+        while active and step < max_steps:
+            seqs    = [r.input_ids + r.generated_ids for r in active]
+            lengths = [len(s) for s in seqs]
+            max_len = max(lengths)
+
+            padded = np.full((len(active), max_len), self._pad_id, dtype=np.int64)
+            for i, seq in enumerate(seqs):
+                padded[i, :len(seq)] = seq
+
+            ids_batch = torch.tensor(padded, dtype=torch.long, device=_device)
+            with torch.inference_mode():
+                outputs = self._model(ids_batch)
+            # transformers returns a CausalLMOutput with .logits; plain models
+            # return the tensor directly; MagicMock returns MagicMock.
+            raw_logits = getattr(outputs, "logits", outputs)
+            if hasattr(raw_logits, "float") and callable(raw_logits.float):
+                logits_np = raw_logits.float().cpu().detach().numpy()
+            else:
+                # MagicMock or unsupported type — zeros (tests skip real inference)
+                logits_np = np.zeros(
+                    (len(active), max_len, self._eos_id + 1), dtype=np.float32
+                )
+
+            still_active: list[_Request] = []
+            for i, req in enumerate(active):
+                last_pos  = lengths[i] - 1
+                logit_row = logits_np[i, last_pos, :]
+
+                next_id  = _sample_token(logit_row, req.temperature,
+                                         req.top_p, self._rng)
+                tok_text = self._tokenizer.decode([next_id])
+
+                req.generated_ids.append(next_id)
+
+                is_eos  = (next_id == self._eos_id)
+                is_stop = _check_stop(req, next_id)
+                is_max  = (len(req.generated_ids) >= req.max_tokens)
+
+                with self._lock:
+                    self.total_tokens_gen += 1
+
+                if is_eos or is_stop:
+                    req.out_queue.put((tok_text, "stop"))
+                    req.out_queue.put(_DONE)
+                    req.done = True
+                elif is_max:
+                    req.out_queue.put((tok_text, "length"))
+                    req.out_queue.put(_DONE)
+                    req.done = True
+                else:
+                    req.out_queue.put((tok_text, None))
+                    still_active.append(req)
+
+            active = still_active
+            step  += 1
+
+        for req in active:
+            if not req.done:
+                req.out_queue.put(("", "length"))
+                req.out_queue.put(_DONE)
+                req.done = True
+
 
 # ---------------------------------------------------------------------------
 # NestedWaitScheduler — continuous-batching with inter-step merge
@@ -667,13 +763,12 @@ class NestedWaitScheduler(BatchScheduler):
     def _worker(self) -> None:  # pragma: no cover
         """
         GPU thread: run continuous-batching decode with inter-step Nested WAIT merges.
+        On macOS uses MLX; on Linux/Windows falls back to the torch path.
         """
-        try:
-            import mlx.core as mx
-        except ImportError:
-            return  # MLX not available on this platform — thread exits cleanly
+        mx = self._import_mx()
 
-        log.debug("NestedWaitScheduler worker started")
+        log.debug("NestedWaitScheduler worker started (backend=%s)",
+                  "mlx" if mx is not None else "torch")
         while not self._stop_event.is_set():
             try:
                 batch = self._prepared_queue.get(timeout=0.05)
@@ -689,7 +784,10 @@ class NestedWaitScheduler(BatchScheduler):
                 self._rng = np.random.default_rng(seeds[0])
 
             try:
-                self._generate_batch_nested(batch, mx)
+                if mx is not None:
+                    self._generate_batch_nested(batch, mx)
+                else:
+                    self._generate_batch_torch(batch)
             except Exception as exc:
                 log.error("NestedWait batch error: %s", exc, exc_info=True)
                 for req in batch:

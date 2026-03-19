@@ -569,3 +569,66 @@ class TestStubBackend:
         stub = self._make_stub()
         with pytest.raises(RuntimeError, match="no compute backend"):
             stub.load_model("/fake/path")
+
+
+# ---------------------------------------------------------------------------
+# create_backend factory
+# ---------------------------------------------------------------------------
+
+
+class TestCreateBackend:
+    """Tests for the create_backend() factory function."""
+
+    @mlx_only
+    def test_returns_apple_backend_on_macos(self):
+        """On macOS with MLX, create_backend() always returns AppleBackend."""
+        from squish.backend import _AppleBackend, create_backend
+        b = create_backend()
+        assert isinstance(b, _AppleBackend)
+
+    @mlx_only
+    def test_device_arg_ignored_on_apple(self):
+        """device kwarg is ignored on Apple — always Metal."""
+        from squish.backend import _AppleBackend, create_backend
+        b = create_backend(device="cpu")
+        assert isinstance(b, _AppleBackend)
+        assert b.device == "metal"
+
+    def test_returns_torch_backend_on_linux_cpu(self):
+        """On non-Apple with torch available, create_backend() returns TorchBackend."""
+        from squish.backend import _TorchBackend, create_backend
+        mock_torch = _make_torch_mock(cuda_available=False)
+        # Simulate non-Apple platform
+        with patch("squish.backend._IS_APPLE", False), \
+             patch.dict(sys.modules, {"torch": mock_torch}):
+            b = create_backend(device="cpu")
+        assert isinstance(b, _TorchBackend)
+        assert b.device == "cpu"
+
+    def test_returns_torch_backend_auto_detect_cpu(self):
+        """Auto-detect (device=None) on non-Apple + no CUDA → cpu."""
+        from squish.backend import _TorchBackend, create_backend
+        mock_torch = _make_torch_mock(cuda_available=False)
+        with patch("squish.backend._IS_APPLE", False), \
+             patch.dict(sys.modules, {"torch": mock_torch}):
+            b = create_backend()
+        assert isinstance(b, _TorchBackend)
+        assert b.device == "cpu"
+
+    def test_returns_stub_when_torch_missing(self):
+        """Returns StubBackend when neither MLX nor torch is installed."""
+        from squish.backend import _StubBackend, create_backend
+        with patch("squish.backend._IS_APPLE", False), \
+             patch.dict(sys.modules, {"torch": None}):
+            b = create_backend()
+        assert isinstance(b, _StubBackend)
+
+    def test_cuda_device_request_without_cuda_raises(self):
+        """Requesting device='cuda' on a machine without CUDA raises RuntimeError."""
+        from squish.backend import create_backend
+        mock_torch = _make_torch_mock(cuda_available=False)
+        mock_torch.device.side_effect = lambda s: s
+        with patch("squish.backend._IS_APPLE", False), \
+             patch.dict(sys.modules, {"torch": mock_torch}):
+            with pytest.raises(RuntimeError, match="cuda"):
+                create_backend(device="cuda")
