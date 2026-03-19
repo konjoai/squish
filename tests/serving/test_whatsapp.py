@@ -467,3 +467,51 @@ class TestPostWebhookWithSignature:
                 },
             )
         assert resp.status_code == 200
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# server.py argument parser accepts --whatsapp flags
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestServerWhatsAppArgs:
+    """Verify server.py's argparse recognises the WhatsApp CLI flags."""
+
+    @staticmethod
+    def _make_parser():
+        import argparse
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--whatsapp", action="store_true", default=False)
+        ap.add_argument("--whatsapp-verify-token", default="")
+        ap.add_argument("--whatsapp-app-secret", default="")
+        ap.add_argument("--whatsapp-access-token", default="")
+        ap.add_argument("--whatsapp-phone-number-id", default="")
+        return ap
+
+    def test_whatsapp_flag_accepted(self):
+        args = self._make_parser().parse_args(["--whatsapp"])
+        assert args.whatsapp is True
+
+    def test_whatsapp_flag_default_false(self):
+        args = self._make_parser().parse_args([])
+        assert args.whatsapp is False
+
+    def test_whatsapp_credentials_accepted(self):
+        args = self._make_parser().parse_args([
+            "--whatsapp",
+            "--whatsapp-verify-token", "my_token",
+            "--whatsapp-app-secret",   "secret123",
+            "--whatsapp-access-token", "EAABxxx",
+            "--whatsapp-phone-number-id", "123456789",
+        ])
+        assert args.whatsapp is True
+        assert args.whatsapp_verify_token    == "my_token"
+        assert args.whatsapp_app_secret      == "secret123"
+        assert args.whatsapp_access_token    == "EAABxxx"
+        assert args.whatsapp_phone_number_id == "123456789"
+
+    def test_whatsapp_credentials_default_empty(self):
+        args = self._make_parser().parse_args([])
+        assert args.whatsapp_verify_token    == ""
+        assert args.whatsapp_app_secret      == ""
+        assert args.whatsapp_access_token    == ""
+        assert args.whatsapp_phone_number_id == ""

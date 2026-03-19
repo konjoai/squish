@@ -2680,6 +2680,41 @@ Examples:
         ),
     )
 
+    # ── WhatsApp / Meta Cloud API integration ────────────────────────────────
+    ap.add_argument(
+        "--whatsapp", action="store_true", default=False,
+        help=(
+            "Enable the WhatsApp Cloud API webhook (POST /webhook/whatsapp). "
+            "Requires --whatsapp-verify-token, --whatsapp-access-token, and "
+            "--whatsapp-phone-number-id to function. "
+            "Also reads WHATSAPP_VERIFY_TOKEN / WHATSAPP_ACCESS_TOKEN / "
+            "WHATSAPP_PHONE_NUMBER_ID env vars as fallback."
+        ),
+    )
+    ap.add_argument(
+        "--whatsapp-verify-token", default="",
+        help="Custom string set in the Meta App Dashboard to verify webhook ownership. "
+             "Fallback: WHATSAPP_VERIFY_TOKEN env var.",
+    )
+    ap.add_argument(
+        "--whatsapp-app-secret", default="",
+        help="Meta App Secret (App Settings → Basic → App Secret). "
+             "When provided, all incoming webhook payloads are validated with "
+             "HMAC-SHA256; requests with missing/wrong signatures are rejected 403. "
+             "Fallback: WHATSAPP_APP_SECRET env var.",
+    )
+    ap.add_argument(
+        "--whatsapp-access-token", default="",
+        help="Permanent or temporary access token for sending replies via the "
+             "Meta Graph API (WhatsApp → API Setup → Access Token). "
+             "Fallback: WHATSAPP_ACCESS_TOKEN env var.",
+    )
+    ap.add_argument(
+        "--whatsapp-phone-number-id", default="",
+        help="Phone Number ID from the Meta WhatsApp API Setup page. "
+             "Fallback: WHATSAPP_PHONE_NUMBER_ID env var.",
+    )
+
     args = ap.parse_args()
 
     # ── Expand --all-optimizations into individual flags ─────────────────────
@@ -3483,6 +3518,30 @@ Examples:
     except ImportError:
         pass
 
+    # ── WhatsApp webhook ──────────────────────────────────────────────────────
+    import os as _os
+    _wa_enabled = getattr(args, "whatsapp", False)
+    if _wa_enabled:
+        _wa_verify_token    = getattr(args, "whatsapp_verify_token",    "") or _os.environ.get("WHATSAPP_VERIFY_TOKEN",    "")
+        _wa_app_secret      = getattr(args, "whatsapp_app_secret",      "") or _os.environ.get("WHATSAPP_APP_SECRET",      "")
+        _wa_access_token    = getattr(args, "whatsapp_access_token",    "") or _os.environ.get("WHATSAPP_ACCESS_TOKEN",    "")
+        _wa_phone_number_id = getattr(args, "whatsapp_phone_number_id", "") or _os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+        try:
+            from .serving.whatsapp import mount_whatsapp as _mount_whatsapp  # package import
+        except ImportError:  # pragma: no cover
+            from serving.whatsapp import mount_whatsapp as _mount_whatsapp    # direct script run
+        _mount_whatsapp(
+            app,
+            get_state        = lambda: _state,
+            get_generate     = lambda: _generate_tokens,
+            get_tokenizer    = lambda: _state.tokenizer,
+            verify_token     = _wa_verify_token,
+            app_secret       = _wa_app_secret,
+            access_token     = _wa_access_token,
+            phone_number_id  = _wa_phone_number_id,
+            system_prompt    = "",
+        )
+
     print()
     _section("")
     print(f"  {_C.B}{_gradient('  Server ready!', _LOGO_GRAD)}{_C.R}")
@@ -3490,6 +3549,8 @@ Examples:
     _info("API endpoint",  f"{_C.T}http://{args.host}:{args.port}/v1{_C.R}")
     _info("Web chat UI",   f"{_C.T}http://{args.host}:{args.port}/chat{_C.R}")
     _info("Ollama compat", f"{_C.T}http://{args.host}:{args.port}/api/chat{_C.R}")
+    if _wa_enabled:
+        _info("WhatsApp",     f"{_C.T}http://{args.host}:{args.port}/webhook/whatsapp{_C.R}")
     print()
     print(f"  {_C.DIM}Set in any OpenAI client:{_C.R}")
     print(f"    {_C.MG}OPENAI_BASE_URL{_C.R}=http://{args.host}:{args.port}/v1")
