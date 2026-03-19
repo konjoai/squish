@@ -16,6 +16,9 @@ on:
         type: string
         default: "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
