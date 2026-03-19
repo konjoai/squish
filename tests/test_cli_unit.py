@@ -166,7 +166,7 @@ class TestCmdModels:
             fn(ns)
 
         captured = capsys.readouterr()
-        assert "[MoE" in captured.out
+        assert "MoE" in captured.out
 
     def test_no_moe_badge_for_regular_model(self, tmp_path, capsys):
         """cmd_models does not show [MoE] for non-MoE catalog entries."""
@@ -190,7 +190,7 @@ class TestCmdModels:
             fn(ns)
 
         captured = capsys.readouterr()
-        assert "[MoE" not in captured.out
+        assert "MoE" not in captured.out
 
     def test_moe_badge_without_active_params(self, tmp_path, capsys):
         """[MoE] badge shown without active-params when active_params_b is None."""
@@ -214,7 +214,7 @@ class TestCmdModels:
             fn(ns)
 
         captured = capsys.readouterr()
-        assert "[MoE]" in captured.out
+        assert "MoE" in captured.out
 
     def test_catalog_failure_does_not_crash_models(self, tmp_path, capsys):
         """If catalog import fails, cmd_models still works without badge."""
@@ -233,7 +233,7 @@ class TestCmdModels:
 
         captured = capsys.readouterr()
         assert "some-model" in captured.out
-        assert "[MoE" not in captured.out
+        assert "MoE" not in captured.out
 
 
 # ── cmd_doctor ────────────────────────────────────────────────────────────────

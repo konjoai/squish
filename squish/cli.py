@@ -6,20 +6,24 @@ Entry point for the Squish local-inference CLI.
 
 Sub-commands
 ───────────
-  squish pull   MODEL               Download + compress a model
+  squish pull     MODEL             Download + compress a model
   squish catalog                    Browse available models
-  squish run    [MODEL] [OPTIONS]   Start the inference server
-  squish serve  [MODEL] [OPTIONS]   Alias for `squish run`
-  squish chat   [MODEL] [OPTIONS]   Interactive terminal chat (no browser needed)
+  squish run      [MODEL] [OPTIONS] Start the inference server
+  squish serve    [MODEL] [OPTIONS] Alias for `squish run`
+  squish chat     [MODEL] [OPTIONS] Interactive terminal chat (no browser needed)
+  squish compress [MODEL] [OPTIONS] Compress a model to npy-dir format  (legacy: it)
+  squish quantize [OPTIONS]         Mixed-precision quantize a model     (legacy: convert-model)
+  squish train    MODEL [OPTIONS]   Train a LoRA adapter                (legacy: train-adapter)
+  squish merge    MODEL [OPTIONS]   Merge LoRA adapters                 (legacy: merge-model)
+  squish config   [KEY] [VAL]       Read/write user configuration
   squish setup                      Interactive setup wizard (detect hw, pull, start)
   squish models                     List local models (auto-discovers ~/.squish/models/)
   squish info                       System info: Metal, RAM, disk
-  squish bench  [MODEL] [OPTIONS]   Quick throughput/latency benchmark
-  squish doctor [--report]          Check all dependencies
-  squish daemon start|stop|status   Manage background server
-  squish it MODEL                   Compress a model to npy-dir format
-  squish rotate MODEL               SpinQuant Cayley-SGD rotation calibration
-  squish predict [MODEL]            LIFE analytical performance prediction
+  squish bench    [MODEL] [OPTIONS] Quick throughput/latency benchmark
+  squish doctor   [--report]        Check all dependencies
+  squish daemon   start|stop|status Manage background server
+  squish rotate   MODEL             SpinQuant Cayley-SGD rotation calibration
+  squish predict  [MODEL]           LIFE analytical performance prediction
 
 MODEL shorthand resolves via the Squish catalog:
   qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b, phi4:14b …
@@ -289,12 +293,13 @@ def _box(lines: list[str]) -> None:
 # ── squish models ─────────────────────────────────────────────────────────────
 
 def cmd_models(args):
-    """List available local models."""
-    print()
-    print(f"  Local models in {_MODELS_DIR}:")
-    print()
+    """List available local models with rich table formatting."""
+    from squish.ui import console, make_table, hint, success, warn, _RICH_AVAILABLE
+    import rich.box as _rbox  # noqa: F401 (unused if rich absent)
+
     if not _MODELS_DIR.exists():
-        print("  (directory not found)")
+        warn(f"Models directory not found: {_MODELS_DIR}")
+        hint("Run: squish pull qwen3:8b")
         return
 
     rows = []
@@ -313,7 +318,7 @@ def cmd_models(args):
         if d.name.startswith("."):
             continue
         compressed = Path(str(d) + _COMPRESSED_SUFFIX)
-        comp_str = "✓ compressed" if compressed.exists() else "  (raw only)"
+        comp_str = "✓ ready" if compressed.exists() else "raw only"
         # estimate disk size
         try:
             total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
@@ -325,33 +330,61 @@ def cmd_models(args):
         if _entry is not None and getattr(_entry, "moe", False):
             _active = getattr(_entry, "active_params_b", None)
             badge = (
-                f"  [MoE: {_entry.params} / {_active:.1f}B active]"
+                f"MoE {_entry.params}/{_active:.1f}B active"
                 if _active is not None
-                else "  [MoE]"
+                else "MoE"
             )
         else:
             badge = ""
         rows.append((d.name, size_str, comp_str, badge))
 
     if not rows:
-        print("  No model directories found.")
-        print("  Download a model with: squish pull qwen3:8b")
-        print("  Browse all models    : squish catalog")
+        warn("No model directories found.")
+        hint("Download a model with: squish pull qwen3:8b")
+        hint("Browse all models    : squish catalog")
         return
 
-    # Column widths
-    w0 = max(len(r[0]) for r in rows) + 2
-    print(f"  {'Model':<{w0}} {'Disk':>8}  {'Compressed'}")
-    print(f"  {'─'*w0} {'─'*8}  {'─'*14}")
-    for name, size, comp, badge in rows:
-        print(f"  {name:<{w0}} {size:>8}  {comp}{badge}")
-
-    print()
-    print("  Legacy aliases : 1.5b, 7b, 14b, 32b, 72b")
-    print("  Catalog IDs    : qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …")
-    print("  Browse catalog : squish catalog")
-    print("  Download model : squish pull qwen3:8b")
-    print()
+    if _RICH_AVAILABLE:
+        from rich.console import Console as _Con
+        from rich.table import Table as _Tbl
+        from rich import box as _box
+        tbl = _Tbl(
+            title="Local Models",
+            box=_box.SIMPLE,
+            header_style="rgb(139,92,246) bold",
+            border_style="rgb(100,116,139)",
+            show_lines=False,
+            title_style="rgb(248,250,252) bold",
+        )
+        tbl.add_column("Model", style="rgb(248,250,252)")
+        tbl.add_column("Disk", style="rgb(167,139,250)", justify="right")
+        tbl.add_column("Status", style="rgb(52,211,153)")
+        tbl.add_column("Notes", style="rgb(100,116,139)")
+        for name, size, comp, badge in rows:
+            tbl.add_row(name, size, comp, badge)
+        console.print()
+        console.print(tbl)
+        console.print()
+        console.print("  [rgb(100,116,139)]Aliases   :[/rgb(100,116,139)] [rgb(248,250,252)]1.5b, 7b, 14b, 32b, 72b[/rgb(248,250,252)]")
+        console.print("  [rgb(100,116,139)]Catalog IDs:[/rgb(100,116,139)] [rgb(248,250,252)]qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …[/rgb(248,250,252)]")
+        console.print("  [rgb(100,116,139)]Commands  :[/rgb(100,116,139)] [rgb(248,250,252)]squish catalog[/rgb(248,250,252)]  [rgb(100,116,139)]·[/rgb(100,116,139)]  [rgb(248,250,252)]squish pull qwen3:8b[/rgb(248,250,252)]")
+        console.print()
+    else:
+        print()
+        print(f"  Local models in {_MODELS_DIR}:")
+        print()
+        w0 = max(len(r[0]) for r in rows) + 2
+        print(f"  {'Model':<{w0}} {'Disk':>8}  {'Status'}")
+        print(f"  {'─'*w0} {'─'*8}  {'─'*14}")
+        for name, size, comp, badge in rows:
+            note = f"  [{badge}]" if badge else ""
+            print(f"  {name:<{w0}} {size:>8}  {comp}{note}")
+        print()
+        print("  Legacy aliases : 1.5b, 7b, 14b, 32b, 72b")
+        print("  Catalog IDs    : qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …")
+        print("  Browse catalog : squish catalog")
+        print("  Download model : squish pull qwen3:8b")
+        print()
 
 
 # ── squish rm ────────────────────────────────────────────────────────────────
@@ -2415,6 +2448,157 @@ def cmd_predict(args):  # pragma: no cover
         print()
 
 
+def cmd_config(args):
+    """Read or write Squish user configuration."""
+    from squish import config as _cfg
+    from squish.ui import console, success, warn, error as _err, _RICH_AVAILABLE
+
+    action = getattr(args, "config_action", "show") or "show"
+    key = getattr(args, "config_key", None) or ""
+    value = getattr(args, "config_value", None)
+
+    if action == "show":
+        cfg = _cfg.load()
+        import json as _json
+        cfg_json = _json.dumps(cfg, indent=2)
+        if _RICH_AVAILABLE:
+            console.print()
+            console.print("  [rgb(167,139,250) bold]Squish Configuration[/]  "
+                          f"[rgb(100,116,139)]({_cfg.config_path()})[/]")
+            console.print()
+            from rich.syntax import Syntax
+            console.print(Syntax(cfg_json, "json", theme="nord", background_color="default"))
+            console.print()
+        else:
+            print()
+            print(f"  Squish Configuration  ({_cfg.config_path()})")
+            print()
+            print(cfg_json)
+            print()
+
+    elif action == "get":
+        if not key:
+            _err("Usage: squish config get KEY")
+            sys.exit(1)
+        val = _cfg.get(key)
+        if val is None:
+            warn(f"Key not set: {key!r}")
+            sys.exit(1)
+        print(val)
+
+    elif action == "set":
+        if not key or value is None:
+            _err("Usage: squish config set KEY VALUE")
+            sys.exit(1)
+        # coerce value to bool/int if possible
+        coerced: object
+        if value.lower() in ("true", "yes", "1"):
+            coerced = True
+        elif value.lower() in ("false", "no", "0"):
+            coerced = False
+        else:
+            try:
+                coerced = int(value)
+            except ValueError:
+                try:
+                    coerced = float(value)
+                except ValueError:
+                    coerced = value
+        _cfg.set(key, coerced)
+        success(f"Set {key!r} = {coerced!r}")
+
+    else:  # shouldn't reach here due to argparse choices, but be safe
+        _err(f"Unknown config action: {action!r}")
+        sys.exit(1)
+
+
+def cmd_welcome():
+    """Called when `squish` is invoked with no subcommand."""
+    from squish.ui import banner, console, hint, _RICH_AVAILABLE
+    from squish import config as _cfg
+
+    banner()
+
+    # How much unified memory?
+    ram_gb = 0
+    try:
+        import subprocess as _sp
+        _proc = _sp.run(
+            ["system_profiler", "SPHardwareDataType"],
+            capture_output=True, text=True, timeout=3,
+        )
+        for _line in _proc.stdout.splitlines():
+            if "Memory:" in _line:
+                _parts = _line.split()
+                for _i, _p in enumerate(_parts):
+                    if _p.isdigit():
+                        _gb = int(_p)
+                        _unit = _parts[_i + 1].upper() if _i + 1 < len(_parts) else "GB"
+                        ram_gb = _gb if "GB" in _unit else _gb // 1024
+                        break
+                break
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Choose a sensible default recommendation
+    if ram_gb >= 64:
+        suggestion = "qwen3:32b"
+    elif ram_gb >= 32:
+        suggestion = "qwen3:14b"
+    elif ram_gb >= 16:
+        suggestion = "qwen3:8b"
+    else:
+        suggestion = "qwen3:4b"
+
+    saved_default = _cfg.get("default_model")
+    model = saved_default or suggestion
+
+    # Check if there are any local models already
+    local_count = 0
+    if _MODELS_DIR.exists():
+        local_count = sum(
+            1 for d in _MODELS_DIR.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+        )
+
+    if _RICH_AVAILABLE:
+        console.print()
+        if local_count > 0:
+            console.print(f"  [rgb(100,116,139)]You have[/] "
+                          f"[rgb(248,250,252)]{local_count}[/] "
+                          f"[rgb(100,116,139)]model(s) downloaded.[/]  "
+                          f"[rgb(100,116,139)]Start with:[/]")
+            console.print()
+            console.print(f"    [rgb(167,139,250) bold]squish run {model}[/]")
+        else:
+            console.print(f"  [rgb(100,116,139)]Detected[/] "
+                          f"[rgb(248,250,252)]{ram_gb or '?'} GB[/] "
+                          f"[rgb(100,116,139)]memory.  Get started with:[/]")
+            console.print()
+            console.print(f"    [rgb(167,139,246) bold]squish pull {model}[/]")
+            console.print(f"    [rgb(167,139,246) bold]squish run  {model}[/]")
+        console.print()
+        console.print("  [rgb(100,116,139)]Other commands :[/]  "
+                      "[rgb(248,250,252)]squish catalog[/]  "
+                      "[rgb(100,116,139)]·[/]  "
+                      "[rgb(248,250,252)]squish models[/]  "
+                      "[rgb(100,116,139)]·[/]  "
+                      "[rgb(248,250,252)]squish --help[/]")
+        console.print()
+    else:
+        print()
+        if local_count > 0:
+            print(f"  You have {local_count} model(s). Start with:")
+            print(f"    squish run {model}")
+        else:
+            print(f"  Detected {ram_gb or '?'} GB memory. Get started:")
+            print(f"    squish pull {model}")
+            print(f"    squish run  {model}")
+        print()
+        print("  Other commands: squish catalog  ·  squish models  ·  squish --help")
+        print()
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="squish",
@@ -2671,8 +2855,12 @@ Ollama drop-in:
     p_daemon.add_argument("--api-key", default="squish")
     p_daemon.set_defaults(func=cmd_daemon)
 
-    # ── compress ──
-    p_compress = sub.add_parser("it", help="Compress (squish) a model to INT8 npy-dir format")
+    # ── compress (primary name) + it (hidden legacy alias) ──
+    p_compress = sub.add_parser(
+        "compress",
+        aliases=["it"],
+        help="Compress a model to npy-dir format (INT8 or INT4)",
+    )
     p_compress.add_argument("model", help="Model path (e.g. ~/.squish/models/llama3.1-8b-4bit) or shorthand (7b, 14b)")
     p_compress.add_argument("--output",            default=None,
                             help="Output directory (default: <model>-compressed)")
@@ -2793,10 +2981,11 @@ Ollama drop-in:
     p_search.add_argument("query", help="Search query (matched against ID, tags, params, description)")
     p_search.set_defaults(func=cmd_search)
 
-    # ── convert-model ──
+    # ── quantize (primary name) + convert-model (hidden legacy alias) ──
     p_convert = sub.add_parser(
-        "convert-model",
-        help="Create a mixed-precision quantized model (different bits per layer group)",
+        "quantize",
+        aliases=["convert-model"],
+        help="Mixed-precision quantize a model (different bits per layer group)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
             "Quantize an existing model with different precision per layer group.\n\n"
@@ -2821,10 +3010,11 @@ Ollama drop-in:
                            help="Print what would be done without converting")
     p_convert.set_defaults(func=cmd_convert_model)
 
-    # ── train-adapter ──
+    # ── train (primary name) + train-adapter (hidden legacy alias) ──
     p_train = sub.add_parser(
-        "train-adapter",
-        help="Train a LoRA adapter using mlx_lm (E2)",
+        "train",
+        aliases=["train-adapter"],
+        help="Train a LoRA adapter using mlx_lm",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
             "Fine-tune a LoRA adapter on a JSONL chat dataset using mlx_lm.\n\n"
@@ -2851,10 +3041,11 @@ Ollama drop-in:
                          help="Output directory for the adapter weights")
     p_train.set_defaults(func=cmd_train_adapter)
 
-    # ── merge-model ──
+    # ── merge (primary name) + merge-model (hidden legacy alias) ──
     p_merge = sub.add_parser(
-        "merge-model",
-        help="Offline DARE+TIES multi-adapter merge (E3)",
+        "merge",
+        aliases=["merge-model"],
+        help="Merge LoRA adapters via DARE+TIES",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
             "Merge one or more LoRA adapters into a single flat model via\n"
@@ -2919,10 +3110,38 @@ Ollama drop-in:
                            help="Print results as JSON instead of a human-readable table.")
     p_predict.set_defaults(func=cmd_predict)
 
+    # ── config ──
+    p_config = sub.add_parser(
+        "config",
+        help="Read or write user configuration (~/.squish/config.json)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Read or write Squish user configuration.\n\n"
+            "Examples:\n"
+            "  squish config show\n"
+            "  squish config set default_model qwen3:8b\n"
+            "  squish config get port\n"
+            "  squish config set whatsapp.access_token EAABxxx\n"
+        ),
+    )
+    p_config.add_argument(
+        "config_action",
+        nargs="?",
+        choices=["show", "get", "set"],
+        default="show",
+        help="show | get KEY | set KEY VALUE (default: show)",
+    )
+    p_config.add_argument("config_key",   nargs="?", default=None,
+                          help="Config key (dot-notation supported, e.g. whatsapp.access_token)")
+    p_config.add_argument("config_value", nargs="?", default=None,
+                          help="Value to set")
+    p_config.set_defaults(func=cmd_config)
+
     args = ap.parse_args()
 
     if not args.command:
-        ap.print_help()
+        # No subcommand — show interactive welcome instead of raw argparse help
+        cmd_welcome()
         sys.exit(0)
 
     args.func(args)  # pragma: no cover

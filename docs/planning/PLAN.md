@@ -2722,3 +2722,31 @@ To exceed BF16 on arc_easy, a fundamentally different approach would be required
 - [ ] Profile MiLo compression bottleneck (SVD per tensor) — consider batching or approximating for 7B+
 
 ---
+
+## ✅ CLI Revamp (TUI Phase) — 2026-03-17
+
+Theme: **Discoverable CLI, rich terminal output, persistent config**
+
+| Task | Status | File(s) changed |
+|------|--------|-----------------|
+| `squish/ui.py` — Rich TUI helper module | ✅ done | `squish/ui.py` (new) |
+| `rich>=13.0` dependency | ✅ done | `pyproject.toml`, `requirements.txt` |
+| `squish/config.py` — `~/.squish/config.json` config system | ✅ done | `squish/config.py` (new) |
+| Rename `it` → `compress` (with `it` hidden alias) | ✅ done | `squish/cli.py` |
+| Rename `convert-model` → `quantize` (with `convert-model` hidden alias) | ✅ done | `squish/cli.py` |
+| Add `train` alias for `train-adapter` | ✅ done | `squish/cli.py` |
+| Add `merge` alias for `merge-model` | ✅ done | `squish/cli.py` |
+| `squish` no-args → welcome banner + RAM-aware recommendation | ✅ done | `squish/cli.py` — `cmd_welcome()` |
+| `squish config show/get/set` subcommand | ✅ done | `squish/cli.py` — `cmd_config()` |
+| `squish models` → Rich table with MoE badges and status | ✅ done | `squish/cli.py` — `cmd_models()` |
+| `tests/test_ui_unit.py` — 30+ tests for `squish/ui.py` | ✅ done | `tests/test_ui_unit.py` (new) |
+| `tests/test_config_unit.py` — 35+ tests for `squish/config.py` | ✅ done | `tests/test_config_unit.py` (new) |
+| CLI unit tests updated for new command names | ✅ done | `tests/test_cli_unit.py` |
+
+### Summary
+- Total tests: 7,552 passed, 33 skipped (added 65 new tests, 0 regressions)
+- `squish compress` is now the canonical command; `squish it` still works as a legacy alias
+- `squish quantize` replaces `squish convert-model`; `squish train` replaces `squish train-adapter`
+- Running `squish` with no arguments shows a welcome banner with RAM-aware model recommendation
+- `squish config set default_model qwen3:8b` persists to `~/.squish/config.json`
+

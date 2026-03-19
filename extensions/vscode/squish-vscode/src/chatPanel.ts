@@ -204,12 +204,15 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 <body>
   <div id="header">
     <div class="header-brand">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="28" height="28" aria-hidden="true">
-        <path d="M35 25C25 25 20 35 20 45V85C20 95 25 105 35 105H95C105 105 110 95 110 85V45C110 35 105 25 95 25H35Z" fill="#9146FF" stroke="#1A0B40" stroke-width="4" stroke-linejoin="round"/>
+      <svg viewBox="12 23 106 94" xmlns="http://www.w3.org/2000/svg">
         <ellipse cx="22" cy="65" rx="8" ry="12" fill="#9146FF" stroke="#1A0B40" stroke-width="3" transform="rotate(15 22 65)"/>
         <ellipse cx="108" cy="65" rx="8" ry="12" fill="#9146FF" stroke="#1A0B40" stroke-width="3" transform="rotate(-15 108 65)"/>
+        
         <ellipse cx="45" cy="105" rx="6" ry="10" fill="#9146FF" stroke="#1A0B40" stroke-width="3"/>
         <ellipse cx="85" cy="105" rx="6" ry="10" fill="#9146FF" stroke="#1A0B40" stroke-width="3"/>
+
+        <path d="M35 25C25 25 20 35 20 45V85C20 95 25 105 35 105H95C105 105 110 95 110 85V45C110 35 105 25 95 25H35Z" fill="#9146FF" stroke="#1A0B40" stroke-width="4" stroke-linejoin="round"/>
+        
         <circle cx="48" cy="55" r="6" fill="black"/>
         <circle cx="46" cy="53" r="2" fill="white"/>
         <circle cx="80" cy="55" r="6" fill="black"/>

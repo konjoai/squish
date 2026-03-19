@@ -33,6 +33,7 @@ dependencies = [
     "transformers>=4.40",
     "zstandard>=0.22",
     "aiofiles>=23.0",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]
