@@ -697,6 +697,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#v10-waves-2728-released-2026-03-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ v10 — Waves 27+28 (Released 2026-03-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ v10 — Waves 27+28 (Released 2026-03-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-server-wiring-quick-wins-5-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Server Wiring Quick Wins (5 steps)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-novel-algorithm-modules-6-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Novel Algorithm Modules (6 modules)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests &amp; Benchmarks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#completion-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#v1-core-baseline-released-2026-03-03" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2941,6 +3002,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#v10-waves-2728-released-2026-03-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ v10 — Waves 27+28 (Released 2026-03-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ v10 — Waves 27+28 (Released 2026-03-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-server-wiring-quick-wins-5-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Server Wiring Quick Wins (5 steps)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-novel-algorithm-modules-6-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Novel Algorithm Modules (6 modules)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests &amp; Benchmarks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#completion-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completion Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#v1-core-baseline-released-2026-03-03" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4985,7 +5107,7 @@
 
 <h1 id="squish-development-plan">Squish — Development Plan<a class="headerlink" href="#squish-development-plan" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p>Last updated: 2026-03-12 (v9 complete + pre-launch hardening phase 1+2+3)</p>
+<p>Last updated: 2026-03-13 (v10 complete — Wave 27+28 inference velocity sprint)</p>
 </blockquote>
 <p>This document tracks completed waves, the current release, and the next phase.</p>
 <hr />
@@ -5044,8 +5166,121 @@
 <td>25–26</td>
 <td>Cutting-Edge Attention Variants &amp; Compute Fusion · Distributed Inference &amp; Production Reliability</td>
 </tr>
+<tr>
+<td><strong>v10</strong></td>
+<td>27–28</td>
+<td>Inference Velocity Sprint — server wiring quick-wins + novel algorithm modules</td>
+</tr>
 </tbody>
 </table>
+<hr />
+<h2 id="v10-waves-2728-released-2026-03-13">✅ v10 — Waves 27+28 (Released 2026-03-13)<a class="headerlink" href="#v10-waves-2728-released-2026-03-13" title="Permanent link">&para;</a></h2>
+<p>Theme: <strong>Inference Velocity Sprint — TTFT &amp; Throughput Improvements</strong></p>
+<h3 id="phase-1-server-wiring-quick-wins-5-steps">Phase 1 — Server Wiring Quick Wins (5 steps)<a class="headerlink" href="#phase-1-server-wiring-quick-wins-5-steps" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Change</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1A</td>
+<td>Chunked prefill active on all paths (removed <code>_on_compress_path</code> gate)</td>
+<td><code>--chunk-prefill</code></td>
+</tr>
+<tr>
+<td>1B</td>
+<td>FusedSampler wired as default-on in decode loop</td>
+<td>on (disable with <code>--no-fused-sampler</code>)</td>
+</tr>
+<tr>
+<td>1C</td>
+<td>CacheWarmupPredictor <code>record_access()</code> after tokenization</td>
+<td>on (disable with <code>--no-cache-warmup</code>)</td>
+</tr>
+<tr>
+<td>1D</td>
+<td>TokenMerging <code>patch/unpatch</code> around standard prefill (seq ≥ 64)</td>
+<td><code>--token-merge</code></td>
+</tr>
+<tr>
+<td>1E</td>
+<td>LayerSkip <code>ConfidenceEstimator</code> adaptive depth in decode loop</td>
+<td><code>--layer-skip</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="phase-2-novel-algorithm-modules-6-modules">Phase 2 — Novel Algorithm Modules (6 modules)<a class="headerlink" href="#phase-2-novel-algorithm-modules-6-modules" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>File</th>
+<th>Key Capability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CascadeSpec</td>
+<td><code>squish/speculative/cascade_spec.py</code></td>
+<td>EAGLE-3 tree + n-gram lookahead; ~2.5–3× throughput</td>
+</tr>
+<tr>
+<td>PrefillFusionController</td>
+<td><code>squish/streaming/adaptive_prefill_fusion.py</code></td>
+<td>Entropy-based prefill strategy selection</td>
+</tr>
+<tr>
+<td>DraftMultiplexer</td>
+<td><code>squish/speculative/draft_multiplexer.py</code></td>
+<td>EMA runtime draft strategy selection</td>
+</tr>
+<tr>
+<td>AsyncDecodeOverlap</td>
+<td><code>squish/kernels/async_decode_overlap.py</code></td>
+<td>GPU/CPU pipeline overlap; +5–10% TPS</td>
+</tr>
+<tr>
+<td>PerLayerSparseAttn</td>
+<td><code>squish/attention/per_layer_sparse_attn.py</code></td>
+<td>Per-head entropy sparsity; −15–25% attn FLOP</td>
+</tr>
+<tr>
+<td>SpeculativePrefiller</td>
+<td><code>squish/speculative/speculative_prefill.py</code></td>
+<td>Draft-accelerated prefill; −10–22% TTFT</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tests-benchmarks">Tests &amp; Benchmarks<a class="headerlink" href="#tests-benchmarks" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>tests/test_wave27_server_wiring.py</code> — 33 tests, all passing</li>
+<li><code>tests/test_wave28_server_wiring.py</code> — 77 tests, all passing</li>
+<li><strong>Total tests: 7,672 passed, 33 skipped</strong> (+110 new; 0 failures)</li>
+<li><code>dev/benchmarks/bench_wave27_28.py</code> — micro-benchmark suite</li>
+<li><code>docs/benchmark_wave27_28.md</code> — reference results table</li>
+</ul>
+<h3 id="completion-checklist">Completion Checklist<a class="headerlink" href="#completion-checklist" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[x] Step 1A: chunked prefill on all paths</li>
+<li>[x] Step 1B: FusedSampler default-on</li>
+<li>[x] Step 1C: CacheWarmupPredictor wired</li>
+<li>[x] Step 1D: TokenMerging patch/unpatch</li>
+<li>[x] Step 1E: LayerSkip adaptive depth</li>
+<li>[x] Step 2A: <code>cascade_spec.py</code> created</li>
+<li>[x] Step 2B: <code>adaptive_prefill_fusion.py</code> created</li>
+<li>[x] Step 2C: <code>draft_multiplexer.py</code> created</li>
+<li>[x] Step 2D: <code>async_decode_overlap.py</code> created</li>
+<li>[x] Step 2E: <code>per_layer_sparse_attn.py</code> created</li>
+<li>[x] Step 2F: <code>speculative_prefill.py</code> created</li>
+<li>[x] Tests (110 new tests, all passing)</li>
+<li>[x] Benchmark script</li>
+<li>[x] Docs updated</li>
+<li>[x] CHANGELOG updated</li>
+</ul>
 <hr />
 <h2 id="v1-core-baseline-released-2026-03-03">✅ v1 — Core Baseline (Released 2026-03-03)<a class="headerlink" href="#v1-core-baseline-released-2026-03-03" title="Permanent link">&para;</a></h2>
 <ul>

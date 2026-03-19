@@ -838,6 +838,67 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1000-2026-03-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [10.0.0] — 2026-03-13
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[10.0.0] — 2026-03-13">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-27-phase-1-server-wiring-quick-wins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 27: Phase 1 Server Wiring Quick Wins
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-28-phase-2-novel-algorithm-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 28: Phase 2 Novel Algorithm Modules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Benchmarks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#900-2026-03-12" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -872,7 +933,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests" class="md-nav__link">
+  <a href="#tests_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -883,7 +944,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#benchmarks" class="md-nav__link">
+  <a href="#benchmarks_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Benchmarks
@@ -944,7 +1005,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_1" class="md-nav__link">
+  <a href="#tests_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -955,7 +1016,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#benchmarks_1" class="md-nav__link">
+  <a href="#benchmarks_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Benchmarks
@@ -1016,7 +1077,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_2" class="md-nav__link">
+  <a href="#tests_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1027,7 +1088,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#benchmarks_2" class="md-nav__link">
+  <a href="#benchmarks_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Benchmarks
@@ -1077,7 +1138,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_3" class="md-nav__link">
+  <a href="#tests_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1088,7 +1149,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#benchmarks_3" class="md-nav__link">
+  <a href="#benchmarks_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Benchmarks
@@ -1138,7 +1199,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_4" class="md-nav__link">
+  <a href="#tests_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1149,7 +1210,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#benchmarks_4" class="md-nav__link">
+  <a href="#benchmarks_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Benchmarks
@@ -1210,7 +1271,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_5" class="md-nav__link">
+  <a href="#tests_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1221,7 +1282,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#benchmarks_5" class="md-nav__link">
+  <a href="#benchmarks_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         Benchmarks
@@ -1338,6 +1399,36 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="1000-2026-03-13">[10.0.0] — 2026-03-13<a class="headerlink" href="#1000-2026-03-13" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-27-phase-1-server-wiring-quick-wins">Added — Wave 27: Phase 1 Server Wiring Quick Wins<a class="headerlink" href="#added-wave-27-phase-1-server-wiring-quick-wins" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Chunked prefill universal</strong> (<code>server.py</code>) — Removed <code>_on_compress_path</code> gate; <code>--chunk-prefill</code> now activates for all request paths, not just compressed-weight paths; TTFT −40–60% on long prompts</li>
+<li><strong>FusedSampler default-on</strong> (<code>squish/hardware/fused_sampler.py</code>) — Wired as default decode sampler; fuses temperature/top-k/top-p/min-p/rep-penalty in one pass; ~4× sampling speedup; disable with <code>--no-fused-sampler</code></li>
+<li><strong>CacheWarmupPredictor wired</strong> (<code>squish/kv/cache_warmup.py</code>) — <code>record_access()</code> called after tokenization on every request; predictive pre-warming for repeat prefixes; disable with <code>--no-cache-warmup</code></li>
+<li><strong>TokenMerging patch/unpatch</strong> (<code>squish/token/token_merging.py</code>) — Applied around standard prefill for sequences ≥ 64 tokens (layers 4–11); enable with <code>--token-merge</code></li>
+<li><strong>LayerSkip adaptive depth</strong> (<code>squish/token/layer_skip.py</code>) — <code>ConfidenceEstimator</code> checks per-step logit entropy; adaptively calls <code>model(…, layer_limit=exit_layer)</code> on high-confidence steps; enable with <code>--layer-skip</code></li>
+</ul>
+<h3 id="added-wave-28-phase-2-novel-algorithm-modules">Added — Wave 28: Phase 2 Novel Algorithm Modules<a class="headerlink" href="#added-wave-28-phase-2-novel-algorithm-modules" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>CascadeSpec</strong> (<code>squish/speculative/cascade_spec.py</code>) — Two-stage EAGLE-3 tree + n-gram lookahead two-stage speculative decoding; ~2.5–3× decode throughput on typical prompts; enable with <code>--cascade-spec</code></li>
+<li><strong>PrefillFusionController</strong> (<code>squish/streaming/adaptive_prefill_fusion.py</code>) — Entropy-based prefill complexity classifier selecting optimal ChunkedPrefill/ToMe/LayerSkip combination; ~0.01 ms overhead; enable with <code>--adaptive-prefill</code></li>
+<li><strong>DraftMultiplexer</strong> (<code>squish/speculative/draft_multiplexer.py</code>) — EMA-based runtime draft strategy selection from up to 5 strategies; regex task classifier; +5–7 pp acceptance rate vs fixed strategy; enable with <code>--draft-multiplex</code></li>
+<li><strong>AsyncDecodeOverlap</strong> (<code>squish/kernels/async_decode_overlap.py</code>) — Pipelines CPU sampling for step N with GPU (Metal) kernel for step N+1 via background thread; +5–10% decoded TPS; enable with <code>--async-decode-overlap</code></li>
+<li><strong>PerLayerSparseAttn</strong> (<code>squish/attention/per_layer_sparse_attn.py</code>) — Per-head entropy-based attention sparsity profiled from prefill; EMA-smoothed head profiles; −15–25% attention FLOP in decode; enable with <code>--per-layer-sparse</code></li>
+<li><strong>SpeculativePrefiller</strong> (<code>squish/speculative/speculative_prefill.py</code>) — Draft-accelerated prefill using cosine-similarity KV agreement to skip target layers; −10–22% TTFT; requires <code>--draft-model</code></li>
+</ul>
+<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>tests/test_wave27_server_wiring.py</code> — 33 tests, 33 passing</li>
+<li><code>tests/test_wave28_server_wiring.py</code> — 77 tests, 77 passing</li>
+<li><strong>Total tests: 7,672 passed, 33 skipped</strong> (+110 new; 0 failures)</li>
+</ul>
+<h3 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>dev/benchmarks/bench_wave27_28.py</code> — micro-benchmark suite for all Wave 27+28 modules</li>
+<li><code>docs/benchmark_wave27_28.md</code> — reference results table with per-module performance estimates</li>
+</ul>
+<hr />
 <h2 id="900-2026-03-12">[9.0.0] — 2026-03-12<a class="headerlink" href="#900-2026-03-12" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-25-cutting-edge-attention-variants-compute-fusion-14-modules">Added — Wave 25: Cutting-Edge Attention Variants &amp; Compute Fusion (14 modules)<a class="headerlink" href="#added-wave-25-cutting-edge-attention-variants-compute-fusion-14-modules" title="Permanent link">&para;</a></h3>
 <ul>
@@ -1373,13 +1464,13 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>SchemaValidator</strong> (<code>squish/schema_validator.py</code>) — JSON schema validation (type/required/properties/min+maxLength/min+max/items); 7.48 µs valid, 4.90 µs invalid</li>
 <li><strong>AuditLogger</strong> (<code>squish/audit_logger.py</code>) — SHA-256 hash-chained tamper-evident audit log; 1.92 µs log, 2236 µs verify (chain_length=2010)</li>
 </ul>
-<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<h3 id="tests_1">Tests<a class="headerlink" href="#tests_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave25_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave26_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><strong>Total tests: 4 876</strong> (56 Wave 25 + 56 Wave 26 new; 0 failures)</li>
 </ul>
-<h3 id="benchmarks">Benchmarks<a class="headerlink" href="#benchmarks" title="Permanent link">&para;</a></h3>
+<h3 id="benchmarks_1">Benchmarks<a class="headerlink" href="#benchmarks_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>dev/benchmarks/bench_wave25_26.py</code> — micro-benchmark suite for all 28 modules (28/28, 0 skipped)</li>
 <li><code>dev/results/wave25_26_bench.json</code> — machine-readable results</li>
@@ -1425,13 +1516,13 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>AWQv2</strong> (<code>squish/awq_v2.py</code>) — Activation-aware scale+shift per-channel quantisation; analytical solve, no grid search; 73402 µs calibrate 128×256, 64.4 µs quantize</li>
 <li><strong>IterPrune</strong> (<code>squish/iter_prune.py</code>) — Iterative magnitude pruning with configurable sparsity ramp schedule; 0% → 70% over n_steps; 956 µs prune_step</li>
 </ul>
-<h3 id="tests_1">Tests<a class="headerlink" href="#tests_1" title="Permanent link">&para;</a></h3>
+<h3 id="tests_2">Tests<a class="headerlink" href="#tests_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave23_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave24_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><strong>Total tests: 4 764</strong> (56 Wave 23 + 56 Wave 24 new; 0 failures)</li>
 </ul>
-<h3 id="benchmarks_1">Benchmarks<a class="headerlink" href="#benchmarks_1" title="Permanent link">&para;</a></h3>
+<h3 id="benchmarks_2">Benchmarks<a class="headerlink" href="#benchmarks_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>dev/benchmarks/bench_wave23_24.py</code> — micro-benchmark suite for all 28 modules</li>
 <li><code>dev/results/wave23_24_bench.json</code> — machine-readable results (28/28 modules)</li>
@@ -1477,13 +1568,13 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>SLAMonitor</strong> (<code>squish/sla_monitor.py</code>) — Real-time SLA violation detection + escalation; warning → critical severity tiers; 0.26 µs record, 41.3 µs check</li>
 <li><strong>ContextCache</strong> (<code>squish/context_cache.py</code>) — Persistent cross-session context cache with TTL; hashlib.md5 token fingerprint; 1.9 µs get, 100% hit rate on repeat</li>
 </ul>
-<h3 id="tests_2">Tests<a class="headerlink" href="#tests_2" title="Permanent link">&para;</a></h3>
+<h3 id="tests_3">Tests<a class="headerlink" href="#tests_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave21_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave22_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><strong>Total tests: 4 390</strong> (56 Wave 21 + 56 Wave 22 new; 0 failures)</li>
 </ul>
-<h3 id="benchmarks_2">Benchmarks<a class="headerlink" href="#benchmarks_2" title="Permanent link">&para;</a></h3>
+<h3 id="benchmarks_3">Benchmarks<a class="headerlink" href="#benchmarks_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>dev/benchmarks/bench_wave21_22.py</code> — micro-benchmark suite for all 28 modules</li>
 <li><code>dev/results/wave21_22_bench.json</code> — machine-readable results</li>
@@ -1525,13 +1616,13 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>DistilSpec</strong> (<code>squish/distil_spec.py</code>) — KL-divergence draft-head calibration; estimates +10–15 pp acceptance gain</li>
 <li><strong>BatchEmbed</strong> (<code>squish/batch_embed.py</code>) — Dynamic pooling (mean/max/cls/weighted) for batch embeddings in a single pass</li>
 </ul>
-<h3 id="tests_3">Tests<a class="headerlink" href="#tests_3" title="Permanent link">&para;</a></h3>
+<h3 id="tests_4">Tests<a class="headerlink" href="#tests_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave19_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave20_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><strong>Total tests: 4 278</strong> (56 Wave 19 + 56 Wave 20 new; 0 failures)</li>
 </ul>
-<h3 id="benchmarks_3">Benchmarks<a class="headerlink" href="#benchmarks_3" title="Permanent link">&para;</a></h3>
+<h3 id="benchmarks_4">Benchmarks<a class="headerlink" href="#benchmarks_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>dev/benchmarks/bench_wave19_20.py</code> — micro-benchmark suite for all 28 modules</li>
 <li><code>dev/results/wave19_20_bench.json</code> — machine-readable results</li>
@@ -1573,13 +1664,13 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>PowerMonitor</strong> (<code>squish/power_monitor.py</code>) — Apple Silicon power source advisor via <code>PowerMonitor</code>. 0.5 µs <code>get_power_source()</code> + <code>get_recommended_mode()</code>; adjusts compute policy for battery vs. AC.</li>
 <li><strong>DiffusionDraft</strong> (<code>squish/diffusion_draft.py</code>) — Diffusion-model draft head capability gate via <code>DiffusionDraftHead</code>. <code>is_available()</code> + <code>is_suitable_for_task()</code>; enables parallel diffusion-based speculation.</li>
 </ul>
-<h3 id="tests_4">Tests<a class="headerlink" href="#tests_4" title="Permanent link">&para;</a></h3>
+<h3 id="tests_5">Tests<a class="headerlink" href="#tests_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>tests/test_wave17_server_wiring.py</code> — 56 tests covering all 14 Wave 17 module import, instantiation, and core API paths.</li>
 <li>Added <code>tests/test_wave18_server_wiring.py</code> — 56 tests covering all 14 Wave 18 module import, instantiation, and core API paths.</li>
 <li>Total tests: <strong>4 166 passing</strong>, 16 skipped, 0 failures.</li>
 </ul>
-<h3 id="benchmarks_4">Benchmarks<a class="headerlink" href="#benchmarks_4" title="Permanent link">&para;</a></h3>
+<h3 id="benchmarks_5">Benchmarks<a class="headerlink" href="#benchmarks_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>dev/benchmarks/bench_wave17_18.py</code> — micro-benchmark suite for all 28 Wave 17+18 modules.</li>
 <li>Added <code>dev/results/wave17_18_bench.json</code> — machine-readable benchmark output.</li>
@@ -1619,13 +1710,13 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>ForeLen</strong> (<code>squish/forelen.py</code>) — Entropy-guided output length prediction via <code>EGTPPredictor</code> (entropy histogram) + <code>PLPPredictor</code> (exponential decay). −29% MAE vs TRAIL.</li>
 <li><strong>RASD</strong> (<code>squish/rasd.py</code>) — Retrieval-augmented speculative decode via <code>CorpusIndex</code> + <code>RASDBatcher.build_retrieval_tree()</code>. 40–60% corpus hit rate.</li>
 </ul>
-<h3 id="tests_5">Tests<a class="headerlink" href="#tests_5" title="Permanent link">&para;</a></h3>
+<h3 id="tests_6">Tests<a class="headerlink" href="#tests_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>tests/test_wave15_server_wiring.py</code> — 44 tests covering all Wave 15 module import, instantiation, and core API paths.</li>
 <li>Added <code>tests/test_wave16_server_wiring.py</code> — 45 tests covering all Wave 16 module import, instantiation, and core API paths.</li>
 <li>Total tests: <strong>3 937 passing</strong>, 0 failures.</li>
 </ul>
-<h3 id="benchmarks_5">Benchmarks<a class="headerlink" href="#benchmarks_5" title="Permanent link">&para;</a></h3>
+<h3 id="benchmarks_6">Benchmarks<a class="headerlink" href="#benchmarks_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>dev/benchmarks/bench_wave15_16.py</code> — micro-benchmark suite for all 21 Wave 15+16 modules.</li>
 <li>Added <code>dev/results/wave15_16_bench.json</code> — machine-readable benchmark output.</li>
