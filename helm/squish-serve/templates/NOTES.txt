@@ -1,0 +1,31 @@
+Squish inference server deployed successfully.
+
+1. Get the application URL:
+{{- if eq .Values.service.type "LoadBalancer" }}
+   NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+   Watch its status with:
+     kubectl get svc --namespace {{ .Release.Namespace }} {{ include "squish-serve.fullname" . }} -w
+
+   Once available, access the API at:
+     export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "squish-serve.fullname" . }} \
+        --template "{{ "{{" }} range (index .status.loadBalancer.ingress 0) {{ "}}" }}{{ "{{" }} . {{ "}}" }}{{ "{{" }} end {{ "}}" }}")
+     echo "http://$SERVICE_IP:{{ .Values.service.port }}/v1"
+{{- else if eq .Values.service.type "NodePort" }}
+   export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "squish-serve.fullname" . }})
+   export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+   echo "http://$NODE_IP:$NODE_PORT/v1"
+{{- else }}
+   # Port-forward to reach the ClusterIP service locally:
+   kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "squish-serve.fullname" . }} 8080:{{ .Values.service.port }}
+   echo "API available at http://127.0.0.1:8080/v1"
+{{- end }}
+
+2. Use as an OpenAI drop-in:
+   export OPENAI_BASE_URL=http://<SERVICE>:{{ .Values.service.port }}/v1
+   export OPENAI_API_KEY={{ if .Values.server.apiKey }}{{ .Values.server.apiKey }}{{ else }}squish{{ end }}
+
+3. Check server health:
+   kubectl exec --namespace {{ .Release.Namespace }} deploy/{{ include "squish-serve.fullname" . }} -- curl -s /health
+
+4. View logs:
+   kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "squish-serve.name" . }}" -f

@@ -243,3 +243,95 @@ jobs:
             --run-hardware \
             --model "${{ inputs.hardware_model || 'mlx-community/Qwen2.5-1.5B-Instruct-4bit' }}" \
             -v --tb=short
+
+  # ---------------------------------------------------------------------------
+  # Helm chart linting — validates chart structure and template syntax.
+  # Runs on every push/PR.  Requires `helm` which is pre-installed on
+  # ubuntu-latest runners.
+  # ---------------------------------------------------------------------------
+  helm-lint:
+    name: Helm lint (squish-serve chart)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Helm chart
+        run: helm lint helm/squish-serve --strict
+
+      - name: Helm template (dry-run render)
+        # Render with non-default values to exercise conditional blocks:
+        #   - autoscaling HPA enabled
+        #   - KEDA ScaledObject enabled
+        #   - CPU-only flavour (no GPU resource limits)
+        run: |
+          helm template squish-test helm/squish-serve \
+            --set image.flavour=cpu \
+            --set resources.limits={} \
+            --set autoscaling.enabled=true \
+            | grep -c "^---" || true
+          helm template squish-test helm/squish-serve \
+            --set keda.enabled=true \
+            | grep -c "^---" || true
+
+  # ---------------------------------------------------------------------------
+  # Multi-arch Docker image build + push to ghcr.io.
+  # Triggered only on version tags (v*.*.*) to avoid pushing on every PR.
+  # Builds:
+  #   ghcr.io/squishai/squish:<tag>-cpu   — linux/amd64 + linux/arm64
+  #   ghcr.io/squishai/squish:<tag>-cuda  — linux/amd64 only (CUDA is x86-64)
+  #   ghcr.io/squishai/squish:latest-{cpu,cuda}  (on default branch tags)
+  # ---------------------------------------------------------------------------
+  docker-push:
+    name: Build + push multi-arch images
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (cross-arch emulation for arm64)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version tag
+        id: meta
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build + push CPU image (linux/amd64 + linux/arm64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.cpu
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/squishai/squish:${{ steps.meta.outputs.VERSION }}-cpu
+            ghcr.io/squishai/squish:latest-cpu
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build + push CUDA image (linux/amd64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.cuda
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/squishai/squish:${{ steps.meta.outputs.VERSION }}-cuda
+            ghcr.io/squishai/squish:latest-cuda
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "squish-serve.fullname" . }}-config
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "squish-serve.labels" . | nindent 4 }}
+data:
+  SQUISH_MODEL: {{ .Values.model.id | quote }}
+  SQUISH_HOST: {{ .Values.server.host | quote }}
+  SQUISH_PORT: {{ .Values.server.port | quote }}
+  {{- range $key, $val := .Values.server.extraEnv }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
