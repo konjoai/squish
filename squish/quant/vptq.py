@@ -137,10 +137,9 @@ def _kmeans(
     # k-means++ init
     centres = [X[rng.integers(n)]]
     for _ in range(k - 1):
-        dists = np.array([
-            min(np.sum((x - c) ** 2) for c in centres)
-            for x in X
-        ])
+        centres_arr = np.stack(centres, axis=0)  # (m, dim)
+        diffs = X[:, None, :] - centres_arr[None, :, :]  # (n, m, dim)
+        dists = np.min(np.sum(diffs ** 2, axis=-1), axis=-1)  # (n,)
         probs = dists.astype(np.float64)
         total = probs.sum()
         if total <= 0:
