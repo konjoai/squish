@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-13 (v10 complete — Wave 27+28 inference velocity sprint)
+> Last updated: 2026-03-14 (v11 complete — Wave 29+30 KV compression & scheduling throughput sprint)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -20,6 +20,59 @@ This document tracks completed waves, the current release, and the next phase.
 | **v8** | 23–24 | Multi-Modal & Long Context · Quantisation Evolution & Model Surgery |
 | **v9** | 25–26 | Cutting-Edge Attention Variants & Compute Fusion · Distributed Inference & Production Reliability |
 | **v10** | 27–28 | Inference Velocity Sprint — server wiring quick-wins + novel algorithm modules |
+| **v11** | 29–30 | KV & Attention Compression Sprint · Scheduling & Throughput Sprint |
+
+---
+
+## ✅ v11 — Waves 29+30 (Released 2026-03-14)
+
+Theme: **KV & Attention Compression + Scheduling Throughput Sprint**
+
+### Wave 29 — KV & Attention Compression (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| PyramidKVManager | `squish/kv/pyramid_kv.py` | Layer-wise adaptive KV budget with H2O eviction |
+| SparQAttention | `squish/attention/sparq_attn.py` | Sparse-Q decode attention — r_dims approximation |
+| KVMergeRegistry | `squish/kv/kv_merge.py` | Cross-request KV prefix merging via SharedPrefixSlab |
+| LogitFilter | `squish/token/logit_filter.py` | Random-projection vocabulary sketching for fast candidate selection |
+| RESTSpecDecoder | `squish/speculative/rest_spec.py` | Retrieval-based speculative decoding (REST) |
+| ContrastiveDecoder | `squish/sampling/contrastive_decoding.py` | CD = expert − α·amateur with APC masking |
+
+### Wave 30 — Scheduling & Throughput (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| ThermalScheduler | `squish/serving/thermal_scheduler.py` | Apple Silicon thermal-aware dynamic batch scaling |
+| BatchedDraftVerifier | `squish/speculative/batched_draft_verify.py` | Cross-request batched draft verification |
+| AdaptiveRoPE | `squish/attention/adaptive_rope.py` | Dynamic per-sequence RoPE scaling (STANDARD/DYNAMIC/YaRN/NTK) |
+| ActivationOffloader | `squish/hardware/activation_offload.py` | Long-context layer activation offloading |
+| GEARManager | `squish/kv/gear_kv.py` | GEAR INT4/INT8 KV quantization + low-rank SVD error correction |
+| QuantRotary | `squish/quant/quant_rotary.py` | Fused rotate-then-quantize for Q/K tensors |
+
+### Tests & Benchmarks
+
+- `tests/test_wave29_modules.py` — 66 tests, all passing
+- `tests/test_wave30_modules.py` — 88 tests, all passing
+- **Total tests: 7,826 passed, 33 skipped** (+154 new; 0 failures)
+
+### Completion Checklist
+
+- [x] `pyramid_kv.py` — layer-wise adaptive KV budget
+- [x] `sparq_attn.py` — sparse-Q attention
+- [x] `kv_merge.py` — shared prefix slab + KV merge registry
+- [x] `logit_filter.py` — random-projection logit filter
+- [x] `rest_spec.py` — retrieval-enhanced speculative decoding
+- [x] `contrastive_decoding.py` — contrastive decode with APC
+- [x] `thermal_scheduler.py` — Apple Silicon thermal scheduler
+- [x] `batched_draft_verify.py` — batched cross-request draft verifier
+- [x] `adaptive_rope.py` — adaptive RoPE with YaRN/NTK scaling
+- [x] `activation_offload.py` — long-context activation offloader
+- [x] `gear_kv.py` — GEAR INT4 KV quant + SVD error correction
+- [x] `quant_rotary.py` — fused rotate-quantize for Q/K
+- [x] Tests (154 new tests, all passing)
+- [x] CHANGELOG updated
+- [x] PLAN.md updated
 
 ---
 

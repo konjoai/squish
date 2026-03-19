@@ -5,6 +5,35 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [11.0.0] — 2026-03-14
+
+### Added — Wave 29: KV & Attention Compression Sprint
+
+- **PyramidKV** (`squish/kv/pyramid_kv.py`) — Layer-wise adaptive KV budget allocation; lower layers retain more KV, upper layers evict aggressively via EMA-weighted H2O-style importance scoring; configurable alpha decay and min-budget floor
+- **SparQ Attention** (`squish/attention/sparq_attn.py`) — Sparse-Q decode attention; top-r query dimensions drive approximate KV relevance scoring; exact attention over top-k KV subset; ~(r/d_k)×(k/seq) bandwidth reduction
+- **KV Prefix Merging** (`squish/kv/kv_merge.py`) — Cross-request shared read-only KV prefix slabs; SHA-256 prefix hashing; reference-counted `SharedPrefixSlab`; per-request `RequestKVView` with COW private extension; thread-safe registry
+- **Logit Vocab Filter** (`squish/token/logit_filter.py`) — Random-projection sketch pre-filters LM head candidates; exact matmul only for top-k tokens; ~30× FLOP reduction for large vocabs; `LogitFilter.from_embedding_matrix()` factory
+- **REST Speculative Decoding** (`squish/speculative/rest_spec.py`) — Online n-gram trie DataStore; retrieval-based draft without a secondary model; greedy chained drafting; verify-then-accept loop; ~40–65% acceptance rate on seen-domain text
+- **Contrastive Decoding** (`squish/sampling/contrastive_decoding.py`) — Expert/amateur logit contrast (`cd = expert - α·amateur`); Adaptive Plausibility Constraint (APC) masks implausible tokens; self-derives amateur via high-temperature/uniform/entropy modes
+
+### Added — Wave 30: Scheduling & Throughput Sprint
+
+- **Thermal Scheduler** (`squish/serving/thermal_scheduler.py`) — Apple Silicon thermal-aware dynamic batching; EMA latency proxy + macOS `sysctl kern.thermstate`; NOMINAL/WARM/HOT/CRITICAL states with 100%/75%/50%/25% batch scaling; auto-disables speculative decode under thermal pressure
+- **Batched Draft Verifier** (`squish/speculative/batched_draft_verify.py`) — Cross-request batched speculative verification; pads N drafts → single model forward; per-request greedy acceptance; amortizes Metal dispatch overhead for concurrent spec-decode requests
+- **Adaptive RoPE** (`squish/attention/adaptive_rope.py`) — Per-request dynamic RoPE base frequency selection; short-seq boost (base=500 for <512 tokens), standard (10000), YaRN and NTK scaling for long contexts; lazy cos/sin cache per (seq_len, base)
+- **Activation Offloader** (`squish/hardware/activation_offload.py`) — Long-context activation offloading to CPU RAM; threshold-gated; `ActivationBank` keyed by layer index; tracks offloaded-vs-passthrough bytes; enables 32K+ prefill on 8–16 GB Apple Silicon
+- **GEAR KV Quantization** (`squish/kv/gear_kv.py`) — INT4/INT8 KV quantization with low-rank SVD error correction; rank-r correction residual stored alongside quantized KV; `GEARManager` per-layer API; >99% cosine similarity vs FP16 at rank=8
+- **Quantized Rotary** (`squish/quant/quant_rotary.py`) — Fused dequantize→RoPE rotate→requantize in one NumPy pass; eliminates 2 of 3 kernel launches for Q/K rotation; INT8 symmetric per-row scale; 4-bit mode supported
+
+### Tests
+
+- `tests/test_wave29_modules.py` — 66 tests, 66 passing
+- `tests/test_wave30_modules.py` — 88 tests, 88 passing
+
+### Total test count: 7,826 passed, 33 skipped, 0 failures
+
+---
+
 ## [10.0.0] — 2026-03-13
 
 ### Added — Wave 27: Phase 1 Server Wiring Quick Wins
