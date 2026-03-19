@@ -1,0 +1,391 @@
+{
+  "Llama-3.2-3B": {
+    "3": {
+      "model_id": "Llama-3.2-3B",
+      "bits": 3,
+      "compression": {
+        "bits": 3,
+        "method": "milo_int3",
+        "bpw_approx": 3.0,
+        "compress_s": 3655.1505749589996,
+        "original_gb": 6.434710865,
+        "compressed_gb": 1.51164544,
+        "size_ratio": 0.23492049164512072,
+        "error": null
+      },
+      "throughput": {
+        "bits": 3,
+        "tps_mean": 12.984349121954828,
+        "tps_stdev": 0.2145529347243169,
+        "tps_min": 12.769796187230511,
+        "tps_max": 13.198902056679145,
+        "ttft_mean_ms": 505.9809789963765,
+        "n_runs": 2,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 3,
+        "ppl": 8.115290514356445,
+        "n_tokens": 511,
+        "error": null
+      }
+    },
+    "4": {
+      "model_id": "Llama-3.2-3B",
+      "bits": 4,
+      "compression": {
+        "bits": 4,
+        "method": "int4",
+        "bpw_approx": 5.0,
+        "compress_s": 69.88526399999682,
+        "original_gb": 6.434710865,
+        "compressed_gb": 5.73330823,
+        "size_ratio": 0.8909970238421894,
+        "error": null
+      },
+      "throughput": {
+        "bits": 4,
+        "tps_mean": 12.733188774007559,
+        "tps_stdev": 0.399556837158698,
+        "tps_min": 12.1905363699237,
+        "tps_max": 13.140950951645737,
+        "ttft_mean_ms": 498.1930833358395,
+        "n_runs": 3,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu",
+          "Describe the architecture of a modern vector database and it"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 4,
+        "ppl": 8.115290514356445,
+        "n_tokens": 511,
+        "error": null
+      }
+    }
+  },
+  "Qwen2.5-1.5B": {
+    "2": {
+      "model_id": "Qwen2.5-1.5B",
+      "bits": 2,
+      "compression": {
+        "bits": 2,
+        "method": "aqlm_int2",
+        "bpw_approx": 2.0,
+        "compress_s": 0.0,
+        "original_gb": 3.098984044,
+        "compressed_gb": 0.0,
+        "size_ratio": 0.0,
+        "error": "skipped: AQLM INT2 compression estimated 500+ min on M3 16 GB"
+      },
+      "throughput": {
+        "bits": 2,
+        "tps_mean": 22.181682165267183,
+        "tps_stdev": 3.016261134639592,
+        "tps_min": 19.16542103062759,
+        "tps_max": 25.197943299906775,
+        "ttft_mean_ms": 405.66083299927413,
+        "n_runs": 2,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 2,
+        "ppl": 9.195828892530896,
+        "n_tokens": 511,
+        "error": null
+      }
+    },
+    "3": {
+      "model_id": "Qwen2.5-1.5B",
+      "bits": 3,
+      "compression": {
+        "bits": 3,
+        "method": "milo_int3",
+        "bpw_approx": 3.0,
+        "compress_s": 1298.1209597920097,
+        "original_gb": 3.098984044,
+        "compressed_gb": 0.759426816,
+        "size_ratio": 0.24505670413835792,
+        "error": null
+      },
+      "throughput": {
+        "bits": 3,
+        "tps_mean": 26.52888655370697,
+        "tps_stdev": 0.35473137452244247,
+        "tps_min": 26.174155179184527,
+        "tps_max": 26.883617928229413,
+        "ttft_mean_ms": 240.79518749931594,
+        "n_runs": 2,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 3,
+        "ppl": 9.195828892530896,
+        "n_tokens": 511,
+        "error": null
+      }
+    },
+    "4": {
+      "model_id": "Qwen2.5-1.5B",
+      "bits": 4,
+      "compression": {
+        "bits": 4,
+        "method": "int4",
+        "bpw_approx": 5.0,
+        "compress_s": 10.282554541001446,
+        "original_gb": 3.098984044,
+        "compressed_gb": 2.528598046,
+        "size_ratio": 0.8159441965813491,
+        "error": null
+      },
+      "throughput": {
+        "bits": 4,
+        "tps_mean": 26.29428302337081,
+        "tps_stdev": 0.37283538234001595,
+        "tps_min": 25.768774090841923,
+        "tps_max": 26.594314893799158,
+        "ttft_mean_ms": 230.53763866967833,
+        "n_runs": 3,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu",
+          "Describe the architecture of a modern vector database and it"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 4,
+        "ppl": 9.195828892530896,
+        "n_tokens": 511,
+        "error": null
+      }
+    }
+  },
+  "Qwen2.5-7B": {
+    "3": {
+      "model_id": "Qwen2.5-7B",
+      "bits": 3,
+      "compression": {
+        "bits": 3,
+        "method": "milo_int3",
+        "bpw_approx": 3.75,
+        "compress_s": 0.0,
+        "original_gb": 15.242794109,
+        "compressed_gb": 0.0,
+        "size_ratio": 0.0,
+        "error": "skipped: MiLo INT3 compression est. 100+ min on M3 16 GB"
+      },
+      "throughput": {
+        "bits": 3,
+        "tps_mean": 20.032793783190648,
+        "tps_stdev": 0.07697189126276527,
+        "tps_min": 19.955821891927883,
+        "tps_max": 20.109765674453413,
+        "ttft_mean_ms": 402.6192499950412,
+        "n_runs": 2,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 3,
+        "ppl": 8.243087744472826,
+        "n_tokens": 511,
+        "error": null
+      }
+    },
+    "4": {
+      "model_id": "Qwen2.5-7B",
+      "bits": 4,
+      "compression": {
+        "bits": 4,
+        "method": "int4",
+        "bpw_approx": 5.0,
+        "compress_s": 207.43732475000434,
+        "original_gb": 15.242794109,
+        "compressed_gb": 14.890296789,
+        "size_ratio": 0.9768744944345952,
+        "error": null
+      },
+      "throughput": {
+        "bits": 4,
+        "tps_mean": 20.614461870149935,
+        "tps_stdev": 0.20549653379055235,
+        "tps_min": 20.33751590699415,
+        "tps_max": 20.82921681695345,
+        "ttft_mean_ms": 361.1190693336539,
+        "n_runs": 3,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu",
+          "Describe the architecture of a modern vector database and it"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 4,
+        "ppl": 8.243087744472826,
+        "n_tokens": 511,
+        "error": null
+      }
+    }
+  },
+  "Qwen3-8B": {
+    "3": {
+      "model_id": "Qwen3-8B",
+      "bits": 3,
+      "compression": {
+        "bits": 3,
+        "method": "milo_int3",
+        "bpw_approx": 3.75,
+        "compress_s": 0.0,
+        "original_gb": 16.397438288,
+        "compressed_gb": 0.0,
+        "size_ratio": 0.0,
+        "error": "skipped: MiLo INT3 compression est. 120+ min on M3 16 GB"
+      },
+      "throughput": {
+        "bits": 3,
+        "tps_mean": 17.64902412836897,
+        "tps_stdev": 0.00520865410648419,
+        "tps_min": 17.643815474262485,
+        "tps_max": 17.654232782475454,
+        "ttft_mean_ms": 468.7411874983809,
+        "n_runs": 2,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 3,
+        "ppl": 9.637145935456955,
+        "n_tokens": 511,
+        "error": null
+      }
+    },
+    "4": {
+      "model_id": "Qwen3-8B",
+      "bits": 4,
+      "compression": {
+        "bits": 4,
+        "method": "int4",
+        "bpw_approx": 5.0,
+        "compress_s": 196.97335887500958,
+        "original_gb": 16.397438288,
+        "compressed_gb": 15.360429589,
+        "size_ratio": 0.9367578837141345,
+        "error": null
+      },
+      "throughput": {
+        "bits": 4,
+        "tps_mean": 19.135965434002262,
+        "tps_stdev": 0.1879807166402035,
+        "tps_min": 18.871836921018232,
+        "tps_max": 19.29414905523543,
+        "ttft_mean_ms": 382.5746110038987,
+        "n_runs": 3,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu",
+          "Describe the architecture of a modern vector database and it"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 4,
+        "ppl": 9.637145935456955,
+        "n_tokens": 511,
+        "error": null
+      }
+    }
+  },
+  "gemma-3-4b-it": {
+    "3": {
+      "model_id": "gemma-3-4b-it",
+      "bits": 3,
+      "compression": {
+        "bits": 3,
+        "method": "milo_int3",
+        "bpw_approx": 3.75,
+        "compress_s": 0.0,
+        "original_gb": 9.982115299,
+        "compressed_gb": 0.0,
+        "size_ratio": 0.0,
+        "error": "skipped: MiLo INT3 compression est. 500+ min on M3 (VLM vision tower)"
+      },
+      "throughput": {
+        "bits": 3,
+        "tps_mean": 10.556340564682856,
+        "tps_stdev": 0.4477786899028082,
+        "tps_min": 10.108561874780047,
+        "tps_max": 11.004119254585664,
+        "ttft_mean_ms": 984.68818749825,
+        "n_runs": 2,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 3,
+        "ppl": 16.139182322446413,
+        "n_tokens": 511,
+        "error": null
+      }
+    },
+    "4": {
+      "model_id": "gemma-3-4b-it",
+      "bits": 4,
+      "compression": {
+        "bits": 4,
+        "method": "int4",
+        "bpw_approx": 5.0,
+        "compress_s": 157.40653462499904,
+        "original_gb": 9.982115299,
+        "compressed_gb": 9.267137587,
+        "size_ratio": 0.9283741280696662,
+        "error": null
+      },
+      "throughput": {
+        "bits": 4,
+        "tps_mean": 10.667801639472378,
+        "tps_stdev": 0.5525518930481083,
+        "tps_min": 9.886458752057727,
+        "tps_max": 11.06836555412862,
+        "ttft_mean_ms": 829.7995280008763,
+        "n_runs": 3,
+        "prompts": [
+          "Explain the key differences between a transformer and a recu",
+          "What are the main advantages of quantization for large langu",
+          "Describe the architecture of a modern vector database and it"
+        ],
+        "error": null
+      },
+      "perplexity": {
+        "bits": 4,
+        "ppl": 16.139182322446413,
+        "n_tokens": 511,
+        "error": null
+      }
+    }
+  }
+}
