@@ -1,0 +1,158 @@
+# Default values for squish-serve.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# ── Image ─────────────────────────────────────────────────────────────────────
+image:
+  # Container image to deploy.  Build these images with:
+  #   docker build -f Dockerfile.cuda -t ghcr.io/squishai/squish:latest-cuda .
+  #   docker build -f Dockerfile.cpu  -t ghcr.io/squishai/squish:latest-cpu  .
+  repository: ghcr.io/squishai/squish
+  # Tag base.  Final image = repository:tag-flavour (e.g. latest-cuda).
+  tag: "latest"
+  # flavour — appended to `tag` with a hyphen.
+  #   "cuda" → ghcr.io/squishai/squish:latest-cuda  (NVIDIA GPU inference)
+  #   "cpu"  → ghcr.io/squishai/squish:latest-cpu   (CPU-only inference)
+  #   ""     → ghcr.io/squishai/squish:latest        (tag as-is)
+  flavour: cuda
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+# - name: regcred
+
+# ── Model ─────────────────────────────────────────────────────────────────────
+model:
+  # Absolute path inside the /models volume that the container should serve.
+  # Examples:
+  #   /models/Qwen2.5-7B-Instruct-bf16           (uncompressed BF16)
+  #   /models/Qwen2.5-7B-Instruct-compressed     (squish INT4 npy-dir)
+  id: "/models/Qwen2.5-7B-Instruct-bf16"
+
+# ── Inference server ──────────────────────────────────────────────────────────
+server:
+  host: "0.0.0.0"
+  port: 8080
+  # API key for Bearer token authentication (defaults to "squish" in the binary).
+  # Inject via a Kubernetes Secret in production; leave empty to accept the default.
+  apiKey: ""
+  # Extra environment variables passed directly to the container.
+  # example:
+  #   SQUISH_LOG_LEVEL: "info"
+  #   HF_HUB_DISABLE_PROGRESS_BARS: "1"
+  extraEnv: {}
+
+# ── Service ───────────────────────────────────────────────────────────────────
+service:
+  # ClusterIP:    Internal-only.  Use a port-forward or Ingress to reach it.
+  # NodePort:     Exposes on each node's IP:NodePort.
+  # LoadBalancer: Provisions an external load balancer (cloud-provider dependent).
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+# GPU inference (default): requires NVIDIA device plugin installed on each GPU node.
+# To run CPU-only: remove nvidia.com/gpu from limits (or set to 0).
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: "32Gi"
+  requests:
+    cpu: "4"
+    memory: "16Gi"
+
+# ── Persistence (model weights PVC) ───────────────────────────────────────────
+persistence:
+  # Set enabled: true to create a PVC for squish pull to write model weights into.
+  # Set enabled: false if you pre-populate an existing PVC or use an NFS mount.
+  enabled: true
+  # StorageClass name.  Use "" to use the cluster default StorageClass.
+  storageClass: ""
+  # ReadWriteOnce: single node read-write.  Use ReadWriteMany for multi-node.
+  accessMode: ReadWriteOnce
+  size: 50Gi
+  # Provide an existing PVC name to skip automatic PVC creation.
+  existingClaim: ""
+  # Mount path inside the container.
+  mountPath: /models
+
+# ── Replica count (non-autoscaled) ─────────────────────────────────────────────
+replicaCount: 1
+
+# ── Native HPA autoscaling ────────────────────────────────────────────────────
+# Scales on CPU (and optionally memory) utilisation.  Mutually exclusive with
+# keda.enabled (prefer KEDA for GPU-aware / request-queue-depth scaling).
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+  # targetMemoryUtilizationPercentage: 80
+
+# ── KEDA autoscaling ──────────────────────────────────────────────────────────
+# Scales on Prometheus inference-queue depth.
+# Requires KEDA operator: https://keda.sh/docs/deploy/
+# Disable autoscaling.enabled when enabling KEDA to avoid conflicts.
+keda:
+  enabled: false
+  minReplicaCount: 1
+  maxReplicaCount: 8
+  prometheus:
+    serverAddress: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+    metricName: squish_queue_depth
+    threshold: "10"
+    # PromQL query for the scaling metric:
+    query: 'squish_active_requests{job="squish-serve"}'
+
+# ── Probes ────────────────────────────────────────────────────────────────────
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# ── Service Account ───────────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ── Pod-level settings ────────────────────────────────────────────────────────
+podAnnotations: {}
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # Run as non-root for CIS-hardened clusters:
+  # allowPrivilegeEscalation: false
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+# ── Scheduling ────────────────────────────────────────────────────────────────
+nodeSelector: {}
+  # Uncomment to pin to GPU nodes (requires node label):
+  # accelerator: nvidia-tesla-a100
+
+tolerations: []
+  # Uncomment to tolerate GPU taint applied to GPU-only nodes:
+  # - key: "nvidia.com/gpu"
+  #   operator: "Exists"
+  #   effect: "NoSchedule"
+
+affinity: {}
+
+# ── Name overrides ────────────────────────────────────────────────────────────
+nameOverride: ""
+fullnameOverride: ""

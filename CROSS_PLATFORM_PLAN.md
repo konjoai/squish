@@ -15,7 +15,7 @@ to Linux (CUDA, ROCm, CPU), Windows, and Cloud accelerators (TPU, Gaudi/IPU).
 | Linux CPU | ✅ Wired (Phase 1+2) | PyTorch CPU path via `_TorchBackend`; BF16 fallback |
 | Windows | ❌ Not started | CUDA path possible; WSL2 tested; native installer TBD |
 | Docker | ✅ Complete (Phase 3) | `Dockerfile.cuda`, `Dockerfile.cpu`, `docker-compose.yml` with profiles |
-| Kubernetes | ❌ Not started | No Helm chart, no k8s YAML |
+| Kubernetes | ✅ Complete (Phase 5) | `helm/squish-serve/` chart with GPU/CPU, HPA, KEDA support |
 | Cloud TPU | ❌ Not started | JAX backend required |
 | Intel Gaudi / IPU | ❌ Not started | Habana libs required |
 
@@ -242,7 +242,10 @@ services:
 
 ---
 
-## Phase 5 — Kubernetes / Helm Chart
+## Phase 5 — Kubernetes / Helm Chart ✅ COMPLETE
+
+**Delivered:** `helm/squish-serve/` Helm chart (Chart.yaml, values.yaml, 7 templates: deployment, service, configmap, serviceaccount, pvc, hpa, keda-scaledobject), `helm-lint` CI job (runs on all push/PR), `docker-push` CI job (multi-arch CPU + CUDA on version tags), `tests/test_helm_chart_unit.py` (77 tests, all passing).
+
 
 ### 5.1 Single-pod deployment (inference only)
 
@@ -358,8 +361,8 @@ Priority: lower than CUDA/ROCm — implement only if enterprise demand justifies
 | 1 | Wire `_TorchBackend` | 1 week | All Linux work | ✅ Done (commit 62ff229) |
 | 2 | Linux CUDA module compat | 2 weeks | Docker + K8s | ✅ Done (commit 62ff229) |
 | 3 | Docker + compose | 3 days | K8s, CI | ✅ Done |
-| 4 | K8s / Helm chart | 1 week | Cloud deploy | ❌ Not started |
-| 5 | CI multi-platform build | 3 days | Distribution | 🔶 Partial (docker-build lint job added) |
+| 4 | K8s / Helm chart | 1 week | Cloud deploy | ✅ Done |
+| 5 | CI multi-platform build | 3 days | Distribution | ✅ Done (helm-lint + docker-push on version tags) |
 | 6 | Windows CUDA path | 1 week | Windows users | ❌ Not started |
 | 7 | Windows installer | 1 week | Non-dev users | ❌ Not started |
 | 8 | TPU JAX backend | 3 weeks | Cloud TPU customers | ❌ Not started |

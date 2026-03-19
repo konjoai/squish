@@ -1,0 +1,22 @@
+apiVersion: v2
+name: squish-serve
+description: |
+  Private local-inference server for large language models.
+  Runs Squish INT4-compressed models via PyTorch on NVIDIA GPU (CUDA) or CPU.
+  Exposes an OpenAI-compatible /v1 REST API.
+type: application
+version: 0.1.0
+appVersion: "9.0.0"
+keywords:
+  - ai
+  - llm
+  - inference
+  - squish
+  - nlp
+  - openai
+maintainers:
+  - name: Squish AI
+    url: https://github.com/squishai/squish
+home: https://github.com/squishai/squish
+sources:
+  - https://github.com/squishai/squish
