@@ -189,7 +189,7 @@ jobs:
       - name: Lint Dockerfile.cpu (hadolint)
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: Dockerfile.cpu
+          dockerfile: docker/Dockerfile.cpu
           # DL3008: apt pin versions — git/curl don't need pinning in infra images
           # DL3013: pip pin versions — torch is pinned; other squish extras use >=
           # DL3059: multiple consecutive RUN — intentional for layer caching
@@ -198,14 +198,14 @@ jobs:
       - name: Lint Dockerfile.cuda (hadolint)
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: Dockerfile.cuda
+          dockerfile: docker/Dockerfile.cuda
           ignore: DL3008,DL3013,DL3059
 
       # BuildKit --check validates Dockerfile syntax + instruction semantics
       # without executing any RUN commands.  CPU base (python:3.11-slim) is
       # small enough to pull here; CUDA base (~3 GB) is skipped.
       - name: Validate CPU Dockerfile (BuildKit check)
-        run: docker buildx build --check -f Dockerfile.cpu .
+        run: docker buildx build --check -f docker/Dockerfile.cpu .
 
   # ---------------------------------------------------------------------------
   # Hardware integration tests — runs only on manual workflow_dispatch when
@@ -317,7 +317,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: Dockerfile.cpu
+          file: docker/Dockerfile.cpu
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
@@ -330,7 +330,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: Dockerfile.cuda
+          file: docker/Dockerfile.cuda
           platforms: linux/amd64
           push: true
           tags: |

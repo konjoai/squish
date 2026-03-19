@@ -41,6 +41,7 @@ nohup.out
 
 # Generated coverage / test artifacts
 coverage.json
+upload_report.md
 .coverage
 htmlcov/
 

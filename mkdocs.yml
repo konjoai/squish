@@ -59,6 +59,14 @@ nav:
   - API Reference: api.md
   - Architecture: ARCHITECTURE.md
   - Contributing: contributing.md
+  - Planning:
+    - Roadmap: planning/PLAN.md
+    - Modules: planning/MODULES.md
+    - Cross-Platform: planning/CROSS_PLATFORM_PLAN.md
+    - CLI Revamp: planning/CLI_REVAMP_PLAN.md
+    - INT Quantization: planning/INT_QUANTIZATION_BENCHMARK_PLAN.md
+    - Launch Status: planning/LAUNCH_STATUS_v9.md
+    - Phase 3+4 Guide: planning/PHASE_3_4_COMPLETION_GUIDE.md
 
 extra:
   social:

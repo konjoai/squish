@@ -50,8 +50,8 @@ services:
     profiles: ["cuda"]
     image: squish:cuda
     build:
-      context: .
-      dockerfile: Dockerfile.cuda
+      context: ..
+      dockerfile: docker/Dockerfile.cuda
       args:
         CUDA_TAG: "12.2.0-cudnn8-runtime-ubuntu22.04"
     deploy:
@@ -68,5 +68,5 @@ services:
     profiles: ["cpu"]
     image: squish:cpu
     build:
-      context: .
-      dockerfile: Dockerfile.cpu
+      context: ..
+      dockerfile: docker/Dockerfile.cpu

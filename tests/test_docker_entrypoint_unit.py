@@ -64,12 +64,12 @@ def _parse_serve(argv: list[str], env: dict[str, str] | None = None):
 
 class TestDockerFiles:
     def test_dockerfile_cpu_exists(self):
-        assert (_REPO / "Dockerfile.cpu").is_file(), \
-            "Dockerfile.cpu must exist in repo root"
+        assert (_REPO / "docker" / "Dockerfile.cpu").is_file(), \
+            "Dockerfile.cpu must exist in docker/"
 
     def test_dockerfile_cuda_exists(self):
-        assert (_REPO / "Dockerfile.cuda").is_file(), \
-            "Dockerfile.cuda must exist in repo root"
+        assert (_REPO / "docker" / "Dockerfile.cuda").is_file(), \
+            "Dockerfile.cuda must exist in docker/"
 
     def test_dockerignore_exists(self):
         assert (_REPO / ".dockerignore").is_file(), \
@@ -88,94 +88,94 @@ class TestDockerFiles:
         assert ".git" in content, ".dockerignore must exclude .git"
 
     def test_dockerfile_cpu_exposes_8080(self):
-        content = (_REPO / "Dockerfile.cpu").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cpu").read_text()
         assert "EXPOSE 8080" in content
 
     def test_dockerfile_cuda_exposes_8080(self):
-        content = (_REPO / "Dockerfile.cuda").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cuda").read_text()
         assert "EXPOSE 8080" in content
 
     def test_dockerfile_cpu_has_health_check(self):
-        content = (_REPO / "Dockerfile.cpu").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cpu").read_text()
         assert "HEALTHCHECK" in content
 
     def test_dockerfile_cuda_has_health_check(self):
-        content = (_REPO / "Dockerfile.cuda").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cuda").read_text()
         assert "HEALTHCHECK" in content
 
     def test_dockerfile_cpu_entrypoint_is_squish_cli(self):
-        content = (_REPO / "Dockerfile.cpu").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cpu").read_text()
         assert "squish.cli" in content
 
     def test_dockerfile_cuda_entrypoint_is_squish_cli(self):
-        content = (_REPO / "Dockerfile.cuda").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cuda").read_text()
         assert "squish.cli" in content
 
     def test_dockerfile_cpu_has_models_volume(self):
-        content = (_REPO / "Dockerfile.cpu").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cpu").read_text()
         assert 'VOLUME' in content and '/models' in content
 
     def test_dockerfile_cuda_has_models_volume(self):
-        content = (_REPO / "Dockerfile.cuda").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cuda").read_text()
         assert 'VOLUME' in content and '/models' in content
 
     def test_dockerfile_cpu_uses_linux_extra(self):
         """Dockerfile.cpu must install .[linux] to get torch on Linux."""
-        content = (_REPO / "Dockerfile.cpu").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cpu").read_text()
         assert ".[linux]" in content
 
     def test_dockerfile_cuda_uses_linux_extra(self):
-        content = (_REPO / "Dockerfile.cuda").read_text()
+        content = (_REPO / "docker" / "Dockerfile.cuda").read_text()
         assert ".[linux]" in content
 
 
 class TestDockerCompose:
     def test_docker_compose_exists(self):
-        assert (_REPO / "docker-compose.yml").is_file()
+        assert (_REPO / "docker" / "docker-compose.yml").is_file()
 
     def test_docker_compose_is_valid_yaml(self):
         yaml = pytest.importorskip("yaml")
-        content = (_REPO / "docker-compose.yml").read_text()
+        content = (_REPO / "docker" / "docker-compose.yml").read_text()
         data = yaml.safe_load(content)
         assert isinstance(data, dict)
 
     def test_docker_compose_has_services(self):
         yaml = pytest.importorskip("yaml")
-        data = yaml.safe_load((_REPO / "docker-compose.yml").read_text())
+        data = yaml.safe_load((_REPO / "docker" / "docker-compose.yml").read_text())
         assert "services" in data
 
     def test_docker_compose_has_cpu_service(self):
         yaml = pytest.importorskip("yaml")
-        data = yaml.safe_load((_REPO / "docker-compose.yml").read_text())
+        data = yaml.safe_load((_REPO / "docker" / "docker-compose.yml").read_text())
         assert "squish-cpu" in data["services"]
 
     def test_docker_compose_has_cuda_service(self):
         yaml = pytest.importorskip("yaml")
-        data = yaml.safe_load((_REPO / "docker-compose.yml").read_text())
+        data = yaml.safe_load((_REPO / "docker" / "docker-compose.yml").read_text())
         assert "squish-cuda" in data["services"]
 
     def test_docker_compose_cpu_has_build(self):
         yaml = pytest.importorskip("yaml")
-        data = yaml.safe_load((_REPO / "docker-compose.yml").read_text())
+        data = yaml.safe_load((_REPO / "docker" / "docker-compose.yml").read_text())
         svc = data["services"]["squish-cpu"]
         assert "build" in svc or "image" in svc
 
     def test_docker_compose_cuda_has_build(self):
         yaml = pytest.importorskip("yaml")
-        data = yaml.safe_load((_REPO / "docker-compose.yml").read_text())
+        data = yaml.safe_load((_REPO / "docker" / "docker-compose.yml").read_text())
         svc = data["services"]["squish-cuda"]
         assert "build" in svc or "image" in svc
 
     def test_docker_compose_cuda_profile(self):
         yaml = pytest.importorskip("yaml")
-        data = yaml.safe_load((_REPO / "docker-compose.yml").read_text())
+        data = yaml.safe_load((_REPO / "docker" / "docker-compose.yml").read_text())
         cuda_svc = data["services"]["squish-cuda"]
         assert "profiles" in cuda_svc
         assert "cuda" in cuda_svc["profiles"]
 
     def test_docker_compose_cpu_profile(self):
         yaml = pytest.importorskip("yaml")
-        data = yaml.safe_load((_REPO / "docker-compose.yml").read_text())
+        data = yaml.safe_load((_REPO / "docker" / "docker-compose.yml").read_text())
         cpu_svc = data["services"]["squish-cpu"]
         assert "profiles" in cpu_svc
         assert "cpu" in cpu_svc["profiles"]
