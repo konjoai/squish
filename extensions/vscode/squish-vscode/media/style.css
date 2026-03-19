@@ -273,3 +273,80 @@ button:disabled {
     background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.1));
     opacity: 1;
 }
+
+/* ── Tool call cards ─────────────────────────────────────────────────────── */
+
+.tool-call-card {
+    margin-top: 6px;
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
+    border-radius: 5px;
+    overflow: hidden;
+    font-size: 0.85em;
+}
+
+.tool-call-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    background: var(--vscode-sideBarSectionHeader-background, rgba(128,128,128,0.1));
+}
+
+.tool-call-icon {
+    opacity: 0.7;
+    font-style: normal;
+}
+
+.tool-call-name {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-weight: 600;
+    flex: 1;
+}
+
+.tool-call-status {
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+.tool-call-status.running {
+    color: var(--vscode-charts-yellow, #d7ba7d);
+}
+
+.tool-call-status.done {
+    color: var(--vscode-charts-green, #4ec9b0);
+}
+
+.tool-call-card details {
+    padding: 0 8px 4px;
+}
+
+.tool-call-card summary {
+    cursor: pointer;
+    font-size: 0.8em;
+    opacity: 0.65;
+    padding: 3px 0;
+    user-select: none;
+}
+
+.tool-call-args,
+.tool-call-result {
+    margin: 4px 0 4px;
+    background: var(--vscode-textCodeBlock-background, rgba(0,0,0,0.2));
+    border-radius: 3px;
+    padding: 5px 7px;
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.88em;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.tool-call-result {
+    padding: 4px 8px 6px;
+}
+
+.tool-call-result.hidden {
+    display: none;
+}
+

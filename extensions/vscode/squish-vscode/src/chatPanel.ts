@@ -8,7 +8,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { SquishClient, ChatMessage } from './squishClient';
+import { SquishClient, ChatMessage, ToolDefinition, ToolCall } from './squishClient';
 
 export class ChatPanel implements vscode.WebviewViewProvider {
     public static readonly viewType = 'squish.chatView';
@@ -19,6 +19,77 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     // State for filtering <think>...</think> blocks out of the stream
     private _inThink = false;
     private _thinkBuf = '';
+
+    // ── Tool definitions (passed to the model) ────────────────────────────
+    private static readonly TOOLS: ToolDefinition[] = [
+        {
+            type: 'function',
+            function: {
+                name: 'read_file',
+                description: 'Read the contents of a file in the current workspace.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        path: {
+                            type: 'string',
+                            description: 'Relative path from the workspace root, e.g. "src/index.ts"',
+                        },
+                    },
+                    required: ['path'],
+                },
+            },
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'get_selection',
+                description: 'Get the text currently selected in the active editor.',
+                parameters: { type: 'object', properties: {} },
+            },
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'get_open_files',
+                description: 'List the relative paths of all files currently open in the editor.',
+                parameters: { type: 'object', properties: {} },
+            },
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'run_terminal',
+                description: 'Run a shell command in the VS Code integrated terminal and return its output.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        command: {
+                            type: 'string',
+                            description: 'The shell command to execute.',
+                        },
+                    },
+                    required: ['command'],
+                },
+            },
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'insert_at_cursor',
+                description: 'Insert text at the current cursor position in the active editor.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        text: {
+                            type: 'string',
+                            description: 'The text to insert at the cursor.',
+                        },
+                    },
+                    required: ['text'],
+                },
+            },
+        },
+    ];
 
     constructor(private readonly _extensionUri: vscode.Uri) {}
 
@@ -87,7 +158,6 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         this._history.push({ role: 'user', content: text });
 
         const client = new SquishClient(host, port, apiKey);
-        let assistantReply = '';
 
         // Reset think-block filter state for this turn
         this._inThink = false;
@@ -96,43 +166,229 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         // Signal start of assistant turn
         this._view.webview.postMessage({ type: 'streamStart' });
 
-        client.streamChat(
-            messages,
-            maxTokens,
-            temperature,
-            model,
-            (chunk) => {
-                if (chunk.delta) {
-                    const visible = this._filterThink(chunk.delta);
-                    assistantReply += visible;
-                    if (visible) {
+        await this._runToolLoop(client, messages, maxTokens, temperature, model);
+    }
+
+    /**
+     * Execute the full agentic tool-calling loop.
+     * The model may request 0 or more tool calls before producing a final answer.
+     */
+    private _runToolLoop(
+        client: SquishClient,
+        messages: ChatMessage[],
+        maxTokens: number,
+        temperature: number,
+        model: string,
+    ): Promise<void> {
+        return new Promise<void>((resolve) => {
+            const MAX_TOOL_ROUNDS = 10;
+            let toolRound = 0;
+
+            const runOnce = (msgs: ChatMessage[]) => {
+                let assistantReply = '';
+
+                client.streamChat(
+                    msgs,
+                    maxTokens,
+                    temperature,
+                    model,
+                    async (chunk) => {
+                        if (chunk.delta) {
+                            const visible = this._filterThink(chunk.delta);
+                            assistantReply += visible;
+                            if (visible) {
+                                this._view?.webview.postMessage({
+                                    type: 'streamChunk',
+                                    delta: visible,
+                                });
+                            }
+                        }
+
+                        if (chunk.done) {
+                            // Flush buffered think content
+                            const flushed = this._thinkBuf;
+                            if (!this._inThink && flushed) {
+                                assistantReply += flushed;
+                                this._view?.webview.postMessage({ type: 'streamChunk', delta: flushed });
+                            }
+                            this._thinkBuf = '';
+
+                            const toolCalls = chunk.toolCalls;
+                            const wantsTools = chunk.finishReason === 'tool_calls' && toolCalls && toolCalls.length > 0;
+
+                            if (wantsTools && toolRound < MAX_TOOL_ROUNDS) {
+                                toolRound++;
+
+                                // Append the assistant message (with tool_calls) to history
+                                const assistantMsg: ChatMessage = {
+                                    role: 'assistant',
+                                    content: assistantReply || null,
+                                    tool_calls: toolCalls,
+                                };
+                                this._history.push(assistantMsg);
+                                const nextMsgs = [...msgs, assistantMsg];
+
+                                // Execute each tool call and collect results
+                                for (const tc of toolCalls!) {
+                                    this._view?.webview.postMessage({
+                                        type: 'toolCallStart',
+                                        id: tc.id,
+                                        name: tc.function.name,
+                                        args: tc.function.arguments,
+                                    });
+
+                                    let result: string;
+                                    try {
+                                        result = await this._executeToolCall(tc);
+                                    } catch (e) {
+                                        result = `Error: ${(e as Error).message}`;
+                                    }
+
+                                    this._view?.webview.postMessage({
+                                        type: 'toolCallEnd',
+                                        id: tc.id,
+                                        name: tc.function.name,
+                                        result,
+                                    });
+
+                                    const toolResultMsg: ChatMessage = {
+                                        role: 'tool',
+                                        content: result,
+                                        tool_call_id: tc.id,
+                                        name: tc.function.name,
+                                    };
+                                    this._history.push(toolResultMsg);
+                                    nextMsgs.push(toolResultMsg);
+                                }
+
+                                // Reset think filter and continue
+                                this._inThink = false;
+                                this._thinkBuf = '';
+                                runOnce(nextMsgs);
+                            } else {
+                                // Final answer — commit to history and signal done
+                                this._view?.webview.postMessage({ type: 'streamEnd' });
+                                if (assistantReply) {
+                                    this._history.push({ role: 'assistant', content: assistantReply });
+                                }
+                                resolve();
+                            }
+                        }
+                    },
+                    (err) => {
                         this._view?.webview.postMessage({
-                            type: 'streamChunk',
-                            delta: visible,
+                            type: 'streamError',
+                            message: err.message,
                         });
-                    }
+                        resolve();
+                    },
+                    ChatPanel.TOOLS,
+                );
+            };
+
+            runOnce(messages);
+        });
+    }
+
+    /**
+     * Execute a single tool call and return the string result.
+     */
+    private async _executeToolCall(tc: ToolCall): Promise<string> {
+        const args = this._parseToolArgs(tc.function.arguments);
+
+        switch (tc.function.name) {
+            case 'read_file':
+                return this._toolReadFile(args.path as string);
+
+            case 'get_selection':
+                return this._toolGetSelection();
+
+            case 'get_open_files':
+                return this._toolGetOpenFiles();
+
+            case 'run_terminal':
+                return this._toolRunTerminal(args.command as string);
+
+            case 'insert_at_cursor':
+                return this._toolInsertAtCursor(args.text as string);
+
+            default:
+                throw new Error(`Unknown tool: ${tc.function.name}`);
+        }
+    }
+
+    private _parseToolArgs(argsJson: string): Record<string, unknown> {
+        try {
+            return JSON.parse(argsJson) as Record<string, unknown>;
+        } catch {
+            return {};
+        }
+    }
+
+    // ── Tool implementations ──────────────────────────────────────────────
+
+    private async _toolReadFile(relativePath: string): Promise<string> {
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0) {
+            throw new Error('No workspace open');
+        }
+        const abs = vscode.Uri.joinPath(folders[0].uri, relativePath);
+        const bytes = await vscode.workspace.fs.readFile(abs);
+        return Buffer.from(bytes).toString('utf8');
+    }
+
+    private _toolGetSelection(): string {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            return '';
+        }
+        return editor.document.getText(editor.selection);
+    }
+
+    private _toolGetOpenFiles(): string {
+        const folders = vscode.workspace.workspaceFolders;
+        const rootPath = folders?.[0]?.uri.fsPath ?? '';
+        const openDocs = vscode.workspace.textDocuments
+            .filter((d) => !d.isUntitled && d.uri.scheme === 'file')
+            .map((d) => (rootPath ? path.relative(rootPath, d.uri.fsPath) : d.uri.fsPath));
+        return JSON.stringify(openDocs);
+    }
+
+    private _toolRunTerminal(command: string): Promise<string> {
+        return new Promise((resolve) => {
+            // Run in a new unnamed terminal, capture output via a temp file
+            const tmpFile = path.join(
+                require('os').tmpdir(),
+                `squish_tool_${Date.now()}.txt`,
+            );
+            const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+            const shellArgs = process.platform === 'win32'
+                ? ['/c', `${command} > "${tmpFile}" 2>&1`]
+                : ['-c', `${command} > "${tmpFile}" 2>&1`];
+            const { spawn } = require('child_process') as typeof import('child_process');
+            const child = spawn(shell, shellArgs, { shell: false });
+            child.on('close', () => {
+                try {
+                    resolve(fs.readFileSync(tmpFile, 'utf8'));
+                } catch {
+                    resolve('');
+                } finally {
+                    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
                 }
-                if (chunk.done) {
-                    // Flush remaining buffered content (no trimming — whitespace is intentional)
-                    const flushed = this._thinkBuf;
-                    if (!this._inThink && flushed) {
-                        assistantReply += flushed;
-                        this._view?.webview.postMessage({ type: 'streamChunk', delta: flushed });
-                    }
-                    this._thinkBuf = '';
-                    this._view?.webview.postMessage({ type: 'streamEnd' });
-                    if (assistantReply) {
-                        this._history.push({ role: 'assistant', content: assistantReply });
-                    }
-                }
-            },
-            (err) => {
-                this._view?.webview.postMessage({
-                    type: 'streamError',
-                    message: err.message,
-                });
-            },
-        );
+            });
+            child.on('error', (e: Error) => resolve(`Error: ${e.message}`));
+        });
+    }
+
+    private async _toolInsertAtCursor(text: string): Promise<string> {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            return 'No active editor';
+        }
+        await editor.edit((editBuilder) => {
+            editBuilder.replace(editor.selection, text);
+        });
+        return 'Inserted';
     }
 
     /**

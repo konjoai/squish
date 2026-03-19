@@ -5,11 +5,13 @@
  * the conversation UI.
  *
  * Message protocol (extension → webview):
- *   { type: 'streamStart' }                — assistant turn begins
- *   { type: 'streamChunk', delta: string } — partial token
- *   { type: 'streamEnd' }                  — assistant turn complete
- *   { type: 'streamError', message: str }  — error
- *   { type: 'clearHistory' }               — wipe the UI
+ *   { type: 'streamStart' }                          — assistant turn begins
+ *   { type: 'streamChunk', delta: string }           — partial token
+ *   { type: 'streamEnd' }                            — assistant turn complete
+ *   { type: 'streamError', message: str }            — error
+ *   { type: 'clearHistory' }                         — wipe the UI
+ *   { type: 'toolCallStart', id, name, args }        — tool invocation beginning
+ *   { type: 'toolCallEnd',   id, name, result }      — tool invocation complete
  *
  * Message protocol (webview → extension):
  *   { type: 'userMessage', text: string }
@@ -42,10 +44,14 @@
     let _ackWordIdx          = 0;
     let _realStarted         = false; // has first real streamChunk arrived?
 
-    // Smooth character render queue
+    // Smooth character render queue — 14 chars/frame ≈ 840 chars/sec @ 60 fps,
+    // fast enough to feel instant while remaining smooth during token bursts.
     const _queue             = [];
     let   _rafId             = null;
-    const CHARS_PER_FRAME    = 4;  // ~240 chars/sec at 60 fps; smooths token bursts
+    const CHARS_PER_FRAME    = 14;
+
+    // Active tool call cards keyed by call id
+    const _toolCards         = new Map();
 
     // ── Send ──────────────────────────────────────────────────────────────
 
@@ -104,6 +110,14 @@
                 messagesEl.innerHTML = '';
                 _resetTurnState();
                 break;
+
+            case 'toolCallStart':
+                _onToolCallStart(msg.id, msg.name, msg.args);
+                break;
+
+            case 'toolCallEnd':
+                _onToolCallEnd(msg.id, msg.result);
+                break;
         }
     });
 
@@ -113,6 +127,7 @@
         _realStarted = false;
         _queue.length = 0;
         if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+        _toolCards.clear();
 
         // Build assistant bubble: label + indicator + ack span + content span
         const row = document.createElement('div');
@@ -186,7 +201,10 @@
         }
         const n    = Math.min(CHARS_PER_FRAME, _queue.length);
         const text = _queue.splice(0, n).join('');
-        _currentContentEl.appendChild(document.createTextNode(text));
+        // Batch the text node append via DocumentFragment to minimise reflows
+        const frag = document.createDocumentFragment();
+        frag.appendChild(document.createTextNode(text));
+        _currentContentEl.appendChild(frag);
         messagesEl.scrollTop = messagesEl.scrollHeight;
         _rafId = requestAnimationFrame(_drainQueue);
     }
@@ -208,9 +226,9 @@
     function _flushQueue() {
         if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
         if (_currentContentEl && _queue.length > 0) {
-            _currentContentEl.appendChild(
-                document.createTextNode(_queue.splice(0).join(''))
-            );
+            const frag = document.createDocumentFragment();
+            frag.appendChild(document.createTextNode(_queue.splice(0).join('')));
+            _currentContentEl.appendChild(frag);
             messagesEl.scrollTop = messagesEl.scrollHeight;
         }
     }
@@ -230,11 +248,97 @@
         _cancelAck();
         if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
         _queue.length = 0;
+        _toolCards.clear();
         _currentBubble      = null;
         _currentContentEl   = null;
         _currentIndicatorEl = null;
         _currentAckEl       = null;
         _realStarted        = false;
+    }
+
+    // ── Tool call UI ──────────────────────────────────────────────────────
+
+    function _onToolCallStart(id, name, argsJson) {
+        if (!_currentBubble) { return; }
+
+        // Ensure any pending ack/indicator is cleared before showing tool cards
+        _cancelAck();
+        if (_currentIndicatorEl) { _currentIndicatorEl.style.display = 'none'; }
+        if (_currentAckEl)      { _currentAckEl.remove(); _currentAckEl = null; }
+        // Flush any streamed text before the tool card (precautionary)
+        _flushQueue();
+
+        const card = document.createElement('div');
+        card.className = 'tool-call-card';
+        card.setAttribute('data-id', id);
+
+        const header = document.createElement('div');
+        header.className = 'tool-call-header';
+
+        const iconEl = document.createElement('span');
+        iconEl.className = 'tool-call-icon';
+        iconEl.textContent = '⚙';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'tool-call-name';
+        nameEl.textContent = name;
+
+        const statusEl = document.createElement('span');
+        statusEl.className = 'tool-call-status running';
+        statusEl.textContent = 'running…';
+
+        header.appendChild(iconEl);
+        header.appendChild(nameEl);
+        header.appendChild(statusEl);
+        card.appendChild(header);
+
+        // Collapsible args section
+        let args;
+        try { args = JSON.parse(argsJson || '{}'); } catch { args = {}; }
+        const argsText = Object.entries(args)
+            .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+            .join('\n');
+
+        if (argsText) {
+            const details = document.createElement('details');
+            const summary = document.createElement('summary');
+            summary.textContent = 'Arguments';
+            const pre = document.createElement('pre');
+            pre.className = 'tool-call-args';
+            pre.textContent = argsText;
+            details.appendChild(summary);
+            details.appendChild(pre);
+            card.appendChild(details);
+        }
+
+        // Placeholder for result (filled in on toolCallEnd)
+        const resultEl = document.createElement('pre');
+        resultEl.className = 'tool-call-result hidden';
+        card.appendChild(resultEl);
+
+        _currentBubble.appendChild(card);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+
+        _toolCards.set(id, { card, statusEl, resultEl });
+    }
+
+    function _onToolCallEnd(id, result) {
+        const entry = _toolCards.get(id);
+        if (!entry) { return; }
+
+        const { statusEl, resultEl } = entry;
+        statusEl.textContent = 'done';
+        statusEl.className = 'tool-call-status done';
+
+        if (result !== undefined && result !== null && String(result).length > 0) {
+            const truncated = String(result).length > 500
+                ? String(result).slice(0, 500) + '\n… (truncated)'
+                : String(result);
+            resultEl.textContent = truncated;
+            resultEl.classList.remove('hidden');
+        }
+
+        messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
     // ── Inline markdown renderer ───────────────────────────────────────────
@@ -313,3 +417,4 @@
         messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 }());
+
