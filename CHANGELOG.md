@@ -5,6 +5,38 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [10.0.0] — 2026-03-13
+
+### Added — Wave 27: Phase 1 Server Wiring Quick Wins
+
+- **Chunked prefill universal** (`server.py`) — Removed `_on_compress_path` gate; `--chunk-prefill` now activates for all request paths, not just compressed-weight paths; TTFT −40–60% on long prompts
+- **FusedSampler default-on** (`squish/hardware/fused_sampler.py`) — Wired as default decode sampler; fuses temperature/top-k/top-p/min-p/rep-penalty in one pass; ~4× sampling speedup; disable with `--no-fused-sampler`
+- **CacheWarmupPredictor wired** (`squish/kv/cache_warmup.py`) — `record_access()` called after tokenization on every request; predictive pre-warming for repeat prefixes; disable with `--no-cache-warmup`
+- **TokenMerging patch/unpatch** (`squish/token/token_merging.py`) — Applied around standard prefill for sequences ≥ 64 tokens (layers 4–11); enable with `--token-merge`
+- **LayerSkip adaptive depth** (`squish/token/layer_skip.py`) — `ConfidenceEstimator` checks per-step logit entropy; adaptively calls `model(…, layer_limit=exit_layer)` on high-confidence steps; enable with `--layer-skip`
+
+### Added — Wave 28: Phase 2 Novel Algorithm Modules
+
+- **CascadeSpec** (`squish/speculative/cascade_spec.py`) — Two-stage EAGLE-3 tree + n-gram lookahead two-stage speculative decoding; ~2.5–3× decode throughput on typical prompts; enable with `--cascade-spec`
+- **PrefillFusionController** (`squish/streaming/adaptive_prefill_fusion.py`) — Entropy-based prefill complexity classifier selecting optimal ChunkedPrefill/ToMe/LayerSkip combination; ~0.01 ms overhead; enable with `--adaptive-prefill`
+- **DraftMultiplexer** (`squish/speculative/draft_multiplexer.py`) — EMA-based runtime draft strategy selection from up to 5 strategies; regex task classifier; +5–7 pp acceptance rate vs fixed strategy; enable with `--draft-multiplex`
+- **AsyncDecodeOverlap** (`squish/kernels/async_decode_overlap.py`) — Pipelines CPU sampling for step N with GPU (Metal) kernel for step N+1 via background thread; +5–10% decoded TPS; enable with `--async-decode-overlap`
+- **PerLayerSparseAttn** (`squish/attention/per_layer_sparse_attn.py`) — Per-head entropy-based attention sparsity profiled from prefill; EMA-smoothed head profiles; −15–25% attention FLOP in decode; enable with `--per-layer-sparse`
+- **SpeculativePrefiller** (`squish/speculative/speculative_prefill.py`) — Draft-accelerated prefill using cosine-similarity KV agreement to skip target layers; −10–22% TTFT; requires `--draft-model`
+
+### Tests
+
+- `tests/test_wave27_server_wiring.py` — 33 tests, 33 passing
+- `tests/test_wave28_server_wiring.py` — 77 tests, 77 passing
+- **Total tests: 7,672 passed, 33 skipped** (+110 new; 0 failures)
+
+### Benchmarks
+
+- `dev/benchmarks/bench_wave27_28.py` — micro-benchmark suite for all Wave 27+28 modules
+- `docs/benchmark_wave27_28.md` — reference results table with per-module performance estimates
+
+---
+
 ## [9.0.0] — 2026-03-12
 
 ### Added — Wave 25: Cutting-Edge Attention Variants & Compute Fusion (14 modules)

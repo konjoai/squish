@@ -396,5 +396,105 @@ describe('SquishClient.streamChat()', () => {
             (err) => done(err),
         );
     });
+
+    test('falls back to JSON parsing when server returns non-SSE completion', (done) => {
+        // Squish server forces stream=false when tools are provided and model
+        // produces text — returns plain JSON instead of SSE
+        const jsonBody = JSON.stringify({
+            id: 'chatcmpl-test',
+            object: 'chat.completion',
+            choices: [{
+                index: 0,
+                message: { role: 'assistant', content: 'Here is your answer.' },
+                finish_reason: 'stop',
+            }],
+        });
+        const mockRes = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { setEncoding: jest.fn() },
+        );
+        const mockReq = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { end: jest.fn(), write: jest.fn() },
+        );
+        mockedHttp.request.mockImplementation((_opts: unknown, cb?: unknown) => {
+            if (typeof cb === 'function') {
+                setTimeout(() => {
+                    cb(mockRes as http.IncomingMessage);
+                    mockRes.emit('data', jsonBody);
+                    mockRes.emit('end');
+                }, 0);
+            }
+            return mockReq as unknown as http.ClientRequest;
+        });
+
+        const chunks: ChatChunk[] = [];
+        client.streamChat(
+            [{ role: 'user', content: 'hi' }],
+            128, 0.7, '7b',
+            (c) => {
+                chunks.push(c);
+                if (c.done) {
+                    const content = chunks.filter(c => c.delta).map(c => c.delta).join('');
+                    expect(content).toBe('Here is your answer.');
+                    expect(c.finishReason).toBeNull(); // emitDone() called without reason
+                    done();
+                }
+            },
+            (err) => done(err),
+        );
+    });
+
+    test('JSON fallback handles non-streaming tool_calls response', (done) => {
+        const jsonBody = JSON.stringify({
+            id: 'chatcmpl-tools',
+            object: 'chat.completion',
+            choices: [{
+                index: 0,
+                message: {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [{
+                        id: 'call_abc',
+                        type: 'function',
+                        function: { name: 'read_file', arguments: '{"path":"README.md"}' },
+                    }],
+                },
+                finish_reason: 'tool_calls',
+            }],
+        });
+        const mockRes = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { setEncoding: jest.fn() },
+        );
+        const mockReq = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { end: jest.fn(), write: jest.fn() },
+        );
+        mockedHttp.request.mockImplementation((_opts: unknown, cb?: unknown) => {
+            if (typeof cb === 'function') {
+                setTimeout(() => {
+                    cb(mockRes as http.IncomingMessage);
+                    mockRes.emit('data', jsonBody);
+                    mockRes.emit('end');
+                }, 0);
+            }
+            return mockReq as unknown as http.ClientRequest;
+        });
+
+        client.streamChat(
+            [{ role: 'user', content: 'read file' }],
+            128, 0.7, '7b',
+            (c) => { if (c.done) {
+                expect(c.finishReason).toBe('tool_calls');
+                expect(c.toolCalls).toBeDefined();
+                expect(c.toolCalls).toHaveLength(1);
+                expect(c.toolCalls![0].id).toBe('call_abc');
+                expect(c.toolCalls![0].function.name).toBe('read_file');
+                done();
+            }},
+            (err) => done(err),
+        );
+    });
 });
 

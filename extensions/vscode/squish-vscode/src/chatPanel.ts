@@ -8,6 +8,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+import { spawn } from 'child_process';
 import { SquishClient, ChatMessage, ToolDefinition, ToolCall } from './squishClient';
 
 export class ChatPanel implements vscode.WebviewViewProvider {
@@ -358,14 +360,13 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         return new Promise((resolve) => {
             // Run in a new unnamed terminal, capture output via a temp file
             const tmpFile = path.join(
-                require('os').tmpdir(),
+                os.tmpdir(),
                 `squish_tool_${Date.now()}.txt`,
             );
             const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
             const shellArgs = process.platform === 'win32'
                 ? ['/c', `${command} > "${tmpFile}" 2>&1`]
                 : ['-c', `${command} > "${tmpFile}" 2>&1`];
-            const { spawn } = require('child_process') as typeof import('child_process');
             const child = spawn(shell, shellArgs, { shell: false });
             child.on('close', () => {
                 try {

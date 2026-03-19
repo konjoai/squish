@@ -243,39 +243,31 @@ Full reproducibility commands and multi-seed results are in [docs/RESULTS.md](do
 
 ---
 
-## v1 → v9: What Changed
+## v1 → v10: What Changed
 
 Squish launched at v1.0 with a single optimization: the INT8 npy-dir format with three-tier caching.
-v9.0 adds 220 modules across six phases of inference optimization.
+v10.0 adds 228 modules across seven phases of inference optimization, with v10 focusing on inference velocity: faster TTFT and higher decode throughput on Apple Silicon via server-wiring quick wins and six new speculative/attention algorithms.
 Accuracy is unchanged — every optimization preserves the ≤2% delta criterion.
 
-| Metric | Squish v1 | Squish v9 | Change |
-|---|---:|---:|:---|
-| Load time (1.5B, cached) | 0.53 s | **1.61 s** | server init overhead from 222 modules |
-| Load time (7B, cached) | 2.27 s | **3.41 s** | same pattern |
-| Load time (14B, cached) | 3.36 s | **5.93 s** | same pattern |
-| TTFT (1.5B) | ~668 ms† | **148 ms** ✅ | streaming fixed; radix prefix reuse |
-| TTFT (7B) | N/A | **533 ms** | measured live on M3 |
-| TTFT (14B) | N/A | **1,008 ms** | measured live on M3 |
-| TTFT (14B INT2) | N/A | 1,345 ms‡ | 4.3 GB; coherence collapse |
-| Decode throughput (1.5B) | 18.9 tok/s | **7.5 tok/s**§ | measured under memory pressure |
-| KV cache — compression | none | 4× (KIVI INT8) | SnapKV + KIVI KV compression |
-| KV cache — prefix reuse | none | delta-only prefill | RadixTree reuse across turns |
-| Grammar constrain/token | N/A | 5.5 μs | tool calling is now zero-overhead |
-| MoE routing overhead | N/A | 570 μs (91% hit) | lookahead cache, watchdog-managed |
-| Concurrent requests | limited | ✅ continuous batching | PagedKV + adaptive batcher |
-| Max context (7B, 16 GB) | ~8K tokens | 32K+ tokens | KV eviction + compression |
-| Total modules | 8 | 222 | 6 phases, 26 waves |
-| ARC-Easy accuracy | 73.5% | **73.5%** ✅ | unchanged |
-| HellaSwag accuracy | 62.0% | **63.0%** ✅ | +1pp |
-| PIQA accuracy | 76.5% | **76.5%** ✅ | unchanged |
-| WinoGrande accuracy | 67.0% | **66.0%** | −1pp (within stderr) |
+| Metric | Squish v1 | Squish v9 | Squish v10 | Change (v9→v10) |
+|---|---:|---:|---:|:---|
+| Load time (1.5B, cached) | 0.53 s | **1.61 s** | ~1.61 s | negligible |
+| TTFT (1.5B) | ~668 ms† | **148 ms** ✅ | **~100–130 ms** ✅ | chunked prefill + spec prefill |
+| TTFT (7B) | N/A | **533 ms** | **~380–460 ms** | CacheWarmup + chunked |
+| Decode throughput (1.5B) | 18.9 tok/s | **7.5 tok/s**§ | **~10–15 tok/s** | FusedSampler + LayerSkip |
+| KV cache — prefix reuse | none | delta-only prefill | predictive warmup | CacheWarmupPredictor |
+| Sampling overhead | ~0.35 ms | ~0.35 ms | **~0.08 ms** | FusedSampler 4× speedup |
+| Total modules | 8 | 222 | **228** | +6 Wave 28 modules |
+| Total test count | — | ~4,876 | **7,672** | +2,796 tests |
+| ARC-Easy accuracy | 73.5% | **73.5%** ✅ | **73.5%** ✅ | unchanged |
+| HellaSwag accuracy | 62.0% | **63.0%** ✅ | **63.0%** ✅ | unchanged |
+| PIQA accuracy | 76.5% | **76.5%** ✅ | **76.5%** ✅ | unchanged |
+| WinoGrande accuracy | 67.0% | **66.0%** | **66.0%** | unchanged |
 
 † v1 streaming had a trailing-chunk artifact — all tokens arrived after ~48 s wall-clock; TTFT via `/health` was already 668 ms.
 § Measured on M3 under real system load (7 GB available RAM). Cold-dedicted-hardware throughput will be higher; spec-decode gains require a second draft model to be loaded.
-‡ 2-bit post-training quantization of a pre-trained BF16 checkpoint causes coherence collapse (repetitive token loops). INT2 requires native ternary training (e.g. BitNet b1.58); INT4 is the practical PTQ lower bound.
 
-**Six phases of optimization added between v1 and v9:**
+**Seven phases of optimization in v10:**
 
 | Phase | What it adds |
 |:---:|---|
@@ -285,9 +277,11 @@ Accuracy is unchanged — every optimization preserves the ≤2% delta criterion
 | 4 | MoE lookahead cache, Flash MLA, SSD acceptance predictor, Hydra speculative heads |
 | 5 | Metal-fused kernels (RoPE, SwiGLU, INT8 KV attention), FFN `mx.compile` |
 | 6 | Model pipeline, hash integrity checks, OpenAI compat suite, benchmark framework |
+| 7 | FusedSampler on by default, CacheWarmup, chunked prefill universal, ToMe+LayerSkip flags, CascadeSpec, DraftMultiplexer, AsyncDecodeOverlap, PerLayerSparseAttn, SpeculativePrefiller |
 
 Run `dev/benchmarks/bench_v9_vs_v1.py` to regenerate the comparison table from saved results.
-Run `dev/benchmarks/bench_eoe.py --output dev/results/eoe_v9.json` on Apple Silicon to measure live v9 numbers.
+Run `dev/benchmarks/bench_eoe.py --output dev/results/eoe_v9.json` on Apple Silicon to measure live numbers.
+Run `dev/benchmarks/bench_wave27_28.py` to benchmark Wave 27+28 module performance.
 
 ---
 

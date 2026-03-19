@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-12 (v9 complete + pre-launch hardening phase 1+2+3)
+> Last updated: 2026-03-13 (v10 complete — Wave 27+28 inference velocity sprint)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -19,6 +19,60 @@ This document tracks completed waves, the current release, and the next phase.
 | **v7** | 21–22 | Advanced Decode · Production Serving · Observability |
 | **v8** | 23–24 | Multi-Modal & Long Context · Quantisation Evolution & Model Surgery |
 | **v9** | 25–26 | Cutting-Edge Attention Variants & Compute Fusion · Distributed Inference & Production Reliability |
+| **v10** | 27–28 | Inference Velocity Sprint — server wiring quick-wins + novel algorithm modules |
+
+---
+
+## ✅ v10 — Waves 27+28 (Released 2026-03-13)
+
+Theme: **Inference Velocity Sprint — TTFT & Throughput Improvements**
+
+### Phase 1 — Server Wiring Quick Wins (5 steps)
+
+| Step | Change | Default |
+|------|--------|---------|
+| 1A | Chunked prefill active on all paths (removed `_on_compress_path` gate) | `--chunk-prefill` |
+| 1B | FusedSampler wired as default-on in decode loop | on (disable with `--no-fused-sampler`) |
+| 1C | CacheWarmupPredictor `record_access()` after tokenization | on (disable with `--no-cache-warmup`) |
+| 1D | TokenMerging `patch/unpatch` around standard prefill (seq ≥ 64) | `--token-merge` |
+| 1E | LayerSkip `ConfidenceEstimator` adaptive depth in decode loop | `--layer-skip` |
+
+### Phase 2 — Novel Algorithm Modules (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| CascadeSpec | `squish/speculative/cascade_spec.py` | EAGLE-3 tree + n-gram lookahead; ~2.5–3× throughput |
+| PrefillFusionController | `squish/streaming/adaptive_prefill_fusion.py` | Entropy-based prefill strategy selection |
+| DraftMultiplexer | `squish/speculative/draft_multiplexer.py` | EMA runtime draft strategy selection |
+| AsyncDecodeOverlap | `squish/kernels/async_decode_overlap.py` | GPU/CPU pipeline overlap; +5–10% TPS |
+| PerLayerSparseAttn | `squish/attention/per_layer_sparse_attn.py` | Per-head entropy sparsity; −15–25% attn FLOP |
+| SpeculativePrefiller | `squish/speculative/speculative_prefill.py` | Draft-accelerated prefill; −10–22% TTFT |
+
+### Tests & Benchmarks
+
+- `tests/test_wave27_server_wiring.py` — 33 tests, all passing
+- `tests/test_wave28_server_wiring.py` — 77 tests, all passing
+- **Total tests: 7,672 passed, 33 skipped** (+110 new; 0 failures)
+- `dev/benchmarks/bench_wave27_28.py` — micro-benchmark suite
+- `docs/benchmark_wave27_28.md` — reference results table
+
+### Completion Checklist
+
+- [x] Step 1A: chunked prefill on all paths
+- [x] Step 1B: FusedSampler default-on
+- [x] Step 1C: CacheWarmupPredictor wired
+- [x] Step 1D: TokenMerging patch/unpatch
+- [x] Step 1E: LayerSkip adaptive depth
+- [x] Step 2A: `cascade_spec.py` created
+- [x] Step 2B: `adaptive_prefill_fusion.py` created
+- [x] Step 2C: `draft_multiplexer.py` created
+- [x] Step 2D: `async_decode_overlap.py` created
+- [x] Step 2E: `per_layer_sparse_attn.py` created
+- [x] Step 2F: `speculative_prefill.py` created
+- [x] Tests (110 new tests, all passing)
+- [x] Benchmark script
+- [x] Docs updated
+- [x] CHANGELOG updated
 
 ---
 

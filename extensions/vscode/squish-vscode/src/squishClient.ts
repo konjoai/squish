@@ -124,6 +124,7 @@ export class SquishClient {
 
         const req = http.request(options, (res) => {
             let buffer = '';
+            let rawBody = '';  // full response body for JSON fallback
             let finished = false;
 
             // Accumulate streaming tool call fragments across SSE chunks.
@@ -150,6 +151,7 @@ export class SquishClient {
 
             res.on('data', (chunk: string) => {
                 buffer += chunk;
+                rawBody += chunk;
                 const lines = buffer.split('\n');
                 buffer = lines.pop() ?? '';
 
@@ -207,6 +209,45 @@ export class SquishClient {
             });
 
             res.on('end', () => {
+                if (!finished) {
+                    // The server may have responded with a plain JSON object instead
+                    // of SSE (e.g. when tools are provided the squish server forces
+                    // stream=false internally and returns a non-streaming completion).
+                    // In that case no 'data:' lines matched and we need to extract the
+                    // content from the JSON body before signalling done.
+                    try {
+                        const json = JSON.parse(rawBody.trim()) as Record<string, unknown>;
+                        const choices = json.choices as Array<Record<string, unknown>> | undefined;
+                        const msg = choices?.[0]?.message as Record<string, unknown> | undefined;
+                        const content = (msg?.content ?? '') as string;
+                        const toolCalls = msg?.tool_calls as Array<unknown> | undefined;
+                        if (content) {
+                            onChunk({ delta: content, done: false });
+                        }
+                        // tool_calls in a non-streaming response are a full list, not
+                        // streamed deltas — convert to our ToolCall format
+                        if (toolCalls && toolCalls.length > 0) {
+                            for (const tc of toolCalls as Array<{
+                                id?: string;
+                                function?: { name?: string; arguments?: string };
+                            }>) {
+                                const idx = Object.keys(pendingToolCalls).length;
+                                pendingToolCalls[idx] = {
+                                    id: tc.id ?? `call_${idx}`,
+                                    type: 'function',
+                                    function: {
+                                        name: tc.function?.name ?? '',
+                                        arguments: tc.function?.arguments ?? '{}',
+                                    },
+                                };
+                            }
+                            emitDone('tool_calls');
+                            return;
+                        }
+                    } catch {
+                        // not JSON — fall through to plain emitDone
+                    }
+                }
                 emitDone();
             });
 
