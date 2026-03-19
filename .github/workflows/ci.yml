@@ -170,6 +170,41 @@ jobs:
             -v --tb=short -q
 
   # ---------------------------------------------------------------------------
+  # Docker image validation — lints Dockerfiles with hadolint and does a
+  # BuildKit syntax/semantic check of the CPU image.
+  # Runs on ubuntu-latest (no GPU required).
+  # The CUDA image is linted only; a real CUDA build requires a GPU runner.
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: Docker build (validate Dockerfiles)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # hadolint is a Dockerfile best-practice linter (no network access needed)
+      - name: Lint Dockerfile.cpu (hadolint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile.cpu
+          # DL3008: apt pin versions — git/curl don't need pinning in infra images
+          # DL3013: pip pin versions — torch is pinned; other squish extras use >=
+          # DL3059: multiple consecutive RUN — intentional for layer caching
+          ignore: DL3008,DL3013,DL3059
+
+      - name: Lint Dockerfile.cuda (hadolint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile.cuda
+          ignore: DL3008,DL3013,DL3059
+
+      # BuildKit --check validates Dockerfile syntax + instruction semantics
+      # without executing any RUN commands.  CPU base (python:3.11-slim) is
+      # small enough to pull here; CUDA base (~3 GB) is skipped.
+      - name: Validate CPU Dockerfile (BuildKit check)
+        run: docker buildx build --check -f Dockerfile.cpu .
+
+  # ---------------------------------------------------------------------------
   # Hardware integration tests — runs only on manual workflow_dispatch when
   # run_hardware == true.  Requires Apple Silicon (macos-14) and will download
   # ~900 MB of model weights from HuggingFace.

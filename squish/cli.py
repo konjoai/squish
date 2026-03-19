@@ -2462,11 +2462,19 @@ Ollama drop-in:
     )
 
     # ── run ──
+    # Docker env-var defaults: SQUISH_MODEL, SQUISH_HOST, SQUISH_PORT let
+    # `docker run -e SQUISH_MODEL=/models/...` work without extra CMD args.
+    _env_model    = os.environ.get("SQUISH_MODEL") or None
+    _env_host     = os.environ.get("SQUISH_HOST") or None
+    _env_port_raw = os.environ.get("SQUISH_PORT", "")
+    _env_port: int | None = int(_env_port_raw) if _env_port_raw.strip().isdigit() else None
+
     p_run = sub.add_parser("run", help="Start the inference server")
-    p_run.add_argument("model", nargs="?", help="Model: 7b, 14b, 1.5b, or path")
-    p_run.add_argument("--port",    type=int, default=_DEFAULT_PORT)
-    p_run.add_argument("--host",    default="127.0.0.1",
-                       help="0.0.0.0 to expose on LAN")
+    p_run.add_argument("model", nargs="?", default=_env_model,
+                       help="Model: 7b, 14b, 1.5b, or path (or SQUISH_MODEL env var)")
+    p_run.add_argument("--port",    type=int, default=_env_port or _DEFAULT_PORT)
+    p_run.add_argument("--host",    default=_env_host or "127.0.0.1",
+                       help="0.0.0.0 to expose on LAN (or SQUISH_HOST env var)")
     p_run.add_argument("--api-key", default="squish")
     p_run.add_argument("--draft-model",      default="",
                        help="Path to draft model for speculative decoding")
@@ -2524,10 +2532,11 @@ Ollama drop-in:
 
     # ── serve (alias for run) ──
     p_serve = sub.add_parser("serve", help="Start the inference server (alias for 'run')")
-    p_serve.add_argument("model", nargs="?", help="Model: qwen3:8b, 7b, 14b, or path")
-    p_serve.add_argument("--port",    type=int, default=_DEFAULT_PORT)
-    p_serve.add_argument("--host",    default="127.0.0.1",
-                         help="0.0.0.0 to expose on LAN")
+    p_serve.add_argument("model", nargs="?", default=_env_model,
+                         help="Model: qwen3:8b, 7b, 14b, or path (or SQUISH_MODEL env var)")
+    p_serve.add_argument("--port",    type=int, default=_env_port or _DEFAULT_PORT)
+    p_serve.add_argument("--host",    default=_env_host or "127.0.0.1",
+                         help="0.0.0.0 to expose on LAN (or SQUISH_HOST env var)")
     p_serve.add_argument("--api-key", default="squish")
     p_serve.add_argument("--draft-model",      default="")
     p_serve.add_argument("--batch-scheduler",  action="store_true")

@@ -1,0 +1,73 @@
+# Squish — CUDA image (NVIDIA GPU inference)
+#
+# Build:
+#   docker build -f Dockerfile.cuda -t squish:cuda .
+#   docker build -f Dockerfile.cuda --build-arg CUDA_TAG=12.4.1-cudnn-runtime-ubuntu22.04 -t squish:cuda-124 .
+#
+# Run:
+#   docker run --gpus all -p 8080:8080 \
+#     -v /path/to/models:/models:ro \
+#     -e SQUISH_MODEL=/models/Qwen2.5-7B-Instruct-bf16 \
+#     squish:cuda
+#
+# SQUISH_MODEL  — absolute path inside the container (mounted from /models volume)
+# SQUISH_COMPRESSED — optional path to squish npy-dir compressed weights
+# SQUISH_HOST   — bind address (default: 0.0.0.0)
+# SQUISH_PORT   — port (default: 8080)
+
+ARG CUDA_TAG=12.2.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:${CUDA_TAG}
+
+# ── System deps ───────────────────────────────────────────────────────────────
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 \
+        python3.11-dev \
+        python3-pip \
+        git \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Make python3.11 the default python3 / python
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+ && update-alternatives --install /usr/bin/python  python  /usr/bin/python3.11 1 \
+ && python3 -m pip install --upgrade pip setuptools wheel
+
+# ── Python deps ───────────────────────────────────────────────────────────────
+WORKDIR /app
+
+# Install PyTorch for CUDA 12.1 first (torch is heavy; install before squish
+# so layer is cached when only squish/ source changes)
+ARG TORCH_CUDA_INDEX=https://download.pytorch.org/whl/cu121
+RUN pip install --no-cache-dir \
+        torch==2.3.0+cu121 \
+        torchvision==0.18.0+cu121 \
+    --index-url ${TORCH_CUDA_INDEX}
+
+# Copy only packaging manifests first (better layer caching)
+COPY pyproject.toml README.md ./
+# Minimal stub so pip install -e works without copying source yet
+RUN mkdir -p squish && touch squish/__init__.py
+RUN pip install --no-cache-dir -e ".[linux]"
+
+# ── Application source ────────────────────────────────────────────────────────
+COPY squish/ ./squish/
+COPY scripts/ ./scripts/
+
+# ── Model volume ──────────────────────────────────────────────────────────────
+# Models are NOT bundled — mount a host directory at runtime.
+VOLUME ["/models"]
+
+# ── Runtime config ────────────────────────────────────────────────────────────
+ENV SQUISH_HOST=0.0.0.0
+ENV SQUISH_PORT=8080
+# SQUISH_MODEL and SQUISH_COMPRESSED are set at runtime via -e or docker-compose
+
+EXPOSE 8080
+
+# ── Healthcheck ───────────────────────────────────────────────────────────────
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${SQUISH_PORT}/health || exit 1
+
+ENTRYPOINT ["python3", "-m", "squish.cli", "serve"]
+CMD ["--host", "0.0.0.0", "--port", "8080"]

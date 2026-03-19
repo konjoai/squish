@@ -10,11 +10,11 @@ to Linux (CUDA, ROCm, CPU), Windows, and Cloud accelerators (TPU, Gaudi/IPU).
 | Platform | Status | Notes |
 |----------|--------|-------|
 | Apple Silicon (M1–M4) | ✅ Production | MLX backend, full feature set |
-| Linux CUDA | ❌ Not wired | `_TorchBackend` exists in `squish/backend.py` but not wired into `server.py` |
+| Linux CUDA | ✅ Wired (Phase 1+2) | `create_backend()`, `torch_ops.py`, `compressed_loader_torch.py`, `server.py` Linux path |
 | Linux ROCm | ❌ Not started | Requires ROCm torch wheel + Triton-ROCm |
-| Linux CPU | ❌ Not started | GGUF fallback via llama.cpp or pure-torch fp16 |
+| Linux CPU | ✅ Wired (Phase 1+2) | PyTorch CPU path via `_TorchBackend`; BF16 fallback |
 | Windows | ❌ Not started | CUDA path possible; WSL2 tested; native installer TBD |
-| Docker | ❌ Not started | No Dockerfile or compose config |
+| Docker | ✅ Complete (Phase 3) | `Dockerfile.cuda`, `Dockerfile.cpu`, `docker-compose.yml` with profiles |
 | Kubernetes | ❌ Not started | No Helm chart, no k8s YAML |
 | Cloud TPU | ❌ Not started | JAX backend required |
 | Intel Gaudi / IPU | ❌ Not started | Habana libs required |
@@ -168,7 +168,12 @@ Each squish module needs review and adaptation for non-Apple platforms.
 
 ---
 
-## Phase 4 — Docker Containerisation
+## Phase 4 — Docker Containerisation ✅ COMPLETE
+
+**Delivered:** `Dockerfile.cuda`, `Dockerfile.cpu`, `docker-compose.yml` (dual-profile),
+`.dockerignore`, `[linux]` extra in `pyproject.toml`, `docker-build` CI job,
+`tests/test_docker_entrypoint_unit.py` (39 tests), `SQUISH_MODEL` / `SQUISH_HOST` /
+`SQUISH_PORT` env-var defaults wired into `squish.cli serve` and `squish.cli run`.
 
 ### 4.1 Base images
 
@@ -348,17 +353,17 @@ Priority: lower than CUDA/ROCm — implement only if enterprise demand justifies
 
 ## Implementation Order (recommended)
 
-| Order | Phase | Est. Effort | Unblocks |
-|-------|-------|------------|---------|
-| 1 | Wire `_TorchBackend` | 1 week | All Linux work |
-| 2 | Linux CUDA module compat | 2 weeks | Docker + K8s |
-| 3 | Docker + compose | 3 days | K8s, CI |
-| 4 | K8s / Helm chart | 1 week | Cloud deploy |
-| 5 | CI multi-platform build | 3 days | Distribution |
-| 6 | Windows CUDA path | 1 week | Windows users |
-| 7 | Windows installer | 1 week | Non-dev users |
-| 8 | TPU JAX backend | 3 weeks | Cloud TPU customers |
-| 9 | Gaudi / IPU | 2 weeks | Enterprise HPC |
+| Order | Phase | Est. Effort | Unblocks | Status |
+|-------|-------|------------|---------|--------|
+| 1 | Wire `_TorchBackend` | 1 week | All Linux work | ✅ Done (commit 62ff229) |
+| 2 | Linux CUDA module compat | 2 weeks | Docker + K8s | ✅ Done (commit 62ff229) |
+| 3 | Docker + compose | 3 days | K8s, CI | ✅ Done |
+| 4 | K8s / Helm chart | 1 week | Cloud deploy | ❌ Not started |
+| 5 | CI multi-platform build | 3 days | Distribution | 🔶 Partial (docker-build lint job added) |
+| 6 | Windows CUDA path | 1 week | Windows users | ❌ Not started |
+| 7 | Windows installer | 1 week | Non-dev users | ❌ Not started |
+| 8 | TPU JAX backend | 3 weeks | Cloud TPU customers | ❌ Not started |
+| 9 | Gaudi / IPU | 2 weeks | Enterprise HPC | ❌ Not started |
 
 ---
 

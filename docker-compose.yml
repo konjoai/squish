@@ -1,0 +1,72 @@
+# docker-compose.yml — Squish multi-profile deployment
+#
+# Profiles:
+#   cuda   — NVIDIA GPU inference (default when specifying --profile cuda)
+#   cpu    — CPU-only inference (--profile cpu)
+#
+# Usage:
+#   # CUDA (NVIDIA GPU):
+#   MODELS_DIR=/path/to/models SQUISH_MODEL=/models/Qwen2.5-7B-Instruct-bf16 \
+#     docker compose --profile cuda up
+#
+#   # CPU-only:
+#   MODELS_DIR=/path/to/models SQUISH_MODEL=/models/Qwen2.5-1.5B-Instruct-bf16 \
+#     docker compose --profile cpu up
+#
+#   # Build images without starting:
+#   docker compose --profile cuda build
+#   docker compose --profile cpu build
+#
+# Environment variables (set in .env file or shell):
+#   MODELS_DIR       Host path to your models directory  (default: ./models)
+#   SQUISH_MODEL     Path inside container to the model  (default: /models/Qwen2.5-7B-Instruct-bf16)
+#   SQUISH_COMPRESSED Path to squish npy-dir (optional)
+#   SQUISH_PORT      Host port to expose (default: 8080)
+
+version: "3.9"
+
+x-squish-common: &squish-common
+  restart: unless-stopped
+  volumes:
+    - ${MODELS_DIR:-./models}:/models:ro
+  environment:
+    SQUISH_MODEL: ${SQUISH_MODEL:-/models/Qwen2.5-7B-Instruct-bf16}
+    SQUISH_COMPRESSED: ${SQUISH_COMPRESSED:-}
+    SQUISH_HOST: "0.0.0.0"
+    SQUISH_PORT: ${SQUISH_PORT:-8080}
+  ports:
+    - "${SQUISH_PORT:-8080}:8080"
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+    interval: 30s
+    timeout: 10s
+    start_period: 90s
+    retries: 3
+
+services:
+  # ── CUDA (NVIDIA GPU) ────────────────────────────────────────────────────────
+  squish-cuda:
+    <<: *squish-common
+    profiles: ["cuda"]
+    image: squish:cuda
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
+      args:
+        CUDA_TAG: "12.2.0-cudnn8-runtime-ubuntu22.04"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ── CPU-only ─────────────────────────────────────────────────────────────────
+  squish-cpu:
+    <<: *squish-common
+    profiles: ["cpu"]
+    image: squish:cpu
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu

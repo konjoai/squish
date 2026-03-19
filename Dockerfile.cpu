@@ -1,0 +1,62 @@
+# Squish — CPU-only image (no GPU required)
+#
+# Build:
+#   docker build -f Dockerfile.cpu -t squish:cpu .
+#
+# Run:
+#   docker run -p 8080:8080 \
+#     -v /path/to/models:/models:ro \
+#     -e SQUISH_MODEL=/models/Qwen2.5-1.5B-Instruct-bf16 \
+#     squish:cpu
+#
+# CPU inference is significantly slower than GPU.
+# Recommended: models ≤ 3B parameters, INT4 compressed preferred.
+#
+# SQUISH_MODEL  — absolute path inside the container (mounted from /models volume)
+# SQUISH_COMPRESSED — optional path to squish npy-dir compressed weights
+# SQUISH_HOST   — bind address (default: 0.0.0.0)
+# SQUISH_PORT   — port (default: 8080)
+
+FROM python:3.11-slim
+
+# ── System deps ───────────────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m pip install --upgrade pip setuptools wheel
+
+# ── Python deps ───────────────────────────────────────────────────────────────
+WORKDIR /app
+
+# Install CPU-only torch (much smaller than CUDA wheel ~700 MB vs ~2.5 GB)
+RUN pip install --no-cache-dir \
+        torch==2.3.0+cpu \
+        torchvision==0.18.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Copy packaging manifests first for layer caching
+COPY pyproject.toml README.md ./
+RUN mkdir -p squish && touch squish/__init__.py
+RUN pip install --no-cache-dir -e ".[linux]"
+
+# ── Application source ────────────────────────────────────────────────────────
+COPY squish/ ./squish/
+COPY scripts/ ./scripts/
+
+# ── Model volume ──────────────────────────────────────────────────────────────
+VOLUME ["/models"]
+
+# ── Runtime config ────────────────────────────────────────────────────────────
+ENV SQUISH_HOST=0.0.0.0
+ENV SQUISH_PORT=8080
+
+EXPOSE 8080
+
+# ── Healthcheck ───────────────────────────────────────────────────────────────
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${SQUISH_PORT}/health || exit 1
+
+ENTRYPOINT ["python3", "-m", "squish.cli", "serve"]
+CMD ["--host", "0.0.0.0", "--port", "8080"]

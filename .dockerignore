@@ -1,0 +1,82 @@
+# .dockerignore — exclude files from Docker build context
+#
+# Keeping the build context lean reduces image build time and avoids
+# accidentally baking secrets, local model weights, or dev artefacts
+# into the image layer cache.
+
+# ── Version control ──────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+.github
+
+# ── Python byte-code / caches ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+.env/
+*.egg-info/
+squish.egg-info/
+
+# ── Development, docs, tests ─────────────────────────────────────────────────
+tests/
+dev/
+docs/
+demos/
+notebooks/
+benchmarks/
+eval_output*/
+
+# ── macOS artefacts ───────────────────────────────────────────────────────────
+.DS_Store
+apps/macos/
+
+# ── Node / JS (not needed in server image) ───────────────────────────────────
+node_modules/
+js/
+*.vsix
+
+# ── Rust build output ─────────────────────────────────────────────────────────
+squish_quant_rs/target/
+target/
+
+# ── Model weights and large data files ───────────────────────────────────────
+models/
+*.safetensors
+*.safetensors.index.json
+*.npy
+*.npz
+*.bin
+*.pt
+*.gguf
+
+# ── Results, figures, coverage ───────────────────────────────────────────────
+results/
+coverage.json
+coverage.xml
+.coverage
+*.cast
+
+# ── Local environment files ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Editor / IDE ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── CI / packaging artefacts ─────────────────────────────────────────────────
+dist/
+build/
+*.whl
+upload_report.md
