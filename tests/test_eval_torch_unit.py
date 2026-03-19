@@ -30,7 +30,9 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import torch
+import pytest
+
+torch = pytest.importorskip("torch", reason="torch not installed")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
