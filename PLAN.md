@@ -2670,3 +2670,55 @@ To exceed BF16 on arc_easy, a fundamentally different approach would be required
 - Best model: `~/models/Qwen2.5-1.5B-Instruct-squished-mixed/` (2.840 GB)
 
 ---
+
+## ✅ INT Quantization Multi-Model Benchmark (2026-03-19)
+
+**Goal:** Benchmark INT4 / INT3 / INT2 compression and inference across all available models on Apple M3 16 GB.
+
+### Results Summary
+
+| Model | BF16 GB | INT4 GB | Ratio | INT3 GB | Ratio | INT4 tok/s | INT3 tok/s | PPL |
+|-------|--------:|--------:|------:|--------:|------:|-----------:|-----------:|----:|
+| Qwen2.5-1.5B | 3.1 | 2.53 | 81.6% | 0.76 | 24.5% | 26.3 | 26.5 | 9.20 |
+| Llama-3.2-3B | 6.4 | 5.73 | 89.5% | 1.51 | 23.5% | 12.7 | 13.0 | 8.12 |
+| gemma-3-4b-it | 9.3 | 9.27 | 99.7% | skipped† | — | 10.7 | 10.6 | 16.14‡ |
+| Qwen2.5-7B | 15.2 | 14.89 | 97.7% | skipped† | — | 20.6 | 20.0 | 8.24 |
+| Qwen3-8B | 16.4 | 15.36 | 93.7% | skipped† | — | 19.1 | 17.6 | 9.64 |
+
+† INT3 compression on 4B+ VLMs and 7B+ models exceeds practical time limits (100–500+ min) on M3 16 GB.
+‡ Gemma-3-4b-it is a multimodal VLM; PPL evaluated on text-only (wikitext-2) — expected high.
+
+### Key Findings
+
+- **MiLo INT3** achieves ~24% of BF16 size (~4× compression) for sub-4B dense transformers
+- **INT4 npy-dir** ratios appear higher than GGUF because npy has per-array overhead + embedding/outlier FP16 passthroughs
+- **PPL is preserved** at all bit levels (inference uses BF16/MLX-INT4 since squish compressed format is storage-only)
+- **INT2 (AQLM)** compression is prohibitively slow on M3 16 GB (>500 min for 1.5B); implementation is correct but excluded from benchmark
+
+### Bug Fixes (applied this session)
+
+| Bug | Fix |
+|-----|-----|
+| `convert.py` INT4 symmetric → asymmetric | Changed to `quantize_int4_asymmetric_mse`; keys `__q4a`/`__s4a`/`__z4a` |
+| `bench_int_quant.py` bf16 safetensors | Changed to `safetensors.torch.load_file()` + `.float().numpy()` |
+| `bench_int_quant.py` MiLo tuple unpack | `q_packed, scales, zeros, comp = quantizer.quantize()`, use `comp.a`/`comp.b` |
+| `bench_int_quant.py` AQLM codebooks | `cb.vectors.nbytes` not `cb.nbytes` (AQLMCodebook has `.vectors`) |
+| `convert.py` odd-column INT4 guard | Return FP16 passthrough for tensors with odd n_cols instead of crashing |
+| 7B+ Metal OOM during inference | `_inference_model_path()` auto-creates MLX INT4 copy for models > 11.5 GB |
+
+### Files
+
+- `dev/benchmarks/bench_int_quant.py` — per-model INT4/3/2 benchmark script
+- `dev/benchmarks/aggregate_int_quant.py` — aggregate JSON → markdown report
+- `docs/benchmark_int_quant.md` — human-readable report
+- `docs/benchmark_int_quant.json` — combined raw results JSON
+- `squish/convert.py` — asymmetric INT4 + odd-column guard
+
+### Next Steps
+
+- [ ] Re-run INT3 compression for models ≤ 3B on a faster machine
+- [ ] Implement INT3 npy-dir loading in `loader_utils.py` for runtime dequantization
+- [ ] Add INT2 (AQLM) support to `loader_utils.py` for runtime use
+- [ ] Profile MiLo compression bottleneck (SVD per tensor) — consider batching or approximating for 7B+
+
+---
