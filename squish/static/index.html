@@ -25,6 +25,9 @@
     --asst-bg:   #161b22;
     --danger:    #f85149;
     --success:   #3fb950;
+    --accent2:   #79bbff;
+    --think-bg:  #1a1e26;
+    --think-bdr: #3a4357;
     --radius:    12px;
     --font-sans: "Inter", system-ui, sans-serif;
     --font-mono: "JetBrains Mono", "Fira Code", monospace;
@@ -83,7 +86,15 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 16px; font-weight: 700; }
   .msg.user .msg-avatar   { background: #1c3c5e; color: var(--accent); align-self: flex-start; }
-  .msg.asst .msg-avatar   { background: #1e3a2e; color: var(--success); align-self: flex-start; }
+  .msg.asst .msg-avatar   { background: transparent; align-self: flex-start; overflow: hidden; }
+  /* Pulsing glow on assistant avatar while the model is generating */
+  .msg.asst.generating .msg-avatar { animation: avatarPulse 1.4s ease-in-out infinite; }
+  @keyframes avatarPulse {
+    0%   { box-shadow: 0 0 0 0   rgba(63,185,80,.55); }
+    50%  { box-shadow: 0 0 0 9px rgba(63,185,80,.0);  }
+    100% { box-shadow: 0 0 0 0   rgba(63,185,80,.0);  }
+  }
+  .msg-avatar img { width:100%; height:100%; object-fit:contain; border-radius:8px; }
   .msg.system .msg-avatar { background: #3a1e1e; color: #ff9a3c; align-self: flex-start; }
   .msg-body   { flex: 1; min-width: 0; }
   .msg-meta   { font-size: 11px; color: var(--text-dim); margin-bottom: 4px;
@@ -116,10 +127,43 @@
     cursor: pointer; transition: all .15s; }
   .copy-btn:hover { background: var(--surface2); color: var(--text); }
   .pre-copy  { position: absolute; top: 8px; right: 8px; }
-  /* Streaming cursor */
-  .cursor::after { content: "▋"; display: inline-block; animation: blink .9s step-end infinite; }
-  @keyframes blink { 50% { opacity: 0 } }
-  .thinking { color: var(--text-dim); font-style: italic; font-size: .9em; }
+  /* Typewriter streaming cursor */
+  .msg-content.streaming-text { white-space: pre-wrap; }
+  .stream-cursor { display: inline-block; width: 2px; height: 1.1em;
+    vertical-align: text-bottom; background: var(--accent); border-radius: 1px;
+    margin-left: 1px; animation: cursorBlink .85s step-end infinite; }
+  @keyframes cursorBlink { 50% { opacity: 0 } }
+  /* Thinking / reasoning collapsible blocks */
+  .thinking-block { background: var(--think-bg); border: 1px solid var(--think-bdr);
+    border-radius: 10px; margin: .6em 0; overflow: hidden; }
+  .thinking-block summary { padding: 8px 14px; cursor: pointer; font-size: 12px;
+    color: var(--text-dim); font-weight: 600; list-style: none; display: flex;
+    align-items: center; gap: 6px; user-select: none; transition: color .15s; }
+  .thinking-block summary:hover { color: var(--text); }
+  .thinking-block summary::before { content: "\25B6"; font-size: 9px; transition: transform .2s; }
+  .thinking-block[open] summary::before { transform: rotate(90deg); }
+  .thinking-block .think-content { padding: 0 14px 12px; font-size: 13px;
+    color: var(--text-dim); line-height: 1.65; border-top: 1px solid var(--think-bdr); }
+  .thinking-block .think-content p { margin-bottom: .5em; }
+  /* Live thinking indicator during stream */
+  .think-streaming { display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+    background: var(--think-bg); border: 1px solid var(--think-bdr); border-radius: 10px;
+    margin: .4em 0; font-size: 12px; color: var(--text-dim); }
+  .think-dots span { display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--text-dim); animation: dotBounce 1.2s ease-in-out infinite; }
+  .think-dots span:nth-child(2) { animation-delay: .15s; }
+  .think-dots span:nth-child(3) { animation-delay: .30s; }
+  @keyframes dotBounce {
+    0%,80%,100% { transform: translateY(0); opacity:.4; }
+    40%          { transform: translateY(-4px); opacity:1; }
+  }
+  /* TPS badge + regenerate button */
+  #tps-badge { font-size: 11px; color: var(--success); font-variant-numeric: tabular-nums;
+    min-width: 58px; text-align: right; opacity: 0; transition: opacity .3s; }
+  #tps-badge.live { opacity: 1; }
+  .regen-btn { background: none; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 6px; padding: 2px 9px; font-size: 11px; cursor: pointer; transition: all .15s; }
+  .regen-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
 
   /* ── Input area ─────────────────────────────────────────────────────────── */
   .input-row  { display: flex; gap: 8px; }
@@ -170,14 +214,17 @@
     color: #0d0f14; padding: 7px 18px; font-weight: 600; cursor: pointer; }
   /* ── Empty state ─────────────────────────────────────────────────────────── */
   #empty-state { display: flex; flex-direction: column; align-items: center;
-    justify-content: center; height: 100%; opacity: .4; gap: 10px; user-select: none; }
-  #empty-state .es-icon { font-size: 48px; }
-  #empty-state h2 { font-size: 18px; font-weight: 600; }
-  #empty-state p  { font-size: 13px; color: var(--text-dim); text-align: center; }
-  .tag-row { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; justify-content: center; }
+    justify-content: center; height: 100%; gap: 12px; user-select: none; }
+  .es-logo { width: 72px; height: 72px; object-fit: contain; border-radius: 16px;
+    opacity: .75; filter: drop-shadow(0 0 24px rgba(88,166,255,.3)); }
+  #empty-state h2 { font-size: 20px; font-weight: 700; color: var(--text); margin-top: 4px; }
+  #empty-state p  { font-size: 13px; color: var(--text-dim); text-align: center; max-width: 320px; }
+  .tag-row { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap;
+    justify-content: center; max-width: 480px; }
   .tag { background: var(--surface2); border: 1px solid var(--border); border-radius: 20px;
-    padding: 4px 12px; font-size: 12px; color: var(--text-dim); cursor: pointer; transition: all .15s; }
-  .tag:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+    padding: 5px 14px; font-size: 12px; color: var(--text-dim); cursor: pointer; transition: all .15s; }
+  .tag:hover { border-color: var(--accent); color: var(--accent);
+    background: var(--accent-glow); transform: translateY(-1px); }
 
   /* ── Scrollbar styles ───────────────────────────────────────────────────── */
   ::-webkit-scrollbar { width: 6px; }
@@ -203,11 +250,15 @@
   <div id="main">
     <!-- Header -->
     <div id="header">
-      <div id="logo">⚗️ <span>Squish</span> Chat</div>
+      <img src="/static/icon.png"
+        style="width:26px;height:26px;border-radius:6px;object-fit:contain;flex-shrink:0"
+        alt="" onerror="this.style.display='none'" />
+      <div id="logo"><span>Squish</span> Chat</div>
       <select id="model-sel" onchange="onModelChange(this.value)">
-        <option value="">Loading…</option>
+        <option value="">Loading&hellip;</option>
       </select>
-      <span id="tok-counter" title="Estimated tokens in context">0 tok</span>
+      <span id="tps-badge">-- tok/s</span>
+      <span id="tok-counter" title="Estimated tokens in context"></span>
       <span class="spacer"></span>
       <div id="status-dot" title="Server status"></div>
       <button id="settings-btn" onclick="openSettings()" title="Settings">⚙</button>
@@ -216,7 +267,8 @@
     <!-- Chat area -->
     <div id="chat-area">
       <div id="empty-state">
-        <div class="es-icon">⚗️</div>
+        <img src="/static/icon.png" class="es-logo" alt="Squish"
+          onerror="this.style.display='none'" />
         <h2>What can I help with?</h2>
         <p><span id="es-model">Squish</span> · fully local · private · fast</p>
         <div id="first-run-tip" style="display:none;margin-top:6px;padding:8px 16px;
@@ -273,7 +325,7 @@
     </div>
     <div class="sp-row">
       <label>Max tokens</label>
-      <input type="number" id="s-maxt" value="1024" min="1" max="8192" />
+      <input type="number" id="s-maxt" value="4096" min="64" max="32768" />
     </div>
     <div class="sp-row">
       <label>Seed</label>
@@ -291,31 +343,51 @@
 <script>
 "use strict";
 
-// ── Marked + highlight.js setup ─────────────────────────────────────────────
-marked.setOptions({
-  highlight: (code, lang) => {
-    if (lang && hljs.getLanguage(lang))
-      return hljs.highlight(code, { language: lang }).value;
-    return hljs.highlightAuto(code).value;
-  },
+// ── marked + highlight.js setup ──────────────────────────────────────────────
+marked.use({
   breaks: true, gfm: true,
+  renderer: {
+    code({ text, lang }) {
+      const id = `c${Math.random().toString(36).slice(2, 9)}`;
+      const escaped = (text || "")
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return `<pre><button class="copy-btn pre-copy" onclick="copyCode('${id}')">Copy</button>`
+        + `<code id="${id}">${escaped}</code></pre>`;
+    }
+  }
 });
-const renderer = new marked.Renderer();
-const _origCode = renderer.code.bind(renderer);
-renderer.code = (code, lang) => {
-  const raw = _origCode(code, lang);
-  const id  = `code-${Math.random().toString(36).slice(2,8)}`;
-  return raw.replace(/<pre>/, `<pre><button class="copy-btn pre-copy" onclick="copyCode('${id}')">Copy</button>`).replace(/<code/, `<code id="${id}"`);
-};
-marked.setOptions({ renderer });
+
+function renderContent(raw) {
+  // Convert <think>/<thinking> blocks into collapsible <details> before md parse
+  const processed = raw.replace(/<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi, (_, inner) => {
+    return `<details class="thinking-block"><summary>\u{1F4AD} Reasoning</summary>`
+      + `<div class="think-content">${marked.parse(inner.trim())}</div></details>`;
+  });
+  return marked.parse(processed);
+}
 
 // ── State ────────────────────────────────────────────────────────────────────
 const BASE_URL = window.location.origin;
 let sessions   = JSON.parse(localStorage.getItem("squish_sessions") || "[]");
 let activeIdx  = -1;
-let abortCtrl  = null;   // for fetch cancellation
+let abortCtrl  = null;
 let isStreaming = false;
 let apiKey     = localStorage.getItem("squish_api_key") ?? "";
+
+// Token-queue state for typewriter animation
+let _tokenQueue  = [];
+let _rawContent  = "";
+let _visibleText = "";
+let _drainTimer  = null;
+let _contentDiv  = null;
+let _cursorEl    = null;
+let _msgEl       = null;
+let _streamStart = 0;
+let _streamToks  = 0;
+let _tpsTimer    = null;
+let _isInThink   = false;
+let _thinkBuf    = "";
+let _thinkEl     = null;
 
 function authHeaders() {
   return apiKey ? { "Authorization": `Bearer ${apiKey}` } : {};
@@ -438,43 +510,68 @@ function renderMessages() {
   }
   if (empt && empt.parentNode === area) area.removeChild(empt);
   area.innerHTML = "";
-  for (const m of sess.messages) area.appendChild(buildMsgEl(m));
+  sess.messages.forEach((m, i) => {
+    const el = buildMsgEl(m);
+    area.appendChild(el);
+    if (i === sess.messages.length - 1 && m.role === "assistant") addRegenBtn(el);
+  });
   scrollToBottom();
   updateTokCounter(estimateTokens(sess.messages));
 }
 
 function buildMsgEl(msg) {
-  const wrap = document.createElement("div");
-  wrap.className = `msg ${msg.role === "user" ? "user" : msg.role === "system" ? "system" : "asst"}`;
-  const avatarText = msg.role === "user" ? "U" : msg.role === "system" ? "S" : "A";
+  const wrap  = document.createElement("div");
+  const role  = msg.role;
+  wrap.className = `msg ${role === "user" ? "user" : role === "system" ? "system" : "asst"}`;
   const time_ = msg.ts ? new Date(msg.ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
-  const rendered = msg.role === "user"
-    ? escapeHtml(msg.content)
-    : marked.parse(msg.content || "");
+  const isAsst = role === "assistant";
+  const isUser = role === "user";
+  const avatarHtml = isAsst
+    ? `<img src="/static/icon.png" alt="A" onerror="this.outerHTML='A'">`
+    : (isUser ? "U" : "S");
+  const contentHtml = isUser ? escapeHtml(msg.content) : renderContent(msg.content || "");
   wrap.innerHTML = `
-    <div class="msg-avatar">${avatarText}</div>
+    <div class="msg-avatar">${avatarHtml}</div>
     <div class="msg-body">
       <div class="msg-meta">
-        <b>${msg.role === "user" ? "You" : msg.role === "system" ? "System" : "Assistant"}</b>
+        <b>${isUser ? "You" : role === "system" ? "System" : "Assistant"}</b>
         <span>${time_}</span>
-        ${msg.role !== "user" ? `<button class="copy-btn" onclick="copyMsg(this)">Copy</button>` : ""}
+        ${isAsst ? `<button class="copy-btn" onclick="copyMsg(this)">Copy</button>` : ""}
       </div>
-      <div class="msg-content">${rendered}</div>
+      <div class="msg-content">${contentHtml}</div>
     </div>`;
+  if (isAsst) {
+    wrap.querySelector(".msg-content").querySelectorAll("pre code")
+        .forEach(el => hljs.highlightElement(el));
+  }
   return wrap;
+}
+
+function addRegenBtn(msgEl) {
+  if (!msgEl || msgEl.classList.contains("user")) return;
+  const meta = msgEl.querySelector(".msg-meta");
+  if (!meta) return;
+  const btn = document.createElement("button");
+  btn.className = "regen-btn";
+  btn.textContent = "\u21BA Regenerate";
+  btn.onclick = regenerateLast;
+  meta.appendChild(btn);
 }
 
 function appendMsg(msg) {
   const area = document.getElementById("chat-area");
   const empt = document.getElementById("empty-state");
   if (empt && empt.parentNode === area) area.removeChild(empt);
-  area.appendChild(buildMsgEl(msg));
-  scrollToBottom();
+  const el = buildMsgEl(msg);
+  area.appendChild(el);
+  scrollToBottom(true);
+  return el;
 }
 
-function scrollToBottom() {
+function scrollToBottom(force = false) {
   const a = document.getElementById("chat-area");
-  a.scrollTop = a.scrollHeight;
+  if (force || a.scrollHeight - a.scrollTop - a.clientHeight < 120)
+    a.scrollTop = a.scrollHeight;
 }
 
 function escapeHtml(s) {
@@ -482,7 +579,117 @@ function escapeHtml(s) {
           .replace(/"/g,"&quot;").replace(/\n/g,"<br/>");
 }
 
-// ── Token estimate ────────────────────────────────────────────────────────── 
+// ── Token streaming with typewriter animation ─────────────────────────────
+// Each SSE delta goes into a char queue; a setInterval drains it at ~60fps
+// (2 chars/frame slow, 8 medium, 24 fast) so text "types out" smoothly.
+
+function _startStream(contentDiv, msgEl) {
+  _contentDiv  = contentDiv;
+  _msgEl       = msgEl;
+  _tokenQueue  = [];
+  _rawContent  = "";
+  _visibleText = "";
+  _isInThink   = false;
+  _thinkBuf    = "";
+  _thinkEl     = null;
+  _streamStart = performance.now();
+  _streamToks  = 0;
+
+  _cursorEl = document.createElement("span");
+  _cursorEl.className = "stream-cursor";
+  _contentDiv.classList.add("streaming-text");
+  _contentDiv.textContent = "";
+  _contentDiv.appendChild(_cursorEl);
+
+  _drainTimer = setInterval(_drainTokens, 16);
+  _tpsTimer   = setInterval(_updateTPS, 500);
+}
+
+function _enqueueTokens(delta) {
+  _rawContent += delta;
+  _streamToks++;
+  for (const ch of delta) _tokenQueue.push(ch);
+}
+
+function _drainTokens() {
+  if (_tokenQueue.length === 0) return;
+  const n = _tokenQueue.length > 300 ? 24 : _tokenQueue.length > 60 ? 8 : 2;
+  const batch = _tokenQueue.splice(0, n).join("");
+  _visibleText += batch;
+
+  // Detect entering a <think> block mid-stream
+  if (!_isInThink) {
+    const m = _visibleText.match(/([\s\S]*?)<think(?:ing)?>([\s\S]*)/i);
+    if (m) {
+      _isInThink   = true;
+      _thinkBuf    = m[2];
+      _contentDiv.textContent = m[1];
+      _contentDiv.appendChild(_cursorEl);
+      _thinkEl = document.createElement("div");
+      _thinkEl.className = "think-streaming";
+      _thinkEl.innerHTML = `<div class="think-dots"><span></span><span></span><span></span></div> Reasoning\u2026`;
+      if (_contentDiv.parentNode)
+        _contentDiv.parentNode.insertBefore(_thinkEl, _contentDiv.nextSibling);
+      return;
+    }
+  }
+
+  if (_isInThink) {
+    _thinkBuf += batch;
+    const end = _thinkBuf.match(/([\s\S]*?)<\/think(?:ing)?>([\s\S]*)/i);
+    if (end) {
+      _isInThink   = false;
+      _visibleText = end[2];
+      _thinkBuf    = "";
+      if (_thinkEl?.parentNode) { _thinkEl.remove(); _thinkEl = null; }
+      _contentDiv.textContent = _visibleText;
+      _contentDiv.appendChild(_cursorEl);
+    }
+    return;
+  }
+
+  _contentDiv.textContent = _visibleText;
+  _contentDiv.appendChild(_cursorEl);
+  scrollToBottom();
+}
+
+function _updateTPS() {
+  if (!isStreaming) return;
+  const elapsed = (performance.now() - _streamStart) / 1000;
+  if (elapsed < 0.5) return;
+  const badge = document.getElementById("tps-badge");
+  badge.textContent = `${(_streamToks / elapsed).toFixed(1)} tok/s`;
+  badge.classList.add("live");
+}
+
+function _finalizeStream(asstMsg) {
+  if (_tokenQueue.length > 0) _visibleText += _tokenQueue.splice(0).join("");
+  clearInterval(_drainTimer); clearInterval(_tpsTimer);
+  _drainTimer = null; _tpsTimer = null;
+
+  const elapsed = (performance.now() - _streamStart) / 1000;
+  if (elapsed > 0 && _streamToks > 0) {
+    const badge = document.getElementById("tps-badge");
+    badge.textContent = `${(_streamToks / elapsed).toFixed(1)} tok/s`;
+    badge.classList.add("live");
+    setTimeout(() => badge.classList.remove("live"), 4000);
+  }
+
+  if (_cursorEl?.parentNode) _cursorEl.remove();
+  _contentDiv.classList.remove("streaming-text");
+  if (_thinkEl?.parentNode) _thinkEl.remove();
+
+  // Final render: full markdown with collapsible thinking blocks
+  _contentDiv.innerHTML = renderContent(asstMsg.content);
+  _contentDiv.querySelectorAll("pre code").forEach(el => hljs.highlightElement(el));
+
+  if (_msgEl) _msgEl.classList.remove("generating");
+  addRegenBtn(_msgEl);
+
+  _contentDiv = null; _cursorEl = null; _msgEl = null;
+}
+
+// ── Token / context estimate ───────────────────────────────────────────────
 function estimateTokens(messages) {
   return Math.round(messages.reduce((a,m) => a + (m.content||"").length, 0) / 3.5);
 }
@@ -490,7 +697,7 @@ function updateTokCounter(n) {
   document.getElementById("tok-counter").textContent = n > 0 ? `~${n} tok` : "";
 }
 
-// ── Send / stream ─────────────────────────────────────────────────────────── 
+// ── Send / stream ──────────────────────────────────────────────────────────
 async function sendMessage() {
   if (isStreaming) return;
   const input = document.getElementById("msg-input");
@@ -500,7 +707,6 @@ async function sendMessage() {
   if (!curSession()) newChat();
   const sess = curSession();
 
-  // Append user message
   const userMsg = { role: "user", content: text, ts: new Date().toISOString() };
   sess.messages.push(userMsg);
   appendMsg(userMsg);
@@ -508,39 +714,52 @@ async function sendMessage() {
   autoResize(input);
   saveLocal();
 
-  // Build request
-  const sysVal = document.getElementById("sys-input").value.trim();
-  const reqMsgs = sysVal
-    ? [{ role: "system", content: sysVal }, ...sess.messages.filter(m=>m.role!=="system")]
-    : sess.messages.filter(m=>m.role!=="system");
+  if (sess.messages.filter(m => m.role === "user").length === 1) {
+    sess.title = text.slice(0, 40) + (text.length > 40 ? "\u2026" : "");
+    renderSidebar();
+  }
+  await _doGenerate(sess);
+}
+
+async function regenerateLast() {
+  if (isStreaming || !curSession()) return;
+  const sess = curSession();
+  while (sess.messages.length && sess.messages.at(-1).role === "assistant")
+    sess.messages.pop();
+  saveLocal();
+  renderMessages();
+  await _doGenerate(sess);
+}
+
+async function _doGenerate(sess) {
+  const sysVal   = document.getElementById("sys-input").value.trim();
+  const reqMsgs  = sysVal
+    ? [{ role: "system", content: sysVal }, ...sess.messages.filter(m => m.role !== "system")]
+    : sess.messages.filter(m => m.role !== "system");
 
   const temperature = parseFloat(document.getElementById("s-temp").value);
   const top_p       = parseFloat(document.getElementById("s-topp").value);
-  const max_tokens  = parseInt(document.getElementById("s-maxt").value, 10);
+  const max_tokens  = parseInt(document.getElementById("s-maxt").value, 10) || 4096;
   const seedVal     = document.getElementById("s-seed").value;
   const seed        = seedVal !== "" ? parseInt(seedVal, 10) : undefined;
 
-  // Streaming request
-  abortCtrl  = new AbortController();
-  isStreaming = true;
+  abortCtrl   = new AbortController();
+  isStreaming  = true;
   document.getElementById("send-btn").disabled = true;
   document.getElementById("stop-btn").style.display = "inline-block";
 
-  // Create streaming placeholder message
   const asstMsg = { role: "assistant", content: "", ts: new Date().toISOString() };
   sess.messages.push(asstMsg);
-  const msgEl  = buildMsgEl(asstMsg);
-  const area   = document.getElementById("chat-area");
+  const msgEl = buildMsgEl(asstMsg);
+  msgEl.classList.add("generating");
+  const area = document.getElementById("chat-area");
+  const empt = document.getElementById("empty-state");
+  if (empt && empt.parentNode === area) area.removeChild(empt);
   area.appendChild(msgEl);
-  const contentDiv = msgEl.querySelector(".msg-content");
-  contentDiv.classList.add("cursor");
-  scrollToBottom();
+  scrollToBottom(true);
 
-  // Update session title from first user message
-  if (sess.messages.filter(m=>m.role==="user").length === 1) {
-    sess.title = text.slice(0, 36) + (text.length > 36 ? "…" : "");
-    renderSidebar();
-  }
+  const contentDiv = msgEl.querySelector(".msg-content");
+  _startStream(contentDiv, msgEl);
 
   try {
     const body = {
@@ -550,8 +769,10 @@ async function sendMessage() {
     if (seed !== undefined) body.seed = seed;
 
     const resp = await fetch(`${BASE_URL}/v1/chat/completions`, {
-      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify(body), signal: abortCtrl.signal,
+      method:  "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body:    JSON.stringify(body),
+      signal:  abortCtrl.signal,
     });
 
     if (!resp.ok) {
@@ -576,39 +797,36 @@ async function sendMessage() {
           try {
             const chunk = JSON.parse(s.slice(6));
             const delta = chunk.choices?.[0]?.delta?.content ?? "";
-            if (delta) {
-              asstMsg.content += delta;
-              contentDiv.innerHTML = marked.parse(asstMsg.content);
-              scrollToBottom();
-            }
-          } catch { /* ignore malformed */ }
+            if (delta) { asstMsg.content += delta; _enqueueTokens(delta); }
+          } catch { /* ignore malformed SSE */ }
         }
       }
     }
   } catch (e) {
-    if (e.name !== "AbortError") {
+    if (e.name !== "AbortError")
       asstMsg.content += `\n\n*Error: ${e.message}*`;
-      contentDiv.innerHTML = marked.parse(asstMsg.content);
-    }
   } finally {
-    contentDiv.classList.remove("cursor");
-    // Re-run hljs on code blocks
-    contentDiv.querySelectorAll("pre code").forEach(el => hljs.highlightElement(el));
     isStreaming = false;
     abortCtrl   = null;
-    document.getElementById("send-btn").disabled = false;
-    document.getElementById("stop-btn").style.display = "none";
-    saveLocal();
-    updateTokCounter(estimateTokens(sess.messages));
-    renderSidebar();
+    // Wait for token queue drain to finish, then finalize (up to 3s)
+    const deadline = Date.now() + 3000;
+    const waitDrain = setInterval(() => {
+      if (_tokenQueue.length === 0 || Date.now() > deadline) {
+        clearInterval(waitDrain);
+        _finalizeStream(asstMsg);
+        document.getElementById("send-btn").disabled = false;
+        document.getElementById("stop-btn").style.display = "none";
+        saveLocal();
+        updateTokCounter(estimateTokens(sess.messages));
+        renderSidebar();
+      }
+    }, 32);
   }
 }
 
 function stopGeneration() {
   abortCtrl?.abort();
 }
-
-// ── Utilities ─────────────────────────────────────────────────────────────── 
 function handleKey(e) {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 }
@@ -681,6 +899,7 @@ document.getElementById("settings-panel").addEventListener("click", e => {
   }
   // Refresh server status every 30s
   setInterval(loadModels, 30_000);
+  document.getElementById("msg-input").focus();
 })();
 </script>
 </body>

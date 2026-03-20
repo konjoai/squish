@@ -1900,7 +1900,7 @@ async def chat_completions(  # pragma: no cover
 
     body: dict[str, Any] = await request.json()
     messages    = body.get("messages", [])
-    max_tokens  = int(body.get("max_tokens", 512))
+    max_tokens  = int(body.get("max_tokens", 4096))
     temperature = float(body.get("temperature", 0.7))
     top_p       = float(body.get("top_p", 0.9))
     stream      = bool(body.get("stream", False))
@@ -2153,7 +2153,7 @@ async def completions(  # pragma: no cover
 
     body: dict[str, Any] = await request.json()
     prompt      = body.get("prompt", "")
-    max_tokens  = int(body.get("max_tokens", 512))
+    max_tokens  = int(body.get("max_tokens", 4096))
     temperature = float(body.get("temperature", 0.7))
     top_p       = float(body.get("top_p", 0.9))
     stream      = bool(body.get("stream", False))
