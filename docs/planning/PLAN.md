@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-26 (v14 released — Cross-Platform Linux/CUDA · ROCm · WSL2 complete)
+> Last updated: 2026-03-19 (v15 Wave 38 planned — Long-Context Sparse Attention · LUT Quant · Recurrent Speculation)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -24,6 +24,95 @@ This document tracks completed waves, the current release, and the next phase.
 | **v12** | 31–32 | SOTA Research Integration · Pre-Launch Hardening |
 | **v13** | 33–34 | Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving |
 | **v14** | 35–36 | Sampling Precision · Memory Reclamation · Context Intelligence + Cross-Platform |
+| **v15** | 37–38 | Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation |
+
+---
+
+## 🚧 v15 Wave 38 — Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation (In Progress)
+
+Theme: **Attack the remaining throughput ceiling with four orthogonal axes: (1) sparse/approximate
+attention algorithms to slash attention FLOPs on long contexts, (2) lookup-table and rotation-based
+quantization to eliminate the dequantization bottleneck at decode, (3) ultra-cheap recurrent and
+lookahead-enhanced speculative drafters for zero-extra-model speculation, and (4) static graph
+capture to remove per-token Python/CUDA launch overhead entirely.**
+
+Each module below is backed by a 2024–2025 peer-reviewed paper and targets measurable tok/s or
+TTFT improvement. No server wiring is required for most — these are drop-in improvement layers
+that compose with all existing modules.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| Quest: Query-Aware Sparsity for Efficient Long-Context LLM Inference (Tang et al.) | ICML 2024 | Per-head top-K KV slot selection by query similarity; 2–4× attention speedup at 32k+ | `squish/attention/quest_attn.py` |
+| SnapKV: LLM Knows What You Are Looking For Before Generation (Li et al.) | NeurIPS 2024 | Observation-window pooling compresses KV before decode; 3.6× KV memory reduction | `squish/kv/snap_kv.py` |
+| MagicDec: Breaking the Latency-Throughput Tradeoff for Long Context (He et al.) | NeurIPS 2024 | Sink + recent + landmark sparse decode topology; 8× decode speedup on 32k+ tokens | `squish/attention/magic_dec.py` |
+| InfiniGen: Efficient Generative Inference with Dynamic Context Management (Lee et al.) | arXiv 2406.14737 | Async CPU KV offload + predictive prefetch; zero stalls; 7B on 8 GB M-series | `squish/kv/infinite_gen.py` |
+| RetrievalAttention: Accelerating Long-Context LLM Inference via Vector Retrieval (Chen et al.) | arXiv 2409.10516 | HNSW-indexed KV retrieval; O(log N) attention for 128k+ tokens; 4–8× speedup | `squish/attention/retrieval_attn.py` |
+| Ouroboros: Speculative Decoding with Large Model Enhanced Drafting (Zhao et al.) | NeurIPS 2024 | Previously verified tokens used as lookahead context for next draft; +40% acceptance vs n-gram | `squish/speculative/ouroboros_draft.py` |
+| FLUTE: Flexible Lookup Table for Efficient Weight-Only Quantization (Guo et al.) | ICLR 2025 | LUT-GEMM for INT3/INT4; no dequant step; 1.5–2.3× vs AWQ on memory-bound decode | `squish/quant/flute_quant.py` |
+| QuaRot: Outlier-Free 4-Bit Inference in Rotated LLMs (Ashkboos et al.) | NeurIPS 2024 | Random Hadamard transforms move outliers off channels; enables W4A4 at near-FP16 PPL | `squish/quant/quarot_quant.py` |
+| KIVI: A Tuning-Free Asymmetric 2bit Quantization for KV Cache (Liu et al.) | ICML 2024 | Per-channel asymmetric INT2 KV quant; 2.6× KV memory reduction; no calibration data | `squish/quant/kivi_quant.py` |
+| Recurrent Drafter for Fast Speculative Decoding in Language Models (Zhang et al.) | Apple Research 2024 | GRU-based 1 M-param drafter trained on target model logits; 1.5–2× throughput on M-series | `squish/speculative/recurrent_drafter.py` |
+| CUDA Graphs / Metal Command Buffer Pre-recording | TRT-LLM / Apple Metal 2024 | Capture static decode loop; replay with zero Python/kernel-launch overhead; 3–8 ms/token saved | `squish/kernels/cuda_graph_runner.py` |
+| Sarathi-Serve: Efficient LLM Serving by Chunked-Prefill and Decode Pull Scheduling (Agrawal et al.) | OSDI 2024 | SLO-aware preemption with chunked prefill; reduces KV-eviction OOM; +20–30% throughput at peak | `squish/serving/priority_preempt.py` |
+
+---
+
+### Wave 38a — Long-Context Sparse Attention & KV Intelligence (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| QuestAttention | `squish/attention/quest_attn.py` | Per-head top-K KV selection via query-page similarity; configurable budget ratio; MLX/NumPy fallback |
+| SnapKV | `squish/kv/snap_kv.py` | Observation window pooling selects important KV positions before decode; per-head importance scores |
+| MagicDecAttention | `squish/attention/magic_dec.py` | Sink + recent + landmark sparse decode; adaptive landmark stride; composes with FlashAttention |
+| InfiniGenKVManager | `squish/kv/infinite_gen.py` | Async CPU offload of cold KV entries; FIFO prefetch queue; importance-scored eviction; zero stalls |
+| RetrievalAttention | `squish/attention/retrieval_attn.py` | HNSW approximate KV index; configurable ef_construction/ef_search; exact fallback for short contexts |
+| OuroborosDrafter | `squish/speculative/ouroboros_draft.py` | Multi-stage lookahead with verified-token feedback; GPU-free when paired with NgramDrafter; adaptive depth |
+
+### Wave 38b — LUT Quantization, Recurrent Drafting & Decode Compilation (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| FluteQuantizer | `squish/quant/flute_quant.py` | Precomputed LUT for INT3/INT4 GEMM; no dequantization; direct weight-lookup kernel; NumPy sim path |
+| QuaRotQuantizer | `squish/quant/quarot_quant.py` | Random Hadamard rotation applied to weight/activation matrices; channels with suppressed outliers; W4A4 path |
+| KIVIQuantizer | `squish/quant/kivi_quant.py` | Per-channel asymmetric INT2 KV quant; residual FP16 for last few tokens; plug-and-play on KVCache |
+| RecurrentDrafter | `squish/speculative/recurrent_drafter.py` | GRU or LSTM drafter (configurable); hidden-state reuse across tokens; trained via distillation sim |
+| CUDAGraphRunner | `squish/kernels/cuda_graph_runner.py` | Capture static decode graph on first call; replay with zero Python dispatch; Metal MTLCommandBuffer parity |
+| PriorityPreemptScheduler | `squish/serving/priority_preempt.py` | SLO-score-based preemption queue; chunked prefill integration; age/priority hybrid eviction; request migration |
+
+### v15 Target Metrics (after Wave 38)
+
+> Baselines are v14 measurements on Apple M3 Max 36 GB unless noted.
+
+| Model | v14 tok/s | v15 target tok/s | v14 TTFT | v15 TTFT target | Primary driver |
+|-------|-----------|-----------------|----------|------------------|----------------|
+| Qwen2.5-1.5B (M3) | 180–220 | 240–280 | < 0.12 s | < 0.06 s | CUDAGraph + FLUTE + RecurrentDrafter |
+| Qwen2.5-4B (M3) | 95–120 | 130–160 | < 0.25 s | < 0.12 s | FLUTE + QuaRot + Ouroboros |
+| Qwen3-8B (M3) | 55–75 | 80–100 | < 0.80 s | < 0.35 s | MagicDec + KIVI + Quest |
+| Qwen2.5-7B (8 GB M-series) | OOM | 35–55 | N/A | < 1.0 s | InfiniGen (CPU offload) |
+
+> InfiniGen row unlocks 7B-class models on low-memory devices — this is a qualitative capability
+> gain, not just a speedup.
+
+### Completion Checklist
+
+- [ ] `squish/attention/quest_attn.py` — QuestAttention
+- [ ] `squish/kv/snap_kv.py` — SnapKV
+- [ ] `squish/attention/magic_dec.py` — MagicDecAttention
+- [ ] `squish/kv/infinite_gen.py` — InfiniGenKVManager
+- [ ] `squish/attention/retrieval_attn.py` — RetrievalAttention
+- [ ] `squish/speculative/ouroboros_draft.py` — OuroborosDrafter
+- [ ] `squish/quant/flute_quant.py` — FluteQuantizer
+- [ ] `squish/quant/quarot_quant.py` — QuaRotQuantizer
+- [ ] `squish/quant/kivi_quant.py` — KIVIQuantizer
+- [ ] `squish/speculative/recurrent_drafter.py` — RecurrentDrafter
+- [ ] `squish/kernels/cuda_graph_runner.py` — CUDAGraphRunner
+- [ ] `squish/serving/priority_preempt.py` — PriorityPreemptScheduler
+- [ ] `tests/test_wave38a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave38b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[15.0.0]` entry
+- [ ] PLAN.md updated
 
 ---
 
