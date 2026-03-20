@@ -35,7 +35,7 @@ This document tracks completed waves, the current release, and the next phase.
 
 ---
 
-## 🚧 v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (In Progress)
+## ✅ v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (Complete)
 
 Theme: **Close the final gap between Squish's algorithmic sophistication and its raw hardware efficiency.
 Wave 39 targets three axes that Wave 38 left on the table: (1) activation-level quantization
@@ -104,22 +104,22 @@ Each module is backed by a 2024–2025 paper and is orthogonal to all Wave 38 ad
 
 ### Completion Checklist
 
-- [ ] `squish/quant/smooth_quant.py` — SmoothQuantActivation
-- [ ] `squish/quant/hqq_quant.py` — HQQQuantizer
-- [ ] `squish/attention/hyper_attn.py` — HyperAttention
-- [ ] `squish/speculative/triforce_decode.py` — TriForceDecoder
-- [ ] `squish/kernels/flex_attn.py` — FlexAttentionKernel
-- [ ] `squish/token/massive_activation.py` — MassiveActivationSuppressor
-- [ ] `squish/quant/w8a8_quant.py` — W8A8QuantRuntime
-- [ ] `squish/kernels/torch_compile_decode.py` — TorchCompileDecode
-- [ ] `squish/speculative/apar_decode.py` — APARDecoder
-- [ ] `squish/attention/linear_attn.py` — GatedLinearAttention
-- [ ] `squish/kernels/fused_norm_attn.py` — FusedNormAttnResidual
-- [ ] `squish/serving/async_kv_transfer.py` — AsyncKVTransfer
-- [ ] `tests/test_wave39a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave39b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[16.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/quant/smooth_quant.py` — SmoothQuantActivation
+- [x] `squish/quant/hqq_quant.py` — HQQQuantizer
+- [x] `squish/attention/hyper_attn.py` — HyperAttention
+- [x] `squish/speculative/triforce_decode.py` — TriForceDecoder
+- [x] `squish/kernels/flex_attn.py` — FlexAttentionKernel
+- [x] `squish/token/massive_activation.py` — MassiveActivationSuppressor
+- [x] `squish/quant/w8a8_quant.py` — W8A8QuantRuntime
+- [x] `squish/kernels/torch_compile_decode.py` — TorchCompileDecode
+- [x] `squish/speculative/apar_decode.py` — APARDecoder
+- [x] `squish/attention/linear_attn.py` — GatedLinearAttention
+- [x] `squish/kernels/fused_norm_attn.py` — FusedNormAttnResidual
+- [x] `squish/serving/async_kv_transfer.py` — AsyncKVTransfer
+- [x] `tests/test_wave39a_modules.py` — 120 tests, all passing
+- [x] `tests/test_wave39b_modules.py` — 93 tests, all passing
+- [x] CHANGELOG `[16.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
