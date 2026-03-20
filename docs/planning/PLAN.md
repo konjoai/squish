@@ -308,7 +308,7 @@ planned wave. All modules have MLX/NumPy fallback paths.
 
 ---
 
-## 🚧 v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (In Progress)
+## ✅ v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (Complete)
 
 Theme: **Six new research directions orthogonal to Waves 38–41 — spanning how requests are scheduled
 across hardware, how attention is sparsified at inference, how additional decoding heads accelerate
@@ -376,22 +376,22 @@ All modules have MLX Metal + NumPy CPU fallback paths and follow the existing be
 
 ### Completion Checklist
 
-- [ ] `squish/speculative/medusa_heads.py` — MedusaHeads
-- [ ] `squish/serving/sarathi_scheduler.py` — SarathiScheduler
-- [ ] `squish/attention/nsa_attn.py` — NSAAttention
-- [ ] `squish/attention/flex_prefill.py` — FlexPrefill
-- [ ] `squish/kv/think_cache.py` — ThinKCache
-- [ ] `squish/kv/attention_store.py` — AttentionStore
-- [ ] `squish/speculative/rest_decode.py` — RESTDecode
-- [ ] `squish/attention/star_attn.py` — StarAttention
-- [ ] `squish/serving/splitwise_scheduler.py` — SplitwiseScheduler
-- [ ] `squish/kv/kvquant.py` — KVQuant
-- [ ] `squish/quant/efficient_qat.py` — EfficientQAT
-- [ ] `squish/kv/cache_gen.py` — CacheGen
-- [ ] `tests/test_wave42a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave42b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[17.1.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/speculative/medusa_heads.py` — MedusaHeads
+- [x] `squish/serving/sarathi_scheduler.py` — SarathiScheduler
+- [x] `squish/attention/nsa_attn.py` — NSAAttention
+- [x] `squish/attention/flex_prefill.py` — FlexPrefill
+- [x] `squish/kv/think_cache.py` — ThinKCache
+- [x] `squish/kv/attention_store.py` — AttentionStore
+- [x] `squish/speculative/rest_decode.py` — RESTDecode
+- [x] `squish/attention/star_attn.py` — StarAttention
+- [x] `squish/serving/splitwise_scheduler.py` — SplitwiseScheduler
+- [x] `squish/kv/kvquant.py` — KVQuant
+- [x] `squish/quant/efficient_qat.py` — EfficientQAT
+- [x] `squish/kv/cache_gen.py` — CacheGen
+- [x] `tests/test_wave42a_modules.py` — 81 tests, all passing
+- [x] `tests/test_wave42b_modules.py` — 81 tests, all passing
+- [x] CHANGELOG `[17.1.0]` entry
+- [x] PLAN.md updated
 
 ---
 
