@@ -3701,9 +3701,9 @@ Examples:
         from squish.hardware.chip_detector import ChipDetector
         _chip_profile = ChipDetector().detect()
         _info('chip-detector',
-              f'chip={_chip_profile.name!r} bw={_chip_profile.memory_bandwidth_gbps:.0f} GB/s')
+              f'chip={_chip_profile.generation.name!r} bw={_chip_profile.memory_bandwidth_gbps:.0f} GB/s')
     except Exception as _e:
-        _warn('chip-detector', f'ChipDetector init failed: {_e}')
+        _warn(f'[chip-detector] ChipDetector init failed: {_e}')
 
     if getattr(args, 'kvtc', False):
         try:
