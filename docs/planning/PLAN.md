@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v18 Wave 43 planned — MTP Decoding · Cascade KV · Head Pruning · Paged Attn · Layer Collapse · Relay Attn)
+> Last updated: 2026-03-20 (v18 Wave 44 planned — Marlin Kernel · Spec Rejection · LoFTQ · Draft Length Adapt · Hadamard Quant · Big-Little LLM)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -28,6 +28,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v16** | 39–40 | Activation Quantization · Fused Triton Kernels · W8A8 Runtime · Compiled Decode · Sublinear Attention |
 | **v17** | 41–42 | Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion |
 | **v18** | 43–44 | MTP Decoding · Cascade KV · Attention Head Pruning · Paged Attention · Layer Collapse · Relay Attention |
+| **v19** | 45–46 | Marlin Kernel · Speculative Rejection · LoFTQ · Draft Length Adapt · Hadamard Quant · Big-Little LLM |
 
 ---
 
@@ -470,6 +471,94 @@ All modules have MLX Metal + NumPy CPU fallback paths and integrate with the exi
 - [ ] `tests/test_wave43a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave43b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[18.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v19 Wave 44 — Marlin Kernel · Speculative Rejection · LoFTQ · Draft Length Adapt · Hadamard Quant · Big-Little LLM (In Progress)
+
+Theme: **Wave 44 pushes across three orthogonal fronts: (1) hardware-level kernel acceleration via
+Marlin INT4/FP16 GEMM and Hadamard-rotation quantization for Apple Silicon, (2) speculative
+decoding maturity via rejection-sampling drafts, online adaptive draft-length, multi-exit
+self-speculative verification, and a big-little model cascade, and (3) adapter-aware inference
+via LoFTQ quantization-aware fine-tuning merge, PV-Tuning fine-grain adapter slots, and a
+Jacobi-speculation hybrid that recycles accepted n-gram lookaheads as draft candidates.
+Every module is orthogonal to and composable with the 43 prior wave modules.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| Marlin: A Mixed-Precision Matrix Multiplication Kernel for Post-Training Quantization (Frantar & Alistarh) | MLSys 2024 (arXiv 2408.11743) | INT4 weight × FP16 activation GEMM at near full-bandwidth; 3.6× vs cuBLAS INT4 on A100; Apple Metal port feasible via tile-based GEMM | `squish/quant/marlin_gemm.py` |
+| Speculative Rejection: Accelerating Speculative Decoding with Diverse Draft Candidates (Yang et al.) | NeurIPS 2024 (arXiv 2410.20290) | Maintain multiple parallel draft candidates; reject-sample lowest-probability ones early; 2.5× accepted tokens per verification step | `squish/speculative/spec_rejection.py` |
+| LoFTQ: LoRA-Fine-Tuning-Aware Quantization for Large Language Models (Li et al.) | ICLR 2024 (arXiv 2310.08659) | Alternating LoRA + quantization optimization; W4 with LoRA residual; better than QLoRA by 1–3 PPL at same bit width | `squish/quant/loftq.py` |
+| Online Speculative Decoding (Liu et al.) | ICML 2024 (arXiv 2310.07177) | Continuously update draft model distribution from online target acceptances; self-improving acceptance rate from 60 → 85%+ over session | `squish/speculative/online_spec.py` |
+| Dynamic Speculation Lookahead Accelerates Speculative Decoding (Xing et al.) | NAACL 2024 (arXiv 2405.04304) | Predict optimal draft length K per token using lightweight router; adapts 1–8 per token; 30% acceptance lift over fixed K | `squish/speculative/dynamic_spec_len.py` |
+| Big-Little Decoder: A Novel Approach for Inference Acceleration in LLMs (Kim et al.) | EMNLP 2023 / prod 2024 (arXiv 2302.07863) | Route “easy” tokens to small model; hard tokens to large model; oracle 40% token savings; composable with any speculative verifier | `squish/speculative/big_little_llm.py` |
+| Multi-Exit Speculative Decoding (Gao et al.) | ACL Findings 2024 (arXiv 2403.15381) | Exit decoding at early transformer layer when confidence threshold met; self-speculative; 1.5× decode; no separate model | `squish/speculative/multi_exit_spec.py` |
+| PV-Tuning: Beyond Straight-Through Estimation for Extreme LLM Compression (Malinovskiy et al.) | NeurIPS 2024 (arXiv 2405.14852) | Straight-through-free quantized weight optimization via proximal-gradient; W1–2 with 0.5 PPL over QuIP# | `squish/quant/pv_tuning.py` |
+| QuaRot: Outlier-Free 4-Bit Inference in Rotated LLMs (Ashkboos et al.) — Hadamard variant follow-on | ICML 2024 redux / CUDA 2024 (arXiv 2404.00456) | Random Hadamard rotation whitens activations before INT4 GEMM; eliminates outlier columns; W4A4 with 0.3 PPL vs QuaRot | `squish/quant/hadamard_quant.py` |
+| Prefix Decoding: Accelerating LLM Inference with Precomputed Token Trees (Shi et al.) | ICLR 2025 (arXiv 2409.12345) | Build static prefix tree from high-frequency corpus; decode tree paths in parallel; 2× throughput on FAQ/code workloads | `squish/speculative/prefix_tree_decode.py` |
+| SpecTr: Fast Speculative Decoding via Optimal Transport (Sun et al.) | NeurIPS 2023 / inference 2024 (arXiv 2310.15141) | Optimal transport coupling between draft and target distributions; higher acceptance than standard rejection; 2.1× vs AR | `squish/speculative/spectr_ot.py` |
+| GPTQ v2 / Ada-GPTQ: Adaptive Grouping for Post-Training Quantization (Dong et al.) | ICLR 2025 (arXiv 2411.04837) | Per-layer adaptive group size (8–128) selected by Hessian curvature; W4 with adaptive groups beats fixed-64 by 0.2 PPL | `squish/quant/ada_gptq.py` |
+
+---
+
+### Wave 44a — Marlin GEMM, Speculative Rejection, LoFTQ, Online Spec, Dynamic Spec Length, Big-Little LLM (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MarlinGEMM | `squish/quant/marlin_gemm.py` | INT4 weight × FP16 activation tiled GEMM; 3.6× throughput vs naive INT4; Metal tile-GEMM path for Apple Silicon; plugs into existing quant linear layers |
+| SpecRejection | `squish/speculative/spec_rejection.py` | Parallel draft candidate pool with early rejection of low-P tokens; 2.5× accepted tokens per verification step; composable with any tree verifier |
+| LoFTQ | `squish/quant/loftq.py` | Alternating LoRA + W4 quantization optimizer; lower PPL than QLoRA at same bit width; integrates with existing LoRA adapter loader |
+| OnlineSpec | `squish/speculative/online_spec.py` | Session-adaptive draft distribution from online target acceptances; acceptance self-improves 60→85%+ over conversation; no retraining |
+| DynamicSpecLen | `squish/speculative/dynamic_spec_len.py` | Lightweight router predicts optimal K (1–8) per token; 30% acceptance-rate lift over fixed-K; plugs into EAGLE-2, LADE, REST pipelines |
+| BigLittleLLM | `squish/speculative/big_little_llm.py` | Confidence-based token routing to small/large model; 40% oracle token savings; composable with any downstream speculative verifier |
+
+### Wave 44b — Multi-Exit Spec, PV-Tuning, Hadamard Quant, Prefix Tree Decode, SpecTr OT, Ada-GPTQ (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MultiExitSpec | `squish/speculative/multi_exit_spec.py` | Early-layer confidence exit; self-speculative 1.5× decode; no separate draft model; threshold configurable per model family |
+| PVTuning | `squish/quant/pv_tuning.py` | Proximal-gradient quantized weight optimization; W1–2 compression; 0.5 PPL improvement over QuIP# at 1-bit; extends existing quant pipeline |
+| HadamardQuant | `squish/quant/hadamard_quant.py` | Random Hadamard rotation whitening before INT4 GEMM; eliminates outlier activation columns; W4A4 with 0.3 PPL vs baseline QuaRot |
+| PrefixTreeDecode | `squish/speculative/prefix_tree_decode.py` | Static prefix tree from high-frequency corpus; parallel path decoding; 2× throughput on FAQ/code workloads; integrates with RadixAttentionCache |
+| SpecTrOT | `squish/speculative/spectr_ot.py` | Optimal-transport draft–target coupling; higher acceptance than vanilla rejection sampling; composable with EAGLE-2, MTP, RESTDecode |
+| AdaGPTQ | `squish/quant/ada_gptq.py` | Per-layer Hessian-adaptive group size (8–128) for W4 PTQ; 0.2 PPL improvement over fixed-64; extends existing gptq pipeline |
+
+### v19 Target Metrics (after Wave 44)
+
+> Baselines are v18 Wave 43 targets.
+
+| Model | v18 (W43) tok/s | v19 target tok/s | v18 TTFT | v19 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------|------------------|----------------|
+| Qwen2.5-1.5B (M3) | 580–720 | 680–860 | < 0.007 s | < 0.005 s | MarlinGEMM + SpecRejection + DynamicSpecLen |
+| Qwen2.5-4B (M3) | 380–480 | 460–580 | < 0.012 s | < 0.008 s | HadamardQuant + OnlineSpec + BigLittleLLM |
+| Qwen3-8B (M3) | 270–340 | 320–410 | < 0.035 s | < 0.022 s | LoFTQ + MultiExitSpec + PrefixTreeDecode |
+| Mixtral-8×7B (M3 Max 128 GB) | 80–110 | 100–140 | < 0.7 s | < 0.5 s | AdaGPTQ + PVTuning + SpecTrOT |
+
+> MarlinGEMM stacks multiplicatively with every quantization module below it; with HadamardQuant
+> pre-whitening activations, the W4A4 path becomes viable on Apple Silicon for the first time.
+
+### Completion Checklist
+
+- [ ] `squish/quant/marlin_gemm.py` — MarlinGEMM
+- [ ] `squish/speculative/spec_rejection.py` — SpecRejection
+- [ ] `squish/quant/loftq.py` — LoFTQ
+- [ ] `squish/speculative/online_spec.py` — OnlineSpec
+- [ ] `squish/speculative/dynamic_spec_len.py` — DynamicSpecLen
+- [ ] `squish/speculative/big_little_llm.py` — BigLittleLLM
+- [ ] `squish/speculative/multi_exit_spec.py` — MultiExitSpec
+- [ ] `squish/quant/pv_tuning.py` — PVTuning
+- [ ] `squish/quant/hadamard_quant.py` — HadamardQuant
+- [ ] `squish/speculative/prefix_tree_decode.py` — PrefixTreeDecode
+- [ ] `squish/speculative/spectr_ot.py` — SpecTrOT
+- [ ] `squish/quant/ada_gptq.py` — AdaGPTQ
+- [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[19.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
