@@ -9,6 +9,9 @@ Covers:
   - HTTP endpoint behaviour via FastAPI TestClient:
       GET  /webhook/whatsapp — Meta challenge verification
       POST /webhook/whatsapp — incoming message webhook
+  - Message deduplication (_is_duplicate)
+  - Per-sender rate limiting (_is_rate_limited)
+  - Long reply chunking (_chunk_reply)
 """
 from __future__ import annotations
 
@@ -24,11 +27,23 @@ import pytest
 from squish.serving.whatsapp import (
     _DEFAULT_SYSTEM_PROMPT,
     _MAX_HISTORY,
+    _MAX_MSG_LEN,
+    _RATE_LIMIT,
+    _RATE_WINDOW,
+    _SEEN_IDS,
+    _SEEN_IDS_LOCK,
+    _SEEN_IDS_MAX,
+    _SEEN_IDS_ORDER,
     _SESSION_TIMEOUT,
     _apply_max_history,
+    _chunk_reply,
     _expire_old_sessions,
     _get_or_create_session,
     _handle_message,
+    _is_duplicate,
+    _is_rate_limited,
+    _rate_counts,
+    _rate_lock,
     _reset_session,
     _sessions,
     _sessions_lock,
@@ -45,6 +60,23 @@ def _clear_sessions() -> None:
     with _sessions_lock:
         _sessions.clear()
         _sessions_ts.clear()
+
+
+def _clear_seen_ids() -> None:
+    with _SEEN_IDS_LOCK:
+        _SEEN_IDS.clear()
+        _SEEN_IDS_ORDER.clear()
+
+
+def _clear_rate_counts() -> None:
+    with _rate_lock:
+        _rate_counts.clear()
+
+
+def _clear_all() -> None:
+    _clear_sessions()
+    _clear_seen_ids()
+    _clear_rate_counts()
 
 
 def _meta_sig(app_secret: str, body: bytes) -> str:
@@ -211,9 +243,12 @@ def _call_handle(
     get_generate=None,
     get_tokenizer=None,
     system_prompt: str = _DEFAULT_SYSTEM_PROMPT,
+    msg_id: str = "",
 ) -> list[str]:
     """Call _handle_message and return the list of args passed to _send_whatsapp_reply."""
     _clear_sessions()
+    _clear_seen_ids()
+    _clear_rate_counts()
     sent: list[str] = []
     with mock.patch(
         "squish.serving.whatsapp._send_whatsapp_reply",
@@ -227,6 +262,7 @@ def _call_handle(
             get_generate    = get_generate or (lambda: _fake_generate),
             get_tokenizer   = get_tokenizer or (lambda: _FakeTok()),
             system_prompt   = system_prompt,
+            msg_id          = msg_id,
         )
     return sent
 
@@ -515,3 +551,199 @@ class TestServerWhatsAppArgs:
         assert args.whatsapp_app_secret      == ""
         assert args.whatsapp_access_token    == ""
         assert args.whatsapp_phone_number_id == ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _is_duplicate — message-ID deduplication
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestIsDuplicate:
+    def setup_method(self):
+        _clear_seen_ids()
+
+    def test_first_call_not_duplicate(self):
+        assert _is_duplicate("wamid.001") is False
+
+    def test_second_call_is_duplicate(self):
+        _is_duplicate("wamid.002")
+        assert _is_duplicate("wamid.002") is True
+
+    def test_different_ids_not_duplicate(self):
+        _is_duplicate("wamid.003")
+        assert _is_duplicate("wamid.004") is False
+
+    def test_empty_id_never_duplicate(self):
+        _is_duplicate("")
+        assert _is_duplicate("") is False
+
+    def test_bounded_fifo_evicts_oldest(self):
+        # Fill to capacity + 1 so the very first ID gets evicted
+        for i in range(_SEEN_IDS_MAX + 1):
+            _is_duplicate(f"wamid.{i:06d}")
+        # wamid.000000 was evicted and is no longer considered a duplicate
+        assert _is_duplicate("wamid.000000") is False
+
+    def test_bounded_fifo_keeps_recent(self):
+        for i in range(_SEEN_IDS_MAX):
+            _is_duplicate(f"wamid.r{i:06d}")
+        # The last ID added is still in the set
+        assert _is_duplicate(f"wamid.r{_SEEN_IDS_MAX - 1:06d}") is True
+
+    def test_handle_message_deduplicates(self):
+        """_handle_message silently drops messages with already-seen IDs."""
+        _clear_all()
+        sent: list[str] = []
+        with mock.patch(
+            "squish.serving.whatsapp._send_whatsapp_reply",
+            side_effect=lambda pid, tok, to, body: sent.append(body),
+        ):
+            _handle_message(
+                "15551234567", "hello", "pid", "tok",
+                lambda: _FakeState(), lambda: _fake_generate, lambda: _FakeTok(),
+                _DEFAULT_SYSTEM_PROMPT, msg_id="wamid.dedup01",
+            )
+            # Second call: same wamid, clear sessions to ensure the session state
+            # is not the reason it returns early
+            _clear_sessions()
+            _handle_message(
+                "15551234567", "hello", "pid", "tok",
+                lambda: _FakeState(), lambda: _fake_generate, lambda: _FakeTok(),
+                _DEFAULT_SYSTEM_PROMPT, msg_id="wamid.dedup01",
+            )
+        # Only the first call should have produced a reply
+        assert len(sent) == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _is_rate_limited — per-sender sliding-window rate limiting
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestIsRateLimited:
+    def setup_method(self):
+        _clear_rate_counts()
+
+    def test_first_message_not_limited(self):
+        assert _is_rate_limited("15551234567") is False
+
+    def test_under_limit_not_limited(self):
+        for _ in range(_RATE_LIMIT - 1):
+            assert _is_rate_limited("15551234568") is False
+
+    def test_at_limit_is_limited(self):
+        for _ in range(_RATE_LIMIT):
+            _is_rate_limited("15551234569")
+        assert _is_rate_limited("15551234569") is True
+
+    def test_different_senders_are_independent(self):
+        for _ in range(_RATE_LIMIT):
+            _is_rate_limited("senderA")
+        # senderA is limited; senderB has not sent anything yet
+        assert _is_rate_limited("senderA") is True
+        assert _is_rate_limited("senderB") is False
+
+    def test_expired_timestamps_not_counted(self):
+        sender = "15551234570"
+        with _rate_lock:
+            _rate_counts[sender] = [time.time() - _RATE_WINDOW - 1] * _RATE_LIMIT
+        # All timestamps are outside the window — sender should not be limited
+        assert _is_rate_limited(sender) is False
+
+    def test_handle_message_sends_rate_limit_reply(self):
+        """_handle_message sends a polite refusal when sender exceeds the rate limit."""
+        _clear_all()
+        sender = "15551234571"
+        for _ in range(_RATE_LIMIT):
+            _is_rate_limited(sender)
+        sent: list[str] = []
+        with mock.patch(
+            "squish.serving.whatsapp._send_whatsapp_reply",
+            side_effect=lambda pid, tok, to, body: sent.append(body),
+        ):
+            _handle_message(
+                sender, "hello", "pid", "tok",
+                lambda: _FakeState(), lambda: _fake_generate, lambda: _FakeTok(),
+                _DEFAULT_SYSTEM_PROMPT,
+            )
+        assert len(sent) == 1
+        assert "quickly" in sent[0].lower() or "wait" in sent[0].lower()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _chunk_reply — long-message splitting
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestChunkReply:
+    def test_short_text_single_chunk(self):
+        assert _chunk_reply("hello") == ["hello"]
+
+    def test_empty_string_single_chunk(self):
+        assert _chunk_reply("") == [""]
+
+    def test_exactly_max_len_single_chunk(self):
+        text = "x" * _MAX_MSG_LEN
+        assert _chunk_reply(text) == [text]
+
+    def test_one_over_max_splits_into_two(self):
+        text = "x" * (_MAX_MSG_LEN + 1)
+        chunks = _chunk_reply(text)
+        assert len(chunks) == 2
+        assert all(len(c) <= _MAX_MSG_LEN for c in chunks)
+        assert "".join(chunks) == text
+
+    def test_splits_at_newline(self):
+        part1 = "a" * (_MAX_MSG_LEN - 1)
+        part2 = "b" * 10
+        text = part1 + "\n" + part2
+        chunks = _chunk_reply(text)
+        assert len(chunks) == 2
+        assert chunks[0] == part1
+        assert chunks[1] == part2
+
+    def test_splits_at_space_when_no_newline(self):
+        # Pattern: 1000 'x' chars then a space, repeated — produces spaces inside _MAX_MSG_LEN
+        segment = "x" * 999 + " "
+        text = segment * 5  # 5000 chars, spaces at 1000, 2000, 3000, 4000
+        chunks = _chunk_reply(text)
+        assert len(chunks) >= 2
+        assert all(len(c) <= _MAX_MSG_LEN for c in chunks)
+        # Reassembling with the stripped whitespace should reproduce the words
+        combined = " ".join(chunks)
+        assert combined.replace(" ", "") == text.replace(" ", "")
+
+    def test_hard_cut_when_no_whitespace(self):
+        text = "x" * (_MAX_MSG_LEN * 2)
+        chunks = _chunk_reply(text)
+        assert len(chunks) == 2
+        assert all(len(c) <= _MAX_MSG_LEN for c in chunks)
+        assert "".join(chunks) == text
+
+    def test_multiple_chunks_no_content_lost(self):
+        text = "word " * 3000  # ~15000 chars
+        chunks = _chunk_reply(text)
+        assert len(chunks) >= 3
+        assert all(len(c) <= _MAX_MSG_LEN for c in chunks)
+        # Every word is preserved across all chunks
+        rejoined = " ".join(" ".join(c.split()) for c in chunks)
+        assert rejoined.split() == text.split()
+
+    def test_long_reply_sends_multiple_messages(self):
+        """Verify _handle_message delivers long model output as multiple WhatsApp messages."""
+        _clear_all()
+        long_output = "word " * (_MAX_MSG_LEN // 4)  # ~5x the per-message limit
+
+        def _long_generate(prompt, max_tokens, temperature, top_p, stop, seed):
+            yield (long_output, None)
+            yield ("", "stop")
+
+        sent: list[str] = []
+        with mock.patch(
+            "squish.serving.whatsapp._send_whatsapp_reply",
+            side_effect=lambda pid, tok, to, body: sent.append(body),
+        ):
+            _handle_message(
+                "15551299999", "tell me a story", "pid", "tok",
+                lambda: _FakeState(), lambda: _long_generate, lambda: _FakeTok(),
+                _DEFAULT_SYSTEM_PROMPT,
+            )
+        assert len(sent) >= 2
+        assert all(len(s) <= _MAX_MSG_LEN for s in sent)
