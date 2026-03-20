@@ -5,6 +5,100 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [16.0.0] — 2026-06-17
+
+### Added — Wave 39: Activation Quantization · Fused Kernels · W8A8 Runtime · Compiled Decode · Sublinear Attention
+
+Twelve production-grade modules targeting the full v16 activation-quantisation
+and inference-efficiency frontier across five orthogonal axes: per-channel
+activation smoothing, calibration-free proximal quantisation, dual INT8
+weight+activation runtime, sublinear and recurrent attention, fused
+kernel composition, compiled decode paths, and async KV migration.
+All modules are NumPy-only simulation layers backed by 2023–2025
+peer-reviewed papers.
+
+**Wave 39a — Activation Quantization & Sublinear Attention**
+
+- **SmoothQuant** (`squish/quant/smooth_quant.py`) — Per-channel
+  activation-to-weight difficulty migration (Xiao et al., ICML 2023).
+  Migrates quantisation difficulty from activations to weights via calibrated
+  per-channel scales. `SmoothQuantConfig`, `SmoothQuantActivation.calibrate()`,
+  `.smooth_weight()`, `.smooth_activation()`, `.quantise_int8()`,
+  `.dequantise_int8()`, `.forward_smoothed()`.
+
+- **HQQ** (`squish/quant/hqq_quant.py`) — Half-Quadratic Quantization,
+  calibration-free PTQ via proximal optimisation (Badri & Shaji, 2024).
+  Supports INT2/INT3/INT4/INT8, no calibration data required.
+  `HQQConfig`, `HQQTensor`, `HQQQuantizer.encode()`, `.decode()`,
+  `.relative_error()`, `.quantisation_error_db()`.
+
+- **HyperAttention** (`squish/attention/hyper_attn.py`) — Near-linear O(n√n)
+  attention via LSH bucketing + uniform residual sampling (Han et al.,
+  NeurIPS 2024). Auto-falls back to exact attention for short sequences.
+  `HyperAttentionConfig`, `HyperAttention.forward()`, `_exact_attention()`.
+
+- **TriForce Decode** (`squish/speculative/triforce_decode.py`) — Hierarchical
+  speculative decoding with KV page subsets as the draft KV (Sun et al.,
+  ICLR 2025). `TriForceConfig`, `TriForceDraftResult`, `TriForceDecoder.step()`,
+  `.select_top_k_pages()`, `.accept_reject()`.
+
+- **FlexAttention** (`squish/kernels/flex_attn.py`) — Composable score_mod +
+  BlockMask FlexAttention kernel (PyTorch team, ASPLOS 2025). Factory functions
+  for causal, ALiBi, sliding-window, and softcap mods. `FlexAttentionConfig`,
+  `BlockMask`, `FlexAttentionKernel.forward()`, `make_causal_mod()`,
+  `make_alibi_mod()`, `make_sliding_window_mod()`, `make_softcap_mod()`.
+
+- **MassiveActivationSuppressor** (`squish/token/massive_activation.py`) —
+  Outlier dimension soft-clamp + adjacent energy redistribution (Sun et al.,
+  ICML 2024). Running EMA statistics, per-layer outlier tracking.
+  `MassiveActivationConfig`, `SuppressionStats`,
+  `MassiveActivationSuppressor.detect_outlier_dims()`, `.suppress()`,
+  `.get_stats()`, `.reset_stats()`.
+
+**Wave 39b — W8A8 Runtime · Compiled Decode · Parallel Speculation · Async KV**
+
+- **W8A8QuantRuntime** (`squish/quant/w8a8_quant.py`) — Dual INT8
+  weight+activation matmul runtime (TRT-LLM / vLLM reference, 2024).
+  Symmetric/asymmetric, per-channel/per-tensor. `W8A8Config`, `W8A8Tensor`,
+  `W8A8QuantRuntime.quantise_weight()`, `.quantise_activation()`, `.linear()`,
+  `.relative_error()`.
+
+- **TorchCompileDecode** (`squish/kernels/torch_compile_decode.py`) —
+  torch.compile / mlx.compile wrapper with eager fallback and call-latency
+  stats (PyTorch team, 2024). `TorchCompileConfig`, `CompileStats`,
+  `TorchCompileDecode.compile()`, `.__call__()`, `.stats`, `.reset_stats()`.
+
+- **APARDecoder** (`squish/speculative/apar_decode.py`) — Auto-Parallel
+  Auto-Regressive decoding with output-tree branch forking (Liu et al., 2024).
+  Fork confidence gating, max_branches limit, round-robin branch scheduling.
+  `APARConfig`, `APARBranch`, `APARDecoder.should_fork()`, `.generate()`,
+  `.active_branch_count()`, `.branch_count()`, `.reset()`.
+
+- **GatedLinearAttention** (`squish/attention/linear_attn.py`) — Data-dependent
+  gated decay O(1) recurrent attention (Yang et al., ICML 2024). Both step
+  (decode) and prefill (chunked) modes with persistent state. `GLAConfig`,
+  `GLAState`, `GatedLinearAttention.init_state()`, `.step()`, `.prefill()`.
+
+- **FusedNormAttnResidual** (`squish/kernels/fused_norm_attn.py`) — Fused
+  RMSNorm → Multi-Head Attention → Residual Add in a single operation
+  (Hsu et al., 2024). Accepts (B,T,D) and (T,D) inputs; causal support.
+  `FusedNormAttnConfig`, `FusedNormAttnResidual.rms_norm()`, `.forward()`.
+
+- **AsyncKVTransfer** (`squish/serving/async_kv_transfer.py`) — Non-blocking
+  KV block migration with background worker thread (LMCache, Gao et al.,
+  MLSys 2025). Simulated-latency mode, bandwidth throttling, thread-safe
+  queue. `TransferStatus`, `KVBlock`, `TransferHandle`,
+  `AsyncKVTransferConfig`, `AsyncKVTransfer.enqueue()`, `.get_ready_blocks()`,
+  `.pending_count()`, `.start()`, `.stop()`.
+
+### Tests
+
+- `tests/test_wave39a_modules.py` — 120 tests covering all Wave 39a modules.
+- `tests/test_wave39b_modules.py` — 93 tests covering all Wave 39b modules.
+- Total new tests: **213**; cumulative suite: **8272 passed**.
+
+---
+
 ## [15.0.0] — 2026-06-16
 
 ### Added — Wave 38: Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation
