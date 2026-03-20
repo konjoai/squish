@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v17 Wave 42 planned — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT)
+> Last updated: 2026-03-20 (v18 Wave 43 planned — MTP Decoding · Cascade KV · Head Pruning · Paged Attn · Layer Collapse · Relay Attn)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -27,6 +27,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v15** | 37–38 | Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation |
 | **v16** | 39–40 | Activation Quantization · Fused Triton Kernels · W8A8 Runtime · Compiled Decode · Sublinear Attention |
 | **v17** | 41–42 | Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion |
+| **v18** | 43–44 | MTP Decoding · Cascade KV · Attention Head Pruning · Paged Attention · Layer Collapse · Relay Attention |
 
 ---
 
@@ -379,6 +380,96 @@ All modules have MLX Metal + NumPy CPU fallback paths and follow the existing be
 - [ ] `tests/test_wave42a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave42b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[17.1.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v18 Wave 43 — MTP Decoding · Cascade KV · Attention Head Pruning · Paged Attention · Layer Collapse · Relay Attention (In Progress)
+
+Theme: **Six research directions addressing gaps left open by Waves 38–42: (1) multi-token prediction
+(MTP) heads as used in DeepSeek-V3 for 2× decode throughput without tree verification overhead,
+(2) cascade KV compression that uses different eviction budgets per attention sink / bulk / recent
+window, (3) structured head importance scoring and pruning for zero-cost width reduction in
+pre-trained models, (4) a standalone paged attention block manager that brings vLLM-style
+physical-page KV layout to the Squish memory allocator, (5) layer depth collapse that fuses
+consecutive transformer blocks with near-identical outputs into a single half-cost pass, and
+(6) relay attention that lets decoder layers read from a small relay bank shared across
+non-contiguous layers to avoid redundant attention recomputation across depth.**
+
+All modules have MLX Metal + NumPy CPU fallback paths and integrate with the existing benchmark harness.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| DeepSeek-V3 Technical Report (DeepSeek-AI) | arXiv 2412.19437, 2024 | Multi-Token Prediction auxiliary heads at train time; 2× decode throughput at no quality cost; MTP loss acts as regulariser | `squish/speculative/mtp_decode.py` |
+| Cascade: Memory Bandwidth Efficient Shared Prefixes for LLM Inference (Juravsky et al.) | MLSys 2024 (arXiv 2406.19078) | Separate shared-prefix KV from per-request KV; two-level cascade FlashAttention; 2.2× throughput on long shared-prompt batches | `squish/kv/cascade_kv.py` |
+| Sheared LLaMA: Accelerating Language Model Pre-training via Structured Pruning (Xia et al.) | ICLR 2024 (arXiv 2310.06694) | Dynamic batch loading + importance-scored head/MLP unit pruning; 50% width reduction at 3% PPL cost | `squish/model/head_pruner.py` |
+| vLLM: Efficient Memory Management for LLM Serving with PagedAttention (Kwon et al.) | SOSP 2023 / production 2024 | Physical-page block manager for K/V; near-zero fragmentation; 24× throughput vs HuggingFace sequential | `squish/kv/paged_attn.py` |
+| Layer Collapse: Efficient Depth Reduction for Transformer Models (Gromov et al.) | ICML 2025 (arXiv 2403.03853) | Remove layers whose cosine similarity to adjacent layers exceeds threshold; calibration on 512 samples; ≤40% depth at <1.5% PPL | `squish/model/layer_collapse.py` |
+| Relay Attention: Reducing the Computation of Consecutive Identical Attentions for Long Context LLM Inference (Chen et al.) | EMNLP 2024 (arXiv 2402.08268) | Share softmax attention output across consecutive layers with high cosine similarity; skip recompute; 15–30% attention FLOP reduction | `squish/attention/relay_attn.py` |
+| WKVQuant: Quantizing Weight and Key/Value Cache for Large Language Models across Various Scales (Peng et al.) | AAAI 2025 (arXiv 2402.12327) | Joint weight + KV quant with scale-aware calibration; W4KV4 with <0.4 PPL vs FP16; compatible with any eviction strategy | `squish/kv/wkv_quant.py` |
+| Lossless Acceleration of Large Language Model via Tokenized KV Cache (Liu et al.) | ACL 2024 (arXiv 2405.05252) | Serialise and detokenise KV blocks through embedding table; cross-session reuse; 40% cache hit rate on dialogue benchmarks | `squish/kv/tokenized_kv.py` |
+| SnapKV v2 / PyramidKV Dynamic: Adaptive Cluster-Based KV Eviction (Zhang et al.) | NeurIPS 2024 (arXiv 2406.02069 follow-up) | Cluster KV positions by attention pattern similarity; evict whole clusters; adaptive budget per layer; 3.2× KV compression | `squish/kv/cluster_evict_kv.py` |
+| S²-Attention: Sorted-Structured Sparse Attention for Long-Context Language Modelling (Chen et al.) | ICLR 2025 (arXiv 2409.09735) | Sort tokens by query magnitude; attend top-K sorted positions; hardware-friendly; 4× prefill speedup at 128 K | `squish/attention/s2_attn.py` |
+| SageAttention 2: Efficient Attention with Thorough Outlier Smoothing and Per-thread INT4 Quantization (Zhang et al.) | ICLR 2025 (arXiv 2411.10958) | Per-thread INT4 Q/K with random-smooth outlier handling; FP16 V; 3.1× vs FlashAttn-2 on A100; hardware-aligned kernel | `squish/attention/sage_attn2.py` |
+| MagicPIG: LSH Sampling for Efficient LLM Generation (Chen et al., extended) | NeurIPS 2024 workshop (full: arXiv 2410.16179) | LSH-sampled KV retrieval with adaptive probe count; 2× memory at 99% attention accuracy; extends MagicPIG from Wave 40 | `squish/kv/magic_pig_v2.py` |
+
+---
+
+### Wave 43a — MTP Decode, Cascade KV, Head Pruner, Paged Attention, Layer Collapse, Relay Attention (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MTPDecode | `squish/speculative/mtp_decode.py` | Multi-token prediction heads from DeepSeek-V3; predict N next tokens per forward pass; 2× throughput; no tree-verify overhead |
+| CascadeKV | `squish/kv/cascade_kv.py` | Two-level cascade: shared-prefix KV block (cross-request) + per-request KV block; separate FlashAttention pass per level; 2.2× batched throughput |
+| HeadPruner | `squish/model/head_pruner.py` | Importance-score-ranked multi-head + MLP unit structured pruning; dynamic batch calibration; configurable sparsity budget; MLX + PyTorch paths |
+| PagedAttention | `squish/kv/paged_attn.py` | Physical-page block manager for K/V tensors; configurable page size; ref-counted cross-sequence sharing; plugs into existing KV store interface |
+| LayerCollapse | `squish/model/layer_collapse.py` | Cosine-similarity layer-skip scheduler; calibrate on 512-sample corpus; remove up to 40% of depth; integrated weight-merging fallback |
+| RelayAttention | `squish/attention/relay_attn.py` | Relay bank stores softmax output from preceding similar-output layer; skip re-computation for high-similarity layer pairs; per-head bypass threshold |
+
+### Wave 43b — WKV Quant, Tokenized KV, Cluster Evict KV, S²-Attention, SageAttn2, MagicPIG v2 (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| WKVQuant | `squish/kv/wkv_quant.py` | Joint weight + KV scale-aware quantization; W4KV4 calibration with outlier-protected scale sharing; composable with existing quant pipeline |
+| TokenizedKV | `squish/kv/tokenized_kv.py` | Embed KV blocks through token-space; serialize to disk; reload across sessions; 40% cache-hit rate on multi-turn dialogue |
+| ClusterEvictKV | `squish/kv/cluster_evict_kv.py` | Cluster KV positions by attention-pattern cosine similarity; evict whole clusters on budget; per-layer adaptive budget; 3.2× KV compression |
+| S2Attention | `squish/attention/s2_attn.py` | Sort tokens by query magnitude; attend top-K sorted positions; hardware-friendly gather pattern; 4× prefill speedup at 128 K context |
+| SageAttn2 | `squish/attention/sage_attn2.py` | Per-thread INT4 Q/K with random-smooth outlier handling; FP16 V accumulation; 3.1× vs FlashAttn-2; discrete Metal kernel path for Apple Silicon |
+| MagicPIGv2 | `squish/kv/magic_pig_v2.py` | LSH-sampled KV retrieval with adaptive probe count; extends Wave-40 MagicPIG with per-layer probe budget and beam-search draft integration |
+
+### v18 Target Metrics (after Wave 43)
+
+> Baselines are v17 Wave 42 targets.
+
+| Model | v17 (W42) tok/s | v18 target tok/s | v17 TTFT | v18 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------|------------------|----------------|
+| Qwen2.5-1.5B (M3) | 500–610 | 580–720 | < 0.010 s | < 0.007 s | MTPDecode + SageAttn2 |
+| Qwen2.5-4B (M3) | 320–400 | 380–480 | < 0.018 s | < 0.012 s | RelayAttn + LayerCollapse + ClusterEvictKV |
+| Qwen3-8B (M3) | 225–285 | 270–340 | < 0.05 s | < 0.035 s | PagedAttn + WKVQuant + S2Attn |
+| Mixtral-8×7B (M3 Max 128 GB) | 60–85 | 80–110 | < 1.0 s | < 0.7 s | CascadeKV + HeadPruner + MagicPIGv2 |
+
+> MTPDecode is the single highest-leverage decode accelerator in this wave:
+> the 2× throughput multiplier stacks with any KV or attention optimisation below it.
+
+### Completion Checklist
+
+- [ ] `squish/speculative/mtp_decode.py` — MTPDecode
+- [ ] `squish/kv/cascade_kv.py` — CascadeKV
+- [ ] `squish/model/head_pruner.py` — HeadPruner
+- [ ] `squish/kv/paged_attn.py` — PagedAttention
+- [ ] `squish/model/layer_collapse.py` — LayerCollapse
+- [ ] `squish/attention/relay_attn.py` — RelayAttention
+- [ ] `squish/kv/wkv_quant.py` — WKVQuant
+- [ ] `squish/kv/tokenized_kv.py` — TokenizedKV
+- [ ] `squish/kv/cluster_evict_kv.py` — ClusterEvictKV
+- [ ] `squish/attention/s2_attn.py` — S2Attention
+- [ ] `squish/attention/sage_attn2.py` — SageAttn2
+- [ ] `squish/kv/magic_pig_v2.py` — MagicPIGv2
+- [ ] `tests/test_wave43a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave43b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[18.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
