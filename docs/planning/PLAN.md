@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v17 Wave 41 planned — Prefix Sharing · EAGLE-2 · Ring Attn · Token Pruning · MoE Routing · Sink Fusion)
+> Last updated: 2026-03-20 (v17 Wave 42 planned — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -292,6 +292,93 @@ planned wave. All modules have MLX/NumPy fallback paths.
 - [ ] `tests/test_wave41a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave41b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[17.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (In Progress)
+
+Theme: **Six new research directions orthogonal to Waves 38–41 — spanning how requests are scheduled
+across hardware, how attention is sparsified at inference, how additional decoding heads accelerate
+generation without a draft model, how KV entries are compressed with calibrated non-uniform
+quantization, how KV state is persisted across conversation turns, and how models reach W4A4
+quality without full-scale QAT. Each module targets a distinct bottleneck in the serving stack and
+composes cleanly with the speculative, attention, and quantization modules from prior waves.**
+
+All modules have MLX Metal + NumPy CPU fallback paths and follow the existing benchmark harness.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads (Cai et al.) | ICML 2024 (arXiv 2401.10774) | 2 extra frozen-head draft passes + tree verify; 2.3× vs AR; no separate draft model | `squish/speculative/medusa_heads.py` |
+| Sarathi-Serve: Efficient LLM Inference by Piggybacking Decodes with Chunked Prefills (Agrawal et al.) | OSDI 2024 (arXiv 2308.16369) | Slice prefill into fixed-length chunks; decode tokens fill idle slots; <5% decode overhead; 3× prefill throughput | `squish/serving/sarathi_scheduler.py` |
+| Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention (Yuan et al.) | arXiv 2502.11089, DeepSeek 2025 | Compound block + sliding + selected-token sparse pattern; natively trained; 9× full-attention FLOPs on 64 K context | `squish/attention/nsa_attn.py` |
+| FlexPrefill: A Context-Adaptive Sparse Attention Mechanism for Efficient LLM Prefilling (Lai et al.) | arXiv 2502.20766, 2025 | Per-head query-driven sparsity ratio at prefill; 2–3× prefill on 32 K+ sequences; training-free | `squish/attention/flex_prefill.py` |
+| ThinK: Thinner Key Cache by Query-Driven Pruning (Xu et al.) | EMNLP 2024 (arXiv 2407.21018) | Prune K-channel dimensions aligned to query magnitude; 20% K reduction; <0.1 PPL cost; no eviction budget | `squish/kv/think_cache.py` |
+| AttentionStore: Cost-Effective Attention Reuse across Multi-Turn Conversations (Sheng et al.) | ACL 2024 (arXiv 2403.19708) | Persist KV across turns in GPU→CPU→SSD tiered cache; hierarchical tiling; 8× repeated-turn TTFT | `squish/kv/attention_store.py` |
+| REST: Retrieval-Based Speculative Decoding (He et al.) | NAACL 2024 (arXiv 2311.08252) | Datastore n-gram draft; no training; 1.5–3× AR decode; fully composable with tree-verify | `squish/speculative/rest_decode.py` |
+| Star Attention: Efficient LLM Inference over Long Sequences with Caching (Acharya et al.) | NeurIPS 2024 (arXiv 2411.17116) | Block-partition sequence; each partition attends locally + to star-center anchor block; 11× long-context throughput | `squish/attention/star_attn.py` |
+| Splitwise: Efficient Generative LLM Inference Using Phase Splitting (Patel et al.) | ISCA 2024 (arXiv 2311.18677) | Disaggregate prefill hardware from decode hardware; dedicated resource pools; optimises TTFT + throughput jointly | `squish/serving/splitwise_scheduler.py` |
+| KVQuant: Towards 10 Million Context Length LLM Inference with KV Cache Quantization (Hooper et al.) | NeurIPS 2024 (arXiv 2401.18079) | Per-vector/per-channel NF4 KV quant with non-uniform outlier-aware calibration; 10 M-token context on a single A100 | `squish/kv/kvquant.py` |
+| EfficientQAT: Efficient Quantization-Aware Training for Large Language Models (Chen et al.) | ECCV 2024 (arXiv 2407.11062) | Block-by-block QAT with frozen surrounding layers; W4A4 at <1% of full-model QAT compute; plug-in for staged pipeline | `squish/quant/efficient_qat.py` |
+| CacheGen: KV Cache Compression and Streaming for Fast Large Language Model Services (Liu et al.) | SIGCOMM 2024 (arXiv 2310.07240) | Arithmetic-coded KV bitstream; 4.5× compression over FP16; remote KV streaming; on-demand decode | `squish/kv/cache_gen.py` |
+
+---
+
+### Wave 42a — Medusa, Sarathi, NSA, FlexPrefill, ThinK, AttentionStore (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MedusaHeads | `squish/speculative/medusa_heads.py` | 2 extra frozen draft heads + tree-structured speculative verify; 2.3× vs AR; zero separate draft model; integrates with existing spec pipeline |
+| SarathiScheduler | `squish/serving/sarathi_scheduler.py` | Fixed-size chunked prefill scheduler; decode tokens piggybacked on idle prefill budget; plugs into `server.py` request queue |
+| NSAAttention | `squish/attention/nsa_attn.py` | Natively-trained block + sliding-window + selected-token sparse attention; hardware-aligned tile sizes; 9× FLOP on 64 K context |
+| FlexPrefill | `squish/attention/flex_prefill.py` | Per-head context-adaptive sparse ratio at prefill computed from query norms; 2–3× prefill on sequences ≥ 32 K; training-free |
+| ThinKCache | `squish/kv/think_cache.py` | Query-magnitude-ranked K-channel pruning; configurable keep-ratio; compatible with any downstream KV eviction or quantization module |
+| AttentionStore | `squish/kv/attention_store.py` | Session-scoped KV persistence layer with GPU hot / CPU warm / SSD cold tiers; hierarchical tiling; 8× TTFT on repeated-turn workloads |
+
+### Wave 42b — REST, Star Attention, Splitwise, KVQuant, EfficientQAT, CacheGen (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| RESTDecode | `squish/speculative/rest_decode.py` | Retrieval-based n-gram draft from token datastore; no model training; 1.5–3× decode speedup; composable with any tree-verifier |
+| StarAttention | `squish/attention/star_attn.py` | Block-partitioned star topology: local block attention + single anchor block; 11× throughput on 128 K+ context; multi-host sharding path |
+| SplitwiseScheduler | `squish/serving/splitwise_scheduler.py` | Prefill / decode phase disaggregation into separate resource pools; decoupled scaling; maximises TTFT and throughput simultaneously |
+| KVQuant | `squish/kv/kvquant.py` | Per-vector NF4 + per-channel calibration for K/V tensors; outlier-aware non-uniform quantization; enables 10 M-token context on M3 Max |
+| EfficientQAT | `squish/quant/efficient_qat.py` | Sequential block-wise QAT with frozen neighbouring layers; W4A4 quality; integrates with existing quantization pipeline in `squish/quant/` |
+| CacheGen | `squish/kv/cache_gen.py` | Arithmetic-code KV cache into compact bitstream (4.5× vs FP16); streaming decoder for remote KV shards; multi-host context recovery |
+
+### v17 Target Metrics (after Wave 42)
+
+> Baselines are v17 Wave 41 targets.
+
+| Model | v17 (W41) tok/s | v17 target tok/s | v17 TTFT | v17 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------|------------------|----------------|
+| Qwen2.5-1.5B (M3) | 430–520 | 500–610 | < 0.015 s | < 0.010 s | MedusaHeads + RESTDecode |
+| Qwen2.5-4B (M3) | 270–330 | 320–400 | < 0.025 s | < 0.018 s | FlexPrefill + AttentionStore (multi-turn) |
+| Qwen3-8B (M3) | 190–240 | 225–285 | < 0.08 s | < 0.05 s | NSA + ThinKCache + KVQuant |
+| Mixtral-8×7B (M3 Max 128 GB) | 45–65 | 60–85 | < 1.5 s | < 1.0 s | SarathiScheduler + EfficientQAT + CacheGen |
+
+> Splitwise + CacheGen unlock multi-machine inference: KV prefill computed on one
+> host, streamed to decode host via CacheGen bitstream at 4.5× compression.
+
+### Completion Checklist
+
+- [ ] `squish/speculative/medusa_heads.py` — MedusaHeads
+- [ ] `squish/serving/sarathi_scheduler.py` — SarathiScheduler
+- [ ] `squish/attention/nsa_attn.py` — NSAAttention
+- [ ] `squish/attention/flex_prefill.py` — FlexPrefill
+- [ ] `squish/kv/think_cache.py` — ThinKCache
+- [ ] `squish/kv/attention_store.py` — AttentionStore
+- [ ] `squish/speculative/rest_decode.py` — RESTDecode
+- [ ] `squish/attention/star_attn.py` — StarAttention
+- [ ] `squish/serving/splitwise_scheduler.py` — SplitwiseScheduler
+- [ ] `squish/kv/kvquant.py` — KVQuant
+- [ ] `squish/quant/efficient_qat.py` — EfficientQAT
+- [ ] `squish/kv/cache_gen.py` — CacheGen
+- [ ] `tests/test_wave42a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave42b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[17.1.0]` entry
 - [ ] PLAN.md updated
 
 ---
