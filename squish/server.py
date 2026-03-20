@@ -114,6 +114,20 @@ _layer_skip_config      = None  # EarlyExitConfig         — --layer-skip
 _long_spec_config       = None  # LongSpecConfig          — --long-spec
 _fr_spec_config         = None  # FRSpecConfig            — --fr-spec
 
+# Wave 37: Wire Everything In
+_kvtc_manager           = None  # KVTCManager
+_chunk_kv_manager       = None  # ChunkKVManager
+_ssd_saguaro            = None  # SSDSaguaro
+_speculative_streamer   = None  # SpeculativeStreamer
+_metal_flash_attn       = None  # MetalFlashAttention
+_deja_vu_sparse_ffn     = None  # DejaVuSparseFFN
+_jacobi_decoder         = None  # JacobiDecoder
+_mtp_predictor          = None  # MultiTokenPredictor
+_layer_overlap_loader   = None  # LayerOverlapLoader
+_chip_profile           = None  # ChipProfile (auto)
+_fused_qkv_proj         = None  # FusedQKVProjection
+_pd_disaggregator       = None  # PDDisaggregator
+
 # ── Wave 27: new inference velocity flags ─────────────────────────────────────
 _fused_sampler          = None  # FusedSampler            — --fused-sampler (v10: default on)
 _fused_sampler_enabled  = True  # on by default; --no-fused-sampler to disable
@@ -1076,6 +1090,11 @@ def _generate_tokens(  # pragma: no cover
     if _draft.generator is not None and temperature > 0.0:
         if _trace:
             _tlog(f"REQ {_rid}  dispatch → speculative-decoding")
+        if _speculative_streamer is not None:
+            try:
+                _speculative_streamer.reset()
+            except Exception:
+                pass
         try:
             gen = _draft.generator.stream(
                 prompt,
@@ -1107,10 +1126,47 @@ def _generate_tokens(  # pragma: no cover
                                              "falling back to standard generation", _spec_err)
 
     # ── Quantized KV cache generation path ─────────────────────────────────────
+    # Wave 37: Jacobi parallel decode path
+    if _jacobi_decoder is not None and not getattr(_draft, 'generator', None):
+        import logging as _jdl
+        _jdlog = _jdl.getLogger('squish.jacobi')
+        try:
+            def _jd_logits_fn(_ctx):
+                import mlx.core as mx
+                import numpy as _np
+                _o = model(mx.array(_ctx)[None])
+                return _np.array((_o.logits if hasattr(_o, 'logits') else _o)[0])
+            _jd_ctx = list(input_ids)
+            _jd_gen = []
+            _jd_max = min(max_tokens, 256)
+            while len(_jd_gen) < _jd_max:
+                _acc, _ni = _jacobi_decoder.decode_step(
+                    _jd_logits_fn, _jd_ctx, vocab_size=tokenizer.vocab_size)
+                if not _acc:
+                    break
+                for _t in _acc:
+                    _jd_gen.append(_t)
+                    _jd_ctx.append(_t)
+                    yield tokenizer.decode([_t]), 'continue'
+                    if _t == tokenizer.eos_token_id:
+                        yield '', 'stop'
+                        return
+                    if len(_jd_gen) >= _jd_max:
+                        break
+            yield '', 'stop'
+            return
+        except Exception as _jd_ex:
+            _jdlog.warning('[jacobi] failed (%s); fallback', _jd_ex)
+
     if _kv_cache is not None:
         if _trace:
             _tlog(f"REQ {_rid}  dispatch → kv-cache ({_kv_cache.__class__.__name__})")
         _kv_cache.reset()
+        if _chunk_kv_manager is not None:
+            try:
+                _chunk_kv_manager.invalidate_reuse_cache()
+            except Exception:
+                pass
         try:
             import mlx.core as mx
             import numpy as np
@@ -1714,6 +1770,12 @@ def _generate_tokens(  # pragma: no cover
         _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
     if _trace:
         _tlog(f"REQ {_rid}  DONE  path=manual  tokens={max_tokens}  finish=stop")
+    if _pd_disaggregator is not None:
+        try:
+            _pd_disaggregator.stats.total_generated_tokens += (
+                len(_cache_buf) if _cache_buf else 0)
+        except Exception:
+            pass
     yield "", "stop"
 
 
@@ -2773,6 +2835,46 @@ Examples:
                     help="Enable LongSpec extended speculative decoding.")
     ap.add_argument("--fr-spec", action="store_true", default=False,
                     help="Enable FR-Spec frequency-based token speculative decoding.")
+    # Wave 37: Wire Everything In
+    ap.add_argument("--kvtc", action="store_true", default=False,
+                    help="KV-Transform Coder: low-rank quantised KV cache (v15)")
+    ap.add_argument("--kvtc-rank", type=int, default=64, metavar="N",
+                    help="KV-TC projection rank (default: 64)")
+    ap.add_argument("--kvtc-bits", type=int, default=8, choices=[4, 8],
+                    help="KV-TC quantisation bits (default: 8)")
+    ap.add_argument("--chunk-kv", action="store_true", default=False,
+                    help="ChunkKV: chunk-level KV eviction (v15)")
+    ap.add_argument("--chunk-kv-size", type=int, default=16, metavar="N",
+                    help="Tokens per KV chunk (default 16)")
+    ap.add_argument("--chunk-kv-budget", type=float, default=0.5, metavar="F",
+                    help="KV budget fraction to retain (default 0.5)")
+    ap.add_argument("--ssd-saguaro", action="store_true", default=False,
+                    help="SSD-Saguaro speculative decode (v15)")
+    ap.add_argument("--spec-stream", action="store_true", default=False,
+                    help="SpeculativeStreamer: buffered token stream (v15)")
+    ap.add_argument("--metal-flash-attn", action="store_true", default=False,
+                    help="Metal Flash Attention kernel (v15)")
+    ap.add_argument("--deja-vu", action="store_true", default=False,
+                    help="Deja Vu sparse FFN predictor (v15)")
+    ap.add_argument("--jacobi", action="store_true", default=False,
+                    help="Jacobi parallel decoder (v15)")
+    ap.add_argument("--jacobi-n", type=int, default=4, metavar="N",
+                    help="Jacobi token lookahead width (default: 4)")
+    ap.add_argument("--jacobi-variant", default="jacobi",
+                    choices=["jacobi", "gauss_seidel"],
+                    help="Jacobi decode variant (default: jacobi)")
+    ap.add_argument("--mtp", action="store_true", default=False,
+                    help="Multi-Token Predictor head (v15)")
+    ap.add_argument("--mtp-heads", type=int, default=4, metavar="N",
+                    help="Number of MTP draft heads (default: 4)")
+    ap.add_argument("--layer-overlap", action="store_true", default=False,
+                    help="Layer overlap loader: prefetch next layer (v15)")
+    ap.add_argument("--layer-overlap-prefetch", type=int, default=2, metavar="N",
+                    help="Layers to prefetch ahead (default: 2)")
+    ap.add_argument("--fused-qkv", action="store_true", default=False,
+                    help="Fused Q/K/V projection for GQA models (v15)")
+    ap.add_argument("--pd-disagg", action="store_true", default=False,
+                    help="PD disaggregation (v15)")
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
     ap.add_argument(
@@ -3401,6 +3503,11 @@ Examples:
             _warn(f"[lookahead] Skipped: {_e}")
 
     if getattr(args, "spec_reason", False):
+
+        # Wave 37: Wire Everything In
+        "kvtc", "chunk_kv", "ssd_saguaro", "spec_stream",
+        "metal_flash_attn", "deja_vu", "jacobi", "mtp",
+        "layer_overlap", "fused_qkv", "pd_disagg",
         try:
             from squish.spec_reason import SpecReasonConfig
             _sr_cfg = SpecReasonConfig()
@@ -3583,6 +3690,133 @@ Examples:
             _info("layer-skip", f"early-exit adaptive decoding  (exit_layer={_layer_skip_config.exit_layer}  threshold={_layer_skip_config.confidence_threshold})")
         except Exception as _e:
             _warn(f"[layer-skip] Skipped: {_e}")
+
+    # Wave 37: Wire Everything In
+    global _kvtc_manager, _chunk_kv_manager, _ssd_saguaro
+    global _speculative_streamer, _metal_flash_attn, _deja_vu_sparse_ffn
+    global _jacobi_decoder, _mtp_predictor, _layer_overlap_loader
+    global _chip_profile, _fused_qkv_proj, _pd_disaggregator
+
+    try:
+        from squish.hardware.chip_detector import ChipDetector
+        _chip_profile = ChipDetector().detect()
+        _info('chip-detector',
+              f'chip={_chip_profile.name!r} bw={_chip_profile.memory_bandwidth_gbps:.0f} GB/s')
+    except Exception as _e:
+        _warn('chip-detector', f'ChipDetector init failed: {_e}')
+
+    if getattr(args, 'kvtc', False):
+        try:
+            from squish.kv.kvtc import KVTCConfig, KVTCManager
+            _nl = getattr(getattr(model, 'args', None), 'n_layers', None) \
+                or len(getattr(model, 'layers', [])) or 32
+            _kvtc_manager = KVTCManager(
+                KVTCConfig(rank=args.kvtc_rank, quant_bits=args.kvtc_bits),
+                n_layers=_nl)
+            _kvtc_manager._server_enabled = True
+            _info('kvtc', f'KVTCManager rank={args.kvtc_rank} bits={args.kvtc_bits}')
+        except Exception as _e:
+            _warn('kvtc', f'KVTCManager init failed: {_e}')
+
+    if getattr(args, 'chunk_kv', False):
+        try:
+            from squish.kv.chunk_kv import ChunkKVConfig, ChunkKVManager
+            _chunk_kv_manager = ChunkKVManager(
+                ChunkKVConfig(chunk_size=args.chunk_kv_size,
+                              budget_ratio=args.chunk_kv_budget))
+            _info('chunk-kv', 'ChunkKVManager ready')
+        except Exception as _e:
+            _warn('chunk-kv', f'ChunkKVManager init failed: {_e}')
+
+    if getattr(args, 'ssd_saguaro', False):
+        try:
+            from squish.speculative.ssd_saguaro import SSDConfig, SSDSaguaro
+            _ssd_saguaro = SSDSaguaro(SSDConfig(k_outcomes=4, draft_len=8))
+            _ssd_saguaro._server_enabled = True
+            _info('ssd-saguaro', 'SSD Saguaro ready')
+        except Exception as _e:
+            _warn('ssd-saguaro', f'SSDSaguaro init failed: {_e}')
+
+    if getattr(args, 'spec_stream', False):
+        try:
+            from squish.speculative.spec_stream import SpecStreamConfig, SpeculativeStreamer
+            _speculative_streamer = SpeculativeStreamer(
+                SpecStreamConfig(buffer_size=16, rollback_on_reject=True))
+            _info('spec-stream', 'SpeculativeStreamer ready')
+        except Exception as _e:
+            _warn('spec-stream', f'SpeculativeStreamer init failed: {_e}')
+
+    if getattr(args, 'metal_flash_attn', False):
+        try:
+            from squish.kernels.metal_flash_attn import MetalFlashAttention, MetalFlashConfig
+            _metal_flash_attn = MetalFlashAttention(MetalFlashConfig(causal=True))
+            _metal_flash_attn._server_enabled = True
+            _info('metal-flash-attn', 'MetalFlashAttention active')
+        except Exception as _e:
+            _warn('metal-flash-attn', f'MetalFlashAttention init failed: {_e}')
+
+    if getattr(args, 'deja_vu', False):
+        try:
+            from squish.token.deja_vu_sparse import DejaVuConfig, DejaVuSparseFFN
+            _deja_vu_sparse_ffn = DejaVuSparseFFN(DejaVuConfig(hidden_size=512, ffn_size=2048))
+            _deja_vu_sparse_ffn._server_enabled = True
+            _info('deja-vu', 'DejaVu sparse FFN ready')
+        except Exception as _e:
+            _warn('deja-vu', f'DejaVuSparseFFN init failed: {_e}')
+
+    if getattr(args, 'jacobi', False):
+        try:
+            from squish.speculative.jacobi_decode import JacobiConfig, JacobiDecoder
+            _jacobi_decoder = JacobiDecoder(
+                JacobiConfig(n_tokens=args.jacobi_n, max_iter=8,
+                             variant=args.jacobi_variant, temperature=0.0))
+            _info('jacobi', f'JacobiDecoder ready n_tokens={args.jacobi_n}')
+        except Exception as _e:
+            _warn('jacobi', f'JacobiDecoder init failed: {_e}')
+
+    if getattr(args, 'mtp', False):
+        try:
+            from squish.speculative.mtp_head import MTPHeadConfig, MultiTokenPredictor
+            _mtp_predictor = MultiTokenPredictor(MTPHeadConfig(n_heads=args.mtp_heads))
+            _mtp_predictor._server_enabled = True
+            _info('mtp', f'MultiTokenPredictor ready n_heads={args.mtp_heads}')
+        except Exception as _e:
+            _warn('mtp', f'MultiTokenPredictor init failed: {_e}')
+
+    if getattr(args, 'layer_overlap', False):
+        try:
+            from squish.io.layer_overlap_loader import LayerOverlapConfig, LayerOverlapLoader
+            _n2 = getattr(getattr(model, 'args', None), 'n_layers', None) \
+                or len(getattr(model, 'layers', [])) or 32
+            _layer_overlap_loader = LayerOverlapLoader(
+                LayerOverlapConfig(prefetch_count=args.layer_overlap_prefetch))
+            _layer_overlap_loader.start(_n2, load_fn=lambda i: {'layer_idx': i})
+            _info('layer-overlap', f'LayerOverlapLoader started n={_n2}')
+        except Exception as _e:
+            _warn('layer-overlap', f'LayerOverlapLoader init failed: {_e}')
+
+    if getattr(args, 'fused_qkv', False):
+        try:
+            from squish.hardware.fused_qkv_proj import FusedQKVConfig, FusedQKVProjection
+            _ma = getattr(model, 'args', None) or getattr(model, 'config', None)
+            _dm = getattr(_ma, 'hidden_size', None) or getattr(_ma, 'd_model', 4096) or 4096
+            _nh = getattr(_ma, 'num_attention_heads', None) or getattr(_ma, 'n_heads', 32) or 32
+            _nk = getattr(_ma, 'num_key_value_heads', _nh) or _nh
+            _fused_qkv_proj = FusedQKVProjection(
+                FusedQKVConfig(d_model=_dm, n_heads=_nh, n_kv_heads=_nk, d_head=_dm//_nh))
+            _fused_qkv_proj._server_enabled = True
+            _info('fused-qkv', f'FusedQKV ready d_model={_dm} n_heads={_nh}')
+        except Exception as _e:
+            _warn('fused-qkv', f'FusedQKVProjection init failed: {_e}')
+
+    if getattr(args, 'pd_disagg', False):
+        try:
+            from squish.serving.pd_disagg import PDConfig, PDDisaggregator
+            _pd_disaggregator = PDDisaggregator(
+                PDConfig(max_prefill_tokens=8192, max_decode_tokens=512))
+            _info('pd-disagg', 'PDDisaggregator ready')
+        except Exception as _e:
+            _warn('pd-disagg', f'PDDisaggregator init failed: {_e}')
 
     # ── Wave 27: Inference velocity features ──────────────────────────────────
     # 1B — FusedSampler: replace multi-pass sampling with a single fused kernel
