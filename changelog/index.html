@@ -838,6 +838,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1300-2026-03-25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [13.0.0] — 2026-03-25
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[13.0.0] — 2026-03-25">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-33-decode-parallelism-weight-efficiency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 33: Decode Parallelism &amp; Weight Efficiency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-34-metal-kernel-fusion-bandwidth-optimal-serving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 34: Metal Kernel Fusion &amp; Bandwidth-Optimal Serving
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1300-alpha1-2026-03-19" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1548,6 +1587,104 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="1300-2026-03-25">[13.0.0] — 2026-03-25<a class="headerlink" href="#1300-2026-03-25" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-33-decode-parallelism-weight-efficiency">Added — Wave 33: Decode Parallelism &amp; Weight Efficiency<a class="headerlink" href="#added-wave-33-decode-parallelism-weight-efficiency" title="Permanent link">&para;</a></h3>
+<p>Six production-grade modules targeting parallel token generation, quantization
+efficiency, and zero-copy throughput pipelines.</p>
+<ul>
+<li>
+<p><strong>JacobiDecoder</strong> (<code>squish/speculative/jacobi_decode.py</code>) — CLLMs Jacobi /
+  Gauss-Seidel parallel fixed-point decoding (Santilli et al., 2023). Issues
+  n_tokens guesses per step and iterates until convergence; ~3.4× throughput
+  with zero draft model and O(n·vocab) working memory. <code>JacobiConfig</code>,
+  <code>JacobiDecoder.decode_step()</code>.</p>
+</li>
+<li>
+<p><strong>MultiTokenPredictor</strong> (<code>squish/speculative/mtp_head.py</code>) — Meta MTP
+  auxiliary prediction heads (DeepSeek-V3 / Gloeckle et al., 2024). N
+  independent linear heads predict tokens t+1…t+n_heads in a single Python
+  call; 1.7–3× throughput at n_heads=4 with no teacher forcing at inference.
+  <code>MTPHeadConfig</code>, <code>MultiTokenPredictor.sample_tokens()</code>,
+  <code>.verify_against_target()</code>.</p>
+</li>
+<li>
+<p><strong>FP6Quantizer</strong> (<code>squish/quant/fp6_quant.py</code>) — FP6-LLM 6-bit floating-point
+  weight quantizer (xia et al., 2024). Supports e3m2 and e2m3 formats; packs 4
+  FP6 values into 3 bytes (75% of FP8); per-group absmax scaling. 45–50%
+  weight-storage reduction versus fp16. <code>FP6Config</code>, <code>FP6Quantizer.quantize()</code>,
+  <code>.dequantize()</code>.</p>
+</li>
+<li>
+<p><strong>DraftTokenRecycler</strong> (<code>squish/speculative/token_recycler.py</code>) — ContextHash
+  draft recycler: SHA-256 of context IDs → circular deque lookup; on hit,
+  returns correction token (or accepted prefix + correction) as seed for next
+  speculative step, +14.9% acceptance rate at zero per-step model cost.
+  <code>RecycleConfig</code>, <code>DraftTokenRecycler.record_step()</code>, <code>.get_seed_tokens()</code>.</p>
+</li>
+<li>
+<p><strong>LayerDeduplicator</strong> (<code>squish/quant/layer_dedup.py</code>) — Cross-layer weight
+  deduplication via mean row-cosine-similarity; similar layer pairs store
+  reference + int8 delta (per-row absmax). 20–40% on-disk size reduction for
+  transformers with high layer repetition (LLaMA, Mistral). <code>LayerDedupConfig</code>,
+  <code>LayerDeduplicator.analyze()</code>, <code>.deduplicate()</code>, <code>.reconstruct()</code>.</p>
+</li>
+<li>
+<p><strong>TokenPipeline</strong> (<code>squish/kernels/token_pipeline.py</code>) — Zero-copy ring-buffer
+  token processing pipeline with builder-pattern stage registration and per-stage
+  µs timing. Batch and single-token modes; &lt;1 ms overhead per token on M-series.
+  <code>PipelineConfig</code>, <code>TokenPipeline.add_stage()</code>, <code>.process()</code>, <code>.process_batch()</code>.</p>
+</li>
+</ul>
+<h3 id="added-wave-34-metal-kernel-fusion-bandwidth-optimal-serving">Added — Wave 34: Metal Kernel Fusion &amp; Bandwidth-Optimal Serving<a class="headerlink" href="#added-wave-34-metal-kernel-fusion-bandwidth-optimal-serving" title="Permanent link">&para;</a></h3>
+<p>Six production-grade modules targeting tiled attention, speculative streaming,
+sparse KV, prefill-decode disaggregation, sparse FFN, and weight-load overlap.</p>
+<ul>
+<li>
+<p><strong>MetalFlashAttention</strong> (<code>squish/kernels/metal_flash_attn.py</code>) — Tiled block
+  flash attention (Dao et al., 2022) with online softmax (running max + running
+  sum); O(S·block) working set — no N×N materialization. Supports causal /
+  bidirectional, head-squeeze for single-head inputs. 3–5× memory reduction
+  over naive attention. <code>MetalFlashConfig</code>, <code>MetalFlashAttention.forward()</code>.</p>
+</li>
+<li>
+<p><strong>SpeculativeStreamer</strong> (<code>squish/speculative/spec_stream.py</code>) — Streaming token
+  emitter for speculative decoding; buffers draft tokens and commits accepted
+  prefix + correction in O(1); rollback on reject; EOS detection. Perceived 0 ms
+  TTFT via immediate draft streaming. <code>SpecStreamConfig</code>,
+  <code>SpeculativeStreamer.push_draft()</code>, <code>.commit()</code>, <code>.flush()</code>.</p>
+</li>
+<li>
+<p><strong>BlockSparseKVManager</strong> (<code>squish/kv/block_sparse_kv.py</code>) — Block-sparse KV
+  cache (BigBird / Longformer style): partitions KV into fixed-size blocks,
+  scores via QK dot-product aggregation (max/mean/norm), selects top-k plus
+  most-recent block. 4–8× FLOP reduction at long context. <code>BlockSparseConfig</code>,
+  <code>BlockSparseKVManager.prune()</code>, <code>.compute_attention()</code>.</p>
+</li>
+<li>
+<p><strong>PDDisaggregator</strong> (<code>squish/serving/pd_disagg.py</code>) — Prefill-Decode
+  disaggregation (Zhong et al., 2024 / DistServe): separate prefill and decode
+  phases with KV transfer; pluggable prefill_fn / decode_fn callables; staged
+  request lifecycle tracking. 1.5–2× TTFT improvement under mixed workloads.
+  <code>PDConfig</code>, <code>PDDisaggregator.submit_prefill()</code>, <code>.submit_decode()</code>,
+  <code>.generate()</code>.</p>
+</li>
+<li>
+<p><strong>DejaVuSparseFFN</strong> (<code>squish/token/deja_vu_sparse.py</code>) — DejaVu contextual
+  sparsity (Liu et al., 2023): 2-layer MLP predictor trained via binary
+  cross-entropy to skip neurons with predicted activation near zero. 30–50%
+  FFN FLOP reduction at ≤1% perplexity increase. <code>DejaVuConfig</code>, <code>FFNPredictor</code>,
+  <code>DejaVuSparseFFN.calibrate()</code>, <code>.forward()</code>.</p>
+</li>
+<li>
+<p><strong>LayerOverlapLoader</strong> (<code>squish/io/layer_overlap_loader.py</code>) — Async weight
+  prefetch via daemon threads; next <code>prefetch_count</code> layers loaded concurrently
+  with compute; hit/miss tracking; eviction of old handles. Eliminates
+  weight-load stalls, enabling near-zero idle time between transformer layers.
+  <code>LayerOverlapConfig</code>, <code>LayerOverlapLoader.start()</code>, <code>.get_layer()</code>,
+  <code>.prefetch_next()</code>.</p>
+</li>
+</ul>
 <hr />
 <h2 id="1300-alpha1-2026-03-19">[13.0.0-alpha.1] — 2026-03-19<a class="headerlink" href="#1300-alpha1-2026-03-19" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-33a-velocity-compression-sprint">Added — Wave 33a: Velocity Compression Sprint<a class="headerlink" href="#added-wave-33a-velocity-compression-sprint" title="Permanent link">&para;</a></h3>
