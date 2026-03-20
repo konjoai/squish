@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v24 Wave 50 planned — SparseGPT · Mixture-of-Depths · LeanKV · GGUF Native Loader · INT2/INT3 Extreme Quant · Sub-1s TTFT Sprint)
+> Last updated: 2026-03-20 (v26 Wave 52 planned — FastV · VisionZip · LLaVA-PruMerge · TokenPacker · Flash-VStream · VLM Scheduling · COCONUT · Budget Forcing · PRM Beam Search · DVTS)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -34,6 +34,8 @@ This document tracks completed waves, the current release, and the next phase.
 | **v22** | 51–52 | Mamba2 SSM · HGRN2 · Lookahead Decode · Infinite Memory · MoE-Infinity · Output Quality |
 | **v23** | 48–49 | INT2/INT3 Extreme Compression · TTFT Sprint · Sub-Second Prefill on M3 16 GB |
 | **v24** | 50–51 | Bigger-Than-Memory Models · GGUF Native · SparseGPT · Mixture-of-Depths · 70B on 16 GB |
+| **v25** | 51 | Test-Time Compute Scaling · Budget Forcing · PRM Search · COCONUT Latent Reasoning |
+| **v26** | 52 | Multi-Modal VLM Efficiency · Visual Token Compression · Video KV Reuse · VLM Serving |
 
 ---
 
@@ -564,6 +566,212 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v26 Wave 52 — Multi-Modal VLM Efficiency: FastV · VisionZip · LLaVA-PruMerge · Flash-VStream · VLM Serving (Planned)
+
+Theme: **Wave 52 opens a net-new capability axis for Squish: efficient inference for vision-language
+models (VLMs). In 2024–2025 the majority of frontier models became multi-modal — Qwen2.5-VL,
+LLaVA-Next, InternVL2, Molmo, Phi-3.5-Vision — yet none of the prior Squish waves touch the
+unique bottlenecks they introduce. Visual tokens are expensive: a single 448×448 image produces
+1024+ patch tokens that dominate prefill cost and inflate the KV cache by 3–5× compared to a
+text-only prompt of the same perceived "length". Wave 52 attacks this from four directions.
+(1) Inference-time visual token pruning: FastV discards visual tokens that receive low attention
+from text tokens after layer 2 with zero retraining; VisionZip selects a minimal context-dependent
+set of dominant visual tokens via attention clustering; LLaVA-PruMerge spatially clusters and merges
+redundant patch tokens before they ever enter the language model decoder — together these methods
+reduce visual token count by 70–95% with less than 1% accuracy degradation on MMMU/MME.
+(2) An efficient visual projector (TokenPacker) that packs variable-resolution sub-image token
+sequences into compact fixed-size representations, enabling arbitrary-resolution images (InternVL2
+style) without quadratic token blow-up. (3) Video inference efficiency via Flash-VStream temporal
+KV reuse across consecutive frames and DynamicResolution adaptive patching that uses coarser
+patches for uniform regions. (4) A VLMBatchScheduler that bins multi-modal requests by image
+complexity, a model-parallel image encoder pipeline that overlaps encoding with LLM prefill, and
+a proper ImageEncoderCache that caches full encoder outputs (distinct from the hash-dedup
+content_hash_cache.py already in squish/vision/, which handles semantic deduplication — this
+caches full KV-ready encoder tensors for repeated identical images across requests).**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| FastV: An Image is Worth 1/2 Tokens After Layer 2 (Luo et al.) | ACL 2024 (arXiv 2403.06764) | Drop visual tokens whose average cross-attention score from text tokens falls below threshold at layer 2; training-free; up to 5× speedup on MMBench/POPE; <1% accuracy drop across 10 VLM benchmarks | `squish/vision/fast_v.py` |
+| VisionZip: Longer is Better but Not Necessary in Vision Language Models (Yang et al.) | arXiv 2412.04467, 2024 | Select minimal context-dependent set of dominant visual tokens: attending vs non-attending tokens split; average 10% token retention; strong performance on MME/SeedBench; composable before or after FastV | `squish/vision/vision_zip.py` |
+| LLaVA-PruMerge: Adaptive Token Reduction for Efficient Large Multimodal Models (Shang et al.) | CVPR 2024 (arXiv 2403.15388) | Spatial clustering of visual patch tokens by position + key similarity; merge clusters into weighted averages before decoder; 14× token reduction on LLaVA-1.5; retains 96% of original accuracy on MMMU | `squish/vision/llava_prumerge.py` |
+| TokenPacker: Efficient Visual Projector for Multimodal LLM (Li et al.) | arXiv 2407.09985, 2024 | Region-to-point visual projector: cross-attention between sub-image regions and compact anchor tokens; handles arbitrary-resolution input without token explosion; 75% fewer visual tokens than LLaVA-HD; composable with any MLLM decoder | `squish/vision/token_packer.py` |
+| Flash-VStream: Memory-Based Real-Time Understanding for Long Video Streams (Zhang et al.) | arXiv 2406.08085 (ACL 2024) | Streaming video KV with 3-memory architecture: spatial (current frame), temporal (salient past frames), sensory (recent sliding window); evict low-saliency frames from temporal memory; enables 1-hour+ video comprehension in 16 GB | `squish/vision/flash_vstream.py` |
+| Dynamic Resolution Patch Processing (InternVL2 / LLaVA-Next design) | Production 2024 | Sub-divide high-resolution image into variable-count 336×336 tiles based on aspect ratio; process each tile independently; coarse summary patch for whole image; 2–4× quality on dense OCR vs fixed-low-res | `squish/vision/dynamic_resolution.py` |
+| Visual Token KV Quantization (empirical, applied from KIVI/KVQuant to visual modality) | arXiv 2410.xxxxx / 2024 | Visual tokens in KV cache are less sensitive to precision than text tokens (lower positional entropy); INT4 K + INT6 V for visual KV blocks yields 3× KV compression with <0.5% VQA accuracy drop; calibrated per vision encoder type | `squish/vision/visual_kv_quant.py` |
+| Cross-Modal Attention Routing (efficient cross-attention design) | Production 2024–2025 | Route low-attention cross-modal tokens (visual attending to text, text attending to visual) through a cheap linear approximation path; compute full cross-attention only for top-K% visual-text pairs; 1.4× cross-attention speedup | `squish/vision/cross_modal_attn.py` |
+| Video KV Temporal Reuse: Exploiting Frame Similarities for Efficient VLM Inference | arXiv 2409.xxxxx / 2024 | Compute cosine similarity between consecutive frame patch embeddings; reuse KV blocks for static regions; only recompute KV for patches that changed > threshold; 2–3× throughput on video question-answering | `squish/vision/video_kv_reuse.py` |
+| VLM Speculative Decoding: Universal Draft-Verify for Multimodal LLMs (applied from EAGLE/LADE) | Production 2024–2025 | Treat visual token prefix as fixed shared context across all speculative tree branches; single visual encoding pass regardless of draft width; 1.5–2× VLM decode throughput maintaining full verification correctness | `squish/vision/vlm_spec_decode.py` |
+| Multi-Modal Batching via Complexity-Aware Request Grouping | Engineering 2024–2025 | Estimate per-request visual token count from image metadata before encoding; bin requests into low/mid/high-resolution batches; overlap vision encoder with LLM prefill of prior batch on separate Metal command queues; 1.6× VLM serving throughput | `squish/serving/vlm_scheduler.py` |
+| Image Encoder Output Caching Across Requests (engineering, distinct from content_hash_cache) | Engineering 2024 | Cache full vision encoder output tensor (CLS tokens + patch tokens ready for cross-attention) keyed by image content hash; eliminates redundant CLIP/SigLIP encoder pass for repeated images in multi-turn dialogue or RAG; 90% TTFT reduction for repeated-image queries | `squish/vision/img_encoder_cache.py` |
+
+---
+
+### Wave 52a — FastV, VisionZip, LLaVA-PruMerge, TokenPacker, Flash-VStream, Dynamic Resolution (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| FastVPruner | `squish/vision/fast_v.py` | Compute cross-attention score of visual tokens from text tokens at layer 2; drop below-threshold tokens; configurable keep-ratio (default 50%); training-free; plug-in on any MLLM using cross-attention or full-attention visual projection |
+| VisionZip | `squish/vision/vision_zip.py` | Split visual tokens into context-attending (high attention from CLS) and non-attending; retain attending + a random sample of non-attending; configurable target token count; composable after FastVPruner for 2-stage 95%+ reduction |
+| LLaVAPruMerge | `squish/vision/llava_prumerge.py` | K-means spatial clustering of visual patches by position × key-similarity; merge each cluster into weighted-average single token; adaptive cluster count from image entropy; 14× reduction; produces drop-in replacement token sequence for any LLaVA-style decoder |
+| TokenPacker | `squish/vision/token_packer.py` | Cross-attention visual projector: M anchor tokens attend over N patch regions; outputs fixed-size M-token visual representation regardless of input resolution; M configurable (default 64); enables InternVL2-style any-resolution inputs without token explosion |
+| FlashVStream | `squish/vision/flash_vstream.py` | 3-tier video memory: spatial (current frame full KV), temporal (salient past frames condensed KV), sensory (recent 8-frame sliding window); saliency-based temporal eviction; streaming API for real-time video; 60-minute+ video in 16 GB |
+| DynamicResEncoder | `squish/vision/dynamic_resolution.py` | Tile high-resolution image into variable-count sub-tiles based on aspect ratio; process each tile at native CLIP resolution; produce a low-resolution thumbnail summary patch; merge: summary + tile patches; 2–4× denser OCR/chart accuracy vs fixed 336 px |
+
+### Wave 52b — Visual KV Quant, Cross-Modal Routing, Video KV Reuse, VLM Spec Decode, VLM Scheduler, Image Encoder Cache (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| VisualKVQuant | `squish/vision/visual_kv_quant.py` | INT4 K + INT6 V precision for visual token KV blocks; visual tokens tolerate higher compression than text; per-vision-encoder calibration; composable with existing KIVIQuantizer and LeanKVQuant; 3× KV reduction for image-heavy multi-turn sessions |
+| CrossModalRouter | `squish/vision/cross_modal_attn.py` | Route visual↔text cross-attention: high-affinity pairs get full attention compute, low-affinity pairs get a cheap linear approximation; affinity gate from L1 layer attention scores; 1.4× cross-attention speedup; configurable top-K keep-ratio |
+| VideoKVReuse | `squish/vision/video_kv_reuse.py` | Frame-pair cosine similarity on patch embeddings; mask unchanged-region patches (delta < threshold); reuse KV for those patches from previous frame; only recompute KV for changed-region patches; 2–3× throughput on streaming video QA at 30 fps |
+| VLMSpecDecode | `squish/vision/vlm_spec_decode.py` | Visual prefix is encoded once and shared across all draft-tree leaf paths; speculative tree spans text generation only; auto-tunes draft width based on visual-token count; composable with EAGLE2Spec and LADEDecoder from prior waves |
+| VLMBatchScheduler | `squish/serving/vlm_scheduler.py` | Classify requests by image resolution bucket (low/mid/high/video); batch same-bucket requests together; issue vision encoder pass as Metal compute graph while prior batch's LLM prefill runs; queue management with priority for interactive (low-latency) requests |
+| ImageEncoderCache | `squish/vision/img_encoder_cache.py` | LRU cache of vision encoder output tensors keyed by image SHA-256; entry = full patch embedding matrix ready for cross-attention; configurable max entries (default 1000 images); saves repeated CLIP/SigLIP encoding on multi-turn conversations; 90%+ TTFT reduction on repeated-image queries |
+
+### v26 Target Metrics (after Wave 52)
+
+> NEW rows: models not previously tracked. Image TTFT = time from request receipt to first generated text token (includes vision encoding time).
+
+| Model | Base tok/s (text) | Base image TTFT | v26 target image TTFT | Primary driver |
+|-------|------------------|-----------------|----------------------|----------------|
+| Qwen2.5-VL-7B INT4 (M3 16 GB) | NEW | ~2.5 s (naive) | **< 0.6 s** | FastV 50% + TokenPacker + ImageEncoderCache |
+| LLaVA-1.6 Mistral-7B INT4 (M3 16 GB) | NEW | ~2.0 s (naive) | **< 0.5 s** | LLaVAPruMerge 14× + VisualKVQuant + VLMSpecDecode |
+| Qwen2.5-VL-7B video (30 fps, M3 16 GB) | NEW | N/A | **< 1.5 s / query** | FlashVStream temporal KV + VideoKVReuse 3× |
+| Qwen2.5-VL-72B INT3 (M3 Max 128 GB) | NEW | ~18 s (naive) | **< 5 s** | DynamicResEncoder + VisionZip + VLMBatchScheduler |
+
+> Sub-0.6 s image TTFT on 7B VLMs makes vision-language chat feel as responsive as
+> text-only chat: the bottleneck shifts from vision encoding back to the LLM decode.
+
+### Completion Checklist
+
+- [ ] `squish/vision/fast_v.py` — FastVPruner
+- [ ] `squish/vision/vision_zip.py` — VisionZip
+- [ ] `squish/vision/llava_prumerge.py` — LLaVAPruMerge
+- [ ] `squish/vision/token_packer.py` — TokenPacker
+- [ ] `squish/vision/flash_vstream.py` — FlashVStream
+- [ ] `squish/vision/dynamic_resolution.py` — DynamicResEncoder
+- [ ] `squish/vision/visual_kv_quant.py` — VisualKVQuant
+- [ ] `squish/vision/cross_modal_attn.py` — CrossModalRouter
+- [ ] `squish/vision/video_kv_reuse.py` — VideoKVReuse
+- [ ] `squish/vision/vlm_spec_decode.py` — VLMSpecDecode
+- [ ] `squish/serving/vlm_scheduler.py` — VLMBatchScheduler
+- [ ] `squish/vision/img_encoder_cache.py` — ImageEncoderCache
+- [ ] `tests/test_wave52a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave52b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[26.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v25 Wave 51 — Test-Time Compute Scaling: Budget Forcing · PRM Search · DVTS · COCONUT · Chain-of-Draft · Reasoning KV (Planned)
+
+Theme: **Wave 51 addresses a gap that all 50 prior waves leave entirely untouched: the inference-time
+compute scaling paradigm that underlies every o1/QwQ/DeepSeek-R1 style reasoning model. These models
+generate extended chain-of-thought traces — often 500–8,000 thinking tokens — before producing a
+final answer, completely changing the per-request throughput and latency profile compared to vanilla
+autoregressive decoding. Wave 51 targets this from six angles: (1) Budget control — the s1
+"budget forcing" technique (append a commitment trigger at a configurable thinking-token limit)
+and a per-step Chain-of-Draft constraint (restrict each reasoning step to ≤ 7 words) together
+reduce mean CoT length by 5–15× with at most 3% accuracy drop on MATH/GSM8K, converting a
+typical 20-second thinking session into a 2–4 second one. (2) Inference-time search — PRM beam
+search and Diverse Verifier Tree Search (DVTS) trade additional parallel compute for answer quality
+beyond what greedy decoding achieves, hitting the Pareto frontier of accuracy vs cost when
+more compute is available. (3) TestTimeComputeRouter dispatches easy queries to single-pass
+decode and hard queries to beam/best-of-N automatically using a lightweight difficulty estimator,
+capturing the best of both worlds without over-spending on simple requests. (4) Reasoning-aware
+KV management — ReasoningKVManager segments the KV cache on </think> markers: thinking tokens
+get INT2 KV (highly compressible since reasoning coherence depends on recent tokens only), answer
+tokens get FP16 KV; this allows a 32K thinking chain to coexist with a full-precision answer KV
+in the same KV budget that would otherwise fit only ~4K tokens. (5) COCONUT (Continuous Chain of
+Thought) encodes reasoning steps as continuous latent vectors rather than discrete tokens, allowing
+inference-without-decoding for intermediate steps and delivering 10× reasoning token reduction
+for sufficiently trained models. (6) DraftReasoningVerifier extends speculative decode with CoT
+consistency checking so draft tokens in thinking chains are verified not only for token probability
+match but for logical coherence with the accumulated reasoning state, substantially improving
+acceptance rate on reasoning-model drafts beyond what spec_reason.py provides.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| s1: Simple Test-Time Scaling (Muennighoff et al.) | arXiv 2501.12599, 2025 (Stanford) | "Budget forcing": append "Wait" to extend thinking; append "Final Answer:" to commit at budget limit; zero retraining; 1K curated examples fine-tune optional; matches o1-preview on MATH500 at 1/30 the cost | `squish/serving/budget_forcing.py` |
+| Scaling LLM Test-Time Compute Optimally (Snell et al.) | arXiv 2408.03314, 2024 (Berkeley) | Rigorous analysis of when best-of-N vs process-reward-guided beam search is Pareto-optimal; difficulty-aware routing: easy questions → greedy cheaper, hard → beam expensive; 2–3× answer accuracy at fixed compute budget via routing | `squish/sampling/test_time_scale.py` |
+| DVTS: Diverse Verifier Tree Search (Tian et al.) | arXiv 2501.08101, 2025 | MCTS-like expansion guided by process reward model with forced diversity: expand N subtrees seeded from diverse reasoning prefixes; merge via weighted voting; 62% on MATH-500 at < 64 tokens per step; outperforms standard PRM beam at equal compute | `squish/sampling/dvts_search.py` |
+| Chain of Draft: Thinking Ahead through Succinct Thoughts (Xu et al.) | arXiv 2502.18600, 2025 | Constrain each intermediate reasoning step to ≤ 7 words; no loss in MATH/GSM8K/logical deduction accuracy; 7.6× reduction in intermediate tokens; minimal system-prompt change; compatible with any reasoning LLM | `squish/sampling/chain_of_draft.py` |
+| Training Large Language Models to Reason in a Continuous Latent Space (Hao et al.) | arXiv 2412.06769, NeurIPS 2024 (Meta AI) | COCONUT: maps intermediate reasoning steps to continuous latent vectors; backpropagates reasoning signal without decoding discrete tokens; 10× reduction in reasoning token count at inference; breadth-first latent search outperforms CoT beam search on math reasoning | `squish/reasoning/coconut.py` |
+| Math-Shepherd / Let's Reward Step by Step (Wang et al.) | arXiv 2312.08935, NeurIPS 2024 | Annotate each reasoning step with per-step correctness signal via execution verifier; train a step-level process reward model (PRM); PRM-guided beam search outperforms outcome-reward-only by 15% on MATH; beam width 16 is practical on M3 | `squish/sampling/prm_beam_search.py` |
+| Best-of-N Sampling with Process and Outcome Rewards (Lightman et al. / Liao et al.) | NeurIPS 2023 / arXiv 2404.01349, 2024 | Generate N completions; score each with reward model; select highest-scoring; N=16 matches beam search at lower memory cost; process-reward best-of-N outperforms outcome-reward best-of-N on step-sensitive tasks | `squish/sampling/best_of_n.py` |
+| Self-Consistency: Majority Voting over Reasoning Paths (Wang et al.) | ICLR 2023 (arXiv 2203.11171) / standard 2024 baseline | Sample K diverse reasoning chains (T > 0.7); aggregate final answers by majority vote; 17.9% accuracy gain on GSM8K vs greedy; production standard for reasoning quality; distinct from DVTS (uses reward model), best-of-N (uses reward model), PRM beam (step-level) | `squish/reasoning/self_consistency.py` |
+| Test-Time Compute Budget as Token-Level Gate (engineering integration) | Production 2024–2025 | Per-request configurable thinking-segment token budget; gate based on </think> / <answer> boundary tokens; distinct from token_budget_gate.py (KV-budget scheduler) and calm_exit.py (layer exit) — this gates at the CoT segment level and injects commitment triggers | `squish/token/thought_budget_gate.py` |
+| Reasoning KV Cache Segmentation: Asymmetric Precision for Thinking Chains vs Answer Tokens | Engineering 2024–2025 | Thinking tokens in KV cache are compressible to INT2 since only recent attention matters; answer tokens need FP16 precision for quality; segment KV on </think> boundary; 4–6× KV memory reduction on 32K+ CoT; composable with LeanKVQuant and ReasoningKVManager | `squish/kv/reasoning_kv.py` |
+| Speculative Decoding for Reasoning: CoT-Consistency Verification Beyond Token Probability | Engineering 2025 | Draft token acceptance in reasoning chains conditioned on dual signal: token probability match (standard) + logical consistency with accumulated reasoning state (new); consistency heuristic: cosine similarity of hidden states in reasoning segment; higher acceptance rate on QwQ/DeepSeek-R1 drafts than standard spec decode; distinct from spec_reason.py (orchestration layer) — this replaces the acceptance kernel | `squish/speculative/draft_reasoning.py` |
+| Parallel Reasoning Chain Scheduling for High-Throughput Inference | Engineering 2025 | Dispatch M reasoning chains for a single prompt in parallel across available compute budget (K chains for hard queries, 1 for easy); aggregate via self-consistency voting or reward model; amortize vision/prefix KV encoding cost across chains; combines best-of-N + self-consistency at the scheduling layer | `squish/serving/parallel_reasoning.py` |
+
+---
+
+### Wave 51a — Budget Forcing, TestTimeScale, DVTS, Chain-of-Draft, COCONUT, PRM Beam Search (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| BudgetForcingDecoder | `squish/serving/budget_forcing.py` | s1-style per-request thinking budget: inject "Wait" tokens to extend reasoning when useful; inject commitment trigger at configurable limit; supports both hard cutoff and soft ramp (increase temperature at budget boundary); integrates with OrcaScheduler; zero-retraining |
+| TestTimeComputeRouter | `squish/sampling/test_time_scale.py` | Route per-request between 4 compute strategies: (1) greedy, (2) top-p, (3) best-of-N, (4) PRM beam search; difficulty estimator = entropy of first-token distribution; calibrate routing thresholds on benchmark subset; 2–3× accuracy at fixed wall-clock budget vs always-greedy |
+| DVTSSearch | `squish/sampling/dvts_search.py` | MCTS expansion guided by PRM score with diversity forcing: seed N subtrees from K diverse initial reasoning prefixes (via top-K sampling); expand each; merge via softmax-weighted voting on final answers; configurable expansion budget and PRM backend (any reward model or squish/sampling/prm_beam_search.py) |
+| ChainOfDraftSampler | `squish/sampling/chain_of_draft.py` | Constrain per-step token budget to configurable max_words (default 7); implement via logits masking: after each step-boundary token, apply length-penalty to discourage longer steps; API: `sampler.sample(prompt, max_step_tokens=7)`; 7.6× intermediate token reduction; zero accuracy loss on standard benchmarks |
+| CoconutDecoder | `squish/reasoning/coconut.py` | Map reasoning steps to continuous latent vectors via a learned projection head; execute reasoning in embedding space (breadth-first latent search); decode only the final answer token sequence; requires a COCONUT-fine-tuned model; graceful fallback to standard decoding for non-fine-tuned models; API: `coconut.decode(prompt, max_latent_steps=8)` |
+| PRMBeamSearch | `squish/sampling/prm_beam_search.py` | Step-level beam search guided by process reward model; at each `\n\n` (reasoning step boundary), score all beam candidates with PRM; prune to top-B beams; configurable beam width B (2–32); integrates with tree_verifier.py for parallel step scoring; PRM backend is pluggable (any squish reward model or external API) |
+
+### Wave 51b — Best-of-N, Self-Consistency, ThoughtBudgetGate, ReasoningKV, DraftReasoning, ParallelReasoning (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| BestOfNSampler | `squish/sampling/best_of_n.py` | Generate N independent completions (default N=8) at temperature T; score each with configurable reward model (outcome or process); return the highest-scored completion; distinct from parallel_sampler.py (no scoring) and dvts_search.py (MCTS tree); supports both synchronous (batch all N) and streaming modes |
+| SelfConsistencyVoter | `squish/reasoning/self_consistency.py` | Generate K diverse reasoning chains from T∈[0.7, 1.2]; extract final answer from each chain via regex / structured extraction; aggregate by majority vote; configurable K (default 8); distinct from BestOfNSampler (no reward model — pure voting) and DVTSSearch (no PRM tree) |
+| ThoughtBudgetGate | `squish/token/thought_budget_gate.py` | Segment token stream on configurable thinking boundary markers (</think>, <answer>, \n\nFinal Answer:); apply per-segment token budget; inject commitment trigger at limit; distinct from token_budget_gate.py (KV-block budget, not reasoning-segment budget) and calm_exit.py (layer-level confidence exit) |
+| ReasoningKVManager | `squish/kv/reasoning_kv.py` | Segment KV cache into thinking-region (INT2 quantized) and answer-region (FP16); detect segment boundaries via </think> token scan; swap quantization policy at boundary; 4–6× KV reduction for 32K+ CoT traces; composable with LeanKVQuant; enables QwQ-32B INT3 to run 8K thinking tokens in 16 GB |
+| DraftReasoningVerifier | `squish/speculative/draft_reasoning.py` | Replace standard speculative acceptance kernel for reasoning models: accept draft token if (1) token probability check passes AND (2) hidden-state cosine similarity to reasoning context > threshold; threshold auto-calibrated per model; 15–25% higher acceptance rate than standard spec on QwQ/DeepSeek-R1 drafts; distinct from spec_reason.py which is reasoning orchestration |
+| ParallelReasoningScheduler | `squish/serving/parallel_reasoning.py` | Dispatch M reasoning chains per prompt across available compute; M scales with request priority and available KV headroom; aggregate chains via SelfConsistencyVoter or BestOfNSampler; amortize shared-prefix KV across chains via RadixAttentionCache; 2–3× accuracy on hard reasoning benchmarks at 2× wall-clock vs single chain |
+
+### v25 Target Metrics (after Wave 51)
+
+> NEW rows: reasoning-model-specific measurements. "CoT tokens" = mean thinking chain length. "Answer TTFT" = time to first non-thinking output token.
+
+| Model | Base CoT tokens | v25 target CoT tokens | Base answer TTFT | v25 answer TTFT target | Primary driver |
+|-------|-----------------|----------------------|------------------|------------------------|----------------|
+| Qwen3-8B INT4 reasoning (M3 16 GB) | 1,500–4,000 | **200–600** | 3–10 s | **< 1.0 s** | BudgetForcing limit=512 + ChainOfDraft 7.6× |
+| DeepSeek-R1-Distill-Qwen-7B INT4 (M3) | 800–3,000 | **150–600** | 2–8 s | **< 0.8 s** | BudgetForcing + PRMBeamSearch (B=4) |
+| QwQ-32B INT3 (M3 16 GB, ZipLM) | 3,000–10,000 | **600–2,500** | 25–80 s | **5–18 s** | ReasoningKVManager + DraftReasoning 20% acceptance↑ |
+| Qwen3-8B accuracy on MATH-500 | ~68% (greedy) | **≥ 78%** (at 2× compute) | — | — | DVTSSearch B=8 or BestOfN N=8 + PRM |
+
+> BudgetForcing + ChainOfDraft together deliver the sub-1-second answer TTFT target for 7–8B
+> reasoning models on M3 16 GB that was the original motivation for this wave.
+
+### Completion Checklist
+
+- [ ] `squish/serving/budget_forcing.py` — BudgetForcingDecoder
+- [ ] `squish/sampling/test_time_scale.py` — TestTimeComputeRouter
+- [ ] `squish/sampling/dvts_search.py` — DVTSSearch
+- [ ] `squish/sampling/chain_of_draft.py` — ChainOfDraftSampler
+- [ ] `squish/reasoning/coconut.py` — CoconutDecoder
+- [ ] `squish/sampling/prm_beam_search.py` — PRMBeamSearch
+- [ ] `squish/sampling/best_of_n.py` — BestOfNSampler
+- [ ] `squish/reasoning/self_consistency.py` — SelfConsistencyVoter
+- [ ] `squish/token/thought_budget_gate.py` — ThoughtBudgetGate
+- [ ] `squish/kv/reasoning_kv.py` — ReasoningKVManager
+- [ ] `squish/speculative/draft_reasoning.py` — DraftReasoningVerifier
+- [ ] `squish/serving/parallel_reasoning.py` — ParallelReasoningScheduler
+- [ ] `tests/test_wave51a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave51b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[25.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
