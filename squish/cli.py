@@ -84,11 +84,14 @@ except Exception:  # pragma: no cover
 
 
 # ── Terminal colours ─────────────────────────────────────────────────────────
-# 24-bit ANSI RGB codes bypass the terminal's colour theme palette entirely —
-# theme profiles only remap the 16 named ANSI indices, not direct RGB.  So the
-# squish brand colours always render correctly on any true-colour terminal,
-# regardless of theme.  On terminals without true-colour support we fall back
-# to no colour at all — clean and compatible.  Respects NO_COLOR convention.
+# 24-bit ANSI RGB codes bypass the terminal's colour theme palette remapping —
+# theme profiles remap the 16 named ANSI indices, not direct RGB.  Squish brand
+# colours therefore render predictably on any true-colour terminal.
+# On light-background terminals the dark palette has poor contrast; we detect
+# this via detect_dark_background() and switch to a deeper variant automatically.
+# Respects NO_COLOR and SQUISH_DARK_BG env vars.
+from squish._term import detect_dark_background as _detect_dark_bg_cli  # noqa: E402
+
 _CLI_TTY: bool = sys.stdout.isatty()
 
 
@@ -110,10 +113,11 @@ def _has_truecolor_cli() -> bool:
 
 
 _CLI_TRUE_COLOR: bool = _has_truecolor_cli()
+_CLI_IS_DARK_BG: bool = _detect_dark_bg_cli()
 
 
 class _C:  # noqa: N801
-    """ANSI 24-bit colour constants.  Empty strings on non-true-colour TTYs."""
+    """Dark-background 24-bit colour constants.  Empty strings on non-true-colour TTYs."""
     _k = lambda s: s if _CLI_TRUE_COLOR else ""  # noqa: E731
     DP  = _k("\033[38;2;88;28;135m")   # deep purple  #581C87
     P   = _k("\033[38;2;124;58;237m")  # purple       #7C3AED
@@ -129,6 +133,30 @@ class _C:  # noqa: N801
     DIM = _k("\033[38;2;100;116;139m") # dim slate    #64748B
     B   = _k("\033[1m")                # bold
     R   = _k("\033[0m")                # reset all
+
+
+class _CLight:  # noqa: N801
+    """Light-background 24-bit colour constants — deeper for contrast on white."""
+    _k = lambda s: s if _CLI_TRUE_COLOR else ""  # noqa: E731
+    DP  = _k("\033[38;2;67;20;105m")   # deeper purple  #431469
+    P   = _k("\033[38;2;88;28;135m")   # dark purple    #581C87
+    V   = _k("\033[38;2;109;40;217m")  # dark violet    #6D28D9
+    L   = _k("\033[38;2;124;58;237m")  # purple         #7C3AED
+    MG  = _k("\033[38;2;139;92;246m")  # violet         #8B5CF6
+    PK  = _k("\033[38;2;157;23;77m")   # deep pink      #9D174D
+    LPK = _k("\033[38;2;219;39;119m")  # pink           #DB2777
+    T   = _k("\033[38;2;6;182;212m")   # teal           #06B6D4
+    G   = _k("\033[38;2;16;185;129m")  # green          #10B981
+    W   = _k("\033[38;2;15;23;42m")    # near-black     #0F172A
+    SIL = _k("\033[38;2;71;85;105m")   # slate          #475569
+    DIM = _k("\033[38;2;51;65;85m")    # dim slate      #334155
+    B   = _k("\033[1m")                # bold
+    R   = _k("\033[0m")                # reset all
+
+
+# Select dark or light palette based on detected terminal background.
+if not _CLI_IS_DARK_BG:  # pragma: no cover
+    _C = _CLight  # type: ignore[misc]
 
 
 # ── Model registry ───────────────────────────────────────────────────────────

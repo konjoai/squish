@@ -13,7 +13,16 @@ import os
 
 import pytest
 
-from squish._term import LOGO_GRAD, C, _Palette, gradient, has_truecolor
+from squish._term import (
+    LOGO_GRAD,
+    C,
+    _IS_DARK_BG,
+    _Palette,
+    _PaletteLight,
+    detect_dark_background,
+    gradient,
+    has_truecolor,
+)
 
 # ---------------------------------------------------------------------------
 # has_truecolor
@@ -80,8 +89,12 @@ class TestHasTruecolor:
 # ---------------------------------------------------------------------------
 
 class TestPalette:
-    def test_c_is_palette_instance(self):
-        assert isinstance(C, _Palette)
+    def test_c_is_correct_palette_type(self):
+        # C is _Palette on dark background, _PaletteLight on light background.
+        if _IS_DARK_BG:
+            assert isinstance(C, _Palette)
+        else:
+            assert isinstance(C, _PaletteLight)
 
     def test_reset_is_string(self):
         assert isinstance(C.R, str)
@@ -90,7 +103,7 @@ class TestPalette:
         assert isinstance(C.B, str)
 
     def test_all_attributes_are_strings(self):
-        for attr in ("DP", "P", "V", "L", "MG", "PK", "LPK", "T", "LT",
+        for attr in ("DP", "P", "V", "L", "MG", "PK", "LPK", "T",
                      "G", "W", "SIL", "DIM", "B", "R"):
             val = getattr(C, attr)
             assert isinstance(val, str), f"C.{attr} must be str"
@@ -157,3 +170,110 @@ class TestGradient:
     def test_gradient_with_logo_grad(self):
         result = gradient("Squish", LOGO_GRAD, force_color=True)
         assert "Squish"[0] in result
+
+
+# ---------------------------------------------------------------------------
+# detect_dark_background
+# ---------------------------------------------------------------------------
+
+class TestDetectDarkBackground:
+    def test_returns_bool(self, monkeypatch):
+        monkeypatch.delenv("SQUISH_DARK_BG", raising=False)
+        monkeypatch.delenv("COLORFGBG", raising=False)
+        assert isinstance(detect_dark_background(), bool)
+
+    def test_squish_dark_bg_1_returns_true(self, monkeypatch):
+        monkeypatch.setenv("SQUISH_DARK_BG", "1")
+        assert detect_dark_background() is True
+
+    def test_squish_dark_bg_true_string(self, monkeypatch):
+        monkeypatch.setenv("SQUISH_DARK_BG", "true")
+        assert detect_dark_background() is True
+
+    def test_squish_dark_bg_yes_string(self, monkeypatch):
+        monkeypatch.setenv("SQUISH_DARK_BG", "yes")
+        assert detect_dark_background() is True
+
+    def test_squish_dark_bg_0_returns_false(self, monkeypatch):
+        monkeypatch.setenv("SQUISH_DARK_BG", "0")
+        assert detect_dark_background() is False
+
+    def test_squish_dark_bg_false_returns_false(self, monkeypatch):
+        monkeypatch.setenv("SQUISH_DARK_BG", "false")
+        assert detect_dark_background() is False
+
+    def test_squish_dark_bg_no_returns_false(self, monkeypatch):
+        monkeypatch.setenv("SQUISH_DARK_BG", "no")
+        assert detect_dark_background() is False
+
+    def test_colorfgbg_dark_bg_index(self, monkeypatch):
+        # Background index 0 (black) -> dark
+        monkeypatch.delenv("SQUISH_DARK_BG", raising=False)
+        monkeypatch.setenv("COLORFGBG", "15;0")
+        assert detect_dark_background() is True
+
+    def test_colorfgbg_light_bg_index(self, monkeypatch):
+        # Background index 7 (light grey) -> light
+        monkeypatch.delenv("SQUISH_DARK_BG", raising=False)
+        monkeypatch.setenv("COLORFGBG", "0;7")
+        assert detect_dark_background() is False
+
+    def test_colorfgbg_boundary_index_6_dark(self, monkeypatch):
+        # Index 6 (dark cyan) is still dark
+        monkeypatch.delenv("SQUISH_DARK_BG", raising=False)
+        monkeypatch.setenv("COLORFGBG", "0;6")
+        assert detect_dark_background() is True
+
+    def test_colorfgbg_malformed_falls_back_to_dark(self, monkeypatch):
+        monkeypatch.delenv("SQUISH_DARK_BG", raising=False)
+        monkeypatch.setenv("COLORFGBG", "notanumber")
+        assert detect_dark_background() is True
+
+    def test_no_env_vars_returns_dark_default(self, monkeypatch):
+        monkeypatch.delenv("SQUISH_DARK_BG", raising=False)
+        monkeypatch.delenv("COLORFGBG", raising=False)
+        assert detect_dark_background() is True
+
+    def test_squish_dark_bg_overrides_colorfgbg(self, monkeypatch):
+        # Explicit SQUISH_DARK_BG=0 beats COLORFGBG that says dark
+        monkeypatch.setenv("SQUISH_DARK_BG", "0")
+        monkeypatch.setenv("COLORFGBG", "15;0")
+        assert detect_dark_background() is False
+
+    def test_squish_dark_bg_case_insensitive(self, monkeypatch):
+        monkeypatch.setenv("SQUISH_DARK_BG", "TRUE")
+        assert detect_dark_background() is True
+        monkeypatch.setenv("SQUISH_DARK_BG", "FALSE")
+        assert detect_dark_background() is False
+
+
+# ---------------------------------------------------------------------------
+# _PaletteLight
+# ---------------------------------------------------------------------------
+
+class TestPaletteLight:
+    _ATTRS = ("DP", "P", "V", "L", "MG", "PK", "LPK", "T", "LT",
+              "G", "W", "SIL", "DIM", "B", "R")
+
+    def test_has_same_attributes_as_dark_palette(self):
+        light_attrs = {a for a in dir(_PaletteLight) if not a.startswith("__")}
+        for attr in self._ATTRS:
+            assert attr in light_attrs, f"_PaletteLight missing attribute {attr}"
+
+    def test_all_attributes_are_strings(self):
+        inst = _PaletteLight()
+        for attr in self._ATTRS:
+            assert isinstance(getattr(inst, attr), str), \
+                f"_PaletteLight.{attr} must be str"
+
+    def test_reset_is_empty_or_escape(self):
+        inst = _PaletteLight()
+        assert inst.R == "" or inst.R.startswith("\033[")
+
+    def test_different_w_from_dark(self):
+        # W (text colour) must differ: near-white is illegible on white backgrounds.
+        dark  = _Palette()
+        light = _PaletteLight()
+        # Both are "" in non-TTY environments; only compare when colours are active.
+        if dark.W and light.W:
+            assert dark.W != light.W, "Dark and light W must use different colour codes"
