@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v22 Wave 47 planned — Mamba2 SSM · HGRN2 · Lookahead Decode · IA3 Adapter · MoE-Infinity Offload · KGW Watermark)
+> Last updated: 2026-03-20 (v24 Wave 50 planned — SparseGPT · Mixture-of-Depths · LeanKV · GGUF Native Loader · INT2/INT3 Extreme Quant · Sub-1s TTFT Sprint)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -32,6 +32,8 @@ This document tracks completed waves, the current release, and the next phase.
 | **v20** | 47–48 | Weight Offload · YaRN RoPE · SelfExtend · Orca Scheduling · FP8 Activation · CLEx RoPE |
 | **v21** | 49–50 | Model Surgery · Expert Choice · W4A8 · MLA KV Compress · CacheBlend · Sampling Precision |
 | **v22** | 51–52 | Mamba2 SSM · HGRN2 · Lookahead Decode · Infinite Memory · MoE-Infinity · Output Quality |
+| **v23** | 48–49 | INT2/INT3 Extreme Compression · TTFT Sprint · Sub-Second Prefill on M3 16 GB |
+| **v24** | 50–51 | Bigger-Than-Memory Models · GGUF Native · SparseGPT · Mixture-of-Depths · 70B on 16 GB |
 
 ---
 
@@ -562,6 +564,251 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v24 Wave 50 — Bigger-Than-Memory Models: SparseGPT · Mixture-of-Depths · LeanKV · GGUF Loader · Weight Streaming (Planned)
+
+Theme: **Wave 50 targets a single breakthrough: running quantized 32B models fully in-memory
+and 70B models via efficient weight streaming on a 16 GB Apple M3. Three mutually reinforcing
+strategies make this possible. (1) SparseGPT's second-order Hessian one-shot pruning achieves
+50–60% weight sparsity at less than 1% PPL cost — stacked with INT4 this yields a sparse-INT4
+model that occupies the same DRAM as pure INT2 but retains significantly more quality;
+MixtureOfDepths further halves the effective FLOPs per token by routing each token to only
+the layers it needs. (2) LeanKV's asymmetric K/V precision (K quantized more aggressively
+than V, matching their empirical sensitivity difference) delivers 3× better quality-per-byte
+for the KV cache than uniform INT4 quantization, freeing the headroom needed to run 32B
+weights alongside a practical context window on 16 GB. (3) A native GGUF format loader and an
+overlapped CPU-dequantize ↔ Metal-compute pipeline make the vast ecosystem of community-
+quantized 70B GGUF models (Qwen2.5-72B Q3_K_M, Llama-3.1-70B Q2_K) directly runnable
+in Squish on 16 GB M3, with GPU computation on layer N overlapping CPU INT2→FP16
+dequantization of layer N+1 inside Apple's unified memory pool.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| SparseGPT: Massive Language Models Can Be Accurately Pruned in One Shot (Frantar & Alistarh) | ICLR 2023 (arXiv 2301.00774) | Second-order Hessian weight elimination with post-hoc weight update; 50–60% unstructured sparsity at <1% PPL cost; layers pruned in 30 min for 175B; stacks with INT4 for sparse-quantized model 2× smaller than dense INT2 at same quality | `squish/model/sparse_gpt.py` |
+| Mixture of Depths: Dynamically Allocating Compute in Transformer LLMs (Raposo et al.) | TMLR 2024 (arXiv 2404.02258) | Per-token routing decides which tokens process through current transformer layer and which skip via residual; learned router trained jointly; 50% FLOPs at identical perplexity; orthogonal to all quantization and KV optimisations | `squish/model/mix_of_depths.py` |
+| LeanKV: Towards Efficient KV Cache Compression through Asymmetric Precision (Kang et al.) | arXiv 2407.07805, 2024 | Empirical finding: K-cache tolerates lower precision than V-cache; K at INT4, V at INT6–8; per-tensor calibration; 3× KV compression vs FP16 at <0.3 PPL degradation; surpasses uniform INT4 in quality at equal memory budget | `squish/kv/lean_kv.py` |
+| GGUF Model Format Specification (Gerganov et al., llama.cpp) | llama.cpp v2 community spec (2023) / production 2024 | Block-quantized Q2_K/Q3_K/Q4_K/Q5_K/Q8_0 formats; per-32-element block with {scale, min, super-block meta-scale}; community standard for quantised LLM distribution; Metal-accelerated dequantization via compute shaders | `squish/io/gguf_loader.py` |
+| LLM in a Flash: Efficient Large Language Model Inference with Limited Memory (Alizadeh et al.) | Apple Research 2024 (arXiv 2312.11514) + extended | Flash-as-weight-tier with sliding window DRAM cache; extended here to CPU-side INT2/INT3 dequantization overlapped with Metal GPU compute in M3 unified memory pool; double-buffer scheme eliminates idle GPU cycles on 70B inference | `squish/io/weight_decompress_stream.py` |
+| FlexGen: High-Throughput Generative Inference … (Sheng et al.) + M3 unified memory extension | ICML 2023 extended / production 2024 | Original FlexGen LP-optimal placement policy extended to M3's coherent CPU-GPU unified memory: weight tensors paged into GPU-active, CPU-warm, and SSD-cold tiers; demand-fetch with look-ahead next-layer prefetch; enables 32B fully in-memory, 70B via 2-tier streaming on 16 GB M3 | `squish/io/model_shard_loader.py` |
+
+---
+
+### Wave 50a — SparseGPT, Mixture-of-Depths, LeanKV (3 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| SparseGPTPruner | `squish/model/sparse_gpt.py` | One-shot second-order Hessian weight pruning with post-pruning weight update; configurable sparsity budget (40–70%); stacks with any quant backend (INT2/3/4); sparse-INT4 path delivers dense-INT2 DRAM footprint at measurably higher PPL quality; Metal sparse-GEMM acceleration |
+| MixtureOfDepths | `squish/model/mix_of_depths.py` | Token-level layer routing: each token carries a routing score; tokens below threshold skip current layer via residual bypass; configurable skip budget per layer (e.g. 50%); reduces effective FLOPs per inference by 40–55%; composable with quantisation and KV optimisations |
+| LeanKVQuant | `squish/kv/lean_kv.py` | Asymmetric K/V quantisation: K-cache at INT4 (attention QK-product is robust), V-cache at INT6 or INT8 (output weighted-sum is quality-sensitive); per-tensor scale calibration; composable with GEARKVCache and GreenKV; 3× KV memory reduction at <0.3 PPL vs INT4 uniform |
+
+### Wave 50b — GGUF Native Loader, Weight Decompress Stream, Model Shard Loader (3 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| GGUFNativeLoader | `squish/io/gguf_loader.py` | GGUF v3 file format parser: reads metadata header, tokenizer vocab, and tensor dictionary; supports Q2_K/Q3_K/Q4_K/Q5_K/Q8_0 block layouts; Metal-accelerated block dequantization; plug-in loader that replaces safetensors/ggml loaders; bridges full community ecosystem (Ollama, LM Studio) directly into Squish |
+| WeightDecompressStream | `squish/io/weight_decompress_stream.py` | Overlapped pipeline for large model inference: while Metal GPU computes layer N, CPU SIMD dequantizes the INT2/INT3 weight blocks for layer N+1; double-buffer in M3 unified memory (no PCIe copy); overlaps ~80% of dequantization latency with compute; eliminates the GPU-idle stall that limits throughput on 70B inference at 16 GB |
+| ModelShardLoader | `squish/io/model_shard_loader.py` | Multi-tier weight paging: GPU-resident hot shard (current + next layers), CPU-pinned warm shard (next 4–8 layers), SSD-paged cold shard (remainder); demand-fetch with speculative look-ahead prefetch driven by layer access predictor; protocol: 32B model fits entirely in GPU+CPU tiers on 16 GB M3; 70B model uses 2-tier streaming |
+
+### v24 Target Metrics (after Wave 50)
+
+> Baselines are v23 Wave 49 targets. M3 = 16 GB Apple M3. New model rows marked NEW.
+
+| Model | v23 (W49) tok/s | v24 target tok/s | v23 TTFT | v24 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------|-----------------|----------------|
+| Qwen3-8B INT2 (M3 16 GB) | 560–700 | 560–700 | < 0.006 s | < 0.005 s | SparseGPT + MoD quality improvement (same speed) |
+| Qwen3-14B INT3 (M3 16 GB) | 70–95 | 85–115 | < 0.28 s | < 0.18 s | MixtureOfDepths 50% FLOPs skip on easy tokens |
+| Qwen3-32B INT2 (M3 16 GB) | 8–15 | 10–18 | < 1.2 s | < 0.85 s | ModelShardLoader + LeanKV reduces KV pressure |
+| NEW: Qwen2.5-72B Q3_K_M GGUF (M3 16 GB, streaming) | — | 2–4 | — | < 18 s | WeightDecompressStream + GGUFNativeLoader |
+| Qwen2.5-72B INT3 mixed (M3 Max 128 GB) | 18–28 | 24–38 | < 1.5 s | < 1.0 s | SparseGPT 50% sparse × INT4 + MixtureOfDepths |
+
+> Qwen2.5-72B Q3_K_M on 16 GB M3 is the headline: the first time a 70B-class model runs on
+> consumer 16 GB Apple Silicon via Q3 GGUF compression + streaming weight dequantization.
+
+### Completion Checklist
+
+- [ ] `squish/model/sparse_gpt.py` — SparseGPTPruner
+- [ ] `squish/model/mix_of_depths.py` — MixtureOfDepths
+- [ ] `squish/kv/lean_kv.py` — LeanKVQuant
+- [ ] `squish/io/gguf_loader.py` — GGUFNativeLoader
+- [ ] `squish/io/weight_decompress_stream.py` — WeightDecompressStream
+- [ ] `squish/io/model_shard_loader.py` — ModelShardLoader
+- [ ] `tests/test_wave50a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave50b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[24.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v23 Wave 49 — TTFT Sprint: LLMLingua-2 · RECOMP · Selective Context · PromptCache · PipeInfer · Prepack (Planned)
+
+Theme: **Wave 49 drives time-to-first-token below one second for Qwen3:8b on M3 16 GB even
+for prompts up to 2,000 tokens — a 60–80% TTFT reduction on long-context requests compared to
+a naive full prefill. Four mutually reinforcing attack vectors accomplish this. (1) Prompt
+compression before prefill: LLMLingua-2's fine-tuned token-level binary classifier shrinks a
+2,000-token RAG prompt to 200–400 tokens in under 15 ms; RECOMP's abstractive T5-based
+compressor replaces verbose retrieved passages with tight summaries; SelectiveContext prunes
+low-self-information tokens without any additional model. Together they can reduce effective
+prefill length by 5–20×, bringing a would-be 1.5-second prefill below 150 ms. (2) Schema-based
+KV caching (PromptCache) materialises KV once at server startup for every registered prompt
+template, delivering zero-prefill-cost TTFT for repeated system prompts, few-shot headers, and
+tool-use scaffolding. (3) PipeInfer's single-request prefill-decode pipeline begins emitting the
+first token after the first prefill chunk completes rather than waiting for the full prompt,
+cutting user-perceived TTFT by 30–50% for prompts above 256 tokens. (4) Prepack scheduling
+batches multiple pending request prefills together and emits tokens for each request as its
+own prefix block completes, amortizing hardware setup costs and improving TTFT across the
+entire request queue under sustained load.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| LLMLingua-2: Data Distillation for Efficient and Faithful Task-Agnostic Prompt Compression (Pan et al.) | EMNLP 2024 (arXiv 2403.12968) | Token-level binary classifier fine-tuned via data distillation; task-agnostic; 4–20× prompt reduction in ~15 ms on CPU; 95%+ quality retention on RAG/summarization benchmarks; 3–5× faster than LLMLingua-1 | `squish/serving/llm_lingua2.py` |
+| RECOMP: Improving Retrieval-Augmented LMs with Compressive and Selective Context (Xu et al.) | EMNLP 2023 (arXiv 2310.04408) | Extractive compressor: sentence-level SBERT scoring; Abstractive compressor: T5-small generative summary; 6× retrieved-context reduction; strong on multi-document QA; complementary to LLMLingua-2 (sentence vs token level) | `squish/serving/recomp.py` |
+| Selective Context: Compressing Contexts for Language Models (Li et al.) | arXiv 2304.01210 / EACL 2024 | Self-information pruning: compute per-token log-probability under the LM; discard tokens below information threshold τ; calibration-free; no additional model; 50% context reduction at <2% downstream quality cost; composable as first stage before LLMLingua-2 | `squish/serving/selective_context.py` |
+| PromptCache: Modular Attention Reuse for Low-Latency Inference (Gim et al.) | EuroSys 2024 (arXiv 2311.04934) | Schema-defined prompt templates with named variable slots; pre-materialise KV for each schema constant span at load time; assemble multi-schema KV shards at request time; zero-prefill TTFT for matched schemas; distinct from RadixAttentionCache (arbitrary exact prefix) — this handles structured templates with variable slot substitution | `squish/serving/prompt_cache.py` |
+| PipeInfer: Accelerating LLM Inference using Asynchronous Pipeline Execution (Griggs et al.) | arXiv 2407.11798, 2024 | Split single-request prompt into N fixed-size chunks; begin decode after chunk-1 prefill completes; overlap chunk-2…N prefill with decode-1…(N-1) tokens; Metal command-buffer chaining on M3; 30–50% TTFT reduction for prompts > 256 tokens; orthogonal to multi-request batching strategies | `squish/serving/pipe_infer.py` |
+| Prepack: Efficient Multi-Query Inference via Completion-Order Batching (Kwon et al.) | EMNLP 2024 (arXiv 2405.09613) | Inspect pending request queue; batch prefills of requests expected to complete earliest; emit tokens for each request as its prefix block finishes; reduces head-of-line blocking; 1.4× mean TTFT improvement at sustained load; distinct from OrcaScheduler (iteration-level) and SarathiScheduler (single-request chunked prefill) | `squish/serving/prepack.py` |
+
+---
+
+### Wave 49a — LLMLingua-2, RECOMP, Selective Context (3 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| LLMLingua2Compressor | `squish/serving/llm_lingua2.py` | Token-level binary keep/drop via fine-tuned small classifier; API: `compress(prompt, target_ratio=0.3)`; supports streaming compression for chunked prefill; integrates with PipeInferScheduler and PromptCacheKV; ~15 ms compression overhead for 2K token prompt on M3 CPU |
+| RECOMPCompressor | `squish/serving/recomp.py` | Pluggable extractive (SBERT scoring) + abstractive (T5-small generation) RAG context compressor; API: `compress(documents, query, mode='extractive'\|'abstractive')`; chain with LLMLingua2Compressor for 2-stage RAG pipeline; 6× retrieved context reduction |
+| SelectiveContextCompressor | `squish/serving/selective_context.py` | Zero-overhead self-information pruner: compute per-token log P under the serving model (reuses logits already computed); prune tokens below threshold τ; calibration-free, no secondary model; composable as pre-stage before LLMLingua-2 for additional 1.5–2× compression at near-zero overhead |
+
+### Wave 49b — PromptCache, PipeInfer, Prepack (3 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| PromptCacheKV | `squish/serving/prompt_cache.py` | Register named prompt schemas with constant + variable spans; materialise constant-span KV at server startup; at request time assemble cached constant KV shards + freshly computed variable KV; zero-prefill TTFT for requests matching registered schemas (system prompts, few-shot templates, tool-use scaffolds) |
+| PipeInferScheduler | `squish/serving/pipe_infer.py` | Chunk long single-request prompt into N blocks of configurable size (default 128 tokens); begin decode immediately after block-1 prefill completes; issue block-2…N prefill as Metal command buffers while first decode tokens are generated; 30–50% reduction in user-perceived TTFT for > 256-token prompts |
+| PrepackScheduler | `squish/serving/prepack.py` | Inspect incoming request queue; sort pending prefills by estimated completion time (∝ prompt length); batch shortest-first into combined prefill pass; emit tokens for each request as its block completes; reduces head-of-line blocking under sustained request rate; complements OrcaScheduler and SarathiScheduler without replacing them |
+
+### v23 Target Metrics (after Wave 49)
+
+> Baselines: v23 Wave 48 targets for throughput; long-prompt TTFT rows are net-new measurements.
+> 2K-token prompt = 2,000-token system + user prompt before LLMLingua-2 compression.
+
+| Model | v23 (W48) tok/s | v23 target tok/s | v23 (W48) TTFT | v23 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------------|-----------------|----------------|
+| Qwen3-8B (M3) short prompt | 560–700 | 560–700 | < 0.006 s | < 0.005 s | PipeInfer + PromptCache schema hit |
+| Qwen3-8B (M3) 2K-token prompt | — | — | ~1.8 s | **< 0.8 s** | LLMLingua-2 10× compress → 200 tokens prefill |
+| Qwen3-8B (M3) 2K RAG prompt | — | — | ~2.0 s | **< 0.7 s** | RECOMP 6× compress + PromptCache system prompt |
+| Qwen3-14B INT3 (M3 16 GB) | 70–95 | 75–100 | < 0.28 s | < 0.22 s | SelectiveContext + PromptCache system prompt |
+| Qwen3-32B INT2 (M3 16 GB) | 8–15 | 8–16 | < 1.2 s | < 0.85 s | Prepack + LLMLingua-2 reduces effective input |
+
+> The two long-prompt rows are the primary deliverable of this wave. A 2K-token RAG prompt
+> compressed 10× via LLMLingua-2 shrinks to ~200 tokens; at Qwen3-8B's ~2K token/s prefill
+> speed that is ~0.1 s prefill + 0.08 s first-chunk decode + overhead = well under 0.8 s.
+> The 0.8 s target conservatively accounts for compression latency and real-world prompt
+> diversity.
+
+### Completion Checklist
+
+- [ ] `squish/serving/llm_lingua2.py` — LLMLingua2Compressor
+- [ ] `squish/serving/recomp.py` — RECOMPCompressor
+- [ ] `squish/serving/selective_context.py` — SelectiveContextCompressor
+- [ ] `squish/serving/prompt_cache.py` — PromptCacheKV
+- [ ] `squish/serving/pipe_infer.py` — PipeInferScheduler
+- [ ] `squish/serving/prepack.py` — PrepackScheduler
+- [ ] `tests/test_wave49a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave49b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[23.1.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v23 Wave 48 — INT2/INT3 Extreme Quantization: SpQR · AutoRound · OWQ · BitDistiller · ZipLM · GGUF Mixed (Planned)
+
+Theme: **Wave 48 pushes Squish below the INT4 floor that prior waves have treated as a
+practical limit, targeting 2–3 bits to unlock new model size tiers on a standard 16 GB Apple
+M3: Qwen3-14B at INT3 (~7 GB of weights, leaving 9 GB for KV and activations) and Qwen3-32B
+at INT2 (~8 GB of weights). Note that AQLM, QuIP#, HQQ, and ternary_quant are already
+implemented in squish/quant/; this wave adds six complementary algorithms that each occupy a
+distinct region of the quality-vs-cost tradeoff space for INT2/INT3 specifically.
+SpQR preserves outlier weight rows and columns in FP16 while compressing the dense core to
+INT3, achieving 2.1 effective bits at higher quality than any single-format INT2 method.
+AutoRound replaces GPTQ's one-pass optimal brain rounding with 512 steps of sign-gradient
+Adam descent per layer, closing the INT2/3 quality gap by an additional 0.3–0.5 PPL at no
+more calibration cost. OWQ is orthogonal to both: it identifies input-activation-variant weight
+columns and promotes only those to INT4 while compressing the remainder to INT3, exploiting
+the column-level structure that SpQR's row-column approach misses. BitDistiller introduces a
+distillation signal missing from all three: it uses the FP16 model as a KL-divergence teacher
+during per-block calibration, gaining 0.5 PPL over AQLM at 2-bit. ZipLM is the meta-layer:
+given a memory budget B and all the above backends, it computes a Hessian-sensitivity ranking
+of every transformer layer and assigns INT2/INT3/INT4 per-layer to maximize retained quality.
+GGUF Mixed-Precision rounds out the wave with ecosystem interoperability: it enables Squish
+to both produce and consume the Q2_K/Q3_K/Q4_K block quantization formats used by the entire
+llama.cpp/Ollama community.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| SpQR: A Sparse-Quantized Representation for Near-Lossless LLM Weight Compression (Tim Dettmers et al.) | NeurIPS 2023 (arXiv 2306.03078) | Identifies outlier weight groups (1–2% of all groups) and stores them in FP16 sparse matrix; compresses dense core to INT3; 2.1 effective bits per weight; best published PTQ quality at 2–3 bits on LLaMA/GPT-J; distinct from SqueezeLLM (k-means LUT) and AQLM (residual VQ) | `squish/quant/spqr.py` |
+| AutoRound: Optimizing LLM Quantization via Sign Gradient Descent (Cheng et al.) | EMNLP 2024 (arXiv 2309.05516) | 512 steps of AdamW with sign-projected gradient for rounding decisions per linear layer; no Hessian computation; beats GPTQ and AdaGPTQ by 0.3–0.5 PPL at INT2/INT3; calibration speed comparable to GPTQ; composable with any weight format | `squish/quant/auto_round.py` |
+| OWQ: Outlier-Aware Weight Quantization for Efficient Fine-Tuning and Inference (Lee et al.) | EMNLP 2023 (arXiv 2306.05625) | Detects weight columns whose paired input activations have large variance (outlier columns); promotes those columns from INT3 to INT4; quantizes remainder to INT3; 0.3 PPL improvement over GPTQ INT3 at marginal memory cost; column-level (vs SpQR's row-column group isolation) | `squish/quant/owq.py` |
+| BitDistiller: Unleashing the Potential of Sub-4-Bit LLMs via Self-Distillation (Du et al.) | arXiv 2402.10631, 2024 | Self-distillation: FP16 model acts as KL-divergence teacher during per-block INT2 quantization calibration; 512 optimisation steps per block on unlabelled data; 0.5 PPL gain over non-distillation AQLM at 2-bit; complements SpQR/OWQ by improving the calibration signal quality | `squish/quant/bit_distiller.py` |
+| ZipLM: Inference-Aware Structured Pruning and Quantization for NLP (Kurtic et al.) | NeurIPS 2023 (arXiv 2302.04089) | Hessian-trace sensitivity score per transformer block; assigns minimum feasible bit-width (INT2/3/4) to each block to maximize PPL quality under a total-memory budget B; meta-optimizer that calls SpQR / AutoRound / OWQ / GPTQ backends as sub-routines per layer | `squish/quant/zip_lm.py` |
+| GGUF: Block-Quantized Mixed-Precision LLM Format (Gerganov et al.) | llama.cpp v2 community spec (2023) / production 2024 | Q_K format: 32-element blocks with {scale_f16, min_f16} + super-block meta-scale; Q2_K through Q8_0 families; de-facto community standard for quantised model distribution; write + read .gguf checkpoints; Metal-shader block dequantization | `squish/quant/gguf_mixed.py` |
+
+---
+
+### Wave 48a — SpQR, AutoRound, OWQ (3 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| SpQRQuantizer | `squish/quant/spqr.py` | Outlier weight-group isolation in FP16 sparse matrix (1–2% of groups); INT3 dense core quantization; 2.1 effective bits; Metal sparse-GEMM path for zero-overhead outlier handling; composable with ZipLMMixedPrecision for per-layer bit-width assignment |
+| AutoRoundQuantizer | `squish/quant/auto_round.py` | Sign-projected AdamW 512-step rounding optimizer per linear layer; no Hessian or calibration data beyond 512 unlabelled samples; beats GPTQ INT2/INT3 by 0.3–0.5 PPL; produces standard INT2/3/4 quantised weights compatible with existing quant backends |
+| OWQQuantizer | `squish/quant/owq.py` | Activation-variance ranked column promotion: compute input activation variance per weight column; promote high-variance columns from INT3→INT4; quantize remainder to INT3; column-level complement to SpQR's row-column group isolation; 0.3 PPL gain over plain GPTQ INT3 |
+
+### Wave 48b — BitDistiller, ZipLM, GGUF Mixed (3 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| BitDistillerQuant | `squish/quant/bit_distiller.py` | KL-divergence self-distillation loop: FP16 model generates soft labels; INT2-quantized per-block model trained to minimise KL against them; 512 steps per block on unlabelled text; 0.5 PPL improvement over AQLM 2-bit; plug-in calibration wrapper over any existing quantized linear layer |
+| ZipLMMixedPrecision | `squish/quant/zip_lm.py` | Hessian-trace sensitivity ranking of every transformer block; assigns INT2/INT3/INT4 to each block under total memory budget B via greedy assignment; single `squish quant-model --bits 2.5 --model qwen3-32b` call dispatches SpQR/AutoRound/OWQ sub-routines per layer; returns quantized model and per-layer bit schedule |
+| GGUFMixedQuantizer | `squish/quant/gguf_mixed.py` | GGUF Q2_K/Q3_K/Q4_K/Q5_K/Q8_0 format write + read: block quantization with {scale_f16, min_f16, super_scale} per 32-element tile; Metal-shader block dequantization; `squish export --format gguf --bits Q3_K` writes community-compatible checkpoint; also loads existing .gguf files produced by llama.cpp or Ollama |
+
+### v23 Target Metrics (after Wave 48)
+
+> Baselines: v22 Wave 47 targets. New model-size rows are net-new capabilities.
+
+| Model | v22 (W47) tok/s | v23 target tok/s | v22 TTFT | v23 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------|-----------------|----------------|
+| Qwen3-8B INT4 → INT2 (M3) | 510–640 | 560–700 | < 0.008 s | < 0.006 s | INT2 model is 2× smaller → 2× memory bandwidth per token |
+| NEW: Qwen3-14B INT3 (M3 16 GB) | — | **70–95** | — | **< 0.28 s** | ZipLM INT3 schedule: 7 GB weights + SpQR quality |
+| NEW: Qwen3-32B INT2 (M3 16 GB) | — | **8–15** | — | **< 1.2 s** | ZipLM mixed INT2/INT3: ~8 GB weights fit in 16 GB pool |
+| Qwen2.5-72B (INT3, M3 Max 128 GB) | 10–18 | 14–24 | < 5 s | < 3 s | ZipLM per-layer assignment + GGUFMixed format loading |
+
+> Qwen3-14B INT3 and Qwen3-32B INT2 are the headline deliverables: both model sizes fit
+> entirely within consumer 16 GB Apple Silicon DRAM, with no weight offloading required.
+
+### Completion Checklist
+
+- [ ] `squish/quant/spqr.py` — SpQRQuantizer
+- [ ] `squish/quant/auto_round.py` — AutoRoundQuantizer
+- [ ] `squish/quant/owq.py` — OWQQuantizer
+- [ ] `squish/quant/bit_distiller.py` — BitDistillerQuant
+- [ ] `squish/quant/zip_lm.py` — ZipLMMixedPrecision
+- [ ] `squish/quant/gguf_mixed.py` — GGUFMixedQuantizer
+- [ ] `tests/test_wave48a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave48b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[23.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
