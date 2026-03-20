@@ -86,19 +86,25 @@ except Exception:  # pragma: no cover
 # ── Terminal colours ─────────────────────────────────────────────────────────
 # 24-bit ANSI RGB codes bypass the terminal's colour theme palette remapping —
 # theme profiles remap the 16 named ANSI indices, not direct RGB.  Squish brand
-# colours therefore render predictably on any true-colour terminal.
-# On light-background terminals the dark palette has poor contrast; we detect
-# this via detect_dark_background() and switch to a deeper variant automatically.
+# colours therefore render predictably on any true-colour terminal where the
+# background has been confirmed (via COLORFGBG or SQUISH_DARK_BG).
+# When the terminal background cannot be confirmed we fall back to standard
+# 8/16-colour ANSI codes so the terminal's own colour theme applies.
 # Respects NO_COLOR and SQUISH_DARK_BG env vars.
-from squish._term import detect_dark_background as _detect_dark_bg_cli  # noqa: E402
+from squish._term import (  # noqa: E402
+    _detect_background_info as _detect_bg_info_cli,
+    has_truecolor as _has_truecolor_mod,
+)
 
 _CLI_TTY: bool = sys.stdout.isatty()
+_CLI_NO_COLOR: bool = "NO_COLOR" in os.environ
+_CLI_ANY_TTY: bool = _CLI_TTY and not _CLI_NO_COLOR
 
 
 def _has_truecolor_cli() -> bool:
     return (
         _CLI_TTY
-        and "NO_COLOR" not in os.environ
+        and not _CLI_NO_COLOR
         and (
             os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit")
             or os.environ.get("TERM_PROGRAM", "") in (
@@ -113,7 +119,7 @@ def _has_truecolor_cli() -> bool:
 
 
 _CLI_TRUE_COLOR: bool = _has_truecolor_cli()
-_CLI_IS_DARK_BG: bool = _detect_dark_bg_cli()
+_CLI_IS_DARK_BG, _CLI_BG_CONFIRMED = _detect_bg_info_cli()
 
 
 class _C:  # noqa: N801
@@ -154,9 +160,37 @@ class _CLight:  # noqa: N801
     R   = _k("\033[0m")                # reset all
 
 
-# Select dark or light palette based on detected terminal background.
-if not _CLI_IS_DARK_BG:  # pragma: no cover
-    _C = _CLight  # type: ignore[misc]
+class _CTerminal:  # noqa: N801
+    """Standard 8/16-colour ANSI constants — defers to the terminal's own theme.
+
+    Used when the background brightness cannot be confirmed (no ``COLORFGBG``
+    or ``SQUISH_DARK_BG``).  These codes are remapped by the active colour
+    scheme so they work on both dark and light backgrounds.
+    """
+    _a = lambda s: s if _CLI_ANY_TTY else ""  # noqa: E731
+    DP  = _a("\033[35m")    # magenta
+    P   = _a("\033[35m")    # magenta
+    V   = _a("\033[35m")    # magenta
+    L   = _a("\033[95m")    # bright magenta
+    MG  = _a("\033[95m")    # bright magenta
+    PK  = _a("\033[95m")    # bright magenta
+    LPK = _a("\033[35m")    # magenta
+    T   = _a("\033[36m")    # cyan
+    G   = _a("\033[32m")    # green
+    W   = _a("\033[97m")    # bright white
+    SIL = _a("\033[37m")    # white / light grey
+    DIM = _a("\033[2m")     # dim
+    B   = _a("\033[1m")     # bold
+    R   = _a("\033[0m")     # reset all
+
+
+# Select dark/light 24-bit palette when background is confirmed; fall back to
+# terminal-native ANSI codes when we cannot determine the background colour.
+if _CLI_TRUE_COLOR and _CLI_BG_CONFIRMED:
+    if not _CLI_IS_DARK_BG:  # pragma: no cover
+        _C = _CLight  # type: ignore[misc]
+elif _CLI_ANY_TTY:  # pragma: no cover
+    _C = _CTerminal  # type: ignore[misc]
 
 
 # ── Model registry ───────────────────────────────────────────────────────────
@@ -849,6 +883,11 @@ def cmd_run(args):  # pragma: no cover
         cmd += ["--signal-socket", args.signal_socket]
 
     try:
+        # Strip macOS malloc-debugging env vars so child processes don't inherit them
+        # and produce spurious "MallocStackLogging: can't turn off … not enabled" noise.
+        for _msl_key in ("MallocStackLogging", "MallocStackLoggingNoCompact",
+                         "MallocScribble", "MallocGuardEdges", "MallocPreScribble"):
+            os.environ.pop(_msl_key, None)
         os.execv(sys.executable, cmd)  # replace this process — clean signals
     except Exception as e:
         _die(f"Failed to start server: {e}")
@@ -900,7 +939,11 @@ def cmd_chat(args):  # pragma: no cover
             # API key via env var — keeps it out of `ps aux`
         ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
            cwd=_repo_root_str,
-           env={**os.environ, "SQUISH_API_KEY": api_key, "PYTHONPATH": _pythonpath})
+           env={k: v for k, v in {
+               **os.environ,
+               "SQUISH_API_KEY": api_key,
+               "PYTHONPATH": _pythonpath,
+           }.items() if not k.startswith("Malloc")})
 
         # Wait (up to 30s) for server to come up
         for _ in range(60):
@@ -1506,7 +1549,11 @@ def cmd_daemon(args):  # pragma: no cover
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
                 cwd=_repo_root_str,
-                env={**os.environ, "SQUISH_API_KEY": api_key, "PYTHONPATH": _pythonpath},
+                env={k: v for k, v in {
+                    **os.environ,
+                    "SQUISH_API_KEY": api_key,
+                    "PYTHONPATH": _pythonpath,
+                }.items() if not k.startswith("Malloc")},
             )
 
         pid_file.write_text(str(proc.pid))

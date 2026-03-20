@@ -54,6 +54,30 @@ def has_truecolor(fd: int = 1) -> bool:
     )
 
 
+def _detect_background_info() -> tuple[bool, bool]:
+    """Internal helper returning ``(is_dark, confirmed)``.
+
+    *confirmed* is ``True`` only when the background was explicitly specified
+    (via ``SQUISH_DARK_BG`` or ``COLORFGBG``).  When ``confirmed`` is
+    ``False`` the caller should prefer terminal-native ANSI colours rather
+    than hardcoded 24-bit brand colours.
+    """
+    override = os.environ.get("SQUISH_DARK_BG", "").strip().lower()
+    if override in ("1", "true", "yes"):
+        return True, True
+    if override in ("0", "false", "no"):
+        return False, True
+    cfg = os.environ.get("COLORFGBG", "").strip()
+    if cfg:
+        try:
+            bg_idx = int(cfg.rsplit(";", 1)[-1])
+            # Palette indices 0–6 are dark colours; 7–15 are light/bright.
+            return bg_idx < 7, True
+        except (ValueError, IndexError):
+            pass
+    return True, False  # dark fallback, NOT confirmed
+
+
 def detect_dark_background() -> bool:
     """Return True when the terminal likely has a dark background.
 
@@ -71,20 +95,7 @@ def detect_dark_background() -> bool:
 
         export SQUISH_DARK_BG=0
     """
-    override = os.environ.get("SQUISH_DARK_BG", "").strip().lower()
-    if override in ("1", "true", "yes"):
-        return True
-    if override in ("0", "false", "no"):
-        return False
-    cfg = os.environ.get("COLORFGBG", "").strip()
-    if cfg:
-        try:
-            bg_idx = int(cfg.rsplit(";", 1)[-1])
-            # Palette indices 0–6 are dark colours; 7–15 are light/bright.
-            return bg_idx < 7
-        except (ValueError, IndexError):
-            pass
-    return True  # dark fallback
+    return _detect_background_info()[0]
 
 
 # ── Module-level flags ────────────────────────────────────────────────────────
@@ -93,13 +104,26 @@ try:
     _stdout_fd = sys.stdout.fileno() if hasattr(sys.stdout, "fileno") else 1
 except Exception:
     _stdout_fd = 1
-_TC = has_truecolor(_stdout_fd)
-_IS_DARK_BG: bool = detect_dark_background()
+
+try:
+    _IS_TTY = os.isatty(_stdout_fd)
+except Exception:
+    _IS_TTY = False
+
+_NO_COLOR       = "NO_COLOR" in os.environ
+_IS_ANY_TTY     = _IS_TTY and not _NO_COLOR          # plain TTY (any colour depth)
+_TC             = has_truecolor(_stdout_fd)           # true-colour TTY specifically
+_IS_DARK_BG, _BG_CONFIRMED = _detect_background_info()
 
 
 def _k(s: str) -> str:
     """Return *s* only when stdout is a true-colour TTY."""
     return s if _TC else ""
+
+
+def _a(s: str) -> str:
+    """Return *s* when stdout is any TTY (8/16-colour fallback codes)."""
+    return s if _IS_ANY_TTY else ""
 
 
 class _Palette:
@@ -146,8 +170,42 @@ class _PaletteLight:
     R   = _k("\033[0m")                 # reset all
 
 
-# Select palette at import time based on detected background brightness.
-C: _Palette = _Palette() if _IS_DARK_BG else _PaletteLight()  # type: ignore[assignment]
+class _PaletteANSI:
+    """Standard 8/16-colour ANSI palette — defers to the terminal's own theme.
+
+    Used when the background brightness cannot be confirmed (no ``COLORFGBG``
+    or ``SQUISH_DARK_BG`` in the environment).  These codes are remapped by
+    the terminal's active colour scheme, so they adapt automatically to both
+    dark and light themes without hardcoding specific RGB values.
+    """
+    DP  = _a("\033[35m")    # magenta  (closest to brand purple)
+    P   = _a("\033[35m")    # magenta
+    V   = _a("\033[35m")    # magenta
+    L   = _a("\033[95m")    # bright magenta
+    MG  = _a("\033[95m")    # bright magenta
+    PK  = _a("\033[95m")    # bright magenta
+    LPK = _a("\033[35m")    # magenta
+    T   = _a("\033[36m")    # cyan  (teal)
+    LT  = _a("\033[96m")    # bright cyan
+    G   = _a("\033[32m")    # green
+    W   = _a("\033[97m")    # bright white
+    SIL = _a("\033[37m")    # white / light grey
+    DIM = _a("\033[2m")     # dim
+    B   = _a("\033[1m")     # bold
+    R   = _a("\033[0m")     # reset all
+
+
+# Select palette at import time:
+#  • Truecolor + confirmed theme  → brand  24-bit palette (dark or light variant)
+#  • Truecolor, unconfirmed       → standard ANSI palette (adapts to terminal theme)
+#  • Non-truecolor TTY            → standard ANSI palette (24-bit codes won't render)
+#  • Not a TTY                    → _Palette with all-empty strings (no escape codes)
+if _TC and _BG_CONFIRMED:
+    C: _Palette = _Palette() if _IS_DARK_BG else _PaletteLight()  # type: ignore[assignment]
+elif _IS_ANY_TTY:
+    C = _PaletteANSI()  # type: ignore[assignment]
+else:
+    C = _Palette()  # not a TTY — _k() will produce empty strings for all members
 
 # Purple → pink → teal gradient used for the big logo and accent lines.
 LOGO_GRAD: list[tuple[int, int, int]] = [
