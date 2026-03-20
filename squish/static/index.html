@@ -13,21 +13,22 @@
   /* ── Reset / base ───────────────────────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg:        #0d0f14;
-    --surface:   #161b22;
-    --surface2:  #1e2530;
-    --border:    #30363d;
+    --bg:        #0c0a14;
+    --surface:   #131020;
+    --surface2:  #1a1430;
+    --border:    #2d1f4e;
     --text:      #e6edf3;
     --text-dim:  #8b949e;
-    --accent:    #58a6ff;
-    --accent-glow: rgba(88,166,255,.18);
-    --user-bg:   #1a2233;
-    --asst-bg:   #161b22;
+    --accent:    #8B5CF6;
+    --accent-glow: rgba(139,92,246,.18);
+    --accent-pk: #EC4899;
+    --user-bg:   #1a1033;
+    --asst-bg:   #131020;
     --danger:    #f85149;
     --success:   #3fb950;
-    --accent2:   #79bbff;
-    --think-bg:  #1a1e26;
-    --think-bdr: #3a4357;
+    --accent2:   #A78BFA;
+    --think-bg:  #16112a;
+    --think-bdr: #3a2f5c;
     --radius:    12px;
     --font-sans: "Inter", system-ui, sans-serif;
     --font-mono: "JetBrains Mono", "Fira Code", monospace;
@@ -66,7 +67,9 @@
 
   /* ── Header ─────────────────────────────────────────────────────────────── */
   #logo      { font-weight: 700; font-size: 17px; letter-spacing: -.4px; }
-  #logo span { color: var(--accent); }
+  #logo span { background: linear-gradient(90deg, #8B5CF6, #EC4899);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; }
   .spacer    { flex: 1; }
   #status-dot{ width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
   #status-dot.ok  { background: var(--success); box-shadow: 0 0 6px var(--success); }
@@ -90,9 +93,9 @@
   /* Pulsing glow on assistant avatar while the model is generating */
   .msg.asst.generating .msg-avatar { animation: avatarPulse 1.4s ease-in-out infinite; }
   @keyframes avatarPulse {
-    0%   { box-shadow: 0 0 0 0   rgba(63,185,80,.55); }
-    50%  { box-shadow: 0 0 0 9px rgba(63,185,80,.0);  }
-    100% { box-shadow: 0 0 0 0   rgba(63,185,80,.0);  }
+    0%   { box-shadow: 0 0 0 0   rgba(139,92,246,.6); }
+    50%  { box-shadow: 0 0 0 9px rgba(139,92,246,.0); }
+    100% { box-shadow: 0 0 0 0   rgba(139,92,246,.0); }
   }
   .msg-avatar img { width:100%; height:100%; object-fit:contain; border-radius:8px; }
   .msg.system .msg-avatar { background: #3a1e1e; color: #ff9a3c; align-self: flex-start; }
@@ -133,6 +136,16 @@
     vertical-align: text-bottom; background: var(--accent); border-radius: 1px;
     margin-left: 1px; animation: cursorBlink .85s step-end infinite; }
   @keyframes cursorBlink { 50% { opacity: 0 } }
+  /* Pre-generation loading dots — shown while waiting for first token (TTFT) */
+  .pregen-dots { display: inline-flex; gap: 5px; align-items: center; padding: 4px 0; }
+  .pregen-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+    animation: pregenBounce 1.1s ease-in-out infinite; }
+  .pregen-dots span:nth-child(2) { animation-delay: .18s; }
+  .pregen-dots span:nth-child(3) { animation-delay: .36s; }
+  @keyframes pregenBounce {
+    0%,80%,100% { transform: translateY(0); opacity: .35; }
+    40%         { transform: translateY(-6px); opacity: 1; }
+  }
   /* Thinking / reasoning collapsible blocks */
   .thinking-block { background: var(--think-bg); border: 1px solid var(--think-bdr);
     border-radius: 10px; margin: .6em 0; overflow: hidden; }
@@ -172,10 +185,10 @@
     font-size: 14px; font-family: var(--font-sans); resize: none; min-height: 44px;
     max-height: 200px; outline: none; transition: border-color .15s; line-height: 1.5; }
   #msg-input:focus  { border-color: var(--accent); }
-  #send-btn   { background: var(--accent); border: none; border-radius: var(--radius);
-    color: #0d0f14; padding: 10px 18px; font-weight: 600; font-size: 14px;
-    cursor: pointer; transition: all .15s; white-space: nowrap; }
-  #send-btn:hover:not(:disabled)  { background: #79bbff; }
+  #send-btn   { background: linear-gradient(135deg, #7C3AED, #EC4899); border: none;
+    border-radius: var(--radius); color: #fff; padding: 10px 18px; font-weight: 600;
+    font-size: 14px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  #send-btn:hover:not(:disabled)  { filter: brightness(1.12); }
   #send-btn:disabled { opacity: .5; cursor: not-allowed; }
   #stop-btn   { background: var(--danger); border: none; border-radius: var(--radius);
     color: #fff; padding: 10px 14px; font-weight: 600; font-size: 14px;
@@ -210,13 +223,14 @@
     padding: 3px 8px; font-size: 13px; }
   .sp-row input[type=text]:focus { outline: none; border-color: var(--accent); }
   .sp-val  { width: 46px; font-size: 12px; text-align: right; color: var(--text-dim); }
-  .sp-close { margin-top: 8px; background: var(--accent); border: none; border-radius: 8px;
-    color: #0d0f14; padding: 7px 18px; font-weight: 600; cursor: pointer; }
+  .sp-close { margin-top: 8px; background: linear-gradient(135deg, #7C3AED, #EC4899);
+    border: none; border-radius: 8px; color: #fff; padding: 7px 18px;
+    font-weight: 600; cursor: pointer; }
   /* ── Empty state ─────────────────────────────────────────────────────────── */
   #empty-state { display: flex; flex-direction: column; align-items: center;
     justify-content: center; height: 100%; gap: 12px; user-select: none; }
-  .es-logo { width: 72px; height: 72px; object-fit: contain; border-radius: 16px;
-    opacity: .75; filter: drop-shadow(0 0 24px rgba(88,166,255,.3)); }
+  .es-logo { width: 80px; height: 80px; object-fit: contain; border-radius: 18px;
+    opacity: .9; filter: drop-shadow(0 0 32px rgba(139,92,246,.55)); }
   #empty-state h2 { font-size: 20px; font-weight: 700; color: var(--text); margin-top: 4px; }
   #empty-state p  { font-size: 13px; color: var(--text-dim); text-align: center; max-width: 320px; }
   .tag-row { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap;
@@ -251,7 +265,7 @@
     <!-- Header -->
     <div id="header">
       <img src="/static/icon.png"
-        style="width:26px;height:26px;border-radius:6px;object-fit:contain;flex-shrink:0"
+        style="width:30px;height:30px;border-radius:8px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 0 8px rgba(139,92,246,.45))"
         alt="" onerror="this.style.display='none'" />
       <div id="logo"><span>Squish</span> Chat</div>
       <select id="model-sel" onchange="onModelChange(this.value)">
@@ -381,6 +395,7 @@ let _visibleText = "";
 let _drainTimer  = null;
 let _contentDiv  = null;
 let _cursorEl    = null;
+let _preGenEl    = null;   // loading dots shown during TTFT wait
 let _msgEl       = null;
 let _streamStart = 0;
 let _streamToks  = 0;
@@ -594,12 +609,16 @@ function _startStream(contentDiv, msgEl) {
   _thinkEl     = null;
   _streamStart = performance.now();
   _streamToks  = 0;
+  _cursorEl    = null;
 
-  _cursorEl = document.createElement("span");
-  _cursorEl.className = "stream-cursor";
-  _contentDiv.classList.add("streaming-text");
+  // Show bouncing loading dots while waiting for the first token (TTFT).
+  // The cursor and streaming-text class are added in _enqueueTokens on first token.
+  _preGenEl = document.createElement("div");
+  _preGenEl.className = "pregen-dots";
+  _preGenEl.innerHTML = "<span></span><span></span><span></span>";
+  _contentDiv.classList.remove("streaming-text");
   _contentDiv.textContent = "";
-  _contentDiv.appendChild(_cursorEl);
+  _contentDiv.appendChild(_preGenEl);
 
   _drainTimer = setInterval(_drainTokens, 16);
   _tpsTimer   = setInterval(_updateTPS, 500);
@@ -609,11 +628,21 @@ function _enqueueTokens(delta) {
   _rawContent += delta;
   _streamToks++;
   for (const ch of delta) _tokenQueue.push(ch);
+  // First token arriving: replace loading dots with typewriter cursor.
+  if (_preGenEl) {
+    _preGenEl.remove();
+    _preGenEl = null;
+    _cursorEl = document.createElement("span");
+    _cursorEl.className = "stream-cursor";
+    _contentDiv.classList.add("streaming-text");
+    _contentDiv.textContent = "";
+    _contentDiv.appendChild(_cursorEl);
+  }
 }
 
 function _drainTokens() {
   if (_tokenQueue.length === 0) return;
-  const n = _tokenQueue.length > 300 ? 24 : _tokenQueue.length > 60 ? 8 : 2;
+  const n = _tokenQueue.length > 300 ? 24 : _tokenQueue.length > 60 ? 8 : 4;
   const batch = _tokenQueue.splice(0, n).join("");
   _visibleText += batch;
 
@@ -666,6 +695,9 @@ function _finalizeStream(asstMsg) {
   if (_tokenQueue.length > 0) _visibleText += _tokenQueue.splice(0).join("");
   clearInterval(_drainTimer); clearInterval(_tpsTimer);
   _drainTimer = null; _tpsTimer = null;
+
+  // If the server returned an empty response before any tokens, remove the dots.
+  if (_preGenEl?.parentNode) { _preGenEl.remove(); _preGenEl = null; }
 
   const elapsed = (performance.now() - _streamStart) / 1000;
   if (elapsed > 0 && _streamToks > 0) {
