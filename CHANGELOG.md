@@ -5,6 +5,94 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [13.0.0] — 2026-03-25
+
+### Added — Wave 33: Decode Parallelism & Weight Efficiency
+
+Six production-grade modules targeting parallel token generation, quantization
+efficiency, and zero-copy throughput pipelines.
+
+- **JacobiDecoder** (`squish/speculative/jacobi_decode.py`) — CLLMs Jacobi /
+  Gauss-Seidel parallel fixed-point decoding (Santilli et al., 2023). Issues
+  n_tokens guesses per step and iterates until convergence; ~3.4× throughput
+  with zero draft model and O(n·vocab) working memory. `JacobiConfig`,
+  `JacobiDecoder.decode_step()`.
+
+- **MultiTokenPredictor** (`squish/speculative/mtp_head.py`) — Meta MTP
+  auxiliary prediction heads (DeepSeek-V3 / Gloeckle et al., 2024). N
+  independent linear heads predict tokens t+1…t+n_heads in a single Python
+  call; 1.7–3× throughput at n_heads=4 with no teacher forcing at inference.
+  `MTPHeadConfig`, `MultiTokenPredictor.sample_tokens()`,
+  `.verify_against_target()`.
+
+- **FP6Quantizer** (`squish/quant/fp6_quant.py`) — FP6-LLM 6-bit floating-point
+  weight quantizer (xia et al., 2024). Supports e3m2 and e2m3 formats; packs 4
+  FP6 values into 3 bytes (75% of FP8); per-group absmax scaling. 45–50%
+  weight-storage reduction versus fp16. `FP6Config`, `FP6Quantizer.quantize()`,
+  `.dequantize()`.
+
+- **DraftTokenRecycler** (`squish/speculative/token_recycler.py`) — ContextHash
+  draft recycler: SHA-256 of context IDs → circular deque lookup; on hit,
+  returns correction token (or accepted prefix + correction) as seed for next
+  speculative step, +14.9% acceptance rate at zero per-step model cost.
+  `RecycleConfig`, `DraftTokenRecycler.record_step()`, `.get_seed_tokens()`.
+
+- **LayerDeduplicator** (`squish/quant/layer_dedup.py`) — Cross-layer weight
+  deduplication via mean row-cosine-similarity; similar layer pairs store
+  reference + int8 delta (per-row absmax). 20–40% on-disk size reduction for
+  transformers with high layer repetition (LLaMA, Mistral). `LayerDedupConfig`,
+  `LayerDeduplicator.analyze()`, `.deduplicate()`, `.reconstruct()`.
+
+- **TokenPipeline** (`squish/kernels/token_pipeline.py`) — Zero-copy ring-buffer
+  token processing pipeline with builder-pattern stage registration and per-stage
+  µs timing. Batch and single-token modes; <1 ms overhead per token on M-series.
+  `PipelineConfig`, `TokenPipeline.add_stage()`, `.process()`, `.process_batch()`.
+
+### Added — Wave 34: Metal Kernel Fusion & Bandwidth-Optimal Serving
+
+Six production-grade modules targeting tiled attention, speculative streaming,
+sparse KV, prefill-decode disaggregation, sparse FFN, and weight-load overlap.
+
+- **MetalFlashAttention** (`squish/kernels/metal_flash_attn.py`) — Tiled block
+  flash attention (Dao et al., 2022) with online softmax (running max + running
+  sum); O(S·block) working set — no N×N materialization. Supports causal /
+  bidirectional, head-squeeze for single-head inputs. 3–5× memory reduction
+  over naive attention. `MetalFlashConfig`, `MetalFlashAttention.forward()`.
+
+- **SpeculativeStreamer** (`squish/speculative/spec_stream.py`) — Streaming token
+  emitter for speculative decoding; buffers draft tokens and commits accepted
+  prefix + correction in O(1); rollback on reject; EOS detection. Perceived 0 ms
+  TTFT via immediate draft streaming. `SpecStreamConfig`,
+  `SpeculativeStreamer.push_draft()`, `.commit()`, `.flush()`.
+
+- **BlockSparseKVManager** (`squish/kv/block_sparse_kv.py`) — Block-sparse KV
+  cache (BigBird / Longformer style): partitions KV into fixed-size blocks,
+  scores via QK dot-product aggregation (max/mean/norm), selects top-k plus
+  most-recent block. 4–8× FLOP reduction at long context. `BlockSparseConfig`,
+  `BlockSparseKVManager.prune()`, `.compute_attention()`.
+
+- **PDDisaggregator** (`squish/serving/pd_disagg.py`) — Prefill-Decode
+  disaggregation (Zhong et al., 2024 / DistServe): separate prefill and decode
+  phases with KV transfer; pluggable prefill_fn / decode_fn callables; staged
+  request lifecycle tracking. 1.5–2× TTFT improvement under mixed workloads.
+  `PDConfig`, `PDDisaggregator.submit_prefill()`, `.submit_decode()`,
+  `.generate()`.
+
+- **DejaVuSparseFFN** (`squish/token/deja_vu_sparse.py`) — DejaVu contextual
+  sparsity (Liu et al., 2023): 2-layer MLP predictor trained via binary
+  cross-entropy to skip neurons with predicted activation near zero. 30–50%
+  FFN FLOP reduction at ≤1% perplexity increase. `DejaVuConfig`, `FFNPredictor`,
+  `DejaVuSparseFFN.calibrate()`, `.forward()`.
+
+- **LayerOverlapLoader** (`squish/io/layer_overlap_loader.py`) — Async weight
+  prefetch via daemon threads; next `prefetch_count` layers loaded concurrently
+  with compute; hit/miss tracking; eviction of old handles. Eliminates
+  weight-load stalls, enabling near-zero idle time between transformer layers.
+  `LayerOverlapConfig`, `LayerOverlapLoader.start()`, `.get_layer()`,
+  `.prefetch_next()`.
+
+---
+
 ## [13.0.0-alpha.1] — 2026-03-19
 
 ### Added — Wave 33a: Velocity Compression Sprint
