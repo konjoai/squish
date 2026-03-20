@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-26 (v14 — Wave 35 complete; Wave 36 (Cross-Platform) in progress)
+> Last updated: 2026-03-26 (v14 released — Cross-Platform Linux/CUDA · ROCm · WSL2 complete)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -46,7 +46,7 @@ and deterministic early-exit sampling.**
 
 ---
 
-## 🚧 v14 Wave 36 — Cross-Platform · Linux/CUDA · ROCm · WSL2 · Smart Install (In Progress)
+## ✅ v14 — Waves 35+36: Cross-Platform Linux/CUDA · ROCm · WSL2 · Smart Install (Released 2026-03-26)
 
 Theme: **End the macOS-only constraint. Every module that currently raises `NotImplementedError`
 or silently no-ops on Linux/Windows gets a production-grade implementation path.**
