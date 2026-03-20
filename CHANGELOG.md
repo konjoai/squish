@@ -5,6 +5,95 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [16.1.0] — 2026-06-17
+
+### Added — Wave 40: KV Architecture Innovation · Flash-Weight · Self-Speculative · Entropy Eviction · LSH-KV
+
+Twelve production-grade modules extending v16 with cutting-edge KV cache
+architectures, flash-backed weight offloading, self-speculative decoding without
+a separate draft model, and entropy-driven budget allocation. All modules are
+NumPy-only simulation layers backed by 2024–2025 peer-reviewed papers.
+
+**Wave 40a — KV Architecture Innovation & Flash-Weight**
+
+- **RazorAttention** (`squish/attention/razor_attn.py`) — Retrieval-head-aware
+  KV compression: classifies heads via attention entropy into retrieval (full KV)
+  vs non-retrieval (2-token summary KV), achieving >70% KV reduction with
+  negligible quality loss (He et al., NeurIPS 2024).
+  `RazorAttentionConfig`, `RazorHeadType`, `RazorAttention.calibrate()`,
+  `.forward()`, `.retrieval_head_indices()`, `.non_retrieval_head_indices()`.
+
+- **LCKVCache** (`squish/kv/lckv_cache.py`) — Layer-Condensed KV Cache: bottom-K
+  anchor layers hold full KV; all upper layers re-use nearest anchor KV (Zhang
+  et al., ACL 2024). Achieves n_anchor/n_layers DRAM ratio.
+  `LCKVConfig`, `LCKVCache.write()`, `.read()`, `.is_anchor()`,
+  `.memory_ratio()`, `.n_slots_filled()`.
+
+- **CacheBlendKV** (`squish/kv/cache_blend.py`) — KV block reuse for
+  RAG/prefix workloads with selective importance-weighted partial recompute
+  (Yao et al., EuroSys 2025). Supports L2 and random importance functions.
+  `CacheBlendConfig`, `KVBlock`, `CacheBlendKV.store()`, `.blend()`,
+  `.evict()`, `.n_blends()`.
+
+- **GreenKVEviction** (`squish/kv/green_kv.py`) — Accumulated attention-score
+  eviction with per-head budget redistribution: inverse-coverage weighting
+  transfers budget from focused to broad-attention heads (arXiv:2412.15838).
+  `GreenKVConfig`, `GreenKVEviction.compress()`, `._head_budgets()`.
+
+- **MagicPIGKV** (`squish/kv/magic_pig_kv.py`) — LSH-based top-K KV sampling
+  for approximate attention at million-token scale using multi-table sign-random
+  projections (NeurIPS 2024). Falls back to exact attention when index absent.
+  `MagicPIGConfig`, `MagicPIGKV.build_index()`, `.attend()`,
+  `._retrieve_candidates()`.
+
+- **FlashWeightCache** (`squish/io/flash_weight_cache.py`) — NAND Flash-backed
+  two-tier weight cache (DRAM LRU + Flash NPY files) for serving models larger
+  than DRAM, with prefetch-ahead and bandwidth simulation (Alizadeh et al.,
+  Apple 2024). `FlashWeightCacheConfig`, `FlashWeightCache.store()`, `.load()`,
+  `.prefetch()`, `.evict()`, `.dram_resident_layers()`, `.memory_bytes_dram()`.
+
+**Wave 40b — Self-Speculative Decoding, Entropy Eviction & FP8 KV**
+
+- **KangarooSpec** (`squish/speculative/kangaroo_spec.py`) — Shallow-subnetwork
+  self-speculative decoding with no separate draft model: drafts using bottom
+  n_draft_layers, verifies with full model, acceptance-rejection sampling with
+  bonus token on full acceptance (Liu et al., arXiv:2404.18911).
+  `KangarooConfig`, `KangarooDraftResult`, `KangarooSpec.step()`,
+  `.mean_acceptance_rate`, `.reset_stats()`.
+
+- **CAKEEviction** (`squish/kv/cake_evict.py`) — Layer-wise KV budget from
+  cumulative attention entropy: softmax(entropy/temperature) × global_budget
+  allocation with per-layer min floor (NeurIPS 2024 workshop).
+  `CAKEConfig`, `CAKEEviction.compute_budgets()`, `.compress()`,
+  `._layer_entropy()`.
+
+- **FP8KVCache** (`squish/kv/fp8_kv_cache.py`) — Per-tensor FP8 quantized K/V
+  storage using INT8 codes with dynamic scale; supports e4m3 (max 448) and
+  e5m2 (max 57344) semantics, halving KV memory vs FP16 (TRT-LLM / FlashInfer
+  2024). `FP8KVConfig`, `FP8KVTensor`, `FP8KVCache.quantize()`,
+  `.dequantize()`, `.store()`, `.load()`, `.relative_error()`,
+  `.memory_bytes()`.
+
+- **SubGenAttention** (`squish/attention/subgen_attn.py`) — O(n√n) dual-sparse
+  attention: `(1-alpha)` × sliding local window + `alpha` × global sinks
+  attention (Chen et al., ICML 2024). Supports causal and non-causal modes.
+  `SubGenConfig`, `SubGenAttention.forward()`, `._local_attn()`,
+  `._global_attn()`.
+
+- **SepLLMCompress** (`squish/token/sep_llm_compress.py`) — Separator-token KV
+  retention on alternating layers (~2× KV reduction): even layers compress to
+  separator positions ∪ recent window, odd layers pass through (Chen et al.,
+  ICLR 2025). `SepLLMConfig`, `SepLLMCompress.compress()`,
+  `.compression_ratio()`.
+
+- **SpecExecDrafter** (`squish/speculative/spec_exec.py`) — Budget-bounded
+  speculative token tree with BFS greedy expansion and acceptance-rejection walk
+  from root (Svirschevski et al., arXiv:2405.00047).
+  `SpecExecConfig`, `SpecExecResult`, `_TreeNode`, `SpecExecDrafter.step()`,
+  `.mean_acceptance_rate`, `.reset_stats()`.
+
+---
+
 ## [16.0.0] — 2026-06-17
 
 ### Added — Wave 39: Activation Quantization · Fused Kernels · W8A8 Runtime · Compiled Decode · Sublinear Attention

@@ -127,7 +127,7 @@ Each module is backed by a 2024–2025 paper and is orthogonal to all Wave 38 ad
 
 ---
 
-## 🚧 v16 Wave 40 — KV Architecture Innovation · Flash-Weight · Self-Speculative · Entropy Eviction · LSH-KV (In Progress)
+## ✅ v16 Wave 40 — KV Architecture Innovation · Flash-Weight · Self-Speculative · Entropy Eviction · LSH-KV (Complete)
 
 Theme: **Four orthogonal fronts that Wave 39 leaves unaddressed: (1) retrieval-head-aware KV
 compression and cross-layer KV sharing to cut KV memory by 50–70% without quality loss,
@@ -196,22 +196,22 @@ the Wave 38 and Wave 39 additions already planned.
 
 ### Completion Checklist
 
-- [ ] `squish/attention/razor_attn.py` — RazorAttention
-- [ ] `squish/kv/lckv_cache.py` — LCKVCache
-- [ ] `squish/kv/cache_blend.py` — CacheBlendKV
-- [ ] `squish/kv/green_kv.py` — GreenKVEviction
-- [ ] `squish/kv/magic_pig_kv.py` — MagicPIGKV
-- [ ] `squish/io/flash_weight_cache.py` — FlashWeightCache
-- [ ] `squish/speculative/kangaroo_spec.py` — KangarooSpec
-- [ ] `squish/kv/cake_evict.py` — CAKEEviction
-- [ ] `squish/kv/fp8_kv_cache.py` — FP8KVCache
-- [ ] `squish/attention/subgen_attn.py` — SubGenAttention
-- [ ] `squish/token/sep_llm_compress.py` — SepLLMCompress
-- [ ] `squish/speculative/spec_exec.py` — SpecExecDrafter
-- [ ] `tests/test_wave40a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave40b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[16.1.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/attention/razor_attn.py` — RazorAttention
+- [x] `squish/kv/lckv_cache.py` — LCKVCache
+- [x] `squish/kv/cache_blend.py` — CacheBlendKV
+- [x] `squish/kv/green_kv.py` — GreenKVEviction
+- [x] `squish/kv/magic_pig_kv.py` — MagicPIGKV
+- [x] `squish/io/flash_weight_cache.py` — FlashWeightCache
+- [x] `squish/speculative/kangaroo_spec.py` — KangarooSpec
+- [x] `squish/kv/cake_evict.py` — CAKEEviction
+- [x] `squish/kv/fp8_kv_cache.py` — FP8KVCache
+- [x] `squish/attention/subgen_attn.py` — SubGenAttention
+- [x] `squish/token/sep_llm_compress.py` — SepLLMCompress
+- [x] `squish/speculative/spec_exec.py` — SpecExecDrafter
+- [x] `tests/test_wave40a_modules.py` — 84 tests, all passing
+- [x] `tests/test_wave40b_modules.py` — 75 tests, all passing
+- [x] CHANGELOG `[16.1.0]` entry
+- [x] PLAN.md updated
 
 ---
 
