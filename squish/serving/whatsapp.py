@@ -85,6 +85,22 @@ _DEFAULT_SYSTEM_PROMPT = (
     "Avoid markdown formatting unless the user asks for it."
 )
 
+# ── Per-sender rate limiting ──────────────────────────────────────────────────
+_RATE_LIMIT: int = 10       # max messages per sender per _RATE_WINDOW seconds
+_RATE_WINDOW: float = 60.0
+_rate_counts: dict[str, list[float]] = {}
+_rate_lock = threading.Lock()
+
+# ── Message deduplication ────────────────────────────────────────────────────
+# Prevents duplicate processing when Meta retries a webhook (e.g. our 200 was late).
+_SEEN_IDS_MAX: int = 500
+_SEEN_IDS: set[str] = set()
+_SEEN_IDS_ORDER: list[str] = []
+_SEEN_IDS_LOCK = threading.Lock()
+
+# ── Reply chunking ───────────────────────────────────────────────────────────
+_MAX_MSG_LEN: int = 4096     # WhatsApp Cloud API per-message character limit
+
 # ── Session helpers ──────────────────────────────────────────────────────────
 
 def _expire_old_sessions() -> None:
@@ -121,6 +137,69 @@ def _apply_max_history(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     non_sys = [m for m in messages if m["role"] != "system"]
     keep = non_sys[-(_MAX_HISTORY - 1):] if len(non_sys) > _MAX_HISTORY - 1 else non_sys
     return system + keep
+
+
+def _is_duplicate(msg_id: str) -> bool:
+    """
+    Return True if msg_id was already processed; otherwise record it and return False.
+
+    Keeps a bounded FIFO of the last _SEEN_IDS_MAX message IDs so Meta webhook
+    retries (which occur when our 200 response arrives late) are silently dropped.
+    An empty msg_id is never treated as a duplicate.
+    """
+    if not msg_id:
+        return False
+    with _SEEN_IDS_LOCK:
+        if msg_id in _SEEN_IDS:
+            return True
+        _SEEN_IDS.add(msg_id)
+        _SEEN_IDS_ORDER.append(msg_id)
+        while len(_SEEN_IDS_ORDER) > _SEEN_IDS_MAX:
+            evict = _SEEN_IDS_ORDER.pop(0)
+            _SEEN_IDS.discard(evict)
+        return False
+
+
+def _is_rate_limited(sender: str) -> bool:
+    """
+    Return True if sender has exceeded _RATE_LIMIT messages in the last _RATE_WINDOW seconds.
+
+    Uses a sliding window of per-sender timestamps. Thread-safe.
+    """
+    now = time.time()
+    with _rate_lock:
+        timestamps = _rate_counts.get(sender, [])
+        timestamps = [t for t in timestamps if now - t < _RATE_WINDOW]
+        if len(timestamps) >= _RATE_LIMIT:
+            _rate_counts[sender] = timestamps
+            return True
+        timestamps.append(now)
+        _rate_counts[sender] = timestamps
+        return False
+
+
+def _chunk_reply(text: str) -> list[str]:
+    """
+    Split text into a list of strings each at most _MAX_MSG_LEN characters.
+
+    Splits preferentially at newlines, then spaces, then performs a hard cut
+    if no whitespace boundary is found within the limit.
+    """
+    if len(text) <= _MAX_MSG_LEN:
+        return [text]
+    chunks: list[str] = []
+    while text:
+        if len(text) <= _MAX_MSG_LEN:
+            chunks.append(text)
+            break
+        split_at = text.rfind("\n", 0, _MAX_MSG_LEN)
+        if split_at < 1:
+            split_at = text.rfind(" ", 0, _MAX_MSG_LEN)
+        if split_at < 1:
+            split_at = _MAX_MSG_LEN
+        chunks.append(text[:split_at].rstrip())
+        text = text[split_at:].lstrip()
+    return chunks
 
 
 # ── Meta API helpers ─────────────────────────────────────────────────────────
@@ -189,6 +268,7 @@ def _handle_message(
     get_generate: Any,
     get_tokenizer: Any,
     system_prompt: str,
+    msg_id: str = "",
 ) -> None:
     """
     Process one incoming WhatsApp message and send a reply.
@@ -198,6 +278,15 @@ def _handle_message(
     """
     def _reply(msg: str) -> None:
         _send_whatsapp_reply(phone_number_id, access_token, sender, msg)
+
+    # Drop Meta webhook retries — same wamid already handled
+    if _is_duplicate(msg_id):
+        return
+
+    # Throttle senders that exceed the rate limit
+    if _is_rate_limited(sender):
+        _reply("You're sending messages too quickly. Please wait a moment before sending again.")
+        return
 
     # Special commands
     cmd = text.strip()
@@ -269,7 +358,8 @@ def _handle_message(
         _sessions[sender].append({"role": "assistant", "content": reply_text})
         _sessions_ts[sender] = time.time()
 
-    _reply(reply_text)
+    for chunk in _chunk_reply(reply_text):
+        _reply(chunk)
 
 
 # ── mount_whatsapp ───────────────────────────────────────────────────────────
@@ -345,6 +435,7 @@ def mount_whatsapp(
                 for msg in value.get("messages", []):
                     if msg.get("type") != "text":
                         continue  # skip media/reactions/etc.
+                    msg_id = msg.get("id", "")
                     sender = msg.get("from", "")
                     text = (msg.get("text") or {}).get("body", "")
                     if not sender or not text:
@@ -355,7 +446,7 @@ def mount_whatsapp(
                             sender, text.strip(),
                             phone_number_id, access_token,
                             get_state, get_generate, get_tokenizer,
-                            system_prompt,
+                            system_prompt, msg_id,
                         ),
                         daemon=True,
                     ).start()
