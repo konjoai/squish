@@ -114,6 +114,34 @@ _layer_skip_config      = None  # EarlyExitConfig         — --layer-skip
 _long_spec_config       = None  # LongSpecConfig          — --long-spec
 _fr_spec_config         = None  # FRSpecConfig            -- --fr-spec  # wave37-test-marker
 
+# ── Wave 41: Prefix Sharing, EAGLE-2, Ring Attention, Token Pruning, MoE, Sink Fusion ──
+_radix_attn_cache       = None  # RadixAttentionCache     — --radix-attn
+_eagle2_spec            = None  # EAGLE2Spec              — --eagle2
+_ring_attn_config       = None  # RingAttention           — --ring-attn
+_token_entropy_pruner   = None  # TokenEntropyPruner      — --token-entropy-prune
+_pregated_moe_router    = None  # PreGatedMoERouter       — --pregated-moe
+_sink_fusion_config     = None  # SinkFusion              — --sink-fusion
+_cla_share_config       = None  # CLAShareAttention       — --cla-share
+_qmoe_compressor        = None  # QMoECompressor          — --qmoe-compress
+_lade_decoder           = None  # LADEDecoder             — --lade
+_infini_attn_config     = None  # InfiniAttention         — --infini-attn
+_akvq_cache             = None  # AKVQCache               — --akvq
+_delta_zip_store        = None  # DeltaZipAdapter         — --delta-zip
+
+# ── Wave 42: Disaggregated Serving, NSA, Medusa, KV Quant, AttentionStore, QAT ──
+_medusa_heads           = None  # MedusaHeads             — --medusa-heads
+_sarathi_scheduler      = None  # SarathiScheduler        — --sarathi
+_nsa_attn_config        = None  # NSAAttention            — --nsa-attn
+_flex_prefill_config    = None  # FlexPrefill             — --flex-prefill
+_think_cache            = None  # ThinKCache              — --think-cache
+_attention_store        = None  # AttentionStore          — --attention-store
+_rest_decoder           = None  # RESTDecode              — --rest-decode
+_star_attn_config       = None  # StarAttention           — --star-attn
+_splitwise_scheduler    = None  # SplitwiseScheduler      — --splitwise
+_kvquant_cache          = None  # KVQuantCache            — --kvquant
+_efficient_qat          = None  # EfficientQAT            — --efficient-qat
+_cache_gen_codec        = None  # CacheGenCodec           — --cache-gen
+
 # ── Wave 37: Wire Everything In ───────────────────────────────────────────────
 # Twelve isolation modules from Waves 33–35 wired into the live request path.
 _kvtc_manager           = None  # KVTCManager             — --kvtc
@@ -319,9 +347,15 @@ def _has_truecolor(tty: bool) -> bool:
 _TRUE_COLOR:     bool = _has_truecolor(_TTY)
 _TRUE_COLOR_ERR: bool = _has_truecolor(_TTY_ERR)
 
+try:
+    from squish._term import detect_dark_background as _detect_dark_bg_srv
+    _IS_DARK_BG: bool = _detect_dark_bg_srv()
+except Exception:  # pragma: no cover
+    _IS_DARK_BG = True  # dark fallback if import fails during early startup
+
 
 class _C:
-    """ANSI 24-bit colour constants.  Empty strings on non-true-colour TTYs."""
+    """Dark-background 24-bit colour constants.  Empty strings on non-true-colour TTYs."""
     _k = lambda s: s if _TRUE_COLOR else ""  # noqa: E731
     DP  = _k("\033[38;2;88;28;135m")    # deep purple   #581C87
     P   = _k("\033[38;2;124;58;237m")   # purple        #7C3AED
@@ -338,6 +372,31 @@ class _C:
     DIM = _k("\033[38;2;100;116;139m")  # dim slate     #64748B
     B   = _k("\033[1m")                 # bold
     R   = _k("\033[0m")                 # reset all
+
+
+class _CLight:
+    """Light-background 24-bit colour constants — deeper for contrast on white."""
+    _k = lambda s: s if _TRUE_COLOR else ""  # noqa: E731
+    DP  = _k("\033[38;2;67;20;105m")    # deeper purple  #431469
+    P   = _k("\033[38;2;88;28;135m")    # dark purple    #581C87
+    V   = _k("\033[38;2;109;40;217m")   # dark violet    #6D28D9
+    L   = _k("\033[38;2;124;58;237m")   # purple         #7C3AED
+    MG  = _k("\033[38;2;139;92;246m")   # violet         #8B5CF6
+    PK  = _k("\033[38;2;157;23;77m")    # deep pink      #9D174D
+    LPK = _k("\033[38;2;219;39;119m")   # pink           #DB2777
+    T   = _k("\033[38;2;6;182;212m")    # teal           #06B6D4
+    LT  = _k("\033[38;2;8;145;178m")    # dark teal      #0891B2
+    G   = _k("\033[38;2;16;185;129m")   # green          #10B981
+    W   = _k("\033[38;2;15;23;42m")     # near-black     #0F172A
+    SIL = _k("\033[38;2;71;85;105m")    # slate          #475569
+    DIM = _k("\033[38;2;51;65;85m")     # dim slate      #334155
+    B   = _k("\033[1m")                 # bold
+    R   = _k("\033[0m")                 # reset all
+
+
+# Select dark or light palette based on detected terminal background.
+if not _IS_DARK_BG:  # pragma: no cover
+    _C = _CLight  # type: ignore[misc]
 
 
 def _gradient(text: str, stops: list) -> str:
@@ -2901,6 +2960,79 @@ Examples:
                     help="Enable PD-Disaggregator: route prefill (compute-bound) and\n"
                          "decode (memory-bound) through separate scheduling paths.\n"
                          "Targets 1.5–2× TTFT under mixed prefill/decode load.")
+    # ── Wave 41 flags ─────────────────────────────────────────────────────────
+    ap.add_argument("--radix-attn", action="store_true", default=False,
+                    help="Enable RadixAttentionCache: prefix-aware KV cache sharing "
+                         "via a radix tree. Reduces redundant prefill for shared prefixes.")
+    ap.add_argument("--eagle2", action="store_true", default=False,
+                    help="Enable EAGLE-2 speculative decoding with dynamic draft tree "
+                         "pruning. Typical 2–3× decode throughput improvement.")
+    ap.add_argument("--ring-attn", action="store_true", default=False,
+                    help="Enable RingAttention: sequence-parallel ring-reduce attention "
+                         "for very long contexts across virtual devices.")
+    ap.add_argument("--token-entropy-prune", action="store_true", default=False,
+                    help="Enable TokenEntropyPruner: drop low-entropy (redundant) tokens "
+                         "from the KV cache based on attention entropy.")
+    ap.add_argument("--pregated-moe", action="store_true", default=False,
+                    help="Enable PreGatedMoE router: pre-gate expert selection before "
+                         "FFN to reduce expert activation overhead.")
+    ap.add_argument("--sink-fusion", action="store_true", default=False,
+                    help="Enable SinkFusion: merge attention sink tokens to reduce "
+                         "KV cache memory pressure.")
+    ap.add_argument("--cla-share", action="store_true", default=False,
+                    help="Enable Cross-Layer Attention sharing (CLA): reuse KV caches "
+                         "across adjacent transformer layers.")
+    ap.add_argument("--qmoe-compress", action="store_true", default=False,
+                    help="Enable QMoECompressor: quantize MoE expert weights to reduce "
+                         "memory and improve expert-load throughput.")
+    ap.add_argument("--lade", action="store_true", default=False,
+                    help="Enable LADE: lookahead-based draft speculative decoding.")
+    ap.add_argument("--infini-attn", action="store_true", default=False,
+                    help="Enable InfiniAttention: compressive memory segment for "
+                         "unbounded context windows.")
+    ap.add_argument("--akvq", action="store_true", default=False,
+                    help="Enable AKVQCache: adaptive KV quantization with per-layer "
+                         "bit-width selection.")
+    ap.add_argument("--delta-zip", action="store_true", default=False,
+                    help="Enable DeltaZipAdapter: quantize fine-tuned weight deltas "
+                         "to compress LoRA-style adapters.")
+    # ── Wave 42 flags ─────────────────────────────────────────────────────────
+    ap.add_argument("--medusa-heads", action="store_true", default=False,
+                    help="Enable MedusaHeads: multiple frozen draft heads for parallel "
+                         "speculative decoding (Cai et al., ICML 2024).")
+    ap.add_argument("--sarathi", action="store_true", default=False,
+                    help="Enable SarathiScheduler: fixed-size chunked prefill with "
+                         "decode piggybacking (Agrawal et al., OSDI 2024).")
+    ap.add_argument("--nsa-attn", action="store_true", default=False,
+                    help="Enable NSAAttention: native sparse attention with compound "
+                         "block + window + selected-token pattern (Yuan et al., 2025).")
+    ap.add_argument("--flex-prefill", action="store_true", default=False,
+                    help="Enable FlexPrefill: per-head context-adaptive sparse prefill "
+                         "(Lai et al., arXiv:2502.20766).")
+    ap.add_argument("--think-cache", action="store_true", default=False,
+                    help="Enable ThinKCache: query-driven key-channel pruning to reduce "
+                         "KV memory by ~20%% (Xu et al., EMNLP 2024).")
+    ap.add_argument("--attention-store", action="store_true", default=False,
+                    help="Enable AttentionStore: session-scoped three-tier KV persistence "
+                         "(hot/warm/SSD) for multi-turn reuse (Sheng et al., ACL 2024).")
+    ap.add_argument("--rest-decode", action="store_true", default=False,
+                    help="Enable RESTDecode: retrieval-based n-gram speculative decoding "
+                         "from a token datastore (He et al., NAACL 2024).")
+    ap.add_argument("--star-attn", action="store_true", default=False,
+                    help="Enable StarAttention: block-partitioned star-topology "
+                         "local + anchor attention (Acharya et al., NeurIPS 2024).")
+    ap.add_argument("--splitwise", action="store_true", default=False,
+                    help="Enable SplitwiseScheduler: prefill/decode phase disaggregation "
+                         "into separate resource pools (Patel et al., ISCA 2024).")
+    ap.add_argument("--kvquant", action="store_true", default=False,
+                    help="Enable KVQuantCache: calibrated low-bit KV quantization "
+                         "(Hooper et al., NeurIPS 2024).")
+    ap.add_argument("--efficient-qat", action="store_true", default=False,
+                    help="Enable EfficientQAT: block-wise QAT with frozen neighbours "
+                         "for W4A4 quantization (Chen et al., ECCV 2024).")
+    ap.add_argument("--cache-gen", action="store_true", default=False,
+                    help="Enable CacheGenCodec: arithmetic-coded KV bitstream "
+                         "compression and streaming decoder (Liu et al., SIGCOMM 2024).")
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
     ap.add_argument(
@@ -3015,6 +3147,14 @@ Examples:
             "kvtc", "chunk_kv", "ssd_saguaro", "spec_stream",
             "metal_flash_attn", "deja_vu", "jacobi", "mtp",
             "layer_overlap", "fused_qkv", "pd_disagg",
+            # Wave 41
+            "radix_attn", "eagle2", "ring_attn", "token_entropy_prune",
+            "pregated_moe", "sink_fusion", "cla_share", "qmoe_compress",
+            "lade", "infini_attn", "akvq", "delta_zip",
+            # Wave 42
+            "medusa_heads", "sarathi", "nsa_attn", "flex_prefill",
+            "think_cache", "attention_store", "rest_decode", "star_attn",
+            "splitwise", "kvquant", "efficient_qat", "cache_gen",
         ]
         for _f in _bool_wave_flags:
             if not getattr(args, _f, False):
@@ -3917,6 +4057,248 @@ Examples:
                   f"  max_decode={_pd_cfg.max_decode_tokens}")
         except Exception as _e:
             _warn(f"[pd-disagg] Skipped: {_e}")
+
+    # ── Wave 41: Prefix Sharing, EAGLE-2, Ring Attention, Token Pruning ───────
+    global _radix_attn_cache
+    if getattr(args, "radix_attn", False):
+        try:
+            from squish.kv.radix_attn import RadixAttentionConfig, RadixAttentionCache
+            _ra_cfg = RadixAttentionConfig()
+            _radix_attn_cache = RadixAttentionCache(_ra_cfg)
+            _info("radix-attn", f"prefix-sharing radix KV tree  (max_nodes={_ra_cfg.max_nodes})")
+        except Exception as _e:
+            _warn(f"[radix-attn] Skipped: {_e}")
+
+    global _eagle2_spec
+    if getattr(args, "eagle2", False):
+        try:
+            from squish.speculative.eagle2_spec import EAGLE2Config, EAGLE2Spec
+            _e2_cfg = EAGLE2Config()
+            _eagle2_spec = EAGLE2Spec(_e2_cfg)
+            _info("eagle2", f"EAGLE-2 speculative decoding  (gamma={_e2_cfg.gamma}  tree_depth={_e2_cfg.tree_depth})")
+        except Exception as _e:
+            _warn(f"[eagle2] Skipped: {_e}")
+
+    global _ring_attn_config
+    if getattr(args, "ring_attn", False):
+        try:
+            from squish.attention.ring_attn import RingAttentionConfig, RingAttention
+            _ring_cfg = RingAttentionConfig()
+            _ring_attn_config = RingAttention(_ring_cfg)
+            _info("ring-attn", f"ring-reduce sequence-parallel attention  (n_devices={_ring_cfg.n_devices}  chunk={_ring_cfg.chunk_size})")
+        except Exception as _e:
+            _warn(f"[ring-attn] Skipped: {_e}")
+
+    global _token_entropy_pruner
+    if getattr(args, "token_entropy_prune", False):
+        try:
+            from squish.token.token_entropy_prune import TokenEntropyConfig, TokenEntropyPruner
+            _tep_cfg = TokenEntropyConfig()
+            _token_entropy_pruner = TokenEntropyPruner(_tep_cfg)
+            _info("token-entropy-prune", f"entropy-based KV cache pruning  (keep_ratio={_tep_cfg.keep_ratio})")
+        except Exception as _e:
+            _warn(f"[token-entropy-prune] Skipped: {_e}")
+
+    global _pregated_moe_router
+    if getattr(args, "pregated_moe", False):
+        try:
+            from squish.moe.pregated_router import PreGatedMoEConfig, PreGatedMoERouter
+            _pgm_cfg = PreGatedMoEConfig()
+            _pregated_moe_router = PreGatedMoERouter(_pgm_cfg)
+            _info("pregated-moe", f"pre-gated MoE expert routing  (n_experts={_pgm_cfg.n_experts}  top_k={_pgm_cfg.top_k})")
+        except Exception as _e:
+            _warn(f"[pregated-moe] Skipped: {_e}")
+
+    global _sink_fusion_config
+    if getattr(args, "sink_fusion", False):
+        try:
+            from squish.kv.sink_fusion import SinkFusionConfig, SinkFusion
+            _sf_cfg = SinkFusionConfig()
+            _sink_fusion_config = SinkFusion(_sf_cfg)
+            _info("sink-fusion", f"attention sink token merging  (n_sinks={_sf_cfg.n_sinks})")
+        except Exception as _e:
+            _warn(f"[sink-fusion] Skipped: {_e}")
+
+    global _cla_share_config
+    if getattr(args, "cla_share", False):
+        try:
+            from squish.attention.cla_share import CLAShareConfig, CLAShareAttention
+            _cla_cfg = CLAShareConfig()
+            _cla_share_config = CLAShareAttention(_cla_cfg)
+            _info("cla-share", f"cross-layer KV sharing  (share_every={_cla_cfg.share_every})")
+        except Exception as _e:
+            _warn(f"[cla-share] Skipped: {_e}")
+
+    global _qmoe_compressor
+    if getattr(args, "qmoe_compress", False):
+        try:
+            from squish.moe.qmoe_compress import QMoEConfig, QMoECompressor
+            _qmoe_cfg = QMoEConfig()
+            _qmoe_compressor = QMoECompressor(_qmoe_cfg)
+            _info("qmoe-compress", f"quantized MoE experts  (bits={_qmoe_cfg.bits})")
+        except Exception as _e:
+            _warn(f"[qmoe-compress] Skipped: {_e}")
+
+    global _lade_decoder
+    if getattr(args, "lade", False):
+        try:
+            from squish.speculative.lade_decode import LADEConfig, LADEDecoder
+            _lade_cfg = LADEConfig()
+            _lade_decoder = LADEDecoder(_lade_cfg)
+            _info("lade", f"lookahead speculative decoding  (window={_lade_cfg.window_size}  ngram={_lade_cfg.ngram_size})")
+        except Exception as _e:
+            _warn(f"[lade] Skipped: {_e}")
+
+    global _infini_attn_config
+    if getattr(args, "infini_attn", False):
+        try:
+            from squish.attention.infini_attn import InfiniAttentionConfig, InfiniAttention
+            _ia_cfg = InfiniAttentionConfig()
+            _infini_attn_config = InfiniAttention(_ia_cfg)
+            _info("infini-attn", f"compressive memory attention  (segment={_ia_cfg.segment_size}  mem_dim={_ia_cfg.memory_dim})")
+        except Exception as _e:
+            _warn(f"[infini-attn] Skipped: {_e}")
+
+    global _akvq_cache
+    if getattr(args, "akvq", False):
+        try:
+            from squish.kv.akvq_cache import AKVQConfig, AKVQCache
+            _akvq_cfg = AKVQConfig()
+            _akvq_cache = AKVQCache(_akvq_cfg)
+            _info("akvq", f"adaptive KV quantization  (min_bits={_akvq_cfg.min_bits}  max_bits={_akvq_cfg.max_bits})")
+        except Exception as _e:
+            _warn(f"[akvq] Skipped: {_e}")
+
+    global _delta_zip_store
+    if getattr(args, "delta_zip", False):
+        try:
+            from squish.quant.delta_zip import DeltaZipConfig, DeltaZipAdapter
+            _dz_cfg = DeltaZipConfig()
+            _delta_zip_store = DeltaZipAdapter(_dz_cfg)
+            _info("delta-zip", f"delta weight quantization  (bits={_dz_cfg.bits})")
+        except Exception as _e:
+            _warn(f"[delta-zip] Skipped: {_e}")
+
+    # ── Wave 42: Disaggregated Serving, NSA, Medusa, KV Quant, QAT ───────────
+    global _medusa_heads
+    if getattr(args, "medusa_heads", False):
+        try:
+            from squish.speculative.medusa_heads import MedusaConfig, MedusaHeads
+            _mh_cfg = MedusaConfig()
+            _medusa_heads = MedusaHeads(_mh_cfg)
+            _info("medusa-heads", f"multi-head speculative decoding  (n_heads={_mh_cfg.n_heads}  tree_width={_mh_cfg.tree_width})")
+        except Exception as _e:
+            _warn(f"[medusa-heads] Skipped: {_e}")
+
+    global _sarathi_scheduler
+    if getattr(args, "sarathi", False):
+        try:
+            from squish.serving.sarathi_scheduler import SarathiConfig, SarathiScheduler
+            _sa_cfg = SarathiConfig()
+            _sarathi_scheduler = SarathiScheduler(_sa_cfg)
+            _info("sarathi", f"chunked prefill scheduler  (chunk={_sa_cfg.chunk_size}  max_batch={_sa_cfg.max_batch_size})")
+        except Exception as _e:
+            _warn(f"[sarathi] Skipped: {_e}")
+
+    global _nsa_attn_config
+    if getattr(args, "nsa_attn", False):
+        try:
+            from squish.attention.nsa_attn import NSAConfig, NSAAttention
+            _nsa_cfg = NSAConfig()
+            _nsa_attn_config = NSAAttention(_nsa_cfg)
+            _info("nsa-attn", f"native sparse attention  (block={_nsa_cfg.block_size}  window={_nsa_cfg.window_size}  n_selected={_nsa_cfg.n_selected_blocks})")
+        except Exception as _e:
+            _warn(f"[nsa-attn] Skipped: {_e}")
+
+    global _flex_prefill_config
+    if getattr(args, "flex_prefill", False):
+        try:
+            from squish.attention.flex_prefill import FlexPrefillConfig, FlexPrefill
+            _fp_cfg = FlexPrefillConfig()
+            _flex_prefill_config = FlexPrefill(_fp_cfg)
+            _info("flex-prefill", f"adaptive sparse prefill  (min_keep={_fp_cfg.min_keep_ratio})")
+        except Exception as _e:
+            _warn(f"[flex-prefill] Skipped: {_e}")
+
+    global _think_cache
+    if getattr(args, "think_cache", False):
+        try:
+            from squish.kv.think_cache import ThinKConfig, ThinKCache
+            _tk_cfg = ThinKConfig()
+            _think_cache = ThinKCache(_tk_cfg)
+            _info("think-cache", f"K-channel pruning  (keep_ratio={_tk_cfg.keep_ratio})")
+        except Exception as _e:
+            _warn(f"[think-cache] Skipped: {_e}")
+
+    global _attention_store
+    if getattr(args, "attention_store", False):
+        try:
+            from squish.kv.attention_store import AttentionStoreConfig, AttentionStore
+            _as_cfg = AttentionStoreConfig()
+            _attention_store = AttentionStore(_as_cfg)
+            _info("attention-store", f"tiered KV persistence  (hot={_as_cfg.hot_capacity}  warm={_as_cfg.warm_capacity})")
+        except Exception as _e:
+            _warn(f"[attention-store] Skipped: {_e}")
+
+    global _rest_decoder
+    if getattr(args, "rest_decode", False):
+        try:
+            from squish.speculative.rest_decode import RESTConfig, RESTDecode
+            _rd_cfg = RESTConfig()
+            _rest_decoder = RESTDecode(_rd_cfg)
+            _info("rest-decode", f"retrieval n-gram speculative  (n_gram={_rd_cfg.n_gram}  top_k={_rd_cfg.top_k_draft})")
+        except Exception as _e:
+            _warn(f"[rest-decode] Skipped: {_e}")
+
+    global _star_attn_config
+    if getattr(args, "star_attn", False):
+        try:
+            from squish.attention.star_attn import StarAttentionConfig, StarAttention
+            _sta_cfg = StarAttentionConfig()
+            _star_attn_config = StarAttention(_sta_cfg)
+            _info("star-attn", f"star-topology local+anchor attention  (block={_sta_cfg.block_size})")
+        except Exception as _e:
+            _warn(f"[star-attn] Skipped: {_e}")
+
+    global _splitwise_scheduler
+    if getattr(args, "splitwise", False):
+        try:
+            from squish.serving.splitwise_scheduler import SplitwiseConfig, SplitwiseScheduler
+            _sw_cfg = SplitwiseConfig()
+            _splitwise_scheduler = SplitwiseScheduler(_sw_cfg)
+            _info("splitwise", f"prefill/decode disaggregation  (prefill_workers={_sw_cfg.prefill_workers}  decode_workers={_sw_cfg.decode_workers})")
+        except Exception as _e:
+            _warn(f"[splitwise] Skipped: {_e}")
+
+    global _kvquant_cache
+    if getattr(args, "kvquant", False):
+        try:
+            from squish.kv.kvquant import KVQuantConfig, KVQuantCache
+            _kvq_cfg = KVQuantConfig()
+            _kvquant_cache = KVQuantCache(_kvq_cfg)
+            _info("kvquant", f"calibrated low-bit KV quantization  (bits={_kvq_cfg.bits}  window={_kvq_cfg.calibration_window})")
+        except Exception as _e:
+            _warn(f"[kvquant] Skipped: {_e}")
+
+    global _efficient_qat
+    if getattr(args, "efficient_qat", False):
+        try:
+            from squish.quant.efficient_qat import EfficientQATConfig, EfficientQAT
+            _eqat_cfg = EfficientQATConfig()
+            _efficient_qat = EfficientQAT(_eqat_cfg)
+            _info("efficient-qat", f"block-wise QAT  (bits={_eqat_cfg.bits}  block={_eqat_cfg.block_size})")
+        except Exception as _e:
+            _warn(f"[efficient-qat] Skipped: {_e}")
+
+    global _cache_gen_codec
+    if getattr(args, "cache_gen", False):
+        try:
+            from squish.kv.cache_gen import CacheGenConfig, CacheGenCodec
+            _cg_cfg = CacheGenConfig()
+            _cache_gen_codec = CacheGenCodec(_cg_cfg)
+            _info("cache-gen", f"KV bitstream compression  (bits={_cg_cfg.bits}  block={_cg_cfg.block_size})")
+        except Exception as _e:
+            _warn(f"[cache-gen] Skipped: {_e}")
 
     # ── Wave 27: Inference velocity features ──────────────────────────────────
     # 1B — FusedSampler: replace multi-pass sampling with a single fused kernel

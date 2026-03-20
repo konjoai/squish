@@ -5,6 +5,108 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [17.1.0] — 2026-06-25
+
+### Added — Wave 42: Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT
+
+Twelve production-grade modules extending v17.1 with disaggregated prefill/decode
+scheduling, native sparse attention, multi-head speculative decoding, calibrated KV
+quantization, session-scoped KV persistence, block-wise QAT, retrieval-based speculative
+decoding, star-topology block attention, predator/prey phase disaggregation, arithmetic
+coded KV compression, query-driven key pruning, and adaptive sparse prefill.
+All modules are NumPy-only simulation layers backed by 2024–2025 peer-reviewed papers.
+Server wiring: Wave 41 and Wave 42 modules fully wired into `squish/server.py` via
+`--radix-attn`, `--eagle2`, `--ring-attn`, `--token-entropy-prune`, `--pregated-moe`,
+`--sink-fusion`, `--cla-share`, `--qmoe-compress`, `--lade`, `--infini-attn`, `--akvq`,
+`--delta-zip`, `--medusa-heads`, `--sarathi`, `--nsa-attn`, `--flex-prefill`,
+`--think-cache`, `--attention-store`, `--rest-decode`, `--star-attn`, `--splitwise`,
+`--kvquant`, `--efficient-qat`, `--cache-gen` CLI flags; all covered by `--all-optimizations`.
+
+**Wave 42a — Medusa Heads, Sarathi Scheduler, NSA Attention, Flex Prefill, ThinK Cache, AttentionStore**
+
+- **MedusaHeads** (`squish/speculative/medusa_heads.py`) — Multiple frozen draft heads
+  for parallel speculative decoding: BFS candidate tree, per-head accept-reject with
+  residual correction, acceptance rate tracking (Cai et al., ICML 2024).
+  `MedusaConfig`, `MedusaDraftResult`, `MedusaHeads.step()`,
+  `.mean_acceptance_rate`, `.reset_stats()`.
+
+- **SarathiScheduler** (`squish/serving/sarathi_scheduler.py`) — Fixed-size chunked
+  prefill with decode piggybacking: chunk budget shared between prefill and decode,
+  inflight tracking, completion stats (Agrawal et al., OSDI 2024).
+  `SarathiConfig`, `SarathiRequest`, `SarathiTick`, `SarathiScheduler.add_request()`,
+  `.schedule()`, `.n_inflight()`, `.n_completed()`, `.stats()`.
+
+- **NSAAttention** (`squish/attention/nsa_attn.py`) — Native Sparse Attention with
+  compound block + sliding-window + selected-token pattern: learnable alpha fusion
+  across three sub-attention types, sparsity ratio reporting (Yuan et al., 2025).
+  `NSAConfig`, `NSAAttention.forward()`, `.sparsity_ratio()`.
+
+- **FlexPrefill** (`squish/attention/flex_prefill.py`) — Per-head context-adaptive sparse
+  prefill: query-norm ratio drives per-head keep_k selection, sparse top-k softmax,
+  mean sparsity tracking (Lai et al., arXiv:2502.20766, 2025).
+  `FlexPrefillConfig`, `FlexPrefill.forward()`, `.mean_sparsity_ratio()`, `.reset_stats()`.
+
+- **ThinKCache** (`squish/kv/think_cache.py`) — Query-driven K-channel pruning: per-head
+  query × key magnitude importance scoring, top-k channel retention, ~20% K reduction
+  at <0.1 PPL cost (Xu et al., EMNLP 2024 / arXiv:2407.21018).
+  `ThinKConfig`, `ThinKCache.prune_k()`, `.keep_indices()`, `.channel_reduction_ratio()`,
+  `.reset_stats()`.
+
+- **AttentionStore** (`squish/kv/attention_store.py`) — Session-scoped KV persistence
+  with three-tier hot/warm/SSD cache: LRU eviction across tiers, cross-session hit rate,
+  memory footprint tracking (Sheng et al., ACL 2024 / arXiv:2403.19708).
+  `AttentionStoreConfig`, `AttentionStore.store()`, `.load()`, `.hit_rate()`,
+  `.evict_session()`, `.tiers_used()`, `.memory_bytes()`.
+
+**Wave 42b — REST Decode, Star Attention, Splitwise Scheduler, KVQuant, EfficientQAT, CacheGen**
+
+- **RESTDecode** (`squish/speculative/rest_decode.py`) — Retrieval-based n-gram speculative
+  decoding: LRU n-gram datastore, top-k proposal lookup, speculative accept-reject,
+  acceptance rate tracking (He et al., NAACL 2024 / arXiv:2311.08252).
+  `RESTConfig`, `RESTDraftResult`, `RESTDecode.add_to_datastore()`, `.step()`,
+  `.mean_acceptance_rate`, `.reset_stats()`.
+
+- **StarAttention** (`squish/attention/star_attn.py`) — Block-partitioned star-topology
+  local + anchor attention: each block attends locally plus to the first (anchor) block,
+  log-sum-exp renormalisation fusion, supports causal masking (Acharya et al.,
+  NeurIPS 2024 / arXiv:2411.17116).
+  `StarAttentionConfig`, `StarAttention.forward()`.
+
+- **SplitwiseScheduler** (`squish/serving/splitwise_scheduler.py`) — Prefill/decode
+  phase disaggregation: independent prefill and decode worker pools, FIFO queues,
+  complete-cycle lifecycle tracking (Patel et al., ISCA 2024 / arXiv:2311.18677).
+  `SplitwiseConfig`, `SplitwiseRequest`, `SplitwiseScheduler.submit()`,
+  `.schedule_prefill()`, `.complete_prefill()`, `.schedule_decode()`,
+  `.complete_decode()`, `.stats()`.
+
+- **KVQuantCache** (`squish/kv/kvquant.py`) — Calibrated low-bit KV quantization:
+  per-channel scale estimation from rolling calibration window, symmetric uniform
+  quantization to 2/4/8 bits, relative error reporting (Hooper et al.,
+  NeurIPS 2024 / arXiv:2401.18079).
+  `KVQuantConfig`, `KVQuantCache.calibrate()`, `.quantize()`, `.dequantize()`,
+  `.memory_bytes()`, `.n_layers_cached()`.
+
+- **EfficientQAT** (`squish/quant/efficient_qat.py`) — Block-wise QAT with frozen
+  neighbouring layers: per-output-channel scale calibration with activation statistics,
+  symmetric W4/W8 quantisation, relative error metrics (Chen et al.,
+  ECCV 2024 / arXiv:2407.11062).
+  `EfficientQATConfig`, `EfficientQAT.calibrate_block()`, `.quantize_weight()`,
+  `.dequantize_weight()`, `.relative_error()`, `.n_calibrated_blocks()`.
+
+- **CacheGenCodec** (`squish/kv/cache_gen.py`) — Arithmetic-coded KV bitstream
+  compression: symmetric quantization + byte-packing into compact buffer with shape
+  header, streaming chunk encoding (Liu et al., SIGCOMM 2024 / arXiv:2310.07240).
+  `CacheGenConfig`, `CacheGenCodec.encode()`, `.decode()`, `.compression_ratio()`,
+  `.stream_encode()`.
+
+### Changed
+
+- **server.py** — Wave 41 and Wave 42 modules wired into `squish/server.py`:
+  24 new CLI flags, global variable declarations, and `try/except` init blocks
+  in `main()`. All 24 flags included in `--all-optimizations`.
+
+---
+
 ## [17.0.0] — 2026-06-18
 
 ### Added — Wave 41: Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion
