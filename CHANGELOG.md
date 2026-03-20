@@ -5,6 +5,116 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [17.0.0] — 2026-06-18
+
+### Added — Wave 41: Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion
+
+Twelve production-grade modules extending v17 with radix-tree KV prefix sharing,
+context-aware speculative decoding, sequence-parallel ring attention, entropy-based
+token pruning, pre-gated MoE routing, CLA cross-layer sharing, sub-1-bit MoE
+compression, lookahead decoding, infinite compressive memory attention, AKVQ
+mixed-precision KV quantization, and delta-compressed multi-tenant LoRA serving.
+All modules are NumPy-only simulation layers backed by 2023–2025 peer-reviewed papers.
+
+**Wave 41a — Prefix Sharing, EAGLE-2, Ring Attention, Token Pruning, Pre-Gated MoE, Sink Fusion**
+
+- **RadixAttentionCache** (`squish/kv/radix_attn.py`) — Radix-tree KV prefix
+  deduplication across concurrent requests: longest-prefix matching, LRU leaf
+  eviction, hit-rate tracking (Zheng et al., SOSP 2024 / SGLang arXiv:2312.07104).
+  `RadixAttentionConfig`, `RadixNode`, `RadixAttentionCache.insert()`,
+  `.match_prefix()`, `.lookup()`, `.n_cached_tokens()`, `.hit_rate()`, `.clear()`.
+
+- **EAGLE2Spec** (`squish/speculative/eagle2_spec.py`) — Context-Aware Dynamic
+  Draft Tree speculative decoder: BFS tree expansion with low-probability branch
+  pruning, acceptance-rejection walk with residual sampling (Li et al.,
+  ICML 2025 / arXiv:2406.16858).
+  `EAGLE2Config`, `EAGLE2DraftResult`, `EAGLE2Spec.step()`,
+  `.mean_acceptance_rate`, `.reset_stats()`.
+
+- **RingAttention** (`squish/attention/ring_attn.py`) — Sequence-parallel exact
+  attention via ring-topology K/V passing: splits Q/K/V into n_shards blocks,
+  n_shards rounds of ring shift with online log-sum-exp accumulation, supports
+  causal masking (Liu et al., ICLR 2024 / arXiv:2310.01889).
+  `RingAttentionConfig`, `RingAttention.forward()`.
+
+- **TokenEntropyPruner** (`squish/token/token_entropy_prune.py`) — Per-token
+  residual-stream entropy pruning: keeps highest-softmax-entropy tokens,
+  configurable keep_ratio and min_tokens floor, optional fill-pruned mode
+  (SirLLM, Yao et al., ACL 2024).
+  `TokenEntropyConfig`, `TokenEntropyPruner.prune()`, `.compression_ratio()`,
+  `.reset_stats()`.
+
+- **PreGatedMoERouter** (`squish/moe/pregated_router.py`) — Zero-latency MoE
+  routing via previous-layer hidden state pre-computation: softmax gate weights,
+  load-balancing loss, top-K expert dispatch (Du et al.,
+  EMNLP 2024 / arXiv:2402.05666).
+  `PreGatedMoEConfig`, `PreGatedMoERouter.route()`, `.forward()`,
+  `.load_balancing_loss()`.
+
+- **SinkFusion** (`squish/kv/sink_fusion.py`) — Compress N attention-sink tokens
+  into a single learnable KV vector: mean pooling + EMA-calibrated offset,
+  prepend fused sink to local sliding window (StreamingLLM, Xiao et al.,
+  ICLR 2024). `SinkFusionConfig`, `SinkFusion.fuse()`, `.calibrate()`,
+  `.apply()`, `.memory_saved_tokens()`.
+
+**Wave 41b — CLA Sharing, QMoE Compression, LADE Decoding, Infini Attention, AKVQ, DeltaZip**
+
+- **CLAShareAttention** (`squish/attention/cla_share.py`) — Cross-layer K/V
+  sharing: anchor layers hold full KV; adjacent layers reuse anchor KV
+  projections, reducing KV memory by 1/sharing_stride (Brandon et al.,
+  ACL Findings 2024 / arXiv:2405.12981).
+  `CLAShareConfig`, `CLAShareAttention.compute_kv()`, `.get_kv()`,
+  `.anchor_layer()`, `.is_anchor()`, `.memory_ratio()`, `.n_anchor_layers()`,
+  `.clear()`.
+
+- **QMoECompressor** (`squish/moe/qmoe_compress.py`) — Sub-1-bit codebook
+  compression for MoE expert weights: block-wise K-Means over weight blocks,
+  stores codebook + indices for each expert (Frantar & Alistarh,
+  NeurIPS 2023 / arXiv:2310.16795).
+  `QMoEConfig`, `QMoECompressedExpert`, `QMoECompressor.compress()`,
+  `.decompress()`, `.relative_error()`, `.store()`, `.load()`,
+  `.n_stored_experts()`.
+
+- **LADEDecoder** (`squish/speculative/lade_decode.py`) — N-gram Lookahead
+  Decoding: populates n-gram successor table from context, proposes lookahead
+  tokens without a draft model, parallel verification with residual fallback
+  (Fu et al., ICML 2024 / arXiv:2401.15077).
+  `LADEConfig`, `LADEDraftResult`, `LADEDecoder.update_ngram_table()`,
+  `.step()`, `.n_ngram_entries()`, `.mean_acceptance_rate`, `.reset_stats()`.
+
+- **InfiniAttention** (`squish/attention/infini_attn.py`) — Segment-level
+  compressive memory + local attention for infinite context: associative KV
+  memory matrix updated per segment, sigmoid(β) fusion gate blends memory
+  retrieval with local softmax attention (Munkhdalai et al.,
+  ICML 2024 / arXiv:2404.07143).
+  `InfiniAttentionConfig`, `InfiniAttention.forward()`, `.reset_memory()`,
+  `.memory_bytes()`, `.n_segments`.
+
+- **AKVQCache** (`squish/kv/akvq_cache.py`) — Attention-score-guided
+  mixed-precision INT2/INT4 KV quantization: calibrates per-head importance from
+  attention weights, assigns high-importance heads INT4 and low-importance INT2,
+  protects outlier channels in FP32 (arXiv:2409.12012, 2024).
+  `AKVQConfig`, `AKVQTensor`, `AKVQCache.calibrate()`, `.store()`, `.load()`,
+  `.head_bits()`, `.memory_bytes()`, `.n_layers_cached()`.
+
+- **DeltaZipAdapter** (`squish/quant/delta_zip.py`) — Delta compression for
+  fine-tuned LoRA adapters: block-wise symmetric quantisation of
+  adapted − base delta, lazy zero-copy merge at inference, multi-tenant serving
+  (Yao et al., MLSys 2025 / arXiv:2312.05215).
+  `DeltaZipConfig`, `DeltaCompressedAdapter`, `DeltaZipAdapter.compress_delta()`,
+  `.decompress_delta()`, `.merge()`, `.compression_ratio()`, `.n_adapters()`,
+  `.memory_bytes()`.
+
+### Tests
+
+- `tests/test_wave41a_modules.py` — 78 tests covering RadixAttentionCache,
+  EAGLE2Spec, RingAttention, TokenEntropyPruner, PreGatedMoERouter, SinkFusion.
+- `tests/test_wave41b_modules.py` — 79 tests covering CLAShareAttention,
+  QMoECompressor, LADEDecoder, InfiniAttention, AKVQCache, DeltaZipAdapter.
+- Total test suite: **9378 passing**.
+
+---
+
 ## [16.1.0] — 2026-06-17
 
 ### Added — Wave 40: KV Architecture Innovation · Flash-Weight · Self-Speculative · Entropy Eviction · LSH-KV

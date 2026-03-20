@@ -218,7 +218,7 @@ the Wave 38 and Wave 39 additions already planned.
 
 ---
 
-## 🚧 v17 Wave 41 — Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion (In Progress)
+## ✅ v17 Wave 41 — Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion (Complete)
 
 Theme: **Six production-grade speedups that operate at different layers of the stack and are fully
 orthogonal to Waves 38–40: (1) cross-request prefix KV reuse to eliminate redundant prefill work
@@ -289,22 +289,22 @@ planned wave. All modules have MLX/NumPy fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/kv/radix_attn.py` — RadixAttentionCache
-- [ ] `squish/speculative/eagle2_spec.py` — EAGLE2Spec
-- [ ] `squish/attention/ring_attn.py` — RingAttention
-- [ ] `squish/token/token_entropy_prune.py` — TokenEntropyPruner
-- [ ] `squish/moe/pregated_router.py` — PreGatedMoERouter
-- [ ] `squish/kv/sink_fusion.py` — SinkFusion
-- [ ] `squish/attention/cla_share.py` — CLAShareAttention
-- [ ] `squish/moe/qmoe_compress.py` — QMoECompressor
-- [ ] `squish/speculative/lade_decode.py` — LADEDecoder
-- [ ] `squish/attention/infini_attn.py` — InfiniAttention
-- [ ] `squish/kv/akvq_cache.py` — AKVQCache
-- [ ] `squish/quant/delta_zip.py` — DeltaZipAdapter
-- [ ] `tests/test_wave41a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave41b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[17.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/kv/radix_attn.py` — RadixAttentionCache
+- [x] `squish/speculative/eagle2_spec.py` — EAGLE2Spec
+- [x] `squish/attention/ring_attn.py` — RingAttention
+- [x] `squish/token/token_entropy_prune.py` — TokenEntropyPruner
+- [x] `squish/moe/pregated_router.py` — PreGatedMoERouter
+- [x] `squish/kv/sink_fusion.py` — SinkFusion
+- [x] `squish/attention/cla_share.py` — CLAShareAttention
+- [x] `squish/moe/qmoe_compress.py` — QMoECompressor
+- [x] `squish/speculative/lade_decode.py` — LADEDecoder
+- [x] `squish/attention/infini_attn.py` — InfiniAttention
+- [x] `squish/kv/akvq_cache.py` — AKVQCache
+- [x] `squish/quant/delta_zip.py` — DeltaZipAdapter
+- [x] `tests/test_wave41a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave41b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[17.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
