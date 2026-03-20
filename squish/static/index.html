@@ -56,11 +56,16 @@
     cursor: pointer; text-align: left; font-size: 13px; transition: all .15s; }
   #new-chat:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
   #history-list { flex: 1; overflow-y: auto; padding: 0 6px 6px; }
-  .hist-item { padding: 7px 10px; border-radius: 8px; cursor: pointer;
-    font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  .hist-item { position: relative; padding: 7px 10px; padding-right: 28px; border-radius: 8px;
+    cursor: pointer; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     color: var(--text-dim); transition: all .15s; }
   .hist-item:hover { background: var(--surface2); color: var(--text); }
   .hist-item.active { background: var(--accent-glow); color: var(--accent); }
+  .hist-del { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    display: none; background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+  .hist-item:hover .hist-del { display: block; }
+  .hist-del:hover { color: var(--danger) !important; }
   #sb-meta   { padding: 10px 16px; border-top: 1px solid var(--border);
     font-size: 11px; color: var(--text-dim); }
   #sb-meta a { color: var(--accent); text-decoration: none; }
@@ -240,7 +245,14 @@
   .tag:hover { border-color: var(--accent); color: var(--accent);
     background: var(--accent-glow); transform: translateY(-1px); }
 
-  /* ── Scrollbar styles ───────────────────────────────────────────────────── */
+  #scroll-btn { position: fixed; bottom: 80px; right: 20px; width: 34px; height: 34px;
+    border-radius: 50%; background: var(--accent); border: none; color: #fff;
+    font-size: 18px; cursor: pointer; display: none; align-items: center;
+    justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    transition: all .15s; z-index: 10; }
+  #scroll-btn.visible { display: flex; }
+  #scroll-btn:hover { background: var(--accent2); transform: translateY(-2px); }
+  /* ── Scrollbar styles ─────────────────────────────────────────────────────── */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -314,12 +326,16 @@
         <button id="sys-toggle" onclick="toggleSysInput()">System</button>
         <button id="clear-btn"  onclick="clearChat()"
           style="background:none;border:1px solid var(--border);color:var(--text-dim);
-          border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Clear</button>
-        <span class="hint">Shift+Enter = new line · Enter = send</span>
+          border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Clear</button>        <button id="export-btn" onclick="exportChat()"
+          style="background:none;border:1px solid var(--border);color:var(--text-dim);
+          border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Export</button>        <span class="hint">Shift+Enter = new line · Enter = send</span>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Scroll-to-bottom floating button -->
+<button id="scroll-btn" onclick="scrollToBottom(true)" title="Scroll to bottom">&darr;</button>
 
 <!-- ── Settings panel ─────────────────────────────────────────────────────── -->
 <div id="settings-panel">
@@ -502,10 +518,51 @@ function renderSidebar() {
   sessions.forEach((s, i) => {
     const d = document.createElement("div");
     d.className = "hist-item" + (i === activeIdx ? " active" : "");
-    d.textContent = s.title;
+    const label = document.createElement("span");
+    label.textContent = s.title;
+    const del = document.createElement("button");
+    del.className = "hist-del";
+    del.title = "Delete";
+    del.innerHTML = "&times;";
+    del.onclick = (e) => deleteSession(i, e);
+    d.appendChild(label);
+    d.appendChild(del);
     d.onclick = () => switchSession(i);
+    d.ondblclick = (e) => { e.stopPropagation(); renameSession(i, d, label); };
     list.appendChild(d);
   });
+}
+
+function deleteSession(idx, e) {
+  e.stopPropagation();
+  sessions.splice(idx, 1);
+  if (activeIdx >= sessions.length) activeIdx = sessions.length - 1;
+  saveLocal();
+  renderSidebar();
+  renderMessages();
+}
+
+function renameSession(idx, itemEl, labelEl) {
+  const old = sessions[idx].title;
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.value = old;
+  inp.style.cssText = "background:var(--surface2);border:1px solid var(--accent);color:var(--text);"
+    + "border-radius:4px;padding:2px 6px;font-size:13px;width:calc(100% - 28px);outline:none;";
+  labelEl.replaceWith(inp);
+  inp.focus();
+  inp.select();
+  const commit = () => {
+    const v = inp.value.trim() || old;
+    sessions[idx].title = v;
+    saveLocal();
+    renderSidebar();
+  };
+  inp.onblur = commit;
+  inp.onkeydown = (e) => {
+    if (e.key === "Enter")  { e.preventDefault(); commit(); }
+    if (e.key === "Escape") { sessions[idx].title = old; renderSidebar(); }
+  };
 }
 
 function currentModel() {
@@ -899,6 +956,24 @@ function toggleSysInput() {
   el.style.display = el.style.display === "none" ? "block" : "none";
 }
 
+function exportChat() {
+  const sess = curSession();
+  if (!sess || !sess.messages.length) return;
+  const lines = [`# ${sess.title}`, `*Exported ${new Date().toLocaleString()} · Squish AI*`, ""];
+  for (const m of sess.messages) {
+    const role = m.role === "user" ? "**You**"
+               : m.role === "assistant" ? "**Assistant**"
+               : `**${m.role}**`;
+    lines.push(`${role}\n\n${m.content || ""}\n`);
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `squish-chat-${Date.now()}.md`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function fillInput(text) {
   const input = document.getElementById("msg-input");
   input.value = text;
@@ -950,6 +1025,14 @@ document.getElementById("settings-panel").addEventListener("click", e => {
   }
   // Refresh server status every 30s
   setInterval(loadModels, 30_000);
+  // Scroll-to-bottom button: show when user scrolls up, hide at bottom
+  document.getElementById("chat-area").addEventListener("scroll", () => {
+    const a = document.getElementById("chat-area");
+    const btn = document.getElementById("scroll-btn");
+    if (!btn) return;
+    const atBottom = a.scrollHeight - a.scrollTop - a.clientHeight < 80;
+    btn.classList.toggle("visible", !atBottom);
+  });
   document.getElementById("msg-input").focus();
 })();
 </script>

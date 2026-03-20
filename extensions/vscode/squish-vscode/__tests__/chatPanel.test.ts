@@ -416,4 +416,318 @@ describe('ChatPanel', () => {
         const types = postMessage.mock.calls.map(([m]: [{ type: string }]) => m.type);
         expect(types).toContain('streamEnd');
     });
+
+    // ── Stop generation ───────────────────────────────────────────────────
+
+    test('stopGeneration message triggers abort and posts streamEnd', () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        // streamChat that never calls back (simulates long in-flight request)
+        MockSquishClient.prototype.streamChat = jest.fn();
+        MockSquishClient.prototype.abort = jest.fn();
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+
+        // Start a generation
+        messageHandler?.({ type: 'userMessage', text: 'slow query' });
+        postMessage.mockClear();
+
+        // User clicks Stop
+        messageHandler?.({ type: 'stopGeneration' });
+
+        expect(MockSquishClient.prototype.abort).toHaveBeenCalled();
+        const types = postMessage.mock.calls.map(([m]: [{ type: string }]) => m.type);
+        expect(types).toContain('streamEnd');
+    });
+
+    // ── New tool implementations ──────────────────────────────────────────
+
+    test('write_file tool creates a new file without confirmation', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        const { workspace } = require('vscode') as typeof import('vscode') & {
+            workspace: { fs: { stat: jest.Mock; writeFile: jest.Mock }; _setWorkspaceFolders: (f: unknown[]) => void };
+        };
+        // stat throws → file does not exist (new file)
+        workspace.fs.stat.mockRejectedValueOnce(new Error('not found'));
+        workspace.fs.writeFile.mockResolvedValueOnce(undefined);
+        workspace._setWorkspaceFolders([{ uri: { fsPath: '/ws', toString: () => '/ws' } }]);
+
+        let callCount = 0;
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                callCount++;
+                if (callCount === 1) {
+                    onChunk({
+                        delta: '',
+                        done: true,
+                        finishReason: 'tool_calls',
+                        toolCalls: [{
+                            id: 'tc1',
+                            type: 'function',
+                            function: { name: 'write_file', arguments: JSON.stringify({ path: 'hello.txt', content: 'hi' }) },
+                        }],
+                    });
+                } else {
+                    onChunk({ delta: 'Done', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                }
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'write file' });
+        await new Promise(r => setTimeout(r, 50));
+
+        expect(workspace.fs.writeFile).toHaveBeenCalled();
+        const toolEndMsg = postMessage.mock.calls.find(
+            ([m]: [{ type: string }]) => m.type === 'toolCallEnd'
+        );
+        expect(toolEndMsg).toBeDefined();
+        expect(toolEndMsg![0].result).toContain('Created');
+    });
+
+    test('write_file tool shows confirmation before overwriting and cancels', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        const { workspace, window: vsWindow } = require('vscode') as typeof import('vscode') & {
+            workspace: { fs: { stat: jest.Mock; writeFile: jest.Mock } };
+            window: { showWarningMessage: jest.Mock };
+        };
+        // stat resolves → file exists
+        workspace.fs.stat.mockResolvedValueOnce({});
+        // User clicks Cancel
+        vsWindow.showWarningMessage.mockResolvedValueOnce('Cancel');
+
+        let callCount = 0;
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                callCount++;
+                if (callCount === 1) {
+                    onChunk({
+                        delta: '',
+                        done: true,
+                        finishReason: 'tool_calls',
+                        toolCalls: [{
+                            id: 'tc2',
+                            type: 'function',
+                            function: { name: 'write_file', arguments: JSON.stringify({ path: 'existing.txt', content: 'new' }) },
+                        }],
+                    });
+                } else {
+                    onChunk({ delta: 'ok', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                }
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'overwrite file' });
+        await new Promise(r => setTimeout(r, 50));
+
+        expect(workspace.fs.writeFile).not.toHaveBeenCalled();
+        const toolEndMsg = postMessage.mock.calls.find(
+            ([m]: [{ type: string }]) => m.type === 'toolCallEnd'
+        );
+        expect(toolEndMsg![0].result).toBe('Cancelled.');
+    });
+
+    test('list_directory tool returns entry names', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        const { workspace } = require('vscode') as typeof import('vscode') & {
+            workspace: { fs: { readDirectory: jest.Mock }; _setWorkspaceFolders: (f: unknown[]) => void };
+        };
+        workspace.fs.readDirectory.mockResolvedValueOnce([
+            ['src', 2 /* Directory */],
+            ['README.md', 1 /* File */],
+        ]);
+        workspace._setWorkspaceFolders([{ uri: { fsPath: '/ws', toString: () => '/ws' } }]);
+
+        let callCount = 0;
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                callCount++;
+                if (callCount === 1) {
+                    onChunk({
+                        delta: '',
+                        done: true,
+                        finishReason: 'tool_calls',
+                        toolCalls: [{
+                            id: 'tc3',
+                            type: 'function',
+                            function: { name: 'list_directory', arguments: '{}' },
+                        }],
+                    });
+                } else {
+                    onChunk({ delta: 'listed', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                }
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'list root' });
+        await new Promise(r => setTimeout(r, 50));
+
+        const toolEndMsg = postMessage.mock.calls.find(
+            ([m]: [{ type: string }]) => m.type === 'toolCallEnd'
+        );
+        expect(toolEndMsg).toBeDefined();
+        expect(toolEndMsg![0].result).toContain('src/');
+        expect(toolEndMsg![0].result).toContain('README.md');
+    });
+
+    test('get_diagnostics tool returns formatted error list', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        const { languages, workspace: ws } = require('vscode') as typeof import('vscode') & {
+            languages: { getDiagnostics: jest.Mock };
+            workspace: { _setWorkspaceFolders: (f: unknown[]) => void };
+        };
+        languages.getDiagnostics.mockReturnValueOnce([
+            [
+                { fsPath: '/ws/src/index.ts' },
+                [{ severity: 0 /* Error */, range: { start: { line: 4 } }, message: "Cannot find name 'x'" }],
+            ],
+        ]);
+        ws._setWorkspaceFolders([{ uri: { fsPath: '/ws', toString: () => '/ws' } }]);
+
+        let callCount = 0;
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                callCount++;
+                if (callCount === 1) {
+                    onChunk({
+                        delta: '',
+                        done: true,
+                        finishReason: 'tool_calls',
+                        toolCalls: [{
+                            id: 'tc4',
+                            type: 'function',
+                            function: { name: 'get_diagnostics', arguments: '{}' },
+                        }],
+                    });
+                } else {
+                    onChunk({ delta: 'done', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                }
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'show errors' });
+        await new Promise(r => setTimeout(r, 50));
+
+        const toolEndMsg = postMessage.mock.calls.find(
+            ([m]: [{ type: string }]) => m.type === 'toolCallEnd'
+        );
+        expect(toolEndMsg).toBeDefined();
+        expect(toolEndMsg![0].result).toContain('[error]');
+        expect(toolEndMsg![0].result).toContain("Cannot find name 'x'");
+        expect(toolEndMsg![0].result).toContain(':5 ');
+    });
+
+    test('get_diagnostics returns friendly message when no issues', async () => {
+        const postMessage = jest.fn();
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        const { languages } = require('vscode') as typeof import('vscode') & {
+            languages: { getDiagnostics: jest.Mock };
+        };
+        languages.getDiagnostics.mockReturnValueOnce([]);
+
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                onChunk({
+                    delta: '', done: true, finishReason: 'tool_calls',
+                    toolCalls: [{ id: 'tc5', type: 'function', function: { name: 'get_diagnostics', arguments: '{}' } }],
+                });
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'any errors?' });
+        await new Promise(r => setTimeout(r, 30));
+
+        const toolEndMsg = postMessage.mock.calls.find(
+            ([m]: [{ type: string }]) => m.type === 'toolCallEnd'
+        );
+        expect(toolEndMsg![0].result).toBe('No diagnostics.');
+    });
+
+    test('HTML template contains stop button', () => {
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView();
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        expect(view.webview.html).toContain('btn-stop');
+    });
+
+    test('tools array includes new tool definitions', () => {
+        const panel = new ChatPanel(extUri);
+        const view = makeWebviewView();
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+
+        let messageHandler2: ((msg: unknown) => void) | undefined;
+        const view2 = makeWebviewView();
+        (view2.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb) => { messageHandler2 = cb; }
+        );
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                onChunk({ delta: 'ok', done: false, finishReason: null });
+                onChunk({ delta: '', done: true, finishReason: 'stop' });
+            }
+        );
+        panel.resolveWebviewView(view2, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler2?.({ type: 'userMessage', text: 'hi' });
+
+        const call = (MockSquishClient.prototype.streamChat as jest.Mock).mock.calls[0];
+        const tools = call[6] as Array<{ function: { name: string } }>;
+        const names = tools.map(t => t.function.name);
+        expect(names).toContain('write_file');
+        expect(names).toContain('list_directory');
+        expect(names).toContain('get_diagnostics');
+    });
 });

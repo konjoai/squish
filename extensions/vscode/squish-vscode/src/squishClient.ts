@@ -57,6 +57,8 @@ export interface ChatChunk {
 }
 
 export class SquishClient {
+    private _activeReq?: http.ClientRequest;
+
     constructor(
         private readonly host: string,
         private readonly port: number,
@@ -254,9 +256,16 @@ export class SquishClient {
             res.on('error', onError);
         });
 
-        req.on('error', onError);
+        req.on('error', (e: Error) => { this._activeReq = undefined; onError(e); });
+        this._activeReq = req;
         req.write(payload);
         req.end();
+    }
+
+    /** Cancel an in-flight streamChat request. Safe to call at any time. */
+    abort(): void {
+        this._activeReq?.destroy();
+        this._activeReq = undefined;
     }
 
     // ── Internal ──────────────────────────────────────────────────────────

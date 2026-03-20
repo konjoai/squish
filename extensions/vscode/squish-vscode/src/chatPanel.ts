@@ -17,6 +17,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
 
     private _view?: vscode.WebviewView;
     private _history: ChatMessage[] = [];
+    private _activeClient?: SquishClient;
 
     // State for filtering <think>...</think> blocks out of the stream
     private _inThink = false;
@@ -91,6 +92,52 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                 },
             },
         },
+        {
+            type: 'function',
+            function: {
+                name: 'write_file',
+                description: 'Write or overwrite a file in the workspace. Shows a confirmation dialog before overwriting an existing file.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        path: {
+                            type: 'string',
+                            description: 'Relative path from the workspace root, e.g. "src/index.ts"',
+                        },
+                        content: {
+                            type: 'string',
+                            description: 'The full content to write to the file.',
+                        },
+                    },
+                    required: ['path', 'content'],
+                },
+            },
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'list_directory',
+                description: 'List files and subdirectories at a path in the workspace.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        path: {
+                            type: 'string',
+                            description: 'Relative path from the workspace root (omit or use "." for the root).',
+                        },
+                    },
+                    required: [],
+                },
+            },
+        },
+        {
+            type: 'function',
+            function: {
+                name: 'get_diagnostics',
+                description: 'Get all VS Code errors and warnings (diagnostics) for the current workspace.',
+                parameters: { type: 'object', properties: {} },
+            },
+        },
     ];
 
     constructor(private readonly _extensionUri: vscode.Uri) {}
@@ -121,6 +168,9 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                 case 'clearHistory':
                     this.clearHistory();
                     break;
+                case 'stopGeneration':
+                    this._abortGeneration();
+                    break;
             }
         });
     }
@@ -130,6 +180,13 @@ export class ChatPanel implements vscode.WebviewViewProvider {
     clearHistory(): void {
         this._history = [];
         this._view?.webview.postMessage({ type: 'clearHistory' });
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────
+
+    private _abortGeneration(): void {
+        this._activeClient?.abort();
+        this._view?.webview.postMessage({ type: 'streamEnd' });
     }
 
     // ── Internal ──────────────────────────────────────────────────────────
@@ -159,7 +216,8 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         // Optimistically add user message to history
         this._history.push({ role: 'user', content: text });
 
-        const client = new SquishClient(host, port, apiKey);
+        this._activeClient = new SquishClient(host, port, apiKey);
+        const client = this._activeClient;
 
         // Reset think-block filter state for this turn
         this._inThink = false;
@@ -314,6 +372,15 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             case 'insert_at_cursor':
                 return this._toolInsertAtCursor(args.text as string);
 
+            case 'write_file':
+                return this._toolWriteFile(args.path as string, args.content as string);
+
+            case 'list_directory':
+                return this._toolListDirectory((args.path as string | undefined) ?? '.');
+
+            case 'get_diagnostics':
+                return this._toolGetDiagnostics();
+
             default:
                 throw new Error(`Unknown tool: ${tc.function.name}`);
         }
@@ -390,6 +457,65 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             editBuilder.replace(editor.selection, text);
         });
         return 'Inserted';
+    }
+
+    private async _toolWriteFile(relativePath: string, content: string): Promise<string> {
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0) {
+            throw new Error('No workspace open');
+        }
+        const abs = vscode.Uri.joinPath(folders[0].uri, relativePath);
+        let exists = false;
+        try {
+            await vscode.workspace.fs.stat(abs);
+            exists = true;
+        } catch {
+            // file does not exist — new file, no confirmation needed
+        }
+        if (exists) {
+            const answer = await vscode.window.showWarningMessage(
+                `Squish wants to overwrite "${relativePath}". Proceed?`,
+                'Overwrite',
+                'Cancel',
+            );
+            if (answer !== 'Overwrite') {
+                return 'Cancelled.';
+            }
+        }
+        await vscode.workspace.fs.writeFile(abs, Buffer.from(content, 'utf8'));
+        return exists ? `Updated: ${relativePath}` : `Created: ${relativePath}`;
+    }
+
+    private async _toolListDirectory(relativePath: string): Promise<string> {
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0) {
+            throw new Error('No workspace open');
+        }
+        const dir = (!relativePath || relativePath === '.')
+            ? folders[0].uri
+            : vscode.Uri.joinPath(folders[0].uri, relativePath);
+        const entries = await vscode.workspace.fs.readDirectory(dir);
+        const lines = entries.map(([name, type]) =>
+            type === vscode.FileType.Directory ? `${name}/` : name,
+        );
+        return lines.length > 0 ? lines.join('\n') : '(empty)';
+    }
+
+    private _toolGetDiagnostics(): string {
+        const all = vscode.languages.getDiagnostics();
+        const folders = vscode.workspace.workspaceFolders;
+        const root = folders?.[0]?.uri.fsPath ?? '';
+        const lines: string[] = [];
+        for (const [uri, diags] of all) {
+            for (const d of diags) {
+                const sev = d.severity === vscode.DiagnosticSeverity.Error   ? 'error'
+                          : d.severity === vscode.DiagnosticSeverity.Warning ? 'warning'
+                          : 'info';
+                const rel = root ? path.relative(root, uri.fsPath) : uri.fsPath;
+                lines.push(`${rel}:${d.range.start.line + 1} [${sev}] ${d.message}`);
+            }
+        }
+        return lines.length > 0 ? lines.join('\n') : 'No diagnostics.';
     }
 
     /**
@@ -490,7 +616,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
       rows="3"
       autofocus
     ></textarea>
-    <button id="btn-send">Send</button>
+    <div id="input-btns">
+      <button id="btn-stop" hidden>&#x25A0; Stop</button>
+      <button id="btn-send">Send</button>
+    </div>
   </div>
   <script nonce="${nonce}" src="${chatJsUri}"></script>
 </body>
