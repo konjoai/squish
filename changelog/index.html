@@ -838,6 +838,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1710-2026-06-25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [17.1.0] — 2026-06-25
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[17.1.0] — 2026-06-25">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 42: Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1700-2026-06-18" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1777,6 +1816,118 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="1710-2026-06-25">[17.1.0] — 2026-06-25<a class="headerlink" href="#1710-2026-06-25" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat">Added — Wave 42: Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT<a class="headerlink" href="#added-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules extending v17.1 with disaggregated prefill/decode
+scheduling, native sparse attention, multi-head speculative decoding, calibrated KV
+quantization, session-scoped KV persistence, block-wise QAT, retrieval-based speculative
+decoding, star-topology block attention, predator/prey phase disaggregation, arithmetic
+coded KV compression, query-driven key pruning, and adaptive sparse prefill.
+All modules are NumPy-only simulation layers backed by 2024–2025 peer-reviewed papers.
+Server wiring: Wave 41 and Wave 42 modules fully wired into <code>squish/server.py</code> via
+<code>--radix-attn</code>, <code>--eagle2</code>, <code>--ring-attn</code>, <code>--token-entropy-prune</code>, <code>--pregated-moe</code>,
+<code>--sink-fusion</code>, <code>--cla-share</code>, <code>--qmoe-compress</code>, <code>--lade</code>, <code>--infini-attn</code>, <code>--akvq</code>,
+<code>--delta-zip</code>, <code>--medusa-heads</code>, <code>--sarathi</code>, <code>--nsa-attn</code>, <code>--flex-prefill</code>,
+<code>--think-cache</code>, <code>--attention-store</code>, <code>--rest-decode</code>, <code>--star-attn</code>, <code>--splitwise</code>,
+<code>--kvquant</code>, <code>--efficient-qat</code>, <code>--cache-gen</code> CLI flags; all covered by <code>--all-optimizations</code>.</p>
+<p><strong>Wave 42a — Medusa Heads, Sarathi Scheduler, NSA Attention, Flex Prefill, ThinK Cache, AttentionStore</strong></p>
+<ul>
+<li>
+<p><strong>MedusaHeads</strong> (<code>squish/speculative/medusa_heads.py</code>) — Multiple frozen draft heads
+  for parallel speculative decoding: BFS candidate tree, per-head accept-reject with
+  residual correction, acceptance rate tracking (Cai et al., ICML 2024).
+  <code>MedusaConfig</code>, <code>MedusaDraftResult</code>, <code>MedusaHeads.step()</code>,
+  <code>.mean_acceptance_rate</code>, <code>.reset_stats()</code>.</p>
+</li>
+<li>
+<p><strong>SarathiScheduler</strong> (<code>squish/serving/sarathi_scheduler.py</code>) — Fixed-size chunked
+  prefill with decode piggybacking: chunk budget shared between prefill and decode,
+  inflight tracking, completion stats (Agrawal et al., OSDI 2024).
+  <code>SarathiConfig</code>, <code>SarathiRequest</code>, <code>SarathiTick</code>, <code>SarathiScheduler.add_request()</code>,
+  <code>.schedule()</code>, <code>.n_inflight()</code>, <code>.n_completed()</code>, <code>.stats()</code>.</p>
+</li>
+<li>
+<p><strong>NSAAttention</strong> (<code>squish/attention/nsa_attn.py</code>) — Native Sparse Attention with
+  compound block + sliding-window + selected-token pattern: learnable alpha fusion
+  across three sub-attention types, sparsity ratio reporting (Yuan et al., 2025).
+  <code>NSAConfig</code>, <code>NSAAttention.forward()</code>, <code>.sparsity_ratio()</code>.</p>
+</li>
+<li>
+<p><strong>FlexPrefill</strong> (<code>squish/attention/flex_prefill.py</code>) — Per-head context-adaptive sparse
+  prefill: query-norm ratio drives per-head keep_k selection, sparse top-k softmax,
+  mean sparsity tracking (Lai et al., arXiv:2502.20766, 2025).
+  <code>FlexPrefillConfig</code>, <code>FlexPrefill.forward()</code>, <code>.mean_sparsity_ratio()</code>, <code>.reset_stats()</code>.</p>
+</li>
+<li>
+<p><strong>ThinKCache</strong> (<code>squish/kv/think_cache.py</code>) — Query-driven K-channel pruning: per-head
+  query × key magnitude importance scoring, top-k channel retention, ~20% K reduction
+  at &lt;0.1 PPL cost (Xu et al., EMNLP 2024 / arXiv:2407.21018).
+  <code>ThinKConfig</code>, <code>ThinKCache.prune_k()</code>, <code>.keep_indices()</code>, <code>.channel_reduction_ratio()</code>,
+  <code>.reset_stats()</code>.</p>
+</li>
+<li>
+<p><strong>AttentionStore</strong> (<code>squish/kv/attention_store.py</code>) — Session-scoped KV persistence
+  with three-tier hot/warm/SSD cache: LRU eviction across tiers, cross-session hit rate,
+  memory footprint tracking (Sheng et al., ACL 2024 / arXiv:2403.19708).
+  <code>AttentionStoreConfig</code>, <code>AttentionStore.store()</code>, <code>.load()</code>, <code>.hit_rate()</code>,
+  <code>.evict_session()</code>, <code>.tiers_used()</code>, <code>.memory_bytes()</code>.</p>
+</li>
+</ul>
+<p><strong>Wave 42b — REST Decode, Star Attention, Splitwise Scheduler, KVQuant, EfficientQAT, CacheGen</strong></p>
+<ul>
+<li>
+<p><strong>RESTDecode</strong> (<code>squish/speculative/rest_decode.py</code>) — Retrieval-based n-gram speculative
+  decoding: LRU n-gram datastore, top-k proposal lookup, speculative accept-reject,
+  acceptance rate tracking (He et al., NAACL 2024 / arXiv:2311.08252).
+  <code>RESTConfig</code>, <code>RESTDraftResult</code>, <code>RESTDecode.add_to_datastore()</code>, <code>.step()</code>,
+  <code>.mean_acceptance_rate</code>, <code>.reset_stats()</code>.</p>
+</li>
+<li>
+<p><strong>StarAttention</strong> (<code>squish/attention/star_attn.py</code>) — Block-partitioned star-topology
+  local + anchor attention: each block attends locally plus to the first (anchor) block,
+  log-sum-exp renormalisation fusion, supports causal masking (Acharya et al.,
+  NeurIPS 2024 / arXiv:2411.17116).
+  <code>StarAttentionConfig</code>, <code>StarAttention.forward()</code>.</p>
+</li>
+<li>
+<p><strong>SplitwiseScheduler</strong> (<code>squish/serving/splitwise_scheduler.py</code>) — Prefill/decode
+  phase disaggregation: independent prefill and decode worker pools, FIFO queues,
+  complete-cycle lifecycle tracking (Patel et al., ISCA 2024 / arXiv:2311.18677).
+  <code>SplitwiseConfig</code>, <code>SplitwiseRequest</code>, <code>SplitwiseScheduler.submit()</code>,
+  <code>.schedule_prefill()</code>, <code>.complete_prefill()</code>, <code>.schedule_decode()</code>,
+  <code>.complete_decode()</code>, <code>.stats()</code>.</p>
+</li>
+<li>
+<p><strong>KVQuantCache</strong> (<code>squish/kv/kvquant.py</code>) — Calibrated low-bit KV quantization:
+  per-channel scale estimation from rolling calibration window, symmetric uniform
+  quantization to 2/4/8 bits, relative error reporting (Hooper et al.,
+  NeurIPS 2024 / arXiv:2401.18079).
+  <code>KVQuantConfig</code>, <code>KVQuantCache.calibrate()</code>, <code>.quantize()</code>, <code>.dequantize()</code>,
+  <code>.memory_bytes()</code>, <code>.n_layers_cached()</code>.</p>
+</li>
+<li>
+<p><strong>EfficientQAT</strong> (<code>squish/quant/efficient_qat.py</code>) — Block-wise QAT with frozen
+  neighbouring layers: per-output-channel scale calibration with activation statistics,
+  symmetric W4/W8 quantisation, relative error metrics (Chen et al.,
+  ECCV 2024 / arXiv:2407.11062).
+  <code>EfficientQATConfig</code>, <code>EfficientQAT.calibrate_block()</code>, <code>.quantize_weight()</code>,
+  <code>.dequantize_weight()</code>, <code>.relative_error()</code>, <code>.n_calibrated_blocks()</code>.</p>
+</li>
+<li>
+<p><strong>CacheGenCodec</strong> (<code>squish/kv/cache_gen.py</code>) — Arithmetic-coded KV bitstream
+  compression: symmetric quantization + byte-packing into compact buffer with shape
+  header, streaming chunk encoding (Liu et al., SIGCOMM 2024 / arXiv:2310.07240).
+  <code>CacheGenConfig</code>, <code>CacheGenCodec.encode()</code>, <code>.decode()</code>, <code>.compression_ratio()</code>,
+  <code>.stream_encode()</code>.</p>
+</li>
+</ul>
+<h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>server.py</strong> — Wave 41 and Wave 42 modules wired into <code>squish/server.py</code>:
+  24 new CLI flags, global variable declarations, and <code>try/except</code> init blocks
+  in <code>main()</code>. All 24 flags included in <code>--all-optimizations</code>.</li>
+</ul>
 <hr />
 <h2 id="1700-2026-06-18">[17.0.0] — 2026-06-18<a class="headerlink" href="#1700-2026-06-18" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-41-prefix-sharing-eagle-2-ring-attention-token-pruning-moe-routing-attention-sink-fusion">Added — Wave 41: Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion<a class="headerlink" href="#added-wave-41-prefix-sharing-eagle-2-ring-attention-token-pruning-moe-routing-attention-sink-fusion" title="Permanent link">&para;</a></h3>

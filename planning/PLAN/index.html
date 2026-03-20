@@ -913,15 +913,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v17-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat-in-progress" class="md-nav__link">
+  <a href="#v17-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (In Progress)
+        ✅ v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (In Progress)">
+    <nav class="md-nav" aria-label="✅ v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -4986,15 +4986,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v17-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat-in-progress" class="md-nav__link">
+  <a href="#v17-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (In Progress)
+        ✅ v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (In Progress)">
+    <nav class="md-nav" aria-label="✅ v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -9566,7 +9566,7 @@ M-series via 0.8-bit expert compression, with PreGatedMoERouter eliminating gati
 <li>[x] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v17-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat-in-progress">🚧 v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (In Progress)<a class="headerlink" href="#v17-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat-in-progress" title="Permanent link">&para;</a></h2>
+<h2 id="v17-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat-complete">✅ v17 Wave 42 — Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT (Complete)<a class="headerlink" href="#v17-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Six new research directions orthogonal to Waves 38–41 — spanning how requests are scheduled
 across hardware, how attention is sparsified at inference, how additional decoding heads accelerate
 generation without a draft model, how KV entries are compressed with calibrated non-uniform
@@ -9800,22 +9800,22 @@ host, streamed to decode host via CacheGen bitstream at 4.5× compression.</p>
 </blockquote>
 <h3 id="completion-checklist_3">Completion Checklist<a class="headerlink" href="#completion-checklist_3" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] <code>squish/speculative/medusa_heads.py</code> — MedusaHeads</li>
-<li>[ ] <code>squish/serving/sarathi_scheduler.py</code> — SarathiScheduler</li>
-<li>[ ] <code>squish/attention/nsa_attn.py</code> — NSAAttention</li>
-<li>[ ] <code>squish/attention/flex_prefill.py</code> — FlexPrefill</li>
-<li>[ ] <code>squish/kv/think_cache.py</code> — ThinKCache</li>
-<li>[ ] <code>squish/kv/attention_store.py</code> — AttentionStore</li>
-<li>[ ] <code>squish/speculative/rest_decode.py</code> — RESTDecode</li>
-<li>[ ] <code>squish/attention/star_attn.py</code> — StarAttention</li>
-<li>[ ] <code>squish/serving/splitwise_scheduler.py</code> — SplitwiseScheduler</li>
-<li>[ ] <code>squish/kv/kvquant.py</code> — KVQuant</li>
-<li>[ ] <code>squish/quant/efficient_qat.py</code> — EfficientQAT</li>
-<li>[ ] <code>squish/kv/cache_gen.py</code> — CacheGen</li>
-<li>[ ] <code>tests/test_wave42a_modules.py</code> — ≥ 72 tests, all passing</li>
-<li>[ ] <code>tests/test_wave42b_modules.py</code> — ≥ 72 tests, all passing</li>
-<li>[ ] CHANGELOG <code>[17.1.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] <code>squish/speculative/medusa_heads.py</code> — MedusaHeads</li>
+<li>[x] <code>squish/serving/sarathi_scheduler.py</code> — SarathiScheduler</li>
+<li>[x] <code>squish/attention/nsa_attn.py</code> — NSAAttention</li>
+<li>[x] <code>squish/attention/flex_prefill.py</code> — FlexPrefill</li>
+<li>[x] <code>squish/kv/think_cache.py</code> — ThinKCache</li>
+<li>[x] <code>squish/kv/attention_store.py</code> — AttentionStore</li>
+<li>[x] <code>squish/speculative/rest_decode.py</code> — RESTDecode</li>
+<li>[x] <code>squish/attention/star_attn.py</code> — StarAttention</li>
+<li>[x] <code>squish/serving/splitwise_scheduler.py</code> — SplitwiseScheduler</li>
+<li>[x] <code>squish/kv/kvquant.py</code> — KVQuant</li>
+<li>[x] <code>squish/quant/efficient_qat.py</code> — EfficientQAT</li>
+<li>[x] <code>squish/kv/cache_gen.py</code> — CacheGen</li>
+<li>[x] <code>tests/test_wave42a_modules.py</code> — 81 tests, all passing</li>
+<li>[x] <code>tests/test_wave42b_modules.py</code> — 81 tests, all passing</li>
+<li>[x] CHANGELOG <code>[17.1.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v18-wave-43-mtp-decoding-cascade-kv-attention-head-pruning-paged-attention-layer-collapse-relay-attention-in-progress">🚧 v18 Wave 43 — MTP Decoding · Cascade KV · Attention Head Pruning · Paged Attention · Layer Collapse · Relay Attention (In Progress)<a class="headerlink" href="#v18-wave-43-mtp-decoding-cascade-kv-attention-head-pruning-paged-attention-layer-collapse-relay-attention-in-progress" title="Permanent link">&para;</a></h2>
