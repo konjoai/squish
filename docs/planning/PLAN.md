@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v28 Wave 54 planned — FlashAttn3 · DoubleSparsity · SharedExpert MoE · ExpertOffload · ElasticBatching · Mamba2 SSD · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet · HybridArchRouter)
+> Last updated: 2026-03-20 (v29 Wave 55 planned — Min-P Sampling · Mirostat · Typical Sampling · EtaCutoff · CFG Text Guidance · Diverse Beam · BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -38,6 +38,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v26** | 52 | Multi-Modal VLM Efficiency · Visual Token Compression · Video KV Reuse · VLM Serving |
 | **v27** | 53 | Linear Recurrent Architecture Inference · Mamba2 · RWKV-6 · Griffin · xLSTM · TTT · DeltaNet |
 | **v28** | 54 | Deep MoE Efficiency · FlashAttn3 · DoubleSparsity · ExpertOffload · Elastic Serving |
+| **v29** | 55 | Advanced Sampling Refinement · Min-P · Mirostat · Typical · EtaCutoff · CFG · Diverse Beam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound |
 
 ---
 
@@ -568,6 +569,104 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v29 Wave 55 — Advanced Sampling Refinement: Min-P · Mirostat · Typical · EtaCutoff · CFG · DiverseBeam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound (Planned)
+
+Theme: **Wave 55 closes two major production-quality gaps in Squish that no prior wave has addressed.
+(1) Sampling pipeline completeness — Squish's sampling subsystem has only `sampler.py` (top-p/top-k/temperature)
+and `contrastive_decoding.py`. Six 2022–2024 sampling algorithms backed by peer-reviewed research dramatically
+improve output calibration and diversity: Min-P sampling's dynamic probability floor outperforms top-p at
+controlling incoherence at high temperatures; Mirostat's PID perplexity controller eliminates both topic
+drift and tail repetition through live feedback; Typical sampling's local-entropy set selects the outputs
+humans find most natural; Eta-cutoff provides an elegant entropy-adaptive logit threshold; Classifier-Free
+Guidance for text repurposes diffusion's style-steering technique for LLM formality/tone control without
+fine-tuning; Diverse Beam Search produces genuinely distinct candidate hypotheses for code generation and
+RAG reranking. All six are zero-architecture-change additions that plug into the existing logit pipeline
+via a composable transform chain. (2) Emerging quantization formats — de-facto standards from 2023–2025
+not yet supported: BitNet b1.58 makes every weight ternary {−1, 0, +1} with absmean calibration enabling
+addition-only matmul (distinct from the generic ternary_quant.py); SpQR stores <1% Hessian-detected
+outlier weights in a sparse FP16 overlay over a 3-bit bulk achieving near-lossless compression at 3.5
+effective bits; OmniQuant jointly optimises Learnable Weight Clipping and Learnable Equivalent
+Transformation for class-leading W4A4/W4A8 quality; Q-Sparse applies top-K activation sparsity at matmul
+time for a 40% FLOP cut that is orthogonal to weight quantisation; FP4 (E2M1) targets NVIDIA Blackwell's
+native FP4 GEMM hardware and Apple Silicon's emerging MLX FP4 support; AdaRound learns the optimal
+{floor, ceil} rounding decision per weight via binary relaxation, delivering 0.5–1.0 PPL improvement over
+round-to-nearest at INT4 and composing with every existing calibration method in Squish.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| Calibrating the Confidence of Large Language Models by Eliciting Fidelity (Min-P sampling) (Nguyen et al.) | arXiv 2407.01082, 2024 | Dynamic minimum probability floor = p_min × p_max; adapts with temperature without manual tuning; reduces incoherence at high T and over-concentration at low T; adopted as default alternative to top-p in llama.cpp and Ollama 2024–25 | `squish/sampling/min_p_sampler.py` |
+| Mirostat: A Neural Text Decoding Algorithm that Directly Controls Perplexity (Basu et al.) | ICLR 2021 / production 2024+ | Online PID controller targeting user-specified perplexity τ; estimates per-step cross-entropy from Zipf's law parameters; adjusts logit temperature each token; eliminates tail-repetition and topic-drift simultaneously; Mirostat-v2 with improved τ estimation | `squish/sampling/mirostat_sampler.py` |
+| Typical Decoding for Natural Language Generation (Meister et al.) | EMNLP 2023 (arXiv 2202.00666) | Sample from the local-entropy typical set — tokens within ε of the per-step conditional entropy H(p); rejects both over- and under-likely tokens; outputs human-rated as most natural vs top-p at same perplexity; superior for creative generation | `squish/sampling/typical_sampler.py` |
+| Truncation Sampling as Language Model Desmoothing (Hewitt et al.) | EMNLP 2022 (arXiv 2210.15191) | Eta-cutoff threshold = η × exp(H(p)) where H is per-step entropy; closed-form entropy-adaptive logit floor; consistently outperforms top-p and top-k across both creative and factual benchmarks without hyperparameter search | `squish/sampling/eta_sampler.py` |
+| Stay on-topic with Classifier-Free Guidance (Sanchez et al.) | arXiv 2306.17806, 2023 / production 2024+ | Dual same-model forward pass: conditioned prompt vs unconditioned null prefix; merged logits = uncond + w × (cond − uncond); guidance scale w steers formality, style, sentiment without fine-tuning; 1.5–2× overhead; configurable per-request | `squish/sampling/cfg_sampler.py` |
+| Diverse Beam Search: Decoding Diverse Solutions from Neural Sequence Models (Vijayakumar et al.) | AAAI 2018 / widely adopted 2024+ for constrained decode | G beam groups with inter-group diversity penalty term; produces semantically distinct hypotheses; essential for code-gen candidate re-ranking, RAG answer diversification, and multi-hypothesis planning outputs | `squish/sampling/diverse_beam.py` |
+| The Era of 1-bit LLMs: All Large Language Models are in 1.58 Bits (Ma et al., Microsoft Research) | arXiv 2402.17764, 2024 | Ternary {−1, 0, +1} weights with per-tensor absmean scale; addition-only matmul kernel (no multiply); matches FP16 quality at 3B+ parameters; INT8 activations; distinct from ternary_quant.py: requires specific absmean calibration and BitLinear op contract | `squish/quant/bitnet_b158.py` |
+| SpQR: A Sparse-Quantized Representation for Near-Lossless LLM Weight Compression (Dettmers et al.) | ICLR 2024 (arXiv 2306.03078) | < 1% of weights are Hessian-detected outliers stored in sparse FP16 COO map; remaining 99%+ bulk compressed to 3-bit; fused sparse-quant matmul; near-lossless at 3.5 effective bits across all tested model families; post-hoc applicable to any GPTQ-calibrated layer | `squish/quant/spqr_quant.py` |
+| OmniQuant: Omnidirectionally Calibrated Quantization for Large Language Models (Shao et al.) | ICLR 2024 (arXiv 2308.13137) | Jointly optimise Learnable Weight Clipping (LWC) and Learnable Equivalent Transformation (LET) via block-wise reconstruction loss; calibration on ≤128 samples; SOTA W4A4 and W4A8 quality; outperforms SmoothQuant+GPTQ on W4A8 across Llama and OPT families | `squish/quant/omniquant.py` |
+| Q-Sparse: All Large Language Models can be Fully Sparsely-Activated (Sun et al.) | arXiv 2407.10969, 2024 | Top-K activation sparsity mask applied to input activations at projection GEMM time (not weight pruning); 40% FLOP reduction at 50% activation sparsity rate; composable with any weight quantization scheme; zero weight modification; quality-neutral on calibrated models | `squish/quant/q_sparse.py` |
+| FP4 Quantization for LLM Inference on Next-Generation Hardware | NVIDIA Blackwell whitepaper + MLX v0.22+ FP4 support, 2025 | E2M1 4-bit float (1 sign + 2 exponent + 1 mantissa); native FP4 GEMM on Blackwell H200/B100; MLX FP4 Metal path for Apple Silicon; 0.3–0.5 PPL gap vs FP16 on Llama-3-8B vs 0.6–0.8 for INT4 at same bit-width; 2× throughput of INT4 on Blackwell hardware | `squish/quant/fp4_quant.py` |
+| Up or Down? Adaptive Rounding for Post-Training Quantization (Nagel et al., Qualcomm) | ICML 2020 / ubiquitous production 2024–25 | Per-weight binary {floor, ceil} decision learned via sigmoid relaxation minimising Frobenius-norm block reconstruction loss; 0.5–1.0 PPL improvement over round-to-nearest at INT4; composable post-processing step for GPTQ, HQQ, SmoothQuant, and any custom calibration pipeline | `squish/quant/ada_round.py` |
+
+---
+
+### Wave 55a — MinP · Mirostat · TypicalSampling · EtaCutoff · CFGLogits · DiverseBeam (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MinPSampler | `squish/sampling/min_p_sampler.py` | Dynamic minimum probability floor (p_min × p_max); composable with temperature scaling; one-pass logit transform with no additional forward pass; drop-in replacement for top-p in sampler.py pipeline; default alternative adopted in llama.cpp and Ollama 2024–25; configurable p_min |
+| MirostatSampler | `squish/sampling/mirostat_sampler.py` | PID perplexity controller: estimates per-step information content from Zipf distribution parameters; updates temperature scaling multiplier each token to hit target τ (default 5.0); stateful across generation; Mirostat-v2 formulation with improved τ tracking; eliminates catastrophic repetition and topic drift |
+| TypicalSampler | `squish/sampling/typical_sampler.py` | Sample from local typical set: tokens within ε of H(p) (per-step conditional entropy); rejects both over-probable and under-probable tokens; produces human-rated most-natural outputs at same perplexity as top-p; configurable ε (default 0.95) with per-step entropy estimation |
+| EtaCutoffSampler | `squish/sampling/eta_sampler.py` | Entropy-adaptive hard logit cutoff: threshold = η × exp(H(p)); adapts to each token's information content without manual threshold tuning; outperforms top-p and top-k on factual and creative benchmarks; composable with MinPSampler for dual-floor filtering; configurable η |
+| CFGLogitsSampler | `squish/sampling/cfg_sampler.py` | Classifier-Free Guidance for text: dual forward pass with conditioned prompt and null/unconditional prefix; merged logits = logits_uncond + w × (logits_cond − logits_uncond); per-request guidance scale w; enables style, formality, and sentiment steering without fine-tuning; 1.5–2.0× inference overhead; optional KV cache sharing for null prefix |
+| DiverseBeamSampler | `squish/sampling/diverse_beam.py` | Diverse Beam Search: G beam groups each with B/G beams; inter-group diversity penalty discourages lexical overlap; configurable diversity strength λ and group count G; integrates with grammar/ constrained decode for code-gen candidate diversification and RAG multi-answer hypothesis set generation |
+
+### Wave 55b — BitNet158 · SpQR · OmniQuant · QSparse · FP4 · AdaRound (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| BitNet158Quantizer | `squish/quant/bitnet_b158.py` | Ternary {−1, 0, +1} weight quantization with per-tensor absmean scale factor; BitLinear forward pass using addition-only kernel path (no multiply); calibration via absmean scaling of weight deltas; INT8 activation path; MLX Metal custom BitLinear op; distinct from ternary_quant.py which implements generic ternary without BitNet's specific absmean calibration contract and kernel requirements |
+| SpQRQuantizer | `squish/quant/spqr_quant.py` | Sparse-Quantized Representation: detect <1% Hessian-sensitivity outlier weights via second-order sensitivity scores; store outlier sparse map in FP16 COO format; compress remaining bulk to 3-bit; fused sparse-quant matmul combining bulk GEMM + sparse scatter-add; near-lossless at 3.5 effective bits; post-hoc applicable to any GPTQ-calibrated layer |
+| OmniQuantizer | `squish/quant/omniquant.py` | Omnidirectional calibration: jointly optimise Learnable Weight Clipping (LWC) and Learnable Equivalent Transformation (LET) via block-wise Frobenius reconstruction loss gradient; calibration on ≤128 samples; SOTA W4A4 and W4A8 quality across Llama and OPT model families; integrates with w8a8_quant.py activation pipeline as a drop-in improved calibration step |
+| QSparsifier | `squish/quant/q_sparse.py` | Top-K activation sparsity at matmul time: mask input activations to top-K% magnitude during projection GEMM; calibrate K per-layer via block-wise sensitivity; 40% FLOP reduction at 50% activation sparsity on FFN projections; composable with any weight quantization scheme; zero weight modification — activation-only transform; integrates with smooth_quant.py for joint weight+activation optimisation |
+| FP4Quantizer | `squish/quant/fp4_quant.py` | E2M1 FP4 floating-point quantization (1 sign + 2 exponent + 1 mantissa bit); per-tensor or per-channel scale factor; MLX custom Metal kernel path for FP4 matmul targeting Apple Silicon M4 FP4 hardware; CUDA Blackwell FP4 GMMA path for H200/B100; 0.3–0.5 PPL gap vs FP16 on Llama-3-8B vs 0.6–0.8 for INT4 at same effective bit-width |
+| AdaRoundQuantizer | `squish/quant/ada_round.py` | Adaptive rounding via per-weight binary sigmoid relaxation: learned {floor, ceil} decision minimising Frobenius-norm block reconstruction loss per layer; 0.5–1.0 PPL improvement over round-to-nearest at INT4; calibration on 1024 samples; composable post-processing step for GPTQ, HQQ, SmoothQuant, and any custom calibration pipeline; used internally by AWQ as sub-step — this module exposes it standalone |
+
+### v29 Target Metrics (after Wave 55)
+
+> Baselines are v28 Wave 54 targets plus inherited text-model baselines.
+
+| Model | Base tok/s | v29 target tok/s | Base TTFT | v29 TTFT target | Primary driver |
+|-------|------------|-----------------|-----------|-----------------|----------------|
+| Llama-3-8B INT4 (M3 16 GB) — sampling latency | 0.25–0.35 ms/sample | **< 0.12 ms/sample** | N/A | N/A | MinP / TypicalSampler composable transform chain |
+| Mistral-7B INT4 + Q-Sparse 50% (M3 16 GB) | 110–140 tok/s | **155–185 tok/s** | < 0.12 s | **< 0.08 s** | QSparsifier 40% FFN FLOP reduction atop INT4 |
+| Llama-3-8B OmniQuant W4A8 (M3 16 GB) | 88–95 tok/s (INT4 baseline) | **98–115 tok/s** | < 0.12 s | **< 0.10 s** | OmniQuant improved calibration reduces activation-quant overhead |
+| SmolLM2-1.7B BitNet-b1.58 INT1.58 (M3 16 GB) | NEW model class | **600–900 tok/s** | NEW | **< 0.005 s** | BitNet158 addition-only matmul via Metal — first <2-bit Apple Silicon runtime |
+
+### Completion Checklist
+
+- [ ] `squish/sampling/min_p_sampler.py` — MinPSampler
+- [ ] `squish/sampling/mirostat_sampler.py` — MirostatSampler
+- [ ] `squish/sampling/typical_sampler.py` — TypicalSampler
+- [ ] `squish/sampling/eta_sampler.py` — EtaCutoffSampler
+- [ ] `squish/sampling/cfg_sampler.py` — CFGLogitsSampler
+- [ ] `squish/sampling/diverse_beam.py` — DiverseBeamSampler
+- [ ] `squish/quant/bitnet_b158.py` — BitNet158Quantizer
+- [ ] `squish/quant/spqr_quant.py` — SpQRQuantizer
+- [ ] `squish/quant/omniquant.py` — OmniQuantizer
+- [ ] `squish/quant/q_sparse.py` — QSparsifier
+- [ ] `squish/quant/fp4_quant.py` — FP4Quantizer
+- [ ] `squish/quant/ada_round.py` — AdaRoundQuantizer
+- [ ] `tests/test_wave55a_sampling.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave55b_quant.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[29.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
