@@ -838,6 +838,56 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1200-2026-04-01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [12.0.0] — 2026-04-01
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[12.0.0] — 2026-04-01">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-31-kv-compression-speculative-research-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 31: KV Compression &amp; Speculative Research Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-32-quantization-pre-launch-hardening" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 32: Quantization &amp; Pre-Launch Hardening
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1100-2026-03-14" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -872,7 +922,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests" class="md-nav__link">
+  <a href="#tests_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -933,7 +983,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_1" class="md-nav__link">
+  <a href="#tests_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -994,7 +1044,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_2" class="md-nav__link">
+  <a href="#tests_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1066,7 +1116,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_3" class="md-nav__link">
+  <a href="#tests_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1138,7 +1188,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_4" class="md-nav__link">
+  <a href="#tests_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1199,7 +1249,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_5" class="md-nav__link">
+  <a href="#tests_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1260,7 +1310,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_6" class="md-nav__link">
+  <a href="#tests_7" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1332,7 +1382,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_7" class="md-nav__link">
+  <a href="#tests_8" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1460,6 +1510,31 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="1200-2026-04-01">[12.0.0] — 2026-04-01<a class="headerlink" href="#1200-2026-04-01" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-31-kv-compression-speculative-research-integration">Added — Wave 31: KV Compression &amp; Speculative Research Integration<a class="headerlink" href="#added-wave-31-kv-compression-speculative-research-integration" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>KVTransformCoder</strong> (<code>squish/kv/kvtc.py</code>) — PCA-based transform coding for KV caches (KVTC, NVIDIA 2026); centered SVD → truncated rank-r components → per-column symmetric/asymmetric quantization; <code>KVTCLayer</code>, <code>KVTCManager</code>, <code>KVTCStats</code></li>
+<li><strong>ChunkKVManager</strong> (<code>squish/kv/chunk_kv.py</code>) — Semantic chunk eviction with cross-layer index reuse (ChunkKV, NeurIPS 2025); chunk-level max-attention / dot-product / norm scoring; <code>reuse_window</code> parameter for efficient adjacent-layer KV reuse; <code>ChunkKVOrchestrator</code> for multi-layer coordination</li>
+<li><strong>SSDSaguaro</strong> (<code>squish/speculative/ssd_saguaro.py</code>) — Speculative² decoding with outcome pre-fetching (ICLR 2026); predicts top-k acceptance-length outcomes from draft/target logit ratio; pre-fetches next draft for each outcome; greedy <code>verify_and_select</code>; <code>SSDStats</code> tracking</li>
+<li><strong>ContentHashImageCache</strong> (<code>squish/vision/content_hash_cache.py</code>) — SHA-256 image hash → KV prefix LRU cache; TTL support; <code>evict_lru()</code> / <code>evict_expired()</code>; <code>bytes_cached</code> tracking; 28× speedup on repeated vision prompts</li>
+<li><strong>ChipDetector</strong> (<code>squish/hardware/chip_detector.py</code>) — M1–M5 Apple Silicon chip detection; <code>sysctl</code> + <code>system_profiler</code> fallback; <code>CHIP_PROFILES</code> constants (bandwidth, chunk size, KV bits per generation); <code>get_optimal_chunk_size()</code>, <code>get_recommended_kv_bits()</code>, <code>bandwidth_ratio_vs_m3()</code></li>
+</ul>
+<h3 id="added-wave-32-quantization-pre-launch-hardening">Added — Wave 32: Quantization &amp; Pre-Launch Hardening<a class="headerlink" href="#added-wave-32-quantization-pre-launch-hardening" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Any4Quantizer</strong> (<code>squish/quant/any4.py</code>) — Learned 4-bit LUT quantization (Meta NeurIPS 2025); k-means codebook on single calibration sample; nibble-packed storage; group-wise scale/zero; &gt; INT4/FP4/NF4 accuracy</li>
+<li><strong>VSDDraftTrainer</strong> (<code>squish/speculative/vsd_draft.py</code>) — Variational speculative decoding training objective (VSD, Feb 2026); <code>VSDLoss</code> = -E[accepted_len] + β·KL(p_draft‖p_target); <code>acceptance_probability()</code> via cumulative greedy acceptance; +9.6% acceptance length over EAGLE-3</li>
+<li><strong>ConfidenceGate</strong> (<code>squish/serving/confidence_gate.py</code>) — Confidence-threshold token commit gate (Fast-dLLM); <code>filter_draft()</code> / <code>filter_batch()</code>; configurable <code>min_commit</code>/<code>max_commit</code>; temperature-scaled softmax confidence; 2.4× speedup on masked diffusion models</li>
+<li><strong>INT3RuntimeLoader</strong> (<code>squish/quant/int3_runtime.py</code>) — MiLo INT3 npy-dir → runtime dequantization; <code>load_from_arrays()</code> and <code>load_layer()</code> from <code>{name}__q3.npy</code> / <code>__s3.npy</code> / <code>__z3.npy</code> / <code>__shape.npy</code>; tiled streaming <code>dequantize_tiled()</code> generator</li>
+<li><strong>BenchmarkHarness</strong> (<code>squish/bench/benchmark_harness.py</code>) — 30-trial statistical benchmark suite; mean/σ/P50/P99 for TTFT and TPS; <code>to_markdown_table()</code> / <code>speedup_table()</code> for paper-ready reporting; configurable warmup and timeout</li>
+<li><strong>AdaptiveKVTCManager</strong> (<code>squish/kv/adaptive_kvtc.py</code>) — Per-layer auto-rank KVTC via explained-variance thresholding; <code>AdaptiveKVTCLayer.calibrate_and_tune()</code> selects rank from SVD spectrum; <code>auto_calibrate()</code> bulk API; <code>compression_summary()</code> reports mean rank, compression ratio, explained variance</li>
+</ul>
+<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>tests/test_wave31_modules.py</code> — 81 tests, 81 passing</li>
+<li><code>tests/test_wave32_modules.py</code> — 84 tests, 84 passing</li>
+<li>Full suite: <strong>7,991 passed</strong>, 33 skipped, 0 failures (up from 7,826)</li>
+</ul>
+<hr />
 <h2 id="1100-2026-03-14">[11.0.0] — 2026-03-14<a class="headerlink" href="#1100-2026-03-14" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-29-kv-attention-compression-sprint">Added — Wave 29: KV &amp; Attention Compression Sprint<a class="headerlink" href="#added-wave-29-kv-attention-compression-sprint" title="Permanent link">&para;</a></h3>
 <ul>
@@ -1479,7 +1554,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>GEAR KV Quantization</strong> (<code>squish/kv/gear_kv.py</code>) — INT4/INT8 KV quantization with low-rank SVD error correction; rank-r correction residual stored alongside quantized KV; <code>GEARManager</code> per-layer API; &gt;99% cosine similarity vs FP16 at rank=8</li>
 <li><strong>Quantized Rotary</strong> (<code>squish/quant/quant_rotary.py</code>) — Fused dequantize→RoPE rotate→requantize in one NumPy pass; eliminates 2 of 3 kernel launches for Q/K rotation; INT8 symmetric per-row scale; 4-bit mode supported</li>
 </ul>
-<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<h3 id="tests_1">Tests<a class="headerlink" href="#tests_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave29_modules.py</code> — 66 tests, 66 passing</li>
 <li><code>tests/test_wave30_modules.py</code> — 88 tests, 88 passing</li>
@@ -1504,7 +1579,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>PerLayerSparseAttn</strong> (<code>squish/attention/per_layer_sparse_attn.py</code>) — Per-head entropy-based attention sparsity profiled from prefill; EMA-smoothed head profiles; −15–25% attention FLOP in decode; enable with <code>--per-layer-sparse</code></li>
 <li><strong>SpeculativePrefiller</strong> (<code>squish/speculative/speculative_prefill.py</code>) — Draft-accelerated prefill using cosine-similarity KV agreement to skip target layers; −10–22% TTFT; requires <code>--draft-model</code></li>
 </ul>
-<h3 id="tests_1">Tests<a class="headerlink" href="#tests_1" title="Permanent link">&para;</a></h3>
+<h3 id="tests_2">Tests<a class="headerlink" href="#tests_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave27_server_wiring.py</code> — 33 tests, 33 passing</li>
 <li><code>tests/test_wave28_server_wiring.py</code> — 77 tests, 77 passing</li>
@@ -1551,7 +1626,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>SchemaValidator</strong> (<code>squish/schema_validator.py</code>) — JSON schema validation (type/required/properties/min+maxLength/min+max/items); 7.48 µs valid, 4.90 µs invalid</li>
 <li><strong>AuditLogger</strong> (<code>squish/audit_logger.py</code>) — SHA-256 hash-chained tamper-evident audit log; 1.92 µs log, 2236 µs verify (chain_length=2010)</li>
 </ul>
-<h3 id="tests_2">Tests<a class="headerlink" href="#tests_2" title="Permanent link">&para;</a></h3>
+<h3 id="tests_3">Tests<a class="headerlink" href="#tests_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave25_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave26_server_wiring.py</code> — 56 tests, 56 passing</li>
@@ -1603,7 +1678,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>AWQv2</strong> (<code>squish/awq_v2.py</code>) — Activation-aware scale+shift per-channel quantisation; analytical solve, no grid search; 73402 µs calibrate 128×256, 64.4 µs quantize</li>
 <li><strong>IterPrune</strong> (<code>squish/iter_prune.py</code>) — Iterative magnitude pruning with configurable sparsity ramp schedule; 0% → 70% over n_steps; 956 µs prune_step</li>
 </ul>
-<h3 id="tests_3">Tests<a class="headerlink" href="#tests_3" title="Permanent link">&para;</a></h3>
+<h3 id="tests_4">Tests<a class="headerlink" href="#tests_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave23_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave24_server_wiring.py</code> — 56 tests, 56 passing</li>
@@ -1655,7 +1730,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>SLAMonitor</strong> (<code>squish/sla_monitor.py</code>) — Real-time SLA violation detection + escalation; warning → critical severity tiers; 0.26 µs record, 41.3 µs check</li>
 <li><strong>ContextCache</strong> (<code>squish/context_cache.py</code>) — Persistent cross-session context cache with TTL; hashlib.md5 token fingerprint; 1.9 µs get, 100% hit rate on repeat</li>
 </ul>
-<h3 id="tests_4">Tests<a class="headerlink" href="#tests_4" title="Permanent link">&para;</a></h3>
+<h3 id="tests_5">Tests<a class="headerlink" href="#tests_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave21_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave22_server_wiring.py</code> — 56 tests, 56 passing</li>
@@ -1703,7 +1778,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>DistilSpec</strong> (<code>squish/distil_spec.py</code>) — KL-divergence draft-head calibration; estimates +10–15 pp acceptance gain</li>
 <li><strong>BatchEmbed</strong> (<code>squish/batch_embed.py</code>) — Dynamic pooling (mean/max/cls/weighted) for batch embeddings in a single pass</li>
 </ul>
-<h3 id="tests_5">Tests<a class="headerlink" href="#tests_5" title="Permanent link">&para;</a></h3>
+<h3 id="tests_6">Tests<a class="headerlink" href="#tests_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave19_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave20_server_wiring.py</code> — 56 tests, 56 passing</li>
@@ -1751,7 +1826,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>PowerMonitor</strong> (<code>squish/power_monitor.py</code>) — Apple Silicon power source advisor via <code>PowerMonitor</code>. 0.5 µs <code>get_power_source()</code> + <code>get_recommended_mode()</code>; adjusts compute policy for battery vs. AC.</li>
 <li><strong>DiffusionDraft</strong> (<code>squish/diffusion_draft.py</code>) — Diffusion-model draft head capability gate via <code>DiffusionDraftHead</code>. <code>is_available()</code> + <code>is_suitable_for_task()</code>; enables parallel diffusion-based speculation.</li>
 </ul>
-<h3 id="tests_6">Tests<a class="headerlink" href="#tests_6" title="Permanent link">&para;</a></h3>
+<h3 id="tests_7">Tests<a class="headerlink" href="#tests_7" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>tests/test_wave17_server_wiring.py</code> — 56 tests covering all 14 Wave 17 module import, instantiation, and core API paths.</li>
 <li>Added <code>tests/test_wave18_server_wiring.py</code> — 56 tests covering all 14 Wave 18 module import, instantiation, and core API paths.</li>
@@ -1797,7 +1872,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li><strong>ForeLen</strong> (<code>squish/forelen.py</code>) — Entropy-guided output length prediction via <code>EGTPPredictor</code> (entropy histogram) + <code>PLPPredictor</code> (exponential decay). −29% MAE vs TRAIL.</li>
 <li><strong>RASD</strong> (<code>squish/rasd.py</code>) — Retrieval-augmented speculative decode via <code>CorpusIndex</code> + <code>RASDBatcher.build_retrieval_tree()</code>. 40–60% corpus hit rate.</li>
 </ul>
-<h3 id="tests_7">Tests<a class="headerlink" href="#tests_7" title="Permanent link">&para;</a></h3>
+<h3 id="tests_8">Tests<a class="headerlink" href="#tests_8" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>tests/test_wave15_server_wiring.py</code> — 44 tests covering all Wave 15 module import, instantiation, and core API paths.</li>
 <li>Added <code>tests/test_wave16_server_wiring.py</code> — 45 tests covering all Wave 16 module import, instantiation, and core API paths.</li>
