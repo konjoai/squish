@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v30 Wave 56 planned — Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 Kernels + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill)
+> Last updated: 2026-03-20 (v31 Wave 57 planned — Rust Entropy Codec · PQ ADC · GRU Cell · Cosine Sim · SwiGLU · Randomized SVD + Mojo RMSNorm · SwiGLU Parallel · GQA Decode · Token CosSim · Sparse Block Score · Retention State)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -40,6 +40,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v28** | 54 | Deep MoE Efficiency · FlashAttn3 · DoubleSparsity · ExpertOffload · Elastic Serving |
 | **v29** | 55 | Advanced Sampling Refinement · Min-P · Mirostat · Typical · EtaCutoff · CFG · Diverse Beam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound |
 | **v30** | 56 | Native Acceleration Layer · Rust NF4 / FP8 / INT3 / Sampling / KV-Quant / INT2 Kernels · Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill |
+| **v31** | 57 | Deep Native Acceleration · Rust Entropy Codec / PQ ADC / GRU Cell / Cosine Sim / SwiGLU / Randomized SVD · Mojo RMSNorm / SwiGLU Parallel / GQA Decode / Token CosSim / Sparse Block Score / Retention State |
 
 ---
 
@@ -570,6 +571,133 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v31 Wave 57 — Deep Native Acceleration: Rust Entropy Codec · PQ ADC · GRU Cell · Cosine Sim · SwiGLU · Randomized SVD + Mojo RMSNorm · SwiGLU Parallel · GQA Decode · Token CosSim · Sparse Block Score · Retention State (Planned)
+
+Theme: **Wave 57 is the second tier of native acceleration, attacking six classes of Python/NumPy hotspots that
+Wave 56 intentionally deferred because they require either (a) algorithmic restructuring to unlock Rust SIMD, or
+(b) Mojo SIMD kernels that feed Wave 56's Mojo infrastructure. Each target is backed by measured bottleneck
+evidence from the Squish codebase.**
+
+**Wave 57a targets six Rust acceleration gaps:**
+(1) The rANS encoder/decoder in `rans_codec.py` runs at 50–200 MB/s because every symbol passes through
+the Python interpreter's bytecode loop (`for i in range(n-1, -1, -1)`) executing integer division, modulo, and
+bytearray append per iteration in Python objects. A Rust state machine over a pre-built `[u32; 256]` CDF table
+achieves 1–5 GB/sec throughput — 20× faster — and additionally replaces `dfloat11.py`'s Python Huffman
+encoder (dict key lookup + string concatenation per symbol). (2) Product Quantization in `pq_cache.py` has two
+Python-loop bottlenecks: K-means++ initialisation computes O(N×K) distances as a Python list comprehension,
+and ADC search rebuilds per-code LUT lookups as `[self._codes[i][m] for i in range(n)]` — a Python object
+list to numpy conversion per subspace per query. A Rayon-parallel Rust implementation collapses both into SIMD
+array operations. (3) The ReDrafter GRU cell (`redrafter.py`, `ssd.py`) fires 4–8 times per decode step — once
+per draft token — allocating five intermediate NumPy arrays (gates_x[:hd], gates_h[:hd], r, z, n) via separate
+sigmoid and tanh ufunc calls. A Rust fused GRU step computing sigmoid×2 + tanh×1 + multiply×3 in a single
+Rayon SIMD pass over hidden_dim elements eliminates all intermediate allocations. (4) Batched cosine
+similarity (token merging, sparse attention indexing, layer deduplication) calls `np.linalg.norm` twice and
+then `@` — three memory passes over the data. A Rust fused kernel computes row-norms and dot products
+simultaneously in one pass. (5) SwiGLU/SiLU activation (FFN gate, neuron router) dispatches two NumPy ufuncs
+with intermediate allocation; a single Rust Rayon + NEON SIMD pass fuses sigmoid and multiply. (6) Randomized
+SVD replaces `np.linalg.svd(full_matrices=False)` at 12 call sites in KV compression workflows (shadow_kv,
+gear_kv, kv_cache, milo_quant, delta_compress) where only a rank-16 to rank-64 approximation is needed;
+randomized sketch + QR is 3–8× faster than LAPACK's full SVD for this use case.
+
+**Wave 57b targets six Mojo SIMD kernel opportunities** that build on Wave 56's `MojoBridge` infrastructure:
+(1) RMSNorm + residual add fires at every transformer layer (64 times per 32-layer decode step); fusing the
+residual add into the norm halves memory bandwidth; one Mojo SIMD pass over hidden_dim eliminates the three
+separate NumPy operations. (2) SwiGLU projected outputs — gate and up projections are the two largest FFN
+matmuls — benefit from a Mojo `parallelize` kernel that fuses the SiLU activation and element-wise multiply
+inside the same output-row loop. (3) GQA decode SDPA is the most compute-intensive operation per decode token
+for GQA models (Llama-3, Qwen3, Mistral); the `(1 × n_heads × head_dim) @ (cache_len × n_kv_heads × head_dim)^T`
+score computation has a tight 128-float inner dot product ideal for `SIMD[DType.float32, 8]` with 16-lane
+unrolling. (4) Token cosine similarity (ToMe, sparse attention) computes an all-pairs `(T_a, T_b)` matrix via
+norm + matmul — a perfect fit for `SIMD` fused row-normalize+dot. (5) Sparse block attention scoring
+(`native_sparse_attn.py`, `nsa_attn.py`) runs 6 `np.einsum("hqd,hkd->hqk", ...)` calls computing block-level
+Q×K^T scores for top-K block selection; Mojo tiled SIMD outperforms NumPy's einsum dispatch on small blocks
+(16–64 tokens). (6) Retention attention state update (`retention_attn.py`) maintains a `(n_heads, head_dim,
+head_dim)` recurrent state matrix S; the rank-1 update `S += k^T × v` and retrieval `o = S × q` fire every
+decode step; SIMD outer-product + matrix-vector in Mojo eliminates 2 `np.einsum` calls per layer per step.
+
+All modules have NumPy CPU fallback paths; Mojo kernels fall back to the corresponding Wave 57a Rust path when
+`magic` toolchain is unavailable.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| Asymmetric Numeral Systems: Entropy Coding Combining Speed of Huffman Coding with Compression Rate of Arithmetic Coding (Duda) | IEEE Transactions, 2013 / production 2020–2025 | rANS state machine: `state_new = (state // freq_s) * M + C_s + (state % freq_s)`; pure integer ops on 32-bit or 64-bit state; no conditional branches per symbol if renorm is unrolled; Rust throughput 1–5 GB/s vs Python 50–200 MB/s; Canonical Huffman decode via array of (symbol, code_len) fully eliminates Python dict lookup (~15× faster) | `squish/kernels/rs_entropy_codec.py` |
+| Product Quantization for Nearest Neighbor Search (Jégou et al.) | TPAMI 2011 / production 2023–2025 | K-means codebook over subspaces of dimension D/M; K-means++ initialization O(N×K) distance computation fully parallelizable with Rayon; ADC distance accumulation reduces nearest-neighbour search to K × M table lookups — vectorizable with SIMD gather; Python object-list construction is the dominant bottleneck at O(N×M) list allocation | `squish/kernels/rs_pq_accelerate.py` |
+| ReDrafter: Speculative Decoding with Language Model Drafts (He et al.) | NeurIPS 2024 (arXiv 2403.09919) | GRU-based lightweight draft head: step = sigmoid(r) × tanh(n) + (1-z) × h; 3–8 draft tokens per verify step; head is tiny (hidden_dim=1024–4096) making per-call Python overhead proportionally expensive; fused Rust sigmoid+tanh+multiply eliminates 5 intermediate numpy allocations per GRU cell invocation | `squish/kernels/rs_gru_cell.py` |
+| Training-Free Token Merging for Vision Transformers (Bolya et al.) | NeurIPS 2023 (arXiv 2210.09461) | ToMe: bipartite token matching via cosine similarity matrix; all-pairs batched cosine sim = row-normalize(A) @ row-normalize(B)^T; Rust one-pass fused norm+GEMM is 4–6× faster than NumPy's 3-call chain; used in token_merging.py, layer_dedup.py, sparse_attn_index.py | `squish/kernels/rs_batch_cos_sim.py` |
+| LLM in a Flash: Efficient Large Language Model Inference with Limited Memory (Alizadeh et al.) | ICML 2024 (arXiv 2312.11514) | Activation-selective FFN sparsity with SiLU gating; SiLU(x) = x * sigmoid(x) is applied element-wise to full FFN gate projection output; NEON vsigmoid approximation + parallel multiply eliminates 2 ufunc dispatches at hidden_size × 4× FFN expansion (14336 floats for Llama3-8B) | `squish/kernels/rs_swiglu.py` |
+| Finding the Number of Latent Factors in High-Dimensional Data — Randomized SVD (Halko et al.) | SIAM Review 2011 / ubiquitous production | Randomized SVD: Gaussian sketch Ω (m×k), Y = A×Ω, QR decomposition of Y, small SVD of Q^T×A; O(mnk) flop vs O(mn²) for full SVD; ~3–8× faster at rank ≤ 64 on matrices up to 8192×8192; Rayon parallel matrix multiply for sketch; replaces 12 np.linalg.svd call sites in KV compression | `squish/kernels/rs_randomized_svd.py` |
+| Root Mean Square Layer Normalization (Zhang & Sennrich) | NeurIPS 2019 (arXiv 1910.07467) | RMSNorm replaces LayerNorm mean subtraction with just root-mean-square scale: `x / sqrt(mean(x²) + ε) * w`; fused residual-add+norm (FlashAttention-2 style) reads x + residual once, writes once; Mojo SIMD reduce-sum over hidden_dim in one vectorize call; applies 64× per decode step | `squish/kernels/mojo/rmsnorm_mojo.py` |
+| GLU Variants Improve Transformer (Noam Shazeer) | arXiv 2002.05202, 2020 / universal in Llama, Mistral, Qwen, Mixtral | SwiGLU = SiLU(gate_proj(x)) × up_proj(x) is the FFN of nearly every production LLM since 2023; both projections produce (seq, 14336) tensors; Mojo parallelize over sequences + vectorize over ffn_dim; fused SiLU+multiply eliminates intermediate materialization; 1.3–1.8× faster than two-ufunc NumPy path | `squish/kernels/mojo/swiglu_mojo.py` |
+| GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints (Ainslie et al.) | EMNLP 2023 (arXiv 2305.13245) | Grouped Query Attention: n_kv_heads < n_heads; decode SDPA inner loop is (1 × 128) dot product per Q head × KV cache length; SIMD[DType.float32, 8] with 16-lane unrolling computes 8 dot-product elements/cycle on NEON; fused KV-group broadcast avoids repeat gather; applies to Llama-3, Qwen3, Mistral | `squish/kernels/mojo/gqa_decode_mojo.py` |
+| Token Merging: Your ViT but Faster (Bolya et al.) | ICLR 2023 (arXiv 2210.09461) | All-pairs cosine similarity for token bipartite matching: row-normalize + matmul; Mojo SIMD inner-product with fused norm; @parameter on embedding_dim (128/256/512/1024) for compile-time specialization; parallelize over T_a rows; 3× over NumPy for T ≥ 256 tokens | `squish/kernels/mojo/token_cos_sim_mojo.py` |
+| Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention (NSA Team, DeepSeek-AI) | arXiv 2502.11089, 2025 | Block-level Q×K^T scoring for top-K block selection; block sizes 16–64; bilinear score `np.einsum("hqd,hkd->hqk", q_blocks, k_blocks)` for each head; Mojo `@parameter` on block_size + head_dim; tiled 8×8 SIMD matmul outperforms NumPy einsum dispatch on small blocks (6 patterns in native_sparse_attn.py + nsa_attn.py) | `squish/kernels/mojo/sparse_block_score_mojo.py` |
+| RetNet: Retaining Training Transformers' Performance for Inference (Sun et al.) | arXiv 2307.08621, 2023 | Recurrent mode: per-step state S = γS + kᵀv (rank-1 outer product update); retrieval o = Sq (matrix-vector); S is (n_heads, head_dim, head_dim); outer product update has tight SIMD structure — k and v vectors aligned in memory; Mojo SIMD outer-product + matvec replaces 2 np.einsum calls per layer | `squish/kernels/mojo/retention_state_mojo.py` |
+
+---
+
+### Wave 57a — RustEntropyCodec · RustPQAccelerate · RustGRUCell · RustBatchCosSim · RustSwiGLU · RustRandomizedSVD (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| RustEntropyCodec | `squish/kernels/rs_entropy_codec.py` | Adds `rans_encode`, `rans_decode`, `huffman_encode`, `huffman_decode` to `squish_quant_rs`; rANS: single Rust for-loop over `u32` state with `[u32; 256]` CDF array (no Python GIL per symbol); Huffman: flat `(symbol, code_word, code_len)` array replaces Python dict bit-string; hooks into `rans_codec.py` as primary fast path and `dfloat11.py` entropy stream; ~20× rANS encode, ~15× Huffman encode; decode path symmetrically accelerated; 1–5 GB/s peak throughput enabling real-time activation entropy coding |
+| RustPQAccelerate | `squish/kernels/rs_pq_accelerate.py` | Adds `pq_kmeans_fit`, `pq_encode_batch`, `pq_adc_search` to `squish_quant_rs`; K-means: Rayon parallel squared-distance matrix via SIMD NEON; code book up to K=256 centroids; ADC: accepts transposed `(M, N)` u16 code array matching codebooks LUTs; vectorized LUT gather replaces Python `[codes[i][m] for i in range(n)]` O(N×M) list construction; hooks into `pq_cache.py` fit/encode/search; ~15× K-means, ~10× ADC for N=4096 codes, M=8 subspaces |
+| RustGRUCell | `squish/kernels/rs_gru_cell.py` | Adds `gru_step_f32` to `squish_quant_rs`; accepts pre-multiplied gates_x and gates_h `(3×hidden_dim)` float32 slices; fused: reset gate = sigmoid(gates_x[:h] + gates_h[:h]); update gate = sigmoid(gates_x[h:2h] + gates_h[h:2h]); candidate = tanh(gates_x[2h:] + r × gates_h[2h:]); output = (1−z)×h_prev + z×candidate; all in one Rayon SIMD pass using ARM NEON `vexpq_f32` for sigmoid approximation; eliminates 5 intermediate NumPy array allocations; hooks into `redrafter.py` step(), `ssd.py` predict(); ~8× on hidden_dim=2048 |
+| RustBatchCosSim | `squish/kernels/rs_batch_cos_sim.py` | Adds `batched_cosine_similarity_f32` to `squish_quant_rs`; accepts `(T_a, D)` and `(T_b, D)` float32 arrays; fused: compute a_norms and b_norms via SIMD reduce while also computing dot products; Rayon parallel over T_a rows; one memory pass vs NumPy's 3-pass (linalg.norm + linalg.norm + @); output `(T_a, T_b)` float32; hooks into `token_merging.py`, `layer_dedup.py`, `sparse_attn_index.py`, `kernels/dispatch.py`; ~4–6× on (256, 128) input matrices |
+| RustSwiGLU | `squish/kernels/rs_swiglu.py` | Adds `swiglu_f32`, `silu_f32` to `squish_quant_rs`; accepts matching `(N,)` gate and up float32 slices; fused SiLU: computes `gate / (1 + exp(-gate)) × up` in one Rayon SIMD chunk pass using ARM NEON `vexpq_f32` (Cephes polynomial); eliminates Python dispatch overhead and intermediate `silu(gate)` array allocation; hooks into `hardware/fused_kernels.py` NumPy fallback path and `hardware/neuron_router.py` `_silu()`; ~3–4× on ffn_dim=14336 |
+| RustRandomizedSVD | `squish/kernels/rs_randomized_svd.py` | Adds `randomized_svd_f32` to `squish_quant_rs`; randomized algorithm: (1) Gaussian sketch Ω `(n_cols, rank+oversample)` via fast PRNG; (2) Y = A × Ω via Rayon parallel row matmul; (3) QR of Y for orthonormal basis Q; (4) thin SVD of `(Q^T × A)` `(rank × n_cols)` matrix; returns (U, S, Vt); ~3–8× faster than NumPy LAPACK full SVD at rank ≤ 64; hooks into `shadow_kv.py`, `gear_kv.py`, `kv_cache.py`, `milo_quant.py`, `context/delta_compress.py`, `kv/adaptive_kvtc.py` (12 total `np.linalg.svd` call sites) |
+
+### Wave 57b — MojoRMSNorm · MojoSwiGLUParallel · MojoGQADecode · MojoTokenCosSim · MojoSparseBlockScore · MojoRetentionState (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MojoRMSNormFused | `squish/kernels/mojo/rmsnorm_mojo.py` + `squish/kernels/mojo/kernels/rmsnorm.mojo` | Fused residual-add + RMSNorm + scale in one Mojo SIMD pass: `x_sum = x + residual` (SIMD add), `ms = mean(x_sum²)` (vectorize horizontal-sum reduce), `x_norm = x_sum / sqrt(ms + ε)` (vectorize rsqrt + multiply), `out = x_norm × weight` (vectorize element-scale); `@parameter` specialized on hidden_dim (4096, 7168, 8192); single memory read of x + residual, single write of out + new_residual; applies 64× per 32-layer decode step; replaces `hardware/fused_rmsnorm.py` NumPy path; NumPy fallback via existing `fused_rmsnorm.py` |
+| MojoSwiGLUParallel | `squish/kernels/mojo/swiglu_mojo.py` + `squish/kernels/mojo/kernels/swiglu.mojo` | Fused SiLU(gate) × up projection via Mojo `parallelize` over output rows + `vectorize` over ffn_dim: inner loop processes 8 floats/cycle with `SIMD[DType.float32, 8]` SiLU (`g / (1 + exp(-g))` via `math.exp`) + multiply; `@parameter` specialized on ffn_dim (14336, 16384); eliminates intermediate `silu_out` materialization — gate and up are loaded once and the result is written directly; hooks into `hardware/fused_kernels.py` NumPy fallback; NumPy fallback via `rs_swiglu.py` Rust path; 1.3–1.8× over Rust on M3 for ffn_dim ≥ 8192 |
+| MojoGQADecodeKernel | `squish/kernels/mojo/gqa_decode_mojo.py` + `squish/kernels/mojo/kernels/gqa_decode.mojo` | GQA decode SDPA: for each Q head, compute dot products with all K cache entries (cache_len × head_dim) then softmax + V accumulate; SIMD inner dot-product of `head_dim=128` using sixteen 8-lane NEON registers; `parallelize` over n_heads; fused KV-group broadcast for GQA (n_heads/n_kv_heads Q heads share same KV); `@parameter` on n_kv_heads (8 for Llama-3) and head_dim (128); replaces `gqa.py` np.matmul decode path; NumPy fallback via `gqa.py`; 2–4× for cache_len ≥ 1024 |
+| MojoTokenCosSim | `squish/kernels/mojo/token_cos_sim_mojo.py` + `squish/kernels/mojo/kernels/token_cos_sim.mojo` | All-pairs cosine similarity matrix `(T_a, T_b)` from embeddings of dim D: for each pair (i∈T_a, j∈T_b), computes `dot(a_i, b_j) / (‖a_i‖ × ‖b_j‖)`; Mojo fuses row-norm precompute + matmul in single pass: vectorize over D for partial norms and dot products; `parallelize` over T_a rows; `@parameter` on D (128, 256, 512, 1024); inv-norm via SIMD rsqrt; replaces `token_merging.py` and `sparse_attn_index.py` 3-step numpy chain; NumPy fallback via `rs_batch_cos_sim.py` |
+| MojoSparseBlockScore | `squish/kernels/mojo/sparse_block_score_mojo.py` + `squish/kernels/mojo/kernels/sparse_block_score.mojo` | Block-level attention scoring `(n_heads, n_q_blocks, n_k_blocks)` from `(n_heads, n_q_blocks, block_size, head_dim)` query and key block tensors: outer loop `parallelize` over (head, q_block) pairs; inner SIMD tiled matmul over (block_size × head_dim) tiles; `@parameter` on block_size (16, 32, 64) and head_dim (64, 128); replaces 6 `np.einsum("hqd,hkd->hqk", ...)` calls in `native_sparse_attn.py` and `nsa_attn.py`; NumPy fallback via existing einsum paths; 3–5× on blocks of 32 tokens × 128 head_dim |
+| MojoRetentionState | `squish/kernels/mojo/retention_state_mojo.py` + `squish/kernels/mojo/kernels/retention_state.mojo` | Retention recurrent state update: (1) rank-1 outer-product `S += γ × S + outer(k, v)` — vectorize over head_dim for outer product; `SIMD[DType.float32, 8]` multiply-accumulate for each row of the `(head_dim, head_dim)` state matrix; (2) state retrieval `o = S × q` — matrix-vector via vectorize inner loop; `@parameter` on head_dim (64, 128); `parallelize` over n_heads; replaces `retention_attn.py` `np.einsum("hi,hij->hj", q_f, new_S)` + outer product; extensible to RWKV-6 channel-mix state and SSM recurrent modes from Wave 53; NumPy fallback via `retention_attn.py` |
+
+### v31 Target Metrics (after Wave 57)
+
+> Baselines are v30 Wave 56 targets.
+
+| Operation | v30 Baseline | v31 Target | Primary driver |
+|-----------|-------------|------------|----------------|
+| DFloat11 rANS encode — Qwen3-14B full model (BF16, ~7 GB data) | ~35–70 s (Python for-loop, 50–200 MB/s) | **< 4 s** | RustEntropyCodec 1–3 GB/s state machine |
+| PQ ADC search — 32-head × 4096 cache tokens, M=8 subspaces | ~12 ms/query (Python list loop) | **< 1.2 ms/query** | RustPQAccelerate vectorized LUT gather |
+| ReDrafter GRU 4 draft tokens — hidden_dim=2048 (M3 16 GB) | ~0.18 ms (5 ufunc dispatch chains) | **< 0.022 ms** | RustGRUCell fused SIMD step |
+| Cosine sim matrix 256×256 tokens × dim=128 (layer dedup, ToMe) | ~0.95 ms (norm×2 + @) | **< 0.18 ms** | RustBatchCosSim one-pass SIMD |
+| SwiGLU forward — Llama-3-8B layer, seq=1, ffn_dim=14336 | ~0.42 ms (2 NumPy ufuncs) | **< 0.13 ms** | RustSwiGLU fused NEON |
+| SVD compression — (4096, 128) KV matrix rank=32 (shadow_kv) | ~8.2 ms (LAPACK full SVD) | **< 2.0 ms** | RustRandomizedSVD sketch+QR |
+| RMSNorm + residual — hidden_dim=4096, seq=512, 64 calls/step | ~1.8 ms total (3 NumPy passes) | **< 0.7 ms** | MojoRMSNormFused single-pass SIMD |
+| GQA decode SDPA — Llama-3-8B INT4, cache=2048, M3 16 GB | ~0.38 ms/step (np.matmul) | **< 0.15 ms/step** | MojoGQADecodeKernel SIMD dot product |
+| Sparse block score — NSA, 32 blocks × 64 tokens × 128 dim | ~2.4 ms (6 einsum calls) | **< 0.5 ms** | MojoSparseBlockScore tiled SIMD |
+| Llama-3-8B INT4 decode throughput (combined Wave 57 effect) | 110–140 tok/s (v30 baseline) | **145–185 tok/s** | RMSNorm + GQA + SwiGLU pipeline acceleration |
+
+### Completion Checklist
+
+- [ ] `squish_quant_rs/src/lib.rs` — entropy codec (rANS+Huffman), PQ K-means+ADC, GRU cell, cosine sim, SwiGLU, randomized SVD Rust functions + module registration
+- [ ] `squish/kernels/rs_entropy_codec.py` — RustEntropyCodec (Python wrapper, NumPy fallback)
+- [ ] `squish/kernels/rs_pq_accelerate.py` — RustPQAccelerate (Python wrapper, NumPy fallback)
+- [ ] `squish/kernels/rs_gru_cell.py` — RustGRUCell (Python wrapper, NumPy fallback)
+- [ ] `squish/kernels/rs_batch_cos_sim.py` — RustBatchCosSim (Python wrapper, NumPy fallback)
+- [ ] `squish/kernels/rs_swiglu.py` — RustSwiGLU (Python wrapper, NumPy fallback)
+- [ ] `squish/kernels/rs_randomized_svd.py` — RustRandomizedSVD (Python wrapper, NumPy fallback)
+- [ ] `squish/kernels/mojo/rmsnorm_mojo.py` + `squish/kernels/mojo/kernels/rmsnorm.mojo` — MojoRMSNormFused
+- [ ] `squish/kernels/mojo/swiglu_mojo.py` + `squish/kernels/mojo/kernels/swiglu.mojo` — MojoSwiGLUParallel
+- [ ] `squish/kernels/mojo/gqa_decode_mojo.py` + `squish/kernels/mojo/kernels/gqa_decode.mojo` — MojoGQADecodeKernel
+- [ ] `squish/kernels/mojo/token_cos_sim_mojo.py` + `squish/kernels/mojo/kernels/token_cos_sim.mojo` — MojoTokenCosSim
+- [ ] `squish/kernels/mojo/sparse_block_score_mojo.py` + `squish/kernels/mojo/kernels/sparse_block_score.mojo` — MojoSparseBlockScore
+- [ ] `squish/kernels/mojo/retention_state_mojo.py` + `squish/kernels/mojo/kernels/retention_state.mojo` — MojoRetentionState
+- [ ] `tests/test_wave57a_rust_kernels2.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave57b_mojo_kernels2.py` — ≥ 72 tests with NumPy fallback coverage, all passing
+- [ ] CHANGELOG `[31.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
