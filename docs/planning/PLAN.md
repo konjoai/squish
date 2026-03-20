@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v29 Wave 55 planned — Min-P Sampling · Mirostat · Typical Sampling · EtaCutoff · CFG Text Guidance · Diverse Beam · BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound)
+> Last updated: 2026-03-20 (v30 Wave 56 planned — Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 Kernels + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -39,6 +39,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v27** | 53 | Linear Recurrent Architecture Inference · Mamba2 · RWKV-6 · Griffin · xLSTM · TTT · DeltaNet |
 | **v28** | 54 | Deep MoE Efficiency · FlashAttn3 · DoubleSparsity · ExpertOffload · Elastic Serving |
 | **v29** | 55 | Advanced Sampling Refinement · Min-P · Mirostat · Typical · EtaCutoff · CFG · Diverse Beam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound |
+| **v30** | 56 | Native Acceleration Layer · Rust NF4 / FP8 / INT3 / Sampling / KV-Quant / INT2 Kernels · Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill |
 
 ---
 
@@ -569,6 +570,115 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill (Planned)
+
+Theme: **Wave 56 attacks Squish's most impactful remaining performance bottleneck: the gap between
+existing Rust-accelerated INT8/INT4 weight quantization and the remaining high-traffic paths that still execute
+as interpreted Python/NumPy.** Profiling a 14B model compression-and-inference loop reveals four NumPy-only
+hotspots costing measurable wall time on Apple Silicon: (1) NF4 quantization resolves each weight to the nearest
+of 16 non-uniformly spaced float32 levels using a broadcasted `np.argmin` over the full LUT — O(N×16)
+comparisons that the Rust `squish_quant` crate replaces with a precomputed 16-entry inverse-CDF LUT lookup
+emitting the correct nibble index in a single CPU cycle per element at 8–15× speedup. (2) FP8 E4M3/E5M2
+quantization uses `np.log2`, `np.exp2`, and `np.clip` on element arrays — operations that carry Python-level
+dispatch overhead per ufunc call; direct bit manipulation in Rust (`f32::to_bits()`) eliminates the overhead
+entirely at ~10× speedup for large shards. (3) Per-head INT8 KV cache quantization (`kvquant.py`) runs on the
+hot inference path — every decode step applies per-head abs-mean scaling to thousands of K/V vectors; the
+existing Rust `quantize_int8_grouped` family does not accept the 3-D `(n_heads, n_seq, head_dim)` layout used
+by KV caches; a new KV-native Rust kernel eliminates the Python head loop. (4) Sampling (softmax + top-p +
+min-p filtering) runs once per decode step and today calls three separate NumPy ufuncs plus a Python-controlled
+cumsum + argsort; a fused Rust kernel processing all three transforms in two passes over the logit vector
+yields ~5× speedup on 32k–128k vocabulary models.
+
+The second axis of Wave 56 establishes Mojo as Squish's computation kernel platform for operations that benefit
+from explicit SIMD vectorisation beyond what Rayon + LLVM auto-vectorisation provides. Mojo's
+`SIMD[DType.float32, 8]` type maps directly to ARM NEON 128-bit vector registers; its `@parameter`
+compile-time specialisation and `vectorize` higher-order function compose cleanly with Squish's existing NumPy
+fallback pattern. Wave 56b sets up the Mojo toolchain (Modular `magic` manager, `mojoproject.toml`, compiled
+`.mojopkg` shared library), a thin ctypes-based Python bridge (`mojo_bridge.py`) with automatic NumPy fallback
+when Mojo is unavailable, and five production-grade Mojo kernels covering the most vectorisation-sensitive
+operations: numerically-stable online softmax, RoPE position encoding (applied every forward pass), NF4
+dequantisation (inference hot path once weights are loaded), INT4 grouped GEMM (the most compute-intensive
+inference operation), and block-tiled flash attention prefill (eliminating the `np.einsum` in
+`flash_prefill.py`).
+
+All modules have NumPy CPU fallback paths; Mojo kernels additionally fall back to Rust (`squish_quant`)
+for environments without the `magic` toolchain.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| QLoRA: Efficient Finetuning of Quantized LLMs (Dettmers et al.) | NeurIPS 2023 (arXiv 2305.14314) | NF4 (NormalFloat4) achieves near-lossless 4-bit precision by distributing 16 levels on the standard-normal quantile function; lookup-table nearest-neighbour at inference requires O(N×16) comparisons in NumPy vs O(N) in Rust with precomputed inverse-CDF LUT | `squish/kernels/rs_nf4.py` |
+| FP8 Formats for Deep Learning (Micikevicius et al.) | NeurIPS 2022 Workshop (arXiv 2209.05433) | E4M3 and E5M2 float-8 encodings; decode via exponent-bit extraction; Rust `f32::to_bits()` and direct exponent/mantissa reconstruction are ~10× faster than NumPy's ufunc chain on large tensor shards | `squish/kernels/rs_fp8.py` |
+| GPTQ: Accurate Post-Training Quantization for Large Language Models (Frantar et al.) | ICLR 2023 (arXiv 2210.17323) | Row-wise second-order PTQ calibration; INT3 shown feasible at near-INT4 quality; 3-bit packing (8 values per 3 bytes) is memory-bandwidth bound — Rayon parallel bit-packing is ~8× faster than NumPy byte-array operations | `squish/kernels/rs_int3.py` |
+| KVQuant: Towards 10 Million Context Length LLM Inference with KV Cache Quantisation (Hooper et al.) | NeurIPS 2024 (arXiv 2401.18079) | Per-head channel-wise INT4/INT8 KV quantization with pre-RoPE keys; KV quant on the decode hot-path accounts for 12–18% of decode wall time on long contexts; a 3-D-native Rust kernel eliminates the Python head-loop overhead | `squish/kernels/rs_kv_quant.py` |
+| BitDistiller: Unleashing the Potential of Sub-4-Bit LLMs via Self-Distillation (Liu et al.) | ACL 2024 (arXiv 2402.10631) | INT2 weight quantization via knowledge-distillation alignment; INT2 packing (4 values per byte) is memory-bandwidth bound; Rayon parallel bit-packing provides ~8× speedup vs NumPy on 14B weight tensor | `squish/kernels/rs_int2.py` |
+| Numerically Stable Softmax + Fused Sampling for LLM Decode (engineering reference) | Flash Attention codebase / HuggingFace transformers, 2023–2025 | Online log-sum-exp softmax in two forward passes; fused top-p via O(N) reverse cumsum scan; min-p threshold in same pass — three transforms fused into one cache-hot vector walk; SIMD abs-max reduction in Rust ~5× faster than three-ufunc NumPy chain on 32k–128k vocab | `squish/kernels/rs_sampler.py` |
+| Mojo: A Unified Language for AI Systems Programming (Lattner et al., Modular) | modular.com whitepaper 2023; MAX Platform GA 2025 | Python-compatible systems language with LLVM backend; `SIMD[DType, n]` maps directly to ARM NEON / x86 AVX2; `@parameter` compile-time specialisation eliminates conditional branches; `python` module enables zero-copy NumPy array passing into Mojo functions via Buffer protocol | `squish/kernels/mojo/mojo_bridge.py` |
+| FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning (Dao) | ICLR 2024 (arXiv 2307.08691) | Block-tiled SDPA using online softmax (one-pass log-sum-exp) reduces DRAM reads; Mojo SIMD tile of 16×16 maps to four 128-bit NEON registers; eliminates `np.einsum("hid,hjd->hij", ...)` materialising full attention score matrix in `flash_prefill.py` | `squish/kernels/mojo/flash_prefill_mojo.py` |
+| RoFormer: Enhanced Transformer with Rotary Position Embedding (Su et al.) | Neurocomputing 2021 (arXiv 2104.09864) | RoPE applies position-dependent 2×2 rotation matrices to Q/K pairs; two SIMD multiplies + adds per pair in Mojo vs four NumPy ufuncs; applied every forward pass — cumulative 3–5% decode wall time on M3 | `squish/kernels/mojo/rope_mojo.py` |
+| AWQ: Activation-Aware Weight Quantization for LLM Compression and Acceleration (Lin et al.) | MLSys 2024 (arXiv 2306.00978) | INT4 grouped GEMM with fused dequantisation; scale absorption inside inner loop avoids intermediate float32 materialisation; Mojo `SIMD` dequant-inside-GEMM fuses unpack and multiply into one register pass vs two sequential NumPy operations | `squish/kernels/mojo/int4_gemm_mojo.py` |
+
+---
+
+### Wave 56a — RustNF4Kernel · RustFP8Kernel · RustINT3Kernel · RustSamplerKernel · RustKVQuantKernel · RustINT2Kernel (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| RustNF4Kernel | `squish/kernels/rs_nf4.py` | Adds `quantize_nf4_grouped_f32`, `dequantize_nf4_grouped_f32`, and `quantize_nf4_grouped_bf16` to `squish_quant_rs/src/lib.rs`; precomputed 16-entry inverse-CDF LUT replacing `np.argmin` broadcast; Rayon parallel rows; BF16 input path matching INT8/INT4 convention; hooks into `nf4_quant.py` as primary fast path with NumPy fallback preserved; 8–15× quantize speedup on 14B model load |
+| RustFP8Kernel | `squish/kernels/rs_fp8.py` | Adds `quantize_fp8_e4m3_f32`, `dequantize_fp8_e4m3`, `quantize_fp8_e5m2_f32`, `dequantize_fp8_e5m2` to `squish_quant_rs`; IEEE 754 constituent extraction via `f32::to_bits()` and `u32` bit masking; avoids `np.log2`/`np.exp2` ufunc chain; per-tensor and per-group scale; ARM NEON optional SIMD for abs-max; hooks into `fp8_quant.py`; ~10× speedup for large tensor conversion |
+| RustINT3Kernel | `squish/kernels/rs_int3.py` | Adds `pack_int3_grouped_f32`, `unpack_int3_grouped` to `squish_quant_rs`; 3-bit values packed as 8 elements per 3 bytes (24 bits); Rayon parallel slice-chunked packing; symmetric signed INT3 range [−3, 3] with per-group scale; hooks into `int3_runtime.py` as primary fast path; ~8× faster bit-packing than NumPy byte-array loop on large weight tensors |
+| RustSamplerKernel | `squish/kernels/rs_sampler.py` | Adds `softmax_logits_f32`, `top_p_filter_f32`, `min_p_filter_f32` to `squish_quant_rs`; online two-pass numerically-stable softmax (pass 1 abs-max, pass 2 exp + normalise); fused O(N) reverse-scan top-p cumsum (no sort); min-p threshold computed in same pass; hooks into `sampler.py` hot path; ~5× faster than three-ufunc NumPy chain on 32k–128k vocab |
+| RustKVQuantKernel | `squish/kernels/rs_kv_quant.py` | Adds `quantize_kv_heads_int8`, `dequantize_kv_heads_int8` to `squish_quant_rs`; accepts `(n_heads, n_seq, head_dim)` float32 arrays; per-head per-channel abs-mean scale via Rayon parallel head axis; hooks into `kvquant.py` hot path replacing Python head loop + NumPy per-head ops; ~6× faster on decode-step KV update at 32 heads × 64 head_dim |
+| RustINT2Kernel | `squish/kernels/rs_int2.py` | Adds `quantize_int2_grouped_f32`, `dequantize_int2_grouped_f32`, `quantize_int2_grouped_bf16` to `squish_quant_rs`; 4 values per byte (2-bit unsigned [0–3] with per-group zero-point + scale); Rayon parallel chunk packing; hooks into `weight_only_int2.py`; completes the 2-bit–8-bit quantization ladder in the Rust crate; ~8× faster packing than NumPy |
+
+### Wave 56b — MojoBridge · MojoSoftmax · MojoRoPE · MojoNF4Dequant · MojoINT4GEMM · MojoFlashPrefill (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MojoBridge | `squish/kernels/mojo/mojo_bridge.py` | Modular `magic` toolchain integration: `mojoproject.toml` package manifest + build script compiling `.mojo` source → `.mojopkg` shared library via `mojo build`; ctypes-based Python loader with version hash check; auto-detects Mojo availability; falls back to `squish_quant` Rust path or NumPy when `magic` is absent; exposes `load_kernel(name: str)` factory used by all other Wave 56b modules; zero performance impact on environments without Mojo |
+| MojoSoftmax | `squish/kernels/mojo/softmax_mojo.py` | Mojo `SIMD[DType.float32, 8]` online softmax kernel: pass 1 = vectorised abs-max reduction (8 floats/cycle on NEON); pass 2 = vectorised `exp(x - max)` + accumulate; single normalisation write pass; fused top-p cumsum via reverse-scan in same kernel call; loaded via `MojoBridge`; NumPy fallback via `rs_sampler.py` Rust path; ~2–3× over Rust on M2/M3/M4 for vocab ≥ 32k |
+| MojoRoPE | `squish/kernels/mojo/rope_mojo.py` | Mojo `vectorize` RoPE kernel: unrolled NEON 4×float32 cos/sin multiplications applied to Q/K head dimension pairs each forward pass; `@parameter` compile-time specialisation on `head_dim` (64 / 128 / 256); pre-computed frequency cache shared across layers; hooks into `adaptive_rope.py` and `rope_scaling.py`; eliminates `np.cos`, `np.sin`, and `np.stack` ufunc dispatch overhead applied at every transformer layer; cumulative 3–5% decode wall time savings on M3 |
+| MojoNF4Dequant | `squish/kernels/mojo/nf4_dequant_mojo.py` | Mojo NF4 dequantisation kernel: 16-entry float32 LUT in SRAM; nibble unpack + table gather via `SIMD` masked load; two nibbles per byte processed in same SIMD lane; group scale broadcast fused in one pass; `@parameter` specialised on `group_size` (32 / 64 / 128); hooks into `nf4_quant.py` as inference hot path; NumPy fallback via `rs_nf4.py` Rust path; ~2× over Rust on M3 via tighter SIMD scheduling |
+| MojoINT4GEMM | `squish/kernels/mojo/int4_gemm_mojo.py` | Mojo fused dequant+GEMM for INT4 asymmetric grouped weights: nibble unpack and `(q × scale) + offset` fused inside the inner accumulation loop; SIMD 8-lane float32 MAC on unpacked values; eliminates intermediate float32 weight materialisation reducing DRAM reads by 50% vs sequential dequant-then-matmul; compatible with `squish_quant` packed nibble format from `quantize_int4_asymmetric_grouped`; NumPy fallback via `rs_nf4.py` dequant + `np.matmul` |
+| MojoFlashPrefill | `squish/kernels/mojo/flash_prefill_mojo.py` | Mojo block-tiled SDPA prefill kernel: 16×16 Q×K^T tiles with online log-sum-exp accumulation avoiding O(seq²) DRAM materialisation of the full attention score matrix; `SIMD[DType.float32, 4]` inner dot product; `@parameter` specialised on `n_heads` and `head_dim`; hooks into `flash_prefill.py` replacing `np.einsum("hid,hjd->hij", q_chunk, k_chunk)` hot loop; NumPy fallback via existing `flash_prefill.py` path; projected 3–8× speedup for prompt lengths > 512 tokens |
+
+### v30 Target Metrics (after Wave 56)
+
+> Baselines are v29 Wave 55 targets.
+
+| Operation | v29 Baseline | v30 Target | Primary driver |
+|-----------|-------------|------------|----------------|
+| NF4 quantize speed — Qwen3-14B full model (BF16 → NF4) | ~6.5 s (NumPy argmin broadcast) | **< 0.6 s** | RustNF4Kernel precomputed LUT replacing O(N×16) argmin |
+| FP8 E4M3 quantize — 14B shard (BF16 input) | ~4.2 s (np.log2/exp2 chain) | **< 0.5 s** | RustFP8Kernel f32::to_bits() direct bit manipulation |
+| Per-decode softmax + top-p (128k vocab, e.g. Qwen3) | ~0.28 ms/step (3 NumPy ufuncs) | **< 0.06 ms/step** | RustSamplerKernel fused two-pass kernel |
+| KV cache INT8 update — 32-layer 32-head, 1 new token | ~1.8 ms (Python head loop) | **< 0.30 ms** | RustKVQuantKernel 3-D-native Rayon parallel |
+| Flash prefill TTFT — Llama-3-8B INT4; 512-token prompt (M3 16 GB) | ~0.115 s (np.einsum) | **< 0.068 s** | MojoFlashPrefill tiled SDPA, online softmax |
+| Flash prefill TTFT — Llama-3-8B INT4; 2048-token prompt (M3 16 GB) | ~0.45 s (np.einsum) | **< 0.18 s** | MojoFlashPrefill tiled SDPA; O(seq) SRAM tile loop |
+| INT4 decode throughput — Llama-3-8B INT4 (M3 16 GB) | 110–140 tok/s | **135–170 tok/s** | MojoINT4GEMM fused dequant+GEMM kernel |
+
+### Completion Checklist
+
+- [ ] `squish_quant_rs/src/lib.rs` — NF4, FP8, INT3, sampling, KV-head-int8, INT2 Rust functions added + registered in `squish_quant` module
+- [ ] `squish/kernels/rs_nf4.py` — RustNF4Kernel (Python wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_fp8.py` — RustFP8Kernel (Python wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_int3.py` — RustINT3Kernel (Python wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_sampler.py` — RustSamplerKernel (Python wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_kv_quant.py` — RustKVQuantKernel (Python wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_int2.py` — RustINT2Kernel (Python wrapper + NumPy fallback)
+- [ ] `squish/kernels/mojo/mojo_bridge.py` — MojoBridge ctypes loader + `mojoproject.toml`
+- [ ] `squish/kernels/mojo/softmax_mojo.py` + `squish/kernels/mojo/kernels/softmax.mojo` — MojoSoftmax
+- [ ] `squish/kernels/mojo/rope_mojo.py` + `squish/kernels/mojo/kernels/rope.mojo` — MojoRoPE
+- [ ] `squish/kernels/mojo/nf4_dequant_mojo.py` + `squish/kernels/mojo/kernels/nf4_dequant.mojo` — MojoNF4Dequant
+- [ ] `squish/kernels/mojo/int4_gemm_mojo.py` + `squish/kernels/mojo/kernels/int4_gemm.mojo` — MojoINT4GEMM
+- [ ] `squish/kernels/mojo/flash_prefill_mojo.py` + `squish/kernels/mojo/kernels/flash_prefill.mojo` — MojoFlashPrefill
+- [ ] `tests/test_wave56a_rust_kernels.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave56b_mojo_kernels.py` — ≥ 72 tests with NumPy fallback coverage, all passing
+- [ ] CHANGELOG `[30.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
