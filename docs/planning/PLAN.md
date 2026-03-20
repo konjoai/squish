@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-19 (v15 Wave 38 planned — Long-Context Sparse Attention · LUT Quant · Recurrent Speculation)
+> Last updated: 2026-03-19 (v16 Wave 39 planned — Activation Quant · Fused Kernels · W8A8 · torch.compile · Sublinear Attn)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -25,6 +25,139 @@ This document tracks completed waves, the current release, and the next phase.
 | **v13** | 33–34 | Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving |
 | **v14** | 35–36 | Sampling Precision · Memory Reclamation · Context Intelligence + Cross-Platform |
 | **v15** | 37–38 | Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation |
+| **v16** | 39–40 | Activation Quantization · Fused Triton Kernels · W8A8 Runtime · Compiled Decode · Sublinear Attention |
+
+---
+
+## 🚧 v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (In Progress)
+
+Theme: **Close the final gap between Squish's algorithmic sophistication and its raw hardware efficiency.
+Wave 39 targets three axes that Wave 38 left on the table: (1) activation-level quantization
+(W8A8 INT8 with SmoothQuant activation smoothing) to double CUDA decode throughput beyond what
+weight-only INT4 achieves, (2) kernel-level fusion — one Triton kernel per transformer layer
+instead of 3-5 separate launches — to eliminate L2/DRAM round-trips, and (3) `torch.compile`
+and sublinear attention algorithms that cut both the Python dispatch overhead and the O(n²)
+attention cost at long context.**
+
+Each module is backed by a 2024–2025 paper and is orthogonal to all Wave 38 additions.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| SmoothQuant: Accurate and Efficient Post-Training Quantization for LLMs (Xiao et al.) | ICML 2023 / prod. 2024–25 | Per-channel activation smoothing migrates outliers to weights; enables W8A8 INT8 at near-FP16 quality | `squish/quant/smooth_quant.py` |
+| HQQ: Half-Quadratic Quantization of Large Machine Learning Models (Badri & Shaji) | arXiv 2309.15531, 2024 | Proximal-optimization PTQ; calibration-free INT2/INT4; 10× faster than GPTQ calibration; on-device feasible | `squish/quant/hqq_quant.py` |
+| HyperAttention: Long-context Attention in Near-Linear Time (Han et al.) | NeurIPS 2024 (arXiv 2310.05869) | LSH bucketing + uniform residual correction; O(n√n); 8× speedup vs exact at 64k+ context | `squish/attention/hyper_attn.py` |
+| TriForce: Lossless Acceleration of Long Sequence LLM Decoding (Sun et al.) | ICLR 2025 (arXiv 2404.11912) | Draft KV = top-K pages of full KV cache; hierarchical spec decode; 2.31× on LongBench | `squish/speculative/triforce_decode.py` |
+| FlexAttention: A Programming Model for Attention Generalization (PyTorch team) | pytorch.org/blog 2024 / ASPLOS 2025 | score_mod API compiled to one Triton kernel; arbitrary masks with no overhead; 10–30% vs SDPA | `squish/kernels/flex_attn.py` |
+| Massive Activations: LLM Outlier Suppression Without Calibration (Sun et al.) | ICML 2024 (arXiv 2402.17762) | Detects extreme outlier dimensions; soft-clamp + redistribute; enables 1–2 bit lower eff. quant | `squish/token/massive_activation.py` |
+| W8A8 Dual-INT8 Inference (TRT-LLM / vLLM reference impl.) | Production 2024 | Weight + activation INT8 matmul; 2× FP16 GEMM throughput on Ampere/Hopper A/H-series | `squish/quant/w8a8_quant.py` |
+| torch.compile for LLM Decode (PyTorch Inductor) | PyTorch 2.4+ / 2024 | `fullgraph=True, mode='reduce-overhead'`; persistent CUDA kernels; 15–40% throughput without model edits | `squish/kernels/torch_compile_decode.py` |
+| APAR: LLMs Can Do Auto-Parallel Auto-Regressive Decoding (Liu et al.) | arXiv 2401.06761, 2024 | Structural independence detection in output; parallel subtree generation; up to 2× on JSON/code | `squish/speculative/apar_decode.py` |
+| GLA: Gated Linear Attention Transformers with Hardware-Efficient Training (Yang et al.) | ICML 2024 (arXiv 2312.06635) | Data-dependent gated decay; O(1) per-token recurrent state; linear complexity decode | `squish/attention/linear_attn.py` |
+| Liger Kernel: Efficient Triton Kernels for LLM Training and Inference (Hsu et al.) | arXiv 2410.10989, 2024 | Fused RMSNorm + attn residual; 3 launches → 1; 1.5–2× memory bandwidth reduction per layer | `squish/kernels/fused_norm_attn.py` |
+| LMCache: Enabling Efficient KV Cache Reuse for LLM Serving (Gao et al.) | MLSys 2025 (arXiv 2401.02669) | Async PCIe/NVLink KV block migration between prefill/decode workers; non-blocking KV reuse | `squish/serving/async_kv_transfer.py` |
+
+---
+
+### Wave 39a — Activation Quantization, Fused Kernels & Sublinear Attention (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| SmoothQuantActivation | `squish/quant/smooth_quant.py` | Per-channel activation-to-weight difficulty migration; calibration-free; prerequisite for W8A8 |
+| HQQQuantizer | `squish/quant/hqq_quant.py` | Proximal-optimization PTQ; no calibration data; INT2/INT4; faster than GPTQ; plug-in on any linear |
+| HyperAttention | `squish/attention/hyper_attn.py` | Sorted-LSH bucket attention + uniform residual sampling; O(n√n); exact fallback for short context |
+| TriForceDecoder | `squish/speculative/triforce_decode.py` | Hierarchical spec decode: KV page subset as draft KV; integrates with existing KVCache; long-context specialty |
+| FlexAttentionKernel | `squish/kernels/flex_attn.py` | torch.compile `score_mod` + `block_mask` API; one compiled Triton kernel for any attention pattern |
+| MassiveActivationSuppressor | `squish/token/massive_activation.py` | Outlier dimension tracker; soft-clamp + adjacent redistribution; per-layer, per-head configurable |
+
+### Wave 39b — W8A8 Runtime, Compiled Decode & Parallel Speculation (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| W8A8QuantRuntime | `squish/quant/w8a8_quant.py` | Dual INT8 GEMM path; used as backend for SmoothQuant; NumPy float32 simulation fallback |
+| TorchCompileDecode | `squish/kernels/torch_compile_decode.py` | `torch.compile(fullgraph=True, mode='reduce-overhead')` on decode step; MLX `mx.compile` parity path |
+| APARDecoder | `squish/speculative/apar_decode.py` | Output-tree independence analysis; parallel subtree decode; no draft model; structured-output specialty |
+| GatedLinearAttention | `squish/attention/linear_attn.py` | GRU-like gated decay state; O(1) per-token recurrent mode; composable with standard transformer blocks |
+| FusedNormAttnResidual | `squish/kernels/fused_norm_attn.py` | Single Triton kernel: RMSNorm → QKV → attention → residual; MLX metal shader parity |
+| AsyncKVTransfer | `squish/serving/async_kv_transfer.py` | Non-blocking KV block migration (PCIe/NVLink); extends PDDisaggregator; enables cross-request KV reuse |
+
+### v16 Target Metrics (after Wave 39)
+
+> Baselines are v15 Wave 38 targets. CUDA rows assume RTX 3090 with W8A8 + SmoothQuant active.
+
+| Model | v15 tok/s | v16 target tok/s | v15 TTFT | v16 TTFT target | Primary driver |
+|-------|-----------|-----------------|----------|------------------|----------------|
+| Qwen2.5-1.5B (M3) | 240–280 | 300–360 | < 0.06 s | < 0.03 s | torch.compile + FusedNorm + HQQ |
+| Qwen2.5-4B (M3) | 130–160 | 180–220 | < 0.12 s | < 0.07 s | APAR (structured) + torch.compile |
+| Qwen3-8B (M3) | 80–100 | 110–140 | < 0.35 s | < 0.20 s | HyperAttn + TriForce at 32k+ ctx |
+| Qwen2.5-7B (CUDA, RTX 3090) | 80–120 | 150–180 | < 0.30 s | < 0.15 s | W8A8 + SmoothQuant (2× FP16 GEMM) |
+
+> CUDA W8A8 row (`Qwen2.5-7B`) is the headline CUDA story: SmoothQuant + W8A8 together double
+> throughput beyond INT4 weight-only, because activation quantization removes the dequant bottleneck.
+
+### Completion Checklist
+
+- [ ] `squish/quant/smooth_quant.py` — SmoothQuantActivation
+- [ ] `squish/quant/hqq_quant.py` — HQQQuantizer
+- [ ] `squish/attention/hyper_attn.py` — HyperAttention
+- [ ] `squish/speculative/triforce_decode.py` — TriForceDecoder
+- [ ] `squish/kernels/flex_attn.py` — FlexAttentionKernel
+- [ ] `squish/token/massive_activation.py` — MassiveActivationSuppressor
+- [ ] `squish/quant/w8a8_quant.py` — W8A8QuantRuntime
+- [ ] `squish/kernels/torch_compile_decode.py` — TorchCompileDecode
+- [ ] `squish/speculative/apar_decode.py` — APARDecoder
+- [ ] `squish/attention/linear_attn.py` — GatedLinearAttention
+- [ ] `squish/kernels/fused_norm_attn.py` — FusedNormAttnResidual
+- [ ] `squish/serving/async_kv_transfer.py` — AsyncKVTransfer
+- [ ] `tests/test_wave39a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave39b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[16.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v15 Wave 37 — Wire Everything In (In Progress 2026-03-19)
+
+Theme: **Zero new algorithm work. Twelve existing isolation modules get wired into server.py's live
+request path with CLI flags, startup initialization, and live dispatch hooks in `_generate_tokens()`.**
+
+These modules were implemented in Waves 33–35 as standalone classes but never connected to the
+actual inference path. This wave closes that gap.
+
+### Modules Wired (12)
+
+| # | Module | File | CLI Flag | Live Hook |
+|---|--------|------|----------|-----------|
+| 1 | KVTransformCoder | `squish/kv/kvtc.py` | `--kvtc` | Init + calibrate; `_server_enabled` |
+| 2 | ChunkKVManager | `squish/kv/chunk_kv.py` | `--chunk-kv` | KV path: `invalidate_reuse_cache()` per request |
+| 3 | SSDSaguaro | `squish/speculative/ssd_saguaro.py` | `--ssd-saguaro` | Init + `_server_enabled` in spec path |
+| 4 | SpeculativeStreamer | `squish/speculative/spec_stream.py` | `--spec-stream` | Spec path: `reset()` per request |
+| 5 | MetalFlashAttention | `squish/kernels/metal_flash_attn.py` | `--metal-flash-attn` | Init + `_server_enabled` |
+| 6 | DejaVuSparseFFN | `squish/token/deja_vu_sparse.py` | `--deja-vu` | Init + calibrate on dummy hidden; `_server_enabled` |
+| 7 | JacobiDecoder | `squish/speculative/jacobi_decode.py` | `--jacobi` | New decode path: replaces manual loop; parallel N-token iteration |
+| 8 | MultiTokenPredictor | `squish/speculative/mtp_head.py` | `--mtp` | Init + `_server_enabled` |
+| 9 | LayerOverlapLoader | `squish/io/layer_overlap_loader.py` | `--layer-overlap` | `start()` at startup; provides prefetch infrastructure |
+| 10 | ChipDetector | `squish/hardware/chip_detector.py` | auto (startup) | Auto-tune `chunk_prefill_size` + `kv_bits` at startup |
+| 11 | FusedQKVProjection | `squish/hardware/fused_qkv_proj.py` | `--fused-qkv` | Init with model config; `_server_enabled` |
+| 12 | PDDisaggregator | `squish/serving/pd_disagg.py` | `--pd-disagg` | KV path: timing stats for prefill vs decode; callbacks wired |
+
+### Completion Checklist
+
+- [ ] 12 global declarations added to `squish/server.py`
+- [ ] 12+ CLI flags added to `main()` argparse
+- [ ] New flags added to `--all-optimizations` expansion
+- [ ] 12 module initializations in `main()` (inside try/except, each with `_warn` on failure)
+- [ ] `ChipDetector` auto-tunes `_chunk_prefill_size` at startup
+- [ ] `JacobiDecoder` new decode path in `_generate_tokens()` (before KV path)
+- [ ] `ChunkKVManager.invalidate_reuse_cache()` wired in KV path
+- [ ] `SpeculativeStreamer.reset()` wired in spec path
+- [ ] `PDDisaggregator` timing stats wired in KV path
+- [ ] `LayerOverlapLoader.start()` called in main()
+- [ ] `tests/test_wave37_wiring.py` — ≥ 80 tests, all passing
+- [ ] git `commit-msg` hook blocks `<think>` artifact commits
+- [ ] CHANGELOG `[14.1.0-alpha.1]` entry
+- [ ] PLAN.md updated
 
 ---
 
