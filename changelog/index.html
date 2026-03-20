@@ -838,6 +838,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1400-2026-03-26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [14.0.0] — 2026-03-26
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[14.0.0] — 2026-03-26">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-waves-3536-cross-platform-linuxcuda-rocm-wsl2-smart-dependency-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Waves 35+36: Cross-Platform Linux/CUDA · ROCm · WSL2 · Smart Dependency Resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1400-alpha1-2026-03-26" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1615,6 +1643,114 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="1400-2026-03-26">[14.0.0] — 2026-03-26<a class="headerlink" href="#1400-2026-03-26" title="Permanent link">&para;</a></h2>
+<h3 id="added-waves-3536-cross-platform-linuxcuda-rocm-wsl2-smart-dependency-resolution">Added — Waves 35+36: Cross-Platform Linux/CUDA · ROCm · WSL2 · Smart Dependency Resolution<a class="headerlink" href="#added-waves-3536-cross-platform-linuxcuda-rocm-wsl2-smart-dependency-resolution" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules extending Squish from macOS-only to a fully
+cross-platform inference engine: Linux/CUDA and AMD ROCm GPU serving, WSL2
+support, platform-aware feature flags, memory-mapped weight loading, and
+intelligent dependency resolution.</p>
+<p><strong>Wave 35 — Linux/CUDA Foundation</strong></p>
+<ul>
+<li>
+<p><strong>UnifiedPlatformDetector</strong> (<code>squish/platform/detector.py</code>) — Detects the
+  host platform once and caches: <code>MACOS_APPLE_SILICON</code>, <code>LINUX_CUDA</code>,
+  <code>LINUX_ROCM</code>, <code>LINUX_CPU</code>, <code>WINDOWS_WSL</code>, <code>WINDOWS_NATIVE</code>, <code>UNKNOWN</code>.
+  Probes MLX, CUDA (device count + compute capability), ROCm (HIP version),
+  WSL2 (<code>/proc/version</code>), Apple chip brand, and RAM. O(1) cached reads after
+  first call. <code>PlatformKind</code>, <code>CUDAInfo</code>, <code>PlatformInfo</code>,
+  <code>UnifiedPlatformDetector.detect()</code>, <code>.reset()</code>.</p>
+</li>
+<li>
+<p><strong>LinuxMemGovernor</strong> (<code>squish/platform/memory_linux.py</code>) — <code>/proc/meminfo</code> +
+  cgroup v1/v2 memory pressure monitor for Linux, analogous to the macOS
+  vm_stat governor. Level thresholds: OK / MODERATE / HIGH / CRITICAL.
+  Container-aware (reads <code>memory.max</code> / <code>memory.limit_in_bytes</code>). Background
+  polling thread; per-level handler callbacks. No-op on non-Linux.
+  <code>LinuxMemConfig</code>, <code>LinuxMemGovernor.start()</code>, <code>.stop()</code>, <code>.snapshot()</code>,
+  <code>.register_handler()</code>.</p>
+</li>
+<li>
+<p><strong>CUDAFlashAttention</strong> (<code>squish/kernels/cuda_flash_attn.py</code>) — Unified Flash
+  Attention for CUDA: fallback chain flash-attn 2.x → xformers memory-efficient
+  → PyTorch <code>F.scaled_dot_product_attention</code> → NumPy softmax baseline.
+  Always importable (NumPy fallback on macOS). Identical <code>forward(q,k,v)</code> API
+  as <code>MetalFlashAttention</code>. <code>CUDAFlashConfig</code>, <code>CUDAFlashStats</code>,
+  <code>CUDAFlashAttention.forward()</code>, <code>.reset_stats()</code>.</p>
+</li>
+<li>
+<p><strong>BitsAndBytesQuantizer</strong> (<code>squish/quant/bnb_quant.py</code>) — NF4 / INT8 / FP4
+  quantisation via bitsandbytes on Linux+CUDA; falls back to a NumPy int8 /
+  NF4-lookup-table simulation on CPU and macOS. Double-quant and group-size
+  configurable. <code>BnbConfig</code>, <code>BnbQuantized</code>, <code>BitsAndBytesQuantizer.quantize()</code>,
+  <code>.dequantize()</code>.</p>
+</li>
+<li>
+<p><strong>CrossPlatformMmapLoader</strong> (<code>squish/io/mmap_loader.py</code>) — Memory-mapped
+  weight loader: POSIX <code>mmap.mmap</code> on Linux for zero-copy reads; np.load copy
+  fallback on macOS and CPU; <code>MADV_SEQUENTIAL</code> prefetch hint on Linux.
+  Directory scan (all <code>*.npy</code>), LRU-style cache, size guard. <code>MmapLoaderConfig</code>,
+  <code>CrossPlatformMmapLoader.load()</code>, <code>.load_dir()</code>, <code>.prefetch()</code>, <code>.close()</code>.</p>
+</li>
+<li>
+<p><strong>PlatformFeatureRegistry</strong> (<code>squish/platform/feature_registry.py</code>) — Maps
+  each Squish optimisation (FLASH_ATTENTION, METAL_DISPATCH, CUDA_GRAPHS,
+  INT4_QUANT, INT8_QUANT, SPECULATIVE_DECODE, LAYER_SKIP, TOKEN_PIPELINE,
+  MMAP_WEIGHTS, BNB_QUANT) to NATIVE / EMULATED / UNSUPPORTED on the detected
+  platform. Provides <code>.is_supported()</code>, <code>.support_level()</code>, <code>.best_fallback()</code>,
+  <code>.supported_features()</code>, <code>.native_features()</code>, <code>.summary()</code>.</p>
+</li>
+</ul>
+<p><strong>Wave 36 — Cross-Platform Serving Parity</strong></p>
+<ul>
+<li>
+<p><strong>UniversalAttention</strong> (<code>squish/kernels/universal_attn.py</code>) — Single attention
+  API routing to MetalFlashAttention (macOS), CUDAFlashAttention (Linux GPU), or
+  NumPy fallback. Degrades gracefully if the preferred backend fails at runtime.
+  <code>UniversalAttnConfig</code>, <code>UniversalAttnStats</code>, <code>UniversalAttention.forward()</code>,
+  <code>.backend_name</code>.</p>
+</li>
+<li>
+<p><strong>LinuxServerInit</strong> (<code>squish/serving/linux_server_init.py</code>) — Configures the
+  Linux inference serving environment: CUDA device resolution, per-process memory
+  fraction, TF32 policy, OMP/MKL thread pool. ROCm detection. Heuristic batch-
+  size recommendation based on available VRAM. <code>LinuxServerConfig</code>,
+  <code>LinuxInitResult</code>, <code>LinuxServerInit.initialize()</code>,
+  <code>.get_recommended_batch_size()</code>.</p>
+</li>
+<li>
+<p><strong>ROCmBackend</strong> (<code>squish/platform/rocm_backend.py</code>) — AMD ROCm GPU detector
+  and config advisor. Reports GCN arch name (gfx90a / gfx1100), VRAM, ROCm
+  version, and compute units. Recommends dtype (bf16 on MI series, fp16 on RDNA)
+  and Flash Attention availability. No-op on non-ROCm machines. <code>ROCmConfig</code>,
+  <code>ROCmDeviceInfo</code>, <code>ROCmBackend.detect()</code>, <code>.is_available()</code>,
+  <code>.get_recommended_config()</code>.</p>
+</li>
+<li>
+<p><strong>WSLDetector</strong> (<code>squish/platform/wsl_detector.py</code>) — Windows Subsystem for
+  Linux 2 detector. Inspects <code>/proc/version</code>, <code>WSL_DISTRO_NAME</code> env var,
+  <code>/dev/dxg</code> (D3D12 GPU forwarding), and cgroup memory limits.
+  <code>WSLConfig</code>, <code>WSLInfo</code>, <code>WSLDetector.detect()</code>, <code>.get_memory_limit_gb()</code>,
+  <code>.has_gpu_access()</code>.</p>
+</li>
+<li>
+<p><strong>CrossPlatformModelLoader</strong> (<code>squish/quant/cross_platform_loader.py</code>) — Selects
+  the optimal model-loading strategy for the current platform: MLX on macOS,
+  BitsAndBytes 4-bit NF4 on Linux+CUDA, PyTorch fp16/fp32 elsewhere. Memory
+  estimation accounts for quantization factor. <code>CrossPlatformLoaderConfig</code>,
+  <code>LoadResult</code>, <code>CrossPlatformModelLoader.select_loader()</code>, <code>.load()</code>,
+  <code>.estimate_memory()</code>.</p>
+</li>
+<li>
+<p><strong>DependencyResolver</strong> (<code>squish/install/dependency_resolver.py</code>) — Platform-
+  aware pip dependency manifest: resolves the exact set of required packages for
+  macOS/Apple Silicon, Linux+CUDA cu121, Linux+ROCm rocm5.7, and CPU-only.
+  Generates complete <code>pip install ... --extra-index-url ...</code> commands.
+  Validates import-ability of resolved packages. <code>InstallSpec</code>, <code>DependencyGroup</code>,
+  <code>DependencyResolverConfig</code>, <code>DependencyResolver.resolve()</code>, <code>.validate()</code>,
+  <code>.get_install_command()</code>, <code>.check_missing()</code>.</p>
+</li>
+</ul>
 <hr />
 <h2 id="1400-alpha1-2026-03-26">[14.0.0-alpha.1] — 2026-03-26<a class="headerlink" href="#1400-alpha1-2026-03-26" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-35-sampling-precision-memory-reclamation-context-intelligence">Added — Wave 35: Sampling Precision · Memory Reclamation · Context Intelligence<a class="headerlink" href="#added-wave-35-sampling-precision-memory-reclamation-context-intelligence" title="Permanent link">&para;</a></h3>
