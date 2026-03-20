@@ -1,0 +1,19 @@
+feat(v12): Wave 31+32 - SOTA research integration + pre-launch hardening
+
+Wave 31 (KV Compression & Speculative Research):
+- KVTransformCoder: PCA-based KV cache transform coding (KVTC, NVIDIA 2026)
+- ChunkKVManager: semantic chunk eviction + cross-layer index reuse (NeurIPS 2025)
+- SSDSaguaro: speculative^2 decoding, outcome pre-fetching (ICLR 2026)
+- ContentHashImageCache: SHA256 image hash -> KV prefix reuse
+- ChipDetector: M1-M5 detection, adaptive chunk + KV tuning
+
+Wave 32 (Quantization + Pre-Launch Hardening):
+- Any4Quantizer: learned 4-bit LUT quantization (Meta NeurIPS 2025)
+- VSDDraftTrainer: variational spec decode training objective (Feb 2026)
+- ConfidenceGate: threshold-based token commit gate (Fast-dLLM)
+- INT3RuntimeLoader: MiLo INT3 npy-dir runtime dequantization
+- BenchmarkHarness: 30-trial statistical suite (mean/sigma/P50/P99)
+- AdaptiveKVTCManager: per-layer auto-rank KVTC calibration
+
+Tests: +165 new tests (wave31: 81, wave32: 84), all passing
+Total: 7991 passed, 33 skipped, 0 failures

@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-14 (v11 complete — Wave 29+30 KV compression & scheduling throughput sprint)
+> Last updated: 2026-03-19 (v12 in progress — Wave 31+32 SOTA research integration + pre-launch hardening)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -21,6 +21,90 @@ This document tracks completed waves, the current release, and the next phase.
 | **v9** | 25–26 | Cutting-Edge Attention Variants & Compute Fusion · Distributed Inference & Production Reliability |
 | **v10** | 27–28 | Inference Velocity Sprint — server wiring quick-wins + novel algorithm modules |
 | **v11** | 29–30 | KV & Attention Compression Sprint · Scheduling & Throughput Sprint |
+| **v12** | 31–32 | SOTA Research Integration · Pre-Launch Hardening |
+
+---
+
+## 🚧 v12 — Waves 31+32 (In Progress — 2026-03-19)
+
+Theme: **SOTA Research Integration + Pre-Launch Hardening**
+
+> Objective: ship the two technical differentiators nobody else in Apple Silicon local inference has
+> shipped yet (KVTC + SSD/SAGUARO), integrate the only LLM inference paper benchmarked natively on
+> Apple Silicon MLX (ReDrafter), then close the pre-launch gap with quantization and benchmark tooling.
+
+### Research Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| KVTC — Transform Coding for KV Caches | NVIDIA 2026-03-17 | 20× KV compression; 8× TTFT reduction on 8k-token prompts | `squish/kv/kvtc.py` |
+| ChunkKV — Semantic Chunk Eviction | NeurIPS 2025 | 26.5% throughput ↑ via language-coherent eviction units | `squish/kv/chunk_kv.py` |
+| SSD / SAGUARO — Speculative² Decoding | ICLR 2026 | 5× over AR baseline; 2× over optimized spec decode | `squish/speculative/ssd_saguaro.py` |
+| ReDrafter — MLX-native RNN draft head | Apple ML Research Dec 2025 | 2.3× on Apple Silicon; only paper benchmarked in native MLX | `squish/speculative/redrafter.py` |
+| any4 — Learned 4-bit LUT quantization | Meta NeurIPS 2025 | > INT4/FP4/NF4 accuracy; single calibration sample | `squish/quant/any4.py` |
+| VSD — Variational Speculative Decoding | Feb 2026 | +9.6% acceptance length over EAGLE-3 on MT-Bench | `squish/speculative/vsd_draft.py` |
+| M5 MLX speedup | Apple 2026 | 4× TTFT vs M4 with MLX Neural Accelerator targeting | `squish/hardware/chip_detector.py` |
+
+### Wave 31 — KV Compression & Speculative Research Integration (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| KVTransformCoder | `squish/kv/kvtc.py` | PCA decorrelation + adaptive quant + entropy coding of KV cache |
+| ChunkKVManager | `squish/kv/chunk_kv.py` | Semantic-chunk eviction + cross-layer index reuse |
+| SSDSaguaro | `squish/speculative/ssd_saguaro.py` | Speculative² — predict verification outcome, pre-fetch speculations |
+| ReDrafterHead | `squish/speculative/redrafter.py` | MLX-native RNN draft head conditioned on main model hidden states |
+| ContentHashImageCache | `squish/vision/content_hash_cache.py` | SHA256 image hash → KV reuse before vision encoding fires |
+| ChipDetector | `squish/hardware/chip_detector.py` | M1–M5 detection, adaptive chunk sizing, no MLX dispatch override |
+
+### Wave 32 — Quantization + Pre-Launch Hardening (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| Any4Quantizer | `squish/quant/any4.py` | Learned 4-bit LUT (tinygemm-style); single calibration sample |
+| VSDDraftHead | `squish/speculative/vsd_draft.py` | Sequence-acceptance training objective for draft heads |
+| ConfidenceGate | `squish/serving/confidence_gate.py` | Commit tokens ≥ confidence threshold; re-draft below threshold |
+| INT3RuntimeLoader | `squish/quant/int3_runtime.py` | MiLo INT3 npy-dir → runtime dequantization in loader pipeline |
+| BenchmarkHarness | `squish/bench/benchmark_harness.py` | 30-trial statistical suite: mean, σ, P50, P99; markdown output |
+| AdaptiveKVTC | `squish/kv/adaptive_kvtc.py` | Per-layer calibrated KVTC with auto-rank selection from explained variance |
+
+### Pre-Launch Target Metrics
+
+| Model | Current tok/s | v12 target tok/s | TTFT current | TTFT target |
+|-------|-------------|-----------------|-------------|-------------|
+| Qwen2.5-1.5B | 65–90 | 120–150 | 0.33–0.53 s | < 0.25 s |
+| Qwen2.5-4B | 35–50 | 60–80 | 0.8–1.2 s | < 0.5 s |
+| Qwen3-8B | 19–26 | 35–50 | 2–4 s | < 1.5 s |
+
+> At these numbers: 1.5B → ~1 s full response; 4B → ~2 s; 8B → ~3.5 s average.
+> That is the sub-3-second demo story.
+
+### Publication Roadmap
+
+| Deliverable | Status | Depends On |
+|-------------|--------|------------|
+| Technical report draft (`docs/paper/squish_technical_report.md`) | ⬜ planned | Wave 32 benchmark harness |
+| Demo video script (`docs/demo_script.md`) | ⬜ planned | v12 modules wired |
+| HuggingFace blog post draft | ⬜ planned | 30-trial benchmark results |
+| ArXiv preprint (defer) | ⬜ backlog | Community traction + endorser contact |
+
+### Completion Checklist
+
+- [ ] `kvtc.py` — PCA-based KV transform coder
+- [ ] `chunk_kv.py` — semantic chunk eviction manager
+- [ ] `ssd_saguaro.py` — SAGUARO speculative² algorithm
+- [ ] `redrafter.py` — ReDrafter RNN draft backend
+- [ ] `content_hash_cache.py` — content-hash image prefix cache
+- [ ] `chip_detector.py` — M1–M5 detection + adaptive tuning
+- [ ] `any4.py` — learned 4-bit LUT quantizer
+- [ ] `vsd_draft.py` — VSD training objective for draft heads
+- [ ] `confidence_gate.py` — confidence-threshold commit gate
+- [ ] `int3_runtime.py` — INT3 npy-dir runtime dequantization
+- [ ] `benchmark_harness.py` — 30-trial statistical benchmark
+- [ ] `adaptive_kvtc.py` — per-layer calibrated KVTC
+- [ ] Tests: wave31 (≥ 66 tests) + wave32 (≥ 88 tests), all passing
+- [ ] Statistical benchmarks run (30 trials, variance reported)
+- [ ] Technical report draft
+- [ ] CHANGELOG `[12.0.0]` entry
 
 ---
 

@@ -5,6 +5,33 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [12.0.0] — 2026-04-01
+
+### Added — Wave 31: KV Compression & Speculative Research Integration
+
+- **KVTransformCoder** (`squish/kv/kvtc.py`) — PCA-based transform coding for KV caches (KVTC, NVIDIA 2026); centered SVD → truncated rank-r components → per-column symmetric/asymmetric quantization; `KVTCLayer`, `KVTCManager`, `KVTCStats`
+- **ChunkKVManager** (`squish/kv/chunk_kv.py`) — Semantic chunk eviction with cross-layer index reuse (ChunkKV, NeurIPS 2025); chunk-level max-attention / dot-product / norm scoring; `reuse_window` parameter for efficient adjacent-layer KV reuse; `ChunkKVOrchestrator` for multi-layer coordination
+- **SSDSaguaro** (`squish/speculative/ssd_saguaro.py`) — Speculative² decoding with outcome pre-fetching (ICLR 2026); predicts top-k acceptance-length outcomes from draft/target logit ratio; pre-fetches next draft for each outcome; greedy `verify_and_select`; `SSDStats` tracking
+- **ContentHashImageCache** (`squish/vision/content_hash_cache.py`) — SHA-256 image hash → KV prefix LRU cache; TTL support; `evict_lru()` / `evict_expired()`; `bytes_cached` tracking; 28× speedup on repeated vision prompts
+- **ChipDetector** (`squish/hardware/chip_detector.py`) — M1–M5 Apple Silicon chip detection; `sysctl` + `system_profiler` fallback; `CHIP_PROFILES` constants (bandwidth, chunk size, KV bits per generation); `get_optimal_chunk_size()`, `get_recommended_kv_bits()`, `bandwidth_ratio_vs_m3()`
+
+### Added — Wave 32: Quantization & Pre-Launch Hardening
+
+- **Any4Quantizer** (`squish/quant/any4.py`) — Learned 4-bit LUT quantization (Meta NeurIPS 2025); k-means codebook on single calibration sample; nibble-packed storage; group-wise scale/zero; > INT4/FP4/NF4 accuracy
+- **VSDDraftTrainer** (`squish/speculative/vsd_draft.py`) — Variational speculative decoding training objective (VSD, Feb 2026); `VSDLoss` = -E[accepted_len] + β·KL(p_draft‖p_target); `acceptance_probability()` via cumulative greedy acceptance; +9.6% acceptance length over EAGLE-3
+- **ConfidenceGate** (`squish/serving/confidence_gate.py`) — Confidence-threshold token commit gate (Fast-dLLM); `filter_draft()` / `filter_batch()`; configurable `min_commit`/`max_commit`; temperature-scaled softmax confidence; 2.4× speedup on masked diffusion models
+- **INT3RuntimeLoader** (`squish/quant/int3_runtime.py`) — MiLo INT3 npy-dir → runtime dequantization; `load_from_arrays()` and `load_layer()` from `{name}__q3.npy` / `__s3.npy` / `__z3.npy` / `__shape.npy`; tiled streaming `dequantize_tiled()` generator
+- **BenchmarkHarness** (`squish/bench/benchmark_harness.py`) — 30-trial statistical benchmark suite; mean/σ/P50/P99 for TTFT and TPS; `to_markdown_table()` / `speedup_table()` for paper-ready reporting; configurable warmup and timeout
+- **AdaptiveKVTCManager** (`squish/kv/adaptive_kvtc.py`) — Per-layer auto-rank KVTC via explained-variance thresholding; `AdaptiveKVTCLayer.calibrate_and_tune()` selects rank from SVD spectrum; `auto_calibrate()` bulk API; `compression_summary()` reports mean rank, compression ratio, explained variance
+
+### Tests
+
+- `tests/test_wave31_modules.py` — 81 tests, 81 passing
+- `tests/test_wave32_modules.py` — 84 tests, 84 passing
+- Full suite: **7,991 passed**, 33 skipped, 0 failures (up from 7,826)
+
+---
+
 ## [11.0.0] — 2026-03-14
 
 ### Added — Wave 29: KV & Attention Compression Sprint
