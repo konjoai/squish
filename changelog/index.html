@@ -838,6 +838,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1600-2026-06-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [16.0.0] — 2026-06-17
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[16.0.0] — 2026-06-17">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-39-activation-quantization-fused-kernels-w8a8-runtime-compiled-decode-sublinear-attention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 39: Activation Quantization · Fused Kernels · W8A8 Runtime · Compiled Decode · Sublinear Attention
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1500-2026-06-16" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -984,7 +1023,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests" class="md-nav__link">
+  <a href="#tests_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1034,7 +1073,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_1" class="md-nav__link">
+  <a href="#tests_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1084,7 +1123,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_2" class="md-nav__link">
+  <a href="#tests_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1145,7 +1184,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_3" class="md-nav__link">
+  <a href="#tests_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1206,7 +1245,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_4" class="md-nav__link">
+  <a href="#tests_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1278,7 +1317,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_5" class="md-nav__link">
+  <a href="#tests_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1350,7 +1389,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_6" class="md-nav__link">
+  <a href="#tests_7" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1411,7 +1450,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_7" class="md-nav__link">
+  <a href="#tests_8" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1472,7 +1511,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_8" class="md-nav__link">
+  <a href="#tests_9" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1544,7 +1583,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tests_9" class="md-nav__link">
+  <a href="#tests_10" class="md-nav__link">
     <span class="md-ellipsis">
       
         Tests
@@ -1671,6 +1710,110 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="1600-2026-06-17">[16.0.0] — 2026-06-17<a class="headerlink" href="#1600-2026-06-17" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-39-activation-quantization-fused-kernels-w8a8-runtime-compiled-decode-sublinear-attention">Added — Wave 39: Activation Quantization · Fused Kernels · W8A8 Runtime · Compiled Decode · Sublinear Attention<a class="headerlink" href="#added-wave-39-activation-quantization-fused-kernels-w8a8-runtime-compiled-decode-sublinear-attention" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules targeting the full v16 activation-quantisation
+and inference-efficiency frontier across five orthogonal axes: per-channel
+activation smoothing, calibration-free proximal quantisation, dual INT8
+weight+activation runtime, sublinear and recurrent attention, fused
+kernel composition, compiled decode paths, and async KV migration.
+All modules are NumPy-only simulation layers backed by 2023–2025
+peer-reviewed papers.</p>
+<p><strong>Wave 39a — Activation Quantization &amp; Sublinear Attention</strong></p>
+<ul>
+<li>
+<p><strong>SmoothQuant</strong> (<code>squish/quant/smooth_quant.py</code>) — Per-channel
+  activation-to-weight difficulty migration (Xiao et al., ICML 2023).
+  Migrates quantisation difficulty from activations to weights via calibrated
+  per-channel scales. <code>SmoothQuantConfig</code>, <code>SmoothQuantActivation.calibrate()</code>,
+  <code>.smooth_weight()</code>, <code>.smooth_activation()</code>, <code>.quantise_int8()</code>,
+  <code>.dequantise_int8()</code>, <code>.forward_smoothed()</code>.</p>
+</li>
+<li>
+<p><strong>HQQ</strong> (<code>squish/quant/hqq_quant.py</code>) — Half-Quadratic Quantization,
+  calibration-free PTQ via proximal optimisation (Badri &amp; Shaji, 2024).
+  Supports INT2/INT3/INT4/INT8, no calibration data required.
+  <code>HQQConfig</code>, <code>HQQTensor</code>, <code>HQQQuantizer.encode()</code>, <code>.decode()</code>,
+  <code>.relative_error()</code>, <code>.quantisation_error_db()</code>.</p>
+</li>
+<li>
+<p><strong>HyperAttention</strong> (<code>squish/attention/hyper_attn.py</code>) — Near-linear O(n√n)
+  attention via LSH bucketing + uniform residual sampling (Han et al.,
+  NeurIPS 2024). Auto-falls back to exact attention for short sequences.
+  <code>HyperAttentionConfig</code>, <code>HyperAttention.forward()</code>, <code>_exact_attention()</code>.</p>
+</li>
+<li>
+<p><strong>TriForce Decode</strong> (<code>squish/speculative/triforce_decode.py</code>) — Hierarchical
+  speculative decoding with KV page subsets as the draft KV (Sun et al.,
+  ICLR 2025). <code>TriForceConfig</code>, <code>TriForceDraftResult</code>, <code>TriForceDecoder.step()</code>,
+  <code>.select_top_k_pages()</code>, <code>.accept_reject()</code>.</p>
+</li>
+<li>
+<p><strong>FlexAttention</strong> (<code>squish/kernels/flex_attn.py</code>) — Composable score_mod +
+  BlockMask FlexAttention kernel (PyTorch team, ASPLOS 2025). Factory functions
+  for causal, ALiBi, sliding-window, and softcap mods. <code>FlexAttentionConfig</code>,
+  <code>BlockMask</code>, <code>FlexAttentionKernel.forward()</code>, <code>make_causal_mod()</code>,
+  <code>make_alibi_mod()</code>, <code>make_sliding_window_mod()</code>, <code>make_softcap_mod()</code>.</p>
+</li>
+<li>
+<p><strong>MassiveActivationSuppressor</strong> (<code>squish/token/massive_activation.py</code>) —
+  Outlier dimension soft-clamp + adjacent energy redistribution (Sun et al.,
+  ICML 2024). Running EMA statistics, per-layer outlier tracking.
+  <code>MassiveActivationConfig</code>, <code>SuppressionStats</code>,
+  <code>MassiveActivationSuppressor.detect_outlier_dims()</code>, <code>.suppress()</code>,
+  <code>.get_stats()</code>, <code>.reset_stats()</code>.</p>
+</li>
+</ul>
+<p><strong>Wave 39b — W8A8 Runtime · Compiled Decode · Parallel Speculation · Async KV</strong></p>
+<ul>
+<li>
+<p><strong>W8A8QuantRuntime</strong> (<code>squish/quant/w8a8_quant.py</code>) — Dual INT8
+  weight+activation matmul runtime (TRT-LLM / vLLM reference, 2024).
+  Symmetric/asymmetric, per-channel/per-tensor. <code>W8A8Config</code>, <code>W8A8Tensor</code>,
+  <code>W8A8QuantRuntime.quantise_weight()</code>, <code>.quantise_activation()</code>, <code>.linear()</code>,
+  <code>.relative_error()</code>.</p>
+</li>
+<li>
+<p><strong>TorchCompileDecode</strong> (<code>squish/kernels/torch_compile_decode.py</code>) —
+  torch.compile / mlx.compile wrapper with eager fallback and call-latency
+  stats (PyTorch team, 2024). <code>TorchCompileConfig</code>, <code>CompileStats</code>,
+  <code>TorchCompileDecode.compile()</code>, <code>.__call__()</code>, <code>.stats</code>, <code>.reset_stats()</code>.</p>
+</li>
+<li>
+<p><strong>APARDecoder</strong> (<code>squish/speculative/apar_decode.py</code>) — Auto-Parallel
+  Auto-Regressive decoding with output-tree branch forking (Liu et al., 2024).
+  Fork confidence gating, max_branches limit, round-robin branch scheduling.
+  <code>APARConfig</code>, <code>APARBranch</code>, <code>APARDecoder.should_fork()</code>, <code>.generate()</code>,
+  <code>.active_branch_count()</code>, <code>.branch_count()</code>, <code>.reset()</code>.</p>
+</li>
+<li>
+<p><strong>GatedLinearAttention</strong> (<code>squish/attention/linear_attn.py</code>) — Data-dependent
+  gated decay O(1) recurrent attention (Yang et al., ICML 2024). Both step
+  (decode) and prefill (chunked) modes with persistent state. <code>GLAConfig</code>,
+  <code>GLAState</code>, <code>GatedLinearAttention.init_state()</code>, <code>.step()</code>, <code>.prefill()</code>.</p>
+</li>
+<li>
+<p><strong>FusedNormAttnResidual</strong> (<code>squish/kernels/fused_norm_attn.py</code>) — Fused
+  RMSNorm → Multi-Head Attention → Residual Add in a single operation
+  (Hsu et al., 2024). Accepts (B,T,D) and (T,D) inputs; causal support.
+  <code>FusedNormAttnConfig</code>, <code>FusedNormAttnResidual.rms_norm()</code>, <code>.forward()</code>.</p>
+</li>
+<li>
+<p><strong>AsyncKVTransfer</strong> (<code>squish/serving/async_kv_transfer.py</code>) — Non-blocking
+  KV block migration with background worker thread (LMCache, Gao et al.,
+  MLSys 2025). Simulated-latency mode, bandwidth throttling, thread-safe
+  queue. <code>TransferStatus</code>, <code>KVBlock</code>, <code>TransferHandle</code>,
+  <code>AsyncKVTransferConfig</code>, <code>AsyncKVTransfer.enqueue()</code>, <code>.get_ready_blocks()</code>,
+  <code>.pending_count()</code>, <code>.start()</code>, <code>.stop()</code>.</p>
+</li>
+</ul>
+<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>tests/test_wave39a_modules.py</code> — 120 tests covering all Wave 39a modules.</li>
+<li><code>tests/test_wave39b_modules.py</code> — 93 tests covering all Wave 39b modules.</li>
+<li>Total new tests: <strong>213</strong>; cumulative suite: <strong>8272 passed</strong>.</li>
+</ul>
 <hr />
 <h2 id="1500-2026-06-16">[15.0.0] — 2026-06-16<a class="headerlink" href="#1500-2026-06-16" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-38-long-context-sparse-attention-lut-quantization-recurrent-speculation-decode-compilation">Added — Wave 38: Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation<a class="headerlink" href="#added-wave-38-long-context-sparse-attention-lut-quantization-recurrent-speculation-decode-compilation" title="Permanent link">&para;</a></h3>
@@ -2105,7 +2248,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
   with <code>extract_features()</code>, <code>should_skip()</code>, <code>update()</code>, <code>global_skip_rate()</code>.</p>
 </li>
 </ul>
-<h3 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h3>
+<h3 id="tests_1">Tests<a class="headerlink" href="#tests_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave33_modules.py</code> — <strong>110 tests, 110 passing</strong></li>
 <li>Full suite: <strong>8,101 passed</strong>, 33 skipped, 0 failures (up from 7,991)</li>
@@ -2129,7 +2272,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <li><strong>BenchmarkHarness</strong> (<code>squish/bench/benchmark_harness.py</code>) — 30-trial statistical benchmark suite; mean/σ/P50/P99 for TTFT and TPS; <code>to_markdown_table()</code> / <code>speedup_table()</code> for paper-ready reporting; configurable warmup and timeout</li>
 <li><strong>AdaptiveKVTCManager</strong> (<code>squish/kv/adaptive_kvtc.py</code>) — Per-layer auto-rank KVTC via explained-variance thresholding; <code>AdaptiveKVTCLayer.calibrate_and_tune()</code> selects rank from SVD spectrum; <code>auto_calibrate()</code> bulk API; <code>compression_summary()</code> reports mean rank, compression ratio, explained variance</li>
 </ul>
-<h3 id="tests_1">Tests<a class="headerlink" href="#tests_1" title="Permanent link">&para;</a></h3>
+<h3 id="tests_2">Tests<a class="headerlink" href="#tests_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave31_modules.py</code> — 81 tests, 81 passing</li>
 <li><code>tests/test_wave32_modules.py</code> — 84 tests, 84 passing</li>
@@ -2155,7 +2298,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <li><strong>GEAR KV Quantization</strong> (<code>squish/kv/gear_kv.py</code>) — INT4/INT8 KV quantization with low-rank SVD error correction; rank-r correction residual stored alongside quantized KV; <code>GEARManager</code> per-layer API; &gt;99% cosine similarity vs FP16 at rank=8</li>
 <li><strong>Quantized Rotary</strong> (<code>squish/quant/quant_rotary.py</code>) — Fused dequantize→RoPE rotate→requantize in one NumPy pass; eliminates 2 of 3 kernel launches for Q/K rotation; INT8 symmetric per-row scale; 4-bit mode supported</li>
 </ul>
-<h3 id="tests_2">Tests<a class="headerlink" href="#tests_2" title="Permanent link">&para;</a></h3>
+<h3 id="tests_3">Tests<a class="headerlink" href="#tests_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave29_modules.py</code> — 66 tests, 66 passing</li>
 <li><code>tests/test_wave30_modules.py</code> — 88 tests, 88 passing</li>
@@ -2180,7 +2323,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <li><strong>PerLayerSparseAttn</strong> (<code>squish/attention/per_layer_sparse_attn.py</code>) — Per-head entropy-based attention sparsity profiled from prefill; EMA-smoothed head profiles; −15–25% attention FLOP in decode; enable with <code>--per-layer-sparse</code></li>
 <li><strong>SpeculativePrefiller</strong> (<code>squish/speculative/speculative_prefill.py</code>) — Draft-accelerated prefill using cosine-similarity KV agreement to skip target layers; −10–22% TTFT; requires <code>--draft-model</code></li>
 </ul>
-<h3 id="tests_3">Tests<a class="headerlink" href="#tests_3" title="Permanent link">&para;</a></h3>
+<h3 id="tests_4">Tests<a class="headerlink" href="#tests_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave27_server_wiring.py</code> — 33 tests, 33 passing</li>
 <li><code>tests/test_wave28_server_wiring.py</code> — 77 tests, 77 passing</li>
@@ -2227,7 +2370,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <li><strong>SchemaValidator</strong> (<code>squish/schema_validator.py</code>) — JSON schema validation (type/required/properties/min+maxLength/min+max/items); 7.48 µs valid, 4.90 µs invalid</li>
 <li><strong>AuditLogger</strong> (<code>squish/audit_logger.py</code>) — SHA-256 hash-chained tamper-evident audit log; 1.92 µs log, 2236 µs verify (chain_length=2010)</li>
 </ul>
-<h3 id="tests_4">Tests<a class="headerlink" href="#tests_4" title="Permanent link">&para;</a></h3>
+<h3 id="tests_5">Tests<a class="headerlink" href="#tests_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave25_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave26_server_wiring.py</code> — 56 tests, 56 passing</li>
@@ -2279,7 +2422,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <li><strong>AWQv2</strong> (<code>squish/awq_v2.py</code>) — Activation-aware scale+shift per-channel quantisation; analytical solve, no grid search; 73402 µs calibrate 128×256, 64.4 µs quantize</li>
 <li><strong>IterPrune</strong> (<code>squish/iter_prune.py</code>) — Iterative magnitude pruning with configurable sparsity ramp schedule; 0% → 70% over n_steps; 956 µs prune_step</li>
 </ul>
-<h3 id="tests_5">Tests<a class="headerlink" href="#tests_5" title="Permanent link">&para;</a></h3>
+<h3 id="tests_6">Tests<a class="headerlink" href="#tests_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave23_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave24_server_wiring.py</code> — 56 tests, 56 passing</li>
@@ -2331,7 +2474,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <li><strong>SLAMonitor</strong> (<code>squish/sla_monitor.py</code>) — Real-time SLA violation detection + escalation; warning → critical severity tiers; 0.26 µs record, 41.3 µs check</li>
 <li><strong>ContextCache</strong> (<code>squish/context_cache.py</code>) — Persistent cross-session context cache with TTL; hashlib.md5 token fingerprint; 1.9 µs get, 100% hit rate on repeat</li>
 </ul>
-<h3 id="tests_6">Tests<a class="headerlink" href="#tests_6" title="Permanent link">&para;</a></h3>
+<h3 id="tests_7">Tests<a class="headerlink" href="#tests_7" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave21_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave22_server_wiring.py</code> — 56 tests, 56 passing</li>
@@ -2379,7 +2522,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <li><strong>DistilSpec</strong> (<code>squish/distil_spec.py</code>) — KL-divergence draft-head calibration; estimates +10–15 pp acceptance gain</li>
 <li><strong>BatchEmbed</strong> (<code>squish/batch_embed.py</code>) — Dynamic pooling (mean/max/cls/weighted) for batch embeddings in a single pass</li>
 </ul>
-<h3 id="tests_7">Tests<a class="headerlink" href="#tests_7" title="Permanent link">&para;</a></h3>
+<h3 id="tests_8">Tests<a class="headerlink" href="#tests_8" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave19_server_wiring.py</code> — 56 tests, 56 passing</li>
 <li><code>tests/test_wave20_server_wiring.py</code> — 56 tests, 56 passing</li>
@@ -2427,7 +2570,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <li><strong>PowerMonitor</strong> (<code>squish/power_monitor.py</code>) — Apple Silicon power source advisor via <code>PowerMonitor</code>. 0.5 µs <code>get_power_source()</code> + <code>get_recommended_mode()</code>; adjusts compute policy for battery vs. AC.</li>
 <li><strong>DiffusionDraft</strong> (<code>squish/diffusion_draft.py</code>) — Diffusion-model draft head capability gate via <code>DiffusionDraftHead</code>. <code>is_available()</code> + <code>is_suitable_for_task()</code>; enables parallel diffusion-based speculation.</li>
 </ul>
-<h3 id="tests_8">Tests<a class="headerlink" href="#tests_8" title="Permanent link">&para;</a></h3>
+<h3 id="tests_9">Tests<a class="headerlink" href="#tests_9" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>tests/test_wave17_server_wiring.py</code> — 56 tests covering all 14 Wave 17 module import, instantiation, and core API paths.</li>
 <li>Added <code>tests/test_wave18_server_wiring.py</code> — 56 tests covering all 14 Wave 18 module import, instantiation, and core API paths.</li>
@@ -2473,7 +2616,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <li><strong>ForeLen</strong> (<code>squish/forelen.py</code>) — Entropy-guided output length prediction via <code>EGTPPredictor</code> (entropy histogram) + <code>PLPPredictor</code> (exponential decay). −29% MAE vs TRAIL.</li>
 <li><strong>RASD</strong> (<code>squish/rasd.py</code>) — Retrieval-augmented speculative decode via <code>CorpusIndex</code> + <code>RASDBatcher.build_retrieval_tree()</code>. 40–60% corpus hit rate.</li>
 </ul>
-<h3 id="tests_9">Tests<a class="headerlink" href="#tests_9" title="Permanent link">&para;</a></h3>
+<h3 id="tests_10">Tests<a class="headerlink" href="#tests_10" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>tests/test_wave15_server_wiring.py</code> — 44 tests covering all Wave 15 module import, instantiation, and core API paths.</li>
 <li>Added <code>tests/test_wave16_server_wiring.py</code> — 45 tests covering all Wave 16 module import, instantiation, and core API paths.</li>

@@ -697,15 +697,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v16-wave-39-activation-quant-fused-kernels-w8a8-runtime-torchcompile-sublinear-attention-in-progress" class="md-nav__link">
+  <a href="#v16-wave-39-activation-quant-fused-kernels-w8a8-runtime-torchcompile-sublinear-attention-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (In Progress)
+        ✅ v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (In Progress)">
+    <nav class="md-nav" aria-label="✅ v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -4194,15 +4194,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v16-wave-39-activation-quant-fused-kernels-w8a8-runtime-torchcompile-sublinear-attention-in-progress" class="md-nav__link">
+  <a href="#v16-wave-39-activation-quant-fused-kernels-w8a8-runtime-torchcompile-sublinear-attention-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (In Progress)
+        ✅ v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (In Progress)">
+    <nav class="md-nav" aria-label="✅ v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -7618,7 +7618,7 @@
 </tbody>
 </table>
 <hr />
-<h2 id="v16-wave-39-activation-quant-fused-kernels-w8a8-runtime-torchcompile-sublinear-attention-in-progress">🚧 v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (In Progress)<a class="headerlink" href="#v16-wave-39-activation-quant-fused-kernels-w8a8-runtime-torchcompile-sublinear-attention-in-progress" title="Permanent link">&para;</a></h2>
+<h2 id="v16-wave-39-activation-quant-fused-kernels-w8a8-runtime-torchcompile-sublinear-attention-complete">✅ v16 Wave 39 — Activation Quant · Fused Kernels · W8A8 Runtime · torch.compile · Sublinear Attention (Complete)<a class="headerlink" href="#v16-wave-39-activation-quant-fused-kernels-w8a8-runtime-torchcompile-sublinear-attention-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Close the final gap between Squish's algorithmic sophistication and its raw hardware efficiency.
 Wave 39 targets three axes that Wave 38 left on the table: (1) activation-level quantization
 (W8A8 INT8 with SmoothQuant activation smoothing) to double CUDA decode throughput beyond what
@@ -7853,22 +7853,22 @@ throughput beyond INT4 weight-only, because activation quantization removes the 
 </blockquote>
 <h3 id="completion-checklist">Completion Checklist<a class="headerlink" href="#completion-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] <code>squish/quant/smooth_quant.py</code> — SmoothQuantActivation</li>
-<li>[ ] <code>squish/quant/hqq_quant.py</code> — HQQQuantizer</li>
-<li>[ ] <code>squish/attention/hyper_attn.py</code> — HyperAttention</li>
-<li>[ ] <code>squish/speculative/triforce_decode.py</code> — TriForceDecoder</li>
-<li>[ ] <code>squish/kernels/flex_attn.py</code> — FlexAttentionKernel</li>
-<li>[ ] <code>squish/token/massive_activation.py</code> — MassiveActivationSuppressor</li>
-<li>[ ] <code>squish/quant/w8a8_quant.py</code> — W8A8QuantRuntime</li>
-<li>[ ] <code>squish/kernels/torch_compile_decode.py</code> — TorchCompileDecode</li>
-<li>[ ] <code>squish/speculative/apar_decode.py</code> — APARDecoder</li>
-<li>[ ] <code>squish/attention/linear_attn.py</code> — GatedLinearAttention</li>
-<li>[ ] <code>squish/kernels/fused_norm_attn.py</code> — FusedNormAttnResidual</li>
-<li>[ ] <code>squish/serving/async_kv_transfer.py</code> — AsyncKVTransfer</li>
-<li>[ ] <code>tests/test_wave39a_modules.py</code> — ≥ 72 tests, all passing</li>
-<li>[ ] <code>tests/test_wave39b_modules.py</code> — ≥ 72 tests, all passing</li>
-<li>[ ] CHANGELOG <code>[16.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] <code>squish/quant/smooth_quant.py</code> — SmoothQuantActivation</li>
+<li>[x] <code>squish/quant/hqq_quant.py</code> — HQQQuantizer</li>
+<li>[x] <code>squish/attention/hyper_attn.py</code> — HyperAttention</li>
+<li>[x] <code>squish/speculative/triforce_decode.py</code> — TriForceDecoder</li>
+<li>[x] <code>squish/kernels/flex_attn.py</code> — FlexAttentionKernel</li>
+<li>[x] <code>squish/token/massive_activation.py</code> — MassiveActivationSuppressor</li>
+<li>[x] <code>squish/quant/w8a8_quant.py</code> — W8A8QuantRuntime</li>
+<li>[x] <code>squish/kernels/torch_compile_decode.py</code> — TorchCompileDecode</li>
+<li>[x] <code>squish/speculative/apar_decode.py</code> — APARDecoder</li>
+<li>[x] <code>squish/attention/linear_attn.py</code> — GatedLinearAttention</li>
+<li>[x] <code>squish/kernels/fused_norm_attn.py</code> — FusedNormAttnResidual</li>
+<li>[x] <code>squish/serving/async_kv_transfer.py</code> — AsyncKVTransfer</li>
+<li>[x] <code>tests/test_wave39a_modules.py</code> — 120 tests, all passing</li>
+<li>[x] <code>tests/test_wave39b_modules.py</code> — 93 tests, all passing</li>
+<li>[x] CHANGELOG <code>[16.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v16-wave-40-kv-architecture-innovation-flash-weight-self-speculative-entropy-eviction-lsh-kv-in-progress">🚧 v16 Wave 40 — KV Architecture Innovation · Flash-Weight · Self-Speculative · Entropy Eviction · LSH-KV (In Progress)<a class="headerlink" href="#v16-wave-40-kv-architecture-innovation-flash-weight-self-speculative-entropy-eviction-lsh-kv-in-progress" title="Permanent link">&para;</a></h2>
