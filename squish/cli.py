@@ -322,6 +322,28 @@ def _resolve_model(name: str | None) -> tuple[Path, Path]:  # pragma: no cover
             f"  Browse available models: squish catalog"
         )
 
+    # ── Squished-only dir detection ───────────────────────────────────────────
+    # Squished dirs have manifest.json but no config.json. They contain weights
+    # only; the base model dir provides the architecture config. Auto-detect it.
+    if (model_dir / "manifest.json").exists() and not (model_dir / "config.json").exists():
+        import re as _re
+        _stem = _re.sub(r'(-squished-.+|-compressed)$', '', model_dir.name)
+        _base_dir: Path | None = None
+        for _sfx in ("-bf16", "-fp16", ""):
+            _cand = model_dir.parent / (_stem + _sfx)
+            if _cand.exists() and (_cand / "config.json").exists():
+                _base_dir = _cand
+                break
+        if _base_dir is not None:
+            print(f"  \u2139  Squished weights dir — using base model for config: {_base_dir.name}")
+            return _base_dir, model_dir
+        _die(
+            f"Squished model dir has no config.json and no matching base model was found:\n"
+            f"  Weights : {model_dir}\n"
+            f"  Expected: {model_dir.parent / (_stem + '-bf16')}\n"
+            f"  Tip: ensure the base BF16 model directory exists alongside the squished dir."
+        )
+
     compressed_dir = Path(str(model_dir) + _COMPRESSED_SUFFIX)
     if not compressed_dir.exists():
         # Try squish_4bit subdir (mlx_lm native 4-bit)
@@ -751,8 +773,10 @@ def cmd_run(args):  # pragma: no cover
             args.model = default
 
     # Apple Silicon auto-agent: enable --agent by default when no explicit flag
+    # Suppressed by --no-agent (e.g. for clean benchmark measurements).
     import platform as _platform
     if (not getattr(args, "agent", False)
+            and not getattr(args, "no_agent", False)
             and _platform.system() == "Darwin"
             and _platform.machine() == "arm64"):
         args.agent = True
@@ -778,6 +802,13 @@ def cmd_run(args):  # pragma: no cover
             cmd_pull(_pull_args)
 
     model_dir, compressed_dir = _resolve_model(args.model)
+
+    # Explicit --compressed-dir overrides the auto-detected compressed path.
+    if getattr(args, "compressed_dir", None):
+        _explicit_comp = Path(args.compressed_dir).expanduser()
+        if not _explicit_comp.exists():
+            _die(f"--compressed-dir not found: {_explicit_comp}")
+        compressed_dir = _explicit_comp
 
     # Phase 16A: verify model hash integrity before serving
     if _CATALOG_AVAILABLE and args.model:
@@ -2767,6 +2798,12 @@ Ollama drop-in:
                        help="Server log verbosity (default: warning)")
     p_run.add_argument("--all-optimizations", action="store_true", default=False,
                        help="Enable ALL built-in optimization modules at once")
+    p_run.add_argument("--no-agent", action="store_true", default=False,
+                       help="Disable the Apple Silicon auto-agent preset (useful for "
+                            "benchmarking or when explicit stateless inference is needed).")
+    p_run.add_argument("--compressed-dir", default="", metavar="DIR",
+                       help="Explicit path to squished/compressed weights dir. "
+                            "Overrides auto-detected compressed dir alongside MODEL.")
     # ── Phase 13D: Agent preset ──
     p_run.add_argument("--agent", action="store_true", default=False,
                        help="Agent-mode preset: enables --agent-kv, --grammar, "
@@ -2827,6 +2864,10 @@ Ollama drop-in:
                          help="Server log verbosity (default: warning)")
     p_serve.add_argument("--all-optimizations", action="store_true", default=False,
                          help="Enable ALL built-in optimization modules at once")
+    p_serve.add_argument("--no-agent", action="store_true", default=False,
+                         help="Disable the Apple Silicon auto-agent preset.")
+    p_serve.add_argument("--compressed-dir", default="", metavar="DIR",
+                         help="Explicit path to squished/compressed weights dir.")
     # ── Phase 13D: Agent preset ──
     p_serve.add_argument("--agent", action="store_true", default=False,
                          help="Agent-mode preset: enables --agent-kv, --grammar, "
