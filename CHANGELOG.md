@@ -5,6 +5,99 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [15.0.0] — 2026-06-16
+
+### Added — Wave 38: Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation
+
+Twelve production-grade modules targeting the remaining throughput ceiling via
+four orthogonal axes: sparse/approximate attention for long contexts, LUT and
+rotation-based quantization to eliminate the dequantization bottleneck,
+ultra-cheap recurrent speculative drafters, and static decode graph capture.
+All modules are NumPy-only simulation layers that compose with existing Squish
+infrastructure and are backed by 2024–2025 peer-reviewed papers.
+
+**Wave 38a — Long-Context Sparse Attention & KV Intelligence**
+
+- **QuestAttention** (`squish/attention/quest_attn.py`) — Per-head top-K KV
+  page selection by query-page similarity (Tang et al., ICML 2024). Configurable
+  budget_ratio and page_score_fn ("mean"/"max"/"first"). Falls back to exact
+  attention when seq_len ≤ min_length. `QuestConfig`, `QuestStats`,
+  `QuestAttention.attend()`, `.reset_stats()`.
+
+- **SnapKV** (`squish/kv/snap_kv.py`) — Observation-window pooling selects
+  the most important KV positions before decode (Li et al., NeurIPS 2024).
+  Max-pool importance scoring over configurable window; retains at most
+  `budget` rows. `SnapKVConfig`, `SnapKVStats`, `SnapKV.compress()`,
+  `.reset_stats()`.
+
+- **MagicDecAttention** (`squish/attention/magic_dec.py`) — Sink + recent +
+  landmark sparse decode topology (He et al., NeurIPS 2024). Three-set sparse
+  mask: fixed attention sinks, a recent window, and strided landmark tokens.
+  Exact path for short sequences. `MagicDecConfig`, `MagicDecStats`,
+  `MagicDecAttention.attend()`.
+
+- **InfiniGenKVManager** (`squish/kv/infinite_gen.py`) — Async CPU offload of
+  cold KV entries with importance-scored prefetch (Lee et al., arXiv 2406.14737).
+  Hot/cold dict split; eviction on capacity overflow; `update_scores()` for
+  attention-weight-driven prefetch prioritisation. `InfiniGenConfig`,
+  `InfiniGenStats`, `InfiniGenKVManager.put()`, `.get()`, `.update_scores()`.
+
+- **RetrievalAttention** (`squish/attention/retrieval_attn.py`) — HNSW-indexed
+  approximate KV retrieval for O(log N) attention on 128k+ tokens (Chen et al.,
+  arXiv 2409.10516). Auto-detects `hnswlib`; falls back to NumPy flat search.
+  `backend` property reflects active path. `RetrievalAttnConfig`,
+  `RetrievalAttnStats`, `RetrievalAttention.build_index()`, `.attend()`.
+
+- **OuroborosDrafter** (`squish/speculative/ouroboros_draft.py`) — Lookahead
+  speculative drafting with verified-token feedback (Zhao et al., NeurIPS 2024).
+  N-gram table built from accepted tokens; adaptive lookahead depth; temperature-
+  controlled sampling. `OuroborosConfig`, `OuroborosStats`,
+  `OuroborosDrafter.draft()`, `.accept_feedback()`.
+
+**Wave 38b — LUT Quantization, Recurrent Drafting & Decode Compilation**
+
+- **FluteQuantizer** (`squish/quant/flute_quant.py`) — Flexible LUT-GEMM for
+  INT2/INT3/INT4/INT8 weight quantization without a dequantization step (Guo et
+  al., ICLR 2025). K-means codebook construction; `quantise()`, `dequantise()`,
+  `lut_gemm()`. `FluteConfig`, `FluteStats`.
+
+- **QuaRotQuantizer** (`squish/quant/quarot_quant.py`) — Random Hadamard
+  rotation for outlier-free W4A4 inference (Ashkboos et al., NeurIPS 2024).
+  Per-dim rotation matrix cached; `rotate()` / `unrotate()` are exact inverses;
+  `quantise()` / `dequantise()` apply quantization in rotated space.
+  `QuaRotConfig`, `QuaRotStats`.
+
+- **KIVIQuantizer** (`squish/quant/kivi_quant.py`) — Per-channel asymmetric
+  INT2 KV cache quantization with FP32 residual for recent tokens (Liu et al.,
+  ICML 2024). Short-sequence short-circuit stores residual only. `KIVIConfig`,
+  `KIVIStats`, `KIVIQuantizer.compress()`, `.decompress()`.
+
+- **RecurrentDrafter** (`squish/speculative/recurrent_drafter.py`) — GRU or
+  LSTM 1M-param recurrent drafter trained via distillation simulation (Zhang et
+  al., Apple Research 2024). `update_state()` steps the RNN; `draft()` unrolls
+  `draft_depth` steps; `reset()` preserves weights. `RecurrentDrafterConfig`,
+  `RecurrentDrafterStats`.
+
+- **CUDAGraphRunner** (`squish/kernels/cuda_graph_runner.py`) — Static decode
+  graph capture and replay with zero per-token Python dispatch overhead (TRT-LLM
+  / Apple Metal 2024). Auto-detects CUDA → MLX → passthrough; `capture()` runs
+  warmup iterations; `replay()` raises `RuntimeError` before capture.
+  `CUDAGraphConfig`, `CUDAGraphStats`, `backend` property.
+
+- **PriorityPreemptScheduler** (`squish/serving/priority_preempt.py`) — SLO-
+  aware preemption with chunked prefill and age/priority hybrid scoring (Agrawal
+  et al., OSDI 2024). Enforces `max_active` via preemption; partial prefill
+  resets on eviction; `all_done()` / `active_count()` / `queue_depth()`.
+  `SchedulerConfig`, `RequestEntry`, `SchedulerStats`.
+
+**Tests**
+
+- `tests/test_wave38a_modules.py` — 82 tests covering all 6 Wave 38a modules.
+- `tests/test_wave38b_modules.py` — 73 tests covering all 6 Wave 38b modules.
+- Total test suite: 155 new tests, all passing.
+
+---
+
 ## [14.0.0] — 2026-03-26
 
 ### Added — Waves 35+36: Cross-Platform Linux/CUDA · ROCm · WSL2 · Smart Dependency Resolution

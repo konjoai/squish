@@ -607,7 +607,7 @@ actual inference path. This wave closes that gap.
 
 ---
 
-## 🚧 v15 Wave 38 — Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation (In Progress)
+## ✅ v15 Wave 38 — Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation (Released 2026-06-16)
 
 Theme: **Attack the remaining throughput ceiling with four orthogonal axes: (1) sparse/approximate
 attention algorithms to slash attention FLOPs on long contexts, (2) lookup-table and rotation-based
@@ -676,22 +676,22 @@ that compose with all existing modules.
 
 ### Completion Checklist
 
-- [ ] `squish/attention/quest_attn.py` — QuestAttention
-- [ ] `squish/kv/snap_kv.py` — SnapKV
-- [ ] `squish/attention/magic_dec.py` — MagicDecAttention
-- [ ] `squish/kv/infinite_gen.py` — InfiniGenKVManager
-- [ ] `squish/attention/retrieval_attn.py` — RetrievalAttention
-- [ ] `squish/speculative/ouroboros_draft.py` — OuroborosDrafter
-- [ ] `squish/quant/flute_quant.py` — FluteQuantizer
-- [ ] `squish/quant/quarot_quant.py` — QuaRotQuantizer
-- [ ] `squish/quant/kivi_quant.py` — KIVIQuantizer
-- [ ] `squish/speculative/recurrent_drafter.py` — RecurrentDrafter
-- [ ] `squish/kernels/cuda_graph_runner.py` — CUDAGraphRunner
-- [ ] `squish/serving/priority_preempt.py` — PriorityPreemptScheduler
-- [ ] `tests/test_wave38a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave38b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[15.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/attention/quest_attn.py` — QuestAttention
+- [x] `squish/kv/snap_kv.py` — SnapKV
+- [x] `squish/attention/magic_dec.py` — MagicDecAttention
+- [x] `squish/kv/infinite_gen.py` — InfiniGenKVManager
+- [x] `squish/attention/retrieval_attn.py` — RetrievalAttention
+- [x] `squish/speculative/ouroboros_draft.py` — OuroborosDrafter
+- [x] `squish/quant/flute_quant.py` — FluteQuantizer
+- [x] `squish/quant/quarot_quant.py` — QuaRotQuantizer
+- [x] `squish/quant/kivi_quant.py` — KIVIQuantizer
+- [x] `squish/speculative/recurrent_drafter.py` — RecurrentDrafter
+- [x] `squish/kernels/cuda_graph_runner.py` — CUDAGraphRunner
+- [x] `squish/serving/priority_preempt.py` — PriorityPreemptScheduler
+- [x] `tests/test_wave38a_modules.py` — 82 tests, all passing
+- [x] `tests/test_wave38b_modules.py` — 73 tests, all passing
+- [x] CHANGELOG `[15.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
