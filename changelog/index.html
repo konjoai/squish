@@ -838,6 +838,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1610-2026-06-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [16.1.0] — 2026-06-17
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[16.1.0] — 2026-06-17">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-40-kv-architecture-innovation-flash-weight-self-speculative-entropy-eviction-lsh-kv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 40: KV Architecture Innovation · Flash-Weight · Self-Speculative · Entropy Eviction · LSH-KV
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1600-2026-06-17" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1710,6 +1738,105 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="1610-2026-06-17">[16.1.0] — 2026-06-17<a class="headerlink" href="#1610-2026-06-17" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-40-kv-architecture-innovation-flash-weight-self-speculative-entropy-eviction-lsh-kv">Added — Wave 40: KV Architecture Innovation · Flash-Weight · Self-Speculative · Entropy Eviction · LSH-KV<a class="headerlink" href="#added-wave-40-kv-architecture-innovation-flash-weight-self-speculative-entropy-eviction-lsh-kv" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules extending v16 with cutting-edge KV cache
+architectures, flash-backed weight offloading, self-speculative decoding without
+a separate draft model, and entropy-driven budget allocation. All modules are
+NumPy-only simulation layers backed by 2024–2025 peer-reviewed papers.</p>
+<p><strong>Wave 40a — KV Architecture Innovation &amp; Flash-Weight</strong></p>
+<ul>
+<li>
+<p><strong>RazorAttention</strong> (<code>squish/attention/razor_attn.py</code>) — Retrieval-head-aware
+  KV compression: classifies heads via attention entropy into retrieval (full KV)
+  vs non-retrieval (2-token summary KV), achieving &gt;70% KV reduction with
+  negligible quality loss (He et al., NeurIPS 2024).
+  <code>RazorAttentionConfig</code>, <code>RazorHeadType</code>, <code>RazorAttention.calibrate()</code>,
+  <code>.forward()</code>, <code>.retrieval_head_indices()</code>, <code>.non_retrieval_head_indices()</code>.</p>
+</li>
+<li>
+<p><strong>LCKVCache</strong> (<code>squish/kv/lckv_cache.py</code>) — Layer-Condensed KV Cache: bottom-K
+  anchor layers hold full KV; all upper layers re-use nearest anchor KV (Zhang
+  et al., ACL 2024). Achieves n_anchor/n_layers DRAM ratio.
+  <code>LCKVConfig</code>, <code>LCKVCache.write()</code>, <code>.read()</code>, <code>.is_anchor()</code>,
+  <code>.memory_ratio()</code>, <code>.n_slots_filled()</code>.</p>
+</li>
+<li>
+<p><strong>CacheBlendKV</strong> (<code>squish/kv/cache_blend.py</code>) — KV block reuse for
+  RAG/prefix workloads with selective importance-weighted partial recompute
+  (Yao et al., EuroSys 2025). Supports L2 and random importance functions.
+  <code>CacheBlendConfig</code>, <code>KVBlock</code>, <code>CacheBlendKV.store()</code>, <code>.blend()</code>,
+  <code>.evict()</code>, <code>.n_blends()</code>.</p>
+</li>
+<li>
+<p><strong>GreenKVEviction</strong> (<code>squish/kv/green_kv.py</code>) — Accumulated attention-score
+  eviction with per-head budget redistribution: inverse-coverage weighting
+  transfers budget from focused to broad-attention heads (arXiv:2412.15838).
+  <code>GreenKVConfig</code>, <code>GreenKVEviction.compress()</code>, <code>._head_budgets()</code>.</p>
+</li>
+<li>
+<p><strong>MagicPIGKV</strong> (<code>squish/kv/magic_pig_kv.py</code>) — LSH-based top-K KV sampling
+  for approximate attention at million-token scale using multi-table sign-random
+  projections (NeurIPS 2024). Falls back to exact attention when index absent.
+  <code>MagicPIGConfig</code>, <code>MagicPIGKV.build_index()</code>, <code>.attend()</code>,
+  <code>._retrieve_candidates()</code>.</p>
+</li>
+<li>
+<p><strong>FlashWeightCache</strong> (<code>squish/io/flash_weight_cache.py</code>) — NAND Flash-backed
+  two-tier weight cache (DRAM LRU + Flash NPY files) for serving models larger
+  than DRAM, with prefetch-ahead and bandwidth simulation (Alizadeh et al.,
+  Apple 2024). <code>FlashWeightCacheConfig</code>, <code>FlashWeightCache.store()</code>, <code>.load()</code>,
+  <code>.prefetch()</code>, <code>.evict()</code>, <code>.dram_resident_layers()</code>, <code>.memory_bytes_dram()</code>.</p>
+</li>
+</ul>
+<p><strong>Wave 40b — Self-Speculative Decoding, Entropy Eviction &amp; FP8 KV</strong></p>
+<ul>
+<li>
+<p><strong>KangarooSpec</strong> (<code>squish/speculative/kangaroo_spec.py</code>) — Shallow-subnetwork
+  self-speculative decoding with no separate draft model: drafts using bottom
+  n_draft_layers, verifies with full model, acceptance-rejection sampling with
+  bonus token on full acceptance (Liu et al., arXiv:2404.18911).
+  <code>KangarooConfig</code>, <code>KangarooDraftResult</code>, <code>KangarooSpec.step()</code>,
+  <code>.mean_acceptance_rate</code>, <code>.reset_stats()</code>.</p>
+</li>
+<li>
+<p><strong>CAKEEviction</strong> (<code>squish/kv/cake_evict.py</code>) — Layer-wise KV budget from
+  cumulative attention entropy: softmax(entropy/temperature) × global_budget
+  allocation with per-layer min floor (NeurIPS 2024 workshop).
+  <code>CAKEConfig</code>, <code>CAKEEviction.compute_budgets()</code>, <code>.compress()</code>,
+  <code>._layer_entropy()</code>.</p>
+</li>
+<li>
+<p><strong>FP8KVCache</strong> (<code>squish/kv/fp8_kv_cache.py</code>) — Per-tensor FP8 quantized K/V
+  storage using INT8 codes with dynamic scale; supports e4m3 (max 448) and
+  e5m2 (max 57344) semantics, halving KV memory vs FP16 (TRT-LLM / FlashInfer
+  2024). <code>FP8KVConfig</code>, <code>FP8KVTensor</code>, <code>FP8KVCache.quantize()</code>,
+  <code>.dequantize()</code>, <code>.store()</code>, <code>.load()</code>, <code>.relative_error()</code>,
+  <code>.memory_bytes()</code>.</p>
+</li>
+<li>
+<p><strong>SubGenAttention</strong> (<code>squish/attention/subgen_attn.py</code>) — O(n√n) dual-sparse
+  attention: <code>(1-alpha)</code> × sliding local window + <code>alpha</code> × global sinks
+  attention (Chen et al., ICML 2024). Supports causal and non-causal modes.
+  <code>SubGenConfig</code>, <code>SubGenAttention.forward()</code>, <code>._local_attn()</code>,
+  <code>._global_attn()</code>.</p>
+</li>
+<li>
+<p><strong>SepLLMCompress</strong> (<code>squish/token/sep_llm_compress.py</code>) — Separator-token KV
+  retention on alternating layers (~2× KV reduction): even layers compress to
+  separator positions ∪ recent window, odd layers pass through (Chen et al.,
+  ICLR 2025). <code>SepLLMConfig</code>, <code>SepLLMCompress.compress()</code>,
+  <code>.compression_ratio()</code>.</p>
+</li>
+<li>
+<p><strong>SpecExecDrafter</strong> (<code>squish/speculative/spec_exec.py</code>) — Budget-bounded
+  speculative token tree with BFS greedy expansion and acceptance-rejection walk
+  from root (Svirschevski et al., arXiv:2405.00047).
+  <code>SpecExecConfig</code>, <code>SpecExecResult</code>, <code>_TreeNode</code>, <code>SpecExecDrafter.step()</code>,
+  <code>.mean_acceptance_rate</code>, <code>.reset_stats()</code>.</p>
+</li>
+</ul>
 <hr />
 <h2 id="1600-2026-06-17">[16.0.0] — 2026-06-17<a class="headerlink" href="#1600-2026-06-17" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-39-activation-quantization-fused-kernels-w8a8-runtime-compiled-decode-sublinear-attention">Added — Wave 39: Activation Quantization · Fused Kernels · W8A8 Runtime · Compiled Decode · Sublinear Attention<a class="headerlink" href="#added-wave-39-activation-quantization-fused-kernels-w8a8-runtime-compiled-decode-sublinear-attention" title="Permanent link">&para;</a></h3>
