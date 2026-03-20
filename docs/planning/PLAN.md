@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v19 Wave 45 planned — Weight Offload · YaRN RoPE · SelfExtend · Orca Scheduling · FP8 Activation · CLEx RoPE)
+> Last updated: 2026-03-20 (v22 Wave 47 planned — Mamba2 SSM · HGRN2 · Lookahead Decode · IA3 Adapter · MoE-Infinity Offload · KGW Watermark)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -30,6 +30,8 @@ This document tracks completed waves, the current release, and the next phase.
 | **v18** | 43–44 | MTP Decoding · Cascade KV · Attention Head Pruning · Paged Attention · Layer Collapse · Relay Attention |
 | **v19** | 45–46 | Marlin Kernel · Speculative Rejection · LoFTQ · Draft Length Adapt · Hadamard Quant · Big-Little LLM |
 | **v20** | 47–48 | Weight Offload · YaRN RoPE · SelfExtend · Orca Scheduling · FP8 Activation · CLEx RoPE |
+| **v21** | 49–50 | Model Surgery · Expert Choice · W4A8 · MLA KV Compress · CacheBlend · Sampling Precision |
+| **v22** | 51–52 | Mamba2 SSM · HGRN2 · Lookahead Decode · Infinite Memory · MoE-Infinity · Output Quality |
 
 ---
 
@@ -560,6 +562,183 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v22 Wave 47 — Mamba2 SSM · HGRN2 · Lookahead Decode · Infinite Memory · MoE-Infinity · Output Quality (Planned)
+
+Theme: **Wave 47 opens four new capability axes that prior waves leave untouched: (1) state-space
+and linear-RNN architectures (Mamba-2, HGRN2) that replace quadratic self-attention in decode-bound
+layers with O(1) recurrent steps, giving a new throughput ceiling for autoregressive generation;
+(2) draft-model-free lookahead decoding — a 2D Jacobi window that generates and verifies multiple
+future n-grams simultaneously without any separate draft model, orthogonal to all existing
+speculative modules; (3) infinite-context external memory (InfLLM block memory + vAttention
+virtual paging) that pushes effective context past 1M tokens on commodity hardware; and
+(4) output-quality improvements via DoRA magnitude-direction adapters, IA3 lightweight inference
+adapters, entropy-based typical sampling, and KGW watermarking for provenance attribution —
+four capabilities absent from the existing serving and sampling stacks.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality (Dao & Gu) | ICML 2024 (arXiv 2405.21060) | SSD layer: parallel chunked scan in SRAM + O(1) per-token recurrent decode; 2–3× faster than Transformer-equivalent at same quality | `squish/attention/mamba2_ssm.py` |
+| HGRN2: Gated Linear RNNs with State Expansion (Qin et al.) | COLM 2024 (arXiv 2404.07904) | Multiplicative gating with lower-triangular Toeplitz state expansion; outperforms GLA on recall/retrieval; O(1) decode step | `squish/attention/hgrn2.py` |
+| Break the Sequential Dependency of LLM Inference Using Lookahead Decoding (Fu et al.) | ICML 2024 (arXiv 2402.02057) | 2D Jacobi window: simultaneously fills multiple future-token branches; verifies all in one forward pass; 2.1× mean speedup; no draft model needed | `squish/speculative/lookahead_decode.py` |
+| InfLLM: Training-Free Long-Context Extrapolation for LLMs with an Efficient Context Memory (Xiao et al.) | NeurIPS 2024 (arXiv 2402.04617) | Blocks of distant context stored as compressed representative tokens in external memory; retrieved by query similarity; 1M+ effective context at <1% overhead | `squish/kv/inf_memory.py` |
+| vAttention: Dynamic Memory Management for Serving LLMs without PagedAttention (Prabhu et al.) | OSDI 2024 | OS virtual memory (mmap + huge pages) for KV cache; removes page-table overhead of PagedAttention; 10–30% throughput gain at small batch; zero fragmentation | `squish/kv/v_attention.py` |
+| Few-Shot Parameter-Efficient Fine-Tuning is Better and Cheaper than In-Context Learning (Liu et al., IA³) | NeurIPS 2022 / active production 2024 | Three learned scale vectors injected into K, V, FF activations; 3× fewer parameters than LoRA; inference-zero-overhead after merge; composable with existing LoRA adapters | `squish/lora/ia3_adapter.py` |
+| MoE-Infinity: Activation-Aware Expert Offloading for Efficient MoE Serving (Xue et al.) | arXiv 2401.14361, 2024 | Predict future expert activations from token patterns; prefetch to GPU 1 step ahead; 20× less PCIe traffic vs naïve offload; enables Mixtral / DeepSeek-MoE on 24 GB VRAM | `squish/moe/moe_infinity.py` |
+| MegaBlocks: Efficient Sparse Training with Mixture-of-Experts (Gale et al.) | MLSys 2023 / production inference 2024 | dMoE (dropless MoE) with block-sparse matrix multiplication; ragged batching eliminates token-drop artefacts; 40% faster than dense-equivalent on A100 | `squish/moe/mega_blocks.py` |
+| A Watermark for Large Language Models (Kirchenbauer et al.) | ICML 2023 / production 2024 (arXiv 2301.10226) | Partition vocabulary into green/red lists per context hash; statistical z-test detects watermark at 50 tokens; zero quality loss; no cryptographic secrets in model | `squish/serving/kgw_watermark.py` |
+| Typical Decoding for Natural Language Generation (Meister et al.) | ACL 2023 / production 2024 | Sample tokens whose information content is nearest to the conditional entropy; avoids both greedy repetition and top-p scatter; better diversity/coherence tradeoff | `squish/sampling/typical_sampler.py` |
+| DoRA: Weight-Decomposed Low-Rank Adaptation (Liu et al.) | ICML 2024 (arXiv 2402.09353) | Decomposes weight matrix into magnitude (scalar) + direction (LoRA-style); matches or exceeds full fine-tune quality at LoRA parameter count; drop-in for existing lora_inference.py | `squish/lora/dora.py` |
+| CALM: Confident Adaptive Language Modeling (Schuster et al.) | NeurIPS 2022 / production 2024 | Per-token early exit at any intermediate layer when softmax confidence > threshold; dynamic depth per token; 30–50% FLOPs saved on easy tokens; orthogonal to head-level layer_skip | `squish/token/calm_exit.py` |
+
+---
+
+### Wave 47a — Mamba2 SSM, HGRN2, Lookahead Decode, InfMemory, vAttention, IA3 Adapter (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| Mamba2SSM | `squish/attention/mamba2_ssm.py` | SSD chunked parallel scan + O(1) recurrent decode; drop-in substitute for attention in decode-bound layers; 2–3× throughput; MLX scan kernel |
+| HGRN2 | `squish/attention/hgrn2.py` | Toeplitz-expanded gated linear RNN; outperforms GLA on recall/copy benchmarks; minimal state footprint; complementary to mamba2_ssm |
+| LookaheadDecode | `squish/speculative/lookahead_decode.py` | Rolling 2D Jacobi window of W future branches × N n-gram candidates; single forward-pass batch verification; 2.1× speedup; zero draft-model overhead |
+| InfMemory | `squish/kv/inf_memory.py` | Block-level external KV memory with representative token compression; similarity-based retrieval; extends effective context past 1M tokens without fine-tuning |
+| vAttentionKV | `squish/kv/v_attention.py` | OS-level huge-page virtual memory for KV; no page-table copy on block allocation; lower fragmentation than PagedAttention; composable with paged_kv.py |
+| IA3Adapter | `squish/lora/ia3_adapter.py` | Learned K, V, FF scale vectors; merge-to-zero at inference time; 3× fewer parameters than LoRA; composable via new `ia3_compose()` helper |
+
+### Wave 47b — MoE-Infinity, MegaBlocks, KGW Watermark, Typical Sampler, DoRA, CALM Exit (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MoEInfinityOffload | `squish/moe/moe_infinity.py` | Activation-pattern expert prefetch; 20× less PCIe traffic; async CPU→GPU transfer overlapped with token generation; extends FlexGenOffload for MoE models |
+| MegaBlocksSparse | `squish/moe/mega_blocks.py` | dMoE dropless routing with block-sparse GEMM; ragged-batch tiling on GPU + Metal ANE; 40% faster than naive dense-padded MoE at batch ≥ 4 |
+| KGWWatermark | `squish/serving/kgw_watermark.py` | Green/red list watermark seeded by context n-gram hash; z-test detection endpoint; configurable δ-bias and γ-green-list fraction; zero decoding quality loss |
+| TypicalSampler | `squish/sampling/typical_sampler.py` | Typical-mass sampling: keep tokens within ε of conditional entropy H(p); better coherence than top-p for factual tasks; configurable τ threshold |
+| DoRAAdapter | `squish/lora/dora.py` | Magnitude-direction weight decomposition; LoRA adapter on direction component only; matches full fine-tuning on commonsense benchmarks; merge-to-weights path |
+| AdaptiveCALM | `squish/token/calm_exit.py` | Per-token confidence-gated early exit at any transformer layer; softmax-peaked heuristic; orthogonal to layer_skip.py (head-level) — this exits the full forward pass; 30–50% FLOPs on easy tokens |
+
+### v22 Target Metrics (after Wave 47)
+
+> Baselines are v21 Wave 46 targets.
+
+| Model | v21 (W46) tok/s | v22 target tok/s | v21 TTFT | v22 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------|-----------------|----------------|
+| Qwen2.5-1.5B (M3) | 880–1100 | 1050–1300 | < 0.003 s | < 0.002 s | Mamba2SSM decode layer substitution |
+| Qwen2.5-4B (M3) | 600–750 | 720–900 | < 0.005 s | < 0.003 s | LookaheadDecode 2.1× speculative gain |
+| Qwen3-8B (M3) | 420–530 | 510–640 | < 0.012 s | < 0.008 s | InfMemory + CALM exit on easy tokens |
+| 70B class (M3 Max / offload) | 8–14 | 10–18 | < 7 s | < 5 s | MoE-Infinity prefetch + MegaBlocks |
+| Mixtral-8×7B (M3 Max 128 GB) | 150–190 | 180–230 | < 0.30 s | < 0.22 s | MegaBlocks dMoE sparse GEMM |
+
+### Completion Checklist
+
+- [ ] `squish/attention/mamba2_ssm.py` — Mamba2SSM
+- [ ] `squish/attention/hgrn2.py` — HGRN2
+- [ ] `squish/speculative/lookahead_decode.py` — LookaheadDecode
+- [ ] `squish/kv/inf_memory.py` — InfMemory
+- [ ] `squish/kv/v_attention.py` — vAttentionKV
+- [ ] `squish/lora/ia3_adapter.py` — IA3Adapter
+- [ ] `squish/moe/moe_infinity.py` — MoEInfinityOffload
+- [ ] `squish/moe/mega_blocks.py` — MegaBlocksSparse
+- [ ] `squish/serving/kgw_watermark.py` — KGWWatermark
+- [ ] `squish/sampling/typical_sampler.py` — TypicalSampler
+- [ ] `squish/lora/dora.py` — DoRAAdapter
+- [ ] `squish/token/calm_exit.py` — AdaptiveCALM
+- [ ] `tests/test_wave47a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave47b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[22.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v21 Wave 46 — Model Surgery · Expert Choice · W4A8 · MLA KV Compress · CacheBlend · Sampling Precision (Planned)
+
+Theme: **Wave 46 closes the gap between Squish's algorithmic coverage and three production-critical
+capabilities that 2024 deployments standardized: (1) model surgery — SliceGPT orthogonal column
+pruning, Wanda activation×magnitude unstructured sparsity, and ShortGPT layer-redundancy removal
+give three complementary axes of model compression without retraining; (2) expert system intelligence
+— ExpertChoice drop-free routing and MLA KV latent compression for DeepSeek-class models cut
+MoE inference memory by 93% and eliminate token-drop quality degradation; (3) a complete W4A8
+hybrid-precision path (QServe-style) that sits between existing W4A16 AWQ and W8A8 in both
+speed and memory; plus CacheBlend partial-KV reuse for RAG and two new sampling strategies
+(min-p and contrastive search) that improve output diversity and coherence.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| SliceGPT: Compress Large Language Models by Deleting Rows and Columns (Ashkboos et al.) | ICLR 2024 (arXiv 2401.15024) | PCA-based orthogonal slicing: replaces weight matrices with smaller equivalents; 25–30% parameter reduction; no calibration data; orthogonal to quantization | `squish/quant/slice_gpt.py` |
+| A Simple and Effective Pruning Approach for Large Language Models — Wanda (Sun et al.) | ICLR 2024 (arXiv 2306.11695) | Importance = weight magnitude × input activation RMS; 50% sparsity with <2% quality loss; 5× faster than SparseGPT; N:M sparse export | `squish/quant/wanda_pruner.py` |
+| ShortGPT: Layers in Large Language Models are More Redundant Than You Expect (Men et al.) | arXiv 2403.03853, 2024 | Block Importance (BI) = 1 − cosine-sim(input, output) per layer; remove 25% lowest-BI layers; 30% FLOPs reduction; composable with SliceGPT | `squish/quant/short_gpt.py` |
+| QServe: W4A8KV4 Quantization and System Co-design for Efficient LLM Serving (Lin et al.) | NeurIPS 2024 (arXiv 2405.04532) | W4A8 progressive group quantization with SmoothQuant-compatible migration; 3× vs TensorRT-LLM W8A8 at ISO-quality; KV4 cache co-design | `squish/quant/w4a8_quant.py` |
+| Mixture-of-Experts with Expert Choice Routing (Zhou et al.) | NeurIPS 2022 / production 2024 (arXiv 2202.09368) | Experts choose top-k tokens instead of tokens choosing experts; perfectly balanced load; no token-drop; 2× throughput vs top-1 routing | `squish/moe/expert_choice.py` |
+| DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model (DeepSeek-AI) | arXiv 2405.04434, 2024 | MLA low-rank KV compression: joint K+V projected to shared latent d_c ≪ d_h × n_h; 93.3% KV cache memory reduction at <0.3 PPL cost; complement to flash_mla hardware kernel | `squish/kv/mla_kv_compress.py` |
+| Sampling with a Minimum Probability Threshold — min-p (Nguyen et al.) | arXiv 2407.01082, 2024 | Dynamic probability threshold scaled to max-token probability; eliminates implausible tokens while preserving diversity; outperforms top-p on creative generation benchmarks | `squish/sampling/minp_sampler.py` |
+| A Contrastive Framework for Neural Text Generation (Su & Collier) | NeurIPS 2022 / production 2024 (arXiv 2202.06417) | Contrastive search: balance token probability with cosine dissimilarity to recent context representations; eliminates degenerate repetition without temperature hacks | `squish/sampling/contrastive_search.py` |
+| RazorAttention: Efficient KV Cache Compression Through Retrieval Heads (Tang et al.) | arXiv 2407.15891, 2024 | Classify attention heads as retrieval (full KV) vs non-retrieval (sink + local 2-token KV); 70% KV reduction with <1% quality loss; head type is model-invariant | `squish/attention/razor_attn.py` |
+| CacheBlend: Fast Large Language Model Serving for RAG with Cached Knowledge Fusion (Yao et al.) | EuroSys 2025 (arXiv 2405.16444) | Partial KV prefix reuse across RAG calls: recomputes only the divergence region; reduces prefill FLOPs by 95% on repeated-context queries; distinct from semantic_cache (exact) | `squish/kv/cacheblend.py` |
+| GreenKV: Achieving High Accuracy KV Cache Compression with a Very Low Budget (Li et al.) | arXiv 2412.07159, 2024 | Two-stream importance scoring: generation stream (recent attention) + retrieval stream (aggregated past scores); better than SnapKV at <5% budget; composable with PyramidKV | `squish/kv/green_kv.py` |
+| Preble: Efficient Distribution of Prompt Sharing LLM Serving (Zhang et al.) | arXiv 2407.00023, 2024 | Cross-instance prefix-cache-aware request routing; statistical oracle maps each request to server with highest KV overlap; 50% reduction in prefix recomputation at 4+ instances | `squish/serving/preble_router.py` |
+
+---
+
+### Wave 46a — SliceGPT, Wanda, ShortGPT, W4A8, ExpertChoice, MLA KV Compress (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| SliceGPTPruner | `squish/quant/slice_gpt.py` | PCA orthogonal slicing: compute principal components of each layer's input, project out low-variance directions; 25–30% parameter pruning; MLX + NumPy SVD path |
+| WandaPruner | `squish/quant/wanda_pruner.py` | Weight importance = \|W\| × \|X\|_RMS; prune lowest-importance weights in one forward pass; 50% sparsity target; N:M structured-sparse export for Metal/CUDA |
+| ShortGPTPruner | `squish/quant/short_gpt.py` | Compute block importance (BI) score per transformer layer; remove contiguous lowest-BI blocks; 25% layer reduction; composable after or alongside SliceGPT |
+| W4A8QuantRuntime | `squish/quant/w4a8_quant.py` | W4 weight + A8 activation quantization with progressive per-group scaling; SmoothQuant migration pre-applied; faster than W8A8 on CUDA Ampere; Metal simulation path |
+| ExpertChoiceRouter | `squish/moe/expert_choice.py` | Expert-selects-tokens routing: each expert picks its top-k tokens; no token-drop; load-balanced by construction; plug-in replacement for token-selects-expert in sparse_moe.py |
+| MLAKVCompress | `squish/kv/mla_kv_compress.py` | Low-rank joint K+V projection to shared latent c_t; stores only c_t in KV cache (93% smaller); decompresses on-the-fly during attention; requires RoPE absorption pre-step |
+
+### Wave 46b — Min-P Sampler, Contrastive Search, RazorAttention, CacheBlend, GreenKV, Preble Router (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MinPSampler | `squish/sampling/minp_sampler.py` | Dynamic per-step probability floor = p_max × min_p_factor; prunes impossible tokens while retaining full diversity above floor; better than top-p on creative tasks; composable with top-k |
+| ContrastiveSearch | `squish/sampling/contrastive_search.py` | Select token maximising α·prob − (1−α)·max_cos_sim(token_embed, recent_context_embeds); eliminates degenerate repetition; single-model (distinct from two-model contrastive_decoding.py) |
+| RazorAttention | `squish/attention/razor_attn.py` | One-time head classification via calibration prompts; retrieval heads keep full KV; non-retrieval heads keep only 2 global tokens + local window; 70% KV reduction |
+| CacheBlend | `squish/kv/cacheblend.py` | Partial KV reuse across RAG rounds: detect divergence point in prefix; recompute only divergent suffix; async KV patch; 95% prefill reduction on repeated-context RAG |
+| GreenKV | `squish/kv/green_kv.py` | Two-stream KV eviction budget: generation stream = recent attention; retrieval stream = aggregated past scores; superior to single-stream SnapKV at < 5% budget ratio |
+| PrebeleRouter | `squish/serving/preble_router.py` | Prefix-hash-aware request dispatcher for multi-instance deployments; maintains KV-cache utilisation map per instance; 50% less prefix recompute at 4+ replicas |
+
+### v21 Target Metrics (after Wave 46)
+
+> Baselines are v20 Wave 45 targets.
+
+| Model | v20 (W45) tok/s | v21 target tok/s | v20 TTFT | v21 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------|-----------------|----------------|
+| Qwen2.5-1.5B (M3) | 780–980 | 880–1100 | < 0.004 s | < 0.003 s | W4A8QuantRuntime + MinPSampler |
+| Qwen2.5-4B (M3) | 530–670 | 600–750 | < 0.006 s | < 0.005 s | W4A8 + CacheBlend RAG path |
+| Qwen3-8B (M3) | 370–470 | 420–530 | < 0.015 s | < 0.012 s | RazorAttention + GreenKV |
+| Qwen3-8B after SliceGPT 25% (M3) | — | 500–620 | — | < 0.010 s | SliceGPT parameter reduction |
+| Mixtral-8×7B (M3 Max 128 GB) | 125–165 | 150–190 | < 0.35 s | < 0.25 s | ExpertChoiceRouter + MLAKVCompress |
+
+### Completion Checklist
+
+- [ ] `squish/quant/slice_gpt.py` — SliceGPTPruner
+- [ ] `squish/quant/wanda_pruner.py` — WandaPruner
+- [ ] `squish/quant/short_gpt.py` — ShortGPTPruner
+- [ ] `squish/quant/w4a8_quant.py` — W4A8QuantRuntime
+- [ ] `squish/moe/expert_choice.py` — ExpertChoiceRouter
+- [ ] `squish/kv/mla_kv_compress.py` — MLAKVCompress
+- [ ] `squish/sampling/minp_sampler.py` — MinPSampler
+- [ ] `squish/sampling/contrastive_search.py` — ContrastiveSearch
+- [ ] `squish/attention/razor_attn.py` — RazorAttention
+- [ ] `squish/kv/cacheblend.py` — CacheBlend
+- [ ] `squish/kv/green_kv.py` — GreenKV
+- [ ] `squish/serving/preble_router.py` — PrebeleRouter
+- [ ] `tests/test_wave46a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave46b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[21.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
