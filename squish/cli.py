@@ -723,6 +723,26 @@ def cmd_run(args):  # pragma: no cover
             and _platform.machine() == "arm64"):
         args.agent = True
 
+    # Auto-pull named model if specified but not yet downloaded locally
+    if args.model and _CATALOG_AVAILABLE:
+        if args.model in _MODEL_SHORTHAND:
+            _expected_dir: Path = _MODELS_DIR / _MODEL_SHORTHAND[args.model]
+        else:
+            _cat_entry = _catalog_resolve(args.model)
+            _expected_dir = (
+                _MODELS_DIR / _cat_entry.dir_name
+                if _cat_entry is not None
+                else Path(args.model).expanduser()
+            )
+        if not _expected_dir.exists():
+            print(f"\n  Model '{args.model}' not found locally — pulling now…")
+            import argparse as _ap2
+            _pull_args = _ap2.Namespace(
+                model=args.model, int4=False, int8=False, token=None,
+                models_dir=None, refresh_catalog=False, verbose=True,
+            )
+            cmd_pull(_pull_args)
+
     model_dir, compressed_dir = _resolve_model(args.model)
 
     # Phase 16A: verify model hash integrity before serving
