@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-19 (v13 in progress — Wave 33+34 Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving)
+> Last updated: 2026-03-25 (v13 released — Wave 33+34 Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving · 8,277 tests passing)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -108,20 +108,21 @@ Theme: **Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Ser
 - [x] `weight_only_int2.py` — 2-bit pack-4 group-wise weight quantizer
 - [x] `skip_layer_predictor.py` — online logistic skip-layer predictor
 - [x] `tests/test_wave33_modules.py` — 110 tests, all passing
-- [ ] `jacobi_decode.py` — Jacobi/Gauss-Seidel parallel decode
-- [ ] `mtp_head.py` — multi-token prediction auxiliary heads
-- [ ] `fp6_quant.py` — FP6 float weight quantizer
-- [ ] `token_recycler.py` — draft token recycling buffer
-- [ ] `layer_dedup.py` — cross-layer weight deduplication
-- [ ] `token_pipeline.py` — zero-copy token decode pipeline
-- [ ] `metal_flash_attn.py` — tiled fused Metal attention
-- [ ] `spec_stream.py` — speculative streaming with rollback
-- [ ] `block_sparse_kv.py` — block-sparse KV attention
-- [ ] `pd_disagg.py` — prefill-decode disaggregation scheduler
-- [ ] `deja_vu_sparse.py` — DejaVu FFN activation predictor
-- [ ] `layer_overlap_loader.py` — overlapped weight streaming loader
-- [ ] Tests: wave33b (≥ 72 tests) + wave34 (≥ 72 tests), all passing
-- [ ] CHANGELOG `[13.0.0]` entry
+- [x] `jacobi_decode.py` — Jacobi/Gauss-Seidel parallel decode
+- [x] `mtp_head.py` — multi-token prediction auxiliary heads
+- [x] `fp6_quant.py` — FP6 float weight quantizer
+- [x] `token_recycler.py` — draft token recycling buffer
+- [x] `layer_dedup.py` — cross-layer weight deduplication
+- [x] `token_pipeline.py` — zero-copy token decode pipeline
+- [x] `metal_flash_attn.py` — tiled fused Metal attention
+- [x] `spec_stream.py` — speculative streaming with rollback
+- [x] `block_sparse_kv.py` — block-sparse KV attention
+- [x] `pd_disagg.py` — prefill-decode disaggregation scheduler
+- [x] `deja_vu_sparse.py` — DejaVu FFN activation predictor
+- [x] `layer_overlap_loader.py` — overlapped weight streaming loader
+- [x] `tests/test_wave33_v13_modules.py` — 104 tests, all passing
+- [x] `tests/test_wave34_modules.py` — 72 tests, all passing
+- [x] CHANGELOG `[13.0.0]` entry
 
 ---
 
