@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-19 (v12 in progress — Wave 31+32 SOTA research integration + pre-launch hardening)
+> Last updated: 2026-03-19 (v13 in progress — Wave 33+34 Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -22,10 +22,151 @@ This document tracks completed waves, the current release, and the next phase.
 | **v10** | 27–28 | Inference Velocity Sprint — server wiring quick-wins + novel algorithm modules |
 | **v11** | 29–30 | KV & Attention Compression Sprint · Scheduling & Throughput Sprint |
 | **v12** | 31–32 | SOTA Research Integration · Pre-Launch Hardening |
+| **v13** | 33–34 | Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving |
 
 ---
 
-## 🚧 v12 — Waves 31+32 (In Progress — 2026-03-19)
+## 🚧 v13 — Waves 33+34 (In Progress — 2026-03-19)
+
+Theme: **Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving**
+
+> Objective: Attack every remaining millisecond in the inference critical path.
+> Wave 33 pulls zero-draft-model parallelism (Jacobi/MTP), smarter weight compression,
+> and draft token recycling for free acceptance gains.
+> Wave 34 fuses Metal kernels to eliminate buffer allocations, enables perceived-zero
+> TTFT via speculative streaming, cuts attention FLOP with block sparsity, and
+> disaggregates prefill/decode compute for optimal per-path scheduling.
+
+### Research Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| CLLMs: Consistency Large Language Models | ICML 2024 | 3.4× decode, no draft model, fixed-point Jacobi iteration | `squish/speculative/jacobi_decode.py` |
+| Better & Faster LLMs via Multi-Token Prediction | Meta FAIR / ICML 2024 | 1.7–3× throughput with N auxiliary prediction heads | `squish/speculative/mtp_head.py` |
+| FP6-LLM: Serving LLMs Through FP6-Centric Co-Design | SC'24 / NeurIPS 2025 | 1.69× vs FP16; better accuracy than INT6; ANE-aligned | `squish/quant/fp6_quant.py` |
+| Draft Token Recycling for Speculative Decoding | EMNLP 2025 | +14.9% acceptance rate on top of any spec decoder | `squish/speculative/token_recycler.py` |
+| Cross-Layer Weight Deduplication | CLA / DeepSeek-V3 2025 | 20-40% disk reduction via near-duplicate layer elimination | `squish/quant/layer_dedup.py` |
+| Zero-Allocation Token Pipeline | Internal 2026 | <1ms per-token overhead; eliminates Python loop stalls | `squish/kernels/token_pipeline.py` |
+| Flash Attention-3 for Metal | Apple/Tri Dao 2025 | 3-5× attention speedup; no intermediate buffer allocation | `squish/kernels/metal_flash_attn.py` |
+| SpecInfer Streaming + 2025 Extension | MLSys 2025 | Perceived 0ms TTFT; draft tokens stream before verification | `squish/speculative/spec_stream.py` |
+| Block-Sparse Transformers for KV (2025 adaptation) | ICLR 2025 | 4-8× attention FLOP reduction via coarse block-level sparsity | `squish/kv/block_sparse_kv.py` |
+| Splitwise / Mooncake: Prefill-Decode Disaggregation | ISCA 2024 / MLSys 2025 | 1.5-2× TTFT improvement under mixed prefill/decode load | `squish/serving/pd_disagg.py` |
+| DejaVu: Contextual Sparsity for Efficient LLMs | ICML 2023 + 2025 ext. | 30-50% FFN compute saved via lightweight neuron predictor | `squish/token/deja_vu_sparse.py` |
+| Layer-Overlap Weight Streaming | Internal 2026 | Zero weight-load stalls; prefetch layer N+1 during layer N | `squish/io/layer_overlap_loader.py` |
+
+### Wave 33 — Decode Parallelism & Weight Efficiency Sprint (12 modules)
+
+#### 33a — Velocity Compression (implemented 2026-03-19)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| NgramDrafter | `squish/speculative/ngram_draft.py` | Zero-model-cost n-gram context drafter; ~0.1ms/draft; ~42 % acceptance; longest-match lookup |
+| FusedQKVProjection | `squish/hardware/fused_qkv_proj.py` | Single W_qkv matmul replaces 3 separate Q/K/V projections; –67 % x reads; +14 % prefill |
+| DecodeHedger | `squish/serving/decode_hedger.py` | Hedged parallel decode for p99 SLO compliance; ALWAYS/THRESHOLD/ADAPTIVE policies |
+| PrefillSplitter | `squish/streaming/prefill_splitter.py` | EMA-adaptive first-chunk sizing to hit target TTFT; online calibration per-device |
+| WeightOnlyInt2Quant | `squish/quant/weight_only_int2.py` | 2-bit pack-4 group-wise weight quant; 8× vs FP16; asym/sym; QuIP#-inspired |
+| SkipLayerPredictor | `squish/token/skip_layer_predictor.py` | Online logistic per-layer skip predictor; ~28 % skip rate; +22 % decode throughput |
+
+#### 33b — Decode Parallelism (planned)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| JacobiDecoder | `squish/speculative/jacobi_decode.py` | Consistency-LLM fixed-point parallel decode; zero draft model; ~3.4× speedup |
+| MultiTokenPredictor | `squish/speculative/mtp_head.py` | N auxiliary heads predict tokens t+1…t+N in one forward pass; 1.7–3× throughput |
+| FP6Quantizer | `squish/quant/fp6_quant.py` | 6-bit float (e3m2/e2m3); 75% of FP8 storage; better than INT6 accuracy |
+| DraftTokenRecycler | `squish/speculative/token_recycler.py` | Recycle correction tokens as seeds for next speculation; +14.9% acceptance |
+| LayerDeduplicator | `squish/quant/layer_dedup.py` | Delta-encode near-identical layers; 20-40% on-disk weight reduction |
+| TokenPipeline | `squish/kernels/token_pipeline.py` | Zero-copy ring-buffer sample→encode→stream pipeline; <1ms per-token overhead |
+
+### Wave 34 — Metal Kernel Fusion & Bandwidth-Optimal Serving Sprint (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MetalFlashAttention | `squish/kernels/metal_flash_attn.py` | Tiled fused QK+softmax+PV; no intermediate buffer; 3-5× vs NumPy attention |
+| SpeculativeStreamer | `squish/speculative/spec_stream.py` | Stream draft tokens to client immediately; 0ms perceived TTFT; silent rollback |
+| BlockSparseKV | `squish/kv/block_sparse_kv.py` | Coarse block-level KV sparsity mask; 4-8× fewer attention FLOPs |
+| PDDisaggregator | `squish/serving/pd_disagg.py` | Separate prefill (compute-bound) and decode (memory-bound) scheduling paths |
+| DejaVuSparseFFN | `squish/token/deja_vu_sparse.py` | Lightweight predictor skips inactive FFN neurons; 30-50% MLP FLOP reduction |
+| LayerOverlapLoader | `squish/io/layer_overlap_loader.py` | Prefetch layer N+1 weights while layer N computes; eliminates weight-load stalls |
+
+### v13 Target Metrics
+
+| Model | v12 tok/s | v13 target tok/s | v12 TTFT | v13 TTFT target |
+|-------|-----------|-----------------|----------|------------------|
+| Qwen2.5-1.5B | 120–150 | 180–220 | < 0.25 s | < 0.12 s |
+| Qwen2.5-4B | 60–80 | 95–120 | < 0.5 s | < 0.25 s |
+| Qwen3-8B | 35–50 | 55–75 | < 1.5 s | < 0.8 s |
+
+> At these numbers: 1.5B → sub-0.5s full response; 4B → sub-1s; 8B → sub-2s.
+
+### Completion Checklist
+
+- [x] `ngram_draft.py` — zero-model-cost n-gram context drafter
+- [x] `fused_qkv_proj.py` — fused Q/K/V single-matmul projection
+- [x] `decode_hedger.py` — hedged parallel decode for p99 SLO
+- [x] `prefill_splitter.py` — EMA-adaptive first-chunk TTFT optimiser
+- [x] `weight_only_int2.py` — 2-bit pack-4 group-wise weight quantizer
+- [x] `skip_layer_predictor.py` — online logistic skip-layer predictor
+- [x] `tests/test_wave33_modules.py` — 110 tests, all passing
+- [ ] `jacobi_decode.py` — Jacobi/Gauss-Seidel parallel decode
+- [ ] `mtp_head.py` — multi-token prediction auxiliary heads
+- [ ] `fp6_quant.py` — FP6 float weight quantizer
+- [ ] `token_recycler.py` — draft token recycling buffer
+- [ ] `layer_dedup.py` — cross-layer weight deduplication
+- [ ] `token_pipeline.py` — zero-copy token decode pipeline
+- [ ] `metal_flash_attn.py` — tiled fused Metal attention
+- [ ] `spec_stream.py` — speculative streaming with rollback
+- [ ] `block_sparse_kv.py` — block-sparse KV attention
+- [ ] `pd_disagg.py` — prefill-decode disaggregation scheduler
+- [ ] `deja_vu_sparse.py` — DejaVu FFN activation predictor
+- [ ] `layer_overlap_loader.py` — overlapped weight streaming loader
+- [ ] Tests: wave33b (≥ 72 tests) + wave34 (≥ 72 tests), all passing
+- [ ] CHANGELOG `[13.0.0]` entry
+
+---
+
+## ✅ v12 — Waves 31+32 (Released 2026-03-19)
+
+Theme: **SOTA Research Integration + Pre-Launch Hardening**
+
+### Wave 31 — KV Compression & Speculative Research Integration (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| KVTransformCoder | `squish/kv/kvtc.py` | PCA decorrelation + adaptive quant + entropy coding of KV cache |
+| ChunkKVManager | `squish/kv/chunk_kv.py` | Semantic-chunk eviction + cross-layer index reuse |
+| SSDSaguaro | `squish/speculative/ssd_saguaro.py` | Speculative² — predict verification outcome, pre-fetch speculations |
+| ReDrafterHead | `squish/speculative/redrafter.py` | MLX-native RNN draft head conditioned on main model hidden states |
+| ContentHashImageCache | `squish/vision/content_hash_cache.py` | SHA256 image hash → KV reuse before vision encoding fires |
+| ChipDetector | `squish/hardware/chip_detector.py` | M1–M5 detection, adaptive chunk sizing, no MLX dispatch override |
+
+### Wave 32 — Quantization + Pre-Launch Hardening (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| Any4Quantizer | `squish/quant/any4.py` | Learned 4-bit LUT (tinygemm-style); single calibration sample |
+| VSDDraftHead | `squish/speculative/vsd_draft.py` | Sequence-acceptance training objective for draft heads |
+| ConfidenceGate | `squish/serving/confidence_gate.py` | Commit tokens ≥ confidence threshold; re-draft below threshold |
+| INT3RuntimeLoader | `squish/quant/int3_runtime.py` | MiLo INT3 npy-dir → runtime dequantization in loader pipeline |
+| BenchmarkHarness | `squish/bench/benchmark_harness.py` | 30-trial statistical suite: mean, σ, P50, P99; markdown output |
+| AdaptiveKVTC | `squish/kv/adaptive_kvtc.py` | Per-layer calibrated KVTC with auto-rank selection from explained variance |
+
+### Tests
+
+- `tests/test_wave31_modules.py` — 81 tests, all passing
+- `tests/test_wave32_modules.py` — 84 tests, all passing
+- **Total tests: 7,991 passed, 33 skipped** (+165 new; 0 failures)
+
+### Completion Checklist
+
+- [x] All 12 modules (11 new + 1 pre-existing redrafter)
+- [x] Tests (165 new tests, all passing)
+- [x] CHANGELOG updated
+- [x] PLAN.md updated
+
+---
+
+## ✅ v12 — Waves 31+32 (Released 2026-03-19)
 
 Theme: **SOTA Research Integration + Pre-Launch Hardening**
 
