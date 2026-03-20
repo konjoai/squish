@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v18 Wave 44 planned — Marlin Kernel · Spec Rejection · LoFTQ · Draft Length Adapt · Hadamard Quant · Big-Little LLM)
+> Last updated: 2026-03-20 (v19 Wave 45 planned — Weight Offload · YaRN RoPE · SelfExtend · Orca Scheduling · FP8 Activation · CLEx RoPE)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -29,6 +29,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v17** | 41–42 | Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion |
 | **v18** | 43–44 | MTP Decoding · Cascade KV · Attention Head Pruning · Paged Attention · Layer Collapse · Relay Attention |
 | **v19** | 45–46 | Marlin Kernel · Speculative Rejection · LoFTQ · Draft Length Adapt · Hadamard Quant · Big-Little LLM |
+| **v20** | 47–48 | Weight Offload · YaRN RoPE · SelfExtend · Orca Scheduling · FP8 Activation · CLEx RoPE |
 
 ---
 
@@ -559,6 +560,97 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v20 Wave 45 — Weight Offload · YaRN RoPE · SelfExtend · Orca Scheduling · FP8 Activation · CLEx RoPE (In Progress)
+
+Theme: **Wave 45 addresses four infrastructure gaps that prior waves left open: (1) CPU/disk weight
+offloading to run models larger than available DRAM or VRAM, (2) a new generation of context-length
+extension that goes beyond the `rope_scaling.py` methods already in the codebase — specifically
+YaRN, SelfExtend, and CLEx, which each use a different mathematical approach and have different
+quality-scaling curves, (3) iteration-level scheduling (Orca-style) to replace the current
+request-level batching in server.py, and (4) FP8 activation quantization (W8A8 FP8) which is
+conceptually separate from the existing weight-only fp8_quant.py. Two additional modules cover
+MX FP4 microscaling inference (distinct from existing MX FP8) and a fused bias-GELU kernel for
+activation overhead reduction. All 12 are orthogonal to every prior wave module.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU (Sheng et al.) | ICML 2023 / inference 2024 (arXiv 2303.06865) | CPU–GPU–disk offload schedule computed by linear program; throughput-optimal tensor placement; runs 175B on a single 16 GB GPU at 1 tok/s | `squish/serving/flexgen_offload.py` |
+| YaRN: Efficient Context Window Extension of Large Language Models (Peng et al.) | ICLR 2024 (arXiv 2309.00071) | Frequency-group NTK-by-parts RoPE scaling + attention temperature correction; 128 K ctx with <0.2 PPL over base model at 4 K | `squish/attention/yarn_rope.py` |
+| LLM Maybe LongLM: Self-Extend Context Window of LLMs without Fine-Tuning (Jin et al.) | ICML 2024 (arXiv 2401.01325) | Grouped attention: positions mod group-size within window; no training; 4× context extension with 0 extra params | `squish/attention/self_extend.py` |
+| Continuous Batching: Efficient LLM Serving (Yu et al., Orca) | OSDI 2022 / widely adopted 2024 (arXiv 2309.06180 appendix) | Iteration-level scheduling: swap out finished sequences mid-batch; 10× throughput over request-level batching | `squish/serving/orca_scheduler.py` |
+| Microscaling Data Formats for Deep Learning (Rouhani et al., OCP MX spec) | MICRO 2023 / OCP spec 2024 | Block-scaling FP4 (MXFP4) and FP6 (MXFP6) formats; 2× throughput over FP8 on next-gen hardware; Metal simulation path | `squish/quant/mx_fp4.py` |
+| FP8-LM: Training FP8 LLMs (Peng et al.) | ICLR 2025 (arXiv 2310.18313) | FP8 (E4M3/E5M2) activation + weight GEMM; per-tensor dynamic scale; 1.5× vs BF16 on A100; Metal FP8 simulation path | `squish/quant/fp8_act_quant.py` |
+| CLEx: Continuous Length Extrapolation for Large Language Models (Chen et al.) | arXiv 2405.12483, 2024 | Continuous linear position interpolation with learned per-frequency scale; no fine-tune needed; 256 K effective context | `squish/attention/clex_rope.py` |
+| PowerInfer: Fast Large Language Model Serving with a Consumer-Grade GPU (Song et al.) | SOSP 2024 (arXiv 2312.12456) | Exploit ReLU activation sparsity (DejaVu-style) for CPU-hot/GPU-cold neuron assignment; 11× throughput vs llama.cpp | `squish/serving/powerinfer_offload.py` |
+| LLaMA 3 Grouped RoPE / Long-context Training (Meta AI) | Meta technical blog + arXiv 2407.21783, 2024 | Per-head frequency grouping with high-frequency preservation; up-scales to 128 K via progressive training; production-validated | `squish/attention/grouped_rope.py` |
+| Efficiently Scaling Transformer Inference (Pope et al., Google) | MLSys 2023 / 2024 partitioning | Model-parallel tensor sharding across heterogeneous devices; activation-memory-optimal partition search; supports M-series UMA | `squish/serving/tensor_parallel.py` |
+| BiasGELU Fusion: Operator Fusion for Transformer Inference (from Megatron-LM) | SC 2021 / widely used 2024 | Fuse bias-add + GELU activation into single kernel pass; eliminates intermediate tensor; 20–30% FFN overhead reduction | `squish/kernels/fused_bias_gelu.py` |
+| Efficient Memory Management for Large Language Model Serving with Continuous Batching (Agrawal et al., follow-up) | ASPLOS 2024 (arXiv 2401.11174) | Token-budget-aware preemption: swap KV to CPU when token budget exceeded; deterministic latency SLO; integrates with paged block manager | `squish/serving/token_budget_scheduler.py` |
+
+---
+
+### Wave 45a — FlexGen Offload, YaRN RoPE, SelfExtend, Orca Scheduler, MX FP4, FP8 Activation (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| FlexGenOffload | `squish/serving/flexgen_offload.py` | LP-optimal CPU–GPU–disk weight placement; configurable offload budget; runs 7B–70B on 8 GB VRAM or 16 GB unified; composable with paged block manager |
+| YaRNRoPE | `squish/attention/yarn_rope.py` | NTK-by-parts frequency-group RoPE + attention temperature correction; 128 K ctx at <0.2 PPL over base; drop-in replacement for rope_scaling |
+| SelfExtend | `squish/attention/self_extend.py` | Grouped-position attention (floor-div within window); training-free 4× context extension; zero overhead beyond reshape; configurable group-size |
+| OrcaScheduler | `squish/serving/orca_scheduler.py` | Iteration-level preemptive scheduling; swap finished sequences mid-batch; 10× throughput over request-level; replaces current server.py batch loop |
+| MxFP4 | `squish/quant/mx_fp4.py` | OCP MXFP4 block-scaling 4-bit format; shared exponent per 16-element block; 2× over FP8 on next-gen hardware; Metal simulation path on Apple Silicon |
+| FP8ActQuant | `squish/quant/fp8_act_quant.py` | W8A8 FP8 (E4M3 weight, E5M2 activation) GEMM with per-tensor dynamic scale; distinct from existing weight-only fp8_quant; Metal FP8 simulation |
+
+### Wave 45b — CLEx RoPE, PowerInfer Offload, Grouped RoPE, Tensor Parallel, BiasGELU Fusion, Token Budget Scheduler (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| CLeXRoPE | `squish/attention/clex_rope.py` | Continuous per-frequency learned scale for position interpolation; 256 K effective context without fine-tuning; composable with YaRN and SelfExtend |
+| PowerInferOffload | `squish/serving/powerinfer_offload.py` | ReLU-sparsity-based hot/cold neuron split; hot neurons resident on GPU/Metal ANE, cold on CPU; 11× vs CPU-only; extends FlexGenOffload |
+| GroupedRoPE | `squish/attention/grouped_rope.py` | Per-head frequency grouping with high-frequency preservation (Llama 3.1/3.2 style); production-validated at 128 K; configurable group-count |
+| TensorParallel | `squish/serving/tensor_parallel.py` | Activation-memory-optimal tensor sharding across heterogeneous devices; supports M-series UMA; partition search for arbitrary device topology |
+| FusedBiasGELU | `squish/kernels/fused_bias_gelu.py` | Fused bias-add + GELU single-kernel pass; eliminates intermediate activation tensor; 20–30% FFN memory bandwidth reduction; Metal Shader path |
+| TokenBudgetScheduler | `squish/serving/token_budget_scheduler.py` | KV-budget-aware preemption with CPU swap on overflow; deterministic TTFT SLO; integrates with PagedAttention block manager from Wave 43 |
+
+### v20 Target Metrics (after Wave 45)
+
+> Baselines are v19 Wave 44 targets.
+
+| Model | v19 (W44) tok/s | v20 target tok/s | v19 TTFT | v20 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------|------------------|----------------|
+| Qwen2.5-1.5B (M3) | 680–860 | 780–980 | < 0.005 s | < 0.004 s | FP8ActQuant + MxFP4 + FusedBiasGELU |
+| Qwen2.5-4B (M3) | 460–580 | 530–670 | < 0.008 s | < 0.006 s | OrcaScheduler + TokenBudgetScheduler |
+| Qwen3-8B (M3) | 320–410 | 370–470 | < 0.022 s | < 0.015 s | YaRNRoPE + GroupedRoPE (128 K context) |
+| 70B class (M3 Max / offload) | N/A (OOM) | 6–12 | N/A | < 8 s | FlexGenOffload + PowerInferOffload |
+| Mixtral-8×7B (M3 Max 128 GB) | 100–140 | 125–165 | < 0.5 s | < 0.35 s | TensorParallel + OrcaScheduler |
+
+> FlexGenOffload + PowerInferOffload together unlock a new model tier: 70B-class models
+> (Llama 3 70B, Qwen 72B) become runnable on M3 Max 128 GB with offload for the first time.
+
+### Completion Checklist
+
+- [ ] `squish/serving/flexgen_offload.py` — FlexGenOffload
+- [ ] `squish/attention/yarn_rope.py` — YaRNRoPE
+- [ ] `squish/attention/self_extend.py` — SelfExtend
+- [ ] `squish/serving/orca_scheduler.py` — OrcaScheduler
+- [ ] `squish/quant/mx_fp4.py` — MxFP4
+- [ ] `squish/quant/fp8_act_quant.py` — FP8ActQuant
+- [ ] `squish/attention/clex_rope.py` — CLeXRoPE
+- [ ] `squish/serving/powerinfer_offload.py` — PowerInferOffload
+- [ ] `squish/attention/grouped_rope.py` — GroupedRoPE
+- [ ] `squish/serving/tensor_parallel.py` — TensorParallel
+- [ ] `squish/kernels/fused_bias_gelu.py` — FusedBiasGELU
+- [ ] `squish/serving/token_budget_scheduler.py` — TokenBudgetScheduler
+- [ ] `tests/test_wave45a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave45b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[20.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
