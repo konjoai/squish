@@ -5717,7 +5717,7 @@
 
 <h1 id="squish-development-plan">Squish — Development Plan<a class="headerlink" href="#squish-development-plan" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p>Last updated: 2026-03-19 (v13 in progress — Wave 33+34 Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving)</p>
+<p>Last updated: 2026-03-25 (v13 released — Wave 33+34 Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving · 8,277 tests passing)</p>
 </blockquote>
 <p>This document tracks completed waves, the current release, and the next phase.</p>
 <hr />
@@ -6068,20 +6068,21 @@ disaggregates prefill/decode compute for optimal per-path scheduling.</p>
 <li>[x] <code>weight_only_int2.py</code> — 2-bit pack-4 group-wise weight quantizer</li>
 <li>[x] <code>skip_layer_predictor.py</code> — online logistic skip-layer predictor</li>
 <li>[x] <code>tests/test_wave33_modules.py</code> — 110 tests, all passing</li>
-<li>[ ] <code>jacobi_decode.py</code> — Jacobi/Gauss-Seidel parallel decode</li>
-<li>[ ] <code>mtp_head.py</code> — multi-token prediction auxiliary heads</li>
-<li>[ ] <code>fp6_quant.py</code> — FP6 float weight quantizer</li>
-<li>[ ] <code>token_recycler.py</code> — draft token recycling buffer</li>
-<li>[ ] <code>layer_dedup.py</code> — cross-layer weight deduplication</li>
-<li>[ ] <code>token_pipeline.py</code> — zero-copy token decode pipeline</li>
-<li>[ ] <code>metal_flash_attn.py</code> — tiled fused Metal attention</li>
-<li>[ ] <code>spec_stream.py</code> — speculative streaming with rollback</li>
-<li>[ ] <code>block_sparse_kv.py</code> — block-sparse KV attention</li>
-<li>[ ] <code>pd_disagg.py</code> — prefill-decode disaggregation scheduler</li>
-<li>[ ] <code>deja_vu_sparse.py</code> — DejaVu FFN activation predictor</li>
-<li>[ ] <code>layer_overlap_loader.py</code> — overlapped weight streaming loader</li>
-<li>[ ] Tests: wave33b (≥ 72 tests) + wave34 (≥ 72 tests), all passing</li>
-<li>[ ] CHANGELOG <code>[13.0.0]</code> entry</li>
+<li>[x] <code>jacobi_decode.py</code> — Jacobi/Gauss-Seidel parallel decode</li>
+<li>[x] <code>mtp_head.py</code> — multi-token prediction auxiliary heads</li>
+<li>[x] <code>fp6_quant.py</code> — FP6 float weight quantizer</li>
+<li>[x] <code>token_recycler.py</code> — draft token recycling buffer</li>
+<li>[x] <code>layer_dedup.py</code> — cross-layer weight deduplication</li>
+<li>[x] <code>token_pipeline.py</code> — zero-copy token decode pipeline</li>
+<li>[x] <code>metal_flash_attn.py</code> — tiled fused Metal attention</li>
+<li>[x] <code>spec_stream.py</code> — speculative streaming with rollback</li>
+<li>[x] <code>block_sparse_kv.py</code> — block-sparse KV attention</li>
+<li>[x] <code>pd_disagg.py</code> — prefill-decode disaggregation scheduler</li>
+<li>[x] <code>deja_vu_sparse.py</code> — DejaVu FFN activation predictor</li>
+<li>[x] <code>layer_overlap_loader.py</code> — overlapped weight streaming loader</li>
+<li>[x] <code>tests/test_wave33_v13_modules.py</code> — 104 tests, all passing</li>
+<li>[x] <code>tests/test_wave34_modules.py</code> — 72 tests, all passing</li>
+<li>[x] CHANGELOG <code>[13.0.0]</code> entry</li>
 </ul>
 <hr />
 <h2 id="v12-waves-3132-released-2026-03-19">✅ v12 — Waves 31+32 (Released 2026-03-19)<a class="headerlink" href="#v12-waves-3132-released-2026-03-19" title="Permanent link">&para;</a></h2>
