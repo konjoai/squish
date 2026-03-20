@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-19 (v16 Wave 39 planned — Activation Quant · Fused Kernels · W8A8 · torch.compile · Sublinear Attn)
+> Last updated: 2026-03-19 (v16 Wave 40 planned — KV Architecture · Flash Weight · Self-Spec · Entropy Eviction · LSH-KV · Sublinear)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -113,6 +113,94 @@ Each module is backed by a 2024–2025 paper and is orthogonal to all Wave 38 ad
 - [ ] `tests/test_wave39a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave39b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[16.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v16 Wave 40 — KV Architecture Innovation · Flash-Weight · Self-Speculative · Entropy Eviction · LSH-KV (In Progress)
+
+Theme: **Four orthogonal fronts that Wave 39 leaves unaddressed: (1) retrieval-head-aware KV
+compression and cross-layer KV sharing to cut KV memory by 50–70% without quality loss,
+(2) NAND Flash as a weight tier to run models 4–5× larger than DRAM allows on M-series,
+(3) self-speculative decoding via a shallow adapter subnetwork that requires no separate draft
+model and no extra memory, and (4) information-theoretic KV eviction policies (attention
+entropy and LSH sampling) that outperform all score-based eviction baselines at 128k+ context.**
+
+Each module is backed by a 2024–2025 peer-reviewed paper. All modules compose cleanly with
+the Wave 38 and Wave 39 additions already planned.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| RazorAttention: Efficient KV Cache Compression Through Retrieval Heads (He et al.) | NeurIPS 2024 (arXiv 2407.15891) | Classify heads as retrieval vs non-retrieval; non-retrieval heads keep only 2-token summary KV; 70% KV reduction | `squish/attention/razor_attn.py` |
+| Layer-Condensed KV Cache for Efficient Inference of Large Language Models (Zhang et al.) | ACL 2024 (arXiv 2405.10637) | Bottom-K layers compute KV; all upper layers reuse via cross-layer KV sharing; 3–5× KV memory reduction | `squish/kv/lckv_cache.py` |
+| CacheBlend: Fast Large Language Model Serving with Cached Knowledge Fusion (Yao et al.) | EuroSys 2025 (arXiv 2405.16444) | Blend prefix-document KV caches with selective fresh attention; 2.2–2.8× TTFT for RAG | `squish/kv/cache_blend.py` |
+| GreenKV: Accurate and Efficient KV Cache Eviction with Budget Adjustment (arXiv 2412.15838) | 2024 | Accumulated attention scores with per-head budget; outperforms SnapKV/PyramidKV at 128k | `squish/kv/green_kv.py` |
+| MagicPIG: LLM Serving using Sampling-based KV Cache Compression (arXiv 2410.16179) | NeurIPS 2024 | LSH-based top-K KV sampling for approximate attention; scales to 1M context; 2× throughput | `squish/kv/magic_pig_kv.py` |
+| LLM in a Flash: Efficient Large Language Model Inference with Limited Memory (Alizadeh et al.) | Apple 2024 (arXiv 2312.11514) | NAND Flash as weight storage; sliding window eviction to Flash; 4–5× larger models than DRAM | `squish/io/flash_weight_cache.py` |
+| Kangaroo: Lossless Self-Speculative Decoding via Double Early Exiting (Liu et al.) | arXiv 2404.18911, 2024 | Shallow subnetwork as self-drafter; adapter trained on target model hidden states; 1.7× speedup, zero extra memory | `squish/speculative/kangaroo_spec.py` |
+| CAKE: Cascading and Adaptive KV Cache Eviction with Layer-wise Budget (arXiv 2410.22143) | NeurIPS 2024 workshop | Per-layer budget from cumulative attention entropy distribution; beats uniform allocation | `squish/kv/cake_evict.py` |
+| FP8 KV Cache (TRT-LLM / FlashInfer production) | Production 2024 | Per-tensor FP8 quantization of K/V tensors; 2× KV memory vs FP16; no calibration; composable | `squish/kv/fp8_kv_cache.py` |
+| Sub-quadratic Attention via Implicit Differentiation (arXiv 2402.06082, Chen et al.) | ICML 2024 | Dual sparse kernel: local window + global sink in O(n√n) memory with constant-size buffers | `squish/attention/subgen_attn.py` |
+| SepLLM: Accelerate Large Language Models by Compressing One Separator Token per Two Layers (Chen et al.) | ICLR 2025 | KV kept only for separator tokens + recent window at every other layer; 2× KV reduction on instruction-following | `squish/token/sep_llm_compress.py` |
+| SpecExec: Massively Parallel Speculative Decoding for Interactive LLM Inference on Consumer Devices (Svirschevski et al.) | arXiv 2405.00047, 2024 | Budget-B token tree expanded greedily from residual draft distribution; best acceptance at long context | `squish/speculative/spec_exec.py` |
+
+---
+
+### Wave 40a — KV Architecture Innovation, Flash Weight & LSH-KV (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| RazorAttention | `squish/attention/razor_attn.py` | Head-type classifier (retrieval vs non-retrieval); non-retrieval heads compressed to 2-token summary KV; calibrated once at model load |
+| LCKVCache | `squish/kv/lckv_cache.py` | Cross-layer KV sharing; only bottom-K layers maintain full KV; upper layers attend into bottom-layer KV; configurable K |
+| CacheBlendKV | `squish/kv/cache_blend.py` | KV block reuse for prefix/RAG context; selective partial recompute for blending; composable with prefix_kv_store |
+| GreenKVEviction | `squish/kv/green_kv.py` | Per-head accumulated attention score budget; adaptive budget transfer from low-importance to high-importance heads; exact top-K guarantee |
+| MagicPIGKV | `squish/kv/magic_pig_kv.py` | Random Fourier Feature / LSH approximate inner-product for top-K KV selection; configurable hash tables; CPU fallback |
+| FlashWeightCache | `squish/io/flash_weight_cache.py` | Mmap-backed Flash tier for weight tensors; sliding window to DRAM; prefetch predictor based on layer access pattern; M-series specialty |
+
+### Wave 40b — Self-Speculative Decoding, Entropy Eviction & Compression (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| KangarooSpec | `squish/speculative/kangaroo_spec.py` | Shallow subnetwork drafter (configurable N early layers + adapter); draft tokens from first exit; verify with full model; no extra model |
+| CAKEEviction | `squish/kv/cake_evict.py` | Layer-wise KV budget from cumulative attention entropy; entropy-aware redistribution across layers and heads |
+| FP8KVCache | `squish/kv/fp8_kv_cache.py` | Per-tensor FP8 (e4m3/e5m2) K/V storage; scale factor per tensor; dequant-on-the-fly in attention; plugin for existing KVCache |
+| SubGenAttention | `squish/attention/subgen_attn.py` | O(n√n) dual-sparse kernel: sliding local window + O(√n) global sinks; fixed memory regardless of sequence length |
+| SepLLMCompress | `squish/token/sep_llm_compress.py` | Sentence/section separator token detection; KV kept for separators + sliding recent window on alternating layers; plug-in layer wrapper |
+| SpecExecDrafter | `squish/speculative/spec_exec.py` | Budget-B speculative tree built by greedy expansion of residual probability mass; high acceptance at long context; no draft model |
+
+### v16 Target Metrics (after Wave 40)
+
+> Baselines are v16 Wave 39 targets.
+
+| Model | v16 (W39) tok/s | v16 (W40) target tok/s | v16 TTFT | v16 TTFT target | Primary driver |
+|-------|-----------------|----------------------|----------|------------------|----------------|
+| Qwen2.5-1.5B (M3) | 300–360 | 360–430 | < 0.03 s | < 0.02 s | Kangaroo + FP8 KV + SpecExec |
+| Qwen2.5-4B (M3) | 180–220 | 220–270 | < 0.07 s | < 0.04 s | RazorAttn + LCKV + CacheBlend RAG |
+| Qwen3-8B (M3) | 110–140 | 150–190 | < 0.20 s | < 0.12 s | GreenKV + CAKE + SubGen at 32k+ |
+| Qwen2.5-7B (8 GB M-series) | 35–55 | 60–80 | < 1.0 s | < 0.6 s | FlashWeightCache (NAND offload) |
+
+> FlashWeightCache row represents a qualitative unlock: 7B/14B models that previously required
+> 16+ GB DRAM now run on 8 GB M-series devices via transparent Flash weight paging.
+
+### Completion Checklist
+
+- [ ] `squish/attention/razor_attn.py` — RazorAttention
+- [ ] `squish/kv/lckv_cache.py` — LCKVCache
+- [ ] `squish/kv/cache_blend.py` — CacheBlendKV
+- [ ] `squish/kv/green_kv.py` — GreenKVEviction
+- [ ] `squish/kv/magic_pig_kv.py` — MagicPIGKV
+- [ ] `squish/io/flash_weight_cache.py` — FlashWeightCache
+- [ ] `squish/speculative/kangaroo_spec.py` — KangarooSpec
+- [ ] `squish/kv/cake_evict.py` — CAKEEviction
+- [ ] `squish/kv/fp8_kv_cache.py` — FP8KVCache
+- [ ] `squish/attention/subgen_attn.py` — SubGenAttention
+- [ ] `squish/token/sep_llm_compress.py` — SepLLMCompress
+- [ ] `squish/speculative/spec_exec.py` — SpecExecDrafter
+- [ ] `tests/test_wave40a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave40b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[16.1.0]` entry
 - [ ] PLAN.md updated
 
 ---
