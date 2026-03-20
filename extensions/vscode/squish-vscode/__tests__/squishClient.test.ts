@@ -498,3 +498,41 @@ describe('SquishClient.streamChat()', () => {
     });
 });
 
+// ── SquishClient.abort() ──────────────────────────────────────────────────────
+
+describe('SquishClient.abort()', () => {
+    test('calls destroy on the active request', () => {
+        const mockRes = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { setEncoding: jest.fn() },
+        );
+        const mockReq = Object.assign(
+            Object.create(require('events').EventEmitter.prototype),
+            { end: jest.fn(), write: jest.fn(), destroy: jest.fn() },
+        );
+        mockedHttp.request.mockImplementation((_opts: unknown, cb?: unknown) => {
+            if (typeof cb === 'function') {
+                // Register the callback but do not emit anything — simulates an
+                // in-flight request that has not produced any data yet.
+                setTimeout(() => { cb(mockRes as http.IncomingMessage); }, 100);
+            }
+            return mockReq as unknown as http.ClientRequest;
+        });
+
+        const client = new SquishClient('127.0.0.1', 11435, 'squish');
+        client.streamChat(
+            [{ role: 'user', content: 'hi' }],
+            128, 0.7, '7b',
+            () => {},
+            () => {},
+        );
+        client.abort();
+        expect(mockReq.destroy).toHaveBeenCalled();
+    });
+
+    test('is safe to call when no active request', () => {
+        const client = new SquishClient('127.0.0.1', 11435, 'squish');
+        expect(() => client.abort()).not.toThrow();
+    });
+});
+

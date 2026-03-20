@@ -214,10 +214,17 @@ body {
 
 #input-area {
     display: flex;
+    flex-direction: column;
     gap: 6px;
     padding: 8px 13px 13px;
     border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
     flex-shrink: 0;
+}
+
+#input-btns {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
 }
 
 #user-input {
@@ -348,5 +355,76 @@ button:disabled {
 
 .tool-call-result.hidden {
     display: none;
+}
+
+/* ── Code blocks with header ─────────────────────────────────────────────── */
+
+.code-block {
+    margin: 0.65em 0;
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1px solid var(--vscode-textSeparator-foreground, rgba(128,128,128,0.25));
+}
+
+.code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 8px;
+    background: var(--vscode-tab-inactiveBackground, rgba(128,128,128,0.12));
+    border-bottom: 1px solid var(--vscode-textSeparator-foreground, rgba(128,128,128,0.2));
+}
+
+.code-lang {
+    font-size: 0.75em;
+    opacity: 0.6;
+    font-family: var(--vscode-editor-font-family, monospace);
+    text-transform: lowercase;
+}
+
+.copy-code-btn {
+    background: none;
+    border: none;
+    color: var(--vscode-foreground);
+    opacity: 0.55;
+    cursor: pointer;
+    font-size: 0.75em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.copy-code-btn:hover {
+    opacity: 1;
+    background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+}
+
+.code-block pre {
+    margin: 0;
+    padding: 10px 12px;
+    overflow-x: auto;
+    background: var(--vscode-textCodeBlock-background, rgba(0,0,0,0.15));
+}
+
+.code-block pre code {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.88em;
+    background: none;
+    border-radius: 0;
+    padding: 0;
+    white-space: pre;
+}
+
+/* ── Stop button ─────────────────────────────────────────────────────────── */
+
+#btn-stop {
+    background: transparent;
+    color: var(--vscode-errorForeground, #f85149);
+    border-color: var(--vscode-inputValidation-errorBorder, currentColor);
+}
+
+#btn-stop:hover {
+    background: var(--vscode-inputValidation-errorBackground, rgba(255,0,0,0.1));
 }
 

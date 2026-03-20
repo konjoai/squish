@@ -7,6 +7,8 @@
 
 export const StatusBarAlignment = { Left: 1, Right: 2 };
 export const ConfigurationTarget = { Global: 1, Workspace: 2, WorkspaceFolder: 3 };
+export const FileType = { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 };
+export const DiagnosticSeverity = { Error: 0, Warning: 1, Information: 2, Hint: 3 };
 export class ThemeColor { constructor(public id: string) {} }
 
 const _config: Record<string, unknown> = {
@@ -40,6 +42,13 @@ export const workspace = {
         _workspaceFolders = folders;
     },
     _mockConfig,
+    fs: {
+        stat:          jest.fn().mockRejectedValue(new Error('FileNotFound')),
+        writeFile:     jest.fn().mockResolvedValue(undefined),
+        readDirectory: jest.fn().mockResolvedValue([] as [string, number][]),
+        readFile:      jest.fn().mockResolvedValue(Buffer.from('')),
+    },
+    textDocuments: [] as Array<{ isUntitled: boolean; uri: { scheme: string; fsPath: string } }>,
 };
 
 export const window = {
@@ -67,6 +76,10 @@ export const env = {
     clipboard: {
         writeText: jest.fn().mockResolvedValue(undefined),
     },
+};
+
+export const languages = {
+    getDiagnostics: jest.fn().mockReturnValue([] as [{ fsPath: string }, { severity: number; range: { start: { line: number } }; message: string }[]][]),
 };
 
 export const Uri = {

@@ -26,6 +26,7 @@
     const inputEl    = document.getElementById('user-input');
     const sendBtn    = document.getElementById('btn-send');
     const clearBtn   = document.getElementById('btn-clear');
+    const stopBtn    = document.getElementById('btn-stop');
 
     // ── State ─────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@
         inputEl.value = '';
         _generating = true;
         sendBtn.disabled = true;
+        if (stopBtn) { stopBtn.removeAttribute('hidden'); }
 
         _appendUserMessage(text);
         vscode.postMessage({ type: 'userMessage', text });
@@ -79,6 +81,25 @@
         messagesEl.innerHTML = '';
         _resetTurnState();
         vscode.postMessage({ type: 'clearHistory' });
+    });
+
+    if (stopBtn) {
+        stopBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'stopGeneration' });
+        });
+    }
+
+    // Delegated click handler for copy-code buttons inside rendered code blocks
+    messagesEl.addEventListener('click', (e) => {
+        const btn = /** @type {HTMLElement|null} */ (e.target)?.closest?.('.copy-code-btn');
+        if (!btn) { return; }
+        const id = /** @type {HTMLElement} */ (btn).dataset.id;
+        const codeEl = id ? document.getElementById(id) : null;
+        if (!codeEl) { return; }
+        navigator.clipboard?.writeText(codeEl.textContent ?? '').then(() => {
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+        });
     });
 
     // ── Extension → webview messages ──────────────────────────────────────
@@ -240,6 +261,7 @@
     function _finalizeTurn() {
         _generating = false;
         sendBtn.disabled = false;
+        if (stopBtn) { stopBtn.setAttribute('hidden', ''); }
         _resetTurnState();
         inputEl.focus();
     }
@@ -342,8 +364,8 @@
     }
 
     // ── Inline markdown renderer ───────────────────────────────────────────
-    // Supports: **bold**, *italic*, `code`, and paragraph breaks (blank lines).
-    // All text is HTML-escaped before processing to prevent XSS.
+    // Supports: fenced code blocks (```lang\ncode```), **bold**, *italic*,
+    // `inline code`, and paragraph breaks. All content is HTML-escaped.
 
     function _esc(s) {
         return s
@@ -354,22 +376,44 @@
     }
 
     function _renderMarkdown(text) {
-        // Split into paragraphs on blank lines
-        const paragraphs = text.split(/\n{2,}/);
-        return paragraphs.map((para) => {
-            // Escape the raw paragraph text
-            let s = _esc(para.trim());
-            if (!s) { return ''; }
-            // Bold: **...**  (must come before italic)
-            s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-            // Italic: *...*  (single asterisk, non-greedy)
-            s = s.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
-            // Inline code: `...`
-            s = s.replace(/`([^`]+?)`/g, '<code>$1</code>');
-            // Preserve single newlines as <br>
-            s = s.replace(/\n/g, '<br>');
-            return '<p>' + s + '</p>';
-        }).filter(Boolean).join('');
+        const out = [];
+        // Split around fenced code blocks first so they are not mangled by
+        // paragraph-level processing.
+        const parts = text.split(/(```[\s\S]*?```)/g);
+        for (const part of parts) {
+            const fenceMatch = part.match(/^```(\w*)\n?([\s\S]*?)```$/);
+            if (fenceMatch) {
+                const lang = fenceMatch[1] || '';
+                const code = fenceMatch[2] || '';
+                const id = 'cb_' + Math.random().toString(36).slice(2, 9);
+                out.push(
+                    '<div class="code-block">'
+                    + '<div class="code-header">'
+                    + '<span class="code-lang">' + _esc(lang) + '</span>'
+                    + '<button class="copy-code-btn" data-id="' + id + '">Copy</button>'
+                    + '</div>'
+                    + '<pre><code id="' + id + '">' + _esc(code) + '</code></pre>'
+                    + '</div>',
+                );
+            } else {
+                // Regular text — split into paragraphs and apply inline markdown
+                const paragraphs = part.split(/\n{2,}/);
+                for (const para of paragraphs) {
+                    let s = _esc(para.trim());
+                    if (!s) { continue; }
+                    // Bold: **...**  (must come before italic)
+                    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                    // Italic: *...*  (single asterisk, non-greedy)
+                    s = s.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+                    // Inline code: `...`
+                    s = s.replace(/`([^`]+?)`/g, '<code>$1</code>');
+                    // Preserve single newlines as <br>
+                    s = s.replace(/\n/g, '<br>');
+                    out.push('<p>' + s + '</p>');
+                }
+            }
+        }
+        return out.join('');
     }
 
     // ── Acknowledgement phrase generator ─────────────────────────────────
