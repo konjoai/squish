@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v31 Wave 57 planned — Rust Entropy Codec · PQ ADC · GRU Cell · Cosine Sim · SwiGLU · Randomized SVD + Mojo RMSNorm · SwiGLU Parallel · GQA Decode · Token CosSim · Sparse Block Score · Retention State)
+> Last updated: 2026-03-20 (v32 Wave 58 planned — Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -41,6 +41,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v29** | 55 | Advanced Sampling Refinement · Min-P · Mirostat · Typical · EtaCutoff · CFG · Diverse Beam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound |
 | **v30** | 56 | Native Acceleration Layer · Rust NF4 / FP8 / INT3 / Sampling / KV-Quant / INT2 Kernels · Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill |
 | **v31** | 57 | Deep Native Acceleration · Rust Entropy Codec / PQ ADC / GRU Cell / Cosine Sim / SwiGLU / Randomized SVD · Mojo RMSNorm / SwiGLU Parallel / GQA Decode / Token CosSim / Sparse Block Score / Retention State |
+| **v32** | 58 | Third Acceleration Tier · Rust Vector K-Means / FP6 BitPack / AWQ Channel / Model Merge / MoE Bincount / Online SGD · Mojo Dual-Chunk Attn / Infini-Attn Memory / Sliding-Window Attn / HQQ ALS / VPTQ Decode / Top-K/P Sampling |
 
 ---
 
@@ -571,6 +572,155 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v32 Wave 58 — Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling (Planned)
+
+Theme: **Wave 58 eliminates the third tier of Python/NumPy bottlenecks that are structurally distinct from
+Waves 56 and 57: multi-codebook vector quantization fitting (VPTQ, AQLM, CodecKV), sub-byte float encoding
+(FP6), activation-calibration statistics (AWQ), model merge arithmetic (SLERP/DARE/TIES), mixture-of-experts
+load balancing, online gradient descent, and four new Mojo attention/sampling kernels. Every target is
+evidence-backed by direct code archaeology of source modules with measured line-level complexity.**
+
+**Wave 58a Rust gaps — six new modules:**
+(1) VPTQ (`vptq.py`), AQLM (`aqlm.py`), and CodecKV (`codec_kv.py`) all independently implement K-means
+codebook fitting with the same O(N×K×D) pairwise-distance inner loop. VPTQ expands `(N, K, D)` broadcast
+tensor then does `np.argmin` — allocating an `N×K×D` temporary for each iteration; AQLM uses an identical
+pattern; CodecKV uses `_lloyd_kmeans`. A single Rust Rayon parallel K-means implementation that operates
+directly on memory-contiguous centroids without broadcast expansion covers all three. (2) FP6 quantization
+(`fp6_quant.py` lines 372–383) has a triple nested Python for-loop `for g in range(n_groups): for i in
+range(0, gs, 4): for k in range(4):` that calls the Python function `_fp6_encode_value()` once per scalar
+to compute the 6-bit float representation, then packs 4 encoded values into 3 bytes. A Rust batch encoder
+processing 4 floats per iteration with compile-time constants for `exp_bits` / `man_bits` achieves 30–50×
+speedup. (3) AWQ channel-wise activation statistics (`awq.py`) accumulate per-channel abs-mean across
+calibration batches with `np.abs(flat).mean(axis=0)` and then compute `scales = np.clip(mean_act, 1e-4,
+None) ** alpha` — two NumPy passes over `(batch, in_features)` float32 arrays per sample; a Rust single-pass
+fused channel-abs-accumulate + alpha-power scale achieves ~3–5× per calibration step. (4) TIES/DARE/SLERP
+model merge (`lora/model_merge.py`) performs sequential Python loops over model deltas for sign election and
+masked scatter-add; TIES iterates `for d in trimmed:` twice (once for sign sum, once for masked sum), DARE
+applies random mask via `rng.random()` per element; a Rust Rayon implementation parallelizes over chunks,
+vectorizes sign-election + sum, and eliminates Python object overhead; ~3× on 1B+ parameter layer weight
+matrices. (5) MoE expert frequency bincount (`sparse_moe.py`) computes `for e in range(n_experts):
+freq_fraction[e] = sum(assignments == e) / batch` — a Python loop over 64–128 experts that fires every
+forward batch; Rust SIMD bincount with prefix-sum normalize replaces both the Python loop and the masked
+sum, ~5–10× for n_experts=128. (6) Online logistic regression SGD (skip_layer_predictor + DejaVu
+sparse) fires per token per layer: `sigmoid(dot(weights, features))` + binary cross-entropy gradient +
+`weights -= lr * error * features` — 3 NumPy ufunc dispatches when every decode step is gated by the predictor; a Rust fused SGD step computes sigmoid + loss gradient + weight delta in one pass, ~6–8×.
+
+**Wave 58b Mojo kernel targets — six new kernels:**
+(1) DualChunkAttention (`dual_chunk_attn.py`) runs a full causal SDPA per 512-token chunk with three
+einsum calls (`"hqd,hkd->hqk"`, `"hqk,hkd->hqd"`, `"hd,hsd->hs"`) plus a stack + argpartition for
+inter-chunk top-k selection; a Mojo kernel with `@parameter` on chunk_size (512) and head_dim (128) tiles
+the intra-chunk SDPA with online softmax accumulation (row-wise max tracking, no causal mask materialization),
+achieving ~3× on M3 vs NumPy einsum dispatch overhead. (2) Infini-attention (`infini_attn.py`) maintains a
+compressive memory matrix M of shape `(H, d, d)` updated via `self._M += einsum("htd,hte->hde", K, V)` every
+T tokens and queried as `QM = einsum("htd,hde->hte", Q, self._M)` — the update is a batched outer-product
+accumulate, the query is a batched matrix-vector; a Mojo kernel combining the outer-product accumulate and
+normalization in one pass (avoiding the 2× M materialization) with `@parameter` on head_dim matches the
+MojoRetentionState pattern from Wave 57 but with recurrent-compressive transformer semantics; ~3×. (3) The
+sliding-window local attention in `subgen_attn.py` (`_sliding_window_attn`) has a double Python for-loop
+(`for h in range(n_heads): for t in range(T):`) iterating per-head per-token over a slice `K[h, lo:hi]`;
+Mojo `parallelize` over (head, token) pairs with `@parameter` on window_size (typically 64–256) and
+head_dim extracts `n_heads × seq_len` GIL-free SIMD dot products; ~8–12× speedup from pure loop elimination.
+(4) HQQ alternating least-squares iteration (`hqq_quant.py` lines 198–209) runs `for _ in range(max_iter):`
+with 6 NumPy ufunc dispatches per step (square-sum, scale update, zero update, divide, round, clip); Mojo
+vectorized ALS reads the group tensor once, computes scale and zero analytically, rounds, and clips in a
+single `SIMD[DType.float32, 8]` pass; applies at every quantized layer (3000 groups per 4096×4096 matrix);
+~2.5–4× speedup for `max_iter=10` with `@parameter` on group_size (64, 128, 256). (5) VPTQ vectorized
+codebook decode (`vptq.py`) performs `self._centroids[indices]` fancy-indexing for `(N, group_size)` output;
+with residual codebook it runs the gather twice; Mojo SIMD with `@parameter` on group_size (2, 4, 8, 16)
+compiles an unrolled gather-and-accumulate loop that copies `group_size` floats at once using SIMD width ≥
+group_size; eliminates Python fancy-indexing overhead; ~2–3× at group_size=4 (covers VPTQ residual + AQLM).
+(6) Top-k / top-p sampling pipeline (`scheduler.py`, `token_swift.py`, `early_exit_sampler.py`) calls
+`np.argsort(-probs)` + `np.cumsum(probs[idx])` + `np.searchsorted` — 4 NumPy passes over vocab_size=128K;
+Mojo `@parameter` on vocab_size with vectorized radix partial-sort (extracts top-256 in one pass via
+SIMD histogram over high-byte), then cumsum with SIMD horizontal-add and early-exit once `p >= top_p`; ~3–5×
+on 128K vocabulary.
+
+All Wave 58 modules follow the same fallback pattern as Waves 56–57: Mojo kernels fall back to the Rust path
+when the `magic` toolchain is unavailable; Rust functions fall back to the NumPy implementations when
+`squish_quant_rs` is not compiled. Zero changes to public Python APIs — drop-in replacement at callsite.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| VPTQ: Extreme LLM Weight Compression via Vector Post-Training Quantization (Liu et al.) | NeurIPS 2024 (arXiv 2409.17066) | 2-bit LLM quantization via K-means codebook over weight groups of size 2–16; two-stage: primary codebook + residual codebook; codebook fitting is the dominant calibration cost (5–30 min on GPU); Rayon parallel K-means++ initialization and centroid assignment eliminates Python O(N×K) list comprehension; shared kernel also covers AQLM and CodecKV K-means; ~10–15× codebook fit time | `squish/kernels/rs_vector_kmeans.py` |
+| AQLM: Extreme Compression of Large Language Models Using Additive Quantization (Tseng et al.) | ICLR 2024 (arXiv 2401.06118) | 2-bit quantization via multi-level product codebook (n_codebooks=2–4); encode: nearest-centroid per codebook per group; decode: sum over codebooks; inner `for m in range(n_codebooks): idx = argmin(sq_dists)` Python loop with same pairwise-distance alloc; shared Rayon K-means + SIMD argmin covers both; decode path: codebook gather loop | `squish/kernels/rs_vector_kmeans.py` + `squish/kernels/mojo/vptq_decode_mojo.py` |
+| FP6-LLM: Efficiently Serving Large Language Models Through FP6-Centric Algorithm-System Co-Design (Xia et al.) | arXiv 2401.14112, 2024 | FP6 (3/2 exp/man) packs 4 values into 3 bytes via bit-interleaving; Python scalar encode loop dominant for calibration; Rust batch encoder: process 4 f32 at once, write 3 bytes per 4-pack using bitmask; compile-time constants for exp_bits/man_bits/exp_bias → inlined branch; 30–50× on n_groups × group_size elements | `squish/kernels/rs_fp6_bitpack.py` |
+| AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration (Lin et al.) | MLSys 2024 (arXiv 2306.00978) | Activation-aware scale search: abs-mean channel activations → scales^alpha balancing; accumulate `abs_mean = |flat|.mean(axis=0)` per calibration sample; Rust single-pass: compute per-column abs-sum + broadcast scale + alpha-power in one Rayon chunk; protects AWQ accuracy while accelerating 30–90 calibration passes | `squish/kernels/rs_awq_channel.py` |
+| DARE: Language Model Merging by Randomly Dropping and Rescaling Delta Parameters (Yu et al.) | EMNLP 2024 (arXiv 2311.03099) / TIES-Merging: Resolving Interference When Merging Models (Yadav et al.) NeurIPS 2023 | DARE: random sparse mask (density=0.5) × delta / density; TIES: top-k trimming + majority sign election + masked mean; both are per-element operations on flat weight tensors; sequential Python loops for sign sum / masked-add; Rayon parallel ChunkMapOp covers DARE mask+scale and TIES sign-sum+aggregate; ~3× on 7B model weight shard | `squish/kernels/rs_model_merge.py` |
+| Mixture of Experts (MoE) routing — Mixtral-8×7B, Qwen3-MoE (Jiang et al. 2024 / Qwen Team 2025) | production 2024–2025 | Token-expert routing: top-k softmax over n_experts=64/128 probabilities; expert-frequency load balancing `freq_fraction[e] = sum(assignments == e) / batch`; Python loop over n_experts; Rust SIMD bincount + normalize: single `u32` accumulation array, final normalize pass; covers `sparse_moe.py`, `pregated_router.py`, `mobile_moe.py`; ~5–10× for n_experts=128, batch=64 | `squish/kernels/rs_moe_bincount.py` |
+| Online Learning for Skip-Layer Prediction — early exit / layer-skip self-speculative decode (Schuster et al. / DejaVu 2023) | arXiv 2303.13048 / NeurIPS 2023 | Online logistic regression predictor per layer; standard SGD: error = label - sigma(w·x); w -= lr × error × x; fired N_layers × N_tokens (32 × 1000+ per request); Rust fused step: clip x, sigmoid, error computation, axpy weight update in one Rayon vector pass; eliminates 3 NumPy ufunc dispatches + Python scalar overhead per update; ~6–8× on n_features=16, n_layers=32 | `squish/kernels/rs_online_sgd.py` |
+| Infini-attention: Efficient Infinite Context Transformers with Infini-attention (Munkhdalai et al.) | arXiv 2404.07143, 2024 | Compressive memory M `(H, d, d)` updated per segment: `M += ELU(K)^T × V` (optional ELU); retrieval `A_mem = M × sigma(Q) / (|Z| + ε)` where Z is a normalizer; two batched matrix operations per forward pass: outer-product-accumulate and matrix-vector; Mojo outer-product `@parameter` on head_dim; `parallelize` over heads; covers infini_attn.py and fast_weights.py TTT pattern | `squish/kernels/mojo/infini_attn_mojo.py` |
+| Dual Chunk Attention with Online Cross-chunk Interaction (An et al.) | arXiv 2406.17419, 2024 | Intra-chunk causal SDPA `(chunk_size × head_dim)` × 2 matmul + online softmax; inter-chunk top-4 selection via mean-query scoring; scales linearly with context length; intra-chunk is the tight GEMM kernel; Mojo tiled causal SDPA with compile-time `chunk_size=512`, online max tracking (no mask materialization), `@parameter` on head_dim eliminates 3 NumPy dispatches; ~3× on chunk_size=512, head_dim=128 | `squish/kernels/mojo/dual_chunk_attn_mojo.py` |
+| SubGen: Token Generation in Sublinear Time and Memory (Nawrot et al.) | arXiv 2402.06082, 2024 | Sliding-window local attention + global sink tokens; window attention inner double loop: per-head per-token Q[h,t] @ K[h,lo:hi].T; compile-time window_size eliminates bounds checking; `parallelize(n_heads × T)` tasks, each vectorizing `window_size × head_dim`; 8–12× over Python double for-loop; covers `subgen_attn.py` _sliding_window_attn and related patterns in `nsa_attn.py` `_sliding_window_attn` | `squish/kernels/mojo/sliding_window_attn_mojo.py` |
+| HQQ: Half-Quadratic Quantization of Large Machine Learning Models (Badri & Shaji) | arXiv 2309.15531, 2023 | Alternating least-squares for scale+zero: iterate `scale = (c*(W-z)).sum(-1) / (c²+λ)`, `zero = mean(W - codes*scale)`, `codes = clip(round((W-zero)/scale))`; 6 NumPy ufunc dispatches per ALS step × max_iter iterations × n_groups × 3000 groups per layer; Mojo vectorized ALS over group_size (64–128) eliminates dispatch overhead; `@parameter` on group_size, max_iter; ~3× overall | `squish/kernels/mojo/hqq_als_mojo.py` |
+| VPTQ: Extreme LLM Weight Compression — decode path | NeurIPS 2024 | Codebook decode via fancy-index lookup: `centroids[indices]` gathers group_size floats; residual: two consecutive gathers; for group_size=4, Mojo SIMD copies 4 floats in a single `SIMD[DType.float32, 4].load(ptr)` instruction; `@parameter` on group_size, n_codebooks; replaces `squish/quant/vptq.py` decode and `squish/quant/aqlm.py` dequantize; ~2–3× | `squish/kernels/mojo/vptq_decode_mojo.py` |
+| The Curious Case of Neural Text Degeneration (Holtzman et al.) — top-p / nucleus sampling + top-k (Fan et al.) | ICLR 2020 / arXiv 1904.09751 / universal production | Top-p: argsort(-probs), cumsum, searchsorted — 4 NumPy calls; top-k: np.partition then argsort top-k; Mojo radix-histogram partial-sort: for vocab=128K, high-byte histogram (256 bins) gives approximate top-p in one SIMD vectorize pass; then linear scan over only the high-score bucket for exact cutoff; `@parameter` on vocab_size (32000, 128256); cumsum with SIMD horizontal-add prefix-sum; ~3–5× | `squish/kernels/mojo/topkp_mojo.py` |
+
+---
+
+### Wave 58a — RustVectorKMeans · RustFP6BitPack · RustAWQChannel · RustModelMerge · RustMoEBincount · RustOnlineSGD (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| RustVectorKMeans | `squish/kernels/rs_vector_kmeans.py` | Adds `vector_kmeans_fit_f32`, `vector_kmeans_assign_f32`, `vector_kmeans_reconstruct_f32` to `squish_quant_rs`; K-means++: Rayon map-reduce over N vectors for pairwise distance to existing centroids; main iteration: SIMD squared-distance per chunk avoiding `(N, K, D)` broadcast alloc — instead Rayon chunk-parallel argmin with in-process centroid scatter-add using `AtomicF32`; hooks into `vptq.py` `_kmeans()`, `aqlm.py` `AQLMCodebook.initialize_kmeans()`, `codec_kv.py` `_lloyd_kmeans()`; ~12× K-means fit, ~8× assign for N=10K, K=256, D=8 |
+| RustFP6BitPack | `squish/kernels/rs_fp6_bitpack.py` | Adds `fp6_encode_f32`, `fp6_decode_f32` to `squish_quant_rs`; encoder: configurable `(exp_bits, man_bits, exp_bias)` compile-time constants; processes 4 f32 values per iteration → 3 bytes using Rust bit-banging (`u32::from_bits`, sign/exp/mantissa extraction, round-to-nearest, saturate); replaces triple Python for-loop in `fp6_quant.py`; decoder: unpack 3 bytes → 4 f32 via reverse bit-field extraction; ~40× encode, ~30× decode for matrices ≥ 4096 elements |
+| RustAWQChannel | `squish/kernels/rs_awq_channel.py` | Adds `awq_channel_abs_mean_f32`, `awq_compute_scales_f32` to `squish_quant_rs`; abs-mean accumulation: for each calibration batch, Rayon parallel column-reduce `sum |x[i, col]|` with `AtomicF32` then normalize; scale computation: `clip(mean, 1e-4, ∞) ** alpha` via `f32::powf`; replaces two NumPy passes in `awq.py` `_ActivationHook.record()` and `collect_activation_scales()`; ~4× per calibration step across 30–90 calibration samples |
+| RustModelMerge | `squish/kernels/rs_model_merge.py` | Adds `slerp_f32`, `dare_merge_f32`, `ties_merge_f32` to `squish_quant_rs`; SLERP: norm-normalize in Rayon chunks + dot product (same as rs_batch_cos_sim) + SLERP interpolation `sin((1-t)θ)/sinθ*a + sin(tθ)/sinθ*b`; DARE: Rayon map over elements with Bernoulli mask from fast PRNG (xorshift64); TIES: Rayon parallel sign-sum over deltas + parallel masked-mean accumulate using sign-agreement predicate; replaces Python loops in `lora/model_merge.py`; ~3–4× on 4096×4096 weight matrices |
+| RustMoEBincount | `squish/kernels/rs_moe_bincount.py` | Adds `moe_bincount_f32`, `moe_top_k_f32` to `squish_quant_rs`; bincount: `u32` array of length n_experts, Rayon parallel histogram over assignment indices using chunk-local `[u32; 128]` arrays then atomic combine; top-k extraction: partial-sort via `select_nth_unstable` preserving original batch → expert assignment map; normalize: SIMD divide by batch_size; hooks into `sparse_moe.py`, `pregated_router.py`, `mobile_moe.py`; ~8× for n_experts=128, batch=64 |
+| RustOnlineSGD | `squish/kernels/rs_online_sgd.py` | Adds `logistic_step_f32`, `sgd_weight_update_f32` to `squish_quant_rs`; logistic step: `y_hat = sigmoid(dot(w, x)); error = y - y_hat` in a single Rayon-chunked dot + scalar sigmoid + scalar subtraction; weight update: `axpy(-lr * error, x, w)` via Rayon SIMD chunks (NEON vfmaq_f32); hooks into `skip_layer_predictor.py` `update()` and `deja_vu_sparse.py` `train_step()` gradient accumulation; ~7× for n_features=32, n_layers=32, 1000 steps |
+
+### Wave 58b — MojoDualChunkAttn · MojoInfiniAttnMemory · MojoSlidingWindowAttn · MojoHQQALS · MojoVPTQDecode · MojoTopKP (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MojoDualChunkAttn | `squish/kernels/mojo/dual_chunk_attn_mojo.py` + `squish/kernels/mojo/kernels/dual_chunk_attn.mojo` | Intra-chunk causal SDPA: tiled `(chunk_size, head_dim)` × `(chunk_size, head_dim)^T` score matmul with online max tracking (no explicit causal mask allocation — bound check via tiled loop bounds); `@parameter` on chunk_size (512), head_dim (128); `parallelize` over n_heads; output aggregate via vectorized `attn × V` sum; inter-chunk: SIMD mean-query dot product against compressed summaries; replaces 3 einsum calls in `dual_chunk_attn.py`; NumPy fallback via existing Python path; ~3× on chunk_size=512 |
+| MojoInfiniAttnMemory | `squish/kernels/mojo/infini_attn_mojo.py` + `squish/kernels/mojo/kernels/infini_attn.mojo` | Outer-product-accumulate: for each token t, `M[h, :, :] += K[h,t,:].T ⊗ V[h,t,:]`; fused ELU-gated variant: apply ELU to K in the same SIMD pass; retrieval `A = M × σ(Q) / (|Z| + ε)`: batched SIMD matrix-vector with sigmoid normalization; `@parameter` on head_dim (64, 128); `parallelize` over heads; replaces `np.einsum("htd,hte->hde", K, V)` update and `np.einsum("htd,hde->hte", Q, M)` query in `infini_attn.py`; also covers `fast_weights.py` outer-product update; NumPy fallback; ~3× |
+| MojoSlidingWindowAttn | `squish/kernels/mojo/sliding_window_attn_mojo.py` + `squish/kernels/mojo/kernels/sliding_window_attn.mojo` | Eliminates double Python for-loop `for h in heads: for t in T:` in `subgen_attn.py` `_sliding_window_attn()`; `parallelize(n_heads * T)` tasks, each extracting K-slice of window_size rows and computing `dot(Q[h,t], K[h,lo:hi])^T × scale` → softmax → `sum(attn × V[h,lo:hi])`; `@parameter` on window_size (64, 128, 256) and head_dim (64, 128); also covers `nsa_attn.py` `_sliding_window_attn()` which uses the identical pattern; NumPy fallback; ~10× from loop-elimination on T=2048 |
+| MojoHQQALS | `squish/kernels/mojo/hqq_als_mojo.py` + `squish/kernels/mojo/kernels/hqq_als.mojo` | HQQ ALS iteration over each group `(group_size,)`: (1) compute `c2 = sum(codes²) + lambda` via `vectorize` reduce; (2) `scale = dot(codes, W-zero) / c2`; (3) `zero = mean(W - codes*scale)`; (4) `codes = clip(round((W-zero)/scale, 0, qmax))`; all four steps compiled into one Mojo `vectorize` block reading W once, writing codes once; `@parameter` on group_size (32, 64, 128, 256) and qmax (15 for INT4, 255 for INT8); `parallelize` over groups; replaces 6 NumPy ufunc dispatches × max_iter per group in `hqq_quant.py`; NumPy fallback; ~3× overall |
+| MojoVPTQDecode | `squish/kernels/mojo/vptq_decode_mojo.py` + `squish/kernels/mojo/kernels/vptq_decode.mojo` | Codebook gather: for each of N groups, load `group_size` floats from `centroids[indices[g]]`; for residual: accumulate two gathers; `@parameter` on group_size (2, 4, 8, 16) compiles a `SIMD[DType.float32, group_size]` load instruction; `parallelize` over N groups; final scale application `* col_scale` fused into gather loop; replaces `self._centroids[indices]` fancy-index + `VPTQTensor.forward()` codebook sum in `vptq.py` and AQLM dequantize loop `for m in range(n_codebooks):` in `aqlm.py`; NumPy fallback; ~2.5× at group_size=4, N=50K |
+| MojoTopKP | `squish/kernels/mojo/topkp_mojo.py` + `squish/kernels/mojo/kernels/topkp.mojo` | Fused top-k / top-p sampling over logit/prob array: temperature scaling → softmax (vectorized exp + horizontal-sum) → radix partial-sort: `@parameter` on vocab_size (32000, 128256); high-byte SIMD histogram (256 buckets) identifies score threshold in one vectorize pass; linear scan over threshold bucket for exact top-p cumsum cutoff; multinomial sample via single random draw + cumsum threshold; replaces `np.argsort + np.cumsum + np.searchsorted + mask` (4 NumPy passes) in `scheduler.py`, `token_swift.py`, `early_exit_sampler.py`, `duo_decoding.py`; NumPy fallback; ~4× for vocab=128K on M3 |
+
+### v32 Target Metrics (after Wave 58)
+
+> Baselines are v31 Wave 57 targets.
+
+| Operation | v31 Baseline | v32 Target | Primary driver |
+|-----------|-------------|------------|----------------|
+| VPTQ K-means fit — 256 centroids, D=8, N=50K groups (Qwen3-7B layer) | ~2.8 s/layer (NumPy broadcast O(N×K×D)) | **< 0.23 s/layer** | RustVectorKMeans Rayon parallel argmin + scatter-add |
+| FP6 weight encode — Llama-3-8B layer (4096×4096, gs=64) | ~190 ms/shard (triple Python loop) | **< 5 ms/shard** | RustFP6BitPack 4-at-a-time bit-pack |
+| AWQ calibration — 90 samples × 4096 channels | ~1.4 s total (2 NumPy passes × 90) | **< 0.35 s** | RustAWQChannel single-pass channel accumulate |
+| TIES merge — Llama-3-8B 7B params, 3 models | ~8 s (Python sign-sum + masked-add loops) | **< 2 s** | RustModelMerge Rayon parallel sign-election |
+| MoE routing bincount — 128 experts, batch=64 | ~0.8 ms/step (Python for loop) | **< 0.09 ms** | RustMoEBincount SIMD histogram |
+| Online SGD — 32 layers × 1000 tokens per request | ~1.8 ms total (3 ufunc chains × 32K) | **< 0.25 ms** | RustOnlineSGD fused NEON axpy |
+| Dual-chunk attn — chunk_size=512, head_dim=128, 8 heads | ~1.4 ms/chunk (3 einsum calls) | **< 0.47 ms/chunk** | MojoDualChunkAttn tiled causal SDPA |
+| Sliding-window attn — T=2048, W=128, H=32 heads | ~38 ms (double Python for-loop) | **< 3.5 ms** | MojoSlidingWindowAttn parallelize over (head,token) |
+| HQQ ALS — INT4 4096×4096 layer, 10 iterations | ~14 ms (6 ufuncs × 10 × 3000 groups) | **< 4.5 ms** | MojoHQQALS fused one-pass ALS vectorize |
+| Top-p sampling — vocab=128K, batch decode | ~0.55 ms/step (4 NumPy passes) | **< 0.13 ms/step** | MojoTopKP radix histogram partial-sort |
+| Llama-3-8B INT4 prefill throughput (4K context, combined Wave 58) | 145–185 tok/s (v31) | **175–240 tok/s** | Dual-chunk attn + HQQ + top-p pipeline |
+
+### Completion Checklist
+
+- [ ] `squish_quant_rs/src/lib.rs` — vector_kmeans (fit/assign/reconstruct), fp6_encode/decode, awq_channel_abs_mean/scale, slerp/dare/ties merge, moe_bincount, logistic_step/sgd_weight_update added + registered
+- [ ] `squish/kernels/rs_vector_kmeans.py` — RustVectorKMeans (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_fp6_bitpack.py` — RustFP6BitPack (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_awq_channel.py` — RustAWQChannel (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_model_merge.py` — RustModelMerge (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_moe_bincount.py` — RustMoEBincount (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_online_sgd.py` — RustOnlineSGD (wrapper + NumPy fallback)
+- [ ] `squish/kernels/mojo/dual_chunk_attn_mojo.py` + `squish/kernels/mojo/kernels/dual_chunk_attn.mojo`
+- [ ] `squish/kernels/mojo/infini_attn_mojo.py` + `squish/kernels/mojo/kernels/infini_attn.mojo`
+- [ ] `squish/kernels/mojo/sliding_window_attn_mojo.py` + `squish/kernels/mojo/kernels/sliding_window_attn.mojo`
+- [ ] `squish/kernels/mojo/hqq_als_mojo.py` + `squish/kernels/mojo/kernels/hqq_als.mojo`
+- [ ] `squish/kernels/mojo/vptq_decode_mojo.py` + `squish/kernels/mojo/kernels/vptq_decode.mojo`
+- [ ] `squish/kernels/mojo/topkp_mojo.py` + `squish/kernels/mojo/kernels/topkp.mojo`
+- [ ] `tests/test_wave58a_rust_kernels.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave58b_mojo_kernels.py` — ≥ 72 tests with NumPy fallback coverage, all passing
+- [ ] CHANGELOG `[32.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
