@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-19 (v16 Wave 40 planned — KV Architecture · Flash Weight · Self-Spec · Entropy Eviction · LSH-KV · Sublinear)
+> Last updated: 2026-03-20 (v17 Wave 41 planned — Prefix Sharing · EAGLE-2 · Ring Attn · Token Pruning · MoE Routing · Sink Fusion)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -26,6 +26,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v14** | 35–36 | Sampling Precision · Memory Reclamation · Context Intelligence + Cross-Platform |
 | **v15** | 37–38 | Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation |
 | **v16** | 39–40 | Activation Quantization · Fused Triton Kernels · W8A8 Runtime · Compiled Decode · Sublinear Attention |
+| **v17** | 41–42 | Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion |
 
 ---
 
@@ -201,6 +202,96 @@ the Wave 38 and Wave 39 additions already planned.
 - [ ] `tests/test_wave40a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave40b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[16.1.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v17 Wave 41 — Prefix Sharing · EAGLE-2 · Ring Attention · Token Pruning · MoE Routing · Attention Sink Fusion (In Progress)
+
+Theme: **Six production-grade speedups that operate at different layers of the stack and are fully
+orthogonal to Waves 38–40: (1) cross-request prefix KV reuse to eliminate redundant prefill work
+for shared system prompts, (2) EAGLE-2 context-aware dynamic draft tree for higher acceptance
+without a larger draft model, (3) ring attention to shard long-context sequences across available
+cores without extra memory, (4) importance-scored token pruning in the residual stream to reduce
+activation FLOPs, (5) learned MoE expert routing that pre-routes tokens before dispatch for
+zero-latency gating, and (6) attention-sink anchor fusion that condenses sink tokens into a
+single learnable vector to halve sliding-window overhead.**
+
+Each module is backed by a distinct 2024–2025 paper that addresses a gap not yet covered by any
+planned wave. All modules have MLX/NumPy fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| SGLang: Efficient Execution of Structured Language Model Programs — RadixAttention (Zheng et al.) | SOSP 2024 | Radix-tree KV cache shared across requests with common prefix; 4.4× throughput on multi-turn workloads | `squish/kv/radix_attn.py` |
+| EAGLE-2: Faster Inference of Language Models with Dynamic Draft Trees (Li et al.) | ICML 2025 (arXiv 2406.16858) | Context-aware acceptance probability estimator prunes draft tree nodes before verification; 3.05× vs autoregressive | `squish/speculative/eagle2_spec.py` |
+| Ring Attention with Blockwise Transformers for Near-Infinite Context (Liu et al.) | ICLR 2024 (arXiv 2310.01889) | Distribute sequence blocks across devices/cores with ring-topology K/V passing; O(1) memory per device | `squish/attention/ring_attn.py` |
+| SirLLM: Streaming Infinite Retentive LLM (Yao et al.) | ACL 2024 (arXiv 2405.12528) | Token entropy-based eviction in retention-style state; importance-scored pruning of residual stream tokens | `squish/token/token_entropy_prune.py` |
+| Pre-gated MoE: Efficient Expert Selection for Mixture of Experts (Du et al.) | EMNLP 2024 (arXiv 2402.05666) | Route token to experts at previous layer’s hidden state; zero-latency gating; 1.4× MoE throughput | `squish/moe/pregated_router.py` |
+| StreamingLLM: Efficient Streaming Language Models with Attention Sinks (Xiao et al.) | ICLR 2024 | Attention sinks (0-4 anchor tokens) keep model stable at infinite context; now: fuse sinks to single learnable vector | `squish/kv/sink_fusion.py` |
+| CLA: Cross-Layer Attention Sharing for Large Language Models (Brandon et al.) | ACL Findings 2024 (arXiv 2405.12981) | Adjacent layers share K/V projections; 50% KV parameter reduction with < 1% PPL cost | `squish/attention/cla_share.py` |
+| QMoE: Practical Sub-1-Bit Compression of Trillion-Parameter Models (Frantar & Alistarh) | NeurIPS 2023 / prod 2025 | Codebook quantization for MoE expert weights; 0.8 bit/param; 10× compression vs FP16 for Mixtral-class | `squish/moe/qmoe_compress.py` |
+| LADE: Lookahead Decoding with Verification for Accelerating Inference (Fu et al.) | ICML 2024 (arXiv 2401.15077) | N-gram lookahead branches verified in parallel; 2.1× speedup; no draft model; complements Jacobi | `squish/speculative/lade_decode.py` |
+| InfiniAttention: Memory-Efficient Infinite Context Transformer (Munkhdalai et al.) | ICML 2024 (arXiv 2404.07143) | Segment-level compressive memory with local + global attention; bounded FLOP regardless of history length | `squish/attention/infini_attn.py` |
+| AKVQ: Attention-aware KV Cache Quantization with Partial outlier Protection (arXiv 2409.12012) | 2024 | Per-head attention-score-guided INT2/INT4 mixed-precision KV quant; no calibration data; 3× KV memory | `squish/kv/akvq_cache.py` |
+| DeltaZip: Multi-Tenant Serving of LoRA Models with Delta Compression (Yao et al.) | MLSys 2025 (arXiv 2312.05215) | Store fine-tuned adapters as XOR delta over base; 10–20× smaller; zero-copy merge at inference | `squish/quant/delta_zip.py` |
+
+---
+
+### Wave 41a — Prefix Sharing, EAGLE-2, Ring Attention & Token Pruning (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| RadixAttentionCache | `squish/kv/radix_attn.py` | Radix-tree KV prefix dedup across concurrent requests; LRU leaf eviction; integrates with existing prefix_kv_store |
+| EAGLE2Spec | `squish/speculative/eagle2_spec.py` | Context-aware acceptance probability scoring; prunes low-P nodes from draft tree before verification; 3× vs AR |
+| RingAttention | `squish/attention/ring_attn.py` | Sequence sharded across available cores/threads; ring K/V pass; enables context > DRAM on single node |
+| TokenEntropyPruner | `squish/token/token_entropy_prune.py` | Per-token entropy scoring in residual stream; drops low-information tokens early; configurable keep-ratio |
+| PreGatedMoERouter | `squish/moe/pregated_router.py` | Route via previous-layer hidden state; pre-computed expert assignment; zero-latency gating at dispatch time |
+| SinkFusion | `squish/kv/sink_fusion.py` | Compress N attention-sink anchor tokens into single learnable FP16 vector; halves sink KV footprint |
+
+### Wave 41b — CLA Sharing, QMoE, LADE, InfiniAttn, AKVQ & DeltaZip (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| CLAShareAttention | `squish/attention/cla_share.py` | Adjacent-layer K/V projection sharing; 50% KV parameter memory; configurable sharing stride |
+| QMoECompressor | `squish/moe/qmoe_compress.py` | Codebook PTQ for MoE expert weights; 0.8 bit/param; fits Mixtral-8×7B in 8 GB; MLX Metal path |
+| LADEDecoder | `squish/speculative/lade_decode.py` | N-gram lookahead branch generation + parallel tree verification; no draft model; complements JacobiDecoder |
+| InfiniAttention | `squish/attention/infini_attn.py` | Segment compressive memory state + local window attention; infinite-context bounded compute; MLX fallback |
+| AKVQCache | `squish/kv/akvq_cache.py` | Attention-score-guided mixed-precision INT2/INT4 KV quant; per-head outlier protection; no calibration data |
+| DeltaZipAdapter | `squish/quant/delta_zip.py` | XOR delta compression for fine-tuned adapters; lazy merge at inference; multi-tenant LoRA serving support |
+
+### v17 Target Metrics (after Wave 41)
+
+> Baselines are v16 Wave 40 targets.
+
+| Model | v16 (W40) tok/s | v17 target tok/s | v16 TTFT | v17 TTFT target | Primary driver |
+|-------|-----------------|-----------------|----------|------------------|----------------|
+| Qwen2.5-1.5B (M3) | 360–430 | 430–520 | < 0.02 s | < 0.015 s | EAGLE-2 + RadixCache (multi-turn) |
+| Qwen2.5-4B (M3) | 220–270 | 270–330 | < 0.04 s | < 0.025 s | LADE + CLA + TokenEntropyPruner |
+| Qwen3-8B (M3) | 150–190 | 190–240 | < 0.12 s | < 0.08 s | InfiniAttn + AKVQ + SinkFusion |
+| Mixtral-8×7B (M3 Max 128 GB) | baseline | 45–65 | N/A | < 1.5 s | QMoE (8 GB experts) + PreGated router |
+
+> QMoE row is a new capability unlock: Mixtral-class MoE models become runnable on consumer
+> M-series via 0.8-bit expert compression, with PreGatedMoERouter eliminating gating latency.
+
+### Completion Checklist
+
+- [ ] `squish/kv/radix_attn.py` — RadixAttentionCache
+- [ ] `squish/speculative/eagle2_spec.py` — EAGLE2Spec
+- [ ] `squish/attention/ring_attn.py` — RingAttention
+- [ ] `squish/token/token_entropy_prune.py` — TokenEntropyPruner
+- [ ] `squish/moe/pregated_router.py` — PreGatedMoERouter
+- [ ] `squish/kv/sink_fusion.py` — SinkFusion
+- [ ] `squish/attention/cla_share.py` — CLAShareAttention
+- [ ] `squish/moe/qmoe_compress.py` — QMoECompressor
+- [ ] `squish/speculative/lade_decode.py` — LADEDecoder
+- [ ] `squish/attention/infini_attn.py` — InfiniAttention
+- [ ] `squish/kv/akvq_cache.py` — AKVQCache
+- [ ] `squish/quant/delta_zip.py` — DeltaZipAdapter
+- [ ] `tests/test_wave41a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave41b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[17.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
