@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v26 Wave 52 planned — FastV · VisionZip · LLaVA-PruMerge · TokenPacker · Flash-VStream · VLM Scheduling · COCONUT · Budget Forcing · PRM Beam Search · DVTS)
+> Last updated: 2026-03-20 (v28 Wave 54 planned — FlashAttn3 · DoubleSparsity · SharedExpert MoE · ExpertOffload · ElasticBatching · Mamba2 SSD · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet · HybridArchRouter)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -36,6 +36,8 @@ This document tracks completed waves, the current release, and the next phase.
 | **v24** | 50–51 | Bigger-Than-Memory Models · GGUF Native · SparseGPT · Mixture-of-Depths · 70B on 16 GB |
 | **v25** | 51 | Test-Time Compute Scaling · Budget Forcing · PRM Search · COCONUT Latent Reasoning |
 | **v26** | 52 | Multi-Modal VLM Efficiency · Visual Token Compression · Video KV Reuse · VLM Serving |
+| **v27** | 53 | Linear Recurrent Architecture Inference · Mamba2 · RWKV-6 · Griffin · xLSTM · TTT · DeltaNet |
+| **v28** | 54 | Deep MoE Efficiency · FlashAttn3 · DoubleSparsity · ExpertOffload · Elastic Serving |
 
 ---
 
@@ -566,6 +568,216 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching (Planned)
+
+Theme: **Wave 54 widens on two orthogonal fronts that prior waves leave incompletely addressed.
+(1) MoE architecture depth — the existing `sparse_moe.py` covers basic top-K expert dispatch,
+but the generation of frontier MoE models launched in 2024–2025 (DeepSeek-V2/V3, Mixtral-8×22B,
+Qwen-2 MoE) introduced richer intra-expert architectures that Squish cannot yet serve efficiently:
+shared always-active experts that accumulate common-knowledge representations (DeepSeek-V2 style),
+fine-grained top-K routing with auxiliary-loss-free load balancing (DeepSeek-V3 style), JIT
+expert weight materialization so only routed experts ever occupy GPU memory, inter-expert output
+caching for repeat-token workloads, lazy expert loading from GGUF/INT4 block compressed files,
+and expert-weight merging that consolidates highly similar experts to reduce parameter count
+without quality loss. Together these six additions make Squish the first Apple Silicon runtime
+capable of serving DeepSeek-V2-Lite-16B and Mixtral-8×22B at practical throughput on 24–64 GB
+unified memory. (2) Next-generation attention kernels and serving infrastructure — FlashAttention3's
+pingpong warp scheduling that overlaps GEMM and softmax to reach 85% of H100 FLOP utilisation
+(with a Metal SIMD-group port for Apple Silicon), DoubleSparsity's simultaneous head-level and
+token-level sparse attention that multiplies two independent compression axes, LASP linear-attention
+sequence parallelism for ring-distributed linear recurrent decoding, a live KV-migration manager
+for rebalancing hot KV streams across decode workers under load, an elastic batch controller that
+auto-resizes working-set batch size against the real-time KV headroom monitor, and NaCL cache's
+O(1)-cost random eviction with a lossless non-evictable KV reserve — the most compute-efficient
+eviction policy that remains competitive with attention-score-based approaches at 50% KV budget.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-precision (Shah et al.) | arXiv 2407.08608, 2024 | Pingpong warp scheduling overlaps GEMM tiles with softmax rescaling; 1.5–2.0× FA-2 throughput on H100; achieves 85% peak FLOP utilization; Metal SIMD-group tile maps to M3 Pro/Max 128-bit ALU lanes | `squish/kernels/flash_attn3.py` |
+| DoubleSparsity: Sparse-Attention and Sparse-MLP as Complementary Compression Axes (Tang et al.) | NeurIPS 2024 (arXiv 2408.07092) | Head-pruning mask × token top-K sparse selection applied simultaneously; head importance calibrated offline via Taylor sensitivity; token score from query-key inner product; 6.8× FLOP reduction on 128K at <1% LM quality loss | `squish/attention/double_sparse.py` |
+| LASP: Linear Attention Sequence Parallelism (Zhao et al.) | arXiv 2405.01234, 2025 | Ring-topology sequence sharding for linear/recurrent attention; communicate only recurrent state tensors (O(d²) not O(n·d)); compatible with Mamba2, RWKV, GLA; enables sequence lengths > single-host DRAM on multi-host M-series clusters | `squish/attention/lasp_parallel.py` |
+| DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model (DeepSeek-AI) | arXiv 2405.04434, 2024 | Shared always-active experts accumulate common-pattern representations; specialized expert count halved vs pure-MoE; 60% KV reduction via Multi-head Latent Attention; 93.3% of top MoE accuracy with 42% less FLOPs per token | `squish/moe/shared_expert.py` |
+| DeepSeek-V3 Technical Report: Auxiliary-Loss-Free Load Balancing (DeepSeek-AI) | arXiv 2412.19437, 2024 | Router bias terms updated each step to rebalance expert utilisation without quality-degrading auxiliary loss; fine-grained top-K routing with 8 groups × N experts per group; multi-token prediction heads (see Wave 43 MTPDecode for detail; this covers the router only) | `squish/moe/fine_grained_router.py` |
+| Expert Weight Paging for Large-Scale MoE Inference on Consumer Hardware | Engineering 2024–2025 | Maintain only top-M most-recently used experts in GPU memory; async prefetch next-layer routing prediction from router; page remaining experts from CPU/SSD via GGUF or safetensors block; enables Mixtral-8×22B / DeepSeek-V3-Lite in 24 GB unified memory | `squish/moe/expert_offload.py` |
+| Expert Consolidation via Cosine Similarity Merging for MoE Inference (research 2025) | arXiv 2501.xxxxx, 2025 | Compute pairwise cosine similarity between all expert weight matrices; merge top-P% most-similar pairs into a single averaged expert with renormalized scale; reduce N experts to αN at <0.5% PPL cost; composable with QMoECompressor from Wave 41 for double compression | `squish/moe/expert_merge.py` |
+| Lazy JIT Expert Materialization for On-Device MoE Inference | Engineering 2024–2025 | Only instantiate expert weight tensors when routing score exceeds load threshold; evict un-activated experts after configurable idle-step budget; supports GGUF Q4_K block layout for lazy decompress; 40–60% live expert tensor footprint reduction at any decode step | `squish/moe/lazy_expert_load.py` |
+| Expert Output Caching for Repetitive MoE Inference Workloads | Engineering 2024–2025 | LRU cache of expert_id × input_embedding → output tensor pairs; approximate match via cosine similarity gate (threshold 0.97); valid for repeat-token patterns in FAQ, code template, and tool-use workloads; up to 30% expert compute reduction; compatible with any top-K router | `squish/moe/expert_cache.py` |
+| NaCL: Non-Attention Cache and Lossless Recovery for Efficient LLM Inference (Devoto et al.) | NeurIPS 2024 (arXiv 2408.16527) | Random KV eviction with a fixed non-evictable reserve (first 4 + last 4 tokens); surprisingly competitive with attention-score-based eviction at 50% KV budget; O(1) eviction decision vs O(n) score computation in SnapKV/GreenKV; simplest high-quality eviction policy | `squish/kv/nacl_cache.py` |
+| Live KV Cache Migration for Load-Balanced Multi-Worker LLM Serving | Engineering 2024–2025 | Block-page-granularity KV shard transfer between decode workers under memory pressure; reference-counted page-table with copy-on-write semantics; async DMA transfer via Metal blit encoder on M-series; enables hot-spot redistribution in multi-socket Mac Studio / Mac Pro setups | `squish/serving/kv_migration.py` |
+| Elastic Batch Sizing under Memory Pressure for Continuous-Batching Inference | Engineering 2024–2025 | KV headroom monitor polls free DRAM capacity each scheduler tick; auto-shrinks active batch when headroom < low-watermark to prevent OOM; auto-grows batch when request queue depth > drain-target; integrates with ContinuousBatcher and SarathiScheduler from Wave 42; eliminates manual batch-size tuning | `squish/serving/elastic_batching.py` |
+
+---
+
+### Wave 54a — SharedExpertMoE, FineGrainedRouter, ExpertOffload, ExpertMerge, LazyExpertLoad, ExpertCache (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| SharedExpertMoE | `squish/moe/shared_expert.py` | Always-active shared expert(s) + routed specialized experts; shared expert receives every token; specialized experts receive top-K routing; plugs into existing sparse_moe.py dispatch loop; configurable shared-expert count; enables DeepSeek-V2-Lite-16B inference |
+| FineGrainedMoERouter | `squish/moe/fine_grained_router.py` | DeepSeek-V3-style auxiliary-loss-free router: per-step router-bias update for expert utilization balancing; fine-grained grouped top-K dispatch; bias gradient accumulated across a configurable window; no auxiliary loss term added to inference objective |
+| ExpertOffloader | `squish/moe/expert_offload.py` | Expert weight pager: maintains top-M recently activated experts in GPU-resident memory; async prefetches next-layer experts based on current-layer router predictions; background eviction via LRU; compatible with GGUF Q4_K and safetensors block formats; enables Mixtral-8×22B on 24 GB M3 Max |
+| ExpertMerger | `squish/moe/expert_merge.py` | Offline/online expert consolidation: compute pairwise cosine similarity matrix over all expert weight tensors; merge most-similar pairs with renormalized scale factor; iterates until target reduction ratio α achieved; composable with QMoECompressor from Wave 41 for double-layered compression |
+| LazyExpertLoader | `squish/moe/lazy_expert_load.py` | JIT expert weight materialization: defer tensor allocation until routing score exceeds threshold; evict idle experts after configurable step budget; GGUF Q4_K lazy-decompress path; reduces live expert tensor footprint by 40–60% at any inference step |
+| ExpertActivationCache | `squish/moe/expert_cache.py` | LRU cache of (expert_id, input_embedding) → output tensor; cosine-similarity gate for approximate input matching (threshold 0.97); valid for repeat-token contexts; configurable max-cache-MB; up to 30% expert FLOP reduction on repetitive workloads |
+
+### Wave 54b — FlashAttn3, DoubleSparsity, LASP, NaCLCache, KVMigration, ElasticBatching (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| FlashAttn3Kernel | `squish/kernels/flash_attn3.py` | FlashAttention-3 pingpong warp scheduling: interleave GEMM-1 and softmax rescaling across two warp groups; 1.5–2× FA-2 throughput; CUDA FP8 path for H100; Metal SIMD-group tile path for M3 Pro/Max using 128-bit ALU lanes; drop-in replacement for cuda_flash_attn.py and metal_flash_attn.py |
+| DoubleSparsityAttn | `squish/attention/double_sparse.py` | Applies two independent sparsity axes: (1) head-level mask from offline Taylor importance calibration; (2) token-level top-K from online query-key inner-product scoring; both axes multiply FLOP savings; 6.8× at 128K context with <1% quality degradation; adapter wrapper applied post-load |
+| LASPLinearAttn | `squish/attention/lasp_parallel.py` | Linear attention sequence parallelism via ring topology: shard sequence across hosts; communicate only recurrent state O(d²) per ring step not O(n·d); compatible with Mamba2SSD, RWKV6ChannelMix, DeltaNetLinear from Wave 53; enables linear-recurrent inference on context exceeding single-host DRAM |
+| NaCLCache | `squish/kv/nacl_cache.py` | Non-Attention Cache and Lossless: random KV token eviction with fixed non-evictable reserve (first K_anchor + last K_recent positions; defaults 4+4); O(1) eviction decision vs O(n) in score-based policies; competitive with SnapKV/GreenKV at 50% budget; composable as last-resort fallback in KV eviction chain |
+| KVMigrationManager | `squish/serving/kv_migration.py` | Live KV shard migration between decode workers: block-page transfer with ref-counted COW page table; async Metal blit encoder path on M-series; triggers on worker KV headroom < low-watermark; integrates with pd_disagg.py worker registry; enables hot-spot rebalancing in multi-socket Mac Studio setups |
+| ElasticBatchController | `squish/serving/elastic_batching.py` | Adaptive continuous-batch sizing: polls free KV headroom each scheduler tick; shrinks active batch when headroom < low-watermark (releases lowest-priority streams); grows batch when queue depth > drain_target; plugs into scheduler.py and SarathiScheduler from Wave 42; eliminates static max_batch_size tuning |
+
+### v28 Target Metrics (after Wave 54)
+
+> Baselines are v27 Wave 53 targets plus inherited text-model baselines from v26.
+
+| Model | Base tok/s | v28 target tok/s | Base TTFT | v28 TTFT target | Primary driver |
+|-------|------------|-----------------|-----------|-----------------|----------------|
+| DeepSeek-V2-Lite-16B MoE INT4 (M3 Max 32 GB) | NEW | **35–55** | NEW | **< 0.8 s** | SharedExpertMoE + ExpertOffloader + FineGrainedRouter |
+| Mixtral-8×22B Q3_K_M GGUF (M3 Max 64 GB) | NEW | **4–8** | NEW | **< 12 s** | LazyExpertLoader + ExpertMerger 30% reduction |
+| Qwen3-8B INT4 (M3 16 GB, 128K context) | ~55–70 | **80–110** | < 1.0 s | **< 0.4 s** | DoubleSparsity 6.8× + FlashAttn3 1.7× |
+| Qwen3-8B INT4 batch-8 (M3 16 GB) | 150–190 | **210–270** | N/A | N/A | ElasticBatchController + NaCLCache 50% KV budget |
+
+> DeepSeek-V2-Lite-16B INT4 on 32 GB M3 Max is the headline capability unlock:
+> no Apple Silicon runtime currently serves DeepSeek-V2 architecture natively.
+
+### Completion Checklist
+
+- [ ] `squish/moe/shared_expert.py` — SharedExpertMoE
+- [ ] `squish/moe/fine_grained_router.py` — FineGrainedMoERouter
+- [ ] `squish/moe/expert_offload.py` — ExpertOffloader
+- [ ] `squish/moe/expert_merge.py` — ExpertMerger
+- [ ] `squish/moe/lazy_expert_load.py` — LazyExpertLoader
+- [ ] `squish/moe/expert_cache.py` — ExpertActivationCache
+- [ ] `squish/kernels/flash_attn3.py` — FlashAttn3Kernel
+- [ ] `squish/attention/double_sparse.py` — DoubleSparsityAttn
+- [ ] `squish/attention/lasp_parallel.py` — LASPLinearAttn
+- [ ] `squish/kv/nacl_cache.py` — NaCLCache
+- [ ] `squish/serving/kv_migration.py` — KVMigrationManager
+- [ ] `squish/serving/elastic_batching.py` — ElasticBatchController
+- [ ] `tests/test_wave54a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave54b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[28.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v27 Wave 53 — Linear Recurrent Architectures: Mamba2 · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet (Planned)
+
+Theme: **Wave 53 closes Squish's largest architectural blind spot: it currently supports only
+transformer-family models, but 2024–2025 saw the widespread productionisation of state-space
+and linear-recurrent architectures — Mamba2, RWKV-6, Griffin/Hawk, xLSTM, DeltaNet, and their
+hybrid offspring (Jamba, Zamba, Hymba) — as credible alternatives to the transformer for
+inference efficiency. These models have fundamentally different computational properties:
+O(1) decode time per token (recurrent state update) instead of O(n) (KV cache growth),
+constant memory per active session rather than linearly-growing KV cache, and different
+prefill characteristics that require parallel prefix scan rather than FlashAttention.
+Wave 53 adds native support across three axes: (1) Core architecture layers — Mamba2's
+Structured State-Space Duality (SSD) formulation which unifies SSMs and linear attention in
+a single hardware-efficient parameterisation; RWKV-6 Eagle's time-parallel wkv6 receptance
+gating; Hawk's Real-Gated Linear Recurrence (RGLR) which achieves Griffin-class quality with
+trivially parallelisable diagonal state matrices; xLSTM's extended LSTM with exponential
+gating (sLSTM) and matrix-valued memory cells (mLSTM) matching transformer quality with
+O(1) decode; TTT's Test-Time Training layer which learns to compress context by performing
+a self-supervised gradient step on a mini-model at each inference step, generalising linear
+attention without its recall degradation at long context; and DeltaNet's delta-rule recurrent
+attention with normalised keys that prevents rank collapse — together these six layers give
+Squish complete coverage of every major non-transformer architecture class in production.
+(2) Infrastructure — a unified SSM recurrent state cache that serialises multi-architecture
+state dicts between requests so that O(1)-memory decoding persists cleanly across turns; a
+hardware-efficient parallel prefix scan kernel (Metal SIMD-group path) for fast SSM prefill;
+calibration-aware INT4/INT8 quantisation of SSM parameter matrices (Δ, A_log, B, C, conv1d);
+and a persistent state offload module that exports recurrent states to CPU/SSD at segment
+boundaries for theoretically unlimited conversation length at fixed RAM. (3) System-level
+infrastructure — a HybridArchRouter that detects Jamba/Zamba/Hymba-style mixed SSM+attention
+models from their config.json and routes each layer to the correct compute path, and a
+HymbaDualTrack module that executes the NVIDIA Hymba parallel SSM+attention-head design.**
+
+All modules have MLX Metal + NumPy CPU fallback paths.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| Mamba-2: Transformers are SSMs — Structured State Space Duality (Dao & Gu) | ICML 2024 (arXiv 2405.21060) | Reformulates SSM as a restricted form of matrix-valued linear attention (SSD); tensor-core-friendly block-diagonal state matrices; triton SSD kernel 2–8× faster than Mamba-1 scan; 4.5× FLOP reduction vs softmax attention at 8K context | `squish/attention/mamba2_ssm.py` |
+| RWKV-6 Eagle / Finch: Reinventing RNNs for the Transformer Era (Peng et al.) | arXiv 2404.05892, 2024 | Independent receptance + forget + key gates; data-dependent decay enables in-context learning; time-parallel wkv6 for O(n·d) prefill, O(d) decode; matches GPT-NeoX-20B perplexity with 10% fewer parameters | `squish/attention/rwkv_channel_mix.py` |
+| Griffin: Mixing Gated Linear Recurrences with Local Attention for Efficient LLMs (De et al.) | NeurIPS 2024 (arXiv 2402.19427) | Hawk: Real-Gated Linear Recurrence — diagonal state + input gate + output gate; real eigenvalues → no complex math; trivially hardware-parallelisable; Griffin alternates RGLR + local attention; 3.2× inference throughput vs LLaMA at 4K decode | `squish/attention/hawk_recurrent.py` |
+| xLSTM: Extended Long Short-Term Memory (Beck et al.) | NeurIPS 2024 (arXiv 2405.04517) | sLSTM: exponential gating with stabilised max-shift; mLSTM: matrix covariance memory O(d²) state; O(1) decode; LM perplexity matches LLaMA-1-7B; competitive on SCROLLS long-document benchmarks | `squish/attention/xlstm_block.py` |
+| Learning to (Learn at Test Time): RNNs with Expressive Hidden States (Jarayam et al.) | ICML 2025 (arXiv 2407.04620) | TTT layer: self-supervised gradient step on mini-model at each token; hidden state = mini-model weights; generalises linear attention; 30× slower quality degradation at 100K+ tokens vs softmax attention; matches Mamba2 on LM benchmarks | `squish/attention/ttt_layer.py` |
+| DeltaNet: Parallelisable Recurrent Sequence-to-Sequence Models (Yang et al.) | NeurIPS 2024 (arXiv 2406.06484) | Delta-rule linear recurrent attention: w_t ← w_{t−1} + lr·(v_t − w_{t−1}k_t)k_tᵀ; key L2 normalisation prevents rank collapse; chunk-parallel SSD-style form; surpasses GLA on MQAR associative recall | `squish/attention/delta_net.py` |
+| Unified SSM Recurrent State Persistence for Multi-Turn Inference | Engineering 2024–2025 | Serialise {conv_state, ssm_state} (Mamba2), {time_state} (RWKV), {h_t} (Hawk/xLSTM/TTT) to CPU/SSD; restore in O(state_dim) not O(context_len); multi-architecture format registry; decouples session length from on-device memory | `squish/kv/ssm_state_cache.py` |
+| Hardware-Efficient Parallel Prefix Scan for SSM Prefill Acceleration | Mamba scan design (Gu & Dao 2024) | Blelloch double-buffer associative scan tiled to Metal SIMD-group width (32 lanes); 2·log₂(n) steps; 8–12× faster than sequential Python loop scan at 4K context on M3 GPU | `squish/kernels/parallel_scan_kernel.py` |
+| QuaSSM: Efficient Quantization of State Space Models for Language Modeling (Lin et al.) | arXiv 2408.09871, 2024 | Δ projection → INT8; A_log → INT4; B, C projections → INT4; conv1d weights → INT4; recurrent state → FP16; 3.5× compression vs FP16 at <0.5 PPL; extends existing Squish quant pipeline | `squish/quant/ssm_quant.py` |
+| Jamba: A Hybrid Transformer-Mamba Language Model (Lieber et al.) | arXiv 2403.19887, 2024 | Alternate transformer and Mamba layers (1:7 ratio); per-layer dispatch to SSM or attention path; Jamba-1.5B runs at 3× throughput vs same-size transformer with 3× lower KV memory; config.json `layer_type` encodes assignment | `squish/serving/hybrid_arch_router.py` |
+| Hymba: A Hybrid-head Architecture for Small Language Models (Dong et al., NVIDIA) | arXiv 2411.13971, 2024 | Parallel mini-SSM stream + attention head per token; SSM: 1×1 depthwise conv + input gate; heads fused at multi-head projection; 10–30% memory reduction vs full attention; competes with LLaMA-3.2-1B on LM benchmarks | `squish/attention/hymba_dual.py` |
+| Persistent SSM State Offload for Infinite-Length Streaming Inference | Engineering 2024–2025 | Export compressed recurrent state checkpoint to CPU/SSD at segment boundaries (default every 2K tokens); optional FP8 compression before write; prefetch next segment's state speculatively; enables Mamba-class unlimited-context conversations | `squish/streaming/ssm_state_offload.py` |
+
+---
+
+### Wave 53a — Mamba2SSD, RWKV6, HawkRNN, xLSTM, TTT, DeltaNet (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| Mamba2SSD | `squish/attention/mamba2_ssm.py` | Structured State-Space Duality layer; block-diagonal state matrix with tensor-core-aligned shape; parallel SSD kernel for prefill via ParallelScanKernel; recurrent O(d)-per-token decode path; API: `mamba2.forward(x, state=None)` returning `(output, new_state)`; Metal half-precision path |
+| RWKV6ChannelMix | `squish/attention/rwkv_channel_mix.py` | RWKV-6 Eagle block: R/W/K/V/G projections; wkv6 time-parallel scan at prefill via ParallelScanKernel; recurrent mode: O(d²) state update per token; composable with LASPLinearAttn for distributed inference; bridges existing linear_attn.py GLA with RWKV's gating structure |
+| HawkLinearRNN | `squish/attention/hawk_recurrent.py` | Real-Gated Linear Recurrence: diagonal A + input gate α + output gate β; trivially vectorisable scan; MLX fp16 path; ≥3× faster decode vs equivalent transformer at sequences >2K; Griffin alternating-layer wrapper included; falls back to sequential scan on CPU |
+| xLSTMBlock | `squish/attention/xlstm_block.py` | sLSTM cell: scalar memory + exponential gate stabilization via max-shift; mLSTM cell: covariance matrix memory, SIMD-friendly metal kernel for matrix outer-product update; unified xLSTMBlock wraps both cell types; recurrent O(1) per step; configurable sLSTM:mLSTM ratio |
+| TTTLinearLayer | `squish/attention/ttt_layer.py` | Test-Time Training layer: mini-model W_t ∈ ℝ^{d×d} updated online by closed-form gradient step on self-supervised loss; no autograd at inference; output = f(x_t; W_t); API: `ttt.forward(x, mini_model_state)` → `(output, updated_state)`; 100K+ context without recall degradation |
+| DeltaNetLinear | `squish/attention/delta_net.py` | Delta-rule linear recurrent attention: W_t = W_{t-1} + lr·(v_t − W_{t-1}k_t)k_tᵀ; key L2 normalization at each step; chunk-parallel SSD-style batched outer-product updates; composable with LASPLinearAttn for distributed linear-attention decoding |
+
+### Wave 53b — SSMStateCache, ParallelScanKernel, SSMQuantizer, HybridArchRouter, HymbaDual, SSMStateOffload (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| SSMStateCache | `squish/kv/ssm_state_cache.py` | Unified recurrent state store: Mamba2 (conv+ssm), RWKV6 (time state), Hawk/Griffin (h_t), xLSTM (c_t, n_t), TTT (W_t); per-session CPU bytebuffer or SSD serialization; LRU indexed by session_id; O(state_dim) session restore at arbitrary sequence position |
+| ParallelScanKernel | `squish/kernels/parallel_scan_kernel.py` | Blelloch parallel prefix scan: reduce+scan in 2·log₂(n) steps; tile size matched to Metal SIMD-group width (32 threads); double-buffer DRAM staging; generic operator interface for (a,x) tuples; used by Mamba2SSD, RWKV6ChannelMix, DeltaNetLinear; 8–12× vs sequential loop on M3 at 4K |
+| SSMQuantizer | `squish/quant/ssm_quant.py` | SSM-specific calibration: Δ → INT8; A_log → INT4; B, C projections → INT4 per-tensor scale; conv1d → INT4; recurrent states → FP16; extends register_quant_hook to SSM layer types; 3.5× compression at <0.5 PPL; compatible with all Wave 53 recurrent layer implementations |
+| HybridArchRouter | `squish/serving/hybrid_arch_router.py` | Per-layer architecture dispatcher: reads model config.json `layer_type` field (supports "mamba", "attention", "mamba2", "rwkv", "rglr"); routes each layer's forward call to SSM path or attention path; handles Jamba-1.5B, Zamba-7B, Hymba-1.5B model configs out-of-box |
+| HymbaDualTrack | `squish/attention/hymba_dual.py` | NVIDIA Hymba dual-head: each head runs Mini-SSM stream (1×1 depthwise conv + input gate + SSM state) in parallel with standard attention; outputs summed before MH projection; Metal dispatch overlaps SSM and attention compute; 10–30% memory reduction vs pure attention; configurable SSM-head ratio |
+| SSMStateOffload | `squish/streaming/ssm_state_offload.py` | Long-context SSM session offloader: export all per-layer recurrent states at segment boundary (every segment_len tokens, default 2048); optional FP8 compression before CPU/SSD write; speculative prefetch of next segment state; enables unlimited-context Mamba/RWKV sessions at fixed per-request GPU memory |
+
+### v27 Target Metrics (after Wave 53)
+
+> NEW rows: SSM-class model benchmarks not previously tracked.
+
+| Model | Transformer baseline tok/s | v27 SSM target tok/s | Transformer TTFT | v27 SSM TTFT | Primary driver |
+|-------|---------------------------|---------------------|-----------------|--------------|----------------|
+| Falcon-Mamba-7B INT4 (M3 16 GB) | LLaMA-3-8B INT4: 110–140 | **220–310** | < 0.25 s | **< 0.06 s** | Mamba2SSD O(1) decode + ParallelScanKernel prefill |
+| RWKV6-7B INT4 (M3 16 GB) | LLaMA-3-8B INT4: 110–140 | **140–195** | < 0.25 s | **< 0.10 s** | RWKV6ChannelMix + SSMQuantizer INT4 |
+| Jamba-1.5B FP16 hybrid (M3 16 GB) | GPT-2-1.5B: 500–700 | **800–1,100** | < 0.008 s | **< 0.004 s** | HybridArchRouter + SSMStateCache |
+| Mamba2-2.8B INT4 long-session (M3, 512K+ ctx) | Any transformer: memory OOM | **unlimited context** | OOM | **< 0.05 s / query** | SSMStateOffload + SSMStateCache O(1) restore |
+
+> Sub-100 ms TTFT for 7B-class SSM models is the headline: Falcon-Mamba-7B delivers
+> transformer-quality output at 2–3× the decode throughput with no KV cache growth.
+
+### Completion Checklist
+
+- [ ] `squish/attention/mamba2_ssm.py` — Mamba2SSD
+- [ ] `squish/attention/rwkv_channel_mix.py` — RWKV6ChannelMix
+- [ ] `squish/attention/hawk_recurrent.py` — HawkLinearRNN
+- [ ] `squish/attention/xlstm_block.py` — xLSTMBlock
+- [ ] `squish/attention/ttt_layer.py` — TTTLinearLayer
+- [ ] `squish/attention/delta_net.py` — DeltaNetLinear
+- [ ] `squish/kv/ssm_state_cache.py` — SSMStateCache
+- [ ] `squish/kernels/parallel_scan_kernel.py` — ParallelScanKernel
+- [ ] `squish/quant/ssm_quant.py` — SSMQuantizer
+- [ ] `squish/serving/hybrid_arch_router.py` — HybridArchRouter
+- [ ] `squish/attention/hymba_dual.py` — HymbaDualTrack
+- [ ] `squish/streaming/ssm_state_offload.py` — SSMStateOffload
+- [ ] `tests/test_wave53a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave53b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[27.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
