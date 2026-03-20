@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-25 (v13 released — Wave 33+34 Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving · 8,277 tests passing)
+> Last updated: 2026-03-26 (v14 — Wave 35 complete; Wave 36 (Cross-Platform) in progress)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -23,6 +23,110 @@ This document tracks completed waves, the current release, and the next phase.
 | **v11** | 29–30 | KV & Attention Compression Sprint · Scheduling & Throughput Sprint |
 | **v12** | 31–32 | SOTA Research Integration · Pre-Launch Hardening |
 | **v13** | 33–34 | Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving |
+| **v14** | 35–36 | Sampling Precision · Memory Reclamation · Context Intelligence + Cross-Platform |
+
+---
+
+## ✅ v14 Wave 35 — Sampling Precision · Memory Reclamation · Context Intelligence (Released 2026-03-26)
+
+Theme: **Final ms-level inference bottlenecks: speculation depth tuning, per-head KV compression,
+long-prompt pre-compression, exact-distribution speculative decoding, GC-free buffer pooling,
+and deterministic early-exit sampling.**
+
+### Completion Checklist
+
+- [x] `squish/speculative/adaptive_draft_budget.py` — AdaptiveDraftBudget (UCB1 bandit)
+- [x] `squish/kv/kv_quant_head.py` — KVHeadQuantizer (per-head entropy-based precision)
+- [x] `squish/token/prompt_compress.py` — PromptCompressor (LLMLingua-2 inspired)
+- [x] `squish/speculative/rejection_sample_align.py` — RejectionSampleAligner (exact rejection sampling)
+- [x] `squish/kernels/mem_pool.py` — NumpyMemPool (GC-pressure elimination)
+- [x] `squish/token/early_exit_sampler.py` — EarlyExitSampler (deterministic fast-path)
+- [x] `tests/test_wave35_modules.py` — 103 tests, all passing
+- [x] CHANGELOG `[14.0.0-alpha.1]` entry
+
+---
+
+## 🚧 v14 Wave 36 — Cross-Platform · Linux/CUDA · ROCm · WSL2 · Smart Install (In Progress)
+
+Theme: **End the macOS-only constraint. Every module that currently raises `NotImplementedError`
+or silently no-ops on Linux/Windows gets a production-grade implementation path.**
+
+### Research / Engineering Basis
+
+| Source | Contribution | Squish Module |
+|--------|-------------|---------------|
+| Flash-Attention 2 (Dao 2023) | Tiled CUDA attention, O(N) memory | `squish/kernels/cuda_flash_attn.py` |
+| bitsandbytes (Dettmers 2022) | 4-bit NF4 / 8-bit int8 on CUDA | `squish/quant/bnb_quant.py` |
+| cgroup v2 memory limits | Container-aware OOM prevention | `squish/platform/memory_linux.py` |
+| ROCm/HIP (AMD 2024) | AMD GPU inference via torch+ROCm | `squish/platform/rocm_backend.py` |
+| WSL2 virtio-gpu (Microsoft 2025) | Windows GPU inference via WSL2 | `squish/platform/wsl_detector.py` |
+| PyTorch mmap (torch 2.2+) | Linux mmap weight streaming | `squish/io/mmap_loader.py` |
+
+### Wave 36a — Linux/CUDA Foundation (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|-----------------|
+| UnifiedPlatformDetector | `squish/platform/detector.py` | macOS/Linux/CUDA/ROCm/WSL2 detection; cached; <5ms |
+| LinuxMemGovernor | `squish/platform/memory_linux.py` | /proc/meminfo + cgroup v1/v2 memory pressure governor |
+| CUDAFlashAttention | `squish/kernels/cuda_flash_attn.py` | flash-attn 2.x → xformers → F.scaled_dot_product fallback chain |
+| BitsAndBytesQuantizer | `squish/quant/bnb_quant.py` | 4-bit NF4 + 8-bit int8 via bitsandbytes; CPU-emulation fallback |
+| CrossPlatformMmapLoader | `squish/io/mmap_loader.py` | mmap weight loading on Linux/Windows (Metal path preserved on macOS) |
+| PlatformFeatureRegistry | `squish/platform/feature_registry.py` | Feature→platform matrix; `is_supported()`, `best_fallback()` |
+
+### Wave 36b — Cross-Platform Serving Parity (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|-----------------|
+| UniversalAttention | `squish/kernels/universal_attn.py` | Route Metal/CUDA/NumPy attention based on live platform info |
+| LinuxServerInit | `squish/serving/linux_server_init.py` | CUDA device setup, /proc/meminfo governor, ROCm env, CPU threads |
+| ROCmBackend | `squish/platform/rocm_backend.py` | AMD GPU detection, ROCm version, recommended batch sizes |
+| WSLDetector | `squish/platform/wsl_detector.py` | WSL2 fingerprinting, virtio-gpu, memory-limit extraction |
+| CrossPlatformModelLoader | `squish/quant/cross_platform_loader.py` | Select MLX/torch/bitsandbytes path; auto-quantize if needed |
+| DependencyResolver | `squish/install/dependency_resolver.py` | Platform-aware pip extras selection; install validation |
+
+### v14 Target Metrics
+
+| Platform | Model | Target tok/s | Target TTFT |
+|----------|-------|-------------|-------------|
+| Apple M3 (macOS, MLX) | Qwen2.5-1.5B | 180–220 | < 0.12 s |
+| Linux CUDA (RTX 3090) | Qwen2.5-7B | 80–120 | < 0.3 s |
+| Linux CPU (8-core) | Qwen2.5-1.5B | 10–18 | < 2.0 s |
+| WSL2 + CUDA | Qwen2.5-4B | 60–90 | < 0.5 s |
+
+### Completion Checklist
+
+- [ ] `squish/platform/__init__.py` — platform package
+- [ ] `squish/install/__init__.py` — install package
+- [ ] `squish/platform/detector.py` — UnifiedPlatformDetector
+- [ ] `squish/platform/memory_linux.py` — LinuxMemGovernor
+- [ ] `squish/kernels/cuda_flash_attn.py` — CUDAFlashAttention
+- [ ] `squish/quant/bnb_quant.py` — BitsAndBytesQuantizer
+- [ ] `squish/io/mmap_loader.py` — CrossPlatformMmapLoader
+- [ ] `squish/platform/feature_registry.py` — PlatformFeatureRegistry
+- [ ] `squish/kernels/universal_attn.py` — UniversalAttention
+- [ ] `squish/serving/linux_server_init.py` — LinuxServerInit
+- [ ] `squish/platform/rocm_backend.py` — ROCmBackend
+- [ ] `squish/platform/wsl_detector.py` — WSLDetector
+- [ ] `squish/quant/cross_platform_loader.py` — CrossPlatformModelLoader
+- [ ] `squish/install/dependency_resolver.py` — DependencyResolver
+- [ ] `tests/test_wave36a_modules.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave36b_modules.py` — ≥ 72 tests, all passing
+- [ ] CHANGELOG `[14.0.0]` entry
+
+---
+
+
+## ✅ v13 — Waves 33+34 (Released 2026-03-25)
+
+Theme: **Low-Latency Parallelism · Metal Kernel Fusion · Bandwidth-Optimal Serving**
+
+### Completion Checklist
+
+- [x] All 12 modules (Waves 33+34) — see above for full table
+- [x] Tests: `test_wave33_v13_modules.py` (104 tests) + `test_wave34_modules.py` (72 tests)
+- [x] Total: 8,277 passed, 33 skipped
+- [x] CHANGELOG `[13.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
