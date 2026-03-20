@@ -389,20 +389,21 @@ let isStreaming = false;
 let apiKey     = localStorage.getItem("squish_api_key") ?? "";
 
 // Token-queue state for typewriter animation
-let _tokenQueue  = [];
-let _rawContent  = "";
-let _visibleText = "";
-let _drainTimer  = null;
-let _contentDiv  = null;
-let _cursorEl    = null;
-let _preGenEl    = null;   // loading dots shown during TTFT wait
-let _msgEl       = null;
-let _streamStart = 0;
-let _streamToks  = 0;
-let _tpsTimer    = null;
-let _isInThink   = false;
-let _thinkBuf    = "";
-let _thinkEl     = null;
+let _tokenQueue     = [];
+let _rawContent     = "";
+let _visibleText    = "";
+let _drainTimer     = null;
+let _contentDiv     = null;
+let _cursorEl       = null;
+let _preGenEl       = null;   // loading dots shown during TTFT wait
+let _msgEl          = null;
+let _streamStart    = 0;
+let _firstTokenTime = 0;      // time of first token arrival — excludes TTFT
+let _streamToks     = 0;      // character count (chars ÷ 3.5 ≈ tokens)
+let _tpsTimer       = null;
+let _isInThink      = false;
+let _thinkBuf       = "";
+let _thinkEl        = null;
 
 function authHeaders() {
   return apiKey ? { "Authorization": `Bearer ${apiKey}` } : {};
@@ -599,17 +600,18 @@ function escapeHtml(s) {
 // (2 chars/frame slow, 8 medium, 24 fast) so text "types out" smoothly.
 
 function _startStream(contentDiv, msgEl) {
-  _contentDiv  = contentDiv;
-  _msgEl       = msgEl;
-  _tokenQueue  = [];
-  _rawContent  = "";
-  _visibleText = "";
-  _isInThink   = false;
-  _thinkBuf    = "";
-  _thinkEl     = null;
-  _streamStart = performance.now();
-  _streamToks  = 0;
-  _cursorEl    = null;
+  _contentDiv      = contentDiv;
+  _msgEl           = msgEl;
+  _tokenQueue      = [];
+  _rawContent      = "";
+  _visibleText     = "";
+  _isInThink       = false;
+  _thinkBuf        = "";
+  _thinkEl         = null;
+  _streamStart     = performance.now();
+  _firstTokenTime  = 0;
+  _streamToks      = 0;
+  _cursorEl        = null;
 
   // Show bouncing loading dots while waiting for the first token (TTFT).
   // The cursor and streaming-text class are added in _enqueueTokens on first token.
@@ -621,15 +623,18 @@ function _startStream(contentDiv, msgEl) {
   _contentDiv.appendChild(_preGenEl);
 
   _drainTimer = setInterval(_drainTokens, 16);
-  _tpsTimer   = setInterval(_updateTPS, 500);
+  _tpsTimer   = setInterval(_updateTPS, 200);
 }
 
 function _enqueueTokens(delta) {
   _rawContent += delta;
-  _streamToks++;
+  // Count characters, not SSE events — one delta can be many chars.
+  // Dividing by ~3.5 chars/token gives a realistic tok/s estimate.
+  _streamToks += delta.length;
   for (const ch of delta) _tokenQueue.push(ch);
-  // First token arriving: replace loading dots with typewriter cursor.
+  // First token arriving: record timing and replace loading dots.
   if (_preGenEl) {
+    _firstTokenTime = performance.now();
     _preGenEl.remove();
     _preGenEl = null;
     _cursorEl = document.createElement("span");
@@ -656,7 +661,7 @@ function _drainTokens() {
       _contentDiv.appendChild(_cursorEl);
       _thinkEl = document.createElement("div");
       _thinkEl.className = "think-streaming";
-      _thinkEl.innerHTML = `<div class="think-dots"><span></span><span></span><span></span></div> Reasoning\u2026`;
+      _thinkEl.innerHTML = `<div class="think-dots"><span></span><span></span><span></span></div><span class="think-label">Reasoning\u2026</span>`;
       if (_contentDiv.parentNode)
         _contentDiv.parentNode.insertBefore(_thinkEl, _contentDiv.nextSibling);
       return;
@@ -683,12 +688,21 @@ function _drainTokens() {
 }
 
 function _updateTPS() {
-  if (!isStreaming) return;
-  const elapsed = (performance.now() - _streamStart) / 1000;
-  if (elapsed < 0.5) return;
+  if (!isStreaming || _firstTokenTime === 0) return;
+  // Measure from first token arrival, not request start — excludes TTFT.
+  const elapsed = (performance.now() - _firstTokenTime) / 1000;
+  if (elapsed < 0.2) return;
+  // _streamToks is char count; divide by 3.5 chars/token for a realistic estimate.
+  const tps = (_streamToks / 3.5) / elapsed;
   const badge = document.getElementById("tps-badge");
-  badge.textContent = `${(_streamToks / elapsed).toFixed(1)} tok/s`;
+  const label = _isInThink ? "rsn tok/s" : "tok/s";
+  badge.textContent = `${tps.toFixed(1)} ${label}`;
   badge.classList.add("live");
+  // Update the inline reasoning indicator too
+  if (_isInThink && _thinkEl) {
+    const lbl = _thinkEl.querySelector(".think-label");
+    if (lbl) lbl.textContent = `Reasoning\u2026 ${tps.toFixed(0)} tok/s`;
+  }
 }
 
 function _finalizeStream(asstMsg) {
@@ -699,12 +713,17 @@ function _finalizeStream(asstMsg) {
   // If the server returned an empty response before any tokens, remove the dots.
   if (_preGenEl?.parentNode) { _preGenEl.remove(); _preGenEl = null; }
 
-  const elapsed = (performance.now() - _streamStart) / 1000;
-  if (elapsed > 0 && _streamToks > 0) {
-    const badge = document.getElementById("tps-badge");
-    badge.textContent = `${(_streamToks / elapsed).toFixed(1)} tok/s`;
+  const badge = document.getElementById("tps-badge");
+  if (_firstTokenTime > 0 && _streamToks > 0) {
+    // TPS measured from first token — accurate generation speed, excludes TTFT.
+    const genElapsed = (performance.now() - _firstTokenTime) / 1000;
+    const tps = (_streamToks / 3.5) / genElapsed;
+    // TTFT shown in tooltip for debugging / interest.
+    const ttft = ((_firstTokenTime - _streamStart) / 1000).toFixed(2);
+    badge.textContent = `${tps.toFixed(1)} tok/s`;
+    badge.title = `TTFT: ${ttft}s`;
     badge.classList.add("live");
-    setTimeout(() => badge.classList.remove("live"), 4000);
+    setTimeout(() => { badge.classList.remove("live"); badge.title = ""; }, 5000);
   }
 
   if (_cursorEl?.parentNode) _cursorEl.remove();
