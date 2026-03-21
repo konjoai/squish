@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-21 (Run 4 full benchmark complete — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)
+> Last updated: 2026-03-21 (Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -745,6 +745,18 @@ when `squish_quant_rs` is not compiled. Zero changes to public Python APIs — d
 - [ ] `tests/test_wave59b_mojo_kernels.py` — ≥ 72 tests with NumPy fallback coverage, all passing
 - [ ] CHANGELOG `[33.0.0]` entry
 - [ ] PLAN.md updated
+
+### Pre-Launch Readiness (as of Run 4, 2026-03-21)
+
+The product is demo-ready. These are the only blockers before a public post:
+
+- [x] README: SquishBar marked "coming soon" (was listed as ✅ — does not exist in codebase)
+- [x] README: TTFT clarified as prompt-to-first-token, not cold-load time; both now documented separately with footnotes
+- [x] README: 7B+ BF16 OOM limit documented in model size table (Qwen2.5-7B-bf16 = 14 GB exceeds 15.5 GB Metal budget on 16 GB M-series)
+- [ ] Demo video: record with monitoring dashboard panel open (real-time TPS/TTFT sparklines visible in frame)
+- [ ] HuggingFace blog post: lead with 10–40× TTFT improvement headline; cite Run 4 numbers directly
+
+> Note: Qwen3-1.7B is not in the Run 4 benchmark set — the 65–90 tok/s throughput claim in README is unvalidated. Include it in the next benchmark run before using in a public post.
 
 ---
 
