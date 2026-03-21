@@ -42,6 +42,29 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+# ── Telemetry (structured span tracing + logging config) ─────────────────────
+try:
+    from squish.telemetry import configure_tracing as _configure_tracing
+    from squish.telemetry import get_tracer         as _get_tracer
+    from squish.telemetry import trace_span         as _trace_span
+    from squish.logging_config import configure_logging as _configure_logging
+    _TELEMETRY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _TELEMETRY_AVAILABLE = False
+    def _configure_tracing(enabled): pass       # type: ignore[misc]
+    def _get_tracer(): return None               # type: ignore[misc]
+    def _trace_span(name, **tags): return _NullCtx()  # type: ignore[misc]
+    def _configure_logging(**kwargs): pass      # type: ignore[misc]
+
+
+class _NullCtx:  # pragma: no cover
+    """Fallback no-op context manager used when squish.telemetry is unavailable."""
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+    async def __aenter__(self): return self
+    async def __aexit__(self, *a): pass
+    def __call__(self, f): return f
+
 # ── Ensure the squish package root is importable when run as a script ────────
 # cli.py launches this file directly with `python3 .../squish/server.py`, so
 # the package parent directory must be on sys.path for `from squish.*` imports.
@@ -2789,6 +2812,11 @@ Examples:
                     help="Append trace output to FILE in addition to stderr. "
                          "Useful when the server stdout/stderr is not visible "
                          "(e.g. when launched by _run_all.py).")
+    ap.add_argument("--trace-output", default="",
+                    metavar="FILE",
+                    help="Save a Chrome DevTools Trace Event Format JSON to FILE on exit. "
+                         "Open at https://speedscope.app or chrome://tracing for a "
+                         "flame graph showing every module with start/end timing.")
 
     # ── Wave optimization flags ───────────────────────────────────────────────
     ap.add_argument("--prompt-lookup", action="store_true", default=False,
@@ -3194,10 +3222,16 @@ Examples:
     # Reading from env var prevents the secret appearing in `ps aux`.
     _API_KEY = args.api_key or os.environ.get("SQUISH_API_KEY")
 
-    # ── Tracing globals ───────────────────────────────────────────────────────
+    # ── Structured logging ────────────────────────────────────────────────────
+    if _TELEMETRY_AVAILABLE:
+        _configure_logging(level=getattr(args, "log_level", "warning"))
+
+    # ── Structured span tracing ───────────────────────────────────────────────
     global _trace, _trace_tokens, _trace_file
     _trace        = args.trace or args.trace_tokens
     _trace_tokens = args.trace_tokens
+    if _trace and _TELEMETRY_AVAILABLE:
+        _configure_tracing(True)
     if args.trace_file:
         try:
             _trace_file = open(args.trace_file, "a", buffering=1)  # noqa: WPS515
@@ -3250,10 +3284,13 @@ Examples:
               f"{'  file=' + args.trace_file if args.trace_file else ''}")
     print()
 
-    if getattr(args, "mlx_model_dir", ""):
-        load_mlx_model(args.mlx_model_dir, verbose=args.verbose)
-    else:
-        load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
+    with _trace_span("server.model_load",
+                     mlx=bool(getattr(args, "mlx_model_dir", "")),
+                     model_dir=getattr(args, "mlx_model_dir", "") or args.compressed_dir):
+        if getattr(args, "mlx_model_dir", ""):
+            load_mlx_model(args.mlx_model_dir, verbose=args.verbose)
+        else:
+            load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
     _state._no_compile = args.no_compile  # propagate --no-compile flag
 
     # ── Disk prompt-cache init (Item 2) ──────────────────────────────────────
@@ -4500,6 +4537,16 @@ Examples:
     print(f"    {_C.MG}OPENAI_BASE_URL{_C.R}=http://{args.host}:{args.port}/v1")
     print(f"    {_C.MG}OPENAI_API_KEY{_C.R}=squish")
     print()
+
+    # When --trace is active and --trace-output is set, print the trace tree
+    # after startup (before blocking in uvicorn) so startup timing is visible.
+    if _trace and _TELEMETRY_AVAILABLE:
+        _info("telemetry", "span tracing enabled — startup spans captured")
+        if getattr(args, "trace_output", ""):
+            _tracer = _get_tracer()
+            if _tracer is not None:
+                _tracer.save_trace(args.trace_output)
+                _info("trace-output", f"written to {args.trace_output}")
 
     uvicorn.run(
         app,

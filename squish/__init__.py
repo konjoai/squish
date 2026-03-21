@@ -366,6 +366,16 @@ _LAZY_IMPORTS: dict[str, str] = {
     "YOCOLayerSpec":             "squish.attention.yoco",
     "YOCOSchedule":              "squish.attention.yoco",
     "YOCOStats":                 "squish.attention.yoco",
+
+    # squish.telemetry — structured tracing
+    "trace_span":                "squish.telemetry",
+    "get_tracer":                "squish.telemetry",
+    "reset_tracer":              "squish.telemetry",
+    "configure_tracing":         "squish.telemetry",
+
+    # squish.logging_config — structured logging
+    "configure_logging":         "squish.logging_config",
+    "get_squish_logger":         "squish.logging_config",
 }
 
 _lazy_cache: dict[str, object] = {}
