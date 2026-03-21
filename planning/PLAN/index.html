@@ -9219,7 +9219,7 @@
 
 <h1 id="squish-development-plan">Squish — Development Plan<a class="headerlink" href="#squish-development-plan" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p>Last updated: 2026-03-21 (v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)</p>
+<p>Last updated: 2026-03-21 (Run 4 full benchmark complete — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)</p>
 </blockquote>
 <p>This document tracks completed waves, the current release, and the next phase.</p>
 <hr />
@@ -11247,14 +11247,14 @@ when <code>squish_quant_rs</code> is not compiled. Zero changes to public Python
 </tr>
 <tr>
 <td>Qwen3-8B BF16 decode (tok/s, M3 16 GB, squish mode)</td>
-<td>14.7 tok/s (Run 3 measured)</td>
+<td>17.9 tok/s (Run 4 measured, compressed) / 13.8 tok/s (BF16)</td>
 <td><strong>18–22 tok/s</strong></td>
 <td>MojoBF16GEMV + MojoFlashDecode + MojoRoPE</td>
 </tr>
 <tr>
 <td>Qwen2.5-1.5B BF16 TTFT (ms, M3, squish mode)</td>
-<td>6796 ms (Run 3 measured)</td>
-<td><strong>&lt; 5200 ms</strong></td>
+<td>268 ms (Run 4 measured)</td>
+<td><strong>&lt; 200 ms</strong></td>
 <td>MojoGQAPrefill + MojoSplitKReduce + RustFlashDecode</td>
 </tr>
 </tbody>
