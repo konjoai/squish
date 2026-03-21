@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-21 (Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)
+> Last updated: 2026-03-21 (Wave 37 complete — Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -2172,7 +2172,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v15 Wave 37 — Wire Everything In (In Progress 2026-03-19)
+## ✅ v15 Wave 37 — Wire Everything In (Complete 2026-03-21)
 
 Theme: **Zero new algorithm work. Twelve existing isolation modules get wired into server.py's live
 request path with CLI flags, startup initialization, and live dispatch hooks in `_generate_tokens()`.**
@@ -2199,20 +2199,20 @@ actual inference path. This wave closes that gap.
 
 ### Completion Checklist
 
-- [ ] 12 global declarations added to `squish/server.py`
-- [ ] 12+ CLI flags added to `main()` argparse
-- [ ] New flags added to `--all-optimizations` expansion
-- [ ] 12 module initializations in `main()` (inside try/except, each with `_warn` on failure)
-- [ ] `ChipDetector` auto-tunes `_chunk_prefill_size` at startup
-- [ ] `JacobiDecoder` new decode path in `_generate_tokens()` (before KV path)
-- [ ] `ChunkKVManager.invalidate_reuse_cache()` wired in KV path
-- [ ] `SpeculativeStreamer.reset()` wired in spec path
-- [ ] `PDDisaggregator` timing stats wired in KV path
-- [ ] `LayerOverlapLoader.start()` called in main()
-- [ ] `tests/test_wave37_wiring.py` — ≥ 80 tests, all passing
-- [ ] git `commit-msg` hook blocks `<think>` artifact commits
-- [ ] CHANGELOG `[14.1.0-alpha.1]` entry
-- [ ] PLAN.md updated
+- [x] 12 global declarations added to `squish/server.py`
+- [x] 12+ CLI flags added to `main()` argparse
+- [x] New flags added to `--all-optimizations` expansion
+- [x] 12 module initializations in `main()` (inside try/except, each with `_warn` on failure)
+- [x] `ChipDetector` auto-tunes `_chunk_prefill_size` at startup
+- [x] `JacobiDecoder` new decode path in `_generate_tokens()` (before KV path)
+- [x] `ChunkKVManager.invalidate_reuse_cache()` wired in KV path
+- [x] `SpeculativeStreamer.reset()` wired in spec path
+- [x] `PDDisaggregator` timing stats wired in KV path
+- [x] `LayerOverlapLoader.start()` called in main()
+- [x] `tests/test_wave37_wiring.py` — 98 tests, all passing
+- [x] git `commit-msg` hook blocks `<think>` artifact commits
+- [x] CHANGELOG `[14.1.0-alpha.1]` entry
+- [x] PLAN.md updated
 
 ---
 
