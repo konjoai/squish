@@ -20,26 +20,30 @@
 
 | | mlx_lm (cold) | Ollama | **Squish** |
 |---|:---:|:---:|:---:|
-| **Cold-start load time** | 28.81 s | 8–25 s | **0.33–0.53 s** |
-| **RAM during load** | ~2,400 MB | ~2,000–8,000 MB | **160 MB** ‡ |
+| **Cold-start load time** | 28.81 s | 8–25 s | **0.33–0.53 s** § |
+| **TTFT — qwen3:8b M3** | N/A | 20–30 s (cold) | **443–535 ms** ‡ |
+| **TTFT — qwen3:4b M3** | N/A | 8–25 s (cold) | **728 ms** ‡ |
+| **TTFT — qwen3:0.6b M3** | N/A | 8–25 s (cold) | **182 ms** ‡ |
+| **RAM during load** | ~2,400 MB | ~2,000–8,000 MB | **160 MB** † |
 | **Disk size — 8B model** | 16.4 GB | ~4.7 GB (GGUF q4) | **4.4 GB (INT4 squished)** |
-| **Throughput — qwen3:8b M3** | 12–16 tok/s | 14–19 tok/s | **14–22 tok/s** † |
-| **Throughput — qwen3:4b M3** | 28–36 tok/s | 30–40 tok/s | **35–50 tok/s** † |
-| **Throughput — qwen3:1.7b M3** | 55–70 tok/s | 55–75 tok/s | **65–90 tok/s** † |
+| **Throughput — qwen3:8b M3** | 12–16 tok/s | 14–19 tok/s | **14–22 tok/s** |
+| **Throughput — qwen3:4b M3** | 28–36 tok/s | 30–40 tok/s | **35–50 tok/s** |
+| **Throughput — qwen3:1.7b M3** | 55–70 tok/s | 55–75 tok/s | **65–90 tok/s** |
 | OpenAI-compatible API | ✅ | ✅ | ✅ |
 | Ollama-compatible API | ❌ | ✅ | ✅ |
 | Web chat UI | ❌ | ❌ | ✅ |
 | Grammar-enforced tool calling | ❌ | ❌ | ✅ |
 | Batch / concurrent requests | ❌ | limited | ✅ |
-| macOS menu bar app | ❌ | ❌ | ✅ |
+| macOS menu bar app | ❌ | ❌ | Coming soon |
 | VS Code extension | ❌ | ❌ | ✅ |
 | Pre-squished weights (skip compression) | N/A | N/A | ✅ ([HuggingFace](https://huggingface.co/squish-community)) |
 | Source available | ✅ | ✅ | ✅ |
 
-> **54× faster cold load.  15× less RAM during load.  3.7× smaller model files.  Statistically identical outputs.**
+> **54× faster cold load.  10–40× faster TTFT.  15× less RAM during load.  3.7× smaller model files.  Statistically identical outputs.**
 
-‡ *160 MB = Apple Metal virtual-address delta during load (mmap, no CPU heap). Peak RSS ~402 MB.*  
-† *Throughput measured with `--agent` preset (AgentKV + speculative decode). MLX-native, no GGUF conversion.*
+§ *Cold-start load time = wall time for model weights to be accessible in Metal unified memory (mmap, no dtype conversion). This is not the same as TTFT.*  
+‡ *TTFT = time from first request byte to first streamed token chunk, measured with `--all-optimizations` (default). Squish Run 4, 2026-03-21, 20/21 models, M3 16 GB.*  
+† *160 MB = Apple Metal virtual-address delta during load (mmap, no CPU heap). Peak RSS ~402 MB.*
 
 ### Model Sizes — Raw vs Squished
 
@@ -52,6 +56,8 @@
 | qwen3:14b | 28.7 GB | 7.6 GB | **74%** |
 | llama3.1:8b | 16.1 GB | 4.3 GB | **73%** |
 | deepseek-r1:7b | 14.4 GB | 3.9 GB | **73%** |
+
+> ⚠️ **Memory note:** BF16 7B+ models require ≥ 16 GB Metal budget. Qwen2.5-7B-bf16 (14 GB) exceeds the 15.5 GB usable budget on a 16 GB M-series device and will OOM. Use the INT4 squished variant (4.4 GB) for 7B+ on 16 GB hardware.
 
 ---
 
@@ -115,7 +121,7 @@ squish setup                # detects your RAM, recommends a model, pulls + star
 
 - **Sub-second loads** — INT4 npy-dir format maps directly into Apple Metal unified memory; no dtype conversion on every boot
 - **OpenAI + Ollama drop-in** — any existing client works with a single env-var change; no code changes required
-- **macOS menu bar app** — SquishBar lives in your menu bar; shows live tok/s, start/stop server, one-click model switch
+- **macOS menu bar app** — SquishBar *(coming soon)* — menu-bar icon with live tok/s, start/stop server, one-click model switch
 - **VS Code extension** — sidebar chat with streaming, model selector, server lifecycle management ([setup guide](docs/vscode-agent.md))
 - **Web chat UI** — built-in at `/chat`; dark-themed, streaming, offline, multi-session history
 - **Grammar-enforced tool calling** — XGrammar FSM prevents malformed JSON in tool use; works with any OpenAI `tools` client
