@@ -35,6 +35,7 @@ import hmac
 import json
 import os
 import sys
+import logging as _logging
 import threading
 import time
 import uuid
@@ -596,6 +597,7 @@ class _ModelState:
 _state = _ModelState()
 _API_KEY: str | None = None          # set from --api-key at startup
 _bearer  = HTTPBearer(auto_error=False)
+_server_args: dict = {}              # CLI args captured at startup; exposed via /debug-info
 
 # ── Draft model state (speculative decoding) ─────────────────────────────────
 
@@ -1093,8 +1095,13 @@ def _generate_tokens(  # pragma: no cover
 
     # ── Trace: log request entry ───────────────────────────────────────────────
     _rid = uuid.uuid4().hex[:8]          # short per-request ID for log correlation
+    _prompt_tokens_approx = len(prompt.split())
+    _logging.getLogger(__name__).info(
+        "REQ %s  max_tokens=%d  temp=%.2f  prompt_words≈%d  "
+        "thinking_budget=%d",
+        _rid, max_tokens, temperature, _prompt_tokens_approx, _thinking_budget,
+    )
     if _trace:
-        _prompt_tokens_approx = len(prompt.split())
         _prompt_preview = prompt[:400].replace("\n", "↵") + ("…" if len(prompt) > 400 else "")
         _tlog(f"REQ {_rid}  max_tokens={max_tokens}  temp={temperature}  "
               f"top_p={top_p}  seed={seed}  prompt_words≈{_prompt_tokens_approx}")
@@ -1720,6 +1727,9 @@ def _generate_tokens(  # pragma: no cover
     # ── mlx_lm.stream_generate (preferred, available mlx_lm >= 0.12) ────────
     try:
         import mlx_lm
+        _logging.getLogger(__name__).info(
+            "REQ %s  dispatch → mlx_lm.stream_generate", _rid
+        )
         if _trace:
             _tlog(f"REQ {_rid}  dispatch → mlx_lm.stream_generate")
         _sg_kwargs = {}
@@ -1746,6 +1756,8 @@ def _generate_tokens(  # pragma: no cover
         )
         emitted = 0
         stop_buf: list[int] = []
+        _think_token_count = 0   # tokens inside <think>...</think> blocks
+        _in_think_sg = False     # True while inside a thinking block
         for item in gen:
             # mlx_lm >= 0.19 yields GenerationResult objects; older yields strings
             if hasattr(item, "text"):
@@ -1753,6 +1765,16 @@ def _generate_tokens(  # pragma: no cover
             else:
                 tok_text = str(item)
             emitted += 1
+            # Track thinking tokens for diagnostics
+            if "<think>" in tok_text:
+                _in_think_sg = True
+            elif "</think>" in tok_text:
+                _in_think_sg = False
+                _logging.getLogger(__name__).info(
+                    "REQ %s  thinking block ended  think_tokens=%d", _rid, _think_token_count
+                )
+            elif _in_think_sg:
+                _think_token_count += 1
 
             # Check stop sequences against a rolling token-id buffer
             if stop_ids and hasattr(tokenizer, "encode"):
@@ -1790,17 +1812,32 @@ def _generate_tokens(  # pragma: no cover
             yield tok_text, None
         if cache_eligible and _cache_buf:
             _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
+        _logging.getLogger(__name__).info(
+            "REQ %s  DONE  path=mlx_lm  tokens=%d  think_tokens=%d  finish=stop(eos)",
+            _rid, emitted, _think_token_count,
+        )
         if _trace:
             _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  finish=stop(eos)")
         yield "", "stop"
         return
-    except (AttributeError, TypeError):
-        pass
+    except (AttributeError, TypeError) as _sg_err:
+        import logging as _sg_log
+        _sg_log.getLogger(__name__).warning(
+            "REQ %s  mlx_lm.stream_generate FAILED (%s: %s); "
+            "falling back to O(n²) manual sampling loop — generation will be "
+            "catastrophically slow. This usually means an mlx_lm API mismatch.",
+            _rid, type(_sg_err).__name__, _sg_err,
+        )
 
     # ── Fallback: manual sampling loop ───────────────────────────────────────
     import mlx.core as mx
     import numpy as np
 
+    import logging as _fb_log
+    _fb_log.getLogger(__name__).warning(
+        "REQ %s  running O(n²) manual sampling loop — "
+        "check mlx_lm version compatibility for stream_generate support.", _rid
+    )
     if _trace:
         _tlog(f"REQ {_rid}  dispatch → manual-sampling-loop (fallback)")
     input_ids = tokenizer.encode(prompt) if hasattr(tokenizer, "encode") else \
@@ -2079,6 +2116,7 @@ async def chat_completions(  # pragma: no cover
     if stream:
         # ── Streaming response ────────────────────────────────────────────
         async def event_stream() -> AsyncIterator[str]:
+            import asyncio as _aio
             # Opening chunk (role delta)
             role_chunk = {
                 "id": cid, "object": "chat.completion.chunk",
@@ -2099,6 +2137,10 @@ async def chat_completions(  # pragma: no cover
                             ttft_s = time.perf_counter() - req_start
                         n_comp += 1
                         yield _make_chunk(tok_text, model_id, cid)
+                        # Yield control to the event loop so the HTTP layer can
+                        # flush the SSE chunk immediately before the next forward
+                        # pass blocks the thread.
+                        await _aio.sleep(0)
                     if finish is not None:
                         last_finish = finish
                         break
@@ -2109,8 +2151,12 @@ async def chat_completions(  # pragma: no cover
                 _state.inflight -= 1
                 dur = time.perf_counter() - req_start
                 _state.record_completion(n_comp, dur, ttft_s)
+                _tps = n_comp / dur if dur > 0 else 0.0
+                _logging.getLogger(__name__).info(
+                    "CHAT stream id=%s tokens=%d ttft=%.3fs total=%.3fs tps=%.1f finish=%s",
+                    cid, n_comp, ttft_s, dur, _tps, last_finish,
+                )
                 if _trace:
-                    _tps = n_comp / dur if dur > 0 else 0.0
                     _tlog(f"CHAT stream DONE  id={cid}  tokens={n_comp}  "
                           f"ttft={ttft_s:.3f}s  total={dur:.3f}s  tps={_tps:.1f}  "
                           f"finish={last_finish}")
@@ -2147,8 +2193,12 @@ async def chat_completions(  # pragma: no cover
             _state.inflight -= 1
             dur = time.perf_counter() - req_start
             _state.record_completion(n_comp, dur, ttft_s)
+            _tps = n_comp / dur if dur > 0 else 0.0
+            _logging.getLogger(__name__).info(
+                "CHAT id=%s tokens=%d ttft=%.3fs total=%.3fs tps=%.1f finish=%s",
+                cid, n_comp, ttft_s, dur, _tps, last_finish,
+            )
             if _trace:
-                _tps = n_comp / dur if dur > 0 else 0.0
                 _tlog(f"CHAT  DONE  id={cid}  tokens={n_comp}  "
                       f"ttft={ttft_s:.3f}s  total={dur:.3f}s  tps={_tps:.1f}  "
                       f"finish={last_finish}")
@@ -2478,6 +2528,57 @@ async def metrics():
     ]
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+
+@app.get("/sys-stats")
+async def sys_stats():
+    """System-level resource metrics using stdlib only (no psutil required)."""
+    import shutil as _shutil
+    import resource as _resource
+
+    # CPU load averages (1 / 5 / 15 min)
+    try:
+        load_avg = [round(x, 2) for x in os.getloadavg()]
+    except (AttributeError, OSError):
+        load_avg = [0.0, 0.0, 0.0]
+
+    # Process RSS memory (bytes on macOS, KB on Linux)
+    try:
+        rss_raw = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
+        rss_mb = round(rss_raw / 1024 / 1024 if sys.platform == "darwin" else rss_raw / 1024, 1)
+    except Exception:
+        rss_mb = 0.0
+
+    # Disk usage for root filesystem
+    try:
+        du = _shutil.disk_usage("/")
+        disk_used_pct  = round(du.used / du.total * 100, 1)
+        disk_free_gb   = round(du.free / 1024 ** 3, 1)
+        disk_total_gb  = round(du.total / 1024 ** 3, 1)
+    except Exception:
+        disk_used_pct = 0.0
+        disk_free_gb  = 0.0
+        disk_total_gb = 0.0
+
+    return {
+        "load_avg":       load_avg,
+        "process_rss_mb": rss_mb,
+        "disk_used_pct":  disk_used_pct,
+        "disk_free_gb":   disk_free_gb,
+        "disk_total_gb":  disk_total_gb,
+        "pid":            os.getpid(),
+    }
+
+
+@app.get("/debug-info")
+async def debug_info():
+    """Server configuration and CLI flags for debugging/observability."""
+    return {
+        "cli_flags":      _server_args,
+        "python_version": sys.version,
+        "platform":       sys.platform,
+        "pid":            os.getpid(),
+    }
 
 
 @app.post("/v1/tokenize")
@@ -3159,6 +3260,9 @@ Examples:
     )
 
     args = ap.parse_args()
+
+    # Capture parsed CLI flags so /debug-info can expose them at runtime.
+    _server_args.update({k: str(v) for k, v in vars(args).items()})
 
     # ── Expand --all-optimizations into individual flags ─────────────────────
     if getattr(args, "all_optimizations", False):
