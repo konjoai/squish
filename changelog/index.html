@@ -838,6 +838,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#1410-alpha1-2026-03-21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [14.1.0-alpha.1] — 2026-03-21
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[14.1.0-alpha.1] — 2026-03-21">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-37-wire-everything-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 37: Wire Everything In
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1710-2026-06-25" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1816,6 +1844,82 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="1410-alpha1-2026-03-21">[14.1.0-alpha.1] — 2026-03-21<a class="headerlink" href="#1410-alpha1-2026-03-21" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-37-wire-everything-in">Added — Wave 37: Wire Everything In<a class="headerlink" href="#added-wave-37-wire-everything-in" title="Permanent link">&para;</a></h3>
+<p>Zero new algorithm work. Twelve existing isolation modules from Waves 33–35 are wired into
+<code>squish/server.py</code>'s live request path with CLI flags, startup initialization, dispatch hooks
+in <code>_generate_tokens()</code>, and per-request lifecycle calls. All 12 connections have try/except
+guards with <code>_warn()</code> on failure so a broken optional module never crashes the server.</p>
+<p><strong>Twelve modules wired:</strong></p>
+<ul>
+<li>
+<p><strong>ChipDetector</strong> (<code>squish/hardware/chip_detector.py</code>) — Always runs at startup (no flag
+  required). Detects Apple Silicon generation and memory bandwidth; auto-tunes
+  <code>_chunk_prefill_size</code> and <code>kv_bits</code> when the user has not set them explicitly. Logs:
+  <code>generation</code>, <code>memory_bandwidth_gbps</code>, <code>recommended_chunk_prefill</code>, <code>recommended_kv_bits</code>.</p>
+</li>
+<li>
+<p><strong>KVTransformCoder</strong> (<code>squish/kv/kvtc.py</code>) — <code>--kvtc</code> / <code>--kvtc-rank N</code> / <code>--kvtc-bits {4,8}</code>.
+  Low-rank KV transform coding; initialized with per-layer config after model load;
+  <code>_server_enabled = True</code> marker set.</p>
+</li>
+<li>
+<p><strong>ChunkKVManager</strong> (<code>squish/kv/chunk_kv.py</code>) — <code>--chunk-kv</code> / <code>--chunk-kv-size N</code> /
+  <code>--chunk-kv-budget F</code>. Per-request <code>invalidate_reuse_cache()</code> called at KV path entry
+  to evict stale cross-request chunks.</p>
+</li>
+<li>
+<p><strong>SSDSaguaro</strong> (<code>squish/speculative/ssd_saguaro.py</code>) — <code>--ssd-saguaro</code>.
+  Structured speculative decoding with k-outcome draft; <code>_server_enabled = True</code>.</p>
+</li>
+<li>
+<p><strong>SpeculativeStreamer</strong> (<code>squish/speculative/spec_stream.py</code>) — <code>--spec-stream</code>.
+  Per-request <code>reset()</code> called at request entry in spec path; buffered draft streaming.</p>
+</li>
+<li>
+<p><strong>MetalFlashAttention</strong> (<code>squish/kernels/metal_flash_attn.py</code>) — <code>--metal-flash-attn</code>.
+  Tiled fused QK^T·softmax·PV kernel; <code>_server_enabled = True</code>.</p>
+</li>
+<li>
+<p><strong>DejaVuSparseFFN</strong> (<code>squish/token/deja_vu_sparse.py</code>) — <code>--deja-vu</code>.
+  Calibrated sparse FFN predictor; <code>_server_enabled = True</code>.</p>
+</li>
+<li>
+<p><strong>JacobiDecoder</strong> (<code>squish/speculative/jacobi_decode.py</code>) — <code>--jacobi</code> /
+  <code>--jacobi-n N</code> / <code>--jacobi-variant {jacobi,gauss_seidel}</code>. New decode path in
+  <code>_generate_tokens()</code> before the KV cache path; active when <code>--jacobi</code> is set and no
+  draft model is loaded. Note: intentionally excluded from <code>--all-optimizations</code>
+  (Jacobi is O(n²) in output length for conversational use; opt-in only).</p>
+</li>
+<li>
+<p><strong>MultiTokenPredictor</strong> (<code>squish/speculative/mtp_head.py</code>) — <code>--mtp</code> / <code>--mtp-heads N</code>.
+  Multi-head token prediction; <code>_server_enabled = True</code>.</p>
+</li>
+<li>
+<p><strong>LayerOverlapLoader</strong> (<code>squish/io/layer_overlap_loader.py</code>) — <code>--layer-overlap</code> /
+  <code>--layer-overlap-prefetch N</code>. <code>start()</code> called at model load with layer count and a
+  stub load function; provides prefetch infrastructure.</p>
+</li>
+<li>
+<p><strong>FusedQKVProjection</strong> (<code>squish/hardware/fused_qkv_proj.py</code>) — <code>--fused-qkv</code>.
+  Single W_qkv matmul replacing three separate Q/K/V projections; initialized with
+  d_model, n_heads, n_kv_heads, d_head from model config; <code>_server_enabled = True</code>.</p>
+</li>
+<li>
+<p><strong>PDDisaggregator</strong> (<code>squish/serving/pd_disagg.py</code>) — <code>--pd-disagg</code>.
+  Prefill/decode phase disaggregation; timing callbacks wired at prefill entry and decode
+  completion; <code>stats.total_prefill_ms</code>, <code>total_prompt_tokens</code>, <code>total_requests</code>,
+  <code>total_generated_tokens</code> accumulated per request.</p>
+</li>
+</ul>
+<p><strong>CLI flags added to <code>--all-optimizations</code>:</strong>
+<code>--kvtc</code>, <code>--chunk-kv</code>, <code>--ssd-saguaro</code>, <code>--spec-stream</code>, <code>--metal-flash-attn</code>,
+<code>--deja-vu</code>, <code>--mtp</code>, <code>--layer-overlap</code>, <code>--fused-qkv</code>, <code>--pd-disagg</code>.
+(<code>--jacobi</code> remains explicit opt-in only.)</p>
+<p><strong>Git hook:</strong> <code>.git/hooks/commit-msg</code> blocks commits whose message starts with a <code>&lt;think&gt;</code>
+block (prevents agentic reasoning artifacts from landing in history).</p>
+<p><strong>Tests:</strong> <code>tests/test_wave37_wiring.py</code> — 98 tests, all passing.</p>
 <hr />
 <h2 id="1710-2026-06-25">[17.1.0] — 2026-06-25<a class="headerlink" href="#1710-2026-06-25" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat">Added — Wave 42: Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT<a class="headerlink" href="#added-wave-42-disaggregated-serving-nsa-sparsity-medusa-heads-kv-quant-multi-turn-kv-reuse-efficient-qat" title="Permanent link">&para;</a></h3>

@@ -2220,15 +2220,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v15-wave-37-wire-everything-in-in-progress-2026-03-19" class="md-nav__link">
+  <a href="#v15-wave-37-wire-everything-in-complete-2026-03-21" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v15 Wave 37 — Wire Everything In (In Progress 2026-03-19)
+        ✅ v15 Wave 37 — Wire Everything In (Complete 2026-03-21)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v15 Wave 37 — Wire Everything In (In Progress 2026-03-19)">
+    <nav class="md-nav" aria-label="✅ v15 Wave 37 — Wire Everything In (Complete 2026-03-21)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -6592,15 +6592,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v15-wave-37-wire-everything-in-in-progress-2026-03-19" class="md-nav__link">
+  <a href="#v15-wave-37-wire-everything-in-complete-2026-03-21" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v15 Wave 37 — Wire Everything In (In Progress 2026-03-19)
+        ✅ v15 Wave 37 — Wire Everything In (Complete 2026-03-21)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v15 Wave 37 — Wire Everything In (In Progress 2026-03-19)">
+    <nav class="md-nav" aria-label="✅ v15 Wave 37 — Wire Everything In (Complete 2026-03-21)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -9241,7 +9241,7 @@
 
 <h1 id="squish-development-plan">Squish — Development Plan<a class="headerlink" href="#squish-development-plan" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p>Last updated: 2026-03-21 (Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)</p>
+<p>Last updated: 2026-03-21 (Wave 37 complete — Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)</p>
 </blockquote>
 <p>This document tracks completed waves, the current release, and the next phase.</p>
 <hr />
@@ -14938,7 +14938,7 @@ activation overhead reduction. All 12 are orthogonal to every prior wave module.
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v15-wave-37-wire-everything-in-in-progress-2026-03-19">🚧 v15 Wave 37 — Wire Everything In (In Progress 2026-03-19)<a class="headerlink" href="#v15-wave-37-wire-everything-in-in-progress-2026-03-19" title="Permanent link">&para;</a></h2>
+<h2 id="v15-wave-37-wire-everything-in-complete-2026-03-21">✅ v15 Wave 37 — Wire Everything In (Complete 2026-03-21)<a class="headerlink" href="#v15-wave-37-wire-everything-in-complete-2026-03-21" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Zero new algorithm work. Twelve existing isolation modules get wired into server.py's live
 request path with CLI flags, startup initialization, and live dispatch hooks in <code>_generate_tokens()</code>.</strong></p>
 <p>These modules were implemented in Waves 33–35 as standalone classes but never connected to the
@@ -15043,20 +15043,20 @@ actual inference path. This wave closes that gap.</p>
 </table>
 <h3 id="completion-checklist_21">Completion Checklist<a class="headerlink" href="#completion-checklist_21" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] 12 global declarations added to <code>squish/server.py</code></li>
-<li>[ ] 12+ CLI flags added to <code>main()</code> argparse</li>
-<li>[ ] New flags added to <code>--all-optimizations</code> expansion</li>
-<li>[ ] 12 module initializations in <code>main()</code> (inside try/except, each with <code>_warn</code> on failure)</li>
-<li>[ ] <code>ChipDetector</code> auto-tunes <code>_chunk_prefill_size</code> at startup</li>
-<li>[ ] <code>JacobiDecoder</code> new decode path in <code>_generate_tokens()</code> (before KV path)</li>
-<li>[ ] <code>ChunkKVManager.invalidate_reuse_cache()</code> wired in KV path</li>
-<li>[ ] <code>SpeculativeStreamer.reset()</code> wired in spec path</li>
-<li>[ ] <code>PDDisaggregator</code> timing stats wired in KV path</li>
-<li>[ ] <code>LayerOverlapLoader.start()</code> called in main()</li>
-<li>[ ] <code>tests/test_wave37_wiring.py</code> — ≥ 80 tests, all passing</li>
-<li>[ ] git <code>commit-msg</code> hook blocks <code>&lt;think&gt;</code> artifact commits</li>
-<li>[ ] CHANGELOG <code>[14.1.0-alpha.1]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] 12 global declarations added to <code>squish/server.py</code></li>
+<li>[x] 12+ CLI flags added to <code>main()</code> argparse</li>
+<li>[x] New flags added to <code>--all-optimizations</code> expansion</li>
+<li>[x] 12 module initializations in <code>main()</code> (inside try/except, each with <code>_warn</code> on failure)</li>
+<li>[x] <code>ChipDetector</code> auto-tunes <code>_chunk_prefill_size</code> at startup</li>
+<li>[x] <code>JacobiDecoder</code> new decode path in <code>_generate_tokens()</code> (before KV path)</li>
+<li>[x] <code>ChunkKVManager.invalidate_reuse_cache()</code> wired in KV path</li>
+<li>[x] <code>SpeculativeStreamer.reset()</code> wired in spec path</li>
+<li>[x] <code>PDDisaggregator</code> timing stats wired in KV path</li>
+<li>[x] <code>LayerOverlapLoader.start()</code> called in main()</li>
+<li>[x] <code>tests/test_wave37_wiring.py</code> — 98 tests, all passing</li>
+<li>[x] git <code>commit-msg</code> hook blocks <code>&lt;think&gt;</code> artifact commits</li>
+<li>[x] CHANGELOG <code>[14.1.0-alpha.1]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v15-wave-38-long-context-sparse-attention-lut-quantization-recurrent-speculation-decode-compilation-released-2026-06-16">✅ v15 Wave 38 — Long-Context Sparse Attention · LUT Quantization · Recurrent Speculation · Decode Compilation (Released 2026-06-16)<a class="headerlink" href="#v15-wave-38-long-context-sparse-attention-lut-quantization-recurrent-speculation-decode-compilation-released-2026-06-16" title="Permanent link">&para;</a></h2>
