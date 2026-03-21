@@ -736,6 +736,7 @@ def pull(  # pragma: no cover
     token: str | None = None,
     refresh_catalog: bool = False,
     verbose: bool = False,
+    quant_mode: str = "int4",
 ) -> Path:
     """
     Download and (if needed) compress a model.  Returns the compressed dir path.
@@ -752,6 +753,9 @@ def pull(  # pragma: no cover
     name        : squish model id, e.g. ``"qwen3:8b"``
     models_dir  : base directory for models (default: ``~/.squish/models``)
     int4        : use INT4 nibble-packed compression (default: True). Pass False for INT8.
+                  Ignored when quant_mode is "int3" or "int2".
+    quant_mode  : one of "int4" (default), "int8", "int3", "int2".
+                  Overrides the int4 flag when set to "int3" or "int2".
     token       : HuggingFace user access token (for gated models)
     verbose     : pass ``--verbose`` to the underlying compress step
     """
@@ -769,7 +773,17 @@ def pull(  # pragma: no cover
 
     raw_dir        = models_dir / entry.dir_name
     compressed_dir = models_dir / (entry.dir_name + "-compressed")
-    quant_label    = "INT4" if int4 else "INT8"
+    # Resolve effective quant mode (quant_mode takes priority over int4 flag)
+    if quant_mode in ("int3", "int2"):
+        _mode = quant_mode
+    elif not int4:
+        _mode = "int8"
+    else:
+        _mode = "int4"
+    _BPW = {"int4": 4.5, "int8": 8.5, "int3": 4.37, "int2": 3.00}
+    quant_label    = _mode.upper()
+    # Compressed size estimate derived from benchmark BPW ratios (BF16 = 16 bpw)
+    est_compressed_gb = entry.size_gb * (_BPW[_mode] / 16.0)
 
     # ── Already done? ─────────────────────────────────────────────────────────
     if compressed_dir.exists() and any(compressed_dir.iterdir()):
@@ -819,14 +833,13 @@ def pull(  # pragma: no cover
         print(f"  ✓  Raw weights already in {raw_dir}")
 
     # ── Compress ──────────────────────────────────────────────────────────────
-    est_size = entry.squished_size_gb
-    print(f"\n  Compressing with Squish  ({quant_label}, ~{est_size:.1f} GB output) …")
+    print(f"\n  Compressing with Squish  ({quant_label}, ~{est_compressed_gb:.1f} GB output) …")
 
     # AWQ calibration: load the FP16 model, collect per-channel activation
     # magnitudes, then pass scales to squish.convert.  This runs automatically
     # for INT4 and is skipped gracefully when mlx-lm is unavailable.
     awq_scales_dir = None
-    if int4:
+    if _mode == "int4":
         try:
             import tempfile
 
@@ -861,8 +874,13 @@ def pull(  # pragma: no cover
         "--output",    str(compressed_dir),
         "--format",    "npy-dir",
     ]
-    if int4:
+    if _mode == "int4":
         cmd.extend(["--int4", "--super-weight"])
+    elif _mode == "int3":
+        cmd.append("--int3")
+    elif _mode == "int2":
+        cmd.append("--int2")
+    # int8: no extra flag — default is INT8
     if awq_scales_dir:
         cmd.extend(["--awq-scales", awq_scales_dir])
     if verbose:

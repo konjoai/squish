@@ -97,6 +97,16 @@ def _get_aqlm():
     return AQLMConfig, AQLMQuantizer
 
 
+def _get_milo():
+    from squish.quant.milo_quant import MiLoConfig, MiLoQuantizer
+    return MiLoConfig, MiLoQuantizer
+
+
+def _get_woq():
+    from squish.quant.weight_only_int2 import Int2QuantConfig, WeightOnlyInt2Quant
+    return Int2QuantConfig, WeightOnlyInt2Quant
+
+
 # ---------------------------------------------------------------------------
 # ─── TTY-safe line-clear helper ─────────────────────────────────────────────
 def _clear_line() -> None:
@@ -212,6 +222,10 @@ def quantize_tensor(
     aqlm_config=None,
     super_weight_passthrough: bool = False,
     int4_group_size: int | None = None,
+    use_int3: bool = False,
+    milo_quantizer=None,
+    use_int2: bool = False,
+    woq_quantizer=None,
 ) -> dict:
     """
     Quantize a single float32 tensor.
@@ -319,6 +333,34 @@ def quantize_tensor(
             "__quip_rot": rot,                        # float16 (d_in, d_in) or empty
             "__shape":    shape_arr,
         }
+
+    # ── INT3: MiLo 3-bit + low-rank compensator ──────────────────────────────
+    if use_int3 and milo_quantizer is not None and arr_f32.ndim >= 2:
+        try:
+            q_packed, scales, zeros, compensator = milo_quantizer.quantize(flat, name=name)
+            return {
+                "__q3":    q_packed,         # uint8 3-bit packed
+                "__s3":    scales,           # float32 per-group scales
+                "__z3":    zeros,            # float32 per-group zeros
+                "__lra":   compensator.a,    # float32 low-rank A factor
+                "__lrb":   compensator.b,    # float32 low-rank B factor
+                "__shape": shape_arr,
+            }
+        except Exception as _e:
+            print(f"    [INT3] Warning: MiLo failed on {name}: {_e} — falling back to INT8")
+
+    # ── INT2: WeightOnlyInt2Quant pack-4 asymmetric ───────────────────────────
+    if use_int2 and woq_quantizer is not None and arr_f32.ndim >= 2:
+        try:
+            packed2, scale2, zero2 = woq_quantizer.quantize(flat)
+            return {
+                "__q2":    packed2,   # uint8 pack-4 (2-bit per weight)
+                "__s2":    scale2,    # float32 per-group scales
+                "__z2":    zero2,     # float32 per-group zeros
+                "__shape": shape_arr,
+            }
+        except Exception as _e:
+            print(f"    [INT2] Warning: WOQ failed on {name}: {_e} — falling back to INT8")
 
     # ── AQLM: additive codebook quantization ─────────────────────────────────
     if use_aqlm:
@@ -479,6 +521,11 @@ def process_weights_streaming(
     aqlm_config=None,
     use_super_weight: bool = False,
     int4_group_size: int | None = None,
+    use_int3: bool = False,
+    int3_group_size: int = 64,
+    int3_max_rank: int = 8,
+    use_int2: bool = False,
+    int2_group_size: int = 64,
 ) -> dict:
     """
     Streaming shard-by-shard compression — works for any model size.
@@ -515,6 +562,31 @@ def process_weights_streaming(
             _awq_proj_apply, _awq_ln_apply = prepare_awq_application(awq_scales)
         except ImportError:
             pass
+
+    # ── Build INT3 (MiLo) quantizer once ─────────────────────────────────────
+    milo_quantizer = None
+    if use_int3:
+        MiLoConfig, MiLoQuantizer = _get_milo()
+        milo_quantizer = MiLoQuantizer(MiLoConfig(
+            target_bits=3,
+            max_rank=int3_max_rank,
+            min_rank=2,
+            group_size=int3_group_size,
+            snr_threshold_db=35.0,
+            adaptive_rank=True,
+        ))
+        print(f"  INT3-MiLo: group_size={int3_group_size}, max_rank={int3_max_rank}")
+
+    # ── Build INT2 (WeightOnlyInt2Quant) quantizer once ───────────────────────
+    woq_quantizer = None
+    if use_int2:
+        Int2QuantConfig, WeightOnlyInt2Quant = _get_woq()
+        woq_quantizer = WeightOnlyInt2Quant(Int2QuantConfig(
+            group_size=int2_group_size,
+            symmetric=False,
+            clip_threshold=0.99,
+        ))
+        print(f"  INT2-WOQ: group_size={int2_group_size}, asymmetric")
 
     # ── Build QuIP# quantizer once; shared RNG advances across all tensors ───
     quip_quantizer = None
@@ -573,6 +645,10 @@ def process_weights_streaming(
                 aqlm_config=aqlm_config,
                 super_weight_passthrough=(name in sw_tensor_names),
                 int4_group_size=int4_group_size,
+                use_int3=use_int3,
+                milo_quantizer=milo_quantizer,
+                use_int2=use_int2,
+                woq_quantizer=woq_quantizer,
             )
 
             # Write immediately — don't accumulate in RAM
@@ -615,6 +691,10 @@ def process_weights_streaming(
                     mode = "QUIP"
                 elif "__aqlm_idx" in sub:
                     mode = "AQLM"
+                elif "__q3" in sub:
+                    mode = "INT3"
+                elif "__q2" in sub:
+                    mode = "INT2"
                 elif use_int4:
                     mode = "Q4"
                 else:
@@ -713,6 +793,46 @@ def main():
              "(~1.5 GB for 1.5B vs ~2.9 GB INT8) at ≤2%% accuracy delta.  "
              "Requires squish_quant Rust extension (built with maturin).  "
              "Recommended for 1.5B models where every GB matters.",
+    )
+    ap.add_argument(
+        "--int3",
+        action="store_true",
+        default=False,
+        help="Use MiLo INT3 + low-rank compensator (~4.4 bpw, 73%% of INT4 size).  "
+             "Best quality-vs-size for memory-constrained hardware (e.g. M3 16GB).  "
+             "Pure numpy — no Rust extension required.",
+    )
+    ap.add_argument(
+        "--int3-group-size",
+        type=int,
+        default=64,
+        dest="int3_group_size",
+        metavar="N",
+        help="Group size for INT3-MiLo quantization (default: 64).",
+    )
+    ap.add_argument(
+        "--int3-max-rank",
+        type=int,
+        default=8,
+        dest="int3_max_rank",
+        metavar="R",
+        help="Max low-rank compensator rank for INT3-MiLo (default: 8).",
+    )
+    ap.add_argument(
+        "--int2",
+        action="store_true",
+        default=False,
+        help="Use WeightOnlyInt2Quant pack-4 asymmetric 2-bit (~3 bpw).  "
+             "Smallest on-disk format; best for extreme memory constraints.  "
+             "Pure numpy — no Rust extension required.",
+    )
+    ap.add_argument(
+        "--int2-group-size",
+        type=int,
+        default=64,
+        dest="int2_group_size",
+        metavar="N",
+        help="Group size for INT2-WOQ quantization (default: 64).",
     )
     ap.add_argument(
         "--nf4",
@@ -893,6 +1013,11 @@ def main():
             aqlm_config=aqlm_config,
             use_super_weight=args.super_weight,
             int4_group_size=args.int4_group_size,
+            use_int3=args.int3,
+            int3_group_size=args.int3_group_size,
+            int3_max_rank=args.int3_max_rank,
+            use_int2=args.int2,
+            int2_group_size=args.int2_group_size,
         )
         elapsed = time.time() - t0
 
@@ -912,6 +1037,8 @@ def main():
             "ULTRA (NF4 + DFloat11 rANS)" if args.ultra else
             "QuIP# E8 trellis-coded" if args.quip else
             "AQLM additive codebook" if args.aqlm else
+            "INT3-MiLo (3-bit + low-rank compensator)" if args.int3 else
+            "INT2-WOQ (2-bit pack-4 asymmetric)" if args.int2 else
             "NF4 (NormalFloat-4)" if args.nf4 else
             "VPTQ (vector quantization)" if args.vptq else
             f"INT4 nibble-packed (group-{_int4_gs})" if args.int4 else
@@ -920,7 +1047,7 @@ def main():
         if args.dfloat11 and not args.ultra:
             _mode_str += " + DFloat11 entropy"
         print(f"  Quantization:     {_mode_str}")
-        _quant_label = "INT4" if args.int4 else "INT8"
+        _quant_label = "INT3" if args.int3 else "INT2" if args.int2 else "INT4" if args.int4 else "INT8"
         print(f"  Tensors:          {n_total} total")
         print(f"    Quantized ({_quant_label}): {stats['n_quantized']}")
         print(f"    Passthrough (f16 on disk): {stats['n_passthrough']}")

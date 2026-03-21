@@ -707,7 +707,8 @@ def cmd_setup(args):  # pragma: no cover
                 if answer in ("", "y", "yes"):
                     import argparse as _ap2
                     _pull_args = _ap2.Namespace(
-                        model=recommended, int4=False, int8=False, token=None,
+                        model=recommended, int4=False, int8=False,
+                        int3=False, int2=False, token=None,
                         models_dir=None, refresh_catalog=False, verbose=True,
                     )
                     cmd_pull(_pull_args)
@@ -768,7 +769,8 @@ def cmd_run(args):  # pragma: no cover
                   f"for your {ram_gb:.0f} GB machine…")
             import argparse as _ap2
             _pull_args = _ap2.Namespace(
-                model=default, int4=False, int8=False, token=None,
+                model=default, int4=False, int8=False,
+                int3=False, int2=False, token=None,
                 models_dir=None, refresh_catalog=False, verbose=True,
             )
             cmd_pull(_pull_args)
@@ -796,7 +798,8 @@ def cmd_run(args):  # pragma: no cover
             print(f"\n  Model '{args.model}' not found locally — pulling now…")
             import argparse as _ap2
             _pull_args = _ap2.Namespace(
-                model=args.model, int4=False, int8=False, token=None,
+                model=args.model, int4=False, int8=False,
+                int3=False, int2=False, token=None,
                 models_dir=None, refresh_catalog=False, verbose=True,
             )
             cmd_pull(_pull_args)
@@ -1988,7 +1991,13 @@ def cmd_pull(args):  # pragma: no cover
             f"Run `squish catalog` to browse available models."
         )
 
-    quant_label = "INT8" if args.int8 else "INT4"
+    quant_mode = (
+        "int3" if getattr(args, "int3", False) else
+        "int2" if getattr(args, "int2", False) else
+        "int8" if args.int8 else
+        "int4"
+    )
+    quant_label = quant_mode.upper()
     print()
     _box([
         "  squish pull",
@@ -2005,10 +2014,11 @@ def cmd_pull(args):  # pragma: no cover
         compressed_dir = _catalog_pull(
             name=name,
             models_dir=models_dir,
-            int4=not args.int8,
+            int4=quant_mode == "int4",
             token=token,
             refresh_catalog=args.refresh_catalog,
             verbose=args.verbose,
+            quant_mode=quant_mode,
         )
     except ImportError as exc:
         _die(str(exc))
@@ -3082,6 +3092,12 @@ Ollama drop-in:
                         help="Use INT8 group-64 compression instead of INT4 (default is INT4).")
     p_pull.add_argument("--int4", action="store_true",
                         help="Use INT4 nibble-packed compression (default; flag kept for backward compatibility).")
+    p_pull.add_argument("--int3", action="store_true",
+                        help="Use INT3-MiLo (3-bit + low-rank compensator, ~4.4 bpw). "
+                             "Best quality-vs-size for M3/M4 16GB Macs.")
+    p_pull.add_argument("--int2", action="store_true",
+                        help="Use INT2-WOQ (2-bit pack-4 asymmetric, ~3 bpw). "
+                             "Smallest footprint; fits 14B on 8GB RAM.")
     p_pull.add_argument("--token", default="",
                         help="HuggingFace access token (or set $HF_TOKEN)")
     p_pull.add_argument("--models-dir", default="",
