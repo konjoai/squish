@@ -5,6 +5,76 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [14.1.0-alpha.1] — 2026-03-21
+
+### Added — Wave 37: Wire Everything In
+
+Zero new algorithm work. Twelve existing isolation modules from Waves 33–35 are wired into
+`squish/server.py`'s live request path with CLI flags, startup initialization, dispatch hooks
+in `_generate_tokens()`, and per-request lifecycle calls. All 12 connections have try/except
+guards with `_warn()` on failure so a broken optional module never crashes the server.
+
+**Twelve modules wired:**
+
+- **ChipDetector** (`squish/hardware/chip_detector.py`) — Always runs at startup (no flag
+  required). Detects Apple Silicon generation and memory bandwidth; auto-tunes
+  `_chunk_prefill_size` and `kv_bits` when the user has not set them explicitly. Logs:
+  `generation`, `memory_bandwidth_gbps`, `recommended_chunk_prefill`, `recommended_kv_bits`.
+
+- **KVTransformCoder** (`squish/kv/kvtc.py`) — `--kvtc` / `--kvtc-rank N` / `--kvtc-bits {4,8}`.
+  Low-rank KV transform coding; initialized with per-layer config after model load;
+  `_server_enabled = True` marker set.
+
+- **ChunkKVManager** (`squish/kv/chunk_kv.py`) — `--chunk-kv` / `--chunk-kv-size N` /
+  `--chunk-kv-budget F`. Per-request `invalidate_reuse_cache()` called at KV path entry
+  to evict stale cross-request chunks.
+
+- **SSDSaguaro** (`squish/speculative/ssd_saguaro.py`) — `--ssd-saguaro`.
+  Structured speculative decoding with k-outcome draft; `_server_enabled = True`.
+
+- **SpeculativeStreamer** (`squish/speculative/spec_stream.py`) — `--spec-stream`.
+  Per-request `reset()` called at request entry in spec path; buffered draft streaming.
+
+- **MetalFlashAttention** (`squish/kernels/metal_flash_attn.py`) — `--metal-flash-attn`.
+  Tiled fused QK^T·softmax·PV kernel; `_server_enabled = True`.
+
+- **DejaVuSparseFFN** (`squish/token/deja_vu_sparse.py`) — `--deja-vu`.
+  Calibrated sparse FFN predictor; `_server_enabled = True`.
+
+- **JacobiDecoder** (`squish/speculative/jacobi_decode.py`) — `--jacobi` /
+  `--jacobi-n N` / `--jacobi-variant {jacobi,gauss_seidel}`. New decode path in
+  `_generate_tokens()` before the KV cache path; active when `--jacobi` is set and no
+  draft model is loaded. Note: intentionally excluded from `--all-optimizations`
+  (Jacobi is O(n²) in output length for conversational use; opt-in only).
+
+- **MultiTokenPredictor** (`squish/speculative/mtp_head.py`) — `--mtp` / `--mtp-heads N`.
+  Multi-head token prediction; `_server_enabled = True`.
+
+- **LayerOverlapLoader** (`squish/io/layer_overlap_loader.py`) — `--layer-overlap` /
+  `--layer-overlap-prefetch N`. `start()` called at model load with layer count and a
+  stub load function; provides prefetch infrastructure.
+
+- **FusedQKVProjection** (`squish/hardware/fused_qkv_proj.py`) — `--fused-qkv`.
+  Single W_qkv matmul replacing three separate Q/K/V projections; initialized with
+  d_model, n_heads, n_kv_heads, d_head from model config; `_server_enabled = True`.
+
+- **PDDisaggregator** (`squish/serving/pd_disagg.py`) — `--pd-disagg`.
+  Prefill/decode phase disaggregation; timing callbacks wired at prefill entry and decode
+  completion; `stats.total_prefill_ms`, `total_prompt_tokens`, `total_requests`,
+  `total_generated_tokens` accumulated per request.
+
+**CLI flags added to `--all-optimizations`:**
+`--kvtc`, `--chunk-kv`, `--ssd-saguaro`, `--spec-stream`, `--metal-flash-attn`,
+`--deja-vu`, `--mtp`, `--layer-overlap`, `--fused-qkv`, `--pd-disagg`.
+(`--jacobi` remains explicit opt-in only.)
+
+**Git hook:** `.git/hooks/commit-msg` blocks commits whose message starts with a `<think>`
+block (prevents agentic reasoning artifacts from landing in history).
+
+**Tests:** `tests/test_wave37_wiring.py` — 98 tests, all passing.
+
+---
+
 ## [17.1.0] — 2026-06-25
 
 ### Added — Wave 42: Disaggregated Serving · NSA Sparsity · Medusa Heads · KV Quant · Multi-Turn KV Reuse · Efficient QAT
