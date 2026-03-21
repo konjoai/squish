@@ -3276,8 +3276,12 @@ Examples:
             "kv_share", "kv_slab", "paris_kv", "streaming_sink",
             "diff_kv", "small_kv", "lookahead", "spec_reason",
             # Wave 37: Wire Everything In
+            # NOTE: "jacobi" is intentionally excluded — Jacobi decode uses
+            # full-context forward passes (no KV cache), making it O(n²) and
+            # catastrophically slow for normal generation.  Enable only with
+            # the explicit --jacobi flag.
             "kvtc", "chunk_kv", "ssd_saguaro", "spec_stream",
-            "metal_flash_attn", "deja_vu", "jacobi", "mtp",
+            "metal_flash_attn", "deja_vu", "mtp",
             "layer_overlap", "fused_qkv", "pd_disagg",
             # Wave 41
             "radix_attn", "eagle2", "ring_attn", "token_entropy_prune",
