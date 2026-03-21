@@ -893,6 +893,8 @@ def cmd_run(args):  # pragma: no cover
         cmd += ["--kv-cache-mode", args.kv_cache_mode]
     if getattr(args, "log_level", "warning") != "warning":
         cmd += ["--log-level", args.log_level]
+    if getattr(args, "trace_output", ""):
+        cmd += ["--trace", "--trace-output", args.trace_output]
     if getattr(args, "all_optimizations", False):
         cmd += ["--all-optimizations"]
     if getattr(args, "agent", False):
@@ -2801,6 +2803,11 @@ Ollama drop-in:
                        choices=["critical", "error", "warning", "info", "debug", "trace"],
                        default="warning",
                        help="Server log verbosity (default: warning)")
+    p_run.add_argument("--trace-output", default="",
+                       metavar="FILE",
+                       help="Save a Chrome DevTools flame-graph JSON to FILE on server exit. "
+                            "Open at https://speedscope.app or chrome://tracing to see every "
+                            "module with start/end timing. Implies --trace.")
     p_run.add_argument("--all-optimizations", action="store_true", default=False,
                        help="Enable ALL built-in optimization modules at once "
                             "(enabled by default; this flag is a no-op unless --stock was also set)")
@@ -3290,6 +3297,13 @@ Ollama drop-in:
     p_config.set_defaults(func=cmd_config)
 
     args = ap.parse_args()
+
+    # Configure structured logging based on --log-level (or env var default)
+    try:
+        from squish.logging_config import configure_logging as _configure_logging
+        _configure_logging(level=getattr(args, "log_level", "warning"))
+    except Exception:
+        pass  # never block CLI startup on logging config failure
 
     if not args.command:
         # No subcommand — show interactive welcome instead of raw argparse help
