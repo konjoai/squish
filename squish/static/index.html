@@ -86,6 +86,79 @@
   #settings-btn { background: none; border: none; cursor: pointer; color: var(--text-dim);
     font-size: 20px; line-height: 1; padding: 0 4px; transition: color .15s; }
   #settings-btn:hover { color: var(--text); }
+  #dash-btn { background: none; border: none; cursor: pointer; color: var(--text-dim);
+    font-size: 18px; line-height: 1; padding: 0 4px; transition: color .15s; }
+  #dash-btn:hover { color: var(--text); }
+  #dash-btn.active { color: var(--accent); }
+
+  /* ── Monitoring Dashboard Panel ─────────────────────────────────────────── */
+  #dash-panel { position: fixed; top: 0; right: -52vw; bottom: 0; width: 50vw; min-width: 400px;
+    background: var(--surface); border-left: 1px solid var(--border); z-index: 40;
+    display: flex; flex-direction: column; transition: right .25s cubic-bezier(.4,0,.2,1);
+    overflow: hidden; }
+  #dash-panel.open { right: 0; }
+  #dash-panel-header { padding: 11px 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  #dash-panel-header h3 { font-size: 13px; font-weight: 600; flex: 1;
+    background: linear-gradient(90deg,#8B5CF6,#EC4899);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  #dash-close { background: none; border: none; cursor: pointer; color: var(--text-dim);
+    font-size: 18px; padding: 0 4px; transition: color .15s; }
+  #dash-close:hover { color: var(--danger); }
+  #dash-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .ds-card { background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 12px; }
+  .ds-card > h4 { font-size: 10px; font-weight: 600; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: .07em; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 5px; }
+  .ds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .ds-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .ds-metric { background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 9px; }
+  .ds-metric .ds-label { font-size: 10px; color: var(--text-dim); margin-bottom: 2px;
+    text-transform: uppercase; letter-spacing:.04em; }
+  .ds-metric .ds-val { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums;
+    line-height: 1.2; color: var(--text); }
+  .ds-metric .ds-sub { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .ds-metric.ok   .ds-val { color: var(--success); }
+  .ds-metric.warn .ds-val { color: #f0a000; }
+  .ds-metric.err  .ds-val { color: var(--danger); }
+  .ds-metric.acc  .ds-val { color: var(--accent); }
+  .ds-metric.acc2 .ds-val { color: var(--accent2); }
+  .ds-bar-wrap { background: var(--bg); border-radius: 4px; height: 5px; overflow: hidden; margin-top: 4px; }
+  .ds-bar { height: 100%; border-radius: 4px; transition: width .5s; background: var(--success); }
+  .ds-bar.warn { background: #f0a000; }
+  .ds-bar.err  { background: var(--danger); }
+  .ds-spark { display: block; width: 100%; height: 28px; }
+  .ds-spark-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .ds-spark-lbl  { font-size: 10px; color: var(--text-dim); white-space: nowrap; min-width: 36px; }
+  .ds-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .ds-table th { color: var(--text-dim); font-weight: 600; text-align: left;
+    padding: 3px 5px; border-bottom: 1px solid var(--border); font-size: 10px; }
+  .ds-table td { padding: 3px 5px; border-bottom: 1px solid rgba(255,255,255,.04);
+    font-variant-numeric: tabular-nums; }
+  .ds-table tr:last-child td { border-bottom: none; }
+  .td-g { color: var(--success); } .td-a { color: var(--accent); }
+  .ds-cur-req { font-size: 12px; color: var(--text-dim); padding: 4px 0; min-height: 22px; }
+  #dash-console { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 9px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+    height: 150px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+  .cl-info { color: var(--accent); } .cl-ok { color: var(--success); }
+  .cl-err  { color: var(--danger); } .cl-warn { color: #f0a000; }
+  .ds-console-foot { display: flex; gap: 6px; margin-top: 5px; }
+  .ds-console-foot button { background: none; border: 1px solid var(--border);
+    color: var(--text-dim); border-radius: 4px; padding: 2px 8px; font-size: 10px;
+    cursor: pointer; transition: all .15s; }
+  .ds-console-foot button:hover { border-color: var(--accent); color: var(--accent); }
+  .ds-flags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ds-flag { font-family: var(--font-mono); font-size: 10px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; color: var(--text-dim); }
+  .ds-flag.set { color: var(--accent); border-color: rgba(139,92,246,.35); }
+  .ds-flag b { color: #EC4899; }
+  .dash-live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--success); margin-right: 4px; vertical-align: middle; }
+  .dash-live-dot.pulse { animation: livePulse 1s ease-in-out infinite; }
+  @keyframes livePulse { 0%,100%{opacity:1;} 50%{opacity:.25;} }
 
   /* ── Messages ───────────────────────────────────────────────────────────── */
   .msg        { display: flex; gap: 14px; margin-bottom: 20px; animation: fadeIn .18s; }
@@ -288,6 +361,7 @@
       <span class="spacer"></span>
       <div id="status-dot" title="Server status"></div>
       <button id="settings-btn" onclick="openSettings()" title="Settings">⚙</button>
+      <button id="dash-btn" onclick="toggleDash()" title="Monitoring Dashboard">⬡</button>
     </div>
 
     <!-- Chat area -->
@@ -367,6 +441,103 @@
         oninput="saveApiKey(this.value)" />
     </div>
     <button class="sp-close" onclick="closeSettings()">Done</button>
+  </div>
+</div>
+
+<!-- ── Monitoring Dashboard Panel ────────────────────────────────────────── -->
+<div id="dash-panel">
+  <div id="dash-panel-header">
+    <h3>⬡ Monitoring Dashboard</h3>
+    <button id="dash-close" onclick="toggleDash()" title="Close">✕</button>
+  </div>
+  <div id="dash-body">
+
+    <!-- Server Status -->
+    <div class="ds-card">
+      <h4>🟢 Server Status</h4>
+      <div class="ds-grid">
+        <div class="ds-metric" id="dm-status"><div class="ds-label">Status</div><div class="ds-val" id="dv-status">—</div></div>
+        <div class="ds-metric" id="dm-loader"><div class="ds-label">Loader</div><div class="ds-val" id="dv-loader">—</div></div>
+        <div class="ds-metric" id="dm-inflight"><div class="ds-label">Inflight</div><div class="ds-val" id="dv-inflight">—</div></div>
+        <div class="ds-metric" id="dm-uptime"><div class="ds-label">Uptime</div><div class="ds-val" id="dv-uptime">—</div></div>
+        <div class="ds-metric" id="dm-requests"><div class="ds-label">Total Requests</div><div class="ds-val" id="dv-requests">—</div></div>
+        <div class="ds-metric" id="dm-tokgen"><div class="ds-label">Tokens Generated</div><div class="ds-val" id="dv-tokgen">—</div></div>
+      </div>
+    </div>
+
+    <!-- Performance -->
+    <div class="ds-card">
+      <h4>⚡ Performance</h4>
+      <div class="ds-grid">
+        <div class="ds-metric" id="dm-tps"><div class="ds-label">Avg TPS</div><div class="ds-val" id="dv-tps">—</div></div>
+        <div class="ds-metric" id="dm-ttft"><div class="ds-label">Avg TTFT</div><div class="ds-val" id="dv-ttft">—</div></div>
+      </div>
+      <div class="ds-spark-row"><span class="ds-spark-lbl">TPS</span><svg id="spark-tps" class="ds-spark"></svg></div>
+      <div class="ds-spark-row"><span class="ds-spark-lbl">TTFT ms</span><svg id="spark-ttft" class="ds-spark"></svg></div>
+      <div class="ds-spark-row"><span class="ds-spark-lbl">Reqs/s</span><svg id="spark-reqs" class="ds-spark"></svg></div>
+    </div>
+
+    <!-- Current / Latest Request -->
+    <div class="ds-card">
+      <h4>⏱ Current Request</h4>
+      <div id="dash-cur-req" class="ds-cur-req">No request yet in this session</div>
+    </div>
+
+    <!-- Request History -->
+    <div class="ds-card">
+      <h4>📋 Request History</h4>
+      <table class="ds-table">
+        <thead><tr><th>Time</th><th>Model</th><th>TTFT</th><th>TPS</th><th>Tokens</th><th>Total</th></tr></thead>
+        <tbody id="dash-req-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- System Resources -->
+    <div class="ds-card">
+      <h4>💻 System Resources</h4>
+      <div class="ds-grid">
+        <div class="ds-metric" id="dm-load"><div class="ds-label">CPU Load (1m)</div><div class="ds-val" id="dv-load">—</div>
+          <div class="ds-bar-wrap"><div class="ds-bar" id="db-load" style="width:0%"></div></div></div>
+        <div class="ds-metric" id="dm-rss"><div class="ds-label">Process RSS</div><div class="ds-val" id="dv-rss">—</div></div>
+        <div class="ds-metric" id="dm-disk"><div class="ds-label">Disk Used</div><div class="ds-val" id="dv-disk">—</div>
+          <div class="ds-bar-wrap"><div class="ds-bar" id="db-disk" style="width:0%"></div></div></div>
+        <div class="ds-metric"><div class="ds-label">Disk Free</div><div class="ds-val" id="dv-disk-free">—</div></div>
+        <div class="ds-metric" id="dm-mem"><div class="ds-label">Mem Available</div><div class="ds-val" id="dv-mem">—</div></div>
+        <div class="ds-metric" id="dm-bat"><div class="ds-label">Battery</div><div class="ds-val" id="dv-bat">—</div></div>
+      </div>
+    </div>
+
+    <!-- Cache & KV -->
+    <div class="ds-card">
+      <h4>🗄 Cache &amp; KV</h4>
+      <div class="ds-grid-3">
+        <div class="ds-metric" id="dm-pchits"><div class="ds-label">Prefix Hits</div><div class="ds-val" id="dv-pchits">—</div></div>
+        <div class="ds-metric" id="dm-pcsize"><div class="ds-label">Cache Size</div><div class="ds-val" id="dv-pcsize">—</div></div>
+        <div class="ds-metric" id="dm-pcratio"><div class="ds-label">Hit Rate</div><div class="ds-val" id="dv-pcratio">—</div>
+          <div class="ds-bar-wrap"><div class="ds-bar" id="db-pc" style="width:0%"></div></div></div>
+      </div>
+      <div class="ds-grid" style="margin-top:6px">
+        <div class="ds-metric" id="dm-kvtok"><div class="ds-label">KV Tokens</div><div class="ds-val" id="dv-kvtok">—</div></div>
+        <div class="ds-metric" id="dm-kvmb"><div class="ds-label">KV Memory</div><div class="ds-val" id="dv-kvmb">—</div></div>
+      </div>
+    </div>
+
+    <!-- Trace Console -->
+    <div class="ds-card">
+      <h4>📟 Console Log</h4>
+      <div id="dash-console"></div>
+      <div class="ds-console-foot">
+        <button onclick="clearDashConsole()">Clear</button>
+        <button onclick="document.getElementById('dash-console').scrollTop=0">Top</button>
+      </div>
+    </div>
+
+    <!-- Config / CLI Flags -->
+    <div class="ds-card">
+      <h4>🔧 Config &amp; CLI Flags</h4>
+      <div id="dash-flags" class="ds-flags"></div>
+    </div>
+
   </div>
 </div>
 
@@ -794,6 +965,21 @@ function _finalizeStream(asstMsg) {
   if (_msgEl) _msgEl.classList.remove("generating");
   addRegenBtn(_msgEl);
 
+  // ── Dashboard: record completed request metrics
+  if (_firstTokenTime > 0) {
+    const totalMs = performance.now() - _streamStart;
+    const ttftMs  = _firstTokenTime - _streamStart;
+    const genMs   = Math.max(totalMs - ttftMs, 1);
+    const tokens  = Math.round(_streamToks / 3.5);
+    const tps     = tokens / (genMs / 1000);
+    _curTtftMs  = ttftMs;
+    _curTotalMs = totalMs;
+    _dashHistory.push({ t: Date.now(), model: currentModel(), ttft_ms: ttftMs,
+      total_ms: totalMs, tps, tokens });
+    if (_dashHistory.length > 20) _dashHistory.shift();
+    dashLog("ok", `Done: TTFT ${ttftMs.toFixed(0)}ms · ${tps.toFixed(1)} tok/s · ${tokens} tokens · ${(totalMs/1000).toFixed(2)}s`);
+  }
+
   _contentDiv = null; _cursorEl = null; _msgEl = null;
 }
 
@@ -853,6 +1039,7 @@ async function _doGenerate(sess) {
 
   abortCtrl   = new AbortController();
   isStreaming  = true;
+  dashLog("info", `REQ → model=${currentModel()} temperature=${temperature} max_tokens=${max_tokens}`);
   document.getElementById("send-btn").disabled = true;
   document.getElementById("stop-btn").style.display = "inline-block";
 
@@ -913,6 +1100,8 @@ async function _doGenerate(sess) {
   } catch (e) {
     if (e.name !== "AbortError")
       asstMsg.content += `\n\n*Error: ${e.message}*`;
+    dashLog(e.name === "AbortError" ? "warn" : "err",
+      e.name === "AbortError" ? "Request aborted" : `Error: ${e.message}`);
   } finally {
     isStreaming = false;
     abortCtrl   = null;
@@ -1000,6 +1189,261 @@ function copyCode(id) {
 
 function openSettings()  { document.getElementById("settings-panel").classList.add("open"); }
 function closeSettings() { document.getElementById("settings-panel").classList.remove("open"); }
+
+// ── Monitoring Dashboard ──────────────────────────────────────────────────────
+let _dashOpen     = false;
+let _dashTimer    = null;
+let _dashHistory  = [];       // [{t,tps,ttft_ms,total_ms,tokens,model}] last 20
+let _dashTpsHist  = [];       // [float] rolling 60 samples for sparkline
+let _dashTtftHist = [];       // [float] rolling 60 samples for sparkline
+let _dashReqHist  = [];       // [float] rolling 60 samples for sparkline
+let _dashLastReqs = 0;
+let _consoleLines = [];       // rolling 200 log lines
+let _curTtftMs    = 0;
+let _curTotalMs   = 0;
+let _lastDebug    = null;
+let _dashMetrics  = null;     // parsed /v1/metrics values
+
+function toggleDash() {
+  _dashOpen = !_dashOpen;
+  document.getElementById("dash-panel").classList.toggle("open", _dashOpen);
+  document.getElementById("dash-btn").classList.toggle("active", _dashOpen);
+  if (_dashOpen) {
+    dashLog("info", "Dashboard opened");
+    _dashFetch();
+    if (_dashTimer) clearInterval(_dashTimer);
+    _dashTimer = setInterval(_dashFetch, 1000);
+    // Fetch slow-changing data once
+    _fetchMetrics();
+    if (!_lastDebug) _fetchDebugInfo();
+  } else {
+    clearInterval(_dashTimer); _dashTimer = null;
+  }
+}
+
+async function _dashFetch() {
+  try {
+    const [hRes, sRes] = await Promise.allSettled([
+      fetch(`${BASE_URL}/health`).then(r => r.json()),
+      fetch(`${BASE_URL}/sys-stats`).then(r => r.json()),
+    ]);
+    const h = hRes.status === "fulfilled" ? hRes.value : null;
+    const s = sRes.status === "fulfilled" ? sRes.value : null;
+    _renderDash(h, s);
+  } catch (e) {
+    dashLog("err", `Poll error: ${e.message}`);
+  }
+}
+
+async function _fetchDebugInfo() {
+  try {
+    _lastDebug = await fetch(`${BASE_URL}/debug-info`).then(r => r.json());
+    _renderFlags(_lastDebug);
+  } catch { /* ignore */ }
+}
+
+async function _fetchMetrics() {
+  try {
+    const text = await fetch(`${BASE_URL}/v1/metrics`).then(r => r.text());
+    const get = name => { const m = text.match(new RegExp(`^${name} (\\S+)`, "m")); return m ? parseFloat(m[1]) : null; };
+    _dashMetrics = {
+      pcHits:     get("squish_prefix_cache_hits_total"),
+      pcSize:     get("squish_prefix_cache_size"),
+      pcPrefixH:  get("squish_radix_prefix_hits_total"),
+      kvTok:      get("squish_kv_cache_tokens"),
+      kvMb:       get("squish_kv_cache_memory_mb"),
+      pagedFree:  get("squish_paged_kv_free_blocks"),
+      pagedUsed:  get("squish_paged_kv_used_blocks"),
+      specDraft:  get("squish_spec_draft_loaded"),
+    };
+    if (_dashOpen) _renderCacheSection();
+  } catch { /* ignore */ }
+}
+
+function _renderDash(h, s) {
+  if (!_dashOpen || !h) return;
+
+  // ── History bookkeeping
+  const prevR = _dashLastReqs || h.requests;
+  _dashLastReqs = h.requests;
+  _pushHist(_dashTpsHist,  h.avg_tps || 0);
+  _pushHist(_dashTtftHist, (h.avg_ttft_s || 0) * 1000);
+  _pushHist(_dashReqHist,  Math.max(0, h.requests - prevR));
+
+  // ── Server Status
+  _dm("dm-status",  h.status === "ok" ? "ok" : "err",   "dv-status",  h.status === "ok" ? "Online" : "Offline");
+  _dm("dm-loader",  "acc2",                              "dv-loader",  h.loader || "—");
+  _dm("dm-inflight","",                                  "dv-inflight",String(h.inflight ?? 0));
+  _dm("dm-uptime",  "",                                  "dv-uptime",  _fmtUp(h.uptime_s));
+  _dm("dm-requests","acc",                               "dv-requests",_fmtN(h.requests ?? 0));
+  _dm("dm-tokgen",  "acc2",                              "dv-tokgen",  _fmtN(h.tokens_gen ?? 0));
+
+  // ── Performance
+  _dm("dm-tps",  "ok",  "dv-tps",  `${(h.avg_tps || 0).toFixed(1)} t/s`);
+  _dm("dm-ttft", "acc", "dv-ttft", `${((h.avg_ttft_s || 0) * 1000).toFixed(0)} ms`);
+  _drawSpark("spark-tps",  _dashTpsHist,  "#3fb950");
+  _drawSpark("spark-ttft", _dashTtftHist, "#EC4899");
+  _drawSpark("spark-reqs", _dashReqHist,  "#8B5CF6");
+
+  // ── System resources
+  if (s) {
+    const load1 = s.load_avg?.[0] ?? 0;
+    _dm("dm-load", load1 > 8 ? "err" : load1 > 4 ? "warn" : "ok", "dv-load", load1.toFixed(2));
+    _setBar("db-load", Math.min(100, load1 / 12 * 100));
+    _dm("dm-rss",  "acc",  "dv-rss",       s.process_rss_mb != null ? `${s.process_rss_mb} MB` : "—");
+    if (s.disk_used_pct != null) {
+      _dm("dm-disk", s.disk_used_pct > 90 ? "err" : s.disk_used_pct > 70 ? "warn" : "ok",
+          "dv-disk", `${s.disk_used_pct}%`);
+      _setBar("db-disk", s.disk_used_pct);
+    }
+    const el = document.getElementById("dv-disk-free");
+    if (el && s.disk_free_gb != null) el.textContent = `${s.disk_free_gb} GB`;
+  }
+
+  // ── Memory / battery (from health)
+  const mp = h.mem_pressure ?? 0;
+  _dm("dm-mem", mp === 2 ? "err" : mp === 1 ? "warn" : "ok", "dv-mem",
+      h.mem_available_gb != null ? `${h.mem_available_gb} GB` : "—");
+  _dm("dm-bat", (h.battery_level ?? 100) < 20 ? "warn" : "ok", "dv-bat",
+      h.battery_level != null ? `${h.battery_level}%` : "—");
+
+  // ── Cache (uses separately fetched metrics)
+  _renderCacheSection();
+
+  // ── Current request timing
+  _renderCurReq();
+}
+
+function _renderCacheSection() {
+  const m = _dashMetrics;
+  if (!m) return;
+  const totalReqs = _dashLastReqs || 1;
+  const hitPct    = m.pcHits != null ? Math.min(100, Math.round(m.pcHits / totalReqs * 100)) : 0;
+  _dm("dm-pchits",  "ok",  "dv-pchits",  m.pcHits  != null ? String(Math.round(m.pcHits))  : "—");
+  _dm("dm-pcsize",  "",    "dv-pcsize",  m.pcSize  != null ? String(Math.round(m.pcSize))  : "—");
+  _dm("dm-pcratio", "ok",  "dv-pcratio", m.pcHits  != null ? `${hitPct}%` : "—");
+  _setBar("db-pc", hitPct);
+  _dm("dm-kvtok", "acc",  "dv-kvtok", m.kvTok != null ? _fmtN(Math.round(m.kvTok)) : "—");
+  _dm("dm-kvmb",  "acc2", "dv-kvmb",  m.kvMb  != null ? `${m.kvMb.toFixed(1)} MB` : "—");
+}
+
+function _renderCurReq() {
+  const el = document.getElementById("dash-cur-req");
+  if (!el) return;
+  if (isStreaming && _streamStart > 0) {
+    const now   = performance.now();
+    const ttft  = _firstTokenTime > 0 ? `${(_firstTokenTime - _streamStart).toFixed(0)}ms` : "…";
+    const total = `${((now - _streamStart) / 1000).toFixed(2)}s`;
+    const tpsNow = _firstTokenTime > 0
+      ? `${((_streamToks / 3.5) / ((now - _firstTokenTime) / 1000)).toFixed(1)} t/s` : "…";
+    el.innerHTML = `<span class="dash-live-dot pulse"></span>`
+      + `<b>TTFT:</b> ${ttft} &nbsp; <b>Elapsed:</b> ${total} &nbsp; `
+      + `<b>TPS:</b> ${tpsNow} &nbsp; <b>Chars:</b> ${_streamToks}`;
+  } else if (_curTotalMs > 0) {
+    const last = _dashHistory[_dashHistory.length - 1];
+    el.innerHTML = `<b>Last:</b> TTFT ${_curTtftMs.toFixed(0)}ms · `
+      + `Total ${(_curTotalMs / 1000).toFixed(2)}s`
+      + (last ? ` · ${last.tps.toFixed(1)} tok/s · ${last.tokens} tokens` : "");
+  } else {
+    el.innerHTML = `<span style="color:var(--text-dim)">No request yet in this session</span>`;
+  }
+  // Update request history table
+  const tbody = document.getElementById("dash-req-tbody");
+  if (tbody && _dashHistory.length > 0) {
+    tbody.innerHTML = _dashHistory.slice(-10).reverse().map(r =>
+      `<tr>
+        <td>${new Date(r.t).toLocaleTimeString([],{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'})}</td>
+        <td style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.model||'—'}</td>
+        <td class="td-a">${r.ttft_ms.toFixed(0)}ms</td>
+        <td class="td-g">${r.tps.toFixed(1)}</td>
+        <td>${r.tokens}</td>
+        <td>${(r.total_ms/1000).toFixed(2)}s</td>
+      </tr>`
+    ).join("");
+  }
+}
+
+function _renderFlags(d) {
+  const el = document.getElementById("dash-flags");
+  if (!el || !d) return;
+  const important = new Set(["model_dir","mlx_model_dir","port","host","power_mode",
+    "kv_cache_mode","chunk_prefill","paged_attention","batch_scheduler","draft_model",
+    "minference","log_level","trace","thinking_budget","max_kv_size","compressed_dir"]);
+  let html = "";
+  if (d.cli_flags) {
+    html += Object.entries(d.cli_flags)
+      .filter(([,v]) => v && v !== "None" && v !== "False" && v !== "0" && v !== "")
+      .map(([k,v]) => {
+        const cls = important.has(k) ? "ds-flag set" : "ds-flag";
+        return `<span class="${cls}"><b>${k.replace(/_/g,"-")}</b>=${escapeHtml(String(v))}</span>`;
+      }).join("");
+  }
+  if (d.python_version) html += `<span class="ds-flag"><b>python</b>=${escapeHtml(d.python_version.split(" ")[0])}</span>`;
+  if (d.platform)       html += `<span class="ds-flag"><b>platform</b>=${escapeHtml(d.platform)}</span>`;
+  if (d.pid)            html += `<span class="ds-flag"><b>pid</b>=${d.pid}</span>`;
+  el.innerHTML = html;
+}
+
+// Sparkline SVG renderer (pure SVG, no dependencies)
+function _drawSpark(id, data, color) {
+  const el = document.getElementById(id);
+  if (!el || data.length < 2) return;
+  const W = 200, H = 28, pad = 1;
+  const max = Math.max(...data, 0.001);
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * (W - pad * 2) + pad;
+    const y = H - pad - (v / max) * (H - pad * 2 - pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  el.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  el.setAttribute("preserveAspectRatio", "none");
+  el.innerHTML = `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+}
+
+// Console logging
+function dashLog(level, msg) {
+  const ts = new Date().toLocaleTimeString([], {hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  _consoleLines.push({ ts, level, msg: String(msg) });
+  if (_consoleLines.length > 200) _consoleLines.shift();
+  if (_dashOpen) _renderConsole();
+}
+
+function _renderConsole() {
+  const el = document.getElementById("dash-console");
+  if (!el) return;
+  el.innerHTML = _consoleLines.slice(-80).map(l =>
+    `<span class="cl-${escapeHtml(l.level)}">[${l.ts}] ${escapeHtml(l.msg)}</span>`
+  ).join("\n");
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearDashConsole() { _consoleLines = []; _renderConsole(); }
+
+// Helpers
+function _dm(cardId, cls, valId, val) {
+  const card = document.getElementById(cardId);
+  if (card) card.className = `ds-metric${cls ? " " + cls : ""}`;
+  const v = document.getElementById(valId);
+  if (v) v.textContent = val;
+}
+function _setBar(id, pct) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const c = Math.min(100, Math.max(0, pct));
+  el.style.width = c + "%";
+  el.className = `ds-bar${c > 90 ? " err" : c > 70 ? " warn" : ""}`;
+}
+function _pushHist(arr, val) { arr.push(val); if (arr.length > 60) arr.shift(); }
+function _fmtUp(s) {
+  if (!s) return "—";
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+  return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
+function _fmtN(n) {
+  if (n >= 1e6) return `${(n/1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n/1e3).toFixed(1)}K`;
+  return String(n);
+}
 
 // Close settings on backdrop click
 document.getElementById("settings-panel").addEventListener("click", e => {
