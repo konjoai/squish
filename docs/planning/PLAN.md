@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-20 (v32 Wave 58 planned — Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling)
+> Last updated: 2026-03-21 (v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -42,6 +42,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v30** | 56 | Native Acceleration Layer · Rust NF4 / FP8 / INT3 / Sampling / KV-Quant / INT2 Kernels · Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill |
 | **v31** | 57 | Deep Native Acceleration · Rust Entropy Codec / PQ ADC / GRU Cell / Cosine Sim / SwiGLU / Randomized SVD · Mojo RMSNorm / SwiGLU Parallel / GQA Decode / Token CosSim / Sparse Block Score / Retention State |
 | **v32** | 58 | Third Acceleration Tier · Rust Vector K-Means / FP6 BitPack / AWQ Channel / Model Merge / MoE Bincount / Online SGD · Mojo Dual-Chunk Attn / Infini-Attn Memory / Sliding-Window Attn / HQQ ALS / VPTQ Decode / Top-K/P Sampling |
+| **v33** | 59 | Decode Velocity Sprint · Rust GPTQ Column Solve / QuaRot Group / Calibration Scale / Flash-Decode Kernel / BF16 Cast / Sparse-Act GEMV · Mojo Flash-Decode / BF16 GEMV / GQA Prefill / Split-K Reduce / Rotary Embed / Layer-Skip Predict |
 
 ---
 
@@ -572,6 +573,177 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
 - [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [ ] CHANGELOG `[19.0.0]` entry
+- [ ] PLAN.md updated
+
+---
+
+## 🚧 v33 Wave 59 — Decode Velocity Sprint: Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict (Planned)
+
+Theme: **Wave 59 targets six Python/NumPy hotspots that sit squarely on the critical path
+for both calibration throughput and live decode latency — the operations that appear in
+every profiling run as the next-tier bottlenecks after Waves 56–58 eliminates their predecessors.
+The six Rust modules attack: (1) the GPTQ column-wise Hessian quantization double-nested loop
+that dominates post-training quantization time, (2) the QuaRot per-group
+quantization loop over rotated weight matrices, (3) the per-channel calibration
+scale computation loop that fires across all calibration runs, (4) the Flash-Decode
+per-head GEMV+softmax loop that limits decode-side attention bandwidth, (5) the
+bf16↔fp32 cast overhead that plagues BF16-weight inference on Apple Silicon, and
+(6) the sparse-activation GEMV bottleneck in ReLU/SwiGLU FFN layers where 30–60%
+of activations are zero but NumPy still executes the full dense multiply.
+The six Mojo kernels accelerate the same critical decode path from the SIMD side:
+Flash-Decode per-split attention (the inner-loop complement to the Rust worker),
+native BF16 GEMV on M3 hardware, GQA prefill attention, Split-K log-sum-exp
+parallel reduce, RoPE application, and the LayerSkip inference forward pass.**
+
+**Wave 59a Rust gaps — six new modules:**
+(1) `gptq_layer.py` has a double nested loop `for b in range(n_blocks): for j in range(col_start, col_end):`
+over all weight columns (4096 for a 4096×4096 layer), computing per-column Hessian-weighted scale,
+round-to-nearest quantization, and error propagation to remaining columns in the same block;
+the inner loop fires 4096 times per layer plus a SIMD correction vector write per column;
+a Rust Rayon block-parallel GPTQ solver with SIMD weight-scale, round, clip, and
+Hessian-diagonal error propagation achieves ~5× vs the Python nested loop (~45s → <9s per layer on CPU).
+(2) `quarot_quant.py` has `for g in range(n_groups):` iterating over all weight groups in a
+Hadamard-rotated weight matrix; each group slice does `abs().max()`, scale computation, round, clip —
+identical structure to the RustINT3Kernel target from Wave 56a but operating on FP32-rotated weights
+before quantization; Rust Rayon group-parallel with `@parameter`-style dispatch for symmetric/asymmetric
+variants; ~4× for 4096×4096, gs=128 on M3 (~2.1s → <0.5s). (3) `quant_calib.py`
+`ActivationCalibrator.calibrate()` has `for c in range(C):` iterating over all channels (up to 4096 per
+layer), each calling `_compute_scale(col, n_levels, cfg)` for absmax / percentile / ACIQ computation;
+fires across 30–90 calibration samples × all layers; a Rust Rayon column-parallel calibration worker
+that dispatches the three scale methods as compile-time enum variants achieves ~7× (~0.8s → <0.12s
+per callibration batch). (4) `flash_decode.py` `_compute_split` has `for h in range(n_heads):`
+computing `k_split[kv_h] @ q[h]` (GEMV per head) + `_softmax_with_lse` + `v_split[kv_h].T @ w` —
+n_heads GEMVs and n_heads axpy operations that are fully independent across heads;
+a Rust Rayon parallel head worker with SIMD dot-product
+(NEON FMLA for FP32) achieves ~5× for 32 heads × 1024 KV split length.
+(5) Various modules do `.astype(np.float32)` on BF16 tensors stored as uint16 arrays because NumPy
+≥ 1.26 exposes `np.bfloat16` via a third-party path that allocates an intermediate buffer;
+Apple M2+ hardware has native BF16 SIMD (ARMv8.6-A VCVTFBFH2F / VCVTNEBFH16);
+a Rust kernel using `half::bf16` and ARM NEON intrinsics converts 4096×4096 bf16↔fp32
+without intermediate allocation; ~15× vs the NumPy workaround (<0.06ms vs ~0.9ms per layer cast).
+(6) `ReLU²Attention` (`relu_attn.py`), `NativeSparseAttn` (`native_sparse_attn.py`),
+and the MLP gate in `SwiGLU` produce 30–60% zero activations; the dense NumPy GEMV
+`output = weight @ activation` computes all rows unconditionally; a Rust sparse activation
+GEMV builds a non-zero index set via SIMD comparison mask, packs non-zero (index, value)
+pairs, then runs a compressed dot-product with Rayon column parallelism;
+~2× effective throughput at 50% sparsity for 4096→11008 FFN projections.
+
+**Wave 59b Mojo kernel targets — six new kernels:**
+(1) The `_compute_split` per-head loop in `flash_decode.py` fires once per KV split per decode step;
+with n_splits=8 and n_heads=32 this is 256 independent GEMV+softmax computations;
+Mojo `parallelize(n_heads)` with `@parameter` on head_dim (64, 128) and split_len (power-of-2)
+computes each head's `scores = K_split @ q_h` via SIMD dot-product, applies online softmax
+(row-max + exp normalize) without materializing an intermediate score vector, and
+accumulates `output_h = V_split.T @ w_h` via SIMD axpy; ~6× over the Python for-loop
+for 32 heads × 1024 KV tokens. (2) BF16-native decode GEMV: Apple M2+ exposes
+`BFloat16` SIMD through ARM FBFMMLA; a Mojo GEMV kernel with `DType.bfloat16` SIMD loads
+av oids the bf16→fp32 upcast that existing decode GEMV paths require; `@parameter` on
+hidden_dim (2048, 4096), accumulates in FP32 `SIMD[DType.float32, 8]`, writes output;
+replaces the upcast GEMV path in `compressed_loader.py` and `gqa.py` for BF16 weight models;
+~3× for 4096×4096 BF16 decode on M3. (3) GQA prefill attention: `gqa.py` `grouped_query_attention`
+calls `np.matmul(q, k_expanded.T) * scale` then `np.matmul(attn_weights, v_expanded)` —
+two full `(n_q_heads, T, T)` materializations via `np.repeat` key/value expansion;
+a Mojo kernel eliminates the `repeat` by computing `kv_h = q_h // group` at index time;
+`parallelize` over q_heads × output_positions, `@parameter` on head_dim and group_size (4, 8);
+tiled score accumulation avoids `(T, T)` intermediate; ~3.5× for 32q/8kv heads, T=512. (4) The
+`merge_split_results` function in `flash_decode.py` iterates over a Python list of
+`FlashDecodeSplit` objects, accumulating log-sum-exp renormalization across splits;
+with n_splits=8 and n_heads=32 this is 256 scalar log-sum-exp operations in a Python loop;
+Mojo `parallelize(n_heads)` with `@parameter` on n_splits (4, 8, 16, 32),
+vectorized head-dim accumulation via `SIMD[DType.float32, 8]` loads;
+~8× over the Python list iteration. (5) RoPE application across all heads for prefill
+calls separate `np.cos/sin` + NumPy split + multiply + negate + concat — 6 NumPy dispatches 
+per layer; a Mojo kernel with `@parameter` on head_dim (64, 128) applies sin/cos
+positional rotation in one `vectorize` pass: loads real/imag pairs, applies the 2×2 rotation
+matrix inline via SIMD FMA, writes result; covers `adaptive_rope.py`, `dynamic_ntk.py`,
+`quant_rotary.py`; ~4.5× for T=512, 32 heads, head_dim=128. (6) The layer-skip inference
+forward pass (`skip_layer_predictor.py` `predict()`) computes `sigmoid(dot(w, x))` for
+n_layers predictors once per decode token — a Python list comprehension over 32 predictors each
+doing a `np.dot(self._weights, features)` + Python scalar sigmoid; Mojo `parallelize(n_layers)`
+with `@parameter` on n_features (16, 32) computes all 32 dot-products and sigmoid activations
+in one GIL-free pass; ~8× over Python list comprehension for n_layers=32, n_features=32.
+
+All Wave 59 modules follow the same fallback pattern as Waves 56–58: Mojo kernels fall back to the
+corresponding Rust path when `magic` is unavailable; Rust functions fall back to NumPy implementations
+when `squish_quant_rs` is not compiled. Zero changes to public Python APIs — drop-in replacement at callsite.
+
+### Research / Engineering Basis
+
+| Paper | Venue | Key Result | Squish Module |
+|-------|-------|-----------|---------------|
+| GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers (Frantar et al.) | ICLR 2023 | Column-wise quantization with Hessian-diagonal error propagation; dominant cost is double-nested column loop over `(rows, cols)`; block-parallel Rust Rayon with SIMD quantize+error-propagate achieves ~5× on 4096×4096 weight layer | `squish/kernels/rs_gptq_solve.py` |
+| QuaRoT: Outlier-Free 4-Bit Inference in Rotated LLMs (Ashkboos et al.) | NeurIPS 2024 (arXiv 2404.00456) | Random Hadamard rotation of weight matrices before INT4 quantization eliminates activation outliers; group quantization on rotated weights: `for g in range(n_groups):` abs-max, scale, round, clip; Rust Rayon group-parallel identical to INT3 kernel but on FP32 rotated domain; ~4× calibration speedup | `squish/kernels/rs_quarot_group.py` |
+| Post-Training Quantization Calibration — ACIQ / Percentile / AbsMax (Banner et al. / Finkelstein et al.) | NeurIPS 2019 / NeurIPS 2019 | Per-channel activation scale calibration: `for c in range(C):` single-column scale computation; Rust Rayon column-parallel with method dispatch (absmax, ACIQ Gaussian/Laplace, percentile) in enum; covers `quant_calib.py`, `smooth_quant.py`, `awq.py` calibration workflows | `squish/kernels/rs_calib_scale.py` |
+| Flash-Decoding for Long-Context Inference (Dao, Fu, Ermon, Rudra, Ré) | DAI Workshop NeurIPS 2023 / MLSys 2024 | Split-K: divide KV sequence into P chunks, compute partial softmax per chunk, merge via log-sum-exp; `_compute_split` inner `for h in range(n_heads):` — n_heads independent GEMVs; Rust Rayon head-parallel GEMV + online softmax; Mojo `parallelize(n_heads)` variant for M3; combined: ~5–6× over Python for-loop | `squish/kernels/rs_flash_decode.py` + `squish/kernels/mojo/flash_decode_mojo.py` |
+| BF16 SIMD on ARMv8.6-A (ARM Architecture Reference Manual, v8.6-A) | ARM 2020 / Apple M2+ 2022 | VCVTFBFH2F / VCVTNEBFH16 instructions convert bf16↔fp32 without intermediate allocation; FBFMMLA accumulates bf16 tile products directly; Apple M2+ implements full ARMv8.6-A BF16 SIMD; `half::bf16` Rust crate + ARM intrinsics for cast kernel; Mojo `DType.bfloat16` native SIMD for decode GEMV | `squish/kernels/rs_bf16_cast.py` + `squish/kernels/mojo/bf16_gemv_mojo.py` |
+| Relufication of Language Models (Mirzadeh et al.) | NeurIPS 2023 (arXiv 2310.04564) | Re-training transformers with ReLU² activation produces 30–90% sparsity in FFN activations at inference; zero activations represent free FLOP savings if GEMV skips zero-indexed rows; Rust sparse-activation GEMV: SIMD comparison mask → non-zero run-length list → compressed axpy; ~2× at 50% sparsity for FFN layers | `squish/kernels/rs_sparse_act_gemv.py` |
+| GQA: Training Generalised Multi-Query Transformer Models (Ainslie et al.) | EMNLP 2023 (arXiv 2305.13245) | Grouped-query attention: Q heads grouped over shared KV heads; standard NumPy path calls `np.repeat` to expand KV then `np.matmul` — allocates full `(n_q_heads, T, T)` intermediate; Mojo kernel eliminates repeat: index into KV via `kv_h = q_h // group`, tiles score accumulation, parallelizes over q-heads × output positions | `squish/kernels/mojo/gqa_prefill_mojo.py` |
+| Flash-Decoding (Dao et al.) — split-K LSE merge | MLSys 2024 | `merge_split_results`: iterate splits, accumulate renormalized exp-weighted outputs via log-sum-exp trick; Mojo `parallelize(n_heads)` with `@parameter` on n_splits; SIMD vectorized head-dim accumulation; replaces Python list iteration | `squish/kernels/mojo/splitk_reduce_mojo.py` |
+| RoFormer: Enhanced Transformer with Rotary Position Embedding (Su et al.) | arXiv 2104.09864, 2023 | Rotary embeddings: apply sin/cos rotation to Q/K pairs; standard path: `np.cos`, `np.sin`, split, multiply, concat — 6 dispatches; Mojo one-pass rotary kernel: `@parameter` on head_dim, inline 2×2 rotation via SIMD FMA, covers `adaptive_rope.py`, `dynamic_ntk.py` | `squish/kernels/mojo/rotary_embed_mojo.py` |
+| LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding (Elhoushi et al.) | ACL 2024 (arXiv 2404.16710) | Per-layer confidence predictor: `sigmoid(dot(w, x))` per layer per decode step; Python list comprehension over n_layers predictors; Mojo `parallelize(n_layers)` with `@parameter` on n_features; GIL-free SIMD dot-product + sigmoid; covers `skip_layer_predictor.py` and `deja_vu_sparse.py` inference path | `squish/kernels/mojo/layer_skip_predict_mojo.py` |
+
+---
+
+### Wave 59a — RustGPTQColumnSolve · RustQuaRotGroup · RustCalibScale · RustFlashDecodeKernel · RustBF16Cast · RustSparseActGEMV (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| RustGPTQColumnSolve | `squish/kernels/rs_gptq_solve.py` | Adds `gptq_column_solve_f32` to `squish_quant_rs`; block-parallel GPTQ: outer Rayon loop over column blocks (block_size=128); inner SIMD per-column: scale = col_abs_max / q_max, round-and-clip codes via `f32::round` + clamp, error = w_col - dequant, Hessian-diagonal correction via Rayon `axpy` on remaining columns in block using `h_ratio = h_diag / (h_diag + ε)`; hooks into `gptq_layer.py` `GPTQLayer.quantise_weight()`; replaces double-nested Python loop; ~5× for 4096×4096 with block_size=128 |
+| RustQuaRotGroup | `squish/kernels/rs_quarot_group.py` | Adds `quarot_group_quant_f32`, `quarot_group_dequant_f32` to `squish_quant_rs`; group-parallel: Rayon over n_groups, per-group: (sym) compute abs-max across rows via SIMD horizontal-max, scale = `2*abs_max/max_val`, round+clip via SIMD fma; (asym) min+max per row, scale = `(max-min)/max_val`, zero-point = `-min/scale`; fills `codes`, `scale`, `zero` arrays directly without Python per-group slice; hooks into `quarot_quant.py` `QuaRotQuantizer.quantise()` and `.dequantise()`; ~4× for 4096×4096 gs=128 |
+| RustCalibScale | `squish/kernels/rs_calib_scale.py` | Adds `calib_absmax_f32`, `calib_percentile_f32`, `calib_aciq_f32` to `squish_quant_rs`; column-parallel via Rayon: for each of C channels, computes the requested scale method over the flattened `(N, C)` activation array; absmax: SIMD `f32::abs` + horizontal max per column; percentile: partial-sort via `select_nth_unstable` for per-column percentile; ACIQ: mean + std via Welford online estimator, then Gaussian/Laplace optimal clip formula; hooks into `quant_calib.py` `ActivationCalibrator.calibrate()`, `QuantAwareCalibrator`, and `SmoothQuantActivation`; ~7× per calibration batch |
+| RustFlashDecodeKernel | `squish/kernels/rs_flash_decode.py` | Adds `flash_decode_split_f32` to `squish_quant_rs`; parallelizes over n_heads via Rayon: each head thread computes `scores = K_split_row @ q_h` (SIMD NEON FMLA dot-product, split_len × head_dim), online softmax (`max_accum`, `exp_acc`, `sum_acc` in one pass), `output_h = V_split.T @ w` (SIMD axpy, split_len × head_dim), returns `(output, lse, max_score)` per head; hooks into `flash_decode.py` `FlashDecodeAttention._compute_split()`; ~5× for 32 heads × 1024 split_len |
+| RustBF16Cast | `squish/kernels/rs_bf16_cast.py` | Adds `bf16_to_f32_vec`, `f32_to_bf16_vec` to `squish_quant_rs`; uses `half::bf16` crate with ARM NEON `vcvt_f32_bf16` / `vcvtfbfh2f` intrinsics via `std::arch`; processes 8 elements per SIMD iteration on NEON (ARMv8.6-A BF16 support present on Apple M2+); x86 fallback: manual bit-shift `(u16 << 16)` → `f32::from_bits`; hooks into any module doing `.astype(np.float32)` on uint16-encoded BF16 arrays; ~15× vs NumPy workaround |
+| RustSparseActGEMV | `squish/kernels/rs_sparse_act_gemv.py` | Adds `sparse_act_gemv_f32` to `squish_quant_rs`; sparse activation GEMV: (1) SIMD comparison pass builds non-zero index list with `f32::abs > threshold`; (2) Rayon output-row parallel: each output row accumulates `sum(W[row, nz_idx] * act[nz_idx])` over non-zero indices using SIMD gather (scatter-gather via index array); threshold default=0 (exact sparsity); hooks into `native_sparse_attn.py` FFN gate path and any ReLU²/ReLU-gated projection; ~2× effective throughput at 50% activation sparsity |
+
+### Wave 59b — MojoFlashDecodeKernel · MojoBF16GEMV · MojoGQAPrefill · MojoSplitKReduce · MojoRotaryEmbed · MojoLayerSkipPredict (6 modules)
+
+| Module | File | Key Capability |
+|--------|------|----------------|
+| MojoFlashDecodeKernel | `squish/kernels/mojo/flash_decode_mojo.py` + `squish/kernels/mojo/kernels/flash_decode_split.mojo` | Flash-decode per-split inner loop: `parallelize(n_heads)` tasks; each task: `@parameter` on head_dim (64, 128), split_len variable; `vectorize` dot-product scores `K_split[h] @ q[h]` with SIMD FMA; online softmax via single-pass running max + exp sum (no intermediate score array); `vectorize` output accumulate `V_split[h].T @ w`; returns `(output, lse, max_score)` as stack-allocated arrays; NumPy fallback to existing Python path; ~6× for 32 heads × 1024 tokens |
+| MojoBF16GEMV | `squish/kernels/mojo/bf16_gemv_mojo.py` + `squish/kernels/mojo/kernels/bf16_gemv.mojo` | Native BF16 weight matrix × FP32 activation vector: `@parameter` on hidden_dim (2048, 4096); loads weight rows as `SIMD[DType.bfloat16, 8]`, converts to FP32 accumulator via `SIMD.cast[DType.float32]()`, accumulates dot-product via FMA; utilizes ARMv8.6-A FBFMMLA on M2+ via Mojo SIMD lowering; `parallelize` over output rows; eliminates the bf16→fp32 upcast allocation in `compressed_loader.py` decode path for BF16 models; NumPy fallback; ~3× for 4096×4096 BF16 decode |
+| MojoGQAPrefill | `squish/kernels/mojo/gqa_prefill_mojo.py` + `squish/kernels/mojo/kernels/gqa_prefill.mojo` | GQA prefill attention: Q`(n_q_heads, T, D)` × K`(n_kv_heads, T, D)^T` with implicit group expand; `parallelize(n_q_heads * T_out)` tasks; each task: `kv_h = q_h // group_size` at index time, no `np.repeat`; tiled score accumulate `@parameter` on head_dim and tile_T (32, 64); softmax over row; `vectorize` output `sum(attn_t * V[kv_h, t, :])` for t in T_in; replaces `np.matmul(q, k_expanded.T)` + `np.matmul(attn_weights, v_expanded)` in `gqa.py`; NumPy fallback; ~3.5× for 32q/8kv heads, T=512, head_dim=128 |
+| MojoSplitKReduce | `squish/kernels/mojo/splitk_reduce_mojo.py` + `squish/kernels/mojo/kernels/splitk_reduce.mojo` | Flash-decode split merge: given P `FlashDecodeSplit` results `(output[h, D], lse[h], max_score[h])`; `parallelize(n_heads)` tasks; each head: `@parameter` on n_splits (4, 8, 16, 32); find global max across P per-split max_scores, recompute exp-weights `exp(lse_s - max_global)`, normalize, `vectorize` weighted output sum over head_dim; replaces Python `for split in splits:` list iteration in `merge_split_results()`; NumPy fallback; ~8× for 8 splits, 32 heads |
+| MojoRotaryEmbed | `squish/kernels/mojo/rotary_embed_mojo.py` + `squish/kernels/mojo/kernels/rotary_embed.mojo` | Fused RoPE application: `@parameter` on head_dim (64, 128); `parallelize(n_heads * T)` tasks; each task: loads `q[h, t, :]` as two half-slices (real, imag); computes rotation inline via SIMD FMA: `out_r = q_r * cos - q_i * sin`, `out_i = q_r * sin + q_i * cos`; sin/cos values passed as pre-computed arrays (no recompute per token); covers `adaptive_rope.py` `_apply_rope()`, `dynamic_ntk.py` `apply_ntk_rope()`, `quant_rotary.py`; NumPy fallback; ~4.5× for T=512, 32 heads, head_dim=128 |
+| MojoLayerSkipPredict | `squish/kernels/mojo/layer_skip_predict_mojo.py` + `squish/kernels/mojo/kernels/layer_skip_predict.mojo` | Layer-skip confidence predictor inference: `parallelize(n_layers)` tasks; each layer: `@parameter` on n_features (16, 32); `vectorize` dot-product `dot(w[layer], features)` with SIMD FMA, scalar sigmoid `1 / (1 + exp(-x))`; writes per-layer confidence score; replaces Python list comprehension `[sigmoid(dot(w, x)) for w in weights]` in `skip_layer_predictor.py` `predict()`; also covers `deja_vu_sparse.py` inference forward; NumPy fallback; ~8× for n_layers=32, n_features=32 |
+
+### v33 Target Metrics (after Wave 59)
+
+> Baselines are v32 Wave 58 targets.
+
+| Operation | v32 Baseline | v33 Target | Primary driver |
+|-----------|-------------|------------|----------------|
+| GPTQ column-wise quant — 4096×4096 layer (s/layer) | ~45 s (double Python loop) | **< 9 s** | RustGPTQColumnSolve block-parallel Rayon |
+| QuaRot group quant — 4096×4096, gs=128 (s/layer) | ~2.1 s (Python for-group loop) | **< 0.5 s** | RustQuaRotGroup Rayon group-parallel |
+| Calibration scale — 4096 channels × 90 samples (s) | ~0.8 s (Python for-ch loop) | **< 0.12 s** | RustCalibScale Rayon column-parallel |
+| BF16↔FP32 cast — 4096×4096 layer (ms) | ~0.9 ms (NumPy uint16 workaround) | **< 0.06 ms** | RustBF16Cast ARM NEON VCVT intrinsics |
+| Flash-Decode split — 32 heads × 1024 KV (ms) | ~4.2 ms (Python for-h loop) | **< 0.7 ms** | RustFlashDecodeKernel / MojoFlashDecodeKernel |
+| Sparse-Act GEMV — 50% sparsity, 4096→11008 (ms) | ~0.8 ms (dense NumPy matmul) | **< 0.4 ms** | RustSparseActGEMV compressed axpy |
+| GQA prefill attn — 32q/8kv heads, T=512, D=128 (ms) | ~18 ms (two np.matmul + repeat) | **< 5 ms** | MojoGQAPrefill tiled no-repeat |
+| BF16 decode GEMV — 4096×4096 BF16 on M3 (ms) | ~0.55 ms (upcast FP32 path) | **< 0.18 ms** | MojoBF16GEMV native BF16 SIMD |
+| Split-K LSE merge — 8 splits, 32 heads (ms) | ~0.15 ms (Python list iteration) | **< 0.02 ms** | MojoSplitKReduce parallelize+vectorize |
+| RoPE application — 32 heads, T=512, D=128 (ms) | ~0.8 ms (6 NumPy dispatches) | **< 0.18 ms** | MojoRotaryEmbed one-pass SIMD rotate |
+| LayerSkip predict — 32 layers, n_features=32 (ms) | ~0.12 ms (Python list comp) | **< 0.015 ms** | MojoLayerSkipPredict parallelize/vectorize |
+| Qwen3-8B BF16 decode (tok/s, M3 16 GB, squish mode) | 14.7 tok/s (Run 3 measured) | **18–22 tok/s** | MojoBF16GEMV + MojoFlashDecode + MojoRoPE |
+| Qwen2.5-1.5B BF16 TTFT (ms, M3, squish mode) | 6796 ms (Run 3 measured) | **< 5200 ms** | MojoGQAPrefill + MojoSplitKReduce + RustFlashDecode |
+
+### Completion Checklist
+
+- [ ] `squish_quant_rs/src/lib.rs` — `gptq_column_solve_f32`, `quarot_group_quant/dequant_f32`, `calib_absmax/percentile/aciq_f32`, `flash_decode_split_f32`, `bf16_to_f32_vec`/`f32_to_bf16_vec`, `sparse_act_gemv_f32` added + registered
+- [ ] `squish/kernels/rs_gptq_solve.py` — RustGPTQColumnSolve (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_quarot_group.py` — RustQuaRotGroup (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_calib_scale.py` — RustCalibScale (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_flash_decode.py` — RustFlashDecodeKernel (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_bf16_cast.py` — RustBF16Cast (wrapper + NumPy fallback)
+- [ ] `squish/kernels/rs_sparse_act_gemv.py` — RustSparseActGEMV (wrapper + NumPy fallback)
+- [ ] `squish/kernels/mojo/flash_decode_mojo.py` + `squish/kernels/mojo/kernels/flash_decode_split.mojo`
+- [ ] `squish/kernels/mojo/bf16_gemv_mojo.py` + `squish/kernels/mojo/kernels/bf16_gemv.mojo`
+- [ ] `squish/kernels/mojo/gqa_prefill_mojo.py` + `squish/kernels/mojo/kernels/gqa_prefill.mojo`
+- [ ] `squish/kernels/mojo/splitk_reduce_mojo.py` + `squish/kernels/mojo/kernels/splitk_reduce.mojo`
+- [ ] `squish/kernels/mojo/rotary_embed_mojo.py` + `squish/kernels/mojo/kernels/rotary_embed.mojo`
+- [ ] `squish/kernels/mojo/layer_skip_predict_mojo.py` + `squish/kernels/mojo/kernels/layer_skip_predict.mojo`
+- [ ] `tests/test_wave59a_rust_kernels.py` — ≥ 72 tests, all passing
+- [ ] `tests/test_wave59b_mojo_kernels.py` — ≥ 72 tests with NumPy fallback coverage, all passing
+- [ ] CHANGELOG `[33.0.0]` entry
 - [ ] PLAN.md updated
 
 ---
