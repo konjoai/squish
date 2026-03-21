@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-21 (v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)
+> Last updated: 2026-03-21 (Run 4 full benchmark complete — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -723,8 +723,8 @@ when `squish_quant_rs` is not compiled. Zero changes to public Python APIs — d
 | Split-K LSE merge — 8 splits, 32 heads (ms) | ~0.15 ms (Python list iteration) | **< 0.02 ms** | MojoSplitKReduce parallelize+vectorize |
 | RoPE application — 32 heads, T=512, D=128 (ms) | ~0.8 ms (6 NumPy dispatches) | **< 0.18 ms** | MojoRotaryEmbed one-pass SIMD rotate |
 | LayerSkip predict — 32 layers, n_features=32 (ms) | ~0.12 ms (Python list comp) | **< 0.015 ms** | MojoLayerSkipPredict parallelize/vectorize |
-| Qwen3-8B BF16 decode (tok/s, M3 16 GB, squish mode) | 14.7 tok/s (Run 3 measured) | **18–22 tok/s** | MojoBF16GEMV + MojoFlashDecode + MojoRoPE |
-| Qwen2.5-1.5B BF16 TTFT (ms, M3, squish mode) | 6796 ms (Run 3 measured) | **< 5200 ms** | MojoGQAPrefill + MojoSplitKReduce + RustFlashDecode |
+| Qwen3-8B BF16 decode (tok/s, M3 16 GB, squish mode) | 17.9 tok/s (Run 4 measured, compressed) / 13.8 tok/s (BF16) | **18–22 tok/s** | MojoBF16GEMV + MojoFlashDecode + MojoRoPE |
+| Qwen2.5-1.5B BF16 TTFT (ms, M3, squish mode) | 268 ms (Run 4 measured) | **< 200 ms** | MojoGQAPrefill + MojoSplitKReduce + RustFlashDecode |
 
 ### Completion Checklist
 
