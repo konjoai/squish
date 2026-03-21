@@ -2,15 +2,15 @@
 # run_all_benchmarks.sh — Benchmark all locally-available squish models
 #
 # Runs two tiers for models that support them:
-#   • baseline  — --no-agent (stateless, no KV accumulation) — accurate TTFT
-#   • optimized — --all-optimizations (full acceleration stack)
+#   • squish  — default (all optimizations on) — squish performance numbers
+#   • stock   — --stock (no squish optimizations, comparable to Ollama/mlx_lm)
 #
-# Squished variants are now supported via the fixed _resolve_model auto-detection
+# Squished variants are supported via the fixed _resolve_model auto-detection
 # (pass squished dir as the model path; base model config is auto-found).
 #
 # Usage:
-#   bash scripts/run_all_benchmarks.sh            # baseline only
-#   BENCH_OPTIMIZED=1 bash scripts/run_all_benchmarks.sh  # also run optimized tier
+#   bash scripts/run_all_benchmarks.sh              # squish tier only (default)
+#   BENCH_STOCK=1 bash scripts/run_all_benchmarks.sh  # also run stock comparison tier
 
 set -euo pipefail
 
@@ -24,7 +24,7 @@ HOST="127.0.0.1"
 MAX_TOKENS=256
 SERVER_TIMEOUT=360
 LOG_LEVEL="warning"
-BENCH_OPTIMIZED="${BENCH_OPTIMIZED:-0}"
+BENCH_STOCK="${BENCH_STOCK:-0}"
 
 mkdir -p "$RESULTS_DIR"
 
@@ -132,7 +132,6 @@ bench_tier() {
     python3 "$REPO_DIR/squish/cli.py" run "$MODEL_PATH" \
         --port $PORT \
         --log-level $LOG_LEVEL \
-        --no-agent \
         $EXTRA_FLAGS \
         > "$MODEL_LOG" 2>&1 &
     SERVER_PID=$!
@@ -194,7 +193,7 @@ Generated: $(date '+%Y-%m-%d %H:%M:%S') by \`scripts/run_all_benchmarks.sh\`
 
 Platform: Apple M3 · 17 GB Unified RAM · MLX Metal backend  
 Benchmark: 4 prompts × ${MAX_TOKENS} max tokens · streams measured via OpenAI-compat API  
-Server flags: \`--no-agent\` (baseline) / \`--all-optimizations\` (optimized)
+Server flags: squish default (all optimizations) / \`--stock\` (no optimizations, Ollama comparable)
 
 | Model | Tier | Avg TTFT (ms) | Avg Tok/s | Status |
 |-------|------|-------------:|----------:|--------|
@@ -218,12 +217,12 @@ for MODEL_NAME in "${MODELS[@]}"; do
         continue
     fi
 
-    # Run baseline tier (--no-agent, no extra flags)
-    bench_tier "baseline" "" || true
+    # Run squish tier (all optimizations by default)
+    bench_tier "squish" "" || true
 
-    # Run optimized tier when BENCH_OPTIMIZED=1
-    if [[ "$BENCH_OPTIMIZED" == "1" ]]; then
-        bench_tier "optimized" "--all-optimizations" || true
+    # Run stock tier when BENCH_STOCK=1 (plain mlx_lm, no squish optimizations)
+    if [[ "$BENCH_STOCK" == "1" ]]; then
+        bench_tier "stock" "--stock" || true
     fi
 
     log "  Done with $MODEL_NAME."

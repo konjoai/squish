@@ -730,8 +730,10 @@ def cmd_setup(args):  # pragma: no cover
             port=_DEFAULT_PORT, host="127.0.0.1", api_key="squish",
             draft_model="", batch_scheduler=False, batch_size=8,
             kv_cache_mode="fp16", log_level="warning",
-            all_optimizations=False,
-            agent=True,          # Auto-enable agent preset on Apple Silicon
+            all_optimizations=False,  # cmd_run will set True (default) unless --stock
+            agent=False,
+            stock=False,
+            no_agent=False,
             moe_lookahead=False,
             whatsapp=False, whatsapp_verify_token="",
             whatsapp_app_secret="", whatsapp_access_token="",
@@ -772,14 +774,12 @@ def cmd_run(args):  # pragma: no cover
             cmd_pull(_pull_args)
             args.model = default
 
-    # Apple Silicon auto-agent: enable --agent by default when no explicit flag
-    # Suppressed by --no-agent (e.g. for clean benchmark measurements).
-    import platform as _platform
-    if (not getattr(args, "agent", False)
-            and not getattr(args, "no_agent", False)
-            and _platform.system() == "Darwin"
-            and _platform.machine() == "arm64"):
-        args.agent = True
+    # Default: run the full squish optimization stack.
+    # Pass --stock to get a plain mlx_lm/Ollama-equivalent baseline with no
+    # squish-specific optimizations (useful for benchmarking against stock tools).
+    # Pass --agent to additionally enable the agent-mode KV/grammar preset.
+    if not getattr(args, "stock", False):
+        args.all_optimizations = True
 
     # Auto-pull named model if specified but not yet downloaded locally
     if args.model and _CATALOG_AVAILABLE:
@@ -851,10 +851,15 @@ def cmd_run(args):  # pragma: no cover
             stacklevel=0,
         )
 
+    _mode_label = "stock (no optimizations)" if getattr(args, "stock", False) else (
+        "agent + all optimizations" if getattr(args, "agent", False)
+        else "squish (all optimizations)"
+    )
     print()
     _box([
         "  Squish — Local Inference Server  ",
         f"  Model     : {model_dir.name}",
+        f"  Mode      : {_mode_label}",
         f"  Endpoint  : http://{host}:{port}/v1",
         f"  Web UI    : http://{host}:{port}/chat",
         f"  API key   : {api_key}",
@@ -2797,10 +2802,15 @@ Ollama drop-in:
                        default="warning",
                        help="Server log verbosity (default: warning)")
     p_run.add_argument("--all-optimizations", action="store_true", default=False,
-                       help="Enable ALL built-in optimization modules at once")
+                       help="Enable ALL built-in optimization modules at once "
+                            "(enabled by default; this flag is a no-op unless --stock was also set)")
+    p_run.add_argument("--stock", action="store_true", default=False,
+                       help="Stock mode: disable ALL squish optimizations and agent preset. "
+                            "Runs a plain mlx_lm baseline comparable to Ollama or unoptimized "
+                            "inference. Use this to benchmark against stock tools.")
     p_run.add_argument("--no-agent", action="store_true", default=False,
-                       help="Disable the Apple Silicon auto-agent preset (useful for "
-                            "benchmarking or when explicit stateless inference is needed).")
+                       help="Disable the agent preset (kept for backwards compatibility; "
+                            "agent is now opt-in via --agent, so this flag is a no-op).")
     p_run.add_argument("--compressed-dir", default="", metavar="DIR",
                        help="Explicit path to squished/compressed weights dir. "
                             "Overrides auto-detected compressed dir alongside MODEL.")
@@ -2863,9 +2873,15 @@ Ollama drop-in:
                          default="warning",
                          help="Server log verbosity (default: warning)")
     p_serve.add_argument("--all-optimizations", action="store_true", default=False,
-                         help="Enable ALL built-in optimization modules at once")
+                         help="Enable ALL built-in optimization modules at once "
+                              "(enabled by default; this flag is a no-op unless --stock was also set)")
+    p_serve.add_argument("--stock", action="store_true", default=False,
+                         help="Stock mode: disable ALL squish optimizations and agent preset. "
+                              "Runs a plain mlx_lm baseline comparable to Ollama or unoptimized "
+                              "inference. Use this to benchmark against stock tools.")
     p_serve.add_argument("--no-agent", action="store_true", default=False,
-                         help="Disable the Apple Silicon auto-agent preset.")
+                         help="Disable the agent preset (kept for backwards compatibility; "
+                              "agent is now opt-in via --agent, so this flag is a no-op).")
     p_serve.add_argument("--compressed-dir", default="", metavar="DIR",
                          help="Explicit path to squished/compressed weights dir.")
     # ── Phase 13D: Agent preset ──
