@@ -142,10 +142,10 @@ MODEL_REGISTRY: list[tuple[str, str, float, str]] = [
     ("Qwen3-8B-int3",   "Qwen3-8B-int3",    3.2,  "squish INT3"),
     ("Qwen3-8B-int2",   "Qwen3-8B-int2",    2.4,  "squish INT2"),
     # ── 14 B ───────────────────────────────────────────────────────────────
-    ("Qwen3-14B-bf16",   "Qwen3-14B-bf16",     28.0, "BF16 reference (swap risk)"),
-    ("Qwen3-14B-int4",   "Qwen3-14B-mlx-int4",  7.8,  "squish INT4 (pre-built)"),
-    ("Qwen3-14B-int3",   "Qwen3-14B-int3",       6.0,  "squish INT3"),
-    ("Qwen3-14B-int2",   "Qwen3-14B-int2",       4.5,  "squish INT2"),
+    ("Qwen3-14B-bf16",   "Qwen3-14B-bf16",   28.0, "BF16 reference (swap risk)"),
+    ("Qwen3-14B-int4",   "Qwen3-14B-int4",    9.1,  "squish INT4"),
+    ("Qwen3-14B-int3",   "Qwen3-14B-int3",    7.4,  "squish INT3"),
+    ("Qwen3-14B-int2",   "Qwen3-14B-int2",    5.8,  "squish INT2"),
 ]
 
 # ── task definitions ──────────────────────────────────────────────────────────
