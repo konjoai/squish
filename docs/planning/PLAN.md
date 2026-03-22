@@ -399,7 +399,7 @@ All modules have MLX Metal + NumPy CPU fallback paths and follow the existing be
 
 ---
 
-## 🚧 v18 Wave 43 — MTP Decoding · Cascade KV · Attention Head Pruning · Paged Attention · Layer Collapse · Relay Attention (In Progress)
+## ✅ v18 Wave 43 — MTP Decoding · Cascade KV · Attention Head Pruning · Paged Attention · Layer Collapse · Relay Attention (Complete 2026-03-21)
 
 Theme: **Six research directions addressing gaps left open by Waves 38–42: (1) multi-token prediction
 (MTP) heads as used in DeepSeek-V3 for 2× decode throughput without tree verification overhead,
@@ -470,26 +470,26 @@ All modules have MLX Metal + NumPy CPU fallback paths and integrate with the exi
 
 ### Completion Checklist
 
-- [ ] `squish/speculative/mtp_decode.py` — MTPDecode
-- [ ] `squish/kv/cascade_kv.py` — CascadeKV
-- [ ] `squish/model/head_pruner.py` — HeadPruner
-- [ ] `squish/kv/paged_attn.py` — PagedAttention
-- [ ] `squish/model/layer_collapse.py` — LayerCollapse
-- [ ] `squish/attention/relay_attn.py` — RelayAttention
-- [ ] `squish/kv/wkv_quant.py` — WKVQuant
-- [ ] `squish/kv/tokenized_kv.py` — TokenizedKV
-- [ ] `squish/kv/cluster_evict_kv.py` — ClusterEvictKV
-- [ ] `squish/attention/s2_attn.py` — S2Attention
-- [ ] `squish/attention/sage_attn2.py` — SageAttn2
-- [ ] `squish/kv/magic_pig_v2.py` — MagicPIGv2
-- [ ] `tests/test_wave43a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave43b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[18.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/speculative/mtp_decode.py` — MTPDecode
+- [x] `squish/kv/cascade_kv.py` — CascadeKV
+- [x] `squish/model/head_pruner.py` — HeadPruner
+- [x] `squish/kv/paged_attn.py` — PagedAttention
+- [x] `squish/model/layer_collapse.py` — LayerCollapse
+- [x] `squish/attention/relay_attn.py` — RelayAttention
+- [x] `squish/kv/wkv_quant.py` — WKVQuant
+- [x] `squish/kv/tokenized_kv.py` — TokenizedKV
+- [x] `squish/kv/cluster_evict_kv.py` — ClusterEvictKV
+- [x] `squish/attention/s2_attn.py` — S2Attention
+- [x] `squish/attention/sage_attn2.py` — SageAttn2
+- [x] `squish/kv/magic_pig_v2.py` — MagicPIGv2
+- [x] `tests/test_wave43a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave43b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[18.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
-## 🚧 v19 Wave 44 — Marlin Kernel · Speculative Rejection · LoFTQ · Draft Length Adapt · Hadamard Quant · Big-Little LLM (In Progress)
+## ✅ v19 Wave 44 — Marlin Kernel · Speculative Rejection · LoFTQ · Draft Length Adapt · Hadamard Quant · Big-Little LLM (Complete 2026-03-21)
 
 Theme: **Wave 44 pushes across three orthogonal fronts: (1) hardware-level kernel acceleration via
 Marlin INT4/FP16 GEMM and Hadamard-rotation quantization for Apple Silicon, (2) speculative
@@ -558,22 +558,22 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/quant/marlin_gemm.py` — MarlinGEMM
-- [ ] `squish/speculative/spec_rejection.py` — SpecRejection
-- [ ] `squish/quant/loftq.py` — LoFTQ
-- [ ] `squish/speculative/online_spec.py` — OnlineSpec
-- [ ] `squish/speculative/dynamic_spec_len.py` — DynamicSpecLen
-- [ ] `squish/speculative/big_little_llm.py` — BigLittleLLM
-- [ ] `squish/speculative/multi_exit_spec.py` — MultiExitSpec
-- [ ] `squish/quant/pv_tuning.py` — PVTuning
-- [ ] `squish/quant/hadamard_quant.py` — HadamardQuant
-- [ ] `squish/speculative/prefix_tree_decode.py` — PrefixTreeDecode
-- [ ] `squish/speculative/spectr_ot.py` — SpecTrOT
-- [ ] `squish/quant/ada_gptq.py` — AdaGPTQ
-- [ ] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[19.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/quant/marlin_gemm.py` — MarlinGEMM
+- [x] `squish/speculative/spec_rejection.py` — SpecRejection
+- [x] `squish/quant/loftq.py` — LoFTQ
+- [x] `squish/speculative/online_spec.py` — OnlineSpec
+- [x] `squish/speculative/dynamic_spec_len.py` — DynamicSpecLen
+- [x] `squish/speculative/big_little_llm.py` — BigLittleLLM
+- [x] `squish/speculative/multi_exit_spec.py` — MultiExitSpec
+- [x] `squish/quant/pv_tuning.py` — PVTuning
+- [x] `squish/quant/hadamard_quant.py` — HadamardQuant
+- [x] `squish/speculative/prefix_tree_decode.py` — PrefixTreeDecode
+- [x] `squish/speculative/spectr_ot.py` — SpecTrOT
+- [x] `squish/quant/ada_gptq.py` — AdaGPTQ
+- [x] `tests/test_wave44a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[19.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
@@ -2081,7 +2081,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v20 Wave 45 — Weight Offload · YaRN RoPE · SelfExtend · Orca Scheduling · FP8 Activation · CLEx RoPE (In Progress)
+## ✅ v20 Wave 45 — Weight Offload · YaRN RoPE · SelfExtend · Orca Scheduling · FP8 Activation · CLEx RoPE (Complete 2026-03-21)
 
 Theme: **Wave 45 addresses four infrastructure gaps that prior waves left open: (1) CPU/disk weight
 offloading to run models larger than available DRAM or VRAM, (2) a new generation of context-length
@@ -2153,22 +2153,22 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/serving/flexgen_offload.py` — FlexGenOffload
-- [ ] `squish/attention/yarn_rope.py` — YaRNRoPE
-- [ ] `squish/attention/self_extend.py` — SelfExtend
-- [ ] `squish/serving/orca_scheduler.py` — OrcaScheduler
-- [ ] `squish/quant/mx_fp4.py` — MxFP4
-- [ ] `squish/quant/fp8_act_quant.py` — FP8ActQuant
-- [ ] `squish/attention/clex_rope.py` — CLeXRoPE
-- [ ] `squish/serving/powerinfer_offload.py` — PowerInferOffload
-- [ ] `squish/attention/grouped_rope.py` — GroupedRoPE
-- [ ] `squish/serving/tensor_parallel.py` — TensorParallel
-- [ ] `squish/kernels/fused_bias_gelu.py` — FusedBiasGELU
-- [ ] `squish/serving/token_budget_scheduler.py` — TokenBudgetScheduler
-- [ ] `tests/test_wave45a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave45b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[20.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/serving/flexgen_offload.py` — FlexGenOffload
+- [x] `squish/attention/yarn_rope.py` — YaRNRoPE
+- [x] `squish/attention/self_extend.py` — SelfExtend
+- [x] `squish/serving/orca_scheduler.py` — OrcaScheduler
+- [x] `squish/quant/mx_fp4.py` — MxFP4
+- [x] `squish/quant/fp8_act_quant.py` — FP8ActQuant
+- [x] `squish/attention/clex_rope.py` — CLeXRoPE
+- [x] `squish/serving/powerinfer_offload.py` — PowerInferOffload
+- [x] `squish/attention/grouped_rope.py` — GroupedRoPE
+- [x] `squish/serving/tensor_parallel.py` — TensorParallel
+- [x] `squish/kernels/fused_bias_gelu.py` — FusedBiasGELU
+- [x] `squish/serving/token_budget_scheduler.py` — TokenBudgetScheduler
+- [x] `tests/test_wave45a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave45b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[20.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
