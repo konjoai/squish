@@ -65,6 +65,14 @@ _DEFAULT_CWD: Path = Path(
     os.environ.get("WORKING_DIR", str(Path.home()))
 ).expanduser().resolve()
 
+# Optional HTTPS proxy for networks that block api.telegram.org directly.
+# Reads from .env (HTTPS_PROXY=) or the system HTTPS_PROXY / ALL_PROXY env vars.
+_PROXY_URL: str | None = (
+    os.environ.get("HTTPS_PROXY")
+    or os.environ.get("https_proxy")
+    or os.environ.get("ALL_PROXY")
+)
+
 # ── module-level state ────────────────────────────────────────────────────────
 
 # Per Telegram user-ID session cwd; cleared when the bot restarts.
@@ -373,7 +381,11 @@ async def handle_plain_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 def build_app() -> Application:
     """Construct and return the bot Application (does not start polling)."""
-    app = Application.builder().token(_BOT_TOKEN).build()
+    builder = Application.builder().token(_BOT_TOKEN)
+    if _PROXY_URL:
+        builder = builder.proxy(proxy_url=_PROXY_URL).get_updates_proxy(proxy_url=_PROXY_URL)
+        logger.info("Using proxy: %s", _PROXY_URL)
+    app = builder.build()
     app.add_handler(CommandHandler(["start", "help"], cmd_help))
     app.add_handler(CommandHandler("run", cmd_run))
     app.add_handler(CommandHandler("ask", cmd_ask))
