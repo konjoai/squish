@@ -733,6 +733,885 @@ pub fn quantize_int4_asymmetric_bf16<'py>(
 }
 
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Wave 56a — NF4 · FP8 · INT3 · Sampler · KV-head INT8 · INT2
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── NF4 (NormalFloat4) lookup table ─────────────────────────────────────────
+//
+// 16 non-uniformly spaced float32 levels based on the standard-normal
+// quantile function (QLoRA Table 1, arXiv 2305.14314).
+const NF4_LUT: [f32; 16] = [
+    -1.0,
+    -0.6961928009986877,
+    -0.5250730514526367,
+    -0.39491748809814453,
+    -0.28444138169288635,
+    -0.18477343022823334,
+    -0.09105003625154495,
+    0.0,
+    0.07958029955625534,
+    0.16093020141124725,
+    0.24611230194568634,
+    0.33791524171829224,
+    0.44070982933044434,
+    0.5626170039176941,
+    0.7229568362236023,
+    1.0,
+];
+
+/// Quantize a 2D float32 weight matrix to NF4 using a precomputed LUT.
+///
+/// Each element is mapped to the nearest of 16 NF4 levels after scaling
+/// by the per-group absolute-maximum.  Two nibbles are packed per byte.
+///
+/// Returns (packed: uint8[N, D/2], scales: float32[N, D/group_size])
+#[pyfunction]
+pub fn quantize_nf4_grouped_f32<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, f32>,
+    group_size: usize,
+) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray2<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+    if n_cols % group_size != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_cols must be divisible by group_size",
+        ));
+    }
+    if n_cols % 2 != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_cols must be even for nibble packing",
+        ));
+    }
+    let n_groups  = n_cols / group_size;
+    let n_packed  = n_cols / 2;
+
+    let mut packed_out: Vec<u8>  = vec![0u8;  n_rows * n_packed];
+    let mut scales_out: Vec<f32> = vec![0f32; n_rows * n_groups];
+
+    packed_out
+        .par_chunks_mut(n_packed)
+        .zip(scales_out.par_chunks_mut(n_groups))
+        .enumerate()
+        .for_each(|(row_idx, (p_row, s_row))| {
+            let row = arr_view.row(row_idx);
+            let row_slice = row.as_slice().expect("non-contiguous row");
+
+            // Compute per-group scale = max(|x|) / 1.0  (NF4 range is [-1, 1])
+            for g in 0..n_groups {
+                let start = g * group_size;
+                let end   = start + group_size;
+                let abs_max = row_slice[start..end]
+                    .iter()
+                    .map(|x| x.abs())
+                    .fold(0.0f32, f32::max);
+                s_row[g] = if abs_max == 0.0 { 1.0 } else { abs_max };
+            }
+
+            // Quantize: for each element, scale to [-1,1], find nearest NF4 level
+            for i in 0..n_packed {
+                let j0 = i * 2;
+                let j1 = j0 + 1;
+                let g0 = j0 / group_size;
+                let g1 = j1 / group_size;
+                let v0 = row_slice[j0] / s_row[g0];
+                let v1 = row_slice[j1] / s_row[g1];
+
+                // Nearest NF4 level via linear scan (16 entries — branchless)
+                let mut best0 = 0usize;
+                let mut best1 = 0usize;
+                let mut d0 = f32::MAX;
+                let mut d1 = f32::MAX;
+                for (k, &lv) in NF4_LUT.iter().enumerate() {
+                    let diff0 = (v0 - lv).abs();
+                    let diff1 = (v1 - lv).abs();
+                    if diff0 < d0 { d0 = diff0; best0 = k; }
+                    if diff1 < d1 { d1 = diff1; best1 = k; }
+                }
+                p_row[i] = (best0 as u8 & 0x0F) | ((best1 as u8 & 0x0F) << 4);
+            }
+        });
+
+    let packed_arr = Array2::from_shape_vec((n_rows, n_packed), packed_out)
+        .expect("shape").into_pyarray_bound(py);
+    let scales_arr = Array2::from_shape_vec((n_rows, n_groups), scales_out)
+        .expect("shape").into_pyarray_bound(py);
+    Ok((packed_arr, scales_arr))
+}
+
+/// Dequantize NF4 packed weights back to float32.
+#[pyfunction]
+pub fn dequantize_nf4_grouped_f32<'py>(
+    py: Python<'py>,
+    packed: PyReadonlyArray2<'py, u8>,
+    scales: PyReadonlyArray2<'py, f32>,
+    group_size: usize,
+) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let packed_view = packed.as_array();
+    let scales_view = scales.as_array();
+    let (n_rows, n_packed) = packed_view.dim();
+    let n_cols = n_packed * 2;
+    let n_groups = n_cols / group_size;
+
+    let mut out: Vec<f32> = vec![0f32; n_rows * n_cols];
+
+    out.par_chunks_mut(n_cols)
+        .enumerate()
+        .for_each(|(row_idx, out_row)| {
+            let p_row = packed_view.row(row_idx);
+            let p_slice = p_row.as_slice().expect("non-contiguous");
+            let s_row = scales_view.row(row_idx);
+            let s_slice = s_row.as_slice().expect("non-contiguous");
+
+            for i in 0..n_packed {
+                let byte  = p_slice[i];
+                let idx0  = (byte & 0x0F) as usize;
+                let idx1  = ((byte >> 4) & 0x0F) as usize;
+                let j0    = i * 2;
+                let j1    = j0 + 1;
+                let g0    = j0 / group_size;
+                let g1    = j1 / group_size;
+                out_row[j0] = NF4_LUT[idx0] * s_slice[g0];
+                out_row[j1] = NF4_LUT[idx1] * s_slice[g1];
+            }
+        });
+
+    let _ = n_groups; // used indirectly via group_size
+    Ok(Array2::from_shape_vec((n_rows, n_cols), out)
+        .expect("shape")
+        .into_pyarray_bound(py))
+}
+
+/// NF4 quantization accepting raw BF16 (uint16) input.
+#[pyfunction]
+pub fn quantize_nf4_grouped_bf16<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, u16>,
+    group_size: usize,
+) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray2<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+    if n_cols % group_size != 0 || n_cols % 2 != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_cols must be divisible by group_size and even",
+        ));
+    }
+    let n_groups = n_cols / group_size;
+    let n_packed = n_cols / 2;
+
+    let mut packed_out: Vec<u8>  = vec![0u8;  n_rows * n_packed];
+    let mut scales_out: Vec<f32> = vec![0f32; n_rows * n_groups];
+
+    packed_out
+        .par_chunks_mut(n_packed)
+        .zip(scales_out.par_chunks_mut(n_groups))
+        .enumerate()
+        .for_each(|(row_idx, (p_row, s_row))| {
+            let row = arr_view.row(row_idx);
+            let row_slice = row.as_slice().expect("non-contiguous");
+
+            // Convert BF16 → f32 and compute per-group scale
+            let f32_row: Vec<f32> = row_slice.iter().map(|&b| bf16_to_f32(b)).collect();
+            for g in 0..n_groups {
+                let start = g * group_size;
+                let end   = start + group_size;
+                let abs_max = f32_row[start..end]
+                    .iter()
+                    .map(|x| x.abs())
+                    .fold(0.0f32, f32::max);
+                s_row[g] = if abs_max == 0.0 { 1.0 } else { abs_max };
+            }
+            for i in 0..n_packed {
+                let j0 = i * 2;
+                let j1 = j0 + 1;
+                let g0 = j0 / group_size;
+                let g1 = j1 / group_size;
+                let v0 = f32_row[j0] / s_row[g0];
+                let v1 = f32_row[j1] / s_row[g1];
+                let mut best0 = 0usize; let mut d0 = f32::MAX;
+                let mut best1 = 0usize; let mut d1 = f32::MAX;
+                for (k, &lv) in NF4_LUT.iter().enumerate() {
+                    let diff0 = (v0 - lv).abs();
+                    let diff1 = (v1 - lv).abs();
+                    if diff0 < d0 { d0 = diff0; best0 = k; }
+                    if diff1 < d1 { d1 = diff1; best1 = k; }
+                }
+                p_row[i] = (best0 as u8 & 0x0F) | ((best1 as u8 & 0x0F) << 4);
+            }
+        });
+
+    let packed_arr = Array2::from_shape_vec((n_rows, n_packed), packed_out)
+        .expect("shape").into_pyarray_bound(py);
+    let scales_arr = Array2::from_shape_vec((n_rows, n_groups), scales_out)
+        .expect("shape").into_pyarray_bound(py);
+    Ok((packed_arr, scales_arr))
+}
+
+// ── FP8 E4M3 / E5M2 ──────────────────────────────────────────────────────────
+//
+// IEEE 754 bit manipulation (f32::to_bits) is ~10× faster than np.log2/exp2.
+// E4M3: 1 sign + 4 exponent + 3 mantissa bits; max = 448.0; bias = 7
+// E5M2: 1 sign + 5 exponent + 2 mantissa bits; max = 57344.0; bias = 15
+
+const E4M3_BIAS:   i32 = 7;
+const E4M3_MAX:    f32 = 448.0;
+const E5M2_BIAS:   i32 = 15;
+const E5M2_MAX:    f32 = 57344.0;
+
+#[inline(always)]
+fn encode_fp8_e4m3(x: f32) -> u8 {
+    if x == 0.0 { return 0u8; }
+    let sign = if x < 0.0 { 1u8 } else { 0u8 };
+    let abs_x = x.abs().min(E4M3_MAX);
+    let bits = abs_x.to_bits();
+    let exp_f32 = ((bits >> 23) as i32) - 127;
+    let exp_fp8 = (exp_f32 + E4M3_BIAS).clamp(0, 15) as u8;
+    let mant_fp8 = ((bits >> 20) & 0x7) as u8; // top 3 mantissa bits
+    (sign << 7) | (exp_fp8 << 3) | mant_fp8
+}
+
+#[inline(always)]
+fn decode_fp8_e4m3(byte: u8) -> f32 {
+    if byte & 0x7F == 0 { return 0.0; }
+    let sign:   f32 = if (byte >> 7) != 0 { -1.0 } else { 1.0 };
+    let exp_fp8 = ((byte >> 3) & 0x0F) as i32;
+    let mant_fp8 = (byte & 0x07) as u32;
+    let exp_f32 = (exp_fp8 - E4M3_BIAS + 127).clamp(1, 254) as u32;
+    let f32_bits = (exp_f32 << 23) | (mant_fp8 << 20);
+    sign * f32::from_bits(f32_bits)
+}
+
+#[inline(always)]
+fn encode_fp8_e5m2(x: f32) -> u8 {
+    if x == 0.0 { return 0u8; }
+    let sign = if x < 0.0 { 1u8 } else { 0u8 };
+    let abs_x = x.abs().min(E5M2_MAX);
+    let bits = abs_x.to_bits();
+    let exp_f32 = ((bits >> 23) as i32) - 127;
+    let exp_fp8 = (exp_f32 + E5M2_BIAS).clamp(0, 31) as u8;
+    let mant_fp8 = ((bits >> 21) & 0x3) as u8; // top 2 mantissa bits
+    (sign << 7) | (exp_fp8 << 2) | mant_fp8
+}
+
+#[inline(always)]
+fn decode_fp8_e5m2(byte: u8) -> f32 {
+    if byte & 0x7F == 0 { return 0.0; }
+    let sign:   f32 = if (byte >> 7) != 0 { -1.0 } else { 1.0 };
+    let exp_fp8 = ((byte >> 2) & 0x1F) as i32;
+    let mant_fp8 = (byte & 0x03) as u32;
+    let exp_f32 = (exp_fp8 - E5M2_BIAS + 127).clamp(1, 254) as u32;
+    let f32_bits = (exp_f32 << 23) | (mant_fp8 << 21);
+    sign * f32::from_bits(f32_bits)
+}
+
+/// Quantize float32 → FP8 E4M3 with per-tensor scale.
+#[pyfunction]
+pub fn quantize_fp8_e4m3_f32<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, f32>,
+) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+
+    // Per-tensor abs-maximum scale
+    let abs_max = arr_view.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+    let scale = if abs_max == 0.0 { 1.0f32 } else { abs_max / E4M3_MAX };
+
+    let mut out: Vec<u8> = vec![0u8; n_rows * n_cols];
+    out.par_chunks_mut(n_cols)
+        .enumerate()
+        .for_each(|(row_idx, row_out)| {
+            let row = arr_view.row(row_idx);
+            for (o, &x) in row_out.iter_mut().zip(row.iter()) {
+                *o = encode_fp8_e4m3(x / scale);
+            }
+        });
+
+    let out_arr = Array2::from_shape_vec((n_rows, n_cols), out)
+        .expect("shape").into_pyarray_bound(py);
+    let scales_arr = Array1::from_vec(vec![scale]).into_pyarray_bound(py);
+    Ok((out_arr, scales_arr))
+}
+
+/// Dequantize FP8 E4M3 → float32.
+#[pyfunction]
+pub fn dequantize_fp8_e4m3<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, u8>,
+    scale: f32,
+) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+    let mut out: Vec<f32> = vec![0f32; n_rows * n_cols];
+    out.par_chunks_mut(n_cols)
+        .enumerate()
+        .for_each(|(row_idx, row_out)| {
+            let row = arr_view.row(row_idx);
+            for (o, &b) in row_out.iter_mut().zip(row.iter()) {
+                *o = decode_fp8_e4m3(b) * scale;
+            }
+        });
+    Ok(Array2::from_shape_vec((n_rows, n_cols), out)
+        .expect("shape").into_pyarray_bound(py))
+}
+
+/// Quantize float32 → FP8 E5M2 with per-tensor scale.
+#[pyfunction]
+pub fn quantize_fp8_e5m2_f32<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, f32>,
+) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray1<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+
+    let abs_max = arr_view.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+    let scale = if abs_max == 0.0 { 1.0f32 } else { abs_max / E5M2_MAX };
+
+    let mut out: Vec<u8> = vec![0u8; n_rows * n_cols];
+    out.par_chunks_mut(n_cols)
+        .enumerate()
+        .for_each(|(row_idx, row_out)| {
+            let row = arr_view.row(row_idx);
+            for (o, &x) in row_out.iter_mut().zip(row.iter()) {
+                *o = encode_fp8_e5m2(x / scale);
+            }
+        });
+
+    let out_arr = Array2::from_shape_vec((n_rows, n_cols), out)
+        .expect("shape").into_pyarray_bound(py);
+    let scales_arr = Array1::from_vec(vec![scale]).into_pyarray_bound(py);
+    Ok((out_arr, scales_arr))
+}
+
+/// Dequantize FP8 E5M2 → float32.
+#[pyfunction]
+pub fn dequantize_fp8_e5m2<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, u8>,
+    scale: f32,
+) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+    let mut out: Vec<f32> = vec![0f32; n_rows * n_cols];
+    out.par_chunks_mut(n_cols)
+        .enumerate()
+        .for_each(|(row_idx, row_out)| {
+            let row = arr_view.row(row_idx);
+            for (o, &b) in row_out.iter_mut().zip(row.iter()) {
+                *o = decode_fp8_e5m2(b) * scale;
+            }
+        });
+    Ok(Array2::from_shape_vec((n_rows, n_cols), out)
+        .expect("shape").into_pyarray_bound(py))
+}
+
+// ── INT3 packing ─────────────────────────────────────────────────────────────
+//
+// 3-bit symmetric signed range [-3, 3].  8 values per 3 bytes (24 bits).
+// Layout: bits (value_i & 0x07) packed consecutively, low index at LSB.
+
+#[inline(always)]
+fn quantize_val_int3(x: f32, scale: f32) -> u8 {
+    ((x / scale).round().clamp(-3.0, 3.0) as i8 as i32 & 0x07) as u8
+}
+
+/// Quantize float32 → INT3 grouped, packed 8 values per 3 bytes.
+///
+/// Returns (packed: uint8[N, ceil(D*3/8)], scales: float32[N, D/group_size])
+#[pyfunction]
+pub fn pack_int3_grouped_f32<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, f32>,
+    group_size: usize,
+) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray2<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+    if n_cols % group_size != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_cols must be divisible by group_size",
+        ));
+    }
+    // 8 values per 3 bytes; pad to multiple of 8
+    let padded = ((n_cols + 7) / 8) * 8;
+    let n_packed = padded * 3 / 8;
+    let n_groups = n_cols / group_size;
+
+    let mut packed_out: Vec<u8>  = vec![0u8;  n_rows * n_packed];
+    let mut scales_out: Vec<f32> = vec![0f32; n_rows * n_groups];
+
+    packed_out
+        .par_chunks_mut(n_packed)
+        .zip(scales_out.par_chunks_mut(n_groups))
+        .enumerate()
+        .for_each(|(row_idx, (p_row, s_row))| {
+            let row = arr_view.row(row_idx);
+            let row_slice = row.as_slice().expect("non-contiguous");
+
+            // Per-group scale = max(|x|) / 3.0
+            for g in 0..n_groups {
+                let start = g * group_size;
+                let end   = start + group_size;
+                let abs_max = row_slice[start..end]
+                    .iter()
+                    .map(|x| x.abs())
+                    .fold(0.0f32, f32::max);
+                s_row[g] = if abs_max == 0.0 { 1.0 } else { abs_max / 3.0 };
+            }
+
+            // Pack 8 values into 3 bytes
+            let mut buf = [0u8; 8];
+            let chunks = (n_cols + 7) / 8;
+            for chunk in 0..chunks {
+                let base = chunk * 8;
+                for bit in 0..8 {
+                    let j = base + bit;
+                    let v = if j < n_cols {
+                        let g = j / group_size;
+                        quantize_val_int3(row_slice[j], s_row[g])
+                    } else {
+                        0
+                    };
+                    buf[bit] = v;
+                }
+                // Pack: buf[0]bits0-2, buf[1]bits3-5, buf[2]bits6-8, ...
+                // 3 bytes hold 3×8=24 bits = 8 × 3-bit values
+                let byte0 = buf[0] | (buf[1] << 3) | ((buf[2] & 0x03) << 6);
+                let byte1 = ((buf[2] >> 2) & 0x01) | (buf[3] << 1) | (buf[4] << 4) | ((buf[5] & 0x01) << 7);
+                let byte2 = ((buf[5] >> 1) & 0x03) | (buf[6] << 2) | (buf[7] << 5);
+                let pb = chunk * 3;
+                if pb     < n_packed { p_row[pb]     = byte0; }
+                if pb + 1 < n_packed { p_row[pb + 1] = byte1; }
+                if pb + 2 < n_packed { p_row[pb + 2] = byte2; }
+            }
+        });
+
+    let packed_arr = Array2::from_shape_vec((n_rows, n_packed), packed_out)
+        .expect("shape").into_pyarray_bound(py);
+    let scales_arr = Array2::from_shape_vec((n_rows, n_groups), scales_out)
+        .expect("shape").into_pyarray_bound(py);
+    Ok((packed_arr, scales_arr))
+}
+
+/// Unpack INT3 packed bytes back to float32.
+#[pyfunction]
+pub fn unpack_int3_grouped<'py>(
+    py: Python<'py>,
+    packed: PyReadonlyArray2<'py, u8>,
+    scales: PyReadonlyArray2<'py, f32>,
+    group_size: usize,
+    n_cols: usize,
+) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let packed_view = packed.as_array();
+    let scales_view = scales.as_array();
+    let (n_rows, _n_packed) = packed_view.dim();
+    let mut out: Vec<f32> = vec![0f32; n_rows * n_cols];
+
+    let n_groups = n_cols / group_size;
+    let _ = n_groups;
+
+    out.par_chunks_mut(n_cols)
+        .enumerate()
+        .for_each(|(row_idx, out_row)| {
+            let p_row   = packed_view.row(row_idx);
+            let p_slice = p_row.as_slice().expect("non-contiguous");
+            let s_row   = scales_view.row(row_idx);
+            let s_slice = s_row.as_slice().expect("non-contiguous");
+
+            let chunks = (n_cols + 7) / 8;
+            for chunk in 0..chunks {
+                let pb = chunk * 3;
+                let byte0 = if pb     < p_slice.len() { p_slice[pb]     } else { 0 };
+                let byte1 = if pb + 1 < p_slice.len() { p_slice[pb + 1] } else { 0 };
+                let byte2 = if pb + 2 < p_slice.len() { p_slice[pb + 2] } else { 0 };
+
+                let vals = [
+                    (byte0 & 0x07) as u8,
+                    ((byte0 >> 3) & 0x07) as u8,
+                    (((byte0 >> 6) & 0x03) | ((byte1 & 0x01) << 2)) as u8,
+                    ((byte1 >> 1) & 0x07) as u8,
+                    ((byte1 >> 4) & 0x07) as u8,
+                    (((byte1 >> 7) & 0x01) | ((byte2 & 0x03) << 1)) as u8,
+                    ((byte2 >> 2) & 0x07) as u8,
+                    ((byte2 >> 5) & 0x07) as u8,
+                ];
+
+                for bit in 0..8usize {
+                    let j = chunk * 8 + bit;
+                    if j >= n_cols { break; }
+                    // sign-extend 3-bit to i8: vals in [0,7], 4..7 are negative
+                    let raw = vals[bit];
+                    let signed: i8 = if raw >= 4 { raw as i8 - 8 } else { raw as i8 };
+                    let g = j / group_size;
+                    out_row[j] = signed as f32 * s_slice[g];
+                }
+            }
+        });
+
+    Ok(Array2::from_shape_vec((n_rows, n_cols), out)
+        .expect("shape").into_pyarray_bound(py))
+}
+
+// ── Fused Sampler: softmax + top-p + min-p ───────────────────────────────────
+//
+// Two-pass online softmax, fused reverse-scan top-p cumsum, min-p threshold.
+
+/// Numerically stable softmax with two-pass online algorithm.
+///
+/// Pass 1: find abs-max; Pass 2: exp(x - max) + normalise.
+/// Returns probability vector, same shape as input (1-D, len vocab_size).
+#[pyfunction]
+pub fn softmax_logits_f32<'py>(
+    py: Python<'py>,
+    logits: PyReadonlyArray1<'py, f32>,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let logits_view = logits.as_array();
+    let n = logits_view.len();
+    let logits_slice = logits_view.as_slice().expect("non-contiguous");
+
+    let abs_max = logits_slice.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let mut probs: Vec<f32> = logits_slice.iter().map(|&x| (x - abs_max).exp()).collect();
+    let total: f32 = probs.iter().sum();
+    let inv_total = 1.0 / total.max(1e-10);
+    for p in probs.iter_mut() { *p *= inv_total; }
+
+    Ok(Array1::from_vec(probs).into_pyarray_bound(py))
+}
+
+/// Apply top-p (nucleus) filter in-place via reverse cumsum scan.
+///
+/// Sort descending, compute cumulative probability; zero out tokens once
+/// cumulative mass exceeds `p_threshold`.  Returns masked probability vector.
+#[pyfunction]
+pub fn top_p_filter_f32<'py>(
+    py: Python<'py>,
+    probs: PyReadonlyArray1<'py, f32>,
+    p_threshold: f32,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let probs_view = probs.as_array();
+    let n = probs_view.len();
+    let probs_slice = probs_view.as_slice().expect("non-contiguous");
+
+    // Sort indices descending by probability
+    let mut indices: Vec<usize> = (0..n).collect();
+    indices.sort_unstable_by(|&a, &b| {
+        probs_slice[b].partial_cmp(&probs_slice[a]).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let mut out: Vec<f32> = vec![0.0f32; n];
+    let mut cumsum = 0.0f32;
+    for &idx in &indices {
+        cumsum += probs_slice[idx];
+        out[idx] = probs_slice[idx];
+        if cumsum >= p_threshold { break; }
+    }
+
+    // Re-normalise
+    let total: f32 = out.iter().sum();
+    if total > 1e-10 {
+        let inv = 1.0 / total;
+        for p in out.iter_mut() { *p *= inv; }
+    }
+
+    Ok(Array1::from_vec(out).into_pyarray_bound(py))
+}
+
+/// Apply min-p filter: zero tokens with probability < min_p * p_max.
+#[pyfunction]
+pub fn min_p_filter_f32<'py>(
+    py: Python<'py>,
+    probs: PyReadonlyArray1<'py, f32>,
+    min_p: f32,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let probs_view = probs.as_array();
+    let probs_slice = probs_view.as_slice().expect("non-contiguous");
+
+    let p_max = probs_slice.iter().cloned().fold(0.0f32, f32::max);
+    let threshold = min_p * p_max;
+
+    let mut out: Vec<f32> = probs_slice.iter().map(|&p| if p >= threshold { p } else { 0.0 }).collect();
+
+    // Always keep at least one token
+    if out.iter().all(|&p| p == 0.0) {
+        let best = probs_slice.iter().enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        out[best] = probs_slice[best];
+    }
+
+    // Re-normalise
+    let total: f32 = out.iter().sum();
+    if total > 1e-10 {
+        let inv = 1.0 / total;
+        for p in out.iter_mut() { *p *= inv; }
+    }
+
+    Ok(Array1::from_vec(out).into_pyarray_bound(py))
+}
+
+// ── KV-cache head INT8 quantization ──────────────────────────────────────────
+//
+// Accepts 3-D arrays (n_heads, n_seq, head_dim) — native KV cache layout.
+
+use numpy::{PyArray3, PyReadonlyArray3};
+
+/// Quantize KV cache heads to INT8 (per-head abs-mean scale).
+///
+/// Input:  float32 (n_heads, n_seq, head_dim)
+/// Output: (int8 [n_heads, n_seq, head_dim], scales float32 [n_heads])
+#[pyfunction]
+pub fn quantize_kv_heads_int8<'py>(
+    py: Python<'py>,
+    kv: PyReadonlyArray3<'py, f32>,
+) -> PyResult<(Bound<'py, PyArray3<i8>>, Bound<'py, PyArray1<f32>>)> {
+    use numpy::ndarray::Array3;
+    let kv_view = kv.as_array();
+    let (n_heads, n_seq, head_dim) = kv_view.dim();
+
+    let mut out: Vec<i8>  = vec![0i8;  n_heads * n_seq * head_dim];
+    let mut scales: Vec<f32> = vec![0f32; n_heads];
+
+    scales.par_iter_mut()
+        .zip(
+            out.par_chunks_mut(n_seq * head_dim)
+                .enumerate()
+        )
+        .for_each(|(scale, (head_idx, head_out))| {
+            let head_slice: Vec<f32> = (0..n_seq)
+                .flat_map(|s| (0..head_dim).map(move |d| kv_view[[head_idx, s, d]]))
+                .collect();
+
+            let abs_max = head_slice.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+            *scale = if abs_max == 0.0 { 1.0 } else { abs_max / 127.0 };
+            let inv_s = 1.0 / *scale;
+
+            for (o, &x) in head_out.iter_mut().zip(head_slice.iter()) {
+                *o = (x * inv_s).round().clamp(-127.0, 127.0) as i8;
+            }
+        });
+
+    let out_arr = Array3::from_shape_vec((n_heads, n_seq, head_dim), out)
+        .expect("shape").into_pyarray_bound(py);
+    let scales_arr = Array1::from_vec(scales).into_pyarray_bound(py);
+    Ok((out_arr, scales_arr))
+}
+
+/// Dequantize INT8 KV cache heads back to float32.
+#[pyfunction]
+pub fn dequantize_kv_heads_int8<'py>(
+    py: Python<'py>,
+    kv_q: PyReadonlyArray3<'py, i8>,
+    scales: PyReadonlyArray1<'py, f32>,
+) -> PyResult<Bound<'py, PyArray3<f32>>> {
+    use numpy::ndarray::Array3;
+    let kv_view    = kv_q.as_array();
+    let scales_view = scales.as_array();
+    let (n_heads, n_seq, head_dim) = kv_view.dim();
+
+    let mut out: Vec<f32> = vec![0f32; n_heads * n_seq * head_dim];
+
+    out.par_chunks_mut(n_seq * head_dim)
+        .enumerate()
+        .for_each(|(head_idx, head_out)| {
+            let scale = scales_view[head_idx];
+            for s in 0..n_seq {
+                for d in 0..head_dim {
+                    let flat = s * head_dim + d;
+                    head_out[flat] = kv_view[[head_idx, s, d]] as f32 * scale;
+                }
+            }
+        });
+
+    Ok(Array3::from_shape_vec((n_heads, n_seq, head_dim), out)
+        .expect("shape").into_pyarray_bound(py))
+}
+
+// ── INT2 packing ─────────────────────────────────────────────────────────────
+//
+// 2-bit unsigned [0–3] with per-group zero-point + scale.
+// 4 values per byte, packed low-index at LSB.
+
+/// Quantize float32 → INT2 grouped (4 values per byte).
+///
+/// Returns (packed: uint8[N, D/4], scales: float32[N, D/group_size],
+///          offsets: float32[N, D/group_size])
+#[pyfunction]
+pub fn quantize_int2_grouped_f32<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, f32>,
+    group_size: usize,
+) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray2<f32>>, Bound<'py, PyArray2<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+    if n_cols % group_size != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_cols must be divisible by group_size",
+        ));
+    }
+    if n_cols % 4 != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_cols must be divisible by 4 for INT2 packing",
+        ));
+    }
+    let n_groups = n_cols / group_size;
+    let n_packed = n_cols / 4;
+
+    let mut packed_out:  Vec<u8>  = vec![0u8;  n_rows * n_packed];
+    let mut scales_out:  Vec<f32> = vec![0f32; n_rows * n_groups];
+    let mut offsets_out: Vec<f32> = vec![0f32; n_rows * n_groups];
+
+    packed_out
+        .par_chunks_mut(n_packed)
+        .zip(scales_out.par_chunks_mut(n_groups))
+        .zip(offsets_out.par_chunks_mut(n_groups))
+        .enumerate()
+        .for_each(|(row_idx, ((p_row, s_row), o_row))| {
+            let row = arr_view.row(row_idx);
+            let row_slice = row.as_slice().expect("non-contiguous");
+
+            for g in 0..n_groups {
+                let start = g * group_size;
+                let end   = start + group_size;
+                let mut gmin = f32::INFINITY;
+                let mut gmax = f32::NEG_INFINITY;
+                for &x in &row_slice[start..end] {
+                    if x < gmin { gmin = x; }
+                    if x > gmax { gmax = x; }
+                }
+                s_row[g] = if gmax == gmin { 1.0 } else { (gmax - gmin) / 3.0 };
+                o_row[g] = gmin;
+            }
+
+            for i in 0..n_packed {
+                let mut byte = 0u8;
+                for bit in 0..4 {
+                    let j = i * 4 + bit;
+                    let g = j / group_size;
+                    let q = ((row_slice[j] - o_row[g]) / s_row[g])
+                        .round().clamp(0.0, 3.0) as u8;
+                    byte |= (q & 0x03) << (bit * 2);
+                }
+                p_row[i] = byte;
+            }
+        });
+
+    let packed_arr  = Array2::from_shape_vec((n_rows, n_packed), packed_out)
+        .expect("shape").into_pyarray_bound(py);
+    let scales_arr  = Array2::from_shape_vec((n_rows, n_groups), scales_out)
+        .expect("shape").into_pyarray_bound(py);
+    let offsets_arr = Array2::from_shape_vec((n_rows, n_groups), offsets_out)
+        .expect("shape").into_pyarray_bound(py);
+    Ok((packed_arr, scales_arr, offsets_arr))
+}
+
+/// Dequantize INT2 grouped packed weights back to float32.
+#[pyfunction]
+pub fn dequantize_int2_grouped_f32<'py>(
+    py: Python<'py>,
+    packed: PyReadonlyArray2<'py, u8>,
+    scales: PyReadonlyArray2<'py, f32>,
+    offsets: PyReadonlyArray2<'py, f32>,
+    group_size: usize,
+) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let packed_view  = packed.as_array();
+    let scales_view  = scales.as_array();
+    let offsets_view = offsets.as_array();
+    let (n_rows, n_packed) = packed_view.dim();
+    let n_cols = n_packed * 4;
+
+    let mut out: Vec<f32> = vec![0f32; n_rows * n_cols];
+    out.par_chunks_mut(n_cols)
+        .enumerate()
+        .for_each(|(row_idx, out_row)| {
+            let p_row  = packed_view.row(row_idx);
+            let s_row  = scales_view.row(row_idx);
+            let o_row  = offsets_view.row(row_idx);
+            let p_slice = p_row.as_slice().expect("non-contiguous");
+            let s_slice = s_row.as_slice().expect("non-contiguous");
+            let o_slice = o_row.as_slice().expect("non-contiguous");
+
+            for i in 0..n_packed {
+                let byte = p_slice[i];
+                for bit in 0..4usize {
+                    let j = i * 4 + bit;
+                    let q = (byte >> (bit * 2)) & 0x03;
+                    let g = j / group_size;
+                    out_row[j] = q as f32 * s_slice[g] + o_slice[g];
+                }
+            }
+        });
+
+    Ok(Array2::from_shape_vec((n_rows, n_cols), out)
+        .expect("shape").into_pyarray_bound(py))
+}
+
+/// INT2 quantization accepting raw BF16 (uint16) input.
+#[pyfunction]
+pub fn quantize_int2_grouped_bf16<'py>(
+    py: Python<'py>,
+    arr: PyReadonlyArray2<'py, u16>,
+    group_size: usize,
+) -> PyResult<(Bound<'py, PyArray2<u8>>, Bound<'py, PyArray2<f32>>, Bound<'py, PyArray2<f32>>)> {
+    let arr_view = arr.as_array();
+    let (n_rows, n_cols) = arr_view.dim();
+    if n_cols % group_size != 0 || n_cols % 4 != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "n_cols must be divisible by group_size and by 4",
+        ));
+    }
+    let n_groups = n_cols / group_size;
+    let n_packed = n_cols / 4;
+
+    let mut packed_out:  Vec<u8>  = vec![0u8;  n_rows * n_packed];
+    let mut scales_out:  Vec<f32> = vec![0f32; n_rows * n_groups];
+    let mut offsets_out: Vec<f32> = vec![0f32; n_rows * n_groups];
+
+    packed_out
+        .par_chunks_mut(n_packed)
+        .zip(scales_out.par_chunks_mut(n_groups))
+        .zip(offsets_out.par_chunks_mut(n_groups))
+        .enumerate()
+        .for_each(|(row_idx, ((p_row, s_row), o_row))| {
+            let row = arr_view.row(row_idx);
+            let f32_row: Vec<f32> = row.iter().map(|&b| bf16_to_f32(b)).collect();
+
+            for g in 0..n_groups {
+                let start = g * group_size;
+                let end   = start + group_size;
+                let mut gmin = f32::INFINITY;
+                let mut gmax = f32::NEG_INFINITY;
+                for &x in &f32_row[start..end] {
+                    if x < gmin { gmin = x; }
+                    if x > gmax { gmax = x; }
+                }
+                s_row[g] = if gmax == gmin { 1.0 } else { (gmax - gmin) / 3.0 };
+                o_row[g] = gmin;
+            }
+
+            for i in 0..n_packed {
+                let mut byte = 0u8;
+                for bit in 0..4usize {
+                    let j = i * 4 + bit;
+                    let g = j / group_size;
+                    let q = ((f32_row[j] - o_row[g]) / s_row[g])
+                        .round().clamp(0.0, 3.0) as u8;
+                    byte |= (q & 0x03) << (bit * 2);
+                }
+                p_row[i] = byte;
+            }
+        });
+
+    let packed_arr  = Array2::from_shape_vec((n_rows, n_packed), packed_out)
+        .expect("shape").into_pyarray_bound(py);
+    let scales_arr  = Array2::from_shape_vec((n_rows, n_groups), scales_out)
+        .expect("shape").into_pyarray_bound(py);
+    let offsets_arr = Array2::from_shape_vec((n_rows, n_groups), offsets_out)
+        .expect("shape").into_pyarray_bound(py);
+    Ok((packed_arr, scales_arr, offsets_arr))
+}
+
+
 // ── PyO3 module registration ─────────────────────────────────────────────────
 
 #[pymodule]
@@ -750,5 +1629,23 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(quantize_int8_bf16,                  m)?)?;
     m.add_function(wrap_pyfunction!(quantize_int8_grouped_bf16,          m)?)?;
     m.add_function(wrap_pyfunction!(quantize_int4_asymmetric_bf16,       m)?)?;
+    // Wave 56a — NF4 · FP8 · INT3 · Sampler · KV-head INT8 · INT2
+    m.add_function(wrap_pyfunction!(quantize_nf4_grouped_f32,            m)?)?;
+    m.add_function(wrap_pyfunction!(dequantize_nf4_grouped_f32,          m)?)?;
+    m.add_function(wrap_pyfunction!(quantize_nf4_grouped_bf16,           m)?)?;
+    m.add_function(wrap_pyfunction!(quantize_fp8_e4m3_f32,               m)?)?;
+    m.add_function(wrap_pyfunction!(dequantize_fp8_e4m3,                 m)?)?;
+    m.add_function(wrap_pyfunction!(quantize_fp8_e5m2_f32,               m)?)?;
+    m.add_function(wrap_pyfunction!(dequantize_fp8_e5m2,                 m)?)?;
+    m.add_function(wrap_pyfunction!(pack_int3_grouped_f32,               m)?)?;
+    m.add_function(wrap_pyfunction!(unpack_int3_grouped,                 m)?)?;
+    m.add_function(wrap_pyfunction!(softmax_logits_f32,                  m)?)?;
+    m.add_function(wrap_pyfunction!(top_p_filter_f32,                    m)?)?;
+    m.add_function(wrap_pyfunction!(min_p_filter_f32,                    m)?)?;
+    m.add_function(wrap_pyfunction!(quantize_kv_heads_int8,              m)?)?;
+    m.add_function(wrap_pyfunction!(dequantize_kv_heads_int8,            m)?)?;
+    m.add_function(wrap_pyfunction!(quantize_int2_grouped_f32,           m)?)?;
+    m.add_function(wrap_pyfunction!(dequantize_int2_grouped_f32,         m)?)?;
+    m.add_function(wrap_pyfunction!(quantize_int2_grouped_bf16,          m)?)?;
     Ok(())
 }
