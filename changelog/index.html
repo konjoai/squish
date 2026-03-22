@@ -838,6 +838,90 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#2000-2026-03-21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [20.0.0] — 2026-03-21
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[20.0.0] — 2026-03-21">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-45-weight-offload-rope-extensions-fp8mx-quantization-and-scheduling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 45: Weight Offload, RoPE Extensions, FP8/MX Quantization, and Scheduling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1900-2026-03-21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [19.0.0] — 2026-03-21
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[19.0.0] — 2026-03-21">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-44-marlin-kernel-speculative-rejection-loftq-and-advanced-speculative-decoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 44: Marlin Kernel, Speculative Rejection, LoFTQ, and Advanced Speculative Decoding
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1800-2026-03-21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [18.0.0] — 2026-03-21
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[18.0.0] — 2026-03-21">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-43-mtp-decoding-cascade-kv-paged-attention-and-sparseefficient-attention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 43: MTP Decoding, Cascade KV, Paged Attention, and Sparse/Efficient Attention
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#1410-alpha1-2026-03-21" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1844,6 +1928,199 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="2000-2026-03-21">[20.0.0] — 2026-03-21<a class="headerlink" href="#2000-2026-03-21" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-45-weight-offload-rope-extensions-fp8mx-quantization-and-scheduling">Added — Wave 45: Weight Offload, RoPE Extensions, FP8/MX Quantization, and Scheduling<a class="headerlink" href="#added-wave-45-weight-offload-rope-extensions-fp8mx-quantization-and-scheduling" title="Permanent link">&para;</a></h3>
+<p>Twelve new production-grade modules covering serving-layer weight offload strategies,
+training-free context extension, FP8/MXFP4 quantization, and advanced request scheduling.</p>
+<ul>
+<li>
+<p><strong>FlexGenOffload</strong> (<code>squish/serving/flexgen_offload.py</code>) — LP-optimal CPU/disk weight
+  placement policy (FlexGen, ICML 2023). Greedy tier assignment fills GPU first, then DRAM,
+  then disk. <code>DeviceTier</code> enum, <code>plan()</code>, <code>prefetch()</code>, <code>evict()</code>.</p>
+</li>
+<li>
+<p><strong>YaRNRoPE</strong> (<code>squish/attention/yarn_rope.py</code>) — NTK-by-parts RoPE with temperature
+  correction (YaRN, ICLR 2024). Per-frequency ramp between linear interpolation and
+  extrapolation; temperature correction <code>t ≈ 0.1·ln(s)+1</code>.</p>
+</li>
+<li>
+<p><strong>SelfExtend</strong> (<code>squish/attention/self_extend.py</code>) — Training-free grouped-position
+  floor-division attention (LLM-Maybe-LongLM, ACL 2024). Local window + grouped region;
+  LSE merge.</p>
+</li>
+<li>
+<p><strong>OrcaScheduler</strong> (<code>squish/serving/orca_scheduler.py</code>) — Iteration-level preemptive
+  continuous batching (Orca, OSDI 2022). Min-heap priority queue, preemption to CPU swap,
+  <code>submit()</code>, <code>step()</code>, <code>advance()</code>.</p>
+</li>
+<li>
+<p><strong>MxFP4</strong> (<code>squish/quant/mx_fp4.py</code>) — OCP MXFP4 block-scaling 4-bit quantization
+  (MX Spec v1.0). E2M1 element format, E8M0 per-block scale, block_size=32.</p>
+</li>
+<li>
+<p><strong>FP8ActQuant</strong> (<code>squish/quant/fp8_act_quant.py</code>) — W8A8 FP8 E4M3/E5M2 dynamic
+  activation quantization. Per-tensor dynamic scale, stochastic rounding option,
+  <code>forward()</code> simulated matmul.</p>
+</li>
+<li>
+<p><strong>CLeXRoPE</strong> (<code>squish/attention/clex_rope.py</code>) — Continuous per-frequency learned RoPE
+  scale (CLEx, 2023). 3-layer MLP scale parameterisation, calibration with gradient descent.</p>
+</li>
+<li>
+<p><strong>PowerInferOffload</strong> (<code>squish/serving/powerinfer_offload.py</code>) — ReLU-sparsity hot/cold
+  neuron split (PowerInfer, SOSP 2024). Profiling, <code>plan()</code>, <code>sparse_forward()</code> with
+  arbitrary neuron mask.</p>
+</li>
+<li>
+<p><strong>GroupedRoPE</strong> (<code>squish/attention/grouped_rope.py</code>) — Per-head frequency grouping
+  (Llama 3 / DeepSeek style). <code>n_groups</code> distinct base frequencies; <code>build_all_freqs()</code>,
+  <code>apply()</code>.</p>
+</li>
+<li>
+<p><strong>TensorParallel</strong> (<code>squish/serving/tensor_parallel.py</code>) — Megatron-style column/row
+  tensor-parallel sharding (Megatron-LM, 2019). <code>split_weights_column()</code>,
+  <code>split_weights_row()</code>, <code>column_forward()</code>, <code>row_forward()</code>, <code>all_reduce()</code>.</p>
+</li>
+<li>
+<p><strong>FusedBiasGELU</strong> (<code>squish/kernels/fused_bias_gelu.py</code>) — Fused bias-add + GELU kernel
+  (Megatron-LM fused kernels). Exact (erf) and fast (tanh) modes; <code>forward()</code>,
+  <code>backward()</code> with grad_bias.</p>
+</li>
+<li>
+<p><strong>TokenBudgetScheduler</strong> (<code>squish/serving/token_budget_scheduler.py</code>) — KV-budget token
+  eviction and CPU-swap scheduler. Importance-ranked pruning, priority-ordered swap,
+  <code>enforce()</code>, <code>swap_out()</code>, <code>swap_in()</code>.</p>
+</li>
+</ul>
+<hr />
+<h2 id="1900-2026-03-21">[19.0.0] — 2026-03-21<a class="headerlink" href="#1900-2026-03-21" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-44-marlin-kernel-speculative-rejection-loftq-and-advanced-speculative-decoding">Added — Wave 44: Marlin Kernel, Speculative Rejection, LoFTQ, and Advanced Speculative Decoding<a class="headerlink" href="#added-wave-44-marlin-kernel-speculative-rejection-loftq-and-advanced-speculative-decoding" title="Permanent link">&para;</a></h3>
+<p>Twelve new modules spanning INT4 GEMM simulation, quantization-aware LoRA, rejection
+sampling variants, and online/adaptive speculative decoding.</p>
+<ul>
+<li>
+<p><strong>MarlinGEMM</strong> (<code>squish/quant/marlin_gemm.py</code>) — INT4×FP16 tiled GEMM simulation
+  (Marlin, 2024). Per-group nibble packing, on-the-fly dequantize, <code>pack_weights()</code>,
+  <code>forward()</code>, <code>unpack_weights()</code>.</p>
+</li>
+<li>
+<p><strong>SpecRejection</strong> (<code>squish/speculative/spec_rejection.py</code>) — Parallel draft pool with
+  early rejection and rejection sampling (SpecRejection, 2024). Pool size, early-reject
+  fraction, <code>generate_candidates()</code>, <code>early_reject()</code>, <code>rejection_sample()</code>, <code>step()</code>.</p>
+</li>
+<li>
+<p><strong>LoFTQ</strong> (<code>squish/quant/loftq.py</code>) — LoRA-aware quantization by alternating INT-n
+  quantization and truncated SVD (LoFTQ, NeurIPS 2023). <code>LoFTQResult.effective_weight()</code>.</p>
+</li>
+<li>
+<p><strong>OnlineSpec</strong> (<code>squish/speculative/online_spec.py</code>) — Session-adaptive draft via online
+  SGD logit bias (2024). Per-vocab bias with momentum, <code>adjust_logits()</code>, <code>observe()</code>,
+  <code>sample()</code>.</p>
+</li>
+<li>
+<p><strong>DynamicSpecLen</strong> (<code>squish/speculative/dynamic_spec_len.py</code>) — 2-layer MLP adaptive
+  draft length router with online backprop. Features: top-p, entropy, top-5 probs,
+  log-vocab; <code>predict()</code>, <code>update()</code>.</p>
+</li>
+<li>
+<p><strong>BigLittleLLM</strong> (<code>squish/speculative/big_little_llm.py</code>) — Confidence-based routing
+  between large and small LLM (Big-Little LLM, 2024). Adaptive threshold toward
+  <code>target_small_fraction</code>; <code>RoutingDecision</code>.</p>
+</li>
+<li>
+<p><strong>MultiExitSpec</strong> (<code>squish/speculative/multi_exit_spec.py</code>) — Multi-layer confidence
+  exit speculative decoding. Per-exit-layer MLP head, sequential confidence check,
+  <code>attempt_exits()</code>, <code>ExitResult</code>.</p>
+</li>
+<li>
+<p><strong>PVTuning</strong> (<code>squish/quant/pv_tuning.py</code>) — Proximal-gradient W1–2 quantized weight
+  optimisation (PV-Tuning, NeurIPS 2024). Iterative prox-grad + quantize projection.</p>
+</li>
+<li>
+<p><strong>HadamardQuant</strong> (<code>squish/quant/hadamard_quant.py</code>) — Random Hadamard rotation before
+  INT4 GEMM to eliminate outlier columns (QuaRot / SpinQuant, 2024). <code>quantize()</code>,
+  <code>dequantize_unrotated()</code>.</p>
+</li>
+<li>
+<p><strong>PrefixTreeDecode</strong> (<code>squish/speculative/prefix_tree_decode.py</code>) — Static prefix-tree
+  parallel draft decoding (SpecInfer, ASPLOS 2024). <code>build_from_corpus()</code>, <code>lookup()</code>,
+  <code>decode_step()</code>.</p>
+</li>
+<li>
+<p><strong>SpecTrOT</strong> (<code>squish/speculative/spectr_ot.py</code>) — Optimal-transport draft–target
+  coupling for higher acceptance (SpecTr, NeurIPS 2023). <code>compute_coupling()</code>, <code>sample()</code>,
+  <code>step()</code>.</p>
+</li>
+<li>
+<p><strong>AdaGPTQ</strong> (<code>squish/quant/ada_gptq.py</code>) — Per-layer Hessian-adaptive group GPTQ
+  (GPTQ / OmniQuant-inspired). <code>estimate_hessian()</code>, <code>select_group_boundaries()</code>,
+  <code>quantize()</code>.</p>
+</li>
+</ul>
+<hr />
+<h2 id="1800-2026-03-21">[18.0.0] — 2026-03-21<a class="headerlink" href="#1800-2026-03-21" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-43-mtp-decoding-cascade-kv-paged-attention-and-sparseefficient-attention">Added — Wave 43: MTP Decoding, Cascade KV, Paged Attention, and Sparse/Efficient Attention<a class="headerlink" href="#added-wave-43-mtp-decoding-cascade-kv-paged-attention-and-sparseefficient-attention" title="Permanent link">&para;</a></h3>
+<p>Twelve new modules across speculative decoding, KV cache management, model pruning, and
+efficient attention — culminating in near-complete coverage of 2024–2025 inference research.</p>
+<ul>
+<li>
+<p><strong>MTPDecode</strong> (<code>squish/speculative/mtp_decode.py</code>) — DeepSeek-V3-style multi-token
+  prediction (MTP, 2024). Per-head auxiliary weight, <code>step()</code>, <code>verify_and_accept()</code>,
+  <code>reset()</code>.</p>
+</li>
+<li>
+<p><strong>CascadeKV</strong> (<code>squish/kv/cascade_kv.py</code>) — Two-level cascade KV cache for shared-prefix
+  batches (CascadeKV, 2024). L0 shared-prefix block + per-request L1 blocks; LSE merge.</p>
+</li>
+<li>
+<p><strong>HeadPruner</strong> (<code>squish/model/head_pruner.py</code>) — Structured attention head and MLP unit
+  pruning (Sheared LLaMA, 2023). L1-norm head scoring, <code>calibrate()</code>, <code>compute_mask()</code>,
+  <code>apply_mask()</code>.</p>
+</li>
+<li>
+<p><strong>PagedAttention</strong> (<code>squish/kv/paged_attn.py</code>) — vLLM-style physical-page KV block
+  manager (vLLM, 2023). Set-based free pool, ref-counted blocks, <code>share_prefix()</code>,
+  <code>get_kv()</code>.</p>
+</li>
+<li>
+<p><strong>LayerCollapse</strong> (<code>squish/model/layer_collapse.py</code>) — Cosine-similarity depth reduction
+  (Layer Collapse, 2023). Running cosine-sim accumulator, greedy layer removal up to
+  <code>max_prune_fraction</code>, <code>CollapseSchedule</code>.</p>
+</li>
+<li>
+<p><strong>RelayAttention</strong> (<code>squish/attention/relay_attn.py</code>) — Relay bank to skip redundant
+  attention (RelayAttention, 2024). Per-head cosine-similarity bypass with adaptive
+  threshold.</p>
+</li>
+<li>
+<p><strong>WKVQuant</strong> (<code>squish/kv/wkv_quant.py</code>) — Joint weight + KV INT4 quantization (AAAI
+  2025). Per-group weight quant, per-tensor KV quant, Z-score outlier detection.</p>
+</li>
+<li>
+<p><strong>TokenizedKVCache</strong> (<code>squish/kv/tokenized_kv.py</code>) — Cross-session KV serialization via
+  token-space embedding (ACL 2024). SHA256 context hash, nearest-neighbour lookup.</p>
+</li>
+<li>
+<p><strong>ClusterEvictKV</strong> (<code>squish/kv/cluster_evict_kv.py</code>) — Cluster-based adaptive KV
+  eviction. Single Lloyd k-means step, cluster scoring by attention weight, entropy-adaptive
+  budget.</p>
+</li>
+<li>
+<p><strong>S2Attention</strong> (<code>squish/attention/s2_attn.py</code>) — Sorted-structured sparse attention
+  (ICLR 2025). <code>argpartition</code> top-K token selection, sorted contiguous gather, exact
+  fallback.</p>
+</li>
+<li>
+<p><strong>SageAttn2</strong> (<code>squish/attention/sage_attn2.py</code>) — INT4 Q/K attention with outlier
+  smoothing (SageAttention2, ICLR 2025). Per-channel mean subtraction, INT4 simulation,
+  FP32 V accumulation.</p>
+</li>
+<li>
+<p><strong>MagicPIGv2</strong> (<code>squish/kv/magic_pig_v2.py</code>) — LSH KV retrieval with adaptive probe
+  budget (MagicPIG v2, 2024). SimHash multi-table hashing, adaptive probe expansion.</p>
+</li>
+</ul>
 <hr />
 <h2 id="1410-alpha1-2026-03-21">[14.1.0-alpha.1] — 2026-03-21<a class="headerlink" href="#1410-alpha1-2026-03-21" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-37-wire-everything-in">Added — Wave 37: Wire Everything In<a class="headerlink" href="#added-wave-37-wire-everything-in" title="Permanent link">&para;</a></h3>
