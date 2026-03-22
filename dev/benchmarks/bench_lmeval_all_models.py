@@ -10,17 +10,20 @@ heap memory between tasks and prevent kIOGPUCommandBufferCallbackErrorOutOfMemor
 
 Models evaluated
 ----------------
-  Qwen3-0.6B-bf16                  1.1 GB
-  Qwen2.5-1.5B-Instruct-bf16       2.9 GB
-  Llama-3.2-1B-Instruct-bf16       2.3 GB
-  Llama-3.2-3B-Instruct-bf16       6.0 GB
-  gemma-3-1b-it-bf16               2.5 GB
-  gemma-3-4b-it-bf16               9.3 GB
-  Qwen3-4B-bf16                    7.5 GB
-  Mistral-7B-Instruct-v0.3-bf16    8.8 GB
-  Qwen2.5-7B-Instruct-bf16        14.0 GB
-  Qwen3-8B-bf16                   15.0 GB  (tight — may OOM on 16 GB)
-  Qwen3-14B-mlx-int4               7.8 GB  (MLX INT4)
+  11 source models × (INT4 + INT3 + INT2) = 33 squish-quantized variants.
+  BF16 reference baselines are included but skipped by default (--bits 4 3 2).
+
+  Qwen3-0.6B       BF16(1.1 GB)  INT4  INT3  INT2
+  Llama-3.2-1B     BF16(2.3 GB)  INT4  INT3  INT2
+  gemma-3-1b       BF16(2.5 GB)  INT4  INT3  INT2
+  Qwen2.5-1.5B     BF16(2.9 GB)  INT4  INT3  INT2
+  Llama-3.2-3B     BF16(6.0 GB)  INT4  INT3  INT2
+  Qwen3-4B         BF16(7.5 GB)  INT4  INT3  INT2
+  gemma-3-4b       BF16(9.3 GB)  INT4  INT3  INT2
+  Mistral-7B       BF16(8.8 GB)  INT4  INT3  INT2
+  Qwen2.5-7B       BF16(14.0 GB) INT4  INT3  INT2
+  Qwen3-8B         BF16(15.0 GB) INT4  INT3  INT2
+  Qwen3-14B        BF16(28.0 GB) INT4  INT3  INT2
 
 Tasks (industry-standard)
 --------------------------
@@ -83,11 +86,66 @@ M  = "\033[35m"
 _MODELS_ROOT = Path.home() / "models"
 
 # (display_name, path_relative_to_models_root, approx_gb, notes)
+# Sorted smallest → largest; grouped by model family.
+# BF16 source models are listed as reference baselines.
+# Squish-quantized variants under test: INT4, INT3, INT2.
+# Note: Qwen3-14B-int4 maps to the already-compressed Qwen3-14B-mlx-int4 dir.
 MODEL_REGISTRY: list[tuple[str, str, float, str]] = [
-    # BF16 reference baseline
-    ("Qwen3-14B-bf16",     "Qwen3-14B-bf16",     28.0, "BF16 reference"),
-    # squish-quantized models under test
-    ("Qwen3-14B-mlx-int4", "Qwen3-14B-mlx-int4", 7.8,  "MLX INT4"),
+    # ── 0.6 B ──────────────────────────────────────────────────────────────
+    ("Qwen3-0.6B-bf16",   "Qwen3-0.6B-bf16",   1.1,  "BF16 reference"),
+    ("Qwen3-0.6B-int4",   "Qwen3-0.6B-int4",   0.35, "squish INT4"),
+    ("Qwen3-0.6B-int3",   "Qwen3-0.6B-int3",   0.27, "squish INT3"),
+    ("Qwen3-0.6B-int2",   "Qwen3-0.6B-int2",   0.20, "squish INT2"),
+    # ── 1 B (Llama) ────────────────────────────────────────────────────────
+    ("Llama-3.2-1B-bf16",   "Llama-3.2-1B-Instruct-bf16",   2.3,  "BF16 reference"),
+    ("Llama-3.2-1B-int4",   "Llama-3.2-1B-Instruct-int4",   0.55, "squish INT4"),
+    ("Llama-3.2-1B-int3",   "Llama-3.2-1B-Instruct-int3",   0.43, "squish INT3"),
+    ("Llama-3.2-1B-int2",   "Llama-3.2-1B-Instruct-int2",   0.32, "squish INT2"),
+    # ── 1 B (Gemma) ────────────────────────────────────────────────────────
+    ("gemma-3-1b-bf16",   "gemma-3-1b-it-bf16",   2.5,  "BF16 reference"),
+    ("gemma-3-1b-int4",   "gemma-3-1b-it-int4",   0.60, "squish INT4"),
+    ("gemma-3-1b-int3",   "gemma-3-1b-it-int3",   0.47, "squish INT3"),
+    ("gemma-3-1b-int2",   "gemma-3-1b-it-int2",   0.35, "squish INT2"),
+    # ── 1.5 B ──────────────────────────────────────────────────────────────
+    ("Qwen2.5-1.5B-bf16",   "Qwen2.5-1.5B-Instruct-bf16",   2.9,  "BF16 reference"),
+    ("Qwen2.5-1.5B-int4",   "Qwen2.5-1.5B-Instruct-int4",   0.70, "squish INT4"),
+    ("Qwen2.5-1.5B-int3",   "Qwen2.5-1.5B-Instruct-int3",   0.55, "squish INT3"),
+    ("Qwen2.5-1.5B-int2",   "Qwen2.5-1.5B-Instruct-int2",   0.41, "squish INT2"),
+    # ── 3 B ────────────────────────────────────────────────────────────────
+    ("Llama-3.2-3B-bf16",   "Llama-3.2-3B-Instruct-bf16",   6.0,  "BF16 reference"),
+    ("Llama-3.2-3B-int4",   "Llama-3.2-3B-Instruct-int4",   1.5,  "squish INT4"),
+    ("Llama-3.2-3B-int3",   "Llama-3.2-3B-Instruct-int3",   1.2,  "squish INT3"),
+    ("Llama-3.2-3B-int2",   "Llama-3.2-3B-Instruct-int2",   0.90, "squish INT2"),
+    # ── 4 B (Qwen3) ────────────────────────────────────────────────────────
+    ("Qwen3-4B-bf16",   "Qwen3-4B-bf16",   7.5,  "BF16 reference"),
+    ("Qwen3-4B-int4",   "Qwen3-4B-int4",   2.0,  "squish INT4"),
+    ("Qwen3-4B-int3",   "Qwen3-4B-int3",   1.6,  "squish INT3"),
+    ("Qwen3-4B-int2",   "Qwen3-4B-int2",   1.2,  "squish INT2"),
+    # ── 4 B (Gemma) ────────────────────────────────────────────────────────
+    ("gemma-3-4b-bf16",   "gemma-3-4b-it-bf16",   9.3,  "BF16 reference"),
+    ("gemma-3-4b-int4",   "gemma-3-4b-it-int4",   2.4,  "squish INT4"),
+    ("gemma-3-4b-int3",   "gemma-3-4b-it-int3",   1.9,  "squish INT3"),
+    ("gemma-3-4b-int2",   "gemma-3-4b-it-int2",   1.4,  "squish INT2"),
+    # ── 7 B (Mistral) ──────────────────────────────────────────────────────
+    ("Mistral-7B-bf16",   "Mistral-7B-Instruct-v0.3-bf16",   8.8,  "BF16 reference"),
+    ("Mistral-7B-int4",   "Mistral-7B-Instruct-v0.3-int4",   3.5,  "squish INT4"),
+    ("Mistral-7B-int3",   "Mistral-7B-Instruct-v0.3-int3",   2.8,  "squish INT3"),
+    ("Mistral-7B-int2",   "Mistral-7B-Instruct-v0.3-int2",   2.1,  "squish INT2"),
+    # ── 7 B (Qwen2.5) ──────────────────────────────────────────────────────
+    ("Qwen2.5-7B-bf16",   "Qwen2.5-7B-Instruct-bf16",   14.0, "BF16 reference"),
+    ("Qwen2.5-7B-int4",   "Qwen2.5-7B-Instruct-int4",    3.5,  "squish INT4"),
+    ("Qwen2.5-7B-int3",   "Qwen2.5-7B-Instruct-int3",    2.8,  "squish INT3"),
+    ("Qwen2.5-7B-int2",   "Qwen2.5-7B-Instruct-int2",    2.1,  "squish INT2"),
+    # ── 8 B ────────────────────────────────────────────────────────────────
+    ("Qwen3-8B-bf16",   "Qwen3-8B-bf16",   15.0, "BF16 reference"),
+    ("Qwen3-8B-int4",   "Qwen3-8B-int4",    4.0,  "squish INT4"),
+    ("Qwen3-8B-int3",   "Qwen3-8B-int3",    3.2,  "squish INT3"),
+    ("Qwen3-8B-int2",   "Qwen3-8B-int2",    2.4,  "squish INT2"),
+    # ── 14 B ───────────────────────────────────────────────────────────────
+    ("Qwen3-14B-bf16",   "Qwen3-14B-bf16",     28.0, "BF16 reference (swap risk)"),
+    ("Qwen3-14B-int4",   "Qwen3-14B-mlx-int4",  7.8,  "squish INT4 (pre-built)"),
+    ("Qwen3-14B-int3",   "Qwen3-14B-int3",       6.0,  "squish INT3"),
+    ("Qwen3-14B-int2",   "Qwen3-14B-int2",       4.5,  "squish INT2"),
 ]
 
 # ── task definitions ──────────────────────────────────────────────────────────
