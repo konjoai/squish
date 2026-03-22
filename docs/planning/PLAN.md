@@ -1904,7 +1904,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v22 Wave 47 — Mamba2 SSM · HGRN2 · Lookahead Decode · Infinite Memory · MoE-Infinity · Output Quality (Planned)
+## ✅ v22 Wave 47 — Mamba2 SSM · HGRN2 · Lookahead Decode · Infinite Memory · MoE-Infinity · Output Quality (Complete 2026-03-22)
 
 Theme: **Wave 47 opens four new capability axes that prior waves leave untouched: (1) state-space
 and linear-RNN architectures (Mamba-2, HGRN2) that replace quadratic self-attention in decode-bound
@@ -1974,22 +1974,22 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/attention/mamba2_ssm.py` — Mamba2SSM
-- [ ] `squish/attention/hgrn2.py` — HGRN2
-- [ ] `squish/speculative/lookahead_decode.py` — LookaheadDecode
-- [ ] `squish/kv/inf_memory.py` — InfMemory
-- [ ] `squish/kv/v_attention.py` — vAttentionKV
-- [ ] `squish/lora/ia3_adapter.py` — IA3Adapter
-- [ ] `squish/moe/moe_infinity.py` — MoEInfinityOffload
-- [ ] `squish/moe/mega_blocks.py` — MegaBlocksSparse
-- [ ] `squish/serving/kgw_watermark.py` — KGWWatermark
-- [ ] `squish/sampling/typical_sampler.py` — TypicalSampler
-- [ ] `squish/lora/dora.py` — DoRAAdapter
-- [ ] `squish/token/calm_exit.py` — AdaptiveCALM
-- [ ] `tests/test_wave47a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave47b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[22.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/attention/mamba2_ssm.py` — Mamba2SSM
+- [x] `squish/attention/hgrn2.py` — HGRN2
+- [x] `squish/speculative/lookahead_decode.py` — LookaheadDecode
+- [x] `squish/kv/inf_memory.py` — InfMemory
+- [x] `squish/kv/v_attention.py` — vAttentionKV
+- [x] `squish/lora/ia3_adapter.py` — IA3Adapter
+- [x] `squish/moe/moe_infinity.py` — MoEInfinityOffload
+- [x] `squish/moe/mega_blocks.py` — MegaBlocksSparse
+- [x] `squish/serving/kgw_watermark.py` — KGWWatermark
+- [x] `squish/sampling/typical_sampler.py` — TypicalSampler
+- [x] `squish/lora/dora.py` — DoRAAdapter
+- [x] `squish/token/calm_exit.py` — AdaptiveCALM
+- [x] `tests/test_wave47a_modules.py` — 100 tests, all passing
+- [x] `tests/test_wave47b_modules.py` — 100 tests, all passing
+- [x] CHANGELOG `[22.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 

@@ -5,6 +5,79 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [22.0.0] — 2026-03-22
+
+### Added — Wave 47: Mamba2 SSM · HGRN2 · Lookahead Decode · Infinite Memory · MoE-Infinity · Output Quality
+
+Twelve production-grade modules spanning state-space models (Mamba2, HGRN2), speculative decoding
+(Lookahead), long-context external memory (InfLLM), virtual memory KV management (vAttention),
+adapter methods (IA³, DoRA), offloaded MoE (MoE-Infinity, MegaBlocks), output watermarking (KGW),
+sampling quality (Typical Decoding), and adaptive early exit (CALM).
+
+- **Mamba2SSM** (`squish/attention/mamba2_ssm.py`) — Structured state-space model with
+  multi-head SSM scan and SSD (Structured State Space Duality, ICML 2024 / arXiv 2405.21060).
+  `Mamba2Config`, `Mamba2State`. `forward(x, initial_state)` → `(output, state)`.
+  `step(x_t, state)` for auto-regressive decode. `init_state()`.
+
+- **HGRN2** (`squish/attention/hgrn2.py`) — Hierarchical Gated Recurrent Network v2
+  (ICLR 2024 / arXiv 2404.07904). `HGRN2Config`, `HGRN2State`. `forward(x, initial_state)`,
+  `step(x_t, state)`, `init_state()`.
+
+- **LookaheadDecode** (`squish/speculative/lookahead_decode.py`) — Lookahead speculative decoding
+  with n-gram cache (ICML 2024 / arXiv 2402.02057). `LookaheadConfig`, `LookaheadResult`.
+  `step(context)` always returns ≥ 1 accepted token; `cache_size`, `reset_cache()`,
+  `speedup_estimate`.
+
+- **InfMemory** (`squish/kv/inf_memory.py`) — Training-free long-context external block memory
+  (InfLLM, NeurIPS 2024 / arXiv 2402.04617). `InfMemoryConfig`, `MemoryBlock`.
+  `store_block(K, V)`, `retrieve(Q, top_k)`, `retrieve_kv(Q, top_k)`, `compress_block(K)`,
+  `reset()`.
+
+- **vAttentionKV** (`squish/kv/v_attention.py`) — OS-style virtual memory KV cache
+  (vAttention, OSDI 2024). `vAttentionConfig`. `allocate(seq_id, n_tokens)`,
+  `store_token(seq_id, pos, k, v)`, `get_kv(seq_id)`, `free(seq_id)`. Properties:
+  `n_allocated_pages`, `n_free_pages`, `fragmentation_ratio`.
+
+- **IA3Adapter** (`squish/lora/ia3_adapter.py`) — Infused Adapter via inhibiting and amplifying
+  inner activations (IA³, NeurIPS 2022 / arXiv 2205.05638). `IA3Config`. `apply_k(K)`,
+  `apply_v(V)`, `apply_ff(h)`, `merge_to_base(W_k, W_v, W_ff)`, `reset_to_identity()`,
+  `zero_scales()`. `ia3_compose(adapters)` for multi-adapter composition.
+
+- **MoEInfinityOffload** (`squish/moe/moe_infinity.py`) — Activation-pattern expert
+  prefetch for offloaded MoE (MoE-Infinity, arXiv 2401.14361). `MoEInfinityConfig`.
+  `store_expert(id, weight)`, `prefetch(ids)`, `evict(ids)`, `forward(token, expert_id)`,
+  `predict_next_experts(router_logits, k)`. Properties: `n_on_device`, `prefetch_hit_rate`.
+
+- **MegaBlocksSparse** (`squish/moe/mega_blocks.py`) — Dropless MoE with block-sparse GEMM
+  (MegaBlocks, MLSys 2023). `MegaBlocksConfig`. `route(hidden_states)` → `(expert_ids, weights)`,
+  `forward(hidden_states)` — no token dropped, ragged-batch simulation.
+
+- **KGWWatermark** (`squish/serving/kgw_watermark.py`) — Green/red list LLM output watermarking
+  (KGW, ICML 2023 / arXiv 2301.10226). `KGWConfig`. `apply(logits, context_tokens)`,
+  `detect(token_ids, z_threshold)` → `WatermarkResult(z_score, is_watermarked, green_count, total_tokens)`.
+
+- **TypicalSampler** (`squish/sampling/typical_sampler.py`) — Locally typical sampling
+  (TACL 2023 / ACL 2023). `TypicalConfig`. `sample(logits)` → `TypicalResult`,
+  `sample_batch(logits)`, `filter_logits(logits)`.
+
+- **DoRAAdapter** (`squish/lora/dora.py`) — Weight-decomposed low-rank adaptation
+  (DoRA, ICML 2024 / arXiv 2402.09353). `DoRAConfig`. `adapted_weight()`, `forward(x)`,
+  `merge_to_weight()`. Properties: `magnitude`, `direction`, `lora_A`, `lora_B`.
+
+- **AdaptiveCALM** (`squish/token/calm_exit.py`) — Confidence-adaptive per-token early exit
+  (CALM, NeurIPS 2022). `CALMConfig`. `forward(x, layer_fns)` → `CALMResult(output, exit_layer, confidence, flop_ratio)`.
+  `confidence_at_layer(hidden)`, `exit_histogram`.
+
+### Tests
+
+- `tests/test_wave47a_modules.py` — 100 tests covering Mamba2SSM, HGRN2, LookaheadDecode,
+  InfMemory, vAttentionKV, IA3Adapter.
+- `tests/test_wave47b_modules.py` — 100 tests covering MoEInfinityOffload, MegaBlocksSparse,
+  KGWWatermark, TypicalSampler, DoRAAdapter, AdaptiveCALM.
+- Suite total: **10,572 passed / 34 skipped** (up 200 from v21).
+
+---
+
 ## [21.0.0] — 2026-03-21
 
 ### Added — Wave 46: Model Surgery · Expert Choice · W4A8 · MLA KV Compress · CacheBlend · Sampling Precision
