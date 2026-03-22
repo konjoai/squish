@@ -838,6 +838,73 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#3000-2026-04-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [30.0.0] — 2026-04-07
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[30.0.0] — 2026-04-07">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-56-v30-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 56: v30 Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Added — Wave 56: v30 Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wave-56a-rust-kernel-python-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 56a — Rust kernel Python wrappers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-56a-new-rust-functions-squish_quant_rssrclibrs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 56a — New Rust functions (squish_quant_rs/src/lib.rs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-56b-mojo-infrastructure-kernel-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 56b — Mojo infrastructure + kernel wrappers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#2900-2026-04-06" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2274,6 +2341,100 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="3000-2026-04-07">[30.0.0] — 2026-04-07<a class="headerlink" href="#3000-2026-04-07" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-56-v30-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill">Added — Wave 56: v30 Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill<a class="headerlink" href="#added-wave-56-v30-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules: six Rust-backed kernel wrappers (Wave 56a),
+five Mojo-backed kernel wrappers with a shared ctypes bridge (Wave 56b), plus
+Rust implementations of all algorithms in <code>squish_quant_rs/src/lib.rs</code>.</p>
+<h4 id="wave-56a-rust-kernel-python-wrappers">Wave 56a — Rust kernel Python wrappers<a class="headerlink" href="#wave-56a-rust-kernel-python-wrappers" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>RustNF4Kernel</strong> (<code>squish/kernels/rs_nf4.py</code>) — NormalFloat4 quantization
+  wrapping <code>squish_quant.{quantize,dequantize}_nf4_grouped_{f32,bf16}</code>.
+  Standard-normal quantile 16-level LUT; nibble packing; per-group abs-max
+  scale; Rust→NumPy fallback.</p>
+</li>
+<li>
+<p><strong>RustFP8Kernel</strong> (<code>squish/kernels/rs_fp8.py</code>) — FP8 E4M3 / E5M2
+  quantization wrapping <code>squish_quant.{quantize,dequantize}_fp8_{e4m3,e5m2}</code>.
+  Per-tensor scale; <code>f32::to_bits()</code> Rust encoding; Rust→NumPy fallback.</p>
+</li>
+<li>
+<p><strong>RustINT3Kernel</strong> (<code>squish/kernels/rs_int3.py</code>) — 3-bit symmetric packed
+  quantization wrapping <code>squish_quant.{pack,unpack}_int3_grouped_f32</code>.
+  8 values per 3 bytes; signed range [-3, 3]; Rayon-parallel; Rust→NumPy
+  fallback.</p>
+</li>
+<li>
+<p><strong>RustSamplerKernel</strong> (<code>squish/kernels/rs_sampler.py</code>) — Fused
+  softmax + top-p + min-p sampler wrapping
+  <code>squish_quant.{softmax_logits,top_p_filter,min_p_filter}_f32</code>.
+  Two-pass online softmax; O(N log N) top-p; Rust→NumPy fallback.</p>
+</li>
+<li>
+<p><strong>RustKVQuantKernel</strong> (<code>squish/kernels/rs_kv_quant.py</code>) — KV-cache head
+  INT8 quantization wrapping <code>squish_quant.{quantize,dequantize}_kv_heads_int8</code>.
+  Per-head abs-max scale; <code>(n_heads, n_seq, head_dim)</code> layout; decode-step
+  update API; Rust→NumPy fallback.</p>
+</li>
+<li>
+<p><strong>RustINT2Kernel</strong> (<code>squish/kernels/rs_int2.py</code>) — 2-bit packed
+  quantization wrapping <code>squish_quant.{quantize,dequantize}_int2_grouped_{f32,bf16}</code>.
+  4 values per byte; unsigned [0–3] with per-group zero-point + scale;
+  16× compression ratio; Rust→NumPy fallback.</p>
+</li>
+</ul>
+<h4 id="wave-56a-new-rust-functions-squish_quant_rssrclibrs">Wave 56a — New Rust functions (<code>squish_quant_rs/src/lib.rs</code>)<a class="headerlink" href="#wave-56a-new-rust-functions-squish_quant_rssrclibrs" title="Permanent link">&para;</a></h4>
+<p>17 new <code>#[pyfunction]</code> implementations registered in the <code>squish_quant</code>
+PyO3 module: <code>quantize_nf4_grouped_f32</code>, <code>dequantize_nf4_grouped_f32</code>,
+<code>quantize_nf4_grouped_bf16</code>, <code>quantize_fp8_e4m3_f32</code>, <code>dequantize_fp8_e4m3</code>,
+<code>quantize_fp8_e5m2_f32</code>, <code>dequantize_fp8_e5m2</code>, <code>pack_int3_grouped_f32</code>,
+<code>unpack_int3_grouped</code>, <code>softmax_logits_f32</code>, <code>top_p_filter_f32</code>,
+<code>min_p_filter_f32</code>, <code>quantize_kv_heads_int8</code>, <code>dequantize_kv_heads_int8</code>,
+<code>quantize_int2_grouped_f32</code>, <code>dequantize_int2_grouped_f32</code>,
+<code>quantize_int2_grouped_bf16</code>.</p>
+<h4 id="wave-56b-mojo-infrastructure-kernel-wrappers">Wave 56b — Mojo infrastructure + kernel wrappers<a class="headerlink" href="#wave-56b-mojo-infrastructure-kernel-wrappers" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>MojoBridge</strong> (<code>squish/kernels/mojo/mojo_bridge.py</code>) — ctypes-based
+  dynamic loader for compiled Mojo shared libraries
+  (<code>libsquish_kernels.{so,dylib}</code>).  Discovers library via configurable
+  search paths; resolves backend as <code>"mojo"</code> → <code>"rust"</code> → <code>"numpy"</code>.
+  Includes <code>mojoproject.toml</code> for <code>magic</code> build toolchain.</p>
+</li>
+<li>
+<p><strong>MojoSoftmax</strong> (<code>squish/kernels/mojo/softmax_mojo.py</code>) — SIMD-accelerated
+  softmax + top-p via Mojo→Rust→NumPy fallback chain.</p>
+</li>
+<li>
+<p><strong>MojoRoPE</strong> (<code>squish/kernels/mojo/rope_mojo.py</code>) — Rotary Position
+  Embedding with frequency cache precomputation; Mojo→NumPy fallback; 
+  isometry-preserving implementation.</p>
+</li>
+<li>
+<p><strong>MojoNF4Dequant</strong> (<code>squish/kernels/mojo/nf4_dequant_mojo.py</code>) — NF4
+  nibble dequantization; shares NF4 LUT with RustNF4Kernel; Mojo→Rust→NumPy
+  fallback chain.</p>
+</li>
+<li>
+<p><strong>MojoINT4GEMM</strong> (<code>squish/kernels/mojo/int4_gemm_mojo.py</code>) — Fused
+  asymmetric INT4 dequant + GEMM; avoids intermediate float32 weight
+  materialisation; Mojo→Rust→NumPy fallback.</p>
+</li>
+<li>
+<p><strong>MojoFlashPrefill</strong> (<code>squish/kernels/mojo/flash_prefill_mojo.py</code>) —
+  Block-tiled scaled dot-product attention with per-block online log-sum-exp
+  (Flash Attention 2 algorithm); configurable causal mask; Mojo→NumPy
+  fallback.</p>
+</li>
+<li>
+<p><strong>Mojo kernel stubs</strong> (<code>squish/kernels/mojo/kernels/</code>) —
+  <code>softmax.mojo</code>, <code>rope.mojo</code>, <code>nf4_dequant.mojo</code>, <code>int4_gemm.mojo</code>,
+  <code>flash_prefill.mojo</code> — source-of-truth Mojo files for future compilation
+  via <code>magic run mojo build --emit shared</code>.</p>
+</li>
+</ul>
 <hr />
 <h2 id="2900-2026-04-06">[29.0.0] — 2026-04-06<a class="headerlink" href="#2900-2026-04-06" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-55-v29-advanced-sampling-refinement-minp-mirostat-typicalsampling-etacutoff-cfg-diversebeam-emerging-quantization-bitnet-b158-spqr-omniquant-q-sparse-fp4-adaround">Added — Wave 55: v29 Advanced Sampling Refinement: MinP · Mirostat · TypicalSampling · EtaCutoff · CFG · DiverseBeam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound<a class="headerlink" href="#added-wave-55-v29-advanced-sampling-refinement-minp-mirostat-typicalsampling-etacutoff-cfg-diversebeam-emerging-quantization-bitnet-b158-spqr-omniquant-q-sparse-fp4-adaround" title="Permanent link">&para;</a></h3>

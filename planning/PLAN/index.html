@@ -1356,15 +1356,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v30-wave-56-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill-planned" class="md-nav__link">
+  <a href="#v30-wave-56-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill (Planned)
+        ✅ v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill (Planned)">
+    <nav class="md-nav" aria-label="✅ v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -5789,15 +5789,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v30-wave-56-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill-planned" class="md-nav__link">
+  <a href="#v30-wave-56-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill (Planned)
+        ✅ v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill (Planned)">
+    <nav class="md-nav" aria-label="✅ v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -12091,7 +12091,7 @@ decode step; SIMD outer-product + matrix-vector in Mojo eliminates 2 <code>np.ei
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v30-wave-56-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill-planned">🚧 v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill (Planned)<a class="headerlink" href="#v30-wave-56-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v30-wave-56-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill">✅ v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill<a class="headerlink" href="#v30-wave-56-native-acceleration-layer-rust-nf4-fp8-int3-sampling-kv-quant-int2-mojo-infrastructure-softmax-rope-nf4-dequant-int4-gemm-flash-prefill" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 56 attacks Squish's most impactful remaining performance bottleneck: the gap between
 existing Rust-accelerated INT8/INT4 weight quantization and the remaining high-traffic paths that still execute
 as interpreted Python/NumPy.</strong> Profiling a 14B model compression-and-inference loop reveals four NumPy-only
@@ -12339,23 +12339,23 @@ for environments without the <code>magic</code> toolchain.</p>
 </table>
 <h3 id="completion-checklist_9">Completion Checklist<a class="headerlink" href="#completion-checklist_9" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] <code>squish_quant_rs/src/lib.rs</code> — NF4, FP8, INT3, sampling, KV-head-int8, INT2 Rust functions added + registered in <code>squish_quant</code> module</li>
-<li>[ ] <code>squish/kernels/rs_nf4.py</code> — RustNF4Kernel (Python wrapper + NumPy fallback)</li>
-<li>[ ] <code>squish/kernels/rs_fp8.py</code> — RustFP8Kernel (Python wrapper + NumPy fallback)</li>
-<li>[ ] <code>squish/kernels/rs_int3.py</code> — RustINT3Kernel (Python wrapper + NumPy fallback)</li>
-<li>[ ] <code>squish/kernels/rs_sampler.py</code> — RustSamplerKernel (Python wrapper + NumPy fallback)</li>
-<li>[ ] <code>squish/kernels/rs_kv_quant.py</code> — RustKVQuantKernel (Python wrapper + NumPy fallback)</li>
-<li>[ ] <code>squish/kernels/rs_int2.py</code> — RustINT2Kernel (Python wrapper + NumPy fallback)</li>
-<li>[ ] <code>squish/kernels/mojo/mojo_bridge.py</code> — MojoBridge ctypes loader + <code>mojoproject.toml</code></li>
-<li>[ ] <code>squish/kernels/mojo/softmax_mojo.py</code> + <code>squish/kernels/mojo/kernels/softmax.mojo</code> — MojoSoftmax</li>
-<li>[ ] <code>squish/kernels/mojo/rope_mojo.py</code> + <code>squish/kernels/mojo/kernels/rope.mojo</code> — MojoRoPE</li>
-<li>[ ] <code>squish/kernels/mojo/nf4_dequant_mojo.py</code> + <code>squish/kernels/mojo/kernels/nf4_dequant.mojo</code> — MojoNF4Dequant</li>
-<li>[ ] <code>squish/kernels/mojo/int4_gemm_mojo.py</code> + <code>squish/kernels/mojo/kernels/int4_gemm.mojo</code> — MojoINT4GEMM</li>
-<li>[ ] <code>squish/kernels/mojo/flash_prefill_mojo.py</code> + <code>squish/kernels/mojo/kernels/flash_prefill.mojo</code> — MojoFlashPrefill</li>
-<li>[ ] <code>tests/test_wave56a_rust_kernels.py</code> — ≥ 72 tests, all passing</li>
-<li>[ ] <code>tests/test_wave56b_mojo_kernels.py</code> — ≥ 72 tests with NumPy fallback coverage, all passing</li>
-<li>[ ] CHANGELOG <code>[30.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] <code>squish_quant_rs/src/lib.rs</code> — NF4, FP8, INT3, sampling, KV-head-int8, INT2 Rust functions added + registered in <code>squish_quant</code> module</li>
+<li>[x] <code>squish/kernels/rs_nf4.py</code> — RustNF4Kernel (Python wrapper + NumPy fallback)</li>
+<li>[x] <code>squish/kernels/rs_fp8.py</code> — RustFP8Kernel (Python wrapper + NumPy fallback)</li>
+<li>[x] <code>squish/kernels/rs_int3.py</code> — RustINT3Kernel (Python wrapper + NumPy fallback)</li>
+<li>[x] <code>squish/kernels/rs_sampler.py</code> — RustSamplerKernel (Python wrapper + NumPy fallback)</li>
+<li>[x] <code>squish/kernels/rs_kv_quant.py</code> — RustKVQuantKernel (Python wrapper + NumPy fallback)</li>
+<li>[x] <code>squish/kernels/rs_int2.py</code> — RustINT2Kernel (Python wrapper + NumPy fallback)</li>
+<li>[x] <code>squish/kernels/mojo/mojo_bridge.py</code> — MojoBridge ctypes loader + <code>mojoproject.toml</code></li>
+<li>[x] <code>squish/kernels/mojo/softmax_mojo.py</code> + <code>squish/kernels/mojo/kernels/softmax.mojo</code> — MojoSoftmax</li>
+<li>[x] <code>squish/kernels/mojo/rope_mojo.py</code> + <code>squish/kernels/mojo/kernels/rope.mojo</code> — MojoRoPE</li>
+<li>[x] <code>squish/kernels/mojo/nf4_dequant_mojo.py</code> + <code>squish/kernels/mojo/kernels/nf4_dequant.mojo</code> — MojoNF4Dequant</li>
+<li>[x] <code>squish/kernels/mojo/int4_gemm_mojo.py</code> + <code>squish/kernels/mojo/kernels/int4_gemm.mojo</code> — MojoINT4GEMM</li>
+<li>[x] <code>squish/kernels/mojo/flash_prefill_mojo.py</code> + <code>squish/kernels/mojo/kernels/flash_prefill.mojo</code> — MojoFlashPrefill</li>
+<li>[x] <code>tests/test_wave56a_rust_kernels.py</code> — ≥ 72 tests, all passing</li>
+<li>[x] <code>tests/test_wave56b_mojo_kernels.py</code> — ≥ 72 tests with NumPy fallback coverage, all passing</li>
+<li>[x] CHANGELOG <code>[30.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v29-wave-55-advanced-sampling-refinement-min-p-mirostat-typical-etacutoff-cfg-diversebeam-emerging-quantization-bitnet-b158-spqr-omniquant-q-sparse-fp4-adaround">✅ v29 Wave 55 — Advanced Sampling Refinement: Min-P · Mirostat · Typical · EtaCutoff · CFG · DiverseBeam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound<a class="headerlink" href="#v29-wave-55-advanced-sampling-refinement-min-p-mirostat-typical-etacutoff-cfg-diversebeam-emerging-quantization-bitnet-b158-spqr-omniquant-q-sparse-fp4-adaround" title="Permanent link">&para;</a></h2>
