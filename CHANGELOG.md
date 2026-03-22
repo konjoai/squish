@@ -5,6 +5,54 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [23.0.0] — 2026-03-22
+
+### Added — Wave 48: INT2/INT3 Extreme Quantization: SpQR · AutoRound · OWQ · BitDistiller · ZipLM · GGUF Mixed
+
+Six production-grade modules pushing quantization below INT4 to enable Qwen3-14B at INT3 (~7 GB)
+and Qwen3-32B at INT2 (~8 GB) on 16 GB M3.
+
+- **SpQRQuantizer** (`squish/quant/spqr.py`) — Sparse-quantized representation with per-group
+  INT3 dense core plus FP32 sparse outlier residual (arXiv 2306.03078, NeurIPS 2023).
+  `SpQRConfig`, `SpQRResult` (`.effective_bits`). `quantize(W)`, `dequantize(result)`,
+  `forward(x, result)`, `_int3_quant_group(g)`.
+
+- **AutoRoundQuantizer** (`squish/quant/auto_round.py`) — Sign-projected AdamW 512-step rounding
+  optimiser per linear layer; no Hessian; beats GPTQ INT2/INT3 by 0.3–0.5 PPL
+  (arXiv 2309.05516, EMNLP 2024). `AutoRoundConfig`, `AutoRoundResult`.
+  `quantize(W, calibration_data)`, `dequantize(result)`, `forward(x, result)`.
+
+- **OWQQuantizer** (`squish/quant/owq.py`) — Activation-variance ranked column promotion:
+  INT3 → INT4 for high-variance columns; 0.3 PPL gain over GPTQ INT3
+  (arXiv 2306.05625, EMNLP 2023). `OWQConfig`, `OWQResult`.
+  `compute_activation_variance(activations)`, `quantize(W, activation_stats)`,
+  `dequantize(result)`, `forward(x, result)`.
+
+- **BitDistillerQuant** (`squish/quant/bit_distiller.py`) — KL-divergence self-distillation
+  with FP16 teacher and INT2 per-block student; 0.5 PPL gain over AQLM 2-bit
+  (arXiv 2402.10631, 2024). `BitDistillerConfig`, `BitDistillerResult`.
+  `quantize(W, teacher_W)`, `dequantize(result)`, `forward(x, result)`.
+
+- **ZipLMMixedPrecision** (`squish/quant/zip_lm.py`) — Hessian-trace sensitivity ranking assigns
+  INT2/INT3/INT4 per transformer block under a total-memory budget B
+  (arXiv 2302.04089, NeurIPS 2023). `ZipLMConfig`, `ZipLMResult` (`.effective_bits`).
+  `plan(layer_shapes, layer_sensitivities)`, `assign_bits(n_layers, shapes, sensitivities)`,
+  `estimate_memory_gb(shapes, bits_list)`.
+
+- **GGUFMixedQuantizer** (`squish/quant/gguf_mixed.py`) — GGUF Q2_K/Q3_K/Q4_K/Q5_K/Q8_0
+  block quantization with portable checkpoint encode/decode
+  (llama.cpp v2 community spec, 2023). `GGUFConfig`, `GGUFTensor` (`.quant_bits`).
+  `quantize(W)`, `dequantize(tensor)`, `forward(x, tensor)`,
+  `encode_to_bytes(tensor)`, `decode_from_bytes(data, shape)`.
+
+### Tests
+
+- `tests/test_wave48a_modules.py` — 88 tests covering SpQRQuantizer, AutoRoundQuantizer, OWQQuantizer
+- `tests/test_wave48b_modules.py` — 79 tests covering BitDistillerQuant, ZipLMMixedPrecision, GGUFMixedQuantizer
+- Total: 10,739 passing, 34 skipped
+
+---
+
 ## [22.0.0] — 2026-03-22
 
 ### Added — Wave 47: Mamba2 SSM · HGRN2 · Lookahead Decode · Infinite Memory · MoE-Infinity · Output Quality
