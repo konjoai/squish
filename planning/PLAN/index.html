@@ -1196,10 +1196,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#pre-launch-readiness-as-of-run-4-2026-03-21" class="md-nav__link">
+  <a href="#pre-launch-readiness-as-of-run-4-2026-03-21-run-5-compression-in-progress" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Pre-Launch Readiness (as of Run 4, 2026-03-21)
+        Pre-Launch Readiness (as of Run 4, 2026-03-21 — Run 5 compression in progress)
       
     </span>
   </a>
@@ -5629,10 +5629,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#pre-launch-readiness-as-of-run-4-2026-03-21" class="md-nav__link">
+  <a href="#pre-launch-readiness-as-of-run-4-2026-03-21-run-5-compression-in-progress" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Pre-Launch Readiness (as of Run 4, 2026-03-21)
+        Pre-Launch Readiness (as of Run 4, 2026-03-21 — Run 5 compression in progress)
       
     </span>
   </a>
@@ -9363,7 +9363,7 @@
 
 <h1 id="squish-development-plan">Squish — Development Plan<a class="headerlink" href="#squish-development-plan" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p>Last updated: 2026-03-21 (Wave 37 complete — Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)</p>
+<p>Last updated: 2026-03-21 (Wave 37 complete — Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict — Run 5 compression in progress: Qwen3-14B ✅ CPU mode fix · Mistral-7B download pending)</p>
 </blockquote>
 <p>This document tracks completed waves, the current release, and the next phase.</p>
 <hr />
@@ -11423,17 +11423,22 @@ when <code>squish_quant_rs</code> is not compiled. Zero changes to public Python
 <li>[ ] CHANGELOG <code>[33.0.0]</code> entry</li>
 <li>[ ] PLAN.md updated</li>
 </ul>
-<h3 id="pre-launch-readiness-as-of-run-4-2026-03-21">Pre-Launch Readiness (as of Run 4, 2026-03-21)<a class="headerlink" href="#pre-launch-readiness-as-of-run-4-2026-03-21" title="Permanent link">&para;</a></h3>
+<h3 id="pre-launch-readiness-as-of-run-4-2026-03-21-run-5-compression-in-progress">Pre-Launch Readiness (as of Run 4, 2026-03-21 — Run 5 compression in progress)<a class="headerlink" href="#pre-launch-readiness-as-of-run-4-2026-03-21-run-5-compression-in-progress" title="Permanent link">&para;</a></h3>
 <p>The product is demo-ready. These are the only blockers before a public post:</p>
 <ul>
 <li>[x] README: SquishBar marked "coming soon" (was listed as ✅ — does not exist in codebase)</li>
 <li>[x] README: TTFT clarified as prompt-to-first-token, not cold-load time; both now documented separately with footnotes</li>
 <li>[x] README: 7B+ BF16 OOM limit documented in model size table (Qwen2.5-7B-bf16 = 14 GB exceeds 15.5 GB Metal budget on 16 GB M-series)</li>
+<li>[x] Fix: <code>squish quantize --cpu</code> flag added (commit <code>03750a3</code>) — forces MLX to CPU device to avoid macOS Metal GPU watchdog (30 s command-buffer timeout) when quantizing large models; auto-applied by pipeline for source ≥ 20 GB</li>
+<li>[x] Fix: <code>_source_has_weights()</code> guard added to pipeline — fails fast with re-download hint when weight shards are missing</li>
+<li>[x] Qwen3-14B (28 GB BF16): all 3 bitwidths (INT4 9.1 GB, INT3 7.4 GB, INT2 5.8 GB) successfully quantized using CPU mode</li>
+<li>[ ] Mistral-7B-Instruct-v0.3 shard download in progress (3 × ~5 GB shards); 3 compression jobs pending</li>
+<li>[ ] Run 5 full benchmark: all 11 BF16 models × INT4/INT3/INT2 = 33 jobs; start after Mistral download completes</li>
 <li>[ ] Demo video: record with monitoring dashboard panel open (real-time TPS/TTFT sparklines visible in frame)</li>
 <li>[ ] HuggingFace blog post: lead with 10–40× TTFT improvement headline; cite Run 4 numbers directly</li>
 </ul>
 <blockquote>
-<p>Note: Qwen3-1.7B is not in the Run 4 benchmark set — the 65–90 tok/s throughput claim in README is unvalidated. Include it in the next benchmark run before using in a public post.</p>
+<p>Note: Qwen3-1.7B is not in the Run 4/5 benchmark set — the 65–90 tok/s throughput claim in README is unvalidated. Add it to the model registry before using in a public post.</p>
 </blockquote>
 <hr />
 <h2 id="v32-wave-58-third-acceleration-tier-rust-vector-k-means-fp6-bitpack-awq-channel-model-merge-moe-bincount-online-sgd-mojo-dual-chunk-attn-infini-attn-memory-sliding-window-attn-hqq-als-vptq-decode-top-kp-sampling-planned">🚧 v32 Wave 58 — Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling (Planned)<a class="headerlink" href="#v32-wave-58-third-acceleration-tier-rust-vector-k-means-fp6-bitpack-awq-channel-model-merge-moe-bincount-online-sgd-mojo-dual-chunk-attn-infini-attn-memory-sliding-window-attn-hqq-als-vptq-decode-top-kp-sampling-planned" title="Permanent link">&para;</a></h2>
