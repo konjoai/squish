@@ -1041,7 +1041,7 @@ All modules have NumPy CPU fallback paths; Mojo kernels fall back to the corresp
 
 ---
 
-## 🚧 v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill (Planned)
+## ✅ v30 Wave 56 — Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill
 
 Theme: **Wave 56 attacks Squish's most impactful remaining performance bottleneck: the gap between
 existing Rust-accelerated INT8/INT4 weight quantization and the remaining high-traffic paths that still execute
@@ -1130,23 +1130,23 @@ for environments without the `magic` toolchain.
 
 ### Completion Checklist
 
-- [ ] `squish_quant_rs/src/lib.rs` — NF4, FP8, INT3, sampling, KV-head-int8, INT2 Rust functions added + registered in `squish_quant` module
-- [ ] `squish/kernels/rs_nf4.py` — RustNF4Kernel (Python wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_fp8.py` — RustFP8Kernel (Python wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_int3.py` — RustINT3Kernel (Python wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_sampler.py` — RustSamplerKernel (Python wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_kv_quant.py` — RustKVQuantKernel (Python wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_int2.py` — RustINT2Kernel (Python wrapper + NumPy fallback)
-- [ ] `squish/kernels/mojo/mojo_bridge.py` — MojoBridge ctypes loader + `mojoproject.toml`
-- [ ] `squish/kernels/mojo/softmax_mojo.py` + `squish/kernels/mojo/kernels/softmax.mojo` — MojoSoftmax
-- [ ] `squish/kernels/mojo/rope_mojo.py` + `squish/kernels/mojo/kernels/rope.mojo` — MojoRoPE
-- [ ] `squish/kernels/mojo/nf4_dequant_mojo.py` + `squish/kernels/mojo/kernels/nf4_dequant.mojo` — MojoNF4Dequant
-- [ ] `squish/kernels/mojo/int4_gemm_mojo.py` + `squish/kernels/mojo/kernels/int4_gemm.mojo` — MojoINT4GEMM
-- [ ] `squish/kernels/mojo/flash_prefill_mojo.py` + `squish/kernels/mojo/kernels/flash_prefill.mojo` — MojoFlashPrefill
-- [ ] `tests/test_wave56a_rust_kernels.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave56b_mojo_kernels.py` — ≥ 72 tests with NumPy fallback coverage, all passing
-- [ ] CHANGELOG `[30.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish_quant_rs/src/lib.rs` — NF4, FP8, INT3, sampling, KV-head-int8, INT2 Rust functions added + registered in `squish_quant` module
+- [x] `squish/kernels/rs_nf4.py` — RustNF4Kernel (Python wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_fp8.py` — RustFP8Kernel (Python wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_int3.py` — RustINT3Kernel (Python wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_sampler.py` — RustSamplerKernel (Python wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_kv_quant.py` — RustKVQuantKernel (Python wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_int2.py` — RustINT2Kernel (Python wrapper + NumPy fallback)
+- [x] `squish/kernels/mojo/mojo_bridge.py` — MojoBridge ctypes loader + `mojoproject.toml`
+- [x] `squish/kernels/mojo/softmax_mojo.py` + `squish/kernels/mojo/kernels/softmax.mojo` — MojoSoftmax
+- [x] `squish/kernels/mojo/rope_mojo.py` + `squish/kernels/mojo/kernels/rope.mojo` — MojoRoPE
+- [x] `squish/kernels/mojo/nf4_dequant_mojo.py` + `squish/kernels/mojo/kernels/nf4_dequant.mojo` — MojoNF4Dequant
+- [x] `squish/kernels/mojo/int4_gemm_mojo.py` + `squish/kernels/mojo/kernels/int4_gemm.mojo` — MojoINT4GEMM
+- [x] `squish/kernels/mojo/flash_prefill_mojo.py` + `squish/kernels/mojo/kernels/flash_prefill.mojo` — MojoFlashPrefill
+- [x] `tests/test_wave56a_rust_kernels.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave56b_mojo_kernels.py` — ≥ 72 tests with NumPy fallback coverage, all passing
+- [x] CHANGELOG `[30.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 

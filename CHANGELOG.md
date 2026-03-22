@@ -5,6 +5,91 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [30.0.0] — 2026-04-07
+
+### Added — Wave 56: v30 Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill
+
+Twelve production-grade modules: six Rust-backed kernel wrappers (Wave 56a),
+five Mojo-backed kernel wrappers with a shared ctypes bridge (Wave 56b), plus
+Rust implementations of all algorithms in `squish_quant_rs/src/lib.rs`.
+
+#### Wave 56a — Rust kernel Python wrappers
+
+- **RustNF4Kernel** (`squish/kernels/rs_nf4.py`) — NormalFloat4 quantization
+  wrapping `squish_quant.{quantize,dequantize}_nf4_grouped_{f32,bf16}`.
+  Standard-normal quantile 16-level LUT; nibble packing; per-group abs-max
+  scale; Rust→NumPy fallback.
+
+- **RustFP8Kernel** (`squish/kernels/rs_fp8.py`) — FP8 E4M3 / E5M2
+  quantization wrapping `squish_quant.{quantize,dequantize}_fp8_{e4m3,e5m2}`.
+  Per-tensor scale; `f32::to_bits()` Rust encoding; Rust→NumPy fallback.
+
+- **RustINT3Kernel** (`squish/kernels/rs_int3.py`) — 3-bit symmetric packed
+  quantization wrapping `squish_quant.{pack,unpack}_int3_grouped_f32`.
+  8 values per 3 bytes; signed range [-3, 3]; Rayon-parallel; Rust→NumPy
+  fallback.
+
+- **RustSamplerKernel** (`squish/kernels/rs_sampler.py`) — Fused
+  softmax + top-p + min-p sampler wrapping
+  `squish_quant.{softmax_logits,top_p_filter,min_p_filter}_f32`.
+  Two-pass online softmax; O(N log N) top-p; Rust→NumPy fallback.
+
+- **RustKVQuantKernel** (`squish/kernels/rs_kv_quant.py`) — KV-cache head
+  INT8 quantization wrapping `squish_quant.{quantize,dequantize}_kv_heads_int8`.
+  Per-head abs-max scale; `(n_heads, n_seq, head_dim)` layout; decode-step
+  update API; Rust→NumPy fallback.
+
+- **RustINT2Kernel** (`squish/kernels/rs_int2.py`) — 2-bit packed
+  quantization wrapping `squish_quant.{quantize,dequantize}_int2_grouped_{f32,bf16}`.
+  4 values per byte; unsigned [0–3] with per-group zero-point + scale;
+  16× compression ratio; Rust→NumPy fallback.
+
+#### Wave 56a — New Rust functions (`squish_quant_rs/src/lib.rs`)
+
+17 new `#[pyfunction]` implementations registered in the `squish_quant`
+PyO3 module: `quantize_nf4_grouped_f32`, `dequantize_nf4_grouped_f32`,
+`quantize_nf4_grouped_bf16`, `quantize_fp8_e4m3_f32`, `dequantize_fp8_e4m3`,
+`quantize_fp8_e5m2_f32`, `dequantize_fp8_e5m2`, `pack_int3_grouped_f32`,
+`unpack_int3_grouped`, `softmax_logits_f32`, `top_p_filter_f32`,
+`min_p_filter_f32`, `quantize_kv_heads_int8`, `dequantize_kv_heads_int8`,
+`quantize_int2_grouped_f32`, `dequantize_int2_grouped_f32`,
+`quantize_int2_grouped_bf16`.
+
+#### Wave 56b — Mojo infrastructure + kernel wrappers
+
+- **MojoBridge** (`squish/kernels/mojo/mojo_bridge.py`) — ctypes-based
+  dynamic loader for compiled Mojo shared libraries
+  (`libsquish_kernels.{so,dylib}`).  Discovers library via configurable
+  search paths; resolves backend as `"mojo"` → `"rust"` → `"numpy"`.
+  Includes `mojoproject.toml` for `magic` build toolchain.
+
+- **MojoSoftmax** (`squish/kernels/mojo/softmax_mojo.py`) — SIMD-accelerated
+  softmax + top-p via Mojo→Rust→NumPy fallback chain.
+
+- **MojoRoPE** (`squish/kernels/mojo/rope_mojo.py`) — Rotary Position
+  Embedding with frequency cache precomputation; Mojo→NumPy fallback; 
+  isometry-preserving implementation.
+
+- **MojoNF4Dequant** (`squish/kernels/mojo/nf4_dequant_mojo.py`) — NF4
+  nibble dequantization; shares NF4 LUT with RustNF4Kernel; Mojo→Rust→NumPy
+  fallback chain.
+
+- **MojoINT4GEMM** (`squish/kernels/mojo/int4_gemm_mojo.py`) — Fused
+  asymmetric INT4 dequant + GEMM; avoids intermediate float32 weight
+  materialisation; Mojo→Rust→NumPy fallback.
+
+- **MojoFlashPrefill** (`squish/kernels/mojo/flash_prefill_mojo.py`) —
+  Block-tiled scaled dot-product attention with per-block online log-sum-exp
+  (Flash Attention 2 algorithm); configurable causal mask; Mojo→NumPy
+  fallback.
+
+- **Mojo kernel stubs** (`squish/kernels/mojo/kernels/`) —
+  `softmax.mojo`, `rope.mojo`, `nf4_dequant.mojo`, `int4_gemm.mojo`,
+  `flash_prefill.mojo` — source-of-truth Mojo files for future compilation
+  via `magic run mojo build --emit shared`.
+
+---
+
 ## [29.0.0] — 2026-04-06
 
 ### Added — Wave 55: v29 Advanced Sampling Refinement: MinP · Mirostat · TypicalSampling · EtaCutoff · CFG · DiverseBeam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound
