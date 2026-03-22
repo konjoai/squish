@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-21 (Wave 37 complete — Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict)
+> Last updated: 2026-03-21 (Wave 37 complete — Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict — Run 5 compression in progress: Qwen3-14B ✅ CPU mode fix · Mistral-7B download pending)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -746,17 +746,22 @@ when `squish_quant_rs` is not compiled. Zero changes to public Python APIs — d
 - [ ] CHANGELOG `[33.0.0]` entry
 - [ ] PLAN.md updated
 
-### Pre-Launch Readiness (as of Run 4, 2026-03-21)
+### Pre-Launch Readiness (as of Run 4, 2026-03-21 — Run 5 compression in progress)
 
 The product is demo-ready. These are the only blockers before a public post:
 
 - [x] README: SquishBar marked "coming soon" (was listed as ✅ — does not exist in codebase)
 - [x] README: TTFT clarified as prompt-to-first-token, not cold-load time; both now documented separately with footnotes
 - [x] README: 7B+ BF16 OOM limit documented in model size table (Qwen2.5-7B-bf16 = 14 GB exceeds 15.5 GB Metal budget on 16 GB M-series)
+- [x] Fix: `squish quantize --cpu` flag added (commit `03750a3`) — forces MLX to CPU device to avoid macOS Metal GPU watchdog (30 s command-buffer timeout) when quantizing large models; auto-applied by pipeline for source ≥ 20 GB
+- [x] Fix: `_source_has_weights()` guard added to pipeline — fails fast with re-download hint when weight shards are missing
+- [x] Qwen3-14B (28 GB BF16): all 3 bitwidths (INT4 9.1 GB, INT3 7.4 GB, INT2 5.8 GB) successfully quantized using CPU mode
+- [ ] Mistral-7B-Instruct-v0.3 shard download in progress (3 × ~5 GB shards); 3 compression jobs pending
+- [ ] Run 5 full benchmark: all 11 BF16 models × INT4/INT3/INT2 = 33 jobs; start after Mistral download completes
 - [ ] Demo video: record with monitoring dashboard panel open (real-time TPS/TTFT sparklines visible in frame)
 - [ ] HuggingFace blog post: lead with 10–40× TTFT improvement headline; cite Run 4 numbers directly
 
-> Note: Qwen3-1.7B is not in the Run 4 benchmark set — the 65–90 tok/s throughput claim in README is unvalidated. Include it in the next benchmark run before using in a public post.
+> Note: Qwen3-1.7B is not in the Run 4/5 benchmark set — the 65–90 tok/s throughput claim in README is unvalidated. Add it to the model registry before using in a public post.
 
 ---
 
