@@ -1453,7 +1453,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v26 Wave 52 — Multi-Modal VLM Efficiency: FastV · VisionZip · LLaVA-PruMerge · Flash-VStream · VLM Serving (Planned)
+## ✅ v26 Wave 52 — Multi-Modal VLM Efficiency: FastV · VisionZip · LLaVA-PruMerge · Flash-VStream · VLM Serving
 
 Theme: **Wave 52 opens a net-new capability axis for Squish: efficient inference for vision-language
 models (VLMs). In 2024–2025 the majority of frontier models became multi-modal — Qwen2.5-VL,
@@ -1535,22 +1535,22 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/vision/fast_v.py` — FastVPruner
-- [ ] `squish/vision/vision_zip.py` — VisionZip
-- [ ] `squish/vision/llava_prumerge.py` — LLaVAPruMerge
-- [ ] `squish/vision/token_packer.py` — TokenPacker
-- [ ] `squish/vision/flash_vstream.py` — FlashVStream
-- [ ] `squish/vision/dynamic_resolution.py` — DynamicResEncoder
-- [ ] `squish/vision/visual_kv_quant.py` — VisualKVQuant
-- [ ] `squish/vision/cross_modal_attn.py` — CrossModalRouter
-- [ ] `squish/vision/video_kv_reuse.py` — VideoKVReuse
-- [ ] `squish/vision/vlm_spec_decode.py` — VLMSpecDecode
-- [ ] `squish/serving/vlm_scheduler.py` — VLMBatchScheduler
-- [ ] `squish/vision/img_encoder_cache.py` — ImageEncoderCache
-- [ ] `tests/test_wave52a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave52b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[26.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/vision/fast_v.py` — FastVPruner
+- [x] `squish/vision/vision_zip.py` — VisionZip
+- [x] `squish/vision/llava_prumerge.py` — LLaVAPruMerge
+- [x] `squish/vision/token_packer.py` — TokenPacker
+- [x] `squish/vision/flash_vstream.py` — FlashVStream
+- [x] `squish/vision/dynamic_resolution.py` — DynamicResEncoder
+- [x] `squish/vision/visual_kv_quant.py` — VisualKVQuant
+- [x] `squish/vision/cross_modal_attn.py` — CrossModalRouter
+- [x] `squish/vision/video_kv_reuse.py` — VideoKVReuse
+- [x] `squish/vision/vlm_spec_decode.py` — VLMSpecDecode
+- [x] `squish/serving/vlm_scheduler.py` — VLMBatchScheduler
+- [x] `squish/vision/img_encoder_cache.py` — ImageEncoderCache
+- [x] `tests/test_wave52a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave52b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[26.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
