@@ -5,6 +5,75 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [24.0.0] — 2026-03-22
+
+### Added — Wave 50: v24 Bigger-Than-Memory Models: SparseGPT · MixtureOfDepths · LeanKV · GGUF · WeightDecompressStream · ModelShardLoader
+
+Six production-grade inference modules enabling 32B models to run fully in-memory and 70B
+models via streaming on a 16 GB Apple M3.  Combines one-shot weight pruning, dynamic token
+routing, asymmetric KV compression, native GGUF parsing, overlapped dequantisation streaming,
+and a three-tier memory hierarchy to push Squish beyond the "what fits in DRAM" boundary.
+
+- **SparseGPTPruner** (`squish/model/sparse_gpt.py`) — One-shot second-order Hessian pruning
+  (Frantar & Alistarh, ICLR 2023) that zeroes 50–60 % of weights in a single forward pass and
+  updates survivors via the OBC column-sweep to compensate, stacking with INT4/INT2 to reach
+  dense-INT2 quality at measurable DRAM savings. `SparseGPTConfig` (`sparsity_ratio`,
+  `block_size`, `update_weights`, `structured`, `damp_pct`), `SparseGPTResult`
+  (`compression_ratio` property). `prune_weight(W, H)`, `prune_model(weights, hessians)`,
+  `sparsity_report(weights)`, `_synthesise_hessian()`, `_damp_hessian()`,
+  `_unstructured_prune()` (OBC column-sweep), `_structured_prune()` (2:4 structured).
+
+- **MixtureOfDepths** (`squish/model/mix_of_depths.py`) — Per-token layer routing
+  (Raposo et al., TMLR 2024) that skips the lowest-scored tokens at each transformer layer via
+  a residual bypass, halving effective FLOPs at 50 % skip budget with near-identical perplexity.
+  `MixtureOfDepthsConfig` (`n_layers`, `skip_ratio`, `router_dim`, `router_type`,
+  `min_active_tokens`), `MoDLayerResult` (`active_ratio` property, `skip_mask`).
+  `route(hidden_states, layer_idx)`, `apply_layer(hidden_states, layer_output, result)`,
+  `expected_flop_ratio()`, `reset_stats()`, `layer_stats()`, `router_weight(layer_idx)`.
+
+- **LeanKVQuant** (`squish/kv/lean_kv.py`) — Asymmetric K/V cache quantization
+  (Kang et al., arXiv 2407.07805, 2024) exploiting the empirical finding that key tensors
+  tolerate lower precision than value tensors; K at INT4, V at INT8 delivers 3× KV compression
+  vs FP16 at < 0.3 PPL degradation, better quality-per-byte than uniform INT4. `LeanKVConfig`
+  (`k_bits`, `v_bits`, `group_size`, `per_tensor`, `symmetric`), `LeanKVState`
+  (`k_bytes`, `v_bytes`, `fp16_bytes`, `compression_ratio` properties).
+  `quantize_kv(k, v)`, `dequantize_kv(state)`, `quantize_k()`, `quantize_v()`,
+  `dequantize_k()`, `dequantize_v()`, `memory_bytes(n_heads, seq_len, head_dim)`.
+
+- **GGUFNativeLoader** (`squish/io/gguf_loader.py`) — GGUF v3 format parser covering
+  Q2_K, Q3_K, Q4_K, Q5_K, Q8_0, F16, and F32 tensor types; bridges Squish to the llama.cpp
+  community ecosystem of quantized models. `GGUFConfig` (`supported_qtypes`, `device`),
+  `GGUFMetadata` (`magic`, `version`, `n_tensors`, `n_kv`, `kv`), `GGUFTensor`
+  (`n_elements` property, `name`, `shape`, `dtype`, `offset`).
+  `load(path)`, `get_metadata(path)`, `list_tensors(path)`, `dequantize_block(raw, qtype, n)`,
+  `make_synthetic(shapes)`, `_dequant_q8_0()`, `_dequant_generic_k()`, `_unpack_bits()`.
+
+- **WeightDecompressStream** (`squish/io/weight_decompress_stream.py`) — Overlapped
+  double-buffer CPU dequantize ↔ GPU compute pipeline (Alizadeh et al., Apple 2024;
+  Sheng et al., ICML 2023) that hides dequantisation latency via a ThreadPoolExecutor,
+  enabling continuous inference without stalling on weight loads. `WeightStreamConfig`
+  (`n_layers`, `bits`, `chunk_size`, `n_threads`, `lookahead`), `WeightStreamHandle`
+  (`layer_idx`, `status`). `submit(layer_idx, compressed)`, `fetch(handle)`,
+  `is_ready(handle)`, `prefetch_range(indices, compressed_dict)`, `stats()`, `reset()`,
+  `compress_weight(W, bits)` (static), `decompress_weight(data, bits, shape)` (static).
+
+- **ModelShardLoader** (`squish/io/model_shard_loader.py`) — Three-tier weight paging
+  (Sheng et al., ICML 2023; Alizadeh et al., Apple 2024): HOT (GPU-resident), WARM
+  (CPU-pinned), COLD (SSD-paged) with configurable hot/warm capacities and lookahead
+  prefetch; thread-safe via `threading.Lock`. `ShardTier` (Enum: HOT/WARM/COLD),
+  `ShardConfig` (`hot_layers`, `warm_layers`, `lookahead`), `LayerShard` (`is_resident`
+  property). `load_model(layers)`, `get_layer(idx)`, `prefetch(indices)`,
+  `evict_to_cold(idx)`, `promote_to_warm(idx)`, `promote_to_hot(idx)`, `tier_of(idx)`,
+  `memory_report()`, `advance_window(current_layer)`, `iter_hot()`.
+
+### Tests
+
+- `tests/test_wave50a_modules.py` — 87 tests covering SparseGPTPruner, MixtureOfDepths, LeanKVQuant
+- `tests/test_wave50b_modules.py` — 104 tests covering GGUFNativeLoader, WeightDecompressStream, ModelShardLoader
+- Total: 191 new tests, all passing
+
+---
+
 ## [23.1.0] — 2026-03-22
 
 ### Added — Wave 49: v23 TTFT Sprint: LLMLingua-2 · RECOMP · Selective Context · PromptCache · PipeInfer · Prepack
