@@ -1349,7 +1349,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v27 Wave 53 — Linear Recurrent Architectures: Mamba2 · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet (Planned)
+## ✅ v27 Wave 53 — Linear Recurrent Architectures: Mamba2 · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet
 
 Theme: **Wave 53 closes Squish's largest architectural blind spot: it currently supports only
 transformer-family models, but 2024–2025 saw the widespread productionisation of state-space
@@ -1439,22 +1439,22 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/attention/mamba2_ssm.py` — Mamba2SSD
-- [ ] `squish/attention/rwkv_channel_mix.py` — RWKV6ChannelMix
-- [ ] `squish/attention/hawk_recurrent.py` — HawkLinearRNN
-- [ ] `squish/attention/xlstm_block.py` — xLSTMBlock
-- [ ] `squish/attention/ttt_layer.py` — TTTLinearLayer
-- [ ] `squish/attention/delta_net.py` — DeltaNetLinear
-- [ ] `squish/kv/ssm_state_cache.py` — SSMStateCache
-- [ ] `squish/kernels/parallel_scan_kernel.py` — ParallelScanKernel
-- [ ] `squish/quant/ssm_quant.py` — SSMQuantizer
-- [ ] `squish/serving/hybrid_arch_router.py` — HybridArchRouter
-- [ ] `squish/attention/hymba_dual.py` — HymbaDualTrack
-- [ ] `squish/streaming/ssm_state_offload.py` — SSMStateOffload
-- [ ] `tests/test_wave53a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave53b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[27.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/attention/mamba2_ssm.py` — Mamba2SSD
+- [x] `squish/attention/rwkv_channel_mix.py` — RWKV6ChannelMix
+- [x] `squish/attention/hawk_recurrent.py` — HawkLinearRNN
+- [x] `squish/attention/xlstm_block.py` — xLSTMBlock
+- [x] `squish/attention/ttt_layer.py` — TTTLinearLayer
+- [x] `squish/attention/delta_net.py` — DeltaNetLinear
+- [x] `squish/kv/ssm_state_cache.py` — SSMStateCache
+- [x] `squish/kernels/parallel_scan_kernel.py` — ParallelScanKernel
+- [x] `squish/quant/ssm_quant.py` — SSMQuantizer
+- [x] `squish/serving/hybrid_arch_router.py` — HybridArchRouter
+- [x] `squish/attention/hymba_dual.py` — HymbaDualTrack
+- [x] `squish/streaming/ssm_state_offload.py` — SSMStateOffload
+- [x] `tests/test_wave53a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave53b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[27.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 

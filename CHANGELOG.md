@@ -5,6 +5,89 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [27.0.0] — 2026-04-06
+
+### Added — Wave 53: v27 Linear Recurrent Architectures: Mamba2 · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet · HybridRouter · HymbaDualTrack · SSMStateOffload · SSMStateCache · ParallelScan · SSMQuant
+
+Twelve production-grade modules for O(1)-per-token linear recurrent
+architectures and their inference infrastructure.  Covers SSD/Mamba2
+state-space duality, RWKV-6 Eagle matrix-valued states, Hawk real-gated
+linear recurrence, xLSTM scalar/matrix cell fusion, test-time training
+layers, delta-rule recurrent attention, hybrid-model routing, parallel
+Blelloch prefix scan, SSM-aware quantisation, and unlimited-context
+state offload.
+
+- **Mamba2SSM** (`squish/attention/mamba2_ssm.py`) — Structured State-Space
+  Duality (SSD) block from Mamba-2 (Dao & Gu, arXiv 2405.21060, 2024).
+  `Mamba2Config`, `Mamba2State`, parallel `forward(x, initial_state)`,
+  recurrent `step(x_t, state)`, `init_state()`.
+
+- **RWKV6ChannelMix** (`squish/attention/rwkv_channel_mix.py`) — RWKV-6
+  Eagle/Finch wkv6 time-mix + channel-mix block with matrix-valued state
+  (Peng et al., arXiv 2404.05892, 2024).  `RWKV6Config`, `RWKV6State`
+  (`time_state (n_heads, head_dim, d_state)`, `n_tokens_seen`),
+  `new_state()`, `forward(x, state)`.
+
+- **HawkLinearRNN** (`squish/attention/hawk_recurrent.py`) — Hawk
+  real-gated linear recurrence cell, core SSM layer for Griffin
+  (de Vries et al., arXiv 2402.19427, 2024).  `HawkConfig`, `HawkState`,
+  `new_state()`, `forward(x, state)`, `recurrent_step(x, state)`,
+  `scan_prefill(x, h0)`.
+
+- **xLSTMBlock** (`squish/attention/xlstm_block.py`) — Extended LSTM
+  combining scalar (sLSTM) and matrix (mLSTM) cells with exponential
+  gates and max-stabilisation (Beck et al., arXiv 2405.04517, 2024).
+  `xLSTMConfig`, `sLSTMState`, `mLSTMState`, `xLSTMState`, `new_state()`,
+  `forward(x, state)`.
+
+- **TTTLinearLayer** (`squish/attention/ttt_layer.py`) — Test-Time Training
+  layer with in-context mini-model update via closed-form delta rule
+  (Sun et al., arXiv 2407.04620, 2024).  `TTTConfig`, `TTTState`
+  (`W`, `velocity`), optional SGD momentum, `new_state()`, `forward(x, state)`.
+
+- **DeltaNetLinear** (`squish/attention/delta_net.py`) — Delta-rule linear
+  recurrent attention with L2-normalised keys and per-token learnable β
+  (Yang et al., arXiv 2406.06484, NeurIPS 2024).  `DeltaNetConfig`,
+  `DeltaNetState` (`W (n_heads, head_dim, d_state)`), `new_state()`,
+  `forward(x, state)`.
+
+- **SSMStateCache** (`squish/kv/ssm_state_cache.py`) — LRU session store
+  for Mamba2/RWKV6/Hawk/xLSTM/TTT/DeltaNet recurrent states with
+  NumPy `.npz` serialisation and optional compression.  `SSMStateCacheConfig`,
+  `SSMCacheEntry`, `SSMStateCache` (`put`, `get`, `delete`, `stats`, LRU eviction).
+
+- **ParallelScanKernel** (`squish/kernels/parallel_scan_kernel.py`) —
+  Blelloch work-efficient parallel prefix scan for SSM prefill
+  (O(log N) passes).  `ScalarMulAdd` and `MatMulAdd` associative
+  operators, `scan_scalar`, `scan_affine`, `blelloch_scan_scalar`.
+
+- **SSMQuantizer** (`squish/quant/ssm_quant.py`) — Calibration-aware
+  quantisation for SSM parameter roles (dt→int8, A_log/B/C/conv1d→int4,
+  state→fp16) inspired by ZipCache (He et al., arXiv 2408.09871, 2024).
+  `SSMQuantConfig`, `SSMQuantState`, `observe`, `finalise`,
+  `quantize_tensor`, `dequantize_tensor`, `compression_ratio`.
+
+- **HybridArchRouter** (`squish/serving/hybrid_arch_router.py`) — Per-layer
+  dispatch router for Jamba/Zamba hybrid models reading `layer_types` from
+  config.json (Lieber et al., arXiv 2403.19887, 2024).  `HybridArchConfig`,
+  `HybridLayerSpec`, `HybridArchRouter` (`register`, `route`, `count_by_type`,
+  `attention_ratio`, `from_layer_types`).
+
+- **HymbaDualTrack** (`squish/attention/hymba_dual.py`) — Parallel mini-SSM
+  + causal attention hybrid head from Hymba (Dong et al., arXiv 2411.13676,
+  2024).  SSM stream: per-head state via exponential decay + linear projection;
+  attention stream: masked MHA; outputs summed before projection.
+  `HymbaConfig`, `HymbaState`, `new_state()`, `forward(x, state)`.
+
+- **SSMStateOffload** (`squish/streaming/ssm_state_offload.py`) — Segment-
+  boundary state checkpointing for unlimited-context SSM sessions
+  (Waleffe et al., arXiv 2406.07887, 2024).  Optional FP16 compression,
+  per-session segment eviction.  `SSMStateOffloadConfig`, `OffloadSegment`,
+  `SSMStateOffload` (`new_session`, `maybe_offload`, `restore`,
+  `latest_segment`, `segments_for_session`, `stats`, `delete_session`).
+
+---
+
 ## [26.0.0] — 2026-04-05
 
 ### Added — Wave 52: v26 Multi-Modal VLM Efficiency: FastV · VisionZip · LLaVAPruMerge · TokenPacker · FlashVStream · DynamicRes · VisualKVQuant · CrossModalAttn · VideoKVReuse · VLMSpecDecode · VLMScheduler · ImgEncoderCache
