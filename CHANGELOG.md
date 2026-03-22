@@ -5,6 +5,79 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [21.0.0] — 2026-03-21
+
+### Added — Wave 46: Model Surgery · Expert Choice · W4A8 · MLA KV Compress · CacheBlend · Sampling Precision
+
+Twelve production-grade modules spanning model surgery (SliceGPT, Wanda, ShortGPT), mixed-precision
+quantization (W4A8), Mixture-of-Experts routing (Expert Choice), multi-head latent KV compression
+(DeepSeek MLA), prefix-KV reuse (CacheBlend), multi-server prefix routing (Preble), and advanced
+sampling (Min-P, Contrastive Search). Two modules (RazorAttention, GreenKV) were already present
+from Wave 40 and are covered by the new test suite.
+
+- **SliceGPTPruner** (`squish/quant/slice_gpt.py`) — Orthogonal-rotation weight slicing
+  (SliceGPT, ICLR 2024). SVD-based rotation Q, `compute_rotation()`, `slice_weight()`,
+  `calibrate_and_slice()`, `slice_pair()`. `SliceGPTResult.reconstruct()` restores original shape.
+
+- **WandaPruner** (`squish/quant/wanda_pruner.py`) — Activation-magnitude unstructured and
+  N:M structured pruning (Wanda, ICLR 2024). `prune()`, `prune_layer()`. `WandaResult.apply()`
+  for matmul-with-mask; N:M validated at construction.
+
+- **ShortGPTPruner** (`squish/quant/short_gpt.py`) — Layer-importance block removal via BI score
+  (ShortGPT, IJCAI 2024). `compute_block_importance()`, `select_layers_to_remove()`,
+  `prune_layer_list()`, `calibrate_importance()`. `BlockImportance.most_redundant()` / `.most_important()`.
+
+- **W4A8QuantRuntime** (`squish/quant/w4a8_quant.py`) — 4-bit weight × 8-bit activation mixed-precision
+  runtime. Per-group W4 packing with symmetric/asymmetric options; dynamic per-tensor INT8 activation
+  quantization. `quantize_weight()`, `quantize_activation()`, `forward()`.
+
+- **ExpertChoiceRouter** (`squish/moe/expert_choice.py`) — Token-capacity-balanced MoE routing
+  (Expert Choice, NeurIPS 2022). Each expert selects its top-`capacity` tokens from the batch;
+  `route()`, `combine()`. Equal per-expert capacity guarantees zero load-balance loss.
+
+- **MLAKVCompress** (`squish/kv/mla_kv_compress.py`) — Multi-head Latent Attention KV compression
+  (DeepSeek-V2, 2024). Projects hidden states to latent dimension `c` via W_compress; reconstructs
+  K/V via W_decompress_k/v. `compress()`, `decompress_k/v()`, `get_kv_sequence()`, `reset()`.
+
+- **MinPSampler** (`squish/sampling/minp_sampler.py`) — Min-p probability floor sampling
+  (Nguyen & Salazar, 2024). Temperature + optional top-k pre-filter + min-p gate.
+  `sample()`, `sample_batch()`, `filter_logits()`. Validates `min_p_factor ∈ [0,1)` and `top_k ≥ 0`.
+
+- **ContrastiveSearch** (`squish/sampling/contrastive_search.py`) — Degeneration-penalised
+  token selection (Su et al., ACL 2022). Combines model probability with cosine similarity
+  degeneration penalty against context window. `step()`, `reset_context()`, `generate()`.
+
+- **CacheBlend** (`squish/kv/cacheblend.py`) — Partial KV prefix reuse for RAG context
+  (Yao et al., EuroSys 2025). Exact token-id prefix matching with overlap recomputation window.
+  `store_kv()`, `blend()` returns `CacheBlendResult` with `cache_hit_ratio`. LRU eviction,
+  shape layout `(seq_len, n_heads, head_dim)`. Added `__post_init__` validation.
+
+- **PrebeleRouter** (`squish/serving/preble_router.py`) — Prefix-cache-aware multi-server
+  routing (Preble, arXiv 2407.00023). Chunk-hash occupancy maps per server; scores by KV overlap
+  + load. `route()`, `complete_request()`, `warm_cache()`, `cache_stats()`. Added `chunk_size`
+  and `load_weight` validation.
+
+- **RazorAttention** (`squish/attention/razor_attn.py`) *(Wave 40, newly tested)* — Retrieval-head
+  KV eviction (He et al., NeurIPS 2024). `calibrate()` classifies heads by entropy; `forward()`
+  routes retrieval heads to full KV and non-retrieval heads to 2-token summary KV.
+
+- **GreenKVEviction** (`squish/kv/green_kv.py`) *(Wave 40, newly tested)* — Accumulated-score
+  KV eviction with per-head budget transfer (GreenKV, arXiv 2412.15838). `compress()` returns
+  per-head `(K_keep, V_keep, kept_idx)` lists; global budget preserved with min-head guarantee.
+
+### Changed
+- `MinPConfig.__post_init__`: relaxed `min_p_factor` to allow 0.0 (`[0,1)` instead of `(0,1)`);
+  added `top_k ≥ 0` validation.
+- `MinPSampler.sample`: `n_candidates` now counts tokens with positive filtered probability,
+  correctly reflecting top-k pre-filtering.
+
+### Tests
+- `tests/test_wave46a_modules.py` — 92 tests covering SliceGPT, Wanda, ShortGPT, W4A8, ExpertChoice, MLAKVCompress.
+- `tests/test_wave46b_modules.py` — 85 tests covering MinP, ContrastiveSearch, RazorAttention, CacheBlend, GreenKV, PrebeleRouter.
+- Full suite: **10,372 passed**, 34 skipped.
+
+---
+
 ## [20.0.0] — 2026-03-21
 
 ### Added — Wave 45: Weight Offload, RoPE Extensions, FP8/MX Quantization, and Scheduling

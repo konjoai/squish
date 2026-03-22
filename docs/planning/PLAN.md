@@ -1993,7 +1993,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v21 Wave 46 — Model Surgery · Expert Choice · W4A8 · MLA KV Compress · CacheBlend · Sampling Precision (Planned)
+## ✅ v21 Wave 46 — Model Surgery · Expert Choice · W4A8 · MLA KV Compress · CacheBlend · Sampling Precision (Complete 2026-03-21)
 
 Theme: **Wave 46 closes the gap between Squish's algorithmic coverage and three production-critical
 capabilities that 2024 deployments standardized: (1) model surgery — SliceGPT orthogonal column
@@ -2062,22 +2062,22 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/quant/slice_gpt.py` — SliceGPTPruner
-- [ ] `squish/quant/wanda_pruner.py` — WandaPruner
-- [ ] `squish/quant/short_gpt.py` — ShortGPTPruner
-- [ ] `squish/quant/w4a8_quant.py` — W4A8QuantRuntime
-- [ ] `squish/moe/expert_choice.py` — ExpertChoiceRouter
-- [ ] `squish/kv/mla_kv_compress.py` — MLAKVCompress
-- [ ] `squish/sampling/minp_sampler.py` — MinPSampler
-- [ ] `squish/sampling/contrastive_search.py` — ContrastiveSearch
-- [ ] `squish/attention/razor_attn.py` — RazorAttention
-- [ ] `squish/kv/cacheblend.py` — CacheBlend
-- [ ] `squish/kv/green_kv.py` — GreenKV
-- [ ] `squish/serving/preble_router.py` — PrebeleRouter
-- [ ] `tests/test_wave46a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave46b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[21.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/quant/slice_gpt.py` — SliceGPTPruner
+- [x] `squish/quant/wanda_pruner.py` — WandaPruner
+- [x] `squish/quant/short_gpt.py` — ShortGPTPruner
+- [x] `squish/quant/w4a8_quant.py` — W4A8QuantRuntime
+- [x] `squish/moe/expert_choice.py` — ExpertChoiceRouter
+- [x] `squish/kv/mla_kv_compress.py` — MLAKVCompress
+- [x] `squish/sampling/minp_sampler.py` — MinPSampler
+- [x] `squish/sampling/contrastive_search.py` — ContrastiveSearch
+- [x] `squish/attention/razor_attn.py` — RazorAttention
+- [x] `squish/kv/cacheblend.py` — CacheBlend
+- [x] `squish/kv/green_kv.py` — GreenKV
+- [x] `squish/serving/preble_router.py` — PrebeleRouter
+- [x] `tests/test_wave46a_modules.py` — 92 tests, all passing
+- [x] `tests/test_wave46b_modules.py` — 85 tests, all passing
+- [x] CHANGELOG `[21.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 

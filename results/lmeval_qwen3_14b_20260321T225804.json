@@ -1,0 +1,27 @@
+{
+  "model": "Qwen3-14B-mlx-int4",
+  "model_path": "/Users/wscholl/models/Qwen3-14B-mlx-int4",
+  "timestamp": "20260321T225804",
+  "limit": 10,
+  "platform": {
+    "platform": "macOS-15.7.4-arm64-arm-64bit",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.12.8",
+    "mlx_lm": "0.30.7",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {
+    "arc_easy": 10.0
+  },
+  "raw_results": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.2,
+      "acc_stderr,none": 0.13333333333333333,
+      "acc_norm,none": 0.1,
+      "acc_norm_stderr,none": 0.09999999999999999
+    }
+  },
+  "elapsed_s": 27.677649974822998
+}
