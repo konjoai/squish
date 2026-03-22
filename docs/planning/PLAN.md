@@ -1821,7 +1821,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v23 Wave 48 — INT2/INT3 Extreme Quantization: SpQR · AutoRound · OWQ · BitDistiller · ZipLM · GGUF Mixed (Planned)
+## ✅ v23 Wave 48 — INT2/INT3 Extreme Quantization: SpQR · AutoRound · OWQ · BitDistiller · ZipLM · GGUF Mixed (Complete 2026-03-22)
 
 Theme: **Wave 48 pushes Squish below the INT4 floor that prior waves have treated as a
 practical limit, targeting 2–3 bits to unlock new model size tiers on a standard 16 GB Apple
@@ -1891,16 +1891,16 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/quant/spqr.py` — SpQRQuantizer
-- [ ] `squish/quant/auto_round.py` — AutoRoundQuantizer
-- [ ] `squish/quant/owq.py` — OWQQuantizer
-- [ ] `squish/quant/bit_distiller.py` — BitDistillerQuant
-- [ ] `squish/quant/zip_lm.py` — ZipLMMixedPrecision
-- [ ] `squish/quant/gguf_mixed.py` — GGUFMixedQuantizer
-- [ ] `tests/test_wave48a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave48b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[23.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/quant/spqr.py` — SpQRQuantizer
+- [x] `squish/quant/auto_round.py` — AutoRoundQuantizer
+- [x] `squish/quant/owq.py` — OWQQuantizer
+- [x] `squish/quant/bit_distiller.py` — BitDistillerQuant
+- [x] `squish/quant/zip_lm.py` — ZipLMMixedPrecision
+- [x] `squish/quant/gguf_mixed.py` — GGUFMixedQuantizer
+- [x] `tests/test_wave48a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave48b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[23.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
