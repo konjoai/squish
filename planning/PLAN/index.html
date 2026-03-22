@@ -1500,15 +1500,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v28-wave-54-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-flashattn3-doublesparsity-elasticbatching-planned" class="md-nav__link">
+  <a href="#v28-wave-54-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-flashattn3-doublesparsity-elasticbatching" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching (Planned)
+        ✅ v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching (Planned)">
+    <nav class="md-nav" aria-label="✅ v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -5933,15 +5933,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v28-wave-54-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-flashattn3-doublesparsity-elasticbatching-planned" class="md-nav__link">
+  <a href="#v28-wave-54-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-flashattn3-doublesparsity-elasticbatching" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching (Planned)
+        ✅ v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching (Planned)">
+    <nav class="md-nav" aria-label="✅ v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -12620,7 +12620,7 @@ round-to-nearest at INT4 and composing with every existing calibration method in
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v28-wave-54-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-flashattn3-doublesparsity-elasticbatching-planned">🚧 v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching (Planned)<a class="headerlink" href="#v28-wave-54-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-flashattn3-doublesparsity-elasticbatching-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v28-wave-54-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-flashattn3-doublesparsity-elasticbatching">✅ v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching<a class="headerlink" href="#v28-wave-54-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-flashattn3-doublesparsity-elasticbatching" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 54 widens on two orthogonal fronts that prior waves leave incompletely addressed.
 (1) MoE architecture depth — the existing <code>sparse_moe.py</code> covers basic top-K expert dispatch,
 but the generation of frontier MoE models launched in 2024–2025 (DeepSeek-V2/V3, Mixtral-8×22B,
@@ -12868,22 +12868,22 @@ no Apple Silicon runtime currently serves DeepSeek-V2 architecture natively.</p>
 </blockquote>
 <h3 id="completion-checklist_11">Completion Checklist<a class="headerlink" href="#completion-checklist_11" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] <code>squish/moe/shared_expert.py</code> — SharedExpertMoE</li>
-<li>[ ] <code>squish/moe/fine_grained_router.py</code> — FineGrainedMoERouter</li>
-<li>[ ] <code>squish/moe/expert_offload.py</code> — ExpertOffloader</li>
-<li>[ ] <code>squish/moe/expert_merge.py</code> — ExpertMerger</li>
-<li>[ ] <code>squish/moe/lazy_expert_load.py</code> — LazyExpertLoader</li>
-<li>[ ] <code>squish/moe/expert_cache.py</code> — ExpertActivationCache</li>
-<li>[ ] <code>squish/kernels/flash_attn3.py</code> — FlashAttn3Kernel</li>
-<li>[ ] <code>squish/attention/double_sparse.py</code> — DoubleSparsityAttn</li>
-<li>[ ] <code>squish/attention/lasp_parallel.py</code> — LASPLinearAttn</li>
-<li>[ ] <code>squish/kv/nacl_cache.py</code> — NaCLCache</li>
-<li>[ ] <code>squish/serving/kv_migration.py</code> — KVMigrationManager</li>
-<li>[ ] <code>squish/serving/elastic_batching.py</code> — ElasticBatchController</li>
-<li>[ ] <code>tests/test_wave54a_modules.py</code> — ≥ 72 tests, all passing</li>
-<li>[ ] <code>tests/test_wave54b_modules.py</code> — ≥ 72 tests, all passing</li>
-<li>[ ] CHANGELOG <code>[28.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] <code>squish/moe/shared_expert.py</code> — SharedExpertMoE</li>
+<li>[x] <code>squish/moe/fine_grained_router.py</code> — FineGrainedMoERouter</li>
+<li>[x] <code>squish/moe/expert_offload.py</code> — ExpertOffloader</li>
+<li>[x] <code>squish/moe/expert_merge.py</code> — ExpertMerger</li>
+<li>[x] <code>squish/moe/lazy_expert_load.py</code> — LazyExpertLoader</li>
+<li>[x] <code>squish/moe/expert_cache.py</code> — ExpertActivationCache</li>
+<li>[x] <code>squish/kernels/flash_attn3.py</code> — FlashAttn3Kernel</li>
+<li>[x] <code>squish/attention/double_sparse.py</code> — DoubleSparsityAttn</li>
+<li>[x] <code>squish/attention/lasp_parallel.py</code> — LASPLinearAttn</li>
+<li>[x] <code>squish/kv/nacl_cache.py</code> — NaCLCache</li>
+<li>[x] <code>squish/serving/kv_migration.py</code> — KVMigrationManager</li>
+<li>[x] <code>squish/serving/elastic_batching.py</code> — ElasticBatchController</li>
+<li>[x] <code>tests/test_wave54a_modules.py</code> — ≥ 72 tests, all passing</li>
+<li>[x] <code>tests/test_wave54b_modules.py</code> — ≥ 72 tests, all passing</li>
+<li>[x] CHANGELOG <code>[28.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v27-wave-53-linear-recurrent-architectures-mamba2-rwkv-6-hawkgriffin-xlstm-ttt-deltanet">✅ v27 Wave 53 — Linear Recurrent Architectures: Mamba2 · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet<a class="headerlink" href="#v27-wave-53-linear-recurrent-architectures-mamba2-rwkv-6-hawkgriffin-xlstm-ttt-deltanet" title="Permanent link">&para;</a></h2>

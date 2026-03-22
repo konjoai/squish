@@ -838,6 +838,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#2800-2026-04-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [28.0.0] — 2026-04-06
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[28.0.0] — 2026-04-06">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-54-v28-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-expertmerge-lazyexpertload-expertcache-flashattn3-doublesparsity-laspparallel-naclcache-kvmigration-elasticbatching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 54: v28 Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · ExpertMerge · LazyExpertLoad · ExpertCache · FlashAttn3 · DoubleSparsity · LASPParallel · NaCLCache · KVMigration · ElasticBatching
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#2700-2026-04-06" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2218,6 +2246,75 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="2800-2026-04-06">[28.0.0] — 2026-04-06<a class="headerlink" href="#2800-2026-04-06" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-54-v28-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-expertmerge-lazyexpertload-expertcache-flashattn3-doublesparsity-laspparallel-naclcache-kvmigration-elasticbatching">Added — Wave 54: v28 Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · ExpertMerge · LazyExpertLoad · ExpertCache · FlashAttn3 · DoubleSparsity · LASPParallel · NaCLCache · KVMigration · ElasticBatching<a class="headerlink" href="#added-wave-54-v28-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-expertmerge-lazyexpertload-expertcache-flashattn3-doublesparsity-laspparallel-naclcache-kvmigration-elasticbatching" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules for deep MoE efficiency improvements (DeepSeek-V2/V3 style), next-generation tiled
+attention, ring-parallel linear attention, KV cache management, and adaptive serving infrastructure.</p>
+<ul>
+<li>
+<p><strong>SharedExpertMoE</strong> (<code>squish/moe/shared_expert.py</code>) — DeepSeek-V2-style always-active shared experts combined with
+  top-K routed experts.  <code>SharedExpertConfig</code>, <code>SharedExpertMoE</code>, <code>forward(x)→(out,)</code>, <code>_router(x)</code>.
+  Reference: arXiv 2405.04434.</p>
+</li>
+<li>
+<p><strong>FineGrainedMoERouter</strong> (<code>squish/moe/fine_grained_router.py</code>) — Aux-loss-free expert load balancing via
+  per-step router-bias updates (DeepSeek-V3 style).  <code>FineGrainedRouterConfig</code>, <code>RouterBiasState</code>,
+  <code>route(x, state)→(indices, weights, state)</code>, <code>update_bias(load_counts, state)→state</code>.
+  Reference: arXiv 2412.19437.</p>
+</li>
+<li>
+<p><strong>ExpertOffloader</strong> (<code>squish/moe/expert_offload.py</code>) — CPU-offload expert-weight pager with LRU eviction;
+  models GPU-DRAM paging for sparse MoE inference.  <code>ExpertOffloadConfig</code>, <code>OffloadState</code>,
+  <code>get_expert(idx, state)</code>, <code>evict_lru(state)</code>, <code>stats(state)</code>.</p>
+</li>
+<li>
+<p><strong>ExpertMerger</strong> (<code>squish/moe/expert_merge.py</code>) — Cosine-similarity-based expert consolidation; iteratively
+  merges the most-similar expert pairs until target compression ratio is reached.  <code>ExpertMergeConfig</code>,
+  <code>merge(expert_weights)→(merged, merge_map)</code>, <code>similarity_matrix(weights)</code>, <code>compression_ratio(n, m)</code>.</p>
+</li>
+<li>
+<p><strong>LazyExpertLoader</strong> (<code>squish/moe/lazy_expert_load.py</code>) — JIT expert weight materialisation; defers allocation
+  until routing score exceeds threshold; evicts idle experts.  <code>LazyExpertConfig</code>, <code>LazyExpertState</code>,
+  <code>forward(x, expert_idx, score, state)</code>, <code>_materialize(idx, state)</code>, <code>_maybe_evict(state)</code>.</p>
+</li>
+<li>
+<p><strong>ExpertActivationCache</strong> (<code>squish/moe/expert_cache.py</code>) — LRU output cache with cosine-similarity gate;
+  approximate input matching (threshold 0.97) for up to 30 % expert FLOP reduction.  <code>ExpertCacheConfig</code>,
+  <code>ExpertCacheState</code>, <code>lookup(expert_id, x, state)</code>, <code>store(expert_id, x, out, state)</code>, <code>hit_rate(state)</code>.</p>
+</li>
+<li>
+<p><strong>FlashAttn3Kernel</strong> (<code>squish/kernels/flash_attn3.py</code>) — Tiled online-softmax attention with pingpong
+  accumulation buffers (NumPy reference).  <code>FlashAttn3Config</code>, <code>forward(Q, K, V)→(out, lse)</code>.
+  Reference: arXiv 2407.08608.</p>
+</li>
+<li>
+<p><strong>DoubleSparsityAttn</strong> (<code>squish/attention/double_sparse.py</code>) — Two-axis sparsity: head-level pruning via Taylor
+  importance calibration + token-level top-K key selection.  <code>DoubleSparseConfig</code>, <code>DoubleSparseState</code>,
+  <code>calibrate(grads, state)</code>, <code>finalise_calibration(state)</code>, <code>forward(Q, K, V, state)</code>.
+  Reference: arXiv 2408.07092.</p>
+</li>
+<li>
+<p><strong>LASPLinearAttn</strong> (<code>squish/attention/lasp_parallel.py</code>) — Ring-topology sequence-parallel linear attention;
+  communicates O(head_dim²) recurrent state per ring step.  <code>LASPConfig</code>, <code>LASPRingState</code>,
+  <code>forward(x, state)</code>, <code>ring_step(local_x, recv_state)</code>.  Reference: arXiv 2405.01234.</p>
+</li>
+<li>
+<p><strong>NaCLCache</strong> (<code>squish/kv/nacl_cache.py</code>) — KV cache with anchor + recent reserve and O(1) random eviction
+  of middle tokens.  <code>NaCLConfig</code>, <code>NaCLState</code>, <code>update(k, v, state)</code>, <code>get_kv(state)</code>,
+  <code>evict_if_needed(state)</code>.  Reference: arXiv 2408.16527.</p>
+</li>
+<li>
+<p><strong>KVMigrationManager</strong> (<code>squish/serving/kv_migration.py</code>) — Coordinate live KV page migration between serving
+  workers; ref-counted allocation + rebalance on low headroom.  <code>KVMigrationConfig</code>, <code>MigrationRecord</code>,
+  <code>register_worker</code>, <code>migrate</code>, <code>rebalance</code>, <code>stats</code>.</p>
+</li>
+<li>
+<p><strong>ElasticBatchController</strong> (<code>squish/serving/elastic_batching.py</code>) — Adaptive batch sizing based on KV headroom
+  and queue depth; grow/shrink/hold policy with configurable watermarks.  <code>ElasticBatchConfig</code>,
+  <code>ElasticBatchState</code>, <code>tick(kv_headroom, queue_depth, state)→(batch_size, state)</code>, <code>stats</code>.</p>
+</li>
+</ul>
 <hr />
 <h2 id="2700-2026-04-06">[27.0.0] — 2026-04-06<a class="headerlink" href="#2700-2026-04-06" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-53-v27-linear-recurrent-architectures-mamba2-rwkv-6-hawkgriffin-xlstm-ttt-deltanet-hybridrouter-hymbadualtrack-ssmstateoffload-ssmstatecache-parallelscan-ssmquant">Added — Wave 53: v27 Linear Recurrent Architectures: Mamba2 · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet · HybridRouter · HymbaDualTrack · SSMStateOffload · SSMStateCache · ParallelScan · SSMQuant<a class="headerlink" href="#added-wave-53-v27-linear-recurrent-architectures-mamba2-rwkv-6-hawkgriffin-xlstm-ttt-deltanet-hybridrouter-hymbadualtrack-ssmstateoffload-ssmstatecache-parallelscan-ssmquant" title="Permanent link">&para;</a></h3>
