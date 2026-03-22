@@ -2235,41 +2235,44 @@ def cmd_convert_model(args):
         print(f"  [dry-run] embed-bits  : {args.embed_bits}")
         return
 
-    output_path.mkdir(parents=True, exist_ok=True)
+    # Do NOT pre-create the output directory — mlx_lm.convert refuses to write
+    # to an already-existing path, so we let it create the directory itself.
 
     try:
         import mlx_lm as _mlx_lm
     except ImportError:
         _die("mlx_lm is required for convert-model. Install with: pip install mlx-lm>=0.19")
 
-    print(f"  Quantizing FFN layers to {args.ffn_bits}-bit …")
+    ffn_bits: int = args.ffn_bits
+    embed_bits: int = args.embed_bits
+
+    if ffn_bits == embed_bits:
+        # Uniform quantization — simple path, no per-layer predicate needed.
+        quant_predicate = None
+        q_bits = ffn_bits
+        print(f"  Quantizing all layers to {ffn_bits}-bit …")
+    else:
+        # Mixed-precision: FFN layers at ffn_bits, embed/lm_head at embed_bits.
+        # Single mlx_lm.convert pass using a per-layer dict predicate so that
+        # mlx_lm creates the output directory exactly once.
+        q_bits = ffn_bits  # default (overridden per-layer by predicate)
+        def quant_predicate(path: str, _module) -> bool | dict:  # noqa: E501
+            is_embed = "lm_head" in path or "embed_tokens" in path
+            bits = embed_bits if is_embed else ffn_bits
+            return {"bits": bits, "group_size": 64}
+        print(f"  Quantizing FFN layers to {ffn_bits}-bit, "
+              f"embed/lm_head to {embed_bits}-bit …")
+
     try:
         _mlx_lm.convert(
             hf_path=str(source_path),
             mlx_path=str(output_path),
             quantize=True,
-            q_bits=args.ffn_bits,
-            quant_predicate=lambda path, m, _: (
-                "lm_head" not in path and "embed_tokens" not in path
-            ),
+            q_bits=q_bits,
+            quant_predicate=quant_predicate,
         )
     except Exception as exc:
         _die(f"FFN quantization failed: {exc}")
-
-    if args.embed_bits != args.ffn_bits:
-        print(f"  Re-quantizing embed/lm_head to {args.embed_bits}-bit …")
-        try:
-            _mlx_lm.convert(
-                hf_path=str(output_path),
-                mlx_path=str(output_path),
-                quantize=True,
-                q_bits=args.embed_bits,
-                quant_predicate=lambda path, m, _: (
-                    "lm_head" in path or "embed_tokens" in path
-                ),
-            )
-        except Exception as exc:
-            _die(f"Embed quantization failed: {exc}")
 
     print(f"\n  Mixed-precision model saved to: {output_path}")
     print(f"  Load with: squish run --mlx-model-dir {output_path}")

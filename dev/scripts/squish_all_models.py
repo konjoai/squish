@@ -52,6 +52,14 @@ def _model_base(name: str) -> str:
 def _output_name(name: str, suffix: str) -> str:
     return f"{_model_base(name)}-{suffix}"
 
+def _is_complete(path: Path) -> bool:
+    """Return True only if the output dir exists and has actual content (> 0 bytes)."""
+    if not path.exists():
+        return False
+    total = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    return total > 0
+
+
 def _compress_one(
     source_path: Path,
     output_path: Path,
@@ -60,14 +68,23 @@ def _compress_one(
     dry_run: bool,
 ) -> bool:
     """Run squish quantize for one model/bitwidth. Returns True on success."""
-    if output_path.exists():
-        print(f"  [skip] {output_path.name} already exists")
+    if _is_complete(output_path):
+        gb = sum(f.stat().st_size for f in output_path.rglob("*") if f.is_file()) / 1e9
+        print(f"  [skip] {output_path.name} already exists ({gb:.2f} GB)", flush=True)
         return True
+
+    # Remove any empty/partial directory left by a previous interrupted run.
+    # Use a temp path so that squish never sees a pre-existing dest dir.
+    tmp_path = output_path.parent / (output_path.name + ".__tmp__")
+    for stale in (output_path, tmp_path):
+        if stale.exists():
+            print(f"  [cleanup] removing stale {stale.name}", flush=True)
+            shutil.rmtree(stale)
 
     cmd = [
         "squish", "quantize",
         "--source-path", str(source_path),
-        "--output-path", str(output_path),
+        "--output-path", str(tmp_path),
         "--ffn-bits", str(ffn_bits),
         "--embed-bits", str(embed_bits),
     ]
@@ -76,7 +93,7 @@ def _compress_one(
 
     print(f"  {'[dry-run] ' if dry_run else ''}squish quantize "
           f"{source_path.name} → {output_path.name} "
-          f"(ffn={ffn_bits}b embed={embed_bits}b)")
+          f"(ffn={ffn_bits}b embed={embed_bits}b)", flush=True)
 
     if dry_run:
         result = subprocess.run(cmd, capture_output=False)
@@ -87,14 +104,16 @@ def _compress_one(
     elapsed = time.monotonic() - t0
 
     if result.returncode != 0:
-        print(f"  [ERROR] {output_path.name} failed (exit {result.returncode})")
-        # Clean up partial output
-        if output_path.exists():
-            shutil.rmtree(output_path)
+        print(f"  [ERROR] {output_path.name} failed (exit {result.returncode})", flush=True)
+        # Clean up any partial temp output
+        if tmp_path.exists():
+            shutil.rmtree(tmp_path)
         return False
 
+    # Atomically promote temp dir to final name
+    tmp_path.rename(output_path)
     size_gb = sum(f.stat().st_size for f in output_path.rglob("*") if f.is_file()) / 1e9
-    print(f"  [done] {output_path.name}  {size_gb:.1f} GB  ({elapsed/60:.1f} min)")
+    print(f"  [done] {output_path.name}  {size_gb:.1f} GB  ({elapsed/60:.1f} min)", flush=True)
     return True
 
 
@@ -127,24 +146,24 @@ def main() -> None:
     done = 0
     failed: list[str] = []
 
-    print(f"\nSquish compression plan: {len(models)} models × {len(configs)} bitwidths = {total} jobs")
-    print(f"Bits: {[c[2] for c in configs]}")
-    print(f"Order: smallest → largest\n")
+    print(f"\nSquish compression plan: {len(models)} models × {len(configs)} bitwidths = {total} jobs", flush=True)
+    print(f"Bits: {[c[2] for c in configs]}", flush=True)
+    print(f"Order: smallest → largest\n", flush=True)
 
     for model_name, approx_gb in models:
         source_path = MODELS_DIR / model_name
         if not source_path.exists():
-            print(f"[SKIP] {model_name} — not found in {MODELS_DIR}")
+            print(f"[SKIP] {model_name} — not found in {MODELS_DIR}", flush=True)
             continue
 
-        print(f"\n{'='*60}")
-        print(f"Model: {model_name}  (~{approx_gb:.1f} GB source)")
-        print(f"{'='*60}")
+        print(f"\n{'='*60}", flush=True)
+        print(f"Model: {model_name}  (~{approx_gb:.1f} GB source)", flush=True)
+        print(f"{'='*60}", flush=True)
 
         for ffn_bits, embed_bits, suffix in configs:
             output_path = MODELS_DIR / _output_name(model_name, suffix)
             done += 1
-            print(f"\n[{done}/{total}]  {suffix.upper()}")
+            print(f"\n[{done}/{total}]  {suffix.upper()}", flush=True)
             ok = _compress_one(source_path, output_path, ffn_bits, embed_bits, args.dry_run)
             if not ok:
                 failed.append(f"{model_name} → {suffix}")
