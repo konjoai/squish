@@ -52,6 +52,11 @@ def _model_base(name: str) -> str:
 def _output_name(name: str, suffix: str) -> str:
     return f"{_model_base(name)}-{suffix}"
 
+# Source models >=20 GB will cause Metal GPU timeout on 16 GB M3.
+# For these, force MLX onto CPU (slower, but no watchdog kill).
+_CPU_THRESHOLD_GB = 20.0
+
+
 def _is_complete(path: Path) -> bool:
     """Return True only if the output dir exists and has actual content (> 0 bytes)."""
     if not path.exists():
@@ -60,18 +65,39 @@ def _is_complete(path: Path) -> bool:
     return total > 0
 
 
+def _source_has_weights(source_path: Path) -> bool:
+    """Return True if the source directory contains actual weight files.
+
+    mlx_lm.convert needs either .safetensors shard files OR a .bin file.
+    An index-only download (model.safetensors.index.json but no shards) will
+    fail immediately with 'No safetensors found'.
+    """
+    has_safetensors = any(source_path.glob("*.safetensors"))
+    has_bin = any(source_path.glob("*.bin")) or any(source_path.glob("model.bin"))
+    return has_safetensors or has_bin
+
+
 def _compress_one(
     source_path: Path,
     output_path: Path,
     ffn_bits: int,
     embed_bits: int,
     dry_run: bool,
+    approx_source_gb: float = 0.0,
 ) -> bool:
     """Run squish quantize for one model/bitwidth. Returns True on success."""
     if _is_complete(output_path):
         gb = sum(f.stat().st_size for f in output_path.rglob("*") if f.is_file()) / 1e9
         print(f"  [skip] {output_path.name} already exists ({gb:.2f} GB)", flush=True)
         return True
+
+    if not _source_has_weights(source_path) and not dry_run:
+        print(f"  [ERROR] {source_path.name} has no weight files — download incomplete",
+              flush=True)
+        print(f"  Re-download with:", flush=True)
+        print(f"    python3 -m huggingface_hub download <repo-id> "
+              f"--local-dir {source_path} --include '*.safetensors*'", flush=True)
+        return False
 
     # Remove any empty/partial directory left by a previous interrupted run.
     # Use a temp path so that squish never sees a pre-existing dest dir.
@@ -90,6 +116,10 @@ def _compress_one(
     ]
     if dry_run:
         cmd.append("--dry-run")
+    if not dry_run and approx_source_gb >= _CPU_THRESHOLD_GB:
+        cmd.append("--cpu")
+        print(f"  [cpu mode] source model is ~{approx_source_gb:.0f} GB — using CPU to avoid Metal timeout",
+              flush=True)
 
     print(f"  {'[dry-run] ' if dry_run else ''}squish quantize "
           f"{source_path.name} → {output_path.name} "
@@ -164,7 +194,8 @@ def main() -> None:
             output_path = MODELS_DIR / _output_name(model_name, suffix)
             done += 1
             print(f"\n[{done}/{total}]  {suffix.upper()}", flush=True)
-            ok = _compress_one(source_path, output_path, ffn_bits, embed_bits, args.dry_run)
+            ok = _compress_one(source_path, output_path, ffn_bits, embed_bits,
+                               args.dry_run, approx_source_gb=approx_gb)
             if not ok:
                 failed.append(f"{model_name} → {suffix}")
 

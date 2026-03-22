@@ -2243,6 +2243,16 @@ def cmd_convert_model(args):
     except ImportError:
         _die("mlx_lm is required for convert-model. Install with: pip install mlx-lm>=0.19")
 
+    if getattr(args, "cpu", False):
+        # Force all MLX ops onto CPU to avoid Metal GPU command-buffer timeout
+        # that occurs when quantizing large models (>14B) on limited RAM devices.
+        try:
+            import mlx.core as mx
+            mx.set_default_device(mx.cpu)
+            print("  [cpu mode] MLX device set to CPU (avoids Metal GPU timeout)")
+        except Exception:
+            pass  # non-fatal — falls back to GPU if MLX is not importable here
+
     ffn_bits: int = args.ffn_bits
     embed_bits: int = args.embed_bits
 
@@ -3186,6 +3196,8 @@ Ollama drop-in:
                            help="Quantization bits for lm_head + embed_tokens (default: 6)")
     p_convert.add_argument("--dry-run", action="store_true", default=False,
                            help="Print what would be done without converting")
+    p_convert.add_argument("--cpu", action="store_true", default=False,
+                           help="Force MLX to run on CPU (avoids Metal GPU timeout for large models)")
     p_convert.set_defaults(func=cmd_convert_model)
 
     # ── train (primary name) + train-adapter (hidden legacy alias) ──
