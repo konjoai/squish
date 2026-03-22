@@ -1150,7 +1150,7 @@ for environments without the `magic` toolchain.
 
 ---
 
-## 🚧 v29 Wave 55 — Advanced Sampling Refinement: Min-P · Mirostat · Typical · EtaCutoff · CFG · DiverseBeam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound (Planned)
+## ✅ v29 Wave 55 — Advanced Sampling Refinement: Min-P · Mirostat · Typical · EtaCutoff · CFG · DiverseBeam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound
 
 Theme: **Wave 55 closes two major production-quality gaps in Squish that no prior wave has addressed.
 (1) Sampling pipeline completeness — Squish's sampling subsystem has only `sampler.py` (top-p/top-k/temperature)
@@ -1229,22 +1229,22 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/sampling/min_p_sampler.py` — MinPSampler
-- [ ] `squish/sampling/mirostat_sampler.py` — MirostatSampler
-- [ ] `squish/sampling/typical_sampler.py` — TypicalSampler
-- [ ] `squish/sampling/eta_sampler.py` — EtaCutoffSampler
-- [ ] `squish/sampling/cfg_sampler.py` — CFGLogitsSampler
-- [ ] `squish/sampling/diverse_beam.py` — DiverseBeamSampler
-- [ ] `squish/quant/bitnet_b158.py` — BitNet158Quantizer
-- [ ] `squish/quant/spqr_quant.py` — SpQRQuantizer
-- [ ] `squish/quant/omniquant.py` — OmniQuantizer
-- [ ] `squish/quant/q_sparse.py` — QSparsifier
-- [ ] `squish/quant/fp4_quant.py` — FP4Quantizer
-- [ ] `squish/quant/ada_round.py` — AdaRoundQuantizer
-- [ ] `tests/test_wave55a_sampling.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave55b_quant.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[29.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/sampling/min_p_sampler.py` — MinPSampler
+- [x] `squish/sampling/mirostat_sampler.py` — MirostatSampler
+- [x] `squish/sampling/typical_sampler.py` — TypicalSampler
+- [x] `squish/sampling/eta_sampler.py` — EtaCutoffSampler
+- [x] `squish/sampling/cfg_sampler.py` — CFGLogitsSampler
+- [x] `squish/sampling/diverse_beam.py` — DiverseBeamSampler
+- [x] `squish/quant/bitnet_b158.py` — BitNet158Quantizer
+- [x] `squish/quant/spqr_quant.py` — SpQRQuantizer
+- [x] `squish/quant/omniquant.py` — OmniQuantizer
+- [x] `squish/quant/q_sparse.py` — QSparsifier
+- [x] `squish/quant/fp4_quant.py` — FP4Quantizer
+- [x] `squish/quant/ada_round.py` — AdaRoundQuantizer
+- [x] `tests/test_wave55a_sampling.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave55b_quant.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[29.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
