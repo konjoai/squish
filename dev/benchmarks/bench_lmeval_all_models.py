@@ -84,17 +84,10 @@ _MODELS_ROOT = Path.home() / "models"
 
 # (display_name, path_relative_to_models_root, approx_gb, notes)
 MODEL_REGISTRY: list[tuple[str, str, float, str]] = [
-    ("Qwen3-0.6B-bf16",               "Qwen3-0.6B-bf16",               1.1,   "BF16"),
-    ("Qwen2.5-1.5B-Instruct-bf16",    "Qwen2.5-1.5B-Instruct-bf16",    2.9,   "BF16"),
-    ("Llama-3.2-1B-Instruct-bf16",    "Llama-3.2-1B-Instruct-bf16",    2.3,   "BF16"),
-    ("Llama-3.2-3B-Instruct-bf16",    "Llama-3.2-3B-Instruct-bf16",    6.0,   "BF16"),
-    ("gemma-3-1b-it-bf16",            "gemma-3-1b-it-bf16",            2.5,   "BF16"),
-    ("gemma-3-4b-it-bf16",            "gemma-3-4b-it-bf16",            9.3,   "BF16"),
-    ("Qwen3-4B-bf16",                 "Qwen3-4B-bf16",                 7.5,   "BF16"),
-    ("Mistral-7B-Instruct-v0.3-bf16", "Mistral-7B-Instruct-v0.3-bf16", 8.8,   "BF16"),
-    ("Qwen2.5-7B-Instruct-bf16",      "Qwen2.5-7B-Instruct-bf16",      14.0,  "BF16"),
-    ("Qwen3-8B-bf16",                 "Qwen3-8B-bf16",                 15.0,  "BF16 — tight on 16 GB"),
-    ("Qwen3-14B-mlx-int4",            "Qwen3-14B-mlx-int4",            7.8,   "MLX INT4"),
+    # BF16 reference baseline
+    ("Qwen3-14B-bf16",     "Qwen3-14B-bf16",     28.0, "BF16 reference"),
+    # squish-quantized models under test
+    ("Qwen3-14B-mlx-int4", "Qwen3-14B-mlx-int4", 7.8,  "MLX INT4"),
 ]
 
 # ── task definitions ──────────────────────────────────────────────────────────
