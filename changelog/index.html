@@ -838,6 +838,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#2700-2026-04-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [27.0.0] — 2026-04-06
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[27.0.0] — 2026-04-06">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-53-v27-linear-recurrent-architectures-mamba2-rwkv-6-hawkgriffin-xlstm-ttt-deltanet-hybridrouter-hymbadualtrack-ssmstateoffload-ssmstatecache-parallelscan-ssmquant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 53: v27 Linear Recurrent Architectures: Mamba2 · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet · HybridRouter · HymbaDualTrack · SSMStateOffload · SSMStateCache · ParallelScan · SSMQuant
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#2600-2026-04-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2190,6 +2218,101 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="2700-2026-04-06">[27.0.0] — 2026-04-06<a class="headerlink" href="#2700-2026-04-06" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-53-v27-linear-recurrent-architectures-mamba2-rwkv-6-hawkgriffin-xlstm-ttt-deltanet-hybridrouter-hymbadualtrack-ssmstateoffload-ssmstatecache-parallelscan-ssmquant">Added — Wave 53: v27 Linear Recurrent Architectures: Mamba2 · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet · HybridRouter · HymbaDualTrack · SSMStateOffload · SSMStateCache · ParallelScan · SSMQuant<a class="headerlink" href="#added-wave-53-v27-linear-recurrent-architectures-mamba2-rwkv-6-hawkgriffin-xlstm-ttt-deltanet-hybridrouter-hymbadualtrack-ssmstateoffload-ssmstatecache-parallelscan-ssmquant" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules for O(1)-per-token linear recurrent
+architectures and their inference infrastructure.  Covers SSD/Mamba2
+state-space duality, RWKV-6 Eagle matrix-valued states, Hawk real-gated
+linear recurrence, xLSTM scalar/matrix cell fusion, test-time training
+layers, delta-rule recurrent attention, hybrid-model routing, parallel
+Blelloch prefix scan, SSM-aware quantisation, and unlimited-context
+state offload.</p>
+<ul>
+<li>
+<p><strong>Mamba2SSM</strong> (<code>squish/attention/mamba2_ssm.py</code>) — Structured State-Space
+  Duality (SSD) block from Mamba-2 (Dao &amp; Gu, arXiv 2405.21060, 2024).
+  <code>Mamba2Config</code>, <code>Mamba2State</code>, parallel <code>forward(x, initial_state)</code>,
+  recurrent <code>step(x_t, state)</code>, <code>init_state()</code>.</p>
+</li>
+<li>
+<p><strong>RWKV6ChannelMix</strong> (<code>squish/attention/rwkv_channel_mix.py</code>) — RWKV-6
+  Eagle/Finch wkv6 time-mix + channel-mix block with matrix-valued state
+  (Peng et al., arXiv 2404.05892, 2024).  <code>RWKV6Config</code>, <code>RWKV6State</code>
+  (<code>time_state (n_heads, head_dim, d_state)</code>, <code>n_tokens_seen</code>),
+  <code>new_state()</code>, <code>forward(x, state)</code>.</p>
+</li>
+<li>
+<p><strong>HawkLinearRNN</strong> (<code>squish/attention/hawk_recurrent.py</code>) — Hawk
+  real-gated linear recurrence cell, core SSM layer for Griffin
+  (de Vries et al., arXiv 2402.19427, 2024).  <code>HawkConfig</code>, <code>HawkState</code>,
+  <code>new_state()</code>, <code>forward(x, state)</code>, <code>recurrent_step(x, state)</code>,
+  <code>scan_prefill(x, h0)</code>.</p>
+</li>
+<li>
+<p><strong>xLSTMBlock</strong> (<code>squish/attention/xlstm_block.py</code>) — Extended LSTM
+  combining scalar (sLSTM) and matrix (mLSTM) cells with exponential
+  gates and max-stabilisation (Beck et al., arXiv 2405.04517, 2024).
+  <code>xLSTMConfig</code>, <code>sLSTMState</code>, <code>mLSTMState</code>, <code>xLSTMState</code>, <code>new_state()</code>,
+  <code>forward(x, state)</code>.</p>
+</li>
+<li>
+<p><strong>TTTLinearLayer</strong> (<code>squish/attention/ttt_layer.py</code>) — Test-Time Training
+  layer with in-context mini-model update via closed-form delta rule
+  (Sun et al., arXiv 2407.04620, 2024).  <code>TTTConfig</code>, <code>TTTState</code>
+  (<code>W</code>, <code>velocity</code>), optional SGD momentum, <code>new_state()</code>, <code>forward(x, state)</code>.</p>
+</li>
+<li>
+<p><strong>DeltaNetLinear</strong> (<code>squish/attention/delta_net.py</code>) — Delta-rule linear
+  recurrent attention with L2-normalised keys and per-token learnable β
+  (Yang et al., arXiv 2406.06484, NeurIPS 2024).  <code>DeltaNetConfig</code>,
+  <code>DeltaNetState</code> (<code>W (n_heads, head_dim, d_state)</code>), <code>new_state()</code>,
+  <code>forward(x, state)</code>.</p>
+</li>
+<li>
+<p><strong>SSMStateCache</strong> (<code>squish/kv/ssm_state_cache.py</code>) — LRU session store
+  for Mamba2/RWKV6/Hawk/xLSTM/TTT/DeltaNet recurrent states with
+  NumPy <code>.npz</code> serialisation and optional compression.  <code>SSMStateCacheConfig</code>,
+  <code>SSMCacheEntry</code>, <code>SSMStateCache</code> (<code>put</code>, <code>get</code>, <code>delete</code>, <code>stats</code>, LRU eviction).</p>
+</li>
+<li>
+<p><strong>ParallelScanKernel</strong> (<code>squish/kernels/parallel_scan_kernel.py</code>) —
+  Blelloch work-efficient parallel prefix scan for SSM prefill
+  (O(log N) passes).  <code>ScalarMulAdd</code> and <code>MatMulAdd</code> associative
+  operators, <code>scan_scalar</code>, <code>scan_affine</code>, <code>blelloch_scan_scalar</code>.</p>
+</li>
+<li>
+<p><strong>SSMQuantizer</strong> (<code>squish/quant/ssm_quant.py</code>) — Calibration-aware
+  quantisation for SSM parameter roles (dt→int8, A_log/B/C/conv1d→int4,
+  state→fp16) inspired by ZipCache (He et al., arXiv 2408.09871, 2024).
+  <code>SSMQuantConfig</code>, <code>SSMQuantState</code>, <code>observe</code>, <code>finalise</code>,
+  <code>quantize_tensor</code>, <code>dequantize_tensor</code>, <code>compression_ratio</code>.</p>
+</li>
+<li>
+<p><strong>HybridArchRouter</strong> (<code>squish/serving/hybrid_arch_router.py</code>) — Per-layer
+  dispatch router for Jamba/Zamba hybrid models reading <code>layer_types</code> from
+  config.json (Lieber et al., arXiv 2403.19887, 2024).  <code>HybridArchConfig</code>,
+  <code>HybridLayerSpec</code>, <code>HybridArchRouter</code> (<code>register</code>, <code>route</code>, <code>count_by_type</code>,
+  <code>attention_ratio</code>, <code>from_layer_types</code>).</p>
+</li>
+<li>
+<p><strong>HymbaDualTrack</strong> (<code>squish/attention/hymba_dual.py</code>) — Parallel mini-SSM</p>
+</li>
+<li>
+<p>causal attention hybrid head from Hymba (Dong et al., arXiv 2411.13676,
+  2024).  SSM stream: per-head state via exponential decay + linear projection;
+  attention stream: masked MHA; outputs summed before projection.
+  <code>HymbaConfig</code>, <code>HymbaState</code>, <code>new_state()</code>, <code>forward(x, state)</code>.</p>
+</li>
+<li>
+<p><strong>SSMStateOffload</strong> (<code>squish/streaming/ssm_state_offload.py</code>) — Segment-
+  boundary state checkpointing for unlimited-context SSM sessions
+  (Waleffe et al., arXiv 2406.07887, 2024).  Optional FP16 compression,
+  per-session segment eviction.  <code>SSMStateOffloadConfig</code>, <code>OffloadSegment</code>,
+  <code>SSMStateOffload</code> (<code>new_session</code>, <code>maybe_offload</code>, <code>restore</code>,
+  <code>latest_segment</code>, <code>segments_for_session</code>, <code>stats</code>, <code>delete_session</code>).</p>
+</li>
+</ul>
 <hr />
 <h2 id="2600-2026-04-05">[26.0.0] — 2026-04-05<a class="headerlink" href="#2600-2026-04-05" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-52-v26-multi-modal-vlm-efficiency-fastv-visionzip-llavaprumerge-tokenpacker-flashvstream-dynamicres-visualkvquant-crossmodalattn-videokvreuse-vlmspecdecode-vlmscheduler-imgencodercache">Added — Wave 52: v26 Multi-Modal VLM Efficiency: FastV · VisionZip · LLaVAPruMerge · TokenPacker · FlashVStream · DynamicRes · VisualKVQuant · CrossModalAttn · VideoKVReuse · VLMSpecDecode · VLMScheduler · ImgEncoderCache<a class="headerlink" href="#added-wave-52-v26-multi-modal-vlm-efficiency-fastv-visionzip-llavaprumerge-tokenpacker-flashvstream-dynamicres-visualkvquant-crossmodalattn-videokvreuse-vlmspecdecode-vlmscheduler-imgencodercache" title="Permanent link">&para;</a></h3>
