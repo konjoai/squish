@@ -1,0 +1,406 @@
+{
+  "model_id": "Qwen3-14B",
+  "compression": {
+    "bf16_gb": 29.55,
+    "int3_gb": 28.03,
+    "ratio": 0.9485,
+    "size_savings_pct": 5.2,
+    "actual_bpw": 15.18,
+    "n_int3_tensors": 74,
+    "n_passthrough_tensors": 208,
+    "compress_seconds": null,
+    "error": null
+  },
+  "snr": {
+    "layers_tested": 40,
+    "snr_mean_db": 12.84,
+    "snr_min_db": 11.85,
+    "snr_max_db": 13.11,
+    "snr_p25_db": 12.78,
+    "layer_results": [
+      {
+        "name": "model.layers.2.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 13.02,
+        "time_ms": 2170.8
+      },
+      {
+        "name": "model.layers.1.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 11.85,
+        "time_ms": 2136.4
+      },
+      {
+        "name": "model.layers.0.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 13.0,
+        "time_ms": 2142.2
+      },
+      {
+        "name": "model.layers.0.self_attn.k_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 13.04,
+        "time_ms": 2119.1
+      },
+      {
+        "name": "model.layers.0.self_attn.o_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 13.05,
+        "time_ms": 10592.5
+      },
+      {
+        "name": "model.layers.1.self_attn.o_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 13.11,
+        "time_ms": 10567.8
+      },
+      {
+        "name": "model.layers.13.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.69,
+        "time_ms": 10639.4
+      },
+      {
+        "name": "model.layers.13.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.86,
+        "time_ms": 2150.9
+      },
+      {
+        "name": "model.layers.10.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.95,
+        "time_ms": 2143.9
+      },
+      {
+        "name": "model.layers.12.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.98,
+        "time_ms": 2117.0
+      },
+      {
+        "name": "model.layers.12.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.8,
+        "time_ms": 10485.7
+      },
+      {
+        "name": "model.layers.11.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 13.01,
+        "time_ms": 2139.8
+      },
+      {
+        "name": "model.layers.10.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.93,
+        "time_ms": 10536.8
+      },
+      {
+        "name": "model.layers.21.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.88,
+        "time_ms": 2126.2
+      },
+      {
+        "name": "model.layers.20.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.78,
+        "time_ms": 2155.7
+      },
+      {
+        "name": "model.layers.19.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.83,
+        "time_ms": 2145.9
+      },
+      {
+        "name": "model.layers.19.self_attn.o_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 13.1,
+        "time_ms": 10568.6
+      },
+      {
+        "name": "model.layers.15.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 13.0,
+        "time_ms": 2146.3
+      },
+      {
+        "name": "model.layers.16.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.76,
+        "time_ms": 2172.3
+      },
+      {
+        "name": "model.layers.14.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.97,
+        "time_ms": 2247.4
+      },
+      {
+        "name": "model.layers.14.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.73,
+        "time_ms": 10661.9
+      },
+      {
+        "name": "model.layers.15.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.82,
+        "time_ms": 10574.6
+      },
+      {
+        "name": "model.layers.19.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.81,
+        "time_ms": 10505.2
+      },
+      {
+        "name": "model.layers.18.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.79,
+        "time_ms": 10575.7
+      },
+      {
+        "name": "model.layers.17.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.78,
+        "time_ms": 10482.1
+      },
+      {
+        "name": "model.layers.17.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.94,
+        "time_ms": 2132.7
+      },
+      {
+        "name": "model.layers.18.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.86,
+        "time_ms": 2125.2
+      },
+      {
+        "name": "model.layers.16.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.83,
+        "time_ms": 10633.8
+      },
+      {
+        "name": "model.layers.24.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.77,
+        "time_ms": 2160.9
+      },
+      {
+        "name": "model.layers.23.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.5,
+        "time_ms": 2289.1
+      },
+      {
+        "name": "model.layers.24.self_attn.o_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 13.1,
+        "time_ms": 10575.9
+      },
+      {
+        "name": "model.layers.22.self_attn.v_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.64,
+        "time_ms": 2149.7
+      },
+      {
+        "name": "model.layers.23.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.84,
+        "time_ms": 10496.0
+      },
+      {
+        "name": "model.layers.22.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.91,
+        "time_ms": 10535.1
+      },
+      {
+        "name": "model.layers.22.self_attn.k_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.75,
+        "time_ms": 2158.4
+      },
+      {
+        "name": "model.layers.24.self_attn.k_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.73,
+        "time_ms": 2159.4
+      },
+      {
+        "name": "model.layers.23.self_attn.k_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.77,
+        "time_ms": 2145.7
+      },
+      {
+        "name": "model.layers.24.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.83,
+        "time_ms": 10795.1
+      },
+      {
+        "name": "model.layers.25.self_attn.q_proj.weight",
+        "shape": [
+          5120,
+          5120
+        ],
+        "snr_db": 12.92,
+        "time_ms": 10755.9
+      },
+      {
+        "name": "model.layers.25.self_attn.k_proj.weight",
+        "shape": [
+          1024,
+          5120
+        ],
+        "snr_db": 12.86,
+        "time_ms": 2126.3
+      }
+    ],
+    "error": null
+  },
+  "throughput": {
+    "tps_mean": 10.3,
+    "tps_stdev": 0.3,
+    "tps_min": 9.8,
+    "tps_max": 10.5,
+    "ttft_mean_ms": 845.0,
+    "n_runs": 3,
+    "model_path_used": "/Users/wscholl/models/Qwen3-14B-mlx-int4",
+    "error": null
+  },
+  "perplexity": {
+    "ppl": 8.76,
+    "n_tokens": 165,
+    "error": null
+  },
+  "timestamp": "2026-03-21T21:26:50",
+  "platform_info": {
+    "platform": "macOS-15.7.4-arm64-arm-64bit",
+    "python": "3.12.8",
+    "ram_gb": 17.179869184,
+    "cpu": "Apple M3"
+  }
+}
