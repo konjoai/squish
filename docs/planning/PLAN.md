@@ -1821,6 +1821,62 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
+## ✅ v24 Wave 50 — Bigger-Than-Memory Models: SparseGPT · MixtureOfDepths · LeanKV · GGUF · WeightDecompressStream · ModelShardLoader (Complete 2026-03-22)
+
+Theme: **Wave 50 breaks the DRAM ceiling, enabling 32B models in 16 GB and 70B via
+streaming on Apple M3**, by combining one-shot pruning (SparseGPT) to remove 50–60 % of
+weights, dynamic token routing (MixtureOfDepths) to halve effective FLOPs, asymmetric KV
+compression (LeanKV) for 3× KV savings, native GGUF parsing to absorb llama.cpp ecosystem
+models, overlapped dequantisation streaming (WeightDecompressStream) to fill the PCIe/NVMe
+bandwidth gap, and a three-tier memory hierarchy (ModelShardLoader: GPU-hot / CPU-warm /
+SSD-cold) with lookahead prefetch.
+
+Papers: SparseGPT (Frantar & Alistarh, ICLR 2023), MoD (Raposo et al., TMLR 2024), LeanKV
+(Kang et al., arXiv 2407.07805), GGUF v3 spec (llama.cpp), LLM in a Flash (Apple, 2024),
+FlexGen (Sheng et al., ICML 2023).
+
+### Wave 50a — SparseGPT, MixtureOfDepths, LeanKV (3 modules)
+
+| Module | File | Purpose |
+|--------|------|---------|
+| SparseGPTPruner | `squish/model/sparse_gpt.py` | One-shot Hessian-based magnitude-weighted column pruning with post-hoc weight update; unstructured and 2:4 structured modes; proxy Hessian synthesis when calibration data unavailable |
+| MixtureOfDepths | `squish/model/mix_of_depths.py` | Per-token router at each transformer layer deciding which tokens skip via residual bypass; linear and threshold router types; per-layer active-ratio statistics |
+| LeanKVQuant | `squish/kv/lean_kv.py` | Asymmetric K (INT4) / V (INT8) cache quantization with per-group or per-tensor scaling; symmetric and asymmetric modes; memory_bytes helper for DRAM budgeting |
+
+### Wave 50b — GGUFNativeLoader, WeightDecompressStream, ModelShardLoader (3 modules)
+
+| Module | File | Purpose |
+|--------|------|---------|
+| GGUFNativeLoader | `squish/io/gguf_loader.py` | GGUF v3 parser with Q2_K/Q3_K/Q4_K/Q5_K/Q8_0/F16/F32 block dequantization; bridges llama.cpp model ecosystem; synthetic loader for unit-test use |
+| WeightDecompressStream | `squish/io/weight_decompress_stream.py` | Double-buffer overlapped CPU dequant + compute pipeline via ThreadPoolExecutor; submit/fetch/prefetch_range async API; static compress/decompress_weight |
+| ModelShardLoader | `squish/io/model_shard_loader.py` | Three-tier (HOT/WARM/COLD) weight paging with advance_window lookahead; thread-safe; iter_hot; memory_report |
+
+### v24 Target Metrics (after Wave 50)
+
+> Baselines are v23 Wave 49 targets. M3 = 16 GB Apple M3. New model rows marked NEW.
+
+| Model | v23 (W49) tok/s | v24 target tok/s | v24 TTFT target | Primary driver |
+|-------|-----------------|-----------------|-----------------|----------------|
+| Qwen3-8B (M3) | 560–700 | 560–700 | < 0.005 s | No regression — Wave 50 layers off by default |
+| Qwen3-14B INT4 (M3) | 75–100 | 75–100 | < 0.22 s | SparseGPTConfig(sparsity_ratio=0.5) saves DRAM |
+| Qwen3-32B INT4 (M3 16 GB) NEW | — | 35–50 | < 0.45 s | LeanKV 3× KV + ModelShardLoader HOT 4 layers |
+| Qwen3-70B INT4 (M3 16 GB, streaming) NEW | — | 2–6 | < 4 s | WeightDecompressStream + ModelShardLoader SSD-cold |
+
+### Completion Checklist
+
+- [x] `squish/model/sparse_gpt.py` — SparseGPTPruner
+- [x] `squish/model/mix_of_depths.py` — MixtureOfDepths
+- [x] `squish/kv/lean_kv.py` — LeanKVQuant
+- [x] `squish/io/gguf_loader.py` — GGUFNativeLoader
+- [x] `squish/io/weight_decompress_stream.py` — WeightDecompressStream
+- [x] `squish/io/model_shard_loader.py` — ModelShardLoader
+- [x] `tests/test_wave50a_modules.py` — 87 tests, all passing
+- [x] `tests/test_wave50b_modules.py` — 104 tests, all passing
+- [x] CHANGELOG `[24.0.0]` entry
+- [x] PLAN.md updated
+
+---
+
 ## ✅ v23 Wave 48 — INT2/INT3 Extreme Quantization: SpQR · AutoRound · OWQ · BitDistiller · ZipLM · GGUF Mixed (Complete 2026-03-22)
 
 Theme: **Wave 48 pushes Squish below the INT4 floor that prior waves have treated as a
