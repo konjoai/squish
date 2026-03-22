@@ -838,6 +838,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#2600-2026-04-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [26.0.0] — 2026-04-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[26.0.0] — 2026-04-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-52-v26-multi-modal-vlm-efficiency-fastv-visionzip-llavaprumerge-tokenpacker-flashvstream-dynamicres-visualkvquant-crossmodalattn-videokvreuse-vlmspecdecode-vlmscheduler-imgencodercache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 52: v26 Multi-Modal VLM Efficiency: FastV · VisionZip · LLaVAPruMerge · TokenPacker · FlashVStream · DynamicRes · VisualKVQuant · CrossModalAttn · VideoKVReuse · VLMSpecDecode · VLMScheduler · ImgEncoderCache
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#2500-2026-03-29" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2162,6 +2190,143 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="2600-2026-04-05">[26.0.0] — 2026-04-05<a class="headerlink" href="#2600-2026-04-05" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-52-v26-multi-modal-vlm-efficiency-fastv-visionzip-llavaprumerge-tokenpacker-flashvstream-dynamicres-visualkvquant-crossmodalattn-videokvreuse-vlmspecdecode-vlmscheduler-imgencodercache">Added — Wave 52: v26 Multi-Modal VLM Efficiency: FastV · VisionZip · LLaVAPruMerge · TokenPacker · FlashVStream · DynamicRes · VisualKVQuant · CrossModalAttn · VideoKVReuse · VLMSpecDecode · VLMScheduler · ImgEncoderCache<a class="headerlink" href="#added-wave-52-v26-multi-modal-vlm-efficiency-fastv-visionzip-llavaprumerge-tokenpacker-flashvstream-dynamicres-visualkvquant-crossmodalattn-videokvreuse-vlmspecdecode-vlmscheduler-imgencodercache" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules for visual-token compression, KV efficiency,
+and multi-modal inference scheduling in VLMs (Qwen2.5-VL, LLaVA-Next,
+InternVL2).  Covers training-free token pruning, spatial clustering / merging,
+3-tier video streaming, speculative decoding with shared visual prefix, and
+resolution-aware batch scheduling.</p>
+<ul>
+<li>
+<p><strong>FastVPruner</strong> (<code>squish/vision/fast_v.py</code>) — Training-free visual token
+  pruning at a configurable transformer layer (Luo et al., ACL 2024,
+  arXiv 2403.06764).  Aggregates cross-attention weights over text queries
+  (mean or max) to score visual patches; removes the lowest-scoring tokens.
+  <code>FastVConfig</code> (<code>keep_ratio</code>, <code>prune_layer</code>, <code>min_keep</code>, <code>score_aggregation</code>),
+  <code>FastVPruneResult</code> (<code>kept_indices</code>, <code>pruned_indices</code>, <code>scores</code>,
+  <code>actual_keep_ratio</code>).
+  <code>prune(attn_weights, n_visual)</code>, <code>apply(visual_tokens, attn_weights)</code>,
+  <code>compression_ratio(n_total)</code>.</p>
+</li>
+<li>
+<p><strong>VisionZip</strong> (<code>squish/vision/vision_zip.py</code>) — Two-stage dominant /
+  contextual visual token compression (Yang et al., arXiv 2412.04467, 2024).
+  Selects a dominant set via top-k CLS attention, then randomly down-samples
+  the remaining contextual tokens.
+  <code>VisionZipConfig</code> (<code>dominant_ratio</code>, <code>contextual_keep_ratio</code>, <code>min_tokens</code>),
+  <code>VisionZipResult</code> (<code>kept_indices</code>, <code>dominant_indices</code>,
+  <code>contextual_sampled_indices</code>, <code>compression_ratio</code>).
+  <code>compress(cls_attn)</code>, <code>apply(visual_tokens, cls_attn)</code>.</p>
+</li>
+<li>
+<p><strong>LLaVAPruMerge</strong> (<code>squish/vision/llava_prumerge.py</code>) — Adaptive K-means
+  spatial clustering and mean-pool merging of patch tokens (Shang et al.,
+  CVPR 2024, arXiv 2403.15388).  Optionally halves cluster count when token
+  entropy is low.
+  <code>LLaVAPruMergeConfig</code> (<code>n_clusters</code>, <code>adaptive</code>, <code>entropy_threshold</code>,
+  <code>position_weight</code>, <code>km_iters</code>),
+  <code>LLaVAPruMergeResult</code> (<code>merged_tokens</code>, <code>cluster_labels</code>, <code>n_clusters_used</code>,
+  <code>compression_ratio</code>).
+  <code>merge(keys, positions)</code>.</p>
+</li>
+<li>
+<p><strong>TokenPacker</strong> (<code>squish/vision/token_packer.py</code>) — Fixed-size visual
+  projector via learnable anchor × patch cross-attention (Li et al.,
+  arXiv 2407.09985, 2024).  Produces exactly <code>n_anchor</code> tokens regardless of
+  input patch count.
+  <code>TokenPackerConfig</code> (<code>n_anchor</code>, <code>hidden_dim</code>, <code>n_heads</code>),
+  <code>TokenPackerResult</code> (<code>packed</code>, <code>attn_weights</code>).
+  <code>pack(patches)</code>, <code>set_anchors(anchors)</code>.</p>
+</li>
+<li>
+<p><strong>FlashVStream</strong> (<code>squish/vision/flash_vstream.py</code>) — 3-tier video KV
+  memory (spatial / temporal / sensory) with per-frame saliency-guided
+  eviction (Zhang et al., ACL 2024, arXiv 2406.08085).
+  <code>FlashVStreamConfig</code> (<code>sensory_window</code>, <code>temporal_capacity</code>,
+  <code>saliency_low_threshold</code>, <code>token_dim</code>),
+  <code>FrameEntry</code> (<code>frame_idx</code>, <code>kv</code>, <code>saliency</code>),
+  <code>FlashVStreamState</code> (<code>total_tokens</code>, <code>n_frames_seen</code>, <code>n_frames_evicted</code>).
+  <code>new_state()</code>, <code>ingest(frame_kv, saliency, state)</code>, <code>get_kv(state)</code>,
+  <code>memory_stats(state)</code>.</p>
+</li>
+<li>
+<p><strong>DynamicResEncoder</strong> (<code>squish/vision/dynamic_resolution.py</code>) —
+  Variable-resolution tiling for InternVL2 / LLaVA-Next style encoding.
+  Selects tile grid by aspect-ratio rounding; prepends optional summary patch;
+  validated <code>min_tiles</code> and <code>max_tiles</code> bounds.
+  <code>DynamicResConfig</code> (<code>tile_size</code>, <code>max_tiles</code>, <code>min_tiles</code>, <code>include_summary</code>,
+  <code>token_dim</code>), <code>TileLayout</code> (<code>n_tiles</code>, <code>aspect_ratio</code>),
+  <code>DynamicResResult</code> (<code>total_tokens</code>, <code>n_summary_tokens</code>, <code>n_tile_tokens</code>).
+  <code>plan_layout(h, w)</code>, <code>encode(h, w, patch_encoder)</code>.</p>
+</li>
+<li>
+<p><strong>VisualKVQuant</strong> (<code>squish/vision/visual_kv_quant.py</code>) — Asymmetric
+  INT-k / INT-v quantisation for visual-segment KV blocks (inspired by KIVI,
+  arXiv 2402.02750 and KVQuant, arXiv 2401.18079).  Text-segment KV passes
+  through at full precision; group-wise symmetric quantisation with int8
+  storage and clipped codes avoids overflow artefacts.
+  <code>VisualKVQuantConfig</code> (<code>k_bits</code>, <code>v_bits</code>, <code>group_size</code>, <code>text_passthrough</code>,
+  <code>boundary_token</code>), <code>VisualKVQuantState</code> (<code>total_tokens</code>,
+  <code>compression_ratio</code>).
+  <code>new_state()</code>, <code>update(k, v, token_str, state)</code>, <code>get_kv(state)</code>,
+  <code>memory_summary(state)</code>.</p>
+</li>
+<li>
+<p><strong>CrossModalRouter</strong> (<code>squish/vision/cross_modal_attn.py</code>) — Gate-score
+  routing of visual↔text cross-attention: high-affinity queries use full
+  multi-head scaled dot-product attention; low-affinity queries take a cheaper
+  linear-projection bypass (inspired by MoE routing, Fedus et al.,
+  arXiv 2101.03961).
+  <code>CrossModalConfig</code> (<code>top_k_ratio</code>, <code>n_heads</code>, <code>linear_dim</code>, <code>temperature</code>),
+  <code>CrossModalResult</code> (<code>output</code>, <code>attn_weights</code>, <code>n_full_attn</code>, <code>n_linear_attn</code>,
+  <code>speedup_ratio</code>).
+  <code>route(q, k, v, gate_scores)</code>.</p>
+</li>
+<li>
+<p><strong>VideoKVReuse</strong> (<code>squish/vision/video_kv_reuse.py</code>) — Per-frame cosine
+  similarity gating to reuse unchanged-region KV blocks across consecutive
+  video frames (design follows VideoLLM-online, arXiv 2406.11816, and
+  DeltaLLM, arXiv 2406.12434).
+  <code>VideoKVReuseConfig</code> (<code>change_threshold</code>, <code>token_dim</code>),
+  <code>VideoKVReuseState</code> (<code>reuse_ratio</code>, <code>total_patches_processed</code>, <code>n_frames</code>).
+  <code>new_state()</code>, <code>process_frame(patches, kv_fn, state)</code>,
+  <code>reuse_ratio(state)</code>, <code>_cosine_sim_matrix(a, b)</code>.</p>
+</li>
+<li>
+<p><strong>VLMSpecDecode</strong> (<code>squish/vision/vlm_spec_decode.py</code>) — Speculative
+  decoding with shared visual KV prefix: visual tokens are encoded once and
+  reused across all draft branches (SpecInfer, arXiv 2305.09781; VisionSpec,
+  arXiv 2407.08126).
+  <code>VLMSpecConfig</code> (<code>draft_width</code>, <code>max_draft_tokens</code>, <code>visual_shared</code>),
+  <code>VLMSpecState</code> (<code>acceptance_rate</code>, <code>total_decisions</code>).
+  <code>new_state()</code>, <code>encode_visual(visual_tokens)</code>,
+  <code>speculate(prompt_tokens, draft_fn, verify_fn, visual_kv, state)</code>,
+  <code>acceptance_rate(state)</code>, <code>reset(state)</code>.</p>
+</li>
+<li>
+<p><strong>VLMBatchScheduler</strong> (<code>squish/serving/vlm_scheduler.py</code>) —
+  Resolution-aware multi-modal request classification and batching.  Bins
+  requests into <code>low</code> / <code>mid</code> / <code>high</code> / <code>video</code> buckets; sorts by descending
+  estimated visual token count for encoder-prefill overlap.
+  <code>VLMSchedulerConfig</code> (<code>low_res_threshold</code>, <code>high_res_threshold</code>,
+  <code>max_batch_size</code>, <code>video_fps_threshold</code>),
+  <code>VLMRequest</code> (<code>max_dim</code>, auto UUID), <code>VLMBatch</code> (<code>n_requests</code>,
+  <code>total_visual_tokens</code>).
+  <code>classify(request)</code>, <code>batch(requests)</code>, <code>schedule(requests)</code>,
+  <code>estimated_visual_tokens(h, w)</code>.</p>
+</li>
+<li>
+<p><strong>ImageEncoderCache</strong> (<code>squish/vision/img_encoder_cache.py</code>) — In-process
+  LRU cache of vision encoder token arrays keyed by image SHA-256.  Avoids
+  re-encoding repeated thumbnails, system images, or identical video frames.
+  <code>ImageEncoderCacheConfig</code> (<code>max_entries</code>, <code>token_dim</code>),
+  <code>CacheEntry</code> (<code>image_hash</code>, <code>tokens</code>, <code>timestamp</code>, <code>hit_count</code>).
+  <code>get(image_hash)</code>, <code>put(image_hash, tokens)</code>,
+  <code>encode_or_cached(image_hash, encoder_fn)</code>, <code>stats()</code>, <code>clear()</code>.</p>
+</li>
+</ul>
 <hr />
 <h2 id="2500-2026-03-29">[25.0.0] — 2026-03-29<a class="headerlink" href="#2500-2026-03-29" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-51-v25-test-time-compute-scaling-budgetforcing-testtimescale-dvts-chainofdraft-coconut-prmbeam-bestofn-selfconsistency-thoughtbudgetgate-reasoningkv-draftreasoning-parallelreasoning">Added — Wave 51: v25 Test-Time Compute Scaling: BudgetForcing · TestTimeScale · DVTS · ChainOfDraft · COCONUT · PRMBeam · BestOfN · SelfConsistency · ThoughtBudgetGate · ReasoningKV · DraftReasoning · ParallelReasoning<a class="headerlink" href="#added-wave-51-v25-test-time-compute-scaling-budgetforcing-testtimescale-dvts-chainofdraft-coconut-prmbeam-bestofn-selfconsistency-thoughtbudgetgate-reasoningkv-draftreasoning-parallelreasoning" title="Permanent link">&para;</a></h3>
