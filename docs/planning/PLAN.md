@@ -1248,7 +1248,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching (Planned)
+## ✅ v28 Wave 54 — Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · FlashAttn3 · DoubleSparsity · ElasticBatching
 
 Theme: **Wave 54 widens on two orthogonal fronts that prior waves leave incompletely addressed.
 (1) MoE architecture depth — the existing `sparse_moe.py` covers basic top-K expert dispatch,
@@ -1330,22 +1330,22 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/moe/shared_expert.py` — SharedExpertMoE
-- [ ] `squish/moe/fine_grained_router.py` — FineGrainedMoERouter
-- [ ] `squish/moe/expert_offload.py` — ExpertOffloader
-- [ ] `squish/moe/expert_merge.py` — ExpertMerger
-- [ ] `squish/moe/lazy_expert_load.py` — LazyExpertLoader
-- [ ] `squish/moe/expert_cache.py` — ExpertActivationCache
-- [ ] `squish/kernels/flash_attn3.py` — FlashAttn3Kernel
-- [ ] `squish/attention/double_sparse.py` — DoubleSparsityAttn
-- [ ] `squish/attention/lasp_parallel.py` — LASPLinearAttn
-- [ ] `squish/kv/nacl_cache.py` — NaCLCache
-- [ ] `squish/serving/kv_migration.py` — KVMigrationManager
-- [ ] `squish/serving/elastic_batching.py` — ElasticBatchController
-- [ ] `tests/test_wave54a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave54b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[28.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/moe/shared_expert.py` — SharedExpertMoE
+- [x] `squish/moe/fine_grained_router.py` — FineGrainedMoERouter
+- [x] `squish/moe/expert_offload.py` — ExpertOffloader
+- [x] `squish/moe/expert_merge.py` — ExpertMerger
+- [x] `squish/moe/lazy_expert_load.py` — LazyExpertLoader
+- [x] `squish/moe/expert_cache.py` — ExpertActivationCache
+- [x] `squish/kernels/flash_attn3.py` — FlashAttn3Kernel
+- [x] `squish/attention/double_sparse.py` — DoubleSparsityAttn
+- [x] `squish/attention/lasp_parallel.py` — LASPLinearAttn
+- [x] `squish/kv/nacl_cache.py` — NaCLCache
+- [x] `squish/serving/kv_migration.py` — KVMigrationManager
+- [x] `squish/serving/elastic_batching.py` — ElasticBatchController
+- [x] `tests/test_wave54a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave54b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[28.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
