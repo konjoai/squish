@@ -5,6 +5,65 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [28.0.0] — 2026-04-06
+
+### Added — Wave 54: v28 Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · ExpertMerge · LazyExpertLoad · ExpertCache · FlashAttn3 · DoubleSparsity · LASPParallel · NaCLCache · KVMigration · ElasticBatching
+
+Twelve production-grade modules for deep MoE efficiency improvements (DeepSeek-V2/V3 style), next-generation tiled
+attention, ring-parallel linear attention, KV cache management, and adaptive serving infrastructure.
+
+- **SharedExpertMoE** (`squish/moe/shared_expert.py`) — DeepSeek-V2-style always-active shared experts combined with
+  top-K routed experts.  `SharedExpertConfig`, `SharedExpertMoE`, `forward(x)→(out,)`, `_router(x)`.
+  Reference: arXiv 2405.04434.
+
+- **FineGrainedMoERouter** (`squish/moe/fine_grained_router.py`) — Aux-loss-free expert load balancing via
+  per-step router-bias updates (DeepSeek-V3 style).  `FineGrainedRouterConfig`, `RouterBiasState`,
+  `route(x, state)→(indices, weights, state)`, `update_bias(load_counts, state)→state`.
+  Reference: arXiv 2412.19437.
+
+- **ExpertOffloader** (`squish/moe/expert_offload.py`) — CPU-offload expert-weight pager with LRU eviction;
+  models GPU-DRAM paging for sparse MoE inference.  `ExpertOffloadConfig`, `OffloadState`,
+  `get_expert(idx, state)`, `evict_lru(state)`, `stats(state)`.
+
+- **ExpertMerger** (`squish/moe/expert_merge.py`) — Cosine-similarity-based expert consolidation; iteratively
+  merges the most-similar expert pairs until target compression ratio is reached.  `ExpertMergeConfig`,
+  `merge(expert_weights)→(merged, merge_map)`, `similarity_matrix(weights)`, `compression_ratio(n, m)`.
+
+- **LazyExpertLoader** (`squish/moe/lazy_expert_load.py`) — JIT expert weight materialisation; defers allocation
+  until routing score exceeds threshold; evicts idle experts.  `LazyExpertConfig`, `LazyExpertState`,
+  `forward(x, expert_idx, score, state)`, `_materialize(idx, state)`, `_maybe_evict(state)`.
+
+- **ExpertActivationCache** (`squish/moe/expert_cache.py`) — LRU output cache with cosine-similarity gate;
+  approximate input matching (threshold 0.97) for up to 30 % expert FLOP reduction.  `ExpertCacheConfig`,
+  `ExpertCacheState`, `lookup(expert_id, x, state)`, `store(expert_id, x, out, state)`, `hit_rate(state)`.
+
+- **FlashAttn3Kernel** (`squish/kernels/flash_attn3.py`) — Tiled online-softmax attention with pingpong
+  accumulation buffers (NumPy reference).  `FlashAttn3Config`, `forward(Q, K, V)→(out, lse)`.
+  Reference: arXiv 2407.08608.
+
+- **DoubleSparsityAttn** (`squish/attention/double_sparse.py`) — Two-axis sparsity: head-level pruning via Taylor
+  importance calibration + token-level top-K key selection.  `DoubleSparseConfig`, `DoubleSparseState`,
+  `calibrate(grads, state)`, `finalise_calibration(state)`, `forward(Q, K, V, state)`.
+  Reference: arXiv 2408.07092.
+
+- **LASPLinearAttn** (`squish/attention/lasp_parallel.py`) — Ring-topology sequence-parallel linear attention;
+  communicates O(head_dim²) recurrent state per ring step.  `LASPConfig`, `LASPRingState`,
+  `forward(x, state)`, `ring_step(local_x, recv_state)`.  Reference: arXiv 2405.01234.
+
+- **NaCLCache** (`squish/kv/nacl_cache.py`) — KV cache with anchor + recent reserve and O(1) random eviction
+  of middle tokens.  `NaCLConfig`, `NaCLState`, `update(k, v, state)`, `get_kv(state)`,
+  `evict_if_needed(state)`.  Reference: arXiv 2408.16527.
+
+- **KVMigrationManager** (`squish/serving/kv_migration.py`) — Coordinate live KV page migration between serving
+  workers; ref-counted allocation + rebalance on low headroom.  `KVMigrationConfig`, `MigrationRecord`,
+  `register_worker`, `migrate`, `rebalance`, `stats`.
+
+- **ElasticBatchController** (`squish/serving/elastic_batching.py`) — Adaptive batch sizing based on KV headroom
+  and queue depth; grow/shrink/hold policy with configurable watermarks.  `ElasticBatchConfig`,
+  `ElasticBatchState`, `tick(kv_headroom, queue_depth, state)→(batch_size, state)`, `stats`.
+
+---
+
 ## [27.0.0] — 2026-04-06
 
 ### Added — Wave 53: v27 Linear Recurrent Architectures: Mamba2 · RWKV-6 · Hawk/Griffin · xLSTM · TTT · DeltaNet · HybridRouter · HymbaDualTrack · SSMStateOffload · SSMStateCache · ParallelScan · SSMQuant
