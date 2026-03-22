@@ -100,15 +100,12 @@ MODEL_REGISTRY: list[tuple[str, str, float, str]] = [
 # ── task definitions ──────────────────────────────────────────────────────────
 # (task_name, primary_lmeval_metric, standard_fewshots)
 TASKS: list[tuple[str, str, int]] = [
-    ("arc_easy",       "acc_norm,none",             25),
-    ("arc_challenge",  "acc_norm,none",             25),
-    ("hellaswag",      "acc_norm,none",             10),
-    ("winogrande",     "acc,none",                   5),
-    ("piqa",           "acc_norm,none",              0),
-    ("openbookqa",     "acc_norm,none",              0),
-    ("mmlu",           "acc,none",                   5),
-    ("truthfulqa_mc2", "acc,none",                   0),
-    ("gsm8k",          "exact_match,strict-match",   5),
+    ("arc_easy",      "acc_norm,none", 25),
+    ("arc_challenge", "acc_norm,none", 25),
+    ("hellaswag",     "acc_norm,none", 10),
+    ("winogrande",    "acc,none",       5),
+    ("piqa",          "acc_norm,none",  0),
+    ("openbookqa",    "acc_norm,none",  0),
 ]
 _TASK_METRIC  = {t: m for t, m, _ in TASKS}
 _TASK_FEWSHOT = {t: f for t, _, f in TASKS}
