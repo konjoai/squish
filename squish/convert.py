@@ -24,6 +24,7 @@ Usage:
 """
 import argparse
 import json
+import shutil
 import sys
 import threading
 import time
@@ -105,6 +106,61 @@ def _get_milo():
 def _get_woq():
     from squish.quant.weight_only_int2 import Int2QuantConfig, WeightOnlyInt2Quant
     return Int2QuantConfig, WeightOnlyInt2Quant
+
+
+# ---------------------------------------------------------------------------
+# ─── Disk-space guards ───────────────────────────────────────────────────────
+
+def _get_free_bytes(path: Path) -> int:
+    """Return free bytes on the filesystem that contains *path*.
+
+    Falls back to the parent directory if *path* does not yet exist
+    (common for a new output directory that hasn't been created yet).
+    Returns 0 on any OS error so callers treat it as "no space".
+    """
+    check = path if path.exists() else path.parent
+    try:
+        return shutil.disk_usage(check).free
+    except OSError:
+        return 0
+
+
+_BPW_MULTIPLIERS: dict[str, float] = {
+    # Multiplier relative to BF16 safetensors file size (2 bytes/weight).
+    # Each value includes a 40 % safety buffer above the empirical ratio.
+    "int3": 0.38,   # ~4.37 bpw → (4.37/16) ≈ 0.27 actual
+    "int2": 0.26,   # ~3.0  bpw → (3.0/16)  ≈ 0.19 actual
+    "int4": 0.39,   # ~4.5  bpw → (4.5/16)  ≈ 0.28 actual
+    "int8": 1.32,   # ~INT8 with scale tensors ≈ 1.1× BF16
+}
+
+
+def _estimate_output_bytes(
+    model_dir: Path,
+    *,
+    use_int3: bool = False,
+    use_int2: bool = False,
+    use_int4: bool = False,
+    use_nf4: bool = False,
+) -> int:
+    """Conservative estimate of how many bytes the compressed output will occupy.
+
+    Sums the BF16 safetensors shard sizes then applies a per-format multiplier
+    that includes a 40 % safety buffer above empirical compression ratios.
+    Returns 0 if no safetensors shards are present.
+    """
+    shard_bytes = sum(p.stat().st_size for p in model_dir.glob("*.safetensors"))
+    if shard_bytes == 0:
+        return 0
+    if use_int3:
+        multiplier = _BPW_MULTIPLIERS["int3"]
+    elif use_int2:
+        multiplier = _BPW_MULTIPLIERS["int2"]
+    elif use_int4 or use_nf4:
+        multiplier = _BPW_MULTIPLIERS["int4"]
+    else:
+        multiplier = _BPW_MULTIPLIERS["int8"]
+    return int(shard_bytes * multiplier)
 
 
 # ---------------------------------------------------------------------------
@@ -526,6 +582,7 @@ def process_weights_streaming(
     int3_max_rank: int = 8,
     use_int2: bool = False,
     int2_group_size: int = 64,
+    min_free_gb: float = 10.0,
 ) -> dict:
     """
     Streaming shard-by-shard compression — works for any model size.
@@ -545,6 +602,29 @@ def process_weights_streaming(
 
     tensor_dir = output_path / "tensors"
     tensor_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Pre-flight disk space check ──────────────────────────────────────────
+    _min_safety_bytes = int(min_free_gb * 1e9)
+    _estimated_bytes = _estimate_output_bytes(
+        model_dir,
+        use_int3=use_int3,
+        use_int2=use_int2,
+        use_int4=use_int4,
+        use_nf4=use_nf4,
+    )
+    _free_bytes = _get_free_bytes(output_path)
+    if _free_bytes < _estimated_bytes + _min_safety_bytes:
+        raise RuntimeError(
+            f"Insufficient disk space: {_free_bytes / 1e9:.1f} GB free, "
+            f"need ~{_estimated_bytes / 1e9:.1f} GB for output "
+            f"+ {min_free_gb:.0f} GB safety margin "
+            f"({(_estimated_bytes + _min_safety_bytes) / 1e9:.1f} GB total required). "
+            f"Free up disk space or use --output on a larger volume."
+        )
+    print(
+        f"  Disk check: {_free_bytes / 1e9:.1f} GB free, "
+        f"estimated output ~{_estimated_bytes / 1e9:.1f} GB  ✓"
+    )
 
     manifest  = {}   # original_name → safe_key
     stats     = {"n_quantized": 0, "n_passthrough": 0,
@@ -707,6 +787,16 @@ def process_weights_streaming(
 
         sp.stop(f"Shard {shard_idx} done  ({shard_tensors} tensors written)")
         del shard_weights
+
+        # ── Per-shard disk space check ────────────────────────────────────────
+        _free_now = _get_free_bytes(output_path)
+        if _free_now < _min_safety_bytes:
+            raise RuntimeError(
+                f"Disk space critically low after shard {shard_idx}/{len(shard_files)}: "
+                f"only {_free_now / 1e9:.1f} GB remaining "
+                f"(minimum: {min_free_gb:.0f} GB). "
+                f"Aborting to prevent filesystem corruption."
+            )
 
     # Write manifest
     with open(output_path / "manifest.json", "w") as f:
@@ -936,6 +1026,16 @@ def main():
         help="Override per-group size for INT4 quantization (must be a power of two "
              "that divides the weight matrix column count). Default: auto-select 32.",
     )
+    ap.add_argument(
+        "--min-free-gb",
+        type=float,
+        default=10.0,
+        dest="min_free_gb",
+        metavar="GB",
+        help="Minimum free disk space (GB) to keep throughout compression. "
+             "The job aborts cleanly and removes partial output if free space "
+             "drops below this threshold. Default: 10 GB.",
+    )
     args = ap.parse_args()
 
     # ── --ultra implies nf4 + dfloat11 ────────────────────────────────────────
@@ -995,30 +1095,46 @@ def main():
                 print(f"  [AWQ] Warning: could not load scales: {e}  (continuing without AWQ)")
 
         t0 = time.time()
-        stats = process_weights_streaming(
-            model_dir,
-            output_path,
-            args.passthrough,
-            args.outlier_threshold,
-            args.verbose,
-            awq_scales=awq_scales,
-            use_int4=args.int4,
-            use_nf4=args.nf4,
-            use_vptq=args.vptq,
-            use_dfloat11=args.dfloat11,
-            vptq_config=vptq_config,
-            use_quip=args.quip,
-            quip_bits=args.quip_bits,
-            use_aqlm=args.aqlm,
-            aqlm_config=aqlm_config,
-            use_super_weight=args.super_weight,
-            int4_group_size=args.int4_group_size,
-            use_int3=args.int3,
-            int3_group_size=args.int3_group_size,
-            int3_max_rank=args.int3_max_rank,
-            use_int2=args.int2,
-            int2_group_size=args.int2_group_size,
-        )
+        try:
+            stats = process_weights_streaming(
+                model_dir,
+                output_path,
+                args.passthrough,
+                args.outlier_threshold,
+                args.verbose,
+                awq_scales=awq_scales,
+                use_int4=args.int4,
+                use_nf4=args.nf4,
+                use_vptq=args.vptq,
+                use_dfloat11=args.dfloat11,
+                vptq_config=vptq_config,
+                use_quip=args.quip,
+                quip_bits=args.quip_bits,
+                use_aqlm=args.aqlm,
+                aqlm_config=aqlm_config,
+                use_super_weight=args.super_weight,
+                int4_group_size=args.int4_group_size,
+                use_int3=args.int3,
+                int3_group_size=args.int3_group_size,
+                int3_max_rank=args.int3_max_rank,
+                use_int2=args.int2,
+                int2_group_size=args.int2_group_size,
+                min_free_gb=args.min_free_gb,
+            )
+        except (RuntimeError, OSError, KeyboardInterrupt) as exc:
+            # Remove partial output so the next run starts clean.
+            if output_path.exists():
+                print(
+                    f"\n  Cleaning up partial output at {output_path} …",
+                    flush=True,
+                )
+                shutil.rmtree(output_path, ignore_errors=True)
+                print(f"  Removed {output_path}")
+            if isinstance(exc, KeyboardInterrupt):
+                print("\n  Interrupted by user.", flush=True)
+                sys.exit(130)
+            print(f"\n  ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
         elapsed = time.time() - t0
 
         tensor_dir = output_path / "tensors"

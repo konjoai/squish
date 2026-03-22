@@ -213,3 +213,144 @@ class TestPickInt4GroupSize:
         from squish.convert import _pick_int4_group_size
         for n in (1536, 8960, 256, 512):
             assert _pick_int4_group_size(n, max_group_size=32) == _pick_int4_group_size(n)
+
+
+# ---------------------------------------------------------------------------
+# _get_free_bytes
+# ---------------------------------------------------------------------------
+
+
+class TestGetFreeBytes:
+    def test_returns_nonzero_for_existing_path(self, tmp_path):
+        from squish.convert import _get_free_bytes
+        result = _get_free_bytes(tmp_path)
+        assert isinstance(result, int)
+        assert result > 0
+
+    def test_uses_parent_when_path_does_not_exist(self, tmp_path):
+        from squish.convert import _get_free_bytes
+        nonexistent = tmp_path / "does_not_exist"
+        result = _get_free_bytes(nonexistent)
+        assert result > 0
+
+    def test_returns_zero_on_oserror(self, tmp_path):
+        from squish.convert import _get_free_bytes
+        with patch("squish.convert.shutil.disk_usage", side_effect=OSError("no device")):
+            assert _get_free_bytes(tmp_path) == 0
+
+    def test_return_type_is_int(self, tmp_path):
+        from squish.convert import _get_free_bytes
+        assert isinstance(_get_free_bytes(tmp_path), int)
+
+
+# ---------------------------------------------------------------------------
+# _estimate_output_bytes
+# ---------------------------------------------------------------------------
+
+
+class TestEstimateOutputBytes:
+    """Verify correct multiplier branch is chosen for each quant mode."""
+
+    def _make_shard(self, tmp_path, size: int):
+        shard = tmp_path / "model.safetensors"
+        shard.write_bytes(b"\x00" * size)
+        return shard
+
+    def test_int3_uses_correct_multiplier(self, tmp_path):
+        from squish.convert import _estimate_output_bytes, _BPW_MULTIPLIERS
+        self._make_shard(tmp_path, 1_000_000)
+        assert _estimate_output_bytes(tmp_path, use_int3=True) == int(1_000_000 * _BPW_MULTIPLIERS["int3"])
+
+    def test_int2_uses_correct_multiplier(self, tmp_path):
+        from squish.convert import _estimate_output_bytes, _BPW_MULTIPLIERS
+        self._make_shard(tmp_path, 1_000_000)
+        assert _estimate_output_bytes(tmp_path, use_int2=True) == int(1_000_000 * _BPW_MULTIPLIERS["int2"])
+
+    def test_int4_uses_correct_multiplier(self, tmp_path):
+        from squish.convert import _estimate_output_bytes, _BPW_MULTIPLIERS
+        self._make_shard(tmp_path, 1_000_000)
+        assert _estimate_output_bytes(tmp_path, use_int4=True) == int(1_000_000 * _BPW_MULTIPLIERS["int4"])
+
+    def test_nf4_uses_int4_multiplier(self, tmp_path):
+        from squish.convert import _estimate_output_bytes, _BPW_MULTIPLIERS
+        self._make_shard(tmp_path, 1_000_000)
+        assert _estimate_output_bytes(tmp_path, use_nf4=True) == int(1_000_000 * _BPW_MULTIPLIERS["int4"])
+
+    def test_int8_default_uses_int8_multiplier(self, tmp_path):
+        from squish.convert import _estimate_output_bytes, _BPW_MULTIPLIERS
+        self._make_shard(tmp_path, 1_000_000)
+        assert _estimate_output_bytes(tmp_path) == int(1_000_000 * _BPW_MULTIPLIERS["int8"])
+
+    def test_empty_dir_returns_zero(self, tmp_path):
+        from squish.convert import _estimate_output_bytes
+        assert _estimate_output_bytes(tmp_path) == 0
+
+    def test_return_type_is_int(self, tmp_path):
+        from squish.convert import _estimate_output_bytes
+        self._make_shard(tmp_path, 500_000)
+        assert isinstance(_estimate_output_bytes(tmp_path, use_int3=True), int)
+
+    def test_multiple_shards_summed(self, tmp_path):
+        from squish.convert import _estimate_output_bytes, _BPW_MULTIPLIERS
+        (tmp_path / "shard1.safetensors").write_bytes(b"\x00" * 400_000)
+        (tmp_path / "shard2.safetensors").write_bytes(b"\x00" * 600_000)
+        assert _estimate_output_bytes(tmp_path, use_int4=True) == int(1_000_000 * _BPW_MULTIPLIERS["int4"])
+
+
+# ---------------------------------------------------------------------------
+# Disk pre-flight check in process_weights_streaming
+# ---------------------------------------------------------------------------
+
+
+class TestProcessWeightsStreamingDiskCheck:
+    """Verify the pre-flight disk guard raises RuntimeError when space is tight."""
+
+    def _minimal_model_dir(self, tmp_path):
+        """Create a model dir with one tiny fake safetensors shard."""
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        (model_dir / "model.safetensors").write_bytes(b"\x00" * 1_000_000)
+        return model_dir
+
+    def test_raises_when_disk_too_full(self, tmp_path):
+        from squish.convert import process_weights_streaming
+        model_dir = self._minimal_model_dir(tmp_path)
+        output_path = tmp_path / "output"
+        with patch("squish.convert._get_free_bytes", return_value=0):
+            with pytest.raises(RuntimeError, match="Insufficient disk space"):
+                process_weights_streaming(
+                    model_dir, output_path,
+                    passthrough_patterns=[], outlier_threshold=20.0,
+                    verbose=False, min_free_gb=10.0,
+                )
+
+    def test_error_message_contains_gb_figures(self, tmp_path):
+        from squish.convert import process_weights_streaming
+        model_dir = self._minimal_model_dir(tmp_path)
+        output_path = tmp_path / "output"
+        with patch("squish.convert._get_free_bytes", return_value=0):
+            with pytest.raises(RuntimeError) as exc_info:
+                process_weights_streaming(
+                    model_dir, output_path,
+                    passthrough_patterns=[], outlier_threshold=20.0,
+                    verbose=False, min_free_gb=5.0,
+                )
+        msg = str(exc_info.value)
+        assert "GB" in msg
+        assert "5" in msg
+
+    def test_no_disk_error_when_space_sufficient(self, tmp_path):
+        """With ample free space, RuntimeError should NOT be 'Insufficient disk space'."""
+        from squish.convert import process_weights_streaming
+        model_dir = self._minimal_model_dir(tmp_path)
+        output_path = tmp_path / "output"
+        huge = 1_000_000_000_000
+        with patch("squish.convert._get_free_bytes", return_value=huge):
+            # Will fail trying to load the fake shard — that's fine.
+            with pytest.raises(Exception) as exc_info:
+                process_weights_streaming(
+                    model_dir, output_path,
+                    passthrough_patterns=[], outlier_threshold=20.0,
+                    verbose=False, min_free_gb=10.0,
+                )
+            assert "Insufficient disk space" not in str(exc_info.value)
