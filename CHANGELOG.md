@@ -5,6 +5,75 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [29.0.0] — 2026-04-06
+
+### Added — Wave 55: v29 Advanced Sampling Refinement: MinP · Mirostat · TypicalSampling · EtaCutoff · CFG · DiverseBeam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound
+
+Twelve production-grade modules spanning next-generation sampling strategies
+and emerging quantization techniques.
+
+- **MinPSampler** (`squish/sampling/min_p_sampler.py`) — Min-P vocabulary floor
+  sampling: retains tokens whose probability exceeds `p_min × p_max`.
+  `MinPConfig`, `MinPSampler`, `filter_logits(logits)`, `sample(logits)`,
+  `top_token(logits)`, `survival_count(logits)`.
+  Reference: Nguyen et al. 2024.
+
+- **MirostatSampler** (`squish/sampling/mirostat_sampler.py`) — Mirostat 2.0
+  perplexity-controlled sampling: adapts μ to track target entropy τ.
+  `MirostatConfig`, `MirostatState`, `new_state()`, `sample(logits, state)`,
+  `reset()`.  Reference: Basu et al. arXiv 2007.14966.
+
+- **EtaCutoffSampler** (`squish/sampling/eta_sampler.py`) — η-sampling with
+  entropy-adaptive hard cutoff: threshold = `η × exp(H(p))`.
+  `EtaConfig`, `EtaCutoffSampler`, `filter_logits`, `entropy`, `survival_count`.
+  Reference: Hewitt et al. arXiv 2210.15191.
+
+- **CFGLogitsSampler** (`squish/sampling/cfg_sampler.py`) — Classifier-Free
+  Guidance logit fusion: `logits_uncond + w × (logits_cond - logits_uncond)`.
+  `CFGConfig`, `CFGLogitsSampler`, `merge_logits`, `sample`, `top_token`,
+  `guidance_delta`.
+
+- **DiverseBeamSampler** (`squish/sampling/diverse_beam.py`) — Diverse Beam
+  Search with inter-group diversity penalty; G groups × B/G beams each.
+  `DiverseBeamConfig`, `DiverseBeamState`, `new_state`, `step_logits`,
+  `get_sequences`, `best_sequence`.
+  Reference: Vijayakumar et al. arXiv 1610.02424.
+
+- **BitNet158Quantizer** (`squish/quant/bitnet_b158.py`) — Ternary {-1,0,+1}
+  weight quantization via absmean threshold; addition-only forward pass.
+  `BitNet158Config`, `BitNet158Quantizer`, `quantize_weight`, `dequantize`,
+  `bitlinear_forward`, `compression_ratio`.  Reference: arXiv 2402.17764.
+
+- **SpQRQuantizer** (`squish/quant/spqr_quant.py`) — Sparse-quantized
+  representation: bulk INT-N + COO outlier weights.  `SpQRConfig`,
+  `SpQRQuantizer`, `quantize`, `dequantize`, `matmul`, `effective_bits`.
+  Reference: arXiv 2306.03078.
+
+- **OmniQuantizer** (`squish/quant/omniquant.py`) — Joint LWC + LET
+  calibrated PTQ: learnable per-channel clip values and activation
+  equivalent transformations.  `OmniQuantConfig`, `OmniQuantizer`,
+  `calibrate`, `quantize_weight`, `forward`.  Reference: arXiv 2308.13137.
+
+- **QSparsifier** (`squish/quant/q_sparse.py`) — Top-K activation sparsifier:
+  retains only the top-`k`% of activations by magnitude before matmul.
+  `QSparseConfig`, `QSparsifier`, `sparsify`, `sparse_matmul`,
+  `flop_reduction`, `calibrate_per_layer`.  Reference: arXiv 2407.10969.
+
+- **FP4Quantizer** (`squish/quant/fp4_quant.py`) — FP4 E2M1 weight
+  quantization: 15 representable values, per-channel or per-tensor scale.
+  `FP4Config`, `FP4Quantizer`, `fp4_values`, `quantize`, `dequantize`,
+  `matmul`, `ppl_gap`.  Reference: NVIDIA Blackwell whitepaper.
+
+- **AdaRoundQuantizer** (`squish/quant/ada_round.py`) — Adaptive rounding
+  PTQ: learns optimal floor/ceil decision per weight via sigmoid relaxation.
+  `AdaRoundConfig`, `AdaRoundState`, `new_state`, `hard_round`,
+  `calibrate`, `quantize`.  Reference: Nagel et al. ICML 2020.
+
+- **TypicalSampler** (`squish/sampling/typical_sampler.py`) — Locally typical
+  sampling (pre-existing, included in Wave 55 test coverage).
+
+---
+
 ## [28.0.0] — 2026-04-06
 
 ### Added — Wave 54: v28 Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · ExpertMerge · LazyExpertLoad · ExpertCache · FlashAttn3 · DoubleSparsity · LASPParallel · NaCLCache · KVMigration · ElasticBatching
