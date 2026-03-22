@@ -1554,7 +1554,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v25 Wave 51 — Test-Time Compute Scaling: Budget Forcing · PRM Search · DVTS · COCONUT · Chain-of-Draft · Reasoning KV (Planned)
+## ✅ v25 Wave 51 — Test-Time Compute Scaling: Budget Forcing · PRM Search · DVTS · COCONUT · Chain-of-Draft · Reasoning KV
 
 Theme: **Wave 51 addresses a gap that all 50 prior waves leave entirely untouched: the inference-time
 compute scaling paradigm that underlies every o1/QwQ/DeepSeek-R1 style reasoning model. These models
@@ -1640,22 +1640,22 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/serving/budget_forcing.py` — BudgetForcingDecoder
-- [ ] `squish/sampling/test_time_scale.py` — TestTimeComputeRouter
-- [ ] `squish/sampling/dvts_search.py` — DVTSSearch
-- [ ] `squish/sampling/chain_of_draft.py` — ChainOfDraftSampler
-- [ ] `squish/reasoning/coconut.py` — CoconutDecoder
-- [ ] `squish/sampling/prm_beam_search.py` — PRMBeamSearch
-- [ ] `squish/sampling/best_of_n.py` — BestOfNSampler
-- [ ] `squish/reasoning/self_consistency.py` — SelfConsistencyVoter
-- [ ] `squish/token/thought_budget_gate.py` — ThoughtBudgetGate
-- [ ] `squish/kv/reasoning_kv.py` — ReasoningKVManager
-- [ ] `squish/speculative/draft_reasoning.py` — DraftReasoningVerifier
-- [ ] `squish/serving/parallel_reasoning.py` — ParallelReasoningScheduler
-- [ ] `tests/test_wave51a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave51b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[25.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/serving/budget_forcing.py` — BudgetForcingDecoder
+- [x] `squish/sampling/test_time_scale.py` — TestTimeComputeRouter
+- [x] `squish/sampling/dvts_search.py` — DVTSSearch
+- [x] `squish/sampling/chain_of_draft.py` — ChainOfDraftSampler
+- [x] `squish/reasoning/coconut.py` — CoconutDecoder
+- [x] `squish/sampling/prm_beam_search.py` — PRMBeamSearch
+- [x] `squish/sampling/best_of_n.py` — BestOfNSampler
+- [x] `squish/reasoning/self_consistency.py` — SelfConsistencyVoter
+- [x] `squish/token/thought_budget_gate.py` — ThoughtBudgetGate
+- [x] `squish/kv/reasoning_kv.py` — ReasoningKVManager
+- [x] `squish/speculative/draft_reasoning.py` — DraftReasoningVerifier
+- [x] `squish/serving/parallel_reasoning.py` — ParallelReasoningScheduler
+- [x] `tests/test_wave51a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave51b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[25.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 

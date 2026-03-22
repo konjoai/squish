@@ -5,6 +5,124 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [25.0.0] — 2026-03-29
+
+### Added — Wave 51: v25 Test-Time Compute Scaling: BudgetForcing · TestTimeScale · DVTS · ChainOfDraft · COCONUT · PRMBeam · BestOfN · SelfConsistency · ThoughtBudgetGate · ReasoningKV · DraftReasoning · ParallelReasoning
+
+Twelve production-grade inference modules enabling test-time compute scaling for reasoning
+models (QwQ-32B, DeepSeek-R1, Qwen3-8B).  Covers thinking-budget control, diverse
+verifier tree search, per-step beam search, latent-space reasoning, and parallel chain
+aggregation.
+
+- **BudgetForcingDecoder** (`squish/serving/budget_forcing.py`) — s1-style thinking-budget
+  control (Muennighoff et al., arXiv 2501.12599, 2025).  Appends "Wait" tokens to extend
+  reasoning and injects a commit trigger at the hard token cap; soft temperature ramp from
+  `soft_ramp_start` to `soft_ramp_max_temp` to sharpen predictions near budget exhaustion.
+  `BudgetForcingConfig` (`max_thinking_tokens`, `wait_token`, `commit_token`,
+  `soft_ramp_start`, `soft_ramp_max_temp`, `think_open_token`, `think_close_token`),
+  `BudgetForcingState` (`budget_exhausted` property, `injections`).
+  `new_state()`, `step(token, state)→(injection, temp_mult)`, `should_extend(state)`,
+  `inject_wait(state)`, `budget_fraction(state)`, `reset(state)`.
+
+- **TestTimeComputeRouter** (`squish/sampling/test_time_scale.py`) — Difficulty-aware
+  routing to four compute strategies (Snell et al., arXiv 2408.03314, 2024).  Measures
+  first-token entropy and selects GREEDY / TOP_P / BEST_OF_N / PRM_BEAM automatically.
+  `ComputeStrategy` enum, `TestTimeScaleConfig` (`easy_threshold`, `hard_threshold`,
+  `best_of_n_n`, `prm_beam_width`, `top_p`), `TestTimeScaleResult` (`strategy`, `entropy`).
+  `route(logits)`, `route_from_probs(probs)`, `routing_stats()`, `reset_stats()`.
+
+- **DVTSSearch** (`squish/sampling/dvts_search.py`) — Diverse Verifier Tree Search
+  (Tian et al., arXiv 2501.08101, 2025).  Runs N independent BFS subtrees from diverse
+  seed extensions; each tree is scored by a PRM and the best-scoring answer wins by
+  accumulated reward voting.  `DVTSConfig` (`n_subtrees`, `expand_depth`,
+  `diversity_temperature`, `prm_weight`), `DVTSNode` (`combined_score`, `is_leaf`),
+  `DVTSResult` (`best_answer`, `answer_scores`, `n_nodes_expanded`).
+  `run(seed_tokens, prm_scorer, expand_fn, extract_answer, vocab_size)`,
+  `make_diverse_seeds(base_tokens, vocab_size)`.
+
+- **ChainOfDraftSampler** (`squish/sampling/chain_of_draft.py`) — Per-step word-count
+  constraint (Xu et al., arXiv 2502.18600, 2025) reducing thinking tokens 7.6× by a
+  length penalty applied to logits whenever a step exceeds `max_step_tokens`.
+  `ChainOfDraftConfig` (`max_step_tokens`, `step_boundary`, `length_penalty`,
+  `force_boundary_after_limit`), `ChainOfDraftState` (`current_step_tokens`,
+  `steps_completed`, `compression_ratio`-enabled).
+  `new_state()`, `step(token, state)→(penalty, force_inject)`,
+  `apply_penalty(logits, penalty)`, `compression_ratio(state)`.
+
+- **CoconutDecoder** (`squish/reasoning/coconut.py`) — Continuous Chain-of-Thought
+  in latent space (Hao et al., arXiv 2412.06769, NeurIPS 2024).  Executes reasoning via
+  BFS over latent vectors projected by a trained head; decodes only the final answer token
+  sequence, skipping all intermediate token generation.  Falls back to standard decoding
+  transparently when no projection head is installed.
+  `CoconutConfig` (`latent_dim`, `max_latent_steps`, `beam_width`, `fallback_to_token_decode`),
+  `LatentThoughtState` (`latent`, `score`, `step`, `history`), `CoconutResult`
+  (`token_reduction_ratio` property, `used_fallback`).
+  `decode(prompt, hidden_state)`, `install_projection_head(head)`,
+  `install_answer_decoder(decoder)`.
+
+- **PRMBeamSearch** (`squish/sampling/prm_beam_search.py`) — Step-level beam search
+  guided by a process reward model (Wang et al., arXiv 2312.08935, NeurIPS 2024).  Blends
+  PRM step reward with generator log-probability; prunes to `beam_width` survivors at each
+  reasoning step.  `PRMBeamConfig` (`beam_width`, `max_steps`, `step_boundary`,
+  `prm_weight`, `token_prob_weight`), `PRMBeamCandidate` (`mean_prm_score`,
+  `combined_score(prm_w, tok_w)`), `PRMBeamResult` (`best_answer`).
+  `search(seed_tokens, prm_scorer, expand_fn, extract_answer)`,
+  `_prune_to_beam(candidates)`, `_score_candidates(candidates)`.
+
+- **BestOfNSampler** (`squish/sampling/best_of_n.py`) — Draw the highest-reward
+  completion from N independent samples (Snell et al., arXiv 2408.03314, 2024).  Supports
+  `"max"` (pick highest reward) and `"mean"` (majority-vote by frequency) aggregation.
+  `BestOfNConfig` (`n`, `temperature`, `reward_aggregation`), `BestOfNResult`
+  (`best_score`, `mean_score` properties).
+  `sample(completions, reward_fn)`, `simulate(n, answer_distribution)`.
+
+- **SelfConsistencyVoter** (`squish/reasoning/self_consistency.py`) — Majority-vote
+  aggregation over chain-of-thought paths (Wang et al., ICLR 2023).  Extracts final
+  answers via configurable regex or last-line heuristic; normalises and counts votes.
+  `SelfConsistencyConfig` (`k`, `temperature`, `answer_pattern`, `normalise_answers`),
+  `SelfConsistencyResult` (`winner_vote_share`, `n_chains`).
+  `vote(chains)`, `extract_answer(chain)`, `majority_vote(vote_counts)`.
+
+- **ThoughtBudgetGate** (`squish/token/thought_budget_gate.py`) — Per-token segment
+  gating to enforce thinking-token budgets at the stream level.  Tracks thinking vs answer
+  segment, triggers segment transition on boundary tokens, and force-injects the commit
+  trigger when the hard budget is exhausted.
+  `ThoughtBudgetConfig` (`max_thinking_tokens`, `boundary_tokens`, `commit_trigger`,
+  `soft_budget_fraction`), `ThoughtBudgetState` (`in_thinking`, `in_answer`).
+  `new_state()`, `step(token, state)→(at_boundary, inject_commit)`,
+  `budget_fraction(state)`, `near_soft_budget(state)`, `reset(state)`.
+
+- **ReasoningKVManager** (`squish/kv/reasoning_kv.py`) — Differentiated KV-cache
+  quantisation for reasoning models: thinking-segment entries stored at 2-bit precision
+  (group-wise symmetric), answer-segment entries at fp32 (fp16 stub).  Delivers up to 8×
+  KV memory reduction for the thinking segment with no quality loss on answer tokens.
+  `ReasoningKVSegment` enum (`THINKING`, `ANSWER`), `ReasoningKVConfig`
+  (`thinking_bits`, `answer_bits`, `boundary_token`, `group_size`),
+  `ReasoningKVState` (`compression_ratio`, `boundary_position`).
+  `new_state()`, `update(k, v, token_str, state)`, `get_kv(state)`,
+  `memory_summary(state)`.
+
+- **DraftReasoningVerifier** (`squish/speculative/draft_reasoning.py`) — Speculative-
+  decoding acceptance adapted for reasoning chains.  Accepts a draft token when both token
+  probability ≥ threshold and mean cosine similarity of draft hidden state to recent
+  context window ≥ cosine threshold (Leviathan et al., ICML 2023, extended).
+  `DraftReasoningConfig` (`token_prob_threshold`, `cosine_threshold`, `context_window`),
+  `DraftReasoningState` (`n_accepted`, `n_rejected`, `acceptance_history`).
+  `new_state()`, `verify(draft_token_prob, draft_hidden, context_hiddens, state)`,
+  `acceptance_rate(state)`, `calibrate_threshold(valid_samples, target_rate)`, `reset(state)`.
+
+- **ParallelReasoningScheduler** (`squish/serving/parallel_reasoning.py`) — Dispatch
+  and aggregate parallel reasoning chains via self-consistency or Best-of-N.  Estimates
+  problem difficulty from a caller-supplied score and linearly interpolates chain count
+  between `min_chains` and `max_chains`.
+  `ParallelReasoningConfig` (`max_chains`, `min_chains`, `aggregation`,
+  `easy_threshold`, `hard_threshold`), `ParallelReasoningRequest` (auto UUID),
+  `ParallelReasoningResult` (`n_chains`, `wall_seconds`).
+  `dispatch(difficulty_score)`, `aggregate(chains, method)`,
+  `schedule(request, generate_fn, difficulty_score)`.
+
+---
+
 ## [24.0.0] — 2026-03-22
 
 ### Added — Wave 50: v24 Bigger-Than-Memory Models: SparseGPT · MixtureOfDepths · LeanKV · GGUF · WeightDecompressStream · ModelShardLoader
