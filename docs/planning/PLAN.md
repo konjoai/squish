@@ -1737,7 +1737,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v23 Wave 49 — TTFT Sprint: LLMLingua-2 · RECOMP · Selective Context · PromptCache · PipeInfer · Prepack (Planned)
+## ✅ v23 Wave 49 — TTFT Sprint: LLMLingua-2 · RECOMP · Selective Context · PromptCache · PipeInfer · Prepack (Complete 2026-03-22)
 
 Theme: **Wave 49 drives time-to-first-token below one second for Qwen3:8b on M3 16 GB even
 for prompts up to 2,000 tokens — a 60–80% TTFT reduction on long-context requests compared to
@@ -1808,16 +1808,16 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ### Completion Checklist
 
-- [ ] `squish/serving/llm_lingua2.py` — LLMLingua2Compressor
-- [ ] `squish/serving/recomp.py` — RECOMPCompressor
-- [ ] `squish/serving/selective_context.py` — SelectiveContextCompressor
-- [ ] `squish/serving/prompt_cache.py` — PromptCacheKV
-- [ ] `squish/serving/pipe_infer.py` — PipeInferScheduler
-- [ ] `squish/serving/prepack.py` — PrepackScheduler
-- [ ] `tests/test_wave49a_modules.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave49b_modules.py` — ≥ 72 tests, all passing
-- [ ] CHANGELOG `[23.1.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish/serving/llm_lingua2.py` — LLMLingua2Compressor
+- [x] `squish/serving/recomp.py` — RECOMPCompressor
+- [x] `squish/serving/selective_context.py` — SelectiveContextCompressor
+- [x] `squish/serving/prompt_cache.py` — PromptCacheKV
+- [x] `squish/serving/pipe_infer.py` — PipeInferScheduler
+- [x] `squish/serving/prepack.py` — PrepackScheduler
+- [x] `tests/test_wave49a_modules.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave49b_modules.py` — ≥ 72 tests, all passing
+- [x] CHANGELOG `[23.1.0]` entry
+- [x] PLAN.md updated
 
 ---
 

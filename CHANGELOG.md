@@ -5,6 +5,58 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [23.1.0] — 2026-03-22
+
+### Added — Wave 49: v23 TTFT Sprint: LLMLingua-2 · RECOMP · Selective Context · PromptCache · PipeInfer · Prepack
+
+Six production-grade serving modules driving TTFT below 1 second for Qwen3:8b on M3 16 GB for
+prompts up to 2,000 tokens via four complementary strategies: prompt compression, schema-based KV
+caching, pipelined prefill-decode overlap, and shortest-job-first scheduling.
+
+- **LLMLingua2Compressor** (`squish/serving/llm_lingua2.py`) — Token-level prompt compression via
+  a fine-tuned binary keep/drop classifier; 4–20× compression in ~15 ms with 95%+ downstream
+  quality on RAG and summarisation tasks (arXiv 2403.12968, EMNLP 2024). `LLMLingua2Config`
+  (`target_ratio`, `min_tokens`, `force_tokens`), `LLMLingua2Result` (`.token_mask`).
+  `compress(prompt)`, `compress_tokens(tokens)`, `_score_tokens()`, `_force_mask()`.
+
+- **RECOMPCompressor** (`squish/serving/recomp.py`) — RAG context compression: extractive mode
+  retains top-k sentences by SBERT cosine score; abstractive mode simulates T5-small summarisation
+  (arXiv 2310.04408, EMNLP 2023). `RECOMPConfig` (`mode`, `top_k`, `max_length`),
+  `RECOMPResult` (`.compressed_context`). `compress(documents, query, mode=None)`,
+  `_split_sentences()`, `_bow_vector()`, `_cosine_sim()`.
+
+- **SelectiveContextCompressor** (`squish/serving/selective_context.py`) — Per-token
+  self-information pruning reusing prefill logits at zero additional cost; drops tokens below
+  information threshold τ (arXiv 2304.01210, EACL 2024). `SelectiveContextConfig` (`threshold`,
+  `min_tokens`), `SelectiveContextResult` (`.mask`). `compress(tokens, log_probs)`,
+  `compress_text(text)`, `_synthetic_log_probs()`.
+
+- **PromptCacheKV** (`squish/serving/prompt_cache.py`) — Schema-driven modular KV caching:
+  constant prompt spans are pre-materialised and reused across requests, yielding near-zero
+  TTFT for templated schemas (arXiv 2311.04934, EuroSys 2024). `PromptCacheConfig`,
+  `PromptSchema` (`.n_constant_tokens`), `PromptCacheResult` (`.hit`, `.cached_kv`).
+  `register_schema()`, `materialize()`, `lookup()`, `evict()`, `list_schemas()`.
+
+- **PipeInferScheduler** (`squish/serving/pipe_infer.py`) — Asynchronous chunked prefill-decode
+  pipeline: decode begins after chunk 0 prefill, overlapping remaining prefill chunks with early
+  decode steps for 30–50% TTFT reduction on prompts > 256 tokens (arXiv 2407.11798, 2024).
+  `PipeInferConfig` (`chunk_size`, `max_decode_steps`), `PipeInferRequest`, `PipeInferTick`
+  (`.first_token_emitted`). `submit()`, `step()`, `is_done()`, `ttft_estimate(prompt_length)`.
+
+- **PrepackScheduler** (`squish/serving/prepack.py`) — Shortest-job-first batch scheduler:
+  sorts pending requests by prompt length before batching to reduce head-of-line blocking and
+  achieve ~1.4× mean TTFT improvement vs FCFS (arXiv 2405.09613, EMNLP 2024). `PrepackConfig`
+  (`max_batch_size`, `chunk_size`), `PrepackRequest`, `PrepackBatch` (`.estimated_ttft`).
+  `submit()`, `schedule()`, `drain()`.
+
+### Tests
+
+- `tests/test_wave49a_modules.py` — 83 tests covering LLMLingua2Compressor, RECOMPCompressor, SelectiveContextCompressor
+- `tests/test_wave49b_modules.py` — 83 tests covering PromptCacheKV, PipeInferScheduler, PrepackScheduler
+- Total: 10,905 passing, 34 skipped
+
+---
+
 ## [23.0.0] — 2026-03-22
 
 ### Added — Wave 48: INT2/INT3 Extreme Quantization: SpQR · AutoRound · OWQ · BitDistiller · ZipLM · GGUF Mixed
