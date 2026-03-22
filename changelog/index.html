@@ -838,6 +838,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#2900-2026-04-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [29.0.0] — 2026-04-06
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[29.0.0] — 2026-04-06">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-55-v29-advanced-sampling-refinement-minp-mirostat-typicalsampling-etacutoff-cfg-diversebeam-emerging-quantization-bitnet-b158-spqr-omniquant-q-sparse-fp4-adaround" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 55: v29 Advanced Sampling Refinement: MinP · Mirostat · TypicalSampling · EtaCutoff · CFG · DiverseBeam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#2800-2026-04-06" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2246,6 +2274,85 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="2900-2026-04-06">[29.0.0] — 2026-04-06<a class="headerlink" href="#2900-2026-04-06" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-55-v29-advanced-sampling-refinement-minp-mirostat-typicalsampling-etacutoff-cfg-diversebeam-emerging-quantization-bitnet-b158-spqr-omniquant-q-sparse-fp4-adaround">Added — Wave 55: v29 Advanced Sampling Refinement: MinP · Mirostat · TypicalSampling · EtaCutoff · CFG · DiverseBeam + Emerging Quantization: BitNet-b1.58 · SpQR · OmniQuant · Q-Sparse · FP4 · AdaRound<a class="headerlink" href="#added-wave-55-v29-advanced-sampling-refinement-minp-mirostat-typicalsampling-etacutoff-cfg-diversebeam-emerging-quantization-bitnet-b158-spqr-omniquant-q-sparse-fp4-adaround" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules spanning next-generation sampling strategies
+and emerging quantization techniques.</p>
+<ul>
+<li>
+<p><strong>MinPSampler</strong> (<code>squish/sampling/min_p_sampler.py</code>) — Min-P vocabulary floor
+  sampling: retains tokens whose probability exceeds <code>p_min × p_max</code>.
+  <code>MinPConfig</code>, <code>MinPSampler</code>, <code>filter_logits(logits)</code>, <code>sample(logits)</code>,
+  <code>top_token(logits)</code>, <code>survival_count(logits)</code>.
+  Reference: Nguyen et al. 2024.</p>
+</li>
+<li>
+<p><strong>MirostatSampler</strong> (<code>squish/sampling/mirostat_sampler.py</code>) — Mirostat 2.0
+  perplexity-controlled sampling: adapts μ to track target entropy τ.
+  <code>MirostatConfig</code>, <code>MirostatState</code>, <code>new_state()</code>, <code>sample(logits, state)</code>,
+  <code>reset()</code>.  Reference: Basu et al. arXiv 2007.14966.</p>
+</li>
+<li>
+<p><strong>EtaCutoffSampler</strong> (<code>squish/sampling/eta_sampler.py</code>) — η-sampling with
+  entropy-adaptive hard cutoff: threshold = <code>η × exp(H(p))</code>.
+  <code>EtaConfig</code>, <code>EtaCutoffSampler</code>, <code>filter_logits</code>, <code>entropy</code>, <code>survival_count</code>.
+  Reference: Hewitt et al. arXiv 2210.15191.</p>
+</li>
+<li>
+<p><strong>CFGLogitsSampler</strong> (<code>squish/sampling/cfg_sampler.py</code>) — Classifier-Free
+  Guidance logit fusion: <code>logits_uncond + w × (logits_cond - logits_uncond)</code>.
+  <code>CFGConfig</code>, <code>CFGLogitsSampler</code>, <code>merge_logits</code>, <code>sample</code>, <code>top_token</code>,
+  <code>guidance_delta</code>.</p>
+</li>
+<li>
+<p><strong>DiverseBeamSampler</strong> (<code>squish/sampling/diverse_beam.py</code>) — Diverse Beam
+  Search with inter-group diversity penalty; G groups × B/G beams each.
+  <code>DiverseBeamConfig</code>, <code>DiverseBeamState</code>, <code>new_state</code>, <code>step_logits</code>,
+  <code>get_sequences</code>, <code>best_sequence</code>.
+  Reference: Vijayakumar et al. arXiv 1610.02424.</p>
+</li>
+<li>
+<p><strong>BitNet158Quantizer</strong> (<code>squish/quant/bitnet_b158.py</code>) — Ternary {-1,0,+1}
+  weight quantization via absmean threshold; addition-only forward pass.
+  <code>BitNet158Config</code>, <code>BitNet158Quantizer</code>, <code>quantize_weight</code>, <code>dequantize</code>,
+  <code>bitlinear_forward</code>, <code>compression_ratio</code>.  Reference: arXiv 2402.17764.</p>
+</li>
+<li>
+<p><strong>SpQRQuantizer</strong> (<code>squish/quant/spqr_quant.py</code>) — Sparse-quantized
+  representation: bulk INT-N + COO outlier weights.  <code>SpQRConfig</code>,
+  <code>SpQRQuantizer</code>, <code>quantize</code>, <code>dequantize</code>, <code>matmul</code>, <code>effective_bits</code>.
+  Reference: arXiv 2306.03078.</p>
+</li>
+<li>
+<p><strong>OmniQuantizer</strong> (<code>squish/quant/omniquant.py</code>) — Joint LWC + LET
+  calibrated PTQ: learnable per-channel clip values and activation
+  equivalent transformations.  <code>OmniQuantConfig</code>, <code>OmniQuantizer</code>,
+  <code>calibrate</code>, <code>quantize_weight</code>, <code>forward</code>.  Reference: arXiv 2308.13137.</p>
+</li>
+<li>
+<p><strong>QSparsifier</strong> (<code>squish/quant/q_sparse.py</code>) — Top-K activation sparsifier:
+  retains only the top-<code>k</code>% of activations by magnitude before matmul.
+  <code>QSparseConfig</code>, <code>QSparsifier</code>, <code>sparsify</code>, <code>sparse_matmul</code>,
+  <code>flop_reduction</code>, <code>calibrate_per_layer</code>.  Reference: arXiv 2407.10969.</p>
+</li>
+<li>
+<p><strong>FP4Quantizer</strong> (<code>squish/quant/fp4_quant.py</code>) — FP4 E2M1 weight
+  quantization: 15 representable values, per-channel or per-tensor scale.
+  <code>FP4Config</code>, <code>FP4Quantizer</code>, <code>fp4_values</code>, <code>quantize</code>, <code>dequantize</code>,
+  <code>matmul</code>, <code>ppl_gap</code>.  Reference: NVIDIA Blackwell whitepaper.</p>
+</li>
+<li>
+<p><strong>AdaRoundQuantizer</strong> (<code>squish/quant/ada_round.py</code>) — Adaptive rounding
+  PTQ: learns optimal floor/ceil decision per weight via sigmoid relaxation.
+  <code>AdaRoundConfig</code>, <code>AdaRoundState</code>, <code>new_state</code>, <code>hard_round</code>,
+  <code>calibrate</code>, <code>quantize</code>.  Reference: Nagel et al. ICML 2020.</p>
+</li>
+<li>
+<p><strong>TypicalSampler</strong> (<code>squish/sampling/typical_sampler.py</code>) — Locally typical
+  sampling (pre-existing, included in Wave 55 test coverage).</p>
+</li>
+</ul>
 <hr />
 <h2 id="2800-2026-04-06">[28.0.0] — 2026-04-06<a class="headerlink" href="#2800-2026-04-06" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-54-v28-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-expertmerge-lazyexpertload-expertcache-flashattn3-doublesparsity-laspparallel-naclcache-kvmigration-elasticbatching">Added — Wave 54: v28 Deep MoE Efficiency: SharedExpert · FineGrainedRouter · ExpertOffload · ExpertMerge · LazyExpertLoad · ExpertCache · FlashAttn3 · DoubleSparsity · LASPParallel · NaCLCache · KVMigration · ElasticBatching<a class="headerlink" href="#added-wave-54-v28-deep-moe-efficiency-sharedexpert-finegrainedrouter-expertoffload-expertmerge-lazyexpertload-expertcache-flashattn3-doublesparsity-laspparallel-naclcache-kvmigration-elasticbatching" title="Permanent link">&para;</a></h3>
