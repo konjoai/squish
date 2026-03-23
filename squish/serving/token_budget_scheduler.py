@@ -220,3 +220,7 @@ class TokenBudgetScheduler:
         """Remove a completed request."""
         self._requests.pop(request_id, None)
         self._swapped_cpu.pop(request_id, None)
+
+
+# server.py compatibility alias
+TokenBudgetConfig = TokenBudgetSchedulerConfig

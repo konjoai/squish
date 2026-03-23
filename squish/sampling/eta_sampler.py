@@ -148,3 +148,7 @@ class EtaCutoffSampler:
         """Shannon entropy in nats."""
         safe = np.clip(probs, 1e-40, None)
         return float(-np.sum(probs * np.log(safe)))
+
+
+# server.py compatibility alias
+EtaSampler = EtaCutoffSampler

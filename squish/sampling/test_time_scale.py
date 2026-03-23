@@ -191,3 +191,7 @@ class TestTimeComputeRouter:
         if strategy == ComputeStrategy.BEST_OF_N:
             return {"n": cfg.best_of_n_n, "temperature": 0.8}
         return {"beam_width": cfg.prm_beam_width, "temperature": 0.7}
+
+
+# server.py compatibility alias
+TestTimeComputeConfig = TestTimeScaleConfig

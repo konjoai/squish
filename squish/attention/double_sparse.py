@@ -247,3 +247,7 @@ class DoubleSparsityAttn:
             out[h] = attn_w @ V[h]  # (T_q, head_dim)
 
         return out, state
+
+
+# server.py compatibility alias
+DoubleSparsityConfig = DoubleSparseConfig

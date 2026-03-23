@@ -63,6 +63,10 @@ class RadixAttentionConfig:
         if self.head_dim < 1:
             raise ValueError(f"head_dim must be ≥ 1; got {self.head_dim}")
 
+    @property
+    def max_nodes(self) -> int:  # server.py compatibility alias
+        return self.max_tokens
+
 
 # ── Radix tree node ───────────────────────────────────────────────────────────
 

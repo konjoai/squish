@@ -176,3 +176,7 @@ class VLMSpecDecode:
         state.n_accepted = 0
         state.n_rejected = 0
         state.acceptance_history.clear()
+
+
+# server.py compatibility alias
+VLMSpecDecodeConfig = VLMSpecConfig

@@ -69,6 +69,14 @@ class RingAttentionConfig:
         if self.head_dim < 1:
             raise ValueError(f"head_dim must be ≥ 1; got {self.head_dim}")
 
+    @property
+    def n_devices(self) -> int:  # server.py compatibility alias
+        return self.n_shards
+
+    @property
+    def chunk_size(self) -> int:  # server.py compatibility alias (half-sequence default)
+        return 512
+
 
 # ── Ring Attention ────────────────────────────────────────────────────────────
 

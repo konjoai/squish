@@ -231,3 +231,7 @@ class PRMBeamSearch:
             c.combined_score(self.config.prm_weight, self.config.token_prob_weight)
             for c in candidates
         ]
+
+
+# server.py compatibility alias
+PRMBeamSearchConfig = PRMBeamConfig

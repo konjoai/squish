@@ -231,3 +231,7 @@ class VLMBatchScheduler:
         n_tiles_h = max(1, round(height / _TILE_SIZE))
         n_tiles_w = max(1, round(width / _TILE_SIZE))
         return n_tiles_h * n_tiles_w * _TOKENS_PER_TILE
+
+
+# server.py compatibility alias
+VLMBatchConfig = VLMSchedulerConfig

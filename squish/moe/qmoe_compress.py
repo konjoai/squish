@@ -75,6 +75,10 @@ class QMoEConfig:
         if self.n_iter < 1:
             raise ValueError(f"n_iter must be ≥ 1; got {self.n_iter}")
 
+    @property
+    def bits(self) -> int:  # server.py compatibility alias: codebook index width
+        return (self.n_codes - 1).bit_length()
+
 
 # ── Compressed expert ─────────────────────────────────────────────────────────
 

@@ -94,6 +94,14 @@ class AKVQConfig:
         if self.head_dim < 1:
             raise ValueError(f"head_dim must be ≥ 1; got {self.head_dim}")
 
+    @property
+    def min_bits(self) -> int:  # server.py compatibility alias
+        return self.low_precision_bits
+
+    @property
+    def max_bits(self) -> int:  # server.py compatibility alias
+        return self.high_precision_bits
+
 
 # ── Quantised tensor ──────────────────────────────────────────────────────────
 

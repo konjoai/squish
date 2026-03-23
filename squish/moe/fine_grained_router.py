@@ -215,3 +215,7 @@ class FineGrainedMoERouter:
     def expert_utilization(self, state: RouterBiasState) -> ndarray:
         """Return per-expert EMA load estimate, shape ``(n_experts,)``."""
         return state.load_ema.copy()
+
+
+# server.py compatibility alias
+FineGrainedMoEConfig = FineGrainedRouterConfig

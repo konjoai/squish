@@ -200,3 +200,7 @@ class CrossModalRouter:
     def _softmax(x: np.ndarray, axis: int) -> np.ndarray:
         e = np.exp(x - x.max(axis=axis, keepdims=True))
         return e / e.sum(axis=axis, keepdims=True)
+
+
+# server.py compatibility alias
+CrossModalAttnConfig = CrossModalConfig

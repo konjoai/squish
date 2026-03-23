@@ -57,6 +57,10 @@ class WKVQuantConfig:
     group_size: int = 128
     outlier_threshold: float = 3.0
 
+    @property
+    def bits(self) -> int:  # server.py compatibility alias
+        return self.n_bits
+
 
 @dataclass
 class WKVQuantResult:

@@ -74,6 +74,14 @@ class InfiniAttentionConfig:
         if self.head_dim < 1:
             raise ValueError(f"head_dim must be ≥ 1; got {self.head_dim}")
 
+    @property
+    def segment_size(self) -> int:  # server.py compatibility alias
+        return self.segment_len
+
+    @property
+    def memory_dim(self) -> int:  # server.py compatibility alias
+        return self.n_heads * self.head_dim
+
 
 # ── InfiniAttention ───────────────────────────────────────────────────────────
 

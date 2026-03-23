@@ -84,6 +84,14 @@ class EAGLE2Config:
         if self.temperature <= 0.0:
             raise ValueError(f"temperature must be > 0; got {self.temperature}")
 
+    @property
+    def gamma(self) -> int:  # server.py compatibility alias
+        return self.draft_length
+
+    @property
+    def tree_depth(self) -> int:  # server.py compatibility alias
+        return self.max_depth
+
 
 # ── Result ────────────────────────────────────────────────────────────────────
 

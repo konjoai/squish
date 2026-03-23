@@ -58,6 +58,10 @@ class MinPConfig:
         if self.temperature <= 0.0:
             raise ValueError("temperature must be > 0")
 
+    @property
+    def min_p_factor(self) -> float:  # server.py compatibility alias
+        return self.p_min
+
 
 # ---------------------------------------------------------------------------
 # Sampler

@@ -61,6 +61,10 @@ class LoFTQConfig:
         if self.rank < 1:
             raise ValueError("rank must be >= 1")
 
+    @property
+    def bits(self) -> int:  # server.py compatibility alias
+        return self.n_bits
+
 
 @dataclass
 class LoFTQResult:

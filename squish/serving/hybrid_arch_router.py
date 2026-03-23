@@ -81,16 +81,17 @@ class HybridArchConfig:
         seed: Unused; for API consistency.
     """
 
-    layer_types: List[str]
+    layer_types: Optional[List[str]] = None
     model_name: str = ""
     seed: int = 0
 
     def __post_init__(self) -> None:
-        if not self.layer_types:
-            raise ValueError("layer_types must be non-empty")
-        # Validate all types are recognised
-        for t in self.layer_types:
-            _canonical(t)
+        if self.layer_types is not None:
+            if not self.layer_types:
+                raise ValueError("layer_types must be non-empty")
+            # Validate all types are recognised
+            for t in self.layer_types:
+                _canonical(t)
 
 
 class HybridArchRouter:

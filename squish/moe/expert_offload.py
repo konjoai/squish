@@ -210,3 +210,7 @@ class ExpertOffloader:
             "n_evictions": state.n_evictions,
             "resident_ids": sorted(state.resident.keys()),
         }
+
+
+# server.py compatibility alias
+ExpertOffloaderConfig = ExpertOffloadConfig

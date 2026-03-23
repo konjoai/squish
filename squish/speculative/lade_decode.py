@@ -82,6 +82,14 @@ class LADEConfig:
         if self.temperature <= 0.0:
             raise ValueError(f"temperature must be > 0; got {self.temperature}")
 
+    @property
+    def window_size(self) -> int:  # server.py compatibility alias
+        return self.n_lookahead
+
+    @property
+    def ngram_size(self) -> int:  # server.py compatibility alias
+        return self.n_gram
+
 
 # ── Result ────────────────────────────────────────────────────────────────────
 

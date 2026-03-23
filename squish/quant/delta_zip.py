@@ -73,6 +73,10 @@ class DeltaZipConfig:
         if self.block_size < 1:
             raise ValueError(f"block_size must be ≥ 1; got {self.block_size}")
 
+    @property
+    def bits(self) -> int:  # server.py compatibility alias
+        return self.quant_bits
+
 
 # ── Compressed adapter ────────────────────────────────────────────────────────
 
