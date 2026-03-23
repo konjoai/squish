@@ -838,6 +838,62 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#3200-2026-03-22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [32.0.0] — 2026-03-22
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[32.0.0] — 2026-03-22">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-58-v32-third-acceleration-tier-rust-vector-k-means-fp6-bitpack-awq-channel-model-merge-moe-bincount-online-sgd-mojo-dual-chunk-attn-infini-attn-memory-sliding-window-attn-hqq-als-vptq-decode-top-kp-sampling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 58: v32 Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Added — Wave 58: v32 Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wave-58a-rust-kernel-python-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 58a — Rust kernel Python wrappers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-58b-mojo-kernel-python-wrappers-mojo-stubs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 58b — Mojo kernel Python wrappers + .mojo stubs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#3100-2026-03-22" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2419,6 +2475,104 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="3200-2026-03-22">[32.0.0] — 2026-03-22<a class="headerlink" href="#3200-2026-03-22" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-58-v32-third-acceleration-tier-rust-vector-k-means-fp6-bitpack-awq-channel-model-merge-moe-bincount-online-sgd-mojo-dual-chunk-attn-infini-attn-memory-sliding-window-attn-hqq-als-vptq-decode-top-kp-sampling">Added — Wave 58: v32 Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling<a class="headerlink" href="#added-wave-58-v32-third-acceleration-tier-rust-vector-k-means-fp6-bitpack-awq-channel-model-merge-moe-bincount-online-sgd-mojo-dual-chunk-attn-infini-attn-memory-sliding-window-attn-hqq-als-vptq-decode-top-kp-sampling" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules: six Rust-backed kernel wrappers (Wave 58a)
+adding vector K-means codebook fitting, FP6 bit-packing, AWQ channel statistics,
+SLERP/DARE/TIES model merge, MoE expert bincount, and online SGD to
+<code>squish_quant_rs</code>; plus six Mojo-backed kernel wrappers (Wave 58b) extending
+Wave 56–57's MojoBridge infrastructure with tiled attention, compressive memory,
+and sampling kernels. All 302 Wave 56–57 tests continue passing; 150 new tests
+added (79 Wave 58a + 71 Wave 58b).</p>
+<h4 id="wave-58a-rust-kernel-python-wrappers">Wave 58a — Rust kernel Python wrappers<a class="headerlink" href="#wave-58a-rust-kernel-python-wrappers" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>RustVectorKMeans</strong> (<code>squish/kernels/rs_vector_kmeans.py</code>) — K-means++
+  codebook fitting and assignment wrapping three new <code>squish_quant</code> functions:
+  <code>vector_kmeans_fit_f32</code>, <code>vector_kmeans_assign_f32</code>,
+  <code>vector_kmeans_reconstruct_f32</code>. Rayon parallel K-means++ seeding (max-dist
+  heuristic) + Lloyd E-step via <code>into_par_iter</code> nearest-centroid per row;
+  ~12× fit, ~8× assign at N=10K, K=256, D=8 vs NumPy broadcast <code>(N,K,D)</code>.
+  NumPy fallback with full K-means++ seeding.</p>
+</li>
+<li>
+<p><strong>RustFP6BitPack</strong> (<code>squish/kernels/rs_fp6_bitpack.py</code>) — FP6 encoder/decoder
+  wrapping <code>fp6_encode_f32</code> and <code>fp6_decode_f32</code>. Configurable <code>(exp_bits,
+  man_bits)</code> validated at construction; processes 4 f32 → 3 bytes per iteration
+  using compile-time bit-field extraction; replaces triple nested Python loop
+  in <code>fp6_quant.py</code>; ~40× encode, ~30× decode for matrices ≥ 4096 elements.</p>
+</li>
+<li>
+<p><strong>RustAWQChannel</strong> (<code>squish/kernels/rs_awq_channel.py</code>) — AWQ calibration
+  statistics accumulator wrapping <code>awq_channel_abs_mean_f32</code> and
+  <code>awq_compute_scales_f32</code>. Stateful per-channel abs-mean accumulation across
+  calibration batches; single-pass Rayon column-reduce replaces two NumPy passes
+  in <code>awq.py</code>; ~4× per calibration step across 30–90 samples.</p>
+</li>
+<li>
+<p><strong>RustModelMerge</strong> (<code>squish/kernels/rs_model_merge.py</code>) — SLERP/DARE/TIES model
+  merge wrapping <code>slerp_f32</code>, <code>dare_merge_f32</code>, <code>ties_merge_f32</code>. Rayon parallel
+  sign-election + masked-mean for TIES; Murmur-hash PRNG Bernoulli mask for DARE;
+  norm-normalize + acos SLERP; replaces Python loops in <code>lora/model_merge.py</code>;
+  ~3–4× on 4096×4096 weight matrices.</p>
+</li>
+<li>
+<p><strong>RustMoEBincount</strong> (<code>squish/kernels/rs_moe_bincount.py</code>) — MoE expert frequency
+  bincount and top-k selection wrapping <code>moe_bincount_f32</code> and <code>moe_top_k_f32</code>.
+  Chunk-parallel <code>[u32; n_experts]</code> histogram + sequential reduce + normalize;
+  <code>select_nth_unstable_by</code> top-k; replaces Python for-loop in <code>sparse_moe.py</code>;
+  ~8× for n_experts=128, batch=64.</p>
+</li>
+<li>
+<p><strong>RustOnlineSGD</strong> (<code>squish/kernels/rs_online_sgd.py</code>) — online logistic
+  regression SGD wrapping <code>logistic_step_f32</code> and <code>sgd_weight_update_f32</code>.
+  Fused sigmoid + error + axpy weight update in one Rayon vector pass; replaces
+  3 NumPy ufunc dispatches per step in <code>skip_layer_predictor.py</code> and
+  <code>deja_vu_sparse.py</code>; ~7× for n_features=32, n_layers=32, 1000 steps.</p>
+</li>
+</ul>
+<h4 id="wave-58b-mojo-kernel-python-wrappers-mojo-stubs">Wave 58b — Mojo kernel Python wrappers + .mojo stubs<a class="headerlink" href="#wave-58b-mojo-kernel-python-wrappers-mojo-stubs" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>MojoDualChunkAttn</strong> (<code>squish/kernels/mojo/dual_chunk_attn_mojo.py</code> +
+  <code>squish/kernels/mojo/kernels/dual_chunk_attn.mojo</code>) — tiled causal SDPA over
+  512-token chunks with online softmax accumulation and <code>@parameter</code> on
+  chunk_size/head_dim; replaces 3 einsum calls in <code>dual_chunk_attn.py</code>; ~3×.</p>
+</li>
+<li>
+<p><strong>MojoInfiniAttnMemory</strong> (<code>squish/kernels/mojo/infini_attn_mojo.py</code> +
+  <code>squish/kernels/mojo/kernels/infini_attn.mojo</code>) — ELU-gated outer-product
+  compressive memory update and matrix-vector retrieval; <code>parallelize</code> over
+  heads; replaces <code>np.einsum</code> update/query in <code>infini_attn.py</code>; ~3×.</p>
+</li>
+<li>
+<p><strong>MojoSlidingWindowAttn</strong> (<code>squish/kernels/mojo/sliding_window_attn_mojo.py</code> +
+  <code>squish/kernels/mojo/kernels/sliding_window_attn.mojo</code>) — causal local
+  attention eliminating the double Python for-loop in <code>subgen_attn.py</code>;
+  <code>parallelize(n_heads × T)</code> with <code>@parameter</code> on window_size/head_dim; ~10×.</p>
+</li>
+<li>
+<p><strong>MojoHQQALS</strong> (<code>squish/kernels/mojo/hqq_als_mojo.py</code> +
+  <code>squish/kernels/mojo/kernels/hqq_als.mojo</code>) — fused ALS iteration reading W
+  once and computing scale/zero/codes in one <code>vectorize</code> pass; <code>@parameter</code> on
+  group_size/qmax; replaces 6 NumPy ufunc dispatches per ALS step in
+  <code>hqq_quant.py</code>; ~3× overall.</p>
+</li>
+<li>
+<p><strong>MojoVPTQDecode</strong> (<code>squish/kernels/mojo/vptq_decode_mojo.py</code> +
+  <code>squish/kernels/mojo/kernels/vptq_decode.mojo</code>) — SIMD codebook gather with
+  <code>@parameter</code> on group_size; replaces fancy-index in <code>vptq.py</code> and AQLM
+  dequantize loop; ~2.5× at group_size=4.</p>
+</li>
+<li>
+<p><strong>MojoTopKP</strong> (<code>squish/kernels/mojo/topkp_mojo.py</code> +
+  <code>squish/kernels/mojo/kernels/topkp.mojo</code>) — fused top-k/top-p sampling with
+  radix histogram partial-sort and SIMD horizontal-add cumsum; <code>@parameter</code> on
+  vocab_size; replaces 4 NumPy passes in <code>scheduler.py</code> and <code>token_swift.py</code>;
+  ~4× for vocab=128K.</p>
+</li>
+</ul>
 <hr />
 <h2 id="3100-2026-03-22">[31.0.0] — 2026-03-22<a class="headerlink" href="#3100-2026-03-22" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-57-v31-deep-native-acceleration-rust-entropy-codec-pq-adc-gru-cell-cosine-sim-swiglu-randomized-svd-mojo-rmsnorm-swiglu-parallel-gqa-decode-token-cossim-sparse-block-score-retention-state">Added — Wave 57: v31 Deep Native Acceleration: Rust Entropy Codec · PQ ADC · GRU Cell · Cosine Sim · SwiGLU · Randomized SVD + Mojo RMSNorm · SwiGLU Parallel · GQA Decode · Token CosSim · Sparse Block Score · Retention State<a class="headerlink" href="#added-wave-57-v31-deep-native-acceleration-rust-entropy-codec-pq-adc-gru-cell-cosine-sim-swiglu-randomized-svd-mojo-rmsnorm-swiglu-parallel-gqa-decode-token-cossim-sparse-block-score-retention-state" title="Permanent link">&para;</a></h3>
