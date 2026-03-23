@@ -43,6 +43,8 @@ This document tracks completed waves, the current release, and the next phase.
 | **v31** | 57 | Deep Native Acceleration · Rust Entropy Codec / PQ ADC / GRU Cell / Cosine Sim / SwiGLU / Randomized SVD · Mojo RMSNorm / SwiGLU Parallel / GQA Decode / Token CosSim / Sparse Block Score / Retention State |
 | **v32** | 58 | Third Acceleration Tier · Rust Vector K-Means / FP6 BitPack / AWQ Channel / Model Merge / MoE Bincount / Online SGD · Mojo Dual-Chunk Attn / Infini-Attn Memory / Sliding-Window Attn / HQQ ALS / VPTQ Decode / Top-K/P Sampling |
 | **v33** | 59 | Decode Velocity Sprint · Rust GPTQ Column Solve / QuaRot Group / Calibration Scale / Flash-Decode Kernel / BF16 Cast / Sparse-Act GEMV · Mojo Flash-Decode / BF16 GEMV / GQA Prefill / Split-K Reduce / Rotary Embed / Layer-Skip Predict |
+| **v34** | 60 | SSM Recurrence Sprint · Rust Mamba2 SSM Scan/Decode / AdaRound / Paged KV Gather / Hawk RGLR / CAKE Entropy / Ternary GEMV · Mojo mirrors |
+| **v35** | 61 | Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify |
 
 ---
 
@@ -574,6 +576,140 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [x] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [x] CHANGELOG `[19.0.0]` entry
 - [x] PLAN.md updated
+
+---
+
+## 🚧 v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Planned)
+
+Theme: **Wave 61 targets six remaining Python-loop hotspots that dominate profiling traces after Wave 60
+eliminates the SSM/paged-memory bottlenecks. The six targets span post-training structured sparsity
+(Wanda N:M mask scoring), LUT-weight group encode/decode (FLUTE codebook inference), linear attention
+recurrence (DeltaNet per-token delta-rule update), attention-based KV budget allocation (GreenKV
+per-head importance scoring), parallel-decode convergence checking (Jacobi fixed-point iteration),
+and speculative tree verification (multi-branch accept/reject with residual correction). All six
+have dense, predictable loop shapes that map cleanly to Rayon `into_par_iter` and Mojo `parallelize`,
+and all six sit on critical paths for either calibration throughput or live decode latency.**
+
+**Wave 61a Rust gaps — 7 new functions:**
+
+(1) `squish/quant/wanda_pruner.py` `WandaPruner._nm_mask` has a double nested loop
+`for col_start in range(0, in_f, m): for row in range(out_f):` that iterates over every (row, block)
+pair to rank top-n importance entries per N:M block; for a 4096×4096 layer with M=4 this fires
+4 × 1M = 4M per-block argsort comparisons; Rust `wanda_nm_mask_f32` uses `into_par_iter()` over
+column blocks with `par_iter()` over rows — inner `argsort`-like top-n selection using a fixed-size
+`[f32; M]` stack buffer; ~6× vs Python nested loop (~3.2 s → <0.5 s for a 4096×4096 weight on CPU).
+
+(2) `squish/quant/flute_quant.py` `FluteQuantizer.quantise` has `for g in range(n_groups):` iterating
+over all weight column groups (e.g. 128 groups for a 4096-column weight, group_size=32); per group:
+compute all distances `|w - cb_i|` against a 16-entry codebook; argmin → uint8 code; for a 4096×4096
+weight with n_groups=128 this is ~67M distance evaluations; Rust `flute_lut_encode_f32` with
+`into_par_iter()` over groups + inner `chunks(group_size)` vectorised argmin loop; ~5× vs Python
+(12 s → 2.4 s for 4096×4096, gs=32). `flute_lut_decode_u8` (`FluteQuantizer.dequantise`) likewise:
+`for g in range(n_groups):` plus direct gather `cb[group_codes]`; parallelised similarly; ~4×.
+
+(3) `squish/attention/delta_net.py` `DeltaNetLinear.forward` has `for t in range(T):` calling
+`_step(x[t], state)` sequentially — each step computes `q, k, v = W_q@x, W_k@x, W_v@x`, normalises k,
+computes `beta`, then `W_state += beta * (v - W_state @ k**T)[:, None] * k[None, :]` and
+`y = (W_state @ q).ravel()`; for T=512, h=8, d_state=64 this is 512 sequential O(h×d_state²) GEMV +
+outer-product updates; Rust `delta_net_scan_f32` with sequential time + `into_par_iter()` over heads
+for the per-head outer-product state update; ~4× for T=512, 8 heads on M3.
+
+(4) `squish/kv/green_kv.py` `GreenKVEviction.compress` has `for h in range(H):` computing per-head
+attention logits `Q_obs[h] @ K[h].T`, softmax, and mean importance — plus a second `for h in range(H):`
+for top-k index selection; for H=32, S=1024, D=128 this is 32 separate GEMV/softmax passes; Rust
+`green_kv_score_f32` with `into_par_iter()` over H heads; per-head: `Q_obs[h] @ K[h].T` via BLAS-style
+GEMM, row-wise softmax, column mean; ~5× for H=32, S=1024.
+
+(5) `squish/speculative/jacobi_decode.py` `JacobiDecoder._decode` has `for iteration in ...:` with
+inner `for i in range(n):` iterating over N parallel token positions to check fixed-point convergence by
+comparing `_sample_token(pos_logits[i], ...)` against `guesses[i]`; for N=8, vocab=32000 the inner
+argmax/sampling loop is 256K comparisons per iteration × max_iter=10 = 2.56M operations; Rust
+`jacobi_conv_check_f32(pos_logits: (N, vocab), guesses: (N,), temperature: f32)` → `(N,) i32 new_guesses`
++ `i32 n_fixed`; `into_par_iter()` over N positions; per position: argmax (greedy) or gumbel-max
+(temperature > 0); count matches with old guesses; ~8× for N=8, vocab=32000.
+
+(6) `squish/speculative/tree_verifier.py` `TreeVerifier.verify` has `for b in range(n_branches):
+for i in range(n_draft):` iterating over all (branch, draft-position) pairs; per pair: compute
+`p_draft = softmax(draft_logits[b,i])`, `p_target = softmax(target_logits[b,i])`,
+`accept_prob = min(1, p_target[token] / p_draft[token])`; for B=4 branches, D=4 draft tokens,
+vocab=32000 this is 16 softmax pairs (each 32K ops) = 512K float ops; Rust
+`tree_verify_softmax_f32(draft_tokens: (B,D), draft_logits: (B,D,vocab), target_logits: (B,D,vocab),
+temperature: f32)` → `accepted_tokens (max_B*D,) i32`, `per_branch_len (B,) i32`;
+`into_par_iter()` over branches; sequential token-by-token accept/reject within each branch;
+~5× for B=4, D=4, vocab=32000.
+
+(7) `squish/quant/wanda_pruner.py` `WandaPruner._compute_importance` broadcast
+`|W| × activation_rms` — parallelised as `wanda_importance_f32(W: (out_f, in_f), activation_rms: (in_f,))`
+→ `(out_f, in_f) f32`; `into_par_iter()` over rows; per row: elementwise `|W[row]| × rms`; ~3×
+for 4096×4096 vs NumPy broadcast (baseline already fast but warm-up for the larger mask kernel).
+
+**Wave 61b Mojo modules — 6 new wrappers + stubs:**
+
+`wanda_nm.mojo` — `parallelize[proc_block](n_col_blocks)`;
+inner `parallelize[score_row](out_f)` vectorised top-n selection.
+`flute_lut.mojo` — `parallelize[proc_group](n_groups)`;
+`vectorize[dist_elem, SIMD_W](group_size)` argmin + lookup table dequant.
+`delta_net_recurrence.mojo` — sequential time loop; `parallelize[update_head](n_heads)`;
+`vectorize[outer_prod_elem, SIMD_W](d_state)` state update.
+`green_kv_score.mojo` — `parallelize[score_head](H)`;
+`vectorize[dot_elem, SIMD_W](D)` query-key dot products.
+`jacobi_convergence.mojo` — `parallelize[check_pos](n)`;
+`vectorize[compare_logit, SIMD_W](vocab)` argmax then match check.
+`tree_verify.mojo` — `parallelize[verify_branch](n_branches)`;
+sequential token-by-token accept/reject per branch with residual softmax.
+
+**Expected results:** ≥150 new tests (75+ Wave 61a + 75+ Wave 61b); lib.rs: ~4,000 lines, 78 registered functions.
+
+### Wave 61 Targets
+
+#### Wave 61a — Rust kernel Python wrappers
+
+| Wrapper | Source module | Key loop | Rust function |
+|---|---|---|---|
+| `rs_wanda_nm.py` — `RustWandaNM` | `squish/quant/wanda_pruner.py` | `for col_start in range(0, in_f, m): for row in range(out_f):` | `wanda_nm_mask_f32`, `wanda_importance_f32` |
+| `rs_flute_lut.py` — `RustFluteLUT` | `squish/quant/flute_quant.py` | `for g in range(n_groups):` (encode + decode) | `flute_lut_encode_f32`, `flute_lut_decode_u8` |
+| `rs_delta_net.py` — `RustDeltaNet` | `squish/attention/delta_net.py` | `for t in range(T):` delta-rule state update | `delta_net_scan_f32` |
+| `rs_green_kv_score.py` — `RustGreenKVScore` | `squish/kv/green_kv.py` | `for h in range(H):` Q@K^T + softmax + mean | `green_kv_score_f32` |
+| `rs_jacobi_conv.py` — `RustJacobiConv` | `squish/speculative/jacobi_decode.py` | `for i in range(n):` fixed-point check per position | `jacobi_conv_check_f32` |
+| `rs_tree_verify.py` — `RustTreeVerify` | `squish/speculative/tree_verifier.py` | `for b in range(B): for i in range(D):` accept/reject | `tree_verify_softmax_f32` |
+
+#### Wave 61b — Mojo kernel Python wrappers + stubs
+
+| Mojo wrapper | .mojo stub | Kernel |
+|---|---|---|
+| `squish/kernels/mojo/wanda_nm_mojo.py` | `squish/kernels/mojo/kernels/wanda_nm.mojo` | `parallelize[proc_block](n_col_blocks)` + row-wise top-n |
+| `squish/kernels/mojo/flute_lut_mojo.py` | `squish/kernels/mojo/kernels/flute_lut.mojo` | `parallelize[proc_group](n_groups)` + `vectorize` argmin |
+| `squish/kernels/mojo/delta_net_mojo.py` | `squish/kernels/mojo/kernels/delta_net_recurrence.mojo` | sequential time + `parallelize[update_head]` + `vectorize` outer-product |
+| `squish/kernels/mojo/green_kv_score_mojo.py` | `squish/kernels/mojo/kernels/green_kv_score.mojo` | `parallelize[score_head](H)` + `vectorize[dot_elem, SIMD_W](D)` |
+| `squish/kernels/mojo/jacobi_conv_mojo.py` | `squish/kernels/mojo/kernels/jacobi_convergence.mojo` | `parallelize[check_pos](n)` + `vectorize` argmax |
+| `squish/kernels/mojo/tree_verify_mojo.py` | `squish/kernels/mojo/kernels/tree_verify.mojo` | `parallelize[verify_branch](B)` + sequential token accept/reject |
+
+### Wave 61 Checklist
+
+- [ ] Wave 61 spec reviewed
+- [ ] lib.rs updated (7 Wave 61a functions registered)
+- [ ] `rs_wanda_nm.py` — RustWandaNM (nm_mask + importance)
+- [ ] `rs_flute_lut.py` — RustFluteLUT (encode + decode)
+- [ ] `rs_delta_net.py` — RustDeltaNet (scan)
+- [ ] `rs_green_kv_score.py` — RustGreenKVScore (score)
+- [ ] `rs_jacobi_conv.py` — RustJacobiConv (check)
+- [ ] `rs_tree_verify.py` — RustTreeVerify (verify)
+- [ ] `wanda_nm_mojo.py` — MojoWandaNM
+- [ ] `flute_lut_mojo.py` — MojoFluteLUT
+- [ ] `delta_net_mojo.py` — MojoDeltaNet
+- [ ] `green_kv_score_mojo.py` — MojoGreenKVScore
+- [ ] `jacobi_conv_mojo.py` — MojoJacobiConv
+- [ ] `tree_verify_mojo.py` — MojoTreeVerify
+- [ ] `wanda_nm.mojo` stub
+- [ ] `flute_lut.mojo` stub
+- [ ] `delta_net_recurrence.mojo` stub
+- [ ] `green_kv_score.mojo` stub
+- [ ] `jacobi_convergence.mojo` stub
+- [ ] `tree_verify.mojo` stub
+- [ ] `tests/test_wave61a_rust_kernels.py` (≥75 tests)
+- [ ] `tests/test_wave61b_mojo_kernels.py` (≥75 tests)
+- [ ] CHANGELOG `[35.0.0]` entry
+- [ ] PLAN.md updated
 
 ---
 
