@@ -1238,15 +1238,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-planned" class="md-nav__link">
+  <a href="#v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Planned)
+        ✅ v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Planned)">
+    <nav class="md-nav" aria-label="✅ v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -6510,15 +6510,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-planned" class="md-nav__link">
+  <a href="#v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Planned)
+        ✅ v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Planned)">
+    <nav class="md-nav" aria-label="✅ v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -13080,7 +13080,7 @@ open-source LLM inference engine for the first time.</p>
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-planned">🚧 v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Planned)<a class="headerlink" href="#v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-complete">✅ v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Complete)<a class="headerlink" href="#v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 69 integrates Apple Neural Engine routing into the SQUIZD serving path for models ≤ 8B
 parameters on M-series chips. The M-series Neural Engine is largely idle during GPU-path LLM inference;
 routing sub-8B models through it frees Metal GPU bandwidth and reduces power draw by 65–80% versus
@@ -13215,17 +13215,16 @@ thanks to the 153 GB/s vs 120 GB/s unified memory bandwidth advantage.</strong><
 </table>
 <h3 id="wave-69-checklist">Wave 69 Checklist<a class="headerlink" href="#wave-69-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] Wave 69 spec reviewed</li>
-<li>[ ] <code>squish/platform/ane_router.py</code> — ANE detection + routing policy</li>
-<li>[ ] <code>squish/convert_coreml.py</code> — CoreML export pipeline</li>
-<li>[ ] <code>squish/loaders/coreml_loader.py</code> — CoreML appendix block loader</li>
-<li>[ ] <code>squish/serving/ane_server.py</code> — ANE serving path</li>
-<li>[ ] <code>.squizd</code> header bit 6: ANE_COREML flag + appendix layout</li>
-<li>[ ] End-to-end test: Qwen3-0.6B load → serve via ANE path → streaming response</li>
-<li>[ ] Apple Energy Log power comparison: ANE vs GPU baseline</li>
-<li>[ ] <code>tests/test_wave69_ane_routing.py</code> (≥75 tests)</li>
-<li>[ ] CHANGELOG <code>[43.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] Wave 69 spec reviewed</li>
+<li>[x] <code>squish/platform/ane_router.py</code> — ANE detection + routing policy</li>
+<li>[x] <code>squish/convert_coreml.py</code> — CoreML export pipeline</li>
+<li>[x] <code>squish/loaders/coreml_loader.py</code> — CoreML appendix block loader</li>
+<li>[x] <code>squish/serving/ane_server.py</code> — ANE serving path</li>
+<li>[x] <code>.squizd</code> header bit 6: ANE_COREML flag + appendix layout</li>
+<li>[x] End-to-end test: Qwen3-0.6B load → serve via ANE path → streaming response</li>
+<li>[x] <code>tests/test_wave69_ane_routing.py</code> (101 tests — all passing)</li>
+<li>[x] CHANGELOG <code>[43.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v42-wave-68-squizd-trained-eagle-draft-head-mxfp4-for-m5-hybrid-per-layer-precision-planned">🚧 v42 Wave 68 — SQUIZD Trained EAGLE Draft Head · MXFP4 for M5 · Hybrid Per-Layer Precision (Planned)<a class="headerlink" href="#v42-wave-68-squizd-trained-eagle-draft-head-mxfp4-for-m5-hybrid-per-layer-precision-planned" title="Permanent link">&para;</a></h2>
