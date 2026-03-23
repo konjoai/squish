@@ -838,6 +838,73 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#3300-2026-03-22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [33.0.0] — 2026-03-22
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[33.0.0] — 2026-03-22">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-59-v33-fourth-acceleration-tier-rust-gptq-column-solve-quarot-group-quant-calibscale-absmaxpercentileaciq-flash-decode-split-bf16-cast-sparse-act-gemv-mojo-flash-decode-bf16-gemv-gqa-prefill-split-k-reduce-rotary-embed-layer-skip-predict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 59: v33 Fourth Acceleration Tier: Rust GPTQ Column Solve · QuaRot Group Quant · CalibScale Absmax/Percentile/ACIQ · Flash Decode Split · BF16 Cast · Sparse Act GEMV + Mojo Flash Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer Skip Predict
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Added — Wave 59: v33 Fourth Acceleration Tier: Rust GPTQ Column Solve · QuaRot Group Quant · CalibScale Absmax/Percentile/ACIQ · Flash Decode Split · BF16 Cast · Sparse Act GEMV + Mojo Flash Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer Skip Predict">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wave-59a-rust-kernel-python-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 59a — Rust kernel Python wrappers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-59b-mojo-kernel-python-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 59b — Mojo kernel Python wrappers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-59b-mojo-kernel-stubs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 59b — Mojo kernel stubs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#3200-2026-03-22" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2475,6 +2542,108 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="3300-2026-03-22">[33.0.0] — 2026-03-22<a class="headerlink" href="#3300-2026-03-22" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-59-v33-fourth-acceleration-tier-rust-gptq-column-solve-quarot-group-quant-calibscale-absmaxpercentileaciq-flash-decode-split-bf16-cast-sparse-act-gemv-mojo-flash-decode-bf16-gemv-gqa-prefill-split-k-reduce-rotary-embed-layer-skip-predict">Added — Wave 59: v33 Fourth Acceleration Tier: Rust GPTQ Column Solve · QuaRot Group Quant · CalibScale Absmax/Percentile/ACIQ · Flash Decode Split · BF16 Cast · Sparse Act GEMV + Mojo Flash Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer Skip Predict<a class="headerlink" href="#added-wave-59-v33-fourth-acceleration-tier-rust-gptq-column-solve-quarot-group-quant-calibscale-absmaxpercentileaciq-flash-decode-split-bf16-cast-sparse-act-gemv-mojo-flash-decode-bf16-gemv-gqa-prefill-split-k-reduce-rotary-embed-layer-skip-predict" title="Permanent link">&para;</a></h3>
+<p>Twelve production-grade modules: six Rust-backed kernel wrappers (Wave 59a)
+adding block-parallel GPTQ column solve, QuaRot group quantization/dequantization,
+three calibration scale methods (absmax/percentile/ACIQ), GQA flash-decode split
+with online softmax, BF16 ↔ F32 casting, and sparsity-threshold GEMV to
+<code>squish_quant_rs</code>; plus six Mojo-backed kernel wrappers (Wave 59b) extending
+the MojoBridge infrastructure with flash-decode, BF16 GEMV, GQA prefill,
+split-K merge, rotary embedding, and layer-skip prediction kernels. All 452
+Wave 56–58 tests continue passing; 134 new tests added (75 Wave 59a + 59 Wave 59b).</p>
+<h4 id="wave-59a-rust-kernel-python-wrappers">Wave 59a — Rust kernel Python wrappers<a class="headerlink" href="#wave-59a-rust-kernel-python-wrappers" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>RustGPTQColumnSolve</strong> (<code>squish/kernels/rs_gptq_solve.py</code>) — Block-parallel
+  GPTQ column solve wrapping <code>gptq_column_solve_f32</code>. Outer loop over
+  <code>(cols / block_size)</code> blocks; per-column abs-max scale, round+clamp codes,
+  error propagation <code>err * (h[k]/h[j])</code> to remaining block columns via Rayon
+  <code>into_par_iter</code>.  NumPy fallback with identical column loop logic.</p>
+</li>
+<li>
+<p><strong>RustQuaRotGroup</strong> (<code>squish/kernels/rs_quarot_group.py</code>) — Group quantization
+  and dequantization for QuaRot-style rotated weights wrapping
+  <code>quarot_group_quant_f32</code> and <code>quarot_group_dequant_f32</code>. Symmetric and
+  asymmetric modes; per-group abs-max or min/max scale computation; reverse
+  lookup dequantization <code>(code - zero) * scale</code>.</p>
+</li>
+<li>
+<p><strong>RustCalibScale</strong> (<code>squish/kernels/rs_calib_scale.py</code>) — Three calibration
+  scale methods wrapping <code>calib_absmax_f32</code>, <code>calib_percentile_f32</code>, and
+  <code>calib_aciq_f32</code>. Rayon parallel column abs-max; per-channel sort+select for
+  percentile; Welford online mean+variance with <code>alpha*sigma</code> for ACIQ.
+  Configurable via <code>CalibScaleConfig(method, percentile, n_levels)</code>.</p>
+</li>
+<li>
+<p><strong>RustFlashDecodeKernel</strong> (<code>squish/kernels/rs_flash_decode.py</code>) — GQA
+  flash-decode split wrapping <code>flash_decode_split_f32</code>. Per-head GEMV
+  <code>K_split @ q[h]</code> scaled by <code>1/√head_dim</code>; online-softmax running max + exp</p>
+</li>
+<li>
+<p>normalize; axpy accumulation; <code>kv_h = (h / gqa_group).min(n_kv_heads-1)</code>.
+  K/V passed as 2D <code>(n_kv*split_len, head_dim)</code> due to <code>PyReadonlyArray2</code>
+  bounds; Python wrapper reshapes from 3D.</p>
+</li>
+<li>
+<p><strong>RustBF16Cast</strong> (<code>squish/kernels/rs_bf16_cast.py</code>) — Zero-allocation BF16 ↔
+  F32 conversion wrapping <code>bf16_to_f32_vec</code> and <code>f32_to_bf16_vec</code>. BF16→F32
+  via <code>(u16 as u32) &lt;&lt; 16</code>; F32→BF16 via <code>half::bf16::from_f32</code> (round-to-
+  nearest). NumPy fallback uses bit-shift truncation (accepts slight rounding
+  error at fallback-only paths).</p>
+</li>
+<li>
+<p><strong>RustSparseActGEMV</strong> (<code>squish/kernels/rs_sparse_act_gemv.py</code>) — Sparsity-
+  threshold GEMV wrapping <code>sparse_act_gemv_f32</code>. Non-zero index filter
+  <code>|act[i]| &gt; threshold</code> + Rayon row-parallel compressed axpy. NumPy fallback
+  applies the same threshold mask for consistent semantics. Exposes <code>sparsity()</code>
+  diagnostic returning fraction of pruned activations.</p>
+</li>
+</ul>
+<h4 id="wave-59b-mojo-kernel-python-wrappers">Wave 59b — Mojo kernel Python wrappers<a class="headerlink" href="#wave-59b-mojo-kernel-python-wrappers" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>MojoFlashDecodeKernel</strong> (<code>squish/kernels/mojo/flash_decode_mojo.py</code>) —
+  Mojo-backed GQA flash-decode split loading <code>flash_decode_split</code> kernel via
+  MojoBridge. NumPy fallback identical to Rust wrapper per-head online-softmax
+  loop.</p>
+</li>
+<li>
+<p><strong>MojoBF16GEMV</strong> (<code>squish/kernels/mojo/bf16_gemv_mojo.py</code>) — Mojo-backed BF16
+  GEMV loading <code>bf16_gemv</code> kernel. Accepts <code>uint16</code> weight bits; NumPy fallback
+  upcasts via bit-shift then performs dense <code>@</code>.</p>
+</li>
+<li>
+<p><strong>MojoGQAPrefill</strong> (<code>squish/kernels/mojo/gqa_prefill_mojo.py</code>) — Mojo-backed
+  GQA prefill loading <code>gqa_prefill</code> kernel. NumPy fallback per-head causal
+  attention loop with <code>kv_h = h // group_size</code>.</p>
+</li>
+<li>
+<p><strong>MojoSplitKReduce</strong> (<code>squish/kernels/mojo/splitk_reduce_mojo.py</code>) — Mojo-
+  backed split-K merge loading <code>splitk_reduce</code> kernel. NumPy fallback stacks
+  splits, computes max LSE per head, exp-weights, weighted sum.</p>
+</li>
+<li>
+<p><strong>MojoRotaryEmbed</strong> (<code>squish/kernels/mojo/rotary_embed_mojo.py</code>) — Mojo-backed
+  rotary embedding loading <code>rotary_embed</code> kernel. NumPy fallback splits at
+  <code>head_dim//2</code>, applies broadcast cos/sin, concatenates.</p>
+</li>
+<li>
+<p><strong>MojoLayerSkipPredict</strong> (<code>squish/kernels/mojo/layer_skip_predict_mojo.py</code>) —
+  Mojo-backed early-exit layer skip predictor loading <code>layer_skip_predict</code>
+  kernel. Stateful <code>(n_layers, n_features)</code> weight matrix; NumPy fallback
+  returns <code>sigmoid(weights @ features)</code>.</p>
+</li>
+</ul>
+<h4 id="wave-59b-mojo-kernel-stubs">Wave 59b — Mojo kernel stubs<a class="headerlink" href="#wave-59b-mojo-kernel-stubs" title="Permanent link">&para;</a></h4>
+<p>Six <code>.mojo</code> stubs in <code>squish/kernels/mojo/kernels/</code>:
+<code>flash_decode_split.mojo</code> (two-pass online softmax, <code>parallelize[compute_head]</code>),
+<code>bf16_gemv.mojo</code> (<code>SIMD[DType.bfloat16, 8]</code> load + <code>.cast[float32]()</code> FMA),
+<code>gqa_prefill.mojo</code> (<code>parallelize[compute_token]</code>, kv_h at index time, causal mask),
+<code>splitk_reduce.mojo</code> (<code>SIMD[float32, n_splits]</code> LSE weights, <code>parallelize[merge_head]</code>),
+<code>rotary_embed.mojo</code> (inline 2×2 FMA rotation, <code>alias half = head_dim // 2</code>),
+<code>layer_skip_predict.mojo</code> (vectorized dot + numerically-stable scalar sigmoid).</p>
 <hr />
 <h2 id="3200-2026-03-22">[32.0.0] — 2026-03-22<a class="headerlink" href="#3200-2026-03-22" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-58-v32-third-acceleration-tier-rust-vector-k-means-fp6-bitpack-awq-channel-model-merge-moe-bincount-online-sgd-mojo-dual-chunk-attn-infini-attn-memory-sliding-window-attn-hqq-als-vptq-decode-top-kp-sampling">Added — Wave 58: v32 Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling<a class="headerlink" href="#added-wave-58-v32-third-acceleration-tier-rust-vector-k-means-fp6-bitpack-awq-channel-model-merge-moe-bincount-online-sgd-mojo-dual-chunk-attn-infini-attn-memory-sliding-window-attn-hqq-als-vptq-decode-top-kp-sampling" title="Permanent link">&para;</a></h3>
