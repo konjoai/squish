@@ -6,18 +6,24 @@ repo_name: squishai/squish
 
 theme:
   name: material
+  custom_dir: overrides
+  logo: assets/squish-logo.png
+  favicon: assets/squish-logo.png
+  font:
+    text: Inter
+    code: JetBrains Mono
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: deep purple
+      accent: cyan
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: deep purple
+      accent: cyan
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode

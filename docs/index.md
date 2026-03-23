@@ -1,6 +1,10 @@
-# Squish
-
-**Run 70B language models on a MacBook.**
+---
+template: home.html
+title: Squish — Run 70B models on a MacBook
+hide:
+  - navigation
+  - toc
+---
 
 Squish compresses model weights into memory-mapped INT8 tensors that load in **milliseconds**, then serves them through a fully OpenAI-compatible REST API — all on Apple Silicon, no GPU required.
 

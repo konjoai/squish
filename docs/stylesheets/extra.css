@@ -1,11 +1,49 @@
-/* Squish docs — minor style tweaks */
+/* ── Squish global styles ─────────────────────────────────────── */
 
-/* Widen the content area on large screens */
-.md-grid {
-  max-width: 1200px;
+/* Widen docs content */
+.md-grid { max-width: 1200px; }
+code { font-size: 0.88em; }
+
+/* ── Header: match squish purple brand ─────────────────────────── */
+.md-header {
+  background: #0B0B14 !important;
+  border-bottom: 1px solid rgba(123,63,247,0.2);
+  box-shadow: none;
+}
+.md-header__title { font-weight: 700; letter-spacing: -.01em; }
+
+/* ── Logo sizing ────────────────────────────────────────────────── */
+.md-header__button.md-logo img {
+  width: 32px; height: 32px; border-radius: 6px;
 }
 
-/* Slightly larger code font */
-code {
-  font-size: 0.88em;
+/* ── Nav tabs bar ───────────────────────────────────────────────── */
+.md-tabs { background: #0B0B14 !important; border-bottom: 1px solid rgba(123,63,247,0.15); }
+.md-tabs__link--active,
+.md-tabs__link:hover { color: #B888FF !important; }
+
+/* ── Dark sidebar ───────────────────────────────────────────────── */
+[data-md-color-scheme="slate"] .md-sidebar,
+[data-md-color-scheme="slate"] .md-sidebar__scrollwrap {
+  background: #0E0E1C;
 }
+[data-md-color-scheme="slate"] .md-nav__link--active {
+  color: #B888FF;
+}
+
+/* ── Inline code ────────────────────────────────────────────────── */
+[data-md-color-scheme="slate"] .md-typeset code:not(.highlight code) {
+  background: rgba(123,63,247,0.12);
+  color: #C0A0FF;
+  border-radius: 4px;
+}
+
+/* ── Admonition accent ──────────────────────────────────────────── */
+.md-typeset .admonition { border-left-color: #7B3FF7; }
+.md-typeset .admonition-title::before { color: #7B3FF7; }
+
+/* ── Scrollbar ──────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(123,63,247,0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(123,63,247,0.55); }
