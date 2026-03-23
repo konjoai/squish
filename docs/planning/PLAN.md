@@ -45,6 +45,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v33** | 59 | Decode Velocity Sprint · Rust GPTQ Column Solve / QuaRot Group / Calibration Scale / Flash-Decode Kernel / BF16 Cast / Sparse-Act GEMV · Mojo Flash-Decode / BF16 GEMV / GQA Prefill / Split-K Reduce / Rotary Embed / Layer-Skip Predict |
 | **v34** | 60 | SSM Recurrence Sprint · Rust Mamba2 SSM Scan/Decode / AdaRound / Paged KV Gather / Hawk RGLR / CAKE Entropy / Ternary GEMV · Mojo mirrors |
 | **v35** | 61 | Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify |
+| **v36** | 62 | SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget |
 
 ---
 
@@ -576,6 +577,149 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [x] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [x] CHANGELOG `[19.0.0]` entry
 - [x] PLAN.md updated
+
+---
+
+## 🚧 v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Planned)
+
+Theme: **Wave 62 targets six Python-loop hotspots that remain after Wave 61 clears the pruning/LUT/recurrence tier.
+The six targets span per-head SVD rank search during quantisation calibration (SVDq head profiling),
+low-rank key projection fitting at every context window (ShadowKV SVD fit + token-store batch),
+attention-weighted k-means cluster scoring for token eviction (ClusterKV), iterative Lloyd k-means
+codebook calibration for learned 4-bit quantisation (Any4), online n-gram table construction from
+verified draft tokens (Ouroboros), and logarithmic layer-wise KV budget allocation (PyramidKV).
+All six have tight, numerically dense inner loops with predictable shapes that map cleanly to Rayon
+`into_par_iter` and Mojo `parallelize`, and all six sit on the critical path for either calibration
+throughput or live decode memory management.**
+
+**Wave 62a Rust gaps — 7 new functions:**
+
+(1) `squish/quant/svdq.py` `SVDqCalibrator.search` has a double-nested loop
+`for li in range(cfg.n_layers): for hi in range(cfg.n_heads):` calling `_profile_head(li, hi)` which
+runs `np.linalg.svd(stacked, compute_uv=False)` per (layer, head) pair; for L=32 layers, H=32 heads
+this is 1024 independent SVD calls at O(T × D²) each; Rust `svdq_head_rank_f32` accepts the stacked
+key matrix per head and returns singular values; `into_par_iter()` over the flattened (layer × head)
+index grid maps each pair to an independent LAPACKE `sgesvd` call; ~6× vs Python sequential loop for
+L=32, H=32, T=64, D=128 (~18 s → <3 s during full model calibration).
+
+(2) `squish/kv/shadow_kv.py` `ShadowKVCache.fit_svd` has `for h in range(n_heads):` running
+`np.linalg.svd(K_h, full_matrices=False)` per head; for n_heads=32, head_dim=128, n_tokens=2048
+this is 32 full thin-SVD calls at O(n_tokens × head_dim²) ≈ 32 × 4M ops = 128M FLOP; Rust
+`shadow_kv_svd_fit_f32(keys: (T, H, D), rank: usize)` → `(H, rank, D) f32` V-matrices; Rayon
+`into_par_iter()` over heads with per-head thin SVD via `nalgebra`; ~5× for H=32, T=2048, D=128.
+`shadow_kv_store_batch_f32` parallelises the companion `for i in range(n_tokens):` loop in
+`store_batch()` projecting each token into low-rank space: sequential over tokens (order-preserving),
+per-token `einsum("hrd,hd->hr")` vectorised with Rayon `par_chunks`; ~4× for T=1024.
+
+(3) `squish/kv/cluster_evict_kv.py` `ClusterEvictKV.evict` has `for c in range(n_cl):` computing
+sum of attention weights for all tokens assigned to cluster `c`; for n_cl=64, seq_len=4096 this is
+64 masked-sum passes over a 4096-element attention vector = 262K effective ops per eviction boundary;
+Rust `cluster_kv_score_f32(assignments: (S,) i32, attn: (S,) f32, n_clusters: usize)` →
+`(n_clusters,) f32`; `into_par_iter()` over clusters; per cluster: scatter-add via atomic or
+pre-binned parallel scan; ~4× for n_cl=64, S=4096.
+
+(4) `squish/quant/any4.py` `Any4Quantizer._kmeans_codebook` has `for _ in range(calibration_iters):`
+outer loop (default 100 iterations) with an inner list comprehension `for j in range(k)` computing
+per-centroid mean over assignment masks; for a weight tensor sampled to N=8M float32 values, k=16,
+iters=100 this is 100 × (N → distances=128M ops, argmin=8M, 16×masked-mean) = 13.6B effective ops;
+Rust `any4_lloyd_step_f32(values: (N,) f32, centroids_init: (k,) f32, n_iter: u32)` →
+`(k,) f32` final centroids; outer loop sequential (standard Lloyd convergence), inner `into_par_iter()`
+over value chunks for distance + argmin; final per-centroid means using parallel scatter-reduce;
+~8× vs Python for N=8M, k=16, iters=100 (~42 s → <5 s on M3 Pro).
+
+(5) `squish/speculative/ouroboros_draft.py` `OuroborosDrafter._update_ngram` has
+`for i in range(len(token_ids) - order):` inserting each n-gram observation into a nested Python dict;
+per call on a verified sequence of length L=512, order=4: 508 dict-get-or-create + counter-increment
+operations — pure Python object model overhead dominates; called at every speculative acceptance step;
+Rust `ouroboros_ngram_build(token_ids: &[u32], order: usize)` updates a `BTreeMap<[u32; 4], BTreeMap<u32, u32>>`
+via bulk rayon partition over sliding windows (8 independent hash shards to avoid contention); ~6× vs
+Python nested dicts for L=512 sequences called 10K times (250 ms → <40 ms cumulative per 1K tokens).
+`ouroboros_lookahead_f32` parallelises the `for _ in range(cfg.depth):` draft chain: depth steps are
+sequential by construction but temperature-sampling branch uses `into_par_iter()` over `cfg.depth`
+independent position logit vectors; ~2× for depth=16.
+
+(6) `squish/kv/pyramid_kv.py` `PyramidKVManager._compute_budgets` has `for l in range(cfg.n_layers):`
+computing `round(base_budget * (1.0 - alpha * l/(n_layers-1)))` per layer; for n_layers=80 (70B model)
+this is 80 sequential `round` + `max` ops — negligible FLOP but called inside tight decode loops where
+Python interpreter overhead adds up to ~15 µs/call; Rust `pyramid_kv_budget_f32(base: f32, alpha: f32,
+n_layers: usize, min_budget: usize)` → `Vec<usize>`; `into_par_iter()` over layer indices; ~3× latency
+reduction (15 µs → <5 µs), eliminating this from the Python-overhead tail budget at 80+ layers.
+
+(7) `squish/moe/qmoe_compress.py` `QMoECompressor._quantize_expert` has nested loop
+`for _ in range(self.config.n_iter): for ci in range(k):` computing per-centroid masked mean for
+codebook update; for n_iter=50, k=256, n_blocks=65536 (e.g., a 512×1024 weight with block_size=8):
+50 × 256 masked-mean passes over up to 65536 blocks = ~820M effective comparisons; Rust
+`qmoe_compress_iter_f32(blocks: (N, bs) f32, k: usize, n_iter: u32, seed: u64)` →
+`(k, bs) f32` codebook + `(N,) i32` indices; outer EM loop sequential, inner `into_par_iter()` over
+centroids for masked-mean accumulation; ~5× vs NumPy masked broadcast for N=65536, k=256 (~8 s → <1.6 s).
+
+**Wave 62b Mojo modules — 6 new wrappers + stubs:**
+
+`svdq_head_rank.mojo` — `parallelize[profile_head](n_layers * n_heads)`;
+per-head thin SVD via `vectorize` over D²-sized intermediate matrix; return singular values.
+`shadow_kv_svd_fit.mojo` — `parallelize[fit_head](n_heads)`;
+`vectorize[svd_elem, SIMD_W](head_dim)` thin SVD + `vectorize[proj_elem, SIMD_W](rank)` V^T@k projection.
+`cluster_kv_score.mojo` — `parallelize[score_cluster](n_clusters)`;
+`vectorize[scatter_add, SIMD_W](chunk_size)` masked attention sum per cluster.
+`any4_lloyd_step.mojo` — sequential Lloyd outer loop; `parallelize[assign_chunk](n_chunks)`;
+`vectorize[dist_elem, SIMD_W](k)` argmin + parallel scatter-reduce centroid update.
+`ouroboros_ngram.mojo` — `parallelize[build_shard](n_shards)` n-gram shard build;
+sequential depth-loop for draft chain with `vectorize[softmax_elem, SIMD_W](vocab)`.
+`pyramid_kv_budget.mojo` — `parallelize[compute_layer](n_layers)`;
+`vectorize[budget_elem, SIMD_W](n_layers)` vectorised linear-decay budget computation.
+
+**Expected results:** ≥150 new tests (75+ Wave 62a + 75+ Wave 62b); lib.rs: ~4,250 lines, ~85 registered functions.
+
+### Wave 62 Targets
+
+#### Wave 62a — Rust kernel Python wrappers
+
+| Wrapper | Source module | Key loop | Rust function |
+|---|---|---|---|
+| `rs_svdq_head.py` — `RustSVDqHead` | `squish/quant/svdq.py` | `for li in range(n_layers): for hi in range(n_heads):` SVD per-head | `svdq_head_rank_f32` |
+| `rs_shadow_kv_fit.py` — `RustShadowKVFit` | `squish/kv/shadow_kv.py` | `for h in range(n_heads):` thin SVD fit + `for i in range(n_tokens):` batch store | `shadow_kv_svd_fit_f32`, `shadow_kv_store_batch_f32` |
+| `rs_cluster_kv.py` — `RustClusterKV` | `squish/kv/cluster_evict_kv.py` | `for c in range(n_cl):` cluster attention score sum | `cluster_kv_score_f32` |
+| `rs_any4_lloyd.py` — `RustAny4Lloyd` | `squish/quant/any4.py` | `for _ in range(calibration_iters): for j in range(k):` Lloyd centroid update | `any4_lloyd_step_f32` |
+| `rs_ouroboros_ngram.py` — `RustOuroborosNgram` | `squish/speculative/ouroboros_draft.py` | `for i in range(len-order):` n-gram insert + `for _ in range(depth):` draft chain | `ouroboros_ngram_build`, `ouroboros_lookahead_f32` |
+| `rs_pyramid_kv_budget.py` — `RustPyramidKVBudget` | `squish/kv/pyramid_kv.py` | `for l in range(n_layers):` linear-decay budget compute | `pyramid_kv_budget_f32` |
+
+#### Wave 62b — Mojo kernel Python wrappers + stubs
+
+| Mojo wrapper | .mojo stub | Kernel |
+|---|---|---|
+| `squish/kernels/mojo/svdq_head_mojo.py` | `squish/kernels/mojo/kernels/svdq_head_rank.mojo` | `parallelize[profile_head](n_layers * n_heads)` + `vectorize` thin SVD |
+| `squish/kernels/mojo/shadow_kv_fit_mojo.py` | `squish/kernels/mojo/kernels/shadow_kv_svd_fit.mojo` | `parallelize[fit_head](n_heads)` + `vectorize[proj_elem, SIMD_W](rank)` |
+| `squish/kernels/mojo/cluster_kv_mojo.py` | `squish/kernels/mojo/kernels/cluster_kv_score.mojo` | `parallelize[score_cluster](n_clusters)` + `vectorize` scatter-add |
+| `squish/kernels/mojo/any4_lloyd_mojo.py` | `squish/kernels/mojo/kernels/any4_lloyd_step.mojo` | sequential Lloyd loop + `parallelize[assign_chunk](n_chunks)` + `vectorize` argmin |
+| `squish/kernels/mojo/ouroboros_ngram_mojo.py` | `squish/kernels/mojo/kernels/ouroboros_ngram.mojo` | `parallelize[build_shard](n_shards)` + sequential draft chain |
+| `squish/kernels/mojo/pyramid_kv_budget_mojo.py` | `squish/kernels/mojo/kernels/pyramid_kv_budget.mojo` | `parallelize[compute_layer](n_layers)` + `vectorize[budget_elem, SIMD_W](n_layers)` |
+
+### Wave 62 Checklist
+
+- [ ] Wave 62 spec reviewed
+- [ ] lib.rs updated (7 Wave 62a functions registered)
+- [ ] `rs_svdq_head.py` — RustSVDqHead (head rank profiling)
+- [ ] `rs_shadow_kv_fit.py` — RustShadowKVFit (SVD fit + batch store)
+- [ ] `rs_cluster_kv.py` — RustClusterKV (cluster score)
+- [ ] `rs_any4_lloyd.py` — RustAny4Lloyd (Lloyd step)
+- [ ] `rs_ouroboros_ngram.py` — RustOuroborosNgram (n-gram build + lookahead)
+- [ ] `rs_pyramid_kv_budget.py` — RustPyramidKVBudget (budget alloc)
+- [ ] `svdq_head_mojo.py` — MojoSVDqHead
+- [ ] `shadow_kv_fit_mojo.py` — MojoShadowKVFit
+- [ ] `cluster_kv_mojo.py` — MojoClusterKV
+- [ ] `any4_lloyd_mojo.py` — MojoAny4Lloyd
+- [ ] `ouroboros_ngram_mojo.py` — MojoOuroborosNgram
+- [ ] `pyramid_kv_budget_mojo.py` — MojoPyramidKVBudget
+- [ ] `svdq_head_rank.mojo` stub
+- [ ] `shadow_kv_svd_fit.mojo` stub
+- [ ] `cluster_kv_score.mojo` stub
+- [ ] `any4_lloyd_step.mojo` stub
+- [ ] `ouroboros_ngram.mojo` stub
+- [ ] `pyramid_kv_budget.mojo` stub
+- [ ] `tests/test_wave62a_rust_kernels.py` (≥75 tests)
+- [ ] `tests/test_wave62b_mojo_kernels.py` (≥75 tests)
+- [ ] CHANGELOG `[36.0.0]` entry
+- [ ] PLAN.md updated
 
 ---
 
