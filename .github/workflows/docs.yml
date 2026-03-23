@@ -32,4 +32,6 @@ jobs:
           cp CHANGELOG.md    docs/changelog.md    2>/dev/null || true
 
       - name: Build & deploy
+        # docs/CNAME is automatically copied to site/ by mkdocs and pushed to
+        # gh-pages, so GitHub Pages preserves the custom domain on every deploy.
         run: mkdocs gh-deploy --force
