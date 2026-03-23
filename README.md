@@ -1,6 +1,6 @@
 # Squish — Local LLM Inference for Apple Silicon
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-blue.svg)](LICENSE)
 [![PyPI version](https://img.shields.io/pypi/v/squish.svg)](https://pypi.org/project/squish/)
 [![CI](https://github.com/squishai/squish/actions/workflows/ci.yml/badge.svg)](https://github.com/squishai/squish/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/squishai/squish)
