@@ -334,8 +334,9 @@ class TestMeasureCompression:
 
 class TestMeasureSnr:
     def test_returns_snr_metrics(self, tmp_bf16_dir: Path, tmp_int3_dir: Path):
-        """measure_snr needs safetensors — skip if not available."""
+        """measure_snr needs safetensors+torch — skip if not available."""
         pytest.importorskip("safetensors")
+        pytest.importorskip("torch")
         import torch
         from safetensors.torch import save_file
 
@@ -373,6 +374,7 @@ class TestMeasureSnr:
 
     def test_error_if_manifest_missing(self, tmp_bf16_dir: Path, tmp_path: Path):
         pytest.importorskip("safetensors")
+        pytest.importorskip("torch")  # measure_snr imports safetensors.torch before checking manifest
         no_manifest_dir = tmp_path / "int3_no_manifest"
         no_manifest_dir.mkdir()
         result = measure_snr(tmp_bf16_dir, no_manifest_dir)

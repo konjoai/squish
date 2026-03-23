@@ -116,13 +116,14 @@ class HybridArchRouter:
 
     def __init__(self, config: HybridArchConfig) -> None:
         self.config = config
+        layer_types = config.layer_types or []
         self._specs: List[HybridLayerSpec] = [
             HybridLayerSpec(
                 layer_idx=i,
                 canonical_type=_canonical(t),
                 raw_type=t,
             )
-            for i, t in enumerate(config.layer_types)
+            for i, t in enumerate(layer_types)
         ]
         self._handlers: Dict[str, Callable[..., Any]] = {}
 
