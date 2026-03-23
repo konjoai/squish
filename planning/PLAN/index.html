@@ -1129,6 +1129,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#v34-wave-60-ssm-recurrence-sprint-rust-mamba2-ssm-scandecode-adaround-step-paged-kv-gather-hawk-rglr-scan-cake-entropy-ternary-gemv-mojo-mamba2-scan-hawk-rglr-medusa-verify-paged-kv-cake-entropy-ternary-gemv-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ v34 Wave 60 — SSM Recurrence Sprint: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV (Complete)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ v34 Wave 60 — SSM Recurrence Sprint: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV (Complete)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wave-60-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 60 Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#v33-wave-59-decode-velocity-sprint-rust-gptq-column-solve-quarot-group-calibration-scale-flash-decode-kernel-bf16-cast-sparse-act-gemv-mojo-flash-decode-bf16-gemv-gqa-prefill-split-k-reduce-rotary-embed-layer-skip-predict-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5550,6 +5578,34 @@
     <span class="md-ellipsis">
       
         Completion Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v34-wave-60-ssm-recurrence-sprint-rust-mamba2-ssm-scandecode-adaround-step-paged-kv-gather-hawk-rglr-scan-cake-entropy-ternary-gemv-mojo-mamba2-scan-hawk-rglr-medusa-verify-paged-kv-cake-entropy-ternary-gemv-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ v34 Wave 60 — SSM Recurrence Sprint: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV (Complete)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ v34 Wave 60 — SSM Recurrence Sprint: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV (Complete)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wave-60-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 60 Checklist
       
     </span>
   </a>
@@ -11063,6 +11119,64 @@ pre-whitening activations, the W4A4 path becomes viable on Apple Silicon for the
 <li>[x] <code>tests/test_wave44a_modules.py</code> — ≥ 72 tests, all passing</li>
 <li>[x] <code>tests/test_wave44b_modules.py</code> — ≥ 72 tests, all passing</li>
 <li>[x] CHANGELOG <code>[19.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
+</ul>
+<hr />
+<h2 id="v34-wave-60-ssm-recurrence-sprint-rust-mamba2-ssm-scandecode-adaround-step-paged-kv-gather-hawk-rglr-scan-cake-entropy-ternary-gemv-mojo-mamba2-scan-hawk-rglr-medusa-verify-paged-kv-cake-entropy-ternary-gemv-complete">✅ v34 Wave 60 — SSM Recurrence Sprint: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV (Complete)<a class="headerlink" href="#v34-wave-60-ssm-recurrence-sprint-rust-mamba2-ssm-scandecode-adaround-step-paged-kv-gather-hawk-rglr-scan-cake-entropy-ternary-gemv-mojo-mamba2-scan-hawk-rglr-medusa-verify-paged-kv-cake-entropy-ternary-gemv-complete" title="Permanent link">&para;</a></h2>
+<p>Theme: <strong>Wave 60 targets the next-generation recurrent and paged-memory bottlenecks
+that sit on the critical path for SSM-based models (Mamba2, Hawk/Griffin), speculative
+decoding (Medusa), paged KV-cache memory management (vLLM/PagedAttention), KV-cache
+entropy-aware eviction (CAKE), and BitNet ternary-weight inference — all identified as the
+dominant remaining Python-loop hotspots after Wave 59 eliminated the GPTQ/QuaRot/calibration
+bottlenecks.</strong></p>
+<p><strong>Wave 60a Rust modules (7 new functions, 71 total in squish_quant_rs):</strong>
+(1) <code>mamba2_ssm.py</code> <code>Mamba2SSM._scan_step</code> sequential <code>for t in range(T)</code> loop over d_state channels;
+Rust: sequential time + <code>into_par_iter()</code> over d_state with <code>exp(a[t])*h + b[t]*x[t]</code>, ~4× vs pure-Python
+at T=512, d_state=64. (2) <code>mamba2_ssm.py</code> <code>Mamba2SSM.decode_step</code> single-token state update; Rust
+<code>mamba2_ssm_decode_f32</code> O(d_state) with parallel dot. (3) <code>ada_round.py</code> <code>AdaRound._gradient_step</code>
+parallel <code>for n in range(N)</code> over weight elements; Rust rectified-sigmoid + combined gradient;
+~3× for 4096 weights. (4) <code>paged_attn.py</code> <code>PagedAttention._gather_kv_blocks</code> non-contiguous
+<code>for bid in page_table</code> loop; Rust <code>par_chunks_mut</code> parallel gather with direct pool memcopy; ~5×
+for 1024-token context, 8 heads, head_dim 128. (5) <code>hawk_recurrent.py</code> <code>HawkRGLR._scan</code> sequential
+time loop with softplus+decay+gate; Rust <code>hawk_rglr_scan_f32</code> parallel d_state; ~4× at T=512,
+d_state=512. (6) <code>cake_evict.py</code> <code>CakeEviction.compute_entropy</code> <code>for h in range(H)</code> per-head attention
+entropy; Rust <code>cake_entropy_f32</code> parallel heads with GEMV softmax; ~6× for H=32, T=1024. (7)
+<code>ternary_quant.py</code> <code>TernaryLinear.forward</code> dense matmul over zero weights; Rust <code>ternary_gemv_i8</code>
+<code>match {1,-1,_}</code> skipping zero elements; ~3–5× for 50% sparsity.</p>
+<p><strong>Wave 60b Mojo modules (6 new wrappers + stubs):</strong>
+<code>mamba2_scan.mojo</code> — <code>vectorize</code> d_state dot + state update.
+<code>hawk_rglr.mojo</code> — <code>parallelize[update_channel](d_state)</code> with softplus/decay/gate.
+<code>medusa_verify.mojo</code> — parallel acceptance Phase 1 + sequential prefix enforcement Phase 2.
+<code>paged_kv_gather.mojo</code> — <code>parallelize[gather_token]</code> + <code>vectorize[copy_elem]</code>.
+<code>cake_entropy.mojo</code> — <code>parallelize[compute_head]</code> + <code>vectorize[dot_elem]</code>.
+<code>ternary_gemv.mojo</code> — <code>parallelize[compute_row]</code> with <code>if/elif {1,-1}</code> ternary branch.</p>
+<p><strong>Results:</strong> 155 new tests (77 Wave 60a + 78 Wave 60b); all 741 cumulative tests pass.
+lib.rs: 3,621 lines, 71 registered functions.</p>
+<h3 id="wave-60-checklist">Wave 60 Checklist<a class="headerlink" href="#wave-60-checklist" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[x] Wave 60 spec designed from codebase analysis</li>
+<li>[x] lib.rs updated (7 Wave 60a functions registered)</li>
+<li>[x] <code>rs_mamba2_ssm.py</code> — RustMamba2SSM (scan + decode_step)</li>
+<li>[x] <code>rs_adaround.py</code> — RustAdaRound (step)</li>
+<li>[x] <code>rs_paged_kv.py</code> — RustPagedKVGather (gather)</li>
+<li>[x] <code>rs_hawk_rglr.py</code> — RustHawkRGLR (scan)</li>
+<li>[x] <code>rs_cake_entropy.py</code> — RustCakeEntropy (compute)</li>
+<li>[x] <code>rs_ternary_gemv.py</code> — RustTernaryGEMV (gemv + sparsity)</li>
+<li>[x] <code>mamba2_scan_mojo.py</code> — MojoMamba2Scan</li>
+<li>[x] <code>hawk_rglr_mojo.py</code> — MojoHawkRGLR</li>
+<li>[x] <code>medusa_verify_mojo.py</code> — MojoMedusaVerify</li>
+<li>[x] <code>paged_kv_mojo.py</code> — MojoPagedKVGather</li>
+<li>[x] <code>cake_entropy_mojo.py</code> — MojoCakeEntropy</li>
+<li>[x] <code>ternary_gemv_mojo.py</code> — MojoTernaryGEMV</li>
+<li>[x] <code>mamba2_scan.mojo</code> stub</li>
+<li>[x] <code>hawk_rglr.mojo</code> stub</li>
+<li>[x] <code>medusa_verify.mojo</code> stub</li>
+<li>[x] <code>paged_kv_gather.mojo</code> stub</li>
+<li>[x] <code>cake_entropy.mojo</code> stub</li>
+<li>[x] <code>ternary_gemv.mojo</code> stub</li>
+<li>[x] <code>tests/test_wave60a_rust_kernels.py</code> (77 tests)</li>
+<li>[x] <code>tests/test_wave60b_mojo_kernels.py</code> (78 tests)</li>
+<li>[x] CHANGELOG <code>[34.0.0]</code> entry</li>
 <li>[x] PLAN.md updated</li>
 </ul>
 <hr />

@@ -838,6 +838,62 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#3400-2026-03-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [34.0.0] — 2026-03-29
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[34.0.0] — 2026-03-29">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-60-v34-fifth-acceleration-tier-rust-mamba2-ssm-scandecode-adaround-step-paged-kv-gather-hawk-rglr-scan-cake-entropy-ternary-gemv-mojo-mamba2-scan-hawk-rglr-medusa-verify-paged-kv-cake-entropy-ternary-gemv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 60: v34 Fifth Acceleration Tier: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Added — Wave 60: v34 Fifth Acceleration Tier: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wave-60a-rust-kernel-python-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 60a — Rust kernel Python wrappers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-60b-mojo-kernel-python-wrappers-mojo-stubs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 60b — Mojo kernel Python wrappers + .mojo stubs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#3300-2026-03-22" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2542,6 +2598,92 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="3400-2026-03-29">[34.0.0] — 2026-03-29<a class="headerlink" href="#3400-2026-03-29" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-60-v34-fifth-acceleration-tier-rust-mamba2-ssm-scandecode-adaround-step-paged-kv-gather-hawk-rglr-scan-cake-entropy-ternary-gemv-mojo-mamba2-scan-hawk-rglr-medusa-verify-paged-kv-cake-entropy-ternary-gemv">Added — Wave 60: v34 Fifth Acceleration Tier: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV<a class="headerlink" href="#added-wave-60-v34-fifth-acceleration-tier-rust-mamba2-ssm-scandecode-adaround-step-paged-kv-gather-hawk-rglr-scan-cake-entropy-ternary-gemv-mojo-mamba2-scan-hawk-rglr-medusa-verify-paged-kv-cake-entropy-ternary-gemv" title="Permanent link">&para;</a></h3>
+<p>Thirteen production-grade modules: seven Rust-backed kernel functions (Wave 60a)
+added to <code>squish_quant_rs</code> covering SSM recurrence (Mamba2 sequential scan &amp;
+single-token decode), AdaRound V-parameter gradient step, paged KV-cache block
+gather, Hawk RGLR real-gated linear recurrence scan, CAKE per-head attention
+entropy for KV eviction, and BitNet ternary GEMV; plus six Mojo-backed kernel
+wrappers (Wave 60b) mirroring the same operations with SIMD-vectorised <code>.mojo</code>
+stubs for <code>mamba2_scan</code>, <code>hawk_rglr</code>, <code>medusa_verify</code>, <code>paged_kv_gather</code>,
+<code>cake_entropy</code>, and <code>ternary_gemv</code>. All 586 Wave 56–59 tests continue passing;
+155 new tests added (77 Wave 60a + 78 Wave 60b).</p>
+<h4 id="wave-60a-rust-kernel-python-wrappers">Wave 60a — Rust kernel Python wrappers<a class="headerlink" href="#wave-60a-rust-kernel-python-wrappers" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>RustMamba2SSM</strong> (<code>squish/kernels/rs_mamba2_ssm.py</code>) — Sequential time-step
+  SSM scan with parallel d_state channels wrapping <code>mamba2_ssm_scan_f32</code> and
+  <code>mamba2_ssm_decode_f32</code>. Scan: <code>h = exp(a[t]) * h + b[t] * x[t]</code>,
+  <code>y[t] = dot(c[t], h)</code>. Decode: O(d_state) single-token update returning
+  <code>(y_scalar, new_state)</code>. NumPy fallback with identical step loop.</p>
+</li>
+<li>
+<p><strong>RustAdaRound</strong> (<code>squish/kernels/rs_adaround.py</code>) — AdaRound V-parameter
+  gradient step wrapping <code>adaround_step_f32</code>. Rayon parallel over N weight
+  elements: rectified-sigmoid <code>h = clip(σ(β*(V−ζ)), 0, 1)</code>; soft-quantised
+  weight <code>w_soft = (floor + h) * scale</code>; combined gradient <code>grad + λ * h'</code>
+  where <code>h' = β*h*(1−h)*(γ−ζ)</code>. NumPy fallback with vectorised sigmoid.</p>
+</li>
+<li>
+<p><strong>RustPagedKVGather</strong> (<code>squish/kernels/rs_paged_kv.py</code>) — Paged KV-cache
+  block-gather wrapping <code>paged_kv_gather_f32</code>. Rayon <code>par_chunks_mut</code> over
+  output tokens; physical page index <code>tok // block_size</code> looked up in page
+  table; non-contiguous pool memcopy. Returns <code>(n_valid_tokens, n_heads, head_dim)</code>.</p>
+</li>
+<li>
+<p><strong>RustHawkRGLR</strong> (<code>squish/kernels/rs_hawk_rglr.py</code>) — Real-gated linear
+  recurrence (Hawk/Griffin) scan wrapping <code>hawk_rglr_scan_f32</code>. Sequential
+  time, parallel d_state: <code>decay = exp(−exp(λ[i]) * softplus(dt_i))</code>;
+  <code>i_gate = sqrt(max(1 − decay², 0))</code>; <code>h = decay * h + i_gate * x</code>.</p>
+</li>
+<li>
+<p><strong>RustCakeEntropy</strong> (<code>squish/kernels/rs_cake_entropy.py</code>) — CAKE per-head
+  normalised attention entropy wrapping <code>cake_entropy_f32</code>. Rayon parallel
+  over n_heads; per-head softmax GEMV over T key tokens; Shannon entropy
+  normalised by <code>ln(T)</code>, averaged over <code>obs_window</code> observation queries.</p>
+</li>
+<li>
+<p><strong>RustTernaryGEMV</strong> (<code>squish/kernels/rs_ternary_gemv.py</code>) — BitNet-style
+  ternary weight GEMV wrapping <code>ternary_gemv_i8</code>. Rayon parallel over
+  out_features; <code>match w {1 → acc += a, -1 → acc −= a, _ → skip}</code> avoiding
+  any floating-point multiply for zero weights. Includes <code>sparsity()</code> utility.</p>
+</li>
+</ul>
+<h4 id="wave-60b-mojo-kernel-python-wrappers-mojo-stubs">Wave 60b — Mojo kernel Python wrappers + <code>.mojo</code> stubs<a class="headerlink" href="#wave-60b-mojo-kernel-python-wrappers-mojo-stubs" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>MojoMamba2Scan</strong> (<code>squish/kernels/mojo/mamba2_scan_mojo.py</code>) + stub
+  <code>mamba2_scan.mojo</code> — <code>vectorize[dot_elem, SIMD_W]</code> for d_state dot product;
+  sequential time loop + <code>vectorize</code> state update.</p>
+</li>
+<li>
+<p><strong>MojoHawkRGLR</strong> (<code>squish/kernels/mojo/hawk_rglr_mojo.py</code>) + stub
+  <code>hawk_rglr.mojo</code> — <code>parallelize[update_channel](d_state)</code> with softplus,
+  decay, and input-gate computation per channel; <code>UnsafePointer</code> API.</p>
+</li>
+<li>
+<p><strong>MojoMedusaVerify</strong> (<code>squish/kernels/mojo/medusa_verify_mojo.py</code>) + stub
+  <code>medusa_verify.mojo</code> — <code>parallelize[check_head](n_heads)</code> acceptance Phase 1;
+  sequential prefix enforcement Phase 2.</p>
+</li>
+<li>
+<p><strong>MojoPagedKVGather</strong> (<code>squish/kernels/mojo/paged_kv_mojo.py</code>) + stub
+  <code>paged_kv_gather.mojo</code> — <code>parallelize[gather_token](n_valid_tokens)</code>;
+  <code>vectorize[copy_elem, SIMD_W](head_dim)</code> for head-dim copies.</p>
+</li>
+<li>
+<p><strong>MojoCakeEntropy</strong> (<code>squish/kernels/mojo/cake_entropy_mojo.py</code>) + stub
+  <code>cake_entropy.mojo</code> — <code>parallelize[compute_head](n_heads)</code>; per-head GEMV
+  softmax + entropy; <code>vectorize[dot_elem, SIMD_W](head_dim)</code>.</p>
+</li>
+<li>
+<p><strong>MojoTernaryGEMV</strong> (<code>squish/kernels/mojo/ternary_gemv_mojo.py</code>) + stub
+  <code>ternary_gemv.mojo</code> — <code>parallelize[compute_row](out_features)</code>; <code>if w == 1:
+  acc += a elif -1: acc -= a</code> avoiding multiply for zero elements.</p>
+</li>
+</ul>
 <hr />
 <h2 id="3300-2026-03-22">[33.0.0] — 2026-03-22<a class="headerlink" href="#3300-2026-03-22" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-59-v33-fourth-acceleration-tier-rust-gptq-column-solve-quarot-group-quant-calibscale-absmaxpercentileaciq-flash-decode-split-bf16-cast-sparse-act-gemv-mojo-flash-decode-bf16-gemv-gqa-prefill-split-k-reduce-rotary-embed-layer-skip-predict">Added — Wave 59: v33 Fourth Acceleration Tier: Rust GPTQ Column Solve · QuaRot Group Quant · CalibScale Absmax/Percentile/ACIQ · Flash Decode Split · BF16 Cast · Sparse Act GEMV + Mojo Flash Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer Skip Predict<a class="headerlink" href="#added-wave-59-v33-fourth-acceleration-tier-rust-gptq-column-solve-quarot-group-quant-calibscale-absmaxpercentileaciq-flash-decode-split-bf16-cast-sparse-act-gemv-mojo-flash-decode-bf16-gemv-gqa-prefill-split-k-reduce-rotary-embed-layer-skip-predict" title="Permanent link">&para;</a></h3>
