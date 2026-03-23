@@ -4275,10 +4275,11 @@ Examples:
 
     if getattr(args, "kv_share", False):
         try:
-            from squish.kvsharer import KVShareMap, KVSharerConfig
-            _kvshr_cfg = KVSharerConfig(share_every_n_layers=getattr(args, "kv_share_every", 2))
-            _kvsharer_map = KVShareMap(_kvshr_cfg)
-            _info("kv-share", f"every={_kvshr_cfg.share_every_n_layers} layers")
+            from squish.kvsharer import KVSharerConfig
+            _kvshr_cfg = KVSharerConfig()
+            _kvshr_cfg._server_enabled = True
+            _kvsharer_map = _kvshr_cfg
+            _info("kv-share", f"max_share={_kvshr_cfg.max_share_fraction}  n_layers={_kvshr_cfg.n_layers}")
         except Exception as _e:
             _warn(f"[kv-share] Skipped: {_e}")
 
@@ -4293,18 +4294,22 @@ Examples:
     if getattr(args, "paris_kv", False):
         try:
             from squish.paris_kv import ParisKVCodebook, ParisKVConfig
-            _paris_cfg = ParisKVConfig(n_centroids=getattr(args, "paris_kv_centroids", 64))
-            _paris_kv_codebook = ParisKVCodebook(_paris_cfg)
-            _info("paris-kv", f"centroids={_paris_cfg.n_centroids}")
+            _paris_cfg = ParisKVConfig()
+            _paris_kv_codebook = ParisKVCodebook(
+                dim=128,
+                n_codes=getattr(args, "paris_kv_centroids", 64),
+                config=_paris_cfg,
+            )
+            _info("paris-kv", f"codes={_paris_kv_codebook._n_codes}  lr={_paris_cfg.learning_rate}")
         except Exception as _e:
             _warn(f"[paris-kv] Skipped: {_e}")
 
     if getattr(args, "streaming_sink", False):
         try:
             from squish.streaming_sink import SinkConfig, SinkKVCache
-            _sink_cfg = SinkConfig(max_tokens=getattr(args, "streaming_sink_size", 2048))
+            _sink_cfg = SinkConfig(window_size=getattr(args, "streaming_sink_size", 2048))
             _streaming_sink_cache = SinkKVCache(_sink_cfg)
-            _info("streaming-sink", f"budget={_sink_cfg.max_tokens}")
+            _info("streaming-sink", f"sinks={_sink_cfg.num_sinks}  window={_sink_cfg.window_size}")
         except Exception as _e:
             _warn(f"[streaming-sink] Skipped: {_e}")
 
@@ -4415,7 +4420,7 @@ Examples:
         try:
             from squish.robust_scheduler import AMaxScheduler, RobustSchedulerConfig
             _robust_sched = AMaxScheduler(RobustSchedulerConfig())
-            _info("robust-scheduler", f"A-max scheduling enabled  (max_batch_tokens={_robust_sched.config.max_batch_tokens})")
+            _info("robust-scheduler", f"A-max scheduling enabled  (max_batch_tokens={_robust_sched._config.max_batch_tokens})")
         except Exception as _e:
             _warn(f"[robust-scheduler] Skipped: {_e}")
 
