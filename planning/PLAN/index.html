@@ -1261,15 +1261,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-planned" class="md-nav__link">
+  <a href="#v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Planned)
+        ✅ v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Planned)">
+    <nav class="md-nav" aria-label="✅ v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -5923,15 +5923,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-planned" class="md-nav__link">
+  <a href="#v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Planned)
+        ✅ v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Planned)">
+    <nav class="md-nav" aria-label="✅ v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -11936,7 +11936,7 @@ sequential depth-loop for draft chain with <code>vectorize[softmax_elem, SIMD_W]
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-planned">🚧 v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Planned)<a class="headerlink" href="#v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-complete">✅ v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Complete)<a class="headerlink" href="#v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 61 targets six remaining Python-loop hotspots that dominate profiling traces after Wave 60
 eliminates the SSM/paged-memory bottlenecks. The six targets span post-training structured sparsity
 (Wanda N:M mask scoring), LUT-weight group encode/decode (FLUTE codebook inference), linear attention
@@ -12098,30 +12098,30 @@ sequential token-by-token accept/reject per branch with residual softmax.</p>
 </table>
 <h3 id="wave-61-checklist">Wave 61 Checklist<a class="headerlink" href="#wave-61-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] Wave 61 spec reviewed</li>
-<li>[ ] lib.rs updated (7 Wave 61a functions registered)</li>
-<li>[ ] <code>rs_wanda_nm.py</code> — RustWandaNM (nm_mask + importance)</li>
-<li>[ ] <code>rs_flute_lut.py</code> — RustFluteLUT (encode + decode)</li>
-<li>[ ] <code>rs_delta_net.py</code> — RustDeltaNet (scan)</li>
-<li>[ ] <code>rs_green_kv_score.py</code> — RustGreenKVScore (score)</li>
-<li>[ ] <code>rs_jacobi_conv.py</code> — RustJacobiConv (check)</li>
-<li>[ ] <code>rs_tree_verify.py</code> — RustTreeVerify (verify)</li>
-<li>[ ] <code>wanda_nm_mojo.py</code> — MojoWandaNM</li>
-<li>[ ] <code>flute_lut_mojo.py</code> — MojoFluteLUT</li>
-<li>[ ] <code>delta_net_mojo.py</code> — MojoDeltaNet</li>
-<li>[ ] <code>green_kv_score_mojo.py</code> — MojoGreenKVScore</li>
-<li>[ ] <code>jacobi_conv_mojo.py</code> — MojoJacobiConv</li>
-<li>[ ] <code>tree_verify_mojo.py</code> — MojoTreeVerify</li>
-<li>[ ] <code>wanda_nm.mojo</code> stub</li>
-<li>[ ] <code>flute_lut.mojo</code> stub</li>
-<li>[ ] <code>delta_net_recurrence.mojo</code> stub</li>
-<li>[ ] <code>green_kv_score.mojo</code> stub</li>
-<li>[ ] <code>jacobi_convergence.mojo</code> stub</li>
-<li>[ ] <code>tree_verify.mojo</code> stub</li>
-<li>[ ] <code>tests/test_wave61a_rust_kernels.py</code> (≥75 tests)</li>
-<li>[ ] <code>tests/test_wave61b_mojo_kernels.py</code> (≥75 tests)</li>
-<li>[ ] CHANGELOG <code>[35.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] Wave 61 spec reviewed</li>
+<li>[x] lib.rs updated (8 Wave 61a functions registered)</li>
+<li>[x] <code>rs_wanda_nm.py</code> — RustWandaNM (nm_mask + importance)</li>
+<li>[x] <code>rs_flute_lut.py</code> — RustFluteLUT (encode + decode)</li>
+<li>[x] <code>rs_delta_net.py</code> — RustDeltaNet (scan)</li>
+<li>[x] <code>rs_green_kv_score.py</code> — RustGreenKVScore (score)</li>
+<li>[x] <code>rs_jacobi_conv.py</code> — RustJacobiConv (check)</li>
+<li>[x] <code>rs_tree_verify.py</code> — RustTreeVerify (verify)</li>
+<li>[x] <code>wanda_nm_mojo.py</code> — MojoWandaNM</li>
+<li>[x] <code>flute_lut_mojo.py</code> — MojoFluteLUT</li>
+<li>[x] <code>delta_net_mojo.py</code> — MojoDeltaNet</li>
+<li>[x] <code>green_kv_score_mojo.py</code> — MojoGreenKVScore</li>
+<li>[x] <code>jacobi_conv_mojo.py</code> — MojoJacobiConv</li>
+<li>[x] <code>tree_verify_mojo.py</code> — MojoTreeVerify</li>
+<li>[x] <code>wanda_nm.mojo</code> stub</li>
+<li>[x] <code>flute_lut.mojo</code> stub</li>
+<li>[x] <code>delta_net_recurrence.mojo</code> stub</li>
+<li>[x] <code>green_kv_score.mojo</code> stub</li>
+<li>[x] <code>jacobi_convergence.mojo</code> stub</li>
+<li>[x] <code>tree_verify.mojo</code> stub</li>
+<li>[x] <code>tests/test_wave61a_rust_kernels.py</code> (70 tests)</li>
+<li>[x] <code>tests/test_wave61b_mojo_kernels.py</code> (70 tests)</li>
+<li>[x] CHANGELOG <code>[35.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v34-wave-60-ssm-recurrence-sprint-rust-mamba2-ssm-scandecode-adaround-step-paged-kv-gather-hawk-rglr-scan-cake-entropy-ternary-gemv-mojo-mamba2-scan-hawk-rglr-medusa-verify-paged-kv-cake-entropy-ternary-gemv-complete">✅ v34 Wave 60 — SSM Recurrence Sprint: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV (Complete)<a class="headerlink" href="#v34-wave-60-ssm-recurrence-sprint-rust-mamba2-ssm-scandecode-adaround-step-paged-kv-gather-hawk-rglr-scan-cake-entropy-ternary-gemv-mojo-mamba2-scan-hawk-rglr-medusa-verify-paged-kv-cake-entropy-ternary-gemv-complete" title="Permanent link">&para;</a></h2>
