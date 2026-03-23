@@ -194,9 +194,15 @@
     background: var(--surface2); padding: .15em .4em; border-radius: 4px;
     color: #ff9a3c; }
   .msg-content pre  { background: #0d1117; border: 1px solid var(--border);
-    border-radius: var(--radius); overflow-x: auto; margin: .75em 0; position: relative; }
-  .msg-content pre code { background: none; padding: 1em; display: block;
-    font-size: .85em; color: var(--text); border-radius: 0; }
+    border-radius: var(--radius); overflow-x: auto; margin: .75em 0;
+    position: relative; padding-top: 0; }
+  .code-block-header { display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; background: #161b22; border-bottom: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0; }
+  .code-block-header .code-lang { font-family: var(--font-mono); font-size: 11px;
+    color: var(--text-dim); text-transform: lowercase; }
+  .msg-content pre code { background: none; padding: .85em 1em; display: block;
+    font-size: .85em; border-radius: 0; line-height: 1.55; }
   .msg-content blockquote { border-left: 3px solid var(--border); padding-left: 1em;
     color: var(--text-dim); margin: .5em 0; }
   .msg-content table { border-collapse: collapse; width: 100%; margin: .75em 0; font-size: .9em; }
@@ -207,9 +213,10 @@
     color: var(--text-dim); border-radius: 6px; padding: 2px 9px; font-size: 11px;
     cursor: pointer; transition: all .15s; }
   .copy-btn:hover { background: var(--surface2); color: var(--text); }
-  .pre-copy  { position: absolute; top: 8px; right: 8px; }
-  .code-lang { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
-    position: absolute; top: 9px; left: 10px; pointer-events: none; }
+  .pre-copy  { background: none; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 6px; padding: 2px 9px; font-size: 11px; cursor: pointer;
+    transition: all .15s; margin-left: auto; flex-shrink: 0; }
+  .pre-copy:hover { background: var(--surface2); color: var(--text); }
   /* Typewriter streaming cursor */
   .msg-content.streaming-text { white-space: pre-wrap; }
   .stream-cursor { display: inline-block; width: 2px; height: 1.1em;
@@ -566,10 +573,12 @@ marked.use({
         highlighted = text
           .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
-      const badge = lang
-        ? `<span class="code-lang">${lang.replace(/</g, '&lt;')}</span>` : '';
-      return `<pre>${badge}`
-           + `<button class="copy-btn pre-copy" onclick="copyCode('${id}')">Copy</button>`
+      const safeLang = lang ? lang.replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+      const header = `<div class="code-block-header">`
+           + `<span class="code-lang">${safeLang}</span>`
+           + `<button class="pre-copy" onclick="copyCode('${id}')">Copy</button>`
+           + `</div>`;
+      return `<pre>${header}`
            + `<code id="${id}" class="hljs${lang ? ' language-' + lang : ''}">`
            + `${highlighted}</code></pre>`;
     }
@@ -1195,7 +1204,7 @@ function copyCode(id) {
   const el = document.getElementById(id);
   if (!el) return;
   navigator.clipboard.writeText(el.innerText).then(() => {
-    const btn = el.closest("pre").querySelector(".copy-btn");
+    const btn = el.closest("pre").querySelector(".pre-copy");
     if (btn) { btn.textContent = "Copied!"; setTimeout(() => btn.textContent = "Copy", 1500); }
   });
 }
