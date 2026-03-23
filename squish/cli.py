@@ -286,9 +286,14 @@ def _recommend_model(ram_gb: float) -> str:
     return "qwen3:1.7b"
 
 
-def _resolve_model(name: str | None) -> tuple[Path, Path]:  # pragma: no cover
+def _resolve_model(name: str | None, quant_mode: str = "int4") -> tuple[Path, Path]:  # pragma: no cover
     """
     Resolve MODEL shorthand / path to (model_dir, compressed_dir).
+
+    quant_mode selects which compressed variant to load: "int4" (default),
+    "int3", "int2", or "int8".  The compressed dir is expected at
+    ``<models_dir>/<ModelBase>-<quant_mode>``, e.g. ``Qwen3-8B-int4``.
+
     Raises SystemExit if the path doesn't exist.
     """
     if name is None:
@@ -344,17 +349,26 @@ def _resolve_model(name: str | None) -> tuple[Path, Path]:  # pragma: no cover
             f"  Tip: ensure the base BF16 model directory exists alongside the squished dir."
         )
 
-    compressed_dir = Path(str(model_dir) + _COMPRESSED_SUFFIX)
+    # Build compressed dir using <ModelBase>-<quant> convention, e.g. Qwen3-8B-int4
+    import re as _re
+    _base = _re.sub(r'-(bf16|fp16|[0-9]+bit)(-mlx)?$', '', model_dir.name)
+    compressed_dir = model_dir.parent / f"{_base}-{quant_mode}"
+
     if not compressed_dir.exists():
-        # Try squish_4bit subdir (mlx_lm native 4-bit)
-        squish4bit = model_dir.parent / (model_dir.name.replace("-bf16", "") + "-4bit")
-        if squish4bit.exists():
-            compressed_dir = squish4bit
+        # Backward compat: try old <model>-compressed dirs for existing installations
+        _old_compressed = Path(str(model_dir) + _COMPRESSED_SUFFIX)
+        if _old_compressed.exists():
+            compressed_dir = _old_compressed
         else:
-            print(f"  ⚠  No compressed dir found at {compressed_dir}")
-            print(f"     To compress: python3 -m squish.convert --model-dir {model_dir} --output {compressed_dir}")
-            print("     Starting with uncompressed model (slower load)…")
-            compressed_dir = model_dir
+            # Also try mlx_lm native -4bit dir
+            _squish4bit = model_dir.parent / (model_dir.name.replace("-bf16", "") + "-4bit")
+            if _squish4bit.exists():
+                compressed_dir = _squish4bit
+            else:
+                print(f"  ⚠  No {quant_mode.upper()} compressed dir found at {compressed_dir}")
+                print(f"     To download: squish pull {name or ''} --{quant_mode}")
+                print("     Starting with uncompressed model (slower load)…")
+                compressed_dir = model_dir
 
     return model_dir, compressed_dir
 
@@ -804,7 +818,13 @@ def cmd_run(args):  # pragma: no cover
             )
             cmd_pull(_pull_args)
 
-    model_dir, compressed_dir = _resolve_model(args.model)
+    _quant_mode = (
+        "int3" if getattr(args, "int3", False) else
+        "int2" if getattr(args, "int2", False) else
+        "int8" if getattr(args, "int8", False) else
+        "int4"
+    )
+    model_dir, compressed_dir = _resolve_model(args.model, quant_mode=_quant_mode)
 
     # Explicit --compressed-dir overrides the auto-detected compressed path.
     if getattr(args, "compressed_dir", None):
@@ -2844,6 +2864,14 @@ Ollama drop-in:
     p_run.add_argument("--compressed-dir", default="", metavar="DIR",
                        help="Explicit path to squished/compressed weights dir. "
                             "Overrides auto-detected compressed dir alongside MODEL.")
+    p_run.add_argument("--int4", action="store_true", default=False,
+                       help="Use INT4 compressed weights (default)")
+    p_run.add_argument("--int3", action="store_true", default=False,
+                       help="Use INT3 compressed weights")
+    p_run.add_argument("--int2", action="store_true", default=False,
+                       help="Use INT2 compressed weights")
+    p_run.add_argument("--int8", action="store_true", default=False,
+                       help="Use INT8 compressed weights")
     # ── Phase 13D: Agent preset ──
     p_run.add_argument("--agent", action="store_true", default=False,
                        help="Agent-mode preset: enables --agent-kv, --grammar, "
@@ -2914,6 +2942,14 @@ Ollama drop-in:
                               "agent is now opt-in via --agent, so this flag is a no-op).")
     p_serve.add_argument("--compressed-dir", default="", metavar="DIR",
                          help="Explicit path to squished/compressed weights dir.")
+    p_serve.add_argument("--int4", action="store_true", default=False,
+                         help="Use INT4 compressed weights (default)")
+    p_serve.add_argument("--int3", action="store_true", default=False,
+                         help="Use INT3 compressed weights")
+    p_serve.add_argument("--int2", action="store_true", default=False,
+                         help="Use INT2 compressed weights")
+    p_serve.add_argument("--int8", action="store_true", default=False,
+                         help="Use INT8 compressed weights")
     # ── Phase 13D: Agent preset ──
     p_serve.add_argument("--agent", action="store_true", default=False,
                          help="Agent-mode preset: enables --agent-kv, --grammar, "

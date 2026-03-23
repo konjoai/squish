@@ -13,6 +13,7 @@ from squish.catalog import (
     _ALIASES,
     CatalogEntry,
     _entry_from_dict,
+    _quant_dir_name,
     list_catalog,
     resolve,
 )
@@ -250,3 +251,39 @@ class TestAliases:
             result = resolve(alias)
             if result is not None:
                 assert isinstance(result, CatalogEntry)
+
+
+# ── _quant_dir_name ────────────────────────────────────────────────────────────
+
+class TestQuantDirName:
+    def test_bf16_to_int4(self):
+        assert _quant_dir_name("Qwen3-8B-bf16", "int4") == "Qwen3-8B-int4"
+
+    def test_bf16_to_int3(self):
+        assert _quant_dir_name("Qwen3-8B-bf16", "int3") == "Qwen3-8B-int3"
+
+    def test_bf16_to_int2(self):
+        assert _quant_dir_name("gemma-3-1b-it-bf16", "int2") == "gemma-3-1b-it-int2"
+
+    def test_bf16_to_int8(self):
+        assert _quant_dir_name("Llama-3.2-1B-Instruct-bf16", "int8") == "Llama-3.2-1B-Instruct-int8"
+
+    def test_fp16_stripped(self):
+        assert _quant_dir_name("SomeModel-fp16", "int4") == "SomeModel-int4"
+
+    def test_4bit_suffix_stripped(self):
+        assert _quant_dir_name("DeepSeek-Coder-V2-Lite-Instruct-4bit-mlx", "int4") == "DeepSeek-Coder-V2-Lite-Instruct-int4"
+
+    def test_no_precision_suffix(self):
+        assert _quant_dir_name("SmolLM2-135M-Instruct", "int4") == "SmolLM2-135M-Instruct-int4"
+
+    def test_4bit_without_mlx(self):
+        assert _quant_dir_name("Qwen1.5-MoE-A2.7B-Chat-4bit", "int3") == "Qwen1.5-MoE-A2.7B-Chat-int3"
+
+    def test_various_quant_modes(self):
+        for mode in ("int2", "int3", "int4", "int8"):
+            result = _quant_dir_name("Model-bf16", mode)
+            assert result == f"Model-{mode}"
+
+    def test_returns_string(self):
+        assert isinstance(_quant_dir_name("Model-bf16", "int4"), str)

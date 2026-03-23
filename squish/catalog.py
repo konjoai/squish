@@ -119,6 +119,24 @@ def _is_ssl_error(exc: BaseException) -> bool:
     )
 
 
+# ── Directory naming helpers ─────────────────────────────────────────────────
+
+import re as _re
+
+def _quant_dir_name(dir_name: str, quant_mode: str) -> str:
+    """Return the compressed directory name for a given model dir_name and quant mode.
+
+    Strips any precision suffix (bf16, fp16, Nbit, Nbit-mlx) from dir_name and
+    appends the quant mode.  Examples::
+
+        'Qwen3-8B-bf16'  + 'int4' → 'Qwen3-8B-int4'
+        'gemma-3-1b-it-bf16' + 'int3' → 'gemma-3-1b-it-int3'
+        'SmolLM2-135M-Instruct' + 'int4' → 'SmolLM2-135M-Instruct-int4'
+    """
+    base = _re.sub(r'-(bf16|fp16|[0-9]+bit)(-mlx)?$', '', dir_name)
+    return f"{base}-{quant_mode}"
+
+
 # ── CatalogEntry ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -771,15 +789,16 @@ def pull(  # pragma: no cover
             f"Run `squish catalog` to see available models."
         )
 
-    raw_dir        = models_dir / entry.dir_name
-    compressed_dir = models_dir / (entry.dir_name + "-compressed")
-    # Resolve effective quant mode (quant_mode takes priority over int4 flag)
+    raw_dir = models_dir / entry.dir_name
+    # Resolve effective quant mode first (quant_mode takes priority over int4 flag)
     if quant_mode in ("int3", "int2"):
         _mode = quant_mode
     elif not int4:
         _mode = "int8"
     else:
         _mode = "int4"
+    # Compressed dir uses <model>-<quant> naming: e.g. Qwen3-8B-int4
+    compressed_dir = models_dir / _quant_dir_name(entry.dir_name, _mode)
     _BPW = {"int4": 4.5, "int8": 8.5, "int3": 4.37, "int2": 3.00}
     quant_label    = _mode.upper()
     # Compressed size estimate derived from benchmark BPW ratios (BF16 = 16 bpw)

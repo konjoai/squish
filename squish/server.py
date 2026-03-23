@@ -166,6 +166,167 @@ _kvquant_cache          = None  # KVQuantCache            — --kvquant
 _efficient_qat          = None  # EfficientQAT            — --efficient-qat
 _cache_gen_codec        = None  # CacheGenCodec           — --cache-gen
 
+# ── Wave 43: MTP Decode, Cascade KV, Head Pruner, Paged Attn, Layer Collapse ──
+_mtp_decode_w43         = None  # MTPDecode               — --mtp-decode
+_cascade_kv             = None  # CascadeKV               — --cascade-kv
+_head_pruner            = None  # HeadPruner              — --head-prune
+_paged_attn_w43         = None  # PagedAttention          — --paged-attn-w43
+_layer_collapse         = None  # LayerCollapse           — --layer-collapse
+_relay_attn             = None  # RelayAttention          — --relay-attn
+_wkv_quant              = None  # WKVQuant                — --wkv-quant
+_tokenized_kv           = None  # TokenizedKVCache        — --tokenized-kv
+_cluster_evict_kv       = None  # ClusterEvictKV          — --cluster-evict
+_s2_attn                = None  # S2Attention             — --s2-attn
+_magic_pig_v2           = None  # MagicPIGv2              — --magic-pig-v2
+
+# ── Wave 44: Marlin GEMM, Spec Rejection, LoFTQ, Online Spec, Dynamic Spec ───
+_marlin_gemm            = None  # MarlinGEMM              — --marlin-gemm
+_spec_rejection         = None  # SpecRejection           — --spec-rejection
+_loftq_config           = None  # LoFTQ                   — --loftq
+_online_spec            = None  # OnlineSpec              — --online-spec
+_dynamic_spec_len       = None  # DynamicSpecLen          — --dynamic-spec-len
+_big_little_llm         = None  # BigLittleLLM            — --big-little
+_multi_exit_spec        = None  # MultiExitSpec           — --multi-exit-spec
+_pv_tuning              = None  # PVTuning                — --pv-tuning
+_hadamard_quant         = None  # HadamardQuant           — --hadamard-quant
+_prefix_tree            = None  # PrefixTreeDecode        — --prefix-tree-decode
+_spectr_ot              = None  # SpecTrOT                — --spectr-ot
+_ada_gptq               = None  # AdaGPTQ                 — --ada-gptq
+
+# ── Wave 45: FlexGen Offload, YaRN, SelfExtend, Orca, MxFP4, FP8Act, CLEXRoPE ─
+_flexgen_offload        = None  # FlexGenOffload          — --flexgen-offload
+_yarn_rope              = None  # YaRNRoPE                — --yarn-rope
+_self_extend            = None  # SelfExtend              — --self-extend
+_orca_scheduler         = None  # OrcaScheduler           — --orca-sched
+_mx_fp4_quant           = None  # MxFP4                   — --mx-fp4
+_fp8_act_quant          = None  # FP8ActQuant             — --fp8-act
+_clex_rope              = None  # CLeXRoPE                — --clex-rope
+_powerinfer_offload     = None  # PowerInferOffload       — --powerinfer
+_grouped_rope           = None  # GroupedRoPE             — --grouped-rope
+_tensor_parallel        = None  # TensorParallel          — --tensor-parallel
+_fused_bias_gelu        = None  # FusedBiasGELU           — --fused-bias-gelu
+_token_budget_sched     = None  # TokenBudgetScheduler    — --token-budget-sched
+
+# ── Wave 46: Model Surgery, Expert Choice, W4A8, MLA KV, MinP, Contrastive ───
+_slice_gpt              = None  # SliceGPTPruner          — --slice-gpt
+_wanda_pruner           = None  # WandaPruner             — --wanda
+_short_gpt              = None  # ShortGPTPruner          — --short-gpt
+_w4a8_runtime           = None  # W4A8QuantRuntime        — --w4a8
+_expert_choice          = None  # ExpertChoiceRouter      — --expert-choice
+_mla_kv_compress        = None  # MLAKVCompress           — --mla-kv
+_minp_sampler           = None  # MinPSampler             — --minp
+_contrastive_search     = None  # ContrastiveSearch       — --contrastive-search
+_razor_attn             = None  # RazorAttention          — --razor-attn
+_cache_blend            = None  # CacheBlend              — --cache-blend
+_green_kv               = None  # GreenKVEviction         — --green-kv
+_preble_router          = None  # PrebeleRouter           — --preble
+
+# ── Wave 47: Mamba2, HGRN2, Lookahead, InfMemory, vAttn, IA3, MoE-Infinity ──
+_mamba2_ssm             = None  # Mamba2SSM               — --mamba2-ssm
+_hgrn2                  = None  # HGRN2                   — --hgrn2
+_lookahead_decode       = None  # LookaheadDecode         — --lookahead-decode
+_inf_memory             = None  # InfMemory               — --inf-memory
+_v_attn_kv              = None  # vAttentionKV            — --v-attn
+_ia3_adapter            = None  # IA3Adapter              — --ia3
+_moe_infinity           = None  # MoEInfinityOffload      — --moe-infinity
+_mega_blocks            = None  # MegaBlocksSparse        — --mega-blocks
+_kgw_watermark          = None  # KGWWatermark            — --kgw-watermark
+_typical_sampler        = None  # TypicalSampler          — --typical-sampler
+_dora_adapter           = None  # DoRAAdapter             — --dora
+_calm_exit              = None  # AdaptiveCALM            — --calm-exit
+
+# ── Wave 48: INT2/INT3 Extreme Quantization ───────────────────────────────────
+_spqr_quantizer         = None  # SpQRQuantizer           — --spqr
+_auto_round             = None  # AutoRoundQuantizer      — --auto-round
+_owq_quantizer          = None  # OWQQuantizer            — --owq
+_bit_distiller          = None  # BitDistillerQuant       — --bit-distiller
+_zip_lm                 = None  # ZipLMMixedPrecision     — --zip-lm
+_gguf_mixed             = None  # GGUFMixedQuantizer      — --gguf-mixed
+
+# ── Wave 49: TTFT Sprint: LLMLingua-2, RECOMP, Selective Context, Prepack ────
+_llm_lingua2            = None  # LLMLingua2Compressor    — --llm-lingua2
+_recomp_compressor      = None  # RECOMPCompressor        — --recomp
+_selective_context      = None  # SelectiveContextCompressor — --selective-context
+_prompt_cache_kv        = None  # PromptCacheKV           — --prompt-cache
+_pipe_infer             = None  # PipeInferScheduler      — --pipe-infer
+_prepack_scheduler      = None  # PrepackScheduler        — --prepack
+
+# ── Wave 50: Bigger-Than-Memory: SparseGPT, MoD, LeanKV, GGUF, WeightStream ─
+_sparse_gpt             = None  # SparseGPTPruner         — --sparse-gpt
+_mix_of_depths          = None  # MixtureOfDepths         — --mix-of-depths
+_lean_kv_quant          = None  # LeanKVQuant             — --lean-kv
+_gguf_loader            = None  # GGUFNativeLoader        — --gguf-loader
+_weight_stream          = None  # WeightDecompressStream  — --weight-stream
+_shard_loader           = None  # ModelShardLoader        — --shard-loader
+
+# ── Wave 51: Test-Time Compute Scaling ────────────────────────────────────────
+_budget_forcing         = None  # BudgetForcingDecoder    — --budget-forcing
+_test_time_router       = None  # TestTimeComputeRouter   — --test-time-scale
+_dvts_search            = None  # DVTSSearch              — --dvts
+_chain_of_draft         = None  # ChainOfDraftSampler     — --chain-of-draft
+_coconut_decoder        = None  # CoconutDecoder          — --coconut
+_prm_beam_search        = None  # PRMBeamSearch           — --prm-beam
+_best_of_n              = None  # BestOfNSampler          — --best-of-n
+_self_consistency       = None  # SelfConsistencyVoter    — --self-consistency
+_thought_budget_gate    = None  # ThoughtBudgetGate       — --thought-budget
+_reasoning_kv           = None  # ReasoningKVManager      — --reasoning-kv
+_draft_reasoning        = None  # DraftReasoningVerifier  — --draft-reasoning
+_parallel_reasoning     = None  # ParallelReasoningScheduler — --parallel-reasoning
+
+# ── Wave 52: Multi-Modal VLM Efficiency ───────────────────────────────────────
+_fast_v_pruner          = None  # FastVPruner             — --fast-v
+_vision_zip             = None  # VisionZip               — --vision-zip
+_llava_prumerge         = None  # LLaVAPruMerge           — --llava-prumerge
+_token_packer           = None  # TokenPacker             — --token-packer
+_flash_vstream          = None  # FlashVStream            — --flash-vstream
+_dynamic_res            = None  # DynamicResEncoder       — --dynamic-res
+_visual_kv_quant        = None  # VisualKVQuant           — --visual-kv-quant
+_cross_modal_router     = None  # CrossModalRouter        — --cross-modal
+_video_kv_reuse         = None  # VideoKVReuse            — --video-kv-reuse
+_vlm_spec_decode        = None  # VLMSpecDecode           — --vlm-spec
+_vlm_batch_sched        = None  # VLMBatchScheduler       — --vlm-sched
+_img_encoder_cache      = None  # ImageEncoderCache       — --img-encoder-cache
+
+# ── Wave 53: Linear Recurrent Architectures ───────────────────────────────────
+_rwkv6_channel_mix      = None  # RWKV6ChannelMix         — --rwkv6
+_hawk_rnn               = None  # HawkLinearRNN           — --hawk-rnn
+_xlstm_block            = None  # xLSTMBlock              — --xlstm
+_ttt_layer              = None  # TTTLinearLayer          — --ttt
+_delta_net              = None  # DeltaNetLinear          — --delta-net
+_ssm_state_cache        = None  # SSMStateCache           — --ssm-cache
+_parallel_scan          = None  # ParallelScanKernel      — --parallel-scan
+_ssm_quantizer          = None  # SSMQuantizer            — --ssm-quant
+_hybrid_arch_router     = None  # HybridArchRouter        — --hybrid-arch
+_hymba_dual             = None  # HymbaDualTrack          — --hymba
+_ssm_state_offload      = None  # SSMStateOffload         — --ssm-offload
+
+# ── Wave 54: Deep MoE Efficiency, FlashAttn3, DoubleSparsity, ElasticBatch ───
+_shared_expert_moe      = None  # SharedExpertMoE         — --shared-expert
+_fine_grained_router    = None  # FineGrainedMoERouter    — --fine-grained-moe
+_expert_offloader       = None  # ExpertOffloader         — --expert-offload
+_expert_merger          = None  # ExpertMerger            — --expert-merge
+_lazy_expert            = None  # LazyExpertLoader        — --lazy-expert
+_expert_act_cache       = None  # ExpertActivationCache   — --expert-cache
+_flash_attn3            = None  # FlashAttn3Kernel        — --flash-attn3
+_double_sparse_attn     = None  # DoubleSparsityAttn      — --double-sparse
+_lasp_linear_attn       = None  # LASPLinearAttn          — --lasp
+_nacl_cache             = None  # NaCLCache               — --nacl-cache
+_kv_migration           = None  # KVMigrationManager      — --kv-migration
+_elastic_batch          = None  # ElasticBatchController  — --elastic-batch
+
+# ── Wave 55: Advanced Sampling, Emerging Quantization ────────────────────────
+_min_p_sampler          = None  # MinPSampler             — --min-p
+_mirostat_sampler       = None  # MirostatSampler         — --mirostat
+_eta_cutoff             = None  # EtaCutoffSampler        — --eta-cutoff
+_cfg_sampler            = None  # CFGLogitsSampler        — --cfg-guidance
+_diverse_beam           = None  # DiverseBeamSampler      — --diverse-beam
+_bitnet158              = None  # BitNet158Quantizer      — --bitnet158
+_spqr_quant_w55         = None  # SpQRQuantizer (spqr_quant) — --spqr-quant
+_omniquant              = None  # OmniQuantizer           — --omniquant
+_qsparse                = None  # QSparsifier             — --q-sparse
+_fp4_quantizer          = None  # FP4Quantizer            — --fp4-quant
+_ada_round              = None  # AdaRoundQuantizer       — --ada-round
+
 # ── Wave 37: Wire Everything In ───────────────────────────────────────────────
 # Twelve isolation modules from Waves 33–35 wired into the live request path.
 _kvtc_manager           = None  # KVTCManager             — --kvtc
@@ -3162,6 +3323,303 @@ Examples:
     ap.add_argument("--cache-gen", action="store_true", default=False,
                     help="Enable CacheGenCodec: arithmetic-coded KV bitstream "
                          "compression and streaming decoder (Liu et al., SIGCOMM 2024).")
+
+    # ── Wave 43 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--mtp-decode", action="store_true", default=False,
+                    help="Multi-Token Prediction decode heads (DeepSeek-V3, Wave 43).")
+    ap.add_argument("--cascade-kv", action="store_true", default=False,
+                    help="Cascade KV: two-level shared-prefix + per-request KV cache (Wave 43).")
+    ap.add_argument("--head-prune", action="store_true", default=False,
+                    help="Structured head/MLP pruning via importance scoring (Wave 43).")
+    ap.add_argument("--paged-attn-w43", action="store_true", default=False,
+                    help="PagedAttention Wave-43 block manager (Wave 43).")
+    ap.add_argument("--layer-collapse", action="store_true", default=False,
+                    help="Layer collapse via cosine-similarity skip scheduling (Wave 43).")
+    ap.add_argument("--relay-attn", action="store_true", default=False,
+                    help="Relay attention: share softmax output across similar-output layers (Wave 43).")
+    ap.add_argument("--wkv-quant", action="store_true", default=False,
+                    help="Joint weight+KV quantization W4KV4 (Wave 43).")
+    ap.add_argument("--tokenized-kv", action="store_true", default=False,
+                    help="Tokenized KV: serialize/deserialize KV via embedding table (Wave 43).")
+    ap.add_argument("--cluster-evict", action="store_true", default=False,
+                    help="Cluster-based KV eviction with adaptive per-layer budget (Wave 43).")
+    ap.add_argument("--s2-attn", action="store_true", default=False,
+                    help="S²-Attention: sorted-structured sparse attention (Wave 43).")
+    ap.add_argument("--magic-pig-v2", action="store_true", default=False,
+                    help="MagicPIG v2: LSH-sampled KV retrieval with adaptive probe budget (Wave 43).")
+
+    # ── Wave 44 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--marlin-gemm", action="store_true", default=False,
+                    help="Marlin INT4×FP16 tiled GEMM for post-training quantization (Wave 44).")
+    ap.add_argument("--spec-rejection", action="store_true", default=False,
+                    help="Speculative rejection: parallel draft candidates with early pruning (Wave 44).")
+    ap.add_argument("--loftq", action="store_true", default=False,
+                    help="LoFTQ: alternating LoRA+W4 quantization optimizer (Wave 44).")
+    ap.add_argument("--online-spec", action="store_true", default=False,
+                    help="Online speculative decoding with session-adaptive draft distribution (Wave 44).")
+    ap.add_argument("--dynamic-spec-len", action="store_true", default=False,
+                    help="Dynamic speculation lookahead: adaptive K per token (Wave 44).")
+    ap.add_argument("--big-little", action="store_true", default=False,
+                    help="Big-Little decoder: route easy tokens to small model (Wave 44).")
+    ap.add_argument("--multi-exit-spec", action="store_true", default=False,
+                    help="Multi-exit speculative decoding at early transformer layer (Wave 44).")
+    ap.add_argument("--pv-tuning", action="store_true", default=False,
+                    help="PV-Tuning: proximal-gradient quantized weight optimization W1–2 (Wave 44).")
+    ap.add_argument("--hadamard-quant", action="store_true", default=False,
+                    help="Hadamard rotation whitening before INT4 GEMM (Wave 44).")
+    ap.add_argument("--prefix-tree-decode", action="store_true", default=False,
+                    help="Prefix tree decode: parallel static prefix tree paths (Wave 44).")
+    ap.add_argument("--spectr-ot", action="store_true", default=False,
+                    help="SpecTr: optimal-transport draft-target coupling (Wave 44).")
+    ap.add_argument("--ada-gptq", action="store_true", default=False,
+                    help="Ada-GPTQ: per-layer adaptive group size for W4 PTQ (Wave 44).")
+
+    # ── Wave 45 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--flexgen-offload", action="store_true", default=False,
+                    help="FlexGen offload: LP-optimal CPU/SSD weight paging (Wave 45).")
+    ap.add_argument("--yarn-rope", action="store_true", default=False,
+                    help="YaRN RoPE: extended context via NTK-aware interpolation (Wave 45).")
+    ap.add_argument("--self-extend", action="store_true", default=False,
+                    help="Self-Extend: grouped attention for context beyond training window (Wave 45).")
+    ap.add_argument("--orca-sched", action="store_true", default=False,
+                    help="Orca iteration-level scheduler for continuous batching (Wave 45).")
+    ap.add_argument("--mx-fp4", action="store_true", default=False,
+                    help="MX FP4 microscaling quantization (Wave 45).")
+    ap.add_argument("--fp8-act", action="store_true", default=False,
+                    help="FP8 activation quantization for W8A8-style inference (Wave 45).")
+    ap.add_argument("--clex-rope", action="store_true", default=False,
+                    help="CLeX RoPE: continuous length extrapolation (Wave 45).")
+    ap.add_argument("--powerinfer", action="store_true", default=False,
+                    help="PowerInfer offload: neuron-activation-aware weight streaming (Wave 45).")
+    ap.add_argument("--grouped-rope", action="store_true", default=False,
+                    help="Grouped RoPE: group-query-aware rotary position embeddings (Wave 45).")
+    ap.add_argument("--tensor-parallel", action="store_true", default=False,
+                    help="Tensor parallelism across available compute partitions (Wave 45).")
+    ap.add_argument("--fused-bias-gelu", action="store_true", default=False,
+                    help="Fused bias+GELU kernel (Wave 45).")
+    ap.add_argument("--token-budget-sched", action="store_true", default=False,
+                    help="Token budget scheduler: per-request KV-budget limits (Wave 45).")
+
+    # ── Wave 46 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--slice-gpt", action="store_true", default=False,
+                    help="SliceGPT: PCA orthogonal column pruning (Wave 46).")
+    ap.add_argument("--wanda", action="store_true", default=False,
+                    help="Wanda: weight magnitude × activation RMS pruning (Wave 46).")
+    ap.add_argument("--short-gpt", action="store_true", default=False,
+                    help="ShortGPT: block importance layer removal (Wave 46).")
+    ap.add_argument("--w4a8", action="store_true", default=False,
+                    help="W4A8 hybrid-precision quantization runtime (Wave 46).")
+    ap.add_argument("--expert-choice", action="store_true", default=False,
+                    help="Expert Choice MoE routing: experts select top-k tokens (Wave 46).")
+    ap.add_argument("--mla-kv", action="store_true", default=False,
+                    help="MLA KV compression: low-rank joint K+V projection (Wave 46).")
+    ap.add_argument("--minp", action="store_true", default=False,
+                    help="Min-P sampler: dynamic probability floor (Wave 46).")
+    ap.add_argument("--contrastive-search", action="store_true", default=False,
+                    help="Contrastive search sampling: balance probability and diversity (Wave 46).")
+    ap.add_argument("--razor-attn", action="store_true", default=False,
+                    help="RazorAttention: retrieval-head classifier for 70%% KV reduction (Wave 46).")
+    ap.add_argument("--cache-blend", action="store_true", default=False,
+                    help="CacheBlend: partial KV prefix reuse for RAG (Wave 46).")
+    ap.add_argument("--green-kv", action="store_true", default=False,
+                    help="GreenKV: two-stream importance KV eviction (Wave 46).")
+    ap.add_argument("--preble", action="store_true", default=False,
+                    help="Preble router: prefix-cache-aware multi-instance request routing (Wave 46).")
+
+    # ── Wave 47 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--mamba2-ssm", action="store_true", default=False,
+                    help="Mamba2 SSM: Structured State-Space Duality layer (Wave 47).")
+    ap.add_argument("--hgrn2", action="store_true", default=False,
+                    help="HGRN2: gated linear RNN with state expansion (Wave 47).")
+    ap.add_argument("--lookahead-decode", action="store_true", default=False,
+                    help="Lookahead decoding: 2D Jacobi window without draft model (Wave 47).")
+    ap.add_argument("--inf-memory", action="store_true", default=False,
+                    help="InfLLM: block-level external KV memory for 1M+ context (Wave 47).")
+    ap.add_argument("--v-attn", action="store_true", default=False,
+                    help="vAttention: OS virtual memory KV cache management (Wave 47).")
+    ap.add_argument("--ia3", action="store_true", default=False,
+                    help="IA3 adapter: learned K/V/FF scale vectors (Wave 47).")
+    ap.add_argument("--moe-infinity", action="store_true", default=False,
+                    help="MoE-Infinity: activation-aware expert offloading (Wave 47).")
+    ap.add_argument("--mega-blocks", action="store_true", default=False,
+                    help="MegaBlocks: dropless MoE with block-sparse GEMM (Wave 47).")
+    ap.add_argument("--kgw-watermark", action="store_true", default=False,
+                    help="KGW watermark: green/red list vocabulary watermarking (Wave 47).")
+    ap.add_argument("--typical-sampler", action="store_true", default=False,
+                    help="Typical sampling: sample from local typical set (Wave 47).")
+    ap.add_argument("--dora", action="store_true", default=False,
+                    help="DoRA: magnitude-direction weight decomposition adapter (Wave 47).")
+    ap.add_argument("--calm-exit", action="store_true", default=False,
+                    help="CALM: per-token confidence-gated early exit (Wave 47).")
+
+    # ── Wave 48 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--spqr", action="store_true", default=False,
+                    help="SpQR: sparse-quantized representation with outlier FP16 (Wave 48).")
+    ap.add_argument("--auto-round", action="store_true", default=False,
+                    help="AutoRound: sign-gradient-descent rounding optimizer (Wave 48).")
+    ap.add_argument("--owq", action="store_true", default=False,
+                    help="OWQ: outlier-aware weight quantization with column promotion (Wave 48).")
+    ap.add_argument("--bit-distiller", action="store_true", default=False,
+                    help="BitDistiller: KL-divergence self-distillation for INT2 (Wave 48).")
+    ap.add_argument("--zip-lm", action="store_true", default=False,
+                    help="ZipLM: Hessian-sensitivity mixed-precision layer assignment (Wave 48).")
+    ap.add_argument("--gguf-mixed", action="store_true", default=False,
+                    help="GGUF mixed-precision: Q2_K/Q3_K/Q4_K block quantization format (Wave 48).")
+
+    # ── Wave 49 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--llm-lingua2", action="store_true", default=False,
+                    help="LLMLingua-2: token-level binary classifier prompt compression (Wave 49).")
+    ap.add_argument("--recomp", action="store_true", default=False,
+                    help="RECOMP: extractive+abstractive RAG context compression (Wave 49).")
+    ap.add_argument("--selective-context", action="store_true", default=False,
+                    help="Selective context: self-information pruning (Wave 49).")
+    ap.add_argument("--prompt-cache", action="store_true", default=False,
+                    help="PromptCache: schema-defined KV materialization for templates (Wave 49).")
+    ap.add_argument("--pipe-infer", action="store_true", default=False,
+                    help="PipeInfer: chunked prefill+decode pipeline overlap (Wave 49).")
+    ap.add_argument("--prepack", action="store_true", default=False,
+                    help="Prepack: completion-order batching for TTFT reduction (Wave 49).")
+
+    # ── Wave 50 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--sparse-gpt", action="store_true", default=False,
+                    help="SparseGPT: one-shot Hessian weight pruning 50-60%% (Wave 50).")
+    ap.add_argument("--mix-of-depths", action="store_true", default=False,
+                    help="Mixture-of-Depths: per-token layer routing (Wave 50).")
+    ap.add_argument("--lean-kv", action="store_true", default=False,
+                    help="LeanKV: asymmetric K(INT4)/V(INT8) cache quantization (Wave 50).")
+    ap.add_argument("--gguf-loader", action="store_true", default=False,
+                    help="GGUF native loader: Q2_K/Q3_K/Q4_K/Q5_K/Q8_0 format parser (Wave 50).")
+    ap.add_argument("--weight-stream", action="store_true", default=False,
+                    help="Weight decompress stream: overlapped CPU dequant + GPU compute (Wave 50).")
+    ap.add_argument("--shard-loader", action="store_true", default=False,
+                    help="Model shard loader: 3-tier GPU-hot/CPU-warm/SSD-cold weight paging (Wave 50).")
+
+    # ── Wave 51 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--budget-forcing", action="store_true", default=False,
+                    help="Budget forcing: s1-style per-request thinking token budget (Wave 51).")
+    ap.add_argument("--test-time-scale", action="store_true", default=False,
+                    help="Test-time compute router: difficulty-aware strategy dispatch (Wave 51).")
+    ap.add_argument("--dvts", action="store_true", default=False,
+                    help="DVTS: diverse verifier tree search for reasoning (Wave 51).")
+    ap.add_argument("--chain-of-draft", action="store_true", default=False,
+                    help="Chain-of-Draft: ≤7-word per-step reasoning constraint (Wave 51).")
+    ap.add_argument("--coconut", action="store_true", default=False,
+                    help="COCONUT: continuous latent reasoning decoder (Wave 51).")
+    ap.add_argument("--prm-beam", action="store_true", default=False,
+                    help="PRM beam search: step-level process reward model guidance (Wave 51).")
+    ap.add_argument("--best-of-n", action="store_true", default=False,
+                    help="Best-of-N sampling with reward model scoring (Wave 51).")
+    ap.add_argument("--self-consistency", action="store_true", default=False,
+                    help="Self-consistency: majority voting over K reasoning chains (Wave 51).")
+    ap.add_argument("--thought-budget", action="store_true", default=False,
+                    help="Thought budget gate: per-segment CoT token limiting (Wave 51).")
+    ap.add_argument("--reasoning-kv", action="store_true", default=False,
+                    help="Reasoning KV: INT2 thinking-region + FP16 answer-region KV (Wave 51).")
+    ap.add_argument("--draft-reasoning", action="store_true", default=False,
+                    help="Draft reasoning verifier: CoT-consistency speculative acceptance (Wave 51).")
+    ap.add_argument("--parallel-reasoning", action="store_true", default=False,
+                    help="Parallel reasoning scheduler: M chains per prompt (Wave 51).")
+
+    # ── Wave 52 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--fast-v", action="store_true", default=False,
+                    help="FastV: visual token pruning by cross-attention score at layer 2 (Wave 52).")
+    ap.add_argument("--vision-zip", action="store_true", default=False,
+                    help="VisionZip: context-dependent visual token selection (Wave 52).")
+    ap.add_argument("--llava-prumerge", action="store_true", default=False,
+                    help="LLaVA-PruMerge: spatial clustering+merge of visual patches (Wave 52).")
+    ap.add_argument("--token-packer", action="store_true", default=False,
+                    help="TokenPacker: fixed-size cross-attention visual projector (Wave 52).")
+    ap.add_argument("--flash-vstream", action="store_true", default=False,
+                    help="Flash-VStream: 3-tier video KV memory for streaming video (Wave 52).")
+    ap.add_argument("--dynamic-res", action="store_true", default=False,
+                    help="Dynamic resolution encoder: aspect-ratio tiling (Wave 52).")
+    ap.add_argument("--visual-kv-quant", action="store_true", default=False,
+                    help="Visual KV quantization: INT4K+INT6V for visual token blocks (Wave 52).")
+    ap.add_argument("--cross-modal", action="store_true", default=False,
+                    help="Cross-modal router: affinity-gated visual↔text attention (Wave 52).")
+    ap.add_argument("--video-kv-reuse", action="store_true", default=False,
+                    help="Video KV reuse: frame-pair cosine similarity KV sharing (Wave 52).")
+    ap.add_argument("--vlm-spec", action="store_true", default=False,
+                    help="VLM speculative decoding with shared visual prefix (Wave 52).")
+    ap.add_argument("--vlm-sched", action="store_true", default=False,
+                    help="VLM batch scheduler: image-complexity request binning (Wave 52).")
+    ap.add_argument("--img-encoder-cache", action="store_true", default=False,
+                    help="Image encoder output cache keyed by SHA-256 (Wave 52).")
+
+    # ── Wave 53 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--rwkv6", action="store_true", default=False,
+                    help="RWKV-6 Eagle channel-mix layer (Wave 53).")
+    ap.add_argument("--hawk-rnn", action="store_true", default=False,
+                    help="Hawk/Griffin Real-Gated Linear Recurrence (Wave 53).")
+    ap.add_argument("--xlstm", action="store_true", default=False,
+                    help="xLSTM: extended LSTM with sLSTM and mLSTM cells (Wave 53).")
+    ap.add_argument("--ttt", action="store_true", default=False,
+                    help="TTT layer: Test-Time Training linear layer (Wave 53).")
+    ap.add_argument("--delta-net", action="store_true", default=False,
+                    help="DeltaNet: delta-rule linear recurrent attention (Wave 53).")
+    ap.add_argument("--ssm-cache", action="store_true", default=False,
+                    help="SSM state cache: unified recurrent state persistence (Wave 53).")
+    ap.add_argument("--parallel-scan", action="store_true", default=False,
+                    help="Parallel scan kernel: Blelloch prefix scan for SSM prefill (Wave 53).")
+    ap.add_argument("--ssm-quant", action="store_true", default=False,
+                    help="SSM quantizer: SSM-specific calibration Δ/A/B/C quantization (Wave 53).")
+    ap.add_argument("--hybrid-arch", action="store_true", default=False,
+                    help="Hybrid arch router: per-layer SSM vs attention dispatch (Wave 53).")
+    ap.add_argument("--hymba", action="store_true", default=False,
+                    help="Hymba dual-track: parallel mini-SSM + attention heads (Wave 53).")
+    ap.add_argument("--ssm-offload", action="store_true", default=False,
+                    help="SSM state offload: segment-boundary recurrent state export (Wave 53).")
+
+    # ── Wave 54 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--shared-expert", action="store_true", default=False,
+                    help="Shared expert MoE: always-active shared + routed experts (Wave 54).")
+    ap.add_argument("--fine-grained-moe", action="store_true", default=False,
+                    help="Fine-grained MoE router: DeepSeek-V3 auxiliary-loss-free (Wave 54).")
+    ap.add_argument("--expert-offload", action="store_true", default=False,
+                    help="Expert offloader: top-M LRU expert weight pager (Wave 54).")
+    ap.add_argument("--expert-merge", action="store_true", default=False,
+                    help="Expert merger: cosine-similarity expert consolidation (Wave 54).")
+    ap.add_argument("--lazy-expert", action="store_true", default=False,
+                    help="Lazy expert loader: JIT expert weight materialization (Wave 54).")
+    ap.add_argument("--expert-cache", action="store_true", default=False,
+                    help="Expert activation cache: LRU expert output caching (Wave 54).")
+    ap.add_argument("--flash-attn3", action="store_true", default=False,
+                    help="FlashAttention-3: pingpong warp scheduling 1.5-2× FA-2 (Wave 54).")
+    ap.add_argument("--double-sparse", action="store_true", default=False,
+                    help="DoubleSparsity: simultaneous head-level and token-level sparse attn (Wave 54).")
+    ap.add_argument("--lasp", action="store_true", default=False,
+                    help="LASP: linear attention sequence parallelism via ring topology (Wave 54).")
+    ap.add_argument("--nacl-cache", action="store_true", default=False,
+                    help="NaCL cache: O(1) random KV eviction with non-evictable reserve (Wave 54).")
+    ap.add_argument("--kv-migration", action="store_true", default=False,
+                    help="KV migration manager: live KV shard transfer between workers (Wave 54).")
+    ap.add_argument("--elastic-batch", action="store_true", default=False,
+                    help="Elastic batch controller: adaptive continuous-batch sizing (Wave 54).")
+
+    # ── Wave 55 flags ────────────────────────────────────────────────────────
+    ap.add_argument("--min-p", action="store_true", default=False,
+                    help="Min-P sampler (min_p_sampler): dynamic probability floor (Wave 55).")
+    ap.add_argument("--mirostat", action="store_true", default=False,
+                    help="Mirostat sampler: PID perplexity controller (Wave 55).")
+    ap.add_argument("--eta-cutoff", action="store_true", default=False,
+                    help="Eta-cutoff sampler: entropy-adaptive hard logit cutoff (Wave 55).")
+    ap.add_argument("--cfg-guidance", action="store_true", default=False,
+                    help="CFG logits sampler: Classifier-Free Guidance for text (Wave 55).")
+    ap.add_argument("--diverse-beam", action="store_true", default=False,
+                    help="Diverse beam search: G beam groups with diversity penalty (Wave 55).")
+    ap.add_argument("--bitnet158", action="store_true", default=False,
+                    help="BitNet-b1.58: ternary {-1,0,+1} weight quantization (Wave 55).")
+    ap.add_argument("--spqr-quant", action="store_true", default=False,
+                    help="SpQR quantizer (spqr_quant): sparse-quantized for frontier models (Wave 55).")
+    ap.add_argument("--omniquant", action="store_true", default=False,
+                    help="OmniQuant: LWC+LET joint calibration W4A4/W4A8 (Wave 55).")
+    ap.add_argument("--q-sparse", action="store_true", default=False,
+                    help="Q-Sparse: top-K activation sparsity at matmul time (Wave 55).")
+    ap.add_argument("--fp4-quant", action="store_true", default=False,
+                    help="FP4 quantization: E2M1 FP4 floating-point weights (Wave 55).")
+    ap.add_argument("--ada-round", action="store_true", default=False,
+                    help="AdaRound: adaptive rounding via per-weight sigmoid relaxation (Wave 55).")
+
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
     ap.add_argument(
@@ -3291,6 +3749,54 @@ Examples:
             "medusa_heads", "sarathi", "nsa_attn", "flex_prefill",
             "think_cache", "attention_store", "rest_decode", "star_attn",
             "splitwise", "kvquant", "efficient_qat", "cache_gen",
+            # Wave 43
+            "mtp_decode", "cascade_kv", "head_prune", "paged_attn_w43",
+            "layer_collapse", "relay_attn", "wkv_quant", "tokenized_kv",
+            "cluster_evict", "s2_attn", "magic_pig_v2",
+            # Wave 44
+            "marlin_gemm", "spec_rejection", "loftq", "online_spec",
+            "dynamic_spec_len", "big_little", "multi_exit_spec", "pv_tuning",
+            "hadamard_quant", "prefix_tree_decode", "spectr_ot", "ada_gptq",
+            # Wave 45
+            "flexgen_offload", "yarn_rope", "self_extend", "orca_sched",
+            "mx_fp4", "fp8_act", "clex_rope", "powerinfer",
+            "grouped_rope", "tensor_parallel", "fused_bias_gelu", "token_budget_sched",
+            # Wave 46
+            "slice_gpt", "wanda", "short_gpt", "w4a8",
+            "expert_choice", "mla_kv", "minp", "contrastive_search",
+            "razor_attn", "cache_blend", "green_kv", "preble",
+            # Wave 47
+            "mamba2_ssm", "hgrn2", "lookahead_decode", "inf_memory",
+            "v_attn", "ia3", "moe_infinity", "mega_blocks",
+            "kgw_watermark", "typical_sampler", "dora", "calm_exit",
+            # Wave 48
+            "spqr", "auto_round", "owq", "bit_distiller", "zip_lm", "gguf_mixed",
+            # Wave 49
+            "llm_lingua2", "recomp", "selective_context", "prompt_cache",
+            "pipe_infer", "prepack",
+            # Wave 50
+            "sparse_gpt", "mix_of_depths", "lean_kv", "gguf_loader",
+            "weight_stream", "shard_loader",
+            # Wave 51
+            "budget_forcing", "test_time_scale", "dvts", "chain_of_draft",
+            "coconut", "prm_beam", "best_of_n", "self_consistency",
+            "thought_budget", "reasoning_kv", "draft_reasoning", "parallel_reasoning",
+            # Wave 52
+            "fast_v", "vision_zip", "llava_prumerge", "token_packer",
+            "flash_vstream", "dynamic_res", "visual_kv_quant", "cross_modal",
+            "video_kv_reuse", "vlm_spec", "vlm_sched", "img_encoder_cache",
+            # Wave 53
+            "rwkv6", "hawk_rnn", "xlstm", "ttt", "delta_net",
+            "ssm_cache", "parallel_scan", "ssm_quant", "hybrid_arch",
+            "hymba", "ssm_offload",
+            # Wave 54
+            "shared_expert", "fine_grained_moe", "expert_offload", "expert_merge",
+            "lazy_expert", "expert_cache", "flash_attn3", "double_sparse",
+            "lasp", "nacl_cache", "kv_migration", "elastic_batch",
+            # Wave 55
+            "min_p", "mirostat", "eta_cutoff", "cfg_guidance",
+            "diverse_beam", "bitnet158", "spqr_quant", "omniquant",
+            "q_sparse", "fp4_quant", "ada_round",
         ]
         for _f in _bool_wave_flags:
             if not getattr(args, _f, False):
@@ -4444,6 +4950,1369 @@ Examples:
             _info("cache-gen", f"KV bitstream compression  (bits={_cg_cfg.bits}  block={_cg_cfg.block_size})")
         except Exception as _e:
             _warn(f"[cache-gen] Skipped: {_e}")
+
+    # ── Wave 43: MTP Decode, Cascade KV, Head Pruner, Paged Attn, etc. ────────
+    global _mtp_decode_w43
+    if getattr(args, "mtp_decode", False):
+        try:
+            from squish.speculative.mtp_decode import MTPConfig, MTPDecode
+            _mtp_cfg = MTPConfig()
+            _mtp_decode_w43 = MTPDecode(_mtp_cfg)
+            _info("mtp-decode", f"multi-token prediction heads  (n_heads={_mtp_cfg.n_heads})")
+        except Exception as _e:
+            _warn(f"[mtp-decode] Skipped: {_e}")
+
+    global _cascade_kv
+    if getattr(args, "cascade_kv", False):
+        try:
+            from squish.kv.cascade_kv import CascadeKVConfig, CascadeKV
+            _ck_cfg = CascadeKVConfig()
+            _cascade_kv = CascadeKV(_ck_cfg)
+            _info("cascade-kv", "two-level shared-prefix KV cache")
+        except Exception as _e:
+            _warn(f"[cascade-kv] Skipped: {_e}")
+
+    global _head_pruner
+    if getattr(args, "head_prune", False):
+        try:
+            from squish.model.head_pruner import HeadPrunerConfig, HeadPruner
+            _hp_cfg = HeadPrunerConfig()
+            _head_pruner = HeadPruner(_hp_cfg)
+            _info("head-prune", "structured attention head importance pruning")
+        except Exception as _e:
+            _warn(f"[head-prune] Skipped: {_e}")
+
+    global _paged_attn_w43
+    if getattr(args, "paged_attn_w43", False):
+        try:
+            from squish.kv.paged_attn import PagedAttnConfig, PagedAttention
+            _pa_cfg = PagedAttnConfig()
+            _paged_attn_w43 = PagedAttention(_pa_cfg)
+            _info("paged-attn-w43", f"PagedAttention Wave-43 block manager  (block_size={_pa_cfg.block_size})")
+        except Exception as _e:
+            _warn(f"[paged-attn-w43] Skipped: {_e}")
+
+    global _layer_collapse
+    if getattr(args, "layer_collapse", False):
+        try:
+            from squish.model.layer_collapse import LayerCollapseConfig, LayerCollapse
+            _lc_cfg = LayerCollapseConfig()
+            _layer_collapse = LayerCollapse(_lc_cfg)
+            _info("layer-collapse", "cosine-similarity layer skip scheduling")
+        except Exception as _e:
+            _warn(f"[layer-collapse] Skipped: {_e}")
+
+    global _relay_attn
+    if getattr(args, "relay_attn", False):
+        try:
+            from squish.attention.relay_attn import RelayAttnConfig, RelayAttention
+            _ra_cfg = RelayAttnConfig()
+            _relay_attn = RelayAttention(_ra_cfg)
+            _info("relay-attn", "relay attention cross-layer KV sharing")
+        except Exception as _e:
+            _warn(f"[relay-attn] Skipped: {_e}")
+
+    global _wkv_quant
+    if getattr(args, "wkv_quant", False):
+        try:
+            from squish.kv.wkv_quant import WKVQuantConfig, WKVQuant
+            _wkv_cfg = WKVQuantConfig()
+            _wkv_quant = WKVQuant(_wkv_cfg)
+            _info("wkv-quant", f"joint W4KV4 weight+KV quantization  (bits={_wkv_cfg.bits})")
+        except Exception as _e:
+            _warn(f"[wkv-quant] Skipped: {_e}")
+
+    global _tokenized_kv
+    if getattr(args, "tokenized_kv", False):
+        try:
+            from squish.kv.tokenized_kv import TokenizedKVConfig, TokenizedKVCache
+            _tkv_cfg = TokenizedKVConfig()
+            _tokenized_kv = TokenizedKVCache(_tkv_cfg)
+            _info("tokenized-kv", "KV serialized via embedding lookup table")
+        except Exception as _e:
+            _warn(f"[tokenized-kv] Skipped: {_e}")
+
+    global _cluster_evict_kv
+    if getattr(args, "cluster_evict", False):
+        try:
+            from squish.kv.cluster_evict_kv import ClusterEvictKVConfig, ClusterEvictKV
+            _ce_cfg = ClusterEvictKVConfig()
+            _cluster_evict_kv = ClusterEvictKV(_ce_cfg)
+            _info("cluster-evict", f"cluster-based KV eviction  (n_clusters={_ce_cfg.n_clusters})")
+        except Exception as _e:
+            _warn(f"[cluster-evict] Skipped: {_e}")
+
+    global _s2_attn
+    if getattr(args, "s2_attn", False):
+        try:
+            from squish.attention.s2_attn import S2AttnConfig, S2Attention
+            _s2_cfg = S2AttnConfig()
+            _s2_attn = S2Attention(_s2_cfg)
+            _info("s2-attn", "sorted-structured sparse attention")
+        except Exception as _e:
+            _warn(f"[s2-attn] Skipped: {_e}")
+
+    global _magic_pig_v2
+    if getattr(args, "magic_pig_v2", False):
+        try:
+            from squish.kv.magic_pig_v2 import MagicPIGv2Config, MagicPIGv2
+            _mpv2_cfg = MagicPIGv2Config()
+            _magic_pig_v2 = MagicPIGv2(_mpv2_cfg)
+            _info("magic-pig-v2", "LSH-sampled KV retrieval with adaptive probe budget")
+        except Exception as _e:
+            _warn(f"[magic-pig-v2] Skipped: {_e}")
+
+    # ── Wave 44: Marlin GEMM, Spec Rejection, LoFTQ, Online Spec, etc. ────────
+    global _marlin_gemm
+    if getattr(args, "marlin_gemm", False):
+        try:
+            from squish.quant.marlin_gemm import MarlinGEMMConfig, MarlinGEMM
+            _mg_cfg = MarlinGEMMConfig()
+            _marlin_gemm = MarlinGEMM(_mg_cfg)
+            _info("marlin-gemm", "INT4×FP16 tiled GEMM for post-training quantization")
+        except Exception as _e:
+            _warn(f"[marlin-gemm] Skipped: {_e}")
+
+    global _spec_rejection
+    if getattr(args, "spec_rejection", False):
+        try:
+            from squish.speculative.spec_rejection import SpecRejectionConfig, SpecRejection
+            _sr_cfg = SpecRejectionConfig()
+            _spec_rejection = SpecRejection(_sr_cfg)
+            _info("spec-rejection", "parallel draft candidates with early pruning")
+        except Exception as _e:
+            _warn(f"[spec-rejection] Skipped: {_e}")
+
+    global _loftq_config
+    if getattr(args, "loftq", False):
+        try:
+            from squish.quant.loftq import LoFTQConfig, LoFTQ
+            _lq_cfg = LoFTQConfig()
+            _loftq_config = LoFTQ(_lq_cfg)
+            _info("loftq", f"alternating LoRA+W4 quantization optimizer  (bits={_lq_cfg.bits})")
+        except Exception as _e:
+            _warn(f"[loftq] Skipped: {_e}")
+
+    global _online_spec
+    if getattr(args, "online_spec", False):
+        try:
+            from squish.speculative.online_spec import OnlineSpecConfig, OnlineSpec
+            _os_cfg = OnlineSpecConfig()
+            _online_spec = OnlineSpec(_os_cfg)
+            _info("online-spec", "session-adaptive draft distribution speculative decoding")
+        except Exception as _e:
+            _warn(f"[online-spec] Skipped: {_e}")
+
+    global _dynamic_spec_len
+    if getattr(args, "dynamic_spec_len", False):
+        try:
+            from squish.speculative.dynamic_spec_len import DynamicSpecLenConfig, DynamicSpecLen
+            _dsl_cfg = DynamicSpecLenConfig()
+            _dynamic_spec_len = DynamicSpecLen(_dsl_cfg)
+            _info("dynamic-spec-len", "adaptive speculation lookahead K per token")
+        except Exception as _e:
+            _warn(f"[dynamic-spec-len] Skipped: {_e}")
+
+    global _big_little_llm
+    if getattr(args, "big_little", False):
+        try:
+            from squish.speculative.big_little_llm import BigLittleLLMConfig, BigLittleLLM
+            _bl_cfg = BigLittleLLMConfig()
+            _big_little_llm = BigLittleLLM(_bl_cfg)
+            _info("big-little", "Big-Little decoder: route easy tokens to small model")
+        except Exception as _e:
+            _warn(f"[big-little] Skipped: {_e}")
+
+    global _multi_exit_spec
+    if getattr(args, "multi_exit_spec", False):
+        try:
+            from squish.speculative.multi_exit_spec import MultiExitSpecConfig, MultiExitSpec
+            _mes_cfg = MultiExitSpecConfig()
+            _multi_exit_spec = MultiExitSpec(_mes_cfg)
+            _info("multi-exit-spec", "multi-exit speculative decoding at early layer")
+        except Exception as _e:
+            _warn(f"[multi-exit-spec] Skipped: {_e}")
+
+    global _pv_tuning
+    if getattr(args, "pv_tuning", False):
+        try:
+            from squish.quant.pv_tuning import PVTuningConfig, PVTuning
+            _pvt_cfg = PVTuningConfig()
+            _pv_tuning = PVTuning(_pvt_cfg)
+            _info("pv-tuning", "proximal-gradient quantized weight optimization W1-2")
+        except Exception as _e:
+            _warn(f"[pv-tuning] Skipped: {_e}")
+
+    global _hadamard_quant
+    if getattr(args, "hadamard_quant", False):
+        try:
+            from squish.quant.hadamard_quant import HadamardQuantConfig, HadamardQuant
+            _hq_cfg = HadamardQuantConfig()
+            _hadamard_quant = HadamardQuant(_hq_cfg)
+            _info("hadamard-quant", "Hadamard rotation whitening before INT4 GEMM")
+        except Exception as _e:
+            _warn(f"[hadamard-quant] Skipped: {_e}")
+
+    global _prefix_tree
+    if getattr(args, "prefix_tree_decode", False):
+        try:
+            from squish.speculative.prefix_tree_decode import PrefixTreeConfig, PrefixTreeDecode
+            _pt_cfg = PrefixTreeConfig()
+            _prefix_tree = PrefixTreeDecode(_pt_cfg)
+            _info("prefix-tree-decode", "parallel static prefix tree path decode")
+        except Exception as _e:
+            _warn(f"[prefix-tree-decode] Skipped: {_e}")
+
+    global _spectr_ot
+    if getattr(args, "spectr_ot", False):
+        try:
+            from squish.speculative.spectr_ot import SpecTrOTConfig, SpecTrOT
+            _sot_cfg = SpecTrOTConfig()
+            _spectr_ot = SpecTrOT(_sot_cfg)
+            _info("spectr-ot", "SpecTr: optimal-transport draft-target coupling")
+        except Exception as _e:
+            _warn(f"[spectr-ot] Skipped: {_e}")
+
+    global _ada_gptq
+    if getattr(args, "ada_gptq", False):
+        try:
+            from squish.quant.ada_gptq import AdaGPTQConfig, AdaGPTQ
+            _ag_cfg = AdaGPTQConfig()
+            _ada_gptq = AdaGPTQ(_ag_cfg)
+            _info("ada-gptq", "Ada-GPTQ: per-layer adaptive group size W4 PTQ")
+        except Exception as _e:
+            _warn(f"[ada-gptq] Skipped: {_e}")
+
+    # ── Wave 45: FlexGen Offload, YaRN, SelfExtend, Orca, MxFP4, etc. ────────
+    global _flexgen_offload
+    if getattr(args, "flexgen_offload", False):
+        try:
+            from squish.serving.flexgen_offload import FlexGenOffloadConfig, FlexGenOffload
+            _fgo_cfg = FlexGenOffloadConfig()
+            _flexgen_offload = FlexGenOffload(_fgo_cfg)
+            _info("flexgen-offload", "LP-optimal CPU/SSD weight paging (FlexGen)")
+        except Exception as _e:
+            _warn(f"[flexgen-offload] Skipped: {_e}")
+
+    global _yarn_rope
+    if getattr(args, "yarn_rope", False):
+        try:
+            from squish.attention.yarn_rope import YaRNRoPEConfig, YaRNRoPE
+            _yr_cfg = YaRNRoPEConfig()
+            _yarn_rope = YaRNRoPE(_yr_cfg)
+            _info("yarn-rope", "YaRN RoPE: extended context via NTK-aware interpolation")
+        except Exception as _e:
+            _warn(f"[yarn-rope] Skipped: {_e}")
+
+    global _self_extend
+    if getattr(args, "self_extend", False):
+        try:
+            from squish.attention.self_extend import SelfExtendConfig, SelfExtend
+            _se_cfg = SelfExtendConfig()
+            _self_extend = SelfExtend(_se_cfg)
+            _info("self-extend", "Self-Extend: grouped attention beyond training window")
+        except Exception as _e:
+            _warn(f"[self-extend] Skipped: {_e}")
+
+    global _orca_scheduler
+    if getattr(args, "orca_sched", False):
+        try:
+            from squish.serving.orca_scheduler import OrcaSchedulerConfig, OrcaScheduler
+            _orca_cfg = OrcaSchedulerConfig()
+            _orca_scheduler = OrcaScheduler(_orca_cfg)
+            _info("orca-sched", "Orca iteration-level continuous batching scheduler")
+        except Exception as _e:
+            _warn(f"[orca-sched] Skipped: {_e}")
+
+    global _mx_fp4_quant
+    if getattr(args, "mx_fp4", False):
+        try:
+            from squish.quant.mx_fp4 import MxFP4Config, MxFP4
+            _mfp4_cfg = MxFP4Config()
+            _mx_fp4_quant = MxFP4(_mfp4_cfg)
+            _info("mx-fp4", "MX FP4 microscaling quantization")
+        except Exception as _e:
+            _warn(f"[mx-fp4] Skipped: {_e}")
+
+    global _fp8_act_quant
+    if getattr(args, "fp8_act", False):
+        try:
+            from squish.quant.fp8_act_quant import FP8ActQuantConfig, FP8ActQuant
+            _fp8a_cfg = FP8ActQuantConfig()
+            _fp8_act_quant = FP8ActQuant(_fp8a_cfg)
+            _info("fp8-act", "FP8 activation quantization W8A8-style inference")
+        except Exception as _e:
+            _warn(f"[fp8-act] Skipped: {_e}")
+
+    global _clex_rope
+    if getattr(args, "clex_rope", False):
+        try:
+            from squish.attention.clex_rope import CLeXRoPEConfig, CLeXRoPE
+            _cr_cfg = CLeXRoPEConfig()
+            _clex_rope = CLeXRoPE(_cr_cfg)
+            _info("clex-rope", "CLeX RoPE: continuous length extrapolation")
+        except Exception as _e:
+            _warn(f"[clex-rope] Skipped: {_e}")
+
+    global _powerinfer_offload
+    if getattr(args, "powerinfer", False):
+        try:
+            from squish.serving.powerinfer_offload import PowerInferOffloadConfig, PowerInferOffload
+            _pi_cfg = PowerInferOffloadConfig()
+            _powerinfer_offload = PowerInferOffload(_pi_cfg)
+            _info("powerinfer", "PowerInfer: neuron-activation-aware weight streaming")
+        except Exception as _e:
+            _warn(f"[powerinfer] Skipped: {_e}")
+
+    global _grouped_rope
+    if getattr(args, "grouped_rope", False):
+        try:
+            from squish.attention.grouped_rope import GroupedRoPEConfig, GroupedRoPE
+            _gr_cfg = GroupedRoPEConfig()
+            _grouped_rope = GroupedRoPE(_gr_cfg)
+            _info("grouped-rope", "group-query-aware rotary position embeddings")
+        except Exception as _e:
+            _warn(f"[grouped-rope] Skipped: {_e}")
+
+    global _tensor_parallel
+    if getattr(args, "tensor_parallel", False):
+        try:
+            from squish.serving.tensor_parallel import TensorParallelConfig, TensorParallel
+            _tp_cfg = TensorParallelConfig()
+            _tensor_parallel = TensorParallel(_tp_cfg)
+            _info("tensor-parallel", "tensor parallelism across compute partitions")
+        except Exception as _e:
+            _warn(f"[tensor-parallel] Skipped: {_e}")
+
+    global _fused_bias_gelu
+    if getattr(args, "fused_bias_gelu", False):
+        try:
+            from squish.kernels.fused_bias_gelu import FusedBiasGELUConfig, FusedBiasGELU
+            _fbg_cfg = FusedBiasGELUConfig()
+            _fused_bias_gelu = FusedBiasGELU(_fbg_cfg)
+            _info("fused-bias-gelu", "fused bias+GELU kernel")
+        except Exception as _e:
+            _warn(f"[fused-bias-gelu] Skipped: {_e}")
+
+    global _token_budget_sched
+    if getattr(args, "token_budget_sched", False):
+        try:
+            from squish.serving.token_budget_scheduler import TokenBudgetConfig, TokenBudgetScheduler
+            _tbs_cfg = TokenBudgetConfig()
+            _token_budget_sched = TokenBudgetScheduler(_tbs_cfg)
+            _info("token-budget-sched", "per-request KV-budget preemption scheduler")
+        except Exception as _e:
+            _warn(f"[token-budget-sched] Skipped: {_e}")
+
+    # ── Wave 46: Model Surgery, Expert Choice, W4A8, MLA KV, MinP, etc. ──────
+    global _slice_gpt
+    if getattr(args, "slice_gpt", False):
+        try:
+            from squish.quant.slice_gpt import SliceGPTConfig, SliceGPTPruner
+            _sg_cfg = SliceGPTConfig()
+            _slice_gpt = SliceGPTPruner(_sg_cfg)
+            _info("slice-gpt", "SliceGPT: PCA orthogonal column pruning")
+        except Exception as _e:
+            _warn(f"[slice-gpt] Skipped: {_e}")
+
+    global _wanda_pruner
+    if getattr(args, "wanda", False):
+        try:
+            from squish.quant.wanda_pruner import WandaConfig, WandaPruner
+            _wp_cfg = WandaConfig()
+            _wanda_pruner = WandaPruner(_wp_cfg)
+            _info("wanda", "Wanda: weight magnitude × activation RMS pruning")
+        except Exception as _e:
+            _warn(f"[wanda] Skipped: {_e}")
+
+    global _short_gpt
+    if getattr(args, "short_gpt", False):
+        try:
+            from squish.quant.short_gpt import ShortGPTConfig, ShortGPTPruner
+            _shg_cfg = ShortGPTConfig()
+            _short_gpt = ShortGPTPruner(_shg_cfg)
+            _info("short-gpt", "ShortGPT: block importance layer removal")
+        except Exception as _e:
+            _warn(f"[short-gpt] Skipped: {_e}")
+
+    global _w4a8_runtime
+    if getattr(args, "w4a8", False):
+        try:
+            from squish.quant.w4a8_quant import W4A8Config, W4A8QuantRuntime
+            _w4a8_cfg = W4A8Config()
+            _w4a8_runtime = W4A8QuantRuntime(_w4a8_cfg)
+            _info("w4a8", "W4A8 hybrid-precision quantization runtime")
+        except Exception as _e:
+            _warn(f"[w4a8] Skipped: {_e}")
+
+    global _expert_choice
+    if getattr(args, "expert_choice", False):
+        try:
+            from squish.moe.expert_choice import ExpertChoiceConfig, ExpertChoiceRouter
+            _ec_cfg = ExpertChoiceConfig()
+            _expert_choice = ExpertChoiceRouter(_ec_cfg)
+            _info("expert-choice", "Expert Choice MoE: experts select top-k tokens")
+        except Exception as _e:
+            _warn(f"[expert-choice] Skipped: {_e}")
+
+    global _mla_kv_compress
+    if getattr(args, "mla_kv", False):
+        try:
+            from squish.kv.mla_kv_compress import MLAKVConfig, MLAKVCompress
+            _mla_cfg = MLAKVConfig()
+            _mla_kv_compress = MLAKVCompress(_mla_cfg)
+            _info("mla-kv", "MLA KV compression: low-rank joint K+V projection")
+        except Exception as _e:
+            _warn(f"[mla-kv] Skipped: {_e}")
+
+    global _minp_sampler
+    if getattr(args, "minp", False):
+        try:
+            from squish.sampling.minp_sampler import MinPConfig, MinPSampler
+            _minp_cfg = MinPConfig()
+            _minp_sampler = MinPSampler(_minp_cfg)
+            _info("minp", f"Min-P sampler: dynamic probability floor  (min_p={_minp_cfg.min_p_factor})")
+        except Exception as _e:
+            _warn(f"[minp] Skipped: {_e}")
+
+    global _contrastive_search
+    if getattr(args, "contrastive_search", False):
+        try:
+            from squish.sampling.contrastive_search import ContrastiveSearchConfig, ContrastiveSearch
+            _cs_cfg = ContrastiveSearchConfig()
+            _contrastive_search = ContrastiveSearch(_cs_cfg)
+            _info("contrastive-search", "contrastive search: balance probability and diversity")
+        except Exception as _e:
+            _warn(f"[contrastive-search] Skipped: {_e}")
+
+    global _razor_attn
+    if getattr(args, "razor_attn", False):
+        try:
+            from squish.attention.razor_attn import RazorAttentionConfig, RazorAttention
+            _rzr_cfg = RazorAttentionConfig()
+            _razor_attn = RazorAttention(_rzr_cfg)
+            _info("razor-attn", "RazorAttention: retrieval-head classifier for 70% KV reduction")
+        except Exception as _e:
+            _warn(f"[razor-attn] Skipped: {_e}")
+
+    global _cache_blend
+    if getattr(args, "cache_blend", False):
+        try:
+            from squish.kv.cacheblend import CacheBlendConfig, CacheBlend
+            _cb_cfg = CacheBlendConfig()
+            _cache_blend = CacheBlend(_cb_cfg)
+            _info("cache-blend", "CacheBlend: partial KV prefix reuse for RAG")
+        except Exception as _e:
+            _warn(f"[cache-blend] Skipped: {_e}")
+
+    global _green_kv
+    if getattr(args, "green_kv", False):
+        try:
+            from squish.kv.green_kv import GreenKVConfig, GreenKVEviction
+            _gkv_cfg = GreenKVConfig()
+            _green_kv = GreenKVEviction(_gkv_cfg)
+            _info("green-kv", "GreenKV: two-stream importance KV eviction")
+        except Exception as _e:
+            _warn(f"[green-kv] Skipped: {_e}")
+
+    global _preble_router
+    if getattr(args, "preble", False):
+        try:
+            from squish.serving.preble_router import PrebeleConfig, PrebeleRouter
+            _prb_cfg = PrebeleConfig()
+            _preble_router = PrebeleRouter(_prb_cfg)
+            _info("preble", "Preble router: prefix-cache-aware multi-instance routing")
+        except Exception as _e:
+            _warn(f"[preble] Skipped: {_e}")
+
+    # ── Wave 47: Mamba2, HGRN2, Lookahead, InfMemory, vAttn, IA3, MoE-∞ ──────
+    global _mamba2_ssm
+    if getattr(args, "mamba2_ssm", False):
+        try:
+            from squish.attention.mamba2_ssm import Mamba2Config, Mamba2SSM
+            _m2_cfg = Mamba2Config()
+            _mamba2_ssm = Mamba2SSM(_m2_cfg)
+            _info("mamba2-ssm", f"Mamba2 SSM: Structured State-Space Duality  (d_state={_m2_cfg.d_state})")
+        except Exception as _e:
+            _warn(f"[mamba2-ssm] Skipped: {_e}")
+
+    global _hgrn2
+    if getattr(args, "hgrn2", False):
+        try:
+            from squish.attention.hgrn2 import HGRN2Config, HGRN2
+            _hg_cfg = HGRN2Config()
+            _hgrn2 = HGRN2(_hg_cfg)
+            _info("hgrn2", "HGRN2: gated linear RNN with state expansion")
+        except Exception as _e:
+            _warn(f"[hgrn2] Skipped: {_e}")
+
+    global _lookahead_decode
+    if getattr(args, "lookahead_decode", False):
+        try:
+            from squish.speculative.lookahead_decode import LookaheadConfig, LookaheadDecode
+            _ld_cfg = LookaheadConfig()
+            _lookahead_decode = LookaheadDecode(_ld_cfg)
+            _info("lookahead-decode", "Lookahead decode: 2D Jacobi window without draft model")
+        except Exception as _e:
+            _warn(f"[lookahead-decode] Skipped: {_e}")
+
+    global _inf_memory
+    if getattr(args, "inf_memory", False):
+        try:
+            from squish.kv.inf_memory import InfMemoryConfig, InfMemory
+            _im_cfg = InfMemoryConfig()
+            _inf_memory = InfMemory(_im_cfg)
+            _info("inf-memory", "InfLLM: block-level external KV memory for 1M+ context")
+        except Exception as _e:
+            _warn(f"[inf-memory] Skipped: {_e}")
+
+    global _v_attn_kv
+    if getattr(args, "v_attn", False):
+        try:
+            from squish.kv.v_attention import vAttentionConfig, vAttentionKV
+            _va_cfg = vAttentionConfig()
+            _v_attn_kv = vAttentionKV(_va_cfg)
+            _info("v-attn", "vAttention: OS virtual memory KV cache management")
+        except Exception as _e:
+            _warn(f"[v-attn] Skipped: {_e}")
+
+    global _ia3_adapter
+    if getattr(args, "ia3", False):
+        try:
+            from squish.lora.ia3_adapter import IA3Config, IA3Adapter
+            _ia3_cfg = IA3Config()
+            _ia3_adapter = IA3Adapter(_ia3_cfg)
+            _info("ia3", "IA3 adapter: learned K/V/FF scale vectors")
+        except Exception as _e:
+            _warn(f"[ia3] Skipped: {_e}")
+
+    global _moe_infinity
+    if getattr(args, "moe_infinity", False):
+        try:
+            from squish.moe.moe_infinity import MoEInfinityConfig, MoEInfinityOffload
+            _mi_cfg = MoEInfinityConfig()
+            _moe_infinity = MoEInfinityOffload(_mi_cfg)
+            _info("moe-infinity", "MoE-Infinity: activation-aware expert offloading")
+        except Exception as _e:
+            _warn(f"[moe-infinity] Skipped: {_e}")
+
+    global _mega_blocks
+    if getattr(args, "mega_blocks", False):
+        try:
+            from squish.moe.mega_blocks import MegaBlocksConfig, MegaBlocksSparse
+            _mb_cfg = MegaBlocksConfig()
+            _mega_blocks = MegaBlocksSparse(_mb_cfg)
+            _info("mega-blocks", "MegaBlocks: dropless MoE with block-sparse GEMM")
+        except Exception as _e:
+            _warn(f"[mega-blocks] Skipped: {_e}")
+
+    global _kgw_watermark
+    if getattr(args, "kgw_watermark", False):
+        try:
+            from squish.serving.kgw_watermark import KGWConfig, KGWWatermark
+            _kgw_cfg = KGWConfig()
+            _kgw_watermark = KGWWatermark(_kgw_cfg)
+            _info("kgw-watermark", "KGW watermark: green/red list vocabulary watermarking")
+        except Exception as _e:
+            _warn(f"[kgw-watermark] Skipped: {_e}")
+
+    global _typical_sampler
+    if getattr(args, "typical_sampler", False):
+        try:
+            from squish.sampling.typical_sampler import TypicalConfig, TypicalSampler
+            _typ_cfg = TypicalConfig()
+            _typical_sampler = TypicalSampler(_typ_cfg)
+            _info("typical-sampler", "typical sampling: sample from local typical set")
+        except Exception as _e:
+            _warn(f"[typical-sampler] Skipped: {_e}")
+
+    global _dora_adapter
+    if getattr(args, "dora", False):
+        try:
+            from squish.lora.dora import DoRAConfig, DoRAAdapter
+            _dora_cfg = DoRAConfig()
+            _dora_adapter = DoRAAdapter(_dora_cfg)
+            _info("dora", "DoRA: magnitude-direction weight decomposition adapter")
+        except Exception as _e:
+            _warn(f"[dora] Skipped: {_e}")
+
+    global _calm_exit
+    if getattr(args, "calm_exit", False):
+        try:
+            from squish.token.calm_exit import CALMConfig, AdaptiveCALM
+            _calm_cfg = CALMConfig()
+            _calm_exit = AdaptiveCALM(_calm_cfg)
+            _info("calm-exit", "CALM: per-token confidence-gated early exit")
+        except Exception as _e:
+            _warn(f"[calm-exit] Skipped: {_e}")
+
+    # ── Wave 48: INT2/INT3 Extreme Quantization ────────────────────────────────
+    global _spqr_quantizer
+    if getattr(args, "spqr", False):
+        try:
+            from squish.quant.spqr import SpQRConfig, SpQRQuantizer
+            _spqr_cfg = SpQRConfig()
+            _spqr_quantizer = SpQRQuantizer(_spqr_cfg)
+            _info("spqr", "SpQR: sparse-quantized representation with outlier FP16")
+        except Exception as _e:
+            _warn(f"[spqr] Skipped: {_e}")
+
+    global _auto_round
+    if getattr(args, "auto_round", False):
+        try:
+            from squish.quant.auto_round import AutoRoundConfig, AutoRoundQuantizer
+            _ar_cfg = AutoRoundConfig()
+            _auto_round = AutoRoundQuantizer(_ar_cfg)
+            _info("auto-round", "AutoRound: sign-gradient-descent rounding optimizer")
+        except Exception as _e:
+            _warn(f"[auto-round] Skipped: {_e}")
+
+    global _owq_quantizer
+    if getattr(args, "owq", False):
+        try:
+            from squish.quant.owq import OWQConfig, OWQQuantizer
+            _owq_cfg = OWQConfig()
+            _owq_quantizer = OWQQuantizer(_owq_cfg)
+            _info("owq", "OWQ: outlier-aware weight quantization with column promotion")
+        except Exception as _e:
+            _warn(f"[owq] Skipped: {_e}")
+
+    global _bit_distiller
+    if getattr(args, "bit_distiller", False):
+        try:
+            from squish.quant.bit_distiller import BitDistillerConfig, BitDistillerQuant
+            _bd_cfg = BitDistillerConfig()
+            _bit_distiller = BitDistillerQuant(_bd_cfg)
+            _info("bit-distiller", "BitDistiller: KL-divergence self-distillation for INT2")
+        except Exception as _e:
+            _warn(f"[bit-distiller] Skipped: {_e}")
+
+    global _zip_lm
+    if getattr(args, "zip_lm", False):
+        try:
+            from squish.quant.zip_lm import ZipLMConfig, ZipLMMixedPrecision
+            _zl_cfg = ZipLMConfig()
+            _zip_lm = ZipLMMixedPrecision(_zl_cfg)
+            _info("zip-lm", "ZipLM: Hessian-sensitivity mixed-precision layer assignment")
+        except Exception as _e:
+            _warn(f"[zip-lm] Skipped: {_e}")
+
+    global _gguf_mixed
+    if getattr(args, "gguf_mixed", False):
+        try:
+            from squish.quant.gguf_mixed import GGUFConfig, GGUFMixedQuantizer
+            _gm_cfg = GGUFConfig()
+            _gguf_mixed = GGUFMixedQuantizer(_gm_cfg)
+            _info("gguf-mixed", "GGUF mixed-precision Q2_K/Q3_K/Q4_K block quantization")
+        except Exception as _e:
+            _warn(f"[gguf-mixed] Skipped: {_e}")
+
+    # ── Wave 49: TTFT Sprint: LLMLingua-2, RECOMP, Selective Context, etc. ────
+    global _llm_lingua2
+    if getattr(args, "llm_lingua2", False):
+        try:
+            from squish.serving.llm_lingua2 import LLMLingua2Config, LLMLingua2Compressor
+            _ll2_cfg = LLMLingua2Config()
+            _llm_lingua2 = LLMLingua2Compressor(_ll2_cfg)
+            _info("llm-lingua2", "LLMLingua-2: token-level binary classifier prompt compression")
+        except Exception as _e:
+            _warn(f"[llm-lingua2] Skipped: {_e}")
+
+    global _recomp_compressor
+    if getattr(args, "recomp", False):
+        try:
+            from squish.serving.recomp import RECOMPConfig, RECOMPCompressor
+            _rc_cfg = RECOMPConfig()
+            _recomp_compressor = RECOMPCompressor(_rc_cfg)
+            _info("recomp", "RECOMP: extractive+abstractive RAG context compression")
+        except Exception as _e:
+            _warn(f"[recomp] Skipped: {_e}")
+
+    global _selective_context
+    if getattr(args, "selective_context", False):
+        try:
+            from squish.serving.selective_context import SelectiveContextConfig, SelectiveContextCompressor
+            _sc_cfg = SelectiveContextConfig()
+            _selective_context = SelectiveContextCompressor(_sc_cfg)
+            _info("selective-context", "selective context: self-information pruning")
+        except Exception as _e:
+            _warn(f"[selective-context] Skipped: {_e}")
+
+    global _prompt_cache_kv
+    if getattr(args, "prompt_cache", False):
+        try:
+            from squish.serving.prompt_cache import PromptCacheConfig, PromptCacheKV
+            _pc_cfg = PromptCacheConfig()
+            _prompt_cache_kv = PromptCacheKV(_pc_cfg)
+            _info("prompt-cache", "PromptCache: schema-defined KV materialization for templates")
+        except Exception as _e:
+            _warn(f"[prompt-cache] Skipped: {_e}")
+
+    global _pipe_infer
+    if getattr(args, "pipe_infer", False):
+        try:
+            from squish.serving.pipe_infer import PipeInferConfig, PipeInferScheduler
+            _pi2_cfg = PipeInferConfig()
+            _pipe_infer = PipeInferScheduler(_pi2_cfg)
+            _info("pipe-infer", "PipeInfer: chunked prefill+decode pipeline overlap")
+        except Exception as _e:
+            _warn(f"[pipe-infer] Skipped: {_e}")
+
+    global _prepack_scheduler
+    if getattr(args, "prepack", False):
+        try:
+            from squish.serving.prepack import PrepackConfig, PrepackScheduler
+            _pp_cfg = PrepackConfig()
+            _prepack_scheduler = PrepackScheduler(_pp_cfg)
+            _info("prepack", "Prepack: completion-order batching for TTFT reduction")
+        except Exception as _e:
+            _warn(f"[prepack] Skipped: {_e}")
+
+    # ── Wave 50: Bigger-Than-Memory: SparseGPT, MoD, LeanKV, GGUF, etc. ──────
+    global _sparse_gpt
+    if getattr(args, "sparse_gpt", False):
+        try:
+            from squish.model.sparse_gpt import SparseGPTConfig, SparseGPTPruner
+            _sgpt_cfg = SparseGPTConfig()
+            _sparse_gpt = SparseGPTPruner(_sgpt_cfg)
+            _info("sparse-gpt", f"SparseGPT: one-shot Hessian weight pruning  (sparsity={_sgpt_cfg.sparsity_ratio})")
+        except Exception as _e:
+            _warn(f"[sparse-gpt] Skipped: {_e}")
+
+    global _mix_of_depths
+    if getattr(args, "mix_of_depths", False):
+        try:
+            from squish.model.mix_of_depths import MixtureOfDepthsConfig, MixtureOfDepths
+            _mod_cfg = MixtureOfDepthsConfig()
+            _mix_of_depths = MixtureOfDepths(_mod_cfg)
+            _info("mix-of-depths", "Mixture-of-Depths: per-token layer routing")
+        except Exception as _e:
+            _warn(f"[mix-of-depths] Skipped: {_e}")
+
+    global _lean_kv_quant
+    if getattr(args, "lean_kv", False):
+        try:
+            from squish.kv.lean_kv import LeanKVConfig, LeanKVQuant
+            _lkv_cfg = LeanKVConfig()
+            _lean_kv_quant = LeanKVQuant(_lkv_cfg)
+            _info("lean-kv", "LeanKV: asymmetric K(INT4)/V(INT8) cache quantization")
+        except Exception as _e:
+            _warn(f"[lean-kv] Skipped: {_e}")
+
+    global _gguf_loader
+    if getattr(args, "gguf_loader", False):
+        try:
+            from squish.io.gguf_loader import GGUFConfig, GGUFNativeLoader
+            _gl_cfg = GGUFConfig()
+            _gguf_loader = GGUFNativeLoader(_gl_cfg)
+            _info("gguf-loader", "GGUF native loader: Q2_K/Q3_K/Q4_K/Q5_K/Q8_0 format parser")
+        except Exception as _e:
+            _warn(f"[gguf-loader] Skipped: {_e}")
+
+    global _weight_stream
+    if getattr(args, "weight_stream", False):
+        try:
+            from squish.io.weight_decompress_stream import WeightStreamConfig, WeightDecompressStream
+            _ws_cfg = WeightStreamConfig()
+            _weight_stream = WeightDecompressStream(_ws_cfg)
+            _info("weight-stream", "weight decompress stream: overlapped CPU dequant + GPU compute")
+        except Exception as _e:
+            _warn(f"[weight-stream] Skipped: {_e}")
+
+    global _shard_loader
+    if getattr(args, "shard_loader", False):
+        try:
+            from squish.io.model_shard_loader import ShardConfig, ModelShardLoader
+            _sl_cfg = ShardConfig()
+            _shard_loader = ModelShardLoader(_sl_cfg)
+            _info("shard-loader", "model shard loader: 3-tier GPU-hot/CPU-warm/SSD-cold weight paging")
+        except Exception as _e:
+            _warn(f"[shard-loader] Skipped: {_e}")
+
+    # ── Wave 51: Test-Time Compute Scaling ────────────────────────────────────
+    global _budget_forcing
+    if getattr(args, "budget_forcing", False):
+        try:
+            from squish.serving.budget_forcing import BudgetForcingConfig, BudgetForcingDecoder
+            _bf_cfg = BudgetForcingConfig()
+            _budget_forcing = BudgetForcingDecoder(_bf_cfg)
+            _info("budget-forcing", f"budget forcing: s1-style thinking token budget  (max={_bf_cfg.max_thinking_tokens})")
+        except Exception as _e:
+            _warn(f"[budget-forcing] Skipped: {_e}")
+
+    global _test_time_router
+    if getattr(args, "test_time_scale", False):
+        try:
+            from squish.sampling.test_time_scale import TestTimeComputeConfig, TestTimeComputeRouter
+            _tts_cfg = TestTimeComputeConfig()
+            _test_time_router = TestTimeComputeRouter(_tts_cfg)
+            _info("test-time-scale", "test-time compute router: difficulty-aware strategy dispatch")
+        except Exception as _e:
+            _warn(f"[test-time-scale] Skipped: {_e}")
+
+    global _dvts_search
+    if getattr(args, "dvts", False):
+        try:
+            from squish.sampling.dvts_search import DVTSConfig, DVTSSearch
+            _dvts_cfg = DVTSConfig()
+            _dvts_search = DVTSSearch(_dvts_cfg)
+            _info("dvts", "DVTS: diverse verifier tree search for reasoning")
+        except Exception as _e:
+            _warn(f"[dvts] Skipped: {_e}")
+
+    global _chain_of_draft
+    if getattr(args, "chain_of_draft", False):
+        try:
+            from squish.sampling.chain_of_draft import ChainOfDraftConfig, ChainOfDraftSampler
+            _cod_cfg = ChainOfDraftConfig()
+            _chain_of_draft = ChainOfDraftSampler(_cod_cfg)
+            _info("chain-of-draft", "Chain-of-Draft: ≤7-word per-step reasoning constraint")
+        except Exception as _e:
+            _warn(f"[chain-of-draft] Skipped: {_e}")
+
+    global _coconut_decoder
+    if getattr(args, "coconut", False):
+        try:
+            from squish.reasoning.coconut import CoconutConfig, CoconutDecoder
+            _coc_cfg = CoconutConfig()
+            _coconut_decoder = CoconutDecoder(_coc_cfg)
+            _info("coconut", "COCONUT: continuous latent reasoning decoder")
+        except Exception as _e:
+            _warn(f"[coconut] Skipped: {_e}")
+
+    global _prm_beam_search
+    if getattr(args, "prm_beam", False):
+        try:
+            from squish.sampling.prm_beam_search import PRMBeamSearchConfig, PRMBeamSearch
+            _prm_cfg = PRMBeamSearchConfig()
+            _prm_beam_search = PRMBeamSearch(_prm_cfg)
+            _info("prm-beam", "PRM beam search: step-level process reward model guidance")
+        except Exception as _e:
+            _warn(f"[prm-beam] Skipped: {_e}")
+
+    global _best_of_n
+    if getattr(args, "best_of_n", False):
+        try:
+            from squish.sampling.best_of_n import BestOfNConfig, BestOfNSampler
+            _bon_cfg = BestOfNConfig()
+            _best_of_n = BestOfNSampler(_bon_cfg)
+            _info("best-of-n", "Best-of-N sampling with reward model scoring")
+        except Exception as _e:
+            _warn(f"[best-of-n] Skipped: {_e}")
+
+    global _self_consistency
+    if getattr(args, "self_consistency", False):
+        try:
+            from squish.reasoning.self_consistency import SelfConsistencyConfig, SelfConsistencyVoter
+            _sc2_cfg = SelfConsistencyConfig()
+            _self_consistency = SelfConsistencyVoter(_sc2_cfg)
+            _info("self-consistency", "self-consistency: majority voting over K reasoning chains")
+        except Exception as _e:
+            _warn(f"[self-consistency] Skipped: {_e}")
+
+    global _thought_budget_gate
+    if getattr(args, "thought_budget", False):
+        try:
+            from squish.token.thought_budget_gate import ThoughtBudgetConfig, ThoughtBudgetGate
+            _tbg_cfg = ThoughtBudgetConfig()
+            _thought_budget_gate = ThoughtBudgetGate(_tbg_cfg)
+            _info("thought-budget", "thought budget gate: per-segment CoT token limiting")
+        except Exception as _e:
+            _warn(f"[thought-budget] Skipped: {_e}")
+
+    global _reasoning_kv
+    if getattr(args, "reasoning_kv", False):
+        try:
+            from squish.kv.reasoning_kv import ReasoningKVConfig, ReasoningKVManager
+            _rkv_cfg = ReasoningKVConfig()
+            _reasoning_kv = ReasoningKVManager(_rkv_cfg)
+            _info("reasoning-kv", "Reasoning KV: INT2 thinking-region + FP16 answer-region KV")
+        except Exception as _e:
+            _warn(f"[reasoning-kv] Skipped: {_e}")
+
+    global _draft_reasoning
+    if getattr(args, "draft_reasoning", False):
+        try:
+            from squish.speculative.draft_reasoning import DraftReasoningConfig, DraftReasoningVerifier
+            _dr_cfg = DraftReasoningConfig()
+            _draft_reasoning = DraftReasoningVerifier(_dr_cfg)
+            _info("draft-reasoning", "draft reasoning verifier: CoT-consistency speculative acceptance")
+        except Exception as _e:
+            _warn(f"[draft-reasoning] Skipped: {_e}")
+
+    global _parallel_reasoning
+    if getattr(args, "parallel_reasoning", False):
+        try:
+            from squish.serving.parallel_reasoning import ParallelReasoningConfig, ParallelReasoningScheduler
+            _pr_cfg = ParallelReasoningConfig()
+            _parallel_reasoning = ParallelReasoningScheduler(_pr_cfg)
+            _info("parallel-reasoning", "parallel reasoning scheduler: M chains per prompt")
+        except Exception as _e:
+            _warn(f"[parallel-reasoning] Skipped: {_e}")
+
+    # ── Wave 52: Multi-Modal VLM Efficiency ───────────────────────────────────
+    global _fast_v_pruner
+    if getattr(args, "fast_v", False):
+        try:
+            from squish.vision.fast_v import FastVConfig, FastVPruner
+            _fv_cfg = FastVConfig()
+            _fast_v_pruner = FastVPruner(_fv_cfg)
+            _info("fast-v", "FastV: visual token pruning by cross-attention score")
+        except Exception as _e:
+            _warn(f"[fast-v] Skipped: {_e}")
+
+    global _vision_zip
+    if getattr(args, "vision_zip", False):
+        try:
+            from squish.vision.vision_zip import VisionZipConfig, VisionZip
+            _vz_cfg = VisionZipConfig()
+            _vision_zip = VisionZip(_vz_cfg)
+            _info("vision-zip", "VisionZip: context-dependent visual token selection")
+        except Exception as _e:
+            _warn(f"[vision-zip] Skipped: {_e}")
+
+    global _llava_prumerge
+    if getattr(args, "llava_prumerge", False):
+        try:
+            from squish.vision.llava_prumerge import LLaVAPruMergeConfig, LLaVAPruMerge
+            _lpm_cfg = LLaVAPruMergeConfig()
+            _llava_prumerge = LLaVAPruMerge(_lpm_cfg)
+            _info("llava-prumerge", "LLaVA-PruMerge: spatial clustering+merge of visual patches")
+        except Exception as _e:
+            _warn(f"[llava-prumerge] Skipped: {_e}")
+
+    global _token_packer
+    if getattr(args, "token_packer", False):
+        try:
+            from squish.vision.token_packer import TokenPackerConfig, TokenPacker
+            _tp2_cfg = TokenPackerConfig()
+            _token_packer = TokenPacker(_tp2_cfg)
+            _info("token-packer", "TokenPacker: fixed-size cross-attention visual projector")
+        except Exception as _e:
+            _warn(f"[token-packer] Skipped: {_e}")
+
+    global _flash_vstream
+    if getattr(args, "flash_vstream", False):
+        try:
+            from squish.vision.flash_vstream import FlashVStreamConfig, FlashVStream
+            _fvs_cfg = FlashVStreamConfig()
+            _flash_vstream = FlashVStream(_fvs_cfg)
+            _info("flash-vstream", "Flash-VStream: 3-tier video KV memory for streaming video")
+        except Exception as _e:
+            _warn(f"[flash-vstream] Skipped: {_e}")
+
+    global _dynamic_res
+    if getattr(args, "dynamic_res", False):
+        try:
+            from squish.vision.dynamic_resolution import DynamicResConfig, DynamicResEncoder
+            _dr2_cfg = DynamicResConfig()
+            _dynamic_res = DynamicResEncoder(_dr2_cfg)
+            _info("dynamic-res", "dynamic resolution encoder: aspect-ratio tiling")
+        except Exception as _e:
+            _warn(f"[dynamic-res] Skipped: {_e}")
+
+    global _visual_kv_quant
+    if getattr(args, "visual_kv_quant", False):
+        try:
+            from squish.vision.visual_kv_quant import VisualKVQuantConfig, VisualKVQuant
+            _vkq_cfg = VisualKVQuantConfig()
+            _visual_kv_quant = VisualKVQuant(_vkq_cfg)
+            _info("visual-kv-quant", "Visual KV quantization: INT4K+INT6V for visual token blocks")
+        except Exception as _e:
+            _warn(f"[visual-kv-quant] Skipped: {_e}")
+
+    global _cross_modal_router
+    if getattr(args, "cross_modal", False):
+        try:
+            from squish.vision.cross_modal_attn import CrossModalAttnConfig, CrossModalRouter
+            _cm_cfg = CrossModalAttnConfig()
+            _cross_modal_router = CrossModalRouter(_cm_cfg)
+            _info("cross-modal", "cross-modal router: affinity-gated visual↔text attention")
+        except Exception as _e:
+            _warn(f"[cross-modal] Skipped: {_e}")
+
+    global _video_kv_reuse
+    if getattr(args, "video_kv_reuse", False):
+        try:
+            from squish.vision.video_kv_reuse import VideoKVReuseConfig, VideoKVReuse
+            _vkr_cfg = VideoKVReuseConfig()
+            _video_kv_reuse = VideoKVReuse(_vkr_cfg)
+            _info("video-kv-reuse", "video KV reuse: frame-pair cosine similarity KV sharing")
+        except Exception as _e:
+            _warn(f"[video-kv-reuse] Skipped: {_e}")
+
+    global _vlm_spec_decode
+    if getattr(args, "vlm_spec", False):
+        try:
+            from squish.vision.vlm_spec_decode import VLMSpecDecodeConfig, VLMSpecDecode
+            _vsd_cfg = VLMSpecDecodeConfig()
+            _vlm_spec_decode = VLMSpecDecode(_vsd_cfg)
+            _info("vlm-spec", "VLM speculative decoding with shared visual prefix")
+        except Exception as _e:
+            _warn(f"[vlm-spec] Skipped: {_e}")
+
+    global _vlm_batch_sched
+    if getattr(args, "vlm_sched", False):
+        try:
+            from squish.serving.vlm_scheduler import VLMBatchConfig, VLMBatchScheduler
+            _vlms_cfg = VLMBatchConfig()
+            _vlm_batch_sched = VLMBatchScheduler(_vlms_cfg)
+            _info("vlm-sched", "VLM batch scheduler: image-complexity request binning")
+        except Exception as _e:
+            _warn(f"[vlm-sched] Skipped: {_e}")
+
+    global _img_encoder_cache
+    if getattr(args, "img_encoder_cache", False):
+        try:
+            from squish.vision.img_encoder_cache import ImageEncoderCacheConfig, ImageEncoderCache
+            _iec_cfg = ImageEncoderCacheConfig()
+            _img_encoder_cache = ImageEncoderCache(_iec_cfg)
+            _info("img-encoder-cache", "image encoder output cache keyed by SHA-256")
+        except Exception as _e:
+            _warn(f"[img-encoder-cache] Skipped: {_e}")
+
+    # ── Wave 53: Linear Recurrent Architectures ───────────────────────────────
+    global _rwkv6_channel_mix
+    if getattr(args, "rwkv6", False):
+        try:
+            from squish.attention.rwkv_channel_mix import RWKV6Config, RWKV6ChannelMix
+            _rwkv_cfg = RWKV6Config()
+            _rwkv6_channel_mix = RWKV6ChannelMix(_rwkv_cfg)
+            _info("rwkv6", "RWKV-6 Eagle channel-mix layer")
+        except Exception as _e:
+            _warn(f"[rwkv6] Skipped: {_e}")
+
+    global _hawk_rnn
+    if getattr(args, "hawk_rnn", False):
+        try:
+            from squish.attention.hawk_recurrent import HawkConfig, HawkLinearRNN
+            _hawk_cfg = HawkConfig()
+            _hawk_rnn = HawkLinearRNN(_hawk_cfg)
+            _info("hawk-rnn", "Hawk/Griffin Real-Gated Linear Recurrence")
+        except Exception as _e:
+            _warn(f"[hawk-rnn] Skipped: {_e}")
+
+    global _xlstm_block
+    if getattr(args, "xlstm", False):
+        try:
+            from squish.attention.xlstm_block import xLSTMConfig, xLSTMBlock
+            _xl_cfg = xLSTMConfig()
+            _xlstm_block = xLSTMBlock(_xl_cfg)
+            _info("xlstm", "xLSTM: extended LSTM with sLSTM and mLSTM cells")
+        except Exception as _e:
+            _warn(f"[xlstm] Skipped: {_e}")
+
+    global _ttt_layer
+    if getattr(args, "ttt", False):
+        try:
+            from squish.attention.ttt_layer import TTTConfig, TTTLinearLayer
+            _ttt_cfg = TTTConfig()
+            _ttt_layer = TTTLinearLayer(_ttt_cfg)
+            _info("ttt", "TTT layer: Test-Time Training linear layer")
+        except Exception as _e:
+            _warn(f"[ttt] Skipped: {_e}")
+
+    global _delta_net
+    if getattr(args, "delta_net", False):
+        try:
+            from squish.attention.delta_net import DeltaNetConfig, DeltaNetLinear
+            _dn_cfg = DeltaNetConfig()
+            _delta_net = DeltaNetLinear(_dn_cfg)
+            _info("delta-net", "DeltaNet: delta-rule linear recurrent attention")
+        except Exception as _e:
+            _warn(f"[delta-net] Skipped: {_e}")
+
+    global _ssm_state_cache
+    if getattr(args, "ssm_cache", False):
+        try:
+            from squish.kv.ssm_state_cache import SSMStateCacheConfig, SSMStateCache
+            _ssc_cfg = SSMStateCacheConfig()
+            _ssm_state_cache = SSMStateCache(_ssc_cfg)
+            _info("ssm-cache", "SSM state cache: unified recurrent state persistence")
+        except Exception as _e:
+            _warn(f"[ssm-cache] Skipped: {_e}")
+
+    global _parallel_scan
+    if getattr(args, "parallel_scan", False):
+        try:
+            from squish.kernels.parallel_scan_kernel import ParallelScanConfig, ParallelScanKernel
+            _ps_cfg = ParallelScanConfig()
+            _parallel_scan = ParallelScanKernel(_ps_cfg)
+            _info("parallel-scan", "parallel scan kernel: Blelloch prefix scan for SSM prefill")
+        except Exception as _e:
+            _warn(f"[parallel-scan] Skipped: {_e}")
+
+    global _ssm_quantizer
+    if getattr(args, "ssm_quant", False):
+        try:
+            from squish.quant.ssm_quant import SSMQuantConfig, SSMQuantizer
+            _ssq_cfg = SSMQuantConfig()
+            _ssm_quantizer = SSMQuantizer(_ssq_cfg)
+            _info("ssm-quant", "SSM quantizer: SSM-specific Δ/A/B/C calibration quantization")
+        except Exception as _e:
+            _warn(f"[ssm-quant] Skipped: {_e}")
+
+    global _hybrid_arch_router
+    if getattr(args, "hybrid_arch", False):
+        try:
+            from squish.serving.hybrid_arch_router import HybridArchConfig, HybridArchRouter
+            _ha_cfg = HybridArchConfig()
+            _hybrid_arch_router = HybridArchRouter(_ha_cfg)
+            _info("hybrid-arch", "hybrid arch router: per-layer SSM vs attention dispatch")
+        except Exception as _e:
+            _warn(f"[hybrid-arch] Skipped: {_e}")
+
+    global _hymba_dual
+    if getattr(args, "hymba", False):
+        try:
+            from squish.attention.hymba_dual import HymbaConfig, HymbaDualTrack
+            _hym_cfg = HymbaConfig()
+            _hymba_dual = HymbaDualTrack(_hym_cfg)
+            _info("hymba", "Hymba dual-track: parallel mini-SSM + attention heads")
+        except Exception as _e:
+            _warn(f"[hymba] Skipped: {_e}")
+
+    global _ssm_state_offload
+    if getattr(args, "ssm_offload", False):
+        try:
+            from squish.streaming.ssm_state_offload import SSMStateOffloadConfig, SSMStateOffload
+            _sso_cfg = SSMStateOffloadConfig()
+            _ssm_state_offload = SSMStateOffload(_sso_cfg)
+            _info("ssm-offload", "SSM state offload: segment-boundary recurrent state export")
+        except Exception as _e:
+            _warn(f"[ssm-offload] Skipped: {_e}")
+
+    # ── Wave 54: Deep MoE Efficiency, FlashAttn3, DoubleSparsity, etc. ────────
+    global _shared_expert_moe
+    if getattr(args, "shared_expert", False):
+        try:
+            from squish.moe.shared_expert import SharedExpertConfig, SharedExpertMoE
+            _se2_cfg = SharedExpertConfig()
+            _shared_expert_moe = SharedExpertMoE(_se2_cfg)
+            _info("shared-expert", "shared expert MoE: always-active shared + routed experts")
+        except Exception as _e:
+            _warn(f"[shared-expert] Skipped: {_e}")
+
+    global _fine_grained_router
+    if getattr(args, "fine_grained_moe", False):
+        try:
+            from squish.moe.fine_grained_router import FineGrainedMoEConfig, FineGrainedMoERouter
+            _fgr_cfg = FineGrainedMoEConfig()
+            _fine_grained_router = FineGrainedMoERouter(_fgr_cfg)
+            _info("fine-grained-moe", "fine-grained MoE router: DeepSeek-V3 auxiliary-loss-free")
+        except Exception as _e:
+            _warn(f"[fine-grained-moe] Skipped: {_e}")
+
+    global _expert_offloader
+    if getattr(args, "expert_offload", False):
+        try:
+            from squish.moe.expert_offload import ExpertOffloaderConfig, ExpertOffloader
+            _eo_cfg = ExpertOffloaderConfig()
+            _expert_offloader = ExpertOffloader(_eo_cfg)
+            _info("expert-offload", "expert offloader: top-M LRU expert weight pager")
+        except Exception as _e:
+            _warn(f"[expert-offload] Skipped: {_e}")
+
+    global _expert_merger
+    if getattr(args, "expert_merge", False):
+        try:
+            from squish.moe.expert_merge import ExpertMergeConfig, ExpertMerger
+            _em_cfg = ExpertMergeConfig()
+            _expert_merger = ExpertMerger(_em_cfg)
+            _info("expert-merge", "expert merger: cosine-similarity expert consolidation")
+        except Exception as _e:
+            _warn(f"[expert-merge] Skipped: {_e}")
+
+    global _lazy_expert
+    if getattr(args, "lazy_expert", False):
+        try:
+            from squish.moe.lazy_expert_load import LazyExpertConfig, LazyExpertLoader
+            _le_cfg = LazyExpertConfig()
+            _lazy_expert = LazyExpertLoader(_le_cfg)
+            _info("lazy-expert", "lazy expert loader: JIT expert weight materialization")
+        except Exception as _e:
+            _warn(f"[lazy-expert] Skipped: {_e}")
+
+    global _expert_act_cache
+    if getattr(args, "expert_cache", False):
+        try:
+            from squish.moe.expert_cache import ExpertCacheConfig, ExpertActivationCache
+            _eac_cfg = ExpertCacheConfig()
+            _expert_act_cache = ExpertActivationCache(_eac_cfg)
+            _info("expert-cache", "expert activation cache: LRU expert output caching")
+        except Exception as _e:
+            _warn(f"[expert-cache] Skipped: {_e}")
+
+    global _flash_attn3
+    if getattr(args, "flash_attn3", False):
+        try:
+            from squish.kernels.flash_attn3 import FlashAttn3Config, FlashAttn3Kernel
+            _fa3_cfg = FlashAttn3Config()
+            _flash_attn3 = FlashAttn3Kernel(_fa3_cfg)
+            _info("flash-attn3", "FlashAttention-3: pingpong warp scheduling 1.5-2× FA-2")
+        except Exception as _e:
+            _warn(f"[flash-attn3] Skipped: {_e}")
+
+    global _double_sparse_attn
+    if getattr(args, "double_sparse", False):
+        try:
+            from squish.attention.double_sparse import DoubleSparsityConfig, DoubleSparsityAttn
+            _ds_cfg = DoubleSparsityConfig()
+            _double_sparse_attn = DoubleSparsityAttn(_ds_cfg)
+            _info("double-sparse", "DoubleSparsity: simultaneous head-level and token-level sparse attn")
+        except Exception as _e:
+            _warn(f"[double-sparse] Skipped: {_e}")
+
+    global _lasp_linear_attn
+    if getattr(args, "lasp", False):
+        try:
+            from squish.attention.lasp_parallel import LASPConfig, LASPLinearAttn
+            _lasp_cfg = LASPConfig()
+            _lasp_linear_attn = LASPLinearAttn(_lasp_cfg)
+            _info("lasp", "LASP: linear attention sequence parallelism via ring topology")
+        except Exception as _e:
+            _warn(f"[lasp] Skipped: {_e}")
+
+    global _nacl_cache
+    if getattr(args, "nacl_cache", False):
+        try:
+            from squish.kv.nacl_cache import NaCLConfig, NaCLCache
+            _nacl_cfg = NaCLConfig()
+            _nacl_cache = NaCLCache(_nacl_cfg)
+            _info("nacl-cache", "NaCL cache: O(1) random KV eviction with non-evictable reserve")
+        except Exception as _e:
+            _warn(f"[nacl-cache] Skipped: {_e}")
+
+    global _kv_migration
+    if getattr(args, "kv_migration", False):
+        try:
+            from squish.serving.kv_migration import KVMigrationConfig, KVMigrationManager
+            _kvm_cfg = KVMigrationConfig()
+            _kv_migration = KVMigrationManager(_kvm_cfg)
+            _info("kv-migration", "KV migration manager: live KV shard transfer between workers")
+        except Exception as _e:
+            _warn(f"[kv-migration] Skipped: {_e}")
+
+    global _elastic_batch
+    if getattr(args, "elastic_batch", False):
+        try:
+            from squish.serving.elastic_batching import ElasticBatchConfig, ElasticBatchController
+            _eb_cfg = ElasticBatchConfig()
+            _elastic_batch = ElasticBatchController(_eb_cfg)
+            _info("elastic-batch", "elastic batch controller: adaptive continuous-batch sizing")
+        except Exception as _e:
+            _warn(f"[elastic-batch] Skipped: {_e}")
+
+    # ── Wave 55: Advanced Sampling, Emerging Quantization ─────────────────────
+    global _min_p_sampler
+    if getattr(args, "min_p", False):
+        try:
+            from squish.sampling.min_p_sampler import MinPConfig, MinPSampler
+            _mp_cfg = MinPConfig()
+            _min_p_sampler = MinPSampler(_mp_cfg)
+            _info("min-p", f"Min-P sampler (min_p_sampler): dynamic probability floor  (min_p={_mp_cfg.min_p_factor})")
+        except Exception as _e:
+            _warn(f"[min-p] Skipped: {_e}")
+
+    global _mirostat_sampler
+    if getattr(args, "mirostat", False):
+        try:
+            from squish.sampling.mirostat_sampler import MirostatConfig, MirostatSampler
+            _miro_cfg = MirostatConfig()
+            _mirostat_sampler = MirostatSampler(_miro_cfg)
+            _info("mirostat", "Mirostat sampler: PID perplexity controller")
+        except Exception as _e:
+            _warn(f"[mirostat] Skipped: {_e}")
+
+    global _eta_cutoff
+    if getattr(args, "eta_cutoff", False):
+        try:
+            from squish.sampling.eta_sampler import EtaConfig, EtaSampler
+            _eta_cfg = EtaConfig()
+            _eta_cutoff = EtaSampler(_eta_cfg)
+            _info("eta-cutoff", "eta-cutoff sampler: entropy-adaptive hard logit cutoff")
+        except Exception as _e:
+            _warn(f"[eta-cutoff] Skipped: {_e}")
+
+    global _cfg_sampler
+    if getattr(args, "cfg_guidance", False):
+        try:
+            from squish.sampling.cfg_sampler import CFGConfig, CFGLogitsSampler
+            _cfg_s_cfg = CFGConfig()
+            _cfg_sampler = CFGLogitsSampler(_cfg_s_cfg)
+            _info("cfg-guidance", "CFG logits sampler: Classifier-Free Guidance for text")
+        except Exception as _e:
+            _warn(f"[cfg-guidance] Skipped: {_e}")
+
+    global _diverse_beam
+    if getattr(args, "diverse_beam", False):
+        try:
+            from squish.sampling.diverse_beam import DiverseBeamConfig, DiverseBeamSampler
+            _db_cfg = DiverseBeamConfig()
+            _diverse_beam = DiverseBeamSampler(_db_cfg)
+            _info("diverse-beam", "diverse beam search: G beam groups with diversity penalty")
+        except Exception as _e:
+            _warn(f"[diverse-beam] Skipped: {_e}")
+
+    global _bitnet158
+    if getattr(args, "bitnet158", False):
+        try:
+            from squish.quant.bitnet_b158 import BitNet158Config, BitNet158Quantizer
+            _bn_cfg = BitNet158Config()
+            _bitnet158 = BitNet158Quantizer(_bn_cfg)
+            _info("bitnet158", "BitNet-b1.58: ternary {-1,0,+1} weight quantization")
+        except Exception as _e:
+            _warn(f"[bitnet158] Skipped: {_e}")
+
+    global _spqr_quant_w55
+    if getattr(args, "spqr_quant", False):
+        try:
+            from squish.quant.spqr_quant import SpQRConfig, SpQRQuantizer
+            _spqrq_cfg = SpQRConfig()
+            _spqr_quant_w55 = SpQRQuantizer(_spqrq_cfg)
+            _info("spqr-quant", "SpQR quantizer (spqr_quant): sparse-quantized for frontier models")
+        except Exception as _e:
+            _warn(f"[spqr-quant] Skipped: {_e}")
+
+    global _omniquant
+    if getattr(args, "omniquant", False):
+        try:
+            from squish.quant.omniquant import OmniQuantConfig, OmniQuantizer
+            _omni_cfg = OmniQuantConfig()
+            _omniquant = OmniQuantizer(_omni_cfg)
+            _info("omniquant", "OmniQuant: LWC+LET joint calibration W4A4/W4A8")
+        except Exception as _e:
+            _warn(f"[omniquant] Skipped: {_e}")
+
+    global _qsparse
+    if getattr(args, "q_sparse", False):
+        try:
+            from squish.quant.q_sparse import QSparseConfig, QSparsifier
+            _qs_cfg = QSparseConfig()
+            _qsparse = QSparsifier(_qs_cfg)
+            _info("q-sparse", "Q-Sparse: top-K activation sparsity at matmul time")
+        except Exception as _e:
+            _warn(f"[q-sparse] Skipped: {_e}")
+
+    global _fp4_quantizer
+    if getattr(args, "fp4_quant", False):
+        try:
+            from squish.quant.fp4_quant import FP4Config, FP4Quantizer
+            _fp4_cfg = FP4Config()
+            _fp4_quantizer = FP4Quantizer(_fp4_cfg)
+            _info("fp4-quant", "FP4 quantization: E2M1 FP4 floating-point weights")
+        except Exception as _e:
+            _warn(f"[fp4-quant] Skipped: {_e}")
+
+    global _ada_round
+    if getattr(args, "ada_round", False):
+        try:
+            from squish.quant.ada_round import AdaRoundConfig, AdaRoundQuantizer
+            _adr_cfg = AdaRoundConfig()
+            _ada_round = AdaRoundQuantizer(_adr_cfg)
+            _info("ada-round", "AdaRound: adaptive rounding via per-weight sigmoid relaxation")
+        except Exception as _e:
+            _warn(f"[ada-round] Skipped: {_e}")
 
     # ── Wave 27: Inference velocity features ──────────────────────────────────
     # 1B — FusedSampler: replace multi-pass sampling with a single fused kernel
