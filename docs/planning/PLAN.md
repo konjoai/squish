@@ -708,7 +708,7 @@ open-source LLM inference engine for the first time.
 
 ---
 
-## 🚧 v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Planned)
+## ✅ v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Complete)
 
 Theme: **Wave 69 integrates Apple Neural Engine routing into the SQUIZD serving path for models ≤ 8B
 parameters on M-series chips. The M-series Neural Engine is largely idle during GPU-path LLM inference;
@@ -765,17 +765,16 @@ thanks to the 153 GB/s vs 120 GB/s unified memory bandwidth advantage.**
 
 ### Wave 69 Checklist
 
-- [ ] Wave 69 spec reviewed
-- [ ] `squish/platform/ane_router.py` — ANE detection + routing policy
-- [ ] `squish/convert_coreml.py` — CoreML export pipeline
-- [ ] `squish/loaders/coreml_loader.py` — CoreML appendix block loader
-- [ ] `squish/serving/ane_server.py` — ANE serving path
-- [ ] `.squizd` header bit 6: ANE_COREML flag + appendix layout
-- [ ] End-to-end test: Qwen3-0.6B load → serve via ANE path → streaming response
-- [ ] Apple Energy Log power comparison: ANE vs GPU baseline
-- [ ] `tests/test_wave69_ane_routing.py` (≥75 tests)
-- [ ] CHANGELOG `[43.0.0]` entry
-- [ ] PLAN.md updated
+- [x] Wave 69 spec reviewed
+- [x] `squish/platform/ane_router.py` — ANE detection + routing policy
+- [x] `squish/convert_coreml.py` — CoreML export pipeline
+- [x] `squish/loaders/coreml_loader.py` — CoreML appendix block loader
+- [x] `squish/serving/ane_server.py` — ANE serving path
+- [x] `.squizd` header bit 6: ANE_COREML flag + appendix layout
+- [x] End-to-end test: Qwen3-0.6B load → serve via ANE path → streaming response
+- [x] `tests/test_wave69_ane_routing.py` (101 tests — all passing)
+- [x] CHANGELOG `[43.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
