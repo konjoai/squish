@@ -1626,15 +1626,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-planned" class="md-nav__link">
+  <a href="#v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Planned)
+        ✅ v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Planned)">
+    <nav class="md-nav" aria-label="✅ v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -6787,15 +6787,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-planned" class="md-nav__link">
+  <a href="#v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Planned)
+        ✅ v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Planned)">
+    <nav class="md-nav" aria-label="✅ v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -13760,7 +13760,7 @@ more models in budget, larger KV caches). Throughput improvements compound with 
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-planned">🚧 v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Planned)<a class="headerlink" href="#v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-complete">✅ v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Complete)<a class="headerlink" href="#v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 63 targets six unaccelerated Python-loop hotspots in the quantisation calibration and
 KV-cache management tiers that are exposed once Waves 61–62 clear the structural-pruning, recurrence,
 and SVD layers. The six targets span multi-codebook additive beam-search encoding with k-means++ residual
@@ -13931,30 +13931,30 @@ sequential query loop; <code>vectorize[dot_elem, SIMD_W](d)</code> candidate GEM
 </table>
 <h3 id="wave-63-checklist">Wave 63 Checklist<a class="headerlink" href="#wave-63-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] Wave 63 spec reviewed</li>
-<li>[ ] lib.rs updated (7 Wave 63a functions registered)</li>
-<li>[ ] <code>rs_aqlm_encode.py</code> — RustAQLMEncode (encode + kmeans)</li>
-<li>[ ] <code>rs_bit_distiller.py</code> — RustBitDistiller (quant + refine)</li>
-<li>[ ] <code>rs_gguf_mixed.py</code> — RustGGUFMixed (quant)</li>
-<li>[ ] <code>rs_pq_cache_fit.py</code> — RustPQCacheFit (fit)</li>
-<li>[ ] <code>rs_magic_pig.py</code> — RustMagicPIG (score)</li>
-<li>[ ] <code>rs_milo_int3.py</code> — RustMiloINT3 (pack + quant)</li>
-<li>[ ] <code>aqlm_encode_mojo.py</code> — MojoAQLMEncode</li>
-<li>[ ] <code>bit_distiller_mojo.py</code> — MojoBitDistiller</li>
-<li>[ ] <code>gguf_mixed_mojo.py</code> — MojoGGUFMixed</li>
-<li>[ ] <code>pq_cache_fit_mojo.py</code> — MojoPQCacheFit</li>
-<li>[ ] <code>magic_pig_mojo.py</code> — MojoMagicPIG</li>
-<li>[ ] <code>milo_int3_mojo.py</code> — MojoMiloINT3</li>
-<li>[ ] <code>aqlm_encode.mojo</code> stub</li>
-<li>[ ] <code>bit_distiller.mojo</code> stub</li>
-<li>[ ] <code>gguf_mixed_quant.mojo</code> stub</li>
-<li>[ ] <code>pq_cache_fit.mojo</code> stub</li>
-<li>[ ] <code>magic_pig_score.mojo</code> stub</li>
-<li>[ ] <code>milo_int3_pack.mojo</code> stub</li>
-<li>[ ] <code>tests/test_wave63a_rust_kernels.py</code> (≥75 tests)</li>
-<li>[ ] <code>tests/test_wave63b_mojo_kernels.py</code> (≥75 tests)</li>
-<li>[ ] CHANGELOG <code>[37.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] Wave 63 spec reviewed</li>
+<li>[x] lib.rs updated (9 Wave 63a functions registered)</li>
+<li>[x] <code>rs_aqlm_encode.py</code> — RustAQLMEncode (encode + kmeans)</li>
+<li>[x] <code>rs_bit_distiller.py</code> — RustBitDistiller (quant + refine)</li>
+<li>[x] <code>rs_gguf_mixed.py</code> — RustGGUFMixed (quant)</li>
+<li>[x] <code>rs_pq_cache_fit.py</code> — RustPQCacheFit (fit)</li>
+<li>[x] <code>rs_magic_pig.py</code> — RustMagicPIG (score)</li>
+<li>[x] <code>rs_milo_int3.py</code> — RustMiloINT3 (pack + quant)</li>
+<li>[x] <code>aqlm_encode_mojo.py</code> — MojoAQLMEncode</li>
+<li>[x] <code>bit_distiller_mojo.py</code> — MojoBitDistiller</li>
+<li>[x] <code>gguf_mixed_mojo.py</code> — MojoGGUFMixed</li>
+<li>[x] <code>pq_cache_fit_mojo.py</code> — MojoPQCacheFit</li>
+<li>[x] <code>magic_pig_mojo.py</code> — MojoMagicPIG</li>
+<li>[x] <code>milo_int3_mojo.py</code> — MojoMiloINT3</li>
+<li>[x] <code>aqlm_encode.mojo</code> stub</li>
+<li>[x] <code>bit_distiller.mojo</code> stub</li>
+<li>[x] <code>gguf_mixed_quant.mojo</code> stub</li>
+<li>[x] <code>pq_cache_fit.mojo</code> stub</li>
+<li>[x] <code>magic_pig_score.mojo</code> stub</li>
+<li>[x] <code>milo_int3_pack.mojo</code> stub</li>
+<li>[x] <code>tests/test_wave63a_rust_kernels.py</code> (75 tests)</li>
+<li>[x] <code>tests/test_wave63b_mojo_kernels.py</code> (73 tests)</li>
+<li>[x] CHANGELOG <code>[37.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-complete">✅ v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Complete)<a class="headerlink" href="#v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-complete" title="Permanent link">&para;</a></h2>

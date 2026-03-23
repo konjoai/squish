@@ -836,6 +836,62 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#3700-2026-04-01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [37.0.0] — 2026-04-01
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[37.0.0] — 2026-04-01">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-63-v37-eighth-acceleration-tier-rust-aqlm-encode-bitdistiller-refine-gguf-block-quant-pq-cache-fit-magicpig-score-milo-int3-pack-mojo-counterparts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 63: v37 Eighth Acceleration Tier: Rust AQLM Encode · BitDistiller Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG Score · MILO INT3 Pack + Mojo counterparts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Added — Wave 63: v37 Eighth Acceleration Tier: Rust AQLM Encode · BitDistiller Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG Score · MILO INT3 Pack + Mojo counterparts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wave-63a-rust-kernel-python-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 63a — Rust kernel Python wrappers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-63b-mojo-kernel-python-wrappers-stubs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 63b — Mojo kernel Python wrappers + stubs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#3600-2026-03-24" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2730,6 +2786,88 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="3700-2026-04-01">[37.0.0] — 2026-04-01<a class="headerlink" href="#3700-2026-04-01" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-63-v37-eighth-acceleration-tier-rust-aqlm-encode-bitdistiller-refine-gguf-block-quant-pq-cache-fit-magicpig-score-milo-int3-pack-mojo-counterparts">Added — Wave 63: v37 Eighth Acceleration Tier: Rust AQLM Encode · BitDistiller Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG Score · MILO INT3 Pack + Mojo counterparts<a class="headerlink" href="#added-wave-63-v37-eighth-acceleration-tier-rust-aqlm-encode-bitdistiller-refine-gguf-block-quant-pq-cache-fit-magicpig-score-milo-int3-pack-mojo-counterparts" title="Permanent link">&para;</a></h3>
+<p>Ten production-grade Rust kernel functions added to <code>squish_quant_rs</code>
+(Wave 63a) covering multi-codebook additive encode with k-means++ residual
+initialisation (AQLM), KL-distillation-guided per-group scale refinement
+(BitDistiller), GGUF-style super-block block quantisation with Q4_K-style
+per-block min/max/super-scale (GGUFMixed), product-quantisation sub-codebook
+fitting via masked centroid scatter-reduce (PQ Cache), LSH-bucketed candidate
+GEMV attention scoring over (head, query) pairs (MagicPIG), and INT3 three-bit
+pack/unpack plus group-wise symmetric quantisation (MILO).  Six Mojo-backed
+kernel wrappers (Wave 63b) mirror all six operations with SIMD-vectorised
+<code>.mojo</code> stubs.  All 12,928 pre-Wave-63 tests continue passing; 148 new tests
+added (75 Wave 63a + 73 Wave 63b).</p>
+<h4 id="wave-63a-rust-kernel-python-wrappers">Wave 63a — Rust kernel Python wrappers<a class="headerlink" href="#wave-63a-rust-kernel-python-wrappers" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>RustAQLMEncode</strong> (<code>squish/kernels/rs_aqlm_encode.py</code>) — Multi-codebook
+  additive encoding (<code>aqlm_encode_f32</code>) and k-means++ codebook initialisation
+  (<code>aqlm_kmeans_f32</code>). Rayon parallel over out-features rows; sequential
+  codebook peeling + residual subtract per row.</p>
+</li>
+<li>
+<p><strong>RustBitDistiller</strong> (<code>squish/kernels/rs_bit_distiller.py</code>) — Per-group
+  INT quantisation (<code>bit_distiller_quant_f32</code>) and KL-guided scale refinement
+  (<code>bit_distiller_refine_f32</code>). Parallel over rows; sequential refinement steps.</p>
+</li>
+<li>
+<p><strong>RustGGUFMixed</strong> (<code>squish/kernels/rs_gguf_mixed.py</code>) — GGUF-style
+  block quantisation with super-block meta-scales (<code>gguf_mixed_quant_f32</code>).
+  Parallel over rows; Q4_K-style per-block min/max + super-scale average.</p>
+</li>
+<li>
+<p><strong>RustPQCacheFit</strong> (<code>squish/kernels/rs_pq_cache_fit.py</code>) — Product-
+  quantisation sub-codebook fitting (<code>pq_cache_fit_f32</code>). Parallel E-step
+  over N sub-vectors, sequential M-step Lloyd centroid update.</p>
+</li>
+<li>
+<p><strong>RustMagicPIG</strong> (<code>squish/kernels/rs_magic_pig.py</code>) — LSH-bucketed GEMV
+  attention (<code>magic_pig_score_f32</code>). Parallel over H heads; integer softmax
+  approximation via Taylor-series exp.</p>
+</li>
+<li>
+<p><strong>RustMiloINT3</strong> (<code>squish/kernels/rs_milo_int3.py</code>) — INT3 three-bit
+  pack/unpack (<code>milo_pack_int3_u8</code>) and group-wise symmetric quantisation
+  (<code>milo_quant_f32</code>). Parallel over groups/rows; 8 values → 3 bytes packing.</p>
+</li>
+</ul>
+<h4 id="wave-63b-mojo-kernel-python-wrappers-stubs">Wave 63b — Mojo kernel Python wrappers + stubs<a class="headerlink" href="#wave-63b-mojo-kernel-python-wrappers-stubs" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>MojoAQLMEncode</strong> (<code>squish/kernels/mojo/aqlm_encode_mojo.py</code>) — Mojo stub
+  <code>aqlm_encode.mojo</code>; <code>parallelize[encode_row](out_features)</code> + <code>vectorize</code>
+  argmin; NumPy fallback active until Mojo runtime is installed.</p>
+</li>
+<li>
+<p><strong>MojoBitDistiller</strong> (<code>squish/kernels/mojo/bit_distiller_mojo.py</code>) — Mojo
+  stub <code>bit_distiller.mojo</code>; <code>parallelize[quant_row](rows)</code> + <code>vectorize</code>
+  min/max/scale.</p>
+</li>
+<li>
+<p><strong>MojoGGUFMixed</strong> (<code>squish/kernels/mojo/gguf_mixed_mojo.py</code>) — Mojo stub
+  <code>gguf_mixed_quant.mojo</code>; <code>parallelize[quant_row](rows)</code> + <code>vectorize</code>
+  INT quant + super-block meta-scale.</p>
+</li>
+<li>
+<p><strong>MojoPQCacheFit</strong> (<code>squish/kernels/mojo/pq_cache_fit_mojo.py</code>) — Mojo stub
+  <code>pq_cache_fit.mojo</code>; sequential Lloyd + <code>parallelize[centroid](K)</code> +
+  <code>vectorize</code> masked-mean.</p>
+</li>
+<li>
+<p><strong>MojoMagicPIG</strong> (<code>squish/kernels/mojo/magic_pig_mojo.py</code>) — Mojo stub
+  <code>magic_pig_score.mojo</code>; <code>parallelize[score_head](H)</code> + sequential query
+  loop + <code>vectorize</code> candidate GEMV + softmax.  Head/KV-length mismatch
+  validation added.</p>
+</li>
+<li>
+<p><strong>MojoMiloINT3</strong> (<code>squish/kernels/mojo/milo_int3_mojo.py</code>) — Mojo stub
+  <code>milo_int3_pack.mojo</code>; <code>parallelize[pack_group](n_groups)</code> +
+  <code>vectorize[pack_bits, SIMD_W](8)</code> INT3 bitpack.</p>
+</li>
+</ul>
 <hr />
 <h2 id="3600-2026-03-24">[36.0.0] — 2026-03-24<a class="headerlink" href="#3600-2026-03-24" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-62-v36-seventh-acceleration-tier-rust-svdq-head-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-qmoe-compress-mojo-counterparts">Added — Wave 62: v36 Seventh Acceleration Tier: Rust SVDq Head · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget · QMoE Compress + Mojo counterparts<a class="headerlink" href="#added-wave-62-v36-seventh-acceleration-tier-rust-svdq-head-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-qmoe-compress-mojo-counterparts" title="Permanent link">&para;</a></h3>
