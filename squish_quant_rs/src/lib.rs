@@ -1612,6 +1612,620 @@ pub fn quantize_int2_grouped_bf16<'py>(
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave 57a — Entropy Codec · PQ Accelerate · GRU Cell · Batch CosSim · SwiGLU · Randomized SVD
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── rANS + Huffman Entropy Codec ─────────────────────────────────────────────
+
+/// Build a CDF table from an array of symbol frequencies.
+/// Returns a [u32; 256] CDF where cdf[s] = sum of freqs[0..s].
+fn build_cdf(freqs: &[u32; 256]) -> [u32; 256] {
+    let mut cdf = [0u32; 256];
+    let mut acc = 0u32;
+    for i in 0..255 {
+        cdf[i] = acc;
+        acc += freqs[i];
+    }
+    cdf[255] = acc;
+    cdf
+}
+
+/// rANS encode: symbols -> bytes via state machine over [u32; 256] CDF.
+/// `freqs` is a length-256 array of symbol frequencies (sum = M).
+#[pyfunction]
+fn rans_encode<'py>(
+    py: Python<'py>,
+    symbols: PyReadonlyArray1<u8>,
+    freqs: PyReadonlyArray1<u32>,
+) -> PyResult<Bound<'py, PyArray1<u8>>> {
+    let syms = symbols.as_slice()?;
+    let freq_slice = freqs.as_slice()?;
+    if freq_slice.len() != 256 {
+        return Err(pyo3::exceptions::PyValueError::new_err("freqs must have length 256"));
+    }
+    let mut freq_arr = [0u32; 256];
+    freq_arr.copy_from_slice(freq_slice);
+    let cdf = build_cdf(&freq_arr);
+    let m: u32 = freq_arr.iter().sum();
+    if m == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("sum of freqs must be > 0"));
+    }
+
+    // rANS encode in reverse order
+    let mut state: u64 = 1u64 << 31;
+    let mut out_bytes: Vec<u8> = Vec::with_capacity(syms.len() + 16);
+    for &sym in syms.iter().rev() {
+        let fs = freq_arr[sym as usize] as u64;
+        let cs = cdf[sym as usize] as u64;
+        let m64 = m as u64;
+        // renorm: push low bytes until state is in [fs * L_upper, fs * L_upper*256)
+        let l_upper: u64 = 1 << 23;
+        while state >= fs * l_upper {
+            out_bytes.push((state & 0xFF) as u8);
+            state >>= 8;
+        }
+        state = (state / fs) * m64 + cs + (state % fs);
+    }
+    // encode final state (4 bytes, little-endian)
+    for i in 0..4 {
+        out_bytes.push(((state >> (i * 8)) & 0xFF) as u8);
+    }
+    out_bytes.reverse();
+    Ok(PyArray1::from_vec_bound(py, out_bytes))
+}
+
+/// rANS decode: bytes -> symbols.
+#[pyfunction]
+fn rans_decode<'py>(
+    py: Python<'py>,
+    data: PyReadonlyArray1<u8>,
+    freqs: PyReadonlyArray1<u32>,
+    n_symbols: usize,
+) -> PyResult<Bound<'py, PyArray1<u8>>> {
+    let data_slice = data.as_slice()?;
+    let freq_slice = freqs.as_slice()?;
+    if freq_slice.len() != 256 {
+        return Err(pyo3::exceptions::PyValueError::new_err("freqs must have length 256"));
+    }
+    let mut freq_arr = [0u32; 256];
+    freq_arr.copy_from_slice(freq_slice);
+    let cdf = build_cdf(&freq_arr);
+    let m: u32 = freq_arr.iter().sum();
+    if m == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("sum of freqs must be > 0"));
+    }
+
+    if data_slice.len() < 4 {
+        return Err(pyo3::exceptions::PyValueError::new_err("data too short"));
+    }
+    let mut pos = 0usize;
+    let mut state: u64 = 0;
+    for i in 0..4usize {
+        state |= (data_slice[pos] as u64) << (i * 8);
+        pos += 1;
+    }
+
+    // Build inverse CDF lookup: cumfreq -> symbol
+    let mut inv_cdf = vec![0u8; m as usize];
+    for sym in 0..256usize {
+        let start = cdf[sym] as usize;
+        let end = if sym < 255 { cdf[sym + 1] as usize } else { m as usize };
+        for k in start..end {
+            if k < inv_cdf.len() {
+                inv_cdf[k] = sym as u8;
+            }
+        }
+    }
+
+    let mut out = Vec::with_capacity(n_symbols);
+    let m64 = m as u64;
+    for _ in 0..n_symbols {
+        let slot = (state % m64) as usize;
+        let sym = inv_cdf[slot.min(inv_cdf.len().saturating_sub(1))];
+        out.push(sym);
+        let fs = freq_arr[sym as usize] as u64;
+        let cs = cdf[sym as usize] as u64;
+        state = fs * (state / m64) + slot as u64 - cs;
+        // renorm: read bytes until state is in [L_lower, L_lower * 256)
+        let l_lower: u64 = 1 << 23;
+        while state < l_lower && pos < data_slice.len() {
+            state = (state << 8) | (data_slice[pos] as u64);
+            pos += 1;
+        }
+    }
+    Ok(PyArray1::from_vec_bound(py, out))
+}
+
+/// Canonical Huffman encode: symbols+codebook -> packed bit-string as bytes.
+/// `code_words` and `code_lens` are 256-element arrays.
+#[pyfunction]
+fn huffman_encode<'py>(
+    py: Python<'py>,
+    symbols: PyReadonlyArray1<u8>,
+    code_words: PyReadonlyArray1<u32>,
+    code_lens: PyReadonlyArray1<u8>,
+) -> PyResult<Bound<'py, PyArray1<u8>>> {
+    let syms = symbols.as_slice()?;
+    let cw = code_words.as_slice()?;
+    let cl = code_lens.as_slice()?;
+    if cw.len() != 256 || cl.len() != 256 {
+        return Err(pyo3::exceptions::PyValueError::new_err("code_words and code_lens must have length 256"));
+    }
+
+    let mut out: Vec<u8> = Vec::with_capacity(syms.len() / 2 + 8);
+    let mut bit_buf: u64 = 0;
+    let mut bits_used: u32 = 0;
+    for &sym in syms {
+        let word = cw[sym as usize] as u64;
+        let len = cl[sym as usize] as u32;
+        bit_buf = (bit_buf << len) | word;
+        bits_used += len;
+        while bits_used >= 8 {
+            bits_used -= 8;
+            out.push(((bit_buf >> bits_used) & 0xFF) as u8);
+        }
+    }
+    // flush remaining bits
+    if bits_used > 0 {
+        out.push(((bit_buf << (8 - bits_used)) & 0xFF) as u8);
+    }
+    Ok(PyArray1::from_vec_bound(py, out))
+}
+
+/// Canonical Huffman decode: packed bytes -> symbols.
+/// `code_words` and `code_lens` must describe a prefix-free code (256-symbol alphabet).
+#[pyfunction]
+fn huffman_decode<'py>(
+    py: Python<'py>,
+    data: PyReadonlyArray1<u8>,
+    code_words: PyReadonlyArray1<u32>,
+    code_lens: PyReadonlyArray1<u8>,
+    n_symbols: usize,
+) -> PyResult<Bound<'py, PyArray1<u8>>> {
+    let data_slice = data.as_slice()?;
+    let cw = code_words.as_slice()?;
+    let cl = code_lens.as_slice()?;
+    if cw.len() != 256 || cl.len() != 256 {
+        return Err(pyo3::exceptions::PyValueError::new_err("code_words and code_lens must have length 256"));
+    }
+
+    let mut out = Vec::with_capacity(n_symbols);
+    let mut bit_buf: u64 = 0;
+    let mut bits_avail: u32 = 0;
+    let mut byte_pos = 0usize;
+
+    let fill = |bit_buf: &mut u64, bits_avail: &mut u32, byte_pos: &mut usize| {
+        while *bits_avail < 32 && *byte_pos < data_slice.len() {
+            *bit_buf = (*bit_buf << 8) | (data_slice[*byte_pos] as u64);
+            *bits_avail += 8;
+            *byte_pos += 1;
+        }
+    };
+
+    for _ in 0..n_symbols {
+        fill(&mut bit_buf, &mut bits_avail, &mut byte_pos);
+        // linear scan for matching code
+        let mut matched = false;
+        for sym in 0..256usize {
+            let len = cl[sym] as u32;
+            if len == 0 || len > bits_avail { continue; }
+            let shift = bits_avail - len;
+            let extracted = (bit_buf >> shift) & ((1u64 << len) - 1);
+            if extracted == cw[sym] as u64 {
+                out.push(sym as u8);
+                bits_avail -= len;
+                bit_buf &= (1u64 << bits_avail) - 1;
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            // push a zero symbol and continue (graceful degradation)
+            out.push(0u8);
+        }
+    }
+    Ok(PyArray1::from_vec_bound(py, out))
+}
+
+// ── PQ Accelerate (K-Means + ADC) ────────────────────────────────────────────
+
+/// Fit K-means centroids over `(N, D)` float32 data using Rayon parallel distance computation.
+/// Returns `(K, D)` centroids.
+#[pyfunction]
+fn pq_kmeans_fit<'py>(
+    py: Python<'py>,
+    data: PyReadonlyArray2<f32>,
+    n_clusters: usize,
+    n_iter: usize,
+) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let arr = data.as_array();
+    let (n, d) = arr.dim();
+    if n_clusters == 0 || n_clusters > n {
+        return Err(pyo3::exceptions::PyValueError::new_err("n_clusters out of range"));
+    }
+
+    // K-means++ seeding: choose first centroid uniformly, then by distance probability
+    let mut centroids: Vec<Vec<f32>> = Vec::with_capacity(n_clusters);
+    centroids.push(arr.row(0).to_vec());
+    let mut rng_state: u64 = 0xDEADBEEF_CAFEF00D;
+    let lcg_next = |s: &mut u64| -> u64 {
+        *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *s
+    };
+
+    for _ in 1..n_clusters {
+        let dists: Vec<f32> = (0..n).map(|i| {
+            let row = arr.row(i);
+            centroids.iter().map(|c| {
+                row.iter().zip(c.iter()).map(|(&x, &y)| (x - y) * (x - y)).sum::<f32>()
+            }).fold(f32::INFINITY, f32::min)
+        }).collect();
+        let total: f32 = dists.iter().sum();
+        let threshold = (lcg_next(&mut rng_state) as f64 / u64::MAX as f64) as f32 * total;
+        let mut cum = 0.0f32;
+        let mut chosen = n - 1;
+        for (i, &d_sq) in dists.iter().enumerate() {
+            cum += d_sq;
+            if cum >= threshold { chosen = i; break; }
+        }
+        centroids.push(arr.row(chosen).to_vec());
+    }
+
+    // Lloyd iterations
+    let mut assignments = vec![0usize; n];
+    for _ in 0..n_iter {
+        // Assign
+        assignments.par_iter_mut().enumerate().for_each(|(i, a)| {
+            let row = arr.row(i);
+            let mut best_dist = f32::INFINITY;
+            let mut best_k = 0;
+            for (k, c) in centroids.iter().enumerate() {
+                let dist: f32 = row.iter().zip(c.iter()).map(|(&x, &y)| (x - y) * (x - y)).sum();
+                if dist < best_dist { best_dist = dist; best_k = k; }
+            }
+            *a = best_k;
+        });
+        // Update
+        let mut sums = vec![vec![0.0f32; d]; n_clusters];
+        let mut counts = vec![0usize; n_clusters];
+        for (i, &k) in assignments.iter().enumerate() {
+            let row = arr.row(i);
+            for (s, &v) in sums[k].iter_mut().zip(row.iter()) { *s += v; }
+            counts[k] += 1;
+        }
+        for k in 0..n_clusters {
+            if counts[k] > 0 {
+                let inv = 1.0 / counts[k] as f32;
+                for v in sums[k].iter_mut() { *v *= inv; }
+                centroids[k] = sums[k].clone();
+            }
+        }
+    }
+
+    let flat: Vec<f32> = centroids.into_iter().flatten().collect();
+    let arr2 = Array2::from_shape_vec((n_clusters, d), flat).expect("shape");
+    Ok(arr2.into_pyarray_bound(py))
+}
+
+/// PQ encode: assign each row of `(N, D)` data to the nearest centroid in `(K, D)`.
+/// Returns `(N,)` u8 code array (supports K ≤ 256).
+#[pyfunction]
+fn pq_encode_batch<'py>(
+    py: Python<'py>,
+    data: PyReadonlyArray2<f32>,
+    centroids: PyReadonlyArray2<f32>,
+) -> PyResult<Bound<'py, PyArray1<u8>>> {
+    let data_arr = data.as_array();
+    let cent_arr = centroids.as_array();
+    let (n, _d) = data_arr.dim();
+    let (k, _) = cent_arr.dim();
+    if k > 256 {
+        return Err(pyo3::exceptions::PyValueError::new_err("n_clusters must be ≤ 256"));
+    }
+
+    let codes: Vec<u8> = (0..n).into_par_iter().map(|i| {
+        let row = data_arr.row(i);
+        let mut best_dist = f32::INFINITY;
+        let mut best_k = 0u8;
+        for ki in 0..k {
+            let c = cent_arr.row(ki);
+            let dist: f32 = row.iter().zip(c.iter()).map(|(&x, &y)| (x - y) * (x - y)).sum();
+            if dist < best_dist { best_dist = dist; best_k = ki as u8; }
+        }
+        best_k
+    }).collect();
+
+    Ok(PyArray1::from_vec_bound(py, codes))
+}
+
+/// PQ ADC search: for each query `(M, D/M)`, compute distances to all N codes
+/// using precomputed LUT `(M, K)` and return `(N,)` total distance float32 array.
+/// `codes` has shape `(N, M)` and `lut` has shape `(M, K)`.
+#[pyfunction]
+fn pq_adc_search<'py>(
+    py: Python<'py>,
+    codes: PyReadonlyArray2<u8>,
+    lut: PyReadonlyArray2<f32>,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let codes_arr = codes.as_array();
+    let lut_arr = lut.as_array();
+    let (n, m) = codes_arr.dim();
+    let (lm, _k) = lut_arr.dim();
+    if m != lm {
+        return Err(pyo3::exceptions::PyValueError::new_err("codes M dim must match lut M dim"));
+    }
+
+    let dists: Vec<f32> = (0..n).into_par_iter().map(|i| {
+        let mut total = 0.0f32;
+        for mi in 0..m {
+            let c = codes_arr[(i, mi)] as usize;
+            total += lut_arr[(mi, c)];
+        }
+        total
+    }).collect();
+
+    Ok(PyArray1::from_vec_bound(py, dists))
+}
+
+// ── Fused GRU Cell ────────────────────────────────────────────────────────────
+
+/// Fused GRU step: accepts pre-multiplied gates_x and gates_h `(3 * hidden_dim,)` float32.
+/// Computes reset, update, candidate gates and output h_new in one Rayon SIMD pass.
+/// Returns h_new `(hidden_dim,)` float32.
+#[pyfunction]
+fn gru_step_f32<'py>(
+    py: Python<'py>,
+    gates_x: PyReadonlyArray1<f32>,
+    gates_h: PyReadonlyArray1<f32>,
+    h_prev: PyReadonlyArray1<f32>,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let gx = gates_x.as_slice()?;
+    let gh = gates_h.as_slice()?;
+    let hp = h_prev.as_slice()?;
+    let total = gx.len();
+    if total % 3 != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("gates_x length must be divisible by 3"));
+    }
+    if gh.len() != total || hp.len() != total / 3 {
+        return Err(pyo3::exceptions::PyValueError::new_err("gates_h and h_prev dimension mismatch"));
+    }
+    let hd = total / 3;
+
+    let sigmoid = |x: f32| -> f32 { 1.0 / (1.0 + (-x).exp()) };
+
+    let mut h_new = vec![0.0f32; hd];
+    h_new.par_iter_mut().enumerate().for_each(|(i, out)| {
+        let r = sigmoid(gx[i] + gh[i]);
+        let z = sigmoid(gx[hd + i] + gh[hd + i]);
+        let n = (gx[2 * hd + i] + r * gh[2 * hd + i]).tanh();
+        *out = (1.0 - z) * n + z * hp[i];
+    });
+
+    Ok(PyArray1::from_vec_bound(py, h_new))
+}
+
+// ── Batched Cosine Similarity ─────────────────────────────────────────────────
+
+/// Compute `(T_a, T_b)` cosine similarity matrix from `(T_a, D)` and `(T_b, D)` float32.
+/// Fused: row norms and dot products computed in one Rayon pass over T_a rows.
+#[pyfunction]
+fn batched_cosine_similarity_f32<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray2<f32>,
+    b: PyReadonlyArray2<f32>,
+) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let a_arr = a.as_array();
+    let b_arr = b.as_array();
+    let (ta, da) = a_arr.dim();
+    let (tb, db) = b_arr.dim();
+    if da != db {
+        return Err(pyo3::exceptions::PyValueError::new_err("a and b must have same embedding dim"));
+    }
+
+    // Precompute b norms
+    let b_norms: Vec<f32> = (0..tb).map(|j| {
+        let row = b_arr.row(j);
+        let sq: f32 = row.iter().map(|&x| x * x).sum();
+        sq.sqrt().max(1e-12)
+    }).collect();
+
+    let flat: Vec<f32> = (0..ta).into_par_iter().flat_map(|i| {
+        let a_row = a_arr.row(i);
+        let a_norm: f32 = a_row.iter().map(|&x| x * x).sum::<f32>().sqrt().max(1e-12);
+        (0..tb).map(|j| {
+            let b_row = b_arr.row(j);
+            let dot: f32 = a_row.iter().zip(b_row.iter()).map(|(&x, &y)| x * y).sum();
+            dot / (a_norm * b_norms[j])
+        }).collect::<Vec<f32>>()
+    }).collect();
+
+    let out = Array2::from_shape_vec((ta, tb), flat).expect("shape");
+    Ok(out.into_pyarray_bound(py))
+}
+
+// ── SwiGLU / SiLU ────────────────────────────────────────────────────────────
+
+/// Fused SiLU element-wise: returns `x * sigmoid(x)` for each element of a `(N,)` array.
+#[pyfunction]
+fn silu_f32<'py>(
+    py: Python<'py>,
+    x: PyReadonlyArray1<f32>,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let xs = x.as_slice()?;
+    let out: Vec<f32> = xs.par_iter().map(|&v| v / (1.0 + (-v).exp())).collect();
+    Ok(PyArray1::from_vec_bound(py, out))
+}
+
+/// Fused SwiGLU: `gate * sigmoid(gate) * up` element-wise.
+/// `gate` and `up` must have the same length `(N,)`.
+#[pyfunction]
+fn swiglu_f32<'py>(
+    py: Python<'py>,
+    gate: PyReadonlyArray1<f32>,
+    up: PyReadonlyArray1<f32>,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let gs = gate.as_slice()?;
+    let us = up.as_slice()?;
+    if gs.len() != us.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err("gate and up must have the same length"));
+    }
+    let out: Vec<f32> = gs.par_iter().zip(us.par_iter())
+        .map(|(&g, &u)| g / (1.0 + (-g).exp()) * u)
+        .collect();
+    Ok(PyArray1::from_vec_bound(py, out))
+}
+
+// ── Randomized SVD ────────────────────────────────────────────────────────────
+
+/// Randomized SVD of `(m, n)` float32 matrix A.
+/// Returns (U `(m, rank)`, S `(rank,)`, Vt `(rank, n)`).
+/// Uses: Gaussian sketch Ω `(n, rank+oversample)`, Y = A×Ω, QR(Y), thin SVD of Q^T×A.
+#[pyfunction]
+fn randomized_svd_f32<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray2<f32>,
+    rank: usize,
+    n_oversamples: usize,
+) -> PyResult<(Bound<'py, PyArray2<f32>>, Bound<'py, PyArray1<f32>>, Bound<'py, PyArray2<f32>>)> {
+    let a_arr = a.as_array();
+    let (m, n) = a_arr.dim();
+    let k = (rank + n_oversamples).min(m.min(n));
+
+    // Gaussian sketch Ω: (n, k) using LCG PRNG
+    let mut omega = vec![0.0f32; n * k];
+    let mut rng: u64 = 0x123456789ABCDEF0;
+    for v in omega.iter_mut() {
+        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        // Box-Muller using two LCG values
+        let u1 = (rng >> 11) as f64 / (1u64 << 53) as f64;
+        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let u2 = (rng >> 11) as f64 / (1u64 << 53) as f64;
+        *v = ((-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()) as f32;
+    }
+
+    // Y = A × Ω: (m, k)
+    let mut y_flat = vec![0.0f32; m * k];
+    y_flat.par_chunks_mut(k).enumerate().for_each(|(i, row)| {
+        let a_row = a_arr.row(i);
+        for j in 0..k {
+            row[j] = a_row.iter().enumerate().map(|(l, &v)| v * omega[l * k + j]).sum();
+        }
+    });
+
+    // QR decomposition of Y via Gram-Schmidt: Q is (m, k)
+    let mut q_cols: Vec<Vec<f32>> = Vec::with_capacity(k);
+    for j in 0..k {
+        let mut col: Vec<f32> = (0..m).map(|i| y_flat[i * k + j]).collect();
+        for prev in q_cols.iter() {
+            let dot: f32 = col.iter().zip(prev.iter()).map(|(&a, &b)| a * b).sum();
+            for (c, &p) in col.iter_mut().zip(prev.iter()) { *c -= dot * p; }
+        }
+        let norm: f32 = col.iter().map(|&x| x * x).sum::<f32>().sqrt();
+        if norm > 1e-10 {
+            for v in col.iter_mut() { *v /= norm; }
+        }
+        q_cols.push(col);
+    }
+
+    // B = Q^T × A: (k, n)
+    let mut b_flat = vec![0.0f32; k * n];
+    b_flat.par_chunks_mut(n).enumerate().for_each(|(j, row)| {
+        let q_col = &q_cols[j];
+        for l in 0..n {
+            row[l] = q_col.iter().enumerate().map(|(i, &q)| q * a_arr[(i, l)]).sum();
+        }
+    });
+
+    // Thin SVD of B (k, n) via one-sided Jacobi for small k
+    // For simplicity, use power iteration + eigendecomposition of B×B^T (k×k)
+    // Compute B × B^T: (k, k) symmetric
+    let mut bbt = vec![0.0f32; k * k];
+    for i in 0..k {
+        for j in i..k {
+            let dot: f32 = (0..n).map(|l| b_flat[i * n + l] * b_flat[j * n + l]).sum();
+            bbt[i * k + j] = dot;
+            bbt[j * k + i] = dot;
+        }
+    }
+
+    // Extract eigenvalues/vectors of BBT via Jacobi iterations
+    let mut eig_vecs: Vec<Vec<f32>> = (0..k).map(|i| {
+        let mut e = vec![0.0f32; k];
+        e[i] = 1.0;
+        e
+    }).collect();
+    let mut eig_vals: Vec<f32> = (0..k).map(|i| bbt[i * k + i]).collect();
+
+    for _ in 0..30 {
+        for p in 0..k {
+            for q in (p + 1)..k {
+                let a_pp = eig_vals[p];
+                let a_qq = eig_vals[q];
+                let a_pq = {
+                    let mut val = 0.0f32;
+                    for l in 0..k {
+                        val += eig_vecs[p][l] * (0..k).map(|m2| bbt[l * k + m2] * eig_vecs[q][m2]).sum::<f32>();
+                    }
+                    val
+                };
+                if a_pq.abs() < 1e-8 { continue; }
+                let tau = (a_qq - a_pp) / (2.0 * a_pq);
+                let t = if tau >= 0.0 { 1.0 / (tau + (1.0 + tau * tau).sqrt()) }
+                        else { -1.0 / (-tau + (1.0 + tau * tau).sqrt()) };
+                let c = 1.0 / (1.0 + t * t).sqrt();
+                let s = c * t;
+                eig_vals[p] = a_pp - t * a_pq;
+                eig_vals[q] = a_qq + t * a_pq;
+                let ep = eig_vecs[p].clone();
+                let eq = eig_vecs[q].clone();
+                for l in 0..k {
+                    eig_vecs[p][l] = c * ep[l] - s * eq[l];
+                    eig_vecs[q][l] = s * ep[l] + c * eq[l];
+                }
+            }
+        }
+    }
+
+    // Sort by descending eigenvalue
+    let mut idx: Vec<usize> = (0..k).collect();
+    idx.sort_by(|&a, &b| eig_vals[b].partial_cmp(&eig_vals[a]).unwrap_or(std::cmp::Ordering::Equal));
+
+    let actual_rank = rank.min(k);
+    let mut s_out = vec![0.0f32; actual_rank];
+    let mut u_out = vec![0.0f32; m * actual_rank];
+    let mut vt_out = vec![0.0f32; actual_rank * n];
+
+    for ri in 0..actual_rank {
+        let i = idx[ri];
+        let sv = eig_vals[i].max(0.0).sqrt();
+        s_out[ri] = sv;
+        // U[:,ri] = Q × eig_vecs[i]
+        let ev = &eig_vecs[i];
+        for row in 0..m {
+            u_out[row * actual_rank + ri] = q_cols.iter().enumerate().map(|(j, qc)| qc[row] * ev[j]).sum();
+        }
+        // Vt[ri,:] = B^T × eig_vecs[i] / sv (= V[:,ri]^T)
+        if sv > 1e-10 {
+            let inv_sv = 1.0 / sv;
+            for col in 0..n {
+                vt_out[ri * n + col] =
+                    (0..k).map(|j| b_flat[j * n + col] * ev[j]).sum::<f32>() * inv_sv;
+            }
+        }
+    }
+
+    let u_arr = Array2::from_shape_vec((m, actual_rank), u_out).expect("shape");
+    let s_arr = Array1::from(s_out);
+    let vt_arr = Array2::from_shape_vec((actual_rank, n), vt_out).expect("shape");
+
+    Ok((
+        u_arr.into_pyarray_bound(py),
+        s_arr.into_pyarray_bound(py),
+        vt_arr.into_pyarray_bound(py),
+    ))
+}
+
 // ── PyO3 module registration ─────────────────────────────────────────────────
 
 #[pymodule]
@@ -1647,5 +2261,18 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(quantize_int2_grouped_f32,           m)?)?;
     m.add_function(wrap_pyfunction!(dequantize_int2_grouped_f32,         m)?)?;
     m.add_function(wrap_pyfunction!(quantize_int2_grouped_bf16,          m)?)?;
+    // Wave 57a — Entropy Codec · PQ Accelerate · GRU Cell · Batch CosSim · SwiGLU · Randomized SVD
+    m.add_function(wrap_pyfunction!(rans_encode,                         m)?)?;
+    m.add_function(wrap_pyfunction!(rans_decode,                         m)?)?;
+    m.add_function(wrap_pyfunction!(huffman_encode,                      m)?)?;
+    m.add_function(wrap_pyfunction!(huffman_decode,                      m)?)?;
+    m.add_function(wrap_pyfunction!(pq_kmeans_fit,                       m)?)?;
+    m.add_function(wrap_pyfunction!(pq_encode_batch,                     m)?)?;
+    m.add_function(wrap_pyfunction!(pq_adc_search,                       m)?)?;
+    m.add_function(wrap_pyfunction!(gru_step_f32,                        m)?)?;
+    m.add_function(wrap_pyfunction!(batched_cosine_similarity_f32,       m)?)?;
+    m.add_function(wrap_pyfunction!(silu_f32,                            m)?)?;
+    m.add_function(wrap_pyfunction!(swiglu_f32,                          m)?)?;
+    m.add_function(wrap_pyfunction!(randomized_svd_f32,                  m)?)?;
     Ok(())
 }

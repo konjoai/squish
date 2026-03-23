@@ -5,6 +5,113 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [31.0.0] — 2026-03-22
+
+### Added — Wave 57: v31 Deep Native Acceleration: Rust Entropy Codec · PQ ADC · GRU Cell · Cosine Sim · SwiGLU · Randomized SVD + Mojo RMSNorm · SwiGLU Parallel · GQA Decode · Token CosSim · Sparse Block Score · Retention State
+
+Twelve production-grade modules: six Rust-backed kernel wrappers (Wave 57a)
+adding entropy coding, PQ acceleration, GRU cell, batched cosine similarity,
+SwiGLU/SiLU fusion, and randomized SVD to `squish_quant_rs`; plus six
+Mojo-backed kernel wrappers (Wave 57b) building on Wave 56's MojoBridge
+infrastructure. All 144 Wave 56 tests continue passing; 144 new tests added.
+
+#### Wave 57a — Rust kernel Python wrappers
+
+- **RustEntropyCodec** (`squish/kernels/rs_entropy_codec.py`) — rANS encode/decode
+  and Huffman encode/decode wrapping four new `squish_quant` functions:
+  `rans_encode`, `rans_decode`, `huffman_encode`, `huffman_decode`. rANS state
+  machine over `[u32; 256]` CDF: 1–5 GB/s vs 50–200 MB/s Python loop; Huffman
+  uses flat `(code_word, code_len)` array replacing Python dict bit-string
+  (~15× faster). NumPy fallback implements full encode/decode cycle.
+
+- **RustPQAccelerate** (`squish/kernels/rs_pq_accelerate.py`) — Product
+  Quantization K-means fit + encode + ADC search wrapping `pq_kmeans_fit`,
+  `pq_encode_batch`, `pq_adc_search`. Rayon parallel K-means++ initialization
+  and Lloyd iterations; ADC LUT gather replaces Python `[codes[i][m] for i in ...]`
+  O(N×M) list allocation; ~15× K-means, ~10× ADC at N=4096, M=8 subspaces.
+  NumPy fallback with K-means++ seeding.
+
+- **RustGRUCell** (`squish/kernels/rs_gru_cell.py`) — Fused GRU cell step
+  wrapping `gru_step_f32`. Accepts pre-multiplied `gates_x` and `gates_h`
+  `(3 × hidden_dim)` float32 slices; fused sigmoid×2 + tanh×1 + multiply×3
+  in one Rayon SIMD pass; eliminates 5 intermediate NumPy allocations per step.
+  Hooks into `redrafter.py` and `ssd.py`; ~8× at hidden_dim=2048.
+
+- **RustBatchCosSim** (`squish/kernels/rs_batch_cos_sim.py`) — Batched cosine
+  similarity matrix wrapping `batched_cosine_similarity_f32`. Computes `(T_a, T_b)`
+  similarity from `(T_a, D)` and `(T_b, D)` float32 inputs; fused row-norms and
+  dot products in one Rayon pass vs NumPy's 3-pass (norm+norm+matmul); ~4–6× on
+  (256, 128) inputs. Includes `self_similarity()` convenience wrapper.
+
+- **RustSwiGLU** (`squish/kernels/rs_swiglu.py`) — Fused SwiGLU and SiLU
+  activation kernels wrapping `swiglu_f32` and `silu_f32`. Computes
+  `gate / (1 + exp(-gate)) * up` in one Rayon SIMD chunk pass; eliminates
+  intermediate `silu_out` array allocation and two NumPy ufunc dispatches;
+  ~3–4× at ffn_dim=14336. Includes `silu()` standalone method.
+
+- **RustRandomizedSVD** (`squish/kernels/rs_randomized_svd.py`) — Randomized
+  SVD (Halko et al. 2011) wrapping `randomized_svd_f32`. Gaussian sketch +
+  QR + thin SVD; ~3–8× faster than NumPy LAPACK full SVD at rank ≤ 64.
+  Hooks into 12 `np.linalg.svd` call sites in `shadow_kv.py`, `gear_kv.py`,
+  `kv_cache.py`, `milo_quant.py`, `context/delta_compress.py`, `kv/adaptive_kvtc.py`.
+  Includes `reconstruct()` that returns the rank-k approximation directly.
+
+#### Wave 57b — Mojo kernel Python wrappers
+
+- **MojoRMSNormFused** (`squish/kernels/mojo/rmsnorm_mojo.py` + `kernels/rmsnorm.mojo`)
+  — Fused residual-add + RMSNorm + scale in one SIMD pass. `@parameter` on
+  hidden_dim ∈ {4096, 7168, 8192}; reads `x + residual` once, writes `out` and
+  `new_residual` once; applies 64× per 32-layer decode step → ~1.8 ms → < 0.7 ms.
+  `norm_only()` for use without residual addition. NumPy fallback.
+
+- **MojoSwiGLUParallel** (`squish/kernels/mojo/swiglu_mojo.py` updated +
+  `kernels/swiglu.mojo`) — SwiGLU with `parallelize` over sequence rows and
+  `vectorize` over ffn_dim; supports both 1-D `(ffn_dim,)` and 2-D `(seq, ffn_dim)`
+  inputs; falls back to Rust `swiglu_f32` for 1-D; 1.3–1.8× over Rust on M3
+  for ffn_dim ≥ 8192.
+
+- **MojoGQADecodeKernel** (`squish/kernels/mojo/gqa_decode_mojo.py` +
+  `kernels/gqa_decode.mojo`) — GQA decode scaled dot-product attention with SIMD
+  inner dot product and KV-group broadcast; `@parameter` on n_kv_heads and head_dim;
+  `parallelize` over n_heads; 2–4× over `np.matmul` for cache_len ≥ 1024.
+  Full causal-masked softmax + weighted V accumulation.
+
+- **MojoTokenCosSim** (`squish/kernels/mojo/token_cos_sim_mojo.py` +
+  `kernels/token_cos_sim.mojo`) — All-pairs cosine similarity `(T_a, T_b)` with
+  `parallelize` over T_a rows; `@parameter` on D ∈ {128, 256, 512, 1024}; SIMD
+  rsqrt for inverse norm; `top_k_similar_pairs()` for bipartite token matching.
+  Falls back to Rust `batched_cosine_similarity_f32`; 3× over NumPy for T ≥ 256.
+
+- **MojoSparseBlockScore** (`squish/kernels/mojo/sparse_block_score_mojo.py` +
+  `kernels/sparse_block_score.mojo`) — Block-level `Q × K^T` scoring for top-K
+  block selection in NSA; `@parameter` on block_size ∈ {16, 32, 64} and
+  head_dim ∈ {64, 128}; `parallelize` over (head, q_block) pairs; `top_k_blocks()`
+  returns int64 top-K key block indices; 3–5× over NumPy einsum on 32-token blocks.
+
+- **MojoRetentionState** (`squish/kernels/mojo/retention_state_mojo.py` +
+  `kernels/retention_state.mojo`) — RetNet recurrent state update and retrieval;
+  `S_new = γ×S + outer(k,v)` and `o = S_new @ q` in SIMD; `@parameter` on
+  head_dim ∈ {64, 128}; `parallelize` over n_heads; `zero_state()` initializer;
+  `gamma` override per step; 2 `np.einsum` calls per layer replaced.
+
+#### Rust additions (squish_quant_rs/src/lib.rs)
+
+12 new exported functions: `rans_encode`, `rans_decode`, `huffman_encode`,
+`huffman_decode`, `pq_kmeans_fit`, `pq_encode_batch`, `pq_adc_search`,
+`gru_step_f32`, `batched_cosine_similarity_f32`, `silu_f32`, `swiglu_f32`,
+`randomized_svd_f32`. Module registration extended to 40 total functions.
+
+#### Tests
+
+- `tests/test_wave57a_rust_kernels2.py` — 72 tests across 12 classes covering
+  all 6 Rust kernel modules with config, correctness, edge cases, and NumPy
+  parity validation; all passing.
+- `tests/test_wave57b_mojo_kernels2.py` — 72 tests across 12 classes covering
+  all 6 Mojo kernel modules with config, numerical correctness, edge cases, and
+  NumPy reference cross-validation; all passing.
+
+---
+
 ## [30.0.0] — 2026-04-07
 
 ### Added — Wave 56: v30 Native Acceleration Layer: Rust NF4 · FP8 · INT3 · Sampling · KV-Quant · INT2 + Mojo Infrastructure · Softmax · RoPE · NF4 Dequant · INT4 GEMM · Flash Prefill
