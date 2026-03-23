@@ -4,12 +4,21 @@
 .md-grid { max-width: 1200px; }
 code { font-size: 0.88em; }
 
-/* ── Header: match squish purple brand ─────────────────────────── */
-.md-header {
-  background: #0B0B14 !important;
+/* ── Header: dark scheme (default) ─────────────────────────────── */
+body[data-md-color-scheme="slate"] .md-header,
+body:not([data-md-color-scheme]) .md-header {
+  background: #09090F !important;
   border-bottom: 1px solid rgba(123,63,247,0.2);
   box-shadow: none;
 }
+/* ── Header: light scheme ───────────────────────────────────────── */
+body[data-md-color-scheme="default"] .md-header {
+  background: #F7F4FF !important;
+  border-bottom: 1px solid rgba(110,55,220,0.15);
+  box-shadow: none;
+}
+body[data-md-color-scheme="default"] .md-header__title,
+body[data-md-color-scheme="default"] .md-header__topic { color: #12003C !important; }
 .md-header__title { font-weight: 700; letter-spacing: -.01em; }
 
 /* ── Logo sizing ────────────────────────────────────────────────── */
@@ -17,10 +26,22 @@ code { font-size: 0.88em; }
   width: 32px; height: 32px; border-radius: 6px;
 }
 
-/* ── Nav tabs bar ───────────────────────────────────────────────── */
-.md-tabs { background: #0B0B14 !important; border-bottom: 1px solid rgba(123,63,247,0.15); }
+/* ── Nav tabs bar: dark ─────────────────────────────────────────── */
+body[data-md-color-scheme="slate"] .md-tabs,
+body:not([data-md-color-scheme]) .md-tabs {
+  background: #09090F !important;
+  border-bottom: 1px solid rgba(123,63,247,0.15);
+}
+/* ── Nav tabs bar: light ────────────────────────────────────────── */
+body[data-md-color-scheme="default"] .md-tabs {
+  background: #F0EAFF !important;
+  border-bottom: 1px solid rgba(110,55,220,0.15);
+}
 .md-tabs__link--active,
 .md-tabs__link:hover { color: #B888FF !important; }
+body[data-md-color-scheme="default"] .md-tabs__link { color: #2A1060 !important; }
+body[data-md-color-scheme="default"] .md-tabs__link--active,
+body[data-md-color-scheme="default"] .md-tabs__link:hover { color: #6B2FE7 !important; }
 
 /* ── Dark sidebar ───────────────────────────────────────────────── */
 [data-md-color-scheme="slate"] .md-sidebar,
