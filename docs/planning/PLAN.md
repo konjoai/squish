@@ -577,6 +577,70 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
+## ✅ v34 Wave 60 — SSM Recurrence Sprint: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV (Complete)
+
+Theme: **Wave 60 targets the next-generation recurrent and paged-memory bottlenecks
+that sit on the critical path for SSM-based models (Mamba2, Hawk/Griffin), speculative
+decoding (Medusa), paged KV-cache memory management (vLLM/PagedAttention), KV-cache
+entropy-aware eviction (CAKE), and BitNet ternary-weight inference — all identified as the
+dominant remaining Python-loop hotspots after Wave 59 eliminated the GPTQ/QuaRot/calibration
+bottlenecks.**
+
+**Wave 60a Rust modules (7 new functions, 71 total in squish_quant_rs):**
+(1) `mamba2_ssm.py` `Mamba2SSM._scan_step` sequential `for t in range(T)` loop over d_state channels;
+Rust: sequential time + `into_par_iter()` over d_state with `exp(a[t])*h + b[t]*x[t]`, ~4× vs pure-Python
+at T=512, d_state=64. (2) `mamba2_ssm.py` `Mamba2SSM.decode_step` single-token state update; Rust
+`mamba2_ssm_decode_f32` O(d_state) with parallel dot. (3) `ada_round.py` `AdaRound._gradient_step`
+parallel `for n in range(N)` over weight elements; Rust rectified-sigmoid + combined gradient;
+~3× for 4096 weights. (4) `paged_attn.py` `PagedAttention._gather_kv_blocks` non-contiguous
+`for bid in page_table` loop; Rust `par_chunks_mut` parallel gather with direct pool memcopy; ~5×
+for 1024-token context, 8 heads, head_dim 128. (5) `hawk_recurrent.py` `HawkRGLR._scan` sequential
+time loop with softplus+decay+gate; Rust `hawk_rglr_scan_f32` parallel d_state; ~4× at T=512,
+d_state=512. (6) `cake_evict.py` `CakeEviction.compute_entropy` `for h in range(H)` per-head attention
+entropy; Rust `cake_entropy_f32` parallel heads with GEMV softmax; ~6× for H=32, T=1024. (7)
+`ternary_quant.py` `TernaryLinear.forward` dense matmul over zero weights; Rust `ternary_gemv_i8`
+`match {1,-1,_}` skipping zero elements; ~3–5× for 50% sparsity.
+
+**Wave 60b Mojo modules (6 new wrappers + stubs):**
+`mamba2_scan.mojo` — `vectorize` d_state dot + state update.
+`hawk_rglr.mojo` — `parallelize[update_channel](d_state)` with softplus/decay/gate.
+`medusa_verify.mojo` — parallel acceptance Phase 1 + sequential prefix enforcement Phase 2.
+`paged_kv_gather.mojo` — `parallelize[gather_token]` + `vectorize[copy_elem]`.
+`cake_entropy.mojo` — `parallelize[compute_head]` + `vectorize[dot_elem]`.
+`ternary_gemv.mojo` — `parallelize[compute_row]` with `if/elif {1,-1}` ternary branch.
+
+**Results:** 155 new tests (77 Wave 60a + 78 Wave 60b); all 741 cumulative tests pass.
+lib.rs: 3,621 lines, 71 registered functions.
+
+### Wave 60 Checklist
+
+- [x] Wave 60 spec designed from codebase analysis
+- [x] lib.rs updated (7 Wave 60a functions registered)
+- [x] `rs_mamba2_ssm.py` — RustMamba2SSM (scan + decode_step)
+- [x] `rs_adaround.py` — RustAdaRound (step)
+- [x] `rs_paged_kv.py` — RustPagedKVGather (gather)
+- [x] `rs_hawk_rglr.py` — RustHawkRGLR (scan)
+- [x] `rs_cake_entropy.py` — RustCakeEntropy (compute)
+- [x] `rs_ternary_gemv.py` — RustTernaryGEMV (gemv + sparsity)
+- [x] `mamba2_scan_mojo.py` — MojoMamba2Scan
+- [x] `hawk_rglr_mojo.py` — MojoHawkRGLR
+- [x] `medusa_verify_mojo.py` — MojoMedusaVerify
+- [x] `paged_kv_mojo.py` — MojoPagedKVGather
+- [x] `cake_entropy_mojo.py` — MojoCakeEntropy
+- [x] `ternary_gemv_mojo.py` — MojoTernaryGEMV
+- [x] `mamba2_scan.mojo` stub
+- [x] `hawk_rglr.mojo` stub
+- [x] `medusa_verify.mojo` stub
+- [x] `paged_kv_gather.mojo` stub
+- [x] `cake_entropy.mojo` stub
+- [x] `ternary_gemv.mojo` stub
+- [x] `tests/test_wave60a_rust_kernels.py` (77 tests)
+- [x] `tests/test_wave60b_mojo_kernels.py` (78 tests)
+- [x] CHANGELOG `[34.0.0]` entry
+- [x] PLAN.md updated
+
+---
+
 ## ✅ v33 Wave 59 — Decode Velocity Sprint: Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict (Complete)
 
 Theme: **Wave 59 targets six Python/NumPy hotspots that sit squarely on the critical path

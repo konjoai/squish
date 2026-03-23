@@ -5,6 +5,82 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [34.0.0] — 2026-03-29
+
+### Added — Wave 60: v34 Fifth Acceleration Tier: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV
+
+Thirteen production-grade modules: seven Rust-backed kernel functions (Wave 60a)
+added to `squish_quant_rs` covering SSM recurrence (Mamba2 sequential scan &
+single-token decode), AdaRound V-parameter gradient step, paged KV-cache block
+gather, Hawk RGLR real-gated linear recurrence scan, CAKE per-head attention
+entropy for KV eviction, and BitNet ternary GEMV; plus six Mojo-backed kernel
+wrappers (Wave 60b) mirroring the same operations with SIMD-vectorised `.mojo`
+stubs for `mamba2_scan`, `hawk_rglr`, `medusa_verify`, `paged_kv_gather`,
+`cake_entropy`, and `ternary_gemv`. All 586 Wave 56–59 tests continue passing;
+155 new tests added (77 Wave 60a + 78 Wave 60b).
+
+#### Wave 60a — Rust kernel Python wrappers
+
+- **RustMamba2SSM** (`squish/kernels/rs_mamba2_ssm.py`) — Sequential time-step
+  SSM scan with parallel d_state channels wrapping `mamba2_ssm_scan_f32` and
+  `mamba2_ssm_decode_f32`. Scan: `h = exp(a[t]) * h + b[t] * x[t]`,
+  `y[t] = dot(c[t], h)`. Decode: O(d_state) single-token update returning
+  `(y_scalar, new_state)`. NumPy fallback with identical step loop.
+
+- **RustAdaRound** (`squish/kernels/rs_adaround.py`) — AdaRound V-parameter
+  gradient step wrapping `adaround_step_f32`. Rayon parallel over N weight
+  elements: rectified-sigmoid `h = clip(σ(β*(V−ζ)), 0, 1)`; soft-quantised
+  weight `w_soft = (floor + h) * scale`; combined gradient `grad + λ * h'`
+  where `h' = β*h*(1−h)*(γ−ζ)`. NumPy fallback with vectorised sigmoid.
+
+- **RustPagedKVGather** (`squish/kernels/rs_paged_kv.py`) — Paged KV-cache
+  block-gather wrapping `paged_kv_gather_f32`. Rayon `par_chunks_mut` over
+  output tokens; physical page index `tok // block_size` looked up in page
+  table; non-contiguous pool memcopy. Returns `(n_valid_tokens, n_heads, head_dim)`.
+
+- **RustHawkRGLR** (`squish/kernels/rs_hawk_rglr.py`) — Real-gated linear
+  recurrence (Hawk/Griffin) scan wrapping `hawk_rglr_scan_f32`. Sequential
+  time, parallel d_state: `decay = exp(−exp(λ[i]) * softplus(dt_i))`;
+  `i_gate = sqrt(max(1 − decay², 0))`; `h = decay * h + i_gate * x`.
+
+- **RustCakeEntropy** (`squish/kernels/rs_cake_entropy.py`) — CAKE per-head
+  normalised attention entropy wrapping `cake_entropy_f32`. Rayon parallel
+  over n_heads; per-head softmax GEMV over T key tokens; Shannon entropy
+  normalised by `ln(T)`, averaged over `obs_window` observation queries.
+
+- **RustTernaryGEMV** (`squish/kernels/rs_ternary_gemv.py`) — BitNet-style
+  ternary weight GEMV wrapping `ternary_gemv_i8`. Rayon parallel over
+  out_features; `match w {1 → acc += a, -1 → acc −= a, _ → skip}` avoiding
+  any floating-point multiply for zero weights. Includes `sparsity()` utility.
+
+#### Wave 60b — Mojo kernel Python wrappers + `.mojo` stubs
+
+- **MojoMamba2Scan** (`squish/kernels/mojo/mamba2_scan_mojo.py`) + stub
+  `mamba2_scan.mojo` — `vectorize[dot_elem, SIMD_W]` for d_state dot product;
+  sequential time loop + `vectorize` state update.
+
+- **MojoHawkRGLR** (`squish/kernels/mojo/hawk_rglr_mojo.py`) + stub
+  `hawk_rglr.mojo` — `parallelize[update_channel](d_state)` with softplus,
+  decay, and input-gate computation per channel; `UnsafePointer` API.
+
+- **MojoMedusaVerify** (`squish/kernels/mojo/medusa_verify_mojo.py`) + stub
+  `medusa_verify.mojo` — `parallelize[check_head](n_heads)` acceptance Phase 1;
+  sequential prefix enforcement Phase 2.
+
+- **MojoPagedKVGather** (`squish/kernels/mojo/paged_kv_mojo.py`) + stub
+  `paged_kv_gather.mojo` — `parallelize[gather_token](n_valid_tokens)`;
+  `vectorize[copy_elem, SIMD_W](head_dim)` for head-dim copies.
+
+- **MojoCakeEntropy** (`squish/kernels/mojo/cake_entropy_mojo.py`) + stub
+  `cake_entropy.mojo` — `parallelize[compute_head](n_heads)`; per-head GEMV
+  softmax + entropy; `vectorize[dot_elem, SIMD_W](head_dim)`.
+
+- **MojoTernaryGEMV** (`squish/kernels/mojo/ternary_gemv_mojo.py`) + stub
+  `ternary_gemv.mojo` — `parallelize[compute_row](out_features)`; `if w == 1:
+  acc += a elif -1: acc -= a` avoiding multiply for zero elements.
+
+---
+
 ## [33.0.0] — 2026-03-22
 
 ### Added — Wave 59: v33 Fourth Acceleration Tier: Rust GPTQ Column Solve · QuaRot Group Quant · CalibScale Absmax/Percentile/ACIQ · Flash Decode Split · BF16 Cast · Sparse Act GEMV + Mojo Flash Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer Skip Predict

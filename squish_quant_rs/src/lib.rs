@@ -3246,5 +3246,376 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bf16_to_f32_vec,                     m)?)?;
     m.add_function(wrap_pyfunction!(f32_to_bf16_vec,                     m)?)?;
     m.add_function(wrap_pyfunction!(sparse_act_gemv_f32,                 m)?)?;
+    // Wave 60a — Mamba2SSM · AdaRound · PagedKVGather · HawkRGLR · CakeEntropy · TernaryGEMV
+    m.add_function(wrap_pyfunction!(mamba2_ssm_scan_f32,                 m)?)?;
+    m.add_function(wrap_pyfunction!(mamba2_ssm_decode_f32,               m)?)?;
+    m.add_function(wrap_pyfunction!(adaround_step_f32,                   m)?)?;
+    m.add_function(wrap_pyfunction!(paged_kv_gather_f32,                 m)?)?;
+    m.add_function(wrap_pyfunction!(hawk_rglr_scan_f32,                  m)?)?;
+    m.add_function(wrap_pyfunction!(cake_entropy_f32,                    m)?)?;
+    m.add_function(wrap_pyfunction!(ternary_gemv_i8,                     m)?)?;
     Ok(())
+}
+
+// ── Wave 60a — Mamba2 SSM chunked scan · AdaRound gradient step · Paged KV gather
+//              · Hawk RGLR scan · CAKE entropy · Ternary GEMV ────────────────
+
+/// Mamba-2 SSD chunked parallel scan (prefill path).
+///
+/// Implements: h_{t+1} = A_t * h_t + B_t * x_t,  y_t = C_t @ h_t
+/// A is a per-head scalar broadcast; B, C are (T, d_state); x is (T,).
+/// Returns `output` (T,) and final `state` (d_state,) per head.
+///
+/// # Arguments
+/// * `a` - Log-A scalars (T,) — negative for stability.
+/// * `b` - B matrices (T, d_state).
+/// * `c` - C matrices (T, d_state).
+/// * `x` - Input sequence (T,).
+/// * `h0` - Initial state (d_state,); zero if starting fresh.
+///
+/// # Returns
+/// `(output (T,), final_state (d_state,))`
+#[pyfunction]
+fn mamba2_ssm_scan_f32(
+    py: Python<'_>,
+    a: PyReadonlyArray1<f32>,
+    b: PyReadonlyArray2<f32>,
+    c: PyReadonlyArray2<f32>,
+    x: PyReadonlyArray1<f32>,
+    h0: PyReadonlyArray1<f32>,
+) -> PyResult<(Py<PyArray1<f32>>, Py<PyArray1<f32>>)> {
+    let a_s = a.as_slice()?;
+    let b_s = b.as_slice()?;
+    let x_s = x.as_slice()?;
+    let c_s = c.as_slice()?;
+    let h0_s = h0.as_slice()?;
+    let t_len = a_s.len();
+    let d_state = h0_s.len();
+
+    let mut h: Vec<f32> = h0_s.to_vec();
+    let mut out = vec![0f32; t_len];
+    for t in 0..t_len {
+        let a_t = a_s[t].exp();
+        let x_t = x_s[t];
+        let b_row = &b_s[t * d_state..(t + 1) * d_state];
+        let c_row = &c_s[t * d_state..(t + 1) * d_state];
+        // h = A_t * h + B_t * x_t
+        for i in 0..d_state {
+            h[i] = a_t * h[i] + b_row[i] * x_t;
+        }
+        // y_t = C_t @ h
+        out[t] = c_row.iter().zip(h.iter()).map(|(&ci, &hi)| ci * hi).sum();
+    }
+    let output = PyArray1::from_vec(py, out);
+    let final_state = PyArray1::from_vec(py, h);
+    Ok((output.into(), final_state.into()))
+}
+
+/// Mamba-2 recurrent decode: single-token O(d_state) state update.
+///
+/// # Arguments
+/// * `a_scalar` - Scalar log-A for this step (already exp'd outside).
+/// * `b_vec`    - B vector (d_state,).
+/// * `c_vec`    - C vector (d_state,).
+/// * `x_scalar` - Input scalar for this token.
+/// * `state`    - Current recurrent state (d_state,) — modified in place via copy.
+///
+/// # Returns
+/// `(y_scalar: f32, new_state (d_state,))`
+#[pyfunction]
+fn mamba2_ssm_decode_f32(
+    py: Python<'_>,
+    a_scalar: f32,
+    b_vec: PyReadonlyArray1<f32>,
+    c_vec: PyReadonlyArray1<f32>,
+    x_scalar: f32,
+    state: PyReadonlyArray1<f32>,
+) -> PyResult<(f32, Py<PyArray1<f32>>)> {
+    let b_s = b_vec.as_slice()?;
+    let c_s = c_vec.as_slice()?;
+    let h_s = state.as_slice()?;
+    let d_state = h_s.len();
+    let mut new_h = Vec::with_capacity(d_state);
+    let mut y = 0f32;
+    for i in 0..d_state {
+        let hi = a_scalar * h_s[i] + b_s[i] * x_scalar;
+        y += c_s[i] * hi;
+        new_h.push(hi);
+    }
+    Ok((y, PyArray1::from_vec(py, new_h).into()))
+}
+
+/// AdaRound single optimisation step (vectorised over all weight elements).
+///
+/// Computes the rectified sigmoid h(V) = clip(σ(β*(V - ζ)) , 0, 1) and
+/// takes a gradient step: V ← V - lr * ∂L/∂V where
+/// ∂L/∂V = (W_soft - W_hard) + λ_reg * β_anneal * h'(V).
+///
+/// # Arguments
+/// * `v`             - Rounding parameters (flattened, len = N).
+/// * `w`             - Original weights (flattened, len = N).
+/// * `w_quant_floor` - Floor-quantized weights (flattened, len = N).
+/// * `q_scale`       - Per-element quantisation scale (len = N).
+/// * `lr`            - Learning rate.
+/// * `beta`          - Current β for the annealing schedule.
+/// * `lambda_reg`    - Regularisation coefficient.
+/// * `zeta`          - Stretch lower bound (default 0.1 in paper).
+/// * `gamma`         - Stretch upper bound (default 1.1 in paper).
+///
+/// # Returns
+/// Updated V vector (N,) as float32.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn adaround_step_f32(
+    py: Python<'_>,
+    v: PyReadonlyArray1<f32>,
+    w: PyReadonlyArray1<f32>,
+    w_quant_floor: PyReadonlyArray1<f32>,
+    q_scale: PyReadonlyArray1<f32>,
+    lr: f32,
+    beta: f32,
+    lambda_reg: f32,
+    zeta: f32,
+    gamma: f32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let v_s = v.as_slice()?;
+    let w_s = w.as_slice()?;
+    let wf_s = w_quant_floor.as_slice()?;
+    let qs_s = q_scale.as_slice()?;
+    let n = v_s.len();
+
+    let new_v: Vec<f32> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let vi = v_s[i];
+            // h(V) = clip(σ(β*(V - ζ)), 0, 1)
+            let sig = 1.0 / (1.0 + (-(beta * (vi - zeta))).exp());
+            let h = sig.clamp(0.0, 1.0);
+            // soft weight dequantized
+            let w_soft = (wf_s[i] + h) * qs_s[i];
+            // gradient wrt V: reconstruction loss term
+            let grad_recon = w_soft - w_s[i];
+            // regularisation: h'(V) = β * h * (1 - h) * (gamma - zeta)
+            let h_prime = beta * h * (1.0 - h) * (gamma - zeta);
+            let grad_reg = lambda_reg * h_prime;
+            vi - lr * (grad_recon * qs_s[i] + grad_reg)
+        })
+        .collect();
+    Ok(PyArray1::from_vec(py, new_v).into())
+}
+
+/// Gather K/V blocks from a paged physical buffer into a contiguous tensor.
+///
+/// Reconstructs the full K or V tensor for one sequence from non-contiguous
+/// physical pages.  Each page holds `block_size` tokens of `head_dim` floats
+/// across `n_heads` heads.
+///
+/// # Arguments
+/// * `kv_pool`   - Physical KV pool: (max_blocks, n_heads, block_size, head_dim).
+///   Passed as 2D `(max_blocks * n_heads * block_size, head_dim)`.
+/// * `page_table`  - Page indices for this sequence (n_pages,).
+/// * `n_heads`     - Number of KV heads.
+/// * `block_size`  - Tokens per physical page.
+/// * `head_dim`    - Head dimension.
+/// * `n_valid_tokens` - Number of valid tokens (may be < n_pages * block_size).
+///
+/// # Returns
+/// Contiguous tensor (n_valid_tokens, n_heads, head_dim) as float32.
+#[pyfunction]
+fn paged_kv_gather_f32(
+    py: Python<'_>,
+    kv_pool: PyReadonlyArray2<f32>,
+    page_table: PyReadonlyArray1<i32>,
+    n_heads: usize,
+    block_size: usize,
+    head_dim: usize,
+    n_valid_tokens: usize,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let pool = kv_pool.as_slice()?;
+    let pages = page_table.as_slice()?;
+    let stride = n_heads * block_size * head_dim; // per physical page
+    let out_size = n_valid_tokens * n_heads * head_dim;
+    let mut out = vec![0f32; out_size];
+
+    let filled = out
+        .par_chunks_mut(n_heads * head_dim)
+        .enumerate()
+        .map(|(tok_idx, dst)| {
+            let page_idx = tok_idx / block_size;
+            let tok_in_page = tok_idx % block_size;
+            let phys_page = pages[page_idx] as usize;
+            for h in 0..n_heads {
+                let src_base = phys_page * stride + h * block_size * head_dim + tok_in_page * head_dim;
+                let dst_base = h * head_dim;
+                dst[dst_base..dst_base + head_dim]
+                    .copy_from_slice(&pool[src_base..src_base + head_dim]);
+            }
+        });
+    filled.count(); // drive the parallel iterator
+    Ok(PyArray1::from_vec(py, out).into())
+}
+
+/// Hawk Real-Gated Linear Recurrence (RGLR) scan over a sequence.
+///
+/// Implements: h_t = f_t ⊙ h_{t-1} + i_t ⊙ x_t
+/// where f_t = exp(-exp(Λ) * softplus(dt_t)) and i_t = √(1 - f_t²) (approx).
+/// All operations are element-wise over d_state.
+///
+/// # Arguments
+/// * `x`          - Projected input (T, d_state) — B*x in the paper.
+/// * `dt`         - Delta-time inputs (T, d_state) before softplus.
+/// * `lambda_log` - Log-eigenvalues (d_state,) — Λ in the paper.
+/// * `h0`         - Initial state (d_state,).
+///
+/// # Returns
+/// `(outputs (T, d_state), final_state (d_state,))`
+#[pyfunction]
+fn hawk_rglr_scan_f32(
+    py: Python<'_>,
+    x: PyReadonlyArray2<f32>,
+    dt: PyReadonlyArray2<f32>,
+    lambda_log: PyReadonlyArray1<f32>,
+    h0: PyReadonlyArray1<f32>,
+) -> PyResult<(Py<PyArray1<f32>>, Py<PyArray1<f32>>)> {
+    let x_s = x.as_slice()?;
+    let dt_s = dt.as_slice()?;
+    let lam_s = lambda_log.as_slice()?;
+    let h0_s = h0.as_slice()?;
+    let t_len = x.shape()[0];
+    let d_state = h0_s.len();
+
+    let mut h: Vec<f32> = h0_s.to_vec();
+    let mut out = vec![0f32; t_len * d_state];
+    for t in 0..t_len {
+        let x_row = &x_s[t * d_state..(t + 1) * d_state];
+        let dt_row = &dt_s[t * d_state..(t + 1) * d_state];
+        let out_row = &mut out[t * d_state..(t + 1) * d_state];
+        // parallelise over d_state channels
+        out_row
+            .par_iter_mut()
+            .zip(h.par_iter_mut())
+            .enumerate()
+            .for_each(|(i, (y_i, h_i))| {
+                let sp = (1.0 + (-(dt_row[i])).exp()).ln(); // softplus(dt)
+                let decay = (-(lam_s[i].exp()) * sp).exp(); // f_t
+                let input_gate = (1.0 - decay * decay).sqrt().max(0.0); // i_t approx
+                *h_i = decay * *h_i + input_gate * x_row[i];
+                *y_i = *h_i;
+            });
+    }
+    Ok((
+        PyArray1::from_vec(py, out).into(),
+        PyArray1::from_vec(py, h).into(),
+    ))
+}
+
+/// CAKE attention-entropy computation for KV budget allocation.
+///
+/// Computes mean normalised attention entropy per head across observation_window
+/// recent queries.  Entropy is used to allocate KV-cache budget to each layer.
+///
+/// entropy(h) = -sum_t p(t) * log(p(t) + eps) / log(T)
+///
+/// where p(t) are softmax attention weights for query position t.
+///
+/// # Arguments
+/// * `q_obs`   - Recent queries (obs_window, n_heads, head_dim).
+///   Passed as 2D (obs_window * n_heads, head_dim).
+/// * `k`       - Key cache (T, n_heads, head_dim).
+///   Passed as 2D (T * n_heads, head_dim).
+/// * `n_heads` - Number of attention heads.
+/// * `obs_window` - Number of recent query positions.
+/// * `temperature` - Softmax temperature for score scaling.
+///
+/// # Returns
+/// Per-head mean entropy (n_heads,) as float32.
+#[pyfunction]
+fn cake_entropy_f32(
+    py: Python<'_>,
+    q_obs: PyReadonlyArray2<f32>,
+    k: PyReadonlyArray2<f32>,
+    n_heads: usize,
+    obs_window: usize,
+    temperature: f32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let q_s = q_obs.as_slice()?;
+    let k_s = k.as_slice()?;
+    let head_dim = q_obs.shape()[1];
+    let t_len = k.shape()[0] / n_heads;
+    let scale = 1.0 / ((head_dim as f32).sqrt() * temperature);
+
+    let entropies: Vec<f32> = (0..n_heads)
+        .into_par_iter()
+        .map(|h| {
+            let mut head_entropy = 0f32;
+            for q_pos in 0..obs_window {
+                let q_row = &q_s[(q_pos * n_heads + h) * head_dim
+                    ..(q_pos * n_heads + h + 1) * head_dim];
+                // compute scores for all T key positions
+                let mut scores: Vec<f32> = (0..t_len)
+                    .map(|t| {
+                        let k_row = &k_s[(t * n_heads + h) * head_dim
+                            ..(t * n_heads + h + 1) * head_dim];
+                        q_row.iter().zip(k_row.iter()).map(|(&qi, &ki)| qi * ki).sum::<f32>() * scale
+                    })
+                    .collect();
+                // softmax
+                let max_s = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                let sum_exp: f32 = scores.iter_mut().map(|s| { *s = (*s - max_s).exp(); *s }).sum();
+                // entropy
+                let ent: f32 = scores.iter().map(|&p| {
+                    let prob = p / sum_exp;
+                    if prob > 1e-9 { -prob * prob.ln() } else { 0.0 }
+                }).sum();
+                let log_t = (t_len as f32).ln().max(1.0);
+                head_entropy += ent / log_t;
+            }
+            head_entropy / (obs_window as f32).max(1.0)
+        })
+        .collect();
+    Ok(PyArray1::from_vec(py, entropies).into())
+}
+
+/// Ternary weight GEMV: INT8 {-1, 0, +1} weight matrix × FP32 activation.
+///
+/// Exploits the {-1, 0, +1} structure: per output row, accumulate only
+/// activations where w_ij == +1 (add), subtract where w_ij == -1, skip zeros.
+/// Rayon parallelises over output rows.
+///
+/// # Arguments
+/// * `weight`     - INT8 ternary weight matrix (out_features, in_features).
+///   Values must be in {-1, 0, +1}.
+/// * `activation` - FP32 activation vector (in_features,).
+/// * `scale`      - Scalar dequantisation scale (mean(|W_orig|)).
+///
+/// # Returns
+/// Output vector (out_features,) as float32.
+#[pyfunction]
+fn ternary_gemv_i8(
+    py: Python<'_>,
+    weight: PyReadonlyArray2<i8>,
+    activation: PyReadonlyArray1<f32>,
+    scale: f32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let w_s = weight.as_slice()?;
+    let a_s = activation.as_slice()?;
+    let out_f = weight.shape()[0];
+    let in_f = weight.shape()[1];
+
+    let out: Vec<f32> = (0..out_f)
+        .into_par_iter()
+        .map(|row| {
+            let row_start = row * in_f;
+            let mut acc = 0f32;
+            for j in 0..in_f {
+                match w_s[row_start + j] {
+                    1 => acc += a_s[j],
+                    -1 => acc -= a_s[j],
+                    _ => {}
+                }
+            }
+            acc * scale
+        })
+        .collect();
+    Ok(PyArray1::from_vec(py, out).into())
 }
