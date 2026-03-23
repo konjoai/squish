@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-21 (Wave 37 complete — Run 4 full benchmark complete — README corrected (SquishBar marked coming soon; TTFT vs cold-load clarified; 7B+ OOM documented) — v33 Wave 59 planned — Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict — Run 5 compression in progress: Qwen3-14B ✅ CPU mode fix · Mistral-7B download pending)
+> Last updated: 2026-03-22 (Wave 57 complete — v31 Deep Native Acceleration — Rust Entropy Codec / PQ ADC / GRU Cell / Cosine Sim / SwiGLU / Randomized SVD + Mojo RMSNorm / SwiGLU Parallel / GQA Decode / Token CosSim / Sparse Block Score / Retention State — 144 new tests — v32 Wave 58 planned: Rust Vector K-Means / FP6 BitPack / AWQ Channel / Model Merge / MoE Bincount / Online SGD · Mojo Dual-Chunk Attn / Infini-Attn Memory / Sliding-Window Attn / HQQ ALS / VPTQ Decode / Top-K/P Sampling)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -914,7 +914,7 @@ when the `magic` toolchain is unavailable; Rust functions fall back to the NumPy
 
 ---
 
-## 🚧 v31 Wave 57 — Deep Native Acceleration: Rust Entropy Codec · PQ ADC · GRU Cell · Cosine Sim · SwiGLU · Randomized SVD + Mojo RMSNorm · SwiGLU Parallel · GQA Decode · Token CosSim · Sparse Block Score · Retention State (Planned)
+## ✅ v31 Wave 57 — Deep Native Acceleration: Rust Entropy Codec · PQ ADC · GRU Cell · Cosine Sim · SwiGLU · Randomized SVD + Mojo RMSNorm · SwiGLU Parallel · GQA Decode · Token CosSim · Sparse Block Score · Retention State (Complete)
 
 Theme: **Wave 57 is the second tier of native acceleration, attacking six classes of Python/NumPy hotspots that
 Wave 56 intentionally deferred because they require either (a) algorithmic restructuring to unlock Rust SIMD, or
@@ -1021,23 +1021,23 @@ All modules have NumPy CPU fallback paths; Mojo kernels fall back to the corresp
 
 ### Completion Checklist
 
-- [ ] `squish_quant_rs/src/lib.rs` — entropy codec (rANS+Huffman), PQ K-means+ADC, GRU cell, cosine sim, SwiGLU, randomized SVD Rust functions + module registration
-- [ ] `squish/kernels/rs_entropy_codec.py` — RustEntropyCodec (Python wrapper, NumPy fallback)
-- [ ] `squish/kernels/rs_pq_accelerate.py` — RustPQAccelerate (Python wrapper, NumPy fallback)
-- [ ] `squish/kernels/rs_gru_cell.py` — RustGRUCell (Python wrapper, NumPy fallback)
-- [ ] `squish/kernels/rs_batch_cos_sim.py` — RustBatchCosSim (Python wrapper, NumPy fallback)
-- [ ] `squish/kernels/rs_swiglu.py` — RustSwiGLU (Python wrapper, NumPy fallback)
-- [ ] `squish/kernels/rs_randomized_svd.py` — RustRandomizedSVD (Python wrapper, NumPy fallback)
-- [ ] `squish/kernels/mojo/rmsnorm_mojo.py` + `squish/kernels/mojo/kernels/rmsnorm.mojo` — MojoRMSNormFused
-- [ ] `squish/kernels/mojo/swiglu_mojo.py` + `squish/kernels/mojo/kernels/swiglu.mojo` — MojoSwiGLUParallel
-- [ ] `squish/kernels/mojo/gqa_decode_mojo.py` + `squish/kernels/mojo/kernels/gqa_decode.mojo` — MojoGQADecodeKernel
-- [ ] `squish/kernels/mojo/token_cos_sim_mojo.py` + `squish/kernels/mojo/kernels/token_cos_sim.mojo` — MojoTokenCosSim
-- [ ] `squish/kernels/mojo/sparse_block_score_mojo.py` + `squish/kernels/mojo/kernels/sparse_block_score.mojo` — MojoSparseBlockScore
-- [ ] `squish/kernels/mojo/retention_state_mojo.py` + `squish/kernels/mojo/kernels/retention_state.mojo` — MojoRetentionState
-- [ ] `tests/test_wave57a_rust_kernels2.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave57b_mojo_kernels2.py` — ≥ 72 tests with NumPy fallback coverage, all passing
-- [ ] CHANGELOG `[31.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish_quant_rs/src/lib.rs` — entropy codec (rANS+Huffman), PQ K-means+ADC, GRU cell, cosine sim, SwiGLU, randomized SVD Rust functions + module registration
+- [x] `squish/kernels/rs_entropy_codec.py` — RustEntropyCodec (Python wrapper, NumPy fallback)
+- [x] `squish/kernels/rs_pq_accelerate.py` — RustPQAccelerate (Python wrapper, NumPy fallback)
+- [x] `squish/kernels/rs_gru_cell.py` — RustGRUCell (Python wrapper, NumPy fallback)
+- [x] `squish/kernels/rs_batch_cos_sim.py` — RustBatchCosSim (Python wrapper, NumPy fallback)
+- [x] `squish/kernels/rs_swiglu.py` — RustSwiGLU (Python wrapper, NumPy fallback)
+- [x] `squish/kernels/rs_randomized_svd.py` — RustRandomizedSVD (Python wrapper, NumPy fallback)
+- [x] `squish/kernels/mojo/rmsnorm_mojo.py` + `squish/kernels/mojo/kernels/rmsnorm.mojo` — MojoRMSNormFused
+- [x] `squish/kernels/mojo/swiglu_mojo.py` + `squish/kernels/mojo/kernels/swiglu.mojo` — MojoSwiGLUParallel
+- [x] `squish/kernels/mojo/gqa_decode_mojo.py` + `squish/kernels/mojo/kernels/gqa_decode.mojo` — MojoGQADecodeKernel
+- [x] `squish/kernels/mojo/token_cos_sim_mojo.py` + `squish/kernels/mojo/kernels/token_cos_sim.mojo` — MojoTokenCosSim
+- [x] `squish/kernels/mojo/sparse_block_score_mojo.py` + `squish/kernels/mojo/kernels/sparse_block_score.mojo` — MojoSparseBlockScore
+- [x] `squish/kernels/mojo/retention_state_mojo.py` + `squish/kernels/mojo/kernels/retention_state.mojo` — MojoRetentionState
+- [x] `tests/test_wave57a_rust_kernels2.py` — ≥ 72 tests, all passing
+- [x] `tests/test_wave57b_mojo_kernels2.py` — ≥ 72 tests with NumPy fallback coverage, all passing
+- [x] CHANGELOG `[31.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
