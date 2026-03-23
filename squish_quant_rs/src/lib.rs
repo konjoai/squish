@@ -3291,6 +3291,17 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ouroboros_lookahead_f32,             m)?)?;
     m.add_function(wrap_pyfunction!(pyramid_kv_budget_f32,               m)?)?;
     m.add_function(wrap_pyfunction!(qmoe_compress_iter_f32,              m)?)?;
+
+    // Wave 63a — AQLMEncode · BitDistiller · GGUFMixed · PQCacheFit · MagicPIG · MiloINT3
+    m.add_function(wrap_pyfunction!(aqlm_encode_f32,                     m)?)?;
+    m.add_function(wrap_pyfunction!(aqlm_kmeans_f32,                     m)?)?;
+    m.add_function(wrap_pyfunction!(bit_distiller_quant_f32,             m)?)?;
+    m.add_function(wrap_pyfunction!(bit_distiller_refine_f32,            m)?)?;
+    m.add_function(wrap_pyfunction!(gguf_mixed_quant_f32,                m)?)?;
+    m.add_function(wrap_pyfunction!(pq_cache_fit_f32,                    m)?)?;
+    m.add_function(wrap_pyfunction!(magic_pig_score_f32,                 m)?)?;
+    m.add_function(wrap_pyfunction!(milo_pack_int3_u8,                   m)?)?;
+    m.add_function(wrap_pyfunction!(milo_quant_f32,                      m)?)?;
     Ok(())
 }
 
@@ -4754,4 +4765,719 @@ fn qmoe_compress_iter_f32(
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
     let asgn_arr = Array1::from(assignments);
     Ok((cb_arr.into_pyarray_bound(py).unbind(), asgn_arr.into_pyarray_bound(py).unbind()))
+}
+
+// ── Wave 63a — AQLMEncode · BitDistiller · GGUFMixed · PQCacheFit · MagicPIG · MiloINT3 ────
+
+/// AQLM greedy multi-codebook nearest-lookup + residual subtract.
+///
+/// For each output feature row, iterates over `n_groups` groups and finds the
+/// nearest codebook entry by L2 distance, records its index, then subtracts
+/// the selected codeword from the residual (codebook peeling).
+///
+/// # Arguments
+/// * `residuals` — `(out, n_groups, gs)` f32 residual tensor.
+/// * `codebook`  — `(CB, gs)` f32 codebook entries.
+///
+/// Returns `((out, n_groups) u16 indices, (out, n_groups, gs) f32 updated residuals)`.
+#[pyfunction]
+fn aqlm_encode_f32(
+    py: Python<'_>,
+    residuals: PyReadonlyArray3<f32>,
+    codebook: PyReadonlyArray2<f32>,
+) -> PyResult<(Py<PyArray2<u16>>, Py<PyArray3<f32>>)> {
+    let res_sl = residuals.as_slice()?;
+    let cb_sl = codebook.as_slice()?;
+    let out_feat = residuals.shape()[0];
+    let n_groups = residuals.shape()[1];
+    let gs = residuals.shape()[2];
+    let cb_size = codebook.shape()[0];
+
+    let row_results: Vec<(Vec<u16>, Vec<f32>)> = (0..out_feat)
+        .into_par_iter()
+        .map(|i| {
+            let mut row_res: Vec<f32> =
+                res_sl[i * n_groups * gs..(i + 1) * n_groups * gs].to_vec();
+            let mut row_idx = vec![0u16; n_groups];
+            for g in 0..n_groups {
+                let base = g * gs;
+                let mut best_dist = f32::MAX;
+                let mut best_ci = 0usize;
+                for ci in 0..cb_size {
+                    let dist: f32 = (0..gs)
+                        .map(|k| {
+                            let d = row_res[base + k] - cb_sl[ci * gs + k];
+                            d * d
+                        })
+                        .sum();
+                    if dist < best_dist {
+                        best_dist = dist;
+                        best_ci = ci;
+                    }
+                }
+                row_idx[g] = best_ci as u16;
+                for k in 0..gs {
+                    row_res[base + k] -= cb_sl[best_ci * gs + k];
+                }
+            }
+            (row_idx, row_res)
+        })
+        .collect();
+
+    let mut indices_flat: Vec<u16> = Vec::with_capacity(out_feat * n_groups);
+    let mut res_flat: Vec<f32> = Vec::with_capacity(out_feat * n_groups * gs);
+    for (idx_row, res_row) in row_results {
+        indices_flat.extend_from_slice(&idx_row);
+        res_flat.extend_from_slice(&res_row);
+    }
+
+    let idx_arr = Array2::from_shape_vec((out_feat, n_groups), indices_flat)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    let res_arr = Array3::from_shape_vec((out_feat, n_groups, gs), res_flat)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok((
+        idx_arr.into_pyarray_bound(py).unbind(),
+        res_arr.into_pyarray_bound(py).unbind(),
+    ))
+}
+
+/// K-means++ initialisation + Lloyd clustering for AQLM codebook construction.
+///
+/// # Arguments
+/// * `vecs`   — `(N, gs)` f32 vectors to cluster.
+/// * `k`      — Number of codebook entries.
+/// * `n_iter` — Lloyd iterations.
+/// * `seed`   — Deterministic seed.
+///
+/// Returns `(k, gs)` f32 centroids.
+#[pyfunction]
+fn aqlm_kmeans_f32(
+    py: Python<'_>,
+    vecs: PyReadonlyArray2<f32>,
+    k: usize,
+    n_iter: u32,
+    seed: u64,
+) -> PyResult<Py<PyArray2<f32>>> {
+    let sl = vecs.as_slice()?;
+    let n = vecs.shape()[0];
+    let gs = vecs.shape()[1];
+    if k == 0 || n == 0 {
+        let cb = Array2::<f32>::zeros((k, gs));
+        return Ok(cb.into_pyarray_bound(py).unbind());
+    }
+
+    // K-means++ seeded initialisation
+    let mut rng = seed ^ 0x9e3779b97f4a7c15u64;
+    let lcg_next = |st: &mut u64| -> f64 {
+        *st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((*st >> 11) as f64) / (1u64 << 53) as f64
+    };
+
+    let first = (lcg_next(&mut rng) * n as f64) as usize % n;
+    let mut centroids: Vec<f32> = sl[first * gs..(first + 1) * gs].to_vec();
+
+    for _c in 1..k {
+        let n_cur = centroids.len() / gs;
+        let dists: Vec<f64> = (0..n)
+            .map(|i| {
+                let v = &sl[i * gs..(i + 1) * gs];
+                (0..n_cur)
+                    .map(|ci| {
+                        let c = &centroids[ci * gs..(ci + 1) * gs];
+                        v.iter().zip(c.iter()).map(|(&a, &b)| ((a - b) * (a - b)) as f64).sum::<f64>()
+                    })
+                    .fold(f64::MAX, f64::min)
+            })
+            .collect();
+        let total: f64 = dists.iter().sum();
+        let target = lcg_next(&mut rng) * total;
+        let mut cum = 0f64;
+        let mut chosen = n - 1;
+        for (i, &d) in dists.iter().enumerate() {
+            cum += d;
+            if cum >= target { chosen = i; break; }
+        }
+        centroids.extend_from_slice(&sl[chosen * gs..(chosen + 1) * gs]);
+    }
+
+    // Lloyd iterations
+    let mut assignments = vec![0usize; n];
+    for _iter in 0..n_iter {
+        // E-step: parallel assignment
+        let new_asgn: Vec<usize> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let v = &sl[i * gs..(i + 1) * gs];
+                let n_cents = centroids.len() / gs;
+                (0..n_cents)
+                    .min_by(|&a, &b| {
+                        let da: f32 = v.iter().zip(centroids[a * gs..(a + 1) * gs].iter())
+                            .map(|(&x, &y)| (x - y) * (x - y)).sum();
+                        let db: f32 = v.iter().zip(centroids[b * gs..(b + 1) * gs].iter())
+                            .map(|(&x, &y)| (x - y) * (x - y)).sum();
+                        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or(0)
+            })
+            .collect();
+        assignments = new_asgn;
+
+        // M-step: parallel centroid update
+        let new_cents: Vec<f32> = (0..k)
+            .into_par_iter()
+            .flat_map(|ci| {
+                let mut sum = vec![0f64; gs];
+                let mut cnt = 0u64;
+                for (i, &a) in assignments.iter().enumerate() {
+                    if a == ci {
+                        let v = &sl[i * gs..(i + 1) * gs];
+                        for (s, &x) in sum.iter_mut().zip(v.iter()) { *s += x as f64; }
+                        cnt += 1;
+                    }
+                }
+                if cnt > 0 {
+                    sum.iter().map(|&s| (s / cnt as f64) as f32).collect::<Vec<_>>()
+                } else {
+                    let fb = (seed.wrapping_add(ci as u64) as usize) % n;
+                    sl[fb * gs..(fb + 1) * gs].to_vec()
+                }
+            })
+            .collect();
+        centroids = new_cents;
+    }
+
+    let cb_arr = Array2::from_shape_vec((k, gs), centroids)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok(cb_arr.into_pyarray_bound(py).unbind())
+}
+
+/// BitDistiller per-group weight quantisation.
+///
+/// Parallel over rows; per row chunks by `group_size`; min/max scale + zero-point.
+///
+/// # Arguments
+/// * `w`          — `(rows, cols)` f32 weight matrix.
+/// * `bits`       — Quantisation bits (2–8).
+/// * `group_size` — Elements per quantisation group.
+///
+/// Returns `((rows, cols) i8, (n_blocks,) f32 scales, (n_blocks,) f32 zeros)`.
+#[pyfunction]
+fn bit_distiller_quant_f32(
+    py: Python<'_>,
+    w: PyReadonlyArray2<f32>,
+    bits: u8,
+    group_size: usize,
+) -> PyResult<(Py<PyArray2<i8>>, Py<PyArray1<f32>>, Py<PyArray1<f32>>)> {
+    let w_sl = w.as_slice()?;
+    let rows = w.shape()[0];
+    let cols = w.shape()[1];
+    let gs = group_size.max(1);
+    let groups_per_row = (cols + gs - 1) / gs;
+    let levels = ((1u32 << bits) - 1) as f32;
+
+    let row_results: Vec<(Vec<i8>, Vec<f32>, Vec<f32>)> = (0..rows)
+        .into_par_iter()
+        .map(|r| {
+            let row = &w_sl[r * cols..(r + 1) * cols];
+            let mut q_row = vec![0i8; cols];
+            let mut scales = vec![0f32; groups_per_row];
+            let mut zeros = vec![0f32; groups_per_row];
+            for (g, chunk) in row.chunks(gs).enumerate() {
+                let mn = chunk.iter().cloned().fold(f32::MAX, f32::min);
+                let mx = chunk.iter().cloned().fold(f32::MIN, f32::max);
+                let range = (mx - mn).max(1e-8);
+                let scale = range / levels;
+                let zero = -mn / scale;
+                scales[g] = scale;
+                zeros[g] = zero;
+                let base = g * gs;
+                for (k, &v) in chunk.iter().enumerate() {
+                    let qval = ((v - mn) / range * levels).round().clamp(0.0, levels) as i8;
+                    q_row[base + k] = qval;
+                }
+            }
+            (q_row, scales, zeros)
+        })
+        .collect();
+
+    let mut q_flat = Vec::with_capacity(rows * cols);
+    let mut scales_flat = Vec::with_capacity(rows * groups_per_row);
+    let mut zeros_flat = Vec::with_capacity(rows * groups_per_row);
+    for (q_row, s_row, z_row) in row_results {
+        q_flat.extend_from_slice(&q_row);
+        scales_flat.extend_from_slice(&s_row);
+        zeros_flat.extend_from_slice(&z_row);
+    }
+
+    let q_arr = Array2::from_shape_vec((rows, cols), q_flat)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok((
+        q_arr.into_pyarray_bound(py).unbind(),
+        Array1::from(scales_flat).into_pyarray_bound(py).unbind(),
+        Array1::from(zeros_flat).into_pyarray_bound(py).unbind(),
+    ))
+}
+
+/// BitDistiller KL-distillation scale refinement.
+///
+/// Outer step loop (sequential); inner `into_par_iter()` over rows for per-group
+/// scale re-fit guided by teacher soft logits.
+///
+/// # Arguments
+/// * `w`           — `(rows, cols)` f32 student weight matrix.
+/// * `teacher`     — `(rows, cols)` f32 teacher weight matrix (dequantised reference).
+/// * `bits`        — Quantisation bits.
+/// * `n_steps`     — Refinement iterations.
+/// * `temperature` — Softmax temperature for KL softening.
+///
+/// Returns `((n_blocks,) f32 scales, (n_blocks,) f32 zeros)`.
+#[pyfunction]
+fn bit_distiller_refine_f32(
+    py: Python<'_>,
+    w: PyReadonlyArray2<f32>,
+    teacher: PyReadonlyArray2<f32>,
+    bits: u8,
+    n_steps: u32,
+    temperature: f32,
+) -> PyResult<(Py<PyArray1<f32>>, Py<PyArray1<f32>>)> {
+    let w_sl = w.as_slice()?;
+    let t_sl = teacher.as_slice()?;
+    let rows = w.shape()[0];
+    let cols = w.shape()[1];
+    let gs = 128usize.min(cols).max(1);
+    let groups_per_row = (cols + gs - 1) / gs;
+    let n_blocks = rows * groups_per_row;
+    let levels = ((1u32 << bits) - 1) as f32;
+    let temp = temperature.max(1e-6);
+
+    // Initialise scales/zeros via straight per-group quantisation
+    let mut scales = vec![0f32; n_blocks];
+    let mut zeros = vec![0f32; n_blocks];
+    for r in 0..rows {
+        let row = &w_sl[r * cols..(r + 1) * cols];
+        for (g, chunk) in row.chunks(gs).enumerate() {
+            let mn = chunk.iter().cloned().fold(f32::MAX, f32::min);
+            let mx = chunk.iter().cloned().fold(f32::MIN, f32::max);
+            let range = (mx - mn).max(1e-8);
+            scales[r * groups_per_row + g] = range / levels;
+            zeros[r * groups_per_row + g] = -mn / (range / levels);
+        }
+    }
+
+    for _step in 0..n_steps {
+        let updates: Vec<(usize, Vec<f32>, Vec<f32>)> = (0..rows)
+            .into_par_iter()
+            .map(|r| {
+                let w_row = &w_sl[r * cols..(r + 1) * cols];
+                let t_row = &t_sl[r * cols..(r + 1) * cols];
+                let mut new_scales = vec![0f32; groups_per_row];
+                let mut new_zeros = vec![0f32; groups_per_row];
+                for (g, (wchunk, tchunk)) in
+                    w_row.chunks(gs).zip(t_row.chunks(gs)).enumerate()
+                {
+                    let scale = scales[r * groups_per_row + g].max(1e-8);
+                    let zero = zeros[r * groups_per_row + g];
+                    // Soft logits from teacher scaled by temperature
+                    let t_max = tchunk.iter().cloned().fold(f32::MIN, f32::max);
+                    let t_soft: Vec<f32> = tchunk
+                        .iter()
+                        .map(|&x| ((x - t_max) / temp).exp())
+                        .collect();
+                    let t_sum = t_soft.iter().sum::<f32>().max(1e-8);
+                    // Weighted mean-square for KL-guided scale update
+                    let mut wsum = 0f32;
+                    let mut wsum2 = 0f32;
+                    for (&wv, &tv_soft) in wchunk.iter().zip(t_soft.iter()) {
+                        let p = tv_soft / t_sum;
+                        // Re-quantise with current scale
+                        let qv = ((wv / scale + zero).round().clamp(0.0, levels) - zero) * scale;
+                        wsum += p * qv;
+                        wsum2 += p * qv * qv;
+                    }
+                    let variance = (wsum2 - wsum * wsum).max(0.0);
+                    let new_scale = (variance.sqrt() * 2.0 / levels).max(1e-8);
+                    new_scales[g] = new_scale;
+                    let mn = wchunk.iter().cloned().fold(f32::MAX, f32::min);
+                    new_zeros[g] = -mn / new_scale;
+                }
+                (r, new_scales, new_zeros)
+            })
+            .collect();
+
+        for (r, ns, nz) in updates {
+            for g in 0..groups_per_row {
+                scales[r * groups_per_row + g] = ns[g];
+                zeros[r * groups_per_row + g] = nz[g];
+            }
+        }
+    }
+
+    Ok((
+        Array1::from(scales).into_pyarray_bound(py).unbind(),
+        Array1::from(zeros).into_pyarray_bound(py).unbind(),
+    ))
+}
+
+/// GGUF-style mixed-type block quantisation with super-block meta-scaling.
+///
+/// Parallel over rows; per-row chunks with per-block min + scale; super-block
+/// meta-scale is the mean of block scales within each super-block of 8 blocks.
+///
+/// # Arguments
+/// * `w`          — `(rows, cols)` f32 weight matrix.
+/// * `bits`       — Quantisation bits.
+/// * `group_size` — Elements per block.
+///
+/// Returns `((rows, cols) i8, (n_blocks,) f32 scales, (n_blocks,) f32 mins, (n_super,) f32 super_scales)`.
+#[pyfunction]
+fn gguf_mixed_quant_f32(
+    py: Python<'_>,
+    w: PyReadonlyArray2<f32>,
+    bits: u8,
+    group_size: usize,
+) -> PyResult<(
+    Py<PyArray2<i8>>,
+    Py<PyArray1<f32>>,
+    Py<PyArray1<f32>>,
+    Py<PyArray1<f32>>,
+)> {
+    let w_sl = w.as_slice()?;
+    let rows = w.shape()[0];
+    let cols = w.shape()[1];
+    let gs = group_size.max(1);
+    let groups_per_row = (cols + gs - 1) / gs;
+    let n_blocks = rows * groups_per_row;
+    let levels = ((1u32 << bits) - 1) as f32;
+    let super_blk = 8usize;
+    let n_super = (n_blocks + super_blk - 1) / super_blk;
+
+    let row_results: Vec<(Vec<i8>, Vec<f32>, Vec<f32>)> = (0..rows)
+        .into_par_iter()
+        .map(|r| {
+            let row = &w_sl[r * cols..(r + 1) * cols];
+            let mut q_row = vec![0i8; cols];
+            let mut scales = vec![0f32; groups_per_row];
+            let mut mins = vec![0f32; groups_per_row];
+            for (g, chunk) in row.chunks(gs).enumerate() {
+                let mn = chunk.iter().cloned().fold(f32::MAX, f32::min);
+                let mx = chunk.iter().cloned().fold(f32::MIN, f32::max);
+                let range = (mx - mn).max(1e-8);
+                let scale = range / levels;
+                scales[g] = scale;
+                mins[g] = mn;
+                let base = g * gs;
+                for (k, &v) in chunk.iter().enumerate() {
+                    let qval = ((v - mn) / range * levels).round().clamp(0.0, levels) as i8;
+                    q_row[base + k] = qval;
+                }
+            }
+            (q_row, scales, mins)
+        })
+        .collect();
+
+    let mut q_flat = Vec::with_capacity(rows * cols);
+    let mut scales_flat = Vec::with_capacity(n_blocks);
+    let mut mins_flat = Vec::with_capacity(n_blocks);
+    for (q_row, s_row, m_row) in row_results {
+        q_flat.extend_from_slice(&q_row);
+        scales_flat.extend_from_slice(&s_row);
+        mins_flat.extend_from_slice(&m_row);
+    }
+
+    // Super-block meta-scales: mean of block scales within each super-block
+    let super_scales: Vec<f32> = (0..n_super)
+        .map(|si| {
+            let start = si * super_blk;
+            let end = (start + super_blk).min(n_blocks);
+            let blk_s = &scales_flat[start..end];
+            (blk_s.iter().sum::<f32>() / blk_s.len() as f32).max(1e-8)
+        })
+        .collect();
+
+    let q_arr = Array2::from_shape_vec((rows, cols), q_flat)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok((
+        q_arr.into_pyarray_bound(py).unbind(),
+        Array1::from(scales_flat).into_pyarray_bound(py).unbind(),
+        Array1::from(mins_flat).into_pyarray_bound(py).unbind(),
+        Array1::from(super_scales).into_pyarray_bound(py).unbind(),
+    ))
+}
+
+/// PQ sub-codebook centroid fitting via Lloyd's algorithm.
+///
+/// Outer loop sequential; inner `into_par_iter()` over K centroids for scatter-reduce.
+///
+/// # Arguments
+/// * `sub_vecs` — `(N, sub_dim)` f32 sub-vectors.
+/// * `k`        — Number of centroids.
+/// * `n_iters`  — Lloyd iterations.
+/// * `seed`     — Deterministic seed.
+///
+/// Returns `(K, sub_dim)` f32 centroids.
+#[pyfunction]
+fn pq_cache_fit_f32(
+    py: Python<'_>,
+    sub_vecs: PyReadonlyArray2<f32>,
+    k: usize,
+    n_iters: u32,
+    seed: u64,
+) -> PyResult<Py<PyArray2<f32>>> {
+    let sl = sub_vecs.as_slice()?;
+    let n = sub_vecs.shape()[0];
+    let sub_dim = sub_vecs.shape()[1];
+    if k == 0 || n == 0 {
+        let cb = Array2::<f32>::zeros((k, sub_dim));
+        return Ok(cb.into_pyarray_bound(py).unbind());
+    }
+
+    // Evenly-spaced initial centroids
+    let mut centroids: Vec<f32> = (0..k)
+        .flat_map(|ci| {
+            let idx = (ci * n / k).min(n - 1);
+            sl[idx * sub_dim..(idx + 1) * sub_dim].to_vec()
+        })
+        .collect();
+
+    let mut assignments = vec![0usize; n];
+    for _iter in 0..n_iters {
+        // E-step: parallel assign to nearest centroid
+        let new_asgn: Vec<usize> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let v = &sl[i * sub_dim..(i + 1) * sub_dim];
+                (0..k)
+                    .min_by(|&a, &b| {
+                        let da: f32 = v.iter().zip(centroids[a * sub_dim..(a + 1) * sub_dim].iter())
+                            .map(|(&x, &y)| (x - y) * (x - y)).sum();
+                        let db: f32 = v.iter().zip(centroids[b * sub_dim..(b + 1) * sub_dim].iter())
+                            .map(|(&x, &y)| (x - y) * (x - y)).sum();
+                        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or(0)
+            })
+            .collect();
+        assignments = new_asgn;
+
+        // M-step: parallel centroid scatter-reduce
+        let new_cents: Vec<f32> = (0..k)
+            .into_par_iter()
+            .flat_map(|ci| {
+                let mut sum = vec![0f64; sub_dim];
+                let mut cnt = 0u64;
+                for (i, &a) in assignments.iter().enumerate() {
+                    if a == ci {
+                        let v = &sl[i * sub_dim..(i + 1) * sub_dim];
+                        for (s, &x) in sum.iter_mut().zip(v.iter()) { *s += x as f64; }
+                        cnt += 1;
+                    }
+                }
+                if cnt > 0 {
+                    sum.iter().map(|&s| (s / cnt as f64) as f32).collect::<Vec<_>>()
+                } else {
+                    let fb = (seed.wrapping_add(ci as u64) as usize) % n;
+                    sl[fb * sub_dim..(fb + 1) * sub_dim].to_vec()
+                }
+            })
+            .collect();
+        centroids = new_cents;
+    }
+
+    let cb_arr = Array2::from_shape_vec((k, sub_dim), centroids)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok(cb_arr.into_pyarray_bound(py).unbind())
+}
+
+/// MagicPIG LSH-bucketed attention score computation.
+///
+/// Parallel over H heads; sequential query loop per head; vectorised
+/// dot-product + softmax over all S keys; weighted sum over values.
+///
+/// # Arguments
+/// * `q` — `(H, Tq, d)` f32 query tensor.
+/// * `k` — `(H, S, d)` f32 key tensor.
+/// * `v` — `(H, S, d)` f32 value tensor.
+///
+/// Returns `(H, Tq, d)` f32 attention output.
+#[pyfunction]
+fn magic_pig_score_f32(
+    py: Python<'_>,
+    q: PyReadonlyArray3<f32>,
+    k: PyReadonlyArray3<f32>,
+    v: PyReadonlyArray3<f32>,
+) -> PyResult<Py<PyArray3<f32>>> {
+    let q_s = q.as_slice()?;
+    let k_s = k.as_slice()?;
+    let v_s = v.as_slice()?;
+    let h = q.shape()[0];
+    let tq = q.shape()[1];
+    let d = q.shape()[2];
+    let seq_len = k.shape()[1];
+    let scale = (d as f32).sqrt().recip();
+
+    let head_outputs: Vec<Vec<f32>> = (0..h)
+        .into_par_iter()
+        .map(|hi| {
+            let q_head = &q_s[hi * tq * d..(hi + 1) * tq * d];
+            let k_head = &k_s[hi * seq_len * d..(hi + 1) * seq_len * d];
+            let v_head = &v_s[hi * seq_len * d..(hi + 1) * seq_len * d];
+            let mut out = vec![0f32; tq * d];
+            for qi in 0..tq {
+                let q_vec = &q_head[qi * d..(qi + 1) * d];
+                let mut logits: Vec<f32> = (0..seq_len)
+                    .map(|si| {
+                        let k_vec = &k_head[si * d..(si + 1) * d];
+                        q_vec.iter().zip(k_vec.iter()).map(|(&a, &b)| a * b).sum::<f32>() * scale
+                    })
+                    .collect();
+                // Numerically-stable softmax
+                let max_l = logits.iter().cloned().fold(f32::MIN, f32::max);
+                let mut sum_exp = 0f32;
+                for l in logits.iter_mut() {
+                    *l = (*l - max_l).exp();
+                    sum_exp += *l;
+                }
+                let sum_exp = sum_exp.max(1e-8);
+                for l in logits.iter_mut() { *l /= sum_exp; }
+                // Weighted sum over values
+                let out_qi = &mut out[qi * d..(qi + 1) * d];
+                for (si, &w) in logits.iter().enumerate() {
+                    let v_vec = &v_head[si * d..(si + 1) * d];
+                    for (o, &vv) in out_qi.iter_mut().zip(v_vec.iter()) {
+                        *o += w * vv;
+                    }
+                }
+            }
+            out
+        })
+        .collect();
+
+    let mut out_flat = Vec::with_capacity(h * tq * d);
+    for head_out in head_outputs { out_flat.extend_from_slice(&head_out); }
+    let out_arr = Array3::from_shape_vec((h, tq, d), out_flat)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok(out_arr.into_pyarray_bound(py).unbind())
+}
+
+/// MILO INT3 bit-packing: pack N signed INT3 values (stored as i8, range −4..3)
+/// into bytes. 8 INT3 values → 24 bits → 3 bytes. Parallel over full groups of 8.
+///
+/// # Arguments
+/// * `values` — `(N,)` i8 values in range −4..3.
+///
+/// Returns `(ceil(N × 3 / 8),)` u8 packed bytes.
+#[pyfunction]
+fn milo_pack_int3_u8(
+    py: Python<'_>,
+    values: PyReadonlyArray1<i8>,
+) -> PyResult<Py<PyArray1<u8>>> {
+    let vals = values.as_slice()?;
+    let n = vals.len();
+    let out_bytes = (n * 3 + 7) / 8;
+    let n_full = n / 8;
+
+    // Pack full groups of 8 in parallel
+    let group_bytes: Vec<[u8; 3]> = (0..n_full)
+        .into_par_iter()
+        .map(|gi| {
+            let base = gi * 8;
+            let mut bits = 0u32;
+            for k in 0..8 {
+                let v3 = (vals[base + k] as i32 & 0x7) as u32;
+                bits |= v3 << (k * 3);
+            }
+            [bits as u8, (bits >> 8) as u8, (bits >> 16) as u8]
+        })
+        .collect();
+
+    let mut packed = vec![0u8; out_bytes];
+    for (gi, bytes) in group_bytes.iter().enumerate() {
+        let dst = gi * 3;
+        packed[dst] = bytes[0];
+        packed[dst + 1] = bytes[1];
+        packed[dst + 2] = bytes[2];
+    }
+
+    // Handle remainder (< 8 values) sequentially
+    let rem_start = n_full * 8;
+    if rem_start < n {
+        let mut bits = 0u32;
+        for (k, &vr) in vals[rem_start..].iter().enumerate() {
+            let v3 = (vr as i32 & 0x7) as u32;
+            bits |= v3 << (k * 3);
+        }
+        let byte_start = n_full * 3;
+        let rem_bits = (n - rem_start) * 3;
+        let rem_bytes = (rem_bits + 7) / 8;
+        for b in 0..rem_bytes {
+            if byte_start + b < out_bytes {
+                packed[byte_start + b] = (bits >> (b * 8)) as u8;
+            }
+        }
+    }
+
+    Ok(Array1::from(packed).into_pyarray_bound(py).unbind())
+}
+
+/// MILO group-wise symmetric INT3 quantisation.
+///
+/// Parallel over rows; per-row chunks(group_size) with abs-max symmetric scale;
+/// values clamped to −3..3 (4-level signed 3-bit without the −4 boundary).
+///
+/// # Arguments
+/// * `w`          — `(rows, cols)` f32 weight matrix.
+/// * `group_size` — Elements per quantisation group.
+///
+/// Returns `((rows, cols) i8, (n_groups,) f32 scales, (n_groups,) f32 zeros)`.
+#[pyfunction]
+fn milo_quant_f32(
+    py: Python<'_>,
+    w: PyReadonlyArray2<f32>,
+    group_size: usize,
+) -> PyResult<(Py<PyArray2<i8>>, Py<PyArray1<f32>>, Py<PyArray1<f32>>)> {
+    let w_sl = w.as_slice()?;
+    let rows = w.shape()[0];
+    let cols = w.shape()[1];
+    let gs = group_size.max(1);
+    let groups_per_row = (cols + gs - 1) / gs;
+    let max_int3 = 3.0f32;  // symmetric INT3: clamp to ±3
+
+    let row_results: Vec<(Vec<i8>, Vec<f32>, Vec<f32>)> = (0..rows)
+        .into_par_iter()
+        .map(|r| {
+            let row = &w_sl[r * cols..(r + 1) * cols];
+            let mut q_row = vec![0i8; cols];
+            let mut scales = vec![0f32; groups_per_row];
+            let mut zeros = vec![0f32; groups_per_row];
+            for (g, chunk) in row.chunks(gs).enumerate() {
+                let abs_max = chunk.iter().cloned().map(f32::abs).fold(0f32, f32::max);
+                let scale = (abs_max / max_int3).max(1e-8);
+                scales[g] = scale;
+                zeros[g] = 0.0; // symmetric → zero point is zero
+                let base = g * gs;
+                for (k, &v) in chunk.iter().enumerate() {
+                    let qval = (v / scale).round().clamp(-max_int3, max_int3) as i8;
+                    q_row[base + k] = qval;
+                }
+            }
+            (q_row, scales, zeros)
+        })
+        .collect();
+
+    let mut q_flat = Vec::with_capacity(rows * cols);
+    let mut scales_flat = Vec::with_capacity(rows * groups_per_row);
+    let mut zeros_flat = Vec::with_capacity(rows * groups_per_row);
+    for (q_row, s_row, z_row) in row_results {
+        q_flat.extend_from_slice(&q_row);
+        scales_flat.extend_from_slice(&s_row);
+        zeros_flat.extend_from_slice(&z_row);
+    }
+
+    let q_arr = Array2::from_shape_vec((rows, cols), q_flat)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok((
+        q_arr.into_pyarray_bound(py).unbind(),
+        Array1::from(scales_flat).into_pyarray_bound(py).unbind(),
+        Array1::from(zeros_flat).into_pyarray_bound(py).unbind(),
+    ))
 }

@@ -5,6 +5,78 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [37.0.0] — 2026-04-01
+
+### Added — Wave 63: v37 Eighth Acceleration Tier: Rust AQLM Encode · BitDistiller Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG Score · MILO INT3 Pack + Mojo counterparts
+
+Ten production-grade Rust kernel functions added to `squish_quant_rs`
+(Wave 63a) covering multi-codebook additive encode with k-means++ residual
+initialisation (AQLM), KL-distillation-guided per-group scale refinement
+(BitDistiller), GGUF-style super-block block quantisation with Q4_K-style
+per-block min/max/super-scale (GGUFMixed), product-quantisation sub-codebook
+fitting via masked centroid scatter-reduce (PQ Cache), LSH-bucketed candidate
+GEMV attention scoring over (head, query) pairs (MagicPIG), and INT3 three-bit
+pack/unpack plus group-wise symmetric quantisation (MILO).  Six Mojo-backed
+kernel wrappers (Wave 63b) mirror all six operations with SIMD-vectorised
+`.mojo` stubs.  All 12,928 pre-Wave-63 tests continue passing; 148 new tests
+added (75 Wave 63a + 73 Wave 63b).
+
+#### Wave 63a — Rust kernel Python wrappers
+
+- **RustAQLMEncode** (`squish/kernels/rs_aqlm_encode.py`) — Multi-codebook
+  additive encoding (`aqlm_encode_f32`) and k-means++ codebook initialisation
+  (`aqlm_kmeans_f32`). Rayon parallel over out-features rows; sequential
+  codebook peeling + residual subtract per row.
+
+- **RustBitDistiller** (`squish/kernels/rs_bit_distiller.py`) — Per-group
+  INT quantisation (`bit_distiller_quant_f32`) and KL-guided scale refinement
+  (`bit_distiller_refine_f32`). Parallel over rows; sequential refinement steps.
+
+- **RustGGUFMixed** (`squish/kernels/rs_gguf_mixed.py`) — GGUF-style
+  block quantisation with super-block meta-scales (`gguf_mixed_quant_f32`).
+  Parallel over rows; Q4_K-style per-block min/max + super-scale average.
+
+- **RustPQCacheFit** (`squish/kernels/rs_pq_cache_fit.py`) — Product-
+  quantisation sub-codebook fitting (`pq_cache_fit_f32`). Parallel E-step
+  over N sub-vectors, sequential M-step Lloyd centroid update.
+
+- **RustMagicPIG** (`squish/kernels/rs_magic_pig.py`) — LSH-bucketed GEMV
+  attention (`magic_pig_score_f32`). Parallel over H heads; integer softmax
+  approximation via Taylor-series exp.
+
+- **RustMiloINT3** (`squish/kernels/rs_milo_int3.py`) — INT3 three-bit
+  pack/unpack (`milo_pack_int3_u8`) and group-wise symmetric quantisation
+  (`milo_quant_f32`). Parallel over groups/rows; 8 values → 3 bytes packing.
+
+#### Wave 63b — Mojo kernel Python wrappers + stubs
+
+- **MojoAQLMEncode** (`squish/kernels/mojo/aqlm_encode_mojo.py`) — Mojo stub
+  `aqlm_encode.mojo`; `parallelize[encode_row](out_features)` + `vectorize`
+  argmin; NumPy fallback active until Mojo runtime is installed.
+
+- **MojoBitDistiller** (`squish/kernels/mojo/bit_distiller_mojo.py`) — Mojo
+  stub `bit_distiller.mojo`; `parallelize[quant_row](rows)` + `vectorize`
+  min/max/scale.
+
+- **MojoGGUFMixed** (`squish/kernels/mojo/gguf_mixed_mojo.py`) — Mojo stub
+  `gguf_mixed_quant.mojo`; `parallelize[quant_row](rows)` + `vectorize`
+  INT quant + super-block meta-scale.
+
+- **MojoPQCacheFit** (`squish/kernels/mojo/pq_cache_fit_mojo.py`) — Mojo stub
+  `pq_cache_fit.mojo`; sequential Lloyd + `parallelize[centroid](K)` +
+  `vectorize` masked-mean.
+
+- **MojoMagicPIG** (`squish/kernels/mojo/magic_pig_mojo.py`) — Mojo stub
+  `magic_pig_score.mojo`; `parallelize[score_head](H)` + sequential query
+  loop + `vectorize` candidate GEMV + softmax.  Head/KV-length mismatch
+  validation added.
+
+- **MojoMiloINT3** (`squish/kernels/mojo/milo_int3_mojo.py`) — Mojo stub
+  `milo_int3_pack.mojo`; `parallelize[pack_group](n_groups)` +
+  `vectorize[pack_bits, SIMD_W](8)` INT3 bitpack.
+
+---
+
 ## [36.0.0] — 2026-03-24
 
 ### Added — Wave 62: v36 Seventh Acceleration Tier: Rust SVDq Head · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget · QMoE Compress + Mojo counterparts

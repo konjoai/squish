@@ -1209,7 +1209,7 @@ more models in budget, larger KV caches). Throughput improvements compound with 
 
 ---
 
-## 🚧 v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Planned)
+## ✅ v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Complete)
 
 Theme: **Wave 63 targets six unaccelerated Python-loop hotspots in the quantisation calibration and
 KV-cache management tiers that are exposed once Waves 61–62 clear the structural-pruning, recurrence,
@@ -1325,30 +1325,30 @@ sequential query loop; `vectorize[dot_elem, SIMD_W](d)` candidate GEMV + softmax
 
 ### Wave 63 Checklist
 
-- [ ] Wave 63 spec reviewed
-- [ ] lib.rs updated (7 Wave 63a functions registered)
-- [ ] `rs_aqlm_encode.py` — RustAQLMEncode (encode + kmeans)
-- [ ] `rs_bit_distiller.py` — RustBitDistiller (quant + refine)
-- [ ] `rs_gguf_mixed.py` — RustGGUFMixed (quant)
-- [ ] `rs_pq_cache_fit.py` — RustPQCacheFit (fit)
-- [ ] `rs_magic_pig.py` — RustMagicPIG (score)
-- [ ] `rs_milo_int3.py` — RustMiloINT3 (pack + quant)
-- [ ] `aqlm_encode_mojo.py` — MojoAQLMEncode
-- [ ] `bit_distiller_mojo.py` — MojoBitDistiller
-- [ ] `gguf_mixed_mojo.py` — MojoGGUFMixed
-- [ ] `pq_cache_fit_mojo.py` — MojoPQCacheFit
-- [ ] `magic_pig_mojo.py` — MojoMagicPIG
-- [ ] `milo_int3_mojo.py` — MojoMiloINT3
-- [ ] `aqlm_encode.mojo` stub
-- [ ] `bit_distiller.mojo` stub
-- [ ] `gguf_mixed_quant.mojo` stub
-- [ ] `pq_cache_fit.mojo` stub
-- [ ] `magic_pig_score.mojo` stub
-- [ ] `milo_int3_pack.mojo` stub
-- [ ] `tests/test_wave63a_rust_kernels.py` (≥75 tests)
-- [ ] `tests/test_wave63b_mojo_kernels.py` (≥75 tests)
-- [ ] CHANGELOG `[37.0.0]` entry
-- [ ] PLAN.md updated
+- [x] Wave 63 spec reviewed
+- [x] lib.rs updated (9 Wave 63a functions registered)
+- [x] `rs_aqlm_encode.py` — RustAQLMEncode (encode + kmeans)
+- [x] `rs_bit_distiller.py` — RustBitDistiller (quant + refine)
+- [x] `rs_gguf_mixed.py` — RustGGUFMixed (quant)
+- [x] `rs_pq_cache_fit.py` — RustPQCacheFit (fit)
+- [x] `rs_magic_pig.py` — RustMagicPIG (score)
+- [x] `rs_milo_int3.py` — RustMiloINT3 (pack + quant)
+- [x] `aqlm_encode_mojo.py` — MojoAQLMEncode
+- [x] `bit_distiller_mojo.py` — MojoBitDistiller
+- [x] `gguf_mixed_mojo.py` — MojoGGUFMixed
+- [x] `pq_cache_fit_mojo.py` — MojoPQCacheFit
+- [x] `magic_pig_mojo.py` — MojoMagicPIG
+- [x] `milo_int3_mojo.py` — MojoMiloINT3
+- [x] `aqlm_encode.mojo` stub
+- [x] `bit_distiller.mojo` stub
+- [x] `gguf_mixed_quant.mojo` stub
+- [x] `pq_cache_fit.mojo` stub
+- [x] `magic_pig_score.mojo` stub
+- [x] `milo_int3_pack.mojo` stub
+- [x] `tests/test_wave63a_rust_kernels.py` (75 tests)
+- [x] `tests/test_wave63b_mojo_kernels.py` (73 tests)
+- [x] CHANGELOG `[37.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
