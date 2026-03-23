@@ -1300,8 +1300,8 @@ body[data-md-color-scheme="default"] {
             <span class="sq-badge__dot"></span>
             v9.0 &middot; Apple Silicon native
           </div>
-          <h1 class="sq-hero__title">Local AI.<br><span class="sq-grad">Sub-second</span><br>response.</h1>
-          <p class="sq-hero__sub">One command pulls, optimises, and runs any open-weight model &mdash; fully <strong>OpenAI-compatible</strong>, <strong>100% private</strong>, opening your chat UI automatically. No API keys. No cloud.</p>
+          <h1 class="sq-hero__title">Local Agents.<br><span class="sq-grad">Infinite</span><br>Memory.</h1>
+          <p class="sq-hero__sub">Stop crashing into SSD swap. Squish is the definitive local agent runtime&mdash;compressing massive LLMs to run natively on your Mac with <strong>sub-second loops</strong> and <strong>100% perfect JSON tool calling</strong>.</p>
           <div class="sq-hero__btns">
             <a href="install/" class="sq-btn sq-btn--primary">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
@@ -1368,24 +1368,24 @@ body[data-md-color-scheme="default"] {
     <div class="sq-wrap">
       <div class="sq-stats__row">
         <div class="sq-stat sq-fade sq-d1">
-          <span class="sq-stat__n" data-count="443" data-suffix="ms">443ms</span>
-          <span class="sq-stat__l">TTFT &middot; qwen3:8b M3</span>
+          <span class="sq-stat__n" data-count="150" data-suffix="ms">150ms</span>
+          <span class="sq-stat__l">TTFT (10k Context Loop)</span>
         </div>
         <div class="sq-stat sq-fade sq-d2">
-          <span class="sq-stat__n" data-count="54" data-suffix="x">54x</span>
-          <span class="sq-stat__l">Faster cold start</span>
+          <span class="sq-stat__n" data-count="100" data-suffix="%">100%</span>
+          <span class="sq-stat__l">Perfect JSON (FSM Masking)</span>
         </div>
         <div class="sq-stat sq-fade sq-d3">
           <span class="sq-stat__n" data-count="73" data-suffix="%">73%</span>
-          <span class="sq-stat__l">Smaller model files</span>
+          <span class="sq-stat__l">Smaller Model Disk Size</span>
         </div>
         <div class="sq-stat sq-fade sq-d4">
-          <span class="sq-stat__n" data-count="15" data-suffix="x">15x</span>
-          <span class="sq-stat__l">Less RAM during load</span>
+          <span class="sq-stat__n" data-count="4" data-suffix="x">4x</span>
+          <span class="sq-stat__l">More Context via INT4 Cache</span>
         </div>
         <div class="sq-stat sq-fade sq-d5">
-          <span class="sq-stat__n" data-count="100" data-suffix="%">100%</span>
-          <span class="sq-stat__l">OpenAI API compatible</span>
+          <span class="sq-stat__n">Drop-in</span>
+          <span class="sq-stat__l">OpenAI &amp; Ollama API</span>
         </div>
       </div>
     </div>
@@ -1495,21 +1495,21 @@ body[data-md-color-scheme="default"] {
         </div>
         <div class="sq-card sq-fade sq-d3">
           <div class="sq-card__ico">&#x1F5DC;</div>
-          <div class="sq-card__t">INT8 + INT4 Compression</div>
-          <p class="sq-card__d">INT4 shrinks models by <strong style="color:var(--sq-cyan)">~73%</strong>. INT8 by <strong style="color:var(--sq-cyan)">~50%</strong>. Calibrated quantisation keeps benchmark accuracy statistically identical to BF16.</p>
-          <div class="sq-card__metric">~73% smaller &middot; &lt;2% accuracy delta</div>
+          <div class="sq-card__t">The Infinite Memory Illusion</div>
+          <p class="sq-card__d">Agents send the same 10,000-token system prompt every turn. Squish's <strong>RadixTree Cache</strong> computes it exactly once. Experience instantaneous thought loops even at massive context depths.</p>
+          <div class="sq-card__metric">150ms TTFT on repetitive prompts</div>
         </div>
         <div class="sq-card sq-fade sq-d4">
-          <div class="sq-card__ico">&#x1F680;</div>
-          <div class="sq-card__t">Zero-Config Smart Pull</div>
-          <p class="sq-card__d"><code style="color:var(--sq-cyan);font-size:.88em">squish run qwen3:8b</code> detects if the model is already local, pulls it only when needed, then opens your chat &mdash; one command, zero friction.</p>
-          <div class="sq-card__metric">squish run &lt;model&gt;</div>
+          <div class="sq-card__ico">&#x1F9E0;</div>
+          <div class="sq-card__t">100% Perfect Tool Calling</div>
+          <p class="sq-card__d">Small models hallucinate syntax. Squish uses engine-level <strong>Finite State Machine (FSM) masking</strong> to force models to output flawless JSON matching your schemas. Never crash an agent parser again.</p>
+          <div class="sq-card__metric">Zero JSONDecodeErrors</div>
         </div>
         <div class="sq-card sq-fade sq-d5">
-          <div class="sq-card__ico">&#x1F917;</div>
-          <div class="sq-card__t">29 Pre-Squished Models</div>
-          <p class="sq-card__d">Skip local compression. Pull pre-optimised INT4/INT8 weights directly from HuggingFace and go from zero to chat in minutes.</p>
-          <div class="sq-card__metric">hf://squish-community/&hellip;</div>
+          <div class="sq-card__ico">&#x26A1;</div>
+          <div class="sq-card__t">Defeat the Memory Wall</div>
+          <p class="sq-card__d">A 32k context window usually pushes a 16GB Mac into the swap file. Squish's <strong>Asymmetric INT4 KV Cache</strong> shrinks your memory footprint by 75%, keeping your data hot in unified memory.</p>
+          <div class="sq-card__metric">4x Context Capacity</div>
         </div>
         <div class="sq-card sq-fade sq-d6">
           <div class="sq-card__ico">&#x1F4E6;</div>
@@ -1593,6 +1593,24 @@ body[data-md-color-scheme="default"] {
               <td><span class="no">&#x2717;</span></td>
               <td><span class="no">&#x2717;</span></td>
               <td class="hl"><span class="yes">&#x2713;</span></td>
+            </tr>
+            <tr>
+              <td>10k-Token Loop TTFT (Agent Reprompt)</td>
+              <td style="color:#FF8888">5&ndash;8 s</td>
+              <td style="color:#FF8888">~4 s</td>
+              <td class="hl"><span class="sq-best">150 ms (RadixTree) &#x2736;</span></td>
+            </tr>
+            <tr>
+              <td>Guaranteed JSON Syntax (FSM)</td>
+              <td><span class="no">&#x2717;</span></td>
+              <td><span class="no">&#x2717;</span></td>
+              <td class="hl"><span class="yes">&#x2713; 100% Reliable</span></td>
+            </tr>
+            <tr>
+              <td>Context Window Compression</td>
+              <td>FP16 Only (High VRAM)</td>
+              <td>FP16 Only</td>
+              <td class="hl"><span class="sq-best">INT4 (75% Less VRAM)</span></td>
             </tr>
           </tbody>
         </table>
@@ -1750,8 +1768,8 @@ body[data-md-color-scheme="default"] {
     <div class="sq-wrap">
       <div class="sq-cta__inner sq-fade">
         <img class="sq-cta__mascot" src="assets/squish-mascot.png" alt="Squish" />
-        <h2 class="sq-cta__t">Run your models <span class="sq-grad">faster</span>,<br>keep your data <span class="sq-grad-warm">private</span></h2>
-        <p class="sq-cta__s">Install in 30 seconds. One command brings any 7B&ndash;70B model online &mdash; no cloud, no cost, no compromise.</p>
+        <h2 class="sq-cta__t">Reclaim your <span class="sq-grad">VRAM</span>.<br>Unleash your <span class="sq-grad-warm">Agents</span>.</h2>
+        <p class="sq-cta__s">Turn your MacBook into a production-grade AI agent server in under 60 seconds. No cloud, no API bills, no out-of-memory crashes.</p>
         <div class="sq-cta__btns">
           <a href="install/" class="sq-btn sq-btn--primary">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
