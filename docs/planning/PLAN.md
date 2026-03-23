@@ -867,7 +867,7 @@ sequential depth-loop for draft chain with `vectorize[softmax_elem, SIMD_W](voca
 
 ---
 
-## 🚧 v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Planned)
+## ✅ v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Complete)
 
 Theme: **Wave 61 targets six remaining Python-loop hotspots that dominate profiling traces after Wave 60
 eliminates the SSM/paged-memory bottlenecks. The six targets span post-training structured sparsity
@@ -974,30 +974,30 @@ sequential token-by-token accept/reject per branch with residual softmax.
 
 ### Wave 61 Checklist
 
-- [ ] Wave 61 spec reviewed
-- [ ] lib.rs updated (7 Wave 61a functions registered)
-- [ ] `rs_wanda_nm.py` — RustWandaNM (nm_mask + importance)
-- [ ] `rs_flute_lut.py` — RustFluteLUT (encode + decode)
-- [ ] `rs_delta_net.py` — RustDeltaNet (scan)
-- [ ] `rs_green_kv_score.py` — RustGreenKVScore (score)
-- [ ] `rs_jacobi_conv.py` — RustJacobiConv (check)
-- [ ] `rs_tree_verify.py` — RustTreeVerify (verify)
-- [ ] `wanda_nm_mojo.py` — MojoWandaNM
-- [ ] `flute_lut_mojo.py` — MojoFluteLUT
-- [ ] `delta_net_mojo.py` — MojoDeltaNet
-- [ ] `green_kv_score_mojo.py` — MojoGreenKVScore
-- [ ] `jacobi_conv_mojo.py` — MojoJacobiConv
-- [ ] `tree_verify_mojo.py` — MojoTreeVerify
-- [ ] `wanda_nm.mojo` stub
-- [ ] `flute_lut.mojo` stub
-- [ ] `delta_net_recurrence.mojo` stub
-- [ ] `green_kv_score.mojo` stub
-- [ ] `jacobi_convergence.mojo` stub
-- [ ] `tree_verify.mojo` stub
-- [ ] `tests/test_wave61a_rust_kernels.py` (≥75 tests)
-- [ ] `tests/test_wave61b_mojo_kernels.py` (≥75 tests)
-- [ ] CHANGELOG `[35.0.0]` entry
-- [ ] PLAN.md updated
+- [x] Wave 61 spec reviewed
+- [x] lib.rs updated (8 Wave 61a functions registered)
+- [x] `rs_wanda_nm.py` — RustWandaNM (nm_mask + importance)
+- [x] `rs_flute_lut.py` — RustFluteLUT (encode + decode)
+- [x] `rs_delta_net.py` — RustDeltaNet (scan)
+- [x] `rs_green_kv_score.py` — RustGreenKVScore (score)
+- [x] `rs_jacobi_conv.py` — RustJacobiConv (check)
+- [x] `rs_tree_verify.py` — RustTreeVerify (verify)
+- [x] `wanda_nm_mojo.py` — MojoWandaNM
+- [x] `flute_lut_mojo.py` — MojoFluteLUT
+- [x] `delta_net_mojo.py` — MojoDeltaNet
+- [x] `green_kv_score_mojo.py` — MojoGreenKVScore
+- [x] `jacobi_conv_mojo.py` — MojoJacobiConv
+- [x] `tree_verify_mojo.py` — MojoTreeVerify
+- [x] `wanda_nm.mojo` stub
+- [x] `flute_lut.mojo` stub
+- [x] `delta_net_recurrence.mojo` stub
+- [x] `green_kv_score.mojo` stub
+- [x] `jacobi_convergence.mojo` stub
+- [x] `tree_verify.mojo` stub
+- [x] `tests/test_wave61a_rust_kernels.py` (70 tests)
+- [x] `tests/test_wave61b_mojo_kernels.py` (70 tests)
+- [x] CHANGELOG `[35.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 

@@ -28,6 +28,7 @@ use half::bf16;
 use numpy::{
     ndarray::{Array1, Array2},
     IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2,
+    PyUntypedArrayMethods,
 };
 use pyo3::prelude::*;
 use rayon::prelude::*;
@@ -2871,8 +2872,9 @@ fn quarot_group_quant_f32(
     for g in 0..n_groups {
         let c_start = g * gs;
         let c_end = (c_start + gs).min(cols);
+        let w_slice = &w_flat[..];
         let vals: Vec<f32> = (0..rows)
-            .flat_map(|i| (c_start..c_end).map(move |j| w_flat[i * cols + j]))
+            .flat_map(|i| (c_start..c_end).map(move |j| w_slice[i * cols + j]))
             .collect();
         if symmetric {
             let abs_max = vals.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
@@ -3254,6 +3256,16 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hawk_rglr_scan_f32,                  m)?)?;
     m.add_function(wrap_pyfunction!(cake_entropy_f32,                    m)?)?;
     m.add_function(wrap_pyfunction!(ternary_gemv_i8,                     m)?)?;
+
+    // Wave 61a
+    m.add_function(wrap_pyfunction!(wanda_importance_f32,                m)?)?;
+    m.add_function(wrap_pyfunction!(wanda_nm_mask_f32,                   m)?)?;
+    m.add_function(wrap_pyfunction!(flute_lut_encode_f32,                m)?)?;
+    m.add_function(wrap_pyfunction!(flute_lut_decode_u8,                 m)?)?;
+    m.add_function(wrap_pyfunction!(delta_net_scan_f32,                  m)?)?;
+    m.add_function(wrap_pyfunction!(green_kv_score_f32,                  m)?)?;
+    m.add_function(wrap_pyfunction!(jacobi_conv_check_f32,               m)?)?;
+    m.add_function(wrap_pyfunction!(tree_verify_softmax_f32,             m)?)?;
     Ok(())
 }
 
@@ -3618,4 +3630,525 @@ fn ternary_gemv_i8(
         })
         .collect();
     Ok(PyArray1::from_vec(py, out).into())
+}
+
+// ── Wave 61a — Wanda · FLUTE LUT · DeltaNet · GreenKV · Jacobi · TreeVerify ─
+
+/// Wanda per-element importance: |W| × activation_rms broadcast.
+///
+/// For each row r and column c: `importance[r, c] = |W[r, c]| × rms[c]`.
+/// Rayon parallelises over rows.
+#[pyfunction]
+fn wanda_importance_f32(
+    py: Python<'_>,
+    w: PyReadonlyArray2<f32>,
+    rms: PyReadonlyArray1<f32>,
+) -> PyResult<Py<PyArray2<f32>>> {
+    use numpy::ndarray::Array2;
+    let w_s = w.as_slice()?;
+    let r_s = rms.as_slice()?;
+    let out_f = w.shape()[0];
+    let in_f = w.shape()[1];
+
+    let flat: Vec<f32> = (0..out_f)
+        .into_par_iter()
+        .flat_map(|row| {
+            let row_start = row * in_f;
+            (0..in_f)
+                .map(move |c| w_s[row_start + c].abs() * r_s[c])
+                .collect::<Vec<f32>>()
+        })
+        .collect();
+
+    let arr = Array2::from_shape_vec((out_f, in_f), flat)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// Wanda N:M structured sparsity mask.
+///
+/// For each column block of size `m`, keeps the top-`n` entries per row
+/// by importance score.  Returns `uint8` mask (1 = keep, 0 = prune).
+/// Rayon parallelises over rows.
+#[pyfunction]
+fn wanda_nm_mask_f32(
+    py: Python<'_>,
+    importance: PyReadonlyArray2<f32>,
+    n: usize,
+    m: usize,
+) -> PyResult<Py<PyArray2<u8>>> {
+    use numpy::ndarray::Array2;
+    let imp = importance.as_slice()?;
+    let out_f = importance.shape()[0];
+    let in_f = importance.shape()[1];
+    let n_blocks = (in_f + m - 1) / m;
+
+    let flat: Vec<u8> = (0..out_f)
+        .into_par_iter()
+        .flat_map(|row| {
+            let row_start = row * in_f;
+            let mut row_mask = vec![0u8; in_f];
+            for bi in 0..n_blocks {
+                let col_start = bi * m;
+                let col_end = (col_start + m).min(in_f);
+                let block_w = col_end - col_start;
+                let n_keep = n.min(block_w);
+                let mut scored: Vec<(usize, f32)> = (0..block_w)
+                    .map(|c| (col_start + c, imp[row_start + col_start + c]))
+                    .collect();
+                scored.sort_unstable_by(|a, b| {
+                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                for k in 0..n_keep {
+                    row_mask[scored[k].0] = 1;
+                }
+            }
+            row_mask
+        })
+        .collect();
+
+    let arr = Array2::from_shape_vec((out_f, in_f), flat)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// FLUTE LUT group encode: map weight values to nearest codebook entry index.
+///
+/// For each column group `g`, finds the codebook entry with minimum L1
+/// distance to each weight value.  Rayon parallelises over groups.
+///
+/// `weight`   — `(rows, cols)` f32
+/// `codebook` — `(n_groups, cb_size)` f32 — one codebook per group
+/// Returns `(rows, cols)` uint8 code indices.
+#[pyfunction]
+fn flute_lut_encode_f32(
+    py: Python<'_>,
+    weight: PyReadonlyArray2<f32>,
+    codebook: PyReadonlyArray2<f32>,
+    group_size: usize,
+) -> PyResult<Py<PyArray2<u8>>> {
+    use numpy::ndarray::Array2;
+    let w_s = weight.as_slice()?;
+    let cb_s = codebook.as_slice()?;
+    let rows = weight.shape()[0];
+    let cols = weight.shape()[1];
+    let n_groups = codebook.shape()[0];
+    let cb_size = codebook.shape()[1];
+
+    let group_chunks: Vec<(usize, Vec<u8>)> = (0..n_groups)
+        .into_par_iter()
+        .map(|g| {
+            let col_start = g * group_size;
+            let col_end = (col_start + group_size).min(cols);
+            let gs_actual = col_end - col_start;
+            let cb_g = &cb_s[g * cb_size..(g + 1) * cb_size];
+            let mut grp = vec![0u8; rows * gs_actual];
+            for row in 0..rows {
+                for c in 0..gs_actual {
+                    let v = w_s[row * cols + col_start + c];
+                    let best = cb_g
+                        .iter()
+                        .enumerate()
+                        .min_by(|(_, &a), (_, &b)| {
+                            (v - a).abs().partial_cmp(&(v - b).abs())
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    grp[row * gs_actual + c] = best as u8;
+                }
+            }
+            (g, grp)
+        })
+        .collect();
+
+    let mut flat = vec![0u8; rows * cols];
+    for (g, grp) in group_chunks {
+        let col_start = g * group_size;
+        let col_end = (col_start + group_size).min(cols);
+        let gs_actual = col_end - col_start;
+        for row in 0..rows {
+            for c in 0..gs_actual {
+                flat[row * cols + col_start + c] = grp[row * gs_actual + c];
+            }
+        }
+    }
+
+    let arr = Array2::from_shape_vec((rows, cols), flat)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// FLUTE LUT group decode: gather codebook entries by code indices.
+///
+/// For each column group `g`: `out[:, g*gs:(g+1)*gs] = codebook[g][codes[:]]`.
+/// Rayon parallelises over groups.
+#[pyfunction]
+fn flute_lut_decode_u8(
+    py: Python<'_>,
+    codes: PyReadonlyArray2<u8>,
+    codebook: PyReadonlyArray2<f32>,
+    group_size: usize,
+) -> PyResult<Py<PyArray2<f32>>> {
+    use numpy::ndarray::Array2;
+    let c_s = codes.as_slice()?;
+    let cb_s = codebook.as_slice()?;
+    let rows = codes.shape()[0];
+    let cols = codes.shape()[1];
+    let n_groups = codebook.shape()[0];
+    let cb_size = codebook.shape()[1];
+
+    let group_chunks: Vec<(usize, Vec<f32>)> = (0..n_groups)
+        .into_par_iter()
+        .map(|g| {
+            let col_start = g * group_size;
+            let col_end = (col_start + group_size).min(cols);
+            let gs_actual = col_end - col_start;
+            let cb_g = &cb_s[g * cb_size..(g + 1) * cb_size];
+            let mut grp = vec![0f32; rows * gs_actual];
+            for row in 0..rows {
+                for c in 0..gs_actual {
+                    let idx = c_s[row * cols + col_start + c] as usize;
+                    grp[row * gs_actual + c] = cb_g[idx.min(cb_size - 1)];
+                }
+            }
+            (g, grp)
+        })
+        .collect();
+
+    let mut flat = vec![0f32; rows * cols];
+    for (g, grp) in group_chunks {
+        let col_start = g * group_size;
+        let col_end = (col_start + group_size).min(cols);
+        let gs_actual = col_end - col_start;
+        for row in 0..rows {
+            for c in 0..gs_actual {
+                flat[row * cols + col_start + c] = grp[row * gs_actual + c];
+            }
+        }
+    }
+
+    let arr = Array2::from_shape_vec((rows, cols), flat)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// DeltaNet sequential delta-rule recurrent scan over T tokens.
+///
+/// For each timestep t (sequential), updates per-head state W with:
+///   k̂  = k[t,h] / ‖k[t,h]‖₂
+///   W  = W + β[t,h] · (v[t,h] − W @ k̂) ⊗ k̂
+///   y[t,h] = W @ q[t,h]
+///
+/// The per-head outer-product update is parallelised with Rayon.
+///
+/// `q`, `k`, `v` — `(T, n_heads, head_dim)` f32
+/// `beta`         — `(T, n_heads)` f32
+/// Returns `(T, n_heads, head_dim)` f32 output.
+#[pyfunction]
+fn delta_net_scan_f32(
+    py: Python<'_>,
+    q: PyReadonlyArray3<f32>,
+    k: PyReadonlyArray3<f32>,
+    v: PyReadonlyArray3<f32>,
+    beta: PyReadonlyArray2<f32>,
+) -> PyResult<Py<PyArray3<f32>>> {
+    use numpy::ndarray::Array3;
+    let q_s = q.as_slice()?;
+    let k_s = k.as_slice()?;
+    let v_s = v.as_slice()?;
+    let b_s = beta.as_slice()?;
+    let t_len = q.shape()[0];
+    let n_heads = q.shape()[1];
+    let head_dim = q.shape()[2];
+
+    // W state: (n_heads, head_dim, head_dim)
+    let mut state = vec![0f32; n_heads * head_dim * head_dim];
+    let mut out = vec![0f32; t_len * n_heads * head_dim];
+
+    for t in 0..t_len {
+        let q_t = &q_s[t * n_heads * head_dim..(t + 1) * n_heads * head_dim];
+        let k_t = &k_s[t * n_heads * head_dim..(t + 1) * n_heads * head_dim];
+        let v_t = &v_s[t * n_heads * head_dim..(t + 1) * n_heads * head_dim];
+        let b_t = &b_s[t * n_heads..(t + 1) * n_heads];
+
+        let head_updates: Vec<(Vec<f32>, Vec<f32>)> = (0..n_heads)
+            .into_par_iter()
+            .map(|h| {
+                let q_h = &q_t[h * head_dim..(h + 1) * head_dim];
+                let k_raw = &k_t[h * head_dim..(h + 1) * head_dim];
+                let v_h = &v_t[h * head_dim..(h + 1) * head_dim];
+                let beta_h = b_t[h];
+                let w_h = &state[h * head_dim * head_dim..(h + 1) * head_dim * head_dim];
+
+                let k_norm = k_raw.iter().map(|&x| x * x).sum::<f32>().sqrt().max(1e-8);
+                let k_hat: Vec<f32> = k_raw.iter().map(|&x| x / k_norm).collect();
+
+                // Wk = W[h] @ k_hat
+                let mut wk = vec![0f32; head_dim];
+                for hd in 0..head_dim {
+                    for ds in 0..head_dim {
+                        wk[hd] += w_h[hd * head_dim + ds] * k_hat[ds];
+                    }
+                }
+
+                // residual = v - Wk
+                let residual: Vec<f32> =
+                    v_h.iter().zip(wk.iter()).map(|(&vi, &wi)| vi - wi).collect();
+
+                // new_W = W + beta * outer(residual, k_hat)
+                let mut new_w = w_h.to_vec();
+                for hd in 0..head_dim {
+                    for ds in 0..head_dim {
+                        new_w[hd * head_dim + ds] += beta_h * residual[hd] * k_hat[ds];
+                    }
+                }
+
+                // y = new_W @ q_h
+                let mut y = vec![0f32; head_dim];
+                for hd in 0..head_dim {
+                    for ds in 0..head_dim {
+                        y[hd] += new_w[hd * head_dim + ds] * q_h[ds];
+                    }
+                }
+                (new_w, y)
+            })
+            .collect();
+
+        for (h, (new_w, y)) in head_updates.into_iter().enumerate() {
+            state[h * head_dim * head_dim..(h + 1) * head_dim * head_dim]
+                .copy_from_slice(&new_w);
+            out[t * n_heads * head_dim + h * head_dim..t * n_heads * head_dim + (h + 1) * head_dim]
+                .copy_from_slice(&y);
+        }
+    }
+
+    let arr = Array3::from_shape_vec((t_len, n_heads, head_dim), out)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// GreenKV per-head attention score accumulation for KV cache selection.
+///
+/// For each head h: computes mean softmax attention weights over `obs_window`
+/// query vectors against all `seq_len` key vectors, returning per-token
+/// importance scores `(n_heads, seq_len)`.  Rayon parallelises over heads.
+///
+/// `q_obs` — `(n_heads, obs_window, head_dim)` f32 — recent query slice
+/// `k`     — `(n_heads, seq_len,   head_dim)` f32 — full key cache
+/// Returns `(n_heads, seq_len)` f32 importance scores.
+#[pyfunction]
+fn green_kv_score_f32(
+    py: Python<'_>,
+    q_obs: PyReadonlyArray3<f32>,
+    k: PyReadonlyArray3<f32>,
+) -> PyResult<Py<PyArray2<f32>>> {
+    use numpy::ndarray::Array2;
+    let q_s = q_obs.as_slice()?;
+    let k_s = k.as_slice()?;
+    let n_heads = q_obs.shape()[0];
+    let obs_window = q_obs.shape()[1];
+    let head_dim = q_obs.shape()[2];
+    let seq_len = k.shape()[1];
+    let scale = 1.0f32 / (head_dim as f32).sqrt();
+
+    let flat: Vec<f32> = (0..n_heads)
+        .into_par_iter()
+        .flat_map(|h| {
+            let q_h = &q_s[h * obs_window * head_dim..(h + 1) * obs_window * head_dim];
+            let k_h = &k_s[h * seq_len * head_dim..(h + 1) * seq_len * head_dim];
+            let mut head_scores = vec![0f32; seq_len];
+
+            for qp in 0..obs_window {
+                let q_row = &q_h[qp * head_dim..(qp + 1) * head_dim];
+                let mut logits: Vec<f32> = (0..seq_len)
+                    .map(|s| {
+                        let k_row = &k_h[s * head_dim..(s + 1) * head_dim];
+                        q_row.iter().zip(k_row.iter())
+                            .map(|(&qi, &ki)| qi * ki)
+                            .sum::<f32>() * scale
+                    })
+                    .collect();
+                let max_l = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                let sum_exp: f32 = logits.iter_mut().map(|l| { *l = (*l - max_l).exp(); *l }).sum();
+                for (s, l) in logits.iter().enumerate() {
+                    head_scores[s] += l / (sum_exp + 1e-9);
+                }
+            }
+            head_scores.iter_mut().for_each(|s| *s /= obs_window as f32);
+            head_scores
+        })
+        .collect();
+
+    let arr = Array2::from_shape_vec((n_heads, seq_len), flat)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// Jacobi fixed-point convergence check and next-guess generation.
+///
+/// For each of the N speculative positions:
+///   - `temperature == 0`: `new_guess[i] = argmax(logits[i])`
+///   - `temperature > 0`:  Gumbel-max sampling (deterministic per position via
+///     xorshift64 seeded from `seed ⊕ i`)
+///
+/// Returns `(new_guesses: (N,) i32, n_fixed: i32)` where `n_fixed` counts
+/// positions where `new_guess == old_guess`.
+#[pyfunction]
+fn jacobi_conv_check_f32(
+    py: Python<'_>,
+    pos_logits: PyReadonlyArray2<f32>,
+    guesses: PyReadonlyArray1<i32>,
+    temperature: f32,
+    seed: u64,
+) -> PyResult<(Py<PyArray1<i32>>, i32)> {
+    let l_s = pos_logits.as_slice()?;
+    let g_s = guesses.as_slice()?;
+    let n = pos_logits.shape()[0];
+    let vocab = pos_logits.shape()[1];
+
+    let new_guesses: Vec<i32> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let logits = &l_s[i * vocab..(i + 1) * vocab];
+            if temperature <= 0.0 {
+                logits
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(idx, _)| idx as i32)
+                    .unwrap_or(0)
+            } else {
+                // Gumbel-max: deterministic per-position xorshift64
+                let mut state = seed
+                    .wrapping_add((i as u64).wrapping_mul(6364136223846793005u64))
+                    .wrapping_add(1442695040888963407u64);
+                let max_l = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                let mut best_idx = 0i32;
+                let mut best_val = f32::NEG_INFINITY;
+                for (j, &l) in logits.iter().enumerate() {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    let u = ((state >> 33) as f32) / (u32::MAX as f32) + 1e-20f32;
+                    let gumbel = (l - max_l) / temperature - (-u.ln()).ln();
+                    if gumbel > best_val {
+                        best_val = gumbel;
+                        best_idx = j as i32;
+                    }
+                }
+                best_idx
+            }
+        })
+        .collect();
+
+    let n_fixed = new_guesses
+        .iter()
+        .zip(g_s.iter())
+        .filter(|(&ng, &og)| ng == og)
+        .count() as i32;
+    Ok((
+        Array1::from(new_guesses).into_pyarray_bound(py).unbind(),
+        n_fixed,
+    ))
+}
+
+/// Tree-parallel speculative decoding token verification via rejection sampling.
+///
+/// For each branch `b` (parallelised), verifies draft tokens sequentially:
+///   - `accept_prob = min(1, p_target[token] / p_draft[token])`
+///   - On acceptance: continue to next position
+///   - On rejection:  sample correction token from `max(0, p_t − p_d)` residual,
+///     then stop the branch
+///
+/// Returns `(best_accepted: (n,) i32, best_len: i32)` — the longest accepted
+/// sequence across all branches plus its length.
+///
+/// `draft_tokens`  — `(B, n_draft)` i32
+/// `draft_logits`  — `(B, n_draft, vocab)` f32
+/// `target_logits` — `(B, n_draft, vocab)` f32
+#[pyfunction]
+fn tree_verify_softmax_f32(
+    py: Python<'_>,
+    draft_tokens: PyReadonlyArray2<i32>,
+    draft_logits: PyReadonlyArray3<f32>,
+    target_logits: PyReadonlyArray3<f32>,
+    temperature: f32,
+    seed: u64,
+) -> PyResult<(Py<PyArray1<i32>>, i32)> {
+    let dt_s = draft_tokens.as_slice()?;
+    let dl_s = draft_logits.as_slice()?;
+    let tl_s = target_logits.as_slice()?;
+    let n_branches = draft_tokens.shape()[0];
+    let n_draft = draft_tokens.shape()[1];
+    let vocab = draft_logits.shape()[2];
+    let temp = temperature.max(1e-6);
+
+    let softmax_into = |logits: &[f32], out: &mut Vec<f32>| {
+        let max_l = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        out.clear();
+        out.extend(logits.iter().map(|&l| ((l - max_l) / temp).exp()));
+        let s: f32 = out.iter().sum::<f32>() + 1e-9;
+        out.iter_mut().for_each(|p| *p /= s);
+    };
+
+    let branch_results: Vec<Vec<i32>> = (0..n_branches)
+        .into_par_iter()
+        .map(|b| {
+            let mut rng = seed.wrapping_add((b as u64).wrapping_mul(2654435761u64));
+            let next_rand = |state: &mut u64| -> f32 {
+                *state ^= *state << 13;
+                *state ^= *state >> 7;
+                *state ^= *state << 17;
+                ((*state >> 33) as f32) / (u32::MAX as f32)
+            };
+            let mut d_probs = Vec::with_capacity(vocab);
+            let mut t_probs = Vec::with_capacity(vocab);
+            let mut accepted: Vec<i32> = Vec::new();
+            let b_off = b * n_draft * vocab;
+            for i in 0..n_draft {
+                let token = dt_s[b * n_draft + i] as usize;
+                softmax_into(&dl_s[b_off + i * vocab..b_off + (i + 1) * vocab], &mut d_probs);
+                softmax_into(&tl_s[b_off + i * vocab..b_off + (i + 1) * vocab], &mut t_probs);
+                let p_d = d_probs[token.min(vocab - 1)];
+                let p_t = t_probs[token.min(vocab - 1)];
+                let accept_prob = (p_t / (p_d + 1e-30)).min(1.0);
+                if next_rand(&mut rng) < accept_prob {
+                    accepted.push(token as i32);
+                } else {
+                    // Sample correction from residual = max(0, p_target − p_draft)
+                    let residual: Vec<f32> = t_probs
+                        .iter()
+                        .zip(d_probs.iter())
+                        .map(|(&tp, &dp)| (tp - dp).max(0.0))
+                        .collect();
+                    let rsum: f32 = residual.iter().sum::<f32>() + 1e-9;
+                    let r = next_rand(&mut rng);
+                    let mut cum = 0f32;
+                    let correction = residual
+                        .iter()
+                        .enumerate()
+                        .find(|(_, &rv)| {
+                            cum += rv / rsum;
+                            cum >= r
+                        })
+                        .map(|(j, _)| j as i32)
+                        .unwrap_or(0);
+                    accepted.push(correction);
+                    break;
+                }
+            }
+            accepted
+        })
+        .collect();
+
+    let best = branch_results
+        .into_iter()
+        .max_by_key(|v| v.len())
+        .unwrap_or_default();
+    let best_len = best.len() as i32;
+    Ok((
+        Array1::from(best).into_pyarray_bound(py).unbind(),
+        best_len,
+    ))
 }

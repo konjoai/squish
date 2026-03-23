@@ -5,6 +5,64 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [35.0.0] — 2026-03-30
+
+### Added — Wave 61: v35 Sixth Acceleration Tier: Rust Wanda N:M · FLUTE LUT · DeltaNet Scan · GreenKV Score · Jacobi Conv · Tree Verify + Mojo counterparts
+
+Eight production-grade Rust kernel functions added to `squish_quant_rs`
+(Wave 61a) covering structured N:M pruning (Wanda importance scoring and
+mask generation), FLUTE per-group LUT quantization encode/decode, DeltaNet
+linear attention recurrence scan, GreenKV mean-softmax KV-cache importance
+scoring, Jacobi fixed-point convergence check, and tree-parallel speculative
+decoding verification via rejection sampling.  Six Mojo-backed kernel wrappers
+(Wave 61b) mirror all six operations with SIMD-vectorised `.mojo` stubs.
+All 11333 pre-Wave-61 tests continue passing; 140 new tests added
+(70 Wave 61a + 70 Wave 61b).
+
+#### Wave 61a — Rust kernel Python wrappers
+
+- **RustWandaNM** (`squish/kernels/rs_wanda_nm.py`) — Wanda importance scoring
+  (`wanda_importance_f32`) and N:M mask generation (`wanda_nm_mask_f32`).
+  Rayon parallel rows; per-block top-n partial sort.  `prune()` convenience
+  method zeros masked entries.
+
+- **RustFluteLUT** (`squish/kernels/rs_flute_lut.py`) — FLUTE per-group
+  codebook encoding (`flute_lut_encode_f32`) via L1 argmin and decoding
+  (`flute_lut_decode_u8`) via gather.  `roundtrip_error()` reports MAE.
+
+- **RustDeltaNet** (`squish/kernels/rs_delta_net.py`) — DeltaNet linear
+  attention recurrence scan (`delta_net_scan_f32`). Sequential time loop,
+  Rayon parallel heads, outer-product state update `W += beta*(v-W@k)kᵀ`.
+
+- **RustGreenKVScore** (`squish/kernels/rs_green_kv_score.py`) — GreenKV
+  per-head KV-cache importance score (`green_kv_score_f32`). Mean softmax
+  attention weight over observation window; `top_k_mask()` budget selection.
+
+- **RustJacobiConv** (`squish/kernels/rs_jacobi_conv.py`) — Jacobi decoding
+  convergence check (`jacobi_conv_check_f32`). Greedy argmax or Gumbel-max
+  per position; returns updated guesses and converged count.
+
+- **RustTreeVerify** (`squish/kernels/rs_tree_verify.py`) — Tree-speculative
+  rejection-sampling verifier (`tree_verify_softmax_f32`). Parallel branches,
+  sequential per-token accept/reject; `acceptance_rate()` Monte-Carlo estimate.
+
+#### Wave 61b — Mojo kernel wrappers + stubs
+
+- `squish/kernels/mojo/wanda_nm_mojo.py` + `kernels/wanda_nm.mojo`
+- `squish/kernels/mojo/flute_lut_mojo.py` + `kernels/flute_lut.mojo`
+- `squish/kernels/mojo/delta_net_mojo.py` + `kernels/delta_net_recurrence.mojo`
+- `squish/kernels/mojo/green_kv_score_mojo.py` + `kernels/green_kv_score.mojo`
+- `squish/kernels/mojo/jacobi_conv_mojo.py` + `kernels/jacobi_convergence.mojo`
+- `squish/kernels/mojo/tree_verify_mojo.py` + `kernels/tree_verify.mojo`
+
+### Fixed
+
+- Pre-existing `quarot_group_quant_f32` move-in-closure compile error in
+  `squish_quant_rs/src/lib.rs`: introduced `let w_slice = &w_flat[..]` before
+  inner `move |j|` closure to avoid double-move of `w_flat`.
+
+---
+
 ## [34.0.0] — 2026-03-29
 
 ### Added — Wave 60: v34 Fifth Acceleration Tier: Rust Mamba2 SSM Scan/Decode · AdaRound Step · Paged KV Gather · Hawk RGLR Scan · CAKE Entropy · Ternary GEMV + Mojo Mamba2 Scan · Hawk RGLR · Medusa Verify · Paged KV · CAKE Entropy · Ternary GEMV
