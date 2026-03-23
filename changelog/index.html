@@ -836,6 +836,73 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#3600-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [36.0.0] — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[36.0.0] — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-62-v36-seventh-acceleration-tier-rust-svdq-head-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-qmoe-compress-mojo-counterparts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 62: v36 Seventh Acceleration Tier: Rust SVDq Head · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget · QMoE Compress + Mojo counterparts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Added — Wave 62: v36 Seventh Acceleration Tier: Rust SVDq Head · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget · QMoE Compress + Mojo counterparts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wave-62a-rust-kernel-python-wrappers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 62a — Rust kernel Python wrappers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wave-62b-mojo-kernel-wrappers-stubs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wave 62b — Mojo kernel wrappers + stubs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#3500-2026-03-30" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -887,7 +954,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed" class="md-nav__link">
+  <a href="#fixed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -2586,7 +2653,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed_1" class="md-nav__link">
+  <a href="#fixed_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -2664,6 +2731,77 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="3600-2026-03-24">[36.0.0] — 2026-03-24<a class="headerlink" href="#3600-2026-03-24" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-62-v36-seventh-acceleration-tier-rust-svdq-head-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-qmoe-compress-mojo-counterparts">Added — Wave 62: v36 Seventh Acceleration Tier: Rust SVDq Head · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget · QMoE Compress + Mojo counterparts<a class="headerlink" href="#added-wave-62-v36-seventh-acceleration-tier-rust-svdq-head-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-qmoe-compress-mojo-counterparts" title="Permanent link">&para;</a></h3>
+<p>Nine production-grade Rust kernel functions added to <code>squish_quant_rs</code>
+(Wave 62a) covering per-head SVD rank calibration (SVDq), low-rank key
+projection fitting and token batch projection (ShadowKV), attention-weighted
+cluster scoring for KV-cache eviction (ClusterKV), Lloyd k-means centroid
+calibration for 4-bit learned quantisation (Any4), online n-gram frequency
+table construction and depth-position lookahead sampling for speculative
+decoding (Ouroboros), layer-wise linear-decay KV-cache budget allocation
+(PyramidKV), and shared-codebook block compression for MoE weight matrices
+(QMoE).  Six Mojo-backed kernel wrappers (Wave 62b) mirror the first six
+operations with SIMD-vectorised <code>.mojo</code> stubs.  All 12,740 pre-Wave-62 tests
+continue passing; 188 new tests added (107 Wave 62a + 81 Wave 62b).</p>
+<h4 id="wave-62a-rust-kernel-python-wrappers">Wave 62a — Rust kernel Python wrappers<a class="headerlink" href="#wave-62a-rust-kernel-python-wrappers" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong>RustSVDqHead</strong> (<code>squish/kernels/rs_svdq_head.py</code>) — Per-head approximate
+  singular-value profiles (<code>svdq_head_rank_f32</code>). Rayon parallel over
+  (layer × head) pairs; column-energy sketch.  <code>rank_per_head()</code> returns
+  effective rank as int32 per head.</p>
+</li>
+<li>
+<p><strong>RustShadowKVFit</strong> (<code>squish/kernels/rs_shadow_kv_fit.py</code>) — Per-head thin
+  SVD fit (<code>shadow_kv_svd_fit_f32</code>) returning V-matrices, and token-wise
+  projection into low-rank shadow space (<code>shadow_kv_store_batch_f32</code>).</p>
+</li>
+<li>
+<p><strong>RustClusterKV</strong> (<code>squish/kernels/rs_cluster_kv.py</code>) — Attention-weight
+  cluster scoring (<code>cluster_kv_score_f32</code>).  <code>evict_mask()</code> accepts
+  <code>evict_ratio</code> parameter for fraction-based eviction.</p>
+</li>
+<li>
+<p><strong>RustAny4Lloyd</strong> (<code>squish/kernels/rs_any4_lloyd.py</code>) — Lloyd k-means
+  centroid refinement (<code>any4_lloyd_step_f32</code>). Parallel E-step over value
+  chunks; sequential M-step. <code>quantize()</code> convenience method.</p>
+</li>
+<li>
+<p><strong>RustOuroborosNgram</strong> (<code>squish/kernels/rs_ouroboros_ngram.py</code>) — Shard-
+  parallel n-gram table construction (<code>ouroboros_ngram_build</code>) and parallel
+  depth-position temperature sampling (<code>ouroboros_lookahead_f32</code>).</p>
+</li>
+<li>
+<p><strong>RustPyramidKVBudget</strong> (<code>squish/kernels/rs_pyramid_kv_budget.py</code>) —
+  Linear-decay per-layer KV-cache budget (<code>pyramid_kv_budget_f32</code>).
+  <code>total()</code> returns sum; validated <code>n_layers ≥ 1</code> and <code>base ≥ 0</code>.</p>
+</li>
+<li>
+<p><strong>RustQMoECompress</strong> (<code>squish/kernels/rs_qmoe_compress.py</code>) — EM shared-
+  codebook compression for MoE expert weight blocks
+  (<code>qmoe_compress_iter_f32</code>).  <code>k</code> clamped to <code>N</code> in Python wrapper.
+  <code>reconstruct()</code> restores weight blocks from index + codebook.</p>
+</li>
+</ul>
+<h4 id="wave-62b-mojo-kernel-wrappers-stubs">Wave 62b — Mojo kernel wrappers + stubs<a class="headerlink" href="#wave-62b-mojo-kernel-wrappers-stubs" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>squish/kernels/mojo/svdq_head_mojo.py</code> + <code>kernels/svdq_head_rank.mojo</code></li>
+<li><code>squish/kernels/mojo/shadow_kv_fit_mojo.py</code> + <code>kernels/shadow_kv_svd_fit.mojo</code></li>
+<li><code>squish/kernels/mojo/cluster_kv_mojo.py</code> + <code>kernels/cluster_kv_score.mojo</code></li>
+<li><code>squish/kernels/mojo/any4_lloyd_mojo.py</code> + <code>kernels/any4_lloyd_step.mojo</code></li>
+<li><code>squish/kernels/mojo/ouroboros_ngram_mojo.py</code> + <code>kernels/ouroboros_ngram.mojo</code></li>
+<li><code>squish/kernels/mojo/pyramid_kv_budget_mojo.py</code> + <code>kernels/pyramid_kv_budget.mojo</code></li>
+</ul>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>RustClusterKV.evict_mask</code> signature harmonised with <code>MojoClusterKV</code>:
+  replaced positional <code>budget</code> (number of clusters to keep) with optional
+  <code>evict_ratio</code> kwarg (fraction to evict), matching <code>ClusterKVConfig.evict_ratio</code>.</li>
+<li><code>RustQMoECompress.compress</code> now clamps <code>k = min(k, N)</code> before calling Rust,
+  preventing out-of-bounds when <code>k &gt; blocks.shape[0]</code>.</li>
+</ul>
+<hr />
 <h2 id="3500-2026-03-30">[35.0.0] — 2026-03-30<a class="headerlink" href="#3500-2026-03-30" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-61-v35-sixth-acceleration-tier-rust-wanda-nm-flute-lut-deltanet-scan-greenkv-score-jacobi-conv-tree-verify-mojo-counterparts">Added — Wave 61: v35 Sixth Acceleration Tier: Rust Wanda N:M · FLUTE LUT · DeltaNet Scan · GreenKV Score · Jacobi Conv · Tree Verify + Mojo counterparts<a class="headerlink" href="#added-wave-61-v35-sixth-acceleration-tier-rust-wanda-nm-flute-lut-deltanet-scan-greenkv-score-jacobi-conv-tree-verify-mojo-counterparts" title="Permanent link">&para;</a></h3>
 <p>Eight production-grade Rust kernel functions added to <code>squish_quant_rs</code>
@@ -2718,7 +2856,7 @@ All 11333 pre-Wave-61 tests continue passing; 140 new tests added
 <li><code>squish/kernels/mojo/jacobi_conv_mojo.py</code> + <code>kernels/jacobi_convergence.mojo</code></li>
 <li><code>squish/kernels/mojo/tree_verify_mojo.py</code> + <code>kernels/tree_verify.mojo</code></li>
 </ul>
-<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Pre-existing <code>quarot_group_quant_f32</code> move-in-closure compile error in
   <code>squish_quant_rs/src/lib.rs</code>: introduced <code>let w_slice = &amp;w_flat[..]</code> before
@@ -5605,7 +5743,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 </ul>
 <hr />
 <h2 id="101-2026-03-04">[1.0.1] — 2026-03-04<a class="headerlink" href="#101-2026-03-04" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>eval_output/eval_report.md</code></strong> — Replaced physically impossible benchmark numbers
   (+14.1% ARC, +15.2% HellaSwag after lossy compression) with validated results from a

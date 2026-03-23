@@ -1693,15 +1693,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-planned" class="md-nav__link">
+  <a href="#v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Planned)
+        ✅ v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Planned)">
+    <nav class="md-nav" aria-label="✅ v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -6854,15 +6854,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-planned" class="md-nav__link">
+  <a href="#v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Planned)
+        ✅ v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Planned)">
+    <nav class="md-nav" aria-label="✅ v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -10817,7 +10817,7 @@
 
 <h1 id="squish-development-plan">Squish — Development Plan<a class="headerlink" href="#squish-development-plan" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p>Last updated: 2026-03-23 (Wave 61 complete — v35 Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify — 140 new tests — 11,333 total passing; Waves 64–70 planned: SQUIZD native runtime — ASTC hardware texture compression · TCA-TBE lossless bitmap · structured FFN sparsity · fused INT4/INT2 Metal GEMV · trained EAGLE draft heads · ANE routing · production format spec)</p>
+<p>Last updated: 2026-03-24 (Wave 62 complete — v36 SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget — 188 new tests — 12,928 total passing; Waves 63–70 planned: SQUIZD native runtime — ASTC hardware texture compression · TCA-TBE lossless bitmap · structured FFN sparsity · fused INT4/INT2 Metal GEMV · trained EAGLE draft heads · ANE routing · production format spec)</p>
 </blockquote>
 <p>This document tracks completed waves, the current release, and the next phase.</p>
 <hr />
@@ -13957,7 +13957,7 @@ sequential query loop; <code>vectorize[dot_elem, SIMD_W](d)</code> candidate GEM
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-planned">🚧 v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Planned)<a class="headerlink" href="#v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-complete">✅ v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Complete)<a class="headerlink" href="#v36-wave-62-svdq-head-calibration-shadowkv-svd-fit-clusterkv-score-any4-lloyd-ouroboros-n-gram-pyramidkv-budget-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 62 targets six Python-loop hotspots that remain after Wave 61 clears the pruning/LUT/recurrence tier.
 The six targets span per-head SVD rank search during quantisation calibration (SVDq head profiling),
 low-rank key projection fitting at every context window (ShadowKV SVD fit + token-store batch),
@@ -14128,30 +14128,31 @@ sequential depth-loop for draft chain with <code>vectorize[softmax_elem, SIMD_W]
 </table>
 <h3 id="wave-62-checklist">Wave 62 Checklist<a class="headerlink" href="#wave-62-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] Wave 62 spec reviewed</li>
-<li>[ ] lib.rs updated (7 Wave 62a functions registered)</li>
-<li>[ ] <code>rs_svdq_head.py</code> — RustSVDqHead (head rank profiling)</li>
-<li>[ ] <code>rs_shadow_kv_fit.py</code> — RustShadowKVFit (SVD fit + batch store)</li>
-<li>[ ] <code>rs_cluster_kv.py</code> — RustClusterKV (cluster score)</li>
-<li>[ ] <code>rs_any4_lloyd.py</code> — RustAny4Lloyd (Lloyd step)</li>
-<li>[ ] <code>rs_ouroboros_ngram.py</code> — RustOuroborosNgram (n-gram build + lookahead)</li>
-<li>[ ] <code>rs_pyramid_kv_budget.py</code> — RustPyramidKVBudget (budget alloc)</li>
-<li>[ ] <code>svdq_head_mojo.py</code> — MojoSVDqHead</li>
-<li>[ ] <code>shadow_kv_fit_mojo.py</code> — MojoShadowKVFit</li>
-<li>[ ] <code>cluster_kv_mojo.py</code> — MojoClusterKV</li>
-<li>[ ] <code>any4_lloyd_mojo.py</code> — MojoAny4Lloyd</li>
-<li>[ ] <code>ouroboros_ngram_mojo.py</code> — MojoOuroborosNgram</li>
-<li>[ ] <code>pyramid_kv_budget_mojo.py</code> — MojoPyramidKVBudget</li>
-<li>[ ] <code>svdq_head_rank.mojo</code> stub</li>
-<li>[ ] <code>shadow_kv_svd_fit.mojo</code> stub</li>
-<li>[ ] <code>cluster_kv_score.mojo</code> stub</li>
-<li>[ ] <code>any4_lloyd_step.mojo</code> stub</li>
-<li>[ ] <code>ouroboros_ngram.mojo</code> stub</li>
-<li>[ ] <code>pyramid_kv_budget.mojo</code> stub</li>
-<li>[ ] <code>tests/test_wave62a_rust_kernels.py</code> (≥75 tests)</li>
-<li>[ ] <code>tests/test_wave62b_mojo_kernels.py</code> (≥75 tests)</li>
-<li>[ ] CHANGELOG <code>[36.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] Wave 62 spec reviewed</li>
+<li>[x] lib.rs updated (9 Wave 62a functions registered: svdq_head_rank_f32, shadow_kv_svd_fit_f32, shadow_kv_store_batch_f32, cluster_kv_score_f32, any4_lloyd_step_f32, ouroboros_ngram_build, ouroboros_lookahead_f32, pyramid_kv_budget_f32, qmoe_compress_iter_f32)</li>
+<li>[x] <code>rs_svdq_head.py</code> — RustSVDqHead (head rank profiling)</li>
+<li>[x] <code>rs_shadow_kv_fit.py</code> — RustShadowKVFit (SVD fit + batch store)</li>
+<li>[x] <code>rs_cluster_kv.py</code> — RustClusterKV (cluster score + evict_ratio interface)</li>
+<li>[x] <code>rs_any4_lloyd.py</code> — RustAny4Lloyd (Lloyd step)</li>
+<li>[x] <code>rs_ouroboros_ngram.py</code> — RustOuroborosNgram (n-gram build + lookahead)</li>
+<li>[x] <code>rs_pyramid_kv_budget.py</code> — RustPyramidKVBudget (budget alloc)</li>
+<li>[x] <code>rs_qmoe_compress.py</code> — RustQMoECompress (QMoE block compression, 7th Rust wrapper)</li>
+<li>[x] <code>svdq_head_mojo.py</code> — MojoSVDqHead</li>
+<li>[x] <code>shadow_kv_fit_mojo.py</code> — MojoShadowKVFit</li>
+<li>[x] <code>cluster_kv_mojo.py</code> — MojoClusterKV</li>
+<li>[x] <code>any4_lloyd_mojo.py</code> — MojoAny4Lloyd</li>
+<li>[x] <code>ouroboros_ngram_mojo.py</code> — MojoOuroborosNgram</li>
+<li>[x] <code>pyramid_kv_budget_mojo.py</code> — MojoPyramidKVBudget</li>
+<li>[x] <code>svdq_head_rank.mojo</code> stub</li>
+<li>[x] <code>shadow_kv_svd_fit.mojo</code> stub</li>
+<li>[x] <code>cluster_kv_score.mojo</code> stub</li>
+<li>[x] <code>any4_lloyd_step.mojo</code> stub</li>
+<li>[x] <code>ouroboros_ngram.mojo</code> stub</li>
+<li>[x] <code>pyramid_kv_budget.mojo</code> stub</li>
+<li>[x] <code>tests/test_wave62a_rust_kernels.py</code> (107 tests)</li>
+<li>[x] <code>tests/test_wave62b_mojo_kernels.py</code> (81 tests)</li>
+<li>[x] CHANGELOG <code>[36.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-complete">✅ v35 Wave 61 — Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify (Complete)<a class="headerlink" href="#v35-wave-61-structured-pruning-lut-inference-deltanet-recurrence-greenkv-scoring-jacobi-decode-tree-verify-complete" title="Permanent link">&para;</a></h2>
