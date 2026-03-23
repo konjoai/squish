@@ -1,0 +1,67 @@
+{
+  "model": "Llama-3.2-1B-int3",
+  "model_path": "/Users/wscholl/models/Llama-3.2-1B-Instruct-int3",
+  "model_size_gb": 0.43,
+  "timestamp": "20260322T231732",
+  "limit": 500,
+  "platform": {
+    "platform": "macOS-15.7.4-arm64-arm-64bit",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.12.8",
+    "mlx_lm": "0.30.7",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {
+    "arc_easy": 34.2,
+    "arc_challenge": 22.6,
+    "hellaswag": 39.4,
+    "winogrande": 53.8,
+    "piqa": 68.0,
+    "openbookqa": 31.8
+  },
+  "raw_results": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.33,
+      "acc_stderr,none": 0.02104961216613478,
+      "acc_norm,none": 0.342,
+      "acc_norm_stderr,none": 0.021236147199899316
+    },
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.194,
+      "acc_stderr,none": 0.017701827855304598,
+      "acc_norm,none": 0.226,
+      "acc_norm_stderr,none": 0.01872295644913999
+    },
+    "hellaswag": {
+      "alias": "hellaswag",
+      "acc,none": 0.368,
+      "acc_stderr,none": 0.021588982568353548,
+      "acc_norm,none": 0.394,
+      "acc_norm_stderr,none": 0.02187429930168918
+    },
+    "winogrande": {
+      "alias": "winogrande",
+      "acc,none": 0.538,
+      "acc_stderr,none": 0.022318338119870523
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.654,
+      "acc_stderr,none": 0.021294951277234696,
+      "acc_norm,none": 0.68,
+      "acc_norm_stderr,none": 0.02088234048876172
+    },
+    "openbookqa": {
+      "alias": "openbookqa",
+      "acc,none": 0.19,
+      "acc_stderr,none": 0.01756180041075899,
+      "acc_norm,none": 0.318,
+      "acc_norm_stderr,none": 0.020847571620814014
+    }
+  },
+  "elapsed_s": 2931.964681148529,
+  "errors": {}
+}

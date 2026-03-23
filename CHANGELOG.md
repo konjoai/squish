@@ -5,6 +5,73 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [36.0.0] — 2026-03-24
+
+### Added — Wave 62: v36 Seventh Acceleration Tier: Rust SVDq Head · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget · QMoE Compress + Mojo counterparts
+
+Nine production-grade Rust kernel functions added to `squish_quant_rs`
+(Wave 62a) covering per-head SVD rank calibration (SVDq), low-rank key
+projection fitting and token batch projection (ShadowKV), attention-weighted
+cluster scoring for KV-cache eviction (ClusterKV), Lloyd k-means centroid
+calibration for 4-bit learned quantisation (Any4), online n-gram frequency
+table construction and depth-position lookahead sampling for speculative
+decoding (Ouroboros), layer-wise linear-decay KV-cache budget allocation
+(PyramidKV), and shared-codebook block compression for MoE weight matrices
+(QMoE).  Six Mojo-backed kernel wrappers (Wave 62b) mirror the first six
+operations with SIMD-vectorised `.mojo` stubs.  All 12,740 pre-Wave-62 tests
+continue passing; 188 new tests added (107 Wave 62a + 81 Wave 62b).
+
+#### Wave 62a — Rust kernel Python wrappers
+
+- **RustSVDqHead** (`squish/kernels/rs_svdq_head.py`) — Per-head approximate
+  singular-value profiles (`svdq_head_rank_f32`). Rayon parallel over
+  (layer × head) pairs; column-energy sketch.  `rank_per_head()` returns
+  effective rank as int32 per head.
+
+- **RustShadowKVFit** (`squish/kernels/rs_shadow_kv_fit.py`) — Per-head thin
+  SVD fit (`shadow_kv_svd_fit_f32`) returning V-matrices, and token-wise
+  projection into low-rank shadow space (`shadow_kv_store_batch_f32`).
+
+- **RustClusterKV** (`squish/kernels/rs_cluster_kv.py`) — Attention-weight
+  cluster scoring (`cluster_kv_score_f32`).  `evict_mask()` accepts
+  `evict_ratio` parameter for fraction-based eviction.
+
+- **RustAny4Lloyd** (`squish/kernels/rs_any4_lloyd.py`) — Lloyd k-means
+  centroid refinement (`any4_lloyd_step_f32`). Parallel E-step over value
+  chunks; sequential M-step. `quantize()` convenience method.
+
+- **RustOuroborosNgram** (`squish/kernels/rs_ouroboros_ngram.py`) — Shard-
+  parallel n-gram table construction (`ouroboros_ngram_build`) and parallel
+  depth-position temperature sampling (`ouroboros_lookahead_f32`).
+
+- **RustPyramidKVBudget** (`squish/kernels/rs_pyramid_kv_budget.py`) —
+  Linear-decay per-layer KV-cache budget (`pyramid_kv_budget_f32`).
+  `total()` returns sum; validated `n_layers ≥ 1` and `base ≥ 0`.
+
+- **RustQMoECompress** (`squish/kernels/rs_qmoe_compress.py`) — EM shared-
+  codebook compression for MoE expert weight blocks
+  (`qmoe_compress_iter_f32`).  `k` clamped to `N` in Python wrapper.
+  `reconstruct()` restores weight blocks from index + codebook.
+
+#### Wave 62b — Mojo kernel wrappers + stubs
+
+- `squish/kernels/mojo/svdq_head_mojo.py` + `kernels/svdq_head_rank.mojo`
+- `squish/kernels/mojo/shadow_kv_fit_mojo.py` + `kernels/shadow_kv_svd_fit.mojo`
+- `squish/kernels/mojo/cluster_kv_mojo.py` + `kernels/cluster_kv_score.mojo`
+- `squish/kernels/mojo/any4_lloyd_mojo.py` + `kernels/any4_lloyd_step.mojo`
+- `squish/kernels/mojo/ouroboros_ngram_mojo.py` + `kernels/ouroboros_ngram.mojo`
+- `squish/kernels/mojo/pyramid_kv_budget_mojo.py` + `kernels/pyramid_kv_budget.mojo`
+
+### Fixed
+
+- `RustClusterKV.evict_mask` signature harmonised with `MojoClusterKV`:
+  replaced positional `budget` (number of clusters to keep) with optional
+  `evict_ratio` kwarg (fraction to evict), matching `ClusterKVConfig.evict_ratio`.
+- `RustQMoECompress.compress` now clamps `k = min(k, N)` before calling Rust,
+  preventing out-of-bounds when `k > blocks.shape[0]`.
+
+---
+
 ## [35.0.0] — 2026-03-30
 
 ### Added — Wave 61: v35 Sixth Acceleration Tier: Rust Wanda N:M · FLUTE LUT · DeltaNet Scan · GreenKV Score · Jacobi Conv · Tree Verify + Mojo counterparts

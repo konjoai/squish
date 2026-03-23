@@ -1,0 +1,35 @@
+{
+  "model": "Llama-3.2-3B-int3",
+  "model_path": "/Users/wscholl/models/Llama-3.2-3B-Instruct-int3",
+  "model_size_gb": 1.2,
+  "timestamp": "20260323T112731",
+  "limit": 500,
+  "platform": {
+    "platform": "macOS-15.7.4-arm64-arm-64bit",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.12.8",
+    "mlx_lm": "0.30.7",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {
+    "arc_easy": 40.4
+  },
+  "raw_results": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.446,
+      "acc_stderr,none": 0.022252153078595936,
+      "acc_norm,none": 0.404,
+      "acc_norm_stderr,none": 0.021966635293832883
+    }
+  },
+  "elapsed_s": 3814.3358612060547,
+  "errors": {
+    "arc_challenge": "mlx_lm exit code 1",
+    "hellaswag": "mlx_lm exit code 1",
+    "winogrande": "mlx_lm exit code 1",
+    "piqa": "mlx_lm exit code 1",
+    "openbookqa": "mlx_lm exit code 1"
+  }
+}

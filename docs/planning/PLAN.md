@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-23 (Wave 61 complete — v35 Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify — 140 new tests — 11,333 total passing; Waves 64–70 planned: SQUIZD native runtime — ASTC hardware texture compression · TCA-TBE lossless bitmap · structured FFN sparsity · fused INT4/INT2 Metal GEMV · trained EAGLE draft heads · ANE routing · production format spec)
+> Last updated: 2026-03-24 (Wave 62 complete — v36 SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget — 188 new tests — 12,928 total passing; Waves 63–70 planned: SQUIZD native runtime — ASTC hardware texture compression · TCA-TBE lossless bitmap · structured FFN sparsity · fused INT4/INT2 Metal GEMV · trained EAGLE draft heads · ANE routing · production format spec)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -1352,7 +1352,7 @@ sequential query loop; `vectorize[dot_elem, SIMD_W](d)` candidate GEMV + softmax
 
 ---
 
-## 🚧 v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Planned)
+## ✅ v36 Wave 62 — SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget (Complete)
 
 Theme: **Wave 62 targets six Python-loop hotspots that remain after Wave 61 clears the pruning/LUT/recurrence tier.
 The six targets span per-head SVD rank search during quantisation calibration (SVDq head profiling),
@@ -1468,30 +1468,31 @@ sequential depth-loop for draft chain with `vectorize[softmax_elem, SIMD_W](voca
 
 ### Wave 62 Checklist
 
-- [ ] Wave 62 spec reviewed
-- [ ] lib.rs updated (7 Wave 62a functions registered)
-- [ ] `rs_svdq_head.py` — RustSVDqHead (head rank profiling)
-- [ ] `rs_shadow_kv_fit.py` — RustShadowKVFit (SVD fit + batch store)
-- [ ] `rs_cluster_kv.py` — RustClusterKV (cluster score)
-- [ ] `rs_any4_lloyd.py` — RustAny4Lloyd (Lloyd step)
-- [ ] `rs_ouroboros_ngram.py` — RustOuroborosNgram (n-gram build + lookahead)
-- [ ] `rs_pyramid_kv_budget.py` — RustPyramidKVBudget (budget alloc)
-- [ ] `svdq_head_mojo.py` — MojoSVDqHead
-- [ ] `shadow_kv_fit_mojo.py` — MojoShadowKVFit
-- [ ] `cluster_kv_mojo.py` — MojoClusterKV
-- [ ] `any4_lloyd_mojo.py` — MojoAny4Lloyd
-- [ ] `ouroboros_ngram_mojo.py` — MojoOuroborosNgram
-- [ ] `pyramid_kv_budget_mojo.py` — MojoPyramidKVBudget
-- [ ] `svdq_head_rank.mojo` stub
-- [ ] `shadow_kv_svd_fit.mojo` stub
-- [ ] `cluster_kv_score.mojo` stub
-- [ ] `any4_lloyd_step.mojo` stub
-- [ ] `ouroboros_ngram.mojo` stub
-- [ ] `pyramid_kv_budget.mojo` stub
-- [ ] `tests/test_wave62a_rust_kernels.py` (≥75 tests)
-- [ ] `tests/test_wave62b_mojo_kernels.py` (≥75 tests)
-- [ ] CHANGELOG `[36.0.0]` entry
-- [ ] PLAN.md updated
+- [x] Wave 62 spec reviewed
+- [x] lib.rs updated (9 Wave 62a functions registered: svdq_head_rank_f32, shadow_kv_svd_fit_f32, shadow_kv_store_batch_f32, cluster_kv_score_f32, any4_lloyd_step_f32, ouroboros_ngram_build, ouroboros_lookahead_f32, pyramid_kv_budget_f32, qmoe_compress_iter_f32)
+- [x] `rs_svdq_head.py` — RustSVDqHead (head rank profiling)
+- [x] `rs_shadow_kv_fit.py` — RustShadowKVFit (SVD fit + batch store)
+- [x] `rs_cluster_kv.py` — RustClusterKV (cluster score + evict_ratio interface)
+- [x] `rs_any4_lloyd.py` — RustAny4Lloyd (Lloyd step)
+- [x] `rs_ouroboros_ngram.py` — RustOuroborosNgram (n-gram build + lookahead)
+- [x] `rs_pyramid_kv_budget.py` — RustPyramidKVBudget (budget alloc)
+- [x] `rs_qmoe_compress.py` — RustQMoECompress (QMoE block compression, 7th Rust wrapper)
+- [x] `svdq_head_mojo.py` — MojoSVDqHead
+- [x] `shadow_kv_fit_mojo.py` — MojoShadowKVFit
+- [x] `cluster_kv_mojo.py` — MojoClusterKV
+- [x] `any4_lloyd_mojo.py` — MojoAny4Lloyd
+- [x] `ouroboros_ngram_mojo.py` — MojoOuroborosNgram
+- [x] `pyramid_kv_budget_mojo.py` — MojoPyramidKVBudget
+- [x] `svdq_head_rank.mojo` stub
+- [x] `shadow_kv_svd_fit.mojo` stub
+- [x] `cluster_kv_score.mojo` stub
+- [x] `any4_lloyd_step.mojo` stub
+- [x] `ouroboros_ngram.mojo` stub
+- [x] `pyramid_kv_budget.mojo` stub
+- [x] `tests/test_wave62a_rust_kernels.py` (107 tests)
+- [x] `tests/test_wave62b_mojo_kernels.py` (81 tests)
+- [x] CHANGELOG `[36.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 

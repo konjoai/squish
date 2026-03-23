@@ -1,0 +1,176 @@
+{
+  "timestamp": "20260323T112732",
+  "limit": 500,
+  "tasks": [
+    "arc_easy",
+    "arc_challenge",
+    "hellaswag",
+    "winogrande",
+    "piqa",
+    "openbookqa"
+  ],
+  "platform": {
+    "platform": "macOS-15.7.4-arm64-arm-64bit",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.12.8",
+    "mlx_lm": "0.30.7",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {
+    "Qwen3-0.6B-int4": {
+      "arc_easy": 35.0,
+      "arc_challenge": 27.8,
+      "hellaswag": 31.2,
+      "winogrande": 51.2,
+      "piqa": 64.0,
+      "openbookqa": 34.0
+    },
+    "Qwen3-0.6B-int3": {
+      "arc_easy": 34.4,
+      "arc_challenge": 25.2,
+      "hellaswag": 36.2,
+      "winogrande": 51.2,
+      "piqa": 56.8,
+      "openbookqa": 28.8
+    },
+    "Qwen3-0.6B-int2": {
+      "arc_easy": 27.8,
+      "arc_challenge": 23.6,
+      "hellaswag": 26.4,
+      "winogrande": 49.6,
+      "piqa": 50.8,
+      "openbookqa": 29.4
+    },
+    "Llama-3.2-1B-int4": {
+      "arc_easy": 38.2,
+      "arc_challenge": 28.4,
+      "hellaswag": 42.0,
+      "winogrande": 56.8,
+      "piqa": 71.2,
+      "openbookqa": 37.6
+    },
+    "Llama-3.2-1B-int3": {
+      "arc_easy": 34.2,
+      "arc_challenge": 22.6,
+      "hellaswag": 39.4,
+      "winogrande": 53.8,
+      "piqa": 68.0,
+      "openbookqa": 31.8
+    },
+    "Llama-3.2-1B-int2": {
+      "arc_easy": 26.6,
+      "arc_challenge": 25.4,
+      "hellaswag": 28.6,
+      "winogrande": 50.4,
+      "piqa": 49.4,
+      "openbookqa": 28.0
+    },
+    "gemma-3-1b-int4": {
+      "arc_easy": 51.4,
+      "arc_challenge": 34.2,
+      "hellaswag": 38.0,
+      "winogrande": 55.8,
+      "piqa": 66.8,
+      "openbookqa": 38.0
+    },
+    "gemma-3-1b-int3": {
+      "arc_easy": 44.8,
+      "arc_challenge": 24.2,
+      "hellaswag": 39.2,
+      "winogrande": 48.8,
+      "piqa": 63.6,
+      "openbookqa": 31.2
+    },
+    "gemma-3-1b-int2": {
+      "arc_easy": 27.8,
+      "arc_challenge": 22.8,
+      "hellaswag": 25.4,
+      "winogrande": 53.2,
+      "piqa": 50.8,
+      "openbookqa": 29.6
+    },
+    "Qwen2.5-1.5B-int4": {
+      "arc_easy": 70.6,
+      "arc_challenge": 43.6,
+      "hellaswag": 54.8,
+      "winogrande": 61.4,
+      "piqa": 73.2,
+      "openbookqa": 39.4
+    },
+    "Qwen2.5-1.5B-int3": {
+      "arc_easy": 42.6,
+      "arc_challenge": 33.4,
+      "hellaswag": 44.8,
+      "winogrande": 54.0,
+      "piqa": 69.6,
+      "openbookqa": 31.8
+    },
+    "Qwen2.5-1.5B-int2": {
+      "arc_easy": 28.6,
+      "arc_challenge": 25.2,
+      "hellaswag": 27.2,
+      "winogrande": 49.2,
+      "piqa": 48.8,
+      "openbookqa": 29.0
+    },
+    "Llama-3.2-3B-int4": {
+      "arc_easy": 47.8,
+      "hellaswag": 54.8,
+      "winogrande": 61.2,
+      "piqa": 77.4,
+      "openbookqa": 41.2
+    },
+    "Llama-3.2-3B-int3": {
+      "arc_easy": 40.4
+    },
+    "Llama-3.2-3B-int2": {},
+    "Qwen3-4B-int4": {},
+    "Qwen3-4B-int3": {},
+    "Qwen3-4B-int2": {},
+    "gemma-3-4b-int4": {},
+    "gemma-3-4b-int3": {},
+    "gemma-3-4b-int2": {},
+    "Qwen2.5-7B-int4": {},
+    "Qwen2.5-7B-int3": {},
+    "Qwen2.5-7B-int2": {},
+    "Qwen3-8B-int4": {},
+    "Qwen3-8B-int3": {},
+    "Qwen3-8B-int2": {},
+    "Qwen3-14B-int4": {},
+    "Qwen3-14B-int3": {},
+    "Qwen3-14B-int2": {}
+  },
+  "elapsed_s": {
+    "Qwen3-0.6B-int4": 1575.7958183288574,
+    "Qwen3-0.6B-int3": 1573.7409796714783,
+    "Qwen3-0.6B-int2": 1710.9305036067963,
+    "Llama-3.2-1B-int4": 2854.1958770751953,
+    "Llama-3.2-1B-int3": 2931.964681148529,
+    "Llama-3.2-1B-int2": 2742.8990547657013,
+    "gemma-3-1b-int4": 2409.184799194336,
+    "gemma-3-1b-int3": 2334.658493757248,
+    "gemma-3-1b-int2": 2488.362536907196,
+    "Qwen2.5-1.5B-int4": 6263.148391485214,
+    "Qwen2.5-1.5B-int3": 4145.15350317955,
+    "Qwen2.5-1.5B-int2": 4928.760506153107,
+    "Llama-3.2-3B-int4": 14671.278610944748,
+    "Llama-3.2-3B-int3": 3814.3358612060547,
+    "Llama-3.2-3B-int2": 0.08089208602905273,
+    "Qwen3-4B-int4": 0.08969688415527344,
+    "Qwen3-4B-int3": 0.08125591278076172,
+    "Qwen3-4B-int2": 0.08125543594360352,
+    "gemma-3-4b-int4": 0.08282613754272461,
+    "gemma-3-4b-int3": 0.08155202865600586,
+    "gemma-3-4b-int2": 0.08403849601745605,
+    "Qwen2.5-7B-int4": 0.08649659156799316,
+    "Qwen2.5-7B-int3": 0.08803462982177734,
+    "Qwen2.5-7B-int2": 0.08324360847473145,
+    "Qwen3-8B-int4": 0.08067107200622559,
+    "Qwen3-8B-int3": 0.08091187477111816,
+    "Qwen3-8B-int2": 0.08858227729797363,
+    "Qwen3-14B-int4": 0.08197927474975586,
+    "Qwen3-14B-int3": 0.08366584777832031,
+    "Qwen3-14B-int2": 0.08063626289367676
+  }
+}
