@@ -107,18 +107,18 @@ class TestCmdConvertModel:
         assert "saved" in capsys.readouterr().out.lower()
 
     def test_different_bits_embed_pass_failure_exits(self, tmp_path: Path):
-        """First convert succeeds, second (embed) raises → SystemExit(1)."""
+        """Single-pass convert raises → SystemExit(1)."""
         cli = _import_cli()
         source = tmp_path / "model"
         source.mkdir()
         ns = _ns(source, tmp_path / "out", ffn_bits=4, embed_bits=6)
-        with patch("mlx_lm.convert", side_effect=[None, Exception("embed failed")]):
+        with patch("mlx_lm.convert", side_effect=Exception("quantization failed")):
             with pytest.raises(SystemExit) as exc:
                 cli.cmd_convert_model(ns)
         assert exc.value.code == 1
 
-    def test_different_bits_two_passes_success(self, tmp_path: Path, capsys):
-        """embed_bits != ffn_bits: two mlx_lm.convert calls, prints saved message."""
+    def test_different_bits_single_pass_success(self, tmp_path: Path, capsys):
+        """embed_bits != ffn_bits: single mlx_lm.convert call with quant_predicate."""
         cli = _import_cli()
         source = tmp_path / "model"
         source.mkdir()
@@ -126,7 +126,9 @@ class TestCmdConvertModel:
         ns = _ns(source, output, ffn_bits=4, embed_bits=6)
         with patch("mlx_lm.convert") as mock_conv:
             cli.cmd_convert_model(ns)
-        assert mock_conv.call_count == 2
+        assert mock_conv.call_count == 1
+        _, kwargs = mock_conv.call_args
+        assert callable(kwargs.get("quant_predicate")), "quant_predicate must be a callable"
         assert "saved" in capsys.readouterr().out.lower()
 
 

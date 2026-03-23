@@ -2114,23 +2114,33 @@ fn randomized_svd_f32<'py>(
         }
     });
 
-    // QR decomposition of Y via Gram-Schmidt: Q is (m, k)
+    // QR decomposition of Y via Gram-Schmidt: Q is (m, valid_k)
+    // Skip near-zero columns produced when Y's rank < k (rank-deficient sketch).
+    // Use a *relative* threshold: compare the residual norm to the original column
+    // norm.  Near-zero residuals (< 0.1% of original) mean the column is already
+    // in the span of previous vectors — normalising them amplifies float32 noise
+    // into full-magnitude "phantom" unit vectors that corrupt BBT.
     let mut q_cols: Vec<Vec<f32>> = Vec::with_capacity(k);
     for j in 0..k {
         let mut col: Vec<f32> = (0..m).map(|i| y_flat[i * k + j]).collect();
+        let original_norm: f32 = col.iter().map(|&x| x * x).sum::<f32>().sqrt();
         for prev in q_cols.iter() {
             let dot: f32 = col.iter().zip(prev.iter()).map(|(&a, &b)| a * b).sum();
             for (c, &p) in col.iter_mut().zip(prev.iter()) { *c -= dot * p; }
         }
         let norm: f32 = col.iter().map(|&x| x * x).sum::<f32>().sqrt();
-        if norm > 1e-10 {
+        // Relative threshold: residual must be ≥ 0.1 % of its pre-projection magnitude.
+        let threshold = (original_norm * 1e-3).max(1e-10);
+        if norm > threshold {
             for v in col.iter_mut() { *v /= norm; }
+            q_cols.push(col);
         }
-        q_cols.push(col);
+        // Columns below threshold are rank-exhausted: silently dropped.
     }
+    let valid_k = q_cols.len();
 
-    // B = Q^T × A: (k, n)
-    let mut b_flat = vec![0.0f32; k * n];
+    // B = Q^T × A: (valid_k, n)
+    let mut b_flat = vec![0.0f32; valid_k * n];
     b_flat.par_chunks_mut(n).enumerate().for_each(|(j, row)| {
         let q_col = &q_cols[j];
         for l in 0..n {
@@ -2138,35 +2148,33 @@ fn randomized_svd_f32<'py>(
         }
     });
 
-    // Thin SVD of B (k, n) via one-sided Jacobi for small k
-    // For simplicity, use power iteration + eigendecomposition of B×B^T (k×k)
-    // Compute B × B^T: (k, k) symmetric
-    let mut bbt = vec![0.0f32; k * k];
-    for i in 0..k {
-        for j in i..k {
+    // Thin SVD of B (valid_k, n) via eigendecomposition of B×B^T (valid_k×valid_k)
+    let mut bbt = vec![0.0f32; valid_k * valid_k];
+    for i in 0..valid_k {
+        for j in i..valid_k {
             let dot: f32 = (0..n).map(|l| b_flat[i * n + l] * b_flat[j * n + l]).sum();
-            bbt[i * k + j] = dot;
-            bbt[j * k + i] = dot;
+            bbt[i * valid_k + j] = dot;
+            bbt[j * valid_k + i] = dot;
         }
     }
 
     // Extract eigenvalues/vectors of BBT via Jacobi iterations
-    let mut eig_vecs: Vec<Vec<f32>> = (0..k).map(|i| {
-        let mut e = vec![0.0f32; k];
+    let mut eig_vecs: Vec<Vec<f32>> = (0..valid_k).map(|i| {
+        let mut e = vec![0.0f32; valid_k];
         e[i] = 1.0;
         e
     }).collect();
-    let mut eig_vals: Vec<f32> = (0..k).map(|i| bbt[i * k + i]).collect();
+    let mut eig_vals: Vec<f32> = (0..valid_k).map(|i| bbt[i * valid_k + i]).collect();
 
-    for _ in 0..30 {
-        for p in 0..k {
-            for q in (p + 1)..k {
+    for _ in 0..50 {
+        for p in 0..valid_k {
+            for q in (p + 1)..valid_k {
                 let a_pp = eig_vals[p];
                 let a_qq = eig_vals[q];
                 let a_pq = {
                     let mut val = 0.0f32;
-                    for l in 0..k {
-                        val += eig_vecs[p][l] * (0..k).map(|m2| bbt[l * k + m2] * eig_vecs[q][m2]).sum::<f32>();
+                    for l in 0..valid_k {
+                        val += eig_vecs[p][l] * (0..valid_k).map(|m2| bbt[l * valid_k + m2] * eig_vecs[q][m2]).sum::<f32>();
                     }
                     val
                 };
@@ -2180,19 +2188,25 @@ fn randomized_svd_f32<'py>(
                 eig_vals[q] = a_qq + t * a_pq;
                 let ep = eig_vecs[p].clone();
                 let eq = eig_vecs[q].clone();
-                for l in 0..k {
+                for l in 0..valid_k {
                     eig_vecs[p][l] = c * ep[l] - s * eq[l];
                     eig_vecs[q][l] = s * ep[l] + c * eq[l];
                 }
             }
         }
     }
+    // Recompute eigenvalues from final eigenvectors for accuracy
+    for i in 0..valid_k {
+        eig_vals[i] = (0..valid_k)
+            .map(|l| eig_vecs[i][l] * (0..valid_k).map(|m2| bbt[l * valid_k + m2] * eig_vecs[i][m2]).sum::<f32>())
+            .sum();
+    }
 
     // Sort by descending eigenvalue
-    let mut idx: Vec<usize> = (0..k).collect();
+    let mut idx: Vec<usize> = (0..valid_k).collect();
     idx.sort_by(|&a, &b| eig_vals[b].partial_cmp(&eig_vals[a]).unwrap_or(std::cmp::Ordering::Equal));
 
-    let actual_rank = rank.min(k);
+    let actual_rank = rank.min(valid_k);
     let mut s_out = vec![0.0f32; actual_rank];
     let mut u_out = vec![0.0f32; m * actual_rank];
     let mut vt_out = vec![0.0f32; actual_rank * n];
@@ -2211,7 +2225,7 @@ fn randomized_svd_f32<'py>(
             let inv_sv = 1.0 / sv;
             for col in 0..n {
                 vt_out[ri * n + col] =
-                    (0..k).map(|j| b_flat[j * n + col] * ev[j]).sum::<f32>() * inv_sv;
+                    (0..valid_k).map(|j| b_flat[j * n + col] * ev[j]).sum::<f32>() * inv_sv;
             }
         }
     }
