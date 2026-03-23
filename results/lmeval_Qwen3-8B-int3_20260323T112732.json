@@ -1,0 +1,26 @@
+{
+  "model": "Qwen3-8B-int3",
+  "model_path": "/Users/wscholl/models/Qwen3-8B-int3",
+  "model_size_gb": 3.2,
+  "timestamp": "20260323T112732",
+  "limit": 500,
+  "platform": {
+    "platform": "macOS-15.7.4-arm64-arm-64bit",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.12.8",
+    "mlx_lm": "0.30.7",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {},
+  "raw_results": {},
+  "elapsed_s": 0.08091187477111816,
+  "errors": {
+    "arc_easy": "mlx_lm exit code 1",
+    "arc_challenge": "mlx_lm exit code 1",
+    "hellaswag": "mlx_lm exit code 1",
+    "winogrande": "mlx_lm exit code 1",
+    "piqa": "mlx_lm exit code 1",
+    "openbookqa": "mlx_lm exit code 1"
+  }
+}

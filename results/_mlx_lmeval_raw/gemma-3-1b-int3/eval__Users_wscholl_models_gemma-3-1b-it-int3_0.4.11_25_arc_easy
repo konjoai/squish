@@ -1,0 +1,9 @@
+{
+    "arc_easy": {
+        "alias": "arc_easy",
+        "acc,none": 0.454,
+        "acc_stderr,none": 0.02228814759117707,
+        "acc_norm,none": 0.448,
+        "acc_norm_stderr,none": 0.022261697292270087
+    }
+}

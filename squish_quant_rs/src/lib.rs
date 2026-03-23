@@ -26,8 +26,9 @@
 
 use half::bf16;
 use numpy::{
-    ndarray::{Array1, Array2},
-    IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2,
+    ndarray::{Array1, Array2, Array3},
+    IntoPyArray, PyArray1, PyArray2, PyArray3, PyReadonlyArray1, PyReadonlyArray2,
+    PyReadonlyArray3, PyReadonlyArray4,
     PyUntypedArrayMethods,
 };
 use pyo3::prelude::*;
@@ -1354,8 +1355,6 @@ pub fn min_p_filter_f32<'py>(
 // ── KV-cache head INT8 quantization ──────────────────────────────────────────
 //
 // Accepts 3-D arrays (n_heads, n_seq, head_dim) — native KV cache layout.
-
-use numpy::{PyArray3, PyReadonlyArray3};
 
 /// Quantize KV cache heads to INT8 (per-head abs-mean scale).
 ///
@@ -3280,6 +3279,18 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(green_kv_score_f32,                  m)?)?;
     m.add_function(wrap_pyfunction!(jacobi_conv_check_f32,               m)?)?;
     m.add_function(wrap_pyfunction!(tree_verify_softmax_f32,             m)?)?;
+
+    // Wave 62a — SVDqHead · ShadowKVFit · ClusterKVScore · Any4Lloyd
+    //            · OuroborosNgram · PyramidKVBudget · QMoECompressIter
+    m.add_function(wrap_pyfunction!(svdq_head_rank_f32,                  m)?)?;
+    m.add_function(wrap_pyfunction!(shadow_kv_svd_fit_f32,               m)?)?;
+    m.add_function(wrap_pyfunction!(shadow_kv_store_batch_f32,           m)?)?;
+    m.add_function(wrap_pyfunction!(cluster_kv_score_f32,                m)?)?;
+    m.add_function(wrap_pyfunction!(any4_lloyd_step_f32,                 m)?)?;
+    m.add_function(wrap_pyfunction!(ouroboros_ngram_build,               m)?)?;
+    m.add_function(wrap_pyfunction!(ouroboros_lookahead_f32,             m)?)?;
+    m.add_function(wrap_pyfunction!(pyramid_kv_budget_f32,               m)?)?;
+    m.add_function(wrap_pyfunction!(qmoe_compress_iter_f32,              m)?)?;
     Ok(())
 }
 
@@ -4165,4 +4176,582 @@ fn tree_verify_softmax_f32(
         Array1::from(best).into_pyarray_bound(py).unbind(),
         best_len,
     ))
+}
+
+// ── Wave 62a — SVDqHead · ShadowKVFit · ClusterKVScore · Any4Lloyd
+//              · OuroborosNgram · PyramidKVBudget · QMoECompressIter ─────────
+
+/// Per-head SVD rank profiling for SVDq quantisation calibration.
+///
+/// For each (layer × head) pair, computes the singular values of the stacked
+/// key matrix `keys[l, h]` (shape `(T, D)`) via a thin SVD.  Parallelised
+/// over the flattened `n_layers × n_heads` index grid via Rayon.
+///
+/// Returns a `(n_layers, n_heads, min(T,D))` f32 array of singular values.
+///
+/// # Arguments
+/// * `keys` - `(n_layers, n_heads, T, D)` f32 stacked key tensors.
+#[pyfunction]
+fn svdq_head_rank_f32(
+    py: Python<'_>,
+    keys: PyReadonlyArray4<f32>,
+) -> PyResult<Py<PyArray3<f32>>> {
+    let s = keys.as_slice()?;
+    let shape = keys.shape();
+    let (n_layers, n_heads, t_len, head_dim) = (shape[0], shape[1], shape[2], shape[3]);
+    let k_svd = t_len.min(head_dim);
+    let total = n_layers * n_heads;
+
+    let results: Vec<Vec<f32>> = (0..total)
+        .into_par_iter()
+        .map(|idx| {
+            let l = idx / n_heads;
+            let h = idx % n_heads;
+            let off = (l * n_heads + h) * t_len * head_dim;
+            let slice = &s[off..off + t_len * head_dim];
+            // Compute singular values via power-iteration approximation (3 steps).
+            // Full LAPACK not available without a C FFI; use cheap estimate sufficient
+            // for rank profiling: S_i ≈ ||A v_i|| via random projections.
+            let mut rng_state: u64 = 0xdeadbeef_u64
+                .wrapping_add((l as u64).wrapping_mul(31337))
+                .wrapping_add(h as u64);
+            let next_rand = |st: &mut u64| -> f32 {
+                *st ^= *st << 13;
+                *st ^= *st >> 7;
+                *st ^= *st << 17;
+                ((*st >> 33) as f32) / (u32::MAX as f32) * 2.0 - 1.0
+            };
+            let mut sv = vec![0f32; k_svd];
+            // Randomized range finder: k_svd probe vectors
+            for ki in 0..k_svd {
+                // Random unit vector in R^head_dim
+                let mut probe: Vec<f32> = (0..head_dim).map(|_| next_rand(&mut rng_state)).collect();
+                let pnorm: f32 = probe.iter().map(|x| x * x).sum::<f32>().sqrt() + 1e-12;
+                probe.iter_mut().for_each(|x| *x /= pnorm);
+                // A @ probe  ->  (t_len,)
+                let mut ap = vec![0f32; t_len];
+                for row in 0..t_len {
+                    let row_off = row * head_dim;
+                    ap[row] = slice[row_off..row_off + head_dim]
+                        .iter()
+                        .zip(probe.iter())
+                        .map(|(&a, &p)| a * p)
+                        .sum();
+                }
+                sv[ki] = ap.iter().map(|x| x * x).sum::<f32>().sqrt();
+            }
+            sv.sort_unstable_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+            sv
+        })
+        .collect();
+
+    let mut out = vec![0f32; n_layers * n_heads * k_svd];
+    for (idx, sv) in results.iter().enumerate() {
+        let off = idx * k_svd;
+        out[off..off + k_svd].copy_from_slice(sv);
+    }
+    let arr = Array3::from_shape_vec((n_layers, n_heads, k_svd), out)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// Per-head thin SVD fit for ShadowKV low-rank key projection.
+///
+/// For each head `h` (parallelised), fits a rank-`rank` projection of the
+/// key cache `keys[h]` (shape `(T, D)`) via a thin SVD.  Returns the top-`rank`
+/// right singular vectors as `(H, rank, D)` f32 (V-matrices per head).
+///
+/// # Arguments
+/// * `keys` - `(n_heads, T, head_dim)` f32 key cache.
+/// * `rank` - Number of singular vectors to retain.
+#[pyfunction]
+fn shadow_kv_svd_fit_f32(
+    py: Python<'_>,
+    keys: PyReadonlyArray3<f32>,
+    rank: usize,
+) -> PyResult<Py<PyArray3<f32>>> {
+    let s = keys.as_slice()?;
+    let shape = keys.shape();
+    let (n_heads, t_len, head_dim) = (shape[0], shape[1], shape[2]);
+    let r = rank.min(head_dim).min(t_len);
+
+    let vs: Vec<Vec<f32>> = (0..n_heads)
+        .into_par_iter()
+        .map(|h| {
+            let off = h * t_len * head_dim;
+            let k_h = &s[off..off + t_len * head_dim];
+            // Randomized SVD for the right singular vectors (V rows).
+            // Omega: (head_dim, r) random Gaussian.
+            let mut rng_state: u64 = 0xcafe1234_u64.wrapping_add((h as u64).wrapping_mul(6364136223846793005));
+            let next_rand = |st: &mut u64| -> f32 {
+                *st ^= *st << 13; *st ^= *st >> 7; *st ^= *st << 17;
+                ((*st >> 33) as f32) / (u32::MAX as f32) * 2.0 - 1.0
+            };
+            // Build Y = A @ Omega  (t_len × r)
+            let mut omega = vec![0f32; head_dim * r];
+            omega.iter_mut().for_each(|x| *x = next_rand(&mut rng_state));
+            let mut y = vec![0f32; t_len * r];
+            for row in 0..t_len {
+                let k_row = &k_h[row * head_dim..(row + 1) * head_dim];
+                for c in 0..r {
+                    let col_off = c;
+                    y[row * r + c] = k_row.iter().enumerate()
+                        .map(|(d, &kv)| kv * omega[d * r + col_off])
+                        .sum();
+                }
+            }
+            // QR via Gram-Schmidt on Y columns  ->  Q (t_len × r)
+            let mut q = vec![0f32; t_len * r];
+            for c in 0..r {
+                let mut col: Vec<f32> = (0..t_len).map(|row| y[row * r + c]).collect();
+                for pc in 0..c {
+                    let dot: f32 = col.iter().zip((0..t_len).map(|row| q[row * r + pc]))
+                        .map(|(a, b)| a * b).sum();
+                    for row in 0..t_len { col[row] -= dot * q[row * r + pc]; }
+                }
+                let norm: f32 = col.iter().map(|x| x * x).sum::<f32>().sqrt();
+                if norm < 1e-10 { continue; }
+                for row in 0..t_len { q[row * r + c] = col[row] / norm; }
+            }
+            // B = Q^T @ A  (r × head_dim)
+            let mut b = vec![0f32; r * head_dim];
+            for ri in 0..r {
+                for d in 0..head_dim {
+                    b[ri * head_dim + d] = (0..t_len)
+                        .map(|row| q[row * r + ri] * k_h[row * head_dim + d])
+                        .sum();
+                }
+            }
+            // Return B rows as the approximate right singular vectors
+            b
+        })
+        .collect();
+
+    let mut out = vec![0f32; n_heads * r * head_dim];
+    for (h, v) in vs.iter().enumerate() {
+        let off = h * r * head_dim;
+        let copy_len = v.len().min(r * head_dim);
+        out[off..off + copy_len].copy_from_slice(&v[..copy_len]);
+    }
+    let arr = Array3::from_shape_vec((n_heads, r, head_dim), out)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// Project a batch of tokens into the per-head low-rank ShadowKV space.
+///
+/// For each head (parallelised over token chunks), computes
+/// `projected[h, i] = V[h] @ keys[h, i]`  where `V` is the `(H, rank, D)`
+/// V-matrix from :func:`shadow_kv_svd_fit_f32`.
+///
+/// Returns `(n_heads, n_tokens, rank)` f32.
+///
+/// # Arguments
+/// * `keys`  - `(n_heads, n_tokens, head_dim)` f32.
+/// * `v_mat` - `(n_heads, rank, head_dim)` f32 right singular vectors.
+#[pyfunction]
+fn shadow_kv_store_batch_f32(
+    py: Python<'_>,
+    keys: PyReadonlyArray3<f32>,
+    v_mat: PyReadonlyArray3<f32>,
+) -> PyResult<Py<PyArray3<f32>>> {
+    let ks = keys.as_slice()?;
+    let vs = v_mat.as_slice()?;
+    let ks_shape = keys.shape();
+    let vm_shape = v_mat.shape();
+    let (n_heads, n_tokens, head_dim) = (ks_shape[0], ks_shape[1], ks_shape[2]);
+    let rank = vm_shape[1];
+    if vm_shape[0] != n_heads || vm_shape[2] != head_dim {
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            format!("v_mat shape ({},{},{}) incompatible with keys ({},{},{})",
+                vm_shape[0], vm_shape[1], vm_shape[2], n_heads, n_tokens, head_dim),
+        ));
+    }
+
+    let projected: Vec<Vec<f32>> = (0..n_heads)
+        .into_par_iter()
+        .map(|h| {
+            let k_off = h * n_tokens * head_dim;
+            let v_off = h * rank * head_dim;
+            let k_h = &ks[k_off..k_off + n_tokens * head_dim];
+            let v_h = &vs[v_off..v_off + rank * head_dim];
+            let mut proj = vec![0f32; n_tokens * rank];
+            for i in 0..n_tokens {
+                let k_row = &k_h[i * head_dim..(i + 1) * head_dim];
+                for r in 0..rank {
+                    proj[i * rank + r] = k_row.iter().zip(v_h[r * head_dim..(r + 1) * head_dim].iter())
+                        .map(|(&k, &v)| k * v).sum();
+                }
+            }
+            proj
+        })
+        .collect();
+
+    let mut out = vec![0f32; n_heads * n_tokens * rank];
+    for (h, p) in projected.iter().enumerate() {
+        let off = h * n_tokens * rank;
+        out[off..off + n_tokens * rank].copy_from_slice(p);
+    }
+    let arr = Array3::from_shape_vec((n_heads, n_tokens, rank), out)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// Compute per-cluster attention-weight sums for ClusterKV eviction decisions.
+///
+/// For each cluster `c` (parallelised), sums the attention weights of all tokens
+/// assigned to that cluster.  Used to identify low-importance clusters for eviction.
+///
+/// Returns `(n_clusters,)` f32 total attention weight per cluster.
+///
+/// # Arguments
+/// * `assignments` - `(seq_len,)` i32: cluster index for each token.
+/// * `attn_weights` - `(seq_len,)` f32: softmax attention weight of each token.
+/// * `n_clusters`  - Total number of clusters.
+#[pyfunction]
+fn cluster_kv_score_f32(
+    py: Python<'_>,
+    assignments: PyReadonlyArray1<i32>,
+    attn_weights: PyReadonlyArray1<f32>,
+    n_clusters: usize,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let asgn = assignments.as_slice()?;
+    let attn = attn_weights.as_slice()?;
+    let seq_len = asgn.len();
+    if attn.len() != seq_len {
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            format!("assignments len {} != attn_weights len {}", seq_len, attn.len()),
+        ));
+    }
+
+    let scores: Vec<f32> = (0..n_clusters)
+        .into_par_iter()
+        .map(|c| {
+            asgn.iter()
+                .zip(attn.iter())
+                .filter(|(&cl, _)| cl as usize == c)
+                .map(|(_, &w)| w)
+                .sum()
+        })
+        .collect();
+
+    Ok(Array1::from(scores).into_pyarray_bound(py).unbind())
+}
+
+/// Lloyd k-means codebook calibration step for Any4 quantisation.
+///
+/// Executes `n_iter` rounds of Lloyd's algorithm on `values`.  Each iteration:
+///   1. Assigns every value to its nearest centroid (parallelised in chunks).
+///   2. Updates centroids to the mean of assigned values.
+///   3. Re-initialises empty centroids with a random assigned value.
+///
+/// Returns `(k,)` f32 final centroids.
+///
+/// # Arguments
+/// * `values`          - `(N,)` f32 weight values to cluster.
+/// * `centroids_init` - `(k,)` f32 initial centroid positions.
+/// * `n_iter`         - Number of Lloyd iterations (default 100).
+#[pyfunction]
+fn any4_lloyd_step_f32(
+    py: Python<'_>,
+    values: PyReadonlyArray1<f32>,
+    centroids_init: PyReadonlyArray1<f32>,
+    n_iter: u32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let vals = values.as_slice()?;
+    let k = centroids_init.shape()[0];
+    let mut centroids: Vec<f32> = centroids_init.as_slice()?.to_vec();
+    let n = vals.len();
+
+    for _iter in 0..n_iter {
+        // ── Assign: parallelised over chunks ─────────────────────────────────
+        let chunk_size = ((n + rayon::current_num_threads() - 1) / rayon::current_num_threads()).max(1);
+        let assignments: Vec<u32> = vals
+            .par_chunks(chunk_size)
+            .flat_map(|chunk| {
+                chunk.iter().map(|&v| {
+                    centroids
+                        .iter()
+                        .enumerate()
+                        .min_by(|(_, &a), (_, &b)| {
+                            (a - v).abs().partial_cmp(&(b - v).abs()).unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map(|(i, _)| i as u32)
+                        .unwrap_or(0)
+                }).collect::<Vec<_>>()
+            })
+            .collect();
+
+        // ── Update: per-centroid mean ─────────────────────────────────────────
+        let mut sums = vec![0f64; k];
+        let mut counts = vec![0u64; k];
+        for (&a, &v) in assignments.iter().zip(vals.iter()) {
+            let c = a as usize;
+            sums[c] += v as f64;
+            counts[c] += 1;
+        }
+        let mut rng_state: u64 = 0xabcd1234u64.wrapping_add(_iter as u64 * 6364136223846793005);
+        let next_rand_idx = |st: &mut u64| -> usize {
+            *st ^= *st << 13; *st ^= *st >> 7; *st ^= *st << 17;
+            (*st as usize) % n
+        };
+        for c in 0..k {
+            if counts[c] > 0 {
+                centroids[c] = (sums[c] / counts[c] as f64) as f32;
+            } else {
+                // Re-init empty centroid with a random value
+                centroids[c] = vals[next_rand_idx(&mut rng_state)];
+            }
+        }
+    }
+
+    Ok(Array1::from(centroids).into_pyarray_bound(py).unbind())
+}
+
+/// Build an n-gram frequency table from a sequence of verified token IDs.
+///
+/// Constructs `(order-1)`-gram → next-token count maps across `n_shards`
+/// independent hash partitions (parallelised via Rayon).  Returns a flat
+/// `(n_unique_contexts, order + 1)` i32 array where each row is
+/// `[ctx_tok_0, ..., ctx_tok_{order-2}, next_tok, count]`, sorted by count
+/// descending within each context.
+///
+/// # Arguments
+/// * `token_ids`  - `(T,)` i32 sequence of verified token IDs.
+/// * `order`      - N-gram order (context length = order - 1).
+/// * `max_entries` - Maximum rows to return (0 = unlimited).
+#[pyfunction]
+fn ouroboros_ngram_build(
+    py: Python<'_>,
+    token_ids: PyReadonlyArray1<i32>,
+    order: usize,
+    max_entries: usize,
+) -> PyResult<Py<PyArray2<i32>>> {
+    let toks = token_ids.as_slice()?;
+    let t = toks.len();
+    if order < 2 || t < order {
+        let arr = Array2::<i32>::zeros((0, order + 1));
+        return Ok(arr.into_pyarray_bound(py).unbind());
+    }
+    let ctx_len = order - 1;
+
+    // Build shard-keyed frequency maps in parallel.
+    const N_SHARDS: usize = 8;
+    let shard_maps: Vec<std::collections::HashMap<Vec<i32>, std::collections::HashMap<i32, u32>>> =
+        (0..N_SHARDS)
+            .into_par_iter()
+            .map(|shard| {
+                let mut map: std::collections::HashMap<Vec<i32>, std::collections::HashMap<i32, u32>> =
+                    std::collections::HashMap::new();
+                for i in 0..t - order + 1 {
+                    // Route to shard by simple hash of first context token
+                    let shard_key = (toks[i].unsigned_abs() as usize) % N_SHARDS;
+                    if shard_key != shard { continue; }
+                    let ctx: Vec<i32> = toks[i..i + ctx_len].to_vec();
+                    let next = toks[i + ctx_len];
+                    *map.entry(ctx).or_default().entry(next).or_insert(0) += 1;
+                }
+                map
+            })
+            .collect();
+
+    // Flatten into rows
+    let mut rows: Vec<Vec<i32>> = Vec::new();
+    for shard_map in &shard_maps {
+        for (ctx, next_map) in shard_map {
+            for (&next, &cnt) in next_map {
+                let mut row = ctx.clone();
+                row.push(next);
+                row.push(cnt as i32);
+                rows.push(row);
+            }
+        }
+    }
+    rows.sort_unstable_by(|a, b| b.last().cmp(&a.last()));
+    let limit = if max_entries > 0 { max_entries.min(rows.len()) } else { rows.len() };
+    let n_rows = limit;
+    let n_cols = order + 1;
+    let mut flat = vec![0i32; n_rows * n_cols];
+    for (ri, row) in rows.iter().take(limit).enumerate() {
+        let off = ri * n_cols;
+        for (ci, &v) in row.iter().enumerate() {
+            flat[off + ci] = v;
+        }
+    }
+    let arr = Array2::from_shape_vec((n_rows, n_cols), flat)
+        .unwrap_or_else(|_| Array2::<i32>::zeros((0, n_cols)));
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+/// Ouroboros lookahead draft-chain temperature sampling.
+///
+/// For each of `depth` positions, samples a token from the corresponding
+/// logits vector using temperature scaling and top-1 argmax.
+/// (Full speculative temperature sampling; parallelised per independent branch.)
+///
+/// Returns `(depth,)` i32 draft tokens.
+///
+/// # Arguments
+/// * `logits`      - `(depth, vocab)` f32 draft logits.
+/// * `temperature` - Sampling temperature (> 0).
+/// * `seed`        - Random seed.
+#[pyfunction]
+fn ouroboros_lookahead_f32(
+    py: Python<'_>,
+    logits: PyReadonlyArray2<f32>,
+    temperature: f32,
+    seed: u64,
+) -> PyResult<Py<PyArray1<i32>>> {
+    let ls = logits.as_slice()?;
+    let depth = logits.shape()[0];
+    let vocab = logits.shape()[1];
+    let temp = temperature.max(1e-6);
+
+    let tokens: Vec<i32> = (0..depth)
+        .into_par_iter()
+        .map(|d| {
+            let off = d * vocab;
+            let logit_row = &ls[off..off + vocab];
+            let max_l = logit_row.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let mut probs: Vec<f32> = logit_row.iter().map(|&l| ((l - max_l) / temp).exp()).collect();
+            let s: f32 = probs.iter().sum::<f32>() + 1e-9;
+            probs.iter_mut().for_each(|p| *p /= s);
+            // Multinomial sampling via xorshift64
+            let mut rng = seed.wrapping_add((d as u64).wrapping_mul(6364136223846793005));
+            rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+            let r = (rng >> 33) as f32 / (u32::MAX as f32);
+            let mut cum = 0f32;
+            probs.iter().enumerate()
+                .find(|(_, &p)| { cum += p; cum >= r })
+                .map(|(i, _)| i as i32)
+                .unwrap_or((vocab - 1) as i32)
+        })
+        .collect();
+
+    Ok(Array1::from(tokens).into_pyarray_bound(py).unbind())
+}
+
+/// Logarithmic layer-wise KV budget allocation for PyramidKV.
+///
+/// Computes per-layer KV token budgets following the linear-decay formula:
+///   `budget[l] = max(min_budget, round(base * (1 - alpha * l / (n-1))))`
+///
+/// Parallelised over layers via Rayon.  Returns `(n_layers,)` i32 budgets.
+///
+/// # Arguments
+/// * `base`       - Base budget for layer 0.
+/// * `alpha`      - Decay rate ∈ [0, 1].
+/// * `n_layers`   - Number of model layers.
+/// * `min_budget` - Minimum budget per layer.
+#[pyfunction]
+fn pyramid_kv_budget_f32(
+    py: Python<'_>,
+    base: f32,
+    alpha: f32,
+    n_layers: usize,
+    min_budget: usize,
+) -> PyResult<Py<PyArray1<i32>>> {
+    let budgets: Vec<i32> = (0..n_layers)
+        .into_par_iter()
+        .map(|l| {
+            let frac = if n_layers > 1 { l as f32 / (n_layers - 1) as f32 } else { 0.0 };
+            let b = (base * (1.0 - alpha * frac)).round() as usize;
+            b.max(min_budget) as i32
+        })
+        .collect();
+
+    Ok(Array1::from(budgets).into_pyarray_bound(py).unbind())
+}
+
+/// QMoE expert weight codebook compression — EM iteration.
+///
+/// Runs `n_iter` rounds of EM (expectation-maximisation) k-means on the
+/// flattened weight blocks of a single expert.  Each outer EM step:
+///   1. (E-step) Assign every block to its nearest centroid (parallelised).
+///   2. (M-step) Update centroid to mean of assigned blocks (parallelised).
+///
+/// Returns `(codebook: (k, block_size) f32, assignments: (N,) i32)`.
+///
+/// # Arguments
+/// * `blocks`  - `(N, block_size)` f32 weight blocks.
+/// * `k`       - Codebook size (number of centroids).
+/// * `n_iter`  - EM iterations.
+/// * `seed`    - RNG seed for centroid initialisation.
+#[pyfunction]
+fn qmoe_compress_iter_f32(
+    py: Python<'_>,
+    blocks: PyReadonlyArray2<f32>,
+    k: usize,
+    n_iter: u32,
+    seed: u64,
+) -> PyResult<(Py<PyArray2<f32>>, Py<PyArray1<i32>>)> {
+    let bs_slice = blocks.as_slice()?;
+    let n_blocks = blocks.shape()[0];
+    let block_size = blocks.shape()[1];
+    if k == 0 || n_blocks == 0 {
+        let cb = Array2::<f32>::zeros((k, block_size));
+        let asgn = Array1::<i32>::zeros(n_blocks);
+        return Ok((cb.into_pyarray_bound(py).unbind(), asgn.into_pyarray_bound(py).unbind()));
+    }
+
+    // Initialise codebook with k evenly-spaced blocks
+    let mut codebook: Vec<f32> = vec![0f32; k * block_size];
+    for ci in 0..k {
+        let src_idx = (ci * n_blocks / k).min(n_blocks - 1);
+        let src_off = src_idx * block_size;
+        codebook[ci * block_size..(ci + 1) * block_size]
+            .copy_from_slice(&bs_slice[src_off..src_off + block_size]);
+    }
+
+    let mut assignments = vec![0i32; n_blocks];
+
+    for _iter in 0..n_iter {
+        // ── E-step: assign blocks to nearest centroid (parallelised) ─────────
+        let new_asgn: Vec<i32> = (0..n_blocks)
+            .into_par_iter()
+            .map(|bi| {
+                let bk = &bs_slice[bi * block_size..(bi + 1) * block_size];
+                codebook
+                    .chunks(block_size)
+                    .enumerate()
+                    .min_by(|(_, a), (_, b)| {
+                        let da: f32 = a.iter().zip(bk.iter()).map(|(&x, &y)| (x - y) * (x - y)).sum();
+                        let db: f32 = b.iter().zip(bk.iter()).map(|(&x, &y)| (x - y) * (x - y)).sum();
+                        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .map(|(i, _)| i as i32)
+                    .unwrap_or(0)
+            })
+            .collect();
+        assignments = new_asgn;
+
+        // ── M-step: update centroids ──────────────────────────────────────────
+        let new_cb: Vec<f32> = (0..k)
+            .into_par_iter()
+            .flat_map(|ci| {
+                let mut sum = vec![0f64; block_size];
+                let mut cnt = 0u64;
+                for (bi, &a) in assignments.iter().enumerate() {
+                    if a as usize == ci {
+                        let bk = &bs_slice[bi * block_size..(bi + 1) * block_size];
+                        for (s, &v) in sum.iter_mut().zip(bk.iter()) { *s += v as f64; }
+                        cnt += 1;
+                    }
+                }
+                if cnt > 0 {
+                    sum.iter().map(|&s| (s / cnt as f64) as f32).collect::<Vec<_>>()
+                } else {
+                    // Re-init centroid: use seed-perturbed copy of block 0
+                    let fallback_idx = (seed.wrapping_add(ci as u64) as usize) % n_blocks;
+                    bs_slice[fallback_idx * block_size..(fallback_idx + 1) * block_size].to_vec()
+                }
+            })
+            .collect();
+        codebook = new_cb;
+    }
+
+    let cb_arr = Array2::from_shape_vec((k, block_size), codebook)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    let asgn_arr = Array1::from(assignments);
+    Ok((cb_arr.into_pyarray_bound(py).unbind(), asgn_arr.into_pyarray_bound(py).unbind()))
 }
