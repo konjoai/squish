@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-24 (Wave 62 complete — v36 SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget — 188 new tests — 12,928 total passing; Waves 63–70 planned: SQUIZD native runtime — ASTC hardware texture compression · TCA-TBE lossless bitmap · structured FFN sparsity · fused INT4/INT2 Metal GEMV · trained EAGLE draft heads · ANE routing · production format spec)
+> Last updated: 2026-05-30 (Wave 68 complete — v42 Squish Agent VS Code Extension — 151 new tests — 151 total passing in extension suite; Wave 68 DONE)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -48,6 +48,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v36** | 62 | SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget |
 | **v37** | 63 | AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack |
 | **v38** | 64 | SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 |
+| **v42** | 68 | Squish Agent VS Code Extension — Full Chat UI v2 · Monitoring Dashboard · Agentic Loop · History · CodeLens · Inline Completion |
 | **v39** | 65 | SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch |
 | **v40** | 66 | SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel |
 | **v41** | 67 | SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch |
@@ -1115,6 +1116,93 @@ seq_len == 1) uses fused ZipGEMV for minimum latency. Both paths share the same 
 - [ ] `tests/test_wave65_tca_tbe.py` (≥75 tests)
 - [ ] CHANGELOG `[39.0.0]` entry
 - [ ] PLAN.md updated
+
+---
+
+## 🚧 v42 Wave 68 — Squish Agent VS Code Extension · Full Chat UI v2 · Monitoring Dashboard · Agentic Loop · Conversation History · CodeLens · Inline Completion (Active)
+
+Theme: **Wave 68 is a top-to-bottom redesign of the Squish VS Code extension, renaming it Squish Agent
+and bringing it feature-parity with GitHub Copilot and continue.dev while staying exclusively
+optimised for Squish's local-first, Apple-silicon stack. The extension gains a full sidebar redesign
+matching the web chat UI's purple-pink colour system, a slide-in monitoring dashboard with live tok/s
+and hardware metrics, persistent multi-session conversation history, an autonomous multi-step agentic
+loop that reads, edits, creates and deletes workspace files through an expanded tool set (14 tools),
+CodeLens actions on every function for explain/document/refactor/test, inline completions triggered by
+`//squish:` prefix comments, right-click context-menu actions, a dedicated full-panel mode, and deep
+diagnostic integration (one-click "Fix with Squish" on any editor error).**
+
+### Features
+
+#### Chat UI v2 (webview redesign)
+- Web chat colour system: `--bg #0c0a14`, `--accent #8B5CF6`, `--accent-pk #EC4899`, plus all surface / border variables
+- Squish logo SVG gradient avatar on every assistant message
+- Sidebar conversation history with create / rename / delete sessions stored on disk as JSON
+- Monitoring dashboard slide-in panel (tok/s sparkline, RAM, GPU, active requests, console log)
+- Markdown + code syntax highlighting (marked.js + highlight.js via bundled URIs)
+- Copy button on every code block
+- Stop-generation button; regenerate last response button
+- File attachment chip showing active workspace file context
+
+#### Agentic loop
+- Multi-step autonomous execution: the model can call tools iteratively until `"stop"` is reached or `agent.maxSteps` is exhausted
+- Tool approvals: write_file / create_file / delete_file show an inline diff or confirmation chip before executing
+- New tools (beyond v0.1): `apply_edit`, `search_workspace`, `create_file`, `delete_file`, `get_symbol_at_cursor`, `get_git_status`, `run_diagnostics`
+
+#### CodeLens
+- One CodeLens above every TypeScript/JavaScript/Python/Rust function: **Squish: Explain | Document | Refactor | Test**
+- Clicking opens the chat with the function body pre-quoted and a templated prompt
+
+#### Inline Completions
+- Triggered on `// squish:` or `# squish:` prefix: requests a single-turn completion and inserts ghost text
+- `squish.enableInlineCompletion` toggle (default `true`)
+
+#### Commands + context menu
+- `squish.explainSelection` — explain selected code
+- `squish.fixDiagnostic` — fix the highlighted error
+- `squish.refactorSelection` — refactor selected code
+- `squish.documentFunction` — add docstring/JSDoc to selected function
+- `squish.generateTests` — generate unit tests for selection
+- `squish.openMonitor` — open monitoring dashboard
+- `squish.newChat` — new conversation session
+- `squish.openInPanel` — open chat in full editor column
+
+### New Modules
+
+| File | Purpose |
+|---|---|
+| `src/agentLoop.ts` | Multi-step agent: calls tools iteratively, enforces `maxSteps`, collects diffs |
+| `src/historyManager.ts` | Persist sessions as JSON in `~/.squish/history/`; list/load/delete |
+| `src/monitorPanel.ts` | Monitoring WebviewView matching web chat dashboard panel |
+| `src/inlineCompletion.ts` | `InlineCompletionItemProvider` triggered on `// squish:` prefix |
+| `src/codeLens.ts` | `CodeLensProvider` for TS/JS/Python/Rust function definitions |
+| `src/contextCollector.ts` | Collects active file + diagnostics + git status into system context |
+| `media/chat.js` | Full v2 rewrite: sidebar history, monitoring toggle, agentic tool cards |
+| `media/style.css` | Full v2 rewrite: web chat colour system + dark purple/pink theme |
+| `media/main.js` | Monitoring panel webview script |
+
+### Wave 68 Checklist
+
+- [x] Wave 68 spec reviewed
+- [x] `package.json` updated (v0.2.0, Squish Agent, new commands/views/config)
+- [x] `media/style.css` v2 — web chat colour system
+- [x] `media/chat.js` v2 — sidebar history, monitoring toggle, tool cards, regenerate
+- [x] `src/historyManager.ts` — persistent sessions
+- [x] `src/agentLoop.ts` — multi-step agentic execution
+- [x] `src/monitorPanel.ts` — monitoring dashboard webview
+- [x] `src/inlineCompletion.ts` — inline completion provider
+- [x] `src/codeLens.ts` — CodeLens provider
+- [x] `src/contextCollector.ts` — workspace context builder
+- [x] `src/chatPanel.ts` updated — 14 tools, history integration, agent loop
+- [x] `src/extension.ts` updated — all new commands + providers wired
+- [x] `__tests__/agentLoop.test.ts` (25 tests ✅)
+- [x] `__tests__/historyManager.test.ts` (21 tests ✅)
+- [x] `__tests__/monitorPanel.test.ts` (11 tests ✅)
+- [x] `__tests__/inlineCompletion.test.ts` (18 tests ✅)
+- [x] `__tests__/codeLens.test.ts` (17 tests ✅)
+- [x] CHANGELOG `[42.0.0]` entry
+- [x] PLAN.md updated
+
+**Wave 68 COMPLETE — 151 tests passing across 8 suites — 2026-05-30**
 
 ---
 

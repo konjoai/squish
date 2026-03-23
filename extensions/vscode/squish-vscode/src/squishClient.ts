@@ -268,6 +268,68 @@ export class SquishClient {
         this._activeReq = undefined;
     }
 
+    /**
+     * Async-generator wrapper around streamChat — allows the agent loop to use
+     * `for await` syntax without restructuring the callback-based streamChat.
+     */
+    async *chatStream(
+        messages: ChatMessage[],
+        tools?: ToolDefinition[],
+    ): AsyncIterable<ChatChunk> {
+        const cfg = _defaultCfg();
+        const chunks: ChatChunk[] = [];
+        let done = false;
+        let error: Error | null = null;
+        let resolver: (() => void) | null = null;
+
+        const waitNext = () =>
+            new Promise<void>((res) => {
+                if (chunks.length || done || error) {
+                    res();
+                } else {
+                    resolver = res;
+                }
+            });
+
+        const push = (chunk: ChatChunk) => {
+            chunks.push(chunk);
+            if (chunk.done) {
+                done = true;
+            }
+            resolver?.();
+            resolver = null;
+        };
+
+        const onError = (err: Error) => {
+            error = err;
+            resolver?.();
+            resolver = null;
+        };
+
+        this.streamChat(
+            messages,
+            cfg.maxTokens,
+            cfg.temperature,
+            cfg.model,
+            push,
+            onError,
+            tools,
+        );
+
+        while (!done && !error) {
+            await waitNext();
+            while (chunks.length) {
+                yield chunks.shift()!;
+            }
+        }
+        while (chunks.length) {
+            yield chunks.shift()!;
+        }
+        if (error) {
+            throw error;
+        }
+    }
+
     // ── Internal ──────────────────────────────────────────────────────────
 
     private _get(path: string, timeoutMs = 3000): Promise<string> {
@@ -294,5 +356,23 @@ export class SquishClient {
             req.on('error', reject);
             req.end();
         });
+    }
+}
+
+// ── Module-level helpers ──────────────────────────────────────────────────
+
+/** Read squish config from VS Code settings — fallback values when not in extension context. */
+function _defaultCfg() {
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const vscode = require('vscode') as typeof import('vscode');
+        const cfg = vscode.workspace.getConfiguration('squish');
+        return {
+            maxTokens: cfg.get<number>('maxTokens', 4096),
+            temperature: cfg.get<number>('temperature', 0.7),
+            model: cfg.get<string>('model', '7b'),
+        };
+    } catch {
+        return { maxTokens: 4096, temperature: 0.7, model: '7b' };
     }
 }

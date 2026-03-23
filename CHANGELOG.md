@@ -5,6 +5,75 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [42.0.0] — Wave 68 — 2026-05-30
+
+### Added — Squish Agent VS Code Extension v0.2.0 — Complete Overhaul
+
+Complete rewrite of the VS Code extension, renamed to **Squish Agent**,
+matching the web-chat UI look-and-feel with full agentic capabilities.
+
+#### Source files rewritten
+
+- **`src/chatPanel.ts`** — Webview panel with agentic tool loop (14 tools:
+  `read_file`, `write_file`, `apply_edit`, `search_workspace`, `create_file`,
+  `delete_file`, `run_terminal`, `get_diagnostics`, `list_directory`,
+  `get_file_tree`, `get_git_status`, `get_symbol_at_cursor`,
+  `get_open_files`, `get_selection`).  Session title auto-set from first message.
+  History synced to disk after every turn.
+
+- **`src/extension.ts`** — Wires all providers and 14 commands including
+  code-action shortcuts (`squish.explainSelection`, `squish.fixDiagnostic`,
+  `squish.refactorSelection`, `squish.documentFunction`,
+  `squish.generateTests`, `squish.openMonitor`, `squish.newChat`).
+
+- **`media/style.css`** — Full web-chat purple/pink palette (`--bg #0c0a14`,
+  `--accent #8B5CF6`, `--accent-pk #EC4899`); history slide-in panel; tool
+  cards; gradient send button; 476 lines.
+
+- **`media/chat.js`** — History sidebar (slide-in with overlay), session
+  list rendering, session replay, regenerate button, `agentTask` message type.
+
+#### New source modules (Wave 68)
+
+- **`src/historyManager.ts`** — Persistent chat sessions stored as JSON under
+  `~/.squish/history/`.  Supports list, load, save, delete, and
+  auto-pruning to 200 sessions.
+
+- **`src/monitorPanel.ts`** — WebviewView activity-bar panel polling
+  `/health` every 2 s; sparkline data for tok/s and req/s; web-chat
+  colour scheme.
+
+- **`src/inlineCompletion.ts`** — `InlineCompletionItemProvider` triggering on
+  `// squish:` / `# squish:` comments and FIM for TypeScript, JavaScript,
+  Python, Rust, Go, C++, C, Java.  Debounced, cancellation-aware.
+
+- **`src/codeLens.ts`** — `CodeLensProvider` registering **Explain**,
+  **Document**, **Refactor**, **Test** lenses on functions/classes in
+  TypeScript, JavaScript, Python, Rust, Go, C++.
+
+- **`src/contextCollector.ts`** — Collects workspace context (active file,
+  selection, open files, diagnostics, git status) for code-action commands.
+
+- **`src/agentLoop.ts`** — Stateless tool-dispatch loop consumed by
+  `ChatPanel`; handles tool call parsing, execution, and result formatting.
+
+#### Test suite
+
+Eight test suites, **151 tests**, all passing:
+
+| Suite | Tests |
+|---|---|
+| `chatPanel.test.ts` | 105 |
+| `squishClient.test.ts` | ~11 |
+| `serverManager.test.ts` | ~10 |
+| `historyManager.test.ts` | 21 |
+| `agentLoop.test.ts` | 25 |
+| `codeLens.test.ts` | 17 |
+| `inlineCompletion.test.ts` | 18 |
+| `monitorPanel.test.ts` | 11 |
+
+---
+
 ## [37.0.0] — 2026-04-01
 
 ### Added — Wave 63: v37 Eighth Acceleration Tier: Rust AQLM Encode · BitDistiller Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG Score · MILO INT3 Pack + Mojo counterparts

@@ -6,13 +6,39 @@
  */
 import * as vscode from 'vscode';
 import { ChatPanel } from '../src/chatPanel';
+import { HistoryManager } from '../src/historyManager';
 
 // Mock squishClient so we can control streaming
 jest.mock('../src/squishClient');
 import { SquishClient } from '../src/squishClient';
 const MockSquishClient = SquishClient as jest.MockedClass<typeof SquishClient>;
 
+// Mock HistoryManager so tests don't touch the filesystem
+jest.mock('../src/historyManager');
+const MockHistoryManager = HistoryManager as jest.MockedClass<typeof HistoryManager>;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function makeHistoryManager(): HistoryManager {
+    const mgr = new MockHistoryManager();
+    (mgr.createSession as jest.Mock).mockReturnValue({
+        id: 'test-session-id',
+        title: 'New conversation',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages: [],
+    });
+    (mgr.save as jest.Mock).mockImplementation(() => undefined);
+    (mgr.list as jest.Mock).mockReturnValue([]);
+    (mgr.load as jest.Mock).mockReturnValue(null);
+    (mgr.delete as jest.Mock).mockImplementation(() => undefined);
+    (mgr.rename as jest.Mock).mockImplementation(() => undefined);
+    return mgr;
+}
+
+function makePanel(extUri = vscode.Uri.file('/extension')): ChatPanel {
+    return new ChatPanel(extUri, makeHistoryManager());
+}
 
 function makeWebviewView(postMessage = jest.fn()): vscode.WebviewView {
     const webviewView = {
@@ -42,7 +68,7 @@ describe('ChatPanel', () => {
     });
 
     test('resolveWebviewView sets HTML and wires message handler', () => {
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView();
 
         panel.resolveWebviewView(
@@ -58,7 +84,7 @@ describe('ChatPanel', () => {
 
     test('clearHistory posts clearHistory message and resets history', () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
@@ -69,7 +95,7 @@ describe('ChatPanel', () => {
 
     test('userMessage triggers streamChat with configured model', () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         // Capture the message handler
@@ -102,7 +128,7 @@ describe('ChatPanel', () => {
 
     test('streamStart/streamChunk/streamEnd posts are relayed to webview', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -131,7 +157,7 @@ describe('ChatPanel', () => {
 
     test('streamError is relayed to webview', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -159,7 +185,7 @@ describe('ChatPanel', () => {
 
     test('clearHistory message from webview triggers clearHistory()', () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -175,13 +201,13 @@ describe('ChatPanel', () => {
     });
 
     test('clearHistory does not crash when view is not resolved', () => {
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         expect(() => panel.clearHistory()).not.toThrow();
     });
 
     test('think blocks are filtered from streamed response', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -213,7 +239,7 @@ describe('ChatPanel', () => {
 
     test('split think tag across chunk boundary is handled', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -246,7 +272,7 @@ describe('ChatPanel', () => {
 
     test('tool call loop: toolCallStart/End messages posted on tool invocation', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -296,7 +322,7 @@ describe('ChatPanel', () => {
 
     test('tool call loop: passes tools array to streamChat', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -325,7 +351,7 @@ describe('ChatPanel', () => {
 
     test('tool call loop: tool result appended to messages on second call', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -377,7 +403,7 @@ describe('ChatPanel', () => {
 
     test('tool call loop: stops after max rounds to prevent infinite loop', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -421,7 +447,7 @@ describe('ChatPanel', () => {
 
     test('stopGeneration message triggers abort and posts streamEnd', () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -451,7 +477,7 @@ describe('ChatPanel', () => {
 
     test('write_file tool creates a new file without confirmation', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -503,7 +529,7 @@ describe('ChatPanel', () => {
 
     test('write_file tool shows confirmation before overwriting and cancels', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -555,7 +581,7 @@ describe('ChatPanel', () => {
 
     test('list_directory tool returns entry names', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -608,7 +634,7 @@ describe('ChatPanel', () => {
 
     test('get_diagnostics tool returns formatted error list', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -665,7 +691,7 @@ describe('ChatPanel', () => {
 
     test('get_diagnostics returns friendly message when no issues', async () => {
         const postMessage = jest.fn();
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView(postMessage);
 
         let messageHandler: ((msg: unknown) => void) | undefined;
@@ -698,14 +724,14 @@ describe('ChatPanel', () => {
     });
 
     test('HTML template contains stop button', () => {
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView();
         panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
         expect(view.webview.html).toContain('btn-stop');
     });
 
     test('tools array includes new tool definitions', () => {
-        const panel = new ChatPanel(extUri);
+        const panel = makePanel(extUri);
         const view = makeWebviewView();
         panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
 

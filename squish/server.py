@@ -1228,7 +1228,8 @@ def _generate_tokens(  # pragma: no cover
     # Check BEFORE any model work.  A warm cache hit returns in <20 ms.
     if _semantic_cache is not None:
         try:
-            _cached_response = _semantic_cache.lookup(prompt, _task_type)
+            with _trace_span("gen.semantic_cache"):
+                _cached_response = _semantic_cache.lookup(prompt, _task_type)
             if _cached_response is not None:
                 for _ch in _cached_response:
                     yield _ch, None
@@ -1254,16 +1255,17 @@ def _generate_tokens(  # pragma: no cover
         if _word_count >= _compress_min_tokens:
             _on_compress_path = True
             try:
-                from squish.prompt_compressor import compress as _compress_fn
-                prompt = _compress_fn(
-                    prompt,
-                    ratio=_compress_ratio,
-                    # preserve_tokens protects the fixed system-prompt prefix from
-                    # compression so that RadixAttention still hits on that prefix
-                    # for PREFIX_PATH requests (LLMLingua ↔ RadixAttention synergy).
-                    # Controlled by --compress-preserve-tokens (default 0 = disabled).
-                    preserve_tokens=_compress_preserve_tokens,
-                )
+                with _trace_span("gen.compress", words=_word_count, ratio=_compress_ratio):
+                    from squish.prompt_compressor import compress as _compress_fn
+                    prompt = _compress_fn(
+                        prompt,
+                        ratio=_compress_ratio,
+                        # preserve_tokens protects the fixed system-prompt prefix from
+                        # compression so that RadixAttention still hits on that prefix
+                        # for PREFIX_PATH requests (LLMLingua ↔ RadixAttention synergy).
+                        # Controlled by --compress-preserve-tokens (default 0 = disabled).
+                        preserve_tokens=_compress_preserve_tokens,
+                    )
             except Exception:
                 pass  # never block generation on compression failure
 
@@ -1324,7 +1326,9 @@ def _generate_tokens(  # pragma: no cover
                       and (temperature == 0.0 or seed is not None)
                       and not _on_compress_path)
     if cache_eligible:
-        cached = _prefix_cache.get(_orig_prompt)
+        with _trace_span("gen.prefix_cache") as _pcs:
+            cached = _prefix_cache.get(_orig_prompt)
+        _pcs.set_tag("hit", cached is not None)
         if cached is not None:
             full_text, finish_reason = cached
             if _trace:
@@ -1361,27 +1365,30 @@ def _generate_tokens(  # pragma: no cover
             except Exception:
                 pass  # never block generation on streamer reset failure
         try:
-            gen = _draft.generator.stream(
-                prompt,
-                max_tokens  = max_tokens,
-                temperature = temperature,
-                top_p       = top_p,
-                stop_ids    = stop_ids,
-                seed        = seed,
-            )
-            for tok_text, finish in gen:
-                if cache_eligible:
-                    _cache_buf.append(tok_text)
-                    _last_finish = finish or _last_finish
-                if _trace_tokens and tok_text:
-                    _tlog(f"REQ {_rid}  tok={tok_text!r}")
-                yield tok_text, finish
-                if finish is not None:
-                    if _trace:
-                        _n_spec = len(_cache_buf) if _cache_buf else 0
-                        _tlog(f"REQ {_rid}  DONE  path=speculative  "
-                              f"tokens={_n_spec}  finish={finish}")
-                    break
+            with _trace_span("gen.speculative") as _spec_tspan:
+                gen = _draft.generator.stream(
+                    prompt,
+                    max_tokens  = max_tokens,
+                    temperature = temperature,
+                    top_p       = top_p,
+                    stop_ids    = stop_ids,
+                    seed        = seed,
+                )
+                for tok_text, finish in gen:
+                    if cache_eligible:
+                        _cache_buf.append(tok_text)
+                        _last_finish = finish or _last_finish
+                    if _trace_tokens and tok_text:
+                        _tlog(f"REQ {_rid}  tok={tok_text!r}")
+                    yield tok_text, finish
+                    if finish is not None:
+                        if _trace:
+                            _n_spec = len(_cache_buf) if _cache_buf else 0
+                            _tlog(f"REQ {_rid}  DONE  path=speculative  "
+                                  f"tokens={_n_spec}  finish={finish}")
+                        _spec_tspan.set_tag("n_tokens",
+                                            len(_cache_buf) if _cache_buf else 0)
+                        break
             if cache_eligible and _cache_buf:
                 _prefix_cache.put(_orig_prompt, "".join(_cache_buf), _last_finish)
             return
@@ -1651,9 +1658,10 @@ def _generate_tokens(  # pragma: no cover
 
                 if _last_logit_vec is None:
                     # Standard single-shot prefill (non-compress path or fallback)
-                    x = mx.array(input_ids, dtype=mx.int32)[None]
-                    logits_full = model(x, cache=layer_caches)
-                    mx.eval(logits_full)
+                    with _trace_span("gen.prefill", tokens=len(input_ids)):
+                        x = mx.array(input_ids, dtype=mx.int32)[None]
+                        logits_full = model(x, cache=layer_caches)
+                        mx.eval(logits_full)
                     _last_logit_vec = logits_full[0, -1]
 
                 # ── Phase 3C: restore dense attention after prefill ────────────
@@ -2753,6 +2761,57 @@ async def debug_info():
         "platform":       sys.platform,
         "pid":            os.getpid(),
     }
+
+
+@app.get("/v1/trace")
+async def get_trace(
+    format: str = "",
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """
+    GET /v1/trace — return collected span data for bottleneck analysis.
+
+    Query parameters:
+        format=chrome   Chrome DevTools Trace Event JSON — open at
+                        https://speedscope.app or chrome://tracing
+                        for a flamegraph with every module's start/end timing.
+        (default)       JSON object: 20 slowest spans + total span count.
+
+    Enable tracing first with the --trace flag or SQUISH_TRACE=1 env var.
+    Spans are accumulated across requests; use DELETE /v1/trace to reset.
+    """
+    _check_auth(creds)
+    if not _TELEMETRY_AVAILABLE:
+        return JSONResponse(
+            {"error": "Telemetry module not available"},
+            status_code=503,
+        )
+    tracer = _get_tracer()
+    if format == "chrome":
+        return JSONResponse(tracer.to_chrome_trace())
+    slowest = tracer.slowest_spans(n=20)
+    return JSONResponse({
+        "tracing_enabled": _TELEMETRY_AVAILABLE and __import__("squish.telemetry",
+                           fromlist=["TRACING_ENABLED"]).TRACING_ENABLED,
+        "total_spans": len(tracer.spans()),
+        "hint": (
+            "Enable tracing with --trace (or SQUISH_TRACE=1), then run requests, "
+            "then GET /v1/trace?format=chrome and open at https://speedscope.app"
+        ),
+        "slowest_spans": [s.to_dict() for s in slowest],
+    })
+
+
+@app.delete("/v1/trace")
+async def clear_trace(
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """DELETE /v1/trace — clear all accumulated span data and reset the tracer."""
+    _check_auth(creds)
+    if not _TELEMETRY_AVAILABLE:
+        return JSONResponse({"ok": False, "error": "Telemetry module not available"})
+    _get_tracer().clear()
+    return JSONResponse({"ok": True, "message": "Trace cleared"})
 
 
 @app.post("/v1/tokenize")

@@ -1,8 +1,8 @@
 {
   "name": "squish-vscode",
-  "displayName": "Squish — Local AI Chat",
-  "description": "Chat with a locally running Squish model from VS Code. Streams tokens in real-time via the OpenAI-compatible API.",
-  "version": "0.1.0",
+  "displayName": "Squish Agent",
+  "description": "Squish Agent — agentic AI pair-programmer powered by your local Squish model. Full chat, monitoring dashboard, agentic file editing, CodeLens, and inline completions.",
+  "version": "0.2.0",
   "publisher": "squishai",
   "license": "MIT",
   "repository": {
@@ -13,38 +13,73 @@
     "vscode": "^1.85.0"
   },
   "icon": "media/icon.png",
-  "categories": ["AI", "Chat"],
-  "keywords": ["ai", "llm", "local", "mlx", "apple-silicon", "chat"],
+  "categories": ["AI", "Chat", "Other"],
+  "keywords": ["ai", "agent", "llm", "local", "mlx", "apple-silicon", "chat", "copilot", "squish"],
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "squish.openChat",
-        "title": "Squish: Open Chat Panel"
+        "title": "Squish Agent: Open Chat",
+        "icon": "$(hubot)"
+      },
+      {
+        "command": "squish.newChat",
+        "title": "Squish Agent: New Conversation",
+        "icon": "$(add)"
       },
       {
         "command": "squish.startServer",
-        "title": "Squish: Start Server"
+        "title": "Squish Agent: Start Server"
       },
       {
         "command": "squish.stopServer",
-        "title": "Squish: Stop Server"
+        "title": "Squish Agent: Stop Server"
       },
       {
         "command": "squish.selectModel",
-        "title": "Squish: Select Model"
+        "title": "Squish Agent: Select Model"
       },
       {
         "command": "squish.clearHistory",
-        "title": "Squish: Clear Chat History"
+        "title": "Squish Agent: Clear Conversation"
+      },
+      {
+        "command": "squish.explainSelection",
+        "title": "Squish Agent: Explain Selection"
+      },
+      {
+        "command": "squish.fixDiagnostic",
+        "title": "Squish Agent: Fix Error"
+      },
+      {
+        "command": "squish.refactorSelection",
+        "title": "Squish Agent: Refactor Selection"
+      },
+      {
+        "command": "squish.documentFunction",
+        "title": "Squish Agent: Add Documentation"
+      },
+      {
+        "command": "squish.generateTests",
+        "title": "Squish Agent: Generate Tests"
+      },
+      {
+        "command": "squish.openMonitor",
+        "title": "Squish Agent: Open Monitoring Dashboard",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "squish.openInPanel",
+        "title": "Squish Agent: Open Chat in Editor Panel"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "squish",
-          "title": "Squish AI",
+          "title": "Squish Agent",
           "icon": "media/icon.svg"
         }
       ]
@@ -55,11 +90,76 @@
           "type": "webview",
           "id": "squish.chatView",
           "name": "Chat"
+        },
+        {
+          "type": "webview",
+          "id": "squish.monitorView",
+          "name": "Monitor"
         }
       ]
     },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "squish.explainSelection",
+          "when": "editorHasSelection",
+          "group": "squish@1"
+        },
+        {
+          "command": "squish.refactorSelection",
+          "when": "editorHasSelection",
+          "group": "squish@2"
+        },
+        {
+          "command": "squish.documentFunction",
+          "when": "editorHasSelection",
+          "group": "squish@3"
+        },
+        {
+          "command": "squish.generateTests",
+          "when": "editorHasSelection",
+          "group": "squish@4"
+        },
+        {
+          "command": "squish.fixDiagnostic",
+          "when": "editorHasSelection",
+          "group": "squish@5"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "squish.newChat",
+          "when": "view == squish.chatView",
+          "group": "navigation"
+        },
+        {
+          "command": "squish.openMonitor",
+          "when": "view == squish.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "squish.openChat",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s"
+      },
+      {
+        "command": "squish.explainSelection",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorHasSelection"
+      },
+      {
+        "command": "squish.fixDiagnostic",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "editorFocus"
+      }
+    ],
     "configuration": {
-      "title": "Squish",
+      "title": "Squish Agent",
       "properties": {
         "squish.host": {
           "type": "string",
@@ -88,7 +188,7 @@
         },
         "squish.maxTokens": {
           "type": "number",
-          "default": 2048,
+          "default": 4096,
           "description": "Maximum tokens per response."
         },
         "squish.temperature": {
@@ -104,12 +204,37 @@
         "squish.thinkingBudget": {
           "type": "number",
           "default": 0,
-          "description": "Qwen3 chain-of-thought budget. 0 = disable thinking for fast responses (recommended for coding/chat). -1 = unlimited. Any positive integer caps reasoning at that many tokens."
+          "description": "Qwen3 chain-of-thought budget. 0 = disable. -1 = unlimited. Positive integer caps reasoning tokens."
         },
         "squish.venvPath": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to the squish binary or its virtualenv directory. Example: /Users/you/squish/.venv  or  /Users/you/squish/.venv/bin/squish. Leave empty to auto-detect."
+          "description": "Absolute path to the squish binary or virtualenv directory. Leave empty to auto-detect."
+        },
+        "squish.enableInlineCompletion": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inline completions triggered by '// squish:' or '# squish:' prefix comments."
+        },
+        "squish.enableCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Squish Agent CodeLens actions (Explain | Document | Refactor | Test) above function definitions."
+        },
+        "squish.agentMaxSteps": {
+          "type": "number",
+          "default": 10,
+          "description": "Maximum number of tool-call iterations before the agent stops."
+        },
+        "squish.requireApprovalForWrite": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a confirmation dialog before the agent writes, creates, or deletes files."
+        },
+        "squish.historyPath": {
+          "type": "string",
+          "default": "",
+          "description": "Directory for persisting conversation history. Defaults to ~/.squish/history."
         }
       }
     }
@@ -121,7 +246,7 @@
     "lint": "eslint src --ext ts",
     "test": "jest --testPathPattern=__tests__",
     "package": "npx vsce package --no-dependencies",
-    "install:ext": "code --install-extension squish-vscode-0.1.0.vsix --force",
+    "install:ext": "code --install-extension squish-vscode-0.2.0.vsix --force",
     "deploy": "npm run package && npm run install:ext"
   },
   "jest": {
@@ -130,6 +255,11 @@
     "testMatch": ["**/__tests__/**/*.test.ts"],
     "moduleNameMapper": {
       "^vscode$": "<rootDir>/__mocks__/vscode.ts"
+    },
+    "globals": {
+      "ts-jest": {
+        "tsconfig": "<rootDir>/tsconfig.test.json"
+      }
     },
     "collectCoverageFrom": ["src/**/*.ts"],
     "coverageThreshold": {

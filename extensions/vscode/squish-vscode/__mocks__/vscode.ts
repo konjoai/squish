@@ -89,3 +89,55 @@ export const Uri = {
     })),
     file: jest.fn((p: string) => ({ fsPath: p })),
 };
+
+export class EventEmitter<T> {
+    event = jest.fn();
+    fire(_data: T): void {}
+    dispose(): void {}
+}
+
+export class Position {
+    constructor(public line: number, public character: number) {}
+}
+
+export class Range {
+    constructor(
+        public start: Position | number,
+        public startCharacter?: number,
+        public end?: Position | number,
+        public endCharacter?: number,
+    ) {
+        if (typeof start === 'number') {
+            this.start = new Position(start as number, startCharacter ?? 0);
+            this.end   = new Position(end as number ?? start, endCharacter ?? 0);
+        }
+    }
+}
+
+export const InlineCompletionTriggerKind = { Automatic: 0, Invoke: 1 };
+
+export class InlineCompletionItem {
+    constructor(
+        public insertText: string,
+        public range?: Range,
+    ) {}
+}
+
+export class InlineCompletionList {
+    constructor(public items: InlineCompletionItem[]) {}
+}
+
+export class CancellationTokenSource {
+    token = { isCancellationRequested: false, onCancellationRequested: jest.fn() };
+    cancel(): void { this.token.isCancellationRequested = true; }
+    dispose(): void {}
+}
+
+export class CodeLens {
+    constructor(
+        public range: Range,
+        public command?: { title: string; command: string; arguments?: unknown[] },
+    ) {}
+    isResolved = true;
+}
+
