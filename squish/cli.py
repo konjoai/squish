@@ -52,6 +52,18 @@ import time
 from pathlib import Path
 from typing import NoReturn
 
+# Suppress macOS "can't turn off malloc stack logging" noise in child processes.
+# Must run before any subprocesses or uvicorn workers are spawned.  On macOS,
+# uvicorn uses 'spawn' (not 'fork') for workers, so children re-inherit the
+# raw OS environment — the cleanup in server.py runs too late for those.
+for _k in (
+    "MallocStackLogging", "MallocStackLoggingNoCompact",
+    "MallocScribble", "MallocPreScribble", "MallocGuardEdges",
+    "MallocCheckHeapStart", "MallocCheckHeapEach",
+):
+    os.environ.pop(_k, None)
+del _k
+
 # When running as `python3 squish/cli.py` (not via `-m`), the repo root is NOT
 # on sys.path, which breaks `from squish.X import ...` inside subcommands like
 # compress (AWQ path) and convert.  Inject the repo root so the package is
