@@ -45,6 +45,8 @@
 ‡ *TTFT = time from first request byte to first streamed token chunk, measured with `--all-optimizations` (default). Squish Run 4, 2026-03-21, 20/21 models, M3 16 GB.*  
 † *160 MB = Apple Metal virtual-address delta during load (mmap, no CPU heap). Peak RSS ~402 MB.*
 
+<img src="assets/squish-logo-3.png" height="500" alt="Squish Logo"/>
+
 ### Model Sizes — Raw vs Squished
 
 | Model | Raw (bf16) | Squished (INT4) | Saved |
