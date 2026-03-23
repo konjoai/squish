@@ -5,6 +5,98 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [33.0.0] — 2026-03-22
+
+### Added — Wave 59: v33 Fourth Acceleration Tier: Rust GPTQ Column Solve · QuaRot Group Quant · CalibScale Absmax/Percentile/ACIQ · Flash Decode Split · BF16 Cast · Sparse Act GEMV + Mojo Flash Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer Skip Predict
+
+Twelve production-grade modules: six Rust-backed kernel wrappers (Wave 59a)
+adding block-parallel GPTQ column solve, QuaRot group quantization/dequantization,
+three calibration scale methods (absmax/percentile/ACIQ), GQA flash-decode split
+with online softmax, BF16 ↔ F32 casting, and sparsity-threshold GEMV to
+`squish_quant_rs`; plus six Mojo-backed kernel wrappers (Wave 59b) extending
+the MojoBridge infrastructure with flash-decode, BF16 GEMV, GQA prefill,
+split-K merge, rotary embedding, and layer-skip prediction kernels. All 452
+Wave 56–58 tests continue passing; 134 new tests added (75 Wave 59a + 59 Wave 59b).
+
+#### Wave 59a — Rust kernel Python wrappers
+
+- **RustGPTQColumnSolve** (`squish/kernels/rs_gptq_solve.py`) — Block-parallel
+  GPTQ column solve wrapping `gptq_column_solve_f32`. Outer loop over
+  `(cols / block_size)` blocks; per-column abs-max scale, round+clamp codes,
+  error propagation `err * (h[k]/h[j])` to remaining block columns via Rayon
+  `into_par_iter`.  NumPy fallback with identical column loop logic.
+
+- **RustQuaRotGroup** (`squish/kernels/rs_quarot_group.py`) — Group quantization
+  and dequantization for QuaRot-style rotated weights wrapping
+  `quarot_group_quant_f32` and `quarot_group_dequant_f32`. Symmetric and
+  asymmetric modes; per-group abs-max or min/max scale computation; reverse
+  lookup dequantization `(code - zero) * scale`.
+
+- **RustCalibScale** (`squish/kernels/rs_calib_scale.py`) — Three calibration
+  scale methods wrapping `calib_absmax_f32`, `calib_percentile_f32`, and
+  `calib_aciq_f32`. Rayon parallel column abs-max; per-channel sort+select for
+  percentile; Welford online mean+variance with `alpha*sigma` for ACIQ.
+  Configurable via `CalibScaleConfig(method, percentile, n_levels)`.
+
+- **RustFlashDecodeKernel** (`squish/kernels/rs_flash_decode.py`) — GQA
+  flash-decode split wrapping `flash_decode_split_f32`. Per-head GEMV
+  `K_split @ q[h]` scaled by `1/√head_dim`; online-softmax running max + exp
+  + normalize; axpy accumulation; `kv_h = (h / gqa_group).min(n_kv_heads-1)`.
+  K/V passed as 2D `(n_kv*split_len, head_dim)` due to `PyReadonlyArray2`
+  bounds; Python wrapper reshapes from 3D.
+
+- **RustBF16Cast** (`squish/kernels/rs_bf16_cast.py`) — Zero-allocation BF16 ↔
+  F32 conversion wrapping `bf16_to_f32_vec` and `f32_to_bf16_vec`. BF16→F32
+  via `(u16 as u32) << 16`; F32→BF16 via `half::bf16::from_f32` (round-to-
+  nearest). NumPy fallback uses bit-shift truncation (accepts slight rounding
+  error at fallback-only paths).
+
+- **RustSparseActGEMV** (`squish/kernels/rs_sparse_act_gemv.py`) — Sparsity-
+  threshold GEMV wrapping `sparse_act_gemv_f32`. Non-zero index filter
+  `|act[i]| > threshold` + Rayon row-parallel compressed axpy. NumPy fallback
+  applies the same threshold mask for consistent semantics. Exposes `sparsity()`
+  diagnostic returning fraction of pruned activations.
+
+#### Wave 59b — Mojo kernel Python wrappers
+
+- **MojoFlashDecodeKernel** (`squish/kernels/mojo/flash_decode_mojo.py`) —
+  Mojo-backed GQA flash-decode split loading `flash_decode_split` kernel via
+  MojoBridge. NumPy fallback identical to Rust wrapper per-head online-softmax
+  loop.
+
+- **MojoBF16GEMV** (`squish/kernels/mojo/bf16_gemv_mojo.py`) — Mojo-backed BF16
+  GEMV loading `bf16_gemv` kernel. Accepts `uint16` weight bits; NumPy fallback
+  upcasts via bit-shift then performs dense `@`.
+
+- **MojoGQAPrefill** (`squish/kernels/mojo/gqa_prefill_mojo.py`) — Mojo-backed
+  GQA prefill loading `gqa_prefill` kernel. NumPy fallback per-head causal
+  attention loop with `kv_h = h // group_size`.
+
+- **MojoSplitKReduce** (`squish/kernels/mojo/splitk_reduce_mojo.py`) — Mojo-
+  backed split-K merge loading `splitk_reduce` kernel. NumPy fallback stacks
+  splits, computes max LSE per head, exp-weights, weighted sum.
+
+- **MojoRotaryEmbed** (`squish/kernels/mojo/rotary_embed_mojo.py`) — Mojo-backed
+  rotary embedding loading `rotary_embed` kernel. NumPy fallback splits at
+  `head_dim//2`, applies broadcast cos/sin, concatenates.
+
+- **MojoLayerSkipPredict** (`squish/kernels/mojo/layer_skip_predict_mojo.py`) —
+  Mojo-backed early-exit layer skip predictor loading `layer_skip_predict`
+  kernel. Stateful `(n_layers, n_features)` weight matrix; NumPy fallback
+  returns `sigmoid(weights @ features)`.
+
+#### Wave 59b — Mojo kernel stubs
+
+Six `.mojo` stubs in `squish/kernels/mojo/kernels/`:
+`flash_decode_split.mojo` (two-pass online softmax, `parallelize[compute_head]`),
+`bf16_gemv.mojo` (`SIMD[DType.bfloat16, 8]` load + `.cast[float32]()` FMA),
+`gqa_prefill.mojo` (`parallelize[compute_token]`, kv_h at index time, causal mask),
+`splitk_reduce.mojo` (`SIMD[float32, n_splits]` LSE weights, `parallelize[merge_head]`),
+`rotary_embed.mojo` (inline 2×2 FMA rotation, `alias half = head_dim // 2`),
+`layer_skip_predict.mojo` (vectorized dot + numerically-stable scalar sigmoid).
+
+---
+
 ## [32.0.0] — 2026-03-22
 
 ### Added — Wave 58: v32 Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling

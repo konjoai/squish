@@ -2791,6 +2791,387 @@ fn sgd_weight_update_f32(
     Ok(updated.into_pyarray_bound(py).unbind())
 }
 
+// ── Wave 59a — GPTQ Column Solve · QuaRot Group · Calib Scale · Flash Decode · BF16 Cast · Sparse Act GEMV ──
+
+/// GPTQ block-parallel column-wise weight quantization with Hessian-diagonal
+/// error propagation.
+///
+/// `weight`: `(rows, cols)` f32; `h_diag`: `(cols,)` Hessian diagonal;
+/// `q_max`: maximum quantized value (e.g. 7.0 for INT4 symmetric);
+/// `block_size`: number of columns per GPTQ block.
+///
+/// Returns `(codes_flat: (rows*cols,) i32, scales: (cols,) f32)`.
+#[pyfunction]
+fn gptq_column_solve_f32(
+    py: Python<'_>,
+    weight: PyReadonlyArray2<f32>,
+    h_diag: PyReadonlyArray1<f32>,
+    q_max: f32,
+    block_size: usize,
+) -> PyResult<(PyObject, Py<PyArray1<f32>>)> {
+    let w = weight.as_array();
+    let h = h_diag.as_array();
+    let (rows, cols) = (w.shape()[0], w.shape()[1]);
+    if h.len() != cols {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "h_diag length must equal cols",
+        ));
+    }
+    let mut w_work: Vec<f32> = w.iter().copied().collect();
+    let mut codes_out: Vec<i32> = vec![0i32; rows * cols];
+    let mut scales_out: Vec<f32> = vec![0.0f32; cols];
+    let bs = block_size.max(1);
+    let n_blocks = (cols + bs - 1) / bs;
+    for b in 0..n_blocks {
+        let col_start = b * bs;
+        let col_end = (col_start + bs).min(cols);
+        for j in col_start..col_end {
+            let abs_max: f32 = (0..rows)
+                .map(|i| w_work[i * cols + j].abs())
+                .fold(0.0f32, f32::max);
+            let scale = if abs_max < 1e-9 { 1.0f32 } else { abs_max / q_max };
+            scales_out[j] = scale;
+            for i in 0..rows {
+                let v = w_work[i * cols + j] / scale;
+                let code = v.round().clamp(-q_max, q_max) as i32;
+                codes_out[i * cols + j] = code;
+                let err = w_work[i * cols + j] - (code as f32 * scale);
+                let h_j = h[j].abs().max(1e-6f32);
+                for k in (j + 1)..col_end {
+                    w_work[i * cols + k] += err * (h[k] / h_j);
+                }
+            }
+        }
+    }
+    let codes_arr = Array1::from(codes_out).into_pyarray_bound(py).unbind();
+    let scales_arr = Array1::from(scales_out).into_pyarray_bound(py).unbind();
+    Ok((codes_arr.into(), scales_arr))
+}
+
+/// QuaRot group-parallel quantization: symmetric or asymmetric INT quantization
+/// over rotated weight groups.
+///
+/// Returns `(codes_flat: (rows*cols,) i32, scales: (n_groups,) f32, zeros: (n_groups,) f32)`.
+#[pyfunction]
+fn quarot_group_quant_f32(
+    py: Python<'_>,
+    weight: PyReadonlyArray2<f32>,
+    group_size: usize,
+    q_max: f32,
+    symmetric: bool,
+) -> PyResult<(PyObject, Py<PyArray1<f32>>, Py<PyArray1<f32>>)> {
+    let w = weight.as_array();
+    let (rows, cols) = (w.shape()[0], w.shape()[1]);
+    let gs = group_size.max(1);
+    let n_groups = (cols + gs - 1) / gs;
+    let w_flat: Vec<f32> = w.iter().copied().collect();
+    let mut codes_out: Vec<i32> = vec![0i32; rows * cols];
+    let mut scales_out: Vec<f32> = vec![1.0f32; n_groups];
+    let mut zeros_out: Vec<f32> = vec![0.0f32; n_groups];
+    for g in 0..n_groups {
+        let c_start = g * gs;
+        let c_end = (c_start + gs).min(cols);
+        let vals: Vec<f32> = (0..rows)
+            .flat_map(|i| (c_start..c_end).map(move |j| w_flat[i * cols + j]))
+            .collect();
+        if symmetric {
+            let abs_max = vals.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+            let scale = if abs_max < 1e-9 { 1.0f32 } else { abs_max / q_max };
+            scales_out[g] = scale;
+            for i in 0..rows {
+                for j in c_start..c_end {
+                    let code = (w_flat[i * cols + j] / scale)
+                        .round()
+                        .clamp(-q_max, q_max) as i32;
+                    codes_out[i * cols + j] = code;
+                }
+            }
+        } else {
+            let vmin = vals.iter().cloned().fold(f32::INFINITY, f32::min);
+            let vmax = vals.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let range = (vmax - vmin).max(1e-9);
+            let scale = range / (2.0 * q_max);
+            let zero = -vmin / scale;
+            scales_out[g] = scale;
+            zeros_out[g] = zero;
+            for i in 0..rows {
+                for j in c_start..c_end {
+                    let code = (w_flat[i * cols + j] / scale + zero)
+                        .round()
+                        .clamp(0.0, 2.0 * q_max) as i32;
+                    codes_out[i * cols + j] = code;
+                }
+            }
+        }
+    }
+    let codes_arr = Array1::from(codes_out).into_pyarray_bound(py).unbind();
+    let scales_arr = Array1::from(scales_out).into_pyarray_bound(py).unbind();
+    let zeros_arr = Array1::from(zeros_out).into_pyarray_bound(py).unbind();
+    Ok((codes_arr.into(), scales_arr, zeros_arr))
+}
+
+/// QuaRot group dequantization: reconstruct f32 weights from codes, scales, zeros.
+///
+/// Returns `(rows * cols,)` f32 flat array.
+#[pyfunction]
+fn quarot_group_dequant_f32(
+    py: Python<'_>,
+    codes: PyReadonlyArray1<i32>,
+    scales: PyReadonlyArray1<f32>,
+    zeros: PyReadonlyArray1<f32>,
+    rows: usize,
+    cols: usize,
+    group_size: usize,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let c = codes.as_array();
+    let s = scales.as_array();
+    let z = zeros.as_array();
+    let gs = group_size.max(1);
+    let n_elem = rows * cols;
+    if c.len() != n_elem {
+        return Err(pyo3::exceptions::PyValueError::new_err("codes length mismatch"));
+    }
+    let out: Vec<f32> = (0..rows)
+        .flat_map(|i| {
+            (0..cols).map(move |j| {
+                let g = j / gs;
+                (c[i * cols + j] as f32 - z[g]) * s[g]
+            })
+        })
+        .collect();
+    Ok(Array1::from(out).into_pyarray_bound(py).unbind())
+}
+
+/// Calibration absmax scale: per-channel absolute maximum over `(N, C)` activations.
+///
+/// Returns `(C,)` float32 scale array.
+#[pyfunction]
+fn calib_absmax_f32(
+    py: Python<'_>,
+    acts: PyReadonlyArray2<f32>,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let a = acts.as_array();
+    let (n_samples, n_ch) = (a.shape()[0], a.shape()[1]);
+    let flat: Vec<f32> = a.iter().copied().collect();
+    let scales: Vec<f32> = (0..n_ch)
+        .into_par_iter()
+        .map(|c| {
+            (0..n_samples)
+                .map(|i| flat[i * n_ch + c].abs())
+                .fold(0.0f32, f32::max)
+        })
+        .collect();
+    Ok(Array1::from(scales).into_pyarray_bound(py).unbind())
+}
+
+/// Calibration percentile scale: per-channel `p`-th percentile of absolute activations.
+///
+/// Returns `(C,)` float32 scale array.
+#[pyfunction]
+fn calib_percentile_f32(
+    py: Python<'_>,
+    acts: PyReadonlyArray2<f32>,
+    percentile: f32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let a = acts.as_array();
+    let (n_samples, n_ch) = (a.shape()[0], a.shape()[1]);
+    let flat: Vec<f32> = a.iter().copied().collect();
+    let p = percentile.clamp(0.0, 100.0);
+    let scales: Vec<f32> = (0..n_ch)
+        .into_par_iter()
+        .map(|c| {
+            let mut col: Vec<f32> = (0..n_samples).map(|i| flat[i * n_ch + c].abs()).collect();
+            col.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let idx = ((p / 100.0 * col.len().saturating_sub(1) as f32) as usize)
+                .min(col.len().saturating_sub(1));
+            col.get(idx).copied().unwrap_or(0.0)
+        })
+        .collect();
+    Ok(Array1::from(scales).into_pyarray_bound(py).unbind())
+}
+
+/// Calibration ACIQ scale: per-channel Gaussian optimal clip over `(N, C)` activations.
+///
+/// `n_levels`: number of quantization levels (e.g. 256 for INT8).
+/// Returns `(C,)` float32 scale array.
+#[pyfunction]
+fn calib_aciq_f32(
+    py: Python<'_>,
+    acts: PyReadonlyArray2<f32>,
+    n_levels: usize,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let a = acts.as_array();
+    let (n_samples, n_ch) = (a.shape()[0], a.shape()[1]);
+    let flat: Vec<f32> = a.iter().copied().collect();
+    // ACIQ Gaussian: clip ≈ alpha(b) * sigma; alpha(b) ≈ sqrt(2*ln(n_samples)+1)
+    let alpha_factor: f32 = (2.0 * (n_samples as f32).ln() + 1.0)
+        .sqrt()
+        .max(1.0);
+    let _ = n_levels; // used by caller to select quantizer; sigma is the key output
+    let scales: Vec<f32> = (0..n_ch)
+        .into_par_iter()
+        .map(|c| {
+            let col: Vec<f32> = (0..n_samples).map(|i| flat[i * n_ch + c]).collect();
+            // Welford online mean + variance
+            let mut mean = 0.0f32;
+            let mut m2 = 0.0f32;
+            for (k, &v) in col.iter().enumerate() {
+                let delta = v - mean;
+                mean += delta / (k + 1) as f32;
+                m2 += delta * (v - mean);
+            }
+            let variance = if n_samples > 1 { m2 / (n_samples - 1) as f32 } else { 0.0 };
+            let sigma = variance.sqrt();
+            (sigma * alpha_factor).max(1e-6)
+        })
+        .collect();
+    Ok(Array1::from(scales).into_pyarray_bound(py).unbind())
+}
+
+/// Flash-decode per-split attention: Rayon parallel GEMV + online softmax per head.
+///
+/// `q`: `(n_heads, head_dim)` f32.
+/// `k_split`: `(n_kv_heads * split_len, head_dim)` f32 — caller reshapes 3D → 2D.
+/// `v_split`: `(n_kv_heads * split_len, head_dim)` f32.
+/// `n_kv_heads`, `split_len`: shape parameters for indexing into k_split / v_split.
+/// `gqa_group`: n_heads / n_kv_heads.
+///
+/// Returns `(output_flat (n_heads*head_dim,) f32, lse (n_heads,) f32, max_score (n_heads,) f32)`.
+#[pyfunction]
+fn flash_decode_split_f32(
+    py: Python<'_>,
+    q: PyReadonlyArray2<f32>,
+    k_split: PyReadonlyArray2<f32>,
+    v_split: PyReadonlyArray2<f32>,
+    n_kv_heads: usize,
+    split_len: usize,
+    gqa_group: usize,
+) -> PyResult<(PyObject, Py<PyArray1<f32>>, Py<PyArray1<f32>>)> {
+    let q_a = q.as_array();
+    let k_a = k_split.as_array();
+    let v_a = v_split.as_array();
+    let n_heads = q_a.shape()[0];
+    let head_dim = q_a.shape()[1];
+    let g = gqa_group.max(1);
+    let q_flat: Vec<f32> = q_a.iter().copied().collect();
+    let k_flat: Vec<f32> = k_a.iter().copied().collect();
+    let v_flat: Vec<f32> = v_a.iter().copied().collect();
+    // kv indexing: k_flat[kv_h * split_len * head_dim + t * head_dim + d]
+    let results: Vec<(Vec<f32>, f32, f32)> = (0..n_heads)
+        .into_par_iter()
+        .map(|h| {
+            let kv_h = (h / g).min(n_kv_heads.saturating_sub(1));
+            // scores[t] = dot(q[h, :], k[kv_h, t, :])
+            let mut scores: Vec<f32> = (0..split_len)
+                .map(|t| {
+                    let q_off = h * head_dim;
+                    let k_off = kv_h * split_len * head_dim + t * head_dim;
+                    (0..head_dim)
+                        .map(|d| q_flat[q_off + d] * k_flat[k_off + d])
+                        .sum()
+                })
+                .collect();
+            // Scale by 1/sqrt(head_dim)
+            let scale = (head_dim as f32).sqrt().recip();
+            for s in scores.iter_mut() { *s *= scale; }
+            // Online softmax
+            let max_s = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let exp_sum: f32 = scores.iter().map(|&s| (s - max_s).exp()).sum();
+            let lse = max_s + exp_sum.ln();
+            for s in scores.iter_mut() {
+                *s = (*s - max_s).exp() / exp_sum;
+            }
+            // output_h = sum_t(w[t] * v[kv_h, t, :])
+            let mut out_h = vec![0.0f32; head_dim];
+            for t in 0..split_len {
+                let v_off = kv_h * split_len * head_dim + t * head_dim;
+                let wt = scores[t];
+                for d in 0..head_dim {
+                    out_h[d] += wt * v_flat[v_off + d];
+                }
+            }
+            (out_h, lse, max_s)
+        })
+        .collect();
+    let mut output = vec![0.0f32; n_heads * head_dim];
+    let mut lse_out = vec![0.0f32; n_heads];
+    let mut max_out = vec![0.0f32; n_heads];
+    for (h, (out_h, lse, ms)) in results.into_iter().enumerate() {
+        let off = h * head_dim;
+        output[off..off + head_dim].copy_from_slice(&out_h);
+        lse_out[h] = lse;
+        max_out[h] = ms;
+    }
+    let out_arr = Array1::from(output).into_pyarray_bound(py).unbind();
+    let lse_arr = Array1::from(lse_out).into_pyarray_bound(py).unbind();
+    let max_arr = Array1::from(max_out).into_pyarray_bound(py).unbind();
+    Ok((out_arr.into(), lse_arr, max_arr))
+}
+
+/// BF16 → FP32 conversion: accepts raw BF16 bits as `Vec<u16>`, returns `(N,)` float32 array.
+///
+/// BF16 bit layout: sign(1) + exp(8) + mantissa(7).
+/// Conversion: `f32::from_bits((bf16_bits as u32) << 16)`.
+#[pyfunction]
+fn bf16_to_f32_vec(py: Python<'_>, bf16_bits: Vec<u16>) -> PyResult<Py<PyArray1<f32>>> {
+    let out: Vec<f32> = bf16_bits
+        .iter()
+        .map(|&b| f32::from_bits((b as u32) << 16))
+        .collect();
+    Ok(Array1::from(out).into_pyarray_bound(py).unbind())
+}
+
+/// FP32 → BF16 conversion: returns raw BF16 bits as `Vec<u16>`.
+///
+/// Uses the `half` crate's `bf16::from_f32` (round-to-nearest-even).
+#[pyfunction]
+fn f32_to_bf16_vec(bf16_values: PyReadonlyArray1<f32>) -> PyResult<Vec<u16>> {
+    use half::bf16;
+    let vals = bf16_values.as_array();
+    let out: Vec<u16> = vals.iter().map(|&v| bf16::from_f32(v).to_bits()).collect();
+    Ok(out)
+}
+
+/// Sparse activation GEMV: `output = W @ activation` skipping zero (or near-zero) activations.
+///
+/// Builds a non-zero index list via `|act[i]| > threshold`, then accumulates
+/// a compressed dot-product per output row via Rayon column parallelism.
+///
+/// `weight`: `(out_features, in_features)` f32; `activation`: `(in_features,)` f32.
+/// Returns `(out_features,)` float32 array.
+#[pyfunction]
+fn sparse_act_gemv_f32(
+    py: Python<'_>,
+    weight: PyReadonlyArray2<f32>,
+    activation: PyReadonlyArray1<f32>,
+    threshold: f32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let w = weight.as_array();
+    let a = activation.as_array();
+    let (out_feat, in_feat) = (w.shape()[0], w.shape()[1]);
+    if a.len() != in_feat {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "activation length must equal in_features",
+        ));
+    }
+    let act_flat: Vec<f32> = a.iter().copied().collect();
+    let w_flat: Vec<f32> = w.iter().copied().collect();
+    let nz_indices: Vec<usize> = (0..in_feat)
+        .filter(|&i| act_flat[i].abs() > threshold)
+        .collect();
+    let output: Vec<f32> = (0..out_feat)
+        .into_par_iter()
+        .map(|o| {
+            let row_off = o * in_feat;
+            nz_indices
+                .iter()
+                .map(|&i| w_flat[row_off + i] * act_flat[i])
+                .sum()
+        })
+        .collect();
+    Ok(Array1::from(output).into_pyarray_bound(py).unbind())
+}
+
 // ── PyO3 module registration ─────────────────────────────────────────────────
 
 #[pymodule]
@@ -2854,5 +3235,16 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(moe_top_k_f32,                       m)?)?;
     m.add_function(wrap_pyfunction!(logistic_step_f32,                   m)?)?;
     m.add_function(wrap_pyfunction!(sgd_weight_update_f32,               m)?)?;
+    // Wave 59a — GPTQColumnSolve · QuaRotGroup · CalibScale · FlashDecodeKernel · BF16Cast · SparseActGEMV
+    m.add_function(wrap_pyfunction!(gptq_column_solve_f32,               m)?)?;
+    m.add_function(wrap_pyfunction!(quarot_group_quant_f32,              m)?)?;
+    m.add_function(wrap_pyfunction!(quarot_group_dequant_f32,            m)?)?;
+    m.add_function(wrap_pyfunction!(calib_absmax_f32,                    m)?)?;
+    m.add_function(wrap_pyfunction!(calib_percentile_f32,                m)?)?;
+    m.add_function(wrap_pyfunction!(calib_aciq_f32,                      m)?)?;
+    m.add_function(wrap_pyfunction!(flash_decode_split_f32,              m)?)?;
+    m.add_function(wrap_pyfunction!(bf16_to_f32_vec,                     m)?)?;
+    m.add_function(wrap_pyfunction!(f32_to_bf16_vec,                     m)?)?;
+    m.add_function(wrap_pyfunction!(sparse_act_gemv_f32,                 m)?)?;
     Ok(())
 }

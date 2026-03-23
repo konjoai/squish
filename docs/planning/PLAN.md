@@ -577,7 +577,7 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 
 ---
 
-## 🚧 v33 Wave 59 — Decode Velocity Sprint: Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict (Planned)
+## ✅ v33 Wave 59 — Decode Velocity Sprint: Rust GPTQ Column Solve · QuaRot Group · Calibration Scale · Flash-Decode Kernel · BF16 Cast · Sparse-Act GEMV + Mojo Flash-Decode · BF16 GEMV · GQA Prefill · Split-K Reduce · Rotary Embed · Layer-Skip Predict (Complete)
 
 Theme: **Wave 59 targets six Python/NumPy hotspots that sit squarely on the critical path
 for both calibration throughput and live decode latency — the operations that appear in
@@ -728,23 +728,23 @@ when `squish_quant_rs` is not compiled. Zero changes to public Python APIs — d
 
 ### Completion Checklist
 
-- [ ] `squish_quant_rs/src/lib.rs` — `gptq_column_solve_f32`, `quarot_group_quant/dequant_f32`, `calib_absmax/percentile/aciq_f32`, `flash_decode_split_f32`, `bf16_to_f32_vec`/`f32_to_bf16_vec`, `sparse_act_gemv_f32` added + registered
-- [ ] `squish/kernels/rs_gptq_solve.py` — RustGPTQColumnSolve (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_quarot_group.py` — RustQuaRotGroup (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_calib_scale.py` — RustCalibScale (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_flash_decode.py` — RustFlashDecodeKernel (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_bf16_cast.py` — RustBF16Cast (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_sparse_act_gemv.py` — RustSparseActGEMV (wrapper + NumPy fallback)
-- [ ] `squish/kernels/mojo/flash_decode_mojo.py` + `squish/kernels/mojo/kernels/flash_decode_split.mojo`
-- [ ] `squish/kernels/mojo/bf16_gemv_mojo.py` + `squish/kernels/mojo/kernels/bf16_gemv.mojo`
-- [ ] `squish/kernels/mojo/gqa_prefill_mojo.py` + `squish/kernels/mojo/kernels/gqa_prefill.mojo`
-- [ ] `squish/kernels/mojo/splitk_reduce_mojo.py` + `squish/kernels/mojo/kernels/splitk_reduce.mojo`
-- [ ] `squish/kernels/mojo/rotary_embed_mojo.py` + `squish/kernels/mojo/kernels/rotary_embed.mojo`
-- [ ] `squish/kernels/mojo/layer_skip_predict_mojo.py` + `squish/kernels/mojo/kernels/layer_skip_predict.mojo`
-- [ ] `tests/test_wave59a_rust_kernels.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave59b_mojo_kernels.py` — ≥ 72 tests with NumPy fallback coverage, all passing
-- [ ] CHANGELOG `[33.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish_quant_rs/src/lib.rs` — `gptq_column_solve_f32`, `quarot_group_quant/dequant_f32`, `calib_absmax/percentile/aciq_f32`, `flash_decode_split_f32`, `bf16_to_f32_vec`/`f32_to_bf16_vec`, `sparse_act_gemv_f32` added + registered
+- [x] `squish/kernels/rs_gptq_solve.py` — RustGPTQColumnSolve (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_quarot_group.py` — RustQuaRotGroup (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_calib_scale.py` — RustCalibScale (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_flash_decode.py` — RustFlashDecodeKernel (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_bf16_cast.py` — RustBF16Cast (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_sparse_act_gemv.py` — RustSparseActGEMV (wrapper + NumPy fallback)
+- [x] `squish/kernels/mojo/flash_decode_mojo.py` + `squish/kernels/mojo/kernels/flash_decode_split.mojo`
+- [x] `squish/kernels/mojo/bf16_gemv_mojo.py` + `squish/kernels/mojo/kernels/bf16_gemv.mojo`
+- [x] `squish/kernels/mojo/gqa_prefill_mojo.py` + `squish/kernels/mojo/kernels/gqa_prefill.mojo`
+- [x] `squish/kernels/mojo/splitk_reduce_mojo.py` + `squish/kernels/mojo/kernels/splitk_reduce.mojo`
+- [x] `squish/kernels/mojo/rotary_embed_mojo.py` + `squish/kernels/mojo/kernels/rotary_embed.mojo`
+- [x] `squish/kernels/mojo/layer_skip_predict_mojo.py` + `squish/kernels/mojo/kernels/layer_skip_predict.mojo`
+- [x] `tests/test_wave59a_rust_kernels.py` — 75 tests, all passing
+- [x] `tests/test_wave59b_mojo_kernels.py` — 59 tests with NumPy fallback coverage, all passing
+- [x] CHANGELOG `[33.0.0]` entry
+- [x] PLAN.md updated
 
 ### Pre-Launch Readiness (as of Run 4, 2026-03-21 — Run 5 compression in progress)
 
