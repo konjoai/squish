@@ -172,7 +172,22 @@ class TorchCompileDecode:
                 try:
                     import mlx.core as mx  # type: ignore
 
-                    self._compiled_fn = mx.compile(fn)
+                    _compiled_inner = mx.compile(fn)
+
+                    def _mlx_wrapped(*a: Any, **kw: Any) -> Any:
+                        """Convert np.ndarray inputs to mx.array, then convert output back."""
+                        mlx_a = tuple(
+                            mx.array(v) if isinstance(v, np.ndarray) else v
+                            for v in a
+                        )
+                        mlx_kw = {
+                            k: mx.array(v) if isinstance(v, np.ndarray) else v
+                            for k, v in kw.items()
+                        }
+                        out = _compiled_inner(*mlx_a, **mlx_kw)
+                        return np.asarray(out) if isinstance(out, mx.array) else out
+
+                    self._compiled_fn = _mlx_wrapped
                     self._stats.compiled = True
                     self._stats.backend_used = "mlx"
                 except Exception:
