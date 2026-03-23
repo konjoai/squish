@@ -836,6 +836,73 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#4200-wave-68-2026-05-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [42.0.0] — Wave 68 — 2026-05-30
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[42.0.0] — Wave 68 — 2026-05-30">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-squish-agent-vs-code-extension-v020-complete-overhaul" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Squish Agent VS Code Extension v0.2.0 — Complete Overhaul
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Added — Squish Agent VS Code Extension v0.2.0 — Complete Overhaul">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#source-files-rewritten" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source files rewritten
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-source-modules-wave-68" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New source modules (Wave 68)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test suite
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#3700-2026-04-01" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2786,6 +2853,112 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="4200-wave-68-2026-05-30">[42.0.0] — Wave 68 — 2026-05-30<a class="headerlink" href="#4200-wave-68-2026-05-30" title="Permanent link">&para;</a></h2>
+<h3 id="added-squish-agent-vs-code-extension-v020-complete-overhaul">Added — Squish Agent VS Code Extension v0.2.0 — Complete Overhaul<a class="headerlink" href="#added-squish-agent-vs-code-extension-v020-complete-overhaul" title="Permanent link">&para;</a></h3>
+<p>Complete rewrite of the VS Code extension, renamed to <strong>Squish Agent</strong>,
+matching the web-chat UI look-and-feel with full agentic capabilities.</p>
+<h4 id="source-files-rewritten">Source files rewritten<a class="headerlink" href="#source-files-rewritten" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong><code>src/chatPanel.ts</code></strong> — Webview panel with agentic tool loop (14 tools:
+  <code>read_file</code>, <code>write_file</code>, <code>apply_edit</code>, <code>search_workspace</code>, <code>create_file</code>,
+  <code>delete_file</code>, <code>run_terminal</code>, <code>get_diagnostics</code>, <code>list_directory</code>,
+  <code>get_file_tree</code>, <code>get_git_status</code>, <code>get_symbol_at_cursor</code>,
+  <code>get_open_files</code>, <code>get_selection</code>).  Session title auto-set from first message.
+  History synced to disk after every turn.</p>
+</li>
+<li>
+<p><strong><code>src/extension.ts</code></strong> — Wires all providers and 14 commands including
+  code-action shortcuts (<code>squish.explainSelection</code>, <code>squish.fixDiagnostic</code>,
+  <code>squish.refactorSelection</code>, <code>squish.documentFunction</code>,
+  <code>squish.generateTests</code>, <code>squish.openMonitor</code>, <code>squish.newChat</code>).</p>
+</li>
+<li>
+<p><strong><code>media/style.css</code></strong> — Full web-chat purple/pink palette (<code>--bg #0c0a14</code>,
+  <code>--accent #8B5CF6</code>, <code>--accent-pk #EC4899</code>); history slide-in panel; tool
+  cards; gradient send button; 476 lines.</p>
+</li>
+<li>
+<p><strong><code>media/chat.js</code></strong> — History sidebar (slide-in with overlay), session
+  list rendering, session replay, regenerate button, <code>agentTask</code> message type.</p>
+</li>
+</ul>
+<h4 id="new-source-modules-wave-68">New source modules (Wave 68)<a class="headerlink" href="#new-source-modules-wave-68" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong><code>src/historyManager.ts</code></strong> — Persistent chat sessions stored as JSON under
+  <code>~/.squish/history/</code>.  Supports list, load, save, delete, and
+  auto-pruning to 200 sessions.</p>
+</li>
+<li>
+<p><strong><code>src/monitorPanel.ts</code></strong> — WebviewView activity-bar panel polling
+  <code>/health</code> every 2 s; sparkline data for tok/s and req/s; web-chat
+  colour scheme.</p>
+</li>
+<li>
+<p><strong><code>src/inlineCompletion.ts</code></strong> — <code>InlineCompletionItemProvider</code> triggering on
+  <code>// squish:</code> / <code># squish:</code> comments and FIM for TypeScript, JavaScript,
+  Python, Rust, Go, C++, C, Java.  Debounced, cancellation-aware.</p>
+</li>
+<li>
+<p><strong><code>src/codeLens.ts</code></strong> — <code>CodeLensProvider</code> registering <strong>Explain</strong>,
+  <strong>Document</strong>, <strong>Refactor</strong>, <strong>Test</strong> lenses on functions/classes in
+  TypeScript, JavaScript, Python, Rust, Go, C++.</p>
+</li>
+<li>
+<p><strong><code>src/contextCollector.ts</code></strong> — Collects workspace context (active file,
+  selection, open files, diagnostics, git status) for code-action commands.</p>
+</li>
+<li>
+<p><strong><code>src/agentLoop.ts</code></strong> — Stateless tool-dispatch loop consumed by
+  <code>ChatPanel</code>; handles tool call parsing, execution, and result formatting.</p>
+</li>
+</ul>
+<h4 id="test-suite">Test suite<a class="headerlink" href="#test-suite" title="Permanent link">&para;</a></h4>
+<p>Eight test suites, <strong>151 tests</strong>, all passing:</p>
+<table>
+<thead>
+<tr>
+<th>Suite</th>
+<th>Tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>chatPanel.test.ts</code></td>
+<td>105</td>
+</tr>
+<tr>
+<td><code>squishClient.test.ts</code></td>
+<td>~11</td>
+</tr>
+<tr>
+<td><code>serverManager.test.ts</code></td>
+<td>~10</td>
+</tr>
+<tr>
+<td><code>historyManager.test.ts</code></td>
+<td>21</td>
+</tr>
+<tr>
+<td><code>agentLoop.test.ts</code></td>
+<td>25</td>
+</tr>
+<tr>
+<td><code>codeLens.test.ts</code></td>
+<td>17</td>
+</tr>
+<tr>
+<td><code>inlineCompletion.test.ts</code></td>
+<td>18</td>
+</tr>
+<tr>
+<td><code>monitorPanel.test.ts</code></td>
+<td>11</td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h2 id="3700-2026-04-01">[37.0.0] — 2026-04-01<a class="headerlink" href="#3700-2026-04-01" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-63-v37-eighth-acceleration-tier-rust-aqlm-encode-bitdistiller-refine-gguf-block-quant-pq-cache-fit-magicpig-score-milo-int3-pack-mojo-counterparts">Added — Wave 63: v37 Eighth Acceleration Tier: Rust AQLM Encode · BitDistiller Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG Score · MILO INT3 Pack + Mojo counterparts<a class="headerlink" href="#added-wave-63-v37-eighth-acceleration-tier-rust-aqlm-encode-bitdistiller-refine-gguf-block-quant-pq-cache-fit-magicpig-score-milo-int3-pack-mojo-counterparts" title="Permanent link">&para;</a></h3>
