@@ -5,6 +5,94 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [32.0.0] — 2026-03-22
+
+### Added — Wave 58: v32 Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling
+
+Twelve production-grade modules: six Rust-backed kernel wrappers (Wave 58a)
+adding vector K-means codebook fitting, FP6 bit-packing, AWQ channel statistics,
+SLERP/DARE/TIES model merge, MoE expert bincount, and online SGD to
+`squish_quant_rs`; plus six Mojo-backed kernel wrappers (Wave 58b) extending
+Wave 56–57's MojoBridge infrastructure with tiled attention, compressive memory,
+and sampling kernels. All 302 Wave 56–57 tests continue passing; 150 new tests
+added (79 Wave 58a + 71 Wave 58b).
+
+#### Wave 58a — Rust kernel Python wrappers
+
+- **RustVectorKMeans** (`squish/kernels/rs_vector_kmeans.py`) — K-means++
+  codebook fitting and assignment wrapping three new `squish_quant` functions:
+  `vector_kmeans_fit_f32`, `vector_kmeans_assign_f32`,
+  `vector_kmeans_reconstruct_f32`. Rayon parallel K-means++ seeding (max-dist
+  heuristic) + Lloyd E-step via `into_par_iter` nearest-centroid per row;
+  ~12× fit, ~8× assign at N=10K, K=256, D=8 vs NumPy broadcast `(N,K,D)`.
+  NumPy fallback with full K-means++ seeding.
+
+- **RustFP6BitPack** (`squish/kernels/rs_fp6_bitpack.py`) — FP6 encoder/decoder
+  wrapping `fp6_encode_f32` and `fp6_decode_f32`. Configurable `(exp_bits,
+  man_bits)` validated at construction; processes 4 f32 → 3 bytes per iteration
+  using compile-time bit-field extraction; replaces triple nested Python loop
+  in `fp6_quant.py`; ~40× encode, ~30× decode for matrices ≥ 4096 elements.
+
+- **RustAWQChannel** (`squish/kernels/rs_awq_channel.py`) — AWQ calibration
+  statistics accumulator wrapping `awq_channel_abs_mean_f32` and
+  `awq_compute_scales_f32`. Stateful per-channel abs-mean accumulation across
+  calibration batches; single-pass Rayon column-reduce replaces two NumPy passes
+  in `awq.py`; ~4× per calibration step across 30–90 samples.
+
+- **RustModelMerge** (`squish/kernels/rs_model_merge.py`) — SLERP/DARE/TIES model
+  merge wrapping `slerp_f32`, `dare_merge_f32`, `ties_merge_f32`. Rayon parallel
+  sign-election + masked-mean for TIES; Murmur-hash PRNG Bernoulli mask for DARE;
+  norm-normalize + acos SLERP; replaces Python loops in `lora/model_merge.py`;
+  ~3–4× on 4096×4096 weight matrices.
+
+- **RustMoEBincount** (`squish/kernels/rs_moe_bincount.py`) — MoE expert frequency
+  bincount and top-k selection wrapping `moe_bincount_f32` and `moe_top_k_f32`.
+  Chunk-parallel `[u32; n_experts]` histogram + sequential reduce + normalize;
+  `select_nth_unstable_by` top-k; replaces Python for-loop in `sparse_moe.py`;
+  ~8× for n_experts=128, batch=64.
+
+- **RustOnlineSGD** (`squish/kernels/rs_online_sgd.py`) — online logistic
+  regression SGD wrapping `logistic_step_f32` and `sgd_weight_update_f32`.
+  Fused sigmoid + error + axpy weight update in one Rayon vector pass; replaces
+  3 NumPy ufunc dispatches per step in `skip_layer_predictor.py` and
+  `deja_vu_sparse.py`; ~7× for n_features=32, n_layers=32, 1000 steps.
+
+#### Wave 58b — Mojo kernel Python wrappers + .mojo stubs
+
+- **MojoDualChunkAttn** (`squish/kernels/mojo/dual_chunk_attn_mojo.py` +
+  `squish/kernels/mojo/kernels/dual_chunk_attn.mojo`) — tiled causal SDPA over
+  512-token chunks with online softmax accumulation and `@parameter` on
+  chunk_size/head_dim; replaces 3 einsum calls in `dual_chunk_attn.py`; ~3×.
+
+- **MojoInfiniAttnMemory** (`squish/kernels/mojo/infini_attn_mojo.py` +
+  `squish/kernels/mojo/kernels/infini_attn.mojo`) — ELU-gated outer-product
+  compressive memory update and matrix-vector retrieval; `parallelize` over
+  heads; replaces `np.einsum` update/query in `infini_attn.py`; ~3×.
+
+- **MojoSlidingWindowAttn** (`squish/kernels/mojo/sliding_window_attn_mojo.py` +
+  `squish/kernels/mojo/kernels/sliding_window_attn.mojo`) — causal local
+  attention eliminating the double Python for-loop in `subgen_attn.py`;
+  `parallelize(n_heads × T)` with `@parameter` on window_size/head_dim; ~10×.
+
+- **MojoHQQALS** (`squish/kernels/mojo/hqq_als_mojo.py` +
+  `squish/kernels/mojo/kernels/hqq_als.mojo`) — fused ALS iteration reading W
+  once and computing scale/zero/codes in one `vectorize` pass; `@parameter` on
+  group_size/qmax; replaces 6 NumPy ufunc dispatches per ALS step in
+  `hqq_quant.py`; ~3× overall.
+
+- **MojoVPTQDecode** (`squish/kernels/mojo/vptq_decode_mojo.py` +
+  `squish/kernels/mojo/kernels/vptq_decode.mojo`) — SIMD codebook gather with
+  `@parameter` on group_size; replaces fancy-index in `vptq.py` and AQLM
+  dequantize loop; ~2.5× at group_size=4.
+
+- **MojoTopKP** (`squish/kernels/mojo/topkp_mojo.py` +
+  `squish/kernels/mojo/kernels/topkp.mojo`) — fused top-k/top-p sampling with
+  radix histogram partial-sort and SIMD horizontal-add cumsum; `@parameter` on
+  vocab_size; replaces 4 NumPy passes in `scheduler.py` and `token_swift.py`;
+  ~4× for vocab=128K.
+
+---
+
 ## [31.0.0] — 2026-03-22
 
 ### Added — Wave 57: v31 Deep Native Acceleration: Rust Entropy Codec · PQ ADC · GRU Cell · Cosine Sim · SwiGLU · Randomized SVD + Mojo RMSNorm · SwiGLU Parallel · GQA Decode · Token CosSim · Sparse Block Score · Retention State

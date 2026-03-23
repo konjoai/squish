@@ -2226,6 +2226,571 @@ fn randomized_svd_f32<'py>(
     ))
 }
 
+// ── Wave 58a: VectorKMeans ─────────────────────────────────────────────────
+
+/// K-means++ initialisation + Lloyd iterations for vector codebook fitting.
+///
+/// Returns centroids as a (n_clusters, dim) float32 array.
+#[pyfunction]
+fn vector_kmeans_fit_f32(
+    py: Python<'_>,
+    data: PyReadonlyArray2<f32>,
+    n_clusters: usize,
+    n_iter: usize,
+) -> PyResult<Py<PyArray2<f32>>> {
+    let data = data.as_array();
+    let (n, d) = (data.nrows(), data.ncols());
+    if n_clusters == 0 || n_clusters > n {
+        return Err(pyo3::exceptions::PyValueError::new_err("n_clusters out of range"));
+    }
+    // K-means++ seeding: pick first = row 0; remaining = farthest from current set
+    let mut centroids: Vec<f32> = Vec::with_capacity(n_clusters * d);
+    centroids.extend_from_slice(data.row(0).as_slice().unwrap_or(&[]));
+
+    for _ in 1..n_clusters {
+        let current_k = centroids.len() / d;
+        let dists: Vec<f32> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let row = data.row(i);
+                (0..current_k)
+                    .map(|c| {
+                        let c_start = c * d;
+                        row.iter()
+                            .zip(&centroids[c_start..c_start + d])
+                            .map(|(a, b)| (a - b) * (a - b))
+                            .sum::<f32>()
+                    })
+                    .fold(f32::INFINITY, f32::min)
+            })
+            .collect();
+        let best = dists
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        centroids.extend_from_slice(data.row(best).as_slice().unwrap_or(&[]));
+    }
+
+    let mut centroids_arr = Array2::<f32>::from_shape_vec((n_clusters, d), centroids)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+    // Lloyd iterations
+    for _ in 0..n_iter {
+        // E-step: parallel nearest-centroid assignment
+        let assignments: Vec<usize> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let row = data.row(i);
+                (0..n_clusters)
+                    .min_by(|&a, &b| {
+                        let da: f32 = row
+                            .iter()
+                            .zip(centroids_arr.row(a))
+                            .map(|(x, c)| (x - c) * (x - c))
+                            .sum();
+                        let db: f32 = row
+                            .iter()
+                            .zip(centroids_arr.row(b))
+                            .map(|(x, c)| (x - c) * (x - c))
+                            .sum();
+                        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or(0)
+            })
+            .collect();
+
+        // M-step: recompute centroids
+        let mut sums = vec![0.0f32; n_clusters * d];
+        let mut counts = vec![0usize; n_clusters];
+        for (i, &ci) in assignments.iter().enumerate() {
+            counts[ci] += 1;
+            for (j, &v) in data.row(i).iter().enumerate() {
+                sums[ci * d + j] += v;
+            }
+        }
+        for c in 0..n_clusters {
+            if counts[c] > 0 {
+                let inv = 1.0 / counts[c] as f32;
+                for j in 0..d {
+                    centroids_arr[[c, j]] = sums[c * d + j] * inv;
+                }
+            }
+        }
+    }
+
+    Ok(centroids_arr.into_pyarray_bound(py).unbind())
+}
+
+/// Assign each input vector to its nearest centroid (argmin distance).
+///
+/// Returns (N,) int32 index array.
+#[pyfunction]
+fn vector_kmeans_assign_f32(
+    py: Python<'_>,
+    data: PyReadonlyArray2<f32>,
+    centroids: PyReadonlyArray2<f32>,
+) -> PyResult<Py<PyArray1<i32>>> {
+    let data = data.as_array();
+    let centroids = centroids.as_array();
+    let n = data.nrows();
+    let k = centroids.nrows();
+
+    let assignments: Vec<i32> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let row = data.row(i);
+            (0..k)
+                .min_by(|&a, &b| {
+                    let da: f32 = row
+                        .iter()
+                        .zip(centroids.row(a))
+                        .map(|(x, c)| (x - c) * (x - c))
+                        .sum();
+                    let db: f32 = row
+                        .iter()
+                        .zip(centroids.row(b))
+                        .map(|(x, c)| (x - c) * (x - c))
+                        .sum();
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap_or(0) as i32
+        })
+        .collect();
+
+    Ok(Array1::from(assignments).into_pyarray_bound(py).unbind())
+}
+
+/// Reconstruct vectors from centroid indices.
+///
+/// Returns (N, D) float32 array where output[i] = centroids[indices[i]].
+#[pyfunction]
+fn vector_kmeans_reconstruct_f32(
+    py: Python<'_>,
+    indices: PyReadonlyArray1<i32>,
+    centroids: PyReadonlyArray2<f32>,
+) -> PyResult<Py<PyArray2<f32>>> {
+    let indices = indices.as_array();
+    let centroids = centroids.as_array();
+    let n = indices.len();
+    let (k, d) = (centroids.nrows(), centroids.ncols());
+
+    let mut out = Array2::<f32>::zeros((n, d));
+    for (i, &idx) in indices.iter().enumerate() {
+        let ci = (idx as usize).min(k.saturating_sub(1));
+        for j in 0..d {
+            out[[i, j]] = centroids[[ci, j]];
+        }
+    }
+    Ok(out.into_pyarray_bound(py).unbind())
+}
+
+// ── Wave 58a: FP6 BitPack ──────────────────────────────────────────────────
+
+/// Encode a flat float32 array into FP6 packed bytes (4 FP6 values → 3 bytes).
+///
+/// FP6 layout: 1 sign + exp_bits exponent + man_bits mantissa (must sum to 5).
+/// Input length must be a multiple of 4.
+#[pyfunction]
+fn fp6_encode_f32(
+    _py: Python<'_>,
+    data: PyReadonlyArray1<f32>,
+    exp_bits: u32,
+    man_bits: u32,
+) -> PyResult<Vec<u8>> {
+    let data = data.as_slice().map_err(|_| {
+        pyo3::exceptions::PyValueError::new_err("array must be contiguous")
+    })?;
+    if data.len() % 4 != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("length must be a multiple of 4"));
+    }
+    if 1 + exp_bits + man_bits != 6 {
+        return Err(pyo3::exceptions::PyValueError::new_err("exp_bits + man_bits must equal 5"));
+    }
+
+    let exp_bias = (1u32 << (exp_bits - 1)).saturating_sub(1);
+    let max_exp = (1u32 << exp_bits) - 1;
+    let man_mask = (1u32 << man_bits) - 1;
+
+    let encode_val = |v: f32| -> u8 {
+        if v == 0.0 || v.is_nan() { return 0; }
+        let sign: u8 = if v < 0.0 { 1 } else { 0 };
+        let bits = v.abs().to_bits();
+        let f32_exp = ((bits >> 23) & 0xFF) as i32;
+        let f32_man = bits & 0x007F_FFFF;
+        let rebias: i32 = (f32_exp - 127) + exp_bias as i32;
+        let (enc_exp, enc_man);
+        if rebias <= 0 {
+            enc_exp = 0u8; enc_man = 0u8;
+        } else if rebias >= max_exp as i32 {
+            enc_exp = max_exp as u8; enc_man = man_mask as u8;
+        } else {
+            enc_exp = rebias as u8;
+            enc_man = (f32_man >> (23 - man_bits)) as u8;
+        }
+        (sign << 5) | ((enc_exp & ((1 << exp_bits) - 1)) << man_bits) | (enc_man & man_mask as u8)
+    };
+
+    let n_packs = data.len() / 4;
+    let mut out = vec![0u8; n_packs * 3];
+    data.chunks_exact(4)
+        .zip(out.chunks_exact_mut(3))
+        .for_each(|(chunk, dst)| {
+            let a = encode_val(chunk[0]) as u32;
+            let b = encode_val(chunk[1]) as u32;
+            let c = encode_val(chunk[2]) as u32;
+            let e = encode_val(chunk[3]) as u32;
+            let packed: u32 = (a << 18) | (b << 12) | (c << 6) | e;
+            dst[0] = (packed >> 16) as u8;
+            dst[1] = (packed >> 8) as u8;
+            dst[2] = packed as u8;
+        });
+    Ok(out)
+}
+
+/// Decode FP6 packed bytes back to float32 (3 bytes → 4 FP6 values).
+///
+/// Input must be a multiple of 3 bytes.
+#[pyfunction]
+fn fp6_decode_f32(
+    py: Python<'_>,
+    packed: Vec<u8>,
+    exp_bits: u32,
+    man_bits: u32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    if packed.len() % 3 != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("packed length must be a multiple of 3"));
+    }
+    if 1 + exp_bits + man_bits != 6 {
+        return Err(pyo3::exceptions::PyValueError::new_err("exp_bits + man_bits must equal 5"));
+    }
+
+    let exp_bias = (1u32 << (exp_bits - 1)).saturating_sub(1);
+    let man_mask = (1u32 << man_bits) - 1;
+    let exp_mask = (1u32 << exp_bits) - 1;
+
+    let decode_val = |bits6: u32| -> f32 {
+        let sign = (bits6 >> 5) & 1;
+        let enc_exp = (bits6 >> man_bits) & exp_mask;
+        let enc_man = bits6 & man_mask;
+        if enc_exp == 0 && enc_man == 0 { return 0.0; }
+        let f32_exp = ((enc_exp as i32 - exp_bias as i32) + 127).clamp(0, 254) as u32;
+        let f32_man = enc_man << (23 - man_bits);
+        f32::from_bits((sign << 31) | (f32_exp << 23) | f32_man)
+    };
+
+    let n_vals = packed.len() / 3 * 4;
+    let mut out = vec![0.0f32; n_vals];
+    packed.chunks_exact(3)
+        .zip(out.chunks_exact_mut(4))
+        .for_each(|(src, dst)| {
+            let p = ((src[0] as u32) << 16) | ((src[1] as u32) << 8) | (src[2] as u32);
+            dst[0] = decode_val((p >> 18) & 0x3F);
+            dst[1] = decode_val((p >> 12) & 0x3F);
+            dst[2] = decode_val((p >> 6) & 0x3F);
+            dst[3] = decode_val(p & 0x3F);
+        });
+
+    Ok(Array1::from(out).into_pyarray_bound(py).unbind())
+}
+
+// ── Wave 58a: AWQ Channel ──────────────────────────────────────────────────
+
+/// Accumulate per-channel absolute mean from a calibration batch.
+///
+/// Returns `(updated_abs_mean, new_count)` where abs_mean is `(in_features,)` float32.
+#[pyfunction]
+fn awq_channel_abs_mean_f32(
+    py: Python<'_>,
+    batch: PyReadonlyArray2<f32>,
+    accumulator: PyReadonlyArray1<f32>,
+    count: usize,
+) -> PyResult<(Py<PyArray1<f32>>, usize)> {
+    let batch = batch.as_array();
+    let acc = accumulator.as_array();
+    let (batch_size, in_features) = (batch.nrows(), batch.ncols());
+    if acc.len() != in_features {
+        return Err(pyo3::exceptions::PyValueError::new_err("accumulator length mismatch"));
+    }
+    // Parallel column-wise abs-sum accumulate
+    let new_sum: Vec<f32> = (0..in_features)
+        .into_par_iter()
+        .map(|j| acc[j] + batch.column(j).iter().map(|v| v.abs()).sum::<f32>())
+        .collect();
+    let new_count = count + batch_size;
+    let inv = 1.0 / new_count as f32;
+    let mean_arr: Array1<f32> = new_sum.iter().map(|&s| s * inv).collect::<Vec<_>>().into();
+    Ok((mean_arr.into_pyarray_bound(py).unbind(), new_count))
+}
+
+/// Compute AWQ channel scales: `clip(abs_mean, 1e-4, ∞) ** alpha`.
+///
+/// Returns `(in_features,)` float32 scale vector.
+#[pyfunction]
+fn awq_compute_scales_f32(
+    py: Python<'_>,
+    abs_mean: PyReadonlyArray1<f32>,
+    alpha: f32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let abs_mean = abs_mean.as_array();
+    let scales: Array1<f32> = abs_mean
+        .iter()
+        .map(|&v| v.max(1.0e-4_f32).powf(alpha))
+        .collect::<Vec<_>>()
+        .into();
+    Ok(scales.into_pyarray_bound(py).unbind())
+}
+
+// ── Wave 58a: Model Merge ──────────────────────────────────────────────────
+
+/// Spherical linear interpolation (SLERP) between two flat weight vectors.
+#[pyfunction]
+fn slerp_f32(
+    py: Python<'_>,
+    a: PyReadonlyArray1<f32>,
+    b: PyReadonlyArray1<f32>,
+    t: f32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let a = a.as_array();
+    let b = b.as_array();
+    if a.len() != b.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err("a and b must match in length"));
+    }
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt().max(1.0e-10);
+    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt().max(1.0e-10);
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| (x / norm_a) * (y / norm_b)).sum::<f32>();
+    let dot = dot.clamp(-1.0, 1.0);
+    let theta = dot.acos();
+    let out: Vec<f32> = if theta.abs() < 1.0e-6 {
+        a.iter().zip(b.iter()).map(|(ai, bi)| ai * (1.0 - t) + bi * t).collect()
+    } else {
+        let sin_theta = theta.sin();
+        let scale_a = ((1.0 - t) * theta).sin() / sin_theta;
+        let scale_b = (t * theta).sin() / sin_theta;
+        a.iter().zip(b.iter()).map(|(ai, bi)| ai * scale_a + bi * scale_b).collect()
+    };
+    Ok(Array1::from(out).into_pyarray_bound(py).unbind())
+}
+
+/// DARE: mask weight deltas with Bernoulli(density) and rescale.
+///
+/// `output[i] = base[i] + delta[i] * mask[i] / density` where mask ~ Bernoulli(density).
+#[pyfunction]
+fn dare_merge_f32(
+    py: Python<'_>,
+    base: PyReadonlyArray1<f32>,
+    delta: PyReadonlyArray1<f32>,
+    density: f32,
+    seed: u64,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let base = base.as_array();
+    let delta = delta.as_array();
+    if base.len() != delta.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err("base and delta must match"));
+    }
+    if !(density > 0.0 && density <= 1.0) {
+        return Err(pyo3::exceptions::PyValueError::new_err("density must be in (0, 1]"));
+    }
+    let scale = 1.0 / density;
+    // Fast deterministic per-element Bernoulli via Murmur-style hash
+    let out: Vec<f32> = base
+        .iter()
+        .zip(delta.iter())
+        .enumerate()
+        .map(|(i, (&b_val, &d_val))| {
+            let mut x = seed.wrapping_add((i as u64).wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407));
+            x ^= x >> 33;
+            x = x.wrapping_mul(0xFF51AFD7ED558CCDu64);
+            x ^= x >> 33;
+            x = x.wrapping_mul(0xC4CEB9FE1A85EC53u64);
+            x ^= x >> 33;
+            let u = (x >> 11) as f32 / (1u64 << 53) as f32;
+            if u < density { b_val + d_val * scale } else { b_val }
+        })
+        .collect();
+    Ok(Array1::from(out).into_pyarray_bound(py).unbind())
+}
+
+/// TIES merge: top-trim, majority-sign election, masked mean over multiple deltas.
+///
+/// `deltas` shape `(n_models, n_params)`.  Returns merged flat weight vector.
+#[pyfunction]
+fn ties_merge_f32(
+    py: Python<'_>,
+    base: PyReadonlyArray1<f32>,
+    deltas: PyReadonlyArray2<f32>,
+    trim_fraction: f32,
+    t: f32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let base = base.as_array();
+    let deltas = deltas.as_array();
+    let (n_models, n_params) = deltas.dim();
+    if base.len() != n_params {
+        return Err(pyo3::exceptions::PyValueError::new_err("base/deltas shape mismatch"));
+    }
+    // Per-model magnitude threshold (trim_fraction fraction cutoff)
+    let thresholds: Vec<f32> = (0..n_models).map(|m| {
+        let mut abs_vals: Vec<f32> = deltas.row(m).iter().map(|x| x.abs()).collect();
+        abs_vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let k = ((n_params as f32 * trim_fraction).ceil() as usize).min(n_params.saturating_sub(1));
+        abs_vals[k]
+    }).collect();
+    // Sign sum across trimmed deltas
+    let mut sign_sum = vec![0.0f32; n_params];
+    for m in 0..n_models {
+        let thresh = thresholds[m];
+        for (j, &v) in deltas.row(m).iter().enumerate() {
+            if v.abs() >= thresh { sign_sum[j] += v.signum(); }
+        }
+    }
+    // Masked mean: include delta only if sign matches majority
+    let mut masked_sum = vec![0.0f32; n_params];
+    let mut masked_cnt = vec![0usize; n_params];
+    for m in 0..n_models {
+        let thresh = thresholds[m];
+        for (j, &v) in deltas.row(m).iter().enumerate() {
+            if v.abs() >= thresh && v.signum() == sign_sum[j].signum() {
+                masked_sum[j] += v;
+                masked_cnt[j] += 1;
+            }
+        }
+    }
+    let out: Vec<f32> = base
+        .iter()
+        .zip(masked_sum.iter())
+        .zip(masked_cnt.iter())
+        .map(|((&b_val, &s), &c)| if c > 0 { b_val + t * s / c as f32 } else { b_val })
+        .collect();
+    Ok(Array1::from(out).into_pyarray_bound(py).unbind())
+}
+
+// ── Wave 58a: MoE Bincount ─────────────────────────────────────────────────
+
+/// Expert frequency bincount + normalize for MoE load balancing.
+///
+/// Returns `(n_experts,)` float32 frequency fraction array.
+#[pyfunction]
+fn moe_bincount_f32(
+    py: Python<'_>,
+    assignments: PyReadonlyArray1<i32>,
+    n_experts: usize,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let assignments = assignments.as_slice().map_err(|_| {
+        pyo3::exceptions::PyValueError::new_err("assignments must be contiguous")
+    })?;
+    if assignments.is_empty() || n_experts == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("empty assignments or n_experts"));
+    }
+    let batch_size = assignments.len();
+    let n_threads = rayon::current_num_threads().max(1);
+    let chunk_size = (batch_size + n_threads - 1) / n_threads;
+    // Parallel chunk-local histograms, then reduce
+    let local_counts: Vec<Vec<u32>> = assignments
+        .par_chunks(chunk_size)
+        .map(|chunk| {
+            let mut hist = vec![0u32; n_experts];
+            for &e in chunk {
+                let idx = (e as usize).min(n_experts - 1);
+                hist[idx] += 1;
+            }
+            hist
+        })
+        .collect();
+    let mut counts = vec![0u32; n_experts];
+    for lc in &local_counts {
+        for (i, &c) in lc.iter().enumerate() { counts[i] += c; }
+    }
+    let inv = 1.0 / batch_size as f32;
+    let freqs: Array1<f32> = counts.iter().map(|&c| c as f32 * inv).collect::<Vec<_>>().into();
+    Ok(freqs.into_pyarray_bound(py).unbind())
+}
+
+/// Top-K expert selection from router logits.
+///
+/// Returns `(batch_size, k)` int32 array of top-k expert indices (sorted by score desc).
+#[pyfunction]
+fn moe_top_k_f32(
+    py: Python<'_>,
+    logits: PyReadonlyArray2<f32>,
+    k: usize,
+) -> PyResult<Py<PyArray2<i32>>> {
+    let logits = logits.as_array();
+    let (batch_size, n_experts) = (logits.nrows(), logits.ncols());
+    let k = k.min(n_experts);
+    // Collect per-row top-k in order (parallel map → Vec<Vec<i32>> → flatten)
+    let rows: Vec<Vec<i32>> = (0..batch_size)
+        .into_par_iter()
+        .map(|i| {
+            let row = logits.row(i);
+            let mut idx: Vec<usize> = (0..n_experts).collect();
+            if k < n_experts {
+                idx.select_nth_unstable_by(k.saturating_sub(1), |&a, &b| {
+                    row[b].partial_cmp(&row[a]).unwrap_or(std::cmp::Ordering::Equal)
+                });
+            }
+            let mut top = idx[..k].to_vec();
+            top.sort_by(|&a, &b| {
+                row[b].partial_cmp(&row[a]).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            top.into_iter().map(|x| x as i32).collect()
+        })
+        .collect();
+    let flat: Vec<i32> = rows.into_iter().flatten().collect();
+    let arr = Array2::from_shape_vec((batch_size, k), flat)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+// ── Wave 58a: Online SGD ───────────────────────────────────────────────────
+
+/// Fused logistic regression step: computes `y_hat = sigmoid(w·x)` and `error = y - y_hat`.
+///
+/// Returns `(y_hat, error)` as a Python tuple of f32 scalars.
+#[pyfunction]
+fn logistic_step_f32(
+    _py: Python<'_>,
+    weights: PyReadonlyArray1<f32>,
+    features: PyReadonlyArray1<f32>,
+    label: f32,
+) -> PyResult<(f32, f32)> {
+    let w = weights.as_array();
+    let x = features.as_array();
+    if w.len() != x.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err("weights/features length mismatch"));
+    }
+    let dot: f32 = w.iter().zip(x.iter()).map(|(wi, xi)| wi * xi).sum();
+    let y_hat = 1.0 / (1.0 + (-dot).exp());
+    let error = label - y_hat;
+    Ok((y_hat, error))
+}
+
+/// SGD weight update: `w += lr * error * x` (gradient ascent toward label).
+///
+/// Returns updated weights as `(n_features,)` float32 array.
+#[pyfunction]
+fn sgd_weight_update_f32(
+    py: Python<'_>,
+    weights: PyReadonlyArray1<f32>,
+    features: PyReadonlyArray1<f32>,
+    lr: f32,
+    error: f32,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let w = weights.as_array();
+    let x = features.as_array();
+    if w.len() != x.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err("weights/features length mismatch"));
+    }
+    let scale = lr * error;
+    let updated: Array1<f32> = w
+        .iter()
+        .zip(x.iter())
+        .map(|(&wi, &xi)| wi + scale * xi)
+        .collect::<Vec<_>>()
+        .into();
+    Ok(updated.into_pyarray_bound(py).unbind())
+}
+
 // ── PyO3 module registration ─────────────────────────────────────────────────
 
 #[pymodule]
@@ -2274,5 +2839,20 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(silu_f32,                            m)?)?;
     m.add_function(wrap_pyfunction!(swiglu_f32,                          m)?)?;
     m.add_function(wrap_pyfunction!(randomized_svd_f32,                  m)?)?;
+    // Wave 58a — VectorKMeans · FP6BitPack · AWQChannel · ModelMerge · MoEBincount · OnlineSGD
+    m.add_function(wrap_pyfunction!(vector_kmeans_fit_f32,               m)?)?;
+    m.add_function(wrap_pyfunction!(vector_kmeans_assign_f32,            m)?)?;
+    m.add_function(wrap_pyfunction!(vector_kmeans_reconstruct_f32,       m)?)?;
+    m.add_function(wrap_pyfunction!(fp6_encode_f32,                      m)?)?;
+    m.add_function(wrap_pyfunction!(fp6_decode_f32,                      m)?)?;
+    m.add_function(wrap_pyfunction!(awq_channel_abs_mean_f32,            m)?)?;
+    m.add_function(wrap_pyfunction!(awq_compute_scales_f32,              m)?)?;
+    m.add_function(wrap_pyfunction!(slerp_f32,                           m)?)?;
+    m.add_function(wrap_pyfunction!(dare_merge_f32,                      m)?)?;
+    m.add_function(wrap_pyfunction!(ties_merge_f32,                      m)?)?;
+    m.add_function(wrap_pyfunction!(moe_bincount_f32,                    m)?)?;
+    m.add_function(wrap_pyfunction!(moe_top_k_f32,                       m)?)?;
+    m.add_function(wrap_pyfunction!(logistic_step_f32,                   m)?)?;
+    m.add_function(wrap_pyfunction!(sgd_weight_update_f32,               m)?)?;
     Ok(())
 }

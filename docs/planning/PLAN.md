@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-03-22 (Wave 57 complete — v31 Deep Native Acceleration — Rust Entropy Codec / PQ ADC / GRU Cell / Cosine Sim / SwiGLU / Randomized SVD + Mojo RMSNorm / SwiGLU Parallel / GQA Decode / Token CosSim / Sparse Block Score / Retention State — 144 new tests — v32 Wave 58 planned: Rust Vector K-Means / FP6 BitPack / AWQ Channel / Model Merge / MoE Bincount / Online SGD · Mojo Dual-Chunk Attn / Infini-Attn Memory / Sliding-Window Attn / HQQ ALS / VPTQ Decode / Top-K/P Sampling)
+> Last updated: 2026-03-22 (Wave 58 complete — v32 Third Acceleration Tier — Rust Vector K-Means / FP6 BitPack / AWQ Channel / Model Merge / MoE Bincount / Online SGD + Mojo Dual-Chunk Attn / Infini-Attn Memory / Sliding-Window Attn / HQQ ALS / VPTQ Decode / Top-K/P Sampling — 150 new tests — 452 total passing)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -765,7 +765,7 @@ The product is demo-ready. These are the only blockers before a public post:
 
 ---
 
-## 🚧 v32 Wave 58 — Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling (Planned)
+## ✅ v32 Wave 58 — Third Acceleration Tier: Rust Vector K-Means · FP6 BitPack · AWQ Channel · Model Merge · MoE Bincount · Online SGD + Mojo Dual-Chunk Attn · Infini-Attn Memory · Sliding-Window Attn · HQQ ALS · VPTQ Decode · Top-K/P Sampling (Complete)
 
 Theme: **Wave 58 eliminates the third tier of Python/NumPy bottlenecks that are structurally distinct from
 Waves 56 and 57: multi-codebook vector quantization fitting (VPTQ, AQLM, CodecKV), sub-byte float encoding
@@ -894,23 +894,23 @@ when the `magic` toolchain is unavailable; Rust functions fall back to the NumPy
 
 ### Completion Checklist
 
-- [ ] `squish_quant_rs/src/lib.rs` — vector_kmeans (fit/assign/reconstruct), fp6_encode/decode, awq_channel_abs_mean/scale, slerp/dare/ties merge, moe_bincount, logistic_step/sgd_weight_update added + registered
-- [ ] `squish/kernels/rs_vector_kmeans.py` — RustVectorKMeans (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_fp6_bitpack.py` — RustFP6BitPack (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_awq_channel.py` — RustAWQChannel (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_model_merge.py` — RustModelMerge (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_moe_bincount.py` — RustMoEBincount (wrapper + NumPy fallback)
-- [ ] `squish/kernels/rs_online_sgd.py` — RustOnlineSGD (wrapper + NumPy fallback)
-- [ ] `squish/kernels/mojo/dual_chunk_attn_mojo.py` + `squish/kernels/mojo/kernels/dual_chunk_attn.mojo`
-- [ ] `squish/kernels/mojo/infini_attn_mojo.py` + `squish/kernels/mojo/kernels/infini_attn.mojo`
-- [ ] `squish/kernels/mojo/sliding_window_attn_mojo.py` + `squish/kernels/mojo/kernels/sliding_window_attn.mojo`
-- [ ] `squish/kernels/mojo/hqq_als_mojo.py` + `squish/kernels/mojo/kernels/hqq_als.mojo`
-- [ ] `squish/kernels/mojo/vptq_decode_mojo.py` + `squish/kernels/mojo/kernels/vptq_decode.mojo`
-- [ ] `squish/kernels/mojo/topkp_mojo.py` + `squish/kernels/mojo/kernels/topkp.mojo`
-- [ ] `tests/test_wave58a_rust_kernels.py` — ≥ 72 tests, all passing
-- [ ] `tests/test_wave58b_mojo_kernels.py` — ≥ 72 tests with NumPy fallback coverage, all passing
-- [ ] CHANGELOG `[32.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `squish_quant_rs/src/lib.rs` — vector_kmeans (fit/assign/reconstruct), fp6_encode/decode, awq_channel_abs_mean/scale, slerp/dare/ties merge, moe_bincount, logistic_step/sgd_weight_update added + registered
+- [x] `squish/kernels/rs_vector_kmeans.py` — RustVectorKMeans (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_fp6_bitpack.py` — RustFP6BitPack (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_awq_channel.py` — RustAWQChannel (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_model_merge.py` — RustModelMerge (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_moe_bincount.py` — RustMoEBincount (wrapper + NumPy fallback)
+- [x] `squish/kernels/rs_online_sgd.py` — RustOnlineSGD (wrapper + NumPy fallback)
+- [x] `squish/kernels/mojo/dual_chunk_attn_mojo.py` + `squish/kernels/mojo/kernels/dual_chunk_attn.mojo`
+- [x] `squish/kernels/mojo/infini_attn_mojo.py` + `squish/kernels/mojo/kernels/infini_attn.mojo`
+- [x] `squish/kernels/mojo/sliding_window_attn_mojo.py` + `squish/kernels/mojo/kernels/sliding_window_attn.mojo`
+- [x] `squish/kernels/mojo/hqq_als_mojo.py` + `squish/kernels/mojo/kernels/hqq_als.mojo`
+- [x] `squish/kernels/mojo/vptq_decode_mojo.py` + `squish/kernels/mojo/kernels/vptq_decode.mojo`
+- [x] `squish/kernels/mojo/topkp_mojo.py` + `squish/kernels/mojo/kernels/topkp.mojo`
+- [x] `tests/test_wave58a_rust_kernels.py` — 79 tests, all passing
+- [x] `tests/test_wave58b_mojo_kernels.py` — 71 tests with NumPy fallback coverage, all passing
+- [x] CHANGELOG `[32.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
