@@ -43,6 +43,19 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+# ── Suppress macOS malloc-stack-logging noise in child processes ──────────────
+# When MallocStackLogging is set in the environment (e.g. from Instruments or
+# Xcode), macOS prints "can't turn off malloc stack logging because it was not
+# enabled" to stderr for every forked Python process that did not actually
+# enable it.  Strip all Malloc* debug keys before any subprocesses are spawned.
+for _k in (
+    "MallocStackLogging", "MallocStackLoggingNoCompact",
+    "MallocScribble", "MallocPreScribble", "MallocGuardEdges",
+    "MallocCheckHeapStart", "MallocCheckHeapEach",
+):
+    os.environ.pop(_k, None)
+del _k
+
 # ── Telemetry (structured span tracing + logging config) ─────────────────────
 try:
     from squish.telemetry import configure_tracing as _configure_tracing
