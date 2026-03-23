@@ -46,6 +46,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v34** | 60 | SSM Recurrence Sprint · Rust Mamba2 SSM Scan/Decode / AdaRound / Paged KV Gather / Hawk RGLR / CAKE Entropy / Ternary GEMV · Mojo mirrors |
 | **v35** | 61 | Structured Pruning · LUT Inference · DeltaNet Recurrence · GreenKV Scoring · Jacobi Decode · Tree Verify |
 | **v36** | 62 | SVDq Head Calibration · ShadowKV SVD Fit · ClusterKV Score · Any4 Lloyd · Ouroboros N-gram · PyramidKV Budget |
+| **v37** | 63 | AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack |
 
 ---
 
@@ -577,6 +578,149 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [x] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [x] CHANGELOG `[19.0.0]` entry
 - [x] PLAN.md updated
+
+---
+
+## 🚧 v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Planned)
+
+Theme: **Wave 63 targets six unaccelerated Python-loop hotspots in the quantisation calibration and
+KV-cache management tiers that are exposed once Waves 61–62 clear the structural-pruning, recurrence,
+and SVD layers. The six targets span multi-codebook additive beam-search encoding with k-means++ residual
+initialisation (AQLM), KL-distillation guided per-group scale refinement over n_steps outer iterations
+(BitDistiller), GGUF-style super-block block-quantisation with Q4_K/Q6_K style per-block min/max
+(GGUFMixed), product-quantisation sub-codebook fitting via masked centroid scatter-reduce (PQ Cache),
+LSH-bucketed candidate GEMV attention scoring over (head, query) pairs (MagicPIG KV), and INT3
+three-bit pack/unpack plus group-wise symmetric quant with per-group scale/zero (MILO). All six have
+tight data-parallel inner loops with shapes that map cleanly to Rayon `into_par_iter` and Mojo
+`parallelize`, and all six sit on the hot path for either calibration throughput or decode latency.**
+
+**Wave 63a Rust gaps — 7 new functions:**
+
+(1) `squish/quant/aqlm.py` `AQLMQuantizer.calibrate` has a triple-nested loop
+`for m in range(cfg.n_codebooks): for i in range(out_features): for j in range(n_groups):`
+calling `cb.nearest(residuals[i, j])` (codebook_size × group_size distance evaluation) then
+subtracting the codeword from the residual so the next codebook encodes the remaining error; for
+n_codebooks=4, out_features=4096, n_groups=128, codebook_size=256, group_size=8 this is
+4 × 4096 × 128 = 2.1M nearest() calls each doing 256×8=2048 float ops = 4.3B FLOP total per layer;
+Rust `aqlm_encode_f32(residuals: (out, n_groups, gs) f32, codebook: (CB, gs) f32)` →
+`(out, n_groups) u16 indices` + updated residual; `into_par_iter()` over out_features rows, sequential
+codebook peeling per row; ~8× vs Python triple loop for a 4096×1024 weight on M3 (~45 s → <6 s).
+
+(2) `squish/quant/aqlm.py` `VectorCodebook.initialize_kmeans` has k-means++ init
+`for _ in range(k - 1):` (distance-to-nearest-chosen for each candidate) then Lloyd
+`for _ in range(20): ... for idx in range(k):` masked-mean per centroid; called once per codebook
+per layer so k=256, N=out_features×n_groups=524288, group_size=8 → 20 × 256 masked-mean passes over
+524K-element label array = 2.68B effective ops during initialisation; Rust `aqlm_kmeans_f32`
+(init: distance argmin `into_par_iter()` over N; Lloyd: parallel scatter-reduce per centroid); ~6×
+for k=256, N=524288 (~12 s → <2 s per codebook init).
+
+(3) `squish/quant/bit_distiller.py` `BitDistiller._initial_quant` + `_dequant` each have
+`for r in range(rows): for gc in range(n_col_groups):` — row-group min/max → scale/zero → INT quant
+and the inverse; for rows=4096, n_col_groups=128 (group_size=32): 512K group-quant operations; Rust
+`bit_distiller_quant_f32(W: (rows, cols) f32, bits: u8, group_size: usize)` →
+`(rows, cols) i8 + (rows×n_groups,) f32 scales + zeros`; `into_par_iter()` over rows; per row:
+`chunks(group_size)` vectorised min/max + round clamp; ~5× for rows=4096 (~1.8 s → <0.4 s).
+
+(4) `squish/quant/bit_distiller.py` `BitDistiller.quantize` refinement loop has
+`for _step in range(cfg.n_steps): ... for r in range(rows): for gc in range(n_col_groups):`
+re-fitting per-group scales from teacher soft distributions at every step; for n_steps=50,
+rows=4096, n_col_groups=128 this is 50 × 512K = 25.6M group-scale updates plus 50 full row-softmax
+passes; Rust `bit_distiller_refine_f32(W: (rows, cols) f32, teacher: (rows, cols) f32, bits: u8,
+n_steps: u32, temperature: f32)` → refined scale/zero arrays; outer step loop sequential,
+inner `into_par_iter()` over rows; ~5× for n_steps=50, rows=4096 (~8 s → <1.6 s per refinement pass).
+
+(5) `squish/quant/gguf_mixed.py` `GGUFMixed.quantize` + `dequantize` each have
+`for r in range(rows): for bc in range(n_col_blocks):` — block-wise INT quant with per-block
+min/scale and super-block meta-scale averaging; for rows=4096, n_col_blocks=128, group_size=32:
+512K blocks per quantize + 512K per dequantize = 1M block ops per layer; Rust
+`gguf_mixed_quant_f32(W: (rows, cols) f32, bits: u8, group_size: usize)` →
+`(rows, cols) i8 + scales (n_blocks,) + mins (n_blocks,) + super_scales (n_super,)`;
+`gguf_mixed_dequant_f32` reversal; `into_par_iter()` over rows; ~5× for rows=4096 (~2.1 s → <0.4 s).
+
+(6) `squish/kv/pq_cache.py` `SubspaceQuantizer.fit` has `for _ in range(n_iters): for k in range(K):`
+computing masked centroid mean; for n_iters=50, K=256, N=32768 sub-vectors: 50 × 256 masked-mean
+passes each scanning up to N=32768 assignments = 419M ops; Rust
+`pq_cache_fit_f32(sub_vecs: (N, sub_dim) f32, K: usize, n_iters: u32, seed: u64)` →
+`(K, sub_dim) f32` centroids; outer Lloyd loop sequential, inner `into_par_iter()` over K centroids
+with parallel scatter-bucket reduce; ~5× for K=256, N=32768, sub_dim=16 (~5 s → <1 s).
+
+(7) `squish/kv/magic_pig_kv.py` `MagicPIGKV.score` has `for h in range(H): for t in range(Tq):`
+calling `_retrieve_candidates(Q[h,t], h)` then `Q[h,t] @ k_c.T + softmax`, where each
+`_retrieve_candidates` does `for t in range(n_tables):` hash-bucket lookup; for H=32, Tq=8,
+n_tables=3, candidates=64, d=128: 32×8=256 outer iterations each doing 3 table lookups +
+64×128=8192 dot-product FLOPs = 2.1M dot-product ops + 768 hash probes total; Rust
+`magic_pig_score_f32(Q: (H,Tq,d), K: (H,S,d), V: (H,S,d), projections: &[[f32; n_bits*d]],
+key_hashes: (H,n_tables,S) i32)` → `(H,Tq,d) f32`; `into_par_iter()` over H heads, sequential
+query-token loop per head preserving order; per-head: vectorised hash bucket probe + argmin-select
++ short GEMV + softmax; ~6× vs Python object-model overhead for H=32, Tq=8 (~18 ms → <3 ms/step).
+
+**Wave 63b Mojo modules — 6 new wrappers + stubs:**
+
+`aqlm_encode.mojo` — sequential codebook peeling; `parallelize[encode_row](out_features)`;
+`vectorize[dist_elem, SIMD_W](codebook_size)` argmin + residual subtract per group.
+`bit_distiller.mojo` — `parallelize[quant_row](rows)`; `vectorize[block_elem, SIMD_W](group_size)`
+min/max/scale + round clamp; sequential refinement outer loop + parallel row scale-update.
+`gguf_mixed_quant.mojo` — `parallelize[quant_row](rows)`;
+`vectorize[block_elem, SIMD_W](group_size)` INT quant + `vectorize[deq_elem, SIMD_W](group_size)` dequant.
+`pq_cache_fit.mojo` — sequential Lloyd loop; `parallelize[centroid](K)`;
+`vectorize[mean_elem, SIMD_W](sub_dim)` masked-mean scatter-reduce.
+`magic_pig_score.mojo` — `parallelize[score_head](H)`;
+sequential query loop; `vectorize[dot_elem, SIMD_W](d)` candidate GEMV + softmax.
+`milo_int3_pack.mojo` — `parallelize[pack_group](n_groups)`;
+`vectorize[pack_bits, SIMD_W](8)` INT3 bit-shift pack + group-wise scale/zero quant.
+
+**Expected results:** ≥150 new tests (75+ Wave 63a + 75+ Wave 63b); lib.rs: ~4,500 lines, ~92 registered functions.
+
+### Wave 63 Targets
+
+#### Wave 63a — Rust kernel Python wrappers
+
+| Wrapper | Source module | Key loop | Rust function |
+|---|---|---|---|
+| `rs_aqlm_encode.py` — `RustAQLMEncode` | `squish/quant/aqlm.py` | `for m: for i: for j:` nearest codebook lookup + residual subtract | `aqlm_encode_f32`, `aqlm_kmeans_f32` |
+| `rs_bit_distiller.py` — `RustBitDistiller` | `squish/quant/bit_distiller.py` | `for r: for gc:` group quant/dequant + `for _step: for r: for gc:` scale refine | `bit_distiller_quant_f32`, `bit_distiller_refine_f32` |
+| `rs_gguf_mixed.py` — `RustGGUFMixed` | `squish/quant/gguf_mixed.py` | `for r: for bc:` block quant + dequant with super-block meta-scale | `gguf_mixed_quant_f32` |
+| `rs_pq_cache_fit.py` — `RustPQCacheFit` | `squish/kv/pq_cache.py` | `for n_iters: for k:` PQ sub-codebook masked centroid mean | `pq_cache_fit_f32` |
+| `rs_magic_pig.py` — `RustMagicPIG` | `squish/kv/magic_pig_kv.py` | `for h: for t:` LSH bucket probe + candidate GEMV + softmax | `magic_pig_score_f32` |
+| `rs_milo_int3.py` — `RustMiloINT3` | `squish/quant/milo_quant.py` | `for g:` INT3 pack/unpack + `for g:` group-wise sym quant | `milo_pack_int3_u8`, `milo_quant_f32` |
+
+#### Wave 63b — Mojo kernel Python wrappers + stubs
+
+| Mojo wrapper | .mojo stub | Kernel |
+|---|---|---|
+| `squish/kernels/mojo/aqlm_encode_mojo.py` | `squish/kernels/mojo/kernels/aqlm_encode.mojo` | `parallelize[encode_row](out_features)` + `vectorize` argmin + residual subtract |
+| `squish/kernels/mojo/bit_distiller_mojo.py` | `squish/kernels/mojo/kernels/bit_distiller.mojo` | `parallelize[quant_row](rows)` + `vectorize` min/max/scale + sequential refine loop |
+| `squish/kernels/mojo/gguf_mixed_mojo.py` | `squish/kernels/mojo/kernels/gguf_mixed_quant.mojo` | `parallelize[quant_row](rows)` + `vectorize[block_elem, SIMD_W](group_size)` |
+| `squish/kernels/mojo/pq_cache_fit_mojo.py` | `squish/kernels/mojo/kernels/pq_cache_fit.mojo` | sequential Lloyd + `parallelize[centroid](K)` + `vectorize` masked-mean |
+| `squish/kernels/mojo/magic_pig_mojo.py` | `squish/kernels/mojo/kernels/magic_pig_score.mojo` | `parallelize[score_head](H)` + sequential query loop + `vectorize` candidate GEMV |
+| `squish/kernels/mojo/milo_int3_mojo.py` | `squish/kernels/mojo/kernels/milo_int3_pack.mojo` | `parallelize[pack_group](n_groups)` + `vectorize[pack_bits, SIMD_W](8)` INT3 bitpack |
+
+### Wave 63 Checklist
+
+- [ ] Wave 63 spec reviewed
+- [ ] lib.rs updated (7 Wave 63a functions registered)
+- [ ] `rs_aqlm_encode.py` — RustAQLMEncode (encode + kmeans)
+- [ ] `rs_bit_distiller.py` — RustBitDistiller (quant + refine)
+- [ ] `rs_gguf_mixed.py` — RustGGUFMixed (quant)
+- [ ] `rs_pq_cache_fit.py` — RustPQCacheFit (fit)
+- [ ] `rs_magic_pig.py` — RustMagicPIG (score)
+- [ ] `rs_milo_int3.py` — RustMiloINT3 (pack + quant)
+- [ ] `aqlm_encode_mojo.py` — MojoAQLMEncode
+- [ ] `bit_distiller_mojo.py` — MojoBitDistiller
+- [ ] `gguf_mixed_mojo.py` — MojoGGUFMixed
+- [ ] `pq_cache_fit_mojo.py` — MojoPQCacheFit
+- [ ] `magic_pig_mojo.py` — MojoMagicPIG
+- [ ] `milo_int3_mojo.py` — MojoMiloINT3
+- [ ] `aqlm_encode.mojo` stub
+- [ ] `bit_distiller.mojo` stub
+- [ ] `gguf_mixed_quant.mojo` stub
+- [ ] `pq_cache_fit.mojo` stub
+- [ ] `magic_pig_score.mojo` stub
+- [ ] `milo_int3_pack.mojo` stub
+- [ ] `tests/test_wave63a_rust_kernels.py` (≥75 tests)
+- [ ] `tests/test_wave63b_mojo_kernels.py` (≥75 tests)
+- [ ] CHANGELOG `[37.0.0]` entry
+- [ ] PLAN.md updated
 
 ---
 
