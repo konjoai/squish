@@ -208,6 +208,8 @@
     cursor: pointer; transition: all .15s; }
   .copy-btn:hover { background: var(--surface2); color: var(--text); }
   .pre-copy  { position: absolute; top: 8px; right: 8px; }
+  .code-lang { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+    position: absolute; top: 9px; left: 10px; pointer-events: none; }
   /* Typewriter streaming cursor */
   .msg-content.streaming-text { white-space: pre-wrap; }
   .stream-cursor { display: inline-block; width: 2px; height: 1.1em;
@@ -548,12 +550,28 @@
 marked.use({
   breaks: true, gfm: true,
   renderer: {
-    code({ text, lang }) {
+    code(token) {
+      // Support both marked v7+ token-object API and older positional-arg builds.
+      const text = (typeof token === 'object' && token !== null)
+        ? String(token.text ?? '') : String(token ?? '');
+      const lang = (typeof token === 'object' && token !== null)
+        ? String(token.lang  ?? '') : String(arguments[1] ?? '');
       const id = `c${Math.random().toString(36).slice(2, 9)}`;
-      const escaped = (text || "")
-        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      return `<pre><button class="copy-btn pre-copy" onclick="copyCode('${id}')">Copy</button>`
-        + `<code id="${id}">${escaped}</code></pre>`;
+      let highlighted;
+      try {
+        highlighted = (lang && hljs.getLanguage(lang))
+          ? hljs.highlight(text, { language: lang, ignoreIllegals: true }).value
+          : hljs.highlightAuto(text).value;
+      } catch {
+        highlighted = text
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+      const badge = lang
+        ? `<span class="code-lang">${lang.replace(/</g, '&lt;')}</span>` : '';
+      return `<pre>${badge}`
+           + `<button class="copy-btn pre-copy" onclick="copyCode('${id}')">Copy</button>`
+           + `<code id="${id}" class="hljs${lang ? ' language-' + lang : ''}">`
+           + `${highlighted}</code></pre>`;
     }
   }
 });
@@ -784,10 +802,6 @@ function buildMsgEl(msg) {
       </div>
       <div class="msg-content">${contentHtml}</div>
     </div>`;
-  if (isAsst) {
-    wrap.querySelector(".msg-content").querySelectorAll("pre code")
-        .forEach(el => hljs.highlightElement(el));
-  }
   return wrap;
 }
 
@@ -960,7 +974,6 @@ function _finalizeStream(asstMsg) {
 
   // Final render: full markdown with collapsible thinking blocks
   _contentDiv.innerHTML = renderContent(asstMsg.content);
-  _contentDiv.querySelectorAll("pre code").forEach(el => hljs.highlightElement(el));
 
   if (_msgEl) _msgEl.classList.remove("generating");
   addRegenBtn(_msgEl);
