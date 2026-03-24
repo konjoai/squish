@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Run 70B language models on a MacBook. Squish compresses model weights into memory-mapped INT8 tensors that load in milliseconds.">
+        <meta name="description" content="Run 70B AI models on a MacBook in 2 seconds. Squish — The Local AI Agent Runtime.">
       
       
       
@@ -1113,7 +1113,7 @@ body[data-md-color-scheme="default"] {
 .sq-badge{display:inline-flex;align-items:center;gap:9px;background:rgba(139,79,255,.12);border:1px solid rgba(139,79,255,.35);border-radius:999px;padding:6px 18px;font-size:.76rem;color:#C09FFF;margin-bottom:22px;letter-spacing:.02em}
 .sq-badge__dot{width:8px;height:8px;background:var(--sq-green);border-radius:50%;animation:blink 2.2s ease-in-out infinite;box-shadow:0 0 6px var(--sq-green)}
 @keyframes blink{0%,100%{opacity:1;box-shadow:0 0 6px var(--sq-green)}50%{opacity:.3;box-shadow:none}}
-.sq-hero__title{font-size:clamp(2.5rem,5.5vw,4.4rem);font-weight:800;letter-spacing:-.038em;line-height:1.04;margin:0 0 20px;color:var(--sq-text)!important;-webkit-text-fill-color:var(--sq-text)!important}
+.sq-hero__title{font-size:clamp(3.5rem,8vw,6rem);font-weight:800;letter-spacing:-.038em;line-height:1.04;margin:0 0 20px;color:var(--sq-text)!important;-webkit-text-fill-color:var(--sq-text)!important}
 .sq-hero__title .sq-grad{-webkit-text-fill-color:transparent!important}
 .sq-hero__sub{font-size:1.1rem;color:var(--sq-muted);line-height:1.72;max-width:510px;margin:0 0 32px}
 .sq-hero__sub strong{color:var(--sq-text2)}
@@ -1298,14 +1298,14 @@ body[data-md-color-scheme="default"] {
         <div class="sq-fade-l">
           <div class="sq-badge">
             <span class="sq-badge__dot"></span>
-            v9.0 &middot; Apple Silicon native
+            v47 &middot; Apple Silicon native
           </div>
-          <h1 class="sq-hero__title">Local Agents.<br><span class="sq-grad">Infinite</span><br>Memory.</h1>
-          <p class="sq-hero__sub">Stop crashing into SSD swap. Squish is the definitive local agent runtime&mdash;compressing massive LLMs to run natively on your Mac with <strong>sub-second loops</strong> and <strong>100% perfect JSON tool calling</strong>.</p>
+          <h1 class="sq-hero__title"><span class="sq-grad">Squish</span><br>The Local AI<br>Agent Runtime.</h1>
+          <p class="sq-hero__sub">Run any AI model, fully local, on Apple Silicon. Squish compresses 70B models to fit in 18&thinsp;GB and starts them in under 2 seconds&mdash;<strong>no GPU, no cloud, no API keys</strong>.</p>
           <div class="sq-hero__btns">
             <a href="install/" class="sq-btn sq-btn--primary">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
-              Get Started Free
+              Install Free
             </a>
             <a href="https://github.com/squishai/squish" class="sq-btn sq-btn--ghost">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -1345,8 +1345,8 @@ body[data-md-color-scheme="default"] {
             </div>
             <div class="sq-term__body">
               <p class="t-cmt">Install once</p>
-              <p class="t-cmd">brew install squishai/squish/squish</p>
-              <p class="t-ok">&nbsp;&nbsp;&#10003; squish 9.0.0 installed</p>
+              <p class="t-cmd">brew install squish-ai/squish</p>
+              <p class="t-ok">&nbsp;&nbsp;&#10003; squish 47.0.0 installed</p>
               <span class="t-sp"></span>
               <p class="t-cmt">One command does everything</p>
               <p class="t-cmd">squish run qwen3:8b</p>
@@ -1405,7 +1405,7 @@ body[data-md-color-scheme="default"] {
             <div class="sq-step__n">1</div>
             <div class="sq-step__t">Install Squish</div>
             <p class="sq-step__d">One Homebrew command. No Docker, no CUDA, no virtual environment setup.</p>
-            <code class="sq-step__cmd">brew install squishai/squish/squish</code>
+            <code class="sq-step__cmd">brew install squish-ai/squish</code>
           </div>
           <div class="sq-arrow">&rarr;</div>
           <div class="sq-step">
@@ -1483,38 +1483,38 @@ body[data-md-color-scheme="default"] {
       <div class="sq-cards">
         <div class="sq-card sq-fade sq-d1">
           <div class="sq-card__ico">&#x26A1;</div>
-          <div class="sq-card__t">Sub-second TTFT</div>
-          <p class="sq-card__d">Memory-mapped INT4 tensors load directly into Metal unified memory with zero dtype conversion. First token in 443ms for an 8B model on M3.</p>
+          <div class="sq-card__t">2-second cold start. First token in 443ms.</div>
+          <p class="sq-card__d">Memory-mapped INT4 tensors load directly into Metal unified memory with zero dtype conversion. Cold start 0.4s, first token 443ms for an 8B model on M3.</p>
           <div class="sq-card__metric">443ms TTFT &middot; qwen3:8b M3</div>
         </div>
         <div class="sq-card sq-fade sq-d2">
           <div class="sq-card__ico">&#x1F50C;</div>
-          <div class="sq-card__t">Drop-in OpenAI API</div>
+          <div class="sq-card__t">Drop-in for OpenAI. Any OpenAI SDK.</div>
           <p class="sq-card__d">Zero code changes. LangChain, LlamaIndex, OpenAI SDK, Cursor, and any tool that speaks <code style="color:var(--sq-cyan);font-size:.88em">/v1/chat/completions</code> works out of the box.</p>
           <div class="sq-card__metric">/v1/chat/completions</div>
         </div>
         <div class="sq-card sq-fade sq-d3">
           <div class="sq-card__ico">&#x1F5DC;</div>
-          <div class="sq-card__t">The Infinite Memory Illusion</div>
-          <p class="sq-card__d">Agents send the same 10,000-token system prompt every turn. Squish's <strong>RadixTree Cache</strong> computes it exactly once. Experience instantaneous thought loops even at massive context depths.</p>
+          <div class="sq-card__t">10x faster on repeat prompts.</div>
+          <p class="sq-card__d">Agents resend the same 10,000-token system prompt every turn. Squish's <strong>RadixTree Cache</strong> computes it exactly once&mdash;giving you instantaneous thought loops at any context depth.</p>
           <div class="sq-card__metric">150ms TTFT on repetitive prompts</div>
         </div>
         <div class="sq-card sq-fade sq-d4">
           <div class="sq-card__ico">&#x1F9E0;</div>
-          <div class="sq-card__t">100% Perfect Tool Calling</div>
-          <p class="sq-card__d">Small models hallucinate syntax. Squish uses engine-level <strong>Finite State Machine (FSM) masking</strong> to force models to output flawless JSON matching your schemas. Never crash an agent parser again.</p>
+          <div class="sq-card__t">Zero broken JSON.</div>
+          <p class="sq-card__d">Small models hallucinate syntax. Squish uses engine-level <strong>Finite State Machine (FSM) masking</strong> to constrain every token to valid JSON matching your schema. Agents never crash a parser again.</p>
           <div class="sq-card__metric">Zero JSONDecodeErrors</div>
         </div>
         <div class="sq-card sq-fade sq-d5">
           <div class="sq-card__ico">&#x26A1;</div>
-          <div class="sq-card__t">Defeat the Memory Wall</div>
-          <p class="sq-card__d">A 32k context window usually pushes a 16GB Mac into the swap file. Squish's <strong>Asymmetric INT4 KV Cache</strong> shrinks your memory footprint by 75%, keeping your data hot in unified memory.</p>
+          <div class="sq-card__t">4x more context. Same RAM.</div>
+          <p class="sq-card__d">A 32k context window normally pushes a 16&thinsp;GB Mac into swap. Squish's <strong>Asymmetric INT4 KV Cache</strong> shrinks the KV footprint by 75%, keeping all context hot in unified memory.</p>
           <div class="sq-card__metric">4x Context Capacity</div>
         </div>
         <div class="sq-card sq-fade sq-d6">
           <div class="sq-card__ico">&#x1F4E6;</div>
-          <div class="sq-card__t">Batch Inference</div>
-          <p class="sq-card__d">Process multiple prompts in a single request. Essential for evals, data pipelines, and bulk processing &mdash; a capability Ollama and LM Studio don't offer.</p>
+          <div class="sq-card__t">100 concurrent requests. One model.</div>
+          <p class="sq-card__d">Process multiple prompts in a single request. Essential for evals, data pipelines, and bulk generation&mdash;a capability Ollama and LM Studio don't offer.</p>
           <div class="sq-card__metric">"batch": [req1, req2, &hellip;]</div>
         </div>
       </div>
@@ -1640,8 +1640,8 @@ body[data-md-color-scheme="default"] {
 
         <div id="sq-p-install" class="sq-tabpanel on">
           <p class="tc">macOS via Homebrew (recommended)</p>
-          <p class="tp"><span class="ts">brew install squishai/squish/squish</span></p>
-          <p class="to">&nbsp;&nbsp;&#10003; squish 9.0.0 installed</p>
+          <p class="tp"><span class="ts">brew install squish-ai/squish</span></p>
+          <p class="to">&nbsp;&nbsp;&#10003; squish 47.0.0 installed</p>
           <span class="t-sp"></span>
           <p class="tc">Or via pip (Python 3.10+)</p>
           <p class="tp"><span class="ts">pip install squish</span></p>
