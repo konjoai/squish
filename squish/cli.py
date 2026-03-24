@@ -2469,6 +2469,7 @@ def cmd_convert_model(args):
 
     attn_bits: int | None = getattr(args, "attn_bits", None)
     group_size: int = getattr(args, "group_size", 64)
+    mixed_recipe: str | None = getattr(args, "mixed_recipe", None)
 
     if args.dry_run:
         print(f"  [dry-run] source      : {source_path}")
@@ -2478,6 +2479,8 @@ def cmd_convert_model(args):
             print(f"  [dry-run] attn-bits   : {attn_bits}")
         print(f"  [dry-run] embed-bits  : {args.embed_bits}")
         print(f"  [dry-run] group-size  : {group_size}")
+        if mixed_recipe:
+            print(f"  [dry-run] mixed-recipe: {mixed_recipe}")
         return
 
     # Do NOT pre-create the output directory — mlx_lm.convert refuses to write
@@ -2503,44 +2506,104 @@ def cmd_convert_model(args):
     # attn_bits / group_size already extracted above (before dry-run check)
     effective_attn_bits: int = attn_bits if attn_bits is not None else ffn_bits
 
-    needs_predicate = (
-        ffn_bits != embed_bits
-        or effective_attn_bits != ffn_bits
-    )
+    if mixed_recipe:
+        # 4-tier mixed-precision predicate:
+        #   embed/lm_head                           → embed_bits (8)
+        #   all self_attn/* layers                  → effective_attn_bits (4)
+        #   down_proj / v_proj in "critical" layers → high_bits  (6 for mixed_2_6)
+        #   everything else (gate/up proj, etc.)    → ffn_bits   (2)
+        #
+        # "Critical" layers mirror mlx_lm's mixed_2_6 definition:
+        #   first 12.5%, last 12.5%, and every 3rd layer in the remainder.
+        _high = 6 if mixed_recipe == "mixed_2_6" else 4
+        _low  = ffn_bits
+        _ab   = effective_attn_bits
+        _eb   = embed_bits
+        _gs   = group_size
 
-    if not needs_predicate:
-        # Uniform quantization — simple path, no per-layer predicate needed.
-        quant_predicate = None
-        q_bits = ffn_bits
-        print(f"  Quantizing all layers to {ffn_bits}-bit (group_size={group_size}) …")
-    else:
-        # Three-tier mixed-precision:
-        #   embed/lm_head  →  embed_bits
-        #   self_attn/*    →  effective_attn_bits  (defaults to ffn_bits)
-        #   everything else (MLP gate/up/down) →  ffn_bits
-        q_bits = ffn_bits
-        _gs = group_size  # captured in closure
-        _fb = ffn_bits
-        _ab = effective_attn_bits
-        _eb = embed_bits
+        # Read num_hidden_layers from config.json without loading the model.
+        _num_layers = 32  # sensible default
+        if not _is_hf_id:
+            _cfg_path = Path(str(source_path)) / "config.json"
+            if _cfg_path.exists():
+                try:
+                    import json as _json
+                    _num_layers = _json.loads(_cfg_path.read_text()).get(
+                        "num_hidden_layers", 32
+                    )
+                except Exception:
+                    pass
+        _nl = _num_layers
 
-        def quant_predicate(path: str, _module) -> bool | dict:  # noqa: E501
-            is_embed = "lm_head" in path or "embed_tokens" in path
-            is_attn  = "self_attn" in path or "cross_attn" in path
+        def quant_predicate(path: str, _module) -> dict:
+            # Extract the first digit segment in the path as the layer index.
+            layer_idx = 0
+            for part in path.split("."):
+                if part.isdigit():
+                    layer_idx = int(part)
+                    break
+            use_high_bits = (
+                layer_idx < _nl // 8
+                or layer_idx >= 7 * _nl // 8
+                or (layer_idx - _nl // 8) % 3 == 2
+            )
+            is_embed     = "lm_head" in path or "embed_tokens" in path
+            is_attn      = "self_attn" in path or "cross_attn" in path
+            is_v_proj    = "v_proj" in path or "v_a_proj" in path or "v_b_proj" in path
+            is_down_proj = "down_proj" in path
+
             if is_embed:
                 bits = _eb
             elif is_attn:
                 bits = _ab
+            elif (is_v_proj or is_down_proj) and use_high_bits:
+                bits = _high
             else:
-                bits = _fb
+                bits = _low
             return {"bits": bits, "group_size": _gs}
 
-        parts = [f"FFN={ffn_bits}-bit"]
-        if effective_attn_bits != ffn_bits:
-            parts.append(f"attn={effective_attn_bits}-bit")
-        if embed_bits != ffn_bits:
-            parts.append(f"embed={embed_bits}-bit")
-        print(f"  Quantizing: {', '.join(parts)}, group_size={group_size} …")
+        q_bits = _low
+        print(f"  Quantizing with {mixed_recipe}: low={_low}-bit · high={_high}-bit · "
+              f"attn={_ab}-bit · embed={_eb}-bit · gs={_gs} · num_layers={_nl} …")
+    else:
+        needs_predicate = (
+            ffn_bits != embed_bits
+            or effective_attn_bits != ffn_bits
+        )
+
+        if not needs_predicate:
+            # Uniform quantization — simple path, no per-layer predicate needed.
+            quant_predicate = None
+            q_bits = ffn_bits
+            print(f"  Quantizing all layers to {ffn_bits}-bit (group_size={group_size}) …")
+        else:
+            # Three-tier mixed-precision:
+            #   embed/lm_head  →  embed_bits
+            #   self_attn/*    →  effective_attn_bits  (defaults to ffn_bits)
+            #   everything else (MLP gate/up/down) →  ffn_bits
+            q_bits = ffn_bits
+            _gs = group_size  # captured in closure
+            _fb = ffn_bits
+            _ab = effective_attn_bits
+            _eb = embed_bits
+
+            def quant_predicate(path: str, _module) -> bool | dict:  # noqa: E501
+                is_embed = "lm_head" in path or "embed_tokens" in path
+                is_attn  = "self_attn" in path or "cross_attn" in path
+                if is_embed:
+                    bits = _eb
+                elif is_attn:
+                    bits = _ab
+                else:
+                    bits = _fb
+                return {"bits": bits, "group_size": _gs}
+
+            parts = [f"FFN={ffn_bits}-bit"]
+            if effective_attn_bits != ffn_bits:
+                parts.append(f"attn={effective_attn_bits}-bit")
+            if embed_bits != ffn_bits:
+                parts.append(f"embed={embed_bits}-bit")
+            print(f"  Quantizing: {', '.join(parts)}, group_size={group_size} …")
 
     try:
         _mlx_lm.convert(
@@ -3540,6 +3603,19 @@ Ollama drop-in:
                            help="Print what would be done without converting")
     p_convert.add_argument("--cpu", action="store_true", default=False,
                            help="Force MLX to run on CPU (avoids Metal GPU timeout for large models)")
+    p_convert.add_argument(
+        "--mixed-recipe",
+        default=None,
+        choices=["mixed_2_6", "mixed_3_4"],
+        dest="mixed_recipe",
+        help=(
+            "Apply a layer-aware mixed-precision recipe on top of --ffn-bits. "
+            "'mixed_2_6': 2-bit base with 6-bit protection for critical down_proj/v_proj "
+            "layers (~50%% of layers get 6-bit). Strongly recommended when --ffn-bits 2 "
+            "to recover near-INT3 quality. "
+            "'mixed_3_4': 3-bit base with 4-bit for critical layers."
+        ),
+    )
     p_convert.set_defaults(func=cmd_convert_model)
 
     # ── train (primary name) + train-adapter (hidden legacy alias) ──

@@ -119,54 +119,70 @@ class TestRecipes:
 
     def test_int2_recipe_attn_bits_is_4(self):
         mod = _import_resquish()
-        ffn, attn, embed, gs = mod.RECIPES[2]
+        ffn, attn, embed, gs, _recipe = mod.RECIPES[2]
         assert attn == 4, f"INT2 recipe must have attn=4, got {attn}"
 
     def test_int3_recipe_attn_bits_is_4(self):
         mod = _import_resquish()
-        ffn, attn, embed, gs = mod.RECIPES[3]
+        ffn, attn, embed, gs, _recipe = mod.RECIPES[3]
         assert attn == 4, f"INT3 recipe must have attn=4, got {attn}"
 
     def test_int4_recipe_attn_bits_is_4(self):
         mod = _import_resquish()
-        ffn, attn, embed, gs = mod.RECIPES[4]
+        ffn, attn, embed, gs, _recipe = mod.RECIPES[4]
         assert attn == 4, f"INT4 recipe must have attn=4, got {attn}"
 
     def test_int2_ffn_bits_is_2(self):
         mod = _import_resquish()
-        ffn, attn, embed, gs = mod.RECIPES[2]
+        ffn, attn, embed, gs, _recipe = mod.RECIPES[2]
         assert ffn == 2
 
     def test_int3_ffn_bits_is_3(self):
         mod = _import_resquish()
-        ffn, attn, embed, gs = mod.RECIPES[3]
+        ffn, attn, embed, gs, _recipe = mod.RECIPES[3]
         assert ffn == 3
 
     def test_int4_ffn_bits_is_4(self):
         mod = _import_resquish()
-        ffn, attn, embed, gs = mod.RECIPES[4]
+        ffn, attn, embed, gs, _recipe = mod.RECIPES[4]
         assert ffn == 4
 
     def test_embed_bits_is_8_for_all(self):
         mod = _import_resquish()
-        for bits, (ffn, attn, embed, gs) in mod.RECIPES.items():
+        for bits, (ffn, attn, embed, gs, _recipe) in mod.RECIPES.items():
             assert embed == 8, f"embed must be 8 for INT{bits}, got {embed}"
 
     def test_int2_group_size_is_32(self):
         """INT2 must use group_size=32 to improve quantization fidelity."""
         mod = _import_resquish()
-        ffn, attn, embed, gs = mod.RECIPES[2]
+        ffn, attn, embed, gs, _recipe = mod.RECIPES[2]
         assert gs == 32, f"INT2 group_size must be 32, got {gs}"
 
     def test_int3_group_size_is_32(self):
         mod = _import_resquish()
-        ffn, attn, embed, gs = mod.RECIPES[3]
+        ffn, attn, embed, gs, _recipe = mod.RECIPES[3]
         assert gs == 32, f"INT3 group_size must be 32, got {gs}"
 
     def test_int4_group_size_is_64(self):
         mod = _import_resquish()
-        ffn, attn, embed, gs = mod.RECIPES[4]
+        ffn, attn, embed, gs, _recipe = mod.RECIPES[4]
         assert gs == 64, f"INT4 group_size must be 64, got {gs}"
+
+    def test_int2_has_mixed_2_6_recipe(self):
+        """INT2 must use mixed_2_6 to protect critical down_proj/v_proj layers."""
+        mod = _import_resquish()
+        *_, recipe = mod.RECIPES[2]
+        assert recipe == "mixed_2_6", f"INT2 recipe must be 'mixed_2_6', got {recipe!r}"
+
+    def test_int3_has_no_mixed_recipe(self):
+        mod = _import_resquish()
+        *_, recipe = mod.RECIPES[3]
+        assert recipe is None, f"INT3 recipe must be None, got {recipe!r}"
+
+    def test_int4_has_no_mixed_recipe(self):
+        mod = _import_resquish()
+        *_, recipe = mod.RECIPES[4]
+        assert recipe is None, f"INT4 recipe must be None, got {recipe!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +218,64 @@ class TestSquishSubprocess:
         assert "--attn-bits" in cmd
         attn_idx = cmd.index("--attn-bits")
         assert cmd[attn_idx + 1] == "4", f"Expected attn-bits=4, got {cmd[attn_idx+1]}"
+
+    def test_squish_passes_mixed_recipe_for_int2(self, tmp_path):
+        """INT2 must pass --mixed-recipe mixed_2_6 to squish quantize."""
+        mod = _import_resquish()
+        mock_src = tmp_path / "bf16"
+        mock_src.mkdir()
+        mock_out = tmp_path / "int2"
+
+        captured_cmd: list[list[str]] = []
+
+        def _mock_run(cmd, **kwargs):
+            captured_cmd.append(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        with patch("subprocess.run", side_effect=_mock_run):
+            mod._squish(
+                source=mock_src,
+                output_path=mock_out,
+                bits=2,
+                dry_run=False,
+                cpu=False,
+            )
+
+        cmd = captured_cmd[0]
+        assert "--mixed-recipe" in cmd, "--mixed-recipe must be passed for INT2"
+        recipe_idx = cmd.index("--mixed-recipe")
+        assert cmd[recipe_idx + 1] == "mixed_2_6", (
+            f"Expected mixed-recipe=mixed_2_6, got {cmd[recipe_idx + 1]}"
+        )
+
+    def test_squish_no_mixed_recipe_for_int3(self, tmp_path):
+        """INT3 must NOT pass --mixed-recipe."""
+        mod = _import_resquish()
+        mock_src = tmp_path / "bf16"
+        mock_src.mkdir()
+        mock_out = tmp_path / "int3"
+
+        captured_cmd: list[list[str]] = []
+
+        def _mock_run(cmd, **kwargs):
+            captured_cmd.append(cmd)
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        with patch("subprocess.run", side_effect=_mock_run):
+            mod._squish(
+                source=mock_src,
+                output_path=mock_out,
+                bits=3,
+                dry_run=False,
+                cpu=False,
+            )
+
+        cmd = captured_cmd[0]
+        assert "--mixed-recipe" not in cmd, "--mixed-recipe must NOT be passed for INT3"
 
     def test_squish_passes_group_size_to_cli(self, tmp_path):
         mod = _import_resquish()

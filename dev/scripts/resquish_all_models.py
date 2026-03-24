@@ -170,11 +170,11 @@ MODEL_FAMILIES: list[ModelFamily] = [
 
 # ── quantization recipes ──────────────────────────────────────────────────────
 
-# Per-bit recipe: (ffn_bits, attn_bits, embed_bits, group_size)
-RECIPES: dict[int, tuple[int, int, int, int]] = {
-    2: (2, 4, 8, 32),   # attn=4 fixes garbage output, gs=32 reduces error
-    3: (3, 4, 8, 32),   # attn=4 fixes repetition loops
-    4: (4, 4, 8, 64),   # attn=4 (same as ffn), standard gs=64
+# Per-bit recipe: (ffn_bits, attn_bits, embed_bits, group_size, mixed_recipe)
+RECIPES: dict[int, tuple[int, int, int, int, str | None]] = {
+    2: (2, 4, 8, 32, "mixed_2_6"),  # critical down_proj/v_proj layers get 6-bit protection
+    3: (3, 4, 8, 32, None),          # attn=4 fixes repetition loops (working well already)
+    4: (4, 4, 8, 64, None),          # standard gs=64, attn=4 (same as ffn)
 }
 
 
@@ -222,7 +222,7 @@ def _squish(
     cpu:         bool,
 ) -> bool:
     """Run `squish quantize` for one (source → output) pair.  Returns success."""
-    ffn_bits, attn_bits, embed_bits, group_size = RECIPES[bits]
+    ffn_bits, attn_bits, embed_bits, group_size, mixed_recipe = RECIPES[bits]
 
     cli = [
         sys.executable, "-m", "squish.cli", "quantize",
@@ -233,6 +233,8 @@ def _squish(
         "--embed-bits",  str(embed_bits),
         "--group-size",  str(group_size),
     ]
+    if mixed_recipe:
+        cli += ["--mixed-recipe", mixed_recipe]
     if cpu:
         cli.append("--cpu")
 
@@ -240,9 +242,14 @@ def _squish(
         print(f"  {Y}[dry-run]{NC} would run: {' '.join(cli[2:])}")
         return True
 
+    recipe_desc = (
+        f"ffn={ffn_bits}-bit · attn={attn_bits}-bit · "
+        f"embed={embed_bits}-bit · gs={group_size}"
+    )
+    if mixed_recipe:
+        recipe_desc += f" · {mixed_recipe}"
     print(f"  {C}→ squishing{NC}  {source}  →  {output_path.name}")
-    print(f"  {D}recipe: ffn={ffn_bits}-bit · attn={attn_bits}-bit · "
-          f"embed={embed_bits}-bit · gs={group_size}{NC}")
+    print(f"  {D}recipe: {recipe_desc}{NC}")
 
     t0   = time.time()
     proc = subprocess.run(cli, cwd=str(_REPO_ROOT))
@@ -377,8 +384,11 @@ def main() -> None:
 
     print(f"\n  Recipes:")
     for b in bits_to_fix:
-        ffn, attn, embed, gs = RECIPES[b]
-        print(f"    INT{b}: ffn={ffn}-bit · attn={attn}-bit · embed={embed}-bit · gs={gs}")
+        ffn, attn, embed, gs, recipe = RECIPES[b]
+        desc = f"ffn={ffn}-bit \u00b7 attn={attn}-bit \u00b7 embed={embed}-bit \u00b7 gs={gs}"
+        if recipe:
+            desc += f" \u00b7 {recipe}"
+        print(f"    INT{b}: {desc}")
 
     print(f"\n  Free disk: {_free_gb():.1f} GB\n")
     print(f"  Models:")
