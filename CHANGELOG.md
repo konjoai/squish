@@ -79,6 +79,73 @@ flags required at serve time.
 
 ---
 
+## [39.0.0] — Wave 65 — 2026-03-24
+
+### Added — TCA-TBE Lossless BF16 Bitmap Encoding · ZipGEMV + ZipGEMM Metal Shaders · Stage-Aware Prefill/Decode Dispatch
+
+Wave 65 ports the **TCA-TBE (Tensor-Core-Aware Triple Bitmap Encoding)** technique from the
+ZipServ ASPLOS 2026 paper (Zhang et al.) to the Squish Metal inference stack. TCA-TBE is a
+lossless compression scheme for BF16 weight tensors that exploits the highly skewed exponent
+distribution in trained transformers. Each 128-element block is encoded as three fixed-length
+bitmaps plus a per-element exponent-offset vector, enabling constant-time parallel decode with
+no branches or lookup tables.
+
+#### New modules
+
+- **`squish/compress/tca_tbe.py`** — Pure Python/NumPy reference implementation of the TCA-TBE
+  codec. `TcaTbeCodec` encodes and decodes individual 128-element BF16 blocks losslessly
+  (bit-for-bit exact reconstruction). Includes entropy guard: falls back to raw BF16 when the
+  block is too high-entropy to benefit from compression. Module-level helpers
+  `tca_tbe_encode_tensor` / `tca_tbe_decode_tensor` operate on flat `np.uint16` tensors and
+  return a `List[TcaTbeBlock]` plus `CompressionStats`.
+
+- **`squish/kernels/zip_gemv.metal`** — Fused ZipGEMV Metal shader for the single-token
+  **decode** path (`seq_len == 1`). Each threadgroup (256 threads) decompresses one output
+  row's worth of TCA-TBE packed weight blocks and accumulates the dot product against the input
+  vector. Decompression and accumulation are fused to minimise memory round-trips. Supports
+  both compressed TCA-TBE blocks and raw BF16 fallback blocks transparently.
+
+- **`squish/kernels/zip_gemm.metal`** — Decoupled ZipGEMM Metal shader pair for the
+  multi-token **prefill** path (`seq_len > 1`). `zip_decompress_tile` decompresses 64×128
+  weight tiles from TCA-TBE into float16 in a pre-allocated scratch buffer; `zip_gemm_tile`
+  performs standard 16×16 tiled GEMM reading from the scratch buffer. The pipeline is
+  double-bufferable for GPU occupancy.
+
+- **`squish/runtime/stage_dispatcher.py`** — Stage-aware prefill/decode kernel switcher.
+  `StageDispatcher.dispatch()` inspects `input_ids.shape[1]` to select either `zip_gemv`
+  (decode, `seq_len == 1`) or `zip_gemm` (prefill, `seq_len > 1`). Falls back to a pure-NumPy
+  pipeline when TCA-TBE is disabled. `dispatch_chunked()` yields one `DispatchDecision` per
+  chunk for long-prompt chunked prefill.
+
+#### TCA-TBE block format (128 × BF16 elements)
+
+| Section | Size | Content |
+|---|---|---|
+| sign bitmap | 16 B (128 bits) | sign bit per element |
+| range bitmap | 16 B (128 bits) | 1 = exponent in `[e_mode−1, e_mode+1]` |
+| exponent-offset bitmap | 32 B (2 bits/elem) | exponent offset from window base |
+| mantissa bitmap (7 bit/elem) | 112 B (896 bits) | all 7 BF16 mantissa bits |
+| header scalars | 3 B | `e_mode`, `e_lo_offset`, `e_hi_offset` |
+| spill (out-of-range elems) | variable | raw BF16 for elements outside the window |
+
+Typical transformer weights: ≥80% of elements fall in the range window, leaving a small spill.
+Total compressed size for a fully in-range block: ~179 bytes vs 256 bytes raw (30% reduction).
+
+#### `.squizd` header
+
+`SquizdFlags.TCA_TBE = 1 << 1` (bit 1) was already defined in `squish/runtime/squish_runtime.py`
+from Wave 70. No additional header file is needed.
+
+#### Tests
+
+`tests/test_wave65_tca_tbe.py` — **107 tests** covering `TcaTbeConfig` validation,
+`TcaTbeBlock` properties, single-block encode/decode round-trips (bit-for-bit lossless),
+entropy guard, serialisation round-trips, tensor-level encode/decode, `CompressionStats`,
+`InferenceStage`, `KernelPipeline`, `DispatchDecision`, `StageDispatcher` dispatch and
+chunked-prefill iteration, constructor validation, and full integration scenarios.
+
+---
+
 ## [43.0.0] — Wave 69 — 2026-03-23
 
 ### Added — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path
