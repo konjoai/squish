@@ -5,6 +5,71 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [46.0.0] — Wave 73 — 2026-06-01
+
+### Added — "Impossible" MoE Elastic Inference Engine
+
+Wave 73 implements a complete elastic inference pipeline that makes 70 B–235 B total-parameter sparse
+Mixture-of-Experts models runnable on hardware that cannot hold the full weight set in RAM.  The key
+insight is that top-K routing (e.g. top-2/8 in Mixtral) makes only a tiny fraction of parameters
+active per token; combined with INT4 group quantisation and an LRU in-memory cache, the peak
+resident footprint is backbone + K active experts per layer rather than the naïve total model size.
+
+#### New modules
+
+- **`squish/moe/hf_moe_loader.py`** — `HFMoELoader`, `MoEModelInfo`, `ExpertWeightHandle`,
+  `MoEArchType`: reads HuggingFace model directories (safetensors shards); detects Mixtral /
+  DeepSeek-V2+V3 / Qwen2-MoE / Qwen3-MoE architectures from `config.json`; loads the shared
+  backbone eagerly while exposing per-expert weights lazily via numpy mmap-backed handles.
+  `ExpertWeightHandle.gate/up/down()` materialise on first access; `.evict()` releases them.
+
+- **`squish/moe/expert_memory_map.py`** — `ExpertMemoryMap`, `MemoryMapConfig`,
+  `MemoryMapStats`: LRU-managed RAM resident set bounded by `budget_mb` and an optional
+  `max_experts` hard cap.  `pin()` / `unpin()` protect actively-used experts from eviction.
+  Uses `collections.OrderedDict` for O(1) LRU tracking.  Tracks hit/miss/eviction stats.
+
+- **`squish/moe/router_estimator.py`** — `RouterEstimator`, `RouterConfig`, `ExpertSchedule`,
+  `LayerRouting`: pre-computes the full routing schedule (which experts are needed at every
+  layer) from gate-weight logits *before* any expert is loaded.  Supports single-hidden-state,
+  per-layer list, and 3-D (layers × seq × hidden) inputs.  Normalised softmax weights sum to 1.
+
+- **`squish/moe/int4_expert_pack.py`** — `INT4ExpertPacker`, `PackConfig`, `INT4PackedMatrix`,
+  `INT4PackedExpert`: group-quantised INT4 nibble packing (4–8× compression vs float32).  Uses
+  per-group min/max scale + zero; handles non-power-of-2 feature dimensions via zero-padding.
+  `pack_expert` / `unpack_expert` operate on full `{gate, up, down}` weight dicts.
+
+- **`squish/moe/layer_by_layer_executor.py`** — `LayerByLayerExecutor`, `ExecutorConfig`,
+  `LayerWeights`, `ExecutorStats`: numpy-only, backend-agnostic transformer forward pass.
+  Implements RMSNorm, SwiGLU, scaled-dot-product attention, MoE expert dispatch, and
+  token-weighted expert output aggregation.  Processes one layer block at a time; evicts
+  the previous layer's experts before loading the next layer's — peak RAM = backbone +
+  max_active_experts_per_layer × expert_size.  Supports prefetch callbacks.
+
+- **`squish/moe/moe_pipeline.py`** — `MoEPipeline`, `PipelineConfig`, `PipelineStats`,
+  `GenerationResult`: high-level pipeline tying all five modules together.
+  `MoEPipeline.from_pretrained(path, cfg)` auto-loads from a HuggingFace model directory.
+  `generate(prompt, max_tokens)` is a streaming iterator yielding token strings.
+  INT4 expert cache + LRU memory map + router pre-estimation are all wired automatically.
+
+#### Catalog additions
+
+- **`qwen3:235b-a22b`** — Qwen3-235B-A22B (MoE): 235 B total / 22 B active per token
+  (top-4/128 experts, 9.4% activation ratio).  Tagged `impossible`.  Context 131,072.
+- **`mixtral:8x7b`** — Mixtral-8x7B-Instruct-v0.1: 47 B total / 13 B active (top-2/8).
+- **`mixtral:8x22b`** — Mixtral-8x22B-Instruct-v0.3: 141 B total / 39 B active (top-2/8).
+  Tagged `impossible`.
+- Aliases: `mixtral`, `mixtral:47b`, `mixtral:141b`, `qwen3:235b`.
+
+#### Tests
+
+- **`tests/test_wave73_moe_elastic.py`** — 130 tests covering all six new modules and
+  catalog additions: arch detection, model info extraction, expert key parsing, lazy loading,
+  LRU eviction budget/pin/unpin, router scheduling, INT4 pack/unpack round-trip, forward
+  pass primitives, full executor forward, pipeline warmup/generate, and memory-economics
+  validations proving the "impossible" models are feasible.
+
+---
+
 ## [45.0.0] — Wave 72 — 2026-06-01
 
 ### Added — Public Launch · Agentic Inference Engine · Web Chat Agent Mode v3

@@ -347,6 +347,50 @@ _BUNDLED: list[dict] = [
          notes="MoE — 14.3B total / 2.7B active params per token",
          moe=True, active_params_b=2.7),
 
+    # ── Qwen3-235B-A22B (Wave 73 — "Impossible" 235B MoE) ────────────────────
+    # 235B total parameters; only 22B active per token (top-4/128 experts).
+    # With INT4 expert quantization + elastic offloading, runnable on 32+ GB Mac.
+    dict(id="qwen3:235b-a22b", name="Qwen3-235B-A22B (MoE)",
+         hf_mlx_repo="mlx-community/Qwen3-235B-A22B-bf16",
+         size_gb=470.0, squished_size_gb=58.8, params="235B", context=131072,
+         tags=["moe", "large", "impossible"],
+         notes=(
+             "MoE — 235B total / 22B active per token (top-4/128 experts). "
+             "Wave 73 elastic inference: backbone ~30 GB INT4 + on-demand expert "
+             "streaming from disk. Runnable on 32 GB+ Apple Silicon via "
+             "squish.moe.MoEPipeline."
+         ),
+         moe=True, active_params_b=22.0, grammar_trigger="<tool_call>"),
+
+    # ── Mixtral 8x7B (Wave 73 — elastic MoE inference) ───────────────────────
+    # 47B total; 13B active (top-2 of 8 experts per layer, 32 layers).
+    # INT4 expert quantization brings per-expert footprint to ~84 MB.
+    # With budget_mb=8192, ~97 experts can be resident simultaneously out of 256.
+    dict(id="mixtral:8x7b", name="Mixtral-8x7B-Instruct-v0.1 (MoE)",
+         hf_mlx_repo="mlx-community/Mixtral-8x7B-Instruct-v0.1-bf16",
+         size_gb=93.8, squished_size_gb=23.5, params="47B", context=32768,
+         tags=["moe", "large"],
+         notes=(
+             "MoE — 47B total / 13B active per token (top-2/8 experts). "
+             "Wave 73 elastic inference: backbone ~6 GB + INT4 expert streaming. "
+             "Runnable on 24+ GB Apple Silicon via squish.moe.MoEPipeline."
+         ),
+         moe=True, active_params_b=13.0),
+
+    # ── Mixtral 8x22B (Wave 73 — the "impossible" 140B) ──────────────────────
+    # 141B total; 39B active per token.
+    # INT4 per-expert: ~250 MB → budget_mb=16384 holds ~65 experts at once.
+    dict(id="mixtral:8x22b", name="Mixtral-8x22B-Instruct-v0.3 (MoE)",
+         hf_mlx_repo="mlx-community/Mixtral-8x22B-Instruct-v0.3-bf16",
+         size_gb=282.0, squished_size_gb=70.5, params="141B", context=65536,
+         tags=["moe", "large", "impossible"],
+         notes=(
+             "MoE — 141B total / 39B active per token (top-2/8 experts). "
+             "Wave 73 elastic inference: backbone ~18 GB INT4 + expert streaming. "
+             "Runnable on 32+ GB Apple Silicon via squish.moe.MoEPipeline."
+         ),
+         moe=True, active_params_b=39.0),
+
 
     # ── Phi-4 ─────────────────────────────────────────────────────────────────
     dict(id="phi4:14b", name="Phi-4",
@@ -394,6 +438,11 @@ _ALIASES: dict[str, str] = {
     "r1:7b":  "deepseek-r1:7b",
     "r1:14b": "deepseek-r1:14b",
     "r1:32b": "deepseek-r1:32b",
+    # Wave 73 MoE shorthands
+    "mixtral":     "mixtral:8x7b",
+    "mixtral:47b": "mixtral:8x7b",
+    "mixtral:141b": "mixtral:8x22b",
+    "qwen3:235b":  "qwen3:235b-a22b",
 }
 
 

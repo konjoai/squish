@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-06-01 (Wave 72 in-progress — v45 Public Launch · Agentic Inference Engine · Web Chat Agent Mode v3)
+> Last updated: 2026-06-01 (Wave 73 complete — v46 "Impossible" MoE Elastic Inference · HFMoELoader · INT4 Expert Pack · Expert Memory Map · Router Estimator · Layer-by-Layer Executor · MoE Pipeline · Mixtral/Qwen3-235B Catalog)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -56,6 +56,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v43** | 69 | SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path |
 | **v44** | 70 | SQUIZD Production v1.0 · Unified Runtime Wiring · Format Spec · Statistical Benchmark Suite · 21-Model Expansion |
 | **v45** | 72 | Public Launch Prep · Agentic Inference Engine · MCP Client · Web Chat Agent Mode v3 · squish doctor/update CLI |
+| **v46** | 73 | "Impossible" MoE Elastic Inference · HFMoELoader · INT4 Expert Pack · Expert Memory Map · RouterEstimator · LayerByLayerExecutor · MoEPipeline · Mixtral 8x7B/8x22B + Qwen3-235B-A22B Catalog |
 
 ---
 
