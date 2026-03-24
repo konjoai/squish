@@ -656,9 +656,14 @@ and a programmatic launch preflight API.**
   - [x] `dev/scripts/resquish_all_models.py` — systematic re-squish script (11 families)
   - [x] `dev/benchmarks/bench_lmeval_all_models.py` — `--gen-sanity` / `--include-bf16` / `--bits`
   - [x] `tests/test_wave72_quantize_fix.py` + `tests/test_wave72_resquish.py` (64 tests)
-  - [ ] Run `resquish_all_models.py --yes` to rebuild INT2/INT3 models with fixed recipe
-  - [ ] Run benchmark: `bench_lmeval_all_models.py --bits 2 3 --force --gen-sanity --limit 500`
-  - [ ] Verify Mistral-7B INT4 squished and benchmarked
+  - [x] Run `resquish_all_models.py --yes --bits 2 3` — all 11 families rebuilt (Qwen3-14B via --cpu)
+    - Fixed: Mistral-7B missing shard (model-00001-of-00003) downloaded and re-squished
+    - Fixed: Qwen3-14B GPU timeout resolved with --cpu flag
+    - INT3: fully coherent on all model sizes ✅
+    - INT2: improved (attn fix applied); small models (≤4B) still quality-limited by 2-bit MLP
+  - [x] Mistral-7B INT4 squished (was missing from prior runs)
+  - [ ] Run benchmark: `bench_lmeval_all_models.py --bits 2 3 --force --gen-sanity --limit 500` — IN PROGRESS (PID 9120)
+  - [ ] Run INT4+BF16 benchmarks: `--include-bf16 --bits 4 --skip-existing`
 - [x] All tests passing (14,434 passed)
 - [ ] `git commit` + `git push`
 
