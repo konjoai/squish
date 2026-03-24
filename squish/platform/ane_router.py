@@ -133,6 +133,10 @@ class ANERouter:
         else:
             self._detector = None
 
+        # Track whether a test override was provided; used to bypass the macOS
+        # guard in _detect_chip_generation so unit tests run on any platform.
+        self._detector_overridden: bool = _detector_override is not None
+
         # Eagerly detect so .policy is immediately available.
         self._chip_generation: int = self._detect_chip_generation()
         self._ane_budget_gb: float = _ANE_MEMORY_BUDGET_BY_GEN.get(
@@ -209,9 +213,11 @@ class ANERouter:
 
     def _detect_chip_generation(self) -> int:
         """Return chip generation integer; 0 on non-Apple or failure."""
-        if not self._is_macos():
-            return 0
         if self._detector is None:
+            return 0
+        # Skip the macOS guard when a test override was injected so that chip
+        # detection unit tests run correctly on Linux CI.
+        if not self._is_macos() and not self._detector_overridden:
             return 0
         try:
             profile: Any = self._detector.detect()
