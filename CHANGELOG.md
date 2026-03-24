@@ -79,6 +79,49 @@ flags required at serve time.
 
 ---
 
+## [41.0.0] — Wave 67 — 2026-04-28
+
+### Added — SQUIZD Fused INT4/INT2 Metal GEMV · No BF16 Staging Buffer · Kernel Dispatcher
+
+Wave 67 eliminates the BF16 staging buffer from every INT4 and INT2 inference path.  Previously,
+weights were dequantised to an intermediate BF16 tensor in a first pass, then multiplied in a
+second pass — doubling effective memory bandwidth.  The fused kernels decode weights in-register
+during the multiply, cutting the decode path to a single memory pass.
+
+- **`squish/kernels/fused_int4_gemv.metal`** (`fused_int4_gemv`, `fused_int4_gemv_batched`,
+  `FusedInt4GEMVParams`) — single-pass INT4 GEMV for the decode phase.  One threadgroup per output
+  row; 128 threads; packed nibbles unpacked in-register; group-wise asymmetric FP32 scale+zero
+  applied during accumulation; tree reduction to `float output[row]`.  A 2-D batched variant
+  (`fused_int4_gemv_batched`) handles multi-vector decode with no extra memory overhead.
+- **`squish/kernels/fused_int4_gemm.metal`** (`fused_int4_gemm`, `FusedInt4GEMMParams`) — tiled
+  INT4 GEMM for the prefill phase (seq_len ≥ 2).  Tile sizes TILE_M=64, TILE_N=16, TILE_K=64.
+  Activation tile loaded into 2 KB of threadgroup memory; weight nibbles never staged to
+  threadgroup memory.  Threadgroup memory budget: 2 KB (16× headroom vs. Metal 32 KB limit).
+- **`squish/kernels/lut_int2_gemv.metal`** (`lut_int2_gemv`, `lut_int2_gemv_batched`,
+  `LutInt2GEMVParams`) — INT2 LUT-GEMM GEMV following Park et al. (NeurIPS 2024).  A 256-entry
+  FP16 codebook LUT (512 B) is loaded into threadgroup memory once per row; 4 INT2 weights per
+  packed byte are decoded via table lookup (zero FP multiplies in the dequant step).  A batched
+  variant dispatches across `(n_rows, batch_size)` threadgroups.  Threadgroup budget: 1 KB.
+- **`squish/hardware/kernel_dispatch.py`** (`KernelDispatch`, `KernelDispatcher`,
+  `get_kernel_dispatcher`, `reset_kernel_dispatcher`) — format-aware Metal kernel selector.
+  Reads `SquizdFlag` bits + `HardwareCapabilities` and returns a frozen `KernelDispatch`
+  with `kernel_name`, `metal_shader_path`, `supports_batched`, and `phase` fields.
+  Priority table (highest → lowest): ASTC → `astc_gemv`; TCA_TBE → `zip_gemv`/`zip_gemm`;
+  INT4+SPARSE → `sparse_gemv`; INT4 → `fused_int4_gemv`/`fused_int4_gemm`; INT2 →
+  `lut_int2_gemv`; fallback → `legacy_dequant_matmul`.  Results are cached per `(flags, seq_len)`
+  key for O(1) repeated lookups.  `reset_kernel_dispatcher()` clears the singleton for tests.
+
+### Tests
+
+- **`tests/test_wave67_fused_gemv.py`** — 82 tests across 10 classes covering: INT4 nibble
+  pack/unpack math helpers; INT4 GEMV reference correctness vs. dequant-first matmul; INT4 GEMM
+  linearity and `seq_len` variants; INT2 LUT-GEMM decode and multi-group independence;
+  `KernelDispatch` dataclass field validation and immutability; `KernelDispatcher` default
+  selections; flag priority ordering; hardware capability variants; singleton lifecycle; and Metal
+  threadgroup memory constant verification.
+
+---
+
 ## [40.0.0] — Wave 66 — 2026-03-24
 
 ### Added — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel · Sparsity Predictor

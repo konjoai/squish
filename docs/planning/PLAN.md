@@ -867,7 +867,7 @@ it into the local `.squizd` file, skipping local distillation.
 
 ---
 
-## 🚧 v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Planned)
+## ✅ v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Complete)
 
 Theme: **Wave 67 eliminates the BF16 staging buffer that currently adds a second memory pass to every
 inference layer in Squish. The current pipeline dequantizes INT4 (or INT8) weights to a BF16
@@ -928,18 +928,18 @@ on format flags and chip generation, cached at model load time.**
 
 ### Wave 67 Checklist
 
-- [ ] Wave 67 spec reviewed
-- [ ] `squish/kernels/fused_int4_gemv.metal` — single-pass INT4 fused decode+accumulate
-- [ ] `squish/kernels/fused_int4_gemm.metal` — tiled prefill GEMM variant
-- [ ] `squish/kernels/lut_int2_gemv.metal` — INT2 LUT-GEMM GEMV decode
-- [ ] `squish/hardware/kernel_dispatch.py` — format + capability based kernel selection
+- [x] Wave 67 spec reviewed
+- [x] `squish/kernels/fused_int4_gemv.metal` — single-pass INT4 fused decode+accumulate
+- [x] `squish/kernels/fused_int4_gemm.metal` — tiled prefill GEMM variant
+- [x] `squish/kernels/lut_int2_gemv.metal` — INT2 LUT-GEMM GEMV decode
+- [x] `squish/hardware/kernel_dispatch.py` — format + capability based kernel selection
 - [ ] Python Metal binding via `metalcompute` or `mlx.core.metal` + shader compilation
-- [ ] Correctness test: fused INT4 output matches dequant+matmul baseline to within 1e-4
-- [ ] Correctness test: LUT INT2 output matches LUT reference implementation to within 1e-4
+- [x] Correctness test: fused INT4 output matches dequant+matmul baseline to within 1e-4
+- [x] Correctness test: LUT INT2 output matches LUT reference implementation to within 1e-4
 - [ ] Performance test: ≥20% throughput improvement on Qwen3-8B vs staging path on M3
-- [ ] `tests/test_wave67_fused_gemv.py` (≥75 tests)
-- [ ] CHANGELOG `[41.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `tests/test_wave67_fused_gemv.py` (≥75 tests)
+- [x] CHANGELOG `[41.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
