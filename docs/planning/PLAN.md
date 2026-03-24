@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-06-04 (Wave 74 complete — v47 Onboarding & Website Polish · Squish brand hero · "The Local AI Agent Runtime" · brew squish-ai/squish · squish run local AI detection + browser auto-open · Squish Agent UI)
+> Last updated: 2026-06-05 (Wave 75 complete — v48 Performance Foundations · Metal JIT warmup · tier-3 first-run warning · chunk_prefill on by default · _print_optimization_status table · 24 new tests)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -58,6 +58,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v45** | 72 | Public Launch Prep · Agentic Inference Engine · MCP Client · Web Chat Agent Mode v3 · squish doctor/update CLI |
 | **v46** | 73 | "Impossible" MoE Elastic Inference · HFMoELoader · INT4 Expert Pack · Expert Memory Map · RouterEstimator · LayerByLayerExecutor · MoEPipeline · Mixtral 8x7B/8x22B + Qwen3-235B-A22B Catalog |
 | **v47** | 74 | Onboarding & Website Polish · Squish brand hero · "The Local AI Agent Runtime" tagline · brew squish-ai/squish · squish run detects Ollama/LM Studio · auto-opens Squish Agent browser UI · 22 new tests |
+| **v48** | 75 | Performance Foundations · Metal JIT warmup pass at startup · tier-3 first-run penalty warning · chunked prefill on by default (--no-chunk-prefill to disable) · _print_optimization_status table at startup · 24 new tests |
 
 ---
 

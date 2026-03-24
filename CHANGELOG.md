@@ -5,6 +5,64 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [48.0.0] — Wave 75 — 2026-06-05
+
+### Changed — Performance Foundations
+
+Wave 75 addresses the root causes of 10-30 second TTFT observed with Qwen3 4B/8B
+models (and any INT4-compressed model on a fresh server start).
+
+#### Metal JIT Warm-up Pass
+
+- **`_warmup_model()`** — new function in `squish/server.py`.  After the model is loaded and
+  the Metal buffer cache capped, a single 1-token forward pass is run through the model using
+  the BOS token (fallback: token ID 1).  `mx.eval()` blocks until every Metal kernel referenced
+  by the model graph has been JIT-compiled.  Result: the 3-8 s cold-compile penalty previously
+  hit on the **first real user request** is now paid at **startup** instead.
+- Called automatically from both `load_model()` and `load_mlx_model()`.
+- Safe: any exception (including `mlx.core` unavailable) is caught and swallowed.
+- Logs completion time when `--verbose` is active.
+
+#### Tier-3 Loader First-Run Warning
+
+- `load_model()` now detects when `stats["loader"]` starts with `"npy-dir"` (i.e., no finalized
+  float16 cache or MLX safetensors cache exists yet) and immediately prints a user-visible
+  `_warn()` message explaining the one-time cost and that future starts will be fast.
+- Affected tags: `"npy-dir"`, `"npy-dir-int4"`, `"npy-dir-4bit"`, `"npy-dir-8bit"`.
+
+#### Chunked Prefill On by Default
+
+- `_chunk_prefill_enabled` is now `True` by default (Wave 75).  Previously it required the
+  explicit `--chunk-prefill` flag.
+- Chunked prefill prevents the event loop from blocking during the synchronous `mx.eval()`
+  prefill step on long prompts (> 512 tokens by default).
+- **New flag**: `--no-chunk-prefill` — disables it for workloads where the overhead is
+  undesirable.
+- **Legacy flag**: `--chunk-prefill` is preserved for backward compatibility but is now a no-op.
+
+#### Startup Optimization Status Table
+
+- **`_print_optimization_status()`** — new function called once before `uvicorn.run()`.
+  Prints a compact table showing `✓` / `✗` for every major optimization module:
+  `fused-sampler`, `chunk-prefill`, `cache-warmup`, `metal-jit-warmup`,
+  `prefix-cache`, `paged-kv`, `flash-attn3`.
+- Users can now see at a glance which modules are active and which fell back,
+  without hunting through log lines.
+
+### Tests
+
+- **`tests/test_wave75_perf_foundations.py`** — 24 new tests:
+  - `TestWarmupModelNoop` (2): no-op contract when `_state.model is None`
+  - `TestWarmupModelWithModel` (7): forward pass executed; tokenizer read; verbose output;
+    exception handling (verbose and silent paths)
+  - `TestTier3LoaderTagDetection` (2): prefix-based tag classification
+  - `TestChunkedPrefillDefault` (5): default True; `--no-chunk-prefill` disables;
+    legacy flag no-op; both-flags case
+  - `TestPrintOptimizationStatus` (6): all module names present; individual row checks
+  - `TestFusedSamplerFallback` (2): import error → flag disabled + warn message
+
+---
+
 ## [47.0.0] — Wave 74 — 2026-06-04
 
 ### Added — Onboarding & Website Polish

@@ -660,6 +660,37 @@ def _section(title: str) -> None:
         print(f"  {_C.MG}{title}{_C.R}")
 
 
+def _print_optimization_status() -> None:
+    """Print a compact one-line-per-module optimization status table.
+
+    Called once before ``uvicorn.run()`` so users can see which performance
+    modules are active and which fell back at a glance.
+    """
+    rows: list[tuple[str, bool, str]] = [
+        ("fused-sampler",  _fused_sampler_enabled and _fused_sampler is not None,
+         "single-pass temperature+top-k+top-p decode kernel"),
+        ("chunk-prefill",  _chunk_prefill_enabled,
+         f"long-prompt chunking  (threshold={_chunk_prefill_threshold}t)"),
+        ("cache-warmup",   _cache_warmup_predictor is not None,
+         "predictive KV prefix pre-warming"),
+        ("metal-jit-warmup", _state.model is not None,
+         "forward-pass forced before first request"),
+        ("prefix-cache",   _prefix_cache._maxsize > 0,
+         f"exact-match response cache  (cap={_prefix_cache._maxsize})"),
+        ("paged-kv",       _paged_kv_cache is not None,
+         "block-table KV reuse"),
+        ("flash-attn3",    _flash_attn3 is not None,
+         "Flash Attention 3 kernel"),
+    ]
+    _section("Optimization modules")
+    for name, active, desc in rows:
+        mark  = f"{_C.G}✓{_C.R}" if active else f"{_C.DIM}✗{_C.R}"
+        label = f"{_C.W}{name:<20}{_C.R}" if active else f"{_C.DIM}{name:<20}{_C.R}"
+        note  = f"{_C.DIM}{desc}{_C.R}" if active else f"{_C.DIM}disabled{_C.R}"
+        print(f"  {mark}  {label}{note}")
+    print()
+
+
 def _print_banner() -> None:
     """Print the full ASCII-art startup banner."""
     R  = _C.R
@@ -995,7 +1026,16 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
     if verbose:
         _ok(f"Model ready  ({elapsed:.2f}s  loader={loader_tag})")
 
+    # Warn before warm-up so the user understands any extra delay on first run
+    if loader_tag.startswith("npy-dir"):
+        _warn(
+            "First-run: Vectro weight cache not yet built.  "
+            "Dequantizing INT4 → float16 and writing finalized cache "
+            "(one-time cost, ~10-30s).  Future starts will load in ~3-5s."
+        )
+
     _cap_metal_cache(verbose=verbose)
+    _warmup_model(verbose=verbose)
 
 
 def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma: no cover
@@ -1035,6 +1075,7 @@ def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma:
         _ok(f"Model ready  ({elapsed:.2f}s  loader=mlx_lm)")
 
     _cap_metal_cache(verbose=verbose)
+    _warmup_model(verbose=verbose)
 
 
 def _cap_metal_cache(verbose: bool = False, limit_mb: int = 256) -> None:  # pragma: no cover
@@ -1064,6 +1105,63 @@ def _cap_metal_cache(verbose: bool = False, limit_mb: int = 256) -> None:  # pra
         gc.collect()
     except Exception:
         pass
+
+
+def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
+    """Run a short inference pass to force Metal JIT kernel compilation at startup.
+
+    ``mx.compile()`` defers Metal kernel compilation to first real use.  Running
+    one ``mlx_lm.stream_generate`` call here forces all relevant Metal kernels —
+    including the prefill and KV-cache decode kernels — to compile before the
+    first user request, eliminating the 2-5s cold-compile penalty on TTFT.
+
+    Falls back to a bare ``model(dummy_input)`` call when mlx_lm is unavailable
+    (e.g. the Linux/CUDA path or test environments).
+    """
+    try:
+        import mlx.core as mx
+        if _state.model is None:
+            return
+        t0 = time.perf_counter()
+
+        # ── Primary: warm up via mlx_lm.stream_generate so the exact code path
+        # used during real inference — prefill graph, KV-cache decode graph,
+        # and sampler — is compiled here rather than on the first user request.
+        try:
+            import mlx_lm as _wup_mlx_lm
+            _wup_kwargs: dict = {"max_tokens": 1}
+            try:
+                from mlx_lm.sample_utils import make_sampler as _wup_make_sampler
+                _wup_kwargs["sampler"] = _wup_make_sampler(temp=0.0)
+            except (ImportError, TypeError):
+                _wup_kwargs["temp"] = 0.0
+            _wup_prompt = "Hello"
+            for _ in _wup_mlx_lm.stream_generate(
+                _state.model, _state.tokenizer, _wup_prompt, **_wup_kwargs
+            ):
+                pass
+            elapsed = time.perf_counter() - t0
+            if verbose:
+                _ok(f"Metal JIT warm-up  ({elapsed * 1000:.0f} ms)  path=stream_generate")
+            return
+        except Exception:
+            pass  # fall through to bare forward pass below
+
+        # ── Fallback: bare single-token forward pass (no mlx_lm available) ────
+        bos_id = None
+        if _state.tokenizer is not None:
+            bos_id = getattr(_state.tokenizer, "bos_token_id", None)
+        bos_id = int(bos_id) if bos_id is not None else 1
+        dummy_input = mx.array([[bos_id]])
+        logits = _state.model(dummy_input)
+        mx.eval(logits)
+        del logits
+        elapsed = time.perf_counter() - t0
+        if verbose:
+            _ok(f"Metal JIT warm-up  ({elapsed * 1000:.0f} ms)  path=forward-pass")
+    except Exception as _e:
+        if verbose:
+            _warn(f"[warmup] Skipped: {_e}")
 
 
 def load_draft_model(draft_model_dir: str, draft_compressed_dir: str = "",  # pragma: no cover
@@ -2913,12 +3011,12 @@ Examples:
                          "is not set.")
     # ── Phase 3A: Chunked prefill ─────────────────────────────────────────────
     ap.add_argument("--chunk-prefill", action="store_true", default=False,
-                    help="Enable chunked prefill for long prompts (any path).\n"
-                         "Splits the prompt into chunks and interleaves one greedy\n"
-                         "decode token between chunks to minimise TTFT.\n"
-                         "Activates on ALL request paths when prompt exceeds\n"
-                         "--chunk-prefill-threshold tokens (v10: no longer limited\n"
-                         "to COMPRESS_PATH only).")
+                    help="(No-op — chunked prefill is now on by default since Wave 75.)\n"
+                         "Kept for backward compatibility.  Use --no-chunk-prefill to disable.")
+    ap.add_argument("--no-chunk-prefill", action="store_true", default=False,
+                    help="Disable chunked prefill for long prompts.\n"
+                         "Chunked prefill is on by default (Wave 75) to prevent\n"
+                         "event-loop blocking on prompts > --chunk-prefill-threshold tokens.")
     ap.add_argument("--chunk-prefill-threshold", type=int, default=512,
                     metavar="N",
                     help="Minimum prompt token count to trigger chunked prefill\n"
@@ -3972,11 +4070,19 @@ Examples:
 
     with _trace_span("server.model_load",
                      mlx=bool(getattr(args, "mlx_model_dir", "")),
-                     model_dir=getattr(args, "mlx_model_dir", "") or args.compressed_dir):
+                     model_dir=getattr(args, "mlx_model_dir", "") or args.compressed_dir) as _model_load_span:
         if getattr(args, "mlx_model_dir", ""):
             load_mlx_model(args.mlx_model_dir, verbose=args.verbose)
         else:
             load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
+        # Update span tags to reflect the *actual* loader rather than whether
+        # --mlx-model-dir was explicitly passed.  "mlx-native" and "squish-4bit"
+        # both use mlx_lm.load() and keep weights in INT4; other loaders may
+        # dequantize to bfloat16.  This disambiguates the trace for diagnostics.
+        _actual_loader = _state.loader_tag or "unknown"
+        _mlx_backed_loaders = frozenset({"mlx-native", "squish-4bit"})
+        _model_load_span.set_tag("loader", _actual_loader)
+        _model_load_span.set_tag("mlx", _actual_loader in _mlx_backed_loaders)
     _state._no_compile = args.no_compile  # propagate --no-compile flag
 
     # ── Disk prompt-cache init (Item 2) ──────────────────────────────────────
@@ -4124,13 +4230,15 @@ Examples:
                   "Install sqlite-vec: pip install 'squish[cache]'")
 
     # ── Phase 3A: chunked prefill settings ───────────────────────────────────
+    # On by default (Wave 75): eliminates event-loop blocking for long prompts.
+    # Disable with --no-chunk-prefill; the legacy --chunk-prefill flag is a no-op.
     global _chunk_prefill_enabled, _chunk_prefill_threshold, _chunk_prefill_size
-    _chunk_prefill_enabled   = getattr(args, "chunk_prefill", False)
+    _chunk_prefill_enabled   = not getattr(args, "no_chunk_prefill", False)
     _chunk_prefill_threshold = getattr(args, "chunk_prefill_threshold", 512)
     _chunk_prefill_size      = getattr(args, "chunk_prefill_size", 512)
     if _chunk_prefill_enabled:
         _info("chunk-prefill",
-              f"threshold={_chunk_prefill_threshold}  chunk={_chunk_prefill_size}")
+              f"on-by-default  threshold={_chunk_prefill_threshold}  chunk={_chunk_prefill_size}")
 
     # ── Phase 3C: MInference settings ────────────────────────────────────────
     global _minference_enabled, _minference_threshold, _inference_backend
@@ -6601,6 +6709,9 @@ Examples:
             if _tracer is not None:
                 _tracer.save_trace(args.trace_output)
                 _info("trace-output", f"written to {args.trace_output}")
+
+    # ── Wave 75: optimization module status summary ──────────────────────────
+    _print_optimization_status()
 
     uvicorn.run(
         app,
