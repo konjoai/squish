@@ -13064,20 +13064,20 @@ open-source LLM inference engine for the first time.</p>
 5. Full reproducible benchmark suite across 21 models and 4 format variants on Apple Silicon</p>
 <h3 id="wave-70-checklist">Wave 70 Checklist<a class="headerlink" href="#wave-70-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] Wave 70 spec reviewed</li>
-<li>[ ] <code>squish/runtime/squish_runtime.py</code> — unified dispatch</li>
-<li>[ ] <code>squish/hardware/capability_probe.py</code> — chip detection + capability cache</li>
-<li>[ ] <code>squish/runtime/format_validator.py</code> — .squizd file validation</li>
-<li>[ ] <code>docs/squizd_format_spec.md</code> — format v1.0 public specification</li>
-<li>[ ] <code>squish/bench/squish_bench.py</code> — 30-trial statistical benchmark</li>
-<li>[ ] <code>scripts/run_squish_format_benchmark.sh</code> — 21-model orchestrator</li>
+<li>[x] Wave 70 spec reviewed</li>
+<li>[x] <code>squish/runtime/squish_runtime.py</code> — unified dispatch</li>
+<li>[x] <code>squish/hardware/capability_probe.py</code> — chip detection + capability cache</li>
+<li>[x] <code>squish/runtime/format_validator.py</code> — .squizd file validation</li>
+<li>[x] <code>docs/squizd_format_spec.md</code> — format v1.0 public specification</li>
+<li>[x] <code>squish/bench/squish_bench.py</code> — 30-trial statistical benchmark</li>
+<li>[x] <code>scripts/run_squish_format_benchmark.sh</code> — 21-model orchestrator</li>
 <li>[ ] All 9 new models: pull, compress, benchmark all 4 format variants</li>
 <li>[ ] <code>docs/BENCHMARK_SQUIZD_FORMAT.md</code> — full measured results table</li>
 <li>[ ] End-to-end integration test: load → serve → SSE stream for each flag combination</li>
-<li>[ ] <code>tests/test_wave70_squish_runtime.py</code> (≥75 tests)</li>
-<li>[ ] <code>tests/test_wave70_benchmark_suite.py</code> (≥40 tests)</li>
-<li>[ ] CHANGELOG <code>[44.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] <code>tests/test_wave70_squish_runtime.py</code> (≥75 tests — 87 collected, all passing)</li>
+<li>[x] <code>tests/test_wave70_benchmark_suite.py</code> (≥40 tests — 48 collected, all passing)</li>
+<li>[x] CHANGELOG <code>[44.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-complete">✅ v43 Wave 69 — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path (Complete)<a class="headerlink" href="#v43-wave-69-squizd-apple-neural-engine-routing-coreml-conversion-pipeline-ane-sub-8b-path-complete" title="Permanent link">&para;</a></h2>
