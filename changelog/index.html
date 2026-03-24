@@ -836,6 +836,84 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#4900-wave-76-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [49.0.0] — Wave 76 — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[49.0.0] — Wave 76 — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed-eval-runner-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed — Eval Runner Diagnostics
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Fixed — Eval Runner Diagnostics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bench_lmeval_all_modelspy-silent-failure-fix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        bench_lmeval_all_models.py Silent Failure Fix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#root-cause-of-march-23-benchmark-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Root Cause of March 23 Benchmark Failures
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documented-int2int3-quality-tps-findings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documented — INT2/INT3 Quality &amp; TPS Findings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#4800-wave-75-2026-06-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3700,6 +3778,41 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="4900-wave-76-2026-03-24">[49.0.0] — Wave 76 — 2026-03-24<a class="headerlink" href="#4900-wave-76-2026-03-24" title="Permanent link">&para;</a></h2>
+<h3 id="fixed-eval-runner-diagnostics">Fixed — Eval Runner Diagnostics<a class="headerlink" href="#fixed-eval-runner-diagnostics" title="Permanent link">&para;</a></h3>
+<h4 id="bench_lmeval_all_modelspy-silent-failure-fix"><code>bench_lmeval_all_models.py</code> Silent Failure Fix<a class="headerlink" href="#bench_lmeval_all_modelspy-silent-failure-fix" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong><code>_run_single_task()</code></strong> now uses <code>subprocess.run(..., capture_output=True)</code> so
+  that <code>mlx_lm evaluate</code> stderr is captured instead of lost to the terminal.</li>
+<li>On failure (non-zero exit code), the last 800 chars of stderr are appended to the
+  error message stored in the result JSON. Previously, errors showed only
+  <code>"mlx_lm exit code 1"</code> with no diagnostic context.</li>
+<li>Stdout is always echoed to the terminal for progress visibility. Stderr is only
+  printed on failure to avoid flooding output with mlx_lm's per-layer quant config dumps.</li>
+</ul>
+<h4 id="root-cause-of-march-23-benchmark-failures">Root Cause of March 23 Benchmark Failures<a class="headerlink" href="#root-cause-of-march-23-benchmark-failures" title="Permanent link">&para;</a></h4>
+<p>All Qwen3-4B/8B/14B and Qwen2.5-7B benchmarks recorded <code>mlx_lm exit code 1</code> with
+<code>elapsed_s: 0.08s</code>. Root cause: models were in squish's npy-dir format when the
+benchmark ran at 11:27 AM. They were re-quantized to mlx_lm-native safetensors at
+11:42 PM. <code>mlx_lm evaluate</code> (which uses <code>mlx_lm.utils.load()</code>) cannot load npy-dir
+format — the subprocess crashed before any inference occurred. Re-run in progress.</p>
+<h3 id="documented-int2int3-quality-tps-findings">Documented — INT2/INT3 Quality &amp; TPS Findings<a class="headerlink" href="#documented-int2int3-quality-tps-findings" title="Permanent link">&para;</a></h3>
+<p>Confirmed from lm-eval benchmarks on ≤1.5B models and model size analysis:</p>
+<ul>
+<li><strong>Uniform INT2</strong>: near-random quality (~35% avg on multi-choice tasks). Not viable.</li>
+<li><strong>INT3</strong>: degraded but functional (38–46%). Acceptable for non-critical tasks.</li>
+<li><strong>INT4</strong>: reference quality (40–57%).</li>
+<li><strong>Wave 72 mixed_2_6</strong>: keeps attention at INT4, embeddings at INT8, FFN at INT2.
+  ~20–25% higher TPS than INT4 with significantly better quality than uniform INT2.</li>
+<li><strong>TPS vs bit-width</strong> (M3 base, 100 GB/s): INT2 gives ~20% more TPS than INT4 for
+  Qwen3-8B (4.1 GB vs 4.9 GB), not 2× because attention weights (40% of model) stay INT4.</li>
+</ul>
+<h3 id="added-tests">Added — Tests<a class="headerlink" href="#added-tests" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>tests/test_wave72_quantize_fix.py::TestRunSingleTask</code> — 5 new tests verifying
+  <code>capture_output=True</code>, stderr surfaces in error, <code>--limit</code> flag behaviour.</li>
+</ul>
 <hr />
 <h2 id="4800-wave-75-2026-06-05">[48.0.0] — Wave 75 — 2026-06-05<a class="headerlink" href="#4800-wave-75-2026-06-05" title="Permanent link">&para;</a></h2>
 <h3 id="changed-performance-foundations">Changed — Performance Foundations<a class="headerlink" href="#changed-performance-foundations" title="Permanent link">&para;</a></h3>
