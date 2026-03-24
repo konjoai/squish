@@ -1,6 +1,6 @@
 class Squish < Formula
-  desc "Fast compressed model loader and OpenAI-compatible inference server for Apple Silicon"
-  homepage "https://squishai.github.io/squish"
+  desc "The Local AI Agent Runtime — run 70B models on Apple Silicon in 2 seconds"
+  homepage "https://squish.run"
   url "https://github.com/squishai/squish/archive/refs/tags/v9.0.0.tar.gz"
   sha256 "68b8f46625313d9b50095541eedd6a4a08fc031ff6a2322869001aed6bcc09e0"
   license "MIT"

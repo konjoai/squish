@@ -298,6 +298,87 @@ def _recommend_model(ram_gb: float) -> str:
     return "qwen3:1.7b"
 
 
+def _detect_local_ai_services() -> list[dict]:
+    """
+    Probe well-known local AI service ports and return a list of detected services.
+
+    Each entry has keys: name, base_url, models (list[str]), model_count (int).
+    Never raises — all probe errors are silently swallowed.
+    """
+    import urllib.error
+    import urllib.request
+
+    _SERVICES = [
+        ("Ollama",    "http://127.0.0.1:11434", "/api/tags"),
+        ("LM Studio", "http://127.0.0.1:1234",  "/v1/models"),
+        ("Jan",       "http://127.0.0.1:1337",  "/v1/models"),
+        ("LocalAI",   "http://127.0.0.1:8080",  "/v1/models"),
+    ]
+
+    detected: list[dict] = []
+    for name, base_url, path in _SERVICES:
+        try:
+            req = urllib.request.Request(
+                base_url + path,
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=0.5) as resp:
+                raw = json.loads(resp.read())
+            # Ollama returns {"models": [...]}; OpenAI-compat returns {"data": [...]}
+            if isinstance(raw, dict):
+                model_list = raw.get("models") or raw.get("data") or []
+                models = [
+                    (m.get("name") or m.get("id") or "")
+                    for m in model_list
+                    if isinstance(m, dict)
+                ]
+            else:
+                models = []
+            detected.append({
+                "name":        name,
+                "base_url":    base_url,
+                "models":      [m for m in models if m],
+                "model_count": len([m for m in models if m]),
+            })
+        except Exception:
+            continue
+    return detected
+
+
+def _open_browser_when_ready(url: str, port: int, timeout_s: int = 30) -> None:
+    """
+    Fork a child process that polls ``http://127.0.0.1:<port>/health`` until it
+    returns HTTP 200, then opens *url* in the default browser.
+
+    The parent returns immediately so the caller can proceed to ``os.execv()``.
+    The child calls ``os._exit(0)`` after opening the browser (or after *timeout_s*
+    seconds without a successful health check).
+    """
+    import urllib.error
+    import urllib.request
+    import webbrowser
+
+    pid = os.fork()
+    if pid != 0:
+        # Parent: return immediately so the server process replace can proceed.
+        return
+
+    # Child: poll the health endpoint, open browser on first 200, then exit.
+    deadline = time.time() + timeout_s
+    health_url = f"http://127.0.0.1:{port}/health"
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(health_url, timeout=0.5) as resp:
+                if resp.status == 200:
+                    webbrowser.open(url)
+                    os._exit(0)
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+    os._exit(0)  # timed out — exit silently
+
+
 def _resolve_model(name: str | None, quant_mode: str = "int4") -> tuple[Path, Path]:  # pragma: no cover
     """
     Resolve MODEL shorthand / path to (model_dir, compressed_dir).
@@ -778,6 +859,13 @@ def cmd_setup(args):  # pragma: no cover
 def cmd_run(args):  # pragma: no cover
     """Start the Squish inference server."""
 
+    # ── Detect other local AI services ───────────────────────────────────────
+    _local_services = _detect_local_ai_services()
+    if _local_services:
+        _svc_names = ", ".join(s["name"] for s in _local_services)
+        print(f"\n  ℹ  Detected local AI: {_svc_names}")
+        print("     Squish can run larger models with faster TTFT — proceeding with squish.\n")
+
     # ── Smart defaults ────────────────────────────────────────────────────────
     # No model specified + no local models → auto-pull the RAM-appropriate default
     if not args.model and _CATALOG_AVAILABLE:
@@ -961,6 +1049,10 @@ def cmd_run(args):  # pragma: no cover
         for _msl_key in ("MallocStackLogging", "MallocStackLoggingNoCompact",
                          "MallocScribble", "MallocGuardEdges", "MallocPreScribble"):
             os.environ.pop(_msl_key, None)
+        # ── Auto-open browser unless --no-browser flag is set ─────────────────
+        if not getattr(args, "no_browser", False):
+            _chat_url = f"http://{host}:{port}/chat"
+            _open_browser_when_ready(_chat_url, port)
         os.execv(sys.executable, cmd)  # replace this process — clean signals
     except Exception as e:
         _die(f"Failed to start server: {e}")
@@ -3070,6 +3162,8 @@ Ollama drop-in:
                        help="Qwen3 chain-of-thought budget: -1=unlimited (default), "
                             "0=disable thinking (/no_think mode, fastest), "
                             ">0=cap reasoning at N tokens.")
+    p_run.add_argument("--no-browser", action="store_true", default=False,
+                       help="Do not auto-open the Squish Agent chat UI in a browser after startup.")
     p_run.set_defaults(func=cmd_run)
 
     # ── serve (alias for run) ──
@@ -3146,6 +3240,8 @@ Ollama drop-in:
                          help="Qwen3 chain-of-thought budget: -1=unlimited (default), "
                               "0=disable thinking (/no_think mode, fastest), "
                               ">0=cap reasoning at N tokens.")
+    p_serve.add_argument("--no-browser", action="store_true", default=False,
+                         help="Do not auto-open the Squish Agent chat UI in a browser after startup.")
     p_serve.set_defaults(func=cmd_run)
 
     # ── chat ──

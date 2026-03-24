@@ -1,5 +1,5 @@
 site_name: Squish
-site_description: "Run 70B language models on a MacBook. Squish compresses model weights into memory-mapped INT8 tensors that load in milliseconds."
+site_description: "Run 70B AI models on a MacBook in 2 seconds. Squish — The Local AI Agent Runtime."
 site_url: https://squish.run
 repo_url: https://github.com/squishai/squish
 repo_name: squishai/squish

@@ -39,7 +39,7 @@ Squish compresses model weights into memory-mapped INT8 tensors that load in **m
 
 ```bash
 # Install
-brew install wesleyscholl/squish/squish
+brew install squish-ai/squish
 
 # Pull a compressed model from the community hub
 squish pull llama3.1:8b
@@ -67,6 +67,6 @@ curl http://localhost:11435/v1/chat/completions \
 ## Community
 
 - [Discord](https://discord.gg/squish) — get help, share benchmarks, discuss models  
-- [GitHub Discussions](https://github.com/wesleyscholl/squish/discussions) — Q&A, ideas, show & tell  
+- [GitHub Discussions](https://github.com/squishai/squish/discussions) — Q&A, ideas, show & tell  
 - [HuggingFace](https://huggingface.co/squish-community) — pre-squished model weights  
 - [Contributing](contributing.md) — good first issues, dev setup, PR guidelines  

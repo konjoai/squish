@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Squish Chat</title>
+<title>Squish Agent</title>
 <!-- Marked.js — Markdown rendering -->
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <!-- Highlight.js — code syntax highlighting -->
@@ -423,7 +423,7 @@
       <img src="/static/icon.png"
         style="width:30px;height:30px;border-radius:8px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 0 8px rgba(139,92,246,.45))"
         alt="" onerror="this.style.display='none'" />
-      <div id="logo"><span>Squish</span> Chat</div>
+      <div id="logo"><span>Squish</span> Agent</div>
       <select id="model-sel" onchange="onModelChange(this.value)">
         <option value="">Loading&hellip;</option>
       </select>
@@ -1450,7 +1450,7 @@ function exportChat() {
   const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `squish-chat-${Date.now()}.md`;
+  a.download = `squish-agent-${Date.now()}.md`;
   a.click();
   URL.revokeObjectURL(a.href);
 }

@@ -5,6 +5,59 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [47.0.0] — Wave 74 — 2026-06-04
+
+### Added — Onboarding & Website Polish
+
+Wave 74 focuses on public-facing clarity and the `squish run` experience.
+
+#### Website
+
+- **Hero rebrand**: Homepage now opens with "**Squish**" in large gradient text with the
+  tagline "*The Local AI Agent Runtime.*" — replacing the abstract "Local Agents. Infinite Memory."
+- **Clear hero copy**: New sub-heading explains what Squish does in one sentence:
+  *"Run any AI model, fully local, on Apple Silicon. Squish compresses 70B models to fit in 18 GB
+  and starts them in under 2 seconds — no GPU, no cloud, no API keys."*
+- **plain-english feature cards**: Renamed all six feature cards from jargon titles to direct
+  benefit descriptions — e.g. "The Infinite Memory Illusion" → "10x faster on repeat prompts."
+- **Brew string shortened**: All install commands updated from `squishai/squish/squish` to
+  `squish-ai/squish` across `overrides/home.html`, `docs/index.md`, `README.md`, and
+  `Formula/squish.rb`.
+- **Formula metadata**: `desc` updated to "The Local AI Agent Runtime — run 70B models on
+  Apple Silicon in 2 seconds"; `homepage` set to `https://squish.run`.
+
+#### `squish run` improvements
+
+- **`_detect_local_ai_services()`** — new public function (CLI module). Probes Ollama
+  (`:11434`), LM Studio (`:1234`), Jan (`:1337`), and LocalAI (`:8080`) with a 0.5 s
+  timeout each. Returns a list of `{name, base_url, models, model_count}` dicts. Never
+  raises; all probe errors are silently swallowed.
+- **`_open_browser_when_ready(url, port, timeout_s=30)`** — forks a child process that
+  polls `http://127.0.0.1:<port>/health` every 0.5 s; on the first HTTP 200 response it
+  calls `webbrowser.open(url)` and exits. The parent returns immediately so `os.execv()`
+  can proceed without blocking.
+- **`squish run` / `squish serve`** — calls `_detect_local_ai_services()` at startup and
+  prints an informational message when Ollama, LM Studio, or similar services are detected.
+  Auto-opens the Squish Agent chat UI in the browser after the server is ready (unless
+  `--no-browser` is passed).
+- **`--no-browser`** flag added to both `squish run` and `squish serve` parsers.
+
+#### Web UI
+
+- **Squish Agent**: `squish/static/index.html` title and logo renamed from "Squish Chat"
+  to "Squish Agent".
+
+### Tests
+
+- `tests/test_wave74_run_polish.py` — 19 unit tests covering `_detect_local_ai_services`
+  (8 cases), `_open_browser_when_ready` (3 cases), and `_recommend_model` (8 parametric
+  cases).
+- `tests/test_wave74_web_ui.py` — 3 tests asserting the web UI title, logo text, and
+  absence of the old "Squish Chat" string.
+- Full suite: **14,459 passed**, 34 skipped.
+
+---
+
 ## [46.0.0] — Wave 73 — 2026-06-01
 
 ### Added — "Impossible" MoE Elastic Inference Engine

@@ -67,7 +67,7 @@
 
 ```bash
 # Homebrew (recommended)
-brew install wesleyscholl/squish/squish
+brew install squish-ai/squish
 ```
 
 ```bash
@@ -520,7 +520,7 @@ optimisation, categorised by stability tier.
 ## Community
 
 - **[Discord](https://discord.gg/squish)** — get help, share benchmarks, discuss models
-- **[GitHub Discussions](https://github.com/wesleyscholl/squish/discussions)** — Q&A, ideas, show & tell
+- **[GitHub Discussions](https://github.com/squishai/squish/discussions)** — Q&A, ideas, show & tell
 - **[HuggingFace](https://huggingface.co/squish-community)** — pre-squished model weights (no local compression needed)
 - **[Contributing](CONTRIBUTING.md)** — good first issues, dev setup, PR guidelines
 
