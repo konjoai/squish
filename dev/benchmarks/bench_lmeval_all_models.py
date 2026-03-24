@@ -3,7 +3,7 @@
 bench_lmeval_all_models.py — Full lm-evaluation-harness suite across all
 previously-benchmarked models on Apple Silicon (M3 16 GB).
 
-Each model is evaluated on the standard 9-task lm-eval suite using
+Each model is evaluated on the standard 6-task lm-eval suite using
 ``python -m mlx_lm evaluate``, which runs models natively on the Metal GPU.
 Tasks are executed one at a time in separate subprocesses to release Metal
 heap memory between tasks and prevent kIOGPUCommandBufferCallbackErrorOutOfMemory.
@@ -11,7 +11,8 @@ heap memory between tasks and prevent kIOGPUCommandBufferCallbackErrorOutOfMemor
 Models evaluated
 ----------------
   11 source models × (INT4 + INT3 + INT2) = 33 squish-quantized variants.
-  BF16 reference baselines are included but skipped by default (--bits 4 3 2).
+  BF16 reference baselines are excluded by default; add --include-bf16 to
+  run them alongside the quantized variants.
 
   Qwen3-0.6B       BF16(1.1 GB)  INT4  INT3  INT2
   Llama-3.2-1B     BF16(2.3 GB)  INT4  INT3  INT2
@@ -23,7 +24,7 @@ Models evaluated
   Mistral-7B       BF16(8.8 GB)  INT4  INT3  INT2
   Qwen2.5-7B       BF16(14.0 GB) INT4  INT3  INT2
   Qwen3-8B         BF16(15.0 GB) INT4  INT3  INT2
-  Qwen3-14B        BF16(28.0 GB) INT4  INT3  INT2
+  Qwen3-14B        BF16(28.0 GB) INT4  INT3  INT2  (BF16 swap-risk on 16 GB)
 
 Tasks (industry-standard)
 --------------------------
@@ -33,26 +34,35 @@ Tasks (industry-standard)
   winogrande      Winogrande,      5-shot
   piqa            PIQA,            0-shot
   openbookqa      OpenBookQA,      0-shot
-  mmlu            MMLU,            5-shot
-  truthfulqa_mc2  TruthfulQA MC2,  0-shot
-  gsm8k           GSM8K,           5-shot
+
+Generation sanity check (--gen-sanity)
+--------------------------------------
+  Before running lmeval, three short chat prompts are sent to the model.
+  A model is flagged BROKEN if any response:
+    - Has more than 80 %% of tokens identical (repetition loop)
+    - Contains fewer than 3 unique words (garbage / numeric spew)
+  BROKEN models are logged but NOT skipped; lmeval will still run to
+  capture their (low) accuracy scores for the comparison table.
 
 Usage
 -----
-  # Smoke test (fast — 100 samples per task):
-  python3 dev/benchmarks/bench_lmeval_all_models.py --limit 100
+  # Resume benchmark from last stopping point (safe to re-run):
+  python3 dev/benchmarks/bench_lmeval_all_models.py --skip-existing
 
-  # Full suite (very long — days for all models at full dataset):
-  python3 dev/benchmarks/bench_lmeval_all_models.py
+  # Smoke test (fast — 500 samples per task, good accuracy estimate):
+  python3 dev/benchmarks/bench_lmeval_all_models.py --limit 500 --skip-existing
+
+  # Full suite with generation sanity pre-check:
+  python3 dev/benchmarks/bench_lmeval_all_models.py --gen-sanity
+
+  # Include BF16 reference baselines:
+  python3 dev/benchmarks/bench_lmeval_all_models.py --include-bf16 --skip-existing
+
+  # Specific bit depths only:
+  python3 dev/benchmarks/bench_lmeval_all_models.py --bits 2 3 --skip-existing
 
   # Specific models only:
-  python3 dev/benchmarks/bench_lmeval_all_models.py --models Qwen3-0.6B-bf16 Qwen3-4B-bf16
-
-  # Specific tasks only:
-  python3 dev/benchmarks/bench_lmeval_all_models.py --tasks arc_easy hellaswag mmlu
-
-  # Skip models that already have a result file:
-  python3 dev/benchmarks/bench_lmeval_all_models.py --skip-existing
+  python3 dev/benchmarks/bench_lmeval_all_models.py --models Qwen3-0.6B-int2 Qwen3-0.6B-int3
 
   # Force re-run even if results exist:
   python3 dev/benchmarks/bench_lmeval_all_models.py --force
@@ -66,6 +76,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -81,6 +92,19 @@ sys.path.insert(0, str(_REPO_ROOT))
 G  = "\033[32m"; Y  = "\033[33m"; C  = "\033[36m"; W  = "\033[1;37m"
 D  = "\033[2m";  NC = "\033[0m";  R  = "\033[31m"; B  = "\033[1m"
 M  = "\033[35m"
+
+# ── generation-sanity prompts ─────────────────────────────────────────────────
+# Three short, unambiguous questions that a working instruct model should answer
+# with distinct, coherent words.  Used by --gen-sanity to detect broken models.
+_SANITY_PROMPTS: list[str] = [
+    "What is the capital of France?",
+    "What color is the sky on a clear day?",
+    "Name one planet in our solar system.",
+]
+_SANITY_MAX_TOKENS = 40   # enough for a short answer
+# A response is broken if >80 % of words are identical (loop) or <3 unique words
+_REPETITION_THRESHOLD = 0.80
+_MIN_UNIQUE_WORDS     = 3
 
 # ── model registry ────────────────────────────────────────────────────────────
 _MODELS_ROOT = Path.home() / "models"
@@ -226,6 +250,84 @@ def _result_path(model_name: str, output_dir: Path) -> Path | None:
     """Return the most recent existing result file for a given model, or None."""
     candidates = sorted(output_dir.glob(f"lmeval_{model_name}_*.json"))
     return candidates[-1] if candidates else None
+
+
+# ── generation sanity check ───────────────────────────────────────────────────
+
+def _run_generation_sanity(model_dir: Path) -> dict[str, Any]:
+    """Run a quick generation sanity check: load the model, generate 3 short
+    answers, and report whether any look broken (repetition loop or garbage).
+
+    Returns a dict with keys:
+        passed     – bool: True if no issues detected
+        issues     – list[str]: human-readable problem descriptions
+        responses  – list[str]: raw generated text for each prompt
+        elapsed_s  – float: wall time for the whole check
+    """
+    import mlx_lm  # local import to avoid cost when --gen-sanity not used
+
+    t0 = time.time()
+    issues: list[str]    = []
+    responses: list[str] = []
+
+    try:
+        model, tok = mlx_lm.load(str(model_dir))
+    except Exception as exc:
+        return {
+            "passed":    False,
+            "issues":    [f"load failed: {exc}"],
+            "responses": [],
+            "elapsed_s": time.time() - t0,
+        }
+
+    has_chat_template = (
+        hasattr(tok, "apply_chat_template")
+        and tok.chat_template is not None
+    )
+
+    for user_msg in _SANITY_PROMPTS:
+        if has_chat_template:
+            msgs   = [{"role": "user", "content": user_msg}]
+            prompt = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+        else:
+            prompt = user_msg
+
+        try:
+            out = mlx_lm.generate(
+                model, tok,
+                prompt=prompt,
+                max_tokens=_SANITY_MAX_TOKENS,
+                verbose=False,
+            )
+        except Exception as exc:
+            issues.append(f"generate failed: {exc}")
+            responses.append("")
+            continue
+
+        responses.append(out)
+        words = [w.lower() for w in re.findall(r"\w+", out)]
+        if not words:
+            issues.append(f"empty output for: {user_msg!r}")
+            continue
+        most_common_frac = max(words.count(w) for w in words) / len(words)
+        unique_count     = len(set(words))
+        if most_common_frac >= _REPETITION_THRESHOLD:
+            issues.append(
+                f"repetition loop (top-word {most_common_frac:.0%}): {out[:60]!r}"
+            )
+        elif unique_count < _MIN_UNIQUE_WORDS:
+            issues.append(
+                f"garbage/incoherent output ({unique_count} unique words): {out[:60]!r}"
+            )
+
+    del model  # release Metal memory before lmeval subprocess starts
+
+    return {
+        "passed":    len(issues) == 0,
+        "issues":    issues,
+        "responses": responses,
+        "elapsed_s": time.time() - t0,
+    }
 
 
 # ── per-task subprocess runner ────────────────────────────────────────────────
@@ -577,6 +679,39 @@ def main() -> None:
         help="Re-evaluate even if results already exist (overrides --skip-existing)",
     )
     ap.add_argument(
+        "--gen-sanity",
+        action="store_true",
+        dest="gen_sanity",
+        help=(
+            "Run a 3-prompt generation sanity check before lmeval.  "
+            "Detects repetition loops and garbage output (broken INT2/INT3 models).  "
+            "Reports issues but does not skip the model so lmeval scores are still recorded."
+        ),
+    )
+    ap.add_argument(
+        "--include-bf16",
+        action="store_true",
+        dest="include_bf16",
+        help=(
+            "Include BF16 reference baselines in the evaluation.  "
+            "Excluded by default because they are slow and rarely change."
+        ),
+    )
+    ap.add_argument(
+        "--bits",
+        nargs="+",
+        type=int,
+        choices=[2, 3, 4],
+        default=None,
+        metavar="N",
+        dest="bits",
+        help=(
+            "Only evaluate models quantised at these bit widths "
+            "(e.g. --bits 2 3 skips INT4 and BF16 models).  "
+            "BF16 models are only included when --include-bf16 is also given."
+        ),
+    )
+    ap.add_argument(
         "--models-root",
         type=Path,
         default=_MODELS_ROOT,
@@ -600,6 +735,19 @@ def main() -> None:
             sys.exit(1)
     else:
         registry = list(MODEL_REGISTRY)
+
+    # ── apply --include-bf16 / --bits filters ─────────────────────────────────
+    if not args.include_bf16:
+        registry = [r for r in registry if "bf16" not in r[0].lower()]
+
+    if args.bits:
+        def _model_bits(name: str) -> int | None:
+            for b in [2, 3, 4]:
+                if f"int{b}" in name.lower():
+                    return b
+            return None  # BF16 baseline
+
+        registry = [r for r in registry if _model_bits(r[0]) in args.bits]
 
     # ── filter to models that actually exist on disk ──────────────────────────
     available = []
@@ -661,6 +809,21 @@ def main() -> None:
             except Exception as exc:
                 _err(name, f"could not load existing result: {exc}")
             continue
+
+        # ── optional generation sanity check ──────────────────────────────────
+        if args.gen_sanity:
+            _info("gen-sanity", f"loading model for quick generation check …")
+            sanity = _run_generation_sanity(model_dir)
+            if sanity["passed"]:
+                _ok("gen-sanity", f"PASS  (took {sanity['elapsed_s']:.1f}s)")
+            else:
+                for issue in sanity["issues"]:
+                    _err("gen-sanity", f"BROKEN: {issue}")
+                _info(
+                    "gen-sanity",
+                    "model appears broken — lmeval will still run for score record",
+                )
+        # ─────────────────────────────────────────────────────────────────────
 
         raw = _run_model_eval(
             model_name=name,

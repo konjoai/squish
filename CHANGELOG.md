@@ -74,6 +74,53 @@ and `squish update` CLI.
   `TestPreflightCheck`, `TestPreflightReport`, individual `_check_*` functions,
   `TestRunPreflightChecks`, `TestFormatReport`
 
+- **`tests/test_wave72_quantize_fix.py`** — 38 tests for INT2/INT3 quantization fix:
+  `TestQuantizeArgparser`, `TestHFIDDetection`, `TestDryRun`, `TestQuantPredicate` (12 table-driven
+  cases), `TestMlxLmConvertCall`; plus `TestRunGenerationSanity` (7 cases) and
+  `TestBenchArgFilters` (5 cases) for the updated benchmark script.
+
+- **`tests/test_wave72_resquish.py`** — 26 tests: `TestModelFamily`, `TestModelFamiliesRegistry`,
+  `TestRecipes` (10 cases verifying attn=4-bit, group_size per recipe), `TestSquishSubprocess`
+  (6 cases: attn-bits, group-size, success, failure, dry-run, cpu flag, ffn-bits).
+
+#### Fixed — INT2/INT3 Broken Inference (Root Cause + Fix)
+
+**Root cause diagnosed:** Both INT2 and INT3 models produced broken output because all linear
+layers — including `q_proj`, `k_proj`, `v_proj`, `o_proj` — were quantized at the same low bit
+width as the FFN:
+
+- **INT2** (2-bit attention projections): only 4 discrete weight values → broken attention →
+  garbage output (e.g. `'? and 20% 0: Inant to know that the day to, with 2, 29…'`)
+- **INT3** (3-bit attention projections): degenerate fixed attention pattern → repetition loops
+  (e.g. `'| 2+2 | | | | | | |'`)
+
+**Fix — 3-tier mixed-precision quantization:**
+
+| Variant | FFN layers | Attn Q/K/V/O | Embed/lm_head | group_size |
+|---------|-----------|-------------|--------------|------------|
+| INT2 (fixed) | 2-bit | **4-bit** | 8-bit | **32** |
+| INT3 (fixed) | 3-bit | **4-bit** | 8-bit | **32** |
+| INT4 (unchanged) | 4-bit | 4-bit | 8-bit | 64 |
+
+**CLI changes** (`squish/cli.py`):
+- Added `--attn-bits N` argument to `squish quantize` (default: same as `--ffn-bits`)
+- Added `--group-size N` argument (default: 64)
+- `cmd_convert_model` upgraded to 3-tier `quant_predicate`:
+  embed/lm_head → `embed_bits`; `self_attn`/`cross_attn` → `attn_bits`; MLP → `ffn_bits`
+- HF model ID support: `--source-path Org/Repo` works without a local directory
+
+**New script** (`dev/scripts/resquish_all_models.py`):
+- Systematically deletes broken INT2/INT3 dirs and re-squishes with the fixed recipe
+- Covers all 11 model families; `Qwen3-14B` (HF download); `Mistral-7B` (fresh INT4)
+- Flags: `--dry-run`, `--families`, `--bits`, `--cpu`, `--yes`, `--models-root`
+
+**Benchmark updates** (`dev/benchmarks/bench_lmeval_all_models.py`):
+- `_run_generation_sanity(model_dir)`: loads model, runs 3 short prompts, detects repetition
+  loops (>80% identical words) and garbage output (<3 unique words)
+- `--gen-sanity`: runs generation sanity check before each lmeval evaluation
+- `--include-bf16`: opt-in BF16 reference baseline inclusion
+- `--bits N [N …]`: filter registry to specific bit widths (2, 3, or 4)
+
 ---
 
 ## [45.0.0] — Wave 71 — 2026-03-25

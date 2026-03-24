@@ -649,7 +649,16 @@ and a programmatic launch preflight API.**
 - [x] `squish/static/index.html` — agent mode, tool cards, file attach, slash commands
 - [x] `tests/test_wave72_agent_engine.py`
 - [x] `tests/test_wave72_launch_preflight.py`
-- [ ] All tests passing
+- [x] **INT2/INT3 quantization bug diagnosed and fixed** (3-tier mixed-precision)
+  - [x] Root cause: uniform 2/3-bit on attention projections → broken attn / repetition loops
+  - [x] `squish/cli.py` — `--attn-bits` + `--group-size` + HF ID support + 3-tier predicate
+  - [x] `dev/scripts/resquish_all_models.py` — systematic re-squish script (11 families)
+  - [x] `dev/benchmarks/bench_lmeval_all_models.py` — `--gen-sanity` / `--include-bf16` / `--bits`
+  - [x] `tests/test_wave72_quantize_fix.py` + `tests/test_wave72_resquish.py` (64 tests)
+  - [ ] Run `resquish_all_models.py --yes` to rebuild INT2/INT3 models with fixed recipe
+  - [ ] Run benchmark: `bench_lmeval_all_models.py --bits 2 3 --force --gen-sanity --limit 500`
+  - [ ] Verify Mistral-7B INT4 squished and benchmarked
+- [x] All tests passing (14,434 passed)
 - [ ] `git commit` + `git push`
 
 ---
