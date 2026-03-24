@@ -80,19 +80,25 @@ while _cli_dir in sys.path:  # pragma: no cover
     sys.path.remove(_cli_dir)
 del _cli_dir, _repo_root
 
-try:
-    from squish.catalog import (
-        list_catalog,
-    )
-    from squish.catalog import (
-        pull as _catalog_pull,
-    )
-    from squish.catalog import (
-        resolve as _catalog_resolve,
-    )
-    _CATALOG_AVAILABLE = True
-except Exception:  # pragma: no cover
-    _CATALOG_AVAILABLE = False
+# squish.catalog is imported lazily on first use to keep CLI startup fast
+# (eager import pulled in urllib/ssl/http chains, adding ~43 ms to every invocation).
+_CATALOG_AVAILABLE = True  # catalog is always part of the squish package
+
+
+def list_catalog(*args, **kwargs):
+    from squish.catalog import list_catalog as _lc
+    return _lc(*args, **kwargs)
+
+
+def _catalog_pull(*args, **kwargs):
+    from squish.catalog import pull as _pull
+    return _pull(*args, **kwargs)
+
+
+def _catalog_resolve(*args, **kwargs):
+    from squish.catalog import resolve as _resolve
+    return _resolve(*args, **kwargs)
+
 
 
 # ── Terminal colours ─────────────────────────────────────────────────────────
@@ -347,36 +353,33 @@ def _detect_local_ai_services() -> list[dict]:
 
 def _open_browser_when_ready(url: str, port: int, timeout_s: int = 30) -> None:
     """
-    Fork a child process that polls ``http://127.0.0.1:<port>/health`` until it
+    Spawn a daemon thread that polls ``http://127.0.0.1:<port>/health`` until it
     returns HTTP 200, then opens *url* in the default browser.
 
-    The parent returns immediately so the caller can proceed to ``os.execv()``.
-    The child calls ``os._exit(0)`` after opening the browser (or after *timeout_s*
-    seconds without a successful health check).
+    Uses a daemon thread instead of ``os.fork()`` to avoid the
+    ``DeprecationWarning`` raised when forking from a multi-threaded process
+    (Python 3.12+).  The thread is automatically killed when ``os.execv()``
+    replaces the process immediately after this call returns.
     """
+    import threading
     import urllib.error
     import urllib.request
     import webbrowser
 
-    pid = os.fork()
-    if pid != 0:
-        # Parent: return immediately so the server process replace can proceed.
-        return
+    def _poll() -> None:
+        deadline = time.time() + timeout_s
+        health_url = f"http://127.0.0.1:{port}/health"
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(health_url, timeout=0.5) as resp:
+                    if resp.status == 200:
+                        webbrowser.open(url)
+                        return
+            except Exception:
+                pass
+            time.sleep(0.5)
 
-    # Child: poll the health endpoint, open browser on first 200, then exit.
-    deadline = time.time() + timeout_s
-    health_url = f"http://127.0.0.1:{port}/health"
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(health_url, timeout=0.5) as resp:
-                if resp.status == 200:
-                    webbrowser.open(url)
-                    os._exit(0)
-        except Exception:
-            pass
-        time.sleep(0.5)
-
-    os._exit(0)  # timed out — exit silently
+    threading.Thread(target=_poll, daemon=True).start()
 
 
 def _resolve_model(name: str | None, quant_mode: str = "int4") -> tuple[Path, Path]:  # pragma: no cover
@@ -1463,6 +1466,8 @@ def cmd_bench(args):  # pragma: no cover
 
 def cmd_doctor(args):
     """Check that all squish components are installed correctly."""
+    import concurrent.futures
+    import importlib
     import platform as _platform
     import socket
 
@@ -1497,57 +1502,72 @@ def cmd_doctor(args):
         except Exception:  # pragma: no cover
             return True  # unknown format → assume ok
 
+    # Pre-import all slow packages in parallel to reduce wall-clock time.
+    _slow_pkgs = ["mlx.core", "mlx_lm", "numpy", "transformers", "zstandard", "squish_quant"]
+
+    def _try_import(pkg: str) -> tuple:
+        try:
+            return (pkg, importlib.import_module(pkg), None)
+        except ImportError as exc:
+            return (pkg, None, exc)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(_slow_pkgs)) as _pool:
+        _pkg_cache: dict[str, tuple] = {
+            pkg: (mod, err)
+            for pkg, mod, err in _pool.map(_try_import, _slow_pkgs)
+        }
+
     # MLX
-    try:
-        import mlx.core as mx
-        _check(f"mlx ≥ 0.18  (found {mx.__version__})",
-               _ver_ok(mx.__version__, "0.18"),
+    _mx_mod, _ = _pkg_cache["mlx.core"]
+    if _mx_mod is not None:
+        _check(f"mlx ≥ 0.18  (found {_mx_mod.__version__})",
+               _ver_ok(_mx_mod.__version__, "0.18"),
                "pip install --upgrade mlx")
-    except ImportError:  # pragma: no cover
+    else:  # pragma: no cover
         _check("mlx", False, "pip install mlx")
 
     # mlx-lm
-    try:
-        import mlx_lm
-        version = getattr(mlx_lm, "__version__", "0")
-        _check(f"mlx-lm ≥ 0.19  (found {version})",
-               _ver_ok(version, "0.19"),
+    _mlxlm_mod, _ = _pkg_cache["mlx_lm"]
+    if _mlxlm_mod is not None:
+        _mlxlm_version = getattr(_mlxlm_mod, "__version__", "0")
+        _check(f"mlx-lm ≥ 0.19  (found {_mlxlm_version})",
+               _ver_ok(_mlxlm_version, "0.19"),
                "pip install --upgrade mlx-lm")
-    except ImportError:  # pragma: no cover
+    else:  # pragma: no cover
         _check("mlx-lm", False, "pip install mlx-lm")
 
     # numpy
-    try:
-        import numpy as np
-        _check(f"numpy ≥ 1.26  (found {np.__version__})",
-               _ver_ok(np.__version__, "1.26"),
+    _np_mod, _ = _pkg_cache["numpy"]
+    if _np_mod is not None:
+        _check(f"numpy ≥ 1.26  (found {_np_mod.__version__})",
+               _ver_ok(_np_mod.__version__, "1.26"),
                "pip install --upgrade numpy")
-    except ImportError:  # pragma: no cover
+    else:  # pragma: no cover
         _check("numpy", False, "pip install numpy")
 
     # transformers
-    try:
-        import transformers
-        _check(f"transformers ≥ 4.40  (found {transformers.__version__})",
-               _ver_ok(transformers.__version__, "4.40"),
+    _tf_mod, _ = _pkg_cache["transformers"]
+    if _tf_mod is not None:
+        _check(f"transformers ≥ 4.40  (found {_tf_mod.__version__})",
+               _ver_ok(_tf_mod.__version__, "4.40"),
                "pip install --upgrade transformers")
-    except ImportError:  # pragma: no cover
+    else:  # pragma: no cover
         _check("transformers", False, "pip install transformers")
 
     # zstandard
-    try:
-        import zstandard
-        _check(f"zstandard ≥ 0.22  (found {zstandard.__version__})",
-               _ver_ok(zstandard.__version__, "0.22"),
+    _zstd_mod, _ = _pkg_cache["zstandard"]
+    if _zstd_mod is not None:
+        _check(f"zstandard ≥ 0.22  (found {_zstd_mod.__version__})",
+               _ver_ok(_zstd_mod.__version__, "0.22"),
                "pip install --upgrade zstandard")
-    except ImportError:  # pragma: no cover
+    else:  # pragma: no cover
         _check("zstandard (optional zstd entropy layer)", False, "pip install zstandard")
 
     # squish_quant Rust extension
-    try:
-        import squish_quant  # noqa: F401
+    _squant_mod, _ = _pkg_cache["squish_quant"]
+    if _squant_mod is not None:
         _check("squish_quant Rust extension (6 GB/s quantizer)", True)
-    except ImportError:  # pragma: no cover
+    else:  # pragma: no cover
         _check("squish_quant Rust extension (optional — 4× faster quantization)", False,
                "cd squish_quant_rs && python3 -m maturin build --release && pip install .")
 

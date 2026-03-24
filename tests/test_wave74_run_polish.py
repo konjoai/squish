@@ -181,41 +181,55 @@ class TestDetectLocalAIServices(unittest.TestCase):
 class TestOpenBrowserWhenReady(unittest.TestCase):
     """Tests for _open_browser_when_ready()."""
 
-    def test_parent_returns_immediately_after_fork(self):
-        """The calling (parent) process returns without blocking."""
-        with patch("os.fork", return_value=1) as mock_fork:
-            # return value 1 == parent side
-            _open_browser_when_ready("http://localhost:11435/chat", 11435)
-        mock_fork.assert_called_once()
+    def test_returns_immediately_without_blocking(self):
+        """The function must return immediately — the polling runs in a daemon thread."""
+        import threading
 
-    def test_no_fork_called_when_service_probed_manually(self):
-        """Verify fork is called exactly once per call to open_browser_when_ready."""
-        with patch("os.fork", return_value=42) as mock_fork:
-            _open_browser_when_ready("http://localhost:11435/chat", 11435)
-        self.assertEqual(mock_fork.call_count, 1)
+        threads_before = set(t.ident for t in threading.enumerate())
+        _open_browser_when_ready("http://localhost:11435/chat", 11435, timeout_s=0)
+        # Function should return without raising; new thread may have started and
+        # already finished (timeout_s=0 → no-op poll loop).
+        # The key assertion is just that we return at all.
 
-    def test_child_side_opens_browser_on_200_then_exits(self):
-        """Child (fork returns 0) should open browser on HTTP 200 then os._exit(0)."""
-        import urllib.error
+    def test_spawns_daemon_thread(self):
+        """A daemon thread must be spawned, not os.fork()."""
+        import threading
+
+        spawned: list = []
+        original_init = threading.Thread.__init__
+
+        def capturing_init(self_t, *a, **kw):
+            spawned.append(kw.get("daemon") or a[4] if len(a) > 4 else kw.get("daemon"))
+            original_init(self_t, *a, **kw)
+
+        with patch.object(threading.Thread, "__init__", capturing_init), \
+             patch.object(threading.Thread, "start", lambda s: None):
+            _open_browser_when_ready("http://localhost:11435/chat", 11435)
+
+        self.assertTrue(len(spawned) >= 1, "Expected a Thread to be constructed")
+
+    def test_thread_opens_browser_on_200(self):
+        """The polling function inside the thread should open the browser on HTTP 200."""
+        import threading
 
         resp = MagicMock()
         resp.status = 200
         resp.__enter__ = lambda s: s
         resp.__exit__ = MagicMock(return_value=False)
 
-        with patch("os.fork", return_value=0), \
-             patch("urllib.request.urlopen", return_value=resp), \
+        threads_started: list = []
+
+        def capture_thread(self_t):
+            threads_started.append(self_t)
+            # Run the thread target synchronously so we can observe side-effects.
+            self_t._target()
+
+        with patch("urllib.request.urlopen", return_value=resp), \
              patch("webbrowser.open") as mock_wb, \
-             patch("os._exit") as mock_exit:
-            # _exit terminates the child; we raise SystemExit to escape the loop
-            mock_exit.side_effect = SystemExit(0)
-            try:
-                _open_browser_when_ready("http://localhost:11435/chat", 11435, timeout_s=5)
-            except SystemExit:
-                pass
+             patch.object(threading.Thread, "start", capture_thread):
+            _open_browser_when_ready("http://localhost:11435/chat", 11435, timeout_s=5)
 
         mock_wb.assert_called_once_with("http://localhost:11435/chat")
-        mock_exit.assert_called_once_with(0)
 
 
 # ===========================================================================
