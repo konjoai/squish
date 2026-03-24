@@ -1676,15 +1676,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v38-wave-64-squizd-astc-compression-pipeline-arm-astcenc-hardware-texture-weight-decode-squizd-binary-header-v01-planned" class="md-nav__link">
+  <a href="#v38-wave-64-squizd-astc-compression-pipeline-arm-astcenc-hardware-texture-weight-decode-squizd-binary-header-v01-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Planned)
+        ✅ v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Planned)">
+    <nav class="md-nav" aria-label="✅ v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -6948,15 +6948,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v38-wave-64-squizd-astc-compression-pipeline-arm-astcenc-hardware-texture-weight-decode-squizd-binary-header-v01-planned" class="md-nav__link">
+  <a href="#v38-wave-64-squizd-astc-compression-pipeline-arm-astcenc-hardware-texture-weight-decode-squizd-binary-header-v01-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Planned)
+        ✅ v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Planned)">
+    <nav class="md-nav" aria-label="✅ v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -13944,7 +13944,7 @@ diagnostic integration (one-click "Fix with Squish" on any editor error).</stron
 </ul>
 <p><strong>Wave 68 COMPLETE — 151 tests passing across 8 suites — 2026-05-30</strong></p>
 <hr />
-<h2 id="v38-wave-64-squizd-astc-compression-pipeline-arm-astcenc-hardware-texture-weight-decode-squizd-binary-header-v01-planned">🚧 v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Planned)<a class="headerlink" href="#v38-wave-64-squizd-astc-compression-pipeline-arm-astcenc-hardware-texture-weight-decode-squizd-binary-header-v01-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v38-wave-64-squizd-astc-compression-pipeline-arm-astcenc-hardware-texture-weight-decode-squizd-binary-header-v01-complete">✅ v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Complete)<a class="headerlink" href="#v38-wave-64-squizd-astc-compression-pipeline-arm-astcenc-hardware-texture-weight-decode-squizd-binary-header-v01-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 64 builds the ASTC (Adaptive Scalable Texture Compression) pipeline for transformer
 weight tensors — the foundation of the entire SQUIZD native runtime stack. ASTC 6×6 HDR-ch mode
 stores each weight as approximately 3.56 bits with a fixed-function hardware decoder built into
@@ -14088,20 +14088,20 @@ build upon.</strong></p>
 more models in budget, larger KV caches). Throughput improvements compound with Waves 65–69.</p>
 <h3 id="wave-64-checklist">Wave 64 Checklist<a class="headerlink" href="#wave-64-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] Wave 64 spec reviewed</li>
-<li>[ ] <code>squish/compress/astc_encoder.py</code> — ARM astcenc HDR-ch wrapper + block padding</li>
-<li>[ ] <code>squish/loaders/astc_loader.py</code> — MTLTexture descriptor creation + ASTC block upload</li>
-<li>[ ] <code>squish/kernels/astc_gemv.metal</code> — texture-sampled GEMV shader</li>
-<li>[ ] <code>squish/format/squish_header.py</code> — .squizd binary header v0.1 struct + ser/de</li>
-<li>[ ] <code>squish compress --format astc</code> CLI flag in <code>squish/cli.py</code></li>
-<li>[ ] <code>squish compress --format hybrid</code> flag (ASTC for FFN, INT4 for attention layers)</li>
-<li>[ ] Apple GPU capability check: <code>MTLPixelFormatASTC_6x6_HDR</code> support detection at startup</li>
-<li>[ ] Graceful fallback: <code>--format astc</code> on non-Apple hardware → INT4 with warning</li>
+<li>[x] Wave 64 spec reviewed</li>
+<li>[x] <code>squish/compress/astc_encoder.py</code> — ARM astcenc HDR-ch wrapper + block padding</li>
+<li>[x] <code>squish/loaders/astc_loader.py</code> — MTLTexture descriptor creation + ASTC block upload</li>
+<li>[x] <code>squish/kernels/astc_gemv.metal</code> — texture-sampled GEMV shader</li>
+<li>[x] <code>squish/format/squish_header.py</code> — .squizd binary header v0.1 struct + ser/de</li>
+<li>[x] <code>squish compress --format astc</code> CLI flag in <code>squish/cli.py</code></li>
+<li>[x] <code>squish compress --format hybrid</code> flag (ASTC for FFN, INT4 for attention layers)</li>
+<li>[x] Apple GPU capability check: <code>MTLPixelFormatASTC_6x6_HDR</code> support detection at startup</li>
+<li>[x] Graceful fallback: <code>--format astc</code> on non-Apple hardware → INT4 with warning</li>
 <li>[ ] Correctness test: ASTC-sampled weight values match BF16 within MMLU accuracy budget</li>
 <li>[ ] Integration test: Qwen3-0.6B ASTC compress → serve → correct token generation</li>
-<li>[ ] <code>tests/test_wave64_astc_compression.py</code> (≥75 tests)</li>
-<li>[ ] CHANGELOG <code>[38.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] <code>tests/test_wave64_astc_compression.py</code> (130 tests, all passing)</li>
+<li>[x] CHANGELOG <code>[38.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-complete">✅ v37 Wave 63 — AQLM Multi-Codebook Encode · BitDistiller Scale Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG LSH Score · MILO INT3 Pack (Complete)<a class="headerlink" href="#v37-wave-63-aqlm-multi-codebook-encode-bitdistiller-scale-refine-gguf-block-quant-pq-cache-fit-magicpig-lsh-score-milo-int3-pack-complete" title="Permanent link">&para;</a></h2>
