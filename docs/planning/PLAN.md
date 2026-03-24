@@ -1203,7 +1203,7 @@ diagnostic integration (one-click "Fix with Squish" on any editor error).**
 
 ---
 
-## 🚧 v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Planned)
+## ✅ v38 Wave 64 — SQUIZD ASTC Compression Pipeline · ARM astcenc · Hardware Texture Weight Decode · SQUIZD Binary Header v0.1 (Complete)
 
 Theme: **Wave 64 builds the ASTC (Adaptive Scalable Texture Compression) pipeline for transformer
 weight tensors — the foundation of the entire SQUIZD native runtime stack. ASTC 6×6 HDR-ch mode
@@ -1277,20 +1277,20 @@ more models in budget, larger KV caches). Throughput improvements compound with 
 
 ### Wave 64 Checklist
 
-- [ ] Wave 64 spec reviewed
-- [ ] `squish/compress/astc_encoder.py` — ARM astcenc HDR-ch wrapper + block padding
-- [ ] `squish/loaders/astc_loader.py` — MTLTexture descriptor creation + ASTC block upload
-- [ ] `squish/kernels/astc_gemv.metal` — texture-sampled GEMV shader
-- [ ] `squish/format/squish_header.py` — .squizd binary header v0.1 struct + ser/de
-- [ ] `squish compress --format astc` CLI flag in `squish/cli.py`
-- [ ] `squish compress --format hybrid` flag (ASTC for FFN, INT4 for attention layers)
-- [ ] Apple GPU capability check: `MTLPixelFormatASTC_6x6_HDR` support detection at startup
-- [ ] Graceful fallback: `--format astc` on non-Apple hardware → INT4 with warning
+- [x] Wave 64 spec reviewed
+- [x] `squish/compress/astc_encoder.py` — ARM astcenc HDR-ch wrapper + block padding
+- [x] `squish/loaders/astc_loader.py` — MTLTexture descriptor creation + ASTC block upload
+- [x] `squish/kernels/astc_gemv.metal` — texture-sampled GEMV shader
+- [x] `squish/format/squish_header.py` — .squizd binary header v0.1 struct + ser/de
+- [x] `squish compress --format astc` CLI flag in `squish/cli.py`
+- [x] `squish compress --format hybrid` flag (ASTC for FFN, INT4 for attention layers)
+- [x] Apple GPU capability check: `MTLPixelFormatASTC_6x6_HDR` support detection at startup
+- [x] Graceful fallback: `--format astc` on non-Apple hardware → INT4 with warning
 - [ ] Correctness test: ASTC-sampled weight values match BF16 within MMLU accuracy budget
 - [ ] Integration test: Qwen3-0.6B ASTC compress → serve → correct token generation
-- [ ] `tests/test_wave64_astc_compression.py` (≥75 tests)
-- [ ] CHANGELOG `[38.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `tests/test_wave64_astc_compression.py` (130 tests, all passing)
+- [x] CHANGELOG `[38.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 

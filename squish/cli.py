@@ -1649,7 +1649,34 @@ def cmd_daemon(args):  # pragma: no cover
 
 
 def cmd_compress(args):  # pragma: no cover
-    """Compress a model directory to Squish npy-dir format (INT8 or INT4)."""
+    """Compress a model directory to Squish npy-dir or .squizd format."""
+    # ── Resolve explicit --format to bool flags for backward compat ──────────
+    _compress_format = getattr(args, "compress_format", None)
+    if _compress_format == "int8":
+        # Explicit int8: override any --int4 flag
+        args.int4 = False
+    elif _compress_format == "int4":
+        args.int4 = True
+    elif _compress_format in ("astc", "hybrid"):
+        # ASTC / hybrid: check hardware capability; fall back to INT4 if unsupported
+        try:
+            from squish.loaders.astc_loader import ASTCLoader
+            _loader = ASTCLoader()
+            if not _loader.supports_astc_6x6_hdr():
+                print(
+                    f"\n  Warning: --format {_compress_format} requires Apple Silicon with ASTC "
+                    "texture support.\n"
+                    "  Falling back to INT4 compression on this hardware.\n"
+                )
+                _compress_format = "int4"
+                args.int4 = True
+        except ImportError:
+            print(
+                f"\n  Warning: ASTC loader unavailable; falling back to INT4.\n"
+            )
+            _compress_format = "int4"
+            args.int4 = True
+
     # Resolve model path (accept shorthand or full path)
     if args.model in _MODEL_SHORTHAND:
         model_dir = _MODELS_DIR / _MODEL_SHORTHAND[args.model]
@@ -3131,6 +3158,22 @@ Ollama drop-in:
         help="Override per-group size for INT4 quantization (power of two ≤ 32 "
              "that divides the weight matrix column count). Default: auto-select 32. "
              "Use 16 for finer-grained scales at ~2× scale storage overhead.",
+    )
+    p_compress.add_argument(
+        "--format",
+        choices=["int8", "int4", "astc", "hybrid"],
+        default=None,
+        dest="compress_format",
+        metavar="FORMAT",
+        help=(
+            "Output compression format. Choices: int4 (default, 4-bit group quantisation), "
+            "int8 (8-bit group quantisation), "
+            "astc (ASTC 6×6 HDR texture ~3.56 BPW, Apple Silicon only — "
+            "writes .squizd format), "
+            "hybrid (ASTC for FFN layers + INT4 for attention, Apple Silicon only — "
+            "writes .squizd format). "
+            "ASTC formats fall back to INT4 on non-Apple or non-ASTC hardware."
+        ),
     )
     p_compress.set_defaults(func=cmd_compress)
 

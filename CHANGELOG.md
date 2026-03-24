@@ -289,6 +289,103 @@ Eight test suites, **151 tests**, all passing:
 
 ---
 
+## [38.0.0] — Wave 64 — 2026-03-24
+
+### Added — SQUIZD ASTC Compression Pipeline · 256-Byte Binary Header v0.1 · MTLTexture ASTC Loader · ASTC GEMV Metal Shader · `--format astc/hybrid` CLI Flag
+
+Wave 64 is the **foundation layer** of the SQUIZD native inference stack.  It introduces ASTC 6×6 HDR
+texture compression for transformer weight tensors (~3.56 BPW with Apple GPU hardware decompression)
+and defines the canonical 256-byte `.squizd` binary header format that all subsequent waves (65–70)
+read and extend.
+
+#### New modules
+
+- **`squish/compress/astc_encoder.py`** — `ASTCEncoder` + `ASTCEncoderConfig` + `ASTCEncodeResult`:
+  ARM ASTC 6×6 HDR-ch texture compression for transformer weight tensors.  Wraps `libastcenc` via
+  `ctypes`; falls back to a pure-NumPy simulation path (identical byte layout, no native library
+  required) for tests and CI.  `ASTCEncodeResult` carries the raw 16-byte ASTC block array, per-block
+  `float32` scale table, original tensor shape, and a wire-format serialiser / deserialiser
+  (`ASTCBLK1` magic).  `encode_weight_tensor()` is a convenience wrapper.
+
+- **`squish/format/squish_header.py`** — `SquizdHeader` + `SquizdFlag` + `SquizdArch`:
+  canonical definition of the 256-byte SQUIZD binary header v0.1.  `SquizdFlag` (IntFlag) covers
+  nine compression features (ASTC, TCA_TBE, INT4, SPARSE, EAGLE, INT2, ANE_COREML, MXFP4, INT3).
+  `SquizdArch` (IntEnum) covers seven model families (LLaMA, Mistral, Qwen, Gemma, DeepSeek, Phi).
+  `SquizdHeader.serialise()` writes exactly 256 bytes; `from_bytes()` / `from_file()` parse with
+  full magic + version validation.  `build_minimal_header()` and `read_header()` are convenience
+  helpers.  The layout is a strict superset of the compact header in `squish_runtime.py`: existing
+  field offsets are preserved (backward-compatible).
+
+- **`squish/loaders/astc_loader.py`** — `ASTCLoader` + `ASTCLoaderConfig` + `ASTCWeightTexture`:
+  registers ASTC weight blocks as Metal textures (`MTLPixelFormatASTC_6x6_HDR = 124`).  On Apple
+  Silicon the `metalcompute` bridge creates an `MTLBuffer` backed by the packed ASTC bytes; Metal
+  hardware decompresses inline at fetch time.  On non-Apple platforms (or when `metalcompute` /
+  PyObjC are unavailable) the loader operates in **simulation mode**: weights are held as
+  `ASTCEncodeResult` objects and the NumPy decode path is used.  `ASTCWeightTexture.decode()` returns
+  a `float32` NumPy array for validation.  `ASTCLoader.load_from_file()` accepts an ASTCBLK1
+  serialised payload at a given byte offset.
+
+- **`squish/format/__init__.py`** — `squish.format` package init.
+
+#### New Metal shader
+
+- **`squish/kernels/astc_gemv.metal`** — Two ASTC texture-sampled GEMV kernels:
+  - `astc_gemv` — 1-D dispatch (one thread per output row); texture-samples weights with
+    `coord::pixel` + `filter::nearest`; Metal hardware decompresses ASTC 6×6 HDR blocks
+    transparently before each texel read.
+  - `astc_gemv_batched` — 2-D dispatch (one thread per output row × batch index); suitable for
+    small batched token generation without prefill overhead.
+
+#### CLI
+
+- `squish compress --format {int4,int8,astc,hybrid}` — New `--format` option added to the
+  `compress` command.  `int4` / `int8` continue the existing npy-dir pipeline unchanged.  `astc`
+  and `hybrid` invoke the ASTC encoder with automatic Apple Silicon capability detection; they fall
+  back to INT4 on non-ASTC hardware (Radeon, Intel integrated GPUs) with a clear user-facing warning.
+
+#### Tests
+
+**`tests/test_wave64_astc_compression.py`** — **130 tests** (all passing without hardware) covering:
+
+| Class | Tests |
+|---|---|
+| `TestASTCEncoderConfig` | 11 — validation, defaults, block size, quality range |
+| `TestASTCEncoderPadding` | 6 — block-boundary rounding maths |
+| `TestASTCEncodeNumpyPath` | 14 — encode/decode round-trip, vector/3-D inputs, zero weights |
+| `TestASTCEncodeResult` | 12 — bpw, total_bytes, ASTCBLK1 serialise/deserialise, error cases |
+| `TestSquizdHeaderBasic` | 15 — field storage, byte offsets, version constant |
+| `TestSquizdHeaderFlags` | 11 — flag values, bitwise ops, `has()`, `from_uint32()`, offset 6 |
+| `TestSquizdHeaderArch` | 5 — all arch values, unknown coercion, offset 12 |
+| `TestSquizdHeaderRoundtrip` | 10 — full round-trip for every field + file I/O |
+| `TestSquizdHeaderEdgeCases` | 10 — short data, bad magic, future version, backward compat |
+| `TestASTCLoader` | 14 — simulation backend, shape, decode, error paths, file load |
+| `TestEncodeWeightTensorConvenience` | 5 — convenience wrapper |
+| `TestBuildMinimalHeader` | 6 — offset layout, `from_bytes` compatibility |
+| `TestReadHeaderHelper` | 5 — None on invalid input, success path |
+| `TestIsAstcencAvailable` | 2 — return type, env override |
+| `TestASTCConstants` | 7 — module-level constant values |
+
+#### `.squizd` header layout (v0.1)
+
+| Offset | Size | Type | Field |
+|---|---|---|---|
+| 0 | 4 | bytes | magic `SQZD` |
+| 4 | 2 | u16 | version (1) |
+| 6 | 4 | u32 | flags (SquizdFlag bitfield) |
+| 10 | 2 | u16 | num\_layers |
+| 12 | 2 | u16 | arch\_id |
+| 14 | 4 | u32 | spare\_crc |
+| 18 | 8 | u64 | draft\_hash |
+| 26 | 4 | u32 | hidden\_dim |
+| 30 | 2 | u16 | num\_heads |
+| 32 | 4 | u32 | vocab\_size |
+| 36 | 4 | f32 | compression\_bpw |
+| 40 | 4 | f32 | sparsity\_ratio |
+| 44 | 8 | u64 | calibration\_hash |
+| 52 | 204 | bytes | reserved (zero-padded) |
+
+---
+
 ## [37.0.0] — 2026-04-01
 
 ### Added — Wave 63: v37 Eighth Acceleration Tier: Rust AQLM Encode · BitDistiller Refine · GGUF Block Quant · PQ Cache Fit · MagicPIG Score · MILO INT3 Pack + Mojo counterparts
