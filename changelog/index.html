@@ -1204,6 +1204,84 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#4210-wave-68-addendum-2026-05-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [42.1.0] — Wave 68 addendum — 2026-05-30
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[42.1.0] — Wave 68 addendum — 2026-05-30">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-squizd-trained-eagle-draft-head-mxfp4-format-bridge-hybrid-per-block-precision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — SQUIZD Trained EAGLE Draft Head · MXFP4 Format Bridge · Hybrid Per-Block Precision
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Added — SQUIZD Trained EAGLE Draft Head · MXFP4 Format Bridge · Hybrid Per-Block Precision">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#new-source-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New source modules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#updated-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updated modules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test suites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#3800-wave-64-2026-03-24" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3736,6 +3814,94 @@ matching the web-chat UI look-and-feel with full agentic capabilities.</p>
 </tr>
 </tbody>
 </table>
+<hr />
+<h2 id="4210-wave-68-addendum-2026-05-30">[42.1.0] — Wave 68 addendum — 2026-05-30<a class="headerlink" href="#4210-wave-68-addendum-2026-05-30" title="Permanent link">&para;</a></h2>
+<h3 id="added-squizd-trained-eagle-draft-head-mxfp4-format-bridge-hybrid-per-block-precision">Added — SQUIZD Trained EAGLE Draft Head · MXFP4 Format Bridge · Hybrid Per-Block Precision<a class="headerlink" href="#added-squizd-trained-eagle-draft-head-mxfp4-format-bridge-hybrid-per-block-precision" title="Permanent link">&para;</a></h3>
+<p>Wave 68 compounds the speculative-decode throughput gains from Wave 67 with three
+orthogonal additions to the SQUIZD inference stack.</p>
+<h4 id="new-source-modules">New source modules<a class="headerlink" href="#new-source-modules" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong><code>squish/compress/distill_eagle.py</code></strong> — <code>EAGLEConfig</code>, <code>EAGLEDistiller</code>,
+  <code>EAGLEHeadWeights</code> / <code>EAGLELayerWeights</code>: NumPy reference distillation loop
+  that trains a 3-layer transformer EAGLE draft head from hidden states collected
+  at the 50th and 75th percentile layers of the target model.  Serialises to a
+  <code>.squizd-eagle</code> appendix using <code>b"EAGL"</code> tag + JSON manifest + raw <code>.npy</code>
+  weight streams.  <code>save_eagle_head</code> / <code>load_eagle_head</code> serialise/deserialise
+  in a single pass.  <code>download_pretrained_head</code> downloads from
+  <code>squish-community/eagle-heads</code> on HuggingFace Hub (skips if already present).</p>
+</li>
+<li>
+<p><strong><code>squish/speculative/eagle_head.py</code></strong> — <code>EAGLEHeadRunner</code> with
+  <code>generate_drafts</code>, <code>record_acceptance</code>, rolling 64-token acceptance-rate
+  window, <code>should_fallback()</code> (triggers at rate &lt; threshold when window ≥ 16
+  tokens — avoids premature warm-up fallback).  Stateless <code>eagle_decode_step</code>
+  helper for custom inference loops.  <code>_sample_top_k</code> samples up to <em>n</em> distinct
+  draft tokens without replacement from the top-k set.</p>
+</li>
+<li>
+<p><strong><code>squish/compress/hybrid_precision.py</code></strong> — <code>HybridPrecisionProfiler.assign</code>
+  classifies weight blocks into INT4 (top 75% by variance), INT2 (remaining),
+  or BF16 (top 5% by magnitude — outlier bypass).  <code>BlockPrecisionMap</code> exposes
+  <code>effective_bpw</code>, <code>rate_distortion_table</code>, and per-tier counts.
+  <code>find_variance_threshold</code> analytically derives the variance cutoff that
+  achieves a target BPW.</p>
+</li>
+<li>
+<p><strong><code>squish/format/mx_fp4.py</code></strong> — <code>MxFP4FormatBridge</code>: encodes FP32 weights to
+  the SQUIZD MXFP4 block layout (<code>0xF4</code> tag, 31-byte header, E8M0 scale array +
+  2-per-byte INT4 codes) and decodes back to FP32.  <code>route()</code> dispatches to
+  <code>MxFP4NativeBackend</code> on M5+ or falls back to software dequant + <code>np.dot</code> on
+  M1–M4.  <code>MxFP4BlockHeader.validate()</code> enforces tag/size invariants.</p>
+</li>
+</ul>
+<h4 id="updated-modules">Updated modules<a class="headerlink" href="#updated-modules" title="Permanent link">&para;</a></h4>
+<ul>
+<li>
+<p><strong><code>squish/speculative/draft_multiplexer.py</code></strong> — <code>register_eagle_runner</code>
+  accepts an <code>EAGLEHeadRunner</code>; <code>_apply_eagle_fallback</code> overrides <code>EAGLE3</code>
+  selection with <code>NGRAM</code> when the runner's rolling acceptance rate is below
+  threshold.  Applied in both <code>select()</code> and <code>_round_robin()</code>.</p>
+</li>
+<li>
+<p><strong><code>squish/cli.py</code></strong> — <code>squish pull --with-draft</code>: after downloading model
+  weights, optionally pulls the matching EAGLE-3 draft head from HuggingFace
+  (delegates to <code>cmd_pull_head</code>; skips if already present locally).</p>
+</li>
+</ul>
+<h4 id="test-suites">Test suites<a class="headerlink" href="#test-suites" title="Permanent link">&para;</a></h4>
+<p>Three new test modules, <strong>174 tests</strong>, all passing:</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tests/test_wave68_eagle_head.py</code></td>
+<td>85</td>
+</tr>
+<tr>
+<td><code>tests/test_wave68_hybrid_precision.py</code></td>
+<td>54</td>
+</tr>
+<tr>
+<td><code>tests/test_wave68_mxfp4_bridge.py</code></td>
+<td>35</td>
+</tr>
+</tbody>
+</table>
+<h4 id="bug-fixes">Bug fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>distill_eagle.py</code> distillation loop: project <code>h_a[t+1]</code> from <code>d_model</code> →
+  <code>d_head</code> via <code>input_proj[:, :d_model]</code> before cosine-similarity target
+  computation to fix <code>ValueError: matmul dimension mismatch</code>.</li>
+<li><code>eagle_head.py</code> <code>_sample_top_k</code>: limit <code>k</code> by number of non-zero probability
+  entries (fixes <code>ValueError: Fewer non-zero entries in p than size</code> when
+  <code>top_k &lt; n_draft</code>).</li>
+</ul>
 <hr />
 <h2 id="3800-wave-64-2026-03-24">[38.0.0] — Wave 64 — 2026-03-24<a class="headerlink" href="#3800-wave-64-2026-03-24" title="Permanent link">&para;</a></h2>
 <h3 id="added-squizd-astc-compression-pipeline-256-byte-binary-header-v01-mtltexture-astc-loader-astc-gemv-metal-shader-format-astchybrid-cli-flag">Added — SQUIZD ASTC Compression Pipeline · 256-Byte Binary Header v0.1 · MTLTexture ASTC Loader · ASTC GEMV Metal Shader · <code>--format astc/hybrid</code> CLI Flag<a class="headerlink" href="#added-squizd-astc-compression-pipeline-256-byte-binary-header-v01-mtltexture-astc-loader-astc-gemv-metal-shader-format-astchybrid-cli-flag" title="Permanent link">&para;</a></h3>
