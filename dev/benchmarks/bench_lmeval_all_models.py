@@ -369,11 +369,21 @@ def _run_single_task(
     print(f"  {D}{' '.join(cmd)}{NC}\n")
 
     t0    = time.time()
-    proc  = subprocess.run(cmd, text=True)
+    proc  = subprocess.run(cmd, text=True, capture_output=True)
     elapsed = time.time() - t0
 
+    # Echo stdout for progress visibility; only emit stderr on failure to avoid
+    # flooding terminal with mlx_lm's per-layer quantisation config dumps.
+    if proc.stdout:
+        print(proc.stdout, end="")
+
     if proc.returncode != 0:
-        return {"error": f"mlx_lm exit code {proc.returncode}", "_elapsed_s": elapsed}
+        stderr_tail = (proc.stderr or "")[-800:].strip()
+        error_msg = f"mlx_lm exit code {proc.returncode}"
+        if stderr_tail:
+            error_msg += f" | stderr: {stderr_tail}"
+        print(stderr_tail, file=sys.stderr)
+        return {"error": error_msg, "_elapsed_s": elapsed}
 
     # mlx_lm evaluate writes files named eval_* (no .json extension)
     all_files = sorted(
