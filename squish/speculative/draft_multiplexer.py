@@ -300,7 +300,7 @@ class DraftMultiplexer:
                 best_name  = name
 
         try:
-            return DraftStrategy(best_name)
+            return self._apply_eagle_fallback(DraftStrategy(best_name))
         except ValueError:
             return DraftStrategy(self._cfg.default_strategy)
 
@@ -372,6 +372,46 @@ class DraftMultiplexer:
         idx = self._rr_cursor[tt_key] % len(strategies)
         self._rr_cursor[tt_key] = (idx + 1) % len(strategies)
         try:
-            return DraftStrategy(strategies[idx])
+            strategy = DraftStrategy(strategies[idx])
         except ValueError:
-            return DraftStrategy(self._cfg.default_strategy)
+            strategy = DraftStrategy(self._cfg.default_strategy)
+        return self._apply_eagle_fallback(strategy)
+
+    # ------------------------------------------------------------------
+    # EAGLE integration (Wave 68)
+    # ------------------------------------------------------------------
+
+    def register_eagle_runner(self, runner: Optional[object]) -> None:
+        """Register an :class:`~squish.speculative.eagle_head.EAGLEHeadRunner`.
+
+        When a runner is registered, :meth:`select` applies a rolling-window
+        fallback: if the runner's ``should_fallback()`` returns ``True`` while
+        EAGLE3 is the selected strategy, the multiplexer downgrades the
+        selection to NGRAM automatically.
+
+        Pass ``None`` to unregister any previously registered runner.
+
+        Args:
+            runner: An :class:`~squish.speculative.eagle_head.EAGLEHeadRunner`
+                instance or any object exposing a ``should_fallback() -> bool``
+                method.  ``None`` clears the registration.
+        """
+        self._eagle_runner: Optional[object] = runner
+
+    def _apply_eagle_fallback(self, strategy: DraftStrategy) -> DraftStrategy:
+        """If the registered EAGLE runner signals fallback, downgrade to NGRAM.
+
+        Only activates when *strategy* is :attr:`~DraftStrategy.EAGLE3` and an
+        EAGLE runner is registered.
+        """
+        if strategy is not DraftStrategy.EAGLE3:
+            return strategy
+        runner = getattr(self, "_eagle_runner", None)
+        if runner is None:
+            return strategy
+        try:
+            if runner.should_fallback():  # type: ignore[attr-defined]
+                return DraftStrategy.NGRAM
+        except Exception:
+            pass
+        return strategy

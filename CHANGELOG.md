@@ -378,6 +378,76 @@ Eight test suites, **151 tests**, all passing:
 
 ---
 
+## [42.1.0] — Wave 68 addendum — 2026-05-30
+
+### Added — SQUIZD Trained EAGLE Draft Head · MXFP4 Format Bridge · Hybrid Per-Block Precision
+
+Wave 68 compounds the speculative-decode throughput gains from Wave 67 with three
+orthogonal additions to the SQUIZD inference stack.
+
+#### New source modules
+
+- **`squish/compress/distill_eagle.py`** — `EAGLEConfig`, `EAGLEDistiller`,
+  `EAGLEHeadWeights` / `EAGLELayerWeights`: NumPy reference distillation loop
+  that trains a 3-layer transformer EAGLE draft head from hidden states collected
+  at the 50th and 75th percentile layers of the target model.  Serialises to a
+  `.squizd-eagle` appendix using `b"EAGL"` tag + JSON manifest + raw `.npy`
+  weight streams.  `save_eagle_head` / `load_eagle_head` serialise/deserialise
+  in a single pass.  `download_pretrained_head` downloads from
+  `squish-community/eagle-heads` on HuggingFace Hub (skips if already present).
+
+- **`squish/speculative/eagle_head.py`** — `EAGLEHeadRunner` with
+  `generate_drafts`, `record_acceptance`, rolling 64-token acceptance-rate
+  window, `should_fallback()` (triggers at rate < threshold when window ≥ 16
+  tokens — avoids premature warm-up fallback).  Stateless `eagle_decode_step`
+  helper for custom inference loops.  `_sample_top_k` samples up to *n* distinct
+  draft tokens without replacement from the top-k set.
+
+- **`squish/compress/hybrid_precision.py`** — `HybridPrecisionProfiler.assign`
+  classifies weight blocks into INT4 (top 75% by variance), INT2 (remaining),
+  or BF16 (top 5% by magnitude — outlier bypass).  `BlockPrecisionMap` exposes
+  `effective_bpw`, `rate_distortion_table`, and per-tier counts.
+  `find_variance_threshold` analytically derives the variance cutoff that
+  achieves a target BPW.
+
+- **`squish/format/mx_fp4.py`** — `MxFP4FormatBridge`: encodes FP32 weights to
+  the SQUIZD MXFP4 block layout (`0xF4` tag, 31-byte header, E8M0 scale array +
+  2-per-byte INT4 codes) and decodes back to FP32.  `route()` dispatches to
+  `MxFP4NativeBackend` on M5+ or falls back to software dequant + `np.dot` on
+  M1–M4.  `MxFP4BlockHeader.validate()` enforces tag/size invariants.
+
+#### Updated modules
+
+- **`squish/speculative/draft_multiplexer.py`** — `register_eagle_runner`
+  accepts an `EAGLEHeadRunner`; `_apply_eagle_fallback` overrides `EAGLE3`
+  selection with `NGRAM` when the runner's rolling acceptance rate is below
+  threshold.  Applied in both `select()` and `_round_robin()`.
+
+- **`squish/cli.py`** — `squish pull --with-draft`: after downloading model
+  weights, optionally pulls the matching EAGLE-3 draft head from HuggingFace
+  (delegates to `cmd_pull_head`; skips if already present locally).
+
+#### Test suites
+
+Three new test modules, **174 tests**, all passing:
+
+| Module | Tests |
+|---|---|
+| `tests/test_wave68_eagle_head.py` | 85 |
+| `tests/test_wave68_hybrid_precision.py` | 54 |
+| `tests/test_wave68_mxfp4_bridge.py` | 35 |
+
+#### Bug fixes
+
+- `distill_eagle.py` distillation loop: project `h_a[t+1]` from `d_model` →
+  `d_head` via `input_proj[:, :d_model]` before cosine-similarity target
+  computation to fix `ValueError: matmul dimension mismatch`.
+- `eagle_head.py` `_sample_top_k`: limit `k` by number of non-zero probability
+  entries (fixes `ValueError: Fewer non-zero entries in p than size` when
+  `top_k < n_draft`).
+
+---
+
 ## [38.0.0] — Wave 64 — 2026-03-24
 
 ### Added — SQUIZD ASTC Compression Pipeline · 256-Byte Binary Header v0.1 · MTLTexture ASTC Loader · ASTC GEMV Metal Shader · `--format astc/hybrid` CLI Flag

@@ -2097,6 +2097,30 @@ def cmd_pull(args):  # pragma: no cover
     ])
     print()
 
+    # ── optional: pull EAGLE-3 draft head ────────────────────────────────────
+    if getattr(args, "with_draft", False):
+        print("  Pulling EAGLE-3 draft head …")
+        # Resolve model alias → HF repo using the same catalog as pull-head
+        hf_repo = _EAGLE_HEAD_CATALOG.get(name.lower(), None)
+        if hf_repo is None:
+            print(
+                f"  ⚠  No pre-distilled EAGLE head found for {name!r}.\n"
+                f"     Run `squish pull-head <full-hf-repo>` to supply a custom head."
+            )
+        else:
+            slug = hf_repo.split("/")[-1].lower()
+            head_dir = Path.home() / ".squish" / "eagle-heads" / slug
+            if head_dir.exists() and any(head_dir.iterdir()):
+                print(f"  Draft head already present at {head_dir} — skipping download.")
+            else:
+                # Delegate to the same logic used by cmd_pull_head
+                class _HeadArgs:
+                    model = name
+                    output = ""
+                    token = args.token
+
+                cmd_pull_head(_HeadArgs())
+
 
 # ── squish catalog ────────────────────────────────────────────────────────────
 
@@ -3208,6 +3232,17 @@ Ollama drop-in:
                         help=f"Override models directory (default: {_MODELS_DIR})")
     p_pull.add_argument("--refresh-catalog", action="store_true",
                         help="Force-refresh the online catalog before resolving")
+    p_pull.add_argument(
+        "--with-draft",
+        action="store_true",
+        default=False,
+        help=(
+            "Also download a pre-distilled EAGLE-3 draft head from "
+            "squish-community/eagle-heads on HuggingFace after pulling the "
+            "model weights.  Skipped if the head file already exists locally. "
+            "Equivalent to running `squish pull-head <model>` separately."
+        ),
+    )
     p_pull.add_argument("--verbose", action="store_true")
     p_pull.set_defaults(func=cmd_pull)
 

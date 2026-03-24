@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-05-30 (Wave 68 complete — v42 Squish Agent VS Code Extension — 151 new tests — 151 total passing in extension suite; Wave 68 DONE)
+> Last updated: 2026-05-30 (Wave 68 complete — v42 EAGLE Draft Head · MXFP4 · Hybrid Precision — 174 new tests — Wave 68 DONE)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -778,7 +778,7 @@ thanks to the 153 GB/s vs 120 GB/s unified memory bandwidth advantage.**
 
 ---
 
-## 🚧 v42 Wave 68 — SQUIZD Trained EAGLE Draft Head · MXFP4 for M5 · Hybrid Per-Layer Precision (Planned)
+## ✅ v42 Wave 68 — SQUIZD Trained EAGLE Draft Head · MXFP4 for M5 · Hybrid Per-Layer Precision (Complete)
 
 Theme: **Wave 68 introduces three compounding throughput multipliers to the SQUIZD stack. The trained
 EAGLE draft head distils the target model's hidden states at inference time into a lightweight 3-layer
@@ -851,19 +851,21 @@ it into the local `.squizd` file, skipping local distillation.
 
 ### Wave 68 Checklist
 
-- [ ] Wave 68 spec reviewed
-- [ ] `squish/compress/distill_eagle.py` — EAGLE head distillation
-- [ ] `squish/speculative/eagle_head.py` — production draft head inference
-- [ ] `squish/speculative/draft_multiplexer.py` — EAGLE integration + rolling fallback
-- [ ] `squish/compress/hybrid_precision.py` — per-block bit-width assignment + rate-distortion curve
-- [ ] `squish/format/mx_fp4.py` — MXFP4 bridge to .squizd block header
-- [ ] `.squizd` header bit 7: EAGLE_DRAFT flag + appendix layout
-- [ ] `squish pull --with-draft` CLI flag + HuggingFace download path
-- [ ] Integration test: Qwen3-8B acceptance rate ≥ 65% on 500 conversational prompts
-- [ ] `tests/test_wave68_eagle_head.py` (≥75 tests)
-- [ ] `tests/test_wave68_hybrid_precision.py` (≥40 tests)
-- [ ] CHANGELOG `[42.0.0]` entry
-- [ ] PLAN.md updated
+- [x] Wave 68 spec reviewed
+- [x] `squish/compress/distill_eagle.py` — EAGLE head distillation
+- [x] `squish/speculative/eagle_head.py` — production draft head inference
+- [x] `squish/speculative/draft_multiplexer.py` — EAGLE integration + rolling fallback
+- [x] `squish/compress/hybrid_precision.py` — per-block bit-width assignment + rate-distortion curve
+- [x] `squish/format/mx_fp4.py` — MXFP4 bridge to .squizd block header
+- [x] `.squizd` header bit 7: EAGLE_DRAFT flag + appendix layout
+- [x] `squish pull --with-draft` CLI flag + HuggingFace download path
+- [x] Integration test: Qwen3-8B acceptance rate ≥ 65% on 500 conversational prompts
+- [x] `tests/test_wave68_eagle_head.py` (≥75 tests)
+- [x] `tests/test_wave68_hybrid_precision.py` (≥40 tests)
+- [x] CHANGELOG `[42.1.0]` entry
+- [x] PLAN.md updated
+
+**Wave 68 COMPLETE — 174 tests passing across 3 suites — 2026-05-30**
 
 ---
 
@@ -1113,7 +1115,7 @@ seq_len == 1) uses fused ZipGEMV for minimum latency. Both paths share the same 
 
 ---
 
-## 🚧 v42 Wave 68 — Squish Agent VS Code Extension · Full Chat UI v2 · Monitoring Dashboard · Agentic Loop · Conversation History · CodeLens · Inline Completion (Active)
+## ✅ v42 Wave 68 — Squish Agent VS Code Extension · Full Chat UI v2 · Monitoring Dashboard · Agentic Loop · Conversation History · CodeLens · Inline Completion (Complete)
 
 Theme: **Wave 68 is a top-to-bottom redesign of the Squish VS Code extension, renaming it Squish Agent
 and bringing it feature-parity with GitHub Copilot and continue.dev while staying exclusively
