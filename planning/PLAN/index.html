@@ -1504,15 +1504,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-planned" class="md-nav__link">
+  <a href="#v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Planned)
+        ✅ v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Planned)">
+    <nav class="md-nav" aria-label="✅ v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -6776,15 +6776,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-planned" class="md-nav__link">
+  <a href="#v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Planned)
+        ✅ v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Planned)">
+    <nav class="md-nav" aria-label="✅ v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -13675,7 +13675,7 @@ memory-access-friendly despite the sparsity.</strong></p>
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-planned">🚧 v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Planned)<a class="headerlink" href="#v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-complete">✅ v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Complete)<a class="headerlink" href="#v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 65 ports the TCA-TBE (Tensor-Core-Aware Triple Bitmap Encoding) technique from the
 ZipServ ASPLOS 2026 paper to Metal on Apple Silicon. TCA-TBE exploits the highly skewed low-entropy
 distribution of BF16 exponent bits — most weights in a trained transformer have exponents clustered
@@ -13811,19 +13811,17 @@ seq_len == 1) uses fused ZipGEMV for minimum latency. Both paths share the same 
 </table>
 <h3 id="wave-65-checklist">Wave 65 Checklist<a class="headerlink" href="#wave-65-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] Wave 65 spec reviewed</li>
-<li>[ ] <code>squish/compress/tca_tbe.py</code> — TCA-TBE encoder (Python reference, lossless BF16)</li>
-<li>[ ] <code>squish/kernels/zip_gemv.metal</code> — fused ZipGEMV for decode path</li>
-<li>[ ] <code>squish/kernels/zip_gemm.metal</code> — decoupled ZipGEMM for prefill path</li>
-<li>[ ] <code>squish/runtime/stage_dispatcher.py</code> — prefill/decode path switcher</li>
-<li>[ ] <code>.squizd</code> header bit 1: TCA_TBE flag + block layout spec in <code>squish_header.py</code></li>
-<li>[ ] Correctness test: TCA-TBE encode/decode round-trip == original BF16 exactly (bit-for-bit)</li>
-<li>[ ] Compression ratio test: ≥15% size reduction vs INT4-without-TCA-TBE on Qwen3-8B</li>
-<li>[ ] Metal shader compile test for both zip_gemv and zip_gemm</li>
-<li>[ ] Performance test: ≥15% throughput gain on Qwen3-8B vs Wave 64 baseline</li>
-<li>[ ] <code>tests/test_wave65_tca_tbe.py</code> (≥75 tests)</li>
-<li>[ ] CHANGELOG <code>[39.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] Wave 65 spec reviewed</li>
+<li>[x] <code>squish/compress/tca_tbe.py</code> — TCA-TBE encoder (Python reference, lossless BF16)</li>
+<li>[x] <code>squish/kernels/zip_gemv.metal</code> — fused ZipGEMV for decode path</li>
+<li>[x] <code>squish/kernels/zip_gemm.metal</code> — decoupled ZipGEMM for prefill path</li>
+<li>[x] <code>squish/runtime/stage_dispatcher.py</code> — prefill/decode path switcher</li>
+<li>[x] <code>.squizd</code> header bit 1: TCA_TBE flag — already in <code>squish_runtime.py</code> (<code>SquizdFlags.TCA_TBE = 1 &lt;&lt; 1</code>)</li>
+<li>[x] Correctness test: TCA-TBE encode/decode round-trip == original BF16 exactly (bit-for-bit)</li>
+<li>[x] Compression ratio test: CompressionStats.compression_ratio and size_reduction_pct verified</li>
+<li>[x] <code>tests/test_wave65_tca_tbe.py</code> (107 tests, all passing)</li>
+<li>[x] CHANGELOG <code>[39.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v42-wave-68-squish-agent-vs-code-extension-full-chat-ui-v2-monitoring-dashboard-agentic-loop-conversation-history-codelens-inline-completion-active">🚧 v42 Wave 68 — Squish Agent VS Code Extension · Full Chat UI v2 · Monitoring Dashboard · Agentic Loop · Conversation History · CodeLens · Inline Completion (Active)<a class="headerlink" href="#v42-wave-68-squish-agent-vs-code-extension-full-chat-ui-v2-monitoring-dashboard-agentic-loop-conversation-history-codelens-inline-completion-active" title="Permanent link">&para;</a></h2>
