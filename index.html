@@ -1121,8 +1121,11 @@ body[data-md-color-scheme="default"] {
 .sq-hero__pills{display:flex;gap:10px;flex-wrap:wrap}
 .sq-hero__pill{display:inline-flex;align-items:center;gap:6px;font-size:.76rem;color:var(--sq-muted);background:var(--sq-surface);border:1px solid var(--sq-border);border-radius:999px;padding:5px 13px}
 .sq-hero__right{display:flex;flex-direction:column;align-items:center;gap:20px;position:relative}
-.sq-mascot-wrap{position:relative;display:flex;justify-content:center}
-.sq-mascot{width:220px;height:220px;object-fit:contain;filter:drop-shadow(0 24px 48px rgba(139,79,255,.4));animation:mascot-float 6s ease-in-out infinite}
+.sq-mascot-wrap{position:relative;display:flex;align-items:center;gap:20px;justify-content:center}
+.sq-mascot{width:220px;height:220px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 24px 48px rgba(139,79,255,.4));animation:mascot-float 6s ease-in-out infinite}
+.sq-mascot-lbl{display:flex;flex-direction:column;gap:4px}
+.sq-mascot-h1{font-size:clamp(2.6rem,4.5vw,3.8rem);font-weight:900;letter-spacing:-.055em;line-height:1;margin:0;background:linear-gradient(130deg,var(--sq-purple),var(--sq-cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sq-mascot-sub{font-size:.95rem;color:var(--sq-muted);margin:0;font-weight:500;letter-spacing:.005em}
 @keyframes mascot-float{0%,100%{transform:translateY(0) rotate(-3deg)}25%{transform:translateY(-14px) rotate(1deg)}75%{transform:translateY(-9px) rotate(-1deg)}}
 .sq-spark{position:absolute;border-radius:50%;animation:spark-fade 3s ease-in-out infinite}
 @keyframes spark-fade{0%,100%{opacity:0;transform:scale(0)}40%,60%{opacity:1;transform:scale(1)}}
@@ -1265,6 +1268,8 @@ body[data-md-color-scheme="default"] {
   .sq-hero__inner{grid-template-columns:1fr;gap:40px}
   .sq-hero__right{order:-1}
   .sq-mascot{width:160px;height:160px}
+  .sq-mascot-h1{font-size:2.2rem}
+  .sq-mascot-sub{font-size:.84rem}
   .sq-privacy__inner{grid-template-columns:1fr;gap:40px}
   .sq-cards{grid-template-columns:repeat(2,1fr)}
   .sq-comm{grid-template-columns:1fr}
@@ -1335,6 +1340,10 @@ body[data-md-color-scheme="default"] {
           <div class="sq-spark" style="width:8px;height:8px;background:var(--sq-purple);top:150px;right:5px;animation-delay:0.6s"></div>
           <div class="sq-mascot-wrap">
             <img class="sq-mascot" src="assets/squish-mascot.png" alt="Squish mascot" />
+            <div class="sq-mascot-lbl">
+              <h1 class="sq-mascot-h1">squish</h1>
+              <p class="sq-mascot-sub">The local AI agent&nbsp;runtime</p>
+            </div>
           </div>
           <div class="sq-term">
             <div class="sq-term__bar">
