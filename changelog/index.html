@@ -903,6 +903,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#fixed-int2int3-broken-inference-root-cause-fix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed — INT2/INT3 Broken Inference (Root Cause + Fix)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3531,7 +3542,79 @@ and <code>squish update</code> CLI.</p>
   <code>TestPreflightCheck</code>, <code>TestPreflightReport</code>, individual <code>_check_*</code> functions,
   <code>TestRunPreflightChecks</code>, <code>TestFormatReport</code></p>
 </li>
+<li>
+<p><strong><code>tests/test_wave72_quantize_fix.py</code></strong> — 38 tests for INT2/INT3 quantization fix:
+  <code>TestQuantizeArgparser</code>, <code>TestHFIDDetection</code>, <code>TestDryRun</code>, <code>TestQuantPredicate</code> (12 table-driven
+  cases), <code>TestMlxLmConvertCall</code>; plus <code>TestRunGenerationSanity</code> (7 cases) and
+  <code>TestBenchArgFilters</code> (5 cases) for the updated benchmark script.</p>
+</li>
+<li>
+<p><strong><code>tests/test_wave72_resquish.py</code></strong> — 26 tests: <code>TestModelFamily</code>, <code>TestModelFamiliesRegistry</code>,
+  <code>TestRecipes</code> (10 cases verifying attn=4-bit, group_size per recipe), <code>TestSquishSubprocess</code>
+  (6 cases: attn-bits, group-size, success, failure, dry-run, cpu flag, ffn-bits).</p>
+</li>
 </ul>
+<h4 id="fixed-int2int3-broken-inference-root-cause-fix">Fixed — INT2/INT3 Broken Inference (Root Cause + Fix)<a class="headerlink" href="#fixed-int2int3-broken-inference-root-cause-fix" title="Permanent link">&para;</a></h4>
+<p><strong>Root cause diagnosed:</strong> Both INT2 and INT3 models produced broken output because all linear
+layers — including <code>q_proj</code>, <code>k_proj</code>, <code>v_proj</code>, <code>o_proj</code> — were quantized at the same low bit
+width as the FFN:</p>
+<ul>
+<li><strong>INT2</strong> (2-bit attention projections): only 4 discrete weight values → broken attention →
+  garbage output (e.g. <code>'? and 20% 0: Inant to know that the day to, with 2, 29…'</code>)</li>
+<li><strong>INT3</strong> (3-bit attention projections): degenerate fixed attention pattern → repetition loops
+  (e.g. <code>'| 2+2 | | | | | | |'</code>)</li>
+</ul>
+<p><strong>Fix — 3-tier mixed-precision quantization:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>FFN layers</th>
+<th>Attn Q/K/V/O</th>
+<th>Embed/lm_head</th>
+<th>group_size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>INT2 (fixed)</td>
+<td>2-bit</td>
+<td><strong>4-bit</strong></td>
+<td>8-bit</td>
+<td><strong>32</strong></td>
+</tr>
+<tr>
+<td>INT3 (fixed)</td>
+<td>3-bit</td>
+<td><strong>4-bit</strong></td>
+<td>8-bit</td>
+<td><strong>32</strong></td>
+</tr>
+<tr>
+<td>INT4 (unchanged)</td>
+<td>4-bit</td>
+<td>4-bit</td>
+<td>8-bit</td>
+<td>64</td>
+</tr>
+</tbody>
+</table>
+<p><strong>CLI changes</strong> (<code>squish/cli.py</code>):
+- Added <code>--attn-bits N</code> argument to <code>squish quantize</code> (default: same as <code>--ffn-bits</code>)
+- Added <code>--group-size N</code> argument (default: 64)
+- <code>cmd_convert_model</code> upgraded to 3-tier <code>quant_predicate</code>:
+  embed/lm_head → <code>embed_bits</code>; <code>self_attn</code>/<code>cross_attn</code> → <code>attn_bits</code>; MLP → <code>ffn_bits</code>
+- HF model ID support: <code>--source-path Org/Repo</code> works without a local directory</p>
+<p><strong>New script</strong> (<code>dev/scripts/resquish_all_models.py</code>):
+- Systematically deletes broken INT2/INT3 dirs and re-squishes with the fixed recipe
+- Covers all 11 model families; <code>Qwen3-14B</code> (HF download); <code>Mistral-7B</code> (fresh INT4)
+- Flags: <code>--dry-run</code>, <code>--families</code>, <code>--bits</code>, <code>--cpu</code>, <code>--yes</code>, <code>--models-root</code></p>
+<p><strong>Benchmark updates</strong> (<code>dev/benchmarks/bench_lmeval_all_models.py</code>):
+- <code>_run_generation_sanity(model_dir)</code>: loads model, runs 3 short prompts, detects repetition
+  loops (&gt;80% identical words) and garbage output (&lt;3 unique words)
+- <code>--gen-sanity</code>: runs generation sanity check before each lmeval evaluation
+- <code>--include-bf16</code>: opt-in BF16 reference baseline inclusion
+- <code>--bits N [N …]</code>: filter registry to specific bit widths (2, 3, or 4)</p>
 <hr />
 <h2 id="4500-wave-71-2026-03-25">[45.0.0] — Wave 71 — 2026-03-25<a class="headerlink" href="#4500-wave-71-2026-03-25" title="Permanent link">&para;</a></h2>
 <h3 id="added-public-launch-prep-cross-platform-expansion-cuda-backend-windows-directml-unified-platform-router-versioned-rest-api-release-validator-pypi-manifest">Added — Public Launch Prep · Cross-Platform Expansion · CUDA Backend · Windows DirectML · Unified Platform Router · Versioned REST API · Release Validator · PyPI Manifest<a class="headerlink" href="#added-public-launch-prep-cross-platform-expansion-cuda-backend-windows-directml-unified-platform-router-versioned-rest-api-release-validator-pypi-manifest" title="Permanent link">&para;</a></h3>
