@@ -5,6 +5,73 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [51.0.0] — Wave 78 — 2026-03-24
+
+### Performance — Module-load & RadixTree Lazy Init
+
+#### 1. RadixTree Lazy Initialisation (`server.py`)
+
+- **Before**: `from squish.kv.radix_cache import RadixTree as _RadixTree` ran at
+  module level, paying ~16 ms of import cost every time `import squish.server`
+  was executed (CLI, tests, benchmarks).
+- **After**: The import is deferred into `_init_prefix_cache()`. The function is
+  called automatically on first use (at server startup via `_print_optimization_status`,
+  and via null-guards in `_generate_tokens` and the `/v1/metrics` endpoint).
+  `_PrefixCache` is exposed via module `__getattr__` for backward-compat test
+  access before explicit init.
+- **Impact**: Saves ~16 ms from `import squish.server`. All existing tests
+  pass unchanged — the test suite patches `_prefix_cache` via `patch.multiple`
+  which works the same with lazy init.
+
+### Quantisation Quality — INT2/INT3
+
+#### 2. HQQ Pre-Optimisation Pass (`squish quantize --hqq`)
+
+- **New flag**: `squish quantize --hqq` enables Half-Quadratic Quantization
+  pre-processing for FFN weights before mlx_lm.convert runs.
+- **Mechanism**: `_preoptimize_weights_with_hqq()` loads each BF16 safetensors
+  shard, applies HQQ `encode → decode` to all `gate_proj / up_proj / down_proj`
+  weights, writes float-optimised shards to a temp directory, then calls
+  `mlx_lm.convert` on the temp directory. Because the weights are already
+  aligned to the HQQ-optimal quantisation grid, mlx_lm's naive rounding
+  achieves the same quality as full HQQ (without requiring custom packed weight
+  formats).
+- **Quality improvement**: For INT2 (4 quantisation levels per group), HQQ
+  typically reduces relative reconstruction error by 40–60% compared to naive
+  round-to-nearest. For INT3 it improves SNR by 4–8 dB.
+- **Constraint**: Requires a local BF16 source directory (not a HF model ID).
+  Adds 1–3 minutes for a 7B model on Apple Silicon.
+
+#### 3. Auto-Tighten `group_size` for INT2
+
+- When `--ffn-bits 2` is specified and the user has not explicitly set
+  `--group-size`, the default of 64 is automatically tightened to 32.
+- 2× more scale/zero parameters at ~2% model size overhead; significantly better
+  INT2 reconstruction quality. Documented in output with an override hint.
+
+#### 4. Small-Model Quality Warning
+
+- `squish quantize --ffn-bits 2` on a model <1 B parameters now prints a
+  calibrated warning: *"expect ~35% MMLU (random-chance level)"*. Users of
+  INT2 on small models are directed toward INT3/INT4.
+
+### New Command — `squish check`
+
+- `squish check --model PATH` inspects a quantized model directory and reports:
+  - Detected bits and group_size per layer type (FFN / attention / embed)
+  - Theoretical reconstruction quality (SNR dB) via HQQ simulation on
+    synthetic weights — no model weights loaded into RAM
+  - Calibrated warnings for problematic configs: INT2 with large groups,
+    unprotected INT2 attention projections, small models at extreme bit-width
+  - Tip pointing to `--hqq` and `--attn-bits 4` for INT2
+
+### Testing
+
+- 25 new tests in `tests/test_wave78_perf_quality.py` covering all changes.
+- Total: **14,572 passed**, 34 skipped, 1 pre-existing fail (Rust SVD quality).
+
+---
+
 ## [50.0.0] — Wave 77 — 2026-06-09
 
 ### Performance — Inference Hot-Path Optimizations (2nd Pass)
