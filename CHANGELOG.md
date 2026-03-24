@@ -5,6 +5,80 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [44.0.0] — Wave 70 — 2026-03-24
+
+### Added — SQUIZD Production v1.0 · Unified Runtime Wiring · Format Spec · Statistical Benchmark Suite · 21-Model Expansion
+
+Wave 70 is the production integration and measurement capstone for the entire SQUIZD native runtime stack
+(Waves 64–69).  It wires ASTC texture compression, TCA-TBE lossless encoding, INT4/INT2 quantisation,
+structured FFN sparsity, EAGLE-3 speculative decoding, and ANE CoreML routing into a single unified
+dispatch engine that activates features automatically by inspecting the file header — no user-level
+flags required at serve time.
+
+#### New modules
+
+- **`squish/runtime/__init__.py`** — `squish.runtime` package stub.
+
+- **`squish/runtime/squish_runtime.py`** — `SquishRuntime` + `SquizdFlags` + `SquizdHeader` +
+  `KernelStack` + `DispatchRecord`: reads the 7-bit flags bitfield from the `.squizd` header, builds a
+  per-layer dispatch table, and routes each transformer layer to the correct kernel (ANE CoreML → ASTC
+  → TCA-TBE → INT2 → INT4 → NumPy fallback).  Exposes `from_file()`, `from_flags()`, `generate()`,
+  and `generate_stream()`.  The simulation path uses deterministic NumPy ops for full CI coverage
+  without requiring Apple Silicon hardware.
+
+- **`squish/runtime/format_validator.py`** — `SquizdFormatValidator` + `SquizdFormatError` +
+  `ValidationResult`: validates `.squizd` files against the v1.0 format specification before loading.
+  Checks magic bytes (`SQZD`), format version (1), layer count (1–512), sparsity-metadata CRC32, and
+  draft-head FNV-1a-64 hash.  All violations are collected into a `ValidationResult`; `assert_valid()`
+  raises `SquizdFormatError` on failure.  Strict mode additionally rejects non-zero reserved header
+  bytes.
+
+- **`squish/hardware/capability_probe.py`** — `HardwareCapabilities` + `CapabilityProbe` +
+  `get_capability_probe()`: probes Apple Silicon chip generation (M1–M5) for ASTC texture sampling
+  support, ANE availability, Metal 3+ feature set, and MXFP4 (M5+).  Caches results to
+  `~/.squish/hardware_caps.json` so subsequent startups are instant.  ANE presence is confirmed via
+  `system_profiler SPHardwareDataType` on macOS.  Falls back gracefully on non-Apple platforms.
+
+- **`squish/bench/squish_bench.py`** — `SquizdBenchmark` + `SquizdBenchConfig` +
+  `SquizdFormatVariant` + `SquizdModelResult` + `GGUFBaselineResult` + `FormatComparison`: 30-trial
+  statistical benchmark for the four SQUIZD format variants (`squizd-astc`, `squizd-int4`,
+  `squizd-int4-sparse`, `squizd-full`).  Reports TTFT at P50/P95/P99, tokens/sec at P50/P95/P99, peak
+  Metal working-set size, on-disk file size, and resident RAM.  Includes side-by-side comparison
+  against GGUF Q4_K_M baseline via `compare_to_gguf()`.  Markdown output via `to_markdown_table()`.
+  Built on top of the existing `BenchmarkHarness` / `BenchmarkConfig` infrastructure.
+
+#### New scripts and documentation
+
+- **`scripts/run_squish_format_benchmark.sh`** — Shell orchestrator for the 21-model × 4-variant
+  benchmark run.  Validates Python version (3.10+) and package availability before executing the
+  Python benchmark module.  Writes output to `docs/BENCHMARK_SQUIZD_FORMAT.md`.  Supports
+  `--dry-run`, `--output-dir`, `--models`, and `--variants` overrides.
+
+- **`docs/squizd_format_spec.md`** — SQUIZD binary format specification v1.0.  Documents the 256-byte
+  header layout, all 7 flag bits, the layer index table (32 bytes/entry), weight block layouts for
+  ASTC/TCA-TBE/INT4/INT2/NumPy, sparsity metadata block, scale/zero-point tables, EAGLE-3 draft head
+  appendix, and ANE CoreML appendix.  Includes a 2-layer toy example.
+
+#### Tests
+
+- **`tests/test_wave70_squish_runtime.py`** — 87 tests covering `SquizdFlags` bit values, operations,
+  and `from_uint32`; `SquizdHeader` validity and summary; `SquishRuntime` construction via
+  `from_flags()` and `from_file()` (missing, truncated, wrong-magic files); dispatch table length,
+  kernel selection per flag, priority ordering, sparse/draft annotation; `generate()` / `generate_stream()`
+  determinism, token budget, empty prompt, sparse and EAGLE flag paths; `build_squizd_header()` byte
+  layout; `SquizdFormatValidator` success paths, bad magic, missing file, truncated data, version bounds,
+  layer count bounds, sparsity CRC matching; `assert_valid()` raise behaviour; module-level constants.
+
+- **`tests/test_wave70_benchmark_suite.py`** — 48 tests covering `SquizdFormatVariant` enum values;
+  `SquizdBenchConfig` defaults and validation; `SquizdBenchmark.run_variant()` return type, model name,
+  variant, trial count, TTFT positivity, percentile ordering (TTFT and TPS), disk size from real file;
+  Markdown table rendering; `FormatComparison` speedup/gain/ratio values, missing baseline handling,
+  zero-TTFT safety; `HardwareCapabilities` per-generation flags, to-dict roundtrip, JSON
+  serialisability; `CapabilityProbe` cache load/save/invalidate/corrupt-JSON/force-refresh; and
+  `get_capability_probe()`.
+
+---
+
 ## [43.0.0] — Wave 69 — 2026-03-23
 
 ### Added — SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path
