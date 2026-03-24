@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-05-30 (Wave 68 complete — v42 EAGLE Draft Head · MXFP4 · Hybrid Precision — 174 new tests — Wave 68 DONE)
+> Last updated: 2026-06-01 (Wave 72 in-progress — v45 Public Launch · Agentic Inference Engine · Web Chat Agent Mode v3)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -55,7 +55,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v42** | 68 | SQUIZD Trained EAGLE Draft Head Distillation · MXFP4 for M5 · Hybrid Per-Layer Precision |
 | **v43** | 69 | SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path |
 | **v44** | 70 | SQUIZD Production v1.0 · Unified Runtime Wiring · Format Spec · Statistical Benchmark Suite · 21-Model Expansion |
-| **v45** | 71 | Public Launch Prep · Cross-Platform Expansion · CUDA Backend · Windows DirectML · Unified Platform Router · Versioned REST API · Release Validator · PyPI Manifest |
+| **v45** | 72 | Public Launch Prep · Agentic Inference Engine · MCP Client · Web Chat Agent Mode v3 · squish doctor/update CLI |
 
 ---
 
@@ -587,6 +587,70 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [x] `tests/test_wave44b_modules.py` — ≥ 72 tests, all passing
 - [x] CHANGELOG `[19.0.0]` entry
 - [x] PLAN.md updated
+
+---
+
+---
+
+## 🚧 v45 Wave 72 — Public Launch · Agentic Inference Engine · Web Chat Agent Mode v3
+
+> Status: **In progress** — Wave 72 is the public launch preparation and agentic expansion wave.
+
+Theme: **Wave 72 adds a first-class agentic execution layer to Squish — a multi-step tool loop,
+built-in tools (file I/O, shell, Python REPL, URL fetch), an MCP client for external tool servers,
+and a Web Chat v3 with agent mode toggle, tool call cards, file upload, and slash commands.
+Simultaneously it hardens Squish for public launch: `squish doctor`, `squish update`, CORS middleware,
+and a programmatic launch preflight API.**
+
+### New Source Files
+
+| File | Purpose |
+|------|---------|
+| `squish/agent/__init__.py` | Package entry — exports ToolRegistry, ToolDefinition, ToolResult |
+| `squish/agent/tool_registry.py` | Tool registry with JSON Schema validation and call dispatch |
+| `squish/agent/builtin_tools.py` | 6 built-in tools: read_file, write_file, list_dir, run_shell, python_repl, fetch_url |
+| `squish/serving/agent_executor.py` | Multi-step agentic loop with streaming event emission |
+| `squish/serving/mcp_client.py` | MCP protocol client (stdio + SSE) + MCPToolAdapter |
+| `squish/serving/cors_config.py` | CORS policy dataclass + apply_cors_headers() |
+| `squish/install/launch_preflight.py` | 7-check preflight suite + format_report() |
+
+### CLI Additions
+
+| Command | Description |
+|---------|-------------|
+| `squish update` | `pip install --upgrade squish mlx mlx-lm huggingface_hub` + version diff |
+| `squish doctor` enhanced | Existing doctor + launch_preflight integration |
+
+### Web Chat v3 Additions (`squish/static/index.html`)
+
+- **Agent mode toggle** — `#agent-toggle` pill button, arms multi-step tool loop
+- **Tool call cards** — collapsible `.tool-card` with args + result, error state
+- **File attachment** — `#attach-btn` + drag-drop onto chat area, injected as `<file>` XML in context
+- **Slash commands** — `/clear /export /agent /model /system /help` with keyboard-navigable autocomplete menu
+- **CSS** — all styles namespaced, zero regressions to existing monitoring dashboard
+
+### Tests
+
+| File | Tests |
+|------|-------|
+| `tests/test_wave72_agent_engine.py` | 75+ tests: ToolRegistry, ToolResult, builtin tools, CORSConfig |
+| `tests/test_wave72_launch_preflight.py` | 35+ tests: individual checks, report aggregation, format_report |
+
+### Checklist
+
+- [x] `squish/agent/__init__.py`
+- [x] `squish/agent/tool_registry.py`
+- [x] `squish/agent/builtin_tools.py`
+- [x] `squish/serving/agent_executor.py`
+- [x] `squish/serving/mcp_client.py`
+- [x] `squish/serving/cors_config.py`
+- [x] `squish/install/launch_preflight.py`
+- [x] `squish/cli.py` — `squish update` command
+- [x] `squish/static/index.html` — agent mode, tool cards, file attach, slash commands
+- [x] `tests/test_wave72_agent_engine.py`
+- [x] `tests/test_wave72_launch_preflight.py`
+- [ ] All tests passing
+- [ ] `git commit` + `git push`
 
 ---
 

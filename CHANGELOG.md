@@ -5,6 +5,77 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [45.0.0] — Wave 72 — 2026-06-01
+
+### Added — Public Launch · Agentic Inference Engine · Web Chat Agent Mode v3
+
+Wave 72 adds first-class agentic capabilities to Squish — a multi-step tool execution loop,
+six built-in tools (file I/O, shell, Python REPL, URL fetch), an MCP protocol client, and an
+upgraded Web Chat UI with agent mode, tool call cards, file attachment, and slash commands.
+Wave 72 also hardens Squish for public launch with programmatic preflight checks, CORS middleware,
+and `squish update` CLI.
+
+#### New modules
+
+- **`squish/agent/tool_registry.py`** — `ToolRegistry` + `ToolDefinition` + `ToolResult` +
+  `ToolCallError`: centralised tool registration with JSON Schema validation, per-call dispatch,
+  and OpenAI-compatible schema generation. Supports `@registry.tool()` decorator.
+
+- **`squish/agent/builtin_tools.py`** — Six built-in agent tools:
+  `squish_read_file` (paginated file read), `squish_write_file` (safe UTF-8 write),
+  `squish_list_dir` (annotated directory listing), `squish_run_shell` (subprocess with timeout),
+  `squish_python_repl` (restricted-namespace exec with stdout capture),
+  `squish_fetch_url` (HTTP/HTTPS fetch, `file://` blocked). `register_builtin_tools(registry)`.
+
+- **`squish/serving/agent_executor.py`** — `AgentExecutor` + `AgentConfig` + `AgentSession` +
+  `AgentStep`: multi-step tool loop that calls the model, parses tool calls, dispatches via
+  registry, injects `tool` role results, and repeats until plain text or `max_steps`. Emits
+  `text_delta`, `tool_call_start`, `tool_call_result`, `step_complete`, `done`, `error` events.
+
+- **`squish/serving/mcp_client.py`** — `MCPClient` + `MCPToolDef` + `MCPToolAdapter` +
+  `MCPTransport`: async MCP protocol client supporting stdio subprocess and HTTP SSE transports.
+  Implements `initialize` handshake + `tools/list` + `tools/call` JSON-RPC 2.0. `MCPToolAdapter`
+  bridges discovered MCP tools into a `ToolRegistry`.
+
+- **`squish/serving/cors_config.py`** — `CORSConfig` + `apply_cors_headers()` +
+  `is_origin_allowed()` + `DEFAULT_CORS`: declarative CORS policy with wildcard, exact, and
+  subdomain-wildcard origin matching. Preflight and credentials support.
+
+- **`squish/install/launch_preflight.py`** — `PreflightCheck` + `PreflightReport` +
+  `run_preflight_checks()` + `format_report()`: 7-check launch readiness suite covering
+  Python version, MLX import, Metal GPU, disk space, RAM, write permissions, and port
+  availability. ANSI-coloured terminal output.
+
+#### CLI
+
+- **`squish update`** — upgrades `squish`, `mlx`, `mlx-lm`, `huggingface_hub` via pip,
+  shows version diff before/after. `--all` adds optional heavy dependencies.
+
+#### Web Chat v3 (`squish/static/index.html`)
+
+- **Agent mode toggle** — `#agent-toggle` pill button; when active, routes to `/v1/agents/run`
+- **Tool call cards** — collapsible `.tool-card` elements showing tool name, args, result,
+  elapsed time, and error state (rendered inline in the assistant message stream)
+- **File attachment** — `#attach-btn` + drag-drop onto chat area; text files injected as
+  `<file name="...">` XML context; attachment chips with remove button
+- **Slash commands** — `/clear /export /agent /model /system /help` with keyboard-navigable
+  autocomplete dropdown (`ArrowUp/Down/Tab/Enter` navigation)
+- **CSS** — `.tool-card-*`, `.attach-chip`, `#agent-toggle`, `#slash-menu` styles added;
+  no regressions to existing monitoring dashboard or chat layout
+
+#### Tests
+
+- **`tests/test_wave72_agent_engine.py`** — 75+ tests: `TestToolDefinition`, `TestToolResult`,
+  `TestToolRegistry` (registration, decorator, validation, dispatch, schemas),
+  `TestBuiltinTool*` (all 6 tools), `TestRegisterBuiltinTools`, `TestCORSConfig`,
+  `TestIsOriginAllowed`, `TestApplyCORSHeaders`, `TestMCPTypes`
+
+- **`tests/test_wave72_launch_preflight.py`** — 35+ tests: `TestCheckStatus`,
+  `TestPreflightCheck`, `TestPreflightReport`, individual `_check_*` functions,
+  `TestRunPreflightChecks`, `TestFormatReport`
+
+---
+
 ## [45.0.0] — Wave 71 — 2026-03-25
 
 ### Added — Public Launch Prep · Cross-Platform Expansion · CUDA Backend · Windows DirectML · Unified Platform Router · Versioned REST API · Release Validator · PyPI Manifest
