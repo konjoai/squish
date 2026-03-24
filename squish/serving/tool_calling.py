@@ -108,6 +108,10 @@ def format_tools_prompt(messages: list[dict], tools: list[dict]) -> list[dict]:
 
 # Patterns to extract JSON from model output
 _FENCED_JSON  = re.compile(r"```(?:json)?\s*\n?([\s\S]*?)```", re.MULTILINE)
+# Qwen3 / Hermes native tool-call tags
+_TOOL_CALL_TAG = re.compile(r"<tool_call>\s*([\s\S]*?)\s*</tool_call>", re.MULTILINE)
+# Think-block stripper (Qwen3 reasoning traces before the tool call)
+_THINK_BLOCK   = re.compile(r"<think>[\s\S]*?</think>", re.MULTILINE)
 
 
 def _extract_json_objects(text: str) -> list[str]:
@@ -176,20 +180,41 @@ def parse_tool_calls(text: str) -> list[dict] | None:
 
     Returns a list of raw tool-call dicts ({"name": ..., "arguments": ...})
     or None if no valid tool call is found (meaning the reply is plain text).
+
+    Handles:
+    - Qwen3 / Hermes ``<tool_call>...</tool_call>`` XML-tag format
+    - Fenced JSON blocks (```json...```)
+    - Full-text JSON (model output is only JSON)
+    - Balanced JSON objects/arrays embedded in prose
+    - ``<think>`` blocks are stripped before parsing
     """
-    # 1. Try fenced JSON blocks first (highest confidence)
-    for m in _FENCED_JSON.finditer(text):
+    # Strip think blocks so they don't confuse the JSON extractor
+    stripped = _THINK_BLOCK.sub("", text).strip()
+
+    # 0. Qwen3 / Hermes <tool_call> tag (highest confidence for those models)
+    tag_matches = _TOOL_CALL_TAG.findall(stripped)
+    if tag_matches:
+        calls: list[dict] = []
+        for raw in tag_matches:
+            obj = _try_parse(raw)
+            if obj is not None and _is_tool_call(obj):
+                calls.extend(_normalise(obj))
+        if calls:
+            return calls
+
+    # 1. Try fenced JSON blocks
+    for m in _FENCED_JSON.finditer(stripped):
         obj = _try_parse(m.group(1))
         if obj is not None and _is_tool_call(obj):
             return _normalise(obj)
 
-    # 2. Try the full text as JSON (model output is only JSON)
-    obj = _try_parse(text)
+    # 2. Try the stripped text as bare JSON (model output is only a JSON blob)
+    obj = _try_parse(stripped)
     if obj is not None and _is_tool_call(obj):
         return _normalise(obj)
 
     # 3. Extract balanced JSON objects/arrays from surrounding prose
-    for candidate in _extract_json_objects(text):
+    for candidate in _extract_json_objects(stripped):
         obj = _try_parse(candidate)
         if obj is not None and _is_tool_call(obj):
             return _normalise(obj)

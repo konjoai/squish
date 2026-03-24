@@ -1224,16 +1224,36 @@ def _rebuild_spec_gen() -> None:  # pragma: no cover
 
 # ── Token generation ─────────────────────────────────────────────────────────
 
-def _apply_chat_template(messages: list[dict[str, str]], tokenizer) -> str:
-    """Apply chat template if available, fall back to manual formatting."""
+def _apply_chat_template(
+    messages: list[dict[str, str]],
+    tokenizer,
+    tools: list[dict] | None = None,
+) -> str:
+    """Apply chat template if available, fall back to manual formatting.
+
+    When *tools* is provided and the tokenizer supports native tool calling
+    (Qwen3, Llama-3.1+), the tools list is passed directly so the model uses
+    its trained tool-calling format (e.g. ``<tool_call>`` tags for Qwen3)
+    rather than a manually-injected system-prompt JSON schema.
+    """
     if hasattr(tokenizer, "apply_chat_template"):
+        # Try native tool calling first (Qwen3 / HF models with tools support)
+        if tools:
+            try:
+                return tokenizer.apply_chat_template(
+                    messages,
+                    tools                 = tools,
+                    tokenize              = False,
+                    add_generation_prompt = True,
+                )
+            except Exception:
+                pass  # tokenizer doesn't support tools= → fall through
         try:
-            token_ids = tokenizer.apply_chat_template(
+            return tokenizer.apply_chat_template(
                 messages,
-                tokenize          = False,
+                tokenize              = False,
                 add_generation_prompt = True,
             )
-            return token_ids
         except Exception:
             pass
 
@@ -2364,12 +2384,40 @@ async def chat_completions(  # pragma: no cover
     global _req_tool_schema, _grammar_engine
     _req_tool_schema = None  # cleared per-request
     _client_stream = stream  # remember original before tools forces stream=False
+    _native_tools: list[dict] | None = None  # passed to apply_chat_template
     if tools:
-        from squish.tool_calling import format_tools_prompt
-        messages = format_tools_prompt(messages, tools)
         # When tools are requested, force non-streaming so we can inspect
         # the full output before deciding between text and tool_calls.
         stream = False
+
+        # Prefer native tokenizer tool-calling (Qwen3, Llama-3.1+).  If the
+        # tokenizer supports tools=, we skip the manual system-prompt injection
+        # so the model uses its trained format (e.g. <tool_call> tags for Qwen3).
+        # Fall back to format_tools_prompt for non-native tokenizers.
+        _tok = _state.tokenizer
+        _supports_native = False
+        if _tok is not None and hasattr(_tok, "apply_chat_template"):
+            try:
+                import inspect as _inspect
+                _sig = _inspect.signature(_tok.apply_chat_template)
+                _supports_native = "tools" in _sig.parameters
+            except Exception:
+                pass
+
+        if _supports_native:
+            _native_tools = tools
+            # Ensure generation stops right after the closing tag so the model
+            # doesn't append prose after its tool call.
+            _tc_stop = ["</tool_call>"]
+            if stop is None:
+                stop = _tc_stop
+            elif isinstance(stop, str):
+                stop = [stop] + _tc_stop
+            else:
+                stop = list(stop) + _tc_stop
+        else:
+            from squish.serving.tool_calling import format_tools_prompt
+            messages = format_tools_prompt(messages, tools)
 
         # tool_choice grammar enforcement ─────────────────────────────────
         # "required": force model to output a valid tool call JSON object
@@ -2395,7 +2443,7 @@ async def chat_completions(  # pragma: no cover
             if _grammar_engine is not None:
                 _req_tool_schema = _tc_schema
 
-    prompt         = _apply_chat_template(messages, _state.tokenizer)
+    prompt         = _apply_chat_template(messages, _state.tokenizer, tools=_native_tools)
     prompt_tokens  = _count_tokens(prompt)
     cid            = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     req_start      = time.perf_counter()
@@ -2498,7 +2546,7 @@ async def chat_completions(  # pragma: no cover
 
         # ── Tool calling: detect function call in output ──────────────────────
         if tools:
-            from squish.tool_calling import (  # noqa: PLC0415
+            from squish.serving.tool_calling import (  # noqa: PLC0415
                 build_tool_calls_response,
                 parse_tool_calls,
                 stream_tool_calls_response,
@@ -6985,6 +7033,20 @@ Examples:
             system_prompt    = "",
         )
 
+    # ── Wave 75: optimization module status summary ──────────────────────────
+    _print_optimization_status()
+
+    # ── Wave 76: Initialise agent tool registry ───────────────────────────────
+    global _agent_registry
+    try:
+        from squish.agent.tool_registry import ToolRegistry as _ToolRegistry
+        from squish.agent.builtin_tools import register_builtin_tools as _reg_tools
+        _agent_registry = _ToolRegistry()
+        _reg_tools(_agent_registry)
+        _info("agent-registry", f"loaded  tools={len(_agent_registry)}")
+    except Exception as _ar_exc:  # noqa: BLE001
+        _warn(f"[agent-registry] Could not load built-in tools: {_ar_exc}")
+
     print()
     _section("")
     print(f"  {_C.B}{_gradient('  Server ready!', _LOGO_GRAD)}{_C.R}")
@@ -7011,20 +7073,6 @@ Examples:
             if _tracer is not None:
                 _tracer.save_trace(args.trace_output)
                 _info("trace-output", f"written to {args.trace_output}")
-
-    # ── Wave 75: optimization module status summary ──────────────────────────
-    _print_optimization_status()
-
-    # ── Wave 76: Initialise agent tool registry ───────────────────────────────
-    global _agent_registry
-    try:
-        from squish.agent.tool_registry import ToolRegistry as _ToolRegistry
-        from squish.agent.builtin_tools import register_builtin_tools as _reg_tools
-        _agent_registry = _ToolRegistry()
-        _reg_tools(_agent_registry)
-        _info("agent-registry", f"loaded  tools={len(_agent_registry)}")
-    except Exception as _ar_exc:  # noqa: BLE001
-        _warn(f"[agent-registry] Could not load built-in tools: {_ar_exc}")
 
     uvicorn.run(
         app,
