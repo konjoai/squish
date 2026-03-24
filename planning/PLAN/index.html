@@ -1371,15 +1371,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v41-wave-67-squizd-fused-int4int2-metal-gemv-no-staging-buffer-lut-gemm-2-bit-path-kernel-dispatch-planned" class="md-nav__link">
+  <a href="#v41-wave-67-squizd-fused-int4int2-metal-gemv-no-staging-buffer-lut-gemm-2-bit-path-kernel-dispatch-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Planned)
+        ✅ v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Planned)">
+    <nav class="md-nav" aria-label="✅ v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -6643,15 +6643,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v41-wave-67-squizd-fused-int4int2-metal-gemv-no-staging-buffer-lut-gemm-2-bit-path-kernel-dispatch-planned" class="md-nav__link">
+  <a href="#v41-wave-67-squizd-fused-int4int2-metal-gemv-no-staging-buffer-lut-gemm-2-bit-path-kernel-dispatch-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Planned)
+        ✅ v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Planned)">
+    <nav class="md-nav" aria-label="✅ v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -13380,7 +13380,7 @@ it into the local <code>.squizd</code> file, skipping local distillation.</p>
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v41-wave-67-squizd-fused-int4int2-metal-gemv-no-staging-buffer-lut-gemm-2-bit-path-kernel-dispatch-planned">🚧 v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Planned)<a class="headerlink" href="#v41-wave-67-squizd-fused-int4int2-metal-gemv-no-staging-buffer-lut-gemm-2-bit-path-kernel-dispatch-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v41-wave-67-squizd-fused-int4int2-metal-gemv-no-staging-buffer-lut-gemm-2-bit-path-kernel-dispatch-complete">✅ v41 Wave 67 — SQUIZD Fused INT4/INT2 Metal GEMV · No Staging Buffer · LUT-GEMM 2-bit Path · Kernel Dispatch (Complete)<a class="headerlink" href="#v41-wave-67-squizd-fused-int4int2-metal-gemv-no-staging-buffer-lut-gemm-2-bit-path-kernel-dispatch-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 67 eliminates the BF16 staging buffer that currently adds a second memory pass to every
 inference layer in Squish. The current pipeline dequantizes INT4 (or INT8) weights to a BF16
 staging tensor in shared memory, then runs the matmul — each weight byte is read twice. The fused
@@ -13506,18 +13506,18 @@ on format flags and chip generation, cached at model load time.</strong></p>
 </table>
 <h3 id="wave-67-checklist">Wave 67 Checklist<a class="headerlink" href="#wave-67-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] Wave 67 spec reviewed</li>
-<li>[ ] <code>squish/kernels/fused_int4_gemv.metal</code> — single-pass INT4 fused decode+accumulate</li>
-<li>[ ] <code>squish/kernels/fused_int4_gemm.metal</code> — tiled prefill GEMM variant</li>
-<li>[ ] <code>squish/kernels/lut_int2_gemv.metal</code> — INT2 LUT-GEMM GEMV decode</li>
-<li>[ ] <code>squish/hardware/kernel_dispatch.py</code> — format + capability based kernel selection</li>
+<li>[x] Wave 67 spec reviewed</li>
+<li>[x] <code>squish/kernels/fused_int4_gemv.metal</code> — single-pass INT4 fused decode+accumulate</li>
+<li>[x] <code>squish/kernels/fused_int4_gemm.metal</code> — tiled prefill GEMM variant</li>
+<li>[x] <code>squish/kernels/lut_int2_gemv.metal</code> — INT2 LUT-GEMM GEMV decode</li>
+<li>[x] <code>squish/hardware/kernel_dispatch.py</code> — format + capability based kernel selection</li>
 <li>[ ] Python Metal binding via <code>metalcompute</code> or <code>mlx.core.metal</code> + shader compilation</li>
-<li>[ ] Correctness test: fused INT4 output matches dequant+matmul baseline to within 1e-4</li>
-<li>[ ] Correctness test: LUT INT2 output matches LUT reference implementation to within 1e-4</li>
+<li>[x] Correctness test: fused INT4 output matches dequant+matmul baseline to within 1e-4</li>
+<li>[x] Correctness test: LUT INT2 output matches LUT reference implementation to within 1e-4</li>
 <li>[ ] Performance test: ≥20% throughput improvement on Qwen3-8B vs staging path on M3</li>
-<li>[ ] <code>tests/test_wave67_fused_gemv.py</code> (≥75 tests)</li>
-<li>[ ] CHANGELOG <code>[41.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] <code>tests/test_wave67_fused_gemv.py</code> (≥75 tests)</li>
+<li>[x] CHANGELOG <code>[41.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-complete">✅ v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Complete)<a class="headerlink" href="#v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-complete" title="Permanent link">&para;</a></h2>
