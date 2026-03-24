@@ -691,20 +691,20 @@ open-source LLM inference engine for the first time.
 
 ### Wave 70 Checklist
 
-- [ ] Wave 70 spec reviewed
-- [ ] `squish/runtime/squish_runtime.py` — unified dispatch
-- [ ] `squish/hardware/capability_probe.py` — chip detection + capability cache
-- [ ] `squish/runtime/format_validator.py` — .squizd file validation
-- [ ] `docs/squizd_format_spec.md` — format v1.0 public specification
-- [ ] `squish/bench/squish_bench.py` — 30-trial statistical benchmark
-- [ ] `scripts/run_squish_format_benchmark.sh` — 21-model orchestrator
+- [x] Wave 70 spec reviewed
+- [x] `squish/runtime/squish_runtime.py` — unified dispatch
+- [x] `squish/hardware/capability_probe.py` — chip detection + capability cache
+- [x] `squish/runtime/format_validator.py` — .squizd file validation
+- [x] `docs/squizd_format_spec.md` — format v1.0 public specification
+- [x] `squish/bench/squish_bench.py` — 30-trial statistical benchmark
+- [x] `scripts/run_squish_format_benchmark.sh` — 21-model orchestrator
 - [ ] All 9 new models: pull, compress, benchmark all 4 format variants
 - [ ] `docs/BENCHMARK_SQUIZD_FORMAT.md` — full measured results table
 - [ ] End-to-end integration test: load → serve → SSE stream for each flag combination
-- [ ] `tests/test_wave70_squish_runtime.py` (≥75 tests)
-- [ ] `tests/test_wave70_benchmark_suite.py` (≥40 tests)
-- [ ] CHANGELOG `[44.0.0]` entry
-- [ ] PLAN.md updated
+- [x] `tests/test_wave70_squish_runtime.py` (≥75 tests — 87 collected, all passing)
+- [x] `tests/test_wave70_benchmark_suite.py` (≥40 tests — 48 collected, all passing)
+- [x] CHANGELOG `[44.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
