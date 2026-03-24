@@ -673,6 +673,9 @@ def _print_optimization_status() -> None:
     Called once before ``uvicorn.run()`` so users can see which performance
     modules are active and which fell back at a glance.
     """
+    # Ensure RadixTree is loaded before we read _prefix_cache._maxsize.
+    # This is a no-op when the test suite has already patched _prefix_cache.
+    _init_prefix_cache()
     rows: list[tuple[str, bool, str]] = [
         ("fused-sampler",  _fused_sampler_enabled and _fused_sampler is not None,
          "single-pass temperature+top-k+top-p decode kernel"),
@@ -829,10 +832,40 @@ _draft = _DraftState()
 #   • find_prefix(token_ids) / insert_prefix(token_ids, block_refs) — new (Phase 2B)
 # When --paged-attention is enabled the server also records KV block refs so
 # future requests with matching token prefixes can skip prefill entirely.
-from squish.kv.radix_cache import RadixTree as _RadixTree  # noqa: E402
+#
+# Wave 78: import deferred until first use (_init_prefix_cache) to save ~16 ms
+# from `import squish.server`.  _PrefixCache is set by _init_prefix_cache and
+# exposed via module __getattr__ so test code that accesses _srv._PrefixCache
+# before any server function is called still gets the real class.
 
-_PrefixCache = _RadixTree   # backward-compat alias used by tests
-_prefix_cache = _RadixTree(maxsize=512)
+_RadixTree = None    # populated by _init_prefix_cache()
+_prefix_cache = None  # populated by _init_prefix_cache()
+# NOTE: _PrefixCache is NOT pre-set in module __dict__; access triggers __getattr__
+#       which calls _init_prefix_cache() and then returns the class.
+
+
+def _init_prefix_cache(maxsize: int = 512) -> None:
+    """Lazy-load RadixTree and create the module-level prefix cache instance.
+
+    This is idempotent — subsequent calls are a no-op if the cache is already
+    initialised (or has been replaced by a test mock via patch.multiple).
+    """
+    global _RadixTree, _prefix_cache
+    if _prefix_cache is not None:
+        return
+    from squish.kv.radix_cache import RadixTree as _RT  # noqa: PLC0415
+    _RadixTree = _RT
+    # Set _PrefixCache in the module namespace for backward-compat test access
+    globals()["_PrefixCache"] = _RT
+    _prefix_cache = _RT(maxsize=maxsize)
+
+
+def __getattr__(name: str):
+    """Module-level __getattr__: lazily expose _PrefixCache before first init."""
+    if name == "_PrefixCache":
+        _init_prefix_cache()
+        return globals().get("_PrefixCache")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _sample_mx(logits_row, temperature: float, top_p: float) -> int:  # pragma: no cover
@@ -1449,6 +1482,11 @@ def _generate_tokens(  # pragma: no cover
     # Skip the prefix cache entirely for COMPRESS_PATH requests.
     # Keys always use _orig_prompt so a future identical *uncompressed* request
     # still matches a response that was generated after compression.
+    #
+    # Safety guard: _prefix_cache may be None if the server was not started via
+    # cmd_serve (e.g. direct function calls in tests that skip startup).
+    if _prefix_cache is None:
+        _init_prefix_cache()
     cache_eligible = (use_cache
                       and (temperature == 0.0 or seed is not None)
                       and not _on_compress_path)
@@ -3114,6 +3152,10 @@ async def health():
 @app.get("/v1/metrics")
 async def metrics():
     """Prometheus-compatible plain-text metrics."""
+    # Ensure prefix cache is initialised (lazy-load guard for standalone test
+    # clients that skip the normal startup path via cmd_serve).
+    if _prefix_cache is None:
+        _init_prefix_cache()
     now = time.time()
     uptime = round(now - _state.loaded_at, 1) if _state.loaded_at else 0
     lines = [

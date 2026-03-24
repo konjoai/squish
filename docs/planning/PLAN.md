@@ -6975,3 +6975,32 @@ Theme: **Discoverable CLI, rich terminal output, persistent config**
 - Running `squish` with no arguments shows a welcome banner with RAM-aware model recommendation
 - `squish config set default_model qwen3:8b` persists to `~/.squish/config.json`
 
+---
+
+## ✅ Wave 78 — Module-load Performance + INT2/3 Quality — 2026-03-24
+
+Theme: **Load faster, quantise better**
+
+| Task | Status | File(s) changed |
+|------|--------|-----------------|
+| RadixTree lazy init (saves ~16ms from `import squish.server`) | ✅ done | `squish/server.py` |
+| Module `__getattr__` for `_PrefixCache` backward-compat | ✅ done | `squish/server.py` |
+| Null guards for `_prefix_cache` in `/v1/metrics`, `_generate_tokens`, `_print_optimization_status` | ✅ done | `squish/server.py` |
+| `_preoptimize_weights_with_hqq()` — HQQ pre-optimisation pass for FFN layers | ✅ done | `squish/cli.py` |
+| `squish quantize --hqq` flag | ✅ done | `squish/cli.py` |
+| Auto-tighten `group_size` 64→32 for INT2 | ✅ done | `squish/cli.py` |
+| Small-model INT2 quality warning (<1B params) | ✅ done | `squish/cli.py` |
+| `squish check --model PATH` new command | ✅ done | `squish/cli.py` |
+| `tests/test_wave78_perf_quality.py` — 25 new tests | ✅ done | `tests/test_wave78_perf_quality.py` (new) |
+| Version bump → 9.1.0 | ✅ done | `pyproject.toml`, `CHANGELOG.md` |
+
+### Summary
+- Total tests: 14,572 passed, 34 skipped, 1 pre-existing fail (Rust SVD)
+- `import squish.server` saves ~16 ms (RadixTree deferred from module init to first use)
+- `squish quantize --hqq --ffn-bits 2` now produces coherent INT2 output via HQQ pre-optimisation
+- Key insight: HQQ encode→decode aligns weights to optimal grid; mlx_lm naive rounding then equals HQQ quality
+- `squish check --model PATH` gives instant per-layer bit-width report + HQQ SNR simulation, no weights loaded
+
+### Deferred (Wave 79)
+- Move `squish/kernels/mojo/` → `squish/experimental/kernels/mojo/` (pure reorganisation; zero perf impact; requires updating 5+ test files importing `squish.kernels.mojo.*`)
+
