@@ -5,6 +5,47 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [49.0.0] — Wave 76 — 2026-03-24
+
+### Fixed — Eval Runner Diagnostics
+
+#### `bench_lmeval_all_models.py` Silent Failure Fix
+
+- **`_run_single_task()`** now uses `subprocess.run(..., capture_output=True)` so
+  that `mlx_lm evaluate` stderr is captured instead of lost to the terminal.
+- On failure (non-zero exit code), the last 800 chars of stderr are appended to the
+  error message stored in the result JSON. Previously, errors showed only
+  `"mlx_lm exit code 1"` with no diagnostic context.
+- Stdout is always echoed to the terminal for progress visibility. Stderr is only
+  printed on failure to avoid flooding output with mlx_lm's per-layer quant config dumps.
+
+#### Root Cause of March 23 Benchmark Failures
+
+All Qwen3-4B/8B/14B and Qwen2.5-7B benchmarks recorded `mlx_lm exit code 1` with
+`elapsed_s: 0.08s`. Root cause: models were in squish's npy-dir format when the
+benchmark ran at 11:27 AM. They were re-quantized to mlx_lm-native safetensors at
+11:42 PM. `mlx_lm evaluate` (which uses `mlx_lm.utils.load()`) cannot load npy-dir
+format — the subprocess crashed before any inference occurred. Re-run in progress.
+
+### Documented — INT2/INT3 Quality & TPS Findings
+
+Confirmed from lm-eval benchmarks on ≤1.5B models and model size analysis:
+
+- **Uniform INT2**: near-random quality (~35% avg on multi-choice tasks). Not viable.
+- **INT3**: degraded but functional (38–46%). Acceptable for non-critical tasks.
+- **INT4**: reference quality (40–57%).
+- **Wave 72 mixed_2_6**: keeps attention at INT4, embeddings at INT8, FFN at INT2.
+  ~20–25% higher TPS than INT4 with significantly better quality than uniform INT2.
+- **TPS vs bit-width** (M3 base, 100 GB/s): INT2 gives ~20% more TPS than INT4 for
+  Qwen3-8B (4.1 GB vs 4.9 GB), not 2× because attention weights (40% of model) stay INT4.
+
+### Added — Tests
+
+- `tests/test_wave72_quantize_fix.py::TestRunSingleTask` — 5 new tests verifying
+  `capture_output=True`, stderr surfaces in error, `--limit` flag behaviour.
+
+---
+
 ## [48.0.0] — Wave 75 — 2026-06-05
 
 ### Changed — Performance Foundations

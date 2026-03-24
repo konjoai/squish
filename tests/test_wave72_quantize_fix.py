@@ -750,3 +750,170 @@ class TestMixedRecipePredicate:
             "quant_predicate must be a callable when --mixed-recipe is set"
         )
         assert call_kwargs.get("q_bits") == 2, "q_bits must equal ffn_bits=2 for mixed recipe"
+
+
+# ---------------------------------------------------------------------------
+# bench_lmeval_all_models.py — _run_single_task subprocess capture
+# ---------------------------------------------------------------------------
+
+class TestRunSingleTask:
+    """Verify _run_single_task uses capture_output and surfaces stderr on failure."""
+
+    def _import_bench(self):
+        bench_path = (
+            Path(__file__).resolve().parents[1]
+            / "dev" / "benchmarks" / "bench_lmeval_all_models.py"
+        )
+        spec = importlib.util.spec_from_file_location("bench_lmeval", bench_path)
+        mod  = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        return mod
+
+    def test_success_returns_parsed_json(self, tmp_path, capsys):
+        """A zero-exit subprocess writes a JSON file; _run_single_task parses it."""
+        mod = self._import_bench()
+        out_dir = tmp_path / "lmeval_raw" / "test-model"
+        out_dir.mkdir(parents=True)
+
+        import json, subprocess
+        # Write a fake eval output file that mlx_lm would produce
+        fake_result = {"results": {"arc_easy": {"acc,none": 0.75}}}
+        eval_file = out_dir / "eval_test-model_lmeval_arc_easy"
+        eval_file.write_text(json.dumps(fake_result))
+
+        fake_proc = MagicMock()
+        fake_proc.returncode = 0
+        fake_proc.stdout = "Overwriting default num_fewshot\n"
+        fake_proc.stderr = ""
+
+        with patch("subprocess.run", return_value=fake_proc) as mock_run:
+            result = mod._run_single_task(
+                task="arc_easy",
+                model_dir=tmp_path / "fake-model",
+                limit=100,
+                num_fewshot_override=None,
+                lmeval_out_dir=out_dir,
+                batch_size=1,
+            )
+
+        # Must use capture_output=True
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("capture_output") is True, "capture_output=True must be set"
+        assert kwargs.get("text") is True
+
+        # Stdout must be echoed to our captured output
+        captured = capsys.readouterr()
+        assert "Overwriting default num_fewshot" in captured.out
+
+        # Result should contain the parsed data
+        assert "error" not in result
+        assert "_elapsed_s" in result
+
+    def test_failure_includes_stderr_in_error_message(self, tmp_path):
+        """When returncode != 0, error message must embed the stderr tail."""
+        mod = self._import_bench()
+        out_dir = tmp_path / "lmeval_raw" / "test-model"
+        out_dir.mkdir(parents=True)
+
+        fake_proc = MagicMock()
+        fake_proc.returncode = 1
+        fake_proc.stdout = ""
+        fake_proc.stderr = "Traceback (most recent call last):\n  ...\nValueError: model not found"
+
+        with patch("subprocess.run", return_value=fake_proc):
+            result = mod._run_single_task(
+                task="arc_easy",
+                model_dir=tmp_path / "fake-model",
+                limit=None,
+                num_fewshot_override=None,
+                lmeval_out_dir=out_dir,
+                batch_size=1,
+            )
+
+        assert "error" in result
+        assert "mlx_lm exit code 1" in result["error"]
+        assert "ValueError: model not found" in result["error"]
+        assert "_elapsed_s" in result
+
+    def test_failure_empty_stderr_still_records_exit_code(self, tmp_path):
+        """If stderr is empty, the error message still captures the exit code."""
+        mod = self._import_bench()
+        out_dir = tmp_path / "lmeval_raw" / "test-model"
+        out_dir.mkdir(parents=True)
+
+        fake_proc = MagicMock()
+        fake_proc.returncode = 2
+        fake_proc.stdout = ""
+        fake_proc.stderr = ""
+
+        with patch("subprocess.run", return_value=fake_proc):
+            result = mod._run_single_task(
+                task="arc_easy",
+                model_dir=tmp_path / "fake-model",
+                limit=None,
+                num_fewshot_override=None,
+                lmeval_out_dir=out_dir,
+                batch_size=1,
+            )
+
+        assert "error" in result
+        assert "mlx_lm exit code 2" in result["error"]
+
+    def test_limit_appended_to_cmd_when_set(self, tmp_path):
+        """When limit is not None, --limit must appear in the subprocess command."""
+        mod = self._import_bench()
+        out_dir = tmp_path / "lmeval_raw" / "test-model"
+        out_dir.mkdir(parents=True)
+
+        import json
+        eval_file = out_dir / "eval_out"
+        eval_file.write_text(json.dumps({}))
+
+        fake_proc = MagicMock()
+        fake_proc.returncode = 0
+        fake_proc.stdout = ""
+        fake_proc.stderr = ""
+
+        with patch("subprocess.run", return_value=fake_proc) as mock_run:
+            mod._run_single_task(
+                task="arc_easy",
+                model_dir=tmp_path / "fake-model",
+                limit=50,
+                num_fewshot_override=None,
+                lmeval_out_dir=out_dir,
+                batch_size=1,
+            )
+
+        cmd, _ = mock_run.call_args
+        cmd_list = cmd[0]
+        assert "--limit" in cmd_list
+        assert "50" in cmd_list
+
+    def test_no_limit_omits_limit_flag(self, tmp_path):
+        """When limit is None, --limit must NOT appear in the subprocess command."""
+        mod = self._import_bench()
+        out_dir = tmp_path / "lmeval_raw" / "test-model"
+        out_dir.mkdir(parents=True)
+
+        import json
+        eval_file = out_dir / "eval_out"
+        eval_file.write_text(json.dumps({}))
+
+        fake_proc = MagicMock()
+        fake_proc.returncode = 0
+        fake_proc.stdout = ""
+        fake_proc.stderr = ""
+
+        with patch("subprocess.run", return_value=fake_proc) as mock_run:
+            mod._run_single_task(
+                task="arc_easy",
+                model_dir=tmp_path / "fake-model",
+                limit=None,
+                num_fewshot_override=None,
+                lmeval_out_dir=out_dir,
+                batch_size=1,
+            )
+
+        cmd, _ = mock_run.call_args
+        cmd_list = cmd[0]
+        assert "--limit" not in cmd_list

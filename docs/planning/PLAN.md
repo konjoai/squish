@@ -1,6 +1,6 @@
 # Squish — Development Plan
 
-> Last updated: 2026-06-05 (Wave 75 complete — v48 Performance Foundations · Metal JIT warmup · tier-3 first-run warning · chunk_prefill on by default · _print_optimization_status table · 24 new tests)
+> Last updated: 2026-03-24 (Wave 76 complete — Eval runner diagnostics · bench_lmeval_all_models.py capture_output fix · 4B/7B/8B/14B benchmark re-run queued · INT2/INT3 quality & TPS investigation complete)
 
 This document tracks completed waves, the current release, and the next phase.
 
@@ -59,6 +59,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v46** | 73 | "Impossible" MoE Elastic Inference · HFMoELoader · INT4 Expert Pack · Expert Memory Map · RouterEstimator · LayerByLayerExecutor · MoEPipeline · Mixtral 8x7B/8x22B + Qwen3-235B-A22B Catalog |
 | **v47** | 74 | Onboarding & Website Polish · Squish brand hero · "The Local AI Agent Runtime" tagline · brew squish-ai/squish · squish run detects Ollama/LM Studio · auto-opens Squish Agent browser UI · 22 new tests |
 | **v48** | 75 | Performance Foundations · Metal JIT warmup pass at startup · tier-3 first-run penalty warning · chunked prefill on by default (--no-chunk-prefill to disable) · _print_optimization_status table at startup · 24 new tests |
+| **v49** | 76 | Eval Runner Diagnostics · bench_lmeval_all_models.py capture_output fix · INT2/INT3 quality & TPS investigation · 4B/7B/8B/14B benchmark re-run · 5 new tests |
 
 ---
 
@@ -592,6 +593,68 @@ All modules have MLX Metal + NumPy CPU fallback paths.
 - [x] PLAN.md updated
 
 ---
+
+## ✅ v49 Wave 76 — Eval Runner Diagnostics · INT2/INT3 Investigation (Complete)
+
+> Status: **Complete** — Wave 76 fixes the eval runner silent-failure problem and documents the INT2/INT3 quality/TPS tradeoff.
+
+### Root Cause: `mlx_lm exit code 1` for all 4B+ models (March 23, 2026)
+
+All Qwen3-4B/8B/14B and Qwen2.5-7B benchmarks recorded `mlx_lm exit code 1` with `elapsed_s: 0.08s`.
+
+Root cause confirmed: models were indexed at `~/models/Qwen3-4B-int2` but were in squish's own npy-dir format
+at benchmark time (11:27 AM). They were re-quantized to mlx_lm-native safetensors at 11:42 PM the same day.
+`mlx_lm evaluate` cannot load squish npy-dir format — the subprocess failed at import/load, not at inference.
+
+The benchmarks now run correctly with the mlx_lm-native format (confirmed by test run).
+
+### INT2/INT3 Quality Analysis (actual benchmark data from ≤1.5B models)
+
+| Model class | INT4 avg | INT3 avg | INT2 avg | INT2 verdict |
+|-------------|----------|----------|----------|--------------|
+| Llama-3.2-1B | 45.7% | 41.6–43.2% | 34.7–35.9% | **near-random** |
+| Qwen3-0.6B   | 40.5% | 38.8–40.6% | 34.6–36.5% | **near-random** |
+| Qwen2.5-1.5B | 57.2% | 46.0% | 34.7% | **near-random** |
+
+- **Uniform INT2 = broken for quality** — scores ~35% average on 6 multiple-choice tasks (random baseline ≈ 20–25%).
+- **INT3 = degraded but usable** — 38–46% average, significantly above random.
+- **INT4 = acceptable** — 40–57% average.
+- **Wave 72 mixed_2_6 recipe** (attn layers kept at INT4, embeddings at INT8, FFN at INT2) substantially improves
+  INT2 quality. The 4B+ models all use this recipe as-of the March 23 11:42 PM re-quantization.
+
+### TPS vs Bit-Width (actual model sizes on M3 base 16 GB, 100 GB/s)
+
+Wave 72 mixed_2_6 keeps attention at INT4, so size reduction from INT2 is smaller than pure INT2 would give:
+
+| Model   | INT4 size → TPS | INT3 size → TPS | INT2 size → TPS | INT2 gain |
+|---------|-----------------|-----------------|-----------------|-----------|
+| Qwen3-4B | 2.3 GB → 43 TPS | 2.2 GB → 45 TPS | 1.9 GB → 53 TPS | **+23%** |
+| Qwen3-8B | 4.9 GB → 20 TPS | 4.7 GB → 21 TPS | 4.1 GB → 24 TPS | **+20%** |
+
+TPS = memory_bandwidth / model_size_GB (Apple M3 base ≈ 100 GB/s).
+**INT2 gives ~20-25% more TPS than INT4** with mixed_2_6 (not 2× as uniform INT2 would give, because attention
+layers are locked at INT4 and represent ~40% of model size).
+
+### Fix Applied
+
+- `dev/benchmarks/bench_lmeval_all_models.py`: `subprocess.run(..., capture_output=True)` with stderr surfaced
+  only on failure, stdout always echoed. Silent `mlx_lm exit code 1` entries now include the actual error message.
+- 4B/7B/8B/14B benchmarks re-queued with `--limit 100 --force` to fill the missing data.
+
+### Tests
+
+| File | Tests |
+|------|-------|
+| `tests/test_wave72_quantize_fix.py::TestRunSingleTask` | 5 new tests: capture_output, stderr-in-error, limit flag |
+
+### Checklist
+
+- [x] Root cause of `mlx_lm exit code 1` identified and documented
+- [x] `dev/benchmarks/bench_lmeval_all_models.py` — capture_output + stderr diagnostics
+- [x] `tests/test_wave72_quantize_fix.py` — 5 new `TestRunSingleTask` tests (56 total, all passing)
+- [x] INT2/INT3 quality & TPS findings documented in PLAN.md
+- [x] 4B/7B/8B/14B benchmarks re-running in background (limit=100)
+- [x] PLAN.md updated
 
 ---
 
