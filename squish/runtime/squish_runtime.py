@@ -147,6 +147,7 @@ class KernelStack:
     INT2     = "int2"
     NUMPY    = "numpy"
     COREML   = "coreml"
+    SPARSE   = "sparse_gemv"
 
 
 @dataclass
@@ -379,6 +380,8 @@ class SquishRuntime:
             return KernelStack.ASTC
         if flags.has(SquizdFlags.TCA_TBE):
             return KernelStack.TCA_TBE
+        if flags.has(SquizdFlags.SPARSE):
+            return KernelStack.SPARSE
         if flags.has(SquizdFlags.INT2):
             return KernelStack.INT2
         if flags.has(SquizdFlags.INT4):

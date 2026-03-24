@@ -79,6 +79,52 @@ flags required at serve time.
 
 ---
 
+## [40.0.0] — Wave 66 — 2026-03-24
+
+### Added — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel · Sparsity Predictor
+
+Wave 66 exploits the **dead-neuron phenomenon** in SwiGLU FFN layers: empirically, 40–65 % of FFN
+neurons produce near-zero activations on any given token (DejaVu, PowerInfer).  Wave 66 bakes this
+sparsity into the SQUIZD compressed format at calibration time.
+
+- **`squish/compress/sparsity_profiler.py`** (`SparsityProfiler`, `LayerSparsityProfile`,
+  `ProfilerConfig`, `ClusterInfo`, `coactivation_matrix`, `kmeans_cluster`) — Calibration pass.
+  Runs 2,000 prompt samples through each FFN layer, records per-neuron mean magnitude and firing
+  frequency, assigns neurons to 64 co-activation clusters via pure-NumPy k-means++, and serialises
+  a `LayerSparsityProfile` per layer (cluster boundaries + activation histogram + sparsity ratio)
+  into the `.squizd` sparsity metadata block.
+
+- **`squish/compress/cluster_reorder.py`** (`ClusterReorder`, `ReorderResult`,
+  `compute_cluster_permutation`) — Weight column reordering that physically sorts `W_up` /
+  `W_gate` columns and `W_down` rows by cluster ID, making cluster column ranges contiguous in
+  memory for sequential access.  Preserves exact GEMV output via inverse-permutation on `W_down`.
+
+- **`squish/kernels/sparse_gemv.metal`** (`sparse_gemv_f32`, `dense_gemv_f32`,
+  `SparseGEMVParams`) — Cluster-masked sparse GEMV Metal compute shader.  For each output row,
+  iterates over cluster groups and skips inactive clusters entirely (no weight bytes loaded).
+  256 threads/TG with threadgroup halving-tree reduction.  Dense fallback kernel included for
+  correctness validation and predictor-disabled layers.
+
+- **`squish/token/sparsity_predictor.py`** (`SparsityPredictor`, `PredictorConfig`) — Lightweight
+  per-layer linear classifier.  Stores a `(d_model, n_clusters)` float16 weight matrix per FFN
+  layer.  Computes the active cluster mask in a single `(hidden_state @ W_pred) > threshold` pass.
+  Full train/predict/accuracy/recall pipeline; full to/from bytes serialisation for `.squizd`
+  metadata embedding.
+
+- **`squish/runtime/squish_runtime.py`** — Added `KernelStack.SPARSE = "sparse_gemv"` and
+  added SPARSE flag routing in `_select_kernel()` (routes before INT4/INT2 fallbacks).
+
+### Tests
+
+- `tests/test_wave66_sparsity.py` — **81 new tests** covering `ProfilerConfig`, `kmeans_cluster`,
+  `coactivation_matrix`, `LayerSparsityProfile` serialisation round-trip, `SparsityProfiler`
+  collect/compute/profile/model, `compute_cluster_permutation`, `ClusterReorder` shapes /
+  correctness / boundary invariants, `PredictorConfig`, `SparsityPredictor` predict / train /
+  accuracy / recall / serialisation, `KernelStack.SPARSE`, `_select_kernel` routing, and
+  full Wave 66 end-to-end integration pipeline.
+
+---
+
 ## [39.0.0] — Wave 65 — 2026-03-24
 
 ### Added — TCA-TBE Lossless BF16 Bitmap Encoding · ZipGEMV + ZipGEMM Metal Shaders · Stage-Aware Prefill/Decode Dispatch

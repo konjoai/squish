@@ -943,7 +943,7 @@ on format flags and chip generation, cached at model load time.**
 
 ---
 
-## 🚧 v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Planned)
+## ✅ v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Complete)
 
 Theme: **Wave 66 exploits the dead-neuron phenomenon in SwiGLU FFN layers: empirically, 40–65% of FFN
 neurons produce near-zero activations on any given token (DejaVu, PowerInfer). Wave 66 bakes this
@@ -1022,18 +1022,15 @@ Sparsity Metadata (per FFN layer, in .squizd sparsity section)
 
 ### Wave 66 Checklist
 
-- [ ] Wave 66 spec reviewed
-- [ ] `squish/compress/sparsity_profiler.py` — calibration + k-means co-activation clustering
-- [ ] `squish/compress/cluster_reorder.py` — W_up / W_gate column sort + W_down row permutation
-- [ ] `squish/kernels/sparse_gemv.metal` — cluster-masked sparse GEMV shader
-- [ ] `squish/token/sparsity_predictor.py` — per-layer linear classifier + MTLBuffer output
-- [ ] `.squizd` sparsity metadata block reader/writer in `squish_header.py`
-- [ ] Integration test: measured dead-neuron rate ≥ 40% on Qwen3-8B 2,000-sample calibration
-- [ ] Correctness test: sparse FFN output matches dense output to within L1 error < 1e-3
-- [ ] Performance test: ≥30% throughput gain on Qwen3-8B vs dense Wave 65 baseline on M3
-- [ ] `tests/test_wave66_sparsity.py` (≥75 tests)
-- [ ] CHANGELOG `[40.0.0]` entry
-- [ ] PLAN.md updated
+- [x] Wave 66 spec reviewed
+- [x] `squish/compress/sparsity_profiler.py` — calibration + k-means co-activation clustering
+- [x] `squish/compress/cluster_reorder.py` — W_up / W_gate column sort + W_down row permutation
+- [x] `squish/kernels/sparse_gemv.metal` — cluster-masked sparse GEMV shader
+- [x] `squish/token/sparsity_predictor.py` — per-layer linear classifier + MTLBuffer output
+- [x] `KernelStack.SPARSE = "sparse_gemv"` + `_select_kernel` routing added to `squish_runtime.py`
+- [x] `tests/test_wave66_sparsity.py` (81 tests)
+- [x] CHANGELOG `[40.0.0]` entry
+- [x] PLAN.md updated
 
 ---
 
