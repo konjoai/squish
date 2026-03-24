@@ -97,7 +97,6 @@ def _require(pkg: str, install: str | None = None) -> None:
         sys.exit(1)
 
 _require("fastapi")
-_require("uvicorn", "uvicorn[standard]")
 
 from fastapi import FastAPI, HTTPException, Request, Security  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
@@ -765,10 +764,6 @@ def _tlog(msg: str) -> None:
             _trace_file.flush()
         except Exception:
             pass
-
-# ── Tool calling + Ollama compat (Phase 2.2) ─────────────────────────────────
-# Imported lazily in endpoints — no startup cost when unused
-import uvicorn  # noqa: E402
 
 # ── Model state ──────────────────────────────────────────────────────────────
 
@@ -1889,6 +1884,9 @@ def _generate_tokens(  # pragma: no cover
             # Hoist loop-invariant expressions out of the decode loop
             _bs_cap_inv = _TASK_TOKEN_CAPS.get(_task_type, 0) if _babbling_suppression else 0
             _tok_decode_fn = getattr(tokenizer, "decode", None)
+            # Pre-compute which layer caches support async prefetch so we avoid
+            # a per-layer hasattr() check on every decode step.
+            _prefetch_caches = [lc for lc in layer_caches if hasattr(lc, "start_prefetch")]
             for step in range(max_tokens):
                 # ── Phase E1: Hard token cap (babbling suppression) ──────────────
                 if _bs_cap_inv > 0 and step >= _bs_cap_inv:
@@ -2039,9 +2037,8 @@ def _generate_tokens(  # pragma: no cover
                 # Phase 0C: fire async CPU dequant for next step while we set up
                 # the token embedding — hides O(n_old_tokens) numpy cost behind
                 # the model's token-embedding + layernorm overhead.
-                for _lc in layer_caches:
-                    if hasattr(_lc, "start_prefetch"):
-                        _lc.start_prefetch()
+                for _lc in _prefetch_caches:
+                    _lc.start_prefetch()
             if cache_eligible and _cache_buf:
                 _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
             # Phase E3: end-of-loop clean completion — store in semantic cache
@@ -2117,12 +2114,13 @@ def _generate_tokens(  # pragma: no cover
         _stop_text_buf: str = ""
         _think_token_count = 0   # tokens inside <think>...</think> blocks
         _in_think_sg = False     # True while inside a thinking block
+        _text_getter = None      # resolved on first item: avoids per-token hasattr
         for item in gen:
-            # mlx_lm >= 0.19 yields GenerationResult objects; older yields strings
-            if hasattr(item, "text"):
-                tok_text = item.text
-            else:
-                tok_text = str(item)
+            # mlx_lm >= 0.19 yields GenerationResult objects; older yields strings.
+            # Detect the type once on the first item and reuse the accessor.
+            if _text_getter is None:
+                _text_getter = (lambda i: i.text) if hasattr(item, "text") else str
+            tok_text = _text_getter(item)
             emitted += 1
             # Track thinking tokens for diagnostics
             if "<think>" in tok_text:
@@ -7123,6 +7121,8 @@ Examples:
                 _tracer.save_trace(args.trace_output)
                 _info("trace-output", f"written to {args.trace_output}")
 
+    import uvicorn  # deferred: only needed when actually starting the server
+    _require("uvicorn", "uvicorn[standard]")  # validate before use
     uvicorn.run(
         app,
         host      = args.host,
