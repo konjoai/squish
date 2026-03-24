@@ -2361,14 +2361,31 @@ def cmd_convert_model(args):
     source_path = Path(args.source_path).expanduser().resolve()
     output_path = Path(args.output_path).expanduser().resolve()
 
-    if not source_path.exists():
+    # Allow HF model IDs as source (e.g. "Qwen/Qwen3-14B").  A path that
+    # does not exist but contains a forward-slash and no leading / is treated
+    # as an HF repository ID and passed through to mlx_lm.convert as-is.
+    _is_hf_id = (
+        not source_path.exists()
+        and "/" in args.source_path
+        and not args.source_path.startswith("/")
+    )
+    if not source_path.exists() and not _is_hf_id:
         _die(f"Source path not found: {source_path}")
+    if _is_hf_id:
+        # Override resolved path with the raw HF ID string for mlx_lm.convert
+        source_path = args.source_path  # type: ignore[assignment]
+
+    attn_bits: int | None = getattr(args, "attn_bits", None)
+    group_size: int = getattr(args, "group_size", 64)
 
     if args.dry_run:
         print(f"  [dry-run] source      : {source_path}")
         print(f"  [dry-run] output      : {output_path}")
         print(f"  [dry-run] ffn-bits    : {args.ffn_bits}")
+        if attn_bits is not None and attn_bits != args.ffn_bits:
+            print(f"  [dry-run] attn-bits   : {attn_bits}")
         print(f"  [dry-run] embed-bits  : {args.embed_bits}")
+        print(f"  [dry-run] group-size  : {group_size}")
         return
 
     # Do NOT pre-create the output directory — mlx_lm.convert refuses to write
@@ -2391,23 +2408,47 @@ def cmd_convert_model(args):
 
     ffn_bits: int = args.ffn_bits
     embed_bits: int = args.embed_bits
+    # attn_bits / group_size already extracted above (before dry-run check)
+    effective_attn_bits: int = attn_bits if attn_bits is not None else ffn_bits
 
-    if ffn_bits == embed_bits:
+    needs_predicate = (
+        ffn_bits != embed_bits
+        or effective_attn_bits != ffn_bits
+    )
+
+    if not needs_predicate:
         # Uniform quantization — simple path, no per-layer predicate needed.
         quant_predicate = None
         q_bits = ffn_bits
-        print(f"  Quantizing all layers to {ffn_bits}-bit …")
+        print(f"  Quantizing all layers to {ffn_bits}-bit (group_size={group_size}) …")
     else:
-        # Mixed-precision: FFN layers at ffn_bits, embed/lm_head at embed_bits.
-        # Single mlx_lm.convert pass using a per-layer dict predicate so that
-        # mlx_lm creates the output directory exactly once.
-        q_bits = ffn_bits  # default (overridden per-layer by predicate)
+        # Three-tier mixed-precision:
+        #   embed/lm_head  →  embed_bits
+        #   self_attn/*    →  effective_attn_bits  (defaults to ffn_bits)
+        #   everything else (MLP gate/up/down) →  ffn_bits
+        q_bits = ffn_bits
+        _gs = group_size  # captured in closure
+        _fb = ffn_bits
+        _ab = effective_attn_bits
+        _eb = embed_bits
+
         def quant_predicate(path: str, _module) -> bool | dict:  # noqa: E501
             is_embed = "lm_head" in path or "embed_tokens" in path
-            bits = embed_bits if is_embed else ffn_bits
-            return {"bits": bits, "group_size": 64}
-        print(f"  Quantizing FFN layers to {ffn_bits}-bit, "
-              f"embed/lm_head to {embed_bits}-bit …")
+            is_attn  = "self_attn" in path or "cross_attn" in path
+            if is_embed:
+                bits = _eb
+            elif is_attn:
+                bits = _ab
+            else:
+                bits = _fb
+            return {"bits": bits, "group_size": _gs}
+
+        parts = [f"FFN={ffn_bits}-bit"]
+        if effective_attn_bits != ffn_bits:
+            parts.append(f"attn={effective_attn_bits}-bit")
+        if embed_bits != ffn_bits:
+            parts.append(f"embed={embed_bits}-bit")
+        print(f"  Quantizing: {', '.join(parts)}, group_size={group_size} …")
 
     try:
         _mlx_lm.convert(
@@ -2415,10 +2456,11 @@ def cmd_convert_model(args):
             mlx_path=str(output_path),
             quantize=True,
             q_bits=q_bits,
+            q_group_size=group_size,
             quant_predicate=quant_predicate,
         )
     except Exception as exc:
-        _die(f"FFN quantization failed: {exc}")
+        _die(f"Quantization failed: {exc}")
 
     print(f"\n  Mixed-precision model saved to: {output_path}")
     print(f"  Load with: squish run --mlx-model-dir {output_path}")
@@ -3363,14 +3405,18 @@ Ollama drop-in:
         help="Mixed-precision quantize a model (different bits per layer group)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
-            "Quantize an existing model with different precision per layer group.\n\n"
-            "Applies --ffn-bits to all linear layers except lm_head and embed_tokens,\n"
-            "then --embed-bits to those omitted layers. Produces a single merged model.\n\n"
-            "Example:\n"
-            "  squish convert-model \\\n"
-            "    --source-path ~/.squish/models/qwen3-8b \\\n"
-            "    --output-path ~/.squish/models/qwen3-8b-mixed \\\n"
-            "    --ffn-bits 4 --embed-bits 6\n"
+            "Quantize an existing model with three-tier mixed precision.\n\n"
+            "  --ffn-bits   : MLP gate/up/down projections (most of the weights)\n"
+            "  --attn-bits  : Q/K/V/O attention projections (keeps coherence at low bits)\n"
+            "  --embed-bits : lm_head + embed_tokens\n\n"
+            "For coherent INT2/INT3 generation keep attention at 4-bit:\n"
+            "  squish quantize --source-path ./model-bf16 --output-path ./model-int2 \\\n"
+            "    --ffn-bits 2 --attn-bits 4 --embed-bits 8 --group-size 32\n\n"
+            "  squish quantize --source-path ./model-bf16 --output-path ./model-int3 \\\n"
+            "    --ffn-bits 3 --attn-bits 4 --embed-bits 8 --group-size 32\n\n"
+            "Legacy uniform INT4 (no per-tier override needed):\n"
+            "  squish quantize --source-path ./model-bf16 --output-path ./model-int4 \\\n"
+            "    --ffn-bits 4 --embed-bits 8\n"
         ),
     )
     p_convert.add_argument("--source-path", required=True, metavar="PATH",
@@ -3378,9 +3424,22 @@ Ollama drop-in:
     p_convert.add_argument("--output-path", required=True, metavar="PATH",
                            help="Output directory for mixed-precision model")
     p_convert.add_argument("--ffn-bits", type=int, default=4, metavar="N",
-                           help="Quantization bits for FFN layers (default: 4)")
+                           help="Quantization bits for MLP FFN layers (default: 4)")
+    p_convert.add_argument("--attn-bits", type=int, default=None, metavar="N",
+                           dest="attn_bits",
+                           help=(
+                               "Quantization bits for attention Q/K/V/O projections. "
+                               "Defaults to --ffn-bits when omitted. "
+                               "Use 4 when --ffn-bits is 2 or 3 to fix garbage/looping output."
+                           ))
     p_convert.add_argument("--embed-bits", type=int, default=6, metavar="N",
                            help="Quantization bits for lm_head + embed_tokens (default: 6)")
+    p_convert.add_argument("--group-size", type=int, default=64, metavar="N",
+                           dest="group_size",
+                           help=(
+                               "Quantization group size for weight matrices (default: 64). "
+                               "32 gives better accuracy for INT2 at ~2%% overhead."
+                           ))
     p_convert.add_argument("--dry-run", action="store_true", default=False,
                            help="Print what would be done without converting")
     p_convert.add_argument("--cpu", action="store_true", default=False,
