@@ -1538,6 +1538,59 @@ def cmd_doctor(args):
         print(f"  Report saved to: {_report_path}\n")
 
 
+def cmd_update(args):
+    """Upgrade squish and its core dependencies to the latest published versions."""
+    try:
+        import importlib.metadata as _im
+        current_version = _im.version("squish")
+    except Exception:
+        current_version = "unknown"
+
+    print()
+    _box(["squish update"])
+    print(f"  Current version: {current_version}")
+    print()
+
+    packages = ["squish", "mlx", "mlx-lm", "huggingface_hub"]
+    if getattr(args, "all", False):
+        # Include heavy optional deps when --all is passed
+        packages += ["mlx-vlm", "transformers", "sentencepiece", "tiktoken"]
+
+    for pkg in packages:
+        print(f"  Upgrading {pkg}…")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", pkg],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            # Extract new version from pip output if available
+            new_lines = [
+                ln for ln in result.stdout.splitlines()
+                if "Successfully installed" in ln or "already up-to-date" in ln.lower()
+                or "already satisfied" in ln.lower()
+            ]
+            summary = new_lines[-1].strip() if new_lines else "done"
+            print(f"    ✓ {summary}")
+        else:
+            print(f"    ✗ pip install --upgrade {pkg} failed:")
+            for ln in (result.stderr or result.stdout).splitlines()[-5:]:
+                print(f"      {ln}")
+
+    try:
+        import importlib.metadata as _im2
+        new_version = _im2.version("squish")
+    except Exception:
+        new_version = "unknown"
+
+    print()
+    if new_version != current_version and new_version != "unknown":
+        print(f"  Squish upgraded: {current_version} → {new_version}")
+    else:
+        print(f"  Squish is up to date ({new_version})")
+    print()
+
+
 def cmd_daemon(args):  # pragma: no cover
     """Start, stop, or check the Squish daemon (persistent background server)."""
     import signal
@@ -3123,6 +3176,14 @@ Ollama drop-in:
         help="Write a shareable JSON diagnostic report to ~/.squish/doctor-report-<ts>.json",
     )
     p_doctor.set_defaults(func=cmd_doctor)
+
+    # ── update ──
+    p_update = sub.add_parser("update", help="Upgrade squish and core dependencies to latest")
+    p_update.add_argument(
+        "--all", action="store_true", default=False,
+        help="Include optional/heavy dependencies (mlx-vlm, transformers, etc.)",
+    )
+    p_update.set_defaults(func=cmd_update)
 
     # ── daemon ──
     p_daemon = sub.add_parser("daemon", help="Manage the persistent background server daemon")

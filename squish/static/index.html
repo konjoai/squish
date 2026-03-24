@@ -339,6 +339,68 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+  /* ── Agent mode toggle ──────────────────────────────────────────────────── */
+  #agent-toggle { background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text-dim); border-radius: 20px; padding: 2px 10px; font-size: 11px;
+    cursor: pointer; transition: all .2s; display: flex; align-items: center; gap: 5px; }
+  #agent-toggle.active { border-color: var(--accent); color: var(--accent);
+    background: var(--accent-glow); box-shadow: 0 0 8px rgba(139,92,246,.2); }
+  #agent-toggle::before { content: "⚡"; font-size: 11px; }
+
+  /* ── File attachment ────────────────────────────────────────────────────── */
+  #attach-btn { background: none; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: var(--radius); padding: 10px 12px; font-size: 15px; cursor: pointer;
+    transition: all .15s; line-height: 1; flex-shrink: 0; }
+  #attach-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+  #attach-input { display: none; }
+  #attachments-row { display: flex; gap: 6px; flex-wrap: wrap; padding: 2px 0; }
+  .attach-chip { display: flex; align-items: center; gap: 4px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 11px;
+    color: var(--accent2); }
+  .attach-chip button { background: none; border: none; cursor: pointer; color: var(--text-dim);
+    font-size: 13px; line-height: 1; padding: 0 0 0 2px; }
+  .attach-chip button:hover { color: var(--danger); }
+  #chat-area.drag-over { outline: 2px dashed var(--accent); outline-offset: -6px;
+    background: rgba(139,92,246,.05); }
+
+  /* ── Slash command autocomplete ─────────────────────────────────────────── */
+  #slash-menu { position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 6px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden; display: none; z-index: 20; box-shadow: 0 -4px 16px rgba(0,0,0,.4); }
+  #slash-menu.open { display: block; }
+  .slash-item { padding: 8px 14px; cursor: pointer; display: flex; align-items: baseline;
+    gap: 10px; transition: background .1s; }
+  .slash-item:hover, .slash-item.selected { background: var(--surface2); }
+  .slash-item .slash-cmd { font-family: var(--font-mono); font-size: 13px; color: var(--accent);
+    font-weight: 600; min-width: 80px; }
+  .slash-item .slash-desc { font-size: 12px; color: var(--text-dim); }
+  #input-bar { position: relative; }
+
+  /* ── Tool call cards ────────────────────────────────────────────────────── */
+  .tool-card { background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; margin: .5em 0; overflow: hidden; font-size: 13px; }
+  .tool-card-header { padding: 7px 12px; cursor: pointer; display: flex;
+    align-items: center; gap: 8px; user-select: none;
+    background: linear-gradient(90deg, rgba(139,92,246,.12), rgba(236,72,153,.06)); }
+  .tool-card-header:hover { background: linear-gradient(90deg, rgba(139,92,246,.2), rgba(236,72,153,.1)); }
+  .tool-card-icon { font-size: 14px; flex-shrink: 0; }
+  .tool-card-name { font-family: var(--font-mono); font-weight: 600; color: var(--accent);
+    font-size: 12px; flex: 1; }
+  .tool-card-elapsed { font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+  .tool-card-status { font-size: 12px; flex-shrink: 0; }
+  .tool-card-body { padding: 0; max-height: 0; overflow: hidden;
+    transition: max-height .25s ease, padding .25s; }
+  .tool-card.open .tool-card-body { max-height: 600px; padding: 10px 12px; }
+  .tool-card-section { margin-bottom: 8px; }
+  .tool-card-section:last-child { margin-bottom: 0; }
+  .tool-section-label { font-size: 10px; font-weight: 600; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  .tool-card-body pre { background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 10px; font-size: 11px; overflow-x: auto;
+    white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
+  .tool-card.error .tool-card-header { background: linear-gradient(90deg, rgba(248,81,73,.12), rgba(248,81,73,.06)); }
+  .tool-card.error .tool-card-name { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -399,19 +461,24 @@
     <div id="input-bar">
       <input id="sys-input" type="text" placeholder="System prompt…"
         value="You are a helpful assistant." />
+      <div id="attachments-row" style="display:none"></div>
       <div class="input-row">
-        <textarea id="msg-input" rows="1" placeholder="Message…"
-          onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button id="attach-btn" onclick="document.getElementById('attach-input').click()" title="Attach file">📎</button>
+        <input id="attach-input" type="file" multiple accept="*/*" onchange="handleFileAttach(this.files)" />
+        <textarea id="msg-input" rows="1" placeholder="Message… (/ for commands)"
+          onkeydown="handleKey(event)" oninput="autoResize(this); handleSlashInput(this)"></textarea>
         <button id="stop-btn" onclick="stopGeneration()">■ Stop</button>
         <button id="send-btn" onclick="sendMessage()">Send ↑</button>
       </div>
+      <div id="slash-menu"></div>
       <div class="input-foot">
         <button id="sys-toggle" onclick="toggleSysInput()">System</button>
         <button id="clear-btn"  onclick="clearChat()"
           style="background:none;border:1px solid var(--border);color:var(--text-dim);
           border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Clear</button>        <button id="export-btn" onclick="exportChat()"
           style="background:none;border:1px solid var(--border);color:var(--text-dim);
-          border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Export</button>        <span class="hint">Shift+Enter = new line · Enter = send</span>
+          border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Export</button>        <button id="agent-toggle" onclick="toggleAgentMode()" title="Toggle agent mode (multi-step tool use)">Agent</button>
+        <span class="hint">Shift+Enter = new line · Enter = send</span>
       </div>
     </div>
   </div>
@@ -601,6 +668,161 @@ let activeIdx  = -1;
 let abortCtrl  = null;
 let isStreaming = false;
 let apiKey     = localStorage.getItem("squish_api_key") ?? "";
+
+// ── Agent mode state ─────────────────────────────────────────────────────────
+let agentMode    = false;
+let attachedFiles = [];  // [{name, content}] for text files
+
+// ── Slash commands ───────────────────────────────────────────────────────────
+const SLASH_COMMANDS = {
+  "/clear":  { desc: "Clear the current conversation",
+    fn() { clearChat(); } },
+  "/export": { desc: "Export conversation as markdown",
+    fn() { exportChat(); } },
+  "/agent":  { desc: "Toggle agent mode (multi-step tool use)",
+    fn() { toggleAgentMode(); } },
+  "/system": { desc: "Focus the system prompt input",
+    fn() {
+      const si = document.getElementById("sys-input");
+      si.style.display = "block";
+      si.focus();
+    }
+  },
+  "/model":  { desc: "Show model selector",
+    fn() { document.getElementById("model-sel").focus(); } },
+  "/help":   { desc: "Show available slash commands",
+    fn() {
+      const lines = Object.entries(SLASH_COMMANDS)
+        .map(([cmd, {desc}]) => `**${cmd}** — ${desc}`).join("\n");
+      if (!curSession()) newChat();
+      const sess = curSession();
+      const msg = { role: "assistant", content: lines, ts: new Date().toISOString() };
+      sess.messages.push(msg);
+      appendMsg(msg);
+      saveLocal();
+    }
+  },
+};
+
+let _slashMenuIdx = -1;
+
+function handleSlashInput(textarea) {
+  const val = textarea.value;
+  const menu = document.getElementById("slash-menu");
+  if (!val.startsWith("/")) { closeSlashMenu(); return; }
+  const query = val.toLowerCase();
+  const matches = Object.keys(SLASH_COMMANDS).filter(c => c.startsWith(query));
+  if (!matches.length) { closeSlashMenu(); return; }
+  _slashMenuIdx = -1;
+  menu.innerHTML = matches.map((cmd, i) =>
+    `<div class="slash-item" data-cmd="${cmd}" onclick="commitSlash('${cmd}')">`
+    + `<span class="slash-cmd">${cmd}</span>`
+    + `<span class="slash-desc">${SLASH_COMMANDS[cmd].desc}</span></div>`
+  ).join("");
+  menu.classList.add("open");
+}
+
+function closeSlashMenu() {
+  document.getElementById("slash-menu").classList.remove("open");
+  document.getElementById("slash-menu").innerHTML = "";
+  _slashMenuIdx = -1;
+}
+
+function commitSlash(cmd) {
+  const input = document.getElementById("msg-input");
+  input.value = "";
+  autoResize(input);
+  closeSlashMenu();
+  const handler = SLASH_COMMANDS[cmd];
+  if (handler) handler.fn();
+}
+
+function toggleAgentMode() {
+  agentMode = !agentMode;
+  const btn = document.getElementById("agent-toggle");
+  if (agentMode) {
+    btn.classList.add("active");
+    btn.title = "Agent mode ON — click to disable";
+  } else {
+    btn.classList.remove("active");
+    btn.title = "Agent mode OFF — click to enable";
+  }
+}
+
+// ── File attachment ───────────────────────────────────────────────────────────
+async function handleFileAttach(fileList) {
+  for (const file of fileList) {
+    if (file.size > 512 * 1024) {
+      // Truncate to first 512 KiB for text files
+    }
+    try {
+      const text = await file.text();
+      attachedFiles.push({ name: file.name, content: text.slice(0, 131072) });
+    } catch {
+      attachedFiles.push({ name: file.name, content: `[binary file: ${file.name}]` });
+    }
+  }
+  renderAttachments();
+  // Reset input so the same file can be re-attached
+  document.getElementById("attach-input").value = "";
+}
+
+function renderAttachments() {
+  const row = document.getElementById("attachments-row");
+  if (!attachedFiles.length) { row.style.display = "none"; row.innerHTML = ""; return; }
+  row.style.display = "flex";
+  row.innerHTML = attachedFiles.map((f, i) =>
+    `<div class="attach-chip">📄 ${escHtml(f.name)}`
+    + `<button onclick="removeAttachment(${i})" title="Remove">✕</button></div>`
+  ).join("");
+}
+
+function removeAttachment(idx) {
+  attachedFiles.splice(idx, 1);
+  renderAttachments();
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+          .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+
+// ── Tool call card rendering ──────────────────────────────────────────────────
+function renderToolCard(toolName, args, result, errorMsg, elapsedMs) {
+  const card = document.createElement("div");
+  card.className = "tool-card" + (errorMsg ? " error" : "");
+  const icon = errorMsg ? "✗" : "✓";
+  const statusColor = errorMsg ? "var(--danger)" : "var(--success)";
+  const elapsedStr = elapsedMs != null ? ` ${(elapsedMs/1000).toFixed(2)}s` : "";
+  const argsStr = typeof args === "object" ? JSON.stringify(args, null, 2) : String(args);
+  const resultStr = errorMsg || (typeof result === "object" ? JSON.stringify(result, null, 2) : String(result ?? ""));
+  card.innerHTML =
+    `<div class="tool-card-header" onclick="this.parentElement.classList.toggle('open')">`
+    + `<span class="tool-card-icon">🔧</span>`
+    + `<span class="tool-card-name">${escHtml(toolName)}</span>`
+    + `<span class="tool-card-elapsed">${elapsedStr}</span>`
+    + `<span class="tool-card-status" style="color:${statusColor}">${icon}</span>`
+    + `</div>`
+    + `<div class="tool-card-body">`
+    + `<div class="tool-card-section"><div class="tool-section-label">Arguments</div>`
+    + `<pre>${escHtml(argsStr)}</pre></div>`
+    + `<div class="tool-card-section"><div class="tool-section-label">${errorMsg ? "Error" : "Result"}</div>`
+    + `<pre>${escHtml(resultStr.slice(0, 4096))}</pre></div>`
+    + `</div>`;
+  return card;
+}
+
+// Drag-and-drop on chat area
+document.addEventListener("DOMContentLoaded", () => {
+  const chatArea = document.getElementById("chat-area");
+  chatArea.addEventListener("dragover", e => { e.preventDefault(); chatArea.classList.add("drag-over"); });
+  chatArea.addEventListener("dragleave", () => chatArea.classList.remove("drag-over"));
+  chatArea.addEventListener("drop", async e => {
+    e.preventDefault();
+    chatArea.classList.remove("drag-over");
+    if (e.dataTransfer.files.length) await handleFileAttach(e.dataTransfer.files);
+  });
+});
 
 // Token-queue state for typewriter animation
 let _tokenQueue     = [];
@@ -1020,12 +1242,35 @@ async function sendMessage() {
   const text  = input.value.trim();
   if (!text) return;
 
+  // Handle slash commands
+  if (text.startsWith("/")) {
+    closeSlashMenu();
+    const cmd = Object.keys(SLASH_COMMANDS).find(c => text === c || text.startsWith(c + " "));
+    if (cmd) {
+      input.value = "";
+      autoResize(input);
+      SLASH_COMMANDS[cmd].fn();
+      return;
+    }
+  }
+
   if (!curSession()) newChat();
   const sess = curSession();
 
-  const userMsg = { role: "user", content: text, ts: new Date().toISOString() };
+  // Inject attached file contents as part of user message
+  let fullText = text;
+  if (attachedFiles.length) {
+    const fileParts = attachedFiles.map(f =>
+      `\n\n<file name="${f.name}">\n${f.content}\n</file>`
+    ).join("");
+    fullText = text + fileParts;
+    attachedFiles = [];
+    renderAttachments();
+  }
+
+  const userMsg = { role: "user", content: fullText, ts: new Date().toISOString() };
   sess.messages.push(userMsg);
-  appendMsg(userMsg);
+  appendMsg({ ...userMsg, content: text }); // show without raw file XML
   input.value = "";
   autoResize(input);
   saveLocal();
@@ -1034,6 +1279,7 @@ async function sendMessage() {
     sess.title = text.slice(0, 40) + (text.length > 40 ? "\u2026" : "");
     renderSidebar();
   }
+  closeSlashMenu();
   await _doGenerate(sess);
 }
 
@@ -1147,6 +1393,30 @@ function stopGeneration() {
   abortCtrl?.abort();
 }
 function handleKey(e) {
+  const menu = document.getElementById("slash-menu");
+  const isMenuOpen = menu.classList.contains("open");
+  if (isMenuOpen) {
+    const items = menu.querySelectorAll(".slash-item");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      _slashMenuIdx = Math.min(_slashMenuIdx + 1, items.length - 1);
+      items.forEach((el, i) => el.classList.toggle("selected", i === _slashMenuIdx));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      _slashMenuIdx = Math.max(_slashMenuIdx - 1, 0);
+      items.forEach((el, i) => el.classList.toggle("selected", i === _slashMenuIdx));
+      return;
+    }
+    if (e.key === "Tab" || (e.key === "Enter" && _slashMenuIdx >= 0)) {
+      e.preventDefault();
+      const sel = items[_slashMenuIdx >= 0 ? _slashMenuIdx : 0];
+      if (sel) commitSlash(sel.dataset.cmd);
+      return;
+    }
+    if (e.key === "Escape") { e.preventDefault(); closeSlashMenu(); return; }
+  }
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 }
 
