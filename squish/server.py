@@ -1124,10 +1124,12 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
     Falls back to a bare ``model(dummy_input)`` call when mlx_lm is unavailable
     (e.g. the Linux/CUDA path or test environments).
     """
+    # Guard before the mlx import so tests (and the real server on Linux) return
+    # cleanly without triggering an ImportError-based _warn when no model is set.
+    if _state.model is None:
+        return
     try:
         import mlx.core as mx
-        if _state.model is None:
-            return
         t0 = time.perf_counter()
 
         # ── Primary: warm up via mlx_lm.stream_generate so the exact code path

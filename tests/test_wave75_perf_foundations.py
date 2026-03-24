@@ -63,6 +63,25 @@ class TestWarmupModelNoop(unittest.TestCase):
 class TestWarmupModelWithModel(unittest.TestCase):
     """_warmup_model() runs a forward pass and calls mx.eval when model is loaded."""
 
+    def setUp(self):
+        # On Linux, mlx.core raises ImportError because libmlx.so is absent.
+        # Inject a mock so _warmup_model can proceed to the fallback forward-pass
+        # path; mlx_lm is blocked (None) so the stream_generate primary path is
+        # skipped and we exercise the bare model() fallback instead.
+        self._mock_mx = MagicMock()
+        self._sys_modules_patcher = patch.dict(
+            sys.modules,
+            {
+                "mlx": MagicMock(),
+                "mlx.core": self._mock_mx,
+                "mlx_lm": None,  # forces ImportError → falls through to fallback
+            },
+        )
+        self._sys_modules_patcher.start()
+
+    def tearDown(self):
+        self._sys_modules_patcher.stop()
+
     def _make_state(self, bos_id: int | None = 1) -> MagicMock:
         state = MagicMock()
         state.model = MagicMock()
