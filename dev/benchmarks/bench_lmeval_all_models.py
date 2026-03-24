@@ -205,8 +205,11 @@ def _err(label: str, reason: str) -> None:
     print(f"  {R}✗{NC}  {label:<52} {D}{reason}{NC}")
 
 
-def _info(msg: str) -> None:
-    print(f"  {C}ℹ{NC}  {msg}")
+def _info(label_or_msg: str, msg: str = "") -> None:
+    if msg:
+        print(f"  {C}ℹ{NC}  {label_or_msg:<52} {D}{msg}{NC}")
+    else:
+        print(f"  {C}ℹ{NC}  {label_or_msg}")
 
 
 def _platform_info() -> dict[str, Any]:
