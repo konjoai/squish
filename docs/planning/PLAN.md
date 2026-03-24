@@ -55,6 +55,7 @@ This document tracks completed waves, the current release, and the next phase.
 | **v42** | 68 | SQUIZD Trained EAGLE Draft Head Distillation · MXFP4 for M5 · Hybrid Per-Layer Precision |
 | **v43** | 69 | SQUIZD Apple Neural Engine Routing · CoreML Conversion Pipeline · ANE Sub-8B Path |
 | **v44** | 70 | SQUIZD Production v1.0 · Unified Runtime Wiring · Format Spec · Statistical Benchmark Suite · 21-Model Expansion |
+| **v45** | 71 | Public Launch Prep · Cross-Platform Expansion · CUDA Backend · Windows DirectML · Unified Platform Router · Versioned REST API · Release Validator · PyPI Manifest |
 
 ---
 
@@ -704,6 +705,110 @@ open-source LLM inference engine for the first time.
 - [x] `tests/test_wave70_squish_runtime.py` (≥75 tests — 87 collected, all passing)
 - [x] `tests/test_wave70_benchmark_suite.py` (≥40 tests — 48 collected, all passing)
 - [x] CHANGELOG `[44.0.0]` entry
+- [x] PLAN.md updated
+
+---
+
+## ✅ v45 Wave 71 — Public Launch Prep · CUDA Backend · Windows DirectML · Unified Platform Router · Versioned REST API · Release Validator · PyPI Manifest (Complete)
+
+Theme: **Wave 71 is the public-launch readiness and cross-platform expansion wave. It has two equal
+pillars. The first pillar — cross-platform expansion — fills the three remaining runtime gaps: a
+NVIDIA CUDA backend (`cuda_backend.py`) that brings W8A8/INT4 TensorRT and bitsandbytes serving to
+Linux GPU workloads, a Windows DirectML backend (`windows_backend.py`) for GPU inference on Windows
+11 via the Vulkan-aligned DirectML API without requiring WSL2, and a unified platform router
+(`platform_router.py`) that builds a priority-ordered backend chain (ANE → CUDA → ROCm → Metal →
+DirectML → CPU-only), validates each step, and exposes a single `route_backend()` call used by the
+entire dispatch layer. The second pillar — public launch preparation — delivers the three artefacts
+needed before the arXiv paper lands: a stable versioned REST API (`squish/api/v1_router.py`) with
+`/v1/chat/completions`, `/v1/models`, and `/v1/embeddings` following OpenAI schema and emitting
+`X-Squish-API-Version` headers; a release gate validator (`release_validator.py`) that enforces
+test-coverage thresholds, CHANGELOG entry presence, license-header compliance, and PyPI metadata
+correctness before any `git tag v*` proceeds; and a PyPI manifest builder (`pypi_manifest.py`)
+that auto-generates `MANIFEST.in` and `pyproject.toml` package-data rules, validates wheel contents
+against a known-good allowlist, and flags accidental inclusion of dev scripts, benchmark data, or
+eval outputs.**
+
+All six modules are fully isolated from the SQUIZD format stack. They compose cleanly with every
+prior wave module and have MLX/NumPy CPU fallback paths. Wave 71 leaves device-specific kernel
+development to platform backends and keeps the router and API layer platform-agnostic.
+
+### New Modules
+
+#### Cross-Platform Backends
+
+- **`squish/platform/cuda_backend.py`** — NVIDIA CUDA backend.  Detects CUDA device count,
+  VRAM, compute capability, and CUDA version via `torch.cuda`. Provides a recommended serving
+  configuration: W8A8 via `bitsandbytes` SmoothQuant path for Ampere+ GPUs; INT4 groupwise for
+  cards with < 24 GB VRAM; FP16 for compute-capability < 7.0.  Exposes `CUDABackend.get_kernel_path()`
+  returning a `KernelPathSpec` consistent with `squish/hardware/kernel_dispatch.py`.  Falls back
+  gracefully when neither `torch.cuda` nor CUDA libraries are present.
+
+- **`squish/platform/windows_backend.py`** — Windows DirectML backend.  Detects DirectML
+  availability via `directml` or `torch_directml` packages; enumerates DML adapter list (GPU +
+  NPU + integrated graphics); selects best DML adapter by VRAM budget.  Defines fallback to
+  WSL2-routed CUDA when `wsl_detector.py` confirms WSL2 context.  Provides `WindowsBackend.is_available()`
+  and `WindowsBackend.get_device_map()` consumed by `platform_router.py`.
+
+- **`squish/platform/platform_router.py`** — Unified backend router.  Reads `PlatformInfo` from
+  `detector.py`, queries `ane_router.py`, `cuda_backend.py`, `rocm_backend.py`, and `windows_backend.py`,
+  and builds a priority-ordered `BackendChain`.  Benchmark-validates each candidate with a 1-token
+  warmup; drops failed candidates.  Exposes `PlatformRouter.route()` → `RoutedBackend` with backend
+  name, device spec, and recommended kernel path.  `RoutedBackend` is consumed by
+  `squish/runtime/squish_runtime.py` for all dispatch decisions.
+
+#### Public Launch Infrastructure
+
+- **`squish/api/v1_router.py`** — Versioned public REST API router.  Provides `register_v1_routes(app)`
+  that mounts `/v1/chat/completions` (OpenAI-compatible, SSE streaming), `/v1/completions`,
+  `/v1/models`, and `/v1/embeddings` on any ASGI/WSGI app.  All responses include
+  `X-Squish-API-Version: 1` and `X-Squish-Version: <package_version>` headers.  Deprecated
+  unversioned endpoints (`/chat`, `/completions`) receive a `Deprecation: true` header and a
+  `Sunset` date. Includes `OpenAPISchemaBuilder` that generates a minimal OpenAPI 3.1 document
+  from route metadata — used for client SDK generation.
+
+- **`squish/packaging/release_validator.py`** — Pre-release gate.  Enforces: (1) test-suite
+  pass rate ≥ 99% via `pytest --tb=no -q` subprocess; (2) CHANGELOG contains an entry matching
+  the target version `[{major}.0.0]`; (3) all Python source files in `squish/` carry the SPDX
+  license identifier `# SPDX-License-Identifier: MIT`; (4) `pyproject.toml` has `version`,
+  `description`, `requires-python`, `license`, `authors`, and `classifiers` fields set;
+  (5) the `squish serve --help` smoke test exits 0.  Returns a structured `ReleaseReport` with
+  per-check pass/fail and a summary exit code. Non-blocking warnings are emitted for optional
+  items (arXiv reference, Docker image tag).
+
+- **`squish/packaging/pypi_manifest.py`** — PyPI package manifesting.  Reads `pyproject.toml`
+  and the workspace tree; generates `MANIFEST.in` entries that include all `squish/**/*.py`,
+  `squish/**/*.metal`, `squish/**/*.json`, `docs/squizd_format_spec.md`, and the top-level
+  `README.md`; explicitly excludes `dev/`, `eval_output*/`, `logs/`, `results/`, `tests/`,
+  `docker/`, `helm/`.  Validates the generated wheel by running `pip wheel . --no-deps -q`
+  and listing the `.whl` contents via `zipfile`, asserting every included path matches the
+  allowlist.  Emits a `PyPIManifestReport` with size breakdown and any flagged files.
+
+### Target Metrics (Wave 71)
+
+| Capability | Before Wave 71 | After Wave 71 | Notes |
+|---|---|---|---|
+| Supported platforms | macOS Apple Silicon | + Linux/CUDA + Windows/DirectML | True cross-platform |
+| REST API versioning | Unversioned `/chat`, `/models` | `/v1/*` with OpenAPI 3.1 schema | SDK-generatable |
+| Release process | Manual checklist | Automated gate: 6 checks | Reproducible |
+| PyPI wheel hygiene | Ad-hoc MANIFEST.in | Validated against allowlist | < 5 MB wheel target |
+| CUDA serving path | Not present | W8A8 (Ampere+) / INT4 (<24 GB) | Linux GPU support |
+| Windows serving | Not present | DirectML + WSL2 fallback | Windows 11 supported |
+| Backend selection | Hardcoded Apple paths | Unified router with fallback chain | All platforms |
+
+### Wave 71 Checklist
+
+- [x] Wave 71 spec reviewed
+- [x] `squish/platform/cuda_backend.py` — NVIDIA CUDA backend
+- [x] `squish/platform/windows_backend.py` — Windows DirectML backend
+- [x] `squish/platform/platform_router.py` — Unified platform router
+- [x] `squish/api/__init__.py` — api package init
+- [x] `squish/api/v1_router.py` — Versioned REST API + OpenAPI schema
+- [x] `squish/packaging/__init__.py` — packaging package init
+- [x] `squish/packaging/release_validator.py` — Pre-release gate
+- [x] `squish/packaging/pypi_manifest.py` — PyPI manifest builder
+- [x] `tests/test_wave71_cross_platform.py` — ≥75 tests, all passing
+- [x] `tests/test_wave71_public_launch.py` — ≥75 tests, all passing
+- [x] CHANGELOG `[45.0.0]` entry
 - [x] PLAN.md updated
 
 ---
