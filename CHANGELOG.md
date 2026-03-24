@@ -5,6 +5,57 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [50.0.0] — Wave 77 — 2026-06-09
+
+### Performance — Inference Hot-Path Optimizations (2nd Pass)
+
+Three targeted changes to `squish/server.py` that reduce per-token overhead in the
+default `mlx_lm.stream_generate` inference path and the `--kv-cache` decode loop.
+
+#### 1. Text-Space Stop Sequence Matching (`mlx_lm` path)
+
+- **Before**: Every output token re-encoded via `tokenizer.encode(tok_text,
+  add_special_tokens=False)` to build a rolling token-ID buffer, then checked
+  against stop-sequence token-ID lists. For a 200-token response this was 200
+  unnecessary `encode()` calls.
+- **After**: Stop sequences are matched directly in text space using a rolling
+  character buffer (`_stop_text_buf`). The buffer is trimmed to
+  `max(len(stop_seq)) + 64` characters — just enough to catch any stop string
+  that spans a token boundary. No tokenizer calls inside the generation loop.
+- **Impact**: Eliminates all per-token re-tokenization overhead for stop-sequence
+  checking. Largest win for long responses with stop strings set.
+
+#### 2. KV Decode Loop Invariant Hoisting (`--kv-cache` path)
+
+- **Before**: Inside `for step in range(max_tokens):`, two expressions were
+  recomputed on every token iteration:
+  - `_TASK_TOKEN_CAPS.get(_task_type, 0)` — dict lookup (babbling suppression cap)
+  - `hasattr(tokenizer, "decode")` — attribute probe (for tok_text decode path)
+  Both values are constant for the lifetime of a request.
+- **After**: Both are computed once before the loop into `_bs_cap_inv` and
+  `_tok_decode_fn`. The inner loop body checks `_bs_cap_inv > 0` and calls
+  `_tok_decode_fn(...)` directly.
+- **Impact**: Shaves one dict lookup + one `hasattr` probe per token in the KV
+  cache decode path.
+
+#### 3. `make_sampler` Module-Level Cache
+
+- **Before**: On every `mlx_lm.stream_generate` request, the server executed
+  `from mlx_lm.sample_utils import make_sampler as _make_sampler` inside the
+  function body. Python caches `sys.modules` lookups but still traverses the
+  attribute chain on each call.
+- **After**: `_cached_make_sampler` is a module-level sentinel. First successful
+  import stores the function object; subsequent requests use it directly. A
+  `False` sentinel prevents retrying after an `ImportError`.
+- **Impact**: Eliminates per-request import machinery overhead.
+
+### Tests
+
+- All 14,467 tests pass; 34 skipped; 0 new failures (pre-existing Rust SVD test
+  excluded).
+
+---
+
 ## [49.0.0] — Wave 76 — 2026-03-24
 
 ### Fixed — Eval Runner Diagnostics

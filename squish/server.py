@@ -358,6 +358,7 @@ _pd_disaggregator       = None  # PDDisaggregator         — --pd-disagg
 # ── Wave 27: new inference velocity flags ─────────────────────────────────────
 _fused_sampler          = None  # FusedSampler            — --fused-sampler (v10: default on)
 _fused_sampler_enabled  = True  # on by default; --no-fused-sampler to disable
+_cached_make_sampler: "Any" = None  # cached on first successful import from mlx_lm.sample_utils
 _cache_warmup_predictor = None  # CacheWarmupPredictor    — tracks prefix access patterns
 _cache_warmup_enabled   = True  # on by default; --no-cache-warmup to disable
 _tome_config            = None  # TokenMergingConfig      — --token-merge
@@ -1847,20 +1848,21 @@ def _generate_tokens(  # pragma: no cover
                     _grammar_state = _grammar_engine.json_object_grammar()
                 elif _structured_output_mode == "json-schema" and _structured_output_schema is not None:
                     _grammar_state = _grammar_engine.json_schema_grammar(_structured_output_schema)
+            # Hoist loop-invariant expressions out of the decode loop
+            _bs_cap_inv = _TASK_TOKEN_CAPS.get(_task_type, 0) if _babbling_suppression else 0
+            _tok_decode_fn = getattr(tokenizer, "decode", None)
             for step in range(max_tokens):
                 # ── Phase E1: Hard token cap (babbling suppression) ──────────────
-                if _babbling_suppression:
-                    _bs_cap = _TASK_TOKEN_CAPS.get(_task_type, 0)
-                    if _bs_cap > 0 and step >= _bs_cap:
-                        if cache_eligible and _cache_buf:
-                            _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
-                        if _trace:
-                            _tlog(f"REQ {_rid}  babbling-cap  step={step}  task={_task_type}  cap={_bs_cap}")
-                        yield "", "stop"
-                        return
+                if _bs_cap_inv > 0 and step >= _bs_cap_inv:
+                    if cache_eligible and _cache_buf:
+                        _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
+                    if _trace:
+                        _tlog(f"REQ {_rid}  babbling-cap  step={step}  task={_task_type}  cap={_bs_cap_inv}")
+                    yield "", "stop"
+                    return
                 tok_text = (
-                    tokenizer.decode([next_id])
-                    if hasattr(tokenizer, "decode")
+                    _tok_decode_fn([next_id])
+                    if _tok_decode_fn is not None
                     else str(next_id)
                 )
                 # Phase A1: track thinking block boundaries
@@ -2048,13 +2050,24 @@ def _generate_tokens(  # pragma: no cover
         # would be silently caught below and fall through to the no-cache manual
         # loop (O(n²) — catastrophically slow).  Always use make_sampler when
         # available; fall back to legacy kwargs only for older mlx_lm.
-        try:
-            from mlx_lm.sample_utils import make_sampler as _make_sampler
-            _sg_kwargs["sampler"] = _make_sampler(temp=temperature, top_p=top_p)
-        except (ImportError, TypeError):
+        global _cached_make_sampler
+        if _cached_make_sampler is None:
+            try:
+                from mlx_lm.sample_utils import make_sampler as _ms
+                _cached_make_sampler = _ms
+            except (ImportError, TypeError):
+                _cached_make_sampler = False  # sentinel: don't retry
+        if _cached_make_sampler:
+            _sg_kwargs["sampler"] = _cached_make_sampler(temp=temperature, top_p=top_p)
+        else:
             # Older mlx_lm that accepted temp/top_p directly
             _sg_kwargs["temp"]   = temperature
             _sg_kwargs["top_p"]  = top_p
+        # Pre-compute text-space stop strings; avoids per-token tokenize calls
+        _stop_strings: list[str] = (
+            [stop] if isinstance(stop, str) else list(stop) if stop else []
+        )
+        _stop_text_maxlen = max((len(s) for s in _stop_strings), default=0) + 64
         gen = mlx_lm.stream_generate(
             model,
             tokenizer,
@@ -2063,7 +2076,7 @@ def _generate_tokens(  # pragma: no cover
             **_sg_kwargs,
         )
         emitted = 0
-        stop_buf: list[int] = []
+        _stop_text_buf: str = ""
         _think_token_count = 0   # tokens inside <think>...</think> blocks
         _in_think_sg = False     # True while inside a thinking block
         for item in gen:
@@ -2084,16 +2097,12 @@ def _generate_tokens(  # pragma: no cover
             elif _in_think_sg:
                 _think_token_count += 1
 
-            # Check stop sequences against a rolling token-id buffer
-            if stop_ids and hasattr(tokenizer, "encode"):
-                new_ids = tokenizer.encode(tok_text, add_special_tokens=False)
-                stop_buf.extend(new_ids)
-                hit = False
-                for seq in stop_ids:
-                    if stop_buf[-len(seq):] == seq:
-                        hit = True
-                        break
-                if hit:
+            # Check stop sequences in text space — no per-token re-tokenization
+            if _stop_strings and tok_text:
+                _stop_text_buf += tok_text
+                if len(_stop_text_buf) > _stop_text_maxlen:
+                    _stop_text_buf = _stop_text_buf[-_stop_text_maxlen:]
+                if any(s in _stop_text_buf for s in _stop_strings):
                     if cache_eligible:
                         _cache_buf.append(tok_text)
                         _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
@@ -2102,8 +2111,6 @@ def _generate_tokens(  # pragma: no cover
                               f"finish=stop(stop-seq)")
                     yield "", "stop"
                     return
-                if len(stop_buf) > 64:
-                    stop_buf = stop_buf[-64:]
 
             if emitted >= max_tokens:
                 if cache_eligible:
