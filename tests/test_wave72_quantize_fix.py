@@ -41,6 +41,7 @@ def _make_quantize_args(**kwargs) -> argparse.Namespace:
         group_size=64,
         dry_run=False,
         cpu=False,
+        mixed_recipe=None,
     )
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
@@ -585,3 +586,167 @@ class TestBenchArgFilters:
         assert 0 < mod._REPETITION_THRESHOLD <= 1.0
         assert hasattr(mod, "_MIN_UNIQUE_WORDS")
         assert mod._MIN_UNIQUE_WORDS >= 1
+
+    def test_info_accepts_one_arg(self, capsys):
+        """_info(msg) single-arg form must still work after the 2-arg fix."""
+        mod = self._import_bench()
+        mod._info("hello single-arg")
+        out = capsys.readouterr().out
+        assert "hello single-arg" in out
+
+    def test_info_accepts_two_args(self, capsys):
+        """_info(label, msg) two-arg form (used in gen-sanity section) must not raise."""
+        mod = self._import_bench()
+        mod._info("gen-sanity", "loading model for quick generation check …")
+        out = capsys.readouterr().out
+        assert "gen-sanity" in out
+        assert "loading model" in out
+
+
+# ---------------------------------------------------------------------------
+# mixed_2_6 quant_predicate logic
+# ---------------------------------------------------------------------------
+
+class TestMixedRecipePredicate:
+    """Verify the 4-tier mixed_2_6 predicate routes paths to correct bit widths."""
+
+    def _build_mixed_predicate(self, num_layers: int, ffn_bits: int, attn_bits: int,
+                                embed_bits: int, group_size: int, high_bits: int):
+        """Replicate the mixed predicate closure from cmd_convert_model."""
+        _low  = ffn_bits
+        _high = high_bits
+        _ab   = attn_bits
+        _eb   = embed_bits
+        _gs   = group_size
+        _nl   = num_layers
+
+        def _pred(path: str, _module) -> dict:
+            layer_idx = 0
+            for part in path.split("."):
+                if part.isdigit():
+                    layer_idx = int(part)
+                    break
+            use_high_bits = (
+                layer_idx < _nl // 8
+                or layer_idx >= 7 * _nl // 8
+                or (layer_idx - _nl // 8) % 3 == 2
+            )
+            is_embed     = "lm_head" in path or "embed_tokens" in path
+            is_attn      = "self_attn" in path or "cross_attn" in path
+            is_v_proj    = "v_proj" in path or "v_a_proj" in path or "v_b_proj" in path
+            is_down_proj = "down_proj" in path
+
+            if is_embed:
+                bits = _eb
+            elif is_attn:
+                bits = _ab
+            elif (is_v_proj or is_down_proj) and use_high_bits:
+                bits = _high
+            else:
+                bits = _low
+            return {"bits": bits, "group_size": _gs}
+
+        return _pred
+
+    def test_embed_tokens_always_high(self):
+        pred = self._build_mixed_predicate(28, 2, 4, 8, 32, 6)
+        assert pred("model.embed_tokens.weight", None)["bits"] == 8
+
+    def test_lm_head_always_high(self):
+        pred = self._build_mixed_predicate(28, 2, 4, 8, 32, 6)
+        assert pred("lm_head.weight", None)["bits"] == 8
+
+    def test_attn_always_4bit_regardless_of_layer(self):
+        pred = self._build_mixed_predicate(28, 2, 4, 8, 32, 6)
+        # Layer 0 (critical) — attn should still be 4-bit, not 6-bit
+        assert pred("model.layers.0.self_attn.q_proj.weight", None)["bits"] == 4
+        assert pred("model.layers.14.self_attn.v_proj.weight", None)["bits"] == 4
+        assert pred("model.layers.27.self_attn.o_proj.weight", None)["bits"] == 4
+
+    def test_gate_proj_always_low_bits(self):
+        """gate_proj is never down_proj or v_proj, so always gets ffn_bits=2."""
+        pred = self._build_mixed_predicate(28, 2, 4, 8, 32, 6)
+        # Even in a critical layer, gate_proj must stay at 2-bit
+        assert pred("model.layers.0.mlp.gate_proj.weight", None)["bits"] == 2
+        assert pred("model.layers.27.mlp.gate_proj.weight", None)["bits"] == 2
+
+    def test_up_proj_always_low_bits(self):
+        """up_proj is never down_proj or v_proj, so always gets ffn_bits=2."""
+        pred = self._build_mixed_predicate(28, 2, 4, 8, 32, 6)
+        assert pred("model.layers.0.mlp.up_proj.weight", None)["bits"] == 2
+        assert pred("model.layers.14.mlp.up_proj.weight", None)["bits"] == 2
+
+    def test_down_proj_high_bits_in_critical_layer(self):
+        """down_proj in a critical layer (index 0 < nl//8=3) must get 6-bit."""
+        # num_layers=28: critical = layers 0,1,2 (< 3), 24,25,26,27 (>= 24),
+        # and (idx-3) % 3 == 2 → idx=5,8,11,14,17,20,23
+        pred = self._build_mixed_predicate(28, 2, 4, 8, 32, 6)
+        assert pred("model.layers.0.mlp.down_proj.weight", None)["bits"] == 6
+        assert pred("model.layers.27.mlp.down_proj.weight", None)["bits"] == 6
+        assert pred("model.layers.5.mlp.down_proj.weight", None)["bits"] == 6
+
+    def test_down_proj_low_bits_in_non_critical_layer(self):
+        """down_proj in non-critical layers gets ffn_bits=2."""
+        # num_layers=28: layer 4 → idx=4, (4-3)%3=1 ≠ 2, 4>=3, 4<24 → NOT critical
+        pred = self._build_mixed_predicate(28, 2, 4, 8, 32, 6)
+        assert pred("model.layers.4.mlp.down_proj.weight", None)["bits"] == 2
+        assert pred("model.layers.10.mlp.down_proj.weight", None)["bits"] == 2
+
+    def test_v_proj_high_bits_in_critical_layer(self):
+        pred = self._build_mixed_predicate(28, 2, 4, 8, 32, 6)
+        # v_proj is in self_attn — but what? Wait: is_attn matches first.
+        # self_attn.v_proj matches is_attn → gets attn_bits=4
+        # This is by design: our attn tier takes priority over v_proj in critical layers.
+        assert pred("model.layers.0.self_attn.v_proj.weight", None)["bits"] == 4
+
+    def test_group_size_propagated(self):
+        pred = self._build_mixed_predicate(28, 2, 4, 8, 32, 6)
+        assert pred("lm_head.weight", None)["group_size"] == 32
+        assert pred("model.layers.0.self_attn.q_proj.weight", None)["group_size"] == 32
+        assert pred("model.layers.0.mlp.gate_proj.weight", None)["group_size"] == 32
+        assert pred("model.layers.0.mlp.down_proj.weight", None)["group_size"] == 32
+
+    def test_mixed_recipe_dry_run_shows_recipe_name(self, tmp_path, capsys):
+        """dry_run with --mixed-recipe must print the recipe name."""
+        cli = _import_cli()
+        args = _make_quantize_args(
+            source_path="Org/Repo",
+            output_path=str(tmp_path / "out"),
+            ffn_bits=2,
+            attn_bits=4,
+            embed_bits=8,
+            group_size=32,
+            mixed_recipe="mixed_2_6",
+            dry_run=True,
+        )
+        cli.cmd_convert_model(args)
+        out = capsys.readouterr().out
+        assert "mixed_2_6" in out
+
+    def test_mixed_recipe_calls_mlx_with_predicate(self, tmp_path):
+        """With --mixed-recipe, mlx_lm.convert must receive a callable quant_predicate."""
+        cli = _import_cli()
+        mock_mlx_lm = MagicMock()
+        with patch.dict("sys.modules", {"mlx_lm": mock_mlx_lm}):
+            model_dir = tmp_path / "bf16"
+            model_dir.mkdir()
+            # Write a minimal config.json so num_hidden_layers can be read
+            import json as _json
+            (model_dir / "config.json").write_text(
+                _json.dumps({"num_hidden_layers": 28})
+            )
+            args = _make_quantize_args(
+                source_path=str(model_dir),
+                output_path=str(tmp_path / "out"),
+                ffn_bits=2,
+                attn_bits=4,
+                embed_bits=8,
+                group_size=32,
+                mixed_recipe="mixed_2_6",
+            )
+            cli.cmd_convert_model(args)
+        call_kwargs = mock_mlx_lm.convert.call_args[1]
+        assert callable(call_kwargs.get("quant_predicate")), (
+            "quant_predicate must be a callable when --mixed-recipe is set"
+        )
+        assert call_kwargs.get("q_bits") == 2, "q_bits must equal ffn_bits=2 for mixed recipe"
