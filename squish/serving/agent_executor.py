@@ -180,7 +180,13 @@ class AgentExecutor:
             # ---- call the model ----------------------------------------
             try:
                 if self.config.stream:
-                    text, tool_calls = yield from self._stream_turn(session, effective_tools)
+                    # Async generators cannot return values, so we use a
+                    # mutable out-param list to carry (text, tool_calls) back
+                    # while still forwarding text_delta events to the caller.
+                    _turn_result: list = []
+                    async for event in self._stream_turn(session, effective_tools, _turn_result):
+                        yield event
+                    text, tool_calls = _turn_result[0]
                 else:
                     text, tool_calls = await self._non_stream_turn(session, effective_tools)
             except Exception as exc:  # noqa: BLE001
@@ -320,17 +326,14 @@ class AgentExecutor:
         self,
         session: AgentSession,
         tools: list[dict],
-    ) -> tuple[str, list[dict]]:
+        _result: list,
+    ) -> None:
         """Streaming inference call — collects full text and tool calls.
 
-        Text deltas are yielded via the generator protocol; the caller must
-        forward them.  Because Python generators cannot both ``return`` values
-        and ``yield``, this method uses a mutable list idiom:
-
-        .. note::
-            The caller does ``text, tc = yield from self._stream_turn(...)``
-            which works because the generator's ``StopIteration`` value IS the
-            return value.
+        Text deltas are yielded as events; the final ``(text, tool_calls)``
+        tuple is written into the ``_result`` out-param list so the async
+        generator can communicate state back to the caller without using
+        ``return`` (which is forbidden in async generators).
         """
         text_parts: list[str] = []
         tool_calls_acc: dict[int, dict] = {}
@@ -381,4 +384,4 @@ class AgentExecutor:
                 "function": {"name": fn.get("name", ""), "arguments": parsed_args},
             })
 
-        return text, tool_calls
+        _result.append((text, tool_calls))

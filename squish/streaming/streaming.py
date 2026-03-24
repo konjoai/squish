@@ -34,6 +34,8 @@ stats keys:
     decompression_time_s  Total wall time for decompression
     prefetch_savings_s    Estimated latency hidden by prefetch thread
 """
+from __future__ import annotations
+
 import platform
 import queue
 import re
@@ -41,10 +43,17 @@ import resource
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import mlx.core as mx
-import numpy as np
-from transformers import AutoTokenizer
+# Heavy dependencies are imported lazily inside the functions that need them:
+#   mlx.core       — only in _decompress_group  (~98ms on first import)
+#   numpy          — only in load_streaming     (~25ms on first import)
+#   transformers   — only in load_streaming     (~3s, drags in torch+sklearn)
+# This keeps squish.streaming.streaming importable in ~1ms at server startup.
+
+if TYPE_CHECKING:
+    import mlx.core as mx  # noqa: F401 — for type hints only
+    import numpy as np     # noqa: F401 — for type hints only
 
 from squish.io.loader_utils import (
     _dequantize,
@@ -103,14 +112,15 @@ def _group_tensors(
 # ---------------------------------------------------------------------------
 
 def _decompress_group(
-    npz: np.lib.npyio.NpzFile,
+    npz: "np.lib.npyio.NpzFile",
     group: list[tuple[str, str]],
-) -> tuple[list[tuple[str, mx.array]], int, int]:
+) -> "tuple[list[tuple[str, mx.array]], int, int]":
     """
     Decompress a list of (safe_key, original_name) pairs.
     Returns (weight_tuples, n_quantized, n_passthrough).
     Each numpy buffer is freed immediately after casting to mlx.array.
     """
+    import mlx.core as mx  # lazy — ~98ms on first call, cached by Python after that
     out = []
     n_q = n_pt = 0
     for sk, original in group:
@@ -159,6 +169,7 @@ def load_streaming(
     safe_to_original = _safe_key_to_original(manifest_path)
 
     # 3. Open npz lazily
+    import numpy as np  # lazy — ~25ms on first call, cached by Python after that
     if verbose:
         print(f"[stream] Opening: {npz_path}")
     npz = np.load(npz_path, allow_pickle=False)
@@ -272,6 +283,7 @@ def load_streaming(
     rss_after = _rss_mb()
 
     # 7. Tokenizer
+    from transformers import AutoTokenizer  # lazy — ~3s on first call (drags torch+sklearn)
     tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
 
     rss_final = _rss_mb()
