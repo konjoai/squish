@@ -5978,6 +5978,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#wave-78-module-load-performance-int23-quality-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Wave 78 — Module-load Performance + INT2/3 Quality — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Wave 78 — Module-load Performance + INT2/3 Quality — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summary_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-wave-79" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred (Wave 79)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -11472,6 +11511,45 @@
     <span class="md-ellipsis">
       
         Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wave-78-module-load-performance-int23-quality-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Wave 78 — Module-load Performance + INT2/3 Quality — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Wave 78 — Module-load Performance + INT2/3 Quality — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summary_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-wave-79" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred (Wave 79)
       
     </span>
   </a>
@@ -25676,6 +25754,82 @@ Combined with AWQ alpha=0.1, this produces the best results seen so far.</p>
 <li><code>squish quantize</code> replaces <code>squish convert-model</code>; <code>squish train</code> replaces <code>squish train-adapter</code></li>
 <li>Running <code>squish</code> with no arguments shows a welcome banner with RAM-aware model recommendation</li>
 <li><code>squish config set default_model qwen3:8b</code> persists to <code>~/.squish/config.json</code></li>
+</ul>
+<hr />
+<h2 id="wave-78-module-load-performance-int23-quality-2026-03-24">✅ Wave 78 — Module-load Performance + INT2/3 Quality — 2026-03-24<a class="headerlink" href="#wave-78-module-load-performance-int23-quality-2026-03-24" title="Permanent link">&para;</a></h2>
+<p>Theme: <strong>Load faster, quantise better</strong></p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Status</th>
+<th>File(s) changed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RadixTree lazy init (saves ~16ms from <code>import squish.server</code>)</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td>Module <code>__getattr__</code> for <code>_PrefixCache</code> backward-compat</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td>Null guards for <code>_prefix_cache</code> in <code>/v1/metrics</code>, <code>_generate_tokens</code>, <code>_print_optimization_status</code></td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td><code>_preoptimize_weights_with_hqq()</code> — HQQ pre-optimisation pass for FFN layers</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code></td>
+</tr>
+<tr>
+<td><code>squish quantize --hqq</code> flag</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code></td>
+</tr>
+<tr>
+<td>Auto-tighten <code>group_size</code> 64→32 for INT2</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code></td>
+</tr>
+<tr>
+<td>Small-model INT2 quality warning (&lt;1B params)</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code></td>
+</tr>
+<tr>
+<td><code>squish check --model PATH</code> new command</td>
+<td>✅ done</td>
+<td><code>squish/cli.py</code></td>
+</tr>
+<tr>
+<td><code>tests/test_wave78_perf_quality.py</code> — 25 new tests</td>
+<td>✅ done</td>
+<td><code>tests/test_wave78_perf_quality.py</code> (new)</td>
+</tr>
+<tr>
+<td>Version bump → 9.1.0</td>
+<td>✅ done</td>
+<td><code>pyproject.toml</code>, <code>CHANGELOG.md</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="summary_1">Summary<a class="headerlink" href="#summary_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Total tests: 14,572 passed, 34 skipped, 1 pre-existing fail (Rust SVD)</li>
+<li><code>import squish.server</code> saves ~16 ms (RadixTree deferred from module init to first use)</li>
+<li><code>squish quantize --hqq --ffn-bits 2</code> now produces coherent INT2 output via HQQ pre-optimisation</li>
+<li>Key insight: HQQ encode→decode aligns weights to optimal grid; mlx_lm naive rounding then equals HQQ quality</li>
+<li><code>squish check --model PATH</code> gives instant per-layer bit-width report + HQQ SNR simulation, no weights loaded</li>
+</ul>
+<h3 id="deferred-wave-79">Deferred (Wave 79)<a class="headerlink" href="#deferred-wave-79" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Move <code>squish/kernels/mojo/</code> → <code>squish/experimental/kernels/mojo/</code> (pure reorganisation; zero perf impact; requires updating 5+ test files importing <code>squish.kernels.mojo.*</code>)</li>
 </ul>
 
 
