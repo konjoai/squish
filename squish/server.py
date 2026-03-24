@@ -457,6 +457,12 @@ _memory_governor: "Any | None" = None      # MemoryGovernor instance (macOS only
 _compress_threshold  = 512          # word-count proxy above which COMPRESS_PATH fires
 _inference_backend   = "mlx-eager"  # overridden by --inference-backend in main()
 
+# ── Wave 76: Agentic Tool Registry & MCP Server Map ──────────────────────────
+# _agent_registry is populated in main() by register_builtin_tools().
+# _mcp_servers maps server_id → MCPClient instance (lazily connected).
+_agent_registry: "Any | None" = None   # ToolRegistry | None — set in main()
+_mcp_servers: dict = {}                # {server_id: MCPClient}
+
 # ── Phase F: Inference Backend Abstraction ───────────────────────────────────
 
 class _InferenceBackend:
@@ -2723,6 +2729,300 @@ async def embeddings(
         "data":   results,
         "usage":  {"prompt_tokens": total_tokens, "total_tokens": total_tokens},
     })
+
+
+# ── Wave 76: Agent API ──────────────────────────────────────────────────────
+# Three endpoints:
+#   GET  /v1/agent/tools        — list built-in tools
+#   POST /v1/agent/run          — run the multi-step agent loop (SSE)
+#   GET  /v1/agent/mcp          — list connected MCP servers
+#   POST /v1/agent/mcp          — connect a new MCP server
+#   DELETE /v1/agent/mcp/{id}   — disconnect an MCP server
+
+
+@app.get("/v1/agent/tools")
+async def agent_list_tools(
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """Return the list of built-in agent tools."""
+    _check_auth(creds)
+    if _agent_registry is None:
+        return {"tools": []}
+    return {"tools": _agent_registry.to_openai_schemas()}
+
+
+@app.get("/v1/agent/mcp")
+async def agent_list_mcp(
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """Return the list of connected MCP servers."""
+    _check_auth(creds)
+    return {
+        "servers": [
+            {"id": sid, "status": "connected"}
+            for sid in _mcp_servers
+        ]
+    }
+
+
+@app.post("/v1/agent/mcp")
+async def agent_connect_mcp(
+    request: Request,
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """Connect a new MCP server and load its tools into the agent registry.
+
+    Body:
+        server_id   (str)  — human-readable identifier
+        command     (str)  — STDIO: shell command to launch the MCP server
+        url         (str)  — SSE:   base HTTP URL for the MCP server
+        transport   (str)  — "stdio" (default) or "sse"
+    """
+    _check_auth(creds)
+    if _agent_registry is None:
+        raise HTTPException(503, "Agent registry not initialised")
+
+    body: dict = await request.json()
+    server_id = str(body.get("server_id", "mcp")).strip()
+    command   = str(body.get("command", "")).strip()
+    url       = str(body.get("url", "")).strip()
+    transport = str(body.get("transport", "stdio")).lower()
+
+    if not command and not url:
+        raise HTTPException(400, "Provide 'command' (stdio) or 'url' (sse)")
+    if server_id in _mcp_servers:
+        raise HTTPException(409, f"MCP server '{server_id}' is already connected")
+
+    try:
+        from squish.serving.mcp_client import MCPClient, MCPTransport, MCPToolAdapter  # noqa: PLC0415
+        t = MCPTransport.SSE if transport == "sse" else MCPTransport.STDIO
+        src = url if t == MCPTransport.SSE else command
+        client = MCPClient(src, transport=t, server_id=server_id)
+        await client.connect()
+        adapter = MCPToolAdapter(client)
+        registered = await adapter.load(_agent_registry)
+        _mcp_servers[server_id] = client
+        return {
+            "server_id": server_id,
+            "transport": transport,
+            "tools_registered": registered,
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"MCP connect failed: {exc}") from exc
+
+
+@app.delete("/v1/agent/mcp/{server_id}")
+async def agent_disconnect_mcp(
+    server_id: str,
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """Disconnect an MCP server.  Its tools remain registered for the session."""
+    _check_auth(creds)
+    client = _mcp_servers.pop(server_id, None)
+    if client is None:
+        raise HTTPException(404, f"MCP server '{server_id}' not found")
+    try:
+        from squish.serving.mcp_client import MCPClient  # noqa: PLC0415
+        await client.disconnect()
+    except Exception:  # noqa: BLE001
+        pass
+    return {"disconnected": server_id}
+
+
+@app.post("/v1/agent/run")
+async def agent_run(  # pragma: no cover
+    request: Request,
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """Run the multi-step agentic tool-calling loop over SSE.
+
+    POST body (JSON):
+        messages    list[dict]  — conversation so far (OpenAI format)
+        tools       list[dict]  — extra tool schemas to add (optional)
+        max_steps   int         — max tool-call iterations (default 10)
+        max_tokens  int         — max tokens per inference step (default 2048)
+        temperature float       — sampling temperature (default 0.7)
+        top_p       float       — nucleus sampling threshold (default 0.9)
+        model       str         — model identifier (informational only)
+
+    SSE event stream format (each event is ``data: <json>\\n\\n``):
+
+        {"type": "text_delta",      "delta": str}
+        {"type": "tool_call_start", "call_id": str, "tool_name": str, "arguments": dict}
+        {"type": "tool_call_result","call_id": str, "tool_name": str, "result": str,
+                                    "error": str|null, "elapsed_ms": float}
+        {"type": "step_complete",   "step": int}
+        {"type": "done",            "total_steps": int, "total_tool_calls": int}
+        {"type": "error",           "message": str}
+    """
+    _check_auth(creds)
+    if _state.model is None:
+        raise HTTPException(503, "Model not loaded")
+    if _agent_registry is None:
+        raise HTTPException(503, "Agent registry not initialised")
+
+    body: dict = await request.json()
+    messages    = list(body.get("messages", []))
+    extra_tools = body.get("tools", [])
+    max_steps   = int(body.get("max_steps", 10))
+    max_tokens  = int(body.get("max_tokens", 2048))
+    temperature = float(body.get("temperature", 0.7))
+    top_p       = float(body.get("top_p", 0.9))
+
+    if not messages:
+        raise HTTPException(400, "'messages' must be a non-empty list")
+
+    # Merge built-in tools with any caller-supplied schemas
+    builtin_schemas = _agent_registry.to_openai_schemas()
+    all_tools = builtin_schemas + [
+        t for t in extra_tools
+        if t.get("function", {}).get("name") not in
+        {s["function"]["name"] for s in builtin_schemas}
+    ]
+
+    async def _event_stream():
+        import json as _json  # noqa: PLC0415
+        from squish.serving.tool_calling import (  # noqa: PLC0415
+            format_tools_prompt, parse_tool_calls,
+        )
+
+        current_messages = list(messages)
+        total_tool_calls = 0
+
+        for step in range(1, max_steps + 1):
+            # ── Inject tool schemas into the system prompt ─────────────────
+            augmented = format_tools_prompt(current_messages, all_tools)
+            prompt = _apply_chat_template(augmented, _state.tokenizer)
+
+            # ── Run a non-streaming inference pass ─────────────────────────
+            full_text = ""
+            try:
+                for tok_text, finish in _generate_tokens(
+                    prompt, max_tokens, temperature, top_p, None, None
+                ):
+                    if tok_text:
+                        full_text += tok_text
+                        yield (
+                            "data: "
+                            + _json.dumps({"type": "text_delta", "delta": tok_text})
+                            + "\n\n"
+                        )
+                    if finish is not None:
+                        break
+            except Exception as exc:  # noqa: BLE001
+                yield (
+                    "data: "
+                    + _json.dumps({"type": "error", "message": str(exc)})
+                    + "\n\n"
+                )
+                return
+
+            # ── Check for tool calls in the output ────────────────────────
+            tool_calls = parse_tool_calls(full_text) if all_tools else None
+
+            if not tool_calls:
+                # No more tool calls — the agent is done
+                yield (
+                    "data: "
+                    + _json.dumps({
+                        "type": "done",
+                        "total_steps": step,
+                        "total_tool_calls": total_tool_calls,
+                    })
+                    + "\n\n"
+                )
+                return
+
+            # ── Execute tool calls ────────────────────────────────────────
+            import uuid as _uuid  # noqa: PLC0415
+
+            assistant_tool_calls = []
+            tool_result_messages = []
+
+            for tc in tool_calls:
+                call_id   = f"call_{_uuid.uuid4().hex[:8]}"
+                tool_name = tc.get("name", "")
+                arguments = tc.get("arguments", {})
+
+                yield (
+                    "data: "
+                    + _json.dumps({
+                        "type":      "tool_call_start",
+                        "call_id":   call_id,
+                        "tool_name": tool_name,
+                        "arguments": arguments,
+                    })
+                    + "\n\n"
+                )
+
+                result = _agent_registry.call(tool_name, arguments, call_id=call_id)
+                total_tool_calls += 1
+
+                result_text = (
+                    str(result.output)
+                    if result.ok
+                    else f"[ERROR] {result.error}"
+                )
+
+                yield (
+                    "data: "
+                    + _json.dumps({
+                        "type":       "tool_call_result",
+                        "call_id":    call_id,
+                        "tool_name":  tool_name,
+                        "result":     result_text,
+                        "error":      result.error,
+                        "elapsed_ms": result.elapsed_ms,
+                    })
+                    + "\n\n"
+                )
+
+                assistant_tool_calls.append({
+                    "id":   call_id,
+                    "type": "function",
+                    "function": {
+                        "name":      tool_name,
+                        "arguments": _json.dumps(arguments),
+                    },
+                })
+                tool_result_messages.append({
+                    "role":         "tool",
+                    "tool_call_id": call_id,
+                    "content":      result_text,
+                })
+
+            # ── Append turns to conversation history ──────────────────────
+            current_messages.append({
+                "role":       "assistant",
+                "content":    full_text,
+                "tool_calls": assistant_tool_calls,
+            })
+            current_messages.extend(tool_result_messages)
+
+            yield (
+                "data: "
+                + _json.dumps({"type": "step_complete", "step": step})
+                + "\n\n"
+            )
+
+        # max_steps exhausted
+        yield (
+            "data: "
+            + _json.dumps({
+                "type":    "error",
+                "message": f"Agent hit max_steps={max_steps}. Partial results may be available.",
+            })
+            + "\n\n"
+        )
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/health")
@@ -6712,6 +7012,17 @@ Examples:
 
     # ── Wave 75: optimization module status summary ──────────────────────────
     _print_optimization_status()
+
+    # ── Wave 76: Initialise agent tool registry ───────────────────────────────
+    global _agent_registry
+    try:
+        from squish.agent.tool_registry import ToolRegistry as _ToolRegistry
+        from squish.agent.builtin_tools import register_builtin_tools as _reg_tools
+        _agent_registry = _ToolRegistry()
+        _reg_tools(_agent_registry)
+        _info("agent-registry", f"loaded  tools={len(_agent_registry)}")
+    except Exception as _ar_exc:  # noqa: BLE001
+        _warn(f"[agent-registry] Could not load built-in tools: {_ar_exc}")
 
     uvicorn.run(
         app,

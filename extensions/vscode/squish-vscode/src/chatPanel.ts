@@ -223,6 +223,27 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                 parameters: { type: 'object', properties: {} },
             },
         },
+        {
+            type: 'function',
+            function: {
+                name: 'web_search',
+                description: 'Search the web using DuckDuckGo and return result titles, URLs, and snippets. No API key required.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'The search query.',
+                        },
+                        max_results: {
+                            type: 'number',
+                            description: 'Maximum number of results to return (default 5, max 10).',
+                        },
+                    },
+                    required: ['query'],
+                },
+            },
+        },
     ];
 
     constructor(extensionUri: vscode.Uri, historyManager: HistoryManager) {
@@ -586,6 +607,12 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             case 'get_symbol_at_cursor':
                 return this._toolGetSymbolAtCursor();
 
+            case 'web_search': {
+                const query = args['query'] as string;
+                const maxResults = typeof args['max_results'] === 'number' ? args['max_results'] : 5;
+                return this._toolWebSearch(query, maxResults);
+            }
+
             default:
                 throw new Error(`Unknown tool: ${tc.function.name}`);
         }
@@ -828,6 +855,85 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             }
         } catch { /* language service unavailable */ }
         return `Symbol at cursor: ${word}`;
+    }
+
+    private async _toolWebSearch(query: string, maxResults: number): Promise<string> {
+        const clampedMax = Math.min(Math.max(1, maxResults), 10);
+        const encoded = encodeURIComponent(query);
+        const url = `https://html.duckduckgo.com/html/?q=${encoded}`;
+        try {
+            const raw = await this._httpGet(url, {
+                'User-Agent': 'Mozilla/5.0 (compatible; Squish/1.0)',
+                'Accept': 'text/html',
+            });
+            // Extract result blocks: <a class="result__a" href="...">title</a> and snippets
+            const results: { title: string; url: string; snippet: string }[] = [];
+            // Match result URLs (DuckDuckGo HTML uses /l/?uddg=... redirects)
+            const linkRe = /<a[^>]+class="result__a"[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+            const snippetRe = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+            const titles: { title: string; href: string }[] = [];
+            let m: RegExpExecArray | null;
+            while ((m = linkRe.exec(raw)) !== null && titles.length < clampedMax) {
+                const href = m[1].replace(/&amp;/g, '&');
+                const title = m[2].replace(/<[^>]+>/g, '').trim();
+                // Resolve DuckDuckGo redirect to final URL
+                let finalUrl = href;
+                const uddg = href.match(/[?&]uddg=([^&]+)/);
+                if (uddg) {
+                    finalUrl = decodeURIComponent(uddg[1]);
+                }
+                titles.push({ title, href: finalUrl });
+            }
+            const snippets: string[] = [];
+            while ((m = snippetRe.exec(raw)) !== null) {
+                snippets.push(m[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").trim());
+            }
+            for (let i = 0; i < titles.length; i++) {
+                results.push({
+                    title: titles[i].title,
+                    url: titles[i].href,
+                    snippet: snippets[i] ?? '',
+                });
+            }
+            if (results.length === 0) {
+                return `No results found for: ${query}`;
+            }
+            return results.map((r, i) =>
+                `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
+            ).join('\n\n');
+        } catch (e) {
+            return `web_search error: ${(e as Error).message}`;
+        }
+    }
+
+    private _httpGet(url: string, headers: Record<string, string> = {}): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const https = require('https') as typeof import('https');
+            const http = require('http') as typeof import('http');
+            const parsed = new URL(url);
+            const lib = parsed.protocol === 'https:' ? https : http;
+            const options = {
+                hostname: parsed.hostname,
+                port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+                path: parsed.pathname + parsed.search,
+                method: 'GET',
+                headers: { ...headers },
+            };
+            const req = lib.request(options, (res) => {
+                // Follow redirects (up to 3 hops)
+                if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+                    this._httpGet(res.headers.location, headers).then(resolve).catch(reject);
+                    return;
+                }
+                let body = '';
+                res.setEncoding('utf8');
+                res.on('data', (chunk: string) => { body += chunk; });
+                res.on('end', () => resolve(body));
+            });
+            req.on('error', reject);
+            req.setTimeout(10000, () => { req.destroy(new Error('Request timed out')); });
+            req.end();
+        });
     }
 
     private _toolGetDiagnostics(): string {

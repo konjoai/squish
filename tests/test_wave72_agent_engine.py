@@ -526,12 +526,16 @@ class TestRegisterBuiltinTools(unittest.TestCase):
         register_builtin_tools(self.registry)
 
     def test_six_tools_registered(self):
-        self.assertEqual(len(self.registry), 6)
+        # Wave 76 extended the tool set from 6 to 11
+        self.assertEqual(len(self.registry), 11)
 
     def test_all_names_present(self):
         expected = {
             "squish_read_file", "squish_write_file", "squish_list_dir",
             "squish_run_shell", "squish_python_repl", "squish_fetch_url",
+            # Wave 76 additions
+            "squish_apply_edit", "squish_create_file", "squish_delete_file",
+            "squish_move_file", "squish_web_search",
         }
         self.assertEqual(set(self.registry.names()), expected)
 
