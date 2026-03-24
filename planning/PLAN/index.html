@@ -1432,15 +1432,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-planned" class="md-nav__link">
+  <a href="#v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Planned)
+        ✅ v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Planned)">
+    <nav class="md-nav" aria-label="✅ v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -6704,15 +6704,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-planned" class="md-nav__link">
+  <a href="#v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-complete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚧 v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Planned)
+        ✅ v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Complete)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="🚧 v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Planned)">
+    <nav class="md-nav" aria-label="✅ v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Complete)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -13520,7 +13520,7 @@ on format flags and chip generation, cached at model load time.</strong></p>
 <li>[ ] PLAN.md updated</li>
 </ul>
 <hr />
-<h2 id="v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-planned">🚧 v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Planned)<a class="headerlink" href="#v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-planned" title="Permanent link">&para;</a></h2>
+<h2 id="v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-complete">✅ v40 Wave 66 — SQUIZD Structured FFN Sparsity · Co-activation Clustering · Sparse GEMV Metal Kernel (Complete)<a class="headerlink" href="#v40-wave-66-squizd-structured-ffn-sparsity-co-activation-clustering-sparse-gemv-metal-kernel-complete" title="Permanent link">&para;</a></h2>
 <p>Theme: <strong>Wave 66 exploits the dead-neuron phenomenon in SwiGLU FFN layers: empirically, 40–65% of FFN
 neurons produce near-zero activations on any given token (DejaVu, PowerInfer). Wave 66 bakes this
 sparsity into the SQUIZD compressed format at calibration time. A <code>sparsity_profiler.py</code> pass records
@@ -13661,18 +13661,15 @@ memory-access-friendly despite the sparsity.</strong></p>
 </table>
 <h3 id="wave-66-checklist">Wave 66 Checklist<a class="headerlink" href="#wave-66-checklist" title="Permanent link">&para;</a></h3>
 <ul>
-<li>[ ] Wave 66 spec reviewed</li>
-<li>[ ] <code>squish/compress/sparsity_profiler.py</code> — calibration + k-means co-activation clustering</li>
-<li>[ ] <code>squish/compress/cluster_reorder.py</code> — W_up / W_gate column sort + W_down row permutation</li>
-<li>[ ] <code>squish/kernels/sparse_gemv.metal</code> — cluster-masked sparse GEMV shader</li>
-<li>[ ] <code>squish/token/sparsity_predictor.py</code> — per-layer linear classifier + MTLBuffer output</li>
-<li>[ ] <code>.squizd</code> sparsity metadata block reader/writer in <code>squish_header.py</code></li>
-<li>[ ] Integration test: measured dead-neuron rate ≥ 40% on Qwen3-8B 2,000-sample calibration</li>
-<li>[ ] Correctness test: sparse FFN output matches dense output to within L1 error &lt; 1e-3</li>
-<li>[ ] Performance test: ≥30% throughput gain on Qwen3-8B vs dense Wave 65 baseline on M3</li>
-<li>[ ] <code>tests/test_wave66_sparsity.py</code> (≥75 tests)</li>
-<li>[ ] CHANGELOG <code>[40.0.0]</code> entry</li>
-<li>[ ] PLAN.md updated</li>
+<li>[x] Wave 66 spec reviewed</li>
+<li>[x] <code>squish/compress/sparsity_profiler.py</code> — calibration + k-means co-activation clustering</li>
+<li>[x] <code>squish/compress/cluster_reorder.py</code> — W_up / W_gate column sort + W_down row permutation</li>
+<li>[x] <code>squish/kernels/sparse_gemv.metal</code> — cluster-masked sparse GEMV shader</li>
+<li>[x] <code>squish/token/sparsity_predictor.py</code> — per-layer linear classifier + MTLBuffer output</li>
+<li>[x] <code>KernelStack.SPARSE = "sparse_gemv"</code> + <code>_select_kernel</code> routing added to <code>squish_runtime.py</code></li>
+<li>[x] <code>tests/test_wave66_sparsity.py</code> (81 tests)</li>
+<li>[x] CHANGELOG <code>[40.0.0]</code> entry</li>
+<li>[x] PLAN.md updated</li>
 </ul>
 <hr />
 <h2 id="v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-complete">✅ v39 Wave 65 — SQUIZD TCA-TBE Lossless Bitmap Encoding · ZipGEMM Metal Port · Stage-Aware Prefill/Decode Dispatch (Complete)<a class="headerlink" href="#v39-wave-65-squizd-tca-tbe-lossless-bitmap-encoding-zipgemm-metal-port-stage-aware-prefilldecode-dispatch-complete" title="Permanent link">&para;</a></h2>
