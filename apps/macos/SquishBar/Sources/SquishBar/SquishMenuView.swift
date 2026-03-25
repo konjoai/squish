@@ -31,6 +31,48 @@ struct SquishMenuView: View {
 
             Divider()
 
+            // ── Model picker ──────────────────────────────────────────────────
+            if !engine.models.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    Menu("Switch Model") {
+                        ForEach(engine.models, id: \.self) { modelId in
+                            Button {
+                                engine.switchModel(modelId)
+                            } label: {
+                                Label(
+                                    modelId,
+                                    systemImage: modelId == (engine.health?.model ?? engine.preferredModel)
+                                        ? "checkmark" : "cpu"
+                                )
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+                }
+            }
+
+            // ── Pull Model ────────────────────────────────────────────────────
+            MenuButton(title: "Pull Model…", systemImage: "arrow.down.circle") {
+                engine.promptPullModel()
+            }
+
+            // ── Compression progress ──────────────────────────────────────────
+            if let progress = engine.compressionProgress {
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: max(0, min(progress, 1)))
+                        .progressViewStyle(.linear)
+                    Text(engine.compressionStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+
+            Divider()
+
             // ── Chat button ───────────────────────────────────────────────────
             MenuButton(title: "Open Chat UI", systemImage: "bubble.left.and.bubble.right") {
                 NSWorkspace.shared.open(engine.chatURL)
@@ -160,6 +202,11 @@ struct SettingsSection: View {
                 HStack {
                     Text("Model").frame(width: 44, alignment: .leading)
                     TextField("qwen3:8b", text: $engine.preferredModel)
+                        .textFieldStyle(.roundedBorder)
+                }
+                HStack {
+                    Text("Hotkey").frame(width: 44, alignment: .leading)
+                    TextField("⌘⌥S", text: $engine.hotkey)
                         .textFieldStyle(.roundedBorder)
                 }
                 Button("Done") { editing = false }

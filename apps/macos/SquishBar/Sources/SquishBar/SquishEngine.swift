@@ -27,17 +27,25 @@ final class SquishEngine: ObservableObject {
     @AppStorage("squish.apiKey") var apiKey: String = "squish"
     @AppStorage("squish.model")  var preferredModel: String = "qwen3:8b"
 
+    // Hotkey preference
+    @AppStorage("squish.hotkey") var hotkey: String = "⌘⌥S"
+
     // Published state
-    @Published var health:   SquishHealth? = nil
-    @Published var models:   [String]      = []
-    @Published var isPolling:  Bool        = false
-    @Published var serverRunning: Bool     = false
-    @Published var lastError:  String?     = nil
+    @Published var health:              SquishHealth? = nil
+    @Published var models:              [String]      = []
+    @Published var isPolling:           Bool          = false
+    @Published var serverRunning:       Bool          = false
+    @Published var lastError:           String?       = nil
+    @Published var compressionProgress: Double?       = nil
+    @Published var compressionStatus:   String        = ""
 
     private var pollTask:   Task<Void, Never>? = nil
     private var serverProc: Process?           = nil
 
-    init() { startPolling() }
+    init() {
+        startPolling()
+        _registerGlobalHotkey()
+    }
 
     deinit { pollTask?.cancel() }
 
@@ -140,6 +148,83 @@ final class SquishEngine: ObservableObject {
         serverRunning ? (health?.loaded == true ? "brain" : "hourglass") : "circle.slash"
     }
 
+    // ── Model switching ───────────────────────────────────────────────────────
+
+    func switchModel(_ modelId: String) {
+        guard modelId != preferredModel else { return }
+        preferredModel = modelId
+        if serverRunning {
+            stopServer()
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                startServer()
+            }
+        }
+    }
+
+    // ── Pull / compression progress ───────────────────────────────────────────
+
+    func promptPullModel() {
+        let panel = NSAlert()
+        panel.messageText = "Pull a Model"
+        panel.informativeText = "Enter a catalog model ID to download and pre-compress (e.g. qwen3:14b):"
+        panel.addButton(withTitle: "Pull")
+        panel.addButton(withTitle: "Cancel")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        input.placeholderString = "qwen3:8b"
+        panel.accessoryView = input
+        guard panel.runModal() == .alertFirstButtonReturn else { return }
+        let modelId = input.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !modelId.isEmpty else { return }
+        _startPull(modelId: modelId)
+    }
+
+    private func _startPull(modelId: String) {
+        compressionProgress = 0
+        compressionStatus = "Pulling \(modelId)…"
+
+        let squishBin: String = which("squish") ?? "squish"
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        proc.arguments = [squishBin, "pull", modelId]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError  = pipe
+        proc.terminationHandler = { [weak self] p in
+            Task { @MainActor [weak self] in
+                if p.terminationStatus == 0 {
+                    self?.compressionStatus   = "Pull complete: \(modelId)"
+                } else {
+                    self?.compressionStatus   = "Pull failed (exit \(p.terminationStatus))"
+                }
+                try? await Task.sleep(for: .seconds(3))
+                self?.compressionProgress = nil
+                self?.compressionStatus   = ""
+            }
+        }
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] fh in
+            let line = String(data: fh.availableData, encoding: .utf8) ?? ""
+            // Parse rough progress: "X MB / Y MB" style lines
+            let progress: Double? = {
+                let pattern = #"(\d+(?:\.\d+)?)\s*(?:MB|GB)\s*/\s*(\d+(?:\.\d+)?)\s*(?:MB|GB)"#
+                guard let regex = try? NSRegularExpression(pattern: pattern),
+                      let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+                      let r1 = Range(match.range(at: 1), in: line),
+                      let r2 = Range(match.range(at: 2), in: line),
+                      let cur = Double(line[r1]), let total = Double(line[r2]),
+                      total > 0 else { return nil }
+                return min(cur / total, 1.0)
+            }()
+            Task { @MainActor [weak self] in
+                if let p = progress { self?.compressionProgress = p }
+                if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self?.compressionStatus = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+        }
+        try? proc.run()
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private func which(_ cmd: String) -> String? {
@@ -153,5 +238,22 @@ final class SquishEngine: ObservableObject {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return (path?.isEmpty == false) ? path : nil
+    }
+
+    private func _registerGlobalHotkey() {
+        // Require Accessibility permission; prompt if not yet granted
+        guard AXIsProcessTrusted() else {
+            let opts: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true]
+            AXIsProcessTrustedWithOptions(opts)
+            return
+        }
+        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return }
+            // ⌘⌥S (default hotkey) — open chat URL
+            if event.modifierFlags.contains([.command, .option]),
+               event.charactersIgnoringModifiers == "s" {
+                NSWorkspace.shared.open(self.chatURL)
+            }
+        }
     }
 }

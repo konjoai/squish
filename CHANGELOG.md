@@ -5,6 +5,50 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [66.0.0] — Wave 93 — 2026-03-25
+
+### Feat — macOS SquishBar Polish
+
+#### 1. Model Picker (`SquishMenuView.swift`, `SquishEngine.swift`)
+
+- **Model picker** replaces static model text — `Menu { ForEach(engine.models) }`
+  with a checkmark on the currently-active model.  Populated from `/v1/models`
+  at panel open.
+- `switchModel(_ modelId: String)`: updates `preferredModel`, stops the running
+  server, waits 1 s, then restarts with the new model.
+
+#### 2. Pull Model + Compression Progress (`SquishEngine.swift`, `SquishMenuView.swift`)
+
+- **"Pull Model…"** menu button opens an `NSAlert` prompt for a catalog model ID,
+  then runs `squish pull <model>` as a child `Process`.
+- Stdout/stderr streamed to `@Published var compressionStatus: String` — live
+  status line shown below the progress bar.
+- Regex parses `X MB / Y MB` lines from pull output → `@Published var compressionProgress: Double?`
+  drives a `ProgressView`.  Bar and status line auto-dismiss 3 s after completion.
+
+#### 3. Global Hotkey (`SquishEngine.swift`)
+
+- `@AppStorage("squish.hotkey") var hotkey: String = "⌘⌥S"` persists hotkey preference.
+- `_registerGlobalHotkey()` registers `NSEvent.addGlobalMonitorForEvents` on app init.
+  Defaults to `⌘⌥S` → opens `http://localhost:11435/chat` in the default browser.
+- Guards with `AXIsProcessTrusted()` — prompts for Accessibility permission on first
+  run; silently disabled if not granted.
+- **Hotkey row** added to `SettingsSection` UI for easy reconfiguration.
+
+#### 4. Makefile — `release` + `dmg` Targets
+
+- **`make release`**: swift build release `.app` bundle.
+- **`make dmg`**: wraps the `.app` in a distributable UDZO disk image via `hdiutil`.
+- `make clean` now also removes `SquishBar.dmg`.
+
+#### 5. `docs/squishbar.md`
+
+- New reference page: feature list, build steps (`swift build` / `make` / `make dmg`),
+  configuration table, global hotkey setup, API endpoint reference, and
+  troubleshooting section.
+
+---
+
 ## [65.0.0] — Wave 92 — 2026-03-25
 
 ### Feat — Pre-Compress Pipeline + HF Batch Upload
