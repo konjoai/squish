@@ -5,6 +5,82 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [71.0.0] — Wave 98 — 2026-03-25
+
+### Feature — Multiplier Stack: FFN Sparsity Wiring + EAGLE Auto-Load Fix + gen-masks CLI
+
+Wave 98 connects three previously dormant optimization ingredients into the live
+inference path.  The theoretical throughput ceiling for 8B INT2+sparsity+EAGLE
+on M3 (175–205 tok/s) is now accessible — the gap was a set of disconnects
+between research modules and production inference code. This wave wires them in.
+
+#### 1. FFN Sparsity Injection at Inference Time (`squish/kernels/ffn_mask_patch.py`)
+
+**Root cause**: Wave 82b loaded `sparse_masks.npz` into `_structured_sparsity`
+global at server startup but never applied the masks to the model.  The masks
+sat in RAM unused on every single forward pass.
+
+**Fix**: New `MaskedFFN` wrapper class and `patch_model_ffn_sparsity()` function
+in `squish/kernels/ffn_mask_patch.py`.  Each `model.layers[i].mlp` that has a
+corresponding mask is replaced with a `MaskedFFN` wrapper that calls the
+original MLP then multiplies the output by a stored binary MLX array.
+
+- `MaskedFFN.__call__(x)`: `inner(x) * mask` — single broadcastable multiply
+- `patch_model_ffn_sparsity(model, sparsity)` — in-place; returns count of patched layers
+- `unpatch_model_ffn_sparsity(model)` — reverses the patch (for testing / hot-reload)
+- Handles both `model.layers` and `model.model.layers` layouts
+- Idempotent: double-patching a layer is a no-op
+- `server.py` Wave 98 block: calls `patch_model_ffn_sparsity` immediately after
+  Wave 82b loads the sparsity object, so masks are active from the first token
+
+#### 2. EAGLE Head Auto-Detection Fix (`squish/runtime/auto_profile.py`)
+
+**Root cause**: `squish pull-head qwen3:8b` saves the head to
+`~/.squish/eagle-heads/eagle3-qwen3-instruct-8b/`.  `ModelCapabilityDetector._detect_eagle3()`
+only searched 4 paths adjacent to the model directory — it never looked in
+`~/.squish/eagle-heads/`.  Result: every `pull-head` user had a head on disk
+that was silently never loaded.
+
+**Fix**: `_detect_eagle3` now performs a two-pass search:
+
+- **Pass 1** (unchanged): `comp_path`, `model_path`, `model_path.parent`, `comp_path.parent`
+- **Pass 2** (new): iterates every subdirectory of `~/.squish/eagle-heads/` that
+  contains a valid EAGLE head file, scores each by word-overlap with the model
+  path (noise tokens "eagle3", "instruct" stripped), and picks the highest-scoring
+  slug directory.
+
+Adjacent directories still take priority over slug directories in Pass 1.
+Added `_eagle3_head_found()` (pure function, testable) and `_model_slug_score()`
+(scoring helper) as `@staticmethod` methods on `ModelCapabilityDetector`.
+
+#### 3. `squish gen-masks` CLI Command (`squish/cli.py`)
+
+**Root cause**: The `SparsityProfiler` calibration pipeline existed in
+`squish/compress/sparsity_profiler.py` but was never exposed as a user-facing
+command.  Users had no way to generate `sparse_masks.npz` without writing
+custom Python.
+
+**Fix**: New `cmd_gen_masks()` function and `squish gen-masks` subparser.
+
+- Loads the compressed model via `mlx_lm.load()`
+- Installs per-layer `_CaptureMLP` hooks (same `MaskedFFN`-style pattern)
+  that record MLP output activations during calibration
+- Runs configurable number of calibration prompts (default: 20 built-in)
+- Computes per-neuron firing frequency: `mean(|output| > threshold)`
+- Binary mask: neurons firing on ≥ threshold fraction of samples → kept (1.0)
+- Saves `sparse_masks.npz` to the compressed directory
+
+```
+squish gen-masks qwen3:8b                          # default 20 prompts
+squish gen-masks qwen3:8b --samples 500            # higher quality masks
+squish gen-masks ./my-model-compressed --threshold 0.02
+```
+
+After running `gen-masks`, the next `squish serve` auto-loads the masks and
+calls `patch_model_ffn_sparsity` at startup — no flags required.
+
+---
+
 ## [70.0.0] — Wave 97 — 2026-03-25
 
 ### Fix — Inference Stability: Event Loop + INT2 Coherence

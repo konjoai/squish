@@ -2676,6 +2676,189 @@ _EAGLE_HEAD_CATALOG: dict[str, str] = {
     "llama3.2:3b":    "yuhuili/EAGLE3-Llama-3.2-Instruct-3B",
 }
 
+# ── Built-in calibration prompts for gen-masks ────────────────────────────────
+_GEN_MASKS_CALIBRATION_PROMPTS: list[str] = [
+    "The capital of France is",
+    "In machine learning, a transformer model",
+    "The derivative of sin(x) is",
+    "Once upon a time in a land far away",
+    "Python is a programming language known for",
+    "The best way to learn mathematics is",
+    "Water boils at 100 degrees Celsius because",
+    "The history of the Roman Empire spans",
+    "To implement a binary search tree in Python",
+    "The human genome contains approximately",
+    "Climate change is primarily caused by",
+    "The theory of relativity states that",
+    "A neural network learns by adjusting",
+    "The French Revolution began in",
+    "In quantum physics, the uncertainty principle",
+    "The mitochondria is often called",
+    "Shakespeare wrote his sonnets during",
+    "The speed of light in a vacuum is",
+    "Gradient descent works by iteratively",
+    "The first computer was invented by",
+]
+
+
+def cmd_gen_masks(args):
+    """
+    Generate structured FFN sparsity masks for a compressed model.
+
+    Runs calibration inference on the model, measures per-layer MLP output
+    neuron firing frequency, and saves a ``sparse_masks.npz`` file to the
+    compressed model directory.  The masks can then be loaded automatically
+    by the squish server (Wave 98) to zero out reliably-inactive neurons at
+    every forward pass, improving INT2/INT3 quantisation quality.
+
+    Examples
+    --------
+      squish gen-masks qwen3:8b
+      squish gen-masks ./path/to/model-compressed --samples 200 --threshold 0.05
+    """
+    import sys
+    import time
+
+    try:
+        import mlx.core as mx
+        import mlx_lm
+    except ImportError:
+        _die(
+            "mlx and mlx_lm are required for gen-masks.\n"
+            "Install with: pip install mlx mlx-lm"
+        )
+
+    try:
+        import numpy as np
+    except ImportError:
+        _die("numpy is required. Install with: pip install numpy")
+
+    model_arg: str = args.model
+    n_samples: int = max(1, int(args.samples))
+    threshold: float = float(args.threshold)
+    output_path: str = args.output or ""
+
+    # ── Resolve model → compressed directory ─────────────────────────────────
+    import re as _re
+    # Accept: alias (qwen3:8b), directory path, or model name
+    if os.path.isdir(model_arg):
+        comp_dir = Path(model_arg).expanduser().resolve()
+    else:
+        # Try to find via squish model list logic
+        from squish.utils import resolve_model_path as _rmp  # type: ignore[import]
+        try:
+            comp_dir = Path(_rmp(model_arg))
+        except Exception:
+            _die(
+                f"Cannot resolve model {model_arg!r} to a local directory.\n"
+                "Pass a local path or a model alias (e.g. qwen3:8b)."
+            )
+
+    if not comp_dir.exists():
+        _die(f"Model directory not found: {comp_dir}")
+
+    out_npz = Path(output_path) if output_path else (comp_dir / "sparse_masks.npz")
+    out_npz = out_npz.expanduser().resolve()
+
+    print()
+    _box([
+        "  squish gen-masks",
+        f"  Model dir  : {comp_dir}",
+        f"  Samples    : {n_samples}",
+        f"  Threshold  : {threshold}",
+        f"  Output     : {out_npz}",
+    ])
+    print()
+
+    # ── Load model ────────────────────────────────────────────────────────────
+    print("  Loading model …")
+    t0 = time.time()
+    model, tokenizer = mlx_lm.load(str(comp_dir))
+    layers = getattr(model, "layers", None) or getattr(getattr(model, "model", None), "layers", None)
+    if layers is None:
+        _die("Cannot find model.layers — unsupported architecture.")
+    n_layers = len(layers)
+    print(f"  Loaded {n_layers}-layer model in {time.time() - t0:.1f}s")
+
+    # ── Install per-layer MLP output capture hooks ────────────────────────────
+    class _CaptureMLP:
+        """Thin wrapper that records every MLP output for mask calibration."""
+        def __init__(self, inner, layer_idx: int) -> None:
+            self.inner = inner
+            self.layer_idx = layer_idx
+            self.outputs: list = []  # list of (hidden_dim,) numpy arrays
+
+        def __call__(self, x):
+            out = self.inner(x)
+            mx.eval(out)
+            # out: (batch, seq_len, hidden_dim) — record per-token outputs
+            arr = np.array(out).reshape(-1, out.shape[-1])  # (tokens, hidden_dim)
+            self.outputs.append(arr)
+            return out
+
+        def __getattr__(self, name: str):
+            return getattr(self.inner, name)
+
+    hooks: list[_CaptureMLP] = []
+    for i, layer in enumerate(layers):
+        h = _CaptureMLP(layer.mlp, i)
+        layer.mlp = h
+        hooks.append(h)
+
+    # ── Run calibration prompts ───────────────────────────────────────────────
+    # Select prompts (repeat if fewer than n_samples)
+    prompts = (_GEN_MASKS_CALIBRATION_PROMPTS * ((n_samples // len(_GEN_MASKS_CALIBRATION_PROMPTS)) + 1))[:n_samples]
+    print(f"  Running {len(prompts)} calibration prompts …")
+    for idx, prompt in enumerate(prompts):
+        try:
+            toks = tokenizer.encode(prompt)
+            if not toks:
+                continue
+            inp = mx.array([toks])
+            model(inp)
+            mx.eval()
+        except Exception as _ce:
+            print(f"  ⚠  Prompt {idx} failed: {_ce}", file=sys.stderr)
+        if (idx + 1) % 10 == 0:
+            print(f"  … {idx + 1}/{len(prompts)} prompts done")
+
+    # ── Restore original MLPs ─────────────────────────────────────────────────
+    for hook, layer in zip(hooks, layers):
+        layer.mlp = hook.inner
+
+    # ── Compute binary masks from firing frequency ────────────────────────────
+    print("  Computing masks …")
+    masks: dict[str, np.ndarray] = {}
+    sparsity_by_layer: list[float] = []
+
+    for hook in hooks:
+        if not hook.outputs:
+            sparsity_by_layer.append(0.0)
+            continue
+        # Concatenate all captured outputs: (total_tokens, hidden_dim)
+        all_out = np.concatenate(hook.outputs, axis=0).astype(np.float32)
+        # Firing frequency: fraction of tokens where |output| > threshold
+        firing = (np.abs(all_out) > threshold).astype(np.float32).mean(axis=0)  # (hidden_dim,)
+        # Binary mask: keep neuron if it fires on ≥threshold of samples
+        binary = (firing >= threshold).astype(np.float32)
+        sparsity = float(1.0 - binary.mean())
+        sparsity_by_layer.append(sparsity)
+        masks[f"layer_{hook.layer_idx}"] = binary
+
+    # ── Save masks ────────────────────────────────────────────────────────────
+    out_npz.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(str(out_npz), **masks)
+
+    mean_sparsity = float(np.mean(sparsity_by_layer)) if sparsity_by_layer else 0.0
+    print()
+    print(f"  Saved {len(masks)} layer masks → {out_npz}")
+    print(f"  Mean sparsity : {mean_sparsity:.1%}")
+    print(f"  Layers zeroed : {sum(1 for s in sparsity_by_layer if s > 0)}/{n_layers}")
+    print()
+    print("  To use: run squish serve with the same compressed directory.")
+    print("  The server auto-loads sparse_masks.npz and patches FFN layers.")
+    print()
+
 
 def cmd_pull_head(args):  # pragma: no cover
     """
@@ -4597,6 +4780,38 @@ Ollama drop-in:
     p_head.add_argument("--token", default="",
                         help="HuggingFace API token (or set HF_TOKEN env var)")
     p_head.set_defaults(func=cmd_pull_head)
+
+    # ── gen-masks (Wave 98 — structured FFN sparsity calibration) ──
+    p_gm = sub.add_parser(
+        "gen-masks",
+        help="Generate structured FFN sparsity masks for a local compressed model",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Profile a compressed model with calibration prompts and generate\n"
+            "binary sparsity masks for each FFN layer.  Masks are saved as\n"
+            "sparse_masks.npz in the model's compressed directory and are\n"
+            "auto-loaded by `squish serve` to improve INT2/INT3 quality.\n\n"
+            "Examples:\n"
+            "  squish gen-masks qwen3:8b\n"
+            "  squish gen-masks ./my-model-compressed --samples 500\n"
+            "  squish gen-masks qwen3:14b --samples 200 --threshold 0.02"
+        ),
+    )
+    p_gm.add_argument("model",
+                      help="Model alias (e.g. qwen3:8b) or path to compressed directory")
+    p_gm.add_argument("--samples", type=int, default=20,
+                      metavar="N",
+                      help="Number of calibration prompts to run (default: 20; "
+                           "increase to 200-500 for higher-quality masks)")
+    p_gm.add_argument("--threshold", type=float, default=0.05,
+                      metavar="T",
+                      help="Neuron keep threshold: neurons firing on >= T fraction of "
+                           "samples are kept (default: 0.05 = 5%%)")
+    p_gm.add_argument("--output", default="",
+                      metavar="PATH",
+                      help="Override output path for sparse_masks.npz "
+                           "(default: <compressed_dir>/sparse_masks.npz)")
+    p_gm.set_defaults(func=cmd_gen_masks)
 
     # ── catalog ──
     p_catalog = sub.add_parser("catalog", help="Browse available models in the Squish catalog")

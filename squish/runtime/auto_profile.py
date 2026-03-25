@@ -290,35 +290,82 @@ class ModelCapabilityDetector:
         # This is handled at runtime by the kernel dispatcher — no change here.
 
     @staticmethod
+    def _eagle3_head_found(directory: Path, eagle_patterns: list) -> str | None:
+        """Return the head dir path if *directory* contains a valid EAGLE head, else None."""
+        if not directory.exists():
+            return None
+        for pattern in eagle_patterns:
+            candidate = directory / pattern
+            if candidate.exists():
+                return str(candidate if candidate.is_dir() else candidate.parent)
+        return None
+
+    @staticmethod
+    def _model_slug_score(model_path: Path, slug: str) -> int:
+        """Return word-overlap score between model path tokens and EAGLE slug.
+
+        Strips generic tokens that appear in almost every EAGLE slug ("eagle3",
+        "instruct") to avoid false positives.  Score = count of unique matching
+        tokens; 0 means no evidence this head belongs to this model.
+        """
+        _noise = {"eagle3", "eagle", "instruct", "instruct2"}
+        slug_tokens = set(slug.lower().replace(".", "").split("-")) - _noise
+        # Gather tokens from the full model path string (last 3 components)
+        path_str = "/".join(model_path.parts[-3:]).lower().replace(".", "").replace(":", "")
+        path_tokens = set(path_str.replace("/", " ").replace("-", " ").replace("_", " ").split())
+        return len(slug_tokens & path_tokens)
+
+    @staticmethod
     def _detect_eagle3(
         profile: OptimizationProfile,
         model_path: Path,
         comp_path: Path,
     ) -> None:
-        """Detect EAGLE-3 draft head file presence."""
-        search_dirs = [
-            comp_path,
-            model_path,
-            model_path.parent,
-            comp_path.parent,
-        ]
+        """Detect EAGLE-3 draft head file presence.
+
+        Search order:
+        1. Paths adjacent to the model/compressed directory (legacy behaviour).
+        2. ``~/.squish/eagle-heads/<slug>/`` — where ``squish pull-head`` saves
+           downloaded heads.  The slug closest to the loaded model name is
+           preferred (highest word-overlap score); ties are broken alphabetically.
+        """
         eagle_patterns = [
             "eagle3_head.safetensors",
             "eagle3_head",
             "eagle_head.safetensors",
         ]
-        for directory in search_dirs:
-            if not directory.exists():
+
+        # ── Pass 1: model-adjacent directories (original behaviour) ──────────
+        adjacent_dirs = [comp_path, model_path, model_path.parent, comp_path.parent]
+        for directory in adjacent_dirs:
+            found = ModelCapabilityDetector._eagle3_head_found(directory, eagle_patterns)
+            if found is not None:
+                profile.use_eagle3 = True
+                profile.eagle3_head_dir = found
+                return
+
+        # ── Pass 2: ~/.squish/eagle-heads/<slug>/ ────────────────────────────
+        eagle_heads_root = Path.home() / ".squish" / "eagle-heads"
+        if not eagle_heads_root.exists():
+            return
+
+        best_dir: str | None = None
+        best_score: int = -1
+
+        for slug_dir in sorted(eagle_heads_root.iterdir()):
+            if not slug_dir.is_dir():
                 continue
-            for pattern in eagle_patterns:
-                candidate = directory / pattern
-                if candidate.exists():
-                    profile.use_eagle3 = True
-                    # Point to the directory containing the head file
-                    profile.eagle3_head_dir = str(
-                        candidate if candidate.is_dir() else candidate.parent
-                    )
-                    return
+            found = ModelCapabilityDetector._eagle3_head_found(slug_dir, eagle_patterns)
+            if found is None:
+                continue
+            score = ModelCapabilityDetector._model_slug_score(model_path, slug_dir.name)
+            if score > best_score:
+                best_score = score
+                best_dir = found
+
+        if best_dir is not None:
+            profile.use_eagle3 = True
+            profile.eagle3_head_dir = best_dir
 
     @staticmethod
     def _detect_sparsity(
