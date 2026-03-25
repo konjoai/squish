@@ -5,48 +5,59 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [67.0.0] — Wave 94 — 2026-03-25
+## [68.0.0] — Wave 95 — 2026-03-25
 
-### Feat — Cross-Platform Support Review
+### CLI — `squish ps` + `squish logs`
 
-#### 1. `PlatformInfo` Convenience Properties (`squish/platform/detector.py`)
+#### 1. `squish ps` — Server Process Status
 
-- **`is_apple_silicon`**: `True` when `kind == MACOS_APPLE_SILICON`.
-- **`is_cuda`**: alias for `has_cuda`.
-- **`name`**: lower-case `kind.name` string (e.g. `"macos_apple_silicon"`).
-- **`platform_name`**: human-readable description (e.g. `"Apple Silicon (M3 Pro)"`).
-- **`detect_platform()`**: module-level singleton convenience function; returns
-  cached `PlatformInfo` without needing to instantiate `UnifiedPlatformDetector`.
+- New `cmd_ps` function in `squish/cli.py`.
+- Queries `GET /api/ps` (Wave 88) to show the currently loaded model.
+- Displays model name, family, parameter count, quantisation level, context
+  length, and size in a readable format.
+- `--startup` flag fetches `GET /v1/startup-profile` (Wave 90) and prints a
+  per-phase timing breakdown with a bar proportional to duration.
+- `--host` / `--port` flags to target a non-default server endpoint.
+- Server-not-running: friendly message with the `squish run <model>` hint.
+- No-model-loaded: friendly message explaining the server is up but idle.
 
-#### 2. `get_inference_backend()` (`squish/platform/platform_router.py`)
+#### 2. `squish logs` — Server Log Viewer
 
-- New standalone function `get_inference_backend(platform) -> str` returns
-  `"mlx"`, `"torch_cuda"`, `"torch_rocm"`, or `"torch_cpu"` based on
-  `platform.is_apple_silicon`, `is_cuda`, and `has_rocm`.
-- Consumed by `cmd_setup()` to route non-Apple users to the right backend.
-
-#### 3. `cmd_setup()` Cross-Platform Routing (`squish/cli.py`)
-
-- Removed `sys.exit(1)` for non-Apple Silicon.  Instead prints an
-  informational notice with the detected backend and appropriate install
-  hints (CUDA pip command, CPU performance warning).
-- Continues to model recommendation for all platforms.
-
-#### 4. README Platform Update (`README.md`)
-
-- Title changed from "Squish — Local LLM Inference for Apple Silicon" →
-  "Squish — Local LLM Inference".
-- Platform badge updated from "Apple Silicon" → "macOS | Linux | Windows".
-- Removed hard "⚠️ macOS + Apple Silicon only" warning; replaced with a
-  `💡` note clarifying best performance is on Apple Silicon while Linux/CUDA
-  and Windows DirectML are also supported.
+- New `cmd_logs` function in `squish/cli.py`.
+- Reads `~/.squish/daemon.log` (or `--log-file PATH` override).
+- `--tail N` (default 50): shows the last N lines with a colour header.
+- `--follow`: streams the log live (`tail -f` behaviour); `pragma: no cover`.
+- Log-file-not-found: helpful message with `squish daemon start` hint.
+- Empty log file: gracefully reports it rather than printing nothing.
 
 #### Tests
 
-`tests/test_wave94_cross_platform.py` — 26 tests:
-`detect_platform()` attrs, `PlatformInfo` computed properties, `is_apple_silicon`
-correctness per kind, `get_inference_backend` for all 4 combinations,
-`cmd_setup` no longer calls sys.exit, README badge and title checks.
+`tests/test_wave95_ps_logs.py` — 31 tests covering parser registration, URLError
+path, empty models list, loaded model display, size formatting, --startup flag,
+startup failure silencing, missing/empty log file, --tail limiting, header output,
+and custom --log-file path.
+
+---
+
+#### 3. README Final Audit + Model Count
+
+- **Model count** updated: "34 models" → "40 models" (verified `len(list_catalog()) == 40`).
+- `squish catalog` Quick Start updated to `browse 40 available models`.
+- No "Coming soon" text remains anywhere in README.
+- Platform accuracy confirmed (Wave 94 changes verified in place).
+
+#### 4. `squish version` Subcommand (`cli.py`)
+
+- `_CURRENT_WAVE = 95` module constant added.
+- `cmd_version()` uses `globals().get("_CURRENT_WAVE", "unknown")` to
+  correctly resolve wave from module scope.
+- Output: `squish 9.1.0  (Wave 95)` + Python version + platform info.
+- `squish --version` flag already used `importlib.metadata` (confirmed).
+
+#### 5. MODULES.md Backfill
+
+- Waves 85–95 summary table + per-wave descriptions added to `MODULES.md`.
+- Document now covers full history from Wave 27 to Wave 95.
 
 ---
 

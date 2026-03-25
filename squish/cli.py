@@ -24,7 +24,8 @@ Sub-commands
   squish daemon   start|stop|status Manage background server
   squish rotate   MODEL             SpinQuant Cayley-SGD rotation calibration
   squish predict  [MODEL]           LIFE analytical performance prediction
-
+  squish ps       [OPTIONS]         Show loaded model and server status
+  squish logs     [OPTIONS]         View or stream the server log
 MODEL shorthand resolves via the Squish catalog:
   qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b, phi4:14b …
   Legacy aliases still work: 7b, 14b, 1.5b, 32b, 72b
@@ -186,6 +187,7 @@ _COMPRESSED_SUFFIX = "-compressed"
 
 # Default server port
 _DEFAULT_PORT = 11435
+_CURRENT_WAVE = 95  # current development wave
 
 
 def _detect_ram_gb() -> float:
@@ -746,8 +748,26 @@ def cmd_setup(args):  # pragma: no cover
     print(f"  {ok_sym}  RAM         : {ram_gb:.0f} GB")
 
     if not is_apple_silicon:
-        print(f"\n  {_C.PK}squish requires Apple Silicon (M1–M5). Aborting.{_C.R}\n")
-        sys.exit(1)
+        # Non-Apple Silicon — print informational notice and continue with
+        # platform-appropriate setup rather than hard-exiting.
+        _backend = "torch_cuda" if _platform.system().lower() == "linux" else "torch_cpu"
+        try:
+            from squish.platform.platform_router import get_inference_backend
+            from squish.platform.detector import detect_platform as _dp
+            _backend = get_inference_backend(_dp())
+        except Exception:
+            pass
+        print(f"\n  {_C.V}ℹ{_C.R}  Non-Apple-Silicon platform detected.")
+        print(f"      Inference backend : {_backend}")
+        if _backend == "torch_cuda":
+            print(f"      Install:  pip install torch  (CUDA build)")
+            print(f"      Note: MLX-specific features (INT4 squish format) are not")
+            print(f"            available on CUDA — use safetensors models directly.")
+        elif _backend == "torch_cpu":
+            print(f"      Note: CPU-only inference is slow. A GPU is strongly recommended.")
+        print()
+        # Continue to model recommendation — don't exit
+
 
     # 2. Recommend a model
     recommended = _recommend_model(ram_gb)
@@ -3475,6 +3495,130 @@ def cmd_predict(args):  # pragma: no cover
         print()
 
 
+# ── squish ps ────────────────────────────────────────────────────────────────
+
+def cmd_ps(args):
+    """Show the currently loaded model and server process status."""
+    import urllib.error
+    import urllib.request
+
+    host = getattr(args, "host", "127.0.0.1")
+    port = getattr(args, "port", 11435)
+    base = f"http://{host}:{port}"
+
+    def _get(path: str) -> dict:
+        req = urllib.request.Request(
+            base + path, headers={"Accept": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read())
+
+    print()
+    _box(["squish ps"])
+    print()
+
+    try:
+        data = _get("/api/ps")
+    except (urllib.error.URLError, OSError) as e:
+        print(f"  No server running at {base}\n  ({e})")
+        print("  Start with: squish run <model>")
+        print()
+        return
+
+    models = data.get("models", [])
+    if not models:
+        print(f"  {_C.MG}No model loaded.{_C.R}")
+        print(f"  Server is running at {base} but no model is active.")
+        print(f"  Load with: squish run <model>")
+    else:
+        for m in models:
+            name       = m.get("name", "unknown")
+            size_bytes = m.get("size", 0)
+            size_str   = (
+                f"{size_bytes / 1e9:.1f} GB" if size_bytes >= 1e9
+                else f"{size_bytes / 1e6:.0f} MB" if size_bytes > 0
+                else "—"
+            )
+            details    = m.get("details", {})
+            family     = details.get("family", "")
+            param_size = details.get("parameter_size", "")
+            quant      = details.get("quantization_level", "")
+            ctx        = details.get("context_length", 0)
+
+            print(f"  {_C.G}●{_C.R}  {_C.P}{name}{_C.R}")
+            if family:
+                print(f"     Family     : {family}")
+            if param_size:
+                print(f"     Parameters : {param_size}")
+            if quant:
+                print(f"     Quant      : {quant}")
+            if ctx:
+                print(f"     Context    : {ctx:,} tokens")
+            print(f"     Model size : {size_str}")
+            print()
+
+    # Optional startup profile (--startup flag or env var)
+    if getattr(args, "startup", False):
+        try:
+            sp = _get("/v1/startup-profile")
+            total_ms = sp.get("total_ms", 0)
+            phases   = sp.get("phases", {})
+            print(f"  {_C.P}Startup profile{_C.R}  total={total_ms:.0f} ms")
+            for phase, ms in sorted(phases.items(), key=lambda kv: -kv[1]):
+                bar = "█" * max(1, int(ms / 50))
+                print(f"    {phase:<30} {ms:>7.0f} ms  {_C.DIM}{bar}{_C.R}")
+            print()
+        except Exception:
+            pass  # startup-profile is best-effort
+
+
+# ── squish logs ───────────────────────────────────────────────────────────────
+
+def cmd_logs(args):
+    """View or stream the squish server log."""
+    import collections
+
+    log_file = Path(getattr(args, "log_file", "") or (Path.home() / ".squish" / "daemon.log"))
+    n        = getattr(args, "tail", 50)
+    follow   = getattr(args, "follow", False)
+
+    if not log_file.exists():
+        print(f"\n  No log file found at {log_file}")
+        print("  Logs are written when the server runs as a daemon:")
+        print("    squish daemon start <model>")
+        print()
+        return
+
+    if follow:  # pragma: no cover
+        import time
+        print(f"\n  Streaming {log_file}  (Ctrl+C to stop)\n")
+        with open(log_file) as fh:
+            fh.seek(0, 2)  # jump to end
+            try:
+                while True:
+                    line = fh.readline()
+                    if line:
+                        print(line, end="", flush=True)
+                    else:
+                        time.sleep(0.1)
+            except KeyboardInterrupt:
+                print()
+        return
+
+    with open(log_file) as fh:
+        lines = list(collections.deque(fh, n))
+
+    if not lines:
+        print(f"\n  {log_file} is empty.")
+        print()
+        return
+
+    print(f"\n  {_C.P}Last {n} lines of {log_file}{_C.R}\n")
+    for line in lines:
+        print(line, end="")
+    print()
+
+
 def cmd_trace(args):
     """
     View span traces and the slow-module bottleneck report.
@@ -3765,6 +3909,25 @@ def cmd_welcome():
         print()
 
 
+def cmd_version(args) -> None:  # noqa: ARG001
+    """Print squish version and wave number."""
+    try:
+        import importlib.metadata as _im
+        ver = _im.version("squish")
+    except Exception:
+        from squish import __version__ as ver  # type: ignore[assignment]
+    # Derive wave number from version string (major version = wave + offset)
+    # Convention: release version tracks internal wave numbering
+    _wave = globals().get("_CURRENT_WAVE", "unknown")
+    print(f"squish {ver}  (Wave {_wave})")
+    print(f"  Python : {sys.version.split()[0]}")
+    try:
+        import platform as _pl
+        print(f"  Platform: {_pl.system()} {_pl.machine()}")
+    except Exception:
+        pass
+
+
 def build_parser() -> "argparse.ArgumentParser":
     """Build and return the squish argument parser.
 
@@ -3812,7 +3975,7 @@ Ollama drop-in:
 
     ap.add_argument(
         "--version", action="version",
-        version="squish 9.0.0",
+        version=f"squish {__import__('importlib.metadata', fromlist=['version']).version('squish')}",
         help="Show squish version and exit",
     )
 
@@ -4467,6 +4630,49 @@ Ollama drop-in:
                            help="Print results as JSON instead of a human-readable table.")
     p_predict.set_defaults(func=cmd_predict)
 
+    # ── squish ps ─────────────────────────────────────────────────────────────
+    p_ps = sub.add_parser(
+        "ps",
+        help="Show the currently loaded model and server process status",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Query the running Squish server for the loaded model and status.\n\n"
+            "Examples:\n"
+            "  squish ps\n"
+            "  squish ps --startup\n"
+            "  squish ps --host 0.0.0.0 --port 11435\n"
+        ),
+    )
+    p_ps.add_argument("--startup", action="store_true",
+                      help="Also show startup phase timings from /v1/startup-profile")
+    p_ps.add_argument("--host", default="127.0.0.1",
+                      help="Server host (default: 127.0.0.1)")
+    p_ps.add_argument("--port", type=int, default=11435,
+                      help="Server port (default: 11435)")
+    p_ps.set_defaults(func=cmd_ps)
+
+    # ── squish logs ───────────────────────────────────────────────────────────
+    p_logs = sub.add_parser(
+        "logs",
+        help="View or stream the squish server log",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "View the last N lines of the daemon log, or stream it live.\n\n"
+            "Examples:\n"
+            "  squish logs\n"
+            "  squish logs --tail 100\n"
+            "  squish logs --follow\n"
+            "  squish logs --log-file /path/to/custom.log\n"
+        ),
+    )
+    p_logs.add_argument("--tail", type=int, default=50, metavar="N",
+                        help="Show last N lines (default: 50)")
+    p_logs.add_argument("--follow", action="store_true",
+                        help="Stream the log continuously (like tail -f)")
+    p_logs.add_argument("--log-file", dest="log_file", default="", metavar="PATH",
+                        help="Override log file path (default: ~/.squish/daemon.log)")
+    p_logs.set_defaults(func=cmd_logs)
+
     # ── squish trace ───────────────────────────────────────────────────────────
     p_trace = sub.add_parser(
         "trace",
@@ -4526,6 +4732,13 @@ Ollama drop-in:
     p_config.add_argument("config_value", nargs="?", default=None,
                           help="Value to set")
     p_config.set_defaults(func=cmd_config)
+
+    # ── version ──
+    p_version = sub.add_parser(
+        "version",
+        help="Show squish version, Python version, and platform info",
+    )
+    p_version.set_defaults(func=cmd_version)
 
     return ap
 

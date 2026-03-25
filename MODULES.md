@@ -1,12 +1,145 @@
-# Squish Module Reference — Wave 27+28 (v10)
+# Squish Module Reference
 
-This document describes the six new algorithm modules added in v10 (Wave 28)
-and the five server-wiring changes from Wave 27.
-
-For the full module inventory across all waves, see the versioning table in
-[docs/planning/PLAN.md](docs/planning/PLAN.md).
+> Updated through Wave 95 (v68.0.0). For waves 1–28, see the historical record below.
 
 ---
+
+## Waves 85–95 Summary (v58.0.0–v68.0.0)
+
+| Wave | Version | Theme | Key Files |
+|------|---------|-------|-----------|
+| 85 | 58.0.0 | CLI color dedup + README accuracy | `cli.py`, `server.py`, `api/v1_router.py` |
+| 86 | 59.0.0 | Observability: ProductionProfiler + `squish trace` | `hardware/production_profiler.py`, `serving/obs_report.py`, `cli.py` |
+| 87 | 60.0.0 | VSCode/Web UI agent tool execution fix | `serving/tool_calling.py`, `agent/tool_name_map.py`, `squishClient.ts` |
+| 88 | 61.0.0 | Ollama gaps + LocalAI + `squish compat` | `serving/ollama_compat.py`, `serving/localai_compat.py`, `serving/backend_router.py` |
+| 89 | 62.0.0 | Local model scanner + `squish pull` URI schemes | `serving/local_model_scanner.py`, `cli.py` |
+| 90 | 63.0.0 | Lean startup profiler + server.py decomposition | `serving/startup_profiler.py`, `serving/feature_state.py`, `serving/blazing.py` |
+| 91 | 64.0.0 | Sub-3s TTFT (blazing default) + 70B loader | `server.py`, `cli.py`, `catalog.py`, `serving/blazing.py` |
+| 92 | 65.0.0 | Pre-compress pipeline + HF batch upload | `catalog.py`, `dev/scripts/upload_to_hub.py`, `.github/workflows/model_upload.yml` |
+| 93 | 66.0.0 | macOS SquishBar: model picker, progress, hotkey | `apps/macos/SquishBar/Sources/SquishBar/SquishEngine.swift`, `SquishMenuView.swift`, `Makefile` |
+| 94 | 67.0.0 | Cross-platform support review | `platform/detector.py`, `platform/platform_router.py`, `cli.py`, `README.md` |
+| 95 | 68.0.0 | README final audit + public release | `README.md`, `MODULES.md`, `cli.py`, `squish/__init__.py` |
+
+---
+
+## Wave 85 — CLI Color Dedup + README Accuracy (v58.0.0)
+
+Consolidated three duplicate terminal palette implementations into a single
+`squish/_term.py` source of truth.  `cli.py` and `server.py` now import from
+`_term` instead of carrying their own copies.  Fixed hardcoded `localhost:11434`
+port in `api/v1_router.py` default URL.
+
+**Key changes:**
+- `squish/cli.py`: removed local `_C`/`_CTerminal` classes; import from `squish._term`
+- `squish/server.py`: removed duplicate `_gradient()`, `_LOGO_GRAD`, local `_C`
+- `squish/api/v1_router.py`: default `server_url` reads `SQUISH_SERVER_URL` env or `localhost:11435`
+
+---
+
+## Wave 86 — Observability: Profiler + `squish trace` (v59.0.0)
+
+Wired `trace_span` into hot paths and instantiated `ProductionProfiler` at
+server start.  Added `GET /v1/obs-report` endpoint and `squish trace` CLI
+command with remediation hints.
+
+**New file:** `squish/serving/obs_report.py` — `detect_bottlenecks()`,
+`generate_report()`, `_REMEDIATION_HINTS` dict.
+
+---
+
+## Wave 87 — Agent Tool Execution Fix (v60.0.0)
+
+Fixed truncated `<tool_call>` tag parsing (Strategy 0.5 added before existing
+strategies), normalized VSCode tool names via `agent/tool_name_map.py`, fixed
+30-second timeout in `_toolRunTerminal`, and added agent mode toggle to Web UI.
+
+**New file:** `squish/agent/tool_name_map.py` — `VSCODE_TO_BACKEND` dict,
+`normalize_for_backend()`, `normalize_for_client()`.
+
+---
+
+## Wave 88 — Drop-in Compat: Ollama + LocalAI (v61.0.0)
+
+Implemented `/api/pull` streaming, `/api/ps`, `/api/version` (dynamic), and
+other previously-stubbed Ollama endpoints.  Added LocalAI compatibility routes
+(`GET /`, `GET /v1/version`, `GET /readyz`).  Added `squish compat` command
+printing client configuration snippets.
+
+**New files:** `squish/serving/localai_compat.py`, `squish/serving/backend_router.py`
+
+---
+
+## Wave 89 — Local Model Scanner + URI Schemes (v62.0.0)
+
+`LocalModelScanner` scans Squish, Ollama, and LM Studio model directories.
+`squish models` shows an "External models detected" section.  `squish pull`
+accepts `ollama:` and `hf:` URI prefixes.  `squish import` added as new command.
+
+**New file:** `squish/serving/local_model_scanner.py` — `LocalModel` dataclass,
+`scan_squish()`, `scan_ollama()`, `scan_lm_studio()`, `find_all()`.
+
+---
+
+## Wave 90 — Lean Startup Profiler (v63.0.0)
+
+`StartupTimer` context manager + `StartupReport` with `slowest()` / `to_dict()`,
+enabled by `SQUISH_TRACE_STARTUP=1`.  `FeatureState` dataclass centralises all
+`_xxx = None` server globals.  `BlazingPreset` / `auto_blazing_eligible` moved
+to `serving/blazing.py`.
+
+**New files:** `squish/serving/startup_profiler.py`, `squish/serving/feature_state.py`,
+`squish/serving/blazing.py`
+
+---
+
+## Wave 91 — Sub-3s TTFT + 70B Loader (v64.0.0)
+
+Blazing mode auto-activates on M3/M4/M5 with ≥16 GB RAM (pass `--no-blazing`
+to disable).  `cmd_run` auto-selects INT2/INT3 based on available RAM vs
+model size.  `_recommend_model()` priority order fixed (was recommending llama3.3:70b
+on 64+ GB machines).  `llama3.3:70b` catalog entry added with `squish_repo`.
+
+---
+
+## Wave 92 — Pre-Compress Pipeline + HF Batch Upload (v65.0.0)
+
+`dev/scripts/upload_to_hub.py` gained `--all-missing`, `--batch-file`, `--int2`,
+`--force`, `--org` flags.  `catalog.py` `squish_repo` backfilled for 5 models.
+GitHub Actions `model_upload.yml` workflow added for CI-triggered uploads.
+
+---
+
+## Wave 93 — macOS SquishBar Polish (v66.0.0)
+
+SquishBar gained: model picker with active-model checkmark (`switchModel()`),
+"Pull Model…" button with live compression progress bar, global hotkey (`⌘⌥S`
+default, configurable in Settings…), and `Makefile` `release` + `dmg` targets.
+New `docs/squishbar.md` reference page.
+
+---
+
+## Wave 94 — Cross-Platform Support (v67.0.0)
+
+README title, badge, and Requirements section updated for multi-platform.
+`cmd_setup()` no longer calls `sys.exit(1)` on non-Apple platforms; instead
+detects backend via `get_inference_backend(detect_platform())` and prints
+guidance.  `platform/` module verified with `is_apple_silicon`, `is_cuda`,
+`name`, `platform_name`, and `get_inference_backend()` all confirmed present.
+
+---
+
+## Wave 95 — Final Public Release Audit (v68.0.0)
+
+`_CURRENT_WAVE = 95` constant added to `cli.py`.  `cmd_version` / `squish version`
+subcommand prints version + wave from `importlib.metadata`.  README model count
+updated to 40.  MODULES.md backfilled with Waves 85–95 summary.
+CHANGELOG fully populated through v68.0.0.
+
+---
+
+---
+
+# Historical Reference: Wave 27+28 (v10)
 
 ## Wave 27 — Server Wiring Quick Wins
 
@@ -213,3 +346,78 @@ python dev/benchmarks/bench_wave27_28.py [--runs N] [--vocab N] [--output path]
 
 Results saved to `dev/results/wave27_28_bench.json`.
 Reference table: [docs/benchmark_wave27_28.md](docs/benchmark_wave27_28.md).
+
+---
+
+## Waves 85–95 — Tooling + Platform Maturity (v58–v68)
+
+| Wave | Version | Theme | New Files |
+|------|---------|-------|-----------|
+| 85 | 58.0.0 | CLI color dedup + README accuracy | — |
+| 86 | 59.0.0 | Observability: profiler wiring + `squish trace` | `squish/serving/obs_report.py` |
+| 87 | 60.0.0 | Agent tool execution fix | `squish/agent/tool_name_map.py` |
+| 88 | 61.0.0 | Ollama/LocalAI compat gaps | `squish/serving/localai_compat.py`, `squish/serving/backend_router.py` |
+| 89 | 62.0.0 | Local model scanner + `squish pull` URI schemes | `squish/serving/local_model_scanner.py` |
+| 90 | 63.0.0 | Startup profiler + core module extraction | `squish/serving/startup_profiler.py`, `squish/serving/feature_state.py`, `squish/serving/blazing.py`, `dev/scripts/import_scan.py` |
+| 91 | 64.0.0 | Sub-3s TTFT + 70B INT2 loader | — |
+| 92 | 65.0.0 | Pre-compress pipeline + HF batch upload | — |
+| 93 | 66.0.0 | macOS SquishBar polish | `docs/squishbar.md` |
+| 94 | 67.0.0 | Cross-platform support review | — |
+| 95 | 68.0.0 | README final audit + public release | — |
+
+### Wave 90 — Key New Modules
+
+#### `squish/serving/startup_profiler.py`
+Phase-level startup timing via `StartupTimer` context manager and `StartupReport`.
+`SQUISH_TRACE_STARTUP=1` enables tracing; result accessible at `GET /v1/startup-profile`.
+
+#### `squish/serving/feature_state.py`
+`FeatureState` dataclass centralises ~90 previously scattered `_xxx = None` globals
+from `server.py` into a typed, importable structure.
+
+#### `squish/serving/blazing.py`
+M3/M4/M5 auto-blazing eligibility (`auto_blazing_eligible`), `BlazingPreset` dataclass,
+and `get_preset(chip, ram_gb)` which selects INT4 for ≥ 24 GB RAM configs.
+
+#### `squish/serving/local_model_scanner.py` (Wave 89)
+`LocalModelScanner` discovers Squish, Ollama, and LM Studio models from standard
+local directories and exposes them through `/api/tags` for OpenWebUI compatibility.
+
+### Wave 90 — Import Audit Script
+
+#### `dev/scripts/import_scan.py`
+AST-based import dependency analyzer. Report A: orphan modules (zero inbound imports).
+Report B: server.py globals assigned only `None` (dead feature flags).
+
+### Wave 91 — Performance
+
+- `--no-blazing` flag disables auto-activation on M3+ for users preferring
+  full context window over sub-3s TTFT.
+- RAM-aware quant auto-selection: INT2 when model > 75% RAM, INT3 when > 55%.
+- `llama3.3:70b` wired with INT2 catalog entry and `"impossible"` tag.
+
+### Wave 94 — Platform Properties
+
+`PlatformInfo` (frozen dataclass in `squish/platform/detector.py`) now exposes:
+- `.is_apple_silicon` — True when `kind == MACOS_APPLE_SILICON`
+- `.is_cuda` — alias for `has_cuda`
+- `.name` — lower-case kind string (e.g. `"macos_apple_silicon"`)
+- `.platform_name` — human-readable (e.g. `"Apple Silicon (M3 Pro)"`)
+
+`detect_platform()` module-level convenience function added.
+
+`get_inference_backend(platform)` in `platform_router.py` returns
+`"mlx" | "torch_cuda" | "torch_rocm" | "torch_cpu"`.
+
+### Test Coverage — Waves 85–95
+
+| Test file | Tests |
+|-----------|------:|
+| `tests/test_wave89_local_model_scan.py` | 36 |
+| `tests/test_wave90_startup_lean.py` | 33 |
+| `tests/test_wave91_performance.py` | 32 |
+| `tests/test_wave92_presquish.py` | 25 |
+| `tests/test_wave93_squishbar.py` | 37 |
+| `tests/test_wave94_cross_platform.py` | 29 |
+| `tests/test_wave95_release.py` | TBD |
+

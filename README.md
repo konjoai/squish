@@ -90,7 +90,7 @@ squish run                  # auto-detects RAM, pulls + starts best model for yo
 Or pick a specific model:
 
 ```bash
-squish catalog              # browse 34 available models
+squish catalog              # browse 40 available models
 squish pull qwen3:8b        # download pre-squished weights from HuggingFace (~4.4 GB)
 squish run qwen3:8b         # start server on :11435
 ```
@@ -129,7 +129,7 @@ squish setup                # detects your RAM, recommends a model, pulls + star
 - **Web chat UI** — built-in at `/chat`; dark-themed, streaming, offline, multi-session history
 - **Grammar-enforced tool calling** — XGrammar FSM prevents malformed JSON in tool use; works with any OpenAI `tools` client
 - **Agent preset** — `--agent` (auto-enabled on Apple Silicon) wires AgentKV INT2 + speculative decode + semantic cache
-- **34 ready-to-use models** — pre-squished weights on HuggingFace skip the compression step; `squish pull qwen3:8b` finishes in minutes
+- **40 ready-to-use models** — pre-squished weights on HuggingFace skip the compression step; `squish pull qwen3:8b` finishes in minutes
 
 See [MODULES.md](MODULES.md) for the full flag reference and stability tiers (Stable / Beta / Experimental).
 
