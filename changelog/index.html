@@ -836,6 +836,129 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#7100-wave-98-2026-03-25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [71.0.0] — Wave 98 — 2026-03-25
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[71.0.0] — Wave 98 — 2026-03-25">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#feature-multiplier-stack-ffn-sparsity-wiring-eagle-auto-load-fix-gen-masks-cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature — Multiplier Stack: FFN Sparsity Wiring + EAGLE Auto-Load Fix + gen-masks CLI
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Feature — Multiplier Stack: FFN Sparsity Wiring + EAGLE Auto-Load Fix + gen-masks CLI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-ffn-sparsity-injection-at-inference-time-squishkernelsffn_mask_patchpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. FFN Sparsity Injection at Inference Time (squish/kernels/ffn_mask_patch.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-eagle-head-auto-detection-fix-squishruntimeauto_profilepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. EAGLE Head Auto-Detection Fix (squish/runtime/auto_profile.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-squish-gen-masks-cli-command-squishclipy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. squish gen-masks CLI Command (squish/cli.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7000-wave-97-2026-03-25" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [70.0.0] — Wave 97 — 2026-03-25
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[70.0.0] — Wave 97 — 2026-03-25">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fix-inference-stability-event-loop-int2-coherence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fix — Inference Stability: Event Loop + INT2 Coherence
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Fix — Inference Stability: Event Loop + INT2 Coherence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-server-offline-during-generation-fixed-squishserverpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Server "offline" during generation — fixed (squish/server.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-int2-auto-selection-causing-incoherent-output-fixed-squishclipy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. INT2 auto-selection causing incoherent output — fixed (squish/cli.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#6900-wave-96-2026-03-25" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4938,6 +5061,123 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="7100-wave-98-2026-03-25">[71.0.0] — Wave 98 — 2026-03-25<a class="headerlink" href="#7100-wave-98-2026-03-25" title="Permanent link">&para;</a></h2>
+<h3 id="feature-multiplier-stack-ffn-sparsity-wiring-eagle-auto-load-fix-gen-masks-cli">Feature — Multiplier Stack: FFN Sparsity Wiring + EAGLE Auto-Load Fix + gen-masks CLI<a class="headerlink" href="#feature-multiplier-stack-ffn-sparsity-wiring-eagle-auto-load-fix-gen-masks-cli" title="Permanent link">&para;</a></h3>
+<p>Wave 98 connects three previously dormant optimization ingredients into the live
+inference path.  The theoretical throughput ceiling for 8B INT2+sparsity+EAGLE
+on M3 (175–205 tok/s) is now accessible — the gap was a set of disconnects
+between research modules and production inference code. This wave wires them in.</p>
+<h4 id="1-ffn-sparsity-injection-at-inference-time-squishkernelsffn_mask_patchpy">1. FFN Sparsity Injection at Inference Time (<code>squish/kernels/ffn_mask_patch.py</code>)<a class="headerlink" href="#1-ffn-sparsity-injection-at-inference-time-squishkernelsffn_mask_patchpy" title="Permanent link">&para;</a></h4>
+<p><strong>Root cause</strong>: Wave 82b loaded <code>sparse_masks.npz</code> into <code>_structured_sparsity</code>
+global at server startup but never applied the masks to the model.  The masks
+sat in RAM unused on every single forward pass.</p>
+<p><strong>Fix</strong>: New <code>MaskedFFN</code> wrapper class and <code>patch_model_ffn_sparsity()</code> function
+in <code>squish/kernels/ffn_mask_patch.py</code>.  Each <code>model.layers[i].mlp</code> that has a
+corresponding mask is replaced with a <code>MaskedFFN</code> wrapper that calls the
+original MLP then multiplies the output by a stored binary MLX array.</p>
+<ul>
+<li><code>MaskedFFN.__call__(x)</code>: <code>inner(x) * mask</code> — single broadcastable multiply</li>
+<li><code>patch_model_ffn_sparsity(model, sparsity)</code> — in-place; returns count of patched layers</li>
+<li><code>unpatch_model_ffn_sparsity(model)</code> — reverses the patch (for testing / hot-reload)</li>
+<li>Handles both <code>model.layers</code> and <code>model.model.layers</code> layouts</li>
+<li>Idempotent: double-patching a layer is a no-op</li>
+<li><code>server.py</code> Wave 98 block: calls <code>patch_model_ffn_sparsity</code> immediately after
+  Wave 82b loads the sparsity object, so masks are active from the first token</li>
+</ul>
+<h4 id="2-eagle-head-auto-detection-fix-squishruntimeauto_profilepy">2. EAGLE Head Auto-Detection Fix (<code>squish/runtime/auto_profile.py</code>)<a class="headerlink" href="#2-eagle-head-auto-detection-fix-squishruntimeauto_profilepy" title="Permanent link">&para;</a></h4>
+<p><strong>Root cause</strong>: <code>squish pull-head qwen3:8b</code> saves the head to
+<code>~/.squish/eagle-heads/eagle3-qwen3-instruct-8b/</code>.  <code>ModelCapabilityDetector._detect_eagle3()</code>
+only searched 4 paths adjacent to the model directory — it never looked in
+<code>~/.squish/eagle-heads/</code>.  Result: every <code>pull-head</code> user had a head on disk
+that was silently never loaded.</p>
+<p><strong>Fix</strong>: <code>_detect_eagle3</code> now performs a two-pass search:</p>
+<ul>
+<li><strong>Pass 1</strong> (unchanged): <code>comp_path</code>, <code>model_path</code>, <code>model_path.parent</code>, <code>comp_path.parent</code></li>
+<li><strong>Pass 2</strong> (new): iterates every subdirectory of <code>~/.squish/eagle-heads/</code> that
+  contains a valid EAGLE head file, scores each by word-overlap with the model
+  path (noise tokens "eagle3", "instruct" stripped), and picks the highest-scoring
+  slug directory.</li>
+</ul>
+<p>Adjacent directories still take priority over slug directories in Pass 1.
+Added <code>_eagle3_head_found()</code> (pure function, testable) and <code>_model_slug_score()</code>
+(scoring helper) as <code>@staticmethod</code> methods on <code>ModelCapabilityDetector</code>.</p>
+<h4 id="3-squish-gen-masks-cli-command-squishclipy">3. <code>squish gen-masks</code> CLI Command (<code>squish/cli.py</code>)<a class="headerlink" href="#3-squish-gen-masks-cli-command-squishclipy" title="Permanent link">&para;</a></h4>
+<p><strong>Root cause</strong>: The <code>SparsityProfiler</code> calibration pipeline existed in
+<code>squish/compress/sparsity_profiler.py</code> but was never exposed as a user-facing
+command.  Users had no way to generate <code>sparse_masks.npz</code> without writing
+custom Python.</p>
+<p><strong>Fix</strong>: New <code>cmd_gen_masks()</code> function and <code>squish gen-masks</code> subparser.</p>
+<ul>
+<li>Loads the compressed model via <code>mlx_lm.load()</code></li>
+<li>Installs per-layer <code>_CaptureMLP</code> hooks (same <code>MaskedFFN</code>-style pattern)
+  that record MLP output activations during calibration</li>
+<li>Runs configurable number of calibration prompts (default: 20 built-in)</li>
+<li>Computes per-neuron firing frequency: <code>mean(|output| &gt; threshold)</code></li>
+<li>Binary mask: neurons firing on ≥ threshold fraction of samples → kept (1.0)</li>
+<li>Saves <code>sparse_masks.npz</code> to the compressed directory</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>squish gen-masks qwen3:8b                          # default 20 prompts
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>squish gen-masks qwen3:8b --samples 500            # higher quality masks
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>squish gen-masks ./my-model-compressed --threshold 0.02
+</code></pre></div>
+<p>After running <code>gen-masks</code>, the next <code>squish serve</code> auto-loads the masks and
+calls <code>patch_model_ffn_sparsity</code> at startup — no flags required.</p>
+<hr />
+<h2 id="7000-wave-97-2026-03-25">[70.0.0] — Wave 97 — 2026-03-25<a class="headerlink" href="#7000-wave-97-2026-03-25" title="Permanent link">&para;</a></h2>
+<h3 id="fix-inference-stability-event-loop-int2-coherence">Fix — Inference Stability: Event Loop + INT2 Coherence<a class="headerlink" href="#fix-inference-stability-event-loop-int2-coherence" title="Permanent link">&para;</a></h3>
+<p>Two production bugs fixed that manifested during active use.</p>
+<h4 id="1-server-offline-during-generation-fixed-squishserverpy">1. Server "offline" during generation — fixed (<code>squish/server.py</code>)<a class="headerlink" href="#1-server-offline-during-generation-fixed-squishserverpy" title="Permanent link">&para;</a></h4>
+<p><strong>Root cause</strong>: MLX's <code>.generate()</code> is a synchronous Python generator. Every
+<code>next()</code> call blocks for the full forward pass (~50–200 ms per token, 2–5 s for
+prefill on large context). This blocked the uvicorn async event loop entirely,
+so the <code>/health</code> endpoint could not respond during generation.  The VSCode
+MonitorPanel polls every 2 s and would show "server offline" for the duration of
+each generation.</p>
+<p><strong>Fix</strong>: A module-level <code>ThreadPoolExecutor(max_workers=1)</code> (<code>_inference_executor</code>)
+offloads every synchronous <code>next(gen)</code> call to a background thread via
+<code>loop.run_in_executor()</code>.  Between each token the event loop is free to handle
+health checks, metrics, and SSE flushes.  <code>max_workers=1</code> is intentional — MLX
+is not thread-safe, so no concurrent forward passes are ever scheduled.</p>
+<ul>
+<li><strong>Streaming path</strong> (<code>event_stream()</code> async generator): replaced the
+  <code>for tok_text, finish in gen:</code> loop + <code>await asyncio.sleep(0)</code> with a
+  <code>while True: item = await loop.run_in_executor(_inference_executor, _iter_next, gen)</code>
+  loop. <code>_iter_next</code> returns the <code>_INFERENCE_STOP</code> sentinel instead of raising
+  <code>StopIteration</code> (futures cannot propagate <code>StopIteration</code>).</li>
+<li><strong>Non-streaming path</strong> (<code>else</code> branch of <code>chat_completions</code>): the entire
+  generation is collected in one <code>run_in_executor</code> call via <code>_collect_tokens_sync</code>.</li>
+<li><strong>No latency regression</strong>: the per-token overhead of <code>run_in_executor</code> is
+  ~0.1 ms — negligible compared to the 50–200 ms forward pass.</li>
+</ul>
+<p>New helpers added at module level in <code>server.py</code>:
+- <code>_inference_executor</code> — <code>ThreadPoolExecutor(max_workers=1)</code>
+- <code>_INFERENCE_STOP</code> — unique sentinel object
+- <code>_iter_next(it)</code> — single-step iterator advance, returns sentinel on exhaustion
+- <code>_collect_tokens_sync(gen)</code> — drains a token generator to a list</p>
+<h4 id="2-int2-auto-selection-causing-incoherent-output-fixed-squishclipy">2. INT2 auto-selection causing incoherent output — fixed (<code>squish/cli.py</code>)<a class="headerlink" href="#2-int2-auto-selection-causing-incoherent-output-fixed-squishclipy" title="Permanent link">&para;</a></h4>
+<p><strong>Root cause</strong>: The RAM-aware auto-quant block in <code>cmd_run</code> would silently
+select INT2 when <code>squished_size_gb &gt; ram_gb × 0.75</code>, with no floor on parameter
+count.  INT2 quantization (4 discrete levels per weight group) is only viable at
+≥ 30B parameters — below that, the weight matrices are too low-rank to survive
+2-bit compression and the output becomes completely incoherent (repetition,
+hallucinated links, garbled text).</p>
+<p><strong>Fix</strong>: INT2 auto-selection is now gated on <code>params_b &gt;= 30.0</code>.  The <code>params</code>
+string from <code>CatalogEntry</code> (e.g. <code>"8B"</code>, <code>"14B"</code>, <code>"70B"</code>) is parsed with a
+regex.  For models below the threshold that exceed the RAM budget, a clear
+warning is printed and INT4 is used instead (may swap on tight RAM but output
+stays coherent).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a># Before (broken):
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>if _sq_gb &gt; _ram_gb * 0.75:
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    args.int2 = True   # ← silently destroys 8B models
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a># After (fixed):
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>if _sq_gb &gt; _ram_gb * 0.75:
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    if _params_b &gt;= 30.0:
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        args.int2 = True
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    else:
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>        print(&quot;⚠  INT2 unsafe below 30B — running INT4&quot;)
+</code></pre></div>
+<hr />
 <h2 id="6900-wave-96-2026-03-25">[69.0.0] — Wave 96 — 2026-03-25<a class="headerlink" href="#6900-wave-96-2026-03-25" title="Permanent link">&para;</a></h2>
 <h3 id="feat-lm-studio-model-auto-detection">Feat — LM Studio Model Auto-Detection<a class="headerlink" href="#feat-lm-studio-model-auto-detection" title="Permanent link">&para;</a></h3>
 <p>Zero-configuration detection of models installed and running via
@@ -6245,11 +6485,11 @@ Metal GPU bandwidth and reducing power draw by 65–80% versus the GPU path.</p>
 </ul>
 <h4 id="squizd-header-bit-6-ane_coreml-appendix-block"><code>.squizd</code> header bit 6 — ANE_COREML appendix block<a class="headerlink" href="#squizd-header-bit-6-ane_coreml-appendix-block" title="Permanent link">&para;</a></h4>
 <p>A new optional appendix block is defined for <code>.squizd</code> files:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>+------------------+
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>| b&quot;ANML&quot;  4 bytes |  tag constant (SQUIZD_APPENDIX_TAG)
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>| payload_len 8 B  |  uint64 little-endian — byte length of JSON manifest
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>| JSON manifest    |  UTF-8 encoded; keys: header_bit, chunk_count, chunks[]
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>+------------------+
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>+------------------+
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>| b&quot;ANML&quot;  4 bytes |  tag constant (SQUIZD_APPENDIX_TAG)
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>| payload_len 8 B  |  uint64 little-endian — byte length of JSON manifest
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>| JSON manifest    |  UTF-8 encoded; keys: header_bit, chunk_count, chunks[]
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>+------------------+
 </code></pre></div>
 <p>Header bit 6 (<code>SQUIZD_ANE_COREML_BIT = 6</code>) flags the presence of this block.
 <code>CoreMLLoader.has_ane_appendix()</code> scans the last 4 KB of the file to detect it efficiently.</p>
