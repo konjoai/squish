@@ -18,6 +18,7 @@ from __future__ import annotations
 import io
 import sys
 
+import squish._term as term
 import squish.server as srv
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ def _capture_stderr(fn, *args, **kwargs) -> str:
 class TestGradient:
 
     def test_true_color_returns_escape_codes(self, monkeypatch):
-        monkeypatch.setattr(srv, "_TRUE_COLOR", True)
+        monkeypatch.setattr(term, "_TC", True)
         result = srv._gradient("Hi", [(255, 0, 0), (0, 0, 255)])
         assert "\033[38;2;" in result
         # Each character should be present somewhere in the result
@@ -57,22 +58,22 @@ class TestGradient:
         assert "i" in result
 
     def test_false_color_returns_text_unchanged(self, monkeypatch):
-        monkeypatch.setattr(srv, "_TRUE_COLOR", False)
+        monkeypatch.setattr(term, "_TC", False)
         result = srv._gradient("Hi", [(255, 0, 0), (0, 0, 255)])
         assert result == "Hi"
 
     def test_empty_text_returns_empty(self, monkeypatch):
-        monkeypatch.setattr(srv, "_TRUE_COLOR", True)
+        monkeypatch.setattr(term, "_TC", True)
         result = srv._gradient("", [(255, 0, 0), (0, 0, 255)])
         assert result == ""
 
     def test_single_char(self, monkeypatch):
-        monkeypatch.setattr(srv, "_TRUE_COLOR", True)
+        monkeypatch.setattr(term, "_TC", True)
         result = srv._gradient("X", [(0, 128, 255), (255, 128, 0)])
         assert "X" in result
 
     def test_multi_stop_gradient(self, monkeypatch):
-        monkeypatch.setattr(srv, "_TRUE_COLOR", True)
+        monkeypatch.setattr(term, "_TC", True)
         stops = [(88, 28, 135), (236, 72, 153), (34, 211, 238)]
         result = srv._gradient("SQUISH", stops)
         assert len(result) > len("SQUISH")
@@ -137,7 +138,7 @@ class TestPrintBanner:
     def test_tty_path_prints_ascii_art(self, monkeypatch):
         """When _TTY is True the SQUISH ASCII-art block is emitted."""
         monkeypatch.setattr(srv, "_TTY", True)
-        monkeypatch.setattr(srv, "_TRUE_COLOR", False)   # keep output plain
+        monkeypatch.setattr(term, "_TC", False)   # keep output plain
         output = _capture_stdout(srv._print_banner)
         # Logo lines or character from banner
         assert "SQUISH" in output or "squish" in output.lower() or "◕" in output or "═" in output
