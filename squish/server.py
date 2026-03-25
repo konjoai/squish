@@ -2711,6 +2711,14 @@ async def chat_completions(  # pragma: no cover
             )
             raw_calls = parse_tool_calls(full_text)
             if raw_calls is not None:
+                # Normalize tool names for the client (e.g. squish_create_file → create_file)
+                try:
+                    from squish.agent.tool_name_map import normalize_for_client as _norm_tc  # noqa: PLC0415
+                    for _tc in raw_calls:
+                        if "name" in _tc:
+                            _tc["name"] = _norm_tc(_tc["name"])
+                except ImportError:
+                    pass
                 if _client_stream:
                     # Client requested streaming: replay tool call as SSE deltas
                     return StreamingResponse(

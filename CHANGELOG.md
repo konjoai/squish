@@ -5,6 +5,33 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [60.0.0] — Wave 87 — 2026-03-25
+
+### Fix — VSCode/Web UI Agent Tool Execution
+
+#### 1. Strategy 0.5 — Truncated `<tool_call>` Parsing (`tool_calling.py`)
+
+- **Root cause**: Qwen3's stop string consumes `</tool_call>`, leaving only
+  `<tool_call>{...}` in the output. Strategy 0 requires the closing tag and
+  misses these outputs entirely, causing raw JSON to appear in chat.
+- **Fix**: Added `_OPEN_TOOL_CALL_TAG` regex and **Strategy 0.5** between the
+  think-block stripping and Strategy 0. Parses the trailing JSON after an
+  unclosed `<tool_call>` opener.
+
+#### 2. `"input"` Key Support (`tool_calling.py`)
+
+- `_is_tool_call()` now accepts `"input"` as well as `"arguments"` key.
+- `_normalise()` renames `"input"` → `"arguments"` in-place for downstream
+  code compatibility.
+
+#### 3. Tool Name Normalization (`squish/agent/tool_name_map.py` — new)
+
+- Bidirectional mapping: VSCode unprefixed → backend `squish_` prefixed.
+- `server.py` calls `normalize_for_client()` on each tool name before building
+  the `tool_calls` response so VSCode clients see unprefixed names.
+
+---
+
 ## [59.0.0] — Wave 86 — 2026-03-25
 
 ### Observability — Profiler Wiring + `squish trace`

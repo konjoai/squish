@@ -618,9 +618,13 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         }
     }
 
-    private _parseToolArgs(argsJson: string): Record<string, unknown> {
+    private _parseToolArgs(argsJson: string | Record<string, unknown>): Record<string, unknown> {
+        // Handle the case where argsJson is already a parsed object (e.g. from streaming accumulator)
+        if (typeof argsJson === 'object' && argsJson !== null) {
+            return argsJson as Record<string, unknown>;
+        }
         try {
-            return JSON.parse(argsJson) as Record<string, unknown>;
+            return JSON.parse(argsJson as string) as Record<string, unknown>;
         } catch {
             return {};
         }
@@ -667,7 +671,20 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                 ? ['/c', `${command} > "${tmpFile}" 2>&1`]
                 : ['-c', `${command} > "${tmpFile}" 2>&1`];
             const child = spawn(shell, shellArgs, { shell: false });
+            // 30-second hard timeout — kill the child and return whatever was written
+            const timer = setTimeout(() => {
+                child.kill();
+                try {
+                    const partial = fs.readFileSync(tmpFile, 'utf8');
+                    resolve(`[timeout after 30s]\n${partial}`);
+                } catch {
+                    resolve('[timeout after 30s — no output]');
+                } finally {
+                    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+                }
+            }, 30_000);
             child.on('close', () => {
+                clearTimeout(timer);
                 try {
                     resolve(fs.readFileSync(tmpFile, 'utf8'));
                 } catch {
@@ -676,7 +693,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                     try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
                 }
             });
-            child.on('error', (e: Error) => resolve(`Error: ${e.message}`));
+            child.on('error', (e: Error) => { clearTimeout(timer); resolve(`Error: ${e.message}`); });
         });
     }
 
