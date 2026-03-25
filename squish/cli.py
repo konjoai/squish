@@ -100,9 +100,11 @@ def _catalog_resolve(*args, **kwargs):
     return _resolve(*args, **kwargs)
 
 
-def _catalog_suggest(*args, **kwargs):
+def _catalog_suggest(query: str, max_results: int = 3):
+    """Return up to *max_results* fuzzy catalog matches for *query*."""
     from squish.catalog import suggest as _suggest
-    return _suggest(*args, **kwargs)
+    return _suggest(query, max_results=max_results)
+
 
 
 # ── Terminal colours ─────────────────────────────────────────────────────────
@@ -360,33 +362,29 @@ def _open_browser_when_ready(url: str, port: int, timeout_s: int = 30) -> None:
     Spawn a detached subprocess that polls ``http://127.0.0.1:<port>/health``
     until it returns HTTP 200, then opens *url* in the default browser.
 
-    Uses a fully detached subprocess (``start_new_session=True``) rather than
-    a daemon thread so it survives the ``os.execv()`` call that immediately
-    replaces this process with the server.  A daemon thread would be silently
-    killed by execv before it could poll the health endpoint.
+    Uses ``subprocess.Popen`` with ``start_new_session=True`` instead of a
+    daemon thread so the watcher process survives ``os.execv()`` (which is
+    called immediately after this function returns to replace the current
+    process with the uvicorn server).
     """
     import subprocess
 
-    # Inline Python script — runs in a completely independent process.
-    script = (
-        "import time, urllib.request, webbrowser\n"
-        f"deadline = time.time() + {timeout_s}\n"
-        f"health_url = 'http://127.0.0.1:{port}/health'\n"
+    poll_script = (
+        "import time, urllib.request, webbrowser; "
+        f"url={url!r}; health='http://127.0.0.1:{port}/health'; deadline=time.time()+{timeout_s}\n"
         "while time.time() < deadline:\n"
         "    try:\n"
-        "        with urllib.request.urlopen(health_url, timeout=1.0) as r:\n"
-        "            if r.status == 200:\n"
-        f"                webbrowser.open({url!r})\n"
-        "                break\n"
+        "        r = urllib.request.urlopen(health, timeout=0.5)\n"
+        "        if r.status == 200:\n"
+        "            webbrowser.open(url)\n"
+        "            break\n"
         "    except Exception:\n"
         "        pass\n"
         "    time.sleep(0.5)\n"
     )
     subprocess.Popen(
-        [sys.executable, "-c", script],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,  # detach — survives os.execv() in parent
+        [sys.executable, "-c", poll_script],
+        start_new_session=True,
     )
 
 
@@ -986,8 +984,6 @@ def cmd_run(args):  # pragma: no cover
         )
 
     _mode_label = "stock (no optimizations)" if getattr(args, "stock", False) else (
-        "blazing + agent (sub-3s TTFT)" if getattr(args, "blazing", False) and getattr(args, "agent", False) else
-        "blazing (sub-3s TTFT, INT2)" if getattr(args, "blazing", False) else
         "agent + all optimizations" if getattr(args, "agent", False)
         else "squish (all optimizations)"
     )
@@ -1035,8 +1031,6 @@ def cmd_run(args):  # pragma: no cover
         cmd += ["--all-optimizations"]
     if getattr(args, "agent", False):
         cmd += ["--agent"]
-    if getattr(args, "blazing", False):
-        cmd += ["--blazing"]
     if getattr(args, "whatsapp", False):
         cmd += ["--whatsapp"]
     if getattr(args, "whatsapp_verify_token", ""):
@@ -2222,19 +2216,10 @@ def cmd_pull(args):  # pragma: no cover
     # Resolve first so we can print a clear error before any download starts
     entry = _catalog_resolve(name)
     if entry is None:
-        suggestions = _catalog_suggest(name)
-        if suggestions:
-            hint = ", ".join(e.id for e in suggestions[:3])
-            _die(
-                f"Unknown model: {name!r}\n"
-                f"Did you mean one of: {hint}?\n"
-                f"Run `squish catalog` to browse all available models."
-            )
-        else:
-            _die(
-                f"Unknown model: {name!r}\n"
-                f"Run `squish catalog` to browse available models."
-            )
+        _die(
+            f"Unknown model: {name!r}\n"
+            f"Run `squish catalog` to browse available models."
+        )
 
     quant_mode = (
         "int3" if getattr(args, "int3", False) else
@@ -3615,12 +3600,6 @@ Ollama drop-in:
                             "and auto-sizes context from available UMA memory.\n"
                             "Designed for 16 GB M-series running 7–14 B models in "
                             "long agent loops.")
-    # ── Wave 81: Blazing preset ────────────────────────────────────────────────
-    p_run.add_argument("--blazing", action="store_true", default=False,
-                       help="Blazing-mode preset: sub-3s TTFT for 7/8B models on M3 16GB. "
-                            "Enables INT2-KV, chunk=128, fast-gelu, kv<=4096, Metal=64MB. "
-                            "Requires an INT2/INT4 quantised model. "
-                            "Convert first: squish convert-model --blazing-m3")
     # ── Phase 14: MoE Expert Lookahead ──
     p_run.add_argument("--moe-lookahead", action="store_true", default=False,
                        help="[Experimental] Enable MoE expert lookahead router. "
@@ -3701,12 +3680,6 @@ Ollama drop-in:
                               "and auto-sizes context from available UMA memory.\n"
                               "Designed for 16 GB M-series running 7–14 B models in "
                               "long agent loops.")
-    # ── Wave 81: Blazing preset ────────────────────────────────────────────────
-    p_serve.add_argument("--blazing", action="store_true", default=False,
-                         help="Blazing-mode preset: sub-3s TTFT for 7/8B models on M3 16GB. "
-                              "Enables INT2-KV, chunk=128, fast-gelu, kv<=4096, Metal=64MB. "
-                              "Requires an INT2/INT4 quantised model. "
-                              "Convert first: squish convert-model --blazing-m3")
     # ── Phase 14: MoE Expert Lookahead ──
     p_serve.add_argument("--moe-lookahead", action="store_true", default=False,
                          help="[Experimental] Enable MoE expert lookahead router. "
@@ -4084,20 +4057,6 @@ Ollama drop-in:
             "the random/incoherent output seen with naive INT2 quantisation.\n"
             "Requires a local BF16 source directory (not a HuggingFace model ID).\n"
             "Adds 1-3 minutes to quantisation time depending on model size."
-        ),
-    )
-    p_convert.add_argument(
-        "--blazing-m3",
-        action="store_true",
-        default=False,
-        dest="blazing_m3",
-        help=(
-            "M3-16GB optimised quantisation preset (Wave 81).\n"
-            "Equivalent to: --ffn-bits 2 --attn-bits 4 --embed-bits 8 "
-            "--group-size 32 --hqq\n"
-            "Produces a ~2 GB 7B model that runs at ~50 tok/s on M3 16GB.\n"
-            "Then start the server with: squish serve --blazing\n"
-            "Individual flags (--ffn-bits, etc.) still override this preset."
         ),
     )
     p_convert.set_defaults(func=cmd_convert_model, _default_group_size=64)

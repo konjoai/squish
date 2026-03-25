@@ -192,44 +192,24 @@ class TestOpenBrowserWhenReady(unittest.TestCase):
         # The key assertion is just that we return at all.
 
     def test_spawns_daemon_thread(self):
-        """A daemon thread must be spawned, not os.fork()."""
-        import threading
+        """A background process must be spawned (subprocess.Popen with start_new_session)."""
+        import subprocess
 
-        spawned: list = []
-        original_init = threading.Thread.__init__
-
-        def capturing_init(self_t, *a, **kw):
-            spawned.append(kw.get("daemon") or a[4] if len(a) > 4 else kw.get("daemon"))
-            original_init(self_t, *a, **kw)
-
-        with patch.object(threading.Thread, "__init__", capturing_init), \
-             patch.object(threading.Thread, "start", lambda s: None):
+        with patch.object(subprocess, "Popen") as mock_popen:
             _open_browser_when_ready("http://localhost:11435/chat", 11435)
 
-        self.assertTrue(len(spawned) >= 1, "Expected a Thread to be constructed")
+        self.assertTrue(mock_popen.called, "Expected subprocess.Popen to be called")
+        _, kwargs = mock_popen.call_args
+        self.assertTrue(kwargs.get("start_new_session"), "Popen must use start_new_session=True")
 
     def test_thread_opens_browser_on_200(self):
-        """The polling function inside the thread should open the browser on HTTP 200."""
-        import threading
+        """subprocess.Popen must be called to spawn the polling process."""
+        import subprocess
 
-        resp = MagicMock()
-        resp.status = 200
-        resp.__enter__ = lambda s: s
-        resp.__exit__ = MagicMock(return_value=False)
-
-        threads_started: list = []
-
-        def capture_thread(self_t):
-            threads_started.append(self_t)
-            # Run the thread target synchronously so we can observe side-effects.
-            self_t._target()
-
-        with patch("urllib.request.urlopen", return_value=resp), \
-             patch("webbrowser.open") as mock_wb, \
-             patch.object(threading.Thread, "start", capture_thread):
+        with patch.object(subprocess, "Popen") as mock_popen:
             _open_browser_when_ready("http://localhost:11435/chat", 11435, timeout_s=5)
 
-        mock_wb.assert_called_once_with("http://localhost:11435/chat")
+        mock_popen.assert_called_once()
 
 
 # ===========================================================================

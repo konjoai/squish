@@ -5309,6 +5309,23 @@ Examples:
     except Exception as _cd_err:
         _info("chip-detector", f"detection unavailable ({_cd_err})")
 
+    # ── Wave 79: Auto-detect optimal settings from hardware + model files ─────
+    if not getattr(args, "no_optimize", False):
+        try:
+            from squish.runtime.auto_profile import ModelCapabilityDetector as _MCD
+            from squish.hardware.chip_detector import ChipDetector as _ChipDetW79
+            _ram_gb_w79 = _ChipDetW79.detect_ram_gb()
+            _auto_profile_inst = _MCD().detect(
+                model_dir      = getattr(args, "model_dir", "") or getattr(args, "mlx_model_dir", ""),
+                compressed_dir = getattr(args, "compressed_dir", ""),
+                chip_profile   = _chip_profile,
+                ram_gb         = _ram_gb_w79,
+            )
+            _auto_profile_inst.apply_defaults(args)
+            globals()["_auto_profile"] = _auto_profile_inst
+        except Exception:  # noqa: BLE001
+            pass  # never block startup on auto-profile failure
+
     global _kvtc_manager
     if getattr(args, "kvtc", False) and _state.model is not None:
         try:
@@ -7281,8 +7298,16 @@ Examples:
             system_prompt    = "",
         )
 
-    # ── Wave 75: optimization module status summary ──────────────────────────
-    _print_optimization_status()
+    # ── Wave 75/79: optimization status — compact auto-profile or full table ──
+    _auto_prof = globals().get("_auto_profile")
+    if _auto_prof is not None and _state.model is not None:
+        # Wave 79: single-line status when auto-profile is active
+        _model_label = getattr(_state, "model_name", "") or "model"
+        _load_s = getattr(_state, "load_time_s", 0.0) or 0.0
+        _status = _auto_prof.status_line(_model_label, _load_s)
+        _ok(_status)
+    else:
+        _print_optimization_status()
 
     # ── Wave 76: Initialise agent tool registry ───────────────────────────────
     global _agent_registry

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -122,34 +123,6 @@ def _is_ssl_error(exc: BaseException) -> bool:
 # ── Directory naming helpers ─────────────────────────────────────────────────
 
 import re as _re
-
-# Quant suffixes the user might accidentally append to a model name
-_USER_QUANT_SUFFIX_RE = _re.compile(
-    r'[-_](int2|int3|int4|int8|bf16|fp16|q4|q8|q3|gguf)$',
-    flags=_re.IGNORECASE,
-)
-# Matches a trailing -<size> parameter token (e.g. -7b, -8b, -14b, -30b-a3b)
-_PARAM_SUFFIX_RE = _re.compile(r'-(\d[\w.]*)$')
-
-
-def _normalize_model_name(name: str) -> str:
-    """Normalize user-friendly model name to a canonical catalog ID.
-
-    Handles:
-    - Quant suffix stripping: ``"qwen2.5-7b-int2"`` → ``"qwen2.5-7b"``
-    - Dash→colon conversion for size suffix:
-      ``"qwen2.5-7b"`` → ``"qwen2.5:7b"``
-      ``"deepseek-r1-7b"`` → ``"deepseek-r1:7b"``
-      ``"llama3.1-8b"`` → ``"llama3.1:8b"``
-    """
-    name = name.strip().lower()
-    # Strip any quant suffix the user may have appended
-    name = _USER_QUANT_SUFFIX_RE.sub('', name)
-    # Replace the last -<size> (digit-led) token with :<size>
-    # e.g. "qwen2.5-7b" → "qwen2.5:7b", "deepseek-r1-7b" → "deepseek-r1:7b"
-    name = _PARAM_SUFFIX_RE.sub(r':\1', name)
-    return name
-
 
 def _quant_dir_name(dir_name: str, quant_mode: str) -> str:
     """Return the compressed directory name for a given model dir_name and quant mode.
@@ -653,64 +626,123 @@ def search(
     ]
 
 
+# ── Name normalisation ───────────────────────────────────────────────────────
+
+# Pattern for a size suffix like "7b", "8b", "14b", "1.5b", "30b-a3b", "235b-a22b".
+# Used to find the boundary where dash-separated model family ends and size begins.
+_SIZE_SUFFIX_RE = re.compile(
+    r"[-_](\d+\.?\d*b(?:-a\d+\.?\d*b)?)"
+    r"(?:[-_](?:int2|int3|int4|int8|q4|q8|bf16|fp16|fp32))?$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_model_name(name: str) -> str:
+    """Convert a user-friendly model name to a canonical catalog id.
+
+    Rules applied in order:
+    1. Strip leading/trailing whitespace.
+    2. Lowercase the entire string.
+    3. Strip trailing quantization suffixes (``-int2``, ``-int4``, ``_int8``,
+       ``-bf16``, etc.).
+    4. Replace the last *dash* before a recognisable size token (e.g. ``7b``,
+       ``8b``, ``14b``, ``1.5b``) with a colon to produce the canonical id
+       ``"family:size"``.
+
+    Examples::
+
+        _normalize_model_name("qwen2.5-7b")       → "qwen2.5:7b"
+        _normalize_model_name("Qwen3-8B-INT4")    → "qwen3:8b"
+        _normalize_model_name("llama3.1-8b-bf16") → "llama3.1:8b"
+        _normalize_model_name("qwen2.5:7b")       → "qwen2.5:7b"  (unchanged)
+        _normalize_model_name("qwen2.5")          → "qwen2.5"     (no size → unchanged)
+    """
+    normalized = name.strip().lower()
+    # If already canonical (contains ":") return as-is
+    if ":" in normalized:
+        return normalized
+    # Match and remove quant suffix first, then capture size
+    m = _SIZE_SUFFIX_RE.search(normalized)
+    if m:
+        size = m.group(1)  # e.g. "7b", "30b-a3b"
+        # The prefix ends just before the matched dash/underscore
+        prefix = normalized[: m.start()]
+        return f"{prefix}:{size}"
+    return normalized
+
+
+def suggest(query: str, max_results: int = 3) -> list["CatalogEntry"]:
+    """Return up to *max_results* catalog entries that are close matches for *query*.
+
+    Matching strategy (applied in priority order):
+    1. Substring match on the normalized query against each entry's id, name,
+       and tags.
+    2. Any single word (token) from the normalized query matches a segment of
+       an entry id.
+
+    Returns an empty list when no plausible matches are found.
+    """
+    normalized = _normalize_model_name(query)
+    # Build search tokens: the full normalized name plus individual colon-split parts
+    tokens = {normalized}
+    tokens.update(normalized.replace(":", "-").split("-"))
+    tokens.discard("")
+
+    catalog = load_catalog()
+    scored: list[tuple[int, CatalogEntry]] = []
+    for entry in catalog.values():
+        score = 0
+        eid = entry.id.lower()
+        ename = entry.name.lower()
+        # Exact/substring match on canonical id
+        if normalized in eid or eid in normalized:
+            score += 10
+        # Token-level match
+        for tok in tokens:
+            if len(tok) >= 2 and tok in eid:
+                score += 3
+            if len(tok) >= 2 and tok in ename:
+                score += 1
+        if score > 0:
+            scored.append((score, entry))
+
+    if not scored:
+        return []
+
+    scored.sort(key=lambda t: (-t[0], t[1].size_gb))
+    return [e for _, e in scored[:max_results]]
+
+
 def resolve(name: str, refresh: bool = False) -> CatalogEntry | None:
     """
     Resolve a model name/shorthand to a ``CatalogEntry``.
 
     Accepts:
-      - canonical ids:        ``"qwen3:8b"``
-      - user-friendly names:  ``"qwen2.5-7b"`` → ``"qwen2.5:7b"``
-      - quant-suffixed names: ``"qwen2.5-7b-int2"`` → ``"qwen2.5:7b"``
-      - legacy aliases:       ``"7b"`` → ``"qwen2.5:7b"``
-      - prefix matches:       ``"qwen3"`` → smallest qwen3 entry
-
-    Returns ``None`` only if *no* catalog entry matches the name at all
-    (e.g. a genuine typo).  Callers that want a "did you mean?" hint should
-    call :func:`suggest` after a ``None`` return.
+      - canonical ids:  ``"qwen3:8b"``
+      - dash-separated: ``"qwen3-8b"`` → ``"qwen3:8b"``
+      - quant suffixes: ``"qwen2.5-7b-int2"`` → ``"qwen2.5:7b"``
+      - legacy aliases: ``"7b"`` → ``"qwen2.5:7b"``
+      - prefix matches: ``"qwen3"`` → first qwen3 entry by param count
     """
-    raw = name.strip().lower()
+    # normalise (handles dash→colon and quant-suffix stripping)
+    normalized = _normalize_model_name(name.strip())
 
-    def _lookup(candidate: str) -> CatalogEntry | None:
-        # legacy alias
-        canonical = _ALIASES.get(candidate, candidate)
-        catalog = load_catalog(refresh=refresh)
-        # exact match
-        if canonical in catalog:
-            return catalog[canonical]
-        # prefix match: "qwen3" → first qwen3:* entry by size
-        matches = [e for k, e in catalog.items() if k.startswith(canonical + ":")]
-        if matches:
-            return sorted(matches, key=lambda e: e.size_gb)[0]
-        return None
+    # legacy alias (check both the original stripped name and normalized form)
+    canonical = _ALIASES.get(normalized, _ALIASES.get(name.strip().lower(), normalized))
 
-    # 1. Try the raw name first
-    entry = _lookup(raw)
-    if entry is not None:
-        return entry
+    catalog = load_catalog(refresh=refresh)
 
-    # 2. Try normalized form (strip quant suffix, dash→colon for size)
-    normalized = _normalize_model_name(raw)
-    if normalized != raw:
-        entry = _lookup(normalized)
-        if entry is not None:
-            return entry
+    # exact match
+    if canonical in catalog:
+        return catalog[canonical]
+
+    # prefix / fuzzy match (e.g. "qwen3" or "gemma3")
+    prefix = canonical.split(":")[0] if ":" in canonical else canonical
+    matches = [e for k, e in catalog.items() if k.startswith(prefix + ":")]
+    if matches:
+        return sorted(matches, key=lambda e: e.size_gb)[0]
 
     return None
-
-
-def suggest(name: str, refresh: bool = False) -> list[CatalogEntry]:
-    """Return up to 3 catalog entries that closely match *name*.
-
-    Used to build "did you mean?" messages when :func:`resolve` returns None.
-    Performs a substring search across id, name, tags, and params.
-    """
-    # Use normalized form for search so "qwen2.5-7b" hits "qwen2.5:7b"
-    normalized = _normalize_model_name(name.strip().lower())
-    # First try substring on the normalized form, then fall back to raw
-    results = search(normalized, refresh=refresh)
-    if not results:
-        results = search(name.strip().lower(), refresh=refresh)
-    return results[:3]
 
 
 # ── Download helpers ──────────────────────────────────────────────────────────
