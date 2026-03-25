@@ -276,6 +276,7 @@ class TestAutoTightenGroupSize(unittest.TestCase):
         args.hqq = hqq
         args.cpu = False
         args.dry_run = dry_run
+        args.blazing_m3 = False   # Wave 81: prevent _apply_blazing_m3_preset from firing
         return args
 
     def _run_cmd(self, args) -> str:
