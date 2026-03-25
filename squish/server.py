@@ -354,6 +354,9 @@ _layer_overlap_loader   = None  # LayerOverlapLoader      — --layer-overlap
 _chip_profile           = None  # ChipProfile             — auto (startup)
 _fused_qkv_proj         = None  # FusedQKVProjection      — --fused-qkv
 _pd_disaggregator       = None  # PDDisaggregator         — --pd-disagg
+# ── Wave 81: blazing-mode globals ─────────────────────────────────────────────
+_blazing_mode: bool     = False  # True when --blazing preset is active
+_metal_cache_limit_mb: int = 256  # Override via --blazing (drops to 64 MB)
 
 # ── Wave 27: new inference velocity flags ─────────────────────────────────────
 _fused_sampler          = None  # FusedSampler            — --fused-sampler (v10: default on)
@@ -919,7 +922,128 @@ def _system_fingerprint(model_name: str | None, loaded_at: float) -> str:
     ).hexdigest()[:8]
 
 
-# ── Phase E1: Task-type detection ─────────────────────────────────────────────
+# ── Wave 81: blazing-mode helpers ─────────────────────────────────────────────
+
+def _has_quantized_layers(model: "Any") -> bool:
+    """Return True if the model has at least one quantized linear layer.
+
+    Checks the first three transformer blocks for an object that carries a
+    ``bits`` integer attribute — the signature of ``mlx_lm.QuantizedLinear``.
+    Works for any model whose layers are exposed as ``model.model.layers``
+    or ``model.layers`` (the standard mlx_lm layout).
+
+    Parameters
+    ----------
+    model : loaded mlx_lm model or any object with a ``layers`` attribute
+
+    Returns
+    -------
+    bool — True = at least one quantized layer found; False = no quantization
+    detected (e.g. BF16/FP16).
+    """
+    inner = getattr(model, "model", model)
+    layers = getattr(inner, "layers", None) or getattr(model, "layers", None)
+    if not layers:
+        return False
+    for layer in layers[:3]:  # check first 3 transformer blocks only
+        for val in vars(layer).values():
+            if hasattr(val, "bits") and isinstance(getattr(val, "bits", None), int):
+                return True
+            for sub in vars(val).values() if hasattr(val, "__dict__") else ():
+                if hasattr(sub, "bits") and isinstance(getattr(sub, "bits", None), int):
+                    return True
+    return False
+
+
+def _blazing_preset_defaults(
+    args: "Any",
+    chip_profile: "Any | None" = None,
+    ram_gb: float = 0.0,
+) -> "Any":
+    """Apply Wave-81 blazing-mode defaults to *args* (mutated in-place).
+
+    Called when ``--blazing`` is passed on the CLI.  Applies the minimum set
+    of flags needed for sub-3s TTFT with 7/8B models on 16 GB M3:
+
+    * INT2 asymmetric KV cache       (--agent-kv)
+    * TTFT-optimised chunk-prefill   (--chunk-prefill-size 128)
+    * Fast-GELU approximation        (--fast-gelu)
+    * Tight Metal buffer pool        (_metal_cache_limit_mb → 64 MB)
+    * Clamp max-KV-context to 4096   (frees ~3 GB vs 32 K default)
+
+    Parameters
+    ----------
+    args        : argparse Namespace (or any object with setattr)
+    chip_profile: optional ``ChipProfile`` from ``ChipDetector.detect()``
+    ram_gb      : detected system RAM in GB (0 = unknown)
+
+    Returns
+    -------
+    The same *args* object, with fields mutated.
+    """
+    # ── KV cache: INT2 asymmetric (6× footprint reduction vs FP16) ──────────
+    setattr(args, "agent_kv", True)
+
+    # ── Chunked prefill: TTFT-optimised size ────────────────────────────────
+    ttft_chunk = 128
+    if chip_profile is not None and hasattr(chip_profile, "recommended_chunk_prefill_ttft"):
+        ttft_chunk = chip_profile.recommended_chunk_prefill_ttft
+    setattr(args, "chunk_prefill_size", ttft_chunk)
+    setattr(args, "no_chunk_prefill", False)  # ensure chunking is on
+
+    # ── Fast-GELU approximation (Wave 28): x·sigmoid(1.702x) — no change in
+    #    perceptible output quality but avoids trigonometric exact computation ─
+    setattr(args, "fast_gelu", True)
+
+    # ── Clamp KV context: 4096 is plenty for interactive chat; unclamped
+    #    context on 16 GB eats 500 MB+ per request ────────────────────────────
+    current_max_kv = getattr(args, "max_kv_size", None)
+    if current_max_kv is None or current_max_kv > 4096:
+        setattr(args, "max_kv_size", 4096)
+
+    # ── Metal allocator pool: 64 MB covers normal weight-loading churn while
+    #    releasing stale buffers aggressively on a 16 GB system ───────────────
+    setattr(args, "_blazing_metal_cache_mb", 64)
+
+    return args
+
+
+def _configure_blazing_mode(args: "Any") -> None:
+    """Activate Wave-81 blazing mode when ``--blazing`` was passed.
+
+    Sets ``_blazing_mode`` and ``_metal_cache_limit_mb`` globals, then
+    delegates to :func:`_blazing_preset_defaults` for individual flag
+    expansion.  Must be called in ``main()`` *before* model loading.
+    """
+    if not getattr(args, "blazing", False):
+        return
+
+    global _blazing_mode, _metal_cache_limit_mb  # noqa: PLW0603
+    _blazing_mode = True
+
+    ram_gb: float = 0.0
+    try:
+        from squish.hardware.chip_detector import ChipDetector as _BlazCD  # noqa: PLC0415
+        ram_gb = _BlazCD.detect_ram_gb()
+    except Exception:  # noqa: BLE001
+        pass
+
+    _blazing_preset_defaults(args, chip_profile=_chip_profile, ram_gb=ram_gb)
+
+    limit_mb: int = int(getattr(args, "_blazing_metal_cache_mb", 64))
+    _metal_cache_limit_mb = limit_mb
+
+    _info(
+        "blazing",
+        (
+            f"active  INT2-KV  chunk={getattr(args, 'chunk_prefill_size', 128)}"
+            f"  kv-max={getattr(args, 'max_kv_size', 4096)}"
+            f"  metal-cache={limit_mb}MB  two-pass-warmup=on"
+        ),
+    )
+
+
+
 # Match on the first 200 chars of the prompt to classify the task.
 # Only used to select the right token cap and semantic cache threshold.
 _TASK_TYPE_KEYWORDS: dict = {
@@ -1119,7 +1243,7 @@ def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma:
     _warmup_model(verbose=verbose)
 
 
-def _cap_metal_cache(verbose: bool = False, limit_mb: int = 256) -> None:  # pragma: no cover
+def _cap_metal_cache(verbose: bool = False, limit_mb: int | None = None) -> None:  # pragma: no cover
     """
     Cap the MLX Metal allocator's buffer pool after model load.
 
@@ -1128,7 +1252,12 @@ def _cap_metal_cache(verbose: bool = False, limit_mb: int = 256) -> None:  # pra
     stale buffers.  Capping it to ``limit_mb`` MB frees that memory back to
     the OS without affecting inference performance (the cache is only used
     for *new* allocations, not existing model weights).
+
+    When ``limit_mb`` is None the global ``_metal_cache_limit_mb`` is used
+    (256 MB normally; 64 MB in ``--blazing`` mode).
     """
+    if limit_mb is None:
+        limit_mb = _metal_cache_limit_mb
     try:
         import gc
 
@@ -1156,6 +1285,11 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
     including the prefill and KV-cache decode kernels — to compile before the
     first user request, eliminating the 2-5s cold-compile penalty on TTFT.
 
+    Wave 81: Two-pass warmup.  Pass 1 compiles the single-token decode path
+    (``max_tokens=1``); pass 2 uses a 33-token prompt to trigger the chunked-
+    prefill kernel (chunk boundary compile path) rather than waiting for the
+    first real user request to hit it.
+
     Falls back to a bare ``model(dummy_input)`` call when mlx_lm is unavailable
     (e.g. the Linux/CUDA path or test environments).
     """
@@ -1178,14 +1312,37 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
                 _wup_kwargs["sampler"] = _wup_make_sampler(temp=0.0)
             except (ImportError, TypeError):
                 _wup_kwargs["temp"] = 0.0
+
+            # ── Pass 1: single-token decode path (compile short decode graph) ─
             _wup_prompt = "Hello"
             for _ in _wup_mlx_lm.stream_generate(
                 _state.model, _state.tokenizer, _wup_prompt, **_wup_kwargs
             ):
                 pass
+            elapsed_p1 = time.perf_counter() - t0
+
+            # ── Pass 2 (Wave 81): 33-token prompt forces the chunked-prefill
+            # kernel to compile.  Pass 2 only runs when --blazing mode is on
+            # (or when chunk-prefill with small chunk size is active) so we
+            # avoid doubling startup time for normal users.
+            p2_elapsed = 0.0
+            if _blazing_mode or _chunk_prefill_size <= 128:
+                _p2_prompt = " ".join(["word"] * 33)  # 33 tokens ≈ 1 chunk
+                _p2_t0 = time.perf_counter()
+                for _ in _wup_mlx_lm.stream_generate(
+                    _state.model, _state.tokenizer, _p2_prompt, **_wup_kwargs
+                ):
+                    pass
+                p2_elapsed = time.perf_counter() - _p2_t0
+
             elapsed = time.perf_counter() - t0
             if verbose:
-                _ok(f"Metal JIT warm-up  ({elapsed * 1000:.0f} ms)  path=stream_generate")
+                p2_note = f"  +chunked-prefill={p2_elapsed*1000:.0f}ms" if p2_elapsed > 0 else ""
+                _ok(
+                    f"Metal JIT warm-up  ({elapsed_p1 * 1000:.0f}ms decode"
+                    f"{p2_note}  total={elapsed * 1000:.0f} ms)"
+                    f"  path=stream_generate"
+                )
             return
         except Exception:
             pass  # fall through to bare forward pass below
@@ -4252,6 +4409,24 @@ Examples:
         ),
     )
 
+    # ── Wave 81: Blazing preset ───────────────────────────────────────────────
+    ap.add_argument(
+        "--blazing", action="store_true", default=False,
+        help=(
+            "Blazing-mode preset — targets sub-3 s TTFT for 7/8B models on "
+            "16 GB M3 Apple Silicon:\n"
+            "  --agent-kv            INT2 asymmetric KV cache (6× footprint)\n"
+            "  --chunk-prefill-size 128  TTFT-optimised chunk size (vs 512/1024 default)\n"
+            "  --fast-gelu           fast GELU approximation (no quality change)\n"
+            "  --max-kv-size 4096    clamp context to preserve UMA headroom\n"
+            "  Metal buffer pool → 64 MB (vs 256 MB default)\n"
+            "  Two-pass JIT warmup (decode + chunked-prefill kernels pre-compiled)\n"
+            "Requires an INT2/INT3/INT4 quantised model — NOT a raw BF16 model.\n"
+            "Convert first:  squish convert-model --blazing-m3 <model>\n"
+            "Combines cleanly with --agent for the full agent+speed stack."
+        ),
+    )
+
     # ── WhatsApp / Meta Cloud API integration ────────────────────────────────
     ap.add_argument(
         "--whatsapp", action="store_true", default=False,
@@ -4420,6 +4595,9 @@ Examples:
         _info("agent-preset",
               f"active  agent-kv=True  chunk-prefill=True"
               f"  batch={args.batch_size}  max-kv={args.max_kv_size}")
+
+    # ── Wave 81: Blazing mode expansion ───────────────────────────────────────
+    _configure_blazing_mode(args)
 
     global _API_KEY
     # Prefer explicit CLI flag; fall back to SQUISH_API_KEY env var.

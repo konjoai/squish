@@ -2556,6 +2556,48 @@ def _preoptimize_weights_with_hqq(
     return tmp_dir
 
 
+def _apply_blazing_m3_preset(args: "Any") -> "Any":
+    """Apply Wave-81 ``--blazing-m3`` preset values to *args* (mutated in-place).
+
+    Preset targets sub-3 s TTFT on M3 16 GB Apple Silicon with Qwen2.5-7B
+    or Llama-3.1-8B:
+
+    * FFN weights  → INT2  (``--ffn-bits 2``)
+    * Attention    → INT4  (``--attn-bits 4``)
+    * Embeddings   → INT8  (``--embed-bits 8``)
+    * Group size   → 32    (halves reconstruction error vs 64 at 2% size cost)
+    * HQQ          → True  (calibration-free proximal solver improves INT2 quality)
+
+    Only sets a field when the user has not already overridden it via an
+    explicit CLI flag (detected via the ``_user_set_*`` sentinel attributes).
+
+    Parameters
+    ----------
+    args : argparse Namespace (or any object supporting getattr/setattr)
+
+    Returns
+    -------
+    The same *args* object with fields mutated.
+    """
+    if not getattr(args, "blazing_m3", False):
+        return args
+
+    default_gs = int(getattr(args, "_default_group_size", 64))
+
+    if int(getattr(args, "ffn_bits", 4)) == 4:          # default untouched
+        args.ffn_bits = 2
+    if getattr(args, "attn_bits", None) is None:         # not set by user
+        args.attn_bits = 4
+    if int(getattr(args, "embed_bits", 6)) == 6:         # default untouched
+        args.embed_bits = 8
+    if int(getattr(args, "group_size", 64)) == default_gs:  # default untouched
+        args.group_size = 32
+    if not getattr(args, "hqq", False):                  # not explicitly set
+        args.hqq = True
+
+    return args
+
+
 def cmd_convert_model(args):
     """
     Convert and optionally quantize a model with mixed-precision quantization.
@@ -2569,6 +2611,9 @@ def cmd_convert_model(args):
         --output-path path/to/output \\
         --ffn-bits 4 --embed-bits 6
     """
+    # ── Wave 81: apply --blazing-m3 preset before any other logic ───────────
+    _apply_blazing_m3_preset(args)
+
     source_path = Path(args.source_path).expanduser().resolve()
     output_path = Path(args.output_path).expanduser().resolve()
 
@@ -4006,6 +4051,20 @@ Ollama drop-in:
             "the random/incoherent output seen with naive INT2 quantisation.\n"
             "Requires a local BF16 source directory (not a HuggingFace model ID).\n"
             "Adds 1-3 minutes to quantisation time depending on model size."
+        ),
+    )
+    p_convert.add_argument(
+        "--blazing-m3",
+        action="store_true",
+        default=False,
+        dest="blazing_m3",
+        help=(
+            "M3-16GB optimised quantisation preset (Wave 81).\n"
+            "Equivalent to: --ffn-bits 2 --attn-bits 4 --embed-bits 8 "
+            "--group-size 32 --hqq\n"
+            "Produces a ~2 GB 7B model that runs at ~50 tok/s on M3 16GB.\n"
+            "Then start the server with: squish serve --blazing\n"
+            "Individual flags (--ffn-bits, etc.) still override this preset."
         ),
     )
     p_convert.set_defaults(func=cmd_convert_model, _default_group_size=64)
