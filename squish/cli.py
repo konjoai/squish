@@ -1092,6 +1092,31 @@ def cmd_run(args):  # pragma: no cover
         "int8" if getattr(args, "int8", False) else
         "int4"
     )
+
+    # ── INT2 explicit-user warning ────────────────────────────────────────────
+    # INT2 uses only 4 discrete weight levels. This destroys low-rank matrix
+    # structure on models < 30B parameters and produces incoherent / repetitive
+    # output. Auto-selection was fixed in Wave 97 to gate on >=30B only.
+    # When a user manually passes --int2, warn loudly regardless of model size.
+    if getattr(args, "int2", False):
+        import sys as _sys
+        print(
+            "\n  \033[31m⚠  WARNING: INT2 selected.\033[0m\n"
+            "  INT2 (4 discrete weight levels) produces incoherent / repetitive\n"
+            "  output on models < 30B parameters. This is a known limitation —\n"
+            "  not a bug in the model.\n"
+            "  Recommended: use --int4 (default) or --int8 for models under 30B.\n"
+            "  Pass --expert to suppress this warning.\n",
+            file=_sys.stderr,
+        )
+        if not getattr(args, "expert", False):
+            print(
+                "  Waiting 5 seconds before starting … (Ctrl-C to abort)\n",
+                file=_sys.stderr,
+            )
+            import time as _time
+            _time.sleep(5)
+
     model_dir, compressed_dir = _resolve_model(args.model, quant_mode=_quant_mode)
 
     # Explicit --compressed-dir overrides the auto-detected compressed path.
@@ -2742,23 +2767,38 @@ def cmd_gen_masks(args):
 
     model_arg: str = args.model
     n_samples: int = max(1, int(args.samples))
-    threshold: float = float(args.threshold)
+    activation_threshold: float = float(args.activation_threshold)
+    keep_threshold: float = float(args.keep_threshold)
     output_path: str = args.output or ""
 
     # ── Resolve model → compressed directory ─────────────────────────────────
-    import re as _re
     # Accept: alias (qwen3:8b), directory path, or model name
     if os.path.isdir(model_arg):
         comp_dir = Path(model_arg).expanduser().resolve()
     else:
-        # Try to find via squish model list logic
-        from squish.utils import resolve_model_path as _rmp  # type: ignore[import]
+        # Resolve alias via LocalModelScanner (searches ~/.squish/models/,
+        # ~/.ollama/, and ~/.lmstudio/ — same logic used by squish serve)
         try:
-            comp_dir = Path(_rmp(model_arg))
-        except Exception:
+            from squish.serving.local_model_scanner import LocalModelScanner as _Scn  # noqa: PLC0415
+            _scanner = _Scn()
+            _candidates = [
+                m for m in _scanner.find_all()
+                if m.name.lower() == model_arg.lower()
+                or model_arg.lower() in str(m.path).lower()
+            ]
+            if not _candidates:
+                _die(
+                    f"Cannot resolve model {model_arg!r} to a local directory.\n"
+                    "Pass a local path or a model alias (e.g. qwen3:8b)."
+                )
+            comp_dir = _candidates[0].path
+            if not comp_dir.is_dir():
+                comp_dir = comp_dir.parent
+        except Exception as _rmp_exc:
             _die(
                 f"Cannot resolve model {model_arg!r} to a local directory.\n"
-                "Pass a local path or a model alias (e.g. qwen3:8b)."
+                f"Pass a local path or a model alias (e.g. qwen3:8b).\n"
+                f"(Lookup error: {_rmp_exc})"
             )
 
     if not comp_dir.exists():
@@ -2770,10 +2810,11 @@ def cmd_gen_masks(args):
     print()
     _box([
         "  squish gen-masks",
-        f"  Model dir  : {comp_dir}",
-        f"  Samples    : {n_samples}",
-        f"  Threshold  : {threshold}",
-        f"  Output     : {out_npz}",
+        f"  Model dir          : {comp_dir}",
+        f"  Samples            : {n_samples}",
+        f"  Activation thresh  : {activation_threshold}  (|output| cutoff)",
+        f"  Keep threshold     : {keep_threshold}  (min firing fraction)",
+        f"  Output             : {out_npz}",
     ])
     print()
 
@@ -2844,10 +2885,12 @@ def cmd_gen_masks(args):
             continue
         # Concatenate all captured outputs: (total_tokens, hidden_dim)
         all_out = np.concatenate(hook.outputs, axis=0).astype(np.float32)
-        # Firing frequency: fraction of tokens where |output| > threshold
-        firing = (np.abs(all_out) > threshold).astype(np.float32).mean(axis=0)  # (hidden_dim,)
-        # Binary mask: keep neuron if it fires on ≥threshold of samples
-        binary = (firing >= threshold).astype(np.float32)
+        # Firing frequency: fraction of tokens where |output| > activation_threshold
+        # activation_threshold is a *magnitude* cutoff (units: activation values)
+        firing = (np.abs(all_out) > activation_threshold).astype(np.float32).mean(axis=0)  # (hidden_dim,)
+        # Binary mask: keep neuron if it fires on ≥keep_threshold fraction of tokens
+        # keep_threshold is a *frequency* cutoff in [0, 1]
+        binary = (firing >= keep_threshold).astype(np.float32)
         sparsity = float(1.0 - binary.mean())
         sparsity_by_layer.append(sparsity)
         masks[f"layer_{hook.layer_idx}"] = binary
@@ -4459,6 +4502,8 @@ Ollama drop-in:
                          help="Use INT2 compressed weights")
     p_serve.add_argument("--int8", action="store_true", default=False,
                          help="Use INT8 compressed weights")
+    p_serve.add_argument("--expert", action="store_true", default=False,
+                         help="Suppress expert-mode safety warnings (e.g. --int2 on sub-30B models)")
     # ── Phase 13D: Agent preset ──
     p_serve.add_argument("--agent", action="store_true", default=False,
                          help="Agent-mode preset: enables --agent-kv, --grammar, "
@@ -4810,10 +4855,17 @@ Ollama drop-in:
                       metavar="N",
                       help="Number of calibration prompts to run (default: 20; "
                            "increase to 200-500 for higher-quality masks)")
-    p_gm.add_argument("--threshold", type=float, default=0.05,
-                      metavar="T",
-                      help="Neuron keep threshold: neurons firing on >= T fraction of "
-                           "samples are kept (default: 0.05 = 5%%)")
+    p_gm.add_argument("--activation-threshold", type=float, default=0.01,
+                      dest="activation_threshold",
+                      metavar="A",
+                      help="Magnitude cutoff: a neuron 'fires' on a token when "
+                           "|output| > A (default: 0.01). Units: activation values.")
+    p_gm.add_argument("--keep-threshold", type=float, default=0.05,
+                      dest="keep_threshold",
+                      metavar="K",
+                      help="Frequency cutoff: keep a neuron if it fires on >= K "
+                           "fraction of tokens (default: 0.05 = 5%%). "
+                           "Distinct unit from --activation-threshold.")
     p_gm.add_argument("--output", default="",
                       metavar="PATH",
                       help="Override output path for sparse_masks.npz "
