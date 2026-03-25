@@ -60,6 +60,9 @@ This document tracks completed waves, the current release, and the next phase.
 | **v47** | 74 | Onboarding & Website Polish · Squish brand hero · "The Local AI Agent Runtime" tagline · brew squish-ai/squish · squish run detects Ollama/LM Studio · auto-opens Squish Agent browser UI · 22 new tests |
 | **v48** | 75 | Performance Foundations · Metal JIT warmup pass at startup · tier-3 first-run penalty warning · chunked prefill on by default (--no-chunk-prefill to disable) · _print_optimization_status table at startup · 24 new tests |
 | **v49** | 76 | Eval Runner Diagnostics · bench_lmeval_all_models.py capture_output fix · INT2/INT3 quality & TPS investigation · 4B/7B/8B/14B benchmark re-run · 5 new tests |
+| **v50** | 79–81 | Auto-Optimization Engine · SSE fingerprint caching · orjson SSE fast-path · zero-flag optimal startup · 50+32+23 new tests |
+| **v51** | 82 | EAGLE-3 auto-load ordering fix · Structured FFN sparsity (StructuredFfnSparsity) · Wave 82a/82b server wiring · 40 new tests |
+| **v52** | 83 | MoE auto-load wiring · 6 MoE catalog entries (OlMoE · Qwen2-57B-A14B · Phi-3.5-MoE · DeepSeek-V2-Lite · Jamba-1.5-Mini · DeepSeek-V3) |
 
 ---
 
@@ -7053,4 +7056,40 @@ Theme: **Zero per-token overhead for streamed responses**
 ### Deferred (Wave 81)
 - Move `squish/kernels/mojo/` → `squish/experimental/kernels/mojo/`
 - Profile `json.dumps` cost per token — potential `orjson` swap
+
+---
+
+## ✅ Wave 82 — EAGLE-3 Auto-load + Structured FFN Sparsity — 2026-03-25
+
+### Objective
+Close two auto-profile wiring gaps discovered when landing Wave 79: (1) `load_eagle_head()` already fires at line ~4988, before the auto-profile block sets `eagle3_head_dir` — the auto-load was therefore always a no-op; (2) `sparsity_mask_path` was detected but never consumed by server.py.
+
+### Changes
+| File | Change |
+|------|--------|
+| `squish/runtime/structured_sparsity.py` | New `StructuredFfnSparsity` class — loads `sparse_masks.npz`, handles key formats (`layer_N_gate`, `layer_N_up`, `layer_N`, `N`), combines multi-mask layers via pointwise AND, applies masks to numpy + MLX arrays |
+| `squish/server.py` | Wave 82a block: re-checks EAGLE-3 auto-load after `apply_defaults()` (ordering fix). Wave 82b block: auto-loads `StructuredFfnSparsity` from sparsity_mask_path. `_structured_sparsity` global added. Both guards silence all load errors. |
+| `tests/test_wave82_autoload_eagle3.py` | 40 new tests: StructuredFfnSparsity from_file, properties, apply_mask, multi-mask AND combinator, EAGLE-3 guard conditions, sparsity auto-load, server globals |
+
+### Deferred (Wave 83)
+- Wire `use_moe_lazy` auto-profile flag into `LazyExpertLoader` startup
+- Expand MoE catalog with OlMoE, Qwen2-57B-A14B, Phi-3.5-MoE, DeepSeek-V2-Lite, Jamba-1.5-Mini, DeepSeek-V3
+
+---
+
+## ✅ Wave 83 — MoE Auto-load + 6 MoE Catalog Entries — 2026-03-25
+
+### Objective
+Close the final auto-profile wiring gap (MoE lazy loading) and expand the bundled catalog with the six most-requested MoE models spanning tiny-edge to impossible-scale.
+
+### Changes
+| File | Change |
+|------|--------|
+| `squish/server.py` | Wave 83 block: after Wave 82b, if `auto_profile.use_moe_lazy=True` and `_lazy_expert is None`, auto-initialise `LazyExpertLoader` — no user flag required for MoE models |
+| `squish/catalog.py` | 6 new MoE entries: OlMoE-1B-7B (edge), Qwen2-57B-A14B (mid), Phi-3.5-MoE (balanced), DeepSeek-V2-Lite (compact), Jamba-1.5-Mini (SSM hybrid), DeepSeek-V3 (impossible 685B) |
+| `tests/test_wave83_moe_autoload.py` | New test file covering all Wave 83 changes |
+
+### Deferred (Wave 84)
+- Dead code removal audit (commented-out experimental blocks)
+- Benchmark gate: `python -m squish.bench --tps-min 30` in CI
 

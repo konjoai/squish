@@ -392,6 +392,75 @@ _BUNDLED: list[dict] = [
          ),
          moe=True, active_params_b=39.0),
 
+    # ── Wave 83: Additional MoE models ───────────────────────────────────────
+
+    # OlMoE-1B-7B — tiny edge MoE (7B total / 1B active, top-1/8 experts)
+    dict(id="olmoe:1b-7b", name="OlMoE-1B-7B-Instruct (MoE)",
+         hf_mlx_repo="mlx-community/OlMoE-1B-7B-Instruct-bf16",
+         size_gb=14.0, squished_size_gb=5.6, params="7B", context=4096,
+         tags=["moe", "small", "fast", "edge"],
+         notes=(
+             "MoE — 7B total / 1B active per token (top-1/8 experts). "
+             "Fully open (Apache-2.0). Edge-deployable with lazy expert loading."
+         ),
+         moe=True, active_params_b=1.0),
+
+    # Qwen2-57B-A14B — mid-size MoE (57B total / 14B active, top-8/64 experts)
+    dict(id="qwen2-moe:57b-a14b", name="Qwen2-57B-A14B-Instruct (MoE)",
+         hf_mlx_repo="mlx-community/Qwen2-57B-A14B-Instruct-bf16",
+         size_gb=114.0, squished_size_gb=28.5, params="57B", context=65536,
+         tags=["moe", "large"],
+         notes=(
+             "MoE — 57B total / 14B active per token (top-8/64 experts). "
+             "Qwen2 architecture; strong multilingual + code capability."
+         ),
+         moe=True, active_params_b=14.0, grammar_trigger="<tool_call>"),
+
+    # Phi-3.5-MoE — Microsoft 16-expert MoE (~42B total / 6.6B active)
+    dict(id="phi3.5-moe:42b", name="Phi-3.5-MoE-Instruct (MoE)",
+         hf_mlx_repo="mlx-community/Phi-3.5-MoE-instruct-4bit",
+         size_gb=21.0, squished_size_gb=21.0, params="42B", context=131072,
+         tags=["moe", "balanced", "agent"],
+         notes=(
+             "MoE — 16 experts × 3.8B; ~6.6B active per token. "
+             "Microsoft Phi-3.5 architecture; strong STEM + long-context."
+         ),
+         moe=True, active_params_b=6.6),
+
+    # DeepSeek-V2-Lite — compact MoE (16B total / 2.4B active)
+    dict(id="deepseek-v2-lite:16b", name="DeepSeek-V2-Lite-Chat (MoE)",
+         hf_mlx_repo="mlx-community/DeepSeek-V2-Lite-Chat-bf16",
+         size_gb=31.4, squished_size_gb=7.9, params="16B", context=131072,
+         tags=["moe", "balanced", "code"],
+         notes=(
+             "MoE — 16B total / 2.4B active per token. "
+             "DeepSeek-V2 with multi-head latent attention (MLA); efficient KV cache."
+         ),
+         moe=True, active_params_b=2.4),
+
+    # Jamba-1.5-Mini — Mamba2 + attention hybrid MoE (52B total / ~12B active)
+    dict(id="jamba:1.5-mini", name="Jamba-1.5-Mini (Hybrid SSM-MoE)",
+         hf_mlx_repo="mlx-community/Jamba-1.5-Mini-bf16",
+         size_gb=104.0, squished_size_gb=26.0, params="52B", context=256000,
+         tags=["moe", "large", "ssm"],
+         notes=(
+             "Hybrid SSM + attention MoE — 52B total / ~12B active per token. "
+             "AI21 Labs Jamba-1.5: Mamba2 + attention layers + MoE experts; "
+             "256k context. Efficient long-doc processing."
+         ),
+         moe=True, active_params_b=12.0),
+
+    # DeepSeek-V3 — 685B sparse MoE ("impossible" scale on Apple Silicon)
+    dict(id="deepseek-v3:685b", name="DeepSeek-V3 (MoE — 685B)",
+         hf_mlx_repo="mlx-community/DeepSeek-V3-4bit",
+         size_gb=1370.0, squished_size_gb=85.6, params="685B", context=131072,
+         tags=["moe", "large", "impossible"],
+         notes=(
+             "MoE — 685B total / 37B active per token (top-8/256 experts). "
+             "Wave 83 elastic inference: streamed expert loading via squish.moe.MoEPipeline. "
+             "Requires 128+ GB Apple Silicon or NVMe offloading."
+         ),
+         moe=True, active_params_b=37.0, grammar_trigger="<tool_call>"),
 
     # ── Phi-4 ─────────────────────────────────────────────────────────────────
     dict(id="phi4:14b", name="Phi-4",

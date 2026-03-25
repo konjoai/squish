@@ -1002,10 +1002,21 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const styleUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'media', 'style.css'),
         );
-        const iconUri = webview.asWebviewUri(
-            vscode.Uri.joinPath(this._extensionUri, 'media', 'icon.png'),
-        );
         const nonce = _nonce();
+
+        // SVG logo path (same squish character as before)
+        const logoSvg = `<svg viewBox="12 23 106 94" xmlns="http://www.w3.org/2000/svg" width="28" height="28">
+  <ellipse cx="22" cy="65" rx="8" ry="12" fill="#8B5CF6" stroke="#1A0B40" stroke-width="3" transform="rotate(15 22 65)"/>
+  <ellipse cx="108" cy="65" rx="8" ry="12" fill="#8B5CF6" stroke="#1A0B40" stroke-width="3" transform="rotate(-15 108 65)"/>
+  <ellipse cx="45" cy="105" rx="6" ry="10" fill="#8B5CF6" stroke="#1A0B40" stroke-width="3"/>
+  <ellipse cx="85" cy="105" rx="6" ry="10" fill="#8B5CF6" stroke="#1A0B40" stroke-width="3"/>
+  <path d="M35 25C25 25 20 35 20 45V85C20 95 25 105 35 105H95C105 105 110 95 110 85V45C110 35 105 25 95 25H35Z" fill="#8B5CF6" stroke="#1A0B40" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="48" cy="55" r="6" fill="black"/><circle cx="46" cy="53" r="2" fill="white"/>
+  <circle cx="80" cy="55" r="6" fill="black"/><circle cx="78" cy="53" r="2" fill="white"/>
+  <path d="M58 70C58 75 70 75 70 70H58Z" fill="#FF8A8A" stroke="#1A0B40" stroke-width="2"/>
+  <circle cx="40" cy="68" r="4" fill="#FFBABA" opacity="0.6"/>
+  <circle cx="88" cy="68" r="4" fill="#FFBABA" opacity="0.6"/>
+</svg>`;
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -1014,8 +1025,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
              style-src ${webview.cspSource} 'unsafe-inline';
-             img-src ${webview.cspSource};
-             script-src 'nonce-${nonce}';">  
+             script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${styleUri}">
   <title>Squish Agent</title>
@@ -1040,7 +1050,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   <div id="header">
     <button id="hist-toggle" title="Chat history" aria-label="Toggle history">&#x2630;</button>
     <div class="header-brand">
-      <img src="${iconUri}" width="28" height="28" alt="Squish">
+      ${logoSvg}
       <span class="header-name">Squish <span class="header-accent">Agent</span></span>
     </div>
     <div class="header-actions">

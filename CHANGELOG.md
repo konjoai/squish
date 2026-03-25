@@ -5,6 +5,50 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [58.0.0] — Wave 85 — 2026-03-25
+
+### Refactor — Terminal Palette Consolidation
+
+#### 1. Deduplicate Palette System (`cli.py`, `server.py` → `_term.py`)
+
+- **Before**: Three separate copies of the terminal colour-detection and palette
+  code existed: `squish/_term.py` (canonical), `squish/cli.py:128–217`, and
+  `squish/server.py:540–651`. On terminals with custom colour profiles (Solarized,
+  Nord, Dracula) where `COLORFGBG` is unset, the three copies could render
+  differently because the duplicate detection logic was not kept in sync with the
+  canonical version's `_BG_CONFIRMED` guard.
+- **After**: `cli.py` and `server.py` both import `C`, `gradient`, and `LOGO_GRAD`
+  directly from `squish._term`. All palette selection (`_Palette` dark 24-bit /
+  `_PaletteLight` light 24-bit / `_PaletteANSI` terminal-native ANSI fallback)
+  is now handled exclusively in `_term.py`. This guarantees consistent colours
+  across all entry-points.
+- **Env vars respected (single location)**: `NO_COLOR`, `SQUISH_DARK_BG`,
+  `COLORFGBG`, `FORCE_COLOR`, `COLORTERM`. When background is unconfirmed,
+  `_PaletteANSI` is used so the terminal's own colour profile is respected
+  (standard `\033[35m` codes, not hardcoded RGB).
+- **Lines removed**: ~110 lines from `cli.py`, ~115 lines from `server.py`.
+
+#### 2. Fix Hardcoded Port in `v1_router.py`
+
+- Default `server_url` in `OpenAPISchemaBuilder` and `V1Router.openapi_schema()`
+  was hardcoded to `http://localhost:11434` (Ollama's port). Changed to use
+  module-level `_DEFAULT_SERVER_URL = os.environ.get("SQUISH_SERVER_URL",
+  "http://localhost:11435")` so it respects env-var overrides.
+
+### Documentation — README Accuracy
+
+#### 3. README Accuracy Pass
+
+- **macOS menu bar app** row: changed from "Coming soon" → ✅ (SquishBar at
+  `apps/macos/SquishBar/` is functional).
+- **Model count**: updated `29 available models` → `34 available models`
+  throughout Quick Start section.
+- **SquishBar mention**: removed "*(coming soon)*" annotation.
+- **Ollama compat table**: added `/api/pull` and `/api/ps` rows with
+  descriptive footnote (catalog-backed pull, Wave 88 for full `/api/ps`).
+
+---
+
 ## [51.0.0] — Wave 78 — 2026-03-24
 
 ### Performance — Module-load & RadixTree Lazy Init

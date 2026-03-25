@@ -34,7 +34,7 @@
 | Web chat UI | ❌ | ❌ | ✅ |
 | Grammar-enforced tool calling | ❌ | ❌ | ✅ |
 | Batch / concurrent requests | ❌ | limited | ✅ |
-| macOS menu bar app | ❌ | ❌ | Coming soon |
+| macOS menu bar app | ❌ | ❌ | ✅ |
 | VS Code extension | ❌ | ❌ | ✅ |
 | Pre-squished weights (skip compression) | N/A | N/A | ✅ ([HuggingFace](https://huggingface.co/squish-community)) |
 | Source available | ✅ | ✅ | ✅ |
@@ -89,7 +89,7 @@ squish run                  # auto-detects RAM, pulls + starts best model for yo
 Or pick a specific model:
 
 ```bash
-squish catalog              # browse 29 available models
+squish catalog              # browse 34 available models
 squish pull qwen3:8b        # download pre-squished weights from HuggingFace (~4.4 GB)
 squish run qwen3:8b         # start server on :11435
 ```
@@ -123,12 +123,12 @@ squish setup                # detects your RAM, recommends a model, pulls + star
 
 - **Sub-second loads** — INT4 npy-dir format maps directly into Apple Metal unified memory; no dtype conversion on every boot
 - **OpenAI + Ollama drop-in** — any existing client works with a single env-var change; no code changes required
-- **macOS menu bar app** — SquishBar *(coming soon)* — menu-bar icon with live tok/s, start/stop server, one-click model switch
+- **macOS menu bar app** — SquishBar — menu-bar icon with live tok/s, start/stop server, one-click model switch (`swift build` in `apps/macos/SquishBar/`)
 - **VS Code extension** — sidebar chat with streaming, model selector, server lifecycle management ([setup guide](docs/vscode-agent.md))
 - **Web chat UI** — built-in at `/chat`; dark-themed, streaming, offline, multi-session history
 - **Grammar-enforced tool calling** — XGrammar FSM prevents malformed JSON in tool use; works with any OpenAI `tools` client
 - **Agent preset** — `--agent` (auto-enabled on Apple Silicon) wires AgentKV INT2 + speculative decode + semantic cache
-- **29 ready-to-use models** — pre-squished weights on HuggingFace skip the compression step; `squish pull qwen3:8b` finishes in minutes
+- **34 ready-to-use models** — pre-squished weights on HuggingFace skip the compression step; `squish pull qwen3:8b` finishes in minutes
 
 See [MODULES.md](MODULES.md) for the full flag reference and stability tiers (Stable / Beta / Experimental).
 
@@ -364,7 +364,11 @@ any client that speaks the OpenAI wire protocol.
 | `POST /api/generate` | ✅ Ollama-compatible ndjson |
 | `GET  /api/tags` | ✅ Ollama model listing |
 | `GET  /api/version` | ✅ Ollama version handshake |
+| `POST /api/pull` | ✅ Catalog-backed¹; non-catalog models show instructions |
+| `GET  /api/ps` | ✅ Running model listing (Wave 88) |
 | `POST /api/embeddings` | ✅ Ollama-compatible embeddings |
+
+> ¹ `/api/pull` downloads pre-squished weights from the Squish HuggingFace catalog. Use `squish pull <model>` for the full interactive experience.
 
 ---
 

@@ -538,117 +538,22 @@ _scheduler       = None  # BatchScheduler | None — set in main() when --batch-
 _QueueFullError  = None  # QueueFullError class — imported alongside BatchScheduler
 
 # ── Terminal colours & ASCII art ──────────────────────────────────────────────
+# All palette selection (dark/light 24-bit vs terminal-native ANSI vs no-color)
+# is handled centrally in squish._term.  _C, _gradient, and _LOGO_GRAD are
+# imported from there to ensure consistent behaviour with the CLI.
+# _TTY / _TTY_ERR are local bool flags used for TTY-gated ASCII art and trace
+# log colouring respectively.  _TRUE_COLOR_ERR checks stderr specifically.
 _TTY: bool = sys.stdout.isatty()
 _TTY_ERR: bool = sys.stderr.isatty()
 
-# True only when the terminal reliably renders 24-bit (true) colour.
-# Terminals that remap the ANSI palette via a colour profile will corrupt
-# 24-bit codes that get quantised down to palette indices.  We guard against
-# this by requiring an explicit true-colour signal (COLORTERM env-var or a
-# known terminal program) before emitting gradient escape sequences.
-# Respects the NO_COLOR convention (https://no-color.org).
-def _has_truecolor(tty: bool) -> bool:
-    """Return True when the terminal reliably renders 24-bit RGB escape codes."""
-    return (
-        tty
-        and "NO_COLOR" not in os.environ
-        and (
-            os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit")
-            or os.environ.get("TERM_PROGRAM", "") in (
-                "iTerm.app", "WezTerm", "Ghostty", "Hyper", "vscode", "warp",
-                "Apple_Terminal",
-            )
-            or "kitty" in os.environ.get("TERM", "")
-            or "direct" in os.environ.get("TERM", "")
-            or bool(os.environ.get("FORCE_COLOR", ""))
-        )
-    )
+from squish._term import (  # noqa: E402
+    has_truecolor as _has_truecolor,
+    C as _C,
+    gradient as _gradient,
+    LOGO_GRAD as _LOGO_GRAD,
+)
 
-_TRUE_COLOR:     bool = _has_truecolor(_TTY)
-_TRUE_COLOR_ERR: bool = _has_truecolor(_TTY_ERR)
-
-try:
-    from squish._term import detect_dark_background as _detect_dark_bg_srv
-    _IS_DARK_BG: bool = _detect_dark_bg_srv()
-except Exception:  # pragma: no cover
-    _IS_DARK_BG = True  # dark fallback if import fails during early startup
-
-
-class _C:
-    """Dark-background 24-bit colour constants.  Empty strings on non-true-colour TTYs."""
-    _k = lambda s: s if _TRUE_COLOR else ""  # noqa: E731
-    DP  = _k("\033[38;2;88;28;135m")    # deep purple   #581C87
-    P   = _k("\033[38;2;124;58;237m")   # purple        #7C3AED
-    V   = _k("\033[38;2;139;92;246m")   # violet        #8B5CF6
-    L   = _k("\033[38;2;167;139;250m")  # lilac         #A78BFA
-    MG  = _k("\033[38;2;192;132;252m")  # med-purple    #C084FC
-    PK  = _k("\033[38;2;236;72;153m")   # pink          #EC4899
-    LPK = _k("\033[38;2;249;168;212m")  # light pink    #F9A8D4
-    T   = _k("\033[38;2;34;211;238m")   # teal          #22D3EE
-    LT  = _k("\033[38;2;165;243;252m")  # light teal    #A5F3FC
-    G   = _k("\033[38;2;52;211;153m")   # mint green    #34D399
-    W   = _k("\033[38;2;248;250;252m")  # near-white    #F8FAFC
-    SIL = _k("\033[38;2;180;185;210m")  # silver        #B4B9D2
-    DIM = _k("\033[38;2;100;116;139m")  # dim slate     #64748B
-    B   = _k("\033[1m")                 # bold
-    R   = _k("\033[0m")                 # reset all
-
-
-class _CLight:
-    """Light-background 24-bit colour constants — deeper for contrast on white."""
-    _k = lambda s: s if _TRUE_COLOR else ""  # noqa: E731
-    DP  = _k("\033[38;2;67;20;105m")    # deeper purple  #431469
-    P   = _k("\033[38;2;88;28;135m")    # dark purple    #581C87
-    V   = _k("\033[38;2;109;40;217m")   # dark violet    #6D28D9
-    L   = _k("\033[38;2;124;58;237m")   # purple         #7C3AED
-    MG  = _k("\033[38;2;139;92;246m")   # violet         #8B5CF6
-    PK  = _k("\033[38;2;157;23;77m")    # deep pink      #9D174D
-    LPK = _k("\033[38;2;219;39;119m")   # pink           #DB2777
-    T   = _k("\033[38;2;6;182;212m")    # teal           #06B6D4
-    LT  = _k("\033[38;2;8;145;178m")    # dark teal      #0891B2
-    G   = _k("\033[38;2;16;185;129m")   # green          #10B981
-    W   = _k("\033[38;2;15;23;42m")     # near-black     #0F172A
-    SIL = _k("\033[38;2;71;85;105m")    # slate          #475569
-    DIM = _k("\033[38;2;51;65;85m")     # dim slate      #334155
-    B   = _k("\033[1m")                 # bold
-    R   = _k("\033[0m")                 # reset all
-
-
-# Select dark or light palette based on detected terminal background.
-if not _IS_DARK_BG:  # pragma: no cover
-    _C = _CLight  # type: ignore[misc]
-
-
-def _gradient(text: str, stops: list) -> str:
-    """Interpolate a left-to-right RGB gradient across *text* (true-colour TTY only)."""
-    if not _TRUE_COLOR or not text:
-        return text
-    n = len(text)
-    k = len(stops) - 1
-    out: list[str] = []
-    for i, ch in enumerate(text):
-        t = i / max(n - 1, 1)
-        seg = min(int(t * k), k - 1)
-        frac = t * k - seg
-        r1, g1, b1 = stops[seg]
-        r2, g2, b2 = stops[seg + 1]
-        r = int(r1 + (r2 - r1) * frac)
-        g = int(g1 + (g2 - g1) * frac)
-        b = int(b1 + (b2 - b1) * frac)
-        out.append(f"\033[38;2;{r};{g};{b}m{ch}")
-    out.append("\033[0m")
-    return "".join(out)
-
-
-# Purple → pink → teal gradient used for the big logo and accent lines
-_LOGO_GRAD = [
-    ( 88,  28, 135),   # deep purple
-    (124,  58, 237),   # purple
-    (139,  92, 246),   # violet
-    (192, 100, 220),   # lavender-pink
-    (236,  72, 153),   # pink
-    ( 34, 211, 238),   # teal
-]
+_TRUE_COLOR_ERR: bool = _has_truecolor(2)  # stderr truecolor — used by _tlog()
 
 
 def _cprint(color: str, label: str, value: str = "", end: str = "\n") -> None:
@@ -5375,6 +5280,31 @@ Examples:
             )
         except Exception as _e82b:  # noqa: BLE001
             _warn(f"[sparse-ffn] Could not load masks: {_e82b}")
+
+    # ── Wave 83: Auto-enable MoE lazy expert loading (detected by auto_profile)
+    # When auto_profile sets use_moe_lazy=True (MoE architecture detected from
+    # config.json), automatically initialise LazyExpertLoader so that expert
+    # weights are materialised on-demand rather than all up-front.
+    # Guard: only activate when _lazy_expert has not already been set by the user
+    # passing --lazy-expert explicitly.
+    if (
+        _w82_prof is not None
+        and _w82_prof.use_moe_lazy
+        and globals().get("_lazy_expert") is None   # skip if --lazy-expert already set
+    ):
+        try:
+            from squish.moe.lazy_expert_load import (  # noqa: PLC0415
+                LazyExpertConfig,
+                LazyExpertLoader,
+            )
+            _le83_cfg = LazyExpertConfig()
+            globals()["_lazy_expert"] = LazyExpertLoader(_le83_cfg)
+            _info(
+                "moe-lazy",
+                "JIT expert materialisation: auto-enabled for MoE model",
+            )
+        except Exception as _e83:  # noqa: BLE001
+            _warn(f"[moe-lazy] Could not auto-enable: {_e83}")
 
     global _kvtc_manager
     if getattr(args, "kvtc", False) and _state.model is not None:

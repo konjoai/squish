@@ -108,113 +108,12 @@ def _catalog_suggest(query: str, max_results: int = 3):
 
 
 # ── Terminal colours ─────────────────────────────────────────────────────────
-# 24-bit ANSI RGB codes bypass the terminal's colour theme palette remapping —
-# theme profiles remap the 16 named ANSI indices, not direct RGB.  Squish brand
-# colours therefore render predictably on any true-colour terminal where the
-# background has been confirmed (via COLORFGBG or SQUISH_DARK_BG).
-# When the terminal background cannot be confirmed we fall back to standard
-# 8/16-colour ANSI codes so the terminal's own colour theme applies.
-# Respects NO_COLOR and SQUISH_DARK_BG env vars.
-from squish._term import (  # noqa: E402
-    _detect_background_info as _detect_bg_info_cli,
-    has_truecolor as _has_truecolor_mod,
-)
-
-_CLI_TTY: bool = sys.stdout.isatty()
-_CLI_NO_COLOR: bool = "NO_COLOR" in os.environ
-_CLI_ANY_TTY: bool = _CLI_TTY and not _CLI_NO_COLOR
-
-
-def _has_truecolor_cli() -> bool:
-    return (
-        _CLI_TTY
-        and not _CLI_NO_COLOR
-        and (
-            os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit")
-            or os.environ.get("TERM_PROGRAM", "") in (
-                "iTerm.app", "WezTerm", "Ghostty", "Hyper", "vscode", "warp",
-                "Apple_Terminal",
-            )
-            or "kitty" in os.environ.get("TERM", "")
-            or "direct" in os.environ.get("TERM", "")
-            or bool(os.environ.get("FORCE_COLOR", ""))
-        )
-    )
-
-
-_CLI_TRUE_COLOR: bool = _has_truecolor_cli()
-_CLI_IS_DARK_BG, _CLI_BG_CONFIRMED = _detect_bg_info_cli()
-
-
-class _C:  # noqa: N801
-    """Dark-background 24-bit colour constants.  Empty strings on non-true-colour TTYs."""
-    _k = lambda s: s if _CLI_TRUE_COLOR else ""  # noqa: E731
-    DP  = _k("\033[38;2;88;28;135m")   # deep purple  #581C87
-    P   = _k("\033[38;2;124;58;237m")  # purple       #7C3AED
-    V   = _k("\033[38;2;139;92;246m")  # violet       #8B5CF6
-    L   = _k("\033[38;2;167;139;250m") # lilac        #A78BFA
-    MG  = _k("\033[38;2;192;132;252m") # med-purple   #C084FC
-    PK  = _k("\033[38;2;236;72;153m")  # pink         #EC4899
-    LPK = _k("\033[38;2;249;168;212m") # light pink   #F9A8D4
-    T   = _k("\033[38;2;34;211;238m")  # teal         #22D3EE
-    G   = _k("\033[38;2;52;211;153m")  # mint green   #34D399
-    W   = _k("\033[38;2;248;250;252m") # near-white   #F8FAFC
-    SIL = _k("\033[38;2;180;185;210m") # silver       #B4B9D2
-    DIM = _k("\033[38;2;100;116;139m") # dim slate    #64748B
-    B   = _k("\033[1m")                # bold
-    R   = _k("\033[0m")                # reset all
-
-
-class _CLight:  # noqa: N801
-    """Light-background 24-bit colour constants — deeper for contrast on white."""
-    _k = lambda s: s if _CLI_TRUE_COLOR else ""  # noqa: E731
-    DP  = _k("\033[38;2;67;20;105m")   # deeper purple  #431469
-    P   = _k("\033[38;2;88;28;135m")   # dark purple    #581C87
-    V   = _k("\033[38;2;109;40;217m")  # dark violet    #6D28D9
-    L   = _k("\033[38;2;124;58;237m")  # purple         #7C3AED
-    MG  = _k("\033[38;2;139;92;246m")  # violet         #8B5CF6
-    PK  = _k("\033[38;2;157;23;77m")   # deep pink      #9D174D
-    LPK = _k("\033[38;2;219;39;119m")  # pink           #DB2777
-    T   = _k("\033[38;2;6;182;212m")   # teal           #06B6D4
-    G   = _k("\033[38;2;16;185;129m")  # green          #10B981
-    W   = _k("\033[38;2;15;23;42m")    # near-black     #0F172A
-    SIL = _k("\033[38;2;71;85;105m")   # slate          #475569
-    DIM = _k("\033[38;2;51;65;85m")    # dim slate      #334155
-    B   = _k("\033[1m")                # bold
-    R   = _k("\033[0m")                # reset all
-
-
-class _CTerminal:  # noqa: N801
-    """Standard 8/16-colour ANSI constants — defers to the terminal's own theme.
-
-    Used when the background brightness cannot be confirmed (no ``COLORFGBG``
-    or ``SQUISH_DARK_BG``).  These codes are remapped by the active colour
-    scheme so they work on both dark and light backgrounds.
-    """
-    _a = lambda s: s if _CLI_ANY_TTY else ""  # noqa: E731
-    DP  = _a("\033[35m")    # magenta
-    P   = _a("\033[35m")    # magenta
-    V   = _a("\033[35m")    # magenta
-    L   = _a("\033[95m")    # bright magenta
-    MG  = _a("\033[95m")    # bright magenta
-    PK  = _a("\033[95m")    # bright magenta
-    LPK = _a("\033[35m")    # magenta
-    T   = _a("\033[36m")    # cyan
-    G   = _a("\033[32m")    # green
-    W   = _a("\033[97m")    # bright white
-    SIL = _a("\033[37m")    # white / light grey
-    DIM = _a("\033[2m")     # dim
-    B   = _a("\033[1m")     # bold
-    R   = _a("\033[0m")     # reset all
-
-
-# Select dark/light 24-bit palette when background is confirmed; fall back to
-# terminal-native ANSI codes when we cannot determine the background colour.
-if _CLI_TRUE_COLOR and _CLI_BG_CONFIRMED:
-    if not _CLI_IS_DARK_BG:  # pragma: no cover
-        _C = _CLight  # type: ignore[misc]
-elif _CLI_ANY_TTY:  # pragma: no cover
-    _C = _CTerminal  # type: ignore[misc]
+# All palette selection (dark/light 24-bit vs terminal-native ANSI vs no-color)
+# is handled centrally in squish._term.  Importing C as _C here keeps all
+# downstream uses of _C.P, _C.V, _C.T etc. unchanged while eliminating the
+# duplicate detection logic that previously lived in this file.
+# Respects NO_COLOR, SQUISH_DARK_BG, COLORFGBG, and FORCE_COLOR env vars.
+from squish._term import C as _C  # noqa: E402
 
 
 # ── Model registry ───────────────────────────────────────────────────────────

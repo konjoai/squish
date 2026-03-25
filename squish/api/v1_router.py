@@ -31,8 +31,11 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
+
+_DEFAULT_SERVER_URL: str = os.environ.get("SQUISH_SERVER_URL", "http://localhost:11435")
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +205,7 @@ class OpenAPISchemaBuilder:
         routes: Optional[List[V1RouteSpec]] = None,
         title: str = "Squish API",
         version: Optional[str] = None,
-        server_url: str = "http://localhost:11434",
+        server_url: str = _DEFAULT_SERVER_URL,
     ) -> None:
         self._routes     = routes or BUILTIN_ROUTES
         self._title      = title
@@ -343,7 +346,7 @@ class V1Router:
     def openapi_schema(
         self,
         title: str = "Squish API",
-        server_url: str = "http://localhost:11434",
+        server_url: str = _DEFAULT_SERVER_URL,
     ) -> Dict[str, Any]:
         """Return the OpenAPI 3.1 schema dict for all registered routes."""
         builder = OpenAPISchemaBuilder(
