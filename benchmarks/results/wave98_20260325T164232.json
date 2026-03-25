@@ -1,0 +1,77 @@
+{
+  "timestamp": "20260325T164232",
+  "hardware": {
+    "chip": "Apple M3",
+    "architecture": "applegpu_g15g",
+    "memory_gb": 16.0,
+    "os": "Darwin 24.6.0",
+    "python": "3.12.8",
+    "mlx_version": "0.30.6"
+  },
+  "model_path": "/Users/wscholl/.squish/models/llama3.1-8b-4bit",
+  "micro": [
+    {
+      "name": "baseline (no mask)",
+      "hidden_dim": 4096,
+      "sparsity": 0.0,
+      "runs": 300,
+      "mean_ms": 0.0005097072183464965,
+      "p50_ms": 0.000500003807246685,
+      "p95_ms": 0.0005420006345957518,
+      "p99_ms": 0.0006250047590583563,
+      "std_ms": 3.0808333890455466e-05,
+      "overhead_pct": 0.0
+    },
+    {
+      "name": "MaskedFFN sparsity=0%",
+      "hidden_dim": 4096,
+      "sparsity": 0.0,
+      "runs": 300,
+      "mean_ms": 0.0027152627202061317,
+      "p50_ms": 0.002707995008677244,
+      "p95_ms": 0.0028329959604889154,
+      "p99_ms": 0.0029178484692238263,
+      "std_ms": 7.195876181012894e-05,
+      "overhead_pct": 432.7102741480717
+    },
+    {
+      "name": "MaskedFFN sparsity=30%",
+      "hidden_dim": 4096,
+      "sparsity": 0.3,
+      "runs": 300,
+      "mean_ms": 0.0037273137907808027,
+      "p50_ms": 0.002707995008677244,
+      "p95_ms": 0.00726664729882032,
+      "p99_ms": 0.01711349119432264,
+      "std_ms": 0.004301220208347156,
+      "overhead_pct": 631.2656475363065
+    },
+    {
+      "name": "MaskedFFN sparsity=50%",
+      "hidden_dim": 4096,
+      "sparsity": 0.5,
+      "runs": 300,
+      "mean_ms": 0.002699230390135199,
+      "p50_ms": 0.0026249908842146397,
+      "p95_ms": 0.0028360635042190556,
+      "p99_ms": 0.0052579306066036155,
+      "std_ms": 0.0005194667425145987,
+      "overhead_pct": 429.5648743001076
+    },
+    {
+      "name": "MaskedFFN sparsity=70%",
+      "hidden_dim": 4096,
+      "sparsity": 0.7,
+      "runs": 300,
+      "mean_ms": 0.0026555034370782473,
+      "p50_ms": 0.0026250199880450964,
+      "p95_ms": 0.0028329959604889154,
+      "p99_ms": 0.002874992787837982,
+      "std_ms": 0.00010065006944080763,
+      "overhead_pct": 420.9860369827153
+    }
+  ],
+  "inference": [],
+  "genmasks_sparsity_pct": 0.0,
+  "genmasks_time_s": 0.0
+}

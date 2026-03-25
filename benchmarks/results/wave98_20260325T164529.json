@@ -1,0 +1,77 @@
+{
+  "timestamp": "20260325T164529",
+  "hardware": {
+    "chip": "Apple M3",
+    "architecture": "applegpu_g15g",
+    "memory_gb": 16.0,
+    "os": "Darwin 24.6.0",
+    "python": "3.12.8",
+    "mlx_version": "0.30.6"
+  },
+  "model_path": "/Users/wscholl/.squish/models/llama3.1-8b-4bit",
+  "micro": [
+    {
+      "name": "baseline (raw FFN, no mask)",
+      "hidden_dim": 4096,
+      "sparsity": 0.0,
+      "runs": 300,
+      "mean_ms": 10.979619439458475,
+      "p50_ms": 11.107375001301989,
+      "p95_ms": 11.286986066261306,
+      "p99_ms": 11.521419085620437,
+      "std_ms": 0.27457919655042484,
+      "overhead_pct": 0.0
+    },
+    {
+      "name": "MaskedFFN sparsity=0%",
+      "hidden_dim": 4096,
+      "sparsity": 0.0,
+      "runs": 300,
+      "mean_ms": 11.423194876212316,
+      "p50_ms": 11.137313020299189,
+      "p95_ms": 11.685245858097915,
+      "p99_ms": 25.11624175065655,
+      "std_ms": 2.9432688507269082,
+      "overhead_pct": 4.039989174485621
+    },
+    {
+      "name": "MaskedFFN sparsity=30%",
+      "hidden_dim": 4096,
+      "sparsity": 0.3,
+      "runs": 300,
+      "mean_ms": 11.099393220016887,
+      "p50_ms": 11.122354495455511,
+      "p95_ms": 11.809150355111342,
+      "p99_ms": 14.532014841970515,
+      "std_ms": 0.6883701838219674,
+      "overhead_pct": 1.090873697570708
+    },
+    {
+      "name": "MaskedFFN sparsity=50%",
+      "hidden_dim": 4096,
+      "sparsity": 0.5,
+      "runs": 300,
+      "mean_ms": 11.071348477271385,
+      "p50_ms": 11.130249491543509,
+      "p95_ms": 11.901070862950291,
+      "p99_ms": 12.208566242479717,
+      "std_ms": 0.3860701668494505,
+      "overhead_pct": 0.8354482440735226
+    },
+    {
+      "name": "MaskedFFN sparsity=70%",
+      "hidden_dim": 4096,
+      "sparsity": 0.7,
+      "runs": 300,
+      "mean_ms": 10.973370559998633,
+      "p50_ms": 11.10660401172936,
+      "p95_ms": 11.269093137525488,
+      "p99_ms": 11.437050428357907,
+      "std_ms": 0.2630353650794064,
+      "overhead_pct": -0.056913443077854134
+    }
+  ],
+  "inference": [],
+  "genmasks_sparsity_pct": 0.0,
+  "genmasks_time_s": 0.0
+}
