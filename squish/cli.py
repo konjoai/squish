@@ -403,110 +403,258 @@ def cmd_models(args):
     if not _MODELS_DIR.exists():
         warn(f"Models directory not found: {_MODELS_DIR}")
         hint("Run: squish pull qwen3:8b")
-        return
-
-    rows = []
-    # Build catalog lookup so we can annotate MoE models in the listing
-    _catalog_by_dir: dict = {}
-    try:
-        from squish.catalog import list_catalog
-        for _ce in list_catalog():
-            _catalog_by_dir[_ce.dir_name] = _ce
-    except Exception:  # noqa: BLE001
-        pass
-
-    for d in sorted(_MODELS_DIR.iterdir()):
-        if not d.is_dir():
-            continue
-        if d.name.startswith("."):
-            continue
-        compressed = Path(str(d) + _COMPRESSED_SUFFIX)
-        comp_str = "✓ ready" if compressed.exists() else "raw only"
-        # estimate disk size
+        rows = []
+    else:
+        rows = []
+        # Build catalog lookup so we can annotate MoE models in the listing
+        _catalog_by_dir: dict = {}
         try:
-            total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
-            size_str = f"{total / 1e9:.1f} GB"
-        except Exception:
-            size_str = "?"
-        # MoE badge from catalog metadata
-        _entry = _catalog_by_dir.get(d.name)
-        if _entry is not None and getattr(_entry, "moe", False):
-            _active = getattr(_entry, "active_params_b", None)
-            badge = (
-                f"MoE {_entry.params}/{_active:.1f}B active"
-                if _active is not None
-                else "MoE"
-            )
-        else:
-            badge = ""
-        rows.append((d.name, size_str, comp_str, badge))
+            from squish.catalog import list_catalog
+            for _ce in list_catalog():
+                _catalog_by_dir[_ce.dir_name] = _ce
+        except Exception:  # noqa: BLE001
+            pass
 
-    if not rows:
+        for d in sorted(_MODELS_DIR.iterdir()):
+            if not d.is_dir():
+                continue
+            if d.name.startswith("."):
+                continue
+            compressed = Path(str(d) + _COMPRESSED_SUFFIX)
+            comp_str = "✓ ready" if compressed.exists() else "raw only"
+            # estimate disk size
+            try:
+                total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+                size_str = f"{total / 1e9:.1f} GB"
+            except Exception:
+                size_str = "?"
+            # MoE badge from catalog metadata
+            _entry = _catalog_by_dir.get(d.name)
+            if _entry is not None and getattr(_entry, "moe", False):
+                _active = getattr(_entry, "active_params_b", None)
+                badge = (
+                    f"MoE {_entry.params}/{_active:.1f}B active"
+                    if _active is not None
+                    else "MoE"
+                )
+            else:
+                badge = ""
+            rows.append((d.name, size_str, comp_str, badge))
+
+    if rows:
+        if _RICH_AVAILABLE:
+            from rich.console import Console as _Con
+            from rich.table import Table as _Tbl
+            from rich import box as _box
+            tbl = _Tbl(
+                title="Local Models",
+                box=_box.SIMPLE,
+                header_style="rgb(139,92,246) bold",
+                border_style="rgb(100,116,139)",
+                show_lines=False,
+                title_style="rgb(248,250,252) bold",
+            )
+            tbl.add_column("Model", style="rgb(248,250,252)")
+            tbl.add_column("Disk", style="rgb(167,139,250)", justify="right")
+            tbl.add_column("Status", style="rgb(52,211,153)")
+            tbl.add_column("Notes", style="rgb(100,116,139)")
+            for name, size, comp, badge in rows:
+                tbl.add_row(name, size, comp, badge)
+            console.print()
+            console.print(tbl)
+            console.print()
+            console.print("  [rgb(100,116,139)]Aliases   :[/rgb(100,116,139)] [rgb(248,250,252)]1.5b, 7b, 14b, 32b, 72b[/rgb(248,250,252)]")
+            console.print("  [rgb(100,116,139)]Catalog IDs:[/rgb(100,116,139)] [rgb(248,250,252)]qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …[/rgb(248,250,252)]")
+            console.print("  [rgb(100,116,139)]Commands  :[/rgb(100,116,139)] [rgb(248,250,252)]squish catalog[/rgb(248,250,252)]  [rgb(100,116,139)]·[/rgb(100,116,139)]  [rgb(248,250,252)]squish pull qwen3:8b[/rgb(248,250,252)]")
+            console.print()
+        else:
+            print()
+            print(f"  Local models in {_MODELS_DIR}:")
+            print()
+            w0 = max(len(r[0]) for r in rows) + 2
+            print(f"  {'Model':<{w0}} {'Disk':>8}  {'Status'}")
+            print(f"  {'─'*w0} {'─'*8}  {'─'*14}")
+            for name, size, comp, badge in rows:
+                note = f"  [{badge}]" if badge else ""
+                print(f"  {name:<{w0}} {size:>8}  {comp}{note}")
+            print()
+            print("  Legacy aliases : 1.5b, 7b, 14b, 32b, 72b")
+            print("  Catalog IDs    : qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …")
+            print("  Browse catalog : squish catalog")
+            print("  Download model : squish pull qwen3:8b")
+            print()
+    else:
         warn("No model directories found.")
         hint("Download a model with: squish pull qwen3:8b")
         hint("Browse all models    : squish catalog")
-        return
-
-    if _RICH_AVAILABLE:
-        from rich.console import Console as _Con
-        from rich.table import Table as _Tbl
-        from rich import box as _box
-        tbl = _Tbl(
-            title="Local Models",
-            box=_box.SIMPLE,
-            header_style="rgb(139,92,246) bold",
-            border_style="rgb(100,116,139)",
-            show_lines=False,
-            title_style="rgb(248,250,252) bold",
-        )
-        tbl.add_column("Model", style="rgb(248,250,252)")
-        tbl.add_column("Disk", style="rgb(167,139,250)", justify="right")
-        tbl.add_column("Status", style="rgb(52,211,153)")
-        tbl.add_column("Notes", style="rgb(100,116,139)")
-        for name, size, comp, badge in rows:
-            tbl.add_row(name, size, comp, badge)
-        console.print()
-        console.print(tbl)
-        console.print()
-        console.print("  [rgb(100,116,139)]Aliases   :[/rgb(100,116,139)] [rgb(248,250,252)]1.5b, 7b, 14b, 32b, 72b[/rgb(248,250,252)]")
-        console.print("  [rgb(100,116,139)]Catalog IDs:[/rgb(100,116,139)] [rgb(248,250,252)]qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …[/rgb(248,250,252)]")
-        console.print("  [rgb(100,116,139)]Commands  :[/rgb(100,116,139)] [rgb(248,250,252)]squish catalog[/rgb(248,250,252)]  [rgb(100,116,139)]·[/rgb(100,116,139)]  [rgb(248,250,252)]squish pull qwen3:8b[/rgb(248,250,252)]")
-        console.print()
-    else:
-        print()
-        print(f"  Local models in {_MODELS_DIR}:")
-        print()
-        w0 = max(len(r[0]) for r in rows) + 2
-        print(f"  {'Model':<{w0}} {'Disk':>8}  {'Status'}")
-        print(f"  {'─'*w0} {'─'*8}  {'─'*14}")
-        for name, size, comp, badge in rows:
-            note = f"  [{badge}]" if badge else ""
-            print(f"  {name:<{w0}} {size:>8}  {comp}{note}")
-        print()
-        print("  Legacy aliases : 1.5b, 7b, 14b, 32b, 72b")
-        print("  Catalog IDs    : qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …")
-        print("  Browse catalog : squish catalog")
-        print("  Download model : squish pull qwen3:8b")
-        print()
 
     # ── External models (Ollama / LM Studio) ─────────────────────────────────
     try:
         from squish.serving.local_model_scanner import LocalModelScanner as _Scn
+        from squish.serving.lm_studio_bridge import probe_lm_studio as _probe_lms
         _ext = _Scn()
         _ext_models = _ext.scan_ollama() + _ext.scan_lm_studio()
         if _ext_models:
-            print("  External models detected:")
-            print()
-            _w_src  = max(len(m.source) for m in _ext_models)
-            _w_name = max(len(m.name)   for m in _ext_models)
-            print(f"  {'Source':<{_w_src+2}}  {'Model':<{_w_name+2}}  Import hint")
-            print(f"  {'─'*(_w_src+2)}  {'─'*(_w_name+2)}  {'─'*42}")
-            for _m in _ext_models:
-                _hint = f"squish import {_m.source}:{_m.name}"
-                print(f"  {_m.source:<{_w_src+2}}  {_m.name:<{_w_name+2}}  {_hint}")
-            print()
+            # Silently check which LM Studio models are currently live
+            _lms_status = _probe_lms()
+            _lms_live: set[str] = set(_lms_status.loaded_models) if _lms_status.running else set()
+
+            if _RICH_AVAILABLE:
+                from rich.table import Table as _ETbl
+                from rich import box as _ebox
+                _etbl = _ETbl(
+                    title="External Models",
+                    box=_ebox.SIMPLE,
+                    header_style="rgb(139,92,246) bold",
+                    border_style="rgb(100,116,139)",
+                    show_lines=False,
+                    title_style="rgb(248,250,252) bold",
+                )
+                _etbl.add_column("Source",  style="rgb(100,116,139)")
+                _etbl.add_column("Model",   style="rgb(248,250,252)")
+                _etbl.add_column("Size",    style="rgb(167,139,250)", justify="right")
+                _etbl.add_column("Status",  style="rgb(52,211,153)")
+                for _m in _ext_models:
+                    _sz = (
+                        f"{_m.size_bytes / 1e9:.1f} GB" if _m.size_bytes >= 1e9
+                        else f"{_m.size_bytes / 1e6:.0f} MB" if _m.size_bytes > 0
+                        else "—"
+                    )
+                    _live = "● loaded" if _m.name in _lms_live or any(
+                        _m.name in _lv for _lv in _lms_live
+                    ) else ""
+                    _etbl.add_row(_m.source, _m.name, _sz, _live)
+                console.print()
+                console.print(_etbl)
+                console.print()
+            else:
+                print()
+                print("  External models detected:")
+                print()
+                _w_src  = max(len(m.source) for m in _ext_models)
+                _w_name = max(len(m.name)   for m in _ext_models)
+                print(f"  {'Source':<{_w_src+2}}  {'Model':<{_w_name+2}}  {'Size':>8}  Status")
+                print(f"  {'─'*(_w_src+2)}  {'─'*(_w_name+2)}  {'─'*8}  {'─'*10}")
+                for _m in _ext_models:
+                    _sz = (
+                        f"{_m.size_bytes / 1e9:.1f} GB" if _m.size_bytes >= 1e9
+                        else f"{_m.size_bytes / 1e6:.0f} MB" if _m.size_bytes > 0
+                        else "—"
+                    )
+                    _live = "● loaded" if _m.name in _lms_live or any(
+                        _m.name in _lv for _lv in _lms_live
+                    ) else ""
+                    print(f"  {_m.source:<{_w_src+2}}  {_m.name:<{_w_name+2}}  {_sz:>8}  {_live}")
+                print()
     except Exception:
         pass
+
+
+# ── squish lm ─────────────────────────────────────────────────────────────────
+
+def cmd_lm(args) -> None:
+    """Show LM Studio status and list locally installed LM Studio models.
+
+    With no sub-action: probes the running LM Studio server and prints a status
+    summary, then lists models found on disk.
+
+    Actions
+    -------
+    status  (default) — live probe + disk inventory
+    models             — disk inventory only (no network call)
+    """
+    from squish.serving.lm_studio_bridge import probe_lm_studio
+    from squish.serving.local_model_scanner import LocalModelScanner
+
+    action = getattr(args, "lm_action", "status") or "status"
+    as_json = getattr(args, "json_", False)
+
+    # ── live probe ───────────────────────────────────────────────────────────
+    if action == "status":
+        status = probe_lm_studio(timeout=1.0)
+
+        if as_json:
+            import json as _json
+            print(_json.dumps({
+                "running":       status.running,
+                "base_url":      status.base_url,
+                "loaded_models": status.loaded_models,
+                "version":       status.server_version,
+            }, indent=2))
+            return
+
+        print()
+        _box(["squish lm — LM Studio status"])
+        print()
+        if status.running:
+            print(f"  {_C.G}●{_C.R}  LM Studio is {_C.G}running{_C.R}  ({status.base_url})")
+            if status.server_version:
+                print(f"     Version : {status.server_version}")
+            if status.loaded_models:
+                print(f"     Loaded  :")
+                for mid in status.loaded_models:
+                    print(f"       • {_C.P}{mid}{_C.R}")
+            else:
+                print(f"     {_C.MG}No model currently loaded into memory.{_C.R}")
+                print(f"     Load a model in LM Studio, then Squish can forward requests to it.")
+        else:
+            print(f"  {_C.MG}○{_C.R}  LM Studio is  not running  ({status.base_url})")
+            print()
+            print(f"  {_C.DIM}Start LM Studio, load a model, then run:{_C.R}")
+            print(f"    squish lm              # re-check status")
+        print()
+
+    # ── disk model inventory ─────────────────────────────────────────────────
+    scanner = LocalModelScanner()
+    disk_models = scanner.scan_lm_studio()
+
+    if as_json and action != "status":
+        import json as _json
+        print(_json.dumps([
+            {
+                "name":       m.name,
+                "path":       str(m.path),
+                "size_bytes": m.size_bytes,
+                "family":     m.family,
+                "params":     m.params,
+            }
+            for m in disk_models
+        ], indent=2))
+        return
+
+    if action == "models":
+        print()
+        _box(["squish lm models — LM Studio disk inventory"])
+        print()
+
+    if not disk_models:
+        print(f"  {_C.MG}No LM Studio models found on disk.{_C.R}")
+        print(f"  Default scan dir : ~/.cache/lm-studio/models")
+        print(f"  Override via     : LMSTUDIO_MODELS_DIR=/your/path")
+        print()
+        return
+
+    # Group by source directory publisher
+    header = "LM Studio Models (on disk)"
+    print(f"  {_C.P}{header}{_C.R}")
+    print()
+
+    w_name = max(len(m.name) for m in disk_models)
+    w_size = 8
+
+    print(f"  {'Model':<{w_name+2}}  {'Size':>{w_size}}  Path")
+    print(f"  {'─'*(w_name+2)}  {'─'*w_size}  {'─'*40}")
+    for m in disk_models:
+        size_str = (
+            f"{m.size_bytes / 1e9:.1f} GB" if m.size_bytes >= 1e9
+            else f"{m.size_bytes / 1e6:.0f} MB" if m.size_bytes > 0
+            else "—"
+        )
+        print(f"  {m.name:<{w_name+2}}  {size_str:>{w_size}}  {_C.DIM}{m.path}{_C.R}")
+
+    print()
+    print(f"  {len(disk_models)} model(s) found  ·  Override scan root: LMSTUDIO_MODELS_DIR=/path")
+    print()
 
 
 # ── squish rm ────────────────────────────────────────────────────────────────
@@ -4172,6 +4320,35 @@ Ollama drop-in:
     # ── models ──
     p_models = sub.add_parser("models", help="List local models")
     p_models.set_defaults(func=cmd_models)
+
+    # ── lm ─────────────────────────────────────────────────────────────────────
+    p_lm = sub.add_parser(
+        "lm",
+        help="Show LM Studio status and list LM Studio models",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Probe a running LM Studio instance and list models installed on disk.\n\n"
+            "Examples:\n"
+            "  squish lm                  # live status + disk inventory\n"
+            "  squish lm models           # disk inventory only\n"
+            "  squish lm --json           # machine-readable output\n"
+            "  LMSTUDIO_MODELS_DIR=/path squish lm models\n"
+        ),
+    )
+    p_lm.add_argument(
+        "lm_action",
+        nargs="?",
+        default="status",
+        choices=["status", "models"],
+        help="Action to perform (default: status)",
+    )
+    p_lm.add_argument(
+        "--json",
+        dest="json_",
+        action="store_true",
+        help="Output results as JSON",
+    )
+    p_lm.set_defaults(func=cmd_lm)
 
     # ── squish compat ──────────────────────────────────────────────────────────
     p_compat = sub.add_parser(

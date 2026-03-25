@@ -163,19 +163,88 @@ class LocalModelScanner:
         return models
 
     def scan_lm_studio(self) -> list[LocalModel]:
-        """Return GGUF / safetensors models found in the LM Studio cache."""
-        if not self._lm_studio_dir.is_dir():
+        """Return GGUF and safetensors models found in the LM Studio cache.
+
+        LM Studio stores models at ``<lm_studio_dir>/<publisher>/<repo>/``.
+        Model names are derived as ``publisher/repo`` to mirror LM Studio's
+        own naming convention.  GGUF files are single-file models; safetensors
+        repos are identified by the presence of a ``model.safetensors`` or
+        ``model.safetensors.index.json`` file inside the repo directory.
+
+        The ``LMSTUDIO_MODELS_DIR`` environment variable overrides the default
+        scan root, allowing users with non-standard install paths to be detected.
+        """
+        import os
+
+        # Honour env override (set by user or by test fixtures)
+        env_override = os.environ.get("LMSTUDIO_MODELS_DIR", "")
+        root = Path(env_override) if env_override else self._lm_studio_dir
+        if not root.is_dir():
             return []
+
         models: list[LocalModel] = []
-        for gguf in self._lm_studio_dir.rglob("*.gguf"):
+        seen_paths: set[Path] = set()
+
+        # ── GGUF single-file models ──────────────────────────────────────────
+        for gguf in sorted(root.rglob("*.gguf")):
+            if gguf in seen_paths:
+                continue
+            seen_paths.add(gguf)
+            # Derive a human-readable name from the directory path relative
+            # to the scan root.  LM Studio layout: root/publisher/repo/file.gguf
+            # → name = "publisher/repo"
+            try:
+                rel_parts = gguf.relative_to(root).parts
+                if len(rel_parts) >= 3:
+                    # publisher/repo/model.gguf  or deeper
+                    lm_name = f"{rel_parts[0]}/{rel_parts[1]}"
+                elif len(rel_parts) == 2:
+                    lm_name = rel_parts[0]
+                else:
+                    lm_name = gguf.stem.lower()
+            except ValueError:
+                lm_name = gguf.stem.lower()
+
             models.append(LocalModel(
-                name=gguf.stem.lower(),
+                name=lm_name,
                 path=gguf,
-                source="gguf",
-                size_bytes=gguf.stat().st_size if gguf.exists() else 0,
+                source="lm_studio",
+                size_bytes=gguf.stat().st_size,
                 family=_guess_family(gguf.stem),
                 params=_guess_params(gguf.stem),
             ))
+
+        # ── Safetensors repo models ──────────────────────────────────────────
+        # A safetensors model is a directory containing model.safetensors or
+        # model.safetensors.index.json (sharded).
+        _ST_MARKERS = ("model.safetensors", "model.safetensors.index.json")
+        for candidate in sorted(root.rglob("model.safetensors*")):
+            if not candidate.is_file():
+                continue
+            repo_dir = candidate.parent
+            if repo_dir in seen_paths:
+                continue
+            seen_paths.add(repo_dir)
+            try:
+                rel_parts = repo_dir.relative_to(root).parts
+                if len(rel_parts) >= 2:
+                    lm_name = f"{rel_parts[0]}/{rel_parts[1]}"
+                elif len(rel_parts) == 1:
+                    lm_name = rel_parts[0]
+                else:
+                    lm_name = repo_dir.name.lower()
+            except ValueError:
+                lm_name = repo_dir.name.lower()
+
+            models.append(LocalModel(
+                name=lm_name,
+                path=repo_dir,
+                source="lm_studio",
+                size_bytes=_dir_size(repo_dir),
+                family=_guess_family(repo_dir.name),
+                params=_guess_params(repo_dir.name),
+            ))
+
         return models
 
     def find_all(self) -> list[LocalModel]:

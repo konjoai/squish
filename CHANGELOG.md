@@ -5,6 +5,61 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [69.0.0] — Wave 96 — 2026-03-25
+
+### Feat — LM Studio Model Auto-Detection
+
+Zero-configuration detection of models installed and running via
+[LM Studio](https://lmstudio.ai/).  No flags, no environment variables required
+for the common case.
+
+#### 1. `LocalModelScanner.scan_lm_studio()` — rewritten (`squish/serving/local_model_scanner.py`)
+
+- **Source tag fixed**: models from LM Studio now carry `source="lm_studio"`
+  instead of the incorrect `source="gguf"` from the previous implementation.
+- **Safetensors support**: repos containing `model.safetensors` or
+  `model.safetensors.index.json` (sharded) are now discovered alongside GGUF
+  files.
+- **Publisher/repo naming**: model names are derived from LM Studio's directory
+  layout (`<root>/<publisher>/<repo>/`) → `"publisher/repo"`, matching how LM
+  Studio itself identifies models (e.g. `lmstudio-ai/gemma-2-2b-it-GGUF`).
+- **`LMSTUDIO_MODELS_DIR` env var**: overrides the default scan root
+  (`~/.cache/lm-studio/models`) for non-standard install paths or test fixtures.
+
+#### 2. `lm_studio_bridge.py` — new module (`squish/serving/lm_studio_bridge.py`)
+
+- **`LMStudioStatus`** frozen dataclass: `running`, `base_url`,
+  `loaded_models`, `server_version`, `model_count`.  `__str__` renders a
+  one-line human-readable summary.
+- **`probe_lm_studio(timeout=0.8)`** — silently probes `http://127.0.0.1:1234`
+  (or `LMSTUDIO_BASE_URL`) and returns `LMStudioStatus`.  Never raises.
+- **`LMStudioClient`** — thin stdlib-only HTTP client:
+  - `models()` → list of model dicts from `GET /v1/models`; returns `[]` if
+    LM Studio is not running.
+  - `chat_completions(messages, model, stream=True)` → SSE token iterator or
+    full response dict; raises `ConnectionError` / `RuntimeError` on failure.
+
+#### 3. `cmd_models` — external section enriched (`squish/cli.py`)
+
+- Calls `probe_lm_studio()` silently when building the External Models table.
+- LM Studio models found on disk are displayed with their **disk size** and a
+  `● loaded` badge if the model is currently warm in the LM Studio runtime.
+- Rich and plain-text paths both updated.
+- **Early-return fix**: `cmd_models` no longer exits before reaching the
+  External Models section when `~/models/` is empty — LM Studio models are
+  always shown if present.
+
+#### Tests
+
+`tests/test_wave96_lm_studio.py` — 31 tests covering scanner source tags,
+GGUF + safetensors discovery, publisher/repo naming, `LMSTUDIO_MODELS_DIR`
+override, `probe_lm_studio()` running/not-running, `LMSTUDIO_BASE_URL` override,
+`LMStudioStatus` properties and `__str__`, `LMStudioClient.models()`,
+`LMStudioClient.chat_completions()` SSE iteration, and `cmd_models` external
+section display.
+
+---
+
 ## [68.0.0] — Wave 95 — 2026-03-25
 
 ### CLI — `squish ps` + `squish logs`
