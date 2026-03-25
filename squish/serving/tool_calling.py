@@ -110,6 +110,8 @@ def format_tools_prompt(messages: list[dict], tools: list[dict]) -> list[dict]:
 _FENCED_JSON  = re.compile(r"```(?:json)?\s*\n?([\s\S]*?)```", re.MULTILINE)
 # Qwen3 / Hermes native tool-call tags
 _TOOL_CALL_TAG = re.compile(r"<tool_call>\s*([\s\S]*?)\s*</tool_call>", re.MULTILINE)
+# Strategy 0.5 — opening tag only (closing tag consumed by stop string)
+_OPEN_TOOL_CALL_TAG = re.compile(r"<tool_call>\s*([\s\S]+)$", re.MULTILINE)
 # Think-block stripper (Qwen3 reasoning traces before the tool call)
 _THINK_BLOCK   = re.compile(r"<think>[\s\S]*?</think>", re.MULTILINE)
 
@@ -158,20 +160,27 @@ def _try_parse(text: str) -> Any | None:
 
 
 def _is_tool_call(obj: Any) -> bool:
-    """Return True if `obj` looks like a tool call or list of tool calls."""
+    """Return True if `obj` looks like a tool call or list of tool calls.
+
+    Accepts both ``"arguments"`` (OpenAI/Qwen format) and ``"input"``
+    (Claude/Anthropic tool-use format) as the arguments key.
+    """
+    def _single(x: Any) -> bool:
+        return isinstance(x, dict) and "name" in x and ("arguments" in x or "input" in x)
     if isinstance(obj, dict):
-        return "name" in obj and "arguments" in obj
+        return _single(obj)
     if isinstance(obj, list):
-        return all(isinstance(x, dict) and "name" in x and "arguments" in x
-                   for x in obj) and len(obj) > 0
+        return all(_single(x) for x in obj) and len(obj) > 0
     return False
 
 
 def _normalise(obj: Any) -> list[dict]:
-    """Wrap single tool call in a list."""
-    if isinstance(obj, dict):
-        return [obj]
-    return list(obj)
+    """Wrap single tool call in a list and normalize ``"input"`` → ``"arguments"``."""
+    items = [obj] if isinstance(obj, dict) else list(obj)
+    for item in items:
+        if isinstance(item, dict) and "input" in item and "arguments" not in item:
+            item["arguments"] = item.pop("input")
+    return items
 
 
 def parse_tool_calls(text: str) -> list[dict] | None:
@@ -201,6 +210,13 @@ def parse_tool_calls(text: str) -> list[dict] | None:
                 calls.extend(_normalise(obj))
         if calls:
             return calls
+
+    # 0.5. Opening <tool_call> tag without closing tag (consumed by stop string)
+    open_match = _OPEN_TOOL_CALL_TAG.search(stripped)
+    if open_match:
+        obj = _try_parse(open_match.group(1).strip())
+        if obj is not None and _is_tool_call(obj):
+            return _normalise(obj)
 
     # 1. Try fenced JSON blocks
     for m in _FENCED_JSON.finditer(stripped):
