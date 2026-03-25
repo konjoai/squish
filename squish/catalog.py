@@ -276,6 +276,7 @@ _BUNDLED: list[dict] = [
          moe=True, active_params_b=3.0, grammar_trigger="<tool_call>"),
     dict(id="qwen3:32b", name="Qwen3-32B",
          hf_mlx_repo="mlx-community/Qwen3-32B-bf16",
+         squish_repo="squishai/Qwen3-32B-bf16-squished",
          size_gb=64.0, squished_size_gb=42.9, params="32B", context=131072,
          tags=["large"], grammar_trigger="<tool_call>"),
 
@@ -316,10 +317,12 @@ _BUNDLED: list[dict] = [
          tags=["small"]),
     dict(id="gemma3:12b", name="Gemma-3-12B-Instruct",
          hf_mlx_repo="mlx-community/gemma-3-12b-it-bf16",
+         squish_repo="squishai/gemma-3-12b-it-bf16-squished",
          size_gb=24.2, squished_size_gb=16.2, params="12B", context=131072,
          tags=["balanced"]),
     dict(id="gemma3:27b", name="Gemma-3-27B-Instruct",
          hf_mlx_repo="mlx-community/gemma-3-27b-it-bf16",
+         squish_repo="squishai/gemma-3-27b-it-bf16-squished",
          size_gb=54.0, squished_size_gb=36.2, params="27B", context=131072,
          tags=["large"]),
 
@@ -472,6 +475,7 @@ _BUNDLED: list[dict] = [
     # ── Phi-4 ─────────────────────────────────────────────────────────────────
     dict(id="phi4:14b", name="Phi-4",
          hf_mlx_repo="mlx-community/phi-4-bf16",
+         squish_repo="squishai/phi-4-bf16-squished",
          size_gb=28.0, squished_size_gb=18.8, params="14B", context=16384,
          tags=["balanced"],
          notes="Microsoft Phi-4"),
@@ -479,6 +483,7 @@ _BUNDLED: list[dict] = [
     # ── Mistral ───────────────────────────────────────────────────────────────
     dict(id="mistral:7b", name="Mistral-7B-Instruct-v0.3",
          hf_mlx_repo="mlx-community/Mistral-7B-Instruct-v0.3-bf16",
+         squish_repo="squishai/Mistral-7B-Instruct-v0.3-bf16-squished",
          size_gb=14.5, squished_size_gb=9.7, params="7B", context=32768,
          tags=["balanced"]),
     dict(id="mistral-small:22b", name="Mistral-Small-Instruct-2409",

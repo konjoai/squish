@@ -239,16 +239,26 @@ def main() -> None:
                          "Omit to process all models matching --tag.")
     ap.add_argument("--tag",      default="",
                     help="Process all catalog models with this tag (small, fast, balanced, etc.)")
+    ap.add_argument("--all-missing", action="store_true",
+                    help="Process all catalog models whose squish_repo is not yet set")
+    ap.add_argument("--batch-file", default="",
+                    help="JSON file with a list of model IDs to process")
     ap.add_argument("--int8",     action="store_true",
                     help="Use INT8 per-group compression instead of INT4 (default)")
+    ap.add_argument("--int2",     action="store_true",
+                    help="Use INT2 compression (for 70B+ models)")
     ap.add_argument("--token",    default="",
                     help="HuggingFace access token (or set $HF_TOKEN env var)")
     ap.add_argument("--models-dir", default="",
                     help="Local directory to store downloaded/compressed models")
     ap.add_argument("--dry-run",  action="store_true",
                     help="Compress locally but skip uploading to HuggingFace")
+    ap.add_argument("--force",    action="store_true",
+                    help="Re-upload even if the repo already exists on HuggingFace")
     ap.add_argument("--skip-existing", action="store_true", default=True,
                     help="Skip upload if repo already exists on HuggingFace (default: True)")
+    ap.add_argument("--org",      default="squishai",
+                    help="HuggingFace organisation to upload to (default: squishai)")
     ap.add_argument("--report",   default="upload_report.md",
                     help="Path for markdown upload report (default: upload_report.md)")
     args = ap.parse_args()
@@ -268,7 +278,27 @@ def main() -> None:
     models_dir = Path(args.models_dir).expanduser() if args.models_dir else Path.home() / "models"
 
     # Resolve model list
-    if args.models:
+    if args.all_missing:
+        entries = [e for e in list_catalog() if not e.squish_repo]
+        if not entries:
+            print("  ✓  All catalog models already have a squish_repo — nothing to do.")
+            return
+        print(f"  Found {len(entries)} model(s) without squish_repo")
+    elif args.batch_file:
+        try:
+            with open(args.batch_file, encoding="utf-8") as fh:
+                model_ids = json.load(fh)
+        except Exception as exc:
+            print(f"  ✗  Could not read --batch-file: {exc}", file=sys.stderr)
+            sys.exit(1)
+        entries = []
+        for name in model_ids:
+            e = resolve(name)
+            if e is None:
+                print(f"  ✗  Unknown model in batch file: {name!r}", file=sys.stderr)
+                sys.exit(1)
+            entries.append(e)
+    elif args.models:
         entries = []
         for name in args.models:
             e = resolve(name)
@@ -283,29 +313,63 @@ def main() -> None:
             sys.exit(1)
     else:
         ap.print_help()
-        print("\n  Specify at least one model ID or --tag.")
+        print("\n  Specify at least one model ID, --tag, --all-missing, or --batch-file.")
         sys.exit(1)
 
-    quant_label = "INT8" if args.int8 else "INT4"
+    quant_label = "INT2" if args.int2 else "INT8" if args.int8 else "INT4"
+    int4 = not args.int8 and not args.int2
+
+    # ETA estimate (rough: 1 GB/min compress + 500 MB/min upload)
+    total_size_gb = sum(getattr(e, "squished_size_gb", 0) or 0 for e in entries)
+    eta_compress_min = total_size_gb / 1.0
+    eta_upload_min   = total_size_gb / 0.5
+    eta_total_min    = eta_compress_min + eta_upload_min
+
     print(f"\n  Processing {len(entries)} model(s) with {quant_label} compression")
+    print(f"  Estimated total: ~{total_size_gb:.1f} GB "
+          f"(~{eta_total_min:.0f} min at 1 GB/min compress + 500 MB/min upload)")
     if args.dry_run:
         print("  [dry-run mode — no HuggingFace uploads]")
 
+    # Check which repos already exist (skip unless --force)
+    if not args.force and not args.dry_run:
+        try:
+            from huggingface_hub import HfApi  # type: ignore[import]
+            api = HfApi(token=token)
+            to_skip = []
+            for entry in entries:
+                suffix = "-squished-int2" if args.int2 else "-squished" if int4 else "-squished-int8"
+                repo_id = f"{args.org}/{entry.dir_name}{suffix}"
+                try:
+                    if api.repo_exists(repo_id):
+                        to_skip.append(entry.id)
+                        print(f"  ⏭  {entry.id}: repo already exists at {repo_id} — skipping")
+                except Exception:
+                    pass
+            entries = [e for e in entries if e.id not in to_skip]
+            if not entries:
+                print("  ✓  All repos already exist. Use --force to re-upload.")
+                return
+        except ImportError:
+            pass
+
     results = []
     for entry in entries:
-        int4 = not args.int8
-        suffix = "-squished" if int4 else "-squished-int8"
-        repo_id = f"squishai/{entry.dir_name}{suffix}"
+        suffix = "-squished-int2" if args.int2 else "-squished" if int4 else "-squished-int8"
+        repo_id = f"{args.org}/{entry.dir_name}{suffix}"
+        t_start = time.perf_counter()
         try:
             compressed_dir = _compress(entry, models_dir, int4, token)
             disk_gb = sum(
                 f.stat().st_size for f in compressed_dir.rglob("*") if f.is_file()
             ) / 1e9
             url = _upload(entry, compressed_dir, int4, token, args.dry_run)
+            elapsed_min = (time.perf_counter() - t_start) / 60
             results.append({
                 "id": entry.id, "params": entry.params, "quant": quant_label,
                 "size": f"{disk_gb:.1f} GB", "ok": True,
                 "repo_id": repo_id, "url": url,
+                "elapsed_min": f"{elapsed_min:.1f}",
             })
         except Exception as exc:
             print(f"\n  ✗  {entry.id} failed: {exc}", file=sys.stderr)

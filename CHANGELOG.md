@@ -5,6 +5,44 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [65.0.0] — Wave 92 — 2026-03-25
+
+### Feat — Pre-Compress Pipeline + HF Batch Upload
+
+#### 1. Catalog `squish_repo` Backfill (`catalog.py`)
+
+- Added `squish_repo` for 5 previously-unset catalog entries:
+  - `qwen3:32b` → `squishai/Qwen3-32B-bf16-squished`
+  - `gemma3:12b` → `squishai/gemma-3-12b-it-bf16-squished`
+  - `gemma3:27b` → `squishai/gemma-3-27b-it-bf16-squished`
+  - `phi4:14b` → `squishai/phi-4-bf16-squished`
+  - `mistral:7b` → `squishai/Mistral-7B-Instruct-v0.3-bf16-squished`
+- `_entry_from_dict()` now maps `squished_int2_size_gb` from dict entries
+  (fixes `None` return for catalog entries with INT2 size data).
+
+#### 2. GitHub Actions Workflow (`.github/workflows/model_upload.yml`)
+
+- `workflow_dispatch` trigger with inputs: `model_id` (required model to
+  compress + upload), `int2` (bool — use INT2 quantization), `dry_run` (bool),
+  `org` (HuggingFace org, default `squishai`).
+- Runs on `macos-14` (Apple Silicon), installs squish + huggingface_hub,
+  calls `dev/scripts/upload_to_hub.py` with appropriate flags.
+- Uses `${{ secrets.HF_TOKEN }}` for authenticated HF uploads.
+
+#### 3. `dev/scripts/upload_to_hub.py` Improvements (pre-existing, confirmed)
+
+- `--all-missing`: iterates `list_catalog()`, finds entries where
+  `squish_repo is None`, compresses + uploads each in sequence.
+- `--batch-file PATH`: JSON list of model IDs to process.
+- `--dry-run`: compress locally, skip HF upload. Prints `[dry-run]` prefix.
+- `--force`: re-upload even if repo already exists on HuggingFace.
+- `--org ORG`: target HuggingFace organisation (default: `squishai`).
+- ETA estimate before processing: rough `1 GB/min compress + 500 MB/min upload`.
+- Pre-upload skip check: calls `HfApi.repo_exists()` per entry, prints skip
+  notice, removes skipped entries from the run list.
+
+---
+
 ## [64.0.0] — Wave 91 — 2026-03-25
 
 ### Perf — Sub-3s TTFT + 70B Loader
@@ -91,47 +129,6 @@ on high-RAM configs.
 `StartupTimer` accumulation, `StartupReport.to_dict()`, `total_ms`,
 `slowest()`, `measure_import_ms`, `FeatureState` defaults + mutation,
 `auto_blazing_eligible`, `get_preset`, `StartupPhase` enum values.
-
----
-
-## [63.0.0] — Wave 90 — 2026-03-25
-
-### Startup — Lean Startup Profiler + Core Cleanup
-
-#### 1. Startup Profiler (new `squish/serving/startup_profiler.py`)
-
-- **`StartupPhase`** enum: `IMPORTS`, `CONFIG`, `HW_DETECT`, `MODEL_LOAD`,
-  `KV_CACHE_INIT`, `METAL_WARMUP`, `DRAFT_HEAD`, `HTTP_BIND`.
-- **`StartupTimer`** context manager: records wall-clock elapsed time per phase; no-op when `enabled=False`.
-- **`StartupReport`**: `total_ms`, `slowest(n)`, `to_dict()` for `/v1/startup-profile`.
-- **`measure_import_ms(module_name)`**: times a fresh import; returns `0.0` for already-imported modules.
-- **`_global_report`**: module-level singleton; enabled by `SQUISH_TRACE_STARTUP=1`.
-
-#### 2. Server Flags (`server.py`)
-
-- **`--no-metal-warmup`**: Skip post-load Metal shader warmup (~2 s saved).
-- **`--fast-warmup`**: 1-token warmup instead of full pass (~50 ms vs ~2 s).
-- **`GET /v1/startup-profile`**: Returns startup timing dict or disabled notice.
-
-#### 3. Feature State Container (new `squish/serving/feature_state.py`)
-
-- **`FeatureState`** dataclass: centralises ~90 module-level globals from `server.py`.
-- **`_state`**: module-level singleton.
-
-#### 4. Blazing Mode Helpers (new `squish/serving/blazing.py`)
-
-- **`CHIP_FAMILIES_BLAZING`**: frozenset of eligible chip families (M3/M4/M5).
-- **`auto_blazing_eligible(chip_name, ram_gb)`**: True for M3+/16 GB+.
-- **`BlazingPreset`** dataclass + **`get_preset(chip_name, ram_gb)`**.
-
-#### 5. Import Audit Script (new `dev/scripts/import_scan.py`)
-
-- Report A: orphan modules (zero inbound imports).
-- Report B: module-level globals only ever assigned `None` in server.py.
-
-#### Tests
-
-`tests/test_wave90_startup_lean.py` — 33 tests.
 
 ---
 

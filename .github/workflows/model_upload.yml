@@ -1,0 +1,55 @@
+name: Upload Single Model to HuggingFace
+
+# Manual trigger for uploading one model at a time.
+# For batch operations use model_pipeline.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      model_id:
+        description: 'Catalog model ID (e.g. qwen3:8b, gemma3:12b, llama3.3:70b)'
+        required: true
+        type: string
+      int2:
+        description: 'Use INT2 quantisation (for 70B+ models on memory-limited machines)'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Dry run — compress but do NOT upload to HuggingFace'
+        required: false
+        default: false
+        type: boolean
+      org:
+        description: 'HuggingFace organisation (default: squishai)'
+        required: false
+        default: 'squishai'
+        type: string
+
+jobs:
+  upload:
+    name: Compress & upload ${{ inputs.model_id }}
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install squish + dependencies
+        run: pip install -e ".[dev]" huggingface_hub
+
+      - name: Compress and upload model
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          ARGS="${{ inputs.model_id }}"
+          ARGS="$ARGS --token $HF_TOKEN"
+          ARGS="$ARGS --org ${{ inputs.org }}"
+          [[ "${{ inputs.int2 }}" == "true" ]] && ARGS="$ARGS --int2"
+          [[ "${{ inputs.dry_run }}" == "true" ]] && ARGS="$ARGS --dry-run"
+          python3 dev/scripts/upload_to_hub.py $ARGS
