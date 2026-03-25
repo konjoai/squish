@@ -373,44 +373,22 @@ class TestGetStopIds:
 # ── _system_fingerprint ────────────────────────────────────────────────────────
 
 class TestSystemFingerprint:
+    def setup_method(self):
+        _srv._system_fingerprint.cache_clear()
+
     def test_returns_string_starting_sq(self):
-        orig = _srv._state
-        _srv._state = _srv._ModelState()
-        _srv._state.model_name = "mymodel"
-        _srv._state.loaded_at  = 12345.0
-        try:
-            fp = _srv._system_fingerprint()
-            assert isinstance(fp, str)
-            assert fp.startswith("sq-")
-        finally:
-            _srv._state = orig
+        fp = _srv._system_fingerprint("mymodel", 12345.0)
+        assert isinstance(fp, str)
+        assert fp.startswith("sq-")
 
     def test_fingerprint_is_deterministic(self):
-        orig = _srv._state
-        _srv._state = _srv._ModelState()
-        _srv._state.model_name = "mymodel"
-        _srv._state.loaded_at  = 99999.0
-        try:
-            fp1 = _srv._system_fingerprint()
-            fp2 = _srv._system_fingerprint()
-            assert fp1 == fp2
-        finally:
-            _srv._state = orig
+        fp1 = _srv._system_fingerprint("mymodel", 99999.0)
+        fp2 = _srv._system_fingerprint("mymodel", 99999.0)
+        assert fp1 == fp2
 
     def test_different_models_different_fingerprints(self):
-        orig = _srv._state
-
-        _srv._state = _srv._ModelState()
-        _srv._state.model_name = "modelA"
-        _srv._state.loaded_at  = 1.0
-        fp1 = _srv._system_fingerprint()
-
-        _srv._state = _srv._ModelState()
-        _srv._state.model_name = "modelB"
-        _srv._state.loaded_at  = 1.0
-        fp2 = _srv._system_fingerprint()
-
-        _srv._state = orig
+        fp1 = _srv._system_fingerprint("modelA", 1.0)
+        fp2 = _srv._system_fingerprint("modelB", 1.0)
         assert fp1 != fp2
 
 

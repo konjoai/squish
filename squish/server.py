@@ -30,6 +30,7 @@ Dependencies:
 """
 import argparse
 import collections
+import functools
 import hashlib
 import hmac
 import json
@@ -906,10 +907,15 @@ def _check_auth(creds: HTTPAuthorizationCredentials | None) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
-def _system_fingerprint() -> str:
-    """Stable fingerprint derived from model name + load timestamp."""
+@functools.lru_cache(maxsize=4)
+def _system_fingerprint(model_name: str | None, loaded_at: float) -> str:
+    """Stable fingerprint derived from model name + load timestamp.
+
+    Cached with lru_cache so the MD5 is only computed once per unique
+    (model_name, loaded_at) pair — not on every streamed token.
+    """
     return "sq-" + hashlib.md5(
-        f"{_state.model_name}{_state.loaded_at}".encode()
+        f"{model_name}{loaded_at}".encode()
     ).hexdigest()[:8]
 
 
@@ -2336,14 +2342,21 @@ def _model_card() -> dict:
     }
 
 
-def _make_chunk(content: str, model: str, cid: str, finish_reason=None) -> str:
-    """Build an SSE data line in OpenAI streaming format."""
+def _make_chunk(content: str, model: str, cid: str, finish_reason=None,
+                _created: int | None = None,
+                _fingerprint: str | None = None) -> str:
+    """Build an SSE data line in OpenAI streaming format.
+
+    Callers that stream many tokens should pass pre-computed _created and
+    _fingerprint to avoid recomputing them on every call.
+    """
     chunk = {
         "id":                cid,
         "object":            "chat.completion.chunk",
-        "created":           int(time.time()),
+        "created":           _created if _created is not None else int(time.time()),
         "model":             model,
-        "system_fingerprint": _system_fingerprint(),
+        "system_fingerprint": _fingerprint if _fingerprint is not None
+                               else _system_fingerprint(_state.model_name, _state.loaded_at),
         "choices": [{
             "index":         0,
             "delta":         {"content": content} if content else {},
@@ -2496,11 +2509,15 @@ async def chat_completions(  # pragma: no cover
         # ── Streaming response ────────────────────────────────────────────
         async def event_stream() -> AsyncIterator[str]:
             import asyncio as _aio
+            # Pre-compute per-request constant fields once to avoid
+            # recomputing MD5 and int(time.time()) on every streamed token.
+            _fp      = _system_fingerprint(_state.model_name, _state.loaded_at)
+            _created = int(time.time())
             # Opening chunk (role delta)
             role_chunk = {
                 "id": cid, "object": "chat.completion.chunk",
-                "created": int(time.time()), "model": model_id,
-                "system_fingerprint": _system_fingerprint(),
+                "created": _created, "model": model_id,
+                "system_fingerprint": _fp,
                 "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
             }
             yield f"data: {json.dumps(role_chunk)}\n\n"
@@ -2515,7 +2532,8 @@ async def chat_completions(  # pragma: no cover
                         if n_comp == 0:
                             ttft_s = time.perf_counter() - req_start
                         n_comp += 1
-                        yield _make_chunk(tok_text, model_id, cid)
+                        yield _make_chunk(tok_text, model_id, cid,
+                                          _created=_created, _fingerprint=_fp)
                         # Yield control to the event loop so the HTTP layer can
                         # flush the SSE chunk immediately before the next forward
                         # pass blocks the thread.
@@ -2539,7 +2557,8 @@ async def chat_completions(  # pragma: no cover
                     _tlog(f"CHAT stream DONE  id={cid}  tokens={n_comp}  "
                           f"ttft={ttft_s:.3f}s  total={dur:.3f}s  tps={_tps:.1f}  "
                           f"finish={last_finish}")
-            yield _make_chunk("", model_id, cid, finish_reason=last_finish)
+            yield _make_chunk("", model_id, cid, finish_reason=last_finish,
+                              _created=_created, _fingerprint=_fp)
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(
@@ -2612,7 +2631,7 @@ async def chat_completions(  # pragma: no cover
                     "object":             "chat.completion",
                     "created":            int(time.time()),
                     "model":              model_id,
-                    "system_fingerprint": _system_fingerprint(),
+                    "system_fingerprint": _system_fingerprint(_state.model_name, _state.loaded_at),
                     "choices": [{
                         "index":   0,
                         "message": {
@@ -2635,7 +2654,7 @@ async def chat_completions(  # pragma: no cover
             "object":             "chat.completion",
             "created":            int(time.time()),
             "model":              model_id,
-            "system_fingerprint": _system_fingerprint(),
+            "system_fingerprint": _system_fingerprint(_state.model_name, _state.loaded_at),
             "choices": [{
                 "index":         0,
                 "message":       {"role": "assistant", "content": full_text},
@@ -2679,10 +2698,14 @@ async def completions(  # pragma: no cover
         raise HTTPException(400, "'prompt' must be a non-empty string")
 
     if stream:
+        # Pre-compute the timestamp once; reuse for every yielded chunk so that
+        # all tokens in a single response share the same "created" timestamp.
+        _comp_ts = int(time.time())
+
         def _comp_chunk(text: str, finish_reason=None) -> str:
             chunk = {
                 "id": cid, "object": "text_completion",
-                "created": int(time.time()), "model": model_id,
+                "created": _comp_ts, "model": model_id,
                 "choices": [{"text": text, "index": 0, "finish_reason": finish_reason}],
             }
             return f"data: {json.dumps(chunk)}\n\n"

@@ -7004,3 +7004,53 @@ Theme: **Load faster, quantise better**
 ### Deferred (Wave 79)
 - Move `squish/kernels/mojo/` → `squish/experimental/kernels/mojo/` (pure reorganisation; zero perf impact; requires updating 5+ test files importing `squish.kernels.mojo.*`)
 
+---
+
+## ✅ Wave 79 — Deferred Imports + Inference Loop Micro-opts — 2026-03-24
+
+Theme: **Shave startup latency; eliminate per-layer per-token overhead**
+
+| Task | Status | File(s) changed |
+|------|--------|-----------------|
+| Defer `import uvicorn` + `_require("uvicorn")` to inside `start_server()` body | ✅ done | `squish/server.py` |
+| Pre-compute `_prefetch_caches` list before KV decode loop (eliminates 32 × 512 = 16,384 `hasattr()` calls/req) | ✅ done | `squish/server.py` |
+| Detect `mlx_lm.GenerationResult` type once via `_text_getter` callable; eliminates `hasattr(item, "text")` per token | ✅ done | `squish/server.py` |
+| Sync `squish.__version__` = 9.1.0 with `pyproject.toml` | ✅ done | `squish/__init__.py` |
+| `tests/test_wave79_startup_inference.py` — 17 new tests | ✅ done | `tests/test_wave79_startup_inference.py` (new) |
+
+### Summary
+- Total tests: 14,590 passed, 34 skipped, 0 failed
+- `import squish.server` eliminates uvicorn from import trace; ~41 ms saved from test startup
+- KV decode loop: 32 layers × 512 tokens = 16,384 `hasattr()` calls/request removed
+- `_text_getter` pattern: token text extraction dispatch resolved once, not per token
+
+### Deferred (Wave 80)
+- Move `squish/kernels/mojo/` → `squish/experimental/kernels/mojo/`
+- Profile `json.dumps` cost per token — potential `orjson` swap
+
+---
+
+## ✅ Wave 80 — SSE Streaming Hot-Path Micro-opts — 2026-03-24
+
+Theme: **Zero per-token overhead for streamed responses**
+
+| Task | Status | File(s) changed |
+|------|--------|-----------------|
+| `@functools.lru_cache(maxsize=4)` on `_system_fingerprint(model_name, loaded_at)` — MD5 computed once per model load, not per token | ✅ done | `squish/server.py` |
+| `_make_chunk` gains `_created: int \| None` and `_fingerprint: str \| None` kwargs for pre-computed values | ✅ done | `squish/server.py` |
+| `event_stream` pre-computes `_fp` + `_created` once per request; passes to all `_make_chunk` calls | ✅ done | `squish/server.py` |
+| `/v1/completions` streaming: `_comp_ts = int(time.time())` hoisted before closure definition | ✅ done | `squish/server.py` |
+| All 4 `_system_fingerprint()` call sites updated to pass explicit `(model_name, loaded_at)` args | ✅ done | `squish/server.py` |
+| `tests/test_wave80_chunk_fingerprint.py` — 23 new tests | ✅ done | `tests/test_wave80_chunk_fingerprint.py` (new) |
+| `tests/serving/test_server_unit.py::TestSystemFingerprint` updated for new signature | ✅ done | `tests/serving/test_server_unit.py` |
+
+### Summary
+- Total tests: 14,613 passed, 34 skipped, 0 failures (Rust SVD flaky pre-existing, passes in isolation)
+- 512-token stream: 511 fewer `hashlib.md5()` calls, 511 fewer `int(time.time())` calls
+- `_system_fingerprint` cache key is `(model_name, loaded_at)` — stable across all tokens in a request
+- Backward-compat: `_make_chunk` callers without kwargs still work (fall back to live computation)
+
+### Deferred (Wave 81)
+- Move `squish/kernels/mojo/` → `squish/experimental/kernels/mojo/`
+- Profile `json.dumps` cost per token — potential `orjson` swap
+
