@@ -7,6 +7,7 @@
  *   streamStart                          — assistant turn begins
  *   streamChunk  { delta }               — partial token
  *   streamEnd                            — assistant turn complete
+ *   streamClear                          — erase buffered content (text-mode tool call detected)
  *   streamError  { message }             — error during generation
  *   clearHistory                         — wipe UI + start fresh
  *   toolCallStart { id, name, args }     — tool invocation starting
@@ -223,6 +224,16 @@
                 _flushQueue();
                 _appendErrorMessage('\u26a0 ' + (msg.message || 'Unknown error'));
                 _finalizeTurn();
+                break;
+
+            case 'streamClear':
+                // The extension detected a text-mode tool call after the model
+                // had already streamed JSON args as plain text.  Erase them.
+                _cancelAck();
+                if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+                _queue.length = 0;
+                if (_currentContentEl) { _currentContentEl.innerHTML = ''; }
+                _realStarted = false;
                 break;
 
             case 'clearHistory':
