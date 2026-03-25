@@ -5472,6 +5472,16 @@ Examples:
                 f"  ratio={_sfn.mean_sparsity:.1%}"
                 f"  file={os.path.basename(_w82_prof.sparsity_mask_path)}",
             )
+            # Wave 98: patch live model FFN layers so mask is applied every pass
+            if _state.model is not None:
+                try:
+                    from squish.kernels.ffn_mask_patch import (  # noqa: PLC0415
+                        patch_model_ffn_sparsity as _pfns,
+                    )
+                    _n98 = _pfns(_state.model, _sfn, verbose=False)
+                    _info("sparse-ffn", f"patched {_n98} FFN layers for inference")
+                except Exception as _e98:  # noqa: BLE001
+                    _warn(f"[sparse-ffn] Layer patching failed: {_e98}")
         except Exception as _e82b:  # noqa: BLE001
             _warn(f"[sparse-ffn] Could not load masks: {_e82b}")
 
