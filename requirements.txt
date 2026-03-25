@@ -13,7 +13,9 @@ rich>=13.0
 fastapi>=0.111
 uvicorn[standard]>=0.29.0
 sse-starlette>=1.8.2
-
+# ── Fast JSON (optional speed-up — 3–7× faster SSE serialisation) ──────────
+# Graceful stdlib fallback when not installed.
+orjson>=3.9
 # ── Entropy compression / transparent .npy.zst loading ───────────────────────
 zstandard>=0.22.0
 aiofiles>=23.0

@@ -57,6 +57,17 @@ for _k in (
     os.environ.pop(_k, None)
 del _k
 
+# ── Wave 81: Fast JSON serialiser — orjson when available, stdlib fallback ────
+# orjson is a Rust-backed JSON library 3–7× faster than stdlib json for the
+# small dicts emitted per SSE token.  Gracefully degrades when not installed.
+try:
+    import orjson as _orjson
+    def _json_dumps(obj) -> str:  # type: ignore[explicit-any]
+        """Serialise *obj* to a JSON string.  Uses orjson when installed."""
+        return _orjson.dumps(obj).decode()
+except ImportError:  # pragma: no cover — stdlib path tested in test_wave81
+    _json_dumps = json.dumps  # type: ignore[assignment]
+
 # ── Telemetry (structured span tracing + logging config) ─────────────────────
 try:
     from squish.telemetry import configure_tracing as _configure_tracing
@@ -2520,7 +2531,7 @@ def _make_chunk(content: str, model: str, cid: str, finish_reason=None,
             "finish_reason": finish_reason,
         }],
     }
-    return f"data: {json.dumps(chunk)}\n\n"
+    return f"data: {_json_dumps(chunk)}\n\n"
 
 
 @app.post("/v1/chat/completions")
@@ -2677,7 +2688,7 @@ async def chat_completions(  # pragma: no cover
                 "system_fingerprint": _fp,
                 "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
             }
-            yield f"data: {json.dumps(role_chunk)}\n\n"
+            yield f"data: {_json_dumps(role_chunk)}\n\n"
 
             gen = _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed)
             n_comp   = 0
@@ -2699,7 +2710,7 @@ async def chat_completions(  # pragma: no cover
                         last_finish = finish
                         break
             except Exception as exc:
-                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+                yield f"data: {_json_dumps({'error': str(exc)})}\n\n"
                 return
             finally:
                 _state.inflight -= 1
@@ -2865,7 +2876,7 @@ async def completions(  # pragma: no cover
                 "created": _comp_ts, "model": model_id,
                 "choices": [{"text": text, "index": 0, "finish_reason": finish_reason}],
             }
-            return f"data: {json.dumps(chunk)}\n\n"
+            return f"data: {_json_dumps(chunk)}\n\n"
 
         async def comp_stream() -> AsyncIterator[str]:
             last_finish = "stop"
@@ -3154,7 +3165,6 @@ async def agent_run(  # pragma: no cover
     ]
 
     async def _event_stream():
-        import json as _json  # noqa: PLC0415
         from squish.serving.tool_calling import (  # noqa: PLC0415
             format_tools_prompt, parse_tool_calls,
         )
@@ -3177,7 +3187,7 @@ async def agent_run(  # pragma: no cover
                         full_text += tok_text
                         yield (
                             "data: "
-                            + _json.dumps({"type": "text_delta", "delta": tok_text})
+                            + _json_dumps({"type": "text_delta", "delta": tok_text})
                             + "\n\n"
                         )
                     if finish is not None:
@@ -3185,7 +3195,7 @@ async def agent_run(  # pragma: no cover
             except Exception as exc:  # noqa: BLE001
                 yield (
                     "data: "
-                    + _json.dumps({"type": "error", "message": str(exc)})
+                    + _json_dumps({"type": "error", "message": str(exc)})
                     + "\n\n"
                 )
                 return
@@ -3197,7 +3207,7 @@ async def agent_run(  # pragma: no cover
                 # No more tool calls — the agent is done
                 yield (
                     "data: "
-                    + _json.dumps({
+                    + _json_dumps({
                         "type": "done",
                         "total_steps": step,
                         "total_tool_calls": total_tool_calls,
@@ -3219,7 +3229,7 @@ async def agent_run(  # pragma: no cover
 
                 yield (
                     "data: "
-                    + _json.dumps({
+                    + _json_dumps({
                         "type":      "tool_call_start",
                         "call_id":   call_id,
                         "tool_name": tool_name,
@@ -3239,7 +3249,7 @@ async def agent_run(  # pragma: no cover
 
                 yield (
                     "data: "
-                    + _json.dumps({
+                    + _json_dumps({
                         "type":       "tool_call_result",
                         "call_id":    call_id,
                         "tool_name":  tool_name,
@@ -3255,7 +3265,7 @@ async def agent_run(  # pragma: no cover
                     "type": "function",
                     "function": {
                         "name":      tool_name,
-                        "arguments": _json.dumps(arguments),
+                        "arguments": _json_dumps(arguments),
                     },
                 })
                 tool_result_messages.append({
@@ -3274,14 +3284,14 @@ async def agent_run(  # pragma: no cover
 
             yield (
                 "data: "
-                + _json.dumps({"type": "step_complete", "step": step})
+                + _json_dumps({"type": "step_complete", "step": step})
                 + "\n\n"
             )
 
         # max_steps exhausted
         yield (
             "data: "
-            + _json.dumps({
+            + _json_dumps({
                 "type":    "error",
                 "message": f"Agent hit max_steps={max_steps}. Partial results may be available.",
             })
