@@ -1536,9 +1536,14 @@ def _generate_tokens(  # pragma: no cover
     eos_id    = getattr(tokenizer, "eos_token_id", None) or 151645
 
     # ── Phase E: task-type classification ────────────────────────────────────
-    # Detect once per request; used for babbling suppression caps and
-    # semantic cache threshold selection.
-    _task_type = _detect_task_type(prompt)
+    # Only needed for babbling suppression caps and semantic cache threshold.
+    # Skip unconditionally when both features are inactive to avoid O(prompt)
+    # substring scanning on every request.
+    _task_type = (
+        _detect_task_type(prompt)
+        if (_babbling_suppression or _semantic_cache is not None)
+        else "general"
+    )
 
     # ── Phase E3: Semantic response cache lookup ──────────────────────────────
     # Check BEFORE any model work.  A warm cache hit returns in <20 ms.
@@ -1587,17 +1592,16 @@ def _generate_tokens(  # pragma: no cover
 
     # ── Trace: log request entry ───────────────────────────────────────────────
     _rid = uuid.uuid4().hex[:8]          # short per-request ID for log correlation
-    _prompt_tokens_approx = len(prompt.split())
-    _logging.getLogger(__name__).info(
-        "REQ %s  max_tokens=%d  temp=%.2f  prompt_words≈%d  "
-        "thinking_budget=%d",
-        _rid, max_tokens, temperature, _prompt_tokens_approx, _thinking_budget,
-    )
     if _trace:
+        _prompt_tokens_approx = len(prompt.split())
         _prompt_preview = prompt[:400].replace("\n", "↵") + ("…" if len(prompt) > 400 else "")
         _tlog(f"REQ {_rid}  max_tokens={max_tokens}  temp={temperature}  "
               f"top_p={top_p}  seed={seed}  prompt_words≈{_prompt_tokens_approx}")
         _tlog(f"REQ {_rid}  prompt: {_prompt_preview}")
+    elif _logging.getLogger(__name__).isEnabledFor(_logging.DEBUG):
+        _logging.getLogger(__name__).debug(
+            "REQ %s  max_tokens=%d  temp=%.2f", _rid, max_tokens, temperature,
+        )
 
     # Reset LazyLLM pruning state for this request (Item 3)
     if _lazy_llm_state is not None:
@@ -1641,8 +1645,6 @@ def _generate_tokens(  # pragma: no cover
     #
     # Safety guard: _prefix_cache may be None if the server was not started via
     # cmd_serve (e.g. direct function calls in tests that skip startup).
-    if _prefix_cache is None:
-        _init_prefix_cache()
     cache_eligible = (use_cache
                       and (temperature == 0.0 or seed is not None)
                       and not _on_compress_path)
@@ -1849,7 +1851,8 @@ def _generate_tokens(  # pragma: no cover
                 try:
                     import time as _cwtime
                     _cache_warmup_predictor.record_access(
-                        list(input_ids[:256]),
+                        input_ids[:256].tolist() if hasattr(input_ids, "tolist")
+                        else list(input_ids[:256]),
                         _cwtime.monotonic(),
                     )
                 except Exception:
@@ -2133,41 +2136,49 @@ def _generate_tokens(  # pragma: no cover
                     _lg_np[eos_id] += 8.0
                     _logit_vec = mx.array(_lg_np)
                 # ── Phase E1: EOS probability monitoring (babbling suppression) ──
+                # WAVE 99: Eliminated per-token full-vocabulary Metal reduction (mx_max).
+                # Old path: 2 Metal→CPU syncs per step (single-element + full reduction).
+                # New path: 1 cheap single-element check; full vec only when EOS is
+                # plausibly near-top. The full vector copy (_logit_np_shared) is then
+                # reused by the fused sampler below, cutting Metal syncs from 3→1 per
+                # token in the common case (no grammar, fused sampler on).
+                _logit_np_shared: "np.ndarray | None" = None
                 if _babbling_suppression and step >= _babbling_min_tokens:
-                    _eos_logit_val = float(_logit_vec[eos_id].item())
-                    _max_logit_val = float(mx.max(_logit_vec).item())
-                    if _eos_logit_val > _max_logit_val - 1.5:  # pre-filter: EOS is near-top
-                        _bs_np = np.array(_logit_vec.astype(mx.float32))
-                        _bs_shifted = _bs_np - _bs_np.max()
-                        _bs_exp = np.exp(np.clip(_bs_shifted, -30, 0))
-                        _eos_prob = _bs_exp[eos_id] / (_bs_exp.sum() + 1e-9)
-                        if _eos_prob > _babbling_eos_threshold:
-                            if cache_eligible and _cache_buf:
-                                _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
-                            # Phase E3: model-chosen stop — cache it
-                            if _semantic_cache is not None and _sc_buf:
-                                try:
-                                    _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                                except Exception:
-                                    pass
-                            if _trace:
-                                _tlog(f"REQ {_rid}  babbling-eos  step={step}  p={_eos_prob:.3f}  task={_task_type}")
-                            yield "", "stop"
-                            return
+                    _eos_check = float(_logit_vec[eos_id].item())  # single element: fast
+                    if _eos_check > -10.0:
+                        # EOS logit is non-negligible — materialise full vector once.
+                        _logit_np_shared = np.array(_logit_vec.astype(mx.float32))
+                        _max_logit_val = _logit_np_shared.max()
+                        if _eos_check > _max_logit_val - 1.5:  # pre-filter: EOS near-top
+                            _bs_shifted = _logit_np_shared - _max_logit_val
+                            _bs_exp = np.exp(np.clip(_bs_shifted, -30, 0))
+                            _eos_prob = _bs_exp[eos_id] / (_bs_exp.sum() + 1e-9)
+                            if _eos_prob > _babbling_eos_threshold:
+                                if cache_eligible and _cache_buf:
+                                    _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
+                                # Phase E3: model-chosen stop — cache it
+                                if _semantic_cache is not None and _sc_buf:
+                                    try:
+                                        _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
+                                    except Exception:
+                                        pass
+                                if _trace:
+                                    _tlog(f"REQ {_rid}  babbling-eos  step={step}  p={_eos_prob:.3f}  task={_task_type}")
+                                yield "", "stop"
+                                return
                 # Phase B: grammar-constrained logits
                 if _grammar_engine is not None and _grammar_state is not None:
                     _logit_vec = _grammar_engine.constrain_logits(_logit_vec, _grammar_state)
-                # ── Wave 27 / Step 1B: fused single-pass sampling ─────────────
-                # When FusedSampler is active, replace the multi-pass
-                # temperature + softmax + top-p call with one in-place kernel.
-                # We rebuild a FusedSampler with request-specific temperature/top_p
-                # on the first decode step (only if they differ from the server
-                # defaults), then reuse it for all subsequent steps.
+                    _logit_np_shared = None  # grammar changed _logit_vec — shared copy stale
+                # ── Sampling ─────────────────────────────────────────────────────
+                # Reuse _logit_np_shared from babbling check when possible (same vector,
+                # no grammar change). Avoids a second Metal→CPU copy per token.
                 if (_fused_sampler_enabled
                         and _fused_sampler is not None
                         and temperature > 0.0):
                     try:
-                        _logit_np = np.array(_logit_vec.astype(mx.float32))
+                        _logit_np = (_logit_np_shared if _logit_np_shared is not None
+                                     else np.array(_logit_vec.astype(mx.float32)))
                         next_id = _fused_sampler.sample(_logit_np)
                     except Exception:
                         next_id = _sample_mx(_logit_vec, temperature, top_p)

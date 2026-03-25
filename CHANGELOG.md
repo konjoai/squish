@@ -5,6 +5,67 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [72.0.0] — Wave 99 — 2026-03-25
+
+### Performance — Hot-Path Speed Restoration
+
+Wave 99 eliminates the key latency regressions introduced in Waves 82–98 that
+caused TTFT and decode tok/s to degrade from sub-1s to 3s+ on small models.
+Root cause: multiple Metal→CPU synchronisation points were added to the per-token
+decode loop by babbling suppression and the fused sampler.
+
+#### 1. Eliminated per-token full-vocabulary Metal reduction
+
+**Root cause**: `_babbling_suppression=True` (the default) was calling a
+full-vocabulary `mx_max` operation every decode step.  At 32K vocab this is a
+full Metal→CPU pipeline stall per token — ~2ms each, killing anything faster
+than ~500 tok/s theoretically, and compounding with the fused sampler.
+
+**Fix**: Replace the full-vocabulary reduction with a cheap single-element EOS
+check (`_eos_check = float(_logit_vec[eos_id].item())`).  The full numpy copy is
+materialised only when `_eos_check > -10.0` (EOS logit non-negligible, rare
+during normal output).  The resulting copy (`_logit_np_shared`) is then shared
+with the fused sampler, cutting Metal→CPU syncs from 3→1 per token in the
+common case.
+
+- **Before**: 3 Metal→CPU syncs per token (full-vocab max + babbling copy + fused sampler copy)
+- **After**: 1 Metal→CPU sync per token (single-element; full copy only near EOS or for sampling)
+- Grammar engine invalidates `_logit_np_shared` when it constrains logits (correctness preserved)
+
+#### 2. INT3 params floor (fixes incoherent output on <7B models)
+
+**Root cause**: INT3 auto-selection had no parameter count floor (only INT2 from
+Wave 97 had one).  A 1.7B–6B model on tight RAM was silently selected for INT3
+quantization, which produces incoherent output at sub-7B scale.
+
+**Fix**: Mirror Wave 97's INT2 gate pattern in `cli.py`. INT3 is now gated on
+`_params_b >= 7.0`.  Models below 7B print a warning and fall back to INT4.
+
+#### 3. Dead-code removal from hot path
+
+- Removed `if _prefix_cache is None: _init_prefix_cache()` guard (always False in production)
+- Gated `len(prompt.split())` behind `if _trace:` — eliminates O(prompt) work per request
+- Gated `_detect_task_type(prompt)` behind `if _babbling_suppression or _semantic_cache is not None:` — skips 24 substring scans when both features are inactive
+- Cache warmup: `list(input_ids[:256])` → `.tolist()` when available (avoids Python boxing)
+
+#### 4. Benchmark script (`dev/benchmarks/bench_wave99_speed.py`)
+
+New TTFT + tok/s benchmark with 8 standard prompts × 2 passes.  Supports:
+- `--out FILE` to save JSON for comparison
+- `--compare before.json after.json` for side-by-side delta table
+- Optional 25-sample lm_eval ARC-Easy coherence probe
+
+### Tests
+
+`tests/test_wave99_speed_restore.py` — 23 tests covering:
+- Structural: banned patterns removed from decode loop
+- Dead-code checks: prefix cache guard, prompt.split, task-type detection
+- INT3 floor: 9 parametric tests (3B/1.7B/4B/6.9B → no INT3; 7B/8B/14B → INT3 OK)
+- Source-level grep checks in server.py and cli.py
+- Benchmark script existence and parsability
+
+---
+
 ## [71.0.0] — Wave 98 — 2026-03-25
 
 ### Feature — Multiplier Stack: FFN Sparsity Wiring + EAGLE Auto-Load Fix + gen-masks CLI
