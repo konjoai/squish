@@ -1060,11 +1060,11 @@ def cmd_run(args):  # pragma: no cover
         _auto_entry = _catalog_resolve(args.model)
         if _auto_entry is not None:
             _sq_gb = getattr(_auto_entry, "squished_size_gb", 0.0) or 0.0
+            import re as _re
+            _params_str = getattr(_auto_entry, "params", "") or ""
+            _pm = _re.search(r"(\d+\.?\d*)B", _params_str, _re.IGNORECASE)
+            _params_b = float(_pm.group(1)) if _pm else 0.0
             if _sq_gb > _ram_gb * 0.75:
-                import re as _re
-                _params_str = getattr(_auto_entry, "params", "") or ""
-                _pm = _re.search(r"(\d+\.?\d*)B", _params_str, _re.IGNORECASE)
-                _params_b = float(_pm.group(1)) if _pm else 0.0
                 if _params_b >= 30.0:
                     args.int2 = True
                     _est_gb = _sq_gb * 0.55
@@ -1076,8 +1076,15 @@ def cmd_run(args):  # pragma: no cover
                         f"INT2 unsafe below 30B — running INT4 (expect swapping on small RAM)."
                     )
             elif _sq_gb > _ram_gb * 0.55:
-                args.int3 = True
-                print(f"  ℹ  Auto-selecting INT3 for {_ram_gb:.0f} GB RAM")
+                if _params_b >= 7.0:
+                    args.int3 = True
+                    print(f"  ℹ  Auto-selecting INT3 for {_ram_gb:.0f} GB RAM")
+                else:
+                    # INT3 on sub-7B models produces degraded/incoherent output.
+                    print(
+                        f"  ⚠  Model <7B — INT3 degrades quality at this scale. "
+                        f"Running INT4 instead."
+                    )
 
     _quant_mode = (
         "int3" if getattr(args, "int3", False) else
