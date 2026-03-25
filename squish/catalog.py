@@ -168,6 +168,10 @@ class CatalogEntry:
     # HuggingFace repo with pre-compressed Squish weights (or None)
     squish_repo: str | None = None
 
+    # approximate INT2-compressed size in GB (for 70B+ models where INT2 is the
+    # recommended quality/size trade-off); None when not applicable
+    squished_int2_size_gb: float | None = None
+
     # arbitrary tags for filtering: ["small", "fast", "moe", "reasoning", …]
     tags: list[str] = field(default_factory=list)
 
@@ -293,8 +297,11 @@ _BUNDLED: list[dict] = [
          tags=["balanced"]),
     dict(id="llama3.3:70b", name="Llama-3.3-70B-Instruct",
          hf_mlx_repo="mlx-community/Llama-3.3-70B-Instruct-bf16",
+         squish_repo="squishai/Llama-3.3-70B-Instruct-bf16-squished-int2",
+         squished_int2_size_gb=19.5,
          size_gb=140.0, squished_size_gb=93.8, params="70B", context=131072,
-         tags=["large"]),
+         tags=["large", "impossible"],
+         notes="INT2 ~19 GB, requires 24 GB+ Apple Silicon, run with `--int2 --agent-kv`."),
 
     # ── Gemma 3 ───────────────────────────────────────────────────────────────
     dict(id="gemma3:1b", name="Gemma-3-1B-Instruct",
@@ -530,6 +537,7 @@ def _entry_from_dict(d: dict) -> CatalogEntry:
         squish_repo=d.get("squish_repo"),
         tags=d.get("tags", []),
         notes=d.get("notes", ""),
+        squished_int2_size_gb=d.get("squished_int2_size_gb"),
         moe=d.get("moe", False),
         active_params_b=d.get("active_params_b"),
         grammar_trigger=d.get("grammar_trigger"),
