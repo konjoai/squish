@@ -8,8 +8,14 @@ import * as vscode from 'vscode';
 import { ChatPanel } from '../src/chatPanel';
 import { HistoryManager } from '../src/historyManager';
 
-// Mock squishClient so we can control streaming
-jest.mock('../src/squishClient');
+// Mock squishClient so we can control streaming, but keep extractTextModeToolCall real
+jest.mock('../src/squishClient', () => {
+    const actual = jest.requireActual('../src/squishClient') as Record<string, unknown>;
+    return {
+        ...actual,
+        SquishClient: jest.fn(),
+    };
+});
 import { SquishClient } from '../src/squishClient';
 const MockSquishClient = SquishClient as jest.MockedClass<typeof SquishClient>;
 
@@ -756,4 +762,136 @@ describe('ChatPanel', () => {
         expect(names).toContain('list_directory');
         expect(names).toContain('get_diagnostics');
     });
+
+    // ── Text-mode tool calling ────────────────────────────────────────────
+
+    test('text-mode tool call: JSON args as content triggers streamClear + tool execution', async () => {
+        const postMessage = jest.fn();
+        const panel = makePanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        const { workspace } = require('vscode') as typeof import('vscode') & {
+            workspace: { fs: { stat: jest.Mock; writeFile: jest.Mock }; _setWorkspaceFolders: (f: unknown[]) => void };
+        };
+        workspace.fs.stat.mockRejectedValueOnce(new Error('not found'));  // file doesn't exist
+        workspace.fs.writeFile.mockResolvedValueOnce(undefined);
+        workspace._setWorkspaceFolders([{ uri: { fsPath: '/ws', toString: () => '/ws' } }]);
+
+        // First call: model emits JSON args as plain text (doesn't use tool_calls)
+        // Second call: model produces the final answer after seeing the tool result
+        let callCount = 0;
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                callCount++;
+                if (callCount === 1) {
+                    // Simulate a model that outputs create_file args as JSON text
+                    onChunk({ delta: '{"path": "hello.txt", "content": "hello"}', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                } else {
+                    onChunk({ delta: 'Done!', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                }
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'create hello.txt' });
+        await new Promise(r => setTimeout(r, 50));
+
+        const types = postMessage.mock.calls.map(([m]: [{ type: string }]) => m.type);
+
+        // streamClear must have been sent to erase the JSON text from the webview
+        expect(types).toContain('streamClear');
+
+        // The tool must have been invoked (toolCallStart + toolCallEnd)
+        expect(types).toContain('toolCallStart');
+        expect(types).toContain('toolCallEnd');
+
+        // The tool call should be for create_file (or write_file — first schema match)
+        const startMsg = postMessage.mock.calls.find(
+            ([m]: [{ type: string }]) => m.type === 'toolCallStart'
+        );
+        expect(['create_file', 'write_file']).toContain(startMsg![0].name);
+
+        // A second streamChat call must happen to get the final answer
+        expect(callCount).toBe(2);
+
+        // Final streamEnd must be posted
+        expect(types).toContain('streamEnd');
+    });
+
+    test('text-mode tool call: non-JSON response is NOT treated as tool call', async () => {
+        const postMessage = jest.fn();
+        const panel = makePanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                onChunk({ delta: 'This is a plain text answer.', done: false, finishReason: null });
+                onChunk({ delta: '', done: true, finishReason: 'stop' });
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'hello' });
+        await new Promise(r => setTimeout(r, 20));
+
+        const types = postMessage.mock.calls.map(([m]: [{ type: string }]) => m.type);
+        expect(types).not.toContain('streamClear');
+        expect(types).not.toContain('toolCallStart');
+        expect(types).toContain('streamEnd');
+    });
+
+    test('text-mode tool call: streamClear is sent before toolCallStart', async () => {
+        const postMessage = jest.fn();
+        const panel = makePanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        const { workspace } = require('vscode') as typeof import('vscode') & {
+            workspace: { fs: { stat: jest.Mock; writeFile: jest.Mock }; _setWorkspaceFolders: (f: unknown[]) => void };
+        };
+        workspace.fs.stat.mockRejectedValueOnce(new Error('not found'));
+        workspace.fs.writeFile.mockResolvedValueOnce(undefined);
+        workspace._setWorkspaceFolders([{ uri: { fsPath: '/ws', toString: () => '/ws' } }]);
+
+        let callCount = 0;
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                callCount++;
+                if (callCount === 1) {
+                    onChunk({ delta: '{"path": "x.txt", "content": "x"}', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                } else {
+                    onChunk({ delta: 'done', done: false, finishReason: null });
+                    onChunk({ delta: '', done: true, finishReason: 'stop' });
+                }
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'make x.txt' });
+        await new Promise(r => setTimeout(r, 50));
+
+        const types = postMessage.mock.calls.map(([m]: [{ type: string }]) => m.type);
+        const clearIdx = types.indexOf('streamClear');
+        const startIdx = types.indexOf('toolCallStart');
+        expect(clearIdx).toBeGreaterThanOrEqual(0);
+        expect(startIdx).toBeGreaterThan(clearIdx);
+    });
 });
+

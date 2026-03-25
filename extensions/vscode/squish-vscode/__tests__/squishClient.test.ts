@@ -5,7 +5,7 @@
  * Mocks Node http so we never open a real socket.
  */
 import * as http from 'http';
-import { SquishClient, ChatChunk, ToolDefinition } from '../src/squishClient';
+import { SquishClient, ChatChunk, ToolDefinition, extractTextModeToolCall } from '../src/squishClient';
 
 jest.mock('http');
 
@@ -533,6 +533,188 @@ describe('SquishClient.abort()', () => {
     test('is safe to call when no active request', () => {
         const client = new SquishClient('127.0.0.1', 11435, 'squish');
         expect(() => client.abort()).not.toThrow();
+    });
+});
+
+// ── extractTextModeToolCall ───────────────────────────────────────────────────
+
+const SAMPLE_TOOLS: ToolDefinition[] = [
+    {
+        type: 'function',
+        function: {
+            name: 'read_file',
+            description: 'Read a file',
+            parameters: {
+                type: 'object',
+                properties: { path: { type: 'string', description: 'path' } },
+                required: ['path'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'create_file',
+            description: 'Create a file',
+            parameters: {
+                type: 'object',
+                properties: {
+                    path:    { type: 'string', description: 'path' },
+                    content: { type: 'string', description: 'content' },
+                },
+                required: ['path', 'content'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_selection',
+            description: 'Get selection (no params)',
+            parameters: { type: 'object', properties: {} },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'run_terminal',
+            description: 'Run a command',
+            parameters: {
+                type: 'object',
+                properties: { command: { type: 'string', description: 'cmd' } },
+                required: ['command'],
+            },
+        },
+    },
+];
+
+describe('extractTextModeToolCall()', () => {
+    // ── Format 1: raw args ────────────────────────────────────────────────
+
+    test('matches create_file by raw args {path, content}', () => {
+        const result = extractTextModeToolCall(
+            '{"path": "/home/user/file.txt", "content": "hello world"}',
+            SAMPLE_TOOLS,
+        );
+        expect(result).not.toBeNull();
+        expect(result!.type).toBe('function');
+        expect(result!.function.name).toBe('create_file');
+        const args = JSON.parse(result!.function.arguments);
+        expect(args.path).toBe('/home/user/file.txt');
+        expect(args.content).toBe('hello world');
+    });
+
+    test('matches read_file by raw arg {path} (single required key)', () => {
+        const result = extractTextModeToolCall('{"path": "src/index.ts"}', SAMPLE_TOOLS);
+        expect(result).not.toBeNull();
+        expect(result!.function.name).toBe('read_file');
+        expect(JSON.parse(result!.function.arguments).path).toBe('src/index.ts');
+    });
+
+    test('matches run_terminal by raw arg {command}', () => {
+        const result = extractTextModeToolCall('{"command": "ls -la"}', SAMPLE_TOOLS);
+        expect(result).not.toBeNull();
+        expect(result!.function.name).toBe('run_terminal');
+        expect(JSON.parse(result!.function.arguments).command).toBe('ls -la');
+    });
+
+    test('assigns a unique call id', () => {
+        const r1 = extractTextModeToolCall('{"path": "a.ts"}', SAMPLE_TOOLS)!;
+        const r2 = extractTextModeToolCall('{"path": "b.ts"}', SAMPLE_TOOLS)!;
+        expect(r1.id).toMatch(/^call_text_/);
+        expect(r2.id).toMatch(/^call_text_/);
+    });
+
+    // ── Format 2: {"name": "...", "parameters": {...}} ────────────────────
+
+    test('matches format-2 name+parameters wrapper', () => {
+        const result = extractTextModeToolCall(
+            '{"name": "run_terminal", "parameters": {"command": "echo hi"}}',
+            SAMPLE_TOOLS,
+        );
+        expect(result).not.toBeNull();
+        expect(result!.function.name).toBe('run_terminal');
+        expect(JSON.parse(result!.function.arguments).command).toBe('echo hi');
+    });
+
+    test('matches format-2 name+arguments wrapper', () => {
+        const result = extractTextModeToolCall(
+            '{"name": "read_file", "arguments": {"path": "README.md"}}',
+            SAMPLE_TOOLS,
+        );
+        expect(result).not.toBeNull();
+        expect(result!.function.name).toBe('read_file');
+    });
+
+    // ── Format 3: {"function": "...", "arguments": {...}} ─────────────────
+
+    test('matches format-3 function+arguments wrapper', () => {
+        const result = extractTextModeToolCall(
+            '{"function": "create_file", "arguments": {"path": "x.txt", "content": "data"}}',
+            SAMPLE_TOOLS,
+        );
+        expect(result).not.toBeNull();
+        expect(result!.function.name).toBe('create_file');
+    });
+
+    // ── Negative cases ────────────────────────────────────────────────────
+
+    test('returns null for plain text (not JSON)', () => {
+        expect(extractTextModeToolCall('Hello! How can I help?', SAMPLE_TOOLS)).toBeNull();
+    });
+
+    test('returns null for JSON array', () => {
+        expect(extractTextModeToolCall('[{"path": "a.ts"}]', SAMPLE_TOOLS)).toBeNull();
+    });
+
+    test('returns null for empty object {}', () => {
+        expect(extractTextModeToolCall('{}', SAMPLE_TOOLS)).toBeNull();
+    });
+
+    test('returns null when tools array is empty', () => {
+        expect(extractTextModeToolCall('{"path": "a.ts"}', [])).toBeNull();
+    });
+
+    test('returns null when tools is undefined', () => {
+        expect(extractTextModeToolCall('{"path": "a.ts"}', undefined)).toBeNull();
+    });
+
+    test('returns null when JSON has extra unknown keys', () => {
+        // {path, content, extra} does not match any tool (extra key not in schema)
+        expect(extractTextModeToolCall(
+            '{"path": "x.ts", "content": "hi", "extra": "bad"}',
+            SAMPLE_TOOLS,
+        )).toBeNull();
+    });
+
+    test('returns null when required keys are missing', () => {
+        // create_file requires both path and content — only content is present
+        expect(extractTextModeToolCall('{"content": "hello"}', SAMPLE_TOOLS)).toBeNull();
+    });
+
+    test('does not match zero-parameter tools (ambiguous)', () => {
+        // get_selection has properties:{} — should not match an arbitrary JSON object
+        expect(extractTextModeToolCall('{"foo": "bar"}', SAMPLE_TOOLS)).toBeNull();
+    });
+
+    test('returns null for invalid JSON', () => {
+        expect(extractTextModeToolCall('{bad json}', SAMPLE_TOOLS)).toBeNull();
+    });
+
+    test('handles whitespace padding around JSON', () => {
+        const result = extractTextModeToolCall(
+            '  \n{"path": "README.md"}\n  ',
+            SAMPLE_TOOLS,
+        );
+        expect(result).not.toBeNull();
+        expect(result!.function.name).toBe('read_file');
+    });
+
+    test('returns null for format-2 with unknown tool name', () => {
+        expect(extractTextModeToolCall(
+            '{"name": "unknown_tool", "parameters": {"x": 1}}',
+            SAMPLE_TOOLS,
+        )).toBeNull();
     });
 });
 

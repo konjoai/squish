@@ -361,6 +361,85 @@ export class SquishClient {
 
 // ── Module-level helpers ──────────────────────────────────────────────────
 
+/**
+ * Try to extract a tool call from text content that looks like JSON tool arguments.
+ *
+ * Many local models (especially smaller ones) do not support structured
+ * OpenAI-compatible `tool_calls` and instead emit the tool invocation as raw
+ * JSON text inside the content field.  This function detects that pattern so
+ * the caller can execute the tool rather than presenting the JSON to the user.
+ *
+ * Handles three formats:
+ *   1. Raw args:    {"path": "...", "content": "..."}
+ *   2. Named wrap:  {"name": "create_file", "parameters": {...}}
+ *   3. Alt wrap:    {"function": "create_file", "arguments": {...}}
+ *
+ * Returns null if the text is not a recognised tool call.
+ */
+export function extractTextModeToolCall(
+    text: string,
+    tools: ToolDefinition[] | undefined,
+): ToolCall | null {
+    if (!tools || tools.length === 0) { return null; }
+
+    const trimmed = text.trim();
+    // Must look like a JSON object — fast guard before parsing
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) { return null; }
+
+    let parsed: Record<string, unknown>;
+    try {
+        parsed = JSON.parse(trimmed) as Record<string, unknown>;
+        if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
+            return null;
+        }
+    } catch {
+        return null;
+    }
+
+    const parsedKeys = Object.keys(parsed);
+    if (parsedKeys.length === 0) { return null; }
+
+    // ── Format 2 & 3: explicit name-wrapper ─────────────────────────────
+    const wrapperName = typeof parsed['name'] === 'string' ? parsed['name'] as string
+        : typeof parsed['function'] === 'string' ? parsed['function'] as string
+        : null;
+    if (wrapperName) {
+        const argsObj = (parsed['parameters'] ?? parsed['arguments']) as Record<string, unknown> | undefined;
+        const tool = tools.find(t => t.function.name === wrapperName);
+        if (tool && argsObj && typeof argsObj === 'object' && !Array.isArray(argsObj)) {
+            return {
+                id: `call_text_${Date.now()}`,
+                type: 'function',
+                function: { name: wrapperName, arguments: JSON.stringify(argsObj) },
+            };
+        }
+    }
+
+    // ── Format 1: raw args — match against known tool parameter schemas ──
+    for (const tool of tools) {
+        const required = tool.function.parameters.required ?? [];
+        const properties = tool.function.parameters.properties ?? {};
+        const allKnownKeys = Object.keys(properties);
+
+        // Skip zero-parameter tools — matching {} is too ambiguous
+        if (allKnownKeys.length === 0) { continue; }
+
+        const hasAllRequired = required.every(r => parsedKeys.includes(r));
+        // All keys in the JSON must be known parameter names — no extra fields
+        const noExtraKeys = parsedKeys.every(k => allKnownKeys.includes(k));
+
+        if (hasAllRequired && noExtraKeys) {
+            return {
+                id: `call_text_${Date.now()}`,
+                type: 'function',
+                function: { name: tool.function.name, arguments: JSON.stringify(parsed) },
+            };
+        }
+    }
+
+    return null;
+}
+
 /** Read squish config from VS Code settings — fallback values when not in extension context. */
 function _defaultCfg() {
     try {

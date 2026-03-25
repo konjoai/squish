@@ -11,7 +11,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
-import { SquishClient, ChatMessage, ToolDefinition, ToolCall } from './squishClient';
+import { SquishClient, ChatMessage, ToolDefinition, ToolCall, extractTextModeToolCall } from './squishClient';
 import { HistoryManager, Session } from './historyManager';
 
 const execAsync = promisify(exec);
@@ -469,8 +469,27 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                             }
                             this._thinkBuf = '';
 
-                            const toolCalls = chunk.toolCalls;
-                            const wantsTools = chunk.finishReason === 'tool_calls' && toolCalls && toolCalls.length > 0;
+                            let toolCalls = chunk.toolCalls;
+                            let wantsTools = chunk.finishReason === 'tool_calls' && toolCalls != null && toolCalls.length > 0;
+
+                            // Fallback: detect text-mode tool calling.
+                            // Some local models don't support structured tool_calls and instead
+                            // emit the tool arguments as plain JSON text in the content field.
+                            // Detect that pattern, clear the JSON from the webview, then route
+                            // to the normal tool execution path.
+                            if (!wantsTools) {
+                                const extracted = extractTextModeToolCall(
+                                    assistantReply.trim(),
+                                    ChatPanel.TOOLS,
+                                );
+                                if (extracted) {
+                                    // Erase the JSON text already streamed to the webview
+                                    this._view?.webview.postMessage({ type: 'streamClear' });
+                                    toolCalls = [extracted];
+                                    wantsTools = true;
+                                    assistantReply = '';
+                                }
+                            }
 
                             if (wantsTools && toolRound < MAX_TOOL_ROUNDS) {
                                 toolRound++;
