@@ -950,10 +950,34 @@ def _blazing_preset_defaults(
 def _configure_blazing_mode(args: "Any") -> None:
     """Activate Wave-81 blazing mode when ``--blazing`` was passed.
 
-    Sets ``_blazing_mode`` and ``_metal_cache_limit_mb`` globals, then
-    delegates to :func:`_blazing_preset_defaults` for individual flag
-    expansion.  Must be called in ``main()`` *before* model loading.
+    Auto-activates on M3/M4/M5 with ≥16 GB RAM unless ``--no-blazing`` was
+    explicitly passed.  Sets ``_blazing_mode`` and ``_metal_cache_limit_mb``
+    globals, then delegates to :func:`_blazing_preset_defaults` for
+    individual flag expansion.  Must be called in ``main()`` *before* model
+    loading.
     """
+    if getattr(args, "no_blazing", False):
+        return
+
+    # ── Auto-enable on M3+/16 GB+ ──────────────────────────────────────────
+    if not getattr(args, "blazing", False):
+        try:
+            from squish.serving.blazing import auto_blazing_eligible as _abe  # noqa: PLC0415
+            chip_name: str = ""
+            ram_auto: float = 0.0
+            try:
+                from squish.hardware.chip_detector import ChipDetector as _ACD  # noqa: PLC0415
+                _cd = _ACD.detect()
+                chip_name = getattr(_cd, "chip_name", "") or ""
+                ram_auto  = _ACD.detect_ram_gb()
+            except Exception:  # noqa: BLE001
+                pass
+            if _abe(chip_name, ram_auto):
+                args.blazing = True
+                _info("blazing", f"auto-enabled for {chip_name or 'M3/M4/M5'}  (disable with --no-blazing)")
+        except Exception:  # noqa: BLE001
+            pass
+
     if not getattr(args, "blazing", False):
         return
 
@@ -3467,6 +3491,30 @@ async def get_obs_report(
     return JSONResponse(report, status_code=status_code)
 
 
+@app.get("/v1/startup-profile")
+async def get_startup_profile(
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """
+    GET /v1/startup-profile — Phase-by-phase startup timing report.
+
+    Returns a JSON object with timing data for each major startup phase.
+    Only available when ``SQUISH_TRACE_STARTUP=1`` is set before server start.
+
+    Returns 200 with ``{"enabled": false, "message": "..."}`` when tracing
+    was not enabled at startup.
+    """
+    _check_auth(creds)
+    try:
+        from .serving.startup_profiler import _global_report as _startup_rpt
+    except ImportError:
+        try:
+            from serving.startup_profiler import _global_report as _startup_rpt
+        except ImportError:
+            return JSONResponse({"enabled": False, "message": "startup_profiler not available"})
+    return JSONResponse(_startup_rpt.to_dict())
+
+
 @app.post("/v1/tokenize")
 async def tokenize(
     request: Request,
@@ -3894,6 +3942,15 @@ Examples:
                          "Tracks prefix access patterns and pre-warms the KV cache for\n"
                          "hot paths before each request arrives, reducing TTFT for\n"
                          "repeated system prompts and RAG documents.")
+    ap.add_argument("--no-metal-warmup", action="store_true", default=False,
+                    help="Skip the Metal shader-warmup prefill pass after model load.\n"
+                         "Saves ~2 s on first startup but the first real request will be\n"
+                         "slower (cold Metal compilation overhead).")
+    ap.add_argument("--fast-warmup", action="store_true", default=False,
+                    help="Run a minimal 1-token warmup instead of the full warmup pass.\n"
+                         "Reduces post-load warmup from ~2 s to ~50 ms at the cost of a\n"
+                         "slightly slower very-first token on the first request.\n"
+                         "Implies disabling the full Metal warmup.")
     ap.add_argument("--token-merge", action="store_true", default=False,
                     help="[Beta] Enable Token Merging (ToMe) during prefill.\n"
                          "Merges similar adjacent tokens in attention layers 4–11\n"
@@ -4402,6 +4459,14 @@ Examples:
             "Requires an INT2/INT3/INT4 quantised model — NOT a raw BF16 model.\n"
             "Convert first:  squish convert-model --blazing-m3 <model>\n"
             "Combines cleanly with --agent for the full agent+speed stack."
+        ),
+    )
+    ap.add_argument(
+        "--no-blazing", action="store_true", default=False,
+        help=(
+            "Disable blazing mode even on M3/M4/M5 chips where it would be "
+            "auto-enabled.  Use this when you want full context window or "
+            "INT4/INT8 quality without the INT2 KV cache trade-offs."
         ),
     )
 

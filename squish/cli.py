@@ -204,6 +204,8 @@ def _recommend_model(ram_gb: float) -> str:
         return "qwen3:32b"
     if ram_gb >= 32:
         return "qwen3:14b"
+    if ram_gb >= 24:
+        return "llama3.3:70b"
     if ram_gb >= 16:
         return "qwen3:8b"
     return "qwen3:1.7b"
@@ -880,6 +882,23 @@ def cmd_run(args):  # pragma: no cover
                 models_dir=None, refresh_catalog=False, verbose=True,
             )
             cmd_pull(_pull_args)
+
+    # ── RAM-aware quant auto-selection for >8B models ─────────────────────────
+    # Only applies when no explicit quant flag was given by the user.
+    if _CATALOG_AVAILABLE and args.model and not any(
+        getattr(args, q, False) for q in ("int2", "int3", "int4", "int8")
+    ):
+        _ram_gb = _detect_ram_gb()
+        _auto_entry = _catalog_resolve(args.model)
+        if _auto_entry is not None:
+            _sq_gb = getattr(_auto_entry, "squished_size_gb", 0.0) or 0.0
+            if _sq_gb > _ram_gb * 0.75:
+                args.int2 = True
+                _est_gb = _sq_gb * 0.55
+                print(f"  ℹ  Auto-selecting INT2 (~{_est_gb:.1f} GB est.) for {_ram_gb:.0f} GB RAM")
+            elif _sq_gb > _ram_gb * 0.55:
+                args.int3 = True
+                print(f"  ℹ  Auto-selecting INT3 for {_ram_gb:.0f} GB RAM")
 
     _quant_mode = (
         "int3" if getattr(args, "int3", False) else

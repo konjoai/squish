@@ -5,6 +5,47 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [64.0.0] — Wave 91 — 2026-03-25
+
+### Perf — Sub-3s TTFT + 70B Loader
+
+#### 1. Blazing Auto-Enable on M3/M4/M5 (`server.py`)
+
+- `_configure_blazing_mode()` now auto-activates blazing mode when the chip
+  is M3/M4/M5 **and** RAM ≥ 16 GB, unless `--no-blazing` is explicitly passed.
+  Prints: `"blazing: auto-enabled for <chip>  (disable with --no-blazing)"`.
+- **`--no-blazing`** flag added to server argparse — disables auto-activation
+  for users who prefer full context window or INT4/INT8 quality.
+- `get_preset()` returns INT4 KV quantization (not INT2) when RAM ≥ 24 GB,
+  preserving quality on well-equipped machines.
+
+#### 2. RAM-Aware Quant Auto-Selection (`cli.py`)
+
+- `cmd_run` auto-selects INT2 when `squished_size_gb > ram_gb × 0.75`, or
+  INT3 when `squished_size_gb > ram_gb × 0.55`.  Only applies when no
+  explicit `--int2/--int3/--int4/--int8` flag was given.
+- `_recommend_model()` logic fixed: priority order is now
+  64 GB → qwen3:32b → 32 GB → qwen3:14b → 24 GB → llama3.3:70b → 16 GB → qwen3:8b.
+  Previously the 24 GB branch fired first, recommending llama3.3:70b
+  even on 64–128 GB machines.
+
+#### 3. 70B Model Catalog (`catalog.py`)
+
+- `llama3.3:70b` entry wired with `squish_repo="squishai/Llama-3.3-70B-Instruct-bf16-squished-int2"`.
+- `squished_int2_size_gb=19.5` added to the entry and now correctly mapped
+  through `_entry_from_dict()` (field was previously dropped when loading
+  from the bundled catalog dict).
+- Tags: `["large", "impossible"]`.  Notes guide users to `--int2 --agent-kv`.
+
+#### Tests
+
+`tests/test_wave91_performance.py` — 32 tests:
+`auto_blazing_eligible`, `--no-blazing` argparse, `_recommend_model` priority,
+RAM-aware INT2/INT3 selection, llama3.3:70b catalog fields, `get_preset` INT4
+on high-RAM configs.
+
+---
+
 ## [63.0.0] — Wave 90 — 2026-03-25
 
 ### Perf — Startup Profiler + Core Module Extraction
@@ -50,6 +91,47 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 `StartupTimer` accumulation, `StartupReport.to_dict()`, `total_ms`,
 `slowest()`, `measure_import_ms`, `FeatureState` defaults + mutation,
 `auto_blazing_eligible`, `get_preset`, `StartupPhase` enum values.
+
+---
+
+## [63.0.0] — Wave 90 — 2026-03-25
+
+### Startup — Lean Startup Profiler + Core Cleanup
+
+#### 1. Startup Profiler (new `squish/serving/startup_profiler.py`)
+
+- **`StartupPhase`** enum: `IMPORTS`, `CONFIG`, `HW_DETECT`, `MODEL_LOAD`,
+  `KV_CACHE_INIT`, `METAL_WARMUP`, `DRAFT_HEAD`, `HTTP_BIND`.
+- **`StartupTimer`** context manager: records wall-clock elapsed time per phase; no-op when `enabled=False`.
+- **`StartupReport`**: `total_ms`, `slowest(n)`, `to_dict()` for `/v1/startup-profile`.
+- **`measure_import_ms(module_name)`**: times a fresh import; returns `0.0` for already-imported modules.
+- **`_global_report`**: module-level singleton; enabled by `SQUISH_TRACE_STARTUP=1`.
+
+#### 2. Server Flags (`server.py`)
+
+- **`--no-metal-warmup`**: Skip post-load Metal shader warmup (~2 s saved).
+- **`--fast-warmup`**: 1-token warmup instead of full pass (~50 ms vs ~2 s).
+- **`GET /v1/startup-profile`**: Returns startup timing dict or disabled notice.
+
+#### 3. Feature State Container (new `squish/serving/feature_state.py`)
+
+- **`FeatureState`** dataclass: centralises ~90 module-level globals from `server.py`.
+- **`_state`**: module-level singleton.
+
+#### 4. Blazing Mode Helpers (new `squish/serving/blazing.py`)
+
+- **`CHIP_FAMILIES_BLAZING`**: frozenset of eligible chip families (M3/M4/M5).
+- **`auto_blazing_eligible(chip_name, ram_gb)`**: True for M3+/16 GB+.
+- **`BlazingPreset`** dataclass + **`get_preset(chip_name, ram_gb)`**.
+
+#### 5. Import Audit Script (new `dev/scripts/import_scan.py`)
+
+- Report A: orphan modules (zero inbound imports).
+- Report B: module-level globals only ever assigned `None` in server.py.
+
+#### Tests
+
+`tests/test_wave90_startup_lean.py` — 33 tests.
 
 ---
 
