@@ -6017,6 +6017,84 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#wave-79-deferred-imports-inference-loop-micro-opts-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Wave 79 — Deferred Imports + Inference Loop Micro-opts — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Wave 79 — Deferred Imports + Inference Loop Micro-opts — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summary_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-wave-80" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred (Wave 80)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wave-80-sse-streaming-hot-path-micro-opts-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Wave 80 — SSE Streaming Hot-Path Micro-opts — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Wave 80 — SSE Streaming Hot-Path Micro-opts — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summary_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-wave-81" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred (Wave 81)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -11550,6 +11628,84 @@
     <span class="md-ellipsis">
       
         Deferred (Wave 79)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wave-79-deferred-imports-inference-loop-micro-opts-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Wave 79 — Deferred Imports + Inference Loop Micro-opts — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Wave 79 — Deferred Imports + Inference Loop Micro-opts — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summary_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-wave-80" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred (Wave 80)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wave-80-sse-streaming-hot-path-micro-opts-2026-03-24" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Wave 80 — SSE Streaming Hot-Path Micro-opts — 2026-03-24
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Wave 80 — SSE Streaming Hot-Path Micro-opts — 2026-03-24">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summary_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-wave-81" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred (Wave 81)
       
     </span>
   </a>
@@ -25830,6 +25986,118 @@ Combined with AWQ alpha=0.1, this produces the best results seen so far.</p>
 <h3 id="deferred-wave-79">Deferred (Wave 79)<a class="headerlink" href="#deferred-wave-79" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Move <code>squish/kernels/mojo/</code> → <code>squish/experimental/kernels/mojo/</code> (pure reorganisation; zero perf impact; requires updating 5+ test files importing <code>squish.kernels.mojo.*</code>)</li>
+</ul>
+<hr />
+<h2 id="wave-79-deferred-imports-inference-loop-micro-opts-2026-03-24">✅ Wave 79 — Deferred Imports + Inference Loop Micro-opts — 2026-03-24<a class="headerlink" href="#wave-79-deferred-imports-inference-loop-micro-opts-2026-03-24" title="Permanent link">&para;</a></h2>
+<p>Theme: <strong>Shave startup latency; eliminate per-layer per-token overhead</strong></p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Status</th>
+<th>File(s) changed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Defer <code>import uvicorn</code> + <code>_require("uvicorn")</code> to inside <code>start_server()</code> body</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td>Pre-compute <code>_prefetch_caches</code> list before KV decode loop (eliminates 32 × 512 = 16,384 <code>hasattr()</code> calls/req)</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td>Detect <code>mlx_lm.GenerationResult</code> type once via <code>_text_getter</code> callable; eliminates <code>hasattr(item, "text")</code> per token</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td>Sync <code>squish.__version__</code> = 9.1.0 with <code>pyproject.toml</code></td>
+<td>✅ done</td>
+<td><code>squish/__init__.py</code></td>
+</tr>
+<tr>
+<td><code>tests/test_wave79_startup_inference.py</code> — 17 new tests</td>
+<td>✅ done</td>
+<td><code>tests/test_wave79_startup_inference.py</code> (new)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="summary_2">Summary<a class="headerlink" href="#summary_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Total tests: 14,590 passed, 34 skipped, 0 failed</li>
+<li><code>import squish.server</code> eliminates uvicorn from import trace; ~41 ms saved from test startup</li>
+<li>KV decode loop: 32 layers × 512 tokens = 16,384 <code>hasattr()</code> calls/request removed</li>
+<li><code>_text_getter</code> pattern: token text extraction dispatch resolved once, not per token</li>
+</ul>
+<h3 id="deferred-wave-80">Deferred (Wave 80)<a class="headerlink" href="#deferred-wave-80" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Move <code>squish/kernels/mojo/</code> → <code>squish/experimental/kernels/mojo/</code></li>
+<li>Profile <code>json.dumps</code> cost per token — potential <code>orjson</code> swap</li>
+</ul>
+<hr />
+<h2 id="wave-80-sse-streaming-hot-path-micro-opts-2026-03-24">✅ Wave 80 — SSE Streaming Hot-Path Micro-opts — 2026-03-24<a class="headerlink" href="#wave-80-sse-streaming-hot-path-micro-opts-2026-03-24" title="Permanent link">&para;</a></h2>
+<p>Theme: <strong>Zero per-token overhead for streamed responses</strong></p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Status</th>
+<th>File(s) changed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@functools.lru_cache(maxsize=4)</code> on <code>_system_fingerprint(model_name, loaded_at)</code> — MD5 computed once per model load, not per token</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td><code>_make_chunk</code> gains <code>_created: int \| None</code> and <code>_fingerprint: str \| None</code> kwargs for pre-computed values</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td><code>event_stream</code> pre-computes <code>_fp</code> + <code>_created</code> once per request; passes to all <code>_make_chunk</code> calls</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td><code>/v1/completions</code> streaming: <code>_comp_ts = int(time.time())</code> hoisted before closure definition</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td>All 4 <code>_system_fingerprint()</code> call sites updated to pass explicit <code>(model_name, loaded_at)</code> args</td>
+<td>✅ done</td>
+<td><code>squish/server.py</code></td>
+</tr>
+<tr>
+<td><code>tests/test_wave80_chunk_fingerprint.py</code> — 23 new tests</td>
+<td>✅ done</td>
+<td><code>tests/test_wave80_chunk_fingerprint.py</code> (new)</td>
+</tr>
+<tr>
+<td><code>tests/serving/test_server_unit.py::TestSystemFingerprint</code> updated for new signature</td>
+<td>✅ done</td>
+<td><code>tests/serving/test_server_unit.py</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="summary_3">Summary<a class="headerlink" href="#summary_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Total tests: 14,613 passed, 34 skipped, 0 failures (Rust SVD flaky pre-existing, passes in isolation)</li>
+<li>512-token stream: 511 fewer <code>hashlib.md5()</code> calls, 511 fewer <code>int(time.time())</code> calls</li>
+<li><code>_system_fingerprint</code> cache key is <code>(model_name, loaded_at)</code> — stable across all tokens in a request</li>
+<li>Backward-compat: <code>_make_chunk</code> callers without kwargs still work (fall back to live computation)</li>
+</ul>
+<h3 id="deferred-wave-81">Deferred (Wave 81)<a class="headerlink" href="#deferred-wave-81" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Move <code>squish/kernels/mojo/</code> → <code>squish/experimental/kernels/mojo/</code></li>
+<li>Profile <code>json.dumps</code> cost per token — potential <code>orjson</code> swap</li>
 </ul>
 
 
