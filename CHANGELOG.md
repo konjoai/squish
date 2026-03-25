@@ -5,6 +5,60 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [62.0.0] — Wave 89 — 2026-03-25
+
+### Models — Local Model Scanner + `squish pull` URI Schemes
+
+#### 1. Local Model Scanner (new `squish/serving/local_model_scanner.py`)
+
+- **`LocalModel` dataclass**: `name`, `path`, `source`, `size_bytes`, `family`, `params`.
+- **`LocalModelScanner.scan_squish()`**: Scans `~/models/` for Squish-compressed model directories.
+- **`LocalModelScanner.scan_ollama()`**: Walks Ollama manifest files (`~/.ollama/models/manifests/`),
+  parses JSON to extract layer sizes and metadata.  Handles malformed manifests gracefully.
+- **`LocalModelScanner.scan_lm_studio()`**: Recursively finds GGUF files in `~/.cache/lm-studio/`.
+- **`LocalModelScanner.find_all()`**: Merges all sources, deduplicates by canonical name
+  (Squish > Ollama > LM Studio priority).
+- **`_dir_to_canonical(dir_name)`**: Converts directory names like `Qwen3-8B-bf16` → `qwen3:8b`.
+
+#### 2. `squish pull` URI Schemes (`cli.py`)
+
+- **`squish pull ollama:<name>`**: Probes local Ollama instance; if found and catalog has
+  a matching `squish_repo`, downloads pre-compressed weights.  Friendly error if Ollama
+  is not running.
+- **`squish pull hf:<repo>`**: Downloads from HuggingFace.  If repo matches a catalog entry's
+  `hf_mlx_repo`, delegates to the existing pull path.  Otherwise downloads via
+  `huggingface_hub` and compresses locally.
+
+#### 3. `squish import` Command (`cli.py`)
+
+- New `squish import <source>` subcommand accepting:
+  - `ollama:<name>` — imports from a running Ollama instance
+  - `/path/to/model.gguf` — imports a local GGUF file
+  - `hf:<repo>` — downloads and compresses from HuggingFace
+- Subparser registered with `--models-dir` and `--token` arguments.
+
+#### 4. `/api/tags` Scanner Integration (`ollama_compat.py`)
+
+- **`_local_models()`** now delegates to `LocalModelScanner.find_all()`, so
+  `/api/tags` exposes models from Squish, Ollama, and LM Studio to any Ollama-
+  compatible client (Open WebUI, Continue.dev, etc.).  Falls back to direct
+  directory scan if the scanner is unavailable.
+
+#### 5. `squish models` External Models Section (`cli.py`)
+
+- After listing Squish models, `squish models` now calls `scan_ollama()` +
+  `scan_lm_studio()` and prints an "External models detected" table with
+  `squish import <source>:<name>` hints for each discovered model.
+
+#### Tests
+
+`tests/test_wave89_local_model_scan.py` — 36 tests:
+`LocalModel` dataclass, `_dir_to_canonical`, `scan_squish`/`scan_ollama`/`scan_lm_studio`,
+`find_all` deduplication, `/api/tags` scanner integration, `cmd_import` callable,
+`squish pull` URI scheme dispatch.
+
+---
+
 ## [61.0.0] — Wave 88 — 2026-03-25
 
 ### Compat — Ollama Gaps + LocalAI + `squish compat`

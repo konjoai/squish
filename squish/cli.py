@@ -485,6 +485,25 @@ def cmd_models(args):
         print("  Download model : squish pull qwen3:8b")
         print()
 
+    # ── External models (Ollama / LM Studio) ─────────────────────────────────
+    try:
+        from squish.serving.local_model_scanner import LocalModelScanner as _Scn
+        _ext = _Scn()
+        _ext_models = _ext.scan_ollama() + _ext.scan_lm_studio()
+        if _ext_models:
+            print("  External models detected:")
+            print()
+            _w_src  = max(len(m.source) for m in _ext_models)
+            _w_name = max(len(m.name)   for m in _ext_models)
+            print(f"  {'Source':<{_w_src+2}}  {'Model':<{_w_name+2}}  Import hint")
+            print(f"  {'─'*(_w_src+2)}  {'─'*(_w_name+2)}  {'─'*42}")
+            for _m in _ext_models:
+                _hint = f"squish import {_m.source}:{_m.name}"
+                print(f"  {_m.source:<{_w_src+2}}  {_m.name:<{_w_name+2}}  {_hint}")
+            print()
+    except Exception:
+        pass
+
 
 # ── squish rm ────────────────────────────────────────────────────────────────
 
@@ -2124,6 +2143,110 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
     print(f"     Run with: squish run {model_dir}\n")
 
 
+# ── squish pull URI-scheme helpers ─────────────────────────────────────────────
+
+def _pull_from_ollama(ollama_name: str, models_dir: Path, token: str | None) -> None:  # pragma: no cover
+    """Pull a model by probing the local Ollama instance then falling back to HF.
+
+    Parameters
+    ----------
+    ollama_name:
+        Ollama model identifier, e.g. ``"qwen3:8b"`` or ``"llama3.1:8b"``.
+    models_dir:
+        Destination directory for Squish models.
+    token:
+        HuggingFace token for private repos.
+    """
+    import urllib.error
+    import urllib.request
+
+    # Try to find the model in the local Ollama instance
+    ollama_base = "http://127.0.0.1:11434"
+    try:
+        url = f"{ollama_base}/api/show"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps({"name": ollama_name}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=3) as r:
+            _show = json.loads(r.read())
+        print(f"  Found {ollama_name!r} in local Ollama — attempting to map to Squish catalog…")
+    except (urllib.error.URLError, OSError):
+        print(f"\n  Ollama is not running or model {ollama_name!r} not found locally.")
+        print("  Start Ollama first:  ollama serve")
+        print(f"  Or use direct HF pull:  squish pull hf:mlx-community/{ollama_name.replace(':', '-')}")
+        print()
+        return
+
+    # Check catalog for this model
+    entry = _catalog_resolve(ollama_name)
+    if entry is not None and entry.squished_repo:
+        print(f"  Catalog match found — pulling pre-compressed: {entry.squished_repo}")
+        _pull_from_hf(entry.squished_repo, models_dir, token)
+    else:
+        # Best-effort: map to mlx-community HF repo
+        hf_guess = f"mlx-community/{ollama_name.replace(':', '-')}-bf16"
+        print(f"  No catalog match. Attempting HF pull: {hf_guess}")
+        _pull_from_hf(hf_guess, models_dir, token)
+
+
+def _pull_from_hf(hf_repo: str, models_dir: Path, token: str | None) -> None:  # pragma: no cover
+    """Download and compress a model from HuggingFace.
+
+    If the repo matches a Squish catalog entry with a ``squish_repo``, the
+    pre-compressed weights are downloaded directly.  Otherwise the bf16 source
+    is fetched and compressed locally.
+
+    Parameters
+    ----------
+    hf_repo:
+        HuggingFace repository id, e.g. ``"mlx-community/Qwen3-8B-bf16"``.
+    models_dir:
+        Destination directory for Squish models.
+    token:
+        HuggingFace token for private repos.
+    """
+    try:
+        from huggingface_hub import snapshot_download  # type: ignore[import]
+    except ImportError:
+        print("\n  huggingface_hub is required for HF pulls.")
+        print("  Install with:  pip install huggingface-hub")
+        return
+
+    # Check if any catalog entry matches this HF repo
+    if _CATALOG_AVAILABLE:
+        from squish.catalog import list_catalog as _list_catalog
+        for entry in _list_catalog():
+            if getattr(entry, "hf_mlx_repo", "") == hf_repo:
+                if entry.squished_repo:
+                    print(f"  Catalog match ({entry.id}) — downloading pre-squished from {entry.squished_repo}")
+                    # Delegate to standard pull
+                    import types
+                    fake_args = types.SimpleNamespace(
+                        model=entry.id, models_dir=str(models_dir),
+                        token=token, int2=False, int3=False, int8=False,
+                        verbose=False, force=False,
+                    )
+                    cmd_pull(fake_args)
+                    return
+                print(f"  Catalog match ({entry.id}) — no pre-squished available; compressing locally.")
+                break
+
+    # Fresh download
+    print(f"\n  Downloading from HuggingFace: {hf_repo}")
+    print("  (Model is outside catalog — compressing locally after download)")
+    dest = snapshot_download(
+        repo_id=hf_repo,
+        local_dir=str(models_dir / hf_repo.split("/")[-1]),
+        token=token,
+    )
+    print(f"\n  Downloaded to: {dest}")
+    print("  To compress: squish compress <model-dir>")
+    print()
+
+
 # ── squish pull ───────────────────────────────────────────────────────────────
 
 def cmd_pull(args):  # pragma: no cover
@@ -2147,6 +2270,15 @@ def cmd_pull(args):  # pragma: no cover
     name = args.model
     models_dir = Path(args.models_dir).expanduser() if args.models_dir else _MODELS_DIR
     token = args.token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+
+    # ── URI scheme dispatch ────────────────────────────────────────────────────
+    if name.startswith("ollama:"):
+        _pull_from_ollama(name[len("ollama:"):], models_dir, token)
+        return
+    if name.startswith("hf:") or "huggingface.co" in name:
+        hf_ref = name.removeprefix("hf:")
+        _pull_from_hf(hf_ref, models_dir, token)
+        return
 
     # Resolve first so we can print a clear error before any download starts
     entry = _catalog_resolve(name)
@@ -2226,6 +2358,50 @@ def cmd_pull(args):  # pragma: no cover
                     token = args.token
 
                 cmd_pull_head(_HeadArgs())
+
+
+# ── squish import ─────────────────────────────────────────────────────────────
+
+def cmd_import(args):  # pragma: no cover
+    """Import a model from Ollama, a GGUF file, or HuggingFace.
+
+    Usage examples
+    --------------
+      squish import ollama:qwen3:8b
+      squish import /path/to/model.gguf
+      squish import hf:mlx-community/Qwen3-8B-bf16
+    """
+    name = args.import_source
+    models_dir = Path(getattr(args, "models_dir", None) or _MODELS_DIR).expanduser()
+    token = getattr(args, "token", None) or os.environ.get("HF_TOKEN")
+
+    if name.startswith("ollama:"):
+        _pull_from_ollama(name[len("ollama:"):], models_dir, token)
+    elif name.startswith("hf:") or "huggingface.co" in name:
+        _pull_from_hf(name.removeprefix("hf:"), models_dir, token)
+    elif Path(name).suffix.lower() in (".gguf", ".bin", ".safetensors"):
+        gguf_path = Path(name).expanduser()
+        if not gguf_path.exists():
+            print(f"\n  File not found: {gguf_path}")
+            return
+        print(f"\n  Importing GGUF: {gguf_path}")
+        print("  squish does not directly convert GGUF — use mlx_lm.convert first:")
+        print(f"    python3 -m mlx_lm.convert --hf-path <HF_ID> -q --q-bits 4 --mlx-path {models_dir}")
+        print()
+    else:
+        # Bare model name — try catalog then HF
+        entry = _catalog_resolve(name) if _CATALOG_AVAILABLE else None
+        if entry is not None:
+            import types
+            fake_args = types.SimpleNamespace(
+                model=name, models_dir=str(models_dir),
+                token=token, int2=False, int3=False, int8=False,
+                verbose=False, force=False,
+            )
+            cmd_pull(fake_args)
+        else:
+            # Last resort: try as HF repo
+            _pull_from_hf(name, models_dir, token)
 
 
 # ── squish catalog ────────────────────────────────────────────────────────────
@@ -3570,7 +3746,12 @@ def cmd_welcome():
         print()
 
 
-def main():
+def build_parser() -> "argparse.ArgumentParser":
+    """Build and return the squish argument parser.
+
+    Separated from :func:`main` so tests can introspect subcommands without
+    calling ``sys.exit`` or executing any side-effects.
+    """
     ap = argparse.ArgumentParser(
         prog="squish",
         description="Squish — private local inference for Apple Silicon",
@@ -4001,6 +4182,27 @@ Ollama drop-in:
     p_pull.add_argument("--verbose", action="store_true")
     p_pull.set_defaults(func=cmd_pull)
 
+    # ── import ──
+    p_import = sub.add_parser(
+        "import",
+        help="Import a model from Ollama, a GGUF file, or HuggingFace",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Import a model from an external source into the Squish model store.\n\n"
+            "Examples:\n"
+            "  squish import ollama:qwen3:8b\n"
+            "  squish import /path/to/model.gguf\n"
+            "  squish import hf:mlx-community/Qwen3-8B-bf16"
+        ),
+    )
+    p_import.add_argument("import_source",
+                          help="Source: ollama:<name>, /path/to/model.gguf, or hf:<repo>")
+    p_import.add_argument("--models-dir", default="",
+                          help="Override models directory (default: ~/.squish/models)")
+    p_import.add_argument("--token", default="",
+                          help="HuggingFace API token (or set HF_TOKEN env var)")
+    p_import.set_defaults(func=cmd_import)
+
     # ── pull-head (EAGLE-3) ──
     p_head = sub.add_parser(
         "pull-head",
@@ -4306,6 +4508,11 @@ Ollama drop-in:
                           help="Value to set")
     p_config.set_defaults(func=cmd_config)
 
+    return ap
+
+
+def main():
+    ap = build_parser()
     args = ap.parse_args()
 
     # Configure structured logging based on --log-level (or env var default)

@@ -80,29 +80,54 @@ def mount_ollama(
             return 0
 
     def _local_models() -> list[dict]:
-        """Scan ~/models/ and return Ollama-style model cards."""
-        if not models_dir.exists():
-            return [_single_model_card()]
-        rows = []
-        for d in sorted(models_dir.iterdir()):
-            if not d.is_dir() or d.name.startswith("."):
-                continue
-            size = _model_size_bytes(d.name)
-            rows.append({
-                "name":         d.name + ":latest",
-                "model":        d.name + ":latest",
-                "modified_at":  "2026-01-01T00:00:00Z",
-                "size":         size,
-                "digest":       "squish-local",
-                "details": {
-                    "parent_model":     "",
-                    "format":           "squish",
-                    "family":           _guess_family(d.name),
-                    "families":         [_guess_family(d.name)],
-                    "parameter_size":   _guess_params(d.name),
-                    "quantization_level": "4-bit",
-                },
-            })
+        """Scan all local model sources and return Ollama-style model cards.
+
+        Uses LocalModelScanner to discover models from Squish, Ollama, and
+        LM Studio so that /api/tags reflects the full local model landscape.
+        """
+        rows: list[dict] = []
+        try:
+            from squish.serving.local_model_scanner import LocalModelScanner
+            scanner = LocalModelScanner(squish_models_dir=models_dir)
+            for m in scanner.find_all():
+                tag  = m.name if ":" in m.name else m.name + ":latest"
+                rows.append({
+                    "name":        tag,
+                    "model":       tag,
+                    "modified_at": "2026-01-01T00:00:00Z",
+                    "size":        m.size_bytes,
+                    "digest":      f"{m.source}-local",
+                    "details": {
+                        "parent_model":       "",
+                        "format":             m.source,
+                        "family":             m.family or _guess_family(m.name),
+                        "families":           [m.family or _guess_family(m.name)],
+                        "parameter_size":     m.params or _guess_params(m.name),
+                        "quantization_level": "4-bit",
+                    },
+                })
+        except Exception:
+            # Fallback: scan squish models_dir directly
+            if models_dir.exists():
+                for d in sorted(models_dir.iterdir()):
+                    if not d.is_dir() or d.name.startswith("."):
+                        continue
+                    size = _model_size_bytes(d.name)
+                    rows.append({
+                        "name":        d.name + ":latest",
+                        "model":       d.name + ":latest",
+                        "modified_at": "2026-01-01T00:00:00Z",
+                        "size":        size,
+                        "digest":      "squish-local",
+                        "details": {
+                            "parent_model":       "",
+                            "format":             "squish",
+                            "family":             _guess_family(d.name),
+                            "families":           [_guess_family(d.name)],
+                            "parameter_size":     _guess_params(d.name),
+                            "quantization_level": "4-bit",
+                        },
+                    })
         if not rows:
             rows.append(_single_model_card())
         return rows
