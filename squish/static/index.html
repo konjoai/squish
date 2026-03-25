@@ -894,13 +894,19 @@ async function loadVersion() {
 }
 
 // ── Model loading ─────────────────────────────────────────────────────────── 
+// Track consecutive failures — only show "offline" after 2 failures in a row
+// to avoid false positives when the server is busy with a long inference request.
+let _loadModelsFails = 0;
+const _OFFLINE_FAIL_THRESHOLD = 2;
+
 async function loadModels() {
   const dot = document.getElementById("status-dot");
   const sel = document.getElementById("model-sel");
   try {
-    const r = await fetch(`${BASE_URL}/v1/models`, { headers: authHeaders() });
+    const r = await fetch(`${BASE_URL}/v1/models`, { headers: authHeaders(), signal: AbortSignal.timeout(5000) });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
+    _loadModelsFails = 0;  // reset on success
     dot.className = "ok";
     sel.innerHTML = "";
     for (const m of d.data) {
@@ -915,9 +921,13 @@ async function loadModels() {
     const ob = document.getElementById("offline-banner");
     if (ob) ob.remove();
   } catch {
-    dot.className = "err";
-    sel.innerHTML = `<option value="">Offline</option>`;
-    showOfflineBanner();
+    _loadModelsFails++;
+    // Only mark as offline after repeated failures — server may be busy with inference
+    if (_loadModelsFails >= _OFFLINE_FAIL_THRESHOLD) {
+      dot.className = "err";
+      sel.innerHTML = `<option value="">Offline</option>`;
+      showOfflineBanner();
+    }
   }
 }
 
@@ -1837,6 +1847,16 @@ document.getElementById("settings-panel").addEventListener("click", e => {
   if (apikeyEl && apiKey) apikeyEl.value = apiKey;
   await loadModels();
   loadVersion();   // non-blocking — updates sidebar version tag
+  // Auto-enable agent mode when the server has agent tools available
+  try {
+    const tr = await fetch(`${BASE_URL}/v1/agent/tools`, { headers: authHeaders(), signal: AbortSignal.timeout(3000) });
+    if (tr.ok) {
+      const td = await tr.json();
+      if ((td.tools || []).length > 0 && !agentMode) {
+        toggleAgentMode();
+      }
+    }
+  } catch { /* server may not have agent tools — keep agentMode as-is */ }
   // Restore last session
   if (sessions.length > 0) {
     activeIdx = 0;

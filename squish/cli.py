@@ -100,6 +100,10 @@ def _catalog_resolve(*args, **kwargs):
     return _resolve(*args, **kwargs)
 
 
+def _catalog_suggest(*args, **kwargs):
+    from squish.catalog import suggest as _suggest
+    return _suggest(*args, **kwargs)
+
 
 # ── Terminal colours ─────────────────────────────────────────────────────────
 # 24-bit ANSI RGB codes bypass the terminal's colour theme palette remapping —
@@ -353,33 +357,37 @@ def _detect_local_ai_services() -> list[dict]:
 
 def _open_browser_when_ready(url: str, port: int, timeout_s: int = 30) -> None:
     """
-    Spawn a daemon thread that polls ``http://127.0.0.1:<port>/health`` until it
-    returns HTTP 200, then opens *url* in the default browser.
+    Spawn a detached subprocess that polls ``http://127.0.0.1:<port>/health``
+    until it returns HTTP 200, then opens *url* in the default browser.
 
-    Uses a daemon thread instead of ``os.fork()`` to avoid the
-    ``DeprecationWarning`` raised when forking from a multi-threaded process
-    (Python 3.12+).  The thread is automatically killed when ``os.execv()``
-    replaces the process immediately after this call returns.
+    Uses a fully detached subprocess (``start_new_session=True``) rather than
+    a daemon thread so it survives the ``os.execv()`` call that immediately
+    replaces this process with the server.  A daemon thread would be silently
+    killed by execv before it could poll the health endpoint.
     """
-    import threading
-    import urllib.error
-    import urllib.request
-    import webbrowser
+    import subprocess
 
-    def _poll() -> None:
-        deadline = time.time() + timeout_s
-        health_url = f"http://127.0.0.1:{port}/health"
-        while time.time() < deadline:
-            try:
-                with urllib.request.urlopen(health_url, timeout=0.5) as resp:
-                    if resp.status == 200:
-                        webbrowser.open(url)
-                        return
-            except Exception:
-                pass
-            time.sleep(0.5)
-
-    threading.Thread(target=_poll, daemon=True).start()
+    # Inline Python script — runs in a completely independent process.
+    script = (
+        "import time, urllib.request, webbrowser\n"
+        f"deadline = time.time() + {timeout_s}\n"
+        f"health_url = 'http://127.0.0.1:{port}/health'\n"
+        "while time.time() < deadline:\n"
+        "    try:\n"
+        "        with urllib.request.urlopen(health_url, timeout=1.0) as r:\n"
+        "            if r.status == 200:\n"
+        f"                webbrowser.open({url!r})\n"
+        "                break\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "    time.sleep(0.5)\n"
+    )
+    subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,  # detach — survives os.execv() in parent
+    )
 
 
 def _resolve_model(name: str | None, quant_mode: str = "int4") -> tuple[Path, Path]:  # pragma: no cover
@@ -2214,10 +2222,19 @@ def cmd_pull(args):  # pragma: no cover
     # Resolve first so we can print a clear error before any download starts
     entry = _catalog_resolve(name)
     if entry is None:
-        _die(
-            f"Unknown model: {name!r}\n"
-            f"Run `squish catalog` to browse available models."
-        )
+        suggestions = _catalog_suggest(name)
+        if suggestions:
+            hint = ", ".join(e.id for e in suggestions[:3])
+            _die(
+                f"Unknown model: {name!r}\n"
+                f"Did you mean one of: {hint}?\n"
+                f"Run `squish catalog` to browse all available models."
+            )
+        else:
+            _die(
+                f"Unknown model: {name!r}\n"
+                f"Run `squish catalog` to browse available models."
+            )
 
     quant_mode = (
         "int3" if getattr(args, "int3", False) else

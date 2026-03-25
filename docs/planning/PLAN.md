@@ -7114,4 +7114,53 @@ squish serve qwen2.5-7b-int2 --blazing --agent
 - Metal cache 64 MB (vs 256 MB) releases stale buffers faster under 16GB pressure
 - `--blazing-m3` quantisation produces ~2 GB model from a standard 7B BF16 checkpoint
 
+---
+
+## 🚀 Wave 82 — UX Polish: Fuzzy Catalog Resolution, Browser Auto-Open Fix, Offline Resilience
+
+**Goal**: Fix 4 user-reported quality-of-life bugs: model not found for "qwen2.5-7b", browser never opens, agent shows offline during inference, and agent mode requires manual toggle.
+
+### Issues fixed
+
+| # | Symptom | Root Cause | Fix |
+|---|---------|------------|-----|
+| 1 | `squish run qwen2.5-7b` → "Unknown model" | `resolve()` only exact + colon-prefix match; "qwen2.5-7b" ≠ "qwen2.5:7b" | Added `_normalize_model_name()` (strip quant suffix, dash→colon for size) and `suggest()` for "did you mean?" |
+| 2 | Browser never opens after server starts | `_open_browser_when_ready()` used daemon thread; `os.execv()` replaces the process and kills all threads | Replaced thread with detached `subprocess.Popen(start_new_session=True)` — survives exec |
+| 3 | Agent shows "offline" during long inference | `loadModels()` on `/v1/models` times out under heavy GPU load → immediate offline banner | Added `_loadModelsFails` counter; offline banner only shows after ≥2 consecutive failures; 5s fetch timeout |
+| 4 | Agent tools not used (user must click "Agent" button) | Agent mode was opt-in per session; users unaware | UI startup queries `/v1/agent/tools`; auto-enables agent mode if tools exist on the server |
+
+### Changes
+
+| Component | Change | File |
+|-----------|--------|------|
+| `_normalize_model_name(name)` | New function — strips quant suffix, converts `-<size>` to `:<size>` | `squish/catalog.py` |
+| `resolve(name)` | Two-phase lookup: raw → normalized → None | `squish/catalog.py` |
+| `suggest(name)` | New function — returns up to 3 close-match entries for "did you mean?" | `squish/catalog.py` |
+| `_catalog_suggest()` | New lazy-import wrapper | `squish/cli.py` |
+| `cmd_pull` unknown model error | Now includes "Did you mean one of: ..." suggestions | `squish/cli.py` |
+| `_open_browser_when_ready()` | Replaced daemon thread with `subprocess.Popen(start_new_session=True)` | `squish/cli.py` |
+| `loadModels()` | Added `_loadModelsFails` counter + `_OFFLINE_FAIL_THRESHOLD = 2`; 5s fetch timeout | `squish/static/index.html` |
+| Init block | Queries `/v1/agent/tools` at startup; auto-enables agent mode when tools are present | `squish/static/index.html` |
+| `tests/test_wave82_ux_polish.py` | 51 new tests across 7 test classes | `tests/test_wave82_ux_polish.py` (new) |
+
+### Usage
+
+```bash
+# These all now work — no more "Unknown model" error
+squish run qwen2.5-7b --int2 --blazing --agent
+squish run qwen3-8b
+squish run llama3.1-8b --int4
+squish pull deepseek-r1-7b
+
+# Typo → helpful "did you mean?" message
+squish pull qwen25-7b
+# → Unknown model: 'qwen25-7b'
+# → Did you mean one of: qwen2.5:7b, qwen2.5:1.5b, qwen2.5:14b?
+```
+
+### Summary
+- Catalog resolution is now forgiving for dash-separated names — the most natural user input
+- Browser auto-open is reliable: works because the polling subprocess is a separate OS process, not a thread that exec kills
+- UI no longer flashes "offline" during multi-second inference bursts; requires 2 consecutive timeouts to declare offline
+- Agent mode activates automatically when the server exposes tools — zero manual toggle required
 

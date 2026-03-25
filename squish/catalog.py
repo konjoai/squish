@@ -123,6 +123,34 @@ def _is_ssl_error(exc: BaseException) -> bool:
 
 import re as _re
 
+# Quant suffixes the user might accidentally append to a model name
+_USER_QUANT_SUFFIX_RE = _re.compile(
+    r'[-_](int2|int3|int4|int8|bf16|fp16|q4|q8|q3|gguf)$',
+    flags=_re.IGNORECASE,
+)
+# Matches a trailing -<size> parameter token (e.g. -7b, -8b, -14b, -30b-a3b)
+_PARAM_SUFFIX_RE = _re.compile(r'-(\d[\w.]*)$')
+
+
+def _normalize_model_name(name: str) -> str:
+    """Normalize user-friendly model name to a canonical catalog ID.
+
+    Handles:
+    - Quant suffix stripping: ``"qwen2.5-7b-int2"`` → ``"qwen2.5-7b"``
+    - Dash→colon conversion for size suffix:
+      ``"qwen2.5-7b"`` → ``"qwen2.5:7b"``
+      ``"deepseek-r1-7b"`` → ``"deepseek-r1:7b"``
+      ``"llama3.1-8b"`` → ``"llama3.1:8b"``
+    """
+    name = name.strip().lower()
+    # Strip any quant suffix the user may have appended
+    name = _USER_QUANT_SUFFIX_RE.sub('', name)
+    # Replace the last -<size> (digit-led) token with :<size>
+    # e.g. "qwen2.5-7b" → "qwen2.5:7b", "deepseek-r1-7b" → "deepseek-r1:7b"
+    name = _PARAM_SUFFIX_RE.sub(r':\1', name)
+    return name
+
+
 def _quant_dir_name(dir_name: str, quant_mode: str) -> str:
     """Return the compressed directory name for a given model dir_name and quant mode.
 
@@ -630,28 +658,59 @@ def resolve(name: str, refresh: bool = False) -> CatalogEntry | None:
     Resolve a model name/shorthand to a ``CatalogEntry``.
 
     Accepts:
-      - canonical ids:  ``"qwen3:8b"``
-      - legacy aliases: ``"7b"`` → ``"qwen2.5:7b"``
-      - prefix matches: ``"qwen3"`` → first qwen3 entry by param count
+      - canonical ids:        ``"qwen3:8b"``
+      - user-friendly names:  ``"qwen2.5-7b"`` → ``"qwen2.5:7b"``
+      - quant-suffixed names: ``"qwen2.5-7b-int2"`` → ``"qwen2.5:7b"``
+      - legacy aliases:       ``"7b"`` → ``"qwen2.5:7b"``
+      - prefix matches:       ``"qwen3"`` → smallest qwen3 entry
+
+    Returns ``None`` only if *no* catalog entry matches the name at all
+    (e.g. a genuine typo).  Callers that want a "did you mean?" hint should
+    call :func:`suggest` after a ``None`` return.
     """
-    # normalise
-    name = name.strip().lower()
+    raw = name.strip().lower()
 
-    # legacy alias
-    canonical = _ALIASES.get(name, name)
+    def _lookup(candidate: str) -> CatalogEntry | None:
+        # legacy alias
+        canonical = _ALIASES.get(candidate, candidate)
+        catalog = load_catalog(refresh=refresh)
+        # exact match
+        if canonical in catalog:
+            return catalog[canonical]
+        # prefix match: "qwen3" → first qwen3:* entry by size
+        matches = [e for k, e in catalog.items() if k.startswith(canonical + ":")]
+        if matches:
+            return sorted(matches, key=lambda e: e.size_gb)[0]
+        return None
 
-    catalog = load_catalog(refresh=refresh)
+    # 1. Try the raw name first
+    entry = _lookup(raw)
+    if entry is not None:
+        return entry
 
-    # exact match
-    if canonical in catalog:
-        return catalog[canonical]
-
-    # prefix / fuzzy match (e.g. "qwen3" or "gemma3")
-    matches = [e for k, e in catalog.items() if k.startswith(canonical + ":")]
-    if matches:
-        return sorted(matches, key=lambda e: e.size_gb)[0]
+    # 2. Try normalized form (strip quant suffix, dash→colon for size)
+    normalized = _normalize_model_name(raw)
+    if normalized != raw:
+        entry = _lookup(normalized)
+        if entry is not None:
+            return entry
 
     return None
+
+
+def suggest(name: str, refresh: bool = False) -> list[CatalogEntry]:
+    """Return up to 3 catalog entries that closely match *name*.
+
+    Used to build "did you mean?" messages when :func:`resolve` returns None.
+    Performs a substring search across id, name, tags, and params.
+    """
+    # Use normalized form for search so "qwen2.5-7b" hits "qwen2.5:7b"
+    normalized = _normalize_model_name(name.strip().lower())
+    # First try substring on the normalized form, then fall back to raw
+    results = search(normalized, refresh=refresh)
+    if not results:
+        results = search(name.strip().lower(), refresh=refresh)
+    return results[:3]
 
 
 # ── Download helpers ──────────────────────────────────────────────────────────
