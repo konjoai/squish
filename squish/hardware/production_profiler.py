@@ -45,8 +45,6 @@ import collections
 from dataclasses import dataclass
 from typing import Optional
 
-import numpy as np
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -241,6 +239,7 @@ class ProductionProfiler:
         When the window is empty all statistics are reported as 0.0 to
         allow callers to distinguish an empty window from a missing operation.
         """
+        import numpy as np  # deferred: only loaded when stats are actually computed
         samples = np.array(window, dtype=np.float64)
         n = len(samples)
         if n == 0:

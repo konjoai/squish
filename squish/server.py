@@ -85,12 +85,10 @@ except ImportError:  # pragma: no cover
 
 
 # ── Production profiler (APM-style latency percentiles) ──────────────────────
-try:
-    from squish.hardware.production_profiler import ProductionProfiler as _ProductionProfiler
-    _PROFILER_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _PROFILER_AVAILABLE = False
-    _ProductionProfiler = None  # type: ignore[assignment,misc]
+# Import is deferred to main() so that numpy (a production_profiler dependency)
+# is not loaded at module-import time, keeping the initial process RSS low.
+_ProductionProfiler: "type | None" = None   # set by main()
+_PROFILER_AVAILABLE: bool = False            # set by main()
 
 # ── Observability report ──────────────────────────────────────────────────────
 try:
@@ -4780,6 +4778,16 @@ Examples:
     _state._no_compile = args.no_compile  # propagate --no-compile flag
 
     # ── APM profiler init ─────────────────────────────────────────────────────
+    # Deferred import: production_profiler pulls in numpy at module level,
+    # so we load it here (inside main) to keep process RSS low before model load.
+    global _ProductionProfiler, _PROFILER_AVAILABLE
+    try:
+        from squish.hardware.production_profiler import (  # noqa: PLC0415
+            ProductionProfiler as _ProductionProfiler,
+        )
+        _PROFILER_AVAILABLE = True
+    except ImportError:
+        pass
     global _profiler
     if _PROFILER_AVAILABLE:
         import time as _time_mod
@@ -7482,7 +7490,7 @@ Examples:
             system_prompt    = "",
         )
 
-    # ── Wave 75/79: optimization status — compact auto-profile or full table ──
+    # ── Wave 75/79: optimization status — compact single line ─────────────────
     _auto_prof = globals().get("_auto_profile")
     if _auto_prof is not None and _state.model is not None:
         # Wave 79: single-line status when auto-profile is active
@@ -7490,8 +7498,6 @@ Examples:
         _load_s = getattr(_state, "load_time_s", 0.0) or 0.0
         _status = _auto_prof.status_line(_model_label, _load_s)
         _ok(_status)
-    else:
-        _print_optimization_status()
 
     # ── Wave 76: Initialise agent tool registry ───────────────────────────────
     global _agent_registry
