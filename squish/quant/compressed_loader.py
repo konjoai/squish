@@ -13,10 +13,10 @@ Quantization format hierarchy (auto-detected from file suffixes):
                                   stays INT4 in Metal unified memory)
   INT4 symmetric   — __q4.npy   (legacy format, dequantizes to BF16)
   INT8 (Vectro)    — __q.npy    (dequantizes to BF16)
-  INT3             — __q3.npy   (CURRENTLY dequantizes to float32 → BF16;
-                                  Wave 104 adds int3_gemv.metal for true
-                                  in-Metal INT3 inference with ~37.5% less
-                                  bandwidth than INT4)
+  INT3             — __q3.npy   (Wave 104: builds squish_3bit/ safetensors cache
+                                  on first load; INT3Linear modules store uint8
+                                  codes in Metal, dequantizing per-group lazily.
+                                  ~3.75× lower Metal RSS vs BF16 for linear layers)
   INT2             — stored via WeightOnlyInt2Quant; expert-only, <30B models
                        produce incoherent output — see cli.py warning
   Passthrough F16  — __pt.npy  (lossless, no quantization)
@@ -1073,6 +1073,287 @@ def _build_squish_4bit_dir(  # pragma: no cover
               f"{_sz:.0f} MB  {_elapsed:.1f}s — will stay INT4 in Metal on next load")
 
 
+def _build_squish_3bit_dir(  # pragma: no cover
+    dir_path: Path,
+    tensor_dir: Path,
+    base_keys: list,
+    safe_to_original: dict,
+    model_dir: str,
+    verbose: bool = True,
+) -> None:
+    """Build squish_3bit/ from INT3 npy files — run once on first load.
+
+    Converts Vectro INT3 asymmetric files to a safetensors directory that
+    _load_squish_3bit_cache() can load into INT3Linear modules without ever
+    materialising a full BF16 weight matrix.
+
+    For INT3 layers, stores three tensors keyed by the weight's module path:
+        {module_path}.weight →  uint8  (out, in) codes, one code per byte
+        {module_path}.scales →  float16 (out, n_groups) per-group scales
+        {module_path}.zeros  →  float16 (out, n_groups) per-group zeros
+    For non-INT3 layers:
+        {orig_name}          →  bfloat16 (dequantized from Vectro INT8/PT)
+
+    The squish_3bit/ directory also receives a copy of the model config files
+    needed by _instantiate_model() (config.json, tokenizer*, etc.).
+
+    Memory impact:
+        Weights live as uint8 in Metal: ~1 byte/weight vs 2 bytes/weight (BF16).
+        For a 1.5B model: ~800 MB total vs ~3 GB BF16 → ~3.75× reduction.
+    """
+    from squish.quant.int3_linear import INT3Linear  # noqa: F401  (import validation)
+
+    _t0 = time.perf_counter()
+    squish_3bit_dir = dir_path / "squish_3bit"
+    squish_3bit_dir.mkdir(exist_ok=True)
+
+    # Copy model metadata (config, tokenizer files) from model_dir
+    _model_dir_p = Path(model_dir)
+    for _fname in ("config.json", "tokenizer.json", "tokenizer_config.json",
+                   "tokenizer.model", "special_tokens_map.json",
+                   "generation_config.json", "vocab.json", "merges.txt"):
+        _src = _model_dir_p / _fname
+        if _src.exists():
+            shutil.copy2(str(_src), str(squish_3bit_dir / _fname))
+
+    # Patch config.json: remove any pre-existing quantization key so that
+    # _instantiate_model() builds an unquantized architecture.
+    _cfg_dst = squish_3bit_dir / "config.json"
+    if _cfg_dst.exists():
+        with open(_cfg_dst) as _f:
+            _cfg = json.load(_f)
+        _cfg.pop("quantization", None)
+        with open(_cfg_dst, "w") as _f:
+            json.dump(_cfg, _f, indent=2)
+
+    weight_dict: dict = {}
+    _n_int3 = 0
+    _n_other = 0
+
+    for sk in base_keys:
+        q3_path = tensor_dir / f"{sk}__q3.npy"
+        if _npy_exists(q3_path):
+            # ── INT3 path: reshape to (n_out, n_in) and store as uint8 ────────
+            try:
+                q3 = np.load(str(q3_path), mmap_mode='r')   # (n_total_groups, gs) uint8
+                s3_path = tensor_dir / f"{sk}__s3.npy"
+                z3_path = tensor_dir / f"{sk}__z3.npy"
+                shape_path = tensor_dir / f"{sk}__shape.npy"
+                if not (_npy_exists(s3_path) and _npy_exists(z3_path)
+                        and _npy_exists(shape_path)):
+                    raise ValueError(f"Missing __s3/__z3/__shape for {sk}")
+                s3 = np.load(str(s3_path), mmap_mode='r')   # (n_total_groups,) float32
+                z3 = np.load(str(z3_path), mmap_mode='r')   # (n_total_groups,) float32
+                orig_shape_arr = np.load(str(shape_path), mmap_mode='r')
+                orig_shape = tuple(int(d) for d in orig_shape_arr)
+
+                if len(orig_shape) != 2:
+                    raise ValueError(
+                        f"INT3 layer {sk} has non-2D shape {orig_shape}; skipping"
+                    )
+                n_out, n_in = orig_shape
+                gs = int(q3.shape[1])
+                if n_in % gs != 0:
+                    raise ValueError(
+                        f"n_in={n_in} not divisible by group_size={gs} for {sk}"
+                    )
+
+                n_weights = n_out * n_in
+                n_groups_per_row = n_in // gs
+
+                # Flatten and reshape codes: (n_total_groups*gs,)[:n_weights] → (n_out, n_in)
+                codes_2d = np.ascontiguousarray(
+                    q3.ravel()[:n_weights].reshape(n_out, n_in)
+                )                                                        # uint8
+                # Reshape scales/zeros from (n_total_groups,) → (n_out, n_groups_per_row)
+                scales_2d = np.ascontiguousarray(
+                    s3.ravel()[:n_out * n_groups_per_row]
+                    .reshape(n_out, n_groups_per_row)
+                    .astype(np.float16)
+                )
+                zeros_2d = np.ascontiguousarray(
+                    z3.ravel()[:n_out * n_groups_per_row]
+                    .reshape(n_out, n_groups_per_row)
+                    .astype(np.float16)
+                )
+
+                orig_name = safe_to_original.get(sk, sk.replace("__", "."))
+                # Strip trailing .weight to get the module path for INT3 keys
+                module_path = (orig_name[:-len(".weight")]
+                               if orig_name.endswith(".weight")
+                               else orig_name)
+
+                weight_dict[module_path + ".weight"] = mx.array(codes_2d, dtype=mx.uint8)
+                weight_dict[module_path + ".scales"] = mx.array(scales_2d, dtype=mx.float16)
+                weight_dict[module_path + ".zeros"]  = mx.array(zeros_2d,  dtype=mx.float16)
+
+                del codes_2d, scales_2d, zeros_2d
+                _n_int3 += 1
+            except Exception as _e3:
+                if verbose:
+                    print(f"  [INT3 skip] {sk}: {_e3!r} — falling back to BF16")
+                # Fall through to BF16 dequantization for this key
+                arr = _dequantize_npy_dir(tensor_dir, sk)
+                orig_name = safe_to_original.get(sk, sk.replace("__", "."))
+                weight_dict[orig_name] = mx.array(arr).astype(mx.bfloat16)
+                del arr
+                _n_other += 1
+        else:
+            # ── Non-INT3 path: dequantize to BF16 ─────────────────────────────
+            arr = _dequantize_npy_dir(tensor_dir, sk)
+            orig_name = safe_to_original.get(sk, sk.replace("__", "."))
+            weight_dict[orig_name] = mx.array(arr).astype(mx.bfloat16)
+            del arr
+            _n_other += 1
+
+    mx.save_safetensors(str(squish_3bit_dir / "model.safetensors"), weight_dict)
+    del weight_dict
+
+    # Write sentinel
+    (dir_path / ".squish_3bit_ready").touch()
+
+    _elapsed = time.perf_counter() - _t0
+    if verbose:
+        _sz = (squish_3bit_dir / "model.safetensors").stat().st_size / 1e6
+        print(f"  INT3 cache: {_n_int3} INT3 + {_n_other} BF16 tensors  "
+              f"{_sz:.0f} MB  {_elapsed:.1f}s — uint8 codes stay in Metal on future loads")
+
+
+def _load_squish_3bit_cache(  # pragma: no cover
+    dir_path: Path,
+    model_dir: str,
+    verbose: bool = True,
+    return_stats: bool = False,
+):
+    """Load from a squish_3bit/ directory built by _build_squish_3bit_dir().
+
+    Replaces nn.Linear modules with INT3Linear for layers whose weight is
+    stored as uint8 in the safetensors.  The replacement happens BEFORE
+    mx.eval(), so BF16 weight matrices are never materialised — only the
+    compact uint8 codes land in Metal unified memory.
+
+    Returns (model, tokenizer) or (model, tokenizer, stats_dict).
+    """
+    from squish.quant.int3_linear import INT3Linear
+    import mlx.nn as _nnq
+
+    squish_3bit_dir = dir_path / "squish_3bit"
+    cache_sf = squish_3bit_dir / "model.safetensors"
+
+    rss0 = _rss_mb()
+    stats: dict = {"ram_baseline_mb": rss0}
+
+    if verbose:
+        _sz = cache_sf.stat().st_size / 1e6
+        print(f"  → INT3 model cache found ({_sz:.0f} MB) "
+              f"— loading uint8 codes into Metal")
+
+    # Load all arrays as lazy MLX arrays (not yet in Metal)
+    t0 = time.perf_counter()
+    all_weights: dict = mx.load(str(cache_sf))
+
+    # Identify INT3 layers by uint8 .weight dtype
+    int3_module_paths: set = set()
+    for key, arr in all_weights.items():
+        if key.endswith(".weight") and arr.dtype == mx.uint8:
+            int3_module_paths.add(key[:-len(".weight")])
+
+    # Build empty model architecture
+    model, mlx_type = _instantiate_model(model_dir)
+    if verbose:
+        print(f"  model_type = {mlx_type}  |  {len(int3_module_paths)} INT3 layers")
+
+    # ── Replace nn.Linear → INT3Linear for each quantised layer ─────────────
+    # This happens BEFORE mx.eval, so lazy BF16 arrays in the model's random
+    # initialisation are freed and replaced by lazy uint8 arrays.
+    int3_keys_loaded: set = set()
+    for mpath in int3_module_paths:
+        w_key = mpath + ".weight"
+        s_key = mpath + ".scales"
+        z_key = mpath + ".zeros"
+        if w_key not in all_weights or s_key not in all_weights or z_key not in all_weights:
+            if verbose:
+                print(f"  [INT3 skip] {mpath}: missing scales/zeros in cache")
+            continue
+
+        # Check for optional bias
+        b_key = mpath + ".bias"
+        bias_arr = all_weights.get(b_key)
+
+        stub = INT3Linear(
+            weight=all_weights[w_key],
+            scales=all_weights[s_key],
+            zeros=all_weights[z_key],
+            bias=bias_arr,
+        )
+        try:
+            _nav_and_set_module(model, mpath.split("."), stub)
+            int3_keys_loaded.add(w_key)
+            int3_keys_loaded.add(s_key)
+            int3_keys_loaded.add(z_key)
+            if bias_arr is not None:
+                int3_keys_loaded.add(b_key)
+        except (AttributeError, IndexError, TypeError) as _err:
+            if verbose:
+                print(f"  [INT3 nav fail] {mpath}: {_err!r} — using BF16 fallback weight")
+            # Keep the module as-is (will have random weights until load_weights)
+
+    # ── Load all non-INT3 weights via standard load_weights ──────────────────
+    non_int3_weights = [(k, v) for k, v in all_weights.items()
+                        if k not in int3_keys_loaded
+                        and not (k.endswith(".scales") or k.endswith(".zeros"))]
+    del all_weights
+
+    model.load_weights(non_int3_weights, strict=False)
+    del non_int3_weights
+
+    tokenizer = _get_auto_tokenizer().from_pretrained(model_dir, trust_remote_code=True)
+    mx.eval(model.parameters())
+
+    rss1 = _rss_mb()
+    load_s = time.perf_counter() - t0
+    if verbose:
+        print(f"  INT3 model loaded in {load_s:.2f}s  (RAM Δ {rss1 - rss0:+.0f} MB)")
+
+    stats.update({
+        "loader":               "squish-3bit",
+        "decompression_time_s": load_s,
+        "ram_delta_mb":         rss1 - rss0,
+        "ram_baseline_mb":      rss0,
+    })
+    if return_stats:
+        return model, tokenizer, stats
+    return model, tokenizer
+
+
+def _nav_and_set_module(root, parts: list, module) -> None:  # pragma: no cover
+    """Navigate the MLX Module tree by dot-separated parts and set the last node.
+
+    Handles both attribute access (getattr) and list indexing for numeric parts.
+    Used by _load_squish_3bit_cache to replace nn.Linear → INT3Linear in-place.
+
+    Args:
+        root:   Root MLX Module (e.g. the top-level Model).
+        parts:  Module path split on '.'  e.g. ['model', 'layers', '0', 'q_proj'].
+        module: Replacement module to assign.
+
+    Raises:
+        AttributeError: if a non-numeric part is not found on the current node.
+        IndexError:     if a numeric part is out of range for a list.
+    """
+    obj = root
+    for part in parts[:-1]:
+        if part.isdigit():
+            obj = obj[int(part)]
+        else:
+            obj = getattr(obj, part)
+    last = parts[-1]
+    if last.isdigit():
+        obj[int(last)] = module
+    else:
+        setattr(obj, last, module)
+
+
 def load_from_npy_dir(  # pragma: no cover
     dir_path: str,
     model_dir: str,
@@ -1164,6 +1445,20 @@ def load_from_npy_dir(  # pragma: no cover
         if return_stats:
             return _model, _tok, _stats
         return _model, _tok
+
+    # ── Tier 0b': 3-bit model cache (built once from INT3 npy files) ─────────
+    # When squish_3bit/ was built on a previous invocation, load directly from
+    # the safetensors cache.  INT3Linear module replacement is performed inside
+    # _load_squish_3bit_cache, so uint8 codes reach Metal without BF16 expansion.
+    _three_bit_dir   = dir_path / "squish_3bit"
+    _three_bit_ready = dir_path / ".squish_3bit_ready"
+    if _three_bit_ready.exists() and (_three_bit_dir / "model.safetensors").exists():
+        return _load_squish_3bit_cache(
+            dir_path=dir_path,
+            model_dir=model_dir,
+            verbose=verbose,
+            return_stats=return_stats,
+        )
 
     # ── Tier 0 not found — verify npy-dir exists before proceeding ───────────
     if not manifest_path_obj.exists():
@@ -1302,6 +1597,48 @@ def load_from_npy_dir(  # pragma: no cover
                 _shutil_4b.rmtree(str(_squish4_partial))
             if _four_bit_ready.exists():
                 _four_bit_ready.unlink()
+            # Fall through to the standard Vectro BF16 path below
+
+    # ── Tier 0d: INT3-native path — build squish_3bit/ from Q3 files ─────────
+    # If __q3.npy files exist and squish_3bit/ hasn't been built yet, convert
+    # them to a squish uint8+scales safetensors directory.  On success, future
+    # loads hit the Tier 0b' early-return above.
+    # Note: __q3.npy is NOT detected by _collect_tensor_keys (which only matches
+    # standard suffixes), so we do a separate scandir pass here.
+    _q3_sks = [
+        entry.name[:-len("__q3.npy")]
+        for entry in os.scandir(tensor_dir)
+        if entry.is_file(follow_symlinks=False) and entry.name.endswith("__q3.npy")
+    ]
+    if _q3_sks and not _three_bit_ready.exists() and auto_quantize_bits is None:
+        if verbose:
+            print(f"  ⚡ INT3 asymmetric detected ({len(_q3_sks)} layers)")
+            print("    Building squish_3bit/ cache (once — subsequent loads stay uint8)")
+        try:
+            _build_squish_3bit_dir(
+                dir_path=dir_path,
+                tensor_dir=tensor_dir,
+                base_keys=base_keys,
+                safe_to_original=safe_to_original,
+                model_dir=model_dir,
+                verbose=verbose,
+            )
+            return _load_squish_3bit_cache(
+                dir_path=dir_path,
+                model_dir=model_dir,
+                verbose=verbose,
+                return_stats=return_stats,
+            )
+        except Exception as _e3b:
+            if verbose:
+                print(f"  WARNING: INT3 squish_3bit build failed ({_e3b!r}); "
+                      f"falling back to BF16 dequantization path")
+            import shutil as _shutil_3b
+            _squish3_partial = dir_path / "squish_3bit"
+            if _squish3_partial.exists():
+                _shutil_3b.rmtree(str(_squish3_partial))
+            if _three_bit_ready.exists():
+                _three_bit_ready.unlink()
             # Fall through to the standard Vectro BF16 path below
 
     # Check whether INT4 packed files are available (written by save_int4_npy_dir)
