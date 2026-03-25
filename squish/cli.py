@@ -978,6 +978,8 @@ def cmd_run(args):  # pragma: no cover
         )
 
     _mode_label = "stock (no optimizations)" if getattr(args, "stock", False) else (
+        "blazing + agent (sub-3s TTFT)" if getattr(args, "blazing", False) and getattr(args, "agent", False) else
+        "blazing (sub-3s TTFT, INT2)" if getattr(args, "blazing", False) else
         "agent + all optimizations" if getattr(args, "agent", False)
         else "squish (all optimizations)"
     )
@@ -1025,6 +1027,8 @@ def cmd_run(args):  # pragma: no cover
         cmd += ["--all-optimizations"]
     if getattr(args, "agent", False):
         cmd += ["--agent"]
+    if getattr(args, "blazing", False):
+        cmd += ["--blazing"]
     if getattr(args, "whatsapp", False):
         cmd += ["--whatsapp"]
     if getattr(args, "whatsapp_verify_token", ""):
@@ -3594,6 +3598,12 @@ Ollama drop-in:
                             "and auto-sizes context from available UMA memory.\n"
                             "Designed for 16 GB M-series running 7–14 B models in "
                             "long agent loops.")
+    # ── Wave 81: Blazing preset ────────────────────────────────────────────────
+    p_run.add_argument("--blazing", action="store_true", default=False,
+                       help="Blazing-mode preset: sub-3s TTFT for 7/8B models on M3 16GB. "
+                            "Enables INT2-KV, chunk=128, fast-gelu, kv<=4096, Metal=64MB. "
+                            "Requires an INT2/INT4 quantised model. "
+                            "Convert first: squish convert-model --blazing-m3")
     # ── Phase 14: MoE Expert Lookahead ──
     p_run.add_argument("--moe-lookahead", action="store_true", default=False,
                        help="[Experimental] Enable MoE expert lookahead router. "
@@ -3674,6 +3684,12 @@ Ollama drop-in:
                               "and auto-sizes context from available UMA memory.\n"
                               "Designed for 16 GB M-series running 7–14 B models in "
                               "long agent loops.")
+    # ── Wave 81: Blazing preset ────────────────────────────────────────────────
+    p_serve.add_argument("--blazing", action="store_true", default=False,
+                         help="Blazing-mode preset: sub-3s TTFT for 7/8B models on M3 16GB. "
+                              "Enables INT2-KV, chunk=128, fast-gelu, kv<=4096, Metal=64MB. "
+                              "Requires an INT2/INT4 quantised model. "
+                              "Convert first: squish convert-model --blazing-m3")
     # ── Phase 14: MoE Expert Lookahead ──
     p_serve.add_argument("--moe-lookahead", action="store_true", default=False,
                          help="[Experimental] Enable MoE expert lookahead router. "
