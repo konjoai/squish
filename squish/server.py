@@ -359,6 +359,7 @@ _ssd_saguaro            = None  # SSDSaguaro              — --ssd-saguaro
 _speculative_streamer   = None  # SpeculativeStreamer      — --spec-stream
 _metal_flash_attn       = None  # MetalFlashAttention     — --metal-flash-attn
 _deja_vu_sparse_ffn     = None  # DejaVuSparseFFN         — --deja-vu
+_structured_sparsity    = None  # StructuredFfnSparsity   — Wave 82 auto-load
 _jacobi_decoder         = None  # JacobiDecoder           — --jacobi
 _mtp_predictor          = None  # MultiTokenPredictor     — --mtp
 _layer_overlap_loader   = None  # LayerOverlapLoader      — --layer-overlap
@@ -5335,6 +5336,45 @@ Examples:
             globals()["_auto_profile"] = _auto_profile_inst
         except Exception:  # noqa: BLE001
             pass  # never block startup on auto-profile failure
+
+    # ── Wave 82a: Auto-load EAGLE-3 head (detected by auto_profile) ──────────
+    # load_eagle_head() at line ~4988 runs before the auto-profile block, so
+    # eagle_head_dir from apply_defaults() arrives too late for that call.
+    # This second check runs after apply_defaults() has set the path.
+    _w82_prof = globals().get("_auto_profile")
+    if (
+        _w82_prof is not None
+        and _w82_prof.use_eagle3
+        and _w82_prof.eagle3_head_dir
+        and _draft.eagle_head is None   # skip if user already loaded manually
+    ):
+        try:
+            load_eagle_head(_w82_prof.eagle3_head_dir, verbose=False)
+            _info("eagle3-auto",
+                  f"head auto-loaded from {_w82_prof.eagle3_head_dir}")
+        except Exception as _e82:  # noqa: BLE001
+            _warn(f"[eagle3-auto] Could not load: {_e82}")
+
+    # ── Wave 82b: Auto-load structured FFN sparsity masks ────────────────────
+    if (
+        _w82_prof is not None
+        and _w82_prof.use_sparsity
+        and _w82_prof.sparsity_mask_path
+    ):
+        try:
+            from squish.runtime.structured_sparsity import (  # noqa: PLC0415
+                StructuredFfnSparsity as _SFS,
+            )
+            _sfn = _SFS.from_file(_w82_prof.sparsity_mask_path)
+            globals()["_structured_sparsity"] = _sfn
+            _info(
+                "sparse-ffn",
+                f"loaded  layers={_sfn.n_layers}"
+                f"  ratio={_sfn.mean_sparsity:.1%}"
+                f"  file={os.path.basename(_w82_prof.sparsity_mask_path)}",
+            )
+        except Exception as _e82b:  # noqa: BLE001
+            _warn(f"[sparse-ffn] Could not load masks: {_e82b}")
 
     global _kvtc_manager
     if getattr(args, "kvtc", False) and _state.model is not None:
