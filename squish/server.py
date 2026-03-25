@@ -5491,16 +5491,17 @@ Examples:
                 f"  ratio={_sfn.mean_sparsity:.1%}"
                 f"  file={os.path.basename(_w82_prof.sparsity_mask_path)}",
             )
-            # Wave 98: patch live model FFN layers so mask is applied every pass
-            if _state.model is not None:
-                try:
-                    from squish.kernels.ffn_mask_patch import (  # noqa: PLC0415
-                        patch_model_ffn_sparsity as _pfns,
-                    )
-                    _n98 = _pfns(_state.model, _sfn, verbose=False)
-                    _info("sparse-ffn", f"patched {_n98} FFN layers for inference")
-                except Exception as _e98:  # noqa: BLE001
-                    _warn(f"[sparse-ffn] Layer patching failed: {_e98}")
+            # Wave 98: FFN layer patching is disabled until `squish sparsity-trim`
+            # is implemented. MaskedFFN as currently implemented zeros neuron
+            # outputs *after* the GEMM — it adds compute but saves no memory
+            # bandwidth because the weight rows are still loaded and multiplied.
+            # Re-enable this block once sparsity-trim physically removes zeroed
+            # weight columns (see plan Wave 107).
+            # _SPARSITY_TRIM_AVAILABLE = False
+            # if _state.model is not None:
+            #     from squish.kernels.ffn_mask_patch import patch_model_ffn_sparsity
+            #     _n98 = patch_model_ffn_sparsity(_state.model, _sfn, verbose=False)
+            #     _info("sparse-ffn", f"patched {_n98} FFN layers for inference")
         except Exception as _e82b:  # noqa: BLE001
             _warn(f"[sparse-ffn] Could not load masks: {_e82b}")
 
@@ -7501,7 +7502,7 @@ Examples:
             system_prompt    = "",
         )
 
-    # ── Wave 75/79: optimization status — compact single line ─────────────────
+    # ── Wave 75/79: optimization status ─────────────────────────────────────────
     _auto_prof = globals().get("_auto_profile")
     if _auto_prof is not None and _state.model is not None:
         # Wave 79: single-line status when auto-profile is active
@@ -7509,6 +7510,9 @@ Examples:
         _load_s = getattr(_state, "load_time_s", 0.0) or 0.0
         _status = _auto_prof.status_line(_model_label, _load_s)
         _ok(_status)
+    else:
+        # No auto-profile (e.g. explicit flags passed) — show full module table
+        _print_optimization_status()
 
     # ── Wave 76: Initialise agent tool registry ───────────────────────────────
     global _agent_registry

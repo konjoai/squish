@@ -1,14 +1,21 @@
 """
 INT3RuntimeLoader — MiLo INT3 Runtime Dequantization.
 
-Context: Squish's MiLo INT3 compression is currently *storage-only*.
-Compressed weights are saved to npy-dir format but there is no runtime
-dequantization path — the loader falls back to BF16 for inference.
+Status (Wave 99): INT3 native runtime inference is NOT yet active.
+  INT3-compressed files written by `squish quantize` are stored correctly
+  on disk and load without error, but at load time the weights are
+  dequantized to float32 and then cast to bfloat16 before injection into
+  the MLX graph. The model therefore runs at BF16 precision in Metal
+  unified memory — INT3 only saves disk space today, not runtime RAM.
 
-This module closes that gap: given the packed INT3 representation written
-by squish's `quantize` command, it reconstructs fp32 tensors on demand,
-enabling sub-4B models to run entirely from INT3 weights at ~4× memory
-savings.
+  When Wave 104 is complete (int3_gemv.metal + INT3Linear kernel), this
+  module will activate and weights will stay INT3 in Metal, yielding:
+    - ~1.3 GB for a 1.5B model (vs ~3 GB at BF16, ~2 GB at INT4)
+    - True ~37.5% reduction in Metal memory bandwidth per GEMV
+
+  Until then: if you need the lowest memory footprint, use INT4 (––int4).
+  The compressed_loader.py already contains the INT4 → MLX QuantizedLinear
+  path (Wave 103) which provides real in-Metal INT4 inference.
 
 Format (same as squish/quantizer.py MiLo output):
   Each npy-dir layer has:

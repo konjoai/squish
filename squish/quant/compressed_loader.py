@@ -2,25 +2,34 @@
 """
 compressed_loader.py
 
-Loads a Vectro-compressed model (weights_compressed.npz) into an MLX graph
-without ever opening the original .safetensors files.
+Loads a Vectro-compressed model (weights_compressed.npz or npy-dir format)
+into an MLX graph without ever opening the original .safetensors files.
 
 Public API (same contract as mlx_lm.load):
     model, tokenizer = load_compressed_model(model_dir, npz_path, ...)
 
-How it works:
-  1. Parse config.json to build the MLX model architecture (no weights yet).
-  2. Open the npz lazily — arrays are not decompressed until indexed.
-  3. For each tensor: read the int8+scale block, call Vectro reconstruct, cast
-     to bfloat16 mlx.array.
-  4. Inject all tensors via model.load_weights(list_of_tuples).
-  5. Return (model, tokenizer) just like mlx_lm.load().
+Quantization format hierarchy (auto-detected from file suffixes):
+  INT4 asymmetric  — __q4a.npy  (Wave 103: loads as mlx.nn.QuantizedLinear,
+                                  stays INT4 in Metal unified memory)
+  INT4 symmetric   — __q4.npy   (legacy format, dequantizes to BF16)
+  INT8 (Vectro)    — __q.npy    (dequantizes to BF16)
+  INT3             — __q3.npy   (CURRENTLY dequantizes to float32 → BF16;
+                                  Wave 104 adds int3_gemv.metal for true
+                                  in-Metal INT3 inference with ~37.5% less
+                                  bandwidth than INT4)
+  INT2             — stored via WeightOnlyInt2Quant; expert-only, <30B models
+                       produce incoherent output — see cli.py warning
+  Passthrough F16  — __pt.npy  (lossless, no quantization)
+  QuIP# E8         — __quip_e8.npy
+  AQLM             — __aqlm_idx.npy
 
-Peak RAM behaviour:
+Memory behaviour (non-INT4-native path):
   - The npz zipfile index is held in RAM (~kilobytes for 700 keys).
-  - Each tensor is decompressed → reconstructed → converted → loaded into MLX
-    one at a time; the numpy buffer is released before the next tensor.
-  - The full uncompressed model is never simultaneously in RAM.
+  - Each tensor is decompressed → reconstructed → cast to BF16 → loaded
+    into MLX one at a time; the numpy buffer is released immediately.
+  - The full uncompressed BF16 model IS in RAM after all tensors are loaded.
+  - For the INT4 native path (Wave 103), weights remain packed INT4 in Metal,
+    yielding ~50% memory reduction vs BF16 (e.g. 1.5B model: ~2 GB not ~3 GB).
 """
 import dataclasses
 import importlib
