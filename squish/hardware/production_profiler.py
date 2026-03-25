@@ -183,6 +183,26 @@ class ProductionProfiler:
             for name, window in self._windows.items()
         }
 
+    def to_json_dict(self) -> dict:
+        """Return all operation stats as a JSON-serializable dict.
+
+        Returns:
+            A dict mapping operation name to a dict of stats fields.
+            All float values are rounded to 3 decimal places.
+        """
+        result = {}
+        for name, stats in self.report().items():
+            result[name] = {
+                "n_samples": stats.n_samples,
+                "mean_ms":   round(stats.mean_ms,   3),
+                "p50_ms":    round(stats.p50_ms,    3),
+                "p99_ms":    round(stats.p99_ms,    3),
+                "p999_ms":   round(stats.p999_ms,   3),
+                "min_ms":    round(stats.min_ms,    3),
+                "max_ms":    round(stats.max_ms,    3),
+            }
+        return result
+
     def reset(self, operation: str | None = None) -> None:
         """Clear recorded samples.
 

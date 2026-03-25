@@ -3244,6 +3244,145 @@ def cmd_predict(args):  # pragma: no cover
         print()
 
 
+def cmd_trace(args):
+    """
+    View span traces and the slow-module bottleneck report.
+
+    Actions:
+      view  (default) — print top-20 slowest spans + remediation report
+      reset            — clear all accumulated spans (DELETE /v1/trace)
+      obs              — print APM /v1/obs-report (p99 bottlenecks + hints)
+
+    Flags:
+      --chrome PATH   Save a Chrome-DevTools trace JSON to PATH (use with view)
+    """
+    import urllib.error
+    import urllib.request
+
+    host = getattr(args, "host", "127.0.0.1")
+    port = getattr(args, "port", 11435)
+    base = f"http://{host}:{port}"
+    action = getattr(args, "trace_action", "view") or "view"
+
+    def _get(path: str) -> dict:
+        url = base + path
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read())
+
+    def _delete(path: str) -> dict:
+        url = base + path
+        req = urllib.request.Request(url, method="DELETE")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read())
+
+    def _server_err(e):
+        print(f"\n  Could not connect to squish server at {base}: {e}")
+        print("  Start the server first:  squish run <model>")
+        print()
+
+    if action == "reset":
+        try:
+            result = _delete("/v1/trace")
+            print(f"  Trace cleared: {result}")
+        except (urllib.error.URLError, OSError) as e:
+            _server_err(e)
+        return
+
+    chrome_path = getattr(args, "chrome", None)
+    if action == "view" and chrome_path:
+        try:
+            import urllib.request as _ur
+            url = f"{base}/v1/trace?format=chrome"
+            with _ur.urlopen(url, timeout=5) as resp:
+                raw = resp.read()
+            Path(chrome_path).write_bytes(raw)
+            print(f"  Chrome trace written to {chrome_path}")
+            print(f"  Open at https://speedscope.app  or  chrome://tracing")
+        except (urllib.error.URLError, OSError) as e:
+            _server_err(e)
+        return
+
+    if action == "obs":
+        try:
+            data = _get("/v1/obs-report")
+        except (urllib.error.URLError, OSError) as e:
+            _server_err(e)
+            return
+        status = data.get("status", "unknown")
+        symbol = "✓" if status == "ok" else "⚑"
+        print(f"\n  {_C.P}Squish Observability Report{_C.R}  status={_C.G if status == 'ok' else _C.MG}{symbol} {status}{_C.R}")
+        print()
+        bottlenecks = data.get("bottlenecks", [])
+        if not bottlenecks:
+            print(f"  {_C.G}No bottlenecks detected (all p99 < threshold){_C.R}")
+        else:
+            print(f"  {_C.MG}Bottlenecks (p99 above threshold):{_C.R}")
+            for b in bottlenecks:
+                print(f"    {_C.T}{b['op']:<35}{_C.R} p99={_C.MG}{b['p99_ms']:.1f} ms{_C.R}  n={b['n_samples']}")
+                if b.get("hint"):
+                    print(f"      {_C.DIM}→ {b['hint']}{_C.R}")
+        profile = data.get("profile", {})
+        if profile:
+            print()
+            print(f"  {_C.P}APM Profile:{_C.R}")
+            print(f"  {'Operation':<35}  {'n':>6}  {'mean':>8}  {'p50':>8}  {'p99':>8}")
+            print(f"  {'─' * 35}  {'─' * 6}  {'─' * 8}  {'─' * 8}  {'─' * 8}")
+            for op, s in sorted(profile.items()):
+                print(f"  {op:<35}  {s['n_samples']:>6}  {s['mean_ms']:>7.1f}ms"
+                      f"  {s['p50_ms']:>7.1f}ms  {_C.MG if s['p99_ms'] >= 200 else ''}{s['p99_ms']:>7.1f}ms{_C.R}")
+        print()
+        return
+
+    # Default: view traces
+    try:
+        data = _get("/v1/trace")
+    except (urllib.error.URLError, OSError) as e:
+        _server_err(e)
+        return
+
+    enabled = data.get("tracing_enabled", False)
+    total   = data.get("total_spans", 0)
+    spans   = data.get("slowest_spans", [])
+
+    trace_status = "ON" if enabled else f"{_C.MG}OFF{_C.R} — start server with --trace to collect spans"
+    print(f"\n  {_C.P}Squish Span Trace{_C.R}  tracing={trace_status}  total={total}")
+    if not enabled:
+        print(f"  {_C.DIM}hint: {data.get('hint', '')}{_C.R}")
+    print()
+
+    if spans:
+        print(f"  {'Span Name':<40}  {'Duration':>10}  {'Status':<10}")
+        print(f"  {'─' * 40}  {'─' * 10}  {'─' * 10}")
+        for s in spans:
+            dur_ms = s.get("duration_ms", 0.0)
+            name   = s.get("name", "")[:40]
+            status = s.get("status", "ok")
+            if dur_ms < 50:
+                col = _C.G
+            elif dur_ms < 500:
+                col = _C.MG  # yellow-ish (magenta in ANSI mode)
+            else:
+                col = _C.PK  # red/pink
+            print(f"  {name:<40}  {col}{dur_ms:>8.1f}ms{_C.R}  {status:<10}")
+    else:
+        print(f"  No spans collected yet.")
+
+    # Remediation report from obs-report
+    try:
+        obs = _get("/v1/obs-report")
+        bottlenecks = obs.get("bottlenecks", [])
+        if bottlenecks:
+            print(f"\n  {_C.MG}Remediation Report:{_C.R}")
+            for b in bottlenecks:
+                if b.get("hint"):
+                    print(f"    {_C.T}{b['op']}{_C.R}: {b['hint']}")
+    except Exception:
+        pass  # obs-report is best-effort
+
+    print()
+
+
 def cmd_config(args):
     """Read or write Squish user configuration."""
     from squish import config as _cfg
@@ -4059,6 +4198,39 @@ Ollama drop-in:
     p_predict.add_argument("--json", action="store_true", dest="json_output",
                            help="Print results as JSON instead of a human-readable table.")
     p_predict.set_defaults(func=cmd_predict)
+
+    # ── squish trace ───────────────────────────────────────────────────────────
+    p_trace = sub.add_parser(
+        "trace",
+        help="View span traces and slow-module bottleneck report",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "View collected span traces and APM bottleneck report from the running server.\n\n"
+            "Actions:\n"
+            "  view  (default) — print top-20 slowest spans + remediation hints\n"
+            "  reset           — clear all accumulated spans\n"
+            "  obs             — print APM /v1/obs-report (p99 bottlenecks + hints)\n\n"
+            "Examples:\n"
+            "  squish trace\n"
+            "  squish trace obs\n"
+            "  squish trace reset\n"
+            "  squish trace view --chrome trace.json\n"
+        ),
+    )
+    p_trace.add_argument(
+        "trace_action",
+        nargs="?",
+        default="view",
+        choices=["view", "reset", "obs"],
+        help="Action to perform (default: view)",
+    )
+    p_trace.add_argument("--chrome", metavar="PATH",
+                         help="Save Chrome DevTools trace JSON to PATH (use with view)")
+    p_trace.add_argument("--host", default="127.0.0.1",
+                         help="Server host (default: 127.0.0.1)")
+    p_trace.add_argument("--port", type=int, default=11435,
+                         help="Server port (default: 11435)")
+    p_trace.set_defaults(func=cmd_trace)
 
     # ── config ──
     p_config = sub.add_parser(

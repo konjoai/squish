@@ -83,6 +83,23 @@ except ImportError:  # pragma: no cover
     def _configure_logging(**kwargs): pass      # type: ignore[misc]
 
 
+# ── Production profiler (APM-style latency percentiles) ──────────────────────
+try:
+    from squish.hardware.production_profiler import ProductionProfiler as _ProductionProfiler
+    _PROFILER_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PROFILER_AVAILABLE = False
+    _ProductionProfiler = None  # type: ignore[assignment,misc]
+
+# ── Observability report ──────────────────────────────────────────────────────
+try:
+    from squish.serving.obs_report import generate_report as _generate_obs_report
+    _OBS_REPORT_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _OBS_REPORT_AVAILABLE = False
+    def _generate_obs_report(profiler, tracer, **kw): return {"status": "unavailable"}  # type: ignore[misc]
+
+
 class _NullCtx:  # pragma: no cover
     """Fallback no-op context manager used when squish.telemetry is unavailable."""
     def __enter__(self): return self
@@ -712,6 +729,10 @@ class _ModelState:
             self._tps_window.append((tps, ttft_s))
             self.tokens_gen += n_tokens
             self.requests   += 1
+        # APM profiler — record per-request latencies for p99 analysis
+        if _profiler is not None:
+            _profiler.record("ttft_ms",        ttft_s  * 1000.0)
+            _profiler.record("decode_step_ms", (duration_s - ttft_s) / max(n_tokens, 1) * 1000.0)
 
     @property
     def avg_tps(self) -> float:
@@ -726,6 +747,7 @@ class _ModelState:
         return sum(f for _, f in items) / len(items) if items else 0.0
 
 _state = _ModelState()
+_profiler: "_ProductionProfiler | None" = None   # APM latency profiler; set after model load
 _API_KEY: str | None = None          # set from --api-key at startup
 _bearer  = HTTPBearer(auto_error=False)
 _server_args: dict = {}              # CLI args captured at startup; exposed via /debug-info
@@ -3405,6 +3427,33 @@ async def clear_trace(
     return JSONResponse({"ok": True, "message": "Trace cleared"})
 
 
+@app.get("/v1/obs-report")
+async def get_obs_report(
+    threshold_ms: float = 200.0,
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """
+    GET /v1/obs-report — APM bottleneck report with remediation hints.
+
+    Returns a JSON object with:
+    - ``status``:       ``"ok"`` or ``"degraded"`` (degraded when p99 > threshold_ms)
+    - ``bottlenecks``:  list of slow operations with p99 latency and a hint
+    - ``profile``:      full per-operation latency stats (p50/p99/p999)
+    - ``recent_spans``: 10 slowest recent trace spans
+    - ``profiler_ops``: list of tracked operation names
+
+    Query parameters:
+        threshold_ms  (default 200)  p99 threshold for "degraded" classification.
+
+    Enable span tracing with ``--trace`` (or ``SQUISH_TRACE=1``) for richer data.
+    """
+    _check_auth(creds)
+    tracer = _get_tracer() if _TELEMETRY_AVAILABLE else None
+    report = _generate_obs_report(_profiler, tracer, bottleneck_threshold_ms=threshold_ms)
+    status_code = 200
+    return JSONResponse(report, status_code=status_code)
+
+
 @app.post("/v1/tokenize")
 async def tokenize(
     request: Request,
@@ -4598,6 +4647,20 @@ Examples:
         _model_load_span.set_tag("loader", _actual_loader)
         _model_load_span.set_tag("mlx", _actual_loader in _mlx_backed_loaders)
     _state._no_compile = args.no_compile  # propagate --no-compile flag
+
+    # ── APM profiler init ─────────────────────────────────────────────────────
+    global _profiler
+    if _PROFILER_AVAILABLE:
+        import time as _time_mod
+        _profiler = _ProductionProfiler()
+        # Compute model load duration from the span if available, else from wall time.
+        try:
+            _load_ns = _model_load_span.end_time_ns - _model_load_span.start_time_ns
+            _load_ms = _load_ns / 1_000_000.0
+        except Exception:
+            _load_ms = 0.0
+        if _load_ms > 0:
+            _profiler.record("model_load_ms", _load_ms)
 
     # ── Disk prompt-cache init (Item 2) ──────────────────────────────────────
     global _disk_prompt_cache

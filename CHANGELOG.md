@@ -5,6 +5,46 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [59.0.0] — Wave 86 — 2026-03-25
+
+### Observability — Profiler Wiring + `squish trace`
+
+#### 1. `ProductionProfiler.to_json_dict()` (new method)
+
+- Added `to_json_dict() -> dict` to `squish/hardware/production_profiler.py`.
+  Converts the rolling-window percentile stats for all tracked operations into a
+  JSON-serializable dict suitable for the `/v1/obs-report` response body.
+  Each entry has: `n_samples`, `mean_ms`, `p50_ms`, `p99_ms`, `p999_ms`,
+  `min_ms`, `max_ms` (all floats rounded to 3 decimal places).
+
+#### 2. `squish/serving/obs_report.py` (new module)
+
+- `_REMEDIATION_HINTS` — dict mapping span-name prefixes to actionable hints,
+  covering `gen.prefill`, `gen.decode_loop`, `server.model_load`,
+  `startup.kv_cache_init`, `gen.compress`, `gen.speculative`, and more.
+- `detect_bottlenecks(profiler, threshold_ms=200)` — returns slow operations
+  sorted by p99 descending.
+- `generate_report(profiler, tracer)` — combines profiler stats + tracer slowest
+  spans into a `{status, bottlenecks, profile, recent_spans}` dict.
+
+#### 3. `GET /v1/obs-report` (new endpoint)
+
+- Accepts `?threshold_ms=N` query parameter (default 200).
+- Returns `{"status": "ok"|"degraded", "bottlenecks": [...], "profile": {...}, "recent_spans": [...]}`.
+- Integrates with `_profiler` (instantiated after model load) and `_get_tracer()`.
+
+#### 4. `squish trace` CLI command (new subcommand)
+
+- `squish trace view` — fetches `/v1/trace`, prints a colour-coded table of the
+  20 slowest spans (<50ms green / 50–500ms amber / >500ms red), then prints the
+  bottleneck remediation report from `/v1/obs-report`.
+- `squish trace reset` — sends `DELETE /v1/trace` to clear span data.
+- `squish trace obs` — prints the full APM profile table (p50/p99/p999 per op).
+- `squish trace view --chrome PATH` — saves Chrome DevTools trace JSON.
+- All actions handle server-not-running gracefully (friendly message, no traceback).
+
+---
+
 ## [58.0.0] — Wave 85 — 2026-03-25
 
 ### Refactor — Terminal Palette Consolidation
