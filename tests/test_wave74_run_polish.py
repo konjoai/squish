@@ -234,8 +234,9 @@ class TestRecommendModel(unittest.TestCase):
     def test_16gb_recommends_8b(self):
         self.assertEqual(_recommend_model(16.0), "qwen3:8b")
 
-    def test_24gb_recommends_8b(self):
-        self.assertEqual(_recommend_model(24.0), "qwen3:8b")
+    def test_24gb_recommends_70b_int2(self):
+        # Wave 91: llama3.3:70b at INT2 = 19.5 GB, fits in 24 GB unified memory
+        self.assertEqual(_recommend_model(24.0), "llama3.3:70b")
 
     def test_8gb_recommends_1p7b(self):
         self.assertEqual(_recommend_model(8.0), "qwen3:1.7b")

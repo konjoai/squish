@@ -349,9 +349,13 @@ class TestRecommendModel:
         fn = self._fn()
         assert fn(16.0) == "qwen3:8b"
 
-    def test_between_16_and_32(self):
+    def test_between_16_and_24(self):
         fn = self._fn()
-        assert fn(24.0) == "qwen3:8b"
+        assert fn(20.0) == "qwen3:8b"
+
+    def test_exactly_24gb(self):
+        fn = self._fn()
+        assert fn(24.0) == "llama3.3:70b"  # INT2 fits in ~19.5 GB
 
     def test_exactly_32gb(self):
         fn = self._fn()

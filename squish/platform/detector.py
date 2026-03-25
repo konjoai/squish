@@ -74,6 +74,38 @@ class PlatformInfo:
     apple_chip:      str             # "Apple M3 Pro" or "" on non-Apple
     ram_gb:          float           # Total system RAM GB
 
+    @property
+    def is_apple_silicon(self) -> bool:
+        """True when running on macOS Apple Silicon with MLX available."""
+        return self.kind == PlatformKind.MACOS_APPLE_SILICON
+
+    @property
+    def is_cuda(self) -> bool:
+        """True when a CUDA device is available (alias for has_cuda)."""
+        return self.has_cuda
+
+    @property
+    def name(self) -> str:
+        """Human-readable platform name, e.g. 'macos_apple_silicon'."""
+        return self.kind.name.lower()
+
+    @property
+    def platform_name(self) -> str:
+        """Descriptive platform string, e.g. 'Apple Silicon (M3 Pro)'."""
+        if self.is_apple_silicon:
+            chip = self.apple_chip or "Apple Silicon"
+            return f"Apple Silicon ({chip})"
+        if self.has_cuda:
+            device = self.cuda_info.device_name if self.cuda_info else "CUDA"
+            return f"Linux CUDA ({device})"
+        if self.has_rocm:
+            return "Linux ROCm (AMD)"
+        if self.is_wsl:
+            return "Windows (WSL2)"
+        if self.os_name == "win32":
+            return "Windows (native)"
+        return f"Unknown ({self.os_name}/{self.arch})"
+
 
 @dataclass
 class PlatformDetectorStats:
@@ -292,3 +324,24 @@ class UnifiedPlatformDetector:
             f"ram_gb={i.ram_gb}, has_mlx={i.has_mlx}, "
             f"has_cuda={i.has_cuda}, has_rocm={i.has_rocm})"
         )
+
+
+# ---------------------------------------------------------------------------
+# Module-level convenience
+# ---------------------------------------------------------------------------
+
+_default_detector = UnifiedPlatformDetector()
+
+
+def detect_platform() -> PlatformInfo:
+    """Return PlatformInfo for the current host (cached singleton).
+
+    Convenience wrapper so callers don't need to instantiate
+    ``UnifiedPlatformDetector`` directly::
+
+        from squish.platform.detector import detect_platform
+        info = detect_platform()
+        print(info.is_apple_silicon)   # True on M-series Mac
+        print(info.platform_name)      # "Apple Silicon (Apple M3 Pro)"
+    """
+    return _default_detector.detect()

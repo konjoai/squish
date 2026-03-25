@@ -354,3 +354,35 @@ class PlatformRouter:
             f"device={result.device!r}, "
             f"priority={result.priority})"
         )
+
+
+# ---------------------------------------------------------------------------
+# Convenience helper
+# ---------------------------------------------------------------------------
+
+def get_inference_backend(platform: "Any") -> str:
+    """Return the recommended inference backend name for *platform*.
+
+    Parameters
+    ----------
+    platform:
+        A :class:`~squish.platform.detector.PlatformInfo` instance (or any
+        object with ``is_apple_silicon``, ``is_cuda``, ``has_rocm`` attrs).
+
+    Returns
+    -------
+    str
+        One of ``"mlx"``, ``"torch_cuda"``, ``"torch_rocm"``, or
+        ``"torch_cpu"``.
+    """
+    is_apple = getattr(platform, "is_apple_silicon", False)
+    has_cuda  = getattr(platform, "is_cuda",          False) or getattr(platform, "has_cuda",  False)
+    has_rocm  = getattr(platform, "has_rocm",         False)
+
+    if is_apple:
+        return "mlx"
+    if has_cuda:
+        return "torch_cuda"
+    if has_rocm:
+        return "torch_rocm"
+    return "torch_cpu"
