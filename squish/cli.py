@@ -1061,9 +1061,20 @@ def cmd_run(args):  # pragma: no cover
         if _auto_entry is not None:
             _sq_gb = getattr(_auto_entry, "squished_size_gb", 0.0) or 0.0
             if _sq_gb > _ram_gb * 0.75:
-                args.int2 = True
-                _est_gb = _sq_gb * 0.55
-                print(f"  ℹ  Auto-selecting INT2 (~{_est_gb:.1f} GB est.) for {_ram_gb:.0f} GB RAM")
+                import re as _re
+                _params_str = getattr(_auto_entry, "params", "") or ""
+                _pm = _re.search(r"(\d+\.?\d*)B", _params_str, _re.IGNORECASE)
+                _params_b = float(_pm.group(1)) if _pm else 0.0
+                if _params_b >= 30.0:
+                    args.int2 = True
+                    _est_gb = _sq_gb * 0.55
+                    print(f"  ℹ  Auto-selecting INT2 (~{_est_gb:.1f} GB est.) for {_ram_gb:.0f} GB RAM")
+                else:
+                    # INT2 on <30B models destroys output coherence; warn instead.
+                    print(
+                        f"  ⚠  Model needs ~{_sq_gb:.1f} GB but only {_ram_gb:.0f} GB detected. "
+                        f"INT2 unsafe below 30B — running INT4 (expect swapping on small RAM)."
+                    )
             elif _sq_gb > _ram_gb * 0.55:
                 args.int3 = True
                 print(f"  ℹ  Auto-selecting INT3 for {_ram_gb:.0f} GB RAM")

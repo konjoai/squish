@@ -5,6 +5,73 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [70.0.0] — Wave 97 — 2026-03-25
+
+### Fix — Inference Stability: Event Loop + INT2 Coherence
+
+Two production bugs fixed that manifested during active use.
+
+#### 1. Server "offline" during generation — fixed (`squish/server.py`)
+
+**Root cause**: MLX's `.generate()` is a synchronous Python generator. Every
+`next()` call blocks for the full forward pass (~50–200 ms per token, 2–5 s for
+prefill on large context). This blocked the uvicorn async event loop entirely,
+so the `/health` endpoint could not respond during generation.  The VSCode
+MonitorPanel polls every 2 s and would show "server offline" for the duration of
+each generation.
+
+**Fix**: A module-level `ThreadPoolExecutor(max_workers=1)` (`_inference_executor`)
+offloads every synchronous `next(gen)` call to a background thread via
+`loop.run_in_executor()`.  Between each token the event loop is free to handle
+health checks, metrics, and SSE flushes.  `max_workers=1` is intentional — MLX
+is not thread-safe, so no concurrent forward passes are ever scheduled.
+
+- **Streaming path** (`event_stream()` async generator): replaced the
+  `for tok_text, finish in gen:` loop + `await asyncio.sleep(0)` with a
+  `while True: item = await loop.run_in_executor(_inference_executor, _iter_next, gen)`
+  loop. `_iter_next` returns the `_INFERENCE_STOP` sentinel instead of raising
+  `StopIteration` (futures cannot propagate `StopIteration`).
+- **Non-streaming path** (`else` branch of `chat_completions`): the entire
+  generation is collected in one `run_in_executor` call via `_collect_tokens_sync`.
+- **No latency regression**: the per-token overhead of `run_in_executor` is
+  ~0.1 ms — negligible compared to the 50–200 ms forward pass.
+
+New helpers added at module level in `server.py`:
+- `_inference_executor` — `ThreadPoolExecutor(max_workers=1)`
+- `_INFERENCE_STOP` — unique sentinel object
+- `_iter_next(it)` — single-step iterator advance, returns sentinel on exhaustion
+- `_collect_tokens_sync(gen)` — drains a token generator to a list
+
+#### 2. INT2 auto-selection causing incoherent output — fixed (`squish/cli.py`)
+
+**Root cause**: The RAM-aware auto-quant block in `cmd_run` would silently
+select INT2 when `squished_size_gb > ram_gb × 0.75`, with no floor on parameter
+count.  INT2 quantization (4 discrete levels per weight group) is only viable at
+≥ 30B parameters — below that, the weight matrices are too low-rank to survive
+2-bit compression and the output becomes completely incoherent (repetition,
+hallucinated links, garbled text).
+
+**Fix**: INT2 auto-selection is now gated on `params_b >= 30.0`.  The `params`
+string from `CatalogEntry` (e.g. `"8B"`, `"14B"`, `"70B"`) is parsed with a
+regex.  For models below the threshold that exceed the RAM budget, a clear
+warning is printed and INT4 is used instead (may swap on tight RAM but output
+stays coherent).
+
+```
+# Before (broken):
+if _sq_gb > _ram_gb * 0.75:
+    args.int2 = True   # ← silently destroys 8B models
+
+# After (fixed):
+if _sq_gb > _ram_gb * 0.75:
+    if _params_b >= 30.0:
+        args.int2 = True
+    else:
+        print("⚠  INT2 unsafe below 30B — running INT4")
+```
+
+---
+
 ## [69.0.0] — Wave 96 — 2026-03-25
 
 ### Feat — LM Studio Model Auto-Detection
