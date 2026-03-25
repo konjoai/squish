@@ -5,6 +5,86 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [67.0.0] — Wave 94 — 2026-03-25
+
+### Feat — Cross-Platform Support Review
+
+#### 1. `PlatformInfo` Convenience Properties (`squish/platform/detector.py`)
+
+- **`is_apple_silicon`**: `True` when `kind == MACOS_APPLE_SILICON`.
+- **`is_cuda`**: alias for `has_cuda`.
+- **`name`**: lower-case `kind.name` string (e.g. `"macos_apple_silicon"`).
+- **`platform_name`**: human-readable description (e.g. `"Apple Silicon (M3 Pro)"`).
+- **`detect_platform()`**: module-level singleton convenience function; returns
+  cached `PlatformInfo` without needing to instantiate `UnifiedPlatformDetector`.
+
+#### 2. `get_inference_backend()` (`squish/platform/platform_router.py`)
+
+- New standalone function `get_inference_backend(platform) -> str` returns
+  `"mlx"`, `"torch_cuda"`, `"torch_rocm"`, or `"torch_cpu"` based on
+  `platform.is_apple_silicon`, `is_cuda`, and `has_rocm`.
+- Consumed by `cmd_setup()` to route non-Apple users to the right backend.
+
+#### 3. `cmd_setup()` Cross-Platform Routing (`squish/cli.py`)
+
+- Removed `sys.exit(1)` for non-Apple Silicon.  Instead prints an
+  informational notice with the detected backend and appropriate install
+  hints (CUDA pip command, CPU performance warning).
+- Continues to model recommendation for all platforms.
+
+#### 4. README Platform Update (`README.md`)
+
+- Title changed from "Squish — Local LLM Inference for Apple Silicon" →
+  "Squish — Local LLM Inference".
+- Platform badge updated from "Apple Silicon" → "macOS | Linux | Windows".
+- Removed hard "⚠️ macOS + Apple Silicon only" warning; replaced with a
+  `💡` note clarifying best performance is on Apple Silicon while Linux/CUDA
+  and Windows DirectML are also supported.
+
+#### Tests
+
+`tests/test_wave94_cross_platform.py` — 26 tests:
+`detect_platform()` attrs, `PlatformInfo` computed properties, `is_apple_silicon`
+correctness per kind, `get_inference_backend` for all 4 combinations,
+`cmd_setup` no longer calls sys.exit, README badge and title checks.
+
+---
+
+## [67.0.0] — Wave 94 — 2026-03-25
+
+### Feat — Cross-Platform Support Review
+
+#### 1. README Platform Update (`README.md`)
+
+- Title changed from "…for Apple Silicon" → "…" (platform-agnostic).
+- "⚠️ macOS + Apple Silicon (M1–M5) only" warning replaced with
+  "💡 Best on Apple Silicon…Linux/CUDA + Windows/DirectML also supported."
+- Platform badge updated: `Apple Silicon` → `macOS | Linux | Windows`.
+- Requirements section expanded: Apple Silicon (best), Linux CUDA (experimental),
+  Windows DirectML (experimental), common deps column, install guidance.
+
+#### 2. `cmd_setup()` Cross-Platform Routing (`cli.py`)
+
+- Removed unconditional `sys.exit(1)` for non-Apple-Silicon platforms.
+- On non-Apple machines: detects best backend via
+  `get_inference_backend(detect_platform())`, prints informational notice with
+  install instructions (`pip install torch` for CUDA, CPU-only warning), then
+  continues to the model recommendation step rather than aborting.
+
+#### 3. Platform Detection Layer (pre-existing, confirmed) (`squish/platform/`)
+
+- `PlatformInfo.is_apple_silicon` — property alias for `kind == MACOS_APPLE_SILICON`
+- `PlatformInfo.is_cuda` — property alias for `has_cuda`
+- `PlatformInfo.name` — lowercase `kind.name` (e.g. `"macos_apple_silicon"`)
+- `PlatformInfo.platform_name` — descriptive string (e.g. `"Apple Silicon (M3 Pro)"`)
+- `detect_platform()` — module-level convenience function returning `PlatformInfo`
+- `get_inference_backend(info)` — convenience function returning `"mlx"` /
+  `"torch_cuda"` / `"torch_rocm"` / `"torch_cpu"` / `"directml"` / `"cpu"`
+- `CUDABackend` / `WindowsBackend` guard `ImportError` from `torch` import
+  at call sites, never at module level.
+
+---
+
 ## [66.0.0] — Wave 93 — 2026-03-25
 
 ### Feat — macOS SquishBar Polish

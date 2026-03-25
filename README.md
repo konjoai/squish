@@ -1,9 +1,9 @@
-# Squish — Local LLM Inference for Apple Silicon
+# Squish — Local LLM Inference
 
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-blue.svg)](LICENSE)
 [![PyPI version](https://img.shields.io/pypi/v/squish.svg)](https://pypi.org/project/squish/)
 [![CI](https://github.com/squishai/squish/actions/workflows/ci.yml/badge.svg)](https://github.com/squishai/squish/actions/workflows/ci.yml)
-[![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/squishai/squish)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](https://github.com/squishai/squish)
 [![Discord](https://img.shields.io/badge/Discord-join%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/squish)
 [![HuggingFace](https://img.shields.io/badge/🤗%20Models-squish--community-yellow)](https://huggingface.co/squish-community)
 
@@ -12,7 +12,8 @@
 > Every model you download ships in a format designed for training clusters, not laptops.
 > Squish converts it once into a Metal-native format that maps directly into unified memory — **sub-second cold loads, every time.**
 
-> ⚠️ **macOS + Apple Silicon (M1–M5) only.** Linux/CUDA support is on the roadmap.
+> 💡 **Best on Apple Silicon (M1–M5)** with MLX for sub-second cold loads.
+> Linux/CUDA and Windows (DirectML) are also supported — see `squish setup` for guidance.
 
 ---
 
@@ -532,10 +533,17 @@ optimisation, categorised by stability tier.
 
 ## Requirements
 
-- macOS · Apple Silicon (M1–M5)
-- Python 3.10+ (3.12 recommended)
+**Apple Silicon (best performance):**
+- macOS 13+ · Apple Silicon (M1–M5) · Python 3.10+
+- Core deps: `mlx-lm`, `numpy`, `transformers`, `fastapi`, `uvicorn[standard]`, `safetensors`, `zstandard`, `aiofiles`, `huggingface-hub`
+
+**Linux / Windows (experimental):**
+- Linux: NVIDIA GPU (CUDA 11.8+) or CPU-only · Python 3.10+
+- Windows: DirectML-capable GPU or CPU · Python 3.10+
+- Install: `pip install squish torch` (add `torchvision` for vision models)
+
+**All platforms:**
 - Dependencies install automatically via `pip install squish`
-- Core: `mlx-lm`, `numpy`, `transformers`, `fastapi`, `uvicorn[standard]`, `safetensors`, `zstandard`, `aiofiles`, `huggingface-hub`
 - Eval extras: `pip install squish[eval]` adds `lm-eval`, `datasets`, `accelerate`
 - Optional: Rust quantizer (`squish_quant_rs/`) for 4–6× faster compression throughput
 
