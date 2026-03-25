@@ -5,6 +5,54 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [63.0.0] — Wave 90 — 2026-03-25
+
+### Perf — Startup Profiler + Core Module Extraction
+
+#### 1. Startup Profiler (new `squish/serving/startup_profiler.py`)
+
+- **`StartupPhase`** enum: `IMPORTS`, `CONFIG`, `HW_DETECT`, `MODEL_LOAD`,
+  `KV_CACHE_INIT`, `METAL_WARMUP`, `DRAFT_HEAD`, `HTTP_BIND`, `OTHER`.
+- **`StartupTimer`** context manager: wraps any block and records its
+  elapsed time into a `StartupReport`.  Zero overhead when disabled.
+- **`StartupReport`**: accumulates phase entries; exposes `total_ms`,
+  `slowest(n)`, and `to_dict()` for the HTTP endpoint.
+- **`measure_import_ms(module_name)`**: returns 0.0 for already-cached
+  modules (safe no-op), or times a fresh import for import-chain analysis.
+- **`_global_report`**: module-level singleton written to by server.py
+  when `SQUISH_TRACE_STARTUP=1`.
+- **`GET /v1/startup-profile`** endpoint in server.py: streams the
+  global startup report as JSON.
+- **`--fast-warmup`** flag: 1-token warmup (~50 ms) instead of full
+  warmup (~2 s).
+
+#### 2. FeatureState Dataclass (new `squish/serving/feature_state.py`)
+
+- Centralises ~90 `_xxx = None` server globals into a typed `FeatureState`
+  dataclass, enabling unit testing without importing server.py.
+- Exposes a module-level `_state` singleton that server.py will migrate
+  its globals to in a follow-up cleanup wave.
+
+#### 3. Blazing Helpers (new `squish/serving/blazing.py`)
+
+- **`CHIP_FAMILIES_BLAZING`**: frozenset of chip families qualifying for
+  auto-blazing (M3/M4/M5 and their Pro/Max/Ultra variants).
+- **`auto_blazing_eligible(chip_name, ram_gb)`**: returns True if the
+  chip is M3+ and RAM ≥ 16 GB.
+- **`BlazingPreset`** dataclass: per-chip tuning values
+  (`quant_bits`, `chunk_prefill_size`, `max_kv_size`, etc.).
+- **`get_preset(chip_name, ram_gb)`**: returns the optimal
+  `BlazingPreset` for the given hardware configuration.
+
+#### Tests
+
+`tests/test_wave90_startup_lean.py` — 33 tests:
+`StartupTimer` accumulation, `StartupReport.to_dict()`, `total_ms`,
+`slowest()`, `measure_import_ms`, `FeatureState` defaults + mutation,
+`auto_blazing_eligible`, `get_preset`, `StartupPhase` enum values.
+
+---
+
 ## [62.0.0] — Wave 89 — 2026-03-25
 
 ### Models — Local Model Scanner + `squish pull` URI Schemes
