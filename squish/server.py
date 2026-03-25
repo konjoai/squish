@@ -37,6 +37,7 @@ import json
 import os
 import sys
 import logging as _logging
+import concurrent.futures
 import threading
 import time
 import uuid
@@ -470,6 +471,42 @@ _power_monitor: "Any | None" = None        # PowerMonitor instance (auto mode on
 _power_mode: str = "performance"           # current effective mode name
 # ── Phase 13B: macOS Memory Governor ─────────────────────────────────────────
 _memory_governor: "Any | None" = None      # MemoryGovernor instance (macOS only)
+# ── Inference thread pool ─────────────────────────────────────────────────────
+# MLX .generate() is a synchronous generator that blocks for the full forward
+# pass on each next() call.  Running it in a single-threaded executor keeps the
+# uvicorn event loop responsive (health checks, metrics, SSE flush) during
+# generation.  max_workers=1 is deliberate: MLX is not thread-safe.
+_inference_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="squish-gen"
+)
+_INFERENCE_STOP = object()  # sentinel returned when the sync generator is exhausted
+
+
+def _iter_next(it: "Any") -> "Any":
+    """Advance a sync iterator one step for use in run_in_executor.
+
+    Returns _INFERENCE_STOP instead of raising StopIteration so the caller
+    can distinguish exhaustion from other exceptions.
+    """
+    try:
+        return next(it)
+    except StopIteration:
+        return _INFERENCE_STOP
+
+
+def _collect_tokens_sync(gen: "Any") -> "list[tuple[str, str | None]]":
+    """Drain a sync token generator into a list (non-streaming path).
+
+    Runs entirely in the inference thread pool so the event loop stays free.
+    Returns a list of (tok_text, finish_reason) tuples.
+    """
+    result: list[tuple[str, str | None]] = []
+    for tok_text, finish in gen:
+        result.append((tok_text, finish))
+        if finish is not None:
+            break
+    return result
+
 
 # ── Conflict-Resolution Routing (Phase 0) ────────────────────────────────────
 # Two exclusive request paths prevent incompatible optimizations firing together:
@@ -2648,21 +2685,27 @@ async def chat_completions(  # pragma: no cover
             yield f"data: {_json_dumps(role_chunk)}\n\n"
 
             gen = _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed)
+            loop = _aio.get_running_loop()
             n_comp   = 0
             ttft_s   = 0.0
             last_finish = "stop"
             try:
-                for tok_text, finish in gen:
+                # Each call to run_in_executor offloads one synchronous forward
+                # pass to the inference thread, yielding the event loop between
+                # tokens so health checks and SSE flushes are never blocked.
+                while True:
+                    item = await loop.run_in_executor(
+                        _inference_executor, _iter_next, gen
+                    )
+                    if item is _INFERENCE_STOP:
+                        break
+                    tok_text, finish = item
                     if tok_text:
                         if n_comp == 0:
                             ttft_s = time.perf_counter() - req_start
                         n_comp += 1
                         yield _make_chunk(tok_text, model_id, cid,
                                           _created=_created, _fingerprint=_fp)
-                        # Yield control to the event loop so the HTTP layer can
-                        # flush the SSE chunk immediately before the next forward
-                        # pass blocks the thread.
-                        await _aio.sleep(0)
                     if finish is not None:
                         last_finish = finish
                         break
@@ -2697,12 +2740,22 @@ async def chat_completions(  # pragma: no cover
         )
     else:
         # ── Non-streaming response ────────────────────────────────────────
+        import asyncio as _aio
         full_text    = ""
         last_finish  = "stop"
         ttft_s       = 0.0
         n_comp       = 0
         try:
-            for tok_text, finish in _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed):
+            # Run the full generation in the inference thread pool so health
+            # checks can still respond even during slow prefill or long outputs.
+            _gen_iter = _generate_tokens(
+                prompt, max_tokens, temperature, top_p, stop, seed
+            )
+            _loop = _aio.get_running_loop()
+            _all_toks = await _loop.run_in_executor(
+                _inference_executor, _collect_tokens_sync, _gen_iter
+            )
+            for tok_text, finish in _all_toks:
                 if tok_text:
                     if n_comp == 0:
                         ttft_s = time.perf_counter() - req_start
