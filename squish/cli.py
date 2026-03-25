@@ -488,6 +488,42 @@ def cmd_models(args):
 
 # ── squish rm ────────────────────────────────────────────────────────────────
 
+def cmd_compat(args):
+    """
+    Print client configuration snippets for popular AI tools.
+
+    No server required — prints env-var and config snippets for:
+    OpenAI SDK, Ollama CLI, Open WebUI, Continue.dev, LocalAI, aider, and more.
+    """
+    port = getattr(args, "port", 11435)
+    host = getattr(args, "host", "localhost")
+    base = f"http://{host}:{port}"
+
+    rows = [
+        ("OpenAI SDK",    f"OPENAI_BASE_URL={base}/v1  OPENAI_API_KEY=squish"),
+        ("Ollama CLI",    f"OLLAMA_HOST={base}"),
+        ("Open WebUI",    f"Set Ollama API → {base}"),
+        ("Continue.dev",  f'"apiBase": "{base}/v1"'),
+        ("LocalAI client",f"LOCALAI_API_BASE={base}"),
+        ("aider",         f"--openai-api-base {base}/v1 --openai-api-key squish"),
+        ("Cursor",        f"Custom model → {base}/v1"),
+        ("LM Studio",     f"BaseURL → {base}/v1"),
+        ("LangChain",     f'openai_api_base="{base}/v1", openai_api_key="squish"'),
+        ("Anything LLM",  f"OpenAI-compatible API → {base}/v1"),
+    ]
+
+    w_client = max(len(r[0]) for r in rows)
+    print(f"\n  {_C.P}Squish Drop-in Compatibility Snippets{_C.R}  {_C.DIM}(port {port}){_C.R}")
+    print(f"  {_C.DIM}{'─' * (w_client + 4 + 60)}{_C.R}")
+    print(f"  {_C.T}{'Client':<{w_client+2}}{_C.R}  {_C.T}Configuration{_C.R}")
+    print(f"  {'─' * (w_client + 2)}  {'─' * 58}")
+    for client, snippet in rows:
+        print(f"  {client:<{w_client+2}}  {_C.DIM}{snippet}{_C.R}")
+    print()
+    print(f"  {_C.DIM}squish run <model> starts the server on port {port}{_C.R}")
+    print()
+
+
 def cmd_rm(args):  # pragma: no cover
     """Remove a local model (raw weights and/or compressed dir)."""
     import shutil
@@ -3773,6 +3809,17 @@ Ollama drop-in:
     # ── models ──
     p_models = sub.add_parser("models", help="List local models")
     p_models.set_defaults(func=cmd_models)
+
+    # ── squish compat ──────────────────────────────────────────────────────────
+    p_compat = sub.add_parser(
+        "compat",
+        help="Print client configuration snippets for popular AI tools",
+    )
+    p_compat.add_argument("--host", default="localhost",
+                          help="Server host (default: localhost)")
+    p_compat.add_argument("--port", type=int, default=11435,
+                          help="Server port (default: 11435)")
+    p_compat.set_defaults(func=cmd_compat)
 
     # ── setup ──
     p_setup = sub.add_parser(

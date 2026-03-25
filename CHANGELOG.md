@@ -5,6 +5,47 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [61.0.0] — Wave 88 — 2026-03-25
+
+### Compat — Ollama Gaps + LocalAI + `squish compat`
+
+#### 1. Ollama Compat Improvements (`ollama_compat.py`)
+
+- **`GET /api/version`**: No longer returns hardcoded `"0.3.0"`. Now returns
+  the actual Squish package version from `importlib.metadata`.
+- **`GET /api/ps`**: New endpoint — returns the currently loaded model as an
+  Ollama process card, or `{"models": []}` if no model is loaded.  Used by
+  Open WebUI to show running models.
+- **`HEAD /api/blobs/{digest}`**: Returns 404 (Squish does not store blobs).
+- **`POST /api/blobs/{digest}`**: Returns 400 with explanation.
+- **`POST /api/create`**: Streams helpful ndjson explaining Squish equivalents.
+- **`POST /api/copy`**: Returns 400 with explanation.
+- **`POST /api/pull`**: Kept as helpful redirect stub (full URI pull in Wave 89).
+
+#### 2. LocalAI Compatibility Routes (new `squish/serving/localai_compat.py`)
+
+- `GET /` → `{"message": "LocalAI-compatible API (Squish backend)", "version": "2.0.0", ...}`
+- `GET /v1/version` → `{"version": "2.0.0", "build": "squish", "squish_version": ...}`
+- `GET /readyz` → `{"status": "ok"}` (200) once model loaded, else `{"status": "loading"}` (503)
+- `GET /healthz` → `{"status": "ok"}` always
+- Mounted in `server.py` after Ollama compat layer.
+
+#### 3. `squish compat` CLI command (`cli.py`)
+
+- Prints a table of client configuration snippets for 10 popular tools:
+  OpenAI SDK, Ollama CLI, Open WebUI, Continue.dev, LocalAI, aider, Cursor,
+  LM Studio, LangChain, Anything LLM.
+- No server required — prints env-var and config snippets without connecting.
+
+#### 4. `BackendConfig` + `BackendRouter` (new `squish/serving/backend_router.py`)
+
+- `BackendConfig` reads `SQUISH_BACKEND` (default `"squish"`) and
+  `SQUISH_BACKEND_URL` to configure the active backend.
+- `BackendRouter.proxy_url(path)` builds the correct proxied URL.
+- `BackendRouter.health_check()` probes the backend with appropriate probe path.
+
+---
+
 ## [60.0.0] — Wave 87 — 2026-03-25
 
 ### Fix — VSCode/Web UI Agent Tool Execution

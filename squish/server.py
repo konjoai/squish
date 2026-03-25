@@ -2386,7 +2386,12 @@ _mount_ollama(
     get_tokenizer = lambda: _state.tokenizer,
 )
 
-# ── Web chat UI (/chat) ────────────────────────────────────────────────
+# ── LocalAI compatibility layer (GET /readyz, GET /healthz, GET /v1/version) ─
+try:
+    from .serving.localai_compat import mount_localai as _mount_localai  # package import
+except ImportError:  # pragma: no cover
+    from serving.localai_compat import mount_localai as _mount_localai  # direct script run
+_mount_localai(app, get_state=lambda: _state)
 if _STATIC_FILES_AVAILABLE:  # pragma: no branch
     _static_dir = Path(__file__).parent / "static"
     if _static_dir.exists():  # pragma: no branch

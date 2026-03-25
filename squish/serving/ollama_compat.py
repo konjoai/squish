@@ -31,6 +31,7 @@ References:
 """
 
 import asyncio
+import importlib.metadata
 import json
 import time
 from collections.abc import AsyncIterator
@@ -166,7 +167,11 @@ def mount_ollama(
     @app.get("/api/version")
     async def ollama_version():
         """Ollama version endpoint — tools check this to detect an Ollama server."""
-        return JSONResponse({"version": "0.3.0"})
+        try:
+            squish_ver = importlib.metadata.version("squish")
+        except importlib.metadata.PackageNotFoundError:
+            squish_ver = "0.0.0-dev"
+        return JSONResponse({"version": squish_ver})
 
     @app.get("/api/tags")
     async def ollama_tags():
@@ -428,3 +433,64 @@ def mount_ollama(
             "embedding": emb,
             "model":     body.get("model", state.model_name),
         })
+
+    @app.get("/api/ps")
+    async def ollama_ps():
+        """
+        GET /api/ps — list running models (Ollama process status).
+
+        Returns the currently loaded model as an Ollama process card, or an
+        empty list if no model is loaded.
+        """
+        state = get_state()
+        if state.model is None:
+            return JSONResponse({"models": []})
+        return JSONResponse({
+            "models": [{
+                "name":       (state.model_name or "squish") + ":latest",
+                "model":      (state.model_name or "squish") + ":latest",
+                "size":       4_000_000_000,
+                "digest":     "squish-local",
+                "expires_at": "0001-01-01T00:00:00Z",
+                "size_vram":  0,
+                "details": {
+                    "format":              "squish",
+                    "family":             _guess_family(state.model_name or ""),
+                    "quantization_level": "4-bit",
+                },
+            }],
+        })
+
+    @app.head("/api/blobs/{digest}")
+    async def ollama_blobs_head(digest: str):
+        """HEAD /api/blobs/{digest} — always 404 (Squish uses local file system)."""
+        raise HTTPException(404, "Blob storage not supported by Squish")
+
+    @app.post("/api/blobs/{digest}")
+    async def ollama_blobs_push(digest: str, request: Request):
+        """POST /api/blobs/{digest} — 400 (Squish does not accept blob uploads)."""
+        raise HTTPException(400, "Blob upload not supported by Squish. Use squish pull <model>.")
+
+    @app.post("/api/create")
+    async def ollama_create(request: Request):
+        """
+        POST /api/create — stub (model creation from Modelfile not supported).
+
+        Streams a descriptive ndjson message explaining how to create models
+        in Squish instead.
+        """
+        body = await request.json()
+        name = body.get("name", "")
+
+        async def _stream():
+            yield _ndjson({"status": "Squish does not support Modelfile-based model creation."})
+            yield _ndjson({"status": f"To create a squished model, run:"})
+            yield _ndjson({"status": "  squish pull <model>   OR   squish compress <path>"})
+            yield _ndjson({"status": "success"})
+
+        return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+    @app.post("/api/copy")
+    async def ollama_copy(request: Request):
+        """POST /api/copy — 400 (model copying not supported)."""
+        raise HTTPException(400, "Model copy not supported by Squish. Models are managed in ~/models/.")
