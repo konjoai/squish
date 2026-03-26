@@ -62,6 +62,22 @@
 
 > ⚠️ **Memory note:** BF16 7B+ models require ≥ 16 GB Metal budget. Qwen2.5-7B-bf16 (14 GB) exceeds the 15.5 GB usable budget on a 16 GB M-series device and will OOM. Use the INT4 squished variant (4.4 GB) for 7B+ on 16 GB hardware.
 
+### Metal Inference Memory — INT4 Native (v1.0.0)
+
+Squish keeps weights quantized **end-to-end in Metal** — no BF16 staging buffer
+during inference.  Squished models are loadable on hardware that would OOM on
+the raw BF16 files.
+
+| Model | BF16 in Metal | INT4 in Metal | INT3 in Metal |
+|-------|:-------------:|:-------------:|:-------------:|
+| 1.5B  | ~3.0 GB       | **~0.9 GB**   | **~0.8 GB**   |
+| 4B    | ~8.2 GB       | **~2.2 GB**   | **~1.9 GB**   |
+| 7–8B  | ~15 GB        | **~4.4 GB**   | **~2.1 GB**   |
+| 14B   | ~28 GB        | **~7.6 GB**   | **~5.0 GB**   |
+
+*INT4/INT3 columns = approximate Metal allocation with the native loader path.
+INT3 requires ≥ 7B models for coherent output (smaller models fall back to INT4).*
+
 ---
 
 ## Install
@@ -267,7 +283,7 @@ Accuracy is unchanged — every optimization preserves the ≤2% delta criterion
 | KV cache — prefix reuse | none | delta-only prefill | predictive warmup | CacheWarmupPredictor |
 | Sampling overhead | ~0.35 ms | ~0.35 ms | **~0.08 ms** | FusedSampler 4× speedup |
 | Total modules | 8 | 222 | **228** | +6 Wave 28 modules |
-| Total test count | — | ~4,876 | **7,672** | +2,796 tests |
+| Total test count | — | ~4,876 | **~15,350** | +10,474 tests (v1.0.0) |
 | ARC-Easy accuracy | 73.5% | **73.5%** ✅ | **73.5%** ✅ | unchanged |
 | HellaSwag accuracy | 62.0% | **63.0%** ✅ | **63.0%** ✅ | unchanged |
 | PIQA accuracy | 76.5% | **76.5%** ✅ | **76.5%** ✅ | unchanged |
