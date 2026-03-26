@@ -389,6 +389,24 @@ def _die(msg: str) -> NoReturn:
     sys.exit(1)
 
 
+def _model_is_already_quantized(model_dir: Path) -> bool:
+    """Return True if config.json indicates the model is already natively quantized.
+
+    Detects mlx_lm / HuggingFace native quantized models (INT3, INT4, etc.) that
+    have a ``quantization`` field in their config.json.  These should be loaded
+    as-is via mlx_lm.load() rather than re-quantized by the auto-compress path.
+    """
+    import json as _json
+    _cfg = model_dir / "config.json"
+    if not _cfg.exists():
+        return False
+    try:
+        with open(_cfg) as _f:
+            return "quantization" in _json.load(_f)
+    except Exception:
+        return False
+
+
 def _box(lines: list[str]) -> None:
     """Print a styled box around lines using squish brand colours.
 
@@ -1226,7 +1244,12 @@ def cmd_run(args):  # pragma: no cover
 
     # Auto-compress to INT4 (or selected quant) if no compressed model exists.
     # This avoids running slower BF16 inference on first use.
-    if compressed_dir == model_dir and not getattr(args, "stock", False):
+    # Skip if the model is already natively quantized (mlx_lm INT3/INT4) — those
+    # load via mlx_lm.load() in load_from_npy_dir Tier 0a and must not be
+    # re-quantized (double-quantization produces broken weight dicts).
+    if (compressed_dir == model_dir
+            and not getattr(args, "stock", False)
+            and not _model_is_already_quantized(model_dir)):
         import argparse as _ap_auto
         import re as _re_auto
         _auto_base = _re_auto.sub(r'-(bf16|fp16|[0-9]+bit)(-mlx)?$', '', model_dir.name)
