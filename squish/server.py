@@ -1693,7 +1693,10 @@ def _generate_tokens(  # pragma: no cover
     #
     # Safety guard: _prefix_cache may be None if the server was not started via
     # cmd_serve (e.g. direct function calls in tests that skip startup).
+    if _prefix_cache is None:
+        _init_prefix_cache()
     cache_eligible = (use_cache
+                      and _prefix_cache is not None
                       and (temperature == 0.0 or seed is not None)
                       and not _on_compress_path)
     if cache_eligible:
@@ -3265,12 +3268,13 @@ async def agent_run(  # pragma: no cover
         raise HTTPException(503, "Agent registry not initialised")
 
     body: dict = await request.json()
-    messages    = list(body.get("messages", []))
-    extra_tools = body.get("tools", [])
-    max_steps   = int(body.get("max_steps", 10))
-    max_tokens  = int(body.get("max_tokens", 2048))
-    temperature = float(body.get("temperature", 0.7))
-    top_p       = float(body.get("top_p", 0.9))
+    messages           = list(body.get("messages", []))
+    extra_tools        = body.get("tools", [])
+    max_steps          = int(body.get("max_steps", 10))
+    max_tokens         = int(body.get("max_tokens", 2048))
+    temperature        = float(body.get("temperature", 0.7))
+    top_p              = float(body.get("top_p", 0.9))
+    repetition_penalty = float(body.get("repetition_penalty", 1.0))
 
     if not messages:
         raise HTTPException(400, "'messages' must be a non-empty list")
