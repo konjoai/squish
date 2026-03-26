@@ -623,8 +623,9 @@ def _ok(msg: str) -> None:
 
 
 def _info(label: str, value: str) -> None:
-    """Print a key → value config line."""
-    print(f"  {_C.L}◈{_C.R}  {_C.DIM}{label:<18}{_C.R}{_C.W}{value}{_C.R}")
+    """Print a key → value config line (suppressed unless --verbose)."""
+    if _VERBOSE:
+        print(f"  {_C.L}◈{_C.R}  {_C.DIM}{label:<18}{_C.R}{_C.W}{value}{_C.R}")
 
 
 def _warn(msg: str) -> None:
@@ -786,6 +787,7 @@ _profiler: "_ProductionProfiler | None" = None   # APM latency profiler; set aft
 _API_KEY: str | None = None          # set from --api-key at startup
 _bearer  = HTTPBearer(auto_error=False)
 _server_args: dict = {}              # CLI args captured at startup; exposed via /debug-info
+_VERBOSE: bool = False               # set from --verbose at startup; gates all ◈ feature lines
 
 # ── Draft model state (speculative decoding) ─────────────────────────────────
 
@@ -1189,8 +1191,9 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
     if verbose:
         _ok(f"Model ready  ({elapsed:.2f}s  loader={loader_tag})")
 
-    # Warn before warm-up so the user understands any extra delay on first run
-    if loader_tag.startswith("npy-dir"):
+    # Warn before warm-up so the user understands any extra delay on first run.
+    # Only shown with --verbose since the JIT warmup pause is self-evident.
+    if verbose and loader_tag.startswith("npy-dir"):
         _warn(
             "First-run: Vectro weight cache not yet built.  "
             "Dequantizing INT4 → float16 and writing finalized cache "
@@ -3664,7 +3667,9 @@ Examples:
                          "When set, --model-dir and --compressed-dir are ignored.")
     ap.add_argument("--port",    type=int, default=11435)
     ap.add_argument("--host",    default="127.0.0.1", help="Bind address (use 0.0.0.0 for LAN)")
-    ap.add_argument("--verbose", action="store_true", default=True)
+    ap.add_argument("--verbose", action="store_true", default=False,
+                    help="Print detailed startup diagnostics (feature activation, loader info). "
+                         "Off by default — use when debugging startup issues.")
     ap.add_argument("--api-key", default=None,
                     help="Optional bearer token required on all requests. "
                          "Also readable from the SQUISH_API_KEY environment variable "
@@ -4727,10 +4732,11 @@ Examples:
     # ── Wave 81: Blazing mode expansion ───────────────────────────────────────
     _configure_blazing_mode(args)
 
-    global _API_KEY
+    global _API_KEY, _VERBOSE
     # Prefer explicit CLI flag; fall back to SQUISH_API_KEY env var.
     # Reading from env var prevents the secret appearing in `ps aux`.
     _API_KEY = args.api_key or os.environ.get("SQUISH_API_KEY")
+    _VERBOSE = bool(getattr(args, "verbose", False))
 
     # ── Structured logging ────────────────────────────────────────────────────
     if _TELEMETRY_AVAILABLE:
@@ -4877,7 +4883,7 @@ Examples:
     if _state.model is not None:
         try:
             from squish.io.split_loader import SplitLayerLoader
-            _split_info = SplitLayerLoader.auto_split(_state.model, verbose=True)
+            _split_info = SplitLayerLoader.auto_split(_state.model, verbose=_VERBOSE)
             if _split_info:
                 _info("cpu/gpu split", f"{_split_info.cpu_count} layers offloaded  "
                       f"GPU={_split_info.gpu_gb:.2f}GB  CPU={_split_info.cpu_gb:.2f}GB")
@@ -4889,7 +4895,7 @@ Examples:
     if _state.model is not None:
         try:
             from squish.attention.flash_attention import patch_model_attention
-            patch_model_attention(_state.model, verbose=args.verbose)
+            patch_model_attention(_state.model, verbose=_VERBOSE)
         except Exception as e:
             if args.verbose:
                 _warn(f"[flash_attention] Skipped: {e}")

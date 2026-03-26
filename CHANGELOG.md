@@ -5,6 +5,67 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 111 — Launch Readiness
+
+### Launch Infrastructure
+
+- **`docs/LAUNCH_CHECKLIST.md`** — 5-phase pre-launch checklist (quality gate,
+  memory/latency contracts, integration smoke tests, release packaging, community)
+- **`docs/integrations/openclaw.md`** — OpenClaw agent framework integration guide
+  with config snippets, model recommendations, port/key customisation, and
+  troubleshooting
+- **`scripts/compress_and_upload.py`** — Pipeline script: compress BF16 → INT4/INT3/INT2,
+  run post-compression coherence smoke test (repetition-loop detection), upload to
+  Hugging Face, optional local cleanup. Supports `--bits int4 int3`, `--hf-repo`,
+  `--delete-local`, `--skip-smoke-test`
+
+### CLI Defaults Fixed
+
+- **`squish compress` defaults to INT4** — prior default was INT8; output directory
+  is now named `<model>-int4` (or `<model>-int8` with explicit `--format int8`)
+  instead of the legacy `<model>-compressed`
+- **`squish run` auto-compresses** — when no compressed model exists for the
+  requested model and `--stock` is not set, `run` automatically calls `compress`
+  to build an INT4 variant, then serves it; no manual `compress` step required
+- **Legacy INT8 warning** — `_resolve_model()` now prints a visible warning when
+  an old `<model>-compressed` (INT8) directory is found, explaining the 5× RAM
+  overhead and the command to re-compress to INT4
+
+### Startup Noise Suppressed
+
+- **`squish serve` is quiet by default** — all `◈` feature-activation lines
+  (200+ `_info()` calls) and diagnostic `split_loader`/`flash_attention` output
+  are now suppressed unless `--verbose` is passed; `--verbose` default changed
+  from `True` to `False`
+- **`VERBOSE` module flag** — `server.py` now has a `_VERBOSE: bool` flag set
+  from `args.verbose` at startup; `_info()` is gated behind it
+
+### Numerics Fixed
+
+- **`rs_randomized_svd.py`** — Rust `randomized_svd_f32` Jacobi eigensolver
+  produces inflated singular values for certain float32 inputs; added a
+  quick reconstruction sanity check (rel_err < 0.25 on 8 random rows);
+  silently falls back to the numpy path on failure
+- **`rs_randomized_svd.py` numpy fallback** — upgraded to float64 arithmetic
+  + one power-iteration step (Halko §4.4) for robust reconstruction on
+  rank-deficient float32 matrices
+
+### Hardware Cache (Wave 111a)
+
+- **`chip_detector.py` disk cache** — hardware detection result now cached at
+  `~/.squish/hw_cache.json`; subsequent starts skip the `sysctl`/`system_profiler`
+  subprocess call (saves ~80ms per startup)
+
+### Docs & Process
+
+- **CLAUDE.md / AGENTS.md / copilot-instructions.md** — 7 new standing rules:
+  Stop-and-Ask uncertainty policy, test isolation taxonomy, read-before-edit,
+  framework API verification, CLI exit code standards, ship gate definition,
+  web search mandate
+- **Deleted stale `scripts/patch_wave37*.py` × 4** — post-wave cleanup
+
+---
+
 ## [1.0.0] — Public Release — 2026-03-27
 
 First public release of Squish.  All v1.0.0 components are stable and tested.

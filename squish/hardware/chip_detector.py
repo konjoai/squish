@@ -16,12 +16,49 @@ Approach:
 """
 from __future__ import annotations
 
+import json
+import pathlib
 import platform
 import re
 import subprocess
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Dict, Optional
+
+# ---------------------------------------------------------------------------
+# On-disk chip-detection cache
+# ---------------------------------------------------------------------------
+# Avoids the slow `system_profiler` fallback on subsequent process starts.
+# Cache key = platform.machine() + platform.version() — static per OS install.
+# Invalidated automatically when either changes (e.g. after macOS upgrade).
+
+_DISK_CACHE_PATH: pathlib.Path = pathlib.Path.home() / ".squish" / "hw_cache.json"
+
+
+def _disk_cache_key() -> str:
+    return platform.machine() + platform.version()
+
+
+def _load_disk_cache() -> str | None:
+    """Return cached chip string if cache key matches, else None."""
+    try:
+        data = json.loads(_DISK_CACHE_PATH.read_text())
+        if data.get("key") == _disk_cache_key():
+            return data.get("chip_str", "")
+    except Exception:
+        pass
+    return None
+
+
+def _save_disk_cache(chip_str: str) -> None:
+    """Persist chip string to ~/.squish/hw_cache.json (best-effort)."""
+    try:
+        _DISK_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _DISK_CACHE_PATH.write_text(
+            json.dumps({"key": _disk_cache_key(), "chip_str": chip_str})
+        )
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -166,32 +203,51 @@ class ChipDetector:
         return self._profile
 
     def _read_chip_string(self) -> str:
-        """Read raw chip description from the OS."""
+        """Read raw chip description from the OS.
+
+        Order of precedence:
+          1. ``_override`` (test injection only)
+          2. ``~/.squish/hw_cache.json`` (persisted from a prior run)
+          3. ``sysctl -n machdep.cpu.brand_string`` (fast, < 1 ms)
+          4. ``system_profiler SPHardwareDataType`` (slow, 1-4 s fallback)
+        """
         if self._override is not None:
             return self._override
         if platform.system() != "Darwin":
             return ""
+
+        # Fast path: disk cache hit — avoids all subprocess calls.
+        cached = _load_disk_cache()
+        if cached is not None:
+            return cached
+
+        chip_str = ""
         try:
             result = subprocess.run(
                 ["sysctl", "-n", "machdep.cpu.brand_string"],
                 capture_output=True, text=True, timeout=2,
             )
             if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
+                chip_str = result.stdout.strip()
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
-        try:
-            result = subprocess.run(
-                ["system_profiler", "SPHardwareDataType"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0:
-                for line in result.stdout.splitlines():
-                    if "Chip" in line or "Processor" in line:
-                        return line
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-        return ""
+
+        if not chip_str:
+            try:
+                result = subprocess.run(
+                    ["system_profiler", "SPHardwareDataType"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.splitlines():
+                        if "Chip" in line or "Processor" in line:
+                            chip_str = line
+                            break
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+
+        _save_disk_cache(chip_str)
+        return chip_str
 
     @staticmethod
     def _parse_generation(chip_str: str) -> AppleChipGeneration:

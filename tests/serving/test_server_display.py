@@ -106,7 +106,8 @@ class TestSimplePrinters:
         output = _capture_stdout(srv._ok, "everything is fine")
         assert "everything is fine" in output
 
-    def test_info_prints_label_and_value(self):
+    def test_info_prints_label_and_value(self, monkeypatch):
+        monkeypatch.setattr(srv, "_VERBOSE", True)
         output = _capture_stdout(srv._info, "port", "11435")
         assert "port" in output
         assert "11435" in output

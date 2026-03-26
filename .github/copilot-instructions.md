@@ -23,6 +23,7 @@ This file defines standing instructions for all AI and human contributors workin
 - If no plan exists, create one before proceeding and ask for confirmation.
 - After completing work, update `PLAN.md`, `ROADMAP.md`, `README.md`, and any relevant docs to reflect what changed, what's done, and what's next.
 - If a task deviates from the current plan, call it out explicitly before continuing.
+- If any ambiguity exists in requirements, ask clarifying questions before implementation.
 
 ---
 
@@ -49,6 +50,7 @@ This file defines standing instructions for all AI and human contributors workin
 - **All written code must be production-grade at all times.** No placeholders, no "good enough for now," no TODOs left in shipped code.
 - Avoid code duplication. Extract shared logic into reusable utilities or modules.
 - Add inline comments only where intent is non-obvious. When implementing a novel algorithm, write the math — don't hide it.
+- Prefer removal over addition. Every new line of code must justify its existence. If a simpler, more efficient solution exists that requires fewer lines, it is the only acceptable solution.
 
 ---
 
@@ -101,6 +103,7 @@ This file defines standing instructions for all AI and human contributors workin
 - **The Anti-Mocking Rule for E2E:** E2E and Integration tests must test reality. For tests validating **inference correctness or quantization accuracy**, you are strictly forbidden from mocking the model inference engine — test the real pipeline. For **structural/integration tests** of server lifecycle, routing, and feature activation, mocking the model with a deterministic stub is acceptable and expected. Never mock the quantization pipeline when testing quantization correctness. Never mock the database in E2E tests.
 - All tests must pass in the CI/CD pipeline before committing. Never commit with known failing tests.
 - **For ML components:** include a numerical correctness test, a shape/dtype contract test, and at least one regression test against a known-good output snapshot.
+- Tests must include failure cases, not just success paths.
 
 ---
 
@@ -164,6 +167,194 @@ This file defines standing instructions for all AI and human contributors workin
 
 ---
 
+## 🧠 Agent Behavior & Tool Execution
+
+- **JSON output is not tool use.** Emitting a JSON object that resembles a tool call is insufficient. A valid tool interaction requires:
+  1. Model emits a tool call in the correct schema
+  2. The system executes the tool
+  3. The result is fed back into the model
+  4. The model continues reasoning with updated context
+
+- **Enforce execution loops.** Any agent-capable system must implement:
+  - tool call detection
+  - schema validation
+  - execution layer
+  - retry on malformed output
+  - max iteration limits
+
+- **Strict schema adherence is mandatory.**
+  - All tool calls must validate against JSON schema before execution
+  - Invalid outputs must trigger automatic retry with corrective prompting
+
+- **Never assume tool success.**
+  - All tool responses must be validated before re-injection into context
+  - Handle partial failures explicitly
+
+- **Small models are not reliable planners.**
+  - Systems must compensate via:
+    - constrained decoding
+    - stricter prompts
+    - tool call correction loops
+
+---
+
+## ⚙️ Build-Time vs Runtime Discipline
+
+- **Runtime is sacred.** All heavy computation must happen at build time, not load time.
+
+- The following MUST occur during build/quantization, never at runtime:
+  - weight quantization
+  - tensor layout transformations
+  - kernel fusion
+  - graph optimization
+  - constant folding
+
+- **Runtime responsibilities are limited to:**
+  - memory mapping (mmap) or zero-copy loading
+  - minimal initialization
+  - inference execution
+
+- If a model load path performs:
+  - tensor reshaping
+  - reallocation
+  - recomputation of constants  
+  → it is a bug.
+
+- **Startup time is a first-class metric.**
+  - Regressions >10% are not allowed without justification.
+
+---
+
+## 🧪 Quantization Validation Gates
+
+- **All quantized models must be validated against a higher-precision reference (BF16/FP16).**
+
+- Required metrics:
+  - perplexity delta
+  - max absolute error
+  - output coherence (qualitative + automated checks)
+
+- **INT4 is the production baseline.**
+- **INT3 is experimental and must be explicitly labeled as unstable.**
+- **INT2 is research-only and must not be exposed as production-ready unless proven stable.**
+
+- If a quantized model exhibits:
+  - repetition loops
+  - incoherent output
+  - numerical instability  
+  → it fails validation and must not be shipped.
+
+- **Calibration datasets are mandatory** for all quantization pipelines.
+
+---
+
+## 🔁 Failure Handling & Self-Correction
+
+- Systems must assume outputs can be wrong.
+
+- Required safeguards:
+  - retry on malformed JSON
+  - retry on invalid tool schema
+  - retry on NaN/Inf outputs
+  - detect repetition loops and reset generation
+
+- **Never silently continue on bad output.**
+  - Detect
+  - Log
+  - Correct
+  - Retry
+
+- **When uncertain:**
+  - ask the user for clarification
+  - scan the repository for context
+  - search external documentation if needed
+
+- Uncertainty must never result in fabricated implementations.
+
+---
+
+## 🔍 Repo Awareness & Context Discipline
+
+- **Before creating any new file or module:**
+  - scan the repository for existing implementations
+  - reuse or extend existing logic when possible
+
+- **Do not duplicate functionality.**
+- **Do not create parallel abstractions.**
+
+- If context is incomplete:
+  - search the repo
+  - read related modules
+  - ask for clarification
+
+- Blind generation without context is prohibited.
+
+---
+
+## ⚡ Zero-Config UX Mandate
+
+- The system must work out-of-the-box with zero flags.
+
+- Default behavior must:
+  - auto-detect hardware
+  - select optimal quantization
+  - enable safe optimizations
+  - avoid requiring user tuning
+
+- CLI flags are for advanced users only.
+
+- A first-time user must be able to:
+  1. install
+  2. run a single command
+  3. see correct, fast output
+
+- If a feature requires manual configuration to work correctly, it is not production-ready.
+
+---
+
+## 💾 Disk, Memory & Model Lifecycle
+
+- **Model pipelines must minimize peak disk usage.**
+
+- Preferred workflow:
+  1. download model
+  2. process (quantize/compress)
+  3. upload result
+  4. delete original
+
+- Systems must:
+  - estimate required disk before execution
+  - warn if insufficient space is available
+
+- **Avoid duplicate model storage.**
+  - reuse existing local models when possible
+
+- **Memory mapping (mmap) is preferred** over full loading.
+
+- Peak memory usage must be measured, not assumed.
+
+---
+
+## 🎯 Model Capability Reality Checks
+
+- Do not assume all models can perform all tasks.
+
+- Expected capabilities:
+  - <2B params: basic text generation only
+  - 4B params: limited instruction following
+  - 7B–8B params: minimum viable tool use
+  - 13B+: reliable structured reasoning
+
+- If a model fails at:
+  - tool use
+  - JSON formatting
+  - multi-step reasoning  
+  → the system must adapt (prompting, retries, constraints)
+
+- Do not treat model limitations as system bugs.
+
+---
+
 ## 🚫 Hard Stops
 
 Do not proceed if:
@@ -220,3 +411,59 @@ If a change breaks this, it does not merge.
 **Server startup is a metric.** `time squish serve --dry-run` (or equivalent) must be measured before and after every commit. RSS at startup (before model loads) must stay under 200 MB. Import time must stay under 2 seconds on M3.
 
 **Benchmarks are not decorative.** When benchmark results are added to `benchmarks/results/` or docs, they must be reproducible by running `scripts/run_baseline.sh` on the same hardware. If the script cannot reproduce the number within 10%, the number is removed from the README.
+
+---
+
+## 🛑 When Uncertain — Stop and Ask
+
+Before implementing any change that affects more than 2 files or touches the inference hot path, explicitly state your understanding of the current behaviour and ask for confirmation. When in doubt: stop, scan the repo, search framework docs, then ask. Uncertainty must never result in fabricated implementations.
+
+---
+
+## 🧪 Test Isolation Taxonomy
+
+Tests fall into three strict classes:
+- **Pure unit** — no I/O, no process-state mutation, no temp files.
+- **Integration** — may use temp dirs, must clean up in `tearDown`/`finally`.
+- **Subprocess** — for import-behaviour or process-level state tests; use `subprocess.run()`.
+
+Never mutate `sys.modules`, `sys.path`, environment variables, or signal handlers in-process. Python 3.12+ prohibits C-extension reloads — always use subprocess isolation for those cases.
+
+---
+
+## 📖 Read Before Edit
+
+Before editing any file, read the section being modified plus 20 lines of context on each side. Never edit based on remembered file contents. If a file has changed since it was last read in this session, re-read it.
+
+---
+
+## 🔎 Framework API Verification
+
+Before calling any framework API (MLX, PyTorch, stdlib, mlx-lm), verify the exact signature in existing codebase usage or the framework's official documentation. Never infer argument names or defaults from a function name alone. Hallucinated API calls are bugs with no stack trace warning.
+
+---
+
+## 🖥️ CLI Exit Code & Help Standards
+
+All CLI commands must:
+1. Exit `0` on success, `1` on user/input error, `2` on runtime/system error.
+2. Accept `--help` that prints a usage example.
+3. Accept `--quiet` to suppress informational output for scripting.
+4. Never write error messages to stdout — use stderr.
+
+---
+
+## ✅ Ship Gate — Definition of Done
+
+A feature or wave is **complete** only when all five conditions are met:
+1. `0` failing tests in the full test suite (`pytest --timeout=120`).
+2. Memory + latency contracts measured and within spec (or a written exception filed).
+3. `--help` text updated for any new or changed CLI flag.
+4. `CHANGELOG.md` entry written under the correct version heading.
+5. Module-count rule checked — if a file was added, a file was deleted or justification is written.
+
+---
+
+## 🌐 Web Search Mandate
+
+If implementing an algorithm, API integration, or optimisation technique for which there is no prior codebase pattern and no authoritative documentation already in context, search the web to verify correctness **before writing a single line of code**. This applies to novel quantisation schemes, framework-specific kernel calls, and any external service integration.

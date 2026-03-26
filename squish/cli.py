@@ -364,6 +364,12 @@ def _resolve_model(name: str | None, quant_mode: str = "int4") -> tuple[Path, Pa
         _old_compressed = Path(str(model_dir) + _COMPRESSED_SUFFIX)
         if _old_compressed.exists():
             compressed_dir = _old_compressed
+            print(
+                f"\n  ⚠  Legacy INT8 compressed model detected: {_old_compressed.name}\n"
+                f"     This format loads as BF16 (~2× model size in RAM).\n"
+                f"     Re-compress to INT4 for 4× less RAM and faster loads:\n"
+                f"       squish compress {name or str(model_dir)}\n"
+            )
         else:
             # Also try mlx_lm native -4bit dir
             _squish4bit = model_dir.parent / (model_dir.name.replace("-bf16", "") + "-4bit")
@@ -1118,6 +1124,36 @@ def cmd_run(args):  # pragma: no cover
             _time.sleep(5)
 
     model_dir, compressed_dir = _resolve_model(args.model, quant_mode=_quant_mode)
+
+    # Auto-compress to INT4 (or selected quant) if no compressed model exists.
+    # This avoids running slower BF16 inference on first use.
+    if compressed_dir == model_dir and not getattr(args, "stock", False):
+        import argparse as _ap_auto
+        import re as _re_auto
+        _auto_base = _re_auto.sub(r'-(bf16|fp16|[0-9]+bit)(-mlx)?$', '', model_dir.name)
+        _auto_target = model_dir.parent / f"{_auto_base}-{_quant_mode}"
+        print(f"\n  No {_quant_mode.upper()} compressed model found.")
+        print(f"  Auto-compressing to {_auto_target.name} … (this may take a few minutes)\n")
+        _compress_args = _ap_auto.Namespace(
+            model=str(model_dir),
+            output=str(_auto_target),
+            int4=(_quant_mode == "int4"),
+            no_awq=False,
+            awq=False,
+            awq_samples=20,
+            verbose=False,
+            passthrough=[],
+            outlier_threshold=20.0,
+            aqlm=False,
+            aqlm_codebooks=2,
+            aqlm_cbsize=16,
+            zstd_level=0,
+            int4_group_size=None,
+            compress_format=_quant_mode,
+        )
+        cmd_compress(_compress_args)
+        if _auto_target.exists():
+            compressed_dir = _auto_target
 
     # Explicit --compressed-dir overrides the auto-detected compressed path.
     if getattr(args, "compressed_dir", None):
@@ -2032,6 +2068,11 @@ def cmd_compress(args):  # pragma: no cover
             _compress_format = "int4"
             args.int4 = True
 
+    # Default to INT4 when no explicit format is requested
+    if _compress_format is None and not getattr(args, "int4", False):
+        _compress_format = "int4"
+        args.int4 = True
+
     # Resolve model path (accept shorthand or full path)
     if args.model in _MODEL_SHORTHAND:
         model_dir = _MODELS_DIR / _MODEL_SHORTHAND[args.model]
@@ -2047,7 +2088,15 @@ def cmd_compress(args):  # pragma: no cover
     if not model_dir.exists():
         _die(f"Model directory not found: {model_dir}")
 
-    output_dir = Path(args.output).expanduser() if args.output else Path(str(model_dir) + _COMPRESSED_SUFFIX)
+    if args.output:
+        output_dir = Path(args.output).expanduser()
+    else:
+        import re as _re_out
+        _out_base = _re_out.sub(
+            r'-(bf16|fp16|[0-9]+bit)(-mlx)?$', '', model_dir.name, flags=_re_out.IGNORECASE
+        )
+        _out_fmt = "int4" if getattr(args, "int4", False) else "int8"
+        output_dir = model_dir.parent / f"{_out_base}-{_out_fmt}"
 
     _use_int4  = getattr(args, "int4", False)
     _no_awq    = getattr(args, "no_awq", False)
@@ -3193,6 +3242,16 @@ def cmd_convert_model(args):
         print(f"  [dry-run] group-size  : {group_size}")
         if mixed_recipe:
             print(f"  [dry-run] mixed-recipe: {mixed_recipe}")
+        # Disk size estimates (BF16 → quantized).
+        # Ratio approximation: bits_per_weight / 16 (BF16 baseline).
+        if not _is_hf_id and Path(source_path).exists():
+            safetensors = list(Path(source_path).rglob("*.safetensors"))
+            if safetensors:
+                src_gb = sum(f.stat().st_size for f in safetensors) / 1e9
+                ratio = args.ffn_bits / 16.0
+                est_gb = src_gb * ratio
+                print(f"  [dry-run] source size : {src_gb:.2f} GB (safetensors)")
+                print(f"  [dry-run] est output  : {est_gb:.2f} GB (INT{args.ffn_bits}, ~{ratio*100:.0f}% of BF16)")
         return
 
     # Do NOT pre-create the output directory — mlx_lm.convert refuses to write
@@ -4681,11 +4740,11 @@ Ollama drop-in:
     p_compress = sub.add_parser(
         "compress",
         aliases=["it"],
-        help="Compress a model to npy-dir format (INT8 or INT4)",
+        help="Compress a model to npy-dir format (INT4 by default; use --format int8 for INT8)",
     )
     p_compress.add_argument("model", help="Model path (e.g. ~/.squish/models/llama3.1-8b-4bit) or shorthand (7b, 14b)")
     p_compress.add_argument("--output",            default=None,
-                            help="Output directory (default: <model>-compressed)")
+                            help="Output directory (default: <model>-int4 or <model>-int8)")
     p_compress.add_argument("--passthrough",       nargs="*", default=[], metavar="PATTERN",
                             help="Tensor substrings to keep as float32 (e.g. embed lm_head)")
     p_compress.add_argument("--outlier-threshold", type=float, default=20.0)

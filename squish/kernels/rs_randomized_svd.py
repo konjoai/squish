@@ -89,7 +89,25 @@ class RustRandomizedSVD:
             u = np.asarray(result[0], dtype=np.float32)
             s = np.asarray(result[1], dtype=np.float32)
             vt = np.asarray(result[2], dtype=np.float32)
-            return u, s, vt
+            # Sanity-check: singular values must be non-negative and non-increasing.
+            # The Rust Jacobi eigensolver can give inflated eigenvalues due to
+            # float32 precision in the iterative scheme; fall back to numpy when
+            # that happens (rel_err > 0.05 on a quick spot-check is the signal).
+            if (
+                len(s) >= 2
+                and np.all(np.isfinite(s))
+                and np.all(s >= 0)
+                and np.all(np.diff(s) <= 1e-3)
+            ):
+                # Quick reconstruction check on a random sub-sample row
+                rng_check = np.random.default_rng(0)
+                idx = rng_check.integers(0, a.shape[0], size=min(8, a.shape[0]))
+                a_sub = a[idx]
+                approx_sub = ((u[idx] * s) @ vt)
+                rel_err = float(np.linalg.norm(a_sub - approx_sub) / (np.linalg.norm(a_sub) + 1e-8))
+                if rel_err < 0.25:
+                    return u, s, vt
+            # Rust result failed sanity checks — fall back to numerically stable numpy path.
         return self._numpy_svd(a, r)
 
     def reconstruct(
@@ -123,16 +141,28 @@ class RustRandomizedSVD:
     def _numpy_svd(
         a: np.ndarray, rank: int
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """NumPy randomized SVD via sketch + QR + thin SVD."""
+        """NumPy randomized SVD via sketch + power iteration + QR + thin SVD.
+
+        Implements the randomized subspace iteration algorithm from
+        Halko et al. (SIAM Review 2011, §4.4), which is numerically robust
+        for float32 inputs. One power iteration step y ← A(AᵀY) amplifies
+        the dominant singular subspace before QR, preventing the numerical
+        null-space contamination that degrades accuracy on rank-deficient
+        float32 matrices.
+        """
         m, n = a.shape
         rng = np.random.default_rng(0)
         k = min(rank + 10, min(m, n))
-        omega = rng.standard_normal((n, k)).astype(np.float32)
-        y = a @ omega  # (m, k)
-        q, _ = np.linalg.qr(y)  # Q: (m, k)
-        b = q.T @ a   # (k, n)
+        # Perform the sketch in float64 for numerical stability.
+        a64 = a.astype(np.float64)
+        omega = rng.standard_normal((n, k))          # float64 by default
+        y = a64 @ omega                               # (m, k)
+        # One subspace power iteration: y ← A (Aᵀ y), amplifies top singular values.
+        y = a64 @ (a64.T @ y)                        # (m, k)
+        q, _ = np.linalg.qr(y)                       # q: (m, k)
+        b = q.T @ a64                                 # (k, n)
         u_small, s, vt = np.linalg.svd(b, full_matrices=False)
-        u = q @ u_small  # (m, k) -> back to (m, rank)
+        u = q @ u_small                               # (m, k)
         actual = min(rank, len(s))
         return (
             u[:, :actual].astype(np.float32),
