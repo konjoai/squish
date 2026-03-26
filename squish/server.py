@@ -846,6 +846,33 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
+# ── Repetition loop detection ────────────────────────────────────────────────
+_LOOP_WIN         = 400  # trailing chars of generated text to inspect
+_LOOP_CHECK_EVERY = 20   # analyse every N emitted tokens
+_LOOP_MIN_PERIOD  = 10   # smallest repeating unit (chars)
+_LOOP_MAX_PERIOD  = 80   # largest repeating unit (chars)
+_LOOP_MIN_REPS    = 4    # consecutive repetitions needed to declare a loop
+
+
+def _detect_loop(text: str) -> bool:
+    """Return True when the tail of *text* ends with a verbatim repeating substring.
+
+    Scans every candidate period in [_LOOP_MIN_PERIOD, _LOOP_MAX_PERIOD] and
+    declares a loop when ``period * _LOOP_MIN_REPS`` trailing characters consist
+    of the same ``period``-char pattern repeated exactly that many times.  Short
+    enough to run every 20 tokens with negligible overhead.
+    """
+    n = len(text)
+    for period in range(_LOOP_MIN_PERIOD, _LOOP_MAX_PERIOD + 1):
+        needed = period * _LOOP_MIN_REPS
+        if needed > n:
+            continue
+        tail = text[-needed:]
+        if tail[:period] * _LOOP_MIN_REPS == tail:
+            return True
+    return False
+
+
 def _sample_mx(logits_row, temperature: float, top_p: float) -> int:  # pragma: no cover
     """
     Sample a single token id from an MLX logits vector.
@@ -1538,6 +1565,7 @@ def _generate_tokens(  # pragma: no cover
     stop: list[str] | str | None = None,
     seed: int | None   = None,
     use_cache: bool    = True,
+    repetition_penalty: float = 1.0,
 ):
     """
     Stream (token_text, finish_reason_or_None) tuples from the MLX model.
@@ -2290,6 +2318,15 @@ def _generate_tokens(  # pragma: no cover
             # Older mlx_lm that accepted temp/top_p directly
             _sg_kwargs["temp"]   = temperature
             _sg_kwargs["top_p"]  = top_p
+        # Repetition penalty via mlx_lm logits processor (mlx_lm >= 0.21)
+        if repetition_penalty > 1.0:
+            try:
+                from mlx_lm.sample_utils import make_logits_processors as _mlp
+                _lp = _mlp(repetition_penalty=repetition_penalty)
+                if _lp:
+                    _sg_kwargs["logits_processors"] = _lp
+            except (ImportError, TypeError):
+                pass  # older mlx_lm without logits_processors support
         # Pre-compute text-space stop strings; avoids per-token tokenize calls
         _stop_strings: list[str] = (
             [stop] if isinstance(stop, str) else list(stop) if stop else []
@@ -2304,6 +2341,7 @@ def _generate_tokens(  # pragma: no cover
         )
         emitted = 0
         _stop_text_buf: str = ""
+        _loop_text_buf: str = ""  # rolling window for repetition loop detection
         _think_token_count = 0   # tokens inside <think>...</think> blocks
         _in_think_sg = False     # True while inside a thinking block
         _text_getter = None      # resolved on first item: avoids per-token hasattr
@@ -2314,6 +2352,20 @@ def _generate_tokens(  # pragma: no cover
                 _text_getter = (lambda i: i.text) if hasattr(item, "text") else str
             tok_text = _text_getter(item)
             emitted += 1
+            # Repetition loop detection — runs every _LOOP_CHECK_EVERY tokens
+            if tok_text:
+                _loop_text_buf += tok_text
+                if len(_loop_text_buf) > _LOOP_WIN:
+                    _loop_text_buf = _loop_text_buf[-_LOOP_WIN:]
+                if emitted % _LOOP_CHECK_EVERY == 0 and _detect_loop(_loop_text_buf):
+                    _logging.getLogger(__name__).warning(
+                        "REQ %s  repetition loop detected at token %d — stopping",
+                        _rid, emitted,
+                    )
+                    if cache_eligible and _cache_buf:
+                        _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "repetition")
+                    yield "", "repetition"
+                    return
             # Track thinking tokens for diagnostics
             if "<think>" in tok_text:
                 _in_think_sg = True
@@ -2584,15 +2636,16 @@ async def chat_completions(  # pragma: no cover
 
     body: dict[str, Any] = await request.json()
     messages    = body.get("messages", [])
-    max_tokens  = int(body.get("max_tokens", 4096))
-    temperature = float(body.get("temperature", 0.7))
-    top_p       = float(body.get("top_p", 0.9))
-    stream      = bool(body.get("stream", False))
-    stop        = body.get("stop", None)
-    seed        = body.get("seed", None)
-    model_id    = body.get("model", _state.model_name)
-    tools       = body.get("tools", [])
-    tool_choice = body.get("tool_choice", "auto")
+    max_tokens         = int(body.get("max_tokens", 4096))
+    temperature        = float(body.get("temperature", 0.7))
+    top_p              = float(body.get("top_p", 0.9))
+    repetition_penalty = float(body.get("repetition_penalty", 1.0))
+    stream             = bool(body.get("stream", False))
+    stop               = body.get("stop", None)
+    seed               = body.get("seed", None)
+    model_id           = body.get("model", _state.model_name)
+    tools              = body.get("tools", [])
+    tool_choice        = body.get("tool_choice", "auto")
 
     # tool_choice == "none": agent explicitly disables tools for this turn
     if tool_choice == "none":
@@ -2723,7 +2776,8 @@ async def chat_completions(  # pragma: no cover
             }
             yield f"data: {_json_dumps(role_chunk)}\n\n"
 
-            gen = _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed)
+            gen = _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed,
+                                   repetition_penalty=repetition_penalty)
             loop = _aio.get_running_loop()
             n_comp   = 0
             ttft_s   = 0.0
@@ -2788,7 +2842,8 @@ async def chat_completions(  # pragma: no cover
             # Run the full generation in the inference thread pool so health
             # checks can still respond even during slow prefill or long outputs.
             _gen_iter = _generate_tokens(
-                prompt, max_tokens, temperature, top_p, stop, seed
+                prompt, max_tokens, temperature, top_p, stop, seed,
+                repetition_penalty=repetition_penalty,
             )
             _loop = _aio.get_running_loop()
             _all_toks = await _loop.run_in_executor(
@@ -2907,15 +2962,16 @@ async def completions(  # pragma: no cover
         raise HTTPException(503, "Model not loaded")
 
     body: dict[str, Any] = await request.json()
-    prompt      = body.get("prompt", "")
-    max_tokens  = int(body.get("max_tokens", 4096))
-    temperature = float(body.get("temperature", 0.7))
-    top_p       = float(body.get("top_p", 0.9))
-    stream      = bool(body.get("stream", False))
-    stop        = body.get("stop", None)
-    seed        = body.get("seed", None)
-    model_id    = body.get("model", _state.model_name)
-    cid         = f"cmpl-{uuid.uuid4().hex[:12]}"
+    prompt             = body.get("prompt", "")
+    max_tokens         = int(body.get("max_tokens", 4096))
+    temperature        = float(body.get("temperature", 0.7))
+    top_p              = float(body.get("top_p", 0.9))
+    repetition_penalty = float(body.get("repetition_penalty", 1.0))
+    stream             = bool(body.get("stream", False))
+    stop               = body.get("stop", None)
+    seed               = body.get("seed", None)
+    model_id           = body.get("model", _state.model_name)
+    cid                = f"cmpl-{uuid.uuid4().hex[:12]}"
     req_start   = time.perf_counter()
     _state.inflight += 1
 
@@ -2940,7 +2996,10 @@ async def completions(  # pragma: no cover
             n_comp = 0
             ttft_s = 0.0
             try:
-                for tok_text, finish in _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed):
+                for tok_text, finish in _generate_tokens(
+                    prompt, max_tokens, temperature, top_p, stop, seed,
+                    repetition_penalty=repetition_penalty,
+                ):
                     if tok_text:
                         if n_comp == 0:
                             ttft_s = time.perf_counter() - req_start
@@ -2969,7 +3028,10 @@ async def completions(  # pragma: no cover
         n_comp      = 0
         ttft_s      = 0.0
         try:
-            for tok_text, finish in _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed):
+            for tok_text, finish in _generate_tokens(
+                prompt, max_tokens, temperature, top_p, stop, seed,
+                repetition_penalty=repetition_penalty,
+            ):
                 if tok_text:
                     if n_comp == 0:
                         ttft_s = time.perf_counter() - req_start
@@ -3238,7 +3300,8 @@ async def agent_run(  # pragma: no cover
             full_text = ""
             try:
                 for tok_text, finish in _generate_tokens(
-                    prompt, max_tokens, temperature, top_p, None, None
+                    prompt, max_tokens, temperature, top_p, None, None,
+                    repetition_penalty=repetition_penalty,
                 ):
                     if tok_text:
                         full_text += tok_text

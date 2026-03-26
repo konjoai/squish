@@ -5,6 +5,49 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 114 — Repetition Penalty + Loop Detection
+
+### New Features
+
+- **Repetition penalty (`repetition_penalty`)** — `POST /v1/chat/completions`
+  and `POST /v1/completions` now accept `repetition_penalty` (float, default
+  `1.0`). Values > 1.0 penalise previously-seen tokens; the penalty is applied
+  via `mlx_lm.sample_utils.make_logits_processors` so it runs on-device without
+  any Python per-token overhead. Fully backward-compatible — omitting the field
+  gives identical behaviour to prior releases.
+
+- **Repetition loop detection + early stop** — `_generate_tokens` now
+  maintains a 400-char trailing-text window and checks for verbatim n-gram
+  loops every 20 emitted tokens. Detection fires when any period in [10, 80]
+  chars repeats 4+ consecutive times. On detection the generator yields a
+  `("", "repetition")` sentinel, which the OpenAI and Anthropic streaming paths
+  surface as `finish_reason: "repetition"`. This is the hard safety-net
+  independent of `repetition_penalty`; it prevents the model from producing
+  multi-kilobyte garbage streams (as observed with Llama-3.2-1B-Instruct-int3
+  on the 3rd benchmark prompt).
+
+### Constants
+
+- `_LOOP_WIN = 400` — trailing character window for loop detection.
+- `_LOOP_CHECK_EVERY = 20` — check interval (tokens).
+- `_LOOP_MIN_PERIOD = 10`, `_LOOP_MAX_PERIOD = 80` — period search range.
+- `_LOOP_MIN_REPS = 4` — consecutive repetitions required to declare a loop.
+
+### Tests
+
+- **`tests/test_wave114_rep_loop.py`** — 24 pure-unit tests:
+  - `_detect_loop` positive cases: word-boundary repeats, space-padded units,
+    typical model run-on patterns, loop at tail with clean prefix.
+  - `_detect_loop` negative cases: normal prose, Python code, near-miss (< 4
+    reps), string too short.
+  - `_LOOP_*` constant sanity assertions including window-covers-max-period.
+  - `_generate_tokens` signature: `repetition_penalty` param exists, default
+    is 1.0, no existing params removed.
+  - API body parsing: both `/v1/chat/completions` and `/v1/completions` parse
+    `repetition_penalty` with default 1.0.
+
+---
+
 ## [Unreleased] — Wave 112 — Structural Pruning & Streaming Spec Fix
 
 ### New Features
