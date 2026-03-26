@@ -5082,7 +5082,7 @@ class _SquishHelpFormatter(argparse.RawDescriptionHelpFormatter):
             super().start_section(heading)
 
 
- -> "argparse.ArgumentParser":
+def build_parser() -> "argparse.ArgumentParser":
     """Build and return the squish argument parser.
 
     Separated from :func:`main` so tests can introspect subcommands without
