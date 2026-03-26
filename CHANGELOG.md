@@ -9,6 +9,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### New Features
 
+- **CI benchmark gate (`--tps-min` / `--ttft-max`)** — `squish bench` now
+  accepts `--tps-min N` (fail if average throughput < N tok/s) and
+  `--ttft-max MS` (fail if average TTFT > MS milliseconds). Both flags exit
+  with code 2 on gate failure, enabling hard CI performance regression checks.
+  Default is 0 (disabled). CI usage: `python -m squish.bench --tps-min 30`.
+
+- **`python -m squish.bench` entry point** — `squish/bench/__main__.py`
+  provides a runnable module form. Equivalent to `squish bench [flags]` with
+  automatic `bench` subcommand insertion so all existing flags work unchanged.
+
 - **`squish sparsity-trim` CLI command** — permanently removes low-importance
   intermediate neurons from MLP layers in both BF16 and MLX INT4 model files.
   Uses per-group scale L2-norm as an importance proxy (no calibration data

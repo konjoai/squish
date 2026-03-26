@@ -7093,3 +7093,20 @@ Close the final auto-profile wiring gap (MoE lazy loading) and expand the bundle
 - Dead code removal audit (commented-out experimental blocks)
 - Benchmark gate: `python -m squish.bench --tps-min 30` in CI
 
+---
+
+## ✅ Wave 84 — CI Benchmark Gate + Dead Code Audit — 2026-03-26
+
+### Objective
+Close the two Wave 83 deferreds: instrument `squish bench` with hard performance
+regression gates usable in CI, and complete a full dead code audit.
+
+### Changes
+| File | Change |
+|------|--------|
+| `squish/cli.py` | `--tps-min N` and `--ttft-max MS` flags added to `p_bench`. Gate block in `cmd_bench` exits with code 2 if thresholds are breached. |
+| `squish/bench/__main__.py` | New file — `python -m squish.bench` entry point. Pre-inserts "bench" into argv and delegates to `build_parser()` / `cmd_bench`. |
+| `tests/test_wave84_bench_gate.py` | 27 tests: argparse flag parsing (8), gate boundary conditions (12), bench module structure (5), subprocess help/error behaviour (2). |
+| Dead code audit | All large comment blocks in `server.py`, `cli.py`, `convert.py`, `quant/` inspected. No dead code found — all blocks are intentional deferred-feature documentation. |
+| `scripts/` debris | 10 research/debug scripts (`test_decode_formula*.py`, `test_mlx_*.py`, `test_pack*.py`, `test_packing.py`) deleted per No Graveyards rule. |
+
