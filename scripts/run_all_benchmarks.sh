@@ -22,21 +22,38 @@ SUMMARY_FILE="$RESULTS_DIR/BENCHMARK_SUMMARY.md"
 PORT=11435
 HOST="127.0.0.1"
 MAX_TOKENS=256
-SERVER_TIMEOUT=360
+SERVER_TIMEOUT=900
 LOG_LEVEL="warning"
 BENCH_STOCK="${BENCH_STOCK:-0}"
+BENCH_MAXOPT="${BENCH_MAXOPT:-0}"
+# Hard ceiling for squish INT4 dir size (GB).  On M3 16 GB, loading a squish
+# INT4 dir larger than this fills Metal memory and causes an OOM crash.  The
+# squish format stores BF16 passthrough tensors alongside INT4 weights, so a
+# large model's INT4 dir can be 14 GB even though only ~5 GB is quantized.
+# Measured safe ceiling: gemma-3-4b-it-int4 (8.7 GB) passes; anything ≥ 12 GB
+# (Qwen3-4B-int4, Qwen2.5-7B-Instruct-int4, Qwen3-8B-int4) crashes the host.
+MAX_MODEL_DISK_GB=9
 
 mkdir -p "$RESULTS_DIR"
 
 # ── Models ordered smallest → largest ────────────────────────────────────────
-# - Pass squished dirs directly; cli.py auto-finds base model config.
+# - Pass BF16 dirs for models that need auto-compress; cli.py resolves to INT4.
+# - Native MLX INT3 dirs (config.json with quantization={bits:3}) are safe to
+#   pass directly — _model_is_already_quantized() skips auto-compress for them.
 # - Qwen3-14B-bf16 omitted: config/tokenizer only, no weights.
 # - Mistral-7B-Instruct-v0.3-bf16 omitted: weights never downloaded.
+#
+# EXCLUDED (OOM on M3 16 GB — squish INT4 dir ≥ 12 GB loads fully into Metal):
+#   Qwen3-4B-bf16           → Qwen3-4B-int4           = 14 GB → crash
+#   Qwen2.5-7B-Instruct-bf16→ Qwen2.5-7B-Instruct-int4= 14 GB → crash
+#   Qwen3-8B-bf16           → Qwen3-8B-int4           = 14 GB → crash
 MODELS=(
+    # ── ≤ 1.5B BF16: squish INT4 dirs ≤ 5.4 GB, safe on M3 16 GB ──────────
     "Qwen3-0.6B-bf16"
     "Llama-3.2-1B-Instruct-bf16"
     "gemma-3-1b-it-bf16"
     "Qwen2.5-1.5B-Instruct-bf16"
+    # ── 1.5B squished variants ────────────────────────────────────────────────
     "Qwen2.5-1.5B-Instruct-squished-int4-awq"
     "Qwen2.5-1.5B-Instruct-squished-int4-mse"
     "Qwen2.5-1.5B-Instruct-squished-mixed"
@@ -48,12 +65,14 @@ MODELS=(
     "Qwen2.5-1.5B-Instruct-squished-g8-mixed"
     "Qwen2.5-1.5B-Instruct-squished-lossless"
     "Qwen2.5-1.5B-Instruct-bf16-compressed"
+    # ── 1B native MLX INT3: 606 MB, safe ─────────────────────────────────────
+    "Llama-3.2-1B-Instruct-int3"
+    # ── 3B BF16: int4 dir = 6 GB, safe ──────────────────────────────────────
     "Llama-3.2-3B-Instruct-bf16"
-    "Qwen3-4B-bf16"
+    # ── 4B via safe squish INT4 dir (8.7 GB ≤ ceiling) ───────────────────────
     "gemma-3-4b-it-bf16"
-    "Qwen2.5-7B-Instruct-bf16"
-    "Qwen3-8B-bf16-compressed"
-    "Qwen3-8B-bf16"
+    # ── 8B native MLX INT3: 3.8 GB, no BF16 passthrough, safe ───────────────
+    "Qwen3-8B-int3"
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -193,7 +212,7 @@ Generated: $(date '+%Y-%m-%d %H:%M:%S') by \`scripts/run_all_benchmarks.sh\`
 
 Platform: Apple M3 · 17 GB Unified RAM · MLX Metal backend  
 Benchmark: 4 prompts × ${MAX_TOKENS} max tokens · streams measured via OpenAI-compat API  
-Server flags: squish default (all optimizations) / \`--stock\` (no optimizations, Ollama comparable)
+Tiers: squish=default (auto-profile/blazing) · maxopt=--all-optimizations · stock=--stock (Ollama-comparable)
 
 | Model | Tier | Avg TTFT (ms) | Avg Tok/s | Status |
 |-------|------|-------------:|----------:|--------|
@@ -217,8 +236,28 @@ for MODEL_NAME in "${MODELS[@]}"; do
         continue
     fi
 
-    # Run squish tier (all optimizations by default)
+    # OOM guard: if the model's auto-resolved INT4 dir exceeds the ceiling, skip.
+    # Strips -bf16 / -fp16 suffix to reconstruct the squish INT4 dir name, then
+    # measures its size.  Native MLX INT3 dirs have no -int4 sibling, so they
+    # pass through untouched (they load only quantized weights, no BF16 copies).
+    _oom_base="${MODEL_NAME%-bf16}"; _oom_base="${_oom_base%-fp16}"
+    _oom_int4_dir="$MODELS_DIR/${_oom_base}-int4"
+    if [[ -d "$_oom_int4_dir" ]]; then
+        _oom_gb=$(du -sk "$_oom_int4_dir" 2>/dev/null | awk '{printf "%.0f", $1/1024/1024}')
+        if [[ "${_oom_gb:-0}" -gt "${MAX_MODEL_DISK_GB}" ]]; then
+            log "  SKIP (OOM guard) — ${MODEL_NAME} resolves to ${_oom_base}-int4 (${_oom_gb} GB > ${MAX_MODEL_DISK_GB} GB ceiling)"
+            echo "| \`$MODEL_NAME\` | — | n/a | n/a | SKIP (OOM: ${_oom_gb}GB > ${MAX_MODEL_DISK_GB}GB) |" >> "$SUMMARY_FILE"
+            continue
+        fi
+    fi
+
+    # Run squish tier (default optimizations — auto-profile / blazing mode)
     bench_tier "squish" "" || true
+
+    # Run maxopt tier when BENCH_MAXOPT=1 (--all-optimizations: reproduces README-claimed numbers)
+    if [[ "$BENCH_MAXOPT" == "1" ]]; then
+        bench_tier "maxopt" "--all-optimizations" || true
+    fi
 
     # Run stock tier when BENCH_STOCK=1 (plain mlx_lm, no squish optimizations)
     if [[ "$BENCH_STOCK" == "1" ]]; then
