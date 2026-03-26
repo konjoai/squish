@@ -1,63 +1,113 @@
-"""INT3Linear — MLX module that keeps INT3 weights as uint8 in Metal.
+"""INT3Linear — MLX module using mx.quantized_matmul for in-Metal 3-bit inference.
 
-Stores 3-bit asymmetric codes (one code per uint8 byte, values 0–7) and
-per-group float16 scales / zeros.  The dequantization:
+Accepts uint8 codes (one 3-bit code per byte, values 0–7) plus per-group
+float16 scales / zeros at construction time.
 
-    w_dq[out_i, k] = scales[out_i, k // gs] * codes[out_i, k]
-                   + zeros[out_i, k // gs]          (per group, gs = group_size)
+Fast path (group_size ∈ {32, 64, 128}):
+    Converts to MLX's native uint32 bit-packed format with MLX-convention biases.
+    Every forward call uses ``mx.quantized_matmul`` — the BF16 weight matrix is
+    NEVER materialised in Metal unified memory at inference time.
 
-is fused with the GEMV/GEMM in the MLX JIT graph — no BF16 staging buffer
-is ever written to Metal cache; the codes live as uint8 until the metal
-shader for the matmul reads them.
+Fallback path (group_size < 32 — only used for tiny test tensors):
+    Keeps uint8 codes and uses BF16 dequant+matmul.  Production models always
+    use group_size=64 so this path is never taken at inference time.
 
-Memory footprint vs BF16 (1-byte codes, 2-byte BF16):
-    1.5B model codes ≈ 750 MB  (vs ~1.5 GB BF16 at 1 byte/weight stored as
-                                 uint8 vs 2 bytes BF16 × ~750M linear weights)
-    + scales/zeros ≈ (~1.5B // group_size) × 4 bytes ≈ 45 MB for gs=64
-    Total ≈ ~800 MB vs ~3 GB BF16 → ~3.75× reduction in Metal resident set
+Squish decode convention (per-group asymmetric):
+    w_dq[i, k] = codes[i, k] * scales[i, k//gs] + zeros[i, k//gs]
+
+MLX quantized_matmul decode convention:
+    w_dq[i, k] = scales[i, k//gs] * codes[i, k] + biases[i, k//gs]
+
+Equivalence: biases = zeros (same zero-point, same scales, same codes)
+
+Memory footprint (1.5B model, gs=64):
+    uint32 packed codes ≈ 750 MB × (3/8) = ~281 MB  (3 bits/weight, uint32-packed)
+    scales + biases     ≈ 45 MB  (float16, same as before)
+    Total ≈ ~326 MB vs ~3 GB BF16 → ~9× reduction; no per-token spike.
 
 API:
-    INT3Linear is a drop-in for mlx.nn.Linear.  The weight attribute stores
-    uint8 codes, not float weights.  Callers that inspect dtype should expect
-    mx.uint8 for weight.  The __call__ signature is identical to nn.Linear.
+    INT3Linear is a drop-in for mlx.nn.Linear.  The ``weight`` attribute stores
+    either MLX-native uint32 packed codes (fast path) or raw uint8 codes (fallback).
+    The ``__call__`` signature is identical to nn.Linear.
 """
 from __future__ import annotations
 
 from typing import Optional
+
+import numpy as np
 
 import mlx.core as mx
 import mlx.nn as nn
 
 __all__ = ["INT3Linear"]
 
+# Group sizes supported by mx.quantized_matmul Metal kernels for bits=3.
+_MLX_SUPPORTED_GS: frozenset[int] = frozenset({32, 64, 128})
+
+
+def _pack_codes_uint32(codes_np: np.ndarray, bits: int = 3) -> np.ndarray:
+    """Pack ``(n_out, n_in)`` uint8 codes into ``(n_out, n_packed)`` uint32.
+
+    MLX bit-stream layout: element *i* occupies bits ``[i*bits, i*bits+bits)``
+    of the packed bit-stream, packed LSB-first with cross-word boundary support.
+    Identical pack order to ``mx.quantize`` internals.
+
+    Args:
+        codes_np: uint8 array of shape ``(n_out, n_in)`` with values in
+            ``[0, 2**bits - 1]``.
+        bits:     number of bits per element (default 3).
+
+    Returns:
+        uint32 array of shape ``(n_out, n_packed)`` where
+        ``n_packed = ceil(n_in * bits / 32)``.
+    """
+    n_out, n_in = codes_np.shape
+    n_packed = (n_in * bits + 31) // 32
+    packed = np.zeros((n_out, n_packed), dtype=np.uint32)
+    mask = np.uint32((1 << bits) - 1)
+    codes_u32 = codes_np.view(np.uint8).astype(np.uint32)  # (n_out, n_in)
+    for i in range(n_in):
+        bit_pos = i * bits
+        w = bit_pos >> 5          # word index (bit_pos // 32)
+        b = np.uint32(bit_pos & 31)  # bit position within word
+        packed[:, w] |= (codes_u32[:, i] & mask) << b
+        overflow = int(b) + bits - 32
+        if overflow > 0:
+            packed[:, w + 1] |= codes_u32[:, i] >> np.uint32(bits - overflow)
+    return packed
+
 
 class INT3Linear(nn.Module):
-    """INT3 asymmetric quantized linear layer for MLX.
+    """INT3 asymmetric quantized linear layer — zero-BF16 inference via mx.quantized_matmul.
 
-    Weights are stored as uint8 (one 3-bit code per byte, values 0–7) with
-    per-group float16 scales and zeros.  Dequantization is fused into the
-    MLX JIT graph — weights stay compact in Metal unified memory and are
-    never expanded to a full BF16 matrix.
+    At construction time the uint8 codes are repacked into MLX's native uint32
+    bit-packed format (when group_size ∈ {32, 64, 128}) and zeros are converted to
+    MLX biases.  Every forward call delegates to ``mx.quantized_matmul`` which
+    dequantizes inside the Metal shader — the full BF16 weight matrix is NEVER
+    materialised at inference time.
+
+    For non-standard group sizes (gs < 32, used only in tiny test tensors), the
+    module falls back to BF16 dequant+matmul to preserve correctness.
 
     Args:
         weight: uint8 array, shape ``(out_features, in_features)``.
-            Each element is a 3-bit code in ``[0, 7]`` stored in a byte.
+            Each element is a 3-bit code in ``[0, 7]`` stored in a uint8 byte.
         scales: float16 array, shape ``(out_features, n_groups)`` where
             ``n_groups = in_features // group_size``.
         zeros:  float16 array, shape ``(out_features, n_groups)``.
-        bias:   optional array, shape ``(out_features,)``.  If provided it
-            must be broadcast-compatible with the matmul output.
+        bias:   optional array, shape ``(out_features,)``.
 
     Raises:
         TypeError: if ``weight.dtype`` is not ``mx.uint8``.
         ValueError: if shape constraints (n_groups, divisibility) are violated.
 
     Notes:
-        Dequantization formula (per-group asymmetric):
-            ``w_dq = scales * codes + zeros``
-        This is the same convention used by ``squish.quant.int3_runtime``:
-        ``codes`` are unsigned 0–7 (NOT signed –3 to +3), so the ``zeros``
-        term absorbs the bias rather than a symmetric pivot.
+        Fast path (gs ∈ {32, 64, 128}): ``weight`` is stored as uint32 packed,
+        ``scales`` is float16, ``biases`` is float16 (= squish zeros, the zero-point
+        offset).  MLX decode: ``w = scale * code + biases``, identical to squish
+        decode: ``w = code * scale + zeros``.
+        Fallback path (gs < 32): ``weight`` is uint8, ``scales`` and ``zeros``
+        are float16.
     """
 
     def __init__(
@@ -93,9 +143,36 @@ class INT3Linear(nn.Module):
                 f"in_features ({n_in}) must be divisible by n_groups ({n_groups})"
             )
 
-        self.weight = weight   # (out, in) uint8
-        self.scales = scales   # (out, n_groups) float16
-        self.zeros  = zeros    # (out, n_groups) float16
+        gs = n_in // n_groups
+        self._n_out = n_out
+        self._n_in  = n_in
+        self._gs    = gs
+
+        if gs in _MLX_SUPPORTED_GS:
+            # ── Fast path: pack to MLX uint32 + map zeros → MLX biases ──────
+            # squish: w = codes * scale + zeros
+            # MLX:    w = scale * code + biases  (biases IS the squish zero-point)
+            # Equivalence: mlx_scales = squish_scales, mlx_biases = squish_zeros
+            # Codes are packed bit-for-bit identically in both conventions.
+            codes_np  = np.array(weight, dtype=np.uint8)
+            scales_np = np.array(scales, dtype=np.float32)
+            zeros_np  = np.array(zeros,  dtype=np.float32)
+
+            packed_np = _pack_codes_uint32(codes_np, bits=3)
+
+            self.weight = mx.array(packed_np)                       # uint32 packed
+            self.scales = mx.array(scales_np.astype(np.float16))    # float16
+            self.biases = mx.array(zeros_np.astype(np.float16))     # float16 (= squish zeros)
+            self._fast  = True
+        else:
+            # ── Fallback path: keep uint8, use BF16 dequant+matmul ───────────
+            # Only reached for non-standard group sizes (gs=8, gs=16) which are
+            # used in small test tensors but never in production models.
+            self.weight = weight                           # uint8
+            self.scales = scales.astype(mx.float16)       # float16
+            self.zeros  = zeros.astype(mx.float16)        # float16
+            self._fast  = False
+
         if bias is not None:
             self.bias = bias
 
@@ -103,42 +180,50 @@ class INT3Linear(nn.Module):
 
     @property
     def out_features(self) -> int:
-        return int(self.weight.shape[0])
+        return self._n_out
 
     @property
     def in_features(self) -> int:
-        return int(self.weight.shape[1])
+        return self._n_in
 
     @property
     def group_size(self) -> int:
-        return self.in_features // int(self.scales.shape[1])
+        return self._gs
 
     # ── Forward ────────────────────────────────────────────────────────────────
 
     def __call__(self, x: mx.array) -> mx.array:
-        """Dequantize weights and compute x @ W.T (+ bias).
+        """Compute x @ W.T (+ bias).
 
-        The dequantize + matmul chain is fused by the MLX JIT — Metal only
-        ever materialises the output vector, not the full BF16 weight matrix.
+        Fast path (gs ∈ {32, 64, 128}): dequantizes inside the Metal shader via
+        ``mx.quantized_matmul`` — zero BF16 allocation at inference time.
+
+        Fallback path (gs < 32): BF16 dequant+matmul (only for non-production
+        tiny tensors where Metal kernel is unsupported).
 
         Args:
             x: input array, shape ``(..., in_features)``.
 
         Returns:
-            Output array, shape ``(..., out_features)``, same dtype as ``x``.
+            Output array, shape ``(..., out_features)``.
         """
-        n_out, n_in = self.weight.shape
-        gs = n_in // self.scales.shape[1]
-
-        # Dequantize: w_dq[i, k] = scales[i, k//gs] * codes[i, k] + zeros[i, k//gs]
-        # Reshape for group-wise broadcast multiplication:
-        #   codes  (n_out, n_groups, gs)  →  scale/zero broadcast → (n_out, n_groups, gs)
-        w = self.weight.reshape(n_out, -1, gs).astype(mx.bfloat16)  # (n_out, n_groups, gs)
-        s = self.scales[:, :, None].astype(mx.bfloat16)             # (n_out, n_groups,  1)
-        z = self.zeros[:, :, None].astype(mx.bfloat16)              # (n_out, n_groups,  1)
-        w_dq = (w * s + z).reshape(n_out, n_in)                     # (n_out, n_in)  bfloat16
-
-        y = x @ w_dq.T
+        if self._fast:
+            y = mx.quantized_matmul(
+                x,
+                self.weight,
+                scales=self.scales,
+                biases=self.biases,
+                transpose=True,
+                group_size=self._gs,
+                bits=3,
+            )
+        else:
+            # BF16 fallback for non-standard group sizes (gs < 32).
+            w = self.weight.reshape(self._n_out, -1, self._gs).astype(mx.bfloat16)
+            s = self.scales[:, :, None].astype(mx.bfloat16)
+            z = self.zeros[:, :, None].astype(mx.bfloat16)
+            w_dq = (w * s + z).reshape(self._n_out, self._n_in)
+            y = x @ w_dq.T
         if hasattr(self, "bias"):
             y = y + self.bias
         return y
