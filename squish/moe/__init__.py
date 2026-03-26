@@ -1,1 +1,0 @@
-"""squish.moe subpackage."""
