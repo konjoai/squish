@@ -26,42 +26,47 @@ if str(ROOT) not in sys.path:
 # ==============================================================================
 
 class TestNumpyDeferral(unittest.TestCase):
-    """Importing production_profiler must not load numpy."""
+    """Importing production_profiler must not load numpy.
 
-    def _purge_numpy(self):
-        """Remove numpy from sys.modules to simulate a fresh import environment."""
-        for k in list(sys.modules.keys()):
-            if k == "numpy" or k.startswith("numpy."):
-                del sys.modules[k]
+    Python 3.12+ prohibits reloading C-extension modules within the same
+    process (ImportError: cannot load module more than once per process).
+    Both tests use a subprocess so the verification runs in a clean
+    interpreter that has never loaded numpy, avoiding process poisoning.
+    """
+
+    _SCRIPT_NO_NUMPY = (
+        "import sys; "
+        "import squish.hardware.production_profiler; "
+        "assert 'numpy' not in sys.modules, "
+        "'import production_profiler must not eagerly import numpy'"
+    )
+
+    _SCRIPT_LAZY_NUMPY = (
+        "import sys; "
+        "import squish.hardware.production_profiler as pp; "
+        "assert 'numpy' not in sys.modules, 'numpy loaded too early'; "
+        "p = pp.ProductionProfiler(); p.record('x', 1.0); _ = p.stats('x'); "
+        "assert 'numpy' in sys.modules, 'stats() must trigger numpy import'"
+    )
+
+    def _run_isolated(self, script: str) -> None:
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            f"Isolated check failed:\nstdout: {result.stdout}\nstderr: {result.stderr}",
+        )
 
     def test_import_does_not_load_numpy(self):
         """Module-level import of production_profiler must not trigger numpy."""
-        self._purge_numpy()
-        # Remove the cached module so we reimport it cleanly
-        for k in list(sys.modules.keys()):
-            if "production_profiler" in k:
-                del sys.modules[k]
-
-        import squish.hardware.production_profiler  # noqa: F401
-        self.assertNotIn("numpy", sys.modules,
-                         "import production_profiler must not eagerly import numpy")
+        self._run_isolated(self._SCRIPT_NO_NUMPY)
 
     def test_numpy_loaded_when_stats_called(self):
         """numpy must be imported lazily when stats() is first called."""
-        self._purge_numpy()
-        for k in list(sys.modules.keys()):
-            if "production_profiler" in k:
-                del sys.modules[k]
-
-        import squish.hardware.production_profiler as pp
-        self.assertNotIn("numpy", sys.modules)
-
-        p = pp.ProductionProfiler()
-        p.record("decode", 12.5)
-        _ = p.stats("decode")   # triggers numpy import
-
-        self.assertIn("numpy", sys.modules,
-                      "stats() must trigger numpy import")
+        self._run_isolated(self._SCRIPT_LAZY_NUMPY)
 
 
 # ==============================================================================
