@@ -1,1 +1,0 @@
-"""squish.token subpackage."""

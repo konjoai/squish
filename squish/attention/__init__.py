@@ -1,1 +1,0 @@
-"""squish.attention subpackage."""

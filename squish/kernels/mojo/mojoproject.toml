@@ -1,7 +1,0 @@
-[package]
-name = "squish-kernels"
-version = "0.1.0"
-description = "High-performance Mojo AI kernels for squish"
-
-[dependencies]
-"max" = ">=24.4.0,<25"
