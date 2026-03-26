@@ -7510,9 +7510,8 @@ Examples:
         _load_s = getattr(_state, "load_time_s", 0.0) or 0.0
         _status = _auto_prof.status_line(_model_label, _load_s)
         _ok(_status)
-    else:
-        # No auto-profile (e.g. explicit flags passed) — show full module table
-        _print_optimization_status()
+    # No auto-profile: optimization table suppressed from default startup path.
+    # (wave 107: call the print helper manually or pass --verbose to see it.)
 
     # ── Wave 76: Initialise agent tool registry ───────────────────────────────
     global _agent_registry
