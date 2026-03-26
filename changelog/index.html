@@ -836,6 +836,89 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unreleased-wave-111-launch-readiness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Unreleased] — Wave 111 — Launch Readiness
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Unreleased] — Wave 111 — Launch Readiness">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#launch-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launch Infrastructure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-defaults-fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Defaults Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#startup-noise-suppressed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startup Noise Suppressed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#numerics-fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Numerics Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hardware-cache-wave-111a" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware Cache (Wave 111a)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#docs-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docs &amp; Process
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#100-public-release-2026-03-27" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5389,6 +5472,65 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="unreleased-wave-111-launch-readiness">[Unreleased] — Wave 111 — Launch Readiness<a class="headerlink" href="#unreleased-wave-111-launch-readiness" title="Permanent link">&para;</a></h2>
+<h3 id="launch-infrastructure">Launch Infrastructure<a class="headerlink" href="#launch-infrastructure" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>docs/LAUNCH_CHECKLIST.md</code></strong> — 5-phase pre-launch checklist (quality gate,
+  memory/latency contracts, integration smoke tests, release packaging, community)</li>
+<li><strong><code>docs/integrations/openclaw.md</code></strong> — OpenClaw agent framework integration guide
+  with config snippets, model recommendations, port/key customisation, and
+  troubleshooting</li>
+<li><strong><code>scripts/compress_and_upload.py</code></strong> — Pipeline script: compress BF16 → INT4/INT3/INT2,
+  run post-compression coherence smoke test (repetition-loop detection), upload to
+  Hugging Face, optional local cleanup. Supports <code>--bits int4 int3</code>, <code>--hf-repo</code>,
+  <code>--delete-local</code>, <code>--skip-smoke-test</code></li>
+</ul>
+<h3 id="cli-defaults-fixed">CLI Defaults Fixed<a class="headerlink" href="#cli-defaults-fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squish compress</code> defaults to INT4</strong> — prior default was INT8; output directory
+  is now named <code>&lt;model&gt;-int4</code> (or <code>&lt;model&gt;-int8</code> with explicit <code>--format int8</code>)
+  instead of the legacy <code>&lt;model&gt;-compressed</code></li>
+<li><strong><code>squish run</code> auto-compresses</strong> — when no compressed model exists for the
+  requested model and <code>--stock</code> is not set, <code>run</code> automatically calls <code>compress</code>
+  to build an INT4 variant, then serves it; no manual <code>compress</code> step required</li>
+<li><strong>Legacy INT8 warning</strong> — <code>_resolve_model()</code> now prints a visible warning when
+  an old <code>&lt;model&gt;-compressed</code> (INT8) directory is found, explaining the 5× RAM
+  overhead and the command to re-compress to INT4</li>
+</ul>
+<h3 id="startup-noise-suppressed">Startup Noise Suppressed<a class="headerlink" href="#startup-noise-suppressed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squish serve</code> is quiet by default</strong> — all <code>◈</code> feature-activation lines
+  (200+ <code>_info()</code> calls) and diagnostic <code>split_loader</code>/<code>flash_attention</code> output
+  are now suppressed unless <code>--verbose</code> is passed; <code>--verbose</code> default changed
+  from <code>True</code> to <code>False</code></li>
+<li><strong><code>VERBOSE</code> module flag</strong> — <code>server.py</code> now has a <code>_VERBOSE: bool</code> flag set
+  from <code>args.verbose</code> at startup; <code>_info()</code> is gated behind it</li>
+</ul>
+<h3 id="numerics-fixed">Numerics Fixed<a class="headerlink" href="#numerics-fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>rs_randomized_svd.py</code></strong> — Rust <code>randomized_svd_f32</code> Jacobi eigensolver
+  produces inflated singular values for certain float32 inputs; added a
+  quick reconstruction sanity check (rel_err &lt; 0.25 on 8 random rows);
+  silently falls back to the numpy path on failure</li>
+<li><strong><code>rs_randomized_svd.py</code> numpy fallback</strong> — upgraded to float64 arithmetic</li>
+<li>one power-iteration step (Halko §4.4) for robust reconstruction on
+  rank-deficient float32 matrices</li>
+</ul>
+<h3 id="hardware-cache-wave-111a">Hardware Cache (Wave 111a)<a class="headerlink" href="#hardware-cache-wave-111a" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>chip_detector.py</code> disk cache</strong> — hardware detection result now cached at
+  <code>~/.squish/hw_cache.json</code>; subsequent starts skip the <code>sysctl</code>/<code>system_profiler</code>
+  subprocess call (saves ~80ms per startup)</li>
+</ul>
+<h3 id="docs-process">Docs &amp; Process<a class="headerlink" href="#docs-process" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>CLAUDE.md / AGENTS.md / copilot-instructions.md</strong> — 7 new standing rules:
+  Stop-and-Ask uncertainty policy, test isolation taxonomy, read-before-edit,
+  framework API verification, CLI exit code standards, ship gate definition,
+  web search mandate</li>
+<li><strong>Deleted stale <code>scripts/patch_wave37*.py</code> × 4</strong> — post-wave cleanup</li>
+</ul>
 <hr />
 <h2 id="100-public-release-2026-03-27">[1.0.0] — Public Release — 2026-03-27<a class="headerlink" href="#100-public-release-2026-03-27" title="Permanent link">&para;</a></h2>
 <p>First public release of Squish.  All v1.0.0 components are stable and tested.</p>
