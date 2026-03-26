@@ -279,7 +279,12 @@ class TestMakeChunkOutput(unittest.TestCase):
         self.assertEqual(payload["object"], "chat.completion.chunk")
 
     def test_make_chunk_uses_json_dumps_helper(self):
-        """_make_chunk must call _json_dumps not bare json.dumps."""
+        """_make_chunk must call _json_dumps not bare json.dumps.
+
+        The implementation builds the SSE frame via direct string construction,
+        calling _json_dumps per field rather than once on the whole dict.
+        Assert at least one call so we know the orjson-backed helper is used.
+        """
         called = []
         original = self._srv._json_dumps
 
@@ -289,7 +294,7 @@ class TestMakeChunkOutput(unittest.TestCase):
 
         with patch.object(self._srv, "_json_dumps", side_effect=spy):
             self._make("hello")
-        self.assertEqual(len(called), 1)
+        self.assertGreaterEqual(len(called), 1, "_json_dumps was never called — bare json.dumps may have been used")
 
 
 # ---------------------------------------------------------------------------

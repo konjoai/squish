@@ -34,7 +34,7 @@ This file defines standing instructions for all AI and human contributors workin
 
 **Continuous Cleanup.** Delete dead code immediately. Do not comment it out and leave it — use version control for history.
 
-**No Graveyards.** Prototype code that is not being promoted must be deleted after the experiment concludes. Do not let the experiments/ or research/ directories rot.
+**No Graveyards.** Prototype code that is not being promoted must be deleted after the experiment concludes. The `experimental/` directory exists for research code awaiting validation — not for permanent storage. Each module in `experimental/` must have: (1) a concrete promotion criterion (a specific benchmark number it must hit) and (2) a named owner. If neither exists, the module is deleted immediately. The 90-day review clock starts when the promotion criterion is *written*, not when the file is moved. **squish/ must not grow above 100 active Python files.** Any addition requires a corresponding deletion or demotion to `experimental/`, or explicit written justification.
 
 **Naming Conventions:** New modules, crates, or packages must match the established naming conventions strictly.
 
@@ -59,6 +59,12 @@ This file defines standing instructions for all AI and human contributors workin
 - **NaN/Inf propagation is a silent killer.** Add NaN/Inf assertion checks at module boundaries during development. Never ship code that masks float overflow without a logged warning.
 - **Accumulation dtype matters.** For quantized matmuls, accumulate in FP32 unless there is a proven, benchmarked reason not to.
 - **Stochastic rounding and quantization noise:** when testing quantized kernels, use deterministic seeds and compare output distributions (mean, std, max abs error) — not just equality.
+
+### Framework Primitives — Verify Before Claiming
+
+- **Never claim fusion without proof.** Statements like "MLX will fuse this into a single kernel" or "PyTorch will optimize this chain" must be verified with profiler output or the framework's documentation. Lazy evaluation ≠ kernel fusion. A computation graph node that is `(n_out, n_in)` in shape will materialize a tensor of that size when evaluated, regardless of how many ops built it.
+- **Use the right primitive.** For quantized matmul on MLX: use `mx.quantized_matmul()` or `nn.QuantizedLinear`. For quantized matmul on CUDA: use bitsandbytes or CUTLASS. Do not implement quantized matmul as "dequantize → matmul" in Python unless you have verified the framework fuses it in the Metal/CUDA shader.
+- **Peak memory ≠ steady-state memory.** A model that loads in 800 MB may use 10 GB peak during inference if it materializes large intermediates. Benchmark both. Report both.
 
 ---
 
@@ -92,7 +98,7 @@ This file defines standing instructions for all AI and human contributors workin
   - **E2E / Full-Stack:** Any feature requiring full-stack calls must be tested end-to-end, simulating the entire request lifecycle.
   - **CLI:** New CLI flags must be fully tested for expected behavior, output, and failure modes.
   - **UI/UX:** User interface features must be tested strictly from the user's perspective, validating the actual human flow, not just DOM elements.
-- **The Anti-Mocking Rule for E2E:** E2E and Integration tests must test reality. You are strictly forbidden from mocking the database, the model inference engine, or network boundaries in E2E tests unless explicitly instructed.
+- **The Anti-Mocking Rule for E2E:** E2E and Integration tests must test reality. For tests validating **inference correctness or quantization accuracy**, you are strictly forbidden from mocking the model inference engine — test the real pipeline. For **structural/integration tests** of server lifecycle, routing, and feature activation, mocking the model with a deterministic stub is acceptable and expected. Never mock the quantization pipeline when testing quantization correctness. Never mock the database in E2E tests.
 - All tests must pass in the CI/CD pipeline before committing. Never commit with known failing tests.
 - **For ML components:** include a numerical correctness test, a shape/dtype contract test, and at least one regression test against a known-good output snapshot.
 
@@ -107,7 +113,16 @@ This file defines standing instructions for all AI and human contributors workin
 
 ---
 
-## 🔐 Inference Server Security
+## � Feature Gating
+
+- **One feature in, one benchmark result out.** No feature merges to main without a benchmark proving it improves the target metric by ≥5% on the canonical hardware (M3 16GB for Squish; your primary target for other projects).
+- **Additive commits must not increase startup time or RSS.** Measure `time python3 -c "import <package>"` and peak RSS at server start before and after any commit that adds a new module. If either increases, the commit needs written justification in the PR description.
+- **No feature flags for broken features.** If a CLI flag activates a feature that produces wrong or broken output, remove the flag until the feature is ready. Silent failure is not acceptable.
+- **No bundling unrelated changes.** Each commit does one thing. Commits that bundle multiple unrelated features are forbidden — they make bisection and performance attribution impossible.
+
+---
+
+## �🔐 Inference Server Security
 
 - **Validate all inputs at the API boundary.** Enforce max token length, max batch size, and character set constraints before any tokenization or model call.
 - **Prompt injection is a real attack surface.** System prompt content must never be controllable by request payload.
@@ -129,7 +144,7 @@ This file defines standing instructions for all AI and human contributors workin
 
 - **Research/experimental code** lives in `research/`, `experiments/`, or is gated with a `RESEARCH_MODE` flag.
 - **Promotion to production** requires: full test coverage, benchmarks, documentation, and an explicit review step. Do not silently "graduate" an experiment into a hot path.
-- Prototype code that is not being promoted should be deleted after the experiment concludes — don't let the `experiments/` directory become a graveyard.
+- Prototype code that is not being promoted should be deleted after the experiment concludes — see "No Graveyards" above.
 
 ---
 
@@ -174,3 +189,34 @@ Do not proceed if:
 - **Make it beautiful.** *Sene Magber* — social grace, doing things the right way. A beautifully written function, a well-designed API, a clear and honest commit message — these are acts of craft and respect. 
 - **No surrender.** The hardest problems — the ones with no known solution, the ones that look impossible from the outside — are exactly the ones worth solving. *根性.* Keep going.
 - **The Konjo Pushback Mandate:** You are a collaborator, not a subordinate. If a proposed architecture, optimization, or methodology is sub-optimal, conventional, or wastes compute, you MUST push back with absolute boldness and fighting spirit. Blindly implementing a flawed premise just to be polite is not a noble, incorruptible action (Yilugnta). Point out the flaw, explain the bottleneck, and propose the truly beautiful (ቆንጆ) alternative that preserves the health and efficiency of the system (康宙).
+
+---
+
+## 🐿️ Squish-Specific Rules (`squish/`)
+
+*These rules apply only to the Squish inference server project. They encode hard-won production constraints as non-negotiable contracts.*
+
+**The memory contract.** Every change to the inference path must be measured against this baseline on M3 16GB:
+- `qwen2.5:1.5b INT4`: peak Metal RSS < 1.5 GB
+- `qwen2.5:1.5b INT3`: peak Metal RSS < 1.0 GB
+- `qwen3:8b INT4`: peak Metal RSS < 6.0 GB
+
+If a change breaks this contract, it does not merge.
+
+**The latency contract.**
+- `qwen2.5:1.5b` TTFT: < 300 ms
+- `qwen3:8b` TTFT: < 600 ms
+- Any model tokens/sec: > mlx_lm baseline on the same hardware
+
+If a change breaks this, it does not merge.
+
+**The module count rule.** `squish/` (non-experimental) must stay under 100 Python files. Every new module requires either deleting an existing module or an explicit exception with written justification in the PR description.
+
+**Quantized matmul is never Python arithmetic.** Any linear layer whose weights are stored in a quantized format (INT2, INT3, INT4, INT8) must use the framework's native quantized matmul primitive:
+- MLX: `mx.quantized_matmul()` or `nn.QuantizedLinear`
+- PyTorch: `bitsandbytes.matmul_4bit()` or `torch.ops.llm_awq`
+- **Never:** dequantize to float → standard matmul
+
+**Server startup is a metric.** `time squish serve --dry-run` (or equivalent) must be measured before and after every commit. RSS at startup (before model loads) must stay under 200 MB. Import time must stay under 2 seconds on M3.
+
+**Benchmarks are not decorative.** When benchmark results are added to `benchmarks/results/` or docs, they must be reproducible by running `scripts/run_baseline.sh` on the same hardware. If the script cannot reproduce the number within 10%, the number is removed from the README.

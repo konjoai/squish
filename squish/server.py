@@ -2518,23 +2518,33 @@ def _make_chunk(content: str, model: str, cid: str, finish_reason=None,
                 _fingerprint: str | None = None) -> str:
     """Build an SSE data line in OpenAI streaming format.
 
-    Callers that stream many tokens should pass pre-computed _created and
-    _fingerprint to avoid recomputing them on every call.
+    Hot-path optimization (wave 108): avoid 3 nested dict allocations per token
+    by building the JSON frame directly from pre-serialized parts.  All fields
+    except ``content`` and ``finish_reason`` are constant per request; callers
+    should pass ``_created`` and ``_fingerprint`` to avoid re-computing them.
     """
-    chunk = {
-        "id":                cid,
-        "object":            "chat.completion.chunk",
-        "created":           _created if _created is not None else int(time.time()),
-        "model":             model,
-        "system_fingerprint": _fingerprint if _fingerprint is not None
-                               else _system_fingerprint(_state.model_name, _state.loaded_at),
-        "choices": [{
-            "index":         0,
-            "delta":         {"content": content} if content else {},
-            "finish_reason": finish_reason,
-        }],
-    }
-    return f"data: {_json_dumps(chunk)}\n\n"
+    ts  = _created if _created is not None else int(time.time())
+    fp  = _fingerprint if _fingerprint is not None else _system_fingerprint(
+        _state.model_name, _state.loaded_at
+    )
+    # Serialize the scalar fields once (handles escaping of arbitrary strings)
+    id_s    = _json_dumps(cid)
+    model_s = _json_dumps(model)
+    fp_s    = _json_dumps(fp)
+    # delta: {"content":"<escaped>"} for normal tokens, {} for finish chunk
+    if content:
+        delta_s = f'{{"content":{_json_dumps(content)}}}'
+    else:
+        delta_s = "{}"
+    # finish_reason: null or "stop"/"length"/etc (always a simple identifier)
+    fr_s = "null" if finish_reason is None else f'"{finish_reason}"'
+    return (
+        f'data: {{"id":{id_s},"object":"chat.completion.chunk",'
+        f'"created":{ts},"model":{model_s},'
+        f'"system_fingerprint":{fp_s},'
+        f'"choices":[{{"index":0,"delta":{delta_s},'
+        f'"finish_reason":{fr_s}}}]}}\n\n'
+    )
 
 
 @app.post("/v1/chat/completions")

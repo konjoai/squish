@@ -37,8 +37,6 @@ from __future__ import annotations
 import sys
 from collections.abc import Iterator
 
-import numpy as np
-
 # ── Platform detection ────────────────────────────────────────────────────────
 _IS_APPLE: bool = False
 if sys.platform == "darwin":
@@ -82,6 +80,7 @@ class _AppleBackend:
                 mx.eval(t)
 
     def to_numpy(self, tensor) -> np.ndarray:
+        import numpy as np  # deferred: avoid unconditional numpy load at module import
         import mlx.core as mx
         return np.array(tensor.astype(mx.float32), dtype=np.float32)
 
@@ -95,6 +94,7 @@ class _AppleBackend:
 
     def forward_np(self, model, input_ids, cache=None) -> np.ndarray:
         """Run forward pass; return logits as float32 numpy."""
+        import numpy as np  # deferred
         import mlx.core as mx
         out = self.forward(model, input_ids, cache=cache)
         mx.eval(out)
@@ -192,6 +192,7 @@ class _TorchBackend:
     # ── Tensor ops ────────────────────────────────────────────────────────────
 
     def array(self, data, dtype: str = "int32"):
+        import numpy as np  # deferred
         import torch
         _dtype_map = {
             "int32":    torch.int32,
@@ -208,6 +209,7 @@ class _TorchBackend:
         pass  # PyTorch is eager — no deferred execution graph
 
     def to_numpy(self, tensor) -> np.ndarray:
+        import numpy as np  # deferred
         import torch
         if isinstance(tensor, torch.Tensor):
             return tensor.detach().float().cpu().numpy()
@@ -304,6 +306,7 @@ class _TorchBackend:
     # ── Weight I/O ────────────────────────────────────────────────────────────
 
     def save_tensors(self, path: str, weight_dict: dict) -> None:
+        import numpy as np  # deferred
         import torch
         from safetensors.torch import save_file as _sf
 
