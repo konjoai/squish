@@ -198,7 +198,7 @@ class TestScanLmStudio(unittest.TestCase):
             scanner = LocalModelScanner(lm_studio_dir=Path(tmp))
             models = scanner.scan_lm_studio()
             assert len(models) == 1
-            assert models[0].source == "gguf"
+            assert models[0].source == "lm_studio"
 
     def test_finds_nested_gguf(self):
         from squish.serving.local_model_scanner import LocalModelScanner
