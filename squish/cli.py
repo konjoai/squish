@@ -2190,6 +2190,9 @@ def cmd_daemon(args):  # pragma: no cover
 def cmd_compress(args):  # pragma: no cover
     """Compress a model directory to Squish npy-dir or .squizd format."""
     # ── Resolve explicit --format to bool flags for backward compat ──────────
+    # --int3 shorthand is equivalent to --format int3
+    if getattr(args, "int3", False) and not getattr(args, "compress_format", None):
+        args.compress_format = "int3"
     _compress_format = getattr(args, "compress_format", None)
     if _compress_format == "int3":
         # INT3: use mlx_lm.convert with 3-bit quantization.
@@ -5455,6 +5458,10 @@ Ollama drop-in:
                             help="INT4 nibble-packed (~44%% disk savings vs INT8). "
                                  "Requires squish_quant Rust ext. "
                                  "⚠ Not recommended for models < 3B — use INT8 for best quality.")
+    p_compress.add_argument("--int3",    action="store_true",
+                            help="INT3 native MLX quantisation via mlx_lm.convert (q_bits=3). "
+                                 "~46%% of BF16 size (~375 MB for 1B). Smallest RAM footprint available. "
+                                 "Equivalent to --format int3.")
     p_compress.add_argument("--aqlm",    action="store_true", default=False,
                             help="AQLM additive codebook quantization (ICML 2024). "
                                  "~2-bit effective precision via additive codebook lookup. "
@@ -5488,7 +5495,7 @@ Ollama drop-in:
     )
     p_compress.add_argument(
         "--format",
-        choices=["int8", "int4", "astc", "hybrid"],
+        choices=["int8", "int4", "int3", "astc", "hybrid"],
         default=None,
         dest="compress_format",
         metavar="FORMAT",
