@@ -34,8 +34,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-import numpy as np
-
 import mlx.core as mx
 import mlx.nn as nn
 
@@ -45,12 +43,16 @@ __all__ = ["INT3Linear"]
 _MLX_SUPPORTED_GS: frozenset[int] = frozenset({32, 64, 128})
 
 
-def _pack_codes_uint32(codes_np: np.ndarray, bits: int = 3) -> np.ndarray:
+def _pack_codes_uint32(codes_np, bits: int = 3):
     """Pack ``(n_out, n_in)`` uint8 codes into ``(n_out, n_packed)`` uint32.
 
     MLX bit-stream layout: element *i* occupies bits ``[i*bits, i*bits+bits)``
     of the packed bit-stream, packed LSB-first with cross-word boundary support.
     Identical pack order to ``mx.quantize`` internals.
+
+    Fully vectorised — no Python loop over n_in. Eliminating the per-column
+    loop drops first-load time on a 1.5B model from ~1.75M iterations to a
+    single numpy scatter-or operation.
 
     Args:
         codes_np: uint8 array of shape ``(n_out, n_in)`` with values in
@@ -61,19 +63,33 @@ def _pack_codes_uint32(codes_np: np.ndarray, bits: int = 3) -> np.ndarray:
         uint32 array of shape ``(n_out, n_packed)`` where
         ``n_packed = ceil(n_in * bits / 32)``.
     """
+    import numpy as np  # deferred: only needed at load time, not inference
     n_out, n_in = codes_np.shape
     n_packed = (n_in * bits + 31) // 32
     packed = np.zeros((n_out, n_packed), dtype=np.uint32)
-    mask = np.uint32((1 << bits) - 1)
-    codes_u32 = codes_np.view(np.uint8).astype(np.uint32)  # (n_out, n_in)
-    for i in range(n_in):
-        bit_pos = i * bits
-        w = bit_pos >> 5          # word index (bit_pos // 32)
-        b = np.uint32(bit_pos & 31)  # bit position within word
-        packed[:, w] |= (codes_u32[:, i] & mask) << b
-        overflow = int(b) + bits - 32
-        if overflow > 0:
-            packed[:, w + 1] |= codes_u32[:, i] >> np.uint32(bits - overflow)
+    # Vectorised scatter: compute word index and bit offset for every column
+    # simultaneously, then accumulate with np.add.at for overflow columns.
+    cols    = np.arange(n_in, dtype=np.int64)
+    bit_pos = cols * bits                         # (n_in,)
+    w       = (bit_pos >> 5).astype(np.int64)     # word index per column
+    b       = (bit_pos & 31).astype(np.uint32)    # bit offset within word
+    codes_u32 = codes_np.astype(np.uint32)        # (n_out, n_in)
+    mask    = np.uint32((1 << bits) - 1)
+    # Main contribution: shift each column's codes into position and OR into packed.
+    # packed[:, w[i]] |= (codes_u32[:, i] & mask) << b[i]  — vectorised via
+    # transposing to (n_in, n_out), scaling by shift, then scatter-adding.
+    shifted = (codes_u32 & mask) << b           # (n_out, n_in) — broadcast b
+    np.add.at(packed.T, w, shifted.T)           # scatter-add into correct words
+    # Overflow contribution: bits that spill past the 32-bit word boundary.
+    overflow = b.astype(np.int64) + bits - 32   # (n_in,) — negative when no spill
+    spill_mask = overflow > 0
+    if spill_mask.any():
+        sp_cols   = cols[spill_mask]            # column indices with overflow
+        sp_ov     = overflow[spill_mask].astype(np.uint32)
+        sp_w1     = w[spill_mask] + 1           # next word index
+        sp_shift  = np.uint32(bits) - sp_ov    # right-shift amount
+        sp_vals   = codes_u32[:, sp_cols] >> sp_shift  # (n_out, n_spill)
+        np.add.at(packed.T, sp_w1, sp_vals.T)
     return packed
 
 
@@ -154,6 +170,7 @@ class INT3Linear(nn.Module):
             # MLX:    w = scale * code + biases  (biases IS the squish zero-point)
             # Equivalence: mlx_scales = squish_scales, mlx_biases = squish_zeros
             # Codes are packed bit-for-bit identically in both conventions.
+            import numpy as np  # deferred: load-time only, not inference
             codes_np  = np.array(weight, dtype=np.uint8)
             scales_np = np.array(scales, dtype=np.float32)
             zeros_np  = np.array(zeros,  dtype=np.float32)
