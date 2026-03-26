@@ -126,7 +126,8 @@ kill_server_on_port() {
 }
 
 SERVER_PID=0
-trap 'kill_server_on_port' EXIT
+RESULTS_DIR="$(mktemp -d)"
+trap 'rm -rf "$RESULTS_DIR"; kill_server_on_port' EXIT
 
 # ── Python helper: single request timing ─────────────────────────────────────
 # We invoke an inline Python snippet via subshell for precise timing.
@@ -232,7 +233,6 @@ measure_cold_start() {
 }
 
 # ── Main benchmark loop ───────────────────────────────────────────────────────
-declare -A RESULTS
 
 log "═══════════════════════════════════════════════════"
 log " Squish Benchmark Baseline — Wave 112+"
@@ -256,7 +256,7 @@ for model in "${MODELS[@]}"; do
         # ── 2. Start server for TTFT + tok/s measurements ────────────────────
         if ! start_server "$model" "$fmt"; then
             log "  ✗ Server failed to start for $model $fmt — skipping"
-            RESULTS[$RUN_KEY]='{"error":"server_start_failed"}'
+            echo '{"error":"server_start_failed"}' > "$RESULTS_DIR/$RUN_KEY.json"
             continue
         fi
 
@@ -317,13 +317,12 @@ PYEOF
         log "  TTFT: $STATS_JSON"
         log ""
 
-        RESULTS[$RUN_KEY]=$(python3 -c "
+        python3 -c "
 import json
 cs = '$COLD_START_RESULT'
 stats = $STATS_JSON
 rss = float('$RSS_MB') if '$RSS_MB' else 0
 
-# parse cold start
 cs_dict = {}
 for part in cs.split():
     if '=' in part:
@@ -339,7 +338,7 @@ print(json.dumps({
     'tps': stats['tps'],
     'peak_rss_mb': round(rss, 1),
 }))
-")
+" > "$RESULTS_DIR/$RUN_KEY.json"
     done
 done
 
@@ -358,10 +357,12 @@ hardware = {
 }
 
 models = {}
-$(for key in "${!RESULTS[@]}"; do
+$(for f in "$RESULTS_DIR"/*.json; do
+    [ -e "$f" ] || continue
+    key="$(basename "$f" .json)"
     model_part="${key%%__*}"
     fmt_part="${key##*__}"
-    echo "models.setdefault('$model_part', {})['$fmt_part'] = ${RESULTS[$key]}"
+    echo "models.setdefault('$model_part', {})['$fmt_part'] = $(cat "$f")"
 done)
 
 output = {"hardware": hardware, "results": models,
