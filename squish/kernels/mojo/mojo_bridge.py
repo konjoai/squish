@@ -91,7 +91,7 @@ class MojoBridge:
     def __init__(self, config: MojoBridgeConfig | None = None) -> None:
         self.config = config or MojoBridgeConfig()
         self._lib: ctypes.CDLL | None = None
-        self._try_load()
+        self._loaded: bool = False  # deferred: no stat() calls until first use
 
     # ------------------------------------------------------------------ #
     #  Library loading                                                     #
@@ -141,6 +141,9 @@ class MojoBridge:
         A callable ctypes function object, or ``None`` if the library is
         unavailable or the symbol was not found.
         """
+        if not self._loaded:
+            self._loaded = True
+            self._try_load()
         if self._lib is None:
             return None
         try:
