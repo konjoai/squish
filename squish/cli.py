@@ -1338,14 +1338,26 @@ def cmd_run(args):  # pragma: no cover
         api_key=api_key,
     )
 
-    cmd = [
-        sys.executable, "-m", "squish.server",
-        "--model-dir",      str(model_dir),
-        "--compressed-dir", str(compressed_dir),
-        "--port",           str(port),
-        "--host",           host,
-        # API key is passed via env var to avoid exposure in `ps aux`
-    ]
+    # When the model is already an MLX-native quantized format (INT3, INT4 from
+    # mlx_lm), route through --mlx-model-dir so server.py uses mlx_lm.load()
+    # directly.  Passing --compressed-dir with an MLX-format dir would cause the
+    # npy-dir loader to fail (no tensors/ subdirectory).
+    if _model_is_already_quantized(model_dir):
+        cmd = [
+            sys.executable, "-m", "squish.server",
+            "--mlx-model-dir", str(model_dir),
+            "--port",           str(port),
+            "--host",           host,
+        ]
+    else:
+        cmd = [
+            sys.executable, "-m", "squish.server",
+            "--model-dir",      str(model_dir),
+            "--compressed-dir", str(compressed_dir),
+            "--port",           str(port),
+            "--host",           host,
+            # API key is passed via env var to avoid exposure in `ps aux`
+        ]
     # Inject into the environ that execv will inherit
     os.environ.setdefault("SQUISH_API_KEY", api_key)
     if args.draft_model:

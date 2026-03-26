@@ -3,7 +3,7 @@
 Wave 79 — Startup optimisation + inference loop micro-optimisations
 
 Tests for:
-  - squish.__version__ == "9.1.0" and matches pyproject.toml
+  - squish.__version__ == "9.2.0" and matches pyproject.toml
   - uvicorn is NOT imported at squish.server module-load time
   - _require("uvicorn") is not called at module level (no eager side-effect)
   - _prefetch_caches pre-computation: list is built once, hasattr skipped per token
@@ -29,11 +29,11 @@ if _repo_root not in sys.path:
 # ============================================================================
 
 class TestVersionConsistency(unittest.TestCase):
-    """squish.__version__ must be "9.1.0" and consistent with pyproject.toml."""
+    """squish.__version__ must be "9.2.0" and consistent with pyproject.toml."""
 
-    def test_version_is_9_1_0(self):
+    def test_version_is_9_2_0(self):
         import squish
-        self.assertEqual(squish.__version__, "9.1.0")
+        self.assertEqual(squish.__version__, "9.2.0")
 
     def test_version_is_string(self):
         import squish

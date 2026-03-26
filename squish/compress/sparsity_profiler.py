@@ -159,7 +159,6 @@ class LayerSparsityProfile:
     expected_sparsity: float
     clusters: List[ClusterInfo]
 
-    @property
     def active_clusters_at(self, threshold: float = 0.5) -> int:
         """Count clusters with activation frequency above *threshold*."""
         return int((self.activation_histogram > threshold).sum())

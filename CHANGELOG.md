@@ -5,6 +5,52 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.2.0] — Wave 115 — All-Optimizations Flush + INT3 Load Path + Dead Code
+
+### Fixed
+
+- **`--all-optimizations` TTFT spike eliminated** — Wave modules (100+
+  interceptors) are now pre-warmed at startup via an extra `_warmup_model()`
+  call after all module initialization, before "Server ready!" is printed.
+  Previously the first user request bore a 3–10× TTFT spike as every
+  lazy-init closure executed in the hot path.
+
+- **MLX-native INT3/INT4 models load correctly** — `cli.py` now routes models
+  detected as already-quantized (via `_model_is_already_quantized()`) through
+  `--mlx-model-dir` instead of `--model-dir`/`--compressed-dir`. The prior
+  path caused FAIL(startup) for e.g. `Llama-3.2-1B-Instruct-int3` because
+  server.py's npy-dir loader received an MLX-format dir (no `tensors/`
+  subdir). This completes the fix begun in `298b49c`.
+
+- **`LayerSparsityProfile.active_clusters_at` `@property` bug** — Removed
+  invalid `@property` decorator from a method that takes a `threshold`
+  argument. Python `@property` cannot accept parameters; this was a
+  `TypeError` waiting to fire at runtime.
+
+- **Dead code: `_prefix_cache` None guard removed from hot path** — The
+  `if _prefix_cache is None: _init_prefix_cache()` guard in `_generate_tokens`
+  is dead code: prefix cache is always initialized during server startup. The
+  guard has been removed from the hot path. The equivalent guard in
+  `metrics()` (valid for standalone test clients) is preserved.
+
+### Chore
+
+- **Benchmark script cleanup** — Removed 11 dead squished-variant model
+  entries from `scripts/run_all_benchmarks.sh` that reliably produced
+  `SKIP (not found)`: `*-squished-int4-awq`, `*-int4-mse`, `*-mixed`,
+  `*-mixed-v2`, `*-mixed-v3`, `*-fp16attn-noawq`, `*-fp16embed`,
+  `*-fp16mlp`, `*-g8-mixed`, `*-lossless`, and `*-bf16-compressed`.
+  Canonical BF16/INT3/INT4 models unchanged.
+
+- **Version bump**: `squish.__version__` → `9.2.0`.
+
+### Tests
+
+- Updated hardcoded version constants in `tests/test_version.py`,
+  `tests/test_wave79_startup_inference.py` to `9.2.0`.
+
+---
+
 ## [Unreleased] — Wave 114 — Repetition Penalty + Loop Detection
 
 ### New Features

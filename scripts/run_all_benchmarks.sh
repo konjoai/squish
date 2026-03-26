@@ -53,18 +53,6 @@ MODELS=(
     "Llama-3.2-1B-Instruct-bf16"
     "gemma-3-1b-it-bf16"
     "Qwen2.5-1.5B-Instruct-bf16"
-    # ── 1.5B squished variants ────────────────────────────────────────────────
-    "Qwen2.5-1.5B-Instruct-squished-int4-awq"
-    "Qwen2.5-1.5B-Instruct-squished-int4-mse"
-    "Qwen2.5-1.5B-Instruct-squished-mixed"
-    "Qwen2.5-1.5B-Instruct-squished-mixed-v2"
-    "Qwen2.5-1.5B-Instruct-squished-mixed-v3"
-    "Qwen2.5-1.5B-Instruct-squished-fp16attn-noawq"
-    "Qwen2.5-1.5B-Instruct-squished-fp16embed"
-    "Qwen2.5-1.5B-Instruct-squished-fp16mlp"
-    "Qwen2.5-1.5B-Instruct-squished-g8-mixed"
-    "Qwen2.5-1.5B-Instruct-squished-lossless"
-    "Qwen2.5-1.5B-Instruct-bf16-compressed"
     # ── 1B native MLX INT3: 606 MB, safe ─────────────────────────────────────
     "Llama-3.2-1B-Instruct-int3"
     # ── 3B BF16: int4 dir = 6 GB, safe ──────────────────────────────────────

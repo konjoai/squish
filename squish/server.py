@@ -1690,11 +1690,6 @@ def _generate_tokens(  # pragma: no cover
     # Skip the prefix cache entirely for COMPRESS_PATH requests.
     # Keys always use _orig_prompt so a future identical *uncompressed* request
     # still matches a response that was generated after compression.
-    #
-    # Safety guard: _prefix_cache may be None if the server was not started via
-    # cmd_serve (e.g. direct function calls in tests that skip startup).
-    if _prefix_cache is None:
-        _init_prefix_cache()
     cache_eligible = (use_cache
                       and _prefix_cache is not None
                       and (temperature == 0.0 or seed is not None)
@@ -7660,6 +7655,17 @@ Examples:
         _info("agent-registry", f"loaded  tools={len(_agent_registry)}")
     except Exception as _ar_exc:  # noqa: BLE001
         _warn(f"[agent-registry] Could not load built-in tools: {_ar_exc}")
+
+    # ── Wave 115: Flush all-optimizations lazy-init before first user request ─
+    # When --all-optimizations activates 100+ wave flags, each module's
+    # interceptor lazy-inits on the first call that touches it.  Running an
+    # extra warmup pass here — after all modules are installed — forces that
+    # init during startup so the first real request sees normal TTFT instead of
+    # a 3-10× spike from simultaneous lazy-init across every flag.
+    if getattr(args, "all_optimizations", False) and _state.model is not None:
+        _info("all-optimizations", "pre-warming all modules (flushing lazy-init) …")
+        _warmup_model(verbose=getattr(args, "verbose", False))
+        _cap_metal_cache(verbose=False)
 
     print()
     _section("")
