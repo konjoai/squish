@@ -836,6 +836,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#930-wave-116-lean-and-mean-purge-137-99-source-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [9.3.0] — Wave 116 — Lean-and-Mean Purge (137 → 99 source files)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[9.3.0] — Wave 116 — Lean-and-Mean Purge (137 → 99 source files)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Result
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#920-wave-115-all-optimizations-flush-int3-load-path-dead-code" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5633,6 +5672,48 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="930-wave-116-lean-and-mean-purge-137-99-source-files">[9.3.0] — Wave 116 — Lean-and-Mean Purge (137 → 99 source files)<a class="headerlink" href="#930-wave-116-lean-and-mean-purge-137-99-source-files" title="Permanent link">&para;</a></h2>
+<h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>38 source files deleted</strong> — stripped all code that does not directly
+  speed up inference, reduce memory, or reduce disk usage:</li>
+<li><code>squish/bench/</code> (4 files) and <code>squish/benchmarks/</code> (9 files) — benchmark
+    harness, agent/code/perf/quality/tool bench runners, report generator</li>
+<li><code>squish/install/</code> (3 files) — installer helpers superseded by <code>install.sh</code></li>
+<li><code>squish/format/</code> (3 files) — JSON/GGUF/safetensors format stubs</li>
+<li><code>squish/packaging/</code> (3 files) — packaging / distribution stubs</li>
+<li><code>squish/core/__init__.py</code>, <code>squish/core/determinism.py</code> — orphaned core stubs</li>
+<li><code>squish/eval.py</code>, <code>squish/squish_lm_eval.py</code> — lm-eval integration stubs</li>
+<li><code>squish/minference_patch.py</code> — MInference sparse attention hook (unused)</li>
+<li><code>squish/platform/cuda_backend.py</code>, <code>rocm_backend.py</code>, <code>windows_backend.py</code>,
+    <code>wsl_detector.py</code>, <code>memory_linux.py</code> — non-macOS platform backends</li>
+<li>
+<p><code>squish/hardware/kernel_dispatch.py</code>, <code>squish/grammar/schema_validator.py</code>,
+    <code>squish/io/flash_weight_cache.py</code>, <code>squish/io/mmap_loader.py</code>,
+    <code>squish/runtime/stage_dispatcher.py</code>, <code>squish/serving/health_check.py</code></p>
+</li>
+<li>
+<p><strong><code>squish bench</code> subcommand removed from <code>cli.py</code></strong> (<code>-326 lines</code>) —
+  <code>_cmd_bench_track()</code> and <code>cmd_bench()</code> deleted; bench argparse block removed.</p>
+</li>
+<li>
+<p><strong>MInference dead code removed from <code>server.py</code></strong> (<code>-71 lines</code>) —
+  <code>_minference_enabled</code> / <code>_minference_threshold</code> globals, sparse-attention
+  patch/unpatch blocks in the request handler, and <code>--minference</code> /
+  <code>--minference-threshold</code> CLI arguments all removed.</p>
+</li>
+<li>
+<p><strong>22 test files deleted</strong> — tests for all removed functionality
+  (<code>tests/benchmarks/</code>, <code>tests/core/</code>, bench integration tests,
+  cross-platform wave tests, lm-eval unit tests).</p>
+</li>
+</ul>
+<h3 id="result">Result<a class="headerlink" href="#result" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>squish/ source files: 99</strong> (was 137 at Wave 115, target &lt; 100 ✓)</li>
+<li><strong>All 3,292 tests passing</strong> — exit code 0, 0 failures</li>
+</ul>
 <hr />
 <h2 id="920-wave-115-all-optimizations-flush-int3-load-path-dead-code">[9.2.0] — Wave 115 — All-Optimizations Flush + INT3 Load Path + Dead Code<a class="headerlink" href="#920-wave-115-all-optimizations-flush-int3-load-path-dead-code" title="Permanent link">&para;</a></h2>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
