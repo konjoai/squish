@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_baseline.sh — Squish Wave 100 Benchmark Baseline
+# run_baseline.sh — Squish Benchmark Baseline (Wave 112+)
 #
 # Establishes hard performance numbers against which every future wave is gated.
 # Run this BEFORE making any performance-related code changes. The output JSON
@@ -38,7 +38,7 @@ TTFT_PROMPT="The history of artificial intelligence began in the mid-twentieth c
 
 # Default models and formats (can be overridden via CLI args)
 MODELS_ARG=""
-FORMATS_ARG="int4,int8"
+FORMATS_ARG="int4,int3,int8"
 
 # ── Parse CLI args ───────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -235,7 +235,7 @@ measure_cold_start() {
 declare -A RESULTS
 
 log "═══════════════════════════════════════════════════"
-log " Squish Benchmark Baseline — Wave 100"
+log " Squish Benchmark Baseline — Wave 112+"
 log " Chip : $CHIP ($TOTAL_RAM_GB GB)"
 log " OS   : Darwin $OS_VERSION"
 log " Squish commit: $SQUISH_COMMIT"
@@ -386,7 +386,7 @@ with open("$RESULT_JSON") as f:
 
 hw = data["hardware"]
 lines = [
-    f"# Squish Baseline Benchmark — Wave 100",
+    f"# Squish Baseline Benchmark — Wave 112+",
     f"",
     f"**Date**: {hw['timestamp']}",
     f"**Chip**: {hw['chip']} ({hw['total_ram_gb']} GB)",
@@ -394,7 +394,7 @@ lines = [
     f"**MLX**: {hw['mlx']}",
     f"**OS**: {hw['os']}",
     f"",
-    f"> These numbers are the immutable gate for all future waves.",
+    f"> These numbers are the reference gate for regression tracking.",
     f"> A wave that regresses p95 TTFT by >5% or peak RSS by >10% is a hard stop.",
     f"",
     f"---",

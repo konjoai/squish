@@ -5,6 +5,41 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 112 — Structural Pruning & Streaming Spec Fix
+
+### New Features
+
+- **`squish sparsity-trim` CLI command** — permanently removes low-importance
+  intermediate neurons from MLP layers in both BF16 and MLX INT4 model files.
+  Uses per-group scale L2-norm as an importance proxy (no calibration data
+  required). Prunes in multiples of `--group-size` (default 64) to preserve
+  INT4 uint32 packing alignment. Updates `config.json` with the new
+  `intermediate_size`. Flags: `--threshold` (default 0.10), `--group-size`
+  (default 64), `--dry-run`, `--output`.
+
+### Bug Fixes
+
+- **OpenAI streaming spec compliance** — the opening SSE role-delta chunk from
+  `squish serve` now includes `"content": ""` alongside `"role": "assistant"`,
+  matching the OpenAI API spec. Certain clients (Claude Code, GPT client
+  libraries) that assert an empty content field on the first chunk were
+  dropping the streamed response.
+
+### Tests
+
+- **`tests/test_sparsity_trim.py`** — 12 new unit tests covering `sparsity-trim`:
+  BF16 dry-run, BF16 trim (shape, config.json update, output directory),
+  INT4 dry-run, INT4 trim (dtype preservation, row count, down_proj group-aligned
+  column removal), and error paths (missing directory, unsupported dtype hook).
+
+### Tooling
+
+- **`scripts/run_baseline.sh`** — default benchmark formats updated from
+  `int4,int8` to `int4,int3,int8` to cover the INT3 memory contract baseline.
+  Script label updated to Wave 112+.
+
+---
+
 ## [Unreleased] — Wave 111 — Launch Readiness
 
 ### Launch Infrastructure
