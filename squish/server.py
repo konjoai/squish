@@ -1205,6 +1205,10 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
 
     _cap_metal_cache(verbose=verbose)
     _warmup_model(verbose=verbose)
+    # Drain the Metal buffer pool a second time: JIT compilation during warmup
+    # allocates scratch buffers and compiled-kernel intermediates that can reach
+    # several GB.  Capping again here returns that memory to the OS immediately.
+    _cap_metal_cache(verbose=False)
 
 
 def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma: no cover
@@ -1245,6 +1249,9 @@ def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma:
 
     _cap_metal_cache(verbose=verbose)
     _warmup_model(verbose=verbose)
+    # Post-warmup drain: JIT compilation inflates the Metal buffer pool;
+    # cap again to return those buffers to the OS.
+    _cap_metal_cache(verbose=False)
 
 
 def _cap_metal_cache(verbose: bool = False, limit_mb: int | None = None) -> None:  # pragma: no cover
@@ -5213,8 +5220,38 @@ Examples:
     if getattr(args, "kv_slab", False):
         try:
             from squish.kv_slab import KVSlabAllocator
-            _kv_slab_allocator = KVSlabAllocator(n_pages=getattr(args, "kv_slab_pages", 256))
-            _info("kv-slab", f"pages={getattr(args, 'kv_slab_pages', 256)}")
+            # Derive actual model dimensions from loaded model config to avoid
+            # grossly over-allocating (the hardcoded defaults of 32 layers /
+            # head_dim=128 are 4× too large for a 1B model with 16 layers / head_dim=64).
+            _slab_n_layers = 32
+            _slab_n_heads  = 8
+            _slab_head_dim = 128
+            if _state.model is not None:
+                try:
+                    _mcfg = getattr(_state.model, "config", None) or getattr(_state.model, "args", None)
+                    if _mcfg is not None:
+                        _slab_n_layers = int(getattr(_mcfg, "num_hidden_layers",
+                                                      getattr(_mcfg, "n_layers", _slab_n_layers)))
+                        _slab_n_heads  = int(getattr(_mcfg, "num_key_value_heads",
+                                                      getattr(_mcfg, "num_attention_heads",
+                                                              getattr(_mcfg, "n_heads", _slab_n_heads))))
+                        _hidden        = int(getattr(_mcfg, "hidden_size",
+                                                      getattr(_mcfg, "d_model", _slab_n_heads * _slab_head_dim)))
+                        _n_heads_full  = int(getattr(_mcfg, "num_attention_heads",
+                                                      getattr(_mcfg, "n_heads", _slab_n_heads)))
+                        _slab_head_dim = _hidden // _n_heads_full
+                except Exception:
+                    pass
+            _kv_slab_allocator = KVSlabAllocator(
+                n_pages=getattr(args, "kv_slab_pages", 256),
+                n_layers=_slab_n_layers,
+                n_heads=_slab_n_heads,
+                head_dim=_slab_head_dim,
+            )
+            _slab_mb = _kv_slab_allocator.memory_bytes() / 1e6
+            _info("kv-slab", (f"pages={getattr(args, 'kv_slab_pages', 256)}"
+                               f"  layers={_slab_n_layers}  heads={_slab_n_heads}"
+                               f"  head_dim={_slab_head_dim}  {_slab_mb:.0f} MB"))
         except Exception as _e:
             _warn(f"[kv-slab] Skipped: {_e}")
 

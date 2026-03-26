@@ -585,6 +585,10 @@ def cmd_lm(args) -> None:
     """
     from squish.serving.lm_studio_bridge import probe_lm_studio
     from squish.serving.local_model_scanner import LocalModelScanner
+    try:
+        from squish.ui import console as _con, make_table as _mt, _RICH_AVAILABLE as _rich
+    except Exception:
+        _rich = False
 
     action = getattr(args, "lm_action", "status") or "status"
     as_json = getattr(args, "json_", False)
@@ -603,26 +607,48 @@ def cmd_lm(args) -> None:
             }, indent=2))
             return
 
-        print()
-        _box(["squish lm — LM Studio status"])
-        print()
-        if status.running:
-            print(f"  {_C.G}●{_C.R}  LM Studio is {_C.G}running{_C.R}  ({status.base_url})")
-            if status.server_version:
-                print(f"     Version : {status.server_version}")
-            if status.loaded_models:
-                print(f"     Loaded  :")
-                for mid in status.loaded_models:
-                    print(f"       • {_C.P}{mid}{_C.R}")
+        if _rich:
+            _con.print()
+            _con.rule("[bold squish.violet]squish lm[/]  [squish.dim]LM Studio status[/]", style="squish.dim")
+            _con.print()
+            if status.running:
+                _con.print(f"  [squish.green]●[/]  LM Studio is [bold squish.green]running[/]  [squish.dim]({status.base_url})[/]")
+                if status.server_version:
+                    _con.print(f"     [squish.dim]Version :[/] {status.server_version}")
+                if status.loaded_models:
+                    _con.print("     [squish.dim]Loaded  :[/]")
+                    for mid in status.loaded_models:
+                        _con.print(f"       [squish.violet]•[/] [squish.lilac]{mid}[/]")
+                else:
+                    _con.print("     [squish.dim]No model currently loaded into memory.[/]")
+                    _con.print("     [squish.dim]Load a model in LM Studio, then Squish can forward requests to it.[/]")
             else:
-                print(f"     {_C.MG}No model currently loaded into memory.{_C.R}")
-                print(f"     Load a model in LM Studio, then Squish can forward requests to it.")
+                _con.print(f"  [squish.dim]○[/]  LM Studio is [squish.dim]not running[/]  [squish.dim]({status.base_url})[/]")
+                _con.print()
+                _con.print("  [squish.dim]Start LM Studio, load a model, then run:[/]")
+                _con.print("    [squish.lilac]squish lm[/]              [squish.dim]# re-check status[/]")
+            _con.print()
         else:
-            print(f"  {_C.MG}○{_C.R}  LM Studio is  not running  ({status.base_url})")
             print()
-            print(f"  {_C.DIM}Start LM Studio, load a model, then run:{_C.R}")
-            print(f"    squish lm              # re-check status")
-        print()
+            _box(["squish lm — LM Studio status"])
+            print()
+            if status.running:
+                print(f"  {_C.G}●{_C.R}  LM Studio is {_C.G}running{_C.R}  ({status.base_url})")
+                if status.server_version:
+                    print(f"     Version : {status.server_version}")
+                if status.loaded_models:
+                    print(f"     Loaded  :")
+                    for mid in status.loaded_models:
+                        print(f"       • {_C.P}{mid}{_C.R}")
+                else:
+                    print(f"     {_C.MG}No model currently loaded into memory.{_C.R}")
+                    print(f"     Load a model in LM Studio, then Squish can forward requests to it.")
+            else:
+                print(f"  {_C.MG}○{_C.R}  LM Studio is  not running  ({status.base_url})")
+                print()
+                print(f"  {_C.DIM}Start LM Studio, load a model, then run:{_C.R}")
+                print(f"    squish lm              # re-check status")
+            print()
 
     # ── disk model inventory ─────────────────────────────────────────────────
     scanner = LocalModelScanner()
@@ -643,38 +669,62 @@ def cmd_lm(args) -> None:
         return
 
     if action == "models":
-        print()
-        _box(["squish lm models — LM Studio disk inventory"])
-        print()
+        if _rich:
+            _con.print()
+            _con.rule("[bold squish.violet]squish lm models[/]  [squish.dim]LM Studio disk inventory[/]", style="squish.dim")
+            _con.print()
+        else:
+            print()
+            _box(["squish lm models — LM Studio disk inventory"])
+            print()
 
     if not disk_models:
-        print(f"  {_C.MG}No LM Studio models found on disk.{_C.R}")
-        print(f"  Default scan dir : ~/.cache/lm-studio/models")
-        print(f"  Override via     : LMSTUDIO_MODELS_DIR=/your/path")
-        print()
+        if _rich:
+            _con.print("  [squish.dim]No LM Studio models found on disk.[/]")
+            _con.print("  [squish.dim]Default scan dir :[/] [squish.lilac]~/.cache/lm-studio/models[/]")
+            _con.print("  [squish.dim]Override via     :[/] [squish.lilac]LMSTUDIO_MODELS_DIR=/your/path[/]")
+            _con.print()
+        else:
+            print(f"  {_C.MG}No LM Studio models found on disk.{_C.R}")
+            print(f"  Default scan dir : ~/.cache/lm-studio/models")
+            print(f"  Override via     : LMSTUDIO_MODELS_DIR=/your/path")
+            print()
         return
 
-    # Group by source directory publisher
-    header = "LM Studio Models (on disk)"
-    print(f"  {_C.P}{header}{_C.R}")
-    print()
+    if _rich:
+        tbl = _mt(["Model", "Size", "Path"])
+        for m in disk_models:
+            size_str = (
+                f"{m.size_bytes / 1e9:.1f} GB" if m.size_bytes >= 1e9
+                else f"{m.size_bytes / 1e6:.0f} MB" if m.size_bytes > 0
+                else "—"
+            )
+            tbl.add_row(
+                f"[squish.lilac]{m.name}[/]",
+                f"[squish.violet]{size_str}[/]",
+                f"[squish.dim]{m.path}[/]",
+            )
+        _con.print(tbl)
+        _con.print(f"  [squish.dim]{len(disk_models)} model(s) found  ·  Override scan root:[/] [squish.lilac]LMSTUDIO_MODELS_DIR=/path[/]")
+        _con.print()
+    else:
+        # Group by source directory publisher
+        w_name = max(len(m.name) for m in disk_models)
+        w_size = 8
 
-    w_name = max(len(m.name) for m in disk_models)
-    w_size = 8
+        print(f"  {'Model':<{w_name+2}}  {'Size':>{w_size}}  Path")
+        print(f"  {'─'*(w_name+2)}  {'─'*w_size}  {'─'*40}")
+        for m in disk_models:
+            size_str = (
+                f"{m.size_bytes / 1e9:.1f} GB" if m.size_bytes >= 1e9
+                else f"{m.size_bytes / 1e6:.0f} MB" if m.size_bytes > 0
+                else "—"
+            )
+            print(f"  {m.name:<{w_name+2}}  {size_str:>{w_size}}  {_C.DIM}{m.path}{_C.R}")
 
-    print(f"  {'Model':<{w_name+2}}  {'Size':>{w_size}}  Path")
-    print(f"  {'─'*(w_name+2)}  {'─'*w_size}  {'─'*40}")
-    for m in disk_models:
-        size_str = (
-            f"{m.size_bytes / 1e9:.1f} GB" if m.size_bytes >= 1e9
-            else f"{m.size_bytes / 1e6:.0f} MB" if m.size_bytes > 0
-            else "—"
-        )
-        print(f"  {m.name:<{w_name+2}}  {size_str:>{w_size}}  {_C.DIM}{m.path}{_C.R}")
-
-    print()
-    print(f"  {len(disk_models)} model(s) found  ·  Override scan root: LMSTUDIO_MODELS_DIR=/path")
-    print()
+        print()
+        print(f"  {len(disk_models)} model(s) found  ·  Override scan root: LMSTUDIO_MODELS_DIR=/path")
+        print()
 
 
 # ── squish rm ────────────────────────────────────────────────────────────────
@@ -837,9 +887,11 @@ def cmd_info(args):  # pragma: no cover
 
     from squish.ui import console, make_table, _RICH_AVAILABLE
 
-    print()
-    _box(["Squish — System Info"])
-    print()
+    if _RICH_AVAILABLE:
+        console.rule("[bold squish.violet]squish info[/]", style="squish.dim")
+        console.print()
+    else:
+        print("\n  Squish — System Info\n")
 
     rows: list[tuple[str, str]] = []
 
@@ -922,9 +974,20 @@ def cmd_setup(args):  # pragma: no cover
     """Interactive setup wizard: detect hardware, recommend + pull model, start server."""
     import platform as _platform
 
-    print()
-    _box(["  squish setup — Interactive Setup Wizard"])
-    print()
+    try:
+        from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+    except Exception:
+        _rich = False
+
+    if _rich:
+        _con.print()
+        _con.rule(
+            "[bold squish.violet]squish setup[/]  [squish.dim]Interactive Setup Wizard[/]",
+            style="squish.dim",
+        )
+        _con.print()
+    else:
+        print("\n  squish setup — Interactive Setup Wizard\n")
 
     # 1. Hardware detection
     is_apple_silicon = _platform.system() == "Darwin" and _platform.machine() == "arm64"
@@ -1064,12 +1127,13 @@ def cmd_run(args):  # pragma: no cover
             cmd_pull(_pull_args)
             args.model = default
 
-    # Default: run the full squish optimization stack.
-    # Pass --stock to get a plain mlx_lm/Ollama-equivalent baseline with no
-    # squish-specific optimizations (useful for benchmarking against stock tools).
-    # Pass --agent to additionally enable the agent-mode KV/grammar preset.
-    if not getattr(args, "stock", False):
-        args.all_optimizations = True
+    # --stock gives a plain mlx_lm-equivalent baseline with no squish
+    # optimisations (useful for A/B benchmarking).  --all-optimizations enables
+    # every wave module; leave it off by default so startup RAM stays lean —
+    # blazing mode and auto-profile already pick the right settings for the
+    # hardware without mass-importing 100+ wave modules at once.
+    # Pass --agent to enable the agent-mode KV/grammar preset.
+    pass  # optimisations are opt-in; blazing auto-detects hardware
 
     # Auto-pull named model if specified but not yet downloaded locally
     if args.model and _CATALOG_AVAILABLE:
@@ -1242,25 +1306,14 @@ def cmd_run(args):  # pragma: no cover
         "agent + all optimizations" if getattr(args, "agent", False)
         else "squish (all optimizations)"
     )
-    print()
-    _box([
-        "  Squish — Local Inference Server  ",
-        f"  Model     : {model_dir.name}",
-        f"  Mode      : {_mode_label}",
-        f"  Endpoint  : http://{host}:{port}/v1",
-        f"  Web UI    : http://{host}:{port}/chat",
-        f"  API key   : {api_key}",
-        "",
-        "  OpenAI drop-in:",
-        f"    OPENAI_BASE_URL=http://{host}:{port}/v1",
-        f"    OPENAI_API_KEY={api_key}",
-        "",
-        "  Ollama drop-in:",
-        f"    OLLAMA_HOST=http://{host}:{port}",
-        "",
-        "  Press Ctrl+C to stop",
-    ])
-    print()
+    from squish.ui import startup_panel as _sp
+    _sp(
+        model=model_dir.name,
+        endpoint=f"http://{host}:{port}/v1",
+        web_ui=f"http://{host}:{port}/chat",
+        mode=_mode_label,
+        api_key=api_key,
+    )
 
     cmd = [
         sys.executable, "-m", "squish.server",
@@ -1626,9 +1679,23 @@ def cmd_bench(args):  # pragma: no cover
         "What causes the Northern Lights?",
     ]
 
-    print(f"\n  Squish bench — {len(prompts)} prompts, {args.max_tokens} max tokens")
-    print(f"  Server: {base_url}")
-    print()
+    try:
+        from squish.ui import console as _con, make_table as _mt, _RICH_AVAILABLE as _rich
+    except Exception:
+        _rich = False
+
+    if _rich:
+        _con.print()
+        _con.rule(
+            f"[bold squish.violet]squish bench[/]  [squish.dim]{len(prompts)} prompts · {args.max_tokens} max tokens[/]",
+            style="squish.dim",
+        )
+        _con.print(f"  [squish.dim]Server:[/] [squish.white]{base_url}[/]")
+        _con.print()
+    else:
+        print(f"\n  Squish bench — {len(prompts)} prompts, {args.max_tokens} max tokens")
+        print(f"  Server: {base_url}")
+        print()
 
     results = []
     prompted = []
@@ -1672,8 +1739,15 @@ def cmd_bench(args):  # pragma: no cover
 
         total = time.perf_counter() - t0
         tps   = n_toks / total if total > 0 else 0
-        print(f"  [{i+1}] {prompt[:50]:<50}  TTFT={ttft*1000:.0f}ms  "
-              f"{n_toks:>4} tok  {tps:.1f} tok/s")
+        if _rich:
+            _con.print(
+                f"  [squish.dim][{i+1}][/] {prompt[:50]:<50}  "
+                f"[squish.violet]TTFT={ttft*1000:.0f}ms[/]  "
+                f"[squish.white]{n_toks:>4} tok[/]  [squish.teal]{tps:.1f} tok/s[/]"
+            )
+        else:
+            print(f"  [{i+1}] {prompt[:50]:<50}  TTFT={ttft*1000:.0f}ms  "
+                  f"{n_toks:>4} tok  {tps:.1f} tok/s")
         results.append({"ttft": ttft, "tps": tps, "n_toks": n_toks})
         prompted.append(prompt)
 
@@ -1681,8 +1755,13 @@ def cmd_bench(args):  # pragma: no cover
         print()
         avg_ttft = sum(r["ttft"] for r in results if r["ttft"]) / len(results)
         avg_tps  = sum(r["tps"] for r in results) / len(results)
-        print(f"  Average TTFT: {avg_ttft*1000:.0f} ms")
-        print(f"  Average throughput: {avg_tps:.1f} tok/s (≈word/s)")
+        if _rich:
+            _con.print()
+            _con.print(f"  [squish.dim]Average TTFT:[/]        [squish.violet]{avg_ttft*1000:.0f} ms[/]")
+            _con.print(f"  [squish.dim]Average throughput:[/]  [squish.teal]{avg_tps:.1f} tok/s[/] [squish.dim](≈word/s)[/]")
+        else:
+            print(f"  Average TTFT: {avg_ttft*1000:.0f} ms")
+            print(f"  Average throughput: {avg_tps:.1f} tok/s (≈word/s)")
 
         if getattr(args, "markdown", False) or getattr(args, "save", None):
             import platform as _plat
@@ -1943,10 +2022,20 @@ def cmd_update(args):
     except Exception:
         current_version = "unknown"
 
-    print()
-    _box(["squish update"])
-    print(f"  Current version: {current_version}")
-    print()
+    try:
+        from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+    except Exception:
+        _rich = False
+
+    if _rich:
+        _con.print()
+        _con.rule("[bold squish.violet]squish update[/]", style="squish.dim")
+        _con.print(f"  [squish.dim]Current version:[/] [squish.white]{current_version}[/]")
+        _con.print()
+    else:
+        print()
+        print(f"  squish update  (current: {current_version})")
+        print()
 
     packages = ["squish", "mlx", "mlx-lm", "huggingface_hub"]
     if getattr(args, "all", False):
@@ -2102,6 +2191,69 @@ def cmd_compress(args):  # pragma: no cover
     """Compress a model directory to Squish npy-dir or .squizd format."""
     # ── Resolve explicit --format to bool flags for backward compat ──────────
     _compress_format = getattr(args, "compress_format", None)
+    if _compress_format == "int3":
+        # INT3: use mlx_lm.convert with 3-bit quantization.
+        # Produces a native MLX safetensors directory loadable via mlx_lm.load().
+        # Weight RAM: ~3/8 of BF16 vs ~1/2 for INT4 — smallest footprint available.
+        if args.model in _MODEL_SHORTHAND:
+            _int3_model_dir = _MODELS_DIR / _MODEL_SHORTHAND[args.model]
+        elif _CATALOG_AVAILABLE:
+            _int3_entry = _catalog_resolve(args.model)
+            _int3_model_dir = (_MODELS_DIR / _int3_entry.dir_name
+                               if _int3_entry is not None
+                               else Path(args.model).expanduser())
+        else:
+            _int3_model_dir = Path(args.model).expanduser()
+
+        if not _int3_model_dir.exists():
+            _die(f"Model directory not found: {_int3_model_dir}")
+
+        if args.output:
+            _int3_out_dir = Path(args.output).expanduser()
+        else:
+            import re as _re_int3
+            _int3_base = _re_int3.sub(
+                r'-(bf16|fp16|[0-9]+bit)(-mlx)?$', '', _int3_model_dir.name,
+                flags=_re_int3.IGNORECASE,
+            )
+            _int3_out_dir = _int3_model_dir.parent / f"{_int3_base}-int3"
+
+        print(f"\n  Compressing: {_int3_model_dir}")
+        print(f"  Quantization: INT3 (mlx_lm.convert, ~46% of BF16 size)")
+        print(f"  Output:      {_int3_out_dir}\n")
+
+        # Warn if a stale (INT8-content) INT3 dir already exists
+        _int3_manifest = _int3_out_dir / "manifest.json"
+        if _int3_manifest.exists():
+            print(
+                f"  ⚠  Stale INT3 dir detected (contains Vectro INT8 data, not true INT3).\n"
+                f"     Removing and regenerating with mlx_lm INT3 quantisation.\n"
+            )
+            import shutil as _shutil_int3
+            _shutil_int3.rmtree(str(_int3_out_dir), ignore_errors=True)
+
+        try:
+            import mlx_lm as _mlx_lm_conv
+            _mlx_lm_conv.convert(
+                hf_path=str(_int3_model_dir),
+                mlx_path=str(_int3_out_dir),
+                quantize=True,
+                q_bits=3,
+                q_group_size=64,
+            )
+            print(f"\n  ✓  INT3 model saved to {_int3_out_dir}")
+            _out_size_gb = sum(
+                f.stat().st_size for f in _int3_out_dir.rglob("*") if f.is_file()
+            ) / 1e9
+            print(f"     Disk size: {_out_size_gb:.2f} GB  "
+                  f"(vs {sum(f.stat().st_size for f in _int3_model_dir.rglob('*') if f.is_file()) / 1e9:.2f} GB BF16)")
+        except Exception as _int3_err:
+            _die(
+                f"INT3 compression failed: {_int3_err}\n"
+                f"  Ensure mlx_lm ≥ 0.18.0 is installed: pip install -U mlx-lm"
+            )
+        return
+
     if _compress_format == "int8":
         # Explicit int8: override any --int4 flag
         args.int4 = False
@@ -2605,6 +2757,11 @@ def cmd_pull(args):  # pragma: no cover
     if not _CATALOG_AVAILABLE:
         _die("squish.catalog is not available. Ensure the package is properly installed.")
 
+    try:
+        from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+    except Exception:
+        _rich = False
+
     name = args.model
     models_dir = Path(args.models_dir).expanduser() if args.models_dir else _MODELS_DIR
     token = args.token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
@@ -2633,17 +2790,31 @@ def cmd_pull(args):  # pragma: no cover
         "int4"
     )
     quant_label = quant_mode.upper()
-    print()
-    _box([
-        "  squish pull",
-        f"  Model      : {entry.id}  —  {entry.name}",
-        f"  Parameters : {entry.params}",
-        f"  Raw size   : ~{entry.size_gb:.1f} GB",
-        f"  Compressed : ~{entry.squished_size_gb:.1f} GB  ({quant_label})",
-        f"  Context    : {entry.context:,} tokens",
-        f"  Dest       : {models_dir}",
-    ])
-    print()
+    if _rich:
+        _con.print()
+        _con.rule(
+            f"[bold squish.violet]squish pull[/]  [squish.lilac]{entry.id}[/]  [squish.dim]{quant_label}[/]",
+            style="squish.dim",
+        )
+        _con.print(f"  [squish.dim]Model     :[/] {entry.id}  —  {entry.name}")
+        _con.print(f"  [squish.dim]Parameters:[/] {entry.params}")
+        _con.print(f"  [squish.dim]Raw size  :[/] ~{entry.size_gb:.1f} GB")
+        _con.print(f"  [squish.dim]Compressed:[/] ~{entry.squished_size_gb:.1f} GB  [squish.violet]({quant_label})[/]")
+        _con.print(f"  [squish.dim]Context   :[/] {entry.context:,} tokens")
+        _con.print(f"  [squish.dim]Dest      :[/] [squish.dim]{models_dir}[/]")
+        _con.print()
+    else:
+        print()
+        _box([
+            "  squish pull",
+            f"  Model      : {entry.id}  —  {entry.name}",
+            f"  Parameters : {entry.params}",
+            f"  Raw size   : ~{entry.size_gb:.1f} GB",
+            f"  Compressed : ~{entry.squished_size_gb:.1f} GB  ({quant_label})",
+            f"  Context    : {entry.context:,} tokens",
+            f"  Dest       : {models_dir}",
+        ])
+        print()
 
     try:
         compressed_dir = _catalog_pull(
@@ -2664,14 +2835,22 @@ def cmd_pull(args):  # pragma: no cover
         # clean, actionable message rather than a full traceback.
         _die(str(exc))
 
-    print()
-    _box([
-        f"  ✓  {entry.id} ready!",
-        f"  Run  : squish run {entry.id}",
-        f"  Chat : squish chat {entry.id}",
-        f"  Path : {compressed_dir}",
-    ])
-    print()
+    if _rich:
+        _con.print()
+        _con.print(f"  [squish.green]✓[/]  [bold squish.lilac]{entry.id}[/] ready!")
+        _con.print(f"  [squish.dim]Run  :[/]  [squish.lilac]squish run {entry.id}[/]")
+        _con.print(f"  [squish.dim]Chat :[/]  [squish.lilac]squish chat {entry.id}[/]")
+        _con.print(f"  [squish.dim]Path :[/]  [squish.dim]{compressed_dir}[/]")
+        _con.print()
+    else:
+        print()
+        _box([
+            f"  ✓  {entry.id} ready!",
+            f"  Run  : squish run {entry.id}",
+            f"  Chat : squish chat {entry.id}",
+            f"  Path : {compressed_dir}",
+        ])
+        print()
 
     # ── optional: pull EAGLE-3 draft head ────────────────────────────────────
     if getattr(args, "with_draft", False):
@@ -2759,18 +2938,20 @@ def cmd_catalog(args):
         print(f"\n  No models found{tag_msg}.")
         return
 
-    print()
-    _box([
-        "  Squish Model Catalog",
-        f"  {len(entries)} model(s) available",
-        "  Run `squish pull <id>` to download",
-    ])
-    print()
-
     try:
         from squish.ui import console as _con, make_table as _mt, _RICH_AVAILABLE as _rich
     except Exception:
         _rich = False
+
+    if _rich:
+        _con.print()
+        _con.rule(
+            f"[bold squish.violet]Squish Catalog[/]  [squish.dim]{len(entries)} model(s)[/]",
+            style="squish.dim",
+        )
+        _con.print()
+    else:
+        print(f"\n  Squish Model Catalog  ·  {len(entries)} model(s)\n")
 
     if _rich:
         tbl = _mt(["ID", "Params", "Raw", "Squished", "Prebuilt", "Notes"])
@@ -4887,7 +5068,21 @@ def cmd_version(args) -> None:  # noqa: ARG001
             pass
 
 
-def build_parser() -> "argparse.ArgumentParser":
+class _SquishHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Minimal ANSI accents on section headings — only when writing to a TTY."""
+
+    _BOLD_VIOLET = "\033[1;35m"
+    _RESET       = "\033[0m"
+
+    def start_section(self, heading: str | None) -> None:  # type: ignore[override]
+        import sys as _sys
+        if heading and _sys.stdout.isatty():
+            super().start_section(f"{self._BOLD_VIOLET}{heading.upper()}{self._RESET}")
+        else:
+            super().start_section(heading)
+
+
+ -> "argparse.ArgumentParser":
     """Build and return the squish argument parser.
 
     Separated from :func:`main` so tests can introspect subcommands without
@@ -4896,7 +5091,7 @@ def build_parser() -> "argparse.ArgumentParser":
     ap = argparse.ArgumentParser(
         prog="squish",
         description="Squish — private local inference for Apple Silicon",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=_SquishHelpFormatter,
         epilog="""
 Examples:
   squish catalog                     Browse available models

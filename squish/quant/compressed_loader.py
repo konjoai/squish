@@ -1472,6 +1472,35 @@ def load_from_npy_dir(  # pragma: no cover
             f"Tip: run pull_model.py to build the compressed model first."
         )
 
+    # ── Detect stale INT8-as-INT3 directory (misnamed by old bug) ─────────────
+    # If the directory name ends in "-int3" but contains no __q3.npy files,
+    # it was compressed with the old broken INT3 path that fell through to INT8.
+    # Loading it here will dequantize to BF16 (~2.3 GB for 1B) instead of the
+    # expected ~375 MB for a real INT3 model.  Warn loudly and guide the user
+    # to regenerate with the now-fixed `squish compress --int3` command.
+    if str(dir_path).endswith("-int3") or str(dir_path.name).endswith("-int3"):
+        _q3_probe = any(
+            entry.name.endswith("__q3.npy")
+            for entry in os.scandir(tensor_dir)
+            if entry.is_file(follow_symlinks=False)
+        )
+        if not _q3_probe:
+            import warnings as _warn_mod
+            _warn_msg = (
+                f"\n  ⚠  Stale INT3 model detected at {dir_path}\n"
+                f"\n"
+                f"     This directory was created by a previous 'squish compress --int3'\n"
+                f"     that silently fell back to INT8.  It will load as BF16 (~2.3 GB)\n"
+                f"     instead of the expected MLX INT3 format (~375 MB).\n"
+                f"\n"
+                f"     To fix — regenerate with the corrected INT3 compressor:\n"
+                f"       squish compress <model> --int3\n"
+                f"\n"
+                f"     (The old dir will be replaced automatically.)\n"
+            )
+            print(_warn_msg, flush=True)
+            # The load continues — the model will still work, just at higher RAM.
+
     # ── Safety check: refuse to load large models as bf16 (would OOM/crash) ──
     # INT4 tensors (__q4.npy / __q4a.npy) are decompressed layer-by-layer with
     # no full BF16 expansion — skip the guard for those models.
