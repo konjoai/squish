@@ -5537,13 +5537,27 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <h2 id="unreleased-wave-112-structural-pruning-streaming-spec-fix">[Unreleased] — Wave 112 — Structural Pruning &amp; Streaming Spec Fix<a class="headerlink" href="#unreleased-wave-112-structural-pruning-streaming-spec-fix" title="Permanent link">&para;</a></h2>
 <h3 id="new-features">New Features<a class="headerlink" href="#new-features" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong><code>squish sparsity-trim</code> CLI command</strong> — permanently removes low-importance
+<li>
+<p><strong>CI benchmark gate (<code>--tps-min</code> / <code>--ttft-max</code>)</strong> — <code>squish bench</code> now
+  accepts <code>--tps-min N</code> (fail if average throughput &lt; N tok/s) and
+  <code>--ttft-max MS</code> (fail if average TTFT &gt; MS milliseconds). Both flags exit
+  with code 2 on gate failure, enabling hard CI performance regression checks.
+  Default is 0 (disabled). CI usage: <code>python -m squish.bench --tps-min 30</code>.</p>
+</li>
+<li>
+<p><strong><code>python -m squish.bench</code> entry point</strong> — <code>squish/bench/__main__.py</code>
+  provides a runnable module form. Equivalent to <code>squish bench [flags]</code> with
+  automatic <code>bench</code> subcommand insertion so all existing flags work unchanged.</p>
+</li>
+<li>
+<p><strong><code>squish sparsity-trim</code> CLI command</strong> — permanently removes low-importance
   intermediate neurons from MLP layers in both BF16 and MLX INT4 model files.
   Uses per-group scale L2-norm as an importance proxy (no calibration data
   required). Prunes in multiples of <code>--group-size</code> (default 64) to preserve
   INT4 uint32 packing alignment. Updates <code>config.json</code> with the new
   <code>intermediate_size</code>. Flags: <code>--threshold</code> (default 0.10), <code>--group-size</code>
-  (default 64), <code>--dry-run</code>, <code>--output</code>.</li>
+  (default 64), <code>--dry-run</code>, <code>--output</code>.</p>
+</li>
 </ul>
 <h3 id="bug-fixes">Bug Fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h3>
 <ul>
