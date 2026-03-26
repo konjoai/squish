@@ -390,7 +390,22 @@ def _die(msg: str) -> NoReturn:
 
 
 def _box(lines: list[str]) -> None:
-    """Print a styled box around lines using squish brand colours."""
+    """Print a styled box around lines using squish brand colours.
+
+    Uses a Rich Panel with rounded corners when Rich is available; falls back
+    to a plain Unicode box otherwise.
+    """
+    try:
+        from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+        if _rich:
+            from rich.panel import Panel
+            from rich import box as _rbox
+            body = "\n".join(f"[squish.white]{ln}[/]" for ln in lines)
+            _con.print(Panel(body, box=_rbox.ROUNDED, border_style="squish.purple", padding=(0, 1)))
+            return
+    except Exception:
+        pass
+    # Fallback: plain Unicode box with ANSI palette colours
     V = _C.V; W = _C.W; R = _C.R
     width = max(len(ln) for ln in lines) + 4
     print(f"{V}┌{'─' * width}┐{R}")
@@ -449,29 +464,28 @@ def cmd_models(args):
 
     if rows:
         if _RICH_AVAILABLE:
-            from rich.console import Console as _Con
             from rich.table import Table as _Tbl
-            from rich import box as _box
+            from rich import box as _mbox
             tbl = _Tbl(
                 title="Local Models",
-                box=_box.SIMPLE,
-                header_style="rgb(139,92,246) bold",
-                border_style="rgb(100,116,139)",
+                box=_mbox.ROUNDED,
+                header_style="color(135) bold",
+                border_style="squish.dim",
                 show_lines=False,
-                title_style="rgb(248,250,252) bold",
+                title_style="bold",
             )
-            tbl.add_column("Model", style="rgb(248,250,252)")
-            tbl.add_column("Disk", style="rgb(167,139,250)", justify="right")
-            tbl.add_column("Status", style="rgb(52,211,153)")
-            tbl.add_column("Notes", style="rgb(100,116,139)")
+            tbl.add_column("Model",  style="squish.white")
+            tbl.add_column("Disk",   style="squish.lilac", justify="right")
+            tbl.add_column("Status", style="squish.green")
+            tbl.add_column("Notes",  style="squish.dim")
             for name, size, comp, badge in rows:
                 tbl.add_row(name, size, comp, badge)
             console.print()
             console.print(tbl)
             console.print()
-            console.print("  [rgb(100,116,139)]Aliases   :[/rgb(100,116,139)] [rgb(248,250,252)]1.5b, 7b, 14b, 32b, 72b[/rgb(248,250,252)]")
-            console.print("  [rgb(100,116,139)]Catalog IDs:[/rgb(100,116,139)] [rgb(248,250,252)]qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …[/rgb(248,250,252)]")
-            console.print("  [rgb(100,116,139)]Commands  :[/rgb(100,116,139)] [rgb(248,250,252)]squish catalog[/rgb(248,250,252)]  [rgb(100,116,139)]·[/rgb(100,116,139)]  [rgb(248,250,252)]squish pull qwen3:8b[/rgb(248,250,252)]")
+            console.print("  [squish.dim]Aliases   :[/] [squish.white]1.5b, 7b, 14b, 32b, 72b[/]")
+            console.print("  [squish.dim]Catalog IDs:[/] [squish.white]qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …[/]")
+            console.print("  [squish.dim]Commands  :[/] [squish.white]squish catalog[/]  [squish.dim]·[/]  [squish.white]squish pull qwen3:8b[/]")
             console.print()
         else:
             print()
@@ -510,16 +524,16 @@ def cmd_models(args):
                 from rich import box as _ebox
                 _etbl = _ETbl(
                     title="External Models",
-                    box=_ebox.SIMPLE,
-                    header_style="rgb(139,92,246) bold",
-                    border_style="rgb(100,116,139)",
+                    box=_ebox.ROUNDED,
+                    header_style="color(135) bold",
+                    border_style="squish.dim",
                     show_lines=False,
-                    title_style="rgb(248,250,252) bold",
+                    title_style="bold",
                 )
-                _etbl.add_column("Source",  style="rgb(100,116,139)")
-                _etbl.add_column("Model",   style="rgb(248,250,252)")
-                _etbl.add_column("Size",    style="rgb(167,139,250)", justify="right")
-                _etbl.add_column("Status",  style="rgb(52,211,153)")
+                _etbl.add_column("Source",  style="squish.dim")
+                _etbl.add_column("Model",   style="squish.white")
+                _etbl.add_column("Size",    style="squish.lilac", justify="right")
+                _etbl.add_column("Status",  style="squish.green")
                 for _m in _ext_models:
                     _sz = (
                         f"{_m.size_bytes / 1e9:.1f} GB" if _m.size_bytes >= 1e9
@@ -821,17 +835,21 @@ def cmd_info(args):  # pragma: no cover
     import platform
     import subprocess as sp
 
+    from squish.ui import console, make_table, _RICH_AVAILABLE
+
     print()
     _box(["Squish — System Info"])
     print()
 
+    rows: list[tuple[str, str]] = []
+
     # macOS / chip info
-    print(f"  OS            : {platform.system()} {platform.release()}")
+    rows.append(("OS", f"{platform.system()} {platform.release()}"))
     try:
         chip = sp.check_output(
             ["sysctl", "-n", "machdep.cpu.brand_string"],
             text=True, stderr=sp.DEVNULL).strip()
-        print(f"  Chip          : {chip}")
+        rows.append(("Chip", chip))
     except Exception:
         pass
 
@@ -840,8 +858,8 @@ def cmd_info(args):  # pragma: no cover
         mem_bytes = int(sp.check_output(
             ["sysctl", "-n", "hw.memsize"], text=True).strip())
         mem_gb = mem_bytes / 1e9
-        print(f"  Unified RAM   : {mem_gb:.0f} GB")
-        print(f"  Metal budget  : {mem_gb * 0.90:.1f} GB  (90% of RAM — Phase 0.1)")
+        rows.append(("Unified RAM", f"{mem_gb:.0f} GB"))
+        rows.append(("Metal budget", f"{mem_gb * 0.90:.1f} GB  (90% of RAM)"))
     except Exception:
         pass
 
@@ -849,23 +867,23 @@ def cmd_info(args):  # pragma: no cover
     m = _MODELS_DIR
     if m.exists():
         stat = shutil.disk_usage(m)
-        print(f"  Models dir    : {m}")
-        print(f"  Disk free     : {stat.free / 1e9:.1f} GB")
-        print(f"  Disk used     : {stat.used / 1e9:.1f} GB  (total: {stat.total / 1e9:.0f} GB)")
+        rows.append(("Models dir", str(m)))
+        rows.append(("Disk free", f"{stat.free / 1e9:.1f} GB"))
+        rows.append(("Disk used", f"{stat.used / 1e9:.1f} GB  (total: {stat.total / 1e9:.0f} GB)"))
 
     # Python / MLX
     try:
         import mlx.core as mx
-        print(f"  MLX           : v{mx.__version__}  (Metal backend active)")
+        rows.append(("MLX", f"v{mx.__version__}  (Metal backend active)"))
     except Exception:
-        print("  MLX           : not installed")
-    print(f"  Python        : {sys.version.split()[0]}")
+        rows.append(("MLX", "not installed"))
+    rows.append(("Python", sys.version.split()[0]))
 
     # Models available
     if m.exists():
         n_models = sum(1 for d in m.iterdir() if d.is_dir() and not d.name.startswith("."))
         n_comp   = sum(1 for d in m.iterdir() if d.is_dir() and (Path(str(d)+_COMPRESSED_SUFFIX).exists()))
-        print(f"  Local models  : {n_models} model(s),  {n_comp} compressed")
+        rows.append(("Local models", f"{n_models} model(s),  {n_comp} compressed"))
 
     # Server status
     import socket
@@ -873,11 +891,28 @@ def cmd_info(args):  # pragma: no cover
     s.settimeout(0.5)
     try:
         s.connect(("127.0.0.1", _DEFAULT_PORT))
-        print(f"  Server        : ✓ running on :{_DEFAULT_PORT}")
+        rows.append(("Server", f"● running on :{_DEFAULT_PORT}"))
     except Exception:
-        print("  Server        : not running  (start with: squish run 7b)")
+        rows.append(("Server", f"not running  (start with: squish run 7b)"))
     finally:
         s.close()
+
+    if _RICH_AVAILABLE:
+        tbl = make_table(["Property", "Value"])
+        for key, val in rows:
+            # Highlight the server row based on its status
+            if key == "Server":
+                val_markup = (
+                    f"[squish.green]{val}[/]" if "running" in val and "not" not in val
+                    else f"[squish.dim]{val}[/]"
+                )
+                tbl.add_row(f"[squish.dim]{key}[/]", val_markup)
+            else:
+                tbl.add_row(f"[squish.dim]{key}[/]", val)
+        console.print(tbl)
+    else:
+        for key, val in rows:
+            print(f"  {key:<16}: {val}")
     print()
 
 
@@ -1361,8 +1396,11 @@ def cmd_chat(args):  # pragma: no cover
         messages.append({"role": "system", "content": SYSTEM})
 
     print()
-    print("  Squish Chat  (type /quit to exit, /clear to reset, /system to change system prompt)")
-    print("  ─────────────────────────────────────────────────────────────────")
+    print(
+        f"  {_C.V}{_C.B}Squish Chat{_C.R}"
+        f"  {_C.DIM}/quit · /clear · /system · /help{_C.R}"
+    )
+    print(f"  {_C.DIM}{'─' * 55}{_C.R}")
     print()
 
     def _stream_chat(msgs: list) -> str:
@@ -1401,39 +1439,39 @@ def cmd_chat(args):  # pragma: no cover
                     except Exception:
                         pass
         except urllib.error.URLError as e:
-            print(f"\n  ✗ Request failed: {e}")
+            print(f"\n  {_C.PK}✗{_C.R}  Request failed: {e}")
         print()
         return full
 
     try:
         while True:
             try:
-                user_input = input("  You: ").strip()
+                user_input = input(f"  {_C.V}{_C.B}You{_C.R} › ").strip()
             except (EOFError, KeyboardInterrupt):
-                print("\n  Goodbye.")
+                print(f"\n  {_C.DIM}Goodbye.{_C.R}")
                 break
 
             if not user_input:
                 continue
             if user_input.lower() in ("/quit", "/exit", "quit", "exit"):
-                print("  Goodbye.")
+                print(f"  {_C.DIM}Goodbye.{_C.R}")
                 break
             if user_input.lower() == "/clear":
                 messages = [m for m in messages if m["role"] == "system"]
-                print("  ✓ Conversation cleared.")
+                print(f"  {_C.G}✓{_C.R}  Conversation cleared.")
                 continue
             if user_input.lower().startswith("/system "):
                 new_sys = user_input[8:].strip()
                 messages = [m for m in messages if m["role"] != "system"]
                 messages.insert(0, {"role": "system", "content": new_sys})
-                print("  ✓ System prompt updated.")
+                print(f"  {_C.G}✓{_C.R}  System prompt updated.")
                 continue
             if user_input.lower() == "/help":
-                print("  Commands: /quit  /clear  /system <text>  /help")
+                print(f"  {_C.DIM}Commands: /quit  /clear  /system <text>  /help{_C.R}")
                 continue
 
             messages.append({"role": "user", "content": user_input})
-            print("\n  Assistant: ", end="", flush=True)
+            print(f"\n  {_C.T}{_C.B}Assistant{_C.R}  ", end="", flush=True)
             reply = _stream_chat(messages)
             if reply:
                 messages.append({"role": "assistant", "content": reply})
@@ -1697,8 +1735,13 @@ def cmd_doctor(args):
     import platform as _platform
     import socket
 
+    from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+
     print()
-    _box(["squish doctor — dependency check"])
+    if _rich:
+        _con.rule("[squish.violet bold]squish doctor[/]  [squish.dim]dependency check[/]", style="squish.dim")
+    else:
+        _box(["squish doctor — dependency check"])
     print()
 
     ok = True
@@ -1706,12 +1749,20 @@ def cmd_doctor(args):
 
     def _check(label: str, passed: bool, fix: str = "") -> None:
         nonlocal ok
-        sym = f"{_C.G}✓{_C.R}" if passed else f"{_C.PK}✗{_C.R}"
-        print(f"  {sym}  {label}")
-        if not passed:
-            ok = False
-            if fix:
-                print(f"       {_C.DIM}Fix:{_C.R} {fix}")
+        if _rich:
+            sym = "[squish.green]✓[/]" if passed else "[squish.error]✗[/]"
+            _con.print(f"  {sym}  {label}")
+            if not passed:
+                ok = False
+                if fix:
+                    _con.print(f"       [squish.dim]Fix:[/] [squish.white]{fix}[/]")
+        else:
+            sym = f"{_C.G}✓{_C.R}" if passed else f"{_C.PK}✗{_C.R}"
+            print(f"  {sym}  {label}")
+            if not passed:
+                ok = False
+                if fix:
+                    print(f"       {_C.DIM}Fix:{_C.R} {fix}")
         _results.append({"label": label, "passed": passed, "fix": fix})
 
     # OS
@@ -1852,9 +1903,17 @@ def cmd_doctor(args):
 
     print()
     if ok:
-        print("  All checks passed. squish is ready.\n")
+        if _rich:
+            _con.print("  [squish.green]✓[/]  [squish.white]All checks passed. squish is ready.[/]")
+            _con.print()
+        else:
+            print("  All checks passed. squish is ready.\n")
     else:
-        print("  Some checks failed. See fixes above.\n")
+        if _rich:
+            _con.print("  [squish.error]✗[/]  [squish.white]Some checks failed. See fixes above.[/]")
+            _con.print()
+        else:
+            print("  Some checks failed. See fixes above.\n")
 
     # ── --report: write shareable JSON snapshot ───────────────────────────────
     if getattr(args, "report", False):
@@ -2708,39 +2767,75 @@ def cmd_catalog(args):
     ])
     print()
 
-    # Header
-    col_id   = max(len(e.id) for e in entries) + 2
-    print(f"  {'ID':<{col_id}} {'Params':>7}  {'Raw':>7}  {'Squished':>9}  {'Prebuilt':>9}  Notes")
-    print(f"  {'─'*col_id} {'─'*7}  {'─'*7}  {'─'*9}  {'─'*9}  {'─'*24}")
+    try:
+        from squish.ui import console as _con, make_table as _mt, _RICH_AVAILABLE as _rich
+    except Exception:
+        _rich = False
 
-    for e in entries:
-        prebuilt = "⚡ yes" if e.has_prebuilt else "compress"
-        notes = e.notes if e.notes else ", ".join(e.tags)
-        # Phase 14B: add MoE badge when moe=True
-        if getattr(e, "moe", False):
-            active = getattr(e, "active_params_b", None)
-            if active is not None:
-                moe_badge = f"[MoE: {e.params} total / {active:.1f}B active]"
-            else:
-                moe_badge = "[MoE]"
-            notes = f"{moe_badge}  {notes}" if notes else moe_badge
-        print(
-            f"  {e.id:<{col_id}} {e.params:>7}  "
-            f"{e.size_gb:>6.1f}G  {e.squished_size_gb:>8.1f}G  "
-            f"{prebuilt:>9}  {notes}"
-        )
-
-    print()
-    print("  Prebuilt ⚡ = pre-compressed weights on HuggingFace (instant download)")
-    print()
-
-    if args.tag:
-        print(f"  Showing tag: {args.tag!r}")
-        print("  Other tags: small, fast, balanced, large, reasoning, moe, edge")
+    if _rich:
+        tbl = _mt(["ID", "Params", "Raw", "Squished", "Prebuilt", "Notes"])
+        for e in entries:
+            prebuilt = "⚡ yes" if e.has_prebuilt else "compress"
+            notes = e.notes if e.notes else ", ".join(e.tags)
+            if getattr(e, "moe", False):
+                active = getattr(e, "active_params_b", None)
+                moe_badge = (
+                    f"[MoE: {e.params} total / {active:.1f}B active]"
+                    if active is not None else "[MoE]"
+                )
+                notes = f"{moe_badge}  {notes}" if notes else moe_badge
+            prebuilt_str = (
+                f"[squish.green]{prebuilt}[/]" if e.has_prebuilt
+                else f"[squish.dim]{prebuilt}[/]"
+            )
+            tbl.add_row(
+                f"[squish.lilac]{e.id}[/]",
+                e.params,
+                f"{e.size_gb:.1f}G",
+                f"[squish.violet]{e.squished_size_gb:.1f}G[/]",
+                prebuilt_str,
+                f"[squish.dim]{notes}[/]",
+            )
+        _con.print(tbl)
+        _con.print("  [squish.dim]⚡ prebuilt = pre-compressed weights on HuggingFace (instant download)[/]")
+        _con.print()
+        if args.tag:
+            _con.print(f"  [squish.dim]Showing tag:[/] [squish.white]{args.tag!r}[/]")
+            _con.print("  [squish.dim]Other tags: small, fast, balanced, large, reasoning, moe, edge[/]")
+        else:
+            _con.print("  [squish.dim]Filter by tag:[/]  [squish.lilac]squish catalog --tag reasoning[/]")
+            _con.print("  [squish.dim]Refresh list :[/]  [squish.lilac]squish catalog --refresh[/]")
+        _con.print()
     else:
-        print("  Filter by tag: squish catalog --tag reasoning")
-        print("  Refresh list : squish catalog --refresh")
-    print()
+        # Fallback: plain-text table
+        col_id   = max(len(e.id) for e in entries) + 2
+        print(f"  {'ID':<{col_id}} {'Params':>7}  {'Raw':>7}  {'Squished':>9}  {'Prebuilt':>9}  Notes")
+        print(f"  {'─'*col_id} {'─'*7}  {'─'*7}  {'─'*9}  {'─'*9}  {'─'*24}")
+        for e in entries:
+            prebuilt = "⚡ yes" if e.has_prebuilt else "compress"
+            notes = e.notes if e.notes else ", ".join(e.tags)
+            if getattr(e, "moe", False):
+                active = getattr(e, "active_params_b", None)
+                moe_badge = (
+                    f"[MoE: {e.params} total / {active:.1f}B active]"
+                    if active is not None else "[MoE]"
+                )
+                notes = f"{moe_badge}  {notes}" if notes else moe_badge
+            print(
+                f"  {e.id:<{col_id}} {e.params:>7}  "
+                f"{e.size_gb:>6.1f}G  {e.squished_size_gb:>8.1f}G  "
+                f"{prebuilt:>9}  {notes}"
+            )
+        print()
+        print("  Prebuilt ⚡ = pre-compressed weights on HuggingFace (instant download)")
+        print()
+        if args.tag:
+            print(f"  Showing tag: {args.tag!r}")
+            print("  Other tags: small, fast, balanced, large, reasoning, moe, edge")
+        else:
+            print("  Filter by tag: squish catalog --tag reasoning")
+            print("  Refresh list : squish catalog --refresh")
+        print()
 
 
 # ── EAGLE-3 head download (Phase 1B) ─────────────────────────────────────────
@@ -2956,6 +3051,363 @@ def cmd_gen_masks(args):
     print()
     print("  To use: run squish serve with the same compressed directory.")
     print("  The server auto-loads sparse_masks.npz and patches FFN layers.")
+    print()
+
+
+def cmd_sparsity_trim(args):
+    """
+    Permanently remove low-importance intermediate neurons from MLP weight files.
+
+    Unlike ``squish gen-masks`` (which zeros neuron outputs at runtime with no
+    bandwidth reduction), ``sparsity-trim`` physically deletes weight rows and
+    columns from the model files.  This reduces the peak Metal RSS and per-token
+    memory bandwidth at every forward pass.
+
+    **How neurons are selected for removal:**
+
+    * ``--threshold`` controls the fraction of neurons pruned per layer.
+      The least-important ``threshold × 100 %`` of neurons are removed.
+    * Importance is measured as the sum of per-group scale magnitudes from
+      ``up_proj`` (proxy for weight L2 norm; does not require model loading).
+    * Pruning is aligned to the quantization group boundary (default 64 neurons)
+      so that the INT4 packed-uint32 and scale/bias arrays remain aligned.
+
+    **Supported weight formats:**
+
+    * BF16 / FP16 / FP32 (safetensors float): direct numpy slice.
+    * MLX INT4 (``uint32`` weight + ``float16`` scales + ``float16`` biases):
+      row/column removal on the packed uint32 representation—no dequantization
+      required for ``up_proj`` and ``gate_proj``; ``down_proj`` columns are
+      removed group-aligned (8 uint32 columns per group of 64 neurons).
+
+    **Output:**
+
+    A new model directory ``<model_path>-trimmed`` is created with trimmed
+    ``model.safetensors``, updated ``config.json``, and all other files
+    (tokenizer, generation config) copied unchanged.
+
+    The original model directory is never modified.
+
+    Examples
+    --------
+      squish sparsity-trim qwen3:8b
+      squish sparsity-trim ./my-model-int4 --threshold 0.2
+      squish sparsity-trim ./my-model-int4 --dry-run
+      squish sparsity-trim ./my-model-int4 --output ./my-model-trimmed
+    """
+    import shutil
+    import sys
+    import time
+
+    try:
+        import numpy as np
+    except ImportError:
+        _die("numpy is required. Install with: pip install numpy")
+
+    try:
+        from safetensors import safe_open
+        from safetensors.numpy import save_file as st_save
+    except ImportError:
+        _die("safetensors is required. Install with: pip install safetensors")
+
+    model_arg: str = args.model
+    threshold: float = float(args.threshold)
+    group_size: int = int(args.group_size)
+    dry_run: bool = bool(args.dry_run)
+    output_arg: str = args.output or ""
+
+    if not (0.0 < threshold < 1.0):
+        _die("--threshold must be between 0.0 and 1.0 (exclusive).")
+    if group_size < 8 or group_size % 8 != 0:
+        _die("--group-size must be a multiple of 8 (MLX INT4 packs 8 values per uint32).")
+
+    # ── Resolve model → directory ─────────────────────────────────────────────
+    if os.path.isdir(model_arg):
+        model_dir = Path(model_arg).expanduser().resolve()
+    else:
+        try:
+            from squish.serving.local_model_scanner import LocalModelScanner as _Scn  # noqa: PLC0415
+            _scanner = _Scn()
+            _candidates = [
+                m for m in _scanner.find_all()
+                if m.name.lower() == model_arg.lower()
+                or model_arg.lower() in str(m.path).lower()
+            ]
+            if not _candidates:
+                _die(
+                    f"Cannot resolve model {model_arg!r} to a local directory.\n"
+                    "Pass a local path or a model alias (e.g. qwen3:8b)."
+                )
+            model_dir = _candidates[0].path
+            if not model_dir.is_dir():
+                model_dir = model_dir.parent
+        except Exception as _e:
+            _die(
+                f"Cannot resolve model {model_arg!r}: {_e}\n"
+                "Pass a local directory path."
+            )
+
+    st_file = model_dir / "model.safetensors"
+    cfg_file = model_dir / "config.json"
+    if not st_file.exists():
+        _die(f"model.safetensors not found in {model_dir}")
+    if not cfg_file.exists():
+        _die(f"config.json not found in {model_dir}")
+
+    import json as _json
+    cfg = _json.loads(cfg_file.read_text())
+    n_layers: int = int(cfg.get("num_hidden_layers", 0))
+    intermediate_size: int = int(cfg.get("intermediate_size", 0))
+    if n_layers == 0 or intermediate_size == 0:
+        _die("config.json must contain num_hidden_layers and intermediate_size.")
+
+    # ── Load all weights ──────────────────────────────────────────────────────
+    print()
+    _box([
+        "  squish sparsity-trim",
+        f"  Model dir      : {model_dir}",
+        f"  Threshold      : {threshold:.0%} of neurons pruned per layer",
+        f"  Group size     : {group_size}",
+        f"  Intermediate   : {intermediate_size} neurons/layer × {n_layers} layers",
+        f"  Dry run        : {'yes' if dry_run else 'no'}",
+    ])
+    print()
+
+    t0 = time.time()
+    weights: dict[str, np.ndarray] = {}
+    with safe_open(str(st_file), framework="numpy") as f:
+        for k in f.keys():
+            weights[k] = f.get_tensor(k)
+    print(f"  Loaded {len(weights)} tensors in {time.time()-t0:.1f}s")
+
+    # ── Detect INT4 vs float ───────────────────────────────────────────────────
+    # INT4 presence: up_proj.weight is uint32 dtype (MLX packed format)
+    _probe_key = f"model.layers.0.mlp.up_proj.weight"
+    is_int4 = (_probe_key in weights and weights[_probe_key].dtype == np.uint32)
+    weight_type = "INT4" if is_int4 else "float"
+    print(f"  Weight format  : {weight_type}")
+
+    # number of groups per row in the intermediate dimension
+    n_intermediate_groups = intermediate_size // group_size
+
+    # ── INT4 helpers ──────────────────────────────────────────────────────────
+
+    def _row_importance_int4(w_u32: np.ndarray, scales_f16: np.ndarray) -> np.ndarray:
+        """Per-row importance for INT4 weight: sum of abs(scale) per row.
+
+        Scales have shape (n_rows, n_groups_in). Each row's importance is the
+        sum of its group scales — a proxy for the L2 norm of the weight row.
+        Returns float32 array of shape (n_rows,).
+        """
+        return np.sum(np.abs(scales_f16.astype(np.float32)), axis=1)
+
+    def _row_importance_float(w: np.ndarray) -> np.ndarray:
+        """Per-row L2 norm for float32/float16 weight (n_rows, n_cols)."""
+        return np.linalg.norm(w.astype(np.float32), axis=1)
+
+    def _remove_rows_int4(
+        prefix: str,
+        keep_mask: np.ndarray,
+        trimmed: dict[str, np.ndarray],
+    ) -> None:
+        """Remove rows from INT4 weight + scales + biases for up_proj/gate_proj."""
+        for suffix in ("weight", "scales", "biases"):
+            k = f"{prefix}.{suffix}"
+            if k in weights:
+                trimmed[k] = weights[k][keep_mask]
+
+    def _remove_rows_float(
+        prefix: str,
+        keep_mask: np.ndarray,
+        trimmed: dict[str, np.ndarray],
+    ) -> None:
+        """Remove rows from float weight."""
+        k = f"{prefix}.weight"
+        if k in weights:
+            trimmed[k] = weights[k][keep_mask]
+
+    def _remove_cols_int4_grouped(
+        prefix: str,
+        keep_groups: np.ndarray,
+        trimmed: dict[str, np.ndarray],
+    ) -> None:
+        """Remove INT4 column-groups from down_proj (uint32 packed).
+
+        keep_groups: boolean mask of length n_intermediate_groups; True = keep.
+
+        For group-aligned uint32 columns:
+        - Each group of group_size neurons occupies group_size//8 uint32 columns.
+        - Scales/biases have one column per group.
+        """
+        cols_per_group = group_size // 8  # uint32 columns per neuron group
+        # Build uint32 column mask
+        n_total_u32_cols = intermediate_size // 8
+        col_mask_u32 = np.zeros(n_total_u32_cols, dtype=bool)
+        for g_idx, keep in enumerate(keep_groups):
+            if keep:
+                start = g_idx * cols_per_group
+                col_mask_u32[start:start + cols_per_group] = True
+
+        wk = f"{prefix}.weight"
+        sk = f"{prefix}.scales"
+        bk = f"{prefix}.biases"
+        if wk in weights:
+            trimmed[wk] = weights[wk][:, col_mask_u32]
+        if sk in weights:
+            trimmed[sk] = weights[sk][:, keep_groups]
+        if bk in weights:
+            trimmed[bk] = weights[bk][:, keep_groups]
+
+    def _remove_cols_float(
+        prefix: str,
+        keep_mask: np.ndarray,
+        trimmed: dict[str, np.ndarray],
+    ) -> None:
+        """Remove columns from float down_proj."""
+        k = f"{prefix}.weight"
+        if k in weights:
+            trimmed[k] = weights[k][:, keep_mask]
+
+    # ── Per-layer trimming ────────────────────────────────────────────────────
+    trimmed_weights: dict[str, np.ndarray] = {}
+    # Copy all non-MLP weights unchanged.
+    mlp_prefixes: set[str] = set()
+    for k in weights:
+        if ".mlp." in k:
+            parts = k.split(".mlp.")
+            # e.g. "model.layers.0.mlp.up_proj.weight" → prefix = "model.layers.0.mlp.up_proj"
+            proj_key = parts[0] + ".mlp." + parts[1].split(".")[0]
+            mlp_prefixes.add(proj_key)
+        else:
+            trimmed_weights[k] = weights[k]
+
+    total_removed = 0
+    per_layer_kept: list[int] = []
+
+    for layer_idx in range(n_layers):
+        base = f"model.layers.{layer_idx}.mlp"
+        up_pfx   = f"{base}.up_proj"
+        gate_pfx = f"{base}.gate_proj"
+        down_pfx = f"{base}.down_proj"
+
+        # ── Compute per-row importance (one entry per intermediate neuron) ────
+        if is_int4:
+            up_w   = weights.get(f"{up_pfx}.weight")
+            up_s   = weights.get(f"{up_pfx}.scales")
+            if up_w is None or up_s is None:
+                # Layer missing — copy unchanged
+                for k, v in weights.items():
+                    if k.startswith(base + "."):
+                        trimmed_weights[k] = v
+                per_layer_kept.append(intermediate_size)
+                continue
+            row_imp = _row_importance_int4(up_w, up_s)
+        else:
+            up_w = weights.get(f"{up_pfx}.weight")
+            if up_w is None:
+                for k, v in weights.items():
+                    if k.startswith(base + "."):
+                        trimmed_weights[k] = v
+                per_layer_kept.append(intermediate_size)
+                continue
+            row_imp = _row_importance_float(up_w)
+
+        # ── Group-level importance: sum row importances per group ─────────────
+        group_imp = np.array([
+            row_imp[g * group_size:(g + 1) * group_size].sum()
+            for g in range(n_intermediate_groups)
+        ], dtype=np.float32)
+
+        # ── Select groups to prune ────────────────────────────────────────────
+        n_groups_to_prune = max(1, int(round(n_intermediate_groups * threshold)))
+        prune_group_indices = np.argsort(group_imp)[:n_groups_to_prune]
+        keep_groups = np.ones(n_intermediate_groups, dtype=bool)
+        keep_groups[prune_group_indices] = False
+
+        # Expand group mask to neuron mask
+        keep_neurons = np.repeat(keep_groups, group_size)
+        n_kept = int(keep_neurons.sum())
+        total_removed += int((~keep_neurons).sum())
+        per_layer_kept.append(n_kept)
+
+        # ── Apply trim ────────────────────────────────────────────────────────
+        if is_int4:
+            _remove_rows_int4(up_pfx,   keep_neurons, trimmed_weights)
+            _remove_rows_int4(gate_pfx, keep_neurons, trimmed_weights)
+            _remove_cols_int4_grouped(down_pfx, keep_groups, trimmed_weights)
+        else:
+            _remove_rows_float(up_pfx,   keep_neurons, trimmed_weights)
+            _remove_rows_float(gate_pfx, keep_neurons, trimmed_weights)
+            _remove_cols_float(down_pfx, keep_neurons, trimmed_weights)
+
+        # Copy any down_proj keys we haven't handled (e.g. bias vector)
+        dp_w_key = f"{down_pfx}.weight"
+        for k, v in weights.items():
+            if k.startswith(down_pfx + ".") and k not in trimmed_weights:
+                trimmed_weights[k] = v  # fallback: keep as-is
+
+    # ── Stats ─────────────────────────────────────────────────────────────────
+    n_kept_uniform = per_layer_kept[0] if per_layer_kept else intermediate_size
+    pct_removed = total_removed / (intermediate_size * n_layers) * 100
+    orig_mlp_bytes = sum(v.nbytes for k, v in weights.items() if ".mlp." in k)
+    trim_mlp_bytes = sum(v.nbytes for k, v in trimmed_weights.items() if ".mlp." in k)
+    reduction_pct = (1.0 - trim_mlp_bytes / max(orig_mlp_bytes, 1)) * 100
+
+    print()
+    print(f"  Neurons kept     : {n_kept_uniform} / {intermediate_size} per layer "
+          f"({100 - pct_removed:.0f}% kept, {pct_removed:.0f}% removed)")
+    print(f"  MLP weight bytes : {orig_mlp_bytes/1e6:.1f} MB → "
+          f"{trim_mlp_bytes/1e6:.1f} MB  ({reduction_pct:.0f}% reduction)")
+
+    if dry_run:
+        print()
+        print("  DRY RUN — no files written.")
+        print()
+        sys.exit(0)
+
+    # ── Determine output directory ────────────────────────────────────────────
+    if output_arg:
+        out_dir = Path(output_arg).expanduser().resolve()
+    else:
+        out_dir = model_dir.parent / (model_dir.name + "-trimmed")
+
+    if out_dir.exists():
+        _die(
+            f"Output directory already exists: {out_dir}\n"
+            "Remove it or use --output to choose a different path."
+        )
+    out_dir.mkdir(parents=True)
+
+    # ── Save trimmed safetensors ──────────────────────────────────────────────
+    print()
+    print(f"  Saving trimmed model → {out_dir}")
+    t1 = time.time()
+    st_save(trimmed_weights, str(out_dir / "model.safetensors"))
+    print(f"  Safetensors saved in {time.time()-t1:.1f}s")
+
+    # ── Update config.json ────────────────────────────────────────────────────
+    new_cfg = dict(cfg)
+    new_cfg["intermediate_size"] = n_kept_uniform
+    (out_dir / "config.json").write_text(_json.dumps(new_cfg, indent=2))
+
+    # ── Copy supporting files (tokenizer, generation config, etc.) ────────────
+    skip = {"model.safetensors", "config.json"}
+    for src in model_dir.iterdir():
+        if src.name not in skip and src.is_file():
+            shutil.copy2(src, out_dir / src.name)
+
+    orig_total = sum(v.nbytes for v in weights.values())
+    trim_total = sum(v.nbytes for v in trimmed_weights.values())
+    out_mb = (out_dir / "model.safetensors").stat().st_size / 1e6
+
+    print()
+    print(f"  Done in {time.time()-t0:.1f}s")
+    print(f"  Trimmed model   : {out_dir}")
+    print(f"  Disk size       : {out_mb:.0f} MB  "
+          f"(was {st_file.stat().st_size/1e6:.0f} MB)")
+    print()
+    print("  To serve the trimmed model:")
+    print(f"    squish serve {out_dir}")
     print()
 
 
@@ -3953,6 +4405,8 @@ def cmd_ps(args):
     import urllib.error
     import urllib.request
 
+    from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+
     host = getattr(args, "host", "127.0.0.1")
     port = getattr(args, "port", 11435)
     base = f"http://{host}:{port}"
@@ -3965,22 +4419,36 @@ def cmd_ps(args):
             return json.loads(r.read())
 
     print()
-    _box(["squish ps"])
+    if _rich:
+        _con.rule("[squish.violet bold]squish ps[/]", style="squish.dim")
+    else:
+        _box(["squish ps"])
     print()
 
     try:
         data = _get("/api/ps")
     except (urllib.error.URLError, OSError) as e:
-        print(f"  No server running at {base}\n  ({e})")
-        print("  Start with: squish run <model>")
+        if _rich:
+            _con.print(f"  [squish.dim]No server running at {base}[/]")
+            _con.print(f"  [squish.dim]({e})[/]")
+            _con.print()
+            _con.print("  [squish.dim]Start with:[/]  [squish.lilac bold]squish run <model>[/]")
+        else:
+            print(f"  No server running at {base}\n  ({e})")
+            print("  Start with: squish run <model>")
         print()
         return
 
     models = data.get("models", [])
     if not models:
-        print(f"  {_C.MG}No model loaded.{_C.R}")
-        print(f"  Server is running at {base} but no model is active.")
-        print(f"  Load with: squish run <model>")
+        if _rich:
+            _con.print(f"  [squish.warn]○[/]  [squish.white]No model loaded.[/]")
+            _con.print(f"  [squish.dim]Server is running at {base} but no model is active.[/]")
+            _con.print(f"  [squish.dim]Load with:[/]  [squish.lilac bold]squish run <model>[/]")
+        else:
+            print(f"  {_C.MG}No model loaded.{_C.R}")
+            print(f"  Server is running at {base} but no model is active.")
+            print(f"  Load with: squish run <model>")
     else:
         for m in models:
             name       = m.get("name", "unknown")
@@ -3996,17 +4464,30 @@ def cmd_ps(args):
             quant      = details.get("quantization_level", "")
             ctx        = details.get("context_length", 0)
 
-            print(f"  {_C.G}●{_C.R}  {_C.P}{name}{_C.R}")
-            if family:
-                print(f"     Family     : {family}")
-            if param_size:
-                print(f"     Parameters : {param_size}")
-            if quant:
-                print(f"     Quant      : {quant}")
-            if ctx:
-                print(f"     Context    : {ctx:,} tokens")
-            print(f"     Model size : {size_str}")
-            print()
+            if _rich:
+                _con.print(f"  [squish.green]●[/]  [squish.violet bold]{name}[/]")
+                if family:
+                    _con.print(f"     [squish.dim]Family    [/] {family}")
+                if param_size:
+                    _con.print(f"     [squish.dim]Parameters[/] {param_size}")
+                if quant:
+                    _con.print(f"     [squish.dim]Quant     [/] {quant}")
+                if ctx:
+                    _con.print(f"     [squish.dim]Context   [/] {ctx:,} tokens")
+                _con.print(f"     [squish.dim]Model size[/] {size_str}")
+                _con.print()
+            else:
+                print(f"  {_C.G}●{_C.R}  {_C.P}{name}{_C.R}")
+                if family:
+                    print(f"     Family     : {family}")
+                if param_size:
+                    print(f"     Parameters : {param_size}")
+                if quant:
+                    print(f"     Quant      : {quant}")
+                if ctx:
+                    print(f"     Context    : {ctx:,} tokens")
+                print(f"     Model size : {size_str}")
+                print()
 
     # Optional startup profile (--startup flag or env var)
     if getattr(args, "startup", False):
@@ -4014,10 +4495,23 @@ def cmd_ps(args):
             sp = _get("/v1/startup-profile")
             total_ms = sp.get("total_ms", 0)
             phases   = sp.get("phases", {})
-            print(f"  {_C.P}Startup profile{_C.R}  total={total_ms:.0f} ms")
-            for phase, ms in sorted(phases.items(), key=lambda kv: -kv[1]):
-                bar = "█" * max(1, int(ms / 50))
-                print(f"    {phase:<30} {ms:>7.0f} ms  {_C.DIM}{bar}{_C.R}")
+            if _rich:
+                _con.rule(
+                    f"[squish.violet]Startup profile[/]  [squish.dim]total={total_ms:.0f} ms[/]",
+                    style="squish.dim",
+                )
+                _con.print()
+                for phase, ms in sorted(phases.items(), key=lambda kv: -kv[1]):
+                    bar = "█" * max(1, int(ms / 50))
+                    _con.print(
+                        f"  [squish.dim]{phase:<30}[/] "
+                        f"[squish.white]{ms:>7.0f} ms[/]  [squish.dim]{bar}[/]"
+                    )
+            else:
+                print(f"  {_C.P}Startup profile{_C.R}  total={total_ms:.0f} ms")
+                for phase, ms in sorted(phases.items(), key=lambda kv: -kv[1]):
+                    bar = "█" * max(1, int(ms / 50))
+                    print(f"    {phase:<30} {ms:>7.0f} ms  {_C.DIM}{bar}{_C.R}")
             print()
         except Exception:
             pass  # startup-profile is best-effort
@@ -4224,8 +4718,8 @@ def cmd_config(args):
         cfg_json = _json.dumps(cfg, indent=2)
         if _RICH_AVAILABLE:
             console.print()
-            console.print("  [rgb(167,139,250) bold]Squish Configuration[/]  "
-                          f"[rgb(100,116,139)]({_cfg.config_path()})[/]")
+            console.print("  [bold squish.lilac]Squish Configuration[/]  "
+                          f"[squish.dim]({_cfg.config_path()})[/]")
             console.print()
             from rich.syntax import Syntax
             console.print(Syntax(cfg_json, "json", theme="nord", background_color="default"))
@@ -4325,26 +4819,27 @@ def cmd_welcome():
     if _RICH_AVAILABLE:
         console.print()
         if local_count > 0:
-            console.print(f"  [rgb(100,116,139)]You have[/] "
-                          f"[rgb(248,250,252)]{local_count}[/] "
-                          f"[rgb(100,116,139)]model(s) downloaded.[/]  "
-                          f"[rgb(100,116,139)]Start with:[/]")
+            console.print(
+                f"  [squish.dim]You have[/] [squish.white]{local_count}[/] "
+                f"[squish.dim]model(s) downloaded.[/]  [squish.dim]Start with:[/]"
+            )
             console.print()
-            console.print(f"    [rgb(167,139,250) bold]squish run {model}[/]")
+            console.print(f"    [squish.lilac bold]squish run {model}[/]")
         else:
-            console.print(f"  [rgb(100,116,139)]Detected[/] "
-                          f"[rgb(248,250,252)]{ram_gb or '?'} GB[/] "
-                          f"[rgb(100,116,139)]memory.  Get started with:[/]")
+            console.print(
+                f"  [squish.dim]Detected[/] [squish.white]{ram_gb or '?'} GB[/] "
+                f"[squish.dim]memory.  Get started:[/]"
+            )
             console.print()
-            console.print(f"    [rgb(167,139,246) bold]squish pull {model}[/]")
-            console.print(f"    [rgb(167,139,246) bold]squish run  {model}[/]")
+            console.print(f"    [squish.lilac bold]squish pull {model}[/]")
+            console.print(f"    [squish.lilac bold]squish run  {model}[/]")
         console.print()
-        console.print("  [rgb(100,116,139)]Other commands :[/]  "
-                      "[rgb(248,250,252)]squish catalog[/]  "
-                      "[rgb(100,116,139)]·[/]  "
-                      "[rgb(248,250,252)]squish models[/]  "
-                      "[rgb(100,116,139)]·[/]  "
-                      "[rgb(248,250,252)]squish --help[/]")
+        console.rule(
+            "[squish.dim]squish catalog[/]  [squish.dim]·[/]  "
+            "[squish.dim]squish models[/]  [squish.dim]·[/]  "
+            "[squish.dim]squish --help[/]",
+            style="squish.dim",
+        )
         console.print()
     else:
         print()
@@ -4362,21 +4857,34 @@ def cmd_welcome():
 
 def cmd_version(args) -> None:  # noqa: ARG001
     """Print squish version and wave number."""
+    from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+
     try:
         import importlib.metadata as _im
         ver = _im.version("squish")
     except Exception:
         from squish import __version__ as ver  # type: ignore[assignment]
-    # Derive wave number from version string (major version = wave + offset)
-    # Convention: release version tracks internal wave numbering
     _wave = globals().get("_CURRENT_WAVE", "unknown")
-    print(f"squish {ver}  (Wave {_wave})")
-    print(f"  Python : {sys.version.split()[0]}")
-    try:
-        import platform as _pl
-        print(f"  Platform: {_pl.system()} {_pl.machine()}")
-    except Exception:
-        pass
+
+    if _rich:
+        _con.print(
+            f"[squish.violet bold]squish[/] [squish.white]{ver}[/]"
+            f"  [squish.dim](Wave {_wave})[/]"
+        )
+        _con.print(f"  [squish.dim]Python  :[/] {sys.version.split()[0]}")
+        try:
+            import platform as _pl
+            _con.print(f"  [squish.dim]Platform:[/] {_pl.system()} {_pl.machine()}")
+        except Exception:
+            pass
+    else:
+        print(f"squish {ver}  (Wave {_wave})")
+        print(f"  Python : {sys.version.split()[0]}")
+        try:
+            import platform as _pl
+            print(f"  Platform: {_pl.system()} {_pl.machine()}")
+        except Exception:
+            pass
 
 
 def build_parser() -> "argparse.ArgumentParser":
@@ -4930,6 +5438,45 @@ Ollama drop-in:
                       help="Override output path for sparse_masks.npz "
                            "(default: <compressed_dir>/sparse_masks.npz)")
     p_gm.set_defaults(func=cmd_gen_masks)
+
+    # ── sparsity-trim (Wave 112) ──────────────────────────────────────────────────
+    p_trim = sub.add_parser(
+        "sparsity-trim",
+        help="Permanently prune low-importance MLP neurons from weight files",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Physically remove low-importance intermediate neurons from each MLP\n"
+            "layer, reducing model size and per-token memory bandwidth at runtime.\n\n"
+            "Unlike gen-masks (zero output at runtime, zero bandwidth savings),\n"
+            "sparsity-trim deletes weight rows/columns permanently so every\n"
+            "forward pass loads fewer bytes from Metal unified memory.\n\n"
+            "Supports BF16 and MLX INT4 (uint32-packed) weight formats.\n"
+            "INT4 row and group-column removal preserves quantization alignment.\n\n"
+            "Examples:\n"
+            "  squish sparsity-trim qwen3:8b\n"
+            "  squish sparsity-trim ./my-model-int4 --threshold 0.20\n"
+            "  squish sparsity-trim ./my-model-int4 --dry-run\n"
+            "  squish sparsity-trim ./my-model-int4 --output ./my-model-trimmed"
+        ),
+    )
+    p_trim.add_argument("model",
+                        help="Model alias (e.g. qwen3:8b) or path to local model directory")
+    p_trim.add_argument("--threshold", type=float, default=0.10,
+                        metavar="F",
+                        help="Fraction of neurons to prune per layer (default: 0.10 = 10%%).\n"
+                             "Each layer's least-important neurons (by weight magnitude) are removed.")
+    p_trim.add_argument("--group-size", type=int, default=64,
+                        dest="group_size",
+                        metavar="G",
+                        help="Quantization group alignment for INT4 models (default: 64).\n"
+                             "Pruning is done in multiples of this value to preserve\n"
+                             "INT4 packed-uint32 and scale/bias alignment.")
+    p_trim.add_argument("--dry-run", action="store_true",
+                        help="Print the removal stats without writing any files.")
+    p_trim.add_argument("--output", default="",
+                        metavar="PATH",
+                        help="Output directory (default: <model_dir>-trimmed)")
+    p_trim.set_defaults(func=cmd_sparsity_trim)
 
     # ── catalog ──
     p_catalog = sub.add_parser("catalog", help="Browse available models in the Squish catalog")

@@ -694,7 +694,10 @@ def _print_banner() -> None:
         print(f"              {L}✦{R}    {PK}✦{R}    {L}✦{R}")
         print()
 
-        # ── SQUISH gradient logo (box-drawing block font) ─────────────────────
+        # ── SQUISH logo (box-drawing block font, single colour) ─────────────
+        # No per-character gradient here: gradient sequences trip up terminals
+        # that lie about 24-bit support, tmux without TC passthrough, etc.
+        # A single violet colour is consistent across all terminals.
         logo_lines = [
             " ██████╗   ██████╗  ██╗   ██╗  ██╗   ██████╗  ██╗  ██╗",
             "██╔════╝  ██╔═══██╗ ██║   ██║  ██║  ██╔════╝  ██║  ██║",
@@ -704,11 +707,11 @@ def _print_banner() -> None:
             "╚═════╝    ╚══▀▀═╝   ╚═════╝   ╚═╝  ╚═════╝   ╚═╝  ╚═╝",
         ]
         for line in logo_lines:
-            print(f"  {_gradient(line, _LOGO_GRAD)}{R}")
+            print(f"  {V}{line}{R}")
         print()
 
         sub = "✦  Squish it. Run it. Go.  ✦"
-        print(f"            {_gradient(sub, _LOGO_GRAD)}{R}")
+        print(f"            {L}{sub}{R}")
         print(f"  {DIM}{'─' * 56}{R}")
     else:
         # Plain-text fallback for non-TTY environments
@@ -2709,7 +2712,7 @@ async def chat_completions(  # pragma: no cover
                 "id": cid, "object": "chat.completion.chunk",
                 "created": _created, "model": model_id,
                 "system_fingerprint": _fp,
-                "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}],
             }
             yield f"data: {_json_dumps(role_chunk)}\n\n"
 
