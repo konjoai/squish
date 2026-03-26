@@ -444,10 +444,6 @@ _chunk_prefill_enabled   = False  # set in main() via --chunk-prefill
 _chunk_prefill_threshold = 512    # min token count to trigger chunking (default 512)
 _chunk_prefill_size      = 512    # tokens per chunk (default 512)
 
-# ── Phase 3C: MInference sparse attention ─────────────────────────────────────
-_minference_enabled      = False  # set in main() via --minference
-_minference_threshold    = 1024   # min seq_len to apply sparse attention (default 1024)
-
 # ── Phase A1: Qwen3 thinking budget ──────────────────────────────────────────
 _thinking_budget: int = -1            # -1=unlimited, 0=disable thinking, >0=token limit
 _think_close_token_id: int | None = None  # ID of </think> token, resolved at model load
@@ -1948,38 +1944,6 @@ def _generate_tokens(  # pragma: no cover
                 # Cache miss: run full prefill
                 # ── Wave 37: PD-disagg timing — record prefill start ──────────
                 _pd_prefill_t0 = time.monotonic() if _pd_disaggregator is not None else 0.0
-                # ── Phase 3C: patch sparse attention for long sequences ────────
-                # Applied BEFORE prefill; must be unpatched after regardless of
-                # the prefill path taken (standard or chunked).
-                # Guard: only when NOT using ane-disagg backend (Core ML graphs
-                # are pre-compiled and cannot accept Python-level mask injection).
-                _minf_restore = None
-                if (_minference_enabled
-                        and len(input_ids) > _minference_threshold
-                        and _inference_backend != "ane-disagg"):
-                    try:
-                        from squish.minference_patch import (
-                            patch_model_minference as _patch_minf,
-                        )
-                        from squish.minference_patch import (
-                            select_pattern_for_sequence as _minf_pattern,
-                        )
-                        _pattern = _minf_pattern(len(input_ids))
-                        _minf_restore = _patch_minf(
-                            model,
-                            seq_len_threshold=0,   # already gated above
-                            pattern=_pattern,
-                        )
-                        if _trace:
-                            _tlog(f"REQ {_rid}  minference PATCHED  "
-                                  f"pattern={_pattern}  seq_len={len(input_ids)}")
-                    except Exception as _minf_err:
-                        import logging as _mlog
-                        _mlog.getLogger(__name__).debug(
-                            "[minference] patch failed (%s) — dense fallback", _minf_err
-                        )
-                        _minf_restore = None
-
                 # ── Phase 3A / Wave 27: chunked prefill (all paths, long prompts) ──
                 # CRITICAL: spec decode starts only after is_final_chunk=True.
                 # Interleaved greedy tokens emitted on non-final chunks DO count
@@ -2033,19 +1997,6 @@ def _generate_tokens(  # pragma: no cover
                         logits_full = model(x, cache=layer_caches)
                         mx.eval(logits_full)
                     _last_logit_vec = logits_full[0, -1]
-
-                # ── Phase 3C: restore dense attention after prefill ────────────
-                if _minf_restore is not None:
-                    try:
-                        from squish.minference_patch import (
-                            unpatch_model_minference as _unpatch_minf,
-                        )
-                        _unpatch_minf(model, _minf_restore)
-                        if _trace:
-                            _tlog(f"REQ {_rid}  minference UNPATCHED")
-                    except Exception:
-                        pass  # never block generation on unpatch failure
-                    _minf_restore = None
 
                 next_id = _sample_mx(_last_logit_vec, temperature, top_p)
                 # ── Wave 37: PD-disagg timing — record prefill completion ──────
@@ -3784,17 +3735,6 @@ Examples:
     ap.add_argument("--chunk-prefill-size", type=int, default=512,
                     metavar="N",
                     help="Tokens per prefill chunk (default 512).")
-    # ── Phase 3C: MInference sparse attention ─────────────────────────────────
-    ap.add_argument("--minference", action="store_true", default=False,
-                    help="Enable MInference-style sparse attention during prefill.\n"
-                         "Reduces attention cost from O(n²) to O(n·k) for prompts\n"
-                         "longer than --minference-threshold.\n"
-                         "Automatically selects the best sparsity pattern.\n"
-                         "Incompatible with --inference-backend ane-disagg.")
-    ap.add_argument("--minference-threshold", type=int, default=1024,
-                    metavar="N",
-                    help="Minimum sequence length to activate sparse attention\n"
-                         "(default 1024 tokens).")
     # ── Phase A1: Qwen3 thinking budget ──────────────────────────────────────
     ap.add_argument("--thinking-budget", type=int, default=-1, metavar="N",
                     help="Qwen3 thinking token budget (-1=unlimited, 0=disable thinking mode).\n"
@@ -4586,17 +4526,6 @@ Examples:
     if _chunk_prefill_enabled:
         _info("chunk-prefill",
               f"on-by-default  threshold={_chunk_prefill_threshold}  chunk={_chunk_prefill_size}")
-
-    # ── Phase 3C: MInference settings ────────────────────────────────────────
-    global _minference_enabled, _minference_threshold, _inference_backend
-    _minference_enabled   = getattr(args, "minference", False)
-    _minference_threshold = getattr(args, "minference_threshold", 1024)
-    if _minference_enabled:
-        if _inference_backend == "ane-disagg":
-            _warn("[minference] disabled — incompatible with --inference-backend ane-disagg")
-            _minference_enabled = False
-        else:
-            _info("minference", f"sparse-attention  threshold={_minference_threshold}")
 
     # ── Phase A1: Qwen3 thinking budget ──────────────────────────────────────
     global _thinking_budget, _think_close_token_id

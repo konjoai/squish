@@ -5,6 +5,45 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.3.0] — Wave 116 — Lean-and-Mean Purge (137 → 99 source files)
+
+### Removed
+
+- **38 source files deleted** — stripped all code that does not directly
+  speed up inference, reduce memory, or reduce disk usage:
+  - `squish/bench/` (4 files) and `squish/benchmarks/` (9 files) — benchmark
+    harness, agent/code/perf/quality/tool bench runners, report generator
+  - `squish/install/` (3 files) — installer helpers superseded by `install.sh`
+  - `squish/format/` (3 files) — JSON/GGUF/safetensors format stubs
+  - `squish/packaging/` (3 files) — packaging / distribution stubs
+  - `squish/core/__init__.py`, `squish/core/determinism.py` — orphaned core stubs
+  - `squish/eval.py`, `squish/squish_lm_eval.py` — lm-eval integration stubs
+  - `squish/minference_patch.py` — MInference sparse attention hook (unused)
+  - `squish/platform/cuda_backend.py`, `rocm_backend.py`, `windows_backend.py`,
+    `wsl_detector.py`, `memory_linux.py` — non-macOS platform backends
+  - `squish/hardware/kernel_dispatch.py`, `squish/grammar/schema_validator.py`,
+    `squish/io/flash_weight_cache.py`, `squish/io/mmap_loader.py`,
+    `squish/runtime/stage_dispatcher.py`, `squish/serving/health_check.py`
+
+- **`squish bench` subcommand removed from `cli.py`** (`-326 lines`) —
+  `_cmd_bench_track()` and `cmd_bench()` deleted; bench argparse block removed.
+
+- **MInference dead code removed from `server.py`** (`-71 lines`) —
+  `_minference_enabled` / `_minference_threshold` globals, sparse-attention
+  patch/unpatch blocks in the request handler, and `--minference` /
+  `--minference-threshold` CLI arguments all removed.
+
+- **22 test files deleted** — tests for all removed functionality
+  (`tests/benchmarks/`, `tests/core/`, bench integration tests,
+  cross-platform wave tests, lm-eval unit tests).
+
+### Result
+
+- **squish/ source files: 99** (was 137 at Wave 115, target < 100 ✓)
+- **All 3,292 tests passing** — exit code 0, 0 failures
+
+---
+
 ## [9.2.0] — Wave 115 — All-Optimizations Flush + INT3 Load Path + Dead Code
 
 ### Fixed
