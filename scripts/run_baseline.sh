@@ -71,7 +71,7 @@ TOTAL_RAM_GB="$(echo "scale=1; $TOTAL_RAM_BYTES / 1073741824" | bc 2>/dev/null |
 OS_VERSION="$(uname -r)"
 SQUISH_COMMIT="$(cd "$REPO_DIR" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 PYTHON_VER="$(python3 --version 2>/dev/null | awk '{print $2}')"
-MLX_VER="$(python3 -c 'import mlx; print(mlx.__version__)' 2>/dev/null || echo unknown)"
+MLX_VER="$(python3 -c 'import mlx.core as mx; print(mx.__version__)' 2>/dev/null || echo unknown)"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
@@ -118,8 +118,8 @@ kill_server_on_port() {
         kill -9 $port_pid 2>/dev/null || true
         sleep 2
     fi
-    if [[ -n "${SERVER_PID:-}" ]] && kill -0 "${SERVER_PID:-}" 2>/dev/null; then
-        kill "${SERVER_PID}" 2>/dev/null || true
+    if [[ "${SERVER_PID:-0}" -gt 0 ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+        kill "$SERVER_PID" 2>/dev/null || true
         sleep 2
     fi
     SERVER_PID=0
