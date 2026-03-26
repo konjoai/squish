@@ -6195,6 +6195,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#wave-84-ci-benchmark-gate-dead-code-audit-2026-03-26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Wave 84 — CI Benchmark Gate + Dead Code Audit — 2026-03-26
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Wave 84 — CI Benchmark Gate + Dead Code Audit — 2026-03-26">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#objective_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Objective
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -11906,6 +11945,45 @@
     <span class="md-ellipsis">
       
         Deferred (Wave 84)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wave-84-ci-benchmark-gate-dead-code-audit-2026-03-26" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ✅ Wave 84 — CI Benchmark Gate + Dead Code Audit — 2026-03-26
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Wave 84 — CI Benchmark Gate + Dead Code Audit — 2026-03-26">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#objective_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Objective
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes
       
     </span>
   </a>
@@ -26378,6 +26456,42 @@ Combined with AWQ alpha=0.1, this produces the best results seen so far.</p>
 <li>Dead code removal audit (commented-out experimental blocks)</li>
 <li>Benchmark gate: <code>python -m squish.bench --tps-min 30</code> in CI</li>
 </ul>
+<hr />
+<h2 id="wave-84-ci-benchmark-gate-dead-code-audit-2026-03-26">✅ Wave 84 — CI Benchmark Gate + Dead Code Audit — 2026-03-26<a class="headerlink" href="#wave-84-ci-benchmark-gate-dead-code-audit-2026-03-26" title="Permanent link">&para;</a></h2>
+<h3 id="objective_2">Objective<a class="headerlink" href="#objective_2" title="Permanent link">&para;</a></h3>
+<p>Close the two Wave 83 deferreds: instrument <code>squish bench</code> with hard performance
+regression gates usable in CI, and complete a full dead code audit.</p>
+<h3 id="changes_2">Changes<a class="headerlink" href="#changes_2" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>squish/cli.py</code></td>
+<td><code>--tps-min N</code> and <code>--ttft-max MS</code> flags added to <code>p_bench</code>. Gate block in <code>cmd_bench</code> exits with code 2 if thresholds are breached.</td>
+</tr>
+<tr>
+<td><code>squish/bench/__main__.py</code></td>
+<td>New file — <code>python -m squish.bench</code> entry point. Pre-inserts "bench" into argv and delegates to <code>build_parser()</code> / <code>cmd_bench</code>.</td>
+</tr>
+<tr>
+<td><code>tests/test_wave84_bench_gate.py</code></td>
+<td>27 tests: argparse flag parsing (8), gate boundary conditions (12), bench module structure (5), subprocess help/error behaviour (2).</td>
+</tr>
+<tr>
+<td>Dead code audit</td>
+<td>All large comment blocks in <code>server.py</code>, <code>cli.py</code>, <code>convert.py</code>, <code>quant/</code> inspected. No dead code found — all blocks are intentional deferred-feature documentation.</td>
+</tr>
+<tr>
+<td><code>scripts/</code> debris</td>
+<td>10 research/debug scripts (<code>test_decode_formula*.py</code>, <code>test_mlx_*.py</code>, <code>test_pack*.py</code>, <code>test_packing.py</code>) deleted per No Graveyards rule.</td>
+</tr>
+</tbody>
+</table>
 
 
 
