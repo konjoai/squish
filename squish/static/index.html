@@ -1419,6 +1419,11 @@ async function _doGenerate(sess) {
                 const body2 = msgEl.querySelector(".msg-body");
                 if (body2) body2.appendChild(updated);
                 scrollToBottom();
+              } else if (evt.type === "error" && evt.message) {
+                // Server-side error during agent run — surface it to the user
+                const errText = `\n\n*Agent error: ${evt.message}*`;
+                asstMsg.content += errText;
+                _enqueueTokens(errText);
               }
             } catch { /* ignore malformed SSE */ }
           }
