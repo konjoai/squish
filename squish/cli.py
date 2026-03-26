@@ -1802,6 +1802,31 @@ def cmd_bench(args):  # pragma: no cover
             save_path = Path(getattr(args, "save", None) or "squish_bench.md")
             save_path.write_text(md)
             print(f"\n  Markdown table saved to {save_path}")
+
+        # ── Performance gates ─────────────────────────────────────────────────
+        tps_min  = float(getattr(args, "tps_min",  0.0) or 0.0)
+        ttft_max = float(getattr(args, "ttft_max", 0.0) or 0.0)
+        gate_failed = False
+
+        if tps_min > 0 and avg_tps < tps_min:
+            msg = f"  GATE FAIL: avg throughput {avg_tps:.1f} tok/s < required {tps_min:.1f} tok/s"
+            if _rich:
+                _con.print(f"[bold red]{msg}[/]")
+            else:
+                print(msg, file=sys.stderr)
+            gate_failed = True
+
+        if ttft_max > 0 and avg_ttft * 1000 > ttft_max:
+            msg = f"  GATE FAIL: avg TTFT {avg_ttft*1000:.0f} ms > allowed {ttft_max:.0f} ms"
+            if _rich:
+                _con.print(f"[bold red]{msg}[/]")
+            else:
+                print(msg, file=sys.stderr)
+            gate_failed = True
+
+        if gate_failed:
+            sys.exit(2)
+
     print()
 
 
@@ -2222,17 +2247,21 @@ def cmd_compress(args):  # pragma: no cover
             _int3_out_dir = _int3_model_dir.parent / f"{_int3_base}-int3"
 
         print(f"\n  Compressing: {_int3_model_dir}")
-        print(f"  Quantization: INT3 (mlx_lm.convert, ~46% of BF16 size)")
-        print(f"  Output:      {_int3_out_dir}\n")
+        # q_group_size=32: more fine-grained scale calibration than the mlx_lm default (64).
+        # At 3 bits, larger groups cause significant accumulated quantization error — especially
+        # on small models.  group_size=32 roughly halves per-group error, trading a modest
+        # increase in scale-tensor storage (~+10% total size) for coherent output quality.
+        _INT3_GROUP_SIZE = 32
+        print(f"  Quantization: INT3 q_group_size={_INT3_GROUP_SIZE} (mlx_lm.convert, ~46% of BF16 size)")
+        print(f"  Output:      {_int3_out_dir}")
+        print(f"\n  ⚠  INT3 is experimental. For models < 3B, quality may be degraded vs INT4.")
+        print(f"     Recommended minimum: 3B+ parameters. INT4 is the production baseline.\n")
 
-        # Warn if a stale (INT8-content) INT3 dir already exists
-        _int3_manifest = _int3_out_dir / "manifest.json"
-        if _int3_manifest.exists():
-            print(
-                f"  ⚠  Stale INT3 dir detected (contains Vectro INT8 data, not true INT3).\n"
-                f"     Removing and regenerating with mlx_lm INT3 quantisation.\n"
-            )
-            import shutil as _shutil_int3
+        # Always regenerate: compress is an explicit request for a fresh model.
+        # This ensures q_group_size changes (or any other param changes) take effect.
+        import shutil as _shutil_int3
+        if _int3_out_dir.exists():
+            print(f"  Removing existing INT3 dir for clean regeneration: {_int3_out_dir}")
             _shutil_int3.rmtree(str(_int3_out_dir), ignore_errors=True)
 
         try:
@@ -2242,7 +2271,7 @@ def cmd_compress(args):  # pragma: no cover
                 mlx_path=str(_int3_out_dir),
                 quantize=True,
                 q_bits=3,
-                q_group_size=64,
+                q_group_size=_INT3_GROUP_SIZE,
             )
             print(f"\n  ✓  INT3 model saved to {_int3_out_dir}")
             _out_size_gb = sum(
@@ -5412,6 +5441,10 @@ Ollama drop-in:
                          help="Limit items/tokens per track (passed to runner.run)")
     p_bench.add_argument("--out",        default="eval_output",
                          help="Directory to save ResultRecord JSON files (default: eval_output)")
+    p_bench.add_argument("--tps-min",    type=float, default=0.0, metavar="N",
+                         help="Fail (exit 2) if average throughput falls below N tok/s")
+    p_bench.add_argument("--ttft-max",   type=float, default=0.0, metavar="MS",
+                         help="Fail (exit 2) if average TTFT exceeds MS milliseconds")
     p_bench.set_defaults(func=cmd_bench)
 
     # ── doctor ──
