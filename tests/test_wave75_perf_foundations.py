@@ -280,7 +280,6 @@ class TestPrintOptimizationStatus(unittest.TestCase):
         "metal-jit-warmup",
         "prefix-cache",
         "paged-kv",
-        "flash-attn3",
     ]
 
     def _run_with_patches(self, **overrides) -> str:
@@ -299,7 +298,6 @@ class TestPrintOptimizationStatus(unittest.TestCase):
             "_state":                 mock_state_on,
             "_prefix_cache":          MagicMock(_maxsize=512),
             "_paged_kv_cache":        MagicMock(),
-            "_flash_attn3":           MagicMock(),
         }
         defaults.update(overrides)
 

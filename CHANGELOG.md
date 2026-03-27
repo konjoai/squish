@@ -5,6 +5,57 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.7.0] — Wave 120 — server.py Dead Global Purge (~-376 lines)
+
+### Removed
+
+- **188 dead module-level `_var = None` globals deleted** — all were initialized
+  to `None` at module scope and never assigned to a non-`None` value anywhere in
+  `server.py` (including inside `main()`). These globals accumulated across Waves
+  41–51 as feature-flag placeholders for modules that were never built or were
+  subsequently deleted. The corresponding `global _var` statements in `main()`
+  were removed simultaneously.
+- **4 dead hot-path if-blocks removed** for the subset of globals with > 2 refs:
+  - `_pd_disaggregator`: 3 call sites guarded by `if _pd_disaggregator is not None:`
+    were always-False dead branches (PD-disaggregation prefill timing, stats
+    recording at prefill, stats recording at decode). Also removed the dead
+    `_pd_prefill_t0` variable whose only purpose was feeding those blocks.
+  - `_speculative_streamer`: `streamer.reset()` per-request block was dead
+    (SpeculativeStreamer never existed in squish/).
+  - `_chunk_kv_manager`: `invalidate_reuse_cache()` per-request block was dead
+    (ChunkKVManager never existed in squish/).
+  - `_flash_attn3`: removed from the optimization status table row list
+    (FlashAttn3Kernel module never existed in squish/).
+- **`flash-attn3` removed from optimization status display** — the row was always
+  showing ✗ (False) since the global was permanently None.
+- **False positives preserved** — `_lazy_expert` and `_structured_sparsity` were
+  excluded from deletion because they are legitimately set via
+  `globals()["_varname"] = ...` dict-assignment syntax inside auto-initialization
+  blocks (Wave 83 and Wave 82 respectively), which the static analysis regex
+  does not match.
+- **Two Wave-13/14 pattern sentinels updated** (`test_wave75`, `test_wave78`) to
+  remove `_flash_attn3` patch targets that no longer exist on `squish.server`.
+
+### Added
+
+- `tests/test_wave120_dead_global_purge.py` — 128 regression tests: 60 parametrized
+  spot-checks (module-level + global-stmt absence for 30 representative deleted
+  globals), 4 hot-path absence tests, 2 live-global preservation tests, 1 line-count
+  threshold test (< 5000 lines), 1 sentinel `test_no_new_dead_globals` that will
+  catch any future accumulation before it spirals into another Wave 120.
+
+### Stats
+
+| Metric | Before | After | Delta |
+|---|---|---|---|
+| `server.py` lines | 5207 | 4831 | **-376** |
+| Dead module-level globals | 188 | 0 | -188 |
+| Dead `global _var` stmts | 158 | 0 | -158 |
+| Dead hot-path if-blocks | 4 | 0 | -4 |
+| False positives preserved | — | 2 | `_lazy_expert`, `_structured_sparsity` |
+
+---
+
 ## [9.6.0] — Wave 119 — server.py Wave-13/14 & ToMe Dead-Stub Purge (~-93 lines)
 
 ### Removed

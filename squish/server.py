@@ -147,241 +147,53 @@ _agent_kv_config: "Any | None" = None   # AgentKVConfig | None — set in main()
 
 # ── Wave optimization module state (lazily instantiated) ─────────────────────
 _prompt_lookup_decoder  = None  # PromptLookupDecoder    — --prompt-lookup
-_seq_packer             = None  # SequencePacker         — --seq-packing
-_ada_serve_scheduler    = None  # AdaServeScheduler      — --ada-serve
-_conf_spec_verifier     = None  # ConfSpecVerifier        — --conf-spec
-_kvsharer_map           = None  # KVShareMap             — --kv-share
-_kv_slab_allocator      = None  # KVSlabAllocator        — --kv-slab
-_paris_kv_codebook      = None  # ParisKVCodebook        — --paris-kv
-_streaming_sink_cache   = None  # SinkKVCache            — --streaming-sink
-_diffkv_policy_mgr      = None  # DiffKVPolicyManager    — --diff-kv
-_smallkv_cache          = None  # SmallKVCache           — --small-kv
-_lookahead_engine       = None  # LookaheadReasoningEngine — --lookahead
-_spec_reason_orch       = None  # SpecReasonOrchestrator — --spec-reason
-_sage_attn_kernel       = None  # SageAttentionKernel     — --sage-attention
-_sage_attn2_kernel      = None  # SageAttention2Kernel    — --sage-attention2
-_sparge_engine          = None  # SpargeAttnEngine        — --sparge-attention
-_squeeze_cache          = None  # SqueezeKVCache          — --squeeze-attention
-_yoco_config            = None  # YOCOConfig              — --yoco-kv
-_cla_config             = None  # CLAConfig               — --cla
-_kvtuner_config         = None  # KVTunerConfig           — --kvtuner
-_robust_sched           = None  # AMaxScheduler           — --robust-scheduler
-_gemfilter_config       = None  # GemFilterConfig         — --gemfilter
-_svdq_config            = None  # SVDqConfig              — --svdq
-_sparse_spec_config     = None  # SparseSpecConfig        — --sparse-spec
-_sparse_verify_config   = None  # SparseVerifyConfig      — --sparse-verify
-_trail_config           = None  # TrailConfig             — --trail
-_specontext_config      = None  # SpeContextConfig        — --specontext
-_forelen_config         = None  # ForelenConfig           — --forelen
-_ipw_config             = None  # IPWConfig               — --ipw
-_layer_skip_config      = None  # EarlyExitConfig         — --layer-skip
-_long_spec_config       = None  # LongSpecConfig          — --long-spec
-_fr_spec_config         = None  # FRSpecConfig            -- --fr-spec  # wave37-test-marker
 
 # ── Wave 41: Prefix Sharing, EAGLE-2, Ring Attention, Token Pruning, MoE, Sink Fusion ──
-_radix_attn_cache       = None  # RadixAttentionCache     — --radix-attn
-_eagle2_spec            = None  # EAGLE2Spec              — --eagle2
-_ring_attn_config       = None  # RingAttention           — --ring-attn
-_token_entropy_pruner   = None  # TokenEntropyPruner      — --token-entropy-prune
-_pregated_moe_router    = None  # PreGatedMoERouter       — --pregated-moe
-_sink_fusion_config     = None  # SinkFusion              — --sink-fusion
-_cla_share_config       = None  # CLAShareAttention       — --cla-share
-_qmoe_compressor        = None  # QMoECompressor          — --qmoe-compress
-_lade_decoder           = None  # LADEDecoder             — --lade
-_infini_attn_config     = None  # InfiniAttention         — --infini-attn
-_akvq_cache             = None  # AKVQCache               — --akvq
-_delta_zip_store        = None  # DeltaZipAdapter         — --delta-zip
 
 # ── Wave 42: Disaggregated Serving, NSA, Medusa, KV Quant, AttentionStore, QAT ──
-_medusa_heads           = None  # MedusaHeads             — --medusa-heads
-_sarathi_scheduler      = None  # SarathiScheduler        — --sarathi
-_nsa_attn_config        = None  # NSAAttention            — --nsa-attn
-_flex_prefill_config    = None  # FlexPrefill             — --flex-prefill
-_think_cache            = None  # ThinKCache              — --think-cache
-_attention_store        = None  # AttentionStore          — --attention-store
-_rest_decoder           = None  # RESTDecode              — --rest-decode
-_star_attn_config       = None  # StarAttention           — --star-attn
-_splitwise_scheduler    = None  # SplitwiseScheduler      — --splitwise
-_kvquant_cache          = None  # KVQuantCache            — --kvquant
-_efficient_qat          = None  # EfficientQAT            — --efficient-qat
-_cache_gen_codec        = None  # CacheGenCodec           — --cache-gen
 
 # ── Wave 43: MTP Decode, Cascade KV, Head Pruner, Paged Attn, Layer Collapse ──
-_mtp_decode_w43         = None  # MTPDecode               — --mtp-decode
-_cascade_kv             = None  # CascadeKV               — --cascade-kv
-_head_pruner            = None  # HeadPruner              — --head-prune
-_paged_attn_w43         = None  # PagedAttention          — --paged-attn-w43
-_layer_collapse         = None  # LayerCollapse           — --layer-collapse
-_relay_attn             = None  # RelayAttention          — --relay-attn
-_wkv_quant              = None  # WKVQuant                — --wkv-quant
-_tokenized_kv           = None  # TokenizedKVCache        — --tokenized-kv
-_cluster_evict_kv       = None  # ClusterEvictKV          — --cluster-evict
-_s2_attn                = None  # S2Attention             — --s2-attn
-_magic_pig_v2           = None  # MagicPIGv2              — --magic-pig-v2
 
 # ── Wave 44: Marlin GEMM, Spec Rejection, LoFTQ, Online Spec, Dynamic Spec ───
-_marlin_gemm            = None  # MarlinGEMM              — --marlin-gemm
-_spec_rejection         = None  # SpecRejection           — --spec-rejection
-_loftq_config           = None  # LoFTQ                   — --loftq
-_online_spec            = None  # OnlineSpec              — --online-spec
-_dynamic_spec_len       = None  # DynamicSpecLen          — --dynamic-spec-len
-_big_little_llm         = None  # BigLittleLLM            — --big-little
-_multi_exit_spec        = None  # MultiExitSpec           — --multi-exit-spec
-_pv_tuning              = None  # PVTuning                — --pv-tuning
-_hadamard_quant         = None  # HadamardQuant           — --hadamard-quant
-_prefix_tree            = None  # PrefixTreeDecode        — --prefix-tree-decode
-_spectr_ot              = None  # SpecTrOT                — --spectr-ot
-_ada_gptq               = None  # AdaGPTQ                 — --ada-gptq
 
 # ── Wave 45: FlexGen Offload, YaRN, SelfExtend, Orca, MxFP4, FP8Act, CLEXRoPE ─
-_flexgen_offload        = None  # FlexGenOffload          — --flexgen-offload
-_yarn_rope              = None  # YaRNRoPE                — --yarn-rope
-_self_extend            = None  # SelfExtend              — --self-extend
-_orca_scheduler         = None  # OrcaScheduler           — --orca-sched
-_mx_fp4_quant           = None  # MxFP4                   — --mx-fp4
-_fp8_act_quant          = None  # FP8ActQuant             — --fp8-act
-_clex_rope              = None  # CLeXRoPE                — --clex-rope
-_powerinfer_offload     = None  # PowerInferOffload       — --powerinfer
-_grouped_rope           = None  # GroupedRoPE             — --grouped-rope
-_tensor_parallel        = None  # TensorParallel          — --tensor-parallel
-_fused_bias_gelu        = None  # FusedBiasGELU           — --fused-bias-gelu
-_token_budget_sched     = None  # TokenBudgetScheduler    — --token-budget-sched
 
 # ── Wave 46: Model Surgery, Expert Choice, W4A8, MLA KV, MinP, Contrastive ───
-_slice_gpt              = None  # SliceGPTPruner          — --slice-gpt
-_wanda_pruner           = None  # WandaPruner             — --wanda
-_short_gpt              = None  # ShortGPTPruner          — --short-gpt
-_w4a8_runtime           = None  # W4A8QuantRuntime        — --w4a8
-_expert_choice          = None  # ExpertChoiceRouter      — --expert-choice
-_mla_kv_compress        = None  # MLAKVCompress           — --mla-kv
-_minp_sampler           = None  # MinPSampler             — --minp
-_contrastive_search     = None  # ContrastiveSearch       — --contrastive-search
-_razor_attn             = None  # RazorAttention          — --razor-attn
-_cache_blend            = None  # CacheBlend              — --cache-blend
-_green_kv               = None  # GreenKVEviction         — --green-kv
-_preble_router          = None  # PrebeleRouter           — --preble
 
 # ── Wave 47: Mamba2, HGRN2, Lookahead, InfMemory, vAttn, IA3, MoE-Infinity ──
-_mamba2_ssm             = None  # Mamba2SSM               — --mamba2-ssm
-_hgrn2                  = None  # HGRN2                   — --hgrn2
-_lookahead_decode       = None  # LookaheadDecode         — --lookahead-decode
-_inf_memory             = None  # InfMemory               — --inf-memory
-_v_attn_kv              = None  # vAttentionKV            — --v-attn
-_ia3_adapter            = None  # IA3Adapter              — --ia3
-_moe_infinity           = None  # MoEInfinityOffload      — --moe-infinity
-_mega_blocks            = None  # MegaBlocksSparse        — --mega-blocks
-_kgw_watermark          = None  # KGWWatermark            — --kgw-watermark
-_typical_sampler        = None  # TypicalSampler          — --typical-sampler
-_dora_adapter           = None  # DoRAAdapter             — --dora
-_calm_exit              = None  # AdaptiveCALM            — --calm-exit
 
 # ── Wave 48: INT2/INT3 Extreme Quantization ───────────────────────────────────
-_spqr_quantizer         = None  # SpQRQuantizer           — --spqr
-_auto_round             = None  # AutoRoundQuantizer      — --auto-round
-_owq_quantizer          = None  # OWQQuantizer            — --owq
-_bit_distiller          = None  # BitDistillerQuant       — --bit-distiller
-_zip_lm                 = None  # ZipLMMixedPrecision     — --zip-lm
-_gguf_mixed             = None  # GGUFMixedQuantizer      — --gguf-mixed
 
 # ── Wave 49: TTFT Sprint: LLMLingua-2, RECOMP, Selective Context, Prepack ────
-_llm_lingua2            = None  # LLMLingua2Compressor    — --llm-lingua2
-_recomp_compressor      = None  # RECOMPCompressor        — --recomp
-_selective_context      = None  # SelectiveContextCompressor — --selective-context
-_prompt_cache_kv        = None  # PromptCacheKV           — --prompt-cache
-_pipe_infer             = None  # PipeInferScheduler      — --pipe-infer
-_prepack_scheduler      = None  # PrepackScheduler        — --prepack
 
 # ── Wave 50: Bigger-Than-Memory: SparseGPT, MoD, LeanKV, GGUF, WeightStream ─
-_sparse_gpt             = None  # SparseGPTPruner         — --sparse-gpt
-_mix_of_depths          = None  # MixtureOfDepths         — --mix-of-depths
-_lean_kv_quant          = None  # LeanKVQuant             — --lean-kv
 _gguf_loader            = None  # GGUFNativeLoader        — --gguf-loader
 _weight_stream          = None  # WeightDecompressStream  — --weight-stream
 _shard_loader           = None  # ModelShardLoader        — --shard-loader
 
 # ── Wave 51: Test-Time Compute Scaling ────────────────────────────────────────
-_budget_forcing         = None  # BudgetForcingDecoder    — --budget-forcing
-_test_time_router       = None  # TestTimeComputeRouter   — --test-time-scale
-_dvts_search            = None  # DVTSSearch              — --dvts
-_chain_of_draft         = None  # ChainOfDraftSampler     — --chain-of-draft
 _coconut_decoder        = None  # CoconutDecoder          — --coconut
-_prm_beam_search        = None  # PRMBeamSearch           — --prm-beam
-_best_of_n              = None  # BestOfNSampler          — --best-of-n
 _self_consistency       = None  # SelfConsistencyVoter    — --self-consistency
-_thought_budget_gate    = None  # ThoughtBudgetGate       — --thought-budget
-_reasoning_kv           = None  # ReasoningKVManager      — --reasoning-kv
-_draft_reasoning        = None  # DraftReasoningVerifier  — --draft-reasoning
-_parallel_reasoning     = None  # ParallelReasoningScheduler — --parallel-reasoning
 
 # ── Wave 52: Multi-Modal VLM Efficiency ───────────────────────────────────────
-_fast_v_pruner          = None  # FastVPruner             — --fast-v
-_vision_zip             = None  # VisionZip               — --vision-zip
-_llava_prumerge         = None  # LLaVAPruMerge           — --llava-prumerge
-_token_packer           = None  # TokenPacker             — --token-packer
-_flash_vstream          = None  # FlashVStream            — --flash-vstream
-_dynamic_res            = None  # DynamicResEncoder       — --dynamic-res
-_visual_kv_quant        = None  # VisualKVQuant           — --visual-kv-quant
-_cross_modal_router     = None  # CrossModalRouter        — --cross-modal
-_video_kv_reuse         = None  # VideoKVReuse            — --video-kv-reuse
-_vlm_spec_decode        = None  # VLMSpecDecode           — --vlm-spec
-_vlm_batch_sched        = None  # VLMBatchScheduler       — --vlm-sched
-_img_encoder_cache      = None  # ImageEncoderCache       — --img-encoder-cache
 
 # ── Wave 53: Linear Recurrent Architectures ───────────────────────────────────
-_rwkv6_channel_mix      = None  # RWKV6ChannelMix         — --rwkv6
-_hawk_rnn               = None  # HawkLinearRNN           — --hawk-rnn
-_xlstm_block            = None  # xLSTMBlock              — --xlstm
-_ttt_layer              = None  # TTTLinearLayer          — --ttt
-_delta_net              = None  # DeltaNetLinear          — --delta-net
-_ssm_state_cache        = None  # SSMStateCache           — --ssm-cache
-_parallel_scan          = None  # ParallelScanKernel      — --parallel-scan
-_ssm_quantizer          = None  # SSMQuantizer            — --ssm-quant
-_hybrid_arch_router     = None  # HybridArchRouter        — --hybrid-arch
-_hymba_dual             = None  # HymbaDualTrack          — --hymba
-_ssm_state_offload      = None  # SSMStateOffload         — --ssm-offload
 
 # ── Wave 54: Deep MoE Efficiency, FlashAttn3, DoubleSparsity, ElasticBatch ───
-_shared_expert_moe      = None  # SharedExpertMoE         — --shared-expert
-_fine_grained_router    = None  # FineGrainedMoERouter    — --fine-grained-moe
-_expert_offloader       = None  # ExpertOffloader         — --expert-offload
-_expert_merger          = None  # ExpertMerger            — --expert-merge
 _lazy_expert            = None  # LazyExpertLoader        — --lazy-expert
-_expert_act_cache       = None  # ExpertActivationCache   — --expert-cache
-_flash_attn3            = None  # FlashAttn3Kernel        — --flash-attn3
-_double_sparse_attn     = None  # DoubleSparsityAttn      — --double-sparse
-_lasp_linear_attn       = None  # LASPLinearAttn          — --lasp
-_nacl_cache             = None  # NaCLCache               — --nacl-cache
-_kv_migration           = None  # KVMigrationManager      — --kv-migration
-_elastic_batch          = None  # ElasticBatchController  — --elastic-batch
 
 # ── Wave 55: Advanced Sampling, Emerging Quantization ────────────────────────
-_min_p_sampler          = None  # MinPSampler             — --min-p
-_mirostat_sampler       = None  # MirostatSampler         — --mirostat
-_eta_cutoff             = None  # EtaCutoffSampler        — --eta-cutoff
-_cfg_sampler            = None  # CFGLogitsSampler        — --cfg-guidance
-_diverse_beam           = None  # DiverseBeamSampler      — --diverse-beam
-_bitnet158              = None  # BitNet158Quantizer      — --bitnet158
-_spqr_quant_w55         = None  # SpQRQuantizer (spqr_quant) — --spqr-quant
-_omniquant              = None  # OmniQuantizer           — --omniquant
-_qsparse                = None  # QSparsifier             — --q-sparse
-_fp4_quantizer          = None  # FP4Quantizer            — --fp4-quant
-_ada_round              = None  # AdaRoundQuantizer       — --ada-round
 
 # ── Wave 37: Wire Everything In ───────────────────────────────────────────────
 # Twelve isolation modules from Waves 33–35 wired into the live request path.
 _kvtc_manager           = None  # KVTCManager             — --kvtc
-_chunk_kv_manager       = None  # ChunkKVManager          — --chunk-kv
-_ssd_saguaro            = None  # SSDSaguaro              — --ssd-saguaro
-_speculative_streamer   = None  # SpeculativeStreamer      — --spec-stream
 _metal_flash_attn       = None  # MetalFlashAttention     — --metal-flash-attn
 _deja_vu_sparse_ffn     = None  # DejaVuSparseFFN         — --deja-vu
 _structured_sparsity    = None  # StructuredFfnSparsity   — Wave 82 auto-load
 _jacobi_decoder         = None  # JacobiDecoder           — --jacobi
-_mtp_predictor          = None  # MultiTokenPredictor     — --mtp
 _layer_overlap_loader   = None  # LayerOverlapLoader      — --layer-overlap
 _chip_profile           = None  # ChipProfile             — auto (startup)
 _fused_qkv_proj         = None  # FusedQKVProjection      — --fused-qkv
-_pd_disaggregator       = None  # PDDisaggregator         — --pd-disagg
 # ── Wave 81: blazing-mode globals ─────────────────────────────────────────────
 _blazing_mode: bool     = False  # True when --blazing preset is active
 _metal_cache_limit_mb: int = 256  # Override via --blazing (drops to 64 MB)
@@ -656,8 +468,6 @@ def _print_optimization_status() -> None:
          f"exact-match response cache  (cap={_prefix_cache._maxsize})"),
         ("paged-kv",       _paged_kv_cache is not None,
          "block-table KV reuse"),
-        ("flash-attn3",    _flash_attn3 is not None,
-         "Flash Attention 3 kernel"),
     ]
     _section("Optimization modules")
     for name, active, desc in rows:
@@ -1721,12 +1531,7 @@ def _generate_tokens(  # pragma: no cover
     if _draft.generator is not None and temperature > 0.0:
         if _trace:
             _tlog(f"REQ {_rid}  dispatch → speculative-decoding")
-        # ── Wave 37: reset SpeculativeStreamer per request ─────────────────────
-        if _speculative_streamer is not None:
-            try:
-                _speculative_streamer.reset()
-            except Exception:
-                pass  # never block generation on streamer reset failure
+
         try:
             with _trace_span("gen.speculative") as _spec_tspan:
                 gen = _draft.generator.stream(
@@ -1859,12 +1664,7 @@ def _generate_tokens(  # pragma: no cover
         if _trace:
             _tlog(f"REQ {_rid}  dispatch → kv-cache ({_kv_cache.__class__.__name__})")
         _kv_cache.reset()
-        # ── Wave 37: invalidate ChunkKV cross-layer reuse cache per request ─────
-        if _chunk_kv_manager is not None:
-            try:
-                _chunk_kv_manager.invalidate_reuse_cache()
-            except Exception:
-                pass  # never block generation on chunk-kv invalidation failure
+
         try:
             import mlx.core as mx
             import numpy as np
@@ -1940,8 +1740,6 @@ def _generate_tokens(  # pragma: no cover
                 next_id = _sample_mx(last_logit_mlx, temperature, top_p)
             else:
                 # Cache miss: run full prefill
-                # ── Wave 37: PD-disagg timing — record prefill start ──────────
-                _pd_prefill_t0 = time.monotonic() if _pd_disaggregator is not None else 0.0
                 # ── Phase 3A / Wave 27: chunked prefill (all paths, long prompts) ──
                 # CRITICAL: spec decode starts only after is_final_chunk=True.
                 # Interleaved greedy tokens emitted on non-final chunks DO count
@@ -1997,16 +1795,6 @@ def _generate_tokens(  # pragma: no cover
                     _last_logit_vec = logits_full[0, -1]
 
                 next_id = _sample_mx(_last_logit_vec, temperature, top_p)
-                # ── Wave 37: PD-disagg timing — record prefill completion ──────
-                if _pd_disaggregator is not None:
-                    try:
-                        _pd_disaggregator.stats.total_prefill_ms += (
-                            time.monotonic() - _pd_prefill_t0
-                        ) * 1000.0
-                        _pd_disaggregator.stats.total_prompt_tokens += len(input_ids)
-                        _pd_disaggregator.stats.total_requests += 1
-                    except Exception:
-                        pass  # never block generation on stats update failure
                 # Persist for future requests in background
                 if _disk_prompt_cache is not None:
                     try:
@@ -2218,12 +2006,6 @@ def _generate_tokens(  # pragma: no cover
             if _session_kv_cache is not None and _session_key is not None:
                 try:
                     _session_kv_cache.save_session(_session_key, _kv_cache)
-                except Exception:
-                    pass
-            # ── Wave 37: PD-disagg — record total decoded tokens ──────────────
-            if _pd_disaggregator is not None:
-                try:
-                    _pd_disaggregator.stats.total_generated_tokens += len(_cache_buf) if _cache_buf else 0
                 except Exception:
                     pass
             yield "", "stop"
@@ -4735,9 +4517,6 @@ Examples:
         except Exception as _e:
             _warn(f"[kvtc] Skipped: {_e}")
 
-    global _chunk_kv_manager
-    global _ssd_saguaro
-    global _speculative_streamer
     global _metal_flash_attn
     if getattr(args, "metal_flash_attn", False) and _state.model is not None:
         try:
@@ -4783,7 +4562,6 @@ Examples:
         except Exception as _e:
             _warn(f"[jacobi] Skipped: {_e}")
 
-    global _mtp_predictor
     global _layer_overlap_loader
     if getattr(args, "layer_overlap", False) and _state.model is not None:
         try:
@@ -4830,115 +4608,16 @@ Examples:
         except Exception as _e:
             _warn(f"[fused-qkv] Skipped: {_e}")
 
-    global _pd_disaggregator
     # ── Wave 41: Prefix Sharing, EAGLE-2, Ring Attention, Token Pruning ───────
-    global _radix_attn_cache
-    global _eagle2_spec
-    global _ring_attn_config
-    global _token_entropy_pruner
-    global _pregated_moe_router
-    global _sink_fusion_config
-    global _cla_share_config
-    global _qmoe_compressor
-    global _lade_decoder
-    global _infini_attn_config
-    global _akvq_cache
-    global _delta_zip_store
     # ── Wave 42: Disaggregated Serving, NSA, Medusa, KV Quant, QAT ───────────
-    global _medusa_heads
-    global _sarathi_scheduler
-    global _nsa_attn_config
-    global _flex_prefill_config
-    global _think_cache
-    global _attention_store
-    global _rest_decoder
-    global _star_attn_config
-    global _splitwise_scheduler
-    global _kvquant_cache
-    global _efficient_qat
-    global _cache_gen_codec
     # ── Wave 43: MTP Decode, Cascade KV, Head Pruner, Paged Attn, etc. ────────
-    global _mtp_decode_w43
-    global _cascade_kv
-    global _head_pruner
-    global _paged_attn_w43
-    global _layer_collapse
-    global _relay_attn
-    global _wkv_quant
-    global _tokenized_kv
-    global _cluster_evict_kv
-    global _s2_attn
-    global _magic_pig_v2
     # ── Wave 44: Marlin GEMM, Spec Rejection, LoFTQ, Online Spec, etc. ────────
-    global _marlin_gemm
-    global _spec_rejection
-    global _loftq_config
-    global _online_spec
-    global _dynamic_spec_len
-    global _big_little_llm
-    global _multi_exit_spec
-    global _pv_tuning
-    global _hadamard_quant
-    global _prefix_tree
-    global _spectr_ot
-    global _ada_gptq
     # ── Wave 45: FlexGen Offload, YaRN, SelfExtend, Orca, MxFP4, etc. ────────
-    global _flexgen_offload
-    global _yarn_rope
-    global _self_extend
-    global _orca_scheduler
-    global _mx_fp4_quant
-    global _fp8_act_quant
-    global _clex_rope
-    global _powerinfer_offload
-    global _grouped_rope
-    global _tensor_parallel
-    global _fused_bias_gelu
-    global _token_budget_sched
     # ── Wave 46: Model Surgery, Expert Choice, W4A8, MLA KV, MinP, etc. ──────
-    global _slice_gpt
-    global _wanda_pruner
-    global _short_gpt
-    global _w4a8_runtime
-    global _expert_choice
-    global _mla_kv_compress
-    global _minp_sampler
-    global _contrastive_search
-    global _razor_attn
-    global _cache_blend
-    global _green_kv
-    global _preble_router
     # ── Wave 47: Mamba2, HGRN2, Lookahead, InfMemory, vAttn, IA3, MoE-∞ ──────
-    global _mamba2_ssm
-    global _hgrn2
-    global _lookahead_decode
-    global _inf_memory
-    global _v_attn_kv
-    global _ia3_adapter
-    global _moe_infinity
-    global _mega_blocks
-    global _kgw_watermark
-    global _typical_sampler
-    global _dora_adapter
-    global _calm_exit
     # ── Wave 48: INT2/INT3 Extreme Quantization ────────────────────────────────
-    global _spqr_quantizer
-    global _auto_round
-    global _owq_quantizer
-    global _bit_distiller
-    global _zip_lm
-    global _gguf_mixed
     # ── Wave 49: TTFT Sprint: LLMLingua-2, RECOMP, Selective Context, etc. ────
-    global _llm_lingua2
-    global _recomp_compressor
-    global _selective_context
-    global _prompt_cache_kv
-    global _pipe_infer
-    global _prepack_scheduler
     # ── Wave 50: Bigger-Than-Memory: SparseGPT, MoD, LeanKV, GGUF, etc. ──────
-    global _sparse_gpt
-    global _mix_of_depths
-    global _lean_kv_quant
     global _gguf_loader
     if getattr(args, "gguf_loader", False):
         try:
@@ -4970,10 +4649,6 @@ Examples:
             _warn(f"[shard-loader] Skipped: {_e}")
 
     # ── Wave 51: Test-Time Compute Scaling ────────────────────────────────────
-    global _budget_forcing
-    global _test_time_router
-    global _dvts_search
-    global _chain_of_draft
     global _coconut_decoder
     if getattr(args, "coconut", False):
         try:
@@ -4984,8 +4659,6 @@ Examples:
         except Exception as _e:
             _warn(f"[coconut] Skipped: {_e}")
 
-    global _prm_beam_search
-    global _best_of_n
     global _self_consistency
     if getattr(args, "self_consistency", False):
         try:
@@ -4996,60 +4669,11 @@ Examples:
         except Exception as _e:
             _warn(f"[self-consistency] Skipped: {_e}")
 
-    global _thought_budget_gate
-    global _reasoning_kv
-    global _draft_reasoning
-    global _parallel_reasoning
     # ── Wave 52: Multi-Modal VLM Efficiency ───────────────────────────────────
-    global _fast_v_pruner
-    global _vision_zip
-    global _llava_prumerge
-    global _token_packer
-    global _flash_vstream
-    global _dynamic_res
-    global _visual_kv_quant
-    global _cross_modal_router
-    global _video_kv_reuse
-    global _vlm_spec_decode
-    global _vlm_batch_sched
-    global _img_encoder_cache
     # ── Wave 53: Linear Recurrent Architectures ───────────────────────────────
-    global _rwkv6_channel_mix
-    global _hawk_rnn
-    global _xlstm_block
-    global _ttt_layer
-    global _delta_net
-    global _ssm_state_cache
-    global _parallel_scan
-    global _ssm_quantizer
-    global _hybrid_arch_router
-    global _hymba_dual
-    global _ssm_state_offload
     # ── Wave 54: Deep MoE Efficiency, FlashAttn3, DoubleSparsity, etc. ────────
-    global _shared_expert_moe
-    global _fine_grained_router
-    global _expert_offloader
-    global _expert_merger
     global _lazy_expert
-    global _expert_act_cache
-    global _flash_attn3
-    global _double_sparse_attn
-    global _lasp_linear_attn
-    global _nacl_cache
-    global _kv_migration
-    global _elastic_batch
     # ── Wave 55: Advanced Sampling, Emerging Quantization ─────────────────────
-    global _min_p_sampler
-    global _mirostat_sampler
-    global _eta_cutoff
-    global _cfg_sampler
-    global _diverse_beam
-    global _bitnet158
-    global _spqr_quant_w55
-    global _omniquant
-    global _qsparse
-    global _fp4_quantizer
-    global _ada_round
     # ── Wave 27: Inference velocity features ──────────────────────────────────
     # 1B — FusedSampler: replace multi-pass sampling with a single fused kernel
     global _fused_sampler, _fused_sampler_enabled

@@ -113,7 +113,6 @@ class TestRadixTreeLazyInit(unittest.TestCase):
             _state=MagicMock(model=None),
             _prefix_cache=mock_cache,
             _paged_kv_cache=None,
-            _flash_attn3=None,
         ):
             buf = io.StringIO()
             with patch("sys.stdout", buf):
