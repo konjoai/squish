@@ -123,7 +123,7 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "dev/benchmarks"]
 addopts   = "-q --tb=short --import-mode=importlib"
 markers   = [
     "integration: requires live squish serve",
