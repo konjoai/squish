@@ -5,6 +5,38 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.6.0] — Wave 119 — server.py Wave-13/14 & ToMe Dead-Stub Purge (~-93 lines)
+
+### Removed
+
+- **19 Wave-13/14 "lazy stub" try/except import blocks deleted** — all 19 blocks
+  (`DuoAttentionConfig`, `DuoDecodingConfig`, `ShadowKVConfig`, `PQCacheConfig`,
+  `SpeCacheConfig`, `KnapSpecConfig`, `TokenMergingConfig`, `TokenSwiftConfig`,
+  `C2TConfig`, `SubSpecConfig`, `DFloat11Config`, `RANSCodec`, `QSpecConfig`,
+  `QuantSpecConfig`, `CopySpecConfig`, `SqueezeLLMConfig`, `quantize_nf4`,
+  `run_rotation`, `HeadType`) were silent try/except blocks that always silently
+  caught `ImportError` because the referenced modules no longer exist in `squish/`
+  (18 missed; 1 succeeded but the import was unused). Zero effect on runtime.
+- **`_tome_config` / `_tome_state` dead globals removed** (lines 395–396) — both
+  were always `None`; `TokenMergingConfig` import always failed; the
+  `--token-merge` variant was never added to argparse and the in-request
+  `if _tome_config:` branch was never reachable.
+- **`--tome-r`, `--tome-start-layer`, `--tome-end-layer` dead flags removed** from
+  argparse — all three parsed but were never consumed (no code read `args.tome_r`
+  or either layer flag after model load).
+- **`--lookahead-k` dead flag removed** — parsed but never read; the referenced
+  `LookaheadReasoningEngine` module was deleted in Wave 116.
+- **Orphaned `global _tome_config, _tome_state` + section comment removed** — the
+  `# 1D — TokenMerging: bipartite ToMe during prefill` section header and its
+  `global` declaration were left dangling after ToMe code was deleted earlier.
+
+### Chore
+
+- **Version**: 9.5.0 → 9.6.0
+- **server.py**: 5300 → 5207 lines (−93 lines)
+
+---
+
 ## [9.5.0] — Wave 118 — server.py Dead-Flag Surgery (~-220 lines)
 
 ### Removed

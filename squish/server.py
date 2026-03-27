@@ -392,8 +392,6 @@ _fused_sampler_enabled  = True  # on by default; --no-fused-sampler to disable
 _cached_make_sampler: "Any" = None  # cached on first successful import from mlx_lm.sample_utils
 _cache_warmup_predictor = None  # CacheWarmupPredictor    — tracks prefix access patterns
 _cache_warmup_enabled   = True  # on by default; --no-cache-warmup to disable
-_tome_config            = None  # TokenMergingConfig      — --token-merge
-_tome_state             = None  # TokenMergingState       — per-request merge maps
 # Phase 3: cross-session persistent KV cache
 _session_kv_cache    = None   # SessionKVCache | None — set in main() when --session-cache-dir given
 # Phase 4: prompt compression settings (active when --compress-prompt is set)
@@ -3992,15 +3990,6 @@ Examples:
                          "Reduces post-load warmup from ~2 s to ~50 ms at the cost of a\n"
                          "slightly slower very-first token on the first request.\n"
                          "Implies disabling the full Metal warmup.")
-    ap.add_argument("--tome-r", type=int, default=16, metavar="R",
-                    help="Token pairs to merge per ToMe layer (default 16).\n"
-                         "Higher R = faster prefill but more quality loss.")
-    ap.add_argument("--tome-start-layer", type=int, default=4, metavar="L",
-                    help="First transformer layer where token merging is applied (default 4).")
-    ap.add_argument("--tome-end-layer", type=int, default=11, metavar="L",
-                    help="Last transformer layer where token merging is applied (default 11).")
-    ap.add_argument("--lookahead-k", type=int, default=4, metavar="K",
-                    help="Lookahead window size (default: 4).")
     # ── Wave 37: Wire Everything In ───────────────────────────────────────────
     ap.add_argument("--kvtc", action="store_true", default=False,
                     help="Enable KV-Transform Coder: PCA+quantize KV cache across all layers.\n"
@@ -5092,8 +5081,6 @@ Examples:
             _cache_warmup_enabled = False
             _warn(f"[cache-warmup] Skipped: {_e}")
 
-    # 1D — TokenMerging: bipartite ToMe during prefill
-    global _tome_config, _tome_state
     if getattr(args, "lora_adapter", ""):
         try:
             from squish.lora.lora_manager import LoRAManager
@@ -5102,86 +5089,6 @@ Examples:
             _info("lora-adapter", f"{args.lora_adapter}")
         except Exception as _e:
             _warn(f"[lora-adapter] Skipped: {_e}")
-
-    # ── Wave 13 — Attention/KV/Token innovations (lazy stubs) ────────────────
-    try:
-        from squish.attention.duo_attention import DuoAttentionConfig as _DuoAttentionConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.attention.duo_decoding import DuoDecodingConfig as _DuoDecodingConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.kv.shadow_kv import ShadowKVConfig as _ShadowKVConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.kv.pq_cache import PQCacheConfig as _PQCacheConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.kv.spe_cache import SpeCacheConfig as _SpeCacheConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.token.knapspec import KnapSpecConfig as _KnapSpecConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.token.token_merging import TokenMergingConfig as _TokenMergingConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.token.token_swift import TokenSwiftConfig as _TokenSwiftConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.token.c2t import C2TConfig as _C2TConfig  # noqa: F401
-    except ImportError:
-        pass
-
-    # ── Wave 14 — Quantisation/Speculative extensions (lazy stubs) ───────────
-    try:
-        from squish.speculative.sub_spec import SubSpecConfig as _SubSpecConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.quant.dfloat11 import DFloat11Config as _DFloat11Config  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.quant.rans_codec import RANSCodec as _RANSCodec  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.speculative.qspec import QSpecConfig as _QSpecConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.speculative.quant_spec import QuantSpecConfig as _QuantSpecConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.speculative.copy_spec import CopySpecConfig as _CopySpecConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.quant.squeeze_llm import SqueezeLLMConfig as _SqueezeLLMConfig  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.quant.nf4_quant import quantize_nf4 as _quantize_nf4  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.quant.spin_quant import run_rotation as _spin_run_rotation  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from squish.speculative.head_infer import HeadType as _HeadType  # noqa: F401
-    except ImportError:
-        pass
 
     # ── Signal bot ────────────────────────────────────────────────────────────
     import os as _os
