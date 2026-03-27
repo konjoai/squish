@@ -146,24 +146,6 @@ _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm g
 # ── Wave optimization module state (lazily instantiated) ─────────────────────
 _prompt_lookup_decoder  = None  # PromptLookupDecoder    — --prompt-lookup
 
-# ── Wave 41: Prefix Sharing, EAGLE-2, Ring Attention, Token Pruning, MoE, Sink Fusion ──
-
-# ── Wave 42: Disaggregated Serving, NSA, Medusa, KV Quant, AttentionStore, QAT ──
-
-# ── Wave 43: MTP Decode, Cascade KV, Head Pruner, Paged Attn, Layer Collapse ──
-
-# ── Wave 44: Marlin GEMM, Spec Rejection, LoFTQ, Online Spec, Dynamic Spec ───
-
-# ── Wave 45: FlexGen Offload, YaRN, SelfExtend, Orca, MxFP4, FP8Act, CLEXRoPE ─
-
-# ── Wave 46: Model Surgery, Expert Choice, W4A8, MLA KV, MinP, Contrastive ───
-
-# ── Wave 47: Mamba2, HGRN2, Lookahead, InfMemory, vAttn, IA3, MoE-Infinity ──
-
-# ── Wave 48: INT2/INT3 Extreme Quantization ───────────────────────────────────
-
-# ── Wave 49: TTFT Sprint: LLMLingua-2, RECOMP, Selective Context, Prepack ────
-
 # ── Wave 50: Bigger-Than-Memory: SparseGPT, MoD, LeanKV, GGUF, WeightStream ─
 _gguf_loader            = None  # GGUFNativeLoader        — --gguf-loader
 _weight_stream          = None  # WeightDecompressStream  — --weight-stream
@@ -173,14 +155,8 @@ _shard_loader           = None  # ModelShardLoader        — --shard-loader
 _coconut_decoder        = None  # CoconutDecoder          — --coconut
 _self_consistency       = None  # SelfConsistencyVoter    — --self-consistency
 
-# ── Wave 52: Multi-Modal VLM Efficiency ───────────────────────────────────────
-
-# ── Wave 53: Linear Recurrent Architectures ───────────────────────────────────
-
 # ── Wave 54: Deep MoE Efficiency, FlashAttn3, DoubleSparsity, ElasticBatch ───
 _lazy_expert            = None  # LazyExpertLoader        — --lazy-expert
-
-# ── Wave 55: Advanced Sampling, Emerging Quantization ────────────────────────
 
 # ── Wave 37: Wire Everything In ───────────────────────────────────────────────
 # Twelve isolation modules from Waves 33–35 wired into the live request path.
@@ -4536,15 +4512,6 @@ Examples:
         except Exception as _e:
             _warn(f"[fused-qkv] Skipped: {_e}")
 
-    # ── Wave 41: Prefix Sharing, EAGLE-2, Ring Attention, Token Pruning ───────
-    # ── Wave 42: Disaggregated Serving, NSA, Medusa, KV Quant, QAT ───────────
-    # ── Wave 43: MTP Decode, Cascade KV, Head Pruner, Paged Attn, etc. ────────
-    # ── Wave 44: Marlin GEMM, Spec Rejection, LoFTQ, Online Spec, etc. ────────
-    # ── Wave 45: FlexGen Offload, YaRN, SelfExtend, Orca, MxFP4, etc. ────────
-    # ── Wave 46: Model Surgery, Expert Choice, W4A8, MLA KV, MinP, etc. ──────
-    # ── Wave 47: Mamba2, HGRN2, Lookahead, InfMemory, vAttn, IA3, MoE-∞ ──────
-    # ── Wave 48: INT2/INT3 Extreme Quantization ────────────────────────────────
-    # ── Wave 49: TTFT Sprint: LLMLingua-2, RECOMP, Selective Context, etc. ────
     # ── Wave 50: Bigger-Than-Memory: SparseGPT, MoD, LeanKV, GGUF, etc. ──────
     global _gguf_loader
     if getattr(args, "gguf_loader", False):
@@ -4597,11 +4564,6 @@ Examples:
         except Exception as _e:
             _warn(f"[self-consistency] Skipped: {_e}")
 
-    # ── Wave 52: Multi-Modal VLM Efficiency ───────────────────────────────────
-    # ── Wave 53: Linear Recurrent Architectures ───────────────────────────────
-    # ── Wave 54: Deep MoE Efficiency, FlashAttn3, DoubleSparsity, etc. ────────
-    global _lazy_expert
-    # ── Wave 55: Advanced Sampling, Emerging Quantization ─────────────────────
     # ── Wave 27: Inference velocity features ──────────────────────────────────
     # 1B — FusedSampler: replace multi-pass sampling with a single fused kernel
     global _fused_sampler, _fused_sampler_enabled
