@@ -100,6 +100,116 @@ _DEFAULT_CALIBRATION_TEXTS = [
     "You can test if an egg is fresh by placing it in a glass of cold water to see if it floats.",
 ]
 
+# ---------------------------------------------------------------------------
+# Qwen3-specific calibration texts
+#
+# Qwen3 is trained in a reasoning-first regime (chain-of-thought by default,
+# <think> blocks, math / logic benchmarks).  Generic factual prose activates
+# only a fraction of the MLP gating distribution.  Using reasoning-weighted
+# texts yields calibration statistics that better represent the model's
+# primary operating point, giving AWQ scales that reduce error on the tasks
+# where Qwen3 actually scores.
+# ---------------------------------------------------------------------------
+_QWEN3_CALIBRATION_TEXTS = [
+    # Chain-of-thought / step-by-step reasoning (primary Qwen3 training regime)
+    "Let me think through this step by step. First I need to understand what the question is really asking, then identify the key constraints, and finally work toward a solution.",
+    "Let me reason carefully. All mammals are warm-blooded. Whales are mammals. Therefore whales are warm-blooded. This is a valid deductive argument.",
+    "To solve for x: if 3x + 7 = 22, subtract 7 from both sides to get 3x = 15, then divide by 3 to get x = 5.",
+    "Breaking this down: the train travels at 80 km/h for 2.5 hours, so distance = speed × time = 80 × 2.5 = 200 km.",
+    "Let me think about this carefully. The question assumes P implies Q, but that does not automatically mean Q implies P. This is the fallacy of affirming the consequent.",
+    "Working through the logic: if A > B and B > C, then by transitivity A > C. No further information is needed to establish this relationship.",
+    "Let me verify my answer. I claimed 12 × 17 = 204. Checking: 12 × 10 = 120, 12 × 7 = 84, 120 + 84 = 204. Confirmed.",
+    "To count the arrangements of 4 distinct items: 4! = 4 × 3 × 2 × 1 = 24. The factorial counts all permutations.",
+    "Thinking about this probability problem: if a fair coin is flipped 3 times, the chance of getting all heads is (1/2)^3 = 1/8.",
+    "Let me re-read the problem to make sure I understand. The key constraint is that no two adjacent elements can be equal. That changes the approach significantly.",
+    # Mathematical and logical reasoning
+    "The Pythagorean theorem states that a² + b² = c² for a right triangle. If a = 3 and b = 4, then c² = 9 + 16 = 25, so c = 5.",
+    "To find the derivative of f(x) = x³ + 2x, apply the power rule: f'(x) = 3x² + 2. This is the standard differentiation technique.",
+    "For the series 1 + 2 + 3 + ... + n, Gauss showed the sum equals n(n+1)/2. For n=100, this gives 100 × 101 / 2 = 5050.",
+    "Binary search works by repeatedly halving the search space. On a sorted list of 1000 items, it takes at most log₂(1000) ≈ 10 comparisons.",
+    "The pigeonhole principle: if 13 socks are placed in 12 drawers, at least one drawer must contain at least 2 socks. This follows directly from counting.",
+    # Code and algorithmic reasoning
+    "Looking at this Python function: it iterates through the list, accumulates a running sum, and returns the average. Time complexity is O(n).",
+    "The bug in this code is an off-by-one error: the loop runs while i <= n but should run while i < n to avoid accessing an out-of-bounds index.",
+    "This recursive function has a base case when n == 0 returning 1, and a recursive case returning n * factorial(n-1). It computes n factorial.",
+    "To optimize this nested loop from O(n²) to O(n log n), use a hash map to store previously seen values instead of checking all pairs.",
+    "Analyzing the algorithm: the outer loop runs n times, the inner loop runs log n times on average, giving O(n log n) total complexity.",
+    # Commonsense reasoning (winogrande / hellaswag style, reasoning-framed)
+    "The glass was near the edge of the table, and the cat kept pawing at it. It was only a matter of time before it fell and shattered.",
+    "She checked the weather forecast before packing: rain on Tuesday, sun on Wednesday. She packed an umbrella just for Tuesday.",
+    "The recipe called for the butter to be at room temperature. Taking it from the fridge an hour before baking would be the right move.",
+    "He had saved for three years to afford the down payment. Now, standing outside the house, he knew it had been worth every sacrifice.",
+    "After running the experiment twice and getting different results, the scientist decided to run it a third time to see which result was reproducible.",
+]
+
+# ---------------------------------------------------------------------------
+# Architecture-family defaults: alpha and calibration corpus
+#
+# alpha – AWQ scale exponent (Lin et al. 2023 §3.2).  Lower = stronger
+#   weight-side smoothing (protects more salient channels).
+# texts – calibration corpus tuned to the model's primary training regime.
+#
+# Qwen3 uses alpha=0.07 instead of 0.10: its Grouped Query Attention means
+# K/V projections have far fewer output channels than Q, so the activation
+# magnitude spread is tighter and oversmoothing at 0.10 degrades coherence.
+# The reasoning-weighted corpus matches Qwen3's operating point.
+# ---------------------------------------------------------------------------
+_MODEL_FAMILY_DEFAULTS: dict[str, dict] = {
+    "qwen3":   {"alpha": 0.07, "texts": _QWEN3_CALIBRATION_TEXTS},
+    "qwen2":   {"alpha": 0.10, "texts": _DEFAULT_CALIBRATION_TEXTS},   # Qwen2 / Qwen2.5
+    "llama":   {"alpha": 0.10, "texts": _DEFAULT_CALIBRATION_TEXTS},
+    "gemma3":  {"alpha": 0.10, "texts": _DEFAULT_CALIBRATION_TEXTS},
+    "gemma":   {"alpha": 0.10, "texts": _DEFAULT_CALIBRATION_TEXTS},
+    "mistral": {"alpha": 0.10, "texts": _DEFAULT_CALIBRATION_TEXTS},
+    "phi":     {"alpha": 0.10, "texts": _DEFAULT_CALIBRATION_TEXTS},
+}
+# Fallback alpha for architectures not in _MODEL_FAMILY_DEFAULTS.
+_DEFAULT_AWQ_ALPHA = 0.10
+
+
+def detect_model_family(model_dir: "Path | str") -> "str | None":
+    """
+    Read ``config.json`` from *model_dir* and return a normalised architecture
+    family name, or ``None`` if the family cannot be determined.
+
+    Returned values map into :data:`_MODEL_FAMILY_DEFAULTS`.
+
+    Examples
+    --------
+    ::
+
+        >>> detect_model_family("/models/Qwen3-0.6B-bf16")
+        'qwen3'
+        >>> detect_model_family("/models/Qwen2.5-1.5B-Instruct-bf16")
+        'qwen2'
+        >>> detect_model_family("/models/Llama-3.2-1B-Instruct-bf16")
+        'llama'
+    """
+    import json as _json
+
+    cfg = Path(model_dir) / "config.json"
+    if not cfg.exists():
+        return None
+    try:
+        data = _json.loads(cfg.read_text())
+    except Exception:
+        return None
+
+    # Primary: model_type field (most reliable)
+    mt = (data.get("model_type") or "").lower()
+    for family in _MODEL_FAMILY_DEFAULTS:
+        if mt.startswith(family):
+            return family
+
+    # Secondary: architectures list (e.g. ["Qwen3ForCausalLM"])
+    for arch in data.get("architectures") or []:
+        arch_l = arch.lower()
+        for family in _MODEL_FAMILY_DEFAULTS:
+            if arch_l.startswith(family):
+                return family
+
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Activation collection
@@ -156,24 +266,31 @@ def collect_activation_scales(  # pragma: no cover
     seq_len: int = 512,
     verbose: bool = True,
     min_scale: float = 0.0,
+    model_family: "str | None" = None,
 ) -> dict:
     """
     Run calibration data through ``model`` and compute per-layer AWQ scales.
 
     Parameters
     ----------
-    model       : mlx_lm model object (already loaded, on Metal)
-    tokenizer   : HuggingFace tokenizer matching the model
-    texts       : list of calibration strings (defaults to built-in set)
-    n_samples   : how many total forward passes to run (more = better stats)
-    alpha       : scale exponent  0 = no AWQ, 1 = full activation scaling
-                  0.5 is the default recommended in the AWQ paper
-    seq_len     : max token length per sample (truncated / padded)
-    verbose     : print progress
-    min_scale   : floor for computed scales (default 0.0 = no floor).
-                  Set to 1.0 to only amplify salient channels and never
-                  attenuate less-active ones, which avoids reducing weight
-                  values for channels whose mean activation < 1.0.
+    model        : mlx_lm model object (already loaded, on Metal)
+    tokenizer    : HuggingFace tokenizer matching the model
+    texts        : list of calibration strings.  If ``None``, the corpus is
+                   selected automatically: ``model_family``-specific texts
+                   from :data:`_MODEL_FAMILY_DEFAULTS` if the family is
+                   known, otherwise :data:`_DEFAULT_CALIBRATION_TEXTS`.
+    n_samples    : how many total forward passes to run (more = better stats)
+    alpha        : scale exponent  0 = no AWQ, 1 = full activation scaling.
+                   0.5 is the default recommended in the AWQ paper.
+    seq_len      : max token length per sample (truncated / padded)
+    verbose      : print progress
+    min_scale    : floor for computed scales (default 0.0 = no floor).
+                   Set to 1.0 to only amplify salient channels and never
+                   attenuate less-active ones.
+    model_family : architecture family string (e.g. ``"qwen3"``, ``"llama"``).
+                   When provided and ``texts`` is ``None``, the family-specific
+                   calibration corpus from :data:`_MODEL_FAMILY_DEFAULTS` is
+                   used instead of the generic default.
 
     Returns
     -------
@@ -186,7 +303,8 @@ def collect_activation_scales(  # pragma: no cover
     import mlx.core as mx
 
     if texts is None:
-        texts = _DEFAULT_CALIBRATION_TEXTS
+        family_cfg = _MODEL_FAMILY_DEFAULTS.get(model_family or "")
+        texts = family_cfg["texts"] if family_cfg else _DEFAULT_CALIBRATION_TEXTS
 
     # Cycle the text list to reach n_samples
     sample_texts = [texts[i % len(texts)] for i in range(n_samples)]

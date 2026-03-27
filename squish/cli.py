@@ -1262,7 +1262,7 @@ def cmd_run(args):  # pragma: no cover
             no_awq=False,
             awq=False,
             awq_samples=20,
-            awq_alpha=0.1,
+            awq_alpha=None,  # None = auto-detect from model architecture
             verbose=False,
             passthrough=[],
             outlier_threshold=20.0,
@@ -2335,11 +2335,30 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
 
             import mlx_lm
             model_awq, tokenizer_awq = mlx_lm.load(str(model_dir))
-            from squish.quant.awq import collect_activation_scales, save_awq_scales
-            awq_alpha = getattr(args, "awq_alpha", 0.1)
+            from squish.quant.awq import (
+                _DEFAULT_AWQ_ALPHA,
+                _MODEL_FAMILY_DEFAULTS,
+                collect_activation_scales,
+                detect_model_family,
+                save_awq_scales,
+            )
+            # Resolve effective alpha: explicit CLI flag > architecture default > 0.10.
+            family = detect_model_family(model_dir)
+            user_alpha = getattr(args, "awq_alpha", None)
+            if user_alpha is not None:
+                awq_alpha = user_alpha
+                family_note = f" (--awq-alpha override; arch={family or 'unknown'})"
+            elif family and family in _MODEL_FAMILY_DEFAULTS:
+                awq_alpha = _MODEL_FAMILY_DEFAULTS[family]["alpha"]
+                family_note = f" (arch={family}, auto)"
+            else:
+                awq_alpha = _DEFAULT_AWQ_ALPHA
+                family_note = " (arch=unknown, using default)"
+            print(f"  AWQ alpha={awq_alpha}{family_note}")
             scales = collect_activation_scales(
                 model_awq, tokenizer_awq,
-                n_samples=n_samples, alpha=awq_alpha, min_scale=0.0, verbose=True,
+                n_samples=n_samples, alpha=awq_alpha, min_scale=0.0,
+                model_family=family, verbose=True,
             )
             awq_scales_dir = tempfile.mkdtemp(prefix="squish_awq_")
             save_awq_scales(scales, awq_scales_dir, verbose=False)
@@ -5245,12 +5264,12 @@ Ollama drop-in:
                                  "When --int4 is used AWQ runs automatically unless --no-awq is passed.")
     p_compress.add_argument("--awq-samples", type=int, default=20, metavar="N",
                             help="Number of calibration samples for AWQ (default: 20)")
-    p_compress.add_argument("--awq-alpha", type=float, default=0.1, metavar="A",
+    p_compress.add_argument("--awq-alpha", type=float, default=None, metavar="A",
                             dest="awq_alpha",
-                            help="AWQ weight-activation smoothing strength \u03b1 in [0, 1] (default: 0.1). "
+                            help="AWQ weight-activation smoothing strength \u03b1 in [0, 1] "
+                                 "(default: auto — 0.07 for Qwen3, 0.10 for Qwen2.5/Llama/gemma). "
                                  "Lower values apply stronger weight-side smoothing. "
-                                 "0.1 is optimal for INT4; 0.5 is the AWQ paper default. "
-                                 "Try 0.05\u20130.08 for Qwen3 models.")
+                                 "Override with an explicit value to bypass architecture detection.")
     p_compress.add_argument("--verbose",           action="store_true")
     p_compress.add_argument(
         "--int4-group-size",
