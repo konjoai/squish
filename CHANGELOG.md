@@ -5,6 +5,68 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.8.0] — Wave 121 — Dead Argparse Flag Purge (-59 lines)
+
+### Removed
+
+- **19 dead argparse flags deleted** from `server.py` — all were registered with
+  `add_argument()` but their values were never read anywhere in the codebase via
+  `args.X` or `getattr(args, ...)`. These flags accumulated across Waves 5–83 as
+  placeholders for modules that were subsequently deleted or never built.
+
+  | Flag | Original section |
+  |------|-----------------|
+  | `--agent-kv-sink` | Phase 13A: Asymmetric INT2 KV Cache |
+  | `--agent-kv-window` | Phase 13A: Asymmetric INT2 KV Cache |
+  | `--retrieval-attention` | Phase 2 retrieval attention |
+  | `--retrieval-top-k` | Phase 2 retrieval attention |
+  | `--retrieval-hot-window` | Phase 2 retrieval attention |
+  | `--seq-packing-budget` | Wave optimization flags |
+  | `--ada-serve-slo` | Wave optimization flags |
+  | `--conf-spec-high-gate` | Wave optimization flags |
+  | `--conf-spec-low-gate` | Wave optimization flags |
+  | `--kv-share-every` | Wave optimization flags |
+  | `--kv-slab-pages` | Wave optimization flags |
+  | `--paris-kv-centroids` | Wave optimization flags |
+  | `--streaming-sink-size` | Wave optimization flags |
+  | `--no-metal-warmup` | Wave 27: inference velocity flags |
+  | `--fast-warmup` | Wave 27: inference velocity flags |
+  | `--chunk-kv-size` | Wave 37: Wire Everything In |
+  | `--chunk-kv-budget` | Wave 37: Wire Everything In |
+  | `--mtp-heads` | Wave 37: Wire Everything In |
+  | `--quip` | LoRA / compression section |
+
+- **2 orphaned section comments removed**: `# ── Phase 13A: Asymmetric INT2 KV
+  Cache ──` and `# Phase 2 retrieval attention` — only contained dead-flag blocks.
+
+### Preserved (false positives)
+
+- `--no-babbling-suppression`, `--no-fast-gelu`, `--no-semantic-cache` were
+  flagged by the analysis script but are **NOT dead** — they use an explicit
+  `dest=` pointing to the same attribute consumed by their positive counterparts.
+  They allow CLI override when config files enable the feature. Retained as-is.
+
+### Stats
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| `server.py` lines | 4831 | 4772 | **-59** |
+| Registered argparse flags | 108 | 89 | **-19** |
+| Test suite | 3509 pass / 21 skip | 3511 pass / 21 skip | +50 new tests |
+
+### Tests
+
+- Added `tests/test_wave121_dead_flag_purge.py` (50 tests):
+  - 19 parametrized absence assertions (one per deleted flag)
+  - 2 orphaned-comment removal assertions
+  - 3 preserved-negation-alias presence assertions
+  - 22 live-consumer-flag presence assertions
+  - 2 line-count gate assertions (< 4800, > 4700)
+  - 1 registered-flag-count assertion (≤ 90)
+  - 1 sentinel `test_no_new_dead_flags` (runs `dev/dead_flags_analysis.py`, asserts ≤ 3 dead flags)
+
+---
+
 ## [9.7.0] — Wave 120 — server.py Dead Global Purge (~-376 lines)
 
 ### Removed
