@@ -836,6 +836,56 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#940-wave-117-post-purge-shim-deduplication-99-92-source-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [9.4.0] — Wave 117 — Post-Purge Shim Deduplication (99 → 92 source files)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[9.4.0] — Wave 117 — Post-Purge Shim Deduplication (99 → 92 source files)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chore
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#930-wave-116-lean-and-mean-purge-137-99-source-files" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -848,7 +898,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed" class="md-nav__link">
+  <a href="#removed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -887,7 +937,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed" class="md-nav__link">
+  <a href="#fixed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -898,7 +948,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#chore" class="md-nav__link">
+  <a href="#chore_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Chore
@@ -3829,7 +3879,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed_1" class="md-nav__link">
+  <a href="#fixed_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -3896,7 +3946,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed_2" class="md-nav__link">
+  <a href="#fixed_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -5595,7 +5645,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed_3" class="md-nav__link">
+  <a href="#fixed_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -5673,8 +5723,34 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
-<h2 id="930-wave-116-lean-and-mean-purge-137-99-source-files">[9.3.0] — Wave 116 — Lean-and-Mean Purge (137 → 99 source files)<a class="headerlink" href="#930-wave-116-lean-and-mean-purge-137-99-source-files" title="Permanent link">&para;</a></h2>
+<h2 id="940-wave-117-post-purge-shim-deduplication-99-92-source-files">[9.4.0] — Wave 117 — Post-Purge Shim Deduplication (99 → 92 source files)<a class="headerlink" href="#940-wave-117-post-purge-shim-deduplication-99-92-source-files" title="Permanent link">&para;</a></h2>
 <h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>7 backward-compatibility shim files deleted</strong> (Wave 107 artifacts): <code>kv_cache.py</code>,
+  <code>scheduler.py</code>, <code>chunked_prefill.py</code>, <code>grammar_engine.py</code>, <code>prompt_compressor.py</code>,
+  <code>lazy_llm.py</code>, <code>prompt_lookup.py</code>. All were pure <code>sys.modules</code> substitution shims
+  (3–10 lines each) with zero logic.</li>
+<li><strong>squish/ source file count: 92</strong> (was 99 after Wave 116, &lt;100 contract maintained ✓)</li>
+<li><strong>Deleted <code>server.py.bak</code>, <code>cli.py.bak</code></strong> — leftover backup artifacts (384 KB recovered).</li>
+<li><strong>Removed empty ghost directories</strong>: <code>core/</code>, <code>format/</code>, <code>install/</code>, <code>packaging/</code>
+  (only <code>__pycache__</code> remained after Wave 116 deletions).</li>
+</ul>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>astc_loader.py</code> bare import guarded</strong> — <code>from squish.compress.astc_encoder import</code>
+  was a module-level bare import that raised <code>ModuleNotFoundError</code> on any direct
+  <code>import squish.loaders.astc_loader</code>. Wrapped in <code>try/except ImportError</code> with
+  <code>_ASTC_ENCODER_AVAILABLE = False</code> flag and <code>None</code> stubs so the module loads cleanly.</li>
+</ul>
+<h3 id="chore">Chore<a class="headerlink" href="#chore" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>server.py</code></strong>: all 13 shim-path imports updated to canonical subdirectory paths
+  (<code>squish.kv_cache</code> → <code>squish.kv.kv_cache</code>, <code>squish.grammar_engine</code> →
+  <code>squish.grammar.grammar_engine</code>, <code>squish.lazy_llm</code> → <code>squish.context.lazy_llm</code>, etc.)</li>
+</ul>
+<hr />
+<h2 id="930-wave-116-lean-and-mean-purge-137-99-source-files">[9.3.0] — Wave 116 — Lean-and-Mean Purge (137 → 99 source files)<a class="headerlink" href="#930-wave-116-lean-and-mean-purge-137-99-source-files" title="Permanent link">&para;</a></h2>
+<h3 id="removed_1">Removed<a class="headerlink" href="#removed_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>38 source files deleted</strong> — stripped all code that does not directly
   speed up inference, reduce memory, or reduce disk usage:</li>
@@ -5716,7 +5792,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 </ul>
 <hr />
 <h2 id="920-wave-115-all-optimizations-flush-int3-load-path-dead-code">[9.2.0] — Wave 115 — All-Optimizations Flush + INT3 Load Path + Dead Code<a class="headerlink" href="#920-wave-115-all-optimizations-flush-int3-load-path-dead-code" title="Permanent link">&para;</a></h2>
-<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>--all-optimizations</code> TTFT spike eliminated</strong> — Wave modules (100+
@@ -5747,7 +5823,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
   <code>metrics()</code> (valid for standalone test clients) is preserved.</p>
 </li>
 </ul>
-<h3 id="chore">Chore<a class="headerlink" href="#chore" title="Permanent link">&para;</a></h3>
+<h3 id="chore_1">Chore<a class="headerlink" href="#chore_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong>Benchmark script cleanup</strong> — Removed 11 dead squished-variant model
@@ -8180,7 +8256,7 @@ continue passing; 188 new tests added (107 Wave 62a + 81 Wave 62b).</p>
 <li><code>squish/kernels/mojo/ouroboros_ngram_mojo.py</code> + <code>kernels/ouroboros_ngram.mojo</code></li>
 <li><code>squish/kernels/mojo/pyramid_kv_budget_mojo.py</code> + <code>kernels/pyramid_kv_budget.mojo</code></li>
 </ul>
-<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>RustClusterKV.evict_mask</code> signature harmonised with <code>MojoClusterKV</code>:
   replaced positional <code>budget</code> (number of clusters to keep) with optional
@@ -8243,7 +8319,7 @@ All 11333 pre-Wave-61 tests continue passing; 140 new tests added
 <li><code>squish/kernels/mojo/jacobi_conv_mojo.py</code> + <code>kernels/jacobi_convergence.mojo</code></li>
 <li><code>squish/kernels/mojo/tree_verify_mojo.py</code> + <code>kernels/tree_verify.mojo</code></li>
 </ul>
-<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_3">Fixed<a class="headerlink" href="#fixed_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Pre-existing <code>quarot_group_quant_f32</code> move-in-closure compile error in
   <code>squish_quant_rs/src/lib.rs</code>: introduced <code>let w_slice = &amp;w_flat[..]</code> before
@@ -11130,7 +11206,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 </ul>
 <hr />
 <h2 id="101-2026-03-04">[1.0.1] — 2026-03-04<a class="headerlink" href="#101-2026-03-04" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_3">Fixed<a class="headerlink" href="#fixed_3" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_4">Fixed<a class="headerlink" href="#fixed_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>eval_output/eval_report.md</code></strong> — Replaced physically impossible benchmark numbers
   (+14.1% ARC, +15.2% HellaSwag after lossy compression) with validated results from a
