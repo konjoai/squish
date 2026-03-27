@@ -5,6 +5,40 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.10.0] — Wave 123 — Empty Wave 41-55 Comment Stub Purge (-38 lines)
+
+### Removed
+
+Twelve empty Wave comment sections (header + blank line only, no code beneath)
+from module-level globals, plus nine matching stubs from `main()`, plus the
+orphaned `global _lazy_expert` declaration in `main()` (the variable itself at
+module scope is live via `globals()["_lazy_expert"]` in Wave 83 auto-enable).
+
+**Globals deletions (empty stubs with no variables beneath them):**
+
+| Stub removed | Location |
+|---|---|
+| `# ── Wave 41` through `# ── Wave 49` (9 stubs × 2 lines) | L149–165 |
+| `# ── Wave 52`, `# ── Wave 53` (2 stubs × 2 lines) | L176–179 |
+| `# ── Wave 55` (1 stub × 2 lines) | L183–184 |
+
+**main() deletions:**
+
+| Stub removed | Lines |
+|---|---|
+| `# ── Wave 41` through `# ── Wave 49` (9 comment lines) | L≈4588–4596 |
+| `# ── Wave 52`, `# ── Wave 53`, `# ── Wave 54`, `# ── Wave 55` + `global _lazy_expert` | L4600–4604 |
+
+### Stats
+
+| Metric | Value |
+|---|---|
+| Lines deleted | 38 |
+| `server.py` lines | 4721 (was 4759) |
+| New regression tests | 20 (`test_wave123_empty_section_purge.py`) |
+
+---
+
 ## [9.9.0] — Wave 122 — Dead Module-Level Constant Purge (-13 lines)
 
 ### Removed

@@ -126,9 +126,10 @@ def test_line_count_reduced_by_wave122():
 
 
 def test_line_count_wave122_delta():
-    """Exactly 13 lines were removed in Wave 122 (4772 → 4759)."""
+    """Wave 122 removed 13 lines (4772 → 4759); subsequent waves may reduce further."""
     n = len(_LINES)
-    assert n == 4759, f"Expected 4759 lines; got {n} (delta from 4772 should be 13)"
+    assert n <= 4759, f"Expected ≤ 4759 lines (Wave 122 produced 4759); got {n}"
+    assert n > 4700, f"Sanity floor: expected > 4700 lines; got {n}"
 
 
 # ── 4. No new dead constants introduced ───────────────────────────────────────
