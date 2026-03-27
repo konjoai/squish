@@ -69,8 +69,9 @@ def test_no_orphan_global_block():
 
 
 def test_line_count():
-    """server.py must be exactly 4713 lines after Wave 124 deletions."""
+    """server.py must be ≤ 4713 lines (Wave 124 produced 4713); subsequent waves may reduce further."""
     count = len(LINES)
-    assert count == 4713, (
-        f"Expected 4713 lines after Wave 124 (-8 from 4721), got {count}"
+    assert count <= 4713, (
+        f"Expected ≤ 4713 lines after Wave 124 (-8 from 4721), got {count}"
     )
+    assert count > 4600, f"Sanity floor: expected > 4600 lines; got {count}"

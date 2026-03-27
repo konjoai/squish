@@ -5,6 +5,32 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.12.0] — Wave 125 — Stale Wave 98 Commented-Out Code Purge (-11 lines)
+
+### Removed
+
+A 11-line block of commented-out code and explanatory notes for Wave 98's
+FFN sparsity-trim feature, which was disabled pending a `squish sparsity-trim`
+CLI command (referenced as "Wave 107 plan") that was never implemented.
+
+The block referenced `_SPARSITY_TRIM_AVAILABLE`, `_n98`, and
+`squish.kernels.ffn_mask_patch.patch_model_ffn_sparsity` — all of which
+have zero code references in the current codebase. Deleted per the No
+Graveyards rule: dead code lives in git history, not in source.
+
+The surrounding live sparse-ffn code (`_sfn`, `_w82_prof`, `_e82b`) is
+untouched and fully functional.
+
+### Stats
+
+| Metric | Value |
+|---|---|
+| Lines deleted | 11 |
+| `server.py` lines | 4702 (was 4713) |
+| New regression tests | 7 (`test_wave125_stale_comment_purge.py`) |
+
+---
+
 ## [9.11.0] — Wave 124 — Orphaned `global` Declaration Purge (-8 lines)
 
 ### Removed
