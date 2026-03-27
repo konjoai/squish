@@ -836,6 +836,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#9130-wave-126-empty-section-header-purge-4-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [9.13.0] — Wave 126 — Empty Section Header Purge (-4 lines)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[9.13.0] — Wave 126 — Empty Section Header Purge (-4 lines)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#9120-wave-125-stale-wave-98-commented-out-code-purge-11-lines" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -848,7 +876,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed" class="md-nav__link">
+  <a href="#removed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -887,7 +915,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_1" class="md-nav__link">
+  <a href="#removed_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -926,7 +954,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_2" class="md-nav__link">
+  <a href="#removed_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -965,7 +993,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_3" class="md-nav__link">
+  <a href="#removed_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -1015,7 +1043,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_4" class="md-nav__link">
+  <a href="#removed_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -1076,7 +1104,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_5" class="md-nav__link">
+  <a href="#removed_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -1126,7 +1154,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_6" class="md-nav__link">
+  <a href="#removed_7" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -1165,7 +1193,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_7" class="md-nav__link">
+  <a href="#removed_8" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -1204,7 +1232,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_8" class="md-nav__link">
+  <a href="#removed_9" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -1254,7 +1282,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_9" class="md-nav__link">
+  <a href="#removed_10" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -6079,8 +6107,21 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
-<h2 id="9120-wave-125-stale-wave-98-commented-out-code-purge-11-lines">[9.12.0] — Wave 125 — Stale Wave 98 Commented-Out Code Purge (-11 lines)<a class="headerlink" href="#9120-wave-125-stale-wave-98-commented-out-code-purge-11-lines" title="Permanent link">&para;</a></h2>
+<h2 id="9130-wave-126-empty-section-header-purge-4-lines">[9.13.0] — Wave 126 — Empty Section Header Purge (-4 lines)<a class="headerlink" href="#9130-wave-126-empty-section-header-purge-4-lines" title="Permanent link">&para;</a></h2>
 <h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
+<p>Four consecutive empty <code># ──</code> section headers inside <code>main()</code> that had
+no code between them and no code between them and the next header:</p>
+<ul>
+<li><code># ── Attention and KV kernels</code></li>
+<li><code># ── KV cache strategies</code></li>
+<li><code># ── Speculative decoding variants</code></li>
+<li><code># ── Token-importance / adaptive-layer strategies</code></li>
+</ul>
+<p>These were orphaned stubs from prior wave cleanups. The surrounding active
+code (<code># ── Wave 37: Wire Everything In</code>) is unchanged.</p>
+<hr />
+<h2 id="9120-wave-125-stale-wave-98-commented-out-code-purge-11-lines">[9.12.0] — Wave 125 — Stale Wave 98 Commented-Out Code Purge (-11 lines)<a class="headerlink" href="#9120-wave-125-stale-wave-98-commented-out-code-purge-11-lines" title="Permanent link">&para;</a></h2>
+<h3 id="removed_1">Removed<a class="headerlink" href="#removed_1" title="Permanent link">&para;</a></h3>
 <p>A 11-line block of commented-out code and explanatory notes for Wave 98's
 FFN sparsity-trim feature, which was disabled pending a <code>squish sparsity-trim</code>
 CLI command (referenced as "Wave 107 plan") that was never implemented.</p>
@@ -6115,7 +6156,7 @@ untouched and fully functional.</p>
 </table>
 <hr />
 <h2 id="9110-wave-124-orphaned-global-declaration-purge-8-lines">[9.11.0] — Wave 124 — Orphaned <code>global</code> Declaration Purge (-8 lines)<a class="headerlink" href="#9110-wave-124-orphaned-global-declaration-purge-8-lines" title="Permanent link">&para;</a></h2>
-<h3 id="removed_1">Removed<a class="headerlink" href="#removed_1" title="Permanent link">&para;</a></h3>
+<h3 id="removed_2">Removed<a class="headerlink" href="#removed_2" title="Permanent link">&para;</a></h3>
 <p>30 dead <code>global</code> declarations from a single block inside <code>main()</code> at
 the "Wave optimization module initialisation" section. Each variable was
 declared <code>global</code> but never assigned anywhere in the codebase, making the
@@ -6156,7 +6197,7 @@ declarations entirely inert.</p>
 </table>
 <hr />
 <h2 id="9100-wave-123-empty-wave-41-55-comment-stub-purge-38-lines">[9.10.0] — Wave 123 — Empty Wave 41-55 Comment Stub Purge (-38 lines)<a class="headerlink" href="#9100-wave-123-empty-wave-41-55-comment-stub-purge-38-lines" title="Permanent link">&para;</a></h2>
-<h3 id="removed_2">Removed<a class="headerlink" href="#removed_2" title="Permanent link">&para;</a></h3>
+<h3 id="removed_3">Removed<a class="headerlink" href="#removed_3" title="Permanent link">&para;</a></h3>
 <p>Twelve empty Wave comment sections (header + blank line only, no code beneath)
 from module-level globals, plus nine matching stubs from <code>main()</code>, plus the
 orphaned <code>global _lazy_expert</code> declaration in <code>main()</code> (the variable itself at
@@ -6228,7 +6269,7 @@ module scope is live via <code>globals()["_lazy_expert"]</code> in Wave 83 auto-
 </table>
 <hr />
 <h2 id="990-wave-122-dead-module-level-constant-purge-13-lines">[9.9.0] — Wave 122 — Dead Module-Level Constant Purge (-13 lines)<a class="headerlink" href="#990-wave-122-dead-module-level-constant-purge-13-lines" title="Permanent link">&para;</a></h2>
-<h3 id="removed_3">Removed<a class="headerlink" href="#removed_3" title="Permanent link">&para;</a></h3>
+<h3 id="removed_4">Removed<a class="headerlink" href="#removed_4" title="Permanent link">&para;</a></h3>
 <p>Four module-level constants that were defined but never read anywhere in the
 codebase (confirmed by cross-file grep and <code>dev/dead_consts_analysis.py</code>):</p>
 <table>
@@ -6304,7 +6345,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 </ul>
 <hr />
 <h2 id="980-wave-121-dead-argparse-flag-purge-59-lines">[9.8.0] — Wave 121 — Dead Argparse Flag Purge (-59 lines)<a class="headerlink" href="#980-wave-121-dead-argparse-flag-purge-59-lines" title="Permanent link">&para;</a></h2>
-<h3 id="removed_4">Removed<a class="headerlink" href="#removed_4" title="Permanent link">&para;</a></h3>
+<h3 id="removed_5">Removed<a class="headerlink" href="#removed_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>19 dead argparse flags deleted</strong> from <code>server.py</code> — all were registered with
   <code>add_argument()</code> but their values were never read anywhere in the codebase via
@@ -6452,7 +6493,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 </ul>
 <hr />
 <h2 id="970-wave-120-serverpy-dead-global-purge-376-lines">[9.7.0] — Wave 120 — server.py Dead Global Purge (~-376 lines)<a class="headerlink" href="#970-wave-120-serverpy-dead-global-purge-376-lines" title="Permanent link">&para;</a></h2>
-<h3 id="removed_5">Removed<a class="headerlink" href="#removed_5" title="Permanent link">&para;</a></h3>
+<h3 id="removed_6">Removed<a class="headerlink" href="#removed_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>188 dead module-level <code>_var = None</code> globals deleted</strong> — all were initialized
   to <code>None</code> at module scope and never assigned to a non-<code>None</code> value anywhere in
@@ -6534,7 +6575,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 </table>
 <hr />
 <h2 id="960-wave-119-serverpy-wave-1314-tome-dead-stub-purge-93-lines">[9.6.0] — Wave 119 — server.py Wave-13/14 &amp; ToMe Dead-Stub Purge (~-93 lines)<a class="headerlink" href="#960-wave-119-serverpy-wave-1314-tome-dead-stub-purge-93-lines" title="Permanent link">&para;</a></h2>
-<h3 id="removed_6">Removed<a class="headerlink" href="#removed_6" title="Permanent link">&para;</a></h3>
+<h3 id="removed_7">Removed<a class="headerlink" href="#removed_7" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>19 Wave-13/14 "lazy stub" try/except import blocks deleted</strong> — all 19 blocks
   (<code>DuoAttentionConfig</code>, <code>DuoDecodingConfig</code>, <code>ShadowKVConfig</code>, <code>PQCacheConfig</code>,
@@ -6564,7 +6605,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 </ul>
 <hr />
 <h2 id="950-wave-118-serverpy-dead-flag-surgery-220-lines">[9.5.0] — Wave 118 — server.py Dead-Flag Surgery (~-220 lines)<a class="headerlink" href="#950-wave-118-serverpy-dead-flag-surgery-220-lines" title="Permanent link">&para;</a></h2>
-<h3 id="removed_7">Removed<a class="headerlink" href="#removed_7" title="Permanent link">&para;</a></h3>
+<h3 id="removed_8">Removed<a class="headerlink" href="#removed_8" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Empty Wave 41–55 flag stubs deleted from <code>main()</code></strong> — 15 comment-only placeholder
   sections (<code># ── Wave 41 flags ──</code>, …, <code># ── Wave 55 flags ──</code>) with no live code.</li>
@@ -6590,7 +6631,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 </ul>
 <hr />
 <h2 id="940-wave-117-post-purge-shim-deduplication-99-92-source-files">[9.4.0] — Wave 117 — Post-Purge Shim Deduplication (99 → 92 source files)<a class="headerlink" href="#940-wave-117-post-purge-shim-deduplication-99-92-source-files" title="Permanent link">&para;</a></h2>
-<h3 id="removed_8">Removed<a class="headerlink" href="#removed_8" title="Permanent link">&para;</a></h3>
+<h3 id="removed_9">Removed<a class="headerlink" href="#removed_9" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>7 backward-compatibility shim files deleted</strong> (Wave 107 artifacts): <code>kv_cache.py</code>,
   <code>scheduler.py</code>, <code>chunked_prefill.py</code>, <code>grammar_engine.py</code>, <code>prompt_compressor.py</code>,
@@ -6616,7 +6657,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 </ul>
 <hr />
 <h2 id="930-wave-116-lean-and-mean-purge-137-99-source-files">[9.3.0] — Wave 116 — Lean-and-Mean Purge (137 → 99 source files)<a class="headerlink" href="#930-wave-116-lean-and-mean-purge-137-99-source-files" title="Permanent link">&para;</a></h2>
-<h3 id="removed_9">Removed<a class="headerlink" href="#removed_9" title="Permanent link">&para;</a></h3>
+<h3 id="removed_10">Removed<a class="headerlink" href="#removed_10" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>38 source files deleted</strong> — stripped all code that does not directly
   speed up inference, reduce memory, or reduce disk usage:</li>
