@@ -142,8 +142,6 @@ _kv_cache = None         # QuantizedKVCache | None — set in main() after model
 _paged_kv_cache = None   # PagedKVCache | None — set in main() when --paged-attention
 _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-prompt-cache given
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
-# Phase 13A: asymmetric INT2 KV cache (agent-kv)
-_agent_kv_config: "Any | None" = None   # AgentKVConfig | None — set in main() when --agent-kv
 
 # ── Wave optimization module state (lazily instantiated) ─────────────────────
 _prompt_lookup_decoder  = None  # PromptLookupDecoder    — --prompt-lookup
@@ -241,13 +239,6 @@ _fast_gelu_enabled: bool = True  # on by default; --no-fast-gelu to disable
 # Bypass the model entirely for semantically repeated queries.
 # Per-task-type cosine similarity thresholds and response TTLs.
 _semantic_cache = None   # SquishSemanticCache | None — set in main()
-_SEMANTIC_CACHE_CONFIG: dict = {
-    "git_commit":  {"threshold": 0.95, "ttl_hours": 24},
-    "devops_plan": {"threshold": 0.88, "ttl_hours": 168},
-    "code_review": {"threshold": 0.92, "ttl_hours": 72},
-    "email_draft": {"threshold": 0.85, "ttl_hours": 48},
-    "default":     {"threshold": 0.92, "ttl_hours": 48},
-}
 
 # ── Phase 3A: Chunked prefill (COMPRESS_PATH long sequences) ─────────────────
 _chunk_prefill_enabled   = False  # set in main() via --chunk-prefill
@@ -328,7 +319,6 @@ def _collect_tokens_sync(gen: "Any") -> "list[tuple[str, str | None]]":
 #   'mlx-eager'    — standard MLX path (default)
 #   'mlx-compiled' — mx.compile fused draft+verify decode kernel (Phase 4A)
 #   'ane-disagg'   — Core ML ANE prefill + MLX decode (Phase 4B)
-_compress_threshold  = 512          # word-count proxy above which COMPRESS_PATH fires
 _inference_backend   = "mlx-eager"  # overridden by --inference-backend in main()
 
 # ── Wave 76: Agentic Tool Registry & MCP Server Map ──────────────────────────
@@ -402,7 +392,6 @@ _QueueFullError  = None  # QueueFullError class — imported alongside BatchSche
 # _TTY / _TTY_ERR are local bool flags used for TTY-gated ASCII art and trace
 # log colouring respectively.  _TRUE_COLOR_ERR checks stderr specifically.
 _TTY: bool = sys.stdout.isatty()
-_TTY_ERR: bool = sys.stderr.isatty()
 
 from squish._term import (  # noqa: E402
     has_truecolor as _has_truecolor,
@@ -4102,8 +4091,6 @@ Examples:
                 "[KV cache] could not attach (%s) — running without KV quantisation", e
             )
 
-    # ── Phase 13A: Asymmetric INT2 KV cache (AgentKV) ────────────────────────
-    global _agent_kv_config
     # ── Phase 3: persistent cross-session KV cache ────────────────────────────
     global _session_kv_cache
     _session_cache_dir = getattr(args, "session_cache_dir", "")

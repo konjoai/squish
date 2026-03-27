@@ -15,7 +15,7 @@ import importlib.metadata
 import pytest
 
 # Pinned expected version — update this whenever pyproject.toml version changes.
-EXPECTED_VERSION = "9.8.0"
+EXPECTED_VERSION = "9.9.0"
 
 
 class TestVersionConsistency:

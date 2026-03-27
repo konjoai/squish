@@ -5,6 +5,42 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.9.0] — Wave 122 — Dead Module-Level Constant Purge (-13 lines)
+
+### Removed
+
+Four module-level constants that were defined but never read anywhere in the
+codebase (confirmed by cross-file grep and `dev/dead_consts_analysis.py`):
+
+| Constant | Line (pre-wave) | What it was |
+|---|---|---|
+| `_agent_kv_config` | L146 | `None`-typed annotation for Phase 13A AgentKV (flags deleted in Wave 121) |
+| `_SEMANTIC_CACHE_CONFIG` | L244 | Hard-coded threshold/TTL dict never passed to `SquishSemanticCache` |
+| `_compress_threshold` | L331 | Integer constant referenced only in adjacent comment, never read in code |
+| `_TTY_ERR` | L405 | `sys.stderr.isatty()` flag; `_TTY` (stdout) is alive, `_TTY_ERR` was not |
+
+Also removed the orphaned `global _agent_kv_config` declaration in `main()` (left
+behind after `--agent-kv-sink` / `--agent-kv-window` were purged in Wave 121).
+
+### Stats
+
+| Metric | Value |
+|---|---|
+| Lines deleted | 13 |
+| `server.py` lines | 4759 (was 4772) |
+| Constants purged | 4 (+1 orphaned global) |
+| Tests added | 17 (`test_wave122_dead_const_purge.py`) |
+| Test suite | 3511 passed, 21 skipped |
+
+### Preserved (confirmed alive)
+
+- `_semantic_cache` — active instance, used at ≥ 10 call sites
+- `_active_backend` — tested by `tests/integration/test_phase_f_backends.py`
+- `_TTY` — read at L490+ for TTY-gated ASCII art
+- `_compress_enabled`, `_inference_backend` — active Phase 4 routing vars
+
+---
+
 ## [9.8.0] — Wave 121 — Dead Argparse Flag Purge (-59 lines)
 
 ### Removed

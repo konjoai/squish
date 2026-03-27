@@ -1,0 +1,25 @@
+feat(wave120): purge 188 dead globals, 4 hot-path blocks (-376 lines, v9.7.0)
+
+Delete 188 module-level _var = None globals never assigned non-None.
+Permanent-None placeholders from Waves 41-51.
+
+Removal scope:
+- 188 module-level _var = None declarations
+- 158 standalone `global _var` stmts in main()
+- 4 dead hot-path if-blocks (pd_disaggregator x3, speculative_streamer,
+  chunk_kv_manager, flash_attn3 status row)
+
+False positives excluded (live via globals() dict):
+  _lazy_expert, _structured_sparsity
+
+Lines: 5207 to 4831 (-376)
+
+Add tests/test_wave120_dead_global_purge.py (128 tests):
+- 60 parametrized spot-checks (module-level + global-stmt absence)
+- 4 hot-path absence assertions
+- 2 live-global preservation checks
+- 1 line-count gate (< 5000)
+- 1 sentinel: test_no_new_dead_globals
+
+Update test_wave75/test_wave78: remove _flash_attn3 patch target.
+Add dev/wave120_purge.py + dev/dead_globals_analysis.py for reuse.
