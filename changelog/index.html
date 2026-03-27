@@ -836,6 +836,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#950-wave-118-serverpy-dead-flag-surgery-220-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [9.5.0] — Wave 118 — server.py Dead-Flag Surgery (~-220 lines)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[9.5.0] — Wave 118 — server.py Dead-Flag Surgery (~-220 lines)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chore
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#940-wave-117-post-purge-shim-deduplication-99-92-source-files" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -848,7 +887,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed" class="md-nav__link">
+  <a href="#removed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -870,7 +909,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#chore" class="md-nav__link">
+  <a href="#chore_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Chore
@@ -898,7 +937,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#removed_1" class="md-nav__link">
+  <a href="#removed_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Removed
@@ -948,7 +987,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#chore_1" class="md-nav__link">
+  <a href="#chore_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Chore
@@ -5723,8 +5762,34 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
-<h2 id="940-wave-117-post-purge-shim-deduplication-99-92-source-files">[9.4.0] — Wave 117 — Post-Purge Shim Deduplication (99 → 92 source files)<a class="headerlink" href="#940-wave-117-post-purge-shim-deduplication-99-92-source-files" title="Permanent link">&para;</a></h2>
+<h2 id="950-wave-118-serverpy-dead-flag-surgery-220-lines">[9.5.0] — Wave 118 — server.py Dead-Flag Surgery (~-220 lines)<a class="headerlink" href="#950-wave-118-serverpy-dead-flag-surgery-220-lines" title="Permanent link">&para;</a></h2>
 <h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Empty Wave 41–55 flag stubs deleted from <code>main()</code></strong> — 15 comment-only placeholder
+  sections (<code># ── Wave 41 flags ──</code>, …, <code># ── Wave 55 flags ──</code>) with no live code.</li>
+<li><strong>5 dead <code>ap.add_argument</code> entries deleted</strong>: <code>--gguf-loader</code>, <code>--weight-stream</code>,
+  <code>--shard-loader</code> (Wave 50); <code>--coconut</code>, <code>--self-consistency</code> (Wave 51). All
+  referenced modules were deleted in Wave 116; these flags silently set attributes
+  on a <code>None</code> global.</li>
+<li><strong><code>_bool_wave_flags</code> 29-entry list collapsed to 6 live entries</strong> — the
+  <code>--all-optimizations</code> expansion loop contained 23 dead flag names from deleted
+  Wave 37–55 modules (<code>seq_packing</code>, <code>ada_serve</code>, <code>conf_spec</code>, <code>chunk_kv</code>,
+  <code>ssd_saguaro</code>, <code>spec_stream</code>, <code>mtp</code>, <code>pd_disagg</code>, <code>prm_beam</code>, <code>best_of_n</code>,
+  <code>weight_stream</code>, <code>shard_loader</code>, <code>coconut</code>, <code>self_consistency</code>, and empty
+  Wave 41–55 comment stubs). Replaced with a direct inline tuple of the 6
+  remaining live flags: <code>prompt_lookup</code>, <code>kvtc</code>, <code>metal_flash_attn</code>, <code>deja_vu</code>,
+  <code>layer_overlap</code>, <code>fused_qkv</code>.</li>
+<li><strong><code>--all-optimizations</code> help text trimmed</strong> — 9-line stale list of ~30 deleted
+  module flags replaced with the 6 active flags the option actually enables.</li>
+</ul>
+<h3 id="chore">Chore<a class="headerlink" href="#chore" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Version</strong>: 9.4.0 → 9.5.0</li>
+<li><strong>3264 tests passing</strong>, 21 skipped, 0 failures.</li>
+</ul>
+<hr />
+<h2 id="940-wave-117-post-purge-shim-deduplication-99-92-source-files">[9.4.0] — Wave 117 — Post-Purge Shim Deduplication (99 → 92 source files)<a class="headerlink" href="#940-wave-117-post-purge-shim-deduplication-99-92-source-files" title="Permanent link">&para;</a></h2>
+<h3 id="removed_1">Removed<a class="headerlink" href="#removed_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>7 backward-compatibility shim files deleted</strong> (Wave 107 artifacts): <code>kv_cache.py</code>,
   <code>scheduler.py</code>, <code>chunked_prefill.py</code>, <code>grammar_engine.py</code>, <code>prompt_compressor.py</code>,
@@ -5742,7 +5807,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
   <code>import squish.loaders.astc_loader</code>. Wrapped in <code>try/except ImportError</code> with
   <code>_ASTC_ENCODER_AVAILABLE = False</code> flag and <code>None</code> stubs so the module loads cleanly.</li>
 </ul>
-<h3 id="chore">Chore<a class="headerlink" href="#chore" title="Permanent link">&para;</a></h3>
+<h3 id="chore_1">Chore<a class="headerlink" href="#chore_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>server.py</code></strong>: all 13 shim-path imports updated to canonical subdirectory paths
   (<code>squish.kv_cache</code> → <code>squish.kv.kv_cache</code>, <code>squish.grammar_engine</code> →
@@ -5750,7 +5815,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 </ul>
 <hr />
 <h2 id="930-wave-116-lean-and-mean-purge-137-99-source-files">[9.3.0] — Wave 116 — Lean-and-Mean Purge (137 → 99 source files)<a class="headerlink" href="#930-wave-116-lean-and-mean-purge-137-99-source-files" title="Permanent link">&para;</a></h2>
-<h3 id="removed_1">Removed<a class="headerlink" href="#removed_1" title="Permanent link">&para;</a></h3>
+<h3 id="removed_2">Removed<a class="headerlink" href="#removed_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>38 source files deleted</strong> — stripped all code that does not directly
   speed up inference, reduce memory, or reduce disk usage:</li>
@@ -5823,7 +5888,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
   <code>metrics()</code> (valid for standalone test clients) is preserved.</p>
 </li>
 </ul>
-<h3 id="chore_1">Chore<a class="headerlink" href="#chore_1" title="Permanent link">&para;</a></h3>
+<h3 id="chore_2">Chore<a class="headerlink" href="#chore_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong>Benchmark script cleanup</strong> — Removed 11 dead squished-variant model
