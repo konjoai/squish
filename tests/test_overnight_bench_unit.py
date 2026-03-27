@@ -60,26 +60,25 @@ class TestModelPlan:
 
     def test_all_families_covered(self):
         families = {row[0] for row in rob.MODEL_PLAN}
-        assert families == {"Qwen3-0.6B", "Llama-3.2-1B", "gemma-3-1b", "Qwen2.5-1.5B", "Qwen3-8B"}
+        assert families == {"Qwen3-0.6B", "Llama-3.2-1B", "gemma-3-1b", "Qwen2.5-1.5B", "Qwen3-4B"}
 
-    def test_qwen3_8b_no_int4(self):
-        row = next(r for r in rob.MODEL_PLAN if r[0] == "Qwen3-8B")
-        assert 4 not in row[2], "Qwen3-8B INT4 should be excluded (OOM guard)"
+    def test_all_models_have_int4(self):
+        # All models in the current plan fit in Metal RAM at INT4 (Qwen3-4B INT4 = 2.0 GB)
+        for name, _, bits, _ in rob.MODEL_PLAN:
+            assert 4 in bits, f"{name} should have INT4 in plan"
 
     def test_small_models_have_int4(self):
         for name, _, bits, _ in rob.MODEL_PLAN:
-            if name != "Qwen3-8B":
-                assert 4 in bits, f"{name} should have INT4 in plan"
+            assert 4 in bits, f"{name} should have INT4 in plan"
 
     def test_all_have_int2_int3(self):
         for name, _, bits, _ in rob.MODEL_PLAN:
             assert 2 in bits and 3 in bits, f"{name} missing INT2 or INT3"
 
     def test_bf16_eval_flags(self):
-        # Small models get BF16 eval, Qwen3-8B does not (too slow for BF16 run)
+        # All models in the current plan get BF16 eval (Qwen3-4B fits in RAM)
         for name, _, _, run_bf16 in rob.MODEL_PLAN:
-            if name != "Qwen3-8B":
-                assert run_bf16, f"{name}: expected run_bf16=True"
+            assert run_bf16, f"{name}: expected run_bf16=True"
 
     def test_bf16_dirs_use_bf16_suffix(self):
         for _, bf16_dir, _, _ in rob.MODEL_PLAN:
@@ -104,7 +103,8 @@ class TestBenchModelName:
         # Registry display name differs from dir-name pattern (Instruct vs non-Instruct)
         assert rob._BENCH_MODEL_NAME[("Llama-3.2-1B", 4)] == "Llama-3.2-1B-int4"
 
-    def test_no_qwen3_8b_int4(self):
+    def test_no_large_model_int4_in_name_map(self):
+        # Qwen3-8B INT4 is not in the name map (14 GB — OOM on M3 16 GB)
         assert ("Qwen3-8B", 4) not in rob._BENCH_MODEL_NAME
 
     def test_int2_entries_present(self):

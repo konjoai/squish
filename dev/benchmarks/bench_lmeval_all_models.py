@@ -692,6 +692,18 @@ def main() -> None:
         help="Re-evaluate even if results already exist (overrides --skip-existing)",
     )
     ap.add_argument(
+        "--max-model-gb",
+        type=float,
+        default=9.0,
+        dest="max_model_gb",
+        help=(
+            "Skip models with approx_gb above this threshold to prevent Metal OOM "
+            "during lmeval 5-shot evaluation "
+            "(default: 9.0 GB — safe ceiling for M3 16 GB). "
+            "Pass 0 to disable the guard and attempt all models."
+        ),
+    )
+    ap.add_argument(
         "--gen-sanity",
         action="store_true",
         dest="gen_sanity",
@@ -807,6 +819,15 @@ def main() -> None:
             f"[{model_idx}/{len(available)}] {name}",
             f"{size_gb:.1f} GB  {notes}  →  {model_dir}",
         )
+
+        # OOM guard: skip models too large for Metal heap during 5-shot lmeval
+        if args.max_model_gb > 0 and size_gb > args.max_model_gb:
+            print(
+                f"{Y}SKIP:{NC} {name} "
+                f"({size_gb:.1f} GB > --max-model-gb {args.max_model_gb:.0f} GB "
+                f"— too large for host, pass --max-model-gb 0 to force)"
+            )
+            continue
 
         # Skip logic
         existing = _result_path(name, args.output_dir)

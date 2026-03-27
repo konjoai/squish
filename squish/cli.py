@@ -1262,6 +1262,7 @@ def cmd_run(args):  # pragma: no cover
             no_awq=False,
             awq=False,
             awq_samples=20,
+            awq_alpha=0.1,
             verbose=False,
             passthrough=[],
             outlier_threshold=20.0,
@@ -1992,11 +1993,12 @@ def cmd_compress(args):  # pragma: no cover
             _int3_out_dir = _int3_model_dir.parent / f"{_int3_base}-int3"
 
         print(f"\n  Compressing: {_int3_model_dir}")
-        # q_group_size=32: more fine-grained scale calibration than the mlx_lm default (64).
-        # At 3 bits, larger groups cause significant accumulated quantization error — especially
-        # on small models.  group_size=32 roughly halves per-group error, trading a modest
-        # increase in scale-tensor storage (~+10% total size) for coherent output quality.
-        _INT3_GROUP_SIZE = 32
+        # q_group_size=16: finer-grained scale calibration than mlx_lm default (64) or
+        # the prior default (32).  At 3 bits, larger groups accumulate significant per-block
+        # quantization error — especially on small models.  group_size=16 roughly halves
+        # per-group error vs 32, trading modest scale-tensor overhead (~+15% total size)
+        # for measurably more coherent output.  Aligns with the INT4 AWQ default.
+        _INT3_GROUP_SIZE = 16
         print(f"  Quantization: INT3 q_group_size={_INT3_GROUP_SIZE} (mlx_lm.convert, ~46% of BF16 size)")
         print(f"  Output:      {_int3_out_dir}")
         print(f"\n  ⚠  INT3 is experimental. For models < 3B, quality may be degraded vs INT4.")
@@ -2031,7 +2033,22 @@ def cmd_compress(args):  # pragma: no cover
             )
         return
 
-    if _compress_format == "int8":
+    if _compress_format == "mixed_attn":
+        # mixed_attn: keep attention projection weights (q/k/v/o) as FP16 passthrough,
+        # INT4 + AWQ g=16 everything else (MLP, embed, lm_head).
+        # Delivers the best accuracy/GB ratio — ~5–8% larger than pure INT4 but avoids
+        # the attention-eigenvalue distortion that degrades arc_easy/hellaswag scores.
+        args.int4 = True
+        _attn_passthrough = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        # Merge with any user-supplied --passthrough patterns
+        existing_pt = list(getattr(args, "passthrough", None) or [])
+        args.passthrough = existing_pt + [
+            p for p in _attn_passthrough if p not in existing_pt
+        ]
+        if not getattr(args, "int4_group_size", None):
+            args.int4_group_size = 16
+        _compress_format = "int4"   # use the standard INT4 pipeline
+    elif _compress_format == "int8":
         # Explicit int8: override any --int4 flag
         args.int4 = False
     elif _compress_format == "int4":
@@ -2319,9 +2336,10 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
             import mlx_lm
             model_awq, tokenizer_awq = mlx_lm.load(str(model_dir))
             from squish.quant.awq import collect_activation_scales, save_awq_scales
+            awq_alpha = getattr(args, "awq_alpha", 0.1)
             scales = collect_activation_scales(
                 model_awq, tokenizer_awq,
-                n_samples=n_samples, verbose=True,
+                n_samples=n_samples, alpha=awq_alpha, min_scale=0.0, verbose=True,
             )
             awq_scales_dir = tempfile.mkdtemp(prefix="squish_awq_")
             save_awq_scales(scales, awq_scales_dir, verbose=False)
@@ -2349,8 +2367,11 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         cmd += ["--outlier-threshold", str(args.outlier_threshold)]
     if getattr(args, "int4", False):
         cmd.append("--int4")
-    if getattr(args, "int4_group_size", None):
-        cmd += ["--int4-group-size", str(args.int4_group_size)]
+    _effective_g = getattr(args, "int4_group_size", None)
+    if _run_awq and _effective_g is None:
+        _effective_g = 16  # AWQ optimal group size: finer scales match activation-scaled weights
+    if _effective_g is not None:
+        cmd += ["--int4-group-size", str(_effective_g)]
     if getattr(args, "aqlm", False):
         cmd.append("--aqlm")
         cmd += ["--aqlm-codebooks", str(getattr(args, "aqlm_codebooks", 2))]
@@ -5224,6 +5245,12 @@ Ollama drop-in:
                                  "When --int4 is used AWQ runs automatically unless --no-awq is passed.")
     p_compress.add_argument("--awq-samples", type=int, default=20, metavar="N",
                             help="Number of calibration samples for AWQ (default: 20)")
+    p_compress.add_argument("--awq-alpha", type=float, default=0.1, metavar="A",
+                            dest="awq_alpha",
+                            help="AWQ weight-activation smoothing strength \u03b1 in [0, 1] (default: 0.1). "
+                                 "Lower values apply stronger weight-side smoothing. "
+                                 "0.1 is optimal for INT4; 0.5 is the AWQ paper default. "
+                                 "Try 0.05\u20130.08 for Qwen3 models.")
     p_compress.add_argument("--verbose",           action="store_true")
     p_compress.add_argument(
         "--int4-group-size",
@@ -5232,18 +5259,22 @@ Ollama drop-in:
         dest="int4_group_size",
         metavar="N",
         help="Override per-group size for INT4 quantization (power of two ≤ 32 "
-             "that divides the weight matrix column count). Default: auto-select 32. "
+             "that divides the weight matrix column count). "
+             "Default: 16 when AWQ is active, 32 otherwise. "
              "Use 16 for finer-grained scales at ~2× scale storage overhead.",
     )
     p_compress.add_argument(
         "--format",
-        choices=["int8", "int4", "int3", "astc", "hybrid"],
+        choices=["int8", "int4", "int3", "astc", "hybrid", "mixed_attn"],
         default=None,
         dest="compress_format",
         metavar="FORMAT",
         help=(
-            "Output compression format. Choices: int4 (default, 4-bit group quantisation), "
+            "Output compression format. Choices: "
+            "int4 (default, 4-bit group quantisation + AWQ), "
             "int8 (8-bit group quantisation), "
+            "int3 (native MLX 3-bit, no AWQ), "
+            "mixed_attn (FP16 attention q/k/v/o + INT4 g=16 MLP — best quality/GB), "
             "astc (ASTC 6×6 HDR texture ~3.56 BPW, Apple Silicon only — "
             "writes .squizd format), "
             "hybrid (ASTC for FFN layers + INT4 for attention, Apple Silicon only — "
