@@ -5,6 +5,40 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.14.0] — Architecture-aware AWQ calibration
+
+### Added
+
+- `squish/quant/awq.py`: `_QWEN3_CALIBRATION_TEXTS` — 25 reasoning-chain-of-thought
+  calibration samples matched to Qwen3's training regime (step-by-step math,
+  logical deduction, algorithmic reasoning, commonsense inference).
+- `squish/quant/awq.py`: `_MODEL_FAMILY_DEFAULTS` dict — per-architecture alpha and
+  corpus defaults.  Qwen3: alpha=0.07.  All others (Qwen2, Llama, gemma, mistral,
+  phi): alpha=0.10.  Rationale: Qwen3's Grouped Query Attention produces tighter
+  activation magnitude distributions; alpha=0.10 oversmooths K/V projections.
+- `squish/quant/awq.py`: `_DEFAULT_AWQ_ALPHA = 0.10` — explicit fallback constant.
+- `squish/quant/awq.py`: `detect_model_family(model_dir)` — reads `config.json`,
+  returns normalised family name (`"qwen3"`, `"qwen2"`, `"llama"`, `"gemma"`,
+  `"mistral"`, `"phi"`) or `None`.  Checks both `model_type` and `architectures`
+  fields for robustness.
+- `squish/quant/awq.py`: `collect_activation_scales()` gains `model_family: str | None`
+  parameter.  When `texts is None` and family is known, uses the family-specific
+  calibration corpus from `_MODEL_FAMILY_DEFAULTS`.
+- `squish/cli.py` `_cmd_compress_inner`: auto-detects architecture family before AWQ
+  calibration, resolves effective alpha (explicit `--awq-alpha` > family default >
+  0.10), prints detected family + effective alpha to stdout, passes `model_family`
+  to `collect_activation_scales`.
+- `squish/cli.py` `--awq-alpha` flag: `default` changed from `0.1` to `None`;
+  help text updated to describe automatic per-architecture selection.
+- `squish/cli.py` `_compress_args` Namespace: `awq_alpha` sentinel updated to `None`.
+
+### Contracts
+- All 3566 tests pass; 21 skipped.
+- No new imports at module load time; `detect_model_family` is zero-cost until called.
+- Backward-compatible: callers that pass `alpha` explicitly are unaffected.
+
+---
+
 ## [9.13.0] — Wave 126 — Empty Section Header Purge (-4 lines)
 
 ### Removed
