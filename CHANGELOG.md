@@ -5,6 +5,38 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.11.0] — Wave 124 — Orphaned `global` Declaration Purge (-8 lines)
+
+### Removed
+
+30 dead `global` declarations from a single block inside `main()` at
+the "Wave optimization module initialisation" section. Each variable was
+declared `global` but never assigned anywhere in the codebase, making the
+declarations entirely inert.
+
+`_ProductionProfiler` was **excluded** — it has 4 live read references in
+`server.py` and its `global` declaration at L3971 is kept.
+
+Deleted variables (all confirmed zero references outside `global` stmts):
+`_seq_packer`, `_ada_serve_scheduler`, `_conf_spec_verifier`, `_kvsharer_map`,
+`_kv_slab_allocator`, `_paris_kv_codebook`, `_streaming_sink_cache`,
+`_diffkv_policy_mgr`, `_smallkv_cache`, `_lookahead_engine`, `_spec_reason_orch`,
+`_sage_attn_kernel`, `_sage_attn2_kernel`, `_sparge_engine`, `_squeeze_cache`,
+`_yoco_config`, `_cla_config`, `_kvtuner_config`, `_robust_sched`,
+`_gemfilter_config`, `_svdq_config`, `_sparse_spec_config`, `_sparse_verify_config`,
+`_trail_config`, `_specontext_config`, `_forelen_config`, `_ipw_config`,
+`_layer_skip_config`, `_long_spec_config`, `_fr_spec_config`.
+
+### Stats
+
+| Metric | Value |
+|---|---|
+| Lines deleted | 8 |
+| `server.py` lines | 4713 (was 4721) |
+| New regression tests | 5 (`test_wave124_orphan_global_purge.py`) |
+
+---
+
 ## [9.10.0] — Wave 123 — Empty Wave 41-55 Comment Stub Purge (-38 lines)
 
 ### Removed

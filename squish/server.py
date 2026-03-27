@@ -4260,15 +4260,7 @@ Examples:
         load_eagle_head(args.eagle_head_dir, verbose=args.verbose)
 
     # ── Wave optimization module initialisation ───────────────────────────────
-    global _prompt_lookup_decoder, _seq_packer, _ada_serve_scheduler
-    global _conf_spec_verifier, _kvsharer_map, _kv_slab_allocator
-    global _paris_kv_codebook, _streaming_sink_cache
-    global _diffkv_policy_mgr, _smallkv_cache, _lookahead_engine, _spec_reason_orch
-    global _sage_attn_kernel, _sage_attn2_kernel, _sparge_engine, _squeeze_cache
-    global _yoco_config, _cla_config, _kvtuner_config, _robust_sched
-    global _gemfilter_config, _svdq_config, _sparse_spec_config, _sparse_verify_config
-    global _trail_config, _specontext_config, _forelen_config, _ipw_config
-    global _layer_skip_config, _long_spec_config, _fr_spec_config
+    global _prompt_lookup_decoder
 
     if getattr(args, "prompt_lookup", False):
         try:
