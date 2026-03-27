@@ -4042,44 +4042,6 @@ Examples:
     ap.add_argument("--fused-qkv", action="store_true", default=False,
                     help="Enable FusedQKVProjection: single W_qkv matmul replaces three\n"
                          "separate Q/K/V projections. Reduces input reads by 67%%. +14%% prefill.")
-    # ── Wave 41 flags ─────────────────────────────────────────────────────────
-    # ── Wave 42 flags ─────────────────────────────────────────────────────────
-
-    # ── Wave 43 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 44 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 45 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 46 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 47 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 48 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 49 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 50 flags ────────────────────────────────────────────────────────
-    ap.add_argument("--gguf-loader", action="store_true", default=False,
-                    help="GGUF native loader: Q2_K/Q3_K/Q4_K/Q5_K/Q8_0 format parser (Wave 50).")
-    ap.add_argument("--weight-stream", action="store_true", default=False,
-                    help="Weight decompress stream: overlapped CPU dequant + GPU compute (Wave 50).")
-    ap.add_argument("--shard-loader", action="store_true", default=False,
-                    help="Model shard loader: 3-tier GPU-hot/CPU-warm/SSD-cold weight paging (Wave 50).")
-
-    # ── Wave 51 flags ────────────────────────────────────────────────────────
-    ap.add_argument("--coconut", action="store_true", default=False,
-                    help="COCONUT: continuous latent reasoning decoder (Wave 51).")
-    ap.add_argument("--self-consistency", action="store_true", default=False,
-                    help="Self-consistency: majority voting over K reasoning chains (Wave 51).")
-
-    # ── Wave 52 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 53 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 54 flags ────────────────────────────────────────────────────────
-
-    # ── Wave 55 flags ────────────────────────────────────────────────────────
 
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
@@ -4096,16 +4058,9 @@ Examples:
     ap.add_argument(
         "--all-optimizations", action="store_true", default=False,
         help=(
-            "Enable ALL built-in optimization modules at once. "
-            "Activates every attention kernel, KV cache strategy, speculative "
-            "decoding variant, and adaptive-layer technique. Equivalent to "
-            "passing every --sage-attention, --sparge-attention, --yoco-kv, "
-            "--squeeze-attention, --kvtuner, --robust-scheduler, --gemfilter, "
-            "--svdq, --sparse-spec, --sparse-verify, --trail, --specontext, "
-            "--forelen, --ipw, --layer-skip, --long-spec, --fr-spec, --cla, "
-            "--prompt-lookup, --seq-packing, --conf-spec, --kv-share, --kv-slab, "
-            "--paris-kv, --streaming-sink, --diff-kv, --small-kv, --lookahead, "
-            "--spec-reason flags simultaneously. "
+            "Enable all built-in optimization modules at once. Equivalent to "
+            "passing --prompt-lookup, --kvtc, --metal-flash-attn, --deja-vu, "
+            "--layer-overlap, --fused-qkv simultaneously. "
             "Useful for local testing. Modules that fail to init are skipped."
         ),
     )
@@ -4211,35 +4166,7 @@ Examples:
 
     # ── Expand --all-optimizations into individual flags ─────────────────────
     if getattr(args, "all_optimizations", False):
-        _bool_wave_flags = [
-            "prompt_lookup", "seq_packing", "ada_serve", "conf_spec",
-            # Wave 37: Wire Everything In
-            # NOTE: "jacobi" is intentionally excluded — Jacobi decode uses
-            # full-context forward passes (no KV cache), making it O(n²) and
-            # catastrophically slow for normal generation.  Enable only with
-            # the explicit --jacobi flag.
-            "kvtc", "chunk_kv", "ssd_saguaro", "spec_stream",
-            "metal_flash_attn", "deja_vu", "mtp",
-            "layer_overlap", "fused_qkv", "pd_disagg",
-            # Wave 41
-            # Wave 42
-            # Wave 43
-            # Wave 44
-            # Wave 45
-            # Wave 46
-            # Wave 47
-            # Wave 48
-            # Wave 49
-            # Wave 50
-            "weight_stream", "shard_loader",
-            # Wave 51
-            "coconut", "prm_beam", "best_of_n", "self_consistency",
-            # Wave 52
-            # Wave 53
-            # Wave 54
-            # Wave 55
-        ]
-        for _f in _bool_wave_flags:
+        for _f in ("prompt_lookup", "kvtc", "metal_flash_attn", "deja_vu", "layer_overlap", "fused_qkv"):
             if not getattr(args, _f, False):
                 setattr(args, _f, True)
 

@@ -5,6 +5,34 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.5.0] — Wave 118 — server.py Dead-Flag Surgery (~-220 lines)
+
+### Removed
+
+- **Empty Wave 41–55 flag stubs deleted from `main()`** — 15 comment-only placeholder
+  sections (`# ── Wave 41 flags ──`, …, `# ── Wave 55 flags ──`) with no live code.
+- **5 dead `ap.add_argument` entries deleted**: `--gguf-loader`, `--weight-stream`,
+  `--shard-loader` (Wave 50); `--coconut`, `--self-consistency` (Wave 51). All
+  referenced modules were deleted in Wave 116; these flags silently set attributes
+  on a `None` global.
+- **`_bool_wave_flags` 29-entry list collapsed to 6 live entries** — the
+  `--all-optimizations` expansion loop contained 23 dead flag names from deleted
+  Wave 37–55 modules (`seq_packing`, `ada_serve`, `conf_spec`, `chunk_kv`,
+  `ssd_saguaro`, `spec_stream`, `mtp`, `pd_disagg`, `prm_beam`, `best_of_n`,
+  `weight_stream`, `shard_loader`, `coconut`, `self_consistency`, and empty
+  Wave 41–55 comment stubs). Replaced with a direct inline tuple of the 6
+  remaining live flags: `prompt_lookup`, `kvtc`, `metal_flash_attn`, `deja_vu`,
+  `layer_overlap`, `fused_qkv`.
+- **`--all-optimizations` help text trimmed** — 9-line stale list of ~30 deleted
+  module flags replaced with the 6 active flags the option actually enables.
+
+### Chore
+
+- **Version**: 9.4.0 → 9.5.0
+- **3264 tests passing**, 21 skipped, 0 failures.
+
+---
+
 ## [9.4.0] — Wave 117 — Post-Purge Shim Deduplication (99 → 92 source files)
 
 ### Removed
