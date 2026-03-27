@@ -836,6 +836,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#9140-architecture-aware-awq-calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [9.14.0] — Architecture-aware AWQ calibration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[9.14.0] — Architecture-aware AWQ calibration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contracts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#9130-wave-126-empty-section-header-purge-4-lines" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1115,7 +1154,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#added" class="md-nav__link">
+  <a href="#added_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -6057,7 +6096,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#added_1" class="md-nav__link">
+  <a href="#added_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -6106,6 +6145,39 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="9140-architecture-aware-awq-calibration">[9.14.0] — Architecture-aware AWQ calibration<a class="headerlink" href="#9140-architecture-aware-awq-calibration" title="Permanent link">&para;</a></h2>
+<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>squish/quant/awq.py</code>: <code>_QWEN3_CALIBRATION_TEXTS</code> — 25 reasoning-chain-of-thought
+  calibration samples matched to Qwen3's training regime (step-by-step math,
+  logical deduction, algorithmic reasoning, commonsense inference).</li>
+<li><code>squish/quant/awq.py</code>: <code>_MODEL_FAMILY_DEFAULTS</code> dict — per-architecture alpha and
+  corpus defaults.  Qwen3: alpha=0.07.  All others (Qwen2, Llama, gemma, mistral,
+  phi): alpha=0.10.  Rationale: Qwen3's Grouped Query Attention produces tighter
+  activation magnitude distributions; alpha=0.10 oversmooths K/V projections.</li>
+<li><code>squish/quant/awq.py</code>: <code>_DEFAULT_AWQ_ALPHA = 0.10</code> — explicit fallback constant.</li>
+<li><code>squish/quant/awq.py</code>: <code>detect_model_family(model_dir)</code> — reads <code>config.json</code>,
+  returns normalised family name (<code>"qwen3"</code>, <code>"qwen2"</code>, <code>"llama"</code>, <code>"gemma"</code>,
+  <code>"mistral"</code>, <code>"phi"</code>) or <code>None</code>.  Checks both <code>model_type</code> and <code>architectures</code>
+  fields for robustness.</li>
+<li><code>squish/quant/awq.py</code>: <code>collect_activation_scales()</code> gains <code>model_family: str | None</code>
+  parameter.  When <code>texts is None</code> and family is known, uses the family-specific
+  calibration corpus from <code>_MODEL_FAMILY_DEFAULTS</code>.</li>
+<li><code>squish/cli.py</code> <code>_cmd_compress_inner</code>: auto-detects architecture family before AWQ
+  calibration, resolves effective alpha (explicit <code>--awq-alpha</code> &gt; family default &gt;
+  0.10), prints detected family + effective alpha to stdout, passes <code>model_family</code>
+  to <code>collect_activation_scales</code>.</li>
+<li><code>squish/cli.py</code> <code>--awq-alpha</code> flag: <code>default</code> changed from <code>0.1</code> to <code>None</code>;
+  help text updated to describe automatic per-architecture selection.</li>
+<li><code>squish/cli.py</code> <code>_compress_args</code> Namespace: <code>awq_alpha</code> sentinel updated to <code>None</code>.</li>
+</ul>
+<h3 id="contracts">Contracts<a class="headerlink" href="#contracts" title="Permanent link">&para;</a></h3>
+<ul>
+<li>All 3566 tests pass; 21 skipped.</li>
+<li>No new imports at module load time; <code>detect_model_family</code> is zero-cost until called.</li>
+<li>Backward-compatible: callers that pass <code>alpha</code> explicitly are unaffected.</li>
+</ul>
 <hr />
 <h2 id="9130-wave-126-empty-section-header-purge-4-lines">[9.13.0] — Wave 126 — Empty Section Header Purge (-4 lines)<a class="headerlink" href="#9130-wave-126-empty-section-header-purge-4-lines" title="Permanent link">&para;</a></h2>
 <h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
@@ -6522,7 +6594,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 <li><strong>Two Wave-13/14 pattern sentinels updated</strong> (<code>test_wave75</code>, <code>test_wave78</code>) to
   remove <code>_flash_attn3</code> patch targets that no longer exist on <code>squish.server</code>.</li>
 </ul>
-<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
+<h3 id="added_1">Added<a class="headerlink" href="#added_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave120_dead_global_purge.py</code> — 128 regression tests: 60 parametrized
   spot-checks (module-level + global-stmt absence for 30 representative deleted
@@ -12149,7 +12221,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <hr />
 <h2 id="100-2026-03-03">[1.0.0] — 2026-03-03<a class="headerlink" href="#100-2026-03-03" title="Permanent link">&para;</a></h2>
 <p><strong>Initial public release</strong>, accompanying the research paper.</p>
-<h3 id="added_1">Added<a class="headerlink" href="#added_1" title="Permanent link">&para;</a></h3>
+<h3 id="added_2">Added<a class="headerlink" href="#added_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Three-tier compressed weight loader</strong> — INT8 Vectro → float16 npy → bf16 MLX safetensors</li>
 <li><strong>OpenAI-compatible API server</strong> (<code>/v1/chat/completions</code>, <code>/v1/completions</code>, <code>/v1/embeddings</code>, <code>/v1/models</code>)</li>
