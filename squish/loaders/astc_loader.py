@@ -58,14 +58,22 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 
-from squish.compress.astc_encoder import (
-    ASTC_BLOCK_BYTES,
-    ASTC_BLOCK_X,
-    ASTC_BLOCK_Y,
-    ASTCEncodeResult,
-    ASTCEncoderConfig,
-    ASTCEncoder,
-)
+try:
+    from squish.compress.astc_encoder import (
+        ASTC_BLOCK_BYTES,
+        ASTC_BLOCK_X,
+        ASTC_BLOCK_Y,
+        ASTCEncodeResult,
+        ASTCEncoderConfig,
+        ASTCEncoder,
+    )
+    _ASTC_ENCODER_AVAILABLE = True
+except ImportError:
+    # squish.compress is not installed in this distribution.
+    # ASTC encoding is unavailable; ASTCLoader will raise at runtime if used.
+    _ASTC_ENCODER_AVAILABLE = False
+    ASTC_BLOCK_BYTES = ASTC_BLOCK_X = ASTC_BLOCK_Y = None  # type: ignore[assignment]
+    ASTCEncodeResult = ASTCEncoderConfig = ASTCEncoder = None  # type: ignore[assignment, misc]
 
 __all__ = [
     "ASTCLoaderConfig",

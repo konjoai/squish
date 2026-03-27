@@ -5,6 +5,34 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.4.0] — Wave 117 — Post-Purge Shim Deduplication (99 → 92 source files)
+
+### Removed
+
+- **7 backward-compatibility shim files deleted** (Wave 107 artifacts): `kv_cache.py`,
+  `scheduler.py`, `chunked_prefill.py`, `grammar_engine.py`, `prompt_compressor.py`,
+  `lazy_llm.py`, `prompt_lookup.py`. All were pure `sys.modules` substitution shims
+  (3–10 lines each) with zero logic.
+- **squish/ source file count: 92** (was 99 after Wave 116, <100 contract maintained ✓)
+- **Deleted `server.py.bak`, `cli.py.bak`** — leftover backup artifacts (384 KB recovered).
+- **Removed empty ghost directories**: `core/`, `format/`, `install/`, `packaging/`
+  (only `__pycache__` remained after Wave 116 deletions).
+
+### Fixed
+
+- **`astc_loader.py` bare import guarded** — `from squish.compress.astc_encoder import`
+  was a module-level bare import that raised `ModuleNotFoundError` on any direct
+  `import squish.loaders.astc_loader`. Wrapped in `try/except ImportError` with
+  `_ASTC_ENCODER_AVAILABLE = False` flag and `None` stubs so the module loads cleanly.
+
+### Chore
+
+- **`server.py`**: all 13 shim-path imports updated to canonical subdirectory paths
+  (`squish.kv_cache` → `squish.kv.kv_cache`, `squish.grammar_engine` →
+  `squish.grammar.grammar_engine`, `squish.lazy_llm` → `squish.context.lazy_llm`, etc.)
+
+---
+
 ## [9.3.0] — Wave 116 — Lean-and-Mean Purge (137 → 99 source files)
 
 ### Removed

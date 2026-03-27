@@ -1621,7 +1621,7 @@ def _generate_tokens(  # pragma: no cover
             _on_compress_path = True
             try:
                 with _trace_span("gen.compress", words=_word_count, ratio=_compress_ratio):
-                    from squish.prompt_compressor import compress as _compress_fn
+                    from squish.context.prompt_compressor import compress as _compress_fn
                     prompt = _compress_fn(
                         prompt,
                         ratio=_compress_ratio,
@@ -1955,10 +1955,10 @@ def _generate_tokens(  # pragma: no cover
                 if (_chunk_prefill_enabled
                         and len(input_ids) > _chunk_prefill_threshold):
                     try:
-                        from squish.chunked_prefill import (
+                        from squish.streaming.chunked_prefill import (
                             ChunkedPrefillConfig as _CPFConfig,
                         )
-                        from squish.chunked_prefill import (
+                        from squish.streaming.chunked_prefill import (
                             chunk_prefill as _chunk_prefill_fn,
                         )
                         _cpf_cfg = _CPFConfig(chunk_size=_chunk_prefill_size)
@@ -2696,7 +2696,7 @@ async def chat_completions(  # pragma: no cover
         if _tc_schema is not None:
             # Lazily initialise grammar engine if not already active
             if _grammar_engine is None:
-                from squish.grammar_engine import GrammarEngine  # noqa: PLC0415
+                from squish.grammar.grammar_engine import GrammarEngine  # noqa: PLC0415
                 if GrammarEngine.is_available() and _state.tokenizer is not None:
                     _grammar_engine = GrammarEngine(_state.tokenizer)
             if _grammar_engine is not None:
@@ -4389,9 +4389,9 @@ Examples:
     global _disk_prompt_cache
     if getattr(args, "disk_prompt_cache", ""):
         try:
-            from squish.kv_cache import DiskKVCache as _DiskKVCache
+            from squish.kv.kv_cache import DiskKVCache as _DiskKVCache
         except ImportError:
-            from kv_cache import DiskKVCache as _DiskKVCache  # direct run
+            from squish.kv.kv_cache import DiskKVCache as _DiskKVCache  # direct run
         _disk_prompt_cache = _DiskKVCache(
             cache_dir   = args.disk_prompt_cache,
             max_entries = args.disk_prompt_cache_size,
@@ -4404,11 +4404,11 @@ Examples:
     if getattr(args, "lazy_llm", False) and _state.model is not None:
         try:
             try:
-                from squish.lazy_llm import LazyLLMConfig
-                from squish.lazy_llm import patch_model_lazy_llm as _patch_llm
+                from squish.context.lazy_llm import LazyLLMConfig
+                from squish.context.lazy_llm import patch_model_lazy_llm as _patch_llm
             except ImportError:
-                from lazy_llm import LazyLLMConfig
-                from lazy_llm import patch_model_lazy_llm as _patch_llm
+                from squish.context.lazy_llm import LazyLLMConfig
+                from squish.context.lazy_llm import patch_model_lazy_llm as _patch_llm
             _lazy_llm_cfg = LazyLLMConfig(
                 keep_ratio    = args.lazy_llm_keep_ratio,
                 start_layer   = args.lazy_llm_start_layer,
@@ -4447,7 +4447,7 @@ Examples:
     global _kv_cache
     if args.kv_cache_mode != "fp16" and _state.model is not None:
         try:
-            from squish.kv_cache import patch_model_kv_cache
+            from squish.kv.kv_cache import patch_model_kv_cache
             _kv_cache = patch_model_kv_cache(
                 _state.model,
                 mode=args.kv_cache_mode,
@@ -4470,7 +4470,7 @@ Examples:
     _session_cache_dir = getattr(args, "session_cache_dir", "")
     if _session_cache_dir:
         try:
-            from squish.kv_cache import SessionKVCache as _SessionKVCache
+            from squish.kv.kv_cache import SessionKVCache as _SessionKVCache
             _session_kv_cache = _SessionKVCache(cache_dir=_session_cache_dir)
             _info("session-cache", f"{_session_cache_dir}")
         except Exception as _e:
@@ -4556,7 +4556,7 @@ Examples:
     global _grammar_engine, _structured_output_mode, _structured_output_schema
     _structured_output_mode = getattr(args, "structured_output", "none")
     if _structured_output_mode != "none" and _state.tokenizer is not None:
-        from squish.grammar_engine import GrammarEngine  # noqa: PLC0415
+        from squish.grammar.grammar_engine import GrammarEngine  # noqa: PLC0415
         if GrammarEngine.is_available():
             _grammar_engine = GrammarEngine(_state.tokenizer)
             if _structured_output_mode == "json-schema":
@@ -4626,8 +4626,8 @@ Examples:
     global _scheduler
     if args.batch_scheduler and _state.model is not None:
         try:
-            from squish.scheduler import BatchScheduler, NestedWaitScheduler
-            from squish.scheduler import QueueFullError as _QFE
+            from squish.serving.scheduler import BatchScheduler, NestedWaitScheduler
+            from squish.serving.scheduler import QueueFullError as _QFE
             global _QueueFullError
             _QueueFullError = _QFE
             _sched_cls = (BatchScheduler
@@ -4670,7 +4670,7 @@ Examples:
 
     if getattr(args, "prompt_lookup", False):
         try:
-            from squish.prompt_lookup import PromptLookupConfig, PromptLookupDecoder
+            from squish.speculative.prompt_lookup import PromptLookupConfig, PromptLookupDecoder
             _plcfg = PromptLookupConfig(
                 ngram_min=2,
                 ngram_max=getattr(args, "prompt_lookup_n", 3),
