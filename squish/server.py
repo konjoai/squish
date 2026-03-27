@@ -4277,10 +4277,6 @@ Examples:
         except Exception as _e:
             _warn(f"[prompt-lookup] Skipped: {_e}")
 
-    # ── Attention and KV kernels ─────────────────────────────────────────────
-    # ── KV cache strategies ──────────────────────────────────────────────────
-    # ── Speculative decoding variants ─────────────────────────────────────────
-    # ── Token-importance / adaptive-layer strategies ──────────────────────────
     # ── Wave 37: Wire Everything In ───────────────────────────────────────────
     # ChipDetector is always run at startup (no flag required).
     global _chip_profile

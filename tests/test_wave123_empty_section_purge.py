@@ -96,4 +96,4 @@ def test_line_count():
     assert count <= 4721, (
         f"Expected ≤ 4721 lines after Wave 123 (-38 from 4759), got {count}"
     )
-    assert count > 4700, f"Sanity floor: expected > 4700 lines; got {count}"
+    assert count > 4650, f"Sanity floor: expected > 4650 lines; got {count}"

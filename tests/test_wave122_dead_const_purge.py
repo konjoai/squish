@@ -122,14 +122,14 @@ def test_line_count_reduced_by_wave122():
     """server.py is smaller than v9.8.0 (4772) and larger than 4700 (sanity floor)."""
     n = len(_LINES)
     assert n < 4772, f"Expected < 4772 lines post-Wave-122; got {n}"
-    assert n > 4700, f"Expected > 4700 lines (sanity floor); got {n}"
+    assert n > 4650, f"Expected > 4650 lines (sanity floor); got {n}"
 
 
 def test_line_count_wave122_delta():
     """Wave 122 removed 13 lines (4772 → 4759); subsequent waves may reduce further."""
     n = len(_LINES)
     assert n <= 4759, f"Expected ≤ 4759 lines (Wave 122 produced 4759); got {n}"
-    assert n > 4700, f"Sanity floor: expected > 4700 lines; got {n}"
+    assert n > 4650, f"Sanity floor: expected > 4650 lines; got {n}"
 
 
 # ── 4. No new dead constants introduced ───────────────────────────────────────

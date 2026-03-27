@@ -5,6 +5,23 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.13.0] — Wave 126 — Empty Section Header Purge (-4 lines)
+
+### Removed
+
+Four consecutive empty `# ──` section headers inside `main()` that had
+no code between them and no code between them and the next header:
+
+- `# ── Attention and KV kernels`
+- `# ── KV cache strategies`
+- `# ── Speculative decoding variants`
+- `# ── Token-importance / adaptive-layer strategies`
+
+These were orphaned stubs from prior wave cleanups. The surrounding active
+code (`# ── Wave 37: Wire Everything In`) is unchanged.
+
+---
+
 ## [9.12.0] — Wave 125 — Stale Wave 98 Commented-Out Code Purge (-11 lines)
 
 ### Removed

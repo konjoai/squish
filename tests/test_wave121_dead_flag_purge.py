@@ -125,7 +125,7 @@ def test_line_count_under_4800():
 def test_line_count_over_4700():
     """Sanity check: server.py should not have been accidentally truncated."""
     count = _src().count("\n") + 1
-    assert count > 4700, f"server.py has {count} lines — looks truncated"
+    assert count > 4650, f"server.py has {count} lines — looks truncated"
 
 
 # ── Flag count contract ───────────────────────────────────────────────────────

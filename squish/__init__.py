@@ -13,7 +13,7 @@ Public API:
 """
 from __future__ import annotations
 
-__version__ = "9.12.0"
+__version__ = "9.13.0"
 
 # ── Lazy import registry ───────────────────────────────────────────────────────
 # Every public name is loaded on first access via __getattr__.
