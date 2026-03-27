@@ -91,8 +91,9 @@ def test_lazy_expert_global_var_present():
 # ── Line-count gate ───────────────────────────────────────────────────────────
 
 def test_line_count():
-    """server.py must be exactly 4721 lines after Wave 123 deletions."""
+    """server.py must be ≤ 4721 lines (Wave 123 produced 4721); subsequent waves may reduce further."""
     count = len(LINES)
-    assert count == 4721, (
-        f"Expected 4721 lines after Wave 123 (-38 from 4759), got {count}"
+    assert count <= 4721, (
+        f"Expected ≤ 4721 lines after Wave 123 (-38 from 4759), got {count}"
     )
+    assert count > 4700, f"Sanity floor: expected > 4700 lines; got {count}"
