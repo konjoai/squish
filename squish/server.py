@@ -3571,23 +3571,6 @@ Examples:
                     help="SVD rank for KV compression: project head_dim → N before INT8.\n"
                          "0 = off (default).  Recommended: 64 for head_dim=128 models.\n"
                          "Requires --kv-cache-mode int8 or snap.")
-    # ── Phase 13A: Asymmetric INT2 KV Cache ──────────────────────────────────
-    ap.add_argument("--agent-kv-sink", type=int, default=4, metavar="N",
-                    help="Number of FP32 attention-sink tokens to preserve (default 4)")
-    ap.add_argument("--agent-kv-window", type=int, default=64, metavar="N",
-                    help="FP32 local-window token count for AgentKV (default 64)")
-    # Phase 2 retrieval attention
-    ap.add_argument("--retrieval-attention", action="store_true", default=False,
-                    help="Enable retrieval attention: fetch only the top-k most relevant\n"
-                         "disk-tier tokens via HNSW ANNS search instead of scanning all\n"
-                         "disk tokens.  Requires --disk-prompt-cache.  Needs hnswlib.")
-    ap.add_argument("--retrieval-top-k", type=int, default=32,
-                    metavar="N",
-                    help="ANNS top-k tokens to retrieve from disk tier (default 32)")
-    ap.add_argument("--retrieval-hot-window", type=int, default=256,
-                    metavar="N",
-                    help="Number of most-recent RAM INT8 tokens always returned\n"
-                         "(hot window guarantee, default 256)")
     ap.add_argument("--log-level",
                     choices=["critical", "error", "warning", "info", "debug", "trace"],
                     default="warning",
@@ -3735,23 +3718,6 @@ Examples:
                     help="N-gram size for prompt lookup (default: 3).")
     ap.add_argument("--prompt-lookup-k", type=int, default=4, metavar="K",
                     help="Max draft tokens per lookup step (default: 4).")
-    ap.add_argument("--seq-packing-budget", type=int, default=2048, metavar="N",
-                    help="Token budget per packed batch (default: 2048).")
-    ap.add_argument("--ada-serve-slo", default="general",
-                    choices=["git_commit", "devops_plan", "general", "code_review"],
-                    help="Default SLO profile for AdaServe (default: general).")
-    ap.add_argument("--conf-spec-high-gate", type=float, default=0.90, metavar="F",
-                    help="Confidence above which steps are auto-accepted (default: 0.90).")
-    ap.add_argument("--conf-spec-low-gate", type=float, default=0.50, metavar="F",
-                    help="Confidence below which full target verify is used (default: 0.50).")
-    ap.add_argument("--kv-share-every", type=int, default=2, metavar="N",
-                    help="Share KV every N layers (default: 2).")
-    ap.add_argument("--kv-slab-pages", type=int, default=256, metavar="N",
-                    help="Number of slab pages (default: 256).")
-    ap.add_argument("--paris-kv-centroids", type=int, default=64, metavar="N",
-                    help="PARIS codebook centroid count (default: 64).")
-    ap.add_argument("--streaming-sink-size", type=int, default=2048, metavar="N",
-                    help="Sink KV cache token budget (default: 2048).")
     # ── Wave 27: inference velocity flags ────────────────────────────────────
     ap.add_argument("--no-fused-sampler", action="store_true", default=False,
                     help="Disable fused single-pass token sampling (enabled by default).\n"
@@ -3763,15 +3729,6 @@ Examples:
                          "Tracks prefix access patterns and pre-warms the KV cache for\n"
                          "hot paths before each request arrives, reducing TTFT for\n"
                          "repeated system prompts and RAG documents.")
-    ap.add_argument("--no-metal-warmup", action="store_true", default=False,
-                    help="Skip the Metal shader-warmup prefill pass after model load.\n"
-                         "Saves ~2 s on first startup but the first real request will be\n"
-                         "slower (cold Metal compilation overhead).")
-    ap.add_argument("--fast-warmup", action="store_true", default=False,
-                    help="Run a minimal 1-token warmup instead of the full warmup pass.\n"
-                         "Reduces post-load warmup from ~2 s to ~50 ms at the cost of a\n"
-                         "slightly slower very-first token on the first request.\n"
-                         "Implies disabling the full Metal warmup.")
     # ── Wave 37: Wire Everything In ───────────────────────────────────────────
     ap.add_argument("--kvtc", action="store_true", default=False,
                     help="Enable KV-Transform Coder: PCA+quantize KV cache across all layers.\n"
@@ -3781,10 +3738,6 @@ Examples:
                     help="PCA rank for KVTC (default 64; recommended: head_dim // 2).")
     ap.add_argument("--kvtc-bits", type=int, default=8, choices=[4, 8],
                     help="Quantisation bits for KVTC coefficients (4 or 8, default 8).")
-    ap.add_argument("--chunk-kv-size", type=int, default=16, metavar="N",
-                    help="Tokens per KV chunk for eviction scoring (default 16).")
-    ap.add_argument("--chunk-kv-budget", type=float, default=0.5, metavar="F",
-                    help="Fraction of KV budget to retain after eviction (default 0.5 = 50%%).")
     ap.add_argument("--metal-flash-attn", action="store_true", default=False,
                     help="Enable MetalFlashAttention: tiled fused QK^T·softmax·PV kernel.\n"
                          "No intermediate buffer allocations. 3–5× attention speedup.\n"
@@ -3803,8 +3756,6 @@ Examples:
                     default="jacobi",
                     metavar="VARIANT",
                     help="Jacobi iteration variant (jacobi or gauss_seidel, default: jacobi).")
-    ap.add_argument("--mtp-heads", type=int, default=4, metavar="N",
-                    help="Number of MTP auxiliary heads (default 4).")
     ap.add_argument("--layer-overlap", action="store_true", default=False,
                     help="Enable LayerOverlapLoader: prefetch layer N+1 weights during layer\n"
                          "N compute. Eliminates weight-load stalls between transformer layers.")
@@ -3816,16 +3767,6 @@ Examples:
 
     ap.add_argument("--lora-adapter", default="", metavar="PATH",
                     help="Path to LoRA adapter directory to load via LoRAManager.")
-    ap.add_argument(
-        "--quip",
-        action="store_true",
-        default=False,
-        help="[Experimental] Signal that the loaded model was compressed with QuIP# "
-             "E8 trellis-coded quantization (squish compress --quip).  "
-             "The compressed_loader auto-detects quip_e8.npy files; this flag "
-             "disables the finalized-cache write-back to avoid expanding the "
-             "QuIP# format into a larger float16 cache on first load.",
-    )
     ap.add_argument(
         "--all-optimizations", action="store_true", default=False,
         help=(

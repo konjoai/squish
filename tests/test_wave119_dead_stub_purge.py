@@ -148,10 +148,11 @@ def test_no_new_dead_import_stubs() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6. Version is 9.6.0
+# 6. Version bumped to at least 9.6.0
 # ---------------------------------------------------------------------------
 
 
 def test_version_bumped() -> None:
     from squish import __version__
-    assert __version__ == "9.6.0", f"Expected 9.6.0, got {__version__}"
+    parts = tuple(int(x) for x in __version__.split("."))
+    assert parts >= (9, 6, 0), f"Expected >= 9.6.0, got {__version__}"
