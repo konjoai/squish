@@ -5,6 +5,35 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.15.0] — INT3 group_size correctly fixed to 32; Tier 2/3 model compressions
+
+### Fixed
+
+- `squish/cli.py`: `_INT3_GROUP_SIZE` corrected from 16 → 32.  `mlx.core.quantize()`
+  only supports group sizes 32, 64, and 128; requesting 16 raised `ValueError`.
+  The finest achievable INT3 granularity in MLX is g=32.  The existing test
+  `test_int3_group_size_is_32` in `tests/test_wave72_resquish.py` already asserted 32.
+
+### Results
+
+- `results/lmeval_Qwen2.5-1.5B-int3_20260328T000807.json`: INT3 g=32 (squish compress
+  pipeline) full lm_eval run, limit=500, 6 tasks.  arc_easy=**67.20% ±2.1%**.
+  This is the Q1 gate decision: **67.20% < 72% → INT4 stays the production default**.
+  INT3 = memory-efficiency ("efficient") tier at -3.4pp arc_easy, -3.8× disk.
+- Overnight bench for 19 models (Tier 0–3, INT2/INT3 across all families) started
+  2026-03-28.  Fresh `gemma-3-4b-it-int3`, `gemma-3-4b-it-int2`, and
+  `Llama-3.2-3B-Instruct-int2` compressed this session via `mlx_lm.convert`.
+
+### Documentation
+
+- `SESSION.md`: corrected overnight bench group sizes (g=64 INT4, g=32 INT3, not g=16
+  AWQ), documented squish npy-dir format discovery (INT4/mixed_attn not lm_evaluable),
+  and updated model catalog with Q1 answer.
+- `CLAUDE.md` quant status table: corrected format labels, added confirmed arc_easy
+  baselines.
+
+---
+
 ## [9.14.0] — Architecture-aware AWQ calibration
 
 ### Added
