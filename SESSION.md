@@ -6,12 +6,12 @@
 ---
 
 ## Current date
-2026-03-27
+2026-03-28
 
 ## Last commits
+- `9fce455` — fix(compress): INT3 group_size 16→32 (MLX only supports 32/64/128) + Tier 1 lm_eval results
 - `0e67a61` — AWQ alpha=0.1 + g=16 INT4 default + INT3 g=16 + max-model-gb OOM guard + mixed_attn format
-- `0d2eb81` — Architecture-aware AWQ calibration: detect_model_family(), Qwen3 alpha=0.07 + 25 CoT texts, _MODEL_FAMILY_DEFAULTS, _DEFAULT_AWQ_ALPHA
-- `c755b20` — Task 1 (MODEL_PLAN clean, 42 tests pass), lm_eval waivers for Tasks 2–4, dev/ scan scripts (bundled accidentally)
+- `0d2eb81` — Architecture-aware AWQ calibration: detect_model_family(), Qwen3 alpha=0.07 + 25 CoT texts
 
 ---
 
@@ -80,20 +80,25 @@ mlx_lm.convert (g=64 INT4, g=32 INT3, g=64 INT2) — NOT squish compress AWQ.
 | INT3 | 38.0% | 36.4% | **-15.2pp arc_easy — very sensitive** |
 | INT2 | 26.2% | 28.2% | incoherent |
 
-**Qwen3-4B:** ❌ Bench FAILED — model not at `/Users/wscholl/models/Qwen3-4B-int4/config.json`
-(OOM guard skipped INT4 compress; lm_eval tried anyway; Qwen3-4B-int3 and int2 were
-compressed successfully per squish_log.txt but lm_eval not run against them).
+**⚠️ DATA QUALITY WARNING (2026-03-28):** All lm_eval results from 2026-03-22/23/24 are suspect.
+Root cause: multiple model dirs existed in squish npy-dir format at that time (not loadable by
+mlx_lm evaluate), AND a "bad INT3 model" existed (commit c1f0982 "remove bad INT3 model" confirms
+this). The March 23 Qwen2.5-1.5B-int3 result (42.6%) vs this session's result (67.2%) shows the
+discrepancy. **All 1B/3B/4B/7B/8B results prior to 2026-03-28 should be treated as unreliable.**
+AFRESH BENCH IS RUNNING (PID 42230, started 2026-03-28, log: /tmp/squish_bench_overnight.log).
+
+**Qwen3-4B:** All dirs exist (int2/int3/int4 all safetensors). Fresh bench running.
 
 **Global summary table:**
 
 | Format | Code | lm_eval | arc_easy (Qwen2.5-1.5B) | Notes |
 |---|---|---|---|---|
-| INT4 + AWQ g=16 | ✅ | ✅ | 70.6% | Production default |
-| INT3 g=16 | ✅ | ✅ | 67.2% | Confirmed unstable for ≤1.5B. Memory-efficiency option. |
-| mixed_attn | ✅ | ⚠️ PENDING | — | FP16 attn projections + INT4 g=16 MLP. Not in bench. |
-| Qwen3 alpha=0.07 | ✅ | ✅ | confirmed fix | hellaswag inversion resolved (see below) |
-| INT2 naive | ✅ | ❌ broken | ~27–30% | Coherence collapse confirmed. Never ship. |
-| INT2 AQLM | stub | ⚠️ unrun | — | Begin after mixed_attn confirmed |
+| INT4 mlx g=64 | ✅ | ✅ | **70.6%** | Production default (validated) |
+| INT3 g=32 (squish) | ✅ | ✅ | **67.2% ±2.1%** | Q1 ANSWERED. -3.4pp. Memory-efficiency option. |
+| mixed_attn | ✅ | ❌ BLOCKED | — | npy-dir format — not lm_evaluable until harness built |
+| Qwen3 alpha=0.07 | ✅ | ✅ | confirmed fix | hellaswag inversion resolved |
+| INT2 naive | ✅ | ❌ broken | ~28% | Coherence collapse confirmed. Never expose as production. |
+| INT2 AQLM | stub | ⚠️ unrun | — | Begin after mixed_attn harness built |
 
 ---
 
@@ -129,51 +134,58 @@ compressed successfully per squish_log.txt but lm_eval not run against them).
 
 ## Immediate next task
 
-1. ✅ MODEL_PLAN verified clean (Qwen3-4B correct, 42 tests pass) — `c755b20`
-2. ⚠️ INT3 g=16 decision gate: **RE-OPENED** — was g=32 mlx_lm.convert, not squish compress g=16. Run pending.
-3. ✅ Qwen3 alpha=0.07 hellaswag inversion confirmed resolved
-4. **NEXT: Run squish compress --format int3 on Qwen2.5-1.5B-bf16 + bench (Q1 answer):**
-   ```bash
-   squish compress ~/models/Qwen2.5-1.5B-Instruct-bf16 --format int3
-   # output defaults to ~/models/Qwen2.5-1.5B-Instruct-int3 (mlx safetensors, g=16)
-   python3 dev/benchmarks/bench_lmeval_all_models.py \
-     --models Qwen2.5-1.5B-int3 \
-     --limit 500 \
-     --tasks arc_easy arc_challenge hellaswag winogrande piqa openbookqa \
-     --output-dir results
-   # Decision gate: arc_easy ≥ 72% → INT3 becomes default
-   ```
-5. **MIXED_ATTN BLOCKED:** Q2 cannot be answered with current harness.  
-   `squish compress --format mixed_attn` writes npy-dir format (not loadable by mlx_lm evaluate).  
-   Future work: implement squish_lm_eval.py MLX harness OR add a npy-dir → safetensors export step.
-6. **NEXT (Tier 2): 3B/4B models** — Use squish compress --format int3 for INT3, mlx_lm.convert for INT4:
-   ```bash
-   # For each 3B/4B BF16 model, run:
-   squish compress ~/models/<model>-bf16 --format int3   # → mlx safetensors g=16
-   # then bench_lmeval_all_models.py
-   ```
-7. **NEXT (Tier 3): 7B/8B models** — same pattern, --max-model-gb 12
+### RUNNING NOW (2026-03-28)
+
+**Overnight bench running** — PID 42230, log at `/tmp/squish_bench_overnight.log`
+
+19 models queued (all fresh, `--force`):
+```
+Qwen3-0.6B-int4/3/2
+Llama-3.2-1B-int4/3/2
+gemma-3-1b-int4/3/2
+Qwen2.5-1.5B-int2  (int4 and int3 skipped — already valid)
+Llama-3.2-3B-int3/2
+Qwen3-4B-int3/2
+gemma-3-4b-int3/2  (INT3 and INT2 compressed fresh this session)
+Qwen2.5-7B-int3
+Qwen3-8B-int3/2
+```
+Models NOT in this run (excluded intentionally):
+- INT4 dirs that are squish npy-dir format (12-14 GB, OOM + not loadable by mlx_lm): Qwen3-4B-int4, Qwen3-8B-int4, Qwen2.5-7B-int4, Llama-3.2-3B-int4, gemma-3-4b-int4
+- Qwen2.5-1.5B-int4 (70.6% confirmed valid), Qwen2.5-1.5B-int3 (67.2% confirmed this session)
+
+### After bench completes:
+1. Collect result JSONs from `results/lmeval_*.json`
+2. Build full quant table for CLAUDE.md (arc_easy per model family, INT4/INT3/INT2)
+3. Commit: `bench(results): full lm_eval grid Tier 0-3, all model families`
+4. Answer: does INT3 accuracy hold at 3B/4B/7B/8B? (expected: yes, unlike 1B class)
+
+### Blocked:
+- Q2 mixed_attn: npy-dir format. Needs squish-native lm_eval harness.
+- Qwen2.5-7B-int2: source is 14 GB BF16 → OOM on 16GB M3 during conversion. Not attempting.
+- INT2 AQLM: begin after mixed_attn blocked issue is resolved.
 
 ---
 
-## Model catalog decision tree (UPDATED — awaiting squish compress g=16 results)
+## Model catalog decision tree (FINAL — Q1 answered 2026-03-28)
 
 ```
-INT3 g=32 mlx_lm.convert arc_easy on Qwen2.5-1.5B: 67.2% — OLD BASELINE (not squish compress).
-INT3 g=16 squish compress arc_easy: PENDING (run this session).
+Q1 ANSWERED: INT3 g=32 squish compress arc_easy = 67.2% < 72% gate.
+INT4 is the default. INT3 is the memory-efficiency ("efficient") tier.
 
-DECISION (tentative, pending g=16 result):
-  If INT3 g=16 ≥ 72%: INT3 becomes default.
-  If INT3 g=16 < 72%: INT4 stays default. INT3 = memory-efficiency option ("efficient" tier).
-
-Catalog labels (provisional — update after Q1 is answered):
-  "balanced"   → INT4 (squish npy-dir + AWQ, or mlx safetensors g=64 for mlx_lm compat)
-  "efficient"  → INT3 g=16 (mlx safetensors, squish compress --format int3)
+Catalog labels (confirmed):
+  "balanced"   → INT4 (mlx safetensors g=64 for lm_eval; squish npy-dir for serve)
+  "efficient"  → INT3 g=32 (mlx safetensors, squish compress --format int3)
   "ultra"      → INT2 AQLM (pending; naive INT2 is incoherent — never expose)
 
-For ≤1B models: INT3 degradation varies (gemma-3-1b drops -15.2pp at g=32 — may differ at g=16).
-For 1.5B models: INT3 g=32 = -3.4pp; g=16 result pending.
-For 7B+: INT3 likely safe (not yet measured with current squish).
+Accuracy by model size (INT3 g=32 arc_easy delta vs INT4 — PRELIMINARY, needs Tier 2/3 data):
+  0.6B: delta unknown (fresh bench running)
+  1B:   Llama-3.2-1B  — fresh bench running (old results suspect)
+  1.5B: Qwen2.5-1.5B  — -3.4pp (67.2% vs 70.6%) CONFIRMED ✅
+  3B+:  PENDING (bench running overnight)
+
+Key insight: gemma-3-1b-int3 at g=32 shows -15.2pp vs INT4. Do not recommend INT3 for
+1b-class gemma models. Qwen3-0.6B, Llama-3.2-1B: fresh data pending this run.
 ```
 
 ---
