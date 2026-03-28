@@ -9,9 +9,9 @@
 2026-03-28
 
 ## Last commits
+- `7f492a9` — bench(results): overnight lm_eval Tier 0-1 partial (8 of 19 models) — Qwen3-0.6B, Llama-3.2-1B, gemma-3-1b INT4/3/2 pushed
+- `c2c1f0c` — docs(session): overnight bench running (19 models Tier 0-3); data quality findings
 - `9fce455` — fix(compress): INT3 group_size 16→32 (MLX only supports 32/64/128) + Tier 1 lm_eval results
-- `0e67a61` — AWQ alpha=0.1 + g=16 INT4 default + INT3 g=16 + max-model-gb OOM guard + mixed_attn format
-- `0d2eb81` — Architecture-aware AWQ calibration: detect_model_family(), Qwen3 alpha=0.07 + 25 CoT texts
 
 ---
 
@@ -134,30 +134,39 @@ AFRESH BENCH IS RUNNING (PID 42230, started 2026-03-28, log: /tmp/squish_bench_o
 
 ## Immediate next task
 
-### RUNNING NOW (2026-03-28)
+### RUNNING NOW (2026-03-28 session 2)
 
-**Overnight bench running** — PID 42230, log at `/tmp/squish_bench_overnight.log`
+**Overnight bench still running** — PID 42230. Currently on Qwen2.5-1.5B-int2.
 
-19 models queued (all fresh, `--force`):
+**Completed (10 of 19 models, all fresh 2026-03-28 data):**
 ```
-Qwen3-0.6B-int4/3/2
-Llama-3.2-1B-int4/3/2
-gemma-3-1b-int4/3/2
-Qwen2.5-1.5B-int2  (int4 and int3 skipped — already valid)
+Qwen3-0.6B-int4/3/2      ✅ committed in 7f492a9
+Llama-3.2-1B-int4/3/2    ✅ committed in 7f492a9
+gemma-3-1b-int4/3/2      ✅ int4+int3 committed in 7f492a9; int2 pending commit
+Qwen2.5-1.5B-int3        ✅ committed in 9fce455
+```
+
+**Still pending (10 models):**
+```
+Qwen2.5-1.5B-int2  ← currently running
 Llama-3.2-3B-int3/2
 Qwen3-4B-int3/2
-gemma-3-4b-int3/2  (INT3 and INT2 compressed fresh this session)
+gemma-3-4b-int3/2  (compressed this session; safetensors format ✅)
 Qwen2.5-7B-int3
 Qwen3-8B-int3/2
 ```
-Models NOT in this run (excluded intentionally):
-- INT4 dirs that are squish npy-dir format (12-14 GB, OOM + not loadable by mlx_lm): Qwen3-4B-int4, Qwen3-8B-int4, Qwen2.5-7B-int4, Llama-3.2-3B-int4, gemma-3-4b-int4
-- Qwen2.5-1.5B-int4 (70.6% confirmed valid), Qwen2.5-1.5B-int3 (67.2% confirmed this session)
+
+**gemma-3-4b format:** ls ~/models/gemma-3-4b-it-int3/ showed `model.safetensors` — confirmed ✅. NOT npy-dir. Safe to bench.
+
+Models NOT included (excluded intentionally — OOM or npy-dir format):
+- INT4 dirs: Qwen3-4B-int4, Qwen3-8B-int4, Qwen2.5-7B-int4, Llama-3.2-3B-int4, gemma-3-4b-int4 (all squish npy-dir, 12-14 GB)
+- Qwen2.5-1.5B-int4 (70.6% confirmed, 2026-03-23)
 
 ### After bench completes:
-1. Collect result JSONs from `results/lmeval_*.json`
-2. Build full quant table for CLAUDE.md (arc_easy per model family, INT4/INT3/INT2)
-3. Commit: `bench(results): full lm_eval grid Tier 0-3, all model families`
+1. Commit remaining result JSONs (gemma-3-1b-int2 + all Tier 2/3)
+2. Update CLAUDE.md per-model table with Tier 2/3 data (3B/4B/7B/8B)
+3. Answer: does INT3 safety hold at 3B+? (−3 to −4pp expected for non-gemma)
+4. Final SESSION.md update + commit push
 4. Answer: does INT3 accuracy hold at 3B/4B/7B/8B? (expected: yes, unlike 1B class)
 
 ### Blocked:
