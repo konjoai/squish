@@ -105,6 +105,21 @@ This file defines standing instructions for all AI and human contributors workin
 - **For ML components:** include a numerical correctness test, a shape/dtype contract test, and at least one regression test against a known-good output snapshot.
 - Tests must include failure cases, not just success paths.
 
+**Test Tiers — what counts as what:**
+
+These definitions are enforced, not aspirational. Mislabelling a test tier defeats the gate.
+
+| Tier | What it is | What it is NOT |
+|---|---|---|
+| **Unit** | No I/O, no mlx_lm, no real weight files, deterministic. Tests a single function in isolation. | A test that calls the real compress pipeline is not a unit test even if it passes quickly. |
+| **Integration** | Real pipeline, real weight tensors (even tiny synthetic ones), shape/dtype contracts verified. May use temp dirs — must clean up. | A test that mocks `mlx_lm.convert()` is a unit test, not an integration test. |
+| **E2E** | Runs lm_eval on a real squished model. Verifies accuracy didn't regress. Requires hardware. | Anything that mocks the model output is not E2E. |
+
+**For quantization changes (squish/quant/, squish/cli.py compress path, calibration params):**
+- Minimum: one integration test (real pipeline, synthetic weight matrix, shape/dtype correct).
+- Ship gate: one E2E lm_eval result OR a lm_eval-waiver comment in the commit (see Accuracy Gate).
+- Stub tests that only verify a function exists count for unit coverage only — they do not satisfy the integration requirement.
+
 ---
 
 ## ⚡ Performance Regression Gates
@@ -234,9 +249,21 @@ This file defines standing instructions for all AI and human contributors workin
   - max absolute error
   - output coherence (qualitative + automated checks)
 
-- **INT4 is the production baseline.**
-- **INT3 is experimental and must be explicitly labeled as unstable.**
-- **INT2 is research-only and must not be exposed as production-ready unless proven stable.**
+**Current validated status (update this table when lm_eval results land):**
+
+| Format | Code status | lm_eval status | arc_easy baseline | Notes |
+|---|---|---|---|---|
+| INT4 + AWQ g=16 | production | ✅ validated | ~74.2% (Qwen2.5-1.5B) | Default. AWQ alpha now architecture-aware. |
+| INT3 g=16 | code-complete | ⚠️ unvalidated | — | Pending ablation run. Hypothesis: +3–5pp over old g=32 baseline. |
+| mixed_attn (FP16 attn + INT4 MLP) | code-complete | ⚠️ unvalidated | — | Pending lm_eval. Expected quality crown jewel. |
+| INT2 (naive uniform) | research-only | ❌ coherence failure | ~27–32% | Eigenvalue collapse at 2bpw. Never ship. |
+| INT2 (AQLM codebook) | experimental | ⚠️ unvalidated | — | Legitimate path. Run after INT3 confirmed. |
+| INT2 (SpQR / mixed-layer) | experimental stub | ⚠️ unvalidated | — | Keep outliers in FP16, compress FFN to 2bpw. |
+
+- **INT4 + AWQ g=16 is the production baseline.**
+- **INT3 g=16 is code-complete but accuracy-unvalidated** — label as unstable until lm_eval confirms >72% arc_easy on Qwen2.5-1.5B.
+- **INT2 naive is permanently research-only.** Do not expose as a user-facing option.
+- **INT2 AQLM / SpQR are experimental** — run ablations only after INT3 is confirmed.
 
 - If a quantized model exhibits:
   - repetition loops
@@ -401,7 +428,7 @@ If a change breaks this contract, it does not merge.
 
 If a change breaks this, it does not merge.
 
-**The module count rule.** `squish/` (non-experimental) must stay under 100 Python files. Every new module requires either deleting an existing module or an explicit exception with written justification in the PR description.
+**The module count rule.** `squish/` (non-experimental) must stay under 100 Python files. Every new module requires either deleting an existing module or an explicit exception with written justification in the PR description. Module count is enforced by CI — run `python scripts/check_module_count.py` before committing any new file. If the check fails, the commit is blocked. Written aspiration without automated enforcement is what created 562 stub files in waves 1–70.
 
 **Quantized matmul is never Python arithmetic.** Any linear layer whose weights are stored in a quantized format (INT2, INT3, INT4, INT8) must use the framework's native quantized matmul primitive:
 - MLX: `mx.quantized_matmul()` or `nn.QuantizedLinear`
@@ -453,14 +480,67 @@ All CLI commands must:
 
 ---
 
+## 🧮 Accuracy Gate (mandatory for quantization changes)
+
+Any commit that touches `squish/quant/`, `squish/cli.py` compress path, or any calibration or quantization parameter **must** include either:
+
+1. A lm_eval result (arc_easy on Qwen2.5-1.5B-int4, `limit=200`) compared to the last committed result in `results/`, OR
+2. A waiver comment in the commit message explaining why hardware wasn't available.
+
+**Waiver format:**
+```
+# lm_eval-waiver: <reason hardware not available>
+# expected-delta: +Xpp / -Xpp on arc_easy vs last validated baseline
+# validation-run: queued for overnight bench / next session
+```
+
+**Regression threshold:** A regression of >1pp arc_easy without a written explanation in the commit message is a hard stop — do not merge.
+
+**Why this gate exists:** INT3 g=32 was committed, passed all five ship gate conditions, and degraded arc_easy by 3pp. The ship gate had a hole large enough to drive a truck through. This gate closes it.
+
+**Code-complete vs accuracy-validated are different states.** A commit can be code-complete (passes tests, no regressions in unit/integration suite) without being accuracy-validated. Both states are legitimate — but they must be explicitly labelled in the commit message. Never represent a code-complete commit as fully validated.
+
+---
+
 ## ✅ Ship Gate — Definition of Done
 
 A feature or wave is **complete** only when all five conditions are met:
-1. `0` failing tests in the full test suite (`pytest --timeout=120`).
+1. `0` failing tests in the full test suite (`pytest --timeout=120`). For any commit touching `squish/quant/`, `squish/cli.py` compress path, or calibration parameters: lm_eval result or lm_eval-waiver present (see Accuracy Gate).
 2. Memory + latency contracts measured and within spec (or a written exception filed).
 3. `--help` text updated for any new or changed CLI flag.
 4. `CHANGELOG.md` entry written under the correct version heading.
 5. Module-count rule checked — if a file was added, a file was deleted or justification is written.
+
+---
+
+## 💬 Prompt Discipline — How to Get the Best Results
+
+These are standing conventions for how to frame prompts. The CLAUDE.md philosophy is correct — the gap is prompt discipline around session type and exit conditions.
+
+**Declare the session type at the start of every prompt.** Two types exist:
+- **Code session:** `"Code only. Minimum viable. One wave, one commit."` — I will implement and stop. No research tangents.
+- **Research session:** `"Research only, no code, no tool calls, text only."` — I will reason and advise. I will not reach for the bash tool.
+
+Mixing session types in one prompt causes over-building. The INT2 parity question was answered correctly because you constrained to `output text only`. That constraint is the pattern.
+
+**Give the acceptance criterion before the task.** Format:
+```
+This is done when:
+1. <specific code condition>
+2. <specific test condition>
+3. <no new files / no new imports / etc.>
+```
+Without an explicit done condition I will add code that creates more surface area to test. A bounded task with a clear exit condition prevents wave bloat.
+
+**Anchor me to files before I write new ones.** Say: `"Before you create anything, read [file] lines [N–M]. Tell me what already exists."` This enforces the "scan before creating" rule at the prompt level. Parallel abstractions are always built when I haven't read the existing code first.
+
+**Use wave scoping.** `"This is a single-wave prompt. One purpose, one commit. State the wave purpose before writing any code."` Each commit does one thing — enforcing this at the prompt level removes the temptation to bundle.
+
+**For lm_eval-gated work, say "code-complete only."** `"Implement X. Code-complete only — no hardware to validate. Add lm_eval-waiver comment to the commit message with expected-delta based on ablation data."` This acknowledges the accuracy gap in the record rather than pretending the commit is fully validated.
+
+**Keep `SESSION.md` at the repo root.** Update it at the start of each session with: current open questions, last lm_eval results, what's code-complete but unvalidated, and the immediate next task. Reading it takes 30 seconds and prevents re-discovering context across sessions. The Qwen3-8B/Qwen3-4B test mismatch re-appeared across three sessions because it wasn't tracked anywhere obvious.
+
+**For analysis, say "text only, no tool calls."** Forces reasoning mode. I give the research-intuition answer instead of immediately reaching for the bash tool.
 
 ---
 
