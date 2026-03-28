@@ -25,7 +25,7 @@ Models
   Llama-3.2-1B    INT4  INT3  INT2  +BF16ref
   gemma-3-1b      INT4  INT3  INT2  +BF16ref
   Qwen2.5-1.5B    INT4  INT3  INT2  +BF16ref
-  Qwen3-8B              INT3  INT2          (INT4 = ~14 GB → Metal OOM)
+  Qwen3-4B        INT4  INT3  INT2  +BF16ref  (INT4 = 2.0 GB — safe on M3 16 GB)
 
 Usage
 -----
@@ -48,7 +48,7 @@ Usage
   python3 dev/benchmarks/run_overnight_bench.py --dry-run
 
   # Target a subset of models:
-  python3 dev/benchmarks/run_overnight_bench.py --models Qwen3-0.6B Qwen3-8B
+  python3 dev/benchmarks/run_overnight_bench.py --models Qwen3-0.6B Qwen3-4B
 
   # Table-only — from existing result JSONs in results/:
   python3 dev/benchmarks/run_overnight_bench.py --table-only
@@ -98,7 +98,7 @@ MODEL_PLAN: list[tuple[str, str, list[int], bool]] = [
     ("Llama-3.2-1B", "Llama-3.2-1B-Instruct-bf16",  [4, 3, 2], True),
     ("gemma-3-1b",   "gemma-3-1b-it-bf16",           [4, 3, 2], True),
     ("Qwen2.5-1.5B", "Qwen2.5-1.5B-Instruct-bf16",  [4, 3, 2], True),
-    ("Qwen3-8B",     "Qwen3-8B-bf16",                [3, 2],    False),  # INT4 ~ 14 GB → OOM
+    ("Qwen3-4B",     "Qwen3-4B-bf16",               [4, 3, 2], True),   # INT4 = 2.0 GB — safe on M3 16 GB
 ]
 
 # Model display names as registered in bench_lmeval_all_models.py MODEL_REGISTRY.
@@ -120,9 +120,10 @@ _BENCH_MODEL_NAME: dict[tuple[str, int | str], str] = {
     ("Qwen2.5-1.5B", 4):      "Qwen2.5-1.5B-int4",
     ("Qwen2.5-1.5B", 3):      "Qwen2.5-1.5B-int3",
     ("Qwen2.5-1.5B", 2):      "Qwen2.5-1.5B-int2",
-    ("Qwen3-8B",     "bf16"): "Qwen3-8B-bf16",
-    ("Qwen3-8B",     3):      "Qwen3-8B-int3",
-    ("Qwen3-8B",     2):      "Qwen3-8B-int2",
+    ("Qwen3-4B",     "bf16"): "Qwen3-4B-bf16",
+    ("Qwen3-4B",     4):      "Qwen3-4B-int4",
+    ("Qwen3-4B",     3):      "Qwen3-4B-int3",
+    ("Qwen3-4B",     2):      "Qwen3-4B-int2",
 }
 
 # Standard 6-task lm-eval suite (same as bench_lmeval_all_models.py)
@@ -134,7 +135,7 @@ _TABLE_ORDER = [
     "Llama-3.2-1B-bf16", "Llama-3.2-1B-int4", "Llama-3.2-1B-int3", "Llama-3.2-1B-int2",
     "gemma-3-1b-bf16",   "gemma-3-1b-int4",   "gemma-3-1b-int3",   "gemma-3-1b-int2",
     "Qwen2.5-1.5B-bf16", "Qwen2.5-1.5B-int4", "Qwen2.5-1.5B-int3", "Qwen2.5-1.5B-int2",
-    "Qwen3-8B-int3",     "Qwen3-8B-int2",
+    "Qwen3-4B-bf16",   "Qwen3-4B-int4",   "Qwen3-4B-int3",   "Qwen3-4B-int2",
 ]
 
 
@@ -224,7 +225,7 @@ def squish_model(
     out_dir = _infer_quant_dir(bf16_dir, bits)
     label   = f"{bf16_dir.name} → INT{bits}"
 
-    # OOM guard: skip INT4 for large models (Qwen3-8B INT4 = ~14 GB → Metal OOM on M3 16 GB)
+    # OOM guard: skip INT4 for large models (BF16 source > 8 GB → Metal OOM risk on M3 16 GB)
     # Use the BF16 source size as a proxy (INT4 ≈ BF16/4 but Metal loads both during convert)
     if bits == 4:
         bf16_gb = _dir_gb(bf16_dir)
@@ -470,7 +471,6 @@ def build_comparison_table(
         "- INT4: `mlx_lm.convert q_bits=4 q_group_size=64` (mlx safetensors format).",
         "- INT3: `mlx_lm.convert q_bits=3 q_group_size=32` (mlx safetensors format).",
         "- INT2: `mlx_lm.convert q_bits=2 q_group_size=64` (research only).",
-        "- Qwen3-8B INT4 skipped: ~14 GB quantised dir exceeds M3 16 GB Metal heap.",
         "",
     ]
 
@@ -504,7 +504,7 @@ def main() -> None:
     ap.add_argument("--skip-existing", action="store_true",     help="Skip lm-eval for models with existing results")
     ap.add_argument("--gen-sanity",    action="store_true",     help="Run generation sanity check before lm-eval")
     ap.add_argument("--dry-run",       action="store_true",     help="Print plan without executing")
-    ap.add_argument("--models",        nargs="+", default=None, help="Subset of model family names (e.g. Qwen3-0.6B Qwen3-8B)")
+    ap.add_argument("--models",        nargs="+", default=None, help="Subset of model family names (e.g. Qwen3-0.6B Qwen3-4B)")
     ap.add_argument("--bits",          nargs="+", type=int, choices=[2, 3, 4], default=None, help="Subset of bit widths")
     ap.add_argument("--models-root",   type=Path, default=_MODELS_ROOT, help=f"Models root directory (default: {_MODELS_ROOT})")
     ap.add_argument("--results-dir",   type=Path, default=None, help="Output directory (default: results/overnight_<ts>/)")
