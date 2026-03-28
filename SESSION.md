@@ -17,18 +17,44 @@
 
 ## Quantization status (as of 2026-03-27, overnight bench results)
 
-Overnight bench: `results/overnight_20260326T232055/` — M3 16GB, limit=500, g=16 AWQ throughout.
+**⚠️ CORRECTION (2026-03-27 follow-up session):**
+The overnight bench (`run_overnight_bench.py`) does NOT use `squish compress`. It calls
+`mlx_lm.convert` directly with `q_group_size = {4: 64, 3: 32, 2: 64}`. Verified via:
+- `config.json` in `~/models/Qwen2.5-1.5B-Instruct-int4`: `bits=4, group_size=64`
+- `config.json` in `~/models/Qwen2.5-1.5B-Instruct-int3`: `bits=3, group_size=32`
+- Source: `run_overnight_bench.py` line 259: `q_group_size = {4: 64, 3: 32, 2: 64}`
+The "g=16 AWQ throughout" description in the previous session note was WRONG.
 
-**Qwen2.5-1.5B (key decision model):**
+**⚠️ FORMAT DISCOVERY:**
+`squish compress --format int4` / `--format mixed_attn` outputs squish `.npy-dir` format
+(via `squish.convert --format npy-dir`) which `mlx_lm.load()` CANNOT load. Only
+`squish compress --format int3` uses `mlx_lm.convert` internally and produces standard
+MLX safetensors loadable by the bench harness. This means:
+- INT3 g=16 squish compress results: **measurable** via bench_lmeval_all_models.py ✅
+- INT4 AWQ g=16 squish results: **NOT measurable** via standard lm_eval harness ❌
+- mixed_attn squish results: **NOT measurable** via standard lm_eval harness ❌
+  (Q2 blocked until a squish-native lm_eval harness is built, or npy→safetensors converter)
+
+Overnight bench: `results/overnight_20260326T232055/` — M3 16GB, limit=500,
+mlx_lm.convert (g=64 INT4, g=32 INT3, g=64 INT2) — NOT squish compress AWQ.
+
+**Qwen2.5-1.5B (key decision model) — mlx_lm.convert OLD baselines:**
 
 | Format | arc_easy | arc_challenge | hellaswag | winogrande | piqa | openbookqa | Delta vs INT4 |
 |---|---|---|---|---|---|---|---|
-| INT4 (g=16) | 70.6% | 41.2% | 54.2% | 61.0% | 72.2% | 38.6% | baseline |
-| INT3 (g=16) | 67.2% | 41.6% | 50.6% | 57.2% | 71.6% | 37.6% | **-3.4pp arc_easy** |
-| INT2 (naive) | 29.8% | 24.4% | 24.6% | 51.0% | 51.6% | 29.8% | incoherent |
+| INT4 g=64 (mlx baseline) | 70.6% | 41.2% | 54.2% | 61.0% | 72.2% | 38.6% | baseline |
+| INT3 g=32 (mlx baseline) | 67.2% | 41.6% | 50.6% | 57.2% | 71.6% | 37.6% | **-3.4pp arc_easy** |
+| INT2 g=64 (naive) | 29.8% | 24.4% | 24.6% | 51.0% | 51.6% | 29.8% | incoherent |
 
-Note: Previous "~74.2%" figure in SESSION.md was from a different measurement context
-(different limit or model source). Ground truth with current squish g=16 AWQ: 70.6%.
+**Squish compress g=32 baselines (MEASURED 2026-03-28, mlx_lm 0.31.1, limit=500):**
+
+| Format | arc_easy | arc_challenge | hellaswag | winogrande | piqa | openbookqa | Notes |
+|---|---|---|---|---|---|---|---|
+| INT3 g=32 (squish compress) | **67.20% ±2.1%** | 41.60% | 50.60% | 59.40% | 70.80% | 37.20% | Below 72% gate — INT4 stays default |
+| INT4 AWQ g=16 (squish) | n/a | n/a | n/a | n/a | n/a | n/a | npy-dir — not lm_evaluable |
+| mixed_attn (squish) | n/a | n/a | n/a | n/a | n/a | n/a | npy-dir — not lm_evaluable |
+
+**Q1 DECISION: INT4 is default. INT3 = "efficient" memory-saving option (-3.4pp arc_easy, -3.8x disk).**
 
 **Qwen3-0.6B:**
 
@@ -73,13 +99,18 @@ compressed successfully per squish_log.txt but lm_eval not run against them).
 
 ## Open questions
 
-1. **INT3 g=16 ≥72% on Qwen2.5-1.5B?** → ✅ **ANSWERED: NO — 67.2%.**  
-   Decision: **INT4 stays default.** INT3 = memory-efficiency option ("efficient" tier).  
-   gemma-3-1b is particularly INT3-sensitive (-15.2pp). Do not recommend INT3 for 1b class.
+1. **INT3 g=32 squish compress ≥72% on Qwen2.5-1.5B?** → ✅ **ANSWERED: NO — 67.20% ±2.1%.**  
+   squish compress --format int3 uses g=32 (MLX only supports 32/64/128; g=16 was a bug — fixed).  
+   Result matches overnight mlx_lm.convert g=32 baseline exactly.  
+   **Decision: INT4 stays default. INT3 = memory-efficiency option ("efficient" tier).**  
+   gemma-3-1b INT3-sensitive (-15.2pp at g=32). Do not recommend INT3 for 1b class.  
+   Note: `_INT3_GROUP_SIZE` bug fixed in squish/cli.py (16→32). 3562 tests pass.
 
-2. **Does mixed_attn improve piqa/winogrande vs INT4 g=16?** → ⚠️ **STILL UNANSWERED.**  
-   Not included in overnight bench. Needs a dedicated run: `squish compress --format mixed_attn`  
-   on Qwen2.5-1.5B-bf16 → lm_eval on piqa, winogrande, arc_easy.
+2. **Does mixed_attn improve piqa/winogrande vs INT4 g=16?** → ❌ **BLOCKED (format issue).**  
+   `squish compress --format mixed_attn` writes squish npy-dir format that `mlx_lm.load()` cannot load.  
+   Standard bench harness (`mlx_lm evaluate`) cannot evaluate this model.  
+   To unblock: build a squish npy-dir → lm_eval adapter (squish_lm_eval.py for MLX), OR  
+   convert npy-dir → mlx safetensors via a passthrough export step.
 
 3. **Qwen3 alpha=0.07 hellaswag inversion resolved?** → ✅ **ANSWERED: YES.**  
    Pre-fix (2026-03-22, alpha=0.10): INT3 hellaswag=36.2 > INT4=31.2 (anomalous inversion).  
@@ -99,35 +130,50 @@ compressed successfully per squish_log.txt but lm_eval not run against them).
 ## Immediate next task
 
 1. ✅ MODEL_PLAN verified clean (Qwen3-4B correct, 42 tests pass) — `c755b20`
-2. ✅ INT3 g=16 decision gate answered: 67.2% — INT4 stays default
+2. ⚠️ INT3 g=16 decision gate: **RE-OPENED** — was g=32 mlx_lm.convert, not squish compress g=16. Run pending.
 3. ✅ Qwen3 alpha=0.07 hellaswag inversion confirmed resolved
-4. **NEXT: Run mixed_attn benchmark** (Q2 still open):
+4. **NEXT: Run squish compress --format int3 on Qwen2.5-1.5B-bf16 + bench (Q1 answer):**
    ```bash
-   squish compress --format mixed_attn Qwen2.5-1.5B-bf16 ~/models/Qwen2.5-1.5B-mixed
-   # then lm_eval arc_easy piqa winogrande --limit 500
+   squish compress ~/models/Qwen2.5-1.5B-Instruct-bf16 --format int3
+   # output defaults to ~/models/Qwen2.5-1.5B-Instruct-int3 (mlx safetensors, g=16)
+   python3 dev/benchmarks/bench_lmeval_all_models.py \
+     --models Qwen2.5-1.5B-int3 \
+     --limit 500 \
+     --tasks arc_easy arc_challenge hellaswag winogrande piqa openbookqa \
+     --output-dir results
+   # Decision gate: arc_easy ≥ 72% → INT3 becomes default
    ```
-5. **NEXT: Get Qwen3-4B model** (bench failed — not downloaded):
+5. **MIXED_ATTN BLOCKED:** Q2 cannot be answered with current harness.  
+   `squish compress --format mixed_attn` writes npy-dir format (not loadable by mlx_lm evaluate).  
+   Future work: implement squish_lm_eval.py MLX harness OR add a npy-dir → safetensors export step.
+6. **NEXT (Tier 2): 3B/4B models** — Use squish compress --format int3 for INT3, mlx_lm.convert for INT4:
    ```bash
-   # Download Qwen3-4B-bf16 to ~/models/ before running bench again
+   # For each 3B/4B BF16 model, run:
+   squish compress ~/models/<model>-bf16 --format int3   # → mlx safetensors g=16
+   # then bench_lmeval_all_models.py
    ```
+7. **NEXT (Tier 3): 7B/8B models** — same pattern, --max-model-gb 12
 
 ---
 
-## Model catalog decision tree (UPDATED — decision made)
+## Model catalog decision tree (UPDATED — awaiting squish compress g=16 results)
 
 ```
-INT3 g=16 arc_easy on Qwen2.5-1.5B: 67.2% — BELOW 72% gate.
+INT3 g=32 mlx_lm.convert arc_easy on Qwen2.5-1.5B: 67.2% — OLD BASELINE (not squish compress).
+INT3 g=16 squish compress arc_easy: PENDING (run this session).
 
-DECISION: INT4 is default. INT3 is the "efficient" memory option.
+DECISION (tentative, pending g=16 result):
+  If INT3 g=16 ≥ 72%: INT3 becomes default.
+  If INT3 g=16 < 72%: INT4 stays default. INT3 = memory-efficiency option ("efficient" tier).
 
-Catalog labels:
-  "balanced"   → INT4 g=16 AWQ  (default: 70.6% arc_easy, 2.1x compress)
-  "efficient"  → INT3 g=16      (67.2% arc_easy, 2.8x compress; -3.4pp tradeoff)
-  "ultra"      → INT2 AQLM      (pending; naive INT2 is incoherent — never expose)
+Catalog labels (provisional — update after Q1 is answered):
+  "balanced"   → INT4 (squish npy-dir + AWQ, or mlx safetensors g=64 for mlx_lm compat)
+  "efficient"  → INT3 g=16 (mlx safetensors, squish compress --format int3)
+  "ultra"      → INT2 AQLM (pending; naive INT2 is incoherent — never expose)
 
-For ≤1B models: INT3 is not recommended (gemma-3-1b drops -15.2pp).
-For 1.5B models: INT3 is available but marginal (-3.4pp).
-For 7B+: INT3 likely safe at similar delta (not yet measured with current squish).
+For ≤1B models: INT3 degradation varies (gemma-3-1b drops -15.2pp at g=32 — may differ at g=16).
+For 1.5B models: INT3 g=32 = -3.4pp; g=16 result pending.
+For 7B+: INT3 likely safe (not yet measured with current squish).
 ```
 
 ---

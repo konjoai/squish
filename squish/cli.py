@@ -1998,7 +1998,9 @@ def cmd_compress(args):  # pragma: no cover
         # quantization error — especially on small models.  group_size=16 roughly halves
         # per-group error vs 32, trading modest scale-tensor overhead (~+15% total size)
         # for measurably more coherent output.  Aligns with the INT4 AWQ default.
-        _INT3_GROUP_SIZE = 16
+        # MLX quantize only supports group_size ∈ {32, 64, 128}.
+        # g=16 raises a ValueError; 32 is the finest achievable granularity.
+        _INT3_GROUP_SIZE = 32
         print(f"  Quantization: INT3 q_group_size={_INT3_GROUP_SIZE} (mlx_lm.convert, ~46% of BF16 size)")
         print(f"  Output:      {_int3_out_dir}")
         print(f"\n  ⚠  INT3 is experimental. For models < 3B, quality may be degraded vs INT4.")

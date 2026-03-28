@@ -253,18 +253,21 @@ These definitions are enforced, not aspirational. Mislabelling a test tier defea
 
 | Format | Code status | lm_eval status | arc_easy baseline | Notes |
 |---|---|---|---|---|
-| INT4 + AWQ g=16 | production | ✅ validated | 70.6% (Qwen2.5-1.5B, limit=500) | Default. AWQ alpha now architecture-aware. Previous ~74.2% was from a different measurement context. |
-| INT3 g=16 | production | ✅ validated | 67.2% (Qwen2.5-1.5B, limit=500) | **-3.4pp vs INT4.** Does NOT meet ≥72% gate. Labeled "efficient" tier — memory option, not default. gemma-3-1b drops -15.2pp (very sensitive). |
-| mixed_attn (FP16 attn + INT4 MLP) | code-complete | ⚠️ unvalidated | — | Pending lm_eval. Expected quality crown jewel. |
+| INT4 (mlx g=64, mlx_lm.convert) | production | ✅ validated | 70.6% (Qwen2.5-1.5B, limit=500) | mlx_lm.convert baseline. squish compress INT4 = npy-dir (not lm_evaluable). |
+| INT4 AWQ g=16 (squish npy-dir) | production | ❌ npy-dir format | n/a | Squish serve only; cannot be evaluated via mlx_lm evaluate. |
+| INT3 g=32 (squish compress / mlx_lm.convert) | production | ✅ validated | **67.20% ±2.1%** (Qwen2.5-1.5B, limit=500, 2026-03-28) | -3.4pp vs INT4. Below 72% gate. "Efficient" tier. gemma-3-1b drops -15.2pp (very sensitive). |
+| mixed_attn (FP16 attn + INT4 MLP) | code-complete | ❌ npy-dir format | n/a | squish npy-dir format only. Needs lm_eval harness to measure. |
 | INT2 (naive uniform) | research-only | ❌ coherence failure | ~27–30% | Confirmed incoherent across all model sizes (0.6B–1.5B). Never ship. |
-| INT2 (AQLM codebook) | experimental | ⚠️ unvalidated | — | Legitimate path. Begin after mixed_attn confirmed. |
+| INT2 (AQLM codebook) | experimental | ⚠️ unvalidated | — | Legitimate path. Begin after mixed_attn harness is built. |
 | INT2 (SpQR / mixed-layer) | experimental stub | ⚠️ unvalidated | — | Keep outliers in FP16, compress FFN to 2bpw. |
 
-- **INT4 + AWQ g=16 is the production baseline (70.6% arc_easy, Qwen2.5-1.5B).**
-- **INT3 g=16 is validated but below the 72% gate** — it is the "efficient" memory-saving tier, not the default. Confidence interval overlap at 1.5B makes the delta real (-3.4pp confirmed). Do not recommend INT3 for ≤1B models.
+- **INT4 mlx g=64 is the production baseline for lm_eval comparisons (70.6% arc_easy, Qwen2.5-1.5B).**
+- **squish compress --format int4/mixed_attn writes squish npy-dir format** — NOT loadable by mlx_lm. Only available via squish serve.
+- **squish compress --format int3 uses mlx_lm.convert with g=32** — DOES produce mlx safetensors. `_INT3_GROUP_SIZE` was a bug (16→32 fixed; MLX only supports g ∈ {32,64,128}).
+- **INT3 g=32 arc_easy = 67.20%** — below 72% gate. INT4 stays default. INT3 = "efficient" tier.
 - **Qwen3 alpha=0.07 AWQ fix is confirmed** — hellaswag inversion (INT3 > INT4) was present before the fix; resolved after.
 - **INT2 naive is permanently research-only.** Do not expose as a user-facing option.
-- **INT2 AQLM / SpQR are experimental** — run ablations only after mixed_attn is confirmed.
+- **INT2 AQLM / SpQR are experimental** — begin after mixed_attn lm_eval harness is built.
 
 - If a quantized model exhibits:
   - repetition loops

@@ -1,0 +1,33 @@
+{
+  "timestamp": "20260328T000807",
+  "limit": 500,
+  "tasks": [
+    "arc_easy",
+    "arc_challenge",
+    "hellaswag",
+    "winogrande",
+    "piqa",
+    "openbookqa"
+  ],
+  "platform": {
+    "platform": "macOS-26.4-arm64-arm-64bit-Mach-O",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.14.3",
+    "mlx_lm": "0.31.1",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {
+    "Qwen2.5-1.5B-int3": {
+      "arc_easy": 67.2,
+      "arc_challenge": 41.6,
+      "hellaswag": 50.6,
+      "winogrande": 59.4,
+      "piqa": 70.8,
+      "openbookqa": 37.2
+    }
+  },
+  "elapsed_s": {
+    "Qwen2.5-1.5B-int3": 3478.8957884311676
+  }
+}
