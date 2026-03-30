@@ -369,7 +369,7 @@ def _run_single_task(
     print(f"  {D}{' '.join(cmd)}{NC}\n")
 
     t0    = time.time()
-    proc  = subprocess.run(cmd, text=True, capture_output=True)
+    proc  = subprocess.run(cmd, text=True, capture_output=True, close_fds=True)
     elapsed = time.time() - t0
 
     # Echo stdout for progress visibility; only emit stderr on failure to avoid
@@ -423,6 +423,10 @@ def _run_model_eval(
     """
     lmeval_out_dir = output_dir / "_mlx_lmeval_raw" / model_name
     lmeval_out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not (model_dir / "config.json").exists():
+        print(f"SKIP {model_name} — npy-dir format (no config.json), rebuild with mlx_lm.convert", file=sys.stderr)
+        return {"skipped": "npy-dir format — no config.json", "scores": {}}
 
     aggregate: dict[str, Any] = {}
     total_elapsed = 0.0
@@ -788,6 +792,9 @@ def main() -> None:
         sys.exit(1)
 
     platform_info = _platform_info()
+    mlx_lm_ver = platform_info["mlx_lm"]
+    if mlx_lm_ver != "0.30.7":
+        print(f"WARNING: mlx_lm {mlx_lm_ver} detected; validated version is 0.30.7", file=sys.stderr)
 
     # ── header ────────────────────────────────────────────────────────────────
     _hdr(
