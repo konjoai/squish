@@ -1,200 +1,318 @@
-# NEXT_SESSION_PROMPT.md — Phase 0: Fill Baseline Gaps
+# NEXT_SESSION_PROMPT.md — Squash Phase 4: Retroactive sidecar backfill + EvalBinder auto-wiring
 
 > Paste the content below verbatim as your opening prompt.
-> This is a **bench-and-commit session** — no source files are written.
+> This is a **code session** — two targeted changes, one commit.
 
 ---
 
 ## Prompt
 
-**Code session. Run bench, commit results, no new source files.**
+**Code session. Minimum viable. Two changes, one commit, no new modules.**
 
 ---
 
 ## This session is done when
 
-1. `results/lmeval_Qwen2.5-7B-int3_<ts>.json` — `tasks=6/6 errors=0`
-2. `results/lmeval_Qwen3-8B-int3_<ts>.json` — `tasks=6/6 errors=0`
-3. `results/lmeval_Qwen3-4B-int4_<ts>.json` — `tasks=6/6 errors=0`
-4. `results/lmeval_Llama-3.2-3B-int4_<ts>.json` — `tasks=6/6 errors=0`
-5. `results/lmeval_gemma-3-4b-int4_<ts>.json` — `tasks=6/6 errors=0`
-6. All five committed and pushed to `origin/main`
-7. Safety gate table printed (see Step 4)
-8. No new Python source files created
+1. `dev/squash_backfill.py` generates `cyclonedx-mlbom.json` in all 26 model dirs under `~/models/` that have weight files and no existing sidecar.
+2. `dev/squash_backfill.py` then calls `EvalBinder.bind()` for every model dir that has a matching result in `results/lmeval_<name>_*.json` (6 currently validated).
+3. `dev/benchmarks/bench_lmeval_all_models.py` auto-calls `EvalBinder.bind()` in `_save_result()` whenever the saved JSON lands, so future bench runs self-populate sidecars.
+4. `tests/test_squash_backfill.py` — 5 tests covering: (a) no sidecar → sidecar generated, (b) bind called when result JSON exists, (c) existing sidecar not overwritten if `--no-overwrite`, (d) missing result JSON → bind skipped gracefully, (e) smoke-run of the `_save_result` auto-bind path.
+5. All 35 squash tests pass: `pytest tests/test_eval_binder.py tests/test_oms_signer.py tests/test_governor_middleware.py tests/test_squash_backfill.py -v -W error::DeprecationWarning`
+6. `find squish -name "*.py" | grep -v __pycache__ | wc -l` **≤ 100** (no new module in `squish/`).
+7. Committed and pushed with lm_eval-waiver (no weights touched).
 
 ---
 
 ## Context
 
-**Repo:** `/Users/wscholl/squish`, HEAD `9080c8d`
+**Repo:** `/Users/wscholl/squish`, HEAD `5c54044`
 **Branch:** `main`
-**Bench script:** `dev/benchmarks/bench_lmeval_all_models.py`
-**Results dir:** `results/`
-**Model root:** `~/models/`
-**Platform:** macOS M3 16 GB, mlx_lm 0.31.1, lm_eval 0.4.7, Python 3.14.3
+**Python:** 3.12.8 · pytest 8.4.2 · module count: 97/100
 
-**No bench is currently running.** All previous attempts at these five models
-errored or are incomplete. Exact gap state as of March 30, 2026:
+### What was just completed (commit `5c54044`)
 
-| Model | Best existing result | Gap |
-|---|---|---|
-| `Qwen2.5-7B-int3` | All 3 files `tasks=0/6 errors=6` | Needs full 6-task run |
-| `Qwen3-8B-int3` | Both files `tasks=0/6 errors=6` | Needs full 6-task run |
-| `Qwen3-4B-int4` | Best file `tasks=1/6` (only arc_easy=37.0%) | Fresh full run with `--force` |
-| `Llama-3.2-3B-int4` | `tasks=5/6`, missing `arc_challenge` | Full run with `--force` |
-| `gemma-3-4b-int4` | All files `tasks=0/6 errors=6` | Needs full 6-task run |
+- **Phase 1** `squish/squash/sbom_builder.py` — `CycloneDXBuilder.build()` writes `cyclonedx-mlbom.json` as a post-hook from `squish compress`.
+- **Phase 2** `squish/squash/eval_binder.py` — `EvalBinder.bind(bom_path, lmeval_json_path, baseline_path)` mutates `performanceMetrics` in an existing sidecar.
+- **Phase 3** `squish/squash/governor.py` — `SquashGovernor` Starlette middleware; hash integrity + arc_easy accuracy boot-gate; `GET /v1/sbom` + `GET /v1/health/model` routes wired into `server.py`; `--strict-compliance` + `--min-accuracy-ratio` flags in `cli.py`.
 
-**Why these matter (Phase 1 dependency):**
-- `Qwen3-4B-int4`: INT3=42.2% > INT4=37.0% is physically impossible; must resolve
-  the anomaly before Phase 1 can classify Qwen3-4B.
-- `Llama-3.2-3B-int4`: missing `arc_challenge` → no clean Δ for safety gate.
-- `gemma-3-4b-int4`: zero data → gate cannot classify `gemma-3-4b-int3=64.4%`.
-- `Qwen2.5-7B-int3` and `Qwen3-8B-int3`: complete the Tier 2/3 INT3 evidence table.
+### The gap Phase 4 closes
 
-**Known safe:** all five models are ≤4.0 GB in the registry (default
-`--max-model-gb=9.0` guard will not skip any of them).
+`CycloneDXBuilder.build()` only runs as a post-hook when `squish compress` is called.
+Every model in `~/models/` was compressed before Phase 1 existed — **zero sidecars exist**.
+Six validated bench results exist that can already populate `performanceMetrics`,
+but nothing has called `EvalBinder.bind()` for them yet.
+
+```
+Qwen3-0.6B-int4    result=True(6/6)  sidecar=False
+Qwen3-0.6B-int3    result=True(6/6)  sidecar=False
+Llama-3.2-1B-int4  result=True(6/6)  sidecar=False
+Llama-3.2-1B-int3  result=True(6/6)  sidecar=False
+Qwen2.5-1.5B-int4  result=True(6/6)  sidecar=False
+Qwen2.5-1.5B-int3  result=True(6/6)  sidecar=False
+```
+
+### Bench result ↔ model dir name mapping
+
+The bench script uses shortened names; the model dirs use full Hugging Face names:
+
+| Bench name | Model dir name |
+|---|---|
+| `Qwen3-0.6B-int4` | `~/models/Qwen3-0.6B-int4` |
+| `Qwen3-0.6B-int3` | `~/models/Qwen3-0.6B-int3` |
+| `Llama-3.2-1B-int4` | `~/models/Llama-3.2-1B-Instruct-int4` |
+| `Llama-3.2-1B-int3` | `~/models/Llama-3.2-1B-Instruct-int3` |
+| `Qwen2.5-1.5B-int4` | `~/models/Qwen2.5-1.5B-Instruct-int4` |
+| `Qwen2.5-1.5B-int3` | `~/models/Qwen2.5-1.5B-Instruct-int3` |
+| `gemma-3-1b-int4` | `~/models/gemma-3-1b-it-int4` |
+| `gemma-3-1b-int3` | `~/models/gemma-3-1b-it-int3` |
+
+The mapping is a simple transform: strip `-Instruct` suffix, replace `gemma-3-1b-` with `gemma-3-1b-it-`.
+Build this as a dict in `squash_backfill.py` — do not hard-code paths.
+
+### Baseline pairing for `EvalBinder.bind(baseline_path=...)`
+
+For each INT3 model, the INT4 result of the same family is the baseline.
+For INT4 models, there is no baseline (pass `baseline_path=None`).
+
+| Quantized | Baseline |
+|---|---|
+| `Qwen3-0.6B-int3` | most-recent `results/lmeval_Qwen3-0.6B-int4_*.json` |
+| `Llama-3.2-1B-int3` | most-recent `results/lmeval_Llama-3.2-1B-int4_*.json` |
+| `Qwen2.5-1.5B-int3` | most-recent `results/lmeval_Qwen2.5-1.5B-int4_*.json` |
+| `gemma-3-1b-int3` | most-recent `results/lmeval_gemma-3-1b-int4_*.json` |
+
+`_most_recent(glob_pattern)` — return the most recently modified file matching pattern, or None.
 
 ---
 
-## Step 1 — Verify current state
+## Step 1 — Read these files first
+
+Before writing a single line:
+
+```
+squish/squash/sbom_builder.py   lines 1–80     (CompressRunMeta, CycloneDXBuilder.build signature)
+squish/squash/eval_binder.py    lines 1–60     (EvalBinder.bind signature + schema)
+dev/benchmarks/bench_lmeval_all_models.py  lines 555–600  (_save_result function)
+```
+
+State your understanding of `CycloneDXBuilder.build(meta)` — what is `CompressRunMeta` and what fields does it require?
+Then ask: what is the minimum `CompressRunMeta` you can construct for a model that was compressed externally (we don't have the original `squish compress` args)?
+
+The answer: `CompressRunMeta` needs `model_name: str`, `model_dir: Path`, `format: str`, `group_size: int`, `awq_alpha: float`.
+Infer `format` from the dir-name suffix (`-int4` → `"int4"`, `-int3` → `"int3"`, `-int2` → `"int2"`).
+Infer `group_size` from format: `int4` → 64, `int3` → 32, `int2` → 16. Use `awq_alpha=0.10` (0.07 for Qwen3 — call `detect_model_family`).
+Do not infer anything else — only populate fields that `CycloneDXBuilder.build()` actually uses.
+
+---
+
+## Step 2 — Write `dev/squash_backfill.py`
+
+Location: `dev/squash_backfill.py` — a **standalone dev script**, not a module.
+No `squish/` import of this file. No new entry in `__init__.py`. Module count unchanged.
+
+```
+Usage:
+  python3 dev/squash_backfill.py [--models-root ~/models] [--results-dir results]
+                                  [--no-overwrite] [--dry-run]
+
+Flags:
+  --models-root   Root directory containing model dirs (default: ~/models)
+  --results-dir   Directory containing lmeval_*.json files (default: results)
+  --no-overwrite  Skip model dirs that already have cyclonedx-mlbom.json
+  --dry-run       Print what would happen; write nothing
+
+Exit codes:  0 success  1 user/arg error  2 runtime error (see stderr)
+```
+
+**Logic:**
+
+```
+for each dir in models_root:
+    if not has_weight_files(dir):            # skip dirs with no .safetensors/.npy
+        continue
+    if sidecar_exists and --no-overwrite:
+        print(f"SKIP {name} (sidecar exists)")
+        continue
+    meta = _infer_meta(dir)                  # construct CompressRunMeta
+    CycloneDXBuilder.build(meta)             # writes cyclonedx-mlbom.json
+    print(f"WROTE sidecar: {dir}/cyclonedx-mlbom.json")
+
+    bom_path    = dir / "cyclonedx-mlbom.json"
+    bench_name  = _dir_to_bench_name(dir)    # reverse the name mapping
+    result_json = _most_recent(f"results/lmeval_{bench_name}_*.json")
+    if result_json is None:
+        print(f"  no result for {bench_name} — skipping EvalBinder")
+        continue
+    # Baseline: INT4 result for INT3 models; None otherwise
+    baseline_json = _baseline_for(bench_name)
+    EvalBinder.bind(bom_path, result_json, baseline_json)
+    print(f"  BOUND {result_json.name} → performanceMetrics")
+```
+
+Print a summary table at the end:
+```
+Sidecars written:   N
+Sidecars skipped:   N  (already existed + --no-overwrite)
+Scores bound:       N
+Models with no result yet:  N
+```
+
+---
+
+## Step 3 — Wire `EvalBinder.bind()` into `bench_lmeval_all_models.py`
+
+Find `_save_result()` (around line 563). After `out_file.write_text(...)`, add:
+
+```python
+# ── Auto-populate CycloneDX sidecar if squish[squash] is installed ──────────
+try:
+    from squish.squash.eval_binder import EvalBinder as _EB
+    from squish.squash.eval_binder import _most_recent as _mr  # if you extract it
+    _bom = Path(model_dir) / "cyclonedx-mlbom.json"
+    if _bom.exists():
+        # For INT3 models pair with the INT4 baseline; others pass None.
+        _baseline = None
+        if model_name.endswith(("-int3", "-INT3")):
+            _b4 = model_name[:-5] + "-int4"
+            _baseline = _most_recent_result(_b4, output_dir)
+        _EB.bind(_bom, out_file, _baseline)
+except ImportError:
+    pass  # squish[squash] optional
+except Exception as _e:
+    print(f"  squash bind warning: {_e}", file=sys.stderr)
+```
+
+Where `_most_recent_result(bench_name, output_dir)` returns the most recently
+modified `output_dir/lmeval_{bench_name}_*.json`, or None.
+
+This is a **non-fatal try/except block** — if `squish[squash]` is not installed
+or bind fails for any reason, the bench continues normally. Never let squash
+failures abort a bench run.
+
+---
+
+## Step 4 — Write `tests/test_squash_backfill.py`
+
+5 tests. Use `tempfile.TemporaryDirectory`. Patch `CycloneDXBuilder.build` with a
+stub that writes a minimal `cyclonedx-mlbom.json`; patch `EvalBinder.bind` to
+record call args. Tests must be **pure unit** (no filesystem side-effects outside
+temp dirs, no imports of bench script globals).
+
+| # | Test | Assertion |
+|---|---|---|
+| 1 | `test_sidecar_written_for_model_with_weights` | Given dir with a `.safetensors` file + no sidecar → `CycloneDXBuilder.build` called once |
+| 2 | `test_bind_called_when_result_exists` | Given sidecar + matching `results/lmeval_X_*.json` → `EvalBinder.bind` called with correct paths |
+| 3 | `test_no_overwrite_skips_existing_sidecar` | `--no-overwrite` + existing sidecar → `build` NOT called |
+| 4 | `test_bind_skipped_when_no_result_json` | Sidecar written but no matching result JSON → `bind` NOT called |
+| 5 | `test_dry_run_writes_nothing` | `--dry-run` flag → no files created, nothing written |
+
+Import the logic as importable functions (not `__main__` only). Either:
+- Extract `_process_one_model(dir, ...)` as a testable function in `squash_backfill.py`, OR
+- Test via `subprocess.run(['python3', 'dev/squash_backfill.py', '--dry-run', '--models-root', td], ...)` — subprocess class is acceptable here.
+
+---
+
+## Step 5 — Run the backfill against real models
+
+**After** all tests pass, run for real:
 
 ```bash
 cd /Users/wscholl/squish
+python3 dev/squash_backfill.py \
+  --models-root ~/models \
+  --results-dir results \
+  --no-overwrite
+```
+
+Verify 6 sidecars gained `performanceMetrics`:
+
+```bash
 python3 -c "
-import json, glob
-models = ['Qwen2.5-7B-int3', 'Qwen3-8B-int3', 'Qwen3-4B-int4', 'Llama-3.2-3B-int4', 'gemma-3-4b-int4']
-for m in models:
-    files = sorted(glob.glob(f'results/lmeval_{m}_*.json'))
-    if not files: print(f'{m}: NO FILES'); continue
-    for f in files:
-        d = json.load(open(f))
-        s, e = d.get('scores', {}), d.get('errors', {})
-        print(f'{m}: tasks={len(s)}/6 errors={len(e)} file={f.split(\"/\")[-1]}')
-"
-```
-
-If any model already shows `tasks=6/6 errors=0`, skip it (do not `--force` it —
-remove it from the `--models` list instead).
-
----
-
-## Step 2 — Launch the bench in a background terminal
-
-Run as **background terminal** (`isBackground=true`) so the process survives
-terminal closure. All five models run serially, each releasing the Metal heap
-before the next starts.
-
-```bash
-cd /Users/wscholl/squish && python3 dev/benchmarks/bench_lmeval_all_models.py \
-  --models Qwen2.5-7B-int3 Qwen3-8B-int3 Qwen3-4B-int4 Llama-3.2-3B-int4 gemma-3-4b-int4 \
-  --tasks arc_easy arc_challenge hellaswag winogrande piqa openbookqa \
-  --limit 500 \
-  --output-dir results \
-  --force \
-  --gen-sanity
-```
-
-Flag rationale:
-- `--force` — re-run even if errored partial JSONs already exist
-- `--gen-sanity` — 3-prompt coherence check; records results but does not skip
-- `--limit 500` — matches all prior committed results in this bench series
-- `--tasks ...` — the canonical 6-task set used throughout
-
----
-
-## Step 3 — Poll and commit each result as it lands
-
-Each model writes its JSON immediately on completion. Commit one at a time —
-do not batch.
-
-Check completion:
-
-```bash
-cd /Users/wscholl/squish && python3 -c "
-import json, glob
-models = ['Qwen2.5-7B-int3', 'Qwen3-8B-int3', 'Qwen3-4B-int4', 'Llama-3.2-3B-int4', 'gemma-3-4b-int4']
-for m in models:
-    files = sorted(glob.glob(f'results/lmeval_{m}_*.json'))
-    if not files: print(f'{m}: PENDING'); continue
-    d = json.load(open(files[-1]))
-    s, e = d.get('scores', {}), d.get('errors', {})
-    status = 'COMPLETE' if len(s)==6 and len(e)==0 else f'PARTIAL {len(s)}/6 err={len(e)}'
-    print(f'{m}: {status}  arc_easy={s.get(\"arc_easy\",\"—\")}')
-"
-```
-
-Commit pattern (one per model):
-
-```bash
-# Replace MODEL, TS, and scores with real values
-git add results/lmeval_MODEL_TS.json results/_mlx_lmeval_raw/MODEL/
-git commit -m "bench(results): MODEL lm_eval (limit=500, 2026-03-30)
-
-arc_easy=XX.X arc_challenge=XX.X hellaswag=XX.X winogrande=XX.X piqa=XX.X openbookqa=XX.X"
-git push
-```
-
----
-
-## Step 4 — Print the safety gate table after all five complete
-
-```bash
-cd /Users/wscholl/squish && python3 -c "
-import json, glob
-
-pairs = [
-    ('Qwen3-0.6B',   'Qwen3-0.6B-int4',   'Qwen3-0.6B-int3'),
-    ('Llama-3.2-1B', 'Llama-3.2-1B-int4',  'Llama-3.2-1B-int3'),
-    ('gemma-3-1b',   'gemma-3-1b-int4',    'gemma-3-1b-int3'),
-    ('Qwen2.5-1.5B', 'Qwen2.5-1.5B-int4',  'Qwen2.5-1.5B-int3'),
-    ('Llama-3.2-3B', 'Llama-3.2-3B-int4',  'Llama-3.2-3B-int3'),
-    ('Qwen3-4B',     'Qwen3-4B-int4',      'Qwen3-4B-int3'),
-    ('gemma-3-4b',   'gemma-3-4b-int4',    'gemma-3-4b-int3'),
-    ('Qwen2.5-7B',   'Qwen2.5-7B-int4',    'Qwen2.5-7B-int3'),
-    ('Qwen3-8B',     'Qwen3-8B-int4',      'Qwen3-8B-int3'),
+import json, os
+models = [
+    ('~/models/Qwen3-0.6B-int4',          'Qwen3-0.6B-int4'),
+    ('~/models/Qwen3-0.6B-int3',          'Qwen3-0.6B-int3'),
+    ('~/models/Llama-3.2-1B-Instruct-int4','Llama-3.2-1B-int4'),
+    ('~/models/Llama-3.2-1B-Instruct-int3','Llama-3.2-1B-int3'),
+    ('~/models/Qwen2.5-1.5B-Instruct-int4','Qwen2.5-1.5B-int4'),
+    ('~/models/Qwen2.5-1.5B-Instruct-int3','Qwen2.5-1.5B-int3'),
 ]
-
-def best(model):
-    files = sorted(glob.glob(f'results/lmeval_{model}_*.json'))
-    for f in reversed(files):
-        d = json.load(open(f))
-        s = d.get('scores', {})
-        if 'arc_easy' in s:
-            return s
-    return {}
-
-header = f\"{'Model':<16} {'INT4 ae':>8} {'INT3 ae':>8} {'Δpp':>6} {'Ratio':>7} {'Gate':>6}\"
-print(header)
-print('-' * len(header))
-for name, m4, m3 in pairs:
-    s4, s3 = best(m4), best(m3)
-    ae4, ae3 = s4.get('arc_easy'), s3.get('arc_easy')
-    if ae4 and ae3:
-        delta = ae3 - ae4
-        ratio = ae3 / ae4
-        gate = 'PASS' if ratio >= 0.92 else 'FAIL'
-        print(f'{name:<16} {ae4:>8.1f} {ae3:>8.1f} {delta:>+6.1f} {ratio:>7.2%} {gate:>6}')
-    else:
-        ae4s = f'{ae4:.1f}' if ae4 else '—'
-        ae3s = f'{ae3:.1f}' if ae3 else '—'
-        print(f'{name:<16} {ae4s:>8} {ae3s:>8} {\"—\":>6} {\"—\":>7} {\"PENDING\":>6}')
+for d, name in models:
+    sidecar = os.path.expanduser(f'{d}/cyclonedx-mlbom.json')
+    if not os.path.exists(sidecar):
+        print(f'MISSING {name}')
+        continue
+    bom = json.load(open(sidecar))
+    metrics = (bom.get('components', [{}])[0]
+               .get('modelCard', {})
+               .get('quantitativeAnalysis', {})
+               .get('performanceMetrics', []))
+    n = len(metrics)
+    arc = next((m for m in metrics if m.get('slice') == 'arc_easy'), None)
+    ae = arc.get('value', '—') if arc else '—'
+    delta = arc.get('deltaFromBaseline', '—') if arc else '—'
+    print(f'{name}: metrics={n}  arc_easy={ae}  delta={delta}')
 "
 ```
 
-This table is the direct input to Phase 1 (`int3_baselines.py`). Paste it into
-the Phase 1 prompt.
+Expected output (values from existing bench results):
+```
+Qwen3-0.6B-int4:    metrics=6 arc_easy=35.0  delta=—
+Qwen3-0.6B-int3:    metrics=6 arc_easy=37.2  delta=+2.2
+Llama-3.2-1B-int4:  metrics=6 arc_easy=40.8  delta=—
+Llama-3.2-1B-int3:  metrics=6 arc_easy=37.4  delta=-3.4
+Qwen2.5-1.5B-int4:  metrics=6 arc_easy=70.6  delta=—
+Qwen2.5-1.5B-int3:  metrics=6 arc_easy=67.2  delta=-3.4
+```
+
+---
+
+## Step 6 — Commit and push
+
+```bash
+cd /Users/wscholl/squish
+git add dev/squash_backfill.py dev/benchmarks/bench_lmeval_all_models.py \
+        tests/test_squash_backfill.py \
+        ~/models/*/cyclonedx-mlbom.json   # <-- actually outside git root, skip
+# Sidecars live outside the repo — do NOT add them to git.
+git commit -F /tmp/squash_phase4_msg.txt
+git push origin main
+```
+
+Commit message template:
+
+```
+feat(squash): Phase 4 retroactive sidecar backfill + EvalBinder auto-wiring
+
+- dev/squash_backfill.py: generates CycloneDX sidecars for all existing model dirs,
+  then calls EvalBinder.bind() for any dir with a matching lmeval result JSON.
+  Flags: --no-overwrite, --dry-run.  Zero new squish/ modules.
+
+- dev/benchmarks/bench_lmeval_all_models.py: _save_result() now auto-calls
+  EvalBinder.bind() after writing each result JSON.  Non-fatal try/except —
+  squash failures never abort a bench run.
+
+Results: 6 model sidecars populated with performanceMetrics (Qwen3-0.6B int4/int3,
+Llama-3.2-1B int4/int3, Qwen2.5-1.5B int4/int3).
+
+35/35 squash tests passing. Module count: 97/100.
+
+lm_eval-waiver: no inference path or quantization logic changed
+expected-delta: 0pp (weights untouched; sidecar files live outside repo)
+```
 
 ---
 
 ## Hard stops
 
-- **Do not run INT2 variants.** Permanently cancelled — naive INT2 is confirmed
-  incoherent at all tested sizes (arc_easy ~27%, near random).
-- **Do not run BF16 reference models** (`--include-bf16` would OOM at 14–15 GB).
-- **Do not modify any source file.** Bench-and-commit only.
-- If a model's gen-sanity check flags repetition/garbage, record it in the commit
-  message but still commit the lmeval scores.
-- If any model crashes again (`tasks=0 errors=6`), inspect stdout/stderr from the
-  background terminal for the Metal error, and report it rather than retrying
-  blindly. Common cause: Metal heap fragmentation from prior failed run — try
-  rebooting and running that model alone.
+- **Do not create any new file inside `squish/`** — that would consume module quota.
+  `dev/squash_backfill.py` and `tests/test_squash_backfill.py` are the only new files.
+- **Do not add sidecar files to git.** They live in `~/models/` which is outside the repo.
+- If `CycloneDXBuilder.build()` requires fields from `CompressRunMeta` that cannot be
+  inferred from the model dir alone, read `sbom_builder.py` more carefully and use
+  the minimum set of fields it actually accesses. Do not guess at API shape.
+- The bench-script change must be wrapped in `try/except ImportError` and
+  `try/except Exception` — squash must never abort a production bench run.
+- `tests/test_squash_backfill.py` must be pure unit (temp dirs + patches) — no
+  real model loading, no Metal, no subprocess that touches `~/models/`.
+
