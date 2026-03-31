@@ -335,6 +335,16 @@ def _run_generation_sanity(model_dir: Path) -> dict[str, Any]:
 
 # ── per-task subprocess runner ────────────────────────────────────────────────
 
+# Models that emit <think>…</think> tokens before answering — lm_eval greedy
+# extraction mistakes the chain-of-thought for the answer, causing near-random
+# scores. Disable thinking mode via --chat-template-args for these families.
+_THINKING_MODEL_PREFIXES: tuple[str, ...] = ("Qwen3",)
+
+
+def _is_thinking_model(model_name: str) -> bool:
+    return any(model_name.startswith(p) for p in _THINKING_MODEL_PREFIXES)
+
+
 def _run_single_task(
     task: str,
     model_dir: Path,
@@ -342,6 +352,7 @@ def _run_single_task(
     num_fewshot_override: int | None,
     lmeval_out_dir: Path,
     batch_size: int,
+    disable_thinking: bool = False,
 ) -> dict[str, Any]:
     """
     Run one task in its own ``python -m mlx_lm evaluate`` subprocess.
@@ -363,6 +374,10 @@ def _run_single_task(
         "--batch-size",  str(batch_size),
         "--trust-remote-code",
     ]
+    if disable_thinking:
+        # Suppress <think>…</think> prefix so lm_eval extracts the answer token
+        # correctly instead of scoring the chain-of-thought as the response.
+        cmd += ["--apply-chat-template", "--chat-template-args", '{"enable_thinking": false}']
     if limit is not None:
         cmd += ["--limit", str(limit)]
 
@@ -416,6 +431,7 @@ def _run_model_eval(
     num_fewshot_override: int | None,
     output_dir: Path,
     batch_size: int,
+    disable_thinking: bool = False,
 ) -> dict[str, Any]:
     """
     Run all requested tasks for a single model and return the aggregated raw dict.
@@ -451,6 +467,7 @@ def _run_model_eval(
             num_fewshot_override=num_fewshot_override,
             lmeval_out_dir=lmeval_out_dir,
             batch_size=batch_size,
+            disable_thinking=disable_thinking,
         )
         elapsed = result.get("_elapsed_s", 0.0)
         total_elapsed += elapsed
@@ -874,6 +891,7 @@ def main() -> None:
             num_fewshot_override=args.num_fewshot,
             output_dir=args.output_dir,
             batch_size=args.batch_size,
+            disable_thinking=_is_thinking_model(name),
         )
 
         scores = _display_model_results(name, raw, args.tasks)
