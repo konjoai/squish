@@ -1,0 +1,35 @@
+{
+  "model": "Qwen2.5-1.5B-int2",
+  "model_path": "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-int2",
+  "model_size_gb": 0.41,
+  "timestamp": "20260328T055010",
+  "limit": 500,
+  "platform": {
+    "platform": "macOS-26.4-arm64-arm-64bit-Mach-O",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.14.3",
+    "mlx_lm": "0.31.1",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {
+    "arc_easy": 29.2
+  },
+  "raw_results": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.246,
+      "acc_stderr,none": 0.019279819056352458,
+      "acc_norm,none": 0.292,
+      "acc_norm_stderr,none": 0.020354375480530096
+    }
+  },
+  "elapsed_s": 818.5203008651733,
+  "errors": {
+    "arc_challenge": "mlx_lm exit code 1 | stderr: Fatal Python error: init_sys_streams: can't initialize sys standard streams\nPython runtime state: core initialized\nOSError: [Errno 9] Bad file descriptor\n\nCurrent thread 0x00000001f06fd8c0 (most recent call first):\n  <no Python frame>",
+    "hellaswag": "mlx_lm exit code 1 | stderr: Fatal Python error: init_sys_streams: can't initialize sys standard streams\nPython runtime state: core initialized\nOSError: [Errno 9] Bad file descriptor\n\nCurrent thread 0x00000001f06fd8c0 (most recent call first):\n  <no Python frame>",
+    "winogrande": "mlx_lm exit code 1 | stderr: Fatal Python error: init_sys_streams: can't initialize sys standard streams\nPython runtime state: core initialized\nOSError: [Errno 9] Bad file descriptor\n\nCurrent thread 0x00000001f06fd8c0 (most recent call first):\n  <no Python frame>",
+    "piqa": "mlx_lm exit code 1 | stderr: Fatal Python error: init_sys_streams: can't initialize sys standard streams\nPython runtime state: core initialized\nOSError: [Errno 9] Bad file descriptor\n\nCurrent thread 0x00000001f06fd8c0 (most recent call first):\n  <no Python frame>",
+    "openbookqa": "mlx_lm exit code 1 | stderr: Fatal Python error: init_sys_streams: can't initialize sys standard streams\nPython runtime state: core initialized\nOSError: [Errno 9] Bad file descriptor\n\nCurrent thread 0x00000001f06fd8c0 (most recent call first):\n  <no Python frame>"
+  }
+}

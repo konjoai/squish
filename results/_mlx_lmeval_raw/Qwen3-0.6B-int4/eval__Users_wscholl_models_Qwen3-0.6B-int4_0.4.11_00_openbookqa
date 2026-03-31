@@ -3,7 +3,7 @@
         "alias": "openbookqa",
         "acc,none": 0.176,
         "acc_stderr,none": 0.01704785202062225,
-        "acc_norm,none": 0.34,
-        "acc_norm_stderr,none": 0.021206117013673084
+        "acc_norm,none": 0.33,
+        "acc_norm_stderr,none": 0.02104961216613478
     }
 }
