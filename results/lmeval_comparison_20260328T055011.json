@@ -1,0 +1,127 @@
+{
+  "timestamp": "20260328T055011",
+  "limit": 500,
+  "tasks": [
+    "arc_easy",
+    "arc_challenge",
+    "hellaswag",
+    "winogrande",
+    "piqa",
+    "openbookqa"
+  ],
+  "platform": {
+    "platform": "macOS-26.4-arm64-arm-64bit-Mach-O",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.14.3",
+    "mlx_lm": "0.31.1",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {
+    "Qwen3-0.6B-int4": {
+      "arc_easy": 35.0,
+      "arc_challenge": 28.4,
+      "hellaswag": 31.6,
+      "winogrande": 51.6,
+      "piqa": 63.8,
+      "openbookqa": 33.0
+    },
+    "Qwen3-0.6B-int3": {
+      "arc_easy": 37.2,
+      "arc_challenge": 27.4,
+      "hellaswag": 31.8,
+      "winogrande": 50.2,
+      "piqa": 63.4,
+      "openbookqa": 29.8
+    },
+    "Qwen3-0.6B-int2": {
+      "arc_easy": 27.6,
+      "arc_challenge": 25.0,
+      "hellaswag": 27.6,
+      "winogrande": 46.0,
+      "piqa": 50.4,
+      "openbookqa": 29.2
+    },
+    "Llama-3.2-1B-int4": {
+      "arc_easy": 40.8,
+      "arc_challenge": 28.4,
+      "hellaswag": 43.8,
+      "winogrande": 55.8,
+      "piqa": 71.0,
+      "openbookqa": 36.4
+    },
+    "Llama-3.2-1B-int3": {
+      "arc_easy": 37.4,
+      "arc_challenge": 25.0,
+      "hellaswag": 40.2,
+      "winogrande": 53.8,
+      "piqa": 65.4,
+      "openbookqa": 32.8
+    },
+    "Llama-3.2-1B-int2": {
+      "arc_easy": 27.4,
+      "arc_challenge": 24.8,
+      "hellaswag": 29.6,
+      "winogrande": 47.0,
+      "piqa": 53.8,
+      "openbookqa": 29.4
+    },
+    "gemma-3-1b-int4": {
+      "arc_easy": 53.2,
+      "arc_challenge": 35.4,
+      "hellaswag": 39.4,
+      "winogrande": 54.0,
+      "piqa": 66.8,
+      "openbookqa": 38.6
+    },
+    "gemma-3-1b-int3": {
+      "arc_easy": 38.0,
+      "arc_challenge": 29.4,
+      "hellaswag": 36.4,
+      "winogrande": 51.0,
+      "piqa": 64.4,
+      "openbookqa": 32.0
+    },
+    "gemma-3-1b-int2": {
+      "arc_easy": 26.2,
+      "arc_challenge": 24.2,
+      "hellaswag": 28.2,
+      "winogrande": 43.4,
+      "piqa": 50.8,
+      "openbookqa": 30.2
+    },
+    "Qwen2.5-1.5B-int2": {
+      "arc_easy": 29.2
+    },
+    "Llama-3.2-3B-int3": {},
+    "Llama-3.2-3B-int2": {},
+    "Qwen3-4B-int3": {},
+    "Qwen3-4B-int2": {},
+    "gemma-3-4b-int3": {},
+    "gemma-3-4b-int2": {},
+    "Qwen2.5-7B-int3": {},
+    "Qwen3-8B-int3": {},
+    "Qwen3-8B-int2": {}
+  },
+  "elapsed_s": {
+    "Qwen3-0.6B-int4": 1381.9186341762543,
+    "Qwen3-0.6B-int3": 1356.728922843933,
+    "Qwen3-0.6B-int2": 1367.6112422943115,
+    "Llama-3.2-1B-int4": 2613.9821190834045,
+    "Llama-3.2-1B-int3": 2681.1350767612457,
+    "Llama-3.2-1B-int2": 2502.9380643367767,
+    "gemma-3-1b-int4": 2183.740657567978,
+    "gemma-3-1b-int3": 2308.5732424259186,
+    "gemma-3-1b-int2": 2200.474826812744,
+    "Qwen2.5-1.5B-int2": 818.5203008651733,
+    "Llama-3.2-3B-int3": 0.15399694442749023,
+    "Llama-3.2-3B-int2": 0.15020418167114258,
+    "Qwen3-4B-int3": 0.14974403381347656,
+    "Qwen3-4B-int2": 0.14411234855651855,
+    "gemma-3-4b-int3": 0.14301276206970215,
+    "gemma-3-4b-int2": 0.14430856704711914,
+    "Qwen2.5-7B-int3": 0.14307379722595215,
+    "Qwen3-8B-int3": 0.1519489288330078,
+    "Qwen3-8B-int2": 0.15134620666503906
+  }
+}

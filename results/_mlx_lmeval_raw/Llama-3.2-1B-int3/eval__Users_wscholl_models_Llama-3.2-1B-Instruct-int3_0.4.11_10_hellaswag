@@ -1,9 +1,9 @@
 {
     "hellaswag": {
         "alias": "hellaswag",
-        "acc,none": 0.388,
-        "acc_stderr,none": 0.021814300984787705,
-        "acc_norm,none": 0.396,
-        "acc_norm_stderr,none": 0.021893529941665716
+        "acc,none": 0.39,
+        "acc_stderr,none": 0.021834685869369132,
+        "acc_norm,none": 0.402,
+        "acc_norm_stderr,none": 0.021948929609938706
     }
 }

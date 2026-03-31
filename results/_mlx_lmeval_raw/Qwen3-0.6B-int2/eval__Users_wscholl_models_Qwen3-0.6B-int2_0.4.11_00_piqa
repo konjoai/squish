@@ -1,9 +1,9 @@
 {
     "piqa": {
         "alias": "piqa",
-        "acc,none": 0.554,
-        "acc_stderr,none": 0.022252153078595932,
-        "acc_norm,none": 0.526,
-        "acc_norm_stderr,none": 0.022352791650914174
+        "acc,none": 0.532,
+        "acc_stderr,none": 0.022337186479044292,
+        "acc_norm,none": 0.504,
+        "acc_norm_stderr,none": 0.022382357781962105
     }
 }

@@ -1,7 +1,7 @@
 {
     "winogrande": {
         "alias": "winogrande",
-        "acc,none": 0.496,
-        "acc_stderr,none": 0.022382357781962105
+        "acc,none": 0.502,
+        "acc_stderr,none": 0.022382894986483586
     }
 }

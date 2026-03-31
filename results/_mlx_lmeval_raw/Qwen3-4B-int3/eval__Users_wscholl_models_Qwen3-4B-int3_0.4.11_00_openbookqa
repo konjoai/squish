@@ -1,0 +1,9 @@
+{
+    "openbookqa": {
+        "alias": "openbookqa",
+        "acc,none": 0.238,
+        "acc_stderr,none": 0.019064072958198387,
+        "acc_norm,none": 0.348,
+        "acc_norm_stderr,none": 0.021323728632807425
+    }
+}
