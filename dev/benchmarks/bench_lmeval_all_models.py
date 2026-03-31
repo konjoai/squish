@@ -588,6 +588,27 @@ def _save_model_result(
         "errors":         raw.get("_errors", {}),
     }
     out_file.write_text(json.dumps(payload, indent=2, default=str))
+
+    # ── Squash: auto-bind lmeval scores to ML-BOM sidecar (non-fatal) ──────
+    # If squish[squash] is installed and the model dir already has a sidecar
+    # (written by `squish compress`), populate performanceMetrics immediately.
+    # A missing sidecar or any bind failure must never abort a bench run.
+    try:
+        from squish.squash.eval_binder import EvalBinder as _EB  # noqa: PLC0415
+        _bom = Path(model_dir) / "cyclonedx-mlbom.json"
+        if _bom.exists():
+            _base_name = re.sub(r"-int[23]$", "-int4", model_name)
+            _base_files = sorted(
+                output_dir.glob(f"lmeval_{_base_name}_*.json"),
+                key=lambda p: p.stat().st_mtime,
+            )
+            _baseline = _base_files[-1] if _base_files and _base_name != model_name else None
+            _EB.bind(_bom, out_file, _baseline)
+    except ImportError:
+        pass  # squish[squash] optional
+    except Exception as _squash_err:
+        print(f"  [squash] EvalBinder skipped: {_squash_err}", file=sys.stderr)
+
     return out_file
 
 
