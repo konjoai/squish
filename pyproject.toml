@@ -53,6 +53,13 @@ cache = [
 ]
 whatsapp = []  # Meta WhatsApp Cloud API uses stdlib only (hmac + hashlib + urllib)
                # signal-cli (Java binary) needed for --signal; no Python packages required
+squash = [
+    # CycloneDX 1.7 ML-BOM generation + schema validation.
+    "cyclonedx-python-lib>=7.0",
+    # Optional: OpenSSF Model Signing (keyless via Sigstore Rekor).
+    # Install separately when signature verification is needed:
+    #   pip install sigstore
+]
 eval = [
     "lm-eval>=0.4",
     "datasets>=2.18",

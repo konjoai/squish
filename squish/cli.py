@@ -2449,6 +2449,54 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         else:
             print(f"  Warning: tensors/ not found at {tensors_dir} — skipping entropy pass.")
 
+    # ── ML-BOM sidecar (squish[squash] — optional, non-fatal) ───────────────
+    # Generates cyclonedx-mlbom.json alongside the compressed weights.
+    # Silently skipped when squish[squash] is not installed.
+    try:
+        from squish.squash.sbom_builder import CompressRunMeta, CycloneDXBuilder
+        from squish.quant.awq import detect_model_family as _detect_family
+
+        _quant_fmt = "INT4" if _use_int4 else "INT8"
+        _sbom_family = _detect_family(model_dir)
+
+        # awq_alpha is defined inside the if _run_awq block above.
+        # Use NameError guard: if AWQ was requested but failed, alpha is unknown.
+        _awq_a: float | None = None
+        if _run_awq:
+            try:
+                _awq_a = awq_alpha  # noqa: F821
+            except NameError:
+                pass
+
+        _awq_grp: int | None = None
+        if _use_int4:
+            _awq_grp = getattr(args, "int4_group_size", None) or (16 if _run_awq else 64)
+
+        # Best-effort HF repo: catalog lookup → fallback to model_dir name.
+        _hf_repo: str | None = None
+        if _CATALOG_AVAILABLE:
+            _sbom_entry = _catalog_resolve(args.model)
+            if _sbom_entry is not None:
+                _hf_repo = _sbom_entry.hf_mlx_repo
+        if _hf_repo is None:
+            _hf_repo = f"mlx-community/{model_dir.name}"
+
+        _meta = CompressRunMeta(
+            model_id=args.model,
+            hf_mlx_repo=_hf_repo,
+            model_family=_sbom_family,
+            quant_format=_quant_fmt,
+            awq_alpha=_awq_a,
+            awq_group_size=_awq_grp,
+            output_dir=output_dir,
+        )
+        _sidecar = CycloneDXBuilder.from_compress_run(_meta)
+        print(f"  ✓  ML-BOM sidecar → {_sidecar.relative_to(output_dir.parent)}")
+    except ImportError:
+        pass  # squish[squash] not installed — skip silently
+    except Exception as _sbom_err:
+        print(f"  ⚠  SBOM generation failed (non-fatal): {_sbom_err}")
+
     print(f"     Run with: squish run {model_dir}\n")
 
 
