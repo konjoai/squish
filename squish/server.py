@@ -2210,6 +2210,19 @@ app.add_middleware(
     allow_headers     = ["*"],
 )
 
+# ── Squash governor (squish[squash] — optional, non-fatal) ──────────────────
+try:
+    import squish.squash.governor as _gov_mod
+    from .squash.governor import SquashGovernor as _SquashGovernor
+    _gov_mod._state = _state
+    app.add_middleware(
+        _SquashGovernor,
+        strict             = _server_args.get("strict_compliance") == "True",
+        min_accuracy_ratio = float(_server_args.get("min_accuracy_ratio", "0.92")),
+    )
+except ImportError:
+    pass  # squish[squash] not installed
+
 # ── Ollama compatibility layer (POST /api/chat etc.) ────────────────────────
 try:
     from .serving.ollama_compat import mount_ollama as _mount_ollama  # package import
@@ -3149,6 +3162,38 @@ async def health():
         "battery_level": _battery_level,
         "mem_available_gb": _mem_available,
         "mem_pressure":     _mem_pressure,
+    }
+
+
+@app.get("/v1/sbom")
+async def get_sbom():
+    """Return the CycloneDX ML-BOM sidecar for the loaded model."""
+    if not _state.model_dir:
+        return JSONResponse({"error": "no sidecar available"}, status_code=404)
+    sidecar = Path(_state.model_dir) / "cyclonedx-mlbom.json"
+    if not sidecar.exists():
+        return JSONResponse({"error": "no sidecar available"}, status_code=404)
+    return JSONResponse(json.loads(sidecar.read_text()))
+
+
+@app.get("/v1/health/model")
+async def get_model_health():
+    """Model compliance health: governor boot state + sidecar presence."""
+    _gov_state: dict = {"integrity_ok": None, "accuracy_ok": None, "strict_compliance": False}
+    try:
+        from .squash.governor import _INSTANCE as _gov
+        if _gov is not None:
+            _gov_state = _gov.boot_state
+    except ImportError:
+        pass
+    sidecar = (Path(_state.model_dir) / "cyclonedx-mlbom.json") if _state.model_dir else None
+    return {
+        "model":             _state.model_name or None,
+        "model_dir":         _state.model_dir or None,
+        "sbom_present":      bool(sidecar and sidecar.exists()),
+        "integrity_ok":      _gov_state.get("integrity_ok"),
+        "accuracy_ok":       _gov_state.get("accuracy_ok"),
+        "strict_compliance": _gov_state.get("strict_compliance", False),
     }
 
 

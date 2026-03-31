@@ -9,5 +9,14 @@ Install the optional dependency group to enable:
 """
 
 from squish.squash.sbom_builder import CompressRunMeta, CycloneDXBuilder
+from squish.squash.eval_binder import EvalBinder
+from squish.squash.oms_signer import OmsSigner
+from squish.squash.governor import SquashGovernor
 
-__all__ = ["CycloneDXBuilder", "CompressRunMeta"]
+__all__ = [
+    "CycloneDXBuilder",
+    "CompressRunMeta",
+    "EvalBinder",
+    "OmsSigner",
+    "SquashGovernor",
+]

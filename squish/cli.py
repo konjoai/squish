@@ -5092,6 +5092,13 @@ Ollama drop-in:
                             ">0=cap reasoning at N tokens.")
     p_run.add_argument("--no-browser", action="store_true", default=False,
                        help="Do not auto-open the Squish Agent chat UI in a browser after startup.")
+    # ── Squash compliance ────────────────────────────────────────────────────
+    p_run.add_argument("--strict-compliance", action="store_true", default=False,
+                       help="Return HTTP 503 if model integrity or accuracy checks fail. "
+                            "Requires squish[squash]. Example: squish run 7b --strict-compliance")
+    p_run.add_argument("--min-accuracy-ratio", type=float, default=0.92,
+                       help="Minimum accuracy ratio vs baseline before compliance fails "
+                            "(default: 0.92 = 8pp drop). Example: squish run 7b --min-accuracy-ratio 0.90")
     p_run.set_defaults(func=cmd_run)
 
     # ── serve (alias for run) ──
@@ -5172,6 +5179,13 @@ Ollama drop-in:
                               ">0=cap reasoning at N tokens.")
     p_serve.add_argument("--no-browser", action="store_true", default=False,
                          help="Do not auto-open the Squish Agent chat UI in a browser after startup.")
+    # ── Squash compliance ────────────────────────────────────────────────────
+    p_serve.add_argument("--strict-compliance", action="store_true", default=False,
+                         help="Return HTTP 503 if model integrity or accuracy checks fail. "
+                              "Requires squish[squash]. Example: squish serve 7b --strict-compliance")
+    p_serve.add_argument("--min-accuracy-ratio", type=float, default=0.92,
+                         help="Minimum accuracy ratio vs baseline before compliance fails "
+                              "(default: 0.92 = 8pp drop). Example: squish serve 7b --min-accuracy-ratio 0.90")
     p_serve.set_defaults(func=cmd_run)
 
     # ── chat ──
