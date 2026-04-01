@@ -6,12 +6,13 @@
 ---
 
 ## Current date
-2026-03-28
+2026-04-01
 
 ## Last commits
-- `7f492a9` — bench(results): overnight lm_eval Tier 0-1 partial (8 of 19 models) — Qwen3-0.6B, Llama-3.2-1B, gemma-3-1b INT4/3/2 pushed
-- `c2c1f0c` — docs(session): overnight bench running (19 models Tier 0-3); data quality findings
-- `9fce455` — fix(compress): INT3 group_size 16→32 (MLX only supports 32/64/128) + Tier 1 lm_eval results
+- `61502cd` — chore(bench): add Qwen3-8B-int4 + int3 lm_eval runs with thinking disabled
+- `60c2bf1` — chore(bench): add Qwen2.5-7B-int3 full lm_eval run
+- `9634949` — chore(bench): add Qwen2.5-7B-int4 + Qwen2.5-7B-int3 partial results
+- `eb0684b` — fix(bench): suppress Qwen3 thinking tokens in lm_eval (`--apply-chat-template --chat-template-args '{"enable_thinking": false}'`)
 
 ---
 
@@ -134,40 +135,49 @@ AFRESH BENCH IS RUNNING (PID 42230, started 2026-03-28, log: /tmp/squish_bench_o
 
 ## Immediate next task
 
-### RUNNING NOW (2026-03-28 session 2)
+### COMPLETED (2026-03-31 / 2026-04-01 sessions)
 
-**Overnight bench still running** — PID 42230. Currently on Qwen2.5-1.5B-int2.
+**Tier 2/3 bench complete — all 7 target models validated and committed.**
 
-**Completed (10 of 19 models, all fresh 2026-03-28 data):**
-```
-Qwen3-0.6B-int4/3/2      ✅ committed in 7f492a9
-Llama-3.2-1B-int4/3/2    ✅ committed in 7f492a9
-gemma-3-1b-int4/3/2      ✅ int4+int3 committed in 7f492a9; int2 pending commit
-Qwen2.5-1.5B-int3        ✅ committed in 9fce455
-```
+**⚠️ THINKING MODE DISCOVERY (2026-03-31):**
+Qwen3 models emit `<think>...</think>` reasoning tokens before answers. `mlx_lm evaluate`
+greedy extraction scores the CoT prefix → near-random results (50% arc_easy on 8B).
+Fix: `--apply-chat-template --chat-template-args '{"enable_thinking": false}'`.
+Implemented in `bench_lmeval_all_models.py` via `_is_thinking_model()` (commit `eb0684b`).
+All `Qwen3-*` models auto-detected. Qwen2.5 unaffected.
 
-**Still pending (10 models):**
-```
-Qwen2.5-1.5B-int2  ← currently running
-Llama-3.2-3B-int3/2
-Qwen3-4B-int3/2
-gemma-3-4b-int3/2  (compressed this session; safetensors format ✅)
-Qwen2.5-7B-int3
-Qwen3-8B-int3/2
-```
+**⚠️ INVALID RESULTS — needs re-run:**
+- `Qwen3-4B-int4` in commit `4a2ff5c` — thinking mode ON → arc_easy=41% (invalid)
+- All prior Qwen3-8B results (2026-03-23/28) — thinking mode ON → always invalid
+- **Re-run Qwen3-4B-int4 with thinking disabled is the immediate next bench task**
 
-**gemma-3-4b format:** ls ~/models/gemma-3-4b-it-int3/ showed `model.safetensors` — confirmed ✅. NOT npy-dir. Safe to bench.
+**Tier 2/3 validated results (limit=500, mlx-lm 0.30.7, M3 16GB, thinking disabled for Qwen3):**
 
-Models NOT included (excluded intentionally — OOM or npy-dir format):
-- INT4 dirs: Qwen3-4B-int4, Qwen3-8B-int4, Qwen2.5-7B-int4, Llama-3.2-3B-int4, gemma-3-4b-int4 (all squish npy-dir, 12-14 GB)
-- Qwen2.5-1.5B-int4 (70.6% confirmed, 2026-03-23)
+| Model | arc_easy | arc_challenge | hellaswag | winogrande | piqa | openbookqa | Avg | Commit |
+|---|---|---|---|---|---|---|---|---|
+| Llama-3.2-3B-int4 | 46.8% | 36.8% | 55.4% | 63.2% | 76.6% | 40.4% | 53.2% | `4a2ff5c` |
+| gemma-3-4b-int4 | 80.8% | 55.0% | 43.8% | 64.8% | 68.4% | 42.8% | 59.3% | `4a2ff5c` |
+| Qwen3-4B-int4 ⚠️ | 41.0% | 36.0% | 40.2% | 62.0% | 71.6% | 32.8% | 47.3% | `4a2ff5c` — **INVALID (thinking on)** |
+| Qwen2.5-7B-int4 | 83.0% | 58.8% | 59.4% | 67.4% | 73.8% | 43.0% | 64.2% | `9634949` |
+| Qwen2.5-7B-int3 | 79.0% | 56.0% | 53.6% | 63.4% | 76.0% | 41.4% | 61.6% | `60c2bf1` |
+| Qwen3-8B-int4 ✅ | 79.2% | 58.6% | 49.8% | 61.8% | 74.8% | 39.8% | 60.7% | `61502cd` |
+| Qwen3-8B-int3 ✅ | 71.4% | 52.0% | 45.2% | 59.8% | 73.4% | 36.4% | 56.4% | `61502cd` |
 
-### After bench completes:
-1. Commit remaining result JSONs (gemma-3-1b-int2 + all Tier 2/3)
-2. Update CLAUDE.md per-model table with Tier 2/3 data (3B/4B/7B/8B)
-3. Answer: does INT3 safety hold at 3B+? (−3 to −4pp expected for non-gemma)
-4. Final SESSION.md update + commit push
-4. Answer: does INT3 accuracy hold at 3B/4B/7B/8B? (expected: yes, unlike 1B class)
+**INT3 delta summary (Tier 2/3):**
+- Qwen2.5-7B: −4.0pp arc_easy (79.0% vs 83.0%) — consistent with 1.5B pattern
+- Qwen3-8B: −7.8pp arc_easy (71.4% vs 79.2%) — larger delta; 8B Qwen3 more INT3-sensitive
+
+### Immediate next task
+1. **Re-run Qwen3-4B-int4 with thinking disabled** (bench in progress or to be launched)
+   ```bash
+   cd /Users/wscholl/squish && nohup python3 -u dev/benchmarks/bench_lmeval_all_models.py \
+     --models Qwen3-4B-int4 \
+     --tasks arc_easy arc_challenge hellaswag winogrande piqa openbookqa \
+     --limit 500 --force --max-model-gb 0 --output-dir results \
+     > /tmp/bench_qwen3_4b_rerun.log 2>&1 &
+   ```
+2. Update CLAUDE.md per-model validated table with all Tier 2/3 data
+3. Assess INT3 ship gate for Qwen3-8B (−7.8pp > normal −3 to −4pp — flag for review)
 
 ### Blocked:
 - Q2 mixed_attn: npy-dir format. Needs squish-native lm_eval harness.
