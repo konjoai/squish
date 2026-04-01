@@ -836,6 +836,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unreleased-squash-phase-5-squish-sbom-cli-subcommand-squish-doctor-squash-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Unreleased] — Squash Phase 5: squish sbom CLI subcommand + squish doctor squash check
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Unreleased] — Squash Phase 5: squish sbom CLI subcommand + squish doctor squash check">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#9150-int3-group_size-correctly-fixed-to-32-tier-23-model-compressions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -898,7 +937,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#added" class="md-nav__link">
+  <a href="#added_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -1204,7 +1243,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#added_1" class="md-nav__link">
+  <a href="#added_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -6146,7 +6185,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#added_2" class="md-nav__link">
+  <a href="#added_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -6196,6 +6235,32 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="unreleased-squash-phase-5-squish-sbom-cli-subcommand-squish-doctor-squash-check">[Unreleased] — Squash Phase 5: <code>squish sbom</code> CLI subcommand + <code>squish doctor</code> squash check<a class="headerlink" href="#unreleased-squash-phase-5-squish-sbom-cli-subcommand-squish-doctor-squash-check" title="Permanent link">&para;</a></h2>
+<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>squish/cli.py</code>: <code>cmd_sbom()</code> — new <code>squish sbom</code> subcommand with four sub-actions:</li>
+<li><code>show</code> — pretty-print component name, format, serial, hash, and any bound
+    <code>performanceMetrics</code> in a tabular layout.</li>
+<li><code>verify</code> — re-hash weight files (<code>.npy</code>, <code>.safetensors</code>, <code>.gguf</code>, <code>.npz</code>) via
+    <code>CycloneDXBuilder._hash_weight_files</code> + <code>_composite_hash</code> and compare against
+    the sidecar; exits 0 on match, 1 on mismatch or missing sidecar.</li>
+<li><code>bind</code> — delegate to <code>EvalBinder.bind(bom_path, result_path, baseline_path)</code>;
+    report bound metric count after write.</li>
+<li><code>sign</code> — delegate to <code>OmsSigner.sign(bom_path)</code>; gracefully warns when sigstore
+    is not installed (exit 0).</li>
+<li>Full <code>argparse</code> parser (<code>p_sbom</code>) with <code>--result</code> and <code>--baseline</code> flags and
+    four-action usage examples in <code>--help</code>.</li>
+<li><code>squish/cli.py</code> <code>cmd_doctor</code>: added <strong>squash installed</strong> check row; non-fatal
+  (squash is an optional extra).</li>
+<li><code>tests/test_cli_sbom.py</code>: 7 pure-unit tests covering all four sub-actions,
+  missing-sidecar exit-1 paths, verify hash mismatch, and sigstore-absent warning.</li>
+</ul>
+<h3 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>No new <code>squish/</code> modules added (still 97/100).</li>
+<li>No quantisation logic touched — lm_eval-waiver applies.</li>
+</ul>
+<hr />
 <h2 id="9150-int3-group_size-correctly-fixed-to-32-tier-23-model-compressions">[9.15.0] — INT3 group_size correctly fixed to 32; Tier 2/3 model compressions<a class="headerlink" href="#9150-int3-group_size-correctly-fixed-to-32-tier-23-model-compressions" title="Permanent link">&para;</a></h2>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
 <ul>
@@ -6224,7 +6289,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 </ul>
 <hr />
 <h2 id="9140-architecture-aware-awq-calibration">[9.14.0] — Architecture-aware AWQ calibration<a class="headerlink" href="#9140-architecture-aware-awq-calibration" title="Permanent link">&para;</a></h2>
-<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
+<h3 id="added_1">Added<a class="headerlink" href="#added_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>squish/quant/awq.py</code>: <code>_QWEN3_CALIBRATION_TEXTS</code> — 25 reasoning-chain-of-thought
   calibration samples matched to Qwen3's training regime (step-by-step math,
@@ -6671,7 +6736,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 <li><strong>Two Wave-13/14 pattern sentinels updated</strong> (<code>test_wave75</code>, <code>test_wave78</code>) to
   remove <code>_flash_attn3</code> patch targets that no longer exist on <code>squish.server</code>.</li>
 </ul>
-<h3 id="added_1">Added<a class="headerlink" href="#added_1" title="Permanent link">&para;</a></h3>
+<h3 id="added_2">Added<a class="headerlink" href="#added_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>tests/test_wave120_dead_global_purge.py</code> — 128 regression tests: 60 parametrized
   spot-checks (module-level + global-stmt absence for 30 representative deleted
@@ -12298,7 +12363,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 <hr />
 <h2 id="100-2026-03-03">[1.0.0] — 2026-03-03<a class="headerlink" href="#100-2026-03-03" title="Permanent link">&para;</a></h2>
 <p><strong>Initial public release</strong>, accompanying the research paper.</p>
-<h3 id="added_2">Added<a class="headerlink" href="#added_2" title="Permanent link">&para;</a></h3>
+<h3 id="added_3">Added<a class="headerlink" href="#added_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Three-tier compressed weight loader</strong> — INT8 Vectro → float16 npy → bf16 MLX safetensors</li>
 <li><strong>OpenAI-compatible API server</strong> (<code>/v1/chat/completions</code>, <code>/v1/completions</code>, <code>/v1/embeddings</code>, <code>/v1/models</code>)</li>
