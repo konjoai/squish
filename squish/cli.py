@@ -1578,6 +1578,108 @@ def cmd_chat(args):  # pragma: no cover
 
 # ── CLI entry point ───────────────────────────────────────────────────────────
 
+def cmd_sbom(args) -> None:
+    """Inspect, verify, bind scores to, or sign the CycloneDX ML-BOM sidecar."""
+    try:
+        from squish.squash.sbom_builder import CycloneDXBuilder
+        from squish.squash.eval_binder import EvalBinder
+        from squish.squash.oms_signer import OmsSigner
+    except ImportError:
+        print("squish[squash] not installed — run: pip install 'squish[squash]'",
+              file=sys.stderr)
+        sys.exit(1)
+
+    model_dir = Path(args.model_dir).expanduser()
+    bom_path = model_dir / "cyclonedx-mlbom.json"
+    action = args.sbom_action
+
+    if action == "show":
+        if not bom_path.exists():
+            print(f"✗ No sidecar found at {bom_path}", file=sys.stderr)
+            sys.exit(1)
+        bom = json.loads(bom_path.read_text())
+        comp = bom.get("components", [{}])[0]
+        name = comp.get("name", "—")
+        mc = comp.get("modelCard", {})
+        mp = mc.get("modelParameters", {})
+        version = mp.get("quantizationLevel", "—")
+        serial = bom.get("serialNumber", "—")
+        hashes = comp.get("hashes", [])
+        h_short = hashes[0]["content"][:12] + "…" if hashes else "—"
+        print(f"\n  Model:        {name}")
+        print(f"  Format:       {version}")
+        print(f"  SerialNumber: {serial[:24]}…")
+        print(f"  Hash:         {h_short}")
+        metrics = mc.get("quantitativeAnalysis", {}).get("performanceMetrics", [])
+        if metrics:
+            print(f"\n  {'Task':<20} {'Value':>8}  {'ΔBaseline':>12}")
+            print(f"  {'─'*20} {'─'*8}  {'─'*12}")
+            for m in metrics:
+                task = m.get("type", "—")
+                value = m.get("value", "—")
+                delta = m.get("deltaFromBaseline", "")
+                print(f"  {task:<20} {str(value):>8}  {delta:>12}")
+        else:
+            print("\n  (no performance metrics bound — run: squish sbom bind)")
+        print()
+
+    elif action == "verify":
+        if not bom_path.exists():
+            print(f"✗ No sidecar found at {bom_path}", file=sys.stderr)
+            sys.exit(1)
+        bom = json.loads(bom_path.read_text())
+        comp = bom.get("components", [{}])[0]
+        stored_hashes = comp.get("hashes", [])
+        if not stored_hashes:
+            print("⚠ Sidecar has no composite hash — nothing to verify.", file=sys.stderr)
+            sys.exit(1)
+        stored_composite = stored_hashes[0].get("content", "")
+        file_hashes = CycloneDXBuilder._hash_weight_files(model_dir)
+        live_composite = CycloneDXBuilder._composite_hash(file_hashes) if file_hashes else ""
+        if live_composite == stored_composite:
+            print(f"✓ Weight integrity verified  ({live_composite[:12]}…)")
+        else:
+            print(
+                f"✗ Hash mismatch — weights may have been modified.\n"
+                f"  sidecar: {stored_composite[:12]}…\n"
+                f"  live:    {live_composite[:12]}…",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    elif action == "bind":
+        if not bom_path.exists():
+            print(f"✗ No sidecar found at {bom_path}", file=sys.stderr)
+            sys.exit(1)
+        if not getattr(args, "result", None):
+            print("✗ --result PATH is required for 'bind'", file=sys.stderr)
+            sys.exit(1)
+        result_path = Path(args.result)
+        if not result_path.exists():
+            print(f"✗ Result file not found: {result_path}", file=sys.stderr)
+            sys.exit(1)
+        baseline_path = Path(args.baseline) if getattr(args, "baseline", None) else None
+        EvalBinder.bind(bom_path, result_path, baseline_path)
+        bom = json.loads(bom_path.read_text())
+        metrics = (
+            bom.get("components", [{}])[0]
+               .get("modelCard", {})
+               .get("quantitativeAnalysis", {})
+               .get("performanceMetrics", [])
+        )
+        print(f"✓ bound {len(metrics)} metric(s) to {bom_path}")
+
+    elif action == "sign":
+        if not bom_path.exists():
+            print(f"✗ No sidecar found at {bom_path}", file=sys.stderr)
+            sys.exit(1)
+        sig = OmsSigner.sign(bom_path)
+        if sig:
+            print(f"✓ signed → {sig}")
+        else:
+            print("⚠ sigstore not installed — install: pip install sigstore")
+
+
 def cmd_doctor(args):
     """Check that all squish components are installed correctly."""
     import concurrent.futures
@@ -1750,6 +1852,14 @@ def cmd_doctor(args):
         _check("server not running (optional)", True)  # not an error
     finally:
         s.close()
+
+    # squash (optional)
+    try:
+        import squish.squash.sbom_builder  # noqa: F401
+        _check("squish[squash] installed", True)
+    except ImportError:
+        _check("squish[squash] installed", False,
+               'pip install "squish[squash]"')
 
     print()
     if ok:
@@ -5543,6 +5653,35 @@ Ollama drop-in:
     p_catalog.add_argument("--refresh", action="store_true",
                            help="Force-refresh the catalog from HuggingFace")
     p_catalog.set_defaults(func=cmd_catalog)
+
+    p_sbom = sub.add_parser(
+        "sbom",
+        help="Inspect, verify, bind scores to, or sign the CycloneDX ML-BOM sidecar",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Manage the CycloneDX ML-BOM sidecar (cyclonedx-mlbom.json).\n\n"
+            "Sub-actions:\n"
+            "  show    Pretty-print sidecar metadata and performance metrics.\n"
+            "  verify  Re-hash weight files and compare against sidecar.\n"
+            "  bind    Bind an lmeval result JSON into performanceMetrics.\n"
+            "  sign    Sign the sidecar with Sigstore (requires: pip install sigstore).\n\n"
+            "Examples:\n"
+            "  squish sbom show ~/models/Qwen2.5-1.5B-Instruct-int4\n"
+            "  squish sbom verify ~/models/Qwen2.5-1.5B-Instruct-int4\n"
+            "  squish sbom bind ~/models/Qwen2.5-1.5B-Instruct-int4 \\\n"
+            "    --result results/lmeval_Qwen2.5-1.5B-int4_20260328.json\n"
+            "  squish sbom sign ~/models/Qwen2.5-1.5B-Instruct-int4\n"
+        ),
+    )
+    p_sbom.add_argument("sbom_action", choices=["show", "verify", "bind", "sign"],
+                        help="Sub-action: show | verify | bind | sign")
+    p_sbom.add_argument("model_dir", metavar="MODEL_DIR",
+                        help="Path to the model directory containing cyclonedx-mlbom.json")
+    p_sbom.add_argument("--result", metavar="PATH", default=None,
+                        help="(bind only) Path to lmeval result JSON")
+    p_sbom.add_argument("--baseline", metavar="PATH", default=None,
+                        help="(bind only) Path to INT4 baseline result JSON for delta computation")
+    p_sbom.set_defaults(func=cmd_sbom)
 
     p_rm = sub.add_parser("rm", help="Remove a local model (frees disk space)")
     p_rm.add_argument("model", help="Model ID, alias, or path (e.g. qwen3:8b, 7b, ~/models/Llama-3)")

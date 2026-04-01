@@ -5,6 +5,34 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Phase 5: `squish sbom` CLI subcommand + `squish doctor` squash check
+
+### Added
+
+- `squish/cli.py`: `cmd_sbom()` — new `squish sbom` subcommand with four sub-actions:
+  - `show` — pretty-print component name, format, serial, hash, and any bound
+    `performanceMetrics` in a tabular layout.
+  - `verify` — re-hash weight files (`.npy`, `.safetensors`, `.gguf`, `.npz`) via
+    `CycloneDXBuilder._hash_weight_files` + `_composite_hash` and compare against
+    the sidecar; exits 0 on match, 1 on mismatch or missing sidecar.
+  - `bind` — delegate to `EvalBinder.bind(bom_path, result_path, baseline_path)`;
+    report bound metric count after write.
+  - `sign` — delegate to `OmsSigner.sign(bom_path)`; gracefully warns when sigstore
+    is not installed (exit 0).
+  - Full `argparse` parser (`p_sbom`) with `--result` and `--baseline` flags and
+    four-action usage examples in `--help`.
+- `squish/cli.py` `cmd_doctor`: added **squash installed** check row; non-fatal
+  (squash is an optional extra).
+- `tests/test_cli_sbom.py`: 7 pure-unit tests covering all four sub-actions,
+  missing-sidecar exit-1 paths, verify hash mismatch, and sigstore-absent warning.
+
+### Notes
+
+- No new `squish/` modules added (still 97/100).
+- No quantisation logic touched — lm_eval-waiver applies.
+
+---
+
 ## [9.15.0] — INT3 group_size correctly fixed to 32; Tier 2/3 model compressions
 
 ### Fixed
