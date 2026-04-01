@@ -1,0 +1,51 @@
+{
+  "timestamp": "20260401T054532",
+  "limit": 500,
+  "tasks": [
+    "arc_easy",
+    "arc_challenge",
+    "hellaswag",
+    "winogrande",
+    "piqa",
+    "openbookqa"
+  ],
+  "platform": {
+    "platform": "macOS-26.4-arm64-arm-64bit",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.12.8",
+    "mlx_lm": "0.30.7",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {
+    "Qwen2.5-7B-int3": {
+      "arc_easy": 79.0,
+      "arc_challenge": 56.0,
+      "hellaswag": 53.6,
+      "winogrande": 63.4,
+      "piqa": 76.0,
+      "openbookqa": 41.4
+    },
+    "Qwen3-8B-int4": {
+      "arc_easy": 79.2,
+      "arc_challenge": 58.6,
+      "hellaswag": 49.8,
+      "winogrande": 61.8,
+      "piqa": 74.8,
+      "openbookqa": 39.8
+    },
+    "Qwen3-8B-int3": {
+      "arc_easy": 71.4,
+      "arc_challenge": 52.0,
+      "hellaswag": 45.2,
+      "winogrande": 59.8,
+      "piqa": 73.4,
+      "openbookqa": 36.4
+    }
+  },
+  "elapsed_s": {
+    "Qwen2.5-7B-int3": 22059.86950969696,
+    "Qwen3-8B-int4": 14620.95359158516,
+    "Qwen3-8B-int3": 13739.81703710556
+  }
+}
