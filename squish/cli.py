@@ -477,7 +477,27 @@ def cmd_models(args):
                 )
             else:
                 badge = ""
-            rows.append((d.name, size_str, comp_str, badge))
+            # squash sidecar status (fast check — no re-hashing)
+            _bom = d / "cyclonedx-mlbom.json"
+            if _bom.exists():
+                try:
+                    _bom_data = json.loads(_bom.read_text())
+                    _metrics = (
+                        _bom_data.get("components", [{}])[0]
+                        .get("modelCard", {})
+                        .get("quantitativeAnalysis", {})
+                        .get("performanceMetrics", [])
+                    )
+                    _arc = next(
+                        (m.get("value") for m in _metrics if m.get("slice") == "arc_easy"),
+                        None,
+                    )
+                    _squash_str = f"✓ {_arc}%" if _arc is not None else "✓ sidecar"
+                except Exception:  # noqa: BLE001
+                    _squash_str = "✓ sidecar"
+            else:
+                _squash_str = "—"
+            rows.append((d.name, size_str, comp_str, badge, _squash_str))
 
     if rows:
         if _RICH_AVAILABLE:
@@ -495,8 +515,9 @@ def cmd_models(args):
             tbl.add_column("Disk",   style="squish.lilac", justify="right")
             tbl.add_column("Status", style="squish.green")
             tbl.add_column("Notes",  style="squish.dim")
-            for name, size, comp, badge in rows:
-                tbl.add_row(name, size, comp, badge)
+            tbl.add_column("SBOM",   style="squish.dim")
+            for name, size, comp, badge, squash in rows:
+                tbl.add_row(name, size, comp, badge, squash)
             console.print()
             console.print(tbl)
             console.print()
@@ -509,11 +530,11 @@ def cmd_models(args):
             print(f"  Local models in {_MODELS_DIR}:")
             print()
             w0 = max(len(r[0]) for r in rows) + 2
-            print(f"  {'Model':<{w0}} {'Disk':>8}  {'Status'}")
-            print(f"  {'─'*w0} {'─'*8}  {'─'*14}")
-            for name, size, comp, badge in rows:
+            print(f"  {'Model':<{w0}} {'Disk':>8}  {'Status':<14}  {'SBOM'}")
+            print(f"  {'─'*w0} {'─'*8}  {'─'*14}  {'─'*10}")
+            for name, size, comp, badge, squash in rows:
                 note = f"  [{badge}]" if badge else ""
-                print(f"  {name:<{w0}} {size:>8}  {comp}{note}")
+                print(f"  {name:<{w0}} {size:>8}  {comp:<14}{note}  {squash}")
             print()
             print("  Legacy aliases : 1.5b, 7b, 14b, 32b, 72b")
             print("  Catalog IDs    : qwen3:8b, gemma3:4b, deepseek-r1:7b, llama3.2:3b …")
@@ -1678,6 +1699,204 @@ def cmd_sbom(args) -> None:
             print(f"✓ signed → {sig}")
         else:
             print("⚠ sigstore not installed — install: pip install sigstore")
+
+
+# ── squish eval ───────────────────────────────────────────────────────────────
+_EVAL_TASKS_DEFAULT = "arc_easy,arc_challenge,hellaswag,winogrande,piqa,openbookqa"
+_EVAL_TASK_FEWSHOT: dict[str, int] = {
+    "arc_easy":      25,
+    "arc_challenge": 25,
+    "hellaswag":     10,
+    "winogrande":     5,
+    "piqa":           0,
+    "openbookqa":     0,
+}
+_EVAL_TASK_METRIC: dict[str, str] = {
+    "arc_easy":      "acc_norm,none",
+    "arc_challenge": "acc_norm,none",
+    "hellaswag":     "acc_norm,none",
+    "winogrande":    "acc,none",
+    "piqa":          "acc_norm,none",
+    "openbookqa":    "acc_norm,none",
+}
+
+
+def cmd_eval(args) -> None:
+    """Run lm_eval benchmarks on a model dir and auto-bind scores to the CycloneDX sidecar.
+
+    Tasks are run one at a time in separate subprocesses to release Metal GPU memory
+    between evaluations and prevent kIOGPUCommandBufferCallbackErrorOutOfMemory.
+    """
+    import subprocess as _sp
+    import time as _time
+    from datetime import datetime as _dt
+
+    model_dir = Path(getattr(args, "model_dir", "")).expanduser().resolve()
+    if not model_dir.is_dir():
+        print(f"✗ Model directory not found: {model_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    # Detect npy-dir format produced by `squish compress --format int4/mixed_attn`.
+    # These have no config.json and cannot be loaded by mlx_lm evaluate.
+    if not (model_dir / "config.json").exists():
+        print(
+            f"✗ {model_dir.name} is a squish npy-dir (no config.json).\n"
+            "  mlx_lm evaluate requires a config.json-bearing format (INT3 or mlx-native INT4).\n"
+            "  Compress with:  squish compress --format int3  to get a lm_eval-compatible model.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    tasks_str: str = getattr(args, "tasks", None) or _EVAL_TASKS_DEFAULT
+    tasks: list[str] = [t.strip() for t in tasks_str.split(",") if t.strip()]
+    limit: int | None = getattr(args, "limit", None)
+    baseline_path: Path | None = (
+        Path(args.baseline).expanduser().resolve()
+        if getattr(args, "baseline", None)
+        else None
+    )
+    no_bind: bool = getattr(args, "no_bind", False)
+    output_dir = Path(getattr(args, "output_dir", None) or "results").expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Qwen3 uses chain-of-thought by default — disable it so lm_eval extracts
+    # the answer token rather than scoring the <think>…</think> preamble.
+    disable_thinking: bool = model_dir.name.startswith("Qwen3")
+
+    model_name = model_dir.name
+    ts = _dt.now().strftime("%Y%m%dT%H%M%S")
+    lmeval_raw_dir = output_dir / "_mlx_lmeval_raw" / model_name
+    lmeval_raw_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n  squish eval  →  {model_name}")
+    print(f"  tasks  : {', '.join(tasks)}")
+    if limit:
+        print(f"  limit  : {limit} samples/task")
+    if disable_thinking:
+        print("  Qwen3 thinking: disabled for lm_eval accuracy extraction")
+    print()
+
+    scores: dict[str, float] = {}
+    raw_results: dict = {}
+    errors: dict[str, str] = {}
+    total_elapsed = 0.0
+
+    for i, task in enumerate(tasks, 1):
+        fewshot = _EVAL_TASK_FEWSHOT.get(task, 0)
+        primary_metric = _EVAL_TASK_METRIC.get(task, "acc,none")
+        print(
+            f"  [{i}/{len(tasks)}] {task}  ({fewshot}-shot"
+            + (f", limit={limit}" if limit else "")
+            + ")"
+        )
+
+        cmd: list[str] = [
+            sys.executable, "-m", "mlx_lm", "evaluate",
+            "--model",         str(model_dir),
+            "--tasks",         task,
+            "--num-shots",     str(fewshot),
+            "--output-dir",    str(lmeval_raw_dir),
+            "--batch-size",    "4",
+            "--trust-remote-code",
+        ]
+        if disable_thinking:
+            cmd += ["--apply-chat-template", "--chat-template-args", '{"enable_thinking": false}']
+        if limit is not None:
+            cmd += ["--limit", str(limit)]
+
+        t0 = _time.time()
+        proc = _sp.run(cmd, text=True, capture_output=True, close_fds=True)
+        elapsed = _time.time() - t0
+        total_elapsed += elapsed
+
+        if proc.stdout:
+            print(proc.stdout, end="")
+
+        if proc.returncode != 0:
+            stderr_tail = (proc.stderr or "")[-600:].strip()
+            errors[task] = f"exit {proc.returncode}: {stderr_tail[:200]}"
+            print(f"  ✗  {task}  FAILED  ({elapsed:.0f}s)", file=sys.stderr)
+            if stderr_tail:
+                print(f"     {stderr_tail[:200]}", file=sys.stderr)
+            continue
+
+        # mlx_lm evaluate writes eval_* files (no .json extension) to the output dir.
+        result_files = sorted(
+            (p for p in lmeval_raw_dir.rglob("*") if p.is_file() and p.name.startswith("eval_")),
+            key=lambda p: p.stat().st_mtime,
+        )
+        if not result_files:
+            errors[task] = "no eval_* output file written by mlx_lm evaluate"
+            print(f"  ✗  {task}  no output file  ({elapsed:.0f}s)")
+            continue
+
+        try:
+            raw = json.loads(result_files[-1].read_text())
+        except json.JSONDecodeError as exc:
+            errors[task] = f"JSON parse error: {exc}"
+            print(f"  ✗  {task}  JSON parse failed  ({elapsed:.0f}s)")
+            continue
+
+        # Support both mlx_lm flat dict and lm_eval results-wrapped formats.
+        if "results" in raw and isinstance(raw["results"], dict):
+            task_data: dict = raw["results"].get(task, {})
+        else:
+            task_data = {
+                k: v for k, v in raw.items()
+                if not k.startswith("_") and isinstance(v, dict)
+            }.get(task, {})
+
+        score_val = task_data.get(primary_metric)
+        if score_val is None:
+            # Fallback: try the other common metric key
+            for alt in ("acc_norm,none", "acc,none"):
+                score_val = task_data.get(alt)
+                if score_val is not None:
+                    break
+
+        if isinstance(score_val, float):
+            scores[task] = round(score_val * 100, 4)
+            raw_results[task] = task_data
+            print(f"  ✓  {task}  {scores[task]:.2f}%  ({elapsed:.0f}s)")
+        else:
+            errors[task] = f"metric {primary_metric!r} not found in output"
+            print(f"  ✗  {task}  metric not found  ({elapsed:.0f}s)")
+
+    # ── Save squish-format result JSON ────────────────────────────────────────
+    result_file = output_dir / f"lmeval_{model_name}_{ts}.json"
+    payload = {
+        "model":       model_name,
+        "model_path":  str(model_dir),
+        "timestamp":   ts,
+        "limit":       limit,
+        "scores":      scores,
+        "raw_results": raw_results,
+        "errors":      errors,
+        "elapsed_s":   total_elapsed,
+    }
+    result_file.write_text(json.dumps(payload, indent=2, default=str))
+    print(f"\n  Saved  → {result_file}")
+
+    if scores:
+        avg = sum(scores.values()) / len(scores)
+        print(f"  Average: {avg:.1f}%  ({len(scores)}/{len(tasks)} tasks completed)")
+
+    # ── Auto-bind to CycloneDX sidecar ────────────────────────────────────────
+    bom_path = model_dir / "cyclonedx-mlbom.json"
+    if not no_bind:
+        if bom_path.exists():
+            from squish.squash.eval_binder import EvalBinder
+            EvalBinder.bind(bom_path, result_file, baseline_path)
+            print(f"  ✓ scores bound to sidecar")
+        else:
+            print(
+                "\n  ⚠  No sidecar found — scores saved but not bound.\n"
+                "     Create a sidecar by compressing with:  squish compress <src> <dest>",
+                file=sys.stderr,
+            )
+
+    if errors:
+        print(f"\n  ⚠  {len(errors)} task(s) failed: {', '.join(errors)}", file=sys.stderr)
 
 
 def cmd_doctor(args):
@@ -5682,6 +5901,55 @@ Ollama drop-in:
     p_sbom.add_argument("--baseline", metavar="PATH", default=None,
                         help="(bind only) Path to INT4 baseline result JSON for delta computation")
     p_sbom.set_defaults(func=cmd_sbom)
+
+    # ── squish eval ────────────────────────────────────────────────────────────
+    p_eval = sub.add_parser(
+        "eval",
+        help="Benchmark a model with lm_eval and auto-bind scores to the CycloneDX sidecar",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Run the standard 6-task lm-evaluation-harness suite on a model directory\n"
+            "and automatically bind the accuracy scores to the CycloneDX ML-BOM sidecar.\n\n"
+            "Tasks run in separate subprocesses to release Metal GPU memory between\n"
+            "evaluations and prevent OOM on 16 GB Apple Silicon.\n\n"
+            "Note: models in squish npy-dir format (--format int4 / mixed_attn) cannot\n"
+            "be evaluated — use a model compressed with --format int3.\n\n"
+            "Examples:\n"
+            "  squish eval ~/models/Qwen2.5-1.5B-Instruct-int3\n"
+            "  squish eval ~/models/Qwen2.5-1.5B-Instruct-int3 --limit 500\n"
+            "  squish eval ~/models/Qwen2.5-1.5B-Instruct-int3 \\\n"
+            "    --tasks arc_easy,arc_challenge,hellaswag \\\n"
+            "    --baseline results/lmeval_Qwen2.5-1.5B-Instruct-int4_20260328.json\n"
+        ),
+    )
+    p_eval.add_argument("model_dir", metavar="MODEL_DIR",
+                        help="Path to the model directory to evaluate")
+    p_eval.add_argument(
+        "--tasks",
+        default=None,
+        metavar="TASKS",
+        help=(
+            "Comma-separated task list (default: arc_easy,arc_challenge,hellaswag,"
+            "winogrande,piqa,openbookqa)"
+        ),
+    )
+    p_eval.add_argument(
+        "--limit", type=int, default=None, metavar="N",
+        help="Max samples per task (default: full dataset; 500 recommended for smoke tests)",
+    )
+    p_eval.add_argument(
+        "--baseline", default=None, metavar="PATH",
+        help="Path to an INT4 baseline result JSON for delta-from-baseline annotation",
+    )
+    p_eval.add_argument(
+        "--no-bind", action="store_true", default=False, dest="no_bind",
+        help="Save result JSON but skip auto-binding to the CycloneDX sidecar",
+    )
+    p_eval.add_argument(
+        "--output-dir", default=None, metavar="DIR", dest="output_dir",
+        help="Directory for result JSON files (default: ./results/)",
+    )
+    p_eval.set_defaults(func=cmd_eval)
 
     p_rm = sub.add_parser("rm", help="Remove a local model (frees disk space)")
     p_rm.add_argument("model", help="Model ID, alias, or path (e.g. qwen3:8b, 7b, ~/models/Llama-3)")

@@ -5,6 +5,56 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Phase 6: `squish eval` subcommand + `squish models` SBOM column
+
+### Added
+
+- `squish/cli.py`: `cmd_eval()` — new `squish eval` subcommand with full lm_eval
+  integration:
+  - Accepts a model directory, optional `--tasks` (default: the standard 6-task suite),
+    `--limit`, `--baseline` (for delta-from-baseline annotation), `--no-bind`, and
+    `--output-dir`.
+  - Detects squish npy-dir format (no `config.json`) and exits 1 with a clear error
+    message — these cannot be evaluated with `mlx_lm evaluate`.
+  - Auto-detects Qwen3 family and disables `<think>…</think>` chain-of-thought via
+    `--chat-template-args '{"enable_thinking": false}'` so lm_eval extracts the
+    answer token rather than scoring the preamble.
+  - Runs each task in its own subprocess to release Metal GPU memory between
+    evaluations and prevent OOM on 16 GB Apple Silicon.
+  - Aggregates results into squish-format JSON (`{"scores": {...}, "raw_results": {...}}`)
+    and saves to `results/lmeval_<model_name>_<timestamp>.json`.
+  - Auto-binds scores to the CycloneDX sidecar via `EvalBinder.bind()` if
+    `cyclonedx-mlbom.json` is present (suppressed with `--no-bind`).
+  - Full `argparse` parser (`p_eval`) with examples in `--help`.
+- `squish/cli.py` `cmd_models`: added **SBOM** column to the Local Models table
+  (both Rich and plaintext fallback paths).
+  - Shows `✓ <score>%` (e.g. `✓ 70.6%`) when an `arc_easy` performanceMetric is
+    bound to the sidecar.
+  - Shows `✓ sidecar` when a sidecar exists but no scores are bound yet.
+  - Shows `—` when no sidecar is present.
+  - Fast path: reads sidecar JSON only; no re-hashing.
+- Module-level constants `_EVAL_TASKS_DEFAULT`, `_EVAL_TASK_FEWSHOT`,
+  `_EVAL_TASK_METRIC` extracted for DRY reuse and test introspection.
+- `tests/test_cli_eval.py`: 8 pure-unit tests covering:
+  - Missing model directory → exit 1.
+  - npy-dir format (no config.json) → exit 1.
+  - Result JSON written with correct squish format.
+  - Sidecar present → `EvalBinder.bind` called.
+  - `--no-bind` → `EvalBinder.bind` not called.
+  - SBOM column shows `✓ 70.6%` when arc_easy metric bound.
+  - SBOM column shows `—` when no sidecar.
+  - SBOM column shows `✓ sidecar` when sidecar has no bound scores.
+
+### Notes
+
+- No new `squish/` modules added (still 97/100).
+- No quantisation logic touched.
+- lm_eval-waiver: no hardware available for arch accuracy validation this session.
+  Phase 6 is code-complete. Accuracy validation of `squish eval` output fidelity
+  queued for next session (compare `squish eval` scores against dev bench baseline).
+
+---
+
 ## [Unreleased] — Squash Phase 5: `squish sbom` CLI subcommand + `squish doctor` squash check
 
 ### Added

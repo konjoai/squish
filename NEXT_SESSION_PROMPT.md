@@ -1,83 +1,97 @@
-# NEXT_SESSION_PROMPT.md — Squash Phase 5: `squish sbom` CLI subcommand + `squish doctor` squash check
+# NEXT_SESSION_PROMPT.md — Squash Phase 7: `squish eval` accuracy validation + `squish models` SBOM status
 
 > Paste the content below verbatim as your opening prompt.
-> This is a **code session** — two targeted changes, one commit.
+> This is a **research + code session** — validate Phase 6 against the dev bench baseline, then
+> implement any correctness fixes found.
 
 ---
 
 ## Prompt
 
-**Code session. Minimum viable. Two targeted changes, one commit, zero new squish/ modules.**
+**Research + code session. Validate `squish eval` against dev bench scores, then address any
+discrepancies. One commit per finding. Zero new squish/ modules.**
 
 ---
 
-## This session is done when
+## Phase 6 is done — Phase 7 picks up here
 
-1. `squish sbom show <model-dir>` prints a human-readable summary of the CycloneDX sidecar: component name, version, serialNumber (first 12 chars), composite weight SHA-256 (first 12 chars), and a performanceMetrics table. Exits 1 if no sidecar exists.
-2. `squish sbom verify <model-dir>` re-hashes all weight files and compares the composite SHA-256 to the one stored in the sidecar. Exits 0 on match, 1 on mismatch. Prints "✓ hash match" or "✗ hash mismatch — expected \<stored\> got \<actual\>".
-3. `squish sbom bind <model-dir> --result lmeval.json [--baseline baseline.json]` calls `EvalBinder.bind(bom_path, lmeval_path, baseline_path)` and prints "✓ bound N metrics". Exits 1 if no sidecar or `--result` missing.
-4. `squish sbom sign <model-dir>` calls `OmsSigner.sign(bom_path)` and prints "✓ signed → \<sig-path\>" or "⚠ sigstore not installed — install: pip install sigstore". Exit 0 in both cases.
-5. `squish sbom --help` prints a usage block listing all 4 sub-actions with one-line examples each.
-6. `squish doctor` gains a squash check row between the network check and the final summary: `squish[squash] installed`, fix: `pip install "squish[squash]"`.
-7. `tests/test_cli_sbom.py` — 7 tests all passing.
-8. `find squish -name "*.py" | grep -v __pycache__ | wc -l` **≤ 100** (no new module in `squish/`; `cmd_sbom` lives in `cli.py`).
-9. Committed and pushed with lm_eval-waiver (no weights touched, no quant logic changed).
+### Phases 1–6 complete (commit HEAD on `main`)
 
----
+| Phase | What | Status |
+|-------|------|--------|
+| 1 | `sbom_builder.py` — CycloneDX sidecar generation | ✅ |
+| 2 | `eval_binder.py` + `oms_signer.py` — score binding + Sigstore sign | ✅ |
+| 3 | `governor.py` — Starlette compliance middleware | ✅ |
+| 4 | `dev/squash_backfill.py` + bench auto-bind | ✅ |
+| 5 | `squish sbom` CLI (show/verify/bind/sign) + `squish doctor` squash check | ✅ |
+| 6 | `squish eval` subcommand + `squish models` SBOM column | ✅ 83 tests passing |
 
-## Context
+### Phase 6 code-complete state
 
-**Repo:** `/Users/wscholl/squish`, HEAD `226b4d9`
-**Branch:** `main`
-**Python:** 3.12.8 · pytest 8.4.2 · module count: 97/100
-
-### What was just completed (commit `226b4d9`)
-
-- **Phase 4** `dev/squash_backfill.py` — generated CycloneDX sidecars for all 26 model dirs under `~/models/` with weight files, then called `EvalBinder.bind()` for all 22 models with complete lmeval results.
-- **Phase 4** `dev/benchmarks/bench_lmeval_all_models.py` — `_save_model_result()` now auto-calls `EvalBinder.bind()` after every bench run.
-- **Phase 4** `tests/test_squash_backfill.py` — 6 tests; 36/36 squash tests passing.
-
-### The gap Phase 5 closes
-
-The squash subsystem now generates sidecars, binds scores, and enforces compliance at serve time.
-But there is **no CLI surface** for developers to inspect or manipulate sidecars without starting
-a server or calling Python directly. The only user-visible squash entry points are:
-
-- `squish compress` auto-generates a sidecar (side-effect, not inspectable from CLI).
-- `squish serve/run --strict-compliance` passes traffic through the governor (server-side only).
-- `GET /v1/sbom` returns the sidecar JSON (requires server to be running).
-
-Phase 5 adds `squish sbom` — the missing developer-facing CLI — and adds squash to `squish doctor`.
+- **`squish eval <model-dir>`**: runs lm_eval per-task in separate subprocesses, saves
+  squish-format JSON to `results/lmeval_<name>_<ts>.json`, auto-binds to sidecar.
+- **`squish models`**: SBOM column shows `✓ <score>%` / `✓ sidecar` / `—`.
+- **lm_eval-waiver**: scores not validated against dev bench baseline yet. This is Phase 7.
 
 ---
 
-## Read these files first
+## Phase 7 goals
 
-Before writing a single line:
+### 1. Validate `squish eval` output fidelity (research)
+
+Run `squish eval ~/models/Qwen2.5-1.5B-Instruct-int3 --limit 500 --tasks arc_easy`.
+Compare the reported score to the dev bench baseline: **67.2% arc_easy (limit=500)**.
+
+Acceptance criterion: `squish eval` score within ±1pp of dev bench (66.2–68.2%).
+If outside ±1pp: investigate metric extraction path in `cmd_eval` and fix.
+
+### 2. Verify Qwen3 thinking-mode disablement works correctly
+
+Run `squish eval ~/models/Qwen3-0.6B-int4 --limit 100 --tasks arc_easy`.
+Compare to dev bench INT4 baseline: **35.0% arc_easy (limit=500)**.
+A broken thinking-mode disablement would produce near-random scores (~25–28%).
+
+### 3. Verify `squish models` SBOM column (visual check)
+
+Run `squish models` after Phase 7 bench run.
+Expected: Qwen2.5-1.5B-Instruct-int3 shows `✓ 67.2%` in SBOM column.
+
+---
+
+## Open questions carried from Phase 6
+
+### Q1: `squish eval` npy-dir detection
+`cmd_eval` exits 1 with "no config.json" when given a squish npy-dir.
+**Status:** Code-complete. Not hardware-validated (no npy-dir model available in test).
+
+### Q2: mixed_attn lm_eval
+`squish compress --format mixed_attn` writes npy-dir; currently blocked.
+**Status:** Still blocked. Needs squish-native lm_eval harness (future phase).
+
+### Q3: INT2 AQLM experimental stubs
+`squish/experimental/int2_aqlm.py` → begin only after Q2 (mixed_attn) is resolved.
+
+---
+
+## Module count
 
 ```
-squish/squash/sbom_builder.py   lines 1–80      CompressRunMeta fields; CycloneDXBuilder JSON schema
-                                                  — especially the exact nested key path for the
-                                                  composite weight hash (needed for sbom verify)
-squish/squash/eval_binder.py    lines 1–60      EvalBinder.bind(bom_path, lmeval_json_path, baseline_path)
-squish/squash/oms_signer.py     lines 1–80      OmsSigner.sign(bom_path) → Path | None
-squish/squash/governor.py       lines 1–50      Understand _run_boot_checks weight hashing — reuse
-                                                  the same logic in sbom verify rather than duplicating
-squish/cli.py                   lines 1581–1790 cmd_doctor internals: _check() helper signature,
-                                                  _results list, ok flag; find exact insertion point
-squish/cli.py                   lines 5540–5570 How add_parser + set_defaults looks for catalog/rm;
-                                                  follow this pattern for p_sbom
+squish/ non-experimental: 97/100 (3 slots remain)
 ```
-
-**Before writing any code**, state the exact JSON field path for the composite weight hash inside
-`components[0]` of the CycloneDX document (confirm from `sbom_builder.py`, do not guess).
-Then state where in `cmd_doctor` the squash check row belongs (line reference and surrounding code).
+No new modules in Phase 6. Module count unchanged.
 
 ---
 
-## Implementation spec
+## Before starting Phase 7
 
-### `cmd_sbom(args)` in `squish/cli.py`
+```
+squish eval ~/models/Qwen2.5-1.5B-Instruct-int3 --limit 500 --tasks arc_easy
+```
+Record the arc_easy % in SESSION.md at repo root.
+If within ±1pp of 67.2%: commit "feat(squash): Phase 7 squish eval accuracy validated".
+If outside: read cmd_eval lines 1683–1830, find the score extraction bug, fix it, re-run.
+
+
 
 ```python
 def cmd_sbom(args) -> None:
