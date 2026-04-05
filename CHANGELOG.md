@@ -5,6 +5,53 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Waves 8+9: Scanner Hardening + Custom Policy Rules
+
+### Added — Wave 8: Scanner Hardening
+
+- **`scanner.py`** — ONNX external-data reference scanner (`_scan_onnx`): detects
+  `../` / absolute path-traversal refs in initializer external data; uses `onnx` lib
+  if available, falls back to raw-byte heuristic. Finding IDs: `SCAN-ONNX-001`,
+  `SCAN-ONNX-002`.
+- **`scanner.py`** — safetensors header validator (`_scan_safetensors`): detects
+  integer-overflow header-length (`SCAN-ST-001` critical) and out-of-bounds tensor
+  data offsets (`SCAN-ST-002` critical). Malformed JSON (`SCAN-ST-004`) and
+  undersized files (`SCAN-ST-003`) produce warnings.
+- **`scanner.py`** — Zip-archive scanner (`_scan_zip`): detects embedded
+  `.bin/.pt/.pkl/.gguf` files requiring manual extraction+scan (`SCAN-ZIP-001`
+  critical) and zipslip path-traversal entries (`SCAN-ZIP-002` critical).
+- **`scanner.py`** — ProtectAI ModelScan promoted to first-class backend: runs before
+  all other scanners in `scan_directory`; built-in pickle scan is skipped when
+  ModelScan ran to avoid double-counting.
+- **`api.py`** — `POST /scan` is now async-queued: returns HTTP 202 immediately with
+  `{"job_id": "<uuid>"}`. Scan runs in a background thread pool.
+- **`api.py`** — `GET /scan/{job_id}` polling endpoint: returns 202 while pending,
+  200 with `{"status": "done", "result": {...}}` when complete, 200 with
+  `{"status": "error", ...}` on failure, 404 for unknown IDs. In-memory LRU job
+  store capped at 1 000 entries (env: `SQUASH_SCAN_JOB_LIMIT`).
+
+### Added — Wave 9: Custom Policy Rules
+
+- **`policy.py`** — `PolicyRegistry` class: `load_rules_from_yaml(path)`,
+  `load_rules_from_dict(rules)`, and `validate_rules(rules)` for loading and
+  validating ad-hoc YAML or dict rule sets.
+- **`policy.py`** — `regex_match` and `in_list` check types added to `_check()`.
+  `regex_match` uses `re.search(pattern, str(actual))`; `in_list` checks membership
+  in an `allowed` list.
+- **`policy.py`** — `PolicyFinding.remediation_link: str = ""` field: propagated from
+  rule dict through `evaluate` and `evaluate_custom` to the response JSON.
+- **`policy.py`** — `PolicyEngine.evaluate_custom(sbom, rules, policy_name)` static
+  method: evaluates an ad-hoc rule list against an SBOM without registering a named
+  policy. Invalid rules are skipped with a warning.
+- **`cli.py`** — `squash policies --validate <PATH>`: validates a YAML rules file via
+  `PolicyRegistry`; exits `0` (all valid), `1` (validation errors), or `2` (IO /
+  YAML parse error).
+- **`api.py`** — `POST /policy/evaluate` accepts `custom_rules: list[dict]` in the
+  request body; validates before evaluation and returns HTTP 400 with structured
+  `{"message": ..., "errors": [...]}` on invalid rules.
+
+---
+
 ## [Unreleased] — Squash Phase 7: Standalone Attestation Engine
 
 ### Added

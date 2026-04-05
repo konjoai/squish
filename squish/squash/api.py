@@ -34,6 +34,8 @@ import json
 import logging
 import os
 import tempfile
+import uuid
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -49,13 +51,18 @@ except ImportError as _e:
     ) from _e
 
 from squish.squash.attest import AttestConfig, AttestPipeline, AttestResult
-from squish.squash.policy import AVAILABLE_POLICIES, PolicyEngine
+from squish.squash.policy import AVAILABLE_POLICIES, PolicyEngine, PolicyRegistry
 from squish.squash.scanner import ModelScanner
 
 log = logging.getLogger(__name__)
 
 # Thread-pool for blocking attestation work
 _executor = ThreadPoolExecutor(max_workers=int(os.getenv("SQUASH_WORKERS", "4")))
+
+# In-memory scan job store: job_id → {"status": "pending"|"done"|"error", "result": dict}
+# Bounded to 1000 entries — oldest evicted first (LRU via OrderedDict).
+_SCAN_JOB_LIMIT = int(os.getenv("SQUASH_SCAN_JOB_LIMIT", "1000"))
+_scan_jobs: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
 app = FastAPI(
     title="Squash — AI-SBOM Attestation API",
@@ -100,7 +107,14 @@ class ScanRequest(BaseModel):
 
 class PolicyEvaluateRequest(BaseModel):
     sbom: dict[str, Any] = Field(description="CycloneDX BOM as JSON object")
-    policy: str = Field(description="Policy name to evaluate")
+    policy: str = Field(description="Policy name to evaluate (ignored when custom_rules is set)")
+    custom_rules: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Ad-hoc rule list. When provided, evaluated via PolicyEngine.evaluate_custom "
+            "and the 'policy' field is used only as the result label."
+        ),
+    )
 
 
 class VexEvaluateRequest(BaseModel):
@@ -170,54 +184,110 @@ async def attest(req: AttestRequest) -> JSONResponse:
 
 @app.post("/scan")
 async def scan(req: ScanRequest) -> JSONResponse:
-    """Run the security scanner on a model artifact without full attestation.
+    """Queue a security scan job.  Returns ``{"job_id": "..."}`` immediately.
 
-    Checks for pickle exploits, GGUF metadata injection, and optionally
-    delegates to ProtectAI ModelScan if installed.
+    The scan runs asynchronously in the thread-pool executor.  Poll
+    ``GET /scan/{job_id}`` for results.
+
+    Why async queuing?  Scanning a large GGUF or ONNX model can take several
+    seconds.  Blocking the HTTP response for that duration breaks load-balanced
+    deployments.  The queue is in-memory and bounded to
+    ``SQUASH_SCAN_JOB_LIMIT`` entries (default 1000); the oldest job is evicted
+    when the limit is hit.
     """
     _require_path(req.model_path)
     model_path = Path(req.model_path)
     scan_dir = model_path if model_path.is_dir() else model_path.parent
 
-    loop = asyncio.get_running_loop()
-    scan_result = await loop.run_in_executor(
-        _executor, ModelScanner.scan_directory, scan_dir
-    )
+    job_id = str(uuid.uuid4())
 
-    return JSONResponse(
-        content={
-            "status": scan_result.status,
-            "is_safe": scan_result.is_safe,
-            "critical": scan_result.critical_count,
-            "high": scan_result.high_count,
-            "findings": [
-                {
-                    "severity": f.severity,
-                    "id": f.finding_id,
-                    "title": f.title,
-                    "detail": f.detail,
-                    "file": f.file_path,
-                    "cve": f.cve,
-                }
-                for f in scan_result.findings
-            ],
-        }
-    )
+    # Evict oldest if at capacity
+    if len(_scan_jobs) >= _SCAN_JOB_LIMIT:
+        _scan_jobs.popitem(last=False)
+
+    _scan_jobs[job_id] = {"status": "pending", "result": None}
+
+    loop = asyncio.get_running_loop()
+
+    def _do_scan() -> None:
+        try:
+            result = ModelScanner.scan_directory(scan_dir)
+            payload = {
+                "status": result.status,
+                "is_safe": result.is_safe,
+                "critical": result.critical_count,
+                "high": result.high_count,
+                "findings": [
+                    {
+                        "severity": f.severity,
+                        "id": f.finding_id,
+                        "title": f.title,
+                        "detail": f.detail,
+                        "file": f.file_path,
+                        "cve": f.cve,
+                    }
+                    for f in result.findings
+                ],
+            }
+            _scan_jobs[job_id] = {"status": "done", "result": payload}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("scan job %s failed: %s", job_id, exc)
+            _scan_jobs[job_id] = {"status": "error", "result": {"error": str(exc)}}
+
+    loop.run_in_executor(_executor, _do_scan)
+    return JSONResponse(status_code=202, content={"job_id": job_id})
+
+
+@app.get("/scan/{job_id}")
+async def scan_result(job_id: str) -> JSONResponse:
+    """Return the result of a previously queued scan job.
+
+    Responses:
+    - ``200``  ``{"status": "done",    "result": {...}}``
+    - ``200``  ``{"status": "error",   "result": {"error": "..."}}``
+    - ``202``  ``{"status": "pending"}``  — scan still running
+    - ``404``  job_id unknown
+    """
+    job = _scan_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job_id: {job_id}")
+
+    if job["status"] == "pending":
+        return JSONResponse(status_code=202, content={"status": "pending"})
+
+    return JSONResponse(content={"status": job["status"], "result": job["result"]})
 
 
 @app.post("/policy/evaluate")
 async def evaluate_policy(req: PolicyEvaluateRequest) -> JSONResponse:
-    """Evaluate a submitted CycloneDX BOM against a named policy template.
+    """Evaluate a submitted CycloneDX BOM against a named policy template or custom rules.
+
+    - When ``custom_rules`` is provided, evaluates the ad-hoc rule list.
+      The ``policy`` field is used only as the label in the response.
+    - When ``custom_rules`` is absent, evaluates the named built-in policy.
 
     The SBOM is posted as a JSON body; no files are read from disk.
     """
-    if req.policy not in AVAILABLE_POLICIES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown policy '{req.policy}'. Available: {sorted(AVAILABLE_POLICIES)}",
+    if req.custom_rules is not None:
+        # Validate custom rules before running
+        errors = PolicyRegistry.validate_rules(req.custom_rules)
+        if errors:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": "Invalid custom rules", "errors": errors},
+            )
+        policy_result = PolicyEngine.evaluate_custom(
+            req.sbom,
+            req.custom_rules,
+            policy_name=req.policy or "custom",
         )
-
-    policy_result = PolicyEngine.evaluate(req.sbom, req.policy)
+    else:
+        if req.policy not in AVAILABLE_POLICIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown policy '{req.policy}'. Available: {sorted(AVAILABLE_POLICIES)}",
+            )
+        policy_result = PolicyEngine.evaluate(req.sbom, req.policy)
 
     status_code = 200 if policy_result.passed else 422
     return JSONResponse(
@@ -236,6 +306,7 @@ async def evaluate_policy(req: PolicyEvaluateRequest) -> JSONResponse:
                     "field": f.field,
                     "rationale": f.rationale,
                     "remediation": f.remediation,
+                    "remediation_link": f.remediation_link,
                     "actual_value": str(f.actual_value) if f.actual_value else None,
                 }
                 for f in policy_result.findings

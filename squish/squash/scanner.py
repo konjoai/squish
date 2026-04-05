@@ -1,6 +1,6 @@
 """squish/squash/scanner.py — AI model security scanner.
 
-Detects three classes of threats in AI model artifacts:
+Detects four classes of threats in AI model artifacts:
 
 1. **Pickle/unsafe deserialization** — PyTorch ``.bin`` / ``.pt`` / ``.pth``
    files may contain arbitrary Python code executed at load time via
@@ -11,9 +11,17 @@ Detects three classes of threats in AI model artifacts:
    ``tokenizer.ggml.pre``, ``.model_path``) have been weaponised in PoC attacks
    to trigger shell execution via malicious tokenizer configs loaded post-GGUF.
 
-3. **ProtectAI ModelScan integration** — when ``modelscan`` is installed,
-   delegate to it as a subprocess and parse its JSON output into
-   :class:`ScanResult`.  This avoids rebuilding what ProtectAI already ships.
+3. **ONNX external data references** — ONNX graphs can declare ``External``
+   data refs that point outside the model directory, triggering path traversal
+   or SSRF on load.  Scanned via ``onnx`` library or raw protobuf parse.
+
+4. **safetensors header tampering** — The safetensors format encodes tensor
+   sizes in a JSON header.  A malicious file can declare sizes that exceed actual
+   data, causing out-of-bounds reads when loaded.
+
+5. **ProtectAI ModelScan integration** — when ``modelscan`` is installed,
+   run it **first** as the primary backend and merge its findings into the
+   aggregate result.
 
 All scan methods return a :class:`ScanResult` and never raise on scan errors —
 a failed scan is reported as ``status="error"`` with the traceback in
@@ -154,41 +162,61 @@ class ModelScanner:
     def scan_directory(model_dir: Path) -> ScanResult:
         """Scan all weight files in *model_dir* and return an aggregate result.
 
-        Scans PyTorch files with the pickle scanner, GGUF files with the GGUF
-        scanner, and delegates to ProtectAI ModelScan if available.
+        Scan order:
+        1. ProtectAI ModelScan (if installed) — first-class backend
+        2. PyTorch pickle scanner (``.bin/.pt/.pth/.pkl``)
+        3. GGUF metadata scanner
+        4. ONNX external-data reference scanner
+        5. safetensors header size validator
+        6. Zip archive scanner (detects compressed pickle payloads)
+
+        ModelScan findings take precedence; built-in scanners fill coverage gaps.
         """
         all_findings: list[ScanFinding] = []
         scanned_files = 0
         status = "clean"
 
-        for ext in ("*.bin", "*.pt", "*.pth", "*.pkl"):
-            for fp in model_dir.rglob(ext):
-                r = ModelScanner._scan_pickle(fp)
-                all_findings.extend(r.findings)
-                scanned_files += 1
-                if r.status == "unsafe":
-                    status = "unsafe"
-                elif r.status == "warning" and status == "clean":
-                    status = "warning"
-
-        for fp in model_dir.rglob("*.gguf"):
-            r = ModelScanner._scan_gguf(fp)
+        def _merge(r: ScanResult) -> None:
+            nonlocal status, scanned_files
             all_findings.extend(r.findings)
             scanned_files += 1
             if r.status == "unsafe":
                 status = "unsafe"
-            elif r.status == "warning" and status == "clean":
-                status = "warning"
+            elif r.status in ("warning", "error") and status == "clean":
+                status = r.status
 
-        # Opportunistically delegate to ProtectAI ModelScan
+        # 1. ProtectAI ModelScan — run first; skip built-in pickle scan if it ran
         modelscan_result = ModelScanner._run_modelscan(model_dir)
-        if modelscan_result is not None:
-            all_findings.extend(modelscan_result.findings)
-            if modelscan_result.status == "unsafe":
+        modelscan_ran = modelscan_result is not None
+        if modelscan_ran:
+            all_findings.extend(modelscan_result.findings)  # type: ignore[union-attr]
+            if modelscan_result.status == "unsafe":  # type: ignore[union-attr]
                 status = "unsafe"
 
+        # 2. Pickle scanner (only when ModelScan is absent — avoid double-counting)
+        if not modelscan_ran:
+            for ext in ("*.bin", "*.pt", "*.pth", "*.pkl"):
+                for fp in model_dir.rglob(ext):
+                    _merge(ModelScanner._scan_pickle(fp))
+
+        # 3. GGUF scanner
+        for fp in model_dir.rglob("*.gguf"):
+            _merge(ModelScanner._scan_gguf(fp))
+
+        # 4. ONNX scanner
+        for fp in model_dir.rglob("*.onnx"):
+            _merge(ModelScanner._scan_onnx(fp))
+
+        # 5. safetensors header validator
+        for fp in model_dir.rglob("*.safetensors"):
+            _merge(ModelScanner._scan_safetensors(fp))
+
+        # 6. Zip archive scanner
+        for fp in model_dir.rglob("*.zip"):
+            _merge(ModelScanner._scan_zip(fp))
+
         if scanned_files == 0 and not all_findings:
-            # Nothing to scan (e.g. pure safetensors npy-dir) — not a failure
+            # Nothing to scan — not a failure
             status = "skipped"
 
         return ScanResult(
@@ -205,6 +233,12 @@ class ModelScanner:
             return ModelScanner._scan_pickle(file_path)
         if suffix == ".gguf":
             return ModelScanner._scan_gguf(file_path)
+        if suffix == ".onnx":
+            return ModelScanner._scan_onnx(file_path)
+        if suffix == ".safetensors":
+            return ModelScanner._scan_safetensors(file_path)
+        if suffix == ".zip":
+            return ModelScanner._scan_zip(file_path)
         return ScanResult(
             scanned_path=str(file_path),
             status="skipped",
@@ -397,6 +431,334 @@ class ModelScanner:
                     break
         except struct.error:
             pass  # truncated GGUF — not a scan error
+
+        return ScanResult(
+            scanned_path=str(file_path),
+            status=status,
+            findings=findings,
+        )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # ONNX scanner
+    # ──────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _scan_onnx(file_path: Path) -> ScanResult:
+        """Scan an ONNX model for external data references pointing outside the model dir.
+
+        ONNX ``External`` data refs with a ``location`` field beginning with ``..``
+        or an absolute path are a path-traversal / SSRF vector when the model is
+        loaded on a server.
+
+        Uses the ``onnx`` library for accurate parsing when available; falls back
+        to a raw byte-scan for the string ``external_data`` as a lightweight heuristic.
+        """
+        findings: list[ScanFinding] = []
+        status = "clean"
+        model_dir = file_path.parent
+
+        try:
+            data = file_path.read_bytes()
+        except OSError as e:
+            return ScanResult(
+                scanned_path=str(file_path),
+                status="error",
+                findings=[
+                    ScanFinding(
+                        severity="info",
+                        finding_id="SCAN-IO-003",
+                        title="ONNX file read error",
+                        detail=str(e),
+                        file_path=str(file_path),
+                    )
+                ],
+            )
+
+        # Fast heuristic: does the protobuf even mention external data?
+        if b"external_data" not in data and b"location" not in data[:4096]:
+            return ScanResult(
+                scanned_path=str(file_path),
+                status="clean",
+                findings=[],
+            )
+
+        # Try accurate parsing via onnx library
+        try:
+            import onnx  # type: ignore[import-untyped]
+
+            model = onnx.load(str(file_path))
+            for initializer in model.graph.initializer:
+                if initializer.HasField("data_location") and initializer.data_location == 1:
+                    # data_location == EXTERNAL
+                    for kv in initializer.external_data:
+                        if kv.key == "location":
+                            loc = kv.value
+                            # Flag if path escapes model directory or is absolute
+                            if loc.startswith("..") or loc.startswith("/") or (
+                                len(loc) > 2 and loc[1] == ":"
+                            ):
+                                findings.append(
+                                    ScanFinding(
+                                        severity="high",
+                                        finding_id="SCAN-ONNX-001",
+                                        title=f"ONNX external data ref escapes model dir: {loc!r}",
+                                        detail=(
+                                            f"Initializer '{initializer.name}' references external "
+                                            f"data at '{loc}', which points outside the model directory. "
+                                            "This is a path-traversal vector when the model is loaded "
+                                            "on a server. Reject this ONNX file."
+                                        ),
+                                        file_path=str(file_path),
+                                    )
+                                )
+                                status = "unsafe"
+            return ScanResult(
+                scanned_path=str(file_path),
+                status=status,
+                findings=findings,
+            )
+        except ImportError:
+            pass  # onnx not installed — fall through to heuristic
+        except Exception as e:
+            log.warning("onnx parse failed for %s: %s", file_path, e)
+
+        # Heuristic fallback: scan raw bytes for path-traversal strings
+        for pattern in (b"../", b"..\\", b"\x00/etc", b"\x00/proc"):
+            if pattern in data:
+                findings.append(
+                    ScanFinding(
+                        severity="medium",
+                        finding_id="SCAN-ONNX-002",
+                        title=f"Suspicious path pattern in ONNX file: {pattern!r}",
+                        detail=(
+                            f"Pattern {pattern!r} found in ONNX file bytes. "
+                            "Install 'onnx' (pip install onnx) for precise external-ref scanning. "
+                            "Treat this file as untrusted until confirmed safe."
+                        ),
+                        file_path=str(file_path),
+                    )
+                )
+                if status == "clean":
+                    status = "warning"
+
+        return ScanResult(
+            scanned_path=str(file_path),
+            status=status,
+            findings=findings,
+        )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # safetensors header validator
+    # ──────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _scan_safetensors(file_path: Path) -> ScanResult:
+        """Validate a safetensors file header.
+
+        safetensors layout:
+        - Bytes 0–7: little-endian uint64 ``header_length``
+        - Bytes 8–(8+header_length): UTF-8 JSON header
+        - Remaining bytes: tensor data
+
+        A malicious file can:
+        a) Declare a header length that exceeds the actual file size (truncation attack).
+        b) Declare tensor data ranges that exceed ``file_size - 8 - header_length``
+           (OOB-read / decompression bomb).
+        """
+        findings: list[ScanFinding] = []
+        status = "clean"
+
+        try:
+            file_size = file_path.stat().st_size
+            with file_path.open("rb") as fh:
+                raw_len = fh.read(8)
+                if len(raw_len) < 8:
+                    return ScanResult(
+                        scanned_path=str(file_path),
+                        status="warning",
+                        findings=[
+                            ScanFinding(
+                                severity="medium",
+                                finding_id="SCAN-ST-003",
+                                title="safetensors file too small to contain a valid header",
+                                detail=f"File is {file_size} bytes — cannot contain the 8-byte length prefix.",
+                                file_path=str(file_path),
+                            )
+                        ],
+                    )
+
+                header_len = struct.unpack("<Q", raw_len)[0]
+
+                # Check 1: header length must fit within file
+                if header_len > file_size - 8:
+                    return ScanResult(
+                        scanned_path=str(file_path),
+                        status="unsafe",
+                        findings=[
+                            ScanFinding(
+                                severity="critical",
+                                finding_id="SCAN-ST-001",
+                                title="safetensors header length exceeds file size — potential overflow attack",
+                                detail=(
+                                    f"Header declares {header_len} bytes but file is only "
+                                    f"{file_size} bytes (8-byte prefix + {file_size - 8} remaining). "
+                                    "This is a Buffer overflow / decompression-bomb attack. "
+                                    "Reject this file immediately."
+                                ),
+                                file_path=str(file_path),
+                            )
+                        ],
+                    )
+
+                # Check 2: parse JSON header and validate tensor data offsets
+                raw_header = fh.read(header_len)
+                try:
+                    header: dict = json.loads(raw_header)
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    return ScanResult(
+                        scanned_path=str(file_path),
+                        status="warning",
+                        findings=[
+                            ScanFinding(
+                                severity="medium",
+                                finding_id="SCAN-ST-004",
+                                title="safetensors header JSON is malformed",
+                                detail=f"JSON parse error: {e}. File may be corrupted or tampered.",
+                                file_path=str(file_path),
+                            )
+                        ],
+                    )
+
+                data_region_size = file_size - 8 - header_len
+                for tensor_name, meta in header.items():
+                    if tensor_name == "__metadata__" or not isinstance(meta, dict):
+                        continue
+                    offsets = meta.get("data_offsets")
+                    if not isinstance(offsets, list) or len(offsets) != 2:
+                        continue
+                    start, end = offsets[0], offsets[1]
+                    if end > data_region_size:
+                        findings.append(
+                            ScanFinding(
+                                severity="critical",
+                                finding_id="SCAN-ST-002",
+                                title=(
+                                    f"safetensors tensor '{tensor_name}' data_offsets "
+                                    f"[{start}, {end}] exceed data region ({data_region_size} bytes)"
+                                ),
+                                detail=(
+                                    f"Tensor '{tensor_name}' claims data at bytes [{start}, {end}] "
+                                    f"but the data region is only {data_region_size} bytes. "
+                                    "This is an out-of-bounds read attack. Reject this file."
+                                ),
+                                file_path=str(file_path),
+                            )
+                        )
+                        status = "unsafe"
+
+        except OSError as e:
+            return ScanResult(
+                scanned_path=str(file_path),
+                status="error",
+                findings=[
+                    ScanFinding(
+                        severity="info",
+                        finding_id="SCAN-IO-004",
+                        title="safetensors file read error",
+                        detail=str(e),
+                        file_path=str(file_path),
+                    )
+                ],
+            )
+
+        return ScanResult(
+            scanned_path=str(file_path),
+            status=status,
+            findings=findings,
+        )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Zip archive scanner
+    # ──────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _scan_zip(file_path: Path) -> ScanResult:
+        """Scan a zip archive for embedded model files that should be scanned.
+
+        Zip archives containing ``.bin``, ``.pt``, ``.pkl``, or ``.gguf`` files
+        cannot be safely loaded without extracting — flag for manual review.
+        Also detect zipslip (path traversal in ZIP entry names).
+        """
+        import zipfile
+
+        findings: list[ScanFinding] = []
+        status = "clean"
+
+        try:
+            # Explicitly stat the file so OSError propagates for missing paths,
+            # because zipfile.is_zipfile() silently swallows FileNotFoundError.
+            file_path.stat()
+            if not zipfile.is_zipfile(file_path):
+                return ScanResult(
+                    scanned_path=str(file_path),
+                    status="skipped",
+                    findings=[],
+                )
+
+            with zipfile.ZipFile(file_path, "r") as zf:
+                names = zf.namelist()
+
+            dangerous_exts = {".bin", ".pt", ".pth", ".pkl", ".gguf"}
+            embedded = [n for n in names if Path(n).suffix.lower() in dangerous_exts]
+            if embedded:
+                findings.append(
+                    ScanFinding(
+                        severity="critical",
+                        finding_id="SCAN-ZIP-001",
+                        title=f"ZIP archive contains {len(embedded)} unscanned model file(s)",
+                        detail=(
+                            f"Embedded files: {', '.join(embedded[:5])}"
+                            + (f" (+{len(embedded)-5} more)" if len(embedded) > 5 else "")
+                            + ". These cannot be safely loaded without extraction and scanning. "
+                            "Extract and run squash scan --model-path <extracted_dir> before use."
+                        ),
+                        file_path=str(file_path),
+                    )
+                )
+                status = "unsafe"
+
+            # Zipslip detection: entries with path traversal
+            traversal = [n for n in names if n.startswith("..") or "/../" in n or n.startswith("/")]
+            if traversal:
+                findings.append(
+                    ScanFinding(
+                        severity="critical",
+                        finding_id="SCAN-ZIP-002",
+                        title=f"Zipslip path traversal detected ({len(traversal)} entries)",
+                        detail=(
+                            f"Malicious entries: {', '.join(traversal[:3])}. "
+                            "Extracting this archive can overwrite arbitrary files outside the "
+                            "target directory (CVE-class: Zipslip). Reject immediately."
+                        ),
+                        file_path=str(file_path),
+                    )
+                )
+                status = "unsafe"
+
+        except (OSError, zipfile.BadZipFile) as e:
+            return ScanResult(
+                scanned_path=str(file_path),
+                status="error",
+                findings=[
+                    ScanFinding(
+                        severity="info",
+                        finding_id="SCAN-IO-005",
+                        title="ZIP file read error",
+                        detail=str(e),
+                        file_path=str(file_path),
+                    )
+                ],
+            )
 
         return ScanResult(
             scanned_path=str(file_path),
