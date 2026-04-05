@@ -836,6 +836,89 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unreleased-squash-waves-2025-ntia-validator-slsa-provenance-bom-merge-ai-risk-assessment-drift-detection-cicd-adapters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Unreleased] — Squash Waves 20–25: NTIA Validator, SLSA Provenance, BOM Merge, AI Risk Assessment, Drift Detection, CI/CD Adapters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Unreleased] — Squash Waves 20–25: NTIA Validator, SLSA Provenance, BOM Merge, AI Risk Assessment, Drift Detection, CI/CD Adapters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-20-ntia-minimum-elements-validator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 20: NTIA Minimum Elements Validator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-21-slsa-10-build-provenance-attestation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 21: SLSA 1.0 Build Provenance Attestation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-22-bom-merge-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 22: BOM Merge &amp; Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-23-ai-risk-assessment-eu-ai-act-nist-ai-rmf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 23: AI Risk Assessment (EU AI Act / NIST AI RMF)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-24-drift-detection-continuous-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 24: Drift Detection &amp; Continuous Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-25-cicd-integration-adapters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 25: CI/CD Integration Adapters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#unreleased-squash-waves-1419-sigstore-verify-compliance-report-vex-cache-webhooks-composite-attestation-registry-push" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -6528,6 +6611,44 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="unreleased-squash-waves-2025-ntia-validator-slsa-provenance-bom-merge-ai-risk-assessment-drift-detection-cicd-adapters">[Unreleased] — Squash Waves 20–25: NTIA Validator, SLSA Provenance, BOM Merge, AI Risk Assessment, Drift Detection, CI/CD Adapters<a class="headerlink" href="#unreleased-squash-waves-2025-ntia-validator-slsa-provenance-bom-merge-ai-risk-assessment-drift-detection-cicd-adapters" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-20-ntia-minimum-elements-validator">Added — Wave 20: NTIA Minimum Elements Validator<a class="headerlink" href="#added-wave-20-ntia-minimum-elements-validator" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squash/policy.py</code></strong> — <code>NtiaResult</code> dataclass and <code>NtiaValidator</code> class: <code>check(bom, *, strict=False) → NtiaResult</code>. Validates a CycloneDX BOM against the seven NTIA minimum elements (supplier name, component name/version, unique identifier, dependency relationship, author of SBOM, timestamp). Returns completeness score (0.0–1.0) and per-element pass/fail breakdown. Raises <code>FileNotFoundError</code> if the BOM path does not exist.</li>
+<li><strong><code>squash/cli.py</code></strong> — <code>squash ntia-check BOM_PATH [--strict] [--quiet]</code> subcommand.</li>
+<li><strong><code>squash/api.py</code></strong> — <code>POST /ntia/validate</code> endpoint: returns <code>{passed, completeness_score, missing_fields, present_fields}</code>.</li>
+</ul>
+<h3 id="added-wave-21-slsa-10-build-provenance-attestation">Added — Wave 21: SLSA 1.0 Build Provenance Attestation<a class="headerlink" href="#added-wave-21-slsa-10-build-provenance-attestation" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squash/slsa.py</code></strong> — <code>SlsaLevel</code> enum (L1/L2/L3), <code>SlsaAttestation</code> dataclass, and <code>SlsaProvenanceBuilder</code> class: <code>build(model_dir, *, level, builder_id, invocation_id) → SlsaAttestation</code>. Generates in-toto v1 statements with SLSA 1.0 predicate. L2+ signing and L3+ verification are best-effort (errors swallowed). Attaches provenance as an <code>externalReference</code> in the BOM.</li>
+<li><strong><code>squash/cli.py</code></strong> — <code>squash slsa-attest MODEL_DIR [--level {1,2,3}] [--builder-id ID] [--sign] [--quiet]</code> subcommand.</li>
+<li><strong><code>squash/api.py</code></strong> — <code>POST /slsa/attest</code> endpoint: returns <code>{output_path, level, subject_name, subject_sha256, signed, invocation_id}</code>.</li>
+</ul>
+<h3 id="added-wave-22-bom-merge-composition">Added — Wave 22: BOM Merge &amp; Composition<a class="headerlink" href="#added-wave-22-bom-merge-composition" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squash/sbom_builder.py</code></strong> — <code>BomMerger</code> class: <code>merge(bom_paths, output_path, metadata) → dict</code>. Merges multiple CycloneDX 1.5 BOMs by deduplicating components (by PURL, keeping highest severity), unioning vulnerabilities (keeping worst <code>analysis.state</code>), and emitting a <code>compositions</code> array. Handles components without a PURL.</li>
+<li><strong><code>squash/cli.py</code></strong> — <code>squash merge BOM_PATH [BOM_PATH ...] --output FILE [--quiet]</code> subcommand.</li>
+<li><strong><code>squash/api.py</code></strong> — <code>POST /sbom/merge</code> endpoint: returns <code>{merged, output_path, component_count, vulnerability_count}</code>.</li>
+</ul>
+<h3 id="added-wave-23-ai-risk-assessment-eu-ai-act-nist-ai-rmf">Added — Wave 23: AI Risk Assessment (EU AI Act / NIST AI RMF)<a class="headerlink" href="#added-wave-23-ai-risk-assessment-eu-ai-act-nist-ai-rmf" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squash/risk.py</code></strong> — <code>EuAiActCategory</code> and <code>NistRmfCategory</code> enums, <code>RiskAssessmentResult</code> dataclass, and <code>AiRiskAssessor</code> class: <code>assess_eu_ai_act(bom_path)</code> and <code>assess_nist_rmf(bom_path)</code>. Heuristic assessment from CycloneDX <code>modelCard</code> use-case and sensitivity signals. UNACCEPTABLE / HIGH / LIMITED / MINIMAL tiers for EU; CRITICAL / HIGH / MODERATE / LOW for NIST. <code>RiskCategory</code> alias kept for backward compatibility.</li>
+<li><strong><code>squash/cli.py</code></strong> — <code>squash risk-assess MODEL_DIR [--framework {eu-ai-act,nist-rmf,both}] [--quiet]</code> subcommand.</li>
+<li><strong><code>squash/api.py</code></strong> — <code>POST /risk/assess</code> endpoint: returns EU AI Act and/or NIST RMF assessment dicts.</li>
+</ul>
+<h3 id="added-wave-24-drift-detection-continuous-monitoring">Added — Wave 24: Drift Detection &amp; Continuous Monitoring<a class="headerlink" href="#added-wave-24-drift-detection-continuous-monitoring" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squash/governor.py</code></strong> — <code>DriftEvent</code> dataclass and <code>DriftMonitor</code> class appended: <code>snapshot(model_dir) → str</code> (SHA-256 hex of core attestation files), <code>compare(model_dir, baseline_snapshot) → list[DriftEvent]</code>, <code>watch(model_dir, interval_s, callback) → threading.Event</code>. Detects BOM changes, policy regressions, and CVE appearances between snapshots.</li>
+<li><strong><code>squash/cli.py</code></strong> — <code>squash monitor MODEL_DIR [--baseline SNAP] [--interval 3600] [--once] [--quiet]</code> subcommand.</li>
+<li><strong><code>squash/api.py</code></strong> — <code>POST /monitor/snapshot</code> and <code>POST /monitor/compare</code> endpoints.</li>
+</ul>
+<h3 id="added-wave-25-cicd-integration-adapters">Added — Wave 25: CI/CD Integration Adapters<a class="headerlink" href="#added-wave-25-cicd-integration-adapters" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squash/cicd.py</code></strong> — <code>CiEnvironment</code> dataclass, <code>CicdReport</code> dataclass, and <code>CicdAdapter</code> class: <code>detect() → CiEnvironment</code> (auto-detects GitHub Actions, Jenkins, GitLab CI, CircleCI), <code>annotate(report, env)</code> (emits native CI annotations), <code>job_summary(report, env) → str</code> (Markdown), <code>run_pipeline(model_dir, *, report_format) → CicdReport</code> (orchestrates full NTIA + risk + drift check pipeline). Uses lazy imports to avoid circular dependencies.</li>
+<li><strong><code>squash/cli.py</code></strong> — <code>squash ci-run MODEL_DIR [--report-format {github,jenkins,gitlab,text}] [--quiet]</code> subcommand.</li>
+<li><strong><code>squash/api.py</code></strong> — <code>POST /cicd/report</code> endpoint: returns <code>{passed, env, ntia, risk, drift_events, summary}</code>.</li>
+</ul>
 <hr />
 <h2 id="unreleased-squash-waves-1419-sigstore-verify-compliance-report-vex-cache-webhooks-composite-attestation-registry-push">[Unreleased] — Squash Waves 14–19: Sigstore Verify, Compliance Report, VEX Cache, Webhooks, Composite Attestation, Registry Push<a class="headerlink" href="#unreleased-squash-waves-1419-sigstore-verify-compliance-report-vex-cache-webhooks-composite-attestation-registry-push" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-14-sigstore-verification">Added — Wave 14: Sigstore Verification<a class="headerlink" href="#added-wave-14-sigstore-verification" title="Permanent link">&para;</a></h3>
