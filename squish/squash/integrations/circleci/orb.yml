@@ -1,0 +1,198 @@
+version: 2.1
+
+description: |
+  Squash — AI model supply chain compliance for CircleCI.
+
+  Provides commands for attesting ML model artifacts, checking compliance
+  status, and enforcing policy gates in CI/CD pipelines.  Built on the
+  ``squash ci-run`` CLI shipped with the ``squishai`` PyPI package.
+
+display:
+  home_url: https://squishai.com
+  source_url: https://github.com/squishai/squish
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+commands:
+
+  attest:
+    description: |
+      Generate a CycloneDX / SPDX BOM and attach a Squash attestation to a
+      model artifact.  Output is a signed BOM JSON written to ``output``.
+    parameters:
+      model-path:
+        type: string
+        description: Path to the model directory or artifact to attest.
+      output:
+        type: string
+        default: squash-bom.json
+        description: Output path for the signed BOM file.
+      format:
+        type: string
+        default: cyclonedx-json
+        description: "BOM format: cyclonedx-json or spdx-json."
+      policies:
+        type: string
+        default: ""
+        description: Comma-separated list of policy names to evaluate.
+      sign:
+        type: boolean
+        default: false
+        description: Sign the attestation with Sigstore (requires OIDC token).
+    steps:
+      - run:
+          name: Squash — attest model
+          command: |
+            POLICIES_FLAG=""
+            if [ -n "<<parameters.policies>>" ]; then
+              POLICIES_FLAG="--policies <<parameters.policies>>"
+            fi
+            SIGN_FLAG=""
+            if [ "<<parameters.sign>>" = "true" ]; then
+              SIGN_FLAG="--sign"
+            fi
+            squash ci-run \
+              --model "<<parameters.model-path>>" \
+              --output "<<parameters.output>>" \
+              --format "<<parameters.format>>" \
+              $POLICIES_FLAG \
+              $SIGN_FLAG
+
+  check:
+    description: |
+      Check compliance status of an existing Squash BOM attestation.
+      Requires the BOM file produced by ``squash/attest`` (or a previous run).
+    parameters:
+      bom-path:
+        type: string
+        default: squash-bom.json
+        description: Path to the BOM file to check.
+      fail-on-violation:
+        type: boolean
+        default: true
+        description: Exit non-zero if policy violations are found.
+      policies:
+        type: string
+        default: ""
+        description: Comma-separated list of policy names to re-evaluate.
+    steps:
+      - run:
+          name: Squash — check compliance
+          command: |
+            POLICIES_FLAG=""
+            if [ -n "<<parameters.policies>>" ]; then
+              POLICIES_FLAG="--policies <<parameters.policies>>"
+            fi
+            FAIL_FLAG=""
+            if [ "<<parameters.fail-on-violation>>" = "true" ]; then
+              FAIL_FLAG="--fail-on-violation"
+            fi
+            squash ci-run \
+              --bom "<<parameters.bom-path>>" \
+              --check-only \
+              $POLICIES_FLAG \
+              $FAIL_FLAG
+
+  policy-gate:
+    description: |
+      Enforce a policy gate — block the pipeline if the model fails Squash
+      policy.  Combines attesting + evaluating in one step; exits non-zero to
+      halt the workflow if the model is non-compliant.
+    parameters:
+      model-path:
+        type: string
+        description: Path to the model directory or artifact to gate.
+      policy:
+        type: string
+        default: ""
+        description: Policy name or file path to enforce (empty = all active policies).
+      allow-unscanned:
+        type: boolean
+        default: false
+        description: |
+          If true, allow models with no BOM scan result to pass through.
+          Default false means unscanned models are blocked.
+      output:
+        type: string
+        default: squash-gate.json
+        description: Path to write the gate result JSON.
+    steps:
+      - run:
+          name: Squash — policy gate
+          command: |
+            POLICY_FLAG=""
+            if [ -n "<<parameters.policy>>" ]; then
+              POLICY_FLAG="--policies <<parameters.policy>>"
+            fi
+            ALLOW_FLAG=""
+            if [ "<<parameters.allow-unscanned>>" = "true" ]; then
+              ALLOW_FLAG="--allow-unscanned"
+            fi
+            squash ci-run \
+              --model "<<parameters.model-path>>" \
+              --output "<<parameters.output>>" \
+              $POLICY_FLAG \
+              $ALLOW_FLAG \
+              --exit-code
+
+# ---------------------------------------------------------------------------
+# Examples
+# ---------------------------------------------------------------------------
+examples:
+
+  attest_and_gate:
+    description: |
+      Attest a model artifact and then enforce a policy gate.
+      Both steps use the ``squash ci-run`` CLI under the hood.
+    usage:
+      version: 2.1
+      orbs:
+        squash: squishai/squash@0.1.0
+      jobs:
+        compliance:
+          docker:
+            - image: cimg/python:3.11
+          steps:
+            - checkout
+            - run:
+                name: Install Squash
+                command: pip install squishai
+            - squash/attest:
+                model-path: models/my-llm
+                output: bom.json
+                policies: eu-ai-act,nist-ai-rmf
+            - squash/policy-gate:
+                model-path: models/my-llm
+                policy: eu-ai-act
+                allow-unscanned: false
+      workflows:
+        compliance-check:
+          jobs:
+            - compliance
+
+  check_existing_bom:
+    description: |
+      Check compliance on a BOM file that was generated in a previous step
+      or persisted from a prior pipeline run.
+    usage:
+      version: 2.1
+      orbs:
+        squash: squishai/squash@0.1.0
+      jobs:
+        gate:
+          docker:
+            - image: cimg/python:3.11
+          steps:
+            - checkout
+            - run:
+                name: Install Squash
+                command: pip install squishai
+            - squash/check:
+                bom-path: artifacts/model-bom.json
+                fail-on-violation: true
+                policies: enterprise-strict
+      workflows:
+        policy-check:
+          jobs:
+            - gate

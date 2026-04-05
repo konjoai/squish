@@ -11,8 +11,9 @@ Available adapters
 - :mod:`~squish.squash.integrations.langchain`    — LangChain callback handler
 - :mod:`~squish.squash.integrations.sagemaker`    — AWS SageMaker model package
 - :mod:`~squish.squash.integrations.kubernetes`   — Kubernetes admission webhook
+- :mod:`~squish.squash.integrations.ray`          — Ray Serve deployment decorator
 
 Each adapter is import-guarded — only the adapters whose platform packages
-are installed will load.  The Kubernetes adapter has no extra runtime
-dependencies (it uses stdlib only).
+are installed will load.  The Kubernetes and Ray adapters have no mandatory
+extra runtime dependencies; Ray itself is optional (only required at bind-time).
 """

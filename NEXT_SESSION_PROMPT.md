@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Squash Wave 28+: CircleCI Orb + Ray Serve
+# NEXT_SESSION_PROMPT.md — Squash Wave 29+: VEX Feed Static Hosting + Remaining Gaps
 
 > Paste the content below verbatim as your opening prompt.
 > This is a **code session** — implement the remaining plan gaps.
@@ -7,12 +7,12 @@
 
 ## Prompt
 
-**Code session. Implement Wave 28: CircleCI Orb YAML and Ray Serve decorator.
+**Code session. Implement Wave 29: VEX feed static JSON commit + any outstanding gaps.
 One commit per wave. Minimum viable implementation — no stubs left in shipped code.**
 
 ---
 
-## Waves 1–27 complete (commit HEAD on `main`)
+## Waves 1–28 complete (commit HEAD on `main`)
 
 ### Delivery summary
 
@@ -28,59 +28,56 @@ One commit per wave. Minimum viable implementation — no stubs left in shipped 
 | 25    | CI/CD runtime adapter — GitHub/Jenkins/GitLab/CircleCI (`CicdAdapter`, `ci-run` CLI, `POST /cicd/report`) | ✅ |
 | 26    | SageMaker Pipeline Step, ORAS OCI registry push, VEX feed MVP (`SageMakerSquash`, `OrasAdapter`, `VexFeedManifest`) | ✅ |
 | 27    | Kubernetes Admission Webhook (`KubernetesWebhookHandler`, `WebhookConfig`, Helm chart, `squash webhook` CLI) | ✅ |
+| 28    | CircleCI Orb (`orb.yml` with `squash/attest`, `squash/check`, `squash/policy-gate`) + Ray Serve (`squash_serve` decorator, `SquashServeDeployment`, `SquashServeConfig`) | ✅ |
 
 ### Test state
-- **4116 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
+- **4184 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
 - 25 skipped
 
 ### Module count
 ```
-squish/ non-experimental: 105/100 (+5 over nominal limit — all justified in CHANGELOG)
+squish/ non-experimental: 106/100 (+6 over nominal limit — all justified in CHANGELOG)
   - slsa.py, risk.py, cicd.py: +3 (waves 20-25)
   - integrations/sagemaker.py: +1 (wave 26 — MLOps integration suite)
-  - integrations/kubernetes.py: +1 (wave 27 — K8s enforcement plane, justified)
+  - integrations/kubernetes.py: +1 (wave 27 — K8s enforcement plane)
+  - integrations/ray.py: +1 (wave 28 — Ray Serve deployment lifecycle)
 ```
 
-### Key files added in wave 27
-- `squish/squash/integrations/kubernetes.py` — `KubernetesWebhookHandler`, `WebhookConfig`, `serve_webhook()`
-- `squish/squash/integrations/kubernetes_helm/` — Helm chart (Chart.yaml, values.yaml, templates/)
-- `squish/squash/cli.py` (extended) — `squash webhook [--port 8443] [--tls-cert] [--tls-key] [--policy-store] [--default-deny]`
-- `squish/squash/__init__.py` (extended) — `KubernetesWebhookHandler`, `WebhookConfig` exported
-- `tests/test_squash_wave27.py` — 52 new tests
+### Key files added in wave 28
+- `squish/squash/integrations/circleci/orb.yml` — CircleCI Orb YAML (data file; no module count impact)
+- `squish/squash/integrations/ray.py` — `squash_serve` decorator, `SquashServeDeployment`, `SquashServeConfig`
+- `squish/squash/__init__.py` (extended) — `squash_serve`, `SquashServeConfig`, `SquashServeDeployment` exported
+- `tests/test_squash_wave28.py` — 68 new tests
 
 ---
 
-## Remaining gaps (post wave 27)
+## Remaining gaps (post wave 28)
 
-### 1. CircleCI Orb (Wave 28)
-**Status: Partially delivered (CircleCI detection in `cicd.py`).**
+### 1. VEX feed static hosting (Wave 29)
+**Status: Infrastructure only (client + manifest generator in Wave 26).**
 
-Need a formal CircleCI Orb YAML (`integrations/circleci/orb.yml`).
-- Orb commands: `squash/attest`, `squash/check`, `squash/policy-gate`
-- Uses the `squash ci-run` CLI under the hood
-- Orb metadata: `display.home_url`, `display.source_url`, examples
-- Integration test: parse orb.yml, verify command structure
+`VexFeedManifest.generate()` and `VexCache.fetch_squash_feed()` are complete,
+but no hosted feed exists yet.
+- First step: a static JSON file committed to `squishai/vex-feed` GitHub repo
+  (separate repo action, not squish/ itself).
+- Second step: a `squash vex-publish` CLI subcommand that invokes
+  `VexFeedManifest.generate()` and writes the output to a configurable path.
 
-### 2. Ray Serve decorator (Wave 28 extension)
-**Status: Not started.** Lower priority.
+### 2. CLI completeness audit (Wave 29 extension)
+Verify every public integration has a corresponding CLI subcommand or
+`squash ci-run` flag:
+- `mlflow` / `wandb` / `huggingface` / `langchain` — do they have pipe-friendly
+  CLI access? If not, add `squash attest-mlflow`, etc.
 
-A `@squash_serve` decorator that wraps a Ray Serve deployment and attaches
-attestation at serve time:
-- `integrations/ray.py` — `SquashServeDeployment` decorator
-- Validates the model directory at `.serve.bind()` time
-- Attaches BOM summary to Ray Serve metadata via `ray.serve.get_deployment_status()`
-
-### 3. VEX feed hosting
-**Status: Infrastructure only (client + manifest generator).**
-
-`VexFeedManifest.generate()` and `VexCache.fetch_squash_feed()` are complete, but no hosted feed exists yet.
-First step: a static JSON file commit to `squishai/vex-feed` GitHub repo (separate repo action).
+### 3. lm-eval-validated quantization results (ongoing)
+mixed_attn (FP16 attn + INT4 MLP) is code-complete but unvalidated.
+Requires running `lm_eval` on M3 hardware before merging accuracy claims.
 
 ---
 
 ## Hard stops
 
-- **Module count is at 105.** Any new file requires deleting one or writing justification in CHANGELOG.
+- **Module count is at 106.** Any new file requires deleting one or writing justification in CHANGELOG.
 - **Do not add sidecar or model files to git.**
 - Tests must pass before committing.
 
