@@ -27,7 +27,7 @@ _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
-from squish.runtime.structured_sparsity import StructuredFfnSparsity
+from squish.experimental.structured_sparsity import StructuredFfnSparsity
 
 
 # ===========================================================================
@@ -457,15 +457,15 @@ class TestStructuredSparsityServerGlobal(unittest.TestCase):
 
 class TestStructuredSparsityModuleImport(unittest.TestCase):
     def test_module_importable(self):
-        from squish.runtime import structured_sparsity  # noqa: PLC0415
+        from squish.experimental import structured_sparsity  # noqa: PLC0415
         self.assertIsNotNone(structured_sparsity)
 
     def test_class_exported(self):
-        from squish.runtime.structured_sparsity import StructuredFfnSparsity  # noqa: PLC0415
+        from squish.experimental.structured_sparsity import StructuredFfnSparsity  # noqa: PLC0415
         self.assertTrue(callable(StructuredFfnSparsity))
 
     def test_all_contains_class(self):
-        from squish.runtime import structured_sparsity  # noqa: PLC0415
+        from squish.experimental import structured_sparsity  # noqa: PLC0415
         self.assertIn("StructuredFfnSparsity", structured_sparsity.__all__)
 
 

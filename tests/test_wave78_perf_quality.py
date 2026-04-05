@@ -538,7 +538,7 @@ class TestHQQQualityVsNaive(unittest.TestCase):
 
     def test_hqq_lower_error_than_naive_int2(self):
         """HQQ must achieve strictly lower relative error than naive quant for INT2."""
-        from squish.quant.hqq_quant import HQQConfig, HQQQuantizer
+        from squish.experimental.hqq_quant import HQQConfig, HQQQuantizer
 
         rng = np.random.default_rng(1337)
         W = rng.standard_normal((128, 64)).astype(np.float32) * 0.02
@@ -560,7 +560,7 @@ class TestHQQQualityVsNaive(unittest.TestCase):
 
     def test_hqq_int3_snr_above_threshold(self):
         """HQQ INT3 must achieve SNR > 15 dB on typical transformer weight distribution."""
-        from squish.quant.hqq_quant import HQQConfig, HQQQuantizer
+        from squish.experimental.hqq_quant import HQQConfig, HQQQuantizer
 
         rng = np.random.default_rng(42)
         W = rng.standard_normal((256, 64)).astype(np.float32) * 0.02

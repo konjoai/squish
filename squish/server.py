@@ -2237,9 +2237,9 @@ _mount_ollama(
 
 # ── LocalAI compatibility layer (GET /readyz, GET /healthz, GET /v1/version) ─
 try:
-    from .serving.localai_compat import mount_localai as _mount_localai  # package import
+    from .experimental.localai_compat import mount_localai as _mount_localai  # package import
 except ImportError:  # pragma: no cover
-    from serving.localai_compat import mount_localai as _mount_localai  # direct script run
+    from squish.experimental.localai_compat import mount_localai as _mount_localai  # direct script run
 _mount_localai(app, get_state=lambda: _state)
 if _STATIC_FILES_AVAILABLE:  # pragma: no branch
     _static_dir = Path(__file__).parent / "static"
@@ -4383,7 +4383,7 @@ Examples:
         and _w82_prof.sparsity_mask_path
     ):
         try:
-            from squish.runtime.structured_sparsity import (  # noqa: PLC0415
+            from squish.experimental.structured_sparsity import (  # noqa: PLC0415
                 StructuredFfnSparsity as _SFS,
             )
             _sfn = _SFS.from_file(_w82_prof.sparsity_mask_path)
@@ -4474,7 +4474,7 @@ Examples:
     global _jacobi_decoder
     if getattr(args, "jacobi", False):
         try:
-            from squish.speculative.jacobi_decode import JacobiConfig, JacobiDecoder
+            from squish.experimental.jacobi_decode import JacobiConfig, JacobiDecoder
             _jd_cfg = JacobiConfig(
                 n_tokens=getattr(args, "jacobi_n", 4),
                 max_iter=8,
@@ -4491,7 +4491,7 @@ Examples:
     global _layer_overlap_loader
     if getattr(args, "layer_overlap", False) and _state.model is not None:
         try:
-            from squish.io.layer_overlap_loader import LayerOverlapConfig, LayerOverlapLoader
+            from squish.experimental.layer_overlap_loader import LayerOverlapConfig, LayerOverlapLoader
             _lol_cfg = LayerOverlapConfig(
                 prefetch_count=getattr(args, "layer_overlap_prefetch", 2),
             )

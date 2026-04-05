@@ -146,7 +146,7 @@ class TestLocalAICompat(unittest.TestCase):
     def _make_app(self, model_loaded=False):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-        from squish.serving.localai_compat import mount_localai
+        from squish.experimental.localai_compat import mount_localai
 
         app = FastAPI()
         state = MagicMock()

@@ -253,3 +253,137 @@ class TestOpenApiSchema:
         paths = schema["paths"]
         assert "/health" in paths
         assert "/policies" in paths or "/policies" in str(paths)
+
+
+# ── Wave 13 — Auth, rate limiter, metrics ─────────────────────────────────────
+
+
+class TestBearerAuth:
+    """Bearer token authentication middleware."""
+
+    def test_no_token_env_allows_all_requests(self, client):
+        """When SQUASH_API_TOKEN is unset, auth is disabled."""
+        import os
+        os.environ.pop("SQUASH_API_TOKEN", None)
+        resp = client.get("/health")
+        assert resp.status_code == 200
+
+    def test_correct_token_allows_request(self):
+        import os
+        from fastapi.testclient import TestClient
+        os.environ["SQUASH_API_TOKEN"] = "test-secret"
+        try:
+            from squish.squash import api as _api
+            # Reload to pick up env — use a fresh client per test
+            tc = TestClient(_api.app)
+            resp = tc.get("/policies", headers={"Authorization": "Bearer test-secret"})
+            assert resp.status_code == 200
+        finally:
+            os.environ.pop("SQUASH_API_TOKEN", None)
+
+    def test_wrong_token_returns_401(self):
+        import os
+        from fastapi.testclient import TestClient
+        os.environ["SQUASH_API_TOKEN"] = "secret123"
+        try:
+            from squish.squash import api as _api
+            tc = TestClient(_api.app)
+            resp = tc.get("/policies", headers={"Authorization": "Bearer wrong"})
+            assert resp.status_code == 401
+        finally:
+            os.environ.pop("SQUASH_API_TOKEN", None)
+
+    def test_health_bypasses_auth(self):
+        """Health endpoint is exempted from auth check."""
+        import os
+        from fastapi.testclient import TestClient
+        os.environ["SQUASH_API_TOKEN"] = "secret123"
+        try:
+            from squish.squash import api as _api
+            tc = TestClient(_api.app)
+            resp = tc.get("/health")
+            assert resp.status_code == 200
+        finally:
+            os.environ.pop("SQUASH_API_TOKEN", None)
+
+    def test_metrics_bypasses_auth(self):
+        import os
+        from fastapi.testclient import TestClient
+        os.environ["SQUASH_API_TOKEN"] = "secret123"
+        try:
+            from squish.squash import api as _api
+            tc = TestClient(_api.app)
+            resp = tc.get("/metrics")
+            assert resp.status_code == 200
+        finally:
+            os.environ.pop("SQUASH_API_TOKEN", None)
+
+
+class TestRateLimit:
+    def test_exceeding_rate_limit_returns_429(self):
+        import os
+        from fastapi.testclient import TestClient
+        os.environ.pop("SQUASH_API_TOKEN", None)
+        # Set a tiny rate limit for this test
+        os.environ["SQUASH_RATE_LIMIT"] = "3"
+        try:
+            from squish.squash import api as _api
+            # Reset window state to avoid interference from other tests
+            _api._rate_window.clear()
+            _api._RATE_LIMIT = 3
+            tc = TestClient(_api.app)
+            statuses = [tc.get("/health").status_code for _ in range(5)]
+            assert 429 in statuses
+        finally:
+            os.environ.pop("SQUASH_RATE_LIMIT", None)
+            # Restore default
+            from squish.squash import api as _api2
+            _api2._RATE_LIMIT = 60
+            _api2._rate_window.clear()
+
+    def test_429_includes_retry_after_header(self):
+        import os
+        from fastapi.testclient import TestClient
+        os.environ.pop("SQUASH_API_TOKEN", None)
+        from squish.squash import api as _api
+        _api._rate_window.clear()
+        _api._RATE_LIMIT = 1
+        tc = TestClient(_api.app)
+        tc.get("/health")  # consume the 1 allowed
+        resp = tc.get("/health")
+        if resp.status_code == 429:
+            assert "Retry-After" in resp.headers
+        # restore
+        _api._RATE_LIMIT = 60
+        _api._rate_window.clear()
+
+
+class TestMetricsEndpoint:
+    def test_metrics_returns_200(self, client):
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+
+    def test_metrics_content_type_is_text(self, client):
+        resp = client.get("/metrics")
+        assert "text/plain" in resp.headers["content-type"]
+
+    def test_metrics_contains_counter_names(self, client):
+        resp = client.get("/metrics")
+        body = resp.text
+        assert "squash_attest_total" in body
+        assert "squash_scan_total" in body
+        assert "squash_policy_violations_total" in body
+
+    def test_counter_increments_on_scan(self, client, tmp_path):
+        """Hitting /scan should increment squash_scan_total."""
+        import os
+        from squish.squash import api as _api
+        before = _api._COUNTERS["squash_scan_total"]
+        # Post a scan request (will return 202 with a job_id)
+        d = tmp_path / "model"
+        d.mkdir()
+        (d / "config.json").write_text('{"model_type":"gpt2"}')
+        client.post("/scan", json={"model_path": str(d)})
+        after = _api._COUNTERS["squash_scan_total"]
+        assert after == before + 1
+

@@ -5,6 +5,69 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Waves 10–13: Module Debt Clearance, SARIF Export, SBOM Diff, API Security
+
+### Added — Wave 10: Module Debt Clearance
+
+- Created `squish/experimental/` directory for research-grade modules awaiting promotion criteria.
+- Demoted 12 modules from prod tree to `experimental/` via `git mv` (retaining history):
+  `torch_ops.py`, `_eval_torch.py`, `convert_coreml.py`, `astc_loader.py`,
+  `coreml_loader.py`, `layer_overlap_loader.py`, `jacobi_decode.py`, `lm_studio_bridge.py`,
+  `localai_compat.py`, `structured_sparsity.py`, `spin_quant.py`, `hqq_quant.py`.
+- Updated all lazy import paths in `server.py`, `cli.py`, and 6 test files to
+  `squish.experimental.*`. Module count: 110 → 99 (under 100 ceiling).
+
+### Added — Wave 11: SARIF 2.1.0 Export
+
+- **`squash/sarif.py`** — `SarifBuilder` class: converts `ScanResult` objects and API
+  scan-job payloads to SARIF 2.1.0 JSON. Severity map: critical/high → `error`,
+  medium → `warning`, low/info → `note`. Entry points: `from_scan_result()`,
+  `from_payload()`, `write()`.
+- **`squash/cli.py`** — `squash scan` gains `--sarif PATH` (writes SARIF file after scan)
+  and `--exit-2-on-unsafe` (exit 2 on critical/high findings, exit 1 on other unsafe,
+  exit 0 on clean).
+- **`squash/api.py`** — `GET /scan/{job_id}/sarif` endpoint: returns SARIF 2.1.0 JSON
+  for a completed scan job (202 if pending, 400 if errored, 404 if unknown).
+
+### Added — Wave 12: SBOM Diff + Policy History
+
+- **`squash/sbom_builder.py`** — `SbomDiff` dataclass with `compare(bom_a, bom_b)`
+  static method: detects component hash changes, arc_easy score deltas, policy status
+  regressions, new/resolved CVE findings, and metadata changes. `has_regressions`
+  property returns `True` if any new findings or policy regression exist.
+- **`squash/policy.py`** — `PolicyHistory` class: appends `PolicyResult` evaluations
+  to an ndjson log file, supports `latest(model_path)` lookup and
+  `regressions_since(datetime)` filtering.
+- **`squash/cli.py`** — `squash diff SBOM_A SBOM_B [--exit-1-on-regression]` subcommand.
+- **`squash/api.py`** — `POST /sbom/diff` endpoint: accepts `{sbom_a_path, sbom_b_path}`,
+  returns full diff summary including `has_regressions`.
+- **`squash/__init__.py`** — exports `SbomDiff`, `PolicyHistory`, `PolicyRegistry`,
+  `SarifBuilder` in public API.
+
+### Added — Wave 13: API Security + Metrics
+
+- **`squash/api.py`** — Bearer token auth middleware: set `SQUASH_API_TOKEN` environment
+  variable to enable. Exempted paths: `/health`, `/docs`, `/redoc`, `/openapi.json`,
+  `/metrics`. Returns HTTP 401 on invalid token.
+- **`squash/api.py`** — Per-IP sliding-window rate limiter: `SQUASH_RATE_LIMIT` (default 60)
+  requests per 60-second window. Returns HTTP 429 with `Retry-After` header on breach.
+- **`squash/api.py`** — `GET /metrics` endpoint: Prometheus-compatible counter export.
+  Counters: `squash_attest_total`, `squash_scan_total`, `squash_policy_evaluate_total`,
+  `squash_vex_evaluate_total`, `squash_sbom_diff_total`, `squash_policy_violations_total`.
+  Counters are incremented at each endpoint's success path.
+
+### Tests
+
+- `tests/test_squash_sarif.py` (new, 20 tests): SARIF structure, severity mapping,
+  `write()`, `from_payload()`, and `/scan/{job_id}/sarif` API endpoint.
+- `tests/test_squash_wave12.py` (new, 18 tests): `SbomDiff.compare()` full matrix,
+  `PolicyHistory` round-trip and regression filtering, `squash diff` CLI exit codes,
+  `POST /sbom/diff` API endpoint.
+- `tests/test_squash_api.py` (extended, +14 tests): Bearer auth, rate limiter 429 +
+  `Retry-After`, `/metrics` content and counter increment verification.
+
+---
+
 ## [Unreleased] — Squash Waves 8+9: Scanner Hardening + Custom Policy Rules
 
 ### Added — Wave 8: Scanner Hardening

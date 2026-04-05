@@ -103,6 +103,32 @@ def _build_parser() -> argparse.ArgumentParser:
     scan_cmd = sub.add_parser("scan", help="Run security scanner only (no SBOM generation)")
     scan_cmd.add_argument("model_path", help="Path to model directory or file")
     scan_cmd.add_argument("--json-result", default=None, metavar="PATH")
+    scan_cmd.add_argument(
+        "--sarif",
+        default=None,
+        metavar="PATH",
+        help="Write SARIF 2.1.0 output to PATH",
+    )
+    scan_cmd.add_argument(
+        "--exit-2-on-unsafe",
+        action="store_true",
+        default=False,
+        help="Exit 2 on critical/high findings; exit 1 on other unsafe statuses",
+    )
+
+    # ── squash diff ───────────────────────────────────────────────────────────
+    diff_cmd = sub.add_parser(
+        "diff",
+        help="Compare two CycloneDX SBOM snapshots and report differences",
+    )
+    diff_cmd.add_argument("sbom_a", metavar="SBOM_A", help="Older (baseline) SBOM JSON file")
+    diff_cmd.add_argument("sbom_b", metavar="SBOM_B", help="Newer SBOM JSON file")
+    diff_cmd.add_argument(
+        "--exit-1-on-regression",
+        action="store_true",
+        default=False,
+        help="Exit 1 when new vulnerabilities are introduced or policy status worsens",
+    )
 
     return parser
 
@@ -183,7 +209,69 @@ def _cmd_scan(args: argparse.Namespace, quiet: bool) -> int:
         }
         Path(args.json_result).write_text(json.dumps(data, indent=2))
 
+    if args.sarif:
+        try:
+            from squish.squash.sarif import SarifBuilder
+        except ImportError as e:  # pragma: no cover
+            print(f"sarif export unavailable: {e}", file=sys.stderr)
+            return 2
+        SarifBuilder.write(result, Path(args.sarif))
+        if not quiet:
+            print(f"SARIF written to {args.sarif}")
+
+    if getattr(args, "exit_2_on_unsafe", False):
+        if result.critical_count > 0 or result.high_count > 0:
+            return 2
+        if not result.is_safe:
+            return 1
+        return 0
+
     return 0 if result.is_safe else 2
+
+
+def _cmd_diff(args: argparse.Namespace, quiet: bool) -> int:
+    try:
+        from squish.squash.sbom_builder import SbomDiff
+    except ImportError as e:
+        print(f"squash is not installed: {e}", file=sys.stderr)
+        return 2
+
+    path_a = Path(args.sbom_a)
+    path_b = Path(args.sbom_b)
+    for p in (path_a, path_b):
+        if not p.exists():
+            print(f"error: path does not exist: {p}", file=sys.stderr)
+            return 1
+
+    try:
+        bom_a = json.loads(path_a.read_text(encoding="utf-8"))
+        bom_b = json.loads(path_b.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"error reading SBOM: {e}", file=sys.stderr)
+        return 1
+
+    diff = SbomDiff.compare(bom_a, bom_b)
+
+    if not quiet:
+        print(f"hash changed:          {diff.hash_changed}")
+        print(f"score delta:           {diff.score_delta}")
+        print(f"policy status changed: {diff.policy_status_changed}")
+        if diff.new_findings:
+            print(f"new findings ({len(diff.new_findings)}):")
+            for fid in diff.new_findings:
+                print(f"  + {fid}")
+        if diff.resolved_findings:
+            print(f"resolved findings ({len(diff.resolved_findings)}):")
+            for fid in diff.resolved_findings:
+                print(f"  - {fid}")
+        if diff.metadata_changes:
+            print("metadata changes:")
+            for key, (old, new) in diff.metadata_changes.items():
+                print(f"  {key}: {old!r} → {new!r}")
+
+    if getattr(args, "exit_1_on_regression", False) and diff.has_regressions:
+        return 1
+    return 0
 
 
 def _cmd_attest(args: argparse.Namespace, quiet: bool) -> int:
@@ -269,6 +357,8 @@ def main() -> None:
         sys.exit(_cmd_policies(args, quiet))
     elif args.command == "scan":
         sys.exit(_cmd_scan(args, quiet))
+    elif args.command == "diff":
+        sys.exit(_cmd_diff(args, quiet))
     elif args.command == "attest":
         sys.exit(_cmd_attest(args, quiet))
     else:

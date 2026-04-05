@@ -1,0 +1,42 @@
+{
+  "model": "Qwen3-8B-int2",
+  "model_path": "/Users/wscholl/models/Qwen3-8B-int2",
+  "model_size_gb": 2.4,
+  "timestamp": "20260402T092852",
+  "limit": 500,
+  "platform": {
+    "platform": "macOS-26.4-arm64-arm-64bit",
+    "processor": "arm",
+    "ram_gb": 16,
+    "python": "3.12.8",
+    "mlx_lm": "0.30.7",
+    "lm_eval": "0.4.11"
+  },
+  "scores": {
+    "arc_easy": 28.8,
+    "arc_challenge": 25.4
+  },
+  "raw_results": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.254,
+      "acc_stderr,none": 0.01948659680164342,
+      "acc_norm,none": 0.288,
+      "acc_norm_stderr,none": 0.020271503835075255
+    },
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.19,
+      "acc_stderr,none": 0.01756180041075899,
+      "acc_norm,none": 0.254,
+      "acc_norm_stderr,none": 0.01948659680164342
+    }
+  },
+  "elapsed_s": 7450.626547574997,
+  "errors": {
+    "hellaswag": "mlx_lm exit code 1 | stderr: Fatal Python error: init_sys_streams: can't initialize sys standard streams\nPython runtime state: core initialized\nOSError: [Errno 9] Bad file descriptor\n\nCurrent thread 0x00000001f06fd8c0 (most recent call first):\n  <no Python frame>",
+    "winogrande": "mlx_lm exit code 1 | stderr: Fatal Python error: init_sys_streams: can't initialize sys standard streams\nPython runtime state: core initialized\nOSError: [Errno 9] Bad file descriptor\n\nCurrent thread 0x00000001f06fd8c0 (most recent call first):\n  <no Python frame>",
+    "piqa": "mlx_lm exit code 1 | stderr: Fatal Python error: init_sys_streams: can't initialize sys standard streams\nPython runtime state: core initialized\nOSError: [Errno 9] Bad file descriptor\n\nCurrent thread 0x00000001f06fd8c0 (most recent call first):\n  <no Python frame>",
+    "openbookqa": "mlx_lm exit code 1 | stderr: Fatal Python error: init_sys_streams: can't initialize sys standard streams\nPython runtime state: core initialized\nOSError: [Errno 9] Bad file descriptor\n\nCurrent thread 0x00000001f06fd8c0 (most recent call first):\n  <no Python frame>"
+  }
+}

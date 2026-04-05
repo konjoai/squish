@@ -56,14 +56,14 @@ torch_only = pytest.mark.skipif(not _HAS_TORCH, reason="torch not installed")
 class TestImportTorch:
     def test_raises_if_torch_missing(self):
         """_import_torch() raises RuntimeError when torch is not installed."""
-        from squish.torch_ops import _import_torch
+        from squish.experimental.torch_ops import _import_torch
         with patch.dict(sys.modules, {"torch": None}):
             with pytest.raises((RuntimeError, ImportError)):
                 _import_torch()
 
     @torch_only
     def test_returns_torch_when_available(self):
-        from squish.torch_ops import _import_torch
+        from squish.experimental.torch_ops import _import_torch
         t = _import_torch()
         import torch
         assert t is torch
@@ -82,7 +82,7 @@ class TestDequantizeInt4Asymmetric:
         mock_torch = _make_torch_mock()
         with patch.dict(sys.modules, {"torch": mock_torch}):
             # Reload to pick up mock (avoids cached import)
-            import squish.torch_ops as mod
+            import squish.experimental.torch_ops as mod
             importlib.reload(mod)
             result = mod.dequantize_int4_asymmetric_torch(
                 packed, scales, zero_points, group_size=group_size, device="cpu"
@@ -144,7 +144,7 @@ class TestDequantizeInt4Symmetric:
         import importlib
         mock_torch = _make_torch_mock()
         with patch.dict(sys.modules, {"torch": mock_torch}):
-            import squish.torch_ops as mod
+            import squish.experimental.torch_ops as mod
             importlib.reload(mod)
             return mod.dequantize_int4_torch(packed, scales, group_size=group_size)
 
@@ -180,7 +180,7 @@ class TestLoadedWeightToTorch:
         import importlib
         mock_torch = _make_torch_mock()
         with patch.dict(sys.modules, {"torch": mock_torch}):
-            import squish.torch_ops as mod
+            import squish.experimental.torch_ops as mod
             importlib.reload(mod)
             return mod.loaded_weight_to_torch(arr, device=device, dtype=dtype)
 

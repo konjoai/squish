@@ -180,13 +180,13 @@ class TestProbeLmStudio(unittest.TestCase):
 
     def test_not_running_returns_false(self):
         import urllib.error
-        from squish.serving.lm_studio_bridge import probe_lm_studio
+        from squish.experimental.lm_studio_bridge import probe_lm_studio
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
             status = probe_lm_studio()
         self.assertFalse(status.running)
 
     def test_not_running_never_raises(self):
-        from squish.serving.lm_studio_bridge import probe_lm_studio
+        from squish.experimental.lm_studio_bridge import probe_lm_studio
         with patch("urllib.request.urlopen", side_effect=OSError("no route")):
             try:
                 probe_lm_studio()
@@ -194,7 +194,7 @@ class TestProbeLmStudio(unittest.TestCase):
                 self.fail(f"probe_lm_studio raised {exc!r}")
 
     def test_running_returns_true(self):
-        from squish.serving.lm_studio_bridge import probe_lm_studio
+        from squish.experimental.lm_studio_bridge import probe_lm_studio
         payload = json.dumps({"data": [{"id": "lmstudio-community/gemma-2-2b-it-GGUF"}]}).encode()
         mock_resp = MagicMock()
         mock_resp.__enter__ = lambda s: s
@@ -206,7 +206,7 @@ class TestProbeLmStudio(unittest.TestCase):
         self.assertTrue(status.running)
 
     def test_running_populates_loaded_models(self):
-        from squish.serving.lm_studio_bridge import probe_lm_studio
+        from squish.experimental.lm_studio_bridge import probe_lm_studio
         payload = json.dumps({"data": [
             {"id": "lmstudio-community/gemma-2-2b-it-GGUF"},
             {"id": "meta-llama/Llama-3.2-3B-Instruct"},
@@ -223,7 +223,7 @@ class TestProbeLmStudio(unittest.TestCase):
 
     def test_base_url_env_override(self):
         import urllib.error
-        from squish.serving.lm_studio_bridge import probe_lm_studio
+        from squish.experimental.lm_studio_bridge import probe_lm_studio
         captured_urls: list[str] = []
 
         def _fake(req, timeout=0.8):
@@ -239,7 +239,7 @@ class TestProbeLmStudio(unittest.TestCase):
 
     def test_base_url_in_status(self):
         import urllib.error
-        from squish.serving.lm_studio_bridge import probe_lm_studio
+        from squish.experimental.lm_studio_bridge import probe_lm_studio
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("x")):
             status = probe_lm_studio()
         self.assertIn("1234", status.base_url)
@@ -252,12 +252,12 @@ class TestProbeLmStudio(unittest.TestCase):
 class TestLMStudioStatus(unittest.TestCase):
 
     def test_model_count_zero_when_not_running(self):
-        from squish.serving.lm_studio_bridge import LMStudioStatus
+        from squish.experimental.lm_studio_bridge import LMStudioStatus
         s = LMStudioStatus(running=False, base_url="http://127.0.0.1:1234")
         self.assertEqual(s.model_count, 0)
 
     def test_model_count_when_running(self):
-        from squish.serving.lm_studio_bridge import LMStudioStatus
+        from squish.experimental.lm_studio_bridge import LMStudioStatus
         s = LMStudioStatus(
             running=True,
             base_url="http://127.0.0.1:1234",
@@ -266,12 +266,12 @@ class TestLMStudioStatus(unittest.TestCase):
         self.assertEqual(s.model_count, 2)
 
     def test_str_not_running(self):
-        from squish.serving.lm_studio_bridge import LMStudioStatus
+        from squish.experimental.lm_studio_bridge import LMStudioStatus
         s = LMStudioStatus(running=False, base_url="http://127.0.0.1:1234")
         self.assertIn("not running", str(s).lower())
 
     def test_str_running_with_model(self):
-        from squish.serving.lm_studio_bridge import LMStudioStatus
+        from squish.experimental.lm_studio_bridge import LMStudioStatus
         s = LMStudioStatus(running=True, base_url="http://127.0.0.1:1234",
                            loaded_models=["gemma:2b"])
         out = str(s)
@@ -287,14 +287,14 @@ class TestLMStudioClient(unittest.TestCase):
 
     def test_models_returns_empty_when_not_running(self):
         import urllib.error
-        from squish.serving.lm_studio_bridge import LMStudioClient
+        from squish.experimental.lm_studio_bridge import LMStudioClient
         client = LMStudioClient()
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("x")):
             result = client.models()
         self.assertEqual(result, [])
 
     def test_models_returns_list_when_running(self):
-        from squish.serving.lm_studio_bridge import LMStudioClient
+        from squish.experimental.lm_studio_bridge import LMStudioClient
         payload = json.dumps({"data": [{"id": "gemma:2b"}, {"id": "llama3:8b"}]}).encode()
         mock_resp = MagicMock()
         mock_resp.__enter__ = lambda s: s
@@ -306,7 +306,7 @@ class TestLMStudioClient(unittest.TestCase):
         self.assertEqual(result[0]["id"], "gemma:2b")
 
     def test_chat_completions_sse_yields_tokens(self):
-        from squish.serving.lm_studio_bridge import LMStudioClient
+        from squish.experimental.lm_studio_bridge import LMStudioClient
 
         sse_lines = [
             b'data: {"choices":[{"delta":{"content":"Hello"}}]}\n',
@@ -326,7 +326,7 @@ class TestLMStudioClient(unittest.TestCase):
 
     def test_chat_completions_not_running_raises(self):
         import urllib.error
-        from squish.serving.lm_studio_bridge import LMStudioClient
+        from squish.experimental.lm_studio_bridge import LMStudioClient
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
             with self.assertRaises(ConnectionError):
                 list(LMStudioClient().chat_completions(
@@ -344,7 +344,7 @@ class TestCmdModelsLmStudio(unittest.TestCase):
 
     def _run_models(self, tmp_lms_root: Path) -> str:
         import squish.cli as cli
-        from squish.serving.lm_studio_bridge import LMStudioStatus
+        from squish.experimental.lm_studio_bridge import LMStudioStatus
         args = types.SimpleNamespace()
 
         # Make ~/models/ exist and be empty so the Squish section runs
@@ -365,7 +365,7 @@ class TestCmdModelsLmStudio(unittest.TestCase):
                             return_value=self._fake_lms_models(),
                         ):
                             with patch(
-                                "squish.serving.lm_studio_bridge.probe_lm_studio",
+                                "squish.experimental.lm_studio_bridge.probe_lm_studio",
                                 return_value=LMStudioStatus(running=False, base_url="http://127.0.0.1:1234"),
                             ):
                                 return _capture(cli.cmd_models, args)

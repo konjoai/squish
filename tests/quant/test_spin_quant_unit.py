@@ -7,7 +7,7 @@ import sys
 import numpy as np
 import pytest
 
-from squish.quant.spin_quant import (
+from squish.experimental.spin_quant import (
     _apply_rotations,
     _build_rotation_matrices,
     _cayley_update,

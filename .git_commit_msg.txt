@@ -1,0 +1,30 @@
+feat(squash): Phase 4 retroactive sidecar backfill + EvalBinder auto-wiring
+
+- dev/squash_backfill.py: generates cyclonedx-mlbom.json sidecars for all
+  existing model dirs under ~/models that contain weight files, then calls
+  EvalBinder.bind() for every dir with a matching complete lmeval result.
+  Flags: --no-overwrite, --dry-run, --quiet. Lives in dev/ -- zero new
+  squish/ modules consumed.
+
+- dev/benchmarks/bench_lmeval_all_models.py: _save_model_result() now calls
+  EvalBinder.bind() immediately after writing each result JSON, if the model
+  dir already has a sidecar. Non-fatal try/except -- squash failures never
+  abort a bench run.
+
+- tests/test_squash_backfill.py: 6 tests covering sidecar generation,
+  bind-on-result, no-overwrite guard, no-result skip, dry-run no-write,
+  and missing-dir MISSING status.
+
+Results: 26 sidecars written across ~/models; 22 with scores bound.
+6 priority models fully populated:
+  Qwen3-0.6B-int4:   6 metrics  arc_easy=35.0
+  Qwen3-0.6B-int3:   6 metrics  arc_easy=37.2  delta=+2.2
+  Llama-3.2-1B-int4: 6 metrics  arc_easy=40.8
+  Llama-3.2-1B-int3: 6 metrics  arc_easy=37.4  delta=-3.4
+  Qwen2.5-1.5B-int4: 6 metrics  arc_easy=70.6
+  Qwen2.5-1.5B-int3: 6 metrics  arc_easy=67.2  delta=-3.4
+
+36/36 squash tests passing. Module count: 97/100.
+
+lm_eval-waiver: no inference path or quantization logic changed
+expected-delta: 0pp (weights untouched; sidecars live outside repo)

@@ -15,7 +15,7 @@ For the REST microservice:
     uvicorn squish.squash.api:app --host 0.0.0.0 --port 4444
 """
 
-from squish.squash.sbom_builder import CompressRunMeta, CycloneDXBuilder
+from squish.squash.sbom_builder import CompressRunMeta, CycloneDXBuilder, SbomDiff
 from squish.squash.eval_binder import EvalBinder
 from squish.squash.oms_signer import OmsSigner
 from squish.squash.governor import SquashGovernor
@@ -26,7 +26,9 @@ from squish.squash.policy import (
     AVAILABLE_POLICIES,
     PolicyEngine,
     PolicyFinding,
+    PolicyHistory,
     PolicyResult,
+    PolicyRegistry,
 )
 from squish.squash.scanner import ModelScanner, ScanFinding, ScanResult
 from squish.squash.vex import (
@@ -49,6 +51,7 @@ from squish.squash.attest import (
     AttestResult,
     AttestationViolationError,
 )
+from squish.squash.sarif import SarifBuilder
 
 __all__ = [
     # Phase 1–3 (existing)
@@ -87,4 +90,9 @@ __all__ = [
     "AttestConfig",
     "AttestResult",
     "AttestationViolationError",
+    # Wave 11: SARIF export
+    "SarifBuilder",
+    # Wave 12: SBOM diff + policy history
+    "SbomDiff",
+    "PolicyHistory",
 ]

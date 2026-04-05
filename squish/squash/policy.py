@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import logging
 import re
+import datetime
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -671,3 +673,69 @@ def _check(
         return actual in allowed
     log.warning("Unknown check type '%s' — treating as failed", check_type)
     return False
+
+
+# ── Policy history ────────────────────────────────────────────────────────────
+
+
+class PolicyHistory:
+    """Persistent log of :class:`PolicyResult` evaluations tied to a model.
+
+    Results are persisted as newline-delimited JSON (ndjson) at *log_path*.
+    Each line is a JSON object with the fields:
+    ``{"ts": "<iso8601>", "model": "<path>", "policy": "<name>",
+       "passed": bool, "errors": int, "warnings": int}``
+    """
+
+    def __init__(self, log_path: Path) -> None:
+        self._path = Path(log_path)
+
+    # ------------------------------------------------------------------ write
+
+    def append(self, result: "PolicyResult", model_path: str) -> None:
+        """Append *result* for *model_path* to the history log."""
+        record = {
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "model": model_path,
+            "policy": result.policy_name,
+            "passed": result.passed,
+            "errors": result.error_count,
+            "warnings": result.warning_count,
+        }
+        with self._path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+
+    # ------------------------------------------------------------------ read
+
+    def _iter_records(self) -> list[dict[str, Any]]:
+        if not self._path.exists():
+            return []
+        records: list[dict[str, Any]] = []
+        for raw in self._path.read_text(encoding="utf-8").splitlines():
+            raw = raw.strip()
+            if raw:
+                try:
+                    records.append(json.loads(raw))
+                except json.JSONDecodeError:
+                    pass
+        return records
+
+    def regressions_since(
+        self, since: datetime.datetime
+    ) -> list[dict[str, Any]]:
+        """Return all failed records written after *since*.
+
+        *since* must be timezone-aware.  The comparison is done in UTC.
+        """
+        since_utc = since.astimezone(datetime.timezone.utc)
+        return [
+            r
+            for r in self._iter_records()
+            if not r.get("passed", True)
+            and datetime.datetime.fromisoformat(r["ts"]) >= since_utc
+        ]
+
+    def latest(self, model_path: str) -> "dict[str, Any] | None":
+        """Return the most recent record for *model_path*, or ``None``."""
+        matches = [r for r in self._iter_records() if r.get("model") == model_path]
+        return matches[-1] if matches else None

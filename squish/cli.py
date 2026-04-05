@@ -549,7 +549,7 @@ def cmd_models(args):
     # ── External models (Ollama / LM Studio) ─────────────────────────────────
     try:
         from squish.serving.local_model_scanner import LocalModelScanner as _Scn
-        from squish.serving.lm_studio_bridge import probe_lm_studio as _probe_lms
+        from squish.experimental.lm_studio_bridge import probe_lm_studio as _probe_lms
         _ext = _Scn()
         _ext_models = _ext.scan_ollama() + _ext.scan_lm_studio()
         if _ext_models:
@@ -621,7 +621,7 @@ def cmd_lm(args) -> None:
     status  (default) — live probe + disk inventory
     models             — disk inventory only (no network call)
     """
-    from squish.serving.lm_studio_bridge import probe_lm_studio
+    from squish.experimental.lm_studio_bridge import probe_lm_studio
     from squish.serving.local_model_scanner import LocalModelScanner
     try:
         from squish.ui import console as _con, make_table as _mt, _RICH_AVAILABLE as _rich
@@ -2387,7 +2387,7 @@ def cmd_compress(args):  # pragma: no cover
     elif _compress_format in ("astc", "hybrid"):
         # ASTC / hybrid: check hardware capability; fall back to INT4 if unsupported
         try:
-            from squish.loaders.astc_loader import ASTCLoader
+            from squish.experimental.astc_loader import ASTCLoader
             _loader = ASTCLoader()
             if not _loader.supports_astc_6x6_hdr():
                 print(
@@ -3922,7 +3922,7 @@ def _preoptimize_weights_with_hqq(
 
     import numpy as _np
 
-    from squish.quant.hqq_quant import HQQConfig, HQQQuantizer
+    from squish.experimental.hqq_quant import HQQConfig, HQQQuantizer
 
     _FFN_PATTERNS = ("gate_proj", "up_proj", "down_proj")
 
@@ -4405,7 +4405,7 @@ def cmd_check_model(args):
         configs_to_test = [("(assumed 4-bit)", 4, 64)]
 
     try:
-        from squish.quant.hqq_quant import HQQConfig, HQQQuantizer
+        from squish.experimental.hqq_quant import HQQConfig, HQQQuantizer
         _rng = _np.random.default_rng(42)
         for label, bits, gs in configs_to_test:
             if bits is None:
@@ -4424,7 +4424,7 @@ def cmd_check_model(args):
                 _flag = "  ← caution: low SNR, use --hqq and --attn-bits 4"
             print(f"    {label:<20}: SNR={_snr:+.1f} dB  rel_err={_lerr:.4f}{_flag}")
     except ImportError:
-        print("    (HQQ simulation unavailable — squish.quant.hqq_quant not found)")
+        print("    (HQQ simulation unavailable — squish.experimental.hqq_quant not found)")
 
     print()
     print("  Tip: use `squish quantize --hqq --ffn-bits 2 --attn-bits 4` for best INT2 quality.")
@@ -4691,12 +4691,12 @@ def cmd_rotate(args):  # pragma: no cover
     After rotation the model is functionally identical but quantizes ~1.5–3×
     more accurately than the unrotated version.
 
-    Under the hood this calls :mod:`squish.quant.spin_quant.run_rotation`.
+    Under the hood this calls :mod:`squish.experimental.spin_quant.run_rotation`.
     """
     try:
-        from squish.quant.spin_quant import run_rotation
+        from squish.experimental.spin_quant import run_rotation
     except ImportError as exc:
-        print(f"\n  Error: could not import squish.quant.spin_quant — {exc}")
+        print(f"\n  Error: could not import squish.experimental.spin_quant — {exc}")
         print("  Make sure the squish package is installed.")
         sys.exit(1)
 

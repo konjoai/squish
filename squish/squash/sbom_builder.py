@@ -23,7 +23,7 @@ import datetime
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -266,3 +266,104 @@ class CycloneDXBuilder:
             ],
         }
         return bom
+
+
+@dataclass
+class SbomDiff:
+    """Difference between two CycloneDX SBOM snapshots.
+
+    Produced by :meth:`compare`.  All lists contain human-readable summary
+    strings suitable for display or logging.
+    """
+
+    hash_changed: bool
+    score_delta: float | None
+    policy_status_changed: bool
+    new_findings: list[str] = field(default_factory=list)
+    resolved_findings: list[str] = field(default_factory=list)
+    metadata_changes: dict[str, tuple[Any, Any]] = field(default_factory=dict)
+
+    @property
+    def has_regressions(self) -> bool:
+        """True when any findings were introduced or policy status worsened."""
+        return bool(self.new_findings) or (
+            self.policy_status_changed and self.score_delta is not None and self.score_delta < 0
+        )
+
+    @staticmethod
+    def compare(bom_a: dict[str, Any], bom_b: dict[str, Any]) -> "SbomDiff":
+        """Compare two CycloneDX BOM dicts and return a :class:`SbomDiff`.
+
+        *bom_a* is the older (baseline) snapshot; *bom_b* is the newer one.
+        Both must be dicts as produced by :meth:`CycloneDXBuilder.build`.
+        """
+
+        def _component(bom: dict[str, Any]) -> dict[str, Any]:
+            comps = bom.get("components", [])
+            return comps[0] if comps else {}
+
+        comp_a = _component(bom_a)
+        comp_b = _component(bom_b)
+
+        # ── hash changed? ──────────────────────────────────────────────────
+        def _hash(comp: dict[str, Any]) -> str:
+            for h in comp.get("hashes", []):
+                if h.get("alg") in ("SHA-256", "SHA-512"):
+                    return h.get("content", "")
+            return ""
+
+        hash_changed = _hash(comp_a) != _hash(comp_b)
+
+        # ── performance score delta ────────────────────────────────────────
+        def _score(comp: dict[str, Any]) -> float | None:
+            qa = comp.get("modelCard", {}).get("quantitativeAnalysis", {})
+            metrics = qa.get("performanceMetrics", [])
+            for m in metrics:
+                if m.get("type") in ("arc_easy", "accuracy"):
+                    v = m.get("value")
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        pass
+            return None
+
+        score_a, score_b = _score(comp_a), _score(comp_b)
+        score_delta: float | None = None
+        if score_a is not None and score_b is not None:
+            score_delta = round(score_b - score_a, 4)
+
+        # ── vulnerabilities ────────────────────────────────────────────────
+        def _vuln_ids(bom: dict[str, Any]) -> set[str]:
+            return {v.get("id", "") for v in bom.get("vulnerabilities", [])}
+
+        ids_a, ids_b = _vuln_ids(bom_a), _vuln_ids(bom_b)
+        new_findings = sorted(ids_b - ids_a)
+        resolved_findings = sorted(ids_a - ids_b)
+
+        # ── policy status changed? ─────────────────────────────────────────
+        def _policy_status(bom: dict[str, Any]) -> str:
+            for prop in bom.get("metadata", {}).get("properties", []):
+                if prop.get("name") == "squash:policy_result":
+                    return prop.get("value", "")
+            return ""
+
+        ps_a, ps_b = _policy_status(bom_a), _policy_status(bom_b)
+        policy_status_changed = ps_a != ps_b
+
+        # ── other metadata changes ─────────────────────────────────────────
+        meta_a = bom_a.get("metadata", {})
+        meta_b = bom_b.get("metadata", {})
+        metadata_changes: dict[str, tuple[Any, Any]] = {}
+        for key in ("timestamp", "version"):
+            va, vb = meta_a.get(key), meta_b.get(key)
+            if va != vb:
+                metadata_changes[key] = (va, vb)
+
+        return SbomDiff(
+            hash_changed=hash_changed,
+            score_delta=score_delta,
+            policy_status_changed=policy_status_changed,
+            new_findings=new_findings,
+            resolved_findings=resolved_findings,
+            metadata_changes=metadata_changes,
+        )

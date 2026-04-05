@@ -34,15 +34,16 @@ import json
 import logging
 import os
 import tempfile
+import time
 import uuid
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 try:
     from fastapi import FastAPI, HTTPException, Request
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, PlainTextResponse
     from pydantic import BaseModel, Field
 except ImportError as _e:
     raise ImportError(
@@ -64,6 +65,26 @@ _executor = ThreadPoolExecutor(max_workers=int(os.getenv("SQUASH_WORKERS", "4"))
 _SCAN_JOB_LIMIT = int(os.getenv("SQUASH_SCAN_JOB_LIMIT", "1000"))
 _scan_jobs: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
+# Set SQUASH_API_TOKEN in the environment to enable bearer token auth.
+# Paths listed here bypass auth (health probes, OpenAPI schema, metrics).
+_UNAUTHED_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json", "/metrics"})
+
+# ── Rate limiter ──────────────────────────────────────────────────────────────
+# SQUASH_RATE_LIMIT requests per 60-second sliding window per client IP.
+_RATE_LIMIT = int(os.environ.get("SQUASH_RATE_LIMIT", "60"))
+_rate_window: dict[str, deque] = defaultdict(deque)
+
+# ── Prometheus-style counters ─────────────────────────────────────────────────
+_COUNTERS: dict[str, int] = {
+    "squash_attest_total": 0,
+    "squash_scan_total": 0,
+    "squash_policy_evaluate_total": 0,
+    "squash_vex_evaluate_total": 0,
+    "squash_sbom_diff_total": 0,
+    "squash_policy_violations_total": 0,
+}
+
 app = FastAPI(
     title="Squash — AI-SBOM Attestation API",
     description=(
@@ -75,6 +96,42 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Middleware — auth + rate limiter
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@app.middleware("http")
+async def _security_middleware(request: Request, call_next):
+    """Bearer token auth and per-IP sliding-window rate limiter."""
+    path = request.url.path
+
+    # ── Rate limit (applied before auth) ──────────────────────────────────────
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    window = _rate_window[client_ip]
+    cutoff = now - 60.0
+    while window and window[0] < cutoff:
+        window.popleft()
+    if len(window) >= _RATE_LIMIT:
+        retry_after = int(60 - (now - window[0])) + 1
+        return JSONResponse(
+            {"detail": "Rate limit exceeded"},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+    window.append(now)
+
+    # ── Bearer token auth ─────────────────────────────────────────────────────
+    token = os.environ.get("SQUASH_API_TOKEN", "")
+    if token and path not in _UNAUTHED_PATHS:
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {token}":
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    return await call_next(request)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -125,6 +182,12 @@ class VexEvaluateRequest(BaseModel):
     vex_feed_url: str = Field(default="", description="HTTPS URL to remote VEX feed")
 
 
+class SbomDiffRequest(BaseModel):
+    """Two SBOM file paths to compare."""
+    sbom_a_path: str = Field(description="Path to the older (baseline) CycloneDX BOM JSON")
+    sbom_b_path: str = Field(description="Path to the newer CycloneDX BOM JSON")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────────────────────────────────────
@@ -134,6 +197,16 @@ class VexEvaluateRequest(BaseModel):
 async def health() -> dict[str, str]:
     """Liveness probe."""
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+async def metrics() -> PlainTextResponse:
+    """Prometheus-compatible counter export."""
+    lines: list[str] = []
+    for name, value in _COUNTERS.items():
+        lines.append(f"# TYPE {name} counter")
+        lines.append(f"{name} {value}")
+    return PlainTextResponse("\n".join(lines) + "\n")
 
 
 @app.get("/policies")
@@ -176,6 +249,7 @@ async def attest(req: AttestRequest) -> JSONResponse:
 
     master_data = _result_to_dict(result)
 
+    _COUNTERS["squash_attest_total"] += 1
     if req.fail_on_violation and not result.passed:
         return JSONResponse(status_code=422, content=master_data)
 
@@ -234,6 +308,7 @@ async def scan(req: ScanRequest) -> JSONResponse:
             log.warning("scan job %s failed: %s", job_id, exc)
             _scan_jobs[job_id] = {"status": "error", "result": {"error": str(exc)}}
 
+    _COUNTERS["squash_scan_total"] += 1
     loop.run_in_executor(_executor, _do_scan)
     return JSONResponse(status_code=202, content={"job_id": job_id})
 
@@ -256,6 +331,32 @@ async def scan_result(job_id: str) -> JSONResponse:
         return JSONResponse(status_code=202, content={"status": "pending"})
 
     return JSONResponse(content={"status": job["status"], "result": job["result"]})
+
+
+@app.get("/scan/{job_id}/sarif")
+async def scan_result_sarif(job_id: str) -> JSONResponse:
+    """Return the SARIF 2.1.0 representation of a completed scan job.
+
+    Responses:
+    - ``200``  SARIF document (``application/json``)
+    - ``202``  scan still pending
+    - ``404``  job_id unknown
+    - ``400``  job ended with an error (no scan result to convert)
+    """
+    from squish.squash.sarif import SarifBuilder  # noqa: PLC0415
+
+    job = _scan_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job_id: {job_id}")
+    if job["status"] == "pending":
+        return JSONResponse(status_code=202, content={"status": "pending"})
+    if job["status"] == "error":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Scan job {job_id} ended with an error: {job['result'].get('error', 'unknown')}",
+        )
+    sarif = SarifBuilder.from_payload(job["result"])
+    return JSONResponse(content=sarif)
 
 
 @app.post("/policy/evaluate")
@@ -289,6 +390,9 @@ async def evaluate_policy(req: PolicyEvaluateRequest) -> JSONResponse:
             )
         policy_result = PolicyEngine.evaluate(req.sbom, req.policy)
 
+    _COUNTERS["squash_policy_evaluate_total"] += 1
+    if not policy_result.passed:
+        _COUNTERS["squash_policy_violations_total"] += policy_result.error_count
     status_code = 200 if policy_result.passed else 422
     return JSONResponse(
         status_code=status_code,
@@ -369,8 +473,39 @@ async def evaluate_vex(req: VexEvaluateRequest) -> JSONResponse:
         report = VexEvaluator.evaluate(feed, inv)
         return report.to_dict()
 
+    _COUNTERS["squash_vex_evaluate_total"] += 1
     report_dict = await loop.run_in_executor(_executor, _run_vex)
     return JSONResponse(content=report_dict)
+
+
+@app.post("/sbom/diff")
+async def sbom_diff(req: SbomDiffRequest) -> JSONResponse:
+    """Compare two CycloneDX BOMs and return a diff summary."""
+    from squish.squash.sbom_builder import SbomDiff
+
+    _require_path(req.sbom_a_path)
+    _require_path(req.sbom_b_path)
+
+    def _run() -> dict:
+        with open(req.sbom_a_path) as fh:
+            bom_a = json.load(fh)
+        with open(req.sbom_b_path) as fh:
+            bom_b = json.load(fh)
+        diff = SbomDiff.compare(bom_a, bom_b)
+        return {
+            "hash_changed": diff.hash_changed,
+            "score_delta": diff.score_delta,
+            "policy_status_changed": diff.policy_status_changed,
+            "new_findings": diff.new_findings,
+            "resolved_findings": diff.resolved_findings,
+            "metadata_changes": {k: list(v) for k, v in diff.metadata_changes.items()},
+            "has_regressions": diff.has_regressions,
+        }
+
+    _COUNTERS["squash_sbom_diff_total"] += 1
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(_executor, _run)
+    return JSONResponse(content=result)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
