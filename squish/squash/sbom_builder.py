@@ -22,10 +22,13 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 # Weight-file extensions to hash.  Covers npy-dir (tensors/*.npy),
 # native MLX safetensors dirs, and GGUF single-file downloads.
@@ -367,3 +370,272 @@ class SbomDiff:
             resolved_findings=resolved_findings,
             metadata_changes=metadata_changes,
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 19 — EvalBinder (moved from eval_binder.py; shim retained for compat)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class EvalBinder:
+    """Mutate an existing CycloneDX ML-BOM sidecar with lm_eval task scores.
+
+    All methods are static — the class is a namespace, not a stateful object.
+
+    Previously lived in ``squish.squash.eval_binder``; that module is now a
+    backward-compatible re-export shim.
+    """
+
+    @staticmethod
+    def bind(
+        bom_path: Path,
+        lmeval_json_path: Path,
+        baseline_path: Path | None = None,
+    ) -> None:
+        """Add or replace ``performanceMetrics`` entries in *bom_path*.
+
+        Parameters
+        ----------
+        bom_path:
+            Path to ``cyclonedx-mlbom.json`` written by Phase 1.
+        lmeval_json_path:
+            Path to a squish lmeval JSON result file.
+            Expected schema::
+
+                {
+                  "scores": {"arc_easy": 70.6, ...},
+                  "raw_results": {"arc_easy": {"acc_norm_stderr,none": 0.02, ...}}
+                }
+
+        baseline_path:
+            Optional second lmeval JSON for a higher-precision reference.
+            Adds ``deltaFromBaseline`` keys when present.
+
+        Raises
+        ------
+        FileNotFoundError
+            If *bom_path* or *lmeval_json_path* does not exist.
+        json.JSONDecodeError
+            If any of the JSON files is malformed.
+        """
+        bom: dict = json.loads(bom_path.read_text())
+        lmeval: dict = json.loads(lmeval_json_path.read_text())
+
+        baseline_scores: dict[str, float] | None = None
+        if baseline_path is not None:
+            baseline_scores = json.loads(baseline_path.read_text()).get("scores", {})
+
+        scores: dict[str, float] = lmeval.get("scores", {})
+        raw_results: dict = lmeval.get("raw_results", {})
+
+        metrics: list[dict] = []
+        for task, score in scores.items():
+            entry: dict = {
+                "type": "accuracy",
+                "value": str(round(score, 1)),
+                "slice": task,
+            }
+            raw_task: dict = raw_results.get(task, {})
+            stderr_frac: float | None = raw_task.get("acc_norm_stderr,none")
+            if stderr_frac is not None:
+                half = round(1.96 * stderr_frac * 100, 1)
+                entry["confidenceInterval"] = {
+                    "lowerBound": str(round(score - half, 1)),
+                    "upperBound": str(round(score + half, 1)),
+                }
+            if baseline_scores is not None and task in baseline_scores:
+                delta = round(score - baseline_scores[task], 1)
+                sign = "+" if delta >= 0 else ""
+                entry["deltaFromBaseline"] = f"{sign}{delta}"
+            metrics.append(entry)
+
+        component: dict = bom["components"][0]
+        component["modelCard"]["quantitativeAnalysis"]["performanceMetrics"] = metrics
+
+        tmp = bom_path.with_suffix(".tmp")
+        try:
+            tmp.write_text(json.dumps(bom, indent=2))
+            tmp.rename(bom_path)
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise
+
+        log.debug(
+            "EvalBinder: wrote %d performanceMetrics entries to %s",
+            len(metrics),
+            bom_path,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 19 — SbomRegistry: push CycloneDX BOMs to external registries
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SbomRegistry:
+    """Push CycloneDX BOM documents to SBOM registries via stdlib urllib.
+
+    Three registry protocols are supported:
+
+    * **Dependency-Track** (``dtrack``) — REST API v4, ``PUT /api/v1/bom``
+    * **GUAC** (``guac``) — HTTP POST to the GUAC ingest endpoint
+    * **Squash registry** (``squash``) — generic authenticated POST endpoint
+
+    All methods are static — the class is a namespace, not a stateful object.
+    """
+
+    TIMEOUT_SECONDS: int = 30
+
+    @staticmethod
+    def push_dtrack(
+        bom_path: Path,
+        base_url: str,
+        api_key: str,
+        project_name: str = "squash",
+    ) -> str:
+        """Upload *bom_path* to a Dependency-Track instance.
+
+        Parameters
+        ----------
+        bom_path:
+            Path to ``cyclonedx-mlbom.json`` (or any CycloneDX JSON).
+        base_url:
+            Root URL of the DTrack instance, e.g. ``https://dtrack.example.com``.
+        api_key:
+            DTrack API key with BOM:UPLOAD permission.
+        project_name:
+            Optional project name override (default: ``"squash"``).
+
+        Returns
+        -------
+        str
+            The URL where the BOM is visible in Dependency-Track.
+
+        Raises
+        ------
+        RuntimeError
+            On HTTP errors or network failures.
+        """
+        import base64
+        import urllib.error
+        import urllib.request
+
+        bom_data = bom_path.read_bytes()
+        b64_bom = base64.b64encode(bom_data).decode("ascii")
+
+        import json as _json
+        payload = _json.dumps({
+            "projectName": project_name,
+            "autoCreate": True,
+            "bom": b64_bom,
+        }).encode("utf-8")
+
+        url = base_url.rstrip("/") + "/api/v1/bom"
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            method="PUT",
+            headers={
+                "X-Api-Key": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=SbomRegistry.TIMEOUT_SECONDS) as resp:  # noqa: S310
+                if not (200 <= resp.status < 300):
+                    raise RuntimeError(f"DTrack returned HTTP {resp.status}")
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"DTrack HTTP error {e.code}: {e.reason}") from e
+
+        return f"{base_url.rstrip('/')}/projects?name={project_name}"
+
+    @staticmethod
+    def push_guac(
+        bom_path: Path,
+        endpoint_url: str,
+    ) -> str:
+        """POST *bom_path* to a GUAC ingest HTTP endpoint.
+
+        Parameters
+        ----------
+        bom_path:
+            Path to ``cyclonedx-mlbom.json``.
+        endpoint_url:
+            GUAC ingest endpoint, e.g. ``http://guac.internal/api/v1/upload``.
+
+        Returns
+        -------
+        str
+            The endpoint URL (GUAC does not return a canonical BOM URL).
+
+        Raises
+        ------
+        RuntimeError
+            On HTTP errors or network failures.
+        """
+        import urllib.error
+        import urllib.request
+
+        bom_data = bom_path.read_bytes()
+        req = urllib.request.Request(
+            endpoint_url,
+            data=bom_data,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=SbomRegistry.TIMEOUT_SECONDS) as resp:  # noqa: S310
+                if not (200 <= resp.status < 300):
+                    raise RuntimeError(f"GUAC returned HTTP {resp.status}")
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"GUAC HTTP error {e.code}: {e.reason}") from e
+
+        return endpoint_url
+
+    @staticmethod
+    def push_squash(
+        bom_path: Path,
+        registry_url: str,
+        token: str,
+    ) -> str:
+        """POST *bom_path* to a Squash-compatible BOM registry.
+
+        Parameters
+        ----------
+        bom_path:
+            Path to ``cyclonedx-mlbom.json``.
+        registry_url:
+            Squash registry endpoint.
+        token:
+            Bearer token for ``Authorization: Bearer <token>`` header.
+
+        Returns
+        -------
+        str
+            *registry_url* (echo-back; response body is not parsed).
+
+        Raises
+        ------
+        RuntimeError
+            On HTTP errors or network failures.
+        """
+        import urllib.error
+        import urllib.request
+
+        bom_data = bom_path.read_bytes()
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        req = urllib.request.Request(
+            registry_url,
+            data=bom_data,
+            method="POST",
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=SbomRegistry.TIMEOUT_SECONDS) as resp:  # noqa: S310
+                if not (200 <= resp.status < 300):
+                    raise RuntimeError(f"Squash registry returned HTTP {resp.status}")
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"Squash registry HTTP error {e.code}: {e.reason}") from e
+
+        return registry_url

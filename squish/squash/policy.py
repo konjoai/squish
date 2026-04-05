@@ -739,3 +739,110 @@ class PolicyHistory:
         """Return the most recent record for *model_path*, or ``None``."""
         matches = [r for r in self._iter_records() if r.get("model") == model_path]
         return matches[-1] if matches else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 17 — PolicyWebhook: outbound HTTP alerting
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PolicyWebhook:
+    """Send policy evaluation results as JSON POST webhooks.
+
+    Uses stdlib ``urllib.request`` — zero external dependencies.
+
+    Two entry points:
+
+    * :meth:`notify` — structured payload from a :class:`PolicyResult`.
+    * :meth:`notify_raw` — send an arbitrary dict to any URL (used by the API).
+
+    The payload format follows a simple envelope::
+
+        {
+          "event": "squash.policy.result",
+          "model_path": "...",
+          "policy": "enterprise-strict",
+          "passed": false,
+          "error_count": 3,
+          "warning_count": 1,
+          "timestamp": "2026-01-01T00:00:00+00:00"
+        }
+
+    The webhook URL can be set via the ``SQUASH_WEBHOOK_URL`` environment
+    variable, or passed explicitly.
+    """
+
+    TIMEOUT_SECONDS: int = 5
+    _ENV_KEY: str = "SQUASH_WEBHOOK_URL"
+
+    @staticmethod
+    def notify(
+        result: "PolicyResult",
+        model_path: str,
+        webhook_url: str | None = None,
+    ) -> bool:
+        """Send a structured webhook for *result*.
+
+        Parameters
+        ----------
+        result:
+            The :class:`PolicyResult` to report.
+        model_path:
+            Human-readable model path / identifier to include in the payload.
+        webhook_url:
+            Explicit URL.  Falls back to ``SQUASH_WEBHOOK_URL`` env var.
+            Returns ``False`` immediately if no URL is available.
+
+        Returns
+        -------
+        bool
+            ``True`` if the webhook was delivered (2xx response), ``False``
+            otherwise.  Never raises.
+        """
+        import datetime as _dt
+        import os
+
+        url = webhook_url or os.environ.get(PolicyWebhook._ENV_KEY, "")
+        if not url:
+            return False
+
+        payload: dict[str, Any] = {
+            "event": "squash.policy.result",
+            "model_path": str(model_path),
+            "policy": result.policy_name,
+            "passed": result.passed,
+            "error_count": result.error_count,
+            "warning_count": result.warning_count,
+            "pass_count": result.pass_count,
+            "timestamp": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        }
+        return PolicyWebhook.notify_raw(payload, url)
+
+    @staticmethod
+    def notify_raw(payload: dict[str, Any], webhook_url: str) -> bool:
+        """POST *payload* as JSON to *webhook_url*.
+
+        Returns ``True`` on a 2xx response, ``False`` on any error (network,
+        timeout, non-2xx status).  Never raises.
+        """
+        import urllib.error
+        import urllib.request
+
+        if not webhook_url:
+            return False
+
+        try:
+            body = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                webhook_url,
+                data=body,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=PolicyWebhook.TIMEOUT_SECONDS) as resp:  # noqa: S310
+                return 200 <= resp.status < 300
+        except urllib.error.HTTPError as e:
+            log.warning("PolicyWebhook: HTTP %s for %s", e.code, webhook_url)
+            return False
+        except Exception as e:
+            log.warning("PolicyWebhook: delivery failed for %s — %s", webhook_url, e)
+            return False

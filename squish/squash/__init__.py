@@ -15,9 +15,8 @@ For the REST microservice:
     uvicorn squish.squash.api:app --host 0.0.0.0 --port 4444
 """
 
-from squish.squash.sbom_builder import CompressRunMeta, CycloneDXBuilder, SbomDiff
-from squish.squash.eval_binder import EvalBinder
-from squish.squash.oms_signer import OmsSigner
+from squish.squash.sbom_builder import CompressRunMeta, CycloneDXBuilder, SbomDiff, SbomRegistry, EvalBinder
+from squish.squash.oms_signer import OmsSigner, OmsVerifier
 from squish.squash.governor import SquashGovernor
 
 # Phase 7 exports — lazy-guarded; raise ImportError at access time if cyclonedx absent
@@ -29,11 +28,13 @@ from squish.squash.policy import (
     PolicyHistory,
     PolicyResult,
     PolicyRegistry,
+    PolicyWebhook,
 )
 from squish.squash.scanner import ModelScanner, ScanFinding, ScanResult
 from squish.squash.vex import (
     ModelInventory,
     ModelInventoryEntry,
+    VexCache,
     VexDocument,
     VexEvaluator,
     VexFeed,
@@ -50,8 +51,12 @@ from squish.squash.attest import (
     AttestPipeline,
     AttestResult,
     AttestationViolationError,
+    CompositeAttestConfig,
+    CompositeAttestPipeline,
+    CompositeAttestResult,
 )
 from squish.squash.sarif import SarifBuilder
+from squish.squash.report import ComplianceReporter
 
 __all__ = [
     # Phase 1–3 (existing)
@@ -95,4 +100,18 @@ __all__ = [
     # Wave 12: SBOM diff + policy history
     "SbomDiff",
     "PolicyHistory",
+    # Wave 14: Sigstore verify
+    "OmsVerifier",
+    # Wave 15: HTML compliance report
+    "ComplianceReporter",
+    # Wave 16: VEX cache
+    "VexCache",
+    # Wave 17: Policy webhooks
+    "PolicyWebhook",
+    # Wave 18: Composite attestation
+    "CompositeAttestConfig",
+    "CompositeAttestPipeline",
+    "CompositeAttestResult",
+    # Wave 19: SBOM registry push
+    "SbomRegistry",
 ]

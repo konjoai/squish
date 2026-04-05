@@ -5,6 +5,66 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Waves 14–19: Sigstore Verify, Compliance Report, VEX Cache, Webhooks, Composite Attestation, Registry Push
+
+### Added — Wave 14: Sigstore Verification
+
+- **`squash/oms_signer.py`** — `OmsVerifier` class: static `verify(bom_path, bundle_path=None) → bool | None`. Returns `True` on pass, `False` on failure, `None` when no bundle exists (signing is optional). Requires optional `sigstore` package; degrades gracefully when absent.
+- **`squash/cli.py`** — `squash verify BOM_PATH [--bundle PATH]` subcommand.
+- **`squash/api.py`** — `POST /attest/verify` endpoint: accepts `{bom_path, bundle_path}`, returns `{verified, status}`.
+
+### Added — Wave 15: HTML Compliance Report
+
+- **`squash/report.py`** — `ComplianceReporter` class: `generate_html(model_dir) → str` and `write(model_dir, output_path=None) → Path`. Reads attestation artifacts from a model directory and produces a self-contained HTML report with inline CSS. Handles missing artifacts gracefully. All user-supplied strings are HTML-escaped (XSS safe). Zero external dependencies.
+- **`squash/cli.py`** — `squash report MODEL_DIR [--output PATH] [--json]` subcommand.
+- **`squash/api.py`** — `GET /report` endpoint: accepts `?model_dir=` query param, returns HTML or JSON report.
+
+### Added — Wave 16: VEX Lifecycle Cache
+
+- **`squash/vex.py`** — `VexCache` class: `load_or_fetch(url, *, timeout, ca_bundle, force) → VexFeed`. Caches VEX feeds to `~/.squish/vex-cache/` with `cache-manifest.json` tracking URL, last-fetched timestamp, and statement count. `is_stale(max_age_hours=24)`, `manifest()`, `clear()` methods. Supports `If-Modified-Since` conditional fetch.
+- **`squash/cli.py`** — `squash vex update URL [--force]` and `squash vex status` subcommands.
+
+### Added — Wave 17: Policy Webhooks
+
+- **`squash/policy.py`** — `PolicyWebhook` class: `notify(result, model_path, webhook_url=None) → bool` and static `notify_raw(payload, webhook_url) → bool`. Posts JSON payload to a webhook URL (explicit or via `SQUASH_WEBHOOK_URL` env var). Never raises; returns `False` on any delivery failure. Payload envelope: `{event, model_path, policy, passed, error_count, warning_count, timestamp}`.
+- **Fixed**: `model_path` in payload now coerced to `str` to prevent `PosixPath` JSON serialization errors.
+- **`squash/api.py`** — `POST /webhooks/test` endpoint: fires `notify_raw` with a test payload to a caller-supplied URL.
+
+### Added — Wave 18: Composite Attestation Pipeline
+
+- **`squash/attest.py`** — `CompositeAttestConfig` dataclass: `model_paths`, `output_dir`, `policies`, `sign` fields.
+- **`squash/attest.py`** — `CompositeAttestResult` dataclass: `component_results`, `parent_bom_path`, `output_dir`, `passed`, `error` fields.
+- **`squash/attest.py`** — `CompositeAttestPipeline.run(config) → CompositeAttestResult`: attests N models via `AttestPipeline` and assembles a parent CycloneDX 1.5 BOM with `dependencies[]` referencing each component by `serialNumber`.
+- **Fixed**: Removed orphaned `_build_master_record` function body (33 lines) that was incorrectly left at module scope, causing `SyntaxError: 'return' outside function` on import.
+- **Fixed**: `AttestResult` construction in error path no longer passes invalid `model_path=` kwarg.
+- **`squash/cli.py`** — `squash attest-composed MODEL_DIR [MODEL_DIR ...] [--output-dir PATH] [--policies ...] [--sign]` subcommand.
+- **`squash/api.py`** — `POST /attest/composed` endpoint.
+
+### Added — Wave 19: SBOM Registry Push
+
+- **`squash/sbom_builder.py`** — `SbomRegistry` class: `push_dtrack(bom_path, base_url, api_key, project_name) → str`, `push_guac(bom_path, endpoint_url) → str`, `push_squash(bom_path, registry_url, token) → str`. All use stdlib `urllib.request`; raise `RuntimeError` on HTTP errors. Timeout: 30 s.
+- **`squash/sbom_builder.py`** — `EvalBinder` class moved here from `eval_binder.py` (canonical home). Module count stays at 100.
+- **`squash/eval_binder.py`** — Converted to a 12-line backward-compatibility re-export shim.
+- **`squash/cli.py`** — `squash push BOM_PATH --registry {dtrack,guac,squash} --url URL [--api-key KEY] [--token TOKEN] [--project NAME]` subcommand.
+- **`squash/api.py`** — `POST /sbom/push` endpoint.
+
+### Changed
+
+- **`squash/__init__.py`** — Added `OmsVerifier`, `ComplianceReporter`, `VexCache`, `PolicyWebhook`, `CompositeAttestConfig`, `CompositeAttestResult`, `CompositeAttestPipeline`, `SbomRegistry` to public exports.
+
+### Tests
+
+- `tests/test_squash_wave14.py` — 6 tests: `OmsVerifier.verify()` no-bundle, no-sigstore, mock-pass, mock-fail, explicit bundle, return type contract.
+- `tests/test_squash_wave15.py` — 15 tests: `ComplianceReporter` empty dir, required HTML structure, artifact sections (attest, scan, scan with findings, VEX, policy), XSS escaping, `write()` creates file, default filename, custom path, content is HTML, dtype contracts.
+- `tests/test_squash_wave16.py` — 14 tests: `VexCache` init (default/custom dir), stale (no manifest, fresh, old), manifest (returns dict, empty, with contents), clear (removes files, no error when empty), `load_or_fetch` (fetches when stale, returns VexFeed), dtype contracts.
+- `tests/test_squash_wave17.py` — 10 tests: `PolicyWebhook` no-URL returns False, empty URL, env-var pickup, payload structure, returns True on 200, returns False on HTTP error, `notify_raw` sends, never raises, dtype contracts.
+- `tests/test_squash_wave18.py` — 9 tests: `CompositeAttestConfig` fields, output_dir default, `CompositeAttestResult` passed/failed, `CompositeAttestPipeline.run()` returns result, never raises, parent BOM is CycloneDX, dtype contracts.
+- `tests/test_squash_wave19.py` — 16 tests: `EvalBinder` shim import, canonical import, same class, has bind, bind adds metrics, bind nonexistent raises, return type; `SbomRegistry.push_dtrack` returns URL, sends PUT+API-key, raises on HTTP error; `push_guac` returns endpoint URL, raises on error; `push_squash` returns str, raises on 401; dtype contracts.
+
+**Full suite: 3954 passed, 4 pre-existing failures (line-count only), 25 skipped.**
+
+---
+
 ## [Unreleased] — Squash Waves 10–13: Module Debt Clearance, SARIF Export, SBOM Diff, API Security
 
 ### Added — Wave 10: Module Debt Clearance

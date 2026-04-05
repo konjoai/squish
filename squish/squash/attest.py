@@ -489,3 +489,176 @@ def _build_master_record(config: AttestConfig, result: AttestResult) -> dict[str
             "os": platform.platform(),
         },
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 18 — Composite multi-model attestation
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class CompositeAttestConfig:
+    """Configuration for attesting multiple models in a single pass.
+
+    Each model is attested independently using :class:`AttestPipeline`, then
+    the individual CycloneDX BOMs are assembled into a parent BOM whose
+    ``dependencies`` list references each component by ``serialNumber``.
+    """
+
+    model_paths: list[Path]
+    """Paths to each model directory to attest (minimum 2)."""
+
+    output_dir: Path | None = None
+    """Destination for the parent BOM and summary record.  Defaults to the
+    first model's directory."""
+
+    policies: list[str] = field(default_factory=lambda: ["enterprise-strict"])
+    """Policy names to evaluate against each component."""
+
+    sign: bool = False
+    """Sign each component BOM with Sigstore after attestation."""
+
+
+@dataclass
+class CompositeAttestResult:
+    """Result of a composite multi-model attestation."""
+
+    component_results: list[AttestResult]
+    """Individual attestation result for each input model."""
+
+    parent_bom_path: Path | None
+    """Path to the written parent CycloneDX BOM, or ``None`` on failure."""
+
+    output_dir: Path
+    """Directory where parent artefacts were written."""
+
+    passed: bool
+    """``True`` only when *all* component attestations pass."""
+
+    error: str = ""
+    """Non-empty when a fatal error prevented the run."""
+
+
+class CompositeAttestPipeline:
+    """Attest N models and assemble a parent CycloneDX composition BOM.
+
+    All component BOMs must already exist (produced by
+    :class:`AttestPipeline`).  The parent BOM has ``componentType``
+    ``"application"`` and a ``"dependencies"`` clause listing each
+    component's ``serialNumber``.
+
+    Example::
+
+        cfg = CompositeAttestConfig(
+            model_paths=[Path("model-a"), Path("model-b")],
+            policies=["enterprise-strict"],
+        )
+        result = CompositeAttestPipeline.run(cfg)
+        assert result.passed
+    """
+
+    @staticmethod
+    def run(config: CompositeAttestConfig) -> CompositeAttestResult:
+        """Run attestation on every model in *config.model_paths* and compose.
+
+        Returns :class:`CompositeAttestResult` — never raises.
+        """
+        output_dir = config.output_dir or config.model_paths[0]
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        component_results: list[AttestResult] = []
+        for mp in config.model_paths:
+            try:
+                cfg = AttestConfig(
+                    model_path=mp,
+                    policies=config.policies,
+                    sign=config.sign,
+                )
+                r = AttestPipeline.run(cfg)
+                component_results.append(r)
+            except Exception as exc:
+                # Build a minimal failed result so we can surface the error
+                log.warning("CompositeAttestPipeline: error attesting %s — %s", mp, exc)
+                failed = AttestResult(
+                    model_id=mp.name,
+                    output_dir=mp,
+                    passed=False,
+                    error=str(exc),
+                )
+                component_results.append(failed)
+
+        all_passed = all(r.passed for r in component_results)
+
+        # Build parent CycloneDX composition BOM
+        try:
+            parent_bom = CompositeAttestPipeline._build_parent_bom(
+                component_results, config, output_dir
+            )
+            parent_bom_path = output_dir / "cyclonedx-composed.json"
+            tmp = parent_bom_path.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps(parent_bom, indent=2), encoding="utf-8"
+            )
+            tmp.replace(parent_bom_path)
+        except Exception as exc:
+            log.warning("CompositeAttestPipeline: parent BOM assembly failed — %s", exc)
+            parent_bom_path = None
+
+        return CompositeAttestResult(
+            component_results=component_results,
+            parent_bom_path=parent_bom_path,
+            output_dir=output_dir,
+            passed=all_passed,
+        )
+
+    @staticmethod
+    def _build_parent_bom(
+        results: list[AttestResult],
+        config: CompositeAttestConfig,
+        output_dir: Path,
+    ) -> dict[str, Any]:
+        """Return a CycloneDX 1.5 JSON document referencing component BOMs."""
+        import uuid
+        import datetime as _dt
+
+        now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Collect component serial numbers from each result's CycloneDX BOM
+        components: list[dict[str, Any]] = []
+        dep_refs: list[str] = []
+        parent_serial = f"urn:uuid:{uuid.uuid4()}"
+
+        for r in results:
+            cdx_path = r.cyclonedx_path
+            if cdx_path and cdx_path.exists():
+                try:
+                    cdx = json.loads(cdx_path.read_text(encoding="utf-8"))
+                    serial = cdx.get("serialNumber", f"urn:uuid:{uuid.uuid4()}")
+                    comp = cdx.get("components", [{}])[0]
+                    components.append(comp)
+                    dep_refs.append(serial)
+                except Exception:
+                    dep_refs.append(f"urn:uuid:{uuid.uuid4()}")
+            else:
+                dep_refs.append(f"urn:uuid:{uuid.uuid4()}")
+
+        return {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.5",
+            "version": 1,
+            "serialNumber": parent_serial,
+            "metadata": {
+                "timestamp": now,
+                "component": {
+                    "type": "application",
+                    "name": output_dir.name,
+                    "version": "composed",
+                },
+            },
+            "components": components,
+            "dependencies": [
+                {
+                    "ref": parent_serial,
+                    "dependsOn": dep_refs,
+                }
+            ],
+        }

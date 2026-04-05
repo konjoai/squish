@@ -188,6 +188,46 @@ class SbomDiffRequest(BaseModel):
     sbom_b_path: str = Field(description="Path to the newer CycloneDX BOM JSON")
 
 
+class VerifyRequest(BaseModel):
+    """Verify a Sigstore bundle for a model's CycloneDX BOM."""
+    model_path: str = Field(description="Absolute path to model dir (contains cyclonedx-mlbom.json)")
+    bundle_path: str | None = Field(
+        default=None,
+        description="Explicit .sig.json bundle path; defaults to <bom>.sig.json",
+    )
+    strict: bool = Field(
+        default=False,
+        description="When True, treat a missing bundle as a verification failure",
+    )
+
+
+class WebhookTestRequest(BaseModel):
+    """Send a test event to the configured webhook URL."""
+    webhook_url: str | None = Field(
+        default=None,
+        description="Override URL (uses SQUASH_WEBHOOK_URL env if omitted)",
+    )
+
+
+class PushRequest(BaseModel):
+    """Push a CycloneDX BOM to an SBOM registry."""
+    model_path: str = Field(description="Absolute path to model directory")
+    registry_url: str = Field(description="Base URL of the SBOM registry")
+    api_key: str = Field(default="", description="API key / bearer token for the registry")
+    registry_type: str = Field(
+        default="squash",
+        description="Registry type: 'dtrack' (Dependency-Track), 'guac', or 'squash'",
+    )
+
+
+class ComposedAttestRequest(BaseModel):
+    """Composite multi-model attestation request."""
+    model_paths: list[str] = Field(description="Absolute paths to component model directories")
+    output_dir: str | None = Field(default=None, description="Destination for artifacts")
+    policies: list[str] = Field(default_factory=lambda: ["enterprise-strict"])
+    sign: bool = Field(default=False)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────────────────────────────────────
@@ -508,9 +548,148 @@ async def sbom_diff(req: SbomDiffRequest) -> JSONResponse:
     return JSONResponse(content=result)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ──────────────────────────────────────────────────────────────────────────────
+@app.post("/attest/verify")
+async def attest_verify(req: VerifyRequest) -> JSONResponse:
+    """Verify the Sigstore bundle for a model's CycloneDX BOM.
+
+    Returns ``{"verified": bool, "skipped": bool, "reason": str}``.
+    """
+    from squish.squash.oms_signer import OmsVerifier
+
+    model_path = Path(req.model_path)
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail=f"Model path not found: {req.model_path}")
+
+    bom_path = model_path / "cyclonedx-mlbom.json" if model_path.is_dir() else model_path
+    if not bom_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"CycloneDX BOM not found: {bom_path}",
+        )
+
+    bundle_path = Path(req.bundle_path) if req.bundle_path else None
+
+    def _run() -> dict:
+        res = OmsVerifier.verify(bom_path, bundle_path)
+        if res is None:
+            if req.strict:
+                return {"verified": False, "skipped": False, "reason": "no bundle (strict)"}
+            return {"verified": False, "skipped": True, "reason": "no bundle found"}
+        if res:
+            return {"verified": True, "skipped": False, "reason": ""}
+        return {"verified": False, "skipped": False, "reason": "bundle verification failed"}
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+@app.get("/report")
+async def get_report(model_path: str) -> Any:
+    """Generate a human-readable HTML compliance report for a model.
+
+    Query parameter: ``model_path`` — absolute path to the model directory.
+    Returns ``text/html``.
+    """
+    from fastapi.responses import HTMLResponse
+    from squish.squash.report import ComplianceReporter
+
+    if not Path(model_path).exists():
+        raise HTTPException(status_code=404, detail=f"Model path not found: {model_path}")
+
+    def _run() -> str:
+        return ComplianceReporter.generate_html(Path(model_path))
+
+    loop = asyncio.get_running_loop()
+    html = await loop.run_in_executor(_executor, _run)
+    return HTMLResponse(content=html)
+
+
+@app.post("/webhooks/test")
+async def webhooks_test(req: WebhookTestRequest) -> JSONResponse:
+    """Send a synthetic test event to the configured webhook URL."""
+    from squish.squash.policy import PolicyWebhook
+
+    url = req.webhook_url or os.environ.get("SQUASH_WEBHOOK_URL", "")
+    if not url:
+        raise HTTPException(
+            status_code=400,
+            detail="No webhook URL provided; set SQUASH_WEBHOOK_URL or pass webhook_url",
+        )
+
+    def _run() -> dict:
+        fired = PolicyWebhook.notify_raw(
+            {
+                "event": "squash_webhook_test",
+                "message": "This is a test event from Squash.",
+            },
+            url,
+        )
+        return {"sent": fired, "url": url}
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+@app.post("/attest/composed")
+async def attest_composed(req: ComposedAttestRequest) -> JSONResponse:
+    """Run composite multi-model attestation and return the parent BOM path."""
+    from squish.squash.attest import CompositeAttestConfig, CompositeAttestPipeline
+
+    for mp in req.model_paths:
+        if not Path(mp).exists():
+            raise HTTPException(status_code=404, detail=f"Model path not found: {mp}")
+
+    def _run() -> dict:
+        cfg = CompositeAttestConfig(
+            model_paths=[Path(p) for p in req.model_paths],
+            output_dir=Path(req.output_dir) if req.output_dir else None,
+            policies=req.policies,
+            sign=req.sign,
+        )
+        result = CompositeAttestPipeline.run(cfg)
+        return {
+            "passed": result.passed,
+            "component_count": len(result.component_results),
+            "parent_bom_path": str(result.parent_bom_path) if result.parent_bom_path else None,
+            "output_dir": str(result.output_dir),
+            "error": result.error,
+        }
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+@app.post("/sbom/push")
+async def sbom_push(req: PushRequest) -> JSONResponse:
+    """Push a CycloneDX BOM to an SBOM registry (Dependency-Track, GUAC, or squash)."""
+    from squish.squash.sbom_builder import SbomRegistry
+
+    model_path = Path(req.model_path)
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail=f"Model path not found: {req.model_path}")
+
+    bom_path = model_path / "cyclonedx-mlbom.json"
+    if not bom_path.exists():
+        raise HTTPException(status_code=404, detail=f"CycloneDX BOM not found: {bom_path}")
+
+    valid_types = {"dtrack", "guac", "squash"}
+    if req.registry_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"registry_type must be one of {sorted(valid_types)}",
+        )
+
+    def _run() -> dict:
+        if req.registry_type == "dtrack":
+            url = SbomRegistry.push_dtrack(bom_path, req.registry_url, req.api_key)
+        elif req.registry_type == "guac":
+            url = SbomRegistry.push_guac(bom_path, req.registry_url)
+        else:
+            url = SbomRegistry.push_squash(bom_path, req.registry_url, req.api_key)
+        return {"pushed": True, "registry_url": url, "bom_path": str(bom_path)}
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
 
 
 def _require_path(p: str) -> None:

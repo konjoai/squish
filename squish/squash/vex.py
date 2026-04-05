@@ -418,3 +418,158 @@ def _purl_matches(model_purl: str, stmt_purl: str | None) -> bool:
     if not model_purl:
         return False
     return model_purl == stmt_purl or model_purl.startswith(stmt_purl)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 16 — VexCache: persistent local cache with If-Modified-Since
+# ─────────────────────────────────────────────────────────────────────────────
+
+class VexCache:
+    """Local disk cache for a remote VEX feed.
+
+    Documents are stored under *cache_dir* (default ``~/.squish/vex-cache/``).
+    A ``cache-manifest.json`` records the last fetch URL, timestamp, and
+    statement count so :meth:`is_stale` can make fast freshness decisions
+    without re-parsing every document.
+
+    Example::
+
+        cache = VexCache()
+        feed = cache.load_or_fetch("https://vex.example.com/feed.json")
+        if cache.is_stale():
+            feed = cache.load_or_fetch(..., force=True)
+    """
+
+    DEFAULT_URL: str = "https://raw.githubusercontent.com/squishai/vex-feed/main/feed.json"
+    DEFAULT_MAX_AGE_HOURS: int = 24
+    _MANIFEST_FILE: str = "cache-manifest.json"
+
+    def __init__(self, cache_dir: Path | None = None) -> None:
+        self._cache_dir = cache_dir or (Path.home() / ".squish" / "vex-cache")
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── public API ────────────────────────────────────────────────────────────
+
+    def load_or_fetch(
+        self,
+        url: str,
+        *,
+        timeout: float = 10.0,
+        ca_bundle: str | None = None,
+        force: bool = False,
+    ) -> "VexFeed":
+        """Return a :class:`VexFeed` — from cache if fresh, else re-fetched.
+
+        Parameters
+        ----------
+        url:
+            Remote VEX feed endpoint (JSON or a ZIP of JSON files).
+        timeout:
+            HTTP connect+read timeout in seconds.
+        ca_bundle:
+            Optional path to a PEM CA bundle for TLS verification.
+        force:
+            If *True*, always re-fetch even if cache is fresh.
+        """
+        manifest = self._read_manifest()
+        feed_file = self._cache_dir / "feed.json"
+
+        last_modified: str | None = manifest.get("last_modified")
+        if force or not feed_file.exists() or self.is_stale():
+            self._fetch(url, feed_file, last_modified, timeout, ca_bundle)
+
+        if feed_file.exists():
+            feed = VexFeed.from_url(url, timeout=timeout, ca_bundle=ca_bundle)
+            # Update manifest even if 304 (server reported not modified)
+            self._write_manifest(url, feed)
+            return feed
+
+        return VexFeed(documents=[])  # cache miss + fetch failed gracefully
+
+    def is_stale(self, max_age_hours: int | None = None) -> bool:
+        """Return True if the cache is older than *max_age_hours* or empty."""
+        manifest = self._read_manifest()
+        if not manifest or "last_fetched" not in manifest:
+            return True
+        max_age = max_age_hours or self.DEFAULT_MAX_AGE_HOURS
+        try:
+            fetched_at = datetime.fromisoformat(manifest["last_fetched"])
+            age = datetime.now(timezone.utc) - fetched_at
+            return age.total_seconds() > max_age * 3600
+        except (ValueError, TypeError):
+            return True
+
+    def manifest(self) -> dict[str, Any]:
+        """Return the cached manifest dict (empty dict if cache is empty)."""
+        return self._read_manifest()
+
+    def clear(self) -> None:
+        """Delete all cached documents and the manifest."""
+        import shutil
+        if self._cache_dir.exists():
+            shutil.rmtree(self._cache_dir)
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── internals ─────────────────────────────────────────────────────────────
+
+    def _manifest_path(self) -> Path:
+        return self._cache_dir / self._MANIFEST_FILE
+
+    def _read_manifest(self) -> dict[str, Any]:
+        mp = self._manifest_path()
+        if not mp.exists():
+            return {}
+        try:
+            return json.loads(mp.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _write_manifest(self, url: str, feed: "VexFeed") -> None:
+        manifest = self._read_manifest()
+        manifest["url"] = url
+        manifest["last_fetched"] = datetime.now(timezone.utc).isoformat()
+        manifest["statement_count"] = sum(len(d.statements) for d in feed.documents)
+        self._manifest_path().write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8"
+        )
+
+    def _fetch(
+        self,
+        url: str,
+        dest: Path,
+        last_modified: str | None,
+        timeout: float,
+        ca_bundle: str | None,
+    ) -> None:
+        """Fetch *url* to *dest*; respects ``If-Modified-Since`` (304 = no-op)."""
+        try:
+            req = urllib.request.Request(url)
+            if last_modified:
+                req.add_header("If-Modified-Since", last_modified)
+
+            kwargs: dict[str, Any] = {"timeout": timeout}
+            if ca_bundle:
+                import ssl
+                ctx = ssl.create_default_context(cafile=ca_bundle)
+                kwargs["context"] = ctx
+
+            with urllib.request.urlopen(req, **kwargs) as resp:  # noqa: S310
+                if resp.status == 304:
+                    log.debug("VexCache: 304 Not Modified — reusing cached %s", dest)
+                    return
+                data = resp.read()
+                # Atomic write via temp file
+                tmp = dest.with_suffix(".tmp")
+                tmp.write_bytes(data)
+                tmp.replace(dest)
+                # Record Last-Modified header for next conditional GET
+                last_mod = resp.headers.get("Last-Modified")
+                if last_mod:
+                    manifest = self._read_manifest()
+                    manifest["last_modified"] = last_mod
+                    self._manifest_path().write_text(
+                        json.dumps(manifest, indent=2), encoding="utf-8"
+                    )
+        except Exception as e:
+            log.warning("VexCache: fetch failed for %s — %s", url, e)
+
