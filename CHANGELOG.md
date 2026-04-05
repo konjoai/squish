@@ -5,6 +5,76 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Phase 7: Standalone Attestation Engine
+
+### Added
+
+- **`squish/squash/spdx_builder.py`** — SPDX 2.3 dual output (JSON + tag-value) with
+  SPDX 3.0 AI Profile annotations. `SpdxBuilder.from_compress_run()` produces both
+  `spdx-mlbom.json` and `spdx-mlbom.spdx` alongside the model directory.
+- **`squish/squash/policy.py`** — Built-in compliance policy template engine with five
+  templates: `eu-ai-act`, `nist-ai-rmf`, `owasp-llm-top10`, `iso-42001`,
+  `enterprise-strict` (alias: `strict`). `PolicyEngine.evaluate()` returns a
+  `PolicyResult` with per-rule `PolicyFinding` entries.
+- **`squish/squash/scanner.py`** — AI model security scanner. Detects pickle opcode
+  exploits (GLOBAL, REDUCE, INST), GGUF metadata shell-injection patterns, and
+  delegates to ProtectAI ModelScan when installed. `ScanResult.to_cdx_vulnerabilities()`
+  serialises findings into CycloneDX 1.7 vulnerability objects.
+- **`squish/squash/vex.py`** — VEX (Vulnerability Exploitability eXchange) engine
+  implementing OpenVEX 0.2.0. `VexFeed.from_directory()` / `.from_url()`, fleet-level
+  `VexEvaluator.evaluate()`, `VexReport.is_clean` and `VexReport.to_dict()`.
+- **`squish/squash/provenance.py`** — Training data provenance. `ProvenanceCollector`
+  supports HuggingFace Hub API, S3 boto3 manifests, and local Datasheets-for-Datasets
+  JSON. `ProvenanceManifest.bind_to_sbom()` atomically annotates the CycloneDX BOM.
+- **`squish/squash/attest.py`** — Unified 8-step attestation orchestrator.
+  `AttestPipeline.run(AttestConfig)` returns `AttestResult` with paths to all artifats:
+  `cyclonedx-mlbom.json`, `spdx-mlbom.json`, `spdx-mlbom.spdx`, `squash-scan.json`,
+  per-policy `squash-policy-<name>.json`, `squash-vex-report.json`,
+  `cyclonedx-mlbom.json.sig.json` (Sigstore), `squash-attest.json` (master record).
+- **`squish/squash/api.py`** — FastAPI REST microservice (`squash-api` extra).
+  Five endpoints: `GET /health`, `GET /policies`, `POST /attest`, `POST /scan`,
+  `POST /policy/evaluate`, `POST /vex/evaluate`. Starts with
+  `uvicorn squish.squash.api:app --host 0.0.0.0 --port 4444`.
+- **`squish/squash/cli.py`** — Standalone `squash` CLI entry point. Sub-commands:
+  `squash attest`, `squash scan`, `squash policies`. Full `--help` + exit-code
+  contract (0/1/2) + `--quiet` flag.
+- **`squish/squash/integrations/mlflow.py`** — `MLflowSquash.attest_run()` logs
+  attestation artifacts and sets `squash.*` tags on an MLflow run.
+- **`squish/squash/integrations/wandb.py`** — `WandbSquash.attest_artifact()` adds
+  compliance files to a W&B artifact and populates `run.summary["squash/*"]`.
+- **`squish/squash/integrations/huggingface.py`** — `HFSquash.attest_and_push()`
+  attests locally then uploads all artifacts to the HF Hub under `squash/`.
+- **`squish/squash/integrations/langchain.py`** — `SquashCallback` duck-typed
+  LangChain callback (no hard dependency) with optional `continuous_audit` mode.
+- **`integrations/github-actions/action.yml`** — Composite GitHub Actions action
+  (`squash attest` with artifact upload). Inputs: `model_path`, `policies`, `sign`,
+  `fail_on_violation`. Outputs: `passed`, `scan_status`, artifact paths.
+- **`integrations/jenkins/vars/squashAttest.groovy`** — Jenkins Shared Library step.
+- **`integrations/gitlab/squash-component.yml`** — GitLab CI/CD component spec.
+- **`integrations/argo/squash-workflow-template.yaml`** — Argo Workflows template.
+- **`pyproject.toml`**: added `squash-api` optional dependency group
+  (`fastapi>=0.111`, `uvicorn[standard]>=0.29`); added `squash` CLI entry point.
+- **`squish/squash/__init__.py`**: exports all Phase 7 public symbols.
+
+### Tests Added
+
+- `tests/test_squash_scanner.py` — 9 tests: `ScanFinding`/`ScanResult` contracts,
+  GLOBAL opcode detection, GGUF shell injection, CycloneDX vulnerability serialization.
+- `tests/test_squash_policy.py` — 12 tests: all 5 templates, passing/failing BOMs,
+  `strict` alias, `AVAILABLE_POLICIES` registry.
+- `tests/test_squash_spdx_builder.py` — 11 tests: path contracts, SPDX 2.3 schema
+  fields, AI Profile annotations, tag-value syntax.
+- `tests/test_squash_vex.py` — 12 tests: `VexDocument` parsing, `VexFeed` loading,
+  `VexEvaluator` logic, `VexReport` shape.
+- `tests/test_squash_provenance.py` — 12 tests: `DatasetRecord`, composite SHA-256,
+  `from_datasheet()`, `bind_to_sbom()` atomic write.
+- `tests/test_squash_attest.py` — 18 tests: shape contracts, artifact existence,
+  master record content, policy evaluation, `fail_on_violation`, `skip_scan`.
+- `tests/test_squash_api.py` — 24 tests: all 5 REST endpoints, OpenAPI schema,
+  404/400/422 error semantics.
+
+---
+
 ## [Unreleased] — Squash Phase 6: `squish eval` subcommand + `squish models` SBOM column
 
 ### Added

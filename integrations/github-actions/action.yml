@@ -1,0 +1,134 @@
+name: "Squash — AI-SBOM Attestation"
+description: |
+  Generate and evaluate a CycloneDX + SPDX Software Bill of Materials for an
+  AI/ML model artifact.  Runs security scanning (pickle, GGUF), evaluates named
+  compliance policies, optionally signs via Sigstore, and uploads all artifacts
+  to the workflow run as downloadable assets.
+
+author: "Konjo AI / Squish"
+
+inputs:
+  model_path:
+    description: "Path to the model directory or file (relative to workspace root)"
+    required: true
+  policies:
+    description: "Comma-separated list of policies to evaluate"
+    default: "enterprise-strict"
+    required: false
+  sign:
+    description: "Sign the CycloneDX BOM via Sigstore keyless signing"
+    default: "false"
+    required: false
+  fail_on_violation:
+    description: "Fail the action step if any policy violation or unsafe scan is found"
+    default: "true"
+    required: false
+  output_dir:
+    description: "Directory to write attestation artifacts (defaults to model_path dir)"
+    default: ""
+    required: false
+  upload_artifacts:
+    description: "Upload attestation artifacts as a workflow run artifact"
+    default: "true"
+    required: false
+  python_version:
+    description: "Python version to use"
+    default: "3.11"
+    required: false
+  squish_version:
+    description: "Squish version to install (defaults to latest)"
+    default: ""
+    required: false
+
+outputs:
+  passed:
+    description: "Whether attestation passed (true/false)"
+    value: ${{ steps.attest.outputs.passed }}
+  scan_status:
+    description: "Security scan result status (clean/warning/unsafe)"
+    value: ${{ steps.attest.outputs.scan_status }}
+  cyclonedx_path:
+    description: "Absolute path to the generated CycloneDX BOM"
+    value: ${{ steps.attest.outputs.cyclonedx_path }}
+  spdx_json_path:
+    description: "Absolute path to the generated SPDX JSON"
+    value: ${{ steps.attest.outputs.spdx_json_path }}
+  master_record_path:
+    description: "Absolute path to squash-attest.json master record"
+    value: ${{ steps.attest.outputs.master_record_path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install Squish + Squash extras
+      shell: bash
+      run: |
+        SQUISH_VER="${{ inputs.squish_version }}"
+        if [ -n "$SQUISH_VER" ]; then
+          pip install --quiet "squish[squash]==${SQUISH_VER}"
+        else
+          pip install --quiet "squish[squash]"
+        fi
+
+    - name: Run Squash attestation
+      id: attest
+      shell: bash
+      env:
+        SQUASH_MODEL_PATH:     ${{ inputs.model_path }}
+        SQUASH_POLICIES:       ${{ inputs.policies }}
+        SQUASH_SIGN:           ${{ inputs.sign }}
+        SQUASH_FAIL:           ${{ inputs.fail_on_violation }}
+        SQUASH_OUTPUT_DIR:     ${{ inputs.output_dir }}
+        GITHUB_ACTIONS:        "true"
+      run: |
+        set -euo pipefail
+
+        # Build CLI arg list
+        ARGS="--model-path ${SQUASH_MODEL_PATH}"
+        IFS=',' read -r -a POLICIES <<< "${SQUASH_POLICIES}"
+        for p in "${POLICIES[@]}"; do
+          ARGS+=" --policy ${p// /}"
+        done
+        [[ "${SQUASH_SIGN}" == "true" ]] && ARGS+=" --sign"
+        [[ "${SQUASH_FAIL}" == "true" ]] && ARGS+=" --fail-on-violation"
+        [[ -n "${SQUASH_OUTPUT_DIR}" ]] && ARGS+=" --output-dir ${SQUASH_OUTPUT_DIR}"
+
+        # Run attestation; capture exit code without aborting shell
+        squash attest $ARGS --json-result /tmp/squash-result.json || RC=$?
+        RC=${RC:-0}
+
+        # Parse results and set step outputs
+        PASSED=$(python3 -c "import json,sys; d=json.load(open('/tmp/squash-result.json')); print(str(d.get('passed',False)).lower())")
+        SCAN=$(python3 -c "import json; d=json.load(open('/tmp/squash-result.json')); print(d.get('scan_status','skipped'))")
+        CDX=$(python3 -c "import json; d=json.load(open('/tmp/squash-result.json')); a=d.get('artifacts',{}); print(a.get('cyclonedx',''))")
+        SPDX=$(python3 -c "import json; d=json.load(open('/tmp/squash-result.json')); a=d.get('artifacts',{}); print(a.get('spdx_json',''))")
+        MASTER=$(python3 -c "import json; d=json.load(open('/tmp/squash-result.json')); a=d.get('artifacts',{}); print(a.get('master_record',''))")
+
+        echo "passed=${PASSED}"           >> "$GITHUB_OUTPUT"
+        echo "scan_status=${SCAN}"        >> "$GITHUB_OUTPUT"
+        echo "cyclonedx_path=${CDX}"      >> "$GITHUB_OUTPUT"
+        echo "spdx_json_path=${SPDX}"     >> "$GITHUB_OUTPUT"
+        echo "master_record_path=${MASTER}" >> "$GITHUB_OUTPUT"
+
+        # Respect fail_on_violation
+        if [[ "${SQUASH_FAIL}" == "true" && "${PASSED}" != "true" ]]; then
+          echo "::error title=Squash::Attestation FAILED — scan=${SCAN}, passed=${PASSED}"
+          exit 1
+        fi
+
+    - name: Upload attestation artifacts
+      if: ${{ inputs.upload_artifacts == 'true' && always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: squash-attestation
+        path: |
+          ${{ steps.attest.outputs.master_record_path }}
+          ${{ steps.attest.outputs.cyclonedx_path }}
+          ${{ steps.attest.outputs.spdx_json_path }}
+        if-no-files-found: warn
+        retention-days: 90

@@ -1,0 +1,146 @@
+##
+## squash-workflow-template.yaml — Argo Workflows WorkflowTemplate for Squash
+##
+## Provides a reusable Argo step that can be referenced from any Workflow via
+## templateRef.  Runs Squash inside a Python container, stores artifacts in
+## the configured artifact repository, and optionally fails the node on policy
+## violation.
+##
+## Reference from another Workflow:
+##
+##   templates:
+##     - name: my-ml-workflow
+##       steps:
+##         - - name: train
+##             template: train-step
+##         - - name: attest
+##             templateRef:
+##               name: squash-attestation
+##               template: squash-attest
+##             arguments:
+##               parameters:
+##                 - name: model-path
+##                   value: /mnt/models/llama-3.1-8b
+##                 - name: policies
+##                   value: "eu-ai-act,nist-ai-rmf"
+##
+## Required VolumeMount:
+##   A PersistentVolumeClaim called ``model-store`` should be mounted at
+##   ``/mnt/models`` so the container can read the model directory.
+##
+
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: squash-attestation
+  namespace: argo
+  labels:
+    app: squash
+    version: "1.0"
+  annotations:
+    description: "AI-SBOM attestation using Squish Squash"
+
+spec:
+  templates:
+
+    ##########################################################################
+    # Primary template — squash-attest
+    ##########################################################################
+
+    - name: squash-attest
+      metadata:
+        labels:
+          step: squash-attest
+      inputs:
+        parameters:
+          - name: model-path
+          - name: policies
+            value: "enterprise-strict"
+          - name: sign
+            value: "false"
+          - name: fail-on-violation
+            value: "true"
+          - name: output-dir
+            value: ""
+          - name: squish-version
+            value: ""
+      outputs:
+        parameters:
+          - name: passed
+            valueFrom:
+              path: /tmp/squash-result/passed.txt
+          - name: scan-status
+            valueFrom:
+              path: /tmp/squash-result/scan_status.txt
+        artifacts:
+          - name: squash-artifacts
+            path: /tmp/squash-result
+            archive:
+              tar: {}
+
+      container:
+        image: python:3.11-slim
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -euo pipefail
+
+            # Install squish
+            VER="{{inputs.parameters.squish-version}}"
+            if [ -n "$VER" ]; then
+              pip install --quiet "squish[squash]==${VER}"
+            else
+              pip install --quiet "squish[squash]"
+            fi
+
+            MODEL_PATH="{{inputs.parameters.model-path}}"
+            OUTPUT_DIR="{{inputs.parameters.output-dir}}"
+            OUTPUT_DIR="${OUTPUT_DIR:-/tmp/squash-result}"
+            mkdir -p "$OUTPUT_DIR"
+
+            # Build CLI args
+            ARGS="--model-path ${MODEL_PATH} --output-dir ${OUTPUT_DIR}"
+            IFS=',' read -r -a POLICIES_ARR <<< "{{inputs.parameters.policies}}"
+            for p in "${POLICIES_ARR[@]}"; do
+              ARGS+=" --policy ${p// /}"
+            done
+            [[ "{{inputs.parameters.sign}}" == "true" ]] && ARGS+=" --sign"
+            ARGS+=" --json-result ${OUTPUT_DIR}/squash-attest.json"
+
+            squash attest $ARGS || FAILED=1
+
+            # Extract output params
+            python3 - <<'EOF'
+            import json, pathlib, sys
+            d = json.loads(pathlib.Path("/tmp/squash-result/squash-attest.json").read_text())
+            base = pathlib.Path("/tmp/squash-result")
+            (base / "passed.txt").write_text(str(d.get("passed", False)).lower())
+            (base / "scan_status.txt").write_text(d.get("scan_status", "skipped"))
+            print("Squash: passed=", d.get("passed"), "scan=", d.get("scan_status"))
+            for policy, pr in d.get("policy_results", {}).items():
+                status = "PASS" if pr["passed"] else "FAIL"
+                print(f"  [{status}] {policy}: {pr['error_count']} error(s)")
+            EOF
+
+            if [[ "{{inputs.parameters.fail-on-violation}}" == "true" && "${FAILED:-0}" != "0" ]]; then
+              echo "Squash attestation FAILED for ${MODEL_PATH}"
+              exit 1
+            fi
+
+        volumeMounts:
+          - name: model-store
+            mountPath: /mnt/models
+            readOnly: true
+
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2"
+
+      volumes:
+        - name: model-store
+          persistentVolumeClaim:
+            claimName: model-store

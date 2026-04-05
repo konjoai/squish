@@ -1,0 +1,100 @@
+##
+## squash-component.yml — GitLab CI/CD Component for Squash attestation
+##
+## Usage in .gitlab-ci.yml:
+##
+##   include:
+##     - component: $CI_SERVER_FQDN/konjo-ai/squish/squash-attestation@main
+##       inputs:
+##         model_path: "./output/llama-3.1-8b"
+##         policies: "eu-ai-act,nist-ai-rmf"
+##         fail_on_violation: "true"
+##
+## The component adds a `squash:attest` job to the build pipeline that runs
+## after any existing `build` stage and publishes attestation artifacts.
+##
+
+spec:
+  inputs:
+    model_path:
+      description: "Path to model dir or file (relative to CI_PROJECT_DIR)"
+    policies:
+      description: "Comma-separated policy names"
+      default: "enterprise-strict"
+    sign:
+      description: "Sign via Sigstore keyless signing (true/false)"
+      default: "false"
+    fail_on_violation:
+      description: "Fail the job on compliance violation (true/false)"
+      default: "true"
+    stage:
+      description: "Pipeline stage to run in"
+      default: "test"
+    python_image:
+      description: "Docker image with Python 3.10+ preinstalled"
+      default: "python:3.11-slim"
+    squish_version:
+      description: "Squish version to install (blank = latest)"
+      default: ""
+    artifact_expire:
+      description: "Attestation artifact retention"
+      default: "30 days"
+
+---
+
+squash:attest:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.python_image ]]
+
+  variables:
+    SQUASH_MODEL_PATH:    $[[ inputs.model_path ]]
+    SQUASH_POLICIES:      $[[ inputs.policies ]]
+    SQUASH_SIGN:          $[[ inputs.sign ]]
+    SQUASH_FAIL:          $[[ inputs.fail_on_violation ]]
+    SQUASH_VERSION:       $[[ inputs.squish_version ]]
+
+  before_script:
+    - pip install --quiet "squish[squash]${SQUASH_VERSION:+==${SQUASH_VERSION}}"
+
+  script:
+    - |
+      set -euo pipefail
+
+      ARGS="--model-path ${CI_PROJECT_DIR}/${SQUASH_MODEL_PATH}"
+      IFS=',' read -r -a POLICIES <<< "${SQUASH_POLICIES}"
+      for p in "${POLICIES[@]}"; do
+        ARGS+=" --policy ${p// /}"
+      done
+      [[ "${SQUASH_SIGN}" == "true" ]] && ARGS+=" --sign"
+      ARGS+=" --output-dir ${CI_PROJECT_DIR}/squash-artifacts"
+      ARGS+=" --json-result ${CI_PROJECT_DIR}/squash-artifacts/squash-result.json"
+
+      squash attest $ARGS || FAILED=1
+
+      cat "${CI_PROJECT_DIR}/squash-artifacts/squash-result.json" | python3 -c "
+      import json, sys
+      d = json.load(sys.stdin)
+      passed = d.get('passed', False)
+      scan   = d.get('scan_status', 'skipped')
+      print(f'Squash: passed={passed}  scan={scan}')
+      for policy, pr in d.get('policy_results', {}).items():
+          status = 'PASS' if pr['passed'] else 'FAIL'
+          print(f'  [{status}] {policy}: {pr[\"error_count\"]} error(s)')
+      "
+
+      if [[ "${SQUASH_FAIL}" == "true" && "${FAILED:-0}" != "0" ]]; then
+        echo "ERROR: Squash attestation failed. See squash-artifacts/ for details."
+        exit 1
+      fi
+
+  artifacts:
+    name: "squash-attestation-${CI_COMMIT_SHORT_SHA}"
+    expire_in: $[[ inputs.artifact_expire ]]
+    when: always
+    paths:
+      - squash-artifacts/
+    reports:
+      # Expose squash-attest.json as a generic compliance report
+      dotenv: squash-artifacts/squash-result.json
+
+  allow_failure: false
