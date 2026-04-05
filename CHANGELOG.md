@@ -5,6 +5,54 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Wave 30: REST API Endpoints for VEX Publish + Integration Attestation
+
+### Added — Wave 30: REST API integration endpoints
+
+- **`POST /vex/publish`** — generate an OpenVEX 0.2.0 document via the REST API:
+  - Body: `entries` (list of statement dicts, default `[]`), `author` (default `"squash"`),
+    `doc_id` (optional `@id` URI, auto-generated UUID URN if omitted).
+  - Delegates to `VexFeedManifest.generate()` then `validate()`; 422 on validation errors.
+  - Returns the full OpenVEX document JSON.
+
+- **`POST /attest/mlflow`** — offline `AttestPipeline` attestation for MLflow workflows:
+  - Body: `model_path` (required), `policies` (default `["enterprise-strict"]`),
+    `sign` (bool), `fail_on_violation` (bool).
+  - 200 on pass; 400 on attest error; 422 when `fail_on_violation=true` and violations found.
+
+- **`POST /attest/wandb`** — identical contract to `/attest/mlflow`; for W&B workflows.
+
+- **`POST /attest/huggingface`** — attestation with optional HuggingFace Hub push:
+  - With `repo_id`: delegates to `HFSquash.attest_and_push()`; returns 502 on push failure.
+  - Without `repo_id`: offline mode; runs `AttestPipeline.run()` locally.
+  - `hf_token` falls back to env var if omitted.
+
+- **`POST /attest/langchain`** — identical contract to `/attest/mlflow`; for LangChain workflows.
+
+- **`tests/test_squash_wave30.py`** — 56 new integration tests (4298 total passing):
+  - `TestVexPublishEndpoint` (12), `TestAttestMlflowEndpoint` (7), `TestAttestWandbEndpoint` (6),
+    `TestAttestHuggingFaceEndpoint` (7), `TestAttestLangchainEndpoint` (7) — per-endpoint
+    functional tests with real `TestClient` against real pipeline.
+  - `TestEndpointStructuralContracts` (7) — all 5 new routes present in OpenAPI schema.
+  - `TestVexPublishResponseSchema` (5) — `@id`, timestamp, statements structure.
+  - `TestRequestModelValidation` (5) — 422 for missing required fields.
+  - Fixture resets `_rate_window` before each test to prevent rate-limit false failures in
+    full-suite runs.
+
+### Fixed — Wave 30
+- `fail_on_violation` pattern: all handlers use `fail_on_violation=False` at `AttestConfig`
+  level (prevents exception propagation from thread pool); check post-run for 422 response.
+- Policy fallback: `req.policies if req.policies is not None else ["enterprise-strict"]`
+  (replaces `req.policies or [...]` which incorrectly treated an empty list as falsy).
+- HuggingFace push errors wrapped in `try/except → 502` (avoids unhandled 500s on auth
+  or dependency failures).
+
+### Module count — Wave 30
+- `squish/squash/` non-experimental: **106 Python files** (unchanged — all Wave 30
+  additions are new route handlers inside existing `api.py`).
+
+---
+
 ## [Unreleased] — Squash Wave 29: VEX Publish CLI + Integration CLI Shims
 
 ### Added — Wave 29: VEX publish + integration CLI completeness

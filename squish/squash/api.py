@@ -1,12 +1,17 @@
 """squish/squash/api.py — FastAPI REST microservice for Squash attestation.
 
-Exposes the full Squash engine over HTTP with five core endpoints:
+Exposes the full Squash engine over HTTP.  Core endpoints:
 
-    POST /attest           — full attestation pipeline
-    POST /scan             — security scan only
-    POST /policy/evaluate  — evaluate policy against a submitted SBOM
-    POST /vex/evaluate     — VEX feed evaluation against a model inventory
-    GET  /policies         — list available policy templates
+    POST /attest               — full attestation pipeline
+    POST /scan                 — security scan only
+    POST /policy/evaluate      — evaluate policy against a submitted SBOM
+    POST /vex/evaluate         — VEX feed evaluation against a model inventory
+    GET  /policies             — list available policy templates
+    POST /vex/publish          — generate an OpenVEX 0.2.0 document
+    POST /attest/mlflow        — offline attestation for MLflow artifacts
+    POST /attest/wandb         — offline attestation for W&B artifacts
+    POST /attest/huggingface   — attestation with optional HuggingFace Hub push
+    POST /attest/langchain     — pre-deployment attestation for LangChain pipelines
 
 The server is zero-config: it discovers the squish model store automatically.
 Intended to run embedded alongside the squish inference server or as a
@@ -929,6 +934,193 @@ async def cicd_report(req: CiRunRequest) -> JSONResponse:
 
     loop = asyncio.get_running_loop()
     return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+# ── Wave 30 — VEX publish + integration attestation REST endpoints ─────────────
+
+
+class VexPublishRequest(BaseModel):
+    """Request body for POST /vex/publish."""
+
+    entries: list[dict] = Field(default_factory=list)
+    author: str = Field(default="squash")
+    doc_id: str | None = Field(default=None)
+
+
+@app.post("/vex/publish")
+async def vex_publish(req: VexPublishRequest) -> JSONResponse:
+    """Generate an OpenVEX 0.2.0 document from a list of statement entries.
+
+    Returns the full OpenVEX document JSON.  Validates the document before
+    returning; responds with 422 if validation errors are found.
+    """
+    from squish.squash.vex import VexFeedManifest
+
+    def _run() -> dict:
+        doc = VexFeedManifest.generate(
+            req.entries,
+            author=req.author,
+            doc_id=req.doc_id or None,
+        )
+        errors = VexFeedManifest.validate(doc)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return doc
+
+    loop = asyncio.get_running_loop()
+    try:
+        doc = await loop.run_in_executor(_executor, _run)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return JSONResponse(content=doc)
+
+
+class AttestIntegrationRequest(BaseModel):
+    """Shared request body for offline integration attestation endpoints."""
+
+    model_path: str
+    policies: list[str] | None = Field(default=None)
+    sign: bool = False
+    fail_on_violation: bool = False
+
+
+@app.post("/attest/mlflow")
+async def attest_mlflow(req: AttestIntegrationRequest) -> JSONResponse:
+    """Run an offline AttestPipeline for an MLflow model artifact.
+
+    Equivalent to ``squash attest-mlflow <model_path>``.
+    """
+    _require_path(req.model_path)
+
+    def _run() -> dict:
+        config = AttestConfig(
+            model_path=Path(req.model_path),
+            policies=(req.policies if req.policies is not None else ["enterprise-strict"]),
+            sign=req.sign,
+            fail_on_violation=False,  # never raise from HTTP handler
+            output_dir=Path(req.model_path).parent / "squash",
+        )
+        result = AttestPipeline.run(config)
+        return _result_to_dict(result)
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(_executor, _run)
+    if req.fail_on_violation and not result.get("passed"):
+        return JSONResponse(content=result, status_code=422)
+    status = 200 if result.get("passed") else 400
+    return JSONResponse(content=result, status_code=status)
+
+
+@app.post("/attest/wandb")
+async def attest_wandb(req: AttestIntegrationRequest) -> JSONResponse:
+    """Run an offline AttestPipeline for a W&B artifact directory.
+
+    Equivalent to ``squash attest-wandb <model_path>``.
+    """
+    _require_path(req.model_path)
+
+    def _run() -> dict:
+        config = AttestConfig(
+            model_path=Path(req.model_path),
+            policies=(req.policies if req.policies is not None else ["enterprise-strict"]),
+            sign=req.sign,
+            fail_on_violation=False,  # never raise from HTTP handler
+            output_dir=Path(req.model_path).parent / "squash",
+        )
+        result = AttestPipeline.run(config)
+        return _result_to_dict(result)
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(_executor, _run)
+    if req.fail_on_violation and not result.get("passed"):
+        return JSONResponse(content=result, status_code=422)
+    status = 200 if result.get("passed") else 400
+    return JSONResponse(content=result, status_code=status)
+
+
+class AttestHuggingFaceRequest(BaseModel):
+    """Request body for POST /attest/huggingface."""
+
+    model_path: str
+    repo_id: str | None = Field(default=None)
+    hf_token: str | None = Field(default=None)
+    policies: list[str] | None = Field(default=None)
+    sign: bool = False
+    fail_on_violation: bool = False
+
+
+@app.post("/attest/huggingface")
+async def attest_huggingface(req: AttestHuggingFaceRequest) -> JSONResponse:
+    """Attest a HuggingFace model — offline or with Hub push.
+
+    If ``repo_id`` is provided the attestation artefacts are pushed to the Hub
+    via ``HFSquash.attest_and_push()``.  Otherwise an offline
+    ``AttestPipeline.run()`` is executed.
+
+    Equivalent to ``squash attest-huggingface <model_path> [--repo-id ...]``.
+    """
+    _require_path(req.model_path)
+
+    def _run() -> dict:
+        if req.repo_id:
+            from squish.squash.integrations.huggingface import HFSquash
+
+            result = HFSquash.attest_and_push(
+                req.repo_id,
+                Path(req.model_path),
+                hf_token=req.hf_token or "",
+                policies=(req.policies if req.policies is not None else ["enterprise-strict"]),
+                sign=req.sign,
+                fail_on_violation=False,  # never raise from HTTP handler
+                repo_prefix="squash-attestations",
+            )
+        else:
+            config = AttestConfig(
+                model_path=Path(req.model_path),
+                policies=(req.policies if req.policies is not None else ["enterprise-strict"]),
+                sign=req.sign,
+                fail_on_violation=False,  # never raise from HTTP handler
+                output_dir=Path(req.model_path).parent / "squash",
+            )
+            result = AttestPipeline.run(config)
+        return _result_to_dict(result)
+
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(_executor, _run)
+    except Exception as exc:  # HF push failures (auth, network, missing dep)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if req.fail_on_violation and not result.get("passed"):
+        return JSONResponse(content=result, status_code=422)
+    status = 200 if result.get("passed") else 400
+    return JSONResponse(content=result, status_code=status)
+
+
+@app.post("/attest/langchain")
+async def attest_langchain(req: AttestIntegrationRequest) -> JSONResponse:
+    """Run a pre-deployment attestation for a LangChain pipeline artifact.
+
+    Equivalent to ``squash attest-langchain <model_path>``.
+    """
+    _require_path(req.model_path)
+
+    def _run() -> dict:
+        config = AttestConfig(
+            model_path=Path(req.model_path),
+            policies=(req.policies if req.policies is not None else ["enterprise-strict"]),
+            sign=req.sign,
+            fail_on_violation=False,  # never raise from HTTP handler
+            output_dir=Path(req.model_path).parent / "squash",
+        )
+        result = AttestPipeline.run(config)
+        return _result_to_dict(result)
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(_executor, _run)
+    if req.fail_on_violation and not result.get("passed"):
+        return JSONResponse(content=result, status_code=422)
+    status = 200 if result.get("passed") else 400
+    return JSONResponse(content=result, status_code=status)
 
 
 def _require_path(p: str) -> None:
