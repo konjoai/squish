@@ -639,3 +639,176 @@ class SbomRegistry:
             raise RuntimeError(f"Squash registry HTTP error {e.code}: {e.reason}") from e
 
         return registry_url
+
+
+# ── Wave 22 — BOM Merge & Composition ─────────────────────────────────────────
+
+class BomMerger:
+    """Merge multiple CycloneDX 1.5 BOM files into one canonical BOM.
+
+    * Components are deduplicated by ``purl`` (exact match).  When the same
+      PURL appears in multiple BOMs the entry with the highest vulnerability
+      severity is kept.
+    * Vulnerabilities are unioned; entries with the same ``id`` are merged
+      (worst-case ``analysis.state``).
+    * A ``compositions`` array is appended describing which component sets were
+      merged, per CycloneDX 1.5 spec.
+
+    Example::
+
+        merged_bom = BomMerger.merge(
+            [Path("model-a/cyclonedx-mlbom.json"),
+             Path("model-b/cyclonedx-mlbom.json")],
+            output_path=Path("merged/cyclonedx-mlbom.json"),
+        )
+    """
+
+    _SEVERITY_ORDER = {
+        "critical": 5,
+        "high": 4,
+        "medium": 3,
+        "moderate": 3,
+        "low": 2,
+        "info": 1,
+        "informational": 1,
+        "none": 0,
+        "unknown": 0,
+        "": 0,
+    }
+
+    @classmethod
+    def merge(
+        cls,
+        bom_paths: list,
+        output_path,
+        metadata: dict | None = None,
+    ) -> dict:
+        """Merge *bom_paths* into a single CycloneDX 1.5 BOM.
+
+        Parameters
+        ----------
+        bom_paths:
+            Iterable of :class:`~pathlib.Path` (or path strings) pointing to
+            CycloneDX BOM files.
+        output_path:
+            Destination path for the merged BOM.
+        metadata:
+            Optional dict to *update* the merged BOM's ``metadata`` section.
+
+        Returns
+        -------
+        dict
+            The merged BOM dict (also written to *output_path*).
+        """
+        import pathlib as _pl
+        bom_paths = [_pl.Path(p) for p in bom_paths]
+        output_path = _pl.Path(output_path)
+
+        boms: list[dict] = []
+        for p in bom_paths:
+            try:
+                boms.append(json.loads(p.read_text(encoding="utf-8")))
+            except Exception:
+                boms.append({})
+
+        # Deduplicate components by PURL
+        purl_map: dict[str, dict] = {}
+        no_purl: list[dict] = []
+        for bom in boms:
+            for comp in bom.get("components", []):
+                purl = comp.get("purl", "")
+                if not purl:
+                    no_purl.append(comp)
+                    continue
+                if purl not in purl_map:
+                    purl_map[purl] = comp
+                else:
+                    # Keep higher-severity vulnerabilities on collision
+                    existing = purl_map[purl]
+                    if cls._max_severity(comp) > cls._max_severity(existing):
+                        purl_map[purl] = comp
+
+        merged_components = list(purl_map.values()) + no_purl
+
+        # Union vulnerabilities by ID
+        vuln_map: dict[str, dict] = {}
+        for bom in boms:
+            for vuln in bom.get("vulnerabilities", []):
+                vid = vuln.get("id", "")
+                if vid not in vuln_map:
+                    vuln_map[vid] = vuln
+                else:
+                    # Merge: keep worst analysis state
+                    existing_state = (
+                        vuln_map[vid].get("analysis", {}).get("state", "") or ""
+                    )
+                    new_state = vuln.get("analysis", {}).get("state", "") or ""
+                    if cls._state_severity(new_state) > cls._state_severity(
+                        existing_state
+                    ):
+                        vuln_map[vid] = vuln
+
+        # Build composition entries
+        compositions: list[dict] = []
+        for i, (bom, path) in enumerate(zip(boms, bom_paths)):
+            comp_refs = [
+                c.get("purl") or c.get("bom-ref") or f"comp-{j}"
+                for j, c in enumerate(bom.get("components", []))
+            ]
+            if comp_refs:
+                compositions.append({
+                    "aggregate": "complete",
+                    "assemblies": comp_refs[:20],  # cap for readability
+                    "source": str(path),
+                })
+
+        # Assemble base metadata from first non-empty BOM
+        base_metadata: dict = {}
+        for bom in boms:
+            if bom.get("metadata"):
+                base_metadata = dict(bom["metadata"])
+                break
+        if metadata:
+            base_metadata.update(metadata)
+
+        # Use CycloneDX schema version from first BOM or default to 1.5
+        schema_version = boms[0].get("specVersion", "1.5") if boms else "1.5"
+
+        merged: dict = {
+            "bomFormat": "CycloneDX",
+            "specVersion": schema_version,
+            "metadata": base_metadata,
+            "components": merged_components,
+            "vulnerabilities": list(vuln_map.values()),
+            "compositions": compositions,
+        }
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        return merged
+
+    # ── Internal helpers ───────────────────────────────────────────────────────
+
+    @classmethod
+    def _max_severity(cls, comp: dict) -> int:
+        """Return the maximum vulnerability severity score for a component."""
+        score = 0
+        for vuln in comp.get("vulnerabilities", []):
+            ratings = vuln.get("ratings", [])
+            for r in ratings:
+                sev = str(r.get("severity", "")).lower()
+                score = max(score, cls._SEVERITY_ORDER.get(sev, 0))
+        return score
+
+    @classmethod
+    def _state_severity(cls, state: str) -> int:
+        """Numeric severity for analysis state strings."""
+        _map = {
+            "exploitable": 5,
+            "in_triage": 4,
+            "not_affected": 1,
+            "fixed": 0,
+            "false_positive": 0,
+            "": 0,
+        }
+        return _map.get(state.lower(), 2)

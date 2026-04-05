@@ -692,6 +692,245 @@ async def sbom_push(req: PushRequest) -> JSONResponse:
     return JSONResponse(content=await loop.run_in_executor(_executor, _run))
 
 
+# ── Wave 20 — NTIA minimum elements validation ────────────────────────────────
+
+class NtiaRequest(BaseModel):
+    bom_path: str
+    strict: bool = False
+
+
+@app.post("/ntia/validate")
+async def ntia_validate(req: NtiaRequest) -> JSONResponse:
+    """Validate NTIA minimum elements in a CycloneDX BOM.
+
+    Returns ``passed``, ``completeness_score`` (0–1), ``missing_fields``,
+    and ``present_fields``.
+    """
+    _require_path(req.bom_path)
+    from squish.squash.policy import NtiaValidator
+
+    def _run() -> dict:
+        result = NtiaValidator.check(Path(req.bom_path), strict=req.strict)
+        return {
+            "passed": result.passed,
+            "completeness_score": result.completeness_score,
+            "missing_fields": result.missing_fields,
+            "present_fields": result.present_fields,
+            "bom_path": str(result.bom_path) if result.bom_path else req.bom_path,
+        }
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+# ── Wave 21 — SLSA provenance attestation ─────────────────────────────────────
+
+class SlsaAttestRequest(BaseModel):
+    model_dir: str
+    level: int = 1
+    builder_id: str = "https://squish.local/squash/builder"
+    sign: bool = False
+
+
+@app.post("/slsa/attest")
+async def slsa_attest(req: SlsaAttestRequest) -> JSONResponse:
+    """Generate a SLSA 1.0 provenance statement for the given model directory.
+
+    Returns ``output_path``, ``level``, ``subject_sha256``, and ``subject_name``.
+    """
+    _require_path(req.model_dir)
+    from squish.squash.slsa import SlsaLevel, SlsaProvenanceBuilder
+
+    def _run() -> dict:
+        level = SlsaLevel(req.level)
+        attest = SlsaProvenanceBuilder.build(
+            Path(req.model_dir),
+            level=level,
+            builder_id=req.builder_id,
+        )
+        return {
+            "output_path": str(attest.output_path),
+            "level": attest.level.value,
+            "subject_name": attest.subject_name,
+            "subject_sha256": attest.subject_sha256,
+            "signed": req.level >= 2,
+            "invocation_id": attest.invocation_id,
+        }
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+# ── Wave 22 — BOM merge ────────────────────────────────────────────────────────
+
+class BomMergeRequest(BaseModel):
+    bom_paths: list[str]
+    output_path: str
+    metadata: dict = {}  # noqa: RUF012
+
+
+@app.post("/sbom/merge")
+async def sbom_merge(req: BomMergeRequest) -> JSONResponse:
+    """Merge multiple CycloneDX BOMs into one canonical BOM.
+
+    Deduplicates by PURL and unions vulnerabilities.
+    """
+    for p in req.bom_paths:
+        _require_path(p)
+    from squish.squash.sbom_builder import BomMerger
+
+    def _run() -> dict:
+        merged = BomMerger.merge(
+            [Path(p) for p in req.bom_paths],
+            Path(req.output_path),
+            metadata=req.metadata or None,
+        )
+        return {
+            "merged": True,
+            "output_path": req.output_path,
+            "component_count": len(merged.get("components", [])),
+            "vulnerability_count": len(merged.get("vulnerabilities", [])),
+        }
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+# ── Wave 23 — AI risk assessment ──────────────────────────────────────────────
+
+class RiskAssessRequest(BaseModel):
+    model_dir: str
+    framework: str = "both"
+
+
+@app.post("/risk/assess")
+async def risk_assess(req: RiskAssessRequest) -> JSONResponse:
+    """Assess AI risk per EU AI Act and/or NIST AI RMF.
+
+    ``framework`` must be ``"eu-ai-act"``, ``"nist-rmf"``, or ``"both"``
+    (default).
+    """
+    _require_path(req.model_dir)
+    from squish.squash.risk import AiRiskAssessor
+
+    def _run() -> dict:
+        bom_path = Path(req.model_dir) / "cyclonedx-mlbom.json"
+        result: dict = {}
+        if req.framework in ("eu-ai-act", "both"):
+            eu = AiRiskAssessor.assess_eu_ai_act(bom_path)
+            result["eu_ai_act"] = {
+                "passed": eu.passed,
+                "category": eu.category.value,
+                "rationale": eu.rationale,
+                "mitigation_required": eu.mitigation_required,
+            }
+        if req.framework in ("nist-rmf", "both"):
+            rmf = AiRiskAssessor.assess_nist_rmf(bom_path)
+            result["nist_rmf"] = {
+                "passed": rmf.passed,
+                "category": rmf.category.value,
+                "rationale": rmf.rationale,
+                "mitigation_required": rmf.mitigation_required,
+            }
+        return result
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+# ── Wave 24 — Drift monitoring ─────────────────────────────────────────────────
+
+class MonitorSnapshotRequest(BaseModel):
+    model_dir: str
+
+
+class MonitorCompareRequest(BaseModel):
+    model_dir: str
+    baseline_snapshot: str
+
+
+@app.post("/monitor/snapshot")
+async def monitor_snapshot(req: MonitorSnapshotRequest) -> JSONResponse:
+    """Return a SHA-256 snapshot fingerprint of *model_dir*."""
+    _require_path(req.model_dir)
+    from squish.squash.governor import DriftMonitor
+
+    def _run() -> dict:
+        snap = DriftMonitor.snapshot(Path(req.model_dir))
+        return {"snapshot": snap, "model_dir": req.model_dir}
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+@app.post("/monitor/compare")
+async def monitor_compare(req: MonitorCompareRequest) -> JSONResponse:
+    """Compare current *model_dir* state against *baseline_snapshot*.
+
+    Returns a list of drift events.
+    """
+    _require_path(req.model_dir)
+    from squish.squash.governor import DriftMonitor
+
+    def _run() -> dict:
+        events = DriftMonitor.compare(Path(req.model_dir), req.baseline_snapshot)
+        return {
+            "drift_detected": len(events) > 0,
+            "event_count": len(events),
+            "events": [
+                {
+                    "event_type": e.event_type,
+                    "component": e.component,
+                    "old_value": e.old_value,
+                    "new_value": e.new_value,
+                    "detected_at": e.detected_at,
+                }
+                for e in events
+            ],
+        }
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
+# ── Wave 25 — CI/CD integration ────────────────────────────────────────────────
+
+class CiRunRequest(BaseModel):
+    model_dir: str
+    report_format: str = "text"
+
+
+@app.post("/cicd/report")
+async def cicd_report(req: CiRunRequest) -> JSONResponse:
+    """Run the full squash check pipeline and return a CI report.
+
+    Runs NTIA validation, AI risk assessment, and drift detection.
+    """
+    _require_path(req.model_dir)
+    from squish.squash.cicd import CicdAdapter
+
+    def _run() -> dict:
+        report = CicdAdapter.run_pipeline(
+            Path(req.model_dir), report_format=req.report_format
+        )
+        return {
+            "passed": report.passed,
+            "env": {
+                "env_name": report.env.env_name,
+                "job_id": report.env.job_id,
+                "repo": report.env.repo,
+                "branch": report.env.branch,
+            },
+            "ntia": report.ntia,
+            "risk": report.risk,
+            "drift_events": report.drift_events,
+            "summary": CicdAdapter.job_summary(report),
+        }
+
+    loop = asyncio.get_running_loop()
+    return JSONResponse(content=await loop.run_in_executor(_executor, _run))
+
+
 def _require_path(p: str) -> None:
     if not Path(p).exists():
         raise HTTPException(status_code=404, detail=f"Path not found: {p}")

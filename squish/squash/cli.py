@@ -257,6 +257,137 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Registry protocol (default: dtrack)",
     )
 
+    # ── Wave 20 — NTIA minimum elements check ─────────────────────────────────
+    ntia_cmd = sub.add_parser(
+        "ntia-check",
+        help="Validate NTIA minimum elements in a CycloneDX BOM",
+        description=(
+            "Check a CycloneDX BOM for the NTIA Minimum Elements for SBOM "
+            "compliance (Nov 2021).\n\n"
+            "Example: squash ntia-check model/cyclonedx-mlbom.json"
+        ),
+    )
+    ntia_cmd.add_argument("bom_path", help="Path to the CycloneDX BOM JSON file")
+    ntia_cmd.add_argument(
+        "--strict",
+        action="store_true",
+        help="Require non-empty dependsOn fields (stricter NTIA compliance)",
+    )
+    ntia_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── Wave 21 — SLSA provenance attestation ─────────────────────────────────
+    slsa_cmd = sub.add_parser(
+        "slsa-attest",
+        help="Generate SLSA provenance statement for a model directory",
+        description=(
+            "Build a SLSA 1.0 Build Provenance statement for the artefacts in "
+            "MODEL_DIR and (optionally) sign it.\n\n"
+            "Example: squash slsa-attest ./my-model --level 2"
+        ),
+    )
+    slsa_cmd.add_argument("model_dir", help="Path to the squash model directory")
+    slsa_cmd.add_argument(
+        "--level",
+        type=int,
+        choices=[1, 2, 3],
+        default=1,
+        help="SLSA build track level (default: 1)",
+    )
+    slsa_cmd.add_argument(
+        "--builder-id",
+        default="https://squish.local/squash/builder",
+        help="URI identifying the build system",
+    )
+    slsa_cmd.add_argument("--sign", action="store_true", help="Force signing even at L1")
+    slsa_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── Wave 22 — BOM merge ────────────────────────────────────────────────────
+    merge_cmd = sub.add_parser(
+        "merge",
+        help="Merge multiple CycloneDX BOMs into one canonical BOM",
+        description=(
+            "Deduplicate components by PURL and union vulnerabilities across "
+            "multiple CycloneDX BOMs.\n\n"
+            "Example: squash merge a/cyclonedx-mlbom.json b/cyclonedx-mlbom.json "
+            "--output merged/cyclonedx-mlbom.json"
+        ),
+    )
+    merge_cmd.add_argument(
+        "bom_paths", nargs="+", help="Two or more CycloneDX BOM JSON files to merge"
+    )
+    merge_cmd.add_argument(
+        "--output", required=True, help="Destination path for the merged BOM"
+    )
+    merge_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── Wave 23 — AI risk assessment ──────────────────────────────────────────
+    risk_cmd = sub.add_parser(
+        "risk-assess",
+        help="Assess AI risk per EU AI Act and/or NIST AI RMF",
+        description=(
+            "Evaluate the BOM in MODEL_DIR against the EU AI Act (2024/1689) "
+            "risk tiers and the NIST AI Risk Management Framework.\n\n"
+            "Example: squash risk-assess ./my-model --framework eu-ai-act"
+        ),
+    )
+    risk_cmd.add_argument("model_dir", help="Path to the squash model directory")
+    risk_cmd.add_argument(
+        "--framework",
+        choices=["eu-ai-act", "nist-rmf", "both"],
+        default="both",
+        help="Risk framework to run (default: both)",
+    )
+    risk_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── Wave 24 — Drift monitoring ────────────────────────────────────────────
+    monitor_cmd = sub.add_parser(
+        "monitor",
+        help="Detect drift in a squash model directory",
+        description=(
+            "Snapshot the attestation state of MODEL_DIR and compare against a "
+            "previous snapshot to detect BOM changes, new CVEs, or policy "
+            "regressions.\n\n"
+            "Example: squash monitor ./my-model --once"
+        ),
+    )
+    monitor_cmd.add_argument("model_dir", help="Path to the squash model directory")
+    monitor_cmd.add_argument(
+        "--baseline",
+        default=None,
+        help="SHA-256 baseline snapshot string to compare against (omit to just snapshot)",
+    )
+    monitor_cmd.add_argument(
+        "--interval",
+        type=float,
+        default=3600.0,
+        help="Poll interval in seconds for continuous monitoring (default: 3600)",
+    )
+    monitor_cmd.add_argument(
+        "--once",
+        action="store_true",
+        help="Snapshot once (or compare against --baseline) then exit",
+    )
+    monitor_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── Wave 25 — CI/CD integration ───────────────────────────────────────────
+    ci_cmd = sub.add_parser(
+        "ci-run",
+        help="Run the full squash check pipeline in CI",
+        description=(
+            "Execute NTIA validation, AI risk assessment, and drift detection "
+            "for MODEL_DIR, then emit native CI annotations.\n\n"
+            "Example: squash ci-run ./my-model --report-format github"
+        ),
+    )
+    ci_cmd.add_argument("model_dir", help="Path to the squash model directory")
+    ci_cmd.add_argument(
+        "--report-format",
+        choices=["github", "jenkins", "gitlab", "text"],
+        default="text",
+        help="CI annotation format (default: text; auto-detected if not set)",
+    )
+    ci_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
     return parser
 
 
@@ -687,6 +818,170 @@ def _cmd_push(args: argparse.Namespace, quiet: bool) -> int:
     return 0
 
 
+# ── Wave 20 — NTIA check handler ───────────────────────────────────────────────
+
+def _cmd_ntia_check(args: argparse.Namespace, quiet: bool) -> int:
+    from squish.squash.policy import NtiaValidator
+
+    bom_path = Path(args.bom_path)
+    if not bom_path.exists():
+        print(f"error: BOM file not found: {bom_path}", file=sys.stderr)
+        return 1
+    try:
+        result = NtiaValidator.check(bom_path, strict=getattr(args, "strict", False))
+    except Exception as e:
+        print(f"error: NTIA check failed: {e}", file=sys.stderr)
+        return 2
+    if not quiet:
+        status = "PASS" if result.passed else "FAIL"
+        print(f"NTIA minimum elements: {status}")
+        print(f"  completeness: {result.completeness_score:.1%}  "
+              f"({len(result.present_fields)}/{len(result.present_fields) + len(result.missing_fields)} fields)")
+        if result.missing_fields:
+            print(f"  missing: {', '.join(result.missing_fields)}")
+    return 0 if result.passed else 1
+
+
+# ── Wave 21 — SLSA attest handler ─────────────────────────────────────────────
+
+def _cmd_slsa_attest(args: argparse.Namespace, quiet: bool) -> int:
+    from squish.squash.slsa import SlsaLevel, SlsaProvenanceBuilder
+
+    model_dir = Path(args.model_dir)
+    if not model_dir.exists():
+        print(f"error: model directory not found: {model_dir}", file=sys.stderr)
+        return 1
+    level_int = getattr(args, "level", 1)
+    level = SlsaLevel(level_int)
+    builder_id = getattr(args, "builder_id", "https://squish.local/squash/builder")
+    try:
+        attest = SlsaProvenanceBuilder.build(
+            model_dir,
+            level=level,
+            builder_id=builder_id,
+        )
+    except Exception as e:
+        print(f"error: SLSA attestation failed: {e}", file=sys.stderr)
+        return 2
+    if not quiet:
+        print(f"✓ SLSA L{level.value} provenance written to {attest.output_path}")
+        print(f"  subject: {attest.subject_name}")
+        print(f"  digest:  sha256:{attest.subject_sha256}")
+    return 0
+
+
+# ── Wave 22 — BOM merge handler ───────────────────────────────────────────────
+
+def _cmd_merge(args: argparse.Namespace, quiet: bool) -> int:
+    from squish.squash.sbom_builder import BomMerger
+
+    bom_paths = [Path(p) for p in args.bom_paths]
+    output_path = Path(args.output)
+    for p in bom_paths:
+        if not p.exists():
+            print(f"error: BOM file not found: {p}", file=sys.stderr)
+            return 1
+    try:
+        merged = BomMerger.merge(bom_paths, output_path)
+    except Exception as e:
+        print(f"error: BOM merge failed: {e}", file=sys.stderr)
+        return 2
+    if not quiet:
+        n_comp = len(merged.get("components", []))
+        print(f"✓ Merged {len(bom_paths)} BOMs → {output_path}  ({n_comp} components)")
+    return 0
+
+
+# ── Wave 23 — Risk assess handler ─────────────────────────────────────────────
+
+def _cmd_risk_assess(args: argparse.Namespace, quiet: bool) -> int:
+    from squish.squash.risk import AiRiskAssessor
+
+    model_dir = Path(args.model_dir)
+    bom_path = model_dir / "cyclonedx-mlbom.json"
+    if not bom_path.exists():
+        print(f"error: CycloneDX BOM not found: {bom_path}", file=sys.stderr)
+        return 1
+    framework = getattr(args, "framework", "both")
+    overall_passed = True
+    try:
+        if framework in ("eu-ai-act", "both"):
+            eu = AiRiskAssessor.assess_eu_ai_act(bom_path)
+            if not quiet:
+                print(f"EU AI Act: {eu.category.value.upper()}  "
+                      f"({'PASS' if eu.passed else 'FAIL'})")
+                for r in eu.rationale:
+                    print(f"  • {r}")
+            if not eu.passed:
+                overall_passed = False
+        if framework in ("nist-rmf", "both"):
+            rmf = AiRiskAssessor.assess_nist_rmf(bom_path)
+            if not quiet:
+                print(f"NIST RMF:  {rmf.category.value.upper()}  "
+                      f"({'PASS' if rmf.passed else 'FAIL'})")
+                for r in rmf.rationale:
+                    print(f"  • {r}")
+            if not rmf.passed:
+                overall_passed = False
+    except Exception as e:
+        print(f"error: risk assessment failed: {e}", file=sys.stderr)
+        return 2
+    return 0 if overall_passed else 1
+
+
+# ── Wave 24 — Drift monitor handler ───────────────────────────────────────────
+
+def _cmd_monitor(args: argparse.Namespace, quiet: bool) -> int:
+    from squish.squash.governor import DriftMonitor
+
+    model_dir = Path(args.model_dir)
+    if not model_dir.exists():
+        print(f"error: model directory not found: {model_dir}", file=sys.stderr)
+        return 1
+    baseline = getattr(args, "baseline", None)
+    once = getattr(args, "once", False)
+
+    try:
+        if baseline is None:
+            snap = DriftMonitor.snapshot(model_dir)
+            if not quiet:
+                print(f"✓ Snapshot: {snap}")
+            return 0
+        events = DriftMonitor.compare(model_dir, baseline)
+    except Exception as e:
+        print(f"error: drift monitor failed: {e}", file=sys.stderr)
+        return 2
+
+    if not events:
+        if not quiet:
+            print("✓ No drift detected")
+        return 0
+
+    for evt in events:
+        print(f"[{evt.event_type}] {evt.component}: {evt.old_value!r} → {evt.new_value!r}")
+    return 1
+
+
+# ── Wave 25 — CI run handler ───────────────────────────────────────────────────
+
+def _cmd_ci_run(args: argparse.Namespace, quiet: bool) -> int:
+    from squish.squash.cicd import CicdAdapter
+
+    model_dir = Path(args.model_dir)
+    if not model_dir.exists():
+        print(f"error: model directory not found: {model_dir}", file=sys.stderr)
+        return 1
+    report_format = getattr(args, "report_format", "text")
+    try:
+        report = CicdAdapter.run_pipeline(model_dir, report_format=report_format)
+    except Exception as e:
+        print(f"error: CI pipeline failed: {e}", file=sys.stderr)
+        return 2
+    if not quiet and report_format in ("github", "text"):
+        print(CicdAdapter.job_summary(report))
+    return 0 if report.passed else 1
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -721,6 +1016,18 @@ def main() -> None:
         sys.exit(_cmd_push(args, quiet))
     elif args.command == "attest":
         sys.exit(_cmd_attest(args, quiet))
+    elif args.command == "ntia-check":
+        sys.exit(_cmd_ntia_check(args, quiet))
+    elif args.command == "slsa-attest":
+        sys.exit(_cmd_slsa_attest(args, quiet))
+    elif args.command == "merge":
+        sys.exit(_cmd_merge(args, quiet))
+    elif args.command == "risk-assess":
+        sys.exit(_cmd_risk_assess(args, quiet))
+    elif args.command == "monitor":
+        sys.exit(_cmd_monitor(args, quiet))
+    elif args.command == "ci-run":
+        sys.exit(_cmd_ci_run(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)

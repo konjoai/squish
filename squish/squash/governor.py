@@ -239,3 +239,190 @@ class SquashGovernor(BaseHTTPMiddleware):
             "accuracy_ok":        self._accuracy_ok,
             "strict_compliance":  self.strict,
         }
+
+
+# ── Wave 24 — Drift Detection & Continuous Monitoring ─────────────────────────
+
+import datetime as _dt  # noqa: E402
+import hashlib as _hashlib  # noqa: E402
+import json as _json_drift  # noqa: E402
+import threading as _threading  # noqa: E402
+from dataclasses import dataclass as _dataclass, field as _field  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+from typing import Callable as _Callable  # noqa: E402
+
+
+@_dataclass
+class DriftEvent:
+    """A single detected drift event.
+
+    Attributes
+    ----------
+    event_type:
+        One of ``"BOM_CHANGED"``, ``"CVE_APPEARED"``, ``"POLICY_REGRESSED"``.
+    component:
+        Human-readable component / artifact name that changed.
+    old_value:
+        Previous value (string representation).
+    new_value:
+        Current value (string representation).
+    detected_at:
+        ISO-8601 UTC timestamp.
+    """
+
+    event_type: str
+    component: str
+    old_value: str
+    new_value: str
+    detected_at: str = _field(
+        default_factory=lambda: _dt.datetime.now(_dt.timezone.utc).isoformat()
+    )
+
+
+class DriftMonitor:
+    """Compare model directory state snapshots and emit :class:`DriftEvent` objects.
+
+    Typical CI usage::
+
+        snap = DriftMonitor.snapshot(model_dir)
+        # … later …
+        events = DriftMonitor.compare(model_dir, snap)
+        for e in events:
+            print(e.event_type, e.component)
+
+    Long-running monitoring::
+
+        DriftMonitor.watch(model_dir, interval_s=3600,
+                           callback=lambda evts: alert(evts))
+    """
+
+    @staticmethod
+    def snapshot(model_dir: _Path) -> str:
+        """Return a SHA-256 fingerprint of the attestation state in *model_dir*.
+
+        Covers: CycloneDX BOM, scan results, attestation record, VEX report,
+        and all per-policy JSON files.  Missing files skipped silently.
+        """
+        model_dir = _Path(model_dir)
+        parts: list[str] = []
+        for name in sorted([
+            "cyclonedx-mlbom.json",
+            "squash-scan.json",
+            "squash-attest.json",
+            "squash-vex-report.json",
+        ]):
+            p = model_dir / name
+            parts.append(p.read_text(encoding="utf-8") if p.exists() else "")
+        for p in sorted(model_dir.glob("squash-policy-*.json")):
+            parts.append(p.read_text(encoding="utf-8"))
+        return _hashlib.sha256("\n".join(parts).encode()).hexdigest()
+
+    @staticmethod
+    def compare(
+        model_dir: _Path,
+        baseline_snapshot: str,
+    ) -> list[DriftEvent]:
+        """Compare current state of *model_dir* against *baseline_snapshot*.
+
+        Returns a list of :class:`DriftEvent` describing what changed.
+        An empty list means no drift.
+        """
+        model_dir = _Path(model_dir)
+        events: list[DriftEvent] = []
+        now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+        current_snap = DriftMonitor.snapshot(model_dir)
+        if current_snap == baseline_snapshot:
+            return events
+
+        # BOM identity changed
+        bom_path = model_dir / "cyclonedx-mlbom.json"
+        if not bom_path.exists():
+            events.append(DriftEvent(
+                event_type="BOM_CHANGED",
+                component="cyclonedx-mlbom.json",
+                old_value=baseline_snapshot[:16] + "…",
+                new_value="(missing)",
+                detected_at=now,
+            ))
+            return events
+
+        events.append(DriftEvent(
+            event_type="BOM_CHANGED",
+            component="cyclonedx-mlbom.json",
+            old_value=baseline_snapshot[:16] + "…",
+            new_value=current_snap[:16] + "…",
+            detected_at=now,
+        ))
+
+        # CVE check — report any non-fixed/non-affected vulnerabilities
+        vex_path = model_dir / "squash-vex-report.json"
+        if vex_path.exists():
+            try:
+                vex = _json_drift.loads(vex_path.read_text(encoding="utf-8"))
+                for stmt in vex.get("statements", []):
+                    state = stmt.get("analysis", {}).get("state", "")
+                    if state not in ("not_affected", "fixed"):
+                        cve_id = stmt.get("vulnerability", {}).get("id", "unknown")
+                        events.append(DriftEvent(
+                            event_type="CVE_APPEARED",
+                            component=cve_id,
+                            old_value="not_present",
+                            new_value="present",
+                            detected_at=now,
+                        ))
+            except Exception:
+                pass
+
+        # Policy regression check
+        for policy_path in sorted(model_dir.glob("squash-policy-*.json")):
+            try:
+                pr = _json_drift.loads(policy_path.read_text(encoding="utf-8"))
+                if not pr.get("passed", True) and pr.get("error_count", 0) > 0:
+                    events.append(DriftEvent(
+                        event_type="POLICY_REGRESSED",
+                        component=policy_path.stem,
+                        old_value="passed",
+                        new_value=f"failed ({pr.get('error_count')} errors)",
+                        detected_at=now,
+                    ))
+            except Exception:
+                pass
+
+        return events
+
+    @staticmethod
+    def watch(
+        model_dir: _Path,
+        interval_s: float,
+        callback: _Callable[[list[DriftEvent]], None],
+    ) -> "_threading.Event":
+        """Poll *model_dir* every *interval_s* seconds; call *callback* on drift.
+
+        Returns a :class:`threading.Event` that callers can ``set()`` to stop
+        the background thread.
+
+        Example::
+
+            stop = DriftMonitor.watch(model_dir, 3600, lambda evts: print(evts))
+            # … later …
+            stop.set()
+        """
+        model_dir = _Path(model_dir)
+        baseline = DriftMonitor.snapshot(model_dir)
+        stop_event = _threading.Event()
+
+        def _loop() -> None:
+            nonlocal baseline
+            while not stop_event.wait(timeout=interval_s):
+                events = DriftMonitor.compare(model_dir, baseline)
+                if events:
+                    try:
+                        callback(events)
+                    except Exception:
+                        pass
+                    baseline = DriftMonitor.snapshot(model_dir)
+
+        t = _threading.Thread(target=_loop, daemon=True)
+        t.start()
+        return stop_event
