@@ -388,6 +388,52 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ci_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
+    # ── Wave 27 — Kubernetes admission webhook ─────────────────────────────────
+    webhook_cmd = sub.add_parser(
+        "webhook",
+        help="Start the Kubernetes admission webhook server",
+        description=(
+            "Run an HTTPS validating admission webhook that enforces Squash BOM "
+            "attestation policy.  Pods annotated with "
+            "squash.ai/attestation-required=true must carry a valid "
+            "squash.ai/bom-digest annotation whose digest is present in the "
+            "configured policy store.\n\n"
+            "Example: squash webhook --port 8443 --tls-cert /tls/tls.crt "
+            "--tls-key /tls/tls.key --policy-store /var/squash/policy-store.json"
+        ),
+    )
+    webhook_cmd.add_argument(
+        "--port",
+        type=int,
+        default=8443,
+        help="TCP port for the webhook server (default: 8443)",
+    )
+    webhook_cmd.add_argument(
+        "--tls-cert",
+        metavar="PATH",
+        default=None,
+        help="Path to PEM-encoded TLS certificate (omit for dev HTTP mode)",
+    )
+    webhook_cmd.add_argument(
+        "--tls-key",
+        metavar="PATH",
+        default=None,
+        help="Path to PEM-encoded TLS private key",
+    )
+    webhook_cmd.add_argument(
+        "--policy-store",
+        metavar="PATH",
+        default=None,
+        help="Path to JSON policy store file: {digest: bool}",
+    )
+    webhook_cmd.add_argument(
+        "--default-deny",
+        action="store_true",
+        default=False,
+        help="Deny pods that lack the attestation-required annotation (default: allow)",
+    )
+    webhook_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
     return parser
 
 
@@ -982,6 +1028,39 @@ def _cmd_ci_run(args: argparse.Namespace, quiet: bool) -> int:
     return 0 if report.passed else 1
 
 
+# ── Wave 27 — Kubernetes admission webhook handler ─────────────────────────────
+
+def _cmd_webhook(args: argparse.Namespace, quiet: bool) -> int:
+    from squish.squash.integrations.kubernetes import (
+        KubernetesWebhookHandler,
+        WebhookConfig,
+        serve_webhook,
+    )
+
+    policy_store_path = Path(args.policy_store) if getattr(args, "policy_store", None) else None
+    config = WebhookConfig(
+        policy_store_path=policy_store_path,
+        default_allow=not getattr(args, "default_deny", False),
+    )
+    handler = KubernetesWebhookHandler(config)
+    port: int = getattr(args, "port", 8443)
+    tls_cert: str | None = getattr(args, "tls_cert", None)
+    tls_key: str | None = getattr(args, "tls_key", None)
+
+    if not quiet:
+        mode = "HTTPS" if tls_cert else "HTTP (dev)"
+        print(f"squash webhook: starting {mode} server on port {port}")
+        if policy_store_path:
+            print(f"squash webhook: policy store → {policy_store_path}")
+
+    try:
+        serve_webhook(handler, port=port, tls_cert=tls_cert, tls_key=tls_key)
+    except Exception as e:
+        print(f"error: webhook server failed: {e}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -1028,6 +1107,8 @@ def main() -> None:
         sys.exit(_cmd_monitor(args, quiet))
     elif args.command == "ci-run":
         sys.exit(_cmd_ci_run(args, quiet))
+    elif args.command == "webhook":
+        sys.exit(_cmd_webhook(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)

@@ -1,0 +1,48 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "squash-webhook.fullname" . }}
+  labels:
+    {{- include "squash-webhook.labels" . | nindent 4 }}
+  {{- if .Values.tls.caBundle }}
+  {{- else }}
+  annotations:
+    # Populated by cert-manager cainjector when cert-manager is installed.
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "squash-webhook.fullname" . }}
+  {{- end }}
+webhooks:
+  - name: pods.squash.ai
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    clientConfig:
+      service:
+        name: {{ include "squash-webhook.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /validate
+        port: {{ .Values.service.port }}
+      {{- if .Values.tls.caBundle }}
+      caBundle: {{ .Values.tls.caBundle }}
+      {{- end }}
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations:
+          {{- range .Values.webhook.operations }}
+          - {{ . }}
+          {{- end }}
+        scope: Namespaced
+    namespaceSelector:
+      {{- if .Values.webhook.namespaceSelector }}
+      {{- toYaml .Values.webhook.namespaceSelector | nindent 6 }}
+      {{- else }}
+      matchExpressions:
+        {{- range .Values.excludeNamespaces }}
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - {{ . }}
+        {{- end }}
+      {{- end }}

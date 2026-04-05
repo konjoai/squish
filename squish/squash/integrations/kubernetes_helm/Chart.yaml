@@ -1,0 +1,23 @@
+apiVersion: v2
+name: squash-webhook
+description: >
+  Kubernetes Validating Admission Webhook that enforces Squash BOM attestation
+  policy.  Pods annotated with ``squash.ai/attestation-required: "true"`` must
+  carry a valid ``squash.ai/bom-digest`` annotation whose digest is present
+  in the configured policy store.
+type: application
+version: 0.1.0
+appVersion: "27"
+keywords:
+  - squash
+  - mlops
+  - bom
+  - attestation
+  - admission-webhook
+  - sbom
+home: https://github.com/wesleyscholl/squish
+sources:
+  - https://github.com/wesleyscholl/squish
+maintainers:
+  - name: wesleyscholl
+    email: wes@konjo.ai

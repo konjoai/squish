@@ -1,0 +1,97 @@
+# squash-webhook Helm values
+# Override these with --set or a custom values file.
+
+# -- Number of webhook pods to run
+replicaCount: 2
+
+image:
+  # -- Container image repository
+  repository: ghcr.io/wesleyscholl/squash-webhook
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Docker image tag (defaults to the chart appVersion)
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Whether to create a ServiceAccount for the webhook pod
+  create: true
+  annotations: {}
+  name: ""
+
+# -- Pod annotations (merged with mandatory squash annotations)
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  # -- External port (Kubernetes routes 443 → containerPort)
+  port: 443
+  # -- Container port the webhook server listens on
+  containerPort: 8443
+
+# TLS configuration
+tls:
+  # -- Name of the Kubernetes Secret containing tls.crt and tls.key
+  secretName: squash-webhook-tls
+  # -- CA bundle for the MutatingWebhookConfiguration (base64-encoded PEM).
+  #    Leave empty and patch with cert-manager via cainjector.
+  caBundle: ""
+
+# -- Path inside the container to the policy store JSON
+policyStorePath: /var/squash/policy-store.json
+
+# -- ConfigMap name containing the policy-store.json (mounted as a volume)
+policyStoreConfigMap: squash-policy-store
+
+# Squash webhook policy settings
+webhook:
+  # -- Route all Pod requests through the webhook (all namespaces)
+  namespaceSelector: {}
+  # -- Fail open (Ignore) or fail closed (Fail) when the webhook is unavailable
+  failurePolicy: Fail
+  # -- Per-request timeout in seconds
+  timeoutSeconds: 5
+  # -- Operations to intercept
+  operations:
+    - CREATE
+
+# -- List of active Squash policies to enforce
+policies:
+  - enterprise-strict
+
+# -- List of namespaces the webhook will NOT intercept
+excludeNamespaces:
+  - kube-system
+  - kube-public
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 64Mi
+  requests:
+    cpu: 50m
+    memory: 32Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -72,6 +72,10 @@ from squish.squash.cicd import CiEnvironment, CicdAdapter, CicdReport  # noqa: F
 from squish.squash.integrations.sagemaker import SageMakerSquash  # noqa: F401 (Wave 26)
 from squish.squash.sbom_builder import OrasAdapter  # noqa: F401 (Wave 26)
 from squish.squash.vex import VexFeedManifest, SQUASH_VEX_FEED_URL, SQUASH_VEX_FEED_FALLBACK_URL  # noqa: F401 (Wave 26)
+from squish.squash.integrations.kubernetes import (  # noqa: F401 (Wave 27)
+    KubernetesWebhookHandler,
+    WebhookConfig,
+)
 
 __all__ = [
     # Phase 1–3 (existing)
@@ -157,4 +161,7 @@ __all__ = [
     "VexFeedManifest",
     "SQUASH_VEX_FEED_URL",
     "SQUASH_VEX_FEED_FALLBACK_URL",
+    # Wave 27: Kubernetes Admission Webhook
+    "KubernetesWebhookHandler",
+    "WebhookConfig",
 ]

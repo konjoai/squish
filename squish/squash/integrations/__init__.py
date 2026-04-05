@@ -9,7 +9,10 @@ Available adapters
 - :mod:`~squish.squash.integrations.wandb`        — W&B artifact attestation
 - :mod:`~squish.squash.integrations.huggingface`  — HF Hub model-card SBOM push
 - :mod:`~squish.squash.integrations.langchain`    — LangChain callback handler
+- :mod:`~squish.squash.integrations.sagemaker`    — AWS SageMaker model package
+- :mod:`~squish.squash.integrations.kubernetes`   — Kubernetes admission webhook
 
 Each adapter is import-guarded — only the adapters whose platform packages
-are installed will load.
+are installed will load.  The Kubernetes adapter has no extra runtime
+dependencies (it uses stdlib only).
 """

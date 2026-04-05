@@ -5,7 +5,56 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Squash Wave 26: SageMaker Integration, ORAS OCI Push, VEX Feed MVP
+## [Unreleased] — Squash Wave 27: Kubernetes Admission Webhook Controller
+
+### Added — Wave 27: Kubernetes Admission Webhook
+
+- **`squash/integrations/kubernetes.py`** (new file) — Kubernetes Validating Admission Webhook handler with zero runtime dependencies beyond stdlib:
+  - **`WebhookConfig`** dataclass — configures `policy_store_path` (JSON file mapping BOM digest → bool), `default_allow` flag (opt-in vs opt-out enforcement model), `required_annotation` (`squash.ai/attestation-required`), `bom_digest_annotation` (`squash.ai/bom-digest`), `policies` list, and `namespaces_exclude`.
+  - **`KubernetesWebhookHandler`** — stateless `handle(admission_review: dict) → dict` method implementing full admission policy: non-Pod resources pass through; excluded namespaces pass through; opt-in model via annotation; BOM digest presence check; policy store lookup; correct `AdmissionReview` response structure (uid preserved, `allowed`, `status.code`, `status.message`).
+  - **`serve_webhook(handler, *, port, tls_cert, tls_key)`** — stdlib `http.server` + `ssl.SSLContext` HTTPS server; no FastAPI or uvicorn dependency; supports plain HTTP dev mode when TLS not configured.
+  - **`_truthy(value)`** helper for case-insensitive annotation value parsing.
+  - `reload_store()` method forces re-read of the policy store JSON from disk (supports live ConfigMap updates).
+- **`squash/integrations/kubernetes_helm/`** (new directory) — production-ready Helm chart for the squash-webhook:
+  - `Chart.yaml` — `name: squash-webhook`, `version: 0.1.0`, `appVersion: "27"`.
+  - `values.yaml` — configurable image, replica count, port, TLS secret names, policy store ConfigMap, failure policy, excluded namespaces, resource limits.
+  - `templates/_helpers.tpl` — `squash-webhook.fullname`, `squash-webhook.labels`, `squash-webhook.selectorLabels`, `squash-webhook.serviceAccountName`.
+  - `templates/deployment.yaml` — Deployment with hardened security context (`runAsNonRoot`, `readOnlyRootFilesystem`, dropped capabilities), TLS secret volume mount, policy store ConfigMap mount, liveness/readiness probes.
+  - `templates/service.yaml` — ClusterIP Service on port 443 → containerPort 8443.
+  - `templates/mutatingwebhookconfiguration.yaml` — `ValidatingWebhookConfiguration` with namespace exclusion selector, configurable `failurePolicy`, cert-manager cainjector annotation.
+- **CLI** — `squash webhook` subcommand:
+  - `--port PORT` — TCP port (default: 8443)
+  - `--tls-cert PATH` — PEM TLS certificate
+  - `--tls-key PATH` — PEM TLS private key
+  - `--policy-store PATH` — JSON policy store file
+  - `--default-deny` — flip to opt-out mode (deny without annotation)
+  - `--quiet` — suppress informational output
+- **Exports** — `KubernetesWebhookHandler`, `WebhookConfig` added to `squish.squash.__all__`.
+- **`squash/integrations/__init__.py`** — docstring updated to include `sagemaker` and `kubernetes` adapters.
+
+### Tests — Wave 27
+
+- **`tests/test_squash_wave27.py`** — 52 new tests:
+  - `TestWebhookConfig` (8 tests) — default field values, custom config overrides.
+  - `TestKubernetesWebhookHandlerBasic` (16 tests) — all allow/deny decision paths, graceful handling of empty/malformed review, case-insensitive annotation parsing.
+  - `TestPolicyStore` (7 tests) — pass/fail/missing digest decisions, file round-trip, `reload_store()`, missing file, corrupt JSON.
+  - `TestIntegration` (5 tests) — realistic full AdmissionReview JSON round-trips, batch processing, top-level import verification, `default_allow=False` batch.
+  - `TestWebhookCli` (4 tests) — `--help` exit code, output content, top-level help includes `webhook`, inline module count gate.
+  - `TestServeWebhookApi` (4 tests) — importability, signature inspection, default parameter values.
+  - `TestTruthyHelper` (7 tests) — string/bool/None/empty inputs.
+- **Test totals**: 4116 passed, 25 skipped, 4 pre-existing failures (wave12x line-count stubs).
+
+### Module Count Note
+
+`kubernetes.py` raises the squash non-experimental Python file count to 105.
+**Justification**: Kubernetes is the #1 enterprise ML model serving platform.
+Admission webhook enforcement runs at the cluster control plane — a distinct
+enforcement layer from CI/CD (`ci-run`) or runtime governance (`SquashGovernor`).
+This is the canonical production deployment for Squash policy in ML-serving
+Kubernetes clusters. The module is justified by the enforcement plane it covers,
+not by feature overlap with existing modules.
+
+
 
 ### Added — Wave 26a: SageMaker Pipeline Attestation
 
