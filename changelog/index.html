@@ -836,15 +836,54 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#unreleased-squash-wave-30-rest-api-endpoints-for-vex-publish-integration-attestation" class="md-nav__link">
+  <a href="#unreleased-squash-wave-31-vex-cache-management-rest-endpoints" class="md-nav__link">
     <span class="md-ellipsis">
       
-        [Unreleased] — Squash Wave 30: REST API Endpoints for VEX Publish + Integration Attestation
+        [Unreleased] — Squash Wave 31: VEX Cache Management REST Endpoints
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="[Unreleased] — Squash Wave 30: REST API Endpoints for VEX Publish + Integration Attestation">
+    <nav class="md-nav" aria-label="[Unreleased] — Squash Wave 31: VEX Cache Management REST Endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-31-get-vexstatus-post-vexupdate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 31: GET /vex/status + POST /vex/update
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#module-count-wave-31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Module count — Wave 31
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#previous-squash-wave-30-rest-api-endpoints-for-vex-publish-integration-attestation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Previous] — Squash Wave 30: REST API Endpoints for VEX Publish + Integration Attestation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Previous] — Squash Wave 30: REST API Endpoints for VEX Publish + Integration Attestation">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -6845,7 +6884,45 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
-<h2 id="unreleased-squash-wave-30-rest-api-endpoints-for-vex-publish-integration-attestation">[Unreleased] — Squash Wave 30: REST API Endpoints for VEX Publish + Integration Attestation<a class="headerlink" href="#unreleased-squash-wave-30-rest-api-endpoints-for-vex-publish-integration-attestation" title="Permanent link">&para;</a></h2>
+<h2 id="unreleased-squash-wave-31-vex-cache-management-rest-endpoints">[Unreleased] — Squash Wave 31: VEX Cache Management REST Endpoints<a class="headerlink" href="#unreleased-squash-wave-31-vex-cache-management-rest-endpoints" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-31-get-vexstatus-post-vexupdate">Added — Wave 31: GET /vex/status + POST /vex/update<a class="headerlink" href="#added-wave-31-get-vexstatus-post-vexupdate" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>GET /vex/status</code></strong> — return current VEX feed cache metadata without network I/O:</li>
+<li>Empty cache: <code>{"empty": true}</code>.</li>
+<li>Populated cache: <code>{"empty": false, "url": str, "last_fetched": str, "statement_count": int, "stale": bool}</code>.</li>
+<li>Reads on-disk manifest via <code>VexCache.manifest()</code> and <code>VexCache.is_stale()</code>; zero latency.</li>
+<li>
+<p>Closes the last remaining CLI/REST surface gap (<code>squash vex status</code> now has a REST equivalent).</p>
+</li>
+<li>
+<p><strong><code>POST /vex/update</code></strong> — force-refresh the local VEX feed cache from a remote URL:</p>
+</li>
+<li>Body (all optional): <code>url</code> (fallback: <code>$SQUASH_VEX_URL</code> → <code>VexCache.DEFAULT_URL</code>), <code>timeout</code> (default <code>30.0</code>).</li>
+<li>Runs in thread-pool executor (<code>loop.run_in_executor</code>); always passes <code>force=True</code>.</li>
+<li>Returns: <code>{"url": str, "statement_count": int, "updated": true}</code>.</li>
+<li>Network failures map to <strong>502</strong> (propagated via <code>try/except → HTTPException</code>).</li>
+<li>
+<p>Closes the last remaining CLI/REST surface gap (<code>squash vex update</code> now has a REST equivalent).</p>
+</li>
+<li>
+<p><strong>New Prometheus counters</strong>: <code>squash_vex_update_total</code>, <code>squash_vex_status_total</code>.</p>
+</li>
+<li>
+<p><strong><code>tests/test_squash_wave31.py</code></strong> — 28 new integration tests (4326 total passing):</p>
+</li>
+<li><code>TestVexStatusEndpoint</code> (10) — empty/populated cache, all response fields, stale flag.</li>
+<li><code>TestVexUpdateEndpoint</code> (10) — URL resolution chain (explicit → env → DEFAULT_URL),
+    <code>force=True</code> assertion, timeout forwarding, 502 on network error.</li>
+<li><code>TestVexEndpointContracts</code> (5) — OpenAPI schema presence, correct HTTP methods.</li>
+<li><code>TestVexCounterIncrements</code> (3) — per-request counter increments for both endpoints.</li>
+</ul>
+<h3 id="module-count-wave-31">Module count — Wave 31<a class="headerlink" href="#module-count-wave-31" title="Permanent link">&para;</a></h3>
+<ul>
+<li>No new Python files (both endpoints added to existing <code>api.py</code>).</li>
+<li>Module count unchanged at 106 (all prior justifications in CHANGELOG still apply).</li>
+</ul>
+<hr />
+<h2 id="previous-squash-wave-30-rest-api-endpoints-for-vex-publish-integration-attestation">[Previous] — Squash Wave 30: REST API Endpoints for VEX Publish + Integration Attestation<a class="headerlink" href="#previous-squash-wave-30-rest-api-endpoints-for-vex-publish-integration-attestation" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-30-rest-api-integration-endpoints">Added — Wave 30: REST API integration endpoints<a class="headerlink" href="#added-wave-30-rest-api-integration-endpoints" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>POST /vex/publish</code></strong> — generate an OpenVEX 0.2.0 document via the REST API:</li>
