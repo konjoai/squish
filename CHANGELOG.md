@@ -5,6 +5,52 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 32: squish export — INT4 npy-dir → mlx safetensors exporter
+
+### Added
+
+- **`squish export <npy-dir>`** — new CLI subcommand that converts a squish INT4 npy-dir
+  (produced by `squish compress --format int4` or `--format mixed_attn`) to an
+  mlx_lm-compatible safetensors model at `<npy-dir>/squish_4bit/`. This unblocks
+  `squish eval` for INT4 and mixed_attn models.
+  - Source model (config.json + tokenizer) auto-detected by stripping `-compressed`/`-squished-*`
+    suffix and scanning for sibling `-bf16`, `-fp16`, or bare-name directories.
+  - `--source-model PATH` overrides auto-detection.
+  - `--group-size N` overrides auto-detection (default: inferred from first INT4 tensor shape).
+  - `--force` re-exports even if `<npy-dir>/squish_4bit/` already exists.
+  - Writes sentinel `<npy-dir>/.squish_4bit_ready` on success.
+
+- **`squish eval` npy-dir redirect** — `squish eval` now detects a pre-built
+  `squish_4bit/` directory (by checking `.squish_4bit_ready` sentinel +
+  `squish_4bit/config.json`) and automatically redirects evaluation to it instead of
+  hard-rejecting. Error message updated to suggest `squish export` when the sentinel
+  is absent.
+
+- **`discover_npy_dir_metadata(dir_path)`** — new public function in
+  `squish.quant.compressed_loader`: returns `(tensor_dir, base_keys, safe_to_original)`
+  from a npy-dir without loading any weight tensors into memory. Used by `cmd_export`
+  to enumerate tensors before calling `_build_squish_4bit_dir`.
+
+### Tests
+
+- **`tests/test_squash_wave32.py`** — 29 new tests (4355 total passing):
+  - `TestDiscoverNpyDirMetadata` (6) — return types, missing manifest, missing tensors/,
+    safe_to_original inversion, _tensor_load_key sort order, empty manifest.
+  - `TestCmdEvalNpyDirFix` (6) — rejects bare npy-dir, rejects with squish_4bit/ but no
+    sentinel, rejects with sentinel but no config, redirects when both present, error
+    message content, accepts native mlx dir.
+  - `TestCmdExportParser` (5) — subcommand callable, model_dir positional, source_model
+    flag, force default False, group_size default 0.
+  - `TestCmdExportExecution` (12) — builds with correct args, auto-discovers source model,
+    explicit source overrides auto, fails on missing model_dir, fails on missing manifest,
+    fails on no INT4 tensors, skips if already exported, force re-exports, fails if source
+    not found, fails if explicit source lacks config, auto group_size, explicit group_size.
+
+### Suite
+- 4355 passed (+29), 4 pre-existing failures (test_wave12x line_count), 25 skipped — zero regressions
+
+---
+
 ## [Unreleased] — Squash Wave 31: VEX Cache Management REST Endpoints
 
 ### Added — Wave 31: GET /vex/status + POST /vex/update

@@ -380,6 +380,31 @@ def _tensor_load_key(safe_key: str) -> tuple:
     return (group, layer_num, safe_key)
 
 
+def discover_npy_dir_metadata(
+    dir_path: Path,
+) -> tuple[Path, list[str], dict[str, str]]:
+    """Return ``(tensor_dir, base_keys, safe_to_original)`` for a squish npy-dir.
+
+    This is a metadata-only path — no weights are loaded.  Intended for the
+    ``squish export`` CLI command which needs to enumerate tensors before calling
+    ``_build_squish_4bit_dir()``.
+
+    Raises:
+        FileNotFoundError: if ``manifest.json`` or ``tensors/`` is absent.
+    """
+    manifest_path = dir_path / "manifest.json"
+    tensor_dir = dir_path / "tensors"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"manifest.json not found in {dir_path}")
+    if not tensor_dir.exists():
+        raise FileNotFoundError(f"tensors/ directory not found in {dir_path}")
+    with open(manifest_path) as _f:
+        manifest = json.load(_f)
+    safe_to_original: dict[str, str] = {v: k for k, v in manifest.items()}
+    base_keys: list[str] = sorted(_collect_tensor_keys(tensor_dir), key=_tensor_load_key)
+    return tensor_dir, base_keys, safe_to_original
+
+
 def _save_finalized_cache(dir_path: Path, base_keys: list[str],  # pragma: no cover
                           tensor_dir: Path, safe_to_original: dict,
                           verbose: bool = True) -> None:

@@ -1701,6 +1701,120 @@ def cmd_sbom(args) -> None:
             print("⚠ sigstore not installed — install: pip install sigstore")
 
 
+# ── squish export ─────────────────────────────────────────────────────────────
+
+def cmd_export(args) -> None:
+    """Export a squish INT4 npy-dir to an mlx-compatible safetensors model.
+
+    Wraps ``_build_squish_4bit_dir()`` with automatic source-model discovery so
+    users don't need to pass ``--source-model`` for the common case where the
+    source BF16 dir sits alongside the npy-dir (e.g. ``Qwen2.5-1.5B-bf16`` next
+    to ``Qwen2.5-1.5B-compressed``).
+
+    Output: ``<npy-dir>/squish_4bit/``  (mlx_lm-compatible, readable by squish eval)
+    """
+    import re as _re_ex
+    from squish.quant.compressed_loader import (
+        discover_npy_dir_metadata,
+        _build_squish_4bit_dir,
+        _load_npy_path,
+        _npy_exists,
+    )
+
+    model_dir = Path(args.model_dir).expanduser().resolve()
+    if not model_dir.is_dir():
+        print(f"✗ Model directory not found: {model_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    if not (model_dir / "manifest.json").exists():
+        print(
+            f"✗ {model_dir.name}: not a squish npy-dir (no manifest.json).\n"
+            "  Only directories produced by 'squish compress --format int4' can be exported.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Skip if already exported (unless --force)
+    _sentinel = model_dir / ".squish_4bit_ready"
+    if _sentinel.exists() and not getattr(args, "force", False):
+        print(f"  ✓ Already exported: {model_dir / 'squish_4bit'}")
+        print("    Use --force to re-export.")
+        return
+
+    # Discover source model (provides config.json + tokenizer)
+    if getattr(args, "source_model", None):
+        source_dir = Path(args.source_model).expanduser().resolve()
+    else:
+        _stem = _re_ex.sub(r"(-squished-.+|-compressed)$", "", model_dir.name)
+        source_dir = None
+        for _sfx in ("-bf16", "-fp16", ""):
+            _cand = model_dir.parent / (_stem + _sfx)
+            if _cand.exists() and (_cand / "config.json").exists():
+                source_dir = _cand
+                break
+        if source_dir is None:
+            print(
+                f"✗ Cannot auto-detect source model for {model_dir.name}.\n"
+                "  Squish export needs config.json + tokenizer from the original model.\n"
+                f"  Provide it: squish export {model_dir.name} --source-model <path>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    if not (source_dir / "config.json").exists():
+        print(f"✗ Source model missing config.json: {source_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    # Enumerate tensor metadata without loading weights
+    try:
+        tensor_dir, base_keys, safe_to_original = discover_npy_dir_metadata(model_dir)
+    except FileNotFoundError as _e:
+        print(f"✗ {_e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Verify INT4 tensors exist
+    _q4a_sks = [sk for sk in base_keys if _npy_exists(tensor_dir / f"{sk}__q4a.npy")]
+    if not _q4a_sks:
+        print(
+            f"✗ {model_dir.name} has no INT4 tensors (__q4a.npy).\n"
+            "  Only INT4 npy-dirs (from --format int4 / mixed_attn) can be exported.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Auto-detect group_size from the first INT4 tensor pair
+    group_size: int = getattr(args, "group_size", None) or 0
+    if not group_size:
+        try:
+            _p0 = _load_npy_path(tensor_dir / f"{_q4a_sks[0]}__q4a.npy", mmap_mode="r")
+            _s0 = _load_npy_path(tensor_dir / f"{_q4a_sks[0]}__s4a.npy", mmap_mode="r")
+            group_size = int(_p0.shape[1] * 2 // _s0.shape[1]) if _s0.shape[1] > 0 else 16
+            del _p0, _s0
+        except Exception:
+            group_size = 16
+
+    print(f"\n  squish export  →  {model_dir.name}")
+    print(f"  Source config: {source_dir.name}")
+    print(f"  INT4 layers  : {len(_q4a_sks)}")
+    print(f"  Group size   : {group_size}")
+    print()
+
+    _build_squish_4bit_dir(
+        dir_path=model_dir,
+        tensor_dir=tensor_dir,
+        base_keys=base_keys,
+        safe_to_original=safe_to_original,
+        model_dir=str(source_dir),
+        group_size=group_size,
+        verbose=True,
+    )
+
+    _out = model_dir / "squish_4bit"
+    _sz = sum(f.stat().st_size for f in _out.rglob("*") if f.is_file()) / 1e6
+    print(f"\n  ✓ Exported to {_out}  ({_sz:.0f} MB)")
+    print(f"  Evaluate with: squish eval {_out}")
+
+
 # ── squish eval ───────────────────────────────────────────────────────────────
 _EVAL_TASKS_DEFAULT = "arc_easy,arc_challenge,hellaswag,winogrande,piqa,openbookqa"
 _EVAL_TASK_FEWSHOT: dict[str, int] = {
@@ -1738,14 +1852,21 @@ def cmd_eval(args) -> None:
 
     # Detect npy-dir format produced by `squish compress --format int4/mixed_attn`.
     # These have no config.json and cannot be loaded by mlx_lm evaluate.
+    # If squish_4bit/ was previously built by `squish export`, redirect to it.
     if not (model_dir / "config.json").exists():
-        print(
-            f"✗ {model_dir.name} is a squish npy-dir (no config.json).\n"
-            "  mlx_lm evaluate requires a config.json-bearing format (INT3 or mlx-native INT4).\n"
-            "  Compress with:  squish compress --format int3  to get a lm_eval-compatible model.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        _four_bit_dir = model_dir / "squish_4bit"
+        _four_bit_sentinel = model_dir / ".squish_4bit_ready"
+        if _four_bit_sentinel.exists() and (_four_bit_dir / "config.json").exists():
+            print(f"  → INT4 export found — evaluating {model_dir.name}/squish_4bit/")
+            model_dir = _four_bit_dir
+        else:
+            print(
+                f"✗ {model_dir.name} is a squish npy-dir (no config.json).\n"
+                "  Export first:  squish export <npy-dir>\n"
+                "  Or compress with:  squish compress --format int3  for a lm_eval-ready model.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     tasks_str: str = getattr(args, "tasks", None) or _EVAL_TASKS_DEFAULT
     tasks: list[str] = [t.strip() for t in tasks_str.split(",") if t.strip()]
@@ -5902,6 +6023,43 @@ Ollama drop-in:
                         help="(bind only) Path to INT4 baseline result JSON for delta computation")
     p_sbom.set_defaults(func=cmd_sbom)
 
+    # ── squish export ──────────────────────────────────────────────────────────
+    p_export = sub.add_parser(
+        "export",
+        help="Export a squish INT4 npy-dir to mlx safetensors (enables squish eval)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Convert a squish INT4 npy-dir (from 'squish compress --format int4')\n"
+            "to an mlx_lm-compatible safetensors model in a squish_4bit/ subdirectory.\n"
+            "The exported model can then be evaluated with 'squish eval'.\n\n"
+            "Source model (config.json + tokenizer) is auto-detected by stripping\n"
+            "the '-compressed' suffix from the npy-dir name and looking for a sibling\n"
+            "directory.  Override with --source-model when auto-detection fails.\n\n"
+            "Examples:\n"
+            "  squish export ~/models/Qwen2.5-1.5B-compressed\n"
+            "  squish export ~/models/Qwen2.5-1.5B-compressed --source-model ~/models/Qwen2.5-1.5B-bf16\n"
+            "  squish export ~/models/Qwen2.5-1.5B-compressed --force\n"
+        ),
+    )
+    p_export.add_argument(
+        "model_dir", metavar="MODEL_DIR",
+        help="Path to the squish INT4 npy-dir to export",
+    )
+    p_export.add_argument(
+        "--source-model", default=None, metavar="PATH", dest="source_model",
+        help="Path to original HF model dir with config.json + tokenizer; "
+             "auto-detected from npy-dir name if omitted",
+    )
+    p_export.add_argument(
+        "--group-size", type=int, default=0, metavar="N", dest="group_size",
+        help="INT4 group size (default: auto-detected from first tensor, typically 16)",
+    )
+    p_export.add_argument(
+        "--force", action="store_true", default=False,
+        help="Re-export even if squish_4bit/ already exists",
+    )
+    p_export.set_defaults(func=cmd_export)
+
     # ── squish eval ────────────────────────────────────────────────────────────
     p_eval = sub.add_parser(
         "eval",
@@ -5912,8 +6070,8 @@ Ollama drop-in:
             "and automatically bind the accuracy scores to the CycloneDX ML-BOM sidecar.\n\n"
             "Tasks run in separate subprocesses to release Metal GPU memory between\n"
             "evaluations and prevent OOM on 16 GB Apple Silicon.\n\n"
-            "Note: models in squish npy-dir format (--format int4 / mixed_attn) cannot\n"
-            "be evaluated — use a model compressed with --format int3.\n\n"
+            "Note: models in squish npy-dir format (--format int4 / mixed_attn) must be\n"
+            "exported first: squish export <npy-dir>.  Or compress with --format int3.\n\n"
             "Examples:\n"
             "  squish eval ~/models/Qwen2.5-1.5B-Instruct-int3\n"
             "  squish eval ~/models/Qwen2.5-1.5B-Instruct-int3 --limit 500\n"

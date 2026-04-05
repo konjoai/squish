@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Squash Wave 32+: VEX Feed Hosting + Quantization Validation
+# NEXT_SESSION_PROMPT.md — Wave 33+: VEX Feed Hosting + mixed_attn lm_eval
 
 > Paste the content below verbatim as your opening prompt.
 > This is a **code session** — implement the remaining plan gaps.
@@ -7,15 +7,16 @@
 
 ## Prompt
 
-**Code session. Wave 31 is complete (VEX cache management REST endpoints: GET /vex/status, POST /vex/update).
-Next priority: Wave 32 — the squash REST API surface is now feature-complete at 28 endpoints.
-Focus: (a) VEX feed hosting — commit a static community VEX feed JSON to squishai/vex-feed, and
-(b) INT2 AQLM / SpQR experimental path (begin only after mixed_attn lm_eval result is in).
+**Code session. Wave 32 is complete (`squish export` — INT4 npy-dir → mlx safetensors exporter,
+`squish eval` npy-dir redirect, `discover_npy_dir_metadata()`, 29 new tests, 4355 passing).
+Next priority: Wave 33 — (a) VEX feed hosting: commit a static community VEX feed JSON to
+squishai/vex-feed so VexCache.DEFAULT_URL points to something real, and (b) run lm_eval on
+the exported mixed_attn model now that the export path is unblocked.
 One commit per wave. Minimum viable implementation — no stubs left in shipped code.**
 
 ---
 
-## Waves 1–31 complete (commit HEAD on `main`)
+## Waves 1–32 complete (commit HEAD on `main`)
 
 ### Delivery summary
 
@@ -35,21 +36,28 @@ One commit per wave. Minimum viable implementation — no stubs left in shipped 
 | 29    | VEX publish CLI (`squash vex-publish`) + integration CLI shims (`attest-mlflow`, `attest-wandb`, `attest-huggingface`, `attest-langchain`) | ✅ |
 | 30    | REST API endpoints for Wave 29 CLI additions (`POST /vex/publish`, `/attest/mlflow`, `/attest/wandb`, `/attest/huggingface`, `/attest/langchain`) | ✅ |
 | 31    | VEX cache management REST endpoints (`GET /vex/status`, `POST /vex/update`) — closes the last CLI/REST gap | ✅ |
+| 32    | `squish export` (npy-dir → mlx safetensors), `discover_npy_dir_metadata()`, `squish eval` redirect | ✅ |
 
 ### Test state
-- **4326 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
+- **4355 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
 - 25 skipped
 
 ### Module count
 ```
 squish/ non-experimental: 106/100 (+6 over limit — all justified in CHANGELOG, unchanged from wave 30)
-  Waves 29–31: 0 new modules (all additions inside cli.py / api.py)
+  Waves 29–32: 0 new Python modules (all additions inside cli.py / api.py / compressed_loader.py)
 ```
 
-### Key files added/changed in wave 31
-- `squish/squash/api.py` (extended) — 2 new REST endpoints + 1 request model + 2 counters:
-  - `VexUpdateRequest` + `GET /vex/status` + `POST /vex/update`
-- `tests/test_squash_wave31.py` — 28 new tests (mock pattern: `patch("squish.squash.vex.VexCache")`)
+### Key files added/changed in wave 32
+- `squish/quant/compressed_loader.py` (extended) — new public function `discover_npy_dir_metadata()`
+- `squish/cli.py` (extended) — `cmd_export()` function + `p_export` subparser + `cmd_eval` redirect
+- `tests/test_squash_wave32.py` — 29 new tests (4 test classes, all passing)
+
+### squish export format summary
+- **Input**: npy-dir with `manifest.json` + `tensors/` (INT4 weights as `__q4a.npy`, `__s4a.npy`, etc.)
+- **Output**: `<npy-dir>/squish_4bit/model.safetensors` + `config.json` + `.squish_4bit_ready` sentinel
+- **Source model**: auto-detected by stripping `-compressed`/`-squished-*` suffix, scanning for siblings
+- **Unlock**: `squish eval <npy-dir>` now redirects to `squish_4bit/` when exported
 
 ### Complete REST API surface (28 endpoints, all CLI commands covered)
 ```
@@ -65,14 +73,14 @@ Every `squash` CLI subcommand now has a REST equivalent.
 
 ---
 
-## Remaining gaps (post wave 31)
+## Remaining gaps (post wave 32)
 
-### 1. lm_eval validation for mixed_attn (still blocked)
+### 1. lm_eval validation for mixed_attn (NOW UNBLOCKED by wave 32)
 `mixed_attn` (FP16 attn + INT4 MLP) is code-complete but **unvalidated**.
 lm_eval result or lm_eval-waiver required before any accuracy claims.
 Baseline: INT4 = **70.6% arc_easy** (Qwen2.5-1.5B, limit=500).
-Blocked: squish npy-dir format is not loadable by `mlx_lm evaluate`.
-To unblock: build a squish npy-dir → mlx safetensors export step (no large models needed — test with synthetic tensors).
+**Wave 32 unblocks this**: run `squish export <mixed_attn-npy-dir>` then `squish eval <npy-dir>`.
+Expected result: within ~1pp of INT4 (FP16 attn, INT4 MLP should preserve quality).
 
 ### 2. VEX feed hosting
 `VexFeedManifest.generate()` is complete; no hosted feed yet.
@@ -88,7 +96,7 @@ Begin only after mixed_attn lm_eval result is in. See CLAUDE.md quantization tab
 
 - **Module count is at 106.** Any new file requires deleting one or writing justification in CHANGELOG.
 - **Do not add sidecar or model files to git.**
-- Tests must pass before committing (4326 passing, 4 pre-existing wave12x failures acceptable).
+- Tests must pass before committing (4355 passing, 4 pre-existing wave12x failures acceptable).
 - **For any REST API additions: integration tests must call the real endpoint (no mocking the handler).**
 - **For quantization path changes: lm_eval result or lm_eval-waiver in commit message.**
 
