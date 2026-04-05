@@ -836,6 +836,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#unreleased-squash-wave-28-circleci-orb-ray-serve-decorator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Unreleased] — Squash Wave 28: CircleCI Orb + Ray Serve Decorator
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Unreleased] — Squash Wave 28: CircleCI Orb + Ray Serve Decorator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-wave-28-circleci-orb-ray-serve" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added — Wave 28: CircleCI Orb + Ray Serve
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#unreleased-squash-wave-27-kubernetes-admission-webhook-controller" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -6727,6 +6755,77 @@
 <h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
+<hr />
+<h2 id="unreleased-squash-wave-28-circleci-orb-ray-serve-decorator">[Unreleased] — Squash Wave 28: CircleCI Orb + Ray Serve Decorator<a class="headerlink" href="#unreleased-squash-wave-28-circleci-orb-ray-serve-decorator" title="Permanent link">&para;</a></h2>
+<h3 id="added-wave-28-circleci-orb-ray-serve">Added — Wave 28: CircleCI Orb + Ray Serve<a class="headerlink" href="#added-wave-28-circleci-orb-ray-serve" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squish/squash/integrations/circleci/orb.yml</code></strong> — CircleCI Orb YAML definition
+  (data file, no module count impact):</li>
+<li><code>squash/attest</code> command: generate CycloneDX/SPDX BOM and attest a model
+    artifact inside a CircleCI job; parameters: <code>model-path</code>, <code>output</code>,
+    <code>format</code>, <code>policies</code>, <code>sign</code>.</li>
+<li><code>squash/check</code> command: check compliance of an existing BOM file;
+    parameters: <code>bom-path</code>, <code>fail-on-violation</code>, <code>policies</code>.</li>
+<li><code>squash/policy-gate</code> command: attest + enforce in one step; parameters:
+    <code>model-path</code>, <code>policy</code>, <code>allow-unscanned</code>, <code>output</code>; exits non-zero to
+    halt the workflow on non-compliance.</li>
+<li><code>display.home_url</code> / <code>display.source_url</code> metadata for Orb Registry.</li>
+<li>Two <code>examples</code> blocks: <code>attest_and_gate</code> and <code>check_existing_bom</code>.</li>
+<li>
+<p>All three commands delegate to <code>squash ci-run</code> delivered in Wave 25.</p>
+</li>
+<li>
+<p><strong><code>squish/squash/integrations/ray.py</code></strong> — Ray Serve deployment decorator (+1 module; see note):</p>
+</li>
+<li><code>@squash_serve</code> decorator: wraps any Ray Serve Deployment class; at
+    <code>.bind()</code> time runs <code>AttestPipeline.run()</code> against <code>model_dir</code> and injects
+    the BOM summary dict into <code>user_config["squash_bom_summary"]</code> so Ray
+    observability and health-check endpoints can surface it.</li>
+<li>Supports <code>@squash_serve</code> (zero args), <code>@squash_serve(model_dir=…)</code>, and
+    every permutation of <code>require_bom</code>, <code>policy</code>, <code>metadata</code>.</li>
+<li><code>SquashServeDeployment</code> mix-in base class: bakes config into the class
+    definition via <code>__init_subclass__</code>; override <code>_squash_model_dir</code>,
+    <code>_squash_require_bom</code>, <code>_squash_policy</code>.</li>
+<li><code>SquashServeConfig</code> dataclass: typed config container.</li>
+<li>
+<p>Ray is an optional runtime dep; the module is safe to import without Ray
+    installed; only <code>.bind()</code> requires it.</p>
+</li>
+<li>
+<p><strong><code>squish/squash/__init__.py</code></strong>: exports <code>squash_serve</code>, <code>SquashServeConfig</code>,
+  <code>SquashServeDeployment</code> added to <code>__all__</code>.</p>
+</li>
+<li>
+<p><strong><code>squish/squash/integrations/__init__.py</code></strong>: docstring updated to include
+  <code>ray</code> adapter.</p>
+</li>
+<li>
+<p><strong><code>tests/test_squash_wave28.py</code></strong>: 68 new tests:</p>
+</li>
+<li><code>TestCircleCIOrbExists</code> (20): YAML parse, version, display, all three
+    commands, parameter defaults, steps reference <code>squash ci-run</code>, examples.</li>
+<li><code>TestSquashServeConfig</code> (8): default field values, custom overrides.</li>
+<li><code>TestSquashServeDecorator</code> (9): callable/no-arg forms, bind patched,
+    <code>user_config</code> injection, merge, extra metadata, <code>validated=False</code> path.</li>
+<li><code>TestRunSquashValidation</code> (7): no model_dir, missing dir (raise/no-raise),
+    successful scan (mocked), failed scan (raise/no-raise), policy in summary.</li>
+<li><code>TestSquashServeDeploymentMixin</code> (5): importable, bind inherited,
+    policy override, default require_bom, default policy.</li>
+<li><code>TestModuleCount</code> (1): module count ≤ 106.</li>
+<li><code>TestSquashAllExports</code> (7): all three Wave 28 symbols present; Wave 27
+    symbols still present.</li>
+<li><code>TestRayModuleApiSurface</code> (7): public symbols, constant, decorator forms.</li>
+<li><code>TestFullDecoratorRoundTrip</code> (4): return value pass-through, positional
+    args, summary key, double-decoration idempotent.</li>
+</ul>
+<p><strong>Test state</strong>: 4184 passing (4116 + 68), 4 pre-existing wave12x failures,
+25 skipped.</p>
+<p><strong>Module count note (106)</strong>: <code>ray.py</code> +1 over wave 27 total (106 from 105).
+Justified: Ray Serve is the standard Python framework for deploying ML models
+as microservices at production scale; attestation at <code>.bind()</code> time is the
+correct enforcement point in the Ray deployment lifecycle — it cannot be
+subsumed by either the CI/CD adapter (Wave 25) or the SageMaker adapter
+(Wave 26).</p>
 <hr />
 <h2 id="unreleased-squash-wave-27-kubernetes-admission-webhook-controller">[Unreleased] — Squash Wave 27: Kubernetes Admission Webhook Controller<a class="headerlink" href="#unreleased-squash-wave-27-kubernetes-admission-webhook-controller" title="Permanent link">&para;</a></h2>
 <h3 id="added-wave-27-kubernetes-admission-webhook">Added — Wave 27: Kubernetes Admission Webhook<a class="headerlink" href="#added-wave-27-kubernetes-admission-webhook" title="Permanent link">&para;</a></h3>
