@@ -846,3 +846,129 @@ class PolicyWebhook:
         except Exception as e:
             log.warning("PolicyWebhook: delivery failed for %s — %s", webhook_url, e)
             return False
+
+
+# ── Wave 20 — NTIA Minimum Elements Validator ─────────────────────────────────
+
+# NTIA minimum elements per the 2021 "Minimum Elements For a Software Bill of
+# Materials" guidance.  The CycloneDX field paths are mapped to the seven
+# required elements as closely as the ML-BOM schema allows.
+_NTIA_REQUIRED_FIELD_PATHS: dict[str, str] = {
+    "supplier_name":           "metadata.supplier.name",
+    "component_name":          "components[0].name",
+    "component_version":       "components[0].version",
+    "unique_identifier":       "components[0].purl",
+    "dependency_relationship": "dependencies[0].ref",
+    "author_of_sbom":          "metadata.authors[0].name",
+    "timestamp":               "metadata.timestamp",
+}
+
+
+@dataclass
+class NtiaResult:
+    """Result of an NTIA minimum elements check against a CycloneDX BOM.
+
+    Attributes
+    ----------
+    passed:
+        ``True`` when all seven required NTIA elements are present.
+    present_fields:
+        Element names that were found in the BOM.
+    missing_fields:
+        Element names that were absent or empty.
+    completeness_score:
+        Fraction of required elements present (0.0–1.0).
+    bom_path:
+        Path that was checked (may be ``None`` when the BOM was supplied
+        as a raw dict).
+    """
+
+    passed: bool
+    present_fields: list[str]
+    missing_fields: list[str]
+    completeness_score: float
+    bom_path: "Path | None" = None
+
+
+class NtiaValidator:
+    """Validate a CycloneDX ML-BOM against the NTIA minimum elements spec.
+
+    Usage::
+
+        result = NtiaValidator.check(Path("./model/cyclonedx-mlbom.json"))
+        if not result.passed:
+            print("Missing:", result.missing_fields)
+    """
+
+    @staticmethod
+    def check(
+        bom: "Path | dict[str, Any]",
+        *,
+        strict: bool = False,
+    ) -> "NtiaResult":
+        """Check *bom* for NTIA minimum elements.
+
+        Parameters
+        ----------
+        bom:
+            Either a :class:`~pathlib.Path` to a CycloneDX JSON file or
+            an already-parsed BOM dict.
+        strict:
+            If ``True`` the *dependency_relationship* check requires at
+            least one dependency entry with a non-empty ``dependsOn``
+            list (not just the presence of the ``dependencies`` key).
+
+        Returns
+        -------
+        NtiaResult
+        """
+        import pathlib
+
+        bom_path: "Path | None" = None
+        if isinstance(bom, pathlib.Path):
+            bom_path = bom
+            if not bom.exists():
+                raise FileNotFoundError(f"BOM file not found: {bom}")
+            try:
+                doc: dict[str, Any] = json.loads(bom.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, ValueError, OSError):
+                return NtiaResult(
+                    passed=False,
+                    present_fields=[],
+                    missing_fields=list(_NTIA_REQUIRED_FIELD_PATHS.keys()),
+                    completeness_score=0.0,
+                    bom_path=bom_path,
+                )
+        else:
+            doc = bom
+
+        present: list[str] = []
+        missing: list[str] = []
+
+        for element_name, field_path in _NTIA_REQUIRED_FIELD_PATHS.items():
+            value = _resolve_field(doc, field_path)
+            if element_name == "dependency_relationship" and strict:
+                # strict: require at least one non-empty dependsOn list
+                deps = doc.get("dependencies", [])
+                has_real_dep = any(
+                    isinstance(d.get("dependsOn"), list) and len(d["dependsOn"]) > 0
+                    for d in deps
+                )
+                if has_real_dep:
+                    present.append(element_name)
+                else:
+                    missing.append(element_name)
+            elif value is not None and value != "" and value != [] and value != {}:
+                present.append(element_name)
+            else:
+                missing.append(element_name)
+
+        total = len(_NTIA_REQUIRED_FIELD_PATHS)
+        score = round(len(present) / total, 4) if total else 1.0
+        return NtiaResult(
+            passed=len(missing) == 0,
+            present_fields=present,
+            missing_fields=missing,
+            completeness_score=score,
+            bom_path=bom_path,
+        )

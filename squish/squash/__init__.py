@@ -57,6 +57,18 @@ from squish.squash.attest import (
 )
 from squish.squash.sarif import SarifBuilder
 from squish.squash.report import ComplianceReporter
+from squish.squash.policy import NtiaResult, NtiaValidator  # noqa: F401 (Wave 20)
+from squish.squash.slsa import SlsaLevel, SlsaAttestation, SlsaProvenanceBuilder  # noqa: F401 (Wave 21)
+from squish.squash.sbom_builder import BomMerger  # noqa: F401 (Wave 22)
+from squish.squash.risk import (  # noqa: F401 (Wave 23)
+    RiskCategory,
+    EuAiActCategory,
+    NistRmfCategory,
+    RiskAssessmentResult,
+    AiRiskAssessor,
+)
+from squish.squash.governor import DriftEvent, DriftMonitor  # noqa: F401 (Wave 24)
+from squish.squash.cicd import CiEnvironment, CicdAdapter, CicdReport  # noqa: F401 (Wave 25)
 
 __all__ = [
     # Phase 1–3 (existing)
@@ -114,4 +126,26 @@ __all__ = [
     "CompositeAttestResult",
     # Wave 19: SBOM registry push
     "SbomRegistry",
+    # Wave 20: NTIA minimum elements
+    "NtiaResult",
+    "NtiaValidator",
+    # Wave 21: SLSA provenance
+    "SlsaLevel",
+    "SlsaAttestation",
+    "SlsaProvenanceBuilder",
+    # Wave 22: BOM merge
+    "BomMerger",
+    # Wave 23: AI risk assessment
+    "RiskCategory",
+    "EuAiActCategory",
+    "NistRmfCategory",
+    "RiskAssessmentResult",
+    "AiRiskAssessor",
+    # Wave 24: Drift detection
+    "DriftEvent",
+    "DriftMonitor",
+    # Wave 25: CI/CD integration
+    "CiEnvironment",
+    "CicdAdapter",
+    "CicdReport",
 ]

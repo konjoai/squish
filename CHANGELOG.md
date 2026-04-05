@@ -5,6 +5,46 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Waves 20–25: NTIA Validator, SLSA Provenance, BOM Merge, AI Risk Assessment, Drift Detection, CI/CD Adapters
+
+### Added — Wave 20: NTIA Minimum Elements Validator
+
+- **`squash/policy.py`** — `NtiaResult` dataclass and `NtiaValidator` class: `check(bom, *, strict=False) → NtiaResult`. Validates a CycloneDX BOM against the seven NTIA minimum elements (supplier name, component name/version, unique identifier, dependency relationship, author of SBOM, timestamp). Returns completeness score (0.0–1.0) and per-element pass/fail breakdown. Raises `FileNotFoundError` if the BOM path does not exist.
+- **`squash/cli.py`** — `squash ntia-check BOM_PATH [--strict] [--quiet]` subcommand.
+- **`squash/api.py`** — `POST /ntia/validate` endpoint: returns `{passed, completeness_score, missing_fields, present_fields}`.
+
+### Added — Wave 21: SLSA 1.0 Build Provenance Attestation
+
+- **`squash/slsa.py`** — `SlsaLevel` enum (L1/L2/L3), `SlsaAttestation` dataclass, and `SlsaProvenanceBuilder` class: `build(model_dir, *, level, builder_id, invocation_id) → SlsaAttestation`. Generates in-toto v1 statements with SLSA 1.0 predicate. L2+ signing and L3+ verification are best-effort (errors swallowed). Attaches provenance as an `externalReference` in the BOM.
+- **`squash/cli.py`** — `squash slsa-attest MODEL_DIR [--level {1,2,3}] [--builder-id ID] [--sign] [--quiet]` subcommand.
+- **`squash/api.py`** — `POST /slsa/attest` endpoint: returns `{output_path, level, subject_name, subject_sha256, signed, invocation_id}`.
+
+### Added — Wave 22: BOM Merge & Composition
+
+- **`squash/sbom_builder.py`** — `BomMerger` class: `merge(bom_paths, output_path, metadata) → dict`. Merges multiple CycloneDX 1.5 BOMs by deduplicating components (by PURL, keeping highest severity), unioning vulnerabilities (keeping worst `analysis.state`), and emitting a `compositions` array. Handles components without a PURL.
+- **`squash/cli.py`** — `squash merge BOM_PATH [BOM_PATH ...] --output FILE [--quiet]` subcommand.
+- **`squash/api.py`** — `POST /sbom/merge` endpoint: returns `{merged, output_path, component_count, vulnerability_count}`.
+
+### Added — Wave 23: AI Risk Assessment (EU AI Act / NIST AI RMF)
+
+- **`squash/risk.py`** — `EuAiActCategory` and `NistRmfCategory` enums, `RiskAssessmentResult` dataclass, and `AiRiskAssessor` class: `assess_eu_ai_act(bom_path)` and `assess_nist_rmf(bom_path)`. Heuristic assessment from CycloneDX `modelCard` use-case and sensitivity signals. UNACCEPTABLE / HIGH / LIMITED / MINIMAL tiers for EU; CRITICAL / HIGH / MODERATE / LOW for NIST. `RiskCategory` alias kept for backward compatibility.
+- **`squash/cli.py`** — `squash risk-assess MODEL_DIR [--framework {eu-ai-act,nist-rmf,both}] [--quiet]` subcommand.
+- **`squash/api.py`** — `POST /risk/assess` endpoint: returns EU AI Act and/or NIST RMF assessment dicts.
+
+### Added — Wave 24: Drift Detection & Continuous Monitoring
+
+- **`squash/governor.py`** — `DriftEvent` dataclass and `DriftMonitor` class appended: `snapshot(model_dir) → str` (SHA-256 hex of core attestation files), `compare(model_dir, baseline_snapshot) → list[DriftEvent]`, `watch(model_dir, interval_s, callback) → threading.Event`. Detects BOM changes, policy regressions, and CVE appearances between snapshots.
+- **`squash/cli.py`** — `squash monitor MODEL_DIR [--baseline SNAP] [--interval 3600] [--once] [--quiet]` subcommand.
+- **`squash/api.py`** — `POST /monitor/snapshot` and `POST /monitor/compare` endpoints.
+
+### Added — Wave 25: CI/CD Integration Adapters
+
+- **`squash/cicd.py`** — `CiEnvironment` dataclass, `CicdReport` dataclass, and `CicdAdapter` class: `detect() → CiEnvironment` (auto-detects GitHub Actions, Jenkins, GitLab CI, CircleCI), `annotate(report, env)` (emits native CI annotations), `job_summary(report, env) → str` (Markdown), `run_pipeline(model_dir, *, report_format) → CicdReport` (orchestrates full NTIA + risk + drift check pipeline). Uses lazy imports to avoid circular dependencies.
+- **`squash/cli.py`** — `squash ci-run MODEL_DIR [--report-format {github,jenkins,gitlab,text}] [--quiet]` subcommand.
+- **`squash/api.py`** — `POST /cicd/report` endpoint: returns `{passed, env, ntia, risk, drift_events, summary}`.
+
+---
+
 ## [Unreleased] — Squash Waves 14–19: Sigstore Verify, Compliance Report, VEX Cache, Webhooks, Composite Attestation, Registry Push
 
 ### Added — Wave 14: Sigstore Verification
