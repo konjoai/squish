@@ -5,6 +5,53 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Wave 29: VEX Publish CLI + Integration CLI Shims
+
+### Added — Wave 29: VEX publish + integration CLI completeness
+
+- **`squash vex-publish`** CLI subcommand — generate and write a static OpenVEX 0.2.0
+  feed JSON file from a list of statement entries:
+  - `--output PATH` (required): destination file path; parent directories created automatically.
+  - `--entries PATH_OR_JSON` (default: `[]`): JSON file path, `-` for stdin, or inline JSON
+    array; fully pipe-friendly.
+  - `--author AUTHOR` (default: `squash`): author field in document metadata.
+  - `--doc-id URL` (optional): explicit `@id` URI; auto-generated UUID URN if omitted.
+  - Validates the generated document via `VexFeedManifest.validate()` before writing; exits
+    1 on validation error.
+  - Zero new modules — implemented entirely inside existing `squish/squash/cli.py`.
+
+- **`squash attest-mlflow`** CLI shim — offline pipe-friendly attestation for MLflow workflows:
+  - Runs `AttestPipeline.run()` on `model_path`; emits result JSON to stdout.
+  - Designed for use in CI steps that wrap `mlflow.log_artifact`.
+
+- **`squash attest-wandb`** CLI shim — offline pipe-friendly attestation for Weights & Biases:
+  - Same interface as `attest-mlflow`; output JSON suitable for W&B `run.log()`.
+
+- **`squash attest-huggingface`** CLI shim — attestation with optional HuggingFace Hub push:
+  - With `--repo-id`: delegates to `HFSquash.attest_and_push()`.
+  - Without `--repo-id`: offline mode; runs `AttestPipeline.run()` locally.
+  - `--hf-token` falls back to `HF_TOKEN` env var.
+
+- **`squash attest-langchain`** CLI shim — one-shot offline attestation mirroring `SquashCallback`:
+  - Runs `AttestPipeline.run()` on `model_path`; emits result JSON to stdout.
+  - Enables pre-deployment validation before embedding the model in a LangChain agent.
+
+- **`tests/test_squash_wave29.py`** — 58 new tests covering:
+  - `TestVexPublishCli` (12): subprocess / integration tests; parser, help, real JSON output.
+  - `TestVexPublishHandler` (5): unit tests for `_cmd_vex_publish` with mocked manifest.
+  - `TestVexPublishJson` (4): generated doc conforms to OpenVEX 0.2.0 structure.
+  - `TestAttestMlflowCli` (7), `TestAttestWandbCli` (5), `TestAttestHuggingFaceCli` (6),
+    `TestAttestLangchainCli` (6): per-shim help, missing-path, handler delegation.
+  - `TestIntegrationShimHandlers` (3): default-policy and output-dir defaulting.
+  - `TestModuleCount` (1): module count ≤ 106 (unchanged by wave 29).
+  - `TestCliSubcommandList` (7): all 5 new + 2 pre-existing in `squash --help`.
+
+### Module count — Wave 29
+- `squish/squash/` non-experimental: **106 Python files** (unchanged — all wave 29
+  additions are functions inside existing `cli.py`).
+
+---
+
 ## [Unreleased] — Squash Wave 28: CircleCI Orb + Ray Serve Decorator
 
 ### Added — Wave 28: CircleCI Orb + Ray Serve

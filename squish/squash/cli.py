@@ -434,6 +434,194 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     webhook_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
+    # ── Wave 29 — VEX publish + integration CLI shims ─────────────────────────
+    vex_pub_cmd = sub.add_parser(
+        "vex-publish",
+        help="Generate and write a static OpenVEX 0.2.0 feed JSON file",
+        description=(
+            "Build an OpenVEX 0.2.0 document from a list of statement entries and "
+            "write it to a configurable output path.  Entries are read from a JSON "
+            "file, stdin ('-'), or an inline JSON string.\n\n"
+            "Example: squash vex-publish --output feed.json --entries entries.json\n"
+            "Example: squash vex-publish --output feed.json --entries '[]'"
+        ),
+    )
+    vex_pub_cmd.add_argument(
+        "--output",
+        metavar="PATH",
+        required=True,
+        help="Destination path to write the OpenVEX JSON file",
+    )
+    vex_pub_cmd.add_argument(
+        "--entries",
+        metavar="PATH_OR_JSON",
+        default="[]",
+        help=(
+            "Statement entries as a JSON file path, '-' for stdin, or inline JSON "
+            "array string (default: '[]')"
+        ),
+    )
+    vex_pub_cmd.add_argument(
+        "--author",
+        default="squash",
+        help="Author field in the VEX document (default: squash)",
+    )
+    vex_pub_cmd.add_argument(
+        "--doc-id",
+        metavar="URL",
+        default=None,
+        help="Optional @id URI for the document; auto-generated if omitted",
+    )
+    vex_pub_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    attest_mlflow_cmd = sub.add_parser(
+        "attest-mlflow",
+        help="Run attestation pipeline and emit result as JSON (MLflow-compatible)",
+        description=(
+            "Execute the full Squash attestation pipeline on MODEL_PATH and write "
+            "the result JSON to stdout (or --output-dir).  Designed for piping into "
+            "MLflow artifact upload scripts or CI steps that wrap mlflow.log_artifact.\n\n"
+            "Example: squash attest-mlflow ./my-model --policies enterprise-strict"
+        ),
+    )
+    attest_mlflow_cmd.add_argument("model_path", help="Path to the model directory or file")
+    attest_mlflow_cmd.add_argument(
+        "--output-dir",
+        metavar="PATH",
+        default=None,
+        help="Directory to write attestation artifacts (default: <model_path>/../squash)",
+    )
+    attest_mlflow_cmd.add_argument(
+        "--policies",
+        nargs="*",
+        metavar="POLICY",
+        default=None,
+        help="Policy templates to evaluate (default: enterprise-strict)",
+    )
+    attest_mlflow_cmd.add_argument(
+        "--sign", action="store_true", help="Sign BOM via Sigstore keyless"
+    )
+    attest_mlflow_cmd.add_argument(
+        "--fail-on-violation",
+        action="store_true",
+        help="Exit 1 if any policy violation is found",
+    )
+    attest_mlflow_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    attest_wandb_cmd = sub.add_parser(
+        "attest-wandb",
+        help="Run attestation pipeline and emit result as JSON (W&B-compatible)",
+        description=(
+            "Execute the full Squash attestation pipeline on MODEL_PATH and write "
+            "the result JSON to stdout (or --output-dir).  Designed for piping into "
+            "W&B artifact upload scripts or run-summary steps.\n\n"
+            "Example: squash attest-wandb ./my-model --policies enterprise-strict"
+        ),
+    )
+    attest_wandb_cmd.add_argument("model_path", help="Path to the model directory or file")
+    attest_wandb_cmd.add_argument(
+        "--output-dir",
+        metavar="PATH",
+        default=None,
+        help="Directory to write attestation artifacts (default: <model_path>/../squash)",
+    )
+    attest_wandb_cmd.add_argument(
+        "--policies",
+        nargs="*",
+        metavar="POLICY",
+        default=None,
+        help="Policy templates to evaluate (default: enterprise-strict)",
+    )
+    attest_wandb_cmd.add_argument(
+        "--sign", action="store_true", help="Sign BOM via Sigstore keyless"
+    )
+    attest_wandb_cmd.add_argument(
+        "--fail-on-violation",
+        action="store_true",
+        help="Exit 1 if any policy violation is found",
+    )
+    attest_wandb_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    attest_hf_cmd = sub.add_parser(
+        "attest-huggingface",
+        help="Attest a model and push artifacts to a HuggingFace Hub repository",
+        description=(
+            "Run the Squash attestation pipeline on MODEL_PATH and upload the "
+            "resulting artifacts to --repo-id on the HuggingFace Hub.\n\n"
+            "Example: squash attest-huggingface ./my-model --repo-id myorg/llama-3-8b"
+        ),
+    )
+    attest_hf_cmd.add_argument("model_path", help="Path to the local model directory")
+    attest_hf_cmd.add_argument(
+        "--repo-id",
+        metavar="ORG/REPO",
+        default=None,
+        help="HuggingFace Hub repo ID to push artifacts to (skip push if omitted)",
+    )
+    attest_hf_cmd.add_argument(
+        "--hf-token",
+        metavar="TOKEN",
+        default=None,
+        help="HuggingFace API token; falls back to HF_TOKEN env var",
+    )
+    attest_hf_cmd.add_argument(
+        "--output-dir",
+        metavar="PATH",
+        default=None,
+        help="Local artifact output directory (default: <model_path>/../squash)",
+    )
+    attest_hf_cmd.add_argument(
+        "--policies",
+        nargs="*",
+        metavar="POLICY",
+        default=None,
+        help="Policy templates to evaluate (default: enterprise-strict)",
+    )
+    attest_hf_cmd.add_argument(
+        "--sign", action="store_true", help="Sign BOM via Sigstore keyless"
+    )
+    attest_hf_cmd.add_argument(
+        "--fail-on-violation",
+        action="store_true",
+        help="Exit 1 if any policy violation is found",
+    )
+    attest_hf_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    attest_lc_cmd = sub.add_parser(
+        "attest-langchain",
+        help="Run a one-shot attestation pass on a model (LangChain-compatible)",
+        description=(
+            "Run the Squash attestation pipeline on MODEL_PATH and write the "
+            "result JSON to stdout.  Mirrors the behaviour of SquashCallback on "
+            "first LLM invocation, allowing offline pre-validation before deploying "
+            "a LangChain agent.\n\n"
+            "Example: squash attest-langchain ./my-model --policies enterprise-strict"
+        ),
+    )
+    attest_lc_cmd.add_argument("model_path", help="Path to the model directory or file")
+    attest_lc_cmd.add_argument(
+        "--output-dir",
+        metavar="PATH",
+        default=None,
+        help="Directory for attestation artifacts (default: <model_path>/../squash)",
+    )
+    attest_lc_cmd.add_argument(
+        "--policies",
+        nargs="*",
+        metavar="POLICY",
+        default=None,
+        help="Policy templates to evaluate (default: enterprise-strict)",
+    )
+    attest_lc_cmd.add_argument(
+        "--sign", action="store_true", help="Sign BOM via Sigstore keyless"
+    )
+    attest_lc_cmd.add_argument(
+        "--fail-on-violation",
+        action="store_true",
+        help="Exit 1 if any policy violation is found",
+    )
+    attest_lc_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
     return parser
 
 
@@ -1061,6 +1249,243 @@ def _cmd_webhook(args: argparse.Namespace, quiet: bool) -> int:
     return 0
 
 
+# ── Wave 29 — VEX publish + integration CLI shims ─────────────────────────────
+
+def _cmd_vex_publish(args: argparse.Namespace, quiet: bool) -> int:
+    """Generate an OpenVEX 0.2.0 feed JSON file from statement entries."""
+    import json as _json
+    import sys as _sys
+
+    from squish.squash.vex import VexFeedManifest
+
+    # Resolve entries: inline JSON string, '-' for stdin, or file path
+    entries_raw: str = args.entries
+    if entries_raw == "-":
+        entries_raw = _sys.stdin.read()
+
+    try:
+        p = Path(entries_raw)
+        if p.exists():
+            entries_raw = p.read_text()
+    except (OSError, ValueError):
+        pass  # not a valid path — treat as inline JSON
+
+    try:
+        entries: list[dict] = _json.loads(entries_raw)
+    except _json.JSONDecodeError as e:
+        print(f"error: could not parse entries JSON: {e}", file=sys.stderr)
+        return 1
+
+    if not isinstance(entries, list):
+        print("error: --entries must be a JSON array", file=sys.stderr)
+        return 1
+
+    doc = VexFeedManifest.generate(
+        entries,
+        author=args.author,
+        doc_id=getattr(args, "doc_id", None),
+    )
+
+    errors = VexFeedManifest.validate(doc)
+    if errors:
+        for err in errors:
+            print(f"validation error: {err}", file=sys.stderr)
+        return 1
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(_json.dumps(doc, indent=2))
+
+    if not quiet:
+        print(
+            f"✓ VEX feed written to {output_path} "
+            f"({len(entries)} statement(s), spec {VexFeedManifest.SPEC_VERSION})"
+        )
+    return 0
+
+
+def _cmd_attest_mlflow(args: argparse.Namespace, quiet: bool) -> int:
+    """Run the attestation pipeline and emit result JSON (MLflow-compatible offline shim)."""
+    import json as _json
+
+    from squish.squash.attest import AttestConfig, AttestPipeline
+
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        print(f"error: model path not found: {model_path}", file=sys.stderr)
+        return 1
+
+    out_dir = Path(args.output_dir) if getattr(args, "output_dir", None) else None
+    config = AttestConfig(
+        model_path=model_path,
+        output_dir=out_dir or (model_path.parent / "squash"),
+        policies=args.policies or ["enterprise-strict"],
+        sign=getattr(args, "sign", False),
+        fail_on_violation=getattr(args, "fail_on_violation", False),
+    )
+
+    try:
+        result = AttestPipeline.run(config)
+    except Exception as e:
+        print(f"error: attestation failed: {e}", file=sys.stderr)
+        return 2
+
+    if not quiet:
+        icon = "✓" if result.passed else "✗"
+        print(f"{icon} mlflow attestation {'passed' if result.passed else 'FAILED'}: {model_path}")
+        print(f"  artifacts  : {result.output_dir}")
+        print(f"  bom_path   : {result.bom_path}")
+
+    # Emit JSON to stdout for pipe-friendly consumption
+    print(_json.dumps(result.to_dict() if hasattr(result, "to_dict") else {
+        "passed": result.passed,
+        "bom_path": str(result.bom_path) if result.bom_path else None,
+        "output_dir": str(result.output_dir) if result.output_dir else None,
+    }))
+    return 0 if result.passed else 1
+
+
+def _cmd_attest_wandb(args: argparse.Namespace, quiet: bool) -> int:
+    """Run the attestation pipeline and emit result JSON (W&B-compatible offline shim)."""
+    import json as _json
+
+    from squish.squash.attest import AttestConfig, AttestPipeline
+
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        print(f"error: model path not found: {model_path}", file=sys.stderr)
+        return 1
+
+    out_dir = Path(args.output_dir) if getattr(args, "output_dir", None) else None
+    config = AttestConfig(
+        model_path=model_path,
+        output_dir=out_dir or (model_path.parent / "squash"),
+        policies=args.policies or ["enterprise-strict"],
+        sign=getattr(args, "sign", False),
+        fail_on_violation=getattr(args, "fail_on_violation", False),
+    )
+
+    try:
+        result = AttestPipeline.run(config)
+    except Exception as e:
+        print(f"error: attestation failed: {e}", file=sys.stderr)
+        return 2
+
+    if not quiet:
+        icon = "✓" if result.passed else "✗"
+        print(f"{icon} wandb attestation {'passed' if result.passed else 'FAILED'}: {model_path}")
+        print(f"  artifacts  : {result.output_dir}")
+        print(f"  bom_path   : {result.bom_path}")
+
+    print(_json.dumps(result.to_dict() if hasattr(result, "to_dict") else {
+        "passed": result.passed,
+        "bom_path": str(result.bom_path) if result.bom_path else None,
+        "output_dir": str(result.output_dir) if result.output_dir else None,
+    }))
+    return 0 if result.passed else 1
+
+
+def _cmd_attest_huggingface(args: argparse.Namespace, quiet: bool) -> int:
+    """Attest a model and optionally push artifacts to HuggingFace Hub."""
+    import os
+
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        print(f"error: model path not found: {model_path}", file=sys.stderr)
+        return 1
+
+    repo_id: str | None = getattr(args, "repo_id", None)
+    hf_token: str | None = getattr(args, "hf_token", None) or os.environ.get("HF_TOKEN")
+    policies = getattr(args, "policies", None) or ["enterprise-strict"]
+    sign = getattr(args, "sign", False)
+    fail_on_violation = getattr(args, "fail_on_violation", False)
+    out_dir = Path(args.output_dir) if getattr(args, "output_dir", None) else None
+
+    if repo_id:
+        # Full push via HFSquash
+        try:
+            from squish.squash.integrations.huggingface import HFSquash
+        except ImportError as e:
+            print(f"error: HFSquash not available: {e}", file=sys.stderr)
+            return 2
+        try:
+            result = HFSquash.attest_and_push(
+                repo_id,
+                model_path,
+                hf_token=hf_token or "",
+                policies=policies,
+                sign=sign,
+                fail_on_violation=fail_on_violation,
+            )
+        except Exception as e:
+            print(f"error: HuggingFace attestation failed: {e}", file=sys.stderr)
+            return 2
+    else:
+        # Offline attestation only (no push)
+        from squish.squash.attest import AttestConfig, AttestPipeline
+
+        config = AttestConfig(
+            model_path=model_path,
+            output_dir=out_dir or (model_path.parent / "squash"),
+            policies=policies,
+            sign=sign,
+            fail_on_violation=fail_on_violation,
+        )
+        try:
+            result = AttestPipeline.run(config)
+        except Exception as e:
+            print(f"error: attestation failed: {e}", file=sys.stderr)
+            return 2
+
+    if not quiet:
+        icon = "✓" if result.passed else "✗"
+        label = f"→ {repo_id}" if repo_id else "(local only)"
+        print(f"{icon} huggingface attestation {'passed' if result.passed else 'FAILED'} {label}")
+        print(f"  bom_path   : {result.bom_path}")
+
+    return 0 if result.passed else 1
+
+
+def _cmd_attest_langchain(args: argparse.Namespace, quiet: bool) -> int:
+    """Run a one-shot attestation pass on a model (matches SquashCallback first-run behaviour)."""
+    import json as _json
+
+    from squish.squash.attest import AttestConfig, AttestPipeline
+
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        print(f"error: model path not found: {model_path}", file=sys.stderr)
+        return 1
+
+    out_dir = Path(args.output_dir) if getattr(args, "output_dir", None) else None
+    config = AttestConfig(
+        model_path=model_path,
+        output_dir=out_dir or (model_path.parent / "squash"),
+        policies=getattr(args, "policies", None) or ["enterprise-strict"],
+        sign=getattr(args, "sign", False),
+        fail_on_violation=getattr(args, "fail_on_violation", False),
+    )
+
+    try:
+        result = AttestPipeline.run(config)
+    except Exception as e:
+        print(f"error: attestation failed: {e}", file=sys.stderr)
+        return 2
+
+    if not quiet:
+        icon = "✓" if result.passed else "✗"
+        print(f"{icon} langchain attestation {'passed' if result.passed else 'FAILED'}: {model_path}")
+        print(f"  artifacts  : {result.output_dir}")
+        print(f"  bom_path   : {result.bom_path}")
+
+    print(_json.dumps(result.to_dict() if hasattr(result, "to_dict") else {
+        "passed": result.passed,
+        "bom_path": str(result.bom_path) if result.bom_path else None,
+        "output_dir": str(result.output_dir) if result.output_dir else None,
+    }))
+    return 0 if result.passed else 1
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -1109,6 +1534,16 @@ def main() -> None:
         sys.exit(_cmd_ci_run(args, quiet))
     elif args.command == "webhook":
         sys.exit(_cmd_webhook(args, quiet))
+    elif args.command == "vex-publish":
+        sys.exit(_cmd_vex_publish(args, quiet))
+    elif args.command == "attest-mlflow":
+        sys.exit(_cmd_attest_mlflow(args, quiet))
+    elif args.command == "attest-wandb":
+        sys.exit(_cmd_attest_wandb(args, quiet))
+    elif args.command == "attest-huggingface":
+        sys.exit(_cmd_attest_huggingface(args, quiet))
+    elif args.command == "attest-langchain":
+        sys.exit(_cmd_attest_langchain(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)

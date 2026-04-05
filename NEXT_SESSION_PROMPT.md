@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Squash Wave 29+: VEX Feed Static Hosting + Remaining Gaps
+# NEXT_SESSION_PROMPT.md — Squash Wave 30+: REST API Integration Endpoints + Accuracy Gate
 
 > Paste the content below verbatim as your opening prompt.
 > This is a **code session** — implement the remaining plan gaps.
@@ -7,12 +7,13 @@
 
 ## Prompt
 
-**Code session. Implement Wave 29: VEX feed static JSON commit + any outstanding gaps.
+**Code session. Implement Wave 30: REST API endpoints for the Wave 29 CLI additions
+(`POST /vex/publish`, `POST /attest/mlflow`, etc.) + any outstanding gaps.
 One commit per wave. Minimum viable implementation — no stubs left in shipped code.**
 
 ---
 
-## Waves 1–28 complete (commit HEAD on `main`)
+## Waves 1–29 complete (commit HEAD on `main`)
 
 ### Delivery summary
 
@@ -29,9 +30,10 @@ One commit per wave. Minimum viable implementation — no stubs left in shipped 
 | 26    | SageMaker Pipeline Step, ORAS OCI registry push, VEX feed MVP (`SageMakerSquash`, `OrasAdapter`, `VexFeedManifest`) | ✅ |
 | 27    | Kubernetes Admission Webhook (`KubernetesWebhookHandler`, `WebhookConfig`, Helm chart, `squash webhook` CLI) | ✅ |
 | 28    | CircleCI Orb (`orb.yml` with `squash/attest`, `squash/check`, `squash/policy-gate`) + Ray Serve (`squash_serve` decorator, `SquashServeDeployment`, `SquashServeConfig`) | ✅ |
+| 29    | VEX publish CLI (`squash vex-publish`) + integration CLI shims (`attest-mlflow`, `attest-wandb`, `attest-huggingface`, `attest-langchain`) | ✅ |
 
 ### Test state
-- **4184 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
+- **4242 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
 - 25 skipped
 
 ### Module count
@@ -41,36 +43,33 @@ squish/ non-experimental: 106/100 (+6 over nominal limit — all justified in CH
   - integrations/sagemaker.py: +1 (wave 26 — MLOps integration suite)
   - integrations/kubernetes.py: +1 (wave 27 — K8s enforcement plane)
   - integrations/ray.py: +1 (wave 28 — Ray Serve deployment lifecycle)
+  Wave 29: 0 new modules (all additions inside cli.py)
 ```
 
-### Key files added in wave 28
-- `squish/squash/integrations/circleci/orb.yml` — CircleCI Orb YAML (data file; no module count impact)
-- `squish/squash/integrations/ray.py` — `squash_serve` decorator, `SquashServeDeployment`, `SquashServeConfig`
-- `squish/squash/__init__.py` (extended) — `squash_serve`, `SquashServeConfig`, `SquashServeDeployment` exported
-- `tests/test_squash_wave28.py` — 68 new tests
+### Key files added/changed in wave 29
+- `squish/squash/cli.py` (extended) — 5 new subcommands + handler functions:
+  - `vex-publish`: `_cmd_vex_publish()` — VexFeedManifest.generate() → JSON file
+  - `attest-mlflow`: `_cmd_attest_mlflow()` — offline AttestPipeline shim, JSON to stdout
+  - `attest-wandb`: `_cmd_attest_wandb()` — offline AttestPipeline shim, JSON to stdout
+  - `attest-huggingface`: `_cmd_attest_huggingface()` — AttestPipeline + optional HFSquash push
+  - `attest-langchain`: `_cmd_attest_langchain()` — one-shot pre-deployment attestation
+- `tests/test_squash_wave29.py` — 58 new tests
 
 ---
 
-## Remaining gaps (post wave 28)
+## Remaining gaps (post wave 29)
 
-### 1. VEX feed static hosting (Wave 29)
-**Status: Infrastructure only (client + manifest generator in Wave 26).**
+### 1. REST API endpoints for Wave 29 CLI additions (Wave 30 priority)
+The CLI completeness audit (Wave 29) added 5 new subcommands. Each should have
+a corresponding REST endpoint in `squish/squash/server.py`:
+- `POST /vex/publish` — body: `{entries, author?, doc_id?}` → returns OpenVEX doc JSON
+- `POST /attest/mlflow` — body: `{model_path, policies?, sign?, fail_on_violation?}` → AttestResult
+- `POST /attest/wandb` — same interface as mlflow
+- `POST /attest/huggingface` — body: `{model_path, repo_id?, hf_token?, policies?}` → AttestResult
+- `POST /attest/langchain` — same as mlflow/wandb
 
-`VexFeedManifest.generate()` and `VexCache.fetch_squash_feed()` are complete,
-but no hosted feed exists yet.
-- First step: a static JSON file committed to `squishai/vex-feed` GitHub repo
-  (separate repo action, not squish/ itself).
-- Second step: a `squash vex-publish` CLI subcommand that invokes
-  `VexFeedManifest.generate()` and writes the output to a configurable path.
-
-### 2. CLI completeness audit (Wave 29 extension)
-Verify every public integration has a corresponding CLI subcommand or
-`squash ci-run` flag:
-- `mlflow` / `wandb` / `huggingface` / `langchain` — do they have pipe-friendly
-  CLI access? If not, add `squash attest-mlflow`, etc.
-
-### 3. lm-eval-validated quantization results (ongoing)
-mixed_attn (FP16 attn + INT4 MLP) is code-complete but unvalidated.
+### 2. lm-eval-validated quantization results (ongoing — squish inference)
+`mixed_attn` (FP16 attn + INT4 MLP) is code-complete but unvalidated.
 Requires running `lm_eval` on M3 hardware before merging accuracy claims.
 
 ---
@@ -80,54 +79,9 @@ Requires running `lm_eval` on M3 hardware before merging accuracy claims.
 - **Module count is at 106.** Any new file requires deleting one or writing justification in CHANGELOG.
 - **Do not add sidecar or model files to git.**
 - Tests must pass before committing.
+- **For any REST API additions: integration tests must call the real endpoint (no mocking the handler).**
 
----
 
-### Delivery summary
-
-| Waves | What | Status |
-|-------|------|--------|
-| 1–13  | CycloneDX SBOM, SPDX, scanner, policy engine, VEX, provenance, Sigstore, eval binder, governor, CLI, REST API, SARIF | ✅ |
-| 14–19 | HTML report, VEX cache, policy webhooks, composite attestation, SBOM registry push, advanced policy templates | ✅ |
-| 20    | NTIA minimum elements validator (`NtiaValidator`, `ntia-check` CLI, `POST /ntia/validate`) | ✅ |
-| 21    | SLSA 1.0 provenance (`SlsaProvenanceBuilder`, L1/L2/L3, `slsa-attest` CLI, `POST /slsa/attest`) | ✅ |
-| 22    | BOM merge & composition (`BomMerger`, `merge` CLI, `POST /sbom/merge`) | ✅ |
-| 23    | AI risk assessment — EU AI Act + NIST AI RMF (`AiRiskAssessor`, `risk-assess` CLI, `POST /risk/assess`) | ✅ |
-| 24    | Drift detection & continuous monitoring (`DriftMonitor`, `monitor` CLI, `POST /monitor/snapshot+compare`) | ✅ |
-| 25    | CI/CD runtime adapter — GitHub/Jenkins/GitLab/CircleCI (`CicdAdapter`, `ci-run` CLI, `POST /cicd/report`) | ✅ |
-| 26    | SageMaker Pipeline Step, ORAS OCI registry push, VEX feed MVP (`SageMakerSquash`, `OrasAdapter`, `VexFeedManifest`) | ✅ |
-
-### Test state
-- **4028+ tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
-- 25 skipped
-
-### Module count
-```
-squish/ non-experimental: 104/100 (+4 over nominal limit — justified)
-  - slsa.py, risk.py, cicd.py: +3 (waves 20-25, written in CHANGELOG)
-  - integrations/sagemaker.py: +1 (wave 26, completes MLOps integration suite)
-```
-
-### Key files added in wave 26
-- `squish/squash/integrations/sagemaker.py` — `SageMakerSquash.attach_attestation()`, `SageMakerSquash.tag_model_package()`
-- `squish/squash/sbom_builder.py` (extended) — `OrasAdapter.push()` + `OrasAdapter.build_manifest()`
-- `squish/squash/vex.py` (extended) — `VexFeedManifest.generate()`, `VexFeedManifest.validate()`, `VexCache.fetch_squash_feed()`
-- `squish/squash/__init__.py` (extended) — new exports
-
----
-
-## Remaining gaps (post wave 26)
-
-### 1. Kubernetes Admission Webhook (Wave 27)
-**Status: Not started.**
-
-A Mutating/Validating Webhook controller that verifies Squash signature before pod admission.
-This is the hardest enforcement point — operates at cluster admission, not CI/CD pipeline.
-
-Deliverables:
-- `squish/squash/integrations/kubernetes.py` — `KubernetesWebhookHandler.handle(request)` (FastAPI endpoint)
-- `squish/squash/integrations/kubernetes_helm/` — Helm chart with `MutatingWebhookConfiguration`
-- CLI: `squash webhook serve [--port 8443] [--tls-cert TLS_CERT] [--tls-key TLS_KEY]`
 
 Acceptance:
 - `handle()` returns 200 `{allowed: true}` if Squash signature is valid, 403 `{allowed: false, status: {...}}` if not
