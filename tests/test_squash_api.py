@@ -85,28 +85,45 @@ class TestListPolicies:
 
 
 class TestScanEndpoint:
-    def test_scan_clean_dir_returns_200(self, client, tmp_path):
-        d = _stub_model_dir(tmp_path)
-        resp = client.post("/scan", json={"model_path": str(d)})
-        assert resp.status_code == 200
+    # Wave 8: POST /scan is now async-queued — returns 202 + job_id immediately.
+    # Results are retrieved via GET /scan/{job_id}.
 
-    def test_scan_response_has_status_field(self, client, tmp_path):
+    def _poll(self, client, job_id: str, max_attempts: int = 40) -> dict:
+        """Poll GET /scan/{job_id} until status != 'pending' or budget exhausted."""
+        import time
+
+        for _ in range(max_attempts):
+            r = client.get(f"/scan/{job_id}")
+            body = r.json()
+            if body.get("status") != "pending":
+                return body
+            time.sleep(0.05)
+        return body  # return last seen body even if still pending
+
+    def test_scan_clean_dir_returns_202(self, client, tmp_path):
         d = _stub_model_dir(tmp_path)
         resp = client.post("/scan", json={"model_path": str(d)})
-        data = resp.json()
-        assert "status" in data
+        assert resp.status_code == 202
+
+    def test_scan_response_has_job_id_field(self, client, tmp_path):
+        d = _stub_model_dir(tmp_path)
+        resp = client.post("/scan", json={"model_path": str(d)})
+        assert "job_id" in resp.json()
 
     def test_scan_response_has_is_safe_field(self, client, tmp_path):
         d = _stub_model_dir(tmp_path)
         resp = client.post("/scan", json={"model_path": str(d)})
-        data = resp.json()
-        assert "is_safe" in data
+        job_id = resp.json()["job_id"]
+        data = self._poll(client, job_id)
+        assert "is_safe" in data.get("result", {})
 
     def test_scan_clean_dir_is_safe(self, client, tmp_path):
         d = _stub_model_dir(tmp_path)
         resp = client.post("/scan", json={"model_path": str(d)})
+        job_id = resp.json()["job_id"]
+        data = self._poll(client, job_id)
         # A minimal safetensors stub should be clean
-        assert resp.json()["is_safe"] is True
+        assert data.get("result", {}).get("is_safe") is True
 
     def test_scan_nonexistent_path_returns_404(self, client, tmp_path):
         resp = client.post("/scan", json={"model_path": str(tmp_path / "nonexistent")})

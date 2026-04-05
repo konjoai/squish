@@ -91,7 +91,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     # ── squash policies ────────────────────────────────────────────────────────
-    sub.add_parser("policies", help="List available built-in policy templates")
+    policies_cmd = sub.add_parser("policies", help="List available built-in policy templates")
+    policies_cmd.add_argument(
+        "--validate",
+        metavar="PATH",
+        default=None,
+        help="Validate a custom YAML rules file (exit 0 = valid, 1 = user error, 2 = invalid rules)",
+    )
 
     # ── squash scan ────────────────────────────────────────────────────────────
     scan_cmd = sub.add_parser("scan", help="Run security scanner only (no SBOM generation)")
@@ -101,12 +107,40 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _cmd_policies(quiet: bool) -> int:
+def _cmd_policies(args: argparse.Namespace, quiet: bool) -> int:
     try:
-        from squish.squash.policy import AVAILABLE_POLICIES
+        from squish.squash.policy import AVAILABLE_POLICIES, PolicyRegistry
     except ImportError as e:
         print(f"squash is not installed: {e}", file=sys.stderr)
         return 2
+
+    validate_path: str | None = getattr(args, "validate", None)
+
+    if validate_path is not None:
+        rules_path = Path(validate_path)
+        if not rules_path.exists():
+            print(f"error: path does not exist: {rules_path}", file=sys.stderr)
+            return 1
+        try:
+            rules = PolicyRegistry.load_rules_from_yaml(rules_path)
+        except ImportError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        except (OSError, ValueError) as e:
+            print(f"error loading rules: {e}", file=sys.stderr)
+            return 1
+
+        raw_errors = PolicyRegistry.validate_rules(rules)
+        if raw_errors:
+            if not quiet:
+                print(f"✗ {len(raw_errors)} validation error(s):", file=sys.stderr)
+                for err in raw_errors:
+                    print(f"  {err}", file=sys.stderr)
+            return 2
+
+        if not quiet:
+            print(f"✓ {len(rules)} rule(s) valid: {rules_path}")
+        return 0
 
     if not quiet:
         print("Available policy templates:")
@@ -232,7 +266,7 @@ def main() -> None:
         )
 
     if args.command == "policies":
-        sys.exit(_cmd_policies(quiet))
+        sys.exit(_cmd_policies(args, quiet))
     elif args.command == "scan":
         sys.exit(_cmd_scan(args, quiet))
     elif args.command == "attest":

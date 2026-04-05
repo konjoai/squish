@@ -29,7 +29,9 @@ as the default for Enterprise customers.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -295,6 +297,7 @@ class PolicyFinding:
     rationale: str
     remediation: str
     actual_value: Any = None
+    remediation_link: str = ""
 
 
 @dataclass
@@ -372,7 +375,7 @@ class PolicyEngine:
 
         for rule in rules:
             actual = _resolve_field(sbom, rule["field"])
-            passed = _check(actual, rule["check"], rule.get("value"))
+            passed = _check(actual, rule["check"], rule.get("value"), rule.get("pattern"), rule.get("allowed"))
             findings.append(
                 PolicyFinding(
                     rule_id=rule["id"],
@@ -382,6 +385,7 @@ class PolicyEngine:
                     rationale=rule["rationale"],
                     remediation=rule["remediation"],
                     actual_value=actual,
+                    remediation_link=rule.get("remediation_link", ""),
                 )
             )
 
@@ -400,6 +404,184 @@ class PolicyEngine:
     ) -> dict[str, PolicyResult]:
         """Evaluate multiple policies, returning a dict keyed by policy name."""
         return {name: PolicyEngine.evaluate(sbom, name) for name in policy_names}
+
+    @staticmethod
+    def evaluate_custom(
+        sbom: dict[str, Any], rules: list[dict[str, Any]], policy_name: str = "custom"
+    ) -> PolicyResult:
+        """Evaluate an ad-hoc list of rule dicts against *sbom*.
+
+        Rules use the same schema as built-in policies but are not stored in
+        :data:`_POLICIES`.  Validation errors in individual rules cause that
+        rule to be skipped with a logged warning rather than raising.
+
+        Parameters
+        ----------
+        sbom:
+            CycloneDX 1.7 dict, optionally enriched with ``squash:*`` keys.
+        rules:
+            List of rule dicts.  Each must have: ``id``, ``field``, ``check``,
+            ``severity``.  Optional: ``value``, ``pattern``, ``allowed``,
+            ``rationale``, ``remediation``, ``remediation_link``.
+        policy_name:
+            Label for the returned :class:`PolicyResult`.
+        """
+        validated = PolicyRegistry.validate_rules(rules)
+        if validated:
+            log.warning("custom rules have schema errors (skipping %d): %s", len(validated), validated)
+
+        findings: list[PolicyFinding] = []
+        for rule in rules:
+            if not rule.get("id") or not rule.get("field") or not rule.get("check"):
+                continue  # skip invalid rules
+            actual = _resolve_field(sbom, rule["field"])
+            passed = _check(actual, rule["check"], rule.get("value"), rule.get("pattern"), rule.get("allowed"))
+            findings.append(
+                PolicyFinding(
+                    rule_id=rule["id"],
+                    severity=rule.get("severity", "error"),
+                    passed=passed,
+                    field=rule["field"],
+                    rationale=rule.get("rationale", ""),
+                    remediation=rule.get("remediation", ""),
+                    actual_value=actual,
+                    remediation_link=rule.get("remediation_link", ""),
+                )
+            )
+
+        all_errors_passed = all(f.passed for f in findings if f.severity == "error")
+        return PolicyResult(
+            policy_name=policy_name,
+            passed=all_errors_passed,
+            findings=findings,
+        )
+
+
+# ── Policy registry ──────────────────────────────────────────────────────────
+
+
+# Required fields per rule; values are plain strings or special types noted.
+_RULE_REQUIRED_KEYS: frozenset[str] = frozenset({"id", "field", "check", "severity"})
+_VALID_CHECK_TYPES: frozenset[str] = frozenset(
+    {"present", "non_empty", "equals", "not_equals", "min_value", "regex_match", "in_list"}
+)
+_VALID_SEVERITIES: frozenset[str] = frozenset({"error", "warning"})
+
+
+class PolicyRegistry:
+    """Load and validate custom policy rule sets from YAML files or plain dicts.
+
+    Custom rules follow the same schema as built-in policies and are evaluated
+    via :meth:`PolicyEngine.evaluate_custom`.
+
+    Example YAML rule file::
+
+        - id: CUSTOM-001
+          field: components[0].name
+          check: non_empty
+          severity: error
+          rationale: Our policy requires a named model.
+          remediation: Set model_id in CompressRunMeta.
+          remediation_link: https://docs.example.com/model-id
+
+        - id: CUSTOM-002
+          field: components[0].supplier.name
+          check: regex_match
+          pattern: "^Acme"
+          severity: warning
+          rationale: All models must come from Acme Corp.
+          remediation: Update supplier in the SBOM.
+    """
+
+    @staticmethod
+    def load_rules_from_yaml(path: Path) -> list[dict[str, Any]]:
+        """Load rule dicts from a YAML file.
+
+        Requires ``PyYAML`` (``pip install pyyaml``).
+
+        Parameters
+        ----------
+        path:
+            Path to a ``.yaml`` / ``.yml`` file containing a list of rule dicts.
+
+        Returns
+        -------
+        list[dict]
+            Validated rule dicts (invalid rules are filtered and logged).
+
+        Raises
+        ------
+        ImportError  if PyYAML is not installed.
+        OSError      if the file cannot be read.
+        ValueError   if the YAML top-level is not a list.
+        """
+        try:
+            import yaml  # type: ignore[import-untyped]
+        except ImportError as e:
+            raise ImportError(
+                "PyYAML is required to load YAML rules. "
+                "Install with: pip install pyyaml"
+            ) from e
+
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, list):
+            raise ValueError(
+                f"YAML rules file must contain a top-level list of rules, got {type(raw).__name__}"
+            )
+        return PolicyRegistry.load_rules_from_dict(raw)
+
+    @staticmethod
+    def load_rules_from_dict(rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Normalise and validate a list of rule dicts.
+
+        Invalid rules (missing required keys, unknown check type, bad severity)
+        are filtered out and logged as warnings.  Returns only valid rules.
+        """
+        valid: list[dict[str, Any]] = []
+        for i, rule in enumerate(rules):
+            if not isinstance(rule, dict):
+                log.warning("rules[%d] is not a dict — skipped", i)
+                continue
+            errors = PolicyRegistry.validate_rules([rule])
+            if errors:
+                log.warning("rules[%d] invalid (%s) — skipped", i, "; ".join(errors))
+                continue
+            valid.append(rule)
+        return valid
+
+    @staticmethod
+    def validate_rules(rules: list[dict[str, Any]]) -> list[str]:
+        """Return a list of human-readable validation errors for *rules*.
+
+        Returns an empty list when all rules are valid.
+        """
+        errors: list[str] = []
+        for i, rule in enumerate(rules):
+            prefix = f"rules[{i}] (id={rule.get('id', '?')!r})"
+            if not isinstance(rule, dict):
+                errors.append(f"{prefix}: not a dict")
+                continue
+            for key in _RULE_REQUIRED_KEYS:
+                if not rule.get(key):
+                    errors.append(f"{prefix}: missing required field '{key}'")
+            check = rule.get("check", "")
+            if check and check not in _VALID_CHECK_TYPES:
+                errors.append(
+                    f"{prefix}: unknown check type '{check}'. "
+                    f"Valid: {sorted(_VALID_CHECK_TYPES)}"
+                )
+            sev = rule.get("severity", "")
+            if sev and sev not in _VALID_SEVERITIES:
+                errors.append(
+                    f"{prefix}: unknown severity '{sev}'. Valid: {sorted(_VALID_SEVERITIES)}"
+                )
+            if check == "regex_match" and not rule.get("pattern"):
+                errors.append(f"{prefix}: 'regex_match' requires a 'pattern' key")
+            if check == "in_list" and not rule.get("allowed"):
+                errors.append(f"{prefix}: 'in_list' requires an 'allowed' key (list)")
+            if check in ("equals", "not_equals", "min_value") and rule.get("value") is None:
+                errors.append(f"{prefix}: '{check}' requires a 'value' key")
+        return errors
 
 
 # ── Field resolution helpers ─────────────────────────────────────────────────
@@ -450,7 +632,13 @@ def _split_path(path: str) -> list[str | int]:
     return tokens
 
 
-def _check(actual: Any, check_type: str, expected: Any = None) -> bool:
+def _check(
+    actual: Any,
+    check_type: str,
+    expected: Any = None,
+    pattern: str | None = None,
+    allowed: list[Any] | None = None,
+) -> bool:
     """Evaluate a single rule check."""
     if check_type == "present":
         return actual is not None
@@ -469,5 +657,17 @@ def _check(actual: Any, check_type: str, expected: Any = None) -> bool:
             return float(actual) >= float(expected)
         except (TypeError, ValueError):
             return False
+    if check_type == "regex_match":
+        if pattern is None or actual is None:
+            return False
+        try:
+            return bool(re.search(pattern, str(actual)))
+        except re.error as e:
+            log.warning("regex_match: invalid pattern %r — %s", pattern, e)
+            return False
+    if check_type == "in_list":
+        if allowed is None:
+            return False
+        return actual in allowed
     log.warning("Unknown check type '%s' — treating as failed", check_type)
     return False
