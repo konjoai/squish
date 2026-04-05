@@ -8,6 +8,8 @@ Exposes the full Squash engine over HTTP.  Core endpoints:
     POST /vex/evaluate         — VEX feed evaluation against a model inventory
     GET  /policies             — list available policy templates
     POST /vex/publish          — generate an OpenVEX 0.2.0 document
+    GET  /vex/status           — current VEX cache metadata (url, age, statement count, stale flag)
+    POST /vex/update           — force-refresh the local VEX feed cache from a remote URL
     POST /attest/mlflow        — offline attestation for MLflow artifacts
     POST /attest/wandb         — offline attestation for W&B artifacts
     POST /attest/huggingface   — attestation with optional HuggingFace Hub push
@@ -86,6 +88,8 @@ _COUNTERS: dict[str, int] = {
     "squash_scan_total": 0,
     "squash_policy_evaluate_total": 0,
     "squash_vex_evaluate_total": 0,
+    "squash_vex_update_total": 0,
+    "squash_vex_status_total": 0,
     "squash_sbom_diff_total": 0,
     "squash_policy_violations_total": 0,
 }
@@ -177,6 +181,14 @@ class PolicyEvaluateRequest(BaseModel):
             "and the 'policy' field is used only as the result label."
         ),
     )
+
+
+class VexUpdateRequest(BaseModel):
+    url: str | None = Field(
+        default=None,
+        description="VEX feed URL. Falls back to $SQUASH_VEX_URL then VexCache.DEFAULT_URL.",
+    )
+    timeout: float = Field(default=30.0, description="HTTP timeout in seconds.")
 
 
 class VexEvaluateRequest(BaseModel):
@@ -521,6 +533,74 @@ async def evaluate_vex(req: VexEvaluateRequest) -> JSONResponse:
     _COUNTERS["squash_vex_evaluate_total"] += 1
     report_dict = await loop.run_in_executor(_executor, _run_vex)
     return JSONResponse(content=report_dict)
+
+
+@app.get("/vex/status")
+async def vex_status() -> JSONResponse:
+    """Return metadata about the local VEX feed cache.
+
+    Reads the on-disk manifest — no network I/O.  Returns 200 in all cases;
+    callers should check the ``empty`` field before relying on other fields.
+    """
+    try:
+        from squish.squash.vex import VexCache  # noqa: PLC0415
+    except ImportError:
+        raise HTTPException(500, "VEX engine not available (import error)")
+
+    cache = VexCache()
+    manifest = cache.manifest()
+
+    _COUNTERS["squash_vex_status_total"] += 1
+
+    if not manifest:
+        return JSONResponse(content={"empty": True})
+
+    return JSONResponse(
+        content={
+            "empty": False,
+            "url": manifest.get("url", ""),
+            "last_fetched": manifest.get("last_fetched", ""),
+            "statement_count": manifest.get("statement_count", 0),
+            "stale": cache.is_stale(),
+        }
+    )
+
+
+@app.post("/vex/update")
+async def vex_update(req: VexUpdateRequest) -> JSONResponse:
+    """Force-refresh the local VEX feed cache from a remote URL.
+
+    Equivalent to ``squash vex update``.  The URL resolves via:
+    1. ``req.url`` if provided
+    2. ``$SQUASH_VEX_URL`` environment variable
+    3. :attr:`VexCache.DEFAULT_URL` (canonical community feed)
+
+    Returns 200 on success, 502 on network failure.
+    """
+    try:
+        from squish.squash.vex import VexCache  # noqa: PLC0415
+    except ImportError:
+        raise HTTPException(500, "VEX engine not available (import error)")
+
+    url = req.url or os.environ.get("SQUASH_VEX_URL", VexCache.DEFAULT_URL)
+
+    loop = asyncio.get_running_loop()
+
+    def _do_update() -> dict:
+        cache = VexCache()
+        feed = cache.load_or_fetch(url, timeout=req.timeout, force=True)
+        return {
+            "url": url,
+            "statement_count": sum(len(d.statements) for d in feed.documents),
+            "updated": True,
+        }
+
+    try:
+        _COUNTERS["squash_vex_update_total"] += 1
+        result = await loop.run_in_executor(_executor, _do_update)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return JSONResponse(content=result)
 
 
 @app.post("/sbom/diff")

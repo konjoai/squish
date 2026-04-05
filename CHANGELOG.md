@@ -5,7 +5,39 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Squash Wave 30: REST API Endpoints for VEX Publish + Integration Attestation
+## [Unreleased] — Squash Wave 31: VEX Cache Management REST Endpoints
+
+### Added — Wave 31: GET /vex/status + POST /vex/update
+
+- **`GET /vex/status`** — return current VEX feed cache metadata without network I/O:
+  - Empty cache: `{"empty": true}`.
+  - Populated cache: `{"empty": false, "url": str, "last_fetched": str, "statement_count": int, "stale": bool}`.
+  - Reads on-disk manifest via `VexCache.manifest()` and `VexCache.is_stale()`; zero latency.
+  - Closes the last remaining CLI/REST surface gap (`squash vex status` now has a REST equivalent).
+
+- **`POST /vex/update`** — force-refresh the local VEX feed cache from a remote URL:
+  - Body (all optional): `url` (fallback: `$SQUASH_VEX_URL` → `VexCache.DEFAULT_URL`), `timeout` (default `30.0`).
+  - Runs in thread-pool executor (`loop.run_in_executor`); always passes `force=True`.
+  - Returns: `{"url": str, "statement_count": int, "updated": true}`.
+  - Network failures map to **502** (propagated via `try/except → HTTPException`).
+  - Closes the last remaining CLI/REST surface gap (`squash vex update` now has a REST equivalent).
+
+- **New Prometheus counters**: `squash_vex_update_total`, `squash_vex_status_total`.
+
+- **`tests/test_squash_wave31.py`** — 28 new integration tests (4326 total passing):
+  - `TestVexStatusEndpoint` (10) — empty/populated cache, all response fields, stale flag.
+  - `TestVexUpdateEndpoint` (10) — URL resolution chain (explicit → env → DEFAULT_URL),
+    `force=True` assertion, timeout forwarding, 502 on network error.
+  - `TestVexEndpointContracts` (5) — OpenAPI schema presence, correct HTTP methods.
+  - `TestVexCounterIncrements` (3) — per-request counter increments for both endpoints.
+
+### Module count — Wave 31
+- No new Python files (both endpoints added to existing `api.py`).
+- Module count unchanged at 106 (all prior justifications in CHANGELOG still apply).
+
+---
+
+## [Previous] — Squash Wave 30: REST API Endpoints for VEX Publish + Integration Attestation
 
 ### Added — Wave 30: REST API integration endpoints
 
