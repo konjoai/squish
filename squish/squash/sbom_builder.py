@@ -812,3 +812,218 @@ class BomMerger:
             "": 0,
         }
         return _map.get(state.lower(), 2)
+
+
+class OrasAdapter:
+    """Attach a CycloneDX BOM as an OCI referrer using the ORAS protocol.
+
+    ORAS (OCI Registry As Storage) allows attaching arbitrary artifacts —
+    such as SBOMs and attestations — to existing container images by uploading
+    them as OCI referrers.  This class tries the ``oras`` Python library first
+    and falls back to the ``oras`` CLI.
+
+    Usage::
+
+        digest = OrasAdapter.push(
+            bom_path=Path("out/sbom.cdx.json"),
+            image_ref="registry.example.com/myapp:v1.0.0",
+            username="myuser",
+            password="mypass",
+        )
+        print(digest)  # "sha256:abc123..."
+    """
+
+    SBOM_MEDIA_TYPE = "application/vnd.cyclonedx+json"
+    SPDX_MEDIA_TYPE = "application/spdx+json"
+
+    @staticmethod
+    def push(
+        bom_path: "Path",
+        image_ref: str,
+        *,
+        media_type: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> str:
+        """Push *bom_path* as an OCI referrer attached to *image_ref*.
+
+        Parameters
+        ----------
+        bom_path:
+            Local path to the BOM file (CycloneDX JSON or SPDX JSON).
+        image_ref:
+            Full OCI image reference to attach to, e.g.
+            ``"registry.example.com/myapp:v1.0.0"``.
+        media_type:
+            OCI media type for the BOM layer.  Defaults to
+            :attr:`SBOM_MEDIA_TYPE` (CycloneDX JSON).
+        username:
+            Registry username for authentication.
+        password:
+            Registry password for authentication.
+
+        Returns
+        -------
+        str
+            The ``sha256:…`` digest of the pushed OCI manifest referrer.
+        """
+        from pathlib import Path as _Path
+
+        bom_path = _Path(bom_path)
+        if not bom_path.exists():
+            raise FileNotFoundError(f"BOM file not found: {bom_path}")
+
+        if media_type is None:
+            suffix = bom_path.suffix.lower()
+            media_type = (
+                OrasAdapter.SPDX_MEDIA_TYPE if "spdx" in bom_path.name.lower() else OrasAdapter.SBOM_MEDIA_TYPE
+            )
+
+        # Prefer the oras Python library; fall back to CLI
+        try:
+            return OrasAdapter._push_via_library(
+                bom_path, image_ref, media_type, username, password
+            )
+        except ImportError:
+            return OrasAdapter._push_via_subprocess(
+                bom_path, image_ref, media_type, username, password
+            )
+
+    @staticmethod
+    def build_manifest(bom_path: "Path", media_type: str | None = None) -> dict:
+        """Return an OCI manifest dict describing a single BOM layer.
+
+        This is a pure-Python helper used for testing and for hand-rolling
+        manifests before pushing.
+
+        Parameters
+        ----------
+        bom_path:
+            Local path to the BOM file.
+        media_type:
+            Layer media type; defaults to :attr:`SBOM_MEDIA_TYPE`.
+
+        Returns
+        -------
+        dict
+            OCI manifest structure with ``schemaVersion``, ``mediaType``,
+            ``config``, and ``layers`` keys.
+        """
+        import hashlib
+        import json as _json
+        from pathlib import Path as _Path
+
+        bom_path = _Path(bom_path)
+        if media_type is None:
+            media_type = (
+                OrasAdapter.SPDX_MEDIA_TYPE if "spdx" in bom_path.name.lower() else OrasAdapter.SBOM_MEDIA_TYPE
+            )
+
+        raw = bom_path.read_bytes()
+        digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+        return {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "artifactType": media_type,
+            "config": {
+                "mediaType": "application/vnd.oci.empty.v1+json",
+                "digest": "sha256:44136fa355ba77b9ad7b35f295a3a7ca5a3269b5f0b10a4b0e9cf0c7c8e7d7d6",
+                "size": 2,
+            },
+            "layers": [
+                {
+                    "mediaType": media_type,
+                    "digest": digest,
+                    "size": len(raw),
+                    "annotations": {"org.opencontainers.image.title": bom_path.name},
+                }
+            ],
+        }
+
+    # ── Internal helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _push_via_library(
+        bom_path: "Path",
+        image_ref: str,
+        media_type: str,
+        username: str | None,
+        password: str | None,
+    ) -> str:
+        """Push using the ``oras`` Python package."""
+        try:
+            import oras.client as _oras_client  # type: ignore[import]
+        except ImportError as e:
+            raise ImportError(
+                "oras package not found. Install with: pip install oras"
+            ) from e
+
+        client = _oras_client.OrasClient()
+        if username and password:
+            # registry is the host part of image_ref
+            registry = image_ref.split("/")[0]
+            client.login(hostname=registry, user=username, password=password)
+
+        # oras attach: attach bom_path to image_ref as a referrer
+        result = client.push(
+            files=[str(bom_path)],
+            target=image_ref,
+            manifest_config=None,
+            tag=None,
+            annotation_file=None,
+            annotations={
+                "org.opencontainers.image.title": bom_path.name,
+                "media_type": media_type,
+            },
+        )
+        # Extract digest from the result
+        if isinstance(result, dict) and "digest" in result:
+            return result["digest"]
+        return str(result)
+
+    @staticmethod
+    def _push_via_subprocess(
+        bom_path: "Path",
+        image_ref: str,
+        media_type: str,
+        username: str | None,
+        password: str | None,
+    ) -> str:
+        """Push using the ``oras`` CLI binary via subprocess."""
+        import subprocess
+        import shutil
+
+        if not shutil.which("oras"):
+            raise RuntimeError(
+                "Neither the 'oras' Python library nor the 'oras' CLI binary is available. "
+                "Install one with: pip install oras  OR  brew install oras"
+            )
+
+        cmd = [
+            "oras",
+            "attach",
+            "--artifact-type",
+            media_type,
+            image_ref,
+            f"{bom_path}:{media_type}",
+        ]
+        if username:
+            cmd += ["--username", username]
+        if password:
+            cmd += ["--password", password]
+
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"oras CLI exited {proc.returncode}: {proc.stderr.strip()}"
+            )
+
+        # Parse digest from oras CLI output: "Digest: sha256:..."
+        for line in proc.stdout.splitlines():
+            if line.strip().startswith("Digest:"):
+                return line.strip().split(":", 1)[1].strip()
+            if line.strip().startswith("sha256:"):
+                return line.strip()
+
+        # Fallback — return a placeholder if digest not found in output
+        return f"pushed:{image_ref}"

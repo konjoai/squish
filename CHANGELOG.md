@@ -5,6 +5,51 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Squash Wave 26: SageMaker Integration, ORAS OCI Push, VEX Feed MVP
+
+### Added — Wave 26a: SageMaker Pipeline Attestation
+
+- **`squash/integrations/sagemaker.py`** (new file) — `SageMakerSquash.attach_attestation(model_path, *, model_package_arn, s3_upload_prefix, policies, sign, fail_on_violation) → AttestResult`. Runs a full Squash attestation pipeline and:
+  - Uploads all Squash artifacts (BOM, SPDX, policy reports) to S3 via boto3 when `s3_upload_prefix` is supplied.
+  - Tags the SageMaker Model or ModelPackage with `squash:passed`, `squash:scan_status`, and per-policy results via `sm.add_tags()`.
+- `SageMakerSquash.tag_model_package(model_package_arn, result)` — standalone tagging helper for attaching results to an already-existing ModelPackage ARN.
+- Lazy import with helpful `ImportError` message pointing to `pip install boto3`.
+
+### Added — Wave 26b: ORAS OCI Registry Push
+
+- **`squash/sbom_builder.py`** (extended) — `OrasAdapter` class:
+  - `OrasAdapter.push(bom_path, image_ref, *, media_type, username, password) → str` — attaches the BOM as an OCI referrer to an existing image. Prefers the `oras` Python library; falls back to the `oras` CLI binary; raises `RuntimeError` when neither is available.
+  - `OrasAdapter.build_manifest(bom_path, media_type) → dict` — pure-Python OCI manifest dict with correct `sha256:` digest, size, and annotations. Auto-detects SPDX vs CycloneDX by filename.
+  - `SBOM_MEDIA_TYPE = "application/vnd.cyclonedx+json"` and `SPDX_MEDIA_TYPE = "application/spdx+json"` class constants.
+
+### Added — Wave 26c: VEX Feed MVP
+
+- **`squash/vex.py`** (extended) — `VexFeedManifest` class:
+  - `VexFeedManifest.generate(entries, *, author, doc_id, timestamp) → dict` — generates a valid OpenVEX 0.2.0 document from a list of statement entries. Auto-generates `@id` (UUID URN) and ISO-8601 timestamp when not provided.
+  - `VexFeedManifest.validate(doc) → list[str]` — validates `@context`, `@type`, `@id`, `author`, and per-statement `vulnerability`/`products`/`status` fields. Returns empty list for a valid document.
+- `SQUASH_VEX_FEED_URL = "https://vex.squish.ai/ml-models/feed.openvex.json"` — canonical community feed URL constant.
+- `SQUASH_VEX_FEED_FALLBACK_URL` — GitHub raw fallback when primary endpoint is unreachable.
+- `VexCache.fetch_squash_feed(*, force=False) → VexFeed` — convenience shortcut that calls `load_or_fetch(SQUASH_VEX_FEED_URL)`.
+
+### Changed
+
+- **`squash/__init__.py`** — exports `SageMakerSquash`, `OrasAdapter`, `VexFeedManifest`, `SQUASH_VEX_FEED_URL`, `SQUASH_VEX_FEED_FALLBACK_URL`.
+
+### Tests
+
+- **`tests/test_squash_wave26.py`** — 36 new tests across unit, integration, and E2E:
+  - SageMakerSquash (8): import error messaging, AttestResult passthrough, tag correctness, S3 upload toggles, ARN forwarding, fail_on_violation propagation.
+  - OrasAdapter (11): manifest structure, digest correctness, SPDX media type detection, library preference, subprocess fallback, CLI auth flags, nonzero exit handling, FileNotFoundError.
+  - VexFeedManifest (12): generate structure, context URL, entry count, author/doc_id passthrough, unique IDs, justification preservation, all four valid statuses, validation error detection.
+  - Integration (5): manifest roundtrip, feed generate→validate roundtrip, full SageMaker pipeline with real BOM, fetch_squash_feed URL forwarding.
+- **Total: 4064 passing, 4 pre-existing failures (wave12x line-count stubs, unchanged), 25 skipped.**
+
+### Module count
+
+- **104 active Python files** in `squish/` non-experimental. `integrations/sagemaker.py` (+1) justified as the fifth and final MLOps integration adapter (MLflow + W&B + HF + LangChain + SageMaker = complete suite).
+
+---
+
 ## [Unreleased] — Squash Waves 20–25: NTIA Validator, SLSA Provenance, BOM Merge, AI Risk Assessment, Drift Detection, CI/CD Adapters
 
 ### Added — Wave 20: NTIA Minimum Elements Validator

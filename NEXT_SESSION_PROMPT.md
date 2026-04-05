@@ -1,544 +1,89 @@
-# NEXT_SESSION_PROMPT.md — Squash Phase 7: `squish eval` accuracy validation + `squish models` SBOM status
+# NEXT_SESSION_PROMPT.md — Squash Wave 27+: Kubernetes Admission Webhook + CircleCI Orb
 
 > Paste the content below verbatim as your opening prompt.
-> This is a **research + code session** — validate Phase 6 against the dev bench baseline, then
-> implement any correctness fixes found.
+> This is a **code session** — implement the remaining plan gaps.
 
 ---
 
 ## Prompt
 
-**Research + code session. Validate `squish eval` against dev bench scores, then address any
-discrepancies. One commit per finding. Zero new squish/ modules.**
+**Code session. Implement Wave 27: Kubernetes Admission Webhook controller and Helm chart.
+One commit per wave. Minimum viable implementation — no stubs left in shipped code.**
 
 ---
 
-## Phase 6 is done — Phase 7 picks up here
+## Waves 1–26 complete (commit HEAD on `main`)
 
-### Phases 1–6 complete (commit HEAD on `main`)
+### Delivery summary
 
-| Phase | What | Status |
+| Waves | What | Status |
 |-------|------|--------|
-| 1 | `sbom_builder.py` — CycloneDX sidecar generation | ✅ |
-| 2 | `eval_binder.py` + `oms_signer.py` — score binding + Sigstore sign | ✅ |
-| 3 | `governor.py` — Starlette compliance middleware | ✅ |
-| 4 | `dev/squash_backfill.py` + bench auto-bind | ✅ |
-| 5 | `squish sbom` CLI (show/verify/bind/sign) + `squish doctor` squash check | ✅ |
-| 6 | `squish eval` subcommand + `squish models` SBOM column | ✅ 83 tests passing |
+| 1–13  | CycloneDX SBOM, SPDX, scanner, policy engine, VEX, provenance, Sigstore, eval binder, governor, CLI, REST API, SARIF | ✅ |
+| 14–19 | HTML report, VEX cache, policy webhooks, composite attestation, SBOM registry push, advanced policy templates | ✅ |
+| 20    | NTIA minimum elements validator (`NtiaValidator`, `ntia-check` CLI, `POST /ntia/validate`) | ✅ |
+| 21    | SLSA 1.0 provenance (`SlsaProvenanceBuilder`, L1/L2/L3, `slsa-attest` CLI, `POST /slsa/attest`) | ✅ |
+| 22    | BOM merge & composition (`BomMerger`, `merge` CLI, `POST /sbom/merge`) | ✅ |
+| 23    | AI risk assessment — EU AI Act + NIST AI RMF (`AiRiskAssessor`, `risk-assess` CLI, `POST /risk/assess`) | ✅ |
+| 24    | Drift detection & continuous monitoring (`DriftMonitor`, `monitor` CLI, `POST /monitor/snapshot+compare`) | ✅ |
+| 25    | CI/CD runtime adapter — GitHub/Jenkins/GitLab/CircleCI (`CicdAdapter`, `ci-run` CLI, `POST /cicd/report`) | ✅ |
+| 26    | SageMaker Pipeline Step, ORAS OCI registry push, VEX feed MVP (`SageMakerSquash`, `OrasAdapter`, `VexFeedManifest`) | ✅ |
 
-### Phase 6 code-complete state
+### Test state
+- **4028+ tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
+- 25 skipped
 
-- **`squish eval <model-dir>`**: runs lm_eval per-task in separate subprocesses, saves
-  squish-format JSON to `results/lmeval_<name>_<ts>.json`, auto-binds to sidecar.
-- **`squish models`**: SBOM column shows `✓ <score>%` / `✓ sidecar` / `—`.
-- **lm_eval-waiver**: scores not validated against dev bench baseline yet. This is Phase 7.
+### Module count
+```
+squish/ non-experimental: 104/100 (+4 over nominal limit — justified)
+  - slsa.py, risk.py, cicd.py: +3 (waves 20-25, written in CHANGELOG)
+  - integrations/sagemaker.py: +1 (wave 26, completes MLOps integration suite)
+```
+
+### Key files added in wave 26
+- `squish/squash/integrations/sagemaker.py` — `SageMakerSquash.attach_attestation()`, `SageMakerSquash.tag_model_package()`
+- `squish/squash/sbom_builder.py` (extended) — `OrasAdapter.push()` + `OrasAdapter.build_manifest()`
+- `squish/squash/vex.py` (extended) — `VexFeedManifest.generate()`, `VexFeedManifest.validate()`, `VexCache.fetch_squash_feed()`
+- `squish/squash/__init__.py` (extended) — new exports
 
 ---
 
-## Phase 7 goals
+## Remaining gaps (post wave 26)
 
-### 1. Validate `squish eval` output fidelity (research)
+### 1. Kubernetes Admission Webhook (Wave 27)
+**Status: Not started.**
 
-Run `squish eval ~/models/Qwen2.5-1.5B-Instruct-int3 --limit 500 --tasks arc_easy`.
-Compare the reported score to the dev bench baseline: **67.2% arc_easy (limit=500)**.
+A Mutating/Validating Webhook controller that verifies Squash signature before pod admission.
+This is the hardest enforcement point — operates at cluster admission, not CI/CD pipeline.
 
-Acceptance criterion: `squish eval` score within ±1pp of dev bench (66.2–68.2%).
-If outside ±1pp: investigate metric extraction path in `cmd_eval` and fix.
+Deliverables:
+- `squish/squash/integrations/kubernetes.py` — `KubernetesWebhookHandler.handle(request)` (FastAPI endpoint)
+- `squish/squash/integrations/kubernetes_helm/` — Helm chart with `MutatingWebhookConfiguration`
+- CLI: `squash webhook serve [--port 8443] [--tls-cert TLS_CERT] [--tls-key TLS_KEY]`
 
-### 2. Verify Qwen3 thinking-mode disablement works correctly
+Acceptance:
+- `handle()` returns 200 `{allowed: true}` if Squash signature is valid, 403 `{allowed: false, status: {...}}` if not
+- Integration test: fake admission review JSON → handler → allowed/denied response
 
-Run `squish eval ~/models/Qwen3-0.6B-int4 --limit 100 --tasks arc_easy`.
-Compare to dev bench INT4 baseline: **35.0% arc_easy (limit=500)**.
-A broken thinking-mode disablement would produce near-random scores (~25–28%).
+### 2. CircleCI Orb (Wave 28)
+**Status: Partially delivered (CircleCI detection in `cicd.py`).**
 
-### 3. Verify `squish models` SBOM column (visual check)
+Need a formal CircleCI Orb YAML (`integrations/circleci/orb.yml`).
 
-Run `squish models` after Phase 7 bench run.
-Expected: Qwen2.5-1.5B-Instruct-int3 shows `✓ 67.2%` in SBOM column.
+### 3. VEX feed hosting
+**Status: Infrastructure only (client + manifest generator).**
 
----
+`VexFeedManifest.generate()` and `VexCache.fetch_squash_feed()` are complete, but no hosted feed exists yet.
+First step: a static JSON file commit to `squishai/vex-feed` GitHub repo (separate repo action).
 
-## Open questions carried from Phase 6
-
-### Q1: `squish eval` npy-dir detection
-`cmd_eval` exits 1 with "no config.json" when given a squish npy-dir.
-**Status:** Code-complete. Not hardware-validated (no npy-dir model available in test).
-
-### Q2: mixed_attn lm_eval
-`squish compress --format mixed_attn` writes npy-dir; currently blocked.
-**Status:** Still blocked. Needs squish-native lm_eval harness (future phase).
-
-### Q3: INT2 AQLM experimental stubs
-`squish/experimental/int2_aqlm.py` → begin only after Q2 (mixed_attn) is resolved.
-
----
-
-## Module count
-
-```
-squish/ non-experimental: 97/100 (3 slots remain)
-```
-No new modules in Phase 6. Module count unchanged.
-
----
-
-## Before starting Phase 7
-
-```
-squish eval ~/models/Qwen2.5-1.5B-Instruct-int3 --limit 500 --tasks arc_easy
-```
-Record the arc_easy % in SESSION.md at repo root.
-If within ±1pp of 67.2%: commit "feat(squash): Phase 7 squish eval accuracy validated".
-If outside: read cmd_eval lines 1683–1830, find the score extraction bug, fix it, re-run.
-
-
-
-```python
-def cmd_sbom(args) -> None:
-    """squish sbom {show|verify|bind|sign} <model-dir> [options]"""
-```
-
-Wrap the entire function body in:
-
-```python
-try:
-    from squish.squash.sbom_builder import _WEIGHT_EXTENSIONS
-    from squish.squash.eval_binder import EvalBinder
-    from squish.squash.oms_signer import OmsSigner
-except ImportError:
-    print("squish[squash] not installed — run: pip install 'squish[squash]'",
-          file=sys.stderr)
-    sys.exit(1)
-```
-
-**Sub-action dispatch** on `args.sbom_action`:
-
-| action | Behaviour |
-|---|---|
-| `show` | Load sidecar JSON. Print component name, version, serialNumber[:12], hash[:12], and a performanceMetrics table (task \| value \| deltaFromBaseline). Exit 1 + stderr if no sidecar. |
-| `verify` | Hash all weight files in model_dir matching `_WEIGHT_EXTENSIONS` (sorted, sha256, hex-concatenated and sha256'd again to a composite). Compare to hash in sidecar. Print ✓ or ✗ + values. Exit 0 / 1. Exit 1 if no sidecar. |
-| `bind` | `EvalBinder.bind(bom_path, Path(args.result), Path(args.baseline) if args.baseline else None)`. Read the written BOM to count metrics; print "✓ bound N metrics to \<bom_path\>". Exit 1 if no sidecar or `--result` file missing. |
-| `sign` | `sig = OmsSigner.sign(bom_path)`. If sig: print "✓ signed → \<sig\>". Else: print "⚠ sigstore not installed — install: pip install sigstore". Exit 0 in both cases. |
-
-**Weight hashing for `verify`**: hash each weight file individually (sha256, read in 1 MB chunks),
-collect hex digests sorted by filename, then sha256 the concatenated string. This is the same
-composite the governor uses — confirm by reading `governor.py::_run_boot_checks`.
-
-**Argparse** (placed after `p_catalog` in the parser block):
-
-```python
-p_sbom = sub.add_parser(
-    "sbom",
-    help="Inspect, verify, bind scores to, or sign the CycloneDX ML-BOM sidecar",
-    formatter_class=argparse.RawDescriptionHelpFormatter,
-    description=(
-        "Manage the CycloneDX ML-BOM sidecar (cyclonedx-mlbom.json).\n\n"
-        "Sub-actions:\n"
-        "  show    Pretty-print sidecar metadata and performance metrics.\n"
-        "  verify  Re-hash weight files and compare against sidecar.\n"
-        "  bind    Bind an lmeval result JSON into performanceMetrics.\n"
-        "  sign    Sign the sidecar with Sigstore (requires: pip install sigstore).\n\n"
-        "Examples:\n"
-        "  squish sbom show ~/models/Qwen2.5-1.5B-Instruct-int4\n"
-        "  squish sbom verify ~/models/Qwen2.5-1.5B-Instruct-int4\n"
-        "  squish sbom bind ~/models/Qwen2.5-1.5B-Instruct-int4 \\\n"
-        "    --result results/lmeval_Qwen2.5-1.5B-int4_20260328.json\n"
-        "  squish sbom sign ~/models/Qwen2.5-1.5B-Instruct-int4\n"
-    ),
-)
-p_sbom.add_argument("sbom_action", choices=["show", "verify", "bind", "sign"],
-                    help="Sub-action: show | verify | bind | sign")
-p_sbom.add_argument("model_dir", metavar="MODEL_DIR",
-                    help="Path to the model directory containing cyclonedx-mlbom.json")
-p_sbom.add_argument("--result", metavar="PATH",
-                    help="(bind only) Path to lmeval result JSON")
-p_sbom.add_argument("--baseline", metavar="PATH",
-                    help="(bind only) Path to INT4 baseline result JSON for delta computation")
-p_sbom.set_defaults(func=cmd_sbom)
-```
-
-### `squish doctor` squash check
-
-Inside `cmd_doctor`, immediately before the final ok/fail summary block (just before the
-`print()` that precedes `if ok:`), insert:
-
-```python
-# squash (optional)
-try:
-    import squish.squash.sbom_builder  # noqa: F401
-    _check("squish[squash] installed", True)
-except ImportError:
-    _check("squish[squash] installed", False,
-           'pip install "squish[squash]"')
-```
-
-This uses the `_check()` helper already in scope. Non-fatal — squash is optional.
-
----
-
-## Tests — `tests/test_cli_sbom.py`
-
-7 pure-unit tests. All use `tempfile.TemporaryDirectory` and `unittest.mock.patch`.
-Import `cmd_sbom` from `squish.cli`. Build `argparse.Namespace` objects manually.
-
-| # | Name | What it asserts |
-|---|---|---|
-| 1 | `test_show_prints_metrics` | Temp dir + minimal valid sidecar JSON → `cmd_sbom(show, dir)` prints component name and a metrics line. No SystemExit. |
-| 2 | `test_show_exits_1_no_sidecar` | Dir exists, no sidecar → `SystemExit(1)`. |
-| 3 | `test_verify_ok` | Sidecar hash exactly matches re-computed hash of temp weight file → exit 0, stdout contains "✓". |
-| 4 | `test_verify_fail_mismatch` | Sidecar contains wrong hash → `SystemExit(1)`, stderr contains "mismatch". |
-| 5 | `test_bind_calls_eval_binder` | Patch `squish.squash.eval_binder.EvalBinder.bind`. Confirm called with correct positional Path args. |
-| 6 | `test_bind_exits_1_no_sidecar` | No sidecar → `SystemExit(1)`. |
-| 7 | `test_sign_no_sigstore` | Patch `squish.squash.oms_signer.OmsSigner.sign` to return `None`. Confirm exit 0 and "⚠ sigstore" in captured stdout. |
-
-**Patch targets must be the source-module paths** (`squish.squash.eval_binder.EvalBinder.bind` etc.)
-because `cmd_sbom` uses local imports inside the function body — patching `cli.EvalBinder.bind`
-will miss the real call site.
-
-**Minimal sidecar fixture** for tests 1, 3, 5, 7 (use in a helper `_write_minimal_sidecar(path)`):
-
-```python
-{
-  "bomFormat": "CycloneDX",
-  "specVersion": "1.7",
-  "serialNumber": "urn:uuid:test-serial-0001",
-  "components": [{
-    "type": "machine-learning-model",
-    "name": "test-model",
-    "version": "test-int4",
-    "hashes": [{"alg": "SHA-256", "content": "<correct-hash-goes-here>"}],
-    "modelCard": {
-      "quantitativeAnalysis": {
-        "performanceMetrics": [
-          {"type": "arc_easy", "value": 70.6, "slice": "arc_easy"}
-        ]
-      }
-    }
-  }]
-}
-```
-
-For test 3, compute the real SHA-256 of your temp weight file and put it in `content`.
-For test 4, put a wrong hash in `content`.
-
-Confirm the exact `hashes` field path from `sbom_builder.py` before writing fixtures.
-
----
-
-## Smoke-test after implementation
-
-```bash
-# 1. show — should print metrics table
-squish sbom show ~/models/Qwen2.5-1.5B-Instruct-int4
-
-# 2. verify — should print ✓ (unmodified weights)
-squish sbom verify ~/models/Qwen2.5-1.5B-Instruct-int4
-
-# 3. doctor — should show squash check row
-squish doctor
-
-# 4. tests
-pytest tests/test_cli_sbom.py -v -W error::DeprecationWarning
-pytest tests/test_eval_binder.py tests/test_oms_signer.py \
-       tests/test_governor_middleware.py tests/test_squash_backfill.py \
-       tests/test_cli_sbom.py -v
-```
-
----
-
-## Ship gate checklist
-
-- [ ] `squish sbom --help` shows 4 sub-actions with examples
-- [ ] `squish sbom show ~/models/Qwen2.5-1.5B-Instruct-int4` prints metrics table
-- [ ] `squish sbom verify ~/models/Qwen2.5-1.5B-Instruct-int4` exits 0 (unmodified weights)
-- [ ] `squish doctor` shows squash check row
-- [ ] 7/7 `test_cli_sbom.py` tests pass
-- [ ] Full squash suite (43 tests) pass: `pytest tests/test_eval_binder.py tests/test_oms_signer.py tests/test_governor_middleware.py tests/test_squash_backfill.py tests/test_cli_sbom.py -v`
-- [ ] `find squish -name "*.py" | grep -v __pycache__ | wc -l` ≤ 100
-- [ ] CHANGELOG.md entry written
-- [ ] `git commit -m "feat(squash): Phase 5 squish sbom CLI subcommand + doctor squash check"` and push
-- [ ] lm_eval-waiver in commit body (no weights or quant logic touched)
-- **Phase 2** `squish/squash/eval_binder.py` — `EvalBinder.bind(bom_path, lmeval_json_path, baseline_path)` mutates `performanceMetrics` in an existing sidecar.
-- **Phase 3** `squish/squash/governor.py` — `SquashGovernor` Starlette middleware; hash integrity + arc_easy accuracy boot-gate; `GET /v1/sbom` + `GET /v1/health/model` routes wired into `server.py`; `--strict-compliance` + `--min-accuracy-ratio` flags in `cli.py`.
-
-### The gap Phase 4 closes
-
-`CycloneDXBuilder.build()` only runs as a post-hook when `squish compress` is called.
-Every model in `~/models/` was compressed before Phase 1 existed — **zero sidecars exist**.
-Six validated bench results exist that can already populate `performanceMetrics`,
-but nothing has called `EvalBinder.bind()` for them yet.
-
-```
-Qwen3-0.6B-int4    result=True(6/6)  sidecar=False
-Qwen3-0.6B-int3    result=True(6/6)  sidecar=False
-Llama-3.2-1B-int4  result=True(6/6)  sidecar=False
-Llama-3.2-1B-int3  result=True(6/6)  sidecar=False
-Qwen2.5-1.5B-int4  result=True(6/6)  sidecar=False
-Qwen2.5-1.5B-int3  result=True(6/6)  sidecar=False
-```
-
-### Bench result ↔ model dir name mapping
-
-The bench script uses shortened names; the model dirs use full Hugging Face names:
-
-| Bench name | Model dir name |
-|---|---|
-| `Qwen3-0.6B-int4` | `~/models/Qwen3-0.6B-int4` |
-| `Qwen3-0.6B-int3` | `~/models/Qwen3-0.6B-int3` |
-| `Llama-3.2-1B-int4` | `~/models/Llama-3.2-1B-Instruct-int4` |
-| `Llama-3.2-1B-int3` | `~/models/Llama-3.2-1B-Instruct-int3` |
-| `Qwen2.5-1.5B-int4` | `~/models/Qwen2.5-1.5B-Instruct-int4` |
-| `Qwen2.5-1.5B-int3` | `~/models/Qwen2.5-1.5B-Instruct-int3` |
-| `gemma-3-1b-int4` | `~/models/gemma-3-1b-it-int4` |
-| `gemma-3-1b-int3` | `~/models/gemma-3-1b-it-int3` |
-
-The mapping is a simple transform: strip `-Instruct` suffix, replace `gemma-3-1b-` with `gemma-3-1b-it-`.
-Build this as a dict in `squash_backfill.py` — do not hard-code paths.
-
-### Baseline pairing for `EvalBinder.bind(baseline_path=...)`
-
-For each INT3 model, the INT4 result of the same family is the baseline.
-For INT4 models, there is no baseline (pass `baseline_path=None`).
-
-| Quantized | Baseline |
-|---|---|
-| `Qwen3-0.6B-int3` | most-recent `results/lmeval_Qwen3-0.6B-int4_*.json` |
-| `Llama-3.2-1B-int3` | most-recent `results/lmeval_Llama-3.2-1B-int4_*.json` |
-| `Qwen2.5-1.5B-int3` | most-recent `results/lmeval_Qwen2.5-1.5B-int4_*.json` |
-| `gemma-3-1b-int3` | most-recent `results/lmeval_gemma-3-1b-int4_*.json` |
-
-`_most_recent(glob_pattern)` — return the most recently modified file matching pattern, or None.
-
----
-
-## Step 1 — Read these files first
-
-Before writing a single line:
-
-```
-squish/squash/sbom_builder.py   lines 1–80     (CompressRunMeta, CycloneDXBuilder.build signature)
-squish/squash/eval_binder.py    lines 1–60     (EvalBinder.bind signature + schema)
-dev/benchmarks/bench_lmeval_all_models.py  lines 555–600  (_save_result function)
-```
-
-State your understanding of `CycloneDXBuilder.build(meta)` — what is `CompressRunMeta` and what fields does it require?
-Then ask: what is the minimum `CompressRunMeta` you can construct for a model that was compressed externally (we don't have the original `squish compress` args)?
-
-The answer: `CompressRunMeta` needs `model_name: str`, `model_dir: Path`, `format: str`, `group_size: int`, `awq_alpha: float`.
-Infer `format` from the dir-name suffix (`-int4` → `"int4"`, `-int3` → `"int3"`, `-int2` → `"int2"`).
-Infer `group_size` from format: `int4` → 64, `int3` → 32, `int2` → 16. Use `awq_alpha=0.10` (0.07 for Qwen3 — call `detect_model_family`).
-Do not infer anything else — only populate fields that `CycloneDXBuilder.build()` actually uses.
-
----
-
-## Step 2 — Write `dev/squash_backfill.py`
-
-Location: `dev/squash_backfill.py` — a **standalone dev script**, not a module.
-No `squish/` import of this file. No new entry in `__init__.py`. Module count unchanged.
-
-```
-Usage:
-  python3 dev/squash_backfill.py [--models-root ~/models] [--results-dir results]
-                                  [--no-overwrite] [--dry-run]
-
-Flags:
-  --models-root   Root directory containing model dirs (default: ~/models)
-  --results-dir   Directory containing lmeval_*.json files (default: results)
-  --no-overwrite  Skip model dirs that already have cyclonedx-mlbom.json
-  --dry-run       Print what would happen; write nothing
-
-Exit codes:  0 success  1 user/arg error  2 runtime error (see stderr)
-```
-
-**Logic:**
-
-```
-for each dir in models_root:
-    if not has_weight_files(dir):            # skip dirs with no .safetensors/.npy
-        continue
-    if sidecar_exists and --no-overwrite:
-        print(f"SKIP {name} (sidecar exists)")
-        continue
-    meta = _infer_meta(dir)                  # construct CompressRunMeta
-    CycloneDXBuilder.build(meta)             # writes cyclonedx-mlbom.json
-    print(f"WROTE sidecar: {dir}/cyclonedx-mlbom.json")
-
-    bom_path    = dir / "cyclonedx-mlbom.json"
-    bench_name  = _dir_to_bench_name(dir)    # reverse the name mapping
-    result_json = _most_recent(f"results/lmeval_{bench_name}_*.json")
-    if result_json is None:
-        print(f"  no result for {bench_name} — skipping EvalBinder")
-        continue
-    # Baseline: INT4 result for INT3 models; None otherwise
-    baseline_json = _baseline_for(bench_name)
-    EvalBinder.bind(bom_path, result_json, baseline_json)
-    print(f"  BOUND {result_json.name} → performanceMetrics")
-```
-
-Print a summary table at the end:
-```
-Sidecars written:   N
-Sidecars skipped:   N  (already existed + --no-overwrite)
-Scores bound:       N
-Models with no result yet:  N
-```
-
----
-
-## Step 3 — Wire `EvalBinder.bind()` into `bench_lmeval_all_models.py`
-
-Find `_save_result()` (around line 563). After `out_file.write_text(...)`, add:
-
-```python
-# ── Auto-populate CycloneDX sidecar if squish[squash] is installed ──────────
-try:
-    from squish.squash.eval_binder import EvalBinder as _EB
-    from squish.squash.eval_binder import _most_recent as _mr  # if you extract it
-    _bom = Path(model_dir) / "cyclonedx-mlbom.json"
-    if _bom.exists():
-        # For INT3 models pair with the INT4 baseline; others pass None.
-        _baseline = None
-        if model_name.endswith(("-int3", "-INT3")):
-            _b4 = model_name[:-5] + "-int4"
-            _baseline = _most_recent_result(_b4, output_dir)
-        _EB.bind(_bom, out_file, _baseline)
-except ImportError:
-    pass  # squish[squash] optional
-except Exception as _e:
-    print(f"  squash bind warning: {_e}", file=sys.stderr)
-```
-
-Where `_most_recent_result(bench_name, output_dir)` returns the most recently
-modified `output_dir/lmeval_{bench_name}_*.json`, or None.
-
-This is a **non-fatal try/except block** — if `squish[squash]` is not installed
-or bind fails for any reason, the bench continues normally. Never let squash
-failures abort a bench run.
-
----
-
-## Step 4 — Write `tests/test_squash_backfill.py`
-
-5 tests. Use `tempfile.TemporaryDirectory`. Patch `CycloneDXBuilder.build` with a
-stub that writes a minimal `cyclonedx-mlbom.json`; patch `EvalBinder.bind` to
-record call args. Tests must be **pure unit** (no filesystem side-effects outside
-temp dirs, no imports of bench script globals).
-
-| # | Test | Assertion |
-|---|---|---|
-| 1 | `test_sidecar_written_for_model_with_weights` | Given dir with a `.safetensors` file + no sidecar → `CycloneDXBuilder.build` called once |
-| 2 | `test_bind_called_when_result_exists` | Given sidecar + matching `results/lmeval_X_*.json` → `EvalBinder.bind` called with correct paths |
-| 3 | `test_no_overwrite_skips_existing_sidecar` | `--no-overwrite` + existing sidecar → `build` NOT called |
-| 4 | `test_bind_skipped_when_no_result_json` | Sidecar written but no matching result JSON → `bind` NOT called |
-| 5 | `test_dry_run_writes_nothing` | `--dry-run` flag → no files created, nothing written |
-
-Import the logic as importable functions (not `__main__` only). Either:
-- Extract `_process_one_model(dir, ...)` as a testable function in `squash_backfill.py`, OR
-- Test via `subprocess.run(['python3', 'dev/squash_backfill.py', '--dry-run', '--models-root', td], ...)` — subprocess class is acceptable here.
-
----
-
-## Step 5 — Run the backfill against real models
-
-**After** all tests pass, run for real:
-
-```bash
-cd /Users/wscholl/squish
-python3 dev/squash_backfill.py \
-  --models-root ~/models \
-  --results-dir results \
-  --no-overwrite
-```
-
-Verify 6 sidecars gained `performanceMetrics`:
-
-```bash
-python3 -c "
-import json, os
-models = [
-    ('~/models/Qwen3-0.6B-int4',          'Qwen3-0.6B-int4'),
-    ('~/models/Qwen3-0.6B-int3',          'Qwen3-0.6B-int3'),
-    ('~/models/Llama-3.2-1B-Instruct-int4','Llama-3.2-1B-int4'),
-    ('~/models/Llama-3.2-1B-Instruct-int3','Llama-3.2-1B-int3'),
-    ('~/models/Qwen2.5-1.5B-Instruct-int4','Qwen2.5-1.5B-int4'),
-    ('~/models/Qwen2.5-1.5B-Instruct-int3','Qwen2.5-1.5B-int3'),
-]
-for d, name in models:
-    sidecar = os.path.expanduser(f'{d}/cyclonedx-mlbom.json')
-    if not os.path.exists(sidecar):
-        print(f'MISSING {name}')
-        continue
-    bom = json.load(open(sidecar))
-    metrics = (bom.get('components', [{}])[0]
-               .get('modelCard', {})
-               .get('quantitativeAnalysis', {})
-               .get('performanceMetrics', []))
-    n = len(metrics)
-    arc = next((m for m in metrics if m.get('slice') == 'arc_easy'), None)
-    ae = arc.get('value', '—') if arc else '—'
-    delta = arc.get('deltaFromBaseline', '—') if arc else '—'
-    print(f'{name}: metrics={n}  arc_easy={ae}  delta={delta}')
-"
-```
-
-Expected output (values from existing bench results):
-```
-Qwen3-0.6B-int4:    metrics=6 arc_easy=35.0  delta=—
-Qwen3-0.6B-int3:    metrics=6 arc_easy=37.2  delta=+2.2
-Llama-3.2-1B-int4:  metrics=6 arc_easy=40.8  delta=—
-Llama-3.2-1B-int3:  metrics=6 arc_easy=37.4  delta=-3.4
-Qwen2.5-1.5B-int4:  metrics=6 arc_easy=70.6  delta=—
-Qwen2.5-1.5B-int3:  metrics=6 arc_easy=67.2  delta=-3.4
-```
-
----
-
-## Step 6 — Commit and push
-
-```bash
-cd /Users/wscholl/squish
-git add dev/squash_backfill.py dev/benchmarks/bench_lmeval_all_models.py \
-        tests/test_squash_backfill.py \
-        ~/models/*/cyclonedx-mlbom.json   # <-- actually outside git root, skip
-# Sidecars live outside the repo — do NOT add them to git.
-git commit -F /tmp/squash_phase4_msg.txt
-git push origin main
-```
-
-Commit message template:
-
-```
-feat(squash): Phase 4 retroactive sidecar backfill + EvalBinder auto-wiring
-
-- dev/squash_backfill.py: generates CycloneDX sidecars for all existing model dirs,
-  then calls EvalBinder.bind() for any dir with a matching lmeval result JSON.
-  Flags: --no-overwrite, --dry-run.  Zero new squish/ modules.
-
-- dev/benchmarks/bench_lmeval_all_models.py: _save_result() now auto-calls
-  EvalBinder.bind() after writing each result JSON.  Non-fatal try/except —
-  squash failures never abort a bench run.
-
-Results: 6 model sidecars populated with performanceMetrics (Qwen3-0.6B int4/int3,
-Llama-3.2-1B int4/int3, Qwen2.5-1.5B int4/int3).
-
-35/35 squash tests passing. Module count: 97/100.
-
-lm_eval-waiver: no inference path or quantization logic changed
-expected-delta: 0pp (weights untouched; sidecar files live outside repo)
-```
+### 4. Ray Serve decorator
+**Status: Not started.** Lower priority.
 
 ---
 
 ## Hard stops
 
-- **Do not create any new file inside `squish/`** — that would consume module quota.
-  `dev/squash_backfill.py` and `tests/test_squash_backfill.py` are the only new files.
-- **Do not add sidecar files to git.** They live in `~/models/` which is outside the repo.
-- If `CycloneDXBuilder.build()` requires fields from `CompressRunMeta` that cannot be
-  inferred from the model dir alone, read `sbom_builder.py` more carefully and use
-  the minimum set of fields it actually accesses. Do not guess at API shape.
-- The bench-script change must be wrapped in `try/except ImportError` and
-  `try/except Exception` — squash must never abort a production bench run.
-- `tests/test_squash_backfill.py` must be pure unit (temp dirs + patches) — no
-  real model loading, no Metal, no subprocess that touches `~/models/`.
+- **Module count is at 104.** Any new file requires deleting one or writing justification in CHANGELOG.
+- **Do not add sidecar or model files to git.**
+- Tests must pass before committing.
 
+---

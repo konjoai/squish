@@ -69,6 +69,9 @@ from squish.squash.risk import (  # noqa: F401 (Wave 23)
 )
 from squish.squash.governor import DriftEvent, DriftMonitor  # noqa: F401 (Wave 24)
 from squish.squash.cicd import CiEnvironment, CicdAdapter, CicdReport  # noqa: F401 (Wave 25)
+from squish.squash.integrations.sagemaker import SageMakerSquash  # noqa: F401 (Wave 26)
+from squish.squash.sbom_builder import OrasAdapter  # noqa: F401 (Wave 26)
+from squish.squash.vex import VexFeedManifest, SQUASH_VEX_FEED_URL, SQUASH_VEX_FEED_FALLBACK_URL  # noqa: F401 (Wave 26)
 
 __all__ = [
     # Phase 1–3 (existing)
@@ -148,4 +151,10 @@ __all__ = [
     "CiEnvironment",
     "CicdAdapter",
     "CicdReport",
+    # Wave 26: SageMaker, ORAS, VEX feed
+    "SageMakerSquash",
+    "OrasAdapter",
+    "VexFeedManifest",
+    "SQUASH_VEX_FEED_URL",
+    "SQUASH_VEX_FEED_FALLBACK_URL",
 ]

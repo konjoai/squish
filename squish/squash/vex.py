@@ -573,3 +573,179 @@ class VexCache:
         except Exception as e:
             log.warning("VexCache: fetch failed for %s — %s", url, e)
 
+    def fetch_squash_feed(self, *, force: bool = False) -> "VexFeed":
+        """Convenience shortcut: fetch the canonical Squash community VEX feed.
+
+        Parameters
+        ----------
+        force:
+            If *True*, bypass the ``If-Modified-Since`` cache check and always
+            download a fresh copy.
+
+        Returns
+        -------
+        VexFeed
+            Loaded feed from the Squash community endpoint.
+        """
+        return self.load_or_fetch(SQUASH_VEX_FEED_URL, force=force)
+
+
+# ── VEX feed constants ─────────────────────────────────────────────────────────
+
+#: Canonical URL for the Squash community ML-model VEX feed.
+SQUASH_VEX_FEED_URL = "https://vex.squish.ai/ml-models/feed.openvex.json"
+
+#: Fallback URL (GitHub raw) used when the primary endpoint is unreachable.
+SQUASH_VEX_FEED_FALLBACK_URL = (
+    "https://raw.githubusercontent.com/squishai/vex-feed/main/feed.openvex.json"
+)
+
+
+class VexFeedManifest:
+    """Generate and validate OpenVEX 0.2.0 feed manifests.
+
+    This class provides two entry-points for working with the Squash community
+    VEX feed format:
+
+    * :meth:`generate` — build a valid OpenVEX document dict from a list of
+      statement entries.
+    * :meth:`validate` — check that a document dict conforms to the minimum
+      required structure.
+
+    Usage::
+
+        doc = VexFeedManifest.generate([
+            {
+                "vulnerability": {"name": "CVE-2024-12345"},
+                "products": [{"@id": "pkg:pypi/numpy@1.24.0"}],
+                "status": "not_affected",
+                "justification": "vulnerable_code_not_in_execute_path",
+            }
+        ])
+        errors = VexFeedManifest.validate(doc)
+        assert not errors
+    """
+
+    #: OpenVEX JSON-LD context URL
+    OPENVEX_CONTEXT = "https://openvex.dev/ns/v0.2.0"
+    #: Document type identifier
+    OPENVEX_TYPE = "OpenVEXDocument"
+    #: Canonical spec version tag
+    SPEC_VERSION = "0.2.0"
+
+    @staticmethod
+    def generate(
+        entries: list[dict],
+        *,
+        author: str = "squash",
+        doc_id: str | None = None,
+        timestamp: str | None = None,
+    ) -> dict:
+        """Generate a valid OpenVEX 0.2.0 document from a list of statement entries.
+
+        Parameters
+        ----------
+        entries:
+            List of statement dicts.  Each must contain at minimum
+            ``"vulnerability"``, ``"products"``, and ``"status"`` keys.
+        author:
+            Author field in the document metadata; defaults to ``"squash"``.
+        doc_id:
+            Optional ``@id`` for the document.  A random UUID URN is generated
+            if not provided.
+        timestamp:
+            ISO-8601 timestamp string; defaults to ``datetime.utcnow()``.
+
+        Returns
+        -------
+        dict
+            A fully-populated OpenVEX 0.2.0 document.
+        """
+        import uuid
+        from datetime import datetime, timezone
+
+        if doc_id is None:
+            doc_id = f"https://squish.ai/vex/{uuid.uuid4()}"
+        if timestamp is None:
+            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        statements: list[dict] = []
+        for entry in entries:
+            stmt: dict = {
+                "vulnerability": entry.get("vulnerability", {}),
+                "products": entry.get("products", []),
+                "status": entry.get("status", "under_investigation"),
+            }
+            if "justification" in entry:
+                stmt["justification"] = entry["justification"]
+            if "impact_statement" in entry:
+                stmt["impact_statement"] = entry["impact_statement"]
+            if "action_statement" in entry:
+                stmt["action_statement"] = entry["action_statement"]
+            statements.append(stmt)
+
+        return {
+            "@context": VexFeedManifest.OPENVEX_CONTEXT,
+            "@type": VexFeedManifest.OPENVEX_TYPE,
+            "specVersion": VexFeedManifest.SPEC_VERSION,
+            "@id": doc_id,
+            "author": author,
+            "timestamp": timestamp,
+            "statements": statements,
+        }
+
+    @staticmethod
+    def validate(doc: dict) -> list[str]:
+        """Validate an OpenVEX document dict and return a list of error strings.
+
+        An empty list means the document is structurally valid.
+
+        Parameters
+        ----------
+        doc:
+            The document dict to validate.
+
+        Returns
+        -------
+        list[str]
+            Validation errors.  Empty if document is valid.
+        """
+        errors: list[str] = []
+
+        if doc.get("@context") != VexFeedManifest.OPENVEX_CONTEXT:
+            errors.append(
+                f"@context must be '{VexFeedManifest.OPENVEX_CONTEXT}', got: {doc.get('@context')!r}"
+            )
+        if doc.get("@type") != VexFeedManifest.OPENVEX_TYPE:
+            errors.append(
+                f"@type must be '{VexFeedManifest.OPENVEX_TYPE}', got: {doc.get('@type')!r}"
+            )
+        if "statements" not in doc:
+            errors.append("'statements' key is required")
+        elif not isinstance(doc["statements"], list):
+            errors.append("'statements' must be a list")
+        else:
+            for i, stmt in enumerate(doc["statements"]):
+                if "vulnerability" not in stmt:
+                    errors.append(f"statements[{i}]: 'vulnerability' key is required")
+                if "products" not in stmt:
+                    errors.append(f"statements[{i}]: 'products' key is required")
+                if "status" not in stmt:
+                    errors.append(f"statements[{i}]: 'status' key is required")
+                valid_statuses = {
+                    "not_affected",
+                    "affected",
+                    "fixed",
+                    "under_investigation",
+                }
+                status = stmt.get("status", "")
+                if status and status not in valid_statuses:
+                    errors.append(
+                        f"statements[{i}]: status {status!r} is not a recognised OpenVEX status"
+                    )
+        if "@id" not in doc:
+            errors.append("'@id' key is required")
+        if "author" not in doc:
+            errors.append("'author' key is required")
+        return errors
+
