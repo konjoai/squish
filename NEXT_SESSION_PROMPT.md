@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Wave 34+: mixed_attn lm_eval + EU CRA policy templates
+# NEXT_SESSION_PROMPT.md — Wave 35+: mixed_attn lm_eval + CLI policy help update
 
 > Paste the content below verbatim as your opening prompt.
 > This is a **code session** — implement the remaining plan gaps.
@@ -7,12 +7,13 @@
 
 ## Prompt
 
-**Code session. Wave 33 is complete (VEX feed hosting: squishai/vex-feed repository created,
-feed.openvex.json seeded with 3 ML CVE statements, VexCache.DEFAULT_URL fixed,
-VexCache.load_bundled() added, 31 new tests, 4386 passing).
-Next priority: Wave 34 — (a) run lm_eval on the exported mixed_attn model now that
-the export path is unblocked (squish export → squish eval), and (b) begin EU CRA /
-FedRAMP policy templates if hardware is available for lm_eval.
+**Code session. Wave 34 is complete (EU CRA + FedRAMP/CMMC policy templates:
+eu-cra, fedramp, cmmc policies added to policy.py and AVAILABLE_POLICIES;
+62 new tests, 4451 passing).
+Next priority: Wave 35 — (a) update CLI --policy help text to list eu-cra, fedramp,
+cmmc in the squash attest --policy choices/help string, and (b) run lm_eval on the
+exported mixed_attn model (squish compress → squish export → squish eval — hardware
+required; add lm_eval-waiver to commit if hardware unavailable).
 One commit per wave. Minimum viable implementation — no stubs left in shipped code.**
 
 ---
@@ -39,23 +40,22 @@ One commit per wave. Minimum viable implementation — no stubs left in shipped 
 | 31    | VEX cache management REST endpoints (`GET /vex/status`, `POST /vex/update`) — closes the last CLI/REST gap | ✅ |
 | 32    | `squish export` (npy-dir → mlx safetensors), `discover_npy_dir_metadata()`, `squish eval` redirect | ✅ |
 | 33    | VEX feed hosting: `squishai/vex-feed` repo, `feed.openvex.json` seed, `DEFAULT_URL` fix, `VexCache.load_bundled()` | ✅ |
+| 34    | EU CRA + FedRAMP/CMMC policy templates (`eu-cra`, `fedramp`, `cmmc` added to `_POLICIES` and `AVAILABLE_POLICIES`) | ✅ |
 
 ### Test state
-- **4386 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
+- **4451 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
 - 25 skipped
 
 ### Module count
 ```
 squish/ non-experimental: 106/100 (+6 over limit — all justified in CHANGELOG, unchanged from wave 30)
-  Waves 29–33: 0 new Python modules
+  Waves 29–34: 0 new Python modules
   Wave 33 added: squish/squash/data/community_vex_feed.openvex.json (JSON, not Python)
 ```
 
-### Key files added/changed in wave 33
-- `squish/squash/vex.py` — `VexCache.DEFAULT_URL` fixed, `VexCache.load_bundled()` added
-- `squish/squash/data/community_vex_feed.openvex.json` — bundled community feed
-- `tests/test_squash_wave33.py` — 31 new tests (3 test classes)
-- **External**: `squishai/vex-feed` GitHub repo created with `feed.openvex.json` + README
+### Key files added/changed in wave 34
+- `squish/squash/policy.py` — `eu-cra` (8 rules), `fedramp` (9 rules), `cmmc` alias added to `_POLICIES`
+- `tests/test_squash_wave34.py` — 62 new tests (7 test classes)
 
 ### VEX feed URL reference
 ```
@@ -67,20 +67,19 @@ All three filenames now agree on `.openvex.json`.
 
 ---
 
-## Remaining gaps (post wave 33)
+## Remaining gaps (post wave 34)
 
-### 1. lm_eval validation for mixed_attn (NOW UNBLOCKED — priority)
+### 1. CLI policy help text (Wave 35 — trivial, ~5 min)
+The `squash attest --policy` choices list in `cli.py` needs to show `eu-cra`,
+`fedramp`, `cmmc` in the help string and any argparse choices tuple.
+Search for `eu-ai-act` in `cli.py` to find the exact location.
+
+### 2. lm_eval validation for mixed_attn (hardware required)
 `mixed_attn` (FP16 attn + INT4 MLP) is code-complete but **unvalidated**.
 lm_eval result or lm_eval-waiver required before any accuracy claims.
 - Run: `squish compress --format mixed_attn <model>` → `squish export <dir>` → `squish eval`
 - Baseline: INT4 = **70.6% arc_easy** (Qwen2.5-1.5B, limit=500)
 - Expected: within ~1pp of INT4 (FP16 attn preserves attention quality)
-
-### 2. EU CRA / FedRAMP policy templates (Waves 35–36 per roadmap)
-September 2026 is 5 months out. Two compliance cliffs, one tool.
-- EU CRA (Cyber Resilience Act) — AI-specific vulnerability disclosure obligations
-- FedRAMP / CMMC — no existing tool has AI-specific CMMC mapping
-- Implement as new `PolicyTemplate` subclasses in `policy.py`
 
 ### 3. INT2 AQLM / SpQR experimental path
 Begin only after mixed_attn lm_eval result is in. See CLAUDE.md quantization table.
