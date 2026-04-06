@@ -18,6 +18,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).parent.parent
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -597,7 +599,7 @@ class TestWebhookCli:
             [sys.executable, "-m", "squish.squash.cli", "webhook", "--help"],
             capture_output=True,
             text=True,
-            cwd="/Users/wscholl/squish",
+            cwd=str(_REPO_ROOT),
         )
         assert result.returncode == 0
         assert "webhook" in result.stdout.lower() or "webhook" in result.stderr.lower()
@@ -607,7 +609,7 @@ class TestWebhookCli:
             [sys.executable, "-m", "squish.squash.cli", "webhook", "--help"],
             capture_output=True,
             text=True,
-            cwd="/Users/wscholl/squish",
+            cwd=str(_REPO_ROOT),
         )
         assert result.returncode == 0
         output = (result.stdout + result.stderr).lower()
@@ -619,7 +621,7 @@ class TestWebhookCli:
             [sys.executable, "-m", "squish.squash.cli", "--help"],
             capture_output=True,
             text=True,
-            cwd="/Users/wscholl/squish",
+            cwd=str(_REPO_ROOT),
         )
         output = result.stdout + result.stderr
         assert "webhook" in output
@@ -630,10 +632,10 @@ class TestWebhookCli:
         Counts Python files in squish/squash/ (non-experimental) directly.
         Skips if the check_module_count.py script is not present.
         """
-        check_script = Path("/Users/wscholl/squish/scripts/check_module_count.py")
+        check_script = _REPO_ROOT / "scripts" / "check_module_count.py"
         if not check_script.exists():
             # Enforce inline: count .py files under squish/squash/ excluding experimental/
-            squash_dir = Path("/Users/wscholl/squish/squish/squash")
+            squash_dir = _REPO_ROOT / "squish" / "squash"
             py_files = [
                 p for p in squash_dir.rglob("*.py")
                 if "experimental" not in p.parts
@@ -647,7 +649,7 @@ class TestWebhookCli:
             [sys.executable, str(check_script)],
             capture_output=True,
             text=True,
-            cwd="/Users/wscholl/squish",
+            cwd=str(_REPO_ROOT),
         )
         assert result.returncode in (0, 1), (
             f"check_module_count.py crashed:\n{result.stdout}\n{result.stderr}"

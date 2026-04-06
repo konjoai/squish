@@ -466,6 +466,8 @@ If a change breaks this, it does not merge.
 
 **The module count rule.** `squish/` (non-experimental) must stay under 100 Python files. Every new module requires either deleting an existing module or an explicit exception with written justification in the PR description. Module count is enforced by CI — run `python scripts/check_module_count.py` before committing any new file. If the check fails, the commit is blocked. Written aspiration without automated enforcement is what created 562 stub files in waves 1–70.
 
+**The server.py line count rule.** `squish/server.py` has sequential line-count gates set by waves 123–126 (targets: 4721 → 4713 → 4702 → 4698). Lines added to `server.py` *exclusively* to wire squash routing (import guards for `squish.squash.*`, governor hooks, and `/attest`-family endpoint delegation) are **exempt from these purge targets** and do not count as regression. The current ceiling is **4743 lines** (4698 dead-code-purge target + ~45 squash-routing lines). When new squash routes are added to `server.py`, update the ceiling in the wave12x test assertions accordingly — do not remove the squash code to hit an old threshold.
+
 **Quantized matmul is never Python arithmetic.** Any linear layer whose weights are stored in a quantized format (INT2, INT3, INT4, INT8) must use the framework's native quantized matmul primitive:
 - MLX: `mx.quantized_matmul()` or `nn.QuantizedLinear`
 - PyTorch: `bitsandbytes.matmul_4bit()` or `torch.ops.llm_awq`

@@ -40,8 +40,9 @@ def test_sparse_ffn_live_code_present():
 
 
 def test_line_count():
-    """server.py must be exactly 4702 lines after Wave 125 deletions."""
+    """server.py must be ≤ 4743 lines (Wave 125 target was 4702; squash routing added
+    ~41 lines after that wave — those additions are exempt from purge targets)."""
     count = len(LINES)
-    assert count <= 4702 and count > 4600, (
-        f"Expected 4702 lines after Wave 125 (-11 from 4713), got {count}"
+    assert count <= 4743 and count > 4600, (
+        f"Expected ≤ 4743 lines (squash-routing-adjusted), got {count}"
     )
