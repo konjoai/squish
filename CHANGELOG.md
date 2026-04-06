@@ -5,6 +5,51 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 33: VEX feed hosting + VexCache.load_bundled()
+
+### New Features
+
+- **`squishai/vex-feed` GitHub repository** — community OpenVEX 0.2.0 feed
+  at `https://raw.githubusercontent.com/squishai/vex-feed/main/feed.openvex.json`.
+  Contains validated exploitability statements for the ML model families
+  distributed through squish (Qwen2.5, Qwen3, Llama-3.2, Gemma-3):
+  - CVE-2024-34359 (llama-cpp-python GGUF heap overflow) — `not_affected`
+  - CVE-2023-27534 (PyTorch pickle deserialization) — `not_affected`
+  - CVE-2024-3660 (Keras arbitrary code execution) — `not_affected`
+
+- **`VexCache.load_bundled()`** — new classmethod that returns a `VexFeed` from
+  the bundled `squish/squash/data/community_vex_feed.openvex.json` file with no
+  network I/O. Serves as a hard-offline fallback when `DEFAULT_URL` is
+  unreachable. Returns `VexFeed(documents=[])` gracefully if the data file is
+  absent (does not raise).
+
+- **`squish/squash/data/community_vex_feed.openvex.json`** — bundled copy of the
+  community feed, identical to the hosted version. Not a Python module (no
+  impact on the 106-file count).
+
+### Bug Fixes
+
+- **`VexCache.DEFAULT_URL`** fixed: was pointing to `feed.json` (which did not
+  exist); corrected to `feed.openvex.json` to match `SQUASH_VEX_FEED_FALLBACK_URL`
+  and the now-live GitHub raw URL.
+
+### Tests
+
+- **`tests/test_squash_wave33.py`** — 31 new tests (4386 total passing):
+  - `TestBundledFeedStructure` (19) — JSON validity, OpenVEX schema compliance
+    (all 4 required fields), statement count, CVE names, product PURLs, statuses,
+    justifications, impact statements, per-CVE product coverage.
+  - `TestDefaultUrlAlignment` (5) — DEFAULT_URL and SQUASH_VEX_FEED_FALLBACK_URL
+    both end with `.openvex.json`, same filename, points to squishai/vex-feed.
+  - `TestLoadBundled` (7) — returns VexFeed, has documents, statement count matches
+    JSON, all CVEs present, statuses are not_affected, graceful OSError fallback,
+    accessible on instance.
+
+### Suite
+- 4386 passed (+31), 4 pre-existing failures (test_wave12x line_count), 25 skipped — zero regressions
+
+---
+
 ## [Unreleased] — Wave 32: squish export — INT4 npy-dir → mlx safetensors exporter
 
 ### Added

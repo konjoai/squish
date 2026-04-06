@@ -1,4 +1,101 @@
-# NEXT_SESSION_PROMPT.md — Wave 33+: VEX Feed Hosting + mixed_attn lm_eval
+# NEXT_SESSION_PROMPT.md — Wave 34+: mixed_attn lm_eval + EU CRA policy templates
+
+> Paste the content below verbatim as your opening prompt.
+> This is a **code session** — implement the remaining plan gaps.
+
+---
+
+## Prompt
+
+**Code session. Wave 33 is complete (VEX feed hosting: squishai/vex-feed repository created,
+feed.openvex.json seeded with 3 ML CVE statements, VexCache.DEFAULT_URL fixed,
+VexCache.load_bundled() added, 31 new tests, 4386 passing).
+Next priority: Wave 34 — (a) run lm_eval on the exported mixed_attn model now that
+the export path is unblocked (squish export → squish eval), and (b) begin EU CRA /
+FedRAMP policy templates if hardware is available for lm_eval.
+One commit per wave. Minimum viable implementation — no stubs left in shipped code.**
+
+---
+
+## Waves 1–33 complete (commit HEAD on `main`)
+
+### Delivery summary
+
+| Waves | What | Status |
+|-------|------|--------|
+| 1–13  | CycloneDX SBOM, SPDX, scanner, policy engine, VEX, provenance, Sigstore, eval binder, governor, CLI, REST API, SARIF | ✅ |
+| 14–19 | HTML report, VEX cache, policy webhooks, composite attestation, SBOM registry push, advanced policy templates | ✅ |
+| 20    | NTIA minimum elements validator (`NtiaValidator`, `ntia-check` CLI, `POST /ntia/validate`) | ✅ |
+| 21    | SLSA 1.0 provenance (`SlsaProvenanceBuilder`, L1/L2/L3, `slsa-attest` CLI, `POST /slsa/attest`) | ✅ |
+| 22    | BOM merge & composition (`BomMerger`, `merge` CLI, `POST /sbom/merge`) | ✅ |
+| 23    | AI risk assessment — EU AI Act + NIST AI RMF (`AiRiskAssessor`, `risk-assess` CLI, `POST /risk/assess`) | ✅ |
+| 24    | Drift detection & continuous monitoring (`DriftMonitor`, `monitor` CLI, `POST /monitor/snapshot+compare`) | ✅ |
+| 25    | CI/CD runtime adapter — GitHub/Jenkins/GitLab/CircleCI (`CicdAdapter`, `ci-run` CLI, `POST /cicd/report`) | ✅ |
+| 26    | SageMaker Pipeline Step, ORAS OCI registry push, VEX feed MVP (`SageMakerSquash`, `OrasAdapter`, `VexFeedManifest`) | ✅ |
+| 27    | Kubernetes Admission Webhook (`KubernetesWebhookHandler`, `WebhookConfig`, Helm chart, `squash webhook` CLI) | ✅ |
+| 28    | CircleCI Orb (`orb.yml`) + Ray Serve (`squash_serve` decorator, `SquashServeDeployment`) | ✅ |
+| 29    | VEX publish CLI (`squash vex-publish`) + integration CLI shims (`attest-mlflow`, `attest-wandb`, `attest-huggingface`, `attest-langchain`) | ✅ |
+| 30    | REST API endpoints for Wave 29 CLI additions (`POST /vex/publish`, `/attest/mlflow`, `/attest/wandb`, `/attest/huggingface`, `/attest/langchain`) | ✅ |
+| 31    | VEX cache management REST endpoints (`GET /vex/status`, `POST /vex/update`) — closes the last CLI/REST gap | ✅ |
+| 32    | `squish export` (npy-dir → mlx safetensors), `discover_npy_dir_metadata()`, `squish eval` redirect | ✅ |
+| 33    | VEX feed hosting: `squishai/vex-feed` repo, `feed.openvex.json` seed, `DEFAULT_URL` fix, `VexCache.load_bundled()` | ✅ |
+
+### Test state
+- **4386 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
+- 25 skipped
+
+### Module count
+```
+squish/ non-experimental: 106/100 (+6 over limit — all justified in CHANGELOG, unchanged from wave 30)
+  Waves 29–33: 0 new Python modules
+  Wave 33 added: squish/squash/data/community_vex_feed.openvex.json (JSON, not Python)
+```
+
+### Key files added/changed in wave 33
+- `squish/squash/vex.py` — `VexCache.DEFAULT_URL` fixed, `VexCache.load_bundled()` added
+- `squish/squash/data/community_vex_feed.openvex.json` — bundled community feed
+- `tests/test_squash_wave33.py` — 31 new tests (3 test classes)
+- **External**: `squishai/vex-feed` GitHub repo created with `feed.openvex.json` + README
+
+### VEX feed URL reference
+```
+VexCache.DEFAULT_URL  = https://raw.githubusercontent.com/squishai/vex-feed/main/feed.openvex.json
+SQUASH_VEX_FEED_URL  = https://vex.squish.ai/ml-models/feed.openvex.json  (custom CDN)
+SQUASH_VEX_FEED_FALLBACK_URL = https://raw.githubusercontent.com/squishai/vex-feed/main/feed.openvex.json
+```
+All three filenames now agree on `.openvex.json`.
+
+---
+
+## Remaining gaps (post wave 33)
+
+### 1. lm_eval validation for mixed_attn (NOW UNBLOCKED — priority)
+`mixed_attn` (FP16 attn + INT4 MLP) is code-complete but **unvalidated**.
+lm_eval result or lm_eval-waiver required before any accuracy claims.
+- Run: `squish compress --format mixed_attn <model>` → `squish export <dir>` → `squish eval`
+- Baseline: INT4 = **70.6% arc_easy** (Qwen2.5-1.5B, limit=500)
+- Expected: within ~1pp of INT4 (FP16 attn preserves attention quality)
+
+### 2. EU CRA / FedRAMP policy templates (Waves 35–36 per roadmap)
+September 2026 is 5 months out. Two compliance cliffs, one tool.
+- EU CRA (Cyber Resilience Act) — AI-specific vulnerability disclosure obligations
+- FedRAMP / CMMC — no existing tool has AI-specific CMMC mapping
+- Implement as new `PolicyTemplate` subclasses in `policy.py`
+
+### 3. INT2 AQLM / SpQR experimental path
+Begin only after mixed_attn lm_eval result is in. See CLAUDE.md quantization table.
+
+---
+
+## Hard stops
+
+- **Module count is at 106.** Any new Python file requires deleting one or writing justification.
+- **Do not add sidecar or model files to git.**
+- Tests must pass before committing (4386 passing, 4 pre-existing wave12x failures acceptable).
+- **For any REST API additions: integration tests must call the real endpoint.**
+- **For quantization path changes: lm_eval result or lm_eval-waiver in commit message.**
+
+---
 
 > Paste the content below verbatim as your opening prompt.
 > This is a **code session** — implement the remaining plan gaps.

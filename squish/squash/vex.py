@@ -440,7 +440,7 @@ class VexCache:
             feed = cache.load_or_fetch(..., force=True)
     """
 
-    DEFAULT_URL: str = "https://raw.githubusercontent.com/squishai/vex-feed/main/feed.json"
+    DEFAULT_URL: str = "https://raw.githubusercontent.com/squishai/vex-feed/main/feed.openvex.json"
     DEFAULT_MAX_AGE_HOURS: int = 24
     _MANIFEST_FILE: str = "cache-manifest.json"
 
@@ -588,6 +588,28 @@ class VexCache:
             Loaded feed from the Squash community endpoint.
         """
         return self.load_or_fetch(SQUASH_VEX_FEED_URL, force=force)
+
+    @classmethod
+    def load_bundled(cls) -> "VexFeed":
+        """Return a :class:`VexFeed` loaded from the bundled community seed feed.
+
+        No network I/O — reads the OpenVEX document embedded in the squish
+        package at ``squish/squash/data/community_vex_feed.openvex.json``.
+        Use this as a fallback when :attr:`DEFAULT_URL` is unreachable.
+
+        Returns
+        -------
+        VexFeed
+            Feed containing the bundled community VEX statements.
+        """
+        data_path = Path(__file__).parent / "data" / "community_vex_feed.openvex.json"
+        try:
+            raw = json.loads(data_path.read_text(encoding="utf-8"))
+        except OSError:
+            return VexFeed(documents=[])
+        if isinstance(raw, dict) and "statements" in raw:
+            return VexFeed(documents=[VexDocument.from_dict(raw)])
+        return VexFeed(documents=[])
 
 
 # ── VEX feed constants ─────────────────────────────────────────────────────────
