@@ -5,6 +5,29 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 39: CLAUDE.md per-model validated results — complete Tier 2/3 data
+
+### Changed
+
+- **CLAUDE.md per-model validated results table** — expanded from 11 rows (Tier 1: 0.6B–1.5B)
+  to 25 rows (all Tiers 1–3: 0.6B–8B), adding `winogrande` and `openbookqa` columns.
+  Source: `results/lmeval_*_2026040[12]*.json` (thinking disabled for all Qwen3 runs).
+- **New UNSAFE findings confirmed from Tier 2/3 data:**
+  - `gemma-3-4b INT3`: −16.4pp arc_easy → confirms gemma family UNSAFE at ≤4B (family-level, not size-specific).
+  - `Qwen3-4B INT3`: −14.8pp arc_easy → UNSAFE, same risk class as gemma family.
+  - `Qwen3-8B INT3`: −7.8pp arc_easy → coherent but large delta; review per use case.
+  - `Llama-3.2-3B INT3`: −4.6pp → coherent; consistent with Qwen2.5/Llama −3 to −5pp pattern.
+- Fixed stale `Qwen3-4B INT4` score in table (73.2% thinking-disabled, was 41% invalid thinking-on run).
+- Updated per-format status table INT3 row to note gemma family and Qwen3-4B UNSAFE classifications.
+- Updated INT2 bullet: confirmed incoherent across all families 0.6B–7B (~27–30% arc_easy ≈ random).
+
+### Notes
+
+- No code changes — docs only. No new files.
+- Test suite: 4562 passed, 4 pre-existing wave12x failures (unrelated), 25 skipped.
+
+---
+
 ## [Unreleased] — Wave 38: AQLM dequantization module
 
 ### Added

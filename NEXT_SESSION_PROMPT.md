@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Wave 39: CLAUDE.md table update + mixed_attn lm_eval harness
+# NEXT_SESSION_PROMPT.md — Wave 40: squish-native lm_eval harness
 
 > Paste the content below verbatim as your opening prompt.
 > This is a **code session** — implement the remaining plan gaps.
@@ -15,46 +15,47 @@ Read SESSION.md and CLAUDE.md before writing anything.
 
 --- Context ---
 
-Wave 38 is COMPLETE and committed.
-- squish/quant/aqlm.py implemented (AQLMConfig, AQLMCodebook, AQLMLayer, aqlm_dequantize)
-- closes stub import at compressed_loader.py:664
-- 30 new tests, 4562 total passing, 4 pre-existing wave12x failures, 25 skipped
+Wave 39 is COMPLETE and committed.
+- CLAUDE.md per-model validated results table expanded from 11 → 25 rows (all Tiers 1–3)
+- All Tier 2/3 bench data now in table (0.6B–8B, with winogrande + openbookqa columns)
+- Key UNSAFE findings added: gemma-3-4b INT3 (−16.4pp), Qwen3-4B INT3 (−14.8pp)
+- No code changes. 4562 tests passing, 4 pre-existing wave12x failures, 25 skipped.
 
-Qwen3-4B-int4 re-run is COMPLETE:
-- results/lmeval_Qwen3-4B-int4_20260401T103031.json
-- 73.2% arc_easy (thinking disabled, limit=500) ✅
+Wave 38 AQLM status:
+- squish/quant/aqlm.py: AQLMConfig, AQLMCodebook, AQLMLayer, aqlm_dequantize (decode side only)
+- Encode side (compress → AQLM weights) NOT yet implemented
 
-All Tier 2/3 bench data is valid and present in results/.
+--- Wave 40 priority (single-wave scope) ---
 
---- Wave 39 options (priority order) ---
+PRIMARY: squish-native lm_eval harness
+Build dev/benchmarks/squish_lm_eval.py that evaluates squish .npy-dir format models.
 
-1. CLAUDE.md per-model accuracy table update — update the per-format validated
-   results table in CLAUDE.md with all current Tier 2/3 data. No code changes.
-   Highest value, zero code risk.
+Problem: squish compress --format int4 / --format mixed_attn writes squish npy-dir format
+(not mlx safetensors). The existing bench_lmeval_all_models.py uses mlx_lm.load() which
+CANNOT load npy-dir. So mixed_attn and INT4 AWQ accuracy are completely unmeasured.
 
-   Key updates:
-   - Qwen3-4B-int4: 73.2% arc_easy ✅ (was 41% invalid at thinking-on)
-   - Qwen3-4B-int3: 58.4% (−14.8pp — INT3-unsafe, same risk class as gemma-3-1b)
-   - Qwen3-8B-int4: 79.2% ✅
-   - Qwen3-8B-int3: 71.4% (−7.8pp)
-   - Qwen2.5-7B-int4: 83.0% ✅
-   - Qwen2.5-7B-int3: 79.0% (−4.0pp)
-   - Qwen3-0.6B: int4=34.0, int3=36.4 (within noise), int2=27.0 (incoherent)
-   - Llama-3.2-1B: int4=40.0, int3=37.2, int2=27.2
+Solution: Write a harness using squish's own compressed_loader.py to load the model,
+then shell into mlx_lm.evaluate with the loaded model.
 
-2. squish-native lm_eval harness — build squish_lm_eval.py in dev/benchmarks/
-   that runs mlx_lm.evaluate on squish npy-dir format models (needed to measure
-   mixed_attn and INT4 AWQ g=16).
-   
-   Acceptance: harness runs on Qwen2.5-1.5B-Instruct npy-dir, produces arc_easy score.
+Acceptance criteria:
+1. dev/benchmarks/squish_lm_eval.py exists and is runnable
+2. Runs arc_easy on Qwen2.5-1.5B-Instruct-int4 (squish npy-dir format) and produces a score
+3. Score lands within 2pp of the mlx_lm.convert INT4 baseline (70.6% arc_easy)
+4. At least one integration test in tests/ covers the harness entrypoint
+5. No regressions in full suite (4562 passing, 4 pre-existing wave12x failures expected)
 
-3. INT2 AQLM encode path (if Wave 39 scope allows) — write AQLM quantizer
-   (compress side) using the aqlm.py decode target.
+IF the lm_eval harness is blocked (API mismatch, mlx_lm evaluate internals changed):
+FALLBACK: INT2 AQLM encode path — write the compress-side AQLM quantizer in squish/quant/aqlm.py
+using the existing AQLMCodebook/AQLMLayer decode targets.
+
+--- Module count note ---
+squish/ is at 107 modules (justified: closes existing stubs). Any new file must either
+delete an existing file or carry written justification in the commit message.
 
 --- Done when ---
 1. 0 failing tests in full suite (4 pre-existing wave12x failures are expected)
-2. CLAUDE.md table is complete, accurate, and citable
+2. Harness produces reproducible arc_easy score within 2pp of baseline (or lm_eval-waiver filed)
 3. CHANGELOG entry written
 4. SESSION.md + NEXT_SESSION_PROMPT updated
-5. No new files unless justified (module count check)
+5. Module count checked
 ```

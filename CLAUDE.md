@@ -249,23 +249,36 @@ These definitions are enforced, not aspirational. Mislabelling a test tier defea
   - max absolute error
   - output coherence (qualitative + automated checks)
 
-**Per-model validated results (2026-03-28 unless noted†, limit=500, 6 tasks, mlx_lm 0.31.1):**
+**Per-model validated results (2026-03-28–2026-04-02, limit=500, 6 tasks, mlx_lm 0.30.7–0.31.1):**
+_Qwen3 models: thinking disabled (`--chat-template-args '{"enable_thinking": false}'`). All results use `acc_norm` where available._
 
-| Model | Format | arc_easy | arc_challenge | hellaswag | piqa | Δ arc_easy vs INT4 | Notes |
-|---|---|---|---|---|---|---|---|
-| Qwen3-0.6B | INT4 | 35.0% | 28.4% | 31.6% | 63.8% | — | baseline |
-| Qwen3-0.6B | INT3 | 37.2% | 27.4% | 31.8% | 63.4% | +2.2pp | within noise (±2.2pp); not significant |
-| Qwen3-0.6B | INT2 | 27.6% | 25.0% | 27.6% | 50.4% | −7.4pp | incoherent — near-random |
-| Llama-3.2-1B | INT4 | 40.8% | 28.4% | 43.8% | 71.0% | — | baseline |
-| Llama-3.2-1B | INT3 | 37.4% | 25.0% | 40.2% | 65.4% | −3.4pp | coherent; consistent Qwen/Llama delta |
-| Llama-3.2-1B | INT2 | 27.4% | 24.8% | 29.6% | 53.8% | −13.4pp | incoherent — near-random |
-| gemma-3-1b | INT4 | 53.2% | 35.4% | 39.4% | 66.8% | — | baseline |
-| gemma-3-1b | INT3 | 38.0% | 29.4% | 36.4% | 64.4% | **−15.2pp** | **UNSAFE** — catastrophic for gemma <4B; do not ship |
-| gemma-3-1b | INT2 | 26.2% | 24.2% | 28.2% | 50.8% | −27.0pp | incoherent — near-random |
-| Qwen2.5-1.5B | INT4 | 70.6% | 43.6% | 54.8% | 73.2% | — | †2026-03-23; INT4 unaffected by INT3-model fix |
-| Qwen2.5-1.5B | INT3 | 67.2% | 41.6% | 50.6% | 70.8% | −3.4pp | below 72% gate → "efficient" tier confirmed |
-
-Tiers 2–3 (3B/4B/7B/8B) pending — results appended here when bench completes.
+| Model | Format | arc_easy | arc_challenge | hellaswag | winogrande | piqa | openbookqa | Δ arc_easy vs INT4 | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| Qwen3-0.6B | INT4 | 38.2% | 27.4% | 31.6% | 45.2% | 63.0% | 34.4% | — | baseline (thinking disabled) |
+| Qwen3-0.6B | INT3 | 36.8% | 26.4% | 33.6% | 48.6% | 62.8% | 30.6% | −1.4pp | within noise (±2.2pp); not significant |
+| Qwen3-0.6B | INT2 | 29.6% | 26.6% | 26.2% | 50.8% | 51.2% | 29.6% | −8.6pp | incoherent — near-random |
+| Llama-3.2-1B | INT4 | 40.8% | 28.4% | 43.8% | 55.8% | 71.0% | 36.4% | — | baseline |
+| Llama-3.2-1B | INT3 | 37.4% | 25.0% | 40.2% | 53.8% | 65.4% | 32.8% | −3.4pp | coherent; consistent Qwen/Llama delta |
+| Llama-3.2-1B | INT2 | 27.4% | 24.8% | 29.6% | 47.0% | 53.8% | 29.4% | −13.4pp | incoherent — near-random |
+| Llama-3.2-3B | INT4 | 46.8% | 36.8% | 55.4% | 63.2% | 76.6% | 40.4% | — | baseline |
+| Llama-3.2-3B | INT3 | 42.2% | 33.8% | 45.0% | 62.2% | 75.6% | 38.2% | −4.6pp | coherent; −4 to −5pp pattern holds at 3B |
+| Llama-3.2-3B | INT2 | 26.2% | 24.2% | 26.0% | 51.2% | 52.8% | 28.6% | −20.6pp | incoherent — near-random |
+| gemma-3-1b | INT4 | 53.2% | 35.4% | 39.4% | 54.0% | 66.8% | 38.6% | — | baseline |
+| gemma-3-1b | INT3 | 38.0% | 29.4% | 36.4% | 51.0% | 64.4% | 32.0% | **−15.2pp** | **UNSAFE** — catastrophic for gemma-1b; do not ship |
+| gemma-3-1b | INT2 | 26.2% | 24.2% | 28.2% | 43.4% | 50.8% | 30.2% | −27.0pp | incoherent — near-random |
+| gemma-3-4b | INT4 | 80.8% | 55.0% | 43.8% | 64.8% | 68.4% | 42.8% | — | baseline |
+| gemma-3-4b | INT3 | 64.4% | 46.4% | 44.6% | 59.4% | 71.8% | 39.2% | **−16.4pp** | **UNSAFE** — gemma family INT3-unsafe at ≤4B |
+| gemma-3-4b | INT2 | 30.4% | 23.8% | 29.8% | 48.4% | 52.6% | 26.0% | −50.4pp | incoherent — near-random |
+| Qwen2.5-1.5B | INT4 | 70.6% | 43.6% | 54.8% | 61.0% | 73.2% | 38.6% | — | mlx_lm.convert g=64 baseline |
+| Qwen2.5-1.5B | INT3 | 67.2% | 41.6% | 50.6% | 59.4% | 70.8% | 37.2% | −3.4pp | below 72% gate → "efficient" tier only |
+| Qwen2.5-1.5B | INT2 | 29.8% | 24.4% | 24.6% | 51.0% | 51.6% | 29.8% | −40.8pp | incoherent — near-random |
+| Qwen2.5-7B | INT4 | 83.0% | 58.8% | 59.4% | 67.4% | 73.8% | 43.0% | — | baseline |
+| Qwen2.5-7B | INT3 | 79.0% | 56.0% | 53.6% | 63.4% | 76.0% | 41.4% | −4.0pp | coherent; consistent −3 to −4pp pattern |
+| Qwen3-4B | INT4 | 73.2% | 50.6% | 40.4% | 58.4% | 70.8% | 35.6% | — | baseline (thinking disabled) |
+| Qwen3-4B | INT3 | 58.4% | 40.6% | 41.4% | 54.0% | 69.0% | 33.0% | **−14.8pp** | **UNSAFE** — Qwen3-4B very INT3-sensitive |
+| Qwen3-4B | INT2 | 27.8% | 26.6% | 26.2% | 49.6% | 49.8% | 29.8% | −45.4pp | incoherent — near-random |
+| Qwen3-8B | INT4 | 79.2% | 58.6% | 49.8% | 61.8% | 74.8% | 39.8% | — | baseline (thinking disabled) |
+| Qwen3-8B | INT3 | 71.4% | 52.0% | 45.2% | 59.8% | 73.4% | 36.4% | −7.8pp | coherent but larger delta than Qwen2.5 family |
 
 **Per-format status table:**
 
@@ -273,18 +286,19 @@ Tiers 2–3 (3B/4B/7B/8B) pending — results appended here when bench completes
 |---|---|---|---|---|
 | INT4 (mlx g=64, mlx_lm.convert) | production | ✅ validated | 70.6% (Qwen2.5-1.5B) | mlx_lm.convert baseline. squish compress INT4 = npy-dir (not lm_evaluable). |
 | INT4 AWQ g=16 (squish npy-dir) | production | ❌ npy-dir format | n/a | Squish serve only; cannot be evaluated via mlx_lm evaluate. |
-| INT3 g=32 (squish compress / mlx_lm.convert) | production | ✅ validated | **67.2%** (Qwen2.5-1.5B, 2026-03-28) | −3.4pp vs INT4. Below 72% gate. "Efficient" tier. gemma-3-1b **−15.2pp** (UNSAFE <4B). |
+| INT3 g=32 (squish compress / mlx_lm.convert) | production | ✅ validated | **67.2%** (Qwen2.5-1.5B, 2026-03-28) | −3.4pp vs INT4. Below 72% gate. "Efficient" tier. gemma family **UNSAFE at ≤4B**. Qwen3-4B **UNSAFE (−14.8pp)**. |
 | mixed_attn (FP16 attn + INT4 MLP) | code-complete | ❌ npy-dir format | n/a | squish npy-dir format only. Needs lm_eval harness to measure. |
-| INT2 (naive uniform) | research-only | ❌ coherence failure | ~27–28% | Confirmed incoherent across all 0.6B–1.5B families. Never ship. |
+| INT2 (naive uniform) | research-only | ❌ coherence failure | ~27–30% | Confirmed incoherent across all 0.6B–7B families. Never ship. |
 | INT2 (AQLM codebook) | experimental | ⚠️ unvalidated | — | Legitimate path. Begin after mixed_attn harness is built. |
 | INT2 (SpQR / mixed-layer) | experimental stub | ⚠️ unvalidated | — | Keep outliers in FP16, compress FFN to 2bpw. |
 
 - **INT4 mlx g=64 is the production baseline for lm_eval comparisons (70.6% arc_easy, Qwen2.5-1.5B).**
 - **squish compress --format int4/mixed_attn writes squish npy-dir format** — NOT loadable by mlx_lm. Only available via squish serve.
 - **squish compress --format int3 uses mlx_lm.convert with g=32** — DOES produce mlx safetensors. `_INT3_GROUP_SIZE` was a bug (16→32 fixed; MLX only supports g ∈ {32,64,128}).
-- **INT3 δ = −3 to −4pp across Qwen and Llama families.** Coherent and usable as "efficient" tier. INT4 stays default.
-- **INT3 is UNSAFE for gemma-3-1b (−15.2pp).** Block gemma INT3 below ≥65% validation gate. Await 4B data before classifying as family-level vs size-level failure.
-- **INT2 naive is permanently research-only.** Confirmed incoherent at 0.6B, 1B, 1.5B (~27% arc_easy ≈ random). Do not expose as a user-facing option.
+- **INT3 δ = −3 to −5pp for Qwen2.5 and Llama families.** Coherent and usable as "efficient" tier. INT4 stays default.
+- **INT3 is UNSAFE for the gemma family at ≤4B** (gemma-3-1b: −15.2pp; gemma-3-4b: −16.4pp). Never recommend INT3 for gemma models until ≥7B data confirms safety.
+- **INT3 is UNSAFE for Qwen3-4B (−14.8pp).** Qwen3-4B behaves like gemma-1b at INT3. Qwen3-8B at INT3 is coherent (−7.8pp) but large — review per use case.
+- **INT2 naive is permanently research-only.** Confirmed incoherent across all tested families (0.6B–7B, ~27–30% arc_easy ≈ random). Do not expose as a user-facing option.
 - **INT2 AQLM / SpQR are experimental** — begin after mixed_attn lm_eval harness is built.
 
 - If a quantized model exhibits:

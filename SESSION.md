@@ -6,9 +6,10 @@
 ---
 
 ## Current date
-2026-04-02
+2026-04-06
 
 ## Last commits
+- `3c3a0d5` — feat(wave38): AQLM dequantization module (AQLMConfig, AQLMCodebook, AQLMLayer)
 - `de5d598` — docs(wave37): post-ship docs update (NEXT_SESSION/SESSION)
 - `65ac5fb` — feat(wave37): SPDX AI Profile options in POST /attest with 25 new tests
 - `61502cd` — chore(bench): add Qwen3-8B-int4 + int3 lm_eval runs with thinking disabled
@@ -167,37 +168,37 @@ All `Qwen3-*` models auto-detected. Qwen2.5 unaffected.
 - Qwen2.5-7B: −4.0pp arc_easy (79.0% vs 83.0%) — consistent with 1.5B pattern
 - Qwen3-8B: −7.8pp arc_easy (71.4% vs 79.2%) — larger delta; 8B Qwen3 more INT3-sensitive
 
-### Immediate next task (Wave 39)
-1. **Re-run Qwen3-4B-int4 with thinking disabled** → ✅ **COMPLETE**
-   Result in `results/lmeval_Qwen3-4B-int4_20260401T103031.json`:
-   **73.2% arc_easy**, all 6 tasks. Thinking disabled. Valid ✅.
-   INT3 delta: Qwen3-4B-int3=58.4% → **−14.8pp arc_easy** (very INT3-sensitive, same as gemma-3-1b class).
+### Wave 39 — COMPLETE ✅
 
-2. **Wave 38 COMPLETE** — `squish/quant/aqlm.py` implemented.
-   - `AQLMConfig`, `AQLMCodebook`, `AQLMLayer`, `aqlm_dequantize`
-   - Closes stub import at `compressed_loader.py:664`
-   - 30 new tests (all passing), 4562 total tests passing
-   - Module count: 107 (justified — closes existing stub dependency)
+**CLAUDE.md per-model validated results table completed (2026-04-06).**
+- Expanded from 11 rows (Tier 1 only) to 25 rows (all Tiers 1–3: 0.6B–8B).
+- Added `winogrande` and `openbookqa` columns.
+- Source: `results/lmeval_*_2026040[12]*.json` (thinking disabled for all Qwen3 runs).
+- Key new UNSAFE findings:
+  - `gemma-3-4b INT3`: −16.4pp → confirms gemma family UNSAFE at ≤4B
+  - `Qwen3-4B INT3`: −14.8pp → UNSAFE (same risk class as gemma family)
+  - `Qwen3-8B INT3`: −7.8pp → coherent but large delta
+  - `Llama-3.2-3B INT3`: −4.6pp → coherent
+- Stale Qwen3-4B-int4 score corrected (73.2% thinking-disabled, was 41% invalid).
+- 4562 tests passing. No code changes. No regressions.
 
-3. **NEXT: Update CLAUDE.md per-model validated accuracy table**
-   All Tier 2/3 bench data is fully valid and present in `results/`. Table update is overdue.
-   Key entries to add/update:
-   - Qwen3-4B-int4: **73.2%** arc_easy ✅ (was previously invalid at 41%)
-   - Qwen3-4B-int3: **58.4%** (−14.8pp — very sensitive, same risk class as gemma-3-1b)
-   - Qwen3-8B-int4: **79.2%** ✅
-   - Qwen3-8B-int3: **71.4%** (−7.8pp)
-   - Qwen2.5-7B-int4: **83.0%** ✅
-   - Qwen2.5-7B-int3: **79.0%** (−4.0pp)
+### Immediate next task (Wave 40 options)
 
-4. **Wave 39 options:**
-   - CLAUDE.md table update (highest value, no code risk)
-   - Build squish-native lm_eval harness to unblock mixed_attn evaluation
-   - INT2 AQLM encode path (write AQLM weights, not just decode)
-3. Assess INT3 ship gate for Qwen3-8B (−7.8pp > normal −3 to −4pp — flag for review)
+1. **squish-native lm_eval harness** — `dev/benchmarks/squish_lm_eval.py`
+   Runs `mlx_lm.evaluate` on squish `.npy-dir` format models.
+   Acceptance: produces arc_easy score for Qwen2.5-1.5B-Instruct npy-dir.
+   **Unblocks:** mixed_attn measurement + INT4 AWQ g=16 measurement.
+
+2. **INT2 AQLM encode path** — compress-side quantizer using `aqlm.py` decode as target.
+   (aqlm.py decode side was Wave 38.)
+
+3. **Qwen2.5-7B-int2 bench re-run** — the only Tier 3 int2 data point not in the table.
+   Pre-cutoff result at `lmeval_Qwen2.5-7B-int2_20260324T132641.json` is suspect (before INT3 fix).
+   Needs fresh run (source is 14 GB BF16 — check OOM risk before attempting).
 
 ### Blocked:
 - Q2 mixed_attn: npy-dir format. Needs squish-native lm_eval harness.
-- Qwen2.5-7B-int2: source is 14 GB BF16 → OOM on 16GB M3 during conversion. Not attempting.
+- Qwen2.5-7B-int2: source is 14 GB BF16 → OOM on 16GB M3 during conversion. Assess before attempting.
 - INT2 AQLM: begin after mixed_attn blocked issue is resolved.
 
 ---
