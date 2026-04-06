@@ -277,10 +277,168 @@ _POLICIES: dict[str, list[dict[str, Any]]] = {
             "remediation": "Ensure detect_model_family() resolves for this model.",
         },
     ],
+    # ── EU Cyber Resilience Act (effective September 2026) ────────────────
+    #
+    # The CRA imposes mandatory cybersecurity requirements on products with
+    # digital elements placed on the EU market.  AI models distributed as
+    # software components fall under its scope.  Key obligations for ML
+    # artifacts map to squish's SBOM + attestation pipeline as follows.
+    "eu-cra": [
+        {
+            "id": "CRA-001",
+            "field": "components[0].name",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "EU CRA Art. 13 §3: Technical documentation must uniquely identify the product with digital elements.",
+            "remediation": "Set model_id in CompressRunMeta.",
+        },
+        {
+            "id": "CRA-002",
+            "field": "components[0].hashes",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "EU CRA Annex I Part II §2: SBOM must include components with cryptographic artifact integrity verification.",
+            "remediation": "Ensure model directory contains weight files before attesting.",
+        },
+        {
+            "id": "CRA-003",
+            "field": "squash:scan_result",
+            "check": "equals",
+            "value": "clean",
+            "severity": "error",
+            "rationale": "EU CRA Annex I Part I §2: Products must be delivered without known exploitable vulnerabilities.",
+            "remediation": "Run squash scan before attestation. Reject models with pickle exploits or ACE payloads.",
+        },
+        {
+            "id": "CRA-004",
+            "field": "components[0].purl",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "EU CRA Annex I Part II §2: SBOM must include package identifiers for all third-party components.",
+            "remediation": "Set hf_mlx_repo in CompressRunMeta to populate the package URL.",
+        },
+        {
+            "id": "CRA-005",
+            "field": "components[0].pedigree.ancestors",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "EU CRA Art. 13 §3(a): Technical documentation must trace the product's upstream supply chain.",
+            "remediation": "Set hf_mlx_repo in CompressRunMeta.",
+        },
+        {
+            "id": "CRA-006",
+            "field": "metadata.timestamp",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "EU CRA Art. 14 §1: Vulnerability handling obligations require a dated audit record for each release.",
+            "remediation": "SBOM timestamp is auto-generated at compress time — do not strip it.",
+        },
+        {
+            "id": "CRA-007",
+            "field": "components[0].modelCard.modelParameters.quantizationLevel",
+            "check": "non_empty",
+            "severity": "warning",
+            "rationale": "EU CRA Annex I Part I §3: Products must minimise the attack surface — active capabilities must be documented.",
+            "remediation": "Ensure quant_format is set in CompressRunMeta.",
+        },
+        {
+            "id": "CRA-008",
+            "field": "metadata.tools",
+            "check": "non_empty",
+            "severity": "warning",
+            "rationale": "EU CRA Art. 13 §3(b): Technical documentation must describe the development and manufacturing process.",
+            "remediation": "SBOM metadata.tools is populated automatically — do not strip it.",
+        },
+    ],
+    # ── FedRAMP Moderate / CMMC Level 2 (NIST SP 800-53 / 800-171) ───────
+    #
+    # FedRAMP Moderate authorisation requires compliance with NIST SP 800-53
+    # Rev 5 controls.  AI model components must satisfy the subset of controls
+    # that apply to software supply chain integrity, configuration management,
+    # vulnerability management, and audit logging.  CMMC Level 2 maps to the
+    # same NIST 800-171 control families for organisations handling CUI.
+    "fedramp": [
+        {
+            "id": "FEDRAMP-CM-8",
+            "field": "components[0].name",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "FedRAMP CM-8: System component inventory requires unique identification of each component.",
+            "remediation": "Set model_id in CompressRunMeta.",
+        },
+        {
+            "id": "FEDRAMP-SI-7",
+            "field": "components[0].hashes",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "FedRAMP SI-7: Software integrity verification requires cryptographic hashes on all system components.",
+            "remediation": "Ensure model directory contains weight files before attesting.",
+        },
+        {
+            "id": "FEDRAMP-RA-5",
+            "field": "squash:scan_result",
+            "check": "equals",
+            "value": "clean",
+            "severity": "error",
+            "rationale": "FedRAMP RA-5: Vulnerability scanning must be performed on all system components before deployment.",
+            "remediation": "Run squash scan before attestation.",
+        },
+        {
+            "id": "FEDRAMP-SA-12",
+            "field": "components[0].pedigree.ancestors",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "FedRAMP SA-12: Supply chain risk management requires documented provenance for all acquired components.",
+            "remediation": "Set hf_mlx_repo in CompressRunMeta.",
+        },
+        {
+            "id": "FEDRAMP-SA-10",
+            "field": "metadata.tools",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "FedRAMP SA-10: Developer configuration management requires documentation of development tools and toolchain.",
+            "remediation": "SBOM metadata.tools is populated automatically — do not strip it.",
+        },
+        {
+            "id": "FEDRAMP-CM-8-PURL",
+            "field": "components[0].purl",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "FedRAMP CM-8: Component inventory must include package identifiers for third-party software components.",
+            "remediation": "Set hf_mlx_repo in CompressRunMeta.",
+        },
+        {
+            "id": "FEDRAMP-AU-9",
+            "field": "metadata.timestamp",
+            "check": "non_empty",
+            "severity": "error",
+            "rationale": "FedRAMP AU-9: Audit record protection requires timestamps on all compliance attestation records.",
+            "remediation": "SBOM timestamp is auto-generated at compress time — do not strip it.",
+        },
+        {
+            "id": "FEDRAMP-SA-11",
+            "field": "components[0].modelCard.quantitativeAnalysis.performanceMetrics",
+            "check": "non_empty",
+            "severity": "warning",
+            "rationale": "FedRAMP SA-11: Developer security testing requires documented test results for system components.",
+            "remediation": "Run squish eval to bind lm_eval performance scores.",
+        },
+        {
+            "id": "FEDRAMP-CM-6",
+            "field": "components[0].modelCard.modelParameters",
+            "check": "non_empty",
+            "severity": "warning",
+            "rationale": "FedRAMP CM-6: Configuration settings must be documented and controlled for all system components.",
+            "remediation": "Ensure model card parameters are populated by the compress pipeline.",
+        },
+    ],
 }
 
 # Allow "strict" as an alias for "enterprise-strict"
 _POLICIES["strict"] = _POLICIES["enterprise-strict"]
+# CMMC Level 2 (NIST SP 800-171) shares the same AI-component control
+# mapping as FedRAMP Moderate (NIST SP 800-53) for SBOM / attestation.
+_POLICIES["cmmc"] = _POLICIES["fedramp"]
 
 AVAILABLE_POLICIES: frozenset[str] = frozenset(_POLICIES.keys())
 

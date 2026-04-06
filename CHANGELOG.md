@@ -5,6 +5,56 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 34: EU CRA + FedRAMP / CMMC policy templates
+
+### New Features
+
+- **`eu-cra` policy template** (`squash attest --policy eu-cra`) — EU Cyber
+  Resilience Act compliance template for AI artefacts.  Effective September 2026,
+  the CRA requires software products placed on the EU market to carry documented
+  vulnerability handling, supply-chain provenance, and SBOM evidence.  Rules:
+  - CRA-001 (error): Model identity — Art. 13 §3 unique product identification
+  - CRA-002 (error): Integrity hashes — Annex I Part II §2 cryptographic binding
+  - CRA-003 (error): Scan clean — Annex I Part I §2 no known exploitable vulns
+  - CRA-004 (error): PURL present — Annex I Part II §2 third-party component IDs
+  - CRA-005 (error): Pedigree ancestors — Art. 13 §3(a) supply chain tracing
+  - CRA-006 (error): Timestamp — Art. 14 §1 dated audit record
+  - CRA-007 (warning): Quantization level — Annex I Part I §3 minimal attack surface
+  - CRA-008 (warning): Toolchain documented — Art. 13 §3(b) development process
+
+- **`fedramp` policy template** (`squash attest --policy fedramp`) — FedRAMP
+  Moderate authorisation (NIST SP 800-53 Rev 5) control mapping for AI model
+  components.  Covers CM-8 (inventory), SI-7 (integrity), RA-5 (vulnerability
+  scanning), SA-12 (supply chain), SA-10 (developer config), AU-9 (audit
+  records), SA-11 (developer testing), and CM-6 (configuration settings).
+
+- **`cmmc` alias** — evaluates identically to `fedramp`.  CMMC Level 2
+  (NIST SP 800-171) shares the same AI-component control mapping as FedRAMP
+  Moderate for SBOM and attestation obligations.
+
+### Tests
+
+- **`tests/test_squash_wave34.py`** — 62 new tests (5 classes, all passing):
+  - `TestPolicyRegistration` (7) — eu-cra/fedramp/cmmc in AVAILABLE_POLICIES,
+    cmmc is fedramp alias, strict alias regression guard, frozenset type
+  - `TestEuCraStructure` (12) — rule count, required fields, check type validity,
+    error/warning classification, CRA-003 equals clean, rationale cites CRA
+  - `TestEuCraBehaviour` (15) — full SBOM PASS, individual error field failures
+    (CRA-001 … CRA-006), warning-only failures keep policy.passed=True, empty SBOM
+  - `TestFedRAMPStructure` (10) — rule count, required fields, check validity,
+    error/warning classification, NIST control ID in every rationale
+  - `TestFedRAMPBehaviour` (10) — full SBOM PASS, SI-7/RA-5/SA-12/AU-9/SA-10
+    field failures, warning-only SA-11, empty SBOM, result name, findings count
+  - `TestCmmcAlias` (4) — pass/fail parity with fedramp, same finding count,
+    result.policy_name = "cmmc"
+  - `TestEvaluateAll` (3) — multi-policy eval, both pass on full SBOM, shared
+    field strip fails both eu-cra and fedramp simultaneously
+
+### Suite
+- 4451 passed (+65 Wave 34), 4 pre-existing failures (test_wave12x line_count), 25 skipped — zero regressions
+
+---
+
 ## [Unreleased] — Wave 33: VEX feed hosting + VexCache.load_bundled()
 
 ### New Features
