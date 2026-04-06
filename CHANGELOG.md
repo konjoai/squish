@@ -5,6 +5,39 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 37: SPDX AI Profile options exposed in POST /attest REST API
+
+### Added
+
+- **`AttestRequest.spdx_type`** — Optional `str` field; maps to
+  `SpdxOptions.type_of_model`. Mirrors `--spdx-type` CLI flag.
+- **`AttestRequest.spdx_safety_risk`** — Optional `str` field; maps to
+  `SpdxOptions.safety_risk_assessment`. Mirrors `--spdx-safety-risk`.
+- **`AttestRequest.spdx_datasets`** — Optional `list[str]`; merged
+  (deduplicated) with `training_dataset_ids` before constructing
+  `SpdxOptions.dataset_ids`. Mirrors `--spdx-dataset`.
+- **`AttestRequest.spdx_training_info`** — Optional `str`; maps to
+  `SpdxOptions.information_about_training`. Mirrors `--spdx-training-info`.
+- **`AttestRequest.spdx_sensitive_data`** — Optional `str`; maps to
+  `SpdxOptions.sensitive_personal_information`. Mirrors `--spdx-sensitive-data`.
+
+### Changed
+
+- **`POST /attest` handler** — Constructs `SpdxOptions` from the five new
+  fields when any are supplied; merges `spdx_datasets` + `training_dataset_ids`
+  into a single deduplicated `all_datasets` list that flows to both
+  `AttestConfig.training_dataset_ids` (CycloneDX provenance) and
+  `SpdxOptions.dataset_ids` (SPDX AI Profile). Omitting all SPDX fields
+  preserves prior behaviour.
+
+### Tests
+
+- **`tests/test_squash_wave37.py`** — 25 new tests: unit field-default checks
+  on `AttestRequest`; integration tests for SPDX field acceptance, artifact
+  propagation, dataset merge/deduplication; OpenAPI schema validation.
+
+---
+
 ## [Unreleased] — Wave 36: SPDX AI Profile options exposed in `squash attest` CLI
 
 ### Added

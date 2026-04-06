@@ -165,6 +165,33 @@ class AttestRequest(BaseModel):
     training_dataset_ids: list[str] = Field(default_factory=list)
     vex_feed_path: str | None = Field(default=None)
     vex_feed_url: str = Field(default="")
+    # ── SPDX AI Profile enrichment (mirrors squash attest --spdx-* CLI flags) ──
+    spdx_type: str | None = Field(
+        default=None,
+        description=(
+            "SPDX AI Profile type_of_model "
+            "(e.g. text-generation, text-classification, summarization). Default: text-generation"
+        ),
+    )
+    spdx_safety_risk: str | None = Field(
+        default=None,
+        description="SPDX AI Profile safetyRiskAssessment: high | medium | low | unspecified",
+    )
+    spdx_datasets: list[str] = Field(
+        default_factory=list,
+        description=(
+            "HuggingFace dataset IDs or URIs for the SPDX AI Profile "
+            "(merged with training_dataset_ids; e.g. [\"wikipedia\", \"c4\"])"
+        ),
+    )
+    spdx_training_info: str | None = Field(
+        default=None,
+        description="SPDX AI Profile informationAboutTraining free-text. Default: see-model-card",
+    )
+    spdx_sensitive_data: str | None = Field(
+        default=None,
+        description="SPDX AI Profile sensitivePIIInTrainingData: absent | present | unknown",
+    )
 
 
 class ScanRequest(BaseModel):
@@ -283,6 +310,25 @@ async def attest(req: AttestRequest) -> JSONResponse:
     artifacts.
     """
     _require_path(req.model_path)
+
+    # Merge spdx_datasets with training_dataset_ids (deduplicated, order preserved).
+    all_datasets: list[str] = list(req.training_dataset_ids) + [
+        d for d in req.spdx_datasets if d not in req.training_dataset_ids
+    ]
+
+    # Construct SpdxOptions when any SPDX enrichment field is populated.
+    spdx_options = None
+    if any([req.spdx_type, req.spdx_safety_risk, req.spdx_training_info,
+            req.spdx_sensitive_data, req.spdx_datasets]):
+        from squish.squash.spdx_builder import SpdxOptions
+        spdx_options = SpdxOptions(
+            type_of_model=req.spdx_type or "text-generation",
+            safety_risk_assessment=req.spdx_safety_risk or "unspecified",
+            dataset_ids=all_datasets,
+            information_about_training=req.spdx_training_info or "see-model-card",
+            sensitive_personal_information=req.spdx_sensitive_data or "absent",
+        )
+
     config = AttestConfig(
         model_path=Path(req.model_path),
         output_dir=Path(req.output_dir) if req.output_dir else None,
@@ -294,9 +340,10 @@ async def attest(req: AttestRequest) -> JSONResponse:
         sign=req.sign,
         fail_on_violation=False,  # never raise from HTTP handler; return 422 instead
         skip_scan=req.skip_scan,
-        training_dataset_ids=list(req.training_dataset_ids),
+        training_dataset_ids=all_datasets,
         vex_feed_path=Path(req.vex_feed_path) if req.vex_feed_path else None,
         vex_feed_url=req.vex_feed_url,
+        spdx_options=spdx_options,
     )
 
     loop = asyncio.get_running_loop()
