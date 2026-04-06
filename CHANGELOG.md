@@ -5,6 +5,44 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 40: GCP Vertex AI integration — VertexAISquash platform adapter
+
+### Added
+
+- **`squish/squash/integrations/vertex_ai.py`** — `VertexAISquash` platform adapter (232 lines):
+  - `attach_attestation()`: run squash attestation pipeline + optionally upload artifacts to GCS
+    + label a Vertex AI Model Registry resource with attestation results.
+  - `label_model()`: write attestation results as GCP labels on a Vertex AI Model resource
+    (keys: `squash_passed`, `squash_scan_status`, per-policy `squash_policy_<name>_passed/errors`).
+  - `_upload_to_gcs()`: upload all squash artifact files from a local directory to a GCS bucket.
+  - `_sanitize_label()`: sanitize arbitrary strings to valid GCP label keys/values
+    (lowercase, colons/dots → underscores, digit-leading → `sq` prefix, truncate to 63 chars).
+  - Lazy imports for `google.cloud.aiplatform` and `google.cloud.storage` — module loads
+    without the Google Cloud SDK installed.
+- **`tests/test_squash_wave40.py`** — 24 tests covering all VertexAISquash code paths:
+  - `_sanitize_label`: 8 cases (lowercase, colons, dots, spaces, digit prefix, truncation,
+    valid passthrough, empty string).
+  - `attach_attestation`: returns AttestResult; no label when resource_name absent;
+    label_model called with correct args when resource_name provided; GCS upload called
+    when prefix provided.
+  - `label_model`: correct keys/values incl. `squash_passed` and `squash_scan_status`;
+    per-policy labels present; all keys conform to GCP 63-char grammar; `None` scan_result
+    → `skipped`.
+  - `_upload_to_gcs`: skips gracefully if local_dir missing; uploads all files in dir;
+    raises `AssertionError` on non-`gs://` prefix.
+  - Module-level: importable without SDK; prefix uses underscores not colons;
+    `vertex_ai` mentioned in integrations `__init__` docstring.
+- Updated `squish/squash/integrations/__init__.py` to document the new `vertex_ai` adapter.
+
+### Notes
+
+- GCP label key prefix is `squash_` (not `squash:` — colons violate GCP label grammar).
+- Closes the "GCP Vertex AI integration" gap; was zero prior to this wave.
+- Module count: 108 (was 107); justified as closing the only remaining major cloud gap.
+- Test suite: 4590 passed, 0 failures, 25 skipped.
+
+---
+
 ## [Unreleased] — Wave 39: CLAUDE.md per-model validated results — complete Tier 2/3 data
 
 ### Changed

@@ -10,6 +10,7 @@ Available adapters
 - :mod:`~squish.squash.integrations.huggingface`  — HF Hub model-card SBOM push
 - :mod:`~squish.squash.integrations.langchain`    — LangChain callback handler
 - :mod:`~squish.squash.integrations.sagemaker`    — AWS SageMaker model package
+- :mod:`~squish.squash.integrations.vertex_ai`    — GCP Vertex AI Model Registry
 - :mod:`~squish.squash.integrations.kubernetes`   — Kubernetes admission webhook
 - :mod:`~squish.squash.integrations.ray`          — Ray Serve deployment decorator
 
