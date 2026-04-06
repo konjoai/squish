@@ -5,7 +5,36 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 37: SPDX AI Profile options exposed in POST /attest REST API
+## [Unreleased] — Wave 38: AQLM dequantization module
+
+### Added
+
+- **`squish/quant/aqlm.py`** — `AQLMConfig`, `AQLMCodebook`, `AQLMLayer`,
+  `aqlm_dequantize`. Implements Additive Quantization of Language Models
+  (AQLM) dequantization:
+  $\hat{W}[i,g] = \text{scale} \cdot \sum_{k=1}^{K} \text{CB}_k[\text{indices}[i,g,k]]$
+  Vectorised NumPy advanced indexing over K codebooks —
+  O(out_features × n_groups × K) index gathers, no Python loops over groups.
+- Closes the existing stub import at `compressed_loader.py:664`
+  (`from squish.quant.aqlm import AQLMConfig, AQLMLayer, aqlm_dequantize`).
+- **30 new tests** in `tests/test_squash_wave38.py` — shape/dtype contracts,
+  numerical correctness, regression snapshot, failure cases, and 3
+  integration round-trip tests via `_dequantize_npy_dir`.
+
+### Changed
+
+- Module count: 107 (justified — closes existing stub dependency introduced
+  in Wave 30).
+
+### Notes
+
+- `aqlm.py` is a **decode-only** module (dequantisation for loading
+  externally-trained AQLM weights). AQLM quantisation training
+  (encode path) is Wave 39+ work.
+
+---
+
+## Wave 37: SPDX AI Profile options exposed in POST /attest REST API
 
 ### Added
 

@@ -6,13 +6,13 @@
 ---
 
 ## Current date
-2026-04-01
+2026-04-02
 
 ## Last commits
+- `de5d598` — docs(wave37): post-ship docs update (NEXT_SESSION/SESSION)
+- `65ac5fb` — feat(wave37): SPDX AI Profile options in POST /attest with 25 new tests
 - `61502cd` — chore(bench): add Qwen3-8B-int4 + int3 lm_eval runs with thinking disabled
 - `60c2bf1` — chore(bench): add Qwen2.5-7B-int3 full lm_eval run
-- `9634949` — chore(bench): add Qwen2.5-7B-int4 + Qwen2.5-7B-int3 partial results
-- `eb0684b` — fix(bench): suppress Qwen3 thinking tokens in lm_eval (`--apply-chat-template --chat-template-args '{"enable_thinking": false}'`)
 
 ---
 
@@ -167,16 +167,32 @@ All `Qwen3-*` models auto-detected. Qwen2.5 unaffected.
 - Qwen2.5-7B: −4.0pp arc_easy (79.0% vs 83.0%) — consistent with 1.5B pattern
 - Qwen3-8B: −7.8pp arc_easy (71.4% vs 79.2%) — larger delta; 8B Qwen3 more INT3-sensitive
 
-### Immediate next task
-1. **Re-run Qwen3-4B-int4 with thinking disabled** (bench in progress or to be launched)
-   ```bash
-   cd /Users/wscholl/squish && nohup python3 -u dev/benchmarks/bench_lmeval_all_models.py \
-     --models Qwen3-4B-int4 \
-     --tasks arc_easy arc_challenge hellaswag winogrande piqa openbookqa \
-     --limit 500 --force --max-model-gb 0 --output-dir results \
-     > /tmp/bench_qwen3_4b_rerun.log 2>&1 &
-   ```
-2. Update CLAUDE.md per-model validated table with all Tier 2/3 data
+### Immediate next task (Wave 39)
+1. **Re-run Qwen3-4B-int4 with thinking disabled** → ✅ **COMPLETE**
+   Result in `results/lmeval_Qwen3-4B-int4_20260401T103031.json`:
+   **73.2% arc_easy**, all 6 tasks. Thinking disabled. Valid ✅.
+   INT3 delta: Qwen3-4B-int3=58.4% → **−14.8pp arc_easy** (very INT3-sensitive, same as gemma-3-1b class).
+
+2. **Wave 38 COMPLETE** — `squish/quant/aqlm.py` implemented.
+   - `AQLMConfig`, `AQLMCodebook`, `AQLMLayer`, `aqlm_dequantize`
+   - Closes stub import at `compressed_loader.py:664`
+   - 30 new tests (all passing), 4562 total tests passing
+   - Module count: 107 (justified — closes existing stub dependency)
+
+3. **NEXT: Update CLAUDE.md per-model validated accuracy table**
+   All Tier 2/3 bench data is fully valid and present in `results/`. Table update is overdue.
+   Key entries to add/update:
+   - Qwen3-4B-int4: **73.2%** arc_easy ✅ (was previously invalid at 41%)
+   - Qwen3-4B-int3: **58.4%** (−14.8pp — very sensitive, same risk class as gemma-3-1b)
+   - Qwen3-8B-int4: **79.2%** ✅
+   - Qwen3-8B-int3: **71.4%** (−7.8pp)
+   - Qwen2.5-7B-int4: **83.0%** ✅
+   - Qwen2.5-7B-int3: **79.0%** (−4.0pp)
+
+4. **Wave 39 options:**
+   - CLAUDE.md table update (highest value, no code risk)
+   - Build squish-native lm_eval harness to unblock mixed_attn evaluation
+   - INT2 AQLM encode path (write AQLM weights, not just decode)
 3. Assess INT3 ship gate for Qwen3-8B (−7.8pp > normal −3 to −4pp — flag for review)
 
 ### Blocked:
