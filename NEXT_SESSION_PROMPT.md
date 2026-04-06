@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Wave 37+: mixed_attn lm_eval + AQLM
+# NEXT_SESSION_PROMPT.md — Wave 38+: mixed_attn lm_eval + AQLM
 
 > Paste the content below verbatim as your opening prompt.
 > This is a **code session** — implement the remaining plan gaps.
@@ -7,10 +7,10 @@
 
 ## Prompt
 
-**Code session. Wave 36 is complete (SPDX AI Profile options exposed in `squash attest` CLI:
-`--spdx-type`, `--spdx-safety-risk`, `--spdx-dataset`, `--spdx-training-info`,
-`--spdx-sensitive-data`; 26 new tests, 4507 passing).
-Next priority: Wave 37 — lm_eval validation for `mixed_attn` format (hardware required;
+**Code session. Wave 37 is complete (SPDX AI Profile options in POST /attest REST API:
+`spdx_type`, `spdx_safety_risk`, `spdx_datasets`, `spdx_training_info`,
+`spdx_sensitive_data` on `AttestRequest`; 25 new tests, 4532 passing).
+Next priority: Wave 38 — lm_eval validation for `mixed_attn` format (hardware required;
 add lm_eval-waiver if unavailable). After mixed_attn result is in: implement
 `squish/quant/aqlm.py` (`AQLMConfig`, `AQLMLayer`, `aqlm_dequantize`) to back the
 existing import in `compressed_loader.py:664`.
@@ -43,16 +43,21 @@ One commit per wave. Minimum viable — no stubs.**
 | 34    | EU CRA + FedRAMP/CMMC policy templates (`eu-cra`, `fedramp`, `cmmc` added to `_POLICIES` and `AVAILABLE_POLICIES`) | ✅ |
 | 35    | CLI help text: eu-cra/fedramp/cmmc surfaced in `squash attest --policy`, `attest-composed`, and 4 integration shims | ✅ |
 | 36    | SPDX AI Profile CLI options: `--spdx-type`, `--spdx-safety-risk`, `--spdx-dataset`, `--spdx-training-info`, `--spdx-sensitive-data` on `squash attest` | ✅ |
+| 37    | SPDX AI Profile REST API parity: `spdx_type`, `spdx_safety_risk`, `spdx_datasets`, `spdx_training_info`, `spdx_sensitive_data` on `AttestRequest` / `POST /attest` | ✅ |
 
 ### Test state
-- **4507 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
+- **4532 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
 - 25 skipped
 
 ### Module count
 ```
 squish/ non-experimental: 106/100 (+6 over limit — all justified in CHANGELOG, unchanged from wave 30)
-  Waves 29–36: 0 new Python modules (all additions inside squish/squash/cli.py)
+  Waves 29–37: 0 new Python modules (all additions inside existing files)
 ```
+
+### Key files added/changed in wave 37
+- `squish/squash/api.py` — 5 new SPDX fields on `AttestRequest`; `/attest` handler constructs `SpdxOptions` and merges `spdx_datasets` + `training_dataset_ids`
+- `tests/test_squash_wave37.py` — 25 new tests (5 classes)
 
 ### Key files added/changed in wave 36
 - `squish/squash/cli.py` — 5 new `--spdx-*` args on `squash attest` subparser; `_cmd_attest()` wired to `SpdxOptions`
@@ -68,7 +73,7 @@ All three filenames now agree on `.openvex.json`.
 
 ---
 
-## Remaining gaps (post wave 36)
+## Remaining gaps (post wave 37)
 
 ### 1. lm_eval validation for mixed_attn (hardware required)
 `mixed_attn` (FP16 attn + INT4 MLP) is code-complete but **unvalidated**.
@@ -88,7 +93,7 @@ Begin **only after** mixed_attn lm_eval result is in. See CLAUDE.md quantization
 
 - **Module count is at 106.** Any new Python file requires deleting one or writing justification.
 - **Do not add sidecar or model files to git.**
-- Tests must pass before committing (4386 passing, 4 pre-existing wave12x failures acceptable).
+- Tests must pass before committing (4532 passing, 4 pre-existing wave12x failures acceptable).
 - **For any REST API additions: integration tests must call the real endpoint.**
 - **For quantization path changes: lm_eval result or lm_eval-waiver in commit message.**
 
