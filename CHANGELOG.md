@@ -5,6 +5,47 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 36: SPDX AI Profile options exposed in `squash attest` CLI
+
+### Added
+
+- **`squash attest --spdx-type TYPE`** — Override the SPDX AI Profile
+  `type_of_model` field (e.g. `text-generation`, `text-classification`,
+  `summarization`, `question-answering`). Default: `text-generation`.
+- **`squash attest --spdx-safety-risk {high,medium,low,unspecified}`** —
+  Set the SPDX AI Profile `safetyRiskAssessment` tier. Default: `unspecified`.
+- **`squash attest --spdx-dataset DATASET_ID`** — Append a training-dataset HF
+  ID or URI to the SPDX AI Profile `datasetIds` list (repeatable; e.g.
+  `--spdx-dataset wikipedia --spdx-dataset c4`).
+- **`squash attest --spdx-training-info TEXT`** — Free-text value for SPDX AI
+  Profile `informationAboutTraining`. Default: `see-model-card`.
+- **`squash attest --spdx-sensitive-data {absent,present,unknown}`** — Set the
+  SPDX AI Profile `sensitivePIIInTrainingData` field. Default: `absent`.
+
+### Changed
+
+- **`_cmd_attest()`** (squash CLI) — Constructs a `SpdxOptions` object and
+  passes it to `AttestConfig` only when at least one `--spdx-*` flag is
+  supplied; omitting all flags preserves prior behaviour (defaults used by
+  `SpdxBuilder`).
+
+### Tests
+
+- **`tests/test_squash_wave36.py`** — 26 new tests (5 classes):
+  `TestSpdxArgsRegistered`, `TestSpdxArgsParsed`, `TestSpdxOptionsConstruction`,
+  `TestSpdxOptionsIntegration`. Covers argparse registration, value parsing,
+  choices validation, SpdxOptions construction logic, and end-to-end propagation
+  to the written SPDX JSON artifact. Total suite: 4507 passed, 4 pre-existing
+  line-count failures (wave12x), 0 new failures.
+
+### Notes
+
+- `# lm_eval-waiver: mixed_attn validation deferred — no hardware available this session`
+- `# expected-delta: n/a — no quantization path changed in this wave`
+- `# validation-run: queued for next session (Qwen2.5-1.5B INT4 baseline = 70.6% arc_easy)`
+
+---
+
 ## [Unreleased] — Wave 35: CLI help text surfaces eu-cra / fedramp / cmmc
 
 ### Changed

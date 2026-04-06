@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Wave 36+: mixed_attn lm_eval
+# NEXT_SESSION_PROMPT.md — Wave 37+: mixed_attn lm_eval + AQLM
 
 > Paste the content below verbatim as your opening prompt.
 > This is a **code session** — implement the remaining plan gaps.
@@ -7,18 +7,18 @@
 
 ## Prompt
 
-**Code session. Wave 35 is complete (CLI help text: eu-cra, fedramp, cmmc now visible
-in `squash attest --policy`, `squash attest-composed --policy`, and all four
-integration-shim `--policies` help strings; 30 new tests, 4481 passing).
-Next priority: Wave 36 — lm_eval validation for `mixed_attn` format.
-Workflow: `squish compress --format mixed_attn <model_dir>` → `squish export` →
-`squish eval` (or direct lm_eval harness). Hardware required; add lm_eval-waiver to
-commit if hardware unavailable. Target: arc_easy vs INT4 baseline (70.6%, Qwen2.5-1.5B,
-limit=500). One commit per wave. Minimum viable — no stubs.**
+**Code session. Wave 36 is complete (SPDX AI Profile options exposed in `squash attest` CLI:
+`--spdx-type`, `--spdx-safety-risk`, `--spdx-dataset`, `--spdx-training-info`,
+`--spdx-sensitive-data`; 26 new tests, 4507 passing).
+Next priority: Wave 37 — lm_eval validation for `mixed_attn` format (hardware required;
+add lm_eval-waiver if unavailable). After mixed_attn result is in: implement
+`squish/quant/aqlm.py` (`AQLMConfig`, `AQLMLayer`, `aqlm_dequantize`) to back the
+existing import in `compressed_loader.py:664`.
+One commit per wave. Minimum viable — no stubs.**
 
 ---
 
-## Waves 1–34 complete (commit HEAD on `main`)
+## Waves 1–35 complete (commit HEAD on `main`)
 
 ### Delivery summary
 
@@ -42,21 +42,21 @@ limit=500). One commit per wave. Minimum viable — no stubs.**
 | 33    | VEX feed hosting: `squishai/vex-feed` repo, `feed.openvex.json` seed, `DEFAULT_URL` fix, `VexCache.load_bundled()` | ✅ |
 | 34    | EU CRA + FedRAMP/CMMC policy templates (`eu-cra`, `fedramp`, `cmmc` added to `_POLICIES` and `AVAILABLE_POLICIES`) | ✅ |
 | 35    | CLI help text: eu-cra/fedramp/cmmc surfaced in `squash attest --policy`, `attest-composed`, and 4 integration shims | ✅ |
+| 36    | SPDX AI Profile CLI options: `--spdx-type`, `--spdx-safety-risk`, `--spdx-dataset`, `--spdx-training-info`, `--spdx-sensitive-data` on `squash attest` | ✅ |
 
 ### Test state
-- **4481 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
+- **4507 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
 - 25 skipped
 
 ### Module count
 ```
 squish/ non-experimental: 106/100 (+6 over limit — all justified in CHANGELOG, unchanged from wave 30)
-  Waves 29–34: 0 new Python modules
-  Wave 33 added: squish/squash/data/community_vex_feed.openvex.json (JSON, not Python)
+  Waves 29–36: 0 new Python modules (all additions inside squish/squash/cli.py)
 ```
 
-### Key files added/changed in wave 35
-- `squish/squash/cli.py` — 6 policy help strings updated (attest, attest-composed, 4 shims)
-- `tests/test_squash_wave35.py` — 30 new tests (5 test classes)
+### Key files added/changed in wave 36
+- `squish/squash/cli.py` — 5 new `--spdx-*` args on `squash attest` subparser; `_cmd_attest()` wired to `SpdxOptions`
+- `tests/test_squash_wave36.py` — 26 new tests (5 classes)
 
 ### VEX feed URL reference
 ```
@@ -68,22 +68,19 @@ All three filenames now agree on `.openvex.json`.
 
 ---
 
-## Remaining gaps (post wave 34)
+## Remaining gaps (post wave 36)
 
-### 1. CLI policy help text (Wave 35 — trivial, ~5 min)
-The `squash attest --policy` choices list in `cli.py` needs to show `eu-cra`,
-`fedramp`, `cmmc` in the help string and any argparse choices tuple.
-Search for `eu-ai-act` in `cli.py` to find the exact location.
-
-### 2. lm_eval validation for mixed_attn (hardware required)
+### 1. lm_eval validation for mixed_attn (hardware required)
 `mixed_attn` (FP16 attn + INT4 MLP) is code-complete but **unvalidated**.
 lm_eval result or lm_eval-waiver required before any accuracy claims.
 - Run: `squish compress --format mixed_attn <model>` → `squish export <dir>` → `squish eval`
 - Baseline: INT4 = **70.6% arc_easy** (Qwen2.5-1.5B, limit=500)
 - Expected: within ~1pp of INT4 (FP16 attn preserves attention quality)
 
-### 3. INT2 AQLM / SpQR experimental path
-Begin only after mixed_attn lm_eval result is in. See CLAUDE.md quantization table.
+### 2. INT2 AQLM / SpQR experimental path
+Begin **only after** mixed_attn lm_eval result is in. See CLAUDE.md quantization table.
+- `squish/quant/aqlm.py` does not exist but is imported at `compressed_loader.py:664`
+- Implement: `AQLMConfig`, `AQLMLayer`, `aqlm_dequantize`
 
 ---
 

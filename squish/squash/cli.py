@@ -91,6 +91,46 @@ def _build_parser() -> argparse.ArgumentParser:
         default="unknown",
         help="Quantization format label (e.g. INT4, BF16)",
     )
+    # ── SPDX AI Profile enrichment ────────────────────────────────────────────
+    attest.add_argument(
+        "--spdx-type",
+        default=None,
+        metavar="TYPE",
+        dest="spdx_type",
+        help="SPDX AI Profile: type_of_model (e.g. text-generation, text-classification, "
+             "translation, summarization, question-answering). Default: text-generation",
+    )
+    attest.add_argument(
+        "--spdx-safety-risk",
+        default=None,
+        choices=["high", "medium", "low", "unspecified"],
+        dest="spdx_safety_risk",
+        help="SPDX AI Profile: safetyRiskAssessment tier. Default: unspecified",
+    )
+    attest.add_argument(
+        "--spdx-dataset",
+        action="append",
+        default=[],
+        dest="spdx_datasets",
+        metavar="DATASET_ID",
+        help="Training dataset HF ID or URI (repeatable; e.g. --spdx-dataset wikipedia "
+             "--spdx-dataset c4). Embedded in the SPDX AI Profile",
+    )
+    attest.add_argument(
+        "--spdx-training-info",
+        default=None,
+        dest="spdx_training_info",
+        metavar="TEXT",
+        help="SPDX AI Profile: informationAboutTraining free-text. "
+             "Default: see-model-card",
+    )
+    attest.add_argument(
+        "--spdx-sensitive-data",
+        default=None,
+        choices=["absent", "present", "unknown"],
+        dest="spdx_sensitive_data",
+        help="SPDX AI Profile: sensitivePIIInTrainingData. Default: absent",
+    )
 
     # ── squash policies ────────────────────────────────────────────────────────
     policies_cmd = sub.add_parser("policies", help="List available built-in policy templates")
@@ -829,6 +869,24 @@ def _cmd_attest(args: argparse.Namespace, quiet: bool) -> int:
 
     policies = args.policies if args.policies else ["enterprise-strict"]
 
+    # Build SpdxOptions only when the user supplied at least one SPDX flag.
+    spdx_options = None
+    if any([
+        args.spdx_type,
+        args.spdx_safety_risk,
+        args.spdx_datasets,
+        args.spdx_training_info,
+        args.spdx_sensitive_data,
+    ]):
+        from squish.squash.spdx_builder import SpdxOptions
+        spdx_options = SpdxOptions(
+            type_of_model=args.spdx_type or "text-generation",
+            safety_risk_assessment=args.spdx_safety_risk or "unspecified",
+            dataset_ids=list(args.spdx_datasets),
+            information_about_training=args.spdx_training_info or "see-model-card",
+            sensitive_personal_information=args.spdx_sensitive_data or "absent",
+        )
+
     config = AttestConfig(
         model_path=model_path,
         output_dir=Path(args.output_dir) if args.output_dir else None,
@@ -839,6 +897,7 @@ def _cmd_attest(args: argparse.Namespace, quiet: bool) -> int:
         sign=args.sign,
         fail_on_violation=False,  # handle ourselves below for clean exit codes
         skip_scan=args.skip_scan,
+        spdx_options=spdx_options,
     )
 
     try:
