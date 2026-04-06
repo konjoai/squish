@@ -66,7 +66,9 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="POLICY",
-        help="Policy name to evaluate (repeatable). Default: enterprise-strict",
+        help="Policy name to evaluate (repeatable). Default: enterprise-strict. "
+             "Also: eu-cra, fedramp, cmmc, eu-ai-act, nist-ai-rmf, owasp-llm-top10, iso-42001 "
+             "(run 'squash policies' to list all)",
     )
     attest.add_argument("--output-dir", default=None, help="Artifact destination directory")
     attest.add_argument("--sign", action="store_true", help="Sign BOM via Sigstore keyless")
@@ -219,7 +221,8 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         default=None,
         metavar="NAME",
-        help="Policy name(s) to evaluate (repeatable; default: enterprise-strict)",
+        help="Policy name(s) to evaluate (repeatable; default: enterprise-strict; "
+             "also: eu-cra, fedramp, cmmc — run 'squash policies' to list all)",
     )
     ac_cmd.add_argument(
         "--sign",
@@ -496,7 +499,8 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="*",
         metavar="POLICY",
         default=None,
-        help="Policy templates to evaluate (default: enterprise-strict)",
+        help="Policy templates to evaluate (default: enterprise-strict; "
+             "also: eu-cra, fedramp, cmmc — run 'squash policies' for all)",
     )
     attest_mlflow_cmd.add_argument(
         "--sign", action="store_true", help="Sign BOM via Sigstore keyless"
@@ -530,7 +534,8 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="*",
         metavar="POLICY",
         default=None,
-        help="Policy templates to evaluate (default: enterprise-strict)",
+        help="Policy templates to evaluate (default: enterprise-strict; "
+             "also: eu-cra, fedramp, cmmc — run 'squash policies' for all)",
     )
     attest_wandb_cmd.add_argument(
         "--sign", action="store_true", help="Sign BOM via Sigstore keyless"
@@ -575,7 +580,8 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="*",
         metavar="POLICY",
         default=None,
-        help="Policy templates to evaluate (default: enterprise-strict)",
+        help="Policy templates to evaluate (default: enterprise-strict; "
+             "also: eu-cra, fedramp, cmmc — run 'squash policies' for all)",
     )
     attest_hf_cmd.add_argument(
         "--sign", action="store_true", help="Sign BOM via Sigstore keyless"
@@ -610,7 +616,8 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="*",
         metavar="POLICY",
         default=None,
-        help="Policy templates to evaluate (default: enterprise-strict)",
+        help="Policy templates to evaluate (default: enterprise-strict; "
+             "also: eu-cra, fedramp, cmmc — run 'squash policies' for all)",
     )
     attest_lc_cmd.add_argument(
         "--sign", action="store_true", help="Sign BOM via Sigstore keyless"

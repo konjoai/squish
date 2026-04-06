@@ -5,6 +5,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 35: CLI help text surfaces eu-cra / fedramp / cmmc
+
+### Changed
+
+- **CLI discovery** — `squash attest --policy`, `squash attest-composed --policy`,
+  and all four integration-shim commands (`attest-mlflow`, `attest-wandb`,
+  `attest-huggingface`, `attest-langchain`) now list `eu-cra`, `fedramp`, and
+  `cmmc` in their `--policy` / `--policies` help strings and direct users to
+  `squash policies` for the full policy catalogue.
+
+### Tests
+
+- **`tests/test_squash_wave35.py`** — 30 new tests (4 classes):
+  `TestPolicyRegistryRegression`, `TestAttestHelpText`,
+  `TestAttestComposedHelpText`, `TestIntegrationShimHelpText`,
+  `TestPoliciesCommandOutput`.  Total suite: 4481 passed, 4 pre-existing
+  line-count failures (wave12x), 0 new failures.
+
+---
+
 ## [Unreleased] — Wave 34: EU CRA + FedRAMP / CMMC policy templates
 
 ### New Features

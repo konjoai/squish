@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Wave 35+: mixed_attn lm_eval + CLI policy help update
+# NEXT_SESSION_PROMPT.md — Wave 36+: mixed_attn lm_eval
 
 > Paste the content below verbatim as your opening prompt.
 > This is a **code session** — implement the remaining plan gaps.
@@ -7,18 +7,18 @@
 
 ## Prompt
 
-**Code session. Wave 34 is complete (EU CRA + FedRAMP/CMMC policy templates:
-eu-cra, fedramp, cmmc policies added to policy.py and AVAILABLE_POLICIES;
-62 new tests, 4451 passing).
-Next priority: Wave 35 — (a) update CLI --policy help text to list eu-cra, fedramp,
-cmmc in the squash attest --policy choices/help string, and (b) run lm_eval on the
-exported mixed_attn model (squish compress → squish export → squish eval — hardware
-required; add lm_eval-waiver to commit if hardware unavailable).
-One commit per wave. Minimum viable implementation — no stubs left in shipped code.**
+**Code session. Wave 35 is complete (CLI help text: eu-cra, fedramp, cmmc now visible
+in `squash attest --policy`, `squash attest-composed --policy`, and all four
+integration-shim `--policies` help strings; 30 new tests, 4481 passing).
+Next priority: Wave 36 — lm_eval validation for `mixed_attn` format.
+Workflow: `squish compress --format mixed_attn <model_dir>` → `squish export` →
+`squish eval` (or direct lm_eval harness). Hardware required; add lm_eval-waiver to
+commit if hardware unavailable. Target: arc_easy vs INT4 baseline (70.6%, Qwen2.5-1.5B,
+limit=500). One commit per wave. Minimum viable — no stubs.**
 
 ---
 
-## Waves 1–33 complete (commit HEAD on `main`)
+## Waves 1–34 complete (commit HEAD on `main`)
 
 ### Delivery summary
 
@@ -41,9 +41,10 @@ One commit per wave. Minimum viable implementation — no stubs left in shipped 
 | 32    | `squish export` (npy-dir → mlx safetensors), `discover_npy_dir_metadata()`, `squish eval` redirect | ✅ |
 | 33    | VEX feed hosting: `squishai/vex-feed` repo, `feed.openvex.json` seed, `DEFAULT_URL` fix, `VexCache.load_bundled()` | ✅ |
 | 34    | EU CRA + FedRAMP/CMMC policy templates (`eu-cra`, `fedramp`, `cmmc` added to `_POLICIES` and `AVAILABLE_POLICIES`) | ✅ |
+| 35    | CLI help text: eu-cra/fedramp/cmmc surfaced in `squash attest --policy`, `attest-composed`, and 4 integration shims | ✅ |
 
 ### Test state
-- **4451 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
+- **4481 tests passing** (4 pre-existing line-count failures — wave12x, unchanged)
 - 25 skipped
 
 ### Module count
@@ -53,9 +54,9 @@ squish/ non-experimental: 106/100 (+6 over limit — all justified in CHANGELOG,
   Wave 33 added: squish/squash/data/community_vex_feed.openvex.json (JSON, not Python)
 ```
 
-### Key files added/changed in wave 34
-- `squish/squash/policy.py` — `eu-cra` (8 rules), `fedramp` (9 rules), `cmmc` alias added to `_POLICIES`
-- `tests/test_squash_wave34.py` — 62 new tests (7 test classes)
+### Key files added/changed in wave 35
+- `squish/squash/cli.py` — 6 policy help strings updated (attest, attest-composed, 4 shims)
+- `tests/test_squash_wave35.py` — 30 new tests (5 test classes)
 
 ### VEX feed URL reference
 ```
