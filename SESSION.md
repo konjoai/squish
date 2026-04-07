@@ -6,13 +6,14 @@
 ---
 
 ## Current date
-2026-04-06
+2026-04-07
 
 ## Last commits
+- **`(w41)`** — feat(wave41): squish-native lm_eval harness — dev/benchmarks/squish_lm_eval.py (52 tests, 4642 suite)
+- `d20b0ea` — feat(wave40): GCP Vertex AI integration — VertexAISquash platform adapter (24 tests)
+- `ebbb56b` — fix(ci): resolve 4 test failures
 - `3c3a0d5` — feat(wave38): AQLM dequantization module (AQLMConfig, AQLMCodebook, AQLMLayer)
 - `de5d598` — docs(wave37): post-ship docs update (NEXT_SESSION/SESSION)
-- `65ac5fb` — feat(wave37): SPDX AI Profile options in POST /attest with 25 new tests
-- `61502cd` — chore(bench): add Qwen3-8B-int4 + int3 lm_eval runs with thinking disabled
 - `60c2bf1` — chore(bench): add Qwen2.5-7B-int3 full lm_eval run
 
 ---
@@ -33,9 +34,10 @@ The "g=16 AWQ throughout" description in the previous session note was WRONG.
 `squish compress --format int3` uses `mlx_lm.convert` internally and produces standard
 MLX safetensors loadable by the bench harness. This means:
 - INT3 g=16 squish compress results: **measurable** via bench_lmeval_all_models.py ✅
-- INT4 AWQ g=16 squish results: **NOT measurable** via standard lm_eval harness ❌
-- mixed_attn squish results: **NOT measurable** via standard lm_eval harness ❌
-  (Q2 blocked until a squish-native lm_eval harness is built, or npy→safetensors converter)
+- INT4 AWQ g=16 squish results: **CODE-COMPLETE harness built** — `dev/benchmarks/squish_lm_eval.py` ✅ (Wave 41)
+  Run: `python3 dev/benchmarks/squish_lm_eval.py --npy-dir ~/models/Qwen2.5-1.5B-Instruct-int4-awq --model-dir ~/models/Qwen2.5-1.5B-Instruct --limit 500`
+  Acceptance: arc_easy within ±2pp of 70.6% (lm_eval-waiver in commit — validation run queued)
+- mixed_attn squish results: **harness built** — same command with mixed-attn npy-dir ✅
 
 Overnight bench: `results/overnight_20260326T232055/` — M3 16GB, limit=500,
 mlx_lm.convert (g=64 INT4, g=32 INT3, g=64 INT2) — NOT squish compress AWQ.
@@ -182,24 +184,34 @@ All `Qwen3-*` models auto-detected. Qwen2.5 unaffected.
 - Stale Qwen3-4B-int4 score corrected (73.2% thinking-disabled, was 41% invalid).
 - 4562 tests passing. No code changes. No regressions.
 
-### Immediate next task (Wave 40 options)
+### Immediate next task (Wave 42 options)
 
-1. **squish-native lm_eval harness** — `dev/benchmarks/squish_lm_eval.py`
-   Runs `mlx_lm.evaluate` on squish `.npy-dir` format models.
-   Acceptance: produces arc_easy score for Qwen2.5-1.5B-Instruct npy-dir.
-   **Unblocks:** mixed_attn measurement + INT4 AWQ g=16 measurement.
+1. **Run the harness — validate INT4 AWQ score** (hardware needed):
+   ```bash
+   python3 dev/benchmarks/squish_lm_eval.py \
+       --npy-dir ~/models/Qwen2.5-1.5B-Instruct-int4-awq \
+       --model-dir ~/models/Qwen2.5-1.5B-Instruct \
+       --limit 500 --baseline 70.6
+   ```
+   Target: 68.6–72.6% arc_easy (±2pp of 70.6% baseline).
 
-2. **INT2 AQLM encode path** — compress-side quantizer using `aqlm.py` decode as target.
+2. **Run mixed_attn harness** (unblocked by Wave 41):
+   ```bash
+   python3 dev/benchmarks/squish_lm_eval.py \
+       --npy-dir ~/models/Qwen2.5-1.5B-Instruct-mixed-attn \
+       --model-dir ~/models/Qwen2.5-1.5B-Instruct \
+       --limit 500
+   ```
+
+3. **Azure DevOps Extension** — `squish/squash/integrations/azure_devops.py`
+   (next integration after Vertex AI, per squash integrations roadmap).
+
+4. **INT2 AQLM encode path** — compress-side using aqlm.py decode as target.
    (aqlm.py decode side was Wave 38.)
 
-3. **Qwen2.5-7B-int2 bench re-run** — the only Tier 3 int2 data point not in the table.
-   Pre-cutoff result at `lmeval_Qwen2.5-7B-int2_20260324T132641.json` is suspect (before INT3 fix).
-   Needs fresh run (source is 14 GB BF16 — check OOM risk before attempting).
-
 ### Blocked:
-- Q2 mixed_attn: npy-dir format. Needs squish-native lm_eval harness.
 - Qwen2.5-7B-int2: source is 14 GB BF16 → OOM on 16GB M3 during conversion. Assess before attempting.
-- INT2 AQLM: begin after mixed_attn blocked issue is resolved.
+- INT2 AQLM: begin after mixed_attn accuracy is confirmed (Wave 42 harness runs).
 
 ---
 

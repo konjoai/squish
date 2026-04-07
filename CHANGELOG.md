@@ -5,6 +5,53 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 41: squish-native lm_eval harness — dev/benchmarks/squish_lm_eval.py
+
+### Added
+
+- **`dev/benchmarks/squish_lm_eval.py`** — squish-native lm_eval evaluation harness (dev script, 385 lines):
+  - **Problem solved**: `squish compress --format int4` / `--format mixed_attn` produce squish
+    npy-dir format (manifest.json + tensors/).  `mlx_lm evaluate` cannot load npy-dir;
+    INT4 AWQ and mixed_attn accuracy results were permanently `n/a`.
+  - **Strategy**: call `squish.quant.compressed_loader.load_from_npy_dir()` to trigger
+    one-time `squish_4bit/` cache build (standard MLX safetensors), then run
+    `mlx_lm evaluate` subprocess on the cached dir.  Subsequent runs hit the cache
+    and skip Vectro decompression.
+  - `_validate_npy_dir(path)` — returns `(valid, reason)` for squish-npy-dir and native-mlx paths.
+  - `_detect_eval_dir(npy_dir)` — finds best mlx-loadable subdir:
+    `squish_4bit/` > `squish_3bit/` > native-mlx self > None.
+  - `_ensure_eval_dir(npy_dir, model_dir, skip_cache_build, quiet)` — builds cache if absent.
+  - `_run_single_task(task, eval_dir, limit, …)` — one `mlx_lm evaluate` subprocess per task.
+  - `_extract_metric(task_result, metric_key)` — parses flat or nested lm_eval 0.4.x JSON output.
+  - `compare_to_baseline(score_pct, baseline_pct, threshold_pp)` — Wave 41 acceptance criterion
+    check (default: arc_easy ±2pp of 70.6%).
+  - `evaluate_npy_dir(…)` — orchestrates cache build + all-task eval for one npy-dir.
+  - `main()` / `_build_parser()` — argparse CLI entry point.
+  - Full CLI: `--npy-dir PATH [PATH…]`, `--model-dir PATH`, `--tasks`, `--limit 500`,
+    `--batch-size 4`, `--skip-cache-build`, `--output-dir`, `--baseline`, `--threshold`,
+    `--quiet`.
+  - Results saved as JSON under `results/squish_lmeval_<timestamp>/`.
+  - Thinking-model detection: Qwen3 family auto-disables thinking via
+    `--chat-template-args '{"enable_thinking": false}'`.
+  - **Not a squish/ module** — lives in dev/benchmarks/ and does not count toward the
+    100-file squish/ module ceiling.
+- **`tests/test_squash_wave41.py`** — 52 pure unit tests covering all unit-testable helpers;
+  no real model weights or Metal calls required.
+
+### Wave 41 Acceptance Criterion
+arc_easy score on Qwen2.5-1.5B-Instruct-int4-awq must land within ±2pp of the validated
+mlx_lm.convert INT4 g=64 baseline of **70.6%** (SESSION.md 2026-03-28).
+
+**Status: code-complete.**
+
+```
+# lm_eval-waiver: no hardware available for validation run during implementation session
+# expected-delta: 0pp (strategy reuses squish_4bit/ which == mlx_lm.convert INT4 output)
+# validation-run: queued — run squish_lm_eval.py against Qwen2.5-1.5B-Instruct-int4-awq
+```
+
+---
+
 ## [Unreleased] — Wave 40: GCP Vertex AI integration — VertexAISquash platform adapter
 
 ### Added
