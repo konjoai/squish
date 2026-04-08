@@ -2498,7 +2498,7 @@ def cmd_compress(args):  # pragma: no cover
             p for p in _attn_passthrough if p not in existing_pt
         ]
         if not getattr(args, "int4_group_size", None):
-            args.int4_group_size = 16
+            args.int4_group_size = 32
         _compress_format = "int4"   # use the standard INT4 pipeline
     elif _compress_format == "int8":
         # Explicit int8: override any --int4 flag
@@ -2840,7 +2840,7 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         cmd.append("--int4")
     _effective_g = getattr(args, "int4_group_size", None)
     if _run_awq and _effective_g is None:
-        _effective_g = 16  # AWQ optimal group size: finer scales match activation-scaled weights
+        _effective_g = 32  # MLX requires group_size ∈ {32, 64, 128}; 32 is the finest supported
     if _effective_g is not None:
         cmd += ["--int4-group-size", str(_effective_g)]
     if getattr(args, "aqlm", False):
@@ -2920,7 +2920,7 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
 
         _awq_grp: int | None = None
         if _use_int4:
-            _awq_grp = getattr(args, "int4_group_size", None) or (16 if _run_awq else 64)
+            _awq_grp = getattr(args, "int4_group_size", None) or (32 if _run_awq else 64)
 
         # Best-effort HF repo: catalog lookup → fallback to model_dir name.
         _hf_repo: str | None = None
@@ -5791,10 +5791,8 @@ Ollama drop-in:
         default=None,
         dest="int4_group_size",
         metavar="N",
-        help="Override per-group size for INT4 quantization (power of two ≤ 32 "
-             "that divides the weight matrix column count). "
-             "Default: 16 when AWQ is active, 32 otherwise. "
-             "Use 16 for finer-grained scales at ~2× scale storage overhead.",
+        help="Override per-group size for INT4 quantization. Must be one of {32, 64, 128} "
+             "(MLX constraint). Default: 32 when AWQ is active, 64 otherwise.",
     )
     p_compress.add_argument(
         "--format",
@@ -6052,7 +6050,7 @@ Ollama drop-in:
     )
     p_export.add_argument(
         "--group-size", type=int, default=0, metavar="N", dest="group_size",
-        help="INT4 group size (default: auto-detected from first tensor, typically 16)",
+        help="INT4 group size (default: auto-detected from first tensor, typically 32)",
     )
     p_export.add_argument(
         "--force", action="store_true", default=False,

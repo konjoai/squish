@@ -5,6 +5,67 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 42: bias formula fix + INT4 AWQ lm_eval validation (arc_easy PASS)
+
+### Fixed
+
+- **`squish/cli.py`** — Default `int4_group_size` changed 16 → 32 in 3 locations. MLX
+  `mx.quantize()` only supports `group_size ∈ {32, 64, 128}`; g=16 silently produced
+  malformed quantized tensors.
+
+- **`squish/quant/compressed_loader.py`** — 6 bugs fixed in `_build_squish_4bit_dir`:
+
+  1. **Attention bias vectors** (`.bias`) no longer stored as `QuantizedLinear`. The lookup
+     key is `<layer>.weight`; all other suffixes are stored as BF16 passhthroughs.
+
+  2. **1D norm weights** (LayerNorm / RMSNorm `.weight`) stored as BF16 via ndim check
+     (`_orig_ndim < 2`). Previously mislabelled as INT4 quantized, causing MLP math errors.
+
+  3. **CRITICAL — bias formula corrected.** Old formula: `biases = -zeros / scales ≈ 6.5`
+     produced near-random model output. Correct formula: `biases = zeros` (direct copy).
+     Root cause: Vectro and MLX both use unsigned asymmetric decode `x = zeros + q * scales`,
+     so `biases = zeros` and `scales = scales` — not a sign-flip.
+
+  4. **Group-size detection** skips 1D tensors and validates `_gs ∈ {32, 64, 128}` before
+     passing to `mx.quantize()`. Previously crashed with g=16 and misbehaved on 1D probes.
+
+  5. **`squish_4bit` build** moved inside `else:` block so it only runs when `_gs` is valid.
+
+  6. **Docstring corrected** — old comment described the wrong formula
+     (`biases = −offsets/scales`); now states `biases = zeros (direct copy)`.
+
+### Validated (Wave 42 acceptance run — INT4 AWQ g=32 Qwen2.5-1.5B)
+
+Benchmark: `squish_lm_eval.py --npy-dir .../int4-awq --model-dir .../bf16 --limit 500`
+Model: Qwen2.5-1.5B-Instruct, squish INT4 AWQ g=32, squish_4bit cache, mlx_lm 0.4.11
+
+| Task | squish INT4 AWQ g=32 | mlx_lm.convert INT4 g=64 baseline | Δ |
+|---|---|---|---|
+| arc_easy | **70.8%** ✅ PASS | 70.6% | +0.2pp |
+| arc_challenge | **44.4%** | 43.6% | +0.8pp |
+| hellaswag | TBD (benchmark running) | 54.8% | — |
+| winogrande | TBD | 61.0% | — |
+| piqa | TBD | 73.2% | — |
+| openbookqa | TBD | 38.6% | — |
+
+**lm_eval-waiver status: CLOSED** — arc_easy 70.8% is within ±2pp of 70.6% baseline.
+Remaining 4 tasks pending benchmark completion; results will be recorded in SESSION.md
+and CLAUDE.md accuracy table.
+
+### Known Issues
+
+- **mixed_attn compression broken** — AWQ calibration failed silently during
+  `squish compress --format mixed_attn`.  Evidence: INT4 AWQ npy-dir contains 245
+  `__q4a.npy` files (AWQ worked); mixed_attn npy-dir contains only 59 (57 are 1D norm
+  weights correctly stored as BF16; only 2 actual weight matrices are INT4).
+  Root cause: raw unscaled Qwen2.5 MLP weights have outlier ratio ≈ 28.5 > `has_outliers()`
+  threshold of 20.0; without AWQ pre-scaling almost all MLP tensors fall back to BF16.
+  mixed_attn squish_4bit is effectively a BF16 model — benchmark results are invalid.
+  **Fix queued for Wave 43**: re-run compress with visible AWQ output; verify `__q4a.npy`
+  count ≈ 245 before launching benchmark.
+
+---
+
 ## [Unreleased] — Wave 41: squish-native lm_eval harness — dev/benchmarks/squish_lm_eval.py
 
 ### Added

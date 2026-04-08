@@ -270,6 +270,7 @@ _Qwen3 models: thinking disabled (`--chat-template-args '{"enable_thinking": fal
 | gemma-3-4b | INT3 | 64.4% | 46.4% | 44.6% | 59.4% | 71.8% | 39.2% | **−16.4pp** | **UNSAFE** — gemma family INT3-unsafe at ≤4B |
 | gemma-3-4b | INT2 | 30.4% | 23.8% | 29.8% | 48.4% | 52.6% | 26.0% | −50.4pp | incoherent — near-random |
 | Qwen2.5-1.5B | INT4 | 70.6% | 43.6% | 54.8% | 61.0% | 73.2% | 38.6% | — | mlx_lm.convert g=64 baseline |
+| Qwen2.5-1.5B | INT4 AWQ g=32 (squish) | 70.8% | 44.4% | TBD | TBD | TBD | TBD | +0.2pp | Wave 42; squish_4bit; g=32 fix; 4 tasks pending |
 | Qwen2.5-1.5B | INT3 | 67.2% | 41.6% | 50.6% | 59.4% | 70.8% | 37.2% | −3.4pp | below 72% gate → "efficient" tier only |
 | Qwen2.5-1.5B | INT2 | 29.8% | 24.4% | 24.6% | 51.0% | 51.6% | 29.8% | −40.8pp | incoherent — near-random |
 | Qwen2.5-7B | INT4 | 83.0% | 58.8% | 59.4% | 67.4% | 73.8% | 43.0% | — | baseline |
@@ -285,7 +286,7 @@ _Qwen3 models: thinking disabled (`--chat-template-args '{"enable_thinking": fal
 | Format | Code status | lm_eval status | arc_easy baseline | Notes |
 |---|---|---|---|---|
 | INT4 (mlx g=64, mlx_lm.convert) | production | ✅ validated | 70.6% (Qwen2.5-1.5B) | mlx_lm.convert baseline. squish compress INT4 = npy-dir (not lm_evaluable). |
-| INT4 AWQ g=16 (squish npy-dir) | production | ❌ npy-dir format | n/a | Squish serve only; cannot be evaluated via mlx_lm evaluate. |
+| INT4 AWQ g=32 (squish npy-dir) | production | ✅ validated (partial) | **70.8%** (Qwen2.5-1.5B, Wave 42) | +0.2pp vs mlx baseline. g=16 bug fixed to g=32 (W42). arc_easy + arc_challenge confirmed; 4 tasks pending. |
 | INT3 g=32 (squish compress / mlx_lm.convert) | production | ✅ validated | **67.2%** (Qwen2.5-1.5B, 2026-03-28) | −3.4pp vs INT4. Below 72% gate. "Efficient" tier. gemma family **UNSAFE at ≤4B**. Qwen3-4B **UNSAFE (−14.8pp)**. |
 | mixed_attn (FP16 attn + INT4 MLP) | code-complete | ❌ npy-dir format | n/a | squish npy-dir format only. Needs lm_eval harness to measure. |
 | INT2 (naive uniform) | research-only | ❌ coherence failure | ~27–30% | Confirmed incoherent across all 0.6B–7B families. Never ship. |
@@ -293,7 +294,7 @@ _Qwen3 models: thinking disabled (`--chat-template-args '{"enable_thinking": fal
 | INT2 (SpQR / mixed-layer) | experimental stub | ⚠️ unvalidated | — | Keep outliers in FP16, compress FFN to 2bpw. |
 
 - **INT4 mlx g=64 is the production baseline for lm_eval comparisons (70.6% arc_easy, Qwen2.5-1.5B).**
-- **squish compress --format int4/mixed_attn writes squish npy-dir format** — NOT loadable by mlx_lm. Only available via squish serve.
+- **squish compress --format int4/mixed_attn writes squish npy-dir format** — NOT loadable by mlx_lm directly. Use `squish_lm_eval.py` (W41) to evaluate via squish_4bit cache. `squish serve` uses the npy-dir directly.
 - **squish compress --format int3 uses mlx_lm.convert with g=32** — DOES produce mlx safetensors. `_INT3_GROUP_SIZE` was a bug (16→32 fixed; MLX only supports g ∈ {32,64,128}).
 - **INT3 δ = −3 to −5pp for Qwen2.5 and Llama families.** Coherent and usable as "efficient" tier. INT4 stays default.
 - **INT3 is UNSAFE for the gemma family at ≤4B** (gemma-3-1b: −15.2pp; gemma-3-4b: −16.4pp). Never recommend INT3 for gemma models until ≥7B data confirms safety.

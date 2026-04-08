@@ -1002,9 +1002,9 @@ def _build_squish_4bit_dir(  # pragma: no cover
     a BF16 intermediate, then persists as a valid mlx_lm safetensors model.
 
     Format conversion (preserves Vectro's MSE-optimal calibration):
-      Vectro decode:  x = offsets + q * scales   (offsets = group min; q ∈ [0,15])
-      MLX decode:     x = (q - biases) * scales
-      Equivalence:    biases = −offsets / scales   (stored as float16)
+      Vectro decode:  x = zeros + q * scales   (zeros = group min; q ∈ [0,15])
+      MLX decode:     x = biases + q * scales   (same unsigned asymmetric formula)
+      Equivalence:    biases = zeros  (direct copy; scales = scales)
 
     Nibble packing compatibility (both use identical little-endian nibble order):
       Vectro uint8 (n, k//2):  low_nibble = w[2j],  high_nibble = w[2j+1]
@@ -1055,8 +1055,26 @@ def _build_squish_4bit_dir(  # pragma: no cover
         _s4a = tensor_dir / f"{sk}__s4a.npy"
         _z4a = tensor_dir / f"{sk}__z4a.npy"
 
-        if _npy_exists(_q4a) and _npy_exists(_s4a) and _npy_exists(_z4a):
+        if _npy_exists(_q4a) and _npy_exists(_s4a) and _npy_exists(_z4a) and orig.endswith(".weight"):
             # ── INT4 asymmetric: zero-copy nibble repack + format conversion ──
+            # Only 2-D weight matrices go into QuantizedLinear format (Linear layers).
+            # 1-D weight vectors (LayerNorm .weight, embeddings of rank ≤ 1) do NOT —
+            # they have no .scales/.biases counterpart in the MLX model architecture.
+            # Also skip bias vectors (.bias) — no QuantizedLinear slots for those either.
+            _shape_path = tensor_dir / f"{sk}__shape.npy"
+            _orig_ndim = 2  # default to 2D if shape file is missing
+            if _npy_exists(_shape_path):
+                try:
+                    _orig_ndim = len(_load_npy_path(_shape_path, mmap_mode='r'))
+                except Exception:
+                    pass
+            if _orig_ndim < 2:
+                # 1-D vector: store as plain BF16, not QuantizedLinear
+                _arr_f32 = _dequantize_npy_dir(tensor_dir, sk)
+                weight_dict[orig] = mx.array(_arr_f32).astype(mx.bfloat16)
+                del _arr_f32
+                _n_other += 1
+                continue
             packed_u8  = np.ascontiguousarray(_load_npy_path(_q4a, mmap_mode=None), dtype=np.uint8)
             scales_f32 = np.ascontiguousarray(_load_npy_path(_s4a, mmap_mode=None), dtype=np.float32)
             zeros_f32  = np.ascontiguousarray(_load_npy_path(_z4a, mmap_mode=None), dtype=np.float32)
@@ -1064,13 +1082,15 @@ def _build_squish_4bit_dir(  # pragma: no cover
             # Repack: uint8 (n, k//2) → uint32 (n, k//8); same nibble bit layout.
             packed_u32 = packed_u8.view(np.uint32)
 
-            # Convert Vectro → MLX bias format:
-            #   Vectro: x = zeros + q * scales
-            #   MLX:    x = (q - biases) * scales  ⟹  biases = −zeros / scales
-            _safe_s = np.where(np.abs(scales_f32) < 1e-10, 1.0, scales_f32)
-            biases_f16 = np.clip(-(zeros_f32 / _safe_s), -65504.0, 65504.0).astype(np.float16)
+            # Vectro and MLX use the same unsigned asymmetric INT4 decode formula:
+            #   Vectro: x = zeros + q * scales   (q ∈ [0,15], zeros = group min)
+            #   MLX:    x = biases + q * scales   (same formula, same convention)
+            # Direct mapping: biases = zeros (group minimum), scales = scales (step size).
+            # Previous code wrongly computed biases = −zeros/scales (≈ 6.5) which made
+            # all decoded weights near-constant → near-random output (24% arc_easy).
+            biases_f16 = zeros_f32.astype(np.float16)
 
-            base_name = orig[:-len(".weight")] if orig.endswith(".weight") else orig
+            base_name = orig[:-len(".weight")]
             weight_dict[orig]                = mx.array(packed_u32)
             weight_dict[base_name + ".scales"] = mx.array(scales_f32.astype(np.float16))
             weight_dict[base_name + ".biases"] = mx.array(biases_f16)
@@ -1600,58 +1620,79 @@ def load_from_npy_dir(  # pragma: no cover
     _q4a_sks = [sk for sk in base_keys
                 if _npy_exists(tensor_dir / f"{sk}__q4a.npy")]
     if _q4a_sks and not _four_bit_ready.exists() and auto_quantize_bits is None:
-        # Detect group_size from the first INT4 tensor
-        try:
-            _p0 = _load_npy_path(tensor_dir / f"{_q4a_sks[0]}__q4a.npy", mmap_mode='r')
-            _s0 = _load_npy_path(tensor_dir / f"{_q4a_sks[0]}__s4a.npy", mmap_mode='r')
-            _gs = int(_p0.shape[1] * 2 // _s0.shape[1]) if _s0.shape[1] > 0 else 64
-            del _p0, _s0
-        except Exception:
-            _gs = 64
-        if verbose:
-            print(f"  ⚡ INT4 asymmetric detected ({len(_q4a_sks)} layers, group_size={_gs})")
-            print("    Building squish_4bit/ cache (once — subsequent loads skip Vectro)")
-        try:
-            _build_squish_4bit_dir(
-                dir_path=dir_path,
-                tensor_dir=tensor_dir,
-                base_keys=base_keys,
-                safe_to_original=safe_to_original,
-                model_dir=model_dir,
-                group_size=_gs,
-                verbose=verbose,
-            )
-            # Load the freshly-built INT4 model via mlx_lm.load()
-            import mlx_lm as _mlx_lm_4bit_new
-            _rss0 = _rss_mb()
-            _t0_4b = time.perf_counter()
-            _model_4b, _tok_4b, *_ = _mlx_lm_4bit_new.load(str(_four_bit_dir))
-            _load_s_4b = time.perf_counter() - _t0_4b
-            _rss1 = _rss_mb()
+        # Detect group_size from the first INT4 tensor that is a 2-D weight matrix.
+        # 1-D norm vectors also have __q4a.npy files but don't carry valid group-size
+        # information (their packed shapes aren't 2-D) and must be excluded here.
+        # MLX only supports group_size ∈ {32, 64, 128}; if the compressed model used
+        # a smaller group (e.g. the old default g=16), we cannot build squish_4bit.
+        _MLX_VALID_GROUP_SIZES = {32, 64, 128}
+        _gs = None
+        for _sk_probe in _q4a_sks:
+            try:
+                _p0 = _load_npy_path(tensor_dir / f"{_sk_probe}__q4a.npy", mmap_mode='r')
+                _s0 = _load_npy_path(tensor_dir / f"{_sk_probe}__s4a.npy", mmap_mode='r')
+                if _p0.ndim < 2 or _s0.ndim < 2 or _s0.shape[1] == 0:
+                    continue  # 1-D norm tensor — skip
+                _gs_cand = int(_p0.shape[1] * 2 // _s0.shape[1])
+                del _p0, _s0
+                if _gs_cand in _MLX_VALID_GROUP_SIZES:
+                    _gs = _gs_cand
+                    break
+            except Exception:
+                continue
+        if _gs is None:
+            # No valid group_size found — squish_4bit is not buildable for this model.
+            # This happens if all INT4 tensors use g=16 (old squish default before fix).
+            # Fall through to the BF16 fallback; re-compress the model with g∈{32,64,128}.
             if verbose:
-                print(f"  INT4 model loaded in {_load_s_4b:.2f}s  "
-                      f"(RAM Δ {_rss1 - _rss0:+.0f} MB)")
-            _stats_4b = {
-                "loader": "squish-4bit-native",
-                "decompression_time_s": _load_s_4b,
-                "ram_delta_mb": _rss1 - _rss0,
-                "ram_baseline_mb": _rss0,
-            }
-            if return_stats:
-                return _model_4b, _tok_4b, _stats_4b
-            return _model_4b, _tok_4b
-        except Exception as _e4b:
+                print("  ⚠  INT4 tensors found but group_size is not MLX-compatible "
+                      "(expected ∈ {32,64,128}). Re-compress with `squish compress "
+                      "--format int4` (new default is g=32). Falling back to BF16.")
+        else:
             if verbose:
-                print(f"  WARNING: INT4 native build failed ({_e4b!r}); "
-                      f"falling back to BF16 dequantization path")
-            # Remove partial squish_4bit/ to avoid a corrupt partial state
-            import shutil as _shutil_4b
-            _squish4_partial = dir_path / "squish_4bit"
-            if _squish4_partial.exists():
-                _shutil_4b.rmtree(str(_squish4_partial))
-            if _four_bit_ready.exists():
-                _four_bit_ready.unlink()
-            # Fall through to the standard Vectro BF16 path below
+                print(f"  ⚡ INT4 asymmetric detected ({len(_q4a_sks)} layers, group_size={_gs})")
+                print("    Building squish_4bit/ cache (once — subsequent loads skip Vectro)")
+            try:
+                _build_squish_4bit_dir(
+                    dir_path=dir_path,
+                    tensor_dir=tensor_dir,
+                    base_keys=base_keys,
+                    safe_to_original=safe_to_original,
+                    model_dir=model_dir,
+                    group_size=_gs,
+                    verbose=verbose,
+                )
+                # Load the freshly-built INT4 model via mlx_lm.load()
+                import mlx_lm as _mlx_lm_4bit_new
+                _rss0 = _rss_mb()
+                _t0_4b = time.perf_counter()
+                _model_4b, _tok_4b, *_ = _mlx_lm_4bit_new.load(str(_four_bit_dir))
+                _load_s_4b = time.perf_counter() - _t0_4b
+                _rss1 = _rss_mb()
+                if verbose:
+                    print(f"  INT4 model loaded in {_load_s_4b:.2f}s  "
+                          f"(RAM Δ {_rss1 - _rss0:+.0f} MB)")
+                _stats_4b = {
+                    "loader": "squish-4bit-native",
+                    "decompression_time_s": _load_s_4b,
+                    "ram_delta_mb": _rss1 - _rss0,
+                    "ram_baseline_mb": _rss0,
+                }
+                if return_stats:
+                    return _model_4b, _tok_4b, _stats_4b
+                return _model_4b, _tok_4b
+            except Exception as _e4b:
+                if verbose:
+                    print(f"  WARNING: INT4 native build failed ({_e4b!r}); "
+                          f"falling back to BF16 dequantization path")
+                # Remove partial squish_4bit/ to avoid a corrupt partial state
+                import shutil as _shutil_4b
+                _squish4_partial = dir_path / "squish_4bit"
+                if _squish4_partial.exists():
+                    _shutil_4b.rmtree(str(_squish4_partial))
+                if _four_bit_ready.exists():
+                    _four_bit_ready.unlink()
+                # Fall through to the standard Vectro BF16 path below
 
     # ── Tier 0d: INT3-native path — build squish_3bit/ from Q3 files ─────────
     # If __q3.npy files exist and squish_3bit/ hasn't been built yet, convert

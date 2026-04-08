@@ -6,10 +6,11 @@
 ---
 
 ## Current date
-2026-04-07
+2026-04-08
 
 ## Last commits
-- **`(w41)`** — feat(wave41): squish-native lm_eval harness — dev/benchmarks/squish_lm_eval.py (52 tests, 4642 suite)
+- **`(w42 — TBD hash)`** — fix(wave42): bias formula + norm exclusion + g=32 default; INT4 AWQ arc_easy 70.8% PASS
+- `98885d0 (w41)` — feat(wave41): squish-native lm_eval harness — dev/benchmarks/squish_lm_eval.py (52 tests, 4642 suite)
 - `d20b0ea` — feat(wave40): GCP Vertex AI integration — VertexAISquash platform adapter (24 tests)
 - `ebbb56b` — fix(ci): resolve 4 test failures
 - `3c3a0d5` — feat(wave38): AQLM dequantization module (AQLMConfig, AQLMCodebook, AQLMLayer)
@@ -55,8 +56,8 @@ mlx_lm.convert (g=64 INT4, g=32 INT3, g=64 INT2) — NOT squish compress AWQ.
 | Format | arc_easy | arc_challenge | hellaswag | winogrande | piqa | openbookqa | Notes |
 |---|---|---|---|---|---|---|---|
 | INT3 g=32 (squish compress) | **67.20% ±2.1%** | 41.60% | 50.60% | 59.40% | 70.80% | 37.20% | Below 72% gate — INT4 stays default |
-| INT4 AWQ g=16 (squish) | n/a | n/a | n/a | n/a | n/a | n/a | npy-dir — not lm_evaluable |
-| mixed_attn (squish) | n/a | n/a | n/a | n/a | n/a | n/a | npy-dir — not lm_evaluable |
+| INT4 AWQ g=32 (squish) | **70.8% ✅** | **44.4%** | TBD | TBD | TBD | TBD | W42 PASS (+0.2pp). 4 tasks still running. |
+| mixed_attn (squish) | n/a — broken compress | n/a | n/a | n/a | n/a | n/a | AWQ failed silently → effectively BF16. Fix in W43. |
 
 **Q1 DECISION: INT4 is default. INT3 = "efficient" memory-saving option (-3.4pp arc_easy, -3.8x disk).**
 
@@ -99,33 +100,33 @@ AFRESH BENCH IS RUNNING (PID 42230, started 2026-03-28, log: /tmp/squish_bench_o
 |---|---|---|---|---|
 | INT4 mlx g=64 | ✅ | ✅ | **70.6%** | Production default (validated) |
 | INT3 g=32 (squish) | ✅ | ✅ | **67.2% ±2.1%** | Q1 ANSWERED. -3.4pp. Memory-efficiency option. |
-| mixed_attn | ✅ | ❌ BLOCKED | — | npy-dir format — not lm_evaluable until harness built |
+| INT4 AWQ g=32 (squish) | ✅ | ✅ (partial) | **70.8% ✅** | W42 PASS. arc_easy+arc_challenge confirmed. 4 tasks pending. |
+| mixed_attn | ✅ | ❌ broken compress | — | AWQ calibration failed → ~BF16 quality. Fix W43. |
 | Qwen3 alpha=0.07 | ✅ | ✅ | confirmed fix | hellaswag inversion resolved |
 | INT2 naive | ✅ | ❌ broken | ~28% | Coherence collapse confirmed. Never expose as production. |
-| INT2 AQLM | stub | ⚠️ unrun | — | Begin after mixed_attn harness built |
+| INT2 AQLM | stub | ⚠️ unrun | — | Begin after mixed_attn compress is fixed |
 
 ---
 
 ## Open questions
 
-1. **INT3 g=32 squish compress ≥72% on Qwen2.5-1.5B?** → ✅ **ANSWERED: NO — 67.20% ±2.1%.**  
-   squish compress --format int3 uses g=32 (MLX only supports 32/64/128; g=16 was a bug — fixed).  
-   Result matches overnight mlx_lm.convert g=32 baseline exactly.  
-   **Decision: INT4 stays default. INT3 = memory-efficiency option ("efficient" tier).**  
-   gemma-3-1b INT3-sensitive (-15.2pp at g=32). Do not recommend INT3 for 1b class.  
-   Note: `_INT3_GROUP_SIZE` bug fixed in squish/cli.py (16→32). 3562 tests pass.
+1. **INT4 AWQ g=32 arc_easy = 70.8% PASS** ✅ (W42 — lm_eval-waiver CLOSED)
+   - arc_challenge = 44.4% (+0.8pp vs 43.6% baseline)
+   - hellaswag / winogrande / piqa / openbookqa: benchmark still running (terminal `3af20b5b`)
+   - When complete, update CLAUDE.md accuracy table TBD cells and SESSION.md
 
-2. **Does mixed_attn improve piqa/winogrande vs INT4 g=16?** → ❌ **BLOCKED (format issue).**  
-   `squish compress --format mixed_attn` writes squish npy-dir format that `mlx_lm.load()` cannot load.  
-   Standard bench harness (`mlx_lm evaluate`) cannot evaluate this model.  
-   To unblock: build a squish npy-dir → lm_eval adapter (squish_lm_eval.py for MLX), OR  
-   convert npy-dir → mlx safetensors via a passthrough export step.
+2. **INT4 AWQ arc_easy open question:** ANSWERED — 70.8% (within ±2pp of 70.6% baseline) ✅
 
-3. **Qwen3 alpha=0.07 hellaswag inversion resolved?** → ✅ **ANSWERED: YES.**  
-   Pre-fix (2026-03-22, alpha=0.10): INT3 hellaswag=36.2 > INT4=31.2 (anomalous inversion).  
-   Post-fix overnight: INT3 hellaswag=32.0 < INT4=33.0 (correct ordering, inversion gone).
+3. **Does mixed_attn improve piqa/winogrande vs INT4?** ❌ **BLOCKED — compress broken (W42 discovery).**
+   mixed_attn npy-dir has 59 `__q4a.npy` (57 are 1D norms; only 2 actual matrices INT4).
+   AWQ calibration failed silently during compression. gate_proj outlier ratio=28.5 > threshold=20.0
+   without AWQ pre-scaling → almost all MLP tensors stored as BF16 passthrough.
+   Fix for W43: re-run `squish compress --format mixed_attn` with visible output; verify
+   `__q4a.npy` count ≈ 245 before launching benchmark.
 
-4. **INT2 AQLM path** → Begin after Q2 (mixed_attn) is answered.
+4. **Qwen3 alpha=0.07 hellaswag inversion resolved?** → ✅ **ANSWERED: YES.** (unchanged)
+
+5. **INT2 AQLM path** → Begin after mixed_attn compress is fixed (W43+).
 
 ---
 
@@ -184,34 +185,47 @@ All `Qwen3-*` models auto-detected. Qwen2.5 unaffected.
 - Stale Qwen3-4B-int4 score corrected (73.2% thinking-disabled, was 41% invalid).
 - 4562 tests passing. No code changes. No regressions.
 
-### Immediate next task (Wave 42 options)
+### Immediate next task (Wave 43)
 
-1. **Run the harness — validate INT4 AWQ score** (hardware needed):
+**Priority 1: Complete INT4 AWQ benchmark results**
+When terminal `3af20b5b` finishes (hellaswag, winogrande, piqa, openbookqa), read scores:
+```bash
+for task in hellaswag winogrande piqa openbookqa; do
+  f=$(ls /Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-int4-awq/$task/eval__* 2>/dev/null | head -1)
+  [ -n "$f" ] && python3 -c "import json; d=json.load(open('$f')); t=d.get('$task',{}); print('$task:', t.get('acc_norm,none', t.get('acc,none', 'n/a')))"
+done
+```
+Update CLAUDE.md table TBD cells and this SESSION.md.
+
+**Priority 2: Fix mixed_attn compression (AWQ failure)**
+Root cause: AWQ calibration ran but produced negligible scale reduction (or was silently skipped).
+Steps:
+1. Delete existing broken npy-dir: `rm -rf ~/models/Qwen2.5-1.5B-Instruct-mixed-attn`
+2. Re-run with verbose output — do NOT pipe to `tail`:
    ```bash
-   python3 dev/benchmarks/squish_lm_eval.py \
-       --npy-dir ~/models/Qwen2.5-1.5B-Instruct-int4-awq \
-       --model-dir ~/models/Qwen2.5-1.5B-Instruct \
-       --limit 500 --baseline 70.6
+   squish compress --format mixed_attn ~/models/Qwen2.5-1.5B-Instruct-bf16 ~/models/Qwen2.5-1.5B-Instruct-mixed-attn 2>&1
    ```
-   Target: 68.6–72.6% arc_easy (±2pp of 70.6% baseline).
+3. Verify AWQ ran: check `__q4a.npy` count ≈ 245  
+   `find ~/models/Qwen2.5-1.5B-Instruct-mixed-attn -name '__q4a.npy' | wc -l`
+4. Only launch benchmark AFTER verifying count.
 
-2. **Run mixed_attn harness** (unblocked by Wave 41):
-   ```bash
-   python3 dev/benchmarks/squish_lm_eval.py \
-       --npy-dir ~/models/Qwen2.5-1.5B-Instruct-mixed-attn \
-       --model-dir ~/models/Qwen2.5-1.5B-Instruct \
-       --limit 500
-   ```
+**Priority 3: Azure DevOps integration** (`squish/squash/integrations/azure_devops.py`)
 
-3. **Azure DevOps Extension** — `squish/squash/integrations/azure_devops.py`
-   (next integration after Vertex AI, per squash integrations roadmap).
+### COMPLETED (Wave 42 — 2026-04-08 session)
 
-4. **INT2 AQLM encode path** — compress-side using aqlm.py decode as target.
-   (aqlm.py decode side was Wave 38.)
+**Bug fixes: 6 bugs in `compressed_loader.py` + 1 in `cli.py`.**
+- CRITICAL: bias formula corrected (`biases = zeros`, not `-zeros/scales`)
+- 1D norm weights stored as BF16 (ndim check)
+- Attention bias vectors excluded from QuantizedLinear
+- group_size default 16→32 in cli.py (3 locations)
+- group_size validation ∈ {32,64,128} in loader
+- squish_4bit build inside else: block
+- Docstring corrected
 
-### Blocked:
-- Qwen2.5-7B-int2: source is 14 GB BF16 → OOM on 16GB M3 during conversion. Assess before attempting.
-- INT2 AQLM: begin after mixed_attn accuracy is confirmed (Wave 42 harness runs).
+**INT4 AWQ g=32 arc_easy = 70.8% PASS** (lm_eval-waiver CLOSED).  
+Tests: 4642 passing (all green). No regressions.
+
+### COMPLETED (2026-03-31 / 2026-04-01 sessions)
 
 ---
 
