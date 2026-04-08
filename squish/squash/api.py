@@ -14,6 +14,7 @@ Exposes the full Squash engine over HTTP.  Core endpoints:
     POST /attest/wandb         — offline attestation for W&B artifacts
     POST /attest/huggingface   — attestation with optional HuggingFace Hub push
     POST /attest/langchain     — pre-deployment attestation for LangChain pipelines
+    POST /attest/mcp           — MCP tool manifest supply-chain attestation
 
 The server is zero-config: it discovers the squish model store automatically.
 Intended to run embedded alongside the squish inference server or as a
@@ -1111,6 +1112,18 @@ class AttestIntegrationRequest(BaseModel):
     fail_on_violation: bool = False
 
 
+class McpAttestRequest(BaseModel):
+    """Request body for POST /attest/mcp — MCP tool manifest attestation."""
+
+    catalog_path: str = Field(description="Absolute path to MCP tool catalog JSON file")
+    policy: str = Field(default="mcp-strict", description="Policy to apply (default: mcp-strict)")
+    sign: bool = Field(default=False, description="Sign catalog with Sigstore after scanning")
+    fail_on_violation: bool = Field(
+        default=False,
+        description="Return HTTP 422 if any error-severity finding is present",
+    )
+
+
 @app.post("/attest/mlflow")
 async def attest_mlflow(req: AttestIntegrationRequest) -> JSONResponse:
     """Run an offline AttestPipeline for an MLflow model artifact.
@@ -1248,6 +1261,33 @@ async def attest_langchain(req: AttestIntegrationRequest) -> JSONResponse:
         return JSONResponse(content=result, status_code=422)
     status = 200 if result.get("passed") else 400
     return JSONResponse(content=result, status_code=status)
+
+
+@app.post("/attest/mcp")
+async def attest_mcp(req: McpAttestRequest) -> JSONResponse:
+    """Scan an MCP tool manifest catalog for supply-chain threats.
+
+    Equivalent to ``squash attest-mcp <catalog_path> --policy mcp-strict``.
+
+    Addresses EU AI Act Art. 9(2)(d): adversarial input resilience for
+    agentic AI systems that invoke MCP tools at runtime.
+    """
+    _require_path(req.catalog_path)
+
+    from squish.squash.mcp import McpScanner, McpSigner  # lazy — keeps api.py import-fast
+
+    def _run() -> dict:
+        result = McpScanner.scan_file(Path(req.catalog_path), req.policy)
+        if req.sign:
+            McpSigner.sign(Path(req.catalog_path))
+        return result.to_dict()
+
+    loop = asyncio.get_running_loop()
+    mcp_result = await loop.run_in_executor(_executor, _run)
+    _COUNTERS["squash_attest_total"] += 1
+    if req.fail_on_violation and mcp_result.get("status") == "unsafe":
+        return JSONResponse(content=mcp_result, status_code=422)
+    return JSONResponse(content=mcp_result)
 
 
 def _require_path(p: str) -> None:

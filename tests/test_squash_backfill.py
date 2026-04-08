@@ -103,7 +103,7 @@ def test_sidecar_written_for_model_with_weights():
 
         with (
             patch("squish.squash.sbom_builder.CycloneDXBuilder.from_compress_run", side_effect=fake_from_compress_run),
-            patch("squish.squash.eval_binder.EvalBinder.bind"),
+            patch("squish.squash.sbom_builder.EvalBinder.bind"),
         ):
             status = bf.process_one(
                 "Qwen3-0.6B-int4",
@@ -142,7 +142,7 @@ def test_bind_called_when_result_exists():
 
         with (
             patch("squish.squash.sbom_builder.CycloneDXBuilder.from_compress_run", side_effect=fake_from_compress_run),
-            patch("squish.squash.eval_binder.EvalBinder.bind", side_effect=fake_bind),
+            patch("squish.squash.sbom_builder.EvalBinder.bind", side_effect=fake_bind),
         ):
             status = bf.process_one(
                 "Qwen3-0.6B-int4",
@@ -183,7 +183,7 @@ def test_no_overwrite_skips_existing_sidecar():
 
         with (
             patch("squish.squash.sbom_builder.CycloneDXBuilder.from_compress_run", side_effect=lambda m: build_calls.append(m)),
-            patch("squish.squash.eval_binder.EvalBinder.bind", side_effect=lambda *a, **kw: bind_calls.append(a)),
+            patch("squish.squash.sbom_builder.EvalBinder.bind", side_effect=lambda *a, **kw: bind_calls.append(a)),
         ):
             status = bf.process_one(
                 "Qwen3-0.6B-int3",
@@ -219,7 +219,7 @@ def test_bind_skipped_when_no_result_json():
 
         with (
             patch("squish.squash.sbom_builder.CycloneDXBuilder.from_compress_run", side_effect=fake_from_compress_run),
-            patch("squish.squash.eval_binder.EvalBinder.bind", side_effect=lambda *a, **kw: bind_calls.append(a)),
+            patch("squish.squash.sbom_builder.EvalBinder.bind", side_effect=lambda *a, **kw: bind_calls.append(a)),
         ):
             status = bf.process_one(
                 "Qwen3-0.6B-int4",
@@ -248,7 +248,7 @@ def test_dry_run_writes_nothing():
 
         with (
             patch("squish.squash.sbom_builder.CycloneDXBuilder.from_compress_run") as mock_build,
-            patch("squish.squash.eval_binder.EvalBinder.bind") as mock_bind,
+            patch("squish.squash.sbom_builder.EvalBinder.bind") as mock_bind,
         ):
             status = bf.process_one(
                 "Qwen3-0.6B-int4",

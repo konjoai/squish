@@ -1,4 +1,4 @@
-"""Wave 19 — SbomRegistry and EvalBinder (shim) tests."""
+"""Wave 19 — SbomRegistry and EvalBinder tests (W45: eval_binder shim deleted)."""
 from __future__ import annotations
 
 import base64
@@ -29,24 +29,14 @@ def _write_bom(path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# EvalBinder shim import test
+# EvalBinder import test (W45: eval_binder.py shim deleted — canonical location)
 # ---------------------------------------------------------------------------
 
 class TestEvalBinderShim(unittest.TestCase):
-    def test_import_from_eval_binder(self):
-        """EvalBinder is importable from eval_binder (shim) still works."""
-        from squish.squash.eval_binder import EvalBinder
-        self.assertIsNotNone(EvalBinder)
-
     def test_import_from_sbom_builder(self):
         """EvalBinder is importable from sbom_builder (canonical location)."""
         from squish.squash.sbom_builder import EvalBinder
         self.assertIsNotNone(EvalBinder)
-
-    def test_both_imports_are_same_class(self):
-        from squish.squash.eval_binder import EvalBinder as E1
-        from squish.squash.sbom_builder import EvalBinder as E2
-        self.assertIs(E1, E2)
 
     def test_eval_binder_has_bind(self):
         from squish.squash.sbom_builder import EvalBinder

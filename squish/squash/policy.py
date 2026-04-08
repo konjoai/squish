@@ -440,6 +440,84 @@ _POLICIES["strict"] = _POLICIES["enterprise-strict"]
 # mapping as FedRAMP Moderate (NIST SP 800-53) for SBOM / attestation.
 _POLICIES["cmmc"] = _POLICIES["fedramp"]
 
+# ── MCP server attestation policy (Wave 45) ───────────────────────────────────
+# Targets the MCP tools/list catalog rather than a CycloneDX SBOM.
+# Rules are evaluated by McpScanner.scan() — field paths are MCP-specific.
+_POLICIES["mcp-strict"] = [
+    {
+        "id": "MCP-001",
+        "field": "mcp:tool_descriptions",
+        "check": "non_empty",
+        "severity": "error",
+        "rationale": (
+            "EU AI Act Art. 9(2)(d): adversarial input resilience requires that "
+            "MCP tool descriptions contain no prompt-injection phrases that could "
+            "hijack an agentic LLM's system prompt."
+        ),
+        "remediation": "Remove or sanitize prompt-injection phrases from tool descriptions.",
+    },
+    {
+        "id": "MCP-002",
+        "field": "mcp:tool_params",
+        "check": "non_empty",
+        "severity": "error",
+        "rationale": (
+            "EU AI Act Art. 9(2)(d): SSRF and path-traversal vectors in parameter "
+            "defaults or descriptions can route model-generated requests to internal "
+            "infrastructure, violating network isolation requirements."
+        ),
+        "remediation": "Remove localhost, RFC1918, and cloud-metadata URL references.",
+    },
+    {
+        "id": "MCP-003",
+        "field": "mcp:tool_names",
+        "check": "non_empty",
+        "severity": "error",
+        "rationale": (
+            "Tool shadowing: a tool whose name matches a privileged OS command "
+            "(exec, shell, eval, sudo, etc.) may cause an agentic LLM to confuse "
+            "MCP invocation with direct system-level execution."
+        ),
+        "remediation": "Rename the tool to avoid collision with OS/runtime commands.",
+    },
+    {
+        "id": "MCP-004",
+        "field": "mcp:tool_entries",
+        "check": "non_empty",
+        "severity": "error",
+        "rationale": (
+            "MCP protocol integrity: every tool entry must declare name, description, "
+            "and inputSchema.  Missing fields prevent safe attestation and may cause "
+            "unpredictable agentic behavior."
+        ),
+        "remediation": "Ensure every tool object includes name, description, and inputSchema.",
+    },
+    {
+        "id": "MCP-005",
+        "field": "mcp:tool_params",
+        "check": "non_empty",
+        "severity": "warning",
+        "rationale": (
+            "HTTP endpoints resembling OOB beacons (path indicators /upload, /collect, "
+            "/beacon, /track; OAST domains) in parameter text may indicate a data "
+            "exfiltration vector. Review for legitimacy."
+        ),
+        "remediation": "Remove or document external HTTP endpoints in tool schema.",
+    },
+    {
+        "id": "MCP-006",
+        "field": "mcp:tool_descriptions",
+        "check": "non_empty",
+        "severity": "warning",
+        "rationale": (
+            "EU AI Act Art. 9: permission over-reach claims (admin, root, sudo, system "
+            "access) in tool metadata should be scrutinised to ensure least-privilege "
+            "design for the agentic system."
+        ),
+        "remediation": "Revise tool descriptions to reflect actual minimum required permissions.",
+    },
+]
+
 AVAILABLE_POLICIES: frozenset[str] = frozenset(_POLICIES.keys())
 
 

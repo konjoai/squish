@@ -594,7 +594,7 @@ def _save_model_result(
     # (written by `squish compress`), populate performanceMetrics immediately.
     # A missing sidecar or any bind failure must never abort a bench run.
     try:
-        from squish.squash.eval_binder import EvalBinder as _EB  # noqa: PLC0415
+        from squish.squash.sbom_builder import EvalBinder as _EB  # noqa: PLC0415
         _bom = Path(model_dir) / "cyclonedx-mlbom.json"
         if _bom.exists():
             _base_name = re.sub(r"-int[23]$", "-int4", model_name)

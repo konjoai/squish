@@ -669,6 +669,49 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     attest_lc_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
+    attest_mcp_cmd = sub.add_parser(
+        "attest-mcp",
+        help="Scan an MCP tool manifest catalog for supply-chain threats",
+        description=(
+            "Scan a Model Context Protocol (MCP) tools/list JSON catalog for six "
+            "threat classes: prompt injection, SSRF vectors, tool shadowing, "
+            "integrity gaps, data exfiltration patterns, and permission over-reach.\n\n"
+            "Addresses EU AI Act Art. 9(2)(d): adversarial input resilience for "
+            "agentic AI systems that invoke MCP tools at runtime.\n\n"
+            "Example: squash attest-mcp ./mcp_catalog.json --policy mcp-strict"
+        ),
+    )
+    attest_mcp_cmd.add_argument("catalog_path", help="Path to the MCP tool catalog JSON file")
+    attest_mcp_cmd.add_argument(
+        "--policy",
+        metavar="POLICY",
+        default="mcp-strict",
+        help="Policy template to apply (default: mcp-strict)",
+    )
+    attest_mcp_cmd.add_argument(
+        "--sign",
+        action="store_true",
+        help="Sign the catalog with Sigstore keyless signing after attestation",
+    )
+    attest_mcp_cmd.add_argument(
+        "--fail-on-violation",
+        action="store_true",
+        help="Exit 1 if any error-severity finding is present",
+    )
+    attest_mcp_cmd.add_argument(
+        "--json-result",
+        metavar="PATH",
+        default=None,
+        help="Write scan result JSON to this file (default: stdout only)",
+    )
+    attest_mcp_cmd.add_argument(
+        "--output-dir",
+        metavar="PATH",
+        default=None,
+        help="Directory for attestation artifacts (default: catalog directory)",
+    )
+    attest_mcp_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
     return parser
 
 
@@ -1552,6 +1595,61 @@ def _cmd_attest_langchain(args: argparse.Namespace, quiet: bool) -> int:
     return 0 if result.passed else 1
 
 
+def _cmd_attest_mcp(args: argparse.Namespace, quiet: bool) -> int:
+    """Scan an MCP tool manifest catalog for supply-chain threats."""
+    import json as _json
+
+    from squish.squash.mcp import McpScanner, McpSigner
+
+    catalog_path = Path(args.catalog_path)
+    if not catalog_path.exists():
+        print(f"error: catalog not found: {catalog_path}", file=sys.stderr)
+        return 1
+
+    result = McpScanner.scan_file(catalog_path, getattr(args, "policy", "mcp-strict"))
+
+    if not quiet:
+        icon = "✓" if result.status == "safe" else ("⚠" if result.status == "warn" else "✗")
+        label = {"safe": "SAFE", "warn": "WARNINGS", "unsafe": "UNSAFE"}.get(result.status, result.status.upper())
+        print(f"{icon} MCP attestation {label}: {catalog_path}")
+        print(f"  tools      : {result.tool_count}")
+        print(f"  catalog_sha: {result.catalog_hash[:16]}…")
+        errors = sum(1 for f in result.findings if f.severity == "error")
+        warnings = sum(1 for f in result.findings if f.severity == "warning")
+        if errors or warnings:
+            print(f"  findings   : {errors} error(s), {warnings} warning(s)")
+            for finding in result.findings:
+                prefix = "  ✗" if finding.severity == "error" else "  ⚠"
+                print(f"{prefix} [{finding.rule_id}] {finding.tool_name}: {finding.detail}")
+
+    result_dict = result.to_dict()
+
+    json_result_path = getattr(args, "json_result", None)
+    if json_result_path:
+        try:
+            out_path = Path(json_result_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(_json.dumps(result_dict, indent=2), encoding="utf-8")
+            if not quiet:
+                print(f"  result     : {out_path}")
+        except Exception as exc:
+            print(f"error: could not write result file: {exc}", file=sys.stderr)
+            return 2
+
+    sign = getattr(args, "sign", False)
+    if sign:
+        sig_path = McpSigner.sign(catalog_path)
+        if sig_path and not quiet:
+            print(f"  signed     : {sig_path}")
+        elif not sig_path and not quiet:
+            print("  signing    : unavailable (sigstore not installed)", file=sys.stderr)
+
+    fail_on_violation = getattr(args, "fail_on_violation", False)
+    if fail_on_violation and result.status == "unsafe":
+        return 1
+    return 0
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -1610,6 +1708,8 @@ def main() -> None:
         sys.exit(_cmd_attest_huggingface(args, quiet))
     elif args.command == "attest-langchain":
         sys.exit(_cmd_attest_langchain(args, quiet))
+    elif args.command == "attest-mcp":
+        sys.exit(_cmd_attest_mcp(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)
