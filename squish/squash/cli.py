@@ -793,6 +793,74 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     scan_rag_verify.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
+    # ── Wave 48 — Model transformation lineage ────────────────────────────────────
+    lineage_cmd = sub.add_parser(
+        "lineage",
+        help="Model transformation lineage chain — record, show, and verify (EU AI Act Annex IV)",
+        description=(
+            "Manage the Merkle-chained transformation ledger for a model artefact.\n\n"
+            "Addresses EU AI Act Annex IV technical documentation requirements (Art. 11)\n"
+            "and NIST AI RMF GOVERN 1.7 (supply-chain provenance).  The chain file\n"
+            "(.lineage_chain.json) travels with the model so provenance is available\n"
+            "after transfer or M&A.\n\n"
+            "Examples:\n"
+            "  squash lineage record ./my-model --operation compress --params format=INT4 awq=true\n"
+            "  squash lineage show   ./my-model\n"
+            "  squash lineage verify ./my-model"
+        ),
+    )
+    lineage_sub = lineage_cmd.add_subparsers(dest="lineage_command")
+
+    lineage_record = lineage_sub.add_parser(
+        "record", help="Append a transformation event to the lineage chain"
+    )
+    lineage_record.add_argument("model_dir", help="Model artefact directory")
+    lineage_record.add_argument(
+        "--operation",
+        required=True,
+        metavar="OP",
+        help="Operation label (e.g. compress, quantize, sign, verify, export)",
+    )
+    lineage_record.add_argument(
+        "--model-id",
+        default="",
+        dest="model_id",
+        help="Model identifier (default: directory name)",
+    )
+    lineage_record.add_argument(
+        "--input-dir",
+        default="",
+        dest="input_dir",
+        help="Source model directory (default: model_dir)",
+    )
+    lineage_record.add_argument(
+        "--params",
+        nargs="*",
+        metavar="KEY=VALUE",
+        default=[],
+        help="Arbitrary key=value operation parameters (repeatable)",
+    )
+    lineage_record.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    lineage_show = lineage_sub.add_parser(
+        "show", help="Print the transformation lineage chain for a model directory"
+    )
+    lineage_show.add_argument("model_dir", help="Model artefact directory")
+    lineage_show.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Output events as a JSON array",
+    )
+    lineage_show.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    lineage_verify = lineage_sub.add_parser(
+        "verify",
+        help="Verify the Merkle chain integrity (exit 0=intact, 2=tampered/missing)",
+    )
+    lineage_verify.add_argument("model_dir", help="Model artefact directory")
+    lineage_verify.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
     return parser
 
 
@@ -1785,6 +1853,105 @@ def _cmd_audit(args: argparse.Namespace, quiet: bool) -> int:
     return 1
 
 
+def _cmd_lineage(args: argparse.Namespace, quiet: bool) -> int:
+    """Handler for ``squash lineage record``, ``show``, and ``verify``."""
+    lineage_command = getattr(args, "lineage_command", None)
+    if not lineage_command:
+        print("usage: squash lineage {record,show,verify} -- use --help for details", file=sys.stderr)
+        return 1
+
+    try:
+        from squish.squash.lineage import LineageChain  # lazy — keeps cli.py import-fast
+    except ImportError as e:
+        print(f"squash is not installed: {e}", file=sys.stderr)
+        return 2
+
+    model_dir = Path(args.model_dir)
+
+    if lineage_command == "record":
+        operation = args.operation
+        model_id = getattr(args, "model_id", "") or model_dir.name
+        input_dir = getattr(args, "input_dir", "") or str(model_dir)
+        raw_params = getattr(args, "params", []) or []
+        params: dict = {}
+        for kv in raw_params:
+            if "=" in kv:
+                k, _, v = kv.partition("=")
+                params[k.strip()] = v.strip()
+        try:
+            model_dir.mkdir(parents=True, exist_ok=True)
+            evt = LineageChain.create_event(
+                operation=operation,
+                model_id=model_id,
+                input_dir=input_dir,
+                output_dir=str(model_dir),
+                params=params,
+            )
+            event_hash = LineageChain.record(model_dir, evt)
+        except Exception as exc:
+            print(f"error recording lineage event: {exc}", file=sys.stderr)
+            return 2
+        if not quiet:
+            print(
+                f"✓ lineage event recorded\n"
+                f"  model_dir  : {model_dir}\n"
+                f"  operation  : {operation}\n"
+                f"  event_hash : {event_hash}"
+            )
+        return 0
+
+    if lineage_command == "show":
+        if not model_dir.exists():
+            print(f"error: directory not found: {model_dir}", file=sys.stderr)
+            return 1
+        try:
+            events = LineageChain.load(model_dir)
+        except Exception as exc:
+            print(f"error loading lineage: {exc}", file=sys.stderr)
+            return 2
+        json_output = getattr(args, "json_output", False)
+        if json_output:
+            print(json.dumps([e.to_dict() for e in events], indent=2))
+        else:
+            if not events:
+                if not quiet:
+                    print("(no lineage events recorded)")
+                return 0
+            for i, e in enumerate(events):
+                prev = e.prev_hash[:32] + "\u2026" if e.prev_hash else "(genesis)"
+                print(f"#{i + 1} {e.timestamp}  [{e.operation}]  {e.model_id}")
+                print(f"     operator  : {e.operator}")
+                print(f"     input_dir : {e.input_dir}")
+                print(f"     output_dir: {e.output_dir}")
+                if e.params:
+                    pstr = "  ".join(f"{k}={v}" for k, v in e.params.items())
+                    print(f"     params    : {pstr}")
+                print(f"     event_hash: {e.event_hash[:32]}\u2026")
+                print(f"     prev_hash : {prev}")
+        return 0
+
+    if lineage_command == "verify":
+        if not model_dir.exists():
+            print(f"error: directory not found: {model_dir}", file=sys.stderr)
+            return 1
+        try:
+            result = LineageChain.verify(model_dir)
+        except Exception as exc:
+            print(f"error verifying chain: {exc}", file=sys.stderr)
+            return 2
+        if not quiet:
+            icon = "\u2713" if result.ok else "\u2717"
+            print(f"{icon} lineage chain: {result.message}")
+            print(f"   model_dir  : {result.model_dir}")
+            print(f"   event_count: {result.event_count}")
+            if result.broken_at is not None:
+                print(f"   broken_at  : event index {result.broken_at}", file=sys.stderr)
+        return 0 if result.ok else 2
+
+    print(f"unknown lineage subcommand: {lineage_command}", file=sys.stderr)
+    return 1
+
+
 def _cmd_scan_rag(args: argparse.Namespace, quiet: bool) -> int:
     """Handler for ``squash scan-rag index`` and ``squash scan-rag verify``."""
     from squish.squash.rag import RagScanner  # lazy — keeps cli.py import-fast
@@ -1903,6 +2070,8 @@ def main() -> None:
         sys.exit(_cmd_audit(args, quiet))
     elif args.command == "scan-rag":
         sys.exit(_cmd_scan_rag(args, quiet))
+    elif args.command == "lineage":
+        sys.exit(_cmd_lineage(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)

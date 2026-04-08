@@ -2946,6 +2946,26 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
     except Exception as _sbom_err:
         print(f"  ⚠  SBOM generation failed (non-fatal): {_sbom_err}")
 
+    # ── Lineage event (squish[squash] — optional, non-fatal) ─────────────────
+    try:
+        from squish.squash.lineage import LineageChain as _LineageChain
+
+        _ln_quant_fmt = "INT4" if _use_int4 else "INT8"
+        _ln_awq_grp = getattr(args, "int4_group_size", None) or (32 if _run_awq else 64)
+        _ln_evt = _LineageChain.create_event(
+            operation="compress",
+            model_id=args.model,
+            input_dir=str(model_dir),
+            output_dir=str(output_dir),
+            params={"format": _ln_quant_fmt, "awq": _run_awq, "group_size": _ln_awq_grp},
+        )
+        _LineageChain.record(output_dir, _ln_evt)
+        print(f"  ✓  Lineage event recorded → {output_dir / _LineageChain.CHAIN_FILENAME}")
+    except ImportError:
+        pass  # squish[squash] not installed — skip silently
+    except Exception as _ln_err:
+        print(f"  ⚠  Lineage recording failed (non-fatal): {_ln_err}")
+
     print(f"     Run with: squish run {model_dir}\n")
 
 
