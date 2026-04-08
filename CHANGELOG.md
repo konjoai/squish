@@ -5,6 +5,54 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 47: RAG knowledge base integrity scanner
+
+### Added
+
+- **`squish/squash/rag.py`** — `RagScanner` corpus integrity scanner.
+  `RagScanner.index(corpus_dir)` walks the directory, SHA-256 hashes every
+  document, and writes a tamper-evident `.rag_manifest.json`.  The manifest
+  includes a `manifest_hash` (SHA-256 of the canonical sorted file list) that
+  serves as a deterministic content fingerprint for CI/CD gating.
+  `RagScanner.verify(corpus_dir)` re-hashes the live corpus and returns a
+  `RagVerifyResult` with per-file drift items categorised as `"added"`,
+  `"removed"`, or `"modified"`.  Manifest not found returns
+  `ok=False, status="missing_manifest"` — never raises.  Dataclasses:
+  `RagFileEntry`, `RagManifest`, `RagDriftItem`, `RagVerifyResult`.
+  Addresses the #1 enterprise RAG failure: silently poisoned or drifted
+  knowledge bases.  No external dependencies — stdlib only (hashlib, json,
+  pathlib, dataclasses, datetime).
+
+- **`squish/squash/cli.py`** — `squash scan-rag index <corpus_dir>` and
+  `squash scan-rag verify <corpus_dir>`.  `index` accepts `--glob PATTERN`
+  (default `"**/*"`) and `--quiet`.  `verify` accepts `--json` (emit drift
+  report as JSON to stdout) and `--quiet`.  Exit codes: 0 = intact / success,
+  1 = user/input error, 2 = drift detected or runtime error.
+
+- **`squish/squash/api.py`** — `POST /rag/index` and `POST /rag/verify` REST
+  endpoints.  `/rag/index` accepts `{"corpus_dir", "glob"}`, returns
+  `{"corpus_dir", "file_count", "manifest_path", "manifest_hash", "indexed_at"}`.
+  `/rag/verify` accepts `{"corpus_dir"}`, returns the full `RagVerifyResult`
+  dict (keys: `ok`, `corpus_dir`, `verified_at`, `total_files`, `drift_count`,
+  `drift`).  Both run in the thread-pool executor so the event loop stays free.
+  Pydantic models: `RagIndexRequest`, `RagVerifyRequest`.
+
+- **`tests/test_squash_wave47.py`** — 57 tests across `TestRagFileEntry`,
+  `TestRagManifest`, `TestRagDriftItem`, `TestRagVerifyResult`,
+  `TestRagScannerHashFile`, `TestRagScannerManifestHash`,
+  `TestRagScannerIndex`, `TestRagScannerVerify`, `TestRagScanRagCli`,
+  `TestRagApi`.  Covers: pristine verify, modified/added/removed drift,
+  missing manifest, glob filter, hash stability, json output, API routes.
+
+### Notes
+
+- Module count: 123 (+1, pre-authorised in Wave 47 scope: "Use remaining slot
+  after W45 deletion").
+- Full test suite: **4964 passed, 0 failed, 25 skipped** (baseline 4907 + 57
+  W47 tests).
+
+---
+
 ## [Unreleased] — Wave 46: Agent audit trail
 
 ### Added

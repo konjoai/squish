@@ -1124,6 +1124,22 @@ class McpAttestRequest(BaseModel):
     )
 
 
+# ── Wave 47 — RAG KB integrity ────────────────────────────────────────────────
+
+
+class RagIndexRequest(BaseModel):
+    """Request body for POST /rag/index."""
+
+    corpus_dir: str = Field(description="Absolute path to the corpus directory to index")
+    glob: str = Field(default="**/*", description='File glob pattern (default "**/*")')
+
+
+class RagVerifyRequest(BaseModel):
+    """Request body for POST /rag/verify."""
+
+    corpus_dir: str = Field(description="Absolute path to the corpus directory to verify")
+
+
 @app.post("/attest/mlflow")
 async def attest_mlflow(req: AttestIntegrationRequest) -> JSONResponse:
     """Run an offline AttestPipeline for an MLflow model artifact.
@@ -1333,7 +1349,63 @@ async def get_audit_trail(
     )
 
 
+# ── Wave 47 — RAG KB integrity ────────────────────────────────────────────────
 
+
+@app.post("/rag/index")
+async def post_rag_index(req: RagIndexRequest) -> JSONResponse:
+    """Hash every document in *corpus_dir* and write ``.rag_manifest.json``.
+
+    Equivalent to ``squash scan-rag index <corpus_dir>``.
+
+    Addresses the #1 enterprise RAG failure: silently poisoned or drifted
+    knowledge bases.  The returned ``manifest_hash`` is a deterministic
+    content fingerprint suitable for CI/CD gating.
+    """
+    from squish.squash.rag import RagScanner
+
+    corpus = Path(req.corpus_dir)
+    if not corpus.is_dir():
+        raise HTTPException(status_code=404, detail=f"corpus_dir not found: {req.corpus_dir}")
+
+    def _run() -> dict:
+        manifest = RagScanner.index(corpus, glob=req.glob)
+        return {
+            "corpus_dir": manifest.corpus_dir,
+            "file_count": manifest.file_count,
+            "manifest_path": str(Path(manifest.corpus_dir) / RagScanner.MANIFEST_FILENAME),
+            "manifest_hash": manifest.manifest_hash,
+            "indexed_at": manifest.indexed_at,
+        }
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(_executor, _run)
+    return JSONResponse(content=result)
+
+
+@app.post("/rag/verify")
+async def post_rag_verify(req: RagVerifyRequest) -> JSONResponse:
+    """Compare live corpus against the stored manifest.
+
+    Equivalent to ``squash scan-rag verify <corpus_dir>``.
+
+    Returns HTTP 200 with ``"ok": true`` when no drift is detected.
+    Returns HTTP 200 with ``"ok": false`` when drift exists — callers
+    should gate deployments on the ``ok`` field, not the status code.
+    """
+    from squish.squash.rag import RagScanner
+
+    corpus = Path(req.corpus_dir)
+    if not corpus.exists():
+        raise HTTPException(status_code=404, detail=f"corpus_dir not found: {req.corpus_dir}")
+
+    def _run() -> dict:
+        result = RagScanner.verify(corpus)
+        return result.to_dict()
+
+    loop = asyncio.get_running_loop()
+    content = await loop.run_in_executor(_executor, _run)
+    return JSONResponse(content=content)
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:
