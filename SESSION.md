@@ -9,7 +9,7 @@
 2026-04-08
 
 ## Last commits
-- **`(w42 — TBD hash)`** — fix(wave42): bias formula + norm exclusion + g=32 default; INT4 AWQ arc_easy 70.8% PASS
+- **`784df22 (w42)`** — fix(wave42): bias formula + norm exclusion + g=32 default; INT4 AWQ arc_easy=70.8% PASS
 - `98885d0 (w41)` — feat(wave41): squish-native lm_eval harness — dev/benchmarks/squish_lm_eval.py (52 tests, 4642 suite)
 - `d20b0ea` — feat(wave40): GCP Vertex AI integration — VertexAISquash platform adapter (24 tests)
 - `ebbb56b` — fix(ci): resolve 4 test failures
