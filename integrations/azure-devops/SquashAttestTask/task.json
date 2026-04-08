@@ -1,0 +1,121 @@
+{
+  "id": "f2a5c8e1-3b47-4d9f-8e6a-c1d2b3e4f5a6",
+  "name": "SquashAttest",
+  "friendlyName": "Squash — AI Model SBOM Attestation",
+  "description": "Generate and evaluate a CycloneDX + SPDX BOM for an AI/ML model artifact. Runs security scanning, compliance policy checks, optional Sigstore signing, and publishes attestation artifacts to the pipeline run.",
+  "helpMarkDown": "See [Squash documentation](https://squishai.com/docs/squash) for full policy and configuration reference.",
+  "category": "Utility",
+  "author": "Squish AI (squishai)",
+  "version": {
+    "Major": 1,
+    "Minor": 0,
+    "Patch": 0
+  },
+  "instanceNameFormat": "Squash attest $(modelPath)",
+  "groups": [
+    {
+      "name": "advanced",
+      "displayName": "Advanced",
+      "isExpanded": false
+    }
+  ],
+  "inputs": [
+    {
+      "name": "modelPath",
+      "type": "string",
+      "label": "Model path",
+      "defaultValue": "$(Build.ArtifactStagingDirectory)/model",
+      "required": true,
+      "helpMarkDown": "Path to the model directory or file (relative to the pipeline workspace root, or an absolute path). Supports `$(Build.*)` variables."
+    },
+    {
+      "name": "policies",
+      "type": "string",
+      "label": "Compliance policies",
+      "defaultValue": "enterprise-strict",
+      "required": false,
+      "helpMarkDown": "Comma-separated list of policy names to evaluate. Examples: `eu-ai-act`, `nist-ai-rmf`, `fedramp`, `cmmc`, `enterprise-strict`."
+    },
+    {
+      "name": "sign",
+      "type": "boolean",
+      "label": "Sign BOM via Sigstore",
+      "defaultValue": "false",
+      "required": false,
+      "helpMarkDown": "Sign the generated CycloneDX BOM using Sigstore keyless signing. Requires OIDC token availability on the agent."
+    },
+    {
+      "name": "failOnViolation",
+      "type": "boolean",
+      "label": "Fail on policy violation",
+      "defaultValue": "true",
+      "required": false,
+      "helpMarkDown": "Fail the pipeline task if any error-severity policy violation or unsafe security scan is found."
+    },
+    {
+      "name": "outputDir",
+      "type": "string",
+      "label": "Output directory",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Directory to write attestation artifacts. Defaults to the model directory. Supports `$(Build.*)` variables.",
+      "groupName": "advanced"
+    },
+    {
+      "name": "squishVersion",
+      "type": "string",
+      "label": "Squish version",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Pin Squish version to install (e.g. `9.0.0`). Leave blank to install the latest release.",
+      "groupName": "advanced"
+    },
+    {
+      "name": "pythonExecutable",
+      "type": "string",
+      "label": "Python executable",
+      "defaultValue": "python3",
+      "required": false,
+      "helpMarkDown": "Python binary used to install Squish and run attestation. Use `python` on Windows agents where `python3` is unavailable.",
+      "groupName": "advanced"
+    },
+    {
+      "name": "publishArtifacts",
+      "type": "boolean",
+      "label": "Publish attestation artifacts",
+      "defaultValue": "true",
+      "required": false,
+      "helpMarkDown": "Upload attestation artifacts (BOM, SPDX, master record) to the pipeline run as downloadable build artifacts.",
+      "groupName": "advanced"
+    }
+  ],
+  "outputVariables": [
+    {
+      "name": "SQUASH_PASSED",
+      "description": "Whether attestation passed (`true` or `false`)."
+    },
+    {
+      "name": "SQUASH_SCAN_STATUS",
+      "description": "Security scan result status (`clean`, `warning`, `unsafe`, or `skipped`)."
+    },
+    {
+      "name": "SQUASH_CYCLONEDX_PATH",
+      "description": "Absolute path to the generated CycloneDX BOM file."
+    },
+    {
+      "name": "SQUASH_SPDX_JSON_PATH",
+      "description": "Absolute path to the generated SPDX JSON file."
+    },
+    {
+      "name": "SQUASH_MASTER_RECORD_PATH",
+      "description": "Absolute path to the squash-attest.json master attestation record."
+    }
+  ],
+  "execution": {
+    "PowerShell3": {
+      "target": "run_squash.ps1",
+      "platforms": ["windows", "linux", "osx"]
+    }
+  },
+  "postjobexecution": {}
+}

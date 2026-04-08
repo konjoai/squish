@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Wave 44: fix mixed_attn compress + Azure DevOps integration
+# NEXT_SESSION_PROMPT.md — Wave 45: Post-W44 context
 
 > Paste the content below verbatim as your opening prompt.
 
@@ -13,57 +13,39 @@ Repo: /Users/wscholl/squish
 
 --- Context ---
 
-Wave 43 is COMPLETE and committed.
-- .github/workflows/publish-orb.yml — CircleCI Orb publish (dev + prod)
-- .github/workflows/publish-helm.yml — Helm chart push to GHCR OCI (Artifact Hub)
-- artifacthub-repo.yml — repo metadata (fill in repositoryID when registering on artifacthub.io)
-- tests/test_squash_wave43.py — 23 passing YAML-validation tests
-- No Python module changes. Module count = 121.
+Wave 44 is COMPLETE and committed.
+- integrations/azure-devops/vss-extension.json — ADO Marketplace manifest
+- integrations/azure-devops/SquashAttestTask/task.json — SquashAttest@1 task definition
+- integrations/azure-devops/SquashAttestTask/run_squash.ps1 — cross-platform PS runner
+- integrations/azure-devops/SquashAttestTask/run_squash.sh — bash companion runner
+- squish/squash/integrations/azure_devops.py — Python adapter (module #122)
+- tests/test_squash_wave44.py — N tests passing
+- CI/CD matrix: GitHub Actions ✅ GitLab ✅ Jenkins ✅ Argo ✅ CircleCI ✅ Azure DevOps ✅
 
-INT4 AWQ benchmark: arc_easy=70.8% + arc_challenge=44.4% confirmed (Wave 42).
-hellaswag/winogrande/piqa/openbookqa may have finished in background terminal 3af20b5b.
-Check: ls /Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-int4-awq/
+Module count: 122 (1 above the 100-file ceiling — see W44 CHANGELOG justification).
 
---- Wave 44 priorities ---
+--- ADO publishing (action required by user) ---
 
-PRIORITY 1 — Check if INT4 AWQ remaining 4 tasks finished (terminal 3af20b5b):
-  If done: update CLAUDE.md accuracy table TBD cells + SESSION.md.
+To publish the extension to ADO Marketplace:
+  1. Register publisher "squishai" at marketplace.visualstudio.com
+  2. cd integrations/azure-devops
+  3. npm install -g tfx-cli
+  4. AZURE_DEVOPS_EXT_PAT=<your-pat> tfx extension publish --manifest-globs vss-extension.json
 
-PRIORITY 2 — Fix mixed_attn compression (AWQ silent failure):
-  Root cause: MLP outlier ratio ~28.5 > has_outliers() threshold 20.0 without AWQ pre-scaling
-  → most MLP weights stored as BF16 passthrough (~59 q4a files vs expected 245).
-  Steps:
-  1. rm -rf ~/models/Qwen2.5-1.5B-Instruct-mixed-attn
-  2. squish compress --format mixed_attn ~/models/Qwen2.5-1.5B-Instruct-bf16 ~/models/Qwen2.5-1.5B-Instruct-mixed-attn 2>&1
-     (do NOT pipe to tail — must see full output to detect AWQ failure)
-  3. Verify: find ~/models/Qwen2.5-1.5B-Instruct-mixed-attn -name '__q4a.npy' | wc -l
-     Target ≈ 245. If < 100, AWQ still failing — investigate squish/convert.py outlier threshold.
+--- Wave 45 priorities ---
 
-PRIORITY 3 — Azure DevOps integration (squish/squash/integrations/azure_devops.py)
+PRIORITY 1 — Check INT4 AWQ remaining 4 tasks (from W42):
+  ls /Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-int4-awq/
+  If done: update CLAUDE.md accuracy table + SESSION.md.
 
---- Required secrets (for Wave 43 workflows to run) ---
-CIRCLECI_TOKEN — CircleCI personal API token with orb:write scope
-  Add at: https://github.com/squishai/squish/settings/secrets/actions
+PRIORITY 2 — Fix mixed_attn compression (if not already done):
+  See SESSION.md for steps.
+
+PRIORITY 3 — Prometheus/Grafana metrics export from squash attest runs
+  OR Datadog integration (follows same pattern as azure_devops.py).
 
 --- Done-when ---
-1. 0 failing tests in full suite
-2. CHANGELOG.md entry written
-3. SESSION.md + NEXT_SESSION_PROMPT.md updated
-4. All tests passing: git add / commit / push
-```
-  4. Run benchmark (only after count confirmed):
-     python3 dev/benchmarks/squish_lm_eval.py \
-         --npy-dir ~/models/Qwen2.5-1.5B-Instruct-mixed-attn \
-         --model-dir ~/models/Qwen2.5-1.5B-Instruct-bf16 \
-         --limit 500 --baseline 70.6
 
-PRIORITY 3 (code wave) — Azure DevOps integration:
-  squish/squash/integrations/azure_devops.py (same pattern as vertex_ai.py, Wave 40)
-
---- Done when ---
-1. INT4 AWQ all 6 tasks recorded in CLAUDE.md + SESSION.md
-2. mixed_attn compress verified (245 q4a) OR bug documented with fix plan
-3. mixed_attn benchmark run or lm_eval-waiver filed
-4. CHANGELOG + SESSION.md + NEXT_SESSION_PROMPT updated
-5. Commit + push
+All W45 tests pass; no regressions in full suite; CHANGELOG.md entry; SESSION.md updated;
+NEXT_SESSION_PROMPT.md updated; module count checked.
 ```

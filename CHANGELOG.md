@@ -5,6 +5,60 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 44: Azure DevOps SquashAttest@1 marketplace extension
+
+### Added
+
+- **`integrations/azure-devops/vss-extension.json`** — ADO Marketplace extension manifest.
+  Declares publisher `squishai`, extension id `squash-attest`, category `Azure Pipelines`,
+  and contributes the `SquashAttestTask` task directory.  Publish with:
+  `tfx extension publish --manifest-globs vss-extension.json`
+  Requires `AZURE_DEVOPS_EXT_PAT` (ADO personal access token, `Marketplace (Publish)` scope).
+
+- **`integrations/azure-devops/SquashAttestTask/task.json`** — ADO task definition.
+  GUID `f2a5c8e1-3b47-4d9f-8e6a-c1d2b3e4f5a6` (update after marketplace registration).
+  8 inputs: `modelPath` (required), `policies`, `sign`, `failOnViolation`, `outputDir`,
+  `squishVersion`, `pythonExecutable`, `publishArtifacts`.
+  5 pipeline output variables: `SQUASH_PASSED`, `SQUASH_SCAN_STATUS`,
+  `SQUASH_CYCLONEDX_PATH`, `SQUASH_SPDX_JSON_PATH`, `SQUASH_MASTER_RECORD_PATH`.
+  Execution: `PowerShell3` (runs on Windows PS 5.1+, Linux/macOS PSCore 7+).
+
+- **`integrations/azure-devops/SquashAttestTask/run_squash.ps1`** — Cross-platform
+  PowerShell runner.  Reads `INPUT_*` env vars, pip-installs `squish[squash]`, invokes
+  `squash attest`, parses the JSON result, sets all five `##vso[task.setvariable]` output
+  vars, emits policy-per-row pass/fail summary, optionally uploads artifacts via
+  `##vso[artifact.upload]`, and exits with `##vso[task.complete result=Failed]` + exit 1
+  on policy violation.
+
+- **`integrations/azure-devops/SquashAttestTask/run_squash.sh`** — Bash companion runner
+  for minimal Linux/macOS agents where PSCore is absent.  Same functionality as the PS1
+  script — all `##vso[…]` ADO logging commands are identical.
+
+- **`squish/squash/integrations/azure_devops.py`** — Python adapter for teams running
+  squash from a Python Script task or Azure Function.  Functions: `_emit_vso`,
+  `set_variable`, `log_issue`, `publish_artifact`, `complete_task`, `is_ado_context`.
+  Class: `AzureDevOpsSquash.attest()`.  Zero ADO SDK dependency — all ADO communication
+  via stdout `##vso[…]` logging commands.
+
+### Tests
+
+- **`tests/test_squash_wave44.py`** — Tests spanning:
+  `TestEmitVso` (5), `TestSetVariable` (4), `TestLogIssue` (2), `TestPublishArtifact` (3),
+  `TestCompleteTask` (3), `TestIsAdoContext` (3), `TestAzureDevOpsSquashAttest` (8),
+  `TestAdoImportNoSdk` (2), `TestVssExtensionJson` (9), `TestTaskJson` (8),
+  `TestRunSquashPs1` (9), `TestRunSquashSh` (10).
+  Pure-unit + file-structure; no network, no model weights, no ADO SDK.
+
+### Notes
+
+- `azure_devops.py` is module #122 (above the 100-file non-experimental ceiling).
+  Justification: completes the Fortune 500 Microsoft-stack CI/CD coverage matrix
+  alongside the existing GitHub Actions, GitLab, Jenkins, Argo, and CircleCI integrations.
+  W44 delivers no incremental Python surface area beyond this one adapter file; the
+  extension runner scripts are PowerShell/bash (not counted in the Python module ceiling).
+
+---
+
 ## [Unreleased] — Wave 43: CircleCI Orb publish + Artifact Hub Helm chart publish workflows
 
 ### Added

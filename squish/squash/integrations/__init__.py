@@ -13,6 +13,7 @@ Available adapters
 - :mod:`~squish.squash.integrations.vertex_ai`    — GCP Vertex AI Model Registry
 - :mod:`~squish.squash.integrations.kubernetes`   — Kubernetes admission webhook
 - :mod:`~squish.squash.integrations.ray`          — Ray Serve deployment decorator
+- :mod:`~squish.squash.integrations.azure_devops` — Azure DevOps pipeline task
 
 Each adapter is import-guarded — only the adapters whose platform packages
 are installed will load.  The Kubernetes and Ray adapters have no mandatory

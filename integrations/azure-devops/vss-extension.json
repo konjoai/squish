@@ -1,0 +1,53 @@
+{
+  "manifestVersion": 1,
+  "id": "squash-attest",
+  "publisher": "squishai",
+  "version": "1.0.0",
+  "name": "Squash — AI Model SBOM Attestation",
+  "description": "Generate and evaluate a CycloneDX + SPDX Software Bill of Materials for an AI/ML model artifact. Runs security scanning (pickle, GGUF), evaluates named compliance policies (EU AI Act, NIST AI RMF, FedRAMP, CMMC), optionally signs via Sigstore, and publishes attestation artifacts to the pipeline run.",
+  "public": false,
+  "categories": ["Azure Pipelines"],
+  "tags": [
+    "ai", "ml", "sbom", "security", "compliance",
+    "attestation", "cyclonedx", "spdx", "sigstore",
+    "eu-ai-act", "nist", "fedramp"
+  ],
+  "demands": [],
+  "icons": {
+    "default": "images/extension-icon.png"
+  },
+  "targets": [
+    { "id": "Microsoft.VisualStudio.Services" }
+  ],
+  "links": {
+    "home": { "uri": "https://squishai.com" },
+    "repository": { "uri": "https://github.com/squishai/squish" },
+    "issues": { "uri": "https://github.com/squishai/squish/issues" },
+    "license": { "uri": "https://github.com/squishai/squish/blob/main/LICENSE" }
+  },
+  "repository": {
+    "type": "git",
+    "uri": "https://github.com/squishai/squish"
+  },
+  "badges": [],
+  "contributions": [
+    {
+      "id": "squash-attest-task",
+      "type": "ms.vss-distributed-task.task",
+      "targets": ["ms.vss-distributed-task.tasks"],
+      "properties": {
+        "name": "SquashAttestTask"
+      }
+    }
+  ],
+  "files": [
+    {
+      "path": "SquashAttestTask"
+    },
+    {
+      "path": "images",
+      "addressable": true
+    }
+  ],
+  "scopes": []
+}
