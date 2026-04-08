@@ -1,0 +1,13 @@
+# Artifact Hub repository metadata
+# https://artifacthub.io/docs/topics/repositories/helm-charts/
+#
+# Steps to activate Artifact Hub scanning:
+#   1. Register the OCI repository at https://artifacthub.io/packages/add
+#      (choose "Helm Charts" → "OCI registry" → oci://ghcr.io/squishai/charts)
+#   2. Replace the empty repositoryID below with the UUID shown in the dashboard.
+#   3. Commit this file. Artifact Hub will verify ownership and start indexing.
+#
+repositoryID: ""
+owners:
+  - name: Squish AI
+    email: maintainers@squishai.com

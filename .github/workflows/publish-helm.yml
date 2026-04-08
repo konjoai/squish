@@ -1,0 +1,66 @@
+name: Publish Helm Chart
+
+# Triggers:
+#   - push to main modifying any chart file → publish snapshot
+#   - push of any semver tag (v*.*.*) → publish versioned release
+on:
+  push:
+    branches: [main]
+    paths:
+      - "helm/**"
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Package and push to GHCR OCI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login ghcr.io \
+                --username "${{ github.actor }}" \
+                --password-stdin
+
+      - name: Extract chart version from Chart.yaml
+        id: chart
+        run: |
+          VERSION=$(grep '^version:' helm/squish-serve/Chart.yaml | awk '{print $2}')
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Package chart
+        run: helm package helm/squish-serve --destination /tmp/charts
+
+      - name: Push to GHCR OCI registry
+        run: |
+          helm push \
+            /tmp/charts/squish-serve-${{ steps.chart.outputs.VERSION }}.tgz \
+            oci://ghcr.io/squishai/charts
+
+      - name: Step summary
+        run: |
+          echo "### Helm Chart Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Chart**: squish-serve" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: ${{ steps.chart.outputs.VERSION }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Registry**: \`oci://ghcr.io/squishai/charts/squish-serve\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Install**:" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "helm install squish-serve oci://ghcr.io/squishai/charts/squish-serve \\" >> "$GITHUB_STEP_SUMMARY"
+          echo "  --version ${{ steps.chart.outputs.VERSION }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> **Artifact Hub** auto-discovers OCI charts at this registry when \`artifacthub-repo.yml\` is present at the repo root." >> "$GITHUB_STEP_SUMMARY"

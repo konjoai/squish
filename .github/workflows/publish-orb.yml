@@ -1,0 +1,95 @@
+name: Publish CircleCI Orb
+
+# Triggers:
+#   - push to main modifying the orb YAML  → dev publish
+#   - push of any semver tag (v*.*.*) → production publish
+on:
+  push:
+    branches: [main]
+    paths:
+      - "squish/squash/integrations/circleci/orb.yml"
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate orb YAML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install CircleCI CLI
+        run: |
+          curl -fLSs \
+            https://raw.githubusercontent.com/CircleCI-Public/circleci-cli/master/install.sh \
+            | sudo bash
+
+      - name: Validate orb
+        run: |
+          circleci orb validate \
+            squish/squash/integrations/circleci/orb.yml
+
+  publish-dev:
+    name: Publish dev orb (main branch)
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install CircleCI CLI
+        run: |
+          curl -fLSs \
+            https://raw.githubusercontent.com/CircleCI-Public/circleci-cli/master/install.sh \
+            | sudo bash
+
+      - name: Publish dev orb
+        env:
+          CIRCLECI_CLI_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
+        run: |
+          circleci orb publish \
+            squish/squash/integrations/circleci/orb.yml \
+            squishai/squash@dev:main
+
+      - name: Summary
+        run: |
+          echo "### CircleCI Dev Orb Published 🚀" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Orb**: \`squishai/squash@dev:main\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Install (dev)**: \`squishai/squash@dev:main\`" >> "$GITHUB_STEP_SUMMARY"
+
+  publish-prod:
+    name: Publish production orb (version tag)
+    needs: validate
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install CircleCI CLI
+        run: |
+          curl -fLSs \
+            https://raw.githubusercontent.com/CircleCI-Public/circleci-cli/master/install.sh \
+            | sudo bash
+
+      - name: Extract orb version from tag
+        id: ver
+        run: |
+          echo "ORB_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish production orb
+        env:
+          CIRCLECI_CLI_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
+        run: |
+          circleci orb publish \
+            squish/squash/integrations/circleci/orb.yml \
+            squishai/squash@${{ steps.ver.outputs.ORB_VERSION }}
+
+      - name: Summary
+        run: |
+          echo "### CircleCI Production Orb Published 🚀" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Orb**: \`squishai/squash@${{ steps.ver.outputs.ORB_VERSION }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Install**: \`squishai/squash@${{ steps.ver.outputs.ORB_VERSION }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "#### Required secrets" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`CIRCLECI_TOKEN\` — CircleCI personal API token with orb:write scope" >> "$GITHUB_STEP_SUMMARY"

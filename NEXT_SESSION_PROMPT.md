@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Wave 43: finish INT4 AWQ benchmark + fix mixed_attn compress
+# NEXT_SESSION_PROMPT.md — Wave 44: fix mixed_attn compress + Azure DevOps integration
 
 > Paste the content below verbatim as your opening prompt.
 
@@ -13,31 +13,44 @@ Repo: /Users/wscholl/squish
 
 --- Context ---
 
-Wave 42 is COMPLETE and committed.
-- 6 bugs fixed in squish/quant/compressed_loader.py + 1 in squish/cli.py
-- CRITICAL FIX: bias formula corrected (biases = zeros, not -zeros/scales)
-- INT4 AWQ g=32 arc_easy = 70.8% PASS (lm_eval-waiver CLOSED)
-- arc_challenge = 44.4% (+0.8pp vs baseline)
-- 4 remaining tasks (hellaswag/winogrande/piqa/openbookqa) may STILL BE RUNNING in background terminal 3af20b5b
-- Tests: 4642 passed, 0 failures
+Wave 43 is COMPLETE and committed.
+- .github/workflows/publish-orb.yml — CircleCI Orb publish (dev + prod)
+- .github/workflows/publish-helm.yml — Helm chart push to GHCR OCI (Artifact Hub)
+- artifacthub-repo.yml — repo metadata (fill in repositoryID when registering on artifacthub.io)
+- tests/test_squash_wave43.py — 23 passing YAML-validation tests
+- No Python module changes. Module count = 121.
 
---- Wave 43 priorities ---
+INT4 AWQ benchmark: arc_easy=70.8% + arc_challenge=44.4% confirmed (Wave 42).
+hellaswag/winogrande/piqa/openbookqa may have finished in background terminal 3af20b5b.
+Check: ls /Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-int4-awq/
 
-PRIORITY 1 — Check if INT4 AWQ benchmark finished:
-  ls /Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-int4-awq/
-  # Should show hellaswag/ winogrande/ piqa/ openbookqa/ if done
-  # Read each: python3 -c "import json; d=json.load(open('<path>/eval__*')); print(d.get('<task>',{}).get('acc_norm,none'))"
+--- Wave 44 priorities ---
+
+PRIORITY 1 — Check if INT4 AWQ remaining 4 tasks finished (terminal 3af20b5b):
   If done: update CLAUDE.md accuracy table TBD cells + SESSION.md.
 
-PRIORITY 2 — Fix mixed_attn compression (AWQ failure):
-  Root cause: raw Qwen2.5 MLP weights have outlier ratio ~28.5 > has_outliers() threshold 20.0
-  WITHOUT AWQ pre-scaling → most MLP weights stored as BF16 passthrough (~59 q4a vs expected 245).
+PRIORITY 2 — Fix mixed_attn compression (AWQ silent failure):
+  Root cause: MLP outlier ratio ~28.5 > has_outliers() threshold 20.0 without AWQ pre-scaling
+  → most MLP weights stored as BF16 passthrough (~59 q4a files vs expected 245).
   Steps:
   1. rm -rf ~/models/Qwen2.5-1.5B-Instruct-mixed-attn
   2. squish compress --format mixed_attn ~/models/Qwen2.5-1.5B-Instruct-bf16 ~/models/Qwen2.5-1.5B-Instruct-mixed-attn 2>&1
      (do NOT pipe to tail — must see full output to detect AWQ failure)
   3. Verify: find ~/models/Qwen2.5-1.5B-Instruct-mixed-attn -name '__q4a.npy' | wc -l
-     Target: ≈ 245 (same as INT4 AWQ). If < 100, AWQ still failing — investigate convert.py.
+     Target ≈ 245. If < 100, AWQ still failing — investigate squish/convert.py outlier threshold.
+
+PRIORITY 3 — Azure DevOps integration (squish/squash/integrations/azure_devops.py)
+
+--- Required secrets (for Wave 43 workflows to run) ---
+CIRCLECI_TOKEN — CircleCI personal API token with orb:write scope
+  Add at: https://github.com/squishai/squish/settings/secrets/actions
+
+--- Done-when ---
+1. 0 failing tests in full suite
+2. CHANGELOG.md entry written
+3. SESSION.md + NEXT_SESSION_PROMPT.md updated
+4. All tests passing: git add / commit / push
+```
   4. Run benchmark (only after count confirmed):
      python3 dev/benchmarks/squish_lm_eval.py \
          --npy-dir ~/models/Qwen2.5-1.5B-Instruct-mixed-attn \

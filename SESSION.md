@@ -185,7 +185,16 @@ All `Qwen3-*` models auto-detected. Qwen2.5 unaffected.
 - Stale Qwen3-4B-int4 score corrected (73.2% thinking-disabled, was 41% invalid).
 - 4562 tests passing. No code changes. No regressions.
 
-### Immediate next task (Wave 43)
+### COMPLETED (Wave 43 — 2026-04-08 session)
+
+**CircleCI Orb publish + Artifact Hub Helm chart publish workflows.**
+- `.github/workflows/publish-orb.yml` — validates + publishes `squishai/squash` orb (dev on main, prod on semver tags). Requires `CIRCLECI_TOKEN` GitHub secret.
+- `.github/workflows/publish-helm.yml` — packages `helm/squish-serve` and pushes to GHCR OCI (`oci://ghcr.io/squishai/charts/squish-serve`). Uses `GITHUB_TOKEN`. `packages: write` permission set.
+- `artifacthub-repo.yml` — repo ownership metadata for Artifact Hub. `repositoryID` must be filled after registering the OCI repo at artifacthub.io.
+- `tests/test_squash_wave43.py` — 23 pure-unit YAML-validation tests (all passing).
+- No Python modules added. Module count unchanged at 121.
+
+### Immediate next task (Wave 44)
 
 **Priority 1: Complete INT4 AWQ benchmark results**
 When terminal `3af20b5b` finishes (hellaswag, winogrande, piqa, openbookqa), read scores:

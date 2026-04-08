@@ -5,6 +5,39 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 43: CircleCI Orb publish + Artifact Hub Helm chart publish workflows
+
+### Added
+
+- **`.github/workflows/publish-orb.yml`** — Automates the `squishai/squash` CircleCI Orb
+  lifecycle. Validates orb YAML on every run; publishes `@dev:main` on changes to the orb
+  file on `main`; publishes a production version (`squishai/squash@{semver}`) on semver
+  tags. Requires `CIRCLECI_TOKEN` secret (CircleCI personal API token, orb:write scope).
+- **`.github/workflows/publish-helm.yml`** — Packages `helm/squish-serve` and pushes to
+  GHCR as an OCI artifact on `helm/**` changes to `main` or semver tags. Install path:
+  `helm install squish-serve oci://ghcr.io/squishai/charts/squish-serve --version <ver>`.
+  Uses `secrets.GITHUB_TOKEN` (no additional secret needed) with `packages: write`.
+- **`artifacthub-repo.yml`** — Artifact Hub repository ownership metadata at repo root.
+  Fill in `repositoryID` with the UUID from the Artifact Hub dashboard after registering
+  `oci://ghcr.io/squishai/charts` as an OCI Helm repository.
+
+### Tests
+
+- **`tests/test_squash_wave43.py`** — 23 pure-unit YAML-validation tests:
+  `TestCircleCIOrbYaml` (6), `TestHelmChartYaml` (6), `TestArtifacthubRepoYml` (3),
+  `TestPublishOrbWorkflow` (4), `TestPublishHelmWorkflow` (4). No I/O beyond local file
+  reads; no network, no model weights.
+
+### Notes
+
+- Zero Python modules added. Module count unchanged at 121 (no regression to the
+  non-experimental ceiling; documented in MODULES.md).
+- CircleCI namespace: `squishai`. Orb must be created in the CircleCI dashboard at
+  <https://app.circleci.com/settings/organization/github/squishai/contexts> before
+  the first publish run succeeds.
+
+---
+
 ## [Unreleased] — Wave 42: bias formula fix + INT4 AWQ lm_eval validation (arc_easy PASS)
 
 ### Fixed
