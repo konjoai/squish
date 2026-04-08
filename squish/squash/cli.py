@@ -712,6 +712,55 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     attest_mcp_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
+    # ── Wave 46 — Agent audit trail ───────────────────────────────────────────
+    audit_cmd = sub.add_parser(
+        "audit",
+        help="Agent audit trail management (show / verify)",
+        description=(
+            "Manage the squash agent audit trail (append-only JSONL with hash chain).\n\n"
+            "Examples:\n"
+            "  squash audit show --n 20\n"
+            "  squash audit verify --log /var/log/squash/audit.jsonl"
+        ),
+    )
+    audit_sub = audit_cmd.add_subparsers(dest="audit_command")
+
+    audit_show = audit_sub.add_parser(
+        "show",
+        help="Print the last N entries from the audit log",
+    )
+    audit_show.add_argument(
+        "--n",
+        type=int,
+        default=20,
+        help="Number of entries to show (default: 20)",
+    )
+    audit_show.add_argument(
+        "--log",
+        metavar="PATH",
+        default=None,
+        help="Audit log file path (default: $SQUASH_AUDIT_LOG or ~/.squash/audit.jsonl)",
+    )
+    audit_show.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Output entries as a JSON array instead of pretty-printed lines",
+    )
+    audit_show.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    audit_verify = audit_sub.add_parser(
+        "verify",
+        help="Verify the hash chain integrity of the audit log (exit 0=intact, 2=tampered)",
+    )
+    audit_verify.add_argument(
+        "--log",
+        metavar="PATH",
+        default=None,
+        help="Audit log file path (default: $SQUASH_AUDIT_LOG or ~/.squash/audit.jsonl)",
+    )
+    audit_verify.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
     return parser
 
 
@@ -1650,6 +1699,60 @@ def _cmd_attest_mcp(args: argparse.Namespace, quiet: bool) -> int:
     return 0
 
 
+def _cmd_audit(args: argparse.Namespace, quiet: bool) -> int:
+    """Handler for ``squash audit show`` and ``squash audit verify``."""
+    audit_command = getattr(args, "audit_command", None)
+    if not audit_command:
+        print("usage: squash audit <show|verify>", file=sys.stderr)
+        return 1
+
+    try:
+        from squish.squash.governor import AgentAuditLogger
+    except ImportError as e:
+        print(f"squash is not installed: {e}", file=sys.stderr)
+        return 2
+
+    log_path = getattr(args, "log", None)
+    logger = AgentAuditLogger(log_path=log_path)
+
+    if audit_command == "show":
+        n = getattr(args, "n", 20)
+        entries = logger.read_tail(n)
+        if not entries:
+            if not quiet:
+                print("(audit log is empty or does not exist)")
+            return 0
+        json_output = getattr(args, "json_output", False)
+        if json_output:
+            print(json.dumps(entries, indent=2))
+        else:
+            for e in entries:
+                ts = e.get("ts", "?")
+                seq = e.get("seq", "?")
+                etype = e.get("event_type", "?")
+                model = e.get("model_id", "")
+                session = e.get("session_id", "")
+                latency = e.get("latency_ms", -1)
+                lat_str = f" {latency:.1f}ms" if latency >= 0 else ""
+                sid_str = f" [{session}]" if session else ""
+                mod_str = f" model={model}" if model else ""
+                print(f"#{seq} {ts} {etype}{sid_str}{mod_str}{lat_str}")
+        return 0
+
+    if audit_command == "verify":
+        ok, msg = logger.verify_chain()
+        if ok:
+            if not quiet:
+                path_str = str(logger.path)
+                print(f"✓ audit chain intact: {path_str}")
+            return 0
+        print(f"✗ audit chain TAMPERED: {msg}", file=sys.stderr)
+        return 2
+
+    print(f"unknown audit subcommand: {audit_command}", file=sys.stderr)
+    return 1
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -1710,6 +1813,8 @@ def main() -> None:
         sys.exit(_cmd_attest_langchain(args, quiet))
     elif args.command == "attest-mcp":
         sys.exit(_cmd_attest_mcp(args, quiet))
+    elif args.command == "audit":
+        sys.exit(_cmd_audit(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)

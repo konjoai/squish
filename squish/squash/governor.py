@@ -426,3 +426,174 @@ class DriftMonitor:
         t = _threading.Thread(target=_loop, daemon=True)
         t.start()
         return stop_event
+
+
+# ── Wave 46 — Agent Audit Trail ───────────────────────────────────────────────
+
+import hashlib as _hashlib_audit  # noqa: E402
+import os as _os_audit  # noqa: E402
+from dataclasses import asdict as _asdict, dataclass as _dc_audit  # noqa: E402
+
+
+@_dc_audit
+class AuditEntry:
+    """Immutable audit log entry; entry_hash = sha256(prev|seq|type|ts|in|out). EU AI Act Art. 12."""
+
+    seq: int          # monotonically increasing sequence number
+    ts: str           # ISO-8601 UTC timestamp
+    session_id: str   # caller-supplied session / request identifier
+    event_type: str   # "llm_start", "llm_end", "attestation", "mcp_scan", …
+    model_id: str     # model name/path/hash
+    input_hash: str   # SHA-256 of raw input (hex), or ""
+    output_hash: str  # SHA-256 of raw output (hex), or ""
+    latency_ms: float # elapsed ms, or -1
+    metadata: dict    # JSON-serialisable extras
+    prev_hash: str    # entry_hash of preceding entry ("" for seq 0)
+    entry_hash: str   # forward-chain hash — see class docstring
+
+    @staticmethod
+    def _compute_hash(prev_hash: str, seq: int, event_type: str, ts: str,
+                      input_hash: str, output_hash: str) -> str:
+        raw = f"{prev_hash}|{seq}|{event_type}|{ts}|{input_hash}|{output_hash}"
+        return _hashlib_audit.sha256(raw.encode()).hexdigest()
+
+
+def _hash_text(text: str) -> str:
+    return _hashlib_audit.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+
+class AgentAuditLogger:
+    """Append-only JSONL audit logger (SHA-256 hash chain, EU AI Act Art. 12).
+    Default: $SQUASH_AUDIT_LOG or ~/.squash/audit.jsonl. Thread-safe.
+    """
+
+    def __init__(self, log_path: "_Path | str | None" = None) -> None:
+        if log_path is None:
+            env = _os_audit.environ.get("SQUASH_AUDIT_LOG", "")
+            log_path = _Path(env) if env else _Path.home() / ".squash" / "audit.jsonl"
+        self._path = _Path(log_path)
+        self._lock = _threading.Lock()
+        self._seq: int = -1  # lazily initialised on first append
+
+    @property
+    def path(self) -> _Path:
+        return self._path
+
+    def _ensure_dir(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _last_entry(self) -> "dict | None":
+        if not self._path.exists():
+            return None
+        with self._path.open("r", encoding="utf-8") as fh:
+            last: "dict | None" = None
+            for line in fh:
+                line = line.strip()
+                if line:
+                    try:
+                        last = _json_drift.loads(line)
+                    except Exception:
+                        pass
+        return last
+
+    def append(
+        self,
+        *,
+        session_id: str = "",
+        event_type: str,
+        model_id: str = "",
+        input_hash: str = "",
+        output_hash: str = "",
+        latency_ms: float = -1.0,
+        metadata: "dict | None" = None,
+    ) -> AuditEntry:
+        """Append one entry to the audit log and return it (thread-safe)."""
+        with self._lock:
+            self._ensure_dir()
+            if self._seq < 0:
+                last = self._last_entry()
+                self._seq = (last["seq"] + 1) if last else 0
+                self._prev_hash = last["entry_hash"] if last else ""
+            else:
+                self._seq += 1
+
+            ts = _dt.datetime.now(_dt.timezone.utc).isoformat()
+            entry_hash = AuditEntry._compute_hash(
+                self._prev_hash, self._seq, event_type, ts, input_hash, output_hash
+            )
+            entry = AuditEntry(
+                seq=self._seq,
+                ts=ts,
+                session_id=session_id,
+                event_type=event_type,
+                model_id=model_id,
+                input_hash=input_hash,
+                output_hash=output_hash,
+                latency_ms=latency_ms,
+                metadata=metadata or {},
+                prev_hash=self._prev_hash,
+                entry_hash=entry_hash,
+            )
+            self._prev_hash = entry_hash
+
+            line = _json_drift.dumps(_asdict(entry), separators=(",", ":")) + "\n"
+            with self._path.open("a", encoding="utf-8") as fh:
+                fh.write(line)
+
+        return entry
+
+    def read_tail(self, n: int = 100) -> "list[dict]":
+        """Return the last *n* entries as plain dicts (oldest first)."""
+        if not self._path.exists():
+            return []
+        entries: list[dict] = []
+        with self._path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(_json_drift.loads(line))
+                    except Exception:
+                        pass
+        return entries[-n:] if len(entries) > n else entries
+
+    def verify_chain(self) -> "tuple[bool, str]":
+        """Verify the forward hash chain; return ``(True, "")`` or ``(False, reason)``."""
+        if not self._path.exists():
+            return True, ""
+        prev = ""
+        with self._path.open("r", encoding="utf-8") as fh:
+            for lineno, line in enumerate(fh, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = _json_drift.loads(line)
+                except Exception:
+                    return False, f"line {lineno}: invalid JSON"
+                expected = AuditEntry._compute_hash(
+                    prev, e["seq"], e["event_type"], e["ts"],
+                    e["input_hash"], e["output_hash"],
+                )
+                if e["entry_hash"] != expected:
+                    return False, (
+                        f"line {lineno} seq={e['seq']}: entry_hash mismatch "
+                        f"(expected {expected[:12]}… got {e['entry_hash'][:12]}…)"
+                    )
+                if e["prev_hash"] != prev:
+                    return False, (
+                        f"line {lineno} seq={e['seq']}: prev_hash mismatch"
+                    )
+                prev = e["entry_hash"]
+        return True, ""
+
+
+_AUDIT_LOGGER: "AgentAuditLogger | None" = None
+
+
+def get_audit_logger() -> AgentAuditLogger:
+    """Return the process-level :class:`AgentAuditLogger` singleton."""
+    global _AUDIT_LOGGER
+    if _AUDIT_LOGGER is None:
+        _AUDIT_LOGGER = AgentAuditLogger()
+    return _AUDIT_LOGGER

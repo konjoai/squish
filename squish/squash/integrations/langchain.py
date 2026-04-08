@@ -130,3 +130,133 @@ class SquashCallback:
             "passed" if self._result.passed else "FAILED",
             self._model_path,
         )
+
+
+# ── Wave 46 — SquashAuditCallback ─────────────────────────────────────────────
+
+import time as _time  # noqa: E402
+
+
+class SquashAuditCallback(SquashCallback):
+    """LangChain callback that attests *and* writes an audit trail.
+
+    Extends :class:`SquashCallback` by routing every LLM invocation through
+    :class:`~squish.squash.governor.AgentAuditLogger`.  Each ``llm_start``
+    and ``llm_end`` event is written as an :class:`~squish.squash.governor.AuditEntry`
+    with SHA-256 hashes of the prompt / response payload and the measured
+    first-token latency.
+
+    The logger defaults to the process-level singleton but callers may supply
+    their own ``AgentAuditLogger`` instance for test isolation or custom log
+    paths::
+
+        from squish.squash.governor import AgentAuditLogger
+        from squish.squash.integrations.langchain import SquashAuditCallback
+
+        logger = AgentAuditLogger(log_path="/var/log/squash/audit.jsonl")
+        callback = SquashAuditCallback(
+            model_path=Path("./qwen3-8b-q4"),
+            session_id="req-abc-123",
+            audit_logger=logger,
+        )
+        llm = LlamaCpp(model_path="...", callbacks=[callback])
+
+    Parameters
+    ----------
+    session_id:
+        A stable identifier for this conversation / request.  Defaults to an
+        empty string if not provided.
+    audit_logger:
+        Supply a custom :class:`~squish.squash.governor.AgentAuditLogger`
+        instance.  If *None*, the process-level singleton is used.
+    All other parameters are forwarded to :class:`SquashCallback`.
+    """
+
+    def __init__(
+        self,
+        model_path: Path,
+        *,
+        session_id: str = "",
+        audit_logger: "Any | None" = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(model_path, **kwargs)
+        self._session_id = session_id
+        self._audit_logger = audit_logger
+        self._start_ts: float = 0.0
+
+    def _get_logger(self):
+        if self._audit_logger is not None:
+            return self._audit_logger
+        from squish.squash.governor import get_audit_logger, _hash_text  # noqa: F401
+        return get_audit_logger()
+
+    # ── LangChain callback overrides ──────────────────────────────────────────
+
+    def on_llm_start(
+        self,
+        serialized: dict[str, Any],
+        prompts: list[str],
+        **kwargs: Any,
+    ) -> None:
+        """Attest (first call) and log llm_start with hashed prompt."""
+        self._start_ts = _time.monotonic()
+        self._maybe_attest()
+        try:
+            from squish.squash.governor import _hash_text
+            combined = "\n".join(prompts)
+            self._get_logger().append(
+                session_id=self._session_id,
+                event_type="llm_start",
+                model_id=str(self._model_path),
+                input_hash=_hash_text(combined),
+                metadata={"prompt_count": len(prompts)},
+            )
+        except Exception as exc:
+            log.debug("SquashAuditCallback: llm_start log failed: %s", exc)
+
+    def on_chat_model_start(
+        self,
+        serialized: dict[str, Any],
+        messages: list[Any],
+        **kwargs: Any,
+    ) -> None:
+        """Attest (first call) and log llm_start for chat model."""
+        self._start_ts = _time.monotonic()
+        self._maybe_attest()
+        try:
+            from squish.squash.governor import _hash_text
+            combined = str(messages)
+            self._get_logger().append(
+                session_id=self._session_id,
+                event_type="llm_start",
+                model_id=str(self._model_path),
+                input_hash=_hash_text(combined),
+                metadata={"message_count": len(messages)},
+            )
+        except Exception as exc:
+            log.debug("SquashAuditCallback: chat_start log failed: %s", exc)
+
+    def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+        """Log llm_end with hashed output and measured latency."""
+        latency_ms = (_time.monotonic() - self._start_ts) * 1000 if self._start_ts else -1.0
+        if self._continuous_audit and self._attested:
+            log.debug("Squash continuous audit: re-evaluating policy …")
+            self._run_attestation()
+        try:
+            from squish.squash.governor import _hash_text
+            output_text = str(getattr(response, "generations", response))
+            self._get_logger().append(
+                session_id=self._session_id,
+                event_type="llm_end",
+                model_id=str(self._model_path),
+                output_hash=_hash_text(output_text),
+                latency_ms=round(latency_ms, 2),
+                metadata={
+                    "attestation_passed": (
+                        self._result.passed if self._result else None
+                    ),
+                },
+            )
+        except Exception as exc:
+            log.debug("SquashAuditCallback: llm_end log failed: %s", exc)

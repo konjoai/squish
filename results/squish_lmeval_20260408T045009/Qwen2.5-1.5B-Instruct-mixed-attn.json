@@ -1,0 +1,100 @@
+{
+  "model_name": "Qwen2.5-1.5B-Instruct-mixed-attn",
+  "npy_dir": "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-mixed-attn",
+  "eval_dir": "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-mixed-attn/squish_4bit",
+  "format_tag": "mixed-attn",
+  "tasks": {
+    "arc_easy": {
+      "score_pct": null,
+      "raw": {
+        "arc_easy": {
+          "alias": "arc_easy",
+          "acc,none": 0.73,
+          "acc_stderr,none": 0.019874354831287473,
+          "acc_norm,none": 0.726,
+          "acc_norm_stderr,none": 0.019966103540279518
+        },
+        "_elapsed_s": 7389.1547952500405,
+        "_raw_output_file": "/Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-mixed-attn/arc_easy/eval__Users_wscholl_models_Qwen2.5-1.5B-Instruct-mixed-attn_squish_4bit_0.4.11_25_arc_easy"
+      }
+    },
+    "arc_challenge": {
+      "score_pct": null,
+      "raw": {
+        "arc_challenge": {
+          "alias": "arc_challenge",
+          "acc,none": 0.438,
+          "acc_stderr,none": 0.022210326363977382,
+          "acc_norm,none": 0.448,
+          "acc_norm_stderr,none": 0.022261697292270087
+        },
+        "_elapsed_s": 7188.997940792004,
+        "_raw_output_file": "/Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-mixed-attn/arc_challenge/eval__Users_wscholl_models_Qwen2.5-1.5B-Instruct-mixed-attn_squish_4bit_0.4.11_25_arc_challenge"
+      }
+    },
+    "hellaswag": {
+      "score_pct": null,
+      "raw": {
+        "hellaswag": {
+          "alias": "hellaswag",
+          "acc,none": 0.49,
+          "acc_stderr,none": 0.022378596989230864,
+          "acc_norm,none": 0.574,
+          "acc_norm_stderr,none": 0.022136577335085575
+        },
+        "_elapsed_s": 3634.966305708047,
+        "_raw_output_file": "/Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-mixed-attn/hellaswag/eval__Users_wscholl_models_Qwen2.5-1.5B-Instruct-mixed-attn_squish_4bit_0.4.11_10_hellaswag"
+      }
+    },
+    "winogrande": {
+      "score_pct": null,
+      "raw": {
+        "winogrande": {
+          "alias": "winogrande",
+          "acc,none": 0.628,
+          "acc_stderr,none": 0.021637197985722334
+        },
+        "_elapsed_s": 1473.379495042027,
+        "_raw_output_file": "/Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-mixed-attn/winogrande/eval__Users_wscholl_models_Qwen2.5-1.5B-Instruct-mixed-attn_squish_4bit_0.4.11_05_winogrande"
+      }
+    },
+    "piqa": {
+      "score_pct": null,
+      "raw": {
+        "piqa": {
+          "alias": "piqa",
+          "acc,none": 0.746,
+          "acc_stderr,none": 0.01948659680164342,
+          "acc_norm,none": 0.728,
+          "acc_norm_stderr,none": 0.019920483209566107
+        },
+        "_elapsed_s": 644.3732159580104,
+        "_raw_output_file": "/Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-mixed-attn/piqa/eval__Users_wscholl_models_Qwen2.5-1.5B-Instruct-mixed-attn_squish_4bit_0.4.11_00_piqa"
+      }
+    },
+    "openbookqa": {
+      "score_pct": null,
+      "raw": {
+        "openbookqa": {
+          "alias": "openbookqa",
+          "acc,none": 0.294,
+          "acc_stderr,none": 0.02039509548493655,
+          "acc_norm,none": 0.396,
+          "acc_norm_stderr,none": 0.021893529941665716
+        },
+        "_elapsed_s": 501.0460654590279,
+        "_raw_output_file": "/Users/wscholl/squish/results/_tmp_Qwen2.5-1.5B-Instruct-mixed-attn/openbookqa/eval__Users_wscholl_models_Qwen2.5-1.5B-Instruct-mixed-attn_squish_4bit_0.4.11_00_openbookqa"
+      }
+    }
+  },
+  "platform": {
+    "platform": "macOS-26.4-arm64-arm-64bit-Mach-O",
+    "processor": "arm",
+    "python": "3.14.3",
+    "mlx_lm": "0.31.1",
+    "lm_eval": "0.4.11"
+  },
+  "timestamp": "20260408T045009",
+  "limit": 500,
+  "batch_size": 4
+}

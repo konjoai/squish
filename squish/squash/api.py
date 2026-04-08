@@ -1295,6 +1295,47 @@ def _require_path(p: str) -> None:
         raise HTTPException(status_code=404, detail=f"Path not found: {p}")
 
 
+# ── Wave 46 — Agent audit trail endpoint ─────────────────────────────────────
+
+@app.get("/audit/trail")
+async def get_audit_trail(
+    limit: int = 100,
+    log: str | None = None,
+) -> JSONResponse:
+    """Return the last *limit* entries from the agent audit trail.
+
+    The audit trail is an append-only JSONL file maintained by
+    :class:`~squish.squash.governor.AgentAuditLogger`.  Each entry contains a
+    SHA-256 hash of the LLM input/output, the event type, session ID, and a
+    forward hash-chain link for tamper evidence.
+
+    Addresses EU AI Act Art. 12: mandatory logging for high-risk AI systems.
+
+    Query parameters
+    ----------------
+    limit:
+        Maximum number of most-recent entries to return (default 100, max 1000).
+    log:
+        Override the audit log file path (default: ``SQUASH_AUDIT_LOG`` env or
+        ``~/.squash/audit.jsonl``).
+    """
+    from squish.squash.governor import AgentAuditLogger
+
+    limit = max(1, min(limit, 1000))
+    logger = AgentAuditLogger(log_path=log)
+    entries = logger.read_tail(limit)
+    return JSONResponse(
+        content={
+            "count": len(entries),
+            "log_path": str(logger.path),
+            "entries": entries,
+        }
+    )
+
+
+
+
+
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:
     return {
         "model_id": r.model_id,

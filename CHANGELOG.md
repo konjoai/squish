@@ -5,6 +5,39 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 46: Agent audit trail
+
+### Added
+
+- **`squish/squash/governor.py`** — `AuditEntry` dataclass + `AgentAuditLogger` append-only JSONL
+  audit logger with SHA-256 forward hash chain (EU AI Act Art. 12 compliance).
+  `_hash_text()` helper. `get_audit_logger()` process-level singleton.
+  Hash chain: `entry_hash = sha256(prev_hash|seq|event_type|ts|input_hash|output_hash)`.
+  `verify_chain()` detects any tampered or corrupted entries (returns `(False, reason)`).
+  Default log: `$SQUASH_AUDIT_LOG` or `~/.squash/audit.jsonl`. Thread-safe.
+
+- **`squish/squash/integrations/langchain.py`** — `SquashAuditCallback` extends `SquashCallback`.
+  Logs `llm_start` / `llm_end` events with SHA-256 hashed prompt/response and measured latency.
+  Audit logger errors never propagate to the caller. Accepts injected `AgentAuditLogger` for
+  test isolation.
+
+- **`squish/squash/cli.py`** — `squash audit show` (last N entries, `--json` for machine output,
+  `--log` override) and `squash audit verify` (chain integrity check, exit 0 = intact, exit 2
+  = tampered/corrupt).
+
+- **`squish/squash/api.py`** — `GET /audit/trail` REST endpoint. Params: `limit` (1–1000,
+  default 100), `log` (path override). Returns `{"count", "log_path", "entries"}`.
+
+### Module count
+122 (net zero — no new modules added)
+
+### Unblocks
+- EU AI Act Art. 12 mandatory audit log requirement for high-risk AI systems
+- SOC/SIEM integration via JSONL streaming to log aggregators
+- Differentiator for agentic deployments requiring tamper-evident inference logs
+
+---
+
 ## [Unreleased] — Wave 45: MCP server manifest attestation
 
 ### Added

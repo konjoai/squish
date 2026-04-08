@@ -9,6 +9,7 @@
 2026-04-10
 
 ## Last commits
+- **`(w46 — pending push)`** — feat(wave46): agent audit trail — AgentAuditLogger JSONL hash chain + SquashAuditCallback + CLI + REST — 66 new tests, 4907 suite (0 failures), 122 modules
 - **`(w45 — pending push)`** — feat(wave45): MCP server manifest attestation — McpScanner + McpSigner + attest-mcp CLI + POST /attest/mcp — 110 tests, 0 failures, 122 modules
 - **`bf4a5eb (w44)`** — feat(wave44): Azure DevOps SquashAttest@1 marketplace extension
 - **`e93edf7 (w43)`** — feat(wave43): CircleCI Orb + Artifact Hub Helm chart publish workflows; 23 tests
