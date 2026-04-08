@@ -761,6 +761,38 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     audit_verify.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
+    # ── Wave 47 — RAG knowledge base integrity ────────────────────────────────
+    scan_rag_cmd = sub.add_parser(
+        "scan-rag",
+        help="RAG knowledge base integrity scanner — index a corpus and detect drift",
+    )
+    scan_rag_sub = scan_rag_cmd.add_subparsers(dest="scan_rag_command")
+
+    scan_rag_index = scan_rag_sub.add_parser(
+        "index", help="Hash every document in a corpus and write a signed manifest"
+    )
+    scan_rag_index.add_argument("corpus_dir", help="Corpus directory to index")
+    scan_rag_index.add_argument(
+        "--glob",
+        default="**/*",
+        metavar="PATTERN",
+        help='File glob (default "**/*")',
+    )
+    scan_rag_index.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    scan_rag_verify = scan_rag_sub.add_parser(
+        "verify",
+        help="Verify live corpus against manifest (exit 0=intact, 2=drift detected)",
+    )
+    scan_rag_verify.add_argument("corpus_dir", help="Corpus directory to verify")
+    scan_rag_verify.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Print drift report as JSON",
+    )
+    scan_rag_verify.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
     return parser
 
 
@@ -1753,6 +1785,60 @@ def _cmd_audit(args: argparse.Namespace, quiet: bool) -> int:
     return 1
 
 
+def _cmd_scan_rag(args: argparse.Namespace, quiet: bool) -> int:
+    """Handler for ``squash scan-rag index`` and ``squash scan-rag verify``."""
+    from squish.squash.rag import RagScanner  # lazy — keeps cli.py import-fast
+
+    sub = getattr(args, "scan_rag_command", None)
+    if sub is None:
+        print("usage: squash scan-rag {index,verify} -- use --help for details", file=sys.stderr)
+        return 1
+
+    if sub == "index":
+        corpus_dir = args.corpus_dir
+        try:
+            manifest = RagScanner.index(corpus_dir, glob=args.glob)
+        except NotADirectoryError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        except Exception as exc:  # noqa: BLE001
+            print(f"error indexing corpus: {exc}", file=sys.stderr)
+            return 2
+        if not quiet:
+            print(
+                f"✓ indexed {manifest.file_count} files\n"
+                f"  corpus:        {manifest.corpus_dir}\n"
+                f"  manifest_hash: {manifest.manifest_hash}\n"
+                f"  indexed_at:    {manifest.indexed_at}"
+            )
+        return 0
+
+    if sub == "verify":
+        corpus_dir = args.corpus_dir
+        try:
+            result = RagScanner.verify(corpus_dir)
+        except Exception as exc:  # noqa: BLE001
+            print(f"error verifying corpus: {exc}", file=sys.stderr)
+            return 2
+        if getattr(args, "json_output", False):
+            import json as _json
+            print(_json.dumps(result.to_dict(), indent=2))
+        elif not quiet:
+            if result.ok:
+                print(f"✓ corpus intact — {result.total_files} files, no drift")
+            else:
+                print(
+                    f"✗ drift detected — {result.drift_count} change(s) in {result.corpus_dir}",
+                    file=sys.stderr,
+                )
+                for item in result.drift:
+                    print(f"  [{item.status:8s}] {item.path}", file=sys.stderr)
+        return 0 if result.ok else 2
+
+    print(f"unknown scan-rag subcommand: {sub}", file=sys.stderr)
+    return 1
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -1815,6 +1901,8 @@ def main() -> None:
         sys.exit(_cmd_attest_mcp(args, quiet))
     elif args.command == "audit":
         sys.exit(_cmd_audit(args, quiet))
+    elif args.command == "scan-rag":
+        sys.exit(_cmd_scan_rag(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)
