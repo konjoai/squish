@@ -2,12 +2,14 @@
 
 All tests are pure-unit: no real model weights, no network I/O, no mutation of
 sys.modules or environment variables.  The squash stack (sbom_builder,
-eval_binder, oms_signer) is imported for real; only EvalBinder.bind and
+oms_signer) is imported for real; only EvalBinder.bind and
 OmsSigner.sign are patched where the action under test delegates to them.
 
-Patch targets use source-module paths (squish.squash.eval_binder.EvalBinder.bind
+Patch targets use source-module paths (squish.squash.sbom_builder.EvalBinder.bind
 etc.) because cmd_sbom performs local imports inside the function body — patching
 cli.EvalBinder.bind would miss the real call site.
+
+W45: eval_binder.py shim deleted — EvalBinder canonical location is sbom_builder.
 """
 
 from __future__ import annotations
@@ -127,7 +129,7 @@ def test_bind_calls_eval_binder():
         result_file = tmp_path / "lmeval.json"
         result_file.write_text('{"scores": {"arc_easy": 70.6}, "raw_results": {}}')
 
-        with patch("squish.squash.eval_binder.EvalBinder.bind") as mock_bind:
+        with patch("squish.squash.sbom_builder.EvalBinder.bind") as mock_bind:
             cmd_sbom(_ns(sbom_action="bind", model_dir=tmp, result=str(result_file)))
 
     mock_bind.assert_called_once_with(bom_path, result_file, None)

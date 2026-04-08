@@ -1,5 +1,6 @@
-"""tests/test_eval_binder.py — Integration tests for squish.squash.eval_binder.
+"""tests/test_eval_binder.py — Integration tests for squish.squash.sbom_builder.EvalBinder.
 
+W45: eval_binder.py shim deleted. EvalBinder canonical location is sbom_builder.py.
 Test taxonomy: Integration — real temp dirs, real JSON files written and read.
 No mocks of the binder itself.  Covers:
     - Shape contract: output metrics list length == number of score keys
@@ -19,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from squish.squash.eval_binder import EvalBinder
+from squish.squash.sbom_builder import EvalBinder
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

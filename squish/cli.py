@@ -1602,8 +1602,7 @@ def cmd_chat(args):  # pragma: no cover
 def cmd_sbom(args) -> None:
     """Inspect, verify, bind scores to, or sign the CycloneDX ML-BOM sidecar."""
     try:
-        from squish.squash.sbom_builder import CycloneDXBuilder
-        from squish.squash.eval_binder import EvalBinder
+        from squish.squash.sbom_builder import CycloneDXBuilder, EvalBinder
         from squish.squash.oms_signer import OmsSigner
     except ImportError:
         print("squish[squash] not installed — run: pip install 'squish[squash]'",
@@ -2006,7 +2005,7 @@ def cmd_eval(args) -> None:
     bom_path = model_dir / "cyclonedx-mlbom.json"
     if not no_bind:
         if bom_path.exists():
-            from squish.squash.eval_binder import EvalBinder
+            from squish.squash.sbom_builder import EvalBinder
             EvalBinder.bind(bom_path, result_file, baseline_path)
             print(f"  ✓ scores bound to sidecar")
         else:

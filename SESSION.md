@@ -6,21 +6,19 @@
 ---
 
 ## Current date
-2026-04-09
+2026-04-10
 
 ## Last commits
+- **`(w45 — pending push)`** — feat(wave45): MCP server manifest attestation — McpScanner + McpSigner + attest-mcp CLI + POST /attest/mcp — 110 tests, 0 failures, 122 modules
 - **`bf4a5eb (w44)`** — feat(wave44): Azure DevOps SquashAttest@1 marketplace extension
 - **`e93edf7 (w43)`** — feat(wave43): CircleCI Orb + Artifact Hub Helm chart publish workflows; 23 tests
 - **`784df22 (w42)`** — fix(wave42): bias formula + norm exclusion + g=32 default; INT4 AWQ arc_easy=70.8% PASS
 - `98885d0 (w41)` — feat(wave41): squish-native lm_eval harness — dev/benchmarks/squish_lm_eval.py (52 tests, 4642 suite)
-- `d20b0ea` — feat(wave40): GCP Vertex AI integration — VertexAISquash platform adapter (24 tests)
 
 ---
 
 ## Module count
-- **122** Python files in `squish/` (non-experimental). W44 added `azure_devops.py` (#122).
-  Justification on file: completes CI/CD platform matrix (GitHub Actions, GitLab, Jenkins,
-  Argo, CircleCI, Azure DevOps). No further additions planned for CI/CD tier.
+- **122** Python files in `squish/` (non-experimental). W45: `mcp.py` +1, `eval_binder.py` −1 = net zero.
 
 ---
 

@@ -5,6 +5,55 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 45: MCP server manifest attestation
+
+### Added
+
+- **`squish/squash/mcp.py`** — `McpScanner` (6 threat classes) + `McpSigner` (Sigstore keyless signing).
+  First-mover MCP supply-chain attestation.  `McpScanner.scan()` accepts a `tools/list` catalog
+  (`dict` with `"tools"` key, or a plain `list`) and checks every tool entry for:
+  - **MCP-001** prompt injection phrases (14 patterns, IGNORECASE)
+  - **MCP-002** SSRF / internal-network references (13 patterns incl. RFC1918 + cloud metadata)
+  - **MCP-003** dangerous OS command shadowing (27 reserved names: `shell`, `exec`, `eval`, …)
+  - **MCP-004** schema integrity gaps (missing `name`, `description`, or `inputSchema`)
+  - **MCP-005** data-exfiltration URL indicators (OOB beacons, `/upload` paths — warning)
+  - **MCP-006** permission over-reach phrases (`root access`, `admin`, `sudo` — warning)
+  Status: `"unsafe"` (any error), `"warn"` (warnings only), `"safe"`.
+  `McpSigner.sign()` writes `<catalog>.sig.json` via Sigstore keyless OIDC; lazy import,
+  never raises, returns `None` when sigstore absent.
+
+- **`squash attest-mcp` CLI** (`squish/squash/cli.py`) — `squash attest-mcp <catalog.json>`.
+  Flags: `--policy mcp-strict` (default), `--sign`, `--fail-on-violation`,
+  `--json-result PATH`, `--output-dir PATH`, `--quiet`.
+  Prints ✓/⚠/✗ icon + per-finding breakdown. Exit 1 if `--fail-on-violation` + status unsafe.
+
+- **`POST /attest/mcp`** (`squish/squash/api.py`) — MCP tool manifest supply-chain attestation
+  REST endpoint.  `McpAttestRequest` body: `catalog_path`, `policy`, `sign`, `fail_on_violation`.
+  Returns 422 on fail_on_violation + unsafe status, 200 otherwise.
+  Increments `squash_attest_total` counter.
+
+- **`mcp-strict` policy** (`squish/squash/policy.py`) — 6 rules (MCP-001 through MCP-006)
+  registered in `AVAILABLE_POLICIES`.  Field sentinel notation `mcp:tool_*` (compatible with
+  `PolicyEngine._resolve_field()` colon-key pattern, analogous to `squash:scan_result`).
+  Rationale cites EU AI Act Art. 9(2)(d) for adversarial input resilience.
+
+- **`tests/test_squash_wave45.py`** — 110 tests covering all threat classes,
+  scan_file(), edge-cases (None tools, non-dict entries, very large catalogs),
+  McpSigner, mcp-strict policy structure, attest-mcp CLI parser, /attest/mcp API route,
+  eval_binder deletion, EvalBinder sbom_builder import.
+
+### Removed
+
+- **`squish/squash/eval_binder.py`** — 12-line backward-compat shim deleted.
+  Canonical location: `squish.squash.sbom_builder.EvalBinder`.
+  All callers updated: `squish/cli.py`, `dev/benchmarks/bench_lmeval_all_models.py`,
+  `dev/squash_backfill.py`, `tests/test_eval_binder.py`, `tests/test_squash_wave19.py`,
+  `tests/test_cli_sbom.py`, `tests/test_cli_eval.py`, `tests/test_squash_backfill.py`.
+
+### Module count: 122 (unchanged — `mcp.py` +1, `eval_binder.py` −1)
+
+---
+
 ## [Unreleased] — Wave 44: Azure DevOps SquashAttest@1 marketplace extension
 
 ### Added

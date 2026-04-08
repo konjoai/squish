@@ -90,7 +90,7 @@ class TestCmdEval(unittest.TestCase):
 
             with (
                 patch("subprocess.run", side_effect=fake_run),
-                patch("squish.squash.eval_binder.EvalBinder.bind") as mock_bind,
+                patch("squish.squash.sbom_builder.EvalBinder.bind") as mock_bind,
             ):
                 args = self._make_args(
                     model_dir=model_dir,
@@ -140,7 +140,7 @@ class TestCmdEval(unittest.TestCase):
 
             with (
                 patch("subprocess.run", side_effect=fake_run),
-                patch("squish.squash.eval_binder.EvalBinder.bind") as mock_bind,
+                patch("squish.squash.sbom_builder.EvalBinder.bind") as mock_bind,
             ):
                 args = self._make_args(
                     model_dir=model_dir,
@@ -179,7 +179,7 @@ class TestCmdEval(unittest.TestCase):
 
             with (
                 patch("subprocess.run", side_effect=fake_run),
-                patch("squish.squash.eval_binder.EvalBinder.bind") as mock_bind,
+                patch("squish.squash.sbom_builder.EvalBinder.bind") as mock_bind,
             ):
                 args = self._make_args(
                     model_dir=model_dir,

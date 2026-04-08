@@ -166,8 +166,7 @@ def process_one(
 
     This function is importable for unit tests.
     """
-    from squish.squash.sbom_builder import CycloneDXBuilder  # noqa: PLC0415
-    from squish.squash.eval_binder import EvalBinder          # noqa: PLC0415
+    from squish.squash.sbom_builder import CycloneDXBuilder, EvalBinder  # noqa: PLC0415
 
     if not model_dir.exists():
         return "MISSING"
