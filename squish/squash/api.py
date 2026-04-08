@@ -1140,6 +1140,25 @@ class RagVerifyRequest(BaseModel):
     corpus_dir: str = Field(description="Absolute path to the corpus directory to verify")
 
 
+# ── Wave 48 — Model transformation lineage ────────────────────────────────────
+
+
+class LineageRecordRequest(BaseModel):
+    """Request body for POST /lineage/record."""
+
+    model_dir: str = Field(description="Absolute path to the model artefact directory")
+    operation: str = Field(description='Operation label, e.g. "compress", "sign", "export"')
+    model_id: str = Field(default="", description="Model identifier (default: directory name)")
+    input_dir: str = Field(default="", description="Source directory (default: model_dir)")
+    params: dict = Field(default_factory=dict, description="Operation-specific key/value params")
+
+
+class LineageVerifyRequest(BaseModel):
+    """Request body for POST /lineage/verify."""
+
+    model_dir: str = Field(description="Absolute path to the model artefact directory")
+
+
 @app.post("/attest/mlflow")
 async def attest_mlflow(req: AttestIntegrationRequest) -> JSONResponse:
     """Run an offline AttestPipeline for an MLflow model artifact.
@@ -1401,6 +1420,82 @@ async def post_rag_verify(req: RagVerifyRequest) -> JSONResponse:
 
     def _run() -> dict:
         result = RagScanner.verify(corpus)
+        return result.to_dict()
+
+    loop = asyncio.get_running_loop()
+    content = await loop.run_in_executor(_executor, _run)
+    return JSONResponse(content=content)
+
+
+# ── Wave 48 — Model transformation lineage ────────────────────────────────────
+
+
+@app.post("/lineage/record")
+async def post_lineage_record(req: LineageRecordRequest) -> JSONResponse:
+    """Record a model transformation event into the lineage chain.
+
+    Equivalent to ``squash lineage record <model_dir> --operation <op>``.
+    """
+    from squish.squash.lineage import LineageChain
+
+    model_dir = Path(req.model_dir)
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    def _run() -> dict:
+        model_id = req.model_id or model_dir.name
+        input_dir = req.input_dir or str(model_dir)
+        evt = LineageChain.create_event(
+            operation=req.operation,
+            model_id=model_id,
+            input_dir=input_dir,
+            output_dir=str(model_dir),
+            params=req.params,
+        )
+        event_hash = LineageChain.record(model_dir, evt)
+        return {"event_hash": event_hash, "event_id": evt.event_id, "model_dir": str(model_dir)}
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(_executor, _run)
+    return JSONResponse(content=result)
+
+
+@app.get("/lineage/show")
+async def get_lineage_show(model_dir: str) -> JSONResponse:
+    """Return all recorded lineage events for a model directory.
+
+    Equivalent to ``squash lineage show <model_dir>``.
+    """
+    from squish.squash.lineage import LineageChain
+
+    mdir = Path(model_dir)
+    if not mdir.exists():
+        raise HTTPException(status_code=404, detail=f"model_dir not found: {model_dir}")
+
+    def _run() -> list[dict]:
+        events = LineageChain.load(mdir)
+        return [e.to_dict() for e in events]
+
+    loop = asyncio.get_running_loop()
+    events = await loop.run_in_executor(_executor, _run)
+    return JSONResponse(content={"model_dir": str(mdir), "event_count": len(events), "events": events})
+
+
+@app.post("/lineage/verify")
+async def post_lineage_verify(req: LineageVerifyRequest) -> JSONResponse:
+    """Verify the integrity of a model's lineage chain.
+
+    Equivalent to ``squash lineage verify <model_dir>``.
+    Returns HTTP 200 with ``"ok": true`` when the chain is intact.
+    Returns HTTP 200 with ``"ok": false`` on tampering or missing chain.
+    """
+    from squish.squash.lineage import LineageChain
+
+    mdir = Path(req.model_dir)
+    if not mdir.exists():
+        raise HTTPException(status_code=404, detail=f"model_dir not found: {req.model_dir}")
+
+    def _run() -> dict:
+        result = LineageChain.verify(mdir)
         return result.to_dict()
 
     loop = asyncio.get_running_loop()

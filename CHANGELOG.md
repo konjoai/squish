@@ -5,7 +5,50 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 47: RAG knowledge base integrity scanner
+## [Unreleased] — Wave 48: model transformation lineage chain
+
+### Added
+
+- **`squish/squash/lineage.py`** — `LineageChain` Merkle-chained model
+  transformation ledger, stored as `.lineage_chain.json` alongside model
+  artefacts.  `TransformationEvent` records who ran what operation, when, on
+  which directories, and with what parameters.  Each event's `event_hash` is
+  the SHA-256 of its canonical JSON (all fields except `event_hash` itself,
+  `sort_keys=True`); each event's `prev_hash` equals the preceding event's
+  `event_hash`, forming a Merkle chain that `verify()` can validate without
+  external state.  `LineageVerifyResult` carries `ok`, `event_count`,
+  `broken_at` (0-based index of first bad event), and `message`.
+  Regulatory drivers: EU AI Act Annex IV (Art. 11) technical documentation,
+  NIST AI RMF GOVERN 1.7 supply-chain provenance, M&A model transfer due
+  diligence.  No external dependencies — stdlib only (hashlib, json, pathlib,
+  dataclasses, datetime, getpass, socket, uuid, logging).
+
+- **`squish/squash/cli.py`** — `squash lineage record <model_dir>
+  --operation OP [--model-id] [--input-dir] [--params KEY=VALUE...]`,
+  `squash lineage show <model_dir> [--json]`, and
+  `squash lineage verify <model_dir>`.  Exit codes: 0 = success / chain
+  intact, 1 = user/input error, 2 = chain tampered or missing.
+
+- **`squish/squash/api.py`** — REST routes: `POST /lineage/record`,
+  `GET /lineage/show?model_dir=<path>`, `POST /lineage/verify`.
+  Pydantic request models `LineageRecordRequest` and `LineageVerifyRequest`.
+  `/lineage/verify` returns HTTP 200 with `"ok": true/false` — callers should
+  gate deployments on the `ok` field.  `POST /lineage/record` returns
+  `event_hash`, `event_id`, and `model_dir`.
+
+- **`squish/cli.py`** (`_cmd_compress_inner`) — Non-fatal auto-hook: every
+  `squish compress` run automatically records a lineage event in the output
+  directory when `squish[squash]` is installed.  Falls back silently via
+  `except ImportError: pass` when squash is absent; logs a warning on any
+  other error.
+
+- **`tests/test_squash_wave48.py`** — 69 new tests across 10 classes
+  covering `TransformationEvent`, `LineageVerifyResult`, `_utc_now`,
+  `_load_chain_json`, `LineageChain._hash_event` / `.create_event` /
+  `.record` / `.load` / `.verify`, the CLI subcommand, and all three REST
+  routes.  Full suite: **5033 passed, 25 skipped** (0 failures).
+
+
 
 ### Added
 
