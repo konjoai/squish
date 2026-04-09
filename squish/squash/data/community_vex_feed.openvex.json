@@ -2,9 +2,9 @@
   "@context": "https://openvex.dev/ns/v0.2.0",
   "@type": "OpenVEXDocument",
   "specVersion": "0.2.0",
-  "@id": "https://squish.ai/vex/community-feed-v1",
+  "@id": "https://squish.ai/vex/community-feed-v2",
   "author": "squash",
-  "timestamp": "2026-04-06T00:00:00Z",
+  "timestamp": "2026-04-09T00:00:00Z",
   "statements": [
     {
       "vulnerability": {"name": "CVE-2024-34359"},
@@ -17,21 +17,21 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
-      "impact_statement": "squish serves models exclusively via the MLX safetensors format. The llama-cpp-python library and GGUF model loading path are absent from the squish inference stack; this heap buffer overflow in GGUF parsing cannot be reached."
+      "impact_statement": "squish serves models via MLX safetensors only. llama-cpp-python GGUF heap overflow CVE-2024-34359 has no attack surface."
     },
     {
       "vulnerability": {"name": "CVE-2023-27534"},
       "products": [
+        {"@id": "pkg:pypi/squish"},
         {"@id": "pkg:huggingface/Qwen/Qwen2.5-1.5B-Instruct"},
         {"@id": "pkg:huggingface/Qwen/Qwen3-0.6B"},
         {"@id": "pkg:huggingface/Qwen/Qwen3-8B"},
         {"@id": "pkg:huggingface/meta-llama/Llama-3.2-1B-Instruct"},
-        {"@id": "pkg:huggingface/google/gemma-3-1b-it"},
-        {"@id": "pkg:pypi/squish@9.13.0"}
+        {"@id": "pkg:huggingface/google/gemma-3-1b-it"}
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
-      "impact_statement": "squish loads model weights exclusively via the safetensors library. The PyTorch pickle-based .pt/.bin checkpoint format is neither loaded nor executed in the squish inference path; Python object deserialization through PyTorch does not occur."
+      "impact_statement": "squish uses safetensors exclusively. PyTorch pickle-based .pt/.bin deserialization is neither loaded nor executed in the squish inference path."
     },
     {
       "vulnerability": {"name": "CVE-2024-3660"},
@@ -44,7 +44,188 @@
       ],
       "status": "not_affected",
       "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "squish does not use Keras or the Keras model.json configuration format. None of the model families distributed through squish are Keras-native architectures; the vulnerable Keras model-loading code path is not reachable."
+      "impact_statement": "squish does not use Keras or model.json format. Keras RCE CVE-2024-3660 code path is not reachable."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-5480"},
+      "products": [
+        {"@id": "pkg:pypi/squish"},
+        {"@id": "pkg:huggingface/Qwen/Qwen2.5-1.5B-Instruct"},
+        {"@id": "pkg:huggingface/Qwen/Qwen3-0.6B"},
+        {"@id": "pkg:huggingface/Qwen/Qwen3-8B"},
+        {"@id": "pkg:huggingface/meta-llama/Llama-3.2-1B-Instruct"},
+        {"@id": "pkg:huggingface/google/gemma-3-1b-it"}
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish does not call torch.load(). All model loading uses safetensors which validates headers cryptographically and never deserializes Python pickle objects."
+    },
+    {
+      "vulnerability": {"name": "CVE-2025-32434"},
+      "products": [
+        {"@id": "pkg:pypi/squish"},
+        {"@id": "pkg:huggingface/Qwen/Qwen2.5-1.5B-Instruct"},
+        {"@id": "pkg:huggingface/Qwen/Qwen3-0.6B"},
+        {"@id": "pkg:huggingface/Qwen/Qwen3-8B"},
+        {"@id": "pkg:huggingface/meta-llama/Llama-3.2-1B-Instruct"},
+        {"@id": "pkg:huggingface/google/gemma-3-1b-it"}
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "CVE-2025-32434 is a PyTorch torch.load() RCE even with weights_only=True. squish never invokes torch.load(); MLX is used exclusively for all weight loading."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-0520"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish does not use HuggingFace Transformers at inference time and never executes trust_remote_code paths. Model files are static weight tensors only."
+    },
+    {
+      "vulnerability": {"name": "CVE-2023-36188"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish does not depend on LangChain. The PAL chain code injection in CVE-2023-36188 has no attack surface; no user-supplied input is passed to exec() or eval() in squish."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-22195"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish does not render Jinja2 templates from user-supplied content. Jinja2 is a transitive documentation dependency only; it is not invoked in the inference server path."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-56326"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Jinja2 sandbox bypass CVE-2024-56326 requires attacker-controlled template input. squish has no such code path in the inference server or CLI."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-56201"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Related to CVE-2024-56326: squish does not execute Jinja2 templates from external or user-controlled data at runtime."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-5569"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "squish does not extract ZIP archives containing model weights at runtime. The zipp infinite-loop DoS CVE-2024-5569 is not triggerable in squish."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-39689"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "under_investigation",
+      "justification": "",
+      "impact_statement": "squish uses stdlib urllib for VEX feed fetches. Transitive certifi pins via doc/test tooling are under review. A CA bundle version audit is scheduled for the next maintenance cycle."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-35195"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish uses Python stdlib urllib for all HTTP operations. The requests TLS verification bypass CVE-2024-35195 has no attack surface; squish does not import requests at runtime."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-37891"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish uses stdlib urllib, not urllib3. The proxy-authorization header leakage CVE-2024-37891 has no attack surface."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-6345"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish does not call setuptools at runtime. CVE-2024-6345 RCE via malicious package metadata requires setuptools to process an attacker-controlled package; squish's inference server does not install packages."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-21506"},
+      "products": [
+        {"@id": "pkg:huggingface/Qwen/Qwen2.5-1.5B-Instruct"},
+        {"@id": "pkg:huggingface/Qwen/Qwen3-0.6B"},
+        {"@id": "pkg:huggingface/Qwen/Qwen3-8B"},
+        {"@id": "pkg:huggingface/meta-llama/Llama-3.2-1B-Instruct"},
+        {"@id": "pkg:huggingface/google/gemma-3-1b-it"}
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish serves MLX safetensors format; ONNX Runtime is not installed. The integer overflow in ONNX model parsing CVE-2024-21506 has no attack surface."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-52304"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish server uses uvicorn with starlette, not aiohttp. HTTP request smuggling CVE-2024-52304 has no attack surface."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-45490"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish processes model configuration and SBOM data as JSON. libexpat XML parsing is not used in any squish code path. CVE-2024-45490 entity expansion DoS is not reachable."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-4741"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The OpenSSL use-after-free CVE-2024-4741 affects async X.509 APIs. squish uses the Python ssl module's standard TLS stack and does not invoke the affected OpenSSL async code path."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-3094"},
+      "products": [
+        {"@id": "pkg:pypi/squish"},
+        {"@id": "pkg:huggingface/Qwen/Qwen2.5-1.5B-Instruct"},
+        {"@id": "pkg:huggingface/Qwen/Qwen3-0.6B"},
+        {"@id": "pkg:huggingface/Qwen/Qwen3-8B"},
+        {"@id": "pkg:huggingface/meta-llama/Llama-3.2-1B-Instruct"},
+        {"@id": "pkg:huggingface/google/gemma-3-1b-it"}
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "XZ Utils backdoor CVE-2024-3094 targets xz-linked sshd on affected glibc Linux distributions. squish ships as Python wheels without xz-linked binaries. Model weights use safetensors or MLX-native formats."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-32002"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish does not use Git submodules for model artifact retrieval. Git RCE via malicious submodule URL CVE-2024-32002 has no attack surface."
+    },
+    {
+      "vulnerability": {"name": "CVE-2023-6831"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish does not use MLflow. Arbitrary file read via crafted MLflow artifact URI CVE-2023-6831 has no attack surface; mlflow is not a squish dependency."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-24762"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "squish inference endpoints accept JSON bodies only; multipart/form-data is not handled. Starlette large multipart DoS CVE-2024-24762 is not triggerable."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-45811"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish does not use Vite or serve a browser frontend. Vite open redirect CVE-2024-45811 has no attack surface."
+    },
+    {
+      "vulnerability": {"name": "CVE-2025-27516"},
+      "products": [{"@id": "pkg:pypi/squish"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "squish does not pass externally-controlled data to Jinja2. Jinja2 sandbox bypass via attr filter CVE-2025-27516 requires attacker-controlled template source; squish never renders external templates at runtime."
     }
   ]
 }

@@ -5,6 +5,69 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 52: VEX feed subscription infrastructure
+
+### Added
+
+- **`squish/squash/vex.py`** — Three interconnected extensions:
+  - `VexFeed.statements` property: flat `list[VexStatement]` across all sub-documents
+    (fixes pre-existing `_cmd_vex` call site bug).
+  - `VexFeed.from_url(…, api_key)`, `VexCache.load_or_fetch(…, api_key)`,
+    `VexCache._fetch(…, api_key)` — explicit Bearer token injection via the
+    `SQUASH_VEX_API_KEY` environment variable or an explicit call-site argument.
+    Key value is never stored on disk; only the env-var name is persisted.
+  - `VexSubscription` dataclass: `url`, `alias`, `api_key_env_var`,
+    `polling_hours`, `last_polled` fields.
+  - `VexSubscriptionStore` — persists subscriptions to
+    `~/.squish/vex-subscriptions.json`; methods: `add()`, `remove()`, `list()`,
+    `get()`, `mark_polled()`.  Deduplicates by URL.  Graceful on missing or
+    malformed JSON.  Never writes the API key literal.
+
+- **`squish/squash/cli.py`** — Three new `squash vex` subcommands:
+  - `squash vex subscribe URL [--alias NAME] [--api-key-env VAR] [--polling-hours N] [--quiet]`
+  - `squash vex unsubscribe URL_OR_ALIAS [--quiet]` (exit 1 if not found)
+  - `squash vex list-subscriptions`
+  - `squash vex update` now resolves `SQUASH_VEX_API_KEY` and passes it through
+    the cache fetch path.
+
+- **`squish/squash/data/community_vex_feed.openvex.json`** — Expanded from 3 to 25
+  statements (feed ID bumped to `community-feed-v2`).  Covers ML/Python-ecosystem
+  CVEs: PyTorch pickle/torch.load (CVE-2024-5480, CVE-2025-32434), GGUF overflow
+  (CVE-2024-34359), Keras (CVE-2024-3660), Jinja2 sandbox (CVE-2024-22195,
+  CVE-2024-56326, CVE-2024-56201, CVE-2025-27516), LangChain exec injection
+  (CVE-2023-36188), requests/urllib3 (CVE-2024-35195, CVE-2024-37891),
+  certifi obsolete roots (CVE-2024-39689, status=`under_investigation`),
+  setuptools RCE (CVE-2024-6345), ONNX integer overflow (CVE-2024-21506),
+  aiohttp smuggling (CVE-2024-52304), libexpat (CVE-2024-45490),
+  OpenSSL UAF (CVE-2024-4741), XZ backdoor (CVE-2024-3094),
+  Git submodule RCE (CVE-2024-32002), MLflow file read (CVE-2023-6831),
+  Starlette multipart DoS (CVE-2024-24762), Vite open redirect (CVE-2024-45811),
+  zipp DoS (CVE-2024-5569), HuggingFace trust_remote_code (CVE-2024-0520).
+
+- **`tests/test_squash_wave52.py`** — 52 tests (all pass).  Covers: `VexFeed.statements`
+  (flat-list, empty, order, type), `from_url` Authorization header injection (explicit
+  key, env-var fallback, no key), `VexCache._fetch` header propagation,
+  `VexSubscription` defaults and custom fields, `VexSubscriptionStore` add/remove/list/
+  get/mark_polled/persist/roundtrip/malformed-JSON/api_key-not-on-disk, CLI
+  subscribe/unsubscribe/list-subscriptions exit codes and output, community feed ≥25
+  statements with correct statuses, and module count gate (125).
+
+### Changed
+
+- **`tests/test_squash_wave33.py`** — Updated 7 tests to reflect the expanded community
+  feed: count check now `≥25`, `_EXPECTED_CVES` membership check changed to subset
+  (`<=`), status assertions now accept `under_investigation` for the certifi entry,
+  `CVE-2023-27534` product PURL check updated to unversioned `pkg:pypi/squish`.
+
+### Notes
+
+- Module count: 125 (unchanged — no new Python modules added).
+- All 5272 tests pass (52 net-new from W52, 7 W33 tests updated).
+- No lm_eval impact: changes are purely in VEX/subscription infrastructure, not the
+  quantization or inference path.
+
+---
+
 ## [Unreleased] — Wave 51: SBOM drift detection
 
 ### Added

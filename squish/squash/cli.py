@@ -320,6 +320,62 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     vex_sub.add_parser("status", help="Show VEX cache status and freshness")
 
+    # Wave 52 — subscribe / unsubscribe / list-subscriptions
+    vex_subscribe = vex_sub.add_parser(
+        "subscribe",
+        help="Register a remote VEX feed URL for periodic polling",
+        description=(
+            "squash vex subscribe URL [--alias NAME] [--api-key-env VAR] [--polling-hours N]\n\n"
+            "Example: squash vex subscribe https://vex.example.com/feed.json --alias corp-feed\n"
+            "Example: squash vex subscribe https://api.example.com/vex --api-key-env CORP_VEX_KEY"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    vex_subscribe.add_argument(
+        "url",
+        metavar="URL",
+        help="HTTPS endpoint returning an OpenVEX JSON feed",
+    )
+    vex_subscribe.add_argument(
+        "--alias",
+        default="",
+        metavar="NAME",
+        help="Short human-readable name for this subscription (optional)",
+    )
+    vex_subscribe.add_argument(
+        "--api-key-env",
+        default="SQUASH_VEX_API_KEY",
+        metavar="VAR",
+        help="Environment variable name that holds the API key (default: SQUASH_VEX_API_KEY)",
+    )
+    vex_subscribe.add_argument(
+        "--polling-hours",
+        type=int,
+        default=24,
+        metavar="N",
+        help="Refresh interval in hours used by 'squash vex update --all' (default: 24)",
+    )
+    vex_subscribe.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    vex_unsubscribe = vex_sub.add_parser(
+        "unsubscribe",
+        help="Remove a registered VEX feed subscription",
+        description=(
+            "squash vex unsubscribe URL_OR_ALIAS\n\n"
+            "Example: squash vex unsubscribe corp-feed\n"
+            "Example: squash vex unsubscribe https://vex.example.com/feed.json"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    vex_unsubscribe.add_argument(
+        "url_or_alias",
+        metavar="URL_OR_ALIAS",
+        help="URL or alias of the subscription to remove",
+    )
+    vex_unsubscribe.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    vex_sub.add_parser("list-subscriptions", help="List all registered VEX feed subscriptions")
+
     # ── squash attest-composed ────────────────────────────────────────────────
     ac_cmd = sub.add_parser(
         "attest-composed",
@@ -1476,9 +1532,10 @@ def _cmd_vex(args: argparse.Namespace, quiet: bool) -> int:
         import os
         url = args.url or os.environ.get("SQUASH_VEX_URL", VexCache.DEFAULT_URL)
         timeout = float(args.timeout)
+        api_key = os.environ.get("SQUASH_VEX_API_KEY") or None
         try:
             cache = VexCache()
-            feed = cache.load_or_fetch(url, timeout=timeout, force=True)
+            feed = cache.load_or_fetch(url, timeout=timeout, force=True, api_key=api_key)
             if not quiet:
                 print(f"VEX cache updated: {len(feed.statements)} statements from {url}")
         except Exception as e:
@@ -1501,8 +1558,60 @@ def _cmd_vex(args: argparse.Namespace, quiet: bool) -> int:
             print(f"Stale       : {'yes' if stale else 'no'}")
         return 0
 
+    # ── Wave 52: subscribe  ───────────────────────────────────────────────────
+    if vex_cmd == "subscribe":
+        from squish.squash.vex import VexSubscription, VexSubscriptionStore
+        import os
+        url = args.url
+        if not url.startswith("http"):
+            print(f"error: URL must begin with http(s)://: {url!r}", file=sys.stderr)
+            return 1
+        sub = VexSubscription(
+            url=url,
+            alias=args.alias or "",
+            api_key_env_var=args.api_key_env,
+            polling_hours=args.polling_hours,
+        )
+        store = VexSubscriptionStore()
+        store.add(sub)
+        _q = getattr(args, "quiet", False) or quiet
+        if not _q:
+            label = f" (alias: {sub.alias})" if sub.alias else ""
+            print(f"Subscribed to {url}{label}")
+            print(f"  API key env : {sub.api_key_env_var}")
+            print(f"  Polling     : every {sub.polling_hours}h")
+        return 0
+
+    if vex_cmd == "unsubscribe":
+        from squish.squash.vex import VexSubscriptionStore
+        store = VexSubscriptionStore()
+        removed = store.remove(args.url_or_alias)
+        _q = getattr(args, "quiet", False) or quiet
+        if not removed:
+            print(f"error: no subscription found for {args.url_or_alias!r}", file=sys.stderr)
+            return 1
+        if not _q:
+            print(f"Unsubscribed from {args.url_or_alias}")
+        return 0
+
+    if vex_cmd == "list-subscriptions":
+        from squish.squash.vex import VexSubscriptionStore
+        store = VexSubscriptionStore()
+        subs = store.list()
+        if not subs:
+            if not quiet:
+                print("No VEX feed subscriptions registered.")
+            return 0
+        if not quiet:
+            for sub in subs:
+                alias_part = f" [{sub.alias}]" if sub.alias else ""
+                polled = sub.last_polled or "never"
+                print(f"  {sub.url}{alias_part}")
+                print(f"    api-key-env={sub.api_key_env_var}  polling={sub.polling_hours}h  last-polled={polled}")
+        return 0
+
     # No sub-command — print help
-    print("usage: squash vex {update,status} [options]", file=sys.stderr)
+    print("usage: squash vex {update,status,subscribe,unsubscribe,list-subscriptions} [options]", file=sys.stderr)
     return 1
 
 

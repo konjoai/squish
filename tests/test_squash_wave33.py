@@ -94,14 +94,18 @@ class TestBundledFeedStructure:
         doc = _load_raw()
         assert doc.get("timestamp"), "Feed document must have a non-empty timestamp"
 
-    def test_statement_count_is_three(self):
+    def test_statement_count_at_least_25(self):
         doc = _load_raw()
-        assert len(doc["statements"]) == 3
+        assert len(doc["statements"]) >= 25, (
+            f"Expected ≥25 statements after W52 expansion, got {len(doc['statements'])}"
+        )
 
     def test_all_expected_cves_present(self):
         doc = _load_raw()
         found = {s["vulnerability"]["name"] for s in doc["statements"]}
-        assert found == _EXPECTED_CVES
+        assert _EXPECTED_CVES <= found, (
+            f"Original 3 CVEs must be a subset of the feed. Missing: {_EXPECTED_CVES - found}"
+        )
 
     def test_all_statements_have_products(self):
         doc = _load_raw()
@@ -117,17 +121,21 @@ class TestBundledFeedStructure:
                     f"statements[{i}].products[{j}]['@id'] is not a PURL: {p['@id']!r}"
                 )
 
-    def test_all_statuses_are_not_affected(self):
+    def test_all_statuses_are_valid(self):
         doc = _load_raw()
         for i, stmt in enumerate(doc["statements"]):
-            assert stmt["status"] == "not_affected", (
-                f"statements[{i}]: expected not_affected, got {stmt['status']!r}"
+            assert stmt["status"] in _VALID_STATUSES, (
+                f"statements[{i}]: unexpected status {stmt['status']!r}"
             )
 
-    def test_all_statements_have_justification(self):
+    def test_all_statements_have_justification_or_under_investigation(self):
+        """not_affected requires justification; under_investigation may omit it."""
         doc = _load_raw()
         for i, stmt in enumerate(doc["statements"]):
-            assert stmt.get("justification"), f"statements[{i}] missing justification"
+            if stmt["status"] == "not_affected":
+                assert stmt.get("justification"), (
+                    f"statements[{i}] is not_affected but missing justification"
+                )
 
     def test_all_statements_have_impact_statement(self):
         doc = _load_raw()
@@ -153,7 +161,10 @@ class TestBundledFeedStructure:
             if s["vulnerability"]["name"] == "CVE-2023-27534"
         )
         purls = {p["@id"] for p in stmt["products"]}
-        assert "pkg:pypi/squish@9.13.0" in purls
+        # W52: product PURL dropped the pinned version; match the unversioned PURL
+        assert any(p.startswith("pkg:pypi/squish") for p in purls), (
+            f"CVE-2023-27534 should cover pkg:pypi/squish (any version); found: {purls}"
+        )
 
 
 # ── TestDefaultUrlAlignment ───────────────────────────────────────────────────
@@ -217,21 +228,23 @@ class TestLoadBundled:
                 assert stmt.vulnerability_id, "Statement has empty vulnerability_id"
 
     def test_all_vulnerability_ids_are_expected_cves(self):
+        """Original 3 CVEs must be present; W52 adds more."""
         feed = VexCache.load_bundled()
         found: set[str] = set()
         for doc in feed.documents:
             for stmt in doc.statements:
                 found.add(stmt.vulnerability_id)
-        assert found == _EXPECTED_CVES, (
-            f"load_bundled CVEs {found!r} != expected {_EXPECTED_CVES!r}"
+        assert _EXPECTED_CVES <= found, (
+            f"Original 3 CVEs must be a subset of load_bundled() output. Missing: {_EXPECTED_CVES - found}"
         )
 
-    def test_all_statuses_are_not_affected(self):
+    def test_all_statuses_are_valid(self):
+        """W52 adds an under_investigation entry; all statuses must be valid."""
         feed = VexCache.load_bundled()
         for doc in feed.documents:
             for stmt in doc.statements:
-                assert stmt.status == "not_affected", (
-                    f"{stmt.vulnerability_id}: expected not_affected, got {stmt.status!r}"
+                assert stmt.status in _VALID_STATUSES, (
+                    f"{stmt.vulnerability_id}: unexpected status {stmt.status!r}"
                 )
 
     def test_returns_empty_feed_when_data_file_absent(self, tmp_path):

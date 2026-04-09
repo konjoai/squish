@@ -1,104 +1,35 @@
-# NEXT_SESSION_PROMPT.md — Wave 52: Post-W51 context
+# Next Session Prompt — W53
 
-> Paste the content below verbatim as your opening prompt.
+## Context
+W52 is complete and committed. VEX subscription infrastructure is live:
+- `squash vex subscribe / unsubscribe / list-subscriptions` works end-to-end
+- `SQUASH_VEX_API_KEY` auth propagates through VexCache → VexFeed.from_url
+- Community feed expanded to 25 statements (v1→v2)
+- 5272 tests pass, 125 modules
 
----
+## W53 Candidate: squash lineage sign (Sigstore cosign integration)
 
-## Opening prompt
+**Goal:** `squash lineage sign <model_dir>` — sign the CycloneDX BOM (or the
+weight-hash manifest) with Sigstore's keyless signing workflow (cosign). Produce
+a `.sig` and `.cert` alongside the BOM, compatible with `cosign verify`.
 
-```
-Code session. Read SESSION.md and CLAUDE.md first.
+**Acceptance criteria (define before writing any code):**
+1. `squash lineage sign <model_dir> [--bom BOM_PATH] [--quiet]` exits 0.
+2. Writes `<bom_path>.sig` and `<bom_path>.cert` next to the BOM.
+3. `squash lineage verify <model_dir> [--bom BOM_PATH]` exits 0 on valid sig, 1 on invalid.
+4. No new Python module (inline into `squash/lineage.py` or `squash/cli.py`).
+5. Graceful degradation: if `cosign` binary not found → exit 2 with clear error.
+6. All tests pass.
 
-Repo: /Users/wscholl/squish
+**Alternative W53 candidate:** drift-check REST endpoint (`POST /drift-check`).
+This was the original W52 proposal before the VEX subscription backlog item arrived.
 
---- Context ---
+## Open questions
+- Sigstore vs standalone Ed25519 keygen (offline/air-gapped) — pick one approach before coding.
+- Module count: confirm 125 before adding anything.
 
-Wave 51 is COMPLETE and committed.
-- squish/squash/drift.py — NEW module (module count: 125).
-  DriftConfig(bom_path, model_dir, tolerance: float=0.0) dataclass.
-  DriftHit(path, expected_digest, actual_digest) with .missing/.tampered props.
-  DriftResult(hits, files_checked, ok, summary) with auto-built summary.
-  _parse_bom_hashes(bom) — reads squish:weight_hash:* component properties.
-  check_drift(config) — SHA-256 comparison of BOM against disk files.
-  Stdlib only: hashlib, json, pathlib. No external deps.
-  BOM format: squish CycloneDX sidecar (cyclonedx-mlbom.json).
-- squish/squash/cli.py — squash drift-check <model_dir> --bom <path>.
-  Supports --fail-on-drift (exit 2), --output-json, --quiet.
-  Exit 0 = clean, 1 = error, 2 = drift found + --fail-on-drift.
-- tests/test_squash_wave51.py — 54 tests (all pass).
-  Full suite: 5220 passed, 0 failed. Module count: 125.
-
-Wave 50 is COMPLETE and committed.
-- squish/squash/integrations/kubernetes.py — Shadow AI detection layer:
-  SHADOW_AI_MODEL_EXTENSIONS frozenset (.gguf, .safetensors, .bin, .pt,
-  .ckpt, .pkl, .pth, .onnx, .tflite, .mlmodel).
-  ShadowAiConfig / ShadowAiHit / ShadowAiScanResult / ShadowAiScanner.
-  scan_pod_for_model_files(pod_spec, config) — stdlib only, no K8s SDK.
-  WebhookConfig: shadow_ai_scan_mode: bool = False added.
-- squish/squash/cli.py — squash shadow-ai scan command.
-- tests/test_squash_wave50.py — 65 tests (all pass).
-
---- W52 task ---
-
-Wave 52: Drift-check REST endpoint — SMALL, 1w · P4
-
-Purpose: expose drift-check over HTTP so CI/CD pipelines and policy agents
-can call it without spawning a subprocess.
-
-Scope:
-- squish/squash/api.py — POST /drift-check — accepts JSON body:
-    { "model_dir": "/abs/path", "bom_path": "/abs/path" }
-  Returns 200 + DriftResult as JSON on success (ok=true or ok=false).
-  Returns 422 + { "error": "..." } on missing dirs or bad BOM.
-  Returns 500 + { "error": "..." } on unexpected errors.
-  Drift found does NOT cause a non-2xx status — caller decides based on
-  "ok": false in response body. --fail-on-drift is a CLI-only concept.
-- tests/test_squash_wave52.py — unit + integration:
-  clean model → 200 + ok=true, tampered → 200 + ok=false,
-  missing bom_path → 422, invalid JSON BOM → 422, missing model_dir → 422.
-
-Hard constraints:
-- No new module (add endpoint to existing api.py). Module count stays 125.
-- api.py already imports from squish.squash.drift — no circular imports.
-- Endpoint must be mockable in CI (DriftConfig/check_drift fully injectable).
-
-Done-when:
-1. All W52 tests pass, no regressions in full suite.
-2. CHANGELOG.md entry written.
-3. SESSION.md + NEXT_SESSION_PROMPT updated.
-4. Module count checked (should be 125 — no new files).
-5. git add -A && git commit && git push
-
---- Open questions ---
-
-- mixed_attn lm_eval validation still pending (code-complete since W41)
-- INT2 AQLM / SpQR experimental stubs — begin only after mixed_attn harness confirmed
-- McpSigner.sign() requires sigstore OIDC flow — needs integration test on hardware
-- lineage records persist but are never signed — a natural W52/W53 follow-on
-
---- Next wave candidates (after W52) ---
-
-1. `squash lineage sign` (W53): sign the lineage chain file with Sigstore
-   (mirrors McpSigner pattern). Adds cryptographic non-repudiation.
-2. `squash drift-check --continuous` (W53 alt): poll model_dir at interval,
-   emit events on drift (pairs with squash monitor).
-```
-3. `squish serve --lineage-gate`: reject inference requests when the model's lineage
-   verify() returns ok=False (auto-tamper detection at serve time).
-4. Prometheus metrics export from audit trail + lineage: /metrics endpoint.
-5. mixed_attn lm_eval harness gate: close the accuracy-validation debt from W41.
-```
-
---- Done-when for next session ---
-
-
-State the wave purpose before writing code.
-All tests pass. Module count ≤ 122. CHANGELOG entry written. lm_eval-waiver if needed.
-```
-
-
---- Done-when ---
-
-All W45 tests pass; no regressions in full suite; CHANGELOG.md entry; SESSION.md updated;
-NEXT_SESSION_PROMPT.md updated; module count checked.
-```
+## lm_eval status
+- INT4 AWQ g=32 (squish): 70.8% arc_easy (Qwen2.5-1.5B, limit=500, partial — 2 tasks pending)
+- INT3: 67.2% arc_easy — below 72% gate; "efficient" tier only
+- gemma INT3 ≤4B: UNSAFE (−15–16pp)
+- Qwen3-4B INT3: UNSAFE (−14.8pp)

@@ -9,6 +9,7 @@
 2026-04-09
 
 ## Last commits
+- **`(w52 — pending push)`** — feat(squash): W52 VEX feed subscription — api_key support + subscribe CLI + 25-statement community feed — 52 new tests, 5272 suite, 125 modules
 - **`(w51 — pending push)`** — feat(squash): W51 SBOM drift detection — check_drift + squash drift-check CLI — 54 new tests, 5220 suite, 125 modules
 - **`(w50 — pending push)`** — feat(squash): W50 shadow AI detection — K8s pod scanner scan_pod_for_model_files + ShadowAiScanner + squash shadow-ai scan CLI — 65 new tests, 5166 suite, 124 modules
 - **`(w49 — pending push)`** — feat(squash): W49 air-gapped/sovereign AI mode — _is_offline + keygen/sign_local/verify_local/pack_offline + CLI + REST — 68 new tests, 5101 suite, 124 modules

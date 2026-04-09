@@ -281,6 +281,14 @@ class VexFeed:
     def documents(self) -> list[VexDocument]:
         return list(self._documents)
 
+    @property
+    def statements(self) -> list[VexStatement]:
+        """Flat list of all :class:`VexStatement` entries across all documents."""
+        result: list[VexStatement] = []
+        for doc in self._documents:
+            result.extend(doc.statements)
+        return result
+
     @classmethod
     def from_directory(cls, vex_dir: Path) -> "VexFeed":
         """Load all ``*.vex.json`` / ``*.json`` files from *vex_dir*."""
@@ -299,6 +307,7 @@ class VexFeed:
         url: str,
         timeout: int = 30,
         ca_bundle: str | None = None,
+        api_key: str | None = None,
     ) -> "VexFeed":
         """Fetch a VEX feed from an HTTPS URL.
 
@@ -312,17 +321,27 @@ class VexFeed:
         ca_bundle:
             Optional path to a CA certificate bundle for enterprise environments
             with custom PKI.  Passed to a custom SSL context.
+        api_key:
+            Bearer token for authenticated VEX feed endpoints.  Sent as
+            ``Authorization: Bearer <key>``.  Falls back to the
+            ``SQUASH_VEX_API_KEY`` environment variable when *None*.
         """
         import ssl
+
+        _key = api_key or os.environ.get("SQUASH_VEX_API_KEY") or None
 
         ssl_ctx = ssl.create_default_context()
         if ca_bundle:
             ssl_ctx.load_verify_locations(cafile=ca_bundle)
 
+        headers: dict[str, str] = {"Accept": "application/json", "User-Agent": "squash/1.0"}
+        if _key:
+            headers["Authorization"] = f"Bearer {_key}"
+
         try:
             req = urllib.request.Request(
                 url,
-                headers={"Accept": "application/json", "User-Agent": "squash/1.0"},
+                headers=headers,
             )
             handler = urllib.request.HTTPSHandler(context=ssl_ctx)
             opener = urllib.request.build_opener(handler)
@@ -457,6 +476,7 @@ class VexCache:
         timeout: float = 10.0,
         ca_bundle: str | None = None,
         force: bool = False,
+        api_key: str | None = None,
     ) -> "VexFeed":
         """Return a :class:`VexFeed` — from cache if fresh, else re-fetched.
 
@@ -470,16 +490,21 @@ class VexCache:
             Optional path to a PEM CA bundle for TLS verification.
         force:
             If *True*, always re-fetch even if cache is fresh.
+        api_key:
+            Bearer token for authenticated feed endpoints.  Defaults to the
+            ``SQUASH_VEX_API_KEY`` environment variable when *None*.
         """
+        _key = api_key or os.environ.get("SQUASH_VEX_API_KEY") or None
+
         manifest = self._read_manifest()
         feed_file = self._cache_dir / "feed.json"
 
         last_modified: str | None = manifest.get("last_modified")
         if force or not feed_file.exists() or self.is_stale():
-            self._fetch(url, feed_file, last_modified, timeout, ca_bundle)
+            self._fetch(url, feed_file, last_modified, timeout, ca_bundle, _key)
 
         if feed_file.exists():
-            feed = VexFeed.from_url(url, timeout=timeout, ca_bundle=ca_bundle)
+            feed = VexFeed.from_url(url, timeout=timeout, ca_bundle=ca_bundle, api_key=_key)
             # Update manifest even if 304 (server reported not modified)
             self._write_manifest(url, feed)
             return feed
@@ -540,12 +565,15 @@ class VexCache:
         last_modified: str | None,
         timeout: float,
         ca_bundle: str | None,
+        api_key: str | None = None,
     ) -> None:
         """Fetch *url* to *dest*; respects ``If-Modified-Since`` (304 = no-op)."""
         try:
             req = urllib.request.Request(url)
             if last_modified:
                 req.add_header("If-Modified-Since", last_modified)
+            if api_key:
+                req.add_header("Authorization", f"Bearer {api_key}")
 
             kwargs: dict[str, Any] = {"timeout": timeout}
             if ca_bundle:
@@ -621,6 +649,142 @@ SQUASH_VEX_FEED_URL = "https://vex.squish.ai/ml-models/feed.openvex.json"
 SQUASH_VEX_FEED_FALLBACK_URL = (
     "https://raw.githubusercontent.com/squishai/vex-feed/main/feed.openvex.json"
 )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 52 — VEX subscription management
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class VexSubscription:
+    """Persisted VEX feed subscription entry.
+
+    The API key is **never** stored on disk.  Only the name of the environment
+    variable that holds it is persisted so that key rotation does not require
+    re-subscribing.
+
+    Parameters
+    ----------
+    url:
+        Remote VEX feed endpoint to poll.
+    alias:
+        Short human-readable identifier, e.g. ``"nist-nvd"``.
+    api_key_env_var:
+        Name of the environment variable that supplies the API key.
+    polling_hours:
+        Refresh interval used by ``squash vex update --all``.
+    last_polled:
+        ISO-8601 UTC timestamp of last successful poll (empty = never).
+    """
+
+    url: str
+    alias: str = ""
+    api_key_env_var: str = "SQUASH_VEX_API_KEY"
+    polling_hours: int = 24
+    last_polled: str = ""
+
+
+class VexSubscriptionStore:
+    """Persistent registry of VEX feed subscriptions.
+
+    Subscriptions are written to ``~/.squish/vex-subscriptions.json`` as a
+    JSON array.  The API key itself is never written to disk — only the name
+    of the environment variable that holds it.
+
+    Usage::
+
+        store = VexSubscriptionStore()
+        store.add(VexSubscription(url="https://vex.example.com/feed.json", alias="example"))
+        for sub in store.list():
+            print(sub.url, sub.last_polled or "(never polled)")
+    """
+
+    _FILENAME: str = "vex-subscriptions.json"
+
+    def __init__(self, store_dir: Path | None = None) -> None:
+        self._store_dir = store_dir or (Path.home() / ".squish")
+        self._store_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def _path(self) -> Path:
+        return self._store_dir / self._FILENAME
+
+    # ── public API ────────────────────────────────────────────────────────────
+
+    def add(self, subscription: VexSubscription) -> None:
+        """Add or update a subscription (keyed by URL)."""
+        subs = self.list()
+        subs = [s for s in subs if s.url != subscription.url]
+        subs.append(subscription)
+        self._write(subs)
+
+    def remove(self, url_or_alias: str) -> bool:
+        """Remove a subscription by URL or alias.
+
+        Returns
+        -------
+        bool
+            *True* if a subscription was removed, *False* if not found.
+        """
+        subs = self.list()
+        before = len(subs)
+        subs = [s for s in subs if s.url != url_or_alias and s.alias != url_or_alias]
+        if len(subs) == before:
+            return False
+        self._write(subs)
+        return True
+
+    def list(self) -> list[VexSubscription]:
+        """Return all registered subscriptions."""
+        if not self._path.exists():
+            return []
+        try:
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+            return [
+                VexSubscription(
+                    url=item["url"],
+                    alias=item.get("alias", ""),
+                    api_key_env_var=item.get("api_key_env_var", "SQUASH_VEX_API_KEY"),
+                    polling_hours=item.get("polling_hours", 24),
+                    last_polled=item.get("last_polled", ""),
+                )
+                for item in raw
+                if "url" in item
+            ]
+        except (OSError, json.JSONDecodeError, KeyError):
+            return []
+
+    def get(self, url_or_alias: str) -> "VexSubscription | None":
+        """Return a subscription by URL or alias, or *None* if not found."""
+        for sub in self.list():
+            if sub.url == url_or_alias or sub.alias == url_or_alias:
+                return sub
+        return None
+
+    def mark_polled(self, url: str) -> None:
+        """Update :attr:`~VexSubscription.last_polled` for *url* to now."""
+        subs = self.list()
+        now = datetime.now(timezone.utc).isoformat()
+        for sub in subs:
+            if sub.url == url:
+                sub.last_polled = now
+        self._write(subs)
+
+    # ── internals ─────────────────────────────────────────────────────────────
+
+    def _write(self, subscriptions: list[VexSubscription]) -> None:
+        data = [
+            {
+                "url": s.url,
+                "alias": s.alias,
+                "api_key_env_var": s.api_key_env_var,
+                "polling_hours": s.polling_hours,
+                "last_polled": s.last_polled,
+            }
+            for s in subscriptions
+        ]
+        self._path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 class VexFeedManifest:
