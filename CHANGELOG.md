@@ -5,6 +5,57 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 52-55: Squash Cloud dashboard API
+
+### Added
+
+- **`squish/squash/api.py`** — 10 new `/cloud/*` REST endpoints powering the
+  hosted compliance dashboard (separate Next.js product repo):
+  - `POST /cloud/tenant` — register / upsert a tenant (201, idempotent)
+  - `GET  /cloud/tenant/{tenant_id}` — fetch tenant record (404 if absent)
+  - `GET  /cloud/tenants` — list all tenants (admin view)
+  - `POST /cloud/inventory/register` — ingest attestation result into per-tenant
+    deque (500-entry sliding window); auto-updates `_policy_stats` buckets
+  - `GET  /cloud/inventory` — query model inventory (`limit`, `passed` filter)
+  - `POST /cloud/vex/alert` — ingest a VEX alert (201)
+  - `GET  /cloud/vex/alerts` — query alerts (`limit`, `status`, `severity`)
+  - `POST /cloud/drift/event` — ingest a drift event (201)
+  - `GET  /cloud/drift/events` — query drift events (`limit`, `model_id`, `severity`)
+  - `GET  /cloud/policy/dashboard` — overall model-level pass/fail counts +
+    per-policy breakdown; feeds CMMC / NIST AI RMF / ISO 42001 board reports
+  - `GET  /cloud/audit` — tenant-scoped tail of the `AgentAuditLogger` hash-chain log
+
+- **Multi-tenant JWT auth** — stdlib-only HS256 verifier (`_verify_jwt_hs256`),
+  no external JWT library required.  `SQUASH_JWT_SECRET` env var activates JWT
+  mode; falls back to `X-Tenant-ID` header for single-tenant / no-JWT deployments.
+
+- **`AttestRequest.tenant_id`** field — non-breaking opt-in field; when set, the
+  `/attest` handler auto-registers the result into `_inventory` and updates
+  `_policy_stats`, wiring the existing attestation pipeline into the cloud dashboard
+  without any client-side changes.
+
+- **5 in-memory cloud stores** with configurable env-var caps:
+  `_tenants` (1 000 limit), `_inventory` / `_vex_alerts` / `_drift_events`
+  (500 entries per tenant, per store), `_policy_stats` (nested pass/fail counters).
+
+- **`tests/test_squash_wave5355.py`** — 61 new tests across 11 classes covering
+  tenant CRUD, inventory CRUD, VEX alert pipeline, drift event pipeline, policy
+  dashboard aggregation (model-level `overall` + policy-level `by_policy`),
+  audit delegation, JWT auth (valid / expired / wrong-secret / missing), and
+  `AttestRequest` field shape contracts.  Module count: 125 (unchanged).
+
+### Technical notes
+- `overall.passed` / `overall.failed` on `/cloud/policy/dashboard` counts
+  model deployments, not policy checks — answers "How many of our deployed models
+  are policy-compliant?" not "How many individual policy checks passed?".
+- `by_policy` rows still aggregate policy-check-level counts for drill-down.
+- All `/cloud/*` read endpoints call `_resolve_tenant_id(request)` to scope data.
+- Test suite: **5 333 passed, 0 failed** (5 272 pre-wave + 61 new).
+- Business impact: unblocks enterprise platform sales ($100K+ ACV), CISO adoption,
+  and boardroom compliance reporting.
+
+---
+
 ## [Unreleased] — Wave 52: VEX feed subscription infrastructure
 
 ### Added

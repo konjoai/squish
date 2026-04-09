@@ -38,6 +38,9 @@ event loop is never blocked.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -94,6 +97,91 @@ _COUNTERS: dict[str, int] = {
     "squash_sbom_diff_total": 0,
     "squash_policy_violations_total": 0,
 }
+
+# ── Cloud dashboard stores (W52-55) ───────────────────────────────────────────
+# All stores are in-process / in-memory; a production deployment backs these
+# with a database by replacing the helpers below.  The API contract is stable.
+
+# Tenant registry: tenant_id → {name, plan, contact_email, created_at}
+_TENANT_LIMIT = int(os.getenv("SQUASH_TENANT_LIMIT", "1000"))
+_tenants: dict[str, dict[str, Any]] = {}
+
+# Model inventory: tenant_id → list[record dict], total capped at _INVENTORY_LIMIT
+_INVENTORY_PER_TENANT = int(os.getenv("SQUASH_INVENTORY_PER_TENANT", "500"))
+_inventory: defaultdict[str, deque] = defaultdict(
+    lambda: deque(maxlen=_INVENTORY_PER_TENANT)
+)
+
+# VEX alert feed: tenant_id → deque[alert dict]
+_VEX_ALERTS_PER_TENANT = int(os.getenv("SQUASH_VEX_ALERTS_PER_TENANT", "500"))
+_vex_alerts: defaultdict[str, deque] = defaultdict(
+    lambda: deque(maxlen=_VEX_ALERTS_PER_TENANT)
+)
+
+# Drift event stream: tenant_id → deque[event dict]
+_DRIFT_EVENTS_PER_TENANT = int(os.getenv("SQUASH_DRIFT_EVENTS_PER_TENANT", "500"))
+_drift_events: defaultdict[str, deque] = defaultdict(
+    lambda: deque(maxlen=_DRIFT_EVENTS_PER_TENANT)
+)
+
+# Policy dashboard aggregates: tenant_id → policy_name → {"passed": int, "failed": int}
+_policy_stats: defaultdict[str, defaultdict[str, dict[str, int]]] = defaultdict(
+    lambda: defaultdict(lambda: {"passed": 0, "failed": 0})
+)
+
+
+# ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
+
+def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
+    """Minimal stdlib HS256 JWT verifier — no external dependencies.
+
+    Raises ``ValueError`` on invalid structure, bad signature, or expiry.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("invalid JWT structure")
+    header_b64, payload_b64, sig_b64 = parts
+    signing_input = f"{header_b64}.{payload_b64}".encode()
+    expected_sig = hmac.new(
+        secret.encode(), signing_input, hashlib.sha256
+    ).digest()
+    pad = "=" * (4 - len(sig_b64) % 4)
+    actual_sig = base64.urlsafe_b64decode(sig_b64 + pad)
+    if not hmac.compare_digest(expected_sig, actual_sig):
+        raise ValueError("invalid JWT signature")
+    pad2 = "=" * (4 - len(payload_b64) % 4)
+    claims: dict[str, Any] = json.loads(
+        base64.urlsafe_b64decode(payload_b64 + pad2)
+    )
+    if "exp" in claims and claims["exp"] < time.time():
+        raise ValueError("JWT expired")
+    return claims
+
+
+def _resolve_tenant_id(request: Request) -> str:
+    """Return the tenant_id for the current request.
+
+    Resolution order:
+    1. If ``SQUASH_JWT_SECRET`` is set: decode ``Authorization: Bearer <jwt>``
+       and return the ``tenant_id`` claim (or ``sub`` as fallback).
+    2. Otherwise: return the ``X-Tenant-ID`` header value (may be empty string
+       for single-tenant deployments).
+    """
+    secret = os.environ.get("SQUASH_JWT_SECRET", "")
+    if secret:
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="JWT required for cloud endpoints")
+        try:
+            claims = _verify_jwt_hs256(auth[7:], secret)
+        except ValueError as exc:
+            raise HTTPException(status_code=401, detail=f"Invalid JWT: {exc}") from exc
+        tid = claims.get("tenant_id") or claims.get("sub", "")
+        if not tid:
+            raise HTTPException(status_code=401, detail="JWT missing tenant_id claim")
+        return str(tid)
+    return request.headers.get("X-Tenant-ID", "")
+
 
 app = FastAPI(
     title="Squash — AI-SBOM Attestation API",
@@ -200,6 +288,13 @@ class AttestRequest(BaseModel):
     spdx_sensitive_data: str | None = Field(
         default=None,
         description="SPDX AI Profile sensitivePIIInTrainingData: absent | present | unknown",
+    )
+    tenant_id: str = Field(
+        default="",
+        description=(
+            "Optional tenant identifier.  When set the attestation result is "
+            "automatically registered in the cloud model inventory under this tenant."
+        ),
     )
 
 
@@ -314,6 +409,61 @@ class PackOfflineRequest(BaseModel):
     )
 
 
+# ── W52-55: Cloud dashboard request/response models ───────────────────────────
+
+
+class TenantCreateRequest(BaseModel):
+    """Register a new tenant in the Squash Cloud dashboard."""
+    tenant_id: str = Field(description="Unique tenant identifier (slug, max 64 chars)")
+    name: str = Field(description="Human-readable tenant / organisation name")
+    plan: str = Field(default="community", description="Subscription plan: community | pro | enterprise")
+    contact_email: str = Field(default="", description="Primary contact e-mail")
+
+
+class InventoryRegisterRequest(BaseModel):
+    """Register an attestation result in the cloud model inventory.
+
+    Called by CI/CD pipelines after a successful ``POST /attest``.
+    """
+    tenant_id: str = Field(description="Tenant that owns this model")
+    model_id: str = Field(description="Human-readable model identifier")
+    model_path: str = Field(description="Filesystem path where the model resides")
+    bom_path: str = Field(default="", description="Path to the generated CycloneDX BOM")
+    attestation_passed: bool = Field(description="Whether all policies passed")
+    policy_results: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Map of policy_name → {passed, error_count, warning_count}",
+    )
+    vex_cves: list[str] = Field(
+        default_factory=list,
+        description="CVE IDs surfaced by VEX evaluation for this model",
+    )
+    timestamp: str = Field(default="", description="ISO-8601 attestation timestamp; auto-set if empty")
+
+
+class VexAlertRequest(BaseModel):
+    """Ingest a VEX alert event into the cloud dashboard feed."""
+    tenant_id: str = Field(description="Tenant to scope this alert to")
+    cve_id: str = Field(description="CVE identifier (e.g. CVE-2024-12345)")
+    severity: str = Field(default="unknown", description="critical | high | medium | low | unknown")
+    model_id: str = Field(default="", description="Affected model identifier")
+    status: str = Field(default="open", description="open | acknowledged | resolved")
+    detail: str = Field(default="", description="Human-readable detail / remediation note")
+
+
+class DriftEventRequest(BaseModel):
+    """Ingest a drift event into the cloud dashboard stream."""
+    tenant_id: str = Field(description="Tenant to scope this event to")
+    model_id: str = Field(description="Model that changed")
+    bom_a: str = Field(description="Path or identifier of the baseline BOM")
+    bom_b: str = Field(description="Path or identifier of the new BOM")
+    added: list[str] = Field(default_factory=list, description="Component hashes / IDs added")
+    removed: list[str] = Field(default_factory=list, description="Component hashes / IDs removed")
+    changed: list[str] = Field(default_factory=list, description="Component hashes / IDs changed")
+    severity: str = Field(default="info", description="info | warning | critical")
+    timestamp: str = Field(default="", description="ISO-8601 event timestamp; auto-set if empty")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────────────────────────────────────
@@ -398,6 +548,28 @@ async def attest(req: AttestRequest) -> JSONResponse:
     master_data = _result_to_dict(result)
 
     _COUNTERS["squash_attest_total"] += 1
+
+    # ── Auto-register in cloud inventory when tenant_id is provided ───────────
+    if req.tenant_id:
+        _ts = _ts_now()
+        _rec: dict[str, Any] = {
+            "model_id": result.model_id or req.model_id,
+            "model_path": req.model_path,
+            "bom_path": str(result.cyclonedx_path) if result.cyclonedx_path else "",
+            "attestation_passed": result.passed,
+            "policy_results": master_data.get("policy_results", {}),
+            "vex_cves": [],
+            "timestamp": _ts,
+            "record_id": str(uuid.uuid4()),
+        }
+        _inventory[req.tenant_id].append(_rec)
+        for policy_name, pr in _rec["policy_results"].items():
+            bucket = _policy_stats[req.tenant_id][policy_name]
+            if pr.get("passed"):
+                bucket["passed"] += 1
+            else:
+                bucket["failed"] += 1
+
     if req.fail_on_violation and not result.passed:
         return JSONResponse(status_code=422, content=master_data)
 
@@ -1631,6 +1803,345 @@ async def pack_offline(req: PackOfflineRequest) -> JSONResponse:
         "bundle_path": bundle_path,
         "size_bytes": size_bytes,
         "model_dir": str(mdir),
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# W52-55: Squash Cloud — tenant management + dashboard endpoints
+# ──────────────────────────────────────────────────────────────────────────────
+# All /cloud/* endpoints are multi-tenant.  Tenant identity is resolved via:
+#   • SQUASH_JWT_SECRET set → JWT Bearer auth (tenant_id claim)
+#   • No SQUASH_JWT_SECRET  → X-Tenant-ID header (single-tenant or trusted proxy)
+#
+# For the hosted Squash Cloud product the Next.js dashboard authenticates with
+# the SSO provider (OIDC), receives a signed JWT, and forwards it here.  The
+# squish API validates the JWT signature with the shared SQUASH_JWT_SECRET
+# (HS256) and extracts the tenant_id claim.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _ts_now() -> str:
+    """Return current UTC time as ISO-8601 string."""
+    import datetime
+    return datetime.datetime.utcnow().isoformat() + "Z"
+
+
+# ── Tenant management ─────────────────────────────────────────────────────────
+
+@app.post("/cloud/tenant", status_code=201)
+async def cloud_create_tenant(req: TenantCreateRequest) -> JSONResponse:
+    """Register a new tenant in the Squash Cloud dashboard.
+
+    Idempotent: re-posting the same ``tenant_id`` updates the record.
+
+    Used by the Next.js onboarding flow and by enterprise provisioning scripts.
+    """
+    if len(req.tenant_id) > 64 or not req.tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id must be 1–64 chars")
+    if len(_tenants) >= _TENANT_LIMIT:
+        raise HTTPException(status_code=507, detail="Tenant limit reached")
+    record: dict[str, Any] = {
+        "tenant_id": req.tenant_id,
+        "name": req.name,
+        "plan": req.plan,
+        "contact_email": req.contact_email,
+        "created_at": _tenants.get(req.tenant_id, {}).get("created_at", _ts_now()),
+        "updated_at": _ts_now(),
+    }
+    _tenants[req.tenant_id] = record
+    return JSONResponse(status_code=201, content=record)
+
+
+@app.get("/cloud/tenant/{tenant_id}")
+async def cloud_get_tenant(tenant_id: str) -> JSONResponse:
+    """Return metadata for a registered tenant.
+
+    Used by the dashboard header / org switcher to display plan and quota info.
+    """
+    record = _tenants.get(tenant_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    return JSONResponse(content=record)
+
+
+@app.get("/cloud/tenants")
+async def cloud_list_tenants(request: Request) -> JSONResponse:
+    """List all registered tenants.  Admin-only — requires SQUASH_API_TOKEN auth."""
+    return JSONResponse(content={
+        "count": len(_tenants),
+        "tenants": list(_tenants.values()),
+    })
+
+
+# ── Model inventory ───────────────────────────────────────────────────────────
+
+@app.post("/cloud/inventory/register", status_code=201)
+async def cloud_register_inventory(
+    req: InventoryRegisterRequest, request: Request
+) -> JSONResponse:
+    """Register an attestation result in the cloud model inventory.
+
+    Called automatically by ``POST /attest`` when ``tenant_id`` is set, or
+    explicitly by CI/CD scripts for out-of-band registrations.
+    """
+    if not req.tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    ts = req.timestamp or _ts_now()
+    record: dict[str, Any] = {
+        "model_id": req.model_id,
+        "model_path": req.model_path,
+        "bom_path": req.bom_path,
+        "attestation_passed": req.attestation_passed,
+        "policy_results": req.policy_results,
+        "vex_cves": req.vex_cves,
+        "timestamp": ts,
+        "record_id": str(uuid.uuid4()),
+    }
+    _inventory[req.tenant_id].append(record)
+    # Update policy stats aggregates
+    for policy_name, pr in req.policy_results.items():
+        bucket = _policy_stats[req.tenant_id][policy_name]
+        if pr.get("passed"):
+            bucket["passed"] += 1
+        else:
+            bucket["failed"] += 1
+    return JSONResponse(status_code=201, content=record)
+
+
+@app.get("/cloud/inventory")
+async def cloud_get_inventory(
+    request: Request,
+    limit: int = 50,
+    passed: bool | None = None,
+) -> JSONResponse:
+    """Return the model inventory for the resolved tenant.
+
+    Query parameters
+    ----------------
+    limit:
+        Maximum number of most-recent records to return (default 50, max 500).
+    passed:
+        If ``true``, return only models where all policies passed.
+        If ``false``, return only models with policy failures.
+        Omit to return all.
+    """
+    tenant_id = _resolve_tenant_id(request)
+    limit = max(1, min(limit, 500))
+    records: list[dict[str, Any]] = list(_inventory[tenant_id])
+    if passed is not None:
+        records = [r for r in records if r["attestation_passed"] is passed]
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "count": len(records[-limit:]),
+        "total": len(records),
+        "models": records[-limit:],
+    })
+
+
+# ── VEX alert feed ────────────────────────────────────────────────────────────
+
+@app.post("/cloud/vex/alert", status_code=201)
+async def cloud_post_vex_alert(
+    req: VexAlertRequest, request: Request
+) -> JSONResponse:
+    """Ingest a VEX alert event into the cloud dashboard feed.
+
+    Called by the VEX poller / ``squash vex subscribe`` daemon when a new
+    CVE is detected in the feed for a subscribed tenant.
+    """
+    if not req.tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    record: dict[str, Any] = {
+        "alert_id": str(uuid.uuid4()),
+        "cve_id": req.cve_id,
+        "severity": req.severity,
+        "model_id": req.model_id,
+        "status": req.status,
+        "detail": req.detail,
+        "tenant_id": req.tenant_id,
+        "created_at": _ts_now(),
+    }
+    _vex_alerts[req.tenant_id].append(record)
+    return JSONResponse(status_code=201, content=record)
+
+
+@app.get("/cloud/vex/alerts")
+async def cloud_get_vex_alerts(
+    request: Request,
+    limit: int = 50,
+    status: str | None = None,
+    severity: str | None = None,
+) -> JSONResponse:
+    """Return the VEX alert feed for the resolved tenant.
+
+    Addresses CISO-level requirement: real-time CVE exposure dashboard.
+
+    Query parameters
+    ----------------
+    limit:
+        Maximum recent alerts (default 50, max 500).
+    status:
+        Filter by alert status: ``open`` | ``acknowledged`` | ``resolved``.
+    severity:
+        Filter by severity: ``critical`` | ``high`` | ``medium`` | ``low`` | ``unknown``.
+    """
+    tenant_id = _resolve_tenant_id(request)
+    limit = max(1, min(limit, 500))
+    alerts: list[dict[str, Any]] = list(_vex_alerts[tenant_id])
+    if status:
+        alerts = [a for a in alerts if a["status"] == status]
+    if severity:
+        alerts = [a for a in alerts if a["severity"] == severity]
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "count": len(alerts[-limit:]),
+        "total": len(alerts),
+        "alerts": alerts[-limit:],
+    })
+
+
+# ── Drift event stream ────────────────────────────────────────────────────────
+
+@app.post("/cloud/drift/event", status_code=201)
+async def cloud_post_drift_event(
+    req: DriftEventRequest, request: Request
+) -> JSONResponse:
+    """Ingest a drift event into the cloud dashboard stream.
+
+    Called by CI/CD after ``squash drift-check`` detects BOM divergence.
+    Enables boardroom-level "supply chain integrity over time" charts.
+    """
+    if not req.tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id required")
+    record: dict[str, Any] = {
+        "event_id": str(uuid.uuid4()),
+        "model_id": req.model_id,
+        "bom_a": req.bom_a,
+        "bom_b": req.bom_b,
+        "added": req.added,
+        "removed": req.removed,
+        "changed": req.changed,
+        "severity": req.severity,
+        "tenant_id": req.tenant_id,
+        "timestamp": req.timestamp or _ts_now(),
+    }
+    _drift_events[req.tenant_id].append(record)
+    return JSONResponse(status_code=201, content=record)
+
+
+@app.get("/cloud/drift/events")
+async def cloud_get_drift_events(
+    request: Request,
+    limit: int = 50,
+    model_id: str | None = None,
+    severity: str | None = None,
+) -> JSONResponse:
+    """Return the drift event stream for the resolved tenant.
+
+    Addresses EU AI Act Art. 16(d): ongoing monitoring of model changes.
+
+    Query parameters
+    ----------------
+    limit:
+        Maximum recent events (default 50, max 500).
+    model_id:
+        Filter to a specific model.
+    severity:
+        Filter by: ``info`` | ``warning`` | ``critical``.
+    """
+    tenant_id = _resolve_tenant_id(request)
+    limit = max(1, min(limit, 500))
+    events: list[dict[str, Any]] = list(_drift_events[tenant_id])
+    if model_id:
+        events = [e for e in events if e["model_id"] == model_id]
+    if severity:
+        events = [e for e in events if e["severity"] == severity]
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "count": len(events[-limit:]),
+        "total": len(events),
+        "events": events[-limit:],
+    })
+
+
+# ── Policy dashboard ──────────────────────────────────────────────────────────
+
+@app.get("/cloud/policy/dashboard")
+async def cloud_policy_dashboard(request: Request) -> JSONResponse:
+    """Return policy pass/fail aggregates for the resolved tenant.
+
+    Feeds the boardroom compliance reporting dashboard:
+    "What % of model deployments are policy-compliant across our fleet?"
+
+    Addresses CMMC Level 2/3, NIST AI RMF, and ISO/IEC 42001 audit requirements.
+    """
+    tenant_id = _resolve_tenant_id(request)
+    stats = _policy_stats[tenant_id]
+    dashboard: list[dict[str, Any]] = []
+    for policy_name, counts in stats.items():
+        total = counts["passed"] + counts["failed"]
+        rate = round(counts["passed"] / total, 4) if total else 0.0
+        dashboard.append({
+            "policy": policy_name,
+            "passed": counts["passed"],
+            "failed": counts["failed"],
+            "total": total,
+            "pass_rate": rate,
+        })
+    # Overall aggregate — model-level (did the deployment pass attestation?)
+    models = list(_inventory[tenant_id])
+    m_passed = sum(1 for m in models if m.get("attestation_passed"))
+    m_failed = len(models) - m_passed
+    m_total = len(models)
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "overall": {
+            "passed": m_passed,
+            "failed": m_failed,
+            "total": m_total,
+            "pass_rate": round(m_passed / m_total, 4) if m_total else 0.0,
+        },
+        "by_policy": dashboard,
+    })
+
+
+# ── Tenant-scoped audit log ───────────────────────────────────────────────────
+
+@app.get("/cloud/audit")
+async def cloud_get_audit(
+    request: Request,
+    limit: int = 100,
+    log: str | None = None,
+) -> JSONResponse:
+    """Return the last *limit* audit trail entries, scoped to the resolved tenant.
+
+    Delegates to the existing AgentAuditLogger hash-chain log.  When
+    ``tenant_id`` is non-empty, entries are filtered to those whose
+    ``session_id`` starts with the tenant prefix (CI pipelines should set
+    ``SQUASH_AUDIT_SESSION_PREFIX=<tenant_id>-``).
+
+    Addresses EU AI Act Art. 12 and SEC cybersecurity disclosure requirements.
+    """
+    from squish.squash.governor import AgentAuditLogger
+
+    tenant_id = _resolve_tenant_id(request)
+    limit = max(1, min(limit, 1000))
+    logger = AgentAuditLogger(log_path=log)
+    entries = logger.read_tail(limit * 10 if tenant_id else limit)
+
+    if tenant_id:
+        entries = [
+            e for e in entries
+            if str(e.get("session_id", "")).startswith(tenant_id)
+        ][:limit]
+    else:
+        entries = entries[:limit]
+
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "count": len(entries),
+        "log_path": str(logger.path),
+        "entries": entries,
     })
 
 
