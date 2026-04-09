@@ -51,7 +51,7 @@ from squish.squash.sbom_builder import CompressRunMeta, CycloneDXBuilder
 from squish.squash.spdx_builder import SpdxBuilder, SpdxOptions
 from squish.squash.policy import PolicyEngine, PolicyResult, AVAILABLE_POLICIES
 from squish.squash.scanner import ModelScanner, ScanResult
-from squish.squash.oms_signer import OmsSigner
+from squish.squash.oms_signer import OmsSigner, _is_offline
 
 log = logging.getLogger(__name__)
 
@@ -116,6 +116,10 @@ class AttestConfig:
     quant_format: str = "unknown"
     policies: list[str] = field(default_factory=lambda: ["enterprise-strict"])
     sign: bool = False
+    offline: bool = False
+    """Air-gapped mode — skip all OIDC/network calls (also set by SQUASH_OFFLINE=1)."""
+    local_signing_key: Path | None = None
+    """Ed25519 .priv.pem path for offline signing (requires ``sign=True, offline=True``)."""
     fail_on_violation: bool = True
     skip_scan: bool = False
     spdx_options: SpdxOptions | None = None
@@ -350,15 +354,31 @@ class AttestPipeline:
             except ImportError:
                 log.warning("VEX engine unavailable — skipping (import error)")
 
-        # ── Step 7: Sigstore signing ──────────────────────────────────────
+        # ── Step 7: Signing (Sigstore or local Ed25519 in offline mode) ────
         if config.sign and result.cyclonedx_path:
-            log.info("Signing CycloneDX BOM via Sigstore …")
-            sig_path = OmsSigner.sign(result.cyclonedx_path)
-            result.signature_path = sig_path
-            if sig_path:
-                log.info("  Signed → %s", sig_path)
+            _offline = config.offline or _is_offline()
+            if _offline and config.local_signing_key:
+                log.info("Signing CycloneDX BOM with local Ed25519 key (offline mode) …")
+                try:
+                    sig_path = OmsSigner.sign_local(
+                        result.cyclonedx_path, config.local_signing_key
+                    )
+                    result.signature_path = sig_path
+                    log.info("  Signed (offline) → %s", sig_path)
+                except Exception as exc:
+                    log.warning("  Local signing failed (non-fatal): %s", exc)
+            elif _offline:
+                log.warning(
+                    "  Signing skipped — offline mode active and no local_signing_key provided"
+                )
             else:
-                log.warning("  Signing skipped (sigstore not installed or no OIDC)")
+                log.info("Signing CycloneDX BOM via Sigstore …")
+                sig_path = OmsSigner.sign(result.cyclonedx_path)
+                result.signature_path = sig_path
+                if sig_path:
+                    log.info("  Signed → %s", sig_path)
+                else:
+                    log.warning("  Signing skipped (sigstore not installed or no OIDC)")
 
         # ── Step 8: Master attestation record ─────────────────────────────
         master = _build_master_record(config, result)

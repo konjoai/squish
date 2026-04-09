@@ -131,6 +131,89 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="spdx_sensitive_data",
         help="SPDX AI Profile: sensitivePIIInTrainingData. Default: absent",
     )
+    # ── W49: offline / air-gapped mode ────────────────────────────────────────
+    attest.add_argument(
+        "--offline",
+        action="store_true",
+        default=False,
+        help="Air-gapped mode: disable all OIDC/network calls (also set by SQUASH_OFFLINE=1)",
+    )
+    attest.add_argument(
+        "--offline-key",
+        metavar="PATH",
+        default=None,
+        dest="offline_key",
+        help="Path to Ed25519 .priv.pem for offline signing (requires --sign --offline)",
+    )
+
+    # ── squash keygen ─────────────────────────────────────────────────────────
+    keygen_cmd = sub.add_parser(
+        "keygen",
+        help="Generate a local Ed25519 keypair for offline signing",
+        description=(
+            "Generate an Ed25519 keypair for offline BOM signing.\n\n"
+            "Example: squash keygen mykey\n"
+            "Example: squash keygen ci-key --key-dir ~/.squash/keys"
+        ),
+    )
+    keygen_cmd.add_argument("name", help="Base filename for the keypair (no extension)")
+    keygen_cmd.add_argument(
+        "--key-dir",
+        metavar="DIR",
+        default=".",
+        dest="key_dir",
+        help="Directory to write <name>.priv.pem and <name>.pub.pem (default: current dir)",
+    )
+    keygen_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── squash verify-local ───────────────────────────────────────────────────
+    verify_local_cmd = sub.add_parser(
+        "verify-local",
+        help="Verify a BOM's Ed25519 offline signature against a local public key",
+        description=(
+            "Verify the local Ed25519 signature for a CycloneDX BOM.\n\n"
+            "Example: squash verify-local ./model/cyclonedx-mlbom.json "
+            "--key mykey.pub.pem\n"
+            "Example: squash verify-local bom.json --key ci-key.pub.pem --sig bom.sig"
+        ),
+    )
+    verify_local_cmd.add_argument("bom_path", help="Path to the CycloneDX BOM file to verify")
+    verify_local_cmd.add_argument(
+        "--key",
+        required=True,
+        metavar="PATH",
+        dest="pub_key",
+        help="Path to the Ed25519 .pub.pem public key",
+    )
+    verify_local_cmd.add_argument(
+        "--sig",
+        default=None,
+        metavar="PATH",
+        dest="sig_file",
+        help="Explicit .sig file path (default: <bom_path>.sig)",
+    )
+    verify_local_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── squash pack-offline ───────────────────────────────────────────────────
+    pack_offline_cmd = sub.add_parser(
+        "pack-offline",
+        help="Bundle a model directory and squash artefacts into a .squash-bundle.tar.gz",
+        description=(
+            "Archive a model directory (weights + BOM + signatures + chain) into a "
+            "portable, self-contained tarball for air-gapped deployment.\n\n"
+            "Example: squash pack-offline ./llama-3.1-8b-q4\n"
+            "Example: squash pack-offline ./model --output /tmp/bundle.squash-bundle.tar.gz"
+        ),
+    )
+    pack_offline_cmd.add_argument("model_dir", help="Path to the model directory to bundle")
+    pack_offline_cmd.add_argument(
+        "--output",
+        metavar="PATH",
+        default=None,
+        dest="output_path",
+        help="Output .squash-bundle.tar.gz path (default: <model_dir>-<timestamp>.squash-bundle.tar.gz)",
+    )
+    pack_offline_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
     # ── squash policies ────────────────────────────────────────────────────────
     policies_cmd = sub.add_parser("policies", help="List available built-in policy templates")
@@ -1043,6 +1126,106 @@ def _cmd_verify(args: argparse.Namespace, quiet: bool) -> int:
     return 2
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# Wave 49 — air-gapped / offline signing helpers
+# ────────────────────────────────────────────────────────────────────────────
+
+def _cmd_keygen(args: argparse.Namespace, quiet: bool) -> int:
+    """Generate an Ed25519 keypair for offline BOM signing."""
+    try:
+        from squish.squash.oms_signer import OmsSigner
+    except ImportError as e:
+        print(f"squash is not installed: {e}", file=sys.stderr)
+        return 2
+
+    try:
+        priv_path, pub_path = OmsSigner.keygen(args.name, args.key_dir)
+    except ImportError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except Exception as e:
+        print(f"runtime error: {e}", file=sys.stderr)
+        return 2
+
+    if not quiet:
+        print(f"✓ keypair generated:")
+        print(f"  Private : {priv_path}")
+        print(f"  Public  : {pub_path}")
+        print()
+        print("Keep the private key secret.  Share the public key for verification.")
+        print(f"  Sign  : squash attest <model> --sign --offline --offline-key {priv_path}")
+        print(f"  Verify: squash verify-local <bom> --key {pub_path}")
+    return 0
+
+
+def _cmd_verify_local(args: argparse.Namespace, quiet: bool) -> int:
+    """Verify a BOM's Ed25519 offline signature against a local public key."""
+    try:
+        from squish.squash.oms_signer import OmsVerifier
+    except ImportError as e:
+        print(f"squash is not installed: {e}", file=sys.stderr)
+        return 2
+
+    bom_path = Path(args.bom_path)
+    if not bom_path.exists():
+        print(f"error: BOM not found: {bom_path}", file=sys.stderr)
+        return 1
+
+    pub_key_path = Path(args.pub_key)
+    if not pub_key_path.exists():
+        print(f"error: public key not found: {pub_key_path}", file=sys.stderr)
+        return 1
+
+    sig_path = Path(args.sig_file) if args.sig_file else None
+
+    try:
+        ok = OmsVerifier.verify_local(bom_path, pub_key_path, sig_path)
+    except ImportError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except Exception as e:
+        print(f"runtime error: {e}", file=sys.stderr)
+        return 2
+
+    if ok:
+        if not quiet:
+            print(f"✓ verified (offline): {bom_path}")
+        return 0
+
+    print(f"✗ verification FAILED (offline): {bom_path}", file=sys.stderr)
+    return 2
+
+
+def _cmd_pack_offline(args: argparse.Namespace, quiet: bool) -> int:
+    """Bundle a model directory into a portable .squash-bundle.tar.gz archive."""
+    try:
+        from squish.squash.oms_signer import OmsSigner
+    except ImportError as e:
+        print(f"squash is not installed: {e}", file=sys.stderr)
+        return 2
+
+    model_dir = Path(args.model_dir)
+    if not model_dir.exists():
+        print(f"error: model_dir not found: {model_dir}", file=sys.stderr)
+        return 1
+
+    output_path = Path(args.output_path) if args.output_path else None
+
+    try:
+        bundle_path = OmsSigner.pack_offline(model_dir, output_path)
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"runtime error: {e}", file=sys.stderr)
+        return 2
+
+    size_mb = bundle_path.stat().st_size / (1024 * 1024)
+    if not quiet:
+        print(f"✓ bundle created: {bundle_path} ({size_mb:.1f} MB)")
+    return 0
+
+
 def _cmd_attest(args: argparse.Namespace, quiet: bool) -> int:
     try:
         from squish.squash.attest import (
@@ -1087,6 +1270,8 @@ def _cmd_attest(args: argparse.Namespace, quiet: bool) -> int:
         quant_format=args.quant_format,
         policies=policies,
         sign=args.sign,
+        offline=args.offline,
+        local_signing_key=Path(args.offline_key) if args.offline_key else None,
         fail_on_violation=False,  # handle ourselves below for clean exit codes
         skip_scan=args.skip_scan,
         spdx_options=spdx_options,
@@ -2030,6 +2215,12 @@ def main() -> None:
         sys.exit(_cmd_diff(args, quiet))
     elif args.command == "verify":
         sys.exit(_cmd_verify(args, quiet))
+    elif args.command == "keygen":
+        sys.exit(_cmd_keygen(args, quiet))
+    elif args.command == "verify-local":
+        sys.exit(_cmd_verify_local(args, quiet))
+    elif args.command == "pack-offline":
+        sys.exit(_cmd_pack_offline(args, quiet))
     elif args.command == "report":
         sys.exit(_cmd_report(args, quiet))
     elif args.command == "vex":
