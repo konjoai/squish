@@ -620,6 +620,46 @@ def _build_parser() -> argparse.ArgumentParser:
         "--quiet", action="store_true", help="Suppress non-error output"
     )
 
+    # ── Wave 51 — SBOM drift detection ────────────────────────────────────────
+    drift_check_cmd = sub.add_parser(
+        "drift-check",
+        help="Verify a model directory against its CycloneDX BOM (SHA-256 digest check)",
+        description=(
+            "Compare the SHA-256 digests of every weight file in MODEL_DIR against "
+            "the digests recorded in the squish CycloneDX BOM sidecar.  Reports "
+            "missing or tampered files and optionally exits non-zero on drift.\n\n"
+            "Example: squash drift-check ./my-model --bom ./my-model/cyclonedx-mlbom.json\n"
+            "Example: squash drift-check ./my-model --bom bom.json --fail-on-drift\n"
+            "Exit codes: 0 = clean, 1 = error, 2 = drift found (with --fail-on-drift)"
+        ),
+    )
+    drift_check_cmd.add_argument(
+        "model_dir",
+        metavar="MODEL_DIR",
+        help="Path to the squish compressed model directory",
+    )
+    drift_check_cmd.add_argument(
+        "--bom",
+        metavar="BOM_PATH",
+        required=True,
+        help="Path to the CycloneDX BOM JSON file (cyclonedx-mlbom.json)",
+    )
+    drift_check_cmd.add_argument(
+        "--fail-on-drift",
+        action="store_true",
+        default=False,
+        help="Exit with code 2 when drift is detected (default: exit 0 and report only)",
+    )
+    drift_check_cmd.add_argument(
+        "--output-json",
+        metavar="PATH",
+        default=None,
+        help="Write the full drift result as JSON to this path",
+    )
+    drift_check_cmd.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
+    )
+
     # ── Wave 29 — VEX publish + integration CLI shims ─────────────────────────
     vex_pub_cmd = sub.add_parser(
         "vex-publish",
@@ -1832,6 +1872,67 @@ def _cmd_shadow_ai(args: argparse.Namespace, quiet: bool) -> int:  # noqa: C901
     return 0
 
 
+# ── Wave 51 — SBOM drift detection handler ───────────────────────────────────
+
+def _cmd_drift_check(args: argparse.Namespace, quiet: bool) -> int:
+    """Run the drift-check subcommand (W51)."""
+    import json as _json
+    import dataclasses
+    from squish.squash.drift import DriftConfig, check_drift
+
+    bom_path = Path(getattr(args, "bom", "") or "")
+    model_dir = Path(args.model_dir)
+
+    if not bom_path or not bom_path.exists():
+        print(f"error: BOM file not found: {bom_path}", file=sys.stderr)
+        return 1
+
+    if not model_dir.exists():
+        print(f"error: model directory not found: {model_dir}", file=sys.stderr)
+        return 1
+
+    try:
+        config = DriftConfig(bom_path=bom_path, model_dir=model_dir)
+        result = check_drift(config)
+    except (OSError, _json.JSONDecodeError, ValueError) as exc:
+        print(f"error: drift check failed: {exc}", file=sys.stderr)
+        return 1
+
+    if not quiet:
+        print(result.summary)
+        for hit in result.hits:
+            if hit.missing:
+                print(f"  [MISSING]  {hit.path}")
+            else:
+                print(f"  [TAMPERED] {hit.path}")
+                print(f"             expected: {hit.expected_digest}")
+                print(f"             actual:   {hit.actual_digest}")
+
+    output_json_path: str | None = getattr(args, "output_json", None)
+    if output_json_path:
+        try:
+            Path(output_json_path).write_text(
+                _json.dumps(
+                    {
+                        "ok": result.ok,
+                        "files_checked": result.files_checked,
+                        "summary": result.summary,
+                        "hits": [dataclasses.asdict(h) for h in result.hits],
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            print(f"error: could not write output JSON: {exc}", file=sys.stderr)
+            return 1
+
+    fail_on_drift: bool = getattr(args, "fail_on_drift", False)
+    if not result.ok and fail_on_drift:
+        return 2
+    return 0
+
+
 # ── Wave 29 — VEX publish + integration CLI shims ─────────────────────────────
 
 def _cmd_vex_publish(args: argparse.Namespace, quiet: bool) -> int:
@@ -2405,6 +2506,8 @@ def main() -> None:
         sys.exit(_cmd_scan_rag(args, quiet))
     elif args.command == "lineage":
         sys.exit(_cmd_lineage(args, quiet))
+    elif args.command == "drift-check":
+        sys.exit(_cmd_drift_check(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)
