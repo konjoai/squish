@@ -665,10 +665,10 @@ class TestApiPackOffline:
 
 class TestModuleCount:
     def test_squish_module_count_unchanged(self):
-        """squish/ must still have exactly 124 Python files (W49 adds no new modules)."""
+        """squish/ must still have exactly 125 Python files (W51 adds drift.py — new security domain)."""
         squish_dir = Path(__file__).parent.parent / "squish"
         count = len(list(squish_dir.rglob("*.py")))
-        assert count == 124, (
-            f"Module count changed: expected 124, got {count}. "
-            "W49 must not add new Python files to squish/."
+        assert count == 125, (
+            f"Module count changed: expected 125, got {count}. "
+            "Check squish/ for unexpected additions or deletions."
         )

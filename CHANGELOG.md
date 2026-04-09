@@ -5,6 +5,33 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 51: SBOM drift detection
+
+### Added
+
+- **`squish/squash/drift.py`** — New module (module count: 124→125, justified: new security
+  domain — CMMC Level 2/3 AC.2.006/CM.2.061, EU AI Act Art. 9/12, DoD IL4/IL5).
+  `DriftConfig(bom_path, model_dir, tolerance)` — configuration dataclass.
+  `DriftHit(path, expected_digest, actual_digest)` — single-file divergence record with
+  `missing` and `tampered` computed properties.
+  `DriftResult(hits, files_checked, ok, summary)` — aggregated result with auto-built
+  summary string.  `_parse_bom_hashes(bom)` — extracts `squish:weight_hash:*` properties
+  from the first CycloneDX component.  `check_drift(config)` — computes SHA-256 for each
+  BOM-attested file, reports missing files (`actual_digest=""`) and digest mismatches.
+  Stdlib only: `hashlib`, `json`, `pathlib`.  No optional extras required.
+
+- **`squish/squash/cli.py`** — New `squash drift-check <model_dir> --bom <bom.json>`
+  subcommand.  Exit 0 = clean, 1 = error, 2 = drift found + `--fail-on-drift`.
+  Supports `--output-json PATH` for machine-readable results and `--quiet` for scripting.
+
+- **`tests/test_squash_wave51.py`** — 54 tests (all pass).  Covers `DriftConfig`,
+  `DriftHit`, `DriftResult` dataclasses; `_parse_bom_hashes` with empty/missing/mixed
+  BOM structures; `check_drift` clean/tampered/missing/extra-files/ValueError paths;
+  CLI exit codes 0/1/2, `--output-json`, `--quiet`, `--fail-on-drift`, `--help`,
+  missing BOM/model_dir, invalid JSON.  Module count gate updated to 125.
+
+---
+
 ## [Unreleased] — Wave 50: shadow AI detection
 
 ### Added

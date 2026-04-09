@@ -754,10 +754,10 @@ class TestCliShadowAiScan:
 
 class TestModuleCount:
     def test_squish_module_count_still_124(self):
-        """squish/ non-experimental Python file count must stay at 124."""
+        """squish/ Python file count must be 125 (W51 adds drift.py — SBOM drift detection, new security domain)."""
         squish_dir = _REPO_ROOT / "squish"
         count = len(list(squish_dir.rglob("*.py")))
-        assert count == 124, (
-            f"squish/ Python file count is {count}, expected 124. "
+        assert count == 125, (
+            f"squish/ Python file count is {count}, expected 125. "
             "A new file was added — either remove it or update this gate with written justification."
         )

@@ -9,6 +9,7 @@
 2026-04-09
 
 ## Last commits
+- **`(w51 — pending push)`** — feat(squash): W51 SBOM drift detection — check_drift + squash drift-check CLI — 54 new tests, 5220 suite, 125 modules
 - **`(w50 — pending push)`** — feat(squash): W50 shadow AI detection — K8s pod scanner scan_pod_for_model_files + ShadowAiScanner + squash shadow-ai scan CLI — 65 new tests, 5166 suite, 124 modules
 - **`(w49 — pending push)`** — feat(squash): W49 air-gapped/sovereign AI mode — _is_offline + keygen/sign_local/verify_local/pack_offline + CLI + REST — 68 new tests, 5101 suite, 124 modules
 - **`(w48 — pending push)`** — feat(wave48): model transformation lineage chain — LineageChain(Merkle) + squash lineage CLI + /lineage REST — 69 new tests, 5033 suite (0 failures), 124 modules
@@ -18,7 +19,7 @@
 ---
 
 ## Module count
-- **124** Python files in `squish/` (non-experimental). W50: no new modules (shadow AI detection added to existing kubernetes.py). W48: `squash/lineage.py` +1 (justified: EU AI Act Annex IV traceability requirement). W47: `squash/rag.py` +1. W45: `mcp.py` +1, `eval_binder.py` −1 = net zero.
+- **125** Python files in `squish/` (non-experimental). W51: `squash/drift.py` +1 (justified: new security domain — SBOM drift detection, CMMC/EU AI Act/DoD IL4/IL5). W50: no new modules. W48: `squash/lineage.py` +1 (justified: EU AI Act Annex IV). W47: `squash/rag.py` +1. W45: `mcp.py` +1, `eval_binder.py` −1 = net zero.
 
 ---
 
