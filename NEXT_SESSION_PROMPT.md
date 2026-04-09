@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Wave 49: Post-W48 context
+# NEXT_SESSION_PROMPT.md — Wave 50: Post-W49 context
 
 > Paste the content below verbatim as your opening prompt.
 
@@ -13,20 +13,31 @@ Repo: /Users/wscholl/squish
 
 --- Context ---
 
-Wave 48 is COMPLETE and committed.
+Wave 49 is COMPLETE and committed.
+- squish/squash/oms_signer.py — _is_offline() helper (SQUASH_OFFLINE=1).
+  OmsSigner.sign() returns None immediately when offline (no OIDC calls).
+  OmsSigner.keygen(key_name, key_dir) — Ed25519 keypair → .priv.pem / .pub.pem.
+  OmsSigner.sign_local(bom_path, priv_key_path) — Ed25519 sig → <bom>.sig (128-char hex).
+  OmsSigner.pack_offline(model_dir, output_path) — .squash-bundle.tar.gz.
+  OmsVerifier.verify_local(bom_path, pub_key_path, sig_path) → bool.
+  Requires cryptography>=42.0 (added to pyproject.toml [squash] optional-deps).
+- squish/squash/attest.py — AttestConfig: offline: bool, local_signing_key: Path|None.
+  Step 7: offline+key→sign_local, offline+no-key→skip warning, online→sigstore.
+- squish/squash/cli.py — squash keygen / squash verify-local / squash pack-offline.
+  squash attest --offline --offline-key PATH.
+- squish/squash/api.py — POST /keygen, POST /attest/verify-local, POST /pack/offline.
+  AttestRequest: offline: bool, local_signing_key: str|None.
+- tests/test_squash_wave49.py — 68 tests (all pass). Module count: 124 (unchanged).
+- Unblocks: DoD CMMC, EU sovereign AI, healthcare networks, IL4/IL5.
+
+Wave 48 is COMPLETE.
 - squish/squash/lineage.py — TransformationEvent + LineageVerifyResult dataclasses.
   LineageChain (Merkle-chained audit ledger): create_event(), record(), load(), verify().
   Chain file: ".lineage_chain.json" per model directory. SHA-256 Merkle chain.
   Regulatory drivers: EU AI Act Annex IV (Art. 11), NIST AI RMF GOVERN 1.7,
   M&A model transfer provenance. Stdlib only.
 - squish/squash/cli.py — squash lineage record/show/verify subcommands.
-  lineage record: --operation (required), --model-id, --input-dir, --params KEY=VALUE.
-  lineage show: [--json]. lineage verify. Exit 0=ok/intact, 1=user error, 2=tampered/missing.
 - squish/squash/api.py — POST /lineage/record, GET /lineage/show, POST /lineage/verify.
-  LineageRecordRequest (model_dir, operation, model_id, input_dir, params).
-  LineageVerifyRequest (model_dir).
-- squish/cli.py — non-fatal auto-hook in _cmd_compress_inner: every
-  "squish compress" run automatically records a lineage event (except ImportError silently).
 - tests/test_squash_wave48.py — 69 tests (all pass). Full suite: 5033 passed, 0 failed.
 - Module count: 124 (+1 lineage.py, justified: EU AI Act Annex IV).
 

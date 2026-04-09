@@ -56,6 +56,8 @@ whatsapp = []  # Meta WhatsApp Cloud API uses stdlib only (hmac + hashlib + urll
 squash = [
     # CycloneDX 1.7 ML-BOM generation + schema validation.
     "cyclonedx-python-lib>=7.0",
+    # Ed25519 offline signing (W49 air-gapped mode).
+    "cryptography>=42.0",
     # Optional: OpenSSF Model Signing (keyless via Sigstore Rekor).
     # Install separately when signature verification is needed:
     #   pip install sigstore

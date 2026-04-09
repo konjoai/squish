@@ -9,6 +9,7 @@
 2026-04-08
 
 ## Last commits
+- **`(w49 — pending push)`** — feat(squash): W49 air-gapped/sovereign AI mode — _is_offline + keygen/sign_local/verify_local/pack_offline + CLI + REST — 68 new tests, 5101 suite, 124 modules
 - **`(w48 — pending push)`** — feat(wave48): model transformation lineage chain — LineageChain(Merkle) + squash lineage CLI + /lineage REST — 69 new tests, 5033 suite (0 failures), 124 modules
 - **`(w47 — pending push)`** — feat(wave47): RAG KB integrity scanner — RagScanner(index/verify) + scan-rag CLI + /rag/index /rag/verify REST — 57 new tests, 4964 suite (0 failures), 123 modules
 - **`ed27727 (w46)`** — feat(wave46): agent audit trail — AgentAuditLogger JSONL hash chain + SquashAuditCallback + CLI + REST — 66 new tests, 4907 suite (0 failures), 122 modules

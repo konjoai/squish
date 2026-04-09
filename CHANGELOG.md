@@ -5,6 +5,56 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 49: air-gapped / sovereign AI mode
+
+### Added
+
+- **`squish/squash/oms_signer.py`** — `_is_offline()` module-level helper
+  reads `SQUASH_OFFLINE` env var (truthy unless value is `0/false/no/off`).
+  `OmsSigner.sign()` now returns `None` immediately when offline, preventing
+  any OIDC/network calls.  Three new static methods:
+  `OmsSigner.keygen(key_name, key_dir)` generates an Ed25519 keypair written
+  as PKCS8 `.priv.pem` + SubjectPublicKeyInfo `.pub.pem`;
+  `OmsSigner.sign_local(bom_path, priv_key_path)` signs the BOM with Ed25519
+  and writes a 128-char hex signature to `<bom_stem>.sig`;
+  `OmsSigner.pack_offline(model_dir, output_path)` creates a
+  `.squash-bundle.tar.gz` bundle of the entire model directory for
+  air-gapped transfer.  `OmsVerifier.verify_local(bom_path, pub_key_path,
+  sig_path)` verifies an offline Ed25519 signature.  All three require
+  `cryptography>=42.0` and raise `ImportError` with a `pip install` hint when
+  absent.
+
+- **`squish/squash/attest.py`** — `AttestConfig` gains two new fields:
+  `offline: bool = False` (also triggered by `SQUASH_OFFLINE=1`) and
+  `local_signing_key: Path | None = None`.  Step 7 of the attestation pipeline
+  dispatches on these: `offline + key → sign_local`, `offline + no key →
+  warning/skip`, online → original Sigstore path.
+
+- **`squish/squash/cli.py`** — Three new top-level subcommands:
+  `squash keygen <name> [--key-dir DIR]` (generate keypair),
+  `squash verify-local <bom_path> --key <pub.pem> [--sig PATH]` (verify
+  offline sig, exits 0/2), `squash pack-offline <model_dir> [--output PATH]`
+  (bundle for air-gapped transfer).  `squash attest` gains `--offline` and
+  `--offline-key PATH` flags.
+
+- **`squish/squash/api.py`** — `AttestRequest` gains `offline: bool` and
+  `local_signing_key: str | None` fields.  Three new REST routes:
+  `POST /keygen` (returns priv/pub paths), `POST /attest/verify-local`
+  (returns `{"ok": bool}`), `POST /pack/offline` (returns bundle path +
+  size_bytes).
+
+- **`pyproject.toml`** — `cryptography>=42.0` added to `[project.optional-dependencies]`
+  `squash` optional group.
+
+### Enables
+
+Air-gapped deployment scenarios that require zero network calls:
+DoD CMMC / IL4 / IL5, EU sovereign AI, healthcare networks (HIPAA), and
+any environment where Sigstore / OIDC reachability cannot be guaranteed.
+Set `SQUASH_OFFLINE=1` or pass `--offline` to activate.
+
+---
+
 ## [Unreleased] — Wave 48: model transformation lineage chain
 
 ### Added

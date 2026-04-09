@@ -161,6 +161,14 @@ class AttestRequest(BaseModel):
     quant_format: str = Field(default="unknown", description="Quantization format")
     policies: list[str] = Field(default_factory=lambda: ["enterprise-strict"])
     sign: bool = Field(default=False)
+    offline: bool = Field(
+        default=False,
+        description="Air-gapped mode — skip all OIDC/network calls (also set by SQUASH_OFFLINE=1)",
+    )
+    local_signing_key: str | None = Field(
+        default=None,
+        description="Absolute path to an Ed25519 .priv.pem for offline signing (requires sign=True, offline=True)",
+    )
     fail_on_violation: bool = Field(default=False)
     skip_scan: bool = Field(default=False)
     training_dataset_ids: list[str] = Field(default_factory=list)
@@ -273,6 +281,39 @@ class ComposedAttestRequest(BaseModel):
     sign: bool = Field(default=False)
 
 
+# ── W49: offline / air-gapped request models ─────────────────────────────────
+
+class KeygenRequest(BaseModel):
+    """Generate a local Ed25519 keypair for offline BOM signing."""
+    key_name: str = Field(description="Base filename for the keypair (no extension)")
+    key_dir: str = Field(
+        default=".",
+        description="Directory to write <key_name>.priv.pem and <key_name>.pub.pem",
+    )
+
+
+class VerifyLocalRequest(BaseModel):
+    """Verify a CycloneDX BOM against a local Ed25519 offline signature."""
+    bom_path: str = Field(description="Absolute path to the CycloneDX BOM to verify")
+    pub_key_path: str = Field(description="Absolute path to the Ed25519 .pub.pem file")
+    sig_path: str | None = Field(
+        default=None,
+        description="Explicit .sig file path; defaults to <bom_path with .sig extension>",
+    )
+
+
+class PackOfflineRequest(BaseModel):
+    """Bundle a model directory into a portable .squash-bundle.tar.gz archive."""
+    model_dir: str = Field(description="Absolute path to the model directory to bundle")
+    output_path: str | None = Field(
+        default=None,
+        description=(
+            "Output .squash-bundle.tar.gz path; "
+            "auto-generated as <model_dir>-<timestamp>.squash-bundle.tar.gz if omitted"
+        ),
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────────────────────────────────────
@@ -339,6 +380,8 @@ async def attest(req: AttestRequest) -> JSONResponse:
         quant_format=req.quant_format,
         policies=req.policies,
         sign=req.sign,
+        offline=req.offline,
+        local_signing_key=Path(req.local_signing_key) if req.local_signing_key else None,
         fail_on_violation=False,  # never raise from HTTP handler; return 422 instead
         skip_scan=req.skip_scan,
         training_dataset_ids=all_datasets,
@@ -1501,6 +1544,94 @@ async def post_lineage_verify(req: LineageVerifyRequest) -> JSONResponse:
     loop = asyncio.get_running_loop()
     content = await loop.run_in_executor(_executor, _run)
     return JSONResponse(content=content)
+
+
+# ── W49: offline / air-gapped endpoints ──────────────────────────────────────
+
+
+@app.post("/keygen")
+async def keygen(req: KeygenRequest) -> JSONResponse:
+    """Generate an Ed25519 keypair for offline BOM signing.
+
+    Equivalent to ``squash keygen <name> --key-dir <dir>``.
+    Returns the absolute paths to the generated ``.priv.pem`` and ``.pub.pem`` files.
+    """
+    from squish.squash.oms_signer import OmsSigner
+
+    def _run() -> tuple[str, str]:
+        priv, pub = OmsSigner.keygen(req.key_name, req.key_dir)
+        return str(priv), str(pub)
+
+    loop = asyncio.get_running_loop()
+    try:
+        priv_path, pub_path = await loop.run_in_executor(_executor, _run)
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    return JSONResponse(content={"priv_path": priv_path, "pub_path": pub_path})
+
+
+@app.post("/attest/verify-local")
+async def verify_local(req: VerifyLocalRequest) -> JSONResponse:
+    """Verify a CycloneDX BOM against a local Ed25519 offline signature.
+
+    Equivalent to ``squash verify-local <bom_path> --key <pub_key_path>``.
+    Returns ``{"ok": true}`` on valid signature, ``{"ok": false}`` on failure.
+    """
+    from squish.squash.oms_signer import OmsVerifier
+
+    bom = Path(req.bom_path)
+    if not bom.exists():
+        raise HTTPException(status_code=404, detail=f"bom_path not found: {req.bom_path}")
+
+    pub = Path(req.pub_key_path)
+    if not pub.exists():
+        raise HTTPException(status_code=404, detail=f"pub_key_path not found: {req.pub_key_path}")
+
+    sig = Path(req.sig_path) if req.sig_path else None
+
+    def _run() -> bool:
+        return OmsVerifier.verify_local(bom, pub, sig)
+
+    loop = asyncio.get_running_loop()
+    try:
+        ok = await loop.run_in_executor(_executor, _run)
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    return JSONResponse(content={"ok": ok, "bom_path": str(bom)})
+
+
+@app.post("/pack/offline")
+async def pack_offline(req: PackOfflineRequest) -> JSONResponse:
+    """Bundle a model directory into a portable .squash-bundle.tar.gz archive.
+
+    Equivalent to ``squash pack-offline <model_dir>``.
+    Returns the bundle path and its size in bytes.
+    """
+    from squish.squash.oms_signer import OmsSigner
+
+    mdir = Path(req.model_dir)
+    if not mdir.exists():
+        raise HTTPException(status_code=404, detail=f"model_dir not found: {req.model_dir}")
+
+    out = Path(req.output_path) if req.output_path else None
+
+    def _run() -> str:
+        return str(OmsSigner.pack_offline(mdir, out))
+
+    loop = asyncio.get_running_loop()
+    try:
+        bundle_path = await loop.run_in_executor(_executor, _run)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    size_bytes = Path(bundle_path).stat().st_size
+    return JSONResponse(content={
+        "bundle_path": bundle_path,
+        "size_bytes": size_bytes,
+        "model_dir": str(mdir),
+    })
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:
