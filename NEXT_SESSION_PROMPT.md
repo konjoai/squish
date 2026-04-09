@@ -1,4 +1,4 @@
-# NEXT_SESSION_PROMPT.md — Wave 50: Post-W49 context
+# NEXT_SESSION_PROMPT.md — Wave 51: Post-W50 context
 
 > Paste the content below verbatim as your opening prompt.
 
@@ -13,21 +13,55 @@ Repo: /Users/wscholl/squish
 
 --- Context ---
 
-Wave 49 is COMPLETE and committed.
-- squish/squash/oms_signer.py — _is_offline() helper (SQUASH_OFFLINE=1).
-  OmsSigner.sign() returns None immediately when offline (no OIDC calls).
-  OmsSigner.keygen(key_name, key_dir) — Ed25519 keypair → .priv.pem / .pub.pem.
-  OmsSigner.sign_local(bom_path, priv_key_path) — Ed25519 sig → <bom>.sig (128-char hex).
-  OmsSigner.pack_offline(model_dir, output_path) — .squash-bundle.tar.gz.
-  OmsVerifier.verify_local(bom_path, pub_key_path, sig_path) → bool.
-  Requires cryptography>=42.0 (added to pyproject.toml [squash] optional-deps).
-- squish/squash/attest.py — AttestConfig: offline: bool, local_signing_key: Path|None.
-  Step 7: offline+key→sign_local, offline+no-key→skip warning, online→sigstore.
-- squish/squash/cli.py — squash keygen / squash verify-local / squash pack-offline.
-  squash attest --offline --offline-key PATH.
-- squish/squash/api.py — POST /keygen, POST /attest/verify-local, POST /pack/offline.
-  AttestRequest: offline: bool, local_signing_key: str|None.
-- tests/test_squash_wave49.py — 68 tests (all pass). Module count: 124 (unchanged).
+Wave 50 is COMPLETE and committed.
+- squish/squash/integrations/kubernetes.py — Shadow AI detection layer:
+  SHADOW_AI_MODEL_EXTENSIONS frozenset (.gguf, .safetensors, .bin, .pt,
+  .ckpt, .pkl, .pth, .onnx, .tflite, .mlmodel).
+  ShadowAiConfig dataclass — controls which pod locations are scanned.
+  ShadowAiHit / ShadowAiScanResult dataclasses.
+  scan_pod_for_model_files(pod_spec, config) — scans host_path volumes,
+  volume mounts, env vars, args (and initContainers). Stdlib only, no K8s SDK.
+  ShadowAiScanner.scan_pod_list() / scan_namespace() — batch scanner.
+  WebhookConfig: shadow_ai_scan_mode: bool = False added.
+  ANNOTATION_SHADOW_AI = "squash.ai/shadow-ai-detected" added.
+- squish/squash/cli.py — squash shadow-ai scan command.
+  Supports stdin ('-'), --namespace, --extensions, --output-json, --fail-on-hits.
+  Exit 0 = clean, 1 = error, 2 = hits+fail.
+- tests/test_squash_wave50.py — 65 tests (all pass).
+  Full suite: 5166 passed, 0 failed. Module count: 124 (unchanged).
+
+--- W51 task ---
+
+Wave 51: SBOM drift detection — MEDIUM, 2w · P5
+
+Purpose: detect when a running model's actual files diverge from its attested BOM.
+Allows CISO teams to detect post-deployment tampering or silent model swaps.
+
+Scope:
+- squish/squash/drift.py — new module (module count: 124→125, justified: new security domain)
+  DriftConfig(bom_path, model_dir, tolerance: float=0.0)
+  DriftHit(path, expected_digest, actual_digest)
+  DriftResult(hits, files_checked, ok, summary)
+  check_drift(config: DriftConfig) -> DriftResult — compares SHA-256 digests
+    from the BOM against the model directory on disk.
+- squish/squash/cli.py — squash drift-check <model_dir> --bom <path> [--fail-on-drift]
+  [--output-json PATH] [--quiet]. Exit 0 = clean, 1 = error, 2 = drift+fail.
+- tests/test_squash_wave51.py — unit + integration:
+  clean model passes, tampered file fails, missing file fails, extra files ignored,
+  --fail-on-drift exit 2, --output-json written, CLI help flags.
+
+Hard constraints:
+- No external dependencies (use hashlib, stdlib only).
+- BOM format: CycloneDX JSON (components[].hashes[].content for SHA-256).
+- Module count: 125 after this wave (one new module: squash/drift.py).
+
+Done-when:
+1. All W51 tests pass, no regressions in full suite.
+2. CHANGELOG.md entry written.
+3. SESSION.md + NEXT_SESSION_PROMPT updated.
+4. Module count checked (should be 125).
+5. git add -A && git commit -m "feat(squash): W51 SBOM drift detection — check_drift + squash drift-check CLI" && git push
+```
 - Unblocks: DoD CMMC, EU sovereign AI, healthcare networks, IL4/IL5.
 
 Wave 48 is COMPLETE.

@@ -5,6 +5,44 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 50: shadow AI detection
+
+### Added
+
+- **`squish/squash/integrations/kubernetes.py`** — Shadow AI detection layer:
+  `SHADOW_AI_MODEL_EXTENSIONS` frozenset covering `.gguf`, `.safetensors`,
+  `.bin`, `.pt`, `.ckpt`, `.pkl`, `.pth`, `.onnx`, `.tflite`, `.mlmodel`.
+  `ShadowAiConfig` dataclass controls which pod locations are scanned (volume
+  mounts, env vars, args) and which namespaces to include.  `ShadowAiHit`
+  captures each match: pod name, namespace, container name, location type
+  (`host_path`, `volume_mount`, `env`, `arg`), matched value, and extension.
+  `ShadowAiScanResult` aggregates hits across all pods with `ok` bool and
+  human-readable `summary`.  `scan_pod_for_model_files(pod_spec, config)`
+  inspects a single pod manifest dict — no Kubernetes SDK required, fully
+  mockable in CI.  `ShadowAiScanner` batches across a `kubectl get pods -o
+  json` pod list via `scan_pod_list()` and `scan_namespace()`.  `WebhookConfig`
+  gains `shadow_ai_scan_mode: bool = False` for future webhook enforcement.
+  `ANNOTATION_SHADOW_AI = "squash.ai/shadow-ai-detected"` constant added.
+
+- **`squish/squash/cli.py`** — New `squash shadow-ai scan` subcommand: reads a
+  Kubernetes pod list JSON from a file or stdin (`-`), reports shadow AI model
+  file hits, supports `--namespace` filtering (repeatable), `--extensions`
+  override, `--output-json PATH` for machine-readable results, `--fail-on-hits`
+  (exit 2 on hits), and `--quiet`.  Exit codes: 0 clean, 1 error, 2 hits+fail.
+
+- **`tests/test_squash_wave50.py`** — 65 new tests covering extension set
+  correctness, `scan_pod_for_model_files` across all scan modes and location
+  types, `ShadowAiScanner` batch and namespace filtering, CLI subcommand
+  (help, clean/hit exit codes, stdin, `--output-json`, `--namespace`,
+  `--extensions`, invalid input), and module count gate.
+
+### Changed
+
+- `WebhookConfig` extended with `shadow_ai_scan_mode: bool = False` (backward
+  compatible default).
+
+---
+
 ## [Unreleased] — Wave 49: air-gapped / sovereign AI mode
 
 ### Added

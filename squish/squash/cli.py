@@ -560,6 +560,66 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     webhook_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
+    # ── Wave 50 — Shadow AI detection ─────────────────────────────────────────
+    shadow_ai_cmd = sub.add_parser(
+        "shadow-ai",
+        help="Detect shadow AI model files running inside Kubernetes pods",
+        description=(
+            "Scan a Kubernetes pod list for shadow AI model file references "
+            "(*.gguf, *.safetensors, *.bin, *.pt, etc.) in volume mounts, "
+            "environment variables, and container arguments.\n\n"
+            "Example: squash shadow-ai scan pods.json\n"
+            "Example: kubectl get pods -o json | squash shadow-ai scan -\n"
+            "Example: squash shadow-ai scan pods.json --fail-on-hits"
+        ),
+    )
+    shadow_ai_sub = shadow_ai_cmd.add_subparsers(dest="shadow_ai_cmd", metavar="SUBCOMMAND")
+    shadow_ai_sub.required = True
+    shadow_ai_scan_cmd = shadow_ai_sub.add_parser(
+        "scan",
+        help="Scan a pod list JSON for shadow AI model file references",
+        description=(
+            "Read a Kubernetes pod list (kubectl get pods -o json) from a file or stdin "
+            "and report any container that references shadow AI model files.\n\n"
+            "Exit codes: 0 = clean, 1 = error, 2 = shadow AI hits found (with --fail-on-hits)"
+        ),
+    )
+    shadow_ai_scan_cmd.add_argument(
+        "pod_list",
+        metavar="POD_LIST_JSON",
+        help="Path to pod list JSON file, or '-' to read from stdin",
+    )
+    shadow_ai_scan_cmd.add_argument(
+        "--namespace",
+        metavar="NS",
+        action="append",
+        dest="namespaces",
+        default=[],
+        help="Only scan pods in this namespace (repeatable; default: all namespaces)",
+    )
+    shadow_ai_scan_cmd.add_argument(
+        "--extensions",
+        nargs="+",
+        metavar="EXT",
+        default=None,
+        help="Override the set of file extensions to flag (e.g. --extensions .gguf .pt)",
+    )
+    shadow_ai_scan_cmd.add_argument(
+        "--output-json",
+        metavar="PATH",
+        default=None,
+        help="Write the full scan result as JSON to this path",
+    )
+    shadow_ai_scan_cmd.add_argument(
+        "--fail-on-hits",
+        action="store_true",
+        default=False,
+        help="Exit with code 2 if any shadow AI model files are detected",
+    )
+    shadow_ai_scan_cmd.add_argument(
+        "--quiet", action="store_true", help="Suppress non-error output"
+    )
+
     # ── Wave 29 — VEX publish + integration CLI shims ─────────────────────────
     vex_pub_cmd = sub.add_parser(
         "vex-publish",
@@ -1692,6 +1752,86 @@ def _cmd_webhook(args: argparse.Namespace, quiet: bool) -> int:
     return 0
 
 
+# ── Wave 50 — Shadow AI detection ─────────────────────────────────────────────
+
+def _cmd_shadow_ai(args: argparse.Namespace, quiet: bool) -> int:  # noqa: C901
+    """Run the shadow-ai scan subcommand."""
+    import json as _json
+
+    from squish.squash.integrations.kubernetes import (
+        ShadowAiConfig,
+        ShadowAiScanner,
+        SHADOW_AI_MODEL_EXTENSIONS,
+    )
+
+    subcommand = getattr(args, "shadow_ai_cmd", None)
+    if subcommand != "scan":
+        print("error: unknown shadow-ai subcommand", file=sys.stderr)
+        return 1
+
+    # ─ Load pod list JSON ──────────────────────────────────────────────────────
+    pod_list_path: str = args.pod_list
+    try:
+        if pod_list_path == "-":
+            raw = sys.stdin.read()
+        else:
+            raw = Path(pod_list_path).read_text(encoding="utf-8")
+        pod_list = _json.loads(raw)
+    except (OSError, _json.JSONDecodeError) as exc:
+        print(f"error: could not read pod list: {exc}", file=sys.stderr)
+        return 1
+
+    # ─ Build config ───────────────────────────────────────────────────────────
+    extensions: frozenset[str] | None = None
+    raw_exts: list[str] | None = getattr(args, "extensions", None)
+    if raw_exts:
+        extensions = frozenset(e if e.startswith(".") else f".{e}" for e in raw_exts)
+
+    cfg = ShadowAiConfig(
+        scan_extensions=extensions if extensions is not None else SHADOW_AI_MODEL_EXTENSIONS,
+        namespaces_include=list(getattr(args, "namespaces", None) or []),
+    )
+
+    # ─ Scan ───────────────────────────────────────────────────────────────────
+    scanner = ShadowAiScanner(cfg)
+    result = scanner.scan_pod_list(pod_list)
+
+    # ─ Output ─────────────────────────────────────────────────────────────────
+    if not quiet:
+        print(result.summary)
+        for hit in result.hits:
+            print(
+                f"  [{hit.location_type}] {hit.namespace}/{hit.pod_name}"
+                f" container={hit.container_name!r}"
+                f" value={hit.matched_value!r} ({hit.extension})"
+            )
+
+    output_json_path: str | None = getattr(args, "output_json", None)
+    if output_json_path:
+        import dataclasses
+        try:
+            Path(output_json_path).write_text(
+                _json.dumps(
+                    {
+                        "ok": result.ok,
+                        "pods_scanned": result.pods_scanned,
+                        "summary": result.summary,
+                        "hits": [dataclasses.asdict(h) for h in result.hits],
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            print(f"error: could not write output JSON: {exc}", file=sys.stderr)
+            return 1
+
+    fail_on_hits: bool = getattr(args, "fail_on_hits", False)
+    if not result.ok and fail_on_hits:
+        return 2
+    return 0
+
+
 # ── Wave 29 — VEX publish + integration CLI shims ─────────────────────────────
 
 def _cmd_vex_publish(args: argparse.Namespace, quiet: bool) -> int:
@@ -2245,6 +2385,8 @@ def main() -> None:
         sys.exit(_cmd_ci_run(args, quiet))
     elif args.command == "webhook":
         sys.exit(_cmd_webhook(args, quiet))
+    elif args.command == "shadow-ai":
+        sys.exit(_cmd_shadow_ai(args, quiet))
     elif args.command == "vex-publish":
         sys.exit(_cmd_vex_publish(args, quiet))
     elif args.command == "attest-mlflow":

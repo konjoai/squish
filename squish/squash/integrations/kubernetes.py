@@ -100,6 +100,7 @@ class WebhookConfig:
     bom_digest_annotation: str = ANNOTATION_BOM_DIGEST
     policies: list[str] = field(default_factory=lambda: ["enterprise-strict"])
     namespaces_exclude: list[str] = field(default_factory=lambda: ["kube-system"])
+    shadow_ai_scan_mode: bool = False
 
 
 # ── Handler ────────────────────────────────────────────────────────────────────
@@ -347,3 +348,237 @@ def _truthy(value: object) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() == "true"
+
+
+# ── W50 — Shadow AI detection ──────────────────────────────────────────────────
+
+#: Pod annotation set (by scan) when shadow AI model files are detected.
+ANNOTATION_SHADOW_AI = "squash.ai/shadow-ai-detected"
+
+#: File extensions that indicate a locally-hosted AI model artefact.
+SHADOW_AI_MODEL_EXTENSIONS: frozenset[str] = frozenset({
+    ".gguf",
+    ".safetensors",
+    ".bin",
+    ".pt",
+    ".ckpt",
+    ".pkl",
+    ".pth",
+    ".onnx",
+    ".tflite",
+    ".mlmodel",
+})
+
+
+@dataclass
+class ShadowAiConfig:
+    """Configuration for :class:`ShadowAiScanner` and :func:`scan_pod_for_model_files`.
+
+    Attributes
+    ----------
+    scan_extensions:
+        Set of lowercase file-extension strings (including leading dot) to flag.
+        Defaults to :data:`SHADOW_AI_MODEL_EXTENSIONS`.
+    scan_volume_mounts:
+        Inspect ``spec.containers[].volumeMounts[].mountPath`` for extension hits.
+    scan_env_vars:
+        Inspect ``spec.containers[].env[].value`` for extension hits.
+    scan_args:
+        Inspect ``spec.containers[].args[]`` for extension hits.
+    namespaces_include:
+        If non-empty, only scan pods from these namespaces.  Empty list = scan all.
+    """
+
+    scan_extensions: frozenset[str] = field(default_factory=lambda: SHADOW_AI_MODEL_EXTENSIONS)
+    scan_volume_mounts: bool = True
+    scan_env_vars: bool = True
+    scan_args: bool = True
+    namespaces_include: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ShadowAiHit:
+    """A single shadow AI model file detection in a pod."""
+
+    pod_name: str
+    namespace: str
+    container_name: str
+    #: Where the match was found: ``"host_path"``, ``"volume_mount"``, ``"env"``, or ``"arg"``.
+    location_type: str
+    #: The raw string value where the extension was matched.
+    matched_value: str
+    #: The file extension that triggered the match (e.g. ``".gguf"``).
+    extension: str
+
+
+@dataclass
+class ShadowAiScanResult:
+    """Aggregated result of a shadow AI scan over one or more pods."""
+
+    hits: list[ShadowAiHit]
+    pods_scanned: int
+    #: ``True`` when no shadow AI model files were detected.
+    ok: bool
+    summary: str
+
+
+def _extension_of(value: str, extensions: frozenset[str]) -> str | None:
+    """Return the matching extension from *value* if its suffix is in *extensions*, else None."""
+    suffix = Path(value).suffix.lower()
+    return suffix if suffix in extensions else None
+
+
+def scan_pod_for_model_files(
+    pod_spec: dict,
+    config: ShadowAiConfig | None = None,
+) -> list[ShadowAiHit]:
+    """Scan a single Kubernetes pod manifest dict for shadow AI model file references.
+
+    Inspects host-path volumes, container volume-mount paths, container
+    environment variable values, and container argument strings for file
+    extensions in :attr:`ShadowAiConfig.scan_extensions`.
+
+    Parameters
+    ----------
+    pod_spec:
+        A Kubernetes Pod object dict (containing ``metadata`` and ``spec`` keys).
+    config:
+        Scan configuration.  Defaults to :class:`ShadowAiConfig` with all
+        defaults (i.e. all scan types enabled, default extension set).
+
+    Returns
+    -------
+    list[ShadowAiHit]
+        Zero or more hits.  Empty list means the pod is clean.
+    """
+    cfg = config or ShadowAiConfig()
+    hits: list[ShadowAiHit] = []
+
+    metadata: dict = pod_spec.get("metadata") or {}
+    pod_name: str = metadata.get("name", "")
+    namespace: str = metadata.get("namespace", "")
+
+    spec: dict = pod_spec.get("spec") or {}
+    exts = cfg.scan_extensions
+
+    # ── Host-path volumes (spec.volumes[].hostPath.path) ───────────────────
+    for vol in spec.get("volumes") or []:
+        host_path: str = (vol.get("hostPath") or {}).get("path", "")
+        if host_path:
+            ext = _extension_of(host_path, exts)
+            if ext:
+                hits.append(ShadowAiHit(
+                    pod_name=pod_name,
+                    namespace=namespace,
+                    container_name="",
+                    location_type="host_path",
+                    matched_value=host_path,
+                    extension=ext,
+                ))
+
+    # ── Per-container scans ────────────────────────────────────────────────
+    all_containers: list[dict] = (
+        list(spec.get("containers") or [])
+        + list(spec.get("initContainers") or [])
+    )
+    for container in all_containers:
+        cname: str = container.get("name", "")
+
+        if cfg.scan_volume_mounts:
+            for vm in container.get("volumeMounts") or []:
+                path: str = vm.get("mountPath", "")
+                ext = _extension_of(path, exts)
+                if ext:
+                    hits.append(ShadowAiHit(
+                        pod_name=pod_name,
+                        namespace=namespace,
+                        container_name=cname,
+                        location_type="volume_mount",
+                        matched_value=path,
+                        extension=ext,
+                    ))
+
+        if cfg.scan_env_vars:
+            for env in container.get("env") or []:
+                val: str = env.get("value", "")
+                ext = _extension_of(val, exts)
+                if ext:
+                    hits.append(ShadowAiHit(
+                        pod_name=pod_name,
+                        namespace=namespace,
+                        container_name=cname,
+                        location_type="env",
+                        matched_value=val,
+                        extension=ext,
+                    ))
+
+        if cfg.scan_args:
+            for arg in container.get("args") or []:
+                ext = _extension_of(str(arg), exts)
+                if ext:
+                    hits.append(ShadowAiHit(
+                        pod_name=pod_name,
+                        namespace=namespace,
+                        container_name=cname,
+                        location_type="arg",
+                        matched_value=str(arg),
+                        extension=ext,
+                    ))
+
+    return hits
+
+
+class ShadowAiScanner:
+    """Batch scanner that iterates a Kubernetes pod list and detects shadow AI model files.
+
+    Example
+    -------
+    ::
+
+        scanner = ShadowAiScanner()
+        pod_list = json.loads(Path("/tmp/pods.json").read_text())
+        result = scanner.scan_pod_list(pod_list)
+        if not result.ok:
+            for hit in result.hits:
+                print(f"{hit.namespace}/{hit.pod_name}: {hit.matched_value}")
+    """
+
+    def __init__(self, config: ShadowAiConfig | None = None) -> None:
+        self.config = config or ShadowAiConfig()
+
+    def scan_pod_list(self, pod_list: dict) -> ShadowAiScanResult:
+        """Scan a ``kubectl get pods -o json`` style pod-list dict.
+
+        Parameters
+        ----------
+        pod_list:
+            A dict with an ``"items"`` key containing a list of Pod objects.
+
+        Returns
+        -------
+        ShadowAiScanResult
+        """
+        items: list[dict] = pod_list.get("items") or []
+        return self._scan_items(items)
+
+    def scan_namespace(self, pods: list[dict]) -> ShadowAiScanResult:
+        """Scan a plain list of Pod objects (alternative entry point)."""
+        return self._scan_items(pods)
+
+    def _scan_items(self, items: list[dict]) -> ShadowAiScanResult:
+        all_hits: list[ShadowAiHit] = []
+        include = set(self.config.namespaces_include)
+        scanned = 0
+        for pod in items:
+            ns = (pod.get("metadata") or {}).get("namespace", "")
+            if include and ns not in include:
+                continue
+            scanned += 1
+            all_hits.extend(scan_pod_for_model_files(pod, self.config))
+        ok = len(all_hits) == 0
+        summary = (
+            f"Scanned {scanned} pod(s): no shadow AI model files detected."
+            if ok
+            else f"Scanned {scanned} pod(s): {len(all_hits)} shadow AI hit(s) found."
+        )
+        return ShadowAiScanResult(hits=all_hits, pods_scanned=scanned, ok=ok, summary=summary)

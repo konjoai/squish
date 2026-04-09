@@ -6,21 +6,19 @@
 ---
 
 ## Current date
-2026-04-08
+2026-04-09
 
 ## Last commits
+- **`(w50 — pending push)`** — feat(squash): W50 shadow AI detection — K8s pod scanner scan_pod_for_model_files + ShadowAiScanner + squash shadow-ai scan CLI — 65 new tests, 5166 suite, 124 modules
 - **`(w49 — pending push)`** — feat(squash): W49 air-gapped/sovereign AI mode — _is_offline + keygen/sign_local/verify_local/pack_offline + CLI + REST — 68 new tests, 5101 suite, 124 modules
 - **`(w48 — pending push)`** — feat(wave48): model transformation lineage chain — LineageChain(Merkle) + squash lineage CLI + /lineage REST — 69 new tests, 5033 suite (0 failures), 124 modules
 - **`(w47 — pending push)`** — feat(wave47): RAG KB integrity scanner — RagScanner(index/verify) + scan-rag CLI + /rag/index /rag/verify REST — 57 new tests, 4964 suite (0 failures), 123 modules
 - **`ed27727 (w46)`** — feat(wave46): agent audit trail — AgentAuditLogger JSONL hash chain + SquashAuditCallback + CLI + REST — 66 new tests, 4907 suite (0 failures), 122 modules
-- **`(w45 — pending push)`** — feat(wave45): MCP server manifest attestation — McpScanner + McpSigner + attest-mcp CLI + POST /attest/mcp — 110 tests, 0 failures, 122 modules
-- **`bf4a5eb (w44)`** — feat(wave44): Azure DevOps SquashAttest@1 marketplace extension
-- `98885d0 (w41)` — feat(wave41): squish-native lm_eval harness — dev/benchmarks/squish_lm_eval.py (52 tests, 4642 suite)
 
 ---
 
 ## Module count
-- **124** Python files in `squish/` (non-experimental). W48: `squash/lineage.py` +1 (justified: EU AI Act Annex IV traceability requirement). W47: `squash/rag.py` +1. W45: `mcp.py` +1, `eval_binder.py` −1 = net zero.
+- **124** Python files in `squish/` (non-experimental). W50: no new modules (shadow AI detection added to existing kubernetes.py). W48: `squash/lineage.py` +1 (justified: EU AI Act Annex IV traceability requirement). W47: `squash/rag.py` +1. W45: `mcp.py` +1, `eval_binder.py` −1 = net zero.
 
 ---
 
