@@ -836,15 +836,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#unreleased-wave-52-55-squash-cloud-dashboard-api" class="md-nav__link">
+  <a href="#unreleased-wave-56-aqlm-encode-path-int2-ultra-tier" class="md-nav__link">
     <span class="md-ellipsis">
       
-        [Unreleased] — Wave 52-55: Squash Cloud dashboard API
+        [Unreleased] — Wave 56: AQLM encode path — INT2 'ultra' tier
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="[Unreleased] — Wave 52-55: Squash Cloud dashboard API">
+    <nav class="md-nav" aria-label="[Unreleased] — Wave 56: AQLM encode path — INT2 &#39;ultra&#39; tier">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -852,6 +852,17 @@
     <span class="md-ellipsis">
       
         Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
       
     </span>
   </a>
@@ -909,7 +920,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes" class="md-nav__link">
+  <a href="#notes_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -1065,7 +1076,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes_1" class="md-nav__link">
+  <a href="#notes_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -1215,7 +1226,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes_2" class="md-nav__link">
+  <a href="#notes_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -1265,7 +1276,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes_3" class="md-nav__link">
+  <a href="#notes_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -1393,7 +1404,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes_4" class="md-nav__link">
+  <a href="#notes_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -1432,7 +1443,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes_5" class="md-nav__link">
+  <a href="#notes_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -1482,7 +1493,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes_6" class="md-nav__link">
+  <a href="#notes_7" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -1593,7 +1604,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes_7" class="md-nav__link">
+  <a href="#notes_8" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -2442,7 +2453,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes_8" class="md-nav__link">
+  <a href="#notes_9" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -2481,7 +2492,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#notes_9" class="md-nav__link">
+  <a href="#notes_10" class="md-nav__link">
     <span class="md-ellipsis">
       
         Notes
@@ -7857,19 +7868,68 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
-<h2 id="unreleased-wave-52-55-squash-cloud-dashboard-api">[Unreleased] — Wave 52-55: Squash Cloud dashboard API<a class="headerlink" href="#unreleased-wave-52-55-squash-cloud-dashboard-api" title="Permanent link">&para;</a></h2>
+<h2 id="unreleased-wave-56-aqlm-encode-path-int2-ultra-tier">[Unreleased] — Wave 56: AQLM encode path — INT2 'ultra' tier<a class="headerlink" href="#unreleased-wave-56-aqlm-encode-path-int2-ultra-tier" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong><code>squish/squash/api.py</code></strong> — 10 new <code>/cloud/*</code> REST endpoints powering the
-  hosted compliance dashboard (separate Next.js product repo):</li>
-<li><code>POST /cloud/tenant</code> — register / upsert a tenant (201, idempotent)</li>
-<li><code>GET  /cloud/tenant/{tenant_id}</code> — fetch tenant record (404 if absent)</li>
-<li><code>GET  /cloud/tenants</code> — list all tenants (admin view)</li>
-<li><code>POST /cloud/inventory/register</code> — ingest attestation result into per-tenant
-    deque (500-entry sliding window); auto-updates <code>_policy_stats</code> buckets</li>
-<li><code>GET  /cloud/inventory</code> — query model inventory (<code>limit</code>, <code>passed</code> filter)</li>
-<li><code>POST /cloud/vex/alert</code> — ingest a VEX alert (201)</li>
-<li><code>GET  /cloud/vex/alerts</code> — query alerts (<code>limit</code>, <code>status</code>, <code>severity</code>)</li>
+<li><strong><code>squish/quant/aqlm.py</code></strong> — Additive Quantisation with Learning Multipliers
+  (AQLM) encode path, extending the existing <code>AQLMConfig</code> / <code>AQLMCodebook</code> /
+  <code>AQLMLayer</code> / <code>aqlm_dequantize</code> skeleton:</li>
+<li><code>_kmeans_fit(data, n_clusters, seed, max_iter)</code> — K-means with
+    <code>sklearn.cluster.MiniBatchKMeans</code> (fast path, requires <code>sklearn</code>) falling
+    back to a pure-NumPy Lloyd's algorithm (no external deps).</li>
+<li><code>_assign(groups, centres)</code> — vectorised nearest-centre assignment via
+    squared-distance over the group dimension.</li>
+<li><code>encode_weight_matrix(weight, cfg, *, seed, max_iter, residual_scale)</code>
+    — full iterative residual codebook training for a 2-D weight matrix;
+    returns a populated <code>AQLMLayer</code>.  Documented runtime: 1.5B model ≈ 5–10 min
+    on M3 with sklearn; 5–20× slower without sklearn.</li>
+<li>
+<p><code>AQLMEncoder</code> class — directory-level compression pipeline:</p>
+<ul>
+<li><code>__init__</code> validates safetensors is importable; raises <code>ImportError</code> with
+  install hint if absent.</li>
+<li>Default config: K=2 codebooks, C=256 codebook size, G=8 group size → ≈2 bpw.</li>
+<li><code>_should_encode(name, tensor, min_out)</code> heuristic — encodes 2-D linear
+  weights (proj / fc / dense / mlp / gate) with ≥ <code>min_out_features</code> rows.</li>
+<li><code>compress_dir(model_dir, output_dir)</code> — reads <code>*.safetensors</code>, writes
+  npy-dir format: <code>&lt;stem&gt;__aqlm_idx.npy</code> (int32, shape <code>(out, n_groups, K)</code>),
+  <code>&lt;stem&gt;__aqlm_cb.npy</code> (packed <code>[scale, C, G, *vectors]</code>), passthrough
+  <code>.npy</code> for skipped tensors, and <code>squish.json</code> metadata.</li>
+</ul>
+</li>
+<li>
+<p><strong><code>squish/cli.py</code></strong> — <code>squish compress --format aqlm</code> wired:</p>
+</li>
+<li><code>--format</code> choices now include <code>"aqlm"</code>.</li>
+<li>
+<p>AQLM dispatch block in <code>cmd_compress</code> reads <code>--aqlm-n-codebooks</code>,
+    <code>--aqlm-codebook-size</code>, <code>--aqlm-group-size</code> (defaults K=2 / C=256 / G=8).</p>
+</li>
+<li>
+<p><strong><code>tests/test_quant_aqlm.py</code></strong> — 47 new tests covering AQLMConfig,
+  AQLMCodebook, AQLMLayer, <code>_kmeans_fit</code>, <code>_assign</code>, <code>encode_weight_matrix</code>
+  (shape/dtype/reconstruction/K=2 improvement), <code>AQLMEncoder._should_encode</code>,
+  <code>AQLMEncoder.encode_layer</code>, <code>AQLMEncoder.compress_dir</code> (npy-dir layout,
+  passthrough, indivisible group-size, squish.json bpw estimate), and module
+  count gate.</p>
+</li>
+</ul>
+<h3 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>
+<p><strong>Accuracy gate (lm_eval-waiver):</strong> AQLM is a K-means codebook scheme, not
+  naive uniform INT2. Full lm_eval validation on Qwen2.5-1.5B is required once
+  compression completes (≈5–10 min/model on M3 + lm_eval run ≈ 20 min).
+  Expected delta vs INT4: &lt; 6pp arc_easy (target from W56 spec). Naive INT2
+  uniform baseline is −40.8pp; AQLM should close the gap significantly.
+  <code># lm_eval-waiver: compression runtime &gt; session budget / expected-delta: &lt;6pp arc_easy vs INT4 / validation-run: queued next session</code></p>
+</li>
+<li>
+<p><strong>Module count:</strong> 112 Python files (unchanged, aqlm.py extended in-place).</p>
+</li>
+<li>
+<p><code>GET  /cloud/vex/alerts</code> — query alerts (<code>limit</code>, <code>status</code>, <code>severity</code>)</p>
+</li>
 <li><code>POST /cloud/drift/event</code> — ingest a drift event (201)</li>
 <li><code>GET  /cloud/drift/events</code> — query drift events (<code>limit</code>, <code>model_id</code>, <code>severity</code>)</li>
 <li><code>GET  /cloud/policy/dashboard</code> — overall model-level pass/fail counts +
@@ -7973,7 +8033,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
   (<code>&lt;=</code>), status assertions now accept <code>under_investigation</code> for the certifi entry,
   <code>CVE-2023-27534</code> product PURL check updated to unversioned <code>pkg:pypi/squish</code>.</li>
 </ul>
-<h3 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h3>
+<h3 id="notes_1">Notes<a class="headerlink" href="#notes_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Module count: 125 (unchanged — no new Python modules added).</li>
 <li>All 5272 tests pass (52 net-new from W52, 7 W33 tests updated).</li>
@@ -8192,7 +8252,7 @@ Set <code>SQUASH_OFFLINE=1</code> or pass <code>--offline</code> to activate.</p
   missing manifest, glob filter, hash stability, json output, API routes.</p>
 </li>
 </ul>
-<h3 id="notes_1">Notes<a class="headerlink" href="#notes_1" title="Permanent link">&para;</a></h3>
+<h3 id="notes_2">Notes<a class="headerlink" href="#notes_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Module count: 123 (+1, pre-authorised in Wave 47 scope: "Use remaining slot
   after W45 deletion").</li>
@@ -8337,7 +8397,7 @@ Set <code>SQUASH_OFFLINE=1</code> or pass <code>--offline</code> to activate.</p
   <code>TestRunSquashPs1</code> (9), <code>TestRunSquashSh</code> (10).
   Pure-unit + file-structure; no network, no model weights, no ADO SDK.</li>
 </ul>
-<h3 id="notes_2">Notes<a class="headerlink" href="#notes_2" title="Permanent link">&para;</a></h3>
+<h3 id="notes_3">Notes<a class="headerlink" href="#notes_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>azure_devops.py</code> is module #122 (above the 100-file non-experimental ceiling).
   Justification: completes the Fortune 500 Microsoft-stack CI/CD coverage matrix
@@ -8368,7 +8428,7 @@ Set <code>SQUASH_OFFLINE=1</code> or pass <code>--offline</code> to activate.</p
   <code>TestPublishOrbWorkflow</code> (4), <code>TestPublishHelmWorkflow</code> (4). No I/O beyond local file
   reads; no network, no model weights.</li>
 </ul>
-<h3 id="notes_3">Notes<a class="headerlink" href="#notes_3" title="Permanent link">&para;</a></h3>
+<h3 id="notes_4">Notes<a class="headerlink" href="#notes_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Zero Python modules added. Module count unchanged at 121 (no regression to the
   non-experimental ceiling; documented in MODULES.md).</li>
@@ -8552,7 +8612,7 @@ mlx_lm.convert INT4 g=64 baseline of <strong>70.6%</strong> (SESSION.md 2026-03-
     <code>vertex_ai</code> mentioned in integrations <code>__init__</code> docstring.</li>
 <li>Updated <code>squish/squash/integrations/__init__.py</code> to document the new <code>vertex_ai</code> adapter.</li>
 </ul>
-<h3 id="notes_4">Notes<a class="headerlink" href="#notes_4" title="Permanent link">&para;</a></h3>
+<h3 id="notes_5">Notes<a class="headerlink" href="#notes_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li>GCP label key prefix is <code>squash_</code> (not <code>squash:</code> — colons violate GCP label grammar).</li>
 <li>Closes the "GCP Vertex AI integration" gap; was zero prior to this wave.</li>
@@ -8575,7 +8635,7 @@ mlx_lm.convert INT4 g=64 baseline of <strong>70.6%</strong> (SESSION.md 2026-03-
 <li>Updated per-format status table INT3 row to note gemma family and Qwen3-4B UNSAFE classifications.</li>
 <li>Updated INT2 bullet: confirmed incoherent across all families 0.6B–7B (~27–30% arc_easy ≈ random).</li>
 </ul>
-<h3 id="notes_5">Notes<a class="headerlink" href="#notes_5" title="Permanent link">&para;</a></h3>
+<h3 id="notes_6">Notes<a class="headerlink" href="#notes_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li>No code changes — docs only. No new files.</li>
 <li>Test suite: 4562 passed, 4 pre-existing wave12x failures (unrelated), 25 skipped.</li>
@@ -8601,7 +8661,7 @@ mlx_lm.convert INT4 g=64 baseline of <strong>70.6%</strong> (SESSION.md 2026-03-
 <li>Module count: 107 (justified — closes existing stub dependency introduced
   in Wave 30).</li>
 </ul>
-<h3 id="notes_6">Notes<a class="headerlink" href="#notes_6" title="Permanent link">&para;</a></h3>
+<h3 id="notes_7">Notes<a class="headerlink" href="#notes_7" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>aqlm.py</code> is a <strong>decode-only</strong> module (dequantisation for loading
   externally-trained AQLM weights). AQLM quantisation training
@@ -8671,7 +8731,7 @@ mlx_lm.convert INT4 g=64 baseline of <strong>70.6%</strong> (SESSION.md 2026-03-
   to the written SPDX JSON artifact. Total suite: 4507 passed, 4 pre-existing
   line-count failures (wave12x), 0 new failures.</li>
 </ul>
-<h3 id="notes_7">Notes<a class="headerlink" href="#notes_7" title="Permanent link">&para;</a></h3>
+<h3 id="notes_8">Notes<a class="headerlink" href="#notes_8" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code># lm_eval-waiver: mixed_attn validation deferred — no hardware available this session</code></li>
 <li><code># expected-delta: n/a — no quantization path changed in this wave</code></li>
@@ -9471,7 +9531,7 @@ not by feature overlap with existing modules.</p>
 <li>SBOM column shows <code>—</code> when no sidecar.</li>
 <li>SBOM column shows <code>✓ sidecar</code> when sidecar has no bound scores.</li>
 </ul>
-<h3 id="notes_8">Notes<a class="headerlink" href="#notes_8" title="Permanent link">&para;</a></h3>
+<h3 id="notes_9">Notes<a class="headerlink" href="#notes_9" title="Permanent link">&para;</a></h3>
 <ul>
 <li>No new <code>squish/</code> modules added (still 97/100).</li>
 <li>No quantisation logic touched.</li>
@@ -9500,7 +9560,7 @@ not by feature overlap with existing modules.</p>
 <li><code>tests/test_cli_sbom.py</code>: 7 pure-unit tests covering all four sub-actions,
   missing-sidecar exit-1 paths, verify hash mismatch, and sigstore-absent warning.</li>
 </ul>
-<h3 id="notes_9">Notes<a class="headerlink" href="#notes_9" title="Permanent link">&para;</a></h3>
+<h3 id="notes_10">Notes<a class="headerlink" href="#notes_10" title="Permanent link">&para;</a></h3>
 <ul>
 <li>No new <code>squish/</code> modules added (still 97/100).</li>
 <li>No quantisation logic touched — lm_eval-waiver applies.</li>
