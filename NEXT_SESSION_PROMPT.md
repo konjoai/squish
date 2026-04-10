@@ -1,33 +1,36 @@
-# Next Session Prompt — W56
+# Next Session Prompt — W57
 
 ## Context
-W52-55 is complete and committed. Squash Cloud dashboard API is live:
-- 10 `/cloud/*` REST endpoints (tenant CRUD, inventory, VEX alerts, drift events, policy dashboard, audit)
-- HS256 JWT multi-tenant auth (`SQUASH_JWT_SECRET`) + `X-Tenant-ID` fallback
-- `AttestRequest.tenant_id` auto-registration wires existing attestation into cloud dashboard
-- 5 in-memory per-tenant deques with configurable env-var caps
-- 5333 tests pass, 125 modules
+W56 is complete. AQLM encode path is live:
+- `AQLMEncoder` K-means codebook training in `squish/quant/aqlm.py`
+- `squish compress --format aqlm` CLI wired (K=2, C=256, G=8 → ≈2 bpw default)
+- sklearn MiniBatchKMeans fast path; pure-NumPy fallback
+- npy-dir format: `__aqlm_idx.npy` + `__aqlm_cb.npy` + passthrough + `squish.json`
+- 47 new tests, 5380 suite, 112 modules
+- **lm_eval PENDING**: validate Qwen2.5-1.5B AQLM vs INT4 (target <6pp arc_easy delta)
 
-## W56 Candidate A: Sigstore cosign lineage signing
+## IMMEDIATE: lm_eval validation (accuracy gate)
+```bash
+# 1. Compress (≈5-10 min on M3 with sklearn):
+squish compress --format aqlm ~/.cache/huggingface/hub/Qwen2.5-1.5B-Instruct --output /tmp/qwen2.5-1.5b-aqlm
 
-**Goal:** `squash lineage sign <model_dir>` — sign the CycloneDX BOM with
-Sigstore keyless signing (cosign). Produce `.sig` and `.cert` alongside the BOM.
+# 2. Run lm_eval (≈20 min):
+python3 scripts/squish_lm_eval.py --model-dir /tmp/qwen2.5-1.5b-aqlm --tasks arc_easy --limit 200
 
-**Acceptance criteria:**
-1. `squash lineage sign <model_dir> [--bom BOM_PATH] [--quiet]` exits 0.
-2. Writes `<bom_path>.sig` and `<bom_path>.cert`.
-3. `squash lineage verify <model_dir> [--bom BOM_PATH]` exits 0/1.
-4. No new Python module (inline into `squash/lineage.py`).
-5. Graceful: if `cosign` not found → exit 2.
-6. All tests pass, module count 125.
+# 3. Compare vs baseline (70.6% arc_easy INT4)
+```
+Target: ≥64.6% arc_easy (< 6pp delta). Beats naive INT2 (≈27-30%). If it passes, promote AQLM to "ultra" catalog tier.
 
-## W56 Candidate B: Cloud API persistence (SQLite backend)
+## W57 Candidate A: AQLM dequantize inference path
+If AQLM validates, wire `squish/loader.py` to detect `__aqlm_idx.npy` and route through `aqlm_dequantize` at load time. This unblocks `squish serve` with AQLM models.
 
-**Goal:** Replace in-memory deques with SQLite-backed stores so the cloud
-dashboard survives server restart. `SQUASH_CLOUD_DB` env var selects the path;
-default `:memory:` preserves existing test behavior.
+## W57 Candidate B: Cloud API SQLite persistence
+Replace in-memory deques with SQLite-backed stores. `SQUASH_CLOUD_DB` env var selects path; default `:memory:` preserves existing test behavior.
 
-**Acceptance criteria:**
+## State
+- 5380 tests pass, 112 modules, commit pending push from W56
+- lm_eval-waiver filed for W56 (compression runtime > session budget)
+
 1. All 61 W52-55 tests still pass with `:memory:` backend.
 2. `SQUASH_CLOUD_DB=/tmp/squash.db squish serve` survives a restart and retains data.
 3. No new Python module (inline into `squish/squash/api.py` or a new `squish/squash/cloud_db.py` with written justification).

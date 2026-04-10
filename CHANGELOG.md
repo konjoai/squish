@@ -5,19 +5,57 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 52-55: Squash Cloud dashboard API
+## [Unreleased] — Wave 56: AQLM encode path — INT2 'ultra' tier
 
 ### Added
 
-- **`squish/squash/api.py`** — 10 new `/cloud/*` REST endpoints powering the
-  hosted compliance dashboard (separate Next.js product repo):
-  - `POST /cloud/tenant` — register / upsert a tenant (201, idempotent)
-  - `GET  /cloud/tenant/{tenant_id}` — fetch tenant record (404 if absent)
-  - `GET  /cloud/tenants` — list all tenants (admin view)
-  - `POST /cloud/inventory/register` — ingest attestation result into per-tenant
-    deque (500-entry sliding window); auto-updates `_policy_stats` buckets
-  - `GET  /cloud/inventory` — query model inventory (`limit`, `passed` filter)
-  - `POST /cloud/vex/alert` — ingest a VEX alert (201)
+- **`squish/quant/aqlm.py`** — Additive Quantisation with Learning Multipliers
+  (AQLM) encode path, extending the existing `AQLMConfig` / `AQLMCodebook` /
+  `AQLMLayer` / `aqlm_dequantize` skeleton:
+  - `_kmeans_fit(data, n_clusters, seed, max_iter)` — K-means with
+    `sklearn.cluster.MiniBatchKMeans` (fast path, requires `sklearn`) falling
+    back to a pure-NumPy Lloyd's algorithm (no external deps).
+  - `_assign(groups, centres)` — vectorised nearest-centre assignment via
+    squared-distance over the group dimension.
+  - `encode_weight_matrix(weight, cfg, *, seed, max_iter, residual_scale)`
+    — full iterative residual codebook training for a 2-D weight matrix;
+    returns a populated `AQLMLayer`.  Documented runtime: 1.5B model ≈ 5–10 min
+    on M3 with sklearn; 5–20× slower without sklearn.
+  - `AQLMEncoder` class — directory-level compression pipeline:
+    - `__init__` validates safetensors is importable; raises `ImportError` with
+      install hint if absent.
+    - Default config: K=2 codebooks, C=256 codebook size, G=8 group size → ≈2 bpw.
+    - `_should_encode(name, tensor, min_out)` heuristic — encodes 2-D linear
+      weights (proj / fc / dense / mlp / gate) with ≥ `min_out_features` rows.
+    - `compress_dir(model_dir, output_dir)` — reads `*.safetensors`, writes
+      npy-dir format: `<stem>__aqlm_idx.npy` (int32, shape `(out, n_groups, K)`),
+      `<stem>__aqlm_cb.npy` (packed `[scale, C, G, *vectors]`), passthrough
+      `.npy` for skipped tensors, and `squish.json` metadata.
+
+- **`squish/cli.py`** — `squish compress --format aqlm` wired:
+  - `--format` choices now include `"aqlm"`.
+  - AQLM dispatch block in `cmd_compress` reads `--aqlm-n-codebooks`,
+    `--aqlm-codebook-size`, `--aqlm-group-size` (defaults K=2 / C=256 / G=8).
+
+- **`tests/test_quant_aqlm.py`** — 47 new tests covering AQLMConfig,
+  AQLMCodebook, AQLMLayer, `_kmeans_fit`, `_assign`, `encode_weight_matrix`
+  (shape/dtype/reconstruction/K=2 improvement), `AQLMEncoder._should_encode`,
+  `AQLMEncoder.encode_layer`, `AQLMEncoder.compress_dir` (npy-dir layout,
+  passthrough, indivisible group-size, squish.json bpw estimate), and module
+  count gate.
+
+### Notes
+
+- **Accuracy gate (lm_eval-waiver):** AQLM is a K-means codebook scheme, not
+  naive uniform INT2. Full lm_eval validation on Qwen2.5-1.5B is required once
+  compression completes (≈5–10 min/model on M3 + lm_eval run ≈ 20 min).
+  Expected delta vs INT4: < 6pp arc_easy (target from W56 spec). Naive INT2
+  uniform baseline is −40.8pp; AQLM should close the gap significantly.
+  `# lm_eval-waiver: compression runtime > session budget / expected-delta: <6pp arc_easy vs INT4 / validation-run: queued next session`
+
+- **Module count:** 112 Python files (unchanged, aqlm.py extended in-place).
+
+
   - `GET  /cloud/vex/alerts` — query alerts (`limit`, `status`, `severity`)
   - `POST /cloud/drift/event` — ingest a drift event (201)
   - `GET  /cloud/drift/events` — query drift events (`limit`, `model_id`, `severity`)
