@@ -2414,6 +2414,67 @@ def cmd_compress(args):  # pragma: no cover
     if getattr(args, "int3", False) and not getattr(args, "compress_format", None):
         args.compress_format = "int3"
     _compress_format = getattr(args, "compress_format", None)
+
+    if _compress_format == "aqlm":
+        # ── AQLM codebook compression ~2 bpw (K=2, C=256, G=8 default) ─────
+        # Encodes each eligible linear weight matrix as K additive codebook lookups.
+        # Does NOT require mlx_lm. Requires: safetensors (pip install safetensors).
+        # Runtime estimates (single-thread, sklearn MiniBatchKMeans):
+        #   1.5B model → ~5–10 min on M3
+        #   3B   model → ~12–20 min on M3
+        #   7B   model → ~30–60 min on M3
+        # Without sklearn: ~5–20× slower (pure-NumPy Lloyd fallback).
+        try:
+            from squish.quant.aqlm import AQLMConfig, AQLMEncoder
+        except ImportError as _aqlm_err:
+            _die(
+                f"AQLM encoder unavailable: {_aqlm_err}\n"
+                "  Ensure safetensors is installed: pip install safetensors"
+            )
+
+        if args.model in _MODEL_SHORTHAND:
+            _aqlm_model_dir = _MODELS_DIR / _MODEL_SHORTHAND[args.model]
+        elif _CATALOG_AVAILABLE:
+            _aqlm_entry = _catalog_resolve(args.model)
+            _aqlm_model_dir = (_MODELS_DIR / _aqlm_entry.dir_name
+                               if _aqlm_entry is not None
+                               else Path(args.model).expanduser())
+        else:
+            _aqlm_model_dir = Path(args.model).expanduser()
+
+        if not _aqlm_model_dir.exists():
+            _die(f"Model directory not found: {_aqlm_model_dir}")
+
+        if args.output:
+            _aqlm_out_dir = Path(args.output).expanduser()
+        else:
+            import re as _re_aqlm
+            _aqlm_base = _re_aqlm.sub(
+                r'-(bf16|fp16|[0-9]+bit)(-mlx)?$', '', _aqlm_model_dir.name,
+                flags=_re_aqlm.IGNORECASE,
+            )
+            _aqlm_out_dir = _aqlm_model_dir.parent / f"{_aqlm_base}-aqlm"
+
+        # AQLM config — accept env overrides for power users.
+        _n_cb  = int(getattr(args, "aqlm_n_codebooks",  None) or 2)
+        _cb_sz = int(getattr(args, "aqlm_codebook_size", None) or 256)
+        _g_sz  = int(getattr(args, "aqlm_group_size",    None) or 8)
+        _aqlm_cfg = AQLMConfig(n_codebooks=_n_cb, codebook_size=_cb_sz, group_size=_g_sz)
+
+        print(f"\n  Compressing: {_aqlm_model_dir}")
+        print(f"  Format:    AQLM  K={_n_cb}  C={_cb_sz}  G={_g_sz}")
+        print(f"  BPW est.:  {_n_cb * ((_cb_sz.bit_length() - 1) / _g_sz):.2f}")
+        print(f"  Output:    {_aqlm_out_dir}")
+        print(f"  ⚠  AQLM is experimental. Runtime: ~5–10 min / 1.5B on M3 (sklearn).")
+        print(f"  ⚠  Without sklearn (pip install scikit-learn): 5–20× slower.\n")
+
+        _aqlm_enc = AQLMEncoder(cfg=_aqlm_cfg)
+        try:
+            _aqlm_enc.compress_dir(_aqlm_model_dir, _aqlm_out_dir, progress=True)
+        except Exception as _aqlm_compress_err:
+            _die(f"AQLM compression failed: {_aqlm_compress_err}")
+        return
+
     if _compress_format == "int3":
         # INT3: use mlx_lm.convert with 3-bit quantization.
         # Produces a native MLX safetensors directory loadable via mlx_lm.load().
@@ -5815,7 +5876,7 @@ Ollama drop-in:
     )
     p_compress.add_argument(
         "--format",
-        choices=["int8", "int4", "int3", "astc", "hybrid", "mixed_attn"],
+        choices=["int8", "int4", "int3", "astc", "hybrid", "mixed_attn", "aqlm"],
         default=None,
         dest="compress_format",
         metavar="FORMAT",
@@ -5825,6 +5886,9 @@ Ollama drop-in:
             "int8 (8-bit group quantisation), "
             "int3 (native MLX 3-bit, no AWQ), "
             "mixed_attn (FP16 attention q/k/v/o + INT4 g=16 MLP — best quality/GB), "
+            "aqlm (Additive Quantisation LM, K-means codebook, ~2 bpw — "
+            "INT2 catalog 'ultra' tier; target <6pp arc_easy delta vs INT4; "
+            "requires safetensors; runtime: ~5-10 min/1.5B on M3), "
             "astc (ASTC 6×6 HDR texture ~3.56 BPW, Apple Silicon only — "
             "writes .squizd format), "
             "hybrid (ASTC for FFN layers + INT4 for attention, Apple Silicon only — "
