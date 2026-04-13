@@ -1100,6 +1100,79 @@ def _build_parser() -> argparse.ArgumentParser:
     lineage_verify.add_argument("model_dir", help="Model artefact directory")
     lineage_verify.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
+    # ── remediate ──────────────────────────────────────────────────────────
+    remediate_cmd = sub.add_parser(
+        "remediate",
+        help="Convert unsafe .bin/.pt/.pth pickle files to .safetensors",
+    )
+    remediate_cmd.add_argument("model_path", help="Model directory or single file to remediate")
+    remediate_cmd.add_argument(
+        "--convert-to",
+        default="safetensors",
+        dest="target_format",
+        choices=["safetensors"],
+        help="Target format (default: safetensors)",
+    )
+    remediate_cmd.add_argument("--output-dir", default=None, dest="output_dir",
+                                help="Where to write converted files (default: alongside originals)")
+    remediate_cmd.add_argument("--dry-run", action="store_true",
+                                help="Analyse files but do not write converted output")
+    remediate_cmd.add_argument("--overwrite", action="store_true",
+                                help="Overwrite existing .safetensors files at the destination")
+    remediate_cmd.add_argument("--sbom", default=None,
+                                help="CycloneDX BOM to update with new hashes after conversion")
+    remediate_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── evaluate ───────────────────────────────────────────────────────────
+    evaluate_cmd = sub.add_parser(
+        "evaluate",
+        help="Dynamic behavioural safety red-team evaluation against an inference endpoint",
+    )
+    evaluate_cmd.add_argument(
+        "endpoint",
+        help="OpenAI-compatible base URL (e.g. http://localhost:11434/v1) or 'auto' to use squish serve",
+    )
+    evaluate_cmd.add_argument("--model", default="llama3",
+                               help="Model name to pass to the endpoint (default: llama3)")
+    evaluate_cmd.add_argument("--api-key", default=None, dest="api_key",
+                               help="Bearer API key (optional for local endpoints)")
+    evaluate_cmd.add_argument("--output-dir", default=None, dest="output_dir",
+                               help="Directory for squash-eval-report.json (default: cwd)")
+    evaluate_cmd.add_argument("--bom", default=None,
+                               help="CycloneDX BOM to annotate with evaluation metrics")
+    evaluate_cmd.add_argument("--fail-on-critical", action="store_true", dest="fail_on_critical",
+                               help="Exit 2 if any critical probe fails")
+    evaluate_cmd.add_argument("--timeout", type=float, default=30.0,
+                               help="Seconds to wait per probe request (default: 30)")
+    evaluate_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── edge-scan ──────────────────────────────────────────────────────────
+    edge_scan_cmd = sub.add_parser(
+        "edge-scan",
+        help="Parse and security-scan TFLite (.tflite) or CoreML (.mlpackage) edge AI models",
+    )
+    edge_scan_cmd.add_argument("model_path",
+                                help="Path to a .tflite file or .mlpackage directory")
+    edge_scan_cmd.add_argument("--json-result", default=None, dest="json_result",
+                                help="Write structured scan result to this JSON file")
+    edge_scan_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
+    # ── chat ───────────────────────────────────────────────────────────────
+    chat_cmd = sub.add_parser(
+        "chat",
+        help="Interactive RAG compliance auditor — ask plain-English questions about squash artifacts",
+    )
+    chat_cmd.add_argument("model_dir", help="Model directory containing squash attestation artifacts")
+    chat_cmd.add_argument("--backend", choices=["ollama", "openai"], default="ollama",
+                           help="LLM backend to use (default: ollama)")
+    chat_cmd.add_argument("--model", default=None,
+                           help="Model name (default: llama3 for ollama, gpt-4o-mini for openai)")
+    chat_cmd.add_argument("--api-key", default=None, dest="api_key",
+                           help="API key (required for openai backend)")
+    chat_cmd.add_argument("--top-k", type=int, default=5, dest="top_k",
+                           help="Number of chunks to retrieve per question (default: 5)")
+    chat_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
+
     return parser
 
 
@@ -2541,6 +2614,228 @@ def _cmd_scan_rag(args: argparse.Namespace, quiet: bool) -> int:
     return 1
 
 
+# ── Wave 54–56: remediate / evaluate / edge-scan / chat ──────────────────────
+
+
+def _cmd_remediate(args: argparse.Namespace, quiet: bool) -> int:
+    try:
+        from squish.squash.remediate import Remediator
+    except ImportError as exc:
+        print(f"squash remediate requires torch and safetensors: {exc}", file=sys.stderr)
+        return 2
+
+    model_path = Path(args.model_path)
+    output_dir = Path(args.output_dir) if args.output_dir else None
+
+    result = Remediator.convert(
+        model_path,
+        target_format=args.target_format,
+        output_dir=output_dir,
+        dry_run=args.dry_run,
+        overwrite=args.overwrite,
+    )
+
+    if not quiet:
+        print(result.summary())
+
+    if args.sbom and result.sbom_patch:
+        sbom_path = Path(args.sbom)
+        patched = Remediator.patch_sbom(sbom_path, result.sbom_patch)
+        if not quiet:
+            if patched:
+                print(f"✓ Updated hashes in {sbom_path}")
+            else:
+                print(f"! Could not patch {sbom_path} (not found or invalid JSON)", file=sys.stderr)
+
+    if result.failed and not args.dry_run:
+        for f in result.failed:
+            print(f"  ✗ {f.source.name}: {f.reason}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+def _cmd_evaluate(args: argparse.Namespace, quiet: bool) -> int:
+    try:
+        from squish.squash.evaluator import EvalEngine
+    except ImportError as exc:
+        print(f"squash evaluate unavailable: {exc}", file=sys.stderr)
+        return 2
+
+    engine = EvalEngine(
+        endpoint=args.endpoint,
+        model=args.model,
+        api_key=args.api_key,
+        timeout_s=args.timeout,
+    )
+
+    if not quiet:
+        print(f"Running {len(engine._extra_probes or []) + 8} probes against {args.endpoint} …")
+
+    report = engine.run()
+
+    output_dir = Path(args.output_dir) if args.output_dir else Path.cwd()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_path = output_dir / "squash-eval-report.json"
+    report.save(report_path)
+
+    if not quiet:
+        print(report.summary_text())
+        print(f"Report saved → {report_path}")
+
+    if args.bom:
+        patched = engine.patch_bom(Path(args.bom), report)
+        if not quiet:
+            if patched:
+                print(f"✓ BOM annotated → {args.bom}")
+            else:
+                print(f"! Could not patch BOM {args.bom}", file=sys.stderr)
+
+    if args.fail_on_critical and report.critical_failures:
+        print(f"✗ {report.critical_failures} critical probe(s) failed", file=sys.stderr)
+        return 2
+
+    return 0
+
+
+def _cmd_edge_scan(args: argparse.Namespace, quiet: bool) -> int:
+    try:
+        from squish.squash.edge_formats import (
+            TFLiteParser,
+            CoreMLParser,
+            EdgeSecurityScanner,
+        )
+    except ImportError as exc:
+        print(f"squash edge-scan unavailable: {exc}", file=sys.stderr)
+        return 2
+
+    target = Path(args.model_path)
+    if not target.exists():
+        print(f"Path not found: {target}", file=sys.stderr)
+        return 1
+
+    suffix = target.suffix.lower()
+    if suffix == ".tflite":
+        meta = TFLiteParser.parse(target)
+        findings = EdgeSecurityScanner.scan(target)
+        result_dict: dict = {
+            "format": "tflite",
+            "file": str(target),
+            "sha256": meta.sha256,
+            "schema_version": meta.schema_version,
+            "operator_count": meta.operator_count,
+            "subgraph_count": meta.subgraph_count,
+            "quant_level": meta.quant_level,
+            "custom_ops": meta.custom_ops,
+            "parse_error": meta.parse_error,
+            "findings": [
+                {
+                    "severity": f.severity,
+                    "id": f.finding_id,
+                    "title": f.title,
+                    "detail": f.detail,
+                }
+                for f in findings
+            ],
+        }
+        if not quiet:
+            print(f"TFLite model: {target.name}")
+            print(f"  Schema version : {meta.schema_version}")
+            print(f"  Operators      : {meta.operator_count}")
+            print(f"  Quantisation   : {meta.quant_level}")
+            if meta.custom_ops:
+                print(f"  Custom ops     : {', '.join(meta.custom_ops)}")
+            if meta.parse_error:
+                print(f"  ⚠ parse error  : {meta.parse_error}", file=sys.stderr)
+    elif target.is_dir() and target.name.endswith(".mlpackage"):
+        meta = CoreMLParser.parse(target)
+        findings = EdgeSecurityScanner.scan(target)
+        result_dict = {
+            "format": "coreml",
+            "package": str(target),
+            "sha256": meta.sha256,
+            "model_version": meta.model_version,
+            "spec_version": meta.spec_version,
+            "short_description": meta.short_description,
+            "quant_level": meta.quant_level,
+            "pipeline_stages": meta.pipeline_stages,
+            "findings": [
+                {
+                    "severity": f.severity,
+                    "id": f.finding_id,
+                    "title": f.title,
+                    "detail": f.detail,
+                }
+                for f in findings
+            ],
+        }
+        if not quiet:
+            print(f"CoreML package: {target.name}")
+            print(f"  Spec version   : {meta.spec_version}")
+            print(f"  Quantisation   : {meta.quant_level}")
+    else:
+        print(
+            "Unsupported format. Provide a .tflite file or a .mlpackage directory.",
+            file=sys.stderr,
+        )
+        return 1
+
+    critical = [f for f in findings if f.severity == "critical"]
+    high = [f for f in findings if f.severity == "high"]
+    if not quiet:
+        if findings:
+            print(f"\n{len(findings)} finding(s): {len(critical)} critical, {len(high)} high")
+            for f in findings:
+                print(f"  [{f.severity.upper():8s}] {f.finding_id} — {f.title}")
+        else:
+            print("✓ No security findings")
+
+    if args.json_result:
+        import json as _json
+        json_path = Path(args.json_result)
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(_json.dumps(result_dict, indent=2))
+        if not quiet:
+            print(f"Result saved → {json_path}")
+
+    return 2 if critical else (1 if high else 0)
+
+
+def _cmd_chat(args: argparse.Namespace, quiet: bool) -> int:
+    try:
+        from squish.squash.chat import ChatSession
+    except ImportError as exc:
+        print(f"squash chat unavailable: {exc}", file=sys.stderr)
+        return 2
+
+    model_dir = Path(args.model_dir)
+    if not model_dir.exists():
+        print(f"Model directory not found: {model_dir}", file=sys.stderr)
+        return 1
+
+    backend_defaults = {
+        "ollama": ("http://localhost:11434/v1", "llama3"),
+        "openai": ("https://api.openai.com/v1", "gpt-4o-mini"),
+    }
+    base_url, default_model = backend_defaults[args.backend]
+    model_name = args.model or default_model
+
+    session = ChatSession.from_model_dir(
+        model_dir,
+        endpoint=base_url,
+        model=model_name,
+        api_key=args.api_key,
+        top_k=args.top_k,
+    )
+
+    if not quiet:
+        print(f"squash chat — {model_name} via {args.backend} ({base_url})")
+        print(f"Loaded {len(session._retriever._chunks)} document chunks from {model_dir.name}")
+
+    session.repl()
+    return 0
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -2617,6 +2912,14 @@ def main() -> None:
         sys.exit(_cmd_lineage(args, quiet))
     elif args.command == "drift-check":
         sys.exit(_cmd_drift_check(args, quiet))
+    elif args.command == "remediate":
+        sys.exit(_cmd_remediate(args, quiet))
+    elif args.command == "evaluate":
+        sys.exit(_cmd_evaluate(args, quiet))
+    elif args.command == "edge-scan":
+        sys.exit(_cmd_edge_scan(args, quiet))
+    elif args.command == "chat":
+        sys.exit(_cmd_chat(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)
