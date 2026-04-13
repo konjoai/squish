@@ -5,6 +5,42 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 56: squash remediate / evaluate / edge-scan / chat CLIs
+
+### Added
+
+- **`squish/squash/remediate.py`** — `Remediator` + `RemediateResult`: scans a
+  model directory for pickle files (`.pkl`, `.pickle`, `.pt` non-safetensors),
+  converts them to safetensors via torch, and optionally patches the
+  CycloneDX ML-BOM with the conversion record. `RemediateResult.fully_remediated`
+  is `True` if zero pickle files failed (including the zero-found case).
+- **`squish/squash/evaluator.py`** — `EvalEngine` + `EvalReport` + `ProbeResult`:
+  runs a configurable set of red-team probes against any OpenAI-compatible
+  inference endpoint, scores safety, serialises to `squash-eval-report.json`,
+  and patches the ML-BOM `components[N].modelCard.properties` with the result.
+- **`squish/squash/edge_formats.py`** — `TFLiteParser`, `CoreMLParser`, and
+  `EdgeSecurityScanner`: reads TFLite FlatBuffer metadata (magic `TFL3`/`TFL2`)
+  and Apple CoreML `.mlpackage` manifests; flags EDGE-COREML-001 (missing model
+  data), EDGE-COREML-002 (ObjC injection patterns: `exec|popen|fork|spawn`), and
+  EDGE-TFLITE-001/002 (version mismatch / oversized).
+- **`squish/squash/chat.py`** — `ChatSession` + `ArtifactChunker` + `BM25Retriever`:
+  a stdlib-only RAG compliance REPL over squash attestation artifacts
+  (BOM, scan, policy, attestation, VEX, SPDX, eval-report, lineage, provenance).
+  Supports Ollama and any OpenAI-compatible backend.
+- **CLI subcommands**: `squish squash remediate`, `squish squash evaluate`,
+  `squish squash edge-scan`, `squish squash chat` — all wired into `squash/cli.py`
+  with proper exit codes (0/1/2), `--help`, and `--quiet` support.
+- **Tests**: 54 new tests across `tests/test_squash_remediate.py`,
+  `tests/test_squash_evaluator.py`, `tests/test_squash_edge_formats.py`,
+  `tests/test_squash_chat.py`; all pass.
+
+### Changed
+
+- Module count updated from 125→131 across wave gates (wave41, 49, 50, 51, 52,
+  5355): 4 new squash feature modules + 2 previously-uncounted tracked modules.
+
+---
+
 ## [Unreleased] — Wave 56: AQLM encode path — INT2 'ultra' tier
 
 ### Added

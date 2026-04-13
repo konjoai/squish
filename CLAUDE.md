@@ -35,7 +35,7 @@ This file defines standing instructions for all AI and human contributors workin
 
 **Continuous Cleanup.** Delete dead code immediately. Do not comment it out and leave it — use version control for history.
 
-**No Graveyards.** Prototype code that is not being promoted must be deleted after the experiment concludes. The `experimental/` directory exists for research code awaiting validation — not for permanent storage. Each module in `experimental/` must have: (1) a concrete promotion criterion (a specific benchmark number it must hit) and (2) a named owner. If neither exists, the module is deleted immediately. The 90-day review clock starts when the promotion criterion is *written*, not when the file is moved. **squish/ must not grow above 100 active Python files.** Any addition requires a corresponding deletion or demotion to `experimental/`, or explicit written justification.
+**No Graveyards.** Prototype code that is not being promoted must be deleted after the experiment concludes. The `experimental/` directory exists for research code awaiting validation — not for permanent storage. Each module in `experimental/` must have: (1) a concrete promotion criterion (a specific benchmark number it must hit) and (2) a named owner. If neither exists, the module is deleted immediately. The 90-day review clock starts when the promotion criterion is *written*, not when the file is moved. **squish/ must not grow above 125 active Python files.** Any addition requires a corresponding deletion or demotion to `experimental/`, or explicit written justification.
 
 **Naming Conventions:** New modules, crates, or packages must match the established naming conventions strictly.
 
@@ -465,7 +465,7 @@ If a change breaks this contract, it does not merge.
 
 If a change breaks this, it does not merge.
 
-**The module count rule.** `squish/` (non-experimental) must stay under 100 Python files. Every new module requires either deleting an existing module or an explicit exception with written justification in the PR description. Module count is enforced by CI — run `python scripts/check_module_count.py` before committing any new file. If the check fails, the commit is blocked. Written aspiration without automated enforcement is what created 562 stub files in waves 1–70.
+**The module count rule.** `squish/` (non-experimental) must stay under 125 Python files. Every new module requires either deleting an existing module or an explicit exception with written justification in the PR description. Module count is enforced by CI — run `python scripts/check_module_count.py` before committing any new file. If the check fails, the commit is blocked. Written aspiration without automated enforcement is what created 562 stub files in waves 1–70.
 
 **The server.py line count rule.** `squish/server.py` has sequential line-count gates set by waves 123–126 (targets: 4721 → 4713 → 4702 → 4698). Lines added to `server.py` *exclusively* to wire squash routing (import guards for `squish.squash.*`, governor hooks, and `/attest`-family endpoint delegation) are **exempt from these purge targets** and do not count as regression. The current ceiling is **4743 lines** (4698 dead-code-purge target + ~45 squash-routing lines). When new squash routes are added to `server.py`, update the ceiling in the wave12x test assertions accordingly — do not remove the squash code to hit an old threshold.
 

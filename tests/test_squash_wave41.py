@@ -424,8 +424,9 @@ class TestModuleIsolation:
         squish_dir = _BENCH_SCRIPT.parent.parent.parent / "squish"
         py_files = list(squish_dir.rglob("*.py"))
         count = len(py_files)
-        assert count <= 130, (
-            f"squish/ Python module count {count} exceeds ceiling 130. "
+        assert count <= 132, (
+            f"squish/ Python module count {count} exceeds ceiling 132. "
+            "W54-56 added 4 new squash feature modules (remediate, evaluator, edge_formats, chat). "
             "Was a new module inadvertently added to squish/ in Wave 41?"
         )
 

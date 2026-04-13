@@ -81,6 +81,27 @@ from squish.squash.integrations.kubernetes import (  # noqa: F401 (Wave 27)
     KubernetesWebhookHandler,
     WebhookConfig,
 )
+from squish.squash.remediate import (  # noqa: F401 (Wave 54)
+    Remediator,
+    RemediateResult,
+    ConvertedFile,
+    FailedFile,
+)
+from squish.squash.evaluator import (  # noqa: F401 (Wave 55)
+    EvalEngine,
+    EvalReport,
+    ProbeResult,
+)
+from squish.squash.edge_formats import (  # noqa: F401 (Wave 56)
+    TFLiteParser,
+    TFLiteMetadata,
+    CoreMLParser,
+    CoreMLMetadata,
+    EdgeSecurityScanner,
+    EdgeFinding,
+    TensorDescriptor,
+)
+from squish.squash.chat import ChatSession  # noqa: F401 (Wave 56)
 
 __all__ = [
     # Phase 1–3 (existing)
@@ -173,4 +194,23 @@ __all__ = [
     "SquashServeConfig",
     "SquashServeDeployment",
     "squash_serve",
+    # Wave 54: Remediate (pickle → safetensors)
+    "Remediator",
+    "RemediateResult",
+    "ConvertedFile",
+    "FailedFile",
+    # Wave 55: Dynamic evaluation / red-teaming
+    "EvalEngine",
+    "EvalReport",
+    "ProbeResult",
+    # Wave 56: Edge AI format support
+    "TFLiteParser",
+    "TFLiteMetadata",
+    "CoreMLParser",
+    "CoreMLMetadata",
+    "EdgeSecurityScanner",
+    "EdgeFinding",
+    "TensorDescriptor",
+    # Wave 56: RAG compliance chat
+    "ChatSession",
 ]

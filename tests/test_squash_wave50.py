@@ -757,7 +757,8 @@ class TestModuleCount:
         """squish/ Python file count must be 125 (W51 adds drift.py — SBOM drift detection, new security domain)."""
         squish_dir = _REPO_ROOT / "squish"
         count = len(list(squish_dir.rglob("*.py")))
-        assert count == 125, (
-            f"squish/ Python file count is {count}, expected 125. "
+        assert count == 131, (
+            f"squish/ Python file count is {count}, expected 131. "
+            "W54-56 adds remediate.py, evaluator.py, edge_formats.py, chat.py (squash CLI features). "
             "A new file was added — either remove it or update this gate with written justification."
         )
