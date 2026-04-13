@@ -518,7 +518,12 @@ class VexCache:
             return True
         max_age = max_age_hours or self.DEFAULT_MAX_AGE_HOURS
         try:
-            fetched_at = datetime.fromisoformat(manifest["last_fetched"])
+            raw = manifest["last_fetched"]
+            # Python 3.10 fromisoformat() doesn't accept the 'Z' suffix.
+            # Normalise it to '+00:00' before parsing.
+            if isinstance(raw, str) and raw.endswith("Z"):
+                raw = raw[:-1] + "+00:00"
+            fetched_at = datetime.fromisoformat(raw)
             age = datetime.now(timezone.utc) - fetched_at
             return age.total_seconds() > max_age * 3600
         except (ValueError, TypeError):
