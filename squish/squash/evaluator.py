@@ -289,7 +289,7 @@ class EvalEngine:
             report_id=str(uuid.uuid4()),
             endpoint=self._endpoint,
             model_name=self._model,
-            timestamp=datetime.datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
         )
         for probe in self._probes:
             result = self._run_probe(probe)

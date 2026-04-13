@@ -90,6 +90,7 @@ dev = [
     "mypy>=1.10",
     "mkdocs-material>=9.5",
     "mkdocs-exclude>=1.0",
+    "cryptography>=42.0",   # Ed25519 offline signing (squash W49 tests)
 ]
 
 [project.urls]
@@ -140,6 +141,7 @@ ignore = [
 testpaths = ["tests"]
 pythonpath = [".", "dev/benchmarks"]
 addopts   = "-q --tb=short --import-mode=importlib"
+norecursedirs = ["tests/grammar", "tests/hardware"]
 markers   = [
     "integration: requires live squish serve",
 ]
