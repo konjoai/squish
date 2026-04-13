@@ -5,6 +5,36 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 57: squash model-card generator (HuggingFace / EU AI Act / ISO 42001)
+
+### Added
+
+- **`squish/squash/model_card.py`** — `ModelCardGenerator`, `ModelCard`,
+  `ModelCardConfig`, `ModelCardSection`, `KNOWN_FORMATS`: reads squash attestation
+  artifacts from a model directory (`squish.json`, `cyclonedx-mlbom.json`,
+  `squash-scan.json`, `squash-policy-*.json`, `squash-attest.json`,
+  `squash-vex-report.json`) and generates three regulation-compliant model card
+  formats.  Missing artifacts degrade gracefully with placeholder text.
+  Supports `"hf"` (HuggingFace YAML frontmatter + README.md body),
+  `"eu-ai-act"` (EU AI Act Article 13 transparent AI documentation),
+  `"iso-42001"` (ISO/IEC 42001:2023 AI management system record),
+  and `"all"` (generates all three files simultaneously).  Stdlib-only — no
+  external dependencies.
+- **`squash model-card` CLI command** — `squash model-card <model_dir>
+  [--format hf|eu-ai-act|iso-42001|all] [--output-dir <dir>]
+  [--model-id <id>] [--license <spdx>] [--quiet]`.
+  Writes `squash-model-card-<suffix>.md` alongside existing squash artifacts.
+  Exits `0` on success, `1` on user error, `2` on import error.
+
+### Fixed
+
+- **`squish/squash/api.py`** — `_ts_now()` helper now uses
+  `datetime.datetime.now(datetime.UTC)` instead of the deprecated
+  `datetime.datetime.utcnow()`, silencing the `DeprecationWarning` that
+  appeared in every pytest run.
+
+---
+
 ## [Unreleased] — Wave 56: squash remediate / evaluate / edge-scan / chat CLIs
 
 ### Added

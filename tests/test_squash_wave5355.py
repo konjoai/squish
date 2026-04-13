@@ -677,7 +677,7 @@ class TestModuleCount:
         import subprocess, pathlib
         root = pathlib.Path(__file__).parent.parent / "squish"
         count = len(list(root.rglob("*.py")))
-        assert count == 131, (
-            f"Module count should be 131, got {count}. "
-            "New modules require deletion or written justification."
+        assert count == 132, (
+            f"Module count should be 132, got {count}. "
+            "W57 adds model_card.py. New modules require deletion or written justification."
         )

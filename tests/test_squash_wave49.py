@@ -668,8 +668,9 @@ class TestModuleCount:
         """squish/ must still have exactly 125 Python files (W51 adds drift.py — new security domain)."""
         squish_dir = Path(__file__).parent.parent / "squish"
         count = len(list(squish_dir.rglob("*.py")))
-        assert count == 131, (
-            f"Module count changed: expected 131, got {count}. "
-            "W49-52 added oms_signer.py + 1; W54-56 added remediate.py, evaluator.py, edge_formats.py, chat.py. "
+        assert count == 132, (
+            f"Module count changed: expected 132, got {count}. "
+            "W49-52 added oms_signer.py + 1; W54-56 added remediate.py, evaluator.py, edge_formats.py, chat.py; "
+            "W57 added model_card.py. "
             "Check squish/ for unexpected additions or deletions."
         )

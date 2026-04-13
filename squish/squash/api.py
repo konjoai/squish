@@ -1823,7 +1823,7 @@ async def pack_offline(req: PackOfflineRequest) -> JSONResponse:
 def _ts_now() -> str:
     """Return current UTC time as ISO-8601 string."""
     import datetime
-    return datetime.datetime.utcnow().isoformat() + "Z"
+    return datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z")
 
 
 # ── Tenant management ─────────────────────────────────────────────────────────

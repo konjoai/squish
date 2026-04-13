@@ -102,6 +102,13 @@ from squish.squash.edge_formats import (  # noqa: F401 (Wave 56)
     TensorDescriptor,
 )
 from squish.squash.chat import ChatSession  # noqa: F401 (Wave 56)
+from squish.squash.model_card import (  # noqa: F401 (Wave 57)
+    ModelCard,
+    ModelCardConfig,
+    ModelCardGenerator,
+    ModelCardSection,
+    KNOWN_FORMATS as MODEL_CARD_KNOWN_FORMATS,
+)
 
 __all__ = [
     # Phase 1–3 (existing)
@@ -213,4 +220,10 @@ __all__ = [
     "TensorDescriptor",
     # Wave 56: RAG compliance chat
     "ChatSession",
+    # Wave 57: Model card generator
+    "ModelCard",
+    "ModelCardConfig",
+    "ModelCardGenerator",
+    "ModelCardSection",
+    "MODEL_CARD_KNOWN_FORMATS",
 ]

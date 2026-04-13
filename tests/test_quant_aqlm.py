@@ -555,8 +555,9 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 118, (
-            f"Module count changed: {count} != 118. "
-            "W54-56 added remediate.py, evaluator.py, edge_formats.py, chat.py (4 squash feature modules). "
-            "W56+ must not add new modules without justification."
+        assert count == 119, (
+            f"Module count changed: {count} != 119. "
+            "W54-56 added remediate.py, evaluator.py, edge_formats.py, chat.py; "
+            "W57 added model_card.py (5 squash feature modules). "
+            "W57+ must not add new modules without justification."
         )

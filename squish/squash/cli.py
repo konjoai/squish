@@ -1173,6 +1173,52 @@ def _build_parser() -> argparse.ArgumentParser:
                            help="Number of chunks to retrieve per question (default: 5)")
     chat_cmd.add_argument("--quiet", action="store_true", help="Suppress non-error output")
 
+    mc_cmd = sub.add_parser(
+        "model-card",
+        help="Generate regulation-compliant model cards from squash attestation artifacts",
+        description=(
+            "Generate AI regulation–compliant model cards from squash attestation "
+            "artifacts (ML-BOM, scan results, policy reports, VEX report).\n\n"
+            "Example:\n"
+            "  squash model-card ./my-model --format all"
+        ),
+    )
+    mc_cmd.add_argument(
+        "model_dir",
+        help="Model directory containing squash attestation artifacts",
+    )
+    mc_cmd.add_argument(
+        "--format",
+        choices=["hf", "eu-ai-act", "iso-42001", "all"],
+        default="hf",
+        dest="mc_format",
+        help="Output format: hf (HuggingFace), eu-ai-act (EU AI Act Art. 13), "
+             "iso-42001 (ISO/IEC 42001:2023), all (write all three). Default: hf",
+    )
+    mc_cmd.add_argument(
+        "--output-dir",
+        default=None,
+        dest="mc_output_dir",
+        help="Directory to write model card file(s). Defaults to model_dir.",
+    )
+    mc_cmd.add_argument(
+        "--model-id",
+        default="",
+        dest="mc_model_id",
+        help="Override model identifier used in card metadata.",
+    )
+    mc_cmd.add_argument(
+        "--license",
+        default="apache-2.0",
+        dest="mc_license",
+        help="SPDX licence identifier for the card (default: apache-2.0).",
+    )
+    mc_cmd.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress non-error output",
+    )
+
     return parser
 
 
@@ -2841,6 +2887,42 @@ def _cmd_chat(args: argparse.Namespace, quiet: bool) -> int:
     return 0
 
 
+def _cmd_model_card(args: argparse.Namespace, quiet: bool) -> int:
+    """Generate regulation-compliant model cards from squash attestation artifacts."""
+    try:
+        from squish.squash.model_card import ModelCardConfig, ModelCardGenerator
+    except ImportError as exc:
+        print(f"squash model-card unavailable: {exc}", file=sys.stderr)
+        return 2
+
+    model_dir = Path(args.model_dir)
+    if not model_dir.exists():
+        print(f"Model directory not found: {model_dir}", file=sys.stderr)
+        return 1
+
+    output_dir = Path(args.mc_output_dir) if args.mc_output_dir else None
+
+    config = ModelCardConfig(
+        model_dir=model_dir,
+        model_id=args.mc_model_id or "",
+        license=args.mc_license or "apache-2.0",
+        output_dir=output_dir,
+    )
+    gen = ModelCardGenerator(model_dir=model_dir, config=config)
+
+    try:
+        paths = gen.generate(fmt=args.mc_format, output_dir=output_dir)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    if not quiet:
+        for p in paths:
+            print(f"✓ {p}")
+
+    return 0
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -2925,6 +3007,8 @@ def main() -> None:
         sys.exit(_cmd_edge_scan(args, quiet))
     elif args.command == "chat":
         sys.exit(_cmd_chat(args, quiet))
+    elif args.command == "model-card":
+        sys.exit(_cmd_model_card(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)
