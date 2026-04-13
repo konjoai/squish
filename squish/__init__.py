@@ -317,6 +317,11 @@ _LAZY_IMPORTS: dict[str, str] = {
     "SqueezeKVCache":            "squish.attention.squeeze_attention",
     "SqueezeStats":              "squish.attention.squeeze_attention",
 
+    # squish.quant.hqq
+    "HQQConfig":                 "squish.quant.hqq",
+    "HQQTensor":                 "squish.quant.hqq",
+    "HQQQuantizer":              "squish.quant.hqq",
+
     # squish.quant.squeeze_llm
     "OutlierDetector":           "squish.quant.squeeze_llm",
     "SqueezeLLMConfig":          "squish.quant.squeeze_llm",

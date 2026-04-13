@@ -39,6 +39,7 @@ from __future__ import annotations
 __all__ = [
     "Eagle3Config",
     "Eagle3DraftHead",
+    "Eagle3CompressedDraftHead",
     "Eagle3Decoder",
     "Eagle3Stats",
 ]
@@ -47,6 +48,8 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import numpy as np
+
+from squish.quant.hqq import HQQConfig, HQQQuantizer, HQQTensor
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -74,6 +77,8 @@ class Eagle3Config:
     max_draft_len: int = 5
     acceptance_threshold: float = 0.7
     feature_dim: int | None = None
+    draft_head_bits: int = 0
+    """Bit-width for draft head weight compression via HQQ.  0 = disabled."""
 
     def __post_init__(self) -> None:
         if self.hidden_dim <= 0:
@@ -103,6 +108,11 @@ class Eagle3Config:
         elif self.feature_dim <= 0:
             raise ValueError(
                 f"feature_dim must be a positive integer, got {self.feature_dim}"
+            )
+        if self.draft_head_bits not in (0, 2, 3, 4, 8):
+            raise ValueError(
+                f"draft_head_bits must be 0 (disabled), 2, 3, 4, or 8; "
+                f"got {self.draft_head_bits}"
             )
 
 
@@ -134,6 +144,26 @@ class Eagle3DraftHead:
         self._output_proj = rng.normal(
             0.0, scale_op, (feature_dim, config.vocab_size)
         ).astype(np.float32)
+
+    def compress(self, bits: int = 3) -> "Eagle3CompressedDraftHead":
+        """Return an INT-compressed copy of this draft head via HQQ.
+
+        Args:
+            bits: Target bit-width (2, 3, 4, or 8).  Default is 3 (INT3).
+
+        Returns:
+            :class:`Eagle3CompressedDraftHead` storing :class:`HQQTensor`
+            objects for both projection matrices.
+        """
+        cfg = HQQConfig(bits=bits, group_size=64)
+        quant = HQQQuantizer(cfg)
+        fp_k = quant.encode(self._feature_proj)
+        op_k = quant.encode(self._output_proj)
+        return Eagle3CompressedDraftHead(
+            config=self._config,
+            feature_proj_tensor=fp_k,
+            output_proj_tensor=op_k,
+        )
 
     def predict_features(self, hidden: np.ndarray) -> np.ndarray:
         """Project hidden state to draft feature space via tanh activation.
@@ -173,6 +203,79 @@ class Eagle3DraftHead:
         features = self.predict_features(hidden)
         logits = self.predict_tokens(features)
         return features, logits
+
+
+# ---------------------------------------------------------------------------
+# Compressed draft head (HQQ INT2/INT3/INT4)
+# ---------------------------------------------------------------------------
+
+
+class Eagle3CompressedDraftHead:
+    """HQQ-quantized draft head that decodes weights on each forward pass.
+
+    Create via :meth:`Eagle3DraftHead.compress` rather than constructing
+    directly.
+
+    Memory use of the two projection matrices is dramatically reduced:
+      * float32 baseline:  ``hidden_dim × feature_dim + feature_dim × vocab_size`` float32 bytes
+      * INT3 (bits=3):     approximately ``(bits/32)`` × baseline ≈ 9% of float32
+
+    Args:
+        config: The :class:`Eagle3Config` this head belongs to.
+        feature_proj_tensor: :class:`HQQTensor` for the ``(hidden_dim, feature_dim)`` projection.
+        output_proj_tensor: :class:`HQQTensor` for the ``(feature_dim, vocab_size)`` projection.
+    """
+
+    def __init__(
+        self,
+        config: "Eagle3Config",
+        feature_proj_tensor: HQQTensor,
+        output_proj_tensor: HQQTensor,
+    ) -> None:
+        self._config = config
+        self._fp_tensor = feature_proj_tensor
+        self._op_tensor = output_proj_tensor
+        self._quant = HQQQuantizer(feature_proj_tensor.config)
+
+    def predict_features(self, hidden: np.ndarray) -> np.ndarray:
+        """Project hidden state to draft feature space (decode + matmul)."""
+        fp = self._quant.decode(self._fp_tensor)
+        return np.tanh(hidden @ fp)
+
+    def predict_tokens(self, features: np.ndarray) -> np.ndarray:
+        """Project feature vector to vocabulary logits (decode + matmul)."""
+        op = self._quant.decode(self._op_tensor)
+        return features @ op
+
+    def forward(
+        self, hidden: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Run full feature prediction and token logit computation.
+
+        Both projection matrices are decoded from their HQQ representation
+        on each call.  For batch or streaming use, cache the decoded weights
+        externally and call the projection steps directly.
+        """
+        features = self.predict_features(hidden)
+        logits = self.predict_tokens(features)
+        return features, logits
+
+    @property
+    def memory_bytes(self) -> int:
+        """Approximate compressed storage size in bytes (codes + scales + zeros)."""
+        return self._fp_tensor.nbytes() + self._op_tensor.nbytes()
+
+    @property
+    def bits(self) -> int:
+        """Bit-width used for compression."""
+        return self._fp_tensor.config.bits
+
+    def __repr__(self) -> str:
+        mb = self.memory_bytes / (1024 ** 2)
+        return (
+            f"Eagle3CompressedDraftHead(bits={self.bits}, "
+            f"memory={mb:.1f} MiB)"
+        )
 
 
 # ---------------------------------------------------------------------------
