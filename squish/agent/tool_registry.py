@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 
 __all__ = [
@@ -96,7 +96,7 @@ class ToolResult:
     tool_name: str
     call_id: str
     output: Any
-    error: Optional[str] = None
+    error: str | None = None
     elapsed_ms: float = 0.0
 
     @property
@@ -151,10 +151,10 @@ class ToolRegistry:
 
     def tool(
         self,
-        name: Optional[str] = None,
+        name: str | None = None,
         *,
         description: str = "",
-        parameters: Optional[dict] = None,
+        parameters: dict | None = None,
         source: str = "user",
     ) -> Callable:
         """Decorator for registering a function as a tool.
@@ -197,7 +197,7 @@ class ToolRegistry:
     # Discovery
     # ------------------------------------------------------------------
 
-    def get(self, name: str) -> Optional[ToolDefinition]:
+    def get(self, name: str) -> "ToolDefinition | None":
         """Return the :class:`ToolDefinition` or ``None``."""
         return self._tools.get(name)
 
@@ -281,7 +281,7 @@ class ToolRegistry:
         name: str,
         arguments: dict,
         *,
-        call_id: Optional[str] = None,
+        call_id: str | None = None,
         validate: bool = True,
     ) -> ToolResult:
         """Validate and execute a tool call.

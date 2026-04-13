@@ -33,7 +33,7 @@ import importlib.metadata
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 _DEFAULT_SERVER_URL: str = os.environ.get("SQUISH_SERVER_URL", "http://localhost:11435")
 
@@ -81,12 +81,12 @@ class V1RouteSpec:
         Unversioned alias path, e.g. ``"/chat"`` (receives Deprecation header).
     """
     path:             str
-    methods:          List[str]
+    methods:          list[str]
     summary:          str
     description:      str
-    request_schema:   Optional[Dict[str, Any]] = None
-    response_schema:  Optional[Dict[str, Any]] = None
-    deprecated_alias: Optional[str] = None
+    request_schema:   dict[str, Any] | None = None
+    response_schema:  dict[str, Any] | None = None
+    deprecated_alias: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ _EMBEDDINGS_REQUEST = {
     },
 }
 
-BUILTIN_ROUTES: List[V1RouteSpec] = [
+BUILTIN_ROUTES: list[V1RouteSpec] = [
     V1RouteSpec(
         path="/chat/completions",
         methods=["POST"],
@@ -202,9 +202,9 @@ class OpenAPISchemaBuilder:
 
     def __init__(
         self,
-        routes: Optional[List[V1RouteSpec]] = None,
+        routes: list[V1RouteSpec] | None = None,
         title: str = "Squish API",
-        version: Optional[str] = None,
+        version: str | None = None,
         server_url: str = _DEFAULT_SERVER_URL,
     ) -> None:
         self._routes     = routes or BUILTIN_ROUTES
@@ -212,14 +212,14 @@ class OpenAPISchemaBuilder:
         self._version    = version or _package_version()
         self._server_url = server_url
 
-    def build(self) -> Dict[str, Any]:
+    def build(self) -> dict[str, Any]:
         """Return the OpenAPI 3.1 schema as a Python dict."""
-        paths: Dict[str, Any] = {}
+        paths: dict[str, Any] = {}
         for spec in self._routes:
             full_path = f"/v1{spec.path}"
-            path_item: Dict[str, Any] = {}
+            path_item: dict[str, Any] = {}
             for method in spec.methods:
-                operation: Dict[str, Any] = {
+                operation: dict[str, Any] = {
                     "summary":     spec.summary,
                     "description": spec.description,
                     "operationId": self._operation_id(spec, method),
@@ -286,7 +286,7 @@ class APIVersionMiddleware:
     def __init__(
         self,
         app: Any,
-        deprecated_paths: Optional[set] = None,
+        deprecated_paths: set | None = None,
     ) -> None:
         self._app             = app
         self._deprecated      = deprecated_paths or set()
@@ -331,11 +331,11 @@ class V1Router:
         schema = router.openapi_schema()
     """
 
-    def __init__(self, routes: Optional[List[V1RouteSpec]] = None) -> None:
-        self._routes: List[V1RouteSpec] = list(routes or BUILTIN_ROUTES)
+    def __init__(self, routes: list[V1RouteSpec] | None = None) -> None:
+        self._routes: list[V1RouteSpec] = list(routes or BUILTIN_ROUTES)
 
     @property
-    def routes(self) -> List[V1RouteSpec]:
+    def routes(self) -> list[V1RouteSpec]:
         """Return a copy of the current route list."""
         return list(self._routes)
 
@@ -347,7 +347,7 @@ class V1Router:
         self,
         title: str = "Squish API",
         server_url: str = _DEFAULT_SERVER_URL,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Return the OpenAPI 3.1 schema dict for all registered routes."""
         builder = OpenAPISchemaBuilder(
             routes=self._routes,
@@ -356,7 +356,7 @@ class V1Router:
         )
         return builder.build()
 
-    def deprecated_paths(self) -> List[str]:
+    def deprecated_paths(self) -> list[str]:
         """Return all legacy alias paths that should receive deprecation headers."""
         return [
             r.deprecated_alias
