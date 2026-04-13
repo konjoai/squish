@@ -1645,7 +1645,8 @@ def _cmd_vex(args: argparse.Namespace, quiet: bool) -> int:
             api_key_env_var=args.api_key_env,
             polling_hours=args.polling_hours,
         )
-        store = VexSubscriptionStore()
+        _store_dir = os.environ.get("SQUISH_SQUASH_STORE_DIR")
+        store = VexSubscriptionStore(Path(_store_dir) if _store_dir else None)
         store.add(sub)
         _q = getattr(args, "quiet", False) or quiet
         if not _q:
@@ -1657,7 +1658,9 @@ def _cmd_vex(args: argparse.Namespace, quiet: bool) -> int:
 
     if vex_cmd == "unsubscribe":
         from squish.squash.vex import VexSubscriptionStore
-        store = VexSubscriptionStore()
+        import os as _os
+        _store_dir = _os.environ.get("SQUISH_SQUASH_STORE_DIR")
+        store = VexSubscriptionStore(Path(_store_dir) if _store_dir else None)
         removed = store.remove(args.url_or_alias)
         _q = getattr(args, "quiet", False) or quiet
         if not removed:
@@ -1669,7 +1672,9 @@ def _cmd_vex(args: argparse.Namespace, quiet: bool) -> int:
 
     if vex_cmd == "list-subscriptions":
         from squish.squash.vex import VexSubscriptionStore
-        store = VexSubscriptionStore()
+        import os as _os
+        _store_dir = _os.environ.get("SQUISH_SQUASH_STORE_DIR")
+        store = VexSubscriptionStore(Path(_store_dir) if _store_dir else None)
         subs = store.list()
         if not subs:
             if not quiet:

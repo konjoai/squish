@@ -417,6 +417,22 @@ class TestVexSubscriptionStore(unittest.TestCase):
 class TestCliVexSubscribe(unittest.TestCase):
     """squash vex subscribe / unsubscribe / list-subscriptions smoke tests."""
 
+    def setUp(self) -> None:
+        """Redirect VEX subscription store to a temp dir for each test.
+
+        The default store path (~/.squish/vex-subscriptions.json) requires
+        write access to the home directory, which the VS Code sandbox blocks.
+        Setting SQUISH_SQUASH_STORE_DIR in os.environ is automatically
+        inherited by subprocess.run() calls inside the tests.
+        """
+        self._tmpdir = tempfile.mkdtemp()
+        self._env_patch = patch.dict(os.environ, {"SQUISH_SQUASH_STORE_DIR": self._tmpdir})
+        self._env_patch.start()
+
+    def tearDown(self) -> None:
+        self._env_patch.stop()
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
     def test_subscribe_help_exits_zero(self):
         result = _squash("vex", "subscribe", "--help")
         self.assertEqual(result.returncode, 0)
@@ -440,22 +456,18 @@ class TestCliVexSubscribe(unittest.TestCase):
     def test_subscribe_and_unsubscribe_roundtrip(self):
         """subscribe adds a subscription; unsubscribe removes it."""
         url = "https://example.invalid/vex-wave52-test.json"
-        with tempfile.TemporaryDirectory() as tmp:
-            env = {**os.environ, "SQUISH_SQUASH_STORE_DIR": tmp}
-            # We patch the store dir via a known env var if supported, otherwise
-            # use the default path.  Fallback: verify exit code only.
-            sub_result = subprocess.run(
-                [sys.executable, "-m", "squish.squash.cli", "vex", "subscribe", url,
-                 "--alias", "wave52-test"],
-                capture_output=True, text=True,
-            )
-            self.assertEqual(sub_result.returncode, 0, sub_result.stderr)
+        sub_result = subprocess.run(
+            [sys.executable, "-m", "squish.squash.cli", "vex", "subscribe", url,
+             "--alias", "wave52-test"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(sub_result.returncode, 0, sub_result.stderr)
 
-            unsub_result = subprocess.run(
-                [sys.executable, "-m", "squish.squash.cli", "vex", "unsubscribe", url],
-                capture_output=True, text=True,
-            )
-            self.assertEqual(unsub_result.returncode, 0, unsub_result.stderr)
+        unsub_result = subprocess.run(
+            [sys.executable, "-m", "squish.squash.cli", "vex", "unsubscribe", url],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(unsub_result.returncode, 0, unsub_result.stderr)
 
     def test_unsubscribe_nonexistent_exits_one(self):
         result = _squash("vex", "unsubscribe", "https://never-registered.invalid/vex.json")
