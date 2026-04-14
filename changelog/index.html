@@ -836,15 +836,15 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#unreleased-wave-57-squash-model-card-generator-huggingface-eu-ai-act-iso-42001" class="md-nav__link">
+  <a href="#unreleased-wave-57-mixed_attn-fix-drift-check-rest-sqlite-cloud-persistence-model-card-generator" class="md-nav__link">
     <span class="md-ellipsis">
       
-        [Unreleased] — Wave 57: squash model-card generator (HuggingFace / EU AI Act / ISO 42001)
+        [Unreleased] — Wave 57: mixed_attn fix, /drift-check REST, SQLite cloud persistence, model-card generator
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="[Unreleased] — Wave 57: squash model-card generator (HuggingFace / EU AI Act / ISO 42001)">
+    <nav class="md-nav" aria-label="[Unreleased] — Wave 57: mixed_attn fix, /drift-check REST, SQLite cloud persistence, model-card generator">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -852,6 +852,17 @@
     <span class="md-ellipsis">
       
         Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-continued-w57-completion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added (continued — W57 completion)
       
     </span>
   </a>
@@ -7946,7 +7957,7 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
-<h2 id="unreleased-wave-57-squash-model-card-generator-huggingface-eu-ai-act-iso-42001">[Unreleased] — Wave 57: squash model-card generator (HuggingFace / EU AI Act / ISO 42001)<a class="headerlink" href="#unreleased-wave-57-squash-model-card-generator-huggingface-eu-ai-act-iso-42001" title="Permanent link">&para;</a></h2>
+<h2 id="unreleased-wave-57-mixed_attn-fix-drift-check-rest-sqlite-cloud-persistence-model-card-generator">[Unreleased] — Wave 57: mixed_attn fix, /drift-check REST, SQLite cloud persistence, model-card generator<a class="headerlink" href="#unreleased-wave-57-mixed_attn-fix-drift-check-rest-sqlite-cloud-persistence-model-card-generator" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>squish/squash/model_card.py</code></strong> — <code>ModelCardGenerator</code>, <code>ModelCard</code>,
@@ -7966,8 +7977,33 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
   Writes <code>squash-model-card-&lt;suffix&gt;.md</code> alongside existing squash artifacts.
   Exits <code>0</code> on success, <code>1</code> on user error, <code>2</code> on import error.</li>
 </ul>
+<h3 id="added-continued-w57-completion">Added (continued — W57 completion)<a class="headerlink" href="#added-continued-w57-completion" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>squish/squash/cloud_db.py</code></strong> — <code>CloudDB</code> class: stdlib-only SQLite
+  write-through backend for the five squash cloud in-memory stores (<code>tenants</code>,
+  <code>inventory</code>, <code>vex_alerts</code>, <code>drift_events</code>, <code>policy_stats</code>). Controlled by the
+  <code>SQUASH_CLOUD_DB</code> environment variable; absent or <code>:memory:</code> leaves behaviour
+  unchanged (in-memory only). Thread-safe via <code>threading.Lock()</code>. Methods:
+  <code>upsert_tenant</code>, <code>get_tenant</code>, <code>all_tenants</code>, <code>append_record</code>,
+  <code>get_records(limit=N)</code> (newest-N, returned in ascending order),
+  <code>count_records</code>, <code>inc_policy_stat</code>, <code>get_policy_stats</code>. SQL injection prevented
+  via <code>_VALID_TABLES</code> frozenset allowlist.</li>
+<li><strong><code>squish/squash/api.py</code> — write-through helpers</strong> — five helper functions
+  (<code>_db_write_tenant</code>, <code>_db_write_inventory</code>, <code>_db_write_vex_alert</code>,
+  <code>_db_write_drift_event</code>, <code>_db_inc_policy_stat</code>) wired at all five write points
+  in the API. When <code>SQUASH_CLOUD_DB</code> is set to a real path, every record is
+  durably persisted across server restarts.</li>
+<li><strong><code>POST /drift-check</code></strong> REST endpoint in <code>squish/squash/api.py</code> — accepts
+  <code>{model_dir, bom_path}</code>, validates both paths exist, runs <code>check_drift()</code> in a
+  thread executor, returns <code>{ok, files_checked, summary, hits}</code>. Returns 400 on
+  missing paths.</li>
+</ul>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
 <ul>
+<li><strong><code>squish/cli.py</code> — mixed_attn calibration</strong> — <code>args.outlier_threshold</code> now
+  set to <code>100.0</code> in the <code>--format mixed_attn</code> block, ensuring the AWQ INT4
+  pass always chooses INT4 for MLP weights (default threshold 20.0 caused
+  MLP outlier ratio ≈28.5 to fall through to BF16).</li>
 <li><strong><code>squish/squash/api.py</code></strong> — <code>_ts_now()</code> helper now uses
   <code>datetime.datetime.now(datetime.UTC)</code> instead of the deprecated
   <code>datetime.datetime.utcnow()</code>, silencing the <code>DeprecationWarning</code> that
