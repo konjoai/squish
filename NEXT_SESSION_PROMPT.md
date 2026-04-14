@@ -1,4 +1,59 @@
-# Next Session Prompt — W57
+# Next Session Prompt — W58
+
+## W57 STATUS: COMPLETE ✅
+All 5 tasks done. 3946 tests pass (0 failed, 2 skipped), 133 modules in squish/.
+
+### W57 Completed
+- ✅ `squish/cli.py` — mixed_attn calibration fix (`outlier_threshold=100.0` for MLP AWQ pass)
+- ✅ AQLM loader confirmed wired (`compressed_loader.py` lines 660-691, done W56)
+- ✅ `POST /drift-check` REST endpoint in `squish/squash/api.py`
+- ✅ `squish/squash/cloud_db.py` — stdlib SQLite write-through backend (`SQUASH_CLOUD_DB` env var)
+- ✅ All 5 api.py write points wired to CloudDB helpers
+- ✅ `tests/test_squash_w57.py` — 20/20 passing (17 CloudDB unit + 3 drift-check subprocess)
+- ⚠️ lm_eval AQLM validation PENDING — user must run manually (see below)
+
+---
+
+## IMMEDIATE: lm_eval AQLM validation (accuracy gate — blocks AQLM promotion)
+```bash
+# 1. Compress (≈5-10 min on M3):
+squish compress --format aqlm ~/.cache/huggingface/hub/Qwen2.5-1.5B-Instruct --output /tmp/qwen2.5-1.5b-aqlm
+
+# 2. Run lm_eval (≈20 min):
+python3 scripts/squish_lm_eval.py --model-dir /tmp/qwen2.5-1.5b-aqlm --tasks arc_easy --limit 200
+
+# 3. Compare vs baseline (70.6% arc_easy INT4)
+```
+**Gate**: ≥64.6% arc_easy (< 6pp delta vs INT4). If passes → promote AQLM to "ultra" catalog tier and record result in CLAUDE.md quantization table.
+If fails → document result, stay as experimental.
+
+---
+
+## W58 Candidates
+
+### A: AQLM inference path (depends on lm_eval passing)
+Wire `squish/loader.py` to detect `__aqlm_idx.npy` and route through `aqlm_dequantize` at load time. Unblocks `squish serve` with AQLM models.
+
+### B: CloudDB REST read endpoints
+Expose `GET /cloud/tenants/{id}/inventory`, `GET /cloud/tenants/{id}/vex-alerts`, `GET /cloud/policy-stats` — reads from SQLite when `SQUASH_CLOUD_DB` is set, falls back to in-memory deques. Enables persistent audit trail queries.
+
+### C: INT2 AQLM / SpQR experimental stubs
+Begin after mixed_attn lm_eval harness is built. Keep outliers in FP16, compress FFN to 2bpw.
+
+---
+
+## State
+- 3946 tests pass, 133 modules, commit: "W57: mixed_attn fix, /drift-check REST, SQLite cloud persistence, model-card generator"
+- lm_eval-waiver filed for W57 AQLM validation (hardware budget exceeded this session)
+- SQUASH_CLOUD_DB=:memory: (default) — all existing tests pass with in-memory behavior unchanged
+
+## lm_eval status (last validated)
+- INT4 AWQ g=32 (squish): 70.8% arc_easy (Qwen2.5-1.5B, limit=500, partial)
+- INT3 g=32: 67.2% arc_easy — below 72% gate; "efficient" tier only
+- gemma INT3 ≤4B: UNSAFE (−15–16pp)
+- Qwen3-4B INT3: UNSAFE (−14.8pp)
+- AQLM: UNVALIDATED — pending W58 run
+
 
 ## Context
 W56 is complete. AQLM encode path is live:

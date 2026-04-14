@@ -129,6 +129,54 @@ _policy_stats: defaultdict[str, defaultdict[str, dict[str, int]]] = defaultdict(
     lambda: defaultdict(lambda: {"passed": 0, "failed": 0})
 )
 
+# ── SQLite persistence (W57) ─────────────────────────────────────────────────
+# Optional write-through to a SQLite file.  Set SQUASH_CLOUD_DB=/path/to/db to
+# enable durability.  When absent (default) all stores remain in-memory only.
+try:
+    from squish.squash.cloud_db import CloudDB as _CloudDB, _make_db as _make_cloud_db
+    _db: "_CloudDB | None" = _make_cloud_db()
+except Exception:  # pragma: no cover
+    _db = None  # type: ignore[assignment]
+
+
+def _db_write_tenant(tenant_id: str, record: dict) -> None:
+    """Upsert a tenant record into the in-memory dict and (if active) SQLite."""
+    _tenants[tenant_id] = record
+    if _db is not None:
+        _db.upsert_tenant(tenant_id, record)
+
+
+def _db_write_inventory(tenant_id: str, record: dict) -> None:
+    """Append an inventory record to the deque and (if active) SQLite."""
+    _inventory[tenant_id].append(record)
+    if _db is not None:
+        _db.append_record("inventory", tenant_id, record)
+
+
+def _db_write_vex_alert(tenant_id: str, record: dict) -> None:
+    """Append a VEX alert to the deque and (if active) SQLite."""
+    _vex_alerts[tenant_id].append(record)
+    if _db is not None:
+        _db.append_record("vex_alerts", tenant_id, record)
+
+
+def _db_write_drift_event(tenant_id: str, record: dict) -> None:
+    """Append a drift event to the deque and (if active) SQLite."""
+    _drift_events[tenant_id].append(record)
+    if _db is not None:
+        _db.append_record("drift_events", tenant_id, record)
+
+
+def _db_inc_policy_stat(tenant_id: str, policy_name: str, *, passed: bool) -> None:
+    """Increment in-memory policy bucket and (if active) SQLite counter."""
+    bucket = _policy_stats[tenant_id][policy_name]
+    if passed:
+        bucket["passed"] += 1
+    else:
+        bucket["failed"] += 1
+    if _db is not None:
+        _db.inc_policy_stat(tenant_id, policy_name, passed=passed)
+
 
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
@@ -562,13 +610,9 @@ async def attest(req: AttestRequest) -> JSONResponse:
             "timestamp": _ts,
             "record_id": str(uuid.uuid4()),
         }
-        _inventory[req.tenant_id].append(_rec)
+        _db_write_inventory(req.tenant_id, _rec)
         for policy_name, pr in _rec["policy_results"].items():
-            bucket = _policy_stats[req.tenant_id][policy_name]
-            if pr.get("passed"):
-                bucket["passed"] += 1
-            else:
-                bucket["failed"] += 1
+            _db_inc_policy_stat(req.tenant_id, policy_name, passed=bool(pr.get("passed")))
 
     if req.fail_on_violation and not result.passed:
         return JSONResponse(status_code=422, content=master_data)
@@ -1848,7 +1892,7 @@ async def cloud_create_tenant(req: TenantCreateRequest) -> JSONResponse:
         "created_at": _tenants.get(req.tenant_id, {}).get("created_at", _ts_now()),
         "updated_at": _ts_now(),
     }
-    _tenants[req.tenant_id] = record
+    _db_write_tenant(req.tenant_id, record)
     return JSONResponse(status_code=201, content=record)
 
 
@@ -1897,14 +1941,10 @@ async def cloud_register_inventory(
         "timestamp": ts,
         "record_id": str(uuid.uuid4()),
     }
-    _inventory[req.tenant_id].append(record)
+    _db_write_inventory(req.tenant_id, record)
     # Update policy stats aggregates
     for policy_name, pr in req.policy_results.items():
-        bucket = _policy_stats[req.tenant_id][policy_name]
-        if pr.get("passed"):
-            bucket["passed"] += 1
-        else:
-            bucket["failed"] += 1
+        _db_inc_policy_stat(req.tenant_id, policy_name, passed=bool(pr.get("passed")))
     return JSONResponse(status_code=201, content=record)
 
 
@@ -1961,7 +2001,7 @@ async def cloud_post_vex_alert(
         "tenant_id": req.tenant_id,
         "created_at": _ts_now(),
     }
-    _vex_alerts[req.tenant_id].append(record)
+    _db_write_vex_alert(req.tenant_id, record)
     return JSONResponse(status_code=201, content=record)
 
 
@@ -2025,7 +2065,7 @@ async def cloud_post_drift_event(
         "tenant_id": req.tenant_id,
         "timestamp": req.timestamp or _ts_now(),
     }
-    _drift_events[req.tenant_id].append(record)
+    _db_write_drift_event(req.tenant_id, record)
     return JSONResponse(status_code=201, content=record)
 
 
@@ -2170,3 +2210,67 @@ def _result_to_dict(r: AttestResult) -> dict[str, Any]:
         },
         "error": r.error,
     }
+
+
+# ── On-demand drift check ─────────────────────────────────────────────────────
+
+
+class DriftCheckRequest(BaseModel):
+    """Request body for ``POST /drift-check``."""
+
+    model_dir: str = Field(
+        description="Absolute path (on the squash server) to the compressed model directory"
+    )
+    bom_path: str = Field(
+        description="Absolute path (on the squash server) to the CycloneDX BOM JSON sidecar"
+    )
+
+
+@app.post("/drift-check")
+async def post_drift_check(req: DriftCheckRequest) -> JSONResponse:
+    """Compare BOM-attested SHA-256 digests against the model directory on disk.
+
+    Drives CMMC / EU AI Act Art. 9 supply-chain integrity verification from
+    CI/CD pipelines.  Both ``model_dir`` and ``bom_path`` must be absolute
+    paths accessible to the squash server process.
+
+    Returns
+    -------
+    JSON with keys ``ok`` (bool), ``files_checked`` (int), ``hits`` (list),
+    and ``summary`` (str).  Each hit has ``path``, ``expected_digest``,
+    ``actual_digest``, ``missing``, and ``tampered`` fields.
+    """
+    from squish.squash.drift import DriftConfig, DriftResult, check_drift
+
+    model_path = Path(req.model_dir).resolve()
+    bom = Path(req.bom_path).resolve()
+
+    if not model_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"model_dir not found: {model_path}")
+    if not bom.is_file():
+        raise HTTPException(status_code=400, detail=f"bom_path not found: {bom}")
+
+    try:
+        result: DriftResult = await asyncio.get_event_loop().run_in_executor(
+            None, check_drift, DriftConfig(bom_path=bom, model_dir=model_path)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"I/O error reading drift inputs: {exc}")
+
+    return JSONResponse(content={
+        "ok": result.ok,
+        "files_checked": result.files_checked,
+        "summary": result.summary,
+        "hits": [
+            {
+                "path": h.path,
+                "expected_digest": h.expected_digest,
+                "actual_digest": h.actual_digest,
+                "missing": h.missing,
+                "tampered": h.tampered,
+            }
+            for h in result.hits
+        ],
+    })

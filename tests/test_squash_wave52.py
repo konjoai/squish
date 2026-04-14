@@ -599,9 +599,9 @@ class TestModuleCount(unittest.TestCase):
         py_files = list(squish_root.rglob("*.py"))
         count = len(py_files)
         self.assertEqual(
-            count, 132,
-            f"Module count is {count}, expected exactly 132. "
+            count, 133,
+            f"Module count is {count}, expected exactly 133. "
             f"W54-56 adds remediate.py, evaluator.py, edge_formats.py, chat.py; "
-            f"W57 adds model_card.py. "
+            f"W57 adds model_card.py + cloud_db.py (SQLite persistence, justified). "
             f"Any new module requires a corresponding deletion or written justification.",
         )

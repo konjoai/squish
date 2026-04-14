@@ -5,7 +5,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 57: squash model-card generator (HuggingFace / EU AI Act / ISO 42001)
+## [Unreleased] — Wave 57: mixed_attn fix, /drift-check REST, SQLite cloud persistence, model-card generator
 
 ### Added
 
@@ -26,8 +26,33 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Writes `squash-model-card-<suffix>.md` alongside existing squash artifacts.
   Exits `0` on success, `1` on user error, `2` on import error.
 
+### Added (continued — W57 completion)
+
+- **`squish/squash/cloud_db.py`** — `CloudDB` class: stdlib-only SQLite
+  write-through backend for the five squash cloud in-memory stores (`tenants`,
+  `inventory`, `vex_alerts`, `drift_events`, `policy_stats`). Controlled by the
+  `SQUASH_CLOUD_DB` environment variable; absent or `:memory:` leaves behaviour
+  unchanged (in-memory only). Thread-safe via `threading.Lock()`. Methods:
+  `upsert_tenant`, `get_tenant`, `all_tenants`, `append_record`,
+  `get_records(limit=N)` (newest-N, returned in ascending order),
+  `count_records`, `inc_policy_stat`, `get_policy_stats`. SQL injection prevented
+  via `_VALID_TABLES` frozenset allowlist.
+- **`squish/squash/api.py` — write-through helpers** — five helper functions
+  (`_db_write_tenant`, `_db_write_inventory`, `_db_write_vex_alert`,
+  `_db_write_drift_event`, `_db_inc_policy_stat`) wired at all five write points
+  in the API. When `SQUASH_CLOUD_DB` is set to a real path, every record is
+  durably persisted across server restarts.
+- **`POST /drift-check`** REST endpoint in `squish/squash/api.py` — accepts
+  `{model_dir, bom_path}`, validates both paths exist, runs `check_drift()` in a
+  thread executor, returns `{ok, files_checked, summary, hits}`. Returns 400 on
+  missing paths.
+
 ### Fixed
 
+- **`squish/cli.py` — mixed_attn calibration** — `args.outlier_threshold` now
+  set to `100.0` in the `--format mixed_attn` block, ensuring the AWQ INT4
+  pass always chooses INT4 for MLP weights (default threshold 20.0 caused
+  MLP outlier ratio ≈28.5 to fall through to BF16).
 - **`squish/squash/api.py`** — `_ts_now()` helper now uses
   `datetime.datetime.now(datetime.UTC)` instead of the deprecated
   `datetime.datetime.utcnow()`, silencing the `DeprecationWarning` that
