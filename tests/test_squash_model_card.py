@@ -642,8 +642,8 @@ class TestModuleCountGate(unittest.TestCase):
         # Exact gate: Wave 57 adds model_card.py → should be 36
         self.assertEqual(
             count,
-            36,
-            msg=f"squash/ has {count} Python files (expected 36 after Wave 57). "
+            37,
+            msg=f"squash/ has {count} Python files (expected 37 after Wave 57 cloud_db.py). "
                 "If you added a file, delete one or file a written exception.",
         )
 

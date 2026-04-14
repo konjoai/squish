@@ -2559,6 +2559,12 @@ def cmd_compress(args):  # pragma: no cover
         ]
         if not getattr(args, "int4_group_size", None):
             args.int4_group_size = 32
+        # Force-disable outlier passthrough for non-attention tensors.  MLP weights in
+        # models like Qwen2.5 have per-row max/mean ratios ≈28.5 which exceeds the
+        # default threshold (20.0) and silently falls them back to BF16.  For
+        # mixed_attn the intent is to INT4-quantize ALL non-attention tensors; raising
+        # the ceiling to 100.0 ensures AWQ is applied regardless of outlier ratio.
+        args.outlier_threshold = 100.0
         _compress_format = "int4"   # use the standard INT4 pipeline
     elif _compress_format == "int8":
         # Explicit int8: override any --int4 flag
