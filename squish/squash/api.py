@@ -344,6 +344,23 @@ def _db_read_compliance_overview() -> dict:
     }
 
 
+def _db_read_vex_feed() -> dict:
+    """Return cross-tenant VEX feed from SQLite or in-memory stores."""
+    if _db is not None:
+        return _db.read_vex_feed()
+    # In-memory fallback: iterate registered tenants.
+    tenant_ids = list(_tenants.keys())
+    all_alerts: list[dict[str, Any]] = []
+    for tid in tenant_ids:
+        for alert in _db_read_vex_alerts(tid):
+            all_alerts.append({"tenant_id": tid, **alert})
+    return {
+        "total_alerts": len(all_alerts),
+        "tenant_count": len(tenant_ids),
+        "alerts": all_alerts,
+    }
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2547,6 +2564,17 @@ async def cloud_get_compliance_overview() -> JSONResponse:
     all AI deployments in the organisation).
     """
     return JSONResponse(content=_db_read_compliance_overview())
+
+
+@app.get("/cloud/vex-feed")  # W65
+async def cloud_get_vex_feed() -> JSONResponse:
+    """Return hosted cross-tenant VEX advisory feed.
+
+    EU AI Act Art. 9 / ISO 42001 §8.4: operators must maintain a live,
+    machine-readable feed of known-vulnerability advisories (VEX) across
+    the full model inventory for real-time supply-chain transparency.
+    """
+    return JSONResponse(content=_db_read_vex_feed())
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:

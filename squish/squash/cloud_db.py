@@ -378,6 +378,34 @@ class CloudDB:
             "top_at_risk": at_risk,
         }
 
+    # ── W65 VEX feed ───────────────────────────────────────────────────────────
+
+    def read_vex_feed(self) -> dict:
+        """Return cross-tenant VEX advisory feed across all registered tenants.
+
+        Returns: {
+            total_alerts: int,
+            tenant_count: int,
+            alerts: [{tenant_id, ...alert_record_fields}]
+        }
+        EU AI Act Art. 9 transparency: operators must retain a live feed of
+        known-vulnerability advisories (VEX) across the full model inventory.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT tenant_id FROM tenants"
+            ).fetchall()
+        tenants = [row["tenant_id"] for row in rows]
+        all_alerts: list[dict[str, Any]] = []
+        for tid in tenants:
+            for alert in self.read_vex_alerts(tid):
+                all_alerts.append({"tenant_id": tid, **alert})
+        return {
+            "total_alerts": len(all_alerts),
+            "tenant_count": len(tenants),
+            "alerts": all_alerts,
+        }
+
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
 

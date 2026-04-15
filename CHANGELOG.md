@@ -5,6 +5,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 65: Hosted cross-tenant VEX feed
+
+### Added
+
+- **`CloudDB.read_vex_feed()`** — cross-tenant VEX advisory feed aggregating all per-tenant alerts; returns `{total_alerts, tenant_count, alerts: [{tenant_id, ...fields}]}`.
+- **`GET /cloud/vex-feed`** — cross-tenant endpoint; always HTTP 200; addresses EU AI Act Art. 9 / ISO 42001 §8.4 supply-chain transparency obligation.
+- **`_db_read_vex_feed()`** helper in `squash/api.py` with SQLite + in-memory fallback.
+- **`tests/test_squash_w65.py`** — 16 tests (8 `TestCloudDBVexFeed` unit + 8 `TestCloudAPIVexFeedEndpoint` integration).
+
+---
+
 ## [Unreleased] — Wave 64: Cross-tenant compliance overview
 
 ### Added
