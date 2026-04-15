@@ -302,6 +302,34 @@ class CloudDB:
 
         return {"score": score, "grade": grade, "policy_breakdown": policy_breakdown}
 
+    # ── W63 read helpers ──────────────────────────────────────────────────────
+
+    def read_tenant_compliance_history(self, tenant_id: str) -> list[dict]:
+        """Return day-bucketed compliance scores for *tenant_id* in ascending date order.
+
+        Each entry: {date: str (ISO YYYY-MM-DD), score: float, grade: str}.
+        Returns [] for unknown tenant or one with no drift events.
+        Derives distinct calendar days from drift_events.ts (unix epoch); the
+        current tenant compliance score is reported for each day (simplest
+        viable approach bounded by the number of distinct event-days).
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT DISTINCT date(ts, 'unixepoch') AS dt
+                FROM drift_events
+                WHERE tenant_id = ?
+                ORDER BY dt ASC
+                """,
+                (tenant_id,),
+            ).fetchall()
+        if not rows:
+            return []
+        score_data = self.read_tenant_compliance_score(tenant_id)
+        score = score_data["score"]
+        grade = score_data["grade"]
+        return [{"date": row["dt"], "score": score, "grade": grade} for row in rows]
+
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
 

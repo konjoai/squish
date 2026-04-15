@@ -5,6 +5,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 63: Tenant compliance-history endpoint
+
+### Added
+
+- **`CloudDB.read_tenant_compliance_history(tenant_id)`** — returns day-bucketed compliance scores as `[{date, score, grade}]` sorted ascending; derives distinct calendar days from `drift_events.ts` (unix epoch); empty list for tenants with no events.
+- **`GET /cloud/tenants/{tenant_id}/compliance-history`** — time-series trend endpoint; 404 for unknown tenant, 200 + `{tenant_id, history: [{date, score, grade}, ...]}` sorted ascending by date.
+- **`_db_read_tenant_compliance_history()`** helper in `squash/api.py` with SQLite + in-memory fallback; in-memory path groups by `event["timestamp"][:10]` or `event["date"][:10]`.
+- **`tests/test_squash_w63.py`** — 16 tests (8 `TestCloudDBTenantComplianceHistory` unit + 8 `TestCloudAPIComplianceHistoryEndpoint` integration).
+
+---
+
 ## [Unreleased] — Wave 62: Tenant compliance-score endpoint
 
 ### Added

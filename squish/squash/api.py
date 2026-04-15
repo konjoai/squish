@@ -287,6 +287,28 @@ def _db_read_tenant_compliance_score(tenant_id: str) -> dict:
     return {"score": score, "grade": grade, "policy_breakdown": policy_breakdown}
 
 
+def _db_read_tenant_compliance_history(tenant_id: str) -> list[dict]:
+    """Return day-bucketed compliance history from SQLite or in-memory drift events."""
+    if _db is not None:
+        return _db.read_tenant_compliance_history(tenant_id)
+    # In-memory fallback: group drift events by their embedded timestamp/date field.
+    events = list(_drift_events.get(tenant_id, []))
+    if not events:
+        return []
+    dates: set[str] = set()
+    for e in events:
+        raw = e.get("timestamp") or e.get("date") or ""
+        day = str(raw)[:10]
+        if len(day) == 10:  # plausible YYYY-MM-DD prefix
+            dates.add(day)
+    if not dates:
+        return []
+    score_data = _db_read_tenant_compliance_score(tenant_id)
+    score = score_data["score"]
+    grade = score_data["grade"]
+    return [{"date": d, "score": score, "grade": grade} for d in sorted(dates)]
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2455,6 +2477,25 @@ async def cloud_get_tenant_compliance_score(tenant_id: str) -> JSONResponse:
         raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
     result = _db_read_tenant_compliance_score(tenant_id)
     return JSONResponse(content={"tenant_id": tenant_id, **result})
+
+
+@app.get("/cloud/tenants/{tenant_id}/compliance-history")  # W63
+async def cloud_get_tenant_compliance_history(tenant_id: str) -> JSONResponse:
+    """Return a time-bucketed compliance history for *tenant_id*.
+
+    Each history entry represents a calendar day on which at least one drift
+    event was recorded, paired with the tenant's compliance score and letter
+    grade.  Entries are sorted ascending by date so a client can render a
+    trend line.  Returns an empty ``history`` list for a tenant with no
+    drift events.
+
+    Addresses NIST AI RMF Govern 1.7 (quantified risk metrics over time) and
+    EU AI Act Art. 9 obligation to maintain auditable longitudinal risk records.
+    """
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    history = _db_read_tenant_compliance_history(tenant_id)
+    return JSONResponse(content={"tenant_id": tenant_id, "history": history})
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:
