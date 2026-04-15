@@ -135,6 +135,18 @@ _vertex_results: defaultdict[str, deque] = defaultdict(
     lambda: deque(maxlen=_VERTEX_RESULTS_PER_TENANT)
 )
 
+# Azure DevOps attestation results: tenant_id → deque[result dict]  (W67)
+_ADO_RESULTS_PER_TENANT = int(os.getenv("SQUASH_ADO_RESULTS_PER_TENANT", "500"))
+_ado_results: defaultdict[str, deque] = defaultdict(
+    lambda: deque(maxlen=_ADO_RESULTS_PER_TENANT)
+)
+
+# Azure DevOps attestation results: tenant_id → deque[result dict]  (W67)
+_ADO_RESULTS_PER_TENANT = int(os.getenv("SQUASH_ADO_RESULTS_PER_TENANT", "500"))
+_ado_results: defaultdict[str, deque] = defaultdict(
+    lambda: deque(maxlen=_ADO_RESULTS_PER_TENANT)
+)
+
 # ── SQLite persistence (W57) ─────────────────────────────────────────────────
 # Optional write-through to a SQLite file.  Set SQUASH_CLOUD_DB=/path/to/db to
 # enable durability.  When absent (default) all stores remain in-memory only.
@@ -389,6 +401,30 @@ def _db_read_vertex_results(tenant_id: str) -> list[dict[str, Any]]:
     if _db is not None:
         return _db.read_vertex_results(tenant_id)
     return [dict(r) for r in _vertex_results[tenant_id]]
+
+
+def _db_append_ado_result(
+    tenant_id: str,
+    pipeline_run_id: str,
+    passed: bool,
+    variables: dict[str, Any] | None = None,
+) -> None:
+    """Store an Azure DevOps attestation result in SQLite or in-memory store."""
+    record: dict[str, Any] = {
+        "pipeline_run_id": pipeline_run_id,
+        "passed": passed,
+        "variables": variables,
+    }
+    _ado_results[tenant_id].appendleft(record)
+    if _db is not None:
+        _db.append_ado_result(tenant_id, pipeline_run_id, passed, variables)
+
+
+def _db_read_ado_results(tenant_id: str) -> list[dict[str, Any]]:
+    """Return Azure DevOps attestation results for *tenant_id* from SQLite or in-memory."""
+    if _db is not None:
+        return _db.read_ado_results(tenant_id)
+    return [dict(r) for r in _ado_results[tenant_id]]
 
 
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
@@ -2641,6 +2677,43 @@ async def cloud_get_vertex_results(tenant_id: str) -> JSONResponse:
     where each entry has ``{model_resource_name, passed, labels, ts}``.
     """
     results = _db_read_vertex_results(tenant_id)
+    return JSONResponse(content={"tenant_id": tenant_id, "results": results})
+
+
+@app.post("/cloud/tenants/{tenant_id}/ado-result", status_code=201)  # W67
+async def cloud_post_ado_result(
+    tenant_id: str,
+    body: dict[str, Any],
+) -> JSONResponse:
+    """Ingest an Azure DevOps pipeline attestation result for *tenant_id*.
+
+    Request body fields:
+    - ``pipeline_run_id`` (str, required): ADO pipeline run identifier.
+    - ``passed`` (bool, required): whether the attestation pipeline run passed.
+    - ``variables`` (dict, optional): pipeline output variables to store.
+
+    Returns ``{"status": "ok", "tenant_id": …, "passed": …}`` on success.
+    """
+    run_id = body.get("pipeline_run_id")
+    if not run_id:
+        raise HTTPException(status_code=422, detail="pipeline_run_id is required")
+    passed = bool(body.get("passed", False))
+    variables: dict[str, Any] | None = body.get("variables") or None
+    _db_append_ado_result(tenant_id, str(run_id), passed, variables)
+    return JSONResponse(
+        content={"status": "ok", "tenant_id": tenant_id, "passed": passed},
+        status_code=201,
+    )
+
+
+@app.get("/cloud/tenants/{tenant_id}/ado-results")  # W67
+async def cloud_get_ado_results(tenant_id: str) -> JSONResponse:
+    """Return all stored Azure DevOps attestation results for *tenant_id*.
+
+    Newest result first. Returns ``{"tenant_id": …, "results": […]}``
+    where each entry has ``{pipeline_run_id, passed, variables, ts}``.
+    """
+    results = _db_read_ado_results(tenant_id)
     return JSONResponse(content={"tenant_id": tenant_id, "results": results})
 
 

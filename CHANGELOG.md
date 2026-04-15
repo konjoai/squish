@@ -5,6 +5,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 67: Azure DevOps attestation result ingest
+
+### Added
+- `CloudDB.append_ado_result()` / `read_ado_results()` — durable per-tenant Azure DevOps
+  pipeline attestation records (`pipeline_run_id`, `passed`, optional `variables` JSON blob).
+- `POST /cloud/tenants/{tenant_id}/ado-result` (201) — ingest an ADO pipeline outcome.
+- `GET  /cloud/tenants/{tenant_id}/ado-results` (200) — retrieve ordered history.
+- In-memory `_ado_results` store with `SQUASH_ADO_RESULTS_PER_TENANT` ceiling (default 500).
+- `tests/test_squash_w67.py` — 16 tests (8 CloudDB unit + 8 API integration), all passing.
+
+---
+
 ## [Unreleased] — Wave 66: GCP Vertex AI attestation result ingest
 
 ### Added

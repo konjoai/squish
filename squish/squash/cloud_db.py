@@ -79,10 +79,20 @@ CREATE TABLE IF NOT EXISTS vertex_results (
     ts                  REAL    NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_vertex_tenant ON vertex_results (tenant_id, id);
+
+CREATE TABLE IF NOT EXISTS ado_results (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id       TEXT    NOT NULL,
+    pipeline_run_id TEXT    NOT NULL,
+    passed          INTEGER NOT NULL,
+    variables       TEXT,
+    ts              REAL    NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ado_tenant ON ado_results (tenant_id, id);
 """
 
 # Valid table names — guard against SQL injection via the table parameter.
-_VALID_TABLES = frozenset({"inventory", "vex_alerts", "drift_events", "vertex_results"})
+_VALID_TABLES = frozenset({"inventory", "vex_alerts", "drift_events", "vertex_results", "ado_results"})
 
 # Compliant threshold — tenant scores >= this are counted as compliant (W64).
 _COMPLIANCE_THRESHOLD = 80.0
@@ -468,6 +478,59 @@ class CloudDB:
                 "model_resource_name": row["model_resource_name"],
                 "passed": bool(row["passed"]),
                 "labels": json.loads(row["labels"]) if row["labels"] else None,
+                "ts": row["ts"],
+            })
+        return results
+
+    def append_ado_result(
+        self,
+        tenant_id: str,
+        pipeline_run_id: str,
+        passed: bool,
+        variables: dict | None = None,
+    ) -> None:
+        """Persist an Azure DevOps pipeline attestation result for *tenant_id*.
+
+        Parameters
+        ----------
+        tenant_id:
+            Squash tenant identifier.
+        pipeline_run_id:
+            Azure DevOps pipeline run ID (string or numeric, coerced to str).
+        passed:
+            ``True`` when the attestation pipeline run succeeded.
+        variables:
+            Optional dict of pipeline variables / output variables.
+        """
+        variables_json = json.dumps(variables) if variables else None
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO ado_results (tenant_id, pipeline_run_id, passed, variables)"
+                " VALUES (?, ?, ?, ?)",
+                (tenant_id, str(pipeline_run_id), int(passed), variables_json),
+            )
+            self._conn.commit()
+
+    def read_ado_results(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Return all Azure DevOps attestation results for *tenant_id*, newest first.
+
+        Each entry contains ``{pipeline_run_id, passed, variables, ts}``.
+        ``variables`` is a ``dict`` (or ``None`` if none were stored).
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT pipeline_run_id, passed, variables, ts"
+                "  FROM ado_results"
+                " WHERE tenant_id = ?"
+                " ORDER BY id DESC",
+                (tenant_id,),
+            ).fetchall()
+        results = []
+        for row in rows:
+            results.append({
+                "pipeline_run_id": row["pipeline_run_id"],
+                "passed": bool(row["passed"]),
+                "variables": json.loads(row["variables"]) if row["variables"] else None,
                 "ts": row["ts"],
             })
         return results
