@@ -1,9 +1,22 @@
-# Wave 60 Session Prompt
+# Wave 61 Session Prompt
 
 **Session type:** Code session. Single wave, one commit.
-**State when written:** Wave 59 complete. 3977 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
+**State when written:** Wave 60 complete. ~3993 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
 
 ---
+
+## W60 COMPLETE ✅
+
+| Task | Status |
+|---|---|
+| `CloudDB.read_drift_events(tenant_id)` | ✅ |
+| `CloudDB.read_tenant_policy_stats(tenant_id)` | ✅ |
+| `_db_read_drift_events/policy_stats()` helpers in api.py | ✅ |
+| `GET /cloud/tenants/{id}/drift-events` endpoint | ✅ |
+| `GET /cloud/tenants/{id}/policy-stats` endpoint | ✅ |
+| `tests/test_squash_w60.py` — 16/16 passing | ✅ |
+| Fix: `_C` NameError in server.py (hoisted import) | ✅ |
+| Fix: server.py line count gate (4743 ≤ ceiling) | ✅ |
 
 ## W59 COMPLETE ✅
 
@@ -50,101 +63,110 @@ Still pending. Run before any AQLM-dependent work. Waiver format documented in p
 
 ---
 
-## W60 — Tenant-scoped drift-events + policy-stats reads
+## W61 — Tenant summary endpoint
 
-**Purpose:** Complete the per-tenant read surface. Post-W59 the only missing tenant-scoped reads are `drift_events` and per-tenant `policy_stats`. The aggregate `GET /cloud/policy-stats` (W58) exists; per-tenant and drift-events do not.
+**Purpose:** Add `GET /cloud/tenants/{tenant_id}/summary` — a single aggregate read that collects inventory count, vex-alert count, drift-event count, and policy pass/fail stats for a tenant in one call. This is the "boardroom at a glance" endpoint: clients no longer need to make four separate round-trips for a full compliance posture view.
 
-| Existing | W60 adds |
+Per-tenant reads are now complete through W60. W61 closes the read surface by providing a convenience aggregate on top of the existing four CloudDB read methods.
+
+| Existing per-tenant reads | W61 adds |
 |---|---|
-| `GET /cloud/tenants/{id}/inventory` (W58) | `GET /cloud/tenants/{id}/drift-events` |
-| `GET /cloud/tenants/{id}/vex-alerts` (W58) | `GET /cloud/tenants/{id}/policy-stats` |
-| `GET /cloud/policy-stats` (W58, aggregate) | — |
+| `GET /cloud/tenants/{id}/inventory` (W58) | `GET /cloud/tenants/{id}/summary` |
+| `GET /cloud/tenants/{id}/vex-alerts` (W58) | — |
+| `GET /cloud/tenants/{id}/drift-events` (W60) | — |
+| `GET /cloud/tenants/{id}/policy-stats` (W60) | — |
 
 ---
 
-### Methods to add in `squish/squash/cloud_db.py`
+### Method to add in `squish/squash/cloud_db.py`
 
 ```python
-def read_drift_events(self, tenant_id: str) -> list[dict]:
-    """Return all drift_events rows for *tenant_id*.  Returns [] on fresh DB."""
+def read_tenant_summary(self, tenant_id: str) -> dict:
+    """Return aggregated stats for *tenant_id* across all data tables.
 
-def read_tenant_policy_stats(self, tenant_id: str) -> dict:
-    """Return policy evaluation counts for *tenant_id* keyed by policy_id.
-    Returns {} on fresh DB or unknown tenant."""
+    Keys: inventory_count, vex_alert_count, drift_event_count, policy_stats.
+    Returns zero-counts for an unknown or empty tenant — no raise.
+    Composes the four existing per-tenant read methods.
+    """
 ```
 
-Pattern: match `read_inventory` / `read_vex_alerts` (W58). Handle fresh-DB (missing table) gracefully — return empty container, no raise.
+Pattern: call `read_inventory`, `read_vex_alerts`, `read_drift_events`, `read_tenant_policy_stats` and
+aggregate. Handle fresh-DB / unknown tenant gracefully — return `{"inventory_count": 0, "vex_alert_count": 0, "drift_event_count": 0, "policy_stats": {}}`.
 
 ---
 
-### Endpoints to add in `squish/squash/api.py`
+### Endpoint to add in `squish/squash/api.py`
 
 ```
-GET /cloud/tenants/{tenant_id}/drift-events
-GET /cloud/tenants/{tenant_id}/policy-stats
+GET /cloud/tenants/{tenant_id}/summary
 ```
 
-- Both require the tenant to exist — raise `HTTPException(404)` for unknown `tenant_id`.
-- Both return JSON (list and dict respectively) with HTTP 200.
-- Both backed by the new CloudDB read methods + in-memory fallback pattern from W58.
+- Requires the tenant to exist — raise `HTTPException(404)` for unknown `tenant_id`.
+- Returns HTTP 200 JSON with fields: `tenant_id`, `tenant` (full tenant record), `inventory_count`, `vex_alert_count`, `drift_event_count`, `policy_stats`.
+- Backed by new `_db_read_tenant_summary(tenant_id)` helper + in-memory fallback pattern from W58/W60.
 
-Helper functions to add (pattern: `_db_read_inventory` / `_db_read_vex_alerts`):
+Helper function to add (pattern: `_db_read_drift_events` / `_db_read_tenant_policy_stats`):
 
 ```python
-def _db_read_drift_events(tenant_id: str) -> list[dict]: ...
-def _db_read_tenant_policy_stats(tenant_id: str) -> dict: ...
+def _db_read_tenant_summary(tenant_id: str) -> dict: ...
+```
+
+In-memory fallback (when `_db is None`):
+```python
+{
+    "inventory_count": len(_inventory[tenant_id]),
+    "vex_alert_count": len(_vex_alerts[tenant_id]),
+    "drift_event_count": len(_drift_events[tenant_id]),
+    "policy_stats": dict(_policy_stats[tenant_id]),
+}
 ```
 
 ---
 
-### Tests — `tests/test_squash_w60.py` (new file)
+### Tests — `tests/test_squash_w61.py` (new file)
 
-**`TestCloudDBDriftEvents`** (4 tests):
-1. `test_read_drift_events_returns_empty_on_fresh_db` — fresh `:memory:` DB → `[]`
-2. `test_read_drift_events_returns_data_after_write` — write via `POST /drift-check`, read back, assert content matches
-3. `test_read_drift_events_unknown_tenant_returns_empty` — unknown tenant_id → `[]` (CloudDB level, no 404 here)
-4. `test_read_drift_events_isolates_by_tenant` — two tenants, write to one, other returns `[]`
+**`TestCloudDBTenantSummary`** (8 tests):
+1. `test_summary_returns_zero_counts_on_fresh_db` — fresh `:memory:` DB → all counts 0, policy_stats `{}`
+2. `test_summary_inventory_count_after_write` — append 2 inventory records, inventory_count=2
+3. `test_summary_vex_alert_count_after_write` — append 3 vex alerts, vex_alert_count=3
+4. `test_summary_drift_event_count_after_write` — append 2 drift events, drift_event_count=2
+5. `test_summary_policy_stats_included` — write policy stats, verify non-empty dict in summary
+6. `test_summary_isolates_by_tenant` — two tenants, writes to tenant A only; tenant B still returns zeros
+7. `test_summary_has_required_keys` — assert summary dict has all four required keys
+8. `test_summary_unknown_tenant_returns_zeros` — unknown tenant_id → zeros, no raise (DB-layer only)
 
-**`TestCloudDBTenantPolicyStats`** (4 tests):
-1. `test_read_tenant_policy_stats_returns_empty_on_fresh_db` — fresh DB → `{}`
-2. `test_read_tenant_policy_stats_returns_data_after_write` — write via `POST /cloud/policy-eval`, read back
-3. `test_read_tenant_policy_stats_unknown_tenant_returns_empty` — unknown tenant → `{}`
-4. `test_read_tenant_policy_stats_isolates_by_tenant` — two tenants, assert no cross-contamination
+**`TestCloudAPITenantSummaryEndpoint`** (8 tests):
+1. `test_returns_200_for_known_tenant` — create tenant, GET summary → HTTP 200
+2. `test_response_contains_tenant_record` — verify `tenant.id` present in response `tenant` field
+3. `test_all_counts_zero_on_new_tenant` — new tenant (no data) → all counts 0
+4. `test_inventory_count_after_register` — POST `/cloud/inventory/register`, GET summary → inventory_count=1
+5. `test_vex_alert_count_after_post` — POST `/cloud/vex/alert`, GET summary → vex_alert_count=1
+6. `test_drift_event_count_after_post` — POST `/cloud/drift/event`, GET summary → drift_event_count=1
+7. `test_unknown_tenant_returns_404` — no tenant created, GET summary → 404
+8. `test_isolates_by_tenant` — two tenants, data only on tenant A; tenant B counts remain 0
 
-**`TestCloudAPIDriftEventsEndpoint`** (4 tests):
-1. `test_returns_empty_list_for_known_tenant` — create tenant, GET drift-events → `[]`, HTTP 200
-2. `test_returns_data_after_drift_check` — create tenant, POST drift-check, GET drift-events → data present
-3. `test_unknown_tenant_returns_404` — no create, GET drift-events → 404
-4. `test_isolates_by_tenant` — two tenants, drift-check on one, other returns `[]`
-
-**`TestCloudAPITenantPolicyStatsEndpoint`** (4 tests):
-1. `test_returns_empty_dict_for_known_tenant` — create tenant, GET policy-stats → `{}`, HTTP 200
-2. `test_returns_data_after_policy_eval` — create tenant, POST policy-eval, GET policy-stats → data present
-3. `test_unknown_tenant_returns_404` — no create, GET policy-stats → 404
-4. `test_isolates_by_tenant` — two tenants, policy-eval on one, other returns `{}`
-
-**Total: 16 new tests**. Suite target: **~3993 passing** after W60.
+**Total: 16 new tests.** Suite target: **~4009 passing** after W61.
 
 ---
 
 ## Ship Gate — Done When (all 5 required)
 
-1. **Tests**: `python3 -m pytest tests/ --tb=no -q` → 0 failures. `tests/test_squash_w60.py` included, 16 tests passing.
+1. **Tests**: `python3 -m pytest tests/ --tb=no -q` → 0 failures. `tests/test_squash_w61.py` included, 16 tests passing.
 2. **Memory**: No new in-memory structures introduced — no RSS impact.
 3. **CLI**: No new CLI flags. No `--help` update needed.
-4. **CHANGELOG**: Wave 60 entry prepended in `CHANGELOG.md`.
-5. **Module count**: `find squish -name "*.py" | grep -v __pycache__ | grep -v experimental | wc -l` ≤ 125. W60 adds no new production modules (test file only).
+4. **CHANGELOG**: Wave 61 entry prepended in `CHANGELOG.md`.
+5. **Module count**: `find squish -name "*.py" | grep -v __pycache__ | grep -v experimental | wc -l` ≤ 125. W61 adds no new production modules (test file only).
 
 ---
 
 ## Key Files
 
-| File | W60 Action |
+| File | W61 Action |
 |---|---|
-| `squish/squash/cloud_db.py` | Add `read_drift_events()` + `read_tenant_policy_stats()` (pattern: W58 read methods) |
-| `squish/squash/api.py` | Add `_db_read_drift_events/policy_stats` helpers + 2 GET endpoints |
-| `tests/test_squash_w60.py` | New file — 16 tests (CloudDB×8, API×8) |
-| `CHANGELOG.md` | Prepend Wave 60 entry |
+| `squish/squash/cloud_db.py` | Add `read_tenant_summary()` (composes W58+W60 read methods) |
+| `squish/squash/api.py` | Add `_db_read_tenant_summary()` helper + `GET /cloud/tenants/{id}/summary` endpoint |
+| `tests/test_squash_w61.py` | New file — 16 tests (CloudDB×8, API×8) |
+| `CHANGELOG.md` | Prepend Wave 61 entry |
 
 ---
 
@@ -165,9 +187,10 @@ def _db_read_tenant_policy_stats(tenant_id: str) -> dict: ...
 ## Context Markers
 
 - **squash module path:** `squish/squash/`
-- **server.py ceiling:** 4743 lines — W60 routes live in `squash/api.py`, no server.py changes needed
-- **SQUASH_CLOUD_DB:** default `:memory:` — all existing 3977 tests pass with in-memory behavior
-- **drift_events table:** written by `POST /drift-check` (W57); no read endpoint yet
-- **policy_stats table:** written by `POST /cloud/policy-eval`; aggregate read exists (W58); per-tenant read missing
-- **Commit scope:** `feat(squash): W60 tenant drift-events + policy-stats reads`
+- **server.py ceiling:** 4743 lines — W61 routes live in `squash/api.py`, no server.py changes needed
+- **SQUASH_CLOUD_DB:** default `:memory:` — all existing ~3993 tests pass with in-memory behavior
+- **CloudDB current method count:** 16 methods across 5 data types; W61 adds `read_tenant_summary()`
+- **Per-tenant endpoint surface post-W60:** inventory, vex-alerts, drift-events, policy-stats; W61 adds summary
+- **`_rate_window`:** import + `.clear()` required in every API test class fixture to avoid 429s in full-suite runs
+- **Commit scope:** `feat(squash): W61 tenant summary endpoint`
 
