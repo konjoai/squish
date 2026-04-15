@@ -427,6 +427,25 @@ def _db_read_ado_results(tenant_id: str) -> list[dict[str, Any]]:
     return [dict(r) for r in _ado_results[tenant_id]]
 
 
+def _db_read_attestation_score(tenant_id: str) -> dict[str, Any]:
+    """Return combined attestation pass/fail score for *tenant_id*.
+
+    Aggregates GCP Vertex AI (W66) and Azure DevOps (W67) results.  Falls back
+    to the in-memory deques when SQLite is not configured.
+    """
+    if _db is not None:
+        return _db.read_attestation_score(tenant_id)
+    # In-memory fallback: derive from deques.
+    all_rows: list[dict[str, Any]] = (
+        list(_vertex_results[tenant_id]) + list(_ado_results[tenant_id])
+    )
+    total = len(all_rows)
+    passed = sum(1 for r in all_rows if r.get("passed"))
+    failed = total - passed
+    pass_rate = round(passed / total, 4) if total > 0 else 0.0
+    return {"total": total, "passed": passed, "failed": failed, "pass_rate": pass_rate}
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2715,6 +2734,22 @@ async def cloud_get_ado_results(tenant_id: str) -> JSONResponse:
     """
     results = _db_read_ado_results(tenant_id)
     return JSONResponse(content={"tenant_id": tenant_id, "results": results})
+
+
+@app.get("/cloud/tenants/{tenant_id}/attestation-score")  # W68
+async def cloud_get_attestation_score(tenant_id: str) -> JSONResponse:
+    """Return combined attestation pass/fail score for *tenant_id*.
+
+    Aggregates GCP Vertex AI (W66) and Azure DevOps (W67) attestation results.
+    Returns ``{tenant_id, total, passed, failed, pass_rate}`` where
+    ``pass_rate`` is 0.0 when no attestations are recorded.
+
+    Supports EU AI Act Art. 9 supply-chain integrity continuous-assessment
+    obligations: operators can poll this endpoint to verify that all upstream
+    CI/CD and ML-platform pipelines are passing attestation checks.
+    """
+    score = _db_read_attestation_score(tenant_id)
+    return JSONResponse(content={"tenant_id": tenant_id, **score})
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:

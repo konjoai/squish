@@ -535,6 +535,30 @@ class CloudDB:
             })
         return results
 
+    def read_attestation_score(self, tenant_id: str) -> dict[str, Any]:
+        """Return combined pass/fail counts across all attestation sources for *tenant_id*.
+
+        Aggregates vertex_results (W66) and ado_results (W67).  Returns
+        ``{total, passed, failed, pass_rate}`` where ``pass_rate`` is 0.0 when
+        ``total == 0``.  Supports EU AI Act Art. 9 supply-chain integrity audits.
+        """
+        with self._lock:
+            v_row = self._conn.execute(
+                "SELECT COUNT(*) AS c, SUM(passed) AS ps"
+                "  FROM vertex_results WHERE tenant_id = ?",
+                (tenant_id,),
+            ).fetchone()
+            a_row = self._conn.execute(
+                "SELECT COUNT(*) AS c, SUM(passed) AS ps"
+                "  FROM ado_results WHERE tenant_id = ?",
+                (tenant_id,),
+            ).fetchone()
+        total = int(v_row["c"] or 0) + int(a_row["c"] or 0)
+        passed = int(v_row["ps"] or 0) + int(a_row["ps"] or 0)
+        failed = total - passed
+        pass_rate = round(passed / total, 4) if total > 0 else 0.0
+        return {"total": total, "passed": passed, "failed": failed, "pass_rate": pass_rate}
+
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
 

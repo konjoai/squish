@@ -5,6 +5,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 68: Per-tenant combined attestation score
+
+### Added
+- `CloudDB.read_attestation_score(tenant_id)` — aggregates `vertex_results` (W66) and
+  `ado_results` (W67) into `{total, passed, failed, pass_rate}`.  Returns zeros for
+  unknown tenants; `pass_rate` is rounded to 4 decimal places.
+- `_db_read_attestation_score()` internal helper with SQLite + in-memory fallback.
+- `GET /cloud/tenants/{tenant_id}/attestation-score` (200) — returns `{tenant_id, total,
+  passed, failed, pass_rate}`.  Always 200; no data returns `pass_rate=0.0`.
+  Supports EU AI Act Art. 9 supply-chain integrity audits.
+- 16 new tests in `tests/test_squash_w68.py` (8 unit + 8 API integration).
+
+---
+
 ## [Unreleased] — Wave 67: Azure DevOps attestation result ingest
 
 ### Added
