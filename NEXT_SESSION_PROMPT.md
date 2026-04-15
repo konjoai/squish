@@ -1,9 +1,20 @@
-# Wave 59 Session Prompt
+# Wave 60 Session Prompt
 
 **Session type:** Code session. Single wave, one commit.
-**State when written:** Wave 58 complete. 3962 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
+**State when written:** Wave 59 complete. 3977 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
 
 ---
+
+## W59 COMPLETE ✅
+
+| Task | Status |
+|---|---|
+| `CloudDB.delete_tenant(tenant_id)` — cascade DELETE tenants + all data tables | ✅ |
+| `TenantUpdateRequest` Pydantic model (optional name / plan / contact_email) | ✅ |
+| `_db_delete_tenant()` helper — in-memory pop × 5 stores + CloudDB cascade | ✅ |
+| `PATCH /cloud/tenant/{tenant_id}` — delta-merge, 404 for unknown, updates `updated_at` | ✅ |
+| `DELETE /cloud/tenant/{tenant_id}` — 204 No Content, 404 for unknown, cascade-clears all data | ✅ |
+| `tests/test_squash_w59.py` — 15/15 passing (CloudDB×5, PATCH×5, DELETE×5) | ✅ |
 
 ## W58 COMPLETE ✅
 
@@ -33,135 +44,107 @@
 
 ---
 
-## PRE-WORK: AQLM lm_eval gate (gates Option A)
+## PRE-WORK: AQLM lm_eval gate (carries forward from W58)
 
-Run this **before** starting Option A. If hardware unavailable, use the waiver format below.
-
-```bash
-# 1. Compress (~5-10 min on M3):
-squish compress --format aqlm ~/.cache/huggingface/hub/Qwen2.5-1.5B-Instruct --output /tmp/qwen2.5-1.5b-aqlm
-
-# 2. Run lm_eval (~20 min):
-python3 scripts/squish_lm_eval.py --model-dir /tmp/qwen2.5-1.5b-aqlm --tasks arc_easy --limit 200
-
-# 3. Compare vs baseline
-# INT4 AWQ baseline:  70.8% arc_easy (Qwen2.5-1.5B, W42 canonical)
-# INT3 baseline:      67.2% arc_easy (−3.4pp — "efficient" tier)
-# AQLM gate:          ≥ 64.6% arc_easy (< 6pp delta vs INT4)
-# Naive INT2 floor:   ~27-30% (incoherent — AQLM must crush this)
-```
-
-**Gate pass**: ≥ 64.6% arc_easy → Option A proceeds. Record result in CLAUDE.md quantization table. Promote AQLM to "ultra" catalog tier.
-
-**Gate fail**: Document result in CLAUDE.md. Keep AQLM experimental. Skip Option A this wave.
-
-**Waiver format** (if hardware unavailable — add to commit message):
-```
-# lm_eval-waiver: <reason hardware not available>
-# expected-delta: ~-4 to -6pp vs INT4 (extrapolated from INT3 curve)
-# validation-run: queued for next session with hardware
-```
+Still pending. Run before any AQLM-dependent work. Waiver format documented in prior waves.
 
 ---
 
-## W58 Option A — AQLM loader wiring (conditional on lm_eval gate ≥ 64.6%)
+## W60 — Tenant-scoped drift-events + policy-stats reads
 
-**Purpose:** Wire `squish/loader.py` to detect `__aqlm_idx.npy` → route through `aqlm_dequantize` at load time. This unblocks `squish serve` with AQLM models.
+**Purpose:** Complete the per-tenant read surface. Post-W59 the only missing tenant-scoped reads are `drift_events` and per-tenant `policy_stats`. The aggregate `GET /cloud/policy-stats` (W58) exists; per-tenant and drift-events do not.
 
-### Files to change
-
-**`squish/loader.py`** — AQLM detection
-```python
-# In the model-dir detection logic, add:
-aqlm_idx = os.path.join(model_dir, "__aqlm_idx.npy")
-if os.path.exists(aqlm_idx):
-    from squish.quant.aqlm import aqlm_dequantize
-    return aqlm_dequantize(model_dir)
-```
-Pattern: match existing INT3/INT4 detection blocks already in this file.
-
-**`squish/quant/aqlm.py`** — `aqlm_dequantize` function (may already exist; verify first)
-- Loads `__aqlm_idx.npy` + `__aqlm_cb.npy`
-- Reconstructs weight matrices
-- Returns model in a form compatible with `squish serve`
-
-**`tests/test_squash_w58.py`** (new file — merge A+B tests here)
-- `test_aqlm_loader_detects_npy_dir()` — mock model dir with `__aqlm_idx.npy`, assert loader routes correctly (unit, no real weights)
-- `test_aqlm_loader_fallback_if_no_idx()` — dir without AQLM markers takes normal path
-
-### Done-when for Option A
-- `squish serve --model /tmp/qwen2.5-1.5b-aqlm` starts without error
-- AQLM entry added to CLAUDE.md lm_eval table with validated arc_easy result
+| Existing | W60 adds |
+|---|---|
+| `GET /cloud/tenants/{id}/inventory` (W58) | `GET /cloud/tenants/{id}/drift-events` |
+| `GET /cloud/tenants/{id}/vex-alerts` (W58) | `GET /cloud/tenants/{id}/policy-stats` |
+| `GET /cloud/policy-stats` (W58, aggregate) | — |
 
 ---
-
-## W58 Option B — CloudDB REST read endpoints (always runs, no hardware gate)
-
-**Purpose:** Add 3 GET endpoints backed by `cloud_db.py` SQLite reads. Completes the CRUD story for the CloudDB audit layer introduced in W57.
-
-### Endpoints to add in `squish/squash/api.py`
-
-| Endpoint | Returns | Fallback |
-|---|---|---|
-| `GET /cloud/tenants/{tenant_id}/inventory` | List of inventory records for tenant | Empty list `[]` |
-| `GET /cloud/tenants/{tenant_id}/vex-alerts` | List of VEX alerts for tenant | Empty list `[]` |
-| `GET /cloud/policy-stats` | Aggregate policy evaluation counts | Empty dict `{}` |
-
-Pattern: mirror the W57 write endpoints (all 5 CloudDB write points in api.py). Use `CloudDB` instance via `get_cloud_db()` dependency.
 
 ### Methods to add in `squish/squash/cloud_db.py`
 
 ```python
-def read_inventory(self, tenant_id: str) -> list[dict]: ...
-def read_vex_alerts(self, tenant_id: str) -> list[dict]: ...
-def read_policy_stats(self) -> dict: ...
+def read_drift_events(self, tenant_id: str) -> list[dict]:
+    """Return all drift_events rows for *tenant_id*.  Returns [] on fresh DB."""
+
+def read_tenant_policy_stats(self, tenant_id: str) -> dict:
+    """Return policy evaluation counts for *tenant_id* keyed by policy_id.
+    Returns {} on fresh DB or unknown tenant."""
 ```
 
-- Each method queries the SQLite table written by the corresponding W57 write method.
-- If table does not exist (e.g., fresh `:memory:` DB): return `[]` or `{}` respectively — no error, no raise.
-- Pattern: match the W57 write helpers already in this file.
+Pattern: match `read_inventory` / `read_vex_alerts` (W58). Handle fresh-DB (missing table) gracefully — return empty container, no raise.
 
-### Tests to add in `tests/test_squash_w58.py`
+---
 
-For each GET endpoint (3 × 3 = 9 unit tests minimum):
-1. `test_{endpoint}_returns_empty_when_no_data()` — fresh DB, expect empty list/dict, HTTP 200
-2. `test_{endpoint}_returns_data_after_write()` — write via W57 POST endpoint, read back via W58 GET, assert content matches
-3. `test_{endpoint}_missing_tenant_returns_404()` — for tenant-scoped endpoints only
+### Endpoints to add in `squish/squash/api.py`
 
-Additional:
-- `test_cloud_db_read_does_not_raise_on_fresh_db()` — calls all 3 read methods on `:memory:` DB, no exception
+```
+GET /cloud/tenants/{tenant_id}/drift-events
+GET /cloud/tenants/{tenant_id}/policy-stats
+```
 
-Total W58 tests: ~15 unit + 2 AQLM (if Option A runs) = **~17 new tests**.
-Suite should reach **~3963 passing** after W58.
+- Both require the tenant to exist — raise `HTTPException(404)` for unknown `tenant_id`.
+- Both return JSON (list and dict respectively) with HTTP 200.
+- Both backed by the new CloudDB read methods + in-memory fallback pattern from W58.
+
+Helper functions to add (pattern: `_db_read_inventory` / `_db_read_vex_alerts`):
+
+```python
+def _db_read_drift_events(tenant_id: str) -> list[dict]: ...
+def _db_read_tenant_policy_stats(tenant_id: str) -> dict: ...
+```
+
+---
+
+### Tests — `tests/test_squash_w60.py` (new file)
+
+**`TestCloudDBDriftEvents`** (4 tests):
+1. `test_read_drift_events_returns_empty_on_fresh_db` — fresh `:memory:` DB → `[]`
+2. `test_read_drift_events_returns_data_after_write` — write via `POST /drift-check`, read back, assert content matches
+3. `test_read_drift_events_unknown_tenant_returns_empty` — unknown tenant_id → `[]` (CloudDB level, no 404 here)
+4. `test_read_drift_events_isolates_by_tenant` — two tenants, write to one, other returns `[]`
+
+**`TestCloudDBTenantPolicyStats`** (4 tests):
+1. `test_read_tenant_policy_stats_returns_empty_on_fresh_db` — fresh DB → `{}`
+2. `test_read_tenant_policy_stats_returns_data_after_write` — write via `POST /cloud/policy-eval`, read back
+3. `test_read_tenant_policy_stats_unknown_tenant_returns_empty` — unknown tenant → `{}`
+4. `test_read_tenant_policy_stats_isolates_by_tenant` — two tenants, assert no cross-contamination
+
+**`TestCloudAPIDriftEventsEndpoint`** (4 tests):
+1. `test_returns_empty_list_for_known_tenant` — create tenant, GET drift-events → `[]`, HTTP 200
+2. `test_returns_data_after_drift_check` — create tenant, POST drift-check, GET drift-events → data present
+3. `test_unknown_tenant_returns_404` — no create, GET drift-events → 404
+4. `test_isolates_by_tenant` — two tenants, drift-check on one, other returns `[]`
+
+**`TestCloudAPITenantPolicyStatsEndpoint`** (4 tests):
+1. `test_returns_empty_dict_for_known_tenant` — create tenant, GET policy-stats → `{}`, HTTP 200
+2. `test_returns_data_after_policy_eval` — create tenant, POST policy-eval, GET policy-stats → data present
+3. `test_unknown_tenant_returns_404` — no create, GET policy-stats → 404
+4. `test_isolates_by_tenant` — two tenants, policy-eval on one, other returns `{}`
+
+**Total: 16 new tests**. Suite target: **~3993 passing** after W60.
 
 ---
 
 ## Ship Gate — Done When (all 5 required)
 
-1. **Tests**: `python3 -m pytest tests/ --tb=no -q` → 0 failures. `tests/test_squash_w58.py` included.
-2. **Memory**: `squish serve` with `SQUASH_CLOUD_DB=:memory:` — no RSS regression vs W57 baseline.
-3. **CLI**: No new CLI flags added this wave (REST-only). No `--help` update needed.
-4. **CHANGELOG**: Wave 58 entry prepended in `CHANGELOG.md`.
-5. **Module count**: `python3 scripts/check_module_count.py` ≤ 125 before commit.
-   - Currently 120. Adding `tests/test_squash_w58.py` is a test file — excluded from count.
-   - No new production modules expected. If adding one: delete or justify.
-
-**Accuracy gate (must include in commit message):**
-- If lm_eval ran and AQLM passed: record result `# lm_eval: AQLM Qwen2.5-1.5B {result}% arc_easy`
-- If lm_eval waiver: use waiver format above
+1. **Tests**: `python3 -m pytest tests/ --tb=no -q` → 0 failures. `tests/test_squash_w60.py` included, 16 tests passing.
+2. **Memory**: No new in-memory structures introduced — no RSS impact.
+3. **CLI**: No new CLI flags. No `--help` update needed.
+4. **CHANGELOG**: Wave 60 entry prepended in `CHANGELOG.md`.
+5. **Module count**: `find squish -name "*.py" | grep -v __pycache__ | grep -v experimental | wc -l` ≤ 125. W60 adds no new production modules (test file only).
 
 ---
 
 ## Key Files
 
-| File | W58 Action |
+| File | W60 Action |
 |---|---|
-| `squish/squash/api.py` | Add 3 GET endpoints (pattern: W57 write endpoints) |
-| `squish/squash/cloud_db.py` | Add 3 read query methods (pattern: W57 helpers) |
-| `squish/loader.py` | Detect `__aqlm_idx.npy` → `aqlm_dequantize` (Option A, conditional) |
-| `squish/quant/aqlm.py` | Verify/add `aqlm_dequantize` function (Option A) |
-| `tests/test_squash_w58.py` | New file — all W58 tests (CloudDB reads + AQLM loader) |
-| `CHANGELOG.md` | Prepend Wave 58 entry |
+| `squish/squash/cloud_db.py` | Add `read_drift_events()` + `read_tenant_policy_stats()` (pattern: W58 read methods) |
+| `squish/squash/api.py` | Add `_db_read_drift_events/policy_stats` helpers + 2 GET endpoints |
+| `tests/test_squash_w60.py` | New file — 16 tests (CloudDB×8, API×8) |
+| `CHANGELOG.md` | Prepend Wave 60 entry |
 
 ---
 
@@ -171,7 +154,7 @@ Suite should reach **~3963 passing** after W58.
 |---|---|---|---|
 | Qwen2.5-1.5B | INT4 AWQ g=32 (squish) | **70.8%** | W42 canonical baseline |
 | Qwen2.5-1.5B | INT3 g=32 | 67.2% | −3.4pp; "efficient" tier; below 72% gate |
-| Qwen2.5-1.5B | AQLM | ❓ PENDING | W58 pre-work gate |
+| Qwen2.5-1.5B | AQLM | ❓ PENDING | Pre-work gate, carries forward |
 | Qwen2.5-1.5B | INT2 naive | ~29% | Incoherent — never ship |
 | gemma-3-1b/4b | INT3 | −15–16pp | **UNSAFE** — do not recommend |
 | Qwen3-4B | INT3 | −14.8pp | **UNSAFE** |
@@ -182,7 +165,9 @@ Suite should reach **~3963 passing** after W58.
 ## Context Markers
 
 - **squash module path:** `squish/squash/`
-- **server.py ceiling:** 4743 lines — W58 routes live in `squash/api.py`, no server.py changes needed
-- **SQUASH_CLOUD_DB:** default `:memory:` — all existing 3946 tests pass with in-memory behavior unchanged
-- **AQLM npy-dir format:** `__aqlm_idx.npy` + `__aqlm_cb.npy` + passthrough tensors + `squish.json`
-- **Commit scope:** `feat(squash): W58 CloudDB reads + AQLM loader` — squash scope for api.py, squash for cloud_db.py, loader scope if Option A runs
+- **server.py ceiling:** 4743 lines — W60 routes live in `squash/api.py`, no server.py changes needed
+- **SQUASH_CLOUD_DB:** default `:memory:` — all existing 3977 tests pass with in-memory behavior
+- **drift_events table:** written by `POST /drift-check` (W57); no read endpoint yet
+- **policy_stats table:** written by `POST /cloud/policy-eval`; aggregate read exists (W58); per-tenant read missing
+- **Commit scope:** `feat(squash): W60 tenant drift-events + policy-stats reads`
+
