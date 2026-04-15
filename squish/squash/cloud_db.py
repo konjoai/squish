@@ -204,6 +204,28 @@ class CloudDB:
             ).fetchall()
         return {r["policy_name"]: {"passed": r["passed"], "failed": r["failed"]} for r in rows}
 
+    # ── W58 read helpers ─────────────────────────────────────────────────────
+
+    def read_inventory(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Return all inventory records for *tenant_id* (oldest-first)."""
+        return self.get_records("inventory", tenant_id)
+
+    def read_vex_alerts(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Return all VEX alert records for *tenant_id* (oldest-first)."""
+        return self.get_records("vex_alerts", tenant_id)
+
+    def read_policy_stats(self) -> dict[str, dict[str, int]]:
+        """Return cross-tenant policy aggregates keyed by policy_name."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT policy_name, SUM(passed) AS passed, SUM(failed) AS failed "
+                "FROM policy_stats GROUP BY policy_name"
+            ).fetchall()
+        return {
+            r["policy_name"]: {"passed": int(r["passed"]), "failed": int(r["failed"])}
+            for r in rows
+        }
+
 
 # ── Module-level singleton ────────────────────────────────────────────────────
 

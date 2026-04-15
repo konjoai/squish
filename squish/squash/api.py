@@ -178,6 +178,37 @@ def _db_inc_policy_stat(tenant_id: str, policy_name: str, *, passed: bool) -> No
         _db.inc_policy_stat(tenant_id, policy_name, passed=passed)
 
 
+# ── W58: CloudDB read helpers ────────────────────────────────────────────────
+
+
+def _db_read_inventory(tenant_id: str) -> list[dict[str, Any]]:
+    """Read inventory from SQLite when active, else fall back to in-memory deque."""
+    if _db is not None:
+        return _db.read_inventory(tenant_id)
+    return list(_inventory[tenant_id])
+
+
+def _db_read_vex_alerts(tenant_id: str) -> list[dict[str, Any]]:
+    """Read VEX alerts from SQLite when active, else fall back to in-memory deque."""
+    if _db is not None:
+        return _db.read_vex_alerts(tenant_id)
+    return list(_vex_alerts[tenant_id])
+
+
+def _db_read_policy_stats() -> dict[str, dict[str, int]]:
+    """Cross-tenant policy aggregate — SQLite when active, else fold in-memory dict."""
+    if _db is not None:
+        return _db.read_policy_stats()
+    result: dict[str, dict[str, int]] = {}
+    for tenant_stats in _policy_stats.values():
+        for policy_name, counts in tenant_stats.items():
+            if policy_name not in result:
+                result[policy_name] = {"passed": 0, "failed": 0}
+            result[policy_name]["passed"] += counts.get("passed", 0)
+            result[policy_name]["failed"] += counts.get("failed", 0)
+    return result
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2182,6 +2213,54 @@ async def cloud_get_audit(
         "count": len(entries),
         "log_path": str(logger.path),
         "entries": entries,
+    })
+
+
+# ── W58: CloudDB-backed read endpoints ───────────────────────────────────────
+
+
+@app.get("/cloud/tenants/{tenant_id}/inventory")
+async def cloud_get_tenant_inventory_db(tenant_id: str) -> JSONResponse:
+    """Return inventory for *tenant_id* — reads from CloudDB when active.
+
+    Unlike ``GET /cloud/inventory`` (resolved via JWT/header), this endpoint
+    accepts the tenant_id explicitly in the URL path (suitable for admin
+    dashboards and cross-tenant tooling).
+    """
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    records = _db_read_inventory(tenant_id)
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "count": len(records),
+        "models": records,
+    })
+
+
+@app.get("/cloud/tenants/{tenant_id}/vex-alerts")
+async def cloud_get_tenant_vex_alerts_db(tenant_id: str) -> JSONResponse:
+    """Return VEX alerts for *tenant_id* — reads from CloudDB when active."""
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    alerts = _db_read_vex_alerts(tenant_id)
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "count": len(alerts),
+        "alerts": alerts,
+    })
+
+
+@app.get("/cloud/policy-stats")
+async def cloud_get_policy_stats() -> JSONResponse:
+    """Return cross-tenant policy pass/fail aggregates — reads from CloudDB when active.
+
+    Aggregates across ALL tenants (global fleet view).  Does not require
+    tenant auth — intended for admin dashboards and SLA reporting.
+    """
+    stats = _db_read_policy_stats()
+    return JSONResponse(content={
+        "count": len(stats),
+        "stats": stats,
     })
 
 
