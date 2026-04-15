@@ -5,6 +5,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 60: Tenant-scoped drift-events and policy-stats reads
+
+### Added
+
+- **`CloudDB.read_drift_events(tenant_id)`** — delegates to `get_records("drift_events", ...)`; returns all drift event rows for a tenant (oldest-first).
+- **`CloudDB.read_tenant_policy_stats(tenant_id)`** — thin wrapper over `get_policy_stats(tenant_id)`; returns per-tenant policy pass/fail counts keyed by policy name.
+- **`_db_read_drift_events(tenant_id)`** — API helper: reads from CloudDB when active, falls back to in-memory `_drift_events` deque.
+- **`_db_read_tenant_policy_stats(tenant_id)`** — API helper: reads from CloudDB when active, falls back to `_policy_stats` in-memory dict for the given tenant.
+- **`GET /cloud/tenants/{tenant_id}/drift-events`** — returns `{tenant_id, count, events}` for the named tenant; 404 for unknown tenants.
+- **`GET /cloud/tenants/{tenant_id}/policy-stats`** — returns `{tenant_id, count, stats}` with per-policy pass/fail totals; 404 for unknown tenants.
+- **`tests/test_squash_w60.py`** — 16 new tests covering `CloudDB.read_drift_events()` (4), `CloudDB.read_tenant_policy_stats()` (4), the drift-events GET endpoint (4), and the policy-stats GET endpoint (4).
+
+---
+
 ## [Unreleased] — Wave 59: Tenant lifecycle — PATCH + DELETE
 
 ### Added

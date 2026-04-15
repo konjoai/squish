@@ -214,6 +214,14 @@ class CloudDB:
         """Return all VEX alert records for *tenant_id* (oldest-first)."""
         return self.get_records("vex_alerts", tenant_id)
 
+    def read_drift_events(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Return all drift_events rows for *tenant_id* (oldest-first)."""
+        return self.get_records("drift_events", tenant_id)
+
+    def read_tenant_policy_stats(self, tenant_id: str) -> dict[str, dict[str, int]]:
+        """Return per-tenant policy evaluation counts keyed by policy_name."""
+        return self.get_policy_stats(tenant_id)
+
     def read_policy_stats(self) -> dict[str, dict[str, int]]:
         """Return cross-tenant policy aggregates keyed by policy_name."""
         with self._lock:

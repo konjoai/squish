@@ -222,6 +222,22 @@ def _db_delete_tenant(tenant_id: str) -> None:
         _db.delete_tenant(tenant_id)
 
 
+# ── W60: Tenant-scoped drift-events + policy-stats reads ─────────────────────
+
+def _db_read_drift_events(tenant_id: str) -> list[dict[str, Any]]:
+    """Read drift events from SQLite when active, else fall back to in-memory deque."""
+    if _db is not None:
+        return _db.read_drift_events(tenant_id)
+    return list(_drift_events[tenant_id])
+
+
+def _db_read_tenant_policy_stats(tenant_id: str) -> dict[str, dict[str, int]]:
+    """Read per-tenant policy stats from SQLite when active, else use in-memory dict."""
+    if _db is not None:
+        return _db.read_tenant_policy_stats(tenant_id)
+    return dict(_policy_stats.get(tenant_id, {}))
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2305,6 +2321,32 @@ async def cloud_get_tenant_vex_alerts_db(tenant_id: str) -> JSONResponse:
         "tenant_id": tenant_id,
         "count": len(alerts),
         "alerts": alerts,
+    })
+
+
+@app.get("/cloud/tenants/{tenant_id}/drift-events")
+async def cloud_get_tenant_drift_events(tenant_id: str) -> JSONResponse:
+    """Return drift events for *tenant_id* — reads from CloudDB when active."""
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    events = _db_read_drift_events(tenant_id)
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "count": len(events),
+        "events": events,
+    })
+
+
+@app.get("/cloud/tenants/{tenant_id}/policy-stats")
+async def cloud_get_tenant_policy_stats(tenant_id: str) -> JSONResponse:
+    """Return per-tenant policy pass/fail counts — reads from CloudDB when active."""
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    stats = _db_read_tenant_policy_stats(tenant_id)
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "count": len(stats),
+        "stats": stats,
     })
 
 

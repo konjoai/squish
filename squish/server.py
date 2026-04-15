@@ -115,6 +115,7 @@ if _pkg_root not in sys.path:  # pragma: no cover
     sys.path.insert(0, _pkg_root)
 
 # ── Validate dependencies ────────────────────────────────────────────────────
+from squish._term import C as _C  # noqa: E402 — must precede _require()
 
 def _require(pkg: str, install: str | None = None) -> None:
     try:
@@ -371,7 +372,6 @@ _TTY: bool = sys.stdout.isatty()
 
 from squish._term import (  # noqa: E402
     has_truecolor as _has_truecolor,
-    C as _C,
     gradient as _gradient,
     LOGO_GRAD as _LOGO_GRAD,
 )
