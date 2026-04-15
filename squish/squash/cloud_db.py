@@ -601,6 +601,54 @@ class CloudDB:
         merged.sort(key=lambda x: x["ts"], reverse=True)
         return merged
 
+    def read_attestation_overview(self) -> dict[str, Any]:
+        """Return cross-tenant attestation health overview for the whole platform.
+
+        Iterates all registered tenants, aggregates attestation scores, and returns:
+
+        - ``total_attestations`` (int): sum of all vertex + ADO records.
+        - ``tenants_covered`` (int): number of registered tenants.
+        - ``platform_pass_rate`` (float): passed / total across all tenants; 0.0
+          when no attestations exist.
+        - ``tenants_with_failures`` (list[dict]): tenants with at least one failed
+          attestation, each entry ``{tenant_id, failed, pass_rate}``.
+
+        Always returns HTTP 200; empty platform returns zero counts and an empty list.
+        Supports EU AI Act Art. 9 / Art. 17 portfolio-level supply-chain risk monitoring.
+        """
+        with self._lock:
+            rows = self._conn.execute("SELECT tenant_id FROM tenants").fetchall()
+        tenants = [row["tenant_id"] for row in rows]
+        if not tenants:
+            return {
+                "total_attestations": 0,
+                "tenants_covered": 0,
+                "platform_pass_rate": 0.0,
+                "tenants_with_failures": [],
+            }
+        total_attestations = 0
+        total_passed = 0
+        tenants_with_failures: list[dict[str, Any]] = []
+        for tid in tenants:
+            score = self.read_attestation_score(tid)
+            total_attestations += score["total"]
+            total_passed += score["passed"]
+            if score["failed"] > 0:
+                tenants_with_failures.append({
+                    "tenant_id": tid,
+                    "failed": score["failed"],
+                    "pass_rate": score["pass_rate"],
+                })
+        platform_pass_rate = (
+            round(total_passed / total_attestations, 4) if total_attestations > 0 else 0.0
+        )
+        return {
+            "total_attestations": total_attestations,
+            "tenants_covered": len(tenants),
+            "platform_pass_rate": platform_pass_rate,
+            "tenants_with_failures": tenants_with_failures,
+        }
+
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
 

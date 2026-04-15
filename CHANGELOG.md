@@ -5,6 +5,22 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 70: Platform attestation overview
+
+### Added
+- `CloudDB.read_attestation_overview()` — aggregates vertex + ADO attestation scores across
+  all registered tenants; returns `{total_attestations, tenants_covered, platform_pass_rate,
+  tenants_with_failures}`.  Empty platform returns zeros.
+- `_db_read_attestation_overview()` API helper — SQLite path delegates to CloudDB;
+  in-memory path iterates `_tenants.keys()` mirroring the compliance-overview pattern.
+- `GET /cloud/attestation-overview` (W70) — always HTTP 200; supports EU AI Act Art. 9
+  portfolio-level supply-chain risk monitoring.
+- `tests/test_squash_w70.py` — 16 tests: 8 CloudDB unit + 8 API integration; all pass.
+
+### Test count: 4157 passed, 12 skipped (↑ 16 from W70)
+
+---
+
 ## [Unreleased] — Wave 69: Merged attestation history per tenant
 
 ### Added

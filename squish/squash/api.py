@@ -464,6 +464,42 @@ def _db_read_attestations(tenant_id: str) -> list[dict[str, Any]]:
     return att
 
 
+def _db_read_attestation_overview() -> dict[str, Any]:
+    """Return platform-wide attestation aggregate from SQLite or in-memory stores."""
+    if _db is not None:
+        return _db.read_attestation_overview()
+    tenant_ids = list(_tenants.keys())
+    if not tenant_ids:
+        return {
+            "total_attestations": 0,
+            "tenants_covered": 0,
+            "platform_pass_rate": 0.0,
+            "tenants_with_failures": [],
+        }
+    total_attestations = 0
+    total_passed = 0
+    tenants_with_failures: list[dict[str, Any]] = []
+    for tid in tenant_ids:
+        score = _db_read_attestation_score(tid)
+        total_attestations += score["total"]
+        total_passed += score["passed"]
+        if score["failed"] > 0:
+            tenants_with_failures.append({
+                "tenant_id": tid,
+                "failed": score["failed"],
+                "pass_rate": score["pass_rate"],
+            })
+    platform_pass_rate = (
+        round(total_passed / total_attestations, 4) if total_attestations > 0 else 0.0
+    )
+    return {
+        "total_attestations": total_attestations,
+        "tenants_covered": len(tenant_ids),
+        "platform_pass_rate": platform_pass_rate,
+        "tenants_with_failures": tenants_with_failures,
+    }
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2783,6 +2819,19 @@ async def cloud_get_attestations(tenant_id: str) -> JSONResponse:
     """
     attestations = _db_read_attestations(tenant_id)
     return JSONResponse(content={"tenant_id": tenant_id, "attestations": attestations})
+
+
+@app.get("/cloud/attestation-overview")  # W70
+async def cloud_get_attestation_overview() -> JSONResponse:
+    """Return cross-tenant attestation health overview for the whole platform.
+
+    Aggregates every registered tenant's attestation scores into:
+    ``{total_attestations, tenants_covered, platform_pass_rate, tenants_with_failures}``.
+
+    Always returns HTTP 200; empty platform returns zero counts and an empty list.
+    Supports EU AI Act Art. 9 / Art. 17 portfolio-level supply-chain risk monitoring.
+    """
+    return JSONResponse(content=_db_read_attestation_overview())
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:
