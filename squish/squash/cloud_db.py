@@ -559,6 +559,48 @@ class CloudDB:
         pass_rate = round(passed / total, 4) if total > 0 else 0.0
         return {"total": total, "passed": passed, "failed": failed, "pass_rate": pass_rate}
 
+    def read_attestations(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Return merged chronological attestation history for *tenant_id*, newest first.
+
+        Combines vertex_results (W66) and ado_results (W67), sorted by ``ts`` DESC.
+        Each item includes a ``source`` field (``"vertex"`` or ``"ado"``) plus the
+        source-specific fields (``model_resource_name``/``labels`` or
+        ``pipeline_run_id``/``variables``).
+
+        Supports EU AI Act Art. 12 (technical documentation) and Art. 18 (record-keeping)
+        obligations by providing a complete, auditable attestation trail.
+        """
+        with self._lock:
+            v_rows = self._conn.execute(
+                "SELECT passed, ts, model_resource_name, labels"
+                "  FROM vertex_results WHERE tenant_id = ? ORDER BY ts DESC",
+                (tenant_id,),
+            ).fetchall()
+            a_rows = self._conn.execute(
+                "SELECT passed, ts, pipeline_run_id, variables"
+                "  FROM ado_results WHERE tenant_id = ? ORDER BY ts DESC",
+                (tenant_id,),
+            ).fetchall()
+        merged: list[dict[str, Any]] = []
+        for r in v_rows:
+            merged.append({
+                "source": "vertex",
+                "passed": bool(r["passed"]),
+                "ts": r["ts"],
+                "model_resource_name": r["model_resource_name"],
+                "labels": json.loads(r["labels"]) if r["labels"] else None,
+            })
+        for r in a_rows:
+            merged.append({
+                "source": "ado",
+                "passed": bool(r["passed"]),
+                "ts": r["ts"],
+                "pipeline_run_id": r["pipeline_run_id"],
+                "variables": json.loads(r["variables"]) if r["variables"] else None,
+            })
+        merged.sort(key=lambda x: x["ts"], reverse=True)
+        return merged
+
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
 
