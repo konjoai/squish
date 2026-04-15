@@ -5,6 +5,21 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 69: Merged attestation history per tenant
+
+### Added
+- `CloudDB.read_attestations(tenant_id)` — UNION of `vertex_results` + `ado_results`
+  sorted by ts DESC.  Each item carries `source` (`"vertex"` / `"ado"`), `passed`,
+  `ts`, and source-specific fields (`model_resource_name`/`labels` or
+  `pipeline_run_id`/`variables`).
+- `_db_read_attestations()` internal helper with SQLite + in-memory fallback.
+- `GET /cloud/tenants/{tenant_id}/attestations` (200) — returns `{tenant_id,
+  attestations: [...]}`.  Empty list for tenants with no records.
+  Satisfies EU AI Act Art. 12 + Art. 18 technical-documentation and record-keeping.
+- 16 new tests in `tests/test_squash_w69.py` (8 unit + 8 API integration).
+
+---
+
 ## [Unreleased] — Wave 68: Per-tenant combined attestation score
 
 ### Added

@@ -446,6 +446,24 @@ def _db_read_attestation_score(tenant_id: str) -> dict[str, Any]:
     return {"total": total, "passed": passed, "failed": failed, "pass_rate": pass_rate}
 
 
+def _db_read_attestations(tenant_id: str) -> list[dict[str, Any]]:
+    """Return merged attestation history for *tenant_id* from SQLite or in-memory.
+
+    Each item includes a ``source`` field (``"vertex"`` or ``"ado"``).
+    SQLite path returns results sorted by ts DESC; in-memory path returns
+    vertex results (newest first) followed by ado results (newest first).
+    """
+    if _db is not None:
+        return _db.read_attestations(tenant_id)
+    # In-memory fallback: tag each row with source; order is insertion order per source.
+    att: list[dict[str, Any]] = []
+    for r in _vertex_results[tenant_id]:
+        att.append({"source": "vertex", **r})
+    for r in _ado_results[tenant_id]:
+        att.append({"source": "ado", **r})
+    return att
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2750,6 +2768,21 @@ async def cloud_get_attestation_score(tenant_id: str) -> JSONResponse:
     """
     score = _db_read_attestation_score(tenant_id)
     return JSONResponse(content={"tenant_id": tenant_id, **score})
+
+
+@app.get("/cloud/tenants/{tenant_id}/attestations")  # W69
+async def cloud_get_attestations(tenant_id: str) -> JSONResponse:
+    """Return merged chronological attestation history for *tenant_id*, newest first.
+
+    Combines GCP Vertex AI (W66) and Azure DevOps (W67) attestation records.
+    Returns ``{tenant_id, attestations: [...]}`` where each item includes
+    ``{source, passed, ts, ...source-specific fields}``.
+
+    Supports EU AI Act Art. 12 + Art. 18 technical-documentation and
+    record-keeping obligations by providing a complete, auditable trail.
+    """
+    attestations = _db_read_attestations(tenant_id)
+    return JSONResponse(content={"tenant_id": tenant_id, "attestations": attestations})
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:
