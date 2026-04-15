@@ -535,6 +535,35 @@ def _db_read_tenant_conformance(tenant_id: str) -> dict[str, Any]:  # W71
     }
 
 
+def _db_read_conformance_report() -> dict[str, Any]:  # W72
+    """Return platform-wide conformance report from SQLite or in-memory."""
+    if _db is not None:
+        return _db.read_conformance_report()
+    # ── in-memory path ──────────────────────────────────────────────────────
+    tids = list(_tenants.keys())
+    total = len(tids)
+    conformant_count = 0
+    non_conformant: list[dict[str, Any]] = []
+    for tid in tids:
+        status = _db_read_tenant_conformance(tid)
+        if status["conformant"]:
+            conformant_count += 1
+        else:
+            non_conformant.append({
+                "tenant_id": tid,
+                "compliance_score": status["compliance_score"],
+                "attestation_pass_rate": status["attestation_pass_rate"],
+                "open_vex_alerts": status["open_vex_alerts"],
+                "reasons": status["reasons"],
+            })
+    return {
+        "total_tenants": total,
+        "conformant_tenants": conformant_count,
+        "non_conformant_tenants": total - conformant_count,
+        "non_conformant": non_conformant,
+    }
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2885,6 +2914,19 @@ async def cloud_get_tenant_conformance(tenant_id: str) -> JSONResponse:
     """
     data = _db_read_tenant_conformance(tenant_id)
     return JSONResponse(content={"tenant_id": tenant_id, **data})
+
+
+@app.get("/cloud/conformance-report")  # W72
+async def cloud_get_conformance_report() -> JSONResponse:
+    """Return platform-wide EU AI Act conformance status across all registered tenants.
+
+    Returns ``{total_tenants, conformant_tenants, non_conformant_tenants,
+    non_conformant: [{tenant_id, compliance_score, attestation_pass_rate,
+    open_vex_alerts, reasons}]}``. Always HTTP 200; empty platform returns
+    all-zero counts.
+    Supports EU AI Act Art. 9 + 12 + 17 + 18 platform-level audit obligations.
+    """
+    return JSONResponse(content=_db_read_conformance_report())
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:

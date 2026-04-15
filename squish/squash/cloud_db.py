@@ -697,6 +697,46 @@ class CloudDB:
             "reasons": reasons,
         }
 
+    def read_conformance_report(self) -> dict[str, Any]:  # W72
+        """Return platform-wide EU AI Act conformance status across all registered tenants.
+
+        Returns a dict with keys:
+          - total_tenants (int): count of all registered tenants.
+          - conformant_tenants (int): count where all three gates pass.
+          - non_conformant_tenants (int): count with at least one failing gate.
+          - non_conformant (list[dict]): per-tenant detail for non-conformant tenants,
+            each entry: {tenant_id, compliance_score, attestation_pass_rate,
+            open_vex_alerts, reasons}.
+
+        Empty platform returns all-zero counts and empty list.
+        EU AI Act Art. 9/12/17/18: operators must maintain a documented
+        conformance posture across all managed tenants.
+        """
+        with self._lock:
+            rows = self._conn.execute("SELECT tenant_id FROM tenants").fetchall()
+        tenants = [row["tenant_id"] for row in rows]
+        total = len(tenants)
+        conformant_count = 0
+        non_conformant: list[dict[str, Any]] = []
+        for tid in tenants:
+            status = self.read_tenant_conformance(tid)
+            if status["conformant"]:
+                conformant_count += 1
+            else:
+                non_conformant.append({
+                    "tenant_id": tid,
+                    "compliance_score": status["compliance_score"],
+                    "attestation_pass_rate": status["attestation_pass_rate"],
+                    "open_vex_alerts": status["open_vex_alerts"],
+                    "reasons": status["reasons"],
+                })
+        return {
+            "total_tenants": total,
+            "conformant_tenants": conformant_count,
+            "non_conformant_tenants": total - conformant_count,
+            "non_conformant": non_conformant,
+        }
+
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
 
