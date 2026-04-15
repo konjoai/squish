@@ -22,6 +22,29 @@
 
 ---
 
+## Waves 57–72 Summary (v9.0.0–v9.14.0 — EU AI Act Compliance Layer)
+
+| Wave | Theme | Key Endpoints / Methods | Test File |
+|------|-------|-------------------------|-----------|
+| 57 | CloudDB SQLite backend + `/drift-check` REST + model-card generator | `CloudDB.__init__`, `POST /drift-check`, `squash model-card` | `test_squash_w57*.py` |
+| 58 | CloudDB read endpoints + AQLM loader tests | `read_inventory`, `read_vex_alerts`, `read_policy_stats` | `test_squash_w58.py` |
+| 59 | Tenant lifecycle — PATCH + DELETE | `PATCH /cloud/tenant/{id}`, `DELETE /cloud/tenant/{id}` | `test_squash_w59.py` |
+| 60 | Tenant drift-events + policy-stats reads | `GET /cloud/tenants/{id}/drift-events`, `GET .../policy-stats` | `test_squash_w60.py` |
+| 61 | Tenant summary endpoint | `GET /cloud/tenants/{id}/summary` | `test_squash_w61.py` |
+| 62 | Tenant compliance-score endpoint | `GET /cloud/tenants/{id}/compliance-score` | `test_squash_w62.py` |
+| 63 | Tenant compliance-history endpoint | `GET /cloud/tenants/{id}/compliance-history` | `test_squash_w63.py` |
+| 64 | Cross-tenant compliance overview | `GET /cloud/compliance-overview` | `test_squash_w64.py` |
+| 65 | Hosted cross-tenant VEX feed | `GET /cloud/vex-feed` | `test_squash_w65.py` |
+| 66 | GCP Vertex AI attestation ingest | `POST/GET /cloud/tenants/{id}/vertex-result(s)` | `test_squash_w66.py` |
+| 67 | Azure DevOps attestation ingest | `POST/GET /cloud/tenants/{id}/ado-result(s)` | `test_squash_w67.py` |
+| 68 | Per-tenant combined attestation score | `GET /cloud/tenants/{id}/attestation-score` | `test_squash_w68.py` |
+| 69 | Merged attestation history per tenant | `GET /cloud/tenants/{id}/attestations` | `test_squash_w69.py` |
+| 70 | Platform attestation overview | `GET /cloud/attestation-overview` | `test_squash_w70.py` |
+| 71 | Per-tenant EU AI Act conformance | `GET /cloud/tenants/{id}/conformance` | `test_squash_w71.py` |
+| 72 | Platform EU AI Act conformance report | `GET /cloud/conformance-report` | `test_squash_w72.py` |
+
+---
+
 ## Wave 85 — CLI Color Dedup + README Accuracy (v58.0.0)
 
 Consolidated three duplicate terminal palette implementations into a single

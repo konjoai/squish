@@ -151,6 +151,31 @@ See [MODULES.md](MODULES.md) for the full flag reference and stability tiers (St
 
 ---
 
+## Compliance API — squash (EU AI Act)
+
+`squash` is Squish's AI governance and regulatory compliance module. A full compliance REST API ships with `pip install squish` — no extra dependencies.
+
+```bash
+pip install squish
+squish squash serve  # starts compliance API on :11436
+```
+
+| Endpoint | EU AI Act Article | Description |
+|---|---|---|
+| `GET /cloud/tenants/{id}/compliance-score` | Art. 9 HRMS | Per-tenant compliance score (0–100) + letter grade |
+| `GET /cloud/tenants/{id}/compliance-history` | Art. 12 Records | Day-bucketed compliance trend |
+| `GET /cloud/compliance-overview` | Art. 9/17 Portfolio | Platform-wide aggregate: compliant vs. non-compliant counts |
+| `GET /cloud/tenants/{id}/attestations` | Art. 12/18 Docs | Merged Vertex AI + Azure DevOps attestation history |
+| `GET /cloud/tenants/{id}/attestation-score` | Art. 9 Supply Chain | Pass rate across all attestation sources |
+| `GET /cloud/attestation-overview` | Art. 9 Portfolio | Platform attestation aggregate |
+| `GET /cloud/tenants/{id}/conformance` | Art. 9 + Art. 17 | Per-tenant EU AI Act conformance verdict |
+| `GET /cloud/conformance-report` | Art. 9 Portfolio | Platform-wide conformance report + at-risk tenants |
+| `GET /cloud/vex-feed` | Art. 9/ISO 42001 §8.4 | Cross-tenant VEX advisory feed |
+
+All endpoints return HTTP 200. Empty platform returns zero counts. No auth required in single-tenant mode; JWT-gated via `SQUASH_JWT_SECRET` for multi-tenant.
+
+---
+
 ## Links
 
 | Resource | URL |

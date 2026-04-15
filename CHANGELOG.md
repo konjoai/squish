@@ -5,7 +5,47 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 70: Platform attestation overview
+## [9.14.0] — 2026-04-15 — Wave 72: Platform EU AI Act conformance report
+
+### Added
+- **`CloudDB.read_conformance_report()`** — platform-wide EU AI Act conformance aggregate;
+  returns `{total_tenants, conformant_tenants, non_conformant_tenants, conformance_rate,
+  at_risk_tenants}` where `at_risk_tenants` lists up to 5 non-conformant tenants sorted
+  by compliance score ascending.
+- **`_db_read_conformance_report()`** API helper with SQLite + in-memory fallback;
+  in-memory path iterates `_tenants` and invokes `_db_read_tenant_conformance()` per tenant.
+- **`GET /cloud/conformance-report`** — platform-wide EU AI Act conformance report endpoint;
+  supports Art. 9 portfolio-level HRMS monitoring and boardroom compliance reporting.
+  Always HTTP 200; empty platform returns zero counts.
+- **`tests/test_squash_w72.py`** — 18 tests: 9 CloudDB unit + 9 API integration; all pass.
+  Includes rate-window fixture teardown (`_api_module._rate_window.pop`) to prevent
+  cross-test state leak.
+
+### Test count: 4192 passed, 12 skipped (↑ 18 from W71)
+
+---
+
+## [9.14.0] — 2026-04-15 — Wave 71: Per-tenant EU AI Act conformance
+
+### Added
+- **`CloudDB.read_tenant_conformance(tenant_id)`** — per-tenant EU AI Act conformance verdict
+  derived from compliance score (threshold 80.0) and attestation pass rate; returns
+  `{tenant_id, conformant, score, grade, attestation_pass_rate, non_conformant_policies}`.
+  Returns zero-values and `conformant=False` for unknown tenants; no raise.
+- **`_db_read_tenant_conformance()`** API helper with SQLite + in-memory fallback; in-memory
+  path composes score, grade, and attestation data from existing helpers.
+- **`GET /cloud/tenants/{tenant_id}/conformance`** — per-tenant EU AI Act conformance status
+  endpoint; supports Art. 9 HRMS documentation and Art. 17 QMS implementation evidence.
+  Always HTTP 200; returns `{tenant_id, conformant, score, grade, attestation_pass_rate,
+  non_conformant_policies}`.
+- **`tests/test_squash_w71.py`** — 18 tests: 9 CloudDB unit + 9 API integration; all pass.
+
+### Test count: 4174 passed, 12 skipped (↑ 18 from W70)
+
+---
+
+
+## [9.14.0] — 2026-04-15 — Wave 70: Platform attestation overview
 
 ### Added
 - `CloudDB.read_attestation_overview()` — aggregates vertex + ADO attestation scores across
@@ -21,7 +61,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 69: Merged attestation history per tenant
+## [9.14.0] — 2026-04-15 — Wave 69: Merged attestation history per tenant
 
 ### Added
 - `CloudDB.read_attestations(tenant_id)` — UNION of `vertex_results` + `ado_results`
@@ -36,7 +76,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 68: Per-tenant combined attestation score
+## [9.14.0] — 2026-04-15 — Wave 68: Per-tenant combined attestation score
 
 ### Added
 - `CloudDB.read_attestation_score(tenant_id)` — aggregates `vertex_results` (W66) and
@@ -50,7 +90,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 67: Azure DevOps attestation result ingest
+## [9.14.0] — 2026-04-15 — Wave 67: Azure DevOps attestation result ingest
 
 ### Added
 - `CloudDB.append_ado_result()` / `read_ado_results()` — durable per-tenant Azure DevOps
@@ -62,7 +102,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 66: GCP Vertex AI attestation result ingest
+## [9.14.0] — 2026-04-15 — Wave 66: GCP Vertex AI attestation result ingest
 
 ### Added
 
@@ -75,7 +115,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 65: Hosted cross-tenant VEX feed
+## [9.14.0] — 2026-04-15 — Wave 65: Hosted cross-tenant VEX feed
 
 ### Added
 
@@ -86,7 +126,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 64: Cross-tenant compliance overview
+## [9.14.0] — 2026-04-15 — Wave 64: Cross-tenant compliance overview
 
 ### Added
 
@@ -98,7 +138,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 63: Tenant compliance-history endpoint
+## [9.14.0] — 2026-04-15 — Wave 63: Tenant compliance-history endpoint
 
 ### Added
 
@@ -109,7 +149,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 62: Tenant compliance-score endpoint
+## [9.14.0] — 2026-04-15 — Wave 62: Tenant compliance-score endpoint
 
 ### Added
 
@@ -120,7 +160,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 61: Tenant summary endpoint
+## [9.14.0] — 2026-04-15 — Wave 61: Tenant summary endpoint
 
 ### Added
 
@@ -131,7 +171,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 60: Tenant-scoped drift-events and policy-stats reads
+## [9.14.0] — 2026-04-15 — Wave 60: Tenant-scoped drift-events and policy-stats reads
 
 ### Added
 
@@ -145,7 +185,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 59: Tenant lifecycle — PATCH + DELETE
+## [9.14.0] — 2026-04-15 — Wave 59: Tenant lifecycle — PATCH + DELETE
 
 ### Added
 
@@ -158,7 +198,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 58: CloudDB read endpoints + AQLM loader tests
+## [9.14.0] — 2026-04-15 — Wave 58: CloudDB read endpoints + AQLM loader tests
 
 ### Added
 
@@ -182,7 +222,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 57: mixed_attn fix, /drift-check REST, SQLite cloud persistence, model-card generator
+## [9.14.0] — 2026-04-15 — Wave 57: mixed_attn fix, /drift-check REST, SQLite cloud persistence, model-card generator
 
 ### Added
 
