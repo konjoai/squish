@@ -5,6 +5,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 61: Tenant summary endpoint
+
+### Added
+
+- **`CloudDB.read_tenant_summary(tenant_id)`** — composes `read_inventory`, `read_vex_alerts`, `read_drift_events`, and `read_tenant_policy_stats` into one call; returns zero-counts for unknown tenants, no raise.
+- **`GET /cloud/tenants/{tenant_id}/summary`** — single-call aggregate returning `inventory_count`, `vex_alert_count`, `drift_event_count`, and `policy_stats`; 404 for unknown tenant.
+- **`_db_read_tenant_summary()`** helper in `squash/api.py` with SQLite + in-memory fallback.
+- **`tests/test_squash_w61.py`** — 16 tests (8 CloudDB unit + 8 API integration).
+
+---
+
 ## [Unreleased] — Wave 60: Tenant-scoped drift-events and policy-stats reads
 
 ### Added

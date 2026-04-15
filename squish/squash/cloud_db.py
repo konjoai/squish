@@ -234,6 +234,26 @@ class CloudDB:
             for r in rows
         }
 
+    # ── W61 read helpers ─────────────────────────────────────────────────────
+
+    def read_tenant_summary(self, tenant_id: str) -> dict[str, Any]:
+        """Return aggregated compliance stats for *tenant_id* across all data tables.
+
+        Composes read_inventory, read_vex_alerts, read_drift_events, and
+        read_tenant_policy_stats.  Returns zero-counts for an unknown or empty
+        tenant — no raise.
+        """
+        inventory = self.read_inventory(tenant_id)
+        vex_alerts = self.read_vex_alerts(tenant_id)
+        drift_events = self.read_drift_events(tenant_id)
+        policy_stats = self.read_tenant_policy_stats(tenant_id)
+        return {
+            "inventory_count": len(inventory),
+            "vex_alert_count": len(vex_alerts),
+            "drift_event_count": len(drift_events),
+            "policy_stats": policy_stats,
+        }
+
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
 

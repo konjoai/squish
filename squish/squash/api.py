@@ -238,6 +238,18 @@ def _db_read_tenant_policy_stats(tenant_id: str) -> dict[str, dict[str, int]]:
     return dict(_policy_stats.get(tenant_id, {}))
 
 
+def _db_read_tenant_summary(tenant_id: str) -> dict[str, Any]:
+    """Read tenant summary aggregate from SQLite when active, else fold in-memory stores."""
+    if _db is not None:
+        return _db.read_tenant_summary(tenant_id)
+    return {
+        "inventory_count": len(_inventory[tenant_id]),
+        "vex_alert_count": len(_vex_alerts[tenant_id]),
+        "drift_event_count": len(_drift_events[tenant_id]),
+        "policy_stats": dict(_policy_stats.get(tenant_id, {})),
+    }
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2361,6 +2373,30 @@ async def cloud_get_policy_stats() -> JSONResponse:
     return JSONResponse(content={
         "count": len(stats),
         "stats": stats,
+    })
+
+
+# ── W61: Tenant summary endpoint ─────────────────────────────────────────────
+
+
+@app.get("/cloud/tenants/{tenant_id}/summary")
+async def cloud_get_tenant_summary(tenant_id: str) -> JSONResponse:
+    """Return aggregated compliance posture for *tenant_id* in a single call.
+
+    Collects inventory count, VEX alert count, drift-event count, and
+    policy pass/fail stats — the "boardroom at a glance" view that otherwise
+    requires four separate round-trips.
+
+    Addresses EU AI Act Art. 9 (risk management) and NIST AI RMF Govern 1.2
+    audit trail requirements.
+    """
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    summary = _db_read_tenant_summary(tenant_id)
+    return JSONResponse(content={
+        "tenant_id": tenant_id,
+        "tenant": _tenants[tenant_id],
+        **summary,
     })
 
 
