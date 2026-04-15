@@ -5,6 +5,19 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 59: Tenant lifecycle — PATCH + DELETE
+
+### Added
+
+- **`CloudDB.delete_tenant(tenant_id)`** — cascade-deletes all rows for a tenant from `tenants`, `inventory`, `vex_alerts`, `drift_events`, and `policy_stats` tables in a single transaction; no-op for non-existent tenants.
+- **`TenantUpdateRequest`** — Pydantic model with optional `name`, `plan`, and `contact_email` fields for partial tenant updates.
+- **`_db_delete_tenant(tenant_id)`** — API helper: pops tenant from all five in-memory stores (`_tenants`, `_inventory`, `_vex_alerts`, `_drift_events`, `_policy_stats`) then calls `CloudDB.delete_tenant()` when SQLite is active.
+- **`PATCH /cloud/tenant/{tenant_id}`** — partially updates a tenant's metadata; only supplied fields are changed; returns the updated tenant object; 404 for unknown tenant.
+- **`DELETE /cloud/tenant/{tenant_id}`** — permanently removes a tenant and all associated records; returns HTTP 204 No Content; 404 for unknown tenant.
+- **`tests/test_squash_w59.py`** — 15 new tests covering `CloudDB.delete_tenant()` cascade (5), `PATCH` endpoint (5), and `DELETE` endpoint (5).
+
+---
+
 ## [Unreleased] — Wave 58: CloudDB read endpoints + AQLM loader tests
 
 ### Added
