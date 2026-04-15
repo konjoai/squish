@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write      # needed to create a GitHub Release
+  id-token: write      # needed for OIDC Trusted Publisher upload
 
 jobs:
   build-and-publish:
@@ -22,19 +23,16 @@ jobs:
           cache: pip
 
       - name: Install build tooling
-        run: pip install build twine
+        run: pip install build
 
       - name: Build wheel + sdist
         run: python -m build
 
       - name: Verify distribution
-        run: twine check dist/*
+        run: pip install twine && twine check dist/*
 
-      - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: twine upload dist/*
+      - name: Publish to PyPI (Trusted Publisher / OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
