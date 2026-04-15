@@ -5,6 +5,19 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 66: GCP Vertex AI attestation result ingest
+
+### Added
+
+- **`CloudDB.append_vertex_result()`** — persists a GCP Vertex AI model attestation outcome (model resource name, passed/failed, optional labels) to SQLite `vertex_results` table.
+- **`CloudDB.read_vertex_results()`** — retrieves all attestation results for a tenant, newest first; `labels` round-trips as `dict | None`.
+- **`_vertex_results`** in-memory store in `squash/api.py` — `defaultdict[str, deque]` with `SQUASH_VERTEX_RESULTS_PER_TENANT` (default 500) capacity per tenant.
+- **`POST /cloud/tenants/{tenant_id}/vertex-result`** — ingest endpoint (201); validates `model_resource_name` required; accepts `passed` (bool) + `labels` (dict, optional).
+- **`GET /cloud/tenants/{tenant_id}/vertex-results`** — retrieval endpoint (200); returns `{tenant_id, results: [{model_resource_name, passed, labels, ts}]}`.
+- **`tests/test_squash_w66.py`** — 16 tests (8 `TestCloudDBVertexResults` unit + 8 `TestCloudAPIVertexResults` integration).
+
+---
+
 ## [Unreleased] — Wave 65: Hosted cross-tenant VEX feed
 
 ### Added

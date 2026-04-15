@@ -129,6 +129,12 @@ _policy_stats: defaultdict[str, defaultdict[str, dict[str, int]]] = defaultdict(
     lambda: defaultdict(lambda: {"passed": 0, "failed": 0})
 )
 
+# Vertex AI attestation results: tenant_id → deque[result dict]  (W66)
+_VERTEX_RESULTS_PER_TENANT = int(os.getenv("SQUASH_VERTEX_RESULTS_PER_TENANT", "500"))
+_vertex_results: defaultdict[str, deque] = defaultdict(
+    lambda: deque(maxlen=_VERTEX_RESULTS_PER_TENANT)
+)
+
 # ── SQLite persistence (W57) ─────────────────────────────────────────────────
 # Optional write-through to a SQLite file.  Set SQUASH_CLOUD_DB=/path/to/db to
 # enable durability.  When absent (default) all stores remain in-memory only.
@@ -359,6 +365,30 @@ def _db_read_vex_feed() -> dict:
         "tenant_count": len(tenant_ids),
         "alerts": all_alerts,
     }
+
+
+def _db_append_vertex_result(
+    tenant_id: str,
+    model_resource_name: str,
+    passed: bool,
+    labels: dict[str, str] | None = None,
+) -> None:
+    """Store a Vertex AI attestation result in SQLite or in-memory store."""
+    record: dict[str, Any] = {
+        "model_resource_name": model_resource_name,
+        "passed": passed,
+        "labels": labels,
+    }
+    _vertex_results[tenant_id].appendleft(record)
+    if _db is not None:
+        _db.append_vertex_result(tenant_id, model_resource_name, passed, labels)
+
+
+def _db_read_vertex_results(tenant_id: str) -> list[dict[str, Any]]:
+    """Return Vertex AI attestation results for *tenant_id* from SQLite or in-memory."""
+    if _db is not None:
+        return _db.read_vertex_results(tenant_id)
+    return [dict(r) for r in _vertex_results[tenant_id]]
 
 
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
@@ -2575,6 +2605,43 @@ async def cloud_get_vex_feed() -> JSONResponse:
     the full model inventory for real-time supply-chain transparency.
     """
     return JSONResponse(content=_db_read_vex_feed())
+
+
+@app.post("/cloud/tenants/{tenant_id}/vertex-result", status_code=201)  # W66
+async def cloud_post_vertex_result(
+    tenant_id: str,
+    body: dict[str, Any],
+) -> JSONResponse:
+    """Ingest a GCP Vertex AI attestation result for *tenant_id*.
+
+    Request body fields:
+    - ``model_resource_name`` (str, required): full Vertex AI Model resource name.
+    - ``passed`` (bool, required): whether the attestation run passed.
+    - ``labels`` (dict, optional): GCP labels applied to the Model resource.
+
+    Returns ``{"status": "ok", "tenant_id": …, "passed": …}`` on success.
+    """
+    mrn = body.get("model_resource_name")
+    if not mrn:
+        raise HTTPException(status_code=422, detail="model_resource_name is required")
+    passed = bool(body.get("passed", False))
+    labels: dict[str, str] | None = body.get("labels") or None
+    _db_append_vertex_result(tenant_id, str(mrn), passed, labels)
+    return JSONResponse(
+        content={"status": "ok", "tenant_id": tenant_id, "passed": passed},
+        status_code=201,
+    )
+
+
+@app.get("/cloud/tenants/{tenant_id}/vertex-results")  # W66
+async def cloud_get_vertex_results(tenant_id: str) -> JSONResponse:
+    """Return all stored Vertex AI attestation results for *tenant_id*.
+
+    Newest result first. Returns ``{"tenant_id": …, "results": […]}``
+    where each entry has ``{model_resource_name, passed, labels, ts}``.
+    """
+    results = _db_read_vertex_results(tenant_id)
+    return JSONResponse(content={"tenant_id": tenant_id, "results": results})
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:

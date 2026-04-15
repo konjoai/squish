@@ -69,10 +69,20 @@ CREATE TABLE IF NOT EXISTS policy_stats (
     failed      INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (tenant_id, policy_name)
 );
+
+CREATE TABLE IF NOT EXISTS vertex_results (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id           TEXT    NOT NULL,
+    model_resource_name TEXT    NOT NULL,
+    passed              INTEGER NOT NULL,
+    labels              TEXT,
+    ts                  REAL    NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_vertex_tenant ON vertex_results (tenant_id, id);
 """
 
 # Valid table names — guard against SQL injection via the table parameter.
-_VALID_TABLES = frozenset({"inventory", "vex_alerts", "drift_events"})
+_VALID_TABLES = frozenset({"inventory", "vex_alerts", "drift_events", "vertex_results"})
 
 # Compliant threshold — tenant scores >= this are counted as compliant (W64).
 _COMPLIANCE_THRESHOLD = 80.0
@@ -405,6 +415,62 @@ class CloudDB:
             "tenant_count": len(tenants),
             "alerts": all_alerts,
         }
+
+    # ── W66 Vertex AI result ingest ───────────────────────────────────────────
+
+    def append_vertex_result(
+        self,
+        tenant_id: str,
+        model_resource_name: str,
+        passed: bool,
+        labels: dict[str, str] | None = None,
+    ) -> None:
+        """Persist a GCP Vertex AI attestation result for *tenant_id*.
+
+        Parameters
+        ----------
+        tenant_id:
+            Registered tenant identifier.
+        model_resource_name:
+            Full Vertex AI Model resource name, e.g.
+            ``"projects/my-proj/locations/us-central1/models/12345"``.
+        passed:
+            ``True`` when the attestation run succeeded (squash_passed=true).
+        labels:
+            Optional dict of GCP labels applied to the Vertex AI Model resource.
+        """
+        labels_json = json.dumps(labels) if labels else None
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO vertex_results (tenant_id, model_resource_name, passed, labels)"
+                " VALUES (?, ?, ?, ?)",
+                (tenant_id, model_resource_name, int(passed), labels_json),
+            )
+            self._conn.commit()
+
+    def read_vertex_results(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Return all Vertex AI attestation results for *tenant_id*, newest first.
+
+        Each entry contains ``{model_resource_name, passed, labels, ts}``.
+        ``labels`` is a ``dict`` (or ``None`` if none were stored).
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT model_resource_name, passed, labels, ts"
+                "  FROM vertex_results"
+                " WHERE tenant_id = ?"
+                " ORDER BY id DESC",
+                (tenant_id,),
+            ).fetchall()
+        results = []
+        for row in rows:
+            results.append({
+                "model_resource_name": row["model_resource_name"],
+                "passed": bool(row["passed"]),
+                "labels": json.loads(row["labels"]) if row["labels"] else None,
+                "ts": row["ts"],
+            })
+        return results
 
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
