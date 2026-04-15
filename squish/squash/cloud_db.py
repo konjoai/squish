@@ -226,6 +226,21 @@ class CloudDB:
             for r in rows
         }
 
+    def delete_tenant(self, tenant_id: str) -> None:
+        """Delete a tenant and all associated records (cascade).
+
+        Safe to call for a non-existent *tenant_id* — does nothing if the tenant
+        is not present.
+        """
+        with self._lock:
+            self._conn.execute("DELETE FROM tenants WHERE tenant_id = ?", (tenant_id,))
+            for table in (*_VALID_TABLES, "policy_stats"):
+                self._conn.execute(
+                    f"DELETE FROM {table} WHERE tenant_id = ?",  # noqa: S608
+                    (tenant_id,),
+                )
+            self._conn.commit()
+
 
 # ── Module-level singleton ────────────────────────────────────────────────────
 

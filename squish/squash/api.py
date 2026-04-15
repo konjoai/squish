@@ -53,7 +53,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from fastapi import FastAPI, HTTPException, Request
+    from fastapi import FastAPI, HTTPException, Request, Response
     from fastapi.responses import JSONResponse, PlainTextResponse
     from pydantic import BaseModel, Field
 except ImportError as _e:
@@ -207,6 +207,19 @@ def _db_read_policy_stats() -> dict[str, dict[str, int]]:
             result[policy_name]["passed"] += counts.get("passed", 0)
             result[policy_name]["failed"] += counts.get("failed", 0)
     return result
+
+
+# ── W59: Tenant delete helper ─────────────────────────────────────────────────
+
+def _db_delete_tenant(tenant_id: str) -> None:
+    """Remove a tenant and all associated records from memory and SQLite."""
+    _tenants.pop(tenant_id, None)
+    _inventory.pop(tenant_id, None)
+    _vex_alerts.pop(tenant_id, None)
+    _drift_events.pop(tenant_id, None)
+    _policy_stats.pop(tenant_id, None)
+    if _db is not None:
+        _db.delete_tenant(tenant_id)
 
 
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
@@ -497,6 +510,15 @@ class TenantCreateRequest(BaseModel):
     name: str = Field(description="Human-readable tenant / organisation name")
     plan: str = Field(default="community", description="Subscription plan: community | pro | enterprise")
     contact_email: str = Field(default="", description="Primary contact e-mail")
+
+
+class TenantUpdateRequest(BaseModel):
+    """Partial update fields for a registered tenant.  All fields are optional;
+    only the fields explicitly supplied in the request body are changed."""
+
+    name: str | None = Field(default=None, description="New human-readable tenant / organisation name")
+    plan: str | None = Field(default=None, description="New subscription plan: community | pro | enterprise")
+    contact_email: str | None = Field(default=None, description="New contact e-mail")
 
 
 class InventoryRegisterRequest(BaseModel):
@@ -1946,6 +1968,42 @@ async def cloud_list_tenants(request: Request) -> JSONResponse:
         "count": len(_tenants),
         "tenants": list(_tenants.values()),
     })
+
+
+@app.patch("/cloud/tenant/{tenant_id}")
+async def cloud_update_tenant(tenant_id: str, req: TenantUpdateRequest) -> JSONResponse:
+    """Partially update a registered tenant's metadata.
+
+    Only the fields explicitly set in the request body are changed; omitted
+    fields retain their existing values.
+    """
+    existing = _tenants.get(tenant_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    updated = dict(existing)
+    if req.name is not None:
+        updated["name"] = req.name
+    if req.plan is not None:
+        updated["plan"] = req.plan
+    if req.contact_email is not None:
+        updated["contact_email"] = req.contact_email
+    updated["updated_at"] = _ts_now()
+    _db_write_tenant(tenant_id, updated)
+    return JSONResponse(content=updated)
+
+
+@app.delete("/cloud/tenant/{tenant_id}", status_code=204)
+async def cloud_delete_tenant(tenant_id: str) -> Response:
+    """Delete a tenant and all associated records.
+
+    Permanently removes the tenant's inventory, VEX alerts, drift events, and
+    policy stats from both memory and SQLite (when ``SQUASH_CLOUD_DB`` is set).
+    Returns HTTP 204 No Content on success.
+    """
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    _db_delete_tenant(tenant_id)
+    return Response(status_code=204)
 
 
 # ── Model inventory ───────────────────────────────────────────────────────────
