@@ -5,6 +5,23 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.14.0] — 2026-04-15 — Wave 74: EU AI Act Enforcement Deadline Signal
+
+### Added
+- **`_enforcement_signal()`** helper in `cloud_db.py` and `api.py` — computes days until
+  EU AI Act enforcement (2026-08-02) and assigns a risk level: CRITICAL < 30d | HIGH < 90d |
+  MODERATE < 180d | LOW. Evaluated live on each request via `datetime.date.today()`.
+- **`enforcement_deadline`**, **`days_until_enforcement`**, **`enforcement_risk_level`** fields
+  added to all conformance responses: `CloudDB.read_tenant_conformance()`,
+  `CloudDB.read_conformance_report()`, and both API helper in-memory paths.
+- **`tests/test_squash_w74.py`** — 12 tests across 3 classes:
+  `TestCloudDBTenantEnforcement` (7), `TestCloudDBReportEnforcement` (3),
+  `TestAPIResponseEnforcement` (2). Boundary tests at 29d (CRITICAL) and 30d (HIGH).
+
+### Test count: 4208 passed, 12 skipped (↑ 12 from W73)
+
+---
+
 ## [9.14.0] — 2026-04-15 — Wave 72: Platform EU AI Act conformance report
 
 ### Added

@@ -19,6 +19,7 @@ Stdlib only — ``json``, ``os``, ``sqlite3``, ``threading``.  No extras.
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import os
@@ -96,6 +97,26 @@ _VALID_TABLES = frozenset({"inventory", "vex_alerts", "drift_events", "vertex_re
 
 # Compliant threshold — tenant scores >= this are counted as compliant (W64).
 _COMPLIANCE_THRESHOLD = 80.0
+
+# EU AI Act enforcement deadline (W74).
+_ENFORCEMENT_DATE = datetime.date(2026, 8, 2)
+
+
+def _enforcement_signal() -> dict[str, Any]:
+    """Return EU AI Act enforcement deadline fields for conformance responses (W74)."""
+    today = datetime.date.today()
+    days = (_ENFORCEMENT_DATE - today).days
+    risk = (
+        "CRITICAL" if days < 30
+        else "HIGH" if days < 90
+        else "MODERATE" if days < 180
+        else "LOW"
+    )
+    return {
+        "enforcement_deadline": "2026-08-02",
+        "days_until_enforcement": days,
+        "enforcement_risk_level": risk,
+    }
 
 
 class CloudDB:
@@ -695,6 +716,7 @@ class CloudDB:
             "attestation_pass_rate": attestation_pass_rate,
             "open_vex_alerts": open_vex_alerts,
             "reasons": reasons,
+            **_enforcement_signal(),
         }
 
     def read_conformance_report(self) -> dict[str, Any]:  # W72
@@ -735,6 +757,7 @@ class CloudDB:
             "conformant_tenants": conformant_count,
             "non_conformant_tenants": total - conformant_count,
             "non_conformant": non_conformant,
+            **_enforcement_signal(),
         }
 
     def delete_tenant(self, tenant_id: str) -> None:
