@@ -1,9 +1,18 @@
-# Wave 61 Session Prompt
+# Wave 62 Session Prompt
 
 **Session type:** Code session. Single wave, one commit.
-**State when written:** Wave 60 complete. ~3993 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
+**State when written:** Wave 61 complete. ~4009 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
 
 ---
+
+## W61 COMPLETE ✅
+
+| Task | Status |
+|---|---|
+| `CloudDB.read_tenant_summary(tenant_id)` — composes 4 per-tenant reads | ✅ |
+| `_db_read_tenant_summary()` helper in api.py (SQLite + in-memory fallback) | ✅ |
+| `GET /cloud/tenants/{tenant_id}/summary` endpoint | ✅ |
+| `tests/test_squash_w61.py` — 16/16 passing | ✅ |
 
 ## W60 COMPLETE ✅
 
@@ -63,110 +72,112 @@ Still pending. Run before any AQLM-dependent work. Waiver format documented in p
 
 ---
 
-## W61 — Tenant summary endpoint
+## W62 — Tenant compliance score endpoint
 
-**Purpose:** Add `GET /cloud/tenants/{tenant_id}/summary` — a single aggregate read that collects inventory count, vex-alert count, drift-event count, and policy pass/fail stats for a tenant in one call. This is the "boardroom at a glance" endpoint: clients no longer need to make four separate round-trips for a full compliance posture view.
+**Purpose:** Add `GET /cloud/tenants/{tenant_id}/compliance-score` — a computed metric that distills the tenant's per-policy pass/fail stats into a single score (0–100 float) and letter grade (A/B/C/D/F). This is the actionable "executive dashboard" number that follows naturally from the W61 summary endpoint.
 
-Per-tenant reads are now complete through W60. W61 closes the read surface by providing a convenience aggregate on top of the existing four CloudDB read methods.
+Score formula: `sum(passed) / sum(passed + failed) * 100` across all policies. An empty policy_stats dict (no policy checks run yet) returns `100.0` with grade `A` — no violations recorded.
 
-| Existing per-tenant reads | W61 adds |
+Grade thresholds: `A ≥ 90 | B ≥ 75 | C ≥ 60 | D ≥ 45 | F < 45`.
+
+| Prior aggregates | W62 adds |
 |---|---|
-| `GET /cloud/tenants/{id}/inventory` (W58) | `GET /cloud/tenants/{id}/summary` |
-| `GET /cloud/tenants/{id}/vex-alerts` (W58) | — |
-| `GET /cloud/tenants/{id}/drift-events` (W60) | — |
-| `GET /cloud/tenants/{id}/policy-stats` (W60) | — |
+| `GET /cloud/tenants/{id}/summary` — counts (W61) | `GET /cloud/tenants/{id}/compliance-score` — derived score |
+| `GET /cloud/tenants/{id}/policy-stats` — raw pass/fail per policy (W60) | — |
 
 ---
 
 ### Method to add in `squish/squash/cloud_db.py`
 
 ```python
-def read_tenant_summary(self, tenant_id: str) -> dict:
-    """Return aggregated stats for *tenant_id* across all data tables.
+def read_tenant_compliance_score(self, tenant_id: str) -> dict:
+    """Return a compliance score derived from per-policy pass/fail stats.
 
-    Keys: inventory_count, vex_alert_count, drift_event_count, policy_stats.
-    Returns zero-counts for an unknown or empty tenant — no raise.
-    Composes the four existing per-tenant read methods.
+    Keys: score (float 0-100), grade (str A/B/C/D/F),
+          policy_breakdown (dict[str, {passed, failed, rate}]).
+    Returns score=100.0, grade='A' for unknown tenant or no policy checks.
     """
 ```
 
-Pattern: call `read_inventory`, `read_vex_alerts`, `read_drift_events`, `read_tenant_policy_stats` and
-aggregate. Handle fresh-DB / unknown tenant gracefully — return `{"inventory_count": 0, "vex_alert_count": 0, "drift_event_count": 0, "policy_stats": {}}`.
+Pattern: call `read_tenant_policy_stats(tenant_id)`, compute totals, derive score and grade.
+
+Grade thresholds (inclusive lower bound):
+- A: ≥ 90.0
+- B: ≥ 75.0
+- C: ≥ 60.0
+- D: ≥ 45.0
+- F: < 45.0
+
+Each policy entry in `policy_breakdown`:
+```python
+{"passed": int, "failed": int, "rate": float}  # rate = passed/(passed+failed)*100
+```
 
 ---
 
 ### Endpoint to add in `squish/squash/api.py`
 
 ```
-GET /cloud/tenants/{tenant_id}/summary
+GET /cloud/tenants/{tenant_id}/compliance-score
 ```
 
 - Requires the tenant to exist — raise `HTTPException(404)` for unknown `tenant_id`.
-- Returns HTTP 200 JSON with fields: `tenant_id`, `tenant` (full tenant record), `inventory_count`, `vex_alert_count`, `drift_event_count`, `policy_stats`.
-- Backed by new `_db_read_tenant_summary(tenant_id)` helper + in-memory fallback pattern from W58/W60.
+- Returns HTTP 200 JSON with fields: `tenant_id`, `score`, `grade`, `policy_breakdown`.
+- Backed by new `_db_read_tenant_compliance_score(tenant_id)` helper + in-memory fallback.
 
-Helper function to add (pattern: `_db_read_drift_events` / `_db_read_tenant_policy_stats`):
-
+Helper (pattern: `_db_read_tenant_summary`):
 ```python
-def _db_read_tenant_summary(tenant_id: str) -> dict: ...
+def _db_read_tenant_compliance_score(tenant_id: str) -> dict: ...
 ```
 
-In-memory fallback (when `_db is None`):
-```python
-{
-    "inventory_count": len(_inventory[tenant_id]),
-    "vex_alert_count": len(_vex_alerts[tenant_id]),
-    "drift_event_count": len(_drift_events[tenant_id]),
-    "policy_stats": dict(_policy_stats[tenant_id]),
-}
-```
+In-memory fallback computes the same logic from `_policy_stats[tenant_id]` directly.
 
 ---
 
-### Tests — `tests/test_squash_w61.py` (new file)
+### Tests — `tests/test_squash_w62.py` (new file)
 
-**`TestCloudDBTenantSummary`** (8 tests):
-1. `test_summary_returns_zero_counts_on_fresh_db` — fresh `:memory:` DB → all counts 0, policy_stats `{}`
-2. `test_summary_inventory_count_after_write` — append 2 inventory records, inventory_count=2
-3. `test_summary_vex_alert_count_after_write` — append 3 vex alerts, vex_alert_count=3
-4. `test_summary_drift_event_count_after_write` — append 2 drift events, drift_event_count=2
-5. `test_summary_policy_stats_included` — write policy stats, verify non-empty dict in summary
-6. `test_summary_isolates_by_tenant` — two tenants, writes to tenant A only; tenant B still returns zeros
-7. `test_summary_has_required_keys` — assert summary dict has all four required keys
-8. `test_summary_unknown_tenant_returns_zeros` — unknown tenant_id → zeros, no raise (DB-layer only)
+**`TestCloudDBTenantComplianceScore`** (8 tests):
+1. `test_returns_dict_with_required_keys` — result has keys: score, grade, policy_breakdown
+2. `test_no_policies_returns_perfect_score` — empty/unknown tenant → score 100.0, grade 'A'
+3. `test_all_passed_returns_100` — all policies 100% pass → score 100.0, grade 'A'
+4. `test_all_failed_returns_0` — all policies 100% fail → score 0.0, grade 'F'
+5. `test_mixed_score_computed_correctly` — 3 passed 1 failed → 75.0
+6. `test_grade_thresholds` — parameterize boundary scores: 90→A, 75→B, 60→C, 45→D, 44→F
+7. `test_policy_breakdown_contains_rate` — each policy entry has `rate` float
+8. `test_score_scoped_to_tenant` — two tenants, different stats → different scores
 
-**`TestCloudAPITenantSummaryEndpoint`** (8 tests):
-1. `test_returns_200_for_known_tenant` — create tenant, GET summary → HTTP 200
-2. `test_response_contains_tenant_record` — verify `tenant.id` present in response `tenant` field
-3. `test_all_counts_zero_on_new_tenant` — new tenant (no data) → all counts 0
-4. `test_inventory_count_after_register` — POST `/cloud/inventory/register`, GET summary → inventory_count=1
-5. `test_vex_alert_count_after_post` — POST `/cloud/vex/alert`, GET summary → vex_alert_count=1
-6. `test_drift_event_count_after_post` — POST `/cloud/drift/event`, GET summary → drift_event_count=1
-7. `test_unknown_tenant_returns_404` — no tenant created, GET summary → 404
-8. `test_isolates_by_tenant` — two tenants, data only on tenant A; tenant B counts remain 0
+**`TestCloudAPIComplianceScoreEndpoint`** (8 tests):
+1. `test_404_for_unknown_tenant` — no tenant created → 404
+2. `test_200_for_known_tenant` — create tenant → 200
+3. `test_response_has_required_keys` — check score, grade, policy_breakdown, tenant_id
+4. `test_perfect_score_no_policies` — new tenant (no policy checks) → score 100.0, grade 'A'
+5. `test_score_reflects_in_memory_stats` — set _policy_stats directly, verify score
+6. `test_grade_a_on_high_pass_rate` — 10 passed 0 failed → grade 'A'
+7. `test_grade_f_on_low_pass_rate` — 0 passed 10 failed → grade 'F'
+8. `test_tenant_id_echoed_in_response` — verify tenant_id field in response body
 
-**Total: 16 new tests.** Suite target: **~4009 passing** after W61.
+**Total: 16 new tests.** Suite target: **~4025 passing** after W62.
 
 ---
 
 ## Ship Gate — Done When (all 5 required)
 
-1. **Tests**: `python3 -m pytest tests/ --tb=no -q` → 0 failures. `tests/test_squash_w61.py` included, 16 tests passing.
+1. **Tests**: `python3 -m pytest tests/ --tb=no -q` → 0 failures. `tests/test_squash_w62.py` included, 16 tests passing.
 2. **Memory**: No new in-memory structures introduced — no RSS impact.
 3. **CLI**: No new CLI flags. No `--help` update needed.
-4. **CHANGELOG**: Wave 61 entry prepended in `CHANGELOG.md`.
-5. **Module count**: `find squish -name "*.py" | grep -v __pycache__ | grep -v experimental | wc -l` ≤ 125. W61 adds no new production modules (test file only).
+4. **CHANGELOG**: Wave 62 entry prepended in `CHANGELOG.md`.
+5. **Module count**: `find squish -name "*.py" | grep -v __pycache__ | grep -v experimental | wc -l` ≤ 125. W62 adds no new production modules (test file only).
 
 ---
 
 ## Key Files
 
-| File | W61 Action |
+| File | W62 Action |
 |---|---|
-| `squish/squash/cloud_db.py` | Add `read_tenant_summary()` (composes W58+W60 read methods) |
-| `squish/squash/api.py` | Add `_db_read_tenant_summary()` helper + `GET /cloud/tenants/{id}/summary` endpoint |
-| `tests/test_squash_w61.py` | New file — 16 tests (CloudDB×8, API×8) |
-| `CHANGELOG.md` | Prepend Wave 61 entry |
+| `squish/squash/cloud_db.py` | Add `read_tenant_compliance_score()` (computes score+grade from policy_stats) |
+| `squish/squash/api.py` | Add `_db_read_tenant_compliance_score()` helper + `GET /cloud/tenants/{id}/compliance-score` endpoint |
+| `tests/test_squash_w62.py` | New file — 16 tests (CloudDB×8, API×8) |
+| `CHANGELOG.md` | Prepend Wave 62 entry |
 
 ---
 
