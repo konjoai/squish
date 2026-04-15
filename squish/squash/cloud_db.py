@@ -649,6 +649,54 @@ class CloudDB:
             "tenants_with_failures": tenants_with_failures,
         }
 
+    def read_tenant_conformance(self, tenant_id: str) -> dict[str, Any]:
+        """Return EU AI Act conformance status for *tenant_id*.
+
+        A tenant is *conformant* when all three conditions hold:
+        - ``compliance_score >= 80.0`` (policy hygiene — Art. 9 / Art. 17)
+        - ``attestation_pass_rate >= 0.8`` (technical documentation — Art. 12 / Art. 18)
+        - ``open_vex_alerts == 0`` (supply-chain security — Art. 9)
+
+        Returns:
+        - ``conformant`` (bool)
+        - ``compliance_score`` (float 0–100)
+        - ``attestation_pass_rate`` (float 0.0–1.0)
+        - ``open_vex_alerts`` (int)
+        - ``reasons`` (list[str]): human-readable explanation for each failing gate.
+
+        Always returns a valid dict; unknown / new tenants default to fully conformant
+        (no violations recorded implies perfect posture).
+        """
+        comp = self.read_tenant_compliance_score(tenant_id)
+        att = self.read_attestation_score(tenant_id)
+        vex = self.read_vex_alerts(tenant_id)
+
+        compliance_score: float = comp.get("score", 100.0)
+        attestation_pass_rate: float = att["pass_rate"]
+        open_vex_alerts: int = len(vex)
+
+        reasons: list[str] = []
+        if compliance_score < _COMPLIANCE_THRESHOLD:
+            reasons.append(
+                f"compliance_score {compliance_score} < {_COMPLIANCE_THRESHOLD} (Art. 9/17)"
+            )
+        if attestation_pass_rate < 0.8:
+            reasons.append(
+                f"attestation_pass_rate {attestation_pass_rate} < 0.8 (Art. 12/18)"
+            )
+        if open_vex_alerts > 0:
+            reasons.append(
+                f"{open_vex_alerts} open VEX alert(s) (Art. 9 supply-chain risk)"
+            )
+        conformant = len(reasons) == 0
+        return {
+            "conformant": conformant,
+            "compliance_score": compliance_score,
+            "attestation_pass_rate": attestation_pass_rate,
+            "open_vex_alerts": open_vex_alerts,
+            "reasons": reasons,
+        }
+
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
 

@@ -500,6 +500,41 @@ def _db_read_attestation_overview() -> dict[str, Any]:
     }
 
 
+def _db_read_tenant_conformance(tenant_id: str) -> dict[str, Any]:  # W71
+    """Return EU AI Act conformance for *tenant_id* from SQLite or in-memory."""
+    if _db is not None:
+        return _db.read_tenant_conformance(tenant_id)
+    # ── in-memory path ──────────────────────────────────────────────────────
+    comp = _db_read_tenant_compliance_score(tenant_id)
+    att = _db_read_attestation_score(tenant_id)
+    vex = _db_read_vex_alerts(tenant_id)
+
+    compliance_score: float = comp.get("score", 100.0)
+    attestation_pass_rate: float = att["pass_rate"]
+    open_vex_alerts: int = len(vex)
+
+    reasons: list[str] = []
+    if compliance_score < 80.0:
+        reasons.append(
+            f"compliance_score {compliance_score} < 80.0 (Art. 9/17)"
+        )
+    if attestation_pass_rate < 0.8:
+        reasons.append(
+            f"attestation_pass_rate {attestation_pass_rate} < 0.8 (Art. 12/18)"
+        )
+    if open_vex_alerts > 0:
+        reasons.append(
+            f"{open_vex_alerts} open VEX alert(s) (Art. 9 supply-chain risk)"
+        )
+    return {
+        "conformant": len(reasons) == 0,
+        "compliance_score": compliance_score,
+        "attestation_pass_rate": attestation_pass_rate,
+        "open_vex_alerts": open_vex_alerts,
+        "reasons": reasons,
+    }
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2832,6 +2867,24 @@ async def cloud_get_attestation_overview() -> JSONResponse:
     Supports EU AI Act Art. 9 / Art. 17 portfolio-level supply-chain risk monitoring.
     """
     return JSONResponse(content=_db_read_attestation_overview())
+
+
+@app.get("/cloud/tenants/{tenant_id}/conformance")  # W71
+async def cloud_get_tenant_conformance(tenant_id: str) -> JSONResponse:
+    """Return EU AI Act conformance status for *tenant_id*.
+
+    Evaluates three gates:
+    - ``compliance_score >= 80.0``  (policy hygiene)
+    - ``attestation_pass_rate >= 0.8``  (model attestation coverage)
+    - ``open_vex_alerts == 0``  (no unresolved supply-chain alerts)
+
+    Returns ``{tenant_id, conformant, compliance_score, attestation_pass_rate,
+    open_vex_alerts, reasons}``.  Always HTTP 200; unknown tenants return
+    ``conformant=False`` because attestation_pass_rate defaults to 0.0.
+    Supports EU AI Act Art. 9 + Art. 17 operator self-assessment obligations.
+    """
+    data = _db_read_tenant_conformance(tenant_id)
+    return JSONResponse(content={"tenant_id": tenant_id, **data})
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:
