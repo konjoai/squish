@@ -5,6 +5,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 58: CloudDB read endpoints + AQLM loader tests
+
+### Added
+
+- **`CloudDB.read_inventory(tenant_id)`** — delegates to `get_records("inventory", ...)`; returns all inventory rows for a tenant.
+- **`CloudDB.read_vex_alerts(tenant_id)`** — delegates to `get_records("vex_alerts", ...)`; returns all VEX alert rows for a tenant.
+- **`CloudDB.read_policy_stats()`** — cross-tenant `GROUP BY` aggregate; returns `{policy_name: {passed, failed}}` summed across all tenants.
+- **`_db_read_inventory(tenant_id)`** — API helper: reads from CloudDB when active, falls back to in-memory `_inventory` deque.
+- **`_db_read_vex_alerts(tenant_id)`** — API helper: reads from CloudDB when active, falls back to `_vex_alerts` deque.
+- **`_db_read_policy_stats()`** — API helper: reads from CloudDB when active, folds `_policy_stats` nested dict otherwise.
+- **`GET /cloud/tenants/{tenant_id}/inventory`** — path-param—based inventory read backed by CloudDB; 404 for unknown tenant.
+- **`GET /cloud/tenants/{tenant_id}/vex-alerts`** — path-param—based VEX alert read backed by CloudDB; 404 for unknown tenant.
+- **`GET /cloud/policy-stats`** — global cross-tenant policy pass/fail aggregate; no tenant auth required.
+- **`tests/test_squash_w58.py`** — 17 tests: `TestCloudDBReads` (7), `TestCloudAPIReads` (8), `TestAQLMLoader` (2).
+
+### Notes
+
+- AQLM loader (`squish/quant/compressed_loader.py` lines 659–691) was wired in W56; W58 adds mock-based unit tests confirming the detection branch.
+- `# lm_eval-waiver: hardware not available this session`
+- `# expected-delta: ~−4 to −6pp vs INT4 (extrapolated from INT3 regression curve)`
+- `# validation-run: queued for next session with hardware`
+
+---
+
 ## [Unreleased] — Wave 57: mixed_attn fix, /drift-check REST, SQLite cloud persistence, model-card generator
 
 ### Added
