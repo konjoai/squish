@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import datetime
 import hashlib
 import hmac
 import json
@@ -500,6 +501,27 @@ def _db_read_attestation_overview() -> dict[str, Any]:
     }
 
 
+# EU AI Act enforcement deadline — W74.
+_ENFORCEMENT_DATE = datetime.date(2026, 8, 2)
+
+
+def _enforcement_signal() -> dict[str, Any]:  # W74
+    """Return EU AI Act enforcement deadline fields for in-memory conformance responses."""
+    today = datetime.date.today()
+    days = (_ENFORCEMENT_DATE - today).days
+    risk = (
+        "CRITICAL" if days < 30
+        else "HIGH" if days < 90
+        else "MODERATE" if days < 180
+        else "LOW"
+    )
+    return {
+        "enforcement_deadline": "2026-08-02",
+        "days_until_enforcement": days,
+        "enforcement_risk_level": risk,
+    }
+
+
 def _db_read_tenant_conformance(tenant_id: str) -> dict[str, Any]:  # W71
     """Return EU AI Act conformance for *tenant_id* from SQLite or in-memory."""
     if _db is not None:
@@ -532,6 +554,7 @@ def _db_read_tenant_conformance(tenant_id: str) -> dict[str, Any]:  # W71
         "attestation_pass_rate": attestation_pass_rate,
         "open_vex_alerts": open_vex_alerts,
         "reasons": reasons,
+        **_enforcement_signal(),
     }
 
 
@@ -561,6 +584,7 @@ def _db_read_conformance_report() -> dict[str, Any]:  # W72
         "conformant_tenants": conformant_count,
         "non_conformant_tenants": total - conformant_count,
         "non_conformant": non_conformant,
+        **_enforcement_signal(),
     }
 
 
