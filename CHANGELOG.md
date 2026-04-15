@@ -5,6 +5,17 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 62: Tenant compliance-score endpoint
+
+### Added
+
+- **`CloudDB.read_tenant_compliance_score(tenant_id)`** — derives a compliance score (float 0–100) and letter grade (A/B/C/D/F) from per-policy pass/fail stats; returns `score=100.0 / grade='A'` for tenants with no policy checks recorded.
+- **`GET /cloud/tenants/{tenant_id}/compliance-score`** — executive-dashboard metric endpoint; 404 for unknown tenant, 200 + `{tenant_id, score, grade, policy_breakdown}` otherwise.
+- **`_db_read_tenant_compliance_score()`** helper in `squash/api.py` with SQLite + in-memory fallback; implements identical scoring logic in both paths.
+- **`tests/test_squash_w62.py`** — 16 tests (8 CloudDB unit + 8 API integration).
+
+---
+
 ## [Unreleased] — Wave 61: Tenant summary endpoint
 
 ### Added

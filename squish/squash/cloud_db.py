@@ -254,6 +254,54 @@ class CloudDB:
             "policy_stats": policy_stats,
         }
 
+    # ── W62 read helpers ─────────────────────────────────────────────────────
+
+    def read_tenant_compliance_score(self, tenant_id: str) -> dict:
+        """Return a compliance score derived from per-policy pass/fail stats.
+
+        Keys returned:
+          - score (float 0–100): weighted pass rate across all policy checks.
+          - grade (str): letter grade A/B/C/D/F derived from score.
+          - policy_breakdown (dict[str, {passed, failed, rate}]).
+
+        Returns score=100.0, grade='A' for an unknown tenant or one with no
+        policy checks recorded — no violations recorded implies perfect posture.
+        """
+        stats = self.read_tenant_policy_stats(tenant_id)  # dict[str, {passed, failed}]
+        if not stats:
+            return {"score": 100.0, "grade": "A", "policy_breakdown": {}}
+
+        total_passed = 0
+        total_checks = 0
+        policy_breakdown: dict[str, dict] = {}
+        for policy_name, counts in stats.items():
+            passed = counts.get("passed", 0)
+            failed = counts.get("failed", 0)
+            checks = passed + failed
+            rate = (passed / checks * 100) if checks else 100.0
+            total_passed += passed
+            total_checks += checks
+            policy_breakdown[policy_name] = {
+                "passed": passed,
+                "failed": failed,
+                "rate": round(rate, 2),
+            }
+
+        score = round(total_passed / total_checks * 100, 2) if total_checks else 100.0
+        grade: str
+        if score >= 90:
+            grade = "A"
+        elif score >= 75:
+            grade = "B"
+        elif score >= 60:
+            grade = "C"
+        elif score >= 45:
+            grade = "D"
+        else:
+            grade = "F"
+
+        return {"score": score, "grade": grade, "policy_breakdown": policy_breakdown}
+
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
 

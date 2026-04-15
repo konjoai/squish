@@ -250,6 +250,43 @@ def _db_read_tenant_summary(tenant_id: str) -> dict[str, Any]:
     }
 
 
+def _db_read_tenant_compliance_score(tenant_id: str) -> dict:
+    """Read tenant compliance score from SQLite when active, else compute from in-memory stats."""
+    if _db is not None:
+        return _db.read_tenant_compliance_score(tenant_id)
+    # In-memory fallback — replicate CloudDB scoring logic directly.
+    stats = dict(_policy_stats.get(tenant_id, {}))
+    if not stats:
+        return {"score": 100.0, "grade": "A", "policy_breakdown": {}}
+    total_passed = 0
+    total_checks = 0
+    policy_breakdown: dict[str, dict] = {}
+    for policy_name, counts in stats.items():
+        passed = counts.get("passed", 0)
+        failed = counts.get("failed", 0)
+        checks = passed + failed
+        rate = (passed / checks * 100) if checks else 100.0
+        total_passed += passed
+        total_checks += checks
+        policy_breakdown[policy_name] = {
+            "passed": passed,
+            "failed": failed,
+            "rate": round(rate, 2),
+        }
+    score = round(total_passed / total_checks * 100, 2) if total_checks else 100.0
+    if score >= 90:
+        grade = "A"
+    elif score >= 75:
+        grade = "B"
+    elif score >= 60:
+        grade = "C"
+    elif score >= 45:
+        grade = "D"
+    else:
+        grade = "F"
+    return {"score": score, "grade": grade, "policy_breakdown": policy_breakdown}
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2398,6 +2435,26 @@ async def cloud_get_tenant_summary(tenant_id: str) -> JSONResponse:
         "tenant": _tenants[tenant_id],
         **summary,
     })
+
+
+@app.get("/cloud/tenants/{tenant_id}/compliance-score")  # W62
+async def cloud_get_tenant_compliance_score(tenant_id: str) -> JSONResponse:
+    """Return a computed compliance score (0–100) and letter grade for *tenant_id*.
+
+    Distils the tenant's per-policy pass/fail history from W60 policy-stats
+    into a single executive-dashboard metric.  Score formula:
+    ``sum(passed) / sum(passed + failed) * 100`` across all policies.
+
+    An unknown tenant or one with no policy checks returns score=100.0 /
+    grade='A' — no violations recorded implies perfect posture.
+
+    Addresses NIST AI RMF Govern 1.7 (quantified risk metrics) and EU AI Act
+    Art. 9 obligation to maintain auditable risk management records.
+    """
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    result = _db_read_tenant_compliance_score(tenant_id)
+    return JSONResponse(content={"tenant_id": tenant_id, **result})
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:
