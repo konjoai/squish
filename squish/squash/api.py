@@ -309,6 +309,41 @@ def _db_read_tenant_compliance_history(tenant_id: str) -> list[dict]:
     return [{"date": d, "score": score, "grade": grade} for d in sorted(dates)]
 
 
+def _db_read_compliance_overview() -> dict:
+    """Return platform-wide compliance aggregate from SQLite or in-memory stores."""
+    _THRESHOLD = 80.0
+    if _db is not None:
+        return _db.read_compliance_overview()
+    # In-memory fallback: iterate registered tenants, compute per-tenant score.
+    tenant_ids = list(_tenants.keys())
+    if not tenant_ids:
+        return {
+            "total_tenants": 0,
+            "compliant_tenants": 0,
+            "non_compliant_tenants": 0,
+            "average_score": 0.0,
+            "top_at_risk": [],
+        }
+    scores = []
+    for tid in tenant_ids:
+        data = _db_read_tenant_compliance_score(tid)
+        scores.append({"tenant_id": tid, "score": data["score"], "grade": data["grade"]})
+    total = len(scores)
+    compliant = sum(1 for s in scores if s["score"] >= _THRESHOLD)
+    average = round(sum(s["score"] for s in scores) / total, 4)
+    at_risk = sorted(
+        [s for s in scores if s["score"] < _THRESHOLD],
+        key=lambda x: x["score"],
+    )[:3]
+    return {
+        "total_tenants": total,
+        "compliant_tenants": compliant,
+        "non_compliant_tenants": total - compliant,
+        "average_score": average,
+        "top_at_risk": at_risk,
+    }
+
+
 # ── Cloud auth helpers (W52-55) ───────────────────────────────────────────────
 
 def _verify_jwt_hs256(token: str, secret: str) -> dict[str, Any]:
@@ -2496,6 +2531,22 @@ async def cloud_get_tenant_compliance_history(tenant_id: str) -> JSONResponse:
         raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
     history = _db_read_tenant_compliance_history(tenant_id)
     return JSONResponse(content={"tenant_id": tenant_id, "history": history})
+
+
+@app.get("/cloud/compliance-overview")  # W64
+async def cloud_get_compliance_overview() -> JSONResponse:
+    """Return a platform-wide compliance aggregate across all registered tenants.
+
+    Provides a single-request view of the entire platform's AI compliance posture,
+    including total and compliant tenant counts, the average compliance score, and
+    the top three tenants most at risk.  Always returns HTTP 200; an empty platform
+    returns zero counts and an empty top_at_risk list.
+
+    Addresses EU AI Act Art. 9 / Art. 17 obligations for systematic portfolio-level
+    risk monitoring and NIST AI RMF Govern 1.7 (quantified risk tracking across
+    all AI deployments in the organisation).
+    """
+    return JSONResponse(content=_db_read_compliance_overview())
 
 
 def _result_to_dict(r: AttestResult) -> dict[str, Any]:

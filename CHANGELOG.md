@@ -5,6 +5,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 64: Cross-tenant compliance overview
+
+### Added
+
+- **`CloudDB.read_compliance_overview()`** — platform-wide aggregate returning `{total_tenants, compliant_tenants, non_compliant_tenants, average_score, top_at_risk}` across all registered tenants; compliant threshold is score ≥ 80.0; `top_at_risk` is up to 3 lowest-scoring tenants sorted ascending.
+- **`GET /cloud/compliance-overview`** — cross-tenant endpoint; always HTTP 200; empty platform returns all-zero counts and empty list; addresses EU AI Act Art. 9/17 portfolio-level risk monitoring obligation.
+- **`_db_read_compliance_overview()`** helper in `squash/api.py` with SQLite + in-memory fallback; in-memory path iterates `_tenants` and reuses `_db_read_tenant_compliance_score()`.
+- **`_COMPLIANCE_THRESHOLD = 80.0`** module-level constant in `cloud_db.py`.
+- **`tests/test_squash_w64.py`** — 16 tests (8 `TestCloudDBComplianceOverview` unit + 8 `TestCloudAPIComplianceOverviewEndpoint` integration).
+
+---
+
 ## [Unreleased] — Wave 63: Tenant compliance-history endpoint
 
 ### Added

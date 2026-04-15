@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS policy_stats (
 # Valid table names — guard against SQL injection via the table parameter.
 _VALID_TABLES = frozenset({"inventory", "vex_alerts", "drift_events"})
 
+# Compliant threshold — tenant scores >= this are counted as compliant (W64).
+_COMPLIANCE_THRESHOLD = 80.0
+
 
 class CloudDB:
     """Minimal SQLite wrapper for the squash cloud dashboard stores.
@@ -329,6 +332,51 @@ class CloudDB:
         score = score_data["score"]
         grade = score_data["grade"]
         return [{"date": row["dt"], "score": score, "grade": grade} for row in rows]
+
+    # ── W64 read helpers ──────────────────────────────────────────────────────
+
+    def read_compliance_overview(self) -> dict:
+        """Return platform-wide compliance aggregate across all tenants.
+
+        Returns a dict with keys:
+          - total_tenants (int): count of all registered tenants.
+          - compliant_tenants (int): count with score >= _COMPLIANCE_THRESHOLD.
+          - non_compliant_tenants (int): count with score < _COMPLIANCE_THRESHOLD.
+          - average_score (float): mean score across all tenants; 0.0 when empty.
+          - top_at_risk (list[dict]): up to 3 lowest-scoring tenants, sorted
+            ascending by score (worst first).  Each entry: {tenant_id, score, grade}.
+
+        Empty platform (no tenants) returns all-zero counts and an empty list.
+        """
+        with self._lock:
+            rows = self._conn.execute("SELECT tenant_id FROM tenants").fetchall()
+        tenants = [row["tenant_id"] for row in rows]
+        if not tenants:
+            return {
+                "total_tenants": 0,
+                "compliant_tenants": 0,
+                "non_compliant_tenants": 0,
+                "average_score": 0.0,
+                "top_at_risk": [],
+            }
+        scores = []
+        for tid in tenants:
+            data = self.read_tenant_compliance_score(tid)
+            scores.append({"tenant_id": tid, "score": data["score"], "grade": data["grade"]})
+        total = len(scores)
+        compliant = sum(1 for s in scores if s["score"] >= _COMPLIANCE_THRESHOLD)
+        average = round(sum(s["score"] for s in scores) / total, 4)
+        at_risk = sorted(
+            [s for s in scores if s["score"] < _COMPLIANCE_THRESHOLD],
+            key=lambda x: x["score"],
+        )[:3]
+        return {
+            "total_tenants": total,
+            "compliant_tenants": compliant,
+            "non_compliant_tenants": total - compliant,
+            "average_score": average,
+            "top_at_risk": at_risk,
+        }
 
     def delete_tenant(self, tenant_id: str) -> None:
         """Delete a tenant and all associated records (cascade).
