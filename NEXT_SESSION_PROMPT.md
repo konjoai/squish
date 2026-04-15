@@ -1,9 +1,18 @@
-# Wave 62 Session Prompt
+# Wave 63 Session Prompt
 
 **Session type:** Code session. Single wave, one commit.
-**State when written:** Wave 61 complete. ~4009 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
+**State when written:** Wave 62 complete. ~4029 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
 
 ---
+
+## W62 COMPLETE ✅
+
+| Task | Status |
+|---|---|
+| `CloudDB.read_tenant_compliance_score(tenant_id)` — score 0–100 + grade A/B/C/D/F | ✅ |
+| `_db_read_tenant_compliance_score()` helper in api.py (SQLite + in-memory fallback) | ✅ |
+| `GET /cloud/tenants/{tenant_id}/compliance-score` endpoint | ✅ |
+| `tests/test_squash_w62.py` — 16 tests (20 collected), all passing | ✅ |
 
 ## W61 COMPLETE ✅
 
@@ -72,112 +81,93 @@ Still pending. Run before any AQLM-dependent work. Waiver format documented in p
 
 ---
 
-## W62 — Tenant compliance score endpoint
+## W63 — Tenant compliance history (time-series)
 
-**Purpose:** Add `GET /cloud/tenants/{tenant_id}/compliance-score` — a computed metric that distills the tenant's per-policy pass/fail stats into a single score (0–100 float) and letter grade (A/B/C/D/F). This is the actionable "executive dashboard" number that follows naturally from the W61 summary endpoint.
+**Purpose:** Add `GET /cloud/tenants/{tenant_id}/compliance-history` — a time-bucketed view of compliance scores showing how posture has changed over time. Each drift-event carries a timestamp; W63 groups them by calendar day and returns a sorted list of `{date, score, grade}` entries.
 
-Score formula: `sum(passed) / sum(passed + failed) * 100` across all policies. An empty policy_stats dict (no policy checks run yet) returns `100.0` with grade `A` — no violations recorded.
+This is the natural successor to W62’s point-in-time score: W62 tells you *where you are*, W63 tells you *how you got here*.
 
-Grade thresholds: `A ≥ 90 | B ≥ 75 | C ≥ 60 | D ≥ 45 | F < 45`.
-
-| Prior aggregates | W62 adds |
-|---|---|
-| `GET /cloud/tenants/{id}/summary` — counts (W61) | `GET /cloud/tenants/{id}/compliance-score` — derived score |
-| `GET /cloud/tenants/{id}/policy-stats` — raw pass/fail per policy (W60) | — |
+History formula per bucket: apply the same score/grade logic to the cumulative pass/fail counts of policy events recorded **on or before** that day. This gives a "running compliance score" so a dashboard can render a trend line.
 
 ---
 
 ### Method to add in `squish/squash/cloud_db.py`
 
 ```python
-def read_tenant_compliance_score(self, tenant_id: str) -> dict:
-    """Return a compliance score derived from per-policy pass/fail stats.
+def read_tenant_compliance_history(self, tenant_id: str) -> list[dict]:
+    """Return day-bucketed compliance scores for *tenant_id* in ascending date order.
 
-    Keys: score (float 0-100), grade (str A/B/C/D/F),
-          policy_breakdown (dict[str, {passed, failed, rate}]).
-    Returns score=100.0, grade='A' for unknown tenant or no policy checks.
+    Each entry: {date: str (ISO YYYY-MM-DD), score: float, grade: str}.
+    Returns [] for unknown tenant or one with no drift events.
+    Derived from drift_events.timestamp field using per-day grouping.
     """
 ```
 
-Pattern: call `read_tenant_policy_stats(tenant_id)`, compute totals, derive score and grade.
+Pattern: query `drift_events` rows for `tenant_id`, group by `date(timestamp)`, compute cumulative pass/fail per day using policy-stats data, return sorted list.
 
-Grade thresholds (inclusive lower bound):
-- A: ≥ 90.0
-- B: ≥ 75.0
-- C: ≥ 60.0
-- D: ≥ 45.0
-- F: < 45.0
-
-Each policy entry in `policy_breakdown`:
-```python
-{"passed": int, "failed": int, "rate": float}  # rate = passed/(passed+failed)*100
-```
+**Simplest viable approach:** Group `drift_events` by day. For each day, reuse `read_tenant_compliance_score()` snapshot approach but filtered to events on/before that day. A single-pass approach collecting daily aggregates is acceptable since history is bounded by the number of days with events.
 
 ---
 
 ### Endpoint to add in `squish/squash/api.py`
 
 ```
-GET /cloud/tenants/{tenant_id}/compliance-score
+GET /cloud/tenants/{tenant_id}/compliance-history
 ```
 
 - Requires the tenant to exist — raise `HTTPException(404)` for unknown `tenant_id`.
-- Returns HTTP 200 JSON with fields: `tenant_id`, `score`, `grade`, `policy_breakdown`.
-- Backed by new `_db_read_tenant_compliance_score(tenant_id)` helper + in-memory fallback.
+- Returns HTTP 200 JSON: `{tenant_id, history: [{date, score, grade}, ...]}`.
+- `history` is sorted ascending by date. Empty list for new tenants with no events.
+- Backed by `_db_read_tenant_compliance_history(tenant_id)` helper + in-memory fallback.
 
-Helper (pattern: `_db_read_tenant_summary`):
-```python
-def _db_read_tenant_compliance_score(tenant_id: str) -> dict: ...
-```
-
-In-memory fallback computes the same logic from `_policy_stats[tenant_id]` directly.
+In-memory fallback: since `_drift_events` stores raw event dicts, iterate them, group by `event.get("date")` or `event.get("timestamp", "")[:10]`, compute per-day cumulative score using the same grade formula.
 
 ---
 
-### Tests — `tests/test_squash_w62.py` (new file)
+### Tests — `tests/test_squash_w63.py` (new file, 16 tests)
 
-**`TestCloudDBTenantComplianceScore`** (8 tests):
-1. `test_returns_dict_with_required_keys` — result has keys: score, grade, policy_breakdown
-2. `test_no_policies_returns_perfect_score` — empty/unknown tenant → score 100.0, grade 'A'
-3. `test_all_passed_returns_100` — all policies 100% pass → score 100.0, grade 'A'
-4. `test_all_failed_returns_0` — all policies 100% fail → score 0.0, grade 'F'
-5. `test_mixed_score_computed_correctly` — 3 passed 1 failed → 75.0
-6. `test_grade_thresholds` — parameterize boundary scores: 90→A, 75→B, 60→C, 45→D, 44→F
-7. `test_policy_breakdown_contains_rate` — each policy entry has `rate` float
-8. `test_score_scoped_to_tenant` — two tenants, different stats → different scores
+**`TestCloudDBTenantComplianceHistory`** (8 tests):
+1. `test_returns_list` — result is a list
+2. `test_empty_for_no_events` — tenant with no drift_events → []
+3. `test_single_day_entry` — events on one day → list length 1
+4. `test_two_days_sorted_ascending` — events on two days → sorted by date asc
+5. `test_entry_has_required_keys` — each entry has date, score, grade
+6. `test_score_is_float` — score field is float
+7. `test_grade_is_string` — grade field is one of A/B/C/D/F
+8. `test_history_scoped_to_tenant` — two tenants, independent histories
 
-**`TestCloudAPIComplianceScoreEndpoint`** (8 tests):
-1. `test_404_for_unknown_tenant` — no tenant created → 404
-2. `test_200_for_known_tenant` — create tenant → 200
-3. `test_response_has_required_keys` — check score, grade, policy_breakdown, tenant_id
-4. `test_perfect_score_no_policies` — new tenant (no policy checks) → score 100.0, grade 'A'
-5. `test_score_reflects_in_memory_stats` — set _policy_stats directly, verify score
-6. `test_grade_a_on_high_pass_rate` — 10 passed 0 failed → grade 'A'
-7. `test_grade_f_on_low_pass_rate` — 0 passed 10 failed → grade 'F'
-8. `test_tenant_id_echoed_in_response` — verify tenant_id field in response body
+**`TestCloudAPIComplianceHistoryEndpoint`** (8 tests):
+1. `test_404_for_unknown_tenant`
+2. `test_200_for_known_tenant`
+3. `test_response_has_tenant_id_and_history`
+4. `test_history_empty_for_new_tenant`
+5. `test_history_sorted_ascending` — inject two-day data, verify order
+6. `test_history_entry_has_date_score_grade`
+7. `test_tenant_id_echoed`
+8. `test_history_type_is_list`
 
-**Total: 16 new tests.** Suite target: **~4025 passing** after W62.
+**Total: 16 new tests.** Suite target: **~4045 passing** after W63.
 
 ---
 
 ## Ship Gate — Done When (all 5 required)
 
-1. **Tests**: `python3 -m pytest tests/ --tb=no -q` → 0 failures. `tests/test_squash_w62.py` included, 16 tests passing.
-2. **Memory**: No new in-memory structures introduced — no RSS impact.
-3. **CLI**: No new CLI flags. No `--help` update needed.
-4. **CHANGELOG**: Wave 62 entry prepended in `CHANGELOG.md`.
-5. **Module count**: `find squish -name "*.py" | grep -v __pycache__ | grep -v experimental | wc -l` ≤ 125. W62 adds no new production modules (test file only).
+1. **Tests**: `python3 -m pytest tests/ --tb=no -q` → 0 failures. `tests/test_squash_w63.py` included, 16 tests passing.
+2. **Memory**: No new in-memory structures introduced.
+3. **CLI**: No new CLI flags.
+4. **CHANGELOG**: Wave 63 entry prepended in `CHANGELOG.md`.
+5. **Module count**: ≤ 125 (no new production module, test file only).
 
 ---
 
 ## Key Files
 
-| File | W62 Action |
+| File | W63 Action |
 |---|---|
-| `squish/squash/cloud_db.py` | Add `read_tenant_compliance_score()` (computes score+grade from policy_stats) |
-| `squish/squash/api.py` | Add `_db_read_tenant_compliance_score()` helper + `GET /cloud/tenants/{id}/compliance-score` endpoint |
-| `tests/test_squash_w62.py` | New file — 16 tests (CloudDB×8, API×8) |
-| `CHANGELOG.md` | Prepend Wave 62 entry |
+| `squish/squash/cloud_db.py` | Add `read_tenant_compliance_history()` (day-bucketed scores from drift_events + policy_stats) |
+| `squish/squash/api.py` | Add `_db_read_tenant_compliance_history()` helper + `GET /cloud/tenants/{id}/compliance-history` endpoint |
+| `tests/test_squash_w63.py` | New file — 16 tests (CloudDB×8, API×8) |
+| `CHANGELOG.md` | Prepend Wave 63 entry |
 
 ---
 
