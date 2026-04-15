@@ -1,9 +1,23 @@
-# Wave 58 Session Prompt
+# Wave 59 Session Prompt
 
 **Session type:** Code session. Single wave, one commit.
-**State when written:** Wave 57 complete. 3946 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
+**State when written:** Wave 58 complete. 3962 tests pass (0 failed, 2 skipped). 120 modules (ceiling: 125 ✅).
 
 ---
+
+## W58 COMPLETE ✅
+
+| Task | Status |
+|---|---|
+| `CloudDB.read_inventory(tenant_id)` | ✅ |
+| `CloudDB.read_vex_alerts(tenant_id)` | ✅ |
+| `CloudDB.read_policy_stats()` (cross-tenant aggregate) | ✅ |
+| `_db_read_inventory/vex_alerts/policy_stats()` helpers in api.py | ✅ |
+| `GET /cloud/tenants/{id}/inventory` endpoint | ✅ |
+| `GET /cloud/tenants/{id}/vex-alerts` endpoint | ✅ |
+| `GET /cloud/policy-stats` endpoint | ✅ |
+| `tests/test_squash_w58.py` — 16/16 passing | ✅ |
+| AQLM lm_eval validation | ⚠️ PENDING (lm_eval-waiver filed) |
 
 ## W57 COMPLETE ✅
 
