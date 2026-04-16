@@ -5,6 +5,19 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 75: VEX Feed Plan Gating
+
+### Added
+- `SQUASH_PLAN` env var (`community` / `professional` / `enterprise`) controls VEX history window
+- `_PLAN_LIMITS` tier table: community=7d, professional=90d, enterprise=unlimited
+- `_get_plan_limits()` helper returns the active plan's limit dict
+- `GET /cloud/vex-feed` age-filters alerts to the plan window and returns `X-Squash-Plan` header
+- 402 `plan_upgrade_required` response when community plan has history but none within 7 days
+- Alerts without a `created_at` field are treated as recent (always included)
+- `tests/test_squash_w75.py` — 23 tests covering all three plan tiers, header, and 402 gate
+
+---
+
 ## [9.14.0] — 2026-04-15 — Wave 74: EU AI Act Enforcement Deadline Signal
 
 ### Added

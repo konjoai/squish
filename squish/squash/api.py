@@ -87,6 +87,21 @@ _UNAUTHED_PATHS = frozenset({"/health", "/docs", "/redoc", "/openapi.json", "/me
 _RATE_LIMIT = int(os.environ.get("SQUASH_RATE_LIMIT", "60"))
 _rate_window: dict[str, deque] = defaultdict(deque)
 
+# ── Plan gating — W75 ────────────────────────────────────────────────────────
+# Set SQUASH_PLAN env var to "professional" or "enterprise" to unlock full
+# VEX history and higher rate limits.  Default: community (free tier).
+SQUASH_PLAN: str = os.environ.get("SQUASH_PLAN", "community")
+_PLAN_LIMITS: dict[str, dict[str, int | None]] = {
+    "community":     {"vex_max_age_days": 7,   "vex_rate_limit": 10},
+    "professional":  {"vex_max_age_days": 90,  "vex_rate_limit": 120},
+    "enterprise":    {"vex_max_age_days": None, "vex_rate_limit": None},
+}
+
+
+def _get_plan_limits() -> dict[str, int | None]:  # W75
+    """Return the limit dict for the currently configured plan."""
+    return _PLAN_LIMITS.get(SQUASH_PLAN, _PLAN_LIMITS["community"])
+
 # ── Prometheus-style counters ─────────────────────────────────────────────────
 _COUNTERS: dict[str, int] = {
     "squash_attest_total": 0,
@@ -2793,15 +2808,53 @@ async def cloud_get_compliance_overview() -> JSONResponse:
     return JSONResponse(content=_db_read_compliance_overview())
 
 
-@app.get("/cloud/vex-feed")  # W65
+@app.get("/cloud/vex-feed")  # W65 / W75
 async def cloud_get_vex_feed() -> JSONResponse:
     """Return hosted cross-tenant VEX advisory feed.
 
     EU AI Act Art. 9 / ISO 42001 §8.4: operators must maintain a live,
     machine-readable feed of known-vulnerability advisories (VEX) across
     the full model inventory for real-time supply-chain transparency.
+
+    W75 plan gating:
+    - community:    alerts filtered to the last 7 days; 402 if history exists
+                    but all alerts are outside the window.
+    - professional: alerts filtered to the last 90 days.
+    - enterprise:   full history, no age filter.
+    All responses include ``X-Squash-Plan: <plan>`` header.
     """
-    return JSONResponse(content=_db_read_vex_feed())
+    payload = _db_read_vex_feed()
+    limits = _get_plan_limits()
+    max_age = limits["vex_max_age_days"]
+
+    if max_age is not None:
+        cutoff = datetime.date.today() - datetime.timedelta(days=max_age)
+        all_alerts: list[dict[str, Any]] = payload.get("alerts", [])
+        def _alert_in_window(a: dict[str, Any]) -> bool:
+            try:
+                return datetime.datetime.fromisoformat(a["created_at"]).date() >= cutoff
+            except (KeyError, ValueError):
+                return True  # no/invalid timestamp — treat as recent
+
+        filtered = [a for a in all_alerts if _alert_in_window(a)]
+        # 402: history exists but none fall within the community window.
+        if SQUASH_PLAN == "community" and all_alerts and not filtered:
+            return JSONResponse(
+                status_code=402,
+                content={
+                    "error": "plan_upgrade_required",
+                    "plan": "community",
+                    "upgrade_to": "professional",
+                    "reason": "vex history beyond 7 days requires a professional plan",
+                },
+                headers={"X-Squash-Plan": SQUASH_PLAN},
+            )
+        payload = {**payload, "alerts": filtered, "total_alerts": len(filtered)}
+
+    return JSONResponse(
+        content=payload,
+        headers={"X-Squash-Plan": SQUASH_PLAN},
+    )
 
 
 @app.post("/cloud/tenants/{tenant_id}/vertex-result", status_code=201)  # W66
