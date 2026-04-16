@@ -1219,6 +1219,80 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Suppress non-error output",
     )
 
+    # ── Wave 77 — Cloud CLI commands ──────────────────────────────────────────
+    cloud_status_cmd = sub.add_parser(
+        "cloud-status",
+        help="Show EU AI Act conformance status for a single tenant",
+        description=(
+            "Query the in-memory cloud dashboard for EU AI Act conformance status "
+            "of the specified tenant.  Exits 0 if conformant, 2 if non-conformant.\n\n"
+            "Example: squash cloud-status acme-tenant-id"
+        ),
+    )
+    cloud_status_cmd.add_argument(
+        "tenant_id",
+        help="Tenant identifier to inspect",
+    )
+    cloud_status_cmd.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Also dump full conformance dict as JSON to stdout",
+    )
+    cloud_status_cmd.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress non-error output",
+    )
+
+    cloud_report_cmd = sub.add_parser(
+        "cloud-report",
+        help="Print a platform-wide EU AI Act conformance report",
+        description=(
+            "Print a summary table of EU AI Act conformance for all registered "
+            "tenants.  Exits 0 if all tenants are conformant, 2 if any are not.\n\n"
+            "Example: squash cloud-report"
+        ),
+    )
+    cloud_report_cmd.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Dump full conformance report dict as JSON to stdout",
+    )
+    cloud_report_cmd.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress non-error output",
+    )
+
+    cloud_export_cmd = sub.add_parser(
+        "cloud-export",
+        help="Export a complete compliance audit bundle for a tenant",
+        description=(
+            "Compose and export a complete compliance audit bundle for the "
+            "specified tenant.  Scope is gated by SQUASH_PLAN "
+            "(community/professional/enterprise).\n\n"
+            "Example: squash cloud-export acme-tenant-id --output report.json"
+        ),
+    )
+    cloud_export_cmd.add_argument(
+        "tenant_id",
+        help="Tenant identifier to export",
+    )
+    cloud_export_cmd.add_argument(
+        "--output",
+        metavar="PATH",
+        default=None,
+        dest="output_path",
+        help="Write JSON to PATH (default: stdout; use - for stdout explicitly)",
+    )
+    cloud_export_cmd.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress non-error output",
+    )
+
     return parser
 
 
@@ -2923,6 +2997,116 @@ def _cmd_model_card(args: argparse.Namespace, quiet: bool) -> int:
     return 0
 
 
+# ── Wave 77 — Cloud CLI command implementations ───────────────────────────────
+
+def _cmd_cloud_status(args: argparse.Namespace, quiet: bool) -> int:
+    """Show EU AI Act conformance status for a single tenant. Exit 0=conformant, 2=non-conformant."""
+    try:
+        from squish.squash import api as _api
+    except ImportError as exc:
+        print(f"squash is not installed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.tenant_id not in _api._tenants:
+        print(f"squash cloud-status: tenant not found: {args.tenant_id}", file=sys.stderr)
+        return 1
+
+    status = _api._db_read_tenant_conformance(args.tenant_id)
+
+    conformant: bool = status.get("conformant", False)
+    score: float = float(status.get("compliance_score", 0.0))
+    risk: str = status.get("enforcement_risk_level", "UNKNOWN")
+    days: int = int(status.get("days_until_enforcement", 0))
+    reasons: list = status.get("reasons", [])
+
+    status_label = "CONFORMANT" if conformant else "NON-CONFORMANT"
+    icon = "✓" if conformant else "✗"
+
+    if not quiet:
+        print(
+            f"{icon} {args.tenant_id} | {status_label} | score: {score:.1f} | "
+            f"{risk} | {days} days until enforcement"
+        )
+        for reason in reasons:
+            print(f"  • {reason}")
+
+    if getattr(args, "output_json", False):
+        import json as _json
+        print(_json.dumps(status, indent=2))
+
+    return 0 if conformant else 2
+
+
+def _cmd_cloud_report(args: argparse.Namespace, quiet: bool) -> int:
+    """Print platform-wide EU AI Act conformance report. Exit 0=all conformant, 2=any non-conformant."""
+    try:
+        from squish.squash import api as _api
+    except ImportError as exc:
+        print(f"squash is not installed: {exc}", file=sys.stderr)
+        return 2
+
+    if not _api._tenants:
+        if not quiet:
+            print("no tenants registered")
+        return 0
+
+    report = _api._db_read_conformance_report()
+    total: int = report.get("total_tenants", 0)
+    conformant_count: int = report.get("conformant_tenants", 0)
+    non_conformant_count: int = report.get("non_conformant_tenants", 0)
+    risk: str = report.get("enforcement_risk_level", "UNKNOWN")
+    days: int = int(report.get("days_until_enforcement", 0))
+
+    if not quiet:
+        print(
+            f"Platform Report | {total} tenant(s) | {conformant_count} conformant | "
+            f"{non_conformant_count} non-conformant | {risk} | {days} days until enforcement"
+        )
+        print(f"{'Tenant':<30} {'Score':>7} {'Status':<16} {'Risk':<10} {'Days':>5}")
+        print("-" * 72)
+        for tid in _api._tenants:
+            row = _api._db_read_tenant_conformance(tid)
+            row_score: float = float(row.get("compliance_score", 0.0))
+            row_status = "CONFORMANT" if row.get("conformant") else "NON-CONFORMANT"
+            row_risk: str = row.get("enforcement_risk_level", "UNKNOWN")
+            row_days: int = int(row.get("days_until_enforcement", 0))
+            print(f"{tid:<30} {row_score:>7.1f} {row_status:<16} {row_risk:<10} {row_days:>5}")
+
+    if getattr(args, "output_json", False):
+        import json as _json
+        print(_json.dumps(report, indent=2))
+
+    return 0 if non_conformant_count == 0 else 2
+
+
+def _cmd_cloud_export(args: argparse.Namespace, quiet: bool) -> int:
+    """Export a complete compliance audit bundle for a tenant. Always exits 0 on success."""
+    try:
+        from squish.squash import api as _api
+    except ImportError as exc:
+        print(f"squash is not installed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.tenant_id not in _api._tenants:
+        print(f"squash cloud-export: tenant not found: {args.tenant_id}", file=sys.stderr)
+        return 1
+
+    import json as _json
+
+    bundle = _api._db_build_tenant_export(args.tenant_id)
+
+    output_path = getattr(args, "output_path", None)
+    if output_path and output_path != "-":
+        path = Path(output_path)
+        path.write_text(_json.dumps(bundle, indent=2), encoding="utf-8")
+        if not quiet:
+            print(f"✓ export written to {path}")
+    else:
+        print(_json.dumps(bundle, indent=2))
+
+    return 0
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -3009,6 +3193,12 @@ def main() -> None:
         sys.exit(_cmd_chat(args, quiet))
     elif args.command == "model-card":
         sys.exit(_cmd_model_card(args, quiet))
+    elif args.command == "cloud-status":
+        sys.exit(_cmd_cloud_status(args, quiet))
+    elif args.command == "cloud-report":
+        sys.exit(_cmd_cloud_report(args, quiet))
+    elif args.command == "cloud-export":
+        sys.exit(_cmd_cloud_export(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)
