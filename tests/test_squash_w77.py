@@ -49,13 +49,13 @@ if _SQUISH_ROOT not in sys.path:
 
 import squash.api as _api  # noqa: E402 — after stubs
 
-# Register squash.api under the squish.squash.api key so that cli.py's lazy
-# `from squish.squash import api as _api` resolves to the *same* module object
-# (otherwise tests seed one _tenants dict while the CLI checks a different one).
+# Build minimal package stubs so `from squish.squash import api` resolves to
+# _api at test execution time. The actual sys.modules aliasing is deferred to
+# setUpModule/tearDownModule so pytest collection does NOT permanently replace
+# squish.squash.api in sys.modules (which would break other test modules that
+# also import squish.squash.api at collection time).
 _squish_pkg = sys.modules.setdefault("squish", types.ModuleType("squish"))
 _squish_squash_pkg = sys.modules.setdefault("squish.squash", types.ModuleType("squish.squash"))
-sys.modules["squish.squash.api"] = _api
-_squish_squash_pkg.api = _api  # type: ignore[attr-defined]
 
 # Import CLI handlers directly so we can call them in-process
 from squash.cli import (  # noqa: E402 — after stubs
@@ -112,6 +112,29 @@ def _capture_stdout(fn, *args, **kwargs):
     with contextlib.redirect_stdout(buf):
         rc = fn(*args, **kwargs)
     return rc, buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Module-level setup / teardown — alias squish.squash.api only while running
+# so collection-time imports in other test modules are not affected.
+# ---------------------------------------------------------------------------
+
+_orig_squash_api = None
+
+
+def setUpModule() -> None:  # noqa: N802 — unittest naming convention
+    global _orig_squash_api
+    _orig_squash_api = sys.modules.get("squish.squash.api")
+    sys.modules["squish.squash.api"] = _api
+    _squish_squash_pkg.api = _api  # type: ignore[attr-defined]
+
+
+def tearDownModule() -> None:  # noqa: N802 — unittest naming convention
+    if _orig_squash_api is not None:
+        sys.modules["squish.squash.api"] = _orig_squash_api
+        _squish_squash_pkg.api = _orig_squash_api  # type: ignore[attr-defined]
+    else:
+        sys.modules.pop("squish.squash.api", None)
 
 
 # ---------------------------------------------------------------------------

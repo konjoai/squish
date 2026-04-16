@@ -2088,8 +2088,15 @@ def cmd_doctor(args):
     # MLX
     _mx_mod, _ = _pkg_cache["mlx.core"]
     if _mx_mod is not None:
-        _check(f"mlx ≥ 0.18  (found {_mx_mod.__version__})",
-               _ver_ok(_mx_mod.__version__, "0.18"),
+        _mx_version = getattr(_mx_mod, "__version__", None)
+        if _mx_version is None:
+            try:
+                import mlx as _mlx_pkg  # __version__ lives on mlx, not mlx.core
+                _mx_version = getattr(_mlx_pkg, "__version__", "0")
+            except Exception:  # pragma: no cover
+                _mx_version = "0"
+        _check(f"mlx ≥ 0.18  (found {_mx_version})",
+               _ver_ok(_mx_version, "0.18"),
                "pip install --upgrade mlx")
     else:  # pragma: no cover
         _check("mlx", False, "pip install mlx")
@@ -2107,8 +2114,9 @@ def cmd_doctor(args):
     # numpy
     _np_mod, _ = _pkg_cache["numpy"]
     if _np_mod is not None:
-        _check(f"numpy ≥ 1.26  (found {_np_mod.__version__})",
-               _ver_ok(_np_mod.__version__, "1.26"),
+        _np_version = getattr(_np_mod, "__version__", "0")
+        _check(f"numpy ≥ 1.26  (found {_np_version})",
+               _ver_ok(_np_version, "1.26"),
                "pip install --upgrade numpy")
     else:  # pragma: no cover
         _check("numpy", False, "pip install numpy")
@@ -2116,8 +2124,9 @@ def cmd_doctor(args):
     # transformers
     _tf_mod, _ = _pkg_cache["transformers"]
     if _tf_mod is not None:
-        _check(f"transformers ≥ 4.40  (found {_tf_mod.__version__})",
-               _ver_ok(_tf_mod.__version__, "4.40"),
+        _tf_version = getattr(_tf_mod, "__version__", "0")
+        _check(f"transformers ≥ 4.40  (found {_tf_version})",
+               _ver_ok(_tf_version, "4.40"),
                "pip install --upgrade transformers")
     else:  # pragma: no cover
         _check("transformers", False, "pip install transformers")
@@ -2125,8 +2134,9 @@ def cmd_doctor(args):
     # zstandard
     _zstd_mod, _ = _pkg_cache["zstandard"]
     if _zstd_mod is not None:
-        _check(f"zstandard ≥ 0.22  (found {_zstd_mod.__version__})",
-               _ver_ok(_zstd_mod.__version__, "0.22"),
+        _zstd_version = getattr(_zstd_mod, "__version__", "0")
+        _check(f"zstandard ≥ 0.22  (found {_zstd_version})",
+               _ver_ok(_zstd_version, "0.22"),
                "pip install --upgrade zstandard")
     else:  # pragma: no cover
         _check("zstandard (optional zstd entropy layer)", False, "pip install zstandard")
