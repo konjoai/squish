@@ -5,6 +5,22 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 77: Cloud CLI Commands (cloud-status / cloud-report / cloud-export)
+
+### Added
+- `squash cloud-status <tenant-id>` — per-tenant EU AI Act conformance check (rc 0=conformant, 1=not-found, 2=non-conformant)
+- `squash cloud-report` — platform-wide conformance table across all tenants (rc 0=all-pass, 2=any-fail)
+- `squash cloud-export <tenant-id> [--output-path FILE]` — full tenant compliance JSON export to stdout or file (rc 0=ok, 1=not-found)
+- `--json` flag on `cloud-status` / `cloud-report` for machine-readable JSON output
+- Module aliasing fix: `setUpModule`/`tearDownModule` in `test_squash_w77.py` ensure CLI lazy-import shares the test-seeded in-memory store without polluting `sys.modules` for other test modules
+- `tests/test_squash_w77.py` — 12 tests covering cloud-status, cloud-report, cloud-export (all passing)
+
+### Fixed
+- `cmd_doctor` AttributeError on `mlx.core.__version__` when stub module installed by test collection — now uses `getattr` with fallback to `mlx.__version__` (fixes 6 doctor test failures in full suite)
+- `TestMetricsEndpoint::test_counter_increments_on_scan` and W75 VEX gating tests now pass reliably in full-suite runs (root cause: `test_squash_w77.py` module-level `sys.modules["squish.squash.api"]` replacement; fixed by scoping aliasing to `setUpModule`/`tearDownModule`)
+
+---
+
 ## [Unreleased] — Wave 76: Tenant Audit Export Bundle
 
 ### Added
