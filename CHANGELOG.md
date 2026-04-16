@@ -5,6 +5,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased] — Wave 79: Cloud Attestation CLI + Cloud VEX CLI
+
+### Added
+- `squash cloud-attest <tenant-id> <model-path>` — run attestation pipeline for a model, register result in cloud inventory (rc 0=passed, 1=bad-args/tenant-not-found, 2=attest-failed)
+- `squash cloud-vex <tenant-id>` — list VEX/CVE alerts for a tenant with `--limit`, `--status`, `--severity` filters (rc 0=success, 1=tenant-not-found)
+- `--json` flag on both commands for machine-readable output
+- `tests/test_squash_w79.py` — 12 tests covering both commands (full suite: 4279/4279)
+
+---
+
+## [Unreleased] — Wave 78: Test Isolation Fix + Doctor __version__ Fix
+
+### Fixed
+- `cmd_doctor` AttributeError on `mlx.core.__version__` when stub module installed by test collection — `getattr` fallback to `mlx.__version__` now prevents 6 doctor test failures in full-suite runs
+- 17 pre-existing test failures eliminated via `setUpModule`/`tearDownModule` mock-isolation pattern across affected test modules (full suite: 4267/4267 baseline restored)
+
+---
+
 ## [Unreleased] — Wave 77: Cloud CLI Commands (cloud-status / cloud-report / cloud-export)
 
 ### Added

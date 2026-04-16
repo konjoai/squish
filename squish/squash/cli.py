@@ -1383,6 +1383,42 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Suppress non-error output",
     )
 
+    # ── Wave 80 — Cloud Risk Profile CLI ─────────────────────────────────────
+    cloud_risk_cmd = sub.add_parser(
+        "cloud-risk",
+        help="Show EU AI Act risk profile for a tenant or the entire platform",
+        description=(
+            "Compute and display the EU AI Act risk tier for each model in a tenant's "
+            "inventory, or a platform-wide risk overview when --overview is used. "
+            "Risk tiers: UNACCEPTABLE > HIGH > LIMITED > MINIMAL (Art. 6/9).\n\n"
+            "Example: squash cloud-risk acme-corp\n"
+            "Example: squash cloud-risk --overview"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    cloud_risk_cmd.add_argument(
+        "tenant_id",
+        nargs="?",
+        default=None,
+        help="Tenant ID to inspect (omit when using --overview)",
+    )
+    cloud_risk_cmd.add_argument(
+        "--overview",
+        action="store_true",
+        help="Show platform-wide risk summary across all tenants",
+    )
+    cloud_risk_cmd.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Dump risk profile as JSON to stdout",
+    )
+    cloud_risk_cmd.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress non-error output",
+    )
+
     return parser
 
 
@@ -3346,6 +3382,330 @@ def _cmd_cloud_vex(args: argparse.Namespace, quiet: bool) -> int:
     return 0
 
 
+def _cmd_cloud_risk(args: argparse.Namespace, quiet: bool) -> int:
+    """Show EU AI Act risk profile for a tenant or platform.
+
+    Exit codes:
+        0 = tenant found and overall tier is MINIMAL or LIMITED (conformant-ish)
+        1 = tenant not found (or missing positional arg without --overview)
+        2 = overall tier is HIGH or UNACCEPTABLE (non-conformant)
+    """
+    try:
+        from squish.squash import api as _api
+    except ImportError as exc:
+        print(f"squash is not installed: {exc}", file=sys.stderr)
+        return 2
+
+    overview: bool = getattr(args, "overview", False)
+    tenant_id: str | None = getattr(args, "tenant_id", None)
+    output_json: bool = getattr(args, "output_json", False)
+
+    if overview:
+        # ── Platform overview ──────────────────────────────────────────────
+        summary: dict[str, int] = {
+            "UNACCEPTABLE": 0,
+            "HIGH": 0,
+            "LIMITED": 0,
+            "MINIMAL": 0,
+        }
+        tier_order = ["UNACCEPTABLE", "HIGH", "LIMITED", "MINIMAL"]
+        tenant_rows: list[dict] = []
+
+        for tid in list(_api._tenants.keys()):
+            inventory = _api._db_read_inventory(tid)
+            vex = _api._db_read_vex_alerts(tid)
+            open_vex = len(vex)
+            if inventory:
+                tiers = [_api._compute_model_risk_tier(rec, open_vex) for rec in inventory]
+                overall_tier = min(
+                    tiers,
+                    key=lambda t: tier_order.index(t) if t in tier_order else len(tier_order),
+                )
+            else:
+                overall_tier = "MINIMAL"
+            summary[overall_tier] += 1
+            tenant_rows.append(
+                {
+                    "tenant_id": tid,
+                    "overall_risk_tier": overall_tier,
+                    "model_count": len(inventory),
+                }
+            )
+
+        if output_json:
+            import json as _json
+            print(
+                _json.dumps(
+                    {
+                        "total_tenants": len(tenant_rows),
+                        "risk_summary": summary,
+                        "tenants": tenant_rows,
+                    },
+                    indent=2,
+                )
+            )
+            return 0
+
+        if not quiet:
+            print(f"Risk Overview | {len(tenant_rows)} tenant(s)")
+            print(
+                f"  UNACCEPTABLE: {summary['UNACCEPTABLE']}  "
+                f"HIGH: {summary['HIGH']}  "
+                f"LIMITED: {summary['LIMITED']}  "
+                f"MINIMAL: {summary['MINIMAL']}"
+            )
+            for row in tenant_rows:
+                tier_icon = "\u2715" if row["overall_risk_tier"] in ("UNACCEPTABLE", "HIGH") else "\u2713"
+                print(
+                    f"  {tier_icon} {row['tenant_id']:<30} "
+                    f"{row['overall_risk_tier']:<15} {row['model_count']} model(s)"
+                )
+
+        worst = "MINIMAL"
+        if summary["UNACCEPTABLE"] > 0 or summary["HIGH"] > 0:
+            worst = "HIGH"
+        return 2 if worst in ("UNACCEPTABLE", "HIGH") else 0
+
+    # ── Per-tenant profile ─────────────────────────────────────────────────
+    if not tenant_id:
+        print(
+            "squash cloud-risk: specify a tenant_id or use --overview",
+            file=sys.stderr,
+        )
+        return 1
+
+    if tenant_id not in _api._tenants:
+        print(
+            f"squash cloud-risk: tenant not found: {tenant_id}",
+            file=sys.stderr,
+        )
+        return 1
+
+    inventory = _api._db_read_inventory(tenant_id)
+    vex = _api._db_read_vex_alerts(tenant_id)
+    open_vex = len(vex)
+
+    tier_order = ["UNACCEPTABLE", "HIGH", "LIMITED", "MINIMAL"]
+    model_profiles: list[dict] = []
+    for rec in inventory:
+        tier = _api._compute_model_risk_tier(rec, open_vex)
+        policy_results = rec.get("policy_results", {})
+        total = len(policy_results)
+        failed = sum(1 for pr in policy_results.values() if not pr.get("passed", True))
+        failure_rate = round(failed / total, 4) if total > 0 else 0.0
+        model_profiles.append(
+            {
+                "model_id": rec.get("model_id", ""),
+                "risk_tier": tier,
+                "attestation_passed": bool(rec.get("attestation_passed", False)),
+                "open_vex_alerts": open_vex,
+                "policy_failure_rate": failure_rate,
+            }
+        )
+
+    if model_profiles:
+        overall_tier = min(
+            (p["risk_tier"] for p in model_profiles),
+            key=lambda t: tier_order.index(t) if t in tier_order else len(tier_order),
+        )
+    else:
+        overall_tier = "MINIMAL"
+
+    if output_json:
+        import json as _json
+        print(
+            _json.dumps(
+                {
+                    "tenant_id": tenant_id,
+                    "overall_risk_tier": overall_tier,
+                    "model_count": len(model_profiles),
+                    "models": model_profiles,
+                },
+                indent=2,
+            )
+        )
+        return 0 if overall_tier in ("MINIMAL", "LIMITED") else 2
+
+    if not quiet:
+        icon = "\u2713" if overall_tier in ("MINIMAL", "LIMITED") else "\u2715"
+        print(
+            f"{icon} cloud-risk | {tenant_id} | {overall_tier} | {len(model_profiles)} model(s)"
+        )
+        if model_profiles:
+            print(f"  {'Model':<35} {'Risk Tier':<15} {'Attested':<10} {'VEX Alerts'}")
+            print("  " + "-" * 72)
+            for mp in model_profiles:
+                attest_mark = "PASS" if mp["attestation_passed"] else "FAIL"
+                print(
+                    f"  {mp['model_id']:<35} {mp['risk_tier']:<15} "
+                    f"{attest_mark:<10} {mp['open_vex_alerts']}"
+                )
+
+    return 0 if overall_tier in ("MINIMAL", "LIMITED") else 2
+
+
+def _cmd_cloud_risk(args: argparse.Namespace, quiet: bool) -> int:
+    """Show EU AI Act risk profile for a tenant or platform.
+
+    Exit codes:
+        0 = tenant found and overall tier is MINIMAL or LIMITED (conformant-ish)
+        1 = tenant not found (or missing positional arg without --overview)
+        2 = overall tier is HIGH or UNACCEPTABLE (non-conformant)
+    """
+    try:
+        from squish.squash import api as _api
+    except ImportError as exc:
+        print(f"squash is not installed: {exc}", file=sys.stderr)
+        return 2
+
+    overview: bool = getattr(args, "overview", False)
+    tenant_id: str | None = getattr(args, "tenant_id", None)
+    output_json: bool = getattr(args, "output_json", False)
+
+    if overview:
+        # ── Platform overview ──────────────────────────────────────────────
+        summary: dict[str, int] = {
+            "UNACCEPTABLE": 0,
+            "HIGH": 0,
+            "LIMITED": 0,
+            "MINIMAL": 0,
+        }
+        tier_order = ["UNACCEPTABLE", "HIGH", "LIMITED", "MINIMAL"]
+        tenant_rows: list[dict] = []
+
+        for tid in list(_api._tenants.keys()):
+            inventory = _api._db_read_inventory(tid)
+            vex = _api._db_read_vex_alerts(tid)
+            open_vex = len(vex)
+            if inventory:
+                tiers = [_api._compute_model_risk_tier(rec, open_vex) for rec in inventory]
+                overall_tier = min(
+                    tiers,
+                    key=lambda t: tier_order.index(t) if t in tier_order else len(tier_order),
+                )
+            else:
+                overall_tier = "MINIMAL"
+            summary[overall_tier] += 1
+            tenant_rows.append(
+                {
+                    "tenant_id": tid,
+                    "overall_risk_tier": overall_tier,
+                    "model_count": len(inventory),
+                }
+            )
+
+        if output_json:
+            import json as _json
+            print(
+                _json.dumps(
+                    {
+                        "total_tenants": len(tenant_rows),
+                        "risk_summary": summary,
+                        "tenants": tenant_rows,
+                    },
+                    indent=2,
+                )
+            )
+            return 0
+
+        if not quiet:
+            print(f"Risk Overview | {len(tenant_rows)} tenant(s)")
+            print(
+                f"  UNACCEPTABLE: {summary['UNACCEPTABLE']}  "
+                f"HIGH: {summary['HIGH']}  "
+                f"LIMITED: {summary['LIMITED']}  "
+                f"MINIMAL: {summary['MINIMAL']}"
+            )
+            for row in tenant_rows:
+                tier_icon = "\u2715" if row["overall_risk_tier"] in ("UNACCEPTABLE", "HIGH") else "\u2713"
+                print(
+                    f"  {tier_icon} {row['tenant_id']:<30} "
+                    f"{row['overall_risk_tier']:<15} {row['model_count']} model(s)"
+                )
+
+        worst = "MINIMAL"
+        if summary["UNACCEPTABLE"] > 0 or summary["HIGH"] > 0:
+            worst = "HIGH"
+        return 2 if worst in ("UNACCEPTABLE", "HIGH") else 0
+
+    # ── Per-tenant profile ─────────────────────────────────────────────────
+    if not tenant_id:
+        print(
+            "squash cloud-risk: specify a tenant_id or use --overview",
+            file=sys.stderr,
+        )
+        return 1
+
+    if tenant_id not in _api._tenants:
+        print(
+            f"squash cloud-risk: tenant not found: {tenant_id}",
+            file=sys.stderr,
+        )
+        return 1
+
+    inventory = _api._db_read_inventory(tenant_id)
+    vex = _api._db_read_vex_alerts(tenant_id)
+    open_vex = len(vex)
+
+    tier_order = ["UNACCEPTABLE", "HIGH", "LIMITED", "MINIMAL"]
+    model_profiles: list[dict] = []
+    for rec in inventory:
+        tier = _api._compute_model_risk_tier(rec, open_vex)
+        policy_results = rec.get("policy_results", {})
+        total = len(policy_results)
+        failed = sum(1 for pr in policy_results.values() if not pr.get("passed", True))
+        failure_rate = round(failed / total, 4) if total > 0 else 0.0
+        model_profiles.append(
+            {
+                "model_id": rec.get("model_id", ""),
+                "risk_tier": tier,
+                "attestation_passed": bool(rec.get("attestation_passed", False)),
+                "open_vex_alerts": open_vex,
+                "policy_failure_rate": failure_rate,
+            }
+        )
+
+    if model_profiles:
+        overall_tier = min(
+            (p["risk_tier"] for p in model_profiles),
+            key=lambda t: tier_order.index(t) if t in tier_order else len(tier_order),
+        )
+    else:
+        overall_tier = "MINIMAL"
+
+    if output_json:
+        import json as _json
+        print(
+            _json.dumps(
+                {
+                    "tenant_id": tenant_id,
+                    "overall_risk_tier": overall_tier,
+                    "model_count": len(model_profiles),
+                    "models": model_profiles,
+                },
+                indent=2,
+            )
+        )
+        return 0 if overall_tier in ("MINIMAL", "LIMITED") else 2
+
+    if not quiet:
+        icon = "\u2713" if overall_tier in ("MINIMAL", "LIMITED") else "\u2715"
+        print(
+            f"{icon} cloud-risk | {tenant_id} | {overall_tier} | {len(model_profiles)} model(s)"
+        )
+        if model_profiles:
+            print(f"  {'Model':<35} {'Risk Tier':<15} {'Attested':<10} {'VEX Alerts'}")
+            print("  " + "-" * 72)
+            for mp in model_profiles:
+                attest_mark = "PASS" if mp["attestation_passed"] else "FAIL"
+                print(
+                    f"  {mp['model_id']:<35} {mp['risk_tier']:<15} "
+                    f"{attest_mark:<10} {mp['open_vex_alerts']}"
+                )
+
+    return 0 if overall_tier in ("MINIMAL", "LIMITED") else 2
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -3442,6 +3802,8 @@ def main() -> None:
         sys.exit(_cmd_cloud_attest(args, quiet))
     elif args.command == "cloud-vex":
         sys.exit(_cmd_cloud_vex(args, quiet))
+    elif args.command == "cloud-risk":
+        sys.exit(_cmd_cloud_risk(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)
