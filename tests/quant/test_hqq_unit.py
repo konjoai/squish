@@ -51,7 +51,16 @@ from squish.quant.hqq import HQQConfig, HQQQuantizer, HQQTensor
 class TestHQQConfigValidation:
     def test_invalid_bits_raises(self):
         with pytest.raises(ValueError, match="bits"):
-            HQQConfig(bits=5)
+            HQQConfig(bits=9)  # out of range [1.0, 8.0]
+
+    def test_bits_below_range_raises(self):
+        with pytest.raises(ValueError, match="bits"):
+            HQQConfig(bits=0.9)  # below 1.0
+
+    def test_bits_5_is_valid(self):
+        """5-bit is in [1.0, 8.0] and accepted (W82 extended range)."""
+        cfg = HQQConfig(bits=5)
+        assert cfg.bits == 5.0
 
     def test_zero_group_size_raises(self):
         with pytest.raises(ValueError, match="group_size"):
@@ -79,10 +88,15 @@ class TestHQQConfigValidation:
         assert cfg.group_size == 128
         assert cfg.lambda_scale == 1.0
 
-    def test_all_valid_bits(self):
-        for b in (2, 3, 4, 8):
+    def test_all_valid_integer_bits(self):
+        for b in (1, 2, 3, 4, 5, 6, 7, 8):
             cfg = HQQConfig(bits=b)
-            assert cfg.bits == b
+            assert cfg.bits == float(b)
+
+    def test_fractional_bits_accepted(self):
+        for nb in (1.0, 1.5, 2.5, 3.5, 4.0, 7.5, 8.0):
+            cfg = HQQConfig(bits=nb)
+            assert cfg.bits == nb
 
     def test_full_row_group_size(self):
         cfg = HQQConfig(group_size=-1)

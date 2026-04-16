@@ -13,8 +13,10 @@ reaches a good solution in just a handful of iterations, making it 10× faster
 than GPTQ while matching or exceeding its accuracy on INT2/INT4.
 
 This implementation provides a NumPy simulation of HQQ, suitable for
-off-line weight compression targeting INT2, INT3, or INT4.  The resulting
-compressed tensors can be stored and loaded back without GPU dependencies.
+off-line weight compression targeting any precision from 1-bit (binary)
+through INT8, including non-integer widths such as 1.5-bit (3 levels),
+2.5-bit (6 levels), and 3.5-bit (11 levels).  The resulting compressed
+tensors can be stored and loaded back without GPU dependencies.
 
 Reference:
     Badri & Shaji, "HQQ: Half-Quadratic Quantization of Large Machine
@@ -36,12 +38,28 @@ import numpy as np
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-_VALID_BITS = (2, 3, 4, 8)
+# Any float nbits in [1.0, 8.0] is accepted.
+# Integer widths (1–8) map to exact power-of-two levels.
+# Fractional widths (e.g. 2.5) map to round(2**nbits) levels:
+#   1.0 →  2 levels (binary)
+#   1.5 →  3 levels
+#   2.0 →  4 levels
+#   2.5 →  6 levels
+#   3.0 →  8 levels
+#   3.5 → 11 levels
+#   4.0 → 16 levels
+#   8.0 → 256 levels
+_BITS_MIN: float = 1.0
+_BITS_MAX: float = 8.0
 
 
-def _grid_levels(bits: int) -> int:
-    """Return 2**bits — the number of quantisation levels."""
-    return 1 << bits
+def _grid_levels(nbits: float) -> int:
+    """Return the number of quantisation levels for *nbits* (any float in [1,8]).
+
+    Uses ``max(2, round(2**nbits))`` so that sub-integer widths like 2.5-bit
+    yield 6 levels and 1-bit yields 2 levels (binary).
+    """
+    return max(2, round(2.0 ** nbits))
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -52,7 +70,10 @@ class HQQConfig:
     """Configuration for HQQQuantizer.
 
     Attributes:
-        bits: Target bit-width (2, 3, 4, or 8).
+        bits: Target bit-width.  Accepts any **float** in ``[1.0, 8.0]``,
+            including non-integer widths such as ``1.5``, ``2.5``, or ``3.5``
+            (see :func:`_grid_levels`).  Passing an integer (e.g. ``4``) is
+            fully backward-compatible; it is coerced to ``float`` internally.
         group_size: Number of weights per quantisation group.  ``-1`` means
             use the full row (per-row quantisation).
         lambda_scale: Proximal penalty weight (λ).  Higher values push the
@@ -63,16 +84,18 @@ class HQQConfig:
         axis: Axis along which groups are formed (0 = per-row, 1 = per-col).
     """
 
-    bits: int = 4
+    bits: float = 4.0
     group_size: int = 128
     lambda_scale: float = 1.0
     max_iter: int = 10
     axis: int = 0
 
     def __post_init__(self) -> None:
-        if self.bits not in _VALID_BITS:
+        # Coerce integer bits to float for uniform handling.
+        self.bits = float(self.bits)
+        if not (_BITS_MIN <= self.bits <= _BITS_MAX):
             raise ValueError(
-                f"bits must be one of {_VALID_BITS}; got {self.bits}"
+                f"bits must be in [{_BITS_MIN}, {_BITS_MAX}]; got {self.bits}"
             )
         if self.group_size != -1 and self.group_size < 1:
             raise ValueError(
@@ -90,6 +113,11 @@ class HQQConfig:
             raise ValueError(
                 f"axis must be 0 or 1; got {self.axis}"
             )
+
+    @property
+    def n_levels(self) -> int:
+        """Number of quantisation levels derived from ``bits``."""
+        return _grid_levels(self.bits)
 
 
 # ── Quantised tensor container ────────────────────────────────────────────────
@@ -124,11 +152,16 @@ class HQQTensor:
 
 
 class HQQQuantizer:
-    """Calibration-free INT2/INT3/INT4 weight quantizer via half-quadratic splitting.
+    """Calibration-free weight quantizer via half-quadratic splitting.
+
+    Supports any bit-width in ``[1.0, 8.0]``, including fractional widths
+    such as 1.5-bit (3 levels), 2.5-bit (6 levels), and 3.5-bit (11 levels).
 
     Example::
 
-        cfg = HQQConfig(bits=3, group_size=64)
+        cfg = HQQConfig(bits=3, group_size=64)       # integer bits (classic)
+        cfg = HQQConfig(bits=2.5, group_size=64)     # 6-level fractional
+        cfg = HQQConfig(bits=1.0, group_size=128)    # 1-bit (binary)
         quant = HQQQuantizer(cfg)
         tensor = quant.encode(weight)        # → HQQTensor
         W_hat  = quant.decode(tensor)        # → float32 numpy array
@@ -163,7 +196,7 @@ class HQQQuantizer:
             )
 
         cfg = self.config
-        n_levels = _grid_levels(cfg.bits)
+        n_levels = _grid_levels(cfg.bits)  # works for float nbits
         qmax = float(n_levels - 1)
 
         rows, cols = W.shape

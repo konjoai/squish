@@ -626,11 +626,12 @@ class TestModuleCount(unittest.TestCase):
         count = len(py_files)
         self.assertEqual(
             count,
-            133,
+            134,
             msg=(
-                f"Expected 133 Python files in squish/, found {count}. "
+                f"Expected 134 Python files in squish/, found {count}. "
                 "W54-56 adds remediate.py, evaluator.py, edge_formats.py, chat.py; "
                 "W57 adds model_card.py + cloud_db.py (SQLite persistence, justified). "
+                "W83 adds nist_rmf.py (NIST AI RMF 1.0 controls scanner, justified). "
                 "If you added a file, either justify it or delete an existing one."
             ),
         )

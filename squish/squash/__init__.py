@@ -109,6 +109,14 @@ from squish.squash.model_card import (  # noqa: F401 (Wave 57)
     ModelCardSection,
     KNOWN_FORMATS as MODEL_CARD_KNOWN_FORMATS,
 )
+from squish.squash.nist_rmf import (  # noqa: F401 (Wave 83)
+    NistRmfFunction,
+    NistControlStatus,
+    NistRmfControl,
+    NistRmfPosture,
+    NistRmfReport,
+    NistRmfScanner,
+)
 
 __all__ = [
     # Phase 1–3 (existing)
@@ -226,4 +234,11 @@ __all__ = [
     "ModelCardGenerator",
     "ModelCardSection",
     "MODEL_CARD_KNOWN_FORMATS",
+    # Wave 83: NIST AI RMF 1.0 controls scanner
+    "NistRmfFunction",
+    "NistControlStatus",
+    "NistRmfControl",
+    "NistRmfPosture",
+    "NistRmfReport",
+    "NistRmfScanner",
 ]
