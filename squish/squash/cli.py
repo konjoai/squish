@@ -1293,6 +1293,96 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Suppress non-error output",
     )
 
+    # ── Wave 79 — Cloud Attestation + Cloud VEX CLI ───────────────────────────
+    cloud_attest_cmd = sub.add_parser(
+        "cloud-attest",
+        help="Attest a model for a tenant and register it in the cloud inventory",
+        description=(
+            "Run the full attestation pipeline against MODEL_PATH and register"
+            " the result in the cloud dashboard inventory for TENANT_ID.\n\n"
+            "Example: squash cloud-attest acme-corp ./models/llama-3.1-8b"
+        ),
+    )
+    cloud_attest_cmd.add_argument(
+        "tenant_id",
+        help="Tenant identifier that owns this model",
+    )
+    cloud_attest_cmd.add_argument(
+        "model_path",
+        help="Path to the model directory or file to attest",
+    )
+    cloud_attest_cmd.add_argument(
+        "--policy",
+        metavar="POLICY",
+        default="enterprise-strict",
+        dest="policy",
+        help="Policy to evaluate (default: enterprise-strict)",
+    )
+    cloud_attest_cmd.add_argument(
+        "--output-path",
+        metavar="PATH",
+        default=None,
+        dest="output_path",
+        help="Directory for attestation artifacts (default: model_path directory)",
+    )
+    cloud_attest_cmd.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Dump attestation result as JSON to stdout",
+    )
+    cloud_attest_cmd.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress non-error output",
+    )
+
+    cloud_vex_cmd = sub.add_parser(
+        "cloud-vex",
+        help="List open VEX/CVE alerts for a tenant",
+        description=(
+            "Retrieve VEX alerts from the cloud dashboard for TENANT_ID.\n\n"
+            "Example: squash cloud-vex acme-corp --limit 20"
+        ),
+    )
+    cloud_vex_cmd.add_argument(
+        "tenant_id",
+        help="Tenant identifier to inspect",
+    )
+    cloud_vex_cmd.add_argument(
+        "--limit",
+        metavar="N",
+        type=int,
+        default=50,
+        dest="limit",
+        help="Maximum number of alerts to return (default: 50)",
+    )
+    cloud_vex_cmd.add_argument(
+        "--status",
+        metavar="STATUS",
+        default=None,
+        dest="vex_status",
+        help="Filter by alert status: open | acknowledged | resolved",
+    )
+    cloud_vex_cmd.add_argument(
+        "--severity",
+        metavar="SEVERITY",
+        default=None,
+        dest="severity",
+        help="Filter by severity: critical | high | medium | low | unknown",
+    )
+    cloud_vex_cmd.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Dump alerts as JSON to stdout",
+    )
+    cloud_vex_cmd.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress non-error output",
+    )
+
     return parser
 
 
@@ -3107,6 +3197,155 @@ def _cmd_cloud_export(args: argparse.Namespace, quiet: bool) -> int:
     return 0
 
 
+# ── Wave 79 — Cloud CLI command implementations ──────────────────────────────
+
+def _cmd_cloud_attest(args: argparse.Namespace, quiet: bool) -> int:
+    """Attest a model for a tenant and register the result in the cloud inventory.
+
+    Exit codes: 0=attested+passed+registered, 1=bad-args/tenant-not-found, 2=attest-failed.
+    """
+    try:
+        from squish.squash import api as _api
+        from squish.squash.attest import AttestConfig, AttestPipeline
+    except ImportError as exc:
+        print(f"squash is not installed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.tenant_id not in _api._tenants:
+        print(
+            f"squash cloud-attest: tenant not found: {args.tenant_id}",
+            file=sys.stderr,
+        )
+        return 1
+
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        print(
+            f"squash cloud-attest: model path does not exist: {model_path}",
+            file=sys.stderr,
+        )
+        return 1
+
+    output_dir = Path(args.output_path) if getattr(args, "output_path", None) else None
+
+    config = AttestConfig(
+        model_path=model_path,
+        output_dir=output_dir,
+        model_id=model_path.stem,
+        policies=[args.policy],
+        fail_on_violation=False,
+        sign=False,
+    )
+
+    try:
+        result = AttestPipeline.run(config)
+    except FileNotFoundError as exc:
+        print(f"squash cloud-attest: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        print(f"squash cloud-attest: attestation error: {exc}", file=sys.stderr)
+        return 2
+
+    # Serialize policy results to a plain dict for storage
+    policy_dict: dict = {
+        name: {
+            "passed": pr.passed if hasattr(pr, "passed") else bool(pr),
+            "error_count": getattr(pr, "error_count", 0),
+            "warning_count": getattr(pr, "warning_count", 0),
+        }
+        for name, pr in result.policy_results.items()
+    }
+
+    bom_path_str = str(result.cyclonedx_path) if result.cyclonedx_path else ""
+
+    record: dict = {
+        "model_id": result.model_id,
+        "model_path": str(model_path),
+        "bom_path": bom_path_str,
+        "attestation_passed": result.passed,
+        "policy_results": policy_dict,
+        "vex_cves": [],
+        "timestamp": "",
+        "record_id": "",
+    }
+    import uuid as _uuid
+    import datetime as _dt
+    record["timestamp"] = _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    record["record_id"] = str(_uuid.uuid4())
+
+    _api._db_write_inventory(args.tenant_id, record)
+
+    status_label = "PASS" if result.passed else "FAIL"
+    icon = "\u2713" if result.passed else "\u2717"
+
+    if not quiet:
+        print(
+            f"{icon} cloud-attest | {args.tenant_id} | {result.model_id} | {status_label}"
+            f" | policy: {args.policy} | registered"
+        )
+
+    if getattr(args, "output_json", False):
+        import json as _json
+        print(_json.dumps(record, indent=2))
+
+    return 0 if result.passed else 2
+
+
+def _cmd_cloud_vex(args: argparse.Namespace, quiet: bool) -> int:
+    """List VEX/CVE alerts for a tenant. Exit 0=success, 1=tenant-not-found, 2=server-error."""
+    try:
+        from squish.squash import api as _api
+    except ImportError as exc:
+        print(f"squash is not installed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.tenant_id not in _api._tenants:
+        print(
+            f"squash cloud-vex: tenant not found: {args.tenant_id}",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        alerts: list = _api._db_read_vex_alerts(args.tenant_id)
+    except Exception as exc:  # noqa: BLE001
+        print(f"squash cloud-vex: error reading alerts: {exc}", file=sys.stderr)
+        return 2
+
+    # Apply filters
+    vex_status = getattr(args, "vex_status", None)
+    severity = getattr(args, "severity", None)
+    limit: int = max(1, min(getattr(args, "limit", 50), 500))
+
+    if vex_status:
+        alerts = [a for a in alerts if a.get("status") == vex_status]
+    if severity:
+        alerts = [a for a in alerts if a.get("severity") == severity]
+    alerts = alerts[-limit:]
+
+    if getattr(args, "output_json", False):
+        import json as _json
+        print(_json.dumps({"tenant_id": args.tenant_id, "count": len(alerts), "alerts": alerts}, indent=2))
+        return 0
+
+    if not quiet:
+        if not alerts:
+            print(f"No VEX alerts for tenant: {args.tenant_id}")
+        else:
+            print(f"VEX Alerts | {args.tenant_id} | {len(alerts)} alert(s)")
+            print(f"{'CVE':<20} {'Severity':<10} {'Status':<14} {'Model':<30} {'Date'}")
+            print("-" * 90)
+            for alert in alerts:
+                cve = alert.get("cve_id", "-")
+                sev = alert.get("severity", "-")
+                stat = alert.get("status", "-")
+                model = alert.get("model_id", "-")
+                ts = alert.get("timestamp", "-")[:10] if alert.get("timestamp") else "-"
+                print(f"{cve:<20} {sev:<10} {stat:<14} {model:<30} {ts}")
+
+    return 0
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -3199,6 +3438,10 @@ def main() -> None:
         sys.exit(_cmd_cloud_report(args, quiet))
     elif args.command == "cloud-export":
         sys.exit(_cmd_cloud_export(args, quiet))
+    elif args.command == "cloud-attest":
+        sys.exit(_cmd_cloud_attest(args, quiet))
+    elif args.command == "cloud-vex":
+        sys.exit(_cmd_cloud_vex(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)
