@@ -3231,3 +3231,212 @@ async def cloud_get_platform_export() -> JSONResponse:
         },
         headers={"X-Squash-Plan": SQUASH_PLAN},
     )
+
+
+# ── W80: Per-Tenant Risk Profile ──────────────────────────────────────────────
+
+# EU AI Act risk tiers (Article 6/9 hierarchy): UNACCEPTABLE > HIGH > LIMITED > MINIMAL.
+# Derived entirely from stored inventory fields — no disk I/O, no BOM parsing.
+_RISK_TIER_UNACCEPTABLE = "UNACCEPTABLE"
+_RISK_TIER_HIGH = "HIGH"
+_RISK_TIER_LIMITED = "LIMITED"
+_RISK_TIER_MINIMAL = "MINIMAL"
+
+
+def _compute_model_risk_tier(record: dict[str, Any], open_vex: int) -> str:
+    """Derive EU AI Act risk tier for a single inventory record.
+
+    Decision logic (first match wins):
+    - UNACCEPTABLE: >50% policy failures AND at least one critical VEX CVE present.
+    - HIGH: attestation_passed=False with any non-zero error_count across policies.
+    - LIMITED: attestation_passed=True but open VEX alerts exist.
+    - MINIMAL: attestation_passed=True and zero open VEX alerts.
+
+    Parameters
+    ----------
+    record:
+        A single inventory record dict as stored by ``_db_write_inventory``.
+    open_vex:
+        Number of open VEX alerts for the tenant (from ``_db_read_vex_alerts``).
+
+    Returns
+    -------
+    str
+        One of: ``"UNACCEPTABLE"``, ``"HIGH"``, ``"LIMITED"``, ``"MINIMAL"``.
+    """
+    policy_results: dict = record.get("policy_results", {})
+    total_policies = len(policy_results)
+    failed_count = sum(
+        1 for pr in policy_results.values() if not pr.get("passed", True)
+    )
+    error_count = sum(pr.get("error_count", 0) for pr in policy_results.values())
+    attestation_passed: bool = bool(record.get("attestation_passed", False))
+
+    # UNACCEPTABLE: majority policy failures + active VEX exposure
+    if total_policies > 0 and (failed_count / total_policies) > 0.5 and open_vex > 0:
+        return _RISK_TIER_UNACCEPTABLE
+
+    # HIGH: attestation failed with errors
+    if not attestation_passed and error_count > 0:
+        return _RISK_TIER_HIGH
+
+    # LIMITED: attested but VEX exposure
+    if attestation_passed and open_vex > 0:
+        return _RISK_TIER_LIMITED
+
+    # MINIMAL: attested and clean
+    return _RISK_TIER_MINIMAL
+
+
+@app.get("/cloud/tenants/{tenant_id}/risk-profile")  # W80
+async def cloud_get_tenant_risk_profile(tenant_id: str) -> JSONResponse:
+    """Return the EU AI Act risk profile for all inventory models belonging to *tenant_id*.
+
+    For each inventory record the risk tier is derived from stored attestation
+    and VEX data — no disk access or BOM parsing is required.  The overall
+    tenant risk tier is the worst tier across all models.
+
+    Response shape::
+
+        {
+          "tenant_id": "...",
+          "overall_risk_tier": "HIGH",
+          "model_count": N,
+          "models": [
+            {
+              "model_id": "...",
+              "risk_tier": "HIGH",
+              "attestation_passed": false,
+              "open_vex_alerts": 2,
+              "policy_failure_rate": 0.5
+            },
+            ...
+          ],
+          "enforcement_deadline": "2026-08-02",
+          "days_until_enforcement": N,
+          "enforcement_risk_level": "MODERATE"
+        }
+
+    Returns HTTP 404 for unknown tenants.
+    """
+    if tenant_id not in _tenants:
+        return JSONResponse(
+            content={"detail": f"tenant not found: {tenant_id}"},
+            status_code=404,
+        )
+
+    inventory = _db_read_inventory(tenant_id)
+    vex = _db_read_vex_alerts(tenant_id)
+    open_vex = len(vex)
+
+    tier_order = [
+        _RISK_TIER_UNACCEPTABLE,
+        _RISK_TIER_HIGH,
+        _RISK_TIER_LIMITED,
+        _RISK_TIER_MINIMAL,
+    ]
+
+    model_profiles: list[dict[str, Any]] = []
+    for rec in inventory:
+        tier = _compute_model_risk_tier(rec, open_vex)
+        policy_results = rec.get("policy_results", {})
+        total = len(policy_results)
+        failed = sum(1 for pr in policy_results.values() if not pr.get("passed", True))
+        failure_rate = round(failed / total, 4) if total > 0 else 0.0
+        model_profiles.append(
+            {
+                "model_id": rec.get("model_id", ""),
+                "risk_tier": tier,
+                "attestation_passed": bool(rec.get("attestation_passed", False)),
+                "open_vex_alerts": open_vex,
+                "policy_failure_rate": failure_rate,
+            }
+        )
+
+    # Overall = worst tier observed (or MINIMAL when inventory is empty)
+    if model_profiles:
+        overall = min(
+            (p["risk_tier"] for p in model_profiles),
+            key=lambda t: tier_order.index(t) if t in tier_order else len(tier_order),
+        )
+    else:
+        overall = _RISK_TIER_MINIMAL
+
+    return JSONResponse(
+        content={
+            "tenant_id": tenant_id,
+            "overall_risk_tier": overall,
+            "model_count": len(model_profiles),
+            "models": model_profiles,
+            **_enforcement_signal(),
+        }
+    )
+
+
+@app.get("/cloud/risk-overview")  # W80
+async def cloud_get_risk_overview() -> JSONResponse:
+    """Return a platform-wide risk summary across all registered tenants.
+
+    Response shape::
+
+        {
+          "total_tenants": N,
+          "risk_summary": {
+            "UNACCEPTABLE": 0,
+            "HIGH": 1,
+            "LIMITED": 2,
+            "MINIMAL": 5
+          },
+          "tenants": [
+            {"tenant_id": "...", "overall_risk_tier": "HIGH", "model_count": 3},
+            ...
+          ],
+          "enforcement_deadline": "2026-08-02",
+          "days_until_enforcement": N,
+          "enforcement_risk_level": "MODERATE"
+        }
+
+    Always HTTP 200; empty platform returns all-zero risk_summary.
+    """
+    summary: dict[str, int] = {
+        _RISK_TIER_UNACCEPTABLE: 0,
+        _RISK_TIER_HIGH: 0,
+        _RISK_TIER_LIMITED: 0,
+        _RISK_TIER_MINIMAL: 0,
+    }
+    tenant_rows: list[dict[str, Any]] = []
+
+    for tid in list(_tenants.keys()):
+        inventory = _db_read_inventory(tid)
+        vex = _db_read_vex_alerts(tid)
+        open_vex = len(vex)
+
+        tier_order = [
+            _RISK_TIER_UNACCEPTABLE,
+            _RISK_TIER_HIGH,
+            _RISK_TIER_LIMITED,
+            _RISK_TIER_MINIMAL,
+        ]
+        if inventory:
+            tiers = [_compute_model_risk_tier(rec, open_vex) for rec in inventory]
+            overall = min(tiers, key=lambda t: tier_order.index(t) if t in tier_order else len(tier_order))
+        else:
+            overall = _RISK_TIER_MINIMAL
+
+        summary[overall] += 1
+        tenant_rows.append(
+            {
+                "tenant_id": tid,
+                "overall_risk_tier": overall,
+                "model_count": len(inventory),
+            }
+        )
+
+    return JSONResponse(
+        content={
+            "total_tenants": len(tenant_rows),
+            "risk_summary": summary,
+            "tenants": tenant_rows,
+            **_enforcement_signal(),
+        }
+    )
