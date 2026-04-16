@@ -5,7 +5,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 75: VEX Feed Plan Gating
+## [Unreleased] — Wave 76: Tenant Audit Export Bundle
+
+### Added
+- `export_scope` field in `_PLAN_LIMITS`: community=`"summary"`, professional=`"compliance"`, enterprise=`"full"`
+- `_db_build_tenant_export(tenant_id)` helper composing compliance, conformance, attestation score, enforcement deadline, and risk level; adds policy stats, inventory, history, VEX alerts at compliance+; adds attestations, drift events, vertex/ADO results at full scope
+- `GET /cloud/tenants/{tenant_id}/export` — plan-gated per-tenant compliance export bundle with `exported_at`, `squash_plan`, `export_scope`; returns 404 for unknown tenants
+- `GET /cloud/export` — platform-wide export across all tenants with `tenant_count` and `tenants` array; empty platform returns `tenant_count=0, tenants=[]`
+- `X-Squash-Plan` response header on both export endpoints
+- Fixed `datetime.datetime.utcnow()` → `datetime.datetime.now(datetime.timezone.utc)` in both export endpoints (Python 3.12 deprecation)
+- `tests/test_squash_w76.py` — 24 tests: 8 unit tests for `_db_build_tenant_export()`, 10 API integration tests for tenant export, 6 API integration tests for platform export
+
+---
+
+## [9.15.0] — 2026-04-22 — Wave 75: VEX Feed Plan Gating
 
 ### Added
 - `SQUASH_PLAN` env var (`community` / `professional` / `enterprise`) controls VEX history window

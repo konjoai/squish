@@ -91,10 +91,10 @@ _rate_window: dict[str, deque] = defaultdict(deque)
 # Set SQUASH_PLAN env var to "professional" or "enterprise" to unlock full
 # VEX history and higher rate limits.  Default: community (free tier).
 SQUASH_PLAN: str = os.environ.get("SQUASH_PLAN", "community")
-_PLAN_LIMITS: dict[str, dict[str, int | None]] = {
-    "community":     {"vex_max_age_days": 7,   "vex_rate_limit": 10},
-    "professional":  {"vex_max_age_days": 90,  "vex_rate_limit": 120},
-    "enterprise":    {"vex_max_age_days": None, "vex_rate_limit": None},
+_PLAN_LIMITS: dict[str, dict[str, int | None | str]] = {
+    "community":     {"vex_max_age_days": 7,   "vex_rate_limit": 10,  "export_scope": "summary"},
+    "professional":  {"vex_max_age_days": 90,  "vex_rate_limit": 120, "export_scope": "compliance"},
+    "enterprise":    {"vex_max_age_days": None, "vex_rate_limit": None,"export_scope": "full"},
 }
 
 
@@ -3095,3 +3095,139 @@ async def post_drift_check(req: DriftCheckRequest) -> JSONResponse:
             for h in result.hits
         ],
     })
+
+
+# ── W76: Tenant audit export bundle ──────────────────────────────────────────
+
+
+def _db_build_tenant_export(tenant_id: str) -> dict[str, Any]:  # W76
+    """Compose a complete compliance export bundle for *tenant_id*.
+
+    Export scope is gated by ``SQUASH_PLAN``:
+
+    * ``summary`` (community): compliance score/grade, conformance, attestation
+      score, enforcement signal, and aggregate summary counts.
+    * ``compliance`` (professional): + VEX alerts (plan-age-filtered per W75),
+      policy stats, inventory, and compliance history.
+    * ``full`` (enterprise): + merged attestation history, drift events, GCP
+      Vertex AI results, and Azure DevOps attestation results.
+
+    Returns a dict suitable for direct JSON serialisation.  Callers are
+    responsible for checking that *tenant_id* is in ``_tenants`` before
+    invoking this helper.
+    """
+    scope: str = str(_get_plan_limits().get("export_scope", "summary"))
+
+    # ── Always-included sections (all plans) ─────────────────────────────────
+    bundle: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "tenant": _tenants.get(tenant_id, {}),
+        "compliance": _db_read_tenant_compliance_score(tenant_id),
+        "conformance": _db_read_tenant_conformance(tenant_id),
+        "attestation_score": _db_read_attestation_score(tenant_id),
+        **_enforcement_signal(),
+    }
+
+    # ── Professional+ sections ────────────────────────────────────────────────
+    if scope in ("compliance", "full"):
+        # VEX alerts reuse the W75 plan-age filter via the same helper
+        limits = _get_plan_limits()
+        max_age = limits.get("vex_max_age_days")
+        raw_alerts = _db_read_vex_alerts(tenant_id)
+        if max_age is not None:
+            cutoff = datetime.date.today() - datetime.timedelta(days=int(max_age))
+
+            def _alert_in_window(a: dict[str, Any]) -> bool:
+                try:
+                    return datetime.datetime.fromisoformat(a["created_at"]).date() >= cutoff
+                except (KeyError, ValueError):
+                    return True
+
+            filtered_alerts = [a for a in raw_alerts if _alert_in_window(a)]
+        else:
+            filtered_alerts = raw_alerts
+
+        bundle["policy_stats"] = _db_read_tenant_policy_stats(tenant_id)
+        bundle["inventory"] = _db_read_inventory(tenant_id)
+        bundle["compliance_history"] = _db_read_tenant_compliance_history(tenant_id)
+        bundle["vex_alerts"] = filtered_alerts
+
+    # ── Enterprise-only sections ──────────────────────────────────────────────
+    if scope == "full":
+        bundle["attestations"] = _db_read_attestations(tenant_id)
+        bundle["drift_events"] = _db_read_drift_events(tenant_id)
+        bundle["vertex_results"] = _db_read_vertex_results(tenant_id)
+        bundle["ado_results"] = _db_read_ado_results(tenant_id)
+
+    return bundle
+
+
+@app.get("/cloud/tenants/{tenant_id}/export")  # W76
+async def cloud_get_tenant_export(tenant_id: str) -> JSONResponse:
+    """Return a complete compliance export bundle for *tenant_id*.
+
+    Aggregates all compliance artefacts into a single JSON document suitable
+    for regulatory submission, audit evidence packages, and offline storage.
+
+    **Plan gating** (set ``SQUASH_PLAN`` env var):
+
+    * ``community``  — compliance score, conformance, attestation score,
+      EU AI Act enforcement signal.
+    * ``professional`` — + VEX alerts (90-day window), policy stats,
+      inventory, compliance history.
+    * ``enterprise``  — full export including attestation history, drift events,
+      GCP Vertex AI results, and Azure DevOps pipeline results.
+
+    Responds with ``X-Squash-Plan`` header so API consumers can detect gating.
+
+    Addresses EU AI Act Art. 12 + Art. 18 obligations for maintaining and
+    producing technical documentation on request.
+    """
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant not found: {tenant_id}")
+    bundle = _db_build_tenant_export(tenant_id)
+    payload = {
+        "exported_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "squash_plan": SQUASH_PLAN,
+        "export_scope": str(_get_plan_limits().get("export_scope", "summary")),
+        **bundle,
+    }
+    return JSONResponse(
+        content=payload,
+        headers={"X-Squash-Plan": SQUASH_PLAN},
+    )
+
+
+@app.get("/cloud/export")  # W76
+async def cloud_get_platform_export() -> JSONResponse:
+    """Return a complete compliance export bundle for the entire platform.
+
+    Iterates every registered tenant and calls ``_db_build_tenant_export``
+    for each, returning a single document keyed by tenant.  Same plan gating
+    as the per-tenant endpoint applies to each tenant's section.
+
+    Response shape::
+
+        {
+          "exported_at": "...",
+          "squash_plan": "...",
+          "export_scope": "...",
+          "tenant_count": N,
+          "tenants": [ { ...per-tenant bundle... }, ... ]
+        }
+
+    Always HTTP 200; empty platform returns ``tenant_count=0`` and an empty
+    ``tenants`` list.  Addresses EU AI Act Art. 9 + Art. 18 obligations for
+    platform-level technical documentation.
+    """
+    tenant_exports = [_db_build_tenant_export(tid) for tid in list(_tenants.keys())]
+    return JSONResponse(
+        content={
+            "exported_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "squash_plan": SQUASH_PLAN,
+            "export_scope": str(_get_plan_limits().get("export_scope", "summary")),
+            "tenant_count": len(tenant_exports),
+            "tenants": tenant_exports,
+        },
+        headers={"X-Squash-Plan": SQUASH_PLAN},
+    )
