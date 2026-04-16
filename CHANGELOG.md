@@ -5,7 +5,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased] — Wave 79: Cloud Attestation CLI + Cloud VEX CLI
+## [Unreleased] — Wave 81: Remediation Plan Generator
+
+### Added
+- `RemediationStep` dataclass and `generate_remediation_plan()` in `squash/risk.py` — priority-ordered remediation steps keyed on attestation failure, policy failure rate, open VEX alerts, and missing signing policy
+- `GET /cloud/tenants/{tenant_id}/remediation-plan` — per-tenant prioritised remediation plan with `total_steps`, `critical_count`, and `enforcement_signal` fields (HTTP 404 for unknown tenants, HTTP 200 with 0 steps for compliant tenants)
+- `squash cloud-remediate <tenant_id>` — CLI subcommand printing step-by-step remediation actions (rc 0=no critical steps, 1=tenant not found, 2=critical steps present); `--json` and `--quiet` flags supported
+- `tests/test_squash_w81.py` — 24 tests covering `RemediationStep` dataclass contracts, `generate_remediation_plan()` logic (8 cases), API endpoint (6 cases), and CLI (6 cases); full suite: 4327/4327, 12 skipped
+
+---
+
+## [Unreleased] — Wave 80: Per-Tenant EU AI Act Risk Profile
+
+### Added
+- `_RISK_TIER_UNACCEPTABLE/HIGH/LIMITED/MINIMAL` string constants in `squash/api.py`
+- `_compute_model_risk_tier(record, open_vex) → str` — pure function classifying a model's EU AI Act risk tier from its attestation, policy results, and open VEX count
+- `GET /cloud/tenants/{tenant_id}/risk-profile` — per-tenant risk profile endpoint; returns `overall_risk_tier`, `model_count`, per-model risk data, and `enforcement_signal` fields (HTTP 404 for unknown tenants)
+- `GET /cloud/risk-overview` — platform-wide aggregation: `total_tenants`, `risk_summary` counts per tier, tenant list with per-tenant tier
+- `squash cloud-risk [tenant_id]` — CLI subcommand showing risk tier per model with `--overview` (platform summary), `--json`, and `--quiet` flags (rc 0=MINIMAL/LIMITED, 1=not-found/bad-args, 2=HIGH/UNACCEPTABLE)
+- `tests/test_squash_w80.py` — 24 tests covering tier logic (6), risk-profile API (6), risk-overview API (3), CLI (6), and JSON flag (3); full suite: 4303/4303
+
 
 ### Added
 - `squash cloud-attest <tenant-id> <model-path>` — run attestation pipeline for a model, register result in cloud inventory (rc 0=passed, 1=bad-args/tenant-not-found, 2=attest-failed)

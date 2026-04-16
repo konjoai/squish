@@ -3440,3 +3440,103 @@ async def cloud_get_risk_overview() -> JSONResponse:
             **_enforcement_signal(),
         }
     )
+
+
+@app.get("/cloud/tenants/{tenant_id}/remediation-plan")  # W81
+async def cloud_get_remediation_plan(tenant_id: str) -> JSONResponse:
+    """Return a prioritised remediation plan for all models under *tenant_id*.
+
+    Response shape::
+
+        {
+          "tenant_id": "acme",
+          "risk_tier": "HIGH",
+          "total_steps": 2,
+          "critical_count": 1,
+          "steps": [
+            {
+              "id": "obtain_attestation",
+              "priority": 1,
+              "action": "Obtain attestation",
+              "description": "...",
+              "evidence_required": "...",
+              "estimated_effort": "1d"
+            },
+            ...
+          ],
+          "enforcement_deadline": "2026-08-02",
+          "days_until_enforcement": N,
+          "enforcement_risk_level": "MODERATE"
+        }
+
+    Returns HTTP 404 when *tenant_id* is not registered.
+    Returns HTTP 200 with ``total_steps == 0`` when the tenant is fully compliant.
+    """
+    from squash.risk import generate_remediation_plan  # lazy — avoids circular at module load
+
+    if tenant_id not in _tenants:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found")
+
+    inventory = _db_read_inventory(tenant_id)
+    vex = _db_read_vex_alerts(tenant_id)
+    open_vex = len(vex)
+
+    tier_order = [
+        _RISK_TIER_UNACCEPTABLE,
+        _RISK_TIER_HIGH,
+        _RISK_TIER_LIMITED,
+        _RISK_TIER_MINIMAL,
+    ]
+
+    # Compute tenant overall risk tier (same logic as risk-profile)
+    if inventory:
+        tiers = [_compute_model_risk_tier(rec, open_vex) for rec in inventory]
+        overall = min(
+            tiers,
+            key=lambda t: tier_order.index(t) if t in tier_order else len(tier_order),
+        )
+    else:
+        overall = _RISK_TIER_MINIMAL
+
+    # Aggregate policy_results and attestation state across all models
+    all_policy_results: dict[str, Any] = {}
+    all_attested = True
+    for rec in inventory:
+        if not rec.get("attestation_passed", True):
+            all_attested = False
+        for pname, presult in rec.get("policy_results", {}).items():
+            if pname not in all_policy_results:
+                all_policy_results[pname] = presult
+            elif not presult.get("passed", True):
+                # Worst case wins
+                all_policy_results[pname] = presult
+
+    steps = generate_remediation_plan(
+        risk_tier=overall,
+        policy_results=all_policy_results,
+        open_vex=open_vex,
+        attestation_passed=all_attested,
+    )
+
+    critical_count = sum(1 for s in steps if s.priority == 1)
+
+    return JSONResponse(
+        content={
+            "tenant_id": tenant_id,
+            "risk_tier": overall,
+            "total_steps": len(steps),
+            "critical_count": critical_count,
+            "steps": [
+                {
+                    "id": s.id,
+                    "priority": s.priority,
+                    "action": s.action,
+                    "description": s.description,
+                    "evidence_required": s.evidence_required,
+                    "estimated_effort": s.estimated_effort,
+                }
+                for s in steps
+            ],
+            **_enforcement_signal(),
+        }
+    )
