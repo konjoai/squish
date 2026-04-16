@@ -1419,6 +1419,35 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Suppress non-error output",
     )
 
+    # ── Wave 81 — Cloud Remediation Plan CLI ─────────────────────────────────
+    cloud_remediate_cmd = sub.add_parser(
+        "cloud-remediate",
+        help="Generate a prioritised EU AI Act remediation plan for a tenant",
+        description=(
+            "Produce a step-by-step remediation plan for a cloud tenant based on "
+            "its EU AI Act risk tier.  Steps are ordered by priority "
+            "(1 = critical, 2 = high, 3 = medium).\n\n"
+            "Example: squash cloud-remediate acme-corp\n"
+            "Example: squash cloud-remediate acme-corp --json"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    cloud_remediate_cmd.add_argument(
+        "tenant_id",
+        help="Tenant ID to generate a remediation plan for",
+    )
+    cloud_remediate_cmd.add_argument(
+        "--json",
+        dest="output_json",
+        action="store_true",
+        help="Dump remediation plan as JSON to stdout",
+    )
+    cloud_remediate_cmd.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress non-error output",
+    )
+
     return parser
 
 
@@ -3706,6 +3735,104 @@ def _cmd_cloud_risk(args: argparse.Namespace, quiet: bool) -> int:
     return 0 if overall_tier in ("MINIMAL", "LIMITED") else 2
 
 
+def _cmd_cloud_remediate(args: argparse.Namespace, quiet: bool) -> int:
+    """Generate a prioritised EU AI Act remediation plan for a tenant.
+
+    Exit codes:
+        0 = plan generated with zero critical steps (tenant is on track)
+        1 = tenant not found
+        2 = plan contains one or more priority-1 (critical) steps
+    """
+    try:
+        from squish.squash import api as _api
+        from squash.risk import generate_remediation_plan
+    except ImportError as exc:
+        print(f"squash is not installed: {exc}", file=sys.stderr)
+        return 2
+
+    tenant_id: str = args.tenant_id
+    output_json: bool = getattr(args, "output_json", False)
+
+    if tenant_id not in _api._tenants:
+        print(
+            f"squash cloud-remediate: tenant not found: {tenant_id}",
+            file=sys.stderr,
+        )
+        return 1
+
+    inventory = _api._db_read_inventory(tenant_id)
+    vex = _api._db_read_vex_alerts(tenant_id)
+    open_vex = len(vex)
+
+    tier_order = ["UNACCEPTABLE", "HIGH", "LIMITED", "MINIMAL"]
+    if inventory:
+        tiers = [_api._compute_model_risk_tier(rec, open_vex) for rec in inventory]
+        overall_tier = min(
+            tiers,
+            key=lambda t: tier_order.index(t) if t in tier_order else len(tier_order),
+        )
+    else:
+        overall_tier = "MINIMAL"
+
+    # Aggregate worst-case policy results + attestation state
+    all_policy_results: dict = {}
+    all_attested = True
+    for rec in inventory:
+        if not rec.get("attestation_passed", True):
+            all_attested = False
+        for pname, presult in rec.get("policy_results", {}).items():
+            if pname not in all_policy_results or not presult.get("passed", True):
+                all_policy_results[pname] = presult
+
+    steps = generate_remediation_plan(
+        risk_tier=overall_tier,
+        policy_results=all_policy_results,
+        open_vex=open_vex,
+        attestation_passed=all_attested,
+    )
+    critical_count = sum(1 for s in steps if s.priority == 1)
+
+    if output_json:
+        import json as _json
+        print(
+            _json.dumps(
+                {
+                    "tenant_id": tenant_id,
+                    "risk_tier": overall_tier,
+                    "total_steps": len(steps),
+                    "critical_count": critical_count,
+                    "steps": [
+                        {
+                            "id": s.id,
+                            "priority": s.priority,
+                            "action": s.action,
+                            "description": s.description,
+                            "evidence_required": s.evidence_required,
+                            "estimated_effort": s.estimated_effort,
+                        }
+                        for s in steps
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return 2 if critical_count > 0 else 0
+
+    if not quiet:
+        icon = "\u2713" if critical_count == 0 else "\u2715"
+        print(
+            f"{icon} cloud-remediate | {tenant_id} | {overall_tier} | "
+            f"{len(steps)} step(s), {critical_count} critical"
+        )
+        for s in steps:
+            pri_label = {1: "CRITICAL", 2: "HIGH", 3: "MEDIUM"}.get(s.priority, str(s.priority))
+            print(f"  [{pri_label}] {s.action} ({s.estimated_effort})")
+            print(f"         {s.description[:100]}")
+            print(f"         Evidence: {s.evidence_required}")
+
+    return 2 if critical_count > 0 else 0
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -3804,6 +3931,8 @@ def main() -> None:
         sys.exit(_cmd_cloud_vex(args, quiet))
     elif args.command == "cloud-risk":
         sys.exit(_cmd_cloud_risk(args, quiet))
+    elif args.command == "cloud-remediate":
+        sys.exit(_cmd_cloud_remediate(args, quiet))
     else:
         parser.print_help()
         sys.exit(1)

@@ -343,3 +343,149 @@ class AiRiskAssessor:
             mitigation_required=[],
             passed=True,
         )
+
+
+# ── W81 — Remediation plan generator ──────────────────────────────────────────
+
+@dataclass
+class RemediationStep:
+    """A single actionable remediation step for a model at risk.
+
+    Attributes
+    ----------
+    id:
+        Unique slug identifying the step (e.g. ``"obtain_attestation"``).
+    priority:
+        1 = critical (blocks compliance), 2 = high, 3 = medium.
+    action:
+        Short imperative label for the step.
+    description:
+        Human-readable explanation of what to do and why.
+    evidence_required:
+        What artefact or proof satisfies this step.
+    estimated_effort:
+        Rough estimate: ``"1d"``, ``"1w"``, ``"2w"``.
+    """
+
+    id: str
+    priority: int
+    action: str
+    description: str
+    evidence_required: str
+    estimated_effort: str
+
+
+def generate_remediation_plan(
+    risk_tier: str,
+    policy_results: dict,
+    open_vex: int,
+    attestation_passed: bool = True,
+) -> list[RemediationStep]:
+    """Generate a prioritised remediation plan for a model.
+
+    Rules (evaluated in order; a step is added once regardless of how many
+    triggers fire for the same ``id``):
+
+    * ``attestation_failed`` — priority 1 when ``not attestation_passed``
+    * ``remediate_policy_failures`` — priority 1 when policy failure rate > 50 %
+    * ``close_vex_alerts`` — priority 2 when ``open_vex > 0``
+    * ``sign_model_artifact`` — priority 2 when no signature evidence found in
+      policy_results (key contains "sign")
+
+    UNACCEPTABLE tiers always surface all critical steps; MINIMAL returns an
+    empty list.
+
+    Parameters
+    ----------
+    risk_tier:
+        One of ``"UNACCEPTABLE"``, ``"HIGH"``, ``"LIMITED"``, ``"MINIMAL"``.
+    policy_results:
+        Mapping of policy-name → ``{"passed": bool, "error_count": int, ...}``.
+    open_vex:
+        Number of open VEX alert records for this model.
+    attestation_passed:
+        Whether the model's attestation check passed.
+
+    Returns
+    -------
+    list[RemediationStep]
+        Steps sorted by ``priority`` ascending (most critical first).
+    """
+    if risk_tier == "MINIMAL" and attestation_passed and open_vex == 0:
+        return []
+
+    steps: dict[str, RemediationStep] = {}
+
+    # ── Priority 1: attestation failure ──────────────────────────────────────
+    if not attestation_passed:
+        steps["obtain_attestation"] = RemediationStep(
+            id="obtain_attestation",
+            priority=1,
+            action="Obtain attestation",
+            description=(
+                "The model has not passed attestation.  Run `squash attest` "
+                "to generate a signed attestation record and store it alongside "
+                "the model artefact."
+            ),
+            evidence_required="Signed attestation record (squash-attestation.json)",
+            estimated_effort="1d",
+        )
+
+    # ── Priority 1: high policy failure rate ─────────────────────────────────
+    if policy_results:
+        total = len(policy_results)
+        failed = sum(
+            1 for v in policy_results.values() if not v.get("passed", True)
+        )
+        if total > 0 and (failed / total) > 0.5:
+            steps["remediate_policy_failures"] = RemediationStep(
+                id="remediate_policy_failures",
+                priority=1,
+                action="Remediate policy failures",
+                description=(
+                    f"{failed}/{total} policy checks are failing.  Review each "
+                    "failing policy with `squash scan --policy <name>` and address "
+                    "the reported violations before re-running attestation."
+                ),
+                evidence_required=(
+                    "All policy checks passing (error_count == 0 for each policy)"
+                ),
+                estimated_effort="1w",
+            )
+
+    # ── Priority 2: open VEX alerts ───────────────────────────────────────────
+    if open_vex > 0:
+        steps["close_vex_alerts"] = RemediationStep(
+            id="close_vex_alerts",
+            priority=2,
+            action="Close open VEX alerts",
+            description=(
+                f"{open_vex} open VEX alert(s) exist for this model.  Triage "
+                "each CVE using `squash vex`, apply patches or document "
+                "accepted risk, and mark alerts resolved."
+            ),
+            evidence_required=(
+                "All VEX alerts in 'resolved', 'not_affected', or 'fixed' state"
+            ),
+            estimated_effort="1w",
+        )
+
+    # ── Priority 2: no signing evidence ──────────────────────────────────────
+    has_signing_policy = any(
+        "sign" in k.lower() for k in (policy_results or {})
+    )
+    if not has_signing_policy and policy_results is not None and len(policy_results) > 0:
+        steps["sign_model_artifact"] = RemediationStep(
+            id="sign_model_artifact",
+            priority=2,
+            action="Sign model artefact",
+            description=(
+                "No signing policy check was found in the policy results.  "
+                "Add a signature policy and run `squash attest --sign` to "
+                "produce a verifiable artefact signature."
+            ),
+            evidence_required="Cosign or SLSA signature present and verifiable",
+            estimated_effort="1d",
+        )
+
+    return sorted(steps.values(), key=lambda s: s.priority)
