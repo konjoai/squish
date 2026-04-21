@@ -54,6 +54,21 @@ This file defines standing instructions for all AI and human contributors workin
 
 ---
 
+## 🔄 Version Control & Documentation Sync
+* **Documentation is mandatory per prompt cycle**: Every prompt must result in updated documentation reflecting the current state of the system, including successes, failures, partial progress, blockers, and decisions. This is not gated by Ship Gate results or test outcomes.
+* **Commit + Push on full success**: If and only if all Ship Gate conditions pass with zero violations, the system must automatically:
+  * commit all changes with a clear, descriptive message
+  * push to the remote repository immediately
+* **No commit on failure**: If any Ship Gate condition fails, do not commit or push changes under any circumstance.
+* **Failure-state documentation still required**: Even when gates fail, documentation must still be updated to reflect:
+  * what was attempted
+  * what failed
+  * root cause analysis (technical, not narrative)
+  * next corrective step
+* **No silent state changes**: Documentation must never lag behind implementation state. If the implementation changes, documentation must change in the same prompt cycle. This ensures that the documentation is always a reliable source of truth, even in failure scenarios.
+
+---
+
 ## 🧮 Numerical Correctness & Precision
 
 - **Always be explicit about dtype at every tensor/array boundary.** Never rely on implicit casting — annotate or assert the expected dtype.
