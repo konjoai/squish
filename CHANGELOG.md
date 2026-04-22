@@ -5,6 +5,25 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.14.1] — 2026-04-22 — W100 hotfix: HF URL normalization + doctor version safety
+
+### Fixed
+- `squish pull` / `squish import` now normalize Hugging Face URL inputs to canonical `owner/repo`
+  before invoking download logic. Supported forms include `hf:owner/repo`,
+  `https://huggingface.co/owner/repo`, and `.../tree/<branch>` URLs.
+- Added explicit invalid-reference guard for malformed HF references, with a clear user-facing
+  error message instead of downstream downloader failures.
+- `cmd_doctor` no longer crashes when imported modules (for example `mlx.core` or
+  `transformers`) do not expose `__version__`; version resolution now falls back to package
+  metadata safely.
+
+### Tests
+- `tests/test_wave89_local_model_scan.py` expanded with URI normalization assertions for
+  `cmd_pull` and `cmd_import` dispatch paths.
+- Full suite result: 4403 passed, 12 skipped.
+
+---
+
 ## [9.14.0] — 2026-04-15 — Wave 74: EU AI Act Enforcement Deadline Signal
 
 ### Added

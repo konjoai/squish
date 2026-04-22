@@ -2070,6 +2070,39 @@ def cmd_doctor(args):
         except Exception:  # pragma: no cover
             return True  # unknown format → assume ok
 
+    def _resolve_pkg_version(pkg_name: str, module_obj, dist_names: tuple[str, ...] = ()) -> str:
+        """Resolve package version across module and distribution metadata."""
+        mod_version = getattr(module_obj, "__version__", None)
+        if isinstance(mod_version, str) and mod_version:
+            return mod_version
+
+        root_name = pkg_name.split(".", 1)[0]
+        if root_name and root_name != pkg_name:
+            try:
+                root_mod = importlib.import_module(root_name)
+                root_version = getattr(root_mod, "__version__", None)
+                if isinstance(root_version, str) and root_version:
+                    return root_version
+            except Exception:
+                pass
+
+        try:
+            import importlib.metadata as _im
+            candidates: list[str] = list(dist_names)
+            for candidate in (root_name or pkg_name, (root_name or pkg_name).replace("_", "-"), pkg_name):
+                if candidate and candidate not in candidates:
+                    candidates.append(candidate)
+
+            for dist_name in candidates:
+                try:
+                    return _im.version(dist_name)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        return "0"
+
     # Pre-import all slow packages in parallel to reduce wall-clock time.
     _slow_pkgs = ["mlx.core", "mlx_lm", "numpy", "transformers", "zstandard", "squish_quant"]
 
@@ -2088,8 +2121,9 @@ def cmd_doctor(args):
     # MLX
     _mx_mod, _ = _pkg_cache["mlx.core"]
     if _mx_mod is not None:
-        _check(f"mlx ≥ 0.18  (found {_mx_mod.__version__})",
-               _ver_ok(_mx_mod.__version__, "0.18"),
+        _mx_version = _resolve_pkg_version("mlx.core", _mx_mod, dist_names=("mlx",))
+        _check(f"mlx ≥ 0.18  (found {_mx_version})",
+               _ver_ok(_mx_version, "0.18"),
                "pip install --upgrade mlx")
     else:  # pragma: no cover
         _check("mlx", False, "pip install mlx")
@@ -2097,7 +2131,7 @@ def cmd_doctor(args):
     # mlx-lm
     _mlxlm_mod, _ = _pkg_cache["mlx_lm"]
     if _mlxlm_mod is not None:
-        _mlxlm_version = getattr(_mlxlm_mod, "__version__", "0")
+        _mlxlm_version = _resolve_pkg_version("mlx_lm", _mlxlm_mod, dist_names=("mlx-lm", "mlx_lm"))
         _check(f"mlx-lm ≥ 0.19  (found {_mlxlm_version})",
                _ver_ok(_mlxlm_version, "0.19"),
                "pip install --upgrade mlx-lm")
@@ -2107,8 +2141,9 @@ def cmd_doctor(args):
     # numpy
     _np_mod, _ = _pkg_cache["numpy"]
     if _np_mod is not None:
-        _check(f"numpy ≥ 1.26  (found {_np_mod.__version__})",
-               _ver_ok(_np_mod.__version__, "1.26"),
+        _np_version = _resolve_pkg_version("numpy", _np_mod, dist_names=("numpy",))
+        _check(f"numpy ≥ 1.26  (found {_np_version})",
+               _ver_ok(_np_version, "1.26"),
                "pip install --upgrade numpy")
     else:  # pragma: no cover
         _check("numpy", False, "pip install numpy")
@@ -2116,8 +2151,9 @@ def cmd_doctor(args):
     # transformers
     _tf_mod, _ = _pkg_cache["transformers"]
     if _tf_mod is not None:
-        _check(f"transformers ≥ 4.40  (found {_tf_mod.__version__})",
-               _ver_ok(_tf_mod.__version__, "4.40"),
+        _tf_version = _resolve_pkg_version("transformers", _tf_mod, dist_names=("transformers",))
+        _check(f"transformers ≥ 4.40  (found {_tf_version})",
+               _ver_ok(_tf_version, "4.40"),
                "pip install --upgrade transformers")
     else:  # pragma: no cover
         _check("transformers", False, "pip install transformers")
@@ -2125,8 +2161,9 @@ def cmd_doctor(args):
     # zstandard
     _zstd_mod, _ = _pkg_cache["zstandard"]
     if _zstd_mod is not None:
-        _check(f"zstandard ≥ 0.22  (found {_zstd_mod.__version__})",
-               _ver_ok(_zstd_mod.__version__, "0.22"),
+        _zstd_version = _resolve_pkg_version("zstandard", _zstd_mod, dist_names=("zstandard",))
+        _check(f"zstandard ≥ 0.22  (found {_zstd_version})",
+               _ver_ok(_zstd_version, "0.22"),
                "pip install --upgrade zstandard")
     else:  # pragma: no cover
         _check("zstandard (optional zstd entropy layer)", False, "pip install zstandard")
@@ -3038,6 +3075,37 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
 
 # ── squish pull URI-scheme helpers ─────────────────────────────────────────────
 
+def _normalize_hf_repo_ref(raw_ref: str) -> str:
+    """Normalize user-facing HF references to canonical ``owner/repo`` form.
+
+    Accepted inputs include:
+      - ``hf:owner/repo``
+      - ``owner/repo``
+      - ``https://huggingface.co/owner/repo``
+      - ``https://huggingface.co/owner/repo/tree/main``
+      - ``huggingface.co/owner/repo``
+    """
+    ref = (raw_ref or "").strip()
+    if ref.startswith("hf:"):
+        ref = ref.removeprefix("hf:").strip()
+    if not ref:
+        return ""
+
+    if "huggingface.co" not in ref.lower():
+        return ref.strip("/")
+
+    from urllib.parse import urlparse
+
+    parse_target = ref if "://" in ref else f"https://{ref.lstrip('/')}"
+    parsed = urlparse(parse_target)
+    parts = [p for p in parsed.path.split("/") if p]
+    if parts and parts[0] in {"models", "datasets", "spaces"}:
+        parts = parts[1:]
+    if len(parts) < 2:
+        return ""
+
+    return f"{parts[0]}/{parts[1]}"
+
 def _pull_from_ollama(ollama_name: str, models_dir: Path, token: str | None) -> None:  # pragma: no cover
     """Pull a model by probing the local Ollama instance then falling back to HF.
 
@@ -3101,6 +3169,10 @@ def _pull_from_hf(hf_repo: str, models_dir: Path, token: str | None) -> None:  #
     token:
         HuggingFace token for private repos.
     """
+    hf_repo = _normalize_hf_repo_ref(hf_repo)
+    if not hf_repo:
+        _die("Invalid HuggingFace model reference. Expected owner/repo or a huggingface.co URL.")
+
     try:
         from huggingface_hub import snapshot_download  # type: ignore[import]
     except ImportError:
@@ -3174,7 +3246,9 @@ def cmd_pull(args):  # pragma: no cover
         _pull_from_ollama(name[len("ollama:"):], models_dir, token)
         return
     if name.startswith("hf:") or "huggingface.co" in name:
-        hf_ref = name.removeprefix("hf:")
+        hf_ref = _normalize_hf_repo_ref(name)
+        if not hf_ref:
+            _die("Invalid HuggingFace model reference. Expected owner/repo or a huggingface.co URL.")
         _pull_from_hf(hf_ref, models_dir, token)
         return
 
@@ -3298,7 +3372,11 @@ def cmd_import(args):  # pragma: no cover
     if name.startswith("ollama:"):
         _pull_from_ollama(name[len("ollama:"):], models_dir, token)
     elif name.startswith("hf:") or "huggingface.co" in name:
-        _pull_from_hf(name.removeprefix("hf:"), models_dir, token)
+        hf_ref = _normalize_hf_repo_ref(name)
+        if not hf_ref:
+            print("\n  Invalid HuggingFace model reference. Expected owner/repo or a huggingface.co URL.")
+            return
+        _pull_from_hf(hf_ref, models_dir, token)
     elif Path(name).suffix.lower() in (".gguf", ".bin", ".safetensors"):
         gguf_path = Path(name).expanduser()
         if not gguf_path.exists():

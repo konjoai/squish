@@ -4,6 +4,16 @@
 
 ---
 
+## Patch Notes (Post-W99)
+
+- 2026-04-22: `squish pull` / `squish import` Hugging Face URL normalization hotfix completed.
+  Added canonical `owner/repo` normalization for `hf:` and `huggingface.co` URL inputs,
+  including `/tree/<branch>` links.
+- 2026-04-22: `cmd_doctor` version resolution hardened to prevent crashes when dependency
+  modules do not expose `__version__`; fallback now uses distribution metadata.
+
+---
+
 ## Current State Inventory
 
 ### Squash Enterprise Compliance Layer (W57–W81)

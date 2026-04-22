@@ -1,3 +1,35 @@
+# Session Update — 2026-04-22 (W100 hotfix run)
+
+## Completed in this session
+
+- Fixed Hugging Face URI dispatch robustness in `squish/cli.py`:
+  - Added `_normalize_hf_repo_ref()` to canonicalize supported inputs to `owner/repo`.
+  - Wired normalization into both `cmd_pull` and `cmd_import` Hugging Face paths.
+  - Added invalid-reference guards with clear user-facing messages.
+- Hardened `cmd_doctor` dependency version checks:
+  - Added `_resolve_pkg_version()` with safe fallback order:
+    module `__version__` → root module `__version__` → `importlib.metadata.version(...)`.
+  - Prevents crashes when modules like `mlx.core` / `transformers` omit `__version__`.
+- Added/updated regression coverage in `tests/test_wave89_local_model_scan.py`:
+  - Assert normalized repo IDs for HF URL and `/tree/...` URL dispatch in `cmd_pull`.
+  - Added `cmd_import` URL dispatch normalization test.
+
+## Verification snapshot
+
+- Targeted tests: passing
+  - `tests/test_wave89_local_model_scan.py`
+  - `tests/test_cli_extras.py::TestCmdDoctorFailing::test_failing_check_prints_some_checks_failed`
+  - `tests/test_cli_unit.py::TestCmdDoctor`
+  - `tests/test_cli_unit.py::TestCmdDoctorReport`
+- Full suite: `4403 passed, 12 skipped`.
+
+## Known environment caveat (tooling)
+
+- VS Code sandboxed terminal wrapper intermittently injects malformed startup commands in this
+  environment (`zsh: command not found: Studio`). Use unsandboxed shell mode for reliable runs.
+
+---
+
 # Wave 64 Session Prompt
 
 **Session type:** Code session. Single wave, one commit.

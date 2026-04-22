@@ -419,6 +419,7 @@ class TestCmdPullUriDispatch(unittest.TestCase):
             except SystemExit:
                 pass
             mock_fn.assert_called_once()
+            assert mock_fn.call_args[0][0] == "mlx-community/Qwen3-8B-bf16"
 
     def test_huggingface_url_dispatches_to_hf(self):
         import squish.cli as cli
@@ -430,6 +431,19 @@ class TestCmdPullUriDispatch(unittest.TestCase):
             except SystemExit:
                 pass
             mock_fn.assert_called_once()
+            assert mock_fn.call_args[0][0] == "mlx-community/Qwen3-8B-bf16"
+
+    def test_huggingface_tree_url_is_normalized(self):
+        import squish.cli as cli
+        args = self._make_args("https://huggingface.co/mlx-community/Qwen3-8B-bf16/tree/main?foo=1")
+        with patch.object(cli, "_pull_from_hf") as mock_fn:
+            mock_fn.return_value = None
+            try:
+                cli.cmd_pull(args)
+            except SystemExit:
+                pass
+            mock_fn.assert_called_once()
+            assert mock_fn.call_args[0][0] == "mlx-community/Qwen3-8B-bf16"
 
     def test_pull_from_ollama_no_server_prints_friendly_message(self):
         """_pull_from_ollama prints friendly message when Ollama is not running."""
@@ -442,6 +456,22 @@ class TestCmdPullUriDispatch(unittest.TestCase):
         assert len(output) > 0
         assert any(word in output.lower() for word in
                    ("ollama", "not running", "start", "install", "squish pull"))
+
+
+class TestCmdImportUriDispatch(unittest.TestCase):
+
+    def _make_args(self, import_source):
+        import types
+        return types.SimpleNamespace(import_source=import_source, models_dir="", token="")
+
+    def test_huggingface_url_dispatches_with_normalized_repo(self):
+        import squish.cli as cli
+        args = self._make_args("https://huggingface.co/mlx-community/Qwen3-8B-bf16/tree/main")
+        with patch.object(cli, "_pull_from_hf") as mock_fn:
+            mock_fn.return_value = None
+            cli.cmd_import(args)
+            mock_fn.assert_called_once()
+            assert mock_fn.call_args[0][0] == "mlx-community/Qwen3-8B-bf16"
 
 
 if __name__ == "__main__":
