@@ -30,6 +30,8 @@ References:
     https://github.com/ollama/ollama/blob/main/docs/api.md
 """
 
+from __future__ import annotations
+
 import asyncio
 import importlib.metadata
 import json

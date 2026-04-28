@@ -4,6 +4,7 @@ Covers:
   - _build_tool_union_schema (pure function, tests 1-7)
   - tool_choice logic simulation (tests 8-11)
 """
+from __future__ import annotations
 
 import pytest
 

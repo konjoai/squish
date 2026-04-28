@@ -39,6 +39,8 @@ will generally comply without any special parsing — the JSON injection just
 reinforces behaviour for models that haven't seen a tool-calling system prompt.
 """
 
+from __future__ import annotations
+
 import json
 import re
 import time

@@ -43,6 +43,8 @@ Or apply programmatically before quantizing a weight dict:
     scales = load_awq_scales(awq_dir)
     weights = apply_awq_to_weights(weights, scales)
 """
+from __future__ import annotations
+
 import argparse
 import sys
 import time

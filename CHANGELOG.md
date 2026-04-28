@@ -5,6 +5,47 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.15.1] — 2026-04-28 — W100: Pre-Download ModelScan for `squish pull hf:`
+
+### Added
+- **`squish/serving/local_model_scanner.py`** — two new public exports:
+  - `HFFileSummary` — per-file metadata dataclass from the HF API manifest.
+  - `HFRepoScanResult` — structured result for the pre-download scan with fields
+    `status`, `repo_id`, `findings`, `file_summary`, `total_files`,
+    `total_size_bytes`, `safe_weight_count`, `dangerous_count`,
+    `potentially_unsafe_count`.
+  - `scan_hf_repo_metadata(repo_id, token=None) → HFRepoScanResult` — queries
+    `https://huggingface.co/api/models/<repo>?blobs=true` and classifies files:
+    - `"unsafe"` when `.pkl`/`.pickle` files are present, or `.bin`/`.pt` with
+      no `.safetensors`/`.gguf` counterpart.
+    - `"warning"` when legacy pickle-format weights coexist with safe formats.
+    - `"safe"` when only safetensors/GGUF/NPZ weights are found.
+    - `"error"` when the API is unreachable or returns unexpected data.
+  - `_classify_hf_siblings(repo_id, siblings)` — pure classifier (no HTTP),
+    exported for direct testing.
+- **`squish/cli.py`** — `_pull_from_hf` now calls `scan_hf_repo_metadata` and
+  prints a compact scan report **before** `snapshot_download`. Aborts with
+  `sys.exit(2)` when `status == "unsafe"`. API errors allow download to proceed
+  with a warning (users behind firewalls / private repos are not blocked).
+- **`squish/cli.py`** — `_print_hf_scan_report()` helper renders the scan
+  summary (file count, total size, safe/legacy/dangerous weight counts) to
+  stdout before every HF download.
+- **`tests/test_predownload_scan.py`** — 30 new tests across 5 classes:
+  `TestHFRepoScanResultShape` (6), `TestClassifyHFSiblings` (12),
+  `TestScanHFRepoMetadata` (12). All HF API calls are mocked — no network
+  required. Total tests in this file: 48 (was 18).
+
+### Security
+- Closes the pre-load attack surface: an adversarial HuggingFace model
+  containing `.pkl` payloads is now blocked **before any bytes are transferred**,
+  eliminating the window between download and the post-load byte scan.
+
+### No new mandatory dependencies
+- Uses only `urllib.request` (stdlib) for HF API calls — `requests` or
+  `modelscan` are not required.
+
+---
+
 ## [9.15.0] — 2026-04-28 — Squash Extraction: standalone konjoai/squash package
 
 ### Changed

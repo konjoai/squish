@@ -43,6 +43,8 @@ Low-level: create a cache and pass to generate():
     cache = make_quantized_cache(model, mode="int8", window=64)
     # Pass cache as kv_cache argument to mlx_lm generate functions
 """
+from __future__ import annotations
+
 import threading
 from pathlib import Path
 

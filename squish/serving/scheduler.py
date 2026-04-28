@@ -67,6 +67,8 @@ Standalone test:
 
     python3 -m squish.serving.scheduler
 """
+from __future__ import annotations
+
 import asyncio
 import dataclasses
 import hashlib

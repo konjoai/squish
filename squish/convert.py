@@ -22,6 +22,8 @@ Usage:
         [--outlier-threshold 20.0] \\
         [--verbose]
 """
+from __future__ import annotations
+
 import argparse
 import json
 import shutil

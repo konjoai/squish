@@ -7,12 +7,19 @@ Also provides ``scan_before_load()`` — a lightweight pre-import safety scan
 that inspects downloaded model files for dangerous pickle opcodes, invalid
 GGUF magic, and malformed safetensors headers without executing any model code.
 
+Also provides ``scan_hf_repo_metadata()`` — a **pre-download** safety scan that
+queries the HuggingFace API for the file listing of a repo and flags known-
+dangerous file types *before* any bytes are transferred.  No external scanner
+is required; the analysis is performed natively on the file manifest.
+
 Public API
 ──────────
 LocalModel              — dataclass for a single discovered model
 LocalModelScanner       — scans all sources and merges results
 PreDownloadScanResult   — result of scan_before_load()
 scan_before_load()      — scan a download dir before any model import
+HFRepoScanResult        — result of scan_hf_repo_metadata()
+scan_hf_repo_metadata() — pre-download HF metadata scan (no download needed)
 """
 from __future__ import annotations
 
@@ -21,16 +28,248 @@ __all__ = [
     "LocalModelScanner",
     "PreDownloadScanResult",
     "scan_before_load",
+    "HFRepoScanResult",
+    "scan_hf_repo_metadata",
 ]
 
 import json
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 
 # ---------------------------------------------------------------------------
-# Pre-download safety scan
+# HuggingFace pre-download metadata scan (W100)
+# ---------------------------------------------------------------------------
+
+# File extensions that are always dangerous — arbitrary Python pickles.
+_ALWAYS_DANGEROUS_EXTENSIONS: frozenset = frozenset([
+    ".pkl", ".pickle",
+])
+
+# Extensions that *may* contain dangerous pickle payloads (PyTorch legacy).
+# These are flagged as warnings unless the repo also contains safetensors
+# equivalents, in which case the pickle files are redundant but still risky.
+_POTENTIALLY_DANGEROUS_EXTENSIONS: frozenset = frozenset([
+    ".bin", ".pt", ".pth",
+])
+
+# Safe model weight formats (no executable code).
+_SAFE_WEIGHT_EXTENSIONS: frozenset = frozenset([
+    ".safetensors", ".gguf", ".npz", ".ggml",
+])
+
+# HF API endpoint for model metadata.
+_HF_API_BASE: str = "https://huggingface.co/api/models"
+
+# Maximum number of files listed in the scan report.
+_REPORT_MAX_FILES: int = 50
+
+# Request timeout for HF API calls (seconds).
+_HF_API_TIMEOUT: int = 15
+
+
+@dataclass
+class HFFileSummary:
+    """Metadata for a single file in a HuggingFace repository."""
+    filename: str
+    size_bytes: int = 0
+    flagged: bool = False
+    flag_reason: str = ""
+
+
+@dataclass
+class HFRepoScanResult:
+    """Result returned by ``scan_hf_repo_metadata()``.
+
+    Attributes
+    ----------
+    status:       ``"safe"`` | ``"unsafe"`` | ``"warning"`` | ``"error"``
+    repo_id:      HuggingFace repository id that was scanned.
+    findings:     Human-readable list of security findings (empty when safe).
+    file_summary: Per-file metadata list (up to ``_REPORT_MAX_FILES`` entries).
+    total_files:  Total number of files reported by the API.
+    total_size_bytes: Sum of all file sizes reported by the API.
+    safe_weight_count:    Number of safe weight files (.safetensors / .gguf).
+    dangerous_count:      Number of always-dangerous files (.pkl / .pickle).
+    potentially_unsafe_count: Number of potentially-dangerous files (.bin / .pt).
+    """
+    status:                   str
+    repo_id:                  str
+    findings:                 List[str]            = field(default_factory=list)
+    file_summary:             List[HFFileSummary]  = field(default_factory=list)
+    total_files:              int                  = 0
+    total_size_bytes:         int                  = 0
+    safe_weight_count:        int                  = 0
+    dangerous_count:          int                  = 0
+    potentially_unsafe_count: int                  = 0
+
+
+def scan_hf_repo_metadata(
+    repo_id: str,
+    token: Optional[str] = None,
+) -> HFRepoScanResult:
+    """Pre-download safety scan using the HuggingFace API file listing.
+
+    Queries ``https://huggingface.co/api/models/<repo_id>?blobs=true`` to
+    obtain the complete file manifest for the repository.  No model bytes are
+    downloaded.  Classifies each file and returns a structured result with:
+
+    - A ``"safe"`` status when only safetensors / GGUF / ONNX weight files are
+      present.
+    - A ``"warning"`` status when potentially-dangerous ``.bin`` / ``.pt`` files
+      exist alongside safe equivalents (common for legitimate HF repos that ship
+      both formats).
+    - An ``"unsafe"`` status when ``.pkl`` / ``.pickle`` files are present, or
+      when ``.bin`` files exist with *no* safe-format counterpart.
+    - An ``"error"`` status when the API call fails or returns unexpected data.
+
+    Parameters
+    ----------
+    repo_id:
+        HuggingFace repository id, e.g. ``"mlx-community/Qwen3-8B-4bit"``.
+    token:
+        Optional HuggingFace bearer token for private repositories.
+
+    Returns
+    -------
+    HFRepoScanResult
+    """
+    url = f"{_HF_API_BASE}/{repo_id}?blobs=true"
+    headers: Dict[str, str] = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=_HF_API_TIMEOUT) as resp:
+            raw = resp.read()
+        data = json.loads(raw)
+    except urllib.error.HTTPError as exc:
+        status_code = exc.code
+        if status_code == 401:
+            msg = f"HF API 401 Unauthorized — provide --token for private repo {repo_id!r}"
+        elif status_code == 404:
+            msg = f"HF API 404 — repository {repo_id!r} not found"
+        else:
+            msg = f"HF API HTTP {status_code} for {repo_id!r}: {exc.reason}"
+        return HFRepoScanResult(
+            status="error",
+            repo_id=repo_id,
+            findings=[msg],
+        )
+    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+        return HFRepoScanResult(
+            status="error",
+            repo_id=repo_id,
+            findings=[f"HF API request failed for {repo_id!r}: {exc}"],
+        )
+
+    siblings: List[Dict] = data.get("siblings", [])
+    if not isinstance(siblings, list):
+        return HFRepoScanResult(
+            status="error",
+            repo_id=repo_id,
+            findings=[f"Unexpected HF API response structure for {repo_id!r}"],
+        )
+
+    return _classify_hf_siblings(repo_id, siblings)
+
+
+def _classify_hf_siblings(
+    repo_id: str,
+    siblings: List[Dict],
+) -> HFRepoScanResult:
+    """Classify a file list returned by the HF API and build a scan result."""
+    findings: List[str] = []
+    file_summary: List[HFFileSummary] = []
+    total_size = 0
+    safe_weight_count = 0
+    dangerous_count = 0
+    potentially_unsafe_count = 0
+
+    for entry in siblings[:_REPORT_MAX_FILES]:
+        filename: str = entry.get("rfilename", "")
+        size: int = int(entry.get("size", 0) or 0)
+        total_size += size
+        suffix = Path(filename).suffix.lower()
+        flagged = False
+        flag_reason = ""
+
+        if suffix in _ALWAYS_DANGEROUS_EXTENSIONS:
+            dangerous_count += 1
+            flagged = True
+            flag_reason = f"dangerous file type {suffix!r} — arbitrary pickle execution"
+            findings.append(
+                f"[UNSAFE] {filename}: {flag_reason}"
+            )
+        elif suffix in _POTENTIALLY_DANGEROUS_EXTENSIONS:
+            potentially_unsafe_count += 1
+            flagged = True
+            flag_reason = f"potentially unsafe file type {suffix!r} — may contain pickle payload"
+        elif suffix in _SAFE_WEIGHT_EXTENSIONS:
+            safe_weight_count += 1
+
+        file_summary.append(HFFileSummary(
+            filename=filename,
+            size_bytes=size,
+            flagged=flagged,
+            flag_reason=flag_reason,
+        ))
+
+    # Account for any files beyond _REPORT_MAX_FILES
+    for entry in siblings[_REPORT_MAX_FILES:]:
+        size = int(entry.get("size", 0) or 0)
+        total_size += size
+        suffix = Path(entry.get("rfilename", "")).suffix.lower()
+        if suffix in _ALWAYS_DANGEROUS_EXTENSIONS:
+            dangerous_count += 1
+            findings.append(
+                f"[UNSAFE] {entry.get('rfilename', '?')}: dangerous file type {suffix!r}"
+            )
+        elif suffix in _POTENTIALLY_DANGEROUS_EXTENSIONS:
+            potentially_unsafe_count += 1
+        elif suffix in _SAFE_WEIGHT_EXTENSIONS:
+            safe_weight_count += 1
+
+    # Determine overall status
+    if dangerous_count > 0:
+        status = "unsafe"
+    elif potentially_unsafe_count > 0 and safe_weight_count == 0:
+        # .bin/.pt files with no safetensors/gguf counterpart — high risk
+        findings.append(
+            f"[UNSAFE] {repo_id}: {potentially_unsafe_count} pickle-format weight "
+            f"file(s) (.bin/.pt) with no safe-format (.safetensors/.gguf) counterpart"
+        )
+        status = "unsafe"
+    elif potentially_unsafe_count > 0:
+        # .bin/.pt present but safe formats also exist — warn, don't block
+        findings.append(
+            f"[WARNING] {repo_id}: {potentially_unsafe_count} legacy pickle-format "
+            f"weight file(s) (.bin/.pt) present alongside {safe_weight_count} "
+            f"safe-format file(s) — prefer the safetensors variant"
+        )
+        status = "warning"
+    else:
+        status = "safe"
+
+    return HFRepoScanResult(
+        status=status,
+        repo_id=repo_id,
+        findings=findings,
+        file_summary=file_summary,
+        total_files=len(siblings),
+        total_size_bytes=total_size,
+        safe_weight_count=safe_weight_count,
+        dangerous_count=dangerous_count,
+        potentially_unsafe_count=potentially_unsafe_count,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pre-download safety scan (post-download, pre-import)
 # ---------------------------------------------------------------------------
 
 # Pickle opcodes that allow arbitrary code execution.

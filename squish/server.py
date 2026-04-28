@@ -4,6 +4,7 @@ squish_server.py
 
 OpenAI-compatible HTTP API server for Squish compressed models.
 
+
 Exposes endpoints:
     GET  /v1/models                    — list loaded model
     GET  /v1/models/{model_id}         — model detail
@@ -28,6 +29,8 @@ Usage:
 Dependencies:
     pip install fastapi "uvicorn[standard]"
 """
+from __future__ import annotations
+
 import argparse
 import collections
 import functools

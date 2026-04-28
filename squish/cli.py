@@ -41,6 +41,7 @@ After `pip install -e .`:
     squish run qwen3:8b
     squish chat qwen3:8b
 """
+from __future__ import annotations
 
 import argparse
 import json
@@ -3127,6 +3128,37 @@ def _pull_from_hf(hf_repo: str, models_dir: Path, token: str | None) -> None:  #
                 print(f"  Catalog match ({entry.id}) — no pre-squished available; compressing locally.")
                 break
 
+    # ── Pre-download metadata scan (W100) ─────────────────────────────────────
+    # Query the HF API for the file manifest *before* transferring any bytes.
+    # An adversarial repo can embed ACE payloads in .pkl/.bin files that trigger
+    # at load time — this scan closes that pre-load attack surface.
+    from squish.serving.local_model_scanner import (
+        scan_hf_repo_metadata,
+        scan_before_load,
+    )
+    print(f"\n  Scanning HuggingFace metadata for {hf_repo} …")
+    meta_scan = scan_hf_repo_metadata(hf_repo, token=token)
+
+    # Always display the file inventory so the user can make an informed choice.
+    _print_hf_scan_report(meta_scan)
+
+    if meta_scan.status == "unsafe":
+        print(f"\n  ✗  Pre-download security scan FAILED — aborting.\n")
+        for finding in meta_scan.findings:
+            print(f"     {finding}")
+        print()
+        sys.exit(2)
+    elif meta_scan.status == "error":
+        # API unreachable or repo not found — warn but allow the download so
+        # users behind firewalls or pulling private repos are not blocked.
+        print("  ⚠  Metadata scan could not complete (API error).")
+        print("     Proceeding with download — run `squish scan <dir>` after download.")
+    elif meta_scan.status == "warning":
+        print("  ⚠  Warning: legacy pickle-format weights detected (see above).")
+        print("     Download will proceed — post-download byte scan will verify files.")
+    else:
+        print(f"  ✓  Pre-download scan passed — {meta_scan.total_files} file(s) reviewed.")
+
     # Fresh download
     print(f"\n  Downloading from HuggingFace: {hf_repo}")
     print("  (Model is outside catalog — compressing locally after download)")
@@ -3136,22 +3168,41 @@ def _pull_from_hf(hf_repo: str, models_dir: Path, token: str | None) -> None:  #
         token=token,
     )
 
-    # Pre-load safety scan — inspect downloaded files before any import.
-    from squish.serving.local_model_scanner import scan_before_load
+    # Post-download byte-level scan — inspect downloaded files before any import.
     scan_result = scan_before_load(Path(dest))
     if scan_result.status == "unsafe":
-        print(f"\n  ✗  Security scan failed — {len(scan_result.findings)} finding(s):")
+        print(f"\n  ✗  Post-download security scan failed — {len(scan_result.findings)} finding(s):")
         for finding in scan_result.findings:
             print(f"       {finding}")
         print(f"\n  Downloaded files retained at: {dest}")
         print("  Remove them manually if you do not trust this model.\n")
         sys.exit(2)
     elif scan_result.scanned > 0:
-        print(f"  ✓  Security scan passed ({scan_result.scanned} file(s) checked)")
+        print(f"  ✓  Post-download scan passed ({scan_result.scanned} file(s) checked)")
 
     print(f"\n  Downloaded to: {dest}")
     print("  To compress: squish compress <model-dir>")
     print()
+
+
+def _print_hf_scan_report(result) -> None:
+    """Print a compact scan report for a HFRepoScanResult."""
+    from squish.serving.local_model_scanner import HFRepoScanResult
+    if not isinstance(result, HFRepoScanResult):
+        return
+    total_mb = result.total_size_bytes / (1024 * 1024)
+    print(f"  ┌─ Scan report: {result.repo_id}")
+    print(f"  │  Files       : {result.total_files}")
+    print(f"  │  Total size  : {total_mb:.1f} MB")
+    print(f"  │  Safe weights: {result.safe_weight_count} (.safetensors/.gguf)")
+    if result.potentially_unsafe_count:
+        print(f"  │  Legacy weights: {result.potentially_unsafe_count} (.bin/.pt) ⚠")
+    if result.dangerous_count:
+        print(f"  │  DANGEROUS   : {result.dangerous_count} (.pkl/.pickle) ✗")
+    status_icon = {"safe": "✓", "warning": "⚠", "unsafe": "✗", "error": "?"}.get(
+        result.status, "?"
+    )
+    print(f"  └─ Status: {status_icon} {result.status.upper()}")
 
 
 # ── squish pull ───────────────────────────────────────────────────────────────

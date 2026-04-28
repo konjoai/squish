@@ -31,6 +31,8 @@ Memory behaviour (non-INT4-native path):
   - For the INT4 native path (Wave 103), weights remain packed INT4 in Metal,
     yielding ~50% memory reduction vs BF16 (e.g. 1.5B model: ~2 GB not ~3 GB).
 """
+from __future__ import annotations
+
 import dataclasses
 import importlib
 import json

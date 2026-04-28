@@ -34,6 +34,8 @@ Standalone test:
         --prompt "Explain quantum entanglement in one paragraph."
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from collections.abc import Callable, Iterator

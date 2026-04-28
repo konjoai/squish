@@ -41,15 +41,22 @@
 
 ## Wave Roadmap
 
-### W100 — Pre-Download ModelScan for `squish pull hf:`
+### W100 — Pre-Download ModelScan for `squish pull hf:` ✅ COMPLETE
 **Why:** `squish pull hf:<repo>` downloads model weights before scanning. An adversarial HF model can trigger ACE at load time before the post-load scan runs. This closes the pre-load attack surface.
 
-**Changes:**
-- `squish/serving/local_model_scanner.py`: add `scan_before_load(download_dir: Path) -> ScanResult` — runs `ModelScanner.scan()` on the downloaded files before any import.
-- `squish/cli.py` pull path: call `scan_before_load()` after download, abort with `sys.exit(2)` on `status="unsafe"`.
-- `tests/test_predownload_scan.py`: inject a synthetic pickle-with-REDUCE into a mock download dir; assert the pull path aborts with rc=2. ≥12 tests.
+**Changes (2026-04-28):**
+- `squish/serving/local_model_scanner.py`: added `HFFileSummary`, `HFRepoScanResult`,
+  `scan_hf_repo_metadata(repo_id, token) → HFRepoScanResult`, and
+  `_classify_hf_siblings()`. Native pickle-header classification — no `modelscan` dep.
+- `squish/cli.py`: `_pull_from_hf` calls `scan_hf_repo_metadata` **before**
+  `snapshot_download`; prints compact scan report; aborts with `sys.exit(2)` on
+  `status="unsafe"`. API errors allow download with warning (firewall / private-repo
+  safe). Post-download `scan_before_load()` byte scan retained as second layer.
+- `tests/test_predownload_scan.py`: 30 new tests (total: 48). All HF API calls mocked.
+  `_classify_hf_siblings` tested at unit level; `scan_hf_repo_metadata` tested with
+  mocked HTTP including 401/404/URLError/unexpected structure paths.
 
-**Gate:** All tests pass. `squish pull hf:` aborts on unsafe model before any import.
+**Gate:** 48/48 tests pass. `squish pull hf:` aborts on unsafe model before any bytes transferred. Zero new mandatory dependencies.
 
 ---
 
@@ -108,7 +115,7 @@ cd js && npm install && npm run build
 ---
 
 ## Next Immediate Action
-**Start W100** — Pre-Download ModelScan. Zero new files (extends `local_model_scanner.py` in-place). Highest security-to-implementation ratio.
+**Start W101** — Rust Inference Bridge via candle-pyo3. `squish_quant_rs/` scaffold exists. Expose INT4 matmul via PyO3; Python fallback must still work when the Rust crate is absent.
 
 ---
 
