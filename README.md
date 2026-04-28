@@ -151,14 +151,23 @@ See [MODULES.md](MODULES.md) for the full flag reference and stability tiers (St
 
 ---
 
-## Compliance API — squash (EU AI Act)
+## Compliance — Squash (EU AI Act)
 
-`squash` is Squish's AI governance and regulatory compliance module. A full compliance REST API ships with `pip install squish` — no extra dependencies.
+> **Squash is now a standalone package.** The compliance engine has been extracted to [`konjoai/squash`](https://github.com/konjoai/squash) with its own release cadence, Apache 2.0 Community license, and PyPI package (`squash-ai`).
+
+Squish and Squash form the complete AI deployment stack for regulated environments:
 
 ```bash
+# Optimize inference with Squish
 pip install squish
-squish squash serve  # starts compliance API on :11436
+squish compress ./my-model --quant int4
+
+# Gate on compliance with Squash (EU AI Act, NIST AI RMF, OWASP LLM)
+pip install squash-ai
+squash attest ./my-model --policy eu-ai-act --sign
 ```
+
+See [konjoai/squash](https://github.com/konjoai/squash) for full documentation, pricing, and the standalone REST API.
 
 | Endpoint | EU AI Act Article | Description |
 |---|---|---|
