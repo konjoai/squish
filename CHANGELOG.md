@@ -5,6 +5,31 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.16.0] — 2026-04-28 — W101: Rust INT4 Inference Bridge (GIL-free Rayon GEMV)
+
+### Added
+- **`squish_quant_rs/src/lib.rs`** — `quantized_matmul_int4(w_codes, scales, offsets, x, group_size)`
+  Fused INT4 asymmetric dequantize + matrix multiplication. Parallelises over output features
+  via Rayon; GIL released with `py.allow_threads()`. Registered in `#[pymodule]`. Zero new
+  crate dependencies — consistent with the existing 5,500-line native kernel crate.
+- **`squish/quant/quantizer.py`** — `quantized_matmul_int4()` public Python API.
+  - Rust path used when `squish_quant` extension is available and exposes the new symbol.
+  - `_quantized_matmul_int4_numpy()` NumPy fallback always available (no Rust required).
+  - `get_backend_info()` extended with `"int4_matmul_rust"` boolean key.
+- **`tests/test_rust_matmul.py`** — 18 new tests:
+  - Shape/dtype contract (batch=1, batch>N, multiple group sizes).
+  - NumPy fallback correctness vs. reference dequant+GEMM.
+  - Rust kernel matches NumPy fallback (skipped when Rust extension absent).
+  - Rust determinism test.
+  - Error paths: mismatched `in_f`, bad `group_size`.
+  - Backend info structure and types.
+
+### Changed
+- `squish/quant/quantizer.py`: `get_backend_info()` now returns three keys
+  (`squish_quant_rust`, `int4_matmul_rust`, `numpy`).
+
+---
+
 ## [9.15.1] — 2026-04-28 — W100: Pre-Download ModelScan for `squish pull hf:`
 
 ### Added

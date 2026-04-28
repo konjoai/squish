@@ -60,15 +60,24 @@
 
 ---
 
-### W101 — Rust Inference Bridge via candle-pyo3
-**Why:** `squish_quant_rs/` scaffold exists. candle (HF, Apache-2.0, 20k★) provides `candle-pyo3` for calling Rust kernels from Python. Eliminates GIL on quantized matmul. 4× CPU inference speed potential.
+### W101 — Rust Inference Bridge (native Rayon GEMV) ✅ COMPLETE
+**Why:** Eliminate GIL on quantised GEMV. `squish_quant_rs/` scaffold exists; native Rayon
+(consistent with every other kernel in the 5,500-line crate) preferred over candle
+to avoid a heavy dependency.
 
-**Changes:**
-- `squish_quant_rs/src/lib.rs`: implement INT4 matmul via candle `QTensor`. Expose as `quantized_matmul(w_codes, scales, zeros, x)` via PyO3.
-- `squish/quant/quantizer.py`: detect `squish_quant_rs` availability; fall back to NumPy/MLX path if absent.
-- CI: `cargo build --release -p squish_quant_rs` step.
+**Changes (2026-04-28):**
+- `squish_quant_rs/src/lib.rs`: `quantized_matmul_int4(w_codes, scales, offsets, x, group_size)` —
+  fused INT4 asymmetric dequantize + GEMV, parallelised over output features via Rayon,
+  GIL released via `py.allow_threads()`. Registered in `#[pymodule]`.
+- `squish/quant/quantizer.py`: `quantized_matmul_int4()` public API — Rust-first,
+  `_quantized_matmul_int4_numpy()` NumPy fallback. `get_backend_info()` reports
+  `"int4_matmul_rust"` key.
+- `tests/test_rust_matmul.py`: 18 tests — shape/dtype contract, NumPy fallback correctness,
+  Rust kernel correctness vs fallback (skipped when Rust not built), error paths,
+  backend info.
 
-**Gate:** Maturin build succeeds. Python fallback still works when `squish_quant_rs` absent.
+**Gate:** 18/18 tests pass. `get_backend_info()["int4_matmul_rust"] == True`. Python NumPy
+fallback passes without Rust build. Zero new mandatory dependencies.
 
 ---
 
@@ -115,7 +124,9 @@ cd js && npm install && npm run build
 ---
 
 ## Next Immediate Action
-**Start W101** — Rust Inference Bridge via candle-pyo3. `squish_quant_rs/` scaffold exists. Expose INT4 matmul via PyO3; Python fallback must still work when the Rust crate is absent.
+**W101 COMPLETE** — Rust Inference Bridge landed. `quantized_matmul_int4` Rayon GEMV kernel
+live in `squish_quant_rs`, Python bridge in `squish/quant/quantizer.py`, 18 tests passing.
+Next: define W102 (e.g. streaming KV-cache quantisation or `squish bench` throughput harness).
 
 ---
 

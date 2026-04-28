@@ -3302,6 +3302,8 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(magic_pig_score_f32,                 m)?)?;
     m.add_function(wrap_pyfunction!(milo_pack_int3_u8,                   m)?)?;
     m.add_function(wrap_pyfunction!(milo_quant_f32,                      m)?)?;
+    // W101 — Fused INT4 dequantize + matmul (GIL-free Rayon GEMV)
+    m.add_function(wrap_pyfunction!(quantized_matmul_int4,               m)?)?;
     Ok(())
 }
 
@@ -5480,4 +5482,101 @@ fn milo_quant_f32(
         Array1::from(scales_flat).into_pyarray_bound(py).unbind(),
         Array1::from(zeros_flat).into_pyarray_bound(py).unbind(),
     ))
+}
+
+// ── W101 — Fused INT4 asymmetric dequantize + matmul ────────────────────────
+// Native Rayon GEMV — no candle dependency, consistent with every other
+// kernel in this crate.  GIL released for the full compute section.
+
+/// Fused INT4 asymmetric dequantize + matrix multiplication.
+/// Computes `out = x @ W_hat.T` where `W_hat` is dequantised on-the-fly
+/// from nibble-packed codes.  Parallelises over output features via Rayon.
+///
+/// Format matches `quantize_int4_asymmetric_grouped` / `dequantize_int4_asymmetric_grouped`:
+/// packed byte `p` for row `i`, column-pair `(j0=2p, j1=2p+1)`:
+///   lo nibble (bits 0-3) → col j0,  hi nibble (bits 4-7) → col j1
+///   W_hat[j] = offsets[i, j/gs] + nibble * scales[i, j/gs]
+///
+/// # Arguments
+/// * `w_codes`    — `(out_f, in_f / 2)` uint8 nibble-packed weights
+/// * `scales`     — `(out_f, n_groups)` f32 per-group step size
+/// * `offsets`    — `(out_f, n_groups)` f32 per-group minimum value (gmin)
+/// * `x`          — `(batch, in_f)` f32 input activations
+/// * `group_size` — columns per quantisation group (must divide `in_f`)
+///
+/// # Returns `(batch, out_f)` f32
+#[pyfunction]
+fn quantized_matmul_int4(
+    py: Python<'_>,
+    w_codes: PyReadonlyArray2<u8>,
+    scales:  PyReadonlyArray2<f32>,
+    offsets: PyReadonlyArray2<f32>,
+    x:       PyReadonlyArray2<f32>,
+    group_size: usize,
+) -> PyResult<Py<PyArray2<f32>>> {
+    let w  = w_codes.as_slice()?;
+    let sv = scales.as_slice()?;
+    let ov = offsets.as_slice()?;
+    let xv = x.as_slice()?;
+    let out_f    = w_codes.shape()[0];
+    let n_packed = w_codes.shape()[1];
+    let in_f     = n_packed * 2;
+    let batch    = x.shape()[0];
+    let in_x     = x.shape()[1];
+
+    if in_x != in_f {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "x.shape[1] ({in_x}) must equal w_codes.shape[1]*2 ({in_f})"
+        )));
+    }
+    if group_size == 0 || in_f % group_size != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "group_size ({group_size}) must divide in_f ({in_f}) evenly"
+        )));
+    }
+    let n_groups = in_f / group_size;
+
+    // Release the GIL for the entire parallel compute section.
+    let out_flat = py.allow_threads(|| {
+        // Each Rayon task owns one output feature (row of W).
+        let row_outputs: Vec<Vec<f32>> = (0..out_f)
+            .into_par_iter()
+            .map(|i| {
+                let w_row = &w [i * n_packed .. (i + 1) * n_packed];
+                let s_row = &sv[i * n_groups .. (i + 1) * n_groups];
+                let o_row = &ov[i * n_groups .. (i + 1) * n_groups];
+
+                let mut batch_out = vec![0.0f32; batch];
+                for b in 0..batch {
+                    let x_row = &xv[b * in_f .. (b + 1) * in_f];
+                    let mut acc = 0.0f32;
+                    for p in 0..n_packed {
+                        let byte = w_row[p];
+                        let j0 = p * 2;
+                        let j1 = j0 + 1;
+                        let g0 = j0 / group_size;
+                        let g1 = j1 / group_size;
+                        let w0 = o_row[g0] + (byte & 0x0F) as f32 * s_row[g0];
+                        let w1 = o_row[g1] + ((byte >> 4) & 0x0F) as f32 * s_row[g1];
+                        acc += x_row[j0] * w0 + x_row[j1] * w1;
+                    }
+                    batch_out[b] = acc;
+                }
+                batch_out
+            })
+            .collect();
+
+        // Transpose from (out_f, batch) thread-local layout → (batch, out_f).
+        let mut flat = vec![0.0f32; batch * out_f];
+        for (i, col_vals) in row_outputs.into_iter().enumerate() {
+            for (b, val) in col_vals.into_iter().enumerate() {
+                flat[b * out_f + i] = val;
+            }
+        }
+        flat
+    });
+
+    let arr = Array2::from_shape_vec((batch, out_f), out_flat)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
 }

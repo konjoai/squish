@@ -285,9 +285,11 @@ def _reconstruct_numpy(result: QuantizationResult) -> np.ndarray:
 
 def get_backend_info() -> dict:
     """Return dict describing which backends are available."""
+    _has_rust = _squish_quant is not None
     return {
-        "squish_quant_rust": _squish_quant is not None,
-        "numpy":             True,
+        "squish_quant_rust":    _has_rust,
+        "int4_matmul_rust":     _has_rust and hasattr(_squish_quant, "quantized_matmul_int4"),
+        "numpy":                True,
     }
 
 
@@ -616,6 +618,66 @@ def mean_cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     cosines[both_zero] = 1.0
     cosines[one_zero]  = 0.0
     return float(np.mean(cosines))
+
+
+def _quantized_matmul_int4_numpy(
+    w_codes: np.ndarray,
+    scales: np.ndarray,
+    offsets: np.ndarray,
+    x: np.ndarray,
+    group_size: int,
+) -> np.ndarray:
+    """Pure-NumPy fallback for quantized_matmul_int4 (used when Rust is absent)."""
+    out_f, n_packed = w_codes.shape
+    in_f = n_packed * 2
+    batch = x.shape[0]
+    n_groups = in_f // group_size
+
+    # Unpack nibbles on uint8 before casting to float32
+    w_flat = np.empty((out_f, in_f), dtype=np.float32)
+    w_flat[:, 0::2] = (w_codes & np.uint8(0x0F)).astype(np.float32)   # lo nibble → even cols
+    w_flat[:, 1::2] = ((w_codes >> np.uint8(4)) & np.uint8(0x0F)).astype(np.float32)  # hi nibble → odd cols
+
+    # Dequantize: W_hat = offsets + codes * scales (broadcast over group axis)
+    offsets_expanded = np.repeat(offsets, group_size, axis=1)[:, :in_f]
+    scales_expanded  = np.repeat(scales,  group_size, axis=1)[:, :in_f]
+    w_hat = offsets_expanded + w_flat * scales_expanded  # (out_f, in_f)
+
+    return x.astype(np.float32) @ w_hat.T   # (batch, out_f)
+
+
+def quantized_matmul_int4(
+    w_codes: np.ndarray,
+    scales: np.ndarray,
+    offsets: np.ndarray,
+    x: np.ndarray,
+    group_size: int = 64,
+) -> np.ndarray:
+    """Fused INT4 asymmetric dequantize + matrix multiplication.
+
+    Computes ``out = x @ W_hat.T`` where ``W_hat`` is dequantised on-the-fly
+    from nibble-packed codes.  Uses the GIL-free Rayon kernel when the
+    ``squish_quant`` Rust extension is available; falls back to NumPy otherwise.
+
+    Args:
+        w_codes:    ``(out_f, in_f // 2)`` uint8 — nibble-packed weights from
+                    ``quantize_int4_asymmetric()``.
+        scales:     ``(out_f, n_groups)`` float32 — per-group step size.
+        offsets:    ``(out_f, n_groups)`` float32 — per-group gmin.
+        x:          ``(batch, in_f)`` float32 — input activations.
+        group_size: Columns per quantisation group; must divide ``in_f``.
+
+    Returns:
+        ``(batch, out_f)`` float32.
+    """
+    w_codes = np.ascontiguousarray(w_codes, dtype=np.uint8)
+    scales  = np.ascontiguousarray(scales,  dtype=np.float32)
+    offsets = np.ascontiguousarray(offsets, dtype=np.float32)
+    x       = np.ascontiguousarray(x,       dtype=np.float32)
+
+    if _squish_quant is not None and hasattr(_squish_quant, "quantized_matmul_int4"):
+        return _squish_quant.quantized_matmul_int4(w_codes, scales, offsets, x, group_size)
+    return _quantized_matmul_int4_numpy(w_codes, scales, offsets, x, group_size)
 
 
 if __name__ == "__main__":
