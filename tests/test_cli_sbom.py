@@ -5,7 +5,7 @@ sys.modules or environment variables.  The squash stack (sbom_builder,
 oms_signer) is imported for real; only EvalBinder.bind and
 OmsSigner.sign are patched where the action under test delegates to them.
 
-Patch targets use source-module paths (squish.squash.sbom_builder.EvalBinder.bind
+Patch targets use source-module paths (squash.sbom_builder.EvalBinder.bind
 etc.) because cmd_sbom performs local imports inside the function body — patching
 cli.EvalBinder.bind would miss the real call site.
 
@@ -23,6 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip("squash", reason="squash-ai not installed")
 from squish.cli import cmd_sbom
 
 
@@ -129,7 +130,7 @@ def test_bind_calls_eval_binder():
         result_file = tmp_path / "lmeval.json"
         result_file.write_text('{"scores": {"arc_easy": 70.6}, "raw_results": {}}')
 
-        with patch("squish.squash.sbom_builder.EvalBinder.bind") as mock_bind:
+        with patch("squash.sbom_builder.EvalBinder.bind") as mock_bind:
             cmd_sbom(_ns(sbom_action="bind", model_dir=tmp, result=str(result_file)))
 
     mock_bind.assert_called_once_with(bom_path, result_file, None)
@@ -150,7 +151,7 @@ def test_sign_no_sigstore(capsys):
     """sign exits 0 and warns about sigstore when OmsSigner.sign returns None."""
     with tempfile.TemporaryDirectory() as tmp:
         _write_minimal_sidecar(Path(tmp) / "cyclonedx-mlbom.json")
-        with patch("squish.squash.oms_signer.OmsSigner.sign", return_value=None):
+        with patch("squash.oms_signer.OmsSigner.sign", return_value=None):
             cmd_sbom(_ns(sbom_action="sign", model_dir=tmp))
     out = capsys.readouterr().out
     assert "⚠" in out

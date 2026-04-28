@@ -3,19 +3,192 @@
 Detects models installed via Squish, Ollama, and LM Studio/Hugging Face and
 presents them in a unified ``LocalModel`` format.
 
+Also provides ``scan_before_load()`` — a lightweight pre-import safety scan
+that inspects downloaded model files for dangerous pickle opcodes, invalid
+GGUF magic, and malformed safetensors headers without executing any model code.
+
 Public API
 ──────────
-LocalModel          — dataclass for a single discovered model
-LocalModelScanner   — scans all sources and merges results
+LocalModel              — dataclass for a single discovered model
+LocalModelScanner       — scans all sources and merges results
+PreDownloadScanResult   — result of scan_before_load()
+scan_before_load()      — scan a download dir before any model import
 """
 from __future__ import annotations
 
-__all__ = ["LocalModel", "LocalModelScanner"]
+__all__ = [
+    "LocalModel",
+    "LocalModelScanner",
+    "PreDownloadScanResult",
+    "scan_before_load",
+]
 
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Pre-download safety scan
+# ---------------------------------------------------------------------------
+
+# Pickle opcodes that allow arbitrary code execution.
+# Source: Python pickle module protocol reference + ProtectAI threat analysis.
+_DANGEROUS_OPCODES: frozenset[int] = frozenset([
+    ord("R"),    # REDUCE      — calls func(*args), arbitrary execution
+    ord("c"),    # GLOBAL      — imports module + attribute by name
+    ord("i"),    # INST        — imports + instantiates class
+    ord("b"),    # BUILD       — calls __setstate__, can trigger arbitrary code
+    0x81,        # NEWOBJ      — calls cls.__new__(cls, *args)
+    0x92,        # NEWOBJ_EX   — calls cls.__new__(cls, *args, **kwargs)
+    0x93,        # STACK_GLOBAL — protocol 4 global import
+])
+
+# Extensions scanned for pickle payloads.
+_PICKLE_EXTENSIONS: frozenset[str] = frozenset([
+    ".bin", ".pt", ".pth", ".pkl", ".pickle",
+])
+
+# GGUF magic bytes (4-byte prefix of every valid GGUF file).
+_GGUF_MAGIC: bytes = b"GGUF"
+
+# safetensors header is a little-endian uint64 length followed by JSON.
+_SAFETENSORS_MIN_HEADER: int = 8
+
+
+@dataclass
+class PreDownloadScanResult:
+    """Result returned by ``scan_before_load()``.
+
+    Attributes
+    ----------
+    status:   ``"clean"`` | ``"unsafe"`` | ``"error"``
+    findings: Human-readable list of issues found (empty when clean).
+    scanned:  Number of files inspected.
+    """
+    status:   str
+    findings: list[str] = field(default_factory=list)
+    scanned:  int = 0
+
+
+def scan_before_load(download_dir: Path) -> PreDownloadScanResult:
+    """Scan a downloaded model directory for unsafe content before any import.
+
+    Inspects every file matching known model extensions without executing any
+    model code.  Checks performed:
+
+    - Pickle files (``.bin``, ``.pt``, ``.pkl``, …): scan raw bytes for
+      dangerous opcodes (REDUCE, GLOBAL, INST, BUILD, NEWOBJ, STACK_GLOBAL).
+    - GGUF files: validate 4-byte magic ``GGUF`` at offset 0.
+    - safetensors files: validate uint64 header length is plausible.
+
+    Parameters
+    ----------
+    download_dir:
+        Directory that was just downloaded from HuggingFace or another source.
+
+    Returns
+    -------
+    PreDownloadScanResult
+        ``.status == "unsafe"`` if dangerous content is detected.
+        ``.status == "clean"``  if no issues found.
+        ``.status == "error"``  if the directory is unreadable.
+    """
+    if not download_dir.is_dir():
+        return PreDownloadScanResult(
+            status="error",
+            findings=[f"Directory not found: {download_dir}"],
+        )
+
+    findings: list[str] = []
+    scanned = 0
+
+    for path in sorted(download_dir.rglob("*")):
+        if not path.is_file():
+            continue
+
+        suffix = path.suffix.lower()
+
+        if suffix in _PICKLE_EXTENSIONS:
+            scanned += 1
+            result = _scan_pickle_file(path)
+            if result:
+                findings.extend(result)
+
+        elif suffix == ".gguf":
+            scanned += 1
+            result = _scan_gguf_file(path)
+            if result:
+                findings.extend(result)
+
+        elif suffix == ".safetensors":
+            scanned += 1
+            result = _scan_safetensors_file(path)
+            if result:
+                findings.extend(result)
+
+    return PreDownloadScanResult(
+        status="unsafe" if findings else "clean",
+        findings=findings,
+        scanned=scanned,
+    )
+
+
+def _scan_pickle_file(path: Path) -> list[str]:
+    """Return findings for a single pickle file; empty list = clean."""
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return [f"[READ ERROR] {path.name}: {exc}"]
+
+    found: list[str] = []
+    for i, byte in enumerate(data):
+        if byte in _DANGEROUS_OPCODES:
+            opcode_name = {
+                ord("R"): "REDUCE",
+                ord("c"): "GLOBAL",
+                ord("i"): "INST",
+                ord("b"): "BUILD",
+                0x81:     "NEWOBJ",
+                0x92:     "NEWOBJ_EX",
+                0x93:     "STACK_GLOBAL",
+            }.get(byte, hex(byte))
+            found.append(
+                f"[UNSAFE] {path.name}: dangerous pickle opcode {opcode_name} at byte {i}"
+            )
+            break  # one finding per file is enough; don't flood output
+    return found
+
+
+def _scan_gguf_file(path: Path) -> list[str]:
+    """Return findings for a GGUF file; empty list = valid magic."""
+    try:
+        header = path.read_bytes()[:4]
+    except OSError as exc:
+        return [f"[READ ERROR] {path.name}: {exc}"]
+    if header != _GGUF_MAGIC:
+        return [f"[UNSAFE] {path.name}: invalid GGUF magic {header!r} (expected b'GGUF')"]
+    return []
+
+
+def _scan_safetensors_file(path: Path) -> list[str]:
+    """Return findings for a safetensors file; empty list = plausible header."""
+    import struct
+    try:
+        raw = path.read_bytes()[:_SAFETENSORS_MIN_HEADER]
+    except OSError as exc:
+        return [f"[READ ERROR] {path.name}: {exc}"]
+    if len(raw) < _SAFETENSORS_MIN_HEADER:
+        return [f"[UNSAFE] {path.name}: truncated safetensors header ({len(raw)} bytes)"]
+    (header_len,) = struct.unpack_from("<Q", raw, 0)
+    file_size = path.stat().st_size
+    if header_len == 0 or header_len > file_size:
+        return [
+            f"[UNSAFE] {path.name}: safetensors header length {header_len} "
+            f"exceeds file size {file_size}"
+        ]
+    return []
 
 
 # ---------------------------------------------------------------------------

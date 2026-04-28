@@ -7,12 +7,18 @@ Test taxonomy:
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 import types
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
+
+_HAS_SQUASH = importlib.util.find_spec("squash") is not None
+_squash_required = pytest.mark.skipif(not _HAS_SQUASH, reason="squash-ai not installed")
 
 # ---------------------------------------------------------------------------
 # Helpers to import only the target functions without the full CLI startup
@@ -62,6 +68,7 @@ class TestCmdEval(unittest.TestCase):
                 cli.cmd_eval(args)
         self.assertEqual(ctx.exception.code, 1)
 
+    @_squash_required
     def test_eval_saves_result_json(self):
         """cmd_eval writes a squish-format JSON file to the output dir."""
         cli = _import_cli()
@@ -90,7 +97,7 @@ class TestCmdEval(unittest.TestCase):
 
             with (
                 patch("subprocess.run", side_effect=fake_run),
-                patch("squish.squash.sbom_builder.EvalBinder.bind") as mock_bind,
+                patch("squash.sbom_builder.EvalBinder.bind") as mock_bind,
             ):
                 args = self._make_args(
                     model_dir=model_dir,
@@ -110,6 +117,7 @@ class TestCmdEval(unittest.TestCase):
             self.assertAlmostEqual(data["scores"]["arc_easy"], 70.6, places=1)
             self.assertEqual(data["model"], "MyModel-int3")
 
+    @_squash_required
     def test_eval_with_sidecar_calls_bind(self):
         """cmd_eval invokes EvalBinder.bind when sidecar exists and --no-bind is False."""
         cli = _import_cli()
@@ -140,7 +148,7 @@ class TestCmdEval(unittest.TestCase):
 
             with (
                 patch("subprocess.run", side_effect=fake_run),
-                patch("squish.squash.sbom_builder.EvalBinder.bind") as mock_bind,
+                patch("squash.sbom_builder.EvalBinder.bind") as mock_bind,
             ):
                 args = self._make_args(
                     model_dir=model_dir,
@@ -150,6 +158,7 @@ class TestCmdEval(unittest.TestCase):
                 cli.cmd_eval(args)
                 self.assertTrue(mock_bind.called, "EvalBinder.bind should be called when sidecar exists")
 
+    @_squash_required
     def test_eval_no_bind_skips_bind(self):
         """cmd_eval does NOT call EvalBinder.bind when --no-bind is set."""
         cli = _import_cli()
@@ -179,7 +188,7 @@ class TestCmdEval(unittest.TestCase):
 
             with (
                 patch("subprocess.run", side_effect=fake_run),
-                patch("squish.squash.sbom_builder.EvalBinder.bind") as mock_bind,
+                patch("squash.sbom_builder.EvalBinder.bind") as mock_bind,
             ):
                 args = self._make_args(
                     model_dir=model_dir,

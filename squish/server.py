@@ -2210,10 +2210,10 @@ app.add_middleware(
     allow_headers     = ["*"],
 )
 
-# ── Squash governor (squish[squash] — optional, non-fatal) ──────────────────
+# ── Squash governor (squash-ai — optional, non-fatal) ───────────────────────
 try:
-    import squish.squash.governor as _gov_mod
-    from .squash.governor import SquashGovernor as _SquashGovernor
+    import squash.governor as _gov_mod
+    from squash.governor import SquashGovernor as _SquashGovernor
     _gov_mod._state = _state
     app.add_middleware(
         _SquashGovernor,
@@ -2221,7 +2221,7 @@ try:
         min_accuracy_ratio = float(_server_args.get("min_accuracy_ratio", "0.92")),
     )
 except ImportError:
-    pass  # squish[squash] not installed
+    pass  # squash-ai not installed
 
 # ── Ollama compatibility layer (POST /api/chat etc.) ────────────────────────
 try:
@@ -3181,7 +3181,7 @@ async def get_model_health():
     """Model compliance health: governor boot state + sidecar presence."""
     _gov_state: dict = {"integrity_ok": None, "accuracy_ok": None, "strict_compliance": False}
     try:
-        from .squash.governor import _INSTANCE as _gov
+        from squash.governor import _INSTANCE as _gov
         if _gov is not None:
             _gov_state = _gov.boot_state
     except ImportError:

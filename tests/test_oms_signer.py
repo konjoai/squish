@@ -1,4 +1,4 @@
-"""tests/test_oms_signer.py — Unit tests for squish.squash.oms_signer.
+"""tests/test_oms_signer.py — Unit tests for squash.oms_signer.
 
 Test taxonomy: Pure unit — no I/O, no real sigstore calls.  Tests that
 OmsSigner.sign() behaves correctly when sigstore is absent or raises.
@@ -17,7 +17,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from squish.squash.oms_signer import OmsSigner
+squash = pytest.importorskip("squash", reason="squash-ai not installed")
+from squash.oms_signer import OmsSigner
 
 
 class TestNoSignstore:

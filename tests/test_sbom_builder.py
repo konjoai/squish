@@ -1,4 +1,4 @@
-"""tests/test_sbom_builder.py — Integration tests for squish.squash.sbom_builder.
+"""tests/test_sbom_builder.py — Integration tests for squash.sbom_builder.
 
 Test taxonomy: Integration — real file I/O, temp dirs (cleaned up by pytest
 ``tmp_path`` fixture), real CycloneDXBuilder calls, no mocks of the builder
@@ -18,7 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from squish.squash.sbom_builder import CompressRunMeta, CycloneDXBuilder
+squash = pytest.importorskip("squash", reason="squash-ai not installed")
+from squash.sbom_builder import CompressRunMeta, CycloneDXBuilder
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

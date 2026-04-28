@@ -5,6 +5,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.15.0] — 2026-04-28 — Squash Extraction: standalone konjoai/squash package
+
+### Changed
+- `squish/squash/` module removed from squish. All compliance features now live in the standalone
+  `konjoai/squash` repository (`pip install squash-ai`).
+- `squish/server.py`: Squash governor middleware import updated to `from squash.governor import SquashGovernor` (optional; no-op if `squash-ai` not installed).
+- `squish/cli.py`: All `squish.squash.*` imports updated to `squash.*`; install hint updated to `pip install squash-ai`.
+- `pyproject.toml`: Removed `squash` and `squash-api` optional dependency groups; removed `squash` CLI entry point.
+
+### Removed
+- 80 `tests/test_squash_*.py` test files (moved to `konjoai/squash` repository).
+- `squish/squash/` package directory (38 Python modules + integrations).
+
+### Migration
+Users of `squish[squash]` should run `pip install squash-ai` instead. The `squash` CLI entrypoint is now installed by `squash-ai`. The REST API server is started via `squash-ai`'s own entry point.
+
+---
+
 ## [9.14.0] — 2026-04-15 — Wave 74: EU AI Act Enforcement Deadline Signal
 
 ### Added

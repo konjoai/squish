@@ -1,4 +1,4 @@
-"""tests/test_eval_binder.py — Integration tests for squish.squash.sbom_builder.EvalBinder.
+"""tests/test_eval_binder.py — Integration tests for squash.sbom_builder.EvalBinder.
 
 W45: eval_binder.py shim deleted. EvalBinder canonical location is sbom_builder.py.
 Test taxonomy: Integration — real temp dirs, real JSON files written and read.
@@ -20,7 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from squish.squash.sbom_builder import EvalBinder
+squash = pytest.importorskip("squash", reason="squash-ai not installed")
+from squash.sbom_builder import EvalBinder
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

@@ -1602,10 +1602,10 @@ def cmd_chat(args):  # pragma: no cover
 def cmd_sbom(args) -> None:
     """Inspect, verify, bind scores to, or sign the CycloneDX ML-BOM sidecar."""
     try:
-        from squish.squash.sbom_builder import CycloneDXBuilder, EvalBinder
-        from squish.squash.oms_signer import OmsSigner
+        from squash.sbom_builder import CycloneDXBuilder, EvalBinder
+        from squash.oms_signer import OmsSigner
     except ImportError:
-        print("squish[squash] not installed — run: pip install 'squish[squash]'",
+        print("squash-ai not installed — run: pip install squash-ai",
               file=sys.stderr)
         sys.exit(1)
 
@@ -2005,7 +2005,7 @@ def cmd_eval(args) -> None:
     bom_path = model_dir / "cyclonedx-mlbom.json"
     if not no_bind:
         if bom_path.exists():
-            from squish.squash.sbom_builder import EvalBinder
+            from squash.sbom_builder import EvalBinder
             EvalBinder.bind(bom_path, result_file, baseline_path)
             print(f"  ✓ scores bound to sidecar")
         else:
@@ -2194,11 +2194,11 @@ def cmd_doctor(args):
 
     # squash (optional)
     try:
-        import squish.squash.sbom_builder  # noqa: F401
-        _check("squish[squash] installed", True)
+        import squash.sbom_builder  # noqa: F401
+        _check("squash-ai installed", True)
     except ImportError:
-        _check("squish[squash] installed", False,
-               'pip install "squish[squash]"')
+        _check("squash-ai installed", False,
+               'pip install squash-ai')
 
     print()
     if ok:
@@ -2965,11 +2965,11 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         else:
             print(f"  Warning: tensors/ not found at {tensors_dir} — skipping entropy pass.")
 
-    # ── ML-BOM sidecar (squish[squash] — optional, non-fatal) ───────────────
+    # ── ML-BOM sidecar (squash-ai — optional, non-fatal) ───────────────
     # Generates cyclonedx-mlbom.json alongside the compressed weights.
-    # Silently skipped when squish[squash] is not installed.
+    # Silently skipped when squash-ai is not installed.
     try:
-        from squish.squash.sbom_builder import CompressRunMeta, CycloneDXBuilder
+        from squash.sbom_builder import CompressRunMeta, CycloneDXBuilder
         from squish.quant.awq import detect_model_family as _detect_family
 
         _quant_fmt = "INT4" if _use_int4 else "INT8"
@@ -3009,13 +3009,13 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         _sidecar = CycloneDXBuilder.from_compress_run(_meta)
         print(f"  ✓  ML-BOM sidecar → {_sidecar.relative_to(output_dir.parent)}")
     except ImportError:
-        pass  # squish[squash] not installed — skip silently
+        pass  # squash-ai not installed — skip silently
     except Exception as _sbom_err:
         print(f"  ⚠  SBOM generation failed (non-fatal): {_sbom_err}")
 
-    # ── Lineage event (squish[squash] — optional, non-fatal) ─────────────────
+    # ── Lineage event (squash-ai — optional, non-fatal) ─────────────────
     try:
-        from squish.squash.lineage import LineageChain as _LineageChain
+        from squash.lineage import LineageChain as _LineageChain
 
         _ln_quant_fmt = "INT4" if _use_int4 else "INT8"
         _ln_awq_grp = getattr(args, "int4_group_size", None) or (32 if _run_awq else 64)
@@ -3029,7 +3029,7 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         _LineageChain.record(output_dir, _ln_evt)
         print(f"  ✓  Lineage event recorded → {output_dir / _LineageChain.CHAIN_FILENAME}")
     except ImportError:
-        pass  # squish[squash] not installed — skip silently
+        pass  # squash-ai not installed — skip silently
     except Exception as _ln_err:
         print(f"  ⚠  Lineage recording failed (non-fatal): {_ln_err}")
 
@@ -3135,6 +3135,20 @@ def _pull_from_hf(hf_repo: str, models_dir: Path, token: str | None) -> None:  #
         local_dir=str(models_dir / hf_repo.split("/")[-1]),
         token=token,
     )
+
+    # Pre-load safety scan — inspect downloaded files before any import.
+    from squish.serving.local_model_scanner import scan_before_load
+    scan_result = scan_before_load(Path(dest))
+    if scan_result.status == "unsafe":
+        print(f"\n  ✗  Security scan failed — {len(scan_result.findings)} finding(s):")
+        for finding in scan_result.findings:
+            print(f"       {finding}")
+        print(f"\n  Downloaded files retained at: {dest}")
+        print("  Remove them manually if you do not trust this model.\n")
+        sys.exit(2)
+    elif scan_result.scanned > 0:
+        print(f"  ✓  Security scan passed ({scan_result.scanned} file(s) checked)")
+
     print(f"\n  Downloaded to: {dest}")
     print("  To compress: squish compress <model-dir>")
     print()
@@ -5631,7 +5645,7 @@ Ollama drop-in:
     # ── Squash compliance ────────────────────────────────────────────────────
     p_run.add_argument("--strict-compliance", action="store_true", default=False,
                        help="Return HTTP 503 if model integrity or accuracy checks fail. "
-                            "Requires squish[squash]. Example: squish run 7b --strict-compliance")
+                            "Requires squash-ai. Example: squish run 7b --strict-compliance")
     p_run.add_argument("--min-accuracy-ratio", type=float, default=0.92,
                        help="Minimum accuracy ratio vs baseline before compliance fails "
                             "(default: 0.92 = 8pp drop). Example: squish run 7b --min-accuracy-ratio 0.90")
@@ -5718,7 +5732,7 @@ Ollama drop-in:
     # ── Squash compliance ────────────────────────────────────────────────────
     p_serve.add_argument("--strict-compliance", action="store_true", default=False,
                          help="Return HTTP 503 if model integrity or accuracy checks fail. "
-                              "Requires squish[squash]. Example: squish serve 7b --strict-compliance")
+                              "Requires squash-ai. Example: squish serve 7b --strict-compliance")
     p_serve.add_argument("--min-accuracy-ratio", type=float, default=0.92,
                          help="Minimum accuracy ratio vs baseline before compliance fails "
                               "(default: 0.92 = 8pp drop). Example: squish serve 7b --min-accuracy-ratio 0.90")
