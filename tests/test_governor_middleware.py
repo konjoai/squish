@@ -18,8 +18,9 @@ from starlette.testclient import TestClient
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-import squish.squash.governor as _gov_module
-from squish.squash.governor import SquashGovernor
+squash_pkg = pytest.importorskip("squash", reason="squash-ai not installed")
+import squash.governor as _gov_module
+from squash.governor import SquashGovernor
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

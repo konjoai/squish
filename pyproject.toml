@@ -53,20 +53,6 @@ cache = [
 ]
 whatsapp = []  # Meta WhatsApp Cloud API uses stdlib only (hmac + hashlib + urllib)
                # signal-cli (Java binary) needed for --signal; no Python packages required
-squash = [
-    # CycloneDX 1.7 ML-BOM generation + schema validation.
-    "cyclonedx-python-lib>=7.0",
-    # Ed25519 offline signing (W49 air-gapped mode).
-    "cryptography>=42.0",
-    # Optional: OpenSSF Model Signing (keyless via Sigstore Rekor).
-    # Install separately when signature verification is needed:
-    #   pip install sigstore
-]
-squash-api = [
-    "squish[squash]",
-    "fastapi>=0.111",
-    "uvicorn[standard]>=0.29",
-]
 eval = [
     "lm-eval>=0.4",
     "datasets>=2.18",
@@ -90,7 +76,7 @@ dev = [
     "mypy>=1.10",
     "mkdocs-material>=9.5",
     "mkdocs-exclude>=1.0",
-    "cryptography>=42.0",   # Ed25519 offline signing (squash W49 tests)
+    "cryptography>=42.0",   # Ed25519 offline signing (OMS tests)
 ]
 
 [project.urls]
@@ -102,7 +88,6 @@ dev = [
 squish        = "squish.cli:main"
 squish-server = "squish.server:main"
 squish-convert = "squish.convert:main"
-squash        = "squish.squash.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
