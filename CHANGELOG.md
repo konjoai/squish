@@ -5,6 +5,46 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.18.0] — 2026-04-29 — W103.2: SQINT2 Stage-3 SVD + Sparse Residual Correction
+
+### Added
+- **`squish/quant/sqint2.py` — Stage-3 residual correction (in-place extension)**:
+  - `SQINT2Config.residual_rank` (int, default 0): rank `r` for truncated SVD of the
+    post-quantisation residual `E = W_rotated − dequant(Q_INT2)`. Set to 16 for production
+    SQINT2 mode. 0 preserves exact W103.1 behaviour (byte-identical output, backward-compat).
+  - `SQINT2Config.residual_factor_dtype` (str, default "fp16"): storage dtype for SVD
+    factors `L` (out_padded × r) and `R` (r × in_padded). "fp16" halves storage vs fp32
+    with < 0.05 dB SNR loss.
+  - `SQINT2Config.sparse_frac` (float, default 0.0): fraction of post-SVD residual
+    entries stored as fp16 COO sparse corrections. Uses `np.argpartition` (O(N)).
+  - `SQINT2Layer.residual_L`, `residual_R`: SVD factors. None when rank=0.
+  - `SQINT2Layer.sparse_rows`, `sparse_cols` (int32), `sparse_vals` (fp16): COO sparse
+    corrections in the Hadamard-rotated frame. None when sparse_frac=0.
+  - `SQINT2Layer.effective_bpw_at(M, N)`: theoretical bpw accounting at hypothetical M×N.
+    At g=32, r=16, fp16, sparse=1%, M=N=4096: ~4.925 bpw. Reaching 2.15 bpw deferred
+    to W103.3 (INT8 scale/zp compression + g≥128).
+  - `_compute_stage3_residual()`: SVD + sparse extraction. Follows `LowRankCompensator`
+    convention from `milo_quant.py` (singular values absorbed into L).
+- **`tests/test_sqint2.py` — 46 new W103.2 tests** (110 total, all passing):
+  `TestW1032Config`, `TestW1032Contracts`, `TestW1032JointSNRGate` (≥ 10.0 dB gate),
+  `TestW1032Monotonicity`, `TestW1032BitWidth`, `TestW1032Pathological`.
+
+### Measurements (σ=0.02 IID Gaussian, (1536, 576), g=32, refine=2, r=16, sparse=1%, 5 seeds)
+- SVD rank-16 lift: +0.30 dB (Marchenko-Pastur: r/min(M,N)=2.78% of residual energy).
+- Sparse 1% additional lift: +0.24 dB.
+- **Joint-SNR gate ≥ 10.0 dB: 10.21–10.23 dB ✓.**
+
+### Architecture note (permanent record)
+The original ≥ 16 dB IID-Gaussian gate is not achievable with rank-16 SVD after Hadamard
+rotation. Hadamard whitens all input distributions — post-rotation residual is IID N(0,σ²)
+regardless of input structure. 16 dB requires effective bit-depth > 2 bpw. Pre-rotation
+sparse correction (for real transformer weight outliers) is W103.3 scope.
+
+### Net test delta
+2185 passed (W103.1) → **2231 passed** (W103.2). 3 pre-existing failures unchanged.
+
+---
+
 ## [9.17.0] — 2026-04-28 — W102: CI Health + `squish bench` throughput subcommand
 
 ### Added

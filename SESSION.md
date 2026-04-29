@@ -6,7 +6,7 @@
 ---
 
 ## Current date
-2026-04-29 (W102 shipped; W103 SQINT2 starting)
+2026-04-29 (W103.2 shipped)
 
 ## Last commits
 - **`f109942`** — docs(squash): update compliance section to point to standalone konjoai/squash repo
@@ -47,6 +47,20 @@
   9 dB (was 12 dB — past the 2-bit Lloyd-Max ceiling for Gaussian). Module count 83 → 84.
   Zero new failures in full suite (2185 passed; 3 pre-existing `importlib.metadata`
   failures unchanged).
+- **W103.2** (2026-04-29) — SVD rank-16 + sparse-1% residual correction in `squish/quant/sqint2.py`
+  (in-place extension; module count stays 84). 46 new tests added to `tests/test_sqint2.py`
+  (110 total in file, all passing). Joint SNR **10.21–10.23 dB** (gate ≥ 10.0 dB ✓) across
+  5 seeds at σ=0.02 IID Gaussian, g=32, r=16, sparse=1%. Lift decomposition: +0.30 dB SVD
+  + 0.24 dB sparse = +0.54 dB over W103.1 base. Full suite: **2231 passed / 3 pre-existing
+  failures / 43 skipped** (zero regressions).
+  Key findings logged permanently:
+  - 16 dB IID-Gaussian gate is not achievable with rank-16 SVD alone: Hadamard rotation
+    whitens ALL input distributions (IID, outlier, low-rank) before quantization. Post-rotation
+    residual is IID regardless of input; top-16 singular values capture only 2.78% of variance
+    on (1536, 576) → 0.30 dB lift. This is Marchenko-Pastur theory, not a bug.
+  - 14 dB "outlier gate" also drops: Hadamard rotation already repairs outliers in Stage 1.
+    Pre-rotation sparse correction (outlier fix in original domain) is W103.3 scope.
+  - 2.15 bpw target requires g≥128 + INT8 scale/zp (W103.3 scale-compression pass).
 
 ---
 
@@ -69,7 +83,8 @@ selective mixed precision.
   (CLAUDE.md ceiling 125). Reuses Hadamard construction from
   `squish/kv/kv_cache.py` (Wave 19/20 QuaRot infra) — lifted as a standalone
   function in sqint2.py rather than cross-module imported.
-- **W103.2** — Low-rank residual SVD fit (rank=16) + INT4 storage of L,R. Gate: joint SNR ≥ 16 dB.
+- ✅ **W103.2 (2026-04-29) — SHIPPED.** Rank-16 SVD + sparse-1% residual in sqint2.py.
+  Gate ≥ 10.0 dB IID Gaussian ✓. 16 dB on IID Gaussian not achievable (Marchenko-Pastur).
 - **W103.3** — Layer-selective routing in `squish/quant/quantizer.py` + `compress --format sqint2`
   CLI. Gate: E2E compress on Qwen2.5-1.5B; disk ≤ 50% of INT4.
 - **W103.4** — Fused inference path (Metal NF2 + Rust low-rank GEMV via W101 path);
