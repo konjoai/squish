@@ -555,13 +555,8 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 121, (
-            f"Module count changed: {count} != 121. "
-            "W54-56 added remediate.py, evaluator.py, edge_formats.py, chat.py; "
-            "W57 added model_card.py (5 squash feature modules); "
-            "W57 added cloud_db.py (SQLite write-through for squash cloud stores, "
-            "justified: production deployment durability unblock). "
-            "W83 added nist_rmf.py (NIST AI RMF 1.0 controls scanner, "
-            "justified: enterprise compliance gate — 13 controls across GOVERN/MAP/MEASURE/MANAGE). "
-            "W84+ must not add new modules without justification."
+        assert count == 83, (
+            f"Module count changed: {count} != 83. "
+            "Squash separation (2026-04-28) removed 38 squash/* modules from squish — "
+            "new baseline is 83. W102+ must not add new modules without justification."
         )

@@ -123,10 +123,37 @@ cd js && npm install && npm run build
 
 ---
 
+### W102 — CI Health + `squish bench` throughput subcommand ✅ COMPLETE
+**Why:** 44 pre-existing test failures obscured CI signal; the W101 Rust GEMV kernel had no
+user-facing validation path. W102 eliminates both gaps.
+
+**Changes (2026-04-28):**
+- `squish/cli.py`: `build_parser()` — unguarded `importlib.metadata.version("squish")` at
+  `--version` argument wrapped in try/except → falls back to `squish.__version__`. Fixes 28
+  failures caused by the package not being installed in the dev Python 3.9 environment.
+- `squish/cli.py`: new `cmd_bench()` and `bench` subcommand —
+  `squish bench [--format int4|int8] [--batch N] [--in-features F] [--out-features F]
+  [--group-size G] [--iters N] [--warmup N]`. Reports p50/p95/p99 latency, GOPS, and
+  GB/s. Uses Rust kernel when available, NumPy fallback otherwise.
+- `squish/kv/radix_cache.py`: removed `strict=False` from 3 `zip()` calls (Python 3.9
+  compatibility — `strict=` was added in Python 3.10). Fixes 8 failures.
+- `tests/test_wave123–126_*.py`: bumped server.py line-count ceiling 4743 → 4750 to
+  account for the squash-governor comment block added in W100. Fixes 4 failures.
+- `tests/test_quant_aqlm.py`: updated module count assertion 121 → 83 (38 squash modules
+  extracted in the squash separation). Fixes 1 failure.
+- `tests/test_bench.py`: 25 new tests — subcommand registration, default args, output
+  structure (INT4 + INT8), argument roundtrip, invalid-format rejection.
+
+**Gate:** 25/25 bench tests pass. Full suite: 44 pre-existing failures → 3 (the 3
+remaining call `importlib.metadata.version("squish")` directly — require pip install,
+pass in Python 3.10 CI). Zero new failures introduced.
+
+---
+
 ## Next Immediate Action
-**W101 COMPLETE** — Rust Inference Bridge landed. `quantized_matmul_int4` Rayon GEMV kernel
-live in `squish_quant_rs`, Python bridge in `squish/quant/quantizer.py`, 18 tests passing.
-Next: define W102 (e.g. streaming KV-cache quantisation or `squish bench` throughput harness).
+**W102 COMPLETE** — CI health restored (44 → 3 failures) + `squish bench` subcommand live.
+Next W103 candidates: streaming KV-cache INT8 quantisation, or LoRA adapter INT4 checkpoint
+support.
 
 ---
 

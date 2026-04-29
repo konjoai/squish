@@ -5,6 +5,37 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.17.0] — 2026-04-28 — W102: CI Health + `squish bench` throughput subcommand
+
+### Added
+- **`squish bench` subcommand** — `squish bench [--format int4|int8] [--batch N]
+  [--in-features F] [--out-features F] [--group-size G] [--iters N] [--warmup N]`.
+  Benchmarks the quantized GEMV kernel (Rust when built, NumPy fallback otherwise) and
+  prints p50/p95/p99 latency, GOPS, and GB/s. Provides a user-facing validation path for
+  the W101 Rust inference bridge.
+- **`tests/test_bench.py`** — 25 new tests: subcommand registration, 7 default-arg checks,
+  8 INT4 output structure checks, 2 INT8 output checks, 6 argument parsing roundtrip checks,
+  invalid-format rejection.
+
+### Fixed
+- **`squish/cli.py` `build_parser()`** — `--version` argument previously called
+  `importlib.metadata.version("squish")` at parse time without a try/except. Now wraps the
+  call and falls back to `squish.__version__`. Eliminates `PackageNotFoundError: squish`
+  crash in dev environments where the package is not pip-installed.
+- **`squish/kv/radix_cache.py`** — removed `strict=False` keyword from 3 `zip()` calls.
+  `strict=` was added in Python 3.10; removing it restores Python 3.9 compatibility without
+  changing behavior (default is already non-strict).
+- **`tests/test_wave123–126_*.py`** — bumped server.py line-count ceiling from 4743 → 4750
+  to reflect the squash-governor comment block added during W100 squash extraction.
+- **`tests/test_quant_aqlm.py`** — updated module count assertion from 121 → 83 after the
+  squash separation removed 38 squash/* Python modules from the squish package tree.
+
+### Net test delta
+`44 pre-existing failures → 3` (3 remaining call `importlib.metadata.version("squish")`
+directly — require `pip install squish`; pass in Python 3.10 CI).
+
+---
+
 ## [9.16.0] — 2026-04-28 — W101: Rust INT4 Inference Bridge (GIL-free Rayon GEMV)
 
 ### Added

@@ -397,10 +397,10 @@ class RadixTree:
                 return new_node
 
             edge   = child.edge_tokens
-            common = sum(1 for a, b in zip(remaining, edge, strict=False) if a == b)
+            common = sum(1 for a, b in zip(remaining, edge) if a == b)
             # Calculate common length properly (stop at first mismatch)
             common = 0
-            for a, b in zip(remaining, edge, strict=False):
+            for a, b in zip(remaining, edge):
                 if a != b:
                     break
                 common += 1
@@ -448,7 +448,7 @@ class RadixTree:
 
             edge   = child.edge_tokens
             common = 0
-            for a, b in zip(remaining, edge, strict=False):
+            for a, b in zip(remaining, edge):
                 if a != b:
                     break
                 common += 1
