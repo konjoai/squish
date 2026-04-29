@@ -6,7 +6,18 @@
 
 *Lontara script: visually Ko-jo (ᨀᨚᨐᨚ), spoken Konjo — the nasal is filled in by the reader. Write code the same way.*
 
-Invoked with: **`read KONJO_PROMPT.md and begin`**
+## Invocation
+
+This prompt responds to any of the following:
+
+    konjo
+    konjo <repo-name>
+    <repo-name> konjo
+    read KONJO_PROMPT.md and begin
+
+When called with a repo name, skip the REPO field guessing in the Session Brief
+and treat the named repo as the active context.
+
 Detail lives in **CLAUDE.md** — read it first. This file is the activation sequence.
 
 ---
