@@ -154,6 +154,7 @@ __all__ = [
     "inverse_hadamard",
     "compress_weight",
     "decompress_weight",
+    "compress_weights_sqint2",
     "snr_db",
 ]
 
@@ -903,3 +904,280 @@ def snr_db(signal: np.ndarray, recon: np.ndarray) -> float:
     if noise_power == 0.0:
         return float("inf")
     return 10.0 * float(np.log10(sig_power / noise_power))
+
+
+# ── W103.3 — per-tensor compress pipeline ─────────────────────────────────────
+#
+# compress_weights_sqint2() is the core W103.3 dispatch: it routes every tensor
+# in a weight dict through MixedPrecisionRouter and applies the correct codec.
+# Pure in-memory (no filesystem I/O) so it is unit-testable with synthetic dicts.
+#
+# Helper codecs (INT3, INT4) are pure-NumPy so the pipeline runs without the
+# squish_quant Rust extension.  At W103.4, the Metal inference path will pick up
+# the uint8 INT3 codes from npy-dir and bit-pack them inside the Metal shader.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _npy_safe_key(tensor_name: str) -> str:
+    """Convert a dotted tensor name to a filesystem-safe key.
+
+    Identical to ``squish.convert.safe_key()``, lifted here to avoid an
+    import cycle between squish.quant.sqint2 and squish.convert at import time.
+    """
+    return tensor_name.replace(".", "__")
+
+
+def _int3_quantize_numpy(
+    W: np.ndarray, group_size: int = 32
+) -> "Tuple[np.ndarray, np.ndarray, np.ndarray]":
+    """Pure-NumPy asymmetric INT3 group quantization (8 levels, codes 0–7).
+
+    Convention (matches INT3Linear in squish/quant/int3_linear.py):
+        scale = (xmax - xmin) / 7.0     per group
+        zero  = xmin                     per group
+        code  = round(clamp((x - zero) / scale, 0, 7))
+        decode: w = code * scale + zero
+
+    Storage: uint8 codes (one byte per weight — no bit-packing at this stage).
+    INT3Linear bit-packs at load time via _pack_codes_uint32; W103.4 Metal path
+    does the same.
+
+    Args:
+        W:          float32, shape (out_features, in_features).
+        group_size: columns per quantization group; must divide in_features.
+
+    Returns:
+        codes:  uint8 (out_features, in_features), values in [0, 7]
+        scales: float32 (out_features, n_groups)
+        zeros:  float32 (out_features, n_groups)   — the per-group xmin offset
+    """
+    M, N = W.shape
+    in_pad = _round_up(N, group_size)
+    W_pad = (np.pad(W.astype(np.float32), ((0, 0), (0, in_pad - N)))
+             if in_pad > N else W.astype(np.float32))
+    n_groups = in_pad // group_size
+    grouped = W_pad.reshape(M * n_groups, group_size)
+
+    xmin = grouped.min(axis=1)
+    xmax = grouped.max(axis=1)
+    span = xmax - xmin
+    scale = np.where(span > 0, span / 7.0, 1.0).astype(np.float32)
+    zero = np.where(span > 0, xmin, 0.0).astype(np.float32)
+
+    rescaled = np.clip((grouped - zero[:, None]) / scale[:, None], 0.0, 7.0)
+    codes = np.round(rescaled).astype(np.uint8)
+
+    return (
+        codes.reshape(M, in_pad)[:, :N],
+        scale.reshape(M, n_groups),
+        zero.reshape(M, n_groups),
+    )
+
+
+def _int3_dequantize_numpy(
+    codes: np.ndarray, scales: np.ndarray, zeros: np.ndarray
+) -> np.ndarray:
+    """Inverse of _int3_quantize_numpy. decode: w = code * scale + zero."""
+    M = codes.shape[0]
+    in_features = codes.shape[1]
+    n_groups = scales.shape[1]
+    gs = in_features // n_groups if n_groups > 0 else in_features
+    codes_f = codes.astype(np.float32)
+    if n_groups > 0 and in_features == n_groups * gs:
+        codes_3d = codes_f.reshape(M, n_groups, gs)
+        recon = (codes_3d * scales[:, :, None] + zeros[:, :, None]).reshape(M, in_features)
+    else:
+        recon = codes_f * scales[:, :1] + zeros[:, :1]
+    return recon.astype(np.float32)
+
+
+def _int4_quantize_numpy(
+    W: np.ndarray, group_size: int = 32
+) -> "Tuple[np.ndarray, np.ndarray, np.ndarray]":
+    """Pure-NumPy asymmetric INT4 group quantization (16 levels, nibble-packed).
+
+    Convention:
+        scale = (xmax - xmin) / 15.0    per group
+        offset= xmin                     per group (= gmin)
+        code  = round(clamp((x - offset) / scale, 0, 15))
+        decode: w = offset + code * scale
+
+    Storage: nibble-packed uint8, shape (out, in // 2). Low nibble first.
+    Same layout as squish_quant Rust INT4 output (__q4a suffix).
+
+    Args:
+        W:          float32, shape (out_features, in_features).
+        group_size: columns per group; must divide in_features.
+
+    Returns:
+        packed:  uint8 (out_features, in_features // 2)
+        scales:  float32 (out_features, n_groups)
+        offsets: float32 (out_features, n_groups)   — per-group xmin
+    """
+    M, N = W.shape
+    in_pad = _round_up(N, max(group_size, 2))  # nibble-pack needs even N
+    W_pad = (np.pad(W.astype(np.float32), ((0, 0), (0, in_pad - N)))
+             if in_pad > N else W.astype(np.float32))
+    n_groups = in_pad // group_size
+    grouped = W_pad.reshape(M * n_groups, group_size)
+
+    xmin = grouped.min(axis=1)
+    xmax = grouped.max(axis=1)
+    span = xmax - xmin
+    scale = np.where(span > 0, span / 15.0, 1.0).astype(np.float32)
+    offset = np.where(span > 0, xmin, 0.0).astype(np.float32)
+
+    rescaled = np.clip((grouped - offset[:, None]) / scale[:, None], 0.0, 15.0)
+    codes = np.round(rescaled).astype(np.uint8).reshape(M, in_pad)[:, :N]
+
+    # Nibble-pack: two 4-bit codes per byte, low nibble first.
+    N_even = N + (N % 2)
+    if N_even > N:
+        codes = np.pad(codes, ((0, 0), (0, 1)))
+    packed = (codes[:, 0::2] & 0x0F) | ((codes[:, 1::2] & 0x0F) << 4)
+
+    return (
+        packed.astype(np.uint8),
+        scale.reshape(M, n_groups),
+        offset.reshape(M, n_groups),
+    )
+
+
+def _int4_dequantize_numpy(
+    packed: np.ndarray, scales: np.ndarray, offsets: np.ndarray, in_features: int
+) -> np.ndarray:
+    """Inverse of _int4_quantize_numpy. decode: w = offset + code * scale."""
+    M = packed.shape[0]
+    n_groups = scales.shape[1]
+    # Unpack nibbles
+    lo = (packed & 0x0F).astype(np.float32)
+    hi = ((packed >> 4) & 0x0F).astype(np.float32)
+    codes = np.empty((M, packed.shape[1] * 2), dtype=np.float32)
+    codes[:, 0::2] = lo
+    codes[:, 1::2] = hi
+    codes = codes[:, :in_features]
+    gs = in_features // n_groups if n_groups > 0 else in_features
+    if n_groups > 0 and in_features == n_groups * gs:
+        codes_3d = codes.reshape(M, n_groups, gs)
+        recon = (offsets[:, :, None] + codes_3d * scales[:, :, None]).reshape(M, in_features)
+    else:
+        recon = offsets[:, :1] + codes * scales[:, :1]
+    return recon.astype(np.float32)
+
+
+def compress_weights_sqint2(
+    weights: "dict[str, np.ndarray]",
+    n_layers: int,
+    sqint2_cfg: "SQINT2Config | None" = None,
+    int3_group_size: int = 32,
+    int4_group_size: int = 32,
+) -> "Tuple[dict[str, np.ndarray], dict[str, str], dict[str, int]]":
+    """Route and compress all model weights using W103.3 mixed precision.
+
+    Pure in-memory: reads from *weights* dict, returns compressed arrays ready
+    for npy-dir writing.  No filesystem access — caller supplies weights and
+    writes the output.
+
+    Format dispatch via MixedPrecisionRouter(n_layers):
+        "sqint2" (gate_proj, up_proj, non-boundary) →
+            __sqint2_idx.npy  uint8  packed 2-bit INT2 indices
+            __sqint2_scales   float32 per-group scales
+            __sqint2_zp       float32 per-group zero-points
+            __sqint2_L        fp16 SVD left factor  (if residual_rank > 0)
+            __sqint2_R        fp16 SVD right factor (if residual_rank > 0)
+            __sqint2_srows    int32 sparse row indices  (if sparse_frac > 0)
+            __sqint2_scols    int32 sparse col indices  (if sparse_frac > 0)
+            __sqint2_svals    fp16 sparse values        (if sparse_frac > 0)
+            __shape           int64 original shape
+        "int3" (q/k/v/o_proj, non-boundary) →
+            __q3  uint8 codes [0,7], decode: w = code * scale + zero
+            __s3  float32 per-group scales
+            __z3  float32 per-group zero-point offsets (xmin)
+            __shape
+        "int4" (boundary layers, down_proj, norms) →
+            __q4  uint8 nibble-packed [0,15], decode: w = offset + code * scale
+            __s4  float32 per-group scales
+            __z4  float32 per-group offsets (xmin)
+            __shape
+        None (embed_tokens, lm_head, 1D tensors, non-.weight) →
+            __pt  float16 passthrough
+            __shape
+
+    Args:
+        weights:        Dict mapping tensor name → float32/float16/bfloat16 ndarray.
+        n_layers:       Total number of transformer decoder blocks.
+        sqint2_cfg:     SQINT2Config for the Stage 1+2+3 path. Defaults to
+                        group_size=32, refine_iters=2, residual_rank=16,
+                        sparse_frac=0.01 (production SQINT2 settings).
+        int3_group_size: Group size for the INT3 tier (default 32, matches validated
+                         mlx_lm.convert baseline).
+        int4_group_size: Group size for the INT4 tier (default 32).
+
+    Returns:
+        arrays:     Flat dict ``{"{safe_key}{suffix}": numpy_array}`` ready for
+                    ``squish.convert.write_npy_dir(output_dir, arrays, manifest)``.
+        manifest:   ``{original_name: safe_key}`` mapping for manifest.json.
+        fmt_counts: ``{"sqint2": N, "int3": N, "int4": N, "skip": N}`` summary.
+    """
+    from squish.quant.quantizer import MixedPrecisionRouter
+
+    if sqint2_cfg is None:
+        sqint2_cfg = SQINT2Config(
+            group_size=32,
+            refine_iters=2,
+            residual_rank=16,
+            sparse_frac=0.01,
+        )
+
+    router = MixedPrecisionRouter(n_layers)
+    arrays: "dict[str, np.ndarray]" = {}
+    manifest: "dict[str, str]" = {}
+    fmt_counts: "dict[str, int]" = {"sqint2": 0, "int3": 0, "int4": 0, "skip": 0}
+
+    for name, tensor in weights.items():
+        sk = _npy_safe_key(name)
+        manifest[name] = sk
+        arr = tensor.astype(np.float32)
+        shape_arr = np.array(arr.shape, dtype=np.int64)
+
+        fmt = router.format_for(name)
+
+        # Non-quantizable: 1D tensors always pass through regardless of router verdict.
+        if arr.ndim < 2:
+            fmt = None
+
+        arrays[f"{sk}__shape"] = shape_arr
+
+        if fmt == "sqint2":
+            layer = compress_weight(arr, sqint2_cfg)
+            arrays[f"{sk}__sqint2_idx"] = layer.indices
+            arrays[f"{sk}__sqint2_scales"] = layer.scales
+            arrays[f"{sk}__sqint2_zp"] = layer.zero_points
+            if layer.residual_L is not None:
+                arrays[f"{sk}__sqint2_L"] = layer.residual_L
+                arrays[f"{sk}__sqint2_R"] = layer.residual_R
+            if layer.sparse_rows is not None:
+                arrays[f"{sk}__sqint2_srows"] = layer.sparse_rows
+                arrays[f"{sk}__sqint2_scols"] = layer.sparse_cols
+                arrays[f"{sk}__sqint2_svals"] = layer.sparse_vals
+            fmt_counts["sqint2"] += 1
+
+        elif fmt == "int3":
+            codes, scales3, zeros3 = _int3_quantize_numpy(arr, int3_group_size)
+            arrays[f"{sk}__q3"] = codes
+            arrays[f"{sk}__s3"] = scales3
+            arrays[f"{sk}__z3"] = zeros3
+            fmt_counts["int3"] += 1
+
+        elif fmt == "int4":
+            packed4, scales4, offsets4 = _int4_quantize_numpy(arr, int4_group_size)
+            arrays[f"{sk}__q4"] = packed4
+            arrays[f"{sk}__s4"] = scales4
+            arrays[f"{sk}__z4"] = offsets4
+            fmt_counts["int4"] += 1
+
+        else:  # None — passthrough
+            arrays[f"{sk}__pt"] = arr.astype(np.float16)
+            fmt_counts["skip"] += 1
+
+    return arrays, manifest, fmt_counts

@@ -2548,28 +2548,97 @@ def cmd_compress(args):  # pragma: no cover
         return
 
     if _compress_format == "sqint2":  # pragma: no cover
-        # W103.3 — SQINT2 layer-selective mixed precision:
-        #   MLP gate_proj, up_proj       → SQINT2 (coherent INT2 + rank-16 residual)
-        #   Attention Q/K/V/O projections → INT3 g=32
-        #   Boundary layers (first 2 + last 2 transformer blocks) → INT4
-        #   Everything else              → INT4 (conservative default)
-        #
-        # Requires: squish.quant.sqint2.compress_weight + MixedPrecisionRouter.
-        # The compress inner path reads _sqint2_router from args to dispatch per tensor.
-        # Hardware gate: E2E on Qwen2.5-1.5B, disk ≤ 50% of INT4.
+        # W103.3 — SQINT2 layer-selective mixed precision.
+        # Standalone path: does NOT spawn squish.convert subprocess.
+        # Loads safetensors directly, routes per tensor via MixedPrecisionRouter,
+        # writes npy-dir.  Hardware gate (lm_eval on Qwen2.5-1.5B) deferred to W103.4.
+        import json as _json_sqint2
+
         try:
-            from squish.quant.quantizer import MixedPrecisionRouter
-        except ImportError as _sqint2_import_err:
-            _die(f"SQINT2 routing unavailable: {_sqint2_import_err}")
-        # n_layers will be resolved once the model config is loaded inside
-        # _cmd_compress_inner; store a factory on args so inner can finish the build.
-        args._sqint2_router_cls = MixedPrecisionRouter
-        args._sqint2_format = True
-        # INT4 is the fallback for boundary / non-routed tensors, so enable that path.
-        args.int4 = True
-        if not getattr(args, "int4_group_size", None):
-            args.int4_group_size = 32
-        _compress_format = "int4"   # inner compress runs INT4 pipeline; sqint2 overrides per-tensor
+            import safetensors.numpy as _st_np
+            from safetensors import safe_open as _safe_open
+        except ImportError:
+            _die("SQINT2 compress requires safetensors: pip install safetensors")
+        try:
+            from squish.quant.sqint2 import (
+                SQINT2Config as _SQINT2Config,
+                compress_weights_sqint2 as _compress_weights_sqint2,
+            )
+            from squish.convert import write_npy_dir as _write_npy_dir
+        except ImportError as _e:
+            _die(f"SQINT2 module unavailable: {_e}")
+
+        # ── Resolve model dir ────────────────────────────────────────────────
+        if args.model in _MODEL_SHORTHAND:
+            _sq_model_dir = _MODELS_DIR / _MODEL_SHORTHAND[args.model]
+        elif _CATALOG_AVAILABLE:
+            _sq_entry = _catalog_resolve(args.model)
+            _sq_model_dir = (_MODELS_DIR / _sq_entry.dir_name
+                             if _sq_entry is not None else Path(args.model).expanduser())
+        else:
+            _sq_model_dir = Path(args.model).expanduser()
+        if not _sq_model_dir.exists():
+            _die(f"Model directory not found: {_sq_model_dir}")
+
+        # ── Output dir ───────────────────────────────────────────────────────
+        if args.output:
+            _sq_out_dir = Path(args.output).expanduser()
+        else:
+            import re as _re_sq
+            _sq_base = _re_sq.sub(r'-(bf16|fp16|[0-9]+bit)(-mlx)?$', '',
+                                   _sq_model_dir.name, flags=_re_sq.IGNORECASE)
+            _sq_out_dir = _sq_model_dir.parent / f"{_sq_base}-sqint2"
+        _sq_out_dir.mkdir(parents=True, exist_ok=True)
+
+        # ── Read n_layers from config.json ───────────────────────────────────
+        _sq_cfg_path = _sq_model_dir / "config.json"
+        if not _sq_cfg_path.exists():
+            _die(f"config.json not found at {_sq_cfg_path}")
+        with open(_sq_cfg_path) as _f:
+            _sq_model_cfg = _json_sqint2.load(_f)
+        _sq_n_layers = int(
+            _sq_model_cfg.get("num_hidden_layers")
+            or _sq_model_cfg.get("n_layer")
+            or _sq_model_cfg.get("num_layers")
+            or _die("config.json has no num_hidden_layers / n_layer / num_layers key")
+        )
+
+        # ── Load all safetensors shards ──────────────────────────────────────
+        print(f"\n  Model:        {_sq_model_dir.name}")
+        print(f"  Layers:       {_sq_n_layers}")
+        print(f"  Output:       {_sq_out_dir}")
+        print("  Format:       SQINT2 (gate/up=INT2+SVD, attn=INT3, boundary=INT4)")
+        print("\n  Loading weights …")
+        _sq_weights: "dict[str, np.ndarray]" = {}
+        for _shard in sorted(_sq_model_dir.glob("*.safetensors")):
+            with _safe_open(str(_shard), framework="numpy") as _sf:
+                for _k in _sf.keys():
+                    _sq_weights[_k] = _sf.get_tensor(_k)
+
+        # ── SQINT2 config (production defaults: rank=16, sparse=1%) ──────────
+        _sqint2_cfg = _SQINT2Config(
+            group_size=getattr(args, "int4_group_size", None) or 32,
+            refine_iters=2,
+            residual_rank=16,
+            sparse_frac=0.01,
+        )
+
+        # ── Compress ─────────────────────────────────────────────────────────
+        print("  Compressing …")
+        sys.stdout.flush()
+        _sq_arrays, _sq_manifest, _sq_fmt_counts = _compress_weights_sqint2(
+            _sq_weights,
+            n_layers=_sq_n_layers,
+            sqint2_cfg=_sqint2_cfg,
+        )
+        _sq_bytes = _write_npy_dir(_sq_out_dir, _sq_arrays, _sq_manifest)
+        _sq_gb = _sq_bytes / (1024 ** 3)
+
+        print(f"\n  ✓  SQINT2 compress complete → {_sq_out_dir}")
+        print(f"     Tensors: {_sq_fmt_counts}")
+        print(f"     Output:  {_sq_gb:.3f} GB")
+        print(f"     (Run with --format int4 to compare disk usage)")
+        return  # standalone path — do NOT fall through to _cmd_compress_inner
 
     if _compress_format == "mixed_attn":
         # mixed_attn: keep attention projection weights (q/k/v/o) as FP16 passthrough,

@@ -5,6 +5,53 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.20.0] — 2026-04-29 — W103.3 completion: compress_weights_sqint2 + pure-NumPy codecs
+
+### Added
+- **`squish/quant/sqint2.py` — compress pipeline (W103.3 completion)**:
+  - `compress_weights_sqint2(weights, n_layers, sqint2_cfg, ...)` — core W103.3
+    compress logic. Pure in-memory (no filesystem), no hardware required, fully
+    testable with synthetic weight dicts. Routes every tensor via
+    `MixedPrecisionRouter`, applies the correct codec, returns flat npy-dir-ready
+    dict + manifest + `{format: count}` summary.
+  - `_int3_quantize_numpy(W, group_size)` / `_int3_dequantize_numpy(...)` — pure-NumPy
+    8-level asymmetric INT3 group quantization matching `INT3Linear` convention
+    (`w = code * scale + zero`, codes uint8 [0,7]). No Rust or MLX required.
+  - `_int4_quantize_numpy(W, group_size)` / `_int4_dequantize_numpy(...)` — pure-NumPy
+    16-level nibble-packed INT4 (low nibble first, `w = offset + code * scale`).
+  - `_npy_safe_key(tensor_name)` — same convention as `squish.convert.safe_key` to
+    avoid import cycle.
+  - `compress_weights_sqint2` added to `__all__`.
+
+- **`squish/cli.py` — `--format sqint2` fully wired** (standalone path, returns
+  before `_cmd_compress_inner`):
+  - Reads `config.json` for `num_hidden_layers` / `n_layer` / `num_layers`.
+  - Loads all `.safetensors` shards via `safetensors.safe_open`.
+  - Calls `compress_weights_sqint2()` with production defaults (g=32, refine=2,
+    rank=16, sparse=0.01).
+  - Writes npy-dir via `squish.convert.write_npy_dir`.
+  - Reports tensor format counts and output size in GB.
+
+- **`tests/test_sqint2_compress.py`** — 46 new integration tests:
+  - Format routing: every tensor class in a 6-layer synthetic model routes correctly.
+  - Array key/dtype contracts: SQINT2 (uint8 idx, fp32 scales, fp16 L/R, int32/fp16
+    sparse), INT3 (uint8 codes, fp32 scales/zeros), INT4 (uint8 nibble, fp32 s/z),
+    passthrough (fp16), shape (int64).
+  - `TestINT3Codec`, `TestINT4Codec`: SNR positive, round-trip finite, shape preserved.
+  - `TestSQINT2RoundTrip`: SQINT2 tensors ≥ 9 dB SNR after compress/decompress.
+  - `TestManifest`: all original names present, safe-key format.
+  - `TestNpyDirRoundTrip`: arrays survive `np.save/np.load`, manifest.json readable.
+
+### Net test delta
+2321 passed (W103.3 routing) → **2367 passed** (+46 compress tests). 3 pre-existing
+failures unchanged. Module count stays 84 (all additions in-place to existing files).
+
+# lm_eval-waiver: compress-only wave; no inference path touched.
+# expected-delta: neutral on lm_eval
+# validation-run: W103.4 E2E lm_eval on Qwen2.5-7B
+
+---
+
 ## [9.19.0] — 2026-04-29 — W103.3: Layer-Selective Mixed-Precision Routing
 
 ### Added
