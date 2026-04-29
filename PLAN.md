@@ -35,7 +35,9 @@
 | INT3 g=32 | Qwen2.5-1.5B | ≥ 67.2% arc_easy |
 | INT3 | gemma-3-*b ≤4B | **BLOCKED** (−15pp) |
 | INT3 | Qwen3-4B | **BLOCKED** (−14.8pp) |
-| INT2 naive | any | **NEVER SHIP** |
+| INT2 naive | any | **NEVER SHIP** (~29% ≈ random) |
+| **SQINT2** | Qwen2.5-7B | **TARGET** ≥ 65% arc_easy (W103) |
+| **INT2 KV** | Qwen2.5-7B @ 32K | **TARGET** PPL Δ ≤ +0.5 nats (W104) |
 
 ---
 
@@ -88,6 +90,8 @@ fallback passes without Rust build. Zero new mandatory dependencies.
 | INT3 g=32 | Qwen2.5-1.5B | ≥ 67.2% arc_easy | 2026-03-28 |
 | INT3 | gemma-3-*b ≤4B | **BLOCKED** | confirmed |
 | INT3 | Qwen3-4B | **BLOCKED** | confirmed |
+| **SQINT2** | Qwen2.5-7B | ≥ 65% arc_easy (target 67%) | TARGET — W103 |
+| **INT2 KV** | Qwen2.5-7B 32K | PPL Δ ≤ +0.5 nats vs INT4 KV | TARGET — W104 |
 
 ---
 
@@ -150,10 +154,133 @@ pass in Python 3.10 CI). Zero new failures introduced.
 
 ---
 
+### W103 — SQINT2: Coherent INT2 Weight Compression (TARGET — IN PROGRESS)
+**Why:** Naive INT2 is a mathematical dead-end — confirmed at ~26–30% arc_easy ≈ random
+across the 0.6B–7B family in CLAUDE.md. The cause is geometric, not algorithmic:
+transformer weight matrices contain ~0.1% massive outliers that dictate the quant scale,
+collapsing 99.9% of normal weights into 1–2 of the 4 available bins and destroying signal.
+The 2024–2025 research record (ParetoQ, UPQ, QuIP#, INT2.1) proves the ceiling is high
+when the geometry is respected first. SQINT2 is the Konjo response — a fused four-stage
+pipeline that hits **~2.15 bpw effective**, ~50% of INT4 storage, with arc_easy
+**≥ 65% on Qwen2.5-7B**. This is the next major milestone for the compression axis.
+
+**The four-stage pipeline:**
+1. **Hadamard incoherence preprocessing** — at compress time, apply a randomised
+   Walsh–Hadamard rotation to each FFN weight: `W_rot = H · W · Hᵀ`. Spreads outlier
+   energy across all dimensions; eliminates the bin-collapse failure mode. Store only
+   the seed (not H). Re-uses `squish/kv/kv_cache.py::_build_hadamard` (already in tree
+   from the QuaRot KV work — Wave 19/20). Lift to a shared `squish/quant/_rotation.py`
+   util only if signature mismatch forces it; otherwise inline import.
+2. **NF2 per-group quantization** — quantize `W_rot` against a 4-symbol NormalFloat-2
+   codebook (quantile points of N(0,1) at ±1.5σ, ±0.5σ — *not* uniform spacing).
+   Group size g=32, asymmetric scale + zero-point, re-using the existing AWQ scaling
+   path in `squish/quant/awq.py`. Storage: 2 bits index + (16+16)/32 = 1.0 bit
+   scale/zero overhead → 3.0 bpw before residual.
+3. **Low-rank residual correction** — compute residual `E = W_rot - dequant(Q_INT2)`,
+   run truncated SVD `E ≈ L · R` with rank r=16, store L,R in INT4. Inference path:
+   `dequant(Q_INT2) → inverse Hadamard → + L·R`. Adds ~0.15 bpw amortised on a 7B
+   model → **~2.15 bpw effective**.
+4. **Layer-selective mixed precision** — SQINT2 on FFN `gate_proj`/`up_proj` only;
+   INT3 g=32 on attention `Q/K/V/O`; INT4 on first 2 + last 2 transformer blocks
+   (boundary-layer rule — these dominate output coherence). Routing logic added to
+   `squish/quant/quantizer.py` keyed on layer index + tensor name pattern.
+
+**Module budget:** one new file — `squish/quant/sqint2.py` (encapsulates Hadamard
+preprocess, NF2 codebook lookup, low-rank residual fit/apply, mixed-precision routing
+config). `squish/cli.py` gains `compress --format sqint2`. `compressed_loader.py` gains
+the SQINT2 unpack path. Module count: 83 → 84 (ceiling 125 ✅).
+
+**Hardware-grounded inference path:**
+- NF2 dequant + matmul → MLX `mx.quantized_matmul` (custom NF2 lookup table baked
+  into a Metal shader, NOT Python dequant-then-matmul — CLAUDE.md hard rule).
+- Hadamard inverse → fused into the same kernel (FWHT, O(n log n)).
+- Low-rank `+ L·R` → existing Rust GEMV path from W101 with INT4 weights.
+
+**Acceptance criteria (ship gate):**
+1. arc_easy on Qwen2.5-7B SQINT2 **≥ 65%** (target 67%, vs. ~73% INT4 baseline). Δ ≤ −8pp.
+2. Coherent generation on the 5-prompt smoke set — no repetition loops, no incoherence,
+   passes `scripts/coherence_check.sh`.
+3. Disk: ≤ 50% of INT4 size (Qwen2.5-7B: ~3.5 GB INT4 → ≤ **1.75 GB** SQINT2).
+4. Memory contract: peak Metal RSS ≤ **4 GB** on M3 16GB at 7B.
+5. Latency: SQINT2 decode tok/s ≥ INT4 mlx_lm baseline (the low-rank add must NOT
+   regress through a Python loop — fused kernel or vectorised Rust GEMV).
+6. lm_eval result OR `lm_eval-waiver` per Accuracy Gate (CLAUDE.md).
+7. Module count ≤ 125 after merge.
+
+**Hard stops (DO NOT SHIP):**
+- arc_easy < 60% on any tested 7B model → revert. That's incoherent territory.
+- Any Python `dequant → numpy matmul` path. Quantized matmul is NEVER Python arithmetic.
+- Naive INT2 fallback if SQINT2 build fails. Naive INT2 stays research-only forever.
+- Hadamard rotation applied at runtime (load time) — must be a build-time bake.
+
+**Stages, sequenced:**
+- W103.1 — Hadamard preprocess + NF2 codebook (offline compress only, no inference yet).
+  Validate via reconstruction SNR on synthetic σ=0.02 IID Gaussian weights at g=32 —
+  **must hit ≥ 9 dB** (vs. ~6.8 dB for naive uniform INT2 = +2 dB lift from NF2 +
+  per-group asymmetric + Lloyd-Max refinement). The 9 dB gate matches the Lloyd-Max
+  theoretical ceiling for 2-bit quantisation on Gaussian (~9.3 dB) — past this point,
+  further SNR gain requires the Stage 3 low-rank residual. Earlier drafts of this plan
+  cited a 12 dB target; that was over-aggressive — 2-bit alone cannot exceed
+  Lloyd-Max regardless of codebook design. **12 dB is the W103.4 ship target** (full
+  pipeline including W103.2 residual), not a Stage 1+2 gate.
+- W103.2 — Low-rank residual fit + storage layout. Joint reconstruction SNR ≥ 16 dB
+  on σ=0.02 IID Gaussian (the residual carries the FFT-style high-frequency error;
+  rank-16 SVD typically captures > 80% of residual energy).
+- W103.3 — Layer-selective routing + `compress --format sqint2` CLI flag.
+- W103.4 — Inference path (Metal/Rust fused kernel) + lm_eval gate on Qwen2.5-7B.
+
+**Validation order (hardware-aware):**
+- Synthetic SNR (Stage 1+2) → unit test, no hardware.
+- arc_easy limit=200 → ~30 min on M3 16GB after W103.4.
+- Full arc_easy/hellaswag/piqa/winogrande/openbookqa limit=500 → overnight, gates merge.
+
+---
+
+### W104 — INT2 KV Cache (SIDE-QUEST, runs alongside W103)
+**Why:** KV cache quantization is **orthogonal** to weight quantization — does not touch
+model weights, requires no recompression, and immediately ~4× context length at the same
+RAM. `HadamardKVCache` in `squish/kv/kv_cache.py` already handles INT8 with QuaRot-style
+rotation; extending to INT2 reuses 100% of that infrastructure. This is the highest
+leverage-per-line-of-code item in the entire compression axis.
+
+**Changes:** add `mode="int2"` branch to `HadamardKVCache`; auto-enable when context
+> 8K tokens (alongside Phase 3.1 INT4 path); 128-token recent BF16 window retained for
+quality-critical recent tokens (MiniKV 2025 result). Zero new modules — extension only.
+
+**Acceptance criteria:**
+1. Qwen2.5-7B at 32K context fits in M3 16GB (currently OOMs around 10K with INT4 KV).
+2. PPL Δ vs. INT4 KV ≤ +0.5 nats on wikitext-2 (4K window).
+3. Re-uses `_build_hadamard` and `QuantizedKVCache` infra. Module count unchanged.
+
+**Why this ships first if W103 hits any hardware blocker:** W104 is independent of W103.
+If W103 stage 4 stalls on lack of M3 16GB calibration time, W104 lands on its own and
+delivers a real user-facing win (32K context on a $1100 laptop) without weight-format risk.
+
+---
+
+## Konjo Mode Reminder for SQINT2 (read before writing code)
+
+- **Shatter the box.** "Naive INT2 doesn't work" is a known result. SQINT2 is what works.
+  Do not reach for naive INT2 again. The literature says it is solved — implement the
+  geometry-aware path or implement nothing.
+- **Verify before claiming.** No "Metal will fuse this" assertions. Profile, then claim.
+  CLAUDE.md "Framework Primitives — Verify Before Claiming" applies in full.
+- **The math goes in the code.** Hadamard rotation, NF2 quantile points, SVD truncation —
+  write the math inline as comments. A reader should not need a paper to understand the
+  module. *Sene Magber.*
+- **Code-complete vs accuracy-validated are different states.** Stages 1–3 may land
+  code-complete with reconstruction-SNR gates only. Stage 4 needs lm_eval before merge,
+  or an `lm_eval-waiver` with expected-delta + queued validation run.
+- **No graveyards.** If a stage fails its gate, delete the code or move it to
+  `experimental/` with a written promotion criterion. No half-finished stubs in `squish/`.
+
+---
+
 ## Next Immediate Action
-**W102 COMPLETE** — CI health restored (44 → 3 failures) + `squish bench` subcommand live.
-Next W103 candidates: streaming KV-cache INT8 quantisation, or LoRA adapter INT4 checkpoint
-support.
+**W102 COMPLETE.** **W103 — SQINT2 — IS THE NEXT WAVE.** Start with W103.1 (Hadamard +
+NF2 offline compress, synthetic-weights SNR gate). W104 (INT2 KV) runs in parallel and
+ships independently. INT3 streaming KV-cache and LoRA INT4 checkpoint support are
+deferred to W105+.
 
 ---
 

@@ -546,7 +546,12 @@ class TestEncoderInit:
 
 class TestModuleCount:
     def test_module_count_unchanged(self):
-        """Ensure we haven't added a new Python module (W56 extends aqlm.py only)."""
+        """Module-count gate (CLAUDE.md ceiling 125).
+
+        Baseline history:
+        - 83 — post-squash-separation (2026-04-28) baseline
+        - 84 — W103.1 added `squish/quant/sqint2.py` (Hadamard preprocess + NF2)
+        """
         import squish
         root = Path(squish.__file__).parent
         py_files = [
@@ -555,8 +560,9 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 83, (
-            f"Module count changed: {count} != 83. "
-            "Squash separation (2026-04-28) removed 38 squash/* modules from squish — "
-            "new baseline is 83. W102+ must not add new modules without justification."
+        assert count == 84, (
+            f"Module count changed: {count} != 84. "
+            "Squash separation (2026-04-28) baseline = 83; W103.1 added "
+            "squish/quant/sqint2.py → 84. New modules require either deletion "
+            "of an existing one or written justification per CLAUDE.md."
         )
