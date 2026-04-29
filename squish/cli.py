@@ -23,6 +23,7 @@ Sub-commands
   squish daemon   start|stop|status Manage background server
   squish rotate   MODEL             SpinQuant Cayley-SGD rotation calibration
   squish predict  [MODEL]           LIFE analytical performance prediction
+  squish bench    [OPTIONS]         Benchmark quantized GEMV throughput (INT4/INT8)
   squish ps       [OPTIONS]         Show loaded model and server status
   squish logs     [OPTIONS]         View or stream the server log
 MODEL shorthand resolves via the Squish catalog:
@@ -5536,6 +5537,93 @@ def cmd_version(args) -> None:  # noqa: ARG001
             pass
 
 
+def cmd_bench(args) -> None:
+    """Measure quantized GEMV throughput using the Rust kernel (INT4/INT8)."""
+    import statistics
+    import time
+
+    import numpy as np
+
+    from squish.quant.quantizer import (
+        get_backend_info,
+        quantize_int4_asymmetric,
+        quantize_embeddings,
+        quantized_matmul_int4,
+    )
+
+    fmt        = args.format
+    batch      = args.batch
+    in_f       = args.in_features
+    out_f      = args.out_features
+    gs         = args.group_size
+    iters      = args.iters
+    warmup     = args.warmup
+
+    rng = np.random.default_rng(42)
+    x   = np.ascontiguousarray(rng.standard_normal((batch, in_f)), dtype=np.float32)
+
+    if fmt == "int4":
+        W = np.ascontiguousarray(
+            rng.standard_normal((out_f, in_f)), dtype=np.float32
+        )
+        try:
+            packed, scales, offsets = quantize_int4_asymmetric(W, group_size=gs)
+        except RuntimeError as exc:
+            print(f"  ✗  INT4 quantization unavailable: {exc}")
+            sys.exit(1)
+
+        def _run() -> np.ndarray:
+            return quantized_matmul_int4(packed, scales, offsets, x, group_size=gs)
+
+    else:  # int8
+        W = np.ascontiguousarray(
+            rng.standard_normal((out_f, in_f)), dtype=np.float32
+        )
+        q_result = quantize_embeddings(W, group_size=gs)
+
+        from squish.quant.quantizer import reconstruct_embeddings as _recon
+
+        def _run() -> np.ndarray:
+            return (x @ _recon(q_result).T)
+
+    # Warmup
+    for _ in range(warmup):
+        _run()
+
+    # Timed iterations
+    times_ms: list[float] = []
+    for _ in range(iters):
+        t0 = time.perf_counter()
+        _run()
+        times_ms.append((time.perf_counter() - t0) * 1000.0)
+
+    sorted_t = sorted(times_ms)
+    p50 = statistics.median(times_ms)
+    p95 = sorted_t[max(0, int(len(sorted_t) * 0.95) - 1)]
+    p99 = sorted_t[max(0, int(len(sorted_t) * 0.99) - 1)]
+    mean_t = statistics.mean(times_ms)
+
+    info = get_backend_info()
+    backend = "rust" if (fmt == "int4" and info.get("int4_matmul_rust")) else "numpy"
+
+    # GOPS: batch × out_f × in_f × 2 (multiply + accumulate)
+    ops      = batch * out_f * in_f * 2
+    gops     = ops / (p50 / 1000.0) / 1e9
+    gb_s     = (batch * in_f * 4) / (p50 / 1000.0) / 1e9  # input bytes / sec
+
+    print(f"\n  squish bench — {fmt.upper()} GEMV")
+    print(f"  Shape:   ({batch}, {in_f}) × ({out_f}, {in_f}) → ({batch}, {out_f})")
+    print(f"  Groups:  in_f={in_f} / gs={gs} = {in_f // gs} groups")
+    print(f"  Backend: {backend}  |  warmup={warmup}  iters={iters}")
+    print()
+    print(f"  p50  latency : {p50:8.3f} ms")
+    print(f"  p95  latency : {p95:8.3f} ms")
+    print(f"  p99  latency : {p99:8.3f} ms")
+    print(f"  mean latency : {mean_t:8.3f} ms")
+    print(f"  throughput   : {gops:8.3f} GOPS  ({gb_s:.3f} GB/s input)")
+    print()
+
+
 class _SquishHelpFormatter(argparse.RawDescriptionHelpFormatter):
     """Minimal ANSI accents on section headings — only when writing to a TTY."""
 
@@ -5594,9 +5682,13 @@ Ollama drop-in:
     )
     sub = ap.add_subparsers(dest="command")
 
+    try:
+        _ver = __import__('importlib.metadata', fromlist=['version']).version('squish')
+    except Exception:
+        _ver = __import__('squish').__version__
     ap.add_argument(
         "--version", action="version",
-        version=f"squish {__import__('importlib.metadata', fromlist=['version']).version('squish')}",
+        version=f"squish {_ver}",
         help="Show squish version and exit",
     )
 
@@ -6582,6 +6674,49 @@ Ollama drop-in:
         help="Show squish version, Python version, and platform info",
     )
     p_version.set_defaults(func=cmd_version)
+
+    # ── squish bench ───────────────────────────────────────────────────────────
+    p_bench = sub.add_parser(
+        "bench",
+        help="Measure quantized GEMV throughput (INT4/INT8) with p50/p95/p99 latency",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Benchmark the Rust INT4/INT8 quantized GEMV kernel.\n\n"
+            "Examples:\n"
+            "  squish bench\n"
+            "  squish bench --format int4 --batch 8 --in-features 4096\n"
+            "  squish bench --format int8 --iters 200 --group-size 32\n"
+        ),
+    )
+    p_bench.add_argument(
+        "--format", choices=["int4", "int8"], default="int4", metavar="FMT",
+        help="Quantization format to benchmark: int4 (default) or int8.",
+    )
+    p_bench.add_argument(
+        "--batch", type=int, default=1, metavar="N",
+        help="Batch size (rows of the activation matrix, default 1).",
+    )
+    p_bench.add_argument(
+        "--in-features", type=int, default=4096, metavar="F",
+        help="Input feature dimension (default 4096).",
+    )
+    p_bench.add_argument(
+        "--out-features", type=int, default=4096, metavar="F",
+        help="Output feature dimension / weight rows (default 4096).",
+    )
+    p_bench.add_argument(
+        "--group-size", type=int, default=64, metavar="G",
+        help="Quantization group size; must divide in-features (default 64).",
+    )
+    p_bench.add_argument(
+        "--iters", type=int, default=100, metavar="N",
+        help="Number of timed iterations (default 100).",
+    )
+    p_bench.add_argument(
+        "--warmup", type=int, default=10, metavar="N",
+        help="Number of warmup iterations excluded from timing (default 10).",
+    )
+    p_bench.set_defaults(func=cmd_bench)
 
     return ap
 
