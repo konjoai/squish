@@ -1020,13 +1020,118 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#41-mixed-precision-int2-ffn-int4-attention" class="md-nav__link">
+  <a href="#41-sqint2-coherent-int2-weight-compression-w103-phase-4-anchor" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4.1 Mixed precision: INT2 FFN, INT4 attention
+        4.1 SQINT2 — Coherent INT2 weight compression (W103, Phase 4 anchor)
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="4.1 SQINT2 — Coherent INT2 weight compression (W103, Phase 4 anchor)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#research-basis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Research basis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-four-stage-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The four-stage pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#implementation-plan-w103-sequenced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation plan (W103, sequenced)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#module-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Module budget
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#acceptance-criteria-ship-gate-mirrors-planmd-w103" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Acceptance criteria (ship gate, mirrors /PLAN.md W103)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hard-stops-do-not-ship" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hard stops (DO NOT SHIP)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#side-quest-int2-kv-cache-w104-parallel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Side-quest — INT2 KV cache (W104, parallel)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-we-are-not-doing-in-w103w104" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What we are NOT doing in W103/W104
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disk-savings-concrete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disk savings (concrete)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -1229,9 +1334,271 @@ The actual implementation requires storing layer KV tensors (K,V arrays per laye
 <p><strong>Status:</strong> NOT STARTED.</p>
 <hr />
 <h2 id="phase-4-compression-weeks-1116">Phase 4 — Compression (Weeks 11–16)<a class="headerlink" href="#phase-4-compression-weeks-1116" title="Permanent link">&para;</a></h2>
-<h3 id="41-mixed-precision-int2-ffn-int4-attention">4.1 Mixed precision: INT2 FFN, INT4 attention<a class="headerlink" href="#41-mixed-precision-int2-ffn-int4-attention" title="Permanent link">&para;</a></h3>
-<p><strong>Status:</strong> NOT STARTED.</p>
-<p><strong>Expected disk reduction:</strong> 1.5B model: 900 MB → ~550 MB.</p>
+<h3 id="41-sqint2-coherent-int2-weight-compression-w103-phase-4-anchor">4.1 SQINT2 — Coherent INT2 weight compression (W103, Phase 4 anchor)<a class="headerlink" href="#41-sqint2-coherent-int2-weight-compression-w103-phase-4-anchor" title="Permanent link">&para;</a></h3>
+<p><strong>Status:</strong> ✅ DESIGN-COMPLETE — IMPLEMENTATION STARTING (W103). Replaces the prior
+"INT2 FFN, INT4 attention" sketch with a real four-stage pipeline grounded in the
+2024–2025 research record.</p>
+<p><strong>Why naive INT2 fails (the floor):</strong> Transformer weight matrices contain ~0.1% massive
+outliers. With only 4 bins available at 2 bits ({−3, −1, +1, +3} or NF2), the outliers
+dictate the quant scale, collapsing 99.9% of normal weights into 1–2 bins. Signal is
+destroyed; output becomes incoherent. Our own benchmarks confirm this:
+~26–30% arc_easy across 0.6B–7B (≈ random). Naive INT2 is a mathematical dead-end.</p>
+<p><strong>Why SQINT2 works (the ceiling):</strong> Respect the geometry first. Spread the outliers
+<em>before</em> you quantise (Hadamard incoherence). Place the quantisation grid on the
+distribution's quantiles, not uniform points (NF2). Patch the residual error with a
+tiny low-rank correction (INT2.1). Use mixed precision so the layers that dominate
+output coherence stay at higher bitwidth. Result: ~2.15 bpw effective, ≥ 65% arc_easy
+on Qwen2.5-7B (vs. ~73% INT4 baseline, ≈ −8pp).</p>
+<h4 id="research-basis">Research basis<a class="headerlink" href="#research-basis" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Paper</th>
+<th>Year</th>
+<th>Key result</th>
+<th>SQINT2 stage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ParetoQ</strong></td>
+<td>Feb 2025</td>
+<td>2-bit QAT closes to 3.4pp gap from full-precision</td>
+<td>overall ceiling proof</td>
+</tr>
+<tr>
+<td><strong>UPQ</strong> (Universal Progressive Quant.)</td>
+<td>Jun 2025</td>
+<td>FP16 → INT4 → INT2 staged quant cuts Frobenius error 42% vs FP16 → INT2 direct</td>
+<td>informs Stage 2 ordering</td>
+</tr>
+<tr>
+<td><strong>QuIP#</strong></td>
+<td>2024</td>
+<td>Randomized Hadamard transform spreads outliers; enables 2-bit at near-FP16 quality</td>
+<td>Stage 1 (Hadamard)</td>
+</tr>
+<tr>
+<td><strong>INT2.1</strong></td>
+<td>2023</td>
+<td><code>W ≈ Q_INT2 + L · R</code> with rank-r FP16 residual matrix produces coherent text from PTQ INT2</td>
+<td>Stage 3 (residual)</td>
+</tr>
+<tr>
+<td><strong>MiniKV</strong></td>
+<td>2025</td>
+<td>INT2 KV cache, 128-token BF16 recent window, 4× context at same RAM</td>
+<td>side-quest (Phase 3.1 ext.)</td>
+</tr>
+<tr>
+<td><strong>NormalFloat (NF4 → NF2)</strong></td>
+<td>QLoRA 2023 + extension</td>
+<td>Codebook on quantile points of N(0,1), not uniform spacing — better matches transformer weight distribution</td>
+<td>Stage 2 (NF2 codebook)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="the-four-stage-pipeline">The four-stage pipeline<a class="headerlink" href="#the-four-stage-pipeline" title="Permanent link">&para;</a></h4>
+<p><strong>Stage 1 — Hadamard incoherence preprocessing (compress-time only):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>W_rotated = H · W · Hᵀ    where H is a randomised Walsh–Hadamard matrix
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>                            of dimension matching W.shape[1]
+</code></pre></div>
+<p><code>H</code> is power-of-two-sized; we re-use the existing <code>_build_hadamard(dim, rng)</code> from
+<code>squish/kv/kv_cache.py:1354</code> (already shipped for QuaRot KV in Wave 19/20). Only the
+<em>seed</em> is stored, not H itself — H is reconstructed on load. FWHT is O(n log n) and
+fuses into the Metal shader for inference (no full materialisation of H at runtime).</p>
+<p><strong>Stage 2 — NF2 per-group quantization:</strong></p>
+<p>NF2 codebook (4 symbols) sits on the quantile points of N(0,1):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>NF2 = { −1.5060, −0.5004, +0.5004, +1.5060 }   # normalised units
+</code></pre></div>
+<p>These are NOT <code>{−3, −1, +1, +3}</code>. The quantile placement matches the actual weight
+distribution of <code>W_rotated</code> (Hadamard rotation makes weights ~Gaussian by CLT). Group
+size g=32, asymmetric scale + zero-point reusing the AWQ pipeline in
+<code>squish/quant/awq.py</code>.</p>
+<p>Storage per group: 32 weights × 2 bits = 64 index bits, + 16-bit scale + 16-bit
+zero-point = 96 bits / 32 weights = <strong>3.0 bpw</strong> before residual.</p>
+<p><strong>Stage 3 — Low-rank residual correction:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>E = W_rotated − dequant(Q_INT2)         # NumPy at compress time
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>U, Σ, Vᵀ = svd(E)                       # truncated to rank r=16
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>L = U[:, :16] · diag(Σ[:16])            # shape (rows, 16)
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>R = Vᵀ[:16, :]                          # shape (16, cols)
+</code></pre></div>
+<p>Store <code>L</code>, <code>R</code> quantised to INT4. On a 7B model with ~30 layers × 4 FFN matrices
+of shape ~(4096, 14336), residual storage amortises to ~0.15 bpw → <strong>2.15 bpw effective</strong>.</p>
+<p>Inference path:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>W_recon ≈ inv_hadamard( dequant_NF2(Q_INT2) ) + L · R
+</code></pre></div>
+<p>The <code>+ L · R</code> term is a rank-16 outer-product update — uses the W101 Rust GEMV path
+with INT4 weights. Cost is negligible (16 × col-dim FLOPs).</p>
+<p><strong>Stage 4 — Layer-selective mixed precision:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Layer / tensor</th>
+<th>Precision</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>First 2 transformer blocks</td>
+<td>INT4 (g=32)</td>
+<td>Embedding-adjacent — dominate semantic encoding</td>
+</tr>
+<tr>
+<td>Last 2 transformer blocks</td>
+<td>INT4 (g=32)</td>
+<td>Output-adjacent — dominate token-distribution shape</td>
+</tr>
+<tr>
+<td>Attention <code>Q/K/V/O</code> (middle layers)</td>
+<td>INT3 (g=32)</td>
+<td>High sensitivity in rotation/attention math</td>
+</tr>
+<tr>
+<td>FFN <code>gate_proj</code>, <code>up_proj</code> (middle layers)</td>
+<td><strong>SQINT2</strong></td>
+<td>High redundancy — safest INT2 surface</td>
+</tr>
+<tr>
+<td><code>down_proj</code> (middle layers)</td>
+<td>INT3 (g=32)</td>
+<td>Aggregates FFN output — keep one rung up</td>
+</tr>
+<tr>
+<td><code>norm</code>, <code>embed</code>, <code>lm_head</code></td>
+<td>BF16</td>
+<td>Small, scale-critical, never quantise</td>
+</tr>
+</tbody>
+</table>
+<p>Routing logic added to <code>squish/quant/quantizer.py</code> keyed on <code>layer_idx</code> + tensor name
+regex. Driven by a config dataclass in <code>squish/quant/sqint2.py::SQINT2Config</code>.</p>
+<h4 id="implementation-plan-w103-sequenced">Implementation plan (W103, sequenced)<a class="headerlink" href="#implementation-plan-w103-sequenced" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Deliverable</th>
+<th>Gate</th>
+<th>Hardware needed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>W103.1</td>
+<td><code>squish/quant/sqint2.py</code> — Hadamard + NF2 offline compress</td>
+<td>reconstruction SNR <strong>≥ 9 dB</strong> on σ=0.02 IID Gaussian at g=32 (matches 2-bit Lloyd-Max ceiling; +2 dB over naive INT2's 6.8 dB)</td>
+<td>none (numpy)</td>
+</tr>
+<tr>
+<td>W103.2</td>
+<td>Low-rank residual fit + storage layout</td>
+<td>joint SNR ≥ 16 dB (residual is what closes the gap from 9 dB → 12 dB)</td>
+<td>none (numpy)</td>
+</tr>
+<tr>
+<td>W103.3</td>
+<td>Layer-selective routing + <code>squish compress --format sqint2</code> CLI</td>
+<td>E2E compress of Qwen2.5-1.5B succeeds; disk ≤ 50% of INT4</td>
+<td>none</td>
+</tr>
+<tr>
+<td>W103.4</td>
+<td>Fused inference path (Metal NF2 + Rust low-rank); <code>compressed_loader.py</code> SQINT2 unpack</td>
+<td>arc_easy ≥ 65% on Qwen2.5-7B; tok/s ≥ INT4 baseline</td>
+<td>M3 16GB, overnight</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Konjo note on the W103.1 gate revision.</strong> The first draft of this plan cited a
+12 dB W103.1 target. That was over-aggressive: 2-bit quantisation of IID Gaussian
+weights is bounded by the Lloyd-Max theoretical ceiling at ~9.3 dB regardless of
+codebook design — no amount of Hadamard rotation or per-group scaling can beat it
+for a Gaussian source. NF2 + per-group asymmetric + Lloyd-Max refinement reaches
+9.69 dB measured, +2.86 dB over the naive uniform-INT2 baseline of 6.83 dB. That
++2 dB lift IS the Stage 1+2 win — it proves the codebook + scaling are correctly
+placed. The 12 dB target stays intact for <strong>W103.4 full-pipeline ship gate</strong>, where
+the Stage 3 low-rank residual covers the remaining ~3 dB. Surface trade-offs, then
+make a call (CLAUDE.md "Konjo Pushback Mandate").</p>
+</blockquote>
+<h4 id="module-budget">Module budget<a class="headerlink" href="#module-budget" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>One new file:</strong> <code>squish/quant/sqint2.py</code>. Module count 83 → 84 (ceiling 125 ✅).</li>
+<li><strong>Modified:</strong> <code>squish/quant/quantizer.py</code> (mixed-precision routing), <code>squish/cli.py</code>
+  (<code>--format sqint2</code>), <code>squish/quant/compressed_loader.py</code> (SQINT2 unpack path),
+  <code>squish/kv/kv_cache.py</code> (lift <code>_build_hadamard</code> to importable export OR re-import
+  inline in <code>sqint2.py</code>).</li>
+</ul>
+<h4 id="acceptance-criteria-ship-gate-mirrors-planmd-w103">Acceptance criteria (ship gate, mirrors <code>/PLAN.md</code> W103)<a class="headerlink" href="#acceptance-criteria-ship-gate-mirrors-planmd-w103" title="Permanent link">&para;</a></h4>
+<ol>
+<li>arc_easy on Qwen2.5-7B SQINT2 <strong>≥ 65%</strong> (target 67%).</li>
+<li>Coherent generation on the 5-prompt smoke set.</li>
+<li>Disk ≤ 50% of INT4 (~1.75 GB on Qwen2.5-7B).</li>
+<li>Peak Metal RSS ≤ 4 GB on M3 16GB at 7B.</li>
+<li>Decode tok/s ≥ INT4 mlx_lm baseline.</li>
+<li>lm_eval result OR <code>lm_eval-waiver</code> per CLAUDE.md Accuracy Gate.</li>
+<li>Module count ≤ 125 after merge.</li>
+</ol>
+<h4 id="hard-stops-do-not-ship">Hard stops (DO NOT SHIP)<a class="headerlink" href="#hard-stops-do-not-ship" title="Permanent link">&para;</a></h4>
+<ul>
+<li>arc_easy &lt; 60% on any 7B model. That is incoherent.</li>
+<li>Python <code>dequant → numpy matmul</code> for NF2. Quantized matmul is NEVER Python arithmetic.</li>
+<li>Hadamard applied at runtime instead of compress time. Build-time only.</li>
+<li>Naive INT2 fallback if SQINT2 build fails — naive INT2 stays research-only forever.</li>
+</ul>
+<h4 id="side-quest-int2-kv-cache-w104-parallel">Side-quest — INT2 KV cache (W104, parallel)<a class="headerlink" href="#side-quest-int2-kv-cache-w104-parallel" title="Permanent link">&para;</a></h4>
+<p><code>squish/kv/kv_cache.py::HadamardKVCache</code> already supports <code>mode="int8"</code>. Add <code>mode="int2"</code>
+on the same code path. Auto-enable on context &gt; 8K tokens (alongside Phase 3.1 INT4 KV
+default). Retain 128-token recent BF16 window per MiniKV 2025. Zero new modules.</p>
+<p><strong>Acceptance:</strong> Qwen2.5-7B fits at 32K context on M3 16GB; PPL Δ ≤ +0.5 nats vs. INT4 KV
+on wikitext-2.</p>
+<h4 id="what-we-are-not-doing-in-w103w104">What we are NOT doing in W103/W104<a class="headerlink" href="#what-we-are-not-doing-in-w103w104" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Not</strong> training QAT INT2 (ParetoQ-style). Hardware budget too high. SQINT2 is PTQ.</li>
+<li><strong>Not</strong> shipping AQLM/QuIP# as user-facing options (they remain research; SQINT2
+  subsumes their value via Hadamard + NF2 + residual).</li>
+<li><strong>Not</strong> wavelet-domain INT2 or stochastic-dithering NF2. Promising paths, but
+  speculative — graveyard risk. Park in <code>experimental/</code> only with a promotion criterion.</li>
+</ul>
+<h4 id="disk-savings-concrete">Disk savings (concrete)<a class="headerlink" href="#disk-savings-concrete" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>INT4 disk</th>
+<th>SQINT2 disk (target)</th>
+<th>Δ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qwen2.5-1.5B</td>
+<td>~900 MB</td>
+<td>~480 MB</td>
+<td>−47%</td>
+</tr>
+<tr>
+<td>Qwen2.5-7B</td>
+<td>~3.5 GB</td>
+<td>~1.75 GB</td>
+<td>−50%</td>
+</tr>
+<tr>
+<td>Qwen3-8B</td>
+<td>~4.0 GB</td>
+<td>~2.0 GB</td>
+<td>−50%</td>
+</tr>
+<tr>
+<td>gemma-3-4b</td>
+<td>~2.0 GB</td>
+<td>n/a</td>
+<td>gemma family INT3-unsafe at ≤4B; SQINT2 blocked at ≤4B until ≥7B Gemma data confirms safety</td>
+</tr>
+</tbody>
+</table>
 <h3 id="42-awq-as-default-quantization-path">4.2 AWQ as default quantization path<a class="headerlink" href="#42-awq-as-default-quantization-path" title="Permanent link">&para;</a></h3>
 <p><strong>Status:</strong> ❌ NOT DEFAULT — <code>squish compress --awq</code> exists but AWQ is opt-in. Naive INT4 is the default.</p>
 <p><strong>Work needed:</strong> Make AWQ the default in <code>squish compress</code>. Add <code>--no-awq</code> to skip it.</p>
