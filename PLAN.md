@@ -236,7 +236,11 @@ the SQINT2 unpack path. Module count: 83 → 84 (ceiling 125 ✅).
   correlated, heavy-tailed) is the W103.4 arc_easy gate proxy.
   Sparse-1% adds 0.24 dB on top of SVD → total +0.54 dB joint lift. 46 new tests;
   2231 total passing suite (3 pre-existing version-metadata failures, unchanged).
-- W103.3 — Layer-selective routing + `compress --format sqint2` CLI flag.
+- ✅ **W103.3 (2026-04-29) — SHIPPED.** `MixedPrecisionRouter` in `quantizer.py` +
+  `--format sqint2` in `cli.py`. 90 new tests in `tests/test_sqint2_router.py`.
+  2321 suite passing (0 regressions). Routing spec: boundary layers (first 2 + last 2)
+  → INT4; MLP gate_proj/up_proj → SQINT2; attn Q/K/V/O → INT3; else → INT4.
+  E2E compress gate (lm_eval on Qwen2.5-7B) deferred to W103.4.
 - W103.4 — Inference path (Metal/Rust fused kernel) + lm_eval gate on Qwen2.5-7B.
 
 **Validation order (hardware-aware):**

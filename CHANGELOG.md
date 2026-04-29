@@ -5,6 +5,60 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.19.0] — 2026-04-29 — W103.3: Layer-Selective Mixed-Precision Routing
+
+### Added
+- **`squish/quant/quantizer.py` — `MixedPrecisionRouter` class** (W103.3 routing):
+  Routes transformer weight tensor names to the correct quantisation format based
+  on layer position and projection type. Single source of truth for the W103.3
+  mixed-precision assignment rules:
+
+    | Tensor class                            | Format  |
+    |-----------------------------------------|---------|
+    | Boundary layers (first 2 + last 2)      | INT4    |
+    | MLP `gate_proj`, `up_proj`              | SQINT2  |
+    | Attention `q_proj`, `k_proj`, `v_proj`, `o_proj` | INT3 |
+    | Everything else (`down_proj`, norms, …) | INT4    |
+    | Non-weight tensors (embed, lm_head)     | `None`  |
+
+  Boundary layers (`{0, 1, n_layers-2, n_layers-1}`) always stay at INT4 to
+  preserve residual-stream coherence at the model's input/output boundary.
+  For `n_layers < 4` all layers are treated as boundary (entire model at INT4).
+
+  `MixedPrecisionRouter.summary(names)` returns a `{format: count}` breakdown
+  for compression-plan reporting.
+
+- **`squish/cli.py`** — `--format sqint2` wired in `cmd_compress` dispatch.
+  Accepts `sqint2` as a valid `--format` choice; stores `MixedPrecisionRouter`
+  factory on the args namespace for the inner compress path to use per-tensor.
+
+- **`tests/test_sqint2_router.py`** — 90 new tests:
+  `TestConstructor`, `TestBoundaryLayers`, `TestBoundaryLayersInt4`,
+  `TestSQINT2Routing`, `TestINT3Routing`, `TestINT4Routing`, `TestSkipRouting`,
+  `TestNamingConventions`, `TestSmallModelAllBoundary`, `TestSummary`,
+  `TestRepr`, `TestIdempotency`, `TestIntegration`.
+
+### Design notes
+- Regex patterns match `compressed_loader.py` (`_LAYER_RE`, `_ATTN_RE`, `_MLP_RE`)
+  for naming-convention consistency across loading, routing, and sorting.
+- `down_proj` stays at INT4: it is the FFN output projection and receives the
+  already-quantised MLP output; conservative treatment avoids compounding error
+  at the residual-stream write-back point.
+- `q_norm`, `k_norm`, `input_layernorm` → INT4 (1D scalings; downstream shape
+  check by the actual codec will skip them).
+- Out-of-range `layer_idx >= n_layers` → INT4 (defensive; not reachable with
+  valid model weights but prevents silent mis-routing on unusual exports).
+
+### Net test delta
+2231 passed (W103.2) → **2321 passed** (W103.3, +90). 3 pre-existing failures
+unchanged. Module count stays 84 (no new squish/ file).
+
+# lm_eval-waiver: routing logic only; no codec touched; no model format changed.
+# expected-delta: neutral on lm_eval (no weights changed)
+# validation-run: W103.4 full E2E compress + lm_eval on Qwen2.5-7B
+
+---
+
 ## [9.18.0] — 2026-04-29 — W103.2: SQINT2 Stage-3 SVD + Sparse Residual Correction
 
 ### Added

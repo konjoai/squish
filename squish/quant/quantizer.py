@@ -24,7 +24,8 @@ Backend priority (auto):
 """
 from __future__ import annotations
 
-from typing import NamedTuple
+import re
+from typing import NamedTuple, Optional
 
 import numpy as np
 
@@ -678,6 +679,164 @@ def quantized_matmul_int4(
     if _squish_quant is not None and hasattr(_squish_quant, "quantized_matmul_int4"):
         return _squish_quant.quantized_matmul_int4(w_codes, scales, offsets, x, group_size)
     return _quantized_matmul_int4_numpy(w_codes, scales, offsets, x, group_size)
+
+
+# ---------------------------------------------------------------------------
+# W103.3 — Layer-selective mixed-precision routing
+# ---------------------------------------------------------------------------
+#
+# Design:
+#   The router maps a tensor name (e.g. "model.layers.5.mlp.gate_proj.weight")
+#   to a quantisation format string.  It is the ONLY place where the W103.3
+#   precision assignment rules live; the compress pipeline calls format_for()
+#   once per tensor and dispatches to the correct codec.
+#
+# Regex choices match compressed_loader.py (_LAYER_RE, _ATTN_RE, _MLP_RE) so
+# the same naming conventions work across loading, routing, and sorting.
+# ---------------------------------------------------------------------------
+
+# Matches transformer block indices in a variety of naming conventions:
+#   "model.layers.5."     (Qwen / Llama / Mistral standard)
+#   "transformer.h.5."    (GPT-2 style — dot after h counts as separator)
+#   "model.layers[5]."    (some HF export variants)
+_ROUTE_LAYER_RE = re.compile(r'(?:layers?|\.h)[\.\[](\d+)[\].]?')
+
+# Matches the leaf projection name as the last named component before ".weight".
+# Captures: gate_proj, up_proj, down_proj, q_proj, k_proj, v_proj, o_proj.
+# Does NOT match q_norm, k_norm, input_layernorm, etc. — those fall through to "int4".
+_ROUTE_PROJ_RE = re.compile(
+    r'\.(?P<proj>(?:gate|up|down|q|k|v|o)_proj)\.weight$'
+)
+
+
+class MixedPrecisionRouter:
+    """Routes transformer weight tensor names to SQINT2 / INT3 / INT4 format.
+
+    Implements the W103.3 layer-selective mixed-precision scheme:
+
+        Tensor class                         Format
+        ─────────────────────────────────── ───────
+        Boundary layers (first 2 + last 2)   INT4    conserve output coherence
+        MLP gate_proj, up_proj               SQINT2  high bit-efficiency target
+        Attention Q, K, V, O projections     INT3    validated -3.4pp arc_easy delta
+        Everything else (down_proj, norms…)  INT4    conservative default
+        Non-weight tensors (embed, lm_head)  None    skip quantisation entirely
+
+    "Boundary layers" = transformer block indices {0, 1, n_layers-2, n_layers-1}.
+    First and last two blocks disproportionately determine output coherence at
+    residual stream boundaries; keeping them at INT4 caps quality regression.
+
+    For n_layers < 4 all layers are treated as boundary (entire model at INT4).
+
+    Args:
+        n_layers: total number of transformer decoder blocks.
+
+    Example::
+
+        router = MixedPrecisionRouter(n_layers=32)
+        router.format_for("model.layers.0.self_attn.q_proj.weight")   # "int4"
+        router.format_for("model.layers.5.mlp.gate_proj.weight")      # "sqint2"
+        router.format_for("model.layers.5.self_attn.q_proj.weight")   # "int3"
+        router.format_for("model.layers.5.mlp.down_proj.weight")      # "int4"
+        router.format_for("model.embed_tokens.weight")                 # None
+    """
+
+    # Projections assigned to each non-default format tier.
+    _SQINT2_PROJS: frozenset[str] = frozenset({"gate_proj", "up_proj"})
+    _INT3_PROJS:   frozenset[str] = frozenset({"q_proj", "k_proj", "v_proj", "o_proj"})
+
+    def __init__(self, n_layers: int) -> None:
+        if n_layers < 1:
+            raise ValueError(f"n_layers must be ≥ 1, got {n_layers}")
+        self._n_layers: int = n_layers
+        # For n_layers < 4 every layer is a boundary layer.
+        if n_layers < 4:
+            self._boundary: frozenset[int] = frozenset(range(n_layers))
+        else:
+            self._boundary = frozenset({0, 1, n_layers - 2, n_layers - 1})
+
+    @property
+    def n_layers(self) -> int:
+        """Total number of transformer decoder blocks."""
+        return self._n_layers
+
+    @property
+    def boundary_layers(self) -> frozenset[int]:
+        """Block indices that stay at INT4 regardless of projection type."""
+        return self._boundary
+
+    def format_for(self, tensor_name: str) -> "Optional[str]":
+        """Return the quantisation format for *tensor_name*.
+
+        Args:
+            tensor_name: Dot-separated tensor key as stored in safetensors /
+                         model state-dict.  Examples::
+
+                             "model.layers.5.mlp.gate_proj.weight"
+                             "model.layers.0.self_attn.q_proj.weight"
+                             "model.embed_tokens.weight"
+
+        Returns:
+            ``"sqint2"`` — SQINT2 Stage 1-3 (W103 coherent INT2 + residual)
+            ``"int3"``   — INT3 g=32 (mlx_lm.convert, validated -3.4pp arc_easy)
+            ``"int4"``   — INT4 AWQ g=32 (production baseline, conservative)
+            ``None``     — not a quantisable weight tensor; skip
+
+        Non-``.weight`` tensors (biases, etc.) always return ``None``.
+        Tensors without a layer index (embeddings, lm_head) always return ``None``.
+        """
+        if not tensor_name.endswith(".weight"):
+            return None
+
+        layer_m = _ROUTE_LAYER_RE.search(tensor_name)
+        if layer_m is None:
+            # No layer index — embedding table, lm_head, or global norm.
+            return None
+
+        layer_idx = int(layer_m.group(1))
+
+        # Indices beyond the model's declared range are treated conservatively.
+        if layer_idx >= self._n_layers:
+            return "int4"
+
+        # Boundary layers stay at INT4 unconditionally.
+        if layer_idx in self._boundary:
+            return "int4"
+
+        proj_m = _ROUTE_PROJ_RE.search(tensor_name)
+        if proj_m is None:
+            # Non-projection weight in a non-boundary layer (layer norm, q_norm, …).
+            # Conservative: INT4. Downstream code may skip based on tensor shape.
+            return "int4"
+
+        proj = proj_m.group("proj")
+
+        if proj in self._SQINT2_PROJS:
+            return "sqint2"
+        if proj in self._INT3_PROJS:
+            return "int3"
+        # down_proj and any unrecognised projection → INT4 (conservative output side).
+        return "int4"
+
+    def summary(self, tensor_names: "list[str]") -> "dict[str, int]":
+        """Count how many tensors map to each format across *tensor_names*.
+
+        Useful for compression-plan reporting.
+
+        Returns:
+            Dict mapping format string (or ``"skip"``) to count.
+        """
+        counts: dict[str, int] = {"sqint2": 0, "int3": 0, "int4": 0, "skip": 0}
+        for name in tensor_names:
+            fmt = self.format_for(name)
+            counts["skip" if fmt is None else fmt] += 1
+        return counts
+
+    def __repr__(self) -> str:
+        return (
+            f"MixedPrecisionRouter(n_layers={self._n_layers}, "
+            f"boundary={sorted(self._boundary)})"
+        )
 
 
 if __name__ == "__main__":

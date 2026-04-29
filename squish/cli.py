@@ -2547,6 +2547,30 @@ def cmd_compress(args):  # pragma: no cover
             )
         return
 
+    if _compress_format == "sqint2":  # pragma: no cover
+        # W103.3 — SQINT2 layer-selective mixed precision:
+        #   MLP gate_proj, up_proj       → SQINT2 (coherent INT2 + rank-16 residual)
+        #   Attention Q/K/V/O projections → INT3 g=32
+        #   Boundary layers (first 2 + last 2 transformer blocks) → INT4
+        #   Everything else              → INT4 (conservative default)
+        #
+        # Requires: squish.quant.sqint2.compress_weight + MixedPrecisionRouter.
+        # The compress inner path reads _sqint2_router from args to dispatch per tensor.
+        # Hardware gate: E2E on Qwen2.5-1.5B, disk ≤ 50% of INT4.
+        try:
+            from squish.quant.quantizer import MixedPrecisionRouter
+        except ImportError as _sqint2_import_err:
+            _die(f"SQINT2 routing unavailable: {_sqint2_import_err}")
+        # n_layers will be resolved once the model config is loaded inside
+        # _cmd_compress_inner; store a factory on args so inner can finish the build.
+        args._sqint2_router_cls = MixedPrecisionRouter
+        args._sqint2_format = True
+        # INT4 is the fallback for boundary / non-routed tensors, so enable that path.
+        args.int4 = True
+        if not getattr(args, "int4_group_size", None):
+            args.int4_group_size = 32
+        _compress_format = "int4"   # inner compress runs INT4 pipeline; sqint2 overrides per-tensor
+
     if _compress_format == "mixed_attn":
         # mixed_attn: keep attention projection weights (q/k/v/o) as FP16 passthrough,
         # INT4 + AWQ g=16 everything else (MLP, embed, lm_head).
@@ -6039,7 +6063,7 @@ Ollama drop-in:
     )
     p_compress.add_argument(
         "--format",
-        choices=["int8", "int4", "int3", "astc", "hybrid", "mixed_attn", "aqlm"],
+        choices=["int8", "int4", "int3", "astc", "hybrid", "mixed_attn", "aqlm", "sqint2"],
         default=None,
         dest="compress_format",
         metavar="FORMAT",
@@ -6048,6 +6072,8 @@ Ollama drop-in:
             "int4 (default, 4-bit group quantisation + AWQ), "
             "int8 (8-bit group quantisation), "
             "int3 (native MLX 3-bit, no AWQ), "
+            "sqint2 (W103.3 layer-selective mixed precision: SQINT2 for MLP gate/up, "
+            "INT3 for attention Q/K/V/O, INT4 for boundary layers — ~2.15 bpw target), "
             "mixed_attn (FP16 attention q/k/v/o + INT4 g=16 MLP — best quality/GB), "
             "aqlm (Additive Quantisation LM, K-means codebook, ~2 bpw — "
             "INT2 catalog 'ultra' tier; target <6pp arc_easy delta vs INT4; "

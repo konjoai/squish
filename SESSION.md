@@ -47,6 +47,12 @@
   9 dB (was 12 dB — past the 2-bit Lloyd-Max ceiling for Gaussian). Module count 83 → 84.
   Zero new failures in full suite (2185 passed; 3 pre-existing `importlib.metadata`
   failures unchanged).
+- **W103.3** (2026-04-29) — `MixedPrecisionRouter` added to `squish/quant/quantizer.py`
+  (in-place, module count stays 84). `--format sqint2` wired in `cli.py`. 90 new tests
+  in `tests/test_sqint2_router.py`. Full suite: **2321 passed / 3 pre-existing / 43 skipped**.
+  Routing spec: boundary layers (first 2 + last 2) → INT4; MLP gate/up → SQINT2;
+  attn Q/K/V/O → INT3; everything else → INT4; embeddings/lm_head → None.
+  For Qwen2.5-7B (28 layers): 48 SQINT2, 96 INT3, 52 INT4, 3 skip per 199 weight tensors.
 - **W103.2** (2026-04-29) — SVD rank-16 + sparse-1% residual correction in `squish/quant/sqint2.py`
   (in-place extension; module count stays 84). 46 new tests added to `tests/test_sqint2.py`
   (110 total in file, all passing). Joint SNR **10.21–10.23 dB** (gate ≥ 10.0 dB ✓) across
