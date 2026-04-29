@@ -242,6 +242,14 @@ the SQINT2 unpack path. Module count: 83 → 84 (ceiling 125 ✅).
   → INT4; MLP gate_proj/up_proj → SQINT2; attn Q/K/V/O → INT3; else → INT4.
   E2E compress gate (lm_eval on Qwen2.5-7B) deferred to W103.4.
 - W103.4 — Inference path (Metal/Rust fused kernel) + lm_eval gate on Qwen2.5-7B.
+  - ✅ **W103.4a (2026-04-29) — SHIPPED.** `save_sqint2_layer` / `load_sqint2_layer`
+    in `sqint2.py`; npy-dir format with 4 mandatory + 5 optional `.npy` files; meta
+    header (fp64, 16 slots, version=1.0); SQINT2 dispatch in `compressed_loader.py`
+    `_dequantize_npy_dir` between AQLM and passthrough-F16; `_TENSOR_SUFFIX_RE`
+    extended; 27 new tests in `tests/test_sqint2_loader.py`. 2321 → 2348 passing.
+  - W103.4b — Rust low-rank GEMV (`sqint2_residual_gemv` in `squish_quant_rs`).
+  - W103.4c — Metal NF2 fused-dequant GEMV kernel + `SQINT2Linear` mlx Module.
+  - W103.4d — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65% lm_eval ship gate.
 
 **Validation order (hardware-aware):**
 - Synthetic SNR (Stage 1+2) → unit test, no hardware.

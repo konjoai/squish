@@ -137,6 +137,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Tuple
 
 import numpy as np
@@ -156,6 +157,10 @@ __all__ = [
     "decompress_weight",
     "compress_weights_sqint2",
     "snr_db",
+    "save_sqint2_layer",
+    "load_sqint2_layer",
+    "SQINT2_FORMAT_VERSION",
+    "SQINT2_SUFFIXES",
 ]
 
 
@@ -1153,6 +1158,11 @@ def compress_weights_sqint2(
             arrays[f"{sk}__sqint2_idx"] = layer.indices
             arrays[f"{sk}__sqint2_scales"] = layer.scales
             arrays[f"{sk}__sqint2_zp"] = layer.zero_points
+            # Per-layer meta header (W103.4a). Encodes cfg.seed, which
+            # `load_sqint2_layer` needs to reconstruct the Hadamard rotation
+            # deterministically — without it, decompression rebuilds H
+            # against the default seed and produces incoherent output.
+            arrays[f"{sk}__sqint2_meta"] = _meta_array(layer)
             if layer.residual_L is not None:
                 arrays[f"{sk}__sqint2_L"] = layer.residual_L
                 arrays[f"{sk}__sqint2_R"] = layer.residual_R
@@ -1181,3 +1191,264 @@ def compress_weights_sqint2(
             fmt_counts["skip"] += 1
 
     return arrays, manifest, fmt_counts
+
+
+# ── W103.4a — Disk serialization (npy-dir format) ─────────────────────────────
+#
+# A SQINT2Layer is persisted as a small set of `.npy` files sharing a common
+# safe-key prefix `{sk}` and a `__sqint2_*` suffix. Detection in
+# `squish/quant/compressed_loader.py` triggers on `{sk}__sqint2_idx.npy`.
+#
+#   {sk}__sqint2_idx.npy        uint8   (out, in_padded // 4)   packed indices
+#   {sk}__sqint2_scales.npy     fp32    (out, n_groups)         per-group scales
+#   {sk}__sqint2_zp.npy         fp32    (out, n_groups)         per-group zp
+#   {sk}__sqint2_meta.npy       fp64    (16,)                   header — see below
+#   {sk}__sqint2_L.npy       optional fp16/fp32 (out_pad, r) SVD left factor
+#   {sk}__sqint2_R.npy       optional fp16/fp32 (r, in_pad)  SVD right factor
+#   {sk}__sqint2_srows.npy      optional int32  (k,)            COO rows
+#   {sk}__sqint2_scols.npy      optional int32  (k,)            COO cols
+#   {sk}__sqint2_svals.npy      optional fp16   (k,)            COO values
+#
+# Meta layout (float64 to keep one homogeneous array — config ints fit exactly
+# up to 2^53; using fp64 also accommodates `sparse_frac`):
+#
+#   [0]  format version (= SQINT2_FORMAT_VERSION)
+#   [1]  in_features
+#   [2]  out_features
+#   [3]  group_size
+#   [4]  seed
+#   [5]  refine_iters
+#   [6]  rotate_left   (0.0 or 1.0)
+#   [7]  rotate_right  (0.0 or 1.0)
+#   [8]  residual_rank
+#   [9]  residual_factor_dtype_code (16.0 = fp16, 32.0 = fp32)
+#   [10] sparse_frac
+#   [11..15] reserved (zero)
+#
+# Forward compatibility: readers must check meta[0] and refuse versions newer
+# than the highest they support. Future fields may use the reserved slots.
+# ──────────────────────────────────────────────────────────────────────────────
+
+SQINT2_FORMAT_VERSION: float = 1.0
+
+# Tuple of suffixes (without the leading `{sk}`) — useful for tests and
+# discovery code that needs to enumerate or clean up SQINT2 layer files.
+SQINT2_SUFFIXES: Tuple[str, ...] = (
+    "__sqint2_idx.npy",
+    "__sqint2_scales.npy",
+    "__sqint2_zp.npy",
+    "__sqint2_meta.npy",
+    "__sqint2_L.npy",
+    "__sqint2_R.npy",
+    "__sqint2_srows.npy",
+    "__sqint2_scols.npy",
+    "__sqint2_svals.npy",
+)
+
+_DTYPE_CODE_TO_NAME = {16.0: "fp16", 32.0: "fp32"}
+_DTYPE_NAME_TO_CODE = {v: k for k, v in _DTYPE_CODE_TO_NAME.items()}
+
+
+def _meta_array(layer: "SQINT2Layer") -> np.ndarray:
+    cfg = layer.cfg
+    meta = np.zeros(16, dtype=np.float64)
+    meta[0] = SQINT2_FORMAT_VERSION
+    meta[1] = float(layer.in_features)
+    meta[2] = float(layer.out_features)
+    meta[3] = float(cfg.group_size)
+    meta[4] = float(cfg.seed)
+    meta[5] = float(cfg.refine_iters)
+    meta[6] = 1.0 if cfg.rotate_left else 0.0
+    meta[7] = 1.0 if cfg.rotate_right else 0.0
+    meta[8] = float(cfg.residual_rank)
+    meta[9] = float(_DTYPE_NAME_TO_CODE[cfg.residual_factor_dtype])
+    meta[10] = float(cfg.sparse_frac)
+    return meta
+
+
+def save_sqint2_layer(layer: "SQINT2Layer", tensor_dir, safe_key: str) -> None:
+    """Persist a SQINT2Layer to disk as a set of `.npy` files.
+
+    Writes the four mandatory files (`idx`, `scales`, `zp`, `meta`) plus any
+    optional residual / sparse files present on the layer. The directory must
+    already exist; tensors are written with `np.save` (no compression — these
+    files are mmap'd at load time for fast cold-start, which precludes zip
+    compression at the npy-file level).
+
+    Args:
+        layer: SQINT2Layer to serialise.
+        tensor_dir: pathlib.Path-like directory that will receive the files.
+        safe_key: filesystem-safe tensor key (the `{sk}` prefix; see
+                  `squish/quant/compressed_loader.py:_safe_key_to_original`).
+    """
+    tensor_dir = Path(tensor_dir)
+    if not tensor_dir.is_dir():
+        raise FileNotFoundError(f"tensor_dir does not exist: {tensor_dir}")
+    if "/" in safe_key or "\\" in safe_key:
+        raise ValueError(
+            f"safe_key must not contain path separators, got {safe_key!r}"
+        )
+
+    indices = np.ascontiguousarray(layer.indices, dtype=np.uint8)
+    scales = np.ascontiguousarray(layer.scales, dtype=np.float32)
+    zero_points = np.ascontiguousarray(layer.zero_points, dtype=np.float32)
+
+    np.save(tensor_dir / f"{safe_key}__sqint2_idx.npy", indices)
+    np.save(tensor_dir / f"{safe_key}__sqint2_scales.npy", scales)
+    np.save(tensor_dir / f"{safe_key}__sqint2_zp.npy", zero_points)
+    np.save(tensor_dir / f"{safe_key}__sqint2_meta.npy", _meta_array(layer))
+
+    has_lowrank = layer.residual_L is not None and layer.residual_R is not None
+    if has_lowrank:
+        factor_dtype = np.float16 if layer.cfg.residual_factor_dtype == "fp16" else np.float32
+        L = np.ascontiguousarray(layer.residual_L, dtype=factor_dtype)
+        R = np.ascontiguousarray(layer.residual_R, dtype=factor_dtype)
+        np.save(tensor_dir / f"{safe_key}__sqint2_L.npy", L)
+        np.save(tensor_dir / f"{safe_key}__sqint2_R.npy", R)
+
+    has_sparse = (
+        layer.sparse_rows is not None
+        and layer.sparse_cols is not None
+        and layer.sparse_vals is not None
+    )
+    if has_sparse:
+        np.save(
+            tensor_dir / f"{safe_key}__sqint2_srows.npy",
+            np.ascontiguousarray(layer.sparse_rows, dtype=np.int32),
+        )
+        np.save(
+            tensor_dir / f"{safe_key}__sqint2_scols.npy",
+            np.ascontiguousarray(layer.sparse_cols, dtype=np.int32),
+        )
+        np.save(
+            tensor_dir / f"{safe_key}__sqint2_svals.npy",
+            np.ascontiguousarray(layer.sparse_vals, dtype=np.float16),
+        )
+
+
+def load_sqint2_layer(tensor_dir, safe_key: str) -> "SQINT2Layer":
+    """Reconstruct a SQINT2Layer from on-disk `.npy` files.
+
+    Inverse of :func:`save_sqint2_layer`. Validates the format version,
+    reconstructs `SQINT2Config` from the meta header, and attaches optional
+    residual / sparse arrays when their files are present.
+
+    Args:
+        tensor_dir: directory containing the `{safe_key}__sqint2_*.npy` files.
+        safe_key:   safe-key prefix.
+
+    Returns:
+        SQINT2Layer with cfg, indices, scales, zero_points populated. Residual
+        and sparse fields are populated when their files are present and zero
+        otherwise (matching the contract of :func:`compress_weight`).
+    """
+    tensor_dir = Path(tensor_dir)
+
+    idx_path = tensor_dir / f"{safe_key}__sqint2_idx.npy"
+    if not idx_path.exists():
+        raise FileNotFoundError(
+            f"missing SQINT2 idx file: {idx_path}. A SQINT2 layer requires "
+            f"`__sqint2_idx.npy`, `__sqint2_scales.npy`, `__sqint2_zp.npy`, "
+            f"and `__sqint2_meta.npy`."
+        )
+    meta_path = tensor_dir / f"{safe_key}__sqint2_meta.npy"
+    if not meta_path.exists():
+        raise FileNotFoundError(f"missing SQINT2 meta file: {meta_path}")
+
+    meta = np.load(meta_path)
+    if meta.shape != (16,):
+        raise ValueError(
+            f"SQINT2 meta has unexpected shape {meta.shape}, expected (16,)"
+        )
+    version = float(meta[0])
+    if version > SQINT2_FORMAT_VERSION:
+        raise ValueError(
+            f"SQINT2 file format version {version} is newer than this build "
+            f"supports ({SQINT2_FORMAT_VERSION}). Upgrade `squish`."
+        )
+    if version < 1.0:
+        raise ValueError(f"SQINT2 file format version {version} is invalid (< 1.0)")
+
+    in_features = int(meta[1])
+    out_features = int(meta[2])
+    dtype_code = float(meta[9])
+    if dtype_code not in _DTYPE_CODE_TO_NAME:
+        raise ValueError(
+            f"unknown residual_factor_dtype_code {dtype_code} in meta"
+        )
+
+    cfg = SQINT2Config(
+        group_size=int(meta[3]),
+        seed=int(meta[4]),
+        refine_iters=int(meta[5]),
+        rotate_left=bool(meta[6]),
+        rotate_right=bool(meta[7]),
+        residual_rank=int(meta[8]),
+        residual_factor_dtype=_DTYPE_CODE_TO_NAME[dtype_code],
+        sparse_frac=float(meta[10]),
+    )
+
+    indices = np.load(idx_path)
+    scales = np.load(tensor_dir / f"{safe_key}__sqint2_scales.npy")
+    zero_points = np.load(tensor_dir / f"{safe_key}__sqint2_zp.npy")
+
+    if indices.dtype != np.uint8:
+        raise ValueError(f"SQINT2 indices must be uint8, got {indices.dtype}")
+    if scales.dtype != np.float32:
+        scales = scales.astype(np.float32, copy=False)
+    if zero_points.dtype != np.float32:
+        zero_points = zero_points.astype(np.float32, copy=False)
+
+    in_padded = _round_up(in_features, cfg.group_size)
+    expected_idx_shape = (out_features, in_padded // 4)
+    if indices.shape != expected_idx_shape:
+        raise ValueError(
+            f"SQINT2 indices shape {indices.shape} does not match meta "
+            f"(out_features={out_features}, in_padded//4={in_padded // 4}); "
+            f"expected {expected_idx_shape}"
+        )
+
+    resL_path = tensor_dir / f"{safe_key}__sqint2_L.npy"
+    resR_path = tensor_dir / f"{safe_key}__sqint2_R.npy"
+    residual_L = np.load(resL_path) if resL_path.exists() else None
+    residual_R = np.load(resR_path) if resR_path.exists() else None
+    if (residual_L is None) != (residual_R is None):
+        raise ValueError(
+            "SQINT2 residual factors are partially present — both `__sqint2_L.npy` "
+            "and `__sqint2_R.npy` must be saved together (or neither)."
+        )
+
+    srows_path = tensor_dir / f"{safe_key}__sqint2_srows.npy"
+    scols_path = tensor_dir / f"{safe_key}__sqint2_scols.npy"
+    svals_path = tensor_dir / f"{safe_key}__sqint2_svals.npy"
+    sparse_present = [p.exists() for p in (srows_path, scols_path, svals_path)]
+    if any(sparse_present) and not all(sparse_present):
+        raise ValueError(
+            "SQINT2 sparse triplet is incomplete — `srows`, `scols`, `svals` "
+            "must all be present together (or none)."
+        )
+    if all(sparse_present):
+        sparse_rows = np.load(srows_path).astype(np.int32, copy=False)
+        sparse_cols = np.load(scols_path).astype(np.int32, copy=False)
+        sparse_vals = np.load(svals_path).astype(np.float16, copy=False)
+        if not (sparse_rows.shape == sparse_cols.shape == sparse_vals.shape):
+            raise ValueError(
+                f"SQINT2 sparse triplet shape mismatch: rows={sparse_rows.shape}, "
+                f"cols={sparse_cols.shape}, vals={sparse_vals.shape}"
+            )
+    else:
+        sparse_rows = sparse_cols = sparse_vals = None
+
+    return SQINT2Layer(
+        indices=indices,
+        scales=scales,
+        zero_points=zero_points,
+        in_features=in_features,
+        out_features=out_features,
+        cfg=cfg,
+        residual_L=residual_L,
+        residual_R=residual_R,
+        sparse_rows=sparse_rows,
+        sparse_cols=sparse_cols,
+        sparse_vals=sparse_vals,
+    )

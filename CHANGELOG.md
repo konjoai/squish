@@ -5,6 +5,73 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.21.0] — 2026-04-29 — W103.4a: SQINT2 Disk Serialisation + Loader Wiring
+
+### Added
+- **`squish/quant/sqint2.py` — `save_sqint2_layer` / `load_sqint2_layer`**:
+  npy-dir disk format for `SQINT2Layer`. One `.npy` file per array sharing a
+  safe-key prefix and a `__sqint2_*` suffix. Mandatory files: `idx`, `scales`,
+  `zp`, `meta`. Optional (Stage 3): `L`, `R`, `srows`, `scols`, `svals`.
+  Meta header is a 16-element `float64` array recording version, in/out
+  features, full `SQINT2Config` (including the seed needed to reconstruct the
+  Hadamard rotation deterministically), and forward-compat reserved slots.
+  Format is mmap-friendly (uncompressed `.npy`) for sub-second cold load on
+  Apple Silicon.
+
+- **`squish/quant/sqint2.py` — `SQINT2_FORMAT_VERSION`, `SQINT2_SUFFIXES`**:
+  public constants for downstream consumers (test fixtures, cleanup scripts,
+  compress dispatch).
+
+- **`squish/quant/sqint2.py` — `compress_weights_sqint2` now emits
+  `__sqint2_meta`**: per-layer meta is mandatory for `load_sqint2_layer` to
+  reconstruct cfg.seed and rebuild the per-layer Hadamard rotation. Without
+  meta, decompression rebuilds H against the default seed and produces
+  incoherent output. One-line addition; no behaviour change for existing
+  callers that don't reload.
+
+- **`squish/quant/compressed_loader.py`** — SQINT2 dispatch in
+  `_dequantize_npy_dir`: detects `{sk}__sqint2_idx.npy`, calls
+  `load_sqint2_layer` + `decompress_weight`, returns fp32 weight reshaped to
+  `original_shape`. Sits between AQLM and passthrough-F16 in the format
+  hierarchy. The native `SQINT2Linear` inference path lands in W103.4c —
+  this step produces a dense reconstruction for compatibility with every
+  existing callsite that currently consumes INT4-dequantised weights.
+
+- **`squish/quant/compressed_loader.py`** — `_TENSOR_SUFFIX_RE` extended
+  with the nine SQINT2 suffixes so `_collect_tensor_keys` discovers SQINT2
+  layers during npy-dir scan.
+
+- **`tests/test_sqint2_loader.py`** — 27 new tests across six classes:
+  `TestRoundTripStage12`, `TestRoundTripStage3`, `TestMetaHeader`,
+  `TestErrorPaths`, `TestSuffixes`, `TestCompressedLoaderIntegration`.
+  Covers Stage 1+2 round-trip, full Stage 3 (rank-16 SVD + sparse 1%)
+  round-trip, meta version handling, partial-file rejection,
+  path-traversal rejection, idx shape/dtype validation, and end-to-end
+  fp32 reconstruction through `_dequantize_npy_dir`.
+
+### Design notes
+- **Why one `.npy` per array, not one `.npz`**: matches QuIP#/AQLM
+  precedent in this codebase, keeps each tensor mmap-able for cold-start,
+  and lets `_collect_tensor_keys` discover layers in a single
+  `os.scandir` pass.
+- **Why `float64` meta**: one homogeneous array. Config ints are exact in
+  fp64 up to 2^53; same array carries `sparse_frac` (float). Avoids a
+  separate JSON sidecar.
+- **Forward compat**: `SQINT2_FORMAT_VERSION = 1.0`. Loader rejects
+  newer versions with a clear "upgrade `squish`" error and rejects
+  `< 1.0`. Five reserved meta slots for future fields.
+
+### Net test delta
+2367 passed (W103.3 completion) → **2394 passed** (W103.4a, +27).
+3 pre-existing `importlib.metadata` failures unchanged. Module count
+stays 84/125.
+
+# lm_eval-waiver: serialisation only; no codec touched; no model format changed.
+# expected-delta: neutral on lm_eval (no weights changed)
+# validation-run: W103.4d full E2E compress + lm_eval on Qwen2.5-7B
+
+---
+
 ## [9.20.0] — 2026-04-29 — W103.3 completion: compress_weights_sqint2 + pure-NumPy codecs
 
 ### Added

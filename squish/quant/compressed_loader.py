@@ -22,6 +22,9 @@ Quantization format hierarchy (auto-detected from file suffixes):
   Passthrough F16  — __pt.npy  (lossless, no quantization)
   QuIP# E8         — __quip_e8.npy
   AQLM             — __aqlm_idx.npy
+  SQINT2           — __sqint2_idx.npy (W103.4: Hadamard + NF2 + low-rank
+                                        residual; dequantises to fp32 here,
+                                        native Metal path lands in W103.4c)
 
 Memory behaviour (non-INT4-native path):
   - The npz zipfile index is held in RAM (~kilobytes for 700 keys).
@@ -326,7 +329,16 @@ _MLX_CACHE_READY  = ".squish_ready"         # sentinel alongside the safetensors
 
 # Matches the suffix that identifies a quantised-tensor component file.
 # Groups: __q.npy, __s.npy, __shape.npy, __pt.npy, and their .zst variants.
-_TENSOR_SUFFIX_RE = re.compile(r'__(q\d?|s|shape|pt|quip_e8|quip_res|quip_rot|aqlm_idx|aqlm_cb)\.npy(?:\.zst)?$')
+_TENSOR_SUFFIX_RE = re.compile(
+    r'__('
+    r'q\d?|s|shape|pt|'
+    r'quip_e8|quip_res|quip_rot|'
+    r'aqlm_idx|aqlm_cb|'
+    r'sqint2_idx|sqint2_scales|sqint2_zp|sqint2_meta|'
+    r'sqint2_L|sqint2_R|'
+    r'sqint2_srows|sqint2_scols|sqint2_svals'
+    r')\.npy(?:\.zst)?$'
+)
 
 # Regexes for assigning load-order priority.
 _ATTN_RE  = re.compile(r'self_attn|(?:^|__)(?:q|k|v|o)_proj|attn_(?:q|k|v|o)|_attention|mha_')
@@ -694,6 +706,24 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
             return arr_f32.reshape(original_shape)
         except Exception:
             pass  # fall through to other loaders if AQLM decode fails
+
+    # ── SQINT2: Hadamard + NF2 + low-rank residual (W103.4a) ────────────────
+    # Detection: presence of `{sk}__sqint2_idx.npy`. Reconstruction goes
+    # through `decompress_weight()` and returns fp32 in `original_shape`.
+    # The native SQINT2Linear inference path lands in W103.4c; this path
+    # produces a BF16-compatible dense reconstruction so any callsite that
+    # currently consumes INT4-dequantised weights also works for SQINT2.
+    sqint2_idx_path = tensor_dir / f"{sk}__sqint2_idx.npy"
+    if _npy_exists(sqint2_idx_path):
+        from squish.quant.sqint2 import decompress_weight, load_sqint2_layer
+
+        layer = load_sqint2_layer(tensor_dir, sk)
+        arr_f32 = decompress_weight(layer).astype(np.float32, copy=False)
+        if _npy_exists(shape_path):
+            original_shape = tuple(int(x) for x in _load_npy_path(shape_path).tolist())
+        else:
+            original_shape = (layer.out_features, layer.in_features)
+        return arr_f32.reshape(original_shape)
 
     pt_path = tensor_dir / f"{sk}__pt.npy"
     if _npy_exists(pt_path):
