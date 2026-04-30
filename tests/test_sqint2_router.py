@@ -412,9 +412,9 @@ class TestIntegration:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 84, (
-            f"Module count = {count}, expected 84 after W103.3. "
-            "W103.3 adds routing in-place to quantizer.py — no new squish/ files."
+        assert count == 85, (
+            f"Module count = {count}, expected 85 after W103.4c "
+            "(W103.4c adds squish/quant/sqint2_linear.py)."
         )
         assert count <= 125
 

@@ -5,6 +5,81 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.23.0] — 2026-04-29 — W103.4c: Metal NF2 Fused-Dequant GEMV + SQINT2Linear
+
+### Added
+- **`squish/quant/sqint2_linear.py`** — new module (84 → 85). Drop-in MLX
+  inference module for SQINT2-compressed weights:
+
+  - **`SQINT2Linear(nn.Module)`** — Apple-Silicon-native MLX module. Forward
+    computes ``y = W · x`` from the compressed representation without ever
+    materialising the full BF16/fp32 weight matrix.
+  - **`SQINT2Linear.from_layer(layer, bias=None)`** — canonical constructor
+    from a `SQINT2Layer`. Re-derives Hadamard rotations deterministically
+    from `cfg.seed`.
+  - **`_NF2_GEMV_KERNEL_SOURCE`** — Metal kernel source (one thread per output
+    row, streams 4-codes-per-byte packed indices, in-shader NF2 LUT lookup,
+    per-group asymmetric dequant, dot-product reduction). Compiled lazily via
+    `mx.fast.metal_kernel`. Cache the compile failure so subsequent calls
+    short-circuit to the fallback path.
+  - **`_base_gemv_mlx`** — pure-MLX dequant-then-matmul fallback for batched
+    `x`, older mlx builds, and Metal-kernel compile failures.
+  - **`_residual_gemv`** — in-MLX rank-vector path
+    `Rx = R · x; y = L · Rx`, then a `at[..., rows].add(vals · x[cols])`
+    sparse scatter. Avoids the (M, N) materialisation of `L · R` (~64 MB at
+    M=N=4096, r=16 → ~16 KB rank-vector).
+  - **`_base_gemv_numpy`** — NumPy reference of the base GEMV used by tests.
+
+  Forward path:
+  ```
+  y = H_leftᵀ · ( NF2_dequant(idx, scales, zp) · (H_right · x_pad)
+                + L · R · (H_right · x_pad)
+                + sparse · (H_right · x_pad) )
+  ```
+
+- **`tests/test_sqint2_linear.py`** — 22 new tests across five classes:
+  `TestBaseGemvNumpy`, `TestImport`, `TestForwardParity`, `TestProperties`,
+  `TestModuleCount`. Forward parity vs `decompress_weight(layer) @ x` to
+  1e-3 abs/rel. Covers single-vector and batched x, no-residual / lowrank-only
+  / sparse-only routes, `rotate_left=False`, `rotate_right=False`, padded
+  in_features, bias add, x-shape errors. mlx-gated tests skip cleanly on
+  x86 / non-Apple-Silicon CI via `pytest.importorskip("mlx.core")`.
+
+### Updated
+- **`tests/test_sqint2_router.py`** — module-count gate 84 → 85.
+- **`tests/test_sqint2.py`** — module-count gate 84 → 85.
+
+### Design notes
+- **Why not `mx.quantized_matmul`**: MLX's `mx.quantized_matmul` does not
+  expose a 2-bit code path. Building one in MLX-native form would require
+  upstreaming a kernel; W103.4c instead ships a custom `mx.fast.metal_kernel`
+  that fuses the NF2 lookup into the GEMV.
+- **Why one thread per output row**: smallest sensible Konjo kernel — no
+  tiling, no shared memory, no thread-block coordination. At 4096 × 4096
+  weights with gs=32 this is ~537 M FMAs across 4096 rows; well within
+  one Metal command-buffer dispatch budget on M-series silicon. Tiled
+  variants are deferred to W103.4e if profiling demands them.
+- **Why MLX path for batched x**: launching the single-row kernel B times
+  has worse overhead than the MLX dequant-then-matmul path for typical
+  decode batches (B ≤ 4). At prefill, the larger sequences amortise the
+  W_rot materialisation cost.
+- **Why MLX residual rather than the Rust path**: avoids a numpy↔mlx
+  round-trip mid-forward. The Rust kernel from W103.4b remains the
+  canonical CPU path (compress-time validation, x86 CI parity) and is
+  continuously tested by `test_sqint2_residual_gemv.py`.
+
+### Net test delta
+2415 passed (W103.4b) → **2437 passed** (W103.4c, +22). 12 of the new
+tests are skipped on x86 CI via mlx-importorskip (run on Apple Silicon).
+Module count **84 → 85** (one new file: `sqint2_linear.py`); ceiling
+unchanged at 125.
+
+# lm_eval-waiver: inference module + Metal kernel; no codec or model format change.
+# expected-delta: neutral on lm_eval (forward output matches decompress_weight @ x)
+# validation-run: W103.4d full E2E compress + lm_eval on Qwen2.5-7B
+
+---
+
 ## [9.22.0] — 2026-04-29 — W103.4b: Rust SQINT2 Residual GEMV
 
 ### Added

@@ -23,10 +23,11 @@
 ---
 
 ## Module count
-- Python files in `squish/` (excluding experimental/__pycache__): **84** (post-W103.1).
+- Python files in `squish/` (excluding experimental/__pycache__): **85** (post-W103.4c).
   - Squash separation (2026-04-28): 112 → 68 raw / 83 with experimental excluded.
   - W103.1 (2026-04-29): 83 → 84 (+`squish/quant/sqint2.py`).
-- Ceiling: 125 (CLAUDE.md). Headroom: 41.
+  - W103.4c (2026-04-29): 84 → 85 (+`squish/quant/sqint2_linear.py`).
+- Ceiling: 125 (CLAUDE.md). Headroom: 40.
 
 ---
 
@@ -63,6 +64,19 @@
   `_TENSOR_SUFFIX_RE` extended. Module count stays 84 (in-place). 27 new tests in
   `tests/test_sqint2_loader.py`. Full suite: **2394 passed / 3 pre-existing / 35
   skipped** (2367 → 2394, +27).
+- **W103.4c** (2026-04-29) — New module `squish/quant/sqint2_linear.py`
+  (`SQINT2Linear` MLX nn.Module). Apple-Silicon inference path for SQINT2-
+  compressed weights via `mx.fast.metal_kernel` fused-dequant GEMV (one thread
+  per output row, in-shader NF2 LUT, per-group asymmetric, no W_rot
+  materialisation). Pure-MLX dequant+matmul fallback for batched x and
+  non-Metal builds. Residual leg consumes the same rank-vector trick as
+  W103.4b but in MLX (`mx.matmul(L, mx.matmul(R, x_rot))` + `at[...].add()`
+  scatter for sparse COO). Hadamard rotations re-derived deterministically
+  from `cfg.seed`. 22 new tests in `tests/test_sqint2_linear.py`; mlx tests
+  importorskip on x86. Module count **84 → 85**. Forward output matches
+  `decompress_weight(layer) @ x` to 1e-3 abs/rel (fp16 storage roundoff).
+  Full suite: **2437 passed** (2415 → 2437, +22). Next: W103.4d — end-to-end
+  compress on Qwen2.5-7B + arc_easy ≥ 65% lm_eval ship gate.
 - **W103.4b** (2026-04-29) — `sqint2_residual_gemv_f32` in
   `squish_quant_rs/src/lib.rs` (Rayon-parallel L·R GEMV + serial COO scatter, f64
   accumulator, bounds-checked) + Python wrapper `sqint2_residual_gemv` in

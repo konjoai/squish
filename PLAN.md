@@ -252,7 +252,16 @@ the SQINT2 unpack path. Module count: 83 → 84 (ceiling 125 ✅).
     f64 accumulator); Python wrapper `sqint2_residual_gemv` in `sqint2.py` with
     pure-NumPy fallback; 21 new tests in `tests/test_sqint2_residual_gemv.py`
     (Rust ↔ NumPy parity 1e-5 abs / 1e-4 rel). Module count stays 84.
-  - W103.4c — Metal NF2 fused-dequant GEMV kernel + `SQINT2Linear` mlx Module.
+  - ✅ **W103.4c (2026-04-29) — SHIPPED.** New module
+    `squish/quant/sqint2_linear.py` (`SQINT2Linear` nn.Module): Metal
+    fused-dequant NF2 GEMV kernel via `mx.fast.metal_kernel` (one thread per
+    output row, streams packed 2-bit codes, NF2 LUT in const memory) + pure-MLX
+    dequant-then-matmul fallback for batched x and non-Metal builds. Residual
+    leg uses MLX `mx.matmul(L, mx.matmul(R, x_rot))` for low-rank and
+    `at[...].add()` scatter for sparse COO. Includes Hadamard re-derivation
+    from `cfg.seed`. 22 new tests in `tests/test_sqint2_linear.py` (mlx tests
+    importorskip on non-Apple-Silicon). Module count 84 → 85. Forward output
+    matches `decompress_weight(layer) @ x` to 1e-3 abs/rel (fp16 storage).
   - W103.4d — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65% lm_eval ship gate.
 
 **Validation order (hardware-aware):**
