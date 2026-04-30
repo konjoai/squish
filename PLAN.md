@@ -247,7 +247,11 @@ the SQINT2 unpack path. Module count: 83 → 84 (ceiling 125 ✅).
     header (fp64, 16 slots, version=1.0); SQINT2 dispatch in `compressed_loader.py`
     `_dequantize_npy_dir` between AQLM and passthrough-F16; `_TENSOR_SUFFIX_RE`
     extended; 27 new tests in `tests/test_sqint2_loader.py`. 2321 → 2348 passing.
-  - W103.4b — Rust low-rank GEMV (`sqint2_residual_gemv` in `squish_quant_rs`).
+  - ✅ **W103.4b (2026-04-29) — SHIPPED.** `sqint2_residual_gemv_f32` in
+    `squish_quant_rs/src/lib.rs` (Rayon-parallel L·R GEMV + serial COO scatter,
+    f64 accumulator); Python wrapper `sqint2_residual_gemv` in `sqint2.py` with
+    pure-NumPy fallback; 21 new tests in `tests/test_sqint2_residual_gemv.py`
+    (Rust ↔ NumPy parity 1e-5 abs / 1e-4 rel). Module count stays 84.
   - W103.4c — Metal NF2 fused-dequant GEMV kernel + `SQINT2Linear` mlx Module.
   - W103.4d — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65% lm_eval ship gate.
 

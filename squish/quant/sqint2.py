@@ -156,6 +156,7 @@ __all__ = [
     "compress_weight",
     "decompress_weight",
     "compress_weights_sqint2",
+    "sqint2_residual_gemv",
     "snr_db",
     "save_sqint2_layer",
     "load_sqint2_layer",
@@ -884,6 +885,180 @@ def decompress_weight(layer: SQINT2Layer) -> np.ndarray:
 
     # Step 5: strip column padding.
     return W_recon_padded[:, : layer.in_features].astype(np.float32, copy=False)
+
+
+# ── W103.4b — SQINT2 residual GEMV (rotated frame, decode hot path) ──────────
+#
+# The SQINT2Linear inference path (W103.4c) factors the GEMV into:
+#
+#     y_unrot = H_leftᵀ · ( W_rot_recon · x_rot + L · R · x_rot + sparse · x_rot )
+#                          └──── INT2 dequant GEMV ────┘  └── this function ──┘
+#
+# `sqint2_residual_gemv` computes only the residual contribution
+#     y_res = (L · R) · x_rot + sparse_coo · x_rot
+# in the Hadamard-rotated frame. The caller applies the base INT2 GEMV and
+# the inverse-Hadamard rotation around it. Computing residual separately:
+#   1. lets the (M, r) · (r,) → (M,) path skip the cubic L · R materialisation
+#      (a 4096 × 4096 · (16 × 4096) factor is ~64 MB; this path is ~16 KB);
+#   2. routes the sparse COO directly to scattered accumulates;
+#   3. accumulates in fp32 even when L/R/vals are stored fp16 on disk.
+#
+# A pure-NumPy fallback is used when the squish_quant Rust extension is not
+# built. The Rust path uses Rayon-parallel rows for the L step and an f64
+# accumulator for both R · x and L · Rx (CLAUDE.md numerical-correctness rule
+# for accumulation dtype).
+#
+# Empty paths (residual_rank=0 + nnz=0) return a zero output without invoking
+# the Rust kernel — caller may then skip the addition entirely.
+
+# Optional Rust extension. The compress and dequant paths above are pure NumPy;
+# only this hot inference path tries to dispatch to Rust.
+_squish_quant = None
+try:
+    import squish_quant as _squish_quant  # noqa: PLC0415
+except ImportError:  # pragma: no cover
+    pass
+
+
+def _residual_gemv_numpy(
+    L: np.ndarray,
+    R: np.ndarray,
+    sparse_rows: np.ndarray | None,
+    sparse_cols: np.ndarray | None,
+    sparse_vals: np.ndarray | None,
+    x: np.ndarray,
+) -> np.ndarray:
+    """Reference NumPy implementation of W103.4b residual GEMV (rotated frame).
+
+    Mirrors the Rust kernel byte-for-byte (modulo float roundoff): rank-vector
+    Rx = R @ x, then y = L @ Rx, then COO scatter-add. Both matmuls accumulate
+    in fp64 to match the Rust f64-accumulator path.
+    """
+    M, r = L.shape
+    r2, N = R.shape
+    if r != r2:
+        raise ValueError(
+            f"rank mismatch: L is (M={M}, r={r}) but R is (r={r2}, N={N})"
+        )
+    if x.shape != (N,):
+        raise ValueError(f"x length {x.shape[0]} must equal N={N} (R columns)")
+
+    if r == 0:
+        y = np.zeros(M, dtype=np.float32)
+    else:
+        # Rank-vector path: Rx is shape (r,); cheap regardless of N.
+        Rx = (R.astype(np.float64) @ x.astype(np.float64))
+        y = (L.astype(np.float64) @ Rx).astype(np.float32)
+
+    if sparse_rows is not None and sparse_rows.size > 0:
+        if sparse_cols is None or sparse_vals is None:
+            raise ValueError("sparse_rows provided but cols/vals are None")
+        if sparse_cols.size != sparse_rows.size or sparse_vals.size != sparse_rows.size:
+            raise ValueError(
+                "sparse_rows / sparse_cols / sparse_vals must have the same length"
+            )
+        # COO bounds — match the Rust check; any out-of-range entry is a
+        # corruption signal, not a soft warning.
+        if (sparse_rows < 0).any() or (sparse_rows >= M).any():
+            bad = int(np.argmax((sparse_rows < 0) | (sparse_rows >= M)))
+            raise ValueError(
+                f"sparse_rows[{bad}] = {int(sparse_rows[bad])} out of range [0, {M})"
+            )
+        if (sparse_cols < 0).any() or (sparse_cols >= N).any():
+            bad = int(np.argmax((sparse_cols < 0) | (sparse_cols >= N)))
+            raise ValueError(
+                f"sparse_cols[{bad}] = {int(sparse_cols[bad])} out of range [0, {N})"
+            )
+        np.add.at(
+            y,
+            sparse_rows.astype(np.intp),
+            sparse_vals.astype(np.float32) * x[sparse_cols.astype(np.intp)],
+        )
+    return y
+
+
+def sqint2_residual_gemv(
+    layer: "SQINT2Layer",
+    x_rot: np.ndarray,
+) -> np.ndarray:
+    """Compute the SQINT2 Stage-3 residual GEMV in the rotated frame.
+
+    For a SQINT2Layer with stored low-rank factors ``L`` (M, r) and ``R`` (r, N)
+    plus a sparse COO triplet, this returns
+
+        y_res = (L · R) · x_rot + sparse · x_rot         shape (M,)
+
+    where ``M = out_padded`` and ``N = in_padded`` are the rotated-frame
+    dimensions on the layer. Caller is responsible for:
+
+      1. preparing ``x_rot = H_right · x_unrot``         (input rotation)
+      2. computing the INT2 base GEMV                     (W_rot_recon · x_rot)
+      3. summing the two and applying the inverse left rotation
+         (``y = H_leftᵀ · y_rot``).
+
+    Args:
+        layer:  a compressed SQINT2Layer. ``layer.residual_L``, ``residual_R``,
+                ``sparse_rows / cols / vals`` may be None — both the rank-0 and
+                nnz-0 paths are valid.
+        x_rot:  fp32 array, shape (in_padded,). Caller-prepared rotated input.
+
+    Returns:
+        fp32 array, shape (out_padded,). Zero array when both residual paths
+        are inactive — caller can compare ``return.any()`` to skip the add.
+
+    Numerical contract:
+        Accumulates in fp64 (Rust path: f64; NumPy fallback: float64) to
+        match CLAUDE.md "accumulation dtype matters" for fp16-stored factors.
+        Rust ↔ NumPy parity within 1e-6 abs / 1e-5 rel on σ=0.02 IID Gaussian
+        random factors.
+    """
+    out_padded = layer.indices.shape[0]
+    in_padded = _round_up(layer.in_features, layer.cfg.group_size)
+
+    if x_rot.shape != (in_padded,):
+        raise ValueError(
+            f"x_rot shape {x_rot.shape} must be ({in_padded},) "
+            f"= padded in_features"
+        )
+    x32 = np.ascontiguousarray(x_rot, dtype=np.float32)
+
+    has_lowrank = layer.residual_L is not None and layer.residual_R is not None
+    has_sparse = layer.sparse_rows is not None and layer.sparse_rows.size > 0
+
+    if not has_lowrank and not has_sparse:
+        return np.zeros(out_padded, dtype=np.float32)
+
+    # Promote fp16 storage to fp32 — match the Rust entry-point contract.
+    if has_lowrank:
+        L32 = np.ascontiguousarray(layer.residual_L, dtype=np.float32)
+        R32 = np.ascontiguousarray(layer.residual_R, dtype=np.float32)
+    else:
+        # rank=0 placeholder shaped (out_padded, 0) · (0, in_padded). The Rust
+        # kernel handles 0-rank loops as no-ops; same for NumPy matmul.
+        L32 = np.zeros((out_padded, 0), dtype=np.float32)
+        R32 = np.zeros((0, in_padded), dtype=np.float32)
+
+    if has_sparse:
+        sp_rows = np.ascontiguousarray(layer.sparse_rows, dtype=np.int32)
+        sp_cols = np.ascontiguousarray(layer.sparse_cols, dtype=np.int32)
+        sp_vals = np.ascontiguousarray(layer.sparse_vals, dtype=np.float32)
+    else:
+        sp_rows = np.empty(0, dtype=np.int32)
+        sp_cols = np.empty(0, dtype=np.int32)
+        sp_vals = np.empty(0, dtype=np.float32)
+
+    if _squish_quant is not None and hasattr(_squish_quant, "sqint2_residual_gemv_f32"):
+        return _squish_quant.sqint2_residual_gemv_f32(
+            L32, R32, sp_rows, sp_cols, sp_vals, x32
+        )
+    return _residual_gemv_numpy(
+        L32,
+        R32,
+        sp_rows if has_sparse else None,
+        sp_cols if has_sparse else None,
+        sp_vals if has_sparse else None,
+        x32,
+    )
 
 
 # ── SNR helper ────────────────────────────────────────────────────────────────
