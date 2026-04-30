@@ -5,6 +5,100 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.24.0] — 2026-04-29 — W103.4d-pre: SQINT2 Eval Orchestration
+
+### Added
+- **`squish/quant/compressed_loader.py`** — two new SQINT2 loaders for the
+  W103.4d ship gate:
+  - **`_load_sqint2_npy_dir(...)`** — Path A (in-place, in-process). Loads a
+    SQINT2 npy-dir directly into a model whose `nn.Linear` modules are
+    replaced with `SQINT2Linear` (W103.4c) for FFN gate/up tensors and
+    `INT3Linear` for attention. Other tensors (boundary INT4, embed,
+    lm_head, norms) load as bf16 via `model.load_weights`. Per-tensor
+    cold path is read-once via `np.load(..., mmap_mode='r')`. The Konjo
+    eval path: weights stay 2-bit / 3-bit at every forward.
+  - **`_build_squish_sqint2_eval_dir(...)`** — Path B (one-time bf16 cache
+    for `mlx_lm evaluate` subprocesses). Dequantises every tensor to bf16
+    and writes `squish_sqint2_eval/` as a normal MLX model directory
+    (config.json + tokenizer + bf16 model.safetensors). Mathematically
+    identical to Path A modulo fp16 storage roundoff. Built on first
+    `load_from_npy_dir` call when SQINT2 sentinel files are detected;
+    subsequent loads hit the fast path via the new `.squish_sqint2_eval_ready`
+    sentinel.
+  - **Tier 0c / 0c' dispatch** in `load_from_npy_dir`: detects
+    `__sqint2_idx.npy` files and either loads the existing eval cache via
+    `mlx_lm.load(...)` (fast path) or builds it (first load), then recurses
+    into the fast path.
+
+- **`dev/benchmarks/run_overnight_bench.py`** — extended with the SQINT2
+  ship-gate row:
+  - New `MODEL_PLAN` entry `("Qwen2.5-7B", "Qwen2.5-7B-Instruct-bf16",
+    ["sqint2"], False)` (no bf16 reference at 7B — too large for 16 GB at
+    eval).
+  - `_BENCH_MODEL_NAME[("Qwen2.5-7B", "sqint2")] = "Qwen2.5-7B-sqint2"` and
+    `_TABLE_ORDER` extended.
+  - `squish_model()` branches on the `"sqint2"` sentinel and shells out
+    to `python -m squish.cli compress --format sqint2 ...` instead of
+    `mlx_lm.convert`. The Metal OOM guard is bypassed because SQINT2
+    compress is CPU-bound NumPy.
+  - `_infer_quant_dir` now accepts `int | str` and emits `-sqint2`
+    rather than `-int{N}` for the SQINT2 tier.
+  - `--bits` argparse widened to free-form (accepts `2 3 4 sqint2` with
+    explicit validation).
+
+- **`dev/benchmarks/bench_lmeval_all_models.py`** — registry entry
+  `("Qwen2.5-7B-sqint2", "Qwen2.5-7B-Instruct-sqint2", 2.0, "squish SQINT2 (W103.4d)")`.
+  `_run_model_eval` now redirects SQINT2 npy-dirs (manifest.json present,
+  config.json absent) to the `squish_sqint2_eval/` cache subdir. If the
+  cache hasn't been built yet, the eval call triggers
+  `load_from_npy_dir` first to build it.
+
+- **`dev/benchmarks/run_w103_ship_gate.sh`** — single-command overnight
+  orchestrator. Runs three stages, fail-fast:
+  1. `squish compress --format sqint2` (~30–60 min CPU on M3)
+  2. arc_easy@200 canary — bails if score < 50% (clearly broken inference)
+  3. full 5-eval @limit=500 overnight (~10–14 h)
+
+  Exit codes: 0 = ship-gate PASS (arc_easy ≥ 65%), 8 = canary FAIL,
+  10 = ship-gate MISS, 3/4/5/6/7/9 = environment errors. All output
+  streams to `results/w103_ship_gate_<ts>/{compress,canary,full}.log`.
+  Flags: `--dry-run`, `--skip-compress`, `--canary-only`,
+  `--force-compress`, `--canary-threshold N`, `--models-root PATH`.
+  Honours `MODELS_ROOT` and `SHIP_GATE` env vars.
+
+### Design notes
+- **Two loader paths, default to B**: Path A (in-place SQINT2Linear at every
+  forward) is the canonical Konjo path and remains importable for direct
+  in-process callers. Path B (bf16 eval cache) is the default for
+  `load_from_npy_dir` because the existing eval harness fans out to
+  `mlx_lm evaluate` subprocesses that expect a config.json model dir.
+  The bf16 cache is mathematically equivalent to Path A modulo fp16
+  storage roundoff (SQINT2Linear's forward output equals
+  `decompress_weight(layer) @ x` to ~1e-3 fp16 abs/rel — verified by
+  W103.4c tests).
+- **No bf16 reference for 7B**: 14 GB bf16 doesn't fit in 16 GB at eval
+  time alongside the lm_eval harness. The published Qwen2.5-7B-Instruct
+  scores are the comparison anchor instead.
+- **Canary at 50% (not 65%)**: arc_easy@200 has high variance vs the full
+  set. The canary's job is to detect catastrophic breakage (random
+  output, NaN-storm, mis-routed weights), not to pre-judge the ship gate.
+- **Idempotent**: re-running the orchestrator skips work that's already
+  done. Existing SQINT2 npy-dir → reused. Existing eval cache → reused.
+  `--force-compress` resets the npy-dir; deleting `squish_sqint2_eval/`
+  forces a cache rebuild.
+
+### Net test delta
+2437 passed (W103.4c) → **2437 passed** (W103.4d-pre — orchestration
+only; new code paths land on the M3 in W103.4d proper). 12 mlx-gated
+tests skip on x86. Module count stays **85/125**.
+
+# lm_eval-waiver: orchestration only; no codec change. Eval results land in
+#                 W103.4d when this script runs on Apple Silicon.
+# expected-delta: ship-gate target arc_easy ≥ 65% on Qwen2.5-7B-sqint2
+# validation-run: bash dev/benchmarks/run_w103_ship_gate.sh
+
+---
+
 ## [9.23.0] — 2026-04-29 — W103.4c: Metal NF2 Fused-Dequant GEMV + SQINT2Linear
 
 ### Added

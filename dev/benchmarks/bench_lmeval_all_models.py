@@ -160,6 +160,7 @@ MODEL_REGISTRY: list[tuple[str, str, float, str]] = [
     ("Qwen2.5-7B-int4",   "Qwen2.5-7B-Instruct-int4",    3.5,  "squish INT4"),
     ("Qwen2.5-7B-int3",   "Qwen2.5-7B-Instruct-int3",    2.8,  "squish INT3"),
     ("Qwen2.5-7B-int2",   "Qwen2.5-7B-Instruct-int2",    2.1,  "squish INT2"),
+    ("Qwen2.5-7B-sqint2", "Qwen2.5-7B-Instruct-sqint2",  2.0,  "squish SQINT2 (W103.4d)"),
     # ── 8 B ────────────────────────────────────────────────────────────────
     ("Qwen3-8B-bf16",   "Qwen3-8B-bf16",   15.0, "BF16 reference"),
     ("Qwen3-8B-int4",   "Qwen3-8B-int4",    4.0,  "squish INT4"),
@@ -440,9 +441,49 @@ def _run_model_eval(
     lmeval_out_dir = output_dir / "_mlx_lmeval_raw" / model_name
     lmeval_out_dir.mkdir(parents=True, exist_ok=True)
 
+    # SQINT2 redirect (W103.4d-pre): a SQINT2 npy-dir has manifest.json + tensors/
+    # but no config.json at the top level. The squish_sqint2_eval/ subdirectory
+    # is built on first load_from_npy_dir() call and contains a normal MLX model
+    # (config.json + bf16 model.safetensors). Redirect mlx_lm evaluate there.
     if not (model_dir / "config.json").exists():
-        print(f"SKIP {model_name} — npy-dir format (no config.json), rebuild with mlx_lm.convert", file=sys.stderr)
-        return {"skipped": "npy-dir format — no config.json", "scores": {}}
+        _sqint2_eval = model_dir / "squish_sqint2_eval"
+        if (
+            (model_dir / "manifest.json").exists()
+            and (_sqint2_eval / "config.json").exists()
+            and (_sqint2_eval / "model.safetensors").exists()
+        ):
+            print(f"  ↪  {model_name}: redirecting to SQINT2 eval cache "
+                  f"{_sqint2_eval.name}/")
+            model_dir = _sqint2_eval
+        elif (model_dir / "manifest.json").exists():
+            # SQINT2 npy-dir without a built eval cache. Build it now via
+            # load_from_npy_dir, which will recurse into the cache once it's
+            # written. The base bf16 model_dir is needed for tokenizer files;
+            # we infer it by stripping the "-sqint2" suffix.
+            print(f"  ⚡ {model_name}: building SQINT2 eval cache (one-time)")
+            try:
+                from squish.quant.compressed_loader import load_from_npy_dir  # noqa: PLC0415
+                base_dir = Path(str(model_dir).replace("-sqint2", "-bf16"))
+                if not base_dir.exists():
+                    print(f"SKIP {model_name} — base bf16 dir not found at {base_dir}",
+                          file=sys.stderr)
+                    return {"skipped": f"no base bf16 at {base_dir}", "scores": {}}
+                _model, _tok = load_from_npy_dir(
+                    str(model_dir), str(base_dir), verbose=True, return_stats=False
+                )
+                del _model, _tok                                                # release
+                model_dir = model_dir / "squish_sqint2_eval"
+                if not (model_dir / "config.json").exists():
+                    print(f"SKIP {model_name} — eval cache not built", file=sys.stderr)
+                    return {"skipped": "eval cache build failed", "scores": {}}
+            except Exception as exc:                                            # noqa: BLE001
+                print(f"SKIP {model_name} — SQINT2 cache build failed: {exc!r}",
+                      file=sys.stderr)
+                return {"skipped": f"sqint2 cache build: {exc!r}", "scores": {}}
+        else:
+            print(f"SKIP {model_name} — npy-dir format (no config.json), "
+                  f"rebuild with mlx_lm.convert", file=sys.stderr)
+            return {"skipped": "npy-dir format — no config.json", "scores": {}}
 
     aggregate: dict[str, Any] = {}
     total_elapsed = 0.0

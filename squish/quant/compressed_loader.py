@@ -1431,6 +1431,285 @@ def _nav_and_set_module(root, parts: list, module) -> None:  # pragma: no cover
         setattr(obj, last, module)
 
 
+# ── SQINT2 loaders (W103.4d-pre) ────────────────────────────────────────────
+#
+# Two paths so that both in-process and subprocess-driven eval harnesses can
+# consume W103-compressed npy-dirs:
+#
+#   Path A — _load_sqint2_npy_dir (in-place, in-process):
+#     Builds the model architecture, then replaces nn.Linear modules in-place:
+#       - SQINT2 tensors → SQINT2Linear (W103.4c)         — weights stay 2-bit
+#       - INT3   tensors → INT3Linear   (W56)             — weights stay 3-bit
+#       - all other     → bf16 nn.Linear via load_weights — embeddings, norms, INT4
+#     No cache is written. Used by direct in-process eval harnesses that have
+#     access to the patched model object. This is the canonical Konjo path —
+#     SQINT2Linear's Metal fused-dequant kernel runs at every forward.
+#
+#   Path B — _build_squish_sqint2_eval_dir (one-time BF16 cache):
+#     Writes a squish_sqint2_eval/ subdirectory that looks like a normal MLX
+#     model (config.json + tokenizer files + model.safetensors with bf16
+#     weights). Built once per cold compress; subsequent `mlx_lm evaluate`
+#     subprocesses load it as a standard MLX model with no custom code.
+#     The bf16 weights inside the cache are exactly decompress_weight(layer)
+#     so the eval still measures the W103 quantization error — only the in-
+#     shader compression is foregone for eval-time simplicity.
+#
+# load_from_npy_dir picks Path B by default when a SQINT2 npy-dir is detected
+# (the bench_lmeval_all_models.py subprocess flow needs config.json to exist).
+# Direct in-process callers can opt into Path A by importing
+# _load_sqint2_npy_dir directly.
+
+
+def _load_sqint2_npy_dir(  # pragma: no cover
+    dir_path: Path,
+    tensor_dir: Path,
+    base_keys: list,
+    safe_to_original: dict,
+    model_dir: str,
+    verbose: bool = True,
+    return_stats: bool = False,
+):
+    """Load a SQINT2 npy-dir into a model with SQINT2Linear / INT3Linear.
+
+    Dispatch per tensor (matches the W103.3 MixedPrecisionRouter rules baked
+    into the npy-dir at compress time):
+
+      __sqint2_idx.npy present  →  SQINT2Linear (W103.4c)  — in-shader fused dequant
+      __q3.npy present          →  INT3Linear (mx.quantized_matmul, bits=3)
+      __q4.npy present          →  bf16 dequant + nn.Linear  (boundary / down_proj)
+      __pt.npy present          →  bf16 passthrough (embed, lm_head, norms)
+      anything else             →  fp32 → bf16 dequant via _dequantize_npy_dir
+
+    The per-tensor cold path is read-once: each np.load uses mmap_mode='r' so
+    the working set stays at the active layer's footprint (~30 MB for a
+    Qwen2.5-7B FFN tensor at SQINT2). After construction every weight that
+    is not consumed by a SQINT2Linear / INT3Linear is loaded via
+    ``model.load_weights`` as bf16, and ``mx.eval`` is called once at the end.
+
+    Returns ``(model, tokenizer)`` or ``(model, tokenizer, stats)``.
+    """
+    from squish.quant.sqint2 import load_sqint2_layer
+    from squish.quant.sqint2_linear import SQINT2Linear
+    from squish.quant.int3_linear import INT3Linear
+
+    rss0 = _rss_mb()
+    t0 = time.perf_counter()
+
+    # Build empty model architecture from base model_dir's config.json.
+    model, mlx_type = _instantiate_model(model_dir)
+    if verbose:
+        print(f"  → SQINT2 npy-dir loader  |  model_type={mlx_type}")
+
+    # Detect each tensor's tier by sentinel file in tensors/.
+    sqint2_sks: list = []
+    int3_sks:   list = []
+    other_sks:  list = []
+    for sk in base_keys:
+        if _npy_exists(tensor_dir / f"{sk}__sqint2_idx.npy"):
+            sqint2_sks.append(sk)
+        elif _npy_exists(tensor_dir / f"{sk}__q3.npy"):
+            int3_sks.append(sk)
+        else:
+            other_sks.append(sk)
+
+    if verbose:
+        print(f"  tier counts:  SQINT2={len(sqint2_sks)}  "
+              f"INT3={len(int3_sks)}  other={len(other_sks)}")
+
+    n_sqint2_loaded = 0
+    n_int3_loaded   = 0
+    n_other_loaded  = 0
+    bf16_weights: list = []                # (orig_name, mx.array bf16)
+
+    # ── Tier A: SQINT2 → SQINT2Linear modules ────────────────────────────────
+    for sk in sqint2_sks:
+        orig_name = safe_to_original.get(sk)
+        if orig_name is None or not orig_name.endswith(".weight"):
+            other_sks.append(sk)                  # demote — not a real weight
+            continue
+        module_path = orig_name[: -len(".weight")]
+        try:
+            layer = load_sqint2_layer(tensor_dir, sk)
+            stub = SQINT2Linear.from_layer(layer)
+            _nav_and_set_module(model, module_path.split("."), stub)
+            n_sqint2_loaded += 1
+        except Exception as exc:                  # noqa: BLE001
+            if verbose:
+                print(f"  [SQINT2 fallback] {sk}: {exc!r} — dequant→bf16")
+            arr = _dequantize_npy_dir(tensor_dir, sk)
+            bf16_weights.append((orig_name, mx.array(arr).astype(mx.bfloat16)))
+            del arr
+            n_other_loaded += 1
+
+    # ── Tier B: INT3 → INT3Linear modules ────────────────────────────────────
+    # Reuses the proven INT3Linear path (W56). Codes are mmap'd uint8 at
+    # ``__q3.npy``; scales / zeros are mmap'd float32 at ``__s3.npy / __z3.npy``.
+    for sk in int3_sks:
+        orig_name = safe_to_original.get(sk)
+        if orig_name is None or not orig_name.endswith(".weight"):
+            other_sks.append(sk)
+            continue
+        module_path = orig_name[: -len(".weight")]
+        try:
+            q3 = np.load(str(tensor_dir / f"{sk}__q3.npy"), mmap_mode="r")
+            s3 = np.load(str(tensor_dir / f"{sk}__s3.npy"), mmap_mode="r")
+            z3 = np.load(str(tensor_dir / f"{sk}__z3.npy"), mmap_mode="r")
+            shape = tuple(int(x) for x in
+                          np.load(str(tensor_dir / f"{sk}__shape.npy")).tolist())
+            n_out, n_in = shape
+            gs = int(q3.shape[1])
+            n_groups_per_row = n_in // gs
+            codes = np.ascontiguousarray(q3.ravel()[:n_out * n_in].reshape(n_out, n_in))
+            scales = np.ascontiguousarray(
+                s3.ravel()[:n_out * n_groups_per_row]
+                  .reshape(n_out, n_groups_per_row)
+                  .astype(np.float16)
+            )
+            zeros = np.ascontiguousarray(
+                z3.ravel()[:n_out * n_groups_per_row]
+                  .reshape(n_out, n_groups_per_row)
+                  .astype(np.float16)
+            )
+            stub = INT3Linear(
+                weight=mx.array(codes, dtype=mx.uint8),
+                scales=mx.array(scales, dtype=mx.float16),
+                zeros=mx.array(zeros, dtype=mx.float16),
+            )
+            _nav_and_set_module(model, module_path.split("."), stub)
+            n_int3_loaded += 1
+        except Exception as exc:                  # noqa: BLE001
+            if verbose:
+                print(f"  [INT3 fallback] {sk}: {exc!r} — dequant→bf16")
+            arr = _dequantize_npy_dir(tensor_dir, sk)
+            bf16_weights.append((orig_name, mx.array(arr).astype(mx.bfloat16)))
+            del arr
+            n_other_loaded += 1
+
+    # ── Tier C: everything else → bf16 dequant via existing dispatch ─────────
+    for sk in other_sks:
+        orig_name = safe_to_original.get(sk)
+        if orig_name is None:
+            continue
+        try:
+            arr = _dequantize_npy_dir(tensor_dir, sk)
+        except Exception as exc:                  # noqa: BLE001
+            if verbose:
+                print(f"  [dequant skip] {sk}: {exc!r}")
+            continue
+        bf16_weights.append((orig_name, mx.array(arr).astype(mx.bfloat16)))
+        del arr
+        n_other_loaded += 1
+
+    # Standard load for the bf16 tail (embeddings, lm_head, norms, INT4 fallbacks).
+    if bf16_weights:
+        model.load_weights(bf16_weights, strict=False)
+    del bf16_weights
+
+    tokenizer = _get_auto_tokenizer().from_pretrained(model_dir, trust_remote_code=True)
+    mx.eval(model.parameters())
+
+    rss1 = _rss_mb()
+    load_s = time.perf_counter() - t0
+    if verbose:
+        print(f"  SQINT2 model loaded in {load_s:.2f}s  "
+              f"(SQINT2={n_sqint2_loaded} INT3={n_int3_loaded} other={n_other_loaded}, "
+              f"RAM Δ {rss1 - rss0:+.0f} MB)")
+
+    stats = {
+        "loader":               "squish-sqint2",
+        "decompression_time_s": load_s,
+        "ram_delta_mb":         rss1 - rss0,
+        "ram_baseline_mb":      rss0,
+        "n_sqint2_layers":      n_sqint2_loaded,
+        "n_int3_layers":        n_int3_loaded,
+        "n_other_layers":       n_other_loaded,
+    }
+    if return_stats:
+        return model, tokenizer, stats
+    return model, tokenizer
+
+
+def _build_squish_sqint2_eval_dir(  # pragma: no cover
+    dir_path: Path,
+    tensor_dir: Path,
+    base_keys: list,
+    safe_to_original: dict,
+    model_dir: str,
+    verbose: bool = True,
+) -> Path:
+    """Build squish_sqint2_eval/ — a BF16 safetensors cache for mlx_lm evaluate.
+
+    Extends ``_build_squish_3bit_dir``'s pattern to the W103 SQINT2 npy-dir
+    layout. Each tensor in the npy-dir is dequantised to bf16 via the existing
+    ``_dequantize_npy_dir`` dispatch (which already handles SQINT2 → fp32 →
+    bf16 via decompress_weight). The output is a normal MLX model directory:
+
+        squish_sqint2_eval/
+            config.json           (copied from model_dir, quantization key stripped)
+            tokenizer*.json        (copied)
+            model.safetensors      (bf16 dense weights)
+
+    This is the cache path for ``mlx_lm evaluate`` subprocesses — the in-shader
+    SQINT2 form is preserved on disk in the npy-dir; this cache exists only so
+    eval harnesses that expect a config.json model dir can load it without
+    custom plumbing. The eval result still measures the W103 quantization
+    error because the bf16 weights are exactly ``decompress_weight(layer)``.
+
+    For an in-process eval that runs SQINT2Linear at every forward (the
+    canonical Konjo path), use :func:`_load_sqint2_npy_dir` directly.
+
+    Returns the path to the built squish_sqint2_eval/ directory.
+    """
+    _t0 = time.perf_counter()
+    cache_dir = dir_path / "squish_sqint2_eval"
+    cache_dir.mkdir(exist_ok=True)
+
+    _model_dir_p = Path(model_dir)
+    for _fname in (
+        "config.json", "tokenizer.json", "tokenizer_config.json",
+        "tokenizer.model", "special_tokens_map.json",
+        "generation_config.json", "vocab.json", "merges.txt",
+    ):
+        _src = _model_dir_p / _fname
+        if _src.exists():
+            shutil.copy2(str(_src), str(cache_dir / _fname))
+
+    _cfg_dst = cache_dir / "config.json"
+    if _cfg_dst.exists():
+        with open(_cfg_dst) as _f:
+            _cfg = json.load(_f)
+        _cfg.pop("quantization", None)
+        with open(_cfg_dst, "w") as _f:
+            json.dump(_cfg, _f, indent=2)
+
+    weight_dict: dict = {}
+    n_total = 0
+    for sk in base_keys:
+        orig_name = safe_to_original.get(sk)
+        if orig_name is None:
+            continue
+        try:
+            arr = _dequantize_npy_dir(tensor_dir, sk)
+        except Exception as exc:                          # noqa: BLE001
+            if verbose:
+                print(f"  [eval-cache skip] {sk}: {exc!r}")
+            continue
+        weight_dict[orig_name] = mx.array(arr).astype(mx.bfloat16)
+        del arr
+        n_total += 1
+
+    mx.save_safetensors(str(cache_dir / "model.safetensors"), weight_dict)
+    del weight_dict
+    (dir_path / ".squish_sqint2_eval_ready").touch()
+
+    _elapsed = time.perf_counter() - _t0
+    if verbose:
+        _sz = (cache_dir / "model.safetensors").stat().st_size / 1e9
+        print(f"  SQINT2 eval-cache: {n_total} bf16 tensors  "
+              f"{_sz:.2f} GB  {_elapsed:.1f}s  →  {cache_dir.name}/")
+    return cache_dir
+
+
 def load_from_npy_dir(  # pragma: no cover
     dir_path: str,
     model_dir: str,
@@ -1725,6 +2004,84 @@ def load_from_npy_dir(  # pragma: no cover
                 if _four_bit_ready.exists():
                     _four_bit_ready.unlink()
                 # Fall through to the standard Vectro BF16 path below
+
+    # ── Tier 0c': SQINT2 eval-cache fast path ────────────────────────────────
+    # If squish_sqint2_eval/ has already been built on a previous load, hand
+    # straight off to mlx_lm.load() — no Vectro decompression needed.
+    _sqint2_eval_dir   = dir_path / "squish_sqint2_eval"
+    _sqint2_eval_ready = dir_path / ".squish_sqint2_eval_ready"
+    if (
+        _sqint2_eval_ready.exists()
+        and (_sqint2_eval_dir / "config.json").exists()
+        and (_sqint2_eval_dir / "model.safetensors").exists()
+    ):
+        if verbose:
+            _sz = (_sqint2_eval_dir / "model.safetensors").stat().st_size / 1e9
+            print(f"  → SQINT2 eval-cache found ({_sz:.2f} GB) — loading via mlx_lm.load()")
+        import mlx_lm as _mlx_lm_sq
+        _rss0 = _rss_mb()
+        _t0 = time.perf_counter()
+        _model, _tok, *_ = _mlx_lm_sq.load(str(_sqint2_eval_dir))
+        _load_s = time.perf_counter() - _t0
+        _rss1 = _rss_mb()
+        if verbose:
+            print(f"  SQINT2 model loaded in {_load_s:.2f}s  "
+                  f"(RAM Δ {_rss1 - _rss0:+.0f} MB)")
+        _stats = {
+            "loader":               "squish-sqint2-eval-cache",
+            "decompression_time_s": _load_s,
+            "ram_delta_mb":         _rss1 - _rss0,
+            "ram_baseline_mb":      _rss0,
+        }
+        if return_stats:
+            return _model, _tok, _stats
+        return _model, _tok
+
+    # ── Tier 0c: SQINT2 first-load path (W103.4d-pre) ────────────────────────
+    # On first load of a SQINT2 npy-dir we build the eval cache (Path B) so
+    # that subsequent ``mlx_lm evaluate`` subprocesses can hit the fast path
+    # above. Detection: presence of any ``__sqint2_idx.npy`` sentinel.
+    #
+    # Direct in-process callers that want SQINT2Linear at every forward
+    # (Path A — the Konjo path) should import ``_load_sqint2_npy_dir``
+    # explicitly rather than going through ``load_from_npy_dir``.
+    _has_sqint2 = any(
+        entry.name.endswith("__sqint2_idx.npy")
+        for entry in os.scandir(tensor_dir)
+        if entry.is_file(follow_symlinks=False)
+    )
+    if _has_sqint2 and auto_quantize_bits is None:
+        if verbose:
+            print("  ⚡ SQINT2 layers detected — building eval cache (one-time)")
+        try:
+            _build_squish_sqint2_eval_dir(
+                dir_path=dir_path,
+                tensor_dir=tensor_dir,
+                base_keys=base_keys,
+                safe_to_original=safe_to_original,
+                model_dir=model_dir,
+                verbose=verbose,
+            )
+            # Recurse into the fast path now that the cache exists.
+            return load_from_npy_dir(
+                str(dir_path),
+                model_dir=model_dir,
+                verbose=verbose,
+                return_stats=return_stats,
+                workers=workers,
+                auto_quantize_bits=auto_quantize_bits,
+            )
+        except Exception as _esq:                  # noqa: BLE001
+            if verbose:
+                print(f"  WARNING: SQINT2 eval-cache build failed ({_esq!r}); "
+                      f"falling back to BF16 dequantization path")
+            import shutil as _shutil_sq
+            if _sqint2_eval_dir.exists():
+                _shutil_sq.rmtree(str(_sqint2_eval_dir))
+            if _sqint2_eval_ready.exists():
+                _sqint2_eval_ready.unlink()
+            # Fall through to the standard Vectro BF16 path — _dequantize_npy_dir
+            # already handles SQINT2 sentinels by reconstructing fp32 weights.
 
     # ── Tier 0d: INT3-native path — build squish_3bit/ from Q3 files ─────────
     # If __q3.npy files exist and squish_3bit/ hasn't been built yet, convert

@@ -262,7 +262,16 @@ the SQINT2 unpack path. Module count: 83 → 84 (ceiling 125 ✅).
     from `cfg.seed`. 22 new tests in `tests/test_sqint2_linear.py` (mlx tests
     importorskip on non-Apple-Silicon). Module count 84 → 85. Forward output
     matches `decompress_weight(layer) @ x` to 1e-3 abs/rel (fp16 storage).
-  - W103.4d — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65% lm_eval ship gate.
+  - 🟡 **W103.4d-pre (2026-04-29) — orchestration shipped.**
+    `_load_sqint2_npy_dir` (Path A in-place SQINT2Linear) +
+    `_build_squish_sqint2_eval_dir` (Path B bf16 eval cache) in
+    `compressed_loader.py`. SQINT2 row added to `run_overnight_bench.py`.
+    `bench_lmeval_all_models.py` redirects SQINT2 npy-dirs to the cache
+    subdir. New `dev/benchmarks/run_w103_ship_gate.sh` runs
+    compress → arc_easy@200 canary → full overnight in one command,
+    fail-fast. Verified `--dry-run` clean on x86. Module count stays 85.
+  - W103.4d — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65% lm_eval
+    ship gate. **Run on M3:** `bash dev/benchmarks/run_w103_ship_gate.sh`.
 
 **Validation order (hardware-aware):**
 - Synthetic SNR (Stage 1+2) → unit test, no hardware.

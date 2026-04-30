@@ -64,6 +64,23 @@
   `_TENSOR_SUFFIX_RE` extended. Module count stays 84 (in-place). 27 new tests in
   `tests/test_sqint2_loader.py`. Full suite: **2394 passed / 3 pre-existing / 35
   skipped** (2367 → 2394, +27).
+- **W103.4d-pre** (2026-04-29) — Eval-time orchestration. New loaders in
+  `squish/quant/compressed_loader.py`: `_load_sqint2_npy_dir` (Path A —
+  in-place SQINT2Linear at every forward, the Konjo path) and
+  `_build_squish_sqint2_eval_dir` (Path B — one-time bf16 cache for
+  `mlx_lm evaluate` subprocesses). Tier 0c/0c' dispatch added to
+  `load_from_npy_dir` so SQINT2 npy-dirs auto-build a `squish_sqint2_eval/`
+  cache on first load. `dev/benchmarks/run_overnight_bench.py` extended with
+  `("Qwen2.5-7B", "sqint2")` row that shells `squish compress --format
+  sqint2`. `dev/benchmarks/bench_lmeval_all_models.py` redirects SQINT2
+  npy-dirs to the eval-cache subdir. New shell script
+  `dev/benchmarks/run_w103_ship_gate.sh` orchestrates compress → arc_easy@200
+  canary → full @limit=500 overnight; fail-fast with exit codes for canary
+  fail / ship-gate miss / env errors. Verified `--dry-run` clean on x86
+  (lm_eval requires Apple Silicon — runs the actual eval on the M3 in
+  W103.4d proper). Module count stays 85. No new tests (orchestration
+  only). Next: W103.4d — execute `bash dev/benchmarks/run_w103_ship_gate.sh`
+  on M3 16 GB. Target: arc_easy ≥ 65% on Qwen2.5-7B-sqint2.
 - **W103.4c** (2026-04-29) — New module `squish/quant/sqint2_linear.py`
   (`SQINT2Linear` MLX nn.Module). Apple-Silicon inference path for SQINT2-
   compressed weights via `mx.fast.metal_kernel` fused-dequant GEMV (one thread

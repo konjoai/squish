@@ -93,12 +93,18 @@ INT4_OOM_GB = 9.0   # INT4 dirs larger than this cap are known Metal OOM on M3 1
 # (short_display_name, bf16_dir_name, bits_to_squish, include_bf16_eval)
 # bits_to_squish: strictly the INT widths to CREATE. bench script handles eval.
 # include_bf16_eval: pass to bench script via --include-bf16 flag per-model.
-MODEL_PLAN: list[tuple[str, str, list[int], bool]] = [
+MODEL_PLAN: list[tuple[str, str, list[int | str], bool]] = [
     ("Qwen3-0.6B",   "Qwen3-0.6B-bf16",             [4, 3, 2], True),
     ("Llama-3.2-1B", "Llama-3.2-1B-Instruct-bf16",  [4, 3, 2], True),
     ("gemma-3-1b",   "gemma-3-1b-it-bf16",           [4, 3, 2], True),
     ("Qwen2.5-1.5B", "Qwen2.5-1.5B-Instruct-bf16",  [4, 3, 2], True),
     ("Qwen3-4B",     "Qwen3-4B-bf16",               [4, 3, 2], True),   # INT4 = 2.0 GB — safe on M3 16 GB
+    # W103.4d ship gate: Qwen2.5-7B at SQINT2 (Hadamard + NF2 + low-rank residual).
+    # bf16 source = ~14 GB; SQINT2 output = ~2 GB. Compress is CPU-bound (NumPy),
+    # bypasses the INT4 Metal OOM guard. include_bf16=False because the bf16
+    # reference for 7B does not fit in 16 GB at eval time — comparison should be
+    # against the published Qwen2.5-7B-Instruct baselines instead.
+    ("Qwen2.5-7B",   "Qwen2.5-7B-Instruct-bf16",    ["sqint2"], False),
 ]
 
 # Model display names as registered in bench_lmeval_all_models.py MODEL_REGISTRY.
@@ -124,6 +130,8 @@ _BENCH_MODEL_NAME: dict[tuple[str, int | str], str] = {
     ("Qwen3-4B",     4):      "Qwen3-4B-int4",
     ("Qwen3-4B",     3):      "Qwen3-4B-int3",
     ("Qwen3-4B",     2):      "Qwen3-4B-int2",
+    # W103.4d ship gate
+    ("Qwen2.5-7B",   "sqint2"): "Qwen2.5-7B-sqint2",
 }
 
 # Standard 6-task lm-eval suite (same as bench_lmeval_all_models.py)
@@ -136,6 +144,7 @@ _TABLE_ORDER = [
     "gemma-3-1b-bf16",   "gemma-3-1b-int4",   "gemma-3-1b-int3",   "gemma-3-1b-int2",
     "Qwen2.5-1.5B-bf16", "Qwen2.5-1.5B-int4", "Qwen2.5-1.5B-int3", "Qwen2.5-1.5B-int2",
     "Qwen3-4B-bf16",   "Qwen3-4B-int4",   "Qwen3-4B-int3",   "Qwen3-4B-int2",
+    "Qwen2.5-7B-sqint2",
 ]
 
 
@@ -167,10 +176,17 @@ def _dir_gb(path: Path) -> float:
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / 1e9
 
 
-def _infer_quant_dir(bf16_dir: Path, bits: int) -> Path:
-    """Strip -bf16 / -fp16 suffix and append -int{bits}."""
+def _infer_quant_dir(bf16_dir: Path, bits: int | str) -> Path:
+    """Strip -bf16 / -fp16 suffix and append the tier suffix.
+
+    For numeric ``bits`` we append ``-int{bits}``. For the SQINT2 ship-gate
+    we use ``-sqint2`` instead (the npy-dir contains a mix of SQINT2 / INT3 /
+    INT4 tiers per the W103.3 router; ``-sqint2`` is the dominant tier and
+    matches the registry name used by ``bench_lmeval_all_models.py``).
+    """
     base = re.sub(r"-(bf16|fp16|[0-9]+bit)(-mlx)?$", "", bf16_dir.name, flags=re.IGNORECASE)
-    return bf16_dir.parent / f"{base}-int{bits}"
+    suffix = f"int{bits}" if isinstance(bits, int) else str(bits)
+    return bf16_dir.parent / f"{base}-{suffix}"
 
 
 def _platform_info() -> dict[str, Any]:
@@ -205,7 +221,7 @@ def _is_mlx_format(model_dir: Path) -> bool:
 
 def squish_model(
     bf16_dir: Path,
-    bits: int,
+    bits: int | str,
     force: bool,
     dry_run: bool,
     log_lines: list[str],
@@ -220,10 +236,87 @@ def squish_model(
 
     INT2 is research-only (4 discrete weight levels).
 
+    The ``bits == "sqint2"`` branch is the W103.4d ship-gate path: it calls
+    ``squish compress --format sqint2`` (W103.3) which writes a npy-dir with the
+    layer-routed mix of SQINT2 / INT3 / INT4 / passthrough tiers. The npy-dir
+    is loaded at eval time via ``compressed_loader._load_sqint2_npy_dir`` which
+    replaces ``nn.Linear`` with ``SQINT2Linear`` (W103.4c) and ``INT3Linear``.
+    No safetensors cache is materialised — the npy-dir is the canonical
+    compressed format.
+
     Returns the output Path on success, None on failure or if OOM guard triggered.
     """
     out_dir = _infer_quant_dir(bf16_dir, bits)
-    label   = f"{bf16_dir.name} → INT{bits}"
+    label   = (
+        f"{bf16_dir.name} → SQINT2" if bits == "sqint2"
+        else f"{bf16_dir.name} → INT{bits}"
+    )
+
+    # ── SQINT2 ship-gate path (W103.4d) ───────────────────────────────────────
+    # Bypass the Metal OOM guard: the SQINT2 compress pipeline is CPU-bound
+    # NumPy (Hadamard, randomised SVD, Lloyd-Max) and never materialises the
+    # full BF16 weight in Metal. The output npy-dir is ~2 GB for Qwen2.5-7B
+    # which is well within the 16 GB device budget.
+    if bits == "sqint2":
+        if out_dir.exists() and not force:
+            manifest = out_dir / "manifest.json"
+            tensors  = out_dir / "tensors"
+            if manifest.exists() and tensors.exists():
+                size_gb = _dir_gb(out_dir)
+                _ok(f"{label}: SQINT2 npy-dir exists ({size_gb:.2f} GB) — skipping "
+                    f"(use --force-squish to redo)")
+                log_lines.append(
+                    f"SKIP  SQINT2  {out_dir.name}  {size_gb:.2f}GB  (npy-dir exists)"
+                )
+                return out_dir
+            _warn(f"{label}: dir exists but is missing manifest.json/tensors — overwriting")
+
+        _step(f"Compressing {label}  →  {out_dir.name}")
+        if out_dir.exists():
+            _step(f"  Removing existing {out_dir.name}")
+            if not dry_run:
+                shutil.rmtree(str(out_dir), ignore_errors=True)
+
+        if dry_run:
+            _ok("  DRY-RUN: would `squish compress --format sqint2`")
+            return out_dir
+
+        # squish compress --format sqint2 is exposed by squish/cli.py (W103.3).
+        # We invoke it as a subprocess so a SQINT2 compress crash (e.g. OOM
+        # mid-Hadamard on a borderline machine) does not kill the eval phase.
+        cmd = [
+            sys.executable, "-m", "squish.cli",
+            "compress",
+            "--format", "sqint2",
+            "--input",  str(bf16_dir),
+            "--output", str(out_dir),
+        ]
+        _step(f"  $ {' '.join(cmd)}")
+        t0 = time.time()
+        try:
+            proc = subprocess.run(cmd, text=True)
+            if proc.returncode != 0:
+                _err(f"  squish compress --format sqint2 exited {proc.returncode}")
+                log_lines.append(
+                    f"FAIL  SQINT2  {out_dir.name}  (rc={proc.returncode})"
+                )
+                return None
+        except Exception as exc:                          # noqa: BLE001
+            _err(f"  squish compress failed: {exc}")
+            log_lines.append(f"FAIL  SQINT2  {out_dir.name}  ({exc})")
+            return None
+        finally:
+            gc.collect()
+
+        elapsed = time.time() - t0
+        if not (out_dir / "manifest.json").exists():
+            _err(f"  manifest.json not produced at {out_dir}")
+            log_lines.append(f"FAIL  SQINT2  {out_dir.name}  (no manifest.json)")
+            return None
+        size_gb = _dir_gb(out_dir)
+        _ok(f"  Done in {elapsed / 60:.1f} min  →  {out_dir.name}  ({size_gb:.2f} GB)")
+        log_lines.append(f"OK    SQINT2  {out_dir.name}  {size_gb:.2f}GB  {elapsed:.0f}s")
+        return out_dir
 
     # OOM guard: skip INT4 for large models (BF16 source > 8 GB → Metal OOM risk on M3 16 GB)
     # Use the BF16 source size as a proxy (INT4 ≈ BF16/4 but Metal loads both during convert)
@@ -505,7 +598,12 @@ def main() -> None:
     ap.add_argument("--gen-sanity",    action="store_true",     help="Run generation sanity check before lm-eval")
     ap.add_argument("--dry-run",       action="store_true",     help="Print plan without executing")
     ap.add_argument("--models",        nargs="+", default=None, help="Subset of model family names (e.g. Qwen3-0.6B Qwen3-4B)")
-    ap.add_argument("--bits",          nargs="+", type=int, choices=[2, 3, 4], default=None, help="Subset of bit widths")
+    ap.add_argument(
+        "--bits",
+        nargs="+",
+        default=None,
+        help="Subset of tiers: any of 2 3 4 sqint2 (mix freely; e.g. --bits 4 sqint2)",
+    )
     ap.add_argument("--models-root",   type=Path, default=_MODELS_ROOT, help=f"Models root directory (default: {_MODELS_ROOT})")
     ap.add_argument("--results-dir",   type=Path, default=None, help="Output directory (default: results/overnight_<ts>/)")
     args = ap.parse_args()
@@ -522,8 +620,22 @@ def main() -> None:
         plan = [row for row in plan if row[0] in args.models]
 
     if args.bits:
+        # Accept "2"/"3"/"4" (legacy ints) and "sqint2" (W103.4d sentinel) freely.
+        wanted: set = set()
+        for raw in args.bits:
+            if isinstance(raw, str) and raw.isdigit():
+                wanted.add(int(raw))
+            elif isinstance(raw, int):
+                wanted.add(raw)
+            else:
+                wanted.add(raw)              # "sqint2" or anything future
+        unknown = wanted - {2, 3, 4, "sqint2"}
+        if unknown:
+            print(f"{R}Unknown --bits value(s): {sorted(unknown, key=str)}{NC}")
+            print("Allowed: 2 3 4 sqint2")
+            sys.exit(1)
         plan = [
-            (name, bf16, [b for b in bits if b in args.bits], beval)
+            (name, bf16, [b for b in bits if b in wanted], beval)
             for name, bf16, bits, beval in plan
         ]
         plan = [row for row in plan if row[2]]
@@ -558,7 +670,9 @@ def main() -> None:
     print(f"  lm-eval:        {plat['lm_eval']}")
     print(f"\n  Plan:")
     for name, bf16_name, bits_list, run_bf16 in plan:
-        bits_s  = " + ".join(f"INT{b}" for b in bits_list)
+        bits_s = " + ".join(
+            (f"INT{b}" if isinstance(b, int) else b.upper()) for b in bits_list
+        )
         bf16_s  = " + BF16" if run_bf16 else ""
         bf16_ok = "✓" if (args.models_root / bf16_name).exists() else "✗ MISSING"
         print(f"    {C}{name:<20}{NC}  {bits_s:<18}{bf16_s}   [{bf16_ok}]")
