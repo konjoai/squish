@@ -62,8 +62,19 @@
   emit `__sqint2_meta` per layer (required for cfg.seed → Hadamard rotation).
   `_TENSOR_SUFFIX_RE` extended. Module count stays 84 (in-place). 27 new tests in
   `tests/test_sqint2_loader.py`. Full suite: **2394 passed / 3 pre-existing / 35
-  skipped** (2367 → 2394, +27). Next: W103.4b — Rust `sqint2_residual_gemv` for
-  low-rank L·R + sparse COO.
+  skipped** (2367 → 2394, +27).
+- **W103.4b** (2026-04-29) — `sqint2_residual_gemv_f32` in
+  `squish_quant_rs/src/lib.rs` (Rayon-parallel L·R GEMV + serial COO scatter, f64
+  accumulator, bounds-checked) + Python wrapper `sqint2_residual_gemv` in
+  `sqint2.py` with pure-NumPy fallback for envs without Rust built. fp16 storage
+  promoted to fp32 at the wrapper boundary; rank=0 + nnz=0 short-circuits to a
+  zero-array. 21 new tests in `tests/test_sqint2_residual_gemv.py`: equivalence
+  vs explicit `(L@R + sparse_dense) @ x_rot`, end-to-end consistency with
+  `decompress_weight()`'s residual path, fp16↔fp32 round-trip, COO bounds
+  checks, determinism, Rust ↔ NumPy parity 1e-5 abs / 1e-4 rel
+  (M=256, r=16, N=1024, k=100). Module count stays 84 (in-place additions to
+  `sqint2.py` + `lib.rs`). Full suite: **2415 passed** (2394 → 2415, +21).
+  Next: W103.4c — Metal NF2 fused-dequant GEMV kernel + `SQINT2Linear` mlx Module.
 - **W103.2** (2026-04-29) — SVD rank-16 + sparse-1% residual correction in `squish/quant/sqint2.py`
   (in-place extension; module count stays 84). 46 new tests added to `tests/test_sqint2.py`
   (110 total in file, all passing). Joint SNR **10.21–10.23 dB** (gate ≥ 10.0 dB ✓) across

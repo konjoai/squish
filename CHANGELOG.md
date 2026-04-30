@@ -5,6 +5,80 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.22.0] — 2026-04-29 — W103.4b: Rust SQINT2 Residual GEMV
+
+### Added
+- **`squish_quant_rs/src/lib.rs` — `sqint2_residual_gemv_f32`**:
+  Computes the SQINT2 Stage-3 residual contribution to a GEMV in the
+  Hadamard-rotated frame:
+
+      y_res = (L · R) · x_rot + sparse_coo · x_rot         shape (M,)
+
+  where `L` is `(M, r)` fp32, `R` is `(r, N)` fp32, sparse COO is
+  `(rows: i32, cols: i32, vals: f32)`, and `x_rot` is fp32 `(N,)`. Caller
+  accumulates this onto the SQINT2 base GEMV output before the inverse
+  left-Hadamard rotation.
+
+  Algorithm:
+    1. `Rx = R · x` — serial; rank is small (≤ 64). f64 accumulator.
+    2. `y = L · Rx` — Rayon-parallel over the M output rows. f64 accumulator.
+    3. `y[rows[i]] += vals[i] · x[cols[i]]` — serial COO scatter.
+
+  Empty paths (rank=0 or nnz=0) are zero-size loops. Bounds-checked: any
+  out-of-range row/col is a `PyValueError`, not a silent skip.
+
+- **`squish/quant/sqint2.py` — `sqint2_residual_gemv`** Python wrapper:
+  Dispatches to `squish_quant.sqint2_residual_gemv_f32` when the Rust
+  extension is built; falls back to `_residual_gemv_numpy` (pure NumPy,
+  fp64 accumulator) otherwise. Promotes fp16-stored L/R/vals to fp32
+  before the kernel call. Returns a zero-array shortcut when both
+  `residual_rank == 0` and `nnz == 0`.
+
+- **`squish/quant/sqint2.py` — `_residual_gemv_numpy`**: NumPy reference
+  implementation. Mirrors the Rust kernel byte-for-byte (modulo float
+  roundoff): rank-vector `Rx = R @ x`, then `y = L @ Rx`, then a COO
+  scatter via `np.add.at`. Used by tests and as the fallback path.
+
+- **`tests/test_sqint2_residual_gemv.py`** — 21 new tests:
+  shape contract, x-length validation, equivalence vs explicit
+  `(L@R + sparse_dense) @ x_rot`, lowrank-only and sparse-only paths,
+  rank=0 + nnz=0 zero return, end-to-end consistency with the residual
+  decomposition that `decompress_weight()` performs, fp16↔fp32
+  round-trip, NumPy reference correctness, COO triplet length /
+  bounds error paths, determinism, and Rust ↔ NumPy parity (1e-5 abs /
+  1e-4 rel on σ=0.02 IID Gaussian random factors with M=256, r=16,
+  N=1024, k=100).
+
+### Design notes
+- **Why split residual from base GEMV**: keeps the rank-vector path
+  away from the (M, N) materialisation that `L @ R` would otherwise
+  force. At M=N=4096, r=16, the materialised matrix is ~64 MB; the
+  rank-vector path is ~16 KB. Sparse COO scatter goes directly to
+  the output vector — no dense intermediate.
+- **Why fp32 entry point** (not fp16 / mixed): CLAUDE.md numerical
+  contract for accumulation dtype. The Python wrapper handles
+  fp16→fp32 promotion at the boundary; conversion cost on
+  `(M, r)` + `(r, N)` factors is negligible vs the actual GEMV.
+- **Why f64 inner accumulator**: f32 dot product over N≈4096
+  introduces ~1 ULP per element; f64 keeps the residual within
+  1e-5 of the dense reference.
+- **Why serial Rx and serial COO**: rank ≤ 64 → Rayon overhead exceeds
+  work; nnz ≤ ~4 × 10⁴ at sparse_frac=0.01, M=N=4096 → still
+  serial-dominant. The L · Rx step is the only Rayon-parallelised
+  section.
+
+### Net test delta
+2394 passed (W103.4a) → **2415 passed** (W103.4b, +21).
+3 pre-existing `importlib.metadata` failures unchanged.
+Module count stays **84/125** — additions are in-place to existing
+`sqint2.py` + `lib.rs`.
+
+# lm_eval-waiver: pure inference primitive; no codec change; no model format change.
+# expected-delta: neutral on lm_eval (no weights touched)
+# validation-run: W103.4d full E2E compress + lm_eval on Qwen2.5-7B
+
+---
+
 ## [9.21.0] — 2026-04-29 — W103.4a: SQINT2 Disk Serialisation + Loader Wiring
 
 ### Added

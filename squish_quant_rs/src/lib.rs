@@ -3187,6 +3187,131 @@ fn sparse_act_gemv_f32(
     Ok(Array1::from(output).into_pyarray_bound(py).unbind())
 }
 
+// ── SQINT2 residual GEMV (W103.4b) ──────────────────────────────────────────
+//
+// Computes the SQINT2 Stage-3 residual contribution to a GEMV, in the
+// Hadamard-rotated frame:
+//
+//     y_residual[m] = Σ_k L[m,k] · (Σ_n R[k,n] · x[n])         (rank-r SVD)
+//                   + Σ_{(m,n,v) ∈ COO} v · x[n] · 𝟙{rows[i]=m} (sparse outliers)
+//
+// Inputs:
+//   - L:            (M, r) fp32          — left SVD factor (singular values absorbed)
+//   - R:            (r, N) fp32          — right SVD factor
+//   - sparse_rows:  (k,)   i32           — COO row indices in [0, M)
+//   - sparse_cols:  (k,)   i32           — COO col indices in [0, N)
+//   - sparse_vals:  (k,)   fp32          — COO values
+//   - x:            (N,)   fp32          — rotated input vector (H_right · x_unrot)
+//
+// Returns y_residual (M,) fp32. Caller accumulates this into the SQINT2 base
+// GEMV output before applying the inverse-Hadamard left rotation.
+//
+// Order of operations:
+//   1. Compute Rx = R · x          → (r,)   serial: rank is small (≤ 64)
+//   2. Compute y  = L · Rx         → (M,)   Rayon-parallel over output rows
+//   3. Add sparse: y[rows[i]] += vals[i] · x[cols[i]]   serial: nnz is ~1% of M·N
+//
+// Empty paths (r=0 or nnz=0) are explicit zero-size loops — no special case.
+// fp16 factors are converted upstream in Python; this entry point is fp32 to
+// keep accumulation in the high-precision dtype mandated by CLAUDE.md.
+//
+// References:
+//   QuIP# — sub-3-bit quant with low-rank residual (Tseng & Chee 2024)
+//   INT2.1 — fine-grained 2-bit via low-rank residual (2023)
+
+#[pyfunction]
+fn sqint2_residual_gemv_f32(
+    py: Python<'_>,
+    l: PyReadonlyArray2<f32>,
+    r: PyReadonlyArray2<f32>,
+    sparse_rows: PyReadonlyArray1<i32>,
+    sparse_cols: PyReadonlyArray1<i32>,
+    sparse_vals: PyReadonlyArray1<f32>,
+    x: PyReadonlyArray1<f32>,
+) -> PyResult<Py<PyArray1<f32>>> {
+    let l_arr = l.as_array();
+    let r_arr = r.as_array();
+    let x_arr = x.as_array();
+
+    let m_dim = l_arr.shape()[0];
+    let rank = l_arr.shape()[1];
+    let r_rank = r_arr.shape()[0];
+    let n_dim = r_arr.shape()[1];
+
+    if rank != r_rank {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "rank mismatch: L is (M={}, r={}) but R is (r={}, N={})",
+            m_dim, rank, r_rank, n_dim
+        )));
+    }
+    if x_arr.len() != n_dim {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "x length {} must equal N={} (R columns)",
+            x_arr.len(),
+            n_dim
+        )));
+    }
+    let nnz = sparse_rows.len();
+    if sparse_cols.len() != nnz || sparse_vals.len() != nnz {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "sparse_rows / sparse_cols / sparse_vals must all have the same length",
+        ));
+    }
+
+    // ── Step 1: Rx = R · x  ── serial (rank is small; Rayon overhead would dominate).
+    let x_flat: Vec<f32> = x_arr.iter().copied().collect();
+    let r_flat: Vec<f32> = r_arr.iter().copied().collect();
+    let mut rx = vec![0.0f32; rank];
+    for k in 0..rank {
+        let row_off = k * n_dim;
+        let mut acc = 0.0f64;            // f64 accumulator: f32 dot of N≈4096 needs it
+        for n in 0..n_dim {
+            acc += (r_flat[row_off + n] as f64) * (x_flat[n] as f64);
+        }
+        rx[k] = acc as f32;
+    }
+
+    // ── Step 2: y = L · Rx  ── Rayon-parallel over the M output rows.
+    let l_flat: Vec<f32> = l_arr.iter().copied().collect();
+    let mut y: Vec<f32> = (0..m_dim)
+        .into_par_iter()
+        .map(|m| {
+            let row_off = m * rank;
+            let mut acc = 0.0f64;
+            for k in 0..rank {
+                acc += (l_flat[row_off + k] as f64) * (rx[k] as f64);
+            }
+            acc as f32
+        })
+        .collect();
+
+    // ── Step 3: y[rows[i]] += vals[i] · x[cols[i]]  ── serial COO accumulate.
+    if nnz > 0 {
+        let rows = sparse_rows.as_array();
+        let cols = sparse_cols.as_array();
+        let vals = sparse_vals.as_array();
+        for i in 0..nnz {
+            let m = rows[i] as isize;
+            let n = cols[i] as isize;
+            if m < 0 || (m as usize) >= m_dim {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "sparse_rows[{}] = {} out of range [0, {})",
+                    i, m, m_dim
+                )));
+            }
+            if n < 0 || (n as usize) >= n_dim {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "sparse_cols[{}] = {} out of range [0, {})",
+                    i, n, n_dim
+                )));
+            }
+            y[m as usize] += vals[i] * x_flat[n as usize];
+        }
+    }
+
+    Ok(Array1::from(y).into_pyarray_bound(py).unbind())
+}
+
 // ── PyO3 module registration ─────────────────────────────────────────────────
 
 #[pymodule]
@@ -3261,6 +3386,7 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bf16_to_f32_vec,                     m)?)?;
     m.add_function(wrap_pyfunction!(f32_to_bf16_vec,                     m)?)?;
     m.add_function(wrap_pyfunction!(sparse_act_gemv_f32,                 m)?)?;
+    m.add_function(wrap_pyfunction!(sqint2_residual_gemv_f32,            m)?)?;
     // Wave 60a — Mamba2SSM · AdaRound · PagedKVGather · HawkRGLR · CakeEntropy · TernaryGEMV
     m.add_function(wrap_pyfunction!(mamba2_ssm_scan_f32,                 m)?)?;
     m.add_function(wrap_pyfunction!(mamba2_ssm_decode_f32,               m)?)?;
