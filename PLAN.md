@@ -326,11 +326,59 @@ recent tokens; everything older is INT2-quantised in the rotated frame.
 
 ---
 
+### W105 — INT4 KV Cache (intermediate quality tier) ✅ COMPLETE (2026-05-02)
+**Why:** W104 shipped INT2 KV (4× memory) but the SNR cliff from INT8 (~44 dB)
+to INT2 (~5 dB on Hadamard-rotated activations) is sharp. INT4 fills the gap
+at ~22 dB SNR with 2× memory reduction — the right default for 8 K–16 K
+contexts where INT2 is overkill and INT8 is too expensive.
+
+**Changes shipped (2026-05-02):**
+- `squish/kv/kv_cache.py` (in-place):
+  - `_quantize_int4_per_channel` / `_dequantize_int4_per_channel` — per-token
+    symmetric 16-level uniform codec (`{-7.5,…,7.5}`), nibble-packed
+    2-per-uint8 along `head_dim` (low = even col, high = odd col).
+  - `_kv_quantize_per_channel` / `_kv_dequantize_per_channel` — dispatch
+    extended to `"int4"`. New `_KV_QUANT_MODES` frozenset.
+  - `KVLayerCache(kv_mode="int4")` accepted; validation rejects all other
+    unknown values.
+  - `QuantizedKVCache(mode="int4")` accepted; rejects illegal combinations
+    (`svd_rank > 0`, `comm_vq_bits > 0`, `qfilter_rank > 0`).
+  - `enable_disk_tier()` now rejects all sub-INT8 modes (int4 or int2).
+  - `HadamardKVCache` docstring extended with W105 section.
+  - `recommended_kv_mode_3tier(ctx)` + `KV_INT4_DEFAULT_THRESHOLD = 16384`.
+    `recommended_kv_mode()` accepts optional `medium_mode` /
+    `medium_threshold` for inline 3-tier dispatch.
+- `tests/test_kv_int4.py` — 38 new tests (codec roundtrip, packing layout,
+  SNR ordering INT8 > INT4 > INT2, dispatch, mode validation, end-to-end,
+  memory ratio ≥ 1.7×, disk-tier guardrail, 3-tier recommendation).
+
+**Acceptance criteria met:**
+- ✅ INT4 SNR floor ≥ 18 dB on uniform inputs.
+- ✅ INT4 strictly between INT8 and INT2; ≥ 6 dB margin over INT2.
+- ✅ Storage = `head_dim/2 + 4` bytes per token (head_dim=128 → 68 B/token,
+  asymptotic 2× reduction vs INT8).
+- ✅ Hadamard rotation lifts INT4 SNR on heavy-tailed inputs.
+- ✅ Suite: 2464 passed / 3 pre-existing W95 / 43 skipped (+38 from W105).
+- ✅ Module count: zero new production modules. One new test file.
+
+**Recommended configuration (W105, replacing the W104 default for ≥ 8 K):**
+```python
+from squish.kv.kv_cache import HadamardKVCache, recommended_kv_mode_3tier
+mode = recommended_kv_mode_3tier(planned_context_tokens)
+# ≤ 8K → int8;  8K–16K → int4 (W105);  > 16K → int2 (W104)
+cache = HadamardKVCache(n_layers=N, window=128, mode=mode, seed=42)
+```
+
+---
+
 ## Next Immediate Action
-**W102 COMPLETE.** **W103 — SQINT2 — IS THE NEXT WAVE.** Start with W103.1 (Hadamard +
-NF2 offline compress, synthetic-weights SNR gate). W104 (INT2 KV) runs in parallel and
-ships independently. INT3 streaming KV-cache and LoRA INT4 checkpoint support are
-deferred to W105+.
+**W104 (INT2 KV) + W105 (INT4 KV) COMPLETE.** The next wave to land on `main`
+is the W103.4 hardware ship gate — bring the existing W103.4b (Rust
+`sqint2_residual_gemv`), W103.4c (Metal NF2 GEMV + `SQINT2Linear` MLX
+module), and W103.4d-pre (eval orchestration) commits from
+`claude/angry-cerf-4d8cce` into `main`, then run the arc_easy ≥ 65 % gate
+on Qwen2.5-7B (also validates the W104 32 K-context envelope on the same
+hardware run). LoRA INT4 checkpoint support remains deferred.
 
 ---
 

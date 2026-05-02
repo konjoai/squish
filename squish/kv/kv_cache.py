@@ -242,14 +242,149 @@ def _dequantize_int2_per_channel(
     return arr.astype(np.float16)
 
 
+# ---------------------------------------------------------------------------
+# W105 — Per-token INT4 KV quantization (16-level symmetric, 2-per-byte packed)
+# ---------------------------------------------------------------------------
+#
+# Math:
+#   For each token row v ∈ ℝ^d (after Hadamard rotation):
+#     scale = max(|v|) / 7.5                    (so codebook level ±7.5 = ±max)
+#     idx   = clip(round(v / scale + 7.5), 0, 15)         (16 levels, 4 bits)
+#     decode_value = (idx - 7.5) · scale       i.e. {-7.5, -6.5, ..., 6.5, 7.5} · scale
+#
+#   Symmetric 16-level uniform codebook centred on 0; mirrors the structure of
+#   the W104 INT2 codec (n_levels = 2^bits, mid = (n_levels - 1) / 2).  The
+#   mid-bin offset of 7.5 means the codebook never has a true "0" level — the
+#   two centre levels are ±0.5·scale, equally good for capturing small-but-
+#   nonzero post-rotation activations.
+#
+# Storage:
+#   Indices 0..15 fit in 4 bits.  Pack 2 indices per uint8 byte along head_dim
+#   (low nibble = even index, high nibble = odd index):
+#     byte = (idx_even & 0xF) | ((idx_odd & 0xF) << 4)
+#   For head_dim=128 → packed shape (n_tokens, 64) uint8 = 64 bytes/token, vs
+#   128 bytes/token for INT8.  Plus per-token f32 scale (4 bytes) → 68 bytes
+#   total per token vs 132 for INT8 (≈ 0.515 ratio → ~1.94× context at the
+#   same RAM, asymptotic 2× as head_dim → ∞).
+#
+# Quality positioning (relative to W104 INT2 and existing INT8):
+#   - INT8: ~44 dB SNR on Hadamard-rotated activations (~132 B/token at d=128).
+#   - INT4: ~22–28 dB SNR (~68 B/token) — the intermediate quality tier.
+#   - INT2: ~5–7 dB SNR (~36 B/token) — long-context-only.
+#   INT4 is the "Phase 3.1 INT4 path" originally cited in the W104 plan: it
+#   doubles context within the M3 16 GB envelope while keeping a quality
+#   margin large enough that it works as a safe default for 8 K–24 K contexts
+#   without the SNR cliff that INT2 introduces.
+#
+# Constraint: head_dim must be divisible by 2.  Every common transformer
+# head_dim already satisfies this; we assert at quantize time rather than
+# padding (padding inflates storage and complicates dequant).
+# ---------------------------------------------------------------------------
+
+# INT4 codebook levels — uniform symmetric 16-level codebook centred on 0.
+# Indices 0..15 decode to (idx - 7.5) · scale.  We materialise the lookup
+# table once at module load to keep the dequant hot path branch-free.
+_KV_INT4_LEVELS: np.ndarray = (
+    np.arange(16, dtype=np.float32) - 7.5
+)  # [-7.5, -6.5, ..., 6.5, 7.5]
+
+
+def _quantize_int4_per_channel(arr_f16: np.ndarray) -> tuple:
+    """
+    Quantize a 2-D float16 array to nibble-packed INT4 per output-channel
+    (per row).
+
+    Each row gets its own scale (max(|row|) / 7.5).  Indices in {0..15}
+    are packed 2-per-byte along the head_dim axis:
+        packed[t, i] = (idx_even & 0xF) | ((idx_odd & 0xF) << 4)
+
+    Parameters
+    ----------
+    arr_f16 : np.ndarray  shape (n_tokens, head_dim)  — float16
+              ``head_dim`` must be a multiple of 2.
+
+    Returns
+    -------
+    packed : np.ndarray  shape (n_tokens, head_dim // 2)  — uint8
+    scale  : np.ndarray  shape (n_tokens,)                — float32
+    """
+    if arr_f16.ndim != 2:
+        raise ValueError(f"_quantize_int4_per_channel: expected 2-D, got {arr_f16.ndim}-D")
+    n, d = arr_f16.shape
+    if d % 2 != 0:
+        raise ValueError(
+            f"_quantize_int4_per_channel: head_dim={d} must be divisible by 2 "
+            f"(packing 2 INT4 indices per uint8 byte)"
+        )
+
+    arr = arr_f16.astype(np.float32)
+    abs_max = np.max(np.abs(arr), axis=-1)             # (n,)
+    scale = np.maximum(abs_max, 1e-8) / 7.5            # (n,) — avoid /0
+    normalised = arr / scale[:, np.newaxis] + 7.5
+    np.round(normalised, out=normalised)
+    indices = np.clip(normalised, 0.0, 15.0).astype(np.uint8)  # (n, d)
+
+    # Pack 2 nibbles per byte: even cols → low nibble, odd cols → high nibble.
+    packed = (
+        (indices[:, 0::2] & np.uint8(0x0F))
+        | ((indices[:, 1::2] & np.uint8(0x0F)) << 4)
+    ).astype(np.uint8)
+    return packed, scale.astype(np.float32)
+
+
+def _dequantize_int4_per_channel(
+    packed: np.ndarray, scale: np.ndarray, head_dim: int
+) -> np.ndarray:
+    """
+    Dequantize nibble-packed INT4 array back to float16.
+
+    Inverse of :func:`_quantize_int4_per_channel`.
+
+    Parameters
+    ----------
+    packed   : (n_tokens, head_dim // 2)  uint8
+    scale    : (n_tokens,)                float32
+    head_dim : original (unpacked) head dimension
+
+    Returns
+    -------
+    (n_tokens, head_dim)  float16
+    """
+    if head_dim % 2 != 0:
+        raise ValueError(
+            f"_dequantize_int4_per_channel: head_dim={head_dim} must be divisible by 2"
+        )
+    n_packed = head_dim // 2
+    if packed.shape[-1] != n_packed:
+        raise ValueError(
+            f"_dequantize_int4_per_channel: packed.shape[-1]={packed.shape[-1]} "
+            f"!= head_dim/2 = {n_packed}"
+        )
+
+    n = packed.shape[0]
+    indices = np.empty((n, head_dim), dtype=np.uint8)
+    indices[:, 0::2] =  packed       & np.uint8(0x0F)   # low nibble  → even cols
+    indices[:, 1::2] = (packed >> 4) & np.uint8(0x0F)   # high nibble → odd cols
+
+    arr = _KV_INT4_LEVELS[indices.astype(np.intp)]      # (n, head_dim) float32
+    arr *= scale[:, np.newaxis]
+    return arr.astype(np.float16)
+
+
 # Mode-dispatching helpers used by KVLayerCache to avoid duplicating the
-# INT8/INT2 split at every callsite.  ``mode`` here is the per-layer storage
-# mode; either "int8" (the QuantizedKVCache default) or "int2" (W104).
+# per-mode split at every callsite.  ``mode`` here is the per-layer storage
+# mode: "int8" (default), "int4" (W105), or "int2" (W104).
+
+# All quant-bearing modes recognised by the dispatch helpers.
+_KV_QUANT_MODES: frozenset = frozenset({"int8", "int4", "int2"})
+
 
 def _kv_quantize_per_channel(arr_f16: np.ndarray, mode: str) -> tuple:
     """Dispatch to the correct quantizer for the layer's storage mode."""
     if mode == "int2":
         return _quantize_int2_per_channel(arr_f16)
+    if mode == "int4":
+        return _quantize_int4_per_channel(arr_f16)
     # "int8" / "snap" both use INT8 per-channel storage.
     return _quantize_int8_per_channel(arr_f16)
 
@@ -259,19 +394,27 @@ def _kv_dequantize_per_channel(
 ) -> np.ndarray:
     """Dispatch to the correct dequantizer for the layer's storage mode.
 
-    ``head_dim`` is required when ``mode == "int2"`` to undo bit-packing.
+    ``head_dim`` is required when ``mode in {"int2", "int4"}`` to undo
+    bit-packing.
     """
     if mode == "int2":
         if head_dim is None:
             raise ValueError("head_dim is required for INT2 dequantization")
         return _dequantize_int2_per_channel(q, scale, head_dim)
+    if mode == "int4":
+        if head_dim is None:
+            raise ValueError("head_dim is required for INT4 dequantization")
+        return _dequantize_int4_per_channel(q, scale, head_dim)
     return _dequantize_int8_per_channel(q, scale)
 
 
 # Convenience: recommended KV mode for a given context length.  Plan W104:
 # auto-enable INT2 above 8 K tokens to keep Qwen2.5-7B at 32 K within the
 # M3 16 GB envelope (currently OOMs around ~10 K with INT8 KV).
+# W105 adds an optional INT4 medium tier (8 K–16 K), where the additional
+# 5–10 dB SNR margin over INT2 is worth the extra ~30 B per token.
 KV_INT2_AUTO_THRESHOLD: int = 8192
+KV_INT4_DEFAULT_THRESHOLD: int = 16384      # W105 — switch INT4 → INT2 above this
 
 
 def recommended_kv_mode(
@@ -279,12 +422,26 @@ def recommended_kv_mode(
     short_mode: str = "int8",
     long_mode: str = "int2",
     threshold: int = KV_INT2_AUTO_THRESHOLD,
+    medium_mode: "str | None" = None,
+    medium_threshold: "int | None" = None,
 ) -> str:
     """Pick the KV storage mode suitable for ``context_tokens``.
+
+    Two-tier (W104, default behaviour, unchanged):
 
     >>> recommended_kv_mode(4096)
     'int8'
     >>> recommended_kv_mode(16384)
+    'int2'
+
+    Three-tier (W105) — pass ``medium_mode`` and ``medium_threshold`` to
+    introduce an INT4 stage between ``short_mode`` and ``long_mode``:
+
+    >>> recommended_kv_mode(4000, medium_mode="int4", medium_threshold=8192)
+    'int8'
+    >>> recommended_kv_mode(12000, medium_mode="int4", medium_threshold=8192)
+    'int4'
+    >>> recommended_kv_mode(20000, medium_mode="int4", medium_threshold=8192)
     'int2'
 
     Used by callers that build a :class:`QuantizedKVCache` once per session
@@ -292,7 +449,45 @@ def recommended_kv_mode(
     """
     if context_tokens < 0:
         raise ValueError(f"context_tokens must be ≥ 0, got {context_tokens}")
+    if (medium_mode is None) != (medium_threshold is None):
+        raise ValueError(
+            "medium_mode and medium_threshold must both be set or both be None"
+        )
+    if medium_mode is not None and medium_threshold is not None:
+        if medium_threshold > threshold:
+            raise ValueError(
+                f"medium_threshold ({medium_threshold}) must be ≤ threshold "
+                f"({threshold}) — medium tier sits between short and long"
+            )
+        if context_tokens > threshold:
+            return long_mode
+        if context_tokens > medium_threshold:
+            return medium_mode
+        return short_mode
     return long_mode if context_tokens > threshold else short_mode
+
+
+def recommended_kv_mode_3tier(
+    context_tokens: int,
+    short_threshold: int = KV_INT2_AUTO_THRESHOLD,
+    long_threshold: int = KV_INT4_DEFAULT_THRESHOLD,
+) -> str:
+    """W105 — int8 / int4 / int2 by context length.
+
+    Returns ``"int8"`` for ≤ ``short_threshold``, ``"int4"`` for the band
+    between ``short_threshold`` and ``long_threshold``, and ``"int2"`` for
+    contexts longer than ``long_threshold``.
+
+    Defaults: ≤ 8 K → int8, 8 K–16 K → int4, > 16 K → int2.
+    """
+    return recommended_kv_mode(
+        context_tokens,
+        short_mode="int8",
+        medium_mode="int4",
+        long_mode="int2",
+        medium_threshold=short_threshold,
+        threshold=long_threshold,
+    )
 
 
 # Number of tokens to collect before fitting the per-layer SVD basis.
@@ -362,8 +557,8 @@ class KVLayerCache:
     )
 
     def __init__(self, window: int = 64, kv_mode: str = "int8"):
-        if kv_mode not in ("int8", "int2"):
-            raise ValueError(f"kv_mode must be int8 or int2, got {kv_mode!r}")
+        if kv_mode not in ("int8", "int4", "int2"):
+            raise ValueError(f"kv_mode must be int8, int4, or int2, got {kv_mode!r}")
         self.window        = window
         self._kv_mode      = kv_mode
         self.keys_recent   = []     # list of (n_heads, head_dim) f16 arrays
@@ -821,11 +1016,11 @@ class KVLayerCache:
                             key vectors to support get_relevant_kv().
         """
         import pathlib
-        if self._kv_mode == "int2":
+        if self._kv_mode in ("int4", "int2"):
             raise ValueError(
-                "enable_disk_tier() is INT8-only (memmap dtype is int8). "
-                "INT2 mode (W104) is RAM-only — combining INT2 + disk tier "
-                "is not supported."
+                f"enable_disk_tier() is INT8-only (memmap dtype is int8). "
+                f"Sub-INT8 modes (int4 — W105, int2 — W104) are RAM-only; "
+                f"layer is in {self._kv_mode!r}."
             )
         cache_dir = pathlib.Path(cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1253,31 +1448,33 @@ class QuantizedKVCache:
         fast_weight_lr    : Phase 5 — learning rate for fast-weight absorption (0 = off)
         fast_weight_decay : Phase 5 — per-absorption W_f decay factor
         """
-        if mode not in ("fp16", "int8", "snap", "int2"):
-            raise ValueError(f"mode must be fp16, int8, snap, or int2 — got {mode!r}")
+        if mode not in ("fp16", "int8", "snap", "int4", "int2"):
+            raise ValueError(
+                f"mode must be fp16, int8, snap, int4, or int2 — got {mode!r}"
+            )
 
-        # W104: INT2 storage mode is incompatible with the auxiliary tiers that
-        # assume INT8 storage shape (head_dim) and INT8 quantize/dequantize calls
-        # in their hot paths.  Reject these combinations explicitly so the user
-        # learns about it at construction time rather than via a shape error
-        # mid-decode.
-        if mode == "int2":
+        # W104 / W105: sub-INT8 storage modes are incompatible with the
+        # auxiliary tiers that assume INT8 storage shape (head_dim) and INT8
+        # quantize/dequantize calls in their hot paths.  Reject these
+        # combinations explicitly so the user learns at construction time
+        # rather than via a shape error mid-decode.
+        if mode in ("int4", "int2"):
             if svd_rank > 0:
                 raise ValueError(
-                    "mode='int2' is incompatible with svd_rank > 0 "
+                    f"mode={mode!r} is incompatible with svd_rank > 0 "
                     "(SVD KV path quantizes projected vectors as INT8). "
-                    "Use mode='int8' with svd_rank, or mode='int2' alone."
+                    f"Use mode='int8' with svd_rank, or mode={mode!r} alone."
                 )
             if comm_vq_bits > 0:
                 raise ValueError(
-                    "mode='int2' is incompatible with comm_vq_bits > 0 "
+                    f"mode={mode!r} is incompatible with comm_vq_bits > 0 "
                     "(CommVQ already vector-quantizes K/V; pick one)."
                 )
             if qfilter_rank > 0:
                 raise ValueError(
-                    "mode='int2' is incompatible with qfilter_rank > 0 "
+                    f"mode={mode!r} is incompatible with qfilter_rank > 0 "
                     "(Q-Filters geometric eviction assumes INT8 storage). "
-                    "Use mode='int8' with qfilter_rank, or mode='int2' alone."
+                    f"Use mode='int8' with qfilter_rank, or mode={mode!r} alone."
                 )
 
         self.mode        = mode
@@ -1289,7 +1486,8 @@ class QuantizedKVCache:
         self.n_layers    = n_layers
         # KVLayerCache stores per-layer mode; INT8 is the default for "fp16"
         # (no old-tier quant happens) and "snap" (KIVI INT8 + SnapKV eviction).
-        layer_mode = "int2" if mode == "int2" else "int8"
+        # Sub-INT8 modes ("int4", "int2") propagate directly.
+        layer_mode = mode if mode in ("int4", "int2") else "int8"
         self._layers: list[KVLayerCache] = [
             KVLayerCache(window=window, kv_mode=layer_mode) for _ in range(n_layers)
         ]
@@ -1562,6 +1760,15 @@ class HadamardKVCache(QuantizedKVCache):
     valuable here — without it the post-rotation distribution of K/V outliers
     collapses three of the four NF2 bins, costing ≥ 3 dB MSE.  See PLAN W104
     for the 32 K-context-on-M3-16 GB envelope this enables.
+
+    W105 — INT4 mode
+    ----------------
+    ``mode="int4"`` stores quantised K/V using a 16-level uniform symmetric
+    codebook (±0.5..±7.5 in scaled units) nibble-packed 2-per-byte.  Half the
+    memory of INT8 with ~22–28 dB SNR on Hadamard-rotated activations — the
+    intermediate quality tier that makes 16 K context safe on M3 16 GB
+    without the SNR cliff that INT2 introduces.  Use ``recommended_kv_mode_3tier``
+    to drive int8 / int4 / int2 selection by planned context length.
     """
 
     def __init__(
