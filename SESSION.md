@@ -6,7 +6,7 @@
 ---
 
 ## Current date
-2026-05-01 (W104 shipped — INT2 KV cache extension)
+2026-05-02 (W105 shipped — INT4 KV cache, intermediate quality tier)
 
 ## Last commits
 - **`f109942`** — docs(squash): update compliance section to point to standalone konjoai/squash repo
@@ -38,6 +38,15 @@
 ---
 
 ## ✅ Recently shipped
+- **W105** (2026-05-02) — INT4 KV cache extension. Per-token symmetric 16-level
+  uniform codec, nibble-packed 2-per-uint8 along head_dim. Storage ~68 B/token
+  at d=128 (vs 132 INT8, 36 INT2) — the 2× intermediate tier between INT8 and
+  W104 INT2. SNR ~22 dB on Hadamard-rotated activations. 38 new tests in
+  `tests/test_kv_int4.py`; suite 2426 → 2464 passing (+38, zero regressions).
+  Zero new production modules (in-place extension of `squish/kv/kv_cache.py`).
+  3-tier helper `recommended_kv_mode_3tier(ctx)` returns int8 / int4 / int2
+  by context length (defaults: ≤ 8 K / 8–16 K / > 16 K). Disk-tier guardrail
+  generalised to reject all sub-INT8 modes.
 - **W104** (2026-05-01) — INT2 KV cache extension to `HadamardKVCache` /
   `QuantizedKVCache`. Per-token NF2 codec, 4-bit-packed (4 indices per uint8
   along head_dim). 32 new tests in `tests/test_kv_int2.py`. Zero new modules

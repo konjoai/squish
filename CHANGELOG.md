@@ -5,6 +5,74 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.23.0] — 2026-05-02 — W105: INT4 KV Cache (intermediate quality tier)
+
+### Added
+- **`squish/kv/kv_cache.py` — `_quantize_int4_per_channel` /
+  `_dequantize_int4_per_channel`**: per-token symmetric INT4 codec.
+  16-level uniform codebook `{-7.5, -6.5, …, 6.5, 7.5}` (the natural
+  generalisation of the W104 INT2 NF2 codec to 4 bits), nibble-packed
+  2-per-byte along `head_dim` (low nibble = even col, high = odd).
+  `head_dim` must be a multiple of 2 — every transformer head dim
+  satisfies this. Storage drops from `head_dim + 4` (INT8) to
+  `head_dim/2 + 4` (INT4) bytes per token: ≈ 0.515 ratio at d=128 →
+  ≈ 1.94× context within the same RAM, asymptotic 2× as d → ∞.
+
+- **`squish/kv/kv_cache.py` — `_kv_quantize_per_channel` /
+  `_kv_dequantize_per_channel`**: dispatch extended to `"int4"`. The
+  `_KV_QUANT_MODES` frozenset now lists all three quant-bearing modes
+  (`{"int8", "int4", "int2"}`) for callers that want to enumerate.
+
+- **`KVLayerCache._kv_mode`** now accepts `"int4"` alongside
+  `"int8"` (default) and `"int2"` (W104). Construction-time validation
+  unchanged for the existing values.
+
+- **`QuantizedKVCache(mode="int4")`** validated as a first-class mode
+  alongside `"fp16" | "int8" | "snap" | "int4" | "int2"`. The same
+  construction-time guards from W104 reject illegal combinations:
+  `mode="int4"` + (`svd_rank > 0` | `comm_vq_bits > 0` | `qfilter_rank > 0`).
+  `enable_disk_tier()` rejects layers in any sub-INT8 mode (int4 or int2)
+  — disk overflow stays INT8-only.
+
+- **`HadamardKVCache` — `mode="int4"` documentation**: docstring updated
+  with the W105 motivation. INT4 with QuaRot rotation gives the
+  intermediate quality tier between INT8 and INT2 — large enough margin
+  for the 8 K–16 K context band that INT2 doesn't quite cover safely.
+
+- **`recommended_kv_mode_3tier(context_tokens)` + `KV_INT4_DEFAULT_THRESHOLD = 16384`**:
+  three-tier helper. Returns `"int8"` for ≤ 8 K, `"int4"` for the
+  8 K–16 K band, `"int2"` for > 16 K. The two-arg version of
+  `recommended_kv_mode()` is unchanged (W104 callers keep their behaviour);
+  new optional `medium_mode` / `medium_threshold` parameters introduce the
+  middle tier inline when both are set.
+
+- **`tests/test_kv_int4.py`** — 38 new tests: codec roundtrip · nibble-packing
+  layout (low/high nibble assertion) · per-token-scale independence · zero-input
+  safety · SNR ordering INT8 > INT4 > INT2 with ≥ 6 dB gap to INT2 ·
+  Hadamard-rotation lift on heavy-tailed inputs · dispatch helpers ·
+  KVLayerCache mode wiring · QuantizedKVCache integration · HadamardKVCache
+  end-to-end · memory-ratio assertion (≥ 1.7× reduction at 64 tokens / d=128) ·
+  disk-tier guardrail · 3-tier recommendation logic · partial-arg + inverted-
+  threshold validation · INT8 / INT2 storage shapes unchanged after W105 wiring.
+
+### Why this matters
+W104 shipped INT2 KV (4× memory, ≥ 16 K context) but the SNR cliff between
+INT8 (~44 dB) and INT2 (~5 dB) is sharp. INT4 sits at ~22 dB on Hadamard-
+rotated activations — a clean intermediate that doubles context (8 K → 16 K)
+without the long-context-only reliability profile of INT2. This makes the
+3-tier `recommended_kv_mode_3tier` selection meaningful: int8 for short
+contexts, int4 for medium, int2 for the longest.
+
+### Module count
+- 0 new modules (in-place extension of `squish/kv/kv_cache.py`).
+- 1 new test module (`tests/test_kv_int4.py`).
+
+### Suite
+- 2464 passed / 3 pre-existing W95 importlib failures / 43 skipped.
+- +38 from W105 (W104 was at 2426 passed). Zero new regressions.
+
+---
+
 ## [9.22.0] — 2026-05-01 — W104: INT2 KV Cache (4-level NF2, bit-packed)
 
 ### Added
