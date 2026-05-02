@@ -6,7 +6,7 @@
 ---
 
 ## Current date
-2026-04-29 (W103.2 shipped)
+2026-05-01 (W104 shipped — INT2 KV cache extension)
 
 ## Last commits
 - **`f109942`** — docs(squash): update compliance section to point to standalone konjoai/squash repo
@@ -38,6 +38,15 @@
 ---
 
 ## ✅ Recently shipped
+- **W104** (2026-05-01) — INT2 KV cache extension to `HadamardKVCache` /
+  `QuantizedKVCache`. Per-token NF2 codec, 4-bit-packed (4 indices per uint8
+  along head_dim). 32 new tests in `tests/test_kv_int2.py`. Zero new modules
+  (in-place extension of `squish/kv/kv_cache.py`). Memory: ~36 B per token
+  (vs ~132 B INT8) at head_dim=128 → 32 K context inside 4 GB KV envelope on
+  M3 16 GB (hardware ship gate deferred). Mode validation rejects illegal
+  combos (int2 + svd_rank / comm_vq_bits / qfilter_rank / disk-tier).
+  `recommended_kv_mode(ctx)` + `KV_INT2_AUTO_THRESHOLD = 8192` helper for
+  callers picking mode by planned context length.
 - **W100** (2026-04-28) — Pre-download HF model scanner (48/48 tests; pre-load ACE surface closed).
 - **W101** (2026-04-28) — Rust GIL-free INT4 fused dequantize + GEMV (`squish_quant_rs`); 18/18 tests.
 - **W102** (2026-04-28) — `squish bench` throughput subcommand + Python 3.9 CI repair (44 → 3 failures).
