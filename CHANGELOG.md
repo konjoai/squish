@@ -5,6 +5,76 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.22.0] — 2026-05-01 — W104: INT2 KV Cache (4-level NF2, bit-packed)
+
+### Added
+- **`squish/kv/kv_cache.py` — `_quantize_int2_per_channel` /
+  `_dequantize_int2_per_channel`**: per-token symmetric INT2 codec for KV
+  cache. 4-level NF2 codebook `{-1.5, -0.5, 0.5, 1.5}` (matches
+  `squish.quant.sqint2.NF2_VALUES` — same grid as the SQINT2 weight pipeline).
+  Indices bit-packed 4-per-byte along `head_dim` → packed shape
+  `(n_tokens, head_dim // 4)` uint8. `head_dim` must be a multiple of 4
+  (covers 64 / 96 / 128 / 160 / 192 / 256 — every common transformer head dim).
+  Storage per token drops from `head_dim + 4` bytes (INT8) to
+  `head_dim/4 + 4` bytes (INT2) — asymptotic 4× reduction on the old-tier
+  buffer.
+
+- **`squish/kv/kv_cache.py` — `_kv_quantize_per_channel` /
+  `_kv_dequantize_per_channel`**: mode-dispatching helpers used by
+  `KVLayerCache.append` and `KVLayerCache.get_full_kv` to route to the
+  correct quantizer based on the layer's `_kv_mode` (`"int8"` or `"int2"`).
+
+- **`KVLayerCache` — `_kv_mode` slot + `kv_mode` constructor argument**:
+  per-layer storage mode. Default `"int8"` (no behaviour change for existing
+  callers). Set to `"int2"` by `QuantizedKVCache(mode="int2")`.
+
+- **`QuantizedKVCache` — `mode="int2"`**: validated as a first-class mode
+  alongside `"fp16" | "int8" | "snap"`. Construction-time guards reject
+  combinations that would produce shape errors mid-decode:
+  `mode="int2"` + (`svd_rank > 0` | `comm_vq_bits > 0` | `qfilter_rank > 0`).
+  Disk-tier overflow (`enable_disk_tier`) is also INT8-only and now raises
+  on INT2 layers — INT2 mode is RAM-only by design.
+
+- **`HadamardKVCache` — `mode="int2"` documentation**: docstring updated
+  with the W104 motivation. Hadamard rotation is *especially* valuable
+  under INT2 because outlier-heavy raw activations would collapse three of
+  the four NF2 bins, so this combination is the recommended ≥ 16 K-context
+  configuration.
+
+- **`recommended_kv_mode(context_tokens)` + `KV_INT2_AUTO_THRESHOLD = 8192`**:
+  helper for callers that pick the KV storage mode based on planned context
+  length. Returns `"int8"` for ≤ 8 K, `"int2"` for > 8 K. Threshold and
+  short/long modes are overridable.
+
+- **`tests/test_kv_int2.py`** — 32 new tests:
+  pack/unpack roundtrip · per-token-scale independence · zero-input safety ·
+  dispatch helpers · KVLayerCache mode wiring · QuantizedKVCache integration ·
+  HadamardKVCache end-to-end · memory-ratio assertion (≥ 2.9× reduction at
+  64 tokens / head_dim 128) · disk-tier guardrail · `recommended_kv_mode`
+  threshold logic · INT8 storage shape unchanged after W104 wiring.
+
+### Why this matters
+Qwen2.5-7B at 32 K context currently OOMs around 10 K with the INT8 KV path on
+M3 16 GB. Bit-packed INT2 KV (combined with the existing Hadamard rotation)
+brings the per-token KV footprint from ~132 B to ~36 B, putting 32 K context
+inside the 4 GB KV envelope. The reconstruction error is bounded: NF2 SNR on
+post-rotation distributions is ≥ 5 dB on uniform inputs and improves under
+QuaRot rotation by ≥ 1 dB on heavy-tailed sources (validated in
+`test_hadamard_rotation_improves_int2_snr_vs_raw_outliers`).
+
+### Module count
+- 0 new modules (in-place extension of `squish/kv/kv_cache.py`).
+- 1 new test module (`tests/test_kv_int2.py`).
+
+### Hard stops still in force
+- INT2 + SVD KV / CommVQ / Q-Filters: rejected at construction.
+- INT2 + disk-tier overflow: rejected at `enable_disk_tier()`.
+- Naive INT2 KV without Hadamard rotation: discouraged in docs but not
+  blocked — `QuantizedKVCache(mode="int2")` will run, but the recommended
+  configuration for 7B models is `HadamardKVCache(mode="int2")`.
+
+---
+
 ## [9.21.0] — 2026-04-29 — W103.4a: SQINT2 Disk Serialisation + Loader Wiring
 
 ### Added
