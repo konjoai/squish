@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>squish — per-token KV-cache quantization</title>
+<meta name="description"
+      content="squish: INT8 / INT4 / INT2 KV-cache quantization for transformer inference. Hadamard rotation, NF2 codebook, drop-in MLX integration." />
+<style>
+  /* ────────── design tokens ────────── */
+  :root {
+    --bg-0:        #0b0d12;
+    --bg-1:        #11141c;
+    --bg-2:        #161a26;
+    --bg-3:        #1d2230;
+    --line:        rgba(255,255,255,0.07);
+    --line-strong: rgba(255,255,255,0.14);
+
+    --fg:          #e6e8ef;
+    --fg-mute:     #9ba3b4;
+    --fg-dim:      #6b7382;
+
+    --accent:      #8b6cff;   /* violet — primary */
+    --accent-2:    #28d4c8;   /* teal   — secondary */
+    --accent-3:    #ff9550;   /* orange — INT4 */
+    --accent-4:    #ff5e94;   /* pink   — INT2 */
+    --accent-good: #4cd964;
+    --accent-warn: #ffc857;
+
+    --shadow-sm:   0 1px 2px rgba(0,0,0,0.4);
+    --shadow-md:   0 8px 30px rgba(0,0,0,0.45);
+    --shadow-lg:   0 24px 60px rgba(0,0,0,0.55);
+
+    --radius-sm:   8px;
+    --radius-md:   14px;
+    --radius-lg:   22px;
+
+    --font-mono:   ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --font-sans:   -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  }
+
+  *,*::before,*::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(139,108,255,0.20), transparent 70%),
+      radial-gradient(900px 500px at 0% 30%,    rgba(40,212,200,0.13),  transparent 70%),
+      radial-gradient(700px 400px at 100% 90%,  rgba(255,94,148,0.10),  transparent 70%),
+      var(--bg-0);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+  h1, h2, h3, h4 { letter-spacing: -0.01em; margin: 0; }
+  a { color: var(--accent-2); text-decoration: none; }
+  a:hover { text-decoration: underline; text-decoration-thickness: 2px; }
+  code, kbd, pre, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+
+  /* ────────── layout ────────── */
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+  section { padding: 90px 0; border-top: 1px solid var(--line); }
+  section:first-of-type { border-top: 0; }
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 11px;
+    color: var(--fg-mute);
+    margin-bottom: 14px;
+  }
+  .h2 { font-size: clamp(28px, 3.4vw, 40px); font-weight: 700; }
+  .lede { color: var(--fg-mute); font-size: 18px; max-width: 720px; margin-top: 14px; }
+
+  /* ────────── nav ────────── */
+  nav.top {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(11,13,18,0.78);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  nav.top .wrap {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 17px;
+  }
+  .brand .logo {
+    width: 26px; height: 26px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    border-radius: 7px;
+    box-shadow: 0 0 18px rgba(139,108,255,0.35);
+  }
+  nav.top ul { list-style: none; padding: 0; margin: 0; display: flex; gap: 26px; }
+  nav.top li a { color: var(--fg-mute); font-size: 14px; }
+  nav.top li a:hover { color: var(--fg); text-decoration: none; }
+  @media (max-width: 760px) {
+    nav.top ul { display: none; }
+  }
+
+  /* ────────── hero ────────── */
+  .hero { padding: 120px 0 90px; position: relative; overflow: hidden; }
+  .hero h1 {
+    font-size: clamp(40px, 6vw, 72px);
+    font-weight: 800;
+    line-height: 1.05;
+    background: linear-gradient(90deg, #ffffff 0%, #c5c2ff 60%, #95f0e5 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: 22px;
+  }
+  .hero .pitch { font-size: 21px; color: var(--fg-mute); max-width: 720px; line-height: 1.5; }
+  .hero .actions { margin-top: 36px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .btn {
+    padding: 13px 22px;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--line-strong);
+    background: var(--bg-2);
+    color: var(--fg);
+    transition: 120ms ease;
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn:hover { background: var(--bg-3); transform: translateY(-1px); text-decoration: none; }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #0b0d12;
+    border-color: transparent;
+    box-shadow: 0 12px 28px rgba(139,108,255,0.30);
+  }
+  .btn.primary:hover {
+    box-shadow: 0 18px 38px rgba(139,108,255,0.42);
+  }
+
+  .hero-stats {
+    margin-top: 56px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+  }
+  .stat {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 22px 22px 20px;
+  }
+  .stat .num {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #ffffff, var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .stat .lbl { color: var(--fg-mute); font-size: 13px; margin-top: 4px; }
+  @media (max-width: 760px) {
+    .hero-stats { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* ────────── feature cards ────────── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 22px;
+    margin-top: 44px;
+  }
+  .card {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 26px 24px;
+    position: relative;
+    overflow: hidden;
+    transition: 200ms ease;
+  }
+  .card:hover {
+    border-color: var(--line-strong);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+  .card .tag {
+    position: absolute; top: 22px; right: 22px;
+    font-size: 10px; letter-spacing: 0.14em;
+    color: var(--fg-dim); text-transform: uppercase;
+  }
+  .card .icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: grid; place-items: center;
+    font-size: 22px;
+    margin-bottom: 18px;
+  }
+  .card.int8 .icon  { background: rgba(40,212,200,0.14);  color: var(--accent-2); }
+  .card.int4 .icon  { background: rgba(255,149, 80,0.14); color: var(--accent-3); }
+  .card.int2 .icon  { background: rgba(255, 94,148,0.14); color: var(--accent-4); }
+  .card.had .icon   { background: rgba(139,108,255,0.16); color: var(--accent);   }
+  .card.rec .icon   { background: rgba( 76,217,100,0.14); color: var(--accent-good); }
+  .card.snap .icon  { background: rgba(255,200, 87,0.14); color: var(--accent-warn); }
+  .card h3 { font-size: 18px; margin-bottom: 8px; }
+  .card p { color: var(--fg-mute); font-size: 14.5px; line-height: 1.55; margin: 0; }
+  .card .meta {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-dim);
+  }
+  .card .meta b { color: var(--fg); font-weight: 600; }
+
+  /* ────────── calculator ────────── */
+  .calc {
+    margin-top: 40px;
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    box-shadow: var(--shadow-md);
+  }
+  .calc-grid {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 36px;
+    align-items: start;
+  }
+  @media (max-width: 880px) {
+    .calc-grid { grid-template-columns: 1fr; }
+  }
+  .calc-controls label {
+    display: block;
+    font-size: 13px;
+    color: var(--fg-mute);
+    margin: 12px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+  }
+  .calc-controls input[type=range] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    background: linear-gradient(90deg,
+      var(--accent-2) 0%,
+      var(--accent-3) 50%,
+      var(--accent-4) 100%);
+    border-radius: 99px;
+    outline: none;
+  }
+  .calc-controls input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px; height: 22px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.6);
+    cursor: pointer;
+    border: 3px solid var(--accent);
+  }
+  .calc-controls input[type=range]::-moz-range-thumb {
+    width: 22px; height: 22px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.6);
+    cursor: pointer;
+    border: 3px solid var(--accent);
+  }
+  .calc-controls .row {
+    display: flex; justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .calc-controls .val {
+    font-family: var(--font-mono);
+    font-size: 28px;
+    font-weight: 700;
+  }
+  .calc-controls .unit { color: var(--fg-mute); font-size: 14px; margin-left: 6px; }
+  .calc-controls select {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-2);
+    border: 1px solid var(--line-strong);
+    color: var(--fg);
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: var(--font-mono);
+  }
+  .calc-rec {
+    margin-top: 22px;
+    padding: 16px 18px;
+    border-radius: 12px;
+    background: rgba(139,108,255,0.10);
+    border: 1px solid rgba(139,108,255,0.32);
+    font-size: 14px;
+  }
+  .calc-rec strong { color: var(--accent); }
+  .calc-rec code {
+    background: rgba(0,0,0,0.30);
+    padding: 2px 8px;
+    border-radius: 6px;
+    color: var(--fg);
+  }
+
+  .calc-chart svg { display: block; width: 100%; height: auto; }
+  .calc-chart .bar-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 110px;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--line);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  .calc-chart .bar-row:last-child { border-bottom: 0; }
+  .calc-chart .lbl { font-weight: 600; }
+  .calc-chart .val { text-align: right; color: var(--fg-mute); }
+  .calc-chart .bar {
+    height: 22px;
+    border-radius: 6px;
+    transition: width 220ms ease, background 200ms;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+    min-width: 4px;
+  }
+  .calc-chart .bar.fp16 { background: linear-gradient(90deg, #4a6cff, #7693ff); }
+  .calc-chart .bar.int8 { background: linear-gradient(90deg, var(--accent-2), #5fefe1); }
+  .calc-chart .bar.int4 { background: linear-gradient(90deg, var(--accent-3), #ffba80); }
+  .calc-chart .bar.int2 { background: linear-gradient(90deg, var(--accent-4), #ff8eb6); }
+
+  /* ────────── benchmark table ────────── */
+  .bench {
+    margin-top: 40px;
+    overflow-x: auto;
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+  }
+  table.bench-tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  table.bench-tbl th, table.bench-tbl td {
+    padding: 14px 18px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-mono);
+  }
+  table.bench-tbl th {
+    color: var(--fg-mute);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 11px;
+    background: var(--bg-2);
+  }
+  table.bench-tbl tr:last-child td { border-bottom: 0; }
+  table.bench-tbl td.mode { font-weight: 700; }
+  table.bench-tbl td.mode.int8 { color: var(--accent-2); }
+  table.bench-tbl td.mode.int4 { color: var(--accent-3); }
+  table.bench-tbl td.mode.int2 { color: var(--accent-4); }
+  table.bench-tbl .pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 99px;
+    font-size: 11px;
+    margin-left: 6px;
+    background: rgba(255,255,255,0.06);
+    color: var(--fg-mute);
+  }
+
+  /* ────────── code blocks ────────── */
+  .code-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+    gap: 20px;
+    margin-top: 40px;
+  }
+  .code-card {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .code-card .hd {
+    padding: 12px 18px;
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 13px;
+    color: var(--fg-mute);
+  }
+  .code-card .hd .dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent-3); margin-right: 6px;
+  }
+  .code-card .hd .dot:nth-child(2) { background: var(--accent-warn); }
+  .code-card .hd .dot:nth-child(3) { background: var(--accent-good); }
+  .code-card pre {
+    margin: 0;
+    padding: 22px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--fg);
+  }
+  .code-card pre .k  { color: #c39bff; }    /* keyword */
+  .code-card pre .s  { color: #95f0e5; }    /* string */
+  .code-card pre .n  { color: #ff9550; }    /* number */
+  .code-card pre .c  { color: var(--fg-dim); font-style: italic; }
+  .code-card pre .fn { color: var(--accent-2); }
+  .code-card pre .id { color: var(--fg); }
+
+  /* ────────── footer ────────── */
+  footer {
+    border-top: 1px solid var(--line);
+    padding: 50px 0 70px;
+    color: var(--fg-mute);
+    font-size: 13px;
+  }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: rgba(40,212,200,0.10);
+    color: var(--accent-2);
+    border: 1px solid rgba(40,212,200,0.24);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  ::selection { background: rgba(139,108,255,0.45); color: #fff; }
+</style>
+</head>
+<body>
+
+<!-- ────────── nav ────────── -->
+<nav class="top">
+  <div class="wrap">
+    <div class="brand"><span class="logo"></span> squish</div>
+    <ul>
+      <li><a href="#what">What</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#calc">Calculator</a></li>
+      <li><a href="#bench">Benchmarks</a></li>
+      <li><a href="#code">Code</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ────────── hero ────────── -->
+<section class="hero">
+  <div class="wrap">
+    <div class="badge">v9.23.0 · W105 · MAY 2026</div>
+    <h1 style="margin-top:18px">Quantize the KV cache.<br/>Keep the context.</h1>
+    <p class="pitch">
+      Per-token symmetric KV-cache quantization for transformer inference.
+      INT8, INT4, and INT2 storage with a single-line mode switch.
+      QuaRot-style Hadamard rotation built in. 32 K context on a 16 GB laptop.
+    </p>
+    <div class="actions">
+      <a href="#calc"   class="btn primary">▸ Open the memory calculator</a>
+      <a href="#code"   class="btn">$ pip install squish</a>
+    </div>
+
+    <div class="hero-stats">
+      <div class="stat"><div class="num">4×</div><div class="lbl">INT2 vs INT8 — bytes per token</div></div>
+      <div class="stat"><div class="num">~22 dB</div><div class="lbl">INT4 SNR · post-Hadamard</div></div>
+      <div class="stat"><div class="num">3 modes</div><div class="lbl">int8 · int4 · int2 — one switch</div></div>
+      <div class="stat"><div class="num">0 deps</div><div class="lbl">pure NumPy + optional Rust</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────── what ────────── -->
+<section id="what">
+  <div class="wrap">
+    <div class="eyebrow">What is squish?</div>
+    <h2 class="h2">A KV cache that fits where models don't.</h2>
+    <p class="lede">
+      Modern LLMs spend more memory on the KV cache than on weights at long
+      context.  squish quantizes K and V on a per-token, per-channel basis
+      with a Hadamard rotation in front, so the post-rotation distribution
+      flattens and small codebooks (4 levels for INT2, 16 for INT4) survive
+      the 0.1 % outlier channels that normally collapse low-bit quantization.
+      The result: drop-in <code>QuantizedKVCache</code> /
+      <code>HadamardKVCache</code> classes that plug into the
+      <code>mlx_lm</code> cache protocol with a single mode argument.
+    </p>
+  </div>
+</section>
+
+<!-- ────────── features ────────── -->
+<section id="features">
+  <div class="wrap">
+    <div class="eyebrow">Capabilities</div>
+    <h2 class="h2">One API. Three storage tiers.</h2>
+    <div class="grid">
+
+      <div class="card int8">
+        <div class="tag">DEFAULT · KIVI</div>
+        <div class="icon">▣</div>
+        <h3>INT8 per-token</h3>
+        <p>The familiar baseline.  ~44 dB SNR, 132 B/token at d=128.
+        Zero quality cost — use this for short-context production traffic.</p>
+        <div class="meta"><span>head_dim + 4 B/tok</span><b>≥ 44 dB</b></div>
+      </div>
+
+      <div class="card int4">
+        <div class="tag">W105 · 2026-05</div>
+        <div class="icon">◫</div>
+        <h3>INT4 per-token <span class="badge" style="margin-left:6px">NEW</span></h3>
+        <p>16-level uniform codec, nibble-packed 2-per-byte.
+        Half the memory of INT8, ~22 dB SNR — the right default for the
+        8 K–16 K context band where INT2 is overkill.</p>
+        <div class="meta"><span>head_dim/2 + 4 B/tok</span><b>≈ 22 dB</b></div>
+      </div>
+
+      <div class="card int2">
+        <div class="tag">W104 · 2026-05</div>
+        <div class="icon">▤</div>
+        <h3>INT2 per-token</h3>
+        <p>4-level NF2 codebook bit-packed 4-per-byte.  ~4× memory reduction,
+        designed for ≥ 16 K contexts where the SNR cost is dominated by what
+        Hadamard rotation already buys you.</p>
+        <div class="meta"><span>head_dim/4 + 4 B/tok</span><b>≈ 6 dB</b></div>
+      </div>
+
+      <div class="card had">
+        <div class="tag">QuaRot</div>
+        <div class="icon">◈</div>
+        <h3>Hadamard rotation</h3>
+        <p><code>HadamardKVCache</code> rotates K/V with a random Walsh–Hadamard
+        matrix before quantization, then un-rotates on read.  Outlier energy
+        spreads uniformly across dims; INT2 stops collapsing.  Re-uses the
+        existing seed-driven build path from <code>squish.kv.kv_cache</code>.</p>
+        <div class="meta"><span>orthogonal · O(d log d)</span><b>+1 to +12 dB</b></div>
+      </div>
+
+      <div class="card rec">
+        <div class="tag">helper</div>
+        <div class="icon">◉</div>
+        <h3><span class="mono">recommended_kv_mode_3tier</span></h3>
+        <p>Auto-pick the storage mode by planned context length.  Defaults:
+        ≤ 8 K → INT8, 8 K–16 K → INT4, &gt; 16 K → INT2.  Thresholds and
+        modes are overridable; degrades cleanly to the W104 2-tier helper.</p>
+        <div class="meta"><span>int8 → int4 → int2</span><b>1-line setup</b></div>
+      </div>
+
+      <div class="card snap">
+        <div class="tag">SnapKV · KIVI</div>
+        <div class="icon">◐</div>
+        <h3>Mode-orthogonal eviction</h3>
+        <p>SnapKV importance scoring, NVMe disk-tier overflow, SVD KV
+        compression, CommVQ, Q-Filters — all live alongside the quant tier.
+        Construction-time guards keep the combinations that actually work
+        from the ones that would silently break.</p>
+        <div class="meta"><span>SVD · CommVQ · Disk</span><b>guarded</b></div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ────────── calculator ────────── -->
+<section id="calc">
+  <div class="wrap">
+    <div class="eyebrow">Interactive · memory calculator</div>
+    <h2 class="h2">Slide the context. Watch the cache shrink.</h2>
+    <p class="lede">
+      Per-tier KV-cache RAM for a transformer with the chosen layer count,
+      KV-head count, and head dim, scaled to your planned context length.
+      The bars below show absolute bytes; the recommendation card shows the
+      mode <code>recommended_kv_mode_3tier()</code> would pick.
+    </p>
+
+    <div class="calc">
+      <div class="calc-grid">
+
+        <div class="calc-controls">
+          <div class="row">
+            <label style="margin-top:0">Context length</label>
+            <span><span class="val mono" id="ctx-val">8,192</span><span class="unit">tokens</span></span>
+          </div>
+          <input type="range" id="ctx" min="512" max="65536" step="512" value="8192" />
+
+          <label>Model preset</label>
+          <select id="preset">
+            <option value="qwen-7b" selected>Qwen2.5-7B  (28 layers · 8 KV heads · d=128)</option>
+            <option value="llama-8b">Llama-3-8B  (32 layers · 8 KV heads · d=128)</option>
+            <option value="qwen-1_5b">Qwen2.5-1.5B  (28 layers · 2 KV heads · d=128)</option>
+            <option value="phi-3-mini">Phi-3-mini  (32 layers · 32 KV heads · d=96)</option>
+          </select>
+
+          <div class="calc-rec" id="rec">
+            <div>recommended_kv_mode_3tier(<span class="mono" id="rec-ctx">8192</span>) → <strong id="rec-mode">int8</strong></div>
+            <div style="margin-top:8px;color:var(--fg-mute)">
+              <code id="rec-snippet">cache = HadamardKVCache(n_layers=N, mode="int8")</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="calc-chart" id="chart">
+          <!-- bars injected by JS -->
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ────────── benchmarks ────────── -->
+<section id="bench">
+  <div class="wrap">
+    <div class="eyebrow">Numbers · measured, not asserted</div>
+    <h2 class="h2">Per-token storage and reconstruction quality.</h2>
+    <p class="lede">
+      Bytes/token are the actual on-RAM cost (codes + per-token fp32 scale)
+      from the live <code>QuantizedKVCache</code>.  SNR is measured against
+      float16 ground truth on Hadamard-rotated activations with realistic
+      outlier columns at <code>head_dim = 128</code>.
+    </p>
+
+    <div class="bench">
+      <table class="bench-tbl" aria-label="Benchmark comparison">
+        <thead>
+          <tr>
+            <th>Mode</th>
+            <th>Bits</th>
+            <th>Storage (d=128)</th>
+            <th>Reduction vs INT8</th>
+            <th>SNR (post-Hadamard)</th>
+            <th>Codebook</th>
+            <th>Wave</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mode int8">INT8</td>
+            <td>8</td>
+            <td>132 B / token</td>
+            <td><span class="pill">baseline</span></td>
+            <td>≈ 44 dB</td>
+            <td>symmetric, scale = max/127</td>
+            <td>KIVI default</td>
+          </tr>
+          <tr>
+            <td class="mode int4">INT4</td>
+            <td>4</td>
+            <td>68 B / token</td>
+            <td>1.94×</td>
+            <td>≈ 22 dB</td>
+            <td>uniform 16-level {-7.5, …, 7.5}</td>
+            <td><span class="pill">W105</span></td>
+          </tr>
+          <tr>
+            <td class="mode int2">INT2</td>
+            <td>2</td>
+            <td>36 B / token</td>
+            <td>3.67×</td>
+            <td>≈ 6 dB</td>
+            <td>NF2 4-level {-1.5, -0.5, 0.5, 1.5}</td>
+            <td><span class="pill">W104</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ────────── code ────────── -->
+<section id="code">
+  <div class="wrap">
+    <div class="eyebrow">Snippets</div>
+    <h2 class="h2">Drop-in.  One mode argument.</h2>
+
+    <div class="code-grid">
+
+      <div class="code-card">
+        <div class="hd">
+          <span><span class="dot"></span><span class="dot"></span><span class="dot"></span> 32 K context — Qwen2.5-7B</span>
+          <span class="mono">python</span>
+        </div>
+        <pre><span class="k">from</span> <span class="id">squish.kv.kv_cache</span> <span class="k">import</span> (
+    <span class="id">HadamardKVCache</span>,
+    <span class="id">recommended_kv_mode_3tier</span>,
+)
+
+<span class="c"># pick storage by planned context length</span>
+<span class="id">mode</span> = <span class="fn">recommended_kv_mode_3tier</span>(<span class="n">32_000</span>)   <span class="c"># → 'int2'</span>
+
+<span class="id">cache</span> = <span class="fn">HadamardKVCache</span>(
+    <span class="id">n_layers</span>=<span class="n">28</span>,
+    <span class="id">window</span>=<span class="n">128</span>,
+    <span class="id">mode</span>=<span class="id">mode</span>,
+    <span class="id">seed</span>=<span class="n">42</span>,
+)
+
+<span class="c"># same protocol mlx_lm uses — no other changes</span>
+<span class="id">model</span>.<span class="fn">generate</span>(<span class="id">prompt</span>, <span class="id">kv_cache</span>=<span class="id">cache</span>)</pre>
+      </div>
+
+      <div class="code-card">
+        <div class="hd">
+          <span><span class="dot"></span><span class="dot"></span><span class="dot"></span> measure your own SNR</span>
+          <span class="mono">python</span>
+        </div>
+        <pre><span class="k">import</span> <span class="id">numpy</span> <span class="k">as</span> <span class="id">np</span>
+<span class="k">from</span> <span class="id">squish.kv.kv_cache</span> <span class="k">import</span> (
+    <span class="id">_quantize_int4_per_channel</span>,
+    <span class="id">_dequantize_int4_per_channel</span>,
+)
+
+<span class="id">v</span>   = <span class="id">np</span>.<span class="id">random</span>.<span class="fn">randn</span>(<span class="n">512</span>, <span class="n">128</span>).<span class="fn">astype</span>(<span class="id">np</span>.<span class="id">float16</span>)
+<span class="id">q</span>, <span class="id">s</span> = <span class="fn">_quantize_int4_per_channel</span>(<span class="id">v</span>)
+<span class="id">vh</span>  = <span class="fn">_dequantize_int4_per_channel</span>(<span class="id">q</span>, <span class="id">s</span>, <span class="n">128</span>)
+
+<span class="id">err</span>  = <span class="id">np</span>.<span class="fn">mean</span>((<span class="id">v</span> - <span class="id">vh</span>)**<span class="n">2</span>)
+<span class="id">snr</span>  = <span class="n">10</span> * <span class="id">np</span>.<span class="fn">log10</span>(<span class="id">np</span>.<span class="fn">mean</span>(<span class="id">v</span>**<span class="n">2</span>) / <span class="id">err</span>)
+<span class="fn">print</span>(<span class="s">f"INT4 SNR = {snr:.2f} dB"</span>)</pre>
+      </div>
+
+      <div class="code-card">
+        <div class="hd">
+          <span><span class="dot"></span><span class="dot"></span><span class="dot"></span> three-tier auto mode</span>
+          <span class="mono">python</span>
+        </div>
+        <pre><span class="k">from</span> <span class="id">squish.kv.kv_cache</span> <span class="k">import</span> <span class="id">recommended_kv_mode_3tier</span>
+
+<span class="fn">recommended_kv_mode_3tier</span>(<span class="n">4_000</span>)   <span class="c"># 'int8'  — short context</span>
+<span class="fn">recommended_kv_mode_3tier</span>(<span class="n">12_000</span>)  <span class="c"># 'int4'  — medium</span>
+<span class="fn">recommended_kv_mode_3tier</span>(<span class="n">32_000</span>)  <span class="c"># 'int2'  — long</span>
+
+<span class="c"># override thresholds</span>
+<span class="fn">recommended_kv_mode_3tier</span>(
+    <span class="n">12_000</span>,
+    <span class="id">short_threshold</span>=<span class="n">4_096</span>,
+    <span class="id">long_threshold</span>=<span class="n">32_768</span>,
+)                                <span class="c"># 'int4'</span></pre>
+      </div>
+
+      <div class="code-card">
+        <div class="hd">
+          <span><span class="dot"></span><span class="dot"></span><span class="dot"></span> raw INT2 codec</span>
+          <span class="mono">python</span>
+        </div>
+        <pre><span class="k">from</span> <span class="id">squish.kv.kv_cache</span> <span class="k">import</span> (
+    <span class="id">_quantize_int2_per_channel</span>,
+    <span class="id">_dequantize_int2_per_channel</span>,
+)
+
+<span class="c"># 4-level NF2 codebook · indices packed 4-per-uint8</span>
+<span class="id">packed</span>, <span class="id">scale</span> = <span class="fn">_quantize_int2_per_channel</span>(<span class="id">activations</span>)
+
+<span class="c"># packed.shape == (n_tokens, head_dim // 4)</span>
+<span class="c"># packed.dtype == np.uint8                 </span>
+<span class="c"># scale.shape  == (n_tokens,) float32       </span>
+
+<span class="id">recon</span> = <span class="fn">_dequantize_int2_per_channel</span>(<span class="id">packed</span>, <span class="id">scale</span>, <span class="n">128</span>)</pre>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ────────── footer ────────── -->
+<footer>
+  <div class="wrap">
+    <div>squish · per-token KV-cache quantization · v9.23.0</div>
+    <div>
+      <a href="https://github.com/konjoai/squish">github</a> ·
+      <a href="../CHANGELOG.md">changelog</a> ·
+      <a href="../PLAN.md">roadmap</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ────────── memory calculator ────────── */
+(function () {
+  const PRESETS = {
+    'qwen-7b':    { n_layers: 28, n_kv_heads:  8, head_dim: 128 },
+    'llama-8b':   { n_layers: 32, n_kv_heads:  8, head_dim: 128 },
+    'qwen-1_5b':  { n_layers: 28, n_kv_heads:  2, head_dim: 128 },
+    'phi-3-mini': { n_layers: 32, n_kv_heads: 32, head_dim:  96 },
+  };
+  const SCALE_BYTES = 4;        // fp32 per-token scale
+  const KV_PAIR     = 2;        // K + V buffers
+  const FP16_BYTES  = 2;        // baseline reference
+
+  // thresholds match KV_INT2_AUTO_THRESHOLD / KV_INT4_DEFAULT_THRESHOLD
+  // in squish/kv/kv_cache.py exactly so the JS recommendation matches Python.
+  const T_INT4 = 8192;
+  const T_INT2 = 16384;
+
+  const ctx     = document.getElementById('ctx');
+  const ctxVal  = document.getElementById('ctx-val');
+  const preset  = document.getElementById('preset');
+  const recCtx  = document.getElementById('rec-ctx');
+  const recMode = document.getElementById('rec-mode');
+  const recSnip = document.getElementById('rec-snippet');
+  const chart   = document.getElementById('chart');
+
+  function fmtBytes (n) {
+    if (n < 1024) return n.toLocaleString() + ' B';
+    const u = ['KB','MB','GB','TB'];
+    let i = -1, v = n;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2) + ' ' + u[i];
+  }
+
+  function pickMode (c) {
+    if (c <= T_INT4) return 'int8';
+    if (c <= T_INT2) return 'int4';
+    return 'int2';
+  }
+
+  function bytesPerToken (mode, head_dim) {
+    if (mode === 'fp16') return head_dim * FP16_BYTES;
+    if (mode === 'int8') return head_dim + SCALE_BYTES;
+    if (mode === 'int4') return head_dim / 2 + SCALE_BYTES;
+    if (mode === 'int2') return head_dim / 4 + SCALE_BYTES;
+    return 0;
+  }
+
+  function render () {
+    const c   = parseInt(ctx.value, 10);
+    const cfg = PRESETS[preset.value];
+    const factor = cfg.n_layers * cfg.n_kv_heads * KV_PAIR;
+
+    const data = ['fp16','int8','int4','int2'].map(m => ({
+      mode:  m,
+      label: m,
+      bytes: bytesPerToken(m, cfg.head_dim) * factor * c,
+    }));
+    const max = Math.max(...data.map(d => d.bytes));
+
+    ctxVal.textContent = c.toLocaleString();
+    recCtx.textContent = c.toLocaleString();
+    const mode = pickMode(c);
+    recMode.textContent = mode;
+    recSnip.textContent =
+      `cache = HadamardKVCache(n_layers=${cfg.n_layers}, mode="${mode}")`;
+
+    chart.innerHTML = data.map(d => {
+      const w = (d.bytes / max) * 100;
+      return `
+        <div class="bar-row" data-mode="${d.mode}">
+          <div class="lbl">${d.label}</div>
+          <div class="bar ${d.mode}" style="width:${w.toFixed(2)}%"></div>
+          <div class="val">${fmtBytes(d.bytes)}</div>
+        </div>`;
+    }).join('');
+  }
+
+  ctx.addEventListener('input', render);
+  preset.addEventListener('change', render);
+  render();
+})();
+</script>
+
+</body>
+</html>
