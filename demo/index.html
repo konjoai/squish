@@ -864,6 +864,161 @@
 
   ::selection { background: rgba(139,108,255,0.45); color: #fff; }
 
+  /* ════════════════════════════════════════════════════════════════════════
+     live banner + status badges (server.py integration)
+     ════════════════════════════════════════════════════════════════════════ */
+  .liveband {
+    position: sticky; top: 0; z-index: 60;
+    padding: 11px 20px;
+    text-align: center;
+    font-size: 13.5px;
+    font-family: var(--font-mono);
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(90deg, rgba(255,200, 87,0.10), rgba(255,149, 80,0.12), rgba(255,200, 87,0.10));
+    color: var(--accent-warn);
+    transition: background 600ms, color 400ms, border-color 400ms;
+  }
+  .liveband.live {
+    background: linear-gradient(90deg, rgba(76,217,100,0.10), rgba(40,212,200,0.14), rgba(76,217,100,0.10));
+    color: var(--accent-good);
+    border-bottom-color: rgba(76,217,100,0.30);
+  }
+  .liveband.checking { color: var(--fg-mute); }
+  .liveband code {
+    background: rgba(0,0,0,0.30);
+    padding: 2px 8px;
+    border-radius: 6px;
+    color: var(--fg);
+    margin: 0 4px;
+  }
+  .liveband b { font-weight: 700; }
+
+  /* nudge sticky nav down so the banner doesn't overlap it */
+  .liveband + nav.top { top: 44px; }
+  /* …and reset nav stickiness when banner hidden */
+  body.no-band nav.top { top: 0; }
+
+  /* live/estimated badge that appears on each compare-stat */
+  .badge-live, .badge-est {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    border-radius: 99px;
+    vertical-align: 2px;
+    font-family: var(--font-mono);
+    transition: opacity 300ms;
+  }
+  .badge-live {
+    background: rgba(76,217,100,0.16);
+    color: var(--accent-good);
+    border: 1px solid rgba(76,217,100,0.40);
+    animation: badge-pulse 2.4s ease-in-out infinite;
+  }
+  .badge-est {
+    background: rgba(255,200, 87,0.10);
+    color: var(--accent-warn);
+    border: 1px solid rgba(255,200, 87,0.30);
+  }
+  @keyframes badge-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(76,217,100,0.35); }
+    50%      { box-shadow: 0 0 0 6px rgba(76,217,100,0.00); }
+  }
+  .compare-stat .lbl { display: flex; justify-content: space-between; align-items: center; }
+
+  .live-only { display: none; }
+  body.live .live-only { display: inline-flex; }
+  body.live .est-only  { display: none; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     benchmark panel — appears under the compare section when "Run benchmark" pressed
+     ════════════════════════════════════════════════════════════════════════ */
+  .bench-cta {
+    margin-top: 28px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .bench-cta .info { color: var(--fg-mute); font-size: 13px; flex: 1; min-width: 200px; }
+  .bench-cta .btn { white-space: nowrap; }
+  .bench-cta .btn[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+  .bench-results {
+    margin-top: 28px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 0;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 400ms var(--ease), opacity 400ms, padding 400ms;
+  }
+  .bench-results.show {
+    max-height: 720px;
+    opacity: 1;
+    padding: 4px 0;
+  }
+  .bench-results .summary {
+    padding: 22px 28px 14px;
+    color: var(--fg-mute);
+    font-size: 13.5px;
+  }
+  .bench-results .summary .pill {
+    background: rgba(76,217,100,0.16);
+    color: var(--accent-good);
+    border: 1px solid rgba(76,217,100,0.30);
+    margin-right: 4px;
+  }
+  .bench-results table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+  }
+  .bench-results th, .bench-results td {
+    padding: 13px 28px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+  }
+  .bench-results th {
+    color: var(--fg-mute);
+    font-weight: 600;
+    background: rgba(0,0,0,0.20);
+    font-size: 11px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+  .bench-results tr:last-child td { border-bottom: 0; }
+  .bench-results td.mode { font-weight: 800; font-size: 15px; }
+  .bench-results td.mode.int8 { color: var(--accent-2); }
+  .bench-results td.mode.int4 { color: var(--accent-3); }
+  .bench-results td.mode.int2 { color: var(--accent-4); }
+  .bench-results .micro {
+    padding: 14px 28px 22px;
+    color: var(--fg-dim);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .bench-running {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: var(--fg-mute);
+    font-size: 13px;
+  }
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--line-strong);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
   /* respect reduced motion */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
@@ -878,6 +1033,13 @@
 
 <!-- ════════════ tooltip element (controlled by JS) ════════════ -->
 <div id="tooltip" role="tooltip"></div>
+
+<!-- ════════════ live-server banner (server.py integration) ════════════ -->
+<div id="liveband" class="liveband checking" role="status" aria-live="polite">
+  <span id="liveband-text">
+    ⟳  checking for the demo server…
+  </span>
+</div>
 
 <!-- ════════════ nav ════════════ -->
 <nav class="top">
@@ -1129,22 +1291,34 @@
 
         <div class="compare-stats">
           <div class="compare-stat">
-            <div class="lbl">Memory per token</div>
+            <div class="lbl">
+              <span>Memory per token</span>
+              <span class="badge-live live-only">● LIVE</span>
+              <span class="badge-est est-only">ESTIMATED</span>
+            </div>
             <div class="num" id="cmp-bytes">132<small> bytes</small></div>
-            <div class="desc">vs FP16 baseline of 256 bytes</div>
+            <div class="desc"><span class="est-only">vs FP16 baseline of 256 bytes</span><span class="live-only">measured by <code>QuantizedKVCache</code></span></div>
           </div>
           <div class="compare-stat">
-            <div class="lbl">Quality score</div>
+            <div class="lbl">
+              <span>Quality score</span>
+              <span class="badge-live live-only">● LIVE</span>
+              <span class="badge-est est-only">ESTIMATED</span>
+            </div>
             <div class="num" id="cmp-snr">44<small> dB</small></div>
             <div class="desc">higher = closer to original</div>
           </div>
           <div class="compare-stat">
-            <div class="lbl">Compression ratio</div>
+            <div class="lbl">
+              <span>Compression ratio</span>
+              <span class="badge-live live-only">● LIVE</span>
+              <span class="badge-est est-only">ESTIMATED</span>
+            </div>
             <div class="num" id="cmp-ratio">1.94×</div>
             <div class="desc">vs FP16 (full precision)</div>
           </div>
           <div class="compare-stat">
-            <div class="lbl">Best for context length</div>
+            <div class="lbl"><span>Best for context length</span></div>
             <div class="num" id="cmp-ctx" style="font-size:22px">≤ 8K</div>
             <div class="desc"><span id="cmp-band">short conversations · max quality</span></div>
           </div>
@@ -1178,6 +1352,18 @@
         </div>
 
       </div>
+
+      <!-- ─── benchmark CTA + result table (server.py-only) ─── -->
+      <div class="bench-cta">
+        <div class="info">
+          <strong style="color:var(--fg)">Run a real benchmark on your own machine</strong> —
+          <span class="est-only">requires the demo server. Run <code>python demo/server.py</code> first.</span>
+          <span class="live-only">runs all three modes back-to-back through the actual <code>QuantizedKVCache</code> and reports the real measured numbers below.</span>
+        </div>
+        <button id="run-bench" class="btn primary" disabled>▶ Run benchmark</button>
+      </div>
+      <div id="bench-results" class="bench-results" aria-live="polite"></div>
+
     </div>
   </div>
 </section>
@@ -1784,6 +1970,275 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
   ctx.addEventListener('input', render);
   preset.addEventListener('change', render);
   render();
+})();
+
+/* ════════════════════════════════════════════════════════════════════════
+   7. live mode — talks to demo/server.py if it's running
+   ════════════════════════════════════════════════════════════════════════
+   Detection logic:
+     - same-origin first (page is being served by server.py)
+     - then http://127.0.0.1:8001 (page opened from filesystem)
+     - then http://localhost:8001  (alternate hostname)
+   First base that answers /api/health within 1.2 s wins; any failure leaves
+   the page in "estimated" mode and the rest of the simulation continues
+   exactly as before.
+   ════════════════════════════════════════════════════════════════════════ */
+(function () {
+  const band     = document.getElementById('liveband');
+  const bandText = document.getElementById('liveband-text');
+  const tabs     = document.getElementById('compare-tabs');
+  const cBytes   = document.getElementById('cmp-bytes');
+  const cSnr     = document.getElementById('cmp-snr');
+  const cRatio   = document.getElementById('cmp-ratio');
+  const barQ     = document.getElementById('bar-q');
+  const barS     = document.getElementById('bar-s');
+  const barQVal  = document.getElementById('bar-q-val');
+  const barSVal  = document.getElementById('bar-s-val');
+  const benchBtn = document.getElementById('run-bench');
+  const benchOut = document.getElementById('bench-results');
+
+  // Detect candidate API base URLs in order of preference.
+  function candidates () {
+    const out = [];
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
+      out.push(location.origin);
+    }
+    out.push('http://127.0.0.1:8001');
+    out.push('http://localhost:8001');
+    return [...new Set(out)];
+  }
+
+  let API = null;            // resolved to a working base URL when live
+  let CTX_LEN = 1024;        // shared default context for live calls
+
+  function fetchTimeout (url, opts = {}, ms = 1200) {
+    return Promise.race([
+      fetch(url, opts),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+    ]);
+  }
+
+  async function probe () {
+    for (const base of candidates()) {
+      try {
+        const r = await fetchTimeout(base + '/api/health', { cache: 'no-store' });
+        if (!r.ok) continue;
+        const d = await r.json();
+        if (d.status === 'ok' && d.service === 'squish-demo') {
+          API = base;
+          return true;
+        }
+      } catch (_) { /* try next */ }
+    }
+    return false;
+  }
+
+  function setOffline () {
+    band.classList.remove('checking');
+    band.classList.remove('live');
+    document.body.classList.add('no-band');
+    bandText.innerHTML =
+      '▶  Run <code>python demo/server.py</code> from the repo root, ' +
+      'reload this page, and the demo switches to <b>live mode</b> ' +
+      '— real measurements from your machine, not estimates.';
+    benchBtn.setAttribute('disabled', '');
+    benchBtn.textContent = '▶ Run benchmark (server required)';
+  }
+
+  function setOnline () {
+    band.classList.remove('checking');
+    band.classList.add('live');
+    document.body.classList.add('live');
+    bandText.innerHTML =
+      `✓  <b>LIVE</b> — connected to <code>${API}</code>. ` +
+      'Compare-panel buttons and the benchmark below run real ' +
+      '<code>QuantizedKVCache</code> code on your machine.';
+    benchBtn.removeAttribute('disabled');
+    benchBtn.textContent = '▶ Run benchmark';
+  }
+
+  // ── live updates for the compare panel ────────────────────────────────
+  // We hijack tab clicks AFTER the simulation has already painted, then
+  // replace the numbers with real measurements when the response lands.
+
+  function tweenNum (el, from, to, dur, fmt) {
+    const start = performance.now();
+    function step (now) {
+      const t = Math.min(1, (now - start) / dur);
+      const e = 1 - Math.pow(1 - t, 3);
+      const v = from + (to - from) * e;
+      el.innerHTML = fmt(v);
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // We need the previously-rendered (estimated) values to tween FROM.
+  // Read them straight off the DOM each time — that's whatever the
+  // simulation last painted.
+  function readNum (el) {
+    return parseFloat((el.textContent || '').replace(/[^\d.]/g, '')) || 0;
+  }
+
+  async function liveCompress (mode) {
+    if (!API) return;
+    let r, d;
+    try {
+      r = await fetchTimeout(API + '/api/compress', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          mode, ctx_len: CTX_LEN, head_dim: 128, n_heads: 4,
+        }),
+      }, 8000);
+      d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+    } catch (err) {
+      console.warn('[squish] live compress failed:', err);
+      return;
+    }
+    if (d.mode !== mode) return;     // user has clicked another tab meanwhile
+
+    // FP16 baseline = ctx_len * n_heads * head_dim * 2 (K+V) * 2 (fp16)
+    const liveBytes = d.memory_bytes /
+      (d.ctx_len * d.n_heads * 1.0);            // bytes per token (across K+V layer buffer)
+    const sizePct = Math.min(100,
+      (d.memory_bytes / d.fp16_baseline_bytes) * 100);
+    const qPct = Math.min(100, (d.snr_db / 80) * 100);
+
+    tweenNum(cBytes, readNum(cBytes), Math.round(liveBytes), 600, v =>
+      Math.round(v) + '<small> B/tok</small>');
+    tweenNum(cSnr,   readNum(cSnr),   d.snr_db, 600, v =>
+      v.toFixed(1) + '<small> dB</small>');
+    tweenNum(cRatio, readNum(cRatio), d.compression_ratio, 600, v =>
+      v.toFixed(2) + '×');
+
+    barQ.style.width   = qPct.toFixed(2) + '%';
+    barS.style.width   = sizePct.toFixed(2) + '%';
+    barQVal.textContent = d.snr_db.toFixed(1) + ' dB · live';
+    barSVal.textContent = sizePct.toFixed(0) + '% · live';
+  }
+
+  function bindLiveCompare () {
+    if (!tabs) return;
+    tabs.addEventListener('click', (e) => {
+      const b = e.target.closest('.tab-btn');
+      if (!b) return;
+      const mode = b.dataset.mode;
+      // FP16 isn't a valid quant mode for the cache — keep its simulation.
+      if (mode === 'fp16') return;
+      // Wait one tick so the simulation has updated the DOM first; then
+      // overwrite with the real measurement.
+      setTimeout(() => liveCompress(mode), 30);
+    });
+  }
+
+  // Bridge: keep CTX_LEN in sync with the calculator slider so /api/compress
+  // calls reflect what the user is actually exploring.
+  function bindCtxSync () {
+    const ctx = document.getElementById('ctx');
+    if (!ctx) return;
+    const sync = () => {
+      // Server caps requests; clamp here too so the button keeps working.
+      CTX_LEN = Math.min(parseInt(ctx.value, 10) || 1024, 4096);
+    };
+    ctx.addEventListener('input', sync);
+    sync();
+  }
+
+  // ── benchmark button ──────────────────────────────────────────────────
+  function fmtBytes (n) {
+    if (n < 1024) return n.toLocaleString() + ' B';
+    const u = ['KB','MB','GB'];
+    let i = -1, v = n;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2) + ' ' + u[i];
+  }
+
+  async function runBenchmark () {
+    if (!API) return;
+    benchBtn.setAttribute('disabled', '');
+    benchOut.classList.add('show');
+    benchOut.innerHTML = `
+      <div class="summary">
+        <span class="bench-running"><span class="spinner"></span>
+        running benchmark on your machine — pushing tokens through three real caches…</span>
+      </div>`;
+
+    let d;
+    try {
+      const r = await fetchTimeout(API + '/api/benchmark', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ ctx_len: CTX_LEN, head_dim: 128, n_heads: 4 }),
+      }, 30_000);
+      d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+    } catch (err) {
+      benchOut.innerHTML = `
+        <div class="summary" style="color:var(--accent-4)">
+          ✗ benchmark failed: ${String(err).replace(/[<>]/g,'')}
+        </div>`;
+      benchBtn.removeAttribute('disabled');
+      return;
+    }
+
+    const rows = (d.results || []).filter(r => !r.skipped).map(r => {
+      const bytesPerTok = r.memory_bytes / (r.ctx_len * r.n_heads);
+      return `
+        <tr>
+          <td class="mode ${r.mode}">${r.mode.toUpperCase()}</td>
+          <td>${r.snr_db.toFixed(2)} dB</td>
+          <td>${fmtBytes(r.memory_bytes)}</td>
+          <td>${bytesPerTok.toFixed(1)}</td>
+          <td>${r.compression_ratio.toFixed(2)}×</td>
+          <td>${r.elapsed_ms.toFixed(1)} ms</td>
+          <td>${r.old_q_shape ? `${r.old_q_dtype}${JSON.stringify(r.old_q_shape)}` : '—'}</td>
+        </tr>`;
+    }).join('');
+
+    benchOut.innerHTML = `
+      <div class="summary">
+        <span class="pill">✓ LIVE</span>
+        Real measurements · ${d.ctx_len.toLocaleString()} tokens ·
+        head_dim=${d.head_dim} · n_heads=${d.n_heads} · single layer ·
+        FP16 baseline ${fmtBytes(d.fp16_baseline_bytes)}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Mode</th>
+            <th>Quality (SNR)</th>
+            <th>Memory used</th>
+            <th>B/tok·head</th>
+            <th>vs FP16</th>
+            <th>Time</th>
+            <th>Storage shape</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="micro">
+        ${rows ? '' : 'No results — check the server log.'}
+        Methodology: each row constructs a fresh
+        <code>QuantizedKVCache(n_layers=1, window=2, mode=…)</code>, pushes
+        <code>${d.ctx_len.toLocaleString()}</code> synthetic tokens through
+        <code>.update()</code>, then measures the dequantised
+        <code>get_full_kv()</code> output against the float16 ground truth.
+        Window=2 means almost every token is quantised, so the SNR reflects
+        the codec — not the FP16 recent window.
+      </div>`;
+    benchBtn.removeAttribute('disabled');
+  }
+
+  // ── entry point ──────────────────────────────────────────────────────
+  (async function init () {
+    bindLiveCompare();
+    bindCtxSync();
+    benchBtn.addEventListener('click', runBenchmark);
+    const ok = await probe();
+    if (ok) setOnline(); else setOffline();
+  })();
 })();
 
 </script>
