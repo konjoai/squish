@@ -2,6 +2,14 @@
 
 ---
 
+## The Konjo Way
+
+**KONJO — Know, Outline, Nail, Justify, Optimize.**
+
+The Konjo Way: Know the problem, outline the solution, nail the build, justify the claims, optimize the output. Plan, build, test, ship, rest, repeat.
+
+---
+
 ## The Word
 
 | Script | Language | Word | Soul |
