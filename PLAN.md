@@ -371,14 +371,62 @@ cache = HadamardKVCache(n_layers=N, window=128, mode=mode, seed=42)
 
 ---
 
+### W106 — KV memory budgeting + cache factory ✅ COMPLETE (2026-05-03)
+**Why:** W104 + W105 added three storage modes but production callers still
+hand-wired `recommended_kv_mode_3tier` + a constructor and had no closed-
+form way to answer the two RAM-planning questions every deployer asks:
+"will this fit in N GB?" and "how long a context fits in B bytes?"
+
+**Changes shipped (2026-05-03):**
+- `squish/kv/kv_cache.py` (in-place):
+  - `KVMemoryEstimate` (frozen dataclass) + `estimate_kv_memory()` —
+    closed-form per-tier accounting; matches live `cache.memory_bytes`
+    within 1 % on the regression workload.
+  - `estimate_max_context()` — exact inverse: `(budget, mode, dims) → int`.
+    Subtracts the FP16 recent-window overhead before computing capacity.
+  - `recommend_mode_for_budget()` — budget-driven mode picker
+    (`int8 → int4 → int2`); returns the highest-quality mode that fits or
+    `None` when even INT2 is too large.
+  - `make_kv_cache(n_layers, *, planned_context, rotate=True, mode=None,
+    window=128, seed=42, **extra)` — one-line factory; picks mode via
+    `recommended_kv_mode_3tier` and constructs `HadamardKVCache`
+    (default) or `QuantizedKVCache` (`rotate=False`).
+- `tests/test_kv_budget.py` — 49 new tests covering byte-cost building
+  block, dataclass invariants, closed-form vs. live agreement,
+  `estimate_max_context` ⇄ `estimate_kv_memory` round-trip, ordering
+  invariant `int2 ≥ int4 ≥ int8` at fixed budget, mode selection
+  including the `None`-when-nothing-fits edge, and the factory's
+  defaults / overrides / determinism / kwarg forwarding.
+
+**Acceptance criteria met:**
+- ✅ Closed-form estimate within 1 % of live `cache.memory_bytes` for
+  int8 / int4 / int2 (validated in `test_estimate_matches_live_cache_within_tolerance`).
+- ✅ `estimate_max_context` inverts `estimate_kv_memory` exactly.
+- ✅ `recommend_mode_for_budget` returns `None` when nothing fits.
+- ✅ Factory wires `recommended_kv_mode_3tier` to `HadamardKVCache` /
+  `QuantizedKVCache` with deterministic seed propagation.
+- ✅ Suite: 2513 passed / 3 pre-existing W95 / 43 skipped (+49 from W106).
+- ✅ Module count: zero new production modules; one new test file.
+
+**One-line developer ergonomics now:**
+```python
+from squish.kv.kv_cache import make_kv_cache
+cache = make_kv_cache(n_layers=28, planned_context=32_000)
+# auto-picks int2, builds HadamardKVCache, ready for mlx_lm.
+```
+
+---
+
 ## Next Immediate Action
-**W104 (INT2 KV) + W105 (INT4 KV) COMPLETE.** The next wave to land on `main`
-is the W103.4 hardware ship gate — bring the existing W103.4b (Rust
-`sqint2_residual_gemv`), W103.4c (Metal NF2 GEMV + `SQINT2Linear` MLX
-module), and W103.4d-pre (eval orchestration) commits from
-`claude/angry-cerf-4d8cce` into `main`, then run the arc_easy ≥ 65 % gate
-on Qwen2.5-7B (also validates the W104 32 K-context envelope on the same
-hardware run). LoRA INT4 checkpoint support remains deferred.
+**W104 / W105 / W106 COMPLETE.** The KV-cache compression axis is now
+feature-complete on `main` for the three quant tiers + the budgeting +
+factory layer. The next wave on `main` remains the W103.4 hardware ship
+gate — bring the existing W103.4b (Rust `sqint2_residual_gemv`), W103.4c
+(Metal NF2 GEMV + `SQINT2Linear` MLX module), and W103.4d-pre (eval
+orchestration) commits from `claude/angry-cerf-4d8cce` into `main`, then
+run the arc_easy ≥ 65 % gate on Qwen2.5-7B (also validates the W104
+32 K-context envelope on the same hardware run). LoRA INT4 checkpoint
+support remains deferred.
 
 ---
 

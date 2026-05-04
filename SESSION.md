@@ -6,7 +6,7 @@
 ---
 
 ## Current date
-2026-05-02 (W105 shipped — INT4 KV cache, intermediate quality tier)
+2026-05-03 (W106 shipped — KV memory budgeting + cache factory)
 
 ## Last commits
 - **`f109942`** — docs(squash): update compliance section to point to standalone konjoai/squash repo
@@ -38,6 +38,14 @@
 ---
 
 ## ✅ Recently shipped
+- **W106** (2026-05-03) — KV memory budgeting + cache factory. Closed-form
+  `KVMemoryEstimate` + `estimate_kv_memory()` (matches live `cache.memory_bytes`
+  within 1 %), `estimate_max_context()` inverse, `recommend_mode_for_budget()`
+  for budget-driven selection, `make_kv_cache(...)` one-line factory. 49 new
+  tests in `tests/test_kv_budget.py`; suite 2464 → 2513 (+49, zero regressions).
+  Zero new production modules (in-place extension of `squish/kv/kv_cache.py`).
+  Closes the boilerplate gap left by W104+W105: deployers can now plan RAM
+  budgets and pick modes without sampling the live cache.
 - **W105** (2026-05-02) — INT4 KV cache extension. Per-token symmetric 16-level
   uniform codec, nibble-packed 2-per-uint8 along head_dim. Storage ~68 B/token
   at d=128 (vs 132 INT8, 36 INT2) — the 2× intermediate tier between INT8 and
