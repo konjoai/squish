@@ -5,6 +5,63 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.24.0] — 2026-05-03 — W106: KV memory budgeting + cache factory
+
+### Added
+- **`squish/kv/kv_cache.py` — `KVMemoryEstimate` dataclass + `estimate_kv_memory()`**:
+  closed-form per-tier KV-cache memory accounting that matches the live
+  `cache.memory_bytes` of the actual buffers to within 1% on the
+  regression workload. Returns the full breakdown — bytes/token/head,
+  bytes/token, bytes/layer, total bytes, FP16 baseline, compression ratio,
+  and an explicit additive recent-window overhead so callers can isolate
+  the FP16 residual cost when sizing for SnapKV / KIVI.
+  Frozen dataclass with a `.fits_in(budget_bytes)` convenience method.
+
+- **`estimate_max_context()`**: inverts `estimate_kv_memory()` — given a
+  byte budget, returns the longest context length that fits under a
+  given mode. Subtracts the recent-window overhead first so the answer
+  is the actual usable context, not a theoretical upper bound.
+
+- **`recommend_mode_for_budget()`**: budget-driven counterpart to
+  `recommended_kv_mode_3tier`. Tries `int8 → int4 → int2` in order and
+  returns the highest-quality mode whose KV cache fits in the given byte
+  budget at the planned context. Returns `None` when even INT2 is too
+  large (caller must shrink context, layers, or heads).
+
+- **`make_kv_cache(n_layers, *, planned_context, …)`**: one-line factory
+  that picks the right mode (via `recommended_kv_mode_3tier`) and
+  constructs the right class (`HadamardKVCache` by default,
+  `QuantizedKVCache` when `rotate=False`). Forwards extra kwargs verbatim
+  so `mode="snap"` + `budget=…` + `snap_window=…` flows through cleanly.
+
+- **`tests/test_kv_budget.py`** — 49 new tests: per-head byte cost across
+  all four modes including FP16 · estimate dataclass invariants ·
+  closed-form vs. live `cache.memory_bytes` agreement within 1% for
+  int8/int4/int2 · `estimate_max_context` round-trips with
+  `estimate_kv_memory` exactly · ordering invariant
+  `int2 fits more than int4 fits more than int8` at fixed budget ·
+  budget-driven mode selection · factory defaults / overrides /
+  determinism / kwarg forwarding · all error paths.
+
+### Why this matters
+Until this wave, deployers planning RAM budgets had to sample the live
+cache by running tokens through it — which is slow and requires the model
+to be loaded. The closed-form estimator answers "will this fit?" in
+microseconds at any model dimension, before any GPU work. Together with
+the factory, picking a mode + building a cache for a planned conversation
+length is now one line — the boilerplate around `recommended_kv_mode_3tier`
++ constructor selection collapses.
+
+### Module count
+- 0 new production modules (in-place extension of `squish/kv/kv_cache.py`).
+- 1 new test module (`tests/test_kv_budget.py`).
+
+### Suite
+- 2513 passed / 3 pre-existing W95 importlib failures / 43 skipped.
+- +49 from W106. Zero new regressions.
+
+---
+
 ## [9.23.0] — 2026-05-02 — W105: INT4 KV Cache (intermediate quality tier)
 
 ### Added

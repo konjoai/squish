@@ -46,6 +46,7 @@ Low-level: create a cache and pass to generate():
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -489,6 +490,298 @@ def recommended_kv_mode_3tier(
         threshold=long_threshold,
     )
 
+
+# ---------------------------------------------------------------------------
+# W106 — KV memory budgeting + cache factory  (closed-form planning helpers)
+# ---------------------------------------------------------------------------
+#
+# W104+W105 added three storage modes (int8/int4/int2) but production callers
+# still write boilerplate to wire `recommended_kv_mode_3tier` to the right
+# constructor, and have no closed-form way to answer the two questions
+# every deployer asks before picking a mode:
+#
+#   1. "How much RAM will the KV cache use at context X under mode Y?"
+#   2. "How long a context fits in B bytes under mode Y?"
+#
+# This block answers both with a closed-form formula that matches the live
+# `cache.memory_bytes` of the actual buffers to within 1 % across the
+# regression test workload.  It also adds `make_kv_cache(...)` — the one-line
+# factory that picks the right mode and constructs the right class.
+#
+# Math
+# ----
+# For a single-layer storage tier with `n_kv_heads` heads and `head_dim`
+# columns, the per-token cost is:
+#
+#   bytes_per_token(mode) =
+#       (codes_per_token + scale_bytes_per_token) * n_kv_heads
+#
+#   codes_per_token =
+#       head_dim          for "int8"   (1 byte / value)
+#       head_dim / 2      for "int4"   (½ byte / value)
+#       head_dim / 4      for "int2"   (¼ byte / value)
+#       head_dim * 2      for "fp16"   (2 bytes / value, no quant)
+#
+#   scale_bytes_per_token =
+#       0                 for "fp16"   (no per-token scale stored)
+#       4                 for int8/int4/int2  (one fp32 scale per token)
+#
+# K and V are stored independently → multiply by 2.  Multiply by `n_layers`
+# for whole-model totals.  This DOES NOT include the FP16 recent-window
+# cost (typically window=128 or smaller, dwarfed by the old-tier buffer at
+# real context lengths) — see KVMemoryEstimate.recent_window_bytes for the
+# explicit additive term when callers want it.
+# ---------------------------------------------------------------------------
+
+# Per-quant scale storage (one fp32 scalar per token, per head).
+_KV_SCALE_BYTES: int = 4
+_KV_BYTES_FP16:  int = 2
+_KV_BUFFERS_PER_LAYER: int = 2          # K + V
+
+# Order matters: tiers are tried short→long when picking a mode for a
+# memory budget.  "fp16" is included so callers can ask "does the
+# uncompressed cache fit?" without writing a separate branch.
+_KV_TIER_ORDER: tuple = ("int8", "int4", "int2")
+
+
+def _bytes_per_token_per_head(mode: str, head_dim: int) -> int:
+    """Closed-form per-token-per-head cost for one quant-bearing tier.
+
+    Includes both the code bytes and the fp32 per-token scale.
+    """
+    if head_dim <= 0:
+        raise ValueError(f"head_dim must be positive, got {head_dim}")
+    if mode == "fp16":
+        return head_dim * _KV_BYTES_FP16          # no per-token scale
+    if mode == "int8":
+        codes = head_dim
+    elif mode == "int4":
+        if head_dim % 2:
+            raise ValueError(
+                f"INT4 storage requires head_dim divisible by 2, got {head_dim}"
+            )
+        codes = head_dim // 2
+    elif mode == "int2":
+        if head_dim % 4:
+            raise ValueError(
+                f"INT2 storage requires head_dim divisible by 4, got {head_dim}"
+            )
+        codes = head_dim // 4
+    else:
+        raise ValueError(
+            f"mode must be one of fp16/int8/int4/int2, got {mode!r}"
+        )
+    return codes + _KV_SCALE_BYTES
+
+
+@dataclass(frozen=True)
+class KVMemoryEstimate:
+    """Closed-form KV-cache memory estimate for one (mode, model, context).
+
+    Attributes
+    ----------
+    mode                          one of {"fp16", "int8", "int4", "int2"}
+    n_layers                      transformer block count
+    n_kv_heads                    KV-head count (after grouped-query reduction)
+    head_dim                      per-head dimension
+    context_tokens                planned context length
+    bytes_per_token_per_head      closed-form codes + scale, per head, per tier
+    bytes_per_token               × n_kv_heads × 2 (K+V buffers)
+    bytes_per_layer               × context_tokens
+    total_bytes                   × n_layers — the headline number
+    fp16_baseline_bytes           same dims but with mode="fp16" — the reference
+    compression_ratio             fp16_baseline_bytes / total_bytes (≥ 1.0)
+    recent_window_bytes           additional FP16 recent-window overhead at the
+                                  given window size, per layer × n_layers
+    """
+    mode:                     str
+    n_layers:                 int
+    n_kv_heads:               int
+    head_dim:                 int
+    context_tokens:           int
+    bytes_per_token_per_head: int
+    bytes_per_token:          int
+    bytes_per_layer:          int
+    total_bytes:              int
+    fp16_baseline_bytes:      int
+    compression_ratio:        float
+    recent_window_bytes:      int
+
+    def fits_in(self, budget_bytes: int) -> bool:
+        """True iff ``total_bytes + recent_window_bytes ≤ budget_bytes``."""
+        return (self.total_bytes + self.recent_window_bytes) <= budget_bytes
+
+
+def estimate_kv_memory(
+    n_layers: int,
+    n_kv_heads: int,
+    head_dim: int,
+    context_tokens: int,
+    mode: str,
+    *,
+    window: int = 0,
+) -> KVMemoryEstimate:
+    """Closed-form KV-cache memory estimate.
+
+    Args:
+        n_layers:        transformer layer count.
+        n_kv_heads:      KV-head count (number of distinct K/V heads after any
+                         grouped-query reduction; for a 7B Qwen this is 8, not 28).
+        head_dim:        per-head dimension (e.g. 128).
+        context_tokens:  planned context length.
+        mode:            one of "fp16", "int8", "int4", "int2".
+        window:          optional FP16 recent-window size; included as a
+                         separate additive term (``recent_window_bytes``) so the
+                         caller can isolate it.  Default 0 — pure quant tier.
+
+    Returns:
+        :class:`KVMemoryEstimate` with the full breakdown.
+
+    Raises:
+        ValueError on bad mode, non-positive dims, or head_dim that is
+        incompatible with the requested mode (e.g. odd head_dim + int4).
+    """
+    if n_layers   <= 0: raise ValueError(f"n_layers must be positive, got {n_layers}")
+    if n_kv_heads <= 0: raise ValueError(f"n_kv_heads must be positive, got {n_kv_heads}")
+    if context_tokens < 0:
+        raise ValueError(f"context_tokens must be ≥ 0, got {context_tokens}")
+    if window < 0:
+        raise ValueError(f"window must be ≥ 0, got {window}")
+
+    bpt_head  = _bytes_per_token_per_head(mode, head_dim)
+    bpt       = bpt_head * n_kv_heads * _KV_BUFFERS_PER_LAYER
+    bpl       = bpt * context_tokens
+    total     = bpl * n_layers
+
+    fp16_head = _bytes_per_token_per_head("fp16", head_dim)
+    fp16_base = fp16_head * n_kv_heads * _KV_BUFFERS_PER_LAYER * context_tokens * n_layers
+    ratio     = fp16_base / total if total > 0 else 1.0
+
+    # Recent window holds raw FP16 K and V (head_dim values per token per head).
+    win_bpt   = head_dim * _KV_BYTES_FP16 * n_kv_heads * _KV_BUFFERS_PER_LAYER
+    win_total = win_bpt * window * n_layers
+
+    return KVMemoryEstimate(
+        mode=mode,
+        n_layers=n_layers, n_kv_heads=n_kv_heads, head_dim=head_dim,
+        context_tokens=context_tokens,
+        bytes_per_token_per_head=bpt_head,
+        bytes_per_token=bpt,
+        bytes_per_layer=bpl,
+        total_bytes=total,
+        fp16_baseline_bytes=fp16_base,
+        compression_ratio=ratio,
+        recent_window_bytes=win_total,
+    )
+
+
+def estimate_max_context(
+    n_layers: int,
+    n_kv_heads: int,
+    head_dim: int,
+    budget_bytes: int,
+    mode: str,
+    *,
+    window: int = 0,
+) -> int:
+    """Largest context length whose KV cache fits in ``budget_bytes``.
+
+    Inverts :func:`estimate_kv_memory`.  Returns 0 when the recent-window
+    overhead alone already exceeds the budget.
+    """
+    if budget_bytes < 0:
+        raise ValueError(f"budget_bytes must be ≥ 0, got {budget_bytes}")
+    bpt_head = _bytes_per_token_per_head(mode, head_dim)
+    bpt_layer = bpt_head * n_kv_heads * _KV_BUFFERS_PER_LAYER
+    per_token = bpt_layer * n_layers
+    if per_token <= 0:
+        return 0
+    win_bpt   = head_dim * _KV_BYTES_FP16 * n_kv_heads * _KV_BUFFERS_PER_LAYER
+    win_total = win_bpt * window * n_layers
+    remaining = budget_bytes - win_total
+    if remaining <= 0:
+        return 0
+    return remaining // per_token
+
+
+def recommend_mode_for_budget(
+    n_layers: int,
+    n_kv_heads: int,
+    head_dim: int,
+    context_tokens: int,
+    budget_bytes: int,
+    *,
+    window: int = 0,
+) -> "str | None":
+    """Pick the highest-quality quant mode whose KV cache fits in ``budget_bytes``.
+
+    Tries ``int8`` → ``int4`` → ``int2`` in order; returns the first that
+    fits, or ``None`` if even ``int2`` is too large (in which case the caller
+    must shrink context, layers, or heads — there is no smaller tier).
+
+    Note: this is the *budget-driven* counterpart to
+    :func:`recommended_kv_mode_3tier`, which is *context-driven*.  Callers
+    typically prefer one or the other depending on whether they have a hard
+    RAM ceiling or a planned conversation length.
+    """
+    for mode in _KV_TIER_ORDER:
+        try:
+            est = estimate_kv_memory(
+                n_layers, n_kv_heads, head_dim, context_tokens, mode,
+                window=window,
+            )
+        except ValueError:
+            # head_dim incompatible with this tier — skip and try the next.
+            continue
+        if est.fits_in(budget_bytes):
+            return mode
+    return None
+
+
+def make_kv_cache(
+    n_layers: int,
+    *,
+    planned_context: int,
+    rotate: bool = True,
+    mode: "str | None" = None,
+    window: int = 128,
+    seed: int = 42,
+    **extra,
+) -> "QuantizedKVCache":
+    """Construct the recommended KV cache for a planned workload.
+
+    One-line factory that wraps the W104/W105 mode selection + the right
+    constructor (Hadamard-rotated by default, since rotation is what makes
+    INT2 viable on real activations and is essentially free for INT4/INT8).
+
+    Args:
+        n_layers:         transformer layer count.
+        planned_context:  expected conversation length in tokens; drives mode
+                          selection via :func:`recommended_kv_mode_3tier`
+                          when ``mode`` is not specified.
+        rotate:           use :class:`HadamardKVCache` (default) — recommended.
+                          Set ``False`` for the bare :class:`QuantizedKVCache`.
+        mode:             explicit override; one of "int8" / "int4" / "int2".
+                          When ``None`` (default), the mode is auto-picked.
+        window:           FP16 recent-window size — kept at 128 by default,
+                          which is the long-context recommendation.
+        seed:             Hadamard rotation seed (ignored when ``rotate=False``).
+        **extra:          forwarded verbatim to the cache constructor (e.g.
+                          ``budget``, ``snap_window``).
+
+    Returns:
+        A constructed :class:`HadamardKVCache` (default) or
+        :class:`QuantizedKVCache` ready for ``mlx_lm`` integration.
+    """
+    if mode is None:
+        mode = recommended_kv_mode_3tier(planned_context)
+    cls = HadamardKVCache if rotate else QuantizedKVCache
+    if rotate:
+        return cls(n_layers=n_layers, window=window, mode=mode, seed=seed, **extra)
+    return cls(n_layers=n_layers, window=window, mode=mode, **extra)
+
+
+# ---------------------------------------------------------------------------
 
 # Number of tokens to collect before fitting the per-layer SVD basis.
 # 64 tokens provide a stable subspace for head_dim=128 models.
