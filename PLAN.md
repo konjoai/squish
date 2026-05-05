@@ -247,7 +247,18 @@ the SQINT2 unpack path. Module count: 83 → 84 (ceiling 125 ✅).
     header (fp64, 16 slots, version=1.0); SQINT2 dispatch in `compressed_loader.py`
     `_dequantize_npy_dir` between AQLM and passthrough-F16; `_TENSOR_SUFFIX_RE`
     extended; 27 new tests in `tests/test_sqint2_loader.py`. 2321 → 2348 passing.
-  - W103.4b — Rust low-rank GEMV (`sqint2_residual_gemv` in `squish_quant_rs`).
+  - ✅ **W103.4b (2026-05-05) — SHIPPED.** `sqint2_residual_gemv` in
+    `squish_quant_rs/src/lib.rs` — GIL-free Rayon GEMV for the Stage-3 SVD
+    residual term. Computes `x @ (L @ R)ᵀ` in two sequential Rayon-parallel
+    steps (h = x @ Rᵀ, y = h @ Lᵀ). fp16 factors upcast to fp32 inside the
+    kernel (CLAUDE.md FP32-accumulation mandate). Registered in `#[pymodule]`.
+    Python public API `sqint2_residual_gemv(l_fp16, r_fp16, x)` added to
+    `squish/quant/quantizer.py` with NumPy fallback
+    `_sqint2_residual_gemv_numpy`. `get_backend_info()` gains
+    `"sqint2_residual_gemv_rust"` key. 31 tests in
+    `tests/test_sqint2_residual_gemv.py` (24 passing / 7 Rust-skipped when
+    extension not built). Suite: 349 passing on targeted key files, 0 new
+    regressions. Rust: `cargo check` clean.
   - W103.4c — Metal NF2 fused-dequant GEMV kernel + `SQINT2Linear` mlx Module.
   - W103.4d — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65% lm_eval ship gate.
 
@@ -418,15 +429,22 @@ cache = make_kv_cache(n_layers=28, planned_context=32_000)
 ---
 
 ## Next Immediate Action
-**W104 / W105 / W106 COMPLETE.** The KV-cache compression axis is now
-feature-complete on `main` for the three quant tiers + the budgeting +
-factory layer. The next wave on `main` remains the W103.4 hardware ship
-gate — bring the existing W103.4b (Rust `sqint2_residual_gemv`), W103.4c
-(Metal NF2 GEMV + `SQINT2Linear` MLX module), and W103.4d-pre (eval
-orchestration) commits from `claude/angry-cerf-4d8cce` into `main`, then
-run the arc_easy ≥ 65 % gate on Qwen2.5-7B (also validates the W104
-32 K-context envelope on the same hardware run). LoRA INT4 checkpoint
-support remains deferred.
+**W103.4b SHIPPED (2026-05-05).** `sqint2_residual_gemv` Rust GEMV is now on
+`main`. The Rust path is gated behind `hasattr(_squish_quant, "sqint2_residual_gemv")`
+— NumPy fallback is always available.
+
+**Next: W103.4c** — Metal NF2 fused-dequant GEMV kernel + `SQINT2Linear` MLX Module.
+This requires Apple Silicon with MLX (`platform.machine() == "arm64"`, mlx installed).
+Implementation scope:
+  - `squish/quant/sqint2_linear.py` (new file, gated `if sys.platform == "darwin"`)
+    `SQINT2Linear(mlx.nn.Module)` — holds packed indices + scales + zp as `mx.array`;
+    forward pass: NF2 dequant → matmul → add residual via `sqint2_residual_gemv`.
+  - Metal shader or `mx.quantized_matmul` with custom NF2 lookup table (baked LUT).
+  - Gate: `tests/test_sqint2_linear.py` (skip on Linux / non-arm64).
+
+**After W103.4c: W103.4d** — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65%
+lm_eval ship gate (hardware run required). Also validates the W104 32K-context
+envelope on the same hardware run. LoRA INT4 checkpoint support remains deferred.
 
 ---
 
