@@ -17,6 +17,8 @@ Public API (mirrors vectro interface for drop-in compatibility):
     dequantize_int4(p, s, gs)   — (packed_uint8, scales) → float32 (n,d)
     mean_cosine_similarity(a,b) — float
     get_backend_info()          — dict of available backends
+    quantized_matmul_int4(...)  — GIL-free fused INT4 dequant+GEMV (W101)
+    sqint2_residual_gemv(...)   — GIL-free SQINT2 low-rank residual GEMV (W103.4b)
 
 Backend priority (auto):
     1. squish_quant  (Rust/Rayon/SIMD — 6+ GB/s, `pip install squish[quant]`)
@@ -288,9 +290,10 @@ def get_backend_info() -> dict:
     """Return dict describing which backends are available."""
     _has_rust = _squish_quant is not None
     return {
-        "squish_quant_rust":    _has_rust,
-        "int4_matmul_rust":     _has_rust and hasattr(_squish_quant, "quantized_matmul_int4"),
-        "numpy":                True,
+        "squish_quant_rust":         _has_rust,
+        "int4_matmul_rust":          _has_rust and hasattr(_squish_quant, "quantized_matmul_int4"),
+        "sqint2_residual_gemv_rust": _has_rust and hasattr(_squish_quant, "sqint2_residual_gemv"),
+        "numpy":                     True,
     }
 
 
@@ -679,6 +682,103 @@ def quantized_matmul_int4(
     if _squish_quant is not None and hasattr(_squish_quant, "quantized_matmul_int4"):
         return _squish_quant.quantized_matmul_int4(w_codes, scales, offsets, x, group_size)
     return _quantized_matmul_int4_numpy(w_codes, scales, offsets, x, group_size)
+
+
+# ---------------------------------------------------------------------------
+# W103.4b — SQINT2 low-rank residual GEMV
+# ---------------------------------------------------------------------------
+#
+# At SQINT2 inference time, the reconstructed weight matrix is:
+#
+#   W_recon = H_leftᵀ · (dequant(Q_INT2) + L·R + sparse) · H_right
+#
+# The L·R term is the Stage-3 low-rank residual. This function computes
+# its contribution to the output activation without materialising the full
+# (out_f × in_f) matrix:
+#
+#   out = x @ (L·R)ᵀ  =  x @ Rᵀ @ Lᵀ
+#
+# Step 1: h = x @ Rᵀ    (batch, rank)   — project into rank subspace
+# Step 2: y = h @ Lᵀ    (batch, out_f)  — expand back to output dimension
+#
+# The Rust kernel (W103.4b) releases the GIL and parallelises both steps over
+# Rayon. The NumPy fallback is equivalent but single-threaded. fp16 factors
+# are upcast to fp32 before accumulation in both paths (CLAUDE.md mandate).
+# ---------------------------------------------------------------------------
+
+
+def _sqint2_residual_gemv_numpy(
+    l_fp16: np.ndarray,
+    r_fp16: np.ndarray,
+    x: np.ndarray,
+) -> np.ndarray:
+    """Pure-NumPy fallback for sqint2_residual_gemv.
+
+    Computes x @ (L @ R)ᵀ = (x @ Rᵀ) @ Lᵀ.  L, R are fp16; upcast to fp32
+    before matmul to satisfy the CLAUDE.md FP32-accumulation mandate.
+
+    Args:
+        l_fp16: (out_f, rank) float16 left SVD factor.
+        r_fp16: (rank, in_f) float16 right SVD factor.
+        x:      (batch, in_f) float32 input activations.
+
+    Returns:
+        (batch, out_f) float32.
+    """
+    L = l_fp16.astype(np.float32, copy=False)  # (out_f, rank)
+    R = r_fp16.astype(np.float32, copy=False)  # (rank, in_f)
+    # Step 1: h = x @ Rᵀ   — (batch, in_f) @ (in_f, rank) = (batch, rank)
+    h = x.astype(np.float32, copy=False) @ R.T
+    # Step 2: y = h @ Lᵀ   — (batch, rank) @ (rank, out_f) = (batch, out_f)
+    return h @ L.T
+
+
+def sqint2_residual_gemv(
+    l_fp16: np.ndarray,
+    r_fp16: np.ndarray,
+    x: np.ndarray,
+) -> np.ndarray:
+    """SQINT2 low-rank residual GEMV: computes ``x @ (L @ R)ᵀ`` in fp32.
+
+    L and R are the fp16 SVD residual factors from SQINT2 Stage 3
+    (``SQINT2Layer.residual_L`` and ``SQINT2Layer.residual_R``).  The result
+    is added to the main dequant GEMV output before applying the inverse
+    Hadamard rotation.
+
+    Uses the GIL-free Rayon kernel when ``squish_quant`` Rust extension is
+    available; falls back to NumPy otherwise.
+
+    Math:
+        h = x @ Rᵀ             # project into rank subspace  (batch, rank)
+        y = h @ Lᵀ             # expand to output features    (batch, out_f)
+        out = y                 # = x @ (L·R)ᵀ
+
+    All computation is in float32 — L and R are upcast from fp16 before
+    matmul in both the Rust and NumPy paths.
+
+    Args:
+        l_fp16: ``(out_f, rank)`` float16 — left SVD factor.
+        r_fp16: ``(rank, in_f)`` float16 — right SVD factor.
+        x:      ``(batch, in_f)`` float32 — input activations. Must be
+                contiguous for the Rust path (auto-enforced via ascontiguousarray).
+
+    Returns:
+        ``(batch, out_f)`` float32.
+
+    Raises:
+        ValueError: shape mismatch between L, R, and x.
+    """
+    # dtype enforcement: Rust kernel accepts float16 as uint16 bit view.
+    l_fp16 = np.ascontiguousarray(l_fp16, dtype=np.float16)
+    r_fp16 = np.ascontiguousarray(r_fp16, dtype=np.float16)
+    x      = np.ascontiguousarray(x,      dtype=np.float32)
+
+    if _squish_quant is not None and hasattr(_squish_quant, "sqint2_residual_gemv"):
+        # Rust kernel accepts fp16 as uint16 raw-bit view (numpy float16 ≡ uint16 bits).
+        l_u16 = l_fp16.view(np.uint16)
+        r_u16 = r_fp16.view(np.uint16)
+        return _squish_quant.sqint2_residual_gemv(l_u16, r_u16, x)
+    return _sqint2_residual_gemv_numpy(l_fp16, r_fp16, x)
 
 
 # ---------------------------------------------------------------------------

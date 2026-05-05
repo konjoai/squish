@@ -5,6 +5,91 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.25.0] — 2026-05-05 — W103.4b: SQINT2 low-rank residual GEMV (Rust + NumPy)
+
+### Added
+
+- **`squish_quant_rs/src/lib.rs` — `sqint2_residual_gemv`**: GIL-free Rayon
+  GEMV for the SQINT2 Stage-3 SVD residual term. Computes `x @ (L @ R)ᵀ`
+  in two sequential Rayon-parallel steps without materialising the full
+  `(out_f × in_f)` matrix:
+
+      h = x @ Rᵀ    (batch, rank)  — project into rank subspace
+      y = h @ Lᵀ    (batch, out_f) — expand to output features
+
+  fp16 factors (L, R) are upcast to fp32 inside the kernel before
+  accumulation (CLAUDE.md FP32-accumulation mandate — never fp16 matmul).
+  The GIL is released for the full parallel section via `py.allow_threads`.
+  Registered in the `#[pymodule]` alongside `quantized_matmul_int4` (W101).
+
+  Shape contracts:
+  - `L_fp16`: `(out_f, rank)` float16 numpy array (uint16 raw-bit view)
+  - `R_fp16`: `(rank, in_f)` float16 numpy array
+  - `x`:      `(batch, in_f)` float32 numpy array (contiguous)
+  - returns:  `(batch, out_f)` float32
+
+- **`squish/quant/quantizer.py` — `sqint2_residual_gemv(l_fp16, r_fp16, x)`**:
+  Python public API. Rust-first: dispatches to `_squish_quant.sqint2_residual_gemv`
+  when the Rust extension is available (passing fp16 arrays as uint16 bit-view
+  compatible with the Rust `PyReadonlyArray2<u16>` signature). Falls back to
+  `_sqint2_residual_gemv_numpy` (pure NumPy, always available). Auto-coerces
+  `l_fp16`/`r_fp16` to `np.float16` and `x` to `np.float32` contiguous.
+
+- **`squish/quant/quantizer.py` — `_sqint2_residual_gemv_numpy`**: NumPy
+  fallback. Explicit fp32 upcast before both matmuls so the codepath is
+  identical in numerical contract to the Rust kernel.
+
+- **`squish/quant/quantizer.py` — `get_backend_info()` update**: new key
+  `"sqint2_residual_gemv_rust"` (bool) alongside the existing
+  `"int4_matmul_rust"` key. Callers can query this to determine whether
+  the GIL-free path is active.
+
+- **`tests/test_sqint2_residual_gemv.py`** — 31 tests:
+  - NumPy fallback: correctness vs fp64 reference, shape/dtype contracts,
+    batch-1 / rank-1 / rank-16 / rectangular in≠out, zero-factor guards,
+    explicit fp32-upcast contract.
+  - Public API: fp32/fp64 input coercion, non-contiguous x, large batch.
+  - Rust kernel (7 tests, skipped when extension not built): matches NumPy
+    fallback within float round-trip tolerance, shape/dtype, zero inputs.
+  - Backend info: key presence, value ↔ RUST_AVAILABLE consistency.
+  - Integration with SQINT2Layer: residual GEMV matches explicit L@R product,
+    output shape matches weight dims, GEMV contribution improves SNR vs
+    Stage-1+2 base (≥ 0.1 dB on rank-8 synthetic weights).
+
+### Why this matters
+
+W103.4b completes the CPU-side inference kernel for the SQINT2 residual path.
+Before this wave, `decompress_weight` (the offline Python path) handled L·R
+via a plain NumPy matmul — correct but GIL-bound and not suitable for a
+hot inference path where the decoder token loop calls this kernel at every
+layer. With W103.4b:
+
+1. The GIL is released for the full `x @ Rᵀ @ Lᵀ` compute.
+2. Both steps are parallelised over Rayon — Step 1 over rank, Step 2 over
+   output features. Speedup over the NumPy path is proportional to CPU core
+   count (typically 8–10× on M3).
+3. fp16 storage → fp32 compute round-trip is performed inside the kernel,
+   not outside it, eliminating a Python-side intermediate copy.
+
+The kernel's position in the SQINT2 inference pipeline:
+  dequant(Q_INT2) via Metal NF2 kernel (W103.4c, pending)
+  + sqint2_residual_gemv(L, R, x)  ← this kernel
+  + sparse COO correction (Python scatter, non-bottleneck at 1% sparsity)
+  → inverse Hadamard → output activation
+
+### Module count
+- 0 new production modules. `squish_quant_rs` and `quantizer.py` extended
+  in-place.
+- 1 new test module (`tests/test_sqint2_residual_gemv.py`).
+
+### Suite
+- 349 passed / 7 Rust-skipped on targeted key files. 0 new regressions.
+- The 3 pre-existing W95 `fastapi`/importlib failures are unchanged.
+- `cargo check`: `Finished dev` — zero errors, one pre-existing
+  unrelated `unused variable` warning.
+
+---
+
 ## [9.24.0] — 2026-05-03 — W106: KV memory budgeting + cache factory
 
 ### Added

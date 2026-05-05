@@ -3304,6 +3304,8 @@ fn squish_quant(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(milo_quant_f32,                      m)?)?;
     // W101 — Fused INT4 dequantize + matmul (GIL-free Rayon GEMV)
     m.add_function(wrap_pyfunction!(quantized_matmul_int4,               m)?)?;
+    // W103.4b — SQINT2 low-rank residual GEMV (GIL-free Rayon, fp16→fp32 upcast)
+    m.add_function(wrap_pyfunction!(sqint2_residual_gemv,                m)?)?;
     Ok(())
 }
 
@@ -5574,6 +5576,149 @@ fn quantized_matmul_int4(
             }
         }
         flat
+    });
+
+    let arr = Array2::from_shape_vec((batch, out_f), out_flat)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+    Ok(arr.into_pyarray_bound(py).unbind())
+}
+
+
+// ── W103.4b — SQINT2 low-rank residual GEMV (GIL-free Rayon) ─────────────────
+//
+// At SQINT2 inference time the reconstructed weight is:
+//
+//   W_recon = H_leftᵀ · (dequant(Q_INT2) + L·R + sparse) · H_right
+//
+// The `L·R` term is the Stage-3 low-rank residual correction stored as fp16
+// factors.  This kernel computes the residual's contribution to the output
+// activation without materialising the full (out_f × in_f) matrix:
+//
+//   out = x @ (L·R)ᵀ  =  x @ Rᵀ @ Lᵀ
+//         ─────────────────────────────
+//         Step 1: h = x @ Rᵀ    shape (batch, rank)  — project into rank subspace
+//         Step 2: y = h @ Lᵀ    shape (batch, out_f) — expand back to out dimension
+//
+// Both matmuls are fp32 (L and R are stored fp16, upcast inside the kernel for
+// CLAUDE.md-mandated FP32 accumulation).  Rayon parallelises Step 1 over rank
+// (each thread owns one column of Rᵀ) and Step 2 over out_f (each thread owns
+// one row of L).  GIL released for the full parallel section.
+//
+// Shape contracts:
+//   L_fp16 : (out_f, rank)   — left SVD factor, absorbs singular values
+//   R_fp16 : (rank, in_f)    — right SVD factor
+//   x      : (batch, in_f)   — input activations, float32
+//   returns  (batch, out_f)  — low-rank residual contribution, float32
+//
+// The caller adds this to the main dequant GEMV output before applying the
+// inverse Hadamard. The sparse COO correction (Stage 3c) is applied separately
+// in Python after the inverse Hadamard because the COO indices are small and
+// the sparse scatter is not a bottleneck at rank-16 sparsity.
+
+/// SQINT2 low-rank residual GEMV: computes `x @ (L @ R)ᵀ` in fp32.
+///
+/// L and R are fp16 SVD residual factors from SQINT2 Stage 3; x is fp32 input
+/// activations. The computation is split into two sequential matmuls:
+///   h = x @ Rᵀ     shape (batch, rank)
+///   y = h @ Lᵀ     shape (batch, out_f)
+///
+/// Both are parallelised over Rayon with the GIL released. L and R are
+/// upcast to fp32 inside the kernel (CLAUDE.md: accumulate in FP32 for
+/// quantized matmuls unless benchmarked otherwise).
+///
+/// # Arguments
+/// * `l_fp16` — `(out_f, rank)` float16 left SVD factor (numpy dtype float16)
+/// * `r_fp16` — `(rank, in_f)` float16 right SVD factor
+/// * `x`      — `(batch, in_f)` float32 input activations
+///
+/// # Returns `(batch, out_f)` float32
+#[pyfunction]
+fn sqint2_residual_gemv(
+    py: Python<'_>,
+    l_fp16: PyReadonlyArray2<u16>,   // fp16 as raw u16 bits (numpy float16 view)
+    r_fp16: PyReadonlyArray2<u16>,   // fp16 as raw u16 bits
+    x:      PyReadonlyArray2<f32>,
+) -> PyResult<Py<PyArray2<f32>>> {
+    let l_view = l_fp16.as_array();
+    let r_view = r_fp16.as_array();
+    let x_view = x.as_array();
+
+    let out_f = l_view.shape()[0];
+    let rank  = l_view.shape()[1];
+    let in_f  = x_view.shape()[1];
+    let batch = x_view.shape()[0];
+
+    // Validate shapes: R must be (rank, in_f); L must be (out_f, rank).
+    if r_view.shape()[0] != rank {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "R.shape[0] ({}) must equal L.shape[1] ({})",
+            r_view.shape()[0], rank,
+        )));
+    }
+    if r_view.shape()[1] != in_f {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "R.shape[1] ({}) must equal x.shape[1] ({})",
+            r_view.shape()[1], in_f,
+        )));
+    }
+
+    // Flatten to contiguous slices for cache-friendly access.
+    let l_flat: Vec<f32> = l_view.iter().map(|&bits| half::f16::from_bits(bits).to_f32()).collect(); // (out_f × rank)
+    let r_flat: Vec<f32> = r_view.iter().map(|&bits| half::f16::from_bits(bits).to_f32()).collect(); // (rank × in_f)
+    let x_flat = x_view.as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("x must be contiguous"))?;
+
+    // Release GIL for the full parallel section.
+    let out_flat = py.allow_threads(|| {
+        // ── Step 1: h = x @ Rᵀ  →  h[b, r] = Σ_i x[b,i] * R[r,i]  ─────────
+        // Parallelise over rank (r columns of Rᵀ). Each Rayon thread computes
+        // one column of h across all batch entries.
+        let mut h_flat = vec![0.0f32; batch * rank]; // (batch, rank) row-major
+
+        h_flat
+            .par_chunks_mut(batch)            // one chunk = column r of h
+            .enumerate()                       // r: 0..rank
+            .for_each(|(r, h_col)| {
+                let r_row = &r_flat[r * in_f .. (r + 1) * in_f]; // R[r, :]
+                for b in 0..batch {
+                    let x_row = &x_flat[b * in_f .. (b + 1) * in_f];
+                    let mut acc = 0.0f32;
+                    for i in 0..in_f {
+                        acc += x_row[i] * r_row[i];
+                    }
+                    h_col[b] = acc;
+                }
+            });
+
+        // h_col layout is (rank, batch) from above — reindex as h[b, r].
+        // Rather than transpose, adapt Step 2 to read h in (rank, batch) order.
+
+        // ── Step 2: y = h @ Lᵀ  →  y[b, o] = Σ_r h[b,r] * L[o,r] ──────────
+        // Parallelise over out_f. Each Rayon thread computes one output feature o.
+        let mut out = vec![0.0f32; batch * out_f]; // (batch, out_f) row-major
+
+        out.par_chunks_mut(batch)              // one chunk = column o of y
+            .enumerate()                       // o: 0..out_f
+            .for_each(|(o, y_col)| {
+                let l_row = &l_flat[o * rank .. (o + 1) * rank]; // L[o, :]
+                for b in 0..batch {
+                    let mut acc = 0.0f32;
+                    for r in 0..rank {
+                        // h is stored in (rank, batch) column layout from Step 1
+                        acc += h_flat[r * batch + b] * l_row[r];
+                    }
+                    y_col[b] = acc;
+                }
+            });
+
+        // Transpose (out_f, batch) column-layout → (batch, out_f) row-major.
+        let mut result = vec![0.0f32; batch * out_f];
+        for o in 0..out_f {
+            for b in 0..batch {
+                result[b * out_f + o] = out[o * batch + b];
+            }
+        }
+        result
     });
 
     let arr = Array2::from_shape_vec((batch, out_f), out_flat)
