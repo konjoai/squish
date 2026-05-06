@@ -293,6 +293,7 @@ def get_backend_info() -> dict:
         "squish_quant_rust":         _has_rust,
         "int4_matmul_rust":          _has_rust and hasattr(_squish_quant, "quantized_matmul_int4"),
         "sqint2_residual_gemv_rust": _has_rust and hasattr(_squish_quant, "sqint2_residual_gemv"),
+        "sqint2_linear_numpy":       True,
         "numpy":                     True,
     }
 
@@ -687,24 +688,6 @@ def quantized_matmul_int4(
 # ---------------------------------------------------------------------------
 # W103.4b — SQINT2 low-rank residual GEMV
 # ---------------------------------------------------------------------------
-#
-# At SQINT2 inference time, the reconstructed weight matrix is:
-#
-#   W_recon = H_leftᵀ · (dequant(Q_INT2) + L·R + sparse) · H_right
-#
-# The L·R term is the Stage-3 low-rank residual. This function computes
-# its contribution to the output activation without materialising the full
-# (out_f × in_f) matrix:
-#
-#   out = x @ (L·R)ᵀ  =  x @ Rᵀ @ Lᵀ
-#
-# Step 1: h = x @ Rᵀ    (batch, rank)   — project into rank subspace
-# Step 2: y = h @ Lᵀ    (batch, out_f)  — expand back to output dimension
-#
-# The Rust kernel (W103.4b) releases the GIL and parallelises both steps over
-# Rayon. The NumPy fallback is equivalent but single-threaded. fp16 factors
-# are upcast to fp32 before accumulation in both paths (CLAUDE.md mandate).
-# ---------------------------------------------------------------------------
 
 
 def _sqint2_residual_gemv_numpy(
@@ -712,24 +695,10 @@ def _sqint2_residual_gemv_numpy(
     r_fp16: np.ndarray,
     x: np.ndarray,
 ) -> np.ndarray:
-    """Pure-NumPy fallback for sqint2_residual_gemv.
-
-    Computes x @ (L @ R)ᵀ = (x @ Rᵀ) @ Lᵀ.  L, R are fp16; upcast to fp32
-    before matmul to satisfy the CLAUDE.md FP32-accumulation mandate.
-
-    Args:
-        l_fp16: (out_f, rank) float16 left SVD factor.
-        r_fp16: (rank, in_f) float16 right SVD factor.
-        x:      (batch, in_f) float32 input activations.
-
-    Returns:
-        (batch, out_f) float32.
-    """
+    """Pure-NumPy fallback for sqint2_residual_gemv."""
     L = l_fp16.astype(np.float32, copy=False)  # (out_f, rank)
     R = r_fp16.astype(np.float32, copy=False)  # (rank, in_f)
-    # Step 1: h = x @ Rᵀ   — (batch, in_f) @ (in_f, rank) = (batch, rank)
     h = x.astype(np.float32, copy=False) @ R.T
-    # Step 2: y = h @ Lᵀ   — (batch, rank) @ (rank, out_f) = (batch, out_f)
     return h @ L.T
 
 
@@ -738,43 +707,12 @@ def sqint2_residual_gemv(
     r_fp16: np.ndarray,
     x: np.ndarray,
 ) -> np.ndarray:
-    """SQINT2 low-rank residual GEMV: computes ``x @ (L @ R)ᵀ`` in fp32.
-
-    L and R are the fp16 SVD residual factors from SQINT2 Stage 3
-    (``SQINT2Layer.residual_L`` and ``SQINT2Layer.residual_R``).  The result
-    is added to the main dequant GEMV output before applying the inverse
-    Hadamard rotation.
-
-    Uses the GIL-free Rayon kernel when ``squish_quant`` Rust extension is
-    available; falls back to NumPy otherwise.
-
-    Math:
-        h = x @ Rᵀ             # project into rank subspace  (batch, rank)
-        y = h @ Lᵀ             # expand to output features    (batch, out_f)
-        out = y                 # = x @ (L·R)ᵀ
-
-    All computation is in float32 — L and R are upcast from fp16 before
-    matmul in both the Rust and NumPy paths.
-
-    Args:
-        l_fp16: ``(out_f, rank)`` float16 — left SVD factor.
-        r_fp16: ``(rank, in_f)`` float16 — right SVD factor.
-        x:      ``(batch, in_f)`` float32 — input activations. Must be
-                contiguous for the Rust path (auto-enforced via ascontiguousarray).
-
-    Returns:
-        ``(batch, out_f)`` float32.
-
-    Raises:
-        ValueError: shape mismatch between L, R, and x.
-    """
-    # dtype enforcement: Rust kernel accepts float16 as uint16 bit view.
+    """SQINT2 low-rank residual GEMV: computes ``x @ (L @ R)ᵀ`` in fp32."""
     l_fp16 = np.ascontiguousarray(l_fp16, dtype=np.float16)
     r_fp16 = np.ascontiguousarray(r_fp16, dtype=np.float16)
     x      = np.ascontiguousarray(x,      dtype=np.float32)
 
     if _squish_quant is not None and hasattr(_squish_quant, "sqint2_residual_gemv"):
-        # Rust kernel accepts fp16 as uint16 raw-bit view (numpy float16 ≡ uint16 bits).
         l_u16 = l_fp16.view(np.uint16)
         r_u16 = r_fp16.view(np.uint16)
         return _squish_quant.sqint2_residual_gemv(l_u16, r_u16, x)
@@ -784,64 +722,17 @@ def sqint2_residual_gemv(
 # ---------------------------------------------------------------------------
 # W103.3 — Layer-selective mixed-precision routing
 # ---------------------------------------------------------------------------
-#
-# Design:
-#   The router maps a tensor name (e.g. "model.layers.5.mlp.gate_proj.weight")
-#   to a quantisation format string.  It is the ONLY place where the W103.3
-#   precision assignment rules live; the compress pipeline calls format_for()
-#   once per tensor and dispatches to the correct codec.
-#
-# Regex choices match compressed_loader.py (_LAYER_RE, _ATTN_RE, _MLP_RE) so
-# the same naming conventions work across loading, routing, and sorting.
-# ---------------------------------------------------------------------------
 
-# Matches transformer block indices in a variety of naming conventions:
-#   "model.layers.5."     (Qwen / Llama / Mistral standard)
-#   "transformer.h.5."    (GPT-2 style — dot after h counts as separator)
-#   "model.layers[5]."    (some HF export variants)
-_ROUTE_LAYER_RE = re.compile(r'(?:layers?|\.h)[\.\[](\d+)[\].]?')
+_ROUTE_LAYER_RE = re.compile(r'(?:layers?|\.h)[\.[\](](\d+)[\].]?')
 
-# Matches the leaf projection name as the last named component before ".weight".
-# Captures: gate_proj, up_proj, down_proj, q_proj, k_proj, v_proj, o_proj.
-# Does NOT match q_norm, k_norm, input_layernorm, etc. — those fall through to "int4".
 _ROUTE_PROJ_RE = re.compile(
     r'\.(?P<proj>(?:gate|up|down|q|k|v|o)_proj)\.weight$'
 )
 
 
 class MixedPrecisionRouter:
-    """Routes transformer weight tensor names to SQINT2 / INT3 / INT4 format.
+    """Routes transformer weight tensor names to SQINT2 / INT3 / INT4 format."""
 
-    Implements the W103.3 layer-selective mixed-precision scheme:
-
-        Tensor class                         Format
-        ─────────────────────────────────── ───────
-        Boundary layers (first 2 + last 2)   INT4    conserve output coherence
-        MLP gate_proj, up_proj               SQINT2  high bit-efficiency target
-        Attention Q, K, V, O projections     INT3    validated -3.4pp arc_easy delta
-        Everything else (down_proj, norms…)  INT4    conservative default
-        Non-weight tensors (embed, lm_head)  None    skip quantisation entirely
-
-    "Boundary layers" = transformer block indices {0, 1, n_layers-2, n_layers-1}.
-    First and last two blocks disproportionately determine output coherence at
-    residual stream boundaries; keeping them at INT4 caps quality regression.
-
-    For n_layers < 4 all layers are treated as boundary (entire model at INT4).
-
-    Args:
-        n_layers: total number of transformer decoder blocks.
-
-    Example::
-
-        router = MixedPrecisionRouter(n_layers=32)
-        router.format_for("model.layers.0.self_attn.q_proj.weight")   # "int4"
-        router.format_for("model.layers.5.mlp.gate_proj.weight")      # "sqint2"
-        router.format_for("model.layers.5.self_attn.q_proj.weight")   # "int3"
-        router.format_for("model.layers.5.mlp.down_proj.weight")      # "int4"
-        router.format_for("model.embed_tokens.weight")                 # None
-    """
-
-    # Projections assigned to each non-default format tier.
     _SQINT2_PROJS: frozenset[str] = frozenset({"gate_proj", "up_proj"})
     _INT3_PROJS:   frozenset[str] = frozenset({"q_proj", "k_proj", "v_proj", "o_proj"})
 
@@ -849,7 +740,6 @@ class MixedPrecisionRouter:
         if n_layers < 1:
             raise ValueError(f"n_layers must be ≥ 1, got {n_layers}")
         self._n_layers: int = n_layers
-        # For n_layers < 4 every layer is a boundary layer.
         if n_layers < 4:
             self._boundary: frozenset[int] = frozenset(range(n_layers))
         else:
@@ -857,56 +747,30 @@ class MixedPrecisionRouter:
 
     @property
     def n_layers(self) -> int:
-        """Total number of transformer decoder blocks."""
         return self._n_layers
 
     @property
     def boundary_layers(self) -> frozenset[int]:
-        """Block indices that stay at INT4 regardless of projection type."""
         return self._boundary
 
     def format_for(self, tensor_name: str) -> "Optional[str]":
-        """Return the quantisation format for *tensor_name*.
-
-        Args:
-            tensor_name: Dot-separated tensor key as stored in safetensors /
-                         model state-dict.  Examples::
-
-                             "model.layers.5.mlp.gate_proj.weight"
-                             "model.layers.0.self_attn.q_proj.weight"
-                             "model.embed_tokens.weight"
-
-        Returns:
-            ``"sqint2"`` — SQINT2 Stage 1-3 (W103 coherent INT2 + residual)
-            ``"int3"``   — INT3 g=32 (mlx_lm.convert, validated -3.4pp arc_easy)
-            ``"int4"``   — INT4 AWQ g=32 (production baseline, conservative)
-            ``None``     — not a quantisable weight tensor; skip
-
-        Non-``.weight`` tensors (biases, etc.) always return ``None``.
-        Tensors without a layer index (embeddings, lm_head) always return ``None``.
-        """
         if not tensor_name.endswith(".weight"):
             return None
 
         layer_m = _ROUTE_LAYER_RE.search(tensor_name)
         if layer_m is None:
-            # No layer index — embedding table, lm_head, or global norm.
             return None
 
         layer_idx = int(layer_m.group(1))
 
-        # Indices beyond the model's declared range are treated conservatively.
         if layer_idx >= self._n_layers:
             return "int4"
 
-        # Boundary layers stay at INT4 unconditionally.
         if layer_idx in self._boundary:
             return "int4"
 
         proj_m = _ROUTE_PROJ_RE.search(tensor_name)
         if proj_m is None:
-            # Non-projection weight in a non-boundary layer (layer norm, q_norm, …).
-            # Conservative: INT4. Downstream code may skip based on tensor shape.
             return "int4"
 
         proj = proj_m.group("proj")
@@ -915,17 +779,9 @@ class MixedPrecisionRouter:
             return "sqint2"
         if proj in self._INT3_PROJS:
             return "int3"
-        # down_proj and any unrecognised projection → INT4 (conservative output side).
         return "int4"
 
     def summary(self, tensor_names: "list[str]") -> "dict[str, int]":
-        """Count how many tensors map to each format across *tensor_names*.
-
-        Useful for compression-plan reporting.
-
-        Returns:
-            Dict mapping format string (or ``"skip"``) to count.
-        """
         counts: dict[str, int] = {"sqint2": 0, "int3": 0, "int4": 0, "skip": 0}
         for name in tensor_names:
             fmt = self.format_for(name)
