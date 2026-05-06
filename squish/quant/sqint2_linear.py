@@ -7,7 +7,6 @@ W103.4c — two implementations:
 from __future__ import annotations
 
 import sys
-from typing import Optional
 
 import numpy as np
 
@@ -46,8 +45,8 @@ class SQINT2LinearNumPy:
         packed_weight: np.ndarray,
         scale: float = 1.0,
         zero_point: float = 0.0,
-        residual_L: Optional[np.ndarray] = None,
-        residual_R: Optional[np.ndarray] = None,
+        residual_L: np.ndarray | None = None,
+        residual_R: np.ndarray | None = None,
     ) -> None:
         self.packed_weight = packed_weight.astype(np.uint8)
         self.scale = float(scale)
@@ -97,8 +96,8 @@ if _mlx_available():
             packed_weight: np.ndarray,
             scale: float = 1.0,
             zero_point: float = 0.0,
-            residual_L: Optional[np.ndarray] = None,
-            residual_R: Optional[np.ndarray] = None,
+            residual_L: np.ndarray | None = None,
+            residual_R: np.ndarray | None = None,
         ) -> None:
             super().__init__()
             dequant = _nf2_dequantize_numpy(packed_weight, scale, zero_point)
