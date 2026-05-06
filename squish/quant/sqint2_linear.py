@@ -11,6 +11,7 @@ on CI runners where the Metal context is unavailable.
 from __future__ import annotations
 
 import sys
+from functools import lru_cache
 
 import numpy as np
 
@@ -83,7 +84,14 @@ class SQINT2LinearNumPy:
 # lazily inside __init__ by checking _mlx_available() at call time.
 # ---------------------------------------------------------------------------
 
+@lru_cache(maxsize=None)
 def _mlx_available() -> bool:
+    """Return True if mlx.core is importable on this platform (darwin only).
+
+    Result is cached after the first call so that repeated calls across the
+    test suite do not re-execute `import mlx.core` (which probes the MLX
+    runtime and could trigger side-effects on some macOS CI sandboxes).
+    """
     if sys.platform != "darwin":
         return False
     try:
@@ -114,10 +122,13 @@ class SQINT2LinearMLX:
                 "SQINT2LinearMLX requires Apple Silicon with MLX installed. "
                 "pip install mlx (macOS only)."
             )
-        # Defer MLX imports to here — Metal context is only initialised on
+        # Defer mlx.core import to here — Metal context is only initialised on
         # actual construction, never on a bare module import.
+        # NOTE: mlx.nn is intentionally NOT imported here — SQINT2LinearMLX is
+        # a plain Python class (not a nn.Module subclass), so mlx.nn is unused.
+        # Importing mlx.nn triggers MLX module-registration machinery that can
+        # SIGABRT on macOS CI runners with restricted Metal sandbox access.
         import mlx.core as mx  # noqa: PLC0415
-        import mlx.nn as nn_mlx  # noqa: PLC0415
 
         # Store mx for use in __call__ without a class-level import.
         self._mx = mx
