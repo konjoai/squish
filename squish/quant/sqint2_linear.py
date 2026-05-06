@@ -3,6 +3,10 @@
 W103.4c — two implementations:
 - SQINT2LinearNumPy: always available (reference / CPU)
 - SQINT2LinearMLX:   Apple Silicon only (sys.platform == "darwin" and mlx installed)
+
+IMPORTANT: MLX imports are deferred to __init__/__call__ (never at module level)
+to avoid triggering Metal GPU initialisation during import, which causes SIGABRT
+on CI runners where the Metal context is unavailable.
 """
 from __future__ import annotations
 
@@ -72,6 +76,11 @@ class SQINT2LinearNumPy:
 
 # ---------------------------------------------------------------------------
 # MLX implementation — Apple Silicon only
+#
+# The class is always defined (no module-level `if _mlx_available()` branch)
+# so that `from squish.quant.sqint2_linear import SQINT2LinearMLX` never
+# triggers Metal initialisation.  The real vs. stub behaviour is selected
+# lazily inside __init__ by checking _mlx_available() at call time.
 # ---------------------------------------------------------------------------
 
 def _mlx_available() -> bool:
@@ -84,48 +93,49 @@ def _mlx_available() -> bool:
         return False
 
 
-if _mlx_available():
-    import mlx.core as mx
-    import mlx.nn as nn_mlx
+class SQINT2LinearMLX:
+    """INT2 linear layer backed by MLX (Apple Silicon / Metal) when available.
 
-    class SQINT2LinearMLX(nn_mlx.Module):  # type: ignore[no-redef]
-        """INT2 linear layer backed by MLX — Apple Silicon (Metal) only."""
+    On non-Darwin platforms or when MLX is not installed, construction raises
+    ImportError immediately.  MLX is imported lazily inside __init__ so that
+    merely *importing* this module never triggers Metal GPU initialisation.
+    """
 
-        def __init__(
-            self,
-            packed_weight: np.ndarray,
-            scale: float = 1.0,
-            zero_point: float = 0.0,
-            residual_L: np.ndarray | None = None,
-            residual_R: np.ndarray | None = None,
-        ) -> None:
-            super().__init__()
-            dequant = _nf2_dequantize_numpy(packed_weight, scale, zero_point)
-            self.weight = mx.array(dequant)
-            self.scale = scale
-            self.zero_point = zero_point
-            self.residual_L = mx.array(residual_L) if residual_L is not None else None
-            self.residual_R = mx.array(residual_R) if residual_R is not None else None
-
-        def __call__(self, x: mx.array) -> mx.array:  # type: ignore[override]
-            out = x @ self.weight.T
-            if self.residual_L is not None and self.residual_R is not None:
-                h = x @ self.residual_R.T
-                out = out + h @ self.residual_L.T
-            return out
-
-else:
-    class SQINT2LinearMLX:  # type: ignore[no-redef]
-        """Stub — MLX not available on this platform."""
-
-        def __init__(self, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        packed_weight: np.ndarray,
+        scale: float = 1.0,
+        zero_point: float = 0.0,
+        residual_L: np.ndarray | None = None,
+        residual_R: np.ndarray | None = None,
+    ) -> None:
+        if not _mlx_available():
             raise ImportError(
                 "SQINT2LinearMLX requires Apple Silicon with MLX installed. "
                 "pip install mlx (macOS only)."
             )
+        # Defer MLX imports to here — Metal context is only initialised on
+        # actual construction, never on a bare module import.
+        import mlx.core as mx  # noqa: PLC0415
+        import mlx.nn as nn_mlx  # noqa: PLC0415
 
-        def __call__(self, *args, **kwargs):  # type: ignore[override]
-            raise ImportError("SQINT2LinearMLX is not available on this platform.")
+        # Store mx for use in __call__ without a class-level import.
+        self._mx = mx
+
+        dequant = _nf2_dequantize_numpy(packed_weight, scale, zero_point)
+        self.weight = mx.array(dequant)
+        self.scale = scale
+        self.zero_point = zero_point
+        self.residual_L = mx.array(residual_L) if residual_L is not None else None
+        self.residual_R = mx.array(residual_R) if residual_R is not None else None
+
+    def __call__(self, x: object) -> object:
+        mx = self._mx
+        out = x @ self.weight.T
+        if self.residual_L is not None and self.residual_R is not None:
+            h = x @ self.residual_R.T
+            out = out + h @ self.residual_L.T
+        return out
 
 
 def get_sqint2_linear_info() -> dict:
