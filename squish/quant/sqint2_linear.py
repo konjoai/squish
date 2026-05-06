@@ -7,7 +7,7 @@ W103.4c — two implementations:
 from __future__ import annotations
 
 import sys
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 
@@ -18,20 +18,20 @@ NF2_CODEBOOK = np.array([-1.5, -0.5, 0.5, 1.5], dtype=np.float32)
 
 
 def _nf2_dequantize_numpy(
-    packed: np.ndarray,  # uint8, values in [0,3] (or packed 2-bits per byte)
+    packed: np.ndarray,
     scale: float = 1.0,
     zero_point: float = 0.0,
 ) -> np.ndarray:
     """Dequantize 2-bit packed indices using the NF2 codebook → float32."""
-    indices = packed.astype(np.int32) & 0x3  # ensure 2-bit range
+    indices = packed.astype(np.int32) & 0x3
     weights = NF2_CODEBOOK[indices] * scale + zero_point
     return weights.astype(np.float32)
 
 
 def _residual_gemv_numpy(x: np.ndarray, L: np.ndarray, R: np.ndarray) -> np.ndarray:
-    """Low-rank residual: x @ (L @ R)ᵀ computed without materialising L@R."""
-    h = x @ R.T  # (..., rank)
-    return h @ L.T  # (..., out_features)
+    """Low-rank residual: x @ (L @ R)ᵀ without materialising L@R."""
+    h = x @ R.T
+    return h @ L.T
 
 
 # ---------------------------------------------------------------------------
@@ -43,18 +43,17 @@ class SQINT2LinearNumPy:
 
     def __init__(
         self,
-        packed_weight: np.ndarray,   # uint8, shape (out, in) 2-bit indices
+        packed_weight: np.ndarray,
         scale: float = 1.0,
         zero_point: float = 0.0,
-        residual_L: Optional[np.ndarray] = None,  # (out, rank) float32
-        residual_R: Optional[np.ndarray] = None,  # (rank, in) float32
+        residual_L: Optional[np.ndarray] = None,
+        residual_R: Optional[np.ndarray] = None,
     ) -> None:
         self.packed_weight = packed_weight.astype(np.uint8)
         self.scale = float(scale)
         self.zero_point = float(zero_point)
         self.residual_L = residual_L
         self.residual_R = residual_R
-        # Dequantize once at construction time
         self._weight = _nf2_dequantize_numpy(self.packed_weight, scale, zero_point)
 
     @property
@@ -90,7 +89,7 @@ if _mlx_available():
     import mlx.core as mx
     import mlx.nn as nn_mlx
 
-    class SQINT2LinearMLX(nn_mlx.Module):
+    class SQINT2LinearMLX(nn_mlx.Module):  # type: ignore[no-redef]
         """INT2 linear layer backed by MLX — Apple Silicon (Metal) only."""
 
         def __init__(
@@ -109,7 +108,7 @@ if _mlx_available():
             self.residual_L = mx.array(residual_L) if residual_L is not None else None
             self.residual_R = mx.array(residual_R) if residual_R is not None else None
 
-        def __call__(self, x: mx.array) -> mx.array:
+        def __call__(self, x: mx.array) -> mx.array:  # type: ignore[override]
             out = x @ self.weight.T
             if self.residual_L is not None and self.residual_R is not None:
                 h = x @ self.residual_R.T
@@ -126,7 +125,7 @@ else:
                 "pip install mlx (macOS only)."
             )
 
-        def __call__(self, *args, **kwargs):
+        def __call__(self, *args, **kwargs):  # type: ignore[override]
             raise ImportError("SQINT2LinearMLX is not available on this platform.")
 
 
