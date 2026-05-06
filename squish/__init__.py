@@ -13,7 +13,7 @@ Public API:
 """
 from __future__ import annotations
 
-__version__ = "9.25.0"
+__version__ = "9.26.0"
 
 # ── Lazy import registry ───────────────────────────────────────────────────────
 # Every public name is loaded on first access via __getattr__.
@@ -223,6 +223,10 @@ _LAZY_IMPORTS: dict[str, str] = {
     "quantize_embeddings":       "squish.quant.quantizer",
     "quantize_int4":             "squish.quant.quantizer",
     "reconstruct_embeddings":    "squish.quant.quantizer",
+
+    # squish.quant.sqint2_linear
+    "SQINT2LinearNumPy":         "squish.quant.sqint2_linear",
+    "SQINT2LinearMLX":           "squish.quant.sqint2_linear",
 
     # squish.kv.radix_cache
     "RadixNode":                 "squish.kv.radix_cache",
