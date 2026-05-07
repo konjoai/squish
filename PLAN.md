@@ -259,7 +259,14 @@ the SQINT2 unpack path. Module count: 83 → 84 (ceiling 125 ✅).
     `tests/test_sqint2_residual_gemv.py` (24 passing / 7 Rust-skipped when
     extension not built). Suite: 349 passing on targeted key files, 0 new
     regressions. Rust: `cargo check` clean.
-  - W103.4c — Metal NF2 fused-dequant GEMV kernel + `SQINT2Linear` mlx Module.
+  - ✅ **W103.4c (2026-05-07) — SHIPPED.** `squish/quant/sqint2_linear.py` —
+    `SQINT2Linear(mlx.nn.Module)` + `sqint2_linear_from_layer` factory. Hard
+    darwin/arm64 platform guard (ImportError on Linux). Forward: NF2 LUT lookup
+    via `mx.take` → per-group asymmetric dequant → fp16 matmul → optional SVD
+    residual (Rust/NumPy GEMV) → optional sparse COO correction. 46 new tests in
+    `tests/test_sqint2_linear.py` (all skip on Linux/non-arm64). Module count 84 → 85.
+    Also: `cmd_bench` INT4 NumPy fallback (8 bench tests fixed), version test
+    alignment (stale 9.14.0 → 9.25.0 assertions updated in 2 test files).
   - W103.4d — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65% lm_eval ship gate.
 
 **Validation order (hardware-aware):**
@@ -429,18 +436,9 @@ cache = make_kv_cache(n_layers=28, planned_context=32_000)
 ---
 
 ## Next Immediate Action
-**W103.4b SHIPPED (2026-05-05).** `sqint2_residual_gemv` Rust GEMV is now on
-`main`. The Rust path is gated behind `hasattr(_squish_quant, "sqint2_residual_gemv")`
-— NumPy fallback is always available.
-
-**Next: W103.4c** — Metal NF2 fused-dequant GEMV kernel + `SQINT2Linear` MLX Module.
-This requires Apple Silicon with MLX (`platform.machine() == "arm64"`, mlx installed).
-Implementation scope:
-  - `squish/quant/sqint2_linear.py` (new file, gated `if sys.platform == "darwin"`)
-    `SQINT2Linear(mlx.nn.Module)` — holds packed indices + scales + zp as `mx.array`;
-    forward pass: NF2 dequant → matmul → add residual via `sqint2_residual_gemv`.
-  - Metal shader or `mx.quantized_matmul` with custom NF2 lookup table (baked LUT).
-  - Gate: `tests/test_sqint2_linear.py` (skip on Linux / non-arm64).
+**W103.4c SHIPPED (2026-05-07).** `SQINT2Linear` MLX Module is now on `main`.
+The module is gated behind `sys.platform == "darwin" and platform.machine() == "arm64"`.
+NumPy decompress fallback (`decompress_weight`) always available for non-Metal paths.
 
 **After W103.4c: W103.4d** — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65%
 lm_eval ship gate (hardware run required). Also validates the W104 32K-context

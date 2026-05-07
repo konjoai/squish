@@ -551,6 +551,7 @@ class TestModuleCount:
         Baseline history:
         - 83 — post-squash-separation (2026-04-28) baseline
         - 84 — W103.1 added `squish/quant/sqint2.py` (Hadamard preprocess + NF2)
+        - 85 — W103.4c added `squish/quant/sqint2_linear.py` (SQINT2Linear MLX)
         """
         import squish
         root = Path(squish.__file__).parent
@@ -560,9 +561,10 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 84, (
-            f"Module count changed: {count} != 84. "
+        assert count == 85, (
+            f"Module count changed: {count} != 85. "
             "Squash separation (2026-04-28) baseline = 83; W103.1 added "
-            "squish/quant/sqint2.py → 84. New modules require either deletion "
-            "of an existing one or written justification per CLAUDE.md."
+            "squish/quant/sqint2.py → 84; W103.4c added "
+            "squish/quant/sqint2_linear.py → 85. New modules require either "
+            "deletion of an existing one or written justification per CLAUDE.md."
         )

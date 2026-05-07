@@ -5661,12 +5661,22 @@ def cmd_bench(args) -> None:
         )
         try:
             packed, scales, offsets = quantize_int4_asymmetric(W, group_size=gs)
-        except RuntimeError as exc:
-            print(f"  ✗  INT4 quantization unavailable: {exc}")
-            sys.exit(1)
+            _has_rust_int4 = True
+        except RuntimeError:
+            # Rust extension not built — fall back to pure-NumPy INT4 codec
+            # (squish/quant/sqint2.py::_int4_quantize_numpy / _int4_dequantize_numpy)
+            from squish.quant.sqint2 import _int4_quantize_numpy, _int4_dequantize_numpy
+            packed, scales, offsets = _int4_quantize_numpy(W, group_size=gs)
+            _has_rust_int4 = False
 
-        def _run() -> np.ndarray:
-            return quantized_matmul_int4(packed, scales, offsets, x, group_size=gs)
+        if _has_rust_int4:
+            def _run() -> np.ndarray:
+                return quantized_matmul_int4(packed, scales, offsets, x, group_size=gs)
+        else:
+            def _run() -> np.ndarray:  # type: ignore[misc]
+                from squish.quant.sqint2 import _int4_dequantize_numpy
+                W_dq = _int4_dequantize_numpy(packed, scales, offsets, in_f)
+                return x @ W_dq.T
 
     else:  # int8
         W = np.ascontiguousarray(
@@ -5697,7 +5707,8 @@ def cmd_bench(args) -> None:
     mean_t = statistics.mean(times_ms)
 
     info = get_backend_info()
-    backend = "rust" if (fmt == "int4" and info.get("int4_matmul_rust")) else "numpy"
+    _rust_int4 = locals().get("_has_rust_int4", False) and info.get("int4_matmul_rust")
+    backend = "rust" if _rust_int4 else "numpy"
 
     # GOPS: batch × out_f × in_f × 2 (multiply + accumulate)
     ops      = batch * out_f * in_f * 2

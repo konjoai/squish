@@ -17,7 +17,7 @@ Covers:
   - repr()
   - Idempotency: same name always returns same format
   - Integration: MixedPrecisionRouter importable from squish.quant.quantizer
-  - Module count: squish/ stays ≤ 125 (W103.4c adds squish/quant/sqint2_linear.py)
+  - Module count: squish/ stays ≤ 125 (W103.3 adds no new squish/ file)
 """
 
 from __future__ import annotations
@@ -403,7 +403,7 @@ class TestIntegration:
         assert R is MixedPrecisionRouter
 
     def test_module_count_unchanged(self):
-        """squish/ module count after W103.4c (adds squish/quant/sqint2_linear.py)."""
+        """W103.3 adds routing to quantizer.py (no new squish/ file). Count stays 84."""
         import squish
         root = Path(squish.__file__).parent
         py_files = [
@@ -413,8 +413,9 @@ class TestIntegration:
         ]
         count = len(py_files)
         assert count == 85, (
-            f"Module count = {count}, expected 85 after W103.4c. "
-            "W103.4c adds squish/quant/sqint2_linear.py as a new module."
+            f"Module count = {count}, expected 85 after W103.3+W103.4c. "
+            "W103.3 adds routing in-place to quantizer.py; "
+            "W103.4c adds squish/quant/sqint2_linear.py (84 → 85)."
         )
         assert count <= 125
 
