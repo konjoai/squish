@@ -5,6 +5,61 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.26.0] — 2026-05-07 — W103.4c: SQINT2Linear MLX Module + bench NumPy fallback
+
+### Added
+
+- **`squish/quant/sqint2_linear.py`** — new module (84 → 85). `SQINT2Linear`
+  MLX module for SQINT2 inference on Apple Silicon (darwin/arm64 only):
+
+  - Hard platform guard: `ImportError` on non-darwin/non-arm64 at import time —
+    CLAUDE.md MLX gate requirement enforced at the module level.
+  - `_NF2_LUT` — 4-element fp32 MLX array baked at import time (unified memory,
+    never re-allocated).
+  - **Forward pipeline**:
+    1. Unpack 2-bit indices (numpy bitops, unified-memory zero-copy on M-series).
+    2. NF2 LUT lookup via `mx.take(_NF2_LUT, indices_mx)` — vectorised Metal gather.
+    3. Per-group asymmetric dequant: `dq = (nf2 - zp) * scale` → fp16 weight.
+    4. Optional sparse COO correction (numpy scatter, k ≈ 1% of weights).
+    5. `x @ dq.T` via MLX standard matmul.
+    6. Optional SVD residual: `sqint2_residual_gemv(L, R, x_np)` → mx.array add.
+    7. Optional bias add.
+  - `sqint2_linear_from_layer(layer, bias=None)` — one-call factory from a
+    deserialized `SQINT2Layer` (numpy → mx.array conversion; wires residual + sparse).
+  - Properties: `in_features`, `out_features`, `group_size`, `has_residual`, `has_sparse`.
+
+- **`tests/test_sqint2_linear.py`** — 46 new tests (all skip on Linux/non-arm64):
+  - Platform guard, NF2 LUT correctness.
+  - Construction: dtype/shape contracts, valid and error paths (8 tests).
+  - Forward shape: 1D/2D/3D input, non-square, dtype contract (5 tests).
+  - Forward correctness (no residual): zero input, non-zero sanity, SNR ≥ 6 dB,
+    decompress_weight round-trip within fp16 tolerance (4 tests).
+  - Forward with SVD residual: shape preserved, changes output, SNR not degraded (3 tests).
+  - Forward with sparse correction: shape preserved, changes output (2 tests).
+  - Full pipeline (base + residual + sparse): shape, SNR ≥ 5 dB (2 tests).
+  - Bias: changes output, shape propagated (2 tests).
+  - Repr coverage: class name, dims, group_size, residual rank, sparse k (6 tests).
+  - Factory: returns correct type, accepts numpy/mx bias, no-bias default (4 tests).
+
+### Fixed
+
+- **`squish/cli.py` — `cmd_bench`**: INT4 bench no longer exits with code 1
+  when the `squish_quant` Rust extension is not built. Falls back to
+  `_int4_quantize_numpy` / `_int4_dequantize_numpy` (pure NumPy, always available
+  from `squish/quant/sqint2.py`). Backend label reports `"numpy"` correctly.
+  Fixes 8 `tests/test_bench.py::TestBenchOutputInt4` failures on Linux CI.
+
+- **`tests/test_version.py`**: Updated `EXPECTED_VERSION = "9.14.0"` →
+  `"9.25.0"` to match the current `squish.__version__`.
+
+- **`tests/test_wave79_startup_inference.py`**: Updated version assertion from
+  `"9.14.0"` → `"9.25.0"`.
+
+- **Module count assertions** updated in `test_sqint2.py`, `test_sqint2_router.py`,
+  `test_quant_aqlm.py`: 84 → 85 (one new file: `squish/quant/sqint2_linear.py`).
+
+---
+
 ## [9.25.0] — 2026-05-05 — W103.4b: SQINT2 low-rank residual GEMV (Rust + NumPy)
 
 ### Added
