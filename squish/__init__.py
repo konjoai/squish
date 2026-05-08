@@ -225,8 +225,8 @@ _LAZY_IMPORTS: dict[str, str] = {
     "reconstruct_embeddings":    "squish.quant.quantizer",
 
     # squish.quant.sqint2_linear
-    "SQINT2LinearNumPy":         "squish.quant.sqint2_linear",
-    "SQINT2LinearMLX":           "squish.quant.sqint2_linear",
+    "SQINT2Linear":              "squish.quant.sqint2_linear",
+    "sqint2_linear_from_layer":  "squish.quant.sqint2_linear",
 
     # squish.kv.radix_cache
     "RadixNode":                 "squish.kv.radix_cache",
