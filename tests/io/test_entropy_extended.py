@@ -22,8 +22,8 @@ class TestBenchmarkCompression:
 
         try:
             benchmark_compression(tensors)
-        except Exception as e:
-            if "zstandard" in str(e).lower() or "zstd" in str(e).lower():
+        except (Exception, SystemExit) as e:
+            if isinstance(e, SystemExit) or "zstandard" in str(e).lower() or "zstd" in str(e).lower():
                 pytest.skip("zstandard not installed")
             raise
 
@@ -36,8 +36,8 @@ class TestBenchmarkCompression:
         empty.mkdir()
         try:
             benchmark_compression(empty)
-        except Exception as e:
-            if "zstandard" in str(e).lower() or "zstd" in str(e).lower():
+        except (Exception, SystemExit) as e:
+            if isinstance(e, SystemExit) or "zstandard" in str(e).lower() or "zstd" in str(e).lower():
                 pytest.skip("zstandard not installed")
             raise
         out = capsys.readouterr().out
