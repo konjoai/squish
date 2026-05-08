@@ -41,7 +41,7 @@ export default function App() {
   const [metrics, setMetrics] = useState<CockpitMetrics>(EMPTY_METRICS);
   const [healthFromMock, setHealthFromMock] = useState<boolean>(true);
   const [metricsFromMock, setMetricsFromMock] = useState<boolean>(true);
-  const [benchFromMock] = useState<boolean>(true); // QuantComparator self-reports
+  const [benchFromMock, setBenchFromMock] = useState<boolean>(true);
 
   const [liveTps, setLiveTps] = useState<number | undefined>();
 
@@ -177,7 +177,7 @@ export default function App() {
 
         <KVCacheView metrics={metrics} mode={mode} />
 
-        <QuantComparator serverMode={mode === "fp16" || mode === "unknown" ? "int4" : mode} />
+        <QuantComparator serverMode={mode === "fp16" || mode === "unknown" ? "int4" : mode} onFromMockChange={setBenchFromMock} />
 
         <section className="grid lg:grid-cols-2 gap-4">
           <LatencyWaterfall turn={lastAssistantTurn} />
