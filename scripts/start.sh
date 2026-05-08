@@ -18,7 +18,7 @@ sleep 1
 # Start FastAPI backend
 echo "📦 Starting FastAPI backend on :$BACKEND_PORT..."
 cd "$REPO_DIR"
-python -m konjoai.api.app --port "$BACKEND_PORT" > /tmp/squish_backend.log 2>&1 &
+python3 -m konjoai.api.app --port "$BACKEND_PORT" > /tmp/squish_backend.log 2>&1 &
 BACKEND_PID=$!
 
 # Wait for backend to be ready
@@ -38,7 +38,7 @@ done
 
 # Start demo server (optional, for comparison feature)
 echo "📦 Starting demo server on :$DEMO_PORT..."
-python demo/server.py --port "$DEMO_PORT" > /tmp/squish_demo.log 2>&1 &
+python3 demo/server.py --port "$DEMO_PORT" > /tmp/squish_demo.log 2>&1 &
 DEMO_PID=$!
 sleep 1
 
