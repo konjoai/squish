@@ -7,6 +7,8 @@ import type { CompressBenchResult, KVMode } from "../lib/types";
 export interface QuantComparatorProps {
   /** Currently active mode at server start (read-only). */
   serverMode: KVMode;
+  /** Callback when fromMock status changes (for MetaInspector). */
+  onFromMockChange?: (fromMock: boolean) => void;
 }
 
 const CTX_PRESETS = [1024, 2048, 4096, 8192, 16384];
@@ -26,7 +28,7 @@ const MODE_COLOR: Record<string, string> = {
  * running with (`serverMode`) and what it *could* save by switching, via
  * the demo server's /api/benchmark.
  */
-export function QuantComparator({ serverMode }: QuantComparatorProps) {
+export function QuantComparator({ serverMode, onFromMockChange }: QuantComparatorProps) {
   const [ctx, setCtx] = useState<number>(2048);
   const [data, setData] = useState<CompressBenchResult | null>(null);
   const [fromMock, setFromMock] = useState<boolean>(false);
@@ -40,10 +42,11 @@ export function QuantComparator({ serverMode }: QuantComparatorProps) {
       if (cancelled) return;
       setData(data);
       setFromMock(fromMock);
+      onFromMockChange?.(fromMock);
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [ctx]);
+  }, [ctx, onFromMockChange]);
 
   const baseline = data?.fp16_baseline_bytes ?? 0;
   const maxRatio = Math.max(8, ...((data?.results ?? []).map((r) => r.compression_ratio)));
