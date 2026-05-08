@@ -1,0 +1,18 @@
+@import "@konjoai/ui/styles";
+
+@source "../node_modules/@konjoai/ui/src";
+
+@theme {
+  /* squish-specific severity tints for KV / quant / power modes. */
+  --color-mode-int8: var(--color-konjo-cool);
+  --color-mode-int4: var(--color-konjo-violet);
+  --color-mode-int3: var(--color-konjo-warm);
+  --color-mode-int2: var(--color-konjo-hot);
+
+  --color-power-perf:    var(--color-konjo-hot);
+  --color-power-balance: var(--color-konjo-accent);
+  --color-power-bat:     var(--color-konjo-good);
+}
+
+:root { color-scheme: dark; }
+html, body, #root { height: 100%; margin: 0; }
