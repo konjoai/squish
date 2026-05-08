@@ -62,10 +62,15 @@ jobs:
         #   test_git_integration.py - live-server integration requiring model weights.
         #                             Run: pytest tests/test_git_integration.py --model qwen3:8b
         #   tests/quant/test_int4_loader.py - requires squish_quant Rust extension (cargo/maturin).
+        #   tests/test_sqint2_linear.py - imports mlx.core at module level which triggers Metal
+        #                                 GPU init during pytest collection; SIGABRTs on CI runners
+        #                                 where the Metal context isn't available at import time.
+        #                                 Run manually on real Apple Silicon hardware.
         run: |
           pytest tests/ \
             --ignore=tests/test_git_integration.py \
             --ignore=tests/quant/test_int4_loader.py \
+            --ignore=tests/test_sqint2_linear.py \
             --timeout=60 \
             -v --tb=short -q
 
@@ -106,9 +111,12 @@ jobs:
       - name: Run full test suite (Rust extension available)
         # test_int4_loader.py is now included — requires squish_quant built above.
         # test_git_integration.py still excluded (needs live model weights).
+        # test_sqint2_linear.py excluded: module-level mlx.core import triggers Metal
+        #   GPU init during collection, SIGABRTs on CI runners.
         run: |
           .venv/bin/pytest tests/ \
             --ignore=tests/test_git_integration.py \
+            --ignore=tests/test_sqint2_linear.py \
             --timeout=120 \
             -v --tb=short -q
 
