@@ -142,6 +142,8 @@ class TestSave:
         assert raw["host"] == "0.0.0.0"
 
     def test_save_raises_on_unwritable_dir(self, tmp_path):
+        if os.getuid() == 0:
+            pytest.skip("running as root — filesystem permission checks are not enforced")
         cfg = _import_config()
         tmp_path.chmod(0o444)
         try:
