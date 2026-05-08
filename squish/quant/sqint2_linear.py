@@ -83,8 +83,6 @@ if sys.platform != "darwin" or platform.machine() != "arm64":
 
 from typing import Optional
 
-import mlx.core as mx
-import mlx.nn as nn
 import numpy as np
 
 from squish.quant.sqint2 import (
@@ -97,13 +95,23 @@ from squish.quant.quantizer import sqint2_residual_gemv
 
 __all__ = ["SQINT2Linear", "sqint2_linear_from_layer"]
 
-# NF2 lookup table as a 4-element fp32 MLX array.
-# Baked at module import so the constant lives in unified memory exactly once.
-# Inference path: mx.take(_NF2_LUT, indices_mx, axis=0) — vectorised gather.
-_NF2_LUT: mx.array = mx.array(NF2_VALUES.astype(np.float32))   # (4,) float32
+# _NF2_LUT is initialized lazily on first use inside __init__ to avoid
+# triggering Metal GPU initialization at module import time (causes SIGABRT
+# on macOS CI runners where the Metal context is not ready during the Python
+# import phase).  Access via module __getattr__ or directly as self._nf2_lut.
+_NF2_LUT_CACHE: "Optional[object]" = None  # mx.array once initialized
 
 
-class SQINT2Linear(nn.Module):
+def _get_nf2_lut() -> "object":
+    """Return NF2 LUT (mx.array), initializing lazily on first call."""
+    global _NF2_LUT_CACHE
+    if _NF2_LUT_CACHE is None:
+        import mlx.core as mx  # deferred — safe at function-call time
+        _NF2_LUT_CACHE = mx.array(NF2_VALUES.astype(np.float32))
+    return _NF2_LUT_CACHE
+
+
+class SQINT2Linear:
     """SQINT2 quantized linear layer — NF2 dequant + MLX matmul + SVD residual.
 
     Implements the inference path for SQINT2 Stage 1+2+3 on Apple Silicon:
@@ -141,9 +149,9 @@ class SQINT2Linear(nn.Module):
 
     def __init__(
         self,
-        indices: mx.array,
-        scales: mx.array,
-        zero_points: mx.array,
+        indices: "object",
+        scales: "object",
+        zero_points: "object",
         in_features: int,
         out_features: int,
         group_size: int = 32,
@@ -152,9 +160,9 @@ class SQINT2Linear(nn.Module):
         sparse_rows: "Optional[np.ndarray]" = None,
         sparse_cols: "Optional[np.ndarray]" = None,
         sparse_vals: "Optional[np.ndarray]" = None,
-        bias: "Optional[mx.array]" = None,
+        bias: "Optional[object]" = None,
     ) -> None:
-        super().__init__()
+        import mlx.core as mx  # deferred — avoids Metal init at import time
 
         if indices.dtype != mx.uint8:
             raise TypeError(
@@ -264,7 +272,7 @@ class SQINT2Linear(nn.Module):
 
     # ── Forward ────────────────────────────────────────────────────────────────
 
-    def __call__(self, x: mx.array) -> mx.array:
+    def __call__(self, x: "object") -> "object":
         """Compute SQINT2 forward pass.
 
         Forward pipeline:
@@ -282,6 +290,8 @@ class SQINT2Linear(nn.Module):
         Returns:
             ``(..., out_features)`` mx.array.
         """
+        import mlx.core as mx  # deferred — avoids Metal init at import time
+
         # ── Step 1: unpack 2-bit indices → (out, in_padded) uint8 ────────────
         # _unpack_2bit works on numpy; mx→np→mx roundtrip is acceptable at
         # inference time — it happens in unified memory (zero-copy on M-series).
@@ -292,7 +302,7 @@ class SQINT2Linear(nn.Module):
         # mx.take performs a vectorised gather: NF2_LUT[unpacked] element-wise.
         # No Python loop, no element-wise compute — dispatches to Metal.
         unpacked_mx = mx.array(unpacked_np.astype(np.int32))   # int32 for mx.take index
-        nf2_rescaled = mx.take(_NF2_LUT, unpacked_mx)           # (out, in_padded) float32
+        nf2_rescaled = mx.take(_get_nf2_lut(), unpacked_mx)    # (out, in_padded) float32
 
         # ── Step 3: per-group dequant → float16 weight ───────────────────────
         # Decode convention: w_dq = (NF2_val - zp) * scale
@@ -357,8 +367,8 @@ class SQINT2Linear(nn.Module):
 
 def sqint2_linear_from_layer(
     layer: SQINT2Layer,
-    bias: "Optional[np.ndarray | mx.array]" = None,
-) -> SQINT2Linear:
+    bias: "Optional[object]" = None,
+) -> "SQINT2Linear":
     """Construct a SQINT2Linear from a deserialized SQINT2Layer.
 
     Converts numpy arrays from ``load_sqint2_layer`` into MLX arrays and
@@ -377,11 +387,13 @@ def sqint2_linear_from_layer(
         linear = sqint2_linear_from_layer(layer)
         y = linear(x)   # x: mx.array (batch, in_features)
     """
+    import mlx.core as mx  # deferred — avoids Metal init at import time
+
     indices_mx = mx.array(layer.indices)                      # mx.uint8
     scales_mx  = mx.array(layer.scales.astype(np.float32))   # mx.float32
     zp_mx      = mx.array(layer.zero_points.astype(np.float32))  # mx.float32
 
-    bias_mx: "Optional[mx.array]" = None
+    bias_mx: "Optional[object]" = None
     if bias is not None:
         if isinstance(bias, mx.array):
             bias_mx = bias
@@ -402,3 +414,10 @@ def sqint2_linear_from_layer(
         sparse_vals=layer.sparse_vals,
         bias=bias_mx,
     )
+
+
+def __getattr__(name: str) -> object:
+    """Lazy access to _NF2_LUT — triggers Metal init at access time, not import time."""
+    if name == "_NF2_LUT":
+        return _get_nf2_lut()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
