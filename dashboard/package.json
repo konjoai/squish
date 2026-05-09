@@ -14,7 +14,7 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@konjoai/ui": "file:../../konjoai-ui",
+    "@konjoai/ui": "file:../../ui/packages/ui",
     "@tailwindcss/vite": "^4.2.4",
     "clsx": "^2.1.1",
     "motion": "^12.38.0",
