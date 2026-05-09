@@ -716,6 +716,107 @@
   .calc-chart .bar.int2 { background: linear-gradient(90deg, var(--accent-4), #ff8eb6); }
 
   /* ════════════════════════════════════════════════════════════════════════
+     dashboard v2 — free-input savings calculator
+     ════════════════════════════════════════════════════════════════════════ */
+  .v2 {
+    margin-top: 44px;
+    background:
+      linear-gradient(135deg, rgba(139,108,255,0.06), rgba(40,212,200,0.04));
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 36px;
+    box-shadow: var(--shadow-md);
+  }
+  .v2-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+  @media (max-width: 880px) { .v2-grid { grid-template-columns: 1fr; } }
+  .v2-controls label {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: var(--fg-mute);
+    margin: 18px 0 6px;
+  }
+  .v2-controls label:first-child { margin-top: 0; }
+  .v2-controls input[type=number] {
+    width: 100%;
+    background: var(--bg-2);
+    color: var(--fg);
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-family: var(--font-mono);
+    font-size: 16px;
+    outline: none;
+    transition: border-color 150ms;
+  }
+  .v2-controls input[type=number]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139,108,255,0.18);
+  }
+  .v2-controls .arch-pill {
+    margin-top: 18px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: rgba(139,108,255,0.10);
+    border: 1px solid rgba(139,108,255,0.25);
+    font-size: 13px;
+    color: var(--fg-mute);
+    line-height: 1.5;
+  }
+  .v2-controls .arch-pill strong { color: var(--accent); font-weight: 700; }
+  .v2-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+  .v2-table th, .v2-table td {
+    padding: 14px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+  }
+  .v2-table th {
+    color: var(--fg-mute);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 11px;
+  }
+  .v2-table tr:last-child td { border-bottom: 0; }
+  .v2-table td.mode { font-weight: 800; font-size: 15px; }
+  .v2-table td.mode.fp16 { color: var(--accent-fp16); }
+  .v2-table td.mode.int8 { color: var(--accent-2); }
+  .v2-table td.mode.int4 { color: var(--accent-3); }
+  .v2-table td.mode.int2 { color: var(--accent-4); }
+  .v2-table tr.recommended {
+    background: rgba(139,108,255,0.06);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .v2-table .savings { color: var(--accent-good); font-weight: 700; }
+  .v2-table .savings.zero { color: var(--fg-dim); font-weight: 400; }
+  .v2-table .ratio    { color: var(--accent); font-weight: 700; }
+  .v2-source {
+    margin-top: 18px;
+    font-size: 12px;
+    color: var(--fg-dim);
+    text-align: right;
+  }
+  .v2-source .src-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: rgba(255,255,255,0.06);
+  }
+  .v2-source .src-pill.live    { background: rgba(76,217,100,0.16);  color: var(--accent-good); }
+  .v2-source .src-pill.offline { background: rgba(255,200, 87,0.14); color: var(--accent-warn); }
+
+  /* ════════════════════════════════════════════════════════════════════════
      benchmark table
      ════════════════════════════════════════════════════════════════════════ */
   .bench {
@@ -1417,6 +1518,63 @@
 
       </div>
     </div>
+
+    <!-- v2 — free-input model savings calculator + comparison table -->
+    <div class="v2 reveal" style="margin-top:44px">
+      <div class="eyebrow">Dashboard v2 · projected memory at every tier</div>
+      <h3 class="h2" style="font-size:24px; margin:6px 0 10px">
+        Plug in your model. See where the cache lands.
+      </h3>
+      <p style="color:var(--fg-mute); margin:0 0 26px; max-width:720px">
+        Pick any model size and target context. The table below uses
+        <code>squish.kv.kv_cache.estimate_kv_memory()</code> — the same
+        closed-form pricing that <code>make_kv_cache</code> uses for
+        budget-driven mode selection — to project total memory at FP16,
+        INT8, INT4, and INT2.
+      </p>
+      <div class="v2-grid">
+        <div class="v2-controls">
+          <label for="v2-params">Model size</label>
+          <input type="number" id="v2-params" min="0.05" max="1000"
+                 step="0.1" value="7" />
+          <div class="arch-pill" style="margin-top:6px; font-size:11px">billions of parameters</div>
+
+          <label for="v2-ctx">Context length</label>
+          <input type="number" id="v2-ctx" min="512" max="1000000"
+                 step="512" value="32000" />
+          <div class="arch-pill" style="margin-top:6px; font-size:11px">tokens</div>
+
+          <div class="arch-pill" id="v2-arch">
+            <strong>7B-class</strong><br>
+            32 layers · 8 KV-heads · 128 head_dim
+          </div>
+        </div>
+
+        <div>
+          <table class="v2-table" id="v2-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Weights</th>
+                <th>KV cache</th>
+                <th>Total RAM</th>
+                <th>vs FP16</th>
+                <th>Saved</th>
+                <th>Recommended use</th>
+              </tr>
+            </thead>
+            <tbody id="v2-tbody"><!-- rendered by JS --></tbody>
+          </table>
+          <div class="v2-source">
+            <span class="src-pill" id="v2-source">estimated · client-side</span>
+            <span style="margin-left:8px">
+              row highlighted = <code>recommended_kv_mode_3tier</code> for
+              this context length
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -1973,6 +2131,175 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
 })();
 
 /* ════════════════════════════════════════════════════════════════════════
+   6b. dashboard v2 — free-input savings calculator + comparison table
+   ════════════════════════════════════════════════════════════════════════
+   Computes the same numbers as the server's /api/calculate endpoint, but
+   client-side so the table responds instantly to keystrokes.  When the
+   server is up, the live module below replaces the projected numbers with
+   the server's response (which uses estimate_kv_memory under the hood —
+   the closed-form formula matches to within rounding).
+
+   Architecture lookup MUST stay in sync with demo/server.py:_ARCH_TABLE.
+   ════════════════════════════════════════════════════════════════════════ */
+window.SquishV2 = (function () {
+  const ARCH_TABLE = [
+    { cap: 0.6,      n_layers: 24, n_kv_heads: 2, head_dim:  64, label: '0.5B-class' },
+    { cap: 1.0,      n_layers: 24, n_kv_heads: 2, head_dim: 128, label: '1B-class' },
+    { cap: 2.0,      n_layers: 28, n_kv_heads: 2, head_dim: 128, label: '1.5B–2B-class' },
+    { cap: 4.0,      n_layers: 32, n_kv_heads: 4, head_dim: 128, label: '3B-class' },
+    { cap: 9.0,      n_layers: 32, n_kv_heads: 8, head_dim: 128, label: '7B–8B-class' },
+    { cap: 15.0,     n_layers: 40, n_kv_heads: 8, head_dim: 128, label: '13B-class' },
+    { cap: 35.0,     n_layers: 48, n_kv_heads: 8, head_dim: 128, label: '30B-class' },
+    { cap: 75.0,     n_layers: 80, n_kv_heads: 8, head_dim: 128, label: '70B-class' },
+    { cap: Infinity, n_layers: 96, n_kv_heads: 8, head_dim: 128, label: '100B+-class' },
+  ];
+  const ROWS = [
+    { bits: 16, mode: 'fp16', use: 'baseline · maximum quality, maximum cost' },
+    { bits:  8, mode: 'int8', use: '≤ 8K context · indistinguishable from FP16' },
+    { bits:  4, mode: 'int4', use: '8K–16K context · the sweet spot' },
+    { bits:  2, mode: 'int2', use: '> 16K context · maximum squish' },
+  ];
+  const T_INT4 = 8192;
+  const T_INT2 = 16384;
+  const KV_PAIR = 2;
+  const SCALE_BYTES = 4;
+  const FP16_BPP = 2;
+
+  function archFor (params_b) {
+    for (const a of ARCH_TABLE) if (params_b <= a.cap) return a;
+    throw new Error('arch table exhausted');
+  }
+  function pickMode (ctx) {
+    if (ctx <= T_INT4) return 'int8';
+    if (ctx <= T_INT2) return 'int4';
+    return 'int2';
+  }
+  function bytesPerTokenPerHead (mode, head_dim) {
+    if (mode === 'fp16') return head_dim * FP16_BPP;
+    if (mode === 'int8') return head_dim     + SCALE_BYTES;
+    if (mode === 'int4') return head_dim / 2 + SCALE_BYTES;
+    if (mode === 'int2') return head_dim / 4 + SCALE_BYTES;
+    throw new Error('bad mode: ' + mode);
+  }
+
+  // Validates that head_dim is compatible with the requested mode — same
+  // contract as squish/kv/kv_cache.py:_bytes_per_token_per_head.
+  function modeFits (mode, head_dim) {
+    if (mode === 'int4') return head_dim % 2 === 0;
+    if (mode === 'int2') return head_dim % 4 === 0;
+    return true;
+  }
+
+  function calculate (params_b, ctx_len, bits) {
+    const mode = bits === 16 ? 'fp16'
+               : bits ===  8 ? 'int8'
+               : bits ===  4 ? 'int4'
+               : bits ===  2 ? 'int2'
+               : (() => { throw new Error('bad bits: ' + bits); })();
+    const arch = archFor(params_b);
+    if (!modeFits(mode, arch.head_dim)) {
+      return { skipped: true, reason: `${mode} requires head_dim divisible — got ${arch.head_dim}` };
+    }
+    const params = Math.round(params_b * 1e9);
+    const weights_bytes      = Math.floor(params * bits / 8);
+    const weights_fp16_bytes = params * FP16_BPP;
+    const kv_factor          = arch.n_layers * arch.n_kv_heads * KV_PAIR;
+    const kv_cache_bytes     = bytesPerTokenPerHead(mode, arch.head_dim)
+                             * kv_factor * ctx_len;
+    const kv_cache_fp16      = bytesPerTokenPerHead('fp16', arch.head_dim)
+                             * kv_factor * ctx_len;
+    const total              = weights_bytes      + kv_cache_bytes;
+    const fp16_total         = weights_fp16_bytes + kv_cache_fp16;
+    return {
+      bits, mode, arch,
+      weights_bytes, weights_fp16_bytes,
+      kv_cache_bytes, kv_cache_fp16_bytes: kv_cache_fp16,
+      total_bytes: total,
+      fp16_total_bytes: fp16_total,
+      savings_bytes: fp16_total - total,
+      total_compression_ratio: total > 0 ? fp16_total / total : 1.0,
+    };
+  }
+
+  function fmtBytes (n) {
+    if (n < 1024) return Math.round(n) + ' B';
+    const u = ['KB','MB','GB','TB'];
+    let i = -1, v = n;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2) + ' ' + u[i];
+  }
+  return { ARCH_TABLE, ROWS, archFor, pickMode, calculate, fmtBytes };
+})();
+
+(function () {
+  const V2  = window.SquishV2;
+  const tb  = document.getElementById('v2-tbody');
+  const inP = document.getElementById('v2-params');
+  const inC = document.getElementById('v2-ctx');
+  const arc = document.getElementById('v2-arch');
+  const src = document.getElementById('v2-source');
+  if (!tb || !inP || !inC) return;
+
+  function clamp (n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+
+  function render () {
+    const params_b = clamp(parseFloat(inP.value) || 0, 0.05, 1000);
+    const ctx_len  = clamp(parseInt(inC.value, 10) || 0, 1, 1_000_000);
+    const arch     = V2.archFor(params_b);
+    const recMode  = V2.pickMode(ctx_len);
+
+    arc.innerHTML =
+      `<strong>${arch.label}</strong><br>` +
+      `${arch.n_layers} layers · ${arch.n_kv_heads} KV-heads · ${arch.head_dim} head_dim`;
+
+    tb.innerHTML = V2.ROWS.map(r => {
+      const c = V2.calculate(params_b, ctx_len, r.bits);
+      if (c.skipped) {
+        return `
+          <tr>
+            <td class="mode ${r.mode}">${r.mode.toUpperCase()}</td>
+            <td colspan="6" style="color:var(--fg-dim); font-style:italic">
+              not available · ${c.reason}
+            </td>
+          </tr>`;
+      }
+      const isFP = r.bits === 16;
+      const isRec = !isFP && r.mode === recMode;
+      const savings = isFP ? `<span class="savings zero">—</span>`
+                           : `<span class="savings">${V2.fmtBytes(c.savings_bytes)}</span>`;
+      const ratio = isFP ? '1.00×'
+                         : `<span class="ratio">${c.total_compression_ratio.toFixed(2)}×</span>`;
+      return `
+        <tr class="${isRec ? 'recommended' : ''}">
+          <td class="mode ${r.mode}">${r.mode.toUpperCase()}</td>
+          <td>${V2.fmtBytes(c.weights_bytes)}</td>
+          <td>${V2.fmtBytes(c.kv_cache_bytes)}</td>
+          <td><strong>${V2.fmtBytes(c.total_bytes)}</strong></td>
+          <td>${ratio}</td>
+          <td>${savings}</td>
+          <td style="font-family:var(--font-sans);color:var(--fg-mute);font-size:13px">
+            ${r.use}${isRec ? ' · <strong style="color:var(--accent)">picked</strong>' : ''}
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  inP.addEventListener('input', render);
+  inC.addEventListener('input', render);
+  render();
+
+  // Expose render so the live module can invalidate the table after a
+  // server response if it ever wants to.
+  window.__v2render = render;
+  window.__v2setSource = (label, ok) => {
+    if (!src) return;
+    src.classList.remove('live', 'offline');
+    src.classList.add(ok ? 'live' : 'offline');
+    src.textContent = label;
+  };
+})();
+
+/* ════════════════════════════════════════════════════════════════════════
    7. live mode — talks to demo/server.py if it's running
    ════════════════════════════════════════════════════════════════════════
    Detection logic:
@@ -2043,6 +2370,7 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
       '— real measurements from your machine, not estimates.';
     benchBtn.setAttribute('disabled', '');
     benchBtn.textContent = '▶ Run benchmark (server required)';
+    if (window.__v2setSource) window.__v2setSource('estimated · client-side', false);
   }
 
   function setOnline () {
@@ -2055,6 +2383,7 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
       '<code>QuantizedKVCache</code> code on your machine.';
     benchBtn.removeAttribute('disabled');
     benchBtn.textContent = '▶ Run benchmark';
+    if (window.__v2setSource) window.__v2setSource('LIVE · /api/calculate', true);
   }
 
   // ── live updates for the compare panel ────────────────────────────────
