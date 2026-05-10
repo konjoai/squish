@@ -716,107 +716,6 @@
   .calc-chart .bar.int2 { background: linear-gradient(90deg, var(--accent-4), #ff8eb6); }
 
   /* ════════════════════════════════════════════════════════════════════════
-     dashboard v2 — free-input savings calculator
-     ════════════════════════════════════════════════════════════════════════ */
-  .v2 {
-    margin-top: 44px;
-    background:
-      linear-gradient(135deg, rgba(139,108,255,0.06), rgba(40,212,200,0.04));
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 36px;
-    box-shadow: var(--shadow-md);
-  }
-  .v2-grid {
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: 32px;
-    align-items: start;
-  }
-  @media (max-width: 880px) { .v2-grid { grid-template-columns: 1fr; } }
-  .v2-controls label {
-    display: block;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    color: var(--fg-mute);
-    margin: 18px 0 6px;
-  }
-  .v2-controls label:first-child { margin-top: 0; }
-  .v2-controls input[type=number] {
-    width: 100%;
-    background: var(--bg-2);
-    color: var(--fg);
-    border: 1px solid var(--line-strong);
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-family: var(--font-mono);
-    font-size: 16px;
-    outline: none;
-    transition: border-color 150ms;
-  }
-  .v2-controls input[type=number]:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(139,108,255,0.18);
-  }
-  .v2-controls .arch-pill {
-    margin-top: 18px;
-    padding: 12px 14px;
-    border-radius: 10px;
-    background: rgba(139,108,255,0.10);
-    border: 1px solid rgba(139,108,255,0.25);
-    font-size: 13px;
-    color: var(--fg-mute);
-    line-height: 1.5;
-  }
-  .v2-controls .arch-pill strong { color: var(--accent); font-weight: 700; }
-  .v2-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-family: var(--font-mono);
-    font-size: 14px;
-  }
-  .v2-table th, .v2-table td {
-    padding: 14px 16px;
-    text-align: left;
-    border-bottom: 1px solid var(--line);
-  }
-  .v2-table th {
-    color: var(--fg-mute);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 11px;
-  }
-  .v2-table tr:last-child td { border-bottom: 0; }
-  .v2-table td.mode { font-weight: 800; font-size: 15px; }
-  .v2-table td.mode.fp16 { color: var(--accent-fp16); }
-  .v2-table td.mode.int8 { color: var(--accent-2); }
-  .v2-table td.mode.int4 { color: var(--accent-3); }
-  .v2-table td.mode.int2 { color: var(--accent-4); }
-  .v2-table tr.recommended {
-    background: rgba(139,108,255,0.06);
-    box-shadow: inset 3px 0 0 var(--accent);
-  }
-  .v2-table .savings { color: var(--accent-good); font-weight: 700; }
-  .v2-table .savings.zero { color: var(--fg-dim); font-weight: 400; }
-  .v2-table .ratio    { color: var(--accent); font-weight: 700; }
-  .v2-source {
-    margin-top: 18px;
-    font-size: 12px;
-    color: var(--fg-dim);
-    text-align: right;
-  }
-  .v2-source .src-pill {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 99px;
-    background: rgba(255,255,255,0.06);
-  }
-  .v2-source .src-pill.live    { background: rgba(76,217,100,0.16);  color: var(--accent-good); }
-  .v2-source .src-pill.offline { background: rgba(255,200, 87,0.14); color: var(--accent-warn); }
-
-  /* ════════════════════════════════════════════════════════════════════════
      benchmark table
      ════════════════════════════════════════════════════════════════════════ */
   .bench {
@@ -1128,6 +1027,259 @@
     }
     .reveal { opacity: 1; transform: none; }
   }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     dashboard v2 — free-input savings calculator  (W108)
+     ════════════════════════════════════════════════════════════════════════ */
+  .v2 {
+    margin-top: 44px;
+    background: linear-gradient(135deg, rgba(139,108,255,0.06), rgba(40,212,200,0.04));
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 36px;
+    box-shadow: var(--shadow-md);
+  }
+  .v2-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+  @media (max-width: 880px) { .v2-grid { grid-template-columns: 1fr; } }
+  .v2-controls label {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: var(--fg-mute);
+    margin: 18px 0 6px;
+  }
+  .v2-controls label:first-child { margin-top: 0; }
+  .v2-controls input[type=number] {
+    width: 100%;
+    background: var(--bg-2);
+    color: var(--fg);
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-family: var(--font-mono);
+    font-size: 16px;
+    outline: none;
+    transition: border-color 150ms;
+  }
+  .v2-controls input[type=number]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139,108,255,0.18);
+  }
+  .v2-controls .arch-pill {
+    margin-top: 18px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: rgba(139,108,255,0.10);
+    border: 1px solid rgba(139,108,255,0.25);
+    font-size: 13px;
+    color: var(--fg-mute);
+    line-height: 1.5;
+  }
+  .v2-controls .arch-pill strong { color: var(--accent); font-weight: 700; }
+  .v2-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+  .v2-table th, .v2-table td {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+  }
+  .v2-table th {
+    color: var(--fg-mute);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    background: var(--bg-2);
+  }
+  .v2-table tr:last-child td { border-bottom: 0; }
+  .v2-table td.v2-mode { font-weight: 800; font-size: 15px; }
+  .v2-table td.v2-mode.fp16 { color: var(--accent-fp16); }
+  .v2-table td.v2-mode.int8 { color: var(--accent-2); }
+  .v2-table td.v2-mode.int4 { color: var(--accent-3); }
+  .v2-table td.v2-mode.int2 { color: var(--accent-4); }
+  .v2-savings { font-weight: 700; color: var(--accent-good); }
+  .v2-recommended { background: rgba(76,217,100,0.06); }
+  .v2-source {
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    line-height: 1.7;
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     3-D ISOMETRIC MEMORY BLOCKS  (W → spring entrance, scaleY compression)
+     ════════════════════════════════════════════════════════════════════════ */
+  .iso-scene {
+    height: 280px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    perspective: 680px;
+    perspective-origin: 50% 58%;
+    margin: 28px 0 0;
+    overflow: visible;
+    position: relative;
+  }
+  .iso-view {
+    display: flex;
+    align-items: flex-end;
+    gap: 22px;
+    transform: rotateX(45deg) rotateZ(-45deg);
+    transform-style: preserve-3d;
+  }
+  .iso-block {
+    position: relative;
+    width: 54px;
+    height: var(--bh, 100px);
+    transform-style: preserve-3d;
+    transform: scale(0);
+    will-change: transform;
+    transition:
+      height 900ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 700ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      opacity 350ms;
+    background: transparent;
+  }
+  .iso-block.entered { transform: scale(1); }
+  .iso-block.dim     { opacity: 0.15; }
+
+  .iso-face { position: absolute; backface-visibility: hidden; }
+
+  .iso-face.f-front {
+    inset: 0;
+    background: var(--bc, #8b6cff);
+  }
+  .iso-face.f-side {
+    top: 0; left: 0;
+    width: 54px; height: 100%;
+    transform-origin: right center;
+    transform: rotateY(90deg);
+    background: color-mix(in srgb, var(--bc, #8b6cff) 78%, black 22%);
+  }
+  .iso-face.f-top {
+    top: 0; left: 0;
+    width: 54px; height: 54px;
+    transform-origin: top center;
+    transform: rotateX(90deg);
+    background: color-mix(in srgb, var(--bc, #8b6cff) 78%, white 22%);
+  }
+
+  .iso-labels {
+    display: flex;
+    justify-content: center;
+    gap: 22px;
+    margin-top: 14px;
+  }
+  .iso-lbl {
+    width: 54px;
+    text-align: center;
+    font: 700 10px/1 var(--font-mono);
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    opacity: 0.65;
+    transition: opacity 350ms, color 350ms;
+  }
+  .iso-lbl.dim { opacity: 0.20; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     ESCAPED BITS PARTICLE SYSTEM
+     ════════════════════════════════════════════════════════════════════════ */
+  .bit-particle {
+    position: fixed;
+    pointer-events: none;
+    font: 700 11px/1 var(--font-mono);
+    z-index: 9999;
+    animation: escapeBit 1.5s cubic-bezier(0.23, 1, 0.32, 1) both;
+    user-select: none;
+  }
+  @keyframes escapeBit {
+    0%   { opacity: 1; transform: translate(0,0) rotate(0deg) scale(1); }
+    60%  { opacity: 0.7; }
+    100% { opacity: 0; transform: translate(var(--dx),var(--dy)) rotate(var(--dr)) scale(0.3); }
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     SNR WAVEFORM CANVAS
+     ════════════════════════════════════════════════════════════════════════ */
+  .snr-canvas-wrap {
+    margin: 16px 0 12px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: rgba(0,0,0,0.25);
+    position: relative;
+  }
+  #snr-canvas { display: block; width: 100%; height: 80px; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     MODEL CHIP STRIP
+     ════════════════════════════════════════════════════════════════════════ */
+  .model-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0 4px;
+  }
+  .model-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 14px;
+    border-radius: 99px;
+    border: 1px solid var(--line-strong);
+    background: var(--bg-2);
+    color: var(--fg-mute);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    transition: transform 180ms cubic-bezier(0.34,1.56,0.64,1),
+                background 180ms, border-color 180ms,
+                box-shadow 180ms, color 180ms;
+    will-change: transform;
+  }
+  .model-chip:hover {
+    border-color: var(--accent);
+    color: var(--fg);
+    transform: scale(1.04);
+  }
+  .model-chip.active {
+    background: rgba(139,108,255,0.18);
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: scale(1.06);
+    box-shadow: 0 0 14px rgba(124,58,237,0.60);
+  }
+  .chip-label { font-size: 14px; font-weight: 700; }
+  .chip-sub   { font-size: 9px;  opacity: 0.6; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     HEX GRID CANVAS  (behind the calculator section)
+     ════════════════════════════════════════════════════════════════════════ */
+  .calc { position: relative; overflow: hidden; }
+  #hex-canvas {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.5;
+  }
+  .calc-grid { position: relative; z-index: 1; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     SLIDER DISPLAY — width reserved so spring doesn't shift layout
+     ════════════════════════════════════════════════════════════════════════ */
+  #ctx-val { display: inline-block; min-width: 5ch; }
 </style>
 </head>
 <body>
@@ -1441,13 +1593,12 @@
             <div class="qs-track"><div class="qs-fill size" id="bar-s"></div></div>
           </div>
 
-          <div class="size-cube" aria-hidden="true">
-            <div class="cube" data-mode="fp16" style="height:200px">FP16</div>
-            <div class="cube" data-mode="int8" style="height:104px">INT8</div>
-            <div class="cube" data-mode="int4" style="height:54px">INT4</div>
-            <div class="cube" data-mode="int2" style="height:28px">INT2</div>
+          <!-- 3-D isometric blocks built by JS module 8b -->
+          <div class="iso-scene" aria-hidden="true">
+            <div class="iso-view" id="iso-view"></div>
           </div>
-          <div style="text-align:center; color:var(--fg-dim); font-size:11px; margin-top:14px; letter-spacing:0.08em">
+          <div class="iso-labels" id="iso-labels" aria-hidden="true"></div>
+          <div style="text-align:center; color:var(--fg-dim); font-size:11px; margin-top:10px; letter-spacing:0.08em">
             relative cache size — taller = more memory
           </div>
         </div>
@@ -1484,6 +1635,8 @@
     </div>
 
     <div class="calc reveal">
+      <!-- hex grid drawn by JS module 8f; warms amber→cool blue with slider -->
+      <canvas id="hex-canvas" aria-hidden="true"></canvas>
       <div class="calc-grid">
 
         <div class="calc-controls">
@@ -1493,8 +1646,17 @@
           </div>
           <input type="range" id="ctx" min="512" max="65536" step="512" value="8192" />
 
-          <label>Model preset</label>
-          <select id="preset">
+          <!-- SNR waveform: clean sine at low compression → noisy at high -->
+          <div class="snr-canvas-wrap">
+            <canvas id="snr-canvas" aria-hidden="true"></canvas>
+          </div>
+
+          <label>Model</label>
+          <!-- chip strip — syncs to hidden select -->
+          <div class="model-chips" id="model-chips" role="group" aria-label="Model preset"></div>
+
+          <label style="margin-top:6px">Details</label>
+          <select id="preset" style="display:none">
             <option value="qwen-7b" selected>Qwen2.5-7B  (28 layers · 8 heads · 128-wide)</option>
             <option value="llama-8b">Llama-3-8B  (32 layers · 8 heads · 128-wide)</option>
             <option value="qwen-1_5b">Qwen2.5-1.5B  (28 layers · 2 heads · 128-wide)</option>
@@ -1517,63 +1679,50 @@
         </div>
 
       </div>
-    </div>
 
-    <!-- v2 — free-input model savings calculator + comparison table -->
-    <div class="v2 reveal" style="margin-top:44px">
-      <div class="eyebrow">Dashboard v2 · projected memory at every tier</div>
-      <h3 class="h2" style="font-size:24px; margin:6px 0 10px">
-        Plug in your model. See where the cache lands.
-      </h3>
-      <p style="color:var(--fg-mute); margin:0 0 26px; max-width:720px">
-        Pick any model size and target context. The table below uses
-        <code>squish.kv.kv_cache.estimate_kv_memory()</code> — the same
-        closed-form pricing that <code>make_kv_cache</code> uses for
-        budget-driven mode selection — to project total memory at FP16,
-        INT8, INT4, and INT2.
-      </p>
-      <div class="v2-grid">
-        <div class="v2-controls">
-          <label for="v2-params">Model size</label>
-          <input type="number" id="v2-params" min="0.05" max="1000"
-                 step="0.1" value="7" />
-          <div class="arch-pill" style="margin-top:6px; font-size:11px">billions of parameters</div>
-
-          <label for="v2-ctx">Context length</label>
-          <input type="number" id="v2-ctx" min="512" max="1000000"
-                 step="512" value="32000" />
-          <div class="arch-pill" style="margin-top:6px; font-size:11px">tokens</div>
-
-          <div class="arch-pill" id="v2-arch">
-            <strong>7B-class</strong><br>
-            32 layers · 8 KV-heads · 128 head_dim
+      <!-- v2 — free-input model savings calculator + comparison table (W108) -->
+      <div class="v2 reveal" style="margin-top:44px">
+        <div class="eyebrow">Dashboard v2 · projected memory at every tier</div>
+        <h3 class="h2" style="font-size:24px; margin:6px 0 10px">
+          Plug in your model. See where the cache lands.
+        </h3>
+        <p style="color:var(--fg-mute); margin:0 0 26px; max-width:720px">
+          Pick any model size and target context. The table uses
+          <code>estimate_kv_memory()</code> — the same closed-form pricing
+          that <code>make_kv_cache</code> uses — to project total memory at
+          FP16, INT8, INT4, and INT2.
+        </p>
+        <div class="v2-grid">
+          <div class="v2-controls">
+            <label for="v2-params">Model size</label>
+            <input type="number" id="v2-params" min="0.05" max="1000"
+                   step="0.1" value="7" />
+            <label for="v2-ctx">Context length (tokens)</label>
+            <input type="number" id="v2-ctx" min="512" max="1000000"
+                   step="512" value="32768" />
+            <div class="arch-pill" id="v2-arch">
+              <strong>28</strong> layers · <strong>8</strong> KV heads ·
+              <strong>128</strong>-wide — estimated from model size
+            </div>
+            <p class="v2-source" id="v2-source"></p>
           </div>
-        </div>
-
-        <div>
-          <table class="v2-table" id="v2-table">
-            <thead>
-              <tr>
-                <th>Mode</th>
-                <th>Weights</th>
-                <th>KV cache</th>
-                <th>Total RAM</th>
-                <th>vs FP16</th>
-                <th>Saved</th>
-                <th>Recommended use</th>
-              </tr>
-            </thead>
-            <tbody id="v2-tbody"><!-- rendered by JS --></tbody>
-          </table>
-          <div class="v2-source">
-            <span class="src-pill" id="v2-source">estimated · client-side</span>
-            <span style="margin-left:8px">
-              row highlighted = <code>recommended_kv_mode_3tier</code> for
-              this context length
-            </span>
+          <div>
+            <table class="v2-table" id="v2-table">
+              <thead>
+                <tr>
+                  <th>Mode</th>
+                  <th>Total cache RAM</th>
+                  <th>vs FP16</th>
+                  <th>Saving</th>
+                  <th>Fits in 16 GB?</th>
+                </tr>
+              </thead>
+              <tbody id="v2-tbody"></tbody>
+            </table>
           </div>
         </div>
       </div>
+
     </div>
   </div>
 </section>
@@ -1964,9 +2113,8 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
   const barS    = document.getElementById('bar-s');
   const barQVal = document.getElementById('bar-q-val');
   const barSVal = document.getElementById('bar-s-val');
-  const cubes   = document.querySelectorAll('.size-cube .cube');
+  // Iso blocks are built by module 8b after page load; query lazily in setActive.
 
-  // count-up tweens on a single number
   function tweenNum (el, from, to, dur, fmt) {
     const start = performance.now();
     function step (now) {
@@ -1982,7 +2130,13 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
   function setActive (mode) {
     tabs.querySelectorAll('.tab-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.mode === mode));
-    cubes.forEach(c => c.classList.toggle('dim', c.dataset.mode !== mode));
+    // Lazy query — iso blocks may not exist at parse time (built by JS).
+    document.querySelectorAll('.iso-block').forEach(c =>
+      c.classList.toggle('dim', c.dataset.mode !== mode));
+    document.querySelectorAll('.iso-lbl').forEach(c =>
+      c.classList.toggle('dim', c.dataset.mode !== mode));
+    // Notify konjo enhancement module (particles + waveform update).
+    document.dispatchEvent(new CustomEvent('squish:tab', { detail: { mode } }));
   }
 
   let prev = MODES.int8;        // we ship with INT8 active
@@ -2131,173 +2285,486 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
 })();
 
 /* ════════════════════════════════════════════════════════════════════════
-   6b. dashboard v2 — free-input savings calculator + comparison table
+   6b. dashboard v2 — free-input savings calculator + comparison table (W108)
    ════════════════════════════════════════════════════════════════════════
-   Computes the same numbers as the server's /api/calculate endpoint, but
-   client-side so the table responds instantly to keystrokes.  When the
-   server is up, the live module below replaces the projected numbers with
-   the server's response (which uses estimate_kv_memory under the hood —
-   the closed-form formula matches to within rounding).
-
-   Architecture lookup MUST stay in sync with demo/server.py:_ARCH_TABLE.
+   Computes the same numbers as squish.kv.kv_cache.estimate_kv_memory() but
+   client-side so the table responds instantly to keystrokes.
    ════════════════════════════════════════════════════════════════════════ */
-window.SquishV2 = (function () {
-  const ARCH_TABLE = [
-    { cap: 0.6,      n_layers: 24, n_kv_heads: 2, head_dim:  64, label: '0.5B-class' },
-    { cap: 1.0,      n_layers: 24, n_kv_heads: 2, head_dim: 128, label: '1B-class' },
-    { cap: 2.0,      n_layers: 28, n_kv_heads: 2, head_dim: 128, label: '1.5B–2B-class' },
-    { cap: 4.0,      n_layers: 32, n_kv_heads: 4, head_dim: 128, label: '3B-class' },
-    { cap: 9.0,      n_layers: 32, n_kv_heads: 8, head_dim: 128, label: '7B–8B-class' },
-    { cap: 15.0,     n_layers: 40, n_kv_heads: 8, head_dim: 128, label: '13B-class' },
-    { cap: 35.0,     n_layers: 48, n_kv_heads: 8, head_dim: 128, label: '30B-class' },
-    { cap: 75.0,     n_layers: 80, n_kv_heads: 8, head_dim: 128, label: '70B-class' },
-    { cap: Infinity, n_layers: 96, n_kv_heads: 8, head_dim: 128, label: '100B+-class' },
-  ];
-  const ROWS = [
-    { bits: 16, mode: 'fp16', use: 'baseline · maximum quality, maximum cost' },
-    { bits:  8, mode: 'int8', use: '≤ 8K context · indistinguishable from FP16' },
-    { bits:  4, mode: 'int4', use: '8K–16K context · the sweet spot' },
-    { bits:  2, mode: 'int2', use: '> 16K context · maximum squish' },
-  ];
-  const T_INT4 = 8192;
-  const T_INT2 = 16384;
-  const KV_PAIR = 2;
-  const SCALE_BYTES = 4;
-  const FP16_BPP = 2;
-
-  function archFor (params_b) {
-    for (const a of ARCH_TABLE) if (params_b <= a.cap) return a;
-    throw new Error('arch table exhausted');
-  }
-  function pickMode (ctx) {
-    if (ctx <= T_INT4) return 'int8';
-    if (ctx <= T_INT2) return 'int4';
-    return 'int2';
-  }
-  function bytesPerTokenPerHead (mode, head_dim) {
-    if (mode === 'fp16') return head_dim * FP16_BPP;
-    if (mode === 'int8') return head_dim     + SCALE_BYTES;
-    if (mode === 'int4') return head_dim / 2 + SCALE_BYTES;
-    if (mode === 'int2') return head_dim / 4 + SCALE_BYTES;
-    throw new Error('bad mode: ' + mode);
-  }
-
-  // Validates that head_dim is compatible with the requested mode — same
-  // contract as squish/kv/kv_cache.py:_bytes_per_token_per_head.
-  function modeFits (mode, head_dim) {
-    if (mode === 'int4') return head_dim % 2 === 0;
-    if (mode === 'int2') return head_dim % 4 === 0;
-    return true;
-  }
-
-  function calculate (params_b, ctx_len, bits) {
-    const mode = bits === 16 ? 'fp16'
-               : bits ===  8 ? 'int8'
-               : bits ===  4 ? 'int4'
-               : bits ===  2 ? 'int2'
-               : (() => { throw new Error('bad bits: ' + bits); })();
-    const arch = archFor(params_b);
-    if (!modeFits(mode, arch.head_dim)) {
-      return { skipped: true, reason: `${mode} requires head_dim divisible — got ${arch.head_dim}` };
-    }
-    const params = Math.round(params_b * 1e9);
-    const weights_bytes      = Math.floor(params * bits / 8);
-    const weights_fp16_bytes = params * FP16_BPP;
-    const kv_factor          = arch.n_layers * arch.n_kv_heads * KV_PAIR;
-    const kv_cache_bytes     = bytesPerTokenPerHead(mode, arch.head_dim)
-                             * kv_factor * ctx_len;
-    const kv_cache_fp16      = bytesPerTokenPerHead('fp16', arch.head_dim)
-                             * kv_factor * ctx_len;
-    const total              = weights_bytes      + kv_cache_bytes;
-    const fp16_total         = weights_fp16_bytes + kv_cache_fp16;
-    return {
-      bits, mode, arch,
-      weights_bytes, weights_fp16_bytes,
-      kv_cache_bytes, kv_cache_fp16_bytes: kv_cache_fp16,
-      total_bytes: total,
-      fp16_total_bytes: fp16_total,
-      savings_bytes: fp16_total - total,
-      total_compression_ratio: total > 0 ? fp16_total / total : 1.0,
-    };
-  }
-
-  function fmtBytes (n) {
-    if (n < 1024) return Math.round(n) + ' B';
-    const u = ['KB','MB','GB','TB'];
-    let i = -1, v = n;
-    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-    return v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2) + ' ' + u[i];
-  }
-  return { ARCH_TABLE, ROWS, archFor, pickMode, calculate, fmtBytes };
-})();
-
 (function () {
-  const V2  = window.SquishV2;
-  const tb  = document.getElementById('v2-tbody');
-  const inP = document.getElementById('v2-params');
-  const inC = document.getElementById('v2-ctx');
-  const arc = document.getElementById('v2-arch');
-  const src = document.getElementById('v2-source');
-  if (!tb || !inP || !inC) return;
+  const inP  = document.getElementById('v2-params');
+  const inC  = document.getElementById('v2-ctx');
+  const arc  = document.getElementById('v2-arch');
+  const src  = document.getElementById('v2-source');
+  const tbody = document.getElementById('v2-tbody');
+  if (!inP || !inC || !tbody) return;
 
-  function clamp (n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+  const SCALE_B = 4;  // fp32 per-token scale
+  const KV2     = 2;  // K + V buffers
+  const GB      = 1024 ** 3;
+  const FIT_GB  = 16; // M3 16 GB ceiling
+
+  // Rough arch heuristics from parameter count (billions)
+  function archFrom (B) {
+    if (B <= 1)   return { n_layers: 22, n_kv:  4, head_dim: 64  };
+    if (B <= 3)   return { n_layers: 26, n_kv:  4, head_dim: 128 };
+    if (B <= 8)   return { n_layers: 28, n_kv:  8, head_dim: 128 };
+    if (B <= 14)  return { n_layers: 32, n_kv:  8, head_dim: 128 };
+    if (B <= 30)  return { n_layers: 40, n_kv:  8, head_dim: 128 };
+    if (B <= 70)  return { n_layers: 80, n_kv:  8, head_dim: 128 };
+    return             { n_layers: 96, n_kv: 16, head_dim: 128 };
+  }
+
+  function bptHead (mode, hd) {
+    if (mode === 'fp16') return hd * 2;
+    if (mode === 'int8') return hd + SCALE_B;
+    if (mode === 'int4') return hd / 2 + SCALE_B;
+    if (mode === 'int2') return hd / 4 + SCALE_B;
+    return 0;
+  }
+
+  function fmtB (n) {
+    if (n < 1024) return n.toFixed(0) + ' B';
+    if (n < 1024 ** 2) return (n / 1024).toFixed(1) + ' KB';
+    if (n < GB)   return (n / 1024 ** 2).toFixed(1) + ' MB';
+    return (n / GB).toFixed(2) + ' GB';
+  }
+
+  const MODES = ['fp16','int8','int4','int2'];
+  const COL   = { fp16:'var(--accent-fp16)', int8:'var(--accent-2)', int4:'var(--accent-3)', int2:'var(--accent-4)' };
+  const T_INT4 = 8192, T_INT2 = 16384;
+  function pickMode (c) { return c <= T_INT4 ? 'int8' : c <= T_INT2 ? 'int4' : 'int2'; }
 
   function render () {
-    const params_b = clamp(parseFloat(inP.value) || 0, 0.05, 1000);
-    const ctx_len  = clamp(parseInt(inC.value, 10) || 0, 1, 1_000_000);
-    const arch     = V2.archFor(params_b);
-    const recMode  = V2.pickMode(ctx_len);
+    const B  = Math.max(0.05, parseFloat(inP.value) || 7);
+    const C  = Math.max(512,  parseInt(inC.value)   || 32768);
+    const a  = archFrom(B);
+    const fp16Total = a.head_dim * 2 * a.n_kv * KV2 * C * a.n_layers;
+    const rec = pickMode(C);
 
-    arc.innerHTML =
-      `<strong>${arch.label}</strong><br>` +
-      `${arch.n_layers} layers · ${arch.n_kv_heads} KV-heads · ${arch.head_dim} head_dim`;
+    arc.innerHTML = `<strong>${a.n_layers}</strong> layers · <strong>${a.n_kv}</strong> KV heads · <strong>${a.head_dim}</strong>-wide — estimated from ${B}B parameters`;
+    if (src) src.textContent = `formula: (bpw × head_dim + 4) × n_kv_heads × 2 (K+V) × context × n_layers`;
 
-    tb.innerHTML = V2.ROWS.map(r => {
-      const c = V2.calculate(params_b, ctx_len, r.bits);
-      if (c.skipped) {
-        return `
-          <tr>
-            <td class="mode ${r.mode}">${r.mode.toUpperCase()}</td>
-            <td colspan="6" style="color:var(--fg-dim); font-style:italic">
-              not available · ${c.reason}
-            </td>
-          </tr>`;
-      }
-      const isFP = r.bits === 16;
-      const isRec = !isFP && r.mode === recMode;
-      const savings = isFP ? `<span class="savings zero">—</span>`
-                           : `<span class="savings">${V2.fmtBytes(c.savings_bytes)}</span>`;
-      const ratio = isFP ? '1.00×'
-                         : `<span class="ratio">${c.total_compression_ratio.toFixed(2)}×</span>`;
-      return `
-        <tr class="${isRec ? 'recommended' : ''}">
-          <td class="mode ${r.mode}">${r.mode.toUpperCase()}</td>
-          <td>${V2.fmtBytes(c.weights_bytes)}</td>
-          <td>${V2.fmtBytes(c.kv_cache_bytes)}</td>
-          <td><strong>${V2.fmtBytes(c.total_bytes)}</strong></td>
-          <td>${ratio}</td>
-          <td>${savings}</td>
-          <td style="font-family:var(--font-sans);color:var(--fg-mute);font-size:13px">
-            ${r.use}${isRec ? ' · <strong style="color:var(--accent)">picked</strong>' : ''}
-          </td>
-        </tr>`;
+    tbody.innerHTML = MODES.map(m => {
+      const bytes   = bptHead(m, a.head_dim) * a.n_kv * KV2 * C * a.n_layers;
+      const ratio   = bytes > 0 ? fp16Total / bytes : 1;
+      const saving  = fp16Total - bytes;
+      const fits    = bytes <= FIT_GB * GB;
+      const isRec   = m === rec;
+      return `<tr class="${isRec ? 'v2-recommended' : ''}">
+        <td class="v2-mode ${m}" style="color:${COL[m]}">${m.toUpperCase()}${isRec ? ' ★' : ''}</td>
+        <td>${fmtB(bytes)}</td>
+        <td>${ratio.toFixed(2)}×</td>
+        <td class="${saving > 0 ? 'v2-savings' : ''}">${saving > 0 ? '−' + fmtB(saving) : '—'}</td>
+        <td>${fits ? '✓' : '✗'}</td>
+      </tr>`;
     }).join('');
   }
 
   inP.addEventListener('input', render);
   inC.addEventListener('input', render);
   render();
-
-  // Expose render so the live module can invalidate the table after a
-  // server response if it ever wants to.
-  window.__v2render = render;
-  window.__v2setSource = (label, ok) => {
-    if (!src) return;
-    src.classList.remove('live', 'offline');
-    src.classList.add(ok ? 'live' : 'offline');
-    src.textContent = label;
-  };
 })();
+
+/* ════════════════════════════════════════════════════════════════════════
+   8. KONJO VISUAL ENHANCEMENTS
+      8a  3-D isometric memory blocks
+      8b  Escaped-bits particle system
+      8c  SNR waveform canvas
+      8d  Model chip strip
+      8e  Slider inertia (spring overshoot)
+      8f  Hex-grid background canvas
+   ════════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  // ── shared helpers ──────────────────────────────────────────────────────
+  const lerp  = (a, b, t) => a + (b - a) * t;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const rng   = (lo, hi) => lo + Math.random() * (hi - lo);
+
+  const MODE_COLOR = {
+    fp16: '#5d83ff',
+    int8: '#28d4c8',
+    int4: '#ff9550',
+    int2: '#ff5e94',
+  };
+  // Heights in px — matches visual weight of each tier
+  const MODE_H = { fp16: 196, int8: 104, int4: 54, int2: 26 };
+
+  // ── 8a. 3-D ISOMETRIC BLOCKS ────────────────────────────────────────────
+  (function isoBlocks () {
+    const view   = document.getElementById('iso-view');
+    const lblRow = document.getElementById('iso-labels');
+    if (!view) return;
+
+    const MODES = ['fp16', 'int8', 'int4', 'int2'];
+    const blocks = {};   // mode → .iso-block element
+    const lbls   = {};   // mode → .iso-lbl  element
+
+    MODES.forEach((mode, i) => {
+      const block = document.createElement('div');
+      block.className  = 'iso-block';
+      block.dataset.mode = mode;
+      block.style.setProperty('--bh', MODE_H[mode] + 'px');
+      block.style.setProperty('--bc', MODE_COLOR[mode]);
+
+      ['f-front','f-side','f-top'].forEach(cls => {
+        const face = document.createElement('div');
+        face.className = 'iso-face ' + cls;
+        block.appendChild(face);
+      });
+
+      view.appendChild(block);
+      blocks[mode] = block;
+
+      // Staggered spring entrance
+      setTimeout(() => block.classList.add('entered'), i * 130 + 250);
+
+      // Label below
+      if (lblRow) {
+        const lbl = document.createElement('div');
+        lbl.className    = 'iso-lbl';
+        lbl.dataset.mode = mode;
+        lbl.textContent  = mode.toUpperCase();
+        lbl.style.color  = MODE_COLOR[mode];
+        lblRow.appendChild(lbl);
+        lbls[mode] = lbl;
+      }
+    });
+
+    // Public helpers consumed by other sub-modules
+    window._isoSetActive = function (activeMode) {
+      MODES.forEach(m => {
+        const dim = m !== activeMode;
+        if (blocks[m]) blocks[m].classList.toggle('dim', dim);
+        if (lbls[m])   lbls[m].classList.toggle('dim', dim);
+      });
+    };
+
+    window._isoBlockRect = function (mode) {
+      return blocks[mode] ? blocks[mode].getBoundingClientRect() : null;
+    };
+
+    // Listen to the squish:tab event dispatched by compare-tabs IIFE
+    document.addEventListener('squish:tab', e => {
+      if (window._isoSetActive) window._isoSetActive(e.detail.mode);
+    });
+
+    // Initial state matches the compare panel's default (int8)
+    setTimeout(() => { if (window._isoSetActive) window._isoSetActive('int8'); }, 400);
+  })();
+
+
+  // ── 8b. ESCAPED BITS PARTICLE SYSTEM ────────────────────────────────────
+  (function particles () {
+    // Number of escaped bits per mode — more compression = more bits escaped
+    const COUNT = { fp16: 0, int8: 3, int4: 7, int2: 16 };
+
+    function spawn (mode) {
+      const n = COUNT[mode] || 0;
+      if (!n) return;
+
+      const rect = window._isoBlockRect ? window._isoBlockRect(mode) : null;
+      const cx   = rect ? rect.left + rect.width  / 2 : window.innerWidth  / 2;
+      const cy   = rect ? rect.top  + rect.height * 0.4 : window.innerHeight / 2;
+      const col  = MODE_COLOR[mode] || '#fff';
+
+      for (let i = 0; i < n; i++) {
+        setTimeout(() => {
+          const el = document.createElement('div');
+          el.className   = 'bit-particle';
+          el.textContent = Math.random() < 0.5 ? '0' : '1';
+          el.style.color = col;
+          el.style.left  = (cx + rng(-30, 30)) + 'px';
+          el.style.top   = (cy + rng(-12, 12)) + 'px';
+          el.style.setProperty('--dx', rng(-90, 90)   + 'px');
+          el.style.setProperty('--dy', rng(-130, -45) + 'px');
+          el.style.setProperty('--dr', rng(-220, 220) + 'deg');
+          el.style.animationDelay = rng(0, 0.18) + 's';
+          document.body.appendChild(el);
+          setTimeout(() => el.remove(), 2000);
+        }, i * 22 + Math.random() * 15);
+      }
+    }
+
+    document.addEventListener('squish:tab', e => spawn(e.detail.mode));
+  })();
+
+
+  // ── 8c. SNR WAVEFORM CANVAS ─────────────────────────────────────────────
+  (function waveform () {
+    const canvas = document.getElementById('snr-canvas');
+    if (!canvas) return;
+
+    // compression level 0→1 (0 = FP16 pristine, 1 = INT2 noisy)
+    const LEVEL = { fp16: 0.04, int8: 0.24, int4: 0.56, int2: 0.92 };
+    let progress = LEVEL.int8;
+    let target   = LEVEL.int8;
+    let rafId    = null;
+
+    function resize () {
+      const w = canvas.parentElement ? Math.floor(canvas.parentElement.offsetWidth) : 500;
+      if (canvas.width !== w) {
+        canvas.width  = w || 500;
+        canvas.height = 80;
+      }
+    }
+
+    function draw () {
+      resize();
+      const ctx2 = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      ctx2.clearRect(0, 0, W, H);
+
+      // Purple (#8b6cff) → amber (#ffba50) as compression rises
+      const pr = Math.round(lerp(139, 255, progress));
+      const pg = Math.round(lerp(108, 186, progress * progress));
+      const pb = Math.round(lerp(255,  80, progress));
+      const col = `rgb(${pr},${pg},${pb})`;
+
+      ctx2.strokeStyle = col;
+      ctx2.lineWidth   = 2;
+      ctx2.shadowBlur  = 10;
+      ctx2.shadowColor = col;
+      ctx2.lineCap     = 'round';
+      ctx2.lineJoin    = 'round';
+
+      const amp   = 20;
+      const freq  = 3.5 + progress * 2.5;          // more cycles when noisy
+      const noise = progress * 0.88;
+      const phase = performance.now() / 850;        // scrolls over time
+
+      ctx2.beginPath();
+      for (let x = 0; x <= W; x += 2) {
+        const t     = x / W;
+        const clean = Math.sin(t * Math.PI * 2 * freq + phase) * amp * (1 - noise * 0.68);
+        const n     = noise > 0 ? (Math.random() * 2 - 1) * amp * noise : 0;
+        const y     = H / 2 + clean + n;
+        x === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y);
+      }
+      ctx2.stroke();
+
+      // Quality label overlay
+      ctx2.shadowBlur  = 0;
+      ctx2.globalAlpha = 0.55;
+      ctx2.fillStyle   = col;
+      ctx2.font        = '10px monospace';
+      const qlabel = progress < 0.15 ? 'pristine' :
+                     progress < 0.40 ? 'excellent' :
+                     progress < 0.72 ? 'good' : 'compressed';
+      ctx2.fillText(qlabel + ' quality', 8, H - 10);
+      ctx2.globalAlpha = 1;
+    }
+
+    function step () {
+      progress += (target - progress) * 0.04;
+      draw();
+      rafId = requestAnimationFrame(step);
+    }
+
+    document.addEventListener('squish:tab', e => {
+      target = LEVEL[e.detail.mode] ?? target;
+    });
+
+    window.addEventListener('resize', resize);
+    resize();
+    step();
+  })();
+
+
+  // ── 8d. MODEL CHIP STRIP ────────────────────────────────────────────────
+  (function modelChips () {
+    const strip  = document.getElementById('model-chips');
+    const sel    = document.getElementById('preset');
+    const chart  = document.getElementById('chart');
+    if (!strip || !sel) return;
+
+    const CHIPS = [
+      { value: 'qwen-7b',    label: '7B',   sub: 'qwen' },
+      { value: 'llama-8b',   label: '8B',   sub: 'llama' },
+      { value: 'qwen-1_5b',  label: '1.5B', sub: 'nano' },
+      { value: 'phi-3-mini', label: 'mini', sub: 'phi-3' },
+    ];
+
+    CHIPS.forEach(c => {
+      const btn = document.createElement('button');
+      btn.className      = 'model-chip';
+      btn.dataset.preset = c.value;
+      btn.type           = 'button';
+      btn.setAttribute('aria-pressed', sel.value === c.value ? 'true' : 'false');
+      btn.innerHTML = `<span class="chip-label">${c.label}</span>`
+                    + `<span class="chip-sub">${c.sub}</span>`;
+      strip.appendChild(btn);
+    });
+
+    function activateChip (value) {
+      strip.querySelectorAll('.model-chip').forEach(b => {
+        const on = b.dataset.preset === value;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    activateChip(sel.value);
+
+    strip.addEventListener('click', e => {
+      const chip = e.target.closest('.model-chip');
+      if (!chip || chip.dataset.preset === sel.value) return;
+      activateChip(chip.dataset.preset);
+
+      if (!chart) {
+        sel.value = chip.dataset.preset;
+        sel.dispatchEvent(new Event('change'));
+        return;
+      }
+
+      // Slide out left, update, slide in from right
+      const ease_out = 'cubic-bezier(0.23,1,0.32,1)';
+      const ease_spr = 'cubic-bezier(0.34,1.56,0.64,1)';
+      chart.style.transition = `transform 270ms ${ease_out}, opacity 270ms`;
+      chart.style.transform  = 'translateX(-52px)';
+      chart.style.opacity    = '0';
+
+      setTimeout(() => {
+        sel.value = chip.dataset.preset;
+        sel.dispatchEvent(new Event('change'));
+
+        chart.style.transition = 'none';
+        chart.style.transform  = 'translateX(52px)';
+        chart.style.opacity    = '0';
+
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          chart.style.transition = `transform 310ms ${ease_spr}, opacity 220ms`;
+          chart.style.transform  = 'translateX(0)';
+          chart.style.opacity    = '1';
+        }));
+      }, 275);
+    });
+  })();
+
+
+  // ── 8e. SLIDER INERTIA (spring overshoot) ───────────────────────────────
+  (function sliderInertia () {
+    const slider  = document.getElementById('ctx');
+    const display = document.getElementById('ctx-val');
+    if (!slider || !display) return;
+
+    let dispVal  = parseInt(slider.value, 10);
+    let targVal  = dispVal;
+    let rafId    = null;
+
+    function settle () {
+      // Exponential decay toward target — spec: displayValue += (target - display) * 0.12
+      dispVal += (targVal - dispVal) * 0.12;
+      const rounded = Math.round(dispVal);
+      display.textContent = rounded.toLocaleString();
+
+      if (Math.abs(targVal - dispVal) > 0.9) {
+        rafId = requestAnimationFrame(settle);
+      } else {
+        dispVal = targVal;
+        display.textContent = targVal.toLocaleString();
+        rafId = null;
+      }
+    }
+
+    slider.addEventListener('input', () => {
+      const prev  = targVal;
+      targVal     = parseInt(slider.value, 10);
+      // Apply overshoot: jump display value briefly past target by velocity × 0.15
+      const vel   = (targVal - prev) * 0.15;
+      dispVal    += vel;
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(settle);
+    });
+  })();
+
+
+  // ── 8f. HEX GRID BACKGROUND CANVAS ─────────────────────────────────────
+  (function hexGrid () {
+    const canvas = document.getElementById('hex-canvas');
+    const slider = document.getElementById('ctx');
+    if (!canvas || !slider) return;
+
+    const T_MIN = 512, T_MAX = 65536;
+    let hexProg   = 0.22;   // 0 = cool (#000a1a), 1 = warm (#1a0a00)
+    let hexTarget = 0.22;
+
+    function resize () {
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      const w = Math.floor(parent.offsetWidth)  || 800;
+      const h = Math.floor(parent.offsetHeight) || 300;
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width  = w;
+        canvas.height = h;
+      }
+    }
+
+    // Draw a single pointy-top hexagon centred at (cx, cy), inner radius r
+    function hex (ctx2, cx, cy, r) {
+      ctx2.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a  = (Math.PI / 3) * i - Math.PI / 6;
+        const px = cx + r * Math.cos(a);
+        const py = cy + r * Math.sin(a);
+        i === 0 ? ctx2.moveTo(px, py) : ctx2.lineTo(px, py);
+      }
+      ctx2.closePath();
+    }
+
+    function draw () {
+      resize();
+      const ctx2 = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      ctx2.clearRect(0, 0, W, H);
+
+      const t = hexProg;
+      // cool = #000a1a  (r=0,   g=10,  b=26)
+      // warm = #1a0a00  (r=26,  g=10,  b=0)
+      const bR = Math.round(lerp(0,  26, t));
+      const bG = Math.round(lerp(10, 10, t));
+      const bB = Math.round(lerp(26,  0, t));
+
+      const R    = 12;                                // hex radius (24 px size)
+      const hw   = Math.sqrt(3) * R;                 // pointy-top: col step
+      const vert = R * 1.5;                          // row step
+
+      for (let row = -1; (row - 1) * vert < H + R * 2; row++) {
+        const offset = (row & 1) ? hw / 2 : 0;
+        for (let col = -1; (col - 1) * hw < W + hw; col++) {
+          const cx = col * hw + offset;
+          const cy = row * vert;
+
+          // Per-hex vary for texture — avoid uniform flat look
+          const vary = 0.72 + 0.28 * (0.5 + 0.5 * Math.sin(col * 1.9 + row * 2.7));
+          const fr = Math.round(bR * vary);
+          const fg = Math.round(bG * vary);
+          const fb = Math.round(bB * vary);
+
+          hex(ctx2, cx, cy, R - 1);   // R-1 leaves 2 px gap between hexes
+          ctx2.fillStyle = `rgb(${fr},${fg},${fb})`;
+          ctx2.fill();
+        }
+      }
+    }
+
+    function step () {
+      hexProg += (hexTarget - hexProg) * 0.035;
+      draw();
+      requestAnimationFrame(step);
+    }
+
+    slider.addEventListener('input', () => {
+      const c = parseInt(slider.value, 10);
+      hexTarget = clamp((c - T_MIN) / (T_MAX - T_MIN), 0, 1);
+    });
+
+    window.addEventListener('resize', () => { resize(); draw(); });
+    resize();
+    step();
+  })();
+
+})(); // end Konjo enhancements
 
 /* ════════════════════════════════════════════════════════════════════════
    7. live mode — talks to demo/server.py if it's running
@@ -2370,7 +2837,6 @@ window.SquishV2 = (function () {
       '— real measurements from your machine, not estimates.';
     benchBtn.setAttribute('disabled', '');
     benchBtn.textContent = '▶ Run benchmark (server required)';
-    if (window.__v2setSource) window.__v2setSource('estimated · client-side', false);
   }
 
   function setOnline () {
@@ -2383,7 +2849,6 @@ window.SquishV2 = (function () {
       '<code>QuantizedKVCache</code> code on your machine.';
     benchBtn.removeAttribute('disabled');
     benchBtn.textContent = '▶ Run benchmark';
-    if (window.__v2setSource) window.__v2setSource('LIVE · /api/calculate', true);
   }
 
   // ── live updates for the compare panel ────────────────────────────────
