@@ -49,6 +49,21 @@ squish compat                                 # backend compatibility check
 - `MODULES.md` — per-wave module reference (Waves 1–99+)
 - `CHANGELOG.md` — all notable changes
 
+## Konjo Quality Framework
+
+Three walls against AI slop — all enforced by CI.
+
+**Wall 1 — Pre-commit** (`bash .konjo/scripts/install-hooks.sh`):
+ruff lint, ruff format, bare-except scan, DRY check, TODO scan. Blocks the commit.
+
+**Wall 2 — CI gate** (`.github/workflows/konjo-gate.yml`):
+Coverage ≥ 80% · mutation survival ≤ 10% · complexity ≤ 15 · file ≤ 500L · zero DRY violations. Blocks the merge.
+
+**Wall 3 — Adversarial review** (local only — disabled in CI):
+`git diff HEAD~1 | python3 .konjo/scripts/konjo_review.py`
+
+See `KONJO_QUALITY_FRAMEWORK.md` for the full specification.
+
 ## Skills
 See `.claude/skills/` — auto-loaded when relevant.
 Run `/konjo` to boot a full session (Brief + Discovery + Plan).
