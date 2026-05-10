@@ -6,6 +6,8 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](https://github.com/squishai/squish)
 [![Discord](https://img.shields.io/badge/Discord-join%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/squish)
 [![HuggingFace](https://img.shields.io/badge/🤗%20Models-squish--community-yellow)](https://huggingface.co/squish-community)
+[![HF Space](https://img.shields.io/badge/🤗%20Space-KV%20quant%20demo-orange)](https://huggingface.co/spaces/squish-community/squish-kv-quant)
+[![Benchmarks](https://img.shields.io/badge/benchmarks-grounded-success)](BENCHMARKS.md)
 
 <img src="assets/squish-logo-1.png" height="500" alt="Squish Logo"/>
 

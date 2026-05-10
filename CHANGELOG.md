@@ -5,6 +5,107 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.27.0] — 2026-05-09 — W107: Hugging Face Space + grounded BENCHMARKS.md
+
+### Added
+
+- **`spaces/`** — new top-level directory hosting the public Hugging Face
+  Space `squish-community/squish-kv-quant`. Self-contained (not part of
+  the `squish` wheel); designed to be uploaded verbatim to the HF Space
+  repository.
+
+  - `spaces/_logic.py` — pure-numpy helpers (gradio-free, fully unit
+    tested). Wraps `squish.kv.kv_cache` public symbols
+    (`_quantize_int{8,4,2}_per_channel`, `_dequantize_int{8,4,2}_per_channel`,
+    `estimate_kv_memory`, `recommend_mode_for_budget`,
+    `recommended_kv_mode_3tier`, `HadamardKVCache._build_hadamard`).
+    Functions: `snr_db`, `make_synthetic_activations`, `apply_hadamard`,
+    `run_all_tiers`, `memory_table_rows`, `label_budget_fit`,
+    `recommend_for_budget_mb`, `recommend_mode_for_context`. Plus
+    `MODEL_PRESETS` (5 entries) and `EXAMPLES` (5 pre-loaded inspector
+    presets including the "outlier + rotation" headline demo).
+  - `spaces/app.py` — Gradio Blocks app with **Tensor Inspector** and
+    **Memory Budgeter** tabs. Tensor Inspector: distribution radio +
+    Hadamard checkbox + sliders → per-tier (mode, SNR dB, B/token,
+    compression vs fp16) DataFrame + recommended-tier markdown. Memory
+    Budgeter: model preset + context slider + RAM budget → memory table
+    with "fits/over by N MB" labels + by-context-vs-by-budget
+    recommendations. Five pre-loaded examples via `gr.Examples`.
+  - `spaces/requirements.txt` — `gradio>=4.44,<5.0` + `squish==9.27.0`.
+    No torch (codecs are pure numpy on the CPU runner).
+  - `spaces/README.md` — HF Space metadata YAML header (title, emoji 🥒,
+    sdk: gradio, sdk_version: 4.44.0, app_file: app.py, license: bsl-1.1,
+    tags) + reading guide for the SNR table + source pointers.
+
+- **`BENCHMARKS.md`** (new, repo root) — grounded benchmark page
+  consolidating headline numbers from CLAUDE.md + PLAN.md + the live
+  KV-cache codecs:
+  - §1 cold-load + TTFT (54× cold-load, sub-second TTFT on M3).
+  - §2 disk size raw → squished (~73 % smaller, 7-model table).
+  - §3 weight quantization accuracy gates (INT4 AWQ ≥ 70.6 %, INT3 ≥
+    67.2 % on Qwen2.5-1.5B; SQINT2 target ≥ 65 % on Qwen2.5-7B).
+  - §4 KV-cache: per-token storage (132 / 68 / 36 B for INT8/INT4/INT2
+    at head_dim=128), reconstruction SNR matrix across 3 distributions ×
+    rotation on/off, Qwen2.5-7B per-context memory across 5 tiers.
+    Headlines the **17 dB rotation lift** on outlier-spiked INT2
+    (-8.61 dB raw → +8.47 dB rotated).
+  - §5 quantized GEMV throughput (W101 Rust kernel, 2-3× over NumPy).
+  - §6 reproduce-locally one-liners.
+  - §7 pointer to the live HF Space.
+
+- **`tests/test_spaces_demo.py`** — 41 tests over `spaces/_logic.py`:
+  per-helper contracts, surface invariants over `MODEL_PRESETS` and
+  `EXAMPLES`, monotonicity checks (INT8 SNR ≥ INT4 ≥ INT2, INT8 storage
+  > INT4 > INT2), agreement of `memory_table_rows` with
+  `estimate_kv_memory` cell-by-cell, and a hard-fail headline test
+  (`test_hadamard_rotation_lifts_int2_snr_by_at_least_8db_on_outlier_input`)
+  that pins the demo's pitch into CI.
+
+- **`README.md`** — HF Space and Benchmarks shields added next to the
+  existing HuggingFace catalogue badge.
+
+### Changed
+
+- **`pyproject.toml`** — `mlx>=0.18` and `mlx-lm>=0.19` are now gated
+  behind environment markers `sys_platform == 'darwin' and
+  platform_machine == 'arm64'`. Backward-compatible on Apple Silicon
+  (the markers evaluate true, mlx is required as before); unblocks
+  `pip install squish` on the Linux x86_64 HF Space runner. The lazy
+  imports inside `squish/kv/kv_cache.py:57` already handle the
+  MLX-absent case — no runtime regression.
+
+- Version: **9.26.0 → 9.27.0** (`pyproject.toml`, `squish/__init__.py`,
+  `tests/test_version.py`, `tests/test_wave79_startup_inference.py`).
+
+### Why this matters
+
+Until this wave, the W104 / W105 / W106 KV-cache work shipped as a PyPI
+dependency only — to *try* the codecs you had to install squish, write a
+script, and have a Mac. The HF Space converts the demo into a 10-second
+browser experience anyone can click through. The 8 dB rotation lift on
+outlier inputs is the visceral demo of why naive INT2 fails and why the
+QuaRot-style randomised Hadamard rotation is non-negotiable for
+long-context KV-cache compression. BENCHMARKS.md gives the launch post a
+proof page that points at code, not slides.
+
+### Module count
+
+Zero new files inside `squish/`. The `spaces/` directory is a sibling
+of `squish/`; the existing module-count gates in `tests/test_quant_aqlm.py`,
+`tests/test_sqint2.py`, and `tests/test_sqint2_router.py` walk
+`Path(squish.__file__).parent` and are unaffected.
+
+### Suite
+
+- New: 41 / 41 in `tests/test_spaces_demo.py` (1.87 s).
+- KV regression: 119 / 119 in `tests/test_kv_int2.py`,
+  `tests/test_kv_int4.py`, `tests/test_kv_budget.py` (1.70 s).
+- Version: 29 passed / 1 skipped in `tests/test_version.py` +
+  `tests/test_wave79_startup_inference.py`.
+- No regressions across the targeted suites.
+
+---
+
 ## [9.26.0] — 2026-05-07 — W103.4c: SQINT2Linear MLX Module + bench NumPy fallback
 
 ### Added
