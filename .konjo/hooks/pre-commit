@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# Konjo Quality Framework — Wall 1: Pre-Commit Hook
+#
+# Language-agnostic: detects Rust, Python, Mojo repos and runs appropriate tools.
+# Must complete in < 60 seconds on typical hardware.
+# Zero --no-verify bypasses. If you need to skip, fix the underlying issue.
+#
+# Install: bash .konjo/scripts/install-hooks.sh
+# Manual:  ln -sf ../../.konjo/hooks/pre-commit .git/hooks/pre-commit
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+BOLD="$(tput bold 2>/dev/null || echo '')"
+RED="$(tput setaf 1 2>/dev/null || echo '')"
+YEL="$(tput setaf 3 2>/dev/null || echo '')"
+GRN="$(tput setaf 2 2>/dev/null || echo '')"
+RST="$(tput sgr0 2>/dev/null || echo '')"
+
+banner() { echo "${BOLD}[konjo] $1${RST}"; }
+pass()   { echo "${GRN}  ✓ $1${RST}"; }
+warn()   { echo "${YEL}  ⚠ $1${RST}"; }
+fail()   { echo "${RED}  ✗ $1${RST}" >&2; exit 1; }
+
+# ── Repo type detection ────────────────────────────────────────────────────────
+HAS_RUST=false
+HAS_PYTHON=false
+HAS_MOJO=false
+[[ -f "$REPO_ROOT/Cargo.toml" ]] && HAS_RUST=true
+{ [[ -f "$REPO_ROOT/pyproject.toml" ]] || [[ -f "$REPO_ROOT/requirements.txt" ]]; } && HAS_PYTHON=true
+[[ -f "$REPO_ROOT/pixi.toml" ]] && HAS_MOJO=true
+
+# Get staged files
+STAGED="$(git diff --cached --name-only 2>/dev/null || echo '')"
+if [[ -z "$STAGED" ]]; then
+    echo "[konjo] No staged files — nothing to check."
+    exit 0
+fi
+
+STAGED_RS="$(echo "$STAGED" | grep '\.rs$' || true)"
+STAGED_PY="$(echo "$STAGED" | grep '\.py$' || true)"
+
+banner "Wall 1 pre-commit ($(date +%H:%M:%S))"
+
+# ── 1. RUST GATES ─────────────────────────────────────────────────────────────
+if $HAS_RUST && [[ -n "$STAGED_RS" ]]; then
+    banner "1a. cargo check"
+    if ! cargo check --workspace --quiet 2>&1; then
+        fail "cargo check: compilation errors. Fix before committing."
+    fi
+    pass "cargo check"
+
+    banner "1b. clippy"
+    if ! cargo clippy --workspace --all-targets --quiet -- \
+        -D warnings \
+        -D clippy::unwrap_used \
+        -D clippy::expect_used \
+        -D clippy::panic \
+        -D clippy::todo \
+        -D clippy::dbg_macro \
+        2>&1; then
+        fail "clippy: violations found. Run 'cargo clippy --workspace -- -D warnings' to see details."
+    fi
+    pass "clippy"
+
+    banner "1c. unwrap/expect scan (non-test Rust)"
+    UNWRAP_HITS=""
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        # Skip test/bench files and directories
+        [[ "$f" =~ _tests?\.rs$ ]] && continue
+        [[ "$f" =~ /tests?\.rs$ ]] && continue
+        [[ "$f" =~ _extended\.rs$ ]] && continue   # include!()-based test extensions
+        [[ "$f" =~ /tests/ ]] && continue
+        [[ "$f" =~ /benches/ ]] && continue
+        # Strip #[cfg(test)] blocks before scanning (awk state machine)
+        HITS=$(awk '
+            /^#\[cfg\(test\)\]/ { skip=1; depth=0 }
+            skip { n=split($0,a,"{"); depth+=(n-1); n=split($0,b,"}"); depth-=(n-1); if (depth<0) { skip=0; next } }
+            !skip { print NR": "$0 }
+        ' "$f" \
+            | grep -E '(\.unwrap\(\)|\.expect\()' \
+            | grep -v '^\s*//' || true)
+        if [[ -n "$HITS" ]]; then
+            UNWRAP_HITS+="$f: $HITS"$'\n'
+        fi
+    done <<< "$STAGED_RS"
+    if [[ -n "$UNWRAP_HITS" ]]; then
+        echo "$UNWRAP_HITS"
+        fail "unwrap()/expect() found outside test code. Use anyhow::Result and '?' instead."
+    fi
+    pass "no unwrap/expect in production Rust"
+
+    banner "1d. dead code scan"
+    DEAD_COUNT=$(RUSTFLAGS="-W dead_code" cargo check --workspace --quiet 2>&1 \
+        | grep -c "warning: dead_code" || true)
+    if [[ "$DEAD_COUNT" -gt 0 ]]; then
+        warn "$DEAD_COUNT dead code warning(s) — will be a hard BLOCKER in CI. Fix before PR."
+    else
+        pass "no dead code"
+    fi
+fi
+
+# ── 2. PYTHON GATES ───────────────────────────────────────────────────────────
+if $HAS_PYTHON && [[ -n "$STAGED_PY" ]]; then
+    banner "2a. ruff lint"
+    if command -v ruff &>/dev/null; then
+        # shellcheck disable=SC2086
+        if ! ruff check $STAGED_PY --exit-non-zero-on-fix 2>&1; then
+            fail "ruff: violations found. Run 'ruff check --fix' to auto-fix where possible."
+        fi
+        pass "ruff lint"
+    else
+        warn "ruff not found — skipping Python lint (install: pip install ruff)"
+    fi
+
+    banner "2b. ruff format"
+    if command -v ruff &>/dev/null; then
+        # shellcheck disable=SC2086
+        if ! ruff format $STAGED_PY --check 2>&1; then
+            fail "ruff format: format violations. Run 'ruff format' to fix."
+        fi
+        pass "ruff format"
+    fi
+
+    banner "2c. silent error swallowing scan"
+    SILENT_HITS=""
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        HITS=$(grep -En '(except\s*:$|except\s+Exception\s*:$)' "$f" || true)
+        if [[ -n "$HITS" ]]; then
+            SILENT_HITS+="$f:"$'\n'"$HITS"$'\n'
+        fi
+    done <<< "$STAGED_PY"
+    if [[ -n "$SILENT_HITS" ]]; then
+        echo "$SILENT_HITS"
+        fail "Bare 'except:' or 'except Exception:' found. Log and re-raise or use specific exception types."
+    fi
+    pass "no silent error swallowing"
+
+    banner "2d. mypy type check"
+    if command -v mypy &>/dev/null && [[ -f "$REPO_ROOT/pyproject.toml" ]]; then
+        # shellcheck disable=SC2086
+        mypy $STAGED_PY --ignore-missing-imports --no-error-summary 2>&1 || \
+            warn "mypy: type errors found (not blocking pre-commit, but will fail CI)"
+        pass "mypy (warnings only at pre-commit)"
+    else
+        warn "mypy not found — skipping type check"
+    fi
+fi
+
+# ── 3. UNIVERSAL GATES (all repos) ────────────────────────────────────────────
+banner "3a. file size check"
+while IFS= read -r f; do
+    [[ -f "$f" ]] || continue
+    # Only check source files
+    case "$f" in
+        *.rs|*.py|*.mojo|*.ts|*.tsx|*.js|*.jsx) ;;
+        *) continue ;;
+    esac
+    LINE_COUNT=$(wc -l < "$f" | tr -d ' ')
+    if [[ "$LINE_COUNT" -gt 500 ]]; then
+        warn "$f: $LINE_COUNT lines (hard limit 500, target 300) — split this module before it grows further"
+    fi
+done <<< "$STAGED"
+pass "file size check complete"
+
+banner "3b. DRY check (staged files)"
+if [[ -f "$REPO_ROOT/.konjo/scripts/dry_check.py" ]] && command -v python3 &>/dev/null; then
+    if ! python3 "$REPO_ROOT/.konjo/scripts/dry_check.py" \
+        --staged-only --min-lines 20 --threshold 0.85 2>&1; then
+        fail "DRY violation: duplicate code blocks found. Abstract into a shared function."
+    fi
+    pass "DRY check"
+else
+    warn "dry_check.py not found — skipping DRY check"
+fi
+
+banner "3c. TODO/FIXME in staged code"
+TODO_HITS=""
+while IFS= read -r f; do
+    [[ -f "$f" ]] || continue
+    # Skip hook scripts and documentation files (they describe TODOs, not contain them)
+    [[ "$f" =~ \.konjo/hooks/ ]] && continue
+    [[ "$f" =~ \.claude/ ]] && continue
+    [[ "$f" =~ \.md$ ]] && continue
+    HITS=$(grep -En '(TODO|FIXME|HACK|XXX)\b' "$f" || true)
+    if [[ -n "$HITS" ]]; then
+        TODO_HITS+="$f: $HITS"$'\n'
+    fi
+done <<< "$STAGED"
+if [[ -n "$TODO_HITS" ]]; then
+    echo "$TODO_HITS"
+    fail "TODO/FIXME found in staged code. Placeholder TODOs do not ship. Fix or remove."
+fi
+pass "no TODO/FIXME"
+
+# ── 4. WALL 3 PREVIEW (optional, fast) ───────────────────────────────────────
+# Run a lightweight self-review before the full Opus review fires in CI.
+# This is advisory only — does not block the commit.
+if [[ "${KONJO_SKIP_REVIEW:-}" != "1" ]] && command -v python3 &>/dev/null && \
+   [[ -n "${ANTHROPIC_API_KEY:-}" ]] && \
+   [[ -f "$REPO_ROOT/.konjo/scripts/konjo_review.py" ]]; then
+    banner "4. adversarial review preview (Wall 3 — set KONJO_SKIP_REVIEW=1 to skip)"
+    DIFF=$(git diff --cached 2>/dev/null)
+    if [[ -n "$DIFF" ]]; then
+        python3 "$REPO_ROOT/.konjo/scripts/konjo_review.py" \
+            --diff "$DIFF" \
+            --soft-fail \
+            2>&1 || warn "Review flagged issues — check output above before pushing"
+    fi
+fi
+
+echo ""
+pass "Wall 1 cleared. All pre-commit checks passed."
+echo "${BOLD}Run 'git push' when ready. Wall 2 (CI) and Wall 3 (adversarial review) will gate the PR.${RST}"
