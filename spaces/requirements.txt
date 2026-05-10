@@ -1,0 +1,11 @@
+# squish HF Space — minimal CPU runtime deps.
+#
+# The Space runs the squish KV-cache codecs on synthetic numpy tensors;
+# nothing here touches Metal or CUDA, so we don't pull torch.
+#
+# `squish` itself depends on numpy / safetensors / huggingface-hub /
+# transformers / fastapi / uvicorn / etc. — those install fine on the
+# Linux x86_64 CPU runner. MLX is gated behind a darwin/arm64 marker in
+# the squish pyproject (W107), so it is correctly skipped on this Space.
+gradio>=4.44.0,<5.0.0
+squish==9.28.0

@@ -5,6 +5,215 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.28.0] — 2026-05-10 — W109: Dashboard v2 + GET /api/recommend + visual UI overhaul
+
+### Added
+
+- **`demo/server.py` — `GET /api/recommend?model_size_b&ctx_len[&budget_mb]`**:
+  closed-form planner that takes a model size (snapped to the closest
+  preset in `_REC_ARCH_TABLE` — Qwen2.5 0.5B/1.5B/3B/7B/14B/32B,
+  Llama-3.1 8B/70B, ties broken to the larger model), an optional RAM
+  budget, and a context length. Returns the recommended tier, a
+  human-readable reasoning string, the `basis` field that says which
+  constraint actually decided (`context` / `budget` / `agreement` /
+  `none`), the `arch` block that was used, and a closed-form
+  per-tier `memory_mb` map for fp16 / int8 / int4 / int2. Sub-millisecond
+  per request — uses `estimate_kv_memory` + `recommend_mode_for_budget`
+  + `recommended_kv_mode_3tier` from `squish.kv.kv_cache`. All inputs
+  validated at the API boundary per CLAUDE.md security.md (required-
+  param check, range gates, non-numeric rejection); every error path
+  returns HTTP 400 with a JSON body.
+
+- **`demo/index.html` — full UI rebuild (~960 lines, replaces ~2 250)**.
+  Pure CSS animations, no canvas, no WebGL, no animation libraries.
+  Spec match per W109 design prompt:
+  - Background: `#06060f` + a tiled SVG hexagonal lattice with a 60 s
+    drift loop (`@keyframes hex-drift`) plus four parallax `clip-path`
+    hex blobs floating on independent timelines.
+  - Hero: two-column showcase. Left = static FP16 reference column
+    (16 amber memory blocks, full spacing). Right = live tier column —
+    block count is `LIVE_MAX_BLOCKS / compression_ratio`, so a slider
+    move literally **removes blocks** as compression increases. Tint
+    driven by HSL custom properties so a single `setProperty` call swaps
+    the entire colour scheme.
+  - Slider: single horizontal `<input type="range">`, no label, rail
+    gradient amber → salmon → purple. Snaps to tier midpoints on
+    `change`.
+  - Three orbs above the slider: pure round divs, no text. Active orb
+    scales 1.55× and pulses (`@keyframes orb-pulse`); colour matches
+    its tier. Keyboard-navigable (`role="button"`, Enter/Space).
+  - Three floating number cards: memory MB · SNR dB · mode label. Number
+    rolls eased over 380 ms, card gradient flips colour scheme on tier
+    change, `@keyframes card-flash` fires on transition.
+  - Saving arc: conic-gradient ring centred between the columns, sweep
+    angle = `(1 - 1/compression) × 360°`. Glowing % readout in the centre.
+  - Crystal-lattice comparison table: 5 columns (metric, fp16, int8,
+    int4, int2). Active column shimmers (`@keyframes shimmer`) with a
+    violet inner-shadow ring.
+  - Reasoning panel: live-fetches `GET /api/recommend` and replaces its
+    text when the demo server is reachable; falls back to baked-in
+    strings (numerically identical to `BENCHMARKS.md`) when offline.
+  - Color language: `--hot:#ffb86b` (amber) → `--warm:#ff8a5b` (salmon)
+    → `--cold:#a173ff` (Konjo purple). High precision is hot, compressed
+    is cold.
+  - Accessibility: full `prefers-reduced-motion` support — every
+    keyframe and transition is silenced. Mobile breakpoints at 880 px
+    and 560 px collapse the hero to a single-column stack.
+
+- **`tests/test_demo_server.py`** — 35 new tests:
+  - Pure-function gates: architecture-table invariants (sorted, well-
+    formed, snap-to-closest, tie-break-to-larger), closed-form happy
+    paths (short → int8, medium → int4, long → int2), budget-binding
+    cases (`basis="budget"` overrides `by_context` when the budget is
+    binding; `basis="agreement"` when both pick the same tier;
+    `mode="none"` when even int2 doesn't fit).
+  - Reasoning-content gates: must mention chosen tier; must mention
+    "budget" when the budget decides; must mention "context alone"
+    when the budget overrides the context pick.
+  - Live HTTP: a real `HTTPServer` on a free port + `urllib` client.
+    Happy paths plus 7 negative paths (missing required params, non-
+    numeric, negative, out-of-range, unknown method) — every error
+    returns HTTP 400 with a JSON `error` body.
+  - Backward compat: `/api/health`, POST `/api/recommend`, unknown
+    path → 404 — all unchanged.
+
+### Changed
+
+- Version: **9.27.0 → 9.28.0** (`pyproject.toml`, `squish/__init__.py`,
+  `spaces/requirements.txt`, `tests/test_version.py`,
+  `tests/test_wave79_startup_inference.py`).
+
+### Why this matters
+
+The W107 HF Space is the public, browser-only proof; W109 is the local
+dashboard that ships with `pip install squish` (well, with the repo) and
+becomes the default `python3 demo/server.py` experience. The visual is
+the pitch: you don't need to read about compression — you watch it
+happen as you drag the slider. The new `GET /api/recommend` is the
+counterpart endpoint that lets that dashboard show *why* a tier was
+picked, in plain English, computed from the same closed-form math the
+production inference server uses internally. The API is also a useful
+standalone tool — a deployer planning a new model size can hit
+`GET /api/recommend?model_size_b=14&ctx_len=32000&budget_mb=8000` from
+any HTTP client and get a deterministic recommendation.
+
+### Module count
+
+Zero new files inside `squish/`. The `demo/` directory is a sibling of
+`squish/`; the existing module-count gates in `tests/test_quant_aqlm.py`,
+`tests/test_sqint2.py`, `tests/test_sqint2_router.py` walk
+`Path(squish.__file__).parent` and are unaffected.
+
+### Suite
+
+- New: 35 / 35 in `tests/test_demo_server.py` (0.94 s).
+- Spaces / KV / version regression: unchanged from W107.
+- Wider sweep: same 26 pre-existing failures as W107
+  (safetensors-missing dev env + W95 importlib metadata) — none from W109.
+
+---
+
+## [9.27.0] — 2026-05-09 — W107: Hugging Face Space + grounded BENCHMARKS.md
+
+### Added
+
+- **`spaces/`** — new top-level directory hosting the public Hugging Face
+  Space `squish-community/squish-kv-quant`. Self-contained (not part of
+  the `squish` wheel); designed to be uploaded verbatim to the HF Space
+  repository.
+
+  - `spaces/_logic.py` — pure-numpy helpers (gradio-free, fully unit
+    tested). Wraps `squish.kv.kv_cache` public symbols
+    (`_quantize_int{8,4,2}_per_channel`, `_dequantize_int{8,4,2}_per_channel`,
+    `estimate_kv_memory`, `recommend_mode_for_budget`,
+    `recommended_kv_mode_3tier`, `HadamardKVCache._build_hadamard`).
+    Functions: `snr_db`, `make_synthetic_activations`, `apply_hadamard`,
+    `run_all_tiers`, `memory_table_rows`, `label_budget_fit`,
+    `recommend_for_budget_mb`, `recommend_mode_for_context`. Plus
+    `MODEL_PRESETS` (5 entries) and `EXAMPLES` (5 pre-loaded inspector
+    presets including the "outlier + rotation" headline demo).
+  - `spaces/app.py` — Gradio Blocks app with **Tensor Inspector** and
+    **Memory Budgeter** tabs. Tensor Inspector: distribution radio +
+    Hadamard checkbox + sliders → per-tier (mode, SNR dB, B/token,
+    compression vs fp16) DataFrame + recommended-tier markdown. Memory
+    Budgeter: model preset + context slider + RAM budget → memory table
+    with "fits/over by N MB" labels + by-context-vs-by-budget
+    recommendations. Five pre-loaded examples via `gr.Examples`.
+  - `spaces/requirements.txt` — `gradio>=4.44,<5.0` + `squish==9.27.0`.
+    No torch (codecs are pure numpy on the CPU runner).
+  - `spaces/README.md` — HF Space metadata YAML header (title, emoji 🥒,
+    sdk: gradio, sdk_version: 4.44.0, app_file: app.py, license: bsl-1.1,
+    tags) + reading guide for the SNR table + source pointers.
+
+- **`BENCHMARKS.md`** (new, repo root) — grounded benchmark page
+  consolidating headline numbers from CLAUDE.md + PLAN.md + the live
+  KV-cache codecs:
+  - §1 cold-load + TTFT (54× cold-load, sub-second TTFT on M3).
+  - §2 disk size raw → squished (~73 % smaller, 7-model table).
+  - §3 weight quantization accuracy gates (INT4 AWQ ≥ 70.6 %, INT3 ≥
+    67.2 % on Qwen2.5-1.5B; SQINT2 target ≥ 65 % on Qwen2.5-7B).
+  - §4 KV-cache: per-token storage (132 / 68 / 36 B for INT8/INT4/INT2
+    at head_dim=128), reconstruction SNR matrix across 3 distributions ×
+    rotation on/off, Qwen2.5-7B per-context memory across 5 tiers.
+    Headlines the **17 dB rotation lift** on outlier-spiked INT2
+    (-8.61 dB raw → +8.47 dB rotated).
+  - §5 quantized GEMV throughput (W101 Rust kernel, 2-3× over NumPy).
+  - §6 reproduce-locally one-liners.
+  - §7 pointer to the live HF Space.
+
+- **`tests/test_spaces_demo.py`** — 41 tests over `spaces/_logic.py`:
+  per-helper contracts, surface invariants over `MODEL_PRESETS` and
+  `EXAMPLES`, monotonicity checks (INT8 SNR ≥ INT4 ≥ INT2, INT8 storage
+  > INT4 > INT2), agreement of `memory_table_rows` with
+  `estimate_kv_memory` cell-by-cell, and a hard-fail headline test
+  (`test_hadamard_rotation_lifts_int2_snr_by_at_least_8db_on_outlier_input`)
+  that pins the demo's pitch into CI.
+
+- **`README.md`** — HF Space and Benchmarks shields added next to the
+  existing HuggingFace catalogue badge.
+
+### Changed
+
+- **`pyproject.toml`** — `mlx>=0.18` and `mlx-lm>=0.19` are now gated
+  behind environment markers `sys_platform == 'darwin' and
+  platform_machine == 'arm64'`. Backward-compatible on Apple Silicon
+  (the markers evaluate true, mlx is required as before); unblocks
+  `pip install squish` on the Linux x86_64 HF Space runner. The lazy
+  imports inside `squish/kv/kv_cache.py:57` already handle the
+  MLX-absent case — no runtime regression.
+
+- Version: **9.26.0 → 9.27.0** (`pyproject.toml`, `squish/__init__.py`,
+  `tests/test_version.py`, `tests/test_wave79_startup_inference.py`).
+
+### Why this matters
+
+Until this wave, the W104 / W105 / W106 KV-cache work shipped as a PyPI
+dependency only — to *try* the codecs you had to install squish, write a
+script, and have a Mac. The HF Space converts the demo into a 10-second
+browser experience anyone can click through. The 8 dB rotation lift on
+outlier inputs is the visceral demo of why naive INT2 fails and why the
+QuaRot-style randomised Hadamard rotation is non-negotiable for
+long-context KV-cache compression. BENCHMARKS.md gives the launch post a
+proof page that points at code, not slides.
+
+### Module count
+
+Zero new files inside `squish/`. The `spaces/` directory is a sibling
+of `squish/`; the existing module-count gates in `tests/test_quant_aqlm.py`,
+`tests/test_sqint2.py`, and `tests/test_sqint2_router.py` walk
+`Path(squish.__file__).parent` and are unaffected.
+
+### Suite
+
+- New: 41 / 41 in `tests/test_spaces_demo.py` (1.87 s).
+- KV regression: 119 / 119 in `tests/test_kv_int2.py`,
+  `tests/test_kv_int4.py`, `tests/test_kv_budget.py` (1.70 s).
+- Version: 29 passed / 1 skipped in `tests/test_version.py` +
+  `tests/test_wave79_startup_inference.py`.
+- No regressions across the targeted suites.
+
+---
+
 ## [9.26.0] — 2026-05-07 — W103.4c: SQINT2Linear MLX Module + bench NumPy fallback
 
 ### Added

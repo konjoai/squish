@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "squish"
-version = "9.26.0"
+version = "9.28.0"
 description = "Fast compressed model loader and OpenAI-compatible inference server for Apple Silicon"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,8 +22,11 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "mlx>=0.18",
-    "mlx-lm>=0.19",
+    # MLX is Apple-Silicon-only; gated so non-Apple installs (Linux CI, the
+    # Hugging Face Space published in W107) succeed. The runtime behind the
+    # gate is already lazy-imported (squish/kv/kv_cache.py:57 et al.).
+    "mlx>=0.18; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "mlx-lm>=0.19; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "numpy>=1.26",
     "safetensors>=0.4",
     "fastapi>=0.111",

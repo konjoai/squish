@@ -44,8 +44,10 @@ from squish.kv.kv_cache import (                                  # noqa: E402
     KV_INT4_DEFAULT_THRESHOLD,
     QuantizedKVCache,
     estimate_kv_memory,
+    recommend_mode_for_budget,
     recommended_kv_mode_3tier,
 )
+from urllib.parse import parse_qs, urlsplit                       # noqa: E402
 
 INDEX_HTML = ROOT / "demo" / "index.html"
 
@@ -172,6 +174,23 @@ def _calculate(model_params_b: float, context_len: int,
     }
 
 
+# ── W109 GET /api/recommend limits ────────────────────────────────────────
+GET_REC_MAX_MODEL_B    = 200
+GET_REC_MAX_CTX_LEN    = 1_000_000
+GET_REC_MAX_BUDGET_MB  = 1_000_000
+
+_REC_ARCH_TABLE: tuple = (
+    # (size_b, n_layers, n_kv_heads, head_dim, label)
+    (0.5,  24, 2,  64, "Qwen2.5-0.5B"),
+    (1.5,  28, 2, 128, "Qwen2.5-1.5B"),
+    (3.0,  36, 2, 128, "Qwen2.5-3B"),
+    (7.0,  28, 4, 128, "Qwen2.5-7B"),
+    (8.0,  32, 8, 128, "Llama-3.1-8B"),
+    (14.0, 48, 8, 128, "Qwen2.5-14B"),
+    (32.0, 64, 8, 128, "Qwen2.5-32B"),
+    (70.0, 80, 8, 128, "Llama-3.1-70B"),
+)
+
 # ── measurement helpers ────────────────────────────────────────────────────
 
 
@@ -248,6 +267,165 @@ def _int_param(payload: dict, key: str, default: int, lo: int, hi: int) -> int:
     return v
 
 
+def _arch_for_model_size_b(model_size_b: float) -> dict:
+    """Snap ``model_size_b`` to the closest preset in ``_REC_ARCH_TABLE``.
+
+    Tie-breaks toward the *larger* of two equidistant rows — memory
+    planning should overestimate, not underestimate.
+    """
+    best_idx = 0
+    best_delta = float("inf")
+    for idx, (size_b, *_rest) in enumerate(_REC_ARCH_TABLE):
+        delta = abs(size_b - model_size_b)
+        if delta < best_delta or (delta == best_delta and size_b > _REC_ARCH_TABLE[best_idx][0]):
+            best_delta = delta
+            best_idx = idx
+    size_b, n_layers, n_kv_heads, head_dim, label = _REC_ARCH_TABLE[best_idx]
+    return {
+        "preset_size_b": size_b,
+        "n_layers":      n_layers,
+        "n_kv_heads":    n_kv_heads,
+        "head_dim":      head_dim,
+        "preset_label":  label,
+    }
+
+
+def _query_int(qs: dict, key: str, default: "int | None", lo: int, hi: int,
+               *, required: bool = False) -> "int | None":
+    """Validate an integer query parameter (urlsplit().query parsed dict)."""
+    raw_list = qs.get(key)
+    if not raw_list:
+        if required:
+            raise ValueError(f"missing required query parameter {key!r}")
+        return default
+    raw = raw_list[0]
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{key!r} must be an integer, got {raw!r}")
+    if not (lo <= v <= hi):
+        raise ValueError(f"{key!r} must be in [{lo}, {hi}], got {v}")
+    return v
+
+
+def _query_float(qs: dict, key: str, default: "float | None", lo: float, hi: float,
+                 *, required: bool = False) -> "float | None":
+    raw_list = qs.get(key)
+    if not raw_list:
+        if required:
+            raise ValueError(f"missing required query parameter {key!r}")
+        return default
+    raw = raw_list[0]
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{key!r} must be a number, got {raw!r}")
+    if not (lo <= v <= hi):
+        raise ValueError(f"{key!r} must be in [{lo}, {hi}], got {v}")
+    return v
+
+
+def _format_mb(byte_count: int) -> float:
+    return round(byte_count / 1e6, 2)
+
+
+def _build_recommendation(
+    model_size_b: float,
+    ctx_len: int,
+    budget_mb: "float | None",
+    *,
+    window: int = 128,
+) -> dict:
+    """Closed-form recommendation. No tokens generated; no model loaded."""
+    arch = _arch_for_model_size_b(model_size_b)
+    n_layers, n_kv_heads, head_dim = arch["n_layers"], arch["n_kv_heads"], arch["head_dim"]
+
+    by_context = recommended_kv_mode_3tier(ctx_len)
+
+    by_budget: "str | None" = None
+    if budget_mb is not None:
+        budget_bytes = int(budget_mb * 1e6)
+        by_budget = recommend_mode_for_budget(
+            n_layers, n_kv_heads, head_dim, ctx_len, budget_bytes, window=window,
+        )
+
+    # Resolution: budget wins when both are present and they disagree, since
+    # picking by context alone risks an OOM if the budget is binding. The
+    # "basis" field tells the caller which constraint actually decided.
+    if by_budget is None and budget_mb is not None:
+        mode = "none"
+        basis = "budget"
+    elif budget_mb is None:
+        mode  = by_context
+        basis = "context"
+    else:
+        mode  = by_budget
+        basis = "budget" if by_budget != by_context else "agreement"
+
+    memory_mb: dict = {}
+    for tier in ("fp16", "int8", "int4", "int2"):
+        try:
+            est = estimate_kv_memory(
+                n_layers, n_kv_heads, head_dim, ctx_len, tier, window=window,
+            )
+        except ValueError:
+            continue
+        memory_mb[tier] = _format_mb(est.total_bytes + est.recent_window_bytes)
+
+    # Reasoning string — short, factual, no marketing.
+    base_phrases = {
+        "int8": (
+            f"INT8 (~{memory_mb.get('int8', 0):.0f} MB total) — full "
+            f"quality, default for context ≤ {KV_INT2_AUTO_THRESHOLD:,}."
+        ),
+        "int4": (
+            f"INT4 (~{memory_mb.get('int4', 0):.0f} MB total, ~22 dB SNR) "
+            f"— squish's recommended band "
+            f"({KV_INT2_AUTO_THRESHOLD:,}-{KV_INT4_DEFAULT_THRESHOLD:,} tokens)."
+        ),
+        "int2": (
+            f"INT2 with Hadamard rotation (~{memory_mb.get('int2', 0):.0f} "
+            f"MB total, 7× smaller than fp16) — keeps long contexts "
+            f"inside a typical RAM budget."
+        ),
+    }
+    if mode == "none":
+        reason = (
+            f"Even INT2 (~{memory_mb.get('int2', 0):.0f} MB) exceeds the "
+            f"{budget_mb:.0f} MB budget at {ctx_len:,} tokens — shrink "
+            f"context, layers, or pick a smaller model."
+        )
+    elif basis == "budget" and by_budget != by_context:
+        # Budget made the call and it differs from the pure-context pick.
+        # Show both to make the trade-off explicit.
+        reason = (
+            f"{model_size_b}B model · {ctx_len:,} tokens · "
+            f"{budget_mb:.0f} MB budget → {base_phrases[mode]} "
+            f"(context alone would have picked {by_context}; the budget "
+            f"can fit a higher-quality tier — choose accordingly)."
+        )
+    else:
+        reason = f"{model_size_b}B model · {ctx_len:,} tokens → {base_phrases[mode]}"
+
+    return {
+        "model_size_b":    model_size_b,
+        "ctx_len":         ctx_len,
+        "budget_mb":       budget_mb,
+        "mode":            mode,
+        "reason":          reason,
+        "basis":           basis,
+        "by_context":      by_context,
+        "by_budget":       by_budget,
+        "arch":            arch,
+        "memory_mb":       memory_mb,
+        "thresholds": {
+            "int4_above": KV_INT2_AUTO_THRESHOLD,
+            "int2_above": KV_INT4_DEFAULT_THRESHOLD,
+        },
+        "live": True,
+    }
+
+
 def _check_mode_compat(mode: str, head_dim: int) -> None:
     if mode == "int2" and head_dim % 4:
         raise ValueError(
@@ -318,10 +496,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:                                        # noqa: N802
-        if self.path in ("/", "/index.html", "/demo", "/demo/"):
+        split = urlsplit(self.path)
+        path = split.path
+        if path in ("/", "/index.html", "/demo", "/demo/"):
             self._send_file(INDEX_HTML, "text/html; charset=utf-8")
             return
-        if self.path == "/api/health":
+        if path == "/api/health":
             self._send_json(200, {
                 "status":      "ok",
                 "service":     "squish-demo",
@@ -336,7 +516,28 @@ class Handler(BaseHTTPRequestHandler):
                 },
             })
             return
-        self._send_json(404, {"error": f"GET {self.path} not found"})
+        if path == "/api/recommend":
+            try:
+                qs = parse_qs(split.query, keep_blank_values=False)
+                model_size_b = _query_float(
+                    qs, "model_size_b", default=None,
+                    lo=0.05, hi=GET_REC_MAX_MODEL_B, required=True,
+                )
+                ctx_len = _query_int(
+                    qs, "ctx_len", default=None,
+                    lo=1, hi=GET_REC_MAX_CTX_LEN, required=True,
+                )
+                budget_mb = _query_float(
+                    qs, "budget_mb", default=None,
+                    lo=1.0, hi=GET_REC_MAX_BUDGET_MB,
+                )
+            except ValueError as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            payload = _build_recommendation(model_size_b, ctx_len, budget_mb)
+            self._send_json(200, payload)
+            return
+        self._send_json(404, {"error": f"GET {path} not found"})
 
     def do_POST(self) -> None:                                       # noqa: N802
         try:

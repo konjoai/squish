@@ -435,13 +435,203 @@ cache = make_kv_cache(n_layers=28, planned_context=32_000)
 
 ---
 
-## Next Immediate Action
-**W103.4c SHIPPED (2026-05-07).** `SQINT2Linear` MLX Module is now on `main`.
-The module is gated behind `sys.platform == "darwin" and platform.machine() == "arm64"`.
-NumPy decompress fallback (`decompress_weight`) always available for non-Metal paths.
+### W107 — Hugging Face Spaces demo + grounded BENCHMARKS.md ✅ COMPLETE (2026-05-09)
+**Why:** the W104/W105/W106 KV-cache work shipped a publishable result —
+3 quantization tiers, closed-form memory planning, an 8 dB SNR lift from
+Hadamard rotation on outlier-heavy activations — but had no zero-install
+surface for the public to *try*. A HF Space converts the codecs from a
+PyPI dependency into a clickable demo and gives the upcoming launch post a
+"proof page" (BENCHMARKS.md) that points at code, not slides.
 
-**After W103.4c: W103.4d** — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65%
-lm_eval ship gate (hardware run required). Also validates the W104 32K-context
+**Changes shipped (2026-05-09):**
+- **`spaces/`** (new directory, four files, *not* part of the squish wheel):
+  - `spaces/__init__.py` — package marker so `tests/test_spaces_demo.py`
+    can import the helpers as `spaces._logic`.
+  - `spaces/_logic.py` — pure helpers (gradio-free, fully testable):
+    `snr_db`, `make_synthetic_activations` (gaussian / heavy_tailed /
+    outlier), `apply_hadamard`, `run_all_tiers` (INT8/INT4/INT2 round-trip),
+    `recommend_mode_for_context`, `memory_table_rows`,
+    `label_budget_fit`, `recommend_for_budget_mb`. All numbers come from
+    the public API of `squish.kv.kv_cache` (`estimate_kv_memory`,
+    `recommend_mode_for_budget`, `recommended_kv_mode_3tier`,
+    `_quantize_int{8,4,2}_per_channel`, `HadamardKVCache._build_hadamard`).
+  - `spaces/app.py` — Gradio Blocks app with two tabs:
+    *Tensor Inspector* (distribution + rotation toggle → SNR/B-per-token
+    table + recommended-tier markdown + 5 pre-loaded "Try these examples"
+    via `gr.Examples`) and *Memory Budgeter* (model preset + context +
+    RAM budget → fp16/int8/int4/int2 memory table with "fits / over by
+    N MB" labels + by-context and by-budget recommendations).
+  - `spaces/requirements.txt` — `gradio>=4.44,<5.0` and `squish==9.27.0`.
+    No torch (the codecs are pure numpy).
+  - `spaces/README.md` — HF Space metadata header (title, emoji, sdk,
+    sdk_version, app_file, license, tags) + how-to-read-SNR table +
+    source pointer.
+- **`pyproject.toml`** — gated `mlx` and `mlx-lm` behind
+  `sys_platform == 'darwin' and platform_machine == 'arm64'`. Backward-
+  compatible on Apple Silicon; unblocks `pip install squish` on the
+  Linux x86_64 HF Space runner. Lazy-import paths (`squish/kv/kv_cache.py:57`
+  et al.) already handle the MLX-absent case.
+- **`BENCHMARKS.md`** (new, repo root) — six grounded sections: cold-load
+  + TTFT, disk size raw vs squished, weight quant accuracy gates, KV-cache
+  storage + SNR + Qwen2.5-7B per-context memory table, GEMV throughput,
+  "reproduce" bash recipes. The KV SNR table calls out the 17 dB rotation
+  lift on outlier-spiked input (-8.61 dB → +8.47 dB at INT2) — the
+  demo's headline claim, with a unit test pinning the floor at 8 dB.
+- **`README.md`** — added the HF Space and Benchmarks shields next to
+  the existing HuggingFace badge.
+- **`tests/test_spaces_demo.py`** — 41 new tests covering every public
+  helper in `_logic.py` plus a hard-fail "headline claim" test
+  (`test_hadamard_rotation_lifts_int2_snr_by_at_least_8db_on_outlier_input`).
+- Version bumped 9.26.0 → 9.27.0 (`pyproject.toml`, `squish/__init__.py`,
+  `tests/test_version.py`, `tests/test_wave79_startup_inference.py`).
+
+**Acceptance criteria met:**
+- ✅ `spaces/app.py` constructs without launching (`build_demo()`),
+  syntax-validated; ready for the HF Space runner.
+- ✅ `spaces/_logic.py` runs end-to-end on numpy alone —
+  `python -c "from spaces._logic import ...; ..."` produces the
+  BENCHMARKS.md numbers verbatim.
+- ✅ `pip install squish` succeeds on Linux x86_64 (mlx gated out).
+- ✅ KV-cache tests unchanged: 119 / 119 in `tests/test_kv_*.py`.
+- ✅ New tests: 41 / 41 in `tests/test_spaces_demo.py` (full file in 1.87 s).
+- ✅ Headline 8 dB rotation-lift claim is a hard CI assertion.
+- ✅ Module count: zero new files in `squish/` (`spaces/` is a sibling
+  directory, excluded from the `Path(squish.__file__).parent` walks in
+  `tests/test_quant_aqlm.py`, `test_sqint2.py`, `test_sqint2_router.py`).
+
+**Hard stops (none triggered):**
+- No new mandatory dependency in `squish/` core — gradio lives only in
+  `spaces/requirements.txt`.
+- No `unwrap()` / silent-swallow / `dbg!()` / TODO leftovers in the new code.
+- No mocking of the codecs in tests — all reconstructions are real.
+
+---
+
+### W109 — Dashboard v2 + GET /api/recommend + visual UI overhaul ✅ COMPLETE (2026-05-10)
+**Why:** the W107 HF Space proved the codecs are demonstrable in a browser,
+but the existing local dashboard at `demo/index.html` was an
+information-dense console — bars and numbers — that didn't *show* what
+KV-cache quantization actually does. W109 rebuilds it as a visceral
+visual: two columns of "memory blocks" side by side, the right one
+collapsing as the slider moves through INT8 → INT4 → INT2. The new
+`GET /api/recommend` endpoint adds the planner counterpart to the
+existing live-codec endpoints, so the dashboard can request a real
+reasoning string from the same closed-form math the inference server
+uses internally.
+
+**Changes shipped (2026-05-10):**
+- **`demo/server.py`** — added `GET /api/recommend?model_size_b&ctx_len[&budget_mb]`:
+  - Closed-form (no token loop) — uses `estimate_kv_memory` +
+    `recommend_mode_for_budget` + `recommended_kv_mode_3tier` from
+    `squish.kv.kv_cache`. Sub-millisecond per request.
+  - Architecture snapping table `_REC_ARCH_TABLE` with 8 canonical
+    presets (Qwen2.5 0.5B/1.5B/3B/7B/14B/32B, Llama-3.1 8B/70B). Snaps
+    `model_size_b` to the closest entry; ties break to the **larger**
+    preset (the conservative pick for memory planning).
+  - `basis` field reports which constraint actually decided
+    (`"context"` / `"budget"` / `"agreement"`) — the dashboard surfaces
+    this so the user understands *why* a tier was chosen.
+  - Reasoning string is short and factual; explicitly distinguishes the
+    "context says X but budget allows higher-quality Y" case from the
+    pure-context case.
+  - Input validation per CLAUDE.md security.md: required-param check,
+    range gates, non-numeric rejection — all errors return HTTP 400 with
+    a JSON `{"error": "…"}` body, never 500.
+  - The existing `POST /api/recommend`, `/api/health`, `/api/compress`,
+    `/api/benchmark` endpoints unchanged; backward-compatible.
+
+- **`demo/index.html`** — full rebuild (~960 lines, replaces ~2 250).
+  Pure CSS animations (no canvas, no WebGL, no JS for the visuals —
+  JS only swaps CSS custom properties). Spec match per W109 prompt:
+  - **Background**: `#06060f` + tiled SVG hexagonal lattice with a
+    60 s-loop drift, plus four parallax `clip-path` hex blobs floating
+    independently (`@keyframes hex-drift`, `@keyframes hex-float`).
+  - **Hero**: two-column showcase. Left = static FP16 reference (16
+    bright amber blocks, full spacing). Right = live tier (block count
+    is `LIVE_MAX_BLOCKS / compression_ratio`, so a slider move literally
+    *removes* blocks). Tint driven by HSL custom props
+    (`--tier-hue/sat/light/glow`).
+  - **Slider**: single horizontal `<input type="range">`, no label,
+    rail painted as a left-to-right amber → salmon → purple gradient.
+    Snaps to tier midpoints on `change`.
+  - **Three orbs above the slider**: pure round divs, no text. Active
+    orb scales 1.55× and pulses (`@keyframes orb-pulse`). Orb colour
+    matches its tier (amber/salmon/purple). Keyboard-navigable
+    (`role="button"`, `tabindex=0`, Enter/Space).
+  - **Three floating number cards**: memory MB · SNR dB · mode label.
+    Numbers animate via a per-frame eased ticker (~380 ms). Card
+    gradient flips colour scheme on tier change. Card flash on
+    transition (`@keyframes card-flash`).
+  - **Saving arc**: conic-gradient ring centred between the columns,
+    sweep angle = `(1 - 1/compression) × 360°`. Glowing % readout in
+    the centre.
+  - **Crystal-lattice comparison table**: 5-column grid (metric, fp16,
+    int8, int4, int2). The active tier's column shimmers
+    (`@keyframes shimmer`) with a violet inner-shadow ring.
+  - **Reasoning panel**: pulls live string from `GET /api/recommend`
+    when the demo server is running; falls back to baked-in strings
+    that match the BENCHMARKS.md numbers when offline (file://).
+  - **Color language**: `--hot:#ffb86b` (amber) → `--warm:#ff8a5b`
+    (salmon) → `--cold:#a173ff` (Konjo purple). High precision is hot,
+    compressed is cold.
+  - **Accessibility**: full `prefers-reduced-motion` support — every
+    keyframe and transition is silenced. Mobile-responsive grid
+    breakpoints at 880 px and 560 px.
+
+- **`tests/test_demo_server.py`** — 35 new tests covering the GET
+  endpoint end-to-end (a real `HTTPServer` on a free port + `urllib`
+  client) plus all the helpers as pure functions:
+  - Architecture-table invariants (sorted, well-formed rows, snap-to-
+    closest, tie-breaks-larger).
+  - Closed-form happy paths (short/medium/long context picks correct
+    tier; budget basis correctly resolves and reports `by_context` /
+    `by_budget` / `agreement`).
+  - Reasoning content gates (mentions chosen tier; mentions budget
+    when budget decided; mentions both tiers when they disagree).
+  - Live HTTP — happy paths and 7 negative paths (missing required
+    params, non-numeric, negative, out-of-range — all return 400, none
+    return 500).
+  - Backward compatibility — `/api/health`, POST `/api/recommend`,
+    unknown path → 404.
+
+- Version bumped 9.27.0 → 9.28.0 (`pyproject.toml`,
+  `squish/__init__.py`, `spaces/requirements.txt`,
+  `tests/test_version.py`, `tests/test_wave79_startup_inference.py`).
+
+**Acceptance criteria met:**
+- ✅ Memory savings calculator now has a *visual* output (the right
+  column literally collapses; the saving arc fills; the cards animate).
+  Numbers are still there, but they ride on the visual.
+- ✅ `GET /api/recommend` ships, takes model size + context length
+  (+ optional budget), returns mode + reasoning + closed-form memory
+  table for all 4 tiers.
+- ✅ All UI animations are pure CSS — JS does no animation work, only
+  `setProperty` on CSS custom props and the small number ticker.
+- ✅ Spec compliance: 11 / 11 W109 design-checkpoints verified by an
+  HTML structural sanity script (background colour, hex field, two
+  columns, slider, orbs, cards, lattice, color language, GET wiring,
+  ≥ 5 keyframes).
+- ✅ Tests: 35 / 35 in `tests/test_demo_server.py` (0.94 s).
+- ✅ Existing endpoints + KV-cache + spaces tests unchanged.
+
+**Hard stops (none triggered):**
+- No JS animation libraries pulled in. No bundler. No build step. The
+  HTML opens from `file://` and works offline (live API enhancement is
+  optional).
+- No new mandatory dependency in `squish/` core.
+- No `unwrap()` / silent-swallow / TODO leftovers.
+- All API errors return 400, never 500. CLAUDE.md security.md respected:
+  every input is validated at the boundary, range-checked, and typed.
+
+---
+
+## Next Immediate Action
+**W109 SHIPPED (2026-05-10).** New dashboard at `demo/index.html` ready
+to demo locally (`python3 demo/server.py` → http://127.0.0.1:8001) or
+open standalone from the filesystem.
+
+**After W109: W103.4d** — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65 %
+lm_eval ship gate (hardware run required). Also validates the W104 32 K-context
 envelope on the same hardware run. LoRA INT4 checkpoint support remains deferred.
 
 ---
