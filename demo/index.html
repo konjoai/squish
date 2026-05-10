@@ -1027,6 +1027,171 @@
     }
     .reveal { opacity: 1; transform: none; }
   }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     3-D ISOMETRIC MEMORY BLOCKS  (W → spring entrance, scaleY compression)
+     ════════════════════════════════════════════════════════════════════════ */
+  .iso-scene {
+    height: 280px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    perspective: 680px;
+    perspective-origin: 50% 58%;
+    margin: 28px 0 0;
+    overflow: visible;
+    position: relative;
+  }
+  .iso-view {
+    display: flex;
+    align-items: flex-end;
+    gap: 22px;
+    transform: rotateX(45deg) rotateZ(-45deg);
+    transform-style: preserve-3d;
+  }
+  .iso-block {
+    position: relative;
+    width: 54px;
+    height: var(--bh, 100px);
+    transform-style: preserve-3d;
+    transform: scale(0);
+    will-change: transform;
+    transition:
+      height 900ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 700ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      opacity 350ms;
+    background: transparent;
+  }
+  .iso-block.entered { transform: scale(1); }
+  .iso-block.dim     { opacity: 0.15; }
+
+  .iso-face { position: absolute; backface-visibility: hidden; }
+
+  .iso-face.f-front {
+    inset: 0;
+    background: var(--bc, #8b6cff);
+  }
+  .iso-face.f-side {
+    top: 0; left: 0;
+    width: 54px; height: 100%;
+    transform-origin: right center;
+    transform: rotateY(90deg);
+    background: color-mix(in srgb, var(--bc, #8b6cff) 78%, black 22%);
+  }
+  .iso-face.f-top {
+    top: 0; left: 0;
+    width: 54px; height: 54px;
+    transform-origin: top center;
+    transform: rotateX(90deg);
+    background: color-mix(in srgb, var(--bc, #8b6cff) 78%, white 22%);
+  }
+
+  .iso-labels {
+    display: flex;
+    justify-content: center;
+    gap: 22px;
+    margin-top: 14px;
+  }
+  .iso-lbl {
+    width: 54px;
+    text-align: center;
+    font: 700 10px/1 var(--font-mono);
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    opacity: 0.65;
+    transition: opacity 350ms, color 350ms;
+  }
+  .iso-lbl.dim { opacity: 0.20; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     ESCAPED BITS PARTICLE SYSTEM
+     ════════════════════════════════════════════════════════════════════════ */
+  .bit-particle {
+    position: fixed;
+    pointer-events: none;
+    font: 700 11px/1 var(--font-mono);
+    z-index: 9999;
+    animation: escapeBit 1.5s cubic-bezier(0.23, 1, 0.32, 1) both;
+    user-select: none;
+  }
+  @keyframes escapeBit {
+    0%   { opacity: 1; transform: translate(0,0) rotate(0deg) scale(1); }
+    60%  { opacity: 0.7; }
+    100% { opacity: 0; transform: translate(var(--dx),var(--dy)) rotate(var(--dr)) scale(0.3); }
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     SNR WAVEFORM CANVAS
+     ════════════════════════════════════════════════════════════════════════ */
+  .snr-canvas-wrap {
+    margin: 16px 0 12px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: rgba(0,0,0,0.25);
+    position: relative;
+  }
+  #snr-canvas { display: block; width: 100%; height: 80px; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     MODEL CHIP STRIP
+     ════════════════════════════════════════════════════════════════════════ */
+  .model-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0 4px;
+  }
+  .model-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 14px;
+    border-radius: 99px;
+    border: 1px solid var(--line-strong);
+    background: var(--bg-2);
+    color: var(--fg-mute);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    transition: transform 180ms cubic-bezier(0.34,1.56,0.64,1),
+                background 180ms, border-color 180ms,
+                box-shadow 180ms, color 180ms;
+    will-change: transform;
+  }
+  .model-chip:hover {
+    border-color: var(--accent);
+    color: var(--fg);
+    transform: scale(1.04);
+  }
+  .model-chip.active {
+    background: rgba(139,108,255,0.18);
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: scale(1.06);
+    box-shadow: 0 0 14px rgba(124,58,237,0.60);
+  }
+  .chip-label { font-size: 14px; font-weight: 700; }
+  .chip-sub   { font-size: 9px;  opacity: 0.6; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     HEX GRID CANVAS  (behind the calculator section)
+     ════════════════════════════════════════════════════════════════════════ */
+  .calc { position: relative; overflow: hidden; }
+  #hex-canvas {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.5;
+  }
+  .calc-grid { position: relative; z-index: 1; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     SLIDER DISPLAY — width reserved so spring doesn't shift layout
+     ════════════════════════════════════════════════════════════════════════ */
+  #ctx-val { display: inline-block; min-width: 5ch; }
 </style>
 </head>
 <body>
@@ -1340,13 +1505,12 @@
             <div class="qs-track"><div class="qs-fill size" id="bar-s"></div></div>
           </div>
 
-          <div class="size-cube" aria-hidden="true">
-            <div class="cube" data-mode="fp16" style="height:200px">FP16</div>
-            <div class="cube" data-mode="int8" style="height:104px">INT8</div>
-            <div class="cube" data-mode="int4" style="height:54px">INT4</div>
-            <div class="cube" data-mode="int2" style="height:28px">INT2</div>
+          <!-- 3-D isometric blocks built by JS module 8b -->
+          <div class="iso-scene" aria-hidden="true">
+            <div class="iso-view" id="iso-view"></div>
           </div>
-          <div style="text-align:center; color:var(--fg-dim); font-size:11px; margin-top:14px; letter-spacing:0.08em">
+          <div class="iso-labels" id="iso-labels" aria-hidden="true"></div>
+          <div style="text-align:center; color:var(--fg-dim); font-size:11px; margin-top:10px; letter-spacing:0.08em">
             relative cache size — taller = more memory
           </div>
         </div>
@@ -1383,6 +1547,8 @@
     </div>
 
     <div class="calc reveal">
+      <!-- hex grid drawn by JS module 8f; warms amber→cool blue with slider -->
+      <canvas id="hex-canvas" aria-hidden="true"></canvas>
       <div class="calc-grid">
 
         <div class="calc-controls">
@@ -1392,8 +1558,17 @@
           </div>
           <input type="range" id="ctx" min="512" max="65536" step="512" value="8192" />
 
-          <label>Model preset</label>
-          <select id="preset">
+          <!-- SNR waveform: clean sine at low compression → noisy at high -->
+          <div class="snr-canvas-wrap">
+            <canvas id="snr-canvas" aria-hidden="true"></canvas>
+          </div>
+
+          <label>Model</label>
+          <!-- chip strip — syncs to hidden select -->
+          <div class="model-chips" id="model-chips" role="group" aria-label="Model preset"></div>
+
+          <label style="margin-top:6px">Details</label>
+          <select id="preset" style="display:none">
             <option value="qwen-7b" selected>Qwen2.5-7B  (28 layers · 8 heads · 128-wide)</option>
             <option value="llama-8b">Llama-3-8B  (32 layers · 8 heads · 128-wide)</option>
             <option value="qwen-1_5b">Qwen2.5-1.5B  (28 layers · 2 heads · 128-wide)</option>
@@ -1806,9 +1981,8 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
   const barS    = document.getElementById('bar-s');
   const barQVal = document.getElementById('bar-q-val');
   const barSVal = document.getElementById('bar-s-val');
-  const cubes   = document.querySelectorAll('.size-cube .cube');
+  // Iso blocks are built by module 8b after page load; query lazily in setActive.
 
-  // count-up tweens on a single number
   function tweenNum (el, from, to, dur, fmt) {
     const start = performance.now();
     function step (now) {
@@ -1824,7 +1998,13 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
   function setActive (mode) {
     tabs.querySelectorAll('.tab-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.mode === mode));
-    cubes.forEach(c => c.classList.toggle('dim', c.dataset.mode !== mode));
+    // Lazy query — iso blocks may not exist at parse time (built by JS).
+    document.querySelectorAll('.iso-block').forEach(c =>
+      c.classList.toggle('dim', c.dataset.mode !== mode));
+    document.querySelectorAll('.iso-lbl').forEach(c =>
+      c.classList.toggle('dim', c.dataset.mode !== mode));
+    // Notify konjo enhancement module (particles + waveform update).
+    document.dispatchEvent(new CustomEvent('squish:tab', { detail: { mode } }));
   }
 
   let prev = MODES.int8;        // we ship with INT8 active
@@ -1971,6 +2151,407 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
   preset.addEventListener('change', render);
   render();
 })();
+
+/* ════════════════════════════════════════════════════════════════════════
+   8. KONJO VISUAL ENHANCEMENTS
+      8a  3-D isometric memory blocks
+      8b  Escaped-bits particle system
+      8c  SNR waveform canvas
+      8d  Model chip strip
+      8e  Slider inertia (spring overshoot)
+      8f  Hex-grid background canvas
+   ════════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  // ── shared helpers ──────────────────────────────────────────────────────
+  const lerp  = (a, b, t) => a + (b - a) * t;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const rng   = (lo, hi) => lo + Math.random() * (hi - lo);
+
+  const MODE_COLOR = {
+    fp16: '#5d83ff',
+    int8: '#28d4c8',
+    int4: '#ff9550',
+    int2: '#ff5e94',
+  };
+  // Heights in px — matches visual weight of each tier
+  const MODE_H = { fp16: 196, int8: 104, int4: 54, int2: 26 };
+
+  // ── 8a. 3-D ISOMETRIC BLOCKS ────────────────────────────────────────────
+  (function isoBlocks () {
+    const view   = document.getElementById('iso-view');
+    const lblRow = document.getElementById('iso-labels');
+    if (!view) return;
+
+    const MODES = ['fp16', 'int8', 'int4', 'int2'];
+    const blocks = {};   // mode → .iso-block element
+    const lbls   = {};   // mode → .iso-lbl  element
+
+    MODES.forEach((mode, i) => {
+      const block = document.createElement('div');
+      block.className  = 'iso-block';
+      block.dataset.mode = mode;
+      block.style.setProperty('--bh', MODE_H[mode] + 'px');
+      block.style.setProperty('--bc', MODE_COLOR[mode]);
+
+      ['f-front','f-side','f-top'].forEach(cls => {
+        const face = document.createElement('div');
+        face.className = 'iso-face ' + cls;
+        block.appendChild(face);
+      });
+
+      view.appendChild(block);
+      blocks[mode] = block;
+
+      // Staggered spring entrance
+      setTimeout(() => block.classList.add('entered'), i * 130 + 250);
+
+      // Label below
+      if (lblRow) {
+        const lbl = document.createElement('div');
+        lbl.className    = 'iso-lbl';
+        lbl.dataset.mode = mode;
+        lbl.textContent  = mode.toUpperCase();
+        lbl.style.color  = MODE_COLOR[mode];
+        lblRow.appendChild(lbl);
+        lbls[mode] = lbl;
+      }
+    });
+
+    // Public helpers consumed by other sub-modules
+    window._isoSetActive = function (activeMode) {
+      MODES.forEach(m => {
+        const dim = m !== activeMode;
+        if (blocks[m]) blocks[m].classList.toggle('dim', dim);
+        if (lbls[m])   lbls[m].classList.toggle('dim', dim);
+      });
+    };
+
+    window._isoBlockRect = function (mode) {
+      return blocks[mode] ? blocks[mode].getBoundingClientRect() : null;
+    };
+
+    // Listen to the squish:tab event dispatched by compare-tabs IIFE
+    document.addEventListener('squish:tab', e => {
+      if (window._isoSetActive) window._isoSetActive(e.detail.mode);
+    });
+
+    // Initial state matches the compare panel's default (int8)
+    setTimeout(() => { if (window._isoSetActive) window._isoSetActive('int8'); }, 400);
+  })();
+
+
+  // ── 8b. ESCAPED BITS PARTICLE SYSTEM ────────────────────────────────────
+  (function particles () {
+    // Number of escaped bits per mode — more compression = more bits escaped
+    const COUNT = { fp16: 0, int8: 3, int4: 7, int2: 16 };
+
+    function spawn (mode) {
+      const n = COUNT[mode] || 0;
+      if (!n) return;
+
+      const rect = window._isoBlockRect ? window._isoBlockRect(mode) : null;
+      const cx   = rect ? rect.left + rect.width  / 2 : window.innerWidth  / 2;
+      const cy   = rect ? rect.top  + rect.height * 0.4 : window.innerHeight / 2;
+      const col  = MODE_COLOR[mode] || '#fff';
+
+      for (let i = 0; i < n; i++) {
+        setTimeout(() => {
+          const el = document.createElement('div');
+          el.className   = 'bit-particle';
+          el.textContent = Math.random() < 0.5 ? '0' : '1';
+          el.style.color = col;
+          el.style.left  = (cx + rng(-30, 30)) + 'px';
+          el.style.top   = (cy + rng(-12, 12)) + 'px';
+          el.style.setProperty('--dx', rng(-90, 90)   + 'px');
+          el.style.setProperty('--dy', rng(-130, -45) + 'px');
+          el.style.setProperty('--dr', rng(-220, 220) + 'deg');
+          el.style.animationDelay = rng(0, 0.18) + 's';
+          document.body.appendChild(el);
+          setTimeout(() => el.remove(), 2000);
+        }, i * 22 + Math.random() * 15);
+      }
+    }
+
+    document.addEventListener('squish:tab', e => spawn(e.detail.mode));
+  })();
+
+
+  // ── 8c. SNR WAVEFORM CANVAS ─────────────────────────────────────────────
+  (function waveform () {
+    const canvas = document.getElementById('snr-canvas');
+    if (!canvas) return;
+
+    // compression level 0→1 (0 = FP16 pristine, 1 = INT2 noisy)
+    const LEVEL = { fp16: 0.04, int8: 0.24, int4: 0.56, int2: 0.92 };
+    let progress = LEVEL.int8;
+    let target   = LEVEL.int8;
+    let rafId    = null;
+
+    function resize () {
+      const w = canvas.parentElement ? Math.floor(canvas.parentElement.offsetWidth) : 500;
+      if (canvas.width !== w) {
+        canvas.width  = w || 500;
+        canvas.height = 80;
+      }
+    }
+
+    function draw () {
+      resize();
+      const ctx2 = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      ctx2.clearRect(0, 0, W, H);
+
+      // Purple (#8b6cff) → amber (#ffba50) as compression rises
+      const pr = Math.round(lerp(139, 255, progress));
+      const pg = Math.round(lerp(108, 186, progress * progress));
+      const pb = Math.round(lerp(255,  80, progress));
+      const col = `rgb(${pr},${pg},${pb})`;
+
+      ctx2.strokeStyle = col;
+      ctx2.lineWidth   = 2;
+      ctx2.shadowBlur  = 10;
+      ctx2.shadowColor = col;
+      ctx2.lineCap     = 'round';
+      ctx2.lineJoin    = 'round';
+
+      const amp   = 20;
+      const freq  = 3.5 + progress * 2.5;          // more cycles when noisy
+      const noise = progress * 0.88;
+      const phase = performance.now() / 850;        // scrolls over time
+
+      ctx2.beginPath();
+      for (let x = 0; x <= W; x += 2) {
+        const t     = x / W;
+        const clean = Math.sin(t * Math.PI * 2 * freq + phase) * amp * (1 - noise * 0.68);
+        const n     = noise > 0 ? (Math.random() * 2 - 1) * amp * noise : 0;
+        const y     = H / 2 + clean + n;
+        x === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y);
+      }
+      ctx2.stroke();
+
+      // Quality label overlay
+      ctx2.shadowBlur  = 0;
+      ctx2.globalAlpha = 0.55;
+      ctx2.fillStyle   = col;
+      ctx2.font        = '10px monospace';
+      const qlabel = progress < 0.15 ? 'pristine' :
+                     progress < 0.40 ? 'excellent' :
+                     progress < 0.72 ? 'good' : 'compressed';
+      ctx2.fillText(qlabel + ' quality', 8, H - 10);
+      ctx2.globalAlpha = 1;
+    }
+
+    function step () {
+      progress += (target - progress) * 0.04;
+      draw();
+      rafId = requestAnimationFrame(step);
+    }
+
+    document.addEventListener('squish:tab', e => {
+      target = LEVEL[e.detail.mode] ?? target;
+    });
+
+    window.addEventListener('resize', resize);
+    resize();
+    step();
+  })();
+
+
+  // ── 8d. MODEL CHIP STRIP ────────────────────────────────────────────────
+  (function modelChips () {
+    const strip  = document.getElementById('model-chips');
+    const sel    = document.getElementById('preset');
+    const chart  = document.getElementById('chart');
+    if (!strip || !sel) return;
+
+    const CHIPS = [
+      { value: 'qwen-7b',    label: '7B',   sub: 'qwen' },
+      { value: 'llama-8b',   label: '8B',   sub: 'llama' },
+      { value: 'qwen-1_5b',  label: '1.5B', sub: 'nano' },
+      { value: 'phi-3-mini', label: 'mini', sub: 'phi-3' },
+    ];
+
+    CHIPS.forEach(c => {
+      const btn = document.createElement('button');
+      btn.className      = 'model-chip';
+      btn.dataset.preset = c.value;
+      btn.type           = 'button';
+      btn.setAttribute('aria-pressed', sel.value === c.value ? 'true' : 'false');
+      btn.innerHTML = `<span class="chip-label">${c.label}</span>`
+                    + `<span class="chip-sub">${c.sub}</span>`;
+      strip.appendChild(btn);
+    });
+
+    function activateChip (value) {
+      strip.querySelectorAll('.model-chip').forEach(b => {
+        const on = b.dataset.preset === value;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    activateChip(sel.value);
+
+    strip.addEventListener('click', e => {
+      const chip = e.target.closest('.model-chip');
+      if (!chip || chip.dataset.preset === sel.value) return;
+      activateChip(chip.dataset.preset);
+
+      if (!chart) {
+        sel.value = chip.dataset.preset;
+        sel.dispatchEvent(new Event('change'));
+        return;
+      }
+
+      // Slide out left, update, slide in from right
+      const ease_out = 'cubic-bezier(0.23,1,0.32,1)';
+      const ease_spr = 'cubic-bezier(0.34,1.56,0.64,1)';
+      chart.style.transition = `transform 270ms ${ease_out}, opacity 270ms`;
+      chart.style.transform  = 'translateX(-52px)';
+      chart.style.opacity    = '0';
+
+      setTimeout(() => {
+        sel.value = chip.dataset.preset;
+        sel.dispatchEvent(new Event('change'));
+
+        chart.style.transition = 'none';
+        chart.style.transform  = 'translateX(52px)';
+        chart.style.opacity    = '0';
+
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          chart.style.transition = `transform 310ms ${ease_spr}, opacity 220ms`;
+          chart.style.transform  = 'translateX(0)';
+          chart.style.opacity    = '1';
+        }));
+      }, 275);
+    });
+  })();
+
+
+  // ── 8e. SLIDER INERTIA (spring overshoot) ───────────────────────────────
+  (function sliderInertia () {
+    const slider  = document.getElementById('ctx');
+    const display = document.getElementById('ctx-val');
+    if (!slider || !display) return;
+
+    let dispVal  = parseInt(slider.value, 10);
+    let targVal  = dispVal;
+    let rafId    = null;
+
+    function settle () {
+      // Exponential decay toward target — spec: displayValue += (target - display) * 0.12
+      dispVal += (targVal - dispVal) * 0.12;
+      const rounded = Math.round(dispVal);
+      display.textContent = rounded.toLocaleString();
+
+      if (Math.abs(targVal - dispVal) > 0.9) {
+        rafId = requestAnimationFrame(settle);
+      } else {
+        dispVal = targVal;
+        display.textContent = targVal.toLocaleString();
+        rafId = null;
+      }
+    }
+
+    slider.addEventListener('input', () => {
+      const prev  = targVal;
+      targVal     = parseInt(slider.value, 10);
+      // Apply overshoot: jump display value briefly past target by velocity × 0.15
+      const vel   = (targVal - prev) * 0.15;
+      dispVal    += vel;
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(settle);
+    });
+  })();
+
+
+  // ── 8f. HEX GRID BACKGROUND CANVAS ─────────────────────────────────────
+  (function hexGrid () {
+    const canvas = document.getElementById('hex-canvas');
+    const slider = document.getElementById('ctx');
+    if (!canvas || !slider) return;
+
+    const T_MIN = 512, T_MAX = 65536;
+    let hexProg   = 0.22;   // 0 = cool (#000a1a), 1 = warm (#1a0a00)
+    let hexTarget = 0.22;
+
+    function resize () {
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      const w = Math.floor(parent.offsetWidth)  || 800;
+      const h = Math.floor(parent.offsetHeight) || 300;
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width  = w;
+        canvas.height = h;
+      }
+    }
+
+    // Draw a single pointy-top hexagon centred at (cx, cy), inner radius r
+    function hex (ctx2, cx, cy, r) {
+      ctx2.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a  = (Math.PI / 3) * i - Math.PI / 6;
+        const px = cx + r * Math.cos(a);
+        const py = cy + r * Math.sin(a);
+        i === 0 ? ctx2.moveTo(px, py) : ctx2.lineTo(px, py);
+      }
+      ctx2.closePath();
+    }
+
+    function draw () {
+      resize();
+      const ctx2 = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      ctx2.clearRect(0, 0, W, H);
+
+      const t = hexProg;
+      // cool = #000a1a  (r=0,   g=10,  b=26)
+      // warm = #1a0a00  (r=26,  g=10,  b=0)
+      const bR = Math.round(lerp(0,  26, t));
+      const bG = Math.round(lerp(10, 10, t));
+      const bB = Math.round(lerp(26,  0, t));
+
+      const R    = 12;                                // hex radius (24 px size)
+      const hw   = Math.sqrt(3) * R;                 // pointy-top: col step
+      const vert = R * 1.5;                          // row step
+
+      for (let row = -1; (row - 1) * vert < H + R * 2; row++) {
+        const offset = (row & 1) ? hw / 2 : 0;
+        for (let col = -1; (col - 1) * hw < W + hw; col++) {
+          const cx = col * hw + offset;
+          const cy = row * vert;
+
+          // Per-hex vary for texture — avoid uniform flat look
+          const vary = 0.72 + 0.28 * (0.5 + 0.5 * Math.sin(col * 1.9 + row * 2.7));
+          const fr = Math.round(bR * vary);
+          const fg = Math.round(bG * vary);
+          const fb = Math.round(bB * vary);
+
+          hex(ctx2, cx, cy, R - 1);   // R-1 leaves 2 px gap between hexes
+          ctx2.fillStyle = `rgb(${fr},${fg},${fb})`;
+          ctx2.fill();
+        }
+      }
+    }
+
+    function step () {
+      hexProg += (hexTarget - hexProg) * 0.035;
+      draw();
+      requestAnimationFrame(step);
+    }
+
+    slider.addEventListener('input', () => {
+      const c = parseInt(slider.value, 10);
+      hexTarget = clamp((c - T_MIN) / (T_MAX - T_MIN), 0, 1);
+    });
+
+    window.addEventListener('resize', () => { resize(); draw(); });
+    resize();
+    step();
+  })();
+
+})(); // end Konjo enhancements
 
 /* ════════════════════════════════════════════════════════════════════════
    7. live mode — talks to demo/server.py if it's running
