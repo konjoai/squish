@@ -1029,6 +1029,94 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════════
+     dashboard v2 — free-input savings calculator  (W108)
+     ════════════════════════════════════════════════════════════════════════ */
+  .v2 {
+    margin-top: 44px;
+    background: linear-gradient(135deg, rgba(139,108,255,0.06), rgba(40,212,200,0.04));
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 36px;
+    box-shadow: var(--shadow-md);
+  }
+  .v2-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+  @media (max-width: 880px) { .v2-grid { grid-template-columns: 1fr; } }
+  .v2-controls label {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.10em;
+    color: var(--fg-mute);
+    margin: 18px 0 6px;
+  }
+  .v2-controls label:first-child { margin-top: 0; }
+  .v2-controls input[type=number] {
+    width: 100%;
+    background: var(--bg-2);
+    color: var(--fg);
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-family: var(--font-mono);
+    font-size: 16px;
+    outline: none;
+    transition: border-color 150ms;
+  }
+  .v2-controls input[type=number]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139,108,255,0.18);
+  }
+  .v2-controls .arch-pill {
+    margin-top: 18px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: rgba(139,108,255,0.10);
+    border: 1px solid rgba(139,108,255,0.25);
+    font-size: 13px;
+    color: var(--fg-mute);
+    line-height: 1.5;
+  }
+  .v2-controls .arch-pill strong { color: var(--accent); font-weight: 700; }
+  .v2-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+  .v2-table th, .v2-table td {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+  }
+  .v2-table th {
+    color: var(--fg-mute);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    background: var(--bg-2);
+  }
+  .v2-table tr:last-child td { border-bottom: 0; }
+  .v2-table td.v2-mode { font-weight: 800; font-size: 15px; }
+  .v2-table td.v2-mode.fp16 { color: var(--accent-fp16); }
+  .v2-table td.v2-mode.int8 { color: var(--accent-2); }
+  .v2-table td.v2-mode.int4 { color: var(--accent-3); }
+  .v2-table td.v2-mode.int2 { color: var(--accent-4); }
+  .v2-savings { font-weight: 700; color: var(--accent-good); }
+  .v2-recommended { background: rgba(76,217,100,0.06); }
+  .v2-source {
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    line-height: 1.7;
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
      3-D ISOMETRIC MEMORY BLOCKS  (W → spring entrance, scaleY compression)
      ════════════════════════════════════════════════════════════════════════ */
   .iso-scene {
@@ -1591,6 +1679,50 @@
         </div>
 
       </div>
+
+      <!-- v2 — free-input model savings calculator + comparison table (W108) -->
+      <div class="v2 reveal" style="margin-top:44px">
+        <div class="eyebrow">Dashboard v2 · projected memory at every tier</div>
+        <h3 class="h2" style="font-size:24px; margin:6px 0 10px">
+          Plug in your model. See where the cache lands.
+        </h3>
+        <p style="color:var(--fg-mute); margin:0 0 26px; max-width:720px">
+          Pick any model size and target context. The table uses
+          <code>estimate_kv_memory()</code> — the same closed-form pricing
+          that <code>make_kv_cache</code> uses — to project total memory at
+          FP16, INT8, INT4, and INT2.
+        </p>
+        <div class="v2-grid">
+          <div class="v2-controls">
+            <label for="v2-params">Model size</label>
+            <input type="number" id="v2-params" min="0.05" max="1000"
+                   step="0.1" value="7" />
+            <label for="v2-ctx">Context length (tokens)</label>
+            <input type="number" id="v2-ctx" min="512" max="1000000"
+                   step="512" value="32768" />
+            <div class="arch-pill" id="v2-arch">
+              <strong>28</strong> layers · <strong>8</strong> KV heads ·
+              <strong>128</strong>-wide — estimated from model size
+            </div>
+            <p class="v2-source" id="v2-source"></p>
+          </div>
+          <div>
+            <table class="v2-table" id="v2-table">
+              <thead>
+                <tr>
+                  <th>Mode</th>
+                  <th>Total cache RAM</th>
+                  <th>vs FP16</th>
+                  <th>Saving</th>
+                  <th>Fits in 16 GB?</th>
+                </tr>
+              </thead>
+              <tbody id="v2-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </section>
@@ -2149,6 +2281,87 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
 
   ctx.addEventListener('input', render);
   preset.addEventListener('change', render);
+  render();
+})();
+
+/* ════════════════════════════════════════════════════════════════════════
+   6b. dashboard v2 — free-input savings calculator + comparison table (W108)
+   ════════════════════════════════════════════════════════════════════════
+   Computes the same numbers as squish.kv.kv_cache.estimate_kv_memory() but
+   client-side so the table responds instantly to keystrokes.
+   ════════════════════════════════════════════════════════════════════════ */
+(function () {
+  const inP  = document.getElementById('v2-params');
+  const inC  = document.getElementById('v2-ctx');
+  const arc  = document.getElementById('v2-arch');
+  const src  = document.getElementById('v2-source');
+  const tbody = document.getElementById('v2-tbody');
+  if (!inP || !inC || !tbody) return;
+
+  const SCALE_B = 4;  // fp32 per-token scale
+  const KV2     = 2;  // K + V buffers
+  const GB      = 1024 ** 3;
+  const FIT_GB  = 16; // M3 16 GB ceiling
+
+  // Rough arch heuristics from parameter count (billions)
+  function archFrom (B) {
+    if (B <= 1)   return { n_layers: 22, n_kv:  4, head_dim: 64  };
+    if (B <= 3)   return { n_layers: 26, n_kv:  4, head_dim: 128 };
+    if (B <= 8)   return { n_layers: 28, n_kv:  8, head_dim: 128 };
+    if (B <= 14)  return { n_layers: 32, n_kv:  8, head_dim: 128 };
+    if (B <= 30)  return { n_layers: 40, n_kv:  8, head_dim: 128 };
+    if (B <= 70)  return { n_layers: 80, n_kv:  8, head_dim: 128 };
+    return             { n_layers: 96, n_kv: 16, head_dim: 128 };
+  }
+
+  function bptHead (mode, hd) {
+    if (mode === 'fp16') return hd * 2;
+    if (mode === 'int8') return hd + SCALE_B;
+    if (mode === 'int4') return hd / 2 + SCALE_B;
+    if (mode === 'int2') return hd / 4 + SCALE_B;
+    return 0;
+  }
+
+  function fmtB (n) {
+    if (n < 1024) return n.toFixed(0) + ' B';
+    if (n < 1024 ** 2) return (n / 1024).toFixed(1) + ' KB';
+    if (n < GB)   return (n / 1024 ** 2).toFixed(1) + ' MB';
+    return (n / GB).toFixed(2) + ' GB';
+  }
+
+  const MODES = ['fp16','int8','int4','int2'];
+  const COL   = { fp16:'var(--accent-fp16)', int8:'var(--accent-2)', int4:'var(--accent-3)', int2:'var(--accent-4)' };
+  const T_INT4 = 8192, T_INT2 = 16384;
+  function pickMode (c) { return c <= T_INT4 ? 'int8' : c <= T_INT2 ? 'int4' : 'int2'; }
+
+  function render () {
+    const B  = Math.max(0.05, parseFloat(inP.value) || 7);
+    const C  = Math.max(512,  parseInt(inC.value)   || 32768);
+    const a  = archFrom(B);
+    const fp16Total = a.head_dim * 2 * a.n_kv * KV2 * C * a.n_layers;
+    const rec = pickMode(C);
+
+    arc.innerHTML = `<strong>${a.n_layers}</strong> layers · <strong>${a.n_kv}</strong> KV heads · <strong>${a.head_dim}</strong>-wide — estimated from ${B}B parameters`;
+    if (src) src.textContent = `formula: (bpw × head_dim + 4) × n_kv_heads × 2 (K+V) × context × n_layers`;
+
+    tbody.innerHTML = MODES.map(m => {
+      const bytes   = bptHead(m, a.head_dim) * a.n_kv * KV2 * C * a.n_layers;
+      const ratio   = bytes > 0 ? fp16Total / bytes : 1;
+      const saving  = fp16Total - bytes;
+      const fits    = bytes <= FIT_GB * GB;
+      const isRec   = m === rec;
+      return `<tr class="${isRec ? 'v2-recommended' : ''}">
+        <td class="v2-mode ${m}" style="color:${COL[m]}">${m.toUpperCase()}${isRec ? ' ★' : ''}</td>
+        <td>${fmtB(bytes)}</td>
+        <td>${ratio.toFixed(2)}×</td>
+        <td class="${saving > 0 ? 'v2-savings' : ''}">${saving > 0 ? '−' + fmtB(saving) : '—'}</td>
+        <td>${fits ? '✓' : '✗'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  inP.addEventListener('input', render);
+  inC.addEventListener('input', render);
   render();
 })();
 
