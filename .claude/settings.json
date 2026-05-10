@@ -1,0 +1,1 @@
+{"hooks":{"PostToolUse":[{"matcher":"Edit|Write","hooks":[{"type":"command","command":"bash \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/hooks/post-edit.sh\""}]}],"Stop":[{"hooks":[{"type":"command","command":"bash \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.claude/hooks/on-stop.sh\""}]}]}}
