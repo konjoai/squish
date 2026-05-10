@@ -3,3039 +3,949 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Squish — Make your AI use 4× less memory.</title>
+<title>Squish — KV-cache compression made visible.</title>
 <meta name="description"
-      content="Squish makes AI models use up to 4× less memory without losing quality. Run a 7B model on your laptop, fit four conversations in the space of one." />
+      content="Move the slider. Watch memory blocks compress from FP16 down to INT8, INT4, INT2 — squish's three KV-cache quantization tiers, in real time." />
+
 <style>
   /* ════════════════════════════════════════════════════════════════════════
-     design tokens
+     W109 — design tokens
+     The colour language: warm amber = high precision (FP16/INT8),
+     Konjo purple = compressed (INT2). Everything between is interpolated.
      ════════════════════════════════════════════════════════════════════════ */
   :root {
-    --bg-0:        #06070b;
-    --bg-1:        #0e1018;
-    --bg-2:        #161a26;
-    --bg-3:        #1d2230;
-    --bg-card:     rgba(22, 26, 38, 0.7);
-    --line:        rgba(255,255,255,0.07);
-    --line-strong: rgba(255,255,255,0.16);
+    --bg-0:       #06060f;
+    --bg-1:       #0c0c1a;
+    --bg-glass:   rgba(14, 14, 28, 0.55);
+    --line:       rgba(255,255,255,0.07);
+    --line-soft:  rgba(255,255,255,0.04);
 
-    --fg:          #ecedf3;
-    --fg-mute:     #9ba3b4;
-    --fg-dim:      #6b7382;
+    --fg:         #ecedf3;
+    --fg-mute:    #8b92a8;
+    --fg-dim:     #5f6678;
 
-    --accent:      #8b6cff;          /* violet — primary brand */
-    --accent-2:    #28d4c8;          /* teal   — INT8 / "save a little" */
-    --accent-3:    #ff9550;          /* orange — INT4 / "save a lot" */
-    --accent-4:    #ff5e94;          /* pink   — INT2 / "save the most" */
-    --accent-fp16: #5d83ff;          /* blue   — full precision baseline */
-    --accent-good: #4cd964;
-    --accent-warn: #ffc857;
+    /* hot → cold */
+    --hot:        #ffb86b;     /* amber — FP16 / INT8 */
+    --warm:       #ff8a5b;     /* salmon — INT4 */
+    --cold:       #a173ff;     /* Konjo purple — INT2 */
+    --shimmer:    #c4a4ff;
 
-    --shadow-sm:   0 1px 2px rgba(0,0,0,0.5);
-    --shadow-md:   0 10px 32px rgba(0,0,0,0.55);
-    --shadow-lg:   0 28px 80px rgba(0,0,0,0.65);
+    --good:       #4cd964;
+    --warn:       #ffc857;
+    --hex:        rgba(140, 110, 255, 0.06);
+    --hex-stroke: rgba(180, 150, 255, 0.10);
 
-    --radius-sm:   8px;
-    --radius-md:   16px;
-    --radius-lg:   26px;
+    --font-mono:  ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --font-sans:  -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
 
-    --font-mono:   ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
-    --font-sans:   -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
-
-    --ease:        cubic-bezier(0.22, 0.61, 0.36, 1);
-    --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease:       cubic-bezier(0.22, 0.61, 0.36, 1);
   }
 
   *,*::before,*::after { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     margin: 0;
-    background:
-      radial-gradient(1400px 700px at 80% -10%, rgba(139,108,255,0.22), transparent 70%),
-      radial-gradient(1000px 560px at 0% 25%,    rgba(40,212,200,0.14),  transparent 70%),
-      radial-gradient(800px 460px at 100% 90%,   rgba(255, 94,148,0.10), transparent 70%),
-      var(--bg-0);
+    background: var(--bg-0);
     color: var(--fg);
     font-family: var(--font-sans);
     line-height: 1.55;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-  h1, h2, h3, h4 { letter-spacing: -0.02em; margin: 0; }
-  a { color: var(--accent-2); text-decoration: none; transition: color 150ms; }
-  a:hover { color: #5fefe1; text-decoration: underline; text-decoration-thickness: 2px; }
-  code, kbd, pre, .mono { font-family: var(--font-mono); font-size: 0.92em; }
-
-  /* ─── layout ───────────────────────────────────────────────────────────── */
-  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 28px; }
-  section { padding: 110px 0; border-top: 1px solid var(--line); position: relative; }
-  section:first-of-type { border-top: 0; padding-top: 0; }
-
-  .eyebrow {
-    text-transform: uppercase;
-    letter-spacing: 0.20em;
-    font-size: 11px;
-    color: var(--accent);
-    margin-bottom: 14px;
-    font-weight: 600;
-  }
-  .h2 { font-size: clamp(28px, 3.6vw, 44px); font-weight: 800; line-height: 1.1; }
-  .lede { color: var(--fg-mute); font-size: 18px; max-width: 780px; margin-top: 16px; }
-
-  /* ─── reveal-on-scroll ─────────────────────────────────────────────────── */
-  .reveal {
-    opacity: 0;
-    transform: translateY(28px);
-    transition: opacity 800ms var(--ease), transform 800ms var(--ease);
-  }
-  .reveal.visible {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  .reveal.delay-1 { transition-delay: 100ms; }
-  .reveal.delay-2 { transition-delay: 220ms; }
-  .reveal.delay-3 { transition-delay: 340ms; }
-  .reveal.delay-4 { transition-delay: 460ms; }
-
-  /* ─── nav ──────────────────────────────────────────────────────────────── */
-  nav.top {
-    position: sticky; top: 0; z-index: 50;
-    background: rgba(6, 7, 11, 0.78);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    border-bottom: 1px solid var(--line);
-  }
-  nav.top .wrap {
-    display: flex; align-items: center; justify-content: space-between;
-    height: 64px;
-  }
-  .brand {
-    display: flex; align-items: center; gap: 10px;
-    font-weight: 800; font-size: 18px;
-    transition: transform 150ms var(--ease);
-  }
-  .brand:hover { transform: scale(1.04); }
-  .brand .logo {
-    width: 28px; height: 28px;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-    border-radius: 8px;
-    box-shadow: 0 0 24px rgba(139,108,255,0.45);
-    animation: pulse 3.5s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 24px rgba(139,108,255,0.40); }
-    50%      { box-shadow: 0 0 36px rgba(139,108,255,0.65); }
-  }
-  nav.top ul { list-style: none; padding: 0; margin: 0; display: flex; gap: 28px; }
-  nav.top li a { color: var(--fg-mute); font-size: 14px; }
-  nav.top li a:hover { color: var(--fg); text-decoration: none; }
-  @media (max-width: 760px) { nav.top ul { display: none; } }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     hero
-     ════════════════════════════════════════════════════════════════════════ */
-  .hero { padding: 130px 0 80px; position: relative; overflow: hidden; }
-  .hero h1 {
-    font-size: clamp(56px, 9vw, 116px);
-    font-weight: 900;
-    line-height: 0.95;
-    letter-spacing: -0.04em;
-    background: linear-gradient(135deg,
-      #ffffff 0%, #c5c2ff 40%, #95f0e5 75%, #ff9550 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    margin-bottom: 24px;
-    animation: gradient-shift 9s ease-in-out infinite;
-    background-size: 200% 200%;
-  }
-  @keyframes gradient-shift {
-    0%, 100% { background-position: 0% 50%; }
-    50%      { background-position: 100% 50%; }
-  }
-  .hero .tagline {
-    font-size: clamp(22px, 2.8vw, 32px);
-    font-weight: 600;
-    color: var(--fg);
-    max-width: 840px;
-    line-height: 1.25;
-    margin-bottom: 18px;
-  }
-  .hero .pitch {
-    font-size: 18px; color: var(--fg-mute);
-    max-width: 720px; line-height: 1.55;
-  }
-  .hero .actions { margin-top: 38px; display: flex; gap: 14px; flex-wrap: wrap; }
-
-  .btn {
-    padding: 14px 24px;
-    border-radius: 12px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    border: 1px solid var(--line-strong);
-    background: var(--bg-2);
-    color: var(--fg);
-    transition: all 200ms var(--ease);
-    text-decoration: none;
-    display: inline-flex; align-items: center; gap: 8px;
-    position: relative;
-    overflow: hidden;
-  }
-  .btn::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(139,108,255,0.15), transparent);
-    opacity: 0;
-    transition: opacity 200ms;
-  }
-  .btn:hover { transform: translateY(-2px); border-color: rgba(139,108,255,0.5); text-decoration: none; }
-  .btn:hover::before { opacity: 1; }
-  .btn:active { transform: translateY(0); }
-  .btn.primary {
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: #06070b;
-    border-color: transparent;
-    box-shadow: 0 12px 32px rgba(139,108,255,0.30);
-  }
-  .btn.primary:hover {
-    box-shadow: 0 18px 44px rgba(139,108,255,0.50);
-  }
-
-  .hero-stats {
-    margin-top: 64px;
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 18px;
-  }
-  .stat {
-    background: var(--bg-card);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 24px;
-    transition: all 250ms var(--ease);
-    cursor: default;
-  }
-  .stat:hover {
-    border-color: var(--line-strong);
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-md);
-  }
-  .stat .num {
-    font-size: 32px;
-    font-weight: 800;
-    background: linear-gradient(135deg, #ffffff, var(--accent-2));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    line-height: 1;
-  }
-  .stat .lbl { color: var(--fg-mute); font-size: 13px; margin-top: 8px; }
-  @media (max-width: 760px) { .hero-stats { grid-template-columns: repeat(2, 1fr); } }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     looping animated "shrinking model" diagram
-     ════════════════════════════════════════════════════════════════════════ */
-  .shrink-loop {
-    margin-top: 60px;
-    background: linear-gradient(135deg, rgba(139,108,255,0.08), rgba(40,212,200,0.05));
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 36px;
-    text-align: center;
-    overflow: hidden;
-  }
-  .shrink-loop .label {
-    color: var(--fg-mute);
-    font-size: 13px;
-    letter-spacing: 0.10em;
-    text-transform: uppercase;
-    margin-bottom: 24px;
-  }
-  .shrink-loop .stage {
-    color: var(--accent);
-    font-weight: 700;
-    font-family: var(--font-mono);
     font-size: 16px;
+    overflow-x: hidden;
+    min-height: 100vh;
   }
-  .shrink-loop svg { display: block; margin: 0 auto; max-width: 720px; width: 100%; height: auto; }
+  a { color: var(--shimmer); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ::selection { background: rgba(161, 115, 255, 0.45); color: #fff; }
 
   /* ════════════════════════════════════════════════════════════════════════
-     "Why does this matter" — use cases
+     Floating hexagonal background (the "memory cells")
+     SVG hexagon repeated as a tiled pattern; we float a few of them with
+     keyframes for a slow ambient drift. CSS only — no JS, no canvas.
      ════════════════════════════════════════════════════════════════════════ */
-  .uc-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
-    gap: 22px;
-    margin-top: 44px;
-  }
-  .uc-card {
-    background: var(--bg-1);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 30px 28px;
-    transition: all 250ms var(--ease);
-    position: relative;
-    overflow: hidden;
-  }
-  .uc-card::after {
-    content: '';
-    position: absolute;
+  .hex-field {
+    position: fixed;
     inset: 0;
-    background: radial-gradient(400px 200px at 50% -20%,
-      var(--card-glow, rgba(139,108,255,0.18)), transparent 70%);
-    opacity: 0;
-    transition: opacity 300ms;
+    z-index: 0;
+    overflow: hidden;
     pointer-events: none;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(161,115,255,0.18), transparent 70%),
+      radial-gradient(900px 500px at 0% 110%,  rgba(255,184,107,0.10), transparent 70%),
+      var(--bg-0);
   }
-  .uc-card:hover { transform: translateY(-6px); border-color: var(--line-strong); box-shadow: var(--shadow-lg); }
-  .uc-card:hover::after { opacity: 1; }
-  .uc-card .ico {
-    width: 56px; height: 56px;
-    border-radius: 14px;
-    display: grid; place-items: center;
-    font-size: 28px;
-    margin-bottom: 18px;
-    transition: transform 300ms var(--ease-bounce);
+  .hex-field::before {
+    content: "";
+    position: absolute;
+    inset: -10%;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='104' viewBox='0 0 90 104'><polygon points='45,2 88,26 88,78 45,102 2,78 2,26' fill='none' stroke='rgba(180,150,255,0.10)' stroke-width='1'/></svg>");
+    background-size: 90px 104px;
+    opacity: 0.55;
+    animation: hex-drift 60s linear infinite;
   }
-  .uc-card:hover .ico { transform: rotate(-8deg) scale(1.1); }
-  .uc-card.laptop  .ico { background: rgba(40,212,200,0.14);  color: var(--accent-2); --card-glow: rgba(40,212,200,0.20); }
-  .uc-card.long    .ico { background: rgba(139,108,255,0.16); color: var(--accent);   --card-glow: rgba(139,108,255,0.20); }
-  .uc-card.cheap   .ico { background: rgba(255,149, 80,0.14); color: var(--accent-3); --card-glow: rgba(255,149, 80,0.20); }
-  .uc-card h3 { font-size: 19px; margin-bottom: 10px; }
-  .uc-card p { color: var(--fg-mute); margin: 0 0 12px; font-size: 14.5px; line-height: 1.6; }
-  .uc-card .num-big {
-    font-family: var(--font-mono);
-    font-size: 34px;
-    font-weight: 800;
-    background: linear-gradient(135deg, #fff, var(--accent-2));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    margin-top: 10px;
+  @keyframes hex-drift {
+    0%   { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(-90px, -104px, 0); }
   }
-  .uc-card.long  .num-big { background: linear-gradient(135deg, #fff, var(--accent)); -webkit-background-clip: text; background-clip: text; }
-  .uc-card.cheap .num-big { background: linear-gradient(135deg, #fff, var(--accent-3)); -webkit-background-clip: text; background-clip: text; }
+
+  /* Three "feature" hexagons drifting independently for parallax depth.
+     Each is just a CSS-clipped div with a soft glow. */
+  .hex-blob {
+    position: absolute;
+    width: 120px;
+    height: 138px;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    background: radial-gradient(circle at 50% 50%, rgba(161,115,255,0.18), transparent 70%);
+    filter: blur(6px);
+    animation: hex-float 18s ease-in-out infinite;
+  }
+  .hex-blob.b { top: 20%;  left: 12%; width: 180px; height: 208px;
+                animation-duration: 26s; animation-delay: -8s;
+                background: radial-gradient(circle at 50% 50%, rgba(255,184,107,0.10), transparent 70%); }
+  .hex-blob.c { top: 60%;  left: 78%; width: 220px; height: 254px;
+                animation-duration: 32s; animation-delay: -3s; }
+  .hex-blob.d { top: 78%;  left: 30%; width: 140px; height: 162px;
+                animation-duration: 22s; animation-delay: -14s;
+                background: radial-gradient(circle at 50% 50%, rgba(193,164,255,0.14), transparent 70%); }
+  @keyframes hex-float {
+    0%, 100% { transform: translate3d(0, 0, 0)   rotate(0deg); }
+    50%      { transform: translate3d(20px, -28px, 0) rotate(8deg); }
+  }
 
   /* ════════════════════════════════════════════════════════════════════════
-     "How it works" — 3 step animated diagram
+     Page layout
      ════════════════════════════════════════════════════════════════════════ */
-  .steps {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 22px;
-    margin-top: 50px;
-    position: relative;
-  }
-  .steps::before {
-    content: '';
-    position: absolute;
-    top: 70px;
-    left: 16%;
-    right: 16%;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), var(--accent-3), transparent);
-    z-index: 0;
-    opacity: 0.4;
-  }
-  @media (max-width: 760px) { .steps { grid-template-columns: 1fr; } .steps::before { display: none; } }
-  .step {
-    background: var(--bg-card);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 30px 26px;
-    text-align: center;
+  main {
     position: relative;
     z-index: 1;
-    transition: all 280ms var(--ease);
-  }
-  .step:hover { border-color: var(--line-strong); transform: translateY(-4px); }
-  .step .step-num {
-    width: 36px; height: 36px;
-    border-radius: 50%;
-    display: grid; place-items: center;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: #06070b;
-    font-weight: 800;
-    margin: 0 auto 18px;
-    font-size: 15px;
-  }
-  .step .step-icon {
-    width: 80px; height: 80px;
-    margin: 0 auto 22px;
-    display: grid; place-items: center;
-    border-radius: 20px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid var(--line);
-  }
-  .step .step-icon svg { width: 50px; height: 50px; }
-  .step.s1 .step-icon { box-shadow: 0 0 30px rgba(40,212,200,0.18); }
-  .step.s2 .step-icon { box-shadow: 0 0 30px rgba(139,108,255,0.20); }
-  .step.s3 .step-icon { box-shadow: 0 0 30px rgba(255,149, 80,0.18); }
-  .step h3 { font-size: 18px; margin-bottom: 10px; }
-  .step p { color: var(--fg-mute); font-size: 14.5px; margin: 0; line-height: 1.6; }
-
-  /* spinning rotation inside step 2 svg */
-  .spin-slow { animation: spin 12s linear infinite; transform-origin: center; }
-  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-  .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; transform-origin: center; }
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 0.4; transform: scale(0.85); }
-    50%      { opacity: 1;   transform: scale(1.1); }
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 56px 32px 96px;
   }
 
-  /* ════════════════════════════════════════════════════════════════════════
-     compare panel
-     ════════════════════════════════════════════════════════════════════════ */
-  .compare {
-    margin-top: 50px;
-    background: var(--bg-1);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 40px;
-    box-shadow: var(--shadow-md);
+  /* ─── Top bar ─────────────────────────────────────────────────────── */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 64px;
   }
-  .compare-tabs {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 32px;
-    flex-wrap: wrap;
-  }
-  .tab-btn {
-    flex: 1;
-    min-width: 130px;
-    padding: 16px 20px;
-    background: var(--bg-2);
-    border: 2px solid transparent;
-    color: var(--fg);
-    border-radius: 14px;
-    cursor: pointer;
-    font-family: var(--font-sans);
-    font-size: 15px;
-    font-weight: 600;
-    transition: all 240ms var(--ease);
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-  .tab-btn::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: var(--tab-bg, transparent);
-    opacity: 0;
-    transition: opacity 250ms;
-  }
-  .tab-btn > * { position: relative; z-index: 1; }
-  .tab-btn:hover { transform: translateY(-2px); }
-  .tab-btn .label {
-    display: block;
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--fg-mute);
-    margin-bottom: 6px;
-    transition: color 200ms;
-  }
-  .tab-btn.fp16 { --tab-bg: linear-gradient(135deg, rgba(93,131,255,0.30), rgba(93,131,255,0.05)); }
-  .tab-btn.int8 { --tab-bg: linear-gradient(135deg, rgba(40,212,200,0.30), rgba(40,212,200,0.05)); }
-  .tab-btn.int4 { --tab-bg: linear-gradient(135deg, rgba(255,149, 80,0.30), rgba(255,149, 80,0.05)); }
-  .tab-btn.int2 { --tab-bg: linear-gradient(135deg, rgba(255, 94,148,0.30), rgba(255, 94,148,0.05)); }
-
-  .tab-btn.active.fp16 { border-color: var(--accent-fp16); color: var(--accent-fp16); }
-  .tab-btn.active.int8 { border-color: var(--accent-2);    color: var(--accent-2); }
-  .tab-btn.active.int4 { border-color: var(--accent-3);    color: var(--accent-3); }
-  .tab-btn.active.int2 { border-color: var(--accent-4);    color: var(--accent-4); }
-  .tab-btn.active::before { opacity: 1; }
-
-  .compare-body {
-    display: grid;
-    grid-template-columns: 1.1fr 1fr;
-    gap: 36px;
-    align-items: stretch;
-  }
-  @media (max-width: 880px) { .compare-body { grid-template-columns: 1fr; } }
-
-  .compare-stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    align-content: start;
-  }
-  .compare-stat {
-    background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 22px 20px;
-    transition: border-color 250ms;
-  }
-  .compare-stat .lbl {
-    font-size: 11px;
-    color: var(--fg-mute);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    margin-bottom: 10px;
-  }
-  .compare-stat .num {
-    font-family: var(--font-mono);
-    font-size: 32px;
-    font-weight: 800;
-    color: var(--fg);
-    transition: color 300ms;
-  }
-  .compare-stat .num small {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--fg-mute);
-    margin-left: 4px;
-  }
-  .compare-stat .desc { font-size: 12px; color: var(--fg-dim); margin-top: 6px; }
-
-  .compare-viz {
-    background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 28px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
-  .quality-bar, .size-bar {
-    margin: 16px 0;
-  }
-  .qs-label {
-    display: flex; justify-content: space-between;
-    font-size: 12px;
-    color: var(--fg-mute);
-    margin-bottom: 8px;
-    letter-spacing: 0.06em;
-  }
-  .qs-label .qs-val {
-    font-family: var(--font-mono);
-    color: var(--fg);
-    font-weight: 700;
-  }
-  .qs-track {
-    background: rgba(255,255,255,0.05);
-    border-radius: 99px;
-    height: 14px;
-    overflow: hidden;
-    position: relative;
-  }
-  .qs-fill {
-    height: 100%;
-    border-radius: 99px;
-    width: 0;
-    transition: width 700ms var(--ease), background 350ms;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.20);
-  }
-  .qs-fill.quality { background: linear-gradient(90deg, var(--accent-good), #82e898); }
-  .qs-fill.size    { background: linear-gradient(90deg, var(--accent-3), var(--accent-4)); }
-
-  /* size-cube visualization that shrinks per mode */
-  .size-cube {
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    height: 200px;
-    margin-top: 20px;
-    gap: 14px;
-  }
-  .size-cube .cube {
-    width: 70px;
-    background: linear-gradient(180deg, var(--cube-c, var(--accent-2)), rgba(0,0,0,0.0));
-    border-top: 3px solid var(--cube-c, var(--accent-2));
-    border-radius: 8px 8px 0 0;
-    transition: height 700ms var(--ease), background 400ms;
-    position: relative;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: 8px;
-    font-size: 11px;
-    font-family: var(--font-mono);
-    color: var(--fg);
-    letter-spacing: 0.08em;
-  }
-  .size-cube .cube[data-mode="fp16"] { --cube-c: var(--accent-fp16); }
-  .size-cube .cube[data-mode="int8"] { --cube-c: var(--accent-2); }
-  .size-cube .cube[data-mode="int4"] { --cube-c: var(--accent-3); }
-  .size-cube .cube[data-mode="int2"] { --cube-c: var(--accent-4); }
-  .size-cube .cube.dim { opacity: 0.30; }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     calculator
-     ════════════════════════════════════════════════════════════════════════ */
-  .calc {
-    margin-top: 40px;
-    background: var(--bg-1);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 36px;
-    box-shadow: var(--shadow-md);
-  }
-  .calc-grid {
-    display: grid;
-    grid-template-columns: 380px 1fr;
-    gap: 40px;
-    align-items: start;
-  }
-  @media (max-width: 880px) { .calc-grid { grid-template-columns: 1fr; } }
-
-  .calc-controls label {
-    display: block;
-    font-size: 12px;
-    color: var(--fg-mute);
-    margin: 18px 0 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    font-weight: 600;
-  }
-  .calc-controls .row {
-    display: flex; justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 8px;
-  }
-  .calc-controls .val {
-    font-family: var(--font-mono);
-    font-size: 30px;
-    font-weight: 800;
-    color: var(--fg);
-  }
-  .calc-controls .unit { color: var(--fg-mute); font-size: 14px; margin-left: 6px; }
-  .calc-controls input[type=range] {
-    width: 100%;
-    height: 8px;
-    -webkit-appearance: none;
-    appearance: none;
-    background: linear-gradient(90deg,
-      var(--accent-fp16) 0%,
-      var(--accent-2) 30%,
-      var(--accent-3) 60%,
-      var(--accent-4) 100%);
-    border-radius: 99px;
-    outline: none;
-    cursor: pointer;
-  }
-  .calc-controls input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 26px; height: 26px;
-    background: white;
-    border-radius: 50%;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.6), 0 0 0 4px rgba(139,108,255,0.30);
-    cursor: pointer;
-    border: 3px solid var(--accent);
-    transition: transform 150ms var(--ease-bounce);
-  }
-  .calc-controls input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); }
-  .calc-controls input[type=range]::-moz-range-thumb {
-    width: 26px; height: 26px;
-    background: white;
-    border-radius: 50%;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.6);
-    cursor: pointer;
-    border: 3px solid var(--accent);
-  }
-  .calc-controls select {
-    width: 100%;
-    padding: 12px 16px;
-    background: var(--bg-2);
-    border: 1px solid var(--line-strong);
-    color: var(--fg);
-    border-radius: 12px;
-    font-size: 14px;
-    font-family: var(--font-mono);
-    cursor: pointer;
-    transition: border-color 200ms;
-  }
-  .calc-controls select:hover { border-color: var(--accent); }
-
-  .calc-rec {
-    margin-top: 26px;
-    padding: 20px 22px;
-    border-radius: 14px;
-    background: rgba(139,108,255,0.10);
-    border: 1px solid rgba(139,108,255,0.32);
-    font-size: 14px;
-    transition: all 300ms;
-  }
-  .calc-rec strong {
-    color: var(--accent);
+  .brand {
     font-family: var(--font-mono);
     font-size: 18px;
-  }
-  .calc-rec code {
-    background: rgba(0,0,0,0.30);
-    padding: 3px 10px;
-    border-radius: 6px;
+    letter-spacing: 0.04em;
     color: var(--fg);
-    display: inline-block;
-    margin-top: 4px;
+    display: inline-flex; align-items: center; gap: 10px;
   }
+  .brand-dot {
+    width: 10px; height: 10px;
+    border-radius: 999px;
+    background: var(--cold);
+    box-shadow: 0 0 12px var(--cold);
+    animation: pulse-soft 2.4s var(--ease) infinite;
+  }
+  @keyframes pulse-soft {
+    0%, 100% { box-shadow: 0 0 12px var(--cold); }
+    50%      { box-shadow: 0 0 24px var(--cold), 0 0 44px rgba(161,115,255,0.5); }
+  }
+  .nav { display: flex; gap: 28px; font-size: 14px; color: var(--fg-mute); }
+  .nav a { color: var(--fg-mute); }
+  .nav a:hover { color: var(--fg); text-decoration: none; }
 
-  .calc-chart .bar-row {
-    display: grid;
-    grid-template-columns: 70px 1fr 130px;
-    align-items: center;
-    gap: 14px;
-    padding: 12px 0;
-    border-bottom: 1px dashed var(--line);
-    font-family: var(--font-mono);
-    font-size: 13.5px;
-  }
-  .calc-chart .bar-row:last-child { border-bottom: 0; }
-  .calc-chart .lbl { font-weight: 700; }
-  .calc-chart .lbl small { display: block; font-size: 10px; color: var(--fg-dim); font-weight: 400; margin-top: 2px; }
-  .calc-chart .val { text-align: right; color: var(--fg); font-weight: 700; font-size: 14px; }
-  .calc-chart .bar {
-    height: 26px;
-    border-radius: 8px;
-    transition: width 700ms var(--ease), background 400ms;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.20);
-    min-width: 6px;
-    position: relative;
-    overflow: hidden;
-  }
-  .calc-chart .bar::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent);
-    animation: bar-shine 3s ease-in-out infinite;
-  }
-  @keyframes bar-shine {
-    0%   { transform: translateX(-100%); }
-    100% { transform: translateX(200%); }
-  }
-  .calc-chart .bar.fp16 { background: linear-gradient(90deg, var(--accent-fp16), #84a4ff); }
-  .calc-chart .bar.int8 { background: linear-gradient(90deg, var(--accent-2), #5fefe1); }
-  .calc-chart .bar.int4 { background: linear-gradient(90deg, var(--accent-3), #ffba80); }
-  .calc-chart .bar.int2 { background: linear-gradient(90deg, var(--accent-4), #ff8eb6); }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     benchmark table
-     ════════════════════════════════════════════════════════════════════════ */
-  .bench {
-    margin-top: 44px;
-    overflow-x: auto;
-    background: var(--bg-1);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-  }
-  table.bench-tbl {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-  }
-  table.bench-tbl th, table.bench-tbl td {
-    padding: 16px 20px;
-    text-align: left;
-    border-bottom: 1px solid var(--line);
-    font-family: var(--font-mono);
-  }
-  table.bench-tbl th {
-    color: var(--fg-mute);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 11px;
-    background: var(--bg-2);
-  }
-  table.bench-tbl tr {
-    transition: background 180ms;
-  }
-  table.bench-tbl tbody tr:hover {
-    background: rgba(139,108,255,0.04);
-  }
-  table.bench-tbl tr:last-child td { border-bottom: 0; }
-  table.bench-tbl td.mode { font-weight: 800; font-size: 16px; }
-  table.bench-tbl td.mode.fp16 { color: var(--accent-fp16); }
-  table.bench-tbl td.mode.int8 { color: var(--accent-2); }
-  table.bench-tbl td.mode.int4 { color: var(--accent-3); }
-  table.bench-tbl td.mode.int2 { color: var(--accent-4); }
-  .pill {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 99px;
-    font-size: 11px;
-    margin-left: 6px;
-    background: rgba(255,255,255,0.06);
-    color: var(--fg-mute);
-  }
-  .pill.new { background: rgba(76,217,100,0.14); color: var(--accent-good); }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     code blocks
-     ════════════════════════════════════════════════════════════════════════ */
-  .code-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
-    gap: 22px;
-    margin-top: 44px;
-  }
-  .code-card {
-    background: var(--bg-1);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    transition: all 250ms var(--ease);
-  }
-  .code-card:hover { border-color: var(--line-strong); transform: translateY(-3px); box-shadow: var(--shadow-md); }
-  .code-card .hd {
-    padding: 14px 20px;
-    background: var(--bg-2);
-    border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 13px;
-    color: var(--fg-mute);
-  }
-  .code-card .hd .dot {
-    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-    background: var(--accent-3); margin-right: 6px;
-    transition: transform 200ms;
-  }
-  .code-card:hover .hd .dot { transform: scale(1.3); }
-  .code-card .hd .dot:nth-child(2) { background: var(--accent-warn); }
-  .code-card .hd .dot:nth-child(3) { background: var(--accent-good); }
-  .code-card pre {
-    margin: 0; padding: 24px; overflow-x: auto;
-    font-size: 13px; line-height: 1.65; color: var(--fg);
-  }
-  .code-card pre .k  { color: #c39bff; }
-  .code-card pre .s  { color: #95f0e5; }
-  .code-card pre .n  { color: #ff9550; }
-  .code-card pre .c  { color: var(--fg-dim); font-style: italic; }
-  .code-card pre .fn { color: var(--accent-2); }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     tooltips for technical terms
-     ════════════════════════════════════════════════════════════════════════ */
-  .tip {
-    border-bottom: 1px dotted var(--accent-2);
-    cursor: help;
-    color: inherit;
-    position: relative;
-  }
-  .tip:hover { color: var(--accent-2); }
-  #tooltip {
-    position: fixed;
-    z-index: 1000;
-    max-width: 320px;
-    padding: 12px 16px;
-    background: linear-gradient(135deg, #1d2230, #0e1018);
-    border: 1px solid var(--accent);
-    border-radius: 12px;
-    box-shadow: 0 16px 44px rgba(0,0,0,0.7), 0 0 24px rgba(139,108,255,0.30);
-    font-size: 13.5px;
-    line-height: 1.55;
-    color: var(--fg);
-    pointer-events: none;
-    opacity: 0;
-    transform: translateY(6px);
-    transition: opacity 180ms, transform 180ms;
-  }
-  #tooltip.show { opacity: 1; transform: translateY(0); }
-  #tooltip strong { color: var(--accent-2); }
-
-  /* ────────── footer ────────── */
-  footer {
-    border-top: 1px solid var(--line);
-    padding: 50px 0 70px;
-    color: var(--fg-mute);
-    font-size: 13px;
-  }
-  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
-  .badge {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 99px;
-    background: rgba(40,212,200,0.10);
-    color: var(--accent-2);
-    border: 1px solid rgba(40,212,200,0.24);
-    font-size: 11px;
-    font-family: var(--font-mono);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    font-weight: 600;
-  }
-
-  ::selection { background: rgba(139,108,255,0.45); color: #fff; }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     live banner + status badges (server.py integration)
-     ════════════════════════════════════════════════════════════════════════ */
-  .liveband {
-    position: sticky; top: 0; z-index: 60;
-    padding: 11px 20px;
-    text-align: center;
-    font-size: 13.5px;
-    font-family: var(--font-mono);
-    border-bottom: 1px solid var(--line);
-    background: linear-gradient(90deg, rgba(255,200, 87,0.10), rgba(255,149, 80,0.12), rgba(255,200, 87,0.10));
-    color: var(--accent-warn);
-    transition: background 600ms, color 400ms, border-color 400ms;
-  }
-  .liveband.live {
-    background: linear-gradient(90deg, rgba(76,217,100,0.10), rgba(40,212,200,0.14), rgba(76,217,100,0.10));
-    color: var(--accent-good);
-    border-bottom-color: rgba(76,217,100,0.30);
-  }
-  .liveband.checking { color: var(--fg-mute); }
-  .liveband code {
-    background: rgba(0,0,0,0.30);
-    padding: 2px 8px;
-    border-radius: 6px;
-    color: var(--fg);
-    margin: 0 4px;
-  }
-  .liveband b { font-weight: 700; }
-
-  /* nudge sticky nav down so the banner doesn't overlap it */
-  .liveband + nav.top { top: 44px; }
-  /* …and reset nav stickiness when banner hidden */
-  body.no-band nav.top { top: 0; }
-
-  /* live/estimated badge that appears on each compare-stat */
-  .badge-live, .badge-est {
-    display: inline-block;
-    margin-left: 8px;
-    padding: 2px 8px;
-    font-size: 9px;
+  /* ─── Hero — headline + the two compressing columns ───────────────── */
+  .hero { margin-bottom: 88px; }
+  .hero h1 {
+    font-size: clamp(34px, 4.8vw, 60px);
     font-weight: 700;
-    letter-spacing: 0.14em;
-    border-radius: 99px;
-    vertical-align: 2px;
-    font-family: var(--font-mono);
-    transition: opacity 300ms;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    margin: 0 0 20px;
+    background: linear-gradient(95deg, #fff 30%, var(--shimmer) 60%, var(--cold) 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
-  .badge-live {
-    background: rgba(76,217,100,0.16);
-    color: var(--accent-good);
-    border: 1px solid rgba(76,217,100,0.40);
-    animation: badge-pulse 2.4s ease-in-out infinite;
-  }
-  .badge-est {
-    background: rgba(255,200, 87,0.10);
-    color: var(--accent-warn);
-    border: 1px solid rgba(255,200, 87,0.30);
-  }
-  @keyframes badge-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(76,217,100,0.35); }
-    50%      { box-shadow: 0 0 0 6px rgba(76,217,100,0.00); }
-  }
-  .compare-stat .lbl { display: flex; justify-content: space-between; align-items: center; }
-
-  .live-only { display: none; }
-  body.live .live-only { display: inline-flex; }
-  body.live .est-only  { display: none; }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     benchmark panel — appears under the compare section when "Run benchmark" pressed
-     ════════════════════════════════════════════════════════════════════════ */
-  .bench-cta {
-    margin-top: 28px;
-    padding-top: 22px;
-    border-top: 1px solid var(--line);
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  }
-  .bench-cta .info { color: var(--fg-mute); font-size: 13px; flex: 1; min-width: 200px; }
-  .bench-cta .btn { white-space: nowrap; }
-  .bench-cta .btn[disabled] {
-    opacity: 0.45;
-    cursor: not-allowed;
-    transform: none !important;
-  }
-  .bench-results {
-    margin-top: 28px;
-    background: var(--bg-2);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 0;
-    overflow: hidden;
-    max-height: 0;
-    opacity: 0;
-    transition: max-height 400ms var(--ease), opacity 400ms, padding 400ms;
-  }
-  .bench-results.show {
-    max-height: 720px;
-    opacity: 1;
-    padding: 4px 0;
-  }
-  .bench-results .summary {
-    padding: 22px 28px 14px;
+  .hero .sub {
     color: var(--fg-mute);
-    font-size: 13.5px;
-  }
-  .bench-results .summary .pill {
-    background: rgba(76,217,100,0.16);
-    color: var(--accent-good);
-    border: 1px solid rgba(76,217,100,0.30);
-    margin-right: 4px;
-  }
-  .bench-results table {
-    width: 100%;
-    border-collapse: collapse;
-    font-family: var(--font-mono);
-    font-size: 13.5px;
-  }
-  .bench-results th, .bench-results td {
-    padding: 13px 28px;
-    border-bottom: 1px solid var(--line);
-    text-align: left;
-  }
-  .bench-results th {
-    color: var(--fg-mute);
-    font-weight: 600;
-    background: rgba(0,0,0,0.20);
-    font-size: 11px;
-    letter-spacing: 0.10em;
-    text-transform: uppercase;
-  }
-  .bench-results tr:last-child td { border-bottom: 0; }
-  .bench-results td.mode { font-weight: 800; font-size: 15px; }
-  .bench-results td.mode.int8 { color: var(--accent-2); }
-  .bench-results td.mode.int4 { color: var(--accent-3); }
-  .bench-results td.mode.int2 { color: var(--accent-4); }
-  .bench-results .micro {
-    padding: 14px 28px 22px;
-    color: var(--fg-dim);
-    font-size: 12px;
-    line-height: 1.6;
-  }
-  .bench-running {
-    display: inline-flex; align-items: center; gap: 8px;
-    color: var(--fg-mute);
-    font-size: 13px;
-  }
-  .spinner {
-    display: inline-block;
-    width: 14px; height: 14px;
-    border: 2px solid var(--line-strong);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
+    font-size: clamp(15px, 1.3vw, 18px);
+    max-width: 640px;
+    margin: 0 0 56px;
   }
 
-  /* respect reduced motion */
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.05ms !important;
-    }
-    .reveal { opacity: 1; transform: none; }
-  }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     dashboard v2 — free-input savings calculator  (W108)
-     ════════════════════════════════════════════════════════════════════════ */
-  .v2 {
-    margin-top: 44px;
-    background: linear-gradient(135deg, rgba(139,108,255,0.06), rgba(40,212,200,0.04));
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 36px;
-    box-shadow: var(--shadow-md);
-  }
-  .v2-grid {
+  /* The two-column showcase. Left: FP16 reference. Right: live tier. */
+  .showcase {
     display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: 32px;
-    align-items: start;
+    grid-template-columns: 1fr 220px 1fr;     /* col | gap | col */
+    align-items: end;
+    gap: 0;
+    padding: 32px 0 24px;
+    min-height: 560px;
+    position: relative;
   }
-  @media (max-width: 880px) { .v2-grid { grid-template-columns: 1fr; } }
-  .v2-controls label {
-    display: block;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.10em;
-    color: var(--fg-mute);
-    margin: 18px 0 6px;
+
+  .col {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 12px;
   }
-  .v2-controls label:first-child { margin-top: 0; }
-  .v2-controls input[type=number] {
-    width: 100%;
-    background: var(--bg-2);
-    color: var(--fg);
-    border: 1px solid var(--line-strong);
-    border-radius: 10px;
-    padding: 10px 14px;
+  .col-label {
     font-family: var(--font-mono);
-    font-size: 16px;
-    outline: none;
-    transition: border-color 150ms;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
   }
-  .v2-controls input[type=number]:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(139,108,255,0.18);
-  }
-  .v2-controls .arch-pill {
-    margin-top: 18px;
-    padding: 12px 14px;
-    border-radius: 10px;
-    background: rgba(139,108,255,0.10);
-    border: 1px solid rgba(139,108,255,0.25);
+  .col-cap {
+    width: 200px;
+    text-align: center;
     font-size: 13px;
     color: var(--fg-mute);
-    line-height: 1.5;
+    margin-top: 8px;
   }
-  .v2-controls .arch-pill strong { color: var(--accent); font-weight: 700; }
-  .v2-table {
+
+  /* Memory column — stack of blocks. Each block is a single div. */
+  .stack {
+    width: 96px;
+    height: 480px;
+    display: flex;
+    flex-direction: column-reverse;     /* base of stack at bottom */
+    justify-content: flex-start;
+    gap: var(--block-gap, 8px);
+    position: relative;
+  }
+  .block {
     width: 100%;
-    border-collapse: collapse;
+    height: var(--block-h, 28px);
+    border-radius: 6px;
+    background: linear-gradient(180deg, var(--hot), #ffd9a8);
+    box-shadow: 0 0 16px rgba(255,184,107,0.45),
+                inset 0 1px 0 rgba(255,255,255,0.4);
+    transition: background 600ms var(--ease),
+                box-shadow 600ms var(--ease),
+                height     500ms var(--ease),
+                opacity    400ms var(--ease);
+  }
+  /* Reference column: solid amber, full spacing */
+  .stack.fp16 {
+    --block-h: 28px;
+    --block-gap: 8px;
+  }
+
+  /* Live column: drives via CSS custom props from JS — only var() updates */
+  .stack.live {
+    --block-h: 24px;
+    --block-gap: 5px;
+    --tier-hue: 26;        /* hot amber HSL hue */
+    --tier-sat: 100%;
+    --tier-light: 70%;
+    --tier-glow: 0.45;
+  }
+  .stack.live .block {
+    background: linear-gradient(180deg,
+                hsl(var(--tier-hue) var(--tier-sat) var(--tier-light)),
+                hsl(var(--tier-hue) calc(var(--tier-sat) - 20%) calc(var(--tier-light) + 12%)));
+    box-shadow: 0 0 16px hsla(var(--tier-hue), var(--tier-sat), var(--tier-light), var(--tier-glow)),
+                inset 0 1px 0 rgba(255,255,255,0.32);
+  }
+
+  /* The middle gap — shows the saving as a glowing arc + label */
+  .gap {
+    position: relative;
+    height: 480px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px;
+  }
+  .gap-arc {
+    width: 160px; height: 160px;
+    border-radius: 999px;
+    background:
+      conic-gradient(from -90deg,
+        var(--cold) 0deg,
+        var(--cold) calc(var(--save-deg, 220deg)),
+        rgba(255,255,255,0.06) calc(var(--save-deg, 220deg)),
+        rgba(255,255,255,0.06) 360deg);
+    -webkit-mask: radial-gradient(circle at center, transparent 56%, black 58%);
+            mask: radial-gradient(circle at center, transparent 56%, black 58%);
+    box-shadow: 0 0 60px rgba(161,115,255,0.30);
+    transition: background 700ms var(--ease), box-shadow 700ms var(--ease);
+  }
+  .gap-pct {
+    position: absolute;
     font-family: var(--font-mono);
-    font-size: 14px;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--shimmer);
+    text-shadow: 0 0 18px rgba(161,115,255,0.55);
+    transition: color 600ms var(--ease);
   }
-  .v2-table th, .v2-table td {
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--line);
-    text-align: left;
-  }
-  .v2-table th {
-    color: var(--fg-mute);
-    font-weight: 600;
+  .gap-cap {
+    position: absolute;
+    bottom: 64px;
     font-size: 11px;
-    letter-spacing: 0.10em;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-    background: var(--bg-2);
-  }
-  .v2-table tr:last-child td { border-bottom: 0; }
-  .v2-table td.v2-mode { font-weight: 800; font-size: 15px; }
-  .v2-table td.v2-mode.fp16 { color: var(--accent-fp16); }
-  .v2-table td.v2-mode.int8 { color: var(--accent-2); }
-  .v2-table td.v2-mode.int4 { color: var(--accent-3); }
-  .v2-table td.v2-mode.int2 { color: var(--accent-4); }
-  .v2-savings { font-weight: 700; color: var(--accent-good); }
-  .v2-recommended { background: rgba(76,217,100,0.06); }
-  .v2-source {
-    margin-top: 12px;
-    font-size: 11px;
     color: var(--fg-dim);
-    line-height: 1.7;
   }
 
-  /* ════════════════════════════════════════════════════════════════════════
-     3-D ISOMETRIC MEMORY BLOCKS  (W → spring entrance, scaleY compression)
-     ════════════════════════════════════════════════════════════════════════ */
-  .iso-scene {
-    height: 280px;
+  /* ─── Slider rail with three orbs above ──────────────────────────── */
+  .slider-zone {
+    margin: 56px auto 0;
+    max-width: 760px;
+    padding: 24px 32px 40px;
+  }
+
+  .orbs {
     display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    perspective: 680px;
-    perspective-origin: 50% 58%;
-    margin: 28px 0 0;
-    overflow: visible;
-    position: relative;
+    justify-content: space-between;
+    align-items: end;
+    padding: 0 6px 18px;
   }
-  .iso-view {
-    display: flex;
-    align-items: flex-end;
-    gap: 22px;
-    transform: rotateX(45deg) rotateZ(-45deg);
-    transform-style: preserve-3d;
-  }
-  .iso-block {
-    position: relative;
-    width: 54px;
-    height: var(--bh, 100px);
-    transform-style: preserve-3d;
-    transform: scale(0);
-    will-change: transform;
-    transition:
-      height 900ms cubic-bezier(0.23, 1, 0.32, 1),
-      transform 700ms cubic-bezier(0.34, 1.56, 0.64, 1),
-      opacity 350ms;
-    background: transparent;
-  }
-  .iso-block.entered { transform: scale(1); }
-  .iso-block.dim     { opacity: 0.15; }
-
-  .iso-face { position: absolute; backface-visibility: hidden; }
-
-  .iso-face.f-front {
-    inset: 0;
-    background: var(--bc, #8b6cff);
-  }
-  .iso-face.f-side {
-    top: 0; left: 0;
-    width: 54px; height: 100%;
-    transform-origin: right center;
-    transform: rotateY(90deg);
-    background: color-mix(in srgb, var(--bc, #8b6cff) 78%, black 22%);
-  }
-  .iso-face.f-top {
-    top: 0; left: 0;
-    width: 54px; height: 54px;
-    transform-origin: top center;
-    transform: rotateX(90deg);
-    background: color-mix(in srgb, var(--bc, #8b6cff) 78%, white 22%);
-  }
-
-  .iso-labels {
-    display: flex;
-    justify-content: center;
-    gap: 22px;
-    margin-top: 14px;
-  }
-  .iso-lbl {
-    width: 54px;
-    text-align: center;
-    font: 700 10px/1 var(--font-mono);
-    letter-spacing: 0.10em;
-    text-transform: uppercase;
-    opacity: 0.65;
-    transition: opacity 350ms, color 350ms;
-  }
-  .iso-lbl.dim { opacity: 0.20; }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     ESCAPED BITS PARTICLE SYSTEM
-     ════════════════════════════════════════════════════════════════════════ */
-  .bit-particle {
-    position: fixed;
-    pointer-events: none;
-    font: 700 11px/1 var(--font-mono);
-    z-index: 9999;
-    animation: escapeBit 1.5s cubic-bezier(0.23, 1, 0.32, 1) both;
-    user-select: none;
-  }
-  @keyframes escapeBit {
-    0%   { opacity: 1; transform: translate(0,0) rotate(0deg) scale(1); }
-    60%  { opacity: 0.7; }
-    100% { opacity: 0; transform: translate(var(--dx),var(--dy)) rotate(var(--dr)) scale(0.3); }
-  }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     SNR WAVEFORM CANVAS
-     ════════════════════════════════════════════════════════════════════════ */
-  .snr-canvas-wrap {
-    margin: 16px 0 12px;
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    border: 1px solid var(--line);
-    background: rgba(0,0,0,0.25);
-    position: relative;
-  }
-  #snr-canvas { display: block; width: 100%; height: 80px; }
-
-  /* ════════════════════════════════════════════════════════════════════════
-     MODEL CHIP STRIP
-     ════════════════════════════════════════════════════════════════════════ */
-  .model-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin: 12px 0 4px;
-  }
-  .model-chip {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    padding: 6px 14px;
-    border-radius: 99px;
-    border: 1px solid var(--line-strong);
-    background: var(--bg-2);
-    color: var(--fg-mute);
+  .orb {
+    width: 18px; height: 18px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    transition: background 400ms var(--ease),
+                box-shadow 400ms var(--ease),
+                transform  400ms var(--ease);
     cursor: pointer;
-    font-family: var(--font-mono);
-    transition: transform 180ms cubic-bezier(0.34,1.56,0.64,1),
-                background 180ms, border-color 180ms,
-                box-shadow 180ms, color 180ms;
-    will-change: transform;
   }
-  .model-chip:hover {
-    border-color: var(--accent);
-    color: var(--fg);
-    transform: scale(1.04);
+  .orb[data-active="true"] {
+    transform: scale(1.55);
+    background: var(--orb-color, var(--hot));
+    box-shadow: 0 0 28px var(--orb-color, var(--hot)),
+                0 0 56px var(--orb-color, var(--hot));
+    animation: orb-pulse 1.6s var(--ease) infinite;
   }
-  .model-chip.active {
-    background: rgba(139,108,255,0.18);
-    border-color: var(--accent);
-    color: var(--accent);
-    transform: scale(1.06);
-    box-shadow: 0 0 14px rgba(124,58,237,0.60);
+  @keyframes orb-pulse {
+    0%, 100% { box-shadow: 0 0 22px var(--orb-color, var(--hot)),
+                            0 0 44px var(--orb-color, var(--hot)); }
+    50%      { box-shadow: 0 0 36px var(--orb-color, var(--hot)),
+                            0 0 80px var(--orb-color, var(--hot)); }
   }
-  .chip-label { font-size: 14px; font-weight: 700; }
-  .chip-sub   { font-size: 9px;  opacity: 0.6; letter-spacing: 0.08em; text-transform: uppercase; }
+  .orb[data-tier="int8"] { --orb-color: var(--hot); }
+  .orb[data-tier="int4"] { --orb-color: var(--warm); }
+  .orb[data-tier="int2"] { --orb-color: var(--cold); }
 
-  /* ════════════════════════════════════════════════════════════════════════
-     HEX GRID CANVAS  (behind the calculator section)
-     ════════════════════════════════════════════════════════════════════════ */
-  .calc { position: relative; overflow: hidden; }
-  #hex-canvas {
+  /* The slider itself — one input, no label */
+  .slider {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 14px;
+    background:
+      linear-gradient(90deg,
+        var(--hot)  0%,   var(--hot)  10%,
+        var(--warm) 50%,  var(--warm) 50%,
+        var(--cold) 90%,  var(--cold) 100%);
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06),
+                0 0 24px rgba(161,115,255,0.18);
+    outline: none;
+    cursor: pointer;
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 28px; height: 28px;
+    border-radius: 999px;
+    background: #fff;
+    border: 3px solid var(--cold);
+    box-shadow: 0 0 0 4px rgba(161,115,255,0.18),
+                0 0 28px rgba(255,255,255,0.6);
+    cursor: grab;
+    transition: transform 200ms var(--ease);
+  }
+  .slider::-webkit-slider-thumb:hover  { transform: scale(1.12); }
+  .slider::-webkit-slider-thumb:active { transform: scale(1.04); cursor: grabbing; }
+  .slider::-moz-range-thumb {
+    width: 28px; height: 28px;
+    border-radius: 999px;
+    background: #fff;
+    border: 3px solid var(--cold);
+    box-shadow: 0 0 0 4px rgba(161,115,255,0.18),
+                0 0 28px rgba(255,255,255,0.6);
+    cursor: grab;
+  }
+
+  /* ─── Three floating number cards ─────────────────────────────────── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin: 64px 0 56px;
+  }
+  .card {
+    position: relative;
+    background: var(--bg-glass);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 36px 28px;
+    text-align: center;
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    overflow: hidden;
+    transition: border-color 400ms var(--ease), transform 400ms var(--ease);
+  }
+  .card::before {
+    content: "";
     position: absolute;
     inset: 0;
-    border-radius: inherit;
+    background:
+      radial-gradient(700px 200px at 50% -50%, rgba(161,115,255,0.15), transparent 60%);
     pointer-events: none;
-    z-index: 0;
-    opacity: 0.5;
+    opacity: var(--card-glow, 0.6);
+    transition: opacity 600ms var(--ease);
   }
-  .calc-grid { position: relative; z-index: 1; }
+  .card[data-pulse="true"] {
+    animation: card-flash 800ms var(--ease);
+  }
+  @keyframes card-flash {
+    0%   { transform: scale(1.0); border-color: var(--cold); }
+    50%  { transform: scale(1.02); border-color: var(--shimmer); }
+    100% { transform: scale(1.0); border-color: var(--line); }
+  }
+  .card .num {
+    font-family: var(--font-mono);
+    font-size: clamp(38px, 5vw, 56px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    background: linear-gradient(180deg, #fff, var(--shimmer));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 24px rgba(161,115,255,0.28);
+    transition: filter 400ms var(--ease);
+  }
+  .card[data-tier="int8"] .num { background: linear-gradient(180deg, #fff, var(--hot));
+                                  -webkit-background-clip: text; background-clip: text; }
+  .card[data-tier="int4"] .num { background: linear-gradient(180deg, #fff, var(--warm));
+                                  -webkit-background-clip: text; background-clip: text; }
+  .card[data-tier="int2"] .num { background: linear-gradient(180deg, #fff, var(--cold));
+                                  -webkit-background-clip: text; background-clip: text; }
+  .card .num-suffix {
+    font-size: 0.42em;
+    color: var(--fg-dim);
+    margin-left: 4px;
+    letter-spacing: 0.04em;
+  }
+  .card .key {
+    margin-top: 14px;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+  }
 
-  /* ════════════════════════════════════════════════════════════════════════
-     SLIDER DISPLAY — width reserved so spring doesn't shift layout
-     ════════════════════════════════════════════════════════════════════════ */
-  #ctx-val { display: inline-block; min-width: 5ch; }
+  /* ─── Reasoning panel below cards ────────────────────────────────── */
+  .reason-panel {
+    max-width: 760px;
+    margin: 0 auto 80px;
+    padding: 24px 28px;
+    background: var(--bg-glass);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    color: var(--fg-mute);
+    font-size: 14px;
+    text-align: center;
+    transition: border-color 500ms var(--ease);
+  }
+  .reason-panel.glow { border-color: rgba(161,115,255,0.45); }
+  .reason-panel strong { color: var(--fg); font-weight: 600; }
+
+  /* ─── Crystal-lattice comparison table ───────────────────────────── */
+  .lattice-wrap { margin: 0 auto 80px; max-width: 1100px; }
+  .lattice-title {
+    font-size: 13px;
+    letter-spacing: 0.20em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    text-align: center;
+    margin-bottom: 22px;
+  }
+  .lattice {
+    display: grid;
+    grid-template-columns: 1.4fr repeat(4, 1fr);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    overflow: hidden;
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .lattice .lc {
+    padding: 18px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    border-right: 1px solid var(--line-soft);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--fg);
+    position: relative;
+    transition: background 500ms var(--ease), color 500ms var(--ease);
+  }
+  .lattice .lc:nth-child(5n) { border-right: 0; }
+  .lattice .lc.head {
+    font-size: 11px;
+    letter-spacing: 0.20em;
+    text-transform: uppercase;
+    color: var(--fg-mute);
+    background: rgba(255,255,255,0.02);
+    text-align: center;
+  }
+  .lattice .lc.row-label {
+    color: var(--fg-mute);
+    text-align: left;
+  }
+  .lattice .lc.cell { text-align: center; }
+
+  /* Active column: shimmer + glow. The "active" column is the live tier. */
+  .lattice .lc[data-col-active="true"] {
+    background:
+      linear-gradient(180deg,
+        rgba(161,115,255,0.08), rgba(161,115,255,0.02));
+    color: var(--fg);
+    box-shadow: inset 0 0 0 1px rgba(161,115,255,0.32);
+  }
+  .lattice .lc.head[data-col-active="true"] {
+    color: var(--shimmer);
+    text-shadow: 0 0 20px rgba(161,115,255,0.6);
+    background:
+      linear-gradient(180deg,
+        rgba(161,115,255,0.18), rgba(161,115,255,0.04));
+    animation: shimmer 2.4s linear infinite;
+  }
+  @keyframes shimmer {
+    0%, 100% { text-shadow: 0 0 14px rgba(161,115,255,0.4); }
+    50%      { text-shadow: 0 0 26px rgba(193,164,255,0.85); }
+  }
+
+  /* ─── Footer ─────────────────────────────────────────────────────── */
+  .foot {
+    text-align: center;
+    color: var(--fg-dim);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+  }
+  .foot a { color: var(--fg-mute); }
+
+  /* ─── Responsive ─────────────────────────────────────────────────── */
+  @media (max-width: 880px) {
+    .showcase {
+      grid-template-columns: 1fr 140px 1fr;
+      min-height: 460px;
+    }
+    .stack { width: 76px; height: 380px; }
+    .gap-arc { width: 120px; height: 120px; }
+    .cards { grid-template-columns: 1fr; }
+    .lattice { grid-template-columns: 1fr; }
+    .lattice .lc { border-right: 0; }
+  }
+  @media (max-width: 560px) {
+    .showcase { grid-template-columns: 1fr 100px 1fr; }
+    .stack { width: 60px; height: 320px; }
+    .gap-arc { width: 100px; height: 100px; }
+    .gap-pct { font-size: 22px; }
+  }
+
+  /* Honour the user's reduced-motion preference (a11y). */
+  @media (prefers-reduced-motion: reduce) {
+    .hex-field::before, .hex-blob, .brand-dot,
+    .orb[data-active="true"], .lattice .lc.head[data-col-active="true"],
+    .card[data-pulse="true"] {
+      animation: none !important;
+    }
+    .block, .gap-arc, .card, .lattice .lc {
+      transition-duration: 0ms !important;
+    }
+  }
 </style>
 </head>
 <body>
 
-<!-- ════════════ tooltip element (controlled by JS) ════════════ -->
-<div id="tooltip" role="tooltip"></div>
-
-<!-- ════════════ live-server banner (server.py integration) ════════════ -->
-<div id="liveband" class="liveband checking" role="status" aria-live="polite">
-  <span id="liveband-text">
-    ⟳  checking for the demo server…
-  </span>
+<!-- Floating hexagonal background — pure CSS, no JS, no canvas. -->
+<div class="hex-field" aria-hidden="true">
+  <div class="hex-blob"></div>
+  <div class="hex-blob b"></div>
+  <div class="hex-blob c"></div>
+  <div class="hex-blob d"></div>
 </div>
 
-<!-- ════════════ nav ════════════ -->
-<nav class="top">
-  <div class="wrap">
-    <div class="brand"><span class="logo"></span> Squish</div>
-    <ul>
-      <li><a href="#why">Why</a></li>
-      <li><a href="#how">How</a></li>
-      <li><a href="#compare">Compare</a></li>
-      <li><a href="#calc">Calculator</a></li>
-      <li><a href="#bench">Numbers</a></li>
-      <li><a href="#code">Code</a></li>
-    </ul>
-  </div>
-</nav>
+<main>
 
-<!-- ════════════ hero ════════════ -->
-<section class="hero">
-  <div class="wrap">
-    <div class="reveal">
-      <span class="badge">v9.23.0 · open source · MAY 2026</span>
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <span>squish</span>
     </div>
-    <h1 class="reveal delay-1">Squish.</h1>
-    <p class="tagline reveal delay-2">
-      Make your AI use <strong style="background:linear-gradient(135deg,var(--accent-3),var(--accent-4));-webkit-background-clip:text;background-clip:text;color:transparent">4× less memory</strong> without losing quality.
+    <nav class="nav">
+      <a href="https://github.com/squishai/squish">github</a>
+      <a href="https://huggingface.co/spaces/squish-community/squish-kv-quant">space</a>
+      <a href="https://github.com/squishai/squish/blob/main/BENCHMARKS.md">benchmarks</a>
+    </nav>
+  </div>
+
+  <!-- Hero -->
+  <section class="hero">
+    <h1>Compression, made visible.</h1>
+    <p class="sub">
+      Move the slider. Watch a 32K-token KV cache collapse from FP16 down
+      through INT8, INT4, INT2 — squish's three quantization tiers, in
+      real time. The compressed column is what your laptop actually
+      stores.
     </p>
-    <p class="pitch reveal delay-3">
-      Squish shrinks the part of a language model that grows with the
-      conversation — its <span class="tip" data-tip="Short-term memory of past tokens. As your conversation gets longer, this cache fills up and is what usually pushes models off your laptop and onto a server."><strong>memory cache</strong></span>
-      — so you can run bigger models, hold longer conversations, and serve
-      more users on the same hardware. One line of code switches between
-      three compression levels.
-    </p>
-    <div class="actions reveal delay-3">
-      <a href="#compare" class="btn primary">▸ Try the live demo</a>
-      <a href="#how"     class="btn">▸ See how it works</a>
-      <a href="#code"    class="btn">$ pip install squish</a>
-    </div>
 
-    <div class="hero-stats reveal delay-4">
-      <div class="stat"><div class="num" data-count="4" data-suffix="×">4×</div><div class="lbl">Smaller cache · highest compression mode</div></div>
-      <div class="stat"><div class="num" data-count="32" data-suffix="K">32K</div><div class="lbl">Context length on a 16 GB laptop</div></div>
-      <div class="stat"><div class="num" data-count="3" data-suffix=" modes">3 modes</div><div class="lbl">Pick the trade-off you want</div></div>
-      <div class="stat"><div class="num" data-count="1" data-suffix=" line">1 line</div><div class="lbl">To switch between them</div></div>
-    </div>
+    <!-- Two-column showcase -->
+    <div class="showcase">
+      <div class="col">
+        <div class="col-label">FP16 — REFERENCE</div>
+        <div class="stack fp16" id="stackFp16" aria-hidden="true"></div>
+        <div class="col-cap">Native float16 — every token, every byte.</div>
+      </div>
 
-    <!-- ─── animated shrinking-model loop ─── -->
-    <div class="shrink-loop reveal delay-4">
-      <div class="label">live demonstration · what Squish does to your memory cache</div>
-      <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <!-- backing track -->
-        <rect x="40" y="80" width="640" height="20" rx="10" fill="rgba(255,255,255,0.04)" />
-        <!-- the shrinking bar -->
-        <rect id="shrink-bar" x="40" y="74" width="640" height="32" rx="10"
-              fill="url(#shrink-grad)" />
-        <defs>
-          <linearGradient id="shrink-grad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"   stop-color="#5d83ff" />
-            <stop offset="33%"  stop-color="#28d4c8" />
-            <stop offset="66%"  stop-color="#ff9550" />
-            <stop offset="100%" stop-color="#ff5e94" />
-          </linearGradient>
-        </defs>
-        <!-- ticks -->
-        <g fill="rgba(255,255,255,0.25)" font-family="ui-monospace, monospace" font-size="10" text-anchor="middle">
-          <text x="40"  y="138">0 GB</text>
-          <text x="200" y="138">1 GB</text>
-          <text x="360" y="138">2 GB</text>
-          <text x="520" y="138">3 GB</text>
-          <text x="680" y="138">4 GB</text>
-        </g>
-        <!-- moving label -->
-        <g id="shrink-label" font-family="ui-monospace, monospace" font-weight="700" text-anchor="middle">
-          <rect x="-46" y="36" width="92" height="26" rx="6" fill="#0e1018" stroke="rgba(255,255,255,0.18)" />
-          <text id="shrink-text" x="0" y="54" fill="#ecedf3" font-size="13">FP16 · 4 GB</text>
-        </g>
-      </svg>
-      <div style="margin-top:14px; font-size:13.5px; color:var(--fg-mute)">
-        <span class="stage" id="shrink-stage">Original (FP16)</span> · <span id="shrink-desc">Full quality, but uses the most memory</span>
+      <div class="gap" aria-hidden="true">
+        <div class="gap-arc" id="gapArc"></div>
+        <div class="gap-pct" id="gapPct">0%</div>
+        <div class="gap-cap">SAVED</div>
+      </div>
+
+      <div class="col">
+        <div class="col-label" id="liveLabel">INT8 — SQUISHED</div>
+        <div class="stack live" id="stackLive" aria-hidden="true"></div>
+        <div class="col-cap" id="liveCap">~1.94× smaller, ~44 dB SNR.</div>
       </div>
     </div>
+
+    <!-- Slider zone -->
+    <div class="slider-zone">
+      <div class="orbs" aria-hidden="true">
+        <div class="orb" data-tier="int8" data-active="true"  id="orbInt8" title="INT8"></div>
+        <div class="orb" data-tier="int4" data-active="false" id="orbInt4" title="INT4"></div>
+        <div class="orb" data-tier="int2" data-active="false" id="orbInt2" title="INT2"></div>
+      </div>
+      <input type="range" min="0" max="100" value="0" step="1"
+             class="slider" id="slider"
+             aria-label="quantization tier slider — left INT8, middle INT4, right INT2" />
+    </div>
+  </section>
+
+  <!-- Three floating number cards -->
+  <section class="cards" aria-label="live metrics">
+    <div class="card" id="cardMem"  data-tier="int8">
+      <div class="num"><span id="numMem">132</span><span class="num-suffix">MB</span></div>
+      <div class="key">memory</div>
+    </div>
+    <div class="card" id="cardSnr"  data-tier="int8">
+      <div class="num"><span id="numSnr">44</span><span class="num-suffix">dB</span></div>
+      <div class="key">SNR</div>
+    </div>
+    <div class="card" id="cardMode" data-tier="int8">
+      <div class="num"><span id="numMode">INT8</span></div>
+      <div class="key">mode</div>
+    </div>
+  </section>
+
+  <!-- Reasoning panel -->
+  <div class="reason-panel" id="reason">
+    <strong>INT8</strong> · short context (default ≤ 8K tokens) · full
+    quality, ~1.94× memory reduction. Move the slider to see the trade-off.
   </div>
-</section>
 
-<!-- ════════════ why does this matter ════════════ -->
-<section id="why">
-  <div class="wrap">
-    <div class="reveal">
-      <div class="eyebrow">Why does this matter?</div>
-      <h2 class="h2">It changes what you can run, where.</h2>
-      <p class="lede">
-        Three real situations where shrinking the memory cache changes
-        what's possible.
-      </p>
-    </div>
+  <!-- Crystal-lattice comparison table -->
+  <section class="lattice-wrap">
+    <div class="lattice-title">tier comparison · Qwen2.5-7B · 32K context</div>
+    <div class="lattice" id="lattice"></div>
+  </section>
 
-    <div class="uc-grid">
-      <div class="uc-card laptop reveal">
-        <div class="ico">💻</div>
-        <h3>Run a 7-billion-parameter model on your laptop</h3>
-        <p>
-          Today, a model that big chews through every byte of a 16 GB MacBook
-          long before you reach a real conversation length. Squish brings the
-          memory bill down enough that the same model fits — and stays fast.
-        </p>
-        <div class="num-big">↘ 4×</div>
-        <div style="font-size:12px;color:var(--fg-dim);margin-top:4px">memory used</div>
-      </div>
-
-      <div class="uc-card long reveal delay-1">
-        <div class="ico">📜</div>
-        <h3>Hold conversations 4× longer</h3>
-        <p>
-          The longer you talk to a model, the more memory it eats. Squish lets
-          you hold a 32,000-token conversation in the space that used to fit
-          only 8,000 — entire books, full transcripts, week-long chats.
-        </p>
-        <div class="num-big">↗ 32K</div>
-        <div style="font-size:12px;color:var(--fg-dim);margin-top:4px">tokens of context</div>
-      </div>
-
-      <div class="uc-card cheap reveal delay-2">
-        <div class="ico">💸</div>
-        <h3>Serve 4× more users per server</h3>
-        <p>
-          If you run a model in production, the cache is what limits how many
-          conversations one GPU can hold at once. Cut it by 4× and the same
-          server handles 4× the traffic — without buying more hardware.
-        </p>
-        <div class="num-big">↗ 4×</div>
-        <div style="font-size:12px;color:var(--fg-dim);margin-top:4px">concurrent users</div>
-      </div>
-    </div>
+  <div class="foot">
+    same codecs as <code>pip install squish</code>
+    · <a href="https://huggingface.co/spaces/squish-community/squish-kv-quant">try the HF Space</a>
+    · <a href="https://github.com/squishai/squish">source</a>
   </div>
-</section>
 
-<!-- ════════════ how it works ════════════ -->
-<section id="how">
-  <div class="wrap">
-    <div class="reveal">
-      <div class="eyebrow">How it works</div>
-      <h2 class="h2">Three steps. No model retraining.</h2>
-      <p class="lede">
-        Squish operates on the <span class="tip" data-tip="Inference is what happens when you actually use a trained model — typing in a question and reading the answer. Squish only touches this part. Your model file stays exactly the same.">running model</span>,
-        not the saved file. Your weights, your training, your fine-tunes —
-        all untouched. Squish just compresses what the model
-        <em>remembers</em> as it talks.
-      </p>
-    </div>
-
-    <div class="steps">
-      <div class="step s1 reveal">
-        <div class="step-num">1</div>
-        <div class="step-icon">
-          <!-- spread/rotate icon — represents Hadamard rotation -->
-          <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <g class="spin-slow">
-              <rect x="10" y="10" width="30" height="30" rx="6" stroke="#28d4c8" stroke-width="2" />
-              <line x1="25" y1="6"  x2="25" y2="14" stroke="#28d4c8" stroke-width="2" stroke-linecap="round" />
-              <line x1="25" y1="36" x2="25" y2="44" stroke="#28d4c8" stroke-width="2" stroke-linecap="round" />
-              <line x1="6"  y1="25" x2="14" y2="25" stroke="#28d4c8" stroke-width="2" stroke-linecap="round" />
-              <line x1="36" y1="25" x2="44" y2="25" stroke="#28d4c8" stroke-width="2" stroke-linecap="round" />
-            </g>
-            <circle cx="25" cy="25" r="4" fill="#28d4c8" class="pulse-dot" />
-          </svg>
-        </div>
-        <h3>Spread the load</h3>
-        <p>
-          A few "loud" numbers in the cache normally make the rest look tiny
-          and break compression. Squish first <span class="tip" data-tip="A rotation that mixes every dimension into every other one, keeping the math identical but flattening the distribution. Free trick — math says the model's outputs don't change."><strong>rotates</strong></span> them
-          so all values share the spotlight evenly.
-        </p>
-      </div>
-
-      <div class="step s2 reveal delay-1">
-        <div class="step-num">2</div>
-        <div class="step-icon">
-          <!-- compress icon -->
-          <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="6"  y="14" width="38" height="6" rx="3" fill="#8b6cff" />
-            <rect x="10" y="22" width="30" height="6" rx="3" fill="#8b6cff" opacity="0.7" />
-            <rect x="14" y="30" width="22" height="6" rx="3" fill="#8b6cff" opacity="0.45" />
-            <path d="M25 8 L20 12 L30 12 Z" fill="#8b6cff" />
-            <path d="M25 42 L20 38 L30 38 Z" fill="#8b6cff" />
-          </svg>
-        </div>
-        <h3>Squeeze each number smaller</h3>
-        <p>
-          Each remembered number normally takes 16 bits. Squish rounds them to
-          8, 4, or even 2 bits — three settings. Bigger squish = less memory,
-          slightly less <span class="tip" data-tip="How close the compressed numbers stay to the originals. INT8 is virtually identical; INT4 is excellent; INT2 is good when you also use the rotation step."><strong>fidelity</strong></span>.
-          You pick.
-        </p>
-      </div>
-
-      <div class="step s3 reveal delay-2">
-        <div class="step-num">3</div>
-        <div class="step-icon">
-          <!-- save / disk icon -->
-          <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="8" y="10" width="34" height="30" rx="4" stroke="#ff9550" stroke-width="2" />
-            <rect x="14" y="14" width="22" height="8" rx="1" fill="#ff9550" opacity="0.8" />
-            <rect x="14" y="26" width="22" height="10" rx="1" stroke="#ff9550" stroke-width="1.5" fill="none" />
-            <circle cx="36" cy="32" r="2" fill="#ff9550" class="pulse-dot" />
-          </svg>
-        </div>
-        <h3>Pack them tight</h3>
-        <p>
-          Squish then bit-packs the compressed numbers — fitting four 2-bit
-          values into one byte, where one would normally hold a single 8-bit
-          number. Same math, fraction of the bytes.
-        </p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ════════════ compare modes ════════════ -->
-<section id="compare">
-  <div class="wrap">
-    <div class="reveal">
-      <div class="eyebrow">Try it · pick a mode</div>
-      <h2 class="h2">Quality vs. size — see the trade.</h2>
-      <p class="lede">
-        Click a button below to see what each compression mode actually costs
-        you. Numbers are the live measurements from <code>squish.kv.kv_cache</code>
-        on a typical large language model setup
-        (<span class="tip" data-tip="A common transformer dimension. Each token of context produces one vector this size per attention head per layer. Bigger models use 128 or larger."><code>head_dim = 128</code></span>).
-      </p>
-    </div>
-
-    <div class="compare reveal">
-      <div class="compare-tabs" id="compare-tabs">
-        <button class="tab-btn fp16" data-mode="fp16">
-          <span class="label">baseline</span>FP16
-        </button>
-        <button class="tab-btn int8 active" data-mode="int8">
-          <span class="label">8-bit · safe</span>INT8
-        </button>
-        <button class="tab-btn int4" data-mode="int4">
-          <span class="label">4-bit · sweet spot</span>INT4
-        </button>
-        <button class="tab-btn int2" data-mode="int2">
-          <span class="label">2-bit · max squish</span>INT2
-        </button>
-      </div>
-
-      <div class="compare-body">
-
-        <div class="compare-stats">
-          <div class="compare-stat">
-            <div class="lbl">
-              <span>Memory per token</span>
-              <span class="badge-live live-only">● LIVE</span>
-              <span class="badge-est est-only">ESTIMATED</span>
-            </div>
-            <div class="num" id="cmp-bytes">132<small> bytes</small></div>
-            <div class="desc"><span class="est-only">vs FP16 baseline of 256 bytes</span><span class="live-only">measured by <code>QuantizedKVCache</code></span></div>
-          </div>
-          <div class="compare-stat">
-            <div class="lbl">
-              <span>Quality score</span>
-              <span class="badge-live live-only">● LIVE</span>
-              <span class="badge-est est-only">ESTIMATED</span>
-            </div>
-            <div class="num" id="cmp-snr">44<small> dB</small></div>
-            <div class="desc">higher = closer to original</div>
-          </div>
-          <div class="compare-stat">
-            <div class="lbl">
-              <span>Compression ratio</span>
-              <span class="badge-live live-only">● LIVE</span>
-              <span class="badge-est est-only">ESTIMATED</span>
-            </div>
-            <div class="num" id="cmp-ratio">1.94×</div>
-            <div class="desc">vs FP16 (full precision)</div>
-          </div>
-          <div class="compare-stat">
-            <div class="lbl"><span>Best for context length</span></div>
-            <div class="num" id="cmp-ctx" style="font-size:22px">≤ 8K</div>
-            <div class="desc"><span id="cmp-band">short conversations · max quality</span></div>
-          </div>
-        </div>
-
-        <div class="compare-viz">
-          <div class="quality-bar">
-            <div class="qs-label">
-              <span class="tip" data-tip="A measurement of how close the compressed cache stays to the original. Above ~20 dB is excellent for typical use; above 40 dB is essentially indistinguishable.">Quality (signal-to-noise ratio)</span>
-              <span class="qs-val" id="bar-q-val">44 dB</span>
-            </div>
-            <div class="qs-track"><div class="qs-fill quality" id="bar-q"></div></div>
-          </div>
-          <div class="size-bar">
-            <div class="qs-label">
-              <span>Memory used (relative to FP16 baseline)</span>
-              <span class="qs-val" id="bar-s-val">52%</span>
-            </div>
-            <div class="qs-track"><div class="qs-fill size" id="bar-s"></div></div>
-          </div>
-
-          <!-- 3-D isometric blocks built by JS module 8b -->
-          <div class="iso-scene" aria-hidden="true">
-            <div class="iso-view" id="iso-view"></div>
-          </div>
-          <div class="iso-labels" id="iso-labels" aria-hidden="true"></div>
-          <div style="text-align:center; color:var(--fg-dim); font-size:11px; margin-top:10px; letter-spacing:0.08em">
-            relative cache size — taller = more memory
-          </div>
-        </div>
-
-      </div>
-
-      <!-- ─── benchmark CTA + result table (server.py-only) ─── -->
-      <div class="bench-cta">
-        <div class="info">
-          <strong style="color:var(--fg)">Run a real benchmark on your own machine</strong> —
-          <span class="est-only">requires the demo server. Run <code>python demo/server.py</code> first.</span>
-          <span class="live-only">runs all three modes back-to-back through the actual <code>QuantizedKVCache</code> and reports the real measured numbers below.</span>
-        </div>
-        <button id="run-bench" class="btn primary" disabled>▶ Run benchmark</button>
-      </div>
-      <div id="bench-results" class="bench-results" aria-live="polite"></div>
-
-    </div>
-  </div>
-</section>
-
-<!-- ════════════ calculator ════════════ -->
-<section id="calc">
-  <div class="wrap">
-    <div class="reveal">
-      <div class="eyebrow">Interactive · memory calculator</div>
-      <h2 class="h2">Slide to your context length. Watch the cache shrink.</h2>
-      <p class="lede">
-        Per-mode memory usage for the model you choose, scaled to the context
-        length you plan to handle. The recommendation card below shows the
-        mode <code>recommended_kv_mode_3tier()</code> would pick for that
-        setup — drop it straight into your code.
-      </p>
-    </div>
-
-    <div class="calc reveal">
-      <!-- hex grid drawn by JS module 8f; warms amber→cool blue with slider -->
-      <canvas id="hex-canvas" aria-hidden="true"></canvas>
-      <div class="calc-grid">
-
-        <div class="calc-controls">
-          <div class="row">
-            <label style="margin-top:0">Conversation length</label>
-            <span><span class="val mono" id="ctx-val">8,192</span><span class="unit">tokens</span></span>
-          </div>
-          <input type="range" id="ctx" min="512" max="65536" step="512" value="8192" />
-
-          <!-- SNR waveform: clean sine at low compression → noisy at high -->
-          <div class="snr-canvas-wrap">
-            <canvas id="snr-canvas" aria-hidden="true"></canvas>
-          </div>
-
-          <label>Model</label>
-          <!-- chip strip — syncs to hidden select -->
-          <div class="model-chips" id="model-chips" role="group" aria-label="Model preset"></div>
-
-          <label style="margin-top:6px">Details</label>
-          <select id="preset" style="display:none">
-            <option value="qwen-7b" selected>Qwen2.5-7B  (28 layers · 8 heads · 128-wide)</option>
-            <option value="llama-8b">Llama-3-8B  (32 layers · 8 heads · 128-wide)</option>
-            <option value="qwen-1_5b">Qwen2.5-1.5B  (28 layers · 2 heads · 128-wide)</option>
-            <option value="phi-3-mini">Phi-3-mini  (32 layers · 32 heads · 96-wide)</option>
-          </select>
-
-          <div class="calc-rec" id="rec">
-            <div>Recommended mode for <span class="mono" id="rec-ctx">8,192</span> tokens:
-              <strong id="rec-mode">int8</strong>
-              <span id="rec-desc" style="color:var(--fg-mute);font-size:12px">— full quality, smallest memory cost at this context length</span>
-            </div>
-            <div style="margin-top:10px;color:var(--fg-mute)">
-              <code id="rec-snippet">cache = HadamardKVCache(n_layers=28, mode="int8")</code>
-            </div>
-          </div>
-        </div>
-
-        <div class="calc-chart" id="chart">
-          <!-- bars injected by JS -->
-        </div>
-
-      </div>
-
-      <!-- v2 — free-input model savings calculator + comparison table (W108) -->
-      <div class="v2 reveal" style="margin-top:44px">
-        <div class="eyebrow">Dashboard v2 · projected memory at every tier</div>
-        <h3 class="h2" style="font-size:24px; margin:6px 0 10px">
-          Plug in your model. See where the cache lands.
-        </h3>
-        <p style="color:var(--fg-mute); margin:0 0 26px; max-width:720px">
-          Pick any model size and target context. The table uses
-          <code>estimate_kv_memory()</code> — the same closed-form pricing
-          that <code>make_kv_cache</code> uses — to project total memory at
-          FP16, INT8, INT4, and INT2.
-        </p>
-        <div class="v2-grid">
-          <div class="v2-controls">
-            <label for="v2-params">Model size</label>
-            <input type="number" id="v2-params" min="0.05" max="1000"
-                   step="0.1" value="7" />
-            <label for="v2-ctx">Context length (tokens)</label>
-            <input type="number" id="v2-ctx" min="512" max="1000000"
-                   step="512" value="32768" />
-            <div class="arch-pill" id="v2-arch">
-              <strong>28</strong> layers · <strong>8</strong> KV heads ·
-              <strong>128</strong>-wide — estimated from model size
-            </div>
-            <p class="v2-source" id="v2-source"></p>
-          </div>
-          <div>
-            <table class="v2-table" id="v2-table">
-              <thead>
-                <tr>
-                  <th>Mode</th>
-                  <th>Total cache RAM</th>
-                  <th>vs FP16</th>
-                  <th>Saving</th>
-                  <th>Fits in 16 GB?</th>
-                </tr>
-              </thead>
-              <tbody id="v2-tbody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-<!-- ════════════ benchmarks ════════════ -->
-<section id="bench">
-  <div class="wrap">
-    <div class="reveal">
-      <div class="eyebrow">Numbers · measured, not asserted</div>
-      <h2 class="h2">The full comparison.</h2>
-      <p class="lede">
-        Memory and quality numbers are real measurements from the actual
-        Squish library, not theoretical bounds. <span class="tip" data-tip="Hover any underlined word for a plain-English explanation.">Hover</span>
-        any technical term for an explanation.
-      </p>
-    </div>
-
-    <div class="bench reveal">
-      <table class="bench-tbl">
-        <thead>
-          <tr>
-            <th>Mode</th>
-            <th>Bits per number</th>
-            <th>Memory <small>(per token)</small></th>
-            <th>Smaller than FP16</th>
-            <th>Quality</th>
-            <th><span class="tip" data-tip="The list of allowed values the compressed numbers can take. Smaller list = smaller storage but coarser values.">Allowed values</span></th>
-            <th>Ships in</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="mode fp16">FP16</td>
-            <td>16</td>
-            <td>256 B</td>
-            <td><span class="pill">baseline</span></td>
-            <td>perfect</td>
-            <td>~65,000 unique values</td>
-            <td>standard</td>
-          </tr>
-          <tr>
-            <td class="mode int8">INT8</td>
-            <td>8</td>
-            <td>132 B</td>
-            <td>1.94×</td>
-            <td>≈ 44 dB · indistinguishable</td>
-            <td>256 unique values</td>
-            <td>KIVI default</td>
-          </tr>
-          <tr>
-            <td class="mode int4">INT4</td>
-            <td>4</td>
-            <td>68 B</td>
-            <td>3.76×</td>
-            <td>≈ 22 dB · excellent</td>
-            <td>16 unique values</td>
-            <td><span class="pill new">W105 · NEW</span></td>
-          </tr>
-          <tr>
-            <td class="mode int2">INT2</td>
-            <td>2</td>
-            <td>36 B</td>
-            <td>7.11×</td>
-            <td>≈ 6 dB · good with rotation</td>
-            <td>4 unique values</td>
-            <td><span class="pill">W104</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <p style="margin-top:18px; font-size:13px; color:var(--fg-dim); text-align:center">
-      Quality measured against the original FP16 numbers on
-      <span class="tip" data-tip="A model with a few unusual values (called outliers) that normally wreck compression. Squish handles them by spreading the load (step 1)."> realistic noisy data</span>
-      after Squish's rotation step. Each extra bit roughly doubles the
-      number of allowed values, which translates to ~6 dB more quality.
-    </p>
-  </div>
-</section>
-
-<!-- ════════════ code ════════════ -->
-<section id="code">
-  <div class="wrap">
-    <div class="reveal">
-      <div class="eyebrow">Snippets · copy & paste</div>
-      <h2 class="h2">Drop-in. One mode argument.</h2>
-      <p class="lede">
-        Squish slots into the cache slot of any <code>mlx_lm</code> model
-        with one line. The hard part — picking the right mode for your
-        context length — is automated.
-      </p>
-    </div>
-
-    <div class="code-grid">
-
-      <div class="code-card reveal">
-        <div class="hd">
-          <span><span class="dot"></span><span class="dot"></span><span class="dot"></span> Quick start — auto-pick the mode</span>
-          <span class="mono">python</span>
-        </div>
-        <pre><span class="k">from</span> squish.kv.kv_cache <span class="k">import</span> (
-    HadamardKVCache,
-    recommended_kv_mode_3tier,
-)
-
-<span class="c"># auto-pick the right mode for your planned conversation length</span>
-mode = <span class="fn">recommended_kv_mode_3tier</span>(<span class="n">32_000</span>)   <span class="c"># → 'int2'</span>
-
-cache = <span class="fn">HadamardKVCache</span>(
-    n_layers=<span class="n">28</span>,
-    window=<span class="n">128</span>,
-    mode=mode,
-    seed=<span class="n">42</span>,
-)
-
-<span class="c"># pass it to mlx_lm — same protocol as the default cache</span>
-model.<span class="fn">generate</span>(prompt, kv_cache=cache)</pre>
-      </div>
-
-      <div class="code-card reveal delay-1">
-        <div class="hd">
-          <span><span class="dot"></span><span class="dot"></span><span class="dot"></span> Measure your own quality</span>
-          <span class="mono">python</span>
-        </div>
-        <pre><span class="k">import</span> numpy <span class="k">as</span> np
-<span class="k">from</span> squish.kv.kv_cache <span class="k">import</span> (
-    _quantize_int4_per_channel,
-    _dequantize_int4_per_channel,
-)
-
-v   = np.random.<span class="fn">randn</span>(<span class="n">512</span>, <span class="n">128</span>).<span class="fn">astype</span>(np.float16)
-q,s = <span class="fn">_quantize_int4_per_channel</span>(v)
-vh  = <span class="fn">_dequantize_int4_per_channel</span>(q, s, <span class="n">128</span>)
-
-err = np.<span class="fn">mean</span>((v - vh)**<span class="n">2</span>)
-snr = <span class="n">10</span> * np.<span class="fn">log10</span>(np.<span class="fn">mean</span>(v**<span class="n">2</span>) / err)
-<span class="fn">print</span>(<span class="s">f"INT4 quality = {snr:.2f} dB"</span>)</pre>
-      </div>
-
-      <div class="code-card reveal delay-2">
-        <div class="hd">
-          <span><span class="dot"></span><span class="dot"></span><span class="dot"></span> Three-tier auto mode</span>
-          <span class="mono">python</span>
-        </div>
-        <pre><span class="k">from</span> squish.kv.kv_cache <span class="k">import</span> recommended_kv_mode_3tier
-
-<span class="fn">recommended_kv_mode_3tier</span>(<span class="n">4_000</span>)    <span class="c"># 'int8'  short chat</span>
-<span class="fn">recommended_kv_mode_3tier</span>(<span class="n">12_000</span>)   <span class="c"># 'int4'  medium</span>
-<span class="fn">recommended_kv_mode_3tier</span>(<span class="n">32_000</span>)   <span class="c"># 'int2'  long</span>
-
-<span class="c"># override the default thresholds if you want</span>
-<span class="fn">recommended_kv_mode_3tier</span>(
-    <span class="n">12_000</span>,
-    short_threshold=<span class="n">4_096</span>,
-    long_threshold=<span class="n">32_768</span>,
-)                                  <span class="c"># 'int4'</span></pre>
-      </div>
-
-      <div class="code-card reveal delay-3">
-        <div class="hd">
-          <span><span class="dot"></span><span class="dot"></span><span class="dot"></span> Raw 2-bit codec</span>
-          <span class="mono">python</span>
-        </div>
-        <pre><span class="k">from</span> squish.kv.kv_cache <span class="k">import</span> (
-    _quantize_int2_per_channel,
-    _dequantize_int2_per_channel,
-)
-
-<span class="c"># 4-level codebook · 4 numbers fit into 1 byte</span>
-packed, scale = <span class="fn">_quantize_int2_per_channel</span>(activations)
-
-<span class="c"># packed.shape == (n_tokens, head_dim // 4)</span>
-<span class="c"># packed.dtype == np.uint8                 </span>
-<span class="c"># scale.shape  == (n_tokens,) float32       </span>
-
-recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <span class="n">128</span>)</pre>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-<!-- ════════════ footer ════════════ -->
-<footer>
-  <div class="wrap">
-    <div>Squish · per-token KV-cache compression · v9.23.0 · made with 根性</div>
-    <div>
-      <a href="https://github.com/konjoai/squish">github</a> ·
-      <a href="../CHANGELOG.md">changelog</a> ·
-      <a href="../PLAN.md">roadmap</a>
-    </div>
-  </div>
-</footer>
+</main>
 
 <script>
-'use strict';
+  /* ════════════════════════════════════════════════════════════════════
+     W109 dashboard logic
+     The visual is pure CSS — JS only updates a few CSS custom props
+     and rewrites the ~10 cells of the lattice table.
+     Hits GET /api/recommend when the demo server is running; falls back
+     to a baked-in table identical to BENCHMARKS.md numbers when offline.
+     ════════════════════════════════════════════════════════════════════ */
+  "use strict";
 
-/* ════════════════════════════════════════════════════════════════════════
-   1. tooltip controller — handles every <span class="tip" data-tip="...">
-   ════════════════════════════════════════════════════════════════════════ */
-(function () {
-  const tip = document.getElementById('tooltip');
-  let visibleEl = null;
-
-  function show (el, x, y) {
-    tip.textContent = el.dataset.tip;
-    tip.classList.add('show');
-    place(x, y);
-    visibleEl = el;
-  }
-  function hide () {
-    tip.classList.remove('show');
-    visibleEl = null;
-  }
-  function place (x, y) {
-    const pad = 14;
-    const w = tip.offsetWidth, h = tip.offsetHeight;
-    let nx = x + 14, ny = y + 18;
-    if (nx + w + pad > window.innerWidth)  nx = x - w - 14;
-    if (ny + h + pad > window.innerHeight) ny = y - h - 14;
-    tip.style.left = Math.max(pad, nx) + 'px';
-    tip.style.top  = Math.max(pad, ny) + 'px';
-  }
-
-  document.addEventListener('mouseover', (e) => {
-    const t = e.target.closest('.tip');
-    if (t && t !== visibleEl) show(t, e.clientX, e.clientY);
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (visibleEl) place(e.clientX, e.clientY);
-  });
-  document.addEventListener('mouseout', (e) => {
-    const t = e.target.closest('.tip');
-    if (t === visibleEl && !e.relatedTarget?.closest('.tip')) hide();
-  });
-  // Touch / keyboard accessibility
-  document.addEventListener('focusin', (e) => {
-    const t = e.target.closest('.tip');
-    if (t) {
-      const r = t.getBoundingClientRect();
-      show(t, r.left + r.width / 2, r.bottom);
-    }
-  });
-  document.addEventListener('focusout', () => hide());
-})();
-
-/* ════════════════════════════════════════════════════════════════════════
-   2. scroll reveal — IntersectionObserver toggles .visible
-   ════════════════════════════════════════════════════════════════════════ */
-(function () {
-  if (!('IntersectionObserver' in window)) {
-    document.querySelectorAll('.reveal').forEach(el => el.classList.add('visible'));
-    return;
-  }
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach(en => {
-      if (en.isIntersecting) {
-        en.target.classList.add('visible');
-        io.unobserve(en.target);
-      }
-    });
-  }, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' });
-  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
-})();
-
-/* ════════════════════════════════════════════════════════════════════════
-   3. animated count-up — runs once when each .stat scrolls into view
-   ════════════════════════════════════════════════════════════════════════ */
-(function () {
-  function ease (t) { return 1 - Math.pow(1 - t, 3); }
-  function animate (el) {
-    const target = parseFloat(el.dataset.count);
-    const suffix = el.dataset.suffix || '';
-    const start  = performance.now();
-    const dur    = 1100;
-    const isInt  = Number.isInteger(target);
-    function step (now) {
-      const t = Math.min(1, (now - start) / dur);
-      const v = target * ease(t);
-      el.textContent = (isInt ? Math.round(v) : v.toFixed(1)) + suffix;
-      if (t < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  }
-  if (!('IntersectionObserver' in window)) {
-    document.querySelectorAll('[data-count]').forEach(animate);
-    return;
-  }
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach(en => {
-      if (en.isIntersecting) {
-        animate(en.target);
-        io.unobserve(en.target);
-      }
-    });
-  }, { threshold: 0.4 });
-  document.querySelectorAll('[data-count]').forEach(el => io.observe(el));
-})();
-
-/* ════════════════════════════════════════════════════════════════════════
-   4. looping shrinking-bar diagram — cycles through FP16 → INT8 → INT4 → INT2
-   ════════════════════════════════════════════════════════════════════════ */
-(function () {
-  const bar     = document.getElementById('shrink-bar');
-  const label   = document.getElementById('shrink-label');
-  const text    = document.getElementById('shrink-text');
-  const stage   = document.getElementById('shrink-stage');
-  const desc    = document.getElementById('shrink-desc');
-
-  // Each stage: full width fraction (0..1), label, description, GB amount.
-  const STAGES = [
-    { w: 1.000, name: 'FP16',         color: '#5d83ff', val: 'FP16 · 4.0 GB',
-      stage: 'Original (FP16)',
-      desc:  'Full quality, but uses the most memory' },
-    { w: 0.515, name: 'INT8',         color: '#28d4c8', val: 'INT8 · 2.1 GB',
-      stage: 'Step 1 — INT8',
-      desc:  'Half the memory, no visible quality loss' },
-    { w: 0.265, name: 'INT4',         color: '#ff9550', val: 'INT4 · 1.1 GB',
-      stage: 'Step 2 — INT4',
-      desc:  'A quarter the memory, still excellent quality' },
-    { w: 0.140, name: 'INT2',         color: '#ff5e94', val: 'INT2 · 0.55 GB',
-      stage: 'Step 3 — INT2',
-      desc:  'Maximum compression — best for very long conversations' },
+  /* ── Tier definitions — single source of truth for everything below ─ */
+  const TIERS = [
+    {
+      id: "int8",
+      label: "INT8 — squished",
+      hue:  26,  sat: "100%", light: "70%", glow: 0.42,
+      bytesPerTokenAt128: 132,
+      compressionVsFp16: 256 / 132,
+      snrDb: 44,
+      memoryMb_qwen7b_32k: 968.9,
+      cap:  "~1.94× smaller · ~44 dB SNR · default ≤ 8K tokens.",
+      reason:
+        "<strong>INT8</strong> · short context (default ≤ 8K tokens) · full " +
+        "quality, ~1.94× memory reduction. Move the slider to see the trade-off.",
+    },
+    {
+      id: "int4",
+      label: "INT4 — half the bytes",
+      hue:  18,  sat: "100%", light: "65%", glow: 0.50,
+      bytesPerTokenAt128: 68,
+      compressionVsFp16: 256 / 68,
+      snrDb: 22,
+      memoryMb_qwen7b_32k: 499.1,
+      cap:  "~3.76× smaller · ~22 dB SNR · 8K-16K tokens.",
+      reason:
+        "<strong>INT4</strong> · medium context (8K-16K tokens) · cuts the " +
+        "cache to ~3.76× smaller than fp16 with ~22 dB SNR — squish's " +
+        "recommended balance of memory and quality.",
+    },
+    {
+      id: "int2",
+      label: "INT2 — long context",
+      hue: 268, sat: "100%", light: "73%", glow: 0.58,
+      bytesPerTokenAt128: 36,
+      compressionVsFp16: 256 / 36,
+      snrDb: 6,
+      memoryMb_qwen7b_32k: 264.2,
+      cap:  "~7.11× smaller · ~6-8 dB SNR (rotated) · > 16K tokens.",
+      reason:
+        "<strong>INT2</strong> · long context (> 16K tokens) · with the " +
+        "Hadamard rotation, ~7.11× smaller than fp16. Required to fit " +
+        "a 32K cache inside a typical RAM budget.",
+    },
   ];
 
-  const X0 = 40, MAX_W = 640;
-  let idx = 0;
+  /* ── DOM ─────────────────────────────────────────────────────────── */
+  const el = (id) => document.getElementById(id);
+  const stackFp16 = el("stackFp16");
+  const stackLive = el("stackLive");
+  const gapArc    = el("gapArc");
+  const gapPct    = el("gapPct");
+  const liveLabel = el("liveLabel");
+  const liveCap   = el("liveCap");
+  const orbs      = { int8: el("orbInt8"), int4: el("orbInt4"), int2: el("orbInt2") };
+  const slider    = el("slider");
+  const cardMem   = el("cardMem");
+  const cardSnr   = el("cardSnr");
+  const cardMode  = el("cardMode");
+  const numMem    = el("numMem");
+  const numSnr    = el("numSnr");
+  const numMode   = el("numMode");
+  const reason    = el("reason");
+  const lattice   = el("lattice");
 
-  function tween (from, to, dur, cb) {
-    const start = performance.now();
-    function step (now) {
-      const t  = Math.min(1, (now - start) / dur);
-      const e  = 1 - Math.pow(1 - t, 3);
-      const v  = from + (to - from) * e;
-      cb(v);
-      if (t < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
+  /* ── Build the FP16 reference column once. 16 bright blocks. ───── */
+  const FP16_BLOCKS = 16;
+  for (let i = 0; i < FP16_BLOCKS; i++) {
+    const b = document.createElement("div");
+    b.className = "block";
+    stackFp16.appendChild(b);
   }
 
-  function applyStage (i) {
-    const s = STAGES[i];
-    const targetW = MAX_W * s.w;
-    const fromW   = parseFloat(bar.getAttribute('width'));
+  /* ── Build the live column. Block count = compression-mapped. ──── */
+  const LIVE_MAX_BLOCKS = 16;
+  function rebuildLiveStack(nBlocks) {
+    stackLive.replaceChildren();
+    for (let i = 0; i < nBlocks; i++) {
+      const b = document.createElement("div");
+      b.className = "block";
+      stackLive.appendChild(b);
+    }
+  }
 
-    stage.textContent = s.stage;
-    desc.textContent  = s.desc;
-    text.textContent  = s.val;
-    text.setAttribute('fill', s.color);
+  /* ── Slider value → tier id ─────────────────────────────────────── */
+  function tierForSlider(v) {
+    if (v < 33) return "int8";
+    if (v < 67) return "int4";
+    return "int2";
+  }
 
-    tween(fromW, targetW, 1100, (w) => {
-      bar.setAttribute('width', w.toFixed(1));
-      label.setAttribute('transform', `translate(${X0 + w}, 0)`);
+  /* ── Lattice (comparison table) — built once, cells refreshed on tier change ─ */
+  const LATTICE_ROWS = [
+    { key: "memory_mb_at_32k", label: "memory @ 32K (MB)",
+      fp16: "1879",
+      value: (t) => t.memoryMb_qwen7b_32k.toFixed(0) },
+    { key: "compression",      label: "compression vs fp16",
+      fp16: "1.00×",
+      value: (t) => t.compressionVsFp16.toFixed(2) + "×" },
+    { key: "snr_db",           label: "SNR (dB)",
+      fp16: "∞",
+      value: (t) => t.snrDb.toString() },
+    { key: "bytes_per_token",  label: "B / token (head_dim 128)",
+      fp16: "256",
+      value: (t) => t.bytesPerTokenAt128.toString() },
+    { key: "use_case",         label: "best for context",
+      fp16: "any",
+      value: (t) =>
+        t.id === "int8" ? "≤ 8K"
+      : t.id === "int4" ? "8K-16K"
+      : "> 16K" },
+  ];
+  function buildLattice() {
+    const cells = [];
+    cells.push(`<div class="lc head row-label">metric</div>`);
+    cells.push(`<div class="lc head" data-col="fp16">fp16</div>`);
+    for (const t of TIERS) {
+      cells.push(`<div class="lc head" data-col="${t.id}">${t.id.toUpperCase()}</div>`);
+    }
+    for (const row of LATTICE_ROWS) {
+      cells.push(`<div class="lc row-label">${row.label}</div>`);
+      cells.push(`<div class="lc cell" data-col="fp16">${row.fp16}</div>`);
+      for (const t of TIERS) {
+        cells.push(`<div class="lc cell" data-col="${t.id}">${row.value(t)}</div>`);
+      }
+    }
+    lattice.innerHTML = cells.join("");
+  }
+  buildLattice();
+
+  function highlightLatticeColumn(activeTierId) {
+    const cells = lattice.querySelectorAll(".lc[data-col]");
+    cells.forEach((c) => {
+      c.dataset.colActive = (c.dataset.col === activeTierId) ? "true" : "false";
     });
   }
-  applyStage(0);
-  setInterval(() => {
-    idx = (idx + 1) % STAGES.length;
-    applyStage(idx);
-  }, 2400);
-})();
 
-/* ════════════════════════════════════════════════════════════════════════
-   5. compare-modes panel — buttons drive a live stat update with animation
-   ════════════════════════════════════════════════════════════════════════ */
-(function () {
-  // Reference numbers (all per-token at head_dim=128) — these are the same
-  // values surfaced in the benchmark table and the calculator below.
-  const MODES = {
-    fp16: { bytes: 256, snr: 79.0, ratio: 1.00,  ctx: 'any',
-            band: 'never compressed · 100 % quality' },
-    int8: { bytes: 132, snr: 44.0, ratio: 1.94,  ctx: '≤ 8K',
-            band: 'short conversations · max quality' },
-    int4: { bytes:  68, snr: 22.0, ratio: 3.76,  ctx: '8K–16K',
-            band: 'medium length · the sweet spot' },
-    int2: { bytes:  36, snr:  6.5, ratio: 7.11,  ctx: '> 16K',
-            band: 'very long contexts · maximum squish' },
-  };
-  const QUALITY_MAX = 80;     // dB — caps the bar length
-  const SIZE_MAX    = 256;    // bytes — FP16 reference
+  /* ── Apply a tier — drives all the visual updates from one entry. ─ */
+  let lastTierId = null;
+  function applyTier(tierId, opts) {
+    const tier = TIERS.find((t) => t.id === tierId);
+    if (!tier) return;
+    opts = opts || { pulse: true };
 
-  const tabs    = document.getElementById('compare-tabs');
-  const cBytes  = document.getElementById('cmp-bytes');
-  const cSnr    = document.getElementById('cmp-snr');
-  const cRatio  = document.getElementById('cmp-ratio');
-  const cCtx    = document.getElementById('cmp-ctx');
-  const cBand   = document.getElementById('cmp-band');
-  const barQ    = document.getElementById('bar-q');
-  const barS    = document.getElementById('bar-s');
-  const barQVal = document.getElementById('bar-q-val');
-  const barSVal = document.getElementById('bar-s-val');
-  // Iso blocks are built by module 8b after page load; query lazily in setActive.
+    /* 1. live stack: fewer blocks (compression made literal) */
+    const blocks = Math.max(2, Math.round(LIVE_MAX_BLOCKS / tier.compressionVsFp16));
+    rebuildLiveStack(blocks);
 
-  function tweenNum (el, from, to, dur, fmt) {
-    const start = performance.now();
-    function step (now) {
-      const t = Math.min(1, (now - start) / dur);
-      const e = 1 - Math.pow(1 - t, 3);
-      const v = from + (to - from) * e;
-      el.innerHTML = fmt(v);
-      if (t < 1) requestAnimationFrame(step);
+    /* 2. live stack tint via custom props */
+    stackLive.style.setProperty("--tier-hue",   String(tier.hue));
+    stackLive.style.setProperty("--tier-sat",   tier.sat);
+    stackLive.style.setProperty("--tier-light", tier.light);
+    stackLive.style.setProperty("--tier-glow",  String(tier.glow));
+
+    /* 3. labels */
+    liveLabel.textContent = tier.label.toUpperCase();
+    liveCap.textContent   = tier.cap;
+
+    /* 4. saving arc (0–360 degrees) */
+    const savedFraction = 1 - 1 / tier.compressionVsFp16;
+    const deg = Math.round(savedFraction * 360);
+    gapArc.style.setProperty("--save-deg", deg + "deg");
+    gapPct.textContent = Math.round(savedFraction * 100) + "%";
+
+    /* 5. orbs */
+    for (const id of Object.keys(orbs)) {
+      orbs[id].dataset.active = (id === tierId) ? "true" : "false";
     }
-    requestAnimationFrame(step);
+
+    /* 6. cards — animated number rolls + colour scheme switch */
+    [cardMem, cardSnr, cardMode].forEach((c) => c.dataset.tier = tierId);
+    rollNumber(numMem,  tier.memoryMb_qwen7b_32k);
+    rollNumber(numSnr,  tier.snrDb);
+    numMode.textContent = tier.id.toUpperCase();
+
+    /* 7. reasoning panel */
+    reason.innerHTML = tier.reason;
+    reason.classList.add("glow");
+    setTimeout(() => reason.classList.remove("glow"), 700);
+
+    /* 8. lattice column highlight */
+    highlightLatticeColumn(tierId);
+
+    /* 9. card flash */
+    if (opts.pulse && lastTierId !== tierId) {
+      [cardMem, cardSnr, cardMode].forEach((c) => {
+        c.dataset.pulse = "true";
+        setTimeout(() => { c.dataset.pulse = "false"; }, 800);
+      });
+    }
+    lastTierId = tierId;
+
+    /* 10. swap baked reason for live API reason if available */
+    maybeFetchLiveReason();
   }
 
-  function setActive (mode) {
-    tabs.querySelectorAll('.tab-btn').forEach(b =>
-      b.classList.toggle('active', b.dataset.mode === mode));
-    // Lazy query — iso blocks may not exist at parse time (built by JS).
-    document.querySelectorAll('.iso-block').forEach(c =>
-      c.classList.toggle('dim', c.dataset.mode !== mode));
-    document.querySelectorAll('.iso-lbl').forEach(c =>
-      c.classList.toggle('dim', c.dataset.mode !== mode));
-    // Notify konjo enhancement module (particles + waveform update).
-    document.dispatchEvent(new CustomEvent('squish:tab', { detail: { mode } }));
+  /* ── A small "ticker" for the number cards. */
+  function rollNumber(node, target) {
+    const start = parseFloat(node.textContent.replace(/[^0-9.\-]/g, "")) || 0;
+    const dur   = 380;
+    const t0    = performance.now();
+    function tick(now) {
+      const k = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - k, 3);
+      node.textContent = Math.round(start + (target - start) * eased).toString();
+      if (k < 1) requestAnimationFrame(tick);
+      else      node.textContent = Math.round(target).toString();
+    }
+    requestAnimationFrame(tick);
   }
 
-  let prev = MODES.int8;        // we ship with INT8 active
-  function show (mode) {
-    const m = MODES[mode];
-    setActive(mode);
-
-    // colour theming on stat numbers
-    const colour = {
-      fp16: 'var(--accent-fp16)', int8: 'var(--accent-2)',
-      int4: 'var(--accent-3)',    int2: 'var(--accent-4)'
-    }[mode];
-    cBytes.style.color = cSnr.style.color = cRatio.style.color = colour;
-
-    tweenNum(cBytes,  prev.bytes, m.bytes, 600, v =>
-      Math.round(v) + '<small> bytes</small>');
-    tweenNum(cSnr,    prev.snr,   m.snr,   600, v =>
-      v.toFixed(0) + '<small> dB</small>');
-    tweenNum(cRatio,  prev.ratio, m.ratio, 600, v =>
-      v.toFixed(2) + '×');
-    cCtx.textContent  = m.ctx;
-    cBand.textContent = m.band;
-
-    // animate the two bars
-    const qPct = Math.min(100, (m.snr / QUALITY_MAX) * 100);
-    const sPct = Math.min(100, (m.bytes / SIZE_MAX) * 100);
-    barQ.style.width = qPct.toFixed(2) + '%';
-    barS.style.width = sPct.toFixed(2) + '%';
-    barQVal.textContent = m.snr.toFixed(0) + ' dB';
-    barSVal.textContent = sPct.toFixed(0) + '%';
-
-    prev = m;
-  }
-
-  tabs.addEventListener('click', (e) => {
-    const b = e.target.closest('.tab-btn');
-    if (b) show(b.dataset.mode);
+  /* ── Slider wiring ─────────────────────────────────────────────── */
+  let pendingTier = null;
+  slider.addEventListener("input", () => {
+    const v = parseInt(slider.value, 10);
+    const tierId = tierForSlider(v);
+    if (tierId !== pendingTier) {
+      pendingTier = tierId;
+      applyTier(tierId);
+    }
   });
-  show('int8');
-})();
+  slider.addEventListener("change", () => {
+    const v = parseInt(slider.value, 10);
+    const snap = v < 33 ? 0 : v < 67 ? 50 : 100;
+    slider.value = String(snap);
+  });
 
-/* ════════════════════════════════════════════════════════════════════════
-   6. memory calculator — slider + preset → live bar chart + recommendation
-   ════════════════════════════════════════════════════════════════════════ */
-(function () {
-  const PRESETS = {
-    'qwen-7b':    { n_layers: 28, n_kv_heads:  8, head_dim: 128 },
-    'llama-8b':   { n_layers: 32, n_kv_heads:  8, head_dim: 128 },
-    'qwen-1_5b':  { n_layers: 28, n_kv_heads:  2, head_dim: 128 },
-    'phi-3-mini': { n_layers: 32, n_kv_heads: 32, head_dim:  96 },
-  };
-  const SCALE_BYTES = 4;
-  const KV_PAIR     = 2;
-  const FP16_BYTES  = 2;
-  // thresholds match KV_INT2_AUTO_THRESHOLD / KV_INT4_DEFAULT_THRESHOLD
-  // in squish/kv/kv_cache.py exactly so the JS pick matches the Python pick.
-  const T_INT4 = 8192;
-  const T_INT2 = 16384;
-
-  const ctx     = document.getElementById('ctx');
-  const ctxVal  = document.getElementById('ctx-val');
-  const preset  = document.getElementById('preset');
-  const recCtx  = document.getElementById('rec-ctx');
-  const recMode = document.getElementById('rec-mode');
-  const recDesc = document.getElementById('rec-desc');
-  const recSnip = document.getElementById('rec-snippet');
-  const chart   = document.getElementById('chart');
-
-  const REC_DESC = {
-    int8: '— full quality, smallest memory cost at this context length',
-    int4: '— excellent quality at half the memory; great middle ground',
-    int2: '— maximum squish for very long conversations',
-  };
-  const REC_COLOR = {
-    int8: 'var(--accent-2)', int4: 'var(--accent-3)', int2: 'var(--accent-4)',
-  };
-  const MODE_LABEL = {
-    fp16: 'FP16 · full',
-    int8: 'INT8 · 8-bit',
-    int4: 'INT4 · 4-bit',
-    int2: 'INT2 · 2-bit',
-  };
-  const MODE_SUB = {
-    fp16: 'baseline',
-    int8: 'safe default',
-    int4: 'sweet spot',
-    int2: 'maximum squish',
-  };
-
-  function fmtBytes (n) {
-    if (n < 1024) return n.toLocaleString() + ' B';
-    const u = ['KB','MB','GB','TB'];
-    let i = -1, v = n;
-    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-    return v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2) + ' ' + u[i];
-  }
-  function pickMode (c) {
-    if (c <= T_INT4) return 'int8';
-    if (c <= T_INT2) return 'int4';
-    return 'int2';
-  }
-  function bytesPerToken (mode, head_dim) {
-    if (mode === 'fp16') return head_dim * FP16_BYTES;
-    if (mode === 'int8') return head_dim + SCALE_BYTES;
-    if (mode === 'int4') return head_dim / 2 + SCALE_BYTES;
-    if (mode === 'int2') return head_dim / 4 + SCALE_BYTES;
-    return 0;
-  }
-
-  function render () {
-    const c   = parseInt(ctx.value, 10);
-    const cfg = PRESETS[preset.value];
-    const factor = cfg.n_layers * cfg.n_kv_heads * KV_PAIR;
-
-    const data = ['fp16','int8','int4','int2'].map(m => ({
-      mode:  m,
-      label: MODE_LABEL[m],
-      sub:   MODE_SUB[m],
-      bytes: bytesPerToken(m, cfg.head_dim) * factor * c,
-    }));
-    const max = Math.max(...data.map(d => d.bytes));
-
-    ctxVal.textContent = c.toLocaleString();
-    recCtx.textContent = c.toLocaleString();
-    const mode = pickMode(c);
-    recMode.textContent = mode;
-    recMode.style.color = REC_COLOR[mode];
-    recDesc.textContent = REC_DESC[mode];
-    recSnip.textContent =
-      `cache = HadamardKVCache(n_layers=${cfg.n_layers}, mode="${mode}")`;
-
-    chart.innerHTML = data.map(d => {
-      const w = (d.bytes / max) * 100;
-      return `
-        <div class="bar-row" data-mode="${d.mode}">
-          <div class="lbl">${d.label}<small>${d.sub}</small></div>
-          <div class="bar ${d.mode}" style="width:${w.toFixed(2)}%"></div>
-          <div class="val">${fmtBytes(d.bytes)}</div>
-        </div>`;
-    }).join('');
-  }
-
-  ctx.addEventListener('input', render);
-  preset.addEventListener('change', render);
-  render();
-})();
-
-/* ════════════════════════════════════════════════════════════════════════
-   6b. dashboard v2 — free-input savings calculator + comparison table (W108)
-   ════════════════════════════════════════════════════════════════════════
-   Computes the same numbers as squish.kv.kv_cache.estimate_kv_memory() but
-   client-side so the table responds instantly to keystrokes.
-   ════════════════════════════════════════════════════════════════════════ */
-(function () {
-  const inP  = document.getElementById('v2-params');
-  const inC  = document.getElementById('v2-ctx');
-  const arc  = document.getElementById('v2-arch');
-  const src  = document.getElementById('v2-source');
-  const tbody = document.getElementById('v2-tbody');
-  if (!inP || !inC || !tbody) return;
-
-  const SCALE_B = 4;  // fp32 per-token scale
-  const KV2     = 2;  // K + V buffers
-  const GB      = 1024 ** 3;
-  const FIT_GB  = 16; // M3 16 GB ceiling
-
-  // Rough arch heuristics from parameter count (billions)
-  function archFrom (B) {
-    if (B <= 1)   return { n_layers: 22, n_kv:  4, head_dim: 64  };
-    if (B <= 3)   return { n_layers: 26, n_kv:  4, head_dim: 128 };
-    if (B <= 8)   return { n_layers: 28, n_kv:  8, head_dim: 128 };
-    if (B <= 14)  return { n_layers: 32, n_kv:  8, head_dim: 128 };
-    if (B <= 30)  return { n_layers: 40, n_kv:  8, head_dim: 128 };
-    if (B <= 70)  return { n_layers: 80, n_kv:  8, head_dim: 128 };
-    return             { n_layers: 96, n_kv: 16, head_dim: 128 };
-  }
-
-  function bptHead (mode, hd) {
-    if (mode === 'fp16') return hd * 2;
-    if (mode === 'int8') return hd + SCALE_B;
-    if (mode === 'int4') return hd / 2 + SCALE_B;
-    if (mode === 'int2') return hd / 4 + SCALE_B;
-    return 0;
-  }
-
-  function fmtB (n) {
-    if (n < 1024) return n.toFixed(0) + ' B';
-    if (n < 1024 ** 2) return (n / 1024).toFixed(1) + ' KB';
-    if (n < GB)   return (n / 1024 ** 2).toFixed(1) + ' MB';
-    return (n / GB).toFixed(2) + ' GB';
-  }
-
-  const MODES = ['fp16','int8','int4','int2'];
-  const COL   = { fp16:'var(--accent-fp16)', int8:'var(--accent-2)', int4:'var(--accent-3)', int2:'var(--accent-4)' };
-  const T_INT4 = 8192, T_INT2 = 16384;
-  function pickMode (c) { return c <= T_INT4 ? 'int8' : c <= T_INT2 ? 'int4' : 'int2'; }
-
-  function render () {
-    const B  = Math.max(0.05, parseFloat(inP.value) || 7);
-    const C  = Math.max(512,  parseInt(inC.value)   || 32768);
-    const a  = archFrom(B);
-    const fp16Total = a.head_dim * 2 * a.n_kv * KV2 * C * a.n_layers;
-    const rec = pickMode(C);
-
-    arc.innerHTML = `<strong>${a.n_layers}</strong> layers · <strong>${a.n_kv}</strong> KV heads · <strong>${a.head_dim}</strong>-wide — estimated from ${B}B parameters`;
-    if (src) src.textContent = `formula: (bpw × head_dim + 4) × n_kv_heads × 2 (K+V) × context × n_layers`;
-
-    tbody.innerHTML = MODES.map(m => {
-      const bytes   = bptHead(m, a.head_dim) * a.n_kv * KV2 * C * a.n_layers;
-      const ratio   = bytes > 0 ? fp16Total / bytes : 1;
-      const saving  = fp16Total - bytes;
-      const fits    = bytes <= FIT_GB * GB;
-      const isRec   = m === rec;
-      return `<tr class="${isRec ? 'v2-recommended' : ''}">
-        <td class="v2-mode ${m}" style="color:${COL[m]}">${m.toUpperCase()}${isRec ? ' ★' : ''}</td>
-        <td>${fmtB(bytes)}</td>
-        <td>${ratio.toFixed(2)}×</td>
-        <td class="${saving > 0 ? 'v2-savings' : ''}">${saving > 0 ? '−' + fmtB(saving) : '—'}</td>
-        <td>${fits ? '✓' : '✗'}</td>
-      </tr>`;
-    }).join('');
-  }
-
-  inP.addEventListener('input', render);
-  inC.addEventListener('input', render);
-  render();
-})();
-
-/* ════════════════════════════════════════════════════════════════════════
-   8. KONJO VISUAL ENHANCEMENTS
-      8a  3-D isometric memory blocks
-      8b  Escaped-bits particle system
-      8c  SNR waveform canvas
-      8d  Model chip strip
-      8e  Slider inertia (spring overshoot)
-      8f  Hex-grid background canvas
-   ════════════════════════════════════════════════════════════════════════ */
-(function () {
-  'use strict';
-
-  // ── shared helpers ──────────────────────────────────────────────────────
-  const lerp  = (a, b, t) => a + (b - a) * t;
-  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  const rng   = (lo, hi) => lo + Math.random() * (hi - lo);
-
-  const MODE_COLOR = {
-    fp16: '#5d83ff',
-    int8: '#28d4c8',
-    int4: '#ff9550',
-    int2: '#ff5e94',
-  };
-  // Heights in px — matches visual weight of each tier
-  const MODE_H = { fp16: 196, int8: 104, int4: 54, int2: 26 };
-
-  // ── 8a. 3-D ISOMETRIC BLOCKS ────────────────────────────────────────────
-  (function isoBlocks () {
-    const view   = document.getElementById('iso-view');
-    const lblRow = document.getElementById('iso-labels');
-    if (!view) return;
-
-    const MODES = ['fp16', 'int8', 'int4', 'int2'];
-    const blocks = {};   // mode → .iso-block element
-    const lbls   = {};   // mode → .iso-lbl  element
-
-    MODES.forEach((mode, i) => {
-      const block = document.createElement('div');
-      block.className  = 'iso-block';
-      block.dataset.mode = mode;
-      block.style.setProperty('--bh', MODE_H[mode] + 'px');
-      block.style.setProperty('--bc', MODE_COLOR[mode]);
-
-      ['f-front','f-side','f-top'].forEach(cls => {
-        const face = document.createElement('div');
-        face.className = 'iso-face ' + cls;
-        block.appendChild(face);
-      });
-
-      view.appendChild(block);
-      blocks[mode] = block;
-
-      // Staggered spring entrance
-      setTimeout(() => block.classList.add('entered'), i * 130 + 250);
-
-      // Label below
-      if (lblRow) {
-        const lbl = document.createElement('div');
-        lbl.className    = 'iso-lbl';
-        lbl.dataset.mode = mode;
-        lbl.textContent  = mode.toUpperCase();
-        lbl.style.color  = MODE_COLOR[mode];
-        lblRow.appendChild(lbl);
-        lbls[mode] = lbl;
-      }
+  /* ── Orbs are clickable shortcuts ──────────────────────────────── */
+  Object.entries(orbs).forEach(([tierId, node]) => {
+    node.addEventListener("click", () => {
+      slider.value = tierId === "int8" ? "0" : tierId === "int4" ? "50" : "100";
+      applyTier(tierId);
     });
-
-    // Public helpers consumed by other sub-modules
-    window._isoSetActive = function (activeMode) {
-      MODES.forEach(m => {
-        const dim = m !== activeMode;
-        if (blocks[m]) blocks[m].classList.toggle('dim', dim);
-        if (lbls[m])   lbls[m].classList.toggle('dim', dim);
-      });
-    };
-
-    window._isoBlockRect = function (mode) {
-      return blocks[mode] ? blocks[mode].getBoundingClientRect() : null;
-    };
-
-    // Listen to the squish:tab event dispatched by compare-tabs IIFE
-    document.addEventListener('squish:tab', e => {
-      if (window._isoSetActive) window._isoSetActive(e.detail.mode);
+    node.setAttribute("role", "button");
+    node.setAttribute("tabindex", "0");
+    node.setAttribute("aria-label", `select ${tierId.toUpperCase()} tier`);
+    node.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); node.click(); }
     });
+  });
 
-    // Initial state matches the compare panel's default (int8)
-    setTimeout(() => { if (window._isoSetActive) window._isoSetActive('int8'); }, 400);
-  })();
-
-
-  // ── 8b. ESCAPED BITS PARTICLE SYSTEM ────────────────────────────────────
-  (function particles () {
-    // Number of escaped bits per mode — more compression = more bits escaped
-    const COUNT = { fp16: 0, int8: 3, int4: 7, int2: 16 };
-
-    function spawn (mode) {
-      const n = COUNT[mode] || 0;
-      if (!n) return;
-
-      const rect = window._isoBlockRect ? window._isoBlockRect(mode) : null;
-      const cx   = rect ? rect.left + rect.width  / 2 : window.innerWidth  / 2;
-      const cy   = rect ? rect.top  + rect.height * 0.4 : window.innerHeight / 2;
-      const col  = MODE_COLOR[mode] || '#fff';
-
-      for (let i = 0; i < n; i++) {
-        setTimeout(() => {
-          const el = document.createElement('div');
-          el.className   = 'bit-particle';
-          el.textContent = Math.random() < 0.5 ? '0' : '1';
-          el.style.color = col;
-          el.style.left  = (cx + rng(-30, 30)) + 'px';
-          el.style.top   = (cy + rng(-12, 12)) + 'px';
-          el.style.setProperty('--dx', rng(-90, 90)   + 'px');
-          el.style.setProperty('--dy', rng(-130, -45) + 'px');
-          el.style.setProperty('--dr', rng(-220, 220) + 'deg');
-          el.style.animationDelay = rng(0, 0.18) + 's';
-          document.body.appendChild(el);
-          setTimeout(() => el.remove(), 2000);
-        }, i * 22 + Math.random() * 15);
-      }
-    }
-
-    document.addEventListener('squish:tab', e => spawn(e.detail.mode));
-  })();
-
-
-  // ── 8c. SNR WAVEFORM CANVAS ─────────────────────────────────────────────
-  (function waveform () {
-    const canvas = document.getElementById('snr-canvas');
-    if (!canvas) return;
-
-    // compression level 0→1 (0 = FP16 pristine, 1 = INT2 noisy)
-    const LEVEL = { fp16: 0.04, int8: 0.24, int4: 0.56, int2: 0.92 };
-    let progress = LEVEL.int8;
-    let target   = LEVEL.int8;
-    let rafId    = null;
-
-    function resize () {
-      const w = canvas.parentElement ? Math.floor(canvas.parentElement.offsetWidth) : 500;
-      if (canvas.width !== w) {
-        canvas.width  = w || 500;
-        canvas.height = 80;
-      }
-    }
-
-    function draw () {
-      resize();
-      const ctx2 = canvas.getContext('2d');
-      const W = canvas.width, H = canvas.height;
-      ctx2.clearRect(0, 0, W, H);
-
-      // Purple (#8b6cff) → amber (#ffba50) as compression rises
-      const pr = Math.round(lerp(139, 255, progress));
-      const pg = Math.round(lerp(108, 186, progress * progress));
-      const pb = Math.round(lerp(255,  80, progress));
-      const col = `rgb(${pr},${pg},${pb})`;
-
-      ctx2.strokeStyle = col;
-      ctx2.lineWidth   = 2;
-      ctx2.shadowBlur  = 10;
-      ctx2.shadowColor = col;
-      ctx2.lineCap     = 'round';
-      ctx2.lineJoin    = 'round';
-
-      const amp   = 20;
-      const freq  = 3.5 + progress * 2.5;          // more cycles when noisy
-      const noise = progress * 0.88;
-      const phase = performance.now() / 850;        // scrolls over time
-
-      ctx2.beginPath();
-      for (let x = 0; x <= W; x += 2) {
-        const t     = x / W;
-        const clean = Math.sin(t * Math.PI * 2 * freq + phase) * amp * (1 - noise * 0.68);
-        const n     = noise > 0 ? (Math.random() * 2 - 1) * amp * noise : 0;
-        const y     = H / 2 + clean + n;
-        x === 0 ? ctx2.moveTo(x, y) : ctx2.lineTo(x, y);
-      }
-      ctx2.stroke();
-
-      // Quality label overlay
-      ctx2.shadowBlur  = 0;
-      ctx2.globalAlpha = 0.55;
-      ctx2.fillStyle   = col;
-      ctx2.font        = '10px monospace';
-      const qlabel = progress < 0.15 ? 'pristine' :
-                     progress < 0.40 ? 'excellent' :
-                     progress < 0.72 ? 'good' : 'compressed';
-      ctx2.fillText(qlabel + ' quality', 8, H - 10);
-      ctx2.globalAlpha = 1;
-    }
-
-    function step () {
-      progress += (target - progress) * 0.04;
-      draw();
-      rafId = requestAnimationFrame(step);
-    }
-
-    document.addEventListener('squish:tab', e => {
-      target = LEVEL[e.detail.mode] ?? target;
-    });
-
-    window.addEventListener('resize', resize);
-    resize();
-    step();
-  })();
-
-
-  // ── 8d. MODEL CHIP STRIP ────────────────────────────────────────────────
-  (function modelChips () {
-    const strip  = document.getElementById('model-chips');
-    const sel    = document.getElementById('preset');
-    const chart  = document.getElementById('chart');
-    if (!strip || !sel) return;
-
-    const CHIPS = [
-      { value: 'qwen-7b',    label: '7B',   sub: 'qwen' },
-      { value: 'llama-8b',   label: '8B',   sub: 'llama' },
-      { value: 'qwen-1_5b',  label: '1.5B', sub: 'nano' },
-      { value: 'phi-3-mini', label: 'mini', sub: 'phi-3' },
-    ];
-
-    CHIPS.forEach(c => {
-      const btn = document.createElement('button');
-      btn.className      = 'model-chip';
-      btn.dataset.preset = c.value;
-      btn.type           = 'button';
-      btn.setAttribute('aria-pressed', sel.value === c.value ? 'true' : 'false');
-      btn.innerHTML = `<span class="chip-label">${c.label}</span>`
-                    + `<span class="chip-sub">${c.sub}</span>`;
-      strip.appendChild(btn);
-    });
-
-    function activateChip (value) {
-      strip.querySelectorAll('.model-chip').forEach(b => {
-        const on = b.dataset.preset === value;
-        b.classList.toggle('active', on);
-        b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
-    }
-    activateChip(sel.value);
-
-    strip.addEventListener('click', e => {
-      const chip = e.target.closest('.model-chip');
-      if (!chip || chip.dataset.preset === sel.value) return;
-      activateChip(chip.dataset.preset);
-
-      if (!chart) {
-        sel.value = chip.dataset.preset;
-        sel.dispatchEvent(new Event('change'));
-        return;
-      }
-
-      // Slide out left, update, slide in from right
-      const ease_out = 'cubic-bezier(0.23,1,0.32,1)';
-      const ease_spr = 'cubic-bezier(0.34,1.56,0.64,1)';
-      chart.style.transition = `transform 270ms ${ease_out}, opacity 270ms`;
-      chart.style.transform  = 'translateX(-52px)';
-      chart.style.opacity    = '0';
-
-      setTimeout(() => {
-        sel.value = chip.dataset.preset;
-        sel.dispatchEvent(new Event('change'));
-
-        chart.style.transition = 'none';
-        chart.style.transform  = 'translateX(52px)';
-        chart.style.opacity    = '0';
-
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          chart.style.transition = `transform 310ms ${ease_spr}, opacity 220ms`;
-          chart.style.transform  = 'translateX(0)';
-          chart.style.opacity    = '1';
-        }));
-      }, 275);
-    });
-  })();
-
-
-  // ── 8e. SLIDER INERTIA (spring overshoot) ───────────────────────────────
-  (function sliderInertia () {
-    const slider  = document.getElementById('ctx');
-    const display = document.getElementById('ctx-val');
-    if (!slider || !display) return;
-
-    let dispVal  = parseInt(slider.value, 10);
-    let targVal  = dispVal;
-    let rafId    = null;
-
-    function settle () {
-      // Exponential decay toward target — spec: displayValue += (target - display) * 0.12
-      dispVal += (targVal - dispVal) * 0.12;
-      const rounded = Math.round(dispVal);
-      display.textContent = rounded.toLocaleString();
-
-      if (Math.abs(targVal - dispVal) > 0.9) {
-        rafId = requestAnimationFrame(settle);
-      } else {
-        dispVal = targVal;
-        display.textContent = targVal.toLocaleString();
-        rafId = null;
-      }
-    }
-
-    slider.addEventListener('input', () => {
-      const prev  = targVal;
-      targVal     = parseInt(slider.value, 10);
-      // Apply overshoot: jump display value briefly past target by velocity × 0.15
-      const vel   = (targVal - prev) * 0.15;
-      dispVal    += vel;
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(settle);
-    });
-  })();
-
-
-  // ── 8f. HEX GRID BACKGROUND CANVAS ─────────────────────────────────────
-  (function hexGrid () {
-    const canvas = document.getElementById('hex-canvas');
-    const slider = document.getElementById('ctx');
-    if (!canvas || !slider) return;
-
-    const T_MIN = 512, T_MAX = 65536;
-    let hexProg   = 0.22;   // 0 = cool (#000a1a), 1 = warm (#1a0a00)
-    let hexTarget = 0.22;
-
-    function resize () {
-      const parent = canvas.parentElement;
-      if (!parent) return;
-      const w = Math.floor(parent.offsetWidth)  || 800;
-      const h = Math.floor(parent.offsetHeight) || 300;
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width  = w;
-        canvas.height = h;
-      }
-    }
-
-    // Draw a single pointy-top hexagon centred at (cx, cy), inner radius r
-    function hex (ctx2, cx, cy, r) {
-      ctx2.beginPath();
-      for (let i = 0; i < 6; i++) {
-        const a  = (Math.PI / 3) * i - Math.PI / 6;
-        const px = cx + r * Math.cos(a);
-        const py = cy + r * Math.sin(a);
-        i === 0 ? ctx2.moveTo(px, py) : ctx2.lineTo(px, py);
-      }
-      ctx2.closePath();
-    }
-
-    function draw () {
-      resize();
-      const ctx2 = canvas.getContext('2d');
-      const W = canvas.width, H = canvas.height;
-      ctx2.clearRect(0, 0, W, H);
-
-      const t = hexProg;
-      // cool = #000a1a  (r=0,   g=10,  b=26)
-      // warm = #1a0a00  (r=26,  g=10,  b=0)
-      const bR = Math.round(lerp(0,  26, t));
-      const bG = Math.round(lerp(10, 10, t));
-      const bB = Math.round(lerp(26,  0, t));
-
-      const R    = 12;                                // hex radius (24 px size)
-      const hw   = Math.sqrt(3) * R;                 // pointy-top: col step
-      const vert = R * 1.5;                          // row step
-
-      for (let row = -1; (row - 1) * vert < H + R * 2; row++) {
-        const offset = (row & 1) ? hw / 2 : 0;
-        for (let col = -1; (col - 1) * hw < W + hw; col++) {
-          const cx = col * hw + offset;
-          const cy = row * vert;
-
-          // Per-hex vary for texture — avoid uniform flat look
-          const vary = 0.72 + 0.28 * (0.5 + 0.5 * Math.sin(col * 1.9 + row * 2.7));
-          const fr = Math.round(bR * vary);
-          const fg = Math.round(bG * vary);
-          const fb = Math.round(bB * vary);
-
-          hex(ctx2, cx, cy, R - 1);   // R-1 leaves 2 px gap between hexes
-          ctx2.fillStyle = `rgb(${fr},${fg},${fb})`;
-          ctx2.fill();
-        }
-      }
-    }
-
-    function step () {
-      hexProg += (hexTarget - hexProg) * 0.035;
-      draw();
-      requestAnimationFrame(step);
-    }
-
-    slider.addEventListener('input', () => {
-      const c = parseInt(slider.value, 10);
-      hexTarget = clamp((c - T_MIN) / (T_MAX - T_MIN), 0, 1);
-    });
-
-    window.addEventListener('resize', () => { resize(); draw(); });
-    resize();
-    step();
-  })();
-
-})(); // end Konjo enhancements
-
-/* ════════════════════════════════════════════════════════════════════════
-   7. live mode — talks to demo/server.py if it's running
-   ════════════════════════════════════════════════════════════════════════
-   Detection logic:
-     - same-origin first (page is being served by server.py)
-     - then http://127.0.0.1:8001 (page opened from filesystem)
-     - then http://localhost:8001  (alternate hostname)
-   First base that answers /api/health within 1.2 s wins; any failure leaves
-   the page in "estimated" mode and the rest of the simulation continues
-   exactly as before.
-   ════════════════════════════════════════════════════════════════════════ */
-(function () {
-  const band     = document.getElementById('liveband');
-  const bandText = document.getElementById('liveband-text');
-  const tabs     = document.getElementById('compare-tabs');
-  const cBytes   = document.getElementById('cmp-bytes');
-  const cSnr     = document.getElementById('cmp-snr');
-  const cRatio   = document.getElementById('cmp-ratio');
-  const barQ     = document.getElementById('bar-q');
-  const barS     = document.getElementById('bar-s');
-  const barQVal  = document.getElementById('bar-q-val');
-  const barSVal  = document.getElementById('bar-s-val');
-  const benchBtn = document.getElementById('run-bench');
-  const benchOut = document.getElementById('bench-results');
-
-  // Detect candidate API base URLs in order of preference.
-  function candidates () {
-    const out = [];
-    if (location.protocol === 'http:' || location.protocol === 'https:') {
-      out.push(location.origin);
-    }
-    out.push('http://127.0.0.1:8001');
-    out.push('http://localhost:8001');
-    return [...new Set(out)];
-  }
-
-  let API = null;            // resolved to a working base URL when live
-  let CTX_LEN = 1024;        // shared default context for live calls
-
-  function fetchTimeout (url, opts = {}, ms = 1200) {
-    return Promise.race([
-      fetch(url, opts),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
-    ]);
-  }
-
-  async function probe () {
-    for (const base of candidates()) {
-      try {
-        const r = await fetchTimeout(base + '/api/health', { cache: 'no-store' });
-        if (!r.ok) continue;
-        const d = await r.json();
-        if (d.status === 'ok' && d.service === 'squish-demo') {
-          API = base;
-          return true;
-        }
-      } catch (_) { /* try next */ }
-    }
-    return false;
-  }
-
-  function setOffline () {
-    band.classList.remove('checking');
-    band.classList.remove('live');
-    document.body.classList.add('no-band');
-    bandText.innerHTML =
-      '▶  Run <code>python demo/server.py</code> from the repo root, ' +
-      'reload this page, and the demo switches to <b>live mode</b> ' +
-      '— real measurements from your machine, not estimates.';
-    benchBtn.setAttribute('disabled', '');
-    benchBtn.textContent = '▶ Run benchmark (server required)';
-  }
-
-  function setOnline () {
-    band.classList.remove('checking');
-    band.classList.add('live');
-    document.body.classList.add('live');
-    bandText.innerHTML =
-      `✓  <b>LIVE</b> — connected to <code>${API}</code>. ` +
-      'Compare-panel buttons and the benchmark below run real ' +
-      '<code>QuantizedKVCache</code> code on your machine.';
-    benchBtn.removeAttribute('disabled');
-    benchBtn.textContent = '▶ Run benchmark';
-  }
-
-  // ── live updates for the compare panel ────────────────────────────────
-  // We hijack tab clicks AFTER the simulation has already painted, then
-  // replace the numbers with real measurements when the response lands.
-
-  function tweenNum (el, from, to, dur, fmt) {
-    const start = performance.now();
-    function step (now) {
-      const t = Math.min(1, (now - start) / dur);
-      const e = 1 - Math.pow(1 - t, 3);
-      const v = from + (to - from) * e;
-      el.innerHTML = fmt(v);
-      if (t < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  }
-
-  // We need the previously-rendered (estimated) values to tween FROM.
-  // Read them straight off the DOM each time — that's whatever the
-  // simulation last painted.
-  function readNum (el) {
-    return parseFloat((el.textContent || '').replace(/[^\d.]/g, '')) || 0;
-  }
-
-  async function liveCompress (mode) {
-    if (!API) return;
-    let r, d;
+  /* ── Optional: ask GET /api/recommend for a richer reasoning string
+        when the demo server is running. Strictly an enhancement —
+        offline the baked-in reasons remain authoritative. The query
+        targets the context band that matches the active tier so the
+        live reason agrees with the slider position. */
+  const CTX_FOR_TIER = { int8: 4096, int4: 12000, int2: 32000 };
+  let reasonAbort = null;
+  async function maybeFetchLiveReason() {
+    if (reasonAbort) reasonAbort.abort();
+    reasonAbort = new AbortController();
+    const tierId = lastTierId;
+    const ctx = CTX_FOR_TIER[tierId] || 8000;
     try {
-      r = await fetchTimeout(API + '/api/compress', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          mode, ctx_len: CTX_LEN, head_dim: 128, n_heads: 4,
-        }),
-      }, 8000);
-      d = await r.json();
-      if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
-    } catch (err) {
-      console.warn('[squish] live compress failed:', err);
-      return;
-    }
-    if (d.mode !== mode) return;     // user has clicked another tab meanwhile
-
-    // FP16 baseline = ctx_len * n_heads * head_dim * 2 (K+V) * 2 (fp16)
-    const liveBytes = d.memory_bytes /
-      (d.ctx_len * d.n_heads * 1.0);            // bytes per token (across K+V layer buffer)
-    const sizePct = Math.min(100,
-      (d.memory_bytes / d.fp16_baseline_bytes) * 100);
-    const qPct = Math.min(100, (d.snr_db / 80) * 100);
-
-    tweenNum(cBytes, readNum(cBytes), Math.round(liveBytes), 600, v =>
-      Math.round(v) + '<small> B/tok</small>');
-    tweenNum(cSnr,   readNum(cSnr),   d.snr_db, 600, v =>
-      v.toFixed(1) + '<small> dB</small>');
-    tweenNum(cRatio, readNum(cRatio), d.compression_ratio, 600, v =>
-      v.toFixed(2) + '×');
-
-    barQ.style.width   = qPct.toFixed(2) + '%';
-    barS.style.width   = sizePct.toFixed(2) + '%';
-    barQVal.textContent = d.snr_db.toFixed(1) + ' dB · live';
-    barSVal.textContent = sizePct.toFixed(0) + '% · live';
+      const r = await fetch(
+        `/api/recommend?model_size_b=7&ctx_len=${ctx}`,
+        { method: "GET", headers: { Accept: "application/json" }, signal: reasonAbort.signal },
+      );
+      if (!r.ok) return;
+      const data = await r.json();
+      if (lastTierId !== tierId) return;            // user moved on
+      reason.innerHTML =
+        `<strong>${tierId.toUpperCase()}</strong> · ${escapeHtml(data.reason || "")}`;
+    } catch (_) { /* offline — silent, baked reason stays */ }
+  }
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
-  function bindLiveCompare () {
-    if (!tabs) return;
-    tabs.addEventListener('click', (e) => {
-      const b = e.target.closest('.tab-btn');
-      if (!b) return;
-      const mode = b.dataset.mode;
-      // FP16 isn't a valid quant mode for the cache — keep its simulation.
-      if (mode === 'fp16') return;
-      // Wait one tick so the simulation has updated the DOM first; then
-      // overwrite with the real measurement.
-      setTimeout(() => liveCompress(mode), 30);
-    });
-  }
-
-  // Bridge: keep CTX_LEN in sync with the calculator slider so /api/compress
-  // calls reflect what the user is actually exploring.
-  function bindCtxSync () {
-    const ctx = document.getElementById('ctx');
-    if (!ctx) return;
-    const sync = () => {
-      // Server caps requests; clamp here too so the button keeps working.
-      CTX_LEN = Math.min(parseInt(ctx.value, 10) || 1024, 4096);
-    };
-    ctx.addEventListener('input', sync);
-    sync();
-  }
-
-  // ── benchmark button ──────────────────────────────────────────────────
-  function fmtBytes (n) {
-    if (n < 1024) return n.toLocaleString() + ' B';
-    const u = ['KB','MB','GB'];
-    let i = -1, v = n;
-    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-    return v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2) + ' ' + u[i];
-  }
-
-  async function runBenchmark () {
-    if (!API) return;
-    benchBtn.setAttribute('disabled', '');
-    benchOut.classList.add('show');
-    benchOut.innerHTML = `
-      <div class="summary">
-        <span class="bench-running"><span class="spinner"></span>
-        running benchmark on your machine — pushing tokens through three real caches…</span>
-      </div>`;
-
-    let d;
-    try {
-      const r = await fetchTimeout(API + '/api/benchmark', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ ctx_len: CTX_LEN, head_dim: 128, n_heads: 4 }),
-      }, 30_000);
-      d = await r.json();
-      if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
-    } catch (err) {
-      benchOut.innerHTML = `
-        <div class="summary" style="color:var(--accent-4)">
-          ✗ benchmark failed: ${String(err).replace(/[<>]/g,'')}
-        </div>`;
-      benchBtn.removeAttribute('disabled');
-      return;
-    }
-
-    const rows = (d.results || []).filter(r => !r.skipped).map(r => {
-      const bytesPerTok = r.memory_bytes / (r.ctx_len * r.n_heads);
-      return `
-        <tr>
-          <td class="mode ${r.mode}">${r.mode.toUpperCase()}</td>
-          <td>${r.snr_db.toFixed(2)} dB</td>
-          <td>${fmtBytes(r.memory_bytes)}</td>
-          <td>${bytesPerTok.toFixed(1)}</td>
-          <td>${r.compression_ratio.toFixed(2)}×</td>
-          <td>${r.elapsed_ms.toFixed(1)} ms</td>
-          <td>${r.old_q_shape ? `${r.old_q_dtype}${JSON.stringify(r.old_q_shape)}` : '—'}</td>
-        </tr>`;
-    }).join('');
-
-    benchOut.innerHTML = `
-      <div class="summary">
-        <span class="pill">✓ LIVE</span>
-        Real measurements · ${d.ctx_len.toLocaleString()} tokens ·
-        head_dim=${d.head_dim} · n_heads=${d.n_heads} · single layer ·
-        FP16 baseline ${fmtBytes(d.fp16_baseline_bytes)}
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Mode</th>
-            <th>Quality (SNR)</th>
-            <th>Memory used</th>
-            <th>B/tok·head</th>
-            <th>vs FP16</th>
-            <th>Time</th>
-            <th>Storage shape</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="micro">
-        ${rows ? '' : 'No results — check the server log.'}
-        Methodology: each row constructs a fresh
-        <code>QuantizedKVCache(n_layers=1, window=2, mode=…)</code>, pushes
-        <code>${d.ctx_len.toLocaleString()}</code> synthetic tokens through
-        <code>.update()</code>, then measures the dequantised
-        <code>get_full_kv()</code> output against the float16 ground truth.
-        Window=2 means almost every token is quantised, so the SNR reflects
-        the codec — not the FP16 recent window.
-      </div>`;
-    benchBtn.removeAttribute('disabled');
-  }
-
-  // ── entry point ──────────────────────────────────────────────────────
-  (async function init () {
-    bindLiveCompare();
-    bindCtxSync();
-    benchBtn.addEventListener('click', runBenchmark);
-    const ok = await probe();
-    if (ok) setOnline(); else setOffline();
-  })();
-})();
-
+  /* ── Boot ──────────────────────────────────────────────────────── */
+  applyTier("int8", { pulse: false });
 </script>
-
 </body>
 </html>
