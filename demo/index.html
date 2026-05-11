@@ -1280,9 +1280,162 @@
      SLIDER DISPLAY — width reserved so spring doesn't shift layout
      ════════════════════════════════════════════════════════════════════════ */
   #ctx-val { display: inline-block; min-width: 5ch; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     WAVE 9: alive interaction layer
+     ════════════════════════════════════════════════════════════════════════ */
+
+  /* 9a — token flow river canvas */
+  #token-river {
+    display: block;
+    width: 100%;
+    height: 64px;
+    pointer-events: none;
+    will-change: transform;
+  }
+  .token-river-wrap {
+    margin: 0 0 -4px;
+    overflow: hidden;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  }
+
+  /* 9b — breathing blocks keyframe (applied per-block via JS animation-name) */
+  @keyframes breathe {
+    0%, 100% { transform: scale(1) scaleY(1.000); }
+    50%       { transform: scale(1) scaleY(1.030); }
+  }
+  /* inverted phase for alternating feel */
+  @keyframes breathe-inv {
+    0%, 100% { transform: scale(1) scaleY(1.000); }
+    50%       { transform: scale(1) scaleY(0.970); }
+  }
+
+  /* 9c — parallax sections */
+  .parallax-bg {
+    will-change: transform;
+    transition: none;
+  }
+
+  /* 9d — global squeeze on rapid slider drag */
+  #app-root {
+    will-change: transform;
+    transform-origin: center center;
+    transition: transform 150ms linear;
+  }
+  #app-root.squeeze {
+    transform: scaleX(0.97);
+    transition: transform 150ms linear;
+  }
+  #app-root.unsqueeze {
+    transform: scaleX(1);
+    transition: transform 600ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* 9e — SVG data-flow line */
+  #flow-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 0;
+  }
+  #flow-path {
+    fill: none;
+    stroke-width: 2;
+    stroke-dasharray: 4 8;
+    stroke-linecap: round;
+    opacity: 0.55;
+    will-change: stroke-dashoffset;
+  }
+  .flow-wrap {
+    position: relative;
+  }
+
+  /* 9f — 3D card tilt */
+  .model-chip {
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+  .model-chip .chip-spotlight {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    transition: background 80ms;
+  }
+
+  /* 9g — memory saved counter */
+  .mem-saved-display {
+    margin: 18px 0 0;
+    padding: 16px 20px;
+    border-radius: var(--radius-md);
+    background: rgba(76, 217, 100, 0.07);
+    border: 1px solid rgba(76, 217, 100, 0.22);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    will-change: transform;
+  }
+  .mem-saved-display .label {
+    font-size: 12px;
+    color: var(--fg-mute);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+  .mem-saved-display .count {
+    font: 700 28px/1 var(--font-mono);
+    color: var(--accent-good);
+    will-change: transform;
+    display: inline-block;
+  }
+  .mem-saved-display .unit {
+    font-size: 13px;
+    color: var(--fg-mute);
+  }
+  @keyframes countUp {
+    0%   { transform: scale(1.2); opacity: 0.6; }
+    100% { transform: scale(1.0); opacity: 1.0; }
+  }
+  .count.popped { animation: countUp 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+
+  /* 9h — INT2 background pulse */
+  @keyframes bgPulse {
+    0%   { opacity: 0; }
+    20%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  #int2-pulse {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    pointer-events: none;
+    z-index: 9998;
+    opacity: 0;
+    will-change: opacity;
+  }
+
+  /* comet tail: extra fading bit copies behind each particle */
+  .bit-comet {
+    position: fixed;
+    pointer-events: none;
+    font: 700 11px/1 var(--font-mono);
+    z-index: 9997;
+    animation: escapeBit 1.8s cubic-bezier(0.23, 1, 0.32, 1) both;
+    user-select: none;
+    filter: blur(1px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    @keyframes breathe    { 0%,100% { transform: none; } }
+    @keyframes breathe-inv{ 0%,100% { transform: none; } }
+    #app-root.squeeze, #app-root.unsqueeze { transform: none; }
+  }
 </style>
 </head>
 <body>
+<div id="int2-pulse" aria-hidden="true"></div>
+<div id="app-root">
 
 <!-- ════════════ tooltip element (controlled by JS) ════════════ -->
 <div id="tooltip" role="tooltip"></div>
@@ -1377,8 +1530,13 @@
   </div>
 </section>
 
+<!-- 9a: token flow river — tokens animate rightward into the compare section -->
+<div class="token-river-wrap" aria-hidden="true">
+  <canvas id="token-river"></canvas>
+</div>
+
 <!-- ════════════ why does this matter ════════════ -->
-<section id="why">
+<section id="why" class="parallax-bg">
   <div class="wrap">
     <div class="reveal">
       <div class="eyebrow">Why does this matter?</div>
@@ -1430,7 +1588,7 @@
 </section>
 
 <!-- ════════════ how it works ════════════ -->
-<section id="how">
+<section id="how" class="parallax-bg">
   <div class="wrap">
     <div class="reveal">
       <div class="eyebrow">How it works</div>
@@ -1634,6 +1792,19 @@
       </p>
     </div>
 
+    <!-- 9e: SVG data-flow line lives behind the calc card -->
+    <div style="position:relative">
+    <svg id="flow-svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="flow-grad" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse">
+          <stop offset="0%"   stop-color="#8b6cff"/>
+          <stop offset="50%"  stop-color="#ff9550"/>
+          <stop offset="100%" stop-color="#4cd964"/>
+        </linearGradient>
+      </defs>
+      <path id="flow-path" stroke="url(#flow-grad)"/>
+    </svg>
+
     <div class="calc reveal">
       <!-- hex grid drawn by JS module 8f; warms amber→cool blue with slider -->
       <canvas id="hex-canvas" aria-hidden="true"></canvas>
@@ -1663,6 +1834,9 @@
             <option value="phi-3-mini">Phi-3-mini  (32 layers · 32 heads · 96-wide)</option>
           </select>
 
+          <!-- 9e: SVG data-flow line anchors -->
+          <div class="flow-wrap" id="flow-anchor-input" style="height:4px"></div>
+
           <div class="calc-rec" id="rec">
             <div>Recommended mode for <span class="mono" id="rec-ctx">8,192</span> tokens:
               <strong id="rec-mode">int8</strong>
@@ -1671,6 +1845,13 @@
             <div style="margin-top:10px;color:var(--fg-mute)">
               <code id="rec-snippet">cache = HadamardKVCache(n_layers=28, mode="int8")</code>
             </div>
+          </div>
+
+          <!-- 9g: memory saved animated counter -->
+          <div class="mem-saved-display" id="mem-saved-display">
+            <span class="label">Memory saved vs FP16</span>
+            <span class="count" id="mem-saved-count">0</span>
+            <span class="unit" id="mem-saved-unit">MB</span>
           </div>
         </div>
 
@@ -1724,6 +1905,7 @@
       </div>
 
     </div>
+    </div><!-- /position:relative flow-svg wrapper -->
   </div>
 </section>
 
@@ -2764,7 +2946,409 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
     step();
   })();
 
-})(); // end Konjo enhancements
+})(); // end module 8
+
+/* ════════════════════════════════════════════════════════════════════════
+   WAVE 9: alive interaction layer
+   9a  Token flow river canvas
+   9b  Breathing iso blocks
+   9c  Scroll-parallax info sections
+   9d  Compression squeeze on rapid slider drag
+   9e  SVG data-flow connecting input → slider → output
+   9f  3-D hovering metric cards (tilt + spotlight)
+   9g  Memory-saved animated counter
+   9h  INT2 escape velocity + comet tail + background pulse
+   ════════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  const lerp  = (a, b, t) => a + (b - a) * t;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const rand  = (lo, hi) => lo + Math.random() * (hi - lo);
+
+  const MODE_COMPRESSION = { fp16: 0.04, int8: 0.25, int4: 0.56, int2: 0.95 };
+  let compressionLevel = 0.25;
+
+  // ── 9a. TOKEN FLOW RIVER ─────────────────────────────────────────────────
+  (function tokenRiver () {
+    const canvas = document.getElementById('token-river');
+    if (!canvas) return;
+
+    function resize () {
+      const w = canvas.parentElement.offsetWidth || 800;
+      if (canvas.width !== w) { canvas.width = w; canvas.height = 64; }
+    }
+
+    const TOKENS = ['the','▁of','##ing','Ġand','▁is','tion','▁to','##ly',
+                    'Ġthe','▁in','##ed','Ġof','▁a','##er','▁on','##ment'];
+    const COLS   = ['rgba(139,108,255,','rgba(40,212,200,','rgba(255,149,80,'];
+
+    const particles = [];
+
+    function spawn () {
+      if (particles.length > 60) return;
+      particles.push({
+        x:      -60,
+        y:      rand(8, 56),
+        tok:    TOKENS[Math.floor(Math.random() * TOKENS.length)],
+        speed:  0.6 + compressionLevel * 2.8,
+        size:   rand(10, 14),
+        alpha:  rand(0.55, 0.85),
+        colIdx: Math.floor(Math.random() * COLS.length),
+      });
+    }
+
+    let frame = 0;
+    function step () {
+      resize();
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width;
+
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(6,7,11,0.35)';
+      ctx.fillRect(0, 0, W, canvas.height);
+      ctx.globalCompositeOperation = 'screen';
+
+      const cZone = W * 0.65;
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.speed * (1 + compressionLevel);
+        const zT    = clamp((p.x - cZone) / (W * 0.3), 0, 1);
+        const scale = lerp(1, 0.1, zT);
+        const alpha = p.alpha * lerp(1, 0, zT);
+
+        if (p.x > W + 20 || alpha < 0.01) { particles.splice(i, 1); continue; }
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(scale, scale);
+        ctx.font        = `${p.size}px var(--font-mono,monospace)`;
+        ctx.fillStyle   = `${COLS[p.colIdx]}${alpha.toFixed(2)})`;
+        ctx.shadowBlur  = 8 * scale;
+        ctx.shadowColor = `${COLS[p.colIdx]}0.6)`;
+        ctx.fillText(p.tok, 0, 0);
+        ctx.restore();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+
+      frame++;
+      if (frame % Math.max(1, Math.round(8 - compressionLevel * 6)) === 0) spawn();
+      requestAnimationFrame(step);
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+    step();
+  })();
+
+
+  // ── 9b. BREATHING ISO BLOCKS ─────────────────────────────────────────────
+  (function breathingBlocks () {
+    let applied = false;
+    function apply () {
+      if (applied) return;
+      const blocks = document.querySelectorAll('.iso-block');
+      if (!blocks.length) return;
+      applied = true;
+      blocks.forEach((b, i) => {
+        const dur = rand(2000, 4000);
+        const kf  = i % 2 === 0 ? 'breathe' : 'breathe-inv';
+        b.style.setProperty('animation-name', kf);
+        b.style.setProperty('animation-duration', `${dur.toFixed(0)}ms`);
+        b.style.setProperty('animation-delay', `-${rand(0, dur).toFixed(0)}ms`);
+        b.style.setProperty('animation-timing-function', 'ease-in-out');
+        b.style.setProperty('animation-iteration-count', 'infinite');
+        b.style.setProperty('will-change', 'transform');
+      });
+    }
+    const iv = setInterval(() => { apply(); if (applied) clearInterval(iv); }, 200);
+  })();
+
+
+  // ── 9c. SCROLL PARALLAX ──────────────────────────────────────────────────
+  (function scrollParallax () {
+    const sections = document.querySelectorAll('.parallax-bg');
+    if (!sections.length) return;
+    let ticking = false;
+    function update () {
+      const sy = window.scrollY;
+      sections.forEach(s => {
+        const top   = s.getBoundingClientRect().top + sy;
+        const shift = -(sy - top) * 0.30;
+        s.style.transform = `translateY(${shift.toFixed(2)}px)`;
+      });
+      ticking = false;
+    }
+    window.addEventListener('scroll', () => {
+      if (!ticking) { requestAnimationFrame(update); ticking = true; }
+    }, { passive: true });
+    update();
+  })();
+
+
+  // ── 9d. COMPRESSION SQUEEZE ──────────────────────────────────────────────
+  (function compressionSqueeze () {
+    const root   = document.getElementById('app-root');
+    const slider = document.getElementById('ctx');
+    if (!root || !slider) return;
+
+    let prevVal  = parseInt(slider.value, 10);
+    let sqTimer  = null;
+
+    slider.addEventListener('input', () => {
+      const cur = parseInt(slider.value, 10);
+      const vel = Math.abs(cur - prevVal);
+      prevVal   = cur;
+      if (vel < 1024) return;
+
+      clearTimeout(sqTimer);
+      root.classList.remove('unsqueeze');
+      root.classList.add('squeeze');
+
+      sqTimer = setTimeout(() => {
+        root.classList.remove('squeeze');
+        root.classList.add('unsqueeze');
+        setTimeout(() => root.classList.remove('unsqueeze'), 700);
+      }, 150);
+    });
+  })();
+
+
+  // ── 9e. SVG DATA-FLOW LINE ───────────────────────────────────────────────
+  (function dataFlowLine () {
+    const svg    = document.getElementById('flow-svg');
+    const path   = document.getElementById('flow-path');
+    const slider = document.getElementById('ctx');
+    const grad   = document.getElementById('flow-grad');
+    if (!svg || !path || !slider) return;
+
+    let offset = 0;
+
+    function updatePath () {
+      const svgRect = svg.getBoundingClientRect();
+      if (!svgRect.width) return;
+      const sr = slider.getBoundingClientRect();
+      const recEl = document.getElementById('rec');
+      if (!recEl) return;
+      const rr = recEl.getBoundingClientRect();
+
+      const x1 = sr.left + sr.width * 0.1  - svgRect.left;
+      const y1 = sr.top  + sr.height * 0.5 - svgRect.top;
+      const x2 = rr.left + rr.width  * 0.5 - svgRect.left;
+      const y2 = rr.top  + rr.height * 0.5 - svgRect.top;
+      const mx = (x1 + x2) / 2;
+
+      path.setAttribute('d',
+        `M${x1.toFixed(1)},${y1.toFixed(1)} C${mx.toFixed(1)},${y1.toFixed(1)} ${mx.toFixed(1)},${y2.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`);
+
+      if (grad) {
+        grad.setAttribute('x1', x1.toFixed(1));
+        grad.setAttribute('x2', x2.toFixed(1));
+        grad.setAttribute('y1', y1.toFixed(1));
+        grad.setAttribute('y2', y2.toFixed(1));
+      }
+    }
+
+    function animateDash () {
+      offset -= (1.5 + compressionLevel * 4.5);
+      path.setAttribute('stroke-dashoffset', offset.toFixed(1));
+      requestAnimationFrame(animateDash);
+    }
+
+    window.addEventListener('resize', updatePath);
+    window.addEventListener('scroll', updatePath, { passive: true });
+    slider.addEventListener('input', updatePath);
+    setTimeout(updatePath, 500);
+    animateDash();
+  })();
+
+
+  // ── 9f. 3-D HOVERING METRIC CARDS ───────────────────────────────────────
+  (function cardTilt () {
+    function applyTilt (card) {
+      if (!card.querySelector('.chip-spotlight')) {
+        const s = document.createElement('div');
+        s.className = 'chip-spotlight';
+        card.appendChild(s);
+      }
+      const spot = card.querySelector('.chip-spotlight');
+
+      card.addEventListener('mousemove', e => {
+        const r  = card.getBoundingClientRect();
+        const dx = (e.clientX - r.left - r.width  / 2) / (r.width  / 2);
+        const dy = (e.clientY - r.top  - r.height / 2) / (r.height / 2);
+        card.style.transform = `perspective(400px) rotateX(${(-dy * 5).toFixed(2)}deg) rotateY(${(dx * 5).toFixed(2)}deg) translateZ(8px) scale(1.06)`;
+        card.style.boxShadow = `0 ${8 + Math.abs(dy) * 12}px ${28 + Math.abs(dx) * 20}px rgba(139,108,255,0.48)`;
+        const px = ((e.clientX - r.left) / r.width  * 100).toFixed(1);
+        const py = ((e.clientY - r.top)  / r.height * 100).toFixed(1);
+        spot.style.background = `radial-gradient(circle at ${px}% ${py}%, rgba(124,58,237,0.14), transparent 70%)`;
+      });
+      card.addEventListener('mouseleave', () => {
+        card.style.transform  = '';
+        card.style.boxShadow  = '';
+        spot.style.background = '';
+      });
+    }
+
+    function init () {
+      const chips = document.querySelectorAll('.model-chip');
+      if (!chips.length) return;
+      chips.forEach(applyTilt);
+      clearInterval(iv);
+    }
+    const iv = setInterval(init, 200);
+  })();
+
+
+  // ── 9g. MEMORY-SAVED ANIMATED COUNTER ───────────────────────────────────
+  (function memorySavedCounter () {
+    const countEl = document.getElementById('mem-saved-count');
+    const unitEl  = document.getElementById('mem-saved-unit');
+    if (!countEl || !unitEl) return;
+
+    let displayVal = 0, targetVal = 0, rafId = null;
+
+    function fmtUnit (b) {
+      if (b >= 1024 ** 3) return { v: b / 1024 ** 3, u: 'GB' };
+      if (b >= 1024 ** 2) return { v: b / 1024 ** 2, u: 'MB' };
+      return                      { v: b / 1024,       u: 'KB' };
+    }
+
+    function settle () {
+      displayVal += (targetVal - displayVal) * 0.10;
+      const { v, u } = fmtUnit(displayVal);
+      countEl.textContent = v.toFixed(v >= 10 ? 0 : 1);
+      unitEl.textContent  = u;
+      if (Math.abs(targetVal - displayVal) > 1024) {
+        rafId = requestAnimationFrame(settle);
+      } else {
+        const { v: fv, u: fu } = fmtUnit(targetVal);
+        countEl.textContent = fv.toFixed(fv >= 10 ? 0 : 1);
+        unitEl.textContent  = fu;
+      }
+    }
+
+    const SCALE_B = 4, KV2 = 2;
+    const PRESETS = {
+      'qwen-7b':    { n_layers: 28, n_kv_heads:  8, head_dim: 128 },
+      'llama-8b':   { n_layers: 32, n_kv_heads:  8, head_dim: 128 },
+      'qwen-1_5b':  { n_layers: 28, n_kv_heads:  2, head_dim: 128 },
+      'phi-3-mini': { n_layers: 32, n_kv_heads: 32, head_dim:  96 },
+    };
+    function bpt (mode, hd) {
+      if (mode === 'fp16') return hd * 2;
+      if (mode === 'int8') return hd + SCALE_B;
+      if (mode === 'int4') return hd / 2 + SCALE_B;
+      if (mode === 'int2') return hd / 4 + SCALE_B;
+      return 0;
+    }
+
+    function recompute () {
+      const ctxEl  = document.getElementById('ctx');
+      const preEl  = document.getElementById('preset');
+      const recEl  = document.getElementById('rec-mode');
+      if (!ctxEl || !preEl || !recEl) return;
+      const c    = parseInt(ctxEl.value, 10) || 8192;
+      const cfg  = PRESETS[preEl.value] || PRESETS['qwen-7b'];
+      const mode = recEl.textContent.trim() || 'int8';
+      const f    = cfg.n_layers * cfg.n_kv_heads * KV2;
+      targetVal  = Math.max(0, bpt('fp16', cfg.head_dim) * f * c - bpt(mode, cfg.head_dim) * f * c);
+
+      cancelAnimationFrame(rafId);
+      countEl.classList.remove('popped');
+      void countEl.offsetWidth;
+      countEl.classList.add('popped');
+      rafId = requestAnimationFrame(settle);
+    }
+
+    document.getElementById('ctx')?.addEventListener('input', recompute);
+    document.getElementById('preset')?.addEventListener('change', recompute);
+    document.addEventListener('squish:tab', recompute);
+    setTimeout(recompute, 700);
+  })();
+
+
+  // ── 9h. INT2 COMET TAILS + BACKGROUND PULSE ─────────────────────────────
+  (function int2Comet () {
+    const pulse = document.getElementById('int2-pulse');
+
+    function triggerPulse () {
+      if (!pulse) return;
+      pulse.style.transition = 'none';
+      pulse.style.opacity    = '0';
+      void pulse.offsetWidth;
+      pulse.style.transition = 'opacity 0.3s ease-out';
+      pulse.style.opacity    = '0.5';
+      setTimeout(() => {
+        pulse.style.transition = 'opacity 1.2s ease-in';
+        pulse.style.opacity    = '0';
+      }, 300);
+    }
+
+    function spawnComet (mode) {
+      if (mode !== 'int2') return;
+      const r  = window._isoBlockRect ? window._isoBlockRect('int2') : null;
+      const cx = r ? r.left + r.width / 2   : window.innerWidth  / 2;
+      const cy = r ? r.top  + r.height * 0.4 : window.innerHeight / 2;
+
+      for (let i = 0; i < 20; i++) {
+        const dx    = rand(-140, 140);
+        const dy    = rand(-200, -70);
+        const dr    = rand(-300, 300);
+        const delay = rand(0, 0.24);
+        const glyph = Math.random() < 0.5 ? '0' : '1';
+        const sz    = rand(10, 16);
+
+        const el = document.createElement('div');
+        el.className   = 'bit-particle';
+        el.textContent = glyph;
+        el.style.color = '#ff5e94';
+        el.style.left  = (cx + rand(-36, 36)) + 'px';
+        el.style.top   = (cy + rand(-16, 16)) + 'px';
+        el.style.setProperty('--dx', dx + 'px');
+        el.style.setProperty('--dy', dy + 'px');
+        el.style.setProperty('--dr', dr + 'deg');
+        el.style.animationDelay = delay + 's';
+        el.style.fontSize = sz + 'px';
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 2200);
+
+        // 4 comet tail echoes
+        for (let t = 1; t <= 4; t++) {
+          const tail = document.createElement('div');
+          tail.className    = 'bit-comet';
+          tail.textContent  = glyph;
+          tail.style.color  = '#ff5e94';
+          tail.style.left   = el.style.left;
+          tail.style.top    = el.style.top;
+          tail.style.setProperty('--dx', (dx * (1 - t * 0.18)).toFixed(1) + 'px');
+          tail.style.setProperty('--dy', (dy * (1 - t * 0.18)).toFixed(1) + 'px');
+          tail.style.setProperty('--dr', (dr * 0.5).toFixed(1) + 'deg');
+          tail.style.animationDelay = (delay + t * 0.04) + 's';
+          tail.style.opacity        = (1 - t * 0.22).toFixed(2);
+          tail.style.fontSize       = sz + 'px';
+          tail.style.filter         = `blur(${t * 0.6}px)`;
+          document.body.appendChild(tail);
+          setTimeout(() => tail.remove(), 2500);
+        }
+      }
+      triggerPulse();
+    }
+
+    document.addEventListener('squish:tab', e => {
+      const m = e.detail.mode;
+      compressionLevel = MODE_COMPRESSION[m] ?? compressionLevel;
+      spawnComet(m);
+    });
+
+    document.getElementById('ctx')?.addEventListener('input', () => {
+      const c = parseInt(document.getElementById('ctx').value, 10);
+      const mode = c <= 8192 ? 'int8' : c <= 16384 ? 'int4' : 'int2';
+      compressionLevel = MODE_COMPRESSION[mode];
+    });
+  })();
+
+})(); // end Wave 9
 
 /* ════════════════════════════════════════════════════════════════════════
    7. live mode — talks to demo/server.py if it's running
@@ -3037,5 +3621,6 @@ recon = <span class="fn">_dequantize_int2_per_channel</span>(packed, scale, <spa
 
 </script>
 
+</div><!-- /#app-root -->
 </body>
 </html>
