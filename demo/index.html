@@ -556,10 +556,93 @@
     .block, .gap-arc, .card, .lattice .lc {
       transition-duration: 0ms !important;
     }
+    .parallax-layer { transform: none !important; }
+    #w9-squeeze { transform: none !important; transition: none !important; }
+  }
+
+  /* ── WAVE 9: alive interaction layer ────────────────────────────── */
+
+  /* 9a token river */
+  #token-river {
+    display: block; width: 100%; height: 56px;
+    pointer-events: none; will-change: transform;
+    position: relative; z-index: 2;
+  }
+  .river-wrap { overflow: hidden; height: 56px; margin-bottom: -16px; }
+
+  /* 9b breathing blocks */
+  @keyframes breathe     { 0%,100%{transform:scaleY(1.000)} 50%{transform:scaleY(1.028)} }
+  @keyframes breathe-inv { 0%,100%{transform:scaleY(1.000)} 50%{transform:scaleY(0.974)} }
+
+  /* 9c parallax */
+  .parallax-layer { will-change: transform; }
+
+  /* 9d squeeze */
+  #w9-squeeze { will-change: transform; transform-origin: center center; }
+  #w9-squeeze.squeezing { transform: scaleX(0.97); transition: transform 150ms linear; }
+  #w9-squeeze.springing { transform: scaleX(1); transition: transform 600ms cubic-bezier(0.34,1.56,0.64,1); }
+
+  /* 9e SVG flow path (fixed overlay) */
+  #w9-flow-svg {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 5; overflow: visible;
+  }
+  #w9-flow-path {
+    fill: none; stroke-width: 2; stroke-dasharray: 4 8;
+    stroke-linecap: round; opacity: 0.45; will-change: stroke-dashoffset;
+  }
+
+  /* 9f 3-D card tilt */
+  .card { transform-style: preserve-3d; will-change: transform; }
+  .card-spotlight { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+
+  /* 9g memory saved counter */
+  #w9-saved {
+    margin: 14px auto 0; max-width: 480px;
+    padding: 10px 18px; border-radius: 10px;
+    background: rgba(76,217,100,0.07); border: 1px solid rgba(76,217,100,0.22);
+    display: flex; align-items: baseline; gap: 10px;
+    font-family: var(--mono, ui-monospace, monospace);
+  }
+  #w9-saved .label { font-size:11px; color:#9ba3b4; text-transform:uppercase; letter-spacing:.12em; }
+  #w9-saved .count { font-size:26px; font-weight:700; color:#4cd964; will-change:transform; display:inline-block; }
+  #w9-saved .unit  { font-size:13px; color:#9ba3b4; }
+  @keyframes w9pop { 0%{transform:scale(1.22)} 100%{transform:scale(1)} }
+  .w9pop { animation: w9pop 300ms cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+  /* 9h INT2 pulse + comet particles */
+  #w9-pulse {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    pointer-events: none; z-index: 9998; opacity: 0; will-change: opacity;
+  }
+  .bit-particle, .bit-comet {
+    position: fixed; pointer-events: none;
+    font: 700 11px/1 ui-monospace, monospace;
+    z-index: 9999; user-select: none;
+    animation: bitFly 1.6s cubic-bezier(.23,1,.32,1) both;
+  }
+  .bit-comet { z-index: 9997; animation-duration: 1.9s; }
+  @keyframes bitFly {
+    0%   { opacity:1; transform:translate(0,0) rotate(0deg) scale(1); }
+    60%  { opacity:.7; }
+    100% { opacity:0; transform:translate(var(--dx),var(--dy)) rotate(var(--dr)) scale(.25); }
   }
 </style>
 </head>
 <body>
+<!-- 9h pulse overlay -->
+<div id="w9-pulse" aria-hidden="true"></div>
+<!-- 9e SVG flow line (fixed, spans viewport) -->
+<svg id="w9-flow-svg" aria-hidden="true">
+  <defs>
+    <linearGradient id="w9-grad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#8b6cff"/>
+      <stop offset="50%"  stop-color="#ff9550"/>
+      <stop offset="100%" stop-color="#4cd964"/>
+    </linearGradient>
+  </defs>
+  <path id="w9-flow-path" stroke="url(#w9-grad)"/>
+</svg>
 
 <!-- Floating hexagonal background — pure CSS, no JS, no canvas. -->
 <div class="hex-field" aria-hidden="true">
@@ -569,7 +652,12 @@
   <div class="hex-blob d"></div>
 </div>
 
-<main>
+<!-- 9a token river: tokens stream rightward, shrink into compression zone -->
+<div class="river-wrap" aria-hidden="true">
+  <canvas id="token-river"></canvas>
+</div>
+
+<main id="w9-squeeze">
 
   <!-- Top bar -->
   <div class="topbar">
@@ -650,13 +738,20 @@
     quality, ~1.94× memory reduction. Move the slider to see the trade-off.
   </div>
 
-  <!-- Crystal-lattice comparison table -->
-  <section class="lattice-wrap">
+  <!-- 9g: memory saved animated counter -->
+  <div id="w9-saved" aria-live="polite">
+    <span class="label">memory saved vs FP16</span>
+    <span class="count" id="w9-count">910</span>
+    <span class="unit"  id="w9-unit">MB</span>
+  </div>
+
+  <!-- Crystal-lattice comparison table (9c parallax layer) -->
+  <section class="lattice-wrap parallax-layer">
     <div class="lattice-title">tier comparison · Qwen2.5-7B · 32K context</div>
     <div class="lattice" id="lattice"></div>
   </section>
 
-  <div class="foot">
+  <div class="foot parallax-layer">
     same codecs as <code>pip install squish</code>
     · <a href="https://huggingface.co/spaces/squish-community/squish-kv-quant">try the HF Space</a>
     · <a href="https://github.com/squishai/squish">source</a>
@@ -946,6 +1041,369 @@
 
   /* ── Boot ──────────────────────────────────────────────────────── */
   applyTier("int8", { pulse: false });
+
+  /* ════════════════════════════════════════════════════════════════
+     WAVE 9: alive interaction layer — applied to W109 design
+     ════════════════════════════════════════════════════════════════ */
+  (function wave9 () {
+    "use strict";
+    const lerp  = (a, b, t) => a + (b - a) * t;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const rand  = (lo, hi) => lo + Math.random() * (hi - lo);
+    const TIER_COMP = { int8: 0.25, int4: 0.56, int2: 0.95 };
+
+    let compressionLevel = TIER_COMP.int8;   // updated by tier changes
+    let currentTierId    = "int8";
+
+    // Patch applyTier to forward tier changes into Wave 9.
+    const _origApply = applyTier;
+    function applyTierPatched (tierId, opts) {
+      _origApply(tierId, opts);
+      currentTierId    = tierId;
+      compressionLevel = TIER_COMP[tierId] ?? compressionLevel;
+      onTierChange(tierId);
+    }
+    // Replace in outer scope via re-assignment (same-script, same closure)
+    applyTier = applyTierPatched;  // eslint-disable-line no-func-assign
+
+    /* ── 9a. TOKEN FLOW RIVER ─────────────────────────────────── */
+    (function () {
+      const canvas = document.getElementById("token-river");
+      if (!canvas) return;
+
+      function resize () {
+        const w = canvas.parentElement.offsetWidth || 800;
+        if (canvas.width !== w) { canvas.width = w; canvas.height = 56; }
+      }
+
+      const TOKENS = ["the","▁of","##ing","Ġand","▁is","tion","▁to",
+                      "##ly","Ġthe","##ed","▁a","##er","▁on","##ment"];
+      const COLS   = ["rgba(139,108,255,","rgba(40,212,200,","rgba(255,149,80,"];
+      const pts    = [];   // active particles
+
+      function spawn () {
+        if (pts.length > 50) return;
+        pts.push({
+          x:      -55,
+          y:      rand(8, 48),
+          tok:    TOKENS[Math.floor(Math.random() * TOKENS.length)],
+          speed:  0.7 + compressionLevel * 2.6,
+          sz:     rand(10, 13),
+          a:      rand(0.55, 0.85),
+          ci:     Math.floor(Math.random() * 3),
+        });
+      }
+
+      let frame = 0;
+      function step () {
+        resize();
+        const ctx = canvas.getContext("2d");
+        const W = canvas.width, H = canvas.height;
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = "rgba(6,7,11,0.4)";
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalCompositeOperation = "screen";
+
+        const cz = W * 0.62;
+        for (let i = pts.length - 1; i >= 0; i--) {
+          const p = pts[i];
+          p.x += p.speed * (1 + compressionLevel * 0.8);
+          const t = clamp((p.x - cz) / (W * 0.32), 0, 1);
+          const sc = lerp(1, 0.09, t);
+          const al = p.a * lerp(1, 0, t);
+          if (p.x > W + 20 || al < 0.01) { pts.splice(i, 1); continue; }
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.scale(sc, sc);
+          ctx.font = `${p.sz}px var(--mono,monospace)`;
+          ctx.fillStyle   = `${COLS[p.ci]}${al.toFixed(2)})`;
+          ctx.shadowBlur  = 8 * sc;
+          ctx.shadowColor = `${COLS[p.ci]}0.7)`;
+          ctx.fillText(p.tok, 0, 0);
+          ctx.restore();
+        }
+        ctx.globalCompositeOperation = "source-over";
+
+        frame++;
+        if (frame % Math.max(1, Math.round(7 - compressionLevel * 5)) === 0) spawn();
+        requestAnimationFrame(step);
+      }
+      window.addEventListener("resize", resize);
+      resize();
+      step();
+    })();
+
+    /* ── 9b. BREATHING BLOCKS ─────────────────────────────────── */
+    (function () {
+      // The stacks are rebuilt by rebuildLiveStack(); intercept that too.
+      const _origRebuild = rebuildLiveStack;
+      function rebuildPatched (n) {
+        _origRebuild(n);
+        applyBreathing();
+      }
+      rebuildLiveStack = rebuildPatched;  // eslint-disable-line no-func-assign
+
+      function applyBreathing () {
+        // Apply to both FP16 and live stacks
+        document.querySelectorAll(".stack .block").forEach((b, i) => {
+          if (b.dataset.w9breath) return;   // already applied
+          b.dataset.w9breath = "1";
+          const dur = rand(2000, 4200).toFixed(0);
+          const kf  = i % 2 === 0 ? "breathe" : "breathe-inv";
+          b.style.animationName           = kf;
+          b.style.animationDuration       = dur + "ms";
+          b.style.animationDelay          = `-${rand(0, +dur).toFixed(0)}ms`;
+          b.style.animationTimingFunction = "ease-in-out";
+          b.style.animationIterationCount = "infinite";
+          b.style.willChange              = "transform";
+        });
+      }
+      // Apply to the FP16 stack (built before Wave 9 loads) on next tick
+      setTimeout(applyBreathing, 0);
+    })();
+
+    /* ── 9c. SCROLL PARALLAX ──────────────────────────────────── */
+    (function () {
+      const layers = document.querySelectorAll(".parallax-layer");
+      if (!layers.length) return;
+      let ticking = false;
+      function update () {
+        const sy = window.scrollY;
+        layers.forEach(s => {
+          const top   = s.getBoundingClientRect().top + sy;
+          const shift = -(sy - top) * 0.30;
+          s.style.transform = `translateY(${shift.toFixed(1)}px)`;
+        });
+        ticking = false;
+      }
+      window.addEventListener("scroll", () => {
+        if (!ticking) { requestAnimationFrame(update); ticking = true; }
+      }, { passive: true });
+      update();
+    })();
+
+    /* ── 9d. COMPRESSION SQUEEZE ──────────────────────────────── */
+    (function () {
+      const root = document.getElementById("w9-squeeze");
+      if (!root) return;
+      let prev = parseInt(slider.value, 10), sqT = null;
+      slider.addEventListener("input", () => {
+        const cur = parseInt(slider.value, 10);
+        const vel = Math.abs(cur - prev);
+        prev = cur;
+        if (vel < 10) return;
+        clearTimeout(sqT);
+        root.classList.remove("springing");
+        root.classList.add("squeezing");
+        sqT = setTimeout(() => {
+          root.classList.remove("squeezing");
+          root.classList.add("springing");
+          setTimeout(() => root.classList.remove("springing"), 700);
+        }, 150);
+      });
+    })();
+
+    /* ── 9e. SVG DATA-FLOW LINE ──────────────────────────────── */
+    (function () {
+      const svgEl  = document.getElementById("w9-flow-svg");
+      const path   = document.getElementById("w9-flow-path");
+      const grad   = document.getElementById("w9-grad");
+      if (!svgEl || !path) return;
+      let offset = 0;
+
+      function updatePath () {
+        const sr = slider.getBoundingClientRect();
+        const rr = document.getElementById("reason").getBoundingClientRect();
+        if (!sr.width) return;
+
+        const x1 = sr.left + sr.width * 0.5;
+        const y1 = sr.bottom - 4;
+        const x2 = rr.left  + rr.width  * 0.5;
+        const y2 = rr.top   + rr.height * 0.5;
+        const cy = y1 + (y2 - y1) * 0.45;
+
+        path.setAttribute("d",
+          `M${x1.toFixed(0)},${y1.toFixed(0)} C${x1.toFixed(0)},${cy.toFixed(0)} ${x2.toFixed(0)},${cy.toFixed(0)} ${x2.toFixed(0)},${y2.toFixed(0)}`);
+        if (grad) {
+          grad.setAttribute("x1", x1.toFixed(0));
+          grad.setAttribute("y1", y1.toFixed(0));
+          grad.setAttribute("x2", x2.toFixed(0));
+          grad.setAttribute("y2", y2.toFixed(0));
+        }
+      }
+
+      function animDash () {
+        offset -= (1.5 + compressionLevel * 5);
+        path.setAttribute("stroke-dashoffset", offset.toFixed(1));
+        requestAnimationFrame(animDash);
+      }
+
+      window.addEventListener("resize", updatePath);
+      window.addEventListener("scroll", updatePath, { passive: true });
+      slider.addEventListener("input", updatePath);
+      setTimeout(updatePath, 300);
+      animDash();
+    })();
+
+    /* ── 9f. 3-D CARD TILT ───────────────────────────────────── */
+    (function () {
+      [document.getElementById("cardMem"),
+       document.getElementById("cardSnr"),
+       document.getElementById("cardMode")].forEach(card => {
+        if (!card) return;
+        const spot = document.createElement("div");
+        spot.className = "card-spotlight";
+        card.style.position = "relative";
+        card.appendChild(spot);
+
+        card.addEventListener("mousemove", e => {
+          const r  = card.getBoundingClientRect();
+          const dx = (e.clientX - r.left - r.width  / 2) / (r.width  / 2);
+          const dy = (e.clientY - r.top  - r.height / 2) / (r.height / 2);
+          card.style.transform  = `perspective(380px) rotateX(${(-dy*5).toFixed(1)}deg) rotateY(${(dx*5).toFixed(1)}deg) translateZ(8px)`;
+          card.style.boxShadow  = `0 ${8+Math.abs(dy)*14}px ${30+Math.abs(dx)*22}px rgba(139,108,255,0.50)`;
+          const px = ((e.clientX - r.left) / r.width  * 100).toFixed(1);
+          const py = ((e.clientY - r.top)  / r.height * 100).toFixed(1);
+          spot.style.background = `radial-gradient(circle at ${px}% ${py}%,rgba(124,58,237,0.15),transparent 68%)`;
+        });
+        card.addEventListener("mouseleave", () => {
+          card.style.transform  = "";
+          card.style.boxShadow  = "";
+          spot.style.background = "";
+        });
+      });
+    })();
+
+    /* ── 9g. MEMORY-SAVED COUNTER ───────────────────────────── */
+    (function () {
+      const countEl = document.getElementById("w9-count");
+      const unitEl  = document.getElementById("w9-unit");
+      if (!countEl) return;
+
+      const FP16_MB = 1879;   // Qwen2.5-7B @ 32K, FP16
+      const TIER_MB = { int8: 968.9, int4: 499.1, int2: 264.2 };
+
+      let dispVal = FP16_MB - TIER_MB.int8;
+      let targVal = dispVal;
+      let rafId   = null;
+
+      function settle () {
+        dispVal += (targVal - dispVal) * 0.11;
+        const v = Math.abs(dispVal);
+        countEl.textContent = v >= 1000 ? (v/1000).toFixed(2) : Math.round(v).toString();
+        unitEl.textContent  = v >= 1000 ? "GB" : "MB";
+        if (Math.abs(targVal - dispVal) > 0.5) rafId = requestAnimationFrame(settle);
+        else {
+          dispVal = targVal;
+          const fv = Math.abs(targVal);
+          countEl.textContent = fv >= 1000 ? (fv/1000).toFixed(2) : Math.round(fv).toString();
+          unitEl.textContent  = fv >= 1000 ? "GB" : "MB";
+        }
+      }
+
+      function updateSaved (tierId) {
+        const saved = FP16_MB - (TIER_MB[tierId] ?? FP16_MB);
+        targVal = saved;
+        cancelAnimationFrame(rafId);
+        countEl.classList.remove("w9pop");
+        void countEl.offsetWidth;
+        countEl.classList.add("w9pop");
+        rafId = requestAnimationFrame(settle);
+      }
+
+      // Call on first load
+      setTimeout(() => updateSaved("int8"), 500);
+      // onTierChange defined below — patch in
+      window._w9SavedUpdate = updateSaved;
+    })();
+
+    /* ── 9h. INT2 COMET TAILS + BACKGROUND PULSE ─────────────── */
+    (function () {
+      const pulse = document.getElementById("w9-pulse");
+
+      function triggerPulse () {
+        if (!pulse) return;
+        pulse.style.transition = "none";
+        pulse.style.opacity    = "0";
+        void pulse.offsetWidth;
+        pulse.style.transition = "opacity .28s ease-out";
+        pulse.style.opacity    = "0.52";
+        setTimeout(() => {
+          pulse.style.transition = "opacity 1.3s ease-in";
+          pulse.style.opacity    = "0";
+        }, 300);
+      }
+
+      function spawnParticles (tierId) {
+        const isInt2 = tierId === "int2";
+        const count  = isInt2 ? 22 : tierId === "int4" ? 7 : 3;
+        if (!count) return;
+
+        // Reference point: the live stack element
+        const ref  = document.getElementById("stackLive");
+        const r    = ref ? ref.getBoundingClientRect() : null;
+        const cx   = r ? r.left + r.width  / 2 : window.innerWidth  / 2;
+        const cy   = r ? r.top  + r.height * 0.3 : window.innerHeight / 2;
+        const col  = isInt2 ? "#ff5e94" : tierId === "int4" ? "#ff9550" : "#28d4c8";
+        const spd  = isInt2 ? 1.4 : 1.0;
+
+        for (let i = 0; i < count; i++) {
+          const dx    = rand(-130, 130) * spd;
+          const dy    = rand(-200, -60) * spd;
+          const dr    = rand(-300, 300);
+          const delay = rand(0, 0.22);
+          const glyph = Math.random() < 0.5 ? "0" : "1";
+          const sz    = rand(10, isInt2 ? 17 : 13);
+
+          const el = document.createElement("div");
+          el.className   = "bit-particle";
+          el.textContent = glyph;
+          el.style.color = col;
+          el.style.left  = (cx + rand(-32, 32)) + "px";
+          el.style.top   = (cy + rand(-14, 14)) + "px";
+          el.style.setProperty("--dx", dx.toFixed(0) + "px");
+          el.style.setProperty("--dy", dy.toFixed(0) + "px");
+          el.style.setProperty("--dr", dr.toFixed(0) + "deg");
+          el.style.animationDelay = delay + "s";
+          el.style.fontSize = sz + "px";
+          document.body.appendChild(el);
+          setTimeout(() => el.remove(), 2200);
+
+          if (isInt2) {
+            // Comet tail — 4 fading echoes
+            for (let t = 1; t <= 4; t++) {
+              const tail = document.createElement("div");
+              tail.className    = "bit-comet";
+              tail.textContent  = glyph;
+              tail.style.color  = col;
+              tail.style.left   = el.style.left;
+              tail.style.top    = el.style.top;
+              tail.style.setProperty("--dx", (dx * (1 - t * 0.17)).toFixed(0) + "px");
+              tail.style.setProperty("--dy", (dy * (1 - t * 0.17)).toFixed(0) + "px");
+              tail.style.setProperty("--dr", (dr * 0.5).toFixed(0) + "deg");
+              tail.style.animationDelay = (delay + t * 0.045) + "s";
+              tail.style.opacity        = (1 - t * 0.21).toFixed(2);
+              tail.style.fontSize       = sz + "px";
+              tail.style.filter         = `blur(${(t * 0.55).toFixed(1)}px)`;
+              document.body.appendChild(tail);
+              setTimeout(() => tail.remove(), 2600);
+            }
+          }
+        }
+
+        if (isInt2) triggerPulse();
+      }
+
+      window._w9Particles = spawnParticles;
+    })();
+
+    /* ── Shared tier-change dispatcher ─────────────────────────── */
+    function onTierChange (tierId) {
+      if (window._w9SavedUpdate)  window._w9SavedUpdate(tierId);
+      if (window._w9Particles)    window._w9Particles(tierId);
+    }
+
+  })(); // end Wave 9
 </script>
 </body>
 </html>
