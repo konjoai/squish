@@ -36,7 +36,7 @@ def test_wave37_wire_header_preserved():
 
 
 def test_line_count():
-    """Wave 126 target was 4698; squash routing added ~45 lines after that wave.
-    Those squash-routing additions are exempt from purge logic — see CLAUDE.md."""
-    assert len(LINES) <= 4750, f"Expected ≤ 4750 lines (squash-routing-adjusted), got {len(LINES)}"
+    """Wave 126 target 4698; squash routing +45; W111 quality monitor +18.
+    Those additions are exempt from purge logic — see CLAUDE.md."""
+    assert len(LINES) <= 4780, f"Expected ≤ 4780 lines (W111 quality monitor adjusted), got {len(LINES)}"
     assert len(LINES) > 4600, f"Sanity floor: expected > 4600 lines, got {len(LINES)}"

@@ -527,7 +527,8 @@ class TestModuleCount:
     def test_module_count_after_w103_1(self):
         """W103.1 adds squish/quant/sqint2.py (83 → 84).
         W103.2 extends sqint2.py in-place — count stays at 84.
-        W103.4c adds squish/quant/sqint2_linear.py (84 → 85)."""
+        W103.4c adds squish/quant/sqint2_linear.py (84 → 85).
+        W110 adds router.py (85 → 86). W111 adds quality_monitor.py (86 → 87)."""
         import squish
 
         root = Path(squish.__file__).parent
@@ -537,9 +538,9 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 86, (
-            f"Module count = {count}, expected 86 after W110. "
-            f"(83 baseline post-squash-extraction + sqint2.py + sqint2_linear.py + router.py). "
+        assert count == 87, (
+            f"Module count = {count}, expected 87 after W111. "
+            f"(83 baseline post-squash-extraction + sqint2.py + sqint2_linear.py + router.py + quality_monitor.py). "
             "If this number changed, update CLAUDE.md / SESSION.md too."
         )
         # Ceiling check stays well below 125.

@@ -684,5 +684,65 @@ envelope on the same hardware run. LoRA INT4 checkpoint support remains deferred
 
 ---
 
+### W111 — Inference Quality Monitor (v9.30.0) ✅ COMPLETE (2026-05-11)
+**Why:** squish serves requests across multiple models with no visibility into
+per-request latency percentiles, TTFT, or throughput degradation. W111 adds a
+zero-dependency rolling-window quality tracker that exposes P50/P95/P99 stats
+via `GET /v1/quality` and `squish quality` CLI — making production perf visible
+without Prometheus or any external APM tool.
+
+**Changes shipped (2026-05-11):**
+- **`squish/serving/quality_monitor.py`** — 450-line module, stdlib only:
+  - `RequestMetric` — frozen dataclass: timestamp, model_id, latency_ms, ttft_ms,
+    tokens_generated, tokens_per_sec, success, error_type.
+  - `QualityStats` — frozen dataclass: per-model P50/P95/P99 latency + TPS + TTFT
+    + error_rate + n_requests. `to_dict()` → JSON-serialisable.
+  - `QualityReport` — frozen dataclass: all-models report. `to_dict()`.
+  - `QualityMonitor` — thread-safe deque-backed tracker (threading.Lock).
+    `record()`, `report()`, `stats_for()`, `clear()`. Lazy trim on every record().
+  - `_percentile(values, p)` — linear interpolation; math comment: `i = (p/100)*(n-1)`.
+  - `get_quality_monitor()` — double-checked-locking singleton.
+  - `record_completion_metric(model_id, duration_s, ttft_s, n_tokens, tps)` —
+    server-facing helper; never raises; logs warning on failure.
+  - `quality_response_dict(window, model_filter)` — server-facing report builder.
+
+- **`squish/server.py`** — `_ModelState.record_completion` hooks into
+  `record_completion_metric` via a single-line call. `GET /v1/quality` endpoint
+  (window=[60, 86400], optional model filter). Net +18 lines.
+
+- **`squish/cli.py`** — added `squish quality [--window N] [--model M] [--json]`
+  subcommand via `cmd_quality()` + `p_quality` parser in `build_parser()`.
+
+- **`tests/test_quality_monitor.py`** — 25 tests. All pass in 0.33 s.
+
+- Module count: 86 → 87 (`quality_monitor.py`).
+
+- Version bumped 9.29.0 → 9.30.0: `pyproject.toml`, `squish/__init__.py`,
+  `spaces/requirements.txt`, `tests/test_version.py`,
+  `tests/test_wave79_startup_inference.py`.
+
+- Line-count test thresholds updated (waves 122–126) to account for +18 lines.
+
+**Acceptance criteria:**
+- ✅ `RequestMetric` and `QualityStats` are frozen (mutation raises `FrozenInstanceError`).
+- ✅ Thread-safe: 50 concurrent threads record 500 metrics without crash.
+- ✅ Rolling window correctly excludes events older than `window_seconds`.
+- ✅ `get_quality_monitor()` returns the same singleton across calls.
+- ✅ `squish quality` CLI subcommand registered in `build_parser()`.
+- ✅ `GET /v1/quality` returns HTTP 200 with valid JSON (empty stats valid).
+- ✅ 25 / 25 tests pass; zero regressions introduced.
+- ✅ No silent failures, no TODOs, no dead code, no new mandatory deps.
+
+---
+
+## Next Immediate Action
+**W111 SHIPPED (2026-05-11).** Quality Monitor live at `squish/serving/quality_monitor.py`.
+
+**After W111: W103.4d** — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65 %
+lm_eval ship gate (hardware run required). Also validates the W104 32 K-context
+envelope on the same hardware run.
+
+---
+
 *Owner: wesleyscholl / Konjo AI Research*
 *Update after each completed wave. Never let this drift from actual implementation.*

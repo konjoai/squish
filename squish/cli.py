@@ -5728,6 +5728,59 @@ def cmd_bench(args) -> None:
     print()
 
 
+def cmd_quality(args) -> None:
+    """Print rolling-window inference quality stats.
+
+    Queries the module-level :class:`~squish.serving.quality_monitor.QualityMonitor`
+    singleton and prints per-model P50/P95/P99 latency, throughput, TTFT, and
+    error rates as a formatted table (default) or JSON (``--json``).
+    """
+    from squish.serving.quality_monitor import get_quality_monitor  # noqa: PLC0415
+
+    monitor = get_quality_monitor()
+    window  = int(args.window)
+    report  = monitor.report(window_seconds=window)
+
+    model_filter: str | None = getattr(args, "model", None) or None
+    models = report.models
+    if model_filter:
+        models = [m for m in models if m.model_id == model_filter]
+
+    if args.json:
+        filtered = {
+            "window_seconds":  report.window_seconds,
+            "total_requests":  sum(m.n_requests for m in models),
+            "models":          [m.to_dict() for m in models],
+            "generated_at":    report.generated_at,
+        }
+        print(json.dumps(filtered, indent=2))
+        return
+
+    print()
+    print(f"  Quality report  window={window}s  total_requests={report.total_requests}")
+    if not models:
+        print("  (no requests recorded in window)")
+        print()
+        return
+
+    for stats in models:
+        print()
+        print(f"  Model: {stats.model_id}")
+        print(f"    {'Requests':<22} {stats.n_requests}")
+        print(f"    {'Errors':<22} {stats.n_errors}  (rate={stats.error_rate:.1%})")
+        print(f"    {'Latency P50 (ms)':<22} {stats.latency_p50:.1f}")
+        print(f"    {'Latency P95 (ms)':<22} {stats.latency_p95:.1f}")
+        print(f"    {'Latency P99 (ms)':<22} {stats.latency_p99:.1f}")
+        print(f"    {'Latency mean (ms)':<22} {stats.latency_mean:.1f}")
+        print(f"    {'Tok/s P50':<22} {stats.tokens_per_sec_p50:.1f}")
+        print(f"    {'Tok/s mean':<22} {stats.tokens_per_sec_mean:.1f}")
+        ttft_p50 = f"{stats.ttft_p50:.1f}" if stats.ttft_p50 is not None else "N/A"
+        ttft_p95 = f"{stats.ttft_p95:.1f}" if stats.ttft_p95 is not None else "N/A"
+        print(f"    {'TTFT P50 (ms)':<22} {ttft_p50}")
+        print(f"    {'TTFT P95 (ms)':<22} {ttft_p95}")
+    print()
+
+
 def cmd_route(args) -> None:
     """Classify a prompt and print the routing decision.
 
@@ -6868,6 +6921,33 @@ Ollama drop-in:
         help="Output the routing decision as JSON",
     )
     p_route.set_defaults(func=cmd_route)
+
+    p_quality = sub.add_parser(
+        "quality",
+        help="Show rolling-window inference quality stats (latency, TPS, TTFT, errors)",
+        description=(
+            "Print per-model P50/P95/P99 latency, throughput, TTFT, and error rates\n"
+            "from the in-process quality monitor rolling window.\n\n"
+            "Examples:\n"
+            "  squish quality\n"
+            "  squish quality --window 300\n"
+            "  squish quality --model qwen3:8b --json\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_quality.add_argument(
+        "--window", type=int, default=3600, metavar="SECONDS",
+        help="Rolling window in seconds (default: 3600)",
+    )
+    p_quality.add_argument(
+        "--model", default="", metavar="MODEL_ID",
+        help="Filter output to a single model_id",
+    )
+    p_quality.add_argument(
+        "--json", action="store_true", default=False,
+        help="Output quality report as JSON",
+    )
+    p_quality.set_defaults(func=cmd_quality)
 
     return ap
 

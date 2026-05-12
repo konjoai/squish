@@ -126,9 +126,9 @@ def test_line_count_reduced_by_wave122():
 
 
 def test_line_count_wave122_delta():
-    """Wave 122 removed 13 lines (4772 → 4759); subsequent waves may reduce further."""
+    """Wave 122 removed 13 lines (4772 → 4759); W111 added /v1/quality + monitor hook (+18)."""
     n = len(_LINES)
-    assert n <= 4759, f"Expected ≤ 4759 lines (Wave 122 produced 4759); got {n}"
+    assert n <= 4780, f"Expected ≤ 4780 lines (W111 quality monitor adjusted); got {n}"
     assert n > 4650, f"Sanity floor: expected > 4650 lines; got {n}"
 
 
