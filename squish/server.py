@@ -544,6 +544,9 @@ class _ModelState:
         if _profiler is not None:
             _profiler.record("ttft_ms",        ttft_s  * 1000.0)
             _profiler.record("decode_step_ms", (duration_s - ttft_s) / max(n_tokens, 1) * 1000.0)
+        # Quality monitor — delegates to helper; never raises
+        from squish.serving.quality_monitor import record_completion_metric  # noqa: PLC0415
+        record_completion_metric(self.model_name, duration_s, ttft_s, n_tokens, tps)
 
     @property
     def avg_tps(self) -> float:
@@ -3448,6 +3451,21 @@ async def tokenize(
         "token_count": len(ids),
         "model":       _state.model_name,
     })
+
+
+@app.get("/v1/quality")
+async def quality(
+    window: int = 3600,
+    model: str = "",
+    creds: HTTPAuthorizationCredentials | None = Security(_bearer),
+):
+    """GET /v1/quality — rolling-window P50/P95/P99 inference quality stats.
+
+    window : seconds, clamped to [60, 86400]. model : optional model_id filter.
+    """
+    _check_auth(creds)
+    from squish.serving.quality_monitor import quality_response_dict  # noqa: PLC0415
+    return JSONResponse(quality_response_dict(window, model))
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────

@@ -403,7 +403,9 @@ class TestIntegration:
         assert R is MixedPrecisionRouter
 
     def test_module_count_unchanged(self):
-        """W103.3 adds routing to quantizer.py (no new squish/ file). Count stays 84."""
+        """W103.3 adds routing to quantizer.py (no new squish/ file). Count stays 84.
+        W110 adds squish/serving/router.py (85 → 86).
+        W111 adds squish/serving/quality_monitor.py (86 → 87)."""
         import squish
         root = Path(squish.__file__).parent
         py_files = [
@@ -412,11 +414,12 @@ class TestIntegration:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 86, (
-            f"Module count = {count}, expected 86 after W110. "
+        assert count == 87, (
+            f"Module count = {count}, expected 87 after W111. "
             "W103.3 adds routing in-place to quantizer.py; "
             "W103.4c adds squish/quant/sqint2_linear.py (84 → 85); "
-            "W110 adds squish/serving/router.py (85 → 86)."
+            "W110 adds squish/serving/router.py (85 → 86); "
+            "W111 adds squish/serving/quality_monitor.py (86 → 87)."
         )
         assert count <= 125
 
