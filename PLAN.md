@@ -623,14 +623,62 @@ uses internally.
 - All API errors return 400, never 500. CLAUDE.md security.md respected:
   every input is validated at the boundary, range-checked, and typed.
 
+### W110 — Prompt Router (v9.29.0) ✅ COMPLETE (2026-05-11)
+**Why:** squish serves prompts of wildly different types — Python snippets,
+maths problems, creative writing, factual Q&A. Routing to the best local model
+for each type improves quality without extra latency or model loading. W110
+adds a pure-software, zero-dependency routing layer.
+
+**Changes shipped (2026-05-11):**
+- **`squish/serving/router.py`** — 300-line module, no new deps:
+  - `RouterCategory` — StrEnum: CODE / MATH / CREATIVE / FACTUAL /
+    CONVERSATION / UNKNOWN.
+  - `RouterRule` — dataclass: name, category, compiled regex, priority,
+    model_hint.
+  - `RouterDecision` — frozen dataclass: category, matched_rule, model_hint,
+    confidence (1.0 rule / 0.5 heuristic / 0.0 unknown), reasoning (≤120 chars).
+  - `RouterConfig` — dataclass: custom rules, fallback_category,
+    enable_heuristics.
+  - `PromptRouter` — main classifier. Route steps: (1) empty → UNKNOWN 0.0;
+    (2) rules descending priority, first match → confidence 1.0; (3) keyword
+    heuristics (CODE/MATH/CREATIVE/FACTUAL) → confidence 0.5; (4) UNKNOWN 0.0.
+    `explain()` returns `asdict()` + `prompt_length` + `n_rules_checked`.
+  - 8 built-in rules: python-code (p90), general-code (p85), math-equation
+    (p80), math-calc (p75), creative-story (p70), creative-write (p65),
+    factual-qa (p60), factual-explain (p55).
+  - `get_default_router()` — module-level singleton factory.
+
+- **`squish/cli.py`** — added `squish route "<prompt>" [--json]` subcommand
+  via `cmd_route()` + `p_route` parser in `build_parser()`. Prints a formatted
+  table or JSON. No new imports beyond stdlib `json`.
+
+- **`tests/test_router.py`** — 27 tests (25 required + 2 bonus edge cases):
+  all pass in 0.14 s. Covers every public API path including frozen-dataclass
+  mutation guard, priority ordering, custom rule overrides, heuristic path,
+  UNKNOWN path, explain() keys, CLI subcommand registration.
+
+- Module count updated: 85 → 86 (`test_sqint2.py`, `test_sqint2_router.py`).
+
+- Version bumped 9.28.0 → 9.29.0: `pyproject.toml`, `squish/__init__.py`,
+  `spaces/requirements.txt`, `tests/test_version.py`,
+  `tests/test_wave79_startup_inference.py`.
+
+**Acceptance criteria:**
+- ✅ `RouterDecision` is frozen (mutation raises `FrozenInstanceError`).
+- ✅ Empty prompt → UNKNOWN, confidence 0.0.
+- ✅ Rule match → confidence 1.0, matched_rule populated.
+- ✅ Heuristic path → confidence 0.5, matched_rule=None.
+- ✅ Priority ordering: higher-priority rule wins on ties.
+- ✅ `squish route` CLI subcommand registered in `build_parser()`.
+- ✅ 27 / 27 tests pass; zero regressions introduced.
+- ✅ No silent failures, no TODOs, no dead code, no new mandatory deps.
+
 ---
 
 ## Next Immediate Action
-**W109 SHIPPED (2026-05-10).** New dashboard at `demo/index.html` ready
-to demo locally (`python3 demo/server.py` → http://127.0.0.1:8001) or
-open standalone from the filesystem.
+**W110 SHIPPED (2026-05-11).** Prompt Router live at `squish/serving/router.py`.
 
-**After W109: W103.4d** — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65 %
+**After W110: W103.4d** — End-to-end compress on Qwen2.5-7B + arc_easy ≥ 65 %
 lm_eval ship gate (hardware run required). Also validates the W104 32 K-context
 envelope on the same hardware run. LoRA INT4 checkpoint support remains deferred.
 
