@@ -5728,6 +5728,31 @@ def cmd_bench(args) -> None:
     print()
 
 
+def cmd_route(args) -> None:
+    """Classify a prompt and print the routing decision.
+
+    Uses :func:`squish.serving.router.get_default_router` to classify
+    *args.prompt* and prints the :class:`~squish.serving.router.RouterDecision`
+    as a formatted table (default) or JSON (``--json``).
+    """
+    from squish.serving.router import get_default_router
+
+    router   = get_default_router()
+    decision = router.route(args.prompt)
+
+    if args.json:
+        print(json.dumps(decision.asdict(), indent=2))
+        return
+
+    print()
+    print(f"  {'Category':<16} {decision.category}")
+    print(f"  {'Matched rule':<16} {decision.matched_rule or '(none)'}")
+    print(f"  {'Model hint':<16} {decision.model_hint or '(none)'}")
+    print(f"  {'Confidence':<16} {decision.confidence:.1f}")
+    print(f"  {'Reasoning':<16} {decision.reasoning}")
+    print()
+
+
 class _SquishHelpFormatter(argparse.RawDescriptionHelpFormatter):
     """Minimal ANSI accents on section headings — only when writing to a TTY."""
 
@@ -6823,6 +6848,26 @@ Ollama drop-in:
         help="Number of warmup iterations excluded from timing (default 10).",
     )
     p_bench.set_defaults(func=cmd_bench)
+
+    # ── squish route ──────────────────────────────────────────────────────────
+    p_route = sub.add_parser(
+        "route",
+        help="Classify a prompt and show the routing decision",
+        description=(
+            "Classify a prompt using the built-in rule-based router and print\n"
+            "the recommended model category, matched rule, and confidence.\n\n"
+            "Examples:\n"
+            "  squish route \"Write a Python sort function\"\n"
+            "  squish route \"What is the capital of France?\" --json\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_route.add_argument("prompt", help="The prompt text to classify")
+    p_route.add_argument(
+        "--json", action="store_true", default=False,
+        help="Output the routing decision as JSON",
+    )
+    p_route.set_defaults(func=cmd_route)
 
     return ap
 

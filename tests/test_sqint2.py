@@ -537,9 +537,9 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 85, (
-            f"Module count = {count}, expected 85 after W103.1+W103.2+W103.4c "
-            f"(83 baseline post-squash-extraction + sqint2.py + sqint2_linear.py). "
+        assert count == 86, (
+            f"Module count = {count}, expected 86 after W110. "
+            f"(83 baseline post-squash-extraction + sqint2.py + sqint2_linear.py + router.py). "
             "If this number changed, update CLAUDE.md / SESSION.md too."
         )
         # Ceiling check stays well below 125.
