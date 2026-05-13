@@ -627,9 +627,117 @@
     60%  { opacity:.7; }
     100% { opacity:0; transform:translate(var(--dx),var(--dy)) rotate(var(--dr)) scale(.25); }
   }
+
+  /* ════════════════════════════════════════════════════════════════════
+     WAVE 10: deep living visualization
+     ════════════════════════════════════════════════════════════════════ */
+
+  /* 10a token river canvas — fixed full-viewport, behind everything */
+  #w10-rivers {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    will-change: transform;
+    opacity: 0.72;
+  }
+
+  /* 10b 3-D layer stack — perspective + staggered z-depth per block */
+  .stack {
+    perspective: 720px;
+    perspective-origin: 40% 65%;
+  }
+  .block {
+    transform: rotateX(12deg) rotateY(-8deg)
+               translateZ(calc(var(--i, 0) * -9px));
+    will-change: transform;
+    position: relative;
+    overflow: visible;
+  }
+  /* Simulate left face: 30% darker strip on the left edge */
+  .block::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 10px;
+    background: rgba(0,0,0,0.32);
+    border-radius: 6px 0 0 6px;
+    pointer-events: none;
+  }
+  /* Simulate top face: 15% brighter strip on top edge */
+  .block::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 10px; right: 0;
+    height: 7px;
+    background: rgba(255,255,255,0.18);
+    border-radius: 0 6px 0 0;
+    pointer-events: none;
+  }
+  /* Hover: spring-forward with spring easing */
+  .stack .block:hover {
+    transform: rotateX(12deg) rotateY(-8deg)
+               translateZ(calc(var(--i, 0) * -9px + 40px));
+    z-index: 5;
+    transition:
+      transform 450ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      background 600ms var(--ease),
+      box-shadow 600ms var(--ease);
+  }
+
+  /* 10c magnetic repulsion: cards lifted by cursor proximity (JS-driven) */
+  .card { will-change: transform; }
+
+  /* 10d compression ratio ring */
+  #w10-ring {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    width: 92px;
+    height: 92px;
+    pointer-events: none;
+    z-index: 12;
+    will-change: transform;
+    border-radius: 50%;
+  }
+
+  /* 10e precision-map heat overlay on lattice */
+  .lattice-wrap { position: relative; }
+  #w10-lat-heat {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    border-radius: 22px;
+    opacity: 0.55;
+  }
+
+  /* 10f scroll-triggered entrance */
+  .w10-enter {
+    opacity: 0;
+    transform: translateY(32px);
+    will-change: transform, opacity;
+    transition:
+      opacity  600ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 600ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .w10-enter.w10-delay-1 { transition-delay:  80ms; }
+  .w10-enter.w10-delay-2 { transition-delay: 160ms; }
+  .w10-enter.w10-delay-3 { transition-delay: 240ms; }
+  .w10-enter.w10-visible { opacity: 1; transform: translateY(0); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .block, .block:hover { transform: none !important; transition: none !important; }
+    .w10-enter { opacity: 1; transform: none; transition: none; }
+    #w10-rivers, #w10-ring { display: none; }
+  }
 </style>
 </head>
 <body>
+<!-- 10a: token river canvas — behind all content -->
+<canvas id="w10-rivers" aria-hidden="true"></canvas>
+<!-- 10d: compression ratio ring gauge -->
+<canvas id="w10-ring" aria-hidden="true"></canvas>
 <!-- 9h pulse overlay -->
 <div id="w9-pulse" aria-hidden="true"></div>
 <!-- 9e SVG flow line (fixed, spans viewport) -->
@@ -717,7 +825,7 @@
   </section>
 
   <!-- Three floating number cards -->
-  <section class="cards" aria-label="live metrics">
+  <section class="cards w10-enter" aria-label="live metrics">
     <div class="card" id="cardMem"  data-tier="int8">
       <div class="num"><span id="numMem">132</span><span class="num-suffix">MB</span></div>
       <div class="key">memory</div>
@@ -733,20 +841,22 @@
   </section>
 
   <!-- Reasoning panel -->
-  <div class="reason-panel" id="reason">
+  <div class="reason-panel w10-enter w10-delay-1" id="reason">
     <strong>INT8</strong> · short context (default ≤ 8K tokens) · full
     quality, ~1.94× memory reduction. Move the slider to see the trade-off.
   </div>
 
   <!-- 9g: memory saved animated counter -->
-  <div id="w9-saved" aria-live="polite">
+  <div id="w9-saved" class="w10-enter w10-delay-2" aria-live="polite">
     <span class="label">memory saved vs FP16</span>
     <span class="count" id="w9-count">910</span>
     <span class="unit"  id="w9-unit">MB</span>
   </div>
 
   <!-- Crystal-lattice comparison table (9c parallax layer) -->
-  <section class="lattice-wrap parallax-layer">
+  <section class="lattice-wrap parallax-layer w10-enter w10-delay-3">
+    <!-- 10e: precision-map heat overlay canvas -->
+    <canvas id="w10-lat-heat" aria-hidden="true"></canvas>
     <div class="lattice-title">tier comparison · Qwen2.5-7B · 32K context</div>
     <div class="lattice" id="lattice"></div>
   </section>
@@ -1404,6 +1514,435 @@
     }
 
   })(); // end Wave 9
+
+  /* ════════════════════════════════════════════════════════════════════
+     WAVE 10: deep living visualization
+     10a  Token flow rivers (full-viewport canvas)
+     10b  3-D layer stack (--i CSS var per block, hover lift)
+     10c  Magnetic cursor repulsion on metric cards
+     10d  Live compression ratio ring (canvas arc gauge)
+     10e  Precision map heat cells (lattice canvas overlay)
+     10f  Scroll-triggered entrance (IntersectionObserver)
+     ════════════════════════════════════════════════════════════════════ */
+  (function wave10 () {
+    "use strict";
+
+    const lerp   = (a, b, t) => a + (b - a) * t;
+    const clamp  = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const rand   = (lo, hi) => lo + Math.random() * (hi - lo);
+
+    /* compressionLevel 0→1 (int8=0.25, int4=0.56, int2=0.95) */
+    let compressionLevel = 0.25;
+    let currentTier = "int8";
+
+    /* Tier data — memory saved bytes for Qwen2.5-7B @ 32K */
+    const TIER_SAVED = { int8: 910e6, int4: 1380e6, int2: 1615e6 };
+    const TIER_COMP  = { int8: 0.25, int4: 0.56, int2: 0.95 };
+
+    /* Hook applyTier (defined in outer W109 script) */
+    const _origApply10 = applyTier;
+    applyTier = function (tierId, opts) { // eslint-disable-line no-func-assign
+      _origApply10(tierId, opts);
+      currentTier      = tierId;
+      compressionLevel = TIER_COMP[tierId] ?? compressionLevel;
+      onW10TierChange(tierId);
+    };
+
+    /* ── 10a. TOKEN FLOW RIVERS ────────────────────────────────────────
+       Thin luminous streams of "tokens" flow left→right.
+       Each river: sine-curved path, purple-white gradient.
+       Evicted tokens → downward gravity arc.
+       Compressed tokens → brief orange pulse then shrink to dot.
+       Sink tokens → white-gold glow.
+    ──────────────────────────────────────────────────────────────────── */
+    (function tokenRivers () {
+      const cv = document.getElementById("w10-rivers");
+      if (!cv) return;
+
+      function resize () {
+        cv.width  = window.innerWidth;
+        cv.height = window.innerHeight;
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      const ctx = cv.getContext("2d");
+
+      /* River state: each river is a horizontal channel of tokens */
+      const RIVER_COUNT = 7;
+      const rivers = Array.from({ length: RIVER_COUNT }, (_, i) => ({
+        y:          rand(cv.height * 0.10, cv.height * 0.90),
+        vel:        rand(0.6, 1.8),
+        amp:        rand(4, 14),           // sine-wave amplitude
+        freq:       rand(0.002, 0.006),    // sine-wave frequency
+        brightness: rand(0.4, 1.0),
+        tokens:     [],
+      }));
+
+      /* A "token" is a small circle traveling along a river */
+      function spawnToken (river) {
+        if (river.tokens.length > 30) return;
+        const fate = Math.random();
+        river.tokens.push({
+          x:      -20,
+          y:      river.y,
+          r:      rand(2, 5),
+          speed:  river.vel * (0.7 + compressionLevel * 1.3),
+          /* fate: 0-0.6=normal, 0.6-0.8=evicted, 0.8-0.95=compressed, 0.95-1=sink */
+          fate:   fate < 0.60 ? "normal"
+                : fate < 0.80 ? "evicted"
+                : fate < 0.95 ? "compressed"
+                : "sink",
+          alpha:  1,
+          vy:     0,          // gravity for evicted tokens
+          scale:  1,
+          phase:  rand(0, Math.PI * 2),  // sine-wave phase offset
+          pulseT: 0,          // 0→1 compression pulse timer
+        });
+      }
+
+      let spawnTick = 0;
+
+      function stepAndDraw () {
+        resize();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+
+        const W = cv.width, H = cv.height;
+        const now = performance.now() / 1000;
+
+        rivers.forEach(river => {
+          /* Spawn rate scales with compression */
+          const spawnRate = Math.round(12 - compressionLevel * 9);
+          if (spawnTick % Math.max(1, spawnRate) === 0) spawnToken(river);
+
+          river.tokens.forEach((tk, j) => {
+            /* Advance x */
+            tk.x += tk.speed * (1 + compressionLevel * 0.6);
+
+            /* y follows sine for all but evicted tokens */
+            if (tk.fate === "evicted") {
+              tk.vy += 0.18;            // gravity
+              tk.y  += tk.vy;
+              tk.alpha = Math.max(0, tk.alpha - 0.015);
+            } else {
+              tk.y = river.y + Math.sin(tk.x * river.freq + tk.phase + now * 0.4) * river.amp;
+            }
+
+            /* Compressed tokens shrink */
+            if (tk.fate === "compressed") {
+              tk.pulseT = Math.min(1, tk.pulseT + 0.025);
+              tk.scale  = lerp(1, 0.18, tk.pulseT);
+              if (tk.pulseT > 0.9) tk.alpha = Math.max(0, tk.alpha - 0.04);
+            }
+
+            /* Remove off-screen or faded */
+            if (tk.x > W + 40 || tk.y > H + 40 || tk.alpha <= 0) {
+              river.tokens.splice(j, 1);
+              return;
+            }
+
+            /* Draw */
+            ctx.save();
+            ctx.globalCompositeOperation = "screen";
+            ctx.translate(tk.x, tk.y);
+            ctx.scale(tk.scale, tk.scale);
+
+            let color;
+            if (tk.fate === "sink") {
+              /* white-gold */
+              color = `rgba(255,240,180,${(tk.alpha * river.brightness).toFixed(2)})`;
+              ctx.shadowColor = "rgba(255,230,120,0.7)";
+              ctx.shadowBlur  = 10;
+            } else if (tk.fate === "compressed") {
+              /* orange pulse → dot */
+              const op = Math.min(1, tk.pulseT * 2);
+              color = `rgba(255,${Math.round(lerp(140, 80, tk.pulseT))},40,${(tk.alpha * river.brightness).toFixed(2)})`;
+              ctx.shadowColor = `rgba(255,120,40,${op * 0.6})`;
+              ctx.shadowBlur  = lerp(12, 2, tk.pulseT);
+            } else if (tk.fate === "evicted") {
+              color = `rgba(180,120,255,${(tk.alpha * river.brightness * 0.7).toFixed(2)})`;
+              ctx.shadowBlur = 4;
+            } else {
+              /* normal: purple→white gradient via compressionLevel */
+              const rf = Math.round(lerp(124, 220, compressionLevel));
+              const gf = Math.round(lerp( 58, 180, compressionLevel));
+              const bf = Math.round(lerp(237, 255, compressionLevel));
+              color = `rgba(${rf},${gf},${bf},${(tk.alpha * river.brightness).toFixed(2)})`;
+              ctx.shadowColor = `rgba(${rf},${gf},${bf},0.5)`;
+              ctx.shadowBlur  = 8;
+            }
+
+            ctx.beginPath();
+            ctx.arc(0, 0, tk.r, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.restore();
+          });
+        });
+
+        spawnTick++;
+        requestAnimationFrame(stepAndDraw);
+      }
+      stepAndDraw();
+    })();
+
+
+    /* ── 10b. 3-D LAYER STACK (--i variable on each block) ────────────
+       Patches rebuildLiveStack / buildFP16Stack to set --i per block,
+       creating staggered z-depth for the CSS perspective transform.
+    ──────────────────────────────────────────────────────────────────── */
+    (function layerStack3D () {
+      /* Apply --i to all existing FP16 blocks (built synchronously) */
+      function tagBlocks (container) {
+        const blocks = container.querySelectorAll(".block");
+        blocks.forEach((b, i) => {
+          b.style.setProperty("--i", String(i));
+        });
+      }
+
+      /* FP16 stack is built by W109 before this script runs */
+      const fp16 = document.getElementById("stackFp16");
+      if (fp16) tagBlocks(fp16);
+
+      /* Patch rebuildLiveStack (defined in W109 scope) */
+      const _origRebuild10 = rebuildLiveStack;
+      rebuildLiveStack = function (n) { // eslint-disable-line no-func-assign
+        _origRebuild10(n);
+        const live = document.getElementById("stackLive");
+        if (live) tagBlocks(live);
+      };
+
+      /* Re-tag whenever the W9 breathing module rebuilds */
+      const liveObs = new MutationObserver(() => {
+        const live = document.getElementById("stackLive");
+        if (live) tagBlocks(live);
+      });
+      const live = document.getElementById("stackLive");
+      if (live) liveObs.observe(live, { childList: true });
+    })();
+
+
+    /* ── 10c. MAGNETIC CURSOR REPULSION on metric cards ───────────────
+       Cards gently repel away from the cursor, lerp back to origin.
+    ──────────────────────────────────────────────────────────────────── */
+    (function magneticRepulsion () {
+      const CARDS     = ["cardMem", "cardSnr", "cardMode"];
+      const REPEL_D   = 160;    // px radius where repulsion starts
+      const MAX_SHIFT = 18;     // max displacement in px
+      const LERP_IN   = 0.12;   // toward target
+      const LERP_OUT  = 0.08;   // back to origin
+
+      const state = {};
+      CARDS.forEach(id => {
+        state[id] = { tx: 0, ty: 0, cx: 0, cy: 0 };
+      });
+
+      let mouseX = -9999, mouseY = -9999;
+
+      document.addEventListener("mousemove", e => {
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+      });
+
+      function tick () {
+        CARDS.forEach(id => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          const s  = state[id];
+          const r  = el.getBoundingClientRect();
+          const cx = r.left + r.width  / 2;
+          const cy = r.top  + r.height / 2;
+          const dx = cx - mouseX;
+          const dy = cy - mouseY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          let tx = 0, ty = 0;
+          if (dist < REPEL_D && dist > 0) {
+            const strength = (1 - dist / REPEL_D) * MAX_SHIFT;
+            tx = (dx / dist) * strength;
+            ty = (dy / dist) * strength;
+          }
+
+          s.cx = lerp(s.cx, tx, dist < REPEL_D ? LERP_IN : LERP_OUT);
+          s.cy = lerp(s.cy, ty, dist < REPEL_D ? LERP_IN : LERP_OUT);
+
+          /* Don't overwrite existing card transform (tilt from Wave 9) */
+          el.style.translate = `${s.cx.toFixed(1)}px ${s.cy.toFixed(1)}px`;
+        });
+        requestAnimationFrame(tick);
+      }
+      tick();
+    })();
+
+
+    /* ── 10d. LIVE COMPRESSION RATIO RING (canvas arc gauge) ──────────
+       Fixed bottom-right. Arc sweeps 0→360° for 0→100% saved.
+       Color shifts: #7c3aed (low) → #a78bfa → #e0d9ff (high).
+       Wilson CI band as translucent outer arc.
+    ──────────────────────────────────────────────────────────────────── */
+    (function compressionRing () {
+      const cv = document.getElementById("w10-ring");
+      if (!cv) return;
+      cv.width = cv.height = 92;
+      const ctx = cv.getContext("2d");
+
+      /* Saved fraction 0..1, driven by tier */
+      const SAVED_FRAC = { int8: 0.484, int4: 0.734, int2: 0.861 };
+      let targetFrac = SAVED_FRAC.int8;
+      let dispFrac   = 0;
+
+      function draw () {
+        dispFrac += (targetFrac - dispFrac) * 0.05;
+        const S = 92, cx = S / 2, cy = S / 2, R = 34, Rw = 38;
+        ctx.clearRect(0, 0, S, S);
+
+        /* Track ring (background) */
+        ctx.beginPath();
+        ctx.arc(cx, cy, R, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,255,255,0.07)";
+        ctx.lineWidth   = 7;
+        ctx.stroke();
+
+        /* Wilson CI band (outer, translucent) */
+        const z = 1.96, p = dispFrac, n = 200;
+        const lo = clamp((p + z*z/(2*n) - z*Math.sqrt(p*(1-p)/n + z*z/(4*n*n))) / (1+z*z/n), 0, 1);
+        const hi = clamp((p + z*z/(2*n) + z*Math.sqrt(p*(1-p)/n + z*z/(4*n*n))) / (1+z*z/n), 0, 1);
+        const startAngle = -Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Rw, startAngle + lo * Math.PI * 2, startAngle + hi * Math.PI * 2);
+        ctx.strokeStyle = "rgba(167,139,250,0.18)";
+        ctx.lineWidth   = 6;
+        ctx.stroke();
+
+        /* Main arc — color shifts with compressionLevel */
+        const t  = dispFrac;
+        const rC = Math.round(lerp(124, 224, t));
+        const gC = Math.round(lerp( 58, 217, t));
+        const bC = Math.round(lerp(237, 255, t));
+        ctx.beginPath();
+        ctx.arc(cx, cy, R, startAngle, startAngle + t * Math.PI * 2);
+        ctx.strokeStyle = `rgb(${rC},${gC},${bC})`;
+        ctx.lineWidth   = 7;
+        ctx.lineCap     = "round";
+        ctx.shadowBlur  = 12;
+        ctx.shadowColor = `rgba(${rC},${gC},${bC},0.6)`;
+        ctx.stroke();
+        ctx.shadowBlur  = 0;
+
+        /* Center label */
+        ctx.fillStyle   = `rgb(${rC},${gC},${bC})`;
+        ctx.font        = `700 14px ui-monospace,monospace`;
+        ctx.textAlign   = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(`${Math.round(dispFrac * 100)}%`, cx, cy);
+
+        requestAnimationFrame(draw);
+      }
+      draw();
+
+      window._w10RingUpdate = function (tier) {
+        targetFrac = SAVED_FRAC[tier] ?? targetFrac;
+      };
+    })();
+
+
+    /* ── 10e. PRECISION MAP HEAT CELLS ────────────────────────────────
+       Canvas overlay on the lattice grid.  Each cell (column) gets a
+       radial glow proportional to memory footprint (bitsPerToken).
+       Cells pulse at 2.4s intervals with cubic-bezier easing.
+    ──────────────────────────────────────────────────────────────────── */
+    (function latticHeat () {
+      const cv = document.getElementById("w10-lat-heat");
+      const lat = document.getElementById("lattice");
+      if (!cv || !lat) return;
+
+      /* Map tier → bits per token at head_dim=128 */
+      const BITS = { fp16: 2048, int8: 1056, int4: 528, int2: 288 };
+      const MAX_BITS = 2048;
+
+      let activeTier = "int8";
+      let pulseT     = 0;
+      let pulseDirUp = true;
+
+      function resize () {
+        const r = lat.getBoundingClientRect();
+        cv.width  = Math.round(r.width);
+        cv.height = Math.round(r.height);
+      }
+      window.addEventListener("resize", resize);
+      setTimeout(resize, 100);
+
+      function draw () {
+        const W = cv.width, H = cv.height;
+        if (!W || !H) { requestAnimationFrame(draw); return; }
+        const ctx = cv.getContext("2d");
+        ctx.clearRect(0, 0, W, H);
+
+        /* Pulse animation */
+        const pulseSpeed = 0.008;
+        if (pulseDirUp) { pulseT += pulseSpeed; if (pulseT >= 1) { pulseT = 1; pulseDirUp = false; } }
+        else            { pulseT -= pulseSpeed; if (pulseT <= 0) { pulseT = 0; pulseDirUp = true;  } }
+        const pv = 0.6 + 0.4 * (Math.sin(pulseT * Math.PI));   // cubic-like via sin
+
+        /* Grid columns: fp16 | int8 | int4 | int2 (5 columns: row-label + 4 data) */
+        const COLS = ["fp16", "int8", "int4", "int2"];
+        const colW = W / 5;   /* row-label takes 1/5, remaining 4 are data cols */
+
+        COLS.forEach((tier, ci) => {
+          const x    = (ci + 1) * colW;
+          const bits = BITS[tier] ?? 1;
+          const frac = bits / MAX_BITS;
+          const isActive = tier === activeTier;
+
+          /* Radial glow per column */
+          const grd = ctx.createRadialGradient(
+            x + colW * 0.5, H * 0.5, 0,
+            x + colW * 0.5, H * 0.5, colW * 1.5
+          );
+          const a = (isActive ? 0.22 : 0.07) * pv * frac;
+          const rf = tier === "int8" ? "255,184,107" : tier === "int4" ? "255,138,91"
+                   : tier === "int2" ? "161,115,255" : "255,255,255";
+          grd.addColorStop(0,   `rgba(${rf},${(a * 1.6).toFixed(3)})`);
+          grd.addColorStop(0.7, `rgba(${rf},${(a * 0.3).toFixed(3)})`);
+          grd.addColorStop(1,   "rgba(0,0,0,0)");
+          ctx.fillStyle = grd;
+          ctx.fillRect(x, 0, colW, H);
+        });
+
+        requestAnimationFrame(draw);
+      }
+      draw();
+
+      window._w10HeatUpdate = function (tier) { activeTier = tier; resize(); };
+    })();
+
+
+    /* ── 10f. SCROLL-TRIGGERED ENTRANCE ───────────────────────────────
+       IntersectionObserver on .w10-enter elements.
+       Adds .w10-visible when 15% of the element enters the viewport.
+    ──────────────────────────────────────────────────────────────────── */
+    (function scrollEntrance () {
+      const targets = document.querySelectorAll(".w10-enter");
+      if (!targets.length) return;
+      const obs = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+          if (e.isIntersecting) {
+            e.target.classList.add("w10-visible");
+            obs.unobserve(e.target);
+          }
+        });
+      }, { threshold: 0.15 });
+      targets.forEach(t => obs.observe(t));
+    })();
+
+
+    /* ── Shared tier-change dispatcher ─────────────────────────────── */
+    function onW10TierChange (tier) {
+      if (window._w10RingUpdate)  window._w10RingUpdate(tier);
+      if (window._w10HeatUpdate)  window._w10HeatUpdate(tier);
+    }
+
+  })(); // end Wave 10
 </script>
 </body>
 </html>
