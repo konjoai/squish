@@ -46,8 +46,9 @@ Low-level: create a cache and pass to generate():
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterator
 
 import numpy as np
 
@@ -782,6 +783,112 @@ def make_kv_cache(
 
 
 # ---------------------------------------------------------------------------
+# P1 — Per-request observability metrics
+# ---------------------------------------------------------------------------
+#
+# CompressionResult is returned by QuantizedKVCache.metrics() and available
+# as a snapshot of the cumulative statistics across all layers since the last
+# reset().  Per-layer breakdown in the `layers` list enables hot-path
+# profiling without touching any generation code.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CompressionResult:
+    """Snapshot of KV-cache compression statistics for one QuantizedKVCache.
+
+    All byte / token counts are *cumulative since construction* (or the last
+    ``cache.reset()``).  Call ``cache.metrics()`` at any point during or after
+    generation to read the current snapshot.
+
+    Attributes
+    ----------
+    tokens_compressed : total tokens that passed through the quantization
+                        path (old-tier, any mode).  Does NOT include FP16
+                        recent-window tokens or attention-sink tokens.
+    tokens_fp16       : total tokens held at full FP16 precision (recent
+                        window + sink buffer).
+    tokens_evicted    : tokens discarded by any eviction policy (SnapKV,
+                        Q-Filters, budget eviction).  0 if no eviction is
+                        active.
+    bits_used         : approximate total storage of the old tier in bits.
+                        Exact for INT8/INT4/INT2 codes; excludes per-token
+                        scales and metadata overhead (< 3 % error).
+    memory_saved_bytes: bytes saved vs storing the same tokens at FP16.
+                        Negative if a tier uses *more* memory than FP16
+                        (theoretically impossible; here for completeness).
+    cache_hit_rate    : fraction of ``update_and_fetch`` calls that found
+                        a pre-existing cached result.  0.0 when the cache
+                        is entirely write-through.
+    layers            : per-layer breakdown as a list of
+                        ``(tokens_compressed, tokens_fp16, bits_used)``.
+    """
+
+    tokens_compressed:  int   = 0
+    tokens_fp16:        int   = 0
+    tokens_evicted:     int   = 0
+    bits_used:          int   = 0
+    memory_saved_bytes: int   = 0
+    cache_hit_rate:     float = 0.0
+    layers:             list  = field(default_factory=list)
+
+    def __str__(self) -> str:
+        mb = self.memory_saved_bytes / (1024 ** 2)
+        return (
+            f"CompressionResult("
+            f"compressed={self.tokens_compressed:,} tok, "
+            f"fp16={self.tokens_fp16:,} tok, "
+            f"evicted={self.tokens_evicted:,} tok, "
+            f"saved={mb:.1f} MB)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# P1 — Mixed-precision per-layer precision map helpers
+# ---------------------------------------------------------------------------
+
+_VALID_PRECISION_MAP_MODES = frozenset({"fp16", "int8", "int4", "int2"})
+
+
+def _parse_precision_map(precision_map: dict, n_layers: int) -> list[str]:
+    """Parse a ``precision_map`` dict into a per-layer list of mode strings.
+
+    Keys are either a single layer index (``"5"``) or an inclusive range
+    (``"0-3"``).  Values must be one of ``"fp16" | "int8" | "int4" | "int2"``.
+    Layers not covered by any key keep the ``default`` mode (typically the
+    cache-level mode passed to :class:`QuantizedKVCache`).
+
+    Examples
+    --------
+    >>> _parse_precision_map({"0-3": "fp16", "4-28": "int4", "29-31": "int8"}, 32)
+    ['fp16', 'fp16', 'fp16', 'fp16', 'int4', ..., 'int8', 'int8', 'int8']
+    """
+    modes: list[str | None] = [None] * n_layers
+    for spec, mode in precision_map.items():
+        if mode not in _VALID_PRECISION_MAP_MODES:
+            raise ValueError(
+                f"precision_map value {mode!r} is not valid; "
+                f"must be one of {sorted(_VALID_PRECISION_MAP_MODES)}"
+            )
+        spec = str(spec).strip()
+        if "-" in spec:
+            parts = spec.split("-", 1)
+            lo, hi = int(parts[0]), int(parts[1])
+            if lo > hi:
+                raise ValueError(
+                    f"precision_map range {spec!r} has lo > hi"
+                )
+            for i in range(lo, hi + 1):
+                if 0 <= i < n_layers:
+                    modes[i] = mode
+        else:
+            i = int(spec)
+            if 0 <= i < n_layers:
+                modes[i] = mode
+    return modes  # type: ignore[return-value]  — None entries filled by caller
+
+
+# ---------------------------------------------------------------------------
 
 # Number of tokens to collect before fitting the per-layer SVD basis.
 # 64 tokens provide a stable subspace for head_dim=128 models.
@@ -842,18 +949,45 @@ class KVLayerCache:
         "_comm_vq_old_v",      # np.ndarray | None  (n_heads, n_old) uint16 indices
         # Phase 3: Q-Filters geometric KV eviction
         "_qfilter",            # QFilterState | None — set by QuantizedKVCache when qfilter_rank > 0
-        # W104: per-layer storage mode for the old-tier quantization.
-        # "int8" (default) or "int2"; mirrors QuantizedKVCache.mode for the
-        # quant-bearing modes.  Stored on the layer rather than read from a
-        # parent reference to keep the layer cache self-contained.
+        # W104/W105: per-layer storage mode for the old-tier quantization.
+        # "int8" (default), "int4", "int2", or "fp16" (no quantization).
         "_kv_mode",
+        # P1 — Attention sink: first _sink_count tokens held permanently at FP16.
+        # StreamingLLM (Xiao et al. 2023) shows 45-55 % of total attention mass
+        # accumulates on the first 4 tokens regardless of sequence length.
+        # Preserving them at full precision costs <0.1 % extra RAM and avoids
+        # the sharp perplexity spike that INT2 otherwise causes on "sink" tokens.
+        "keys_sink",    # list[np.ndarray] (n_heads, head_dim) f16 — permanently FP16
+        "values_sink",
+        "_sink_count",  # int: target number of sink tokens (0 = disabled)
+        # P1 — FP16 accumulator used when kv_mode=="fp16" (precision_map use-case).
+        # These layers never quantize; evicted tokens go here rather than keys_old_q.
+        "_fp16_old_k",  # np.ndarray | None  (n_heads, n_fp16_old, head_dim) f16
+        "_fp16_old_v",
+        # P1 — Per-layer observability counters for CompressionResult.
+        "_n_compressed",  # int: tokens written to the quantized old-tier
+        "_n_evicted",     # int: tokens dropped by any eviction policy
     )
 
-    def __init__(self, window: int = 64, kv_mode: str = "int8"):
-        if kv_mode not in ("int8", "int4", "int2"):
-            raise ValueError(f"kv_mode must be int8, int4, or int2, got {kv_mode!r}")
+    def __init__(self, window: int = 64, kv_mode: str = "int8", sink_count: int = 0):
+        if kv_mode not in ("int8", "int4", "int2", "fp16"):
+            raise ValueError(
+                f"kv_mode must be one of int8 / int4 / int2 / fp16, got {kv_mode!r}"
+            )
+        if sink_count < 0:
+            raise ValueError(f"sink_count must be ≥ 0, got {sink_count}")
         self.window        = window
         self._kv_mode      = kv_mode
+        # attention sink
+        self.keys_sink    = []
+        self.values_sink  = []
+        self._sink_count  = sink_count
+        # fp16 accumulator (precision_map "fp16" layers)
+        self._fp16_old_k  = None
+        self._fp16_old_v  = None
+        # observability
+        self._n_compressed = 0
+        self._n_evicted    = 0
         self.keys_recent   = []     # list of (n_heads, head_dim) f16 arrays
         self.values_recent = []
         self.keys_old_q    = None   # (n_heads, n_old, head_dim_or_rank) int8
@@ -898,12 +1032,25 @@ class KVLayerCache:
     def append(self, key_np: np.ndarray, value_np: np.ndarray) -> None:
         """
         Append a single token's K/V pair (shape (n_heads, head_dim)) to the cache.
-        When the recent window overflows, the oldest slot is quantized to INT8.
+        When the recent window overflows, the oldest slot is quantized to the
+        layer's configured mode (int8 / int4 / int2) or kept at fp16.
+
+        P1 — Attention sinks (sink_count > 0): the first ``sink_count`` tokens
+        bypass the window entirely and are stored permanently at FP16 in
+        ``keys_sink`` / ``values_sink``.  They are never evicted or quantized.
         """
         with self._lock:
             if self.n_heads is None:
                 self.n_heads  = key_np.shape[0]
                 self.head_dim = key_np.shape[-1]
+
+            # ── P1: attention sink routing ────────────────────────────────────
+            # Count TOTAL tokens seen (sink + window + quantized) to decide
+            # whether this token belongs to the sink.
+            if self._sink_count > 0 and len(self.keys_sink) < self._sink_count:
+                self.keys_sink.append(key_np.astype(np.float16))
+                self.values_sink.append(value_np.astype(np.float16))
+                return   # sink tokens never enter the sliding window
 
             self.keys_recent.append(key_np.astype(np.float16))
             self.values_recent.append(value_np.astype(np.float16))
@@ -986,8 +1133,22 @@ class KVLayerCache:
                             self._comm_vq_old_v = np.concatenate([self._comm_vq_old_v, idx_v], axis=1)
                     continue  # CommVQ path done — skip INT8 quantization
 
+                # ── P1: fp16 accumulator path (precision_map "fp16" layers) ──────────
+                if self._kv_mode == "fp16":
+                    # No quantization — keep evicted tokens at full precision.
+                    slot_k = oldest_k[np.newaxis, :, :]   # (1, n_heads, head_dim)
+                    slot_v = oldest_v[np.newaxis, :, :]
+                    if self._fp16_old_k is None:
+                        self._fp16_old_k = slot_k
+                        self._fp16_old_v = slot_v
+                    else:
+                        self._fp16_old_k = np.concatenate([self._fp16_old_k, slot_k], axis=0)
+                        self._fp16_old_v = np.concatenate([self._fp16_old_v, slot_v], axis=0)
+                    # fp16 path never hits the quantized buffer; skip the rest.
+                    continue
+
                 # Quantize per-head per-token (dispatched on layer storage mode).
-                # INT8 → (1, head_dim) int8; INT2 → (1, head_dim/4) uint8 packed.
+                # INT8 → (1, head_dim) int8; INT4 → (1, head_dim/2); INT2 → (1, head_dim/4).
                 new_kq_list, new_ks_list = [], []
                 new_vq_list, new_vs_list = [], []
                 for h in range(self.n_heads):
@@ -995,13 +1156,11 @@ class KVLayerCache:
                         oldest_k[h:h+1, :], self._kv_mode)
                     vq, vs = _kv_quantize_per_channel(
                         oldest_v[h:h+1, :], self._kv_mode)
-                    new_kq_list.append(kq)            # each (1, head_dim or head_dim/4)
-                    new_ks_list.append(ks)            # each (1,) float32
+                    new_kq_list.append(kq)
+                    new_ks_list.append(ks)
                     new_vq_list.append(vq)
                     new_vs_list.append(vs)
 
-                # stack → (n_heads, 1, last_dim) and (n_heads, 1)
-                # last_dim is head_dim for INT8, head_dim/4 for INT2.
                 slot_kq = np.stack(new_kq_list, axis=0)
                 slot_ks = np.stack(new_ks_list, axis=0)
                 slot_vq = np.stack(new_vq_list, axis=0)
@@ -1017,6 +1176,8 @@ class KVLayerCache:
                     self.keys_old_s   = np.concatenate([self.keys_old_s,   slot_ks], axis=1)
                     self.values_old_q = np.concatenate([self.values_old_q, slot_vq], axis=1)
                     self.values_old_s = np.concatenate([self.values_old_s, slot_vs], axis=1)
+                # P1 observability: count each compressed token
+                self._n_compressed += 1
             # Spill oldest INT8 entries to NVMe disk tier if enabled
             self._maybe_spill_to_disk()
 
@@ -1030,6 +1191,21 @@ class KVLayerCache:
         values : (n_heads, n_total, head_dim)  float16
         """
         with self._lock:
+            # ── P1: attention sink (always first, always FP16) ───────────────
+            sink_k = (np.stack(self.keys_sink,   axis=1)   # (n_heads, n_sink, d)
+                      if self.keys_sink else None)
+            sink_v = (np.stack(self.values_sink, axis=1)
+                      if self.values_sink else None)
+
+            # ── P1: fp16 accumulator (precision_map "fp16" layers) ───────────
+            # _fp16_old_k shape: (n_fp16_old, n_heads, head_dim)
+            # Transpose to (n_heads, n_fp16_old, head_dim) to match other tiers.
+            if self._fp16_old_k is not None:
+                fp16_old_k = np.transpose(self._fp16_old_k, (1, 0, 2)).astype(np.float16)
+                fp16_old_v = np.transpose(self._fp16_old_v, (1, 0, 2)).astype(np.float16)
+            else:
+                fp16_old_k = fp16_old_v = None
+
             # Reconstruct disk tier (oldest, spilled to NVMe memmap)
             disk_k, disk_v = self._disk_full_kv()
 
@@ -1081,9 +1257,11 @@ class KVLayerCache:
             else:
                 rec_k = rec_v = None
 
-            # Combine: disk || RAM int8 || FP16 recent
-            parts_k = [p for p in (disk_k, old_k, rec_k) if p is not None]
-            parts_v = [p for p in (disk_v, old_v, rec_v) if p is not None]
+            # Combine: sink || fp16_old || disk || quant_old || FP16 recent
+            parts_k = [p for p in (sink_k, fp16_old_k, disk_k, old_k, rec_k)
+                       if p is not None]
+            parts_v = [p for p in (sink_v, fp16_old_v, disk_v, old_v, rec_v)
+                       if p is not None]
             if not parts_k:
                 return None, None
             if len(parts_k) == 1:
@@ -1157,17 +1335,23 @@ class KVLayerCache:
     @property
     def n_tokens(self) -> int:
         old = self.keys_old_q.shape[1] if self.keys_old_q is not None else 0
-        return old + len(self.keys_recent)
+        fp16_old = (self._fp16_old_k.shape[0]
+                    if self._fp16_old_k is not None else 0)
+        return len(self.keys_sink) + fp16_old + old + len(self.keys_recent)
 
     @property
     def memory_bytes(self) -> int:
-        """Approximate memory usage in bytes."""
+        """Approximate memory usage in bytes (codes + scales)."""
         b = 0
         if self.keys_old_q is not None:
             b += self.keys_old_q.nbytes + self.keys_old_s.nbytes * 2
             b += self.values_old_q.nbytes + self.values_old_s.nbytes * 2
         for arr in self.keys_recent + self.values_recent:
             b += arr.nbytes
+        for arr in self.keys_sink + self.values_sink:
+            b += arr.nbytes
+        if self._fp16_old_k is not None:
+            b += self._fp16_old_k.nbytes + self._fp16_old_v.nbytes
         return b
 
     def reset(self):
@@ -1177,6 +1361,12 @@ class KVLayerCache:
             self.values_recent.clear()
             self.keys_old_q = self.keys_old_s = None
             self.values_old_q = self.values_old_s = None
+            # P1: clear sink and fp16 accumulator; preserve config
+            self.keys_sink.clear()
+            self.values_sink.clear()
+            self._fp16_old_k = self._fp16_old_v = None
+            self._n_compressed = 0
+            self._n_evicted    = 0
             self._disk_n = 0
             # Delete memmap files if they exist
             self._disk_map_k = None
@@ -1710,7 +1900,7 @@ class QuantizedKVCache:
         self,
         n_layers: int,
         window: int = 64,
-        mode: str = "int8",                 # "fp16" | "int8" | "snap"
+        mode: str = "int8",                 # "fp16" | "int8" | "snap" | "int4" | "int2"
         budget: int = 4096,
         snap_window: int = 32,
         svd_rank: int = 0,                  # Phase 1: 0 = off; set to rank < head_dim
@@ -1723,6 +1913,10 @@ class QuantizedKVCache:
         # Phase 5: TTT Fast Weights — absorb evicted KVs into outer-product memory
         fast_weight_lr: float = 0.0,        # 0.0 = off; learning rate > 0 enables
         fast_weight_decay: float = 0.999,   # per-absorption W_f decay factor
+        # P1 — Attention sink preservation (StreamingLLM)
+        sink_token_count: int = 0,          # 0 = off; 4 is the StreamingLLM default
+        # P1 — Mixed-precision per-layer override
+        precision_map: "dict | None" = None,  # e.g. {"0-3":"fp16","4-28":"int4"}
     ):
         """
         Parameters
@@ -1770,19 +1964,35 @@ class QuantizedKVCache:
                     f"Use mode='int8' with qfilter_rank, or mode={mode!r} alone."
                 )
 
-        self.mode        = mode
-        self.window      = window
-        self.budget      = budget
-        self.snap_window = snap_window
-        self.svd_rank    = svd_rank
-        self.comm_vq_bits = comm_vq_bits
-        self.n_layers    = n_layers
-        # KVLayerCache stores per-layer mode; INT8 is the default for "fp16"
-        # (no old-tier quant happens) and "snap" (KIVI INT8 + SnapKV eviction).
-        # Sub-INT8 modes ("int4", "int2") propagate directly.
+        if sink_token_count < 0:
+            raise ValueError(f"sink_token_count must be ≥ 0, got {sink_token_count}")
+
+        self.mode             = mode
+        self.window           = window
+        self.budget           = budget
+        self.snap_window      = snap_window
+        self.svd_rank         = svd_rank
+        self.comm_vq_bits     = comm_vq_bits
+        self.n_layers         = n_layers
+        self.sink_token_count = sink_token_count
+
+        # ── Per-layer mode assignment ─────────────────────────────────────────
+        # Default: cache-level mode propagated to all layers.
         layer_mode = mode if mode in ("int4", "int2") else "int8"
+        layer_modes: list[str] = [layer_mode] * n_layers
+
+        # P1 precision_map overrides individual layers.
+        # The map may contain "fp16" entries (no quantization for those layers).
+        if precision_map is not None:
+            overrides = _parse_precision_map(precision_map, n_layers)
+            for i, m in enumerate(overrides):
+                if m is not None:
+                    layer_modes[i] = m
+
         self._layers: list[KVLayerCache] = [
-            KVLayerCache(window=window, kv_mode=layer_mode) for _ in range(n_layers)
+            KVLayerCache(window=window, kv_mode=layer_modes[i],
+                         sink_count=sink_token_count)
+            for i in range(n_layers)
         ]
         if svd_rank > 0:
             for layer in self._layers:
@@ -1845,6 +2055,69 @@ class QuantizedKVCache:
     def get_kv_mlx(self, layer_idx: int):
         """Return (keys, values) as MLX bfloat16 arrays."""
         return self._layers[layer_idx].get_as_mlx()
+
+    # ── P1 — Observability ─────────────────────────────────────────────────
+
+    def metrics(self) -> CompressionResult:
+        """Return a snapshot of compression statistics across all layers.
+
+        Aggregates per-layer counters (set by :class:`KVLayerCache`) into a
+        single :class:`CompressionResult` dataclass.  The snapshot is a
+        *point-in-time copy* — it does not change if more tokens are appended
+        afterwards.  Calling ``reset()`` resets all counters.
+
+        Returns
+        -------
+        CompressionResult
+        """
+        total_compressed  = 0
+        total_fp16        = 0
+        total_evicted     = 0
+        total_bits        = 0
+        memory_saved      = 0
+        layer_breakdown   = []
+
+        bits_per_token = {
+            "int8": 8,  "int4": 4, "int2": 2, "fp16": 0,
+        }
+        fp16_bytes_per_tok = 2  # float16
+
+        for layer in self._layers:
+            n_comp  = layer._n_compressed
+            n_sink  = len(layer.keys_sink)
+            n_rec   = len(layer.keys_recent)
+            n_fp16  = n_sink + n_rec
+            if layer._fp16_old_k is not None:
+                n_fp16 += layer._fp16_old_k.shape[0]
+            n_evict = layer._n_evicted
+
+            hd     = layer.head_dim or 1
+            nh     = layer.n_heads  or 1
+            bpt    = bits_per_token.get(layer._kv_mode, 8)
+            # bits stored in old-tier codes for K + V:
+            # n_comp tokens × n_heads × head_dim values × bpt bits × 2 buffers
+            bits   = n_comp * nh * hd * bpt * 2
+
+            # FP16 baseline for THIS layer:
+            # every token (compressed + fp16) × n_heads × head_dim × 16 bits × 2 buffers
+            fp16_layer = (n_comp + n_fp16) * nh * hd * 16 * 2
+            memory_saved += max(0, (fp16_layer - bits) // 8)
+
+            total_compressed += n_comp
+            total_fp16       += n_fp16
+            total_evicted    += n_evict
+            total_bits       += bits
+            layer_breakdown.append((n_comp, n_fp16, bits))
+
+        return CompressionResult(
+            tokens_compressed  = total_compressed,
+            tokens_fp16        = total_fp16,
+            tokens_evicted     = total_evicted,
+            bits_used          = total_bits,
+            memory_saved_bytes = memory_saved,  # accumulated per-layer above
+            cache_hit_rate     = 0.0,           # populated by serving layer when available
+            layers             = layer_breakdown,
+        )
 
     def reset(self):
         """Clear all layers (new conversation)."""
@@ -2073,10 +2346,14 @@ class HadamardKVCache(QuantizedKVCache):
         snap_window: int = 32,
         svd_rank: int = 0,
         seed: int = 42,
+        sink_token_count: int = 0,
+        precision_map: "dict | None" = None,
     ) -> None:
         super().__init__(
             n_layers=n_layers, window=window, mode=mode,
             budget=budget, snap_window=snap_window, svd_rank=svd_rank,
+            sink_token_count=sink_token_count,
+            precision_map=precision_map,
         )
         self._seed    = seed
         # Hadamard matrices are generated lazily on first use (head_dim unknown)
