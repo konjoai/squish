@@ -430,5 +430,85 @@ support remains deferred.
 
 ---
 
+## Researched Feature Roadmap
+
+> Last updated: 2026-05-12.  Sources: StreamingLLM (Xiao et al. 2023),
+> FastGen (Ge et al. 2023), H2O (Zhang et al. 2023), SnapKV (Li et al. 2024),
+> Quest (Tang et al. 2024), PyramidKV (Cai et al. 2024), PrefixKV (Shi et al. 2024).
+
+---
+
+### 🔴 P1 — Critical / Low Complexity  (all **SHIPPED 2026-05-12**)
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| **Attention sink preservation** (`sink_token_count`) | ✅ SHIPPED | `KVLayerCache(sink_count=N)` keeps first N tokens permanently at FP16. Positional mask in `append()` routes them to `keys_sink` list, bypassing the quantisation pipeline entirely. Sink tokens are prepended in `get_full_kv()` — always first in the reconstruction. StreamingLLM (Xiao 2023) proves 45–55 % of attention mass concentrates on the first 4 tokens; preserving them prevents the INT2 perplexity spike. `QuantizedKVCache(sink_token_count=4)`, `HadamardKVCache(sink_token_count=4)`, `make_kv_cache(…, sink_token_count=4)`. |
+| **Mixed-precision per-layer override** (`precision_map`) | ✅ SHIPPED | `precision_map: dict` accepted by `QuantizedKVCache.__init__` and `HadamardKVCache.__init__`. Keys are single indices (`"5"`) or inclusive ranges (`"0-3"`); values one of `"fp16" \| "int8" \| "int4" \| "int2"`. Parsed by `_parse_precision_map()` at construction time. `"fp16"` layers accumulate evicted tokens in `_fp16_old_k`/`_fp16_old_v` (never quantised). Enables `{"0-3": "fp16", "4-28": "int4", "29-31": "int8"}` in one argument. |
+| **Per-request `CompressionResult` metrics** | ✅ SHIPPED | `@dataclass CompressionResult` with `tokens_compressed`, `tokens_fp16`, `tokens_evicted`, `bits_used`, `memory_saved_bytes`, `cache_hit_rate`, `layers`. Per-layer counters (`_n_compressed`, `_n_evicted`) in `KVLayerCache.__slots__`. Aggregated by `QuantizedKVCache.metrics()` using exact bit-width accounting (n_heads × head_dim × bpt × 2 for K+V). |
+| **HuggingFace drop-in `SquishCache`** | ✅ SHIPPED | `squish.integrations.hf.SquishCache` subclasses `transformers.DynamicCache` (falls back to standalone when `transformers` not installed). Implements `update()`, `get_seq_length()`, `get_usable_length()`, `reset()`, `metrics()`. Grows its inner layer list on demand — `n_layers` need not be known at construction. `@squish_compress(quantization="int4")` decorator patches any `AutoModelForCausalLM` forward method. |
+
+---
+
+### 🟠 P2 — High Impact / Medium Complexity
+
+- **Layer-wise adaptive budget (PyramidKV-style)**: Auto-profile mode computes
+  per-layer attention entropy on a calibration prompt and derives an INT bit
+  schedule. Boundary layers (first 2 + last 2) get more bits; middle layers get
+  fewer. CLI: `squish calibrate --model qwen-7b --output layer_profile.json`.
+  Reference: PyramidKV (Cai 2024), PrefixKV (Shi 2024).
+
+- **Per-head sensitivity calibration (FastGen-style)**: One-time calibration
+  pass identifies which attention heads are "heavy" (concentrated attention) vs
+  "streaming" (uniform). Heavy heads keep more of their KV at high precision.
+  CLI: `squish calibrate --output head_profile.json`.
+  Reference: FastGen (Ge 2023), ScissorHands (Liu 2023).
+
+- **Query-aware eviction (H2O / SnapKV / Quest)**: `eviction_policy` enum:
+  `none | lru | h2o | snapkv | quest`. H2O: running sum of attention scores;
+  evict lowest. SnapKV: observation window + clustering (already partially
+  implemented). Quest: block-level approximate attention over compressed keys.
+  Reference: H2O (Zhang 2023), SnapKV (Li 2024), Quest (Tang 2024).
+
+- **CPU/NVMe tiered offload (async)**: `offload_to_cpu: true`,
+  `offload_to_nvme: "/path"`. Async prefetch thread with `max_offload_latency_ms`
+  guard. Enables 32K+ context on machines where GPU RAM is the bottleneck but
+  CPU/NVMe is large. Disk tier is already partially implemented (NVMe memmap);
+  this wave adds async prefetch and CPU-RAM tiering.
+
+- **vLLM / SGLang integration hooks**: `squish.integrations.vllm.SquishKVConnector`
+  implementing vLLM's `KVCacheConnector` interface. Drop-in into the vLLM
+  serving engine for multi-GPU INT4/INT2 KV caching.
+
+- **Benchmarking suite + Pareto UI**: `squish benchmark` CLI runs
+  RULER / Needle-in-a-Haystack tasks and outputs an accuracy-vs-memory Pareto
+  chart in the demo UI. Makes the accuracy-memory tradeoff concrete for users
+  choosing a compression tier.
+
+---
+
+### 🟡 P3 — Strategic
+
+- **FlashAttention-compatible quantised kernels**: Triton kernel for INT8 fused
+  dequantise + FlashAttention. Avoids the Python dequant loop on the critical
+  path; targets A100/H100 deployments.
+
+- **Streaming / sliding-window cache mode**: `cache_mode: "streaming"` with
+  `sink_size` + `window_size`. Theoretically infinite context at bounded RAM;
+  combines attention sinks (P1) with the KIVI window.
+
+- **Non-prefix RAG cache reuse**: Content-addressable KV store (SHA-256 keyed).
+  Position-independent subsequence reuse across requests; dramatic speed-up for
+  long-shared prefixes (system prompts, document RAG).
+
+- **Speculative decoding KV management**: `SpeculativeKVManager` with tree
+  allocation, rollback on rejection, commit on acceptance. Essential for
+  speculative decoding to remain memory-bounded under INT2.
+
+- **Multi-tenant isolation**: `tenant_id` param, `isolation_level: none | soft | hard`,
+  optional timing jitter. Prevents cross-tenant KV cache timing side-channels in
+  shared-inference deployments.
+
+---
+
 *Owner: wesleyscholl / Konjo AI Research*
 *Update after each completed wave. Never let this drift from actual implementation.*

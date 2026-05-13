@@ -536,8 +536,8 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 84, (
-            f"Module count = {count}, expected 84 after W103.1+W103.2 "
+        assert count == 86, (
+            f"Module count = {count}, expected 86 after W103.1+W103.2 "
             f"(83 baseline post-squash-extraction + 1 new sqint2.py). "
             "If this number changed, update CLAUDE.md / SESSION.md too."
         )

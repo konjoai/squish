@@ -5,6 +5,77 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.25.0] — 2026-05-12 — P1 sprint: attention sinks, precision_map, CompressionResult, HF SquishCache
+
+### Added
+
+**Attention sink preservation** (`sink_token_count` parameter)
+- `KVLayerCache(sink_count=N)`: first `N` tokens are permanently stored at
+  FP16 regardless of the layer's `kv_mode`. They live in `keys_sink` /
+  `values_sink` and are prepended in `get_full_kv()` — always at the front
+  of the reconstructed sequence, never evicted or quantised.
+- `QuantizedKVCache`, `HadamardKVCache`, and `make_kv_cache` all accept
+  `sink_token_count` and propagate it to every layer.
+- Motivation: StreamingLLM (Xiao 2023) demonstrates that 45–55 % of total
+  attention mass lands on the first 4 tokens. Preserving them at FP16
+  prevents the sharp perplexity spike that INT2 otherwise causes while
+  adding < 0.1 % RAM overhead.
+
+**Mixed-precision per-layer API** (`precision_map` parameter)
+- `QuantizedKVCache(precision_map={"0-3": "fp16", "4-28": "int4", "29-31": "int8"})`
+  routes each layer range to the specified storage tier.
+- `_parse_precision_map(d, n_layers)` parses single indices (`"5"`) and
+  inclusive ranges (`"0-3"`). Raises `ValueError` on unknown modes or
+  inverted ranges. Layers not covered fall back to the cache-level `mode`.
+- `"fp16"` in the precision map is fully supported: those layers accumulate
+  evicted tokens in a `_fp16_old_k`/`_fp16_old_v` buffer (never quantised).
+- `KVLayerCache._kv_mode` now accepts `"fp16"` as a valid value.
+
+**Per-request `CompressionResult` metrics**
+- `@dataclass CompressionResult` with `tokens_compressed`, `tokens_fp16`,
+  `tokens_evicted`, `bits_used`, `memory_saved_bytes`, `cache_hit_rate`,
+  `layers` (per-layer breakdown).
+- `QuantizedKVCache.metrics()` aggregates across all layers using exact
+  bit-width accounting (`n_heads × head_dim × bpt × 2` for K+V codes).
+  `memory_saved_bytes` is the per-layer sum of `(fp16_baseline − bits) / 8`
+  — correct even when layers have different modes via `precision_map`.
+- Per-layer counters (`_n_compressed`, `_n_evicted`) added to
+  `KVLayerCache.__slots__`; incremented on every quantisation.
+  `reset()` zeroes both counters but preserves `sink_count`.
+
+**HuggingFace drop-in `SquishCache`** — `squish.integrations.hf`
+- `SquishCache` subclasses `transformers.DynamicCache` when `transformers`
+  is installed; degrades to a standalone compatible class otherwise.
+- Implements the full HF protocol: `update(key_states, value_states, layer_idx)`,
+  `get_seq_length()`, `get_usable_length()`, `reset()`.
+- Accepts NumPy, PyTorch, and MLX tensors via `_to_numpy`/`_restore_type`.
+- Layer list grows on demand (no need to know `n_layers` at construction).
+- `SquishCache.metrics()` returns a `CompressionResult`.
+- `@squish_compress(quantization="int4")` decorator patches any
+  `AutoModelForCausalLM` forward method to inject a `SquishCache`
+  automatically.
+- New package `squish/integrations/` (`__init__.py` + `hf.py`).
+
+**PLAN.md "Researched Feature Roadmap"** — full P1/P2/P3 prioritised
+backlog with research citations (StreamingLLM, FastGen, H2O, SnapKV,
+Quest, PyramidKV, PrefixKV) added as a permanent section.
+
+### Tests
+- `tests/test_kv_p1.py` — 42 new tests (10 attention sink, 11 precision map,
+  10 CompressionResult, 11 SquishCache + decorator). 0 failures.
+- Module count assertions in `test_sqint2.py` and `test_sqint2_router.py`
+  updated from 84 → 86 (integrations `__init__.py` + `hf.py`).
+
+### Suite
+- **2577 passed** / 5 pre-existing failures (W95 importlib + missing
+  safetensors/Rust-ext) / 41 skipped. Zero new regressions.
+
+### Module count
+- `squish/integrations/__init__.py` (+1) + `squish/integrations/hf.py` (+1)
+  = **86 modules** (ceiling 125 ✅).
+
+---
+
 ## [9.24.0] — 2026-05-03 — W106: KV memory budgeting + cache factory
 
 ### Added
