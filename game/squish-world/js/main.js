@@ -96,7 +96,7 @@ class Game {
     this.state = state;
 
     if (state === 'avatar') {
-      this.scene = new AvatarCreatorScene(this.W, this.H, cfg => {
+      this.scene = new AvatarCreatorScene(canvas, cfg => {
         this.avatarConfig = cfg;
         this._goto('stage0');
       });
