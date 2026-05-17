@@ -5806,6 +5806,170 @@ def cmd_route(args) -> None:
     print()
 
 
+def cmd_benchmark(args) -> None:  # noqa: C901
+    """KV-cache compression benchmark with optional baseline comparison.
+
+    Measures SNR (quality), compression ratio, memory, and throughput for each
+    requested quantization mode (INT8, INT4, INT2) on synthetic token streams.
+    Results can be saved as a JSON baseline and compared on subsequent runs —
+    exit code 1 signals a regression, enabling CI gating.
+    """
+    import json
+    import math
+    import time
+    from pathlib import Path
+
+    import numpy as np
+
+    from squish.kv.kv_cache import QuantizedKVCache
+
+    ctx      = args.ctx
+    head_dim = args.head_dim
+    n_heads  = args.n_heads
+    seed     = args.seed
+    threshold = args.threshold
+    modes    = [m.strip() for m in args.modes.split(",") if m.strip()]
+    fp16_bytes = ctx * n_heads * head_dim * 2 * 2    # K + V float16
+
+    def _snr(s: np.ndarray, r: np.ndarray) -> float:
+        sf = s.astype(np.float64)
+        rf = r.astype(np.float64)
+        sig = float(np.mean(sf * sf))
+        err = float(np.mean((sf - rf) ** 2))
+        if sig == 0:
+            return 0.0
+        if err == 0:
+            return float("inf")
+        return 10.0 * math.log10(sig / err)
+
+    rng  = np.random.default_rng(seed)
+    keys = [rng.standard_normal((n_heads, head_dim)).astype(np.float16) * 0.3
+            for _ in range(ctx)]
+    vals = [rng.standard_normal((n_heads, head_dim)).astype(np.float16) * 0.3
+            for _ in range(ctx)]
+
+    results: dict[str, dict] = {}
+    for mode in modes:
+        if mode == "int2" and head_dim % 4:
+            print(f"  skip {mode}: head_dim={head_dim} is not divisible by 4")
+            continue
+        if mode == "int4" and head_dim % 2:
+            print(f"  skip {mode}: head_dim={head_dim} is not divisible by 2")
+            continue
+        cache = QuantizedKVCache(n_layers=1, window=2, mode=mode)
+        t0 = time.perf_counter()
+        for k, v in zip(keys, vals):
+            cache.update(0, k, v)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+        layer = cache._layers[0]
+        full_k, _ = layer.get_full_kv()
+        gt    = np.stack(keys, axis=1)
+        snr   = _snr(gt, full_k)
+        mem   = int(layer.memory_bytes)
+        ratio = fp16_bytes / max(1, mem)
+
+        cr = cache.metrics()
+        results[mode] = {
+            "mode":             mode,
+            "ctx_len":          ctx,
+            "head_dim":         head_dim,
+            "n_heads":          n_heads,
+            "snr_db":           snr,
+            "memory_bytes":     mem,
+            "compression_ratio": ratio,
+            "elapsed_ms":       elapsed_ms,
+            "tokens_compressed": cr.tokens_compressed,
+            "memory_saved_bytes": cr.memory_saved_bytes,
+        }
+
+    # ── Print results table ──
+    hdr = f"  {'mode':<8} {'SNR (dB)':>10} {'ratio':>8} {'memory':>12} {'time (ms)':>12}"
+    sep = f"  {'─' * 54}"
+    print(f"\n  squish benchmark  ctx={ctx}  head_dim={head_dim}  n_heads={n_heads}")
+    print(hdr)
+    print(sep)
+    for m, r in results.items():
+        mb = r["memory_bytes"] / (1024 ** 2)
+        snr_str = f"{r['snr_db']:.2f}" if math.isfinite(r['snr_db']) else "∞"
+        print(
+            f"  {m:<8} {snr_str:>10} {r['compression_ratio']:>8.2f}×"
+            f" {mb:>8.1f} MB {r['elapsed_ms']:>10.1f}"
+        )
+    print()
+
+    # ── Save baseline ──
+    if args.save:
+        payload = {
+            "version": 1,
+            "ctx_len": ctx,
+            "head_dim": head_dim,
+            "n_heads": n_heads,
+            "seed": seed,
+            "results": results,
+        }
+        Path(args.save).write_text(json.dumps(payload, indent=2))
+        print(f"  ✓  Baseline saved → {args.save}")
+
+    # ── Compare against baseline ──
+    if args.compare:
+        baseline_path = Path(args.compare)
+        if not baseline_path.exists():
+            print(f"  ✗  Baseline file not found: {args.compare}", file=sys.stderr)
+            sys.exit(2)
+
+        baseline = json.loads(baseline_path.read_text())
+        base_results: dict = baseline.get("results", {})
+
+        # Metrics where larger is better (regression = current < baseline - threshold).
+        higher_is_better = ("snr_db", "compression_ratio")
+
+        regressions: list[str] = []
+        print(f"  Comparing against {args.compare!r}  (threshold {threshold * 100:.1f}%)")
+        print(sep)
+
+        for mode, cur in results.items():
+            if mode not in base_results:
+                print(f"  ?  {mode}: not in baseline, skipping")
+                continue
+            base = base_results[mode]
+            for metric in higher_is_better:
+                cur_v  = float(cur.get(metric, 0.0))
+                base_v = float(base.get(metric, 0.0))
+                if base_v == 0:
+                    continue
+                # Positive delta means we got *worse* (lower value on a higher-is-better metric).
+                delta = (base_v - cur_v) / abs(base_v)
+                regressed = delta > threshold
+                sign = "+" if delta > 0 else ""
+                sym  = "✗" if regressed else "✓"
+                print(
+                    f"  {sym}  {mode}/{metric}: "
+                    f"{base_v:.3f} → {cur_v:.3f}  ({sign}{delta * 100:.1f}%)"
+                    + ("  ← REGRESSION" if regressed else "")
+                )
+                if regressed:
+                    regressions.append(
+                        f"{mode}/{metric}: {delta * 100:.1f}% regression "
+                        f"({base_v:.3f} → {cur_v:.3f})"
+                    )
+
+        print()
+        if regressions:
+            print(f"  ✗  {len(regressions)} regression(s) detected:")
+            for msg in regressions:
+                print(f"      • {msg}")
+            print(
+                f"\n  Tip: run `squish benchmark --save {args.compare}` to "
+                "update the baseline if the regression is intentional."
+            )
+            sys.exit(1)
+        else:
+            print(
+                f"  ✓  All metrics within {threshold * 100:.1f}% of baseline."
+            )
+
+
 class _SquishHelpFormatter(argparse.RawDescriptionHelpFormatter):
     """Minimal ANSI accents on section headings — only when writing to a TTY."""
 
@@ -6901,6 +7065,57 @@ Ollama drop-in:
         help="Number of warmup iterations excluded from timing (default 10).",
     )
     p_bench.set_defaults(func=cmd_bench)
+
+    # ── squish benchmark ───────────────────────────────────────────────────────
+    p_bmark = sub.add_parser(
+        "benchmark",
+        help="KV-cache compression benchmark with optional CI baseline comparison",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Run a KV-cache compression benchmark across INT8/INT4/INT2 modes\n"
+            "and compare against a saved baseline for CI regression detection.\n\n"
+            "Examples:\n"
+            "  squish benchmark                        # print results table\n"
+            "  squish benchmark --save baseline.json   # save as baseline\n"
+            "  squish benchmark --compare baseline.json --threshold 0.03\n"
+            "  squish benchmark --modes int4,int2 --ctx 2048\n"
+        ),
+    )
+    p_bmark.add_argument(
+        "--modes", default="int8,int4,int2", metavar="MODES",
+        help="Comma-separated list of modes to benchmark (default: int8,int4,int2).",
+    )
+    p_bmark.add_argument(
+        "--ctx", type=int, default=1024, metavar="N",
+        help="Context length — number of tokens to push through the cache (default 1024).",
+    )
+    p_bmark.add_argument(
+        "--head-dim", type=int, default=128, metavar="D",
+        help="Head dimension (default 128). INT2 requires a multiple of 4.",
+    )
+    p_bmark.add_argument(
+        "--n-heads", type=int, default=4, metavar="H",
+        help="Number of KV heads (default 4).",
+    )
+    p_bmark.add_argument(
+        "--seed", type=int, default=42, metavar="S",
+        help="Random seed for reproducible synthetic activations (default 42).",
+    )
+    p_bmark.add_argument(
+        "--save", metavar="FILE",
+        help="Save benchmark results as a JSON baseline file.",
+    )
+    p_bmark.add_argument(
+        "--compare", metavar="FILE",
+        help="Compare current results against a previously saved baseline JSON. "
+             "Exits with code 1 if any metric regresses beyond --threshold.",
+    )
+    p_bmark.add_argument(
+        "--threshold", type=float, default=0.05, metavar="FRAC",
+        help="Regression threshold as a fraction (default 0.05 = 5%%). "
+             "Applied to snr_db and compression_ratio; higher-is-better metrics.",
+    )
+    p_bmark.set_defaults(func=cmd_benchmark)
 
     # ── squish route ──────────────────────────────────────────────────────────
     p_route = sub.add_parser(

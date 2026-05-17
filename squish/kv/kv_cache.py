@@ -2119,6 +2119,143 @@ class QuantizedKVCache:
             layers             = layer_breakdown,
         )
 
+    def auto_calibrate(
+        self,
+        sample_layers: "list[list[np.ndarray]]",
+        *,
+        high_kurtosis: float = 6.0,
+        low_kurtosis: float = 2.0,
+        min_mode: str = "int2",
+        max_mode: str = "int8",
+    ) -> "QuantizedKVCache":
+        """Derive a per-layer ``precision_map`` from sample KV activations.
+
+        Runs a kurtosis analysis on the provided K (or K+V) sample vectors,
+        then constructs a new :class:`QuantizedKVCache` with the optimal
+        per-layer bit-width — using the Hadamard-whitening insight that
+        high excess-kurtosis layers (heavy-tailed outliers) need more bits to
+        avoid bin-collapse, while near-Gaussian layers (excess kurtosis ≲ 2)
+        compress safely to the minimum tier.
+
+        Math
+        ----
+        Excess kurtosis per layer::
+
+            κ₄ = E[(x − μ)⁴] / σ⁴  −  3
+
+        A Gaussian has κ₄ = 0.  Transformer K/V activations with heavy outlier
+        channels have κ₄ in the range 3–20.  StreamingLLM found that attention
+        sink and initial tokens cluster at κ₄ > 10; FFN middle layers tend to
+        sit below 3 after Hadamard rotation.
+
+        Assignment rule::
+
+            κ₄ > high_kurtosis   →  max_mode  (default "int8")
+            κ₄ > low_kurtosis    →  "int4"
+            κ₄ ≤ low_kurtosis    →  min_mode  (default "int2")
+
+        Parameters
+        ----------
+        sample_layers : list of lists.
+            ``sample_layers[i]`` is a list of per-token numpy arrays, each of
+            shape ``(n_heads, head_dim)`` in dtype float16 or float32.  Only
+            key activations are required; values are optional and skipped if
+            ``sample_layers[i]`` has fewer items than the K tensors supplied
+            for a different layer.  At least 16 sample tokens per layer are
+            recommended for a stable kurtosis estimate.
+        high_kurtosis : excess kurtosis above which ``max_mode`` is assigned.
+        low_kurtosis  : excess kurtosis above which "int4" is assigned.
+        min_mode      : the most-compressed tier ("int2" by default).
+        max_mode      : the least-compressed tier ("int8" by default).
+
+        Returns
+        -------
+        QuantizedKVCache
+            A **new** cache constructed with the same parameters as ``self``
+            plus the derived ``precision_map``.  The original cache is
+            unchanged.
+
+        Raises
+        ------
+        ValueError
+            If ``sample_layers`` has a different length from ``self.n_layers``,
+            or if either threshold or mode value is invalid.
+        """
+        if len(sample_layers) != self.n_layers:
+            raise ValueError(
+                f"auto_calibrate: sample_layers has {len(sample_layers)} entries "
+                f"but this cache has {self.n_layers} layers."
+            )
+        if high_kurtosis <= low_kurtosis:
+            raise ValueError(
+                f"auto_calibrate: high_kurtosis ({high_kurtosis}) must be "
+                f"greater than low_kurtosis ({low_kurtosis})."
+            )
+        valid_modes = {"fp16", "int8", "int4", "int2"}
+        for m in (min_mode, max_mode):
+            if m not in valid_modes:
+                raise ValueError(f"auto_calibrate: {m!r} is not a valid mode.")
+
+        precision_map: dict[str, str] = {}
+
+        for li, token_list in enumerate(sample_layers):
+            if not token_list:
+                continue
+            # Stack all sample tokens for this layer.
+            # Each element: (n_heads, head_dim) → result: (n_tokens, n_heads*head_dim)
+            try:
+                data = np.concatenate(
+                    [t.astype(np.float64).reshape(1, -1) for t in token_list],
+                    axis=0,
+                )                           # (n_tokens, n_heads * head_dim)
+            except Exception as exc:
+                raise ValueError(
+                    f"auto_calibrate: layer {li} sample tensors could not be "
+                    f"stacked — shapes may differ: {exc}"
+                ) from exc
+
+            flat = data.ravel()             # (n_tokens * n_heads * head_dim,)
+            if flat.size < 4:
+                # Not enough data for stable kurtosis; keep max_mode.
+                precision_map[str(li)] = max_mode
+                continue
+
+            mu  = float(np.mean(flat))
+            std = float(np.std(flat))
+            if std == 0.0:
+                # Constant tensor — perfectly safe at any tier.
+                precision_map[str(li)] = min_mode
+                continue
+
+            # Excess kurtosis: E[(x - mu)^4] / sigma^4 - 3
+            excess_k = float(np.mean(((flat - mu) / std) ** 4)) - 3.0
+
+            if excess_k > high_kurtosis:
+                mode = max_mode
+            elif excess_k > low_kurtosis:
+                mode = "int4"
+            else:
+                mode = min_mode
+
+            precision_map[str(li)] = mode
+
+        # Build a new cache with the same structural params + derived precision_map.
+        # HadamardKVCache has a narrower __init__ than QuantizedKVCache (no
+        # comm_vq_bits, qfilter_*, fast_weight_*); dispatch by instance type.
+        base_kwargs: dict = dict(
+            n_layers         = self.n_layers,
+            window           = self.window,
+            mode             = self.mode,
+            budget           = self.budget,
+            snap_window      = self.snap_window,
+            svd_rank         = self.svd_rank,
+            sink_token_count = self.sink_token_count,
+            precision_map    = precision_map if precision_map else None,
+        )
+        if type(self) is QuantizedKVCache:  # not a subclass
+            base_kwargs["comm_vq_bits"] = self.comm_vq_bits
+        return self.__class__(**base_kwargs)
+
     def reset(self):
         """Clear all layers (new conversation)."""
         for layer in self._layers:
