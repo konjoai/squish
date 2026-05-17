@@ -67,7 +67,7 @@ html, body {
 <div id="splash"><div class="logo"></div><p>Loading Squish World…</p></div>
 <canvas id="game" aria-label="Squish World — a magical game for Lily"></canvas>
 <script>
-/* Squish World — single-file inlined build. No external deps at play time. */
+/* Squish World — single-file inlined build. No external deps at runtime. */
 (function(){
   if(typeof CanvasRenderingContext2D==='undefined')return;
   if(CanvasRenderingContext2D.prototype.roundRect)return;
@@ -1015,11 +1015,8 @@ function drawAvatar(ctx, cx, cy, size, cfg = {}) {
  * Each activity exports a class with: constructor(w,h), update(dt), draw(ctx),
  * handleTap(x,y), handleDrag(x,y), handleDragEnd(x,y), resize(w,h), destroy()
  */
-  playPop, playSuccess, playSplash, playBounce, playGiggle,
-  playFirefly, playMagic, playChime, playNote, PENTA
-} from '../audio.js';
 
-const RAINBOW = ['#f43f5e','#f59e0b','#22c55e','#3b82f6','#a855f7','#14b8a6','#f97316','#ec4899'];
+// (skipped duplicate top-level: RAINBOW)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. BUBBLE POP
@@ -1755,7 +1752,7 @@ class WeatherWand {
  * All return {done: true} from handleTap when an activity is fully complete.
  */
 
-const RAINBOW = ['#f43f5e','#f59e0b','#22c55e','#3b82f6','#a855f7','#14b8a6','#f97316','#ec4899'];
+// (skipped duplicate top-level: RAINBOW)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A. COLOR MATCH — drag colored shapes into matching colored buckets
@@ -2294,9 +2291,6 @@ class PatternParade {
  * main.js — Squish World game engine.
  * State machine: AVATAR_CREATE → STAGE0 → STAGE1_HUB → STAGE1_ACTIVITY
  */
-  BubblePop, AnimalParade, MagicPaint, MusicStars,
-  ColorRain, SquishBounce, FireflyGarden, WeatherWand
-} from './stage0/activities.js';
 
 // ── Canvas setup ─────────────────────────────────────────────────────────────
 const canvas = document.getElementById('game');
