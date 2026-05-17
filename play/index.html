@@ -1016,7 +1016,7 @@ function drawAvatar(ctx, cx, cy, size, cfg = {}) {
  * handleTap(x,y), handleDrag(x,y), handleDragEnd(x,y), resize(w,h), destroy()
  */
 
-// (skipped duplicate top-level: RAINBOW)
+// (deduplicated top-level: RAINBOW)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. BUBBLE POP
@@ -1752,7 +1752,7 @@ class WeatherWand {
  * All return {done: true} from handleTap when an activity is fully complete.
  */
 
-// (skipped duplicate top-level: RAINBOW)
+// (deduplicated top-level: RAINBOW)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A. COLOR MATCH — drag colored shapes into matching colored buckets
@@ -2772,6 +2772,13 @@ function boot() {
   initSpeech();
   resize();
   game = new Game(canvas.width, canvas.height);
+  // Hide loading splash once the game has booted
+  const splash = document.getElementById('splash');
+  if (splash) {
+    splash.style.transition = 'opacity 0.5s';
+    splash.style.opacity = '0';
+    setTimeout(() => { splash.style.display = 'none'; }, 500);
+  }
   requestAnimationFrame(loop);
 }
 
