@@ -46,7 +46,21 @@ from squish.kv.kv_cache import (                                  # noqa: E402
     recommended_kv_mode_3tier,
 )
 
-INDEX_HTML = ROOT / "demo" / "index.html"
+INDEX_HTML  = ROOT / "demo" / "index.html"
+GAME_DIR    = ROOT / "game" / "squish-world"
+GAME_INDEX  = GAME_DIR / "index.html"
+
+# MIME types for game static assets
+_MIME = {
+    ".html": "text/html; charset=utf-8",
+    ".js":   "application/javascript; charset=utf-8",
+    ".css":  "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".png":  "image/png",
+    ".svg":  "image/svg+xml",
+    ".ico":  "image/x-icon",
+    ".wasm": "application/wasm",
+}
 
 # ── Limits — keep one request comfortably under ~1 second on a laptop ──────
 ALLOWED_MODES = ("int8", "int4", "int2")
@@ -248,6 +262,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:                                        # noqa: N802
         if self.path in ("/", "/index.html", "/demo", "/demo/"):
             self._send_file(INDEX_HTML, "text/html; charset=utf-8")
+            return
+        # ── Squish World game at /play ──────────────────────────────────────
+        if self.path in ("/play", "/play/", "/play/index.html"):
+            self._send_file(GAME_INDEX, "text/html; charset=utf-8")
+            return
+        if self.path.startswith("/play/"):
+            rel = self.path[len("/play/"):].lstrip("/").split("?")[0]
+            asset = GAME_DIR / rel
+            # Safety: stay inside GAME_DIR (prevent path traversal)
+            try:
+                asset = asset.resolve()
+                asset.relative_to(GAME_DIR.resolve())
+            except (ValueError, RuntimeError):
+                self._send_json(403, {"error": "forbidden"})
+                return
+            suffix = asset.suffix.lower()
+            mime   = _MIME.get(suffix, "application/octet-stream")
+            self._send_file(asset, mime)
             return
         if self.path == "/api/health":
             self._send_json(200, {
