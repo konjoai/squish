@@ -58,6 +58,41 @@ MAX_HEAD_DIM  = 256
 MAX_N_HEADS   = 32
 INF_SNR_CAP   = 999.0       # JSON cannot represent +inf — cap for serialisation
 
+# ── Per-request stats store — updated after every compress / benchmark run ──
+# ``GET /api/stats`` returns this; it is None until at least one measurement
+# has been made.  The server is single-threaded, so no locking is needed.
+_last_stats: "dict | None" = None
+# Rolling history for the analytics endpoint: most-recent N results per mode.
+_STATS_HISTORY_LEN = 20
+_stats_history: "list[dict]" = []
+
+
+def _record_stats(result: dict) -> None:
+    """Update the module-level stats store with a fresh measurement."""
+    global _last_stats                                      # noqa: PLW0603
+    m = result.get("metrics", {})
+    _last_stats = {
+        "mode":                result.get("mode"),
+        "ctx_len":             result.get("ctx_len"),
+        "head_dim":            result.get("head_dim"),
+        "n_heads":             result.get("n_heads"),
+        "snr_db":              result.get("snr_db"),
+        "memory_bytes":        result.get("memory_bytes"),
+        "compression_ratio":   result.get("compression_ratio"),
+        "elapsed_ms":          result.get("elapsed_ms"),
+        "tokens_compressed":   m.get("tokens_compressed", 0),
+        "tokens_fp16":         m.get("tokens_fp16", 0),
+        "tokens_evicted":      m.get("tokens_evicted", 0),
+        "bits_used":           m.get("bits_used", 0),
+        "memory_saved_bytes":  m.get("memory_saved_bytes", 0),
+        "cache_hit_rate":      m.get("cache_hit_rate", 0.0),
+        "ts":                  time.time(),
+    }
+    _stats_history.append(_last_stats)
+    if len(_stats_history) > _STATS_HISTORY_LEN:
+        _stats_history.pop(0)
+
+
 # ── /api/calculate limits — pure arithmetic, no cache run, so cap by sanity ─
 ALLOWED_BITS  = (16, 8, 4, 2)
 MIN_PARAMS_B  = 0.05      # 50 M params — smaller than this is degenerate
@@ -236,6 +271,8 @@ def _run_cache(mode: str, ctx_len: int, head_dim: int, n_heads: int,
     snr = _snr_db(ground_truth, full_k)
 
     fp16_baseline_bytes = ctx_len * n_heads * head_dim * 2 * 2  # K + V, f16
+    # Capture CompressionResult before the cache is GC'd.
+    cr = cache.metrics()
     return {
         "mode":               mode,
         "ctx_len":            ctx_len,
@@ -250,6 +287,14 @@ def _run_cache(mode: str, ctx_len: int, head_dim: int, n_heads: int,
                         if layer.keys_old_q is not None else None,
         "old_q_dtype":  str(layer.keys_old_q.dtype)
                         if layer.keys_old_q is not None else None,
+        "metrics": {
+            "tokens_compressed":  cr.tokens_compressed,
+            "tokens_fp16":        cr.tokens_fp16,
+            "tokens_evicted":     cr.tokens_evicted,
+            "bits_used":          cr.bits_used,
+            "memory_saved_bytes": cr.memory_saved_bytes,
+            "cache_hit_rate":     cr.cache_hit_rate,
+        },
     }
 
 
@@ -537,6 +582,19 @@ class Handler(BaseHTTPRequestHandler):
             payload = _build_recommendation(model_size_b, ctx_len, budget_mb)
             self._send_json(200, payload)
             return
+        if path == "/api/stats":
+            if _last_stats is None:
+                self._send_json(503, {
+                    "error": "No measurements yet — run /api/compress or /api/benchmark first.",
+                })
+            else:
+                self._send_json(200, {
+                    "last":    _last_stats,
+                    "history": _stats_history[-_STATS_HISTORY_LEN:],
+                    "n_runs":  len(_stats_history),
+                    "live":    True,
+                })
+            return
         self._send_json(404, {"error": f"GET {path} not found"})
 
     def do_POST(self) -> None:                                       # noqa: N802
@@ -577,6 +635,7 @@ class Handler(BaseHTTPRequestHandler):
         _check_mode_compat(mode, head_dim)
         result = _run_cache(mode, ctx_len, head_dim, n_heads)
         result["live"] = True
+        _record_stats(result)
         self._send_json(200, result)
 
     def _handle_recommend(self, payload: dict) -> None:
@@ -639,7 +698,9 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 results.append({"mode": mode, "skipped": True, "reason": str(exc)})
                 continue
-            results.append(_run_cache(mode, ctx_len, head_dim, n_heads))
+            r = _run_cache(mode, ctx_len, head_dim, n_heads)
+            _record_stats(r)
+            results.append(r)
 
         # FP16 reference row — not from the cache, but the same byte budget the
         # cache is being measured against, so the table makes sense.
