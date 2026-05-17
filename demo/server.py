@@ -50,6 +50,20 @@ from squish.kv.kv_cache import (                                  # noqa: E402
 from urllib.parse import parse_qs, urlsplit                       # noqa: E402
 
 INDEX_HTML = ROOT / "demo" / "index.html"
+GAME_DIR    = ROOT / "game" / "squish-world"
+GAME_INDEX  = GAME_DIR / "index.html"
+
+_MIME = {
+    ".html": "text/html; charset=utf-8",
+    ".js":   "application/javascript; charset=utf-8",
+    ".css":  "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".png":  "image/png",
+    ".svg":  "image/svg+xml",
+    ".ico":  "image/x-icon",
+    ".wasm": "application/wasm",
+}
+
 
 # ── Limits — keep one request comfortably under ~1 second on a laptop ──────
 ALLOWED_MODES = ("int8", "int4", "int2")
