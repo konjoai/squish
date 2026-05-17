@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black" />
-<meta name="theme-color" content="#0a0a1a" />
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+<meta name="theme-color" content="#0a0a1a"/>
 <title>Squish World 🌟</title>
 <style>
 /* game.css — Squish World */
@@ -64,22 +64,18 @@ html, body {
 </style>
 </head>
 <body>
-<div id="splash">
-  <div class="logo"></div>
-  <p>Loading Squish World…</p>
-</div>
+<div id="splash"><div class="logo"></div><p>Loading Squish World…</p></div>
 <canvas id="game" aria-label="Squish World — a magical game for Lily"></canvas>
 <script>
-/* Squish World — fully inlined single-file build. No external deps at play time. */
-(function() {
-  if (typeof CanvasRenderingContext2D === 'undefined') return;
-  if (CanvasRenderingContext2D.prototype.roundRect) return;
-  CanvasRenderingContext2D.prototype.roundRect = function(x,y,w,h,r) {
-    if (typeof r === 'number') r = [r,r,r,r];
-    else if (!Array.isArray(r)) r = [0,0,0,0];
-    while (r.length < 4) r.push(r[r.length-1]);
-    this.moveTo(x+r[0],y);
-    this.lineTo(x+w-r[1],y);
+/* Squish World — single-file inlined build. No external deps at play time. */
+(function(){
+  if(typeof CanvasRenderingContext2D==='undefined')return;
+  if(CanvasRenderingContext2D.prototype.roundRect)return;
+  CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+    if(typeof r==='number')r=[r,r,r,r];
+    else if(!Array.isArray(r))r=[0,0,0,0];
+    while(r.length<4)r.push(r[r.length-1]);
+    this.moveTo(x+r[0],y);this.lineTo(x+w-r[1],y);
     this.quadraticCurveTo(x+w,y,x+w,y+r[1]);
     this.lineTo(x+w,y+h-r[2]);
     this.quadraticCurveTo(x+w,y+h,x+w-r[2],y+h);
@@ -2384,7 +2380,7 @@ class Game {
     this.state = state;
 
     if (state === 'avatar') {
-      this.scene = new AvatarCreatorScene(this.W, this.H, cfg => {
+      this.scene = new AvatarCreatorScene(canvas, cfg => {
         this.avatarConfig = cfg;
         this._goto('stage0');
       });
@@ -2791,8 +2787,6 @@ if (document.readyState === 'loading') {
   boot();
 }
 </script>
-<noscript><p style="color:#fff;text-align:center;padding:2rem;font-family:system-ui">
-  Squish World needs JavaScript. Please enable it to play!
-</p></noscript>
+<noscript><p style="color:#fff;text-align:center;padding:2rem;font-family:system-ui">Squish World needs JavaScript. Please enable it to play!</p></noscript>
 </body>
 </html>
