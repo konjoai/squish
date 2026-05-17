@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+<meta name="theme-color" content="#0a0a1a" />
+<title>Squish World 🌟</title>
+<link rel="stylesheet" href="css/game.css" />
+<!-- PWA manifest inline -->
+<link rel="manifest" href="manifest.json" />
+</head>
+<body>
+<!-- Instant loading splash — visible before JS runs -->
+<div id="splash">
+  <div class="logo"></div>
+  <p>Loading Squish World…</p>
+</div>
+
+<canvas id="game" aria-label="Squish World — a magical game for Lily"></canvas>
+
+<script type="module">
+  // Hide splash once game JS is executing
+  const splash = document.getElementById('splash');
+  if (splash) {
+    splash.classList.add('hidden');
+    setTimeout(() => splash.remove(), 600);
+  }
+</script>
+
+<!-- Game entry point — ES module, deferred automatically -->
+<script type="module" src="js/main.js"></script>
+
+<noscript>
+  <style>
+    body { display: flex; align-items: center; justify-content: center;
+           color: #fff; font-family: system-ui; text-align: center; padding: 2rem; }
+  </style>
+  <p>Squish World needs JavaScript. Please enable it to play!</p>
+</noscript>
+</body>
+</html>
