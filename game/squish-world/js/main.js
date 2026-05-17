@@ -494,6 +494,13 @@ function boot() {
   initSpeech();
   resize();
   game = new Game(canvas.width, canvas.height);
+  // Hide loading splash once the game has booted
+  const splash = document.getElementById('splash');
+  if (splash) {
+    splash.style.transition = 'opacity 0.5s';
+    splash.style.opacity = '0';
+    setTimeout(() => { splash.style.display = 'none'; }, 500);
+  }
   requestAnimationFrame(loop);
 }
 
