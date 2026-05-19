@@ -373,6 +373,134 @@ def _dequantize_int4_per_channel(
     return arr.astype(np.float16)
 
 
+# ---------------------------------------------------------------------------
+# KITTY (arXiv 2511.18643) — Channel-wise sensitivity for INT2 KV caches
+# ---------------------------------------------------------------------------
+#
+# KITTY's key insight: raw K-cache channels have highly non-uniform variance
+# even *after* Hadamard rotation.  A small fraction (typically 5–15 %) of
+# channels carry disproportionate signal energy and collapse the INT2 codebook.
+# Ranking channels by variance and storing the top-k at INT4 instead of INT2
+# costs ~0.2 bpw extra (e.g. 2.2 bpw for fraction=0.1 vs 2.0 for pure INT2)
+# while recovering 4–7 dB SNR on heavy-tailed activations.
+#
+# Implementation:
+#   1. ``_channel_sensitivity_scores`` — per-channel variance across sample tokens.
+#   2. ``_build_sensitive_mask``       — boolean mask of top-fraction channels,
+#      n_sensitive rounded to a multiple of 4 to satisfy both the INT4 (÷2)
+#      and INT2 (÷4) packing constraints.
+#   3. ``_quantize_int2_mixed``        — sensitive channels → INT4; rest → INT2.
+#   4. ``_dequantize_int2_mixed``      — inverse reconstruction.
+# ---------------------------------------------------------------------------
+
+
+def _channel_sensitivity_scores(samples: np.ndarray) -> np.ndarray:
+    """Per-channel variance across sample activations.
+
+    Parameters
+    ----------
+    samples : (N, head_dim) float16 or float32
+
+    Returns
+    -------
+    (head_dim,) float32 variance per channel
+    """
+    return np.var(samples.astype(np.float32), axis=0)
+
+
+def _build_sensitive_mask(
+    scores: np.ndarray, head_dim: int, fraction: float
+) -> np.ndarray:
+    """Boolean mask of the top-``fraction`` channels by variance.
+
+    ``n_sensitive`` is rounded up to the nearest multiple of 4 so that both
+    the INT4 packing constraint (÷2) and the INT2 packing constraint (÷4)
+    are satisfied for the split arrays.
+
+    Raises
+    ------
+    ValueError
+        If ``fraction`` is not in (0, 1) or if ``head_dim`` < 8.
+    """
+    if not 0.0 < fraction < 1.0:
+        raise ValueError(f"fraction must be in (0, 1), got {fraction}")
+    if head_dim < 8:
+        raise ValueError(f"head_dim must be ≥ 8 for channel splitting, got {head_dim}")
+    # Round up to multiple of 4; keep at least 4 insensitive channels for INT2.
+    raw = max(4, int(fraction * head_dim))
+    n_sensitive = int(np.ceil(raw / 4) * 4)
+    n_sensitive = min(n_sensitive, head_dim - 4)
+    # Select top-n_sensitive by score; break ties deterministically by index.
+    ranked = np.argsort(-scores, kind="stable")
+    mask = np.zeros(head_dim, dtype=bool)
+    mask[ranked[:n_sensitive]] = True
+    return mask
+
+
+def _quantize_int2_mixed(
+    arr_f16: np.ndarray, sensitive_mask: np.ndarray
+) -> tuple:
+    """Mixed INT2+INT4 quantization (KITTY-style channel sensitivity).
+
+    Channels where ``sensitive_mask`` is True are stored at INT4 (higher
+    precision); remaining channels are stored at INT2.  Both tiers use
+    per-token scaling identical to the pure-INT2 / pure-INT4 codecs.
+
+    Parameters
+    ----------
+    arr_f16       : (n_tokens, head_dim) float16
+    sensitive_mask: (head_dim,) bool — True for channels needing INT4
+
+    Returns
+    -------
+    (packed_int2, scale_int2, packed_int4, scale_int4)
+      packed_int2 : (n_tokens, n_insensitive // 4) uint8
+      scale_int2  : (n_tokens,) float32
+      packed_int4 : (n_tokens, n_sensitive // 2) uint8
+      scale_int4  : (n_tokens,) float32
+    """
+    insensitive = arr_f16[:, ~sensitive_mask]   # (n, n_insensitive)
+    sensitive   = arr_f16[:,  sensitive_mask]   # (n, n_sensitive)
+    packed_int2, scale_int2 = _quantize_int2_per_channel(insensitive)
+    packed_int4, scale_int4 = _quantize_int4_per_channel(sensitive)
+    return packed_int2, scale_int2, packed_int4, scale_int4
+
+
+def _dequantize_int2_mixed(
+    packed_int2: np.ndarray,
+    scale_int2: np.ndarray,
+    packed_int4: np.ndarray,
+    scale_int4: np.ndarray,
+    sensitive_mask: np.ndarray,
+    head_dim: int,
+) -> np.ndarray:
+    """Inverse of :func:`_quantize_int2_mixed`.
+
+    Reconstructs the full (n_tokens, head_dim) float16 array by dequantizing
+    each tier and interleaving columns back to their original positions.
+
+    Parameters
+    ----------
+    packed_int2   : (n_tokens, n_insensitive // 4) uint8
+    scale_int2    : (n_tokens,) float32
+    packed_int4   : (n_tokens, n_sensitive // 2) uint8
+    scale_int4    : (n_tokens,) float32
+    sensitive_mask: (head_dim,) bool
+    head_dim      : original channel count (before split)
+    """
+    n_sensitive   = int(sensitive_mask.sum())
+    n_insensitive = head_dim - n_sensitive
+    n_tokens = packed_int2.shape[0]
+    arr = np.empty((n_tokens, head_dim), dtype=np.float16)
+    arr[:, ~sensitive_mask] = _dequantize_int2_per_channel(
+        packed_int2, scale_int2, n_insensitive
+    )
+    arr[:,  sensitive_mask] = _dequantize_int4_per_channel(
+        packed_int4, scale_int4, n_sensitive
+    )
+    return arr
+
+
 # Mode-dispatching helpers used by KVLayerCache to avoid duplicating the
 # per-mode split at every callsite.  ``mode`` here is the per-layer storage
 # mode: "int8" (default), "int4" (W105), or "int2" (W104).
@@ -967,6 +1095,14 @@ class KVLayerCache:
         # P1 — Per-layer observability counters for CompressionResult.
         "_n_compressed",  # int: tokens written to the quantized old-tier
         "_n_evicted",     # int: tokens dropped by any eviction policy
+        # KITTY — channel-sensitive INT2 mixed quantization (arXiv 2511.18643).
+        # When set, INT2 eviction splits channels: sensitive ones → INT4 buffer,
+        # the rest → INT2 buffer.  _channel_sensitive_mask is (head_dim,) bool.
+        "_channel_sensitive_mask",  # np.ndarray | None
+        "_keys_old_q2",    # np.ndarray | None  (n_heads, n_old, n_sensitive//2) uint8
+        "_keys_old_s2",    # np.ndarray | None  (n_heads, n_old) float32
+        "_values_old_q2",  # np.ndarray | None  (n_heads, n_old, n_sensitive//2) uint8
+        "_values_old_s2",  # np.ndarray | None  (n_heads, n_old) float32
     )
 
     def __init__(self, window: int = 64, kv_mode: str = "int8", sink_count: int = 0):
@@ -988,6 +1124,12 @@ class KVLayerCache:
         # observability
         self._n_compressed = 0
         self._n_evicted    = 0
+        # KITTY channel-sensitive INT2 (set via HadamardKVCache.calibrate_channel_sensitivity)
+        self._channel_sensitive_mask = None
+        self._keys_old_q2    = None
+        self._keys_old_s2    = None
+        self._values_old_q2  = None
+        self._values_old_s2  = None
         self.keys_recent   = []     # list of (n_heads, head_dim) f16 arrays
         self.values_recent = []
         self.keys_old_q    = None   # (n_heads, n_old, head_dim_or_rank) int8
@@ -1147,6 +1289,51 @@ class KVLayerCache:
                     # fp16 path never hits the quantized buffer; skip the rest.
                     continue
 
+                # ── KITTY: channel-sensitive INT2 (arXiv 2511.18643) ────────────
+                # When a sensitivity mask is set and mode is "int2", split the
+                # head_dim channels: top-fraction go to INT4, the rest to INT2.
+                # This costs ~0.2 bpw extra for a 4–7 dB SNR recovery on the
+                # outlier channels that collapse the INT2 codebook.
+                if self._channel_sensitive_mask is not None and self._kv_mode == "int2":
+                    new_kq2_list, new_ks2_list = [], []
+                    new_vq2_list, new_vs2_list = [], []
+                    new_kq_list,  new_ks_list  = [], []
+                    new_vq_list,  new_vs_list  = [], []
+                    mask = self._channel_sensitive_mask
+                    for h in range(self.n_heads):
+                        kq, ks, kq2, ks2 = _quantize_int2_mixed(oldest_k[h:h+1, :], mask)
+                        vq, vs, vq2, vs2 = _quantize_int2_mixed(oldest_v[h:h+1, :], mask)
+                        new_kq_list.append(kq);   new_ks_list.append(ks)
+                        new_vq_list.append(vq);   new_vs_list.append(vs)
+                        new_kq2_list.append(kq2); new_ks2_list.append(ks2)
+                        new_vq2_list.append(vq2); new_vs2_list.append(vs2)
+
+                    slot_kq  = np.stack(new_kq_list,  axis=0)
+                    slot_ks  = np.stack(new_ks_list,  axis=0)
+                    slot_vq  = np.stack(new_vq_list,  axis=0)
+                    slot_vs  = np.stack(new_vs_list,  axis=0)
+                    slot_kq2 = np.stack(new_kq2_list, axis=0)
+                    slot_ks2 = np.stack(new_ks2_list, axis=0)
+                    slot_vq2 = np.stack(new_vq2_list, axis=0)
+                    slot_vs2 = np.stack(new_vs2_list, axis=0)
+
+                    if self.keys_old_q is None:
+                        self.keys_old_q    = slot_kq;  self.keys_old_s    = slot_ks
+                        self.values_old_q  = slot_vq;  self.values_old_s  = slot_vs
+                        self._keys_old_q2  = slot_kq2; self._keys_old_s2  = slot_ks2
+                        self._values_old_q2 = slot_vq2; self._values_old_s2 = slot_vs2
+                    else:
+                        self.keys_old_q    = np.concatenate([self.keys_old_q,    slot_kq],  axis=1)
+                        self.keys_old_s    = np.concatenate([self.keys_old_s,    slot_ks],  axis=1)
+                        self.values_old_q  = np.concatenate([self.values_old_q,  slot_vq],  axis=1)
+                        self.values_old_s  = np.concatenate([self.values_old_s,  slot_vs],  axis=1)
+                        self._keys_old_q2  = np.concatenate([self._keys_old_q2,  slot_kq2], axis=1)
+                        self._keys_old_s2  = np.concatenate([self._keys_old_s2,  slot_ks2], axis=1)
+                        self._values_old_q2 = np.concatenate([self._values_old_q2, slot_vq2], axis=1)
+                        self._values_old_s2 = np.concatenate([self._values_old_s2, slot_vs2], axis=1)
+                    self._n_compressed += 1
+                    continue
+
                 # Quantize per-head per-token (dispatched on layer storage mode).
                 # INT8 → (1, head_dim) int8; INT4 → (1, head_dim/2); INT2 → (1, head_dim/4).
                 new_kq_list, new_ks_list = [], []
@@ -1217,13 +1404,30 @@ class KVLayerCache:
                 # otherwise the SVD path is INT8-only (validated in __init__).
                 deq_dim = self.head_dim
                 old_k_list, old_v_list = [], []
+                use_mixed = (
+                    self._channel_sensitive_mask is not None
+                    and self._kv_mode == "int2"
+                    and self._keys_old_q2 is not None
+                )
                 for h in range(self.n_heads):
-                    k_deq = _kv_dequantize_per_channel(
-                        self.keys_old_q[h], self.keys_old_s[h],
-                        self._kv_mode, head_dim=deq_dim)
-                    v_deq = _kv_dequantize_per_channel(
-                        self.values_old_q[h], self.values_old_s[h],
-                        self._kv_mode, head_dim=deq_dim)
+                    if use_mixed:
+                        k_deq = _dequantize_int2_mixed(
+                            self.keys_old_q[h], self.keys_old_s[h],
+                            self._keys_old_q2[h], self._keys_old_s2[h],
+                            self._channel_sensitive_mask, deq_dim,
+                        )
+                        v_deq = _dequantize_int2_mixed(
+                            self.values_old_q[h], self.values_old_s[h],
+                            self._values_old_q2[h], self._values_old_s2[h],
+                            self._channel_sensitive_mask, deq_dim,
+                        )
+                    else:
+                        k_deq = _kv_dequantize_per_channel(
+                            self.keys_old_q[h], self.keys_old_s[h],
+                            self._kv_mode, head_dim=deq_dim)
+                        v_deq = _kv_dequantize_per_channel(
+                            self.values_old_q[h], self.values_old_s[h],
+                            self._kv_mode, head_dim=deq_dim)
                     # Phase 1: back-project SVD-compressed tokens to full head_dim
                     if self._svd_Vk is not None:
                         Vk_h = self._svd_Vk[h].astype(np.float32)  # (rank, head_dim)
@@ -1346,6 +1550,9 @@ class KVLayerCache:
         if self.keys_old_q is not None:
             b += self.keys_old_q.nbytes + self.keys_old_s.nbytes * 2
             b += self.values_old_q.nbytes + self.values_old_s.nbytes * 2
+        if self._keys_old_q2 is not None:
+            b += self._keys_old_q2.nbytes + self._keys_old_s2.nbytes * 2
+            b += self._values_old_q2.nbytes + self._values_old_s2.nbytes * 2
         for arr in self.keys_recent + self.values_recent:
             b += arr.nbytes
         for arr in self.keys_sink + self.values_sink:
@@ -1361,6 +1568,9 @@ class KVLayerCache:
             self.values_recent.clear()
             self.keys_old_q = self.keys_old_s = None
             self.values_old_q = self.values_old_s = None
+            # KITTY mixed INT2+INT4 buffers (mask itself is preserved — it's calibration data)
+            self._keys_old_q2 = self._keys_old_s2 = None
+            self._values_old_q2 = self._values_old_s2 = None
             # P1: clear sink and fp16 accumulator; preserve config
             self.keys_sink.clear()
             self.values_sink.clear()
@@ -2541,6 +2751,74 @@ class HadamardKVCache(QuantizedKVCache):
             rng = np.random.default_rng(self._seed + 1)
             self._H_v[head_dim] = self._build_hadamard(head_dim, rng)
         return self._H_v[head_dim]
+
+    # ── KITTY channel-sensitivity calibration ────────────────────────────────
+
+    def calibrate_channel_sensitivity(
+        self,
+        sample_keys: "list[np.ndarray]",
+        fraction: float = 0.1,
+    ) -> "HadamardKVCache":
+        """Calibrate channel-sensitive INT2 quantization (KITTY, arXiv 2511.18643).
+
+        Applies the Hadamard rotation to the provided sample K activations,
+        computes per-channel variance, and sets a boolean sensitivity mask on
+        every layer cache.  Channels in the top ``fraction`` by variance are
+        stored at INT4 rather than INT2 during subsequent ``update()`` calls,
+        recovering 4–7 dB SNR on the outlier dimensions that collapse the INT2
+        codebook.
+
+        Only has an effect when ``self.mode == "int2"``.  When mode is "int8"
+        or "int4", the mask is stored but the eviction path ignores it (the
+        standard quantizer is used instead).
+
+        Parameters
+        ----------
+        sample_keys : list of (n_heads, head_dim) float16 or float32 arrays
+            Representative K activations (before rotation) from a calibration
+            prompt.  16+ tokens per layer recommended for a stable estimate.
+        fraction    : float in (0, 1) — fraction of channels to protect at INT4.
+            0.1 (10 %) is the KITTY default, adding ~0.2 bpw overhead.
+
+        Returns
+        -------
+        self
+            Mutates all layer caches in-place and returns ``self`` for
+            method chaining.
+
+        Raises
+        ------
+        ValueError
+            If ``sample_keys`` is empty, ``fraction`` is out of range, or any
+            sample has an unexpected shape.
+        """
+        if not sample_keys:
+            raise ValueError("sample_keys must not be empty")
+        if not 0.0 < fraction < 1.0:
+            raise ValueError(f"fraction must be in (0, 1), got {fraction}")
+
+        # Stack all provided samples (flatten across heads and samples).
+        head_dim = sample_keys[0].shape[-1]
+        H = self._get_H_k(head_dim).astype(np.float32)  # (head_dim, head_dim)
+
+        rotated_parts: list[np.ndarray] = []
+        for key in sample_keys:
+            if key.shape[-1] != head_dim:
+                raise ValueError(
+                    f"All sample_keys must have the same head_dim; "
+                    f"expected {head_dim}, got {key.shape[-1]}"
+                )
+            k_rot = key.astype(np.float32) @ H  # (..., head_dim)
+            rotated_parts.append(k_rot.reshape(-1, head_dim))  # flatten heads
+
+        all_samples = np.concatenate(rotated_parts, axis=0)  # (N, head_dim)
+        scores = _channel_sensitivity_scores(all_samples)
+        mask   = _build_sensitive_mask(scores, head_dim, fraction)
+
+        for layer in self._layers:
+            layer._channel_sensitive_mask = mask
+
+        return self
 
     # ── Override update to pre-rotate before quantization ────────────────────
 
