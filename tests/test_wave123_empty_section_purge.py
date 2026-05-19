@@ -91,10 +91,10 @@ def test_lazy_expert_global_var_present():
 # ── Line-count gate ───────────────────────────────────────────────────────────
 
 def test_line_count():
-    """server.py must be ≤ 4780 lines (Wave 123 target 4721; squash routing +22;
-    W111 quality monitor endpoint +18 — all exempt from purge targets)."""
+    """server.py must be ≤ 4800 lines (Wave 123 target 4721; squash routing +22;
+    W111 quality monitor endpoint +18; mlx-lm version guard +26 — all exempt from purge targets)."""
     count = len(LINES)
-    assert count <= 4780, (
-        f"Expected ≤ 4780 lines (W111 quality monitor adjusted), got {count}"
+    assert count <= 4800, (
+        f"Expected ≤ 4800 lines (mlx-lm version guard adjusted), got {count}"
     )
     assert count > 4650, f"Sanity floor: expected > 4650 lines; got {count}"
