@@ -552,6 +552,10 @@ class TestModuleCount:
         - 83 — post-squash-separation (2026-04-28) baseline
         - 84 — W103.1 added `squish/quant/sqint2.py` (Hadamard preprocess + NF2)
         - 85 — W103.4c added `squish/quant/sqint2_linear.py` (SQINT2Linear MLX)
+        - 87 — W100/W110 added `squish/integrations/__init__.py`,
+                `squish/integrations/hf.py` (HF batch upload integration)
+        - 89 — W110/W111 added `squish/serving/quality_monitor.py` (inference
+                quality monitor), `squish/serving/router.py` (prompt router)
         """
         import squish
         root = Path(squish.__file__).parent
@@ -561,10 +565,10 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 85, (
-            f"Module count changed: {count} != 85. "
-            "Squash separation (2026-04-28) baseline = 83; W103.1 added "
-            "squish/quant/sqint2.py → 84; W103.4c added "
-            "squish/quant/sqint2_linear.py → 85. New modules require either "
-            "deletion of an existing one or written justification per CLAUDE.md."
+        assert count == 89, (
+            f"Module count changed: {count} != 89. "
+            "Squash separation baseline = 83; W103.1 → 84; W103.4c → 85; "
+            "W100/W110 integrations → 87; W110/W111 serving modules → 89. "
+            "New modules require either deletion of an existing one or written "
+            "justification per CLAUDE.md."
         )

@@ -128,6 +128,31 @@ def _require(pkg: str, install: str | None = None) -> None:
         print(f"  {_C.PK}✗  Missing dependency:{_C.R}  {_C.W}{pkg}{_C.R}  {_C.DIM}→  pip install {hint}{_C.R}")
         sys.exit(1)
 
+
+# mlx-lm 0.31.0 was yanked (March 2026) for a batched KV cache cross-contamination
+# bug — a correctness regression in server mode where different requests in a batch
+# could overwrite each other's KV state.  0.31.1+ is safe.  0.31.2+ also adds
+# native MTP speculative decoding for Qwen3.5/3.6.
+_MLX_LM_BAD_VERSION = "0.31.0"
+
+def _check_mlx_lm_version() -> None:
+    """Warn when the installed mlx-lm version is the yanked 0.31.0 release."""
+    if sys.platform != "darwin":
+        return
+    try:
+        import importlib.metadata as _im
+        ver = _im.version("mlx-lm")
+    except Exception:
+        return  # not installed or metadata unavailable — not our problem
+    if ver == _MLX_LM_BAD_VERSION:
+        print(
+            f"\n  {_C.PK}⚠  mlx-lm {ver} is UNSAFE and was yanked from PyPI.{_C.R}\n"
+            f"  {_C.DIM}Batched KV cache cross-contamination bug: different requests\n"
+            f"  can corrupt each other's KV state in server mode.{_C.R}\n"
+            f"  {_C.W}Upgrade immediately:{_C.R}  {_C.DIM}pip install 'mlx-lm>=0.31.1'{_C.R}\n"
+        )
+
+
 _require("fastapi")
 
 from fastapi import FastAPI, HTTPException, Request, Security  # noqa: E402
@@ -3993,6 +4018,7 @@ Examples:
                 "[paged-attention] could not initialise (%s) — disabled", _paged_err
             )
 
+    _check_mlx_lm_version()
     _print_banner()
 
     if getattr(args, "mlx_model_dir", ""):
