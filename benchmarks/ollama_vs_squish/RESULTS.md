@@ -1,8 +1,100 @@
-# Ollama vs Squish — three serving modes  (M3 MacBook Pro 16 GB)
+# Ollama vs Squish — measured benchmarks  (M3 MacBook Pro 16 GB)
 
-**Date:** 2026-06-01 (re-run with cold-load optimisations)
+**Date:** 2026-06-01
 **Host:** Apple M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0
-**Prompt:** `"What is the capital of France? Answer in one sentence."`
+**Prompts:** see `benchmarks/ollama_vs_squish/bench_v4.py` (v4) and `…/bench.py` (v3).
+
+## v4 — daemon + disk KV cache (measured)
+
+_Replaces the earlier "v4 projected" table. Per-run raw JSON:
+[`../../results/benchmarks_v4/runs/20260601T185911/raw.json`](../../results/benchmarks_v4/runs/20260601T185911/raw.json).
+Feature-by-feature audit of what v4 actually delivers:
+[`../../results/benchmarks_v4/PRECHECK.md`](../../results/benchmarks_v4/PRECHECK.md)._
+
+**Squish:** 9.14.0 (v4 commit `8a8ef47`) · **Ollama:** 0.18.2.
+**Target:** Squish `Qwen2.5-7B-Instruct-int4` (mlx-native, 4.00 GB) vs Ollama `qwen2.5:7b` Q4_K_M GGUF (4.36 GB).
+**Protocol:** 5 runs per metric · median reported · p95/min/max/stddev in raw JSON.
+
+| Metric                                                  | Ollama (warm) | Squish daemon (warm) | Squish + disk KV cache | Winner |
+|---------------------------------------------------------|--------------:|---------------------:|-----------------------:|:------:|
+| **TTFT, fresh prompt** (`~`15 tokens of prompt)         |    **270 ms** |               525 ms |                 633 ms | Ollama |
+| **TTFT, repeated prompt** (cache-hit eligible, `~`75 tokens) |        139 ms |              1.47 s   |              **64 ms** | Squish + KV |
+| **Warm tokens/sec** (200-token decode)                  |**17.6 tok/s** |          11.6 tok/s  |             10.5 tok/s | Ollama |
+| **Spec-decode tokens/sec**                              |          —    |   *not-implemented*  |     *not-implemented*  | —     |
+| **Peak RAM** (full process tree)                        |       4.95 GB |          **1.79 GB** |                2.91 GB | Squish daemon |
+| **Disk size** (model)                                   |       4.36 GB |          **4.00 GB** |                4.00 GB | Squish |
+
+"Winner" is awarded only when the delta exceeds 5 %.
+
+### Per-run TTFT, fresh prompt (ms)
+| Run | Ollama | Squish daemon | Squish + KV |
+|----:|-------:|--------------:|------------:|
+| 1   |    287 |           521 |        2045 |
+| 2   |    270 |           525 |         797 |
+| 3   |    270 |           522 |         499 |
+| 4   |    280 |           606 |         518 |
+| 5   |    265 |           586 |         633 |
+
+### Per-run TTFT, repeated prompt (ms)
+| Run | Ollama | Squish daemon | Squish + KV |
+|----:|-------:|--------------:|------------:|
+| 1   |    166 |          2201 |         919 |
+| 2   |    138 |          1244 |         910 |
+| 3   |    139 |          1203 |          64 |
+| 4   |    135 |          1469 |          48 |
+| 5   |    151 |          1605 |          62 |
+
+The first two repeat runs in the KV config missed the cache (910–919 ms);
+runs 3–5 are the cache-hit floor (48–64 ms — an 11.5× speedup over the same
+config's miss path and a 2.2× speedup over Ollama's built-in prefix cache).
+The miss-then-hit pattern is being investigated; median of 5 absorbs it.
+
+### Per-run warm tokens/sec
+| Run | Ollama | Squish daemon | Squish + KV |
+|----:|-------:|--------------:|------------:|
+| 1   |   17.8 |           5.0 |        11.2 |
+| 2   |   18.1 |           8.7 |        10.5 |
+| 3   |   17.6 |          11.6 |        10.2 |
+| 4   |   16.2 |          12.1 |        10.2 |
+| 5   |   14.4 |          12.5 |        10.7 |
+
+Run-to-run variance in the squish_daemon column (5.0 → 12.5 tok/s) is real
+and reflects Metal kernel warm-up on the 200-token decode path; later runs
+stabilise around 12 tok/s. The squish + KV column is steadier (σ = 0.4) but
+sits slightly lower because int8 KV adds a quantise/dequantise per attention step.
+
+### Spec-decode row
+
+`--draft-model` crashes `squish.server` at init with
+`ImportError: cannot import name 'load_draft_model' from 'squish.speculative'`
+— `load_draft_model` exists in `squish/speculative/speculative.py:580` but
+is not re-exported from `squish/speculative/__init__.py`. A one-line patch
+would unblock it. Per scope guards we do not fix this here. Rather than
+fabricate a "projected" number we report `not-implemented`.
+
+### Headline read
+
+* Cold-prompt TTFT: **Ollama wins** (270 ms vs 525 ms).
+* Repeated-prompt TTFT: **Squish + disk KV wins** (64 ms vs 139 ms) — 2.2×.
+* Sustained throughput: **Ollama wins** (17.6 vs 11.6 tok/s).
+* Peak RAM: **Squish daemon wins** (1.79 vs 4.95 GB) — 2.8× less.
+* Disk: Squish wins by 360 MB (4.00 vs 4.36 GB).
+* Spec decode: blocked by a one-line import bug; not measurable on this branch.
+
+The "v4 article" headline most defensible from this data:
+**Squish + disk KV cache is the lowest-latency local 7B path for repeated
+prompts on M3 (64 ms TTFT vs 139 ms for Ollama, 2.2× speedup), at less than
+60 % of Ollama's RAM. For first-time prompts Ollama is still 2× faster, and
+its sustained throughput remains 50 % higher.**
+
+### Reproduce
+
+```bash
+source .venv/bin/activate
+python benchmarks/ollama_vs_squish/bench_v4.py
+```
+
+---
 
 ## v3 — post-load-optimization results
 
