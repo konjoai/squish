@@ -159,8 +159,8 @@ class _LoadedModel:
         self.key            = key
         self.model_dir      = model_dir
         self.compressed_dir = compressed_dir
-        self.model          = None
-        self.tokenizer      = None
+        self.model:      Any = None
+        self.tokenizer:  Any = None
         self.loaded_at      = 0.0
         self.last_used      = 0.0
         self.n_requests     = 0
