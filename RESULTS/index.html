@@ -1229,22 +1229,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#squish-v4-daemon-speculative-decoding-kv-persistence-benchmarks" class="md-nav__link">
+  <a href="#squish-v4-daemon-disk-kv-cache-measured-2026-06-01" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Squish v4 — Daemon + Speculative Decoding + KV Persistence Benchmarks
+        Squish v4 — Daemon + Disk KV Cache (measured 2026-06-01)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Squish v4 — Daemon + Speculative Decoding + KV Persistence Benchmarks">
+    <nav class="md-nav" aria-label="Squish v4 — Daemon + Disk KV Cache (measured 2026-06-01)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#phase-1-daemon-mode-cold-wall" class="md-nav__link">
+  <a href="#headline-table" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 1 — Daemon Mode Cold Wall
+        Headline table
       
     </span>
   </a>
@@ -1252,10 +1252,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-2-speculative-decoding-throughput" class="md-nav__link">
+  <a href="#what-we-measured-vs-what-the-v4-projections-said" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 2 — Speculative Decoding Throughput
+        What we measured vs what the v4 projections said
       
     </span>
   </a>
@@ -1263,10 +1263,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-3-metal-kernel-cache" class="md-nav__link">
+  <a href="#phase-1-daemon-ttft-model-resident" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 3 — Metal Kernel Cache
+        Phase 1 — Daemon TTFT (model resident)
       
     </span>
   </a>
@@ -1274,10 +1274,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-4-kv-cache-persistence" class="md-nav__link">
+  <a href="#phase-2-disk-kv-cache-hit-the-win" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 4 — KV Cache Persistence
+        Phase 2 — Disk KV cache hit (the win)
       
     </span>
   </a>
@@ -1285,10 +1285,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-5-squish-vs-ollama-v4-full-sweep" class="md-nav__link">
+  <a href="#phase-3-speculative-decoding-not-measurable-on-this-branch" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 5 — squish vs Ollama v4 Full Sweep
+        Phase 3 — Speculative decoding: not measurable on this branch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-steady-state-ram-disk-throughput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Steady-state RAM, disk, throughput
       
     </span>
   </a>
@@ -1300,6 +1311,17 @@
     <span class="md-ellipsis">
       
         Reproduce
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#where-this-leaves-us-vs-v3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where this leaves us vs v3
       
     </span>
   </a>
@@ -2513,229 +2535,369 @@ context lengths based on published paper results for equivalent bit-widths.</p>
 </code></pre></div>
 <hr />
 <hr />
-<h2 id="squish-v4-daemon-speculative-decoding-kv-persistence-benchmarks">Squish v4 — Daemon + Speculative Decoding + KV Persistence Benchmarks<a class="headerlink" href="#squish-v4-daemon-speculative-decoding-kv-persistence-benchmarks" title="Permanent link">&para;</a></h2>
-<p><em>Methodology: M3 16GB unified memory, macOS, MLX, Qwen2.5-7B INT4. All times wall-clock
-(command invocation → first output token). Per-run JSON committed to <code>results/</code> directory.</em></p>
-<p><em>Note: These are projected results based on the implementation architecture. Live hardware
-validation requires Qwen2.5-7B + Qwen2.5-0.5B INT4 models. Run <code>squish bench</code> to reproduce.</em></p>
-<hr />
-<h3 id="phase-1-daemon-mode-cold-wall">Phase 1 — Daemon Mode Cold Wall<a class="headerlink" href="#phase-1-daemon-mode-cold-wall" title="Permanent link">&para;</a></h3>
-<p>"Cold start" redefined: model is daemon-resident; user types command for the first time
-this session. Squish client connects via Unix domain socket (&lt; 1 ms IPC overhead).</p>
-<table>
-<thead>
-<tr>
-<th>System</th>
-<th>Cold Wall (first command)</th>
-<th>Method</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Squish v4 + squishd</strong></td>
-<td><strong>~0.4 s</strong></td>
-<td>Model resident in daemon; UDS connect + dispatch</td>
-</tr>
-<tr>
-<td>Ollama</td>
-<td>~1.66 s</td>
-<td>Process spawn + model load + HTTP</td>
-</tr>
-<tr>
-<td>Squish v3 (no daemon)</td>
-<td>~3.4 s</td>
-<td>Full model load + server init</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Key insight:</strong> The daemon eliminates model loading from the user-perceived latency.
-The 0.4 s residual is: socket connect (~1 ms) + prefill warmup (~380 ms on 7B).</p>
-<p><strong>Daemon socket path:</strong> <code>/tmp/squish.sock</code> (Unix domain socket — no port, no firewall, no TCP overhead)</p>
-<p><strong>Multi-model:</strong> <code>squishd --max-models 2</code> holds 2 models simultaneously. LRU eviction
-when a 3rd model is requested. On M3 16GB: Qwen2.5-7B INT4 (~4 GB) + Qwen2.5-0.5B INT4 (~0.5 GB) = comfortable.</p>
-<hr />
-<h3 id="phase-2-speculative-decoding-throughput">Phase 2 — Speculative Decoding Throughput<a class="headerlink" href="#phase-2-speculative-decoding-throughput" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Mode</th>
-<th>Throughput</th>
-<th>Acceptance Rate</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Spec decode (7B+0.5B INT4)</strong></td>
-<td><strong>~32–40 tok/s</strong></td>
-<td>~58–68%</td>
-<td>FSM adaptive gamma, n-gram hybrid</td>
-</tr>
-<tr>
-<td>Baseline 7B INT4 (no draft)</td>
-<td>~17.5 tok/s</td>
-<td>N/A</td>
-<td>Standard KV-cached autoregressive</td>
-</tr>
-<tr>
-<td>Ollama 7B</td>
-<td>~18–22 tok/s</td>
-<td>N/A</td>
-<td>llama.cpp Metal backend</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Speedup:</strong> 1.8–2.3× throughput from speculative decoding.</p>
-<p><strong>Algorithm:</strong> Leviathan et al. (2023) rejection sampling with:
-- FSM adaptive gamma controller (adjusts K=2–8 based on acceptance rate)
-- N-gram in-context draft table (zero-cost proposals for repetitive content)
-- MLX <code>mx.compile()</code> on the verify batch shape [1,K] (reduces Metal dispatch overhead)
-- EAGLE-3 head support when <code>--eagle-head &lt;dir&gt;</code> provided (75–85% acceptance rate)</p>
-<p><strong>Flags:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>squish<span class="w"> </span>run<span class="w"> </span>--draft-model<span class="w"> </span>~/models/Qwen2.5-0.5B-INT4<span class="w">      </span><span class="c1"># enable spec decode</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>squish<span class="w"> </span>run<span class="w"> </span>--no-spec<span class="w">                                      </span><span class="c1"># baseline (disable spec)</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>squish<span class="w"> </span>run<span class="w"> </span>--draft-model<span class="w"> </span>...<span class="w"> </span>--no-spec<span class="w">                   </span><span class="c1"># load draft but skip spec</span>
-</code></pre></div></p>
-<hr />
-<h3 id="phase-3-metal-kernel-cache">Phase 3 — Metal Kernel Cache<a class="headerlink" href="#phase-3-metal-kernel-cache" title="Permanent link">&para;</a></h3>
-<p><strong>Finding: MLX 0.18–0.22 does not expose a kernel-cache API.</strong></p>
-<p>The OS-level Metal shader cache (<code>~/Library/Caches/com.apple.metal</code>) handles
-shader persistence automatically across processes. After the first run, macOS
-reuses compiled shaders.</p>
-<p><strong>Implemented mitigations:</strong>
-1. <code>squish/serving/kernel_cache.py</code> — investigates cache APIs, exposes <code>run_warmup_pass()</code>.
-2. Warmup pass runs at daemon startup (hidden behind model load latency).
-3. <code>mx.compile()</code> on the [1,1] decode step and [1,K] verify batch in
-   <code>SpeculativeGenerator.__init__</code> — reduces Metal dispatch overhead per token.
-4. Persistent cache dir <code>~/.cache/squish/mlx_kernels/</code> reserved for future
-   MLX versions when they expose <code>MLX_KERNEL_CACHE_DIR</code>.</p>
-<p><strong>Floor:</strong> ~0.4 s warmup on first-ever run; ~0.1 s on subsequent runs (OS cache warm).</p>
-<hr />
-<h3 id="phase-4-kv-cache-persistence">Phase 4 — KV Cache Persistence<a class="headerlink" href="#phase-4-kv-cache-persistence" title="Permanent link">&para;</a></h3>
-<p>For repeated prompts (commit messages, PR descriptions, code review templates):</p>
-<table>
-<thead>
-<tr>
-<th>Scenario</th>
-<th>TTFT</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Cached prompt prefix (hit)</strong></td>
-<td><strong>~50 ms</strong></td>
-<td>Load KV from disk; skip prefill</td>
-</tr>
-<tr>
-<td>Cold prefill (miss)</td>
-<td>~500 ms</td>
-<td>Full prefill + save KV to disk</td>
-</tr>
-<tr>
-<td>Subsequent decode</td>
-<td>~28 ms/tok</td>
-<td>KV cache positioned at offset</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Mechanism:</strong>
-1. SHA-256 hash of the full prompt → 32-hex-char key.
-2. Per-layer KV arrays saved as <code>.npy</code> files in <code>~/.cache/squish/kv_cache/&lt;hash&gt;/</code>.
-3. On hit: load arrays → inject into mlx_lm cache at correct offset → skip prefill.
-4. LRU eviction at 1 GB total cache size.
-5. Per-model isolation via <code>model_key</code> stored in <code>meta.json</code>.</p>
-<p><strong>Flags:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>squish<span class="w"> </span>run<span class="w"> </span><span class="o">[</span>--no-cache<span class="o">]</span><span class="w">   </span><span class="c1"># disable KV persistence (for benchmarking)</span>
-</code></pre></div></p>
-<p><strong>Estimated benefit:</strong> 10× TTFT reduction for cached prompts; most impactful for
-the "same system prompt, different user message" pattern common in squish workflows.</p>
-<hr />
-<h3 id="phase-5-squish-vs-ollama-v4-full-sweep">Phase 5 — squish vs Ollama v4 Full Sweep<a class="headerlink" href="#phase-5-squish-vs-ollama-v4-full-sweep" title="Permanent link">&para;</a></h3>
-<p><em>This table will be updated with live hardware measurements from a dedicated benchmark session.</em></p>
+<h2 id="squish-v4-daemon-disk-kv-cache-measured-2026-06-01">Squish v4 — Daemon + Disk KV Cache (measured 2026-06-01)<a class="headerlink" href="#squish-v4-daemon-disk-kv-cache-measured-2026-06-01" title="Permanent link">&para;</a></h2>
+<p><strong>Measured on M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0, 2026-06-01.</strong>
+<strong>Tooling:</strong> Squish 9.14.0 (v4 commit <code>8a8ef47</code>) · Ollama 0.18.2 · Python 3.14.3 · MLX (via <code>mlx_lm</code>).
+<strong>Target model:</strong> Qwen2.5-7B-Instruct (Squish: mlx-native INT4; Ollama: Q4_K_M GGUF).
+<strong>Protocol:</strong> 5 runs per metric, median reported, min/max/p95/stddev in the raw JSON.
+Two throwaway warm-up requests per server before measurement. Raw artifact:
+<a href="../results/benchmarks_v4/runs/20260601T185911/raw.json"><code>results/benchmarks_v4/runs/20260601T185911/raw.json</code></a>.
+Audit of which v4 features actually work: <a href="../results/benchmarks_v4/PRECHECK.md"><code>results/benchmarks_v4/PRECHECK.md</code></a>.</p>
+<p>The earlier v4 RESULTS table on this page was projected from the implementation
+architecture. This rewrite replaces it with measured numbers. Where projections
+matched reality we say so; where they didn't, the delta is called out below.</p>
+<h3 id="headline-table">Headline table<a class="headerlink" href="#headline-table" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
 <th>Metric</th>
-<th>squish v4</th>
-<th>Ollama</th>
-<th>Winner</th>
+<th style="text-align: right;">Ollama (warm)</th>
+<th style="text-align: right;">Squish daemon (warm)</th>
+<th style="text-align: right;">Squish + disk KV cache</th>
+<th style="text-align: center;">Winner</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Cold start (model unloaded)</td>
-<td>3.4 s</td>
-<td>~8 s</td>
-<td><strong>squish</strong></td>
+<td><strong>TTFT, fresh prompt</strong> (<code>~</code>15 tokens of prompt)</td>
+<td style="text-align: right;"><strong>270 ms</strong></td>
+<td style="text-align: right;">525 ms</td>
+<td style="text-align: right;">633 ms</td>
+<td style="text-align: center;">Ollama</td>
 </tr>
 <tr>
-<td>Daemon cold wall (model resident)</td>
-<td><strong>~0.4 s</strong></td>
-<td>1.66 s</td>
-<td><strong>squish</strong></td>
+<td><strong>TTFT, repeated prompt</strong> (cache-hit eligible, <code>~</code>75 tokens)</td>
+<td style="text-align: right;">139 ms</td>
+<td style="text-align: right;">1.47 s</td>
+<td style="text-align: right;"><strong>64 ms</strong></td>
+<td style="text-align: center;">Squish + KV</td>
 </tr>
 <tr>
-<td>Warm decode tok/s (7B, no spec)</td>
-<td>~17.5 tok/s</td>
-<td>~18–22 tok/s</td>
-<td>Ollama (slight)</td>
+<td><strong>Warm tokens/sec</strong> (200-token decode)</td>
+<td style="text-align: right;"><strong>17.6 tok/s</strong></td>
+<td style="text-align: right;">11.6 tok/s</td>
+<td style="text-align: right;">10.5 tok/s</td>
+<td style="text-align: center;">Ollama</td>
 </tr>
 <tr>
-<td>Spec decode warm tok/s (7B+0.5B)</td>
-<td><strong>~32–40 tok/s</strong></td>
-<td>N/A</td>
-<td><strong>squish</strong></td>
+<td><strong>Spec-decode tokens/sec</strong></td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;"><em>not-implemented</em></td>
+<td style="text-align: right;"><em>not-implemented</em></td>
+<td style="text-align: center;">—</td>
 </tr>
 <tr>
-<td>Cached prompt TTFT</td>
-<td><strong>~50 ms</strong></td>
-<td>~500 ms</td>
-<td><strong>squish</strong></td>
+<td><strong>Peak RAM</strong> (full process tree)</td>
+<td style="text-align: right;">4.95 GB</td>
+<td style="text-align: right;"><strong>1.79 GB</strong></td>
+<td style="text-align: right;">2.91 GB</td>
+<td style="text-align: center;">Squish daemon</td>
 </tr>
 <tr>
-<td>INT4 accuracy (ARC-Easy, 7B)</td>
-<td>75.0%</td>
-<td>74.8% (est.)</td>
-<td>Tie</td>
-</tr>
-<tr>
-<td>Multi-model memory</td>
-<td>2 models simultaneous</td>
-<td>1 at a time</td>
-<td><strong>squish</strong></td>
-</tr>
-<tr>
-<td>macOS auto-start</td>
-<td>LaunchAgent (login)</td>
-<td>LaunchAgent (login)</td>
-<td>Tie</td>
+<td><strong>Disk size</strong> (model)</td>
+<td style="text-align: right;">4.36 GB</td>
+<td style="text-align: right;"><strong>4.00 GB</strong></td>
+<td style="text-align: right;">4.00 GB</td>
+<td style="text-align: center;">Squish</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Summary:</strong>
-- squish wins: daemon cold wall, spec decode throughput, cached TTFT, multi-model
-- Ollama wins: warm baseline throughput (llama.cpp Metal is tuned for this)
-- Tie: accuracy, auto-start</p>
-<hr />
-<h3 id="reproduce">Reproduce<a class="headerlink" href="#reproduce" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Start squishd with Qwen2.5-7B + 0.5B draft pre-loaded</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>squishd<span class="w"> </span>start<span class="w"> </span>~/models/Qwen2.5-7B-INT4<span class="w"> </span>--max-models<span class="w"> </span><span class="m">2</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Benchmark daemon cold wall</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="nb">time</span><span class="w"> </span>squish<span class="w"> </span>run<span class="w"> </span>--daemon<span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;Write a commit message for: add tests&quot;</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># Benchmark spec decode throughput</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>squish<span class="w"> </span>run<span class="w"> </span>--draft-model<span class="w"> </span>~/models/Qwen2.5-0.5B-INT4<span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span>--max-tokens<span class="w"> </span><span class="m">200</span>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="c1"># Baseline (no spec)</span>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>squish<span class="w"> </span>run<span class="w"> </span>--no-spec<span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span>--max-tokens<span class="w"> </span><span class="m">200</span>
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="c1"># macOS auto-start</span>
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>squish<span class="w"> </span>daemon<span class="w"> </span>install<span class="w"> </span>~/models/Qwen2.5-7B-INT4
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>squish<span class="w"> </span>daemon<span class="w"> </span>status
+<p>"Winner" follows the same <code>±5%</code> rule used in v2/v3: deltas under 5 % are reported
+as ties. <code>not-implemented</code> means we could not get the feature to execute on this
+branch — see Phase 3 below.</p>
+<h3 id="what-we-measured-vs-what-the-v4-projections-said">What we measured vs what the v4 projections said<a class="headerlink" href="#what-we-measured-vs-what-the-v4-projections-said" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>v4 projection (pre-measure)</th>
+<th>This run (measured)</th>
+<th>Match?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Daemon "cold wall" Squish</td>
+<td><code>~</code>0.40 s</td>
+<td>0.525 s (TTFT median, fresh)</td>
+<td>within ~30 %</td>
+</tr>
+<tr>
+<td>Daemon "cold wall" Ollama</td>
+<td><code>~</code>1.66 s</td>
+<td>0.270 s (TTFT median, fresh)</td>
+<td><strong>5–6× off</strong> — projection conflated wall-time with TTFT</td>
+</tr>
+<tr>
+<td>Spec-decode with draft</td>
+<td><code>~</code>32–40 tok/s</td>
+<td>not-implemented</td>
+<td><strong>no</strong> — <code>--draft-model</code> crashes at server init (see Phase 3)</td>
+</tr>
+<tr>
+<td>Spec-decode baseline</td>
+<td><code>~</code>17.5 tok/s</td>
+<td>11.6 tok/s (squish_daemon median)</td>
+<td>projection was on a shorter prompt; longer output here</td>
+</tr>
+<tr>
+<td>Cached prompt TTFT</td>
+<td><code>~</code>50 ms</td>
+<td>64 ms (median)</td>
+<td><strong>close</strong> — within 30 %</td>
+</tr>
+<tr>
+<td>Cold prefill (cache miss)</td>
+<td><code>~</code>500 ms</td>
+<td>633 ms (squish_kv ttft_first)</td>
+<td>within 30 %</td>
+</tr>
+</tbody>
+</table>
+<h3 id="phase-1-daemon-ttft-model-resident">Phase 1 — Daemon TTFT (model resident)<a class="headerlink" href="#phase-1-daemon-ttft-model-resident" title="Permanent link">&para;</a></h3>
+<p>The story the v4 docs wanted to tell — "squishd cuts cold wall from 1.66 s
+(Ollama) to 0.4 s (squish)" — does not survive measurement. With the model
+already resident in each tool, Ollama's first-token latency is 270 ms (median
+of 5) while Squish daemon's is 525 ms (median of 5).</p>
+<p>Two things going on:</p>
+<ol>
+<li><strong>The original projection compared apples to oranges.</strong> The 1.66 s figure
+   for Ollama in the v4 doc is its <em>cold wall</em> (start fresh process →
+   first token), which includes the GGUF mmap and Metal warm-up. With a
+   long-lived <code>ollama serve</code> and the model already paged in, Ollama's TTFT
+   is 270 ms, not 1.66 s.</li>
+<li><strong>The new <code>squishd</code> UDS daemon does not load mlx-native quant models.</strong>
+   It hard-codes a call to <code>load_compressed_model</code> with
+   <code>&lt;model&gt;-compressed/manifest.json</code>, which only exists for the squish
+   npy-dir format. Our Qwen2.5-7B-int4 is mlx-native, so squishd's preload
+   crashes. The "Squish daemon" column above uses the older HTTP-based
+   <code>squish daemon start</code> (which is just <code>python -m squish.server</code> kept
+   running) — that path does work. PR follow-up #4 in PRECHECK.md.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Per-run TTFT, fresh prompt (ms)</th>
+<th style="text-align: right;">run 1</th>
+<th style="text-align: right;">run 2</th>
+<th style="text-align: right;">run 3</th>
+<th style="text-align: right;">run 4</th>
+<th style="text-align: right;">run 5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ollama (warm)</td>
+<td style="text-align: right;">287</td>
+<td style="text-align: right;">270</td>
+<td style="text-align: right;">270</td>
+<td style="text-align: right;">280</td>
+<td style="text-align: right;">265</td>
+</tr>
+<tr>
+<td>Squish daemon (warm)</td>
+<td style="text-align: right;">521</td>
+<td style="text-align: right;">525</td>
+<td style="text-align: right;">522</td>
+<td style="text-align: right;">606</td>
+<td style="text-align: right;">586</td>
+</tr>
+<tr>
+<td>Squish + disk KV cache</td>
+<td style="text-align: right;">2045</td>
+<td style="text-align: right;">797</td>
+<td style="text-align: right;">499</td>
+<td style="text-align: right;">518</td>
+<td style="text-align: right;">633</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>Squish + disk KV cache</code> first row (2045 ms) is the <code>--kv-cache-mode int8</code>
+warm-up tax — int8 KV compresses on every layer write and the Metal kernels
+need a couple of dispatches to settle.</p>
+<h3 id="phase-2-disk-kv-cache-hit-the-win">Phase 2 — Disk KV cache hit (the win)<a class="headerlink" href="#phase-2-disk-kv-cache-hit-the-win" title="Permanent link">&para;</a></h3>
+<p>When the same prompt is reissued, the v4 disk cache earns its keep — once it
+actually starts hitting:</p>
+<table>
+<thead>
+<tr>
+<th>Per-run TTFT, repeated prompt (ms)</th>
+<th style="text-align: right;">run 1</th>
+<th style="text-align: right;">run 2</th>
+<th style="text-align: right;">run 3</th>
+<th style="text-align: right;">run 4</th>
+<th style="text-align: right;">run 5</th>
+<th style="text-align: right;">median</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ollama (warm)</td>
+<td style="text-align: right;">166</td>
+<td style="text-align: right;">138</td>
+<td style="text-align: right;">139</td>
+<td style="text-align: right;">135</td>
+<td style="text-align: right;">151</td>
+<td style="text-align: right;"><strong>139</strong></td>
+</tr>
+<tr>
+<td>Squish daemon (warm)</td>
+<td style="text-align: right;">2201</td>
+<td style="text-align: right;">1244</td>
+<td style="text-align: right;">1203</td>
+<td style="text-align: right;">1469</td>
+<td style="text-align: right;">1605</td>
+<td style="text-align: right;">1469</td>
+</tr>
+<tr>
+<td>Squish + disk KV cache</td>
+<td style="text-align: right;">919</td>
+<td style="text-align: right;">910</td>
+<td style="text-align: right;">64</td>
+<td style="text-align: right;">48</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: right;"><strong>64</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Two caveats to the squish + KV row:</p>
+<ul>
+<li><strong>The first two repeat runs missed.</strong> The priming send (one throwaway
+  before the loop) populates the cache, but it took the third write before
+  the cache key matched on lookup. We suspect a key-hashing edge case in
+  the disk-cache store path (see <a href="../squish/server.py"><code>squish/server.py:1862</code></a>
+  where the store runs in the request thread). Still investigating; the
+  failure mode is "miss for two extra requests, then hit forever." Median
+  of 5 absorbs it.</li>
+<li><strong>Runs 3–5 (48–64 ms) are the cache-hit floor.</strong> That's an 11.5× speedup
+  over the cache-miss baseline (910 ms in this config) and a <strong>2.2× speedup
+  over Ollama's already-impressive built-in prefix cache</strong> (139 ms).</li>
+</ul>
+<p>The cache is real: six <code>.npz</code> files totalling 10 MB landed in <code>/tmp/squish_kv_v4/</code>
+during the run. The flag combo is <code>--kv-cache-mode int8 --disk-prompt-cache &lt;DIR&gt;</code>
+on <code>python -m squish.server</code> — see PRECHECK.md for why both flags are required
+together. The v4 PR's <em>new</em> <code>PromptKVStore</code> class is <strong>not wired into the
+inference path</strong> and is not what was measured here; what worked is the
+pre-existing <code>--disk-prompt-cache</code> flag from before v4.</p>
+<h3 id="phase-3-speculative-decoding-not-measurable-on-this-branch">Phase 3 — Speculative decoding: not measurable on this branch<a class="headerlink" href="#phase-3-speculative-decoding-not-measurable-on-this-branch" title="Permanent link">&para;</a></h3>
+<p><code>squish.server</code> crashes at startup when <code>--draft-model</code> is set:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>File &quot;squish/server.py&quot;, line 1276, in load_draft_model
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    from squish.speculative import load_draft_model as _load_draft
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>ImportError: cannot import name &#39;load_draft_model&#39; from &#39;squish.speculative&#39;
 </code></pre></div>
-<p>Per-run JSON results are in <code>results/benchmarks_v4/</code>.</p>
+<p>The function exists at <code>squish/speculative/speculative.py:580</code>. The package
+<code>__init__.py</code> does not re-export it. A one-line patch in <code>__init__.py</code> would
+unblock the flag; per the benchmarking session's scope guards we do not fix
+v4 implementation bugs here. The <code>Spec-decode tokens/sec</code> row in the headline
+table is reported as <code>not-implemented</code> rather than projected.</p>
+<h3 id="phase-4-steady-state-ram-disk-throughput">Phase 4 — Steady-state RAM, disk, throughput<a class="headerlink" href="#phase-4-steady-state-ram-disk-throughput" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th style="text-align: right;">Ollama (warm)</th>
+<th style="text-align: right;">Squish daemon</th>
+<th style="text-align: right;">Squish + KV cache</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Peak RAM (process tree)</td>
+<td style="text-align: right;">4.95 GB</td>
+<td style="text-align: right;"><strong>1.79 GB</strong></td>
+<td style="text-align: right;">2.91 GB</td>
+</tr>
+<tr>
+<td>Disk size (model)</td>
+<td style="text-align: right;">4.36 GB</td>
+<td style="text-align: right;"><strong>4.00 GB</strong></td>
+<td style="text-align: right;">4.00 GB</td>
+</tr>
+<tr>
+<td>Warm tokens/sec (200-tok decode, median)</td>
+<td style="text-align: right;">17.6</td>
+<td style="text-align: right;">11.6 tok/s</td>
+<td style="text-align: right;">10.5 tok/s</td>
+</tr>
+<tr>
+<td>Warm tokens/sec (200-tok decode, p95)</td>
+<td style="text-align: right;">16.2</td>
+<td style="text-align: right;">12.1 tok/s</td>
+<td style="text-align: right;">10.2 tok/s</td>
+</tr>
+<tr>
+<td>Warm tokens/sec (200-tok decode, stddev)</td>
+<td style="text-align: right;">1.4</td>
+<td style="text-align: right;">2.8 tok/s</td>
+<td style="text-align: right;">0.4 tok/s</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>RAM:</strong> Squish daemon uses 64 % less peak RAM than Ollama (1.79 GB vs
+  4.95 GB). int8 KV mode adds 1.1 GB of resident state (squish_kv at 2.91 GB)
+  for the disk-cache feature, but is still 41 % below Ollama.</li>
+<li><strong>Throughput:</strong> Ollama wins on sustained decode (17.6 vs 11.6 tok/s). The
+  v3 short-prompt benchmark put squish at 17.5 tok/s; the gap here is the
+  longer 200-token decode window, which exercises a bigger KV cache and
+  amplifies MLX's per-step overhead vs llama.cpp Metal.</li>
+<li><strong>Disk:</strong> Squish's mlx-native INT4 model is 360 MB smaller than Ollama's
+  Q4_K_M GGUF. Marginal but consistent.</li>
+</ul>
+<h3 id="reproduce">Reproduce<a class="headerlink" href="#reproduce" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>python<span class="w"> </span>benchmarks/ollama_vs_squish/bench_v4.py
+</code></pre></div>
+<p>The bench writes raw per-run JSON to
+<code>results/benchmarks_v4/runs/&lt;UTC-timestamp&gt;/raw.json</code>. The summary printed at
+the end of the run is the same table reproduced above.</p>
+<p>The KV-cache config requires the flag combo
+<code>--kv-cache-mode int8 --disk-prompt-cache &lt;DIR&gt;</code> (see PRECHECK.md for why).
+The <code>squish run</code> CLI does not expose <code>--disk-prompt-cache</code>; the bench calls
+<code>python -m squish.server</code> directly.</p>
+<h3 id="where-this-leaves-us-vs-v3">Where this leaves us vs v3<a class="headerlink" href="#where-this-leaves-us-vs-v3" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th style="text-align: right;">v3 (eager, cold)</th>
+<th style="text-align: right;">v4 (daemon, warm)</th>
+<th>Delta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>User-visible TTFT to first token</td>
+<td style="text-align: right;">7.05 s (cold wall)</td>
+<td style="text-align: right;">525 ms (warm TTFT)</td>
+<td><strong>−6.5 s</strong> by keeping the model resident</td>
+</tr>
+<tr>
+<td>TTFT on repeated prompt</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;"><strong>64 ms</strong></td>
+<td>new in v4 (disk-prompt-cache + int8 KV)</td>
+</tr>
+<tr>
+<td>Warm tok/s</td>
+<td style="text-align: right;">17.5 tok/s</td>
+<td style="text-align: right;">11.6 tok/s</td>
+<td>regression in longer-prompt decode</td>
+</tr>
+<tr>
+<td>Peak RAM</td>
+<td style="text-align: right;">2.65 GB</td>
+<td style="text-align: right;">1.79 GB</td>
+<td><strong>−0.86 GB</strong> (server no longer eager-imports any optimisation modules at fp16 KV defaults)</td>
+</tr>
+</tbody>
+</table>
+<p>The headline story for the article: <strong>daemon mode removes the cold-load
+penalty (7 s → 0.5 s) and the disk KV cache turns Squish into the fastest
+repeat-prompt path on this hardware (64 ms vs Ollama's 139 ms), while
+Ollama retains its lead on cold-prompt TTFT and sustained throughput.</strong>
+Spec decode is a deferred deliverable: the flags ship in v4 but the load
+path is broken.</p>
 
 
 
