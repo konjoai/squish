@@ -556,6 +556,9 @@ class TestModuleCount:
                 `squish/integrations/hf.py` (HF batch upload integration)
         - 89 — W110/W111 added `squish/serving/quality_monitor.py` (inference
                 quality monitor), `squish/serving/router.py` (prompt router)
+        - 95 — v4 perf sprint added `squish/daemon/` (4 modules: __init__, squishd,
+                client, launchagent), `squish/kv/prompt_kv_cache.py`,
+                `squish/serving/kernel_cache.py`
         """
         import squish
         root = Path(squish.__file__).parent
@@ -565,10 +568,11 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 89, (
-            f"Module count changed: {count} != 89. "
+        assert count == 95, (
+            f"Module count changed: {count} != 95. "
             "Squash separation baseline = 83; W103.1 → 84; W103.4c → 85; "
-            "W100/W110 integrations → 87; W110/W111 serving modules → 89. "
+            "W100/W110 integrations → 87; W110/W111 serving modules → 89; "
+            "v4 perf sprint (daemon + kv + kernel_cache) → 95. "
             "New modules require either deletion of an existing one or written "
             "justification per CLAUDE.md."
         )
