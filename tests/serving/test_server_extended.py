@@ -155,12 +155,14 @@ class TestTokenizeWithModel:
 class TestEmbeddingsZeroNorm:
     def test_zero_norm_embedding_not_normalized(self):
         """When model outputs all-zeros, norm=0 → skip normalization (line 1047→1050)."""
+        import numpy as np
         mx = pytest.importorskip("mlx.core")
         from fastapi.testclient import TestClient
 
         mock_model = MagicMock()
-        # Return an all-zero tensor → norm == 0 → normalization skipped
-        mock_model.model.return_value = mx.zeros([1, 3, 16])
+        # Use mx.array(np_data): CPU-backed so mx.eval() works in TestClient thread.
+        # mx.zeros([...]) is a lazy Metal op that fails in background threads.
+        mock_model.model.return_value = mx.array(np.zeros([1, 3, 16], dtype=np.float32))
         mock_tok = MagicMock()
         mock_tok.encode.return_value = [1, 2, 3]
 
@@ -204,7 +206,7 @@ class TestEmbeddingsAdditionalBranches:
         from fastapi.testclient import TestClient
 
         mock_model = MagicMock()
-        mock_model.model.return_value = mx.zeros([1, 3, 16])
+        mock_model.model.return_value = mx.array(np.zeros([1, 3, 16], dtype=np.float32))
         mock_tok = MagicMock()
         mock_tok.encode.return_value = [1, 2, 3]
         _srv._state.model = mock_model
@@ -250,7 +252,7 @@ class TestEmbeddingsAdditionalBranches:
                 return {"input_ids": [np.array([1, 2, 3])]}
 
         mock_model = MagicMock()
-        mock_model.model.return_value = mx.zeros([1, 3, 16])
+        mock_model.model.return_value = mx.array(np.zeros([1, 3, 16], dtype=np.float32))
         _srv._state.model = mock_model
         _srv._state.tokenizer = _CallableTok()
 
