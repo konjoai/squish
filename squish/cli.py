@@ -1134,7 +1134,47 @@ def cmd_setup(args):  # pragma: no cover
 # ── squish run ────────────────────────────────────────────────────────────────
 
 def cmd_run(args):  # pragma: no cover
-    """Start the Squish inference server."""
+    """Start the Squish inference server (or one-shot via squishd)."""
+
+    # ── v4.1 Fix 3: --daemon route (one-shot via squishd UDS) ────────────────
+    # When --daemon is set AND --prompt is given, send the prompt through
+    # squishd over /tmp/squish.sock and print the response.  Falls back to a
+    # spawned server if squishd is not running.  When --daemon is set without
+    # --prompt we just warn and continue to the server-start path so that
+    # `squish daemon start` remains the canonical "bring up the daemon"
+    # command.
+    if getattr(args, "daemon", False) and getattr(args, "prompt", ""):
+        try:
+            from squish.daemon.client import DaemonClient
+            from squish.daemon.squishd import SOCK_PATH as _SOCK_PATH
+        except ImportError as _dc_err:
+            _die(f"squish.daemon import failed: {_dc_err}")
+        _dc = DaemonClient(sock_path=_SOCK_PATH)
+        if _dc.available():
+            try:
+                _resp = _dc.complete(
+                    args.prompt,
+                    max_tokens=getattr(args, "max_tokens", 256),
+                    temperature=0.0,
+                    top_p=1.0,
+                )
+            except (ConnectionRefusedError, RuntimeError) as _rerr:
+                print(f"  ⚠  squishd request failed ({_rerr}) — falling back to direct inference")
+            else:
+                _txt = _resp.get("text", "")
+                _toks = _resp.get("tokens", 0)
+                _tps = _resp.get("tok_s", 0.0)
+                print(_txt)
+                print(f"\n  ({_toks} tokens, {_tps} tok/s — via squishd)", file=sys.stderr)
+                return
+        else:
+            print(
+                "  ℹ  squishd not running at "
+                f"{_SOCK_PATH} — running one-shot via spawned server.\n"
+                "     Start the daemon with: squishd start <model>",
+                file=sys.stderr,
+            )
+            # Fall through; the spawned server below will handle the request
 
     # ── Detect other local AI services ───────────────────────────────────────
     _local_services = _detect_local_ai_services()
@@ -6111,6 +6151,14 @@ Ollama drop-in:
     p_run.add_argument("--daemon",           action="store_true", default=False,
                        help="Route request through squishd (auto-starts if not running); "
                             "falls back to direct inference when daemon unavailable")
+    p_run.add_argument("--prompt",           default="",
+                       metavar="TEXT",
+                       help="One-shot inference mode: send TEXT to the daemon (or a "
+                            "freshly spawned server) and print the completion. "
+                            "Combine with --daemon to skip server spawn.")
+    p_run.add_argument("--max-tokens",       type=int, default=256,
+                       metavar="N",
+                       help="Max tokens to generate in --prompt one-shot mode (default 256)")
     p_run.add_argument("--batch-scheduler",  action="store_true",
                        help="Enable continuous batching (improves concurrent throughput)")
     p_run.add_argument("--batch-size",       type=int, default=8)
