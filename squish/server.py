@@ -40,6 +40,11 @@ from __future__ import annotations
 # the process. See ``squish/_fast_imports.py`` for the contract + tests.
 from . import _fast_imports as _fi  # noqa: E402, ABS101
 _fi.apply_load_path_stubs()
+# Kick off the mlx_lm import on a background thread. The rest of this module's
+# imports (FastAPI, uvicorn, squish.serving.*, etc.) plus main()'s argparse +
+# banner work give the thread something to overlap with — Python releases the
+# GIL inside file I/O in each child import, so we get real wall-time savings.
+_fi.start_background_mlx_lm_import()
 
 import argparse
 import collections
@@ -1085,6 +1090,10 @@ def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma:
     ----------
     mlx_model_dir : path to the mlx_lm-format quantized model directory
     """
+    # Wait for the background mlx_lm import (spawned at squish.server module
+    # load). In practice it's already done by the time we reach here; if not,
+    # we block until it is.
+    _fi.await_mlx_lm_import()
     from mlx_lm.utils import load_config as _mlx_load_config
     from mlx_lm.utils import load_model as _mlx_load_model
     from mlx_lm.utils import load_tokenizer as _mlx_load_tokenizer
