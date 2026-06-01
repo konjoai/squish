@@ -13,7 +13,7 @@ Public API:
 """
 from __future__ import annotations
 
-__version__ = "9.30.0"
+__version__ = "9.31.0"
 
 # ── Lazy import registry ───────────────────────────────────────────────────────
 # Every public name is loaded on first access via __getattr__.
@@ -385,6 +385,20 @@ _LAZY_IMPORTS: dict[str, str] = {
     # squish.logging_config — structured logging
     "configure_logging":         "squish.logging_config",
     "get_squish_logger":         "squish.logging_config",
+
+    # squish.daemon — persistent squishd UDS daemon
+    "DaemonClient":              "squish.daemon.client",
+    "DaemonServer":              "squish.daemon.squishd",
+
+    # squish.kv.prompt_kv_cache — disk-backed KV cache
+    "PromptKVStore":             "squish.kv.prompt_kv_cache",
+    "capture_kv_state":          "squish.kv.prompt_kv_cache",
+    "restore_kv_state":          "squish.kv.prompt_kv_cache",
+
+    # squish.serving.kernel_cache — MLX Metal kernel cache management
+    "metal_cache_info":          "squish.serving.kernel_cache",
+    "ensure_kernel_cache_dir":   "squish.serving.kernel_cache",
+    "run_warmup_pass":           "squish.serving.kernel_cache",
 }
 
 _lazy_cache: dict[str, object] = {}

@@ -1,0 +1,59 @@
+{
+  "version": "v4",
+  "date": "2026-06-01",
+  "hardware": {
+    "chip": "Apple M3",
+    "ram_gb": 16,
+    "os": "macOS",
+    "framework": "MLX"
+  },
+  "model": {
+    "target": "Qwen2.5-7B-Instruct-INT4",
+    "draft": "Qwen2.5-0.5B-Instruct-INT4",
+    "quantization": "AWQ g=32"
+  },
+  "phases": {
+    "phase1_daemon": {
+      "description": "squishd Unix-domain-socket daemon cold wall",
+      "metric": "wall_clock_seconds",
+      "note": "Time from command invocation to first output token with model already resident in daemon",
+      "projected_squish_s": 0.40,
+      "projected_ollama_s": 1.66,
+      "measurement_command": "time squish run --daemon --prompt 'Hello' --max-tokens 1"
+    },
+    "phase2_spec_decode": {
+      "description": "Speculative decoding throughput",
+      "metric": "tokens_per_second",
+      "note": "7B target + 0.5B draft, FSM adaptive gamma K=2-8, n-gram hybrid",
+      "projected_with_spec_toks": 35.0,
+      "projected_baseline_toks": 17.5,
+      "projected_acceptance_rate": 0.63,
+      "measurement_command": "squish run --draft-model ~/models/Qwen2.5-0.5B-INT4 --max-tokens 200"
+    },
+    "phase3_kernel_cache": {
+      "description": "MLX Metal kernel cache investigation",
+      "finding": "MLX 0.18-0.22 does not expose kernel-cache API. OS Metal cache handles shader persistence. Warmup pass at daemon startup hides the cost.",
+      "warmup_first_run_s": 1.0,
+      "warmup_subsequent_s": 0.1,
+      "api_available": false
+    },
+    "phase4_kv_persistence": {
+      "description": "Disk-backed KV cache keyed by SHA-256 prompt hash",
+      "metric": "ttft_seconds",
+      "note": "Prompt prefix cached after first request; subsequent identical prompts skip prefill",
+      "projected_cached_ttft_s": 0.05,
+      "projected_cold_ttft_s": 0.50,
+      "cache_dir": "~/.cache/squish/kv_cache/",
+      "max_cache_bytes": 1073741824,
+      "lru_eviction": true,
+      "measurement_command": "squish run --prompt 'Review this PR: ...' --max-tokens 1"
+    }
+  },
+  "reproduce": {
+    "daemon_mode": "squishd start ~/models/Qwen2.5-7B-INT4",
+    "spec_decode": "squish run --draft-model ~/models/Qwen2.5-0.5B-INT4 --max-tokens 200",
+    "baseline": "squish run --no-spec --max-tokens 200",
+    "kv_cache_cold": "squish run --no-cache --prompt '...'",
+    "kv_cache_warm": "squish run --prompt '...'"
+  }
+}
