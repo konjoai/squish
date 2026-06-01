@@ -2408,6 +2408,52 @@ def cmd_daemon(args):  # pragma: no cover
         print(f"  ⚠  Daemon started (pid {proc.pid}) but hasn't responded yet.")
         print(f"     Check logs: tail -f {log_file}\n")
 
+    if action == "reload":  # pragma: no cover
+        from squish.daemon.squishd import is_running as _uds_running, send_request as _uds_req
+        sock = getattr(args, "sock", "") or "/tmp/squish.sock"
+        if not _uds_running(sock):
+            print(f"\n  ✗  squishd not running at {sock}\n")
+            return
+        try:
+            resp = _uds_req({"_cmd": "reload"}, sock)
+            print(f"\n  ✓  Reloaded: {resp.get('reloaded', '?')}\n")
+        except Exception as e:
+            _die(f"Reload failed: {e}")
+
+    if action == "install":  # pragma: no cover
+        from squish.daemon.launchagent import install as _la_install
+        model_dir_str = ""
+        comp_dir_str  = ""
+        if getattr(args, "model", None):
+            try:
+                _mdir, _cdir = _resolve_model(args.model)
+                model_dir_str = str(_mdir)
+                comp_dir_str  = str(_cdir)
+            except Exception:
+                pass
+        sock = getattr(args, "sock", "") or "/tmp/squish.sock"
+        try:
+            plist = _la_install(
+                model_dir=model_dir_str,
+                compressed_dir=comp_dir_str,
+                sock_path=sock,
+                max_models=getattr(args, "max_models", 2),
+            )
+            print(f"\n  ✓  LaunchAgent installed: {plist}")
+            print("     squishd will auto-start at next login.\n")
+        except RuntimeError as e:
+            _die(str(e))
+        except FileNotFoundError as e:
+            _die(str(e))
+
+    if action == "uninstall":  # pragma: no cover
+        from squish.daemon.launchagent import uninstall as _la_uninstall
+        try:
+            _la_uninstall()
+            print("\n  ✓  LaunchAgent removed.  squishd will not auto-start.\n")
+        except RuntimeError as e:
+            _die(str(e))
+
 
 def cmd_compress(args):  # pragma: no cover
     """Compress a model directory to Squish npy-dir or .squizd format."""
@@ -6055,6 +6101,12 @@ Ollama drop-in:
     p_run.add_argument("--api-key", default="squish")
     p_run.add_argument("--draft-model",      default="",
                        help="Path to draft model for speculative decoding")
+    p_run.add_argument("--no-spec",          action="store_true", default=False,
+                       help="Disable speculative decoding even when --draft-model is set "
+                            "(useful for baseline benchmarking)")
+    p_run.add_argument("--daemon",           action="store_true", default=False,
+                       help="Route request through squishd (auto-starts if not running); "
+                            "falls back to direct inference when daemon unavailable")
     p_run.add_argument("--batch-scheduler",  action="store_true",
                        help="Enable continuous batching (improves concurrent throughput)")
     p_run.add_argument("--batch-size",       type=int, default=8)
@@ -6149,6 +6201,8 @@ Ollama drop-in:
                          help="0.0.0.0 to expose on LAN (or SQUISH_HOST env var)")
     p_serve.add_argument("--api-key", default="squish")
     p_serve.add_argument("--draft-model",      default="")
+    p_serve.add_argument("--no-spec",          action="store_true", default=False,
+                         help="Disable speculative decoding even when --draft-model is set")
     p_serve.add_argument("--batch-scheduler",  action="store_true")
     p_serve.add_argument("--batch-size",       type=int, default=8)
     p_serve.add_argument("--kv-cache-mode",    choices=["fp16", "int8", "snap"], default="fp16")
@@ -6318,13 +6372,18 @@ Ollama drop-in:
     # ── daemon ──
     p_daemon = sub.add_parser("daemon", help="Manage the persistent background server daemon")
     p_daemon.add_argument("daemon_action", nargs="?",
-                          choices=["start", "stop", "status"],
+                          choices=["start", "stop", "status", "install", "uninstall", "reload"],
                           default="status",
-                          help="start | stop | status (default: status)")
-    p_daemon.add_argument("model", nargs="?", help="Model shorthand or path (for start)")
-    p_daemon.add_argument("--port",    type=int, default=_DEFAULT_PORT)
-    p_daemon.add_argument("--host",    default="127.0.0.1")
-    p_daemon.add_argument("--api-key", default="squish")
+                          help="start | stop | status | install | uninstall | reload "
+                               "(default: status)")
+    p_daemon.add_argument("model", nargs="?", help="Model shorthand or path (for start/install)")
+    p_daemon.add_argument("--port",       type=int, default=_DEFAULT_PORT)
+    p_daemon.add_argument("--host",       default="127.0.0.1")
+    p_daemon.add_argument("--api-key",    default="squish")
+    p_daemon.add_argument("--sock",       default="",
+                          help="Unix socket path for squishd (default: /tmp/squish.sock)")
+    p_daemon.add_argument("--max-models", type=int, default=2,
+                          help="Max resident models in squishd (default: 2)")
     p_daemon.set_defaults(func=cmd_daemon)
 
     # ── compress (primary name) + it (hidden legacy alias) ──
