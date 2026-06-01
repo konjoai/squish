@@ -88,6 +88,7 @@ jobs:
   mutation:
     name: "G3 · Mutation Testing"
     runs-on: ubuntu-latest
+    timeout-minutes: 6
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
@@ -99,9 +100,10 @@ jobs:
           pip install mutmut pytest --quiet
           pip install -e . --quiet 2>/dev/null || true
       - name: Run mutation testing
+        timeout-minutes: 5
         continue-on-error: true
         run: |
-          mutmut run 2>&1 | tail -60 || true
+          timeout 270 mutmut run 2>&1 | tail -60 || true
           mutmut results 2>/dev/null || true
 
   # ══════════════════════════════════════════════════════════════════════════
