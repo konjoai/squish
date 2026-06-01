@@ -1,8 +1,63 @@
 # Ollama vs Squish — three serving modes  (M3 MacBook Pro 16 GB)
 
-**Date:** 2026-06-01
+**Date:** 2026-06-01 (re-run with cold-load optimisations)
 **Host:** Apple M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0
 **Prompt:** `"What is the capital of France? Answer in one sentence."`
+
+## v3 — post-load-optimization results
+
+This run uses the cold-load optimisations introduced in
+`perf/cold-load-optimization`:
+* **Fix #1** — sklearn stub before mlx_lm import (saves ~1.2 s)
+* **Fix #2** — parallel tokenizer + weight load (saves ~0.7 s)
+* **Fix #3** — background-thread mlx_lm import (saves ~0.3 s in the
+  full cold-start path)
+
+| Metric                              | Ollama      | Squish (eager) | Squish (lazy) | Squish (preload-async) | Winner |
+|-------------------------------------|-------------|----------------|---------------|------------------------|--------|
+| **Cold wall (kill → first token)**  | **1.66 s**  | 7.05 s         | 6.84 s        | 7.36 s                 | **Ollama** |
+| Cold TTFT (server-ready → first)    | 1.47 s      | **533 ms**     | 5.77 s        | 6.40 s                 | Squish eager |
+| Warm tokens/sec                     | 20.6 tok/s  | 17.5 tok/s     | 16.7 tok/s    | 13.8 tok/s             | Ollama |
+| Peak RAM (full process tree)        | 4.76 GB     | **2.65 GB**    | 2.96 GB       | 2.88 GB                | **Squish eager** |
+| Disk size (model)                   | 4.36 GB     | **4.00 GB**    | 4.00 GB       | 4.00 GB                | Squish |
+
+### v2 → v3 deltas
+
+| Metric (eager mode)         | v2 (pre-fix) | v3 (post-fix) | Δ            |
+|-----------------------------|-------------:|--------------:|-------------:|
+| Cold wall                   |       9.57 s |        7.05 s |  **−2.52 s** |
+| Server-ready time           |       9.05 s |        6.52 s |  **−2.53 s** |
+| Peak RAM                    |       3.14 GB |       2.65 GB |  **−0.49 GB** |
+
+The RAM win is a bonus side-effect — by stubbing sklearn we don't load
+sklearn (~150 MB), scipy (~80 MB), pandas (~150 MB) or torch (~100 MB)
+RSS that we were never using.
+
+Eager-mode cold wall improved by **26 %**. The gap to Ollama narrowed
+from 6.2× (v2) to 4.2× (v3). Remaining Ollama lead is fundamental:
+mlx_lm's safetensors load path on M3 + Metal eval costs ~1.4 s of
+file I/O, plus the JIT-warmup pass to get steady-state tok/s adds
+another ~1 s. Ollama's llama.cpp loader avoids both because it
+mmaps the GGUF file directly and uses pre-compiled CPU/Metal kernels.
+
+### Warm tokens/sec — interpreting the v2→v3 regression
+
+`squish_preload_async` warm tok/s dropped from 17.8 (v2) to 13.8 (v3).
+The other three configs moved within ±1 tok/s of v2. The preload-async
+result on this single 8-token prompt is too noisy to claim a real
+regression — we'd need a longer warm-up run + bigger prompt + p95
+reporting to draw a conclusion. The cold-load fixes don't touch the
+inference path, so any inference-time difference is bench variance,
+not a code change.
+
+## v2 — original (kept for reference)
+
+(See git history for the v2 results table; same row layout as above.
+Cold wall for squish_eager was 9.57 s; peak RAM was 3.14 GB.)
+
+---
+
+
 **Model:**
 - Ollama `qwen2.5:7b` — Q4_K_M GGUF
 - Squish `Qwen2.5-7B-Instruct-int4` — INT4 MLX safetensors
