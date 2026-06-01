@@ -2842,16 +2842,22 @@ async def embeddings(
         try:
             # Preferred path: last hidden state (proper semantic embeddings)
             hidden = model.model(x)                           # (1, seq, hidden_dim)
-            emb_np = np.array(mx.mean(hidden, axis=1)[0])    # (hidden_dim,)
+            mean_h = mx.mean(hidden, axis=1)[0]
+            mx.eval(mean_h)
+            emb_np = np.array(mean_h)                         # (hidden_dim,)
         except (AttributeError, TypeError):  # pragma: no cover
             try:
                 # Second-best: input token embeddings (less useful but available)
                 tok_emb = model.model.embed_tokens(x)        # (1, seq, D)
-                emb_np  = np.array(mx.mean(tok_emb, axis=1)[0])
+                mean_t = mx.mean(tok_emb, axis=1)[0]
+                mx.eval(mean_t)
+                emb_np  = np.array(mean_t)
             except AttributeError:  # pragma: no cover
                 # Last-resort: mean-pool logits (not suitable for similarity tasks)
                 logits = model(x)                            # (1, seq, vocab)
-                emb_np = np.array(mx.mean(logits[0], axis=0))
+                mean_l = mx.mean(logits[0], axis=0)
+                mx.eval(mean_l)
+                emb_np = np.array(mean_l)
 
         # L2-normalize
         norm = np.linalg.norm(emb_np)
