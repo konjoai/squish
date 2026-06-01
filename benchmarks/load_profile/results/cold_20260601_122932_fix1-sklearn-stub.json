@@ -1,0 +1,279 @@
+{
+  "timestamp": "20260601_122932",
+  "label": "fix1-sklearn-stub",
+  "host": "Apple M3 MacBook Pro 16GB",
+  "model": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4",
+  "purge_supported": false,
+  "cold": {
+    "agg": {
+      "median_cumulative_s": {
+        "squish_imports": 0.3471,
+        "mlx_core_import": 0.3814,
+        "mlx_lm_import": 2.9401,
+        "mlx_utils_import": 2.9401,
+        "weights_loaded": 4.2648,
+        "tokenizer_loaded": 4.9361,
+        "warmup_done": 5.9562,
+        "server_bound": 6.0516
+      },
+      "median_per_phase_s": {
+        "squish_imports": 0.3471,
+        "mlx_core_import": 0.0343,
+        "mlx_lm_import": 2.5587,
+        "mlx_utils_import": 0.0,
+        "weights_loaded": 1.3247,
+        "tokenizer_loaded": 0.6713,
+        "warmup_done": 1.0201,
+        "server_bound": 0.0954
+      },
+      "spawn_to_exit_s": {
+        "median": 6.663,
+        "min": 6.2093,
+        "max": 7.6876
+      },
+      "n_runs": 5
+    },
+    "runs": [
+      {
+        "spawn_to_exit_s": 7.6876,
+        "rc": 0,
+        "checkpoints": {
+          "squish_imports": 0.3471,
+          "mlx_core_import": 0.3814,
+          "mlx_lm_import": 3.9297,
+          "mlx_utils_import": 3.9297,
+          "weights_loaded": 5.2762,
+          "tokenizer_loaded": 5.9377,
+          "warmup_done": 6.9948,
+          "server_bound": 7.1103
+        },
+        "result": {
+          "summary": {
+            "squish_imports": 0.3470549170160666,
+            "mlx_imports": 3.9297213749960065,
+            "weights_loaded": 5.276163083966821,
+            "tokenizer_loaded": 5.937678375048563,
+            "warmup_done": 6.994792541954666,
+            "server_bound": 7.110256375046447
+          },
+          "process_pid": 75478,
+          "model_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
+        }
+      },
+      {
+        "spawn_to_exit_s": 6.3747,
+        "rc": 0,
+        "checkpoints": {
+          "squish_imports": 0.3202,
+          "mlx_core_import": 0.3535,
+          "mlx_lm_import": 2.9137,
+          "mlx_utils_import": 2.9137,
+          "weights_loaded": 4.2028,
+          "tokenizer_loaded": 4.8124,
+          "warmup_done": 5.7099,
+          "server_bound": 5.8191
+        },
+        "result": {
+          "summary": {
+            "squish_imports": 0.3201857500243932,
+            "mlx_imports": 2.913726333063096,
+            "weights_loaded": 4.202841875026934,
+            "tokenizer_loaded": 4.812401499948464,
+            "warmup_done": 5.709860582952388,
+            "server_bound": 5.819127249997109
+          },
+          "process_pid": 75518,
+          "model_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
+        }
+      },
+      {
+        "spawn_to_exit_s": 6.2093,
+        "rc": 0,
+        "checkpoints": {
+          "squish_imports": 0.2327,
+          "mlx_core_import": 0.2654,
+          "mlx_lm_import": 2.6343,
+          "mlx_utils_import": 2.6343,
+          "weights_loaded": 3.9149,
+          "tokenizer_loaded": 4.5569,
+          "warmup_done": 5.5653,
+          "server_bound": 5.6671
+        },
+        "result": {
+          "summary": {
+            "squish_imports": 0.23265595908742398,
+            "mlx_imports": 2.6343130000168458,
+            "weights_loaded": 3.9149229590548202,
+            "tokenizer_loaded": 4.556919084046967,
+            "warmup_done": 5.565272459061816,
+            "server_bound": 5.667142042075284
+          },
+          "process_pid": 75553,
+          "model_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
+        }
+      },
+      {
+        "spawn_to_exit_s": 6.7129,
+        "rc": 0,
+        "checkpoints": {
+          "squish_imports": 0.404,
+          "mlx_core_import": 0.4434,
+          "mlx_lm_import": 3.195,
+          "mlx_utils_import": 3.195,
+          "weights_loaded": 4.5037,
+          "tokenizer_loaded": 5.1202,
+          "warmup_done": 6.0547,
+          "server_bound": 6.1372
+        },
+        "result": {
+          "summary": {
+            "squish_imports": 0.4039561660028994,
+            "mlx_imports": 3.1950224159518257,
+            "weights_loaded": 4.503725040936843,
+            "tokenizer_loaded": 5.120159624959342,
+            "warmup_done": 6.05473491596058,
+            "server_bound": 6.137183707905933
+          },
+          "process_pid": 75615,
+          "model_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
+        }
+      },
+      {
+        "spawn_to_exit_s": 6.663,
+        "rc": 0,
+        "checkpoints": {
+          "squish_imports": 0.3542,
+          "mlx_core_import": 0.3943,
+          "mlx_lm_import": 2.9401,
+          "mlx_utils_import": 2.9401,
+          "weights_loaded": 4.2648,
+          "tokenizer_loaded": 4.9361,
+          "warmup_done": 5.9562,
+          "server_bound": 6.0516
+        },
+        "result": {
+          "summary": {
+            "squish_imports": 0.3541639579925686,
+            "mlx_imports": 2.9400850830134004,
+            "weights_loaded": 4.264780708006583,
+            "tokenizer_loaded": 4.9361364169744775,
+            "warmup_done": 5.956175582949072,
+            "server_bound": 6.051625416963361
+          },
+          "process_pid": 75665,
+          "model_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
+        }
+      }
+    ]
+  },
+  "warm": {
+    "agg": {
+      "median_cumulative_s": {
+        "squish_imports": 0.3627,
+        "mlx_core_import": 0.3992,
+        "mlx_lm_import": 3.0439,
+        "mlx_utils_import": 3.0439,
+        "weights_loaded": 4.3444,
+        "tokenizer_loaded": 5.0867,
+        "warmup_done": 6.1116,
+        "server_bound": 6.1982
+      },
+      "median_per_phase_s": {
+        "squish_imports": 0.3627,
+        "mlx_core_import": 0.0365,
+        "mlx_lm_import": 2.6447,
+        "mlx_utils_import": 0.0,
+        "weights_loaded": 1.3005,
+        "tokenizer_loaded": 0.7423,
+        "warmup_done": 1.0249,
+        "server_bound": 0.0866
+      },
+      "spawn_to_exit_s": {
+        "median": 6.8733,
+        "min": 6.7006,
+        "max": 6.9885
+      },
+      "n_runs": 3
+    },
+    "runs": [
+      {
+        "spawn_to_exit_s": 6.9885,
+        "rc": 0,
+        "checkpoints": {
+          "squish_imports": 0.3627,
+          "mlx_core_import": 0.3992,
+          "mlx_lm_import": 3.2281,
+          "mlx_utils_import": 3.2281,
+          "weights_loaded": 4.5516,
+          "tokenizer_loaded": 5.2196,
+          "warmup_done": 6.2681,
+          "server_bound": 6.3605
+        },
+        "result": {
+          "summary": {
+            "squish_imports": 0.3627277909545228,
+            "mlx_imports": 3.228123707929626,
+            "weights_loaded": 4.551555415964685,
+            "tokenizer_loaded": 5.219589457963593,
+            "warmup_done": 6.268063999945298,
+            "server_bound": 6.360503457952291
+          },
+          "process_pid": 75721,
+          "model_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
+        }
+      },
+      {
+        "spawn_to_exit_s": 6.7006,
+        "rc": 0,
+        "checkpoints": {
+          "squish_imports": 0.3189,
+          "mlx_core_import": 0.3562,
+          "mlx_lm_import": 3.0439,
+          "mlx_utils_import": 3.0439,
+          "weights_loaded": 4.3444,
+          "tokenizer_loaded": 5.009,
+          "warmup_done": 6.0454,
+          "server_bound": 6.132
+        },
+        "result": {
+          "summary": {
+            "squish_imports": 0.3188584999879822,
+            "mlx_imports": 3.043884375016205,
+            "weights_loaded": 4.344434458063915,
+            "tokenizer_loaded": 5.009041875018738,
+            "warmup_done": 6.045422250055708,
+            "server_bound": 6.131984499981627
+          },
+          "process_pid": 75814,
+          "model_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
+        }
+      },
+      {
+        "spawn_to_exit_s": 6.8733,
+        "rc": 0,
+        "checkpoints": {
+          "squish_imports": 0.3886,
+          "mlx_core_import": 0.4206,
+          "mlx_lm_import": 2.9837,
+          "mlx_utils_import": 2.9837,
+          "weights_loaded": 4.3435,
+          "tokenizer_loaded": 5.0867,
+          "warmup_done": 6.1116,
+          "server_bound": 6.1982
+        },
+        "result": {
+          "summary": {
+            "squish_imports": 0.38862924999557436,
+            "mlx_imports": 2.983711624983698,
+            "weights_loaded": 4.34345304092858,
+            "tokenizer_loaded": 5.086702208034694,
+            "warmup_done": 6.111620125011541,
+            "server_bound": 6.198231665999629
+          },
+          "process_pid": 75879,
+          "model_dir": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
+        }
+      }
+    ]
+  }
+}

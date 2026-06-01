@@ -31,6 +31,16 @@ Dependencies:
 """
 from __future__ import annotations
 
+# ── Cold-start import stubs ───────────────────────────────────────────────────
+# Pre-populate sys.modules with no-op stubs for sklearn / sklearn.metrics so
+# the `if is_sklearn_available(): from sklearn.metrics import roc_curve` line
+# at the top of `transformers.generation.candidate_generator` skips its real
+# loaders. This is purely an import-time optimisation — squish never calls
+# sklearn at runtime. Must run BEFORE the first `import mlx_lm` anywhere in
+# the process. See ``squish/_fast_imports.py`` for the contract + tests.
+from . import _fast_imports as _fi  # noqa: E402, ABS101
+_fi.apply_load_path_stubs()
+
 import argparse
 import collections
 import functools
