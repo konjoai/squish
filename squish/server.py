@@ -172,6 +172,17 @@ _paged_kv_cache = None   # PagedKVCache | None — set in main() when --paged-at
 _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-prompt-cache given
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
 
+# ── Deferred model-load state (--lazy / --preload-async) ─────────────────────
+# When the server is started in lazy or preload-async mode, the model load is
+# triggered out of band of `main()`. Endpoints block on `_LOAD_COMPLETE` and
+# the first inbound request acquires `_LOAD_LOCK` to drive the load if no
+# background thread has done it yet.
+_LOAD_LOCK = threading.Lock()
+_LOAD_COMPLETE = threading.Event()
+_LOAD_ARGS: "Any" = None  # argparse.Namespace, captured by main() for deferred load
+_LOAD_MODE: str = "eager"  # "eager" | "lazy" | "preload_async"
+_LOAD_ERROR: "str | None" = None  # deferred load failure surfaces here
+
 # ── Wave optimization module state (lazily instantiated) ─────────────────────
 _prompt_lookup_decoder  = None  # PromptLookupDecoder    — --prompt-lookup
 
@@ -2224,6 +2235,75 @@ def _generate_tokens(  # pragma: no cover
     yield "", "stop"
 
 
+# ── Deferred model load (--lazy / --preload-async) ───────────────────────────
+
+
+def _do_model_load(args: "Any") -> None:
+    """Run the synchronous model load for the args captured at startup.
+
+    Used by all three load modes:
+      * eager — called from `main()` before uvicorn binds the port
+      * preload_async — invoked from a background thread after uvicorn binds
+      * lazy — invoked by `_ensure_loaded_blocking()` on the first inference
+                request
+
+    Idempotent under `_LOAD_LOCK`: a second caller observes the event and
+    returns immediately rather than reloading.
+
+    Optimization patches (LazyLLM, KV cache, flash-attn, etc.) installed by
+    `main()` after the load only apply in eager mode. With --lazy or
+    --preload-async those patches are not re-applied — the model loads in a
+    plain configuration. The benchmark relies on this; production users who
+    combine optimization flags with --lazy should add a corresponding
+    `_apply_post_load_patches(args)` hook here.
+    """
+    global _LOAD_ERROR
+    if _LOAD_COMPLETE.is_set():
+        return
+    with _LOAD_LOCK:
+        if _LOAD_COMPLETE.is_set():
+            return
+        try:
+            if getattr(args, "mlx_model_dir", ""):
+                load_mlx_model(args.mlx_model_dir, verbose=getattr(args, "verbose", False))
+            else:
+                load_model(
+                    args.model_dir,
+                    args.compressed_dir,
+                    verbose=getattr(args, "verbose", False),
+                )
+            _LOAD_COMPLETE.set()
+        except Exception as exc:  # noqa: BLE001
+            _LOAD_ERROR = f"{type(exc).__name__}: {exc}"
+            import logging as _logging
+            _logging.getLogger(__name__).exception(
+                "Deferred model load failed (mode=%s)", _LOAD_MODE
+            )
+            raise
+
+
+def _ensure_loaded_blocking() -> None:
+    """Block until the model is loaded. Safe to call from any request handler.
+
+    In eager mode the model is already loaded — fast path returns immediately.
+    In preload-async mode the background thread is usually already done; if
+    not, this caller waits on the lock and (if it acquires first) drives the
+    load itself.
+    In lazy mode the first request reaches this function and drives the load
+    synchronously; subsequent requests find `_LOAD_COMPLETE` set and return.
+    """
+    if _LOAD_COMPLETE.is_set():
+        return
+    if _LOAD_ARGS is None:
+        raise HTTPException(503, "Model not loaded and no deferred load configured")
+    if _LOAD_ERROR is not None:
+        raise HTTPException(503, f"Model load failed: {_LOAD_ERROR}")
+    try:
+        _do_model_load(_LOAD_ARGS)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, f"Model load failed: {exc}") from exc
+
+
 # ── FastAPI app ──────────────────────────────────────────────────────────────
 
 app = FastAPI(
@@ -2369,6 +2449,9 @@ async def chat_completions(  # pragma: no cover
     Returns streaming (stream=true) or non-streaming response.
     """
     _check_auth(creds)
+    if not _LOAD_COMPLETE.is_set():
+        import asyncio as _asyncio  # noqa: PLC0415
+        await _asyncio.to_thread(_ensure_loaded_blocking)
     if _state.model is None:
         raise HTTPException(503, "Model not loaded")
 
@@ -2696,6 +2779,9 @@ async def completions(  # pragma: no cover
     POST /v1/completions — legacy text completion endpoint.
     """
     _check_auth(creds)
+    if not _LOAD_COMPLETE.is_set():
+        import asyncio as _asyncio  # noqa: PLC0415
+        await _asyncio.to_thread(_ensure_loaded_blocking)
     if _state.model is None:
         raise HTTPException(503, "Model not loaded")
 
@@ -2816,6 +2902,9 @@ async def embeddings(
     Output: {'object':'list', 'data':[{'object':'embedding','embedding':[...],'index':0}]}
     """
     _check_auth(creds)
+    if not _LOAD_COMPLETE.is_set():
+        import asyncio as _asyncio  # noqa: PLC0415
+        await _asyncio.to_thread(_ensure_loaded_blocking)
     if _state.model is None:
         raise HTTPException(503, "Model not loaded")
 
@@ -2997,6 +3086,9 @@ async def agent_run(  # pragma: no cover
         {"type": "error",           "message": str}
     """
     _check_auth(creds)
+    if not _LOAD_COMPLETE.is_set():
+        import asyncio as _asyncio  # noqa: PLC0415
+        await _asyncio.to_thread(_ensure_loaded_blocking)
     if _state.model is None:
         raise HTTPException(503, "Model not loaded")
     if _agent_registry is None:
@@ -3177,22 +3269,55 @@ async def health():
     if _memory_governor is not None:
         _mem_available = round(_memory_governor.available_gb, 2)
         _mem_pressure  = _memory_governor.pressure_level
+    _model_loaded = _state.model is not None
+    if _LOAD_MODE == "eager":
+        _status = "ok" if _model_loaded else "no_model"
+    else:
+        # In lazy / preload-async modes the port binds before the model is
+        # resident; report "ready" to distinguish from a missing-model state.
+        _status = "ok" if _model_loaded else "ready"
     return {
-        "status":       "ok" if _state.model is not None else "no_model",
-        "model":        _state.model_name,
-        "loaded":       _state.model is not None,
-        "loader":       _state.loader_tag,
-        "load_time_s":  round(_state.load_time_s, 2),
-        "requests":     _state.requests,
-        "tokens_gen":   _state.tokens_gen,
-        "inflight":     _state.inflight,
-        "avg_tps":      round(_state.avg_tps, 1),
-        "avg_ttft_s":   round(_state.avg_ttft, 3),
-        "uptime_s":     round(time.time() - _state.loaded_at, 1) if _state.loaded_at else 0,
-        "power_mode":   _power_mode,
-        "battery_level": _battery_level,
+        "status":          _status,
+        "model":           _state.model_name,
+        "loaded":          _model_loaded,
+        "model_loaded":    _model_loaded,
+        "load_mode":       _LOAD_MODE,
+        "load_error":      _LOAD_ERROR,
+        "loader":          _state.loader_tag,
+        "load_time_s":     round(_state.load_time_s, 2),
+        "requests":        _state.requests,
+        "tokens_gen":      _state.tokens_gen,
+        "inflight":        _state.inflight,
+        "avg_tps":         round(_state.avg_tps, 1),
+        "avg_ttft_s":      round(_state.avg_ttft, 3),
+        "uptime_s":        round(time.time() - _state.loaded_at, 1) if _state.loaded_at else 0,
+        "power_mode":      _power_mode,
+        "battery_level":   _battery_level,
         "mem_available_gb": _mem_available,
         "mem_pressure":     _mem_pressure,
+    }
+
+
+@app.get("/model/status")
+async def model_status():
+    """Lightweight load-state probe for clients that need to wait for the model.
+
+    Returns immediately without auth so a load balancer or benchmark harness
+    can poll it during cold start. The body is intentionally minimal:
+      {
+        "load_mode":    "eager" | "lazy" | "preload_async",
+        "model_loaded": bool,
+        "model":        str | None,
+        "load_time_s":  float,
+        "load_error":   str | None,
+      }
+    """
+    return {
+        "load_mode":    _LOAD_MODE,
+        "model_loaded": _state.model is not None,
+        "model":        _state.model_name,
+        "load_time_s":  round(_state.load_time_s, 2),
+        "load_error":   _LOAD_ERROR,
     }
 
 
@@ -3526,6 +3651,24 @@ Examples:
                          "When set, --model-dir and --compressed-dir are ignored.")
     ap.add_argument("--port",    type=int, default=11435)
     ap.add_argument("--host",    default="127.0.0.1", help="Bind address (use 0.0.0.0 for LAN)")
+    ap.add_argument(
+        "--lazy", action="store_true", default=False,
+        help=(
+            "Lazy-load: bind the port immediately and defer model load until the "
+            "first inference request. The first request blocks for the full load "
+            "duration; subsequent requests skip the load. Mutually exclusive with "
+            "--preload-async. Eager (default) loads the model before binding."
+        ),
+    )
+    ap.add_argument(
+        "--preload-async", dest="preload_async", action="store_true", default=False,
+        help=(
+            "Preload-async: bind the port immediately AND start the model load in "
+            "a background thread. The first request blocks only if the background "
+            "load is still in progress; otherwise it sees a hot model. Recommended "
+            "for interactive use. Mutually exclusive with --lazy."
+        ),
+    )
     ap.add_argument("--verbose", action="store_true", default=False,
                     help="Print detailed startup diagnostics (feature activation, loader info). "
                          "Off by default — use when debugging startup issues.")
@@ -4039,21 +4182,49 @@ Examples:
               f"{'  file=' + args.trace_file if args.trace_file else ''}")
     print()
 
-    with _trace_span("server.model_load",
-                     mlx=bool(getattr(args, "mlx_model_dir", "")),
-                     model_dir=getattr(args, "mlx_model_dir", "") or args.compressed_dir) as _model_load_span:
-        if getattr(args, "mlx_model_dir", ""):
-            load_mlx_model(args.mlx_model_dir, verbose=args.verbose)
-        else:
-            load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
-        # Update span tags to reflect the *actual* loader rather than whether
-        # --mlx-model-dir was explicitly passed.  "mlx-native" and "squish-4bit"
-        # both use mlx_lm.load() and keep weights in INT4; other loaders may
-        # dequantize to bfloat16.  This disambiguates the trace for diagnostics.
-        _actual_loader = _state.loader_tag or "unknown"
-        _mlx_backed_loaders = frozenset({"mlx-native", "squish-4bit"})
-        _model_load_span.set_tag("loader", _actual_loader)
-        _model_load_span.set_tag("mlx", _actual_loader in _mlx_backed_loaders)
+    # ── Resolve load mode (--lazy / --preload-async) ─────────────────────────
+    if getattr(args, "lazy", False) and getattr(args, "preload_async", False):
+        ap.error("--lazy and --preload-async are mutually exclusive")
+    global _LOAD_MODE, _LOAD_ARGS
+    if getattr(args, "lazy", False):
+        _LOAD_MODE = "lazy"
+    elif getattr(args, "preload_async", False):
+        _LOAD_MODE = "preload_async"
+    else:
+        _LOAD_MODE = "eager"
+    _LOAD_ARGS = args
+    _info("load-mode", _LOAD_MODE)
+
+    _model_load_span = None  # set below in eager mode; tolerated absent later
+    if _LOAD_MODE == "eager":
+        with _trace_span("server.model_load",
+                         mlx=bool(getattr(args, "mlx_model_dir", "")),
+                         model_dir=getattr(args, "mlx_model_dir", "") or args.compressed_dir) as _model_load_span:
+            if getattr(args, "mlx_model_dir", ""):
+                load_mlx_model(args.mlx_model_dir, verbose=args.verbose)
+            else:
+                load_model(args.model_dir, args.compressed_dir, verbose=args.verbose)
+            _LOAD_COMPLETE.set()
+            # Update span tags to reflect the *actual* loader rather than whether
+            # --mlx-model-dir was explicitly passed.  "mlx-native" and "squish-4bit"
+            # both use mlx_lm.load() and keep weights in INT4; other loaders may
+            # dequantize to bfloat16.  This disambiguates the trace for diagnostics.
+            _actual_loader = _state.loader_tag or "unknown"
+            _mlx_backed_loaders = frozenset({"mlx-native", "squish-4bit"})
+            _model_load_span.set_tag("loader", _actual_loader)
+            _model_load_span.set_tag("mlx", _actual_loader in _mlx_backed_loaders)
+    elif _LOAD_MODE == "preload_async":
+        def _bg_preload(args_: "Any" = args) -> None:
+            try:
+                _do_model_load(args_)
+            except Exception:  # noqa: BLE001
+                # _do_model_load already logs + sets _LOAD_ERROR.
+                pass
+        threading.Thread(
+            target=_bg_preload, name="squish-preload-async", daemon=True
+        ).start()
+    # lazy: do nothing; the first inference request drives the load.
+
     _state._no_compile = args.no_compile  # propagate --no-compile flag
     _state._no_ngram_spec = getattr(args, "no_ngram_spec", False)  # propagate --no-ngram-spec
 
