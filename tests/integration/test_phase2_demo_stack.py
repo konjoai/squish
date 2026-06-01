@@ -443,12 +443,16 @@ class TestEmbeddingsEndpoint:
 
     def _make_server_state(self, hidden_dim: int = 64, seq_len: int = 5):
         """Return (mock_model, mock_tokenizer) that produce real MLX tensors."""
+        import numpy as np
         mx = pytest.importorskip("mlx.core")
         from unittest.mock import MagicMock
 
         mock_model = MagicMock()
-        # model.model(x) returns (1, seq, hidden_dim) — non-zero so norm > 0
-        mock_model.model.return_value = mx.ones([1, seq_len, hidden_dim])
+        # Use mx.array(np_data) so the array is CPU-backed and safe to evaluate
+        # from TestClient background threads (mx.ones() creates a lazy Metal op).
+        mock_model.model.return_value = mx.array(
+            np.ones([1, seq_len, hidden_dim], dtype=np.float32)
+        )
 
         mock_tok = MagicMock()
         mock_tok.encode.return_value = list(range(1, seq_len + 1))
