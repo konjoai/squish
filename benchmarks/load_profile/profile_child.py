@@ -66,12 +66,13 @@ def run_load(model_dir: str, prof: cProfile.Profile | None) -> dict[str, float]:
     t2 = time.perf_counter() - T0
     emit("mlx_utils_import", t2)
 
-    # ── t3 (tokenizer) and t4 (weights) — split mlx_lm.load() so we can
-    # time them separately. We follow the same call order as the upstream
-    # load() to keep parity with what `load_mlx_model` triggers.
+    # ── t3 (tokenizer) and t4 (weights) — sequential timing so each phase
+    # has a clean delta. The production load path in
+    # ``squish.server.load_mlx_model`` runs these on a worker thread for
+    # ~0.5 s of overlap; that gain is reflected by the Ollama-vs-Squish
+    # bench, not by this per-phase report.
     model_path = Path(model_dir)
 
-    # t4 first (mlx_lm.load() loads weights before tokenizer)
     model, config = load_model(model_path, lazy=False)
     t4 = time.perf_counter() - T0
     emit("weights_loaded", t4)
@@ -82,14 +83,14 @@ def run_load(model_dir: str, prof: cProfile.Profile | None) -> dict[str, float]:
     t3 = time.perf_counter() - T0
     emit("tokenizer_loaded", t3)
 
-    # ── Register with squish state and run warmup ───────────────────────
+    # Register state and run warmup so subsequent checkpoints match the
+    # real squish.server cold-start sequence.
     _srv._state.model = model
     _srv._state.tokenizer = tokenizer
     _srv._state.model_name = model_path.name
     _srv._state.loaded_at = time.time()
     _srv._state.load_time_s = t4
     _srv._state.loader_tag = "mlx_lm"
-
     _srv._cap_metal_cache(verbose=False)
     _srv._warmup_model(verbose=False)
     _srv._cap_metal_cache(verbose=False)
