@@ -1,0 +1,523 @@
+{
+  "timestamp": "20260601T185911",
+  "host": "Apple M3 MacBook Pro 16 GB",
+  "ollama_version": "ollama version is 0.18.2",
+  "squish_version": "squish 9.14.0",
+  "models": {
+    "ollama": {
+      "name": "qwen2.5:7b",
+      "disk_bytes": 4683086845
+    },
+    "squish": {
+      "path": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4",
+      "disk_bytes": 4295828080
+    }
+  },
+  "warmup_requests": 2,
+  "runs_per_phase": 5,
+  "prompts": {
+    "ttft_first_template": "Once upon a time on a tiny island called {city}, Write a single short sentence about its weather.",
+    "ttft_repeat": "You are a senior engineer reviewing a pull request. The PR adds a new Redis-backed session cache to the auth service. The diff is roughly 240 lines and touches login, logout, and a small middleware shim. Give a two-sentence review covering the most important risk.",
+    "warm_tps": "Write a 200-word description of the Renaissance in two paragraphs."
+  },
+  "configs": {
+    "ollama": {
+      "label": "Ollama (warm)",
+      "peak_rss_bytes": 4952866816,
+      "rss_samples": 1047,
+      "ttft_first": [
+        {
+          "run": 1,
+          "prompt": "Once upon a time on a tiny island called H\u00f6ken\u00e4s, Write a single short sentence about its weather.",
+          "ttft_s": 0.2865466249641031,
+          "total_s": 0.28680008300580084,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "H"
+        },
+        {
+          "run": 2,
+          "prompt": "Once upon a time on a tiny island called Lobamba, Write a single short sentence about its weather.",
+          "ttft_s": 0.26961066701915115,
+          "total_s": 0.26986416697036475,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "L"
+        },
+        {
+          "run": 3,
+          "prompt": "Once upon a time on a tiny island called Mariehamn, Write a single short sentence about its weather.",
+          "ttft_s": 0.26982816704548895,
+          "total_s": 0.27016258402727544,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "Mar"
+        },
+        {
+          "run": 4,
+          "prompt": "Once upon a time on a tiny island called Avarua, Write a single short sentence about its weather.",
+          "ttft_s": 0.2800808340543881,
+          "total_s": 0.2802871250314638,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "A"
+        },
+        {
+          "run": 5,
+          "prompt": "Once upon a time on a tiny island called Yaren, Write a single short sentence about its weather.",
+          "ttft_s": 0.2651849159738049,
+          "total_s": 0.26554441591724753,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "Y"
+        }
+      ],
+      "ttft_repeat": [
+        {
+          "run": 1,
+          "ttft_s": 0.16558208304923028,
+          "total_s": 0.16590870800428092,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "The"
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.13789758295752108,
+          "total_s": 0.13821783289313316,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "The"
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.13943091698456556,
+          "total_s": 0.13974066695664078,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "The"
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.13497812498826534,
+          "total_s": 0.13530916697345674,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "The"
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.15141437505371869,
+          "total_s": 0.1517410830128938,
+          "completion_tokens": 1,
+          "tokens_per_sec": null,
+          "response": "The"
+        }
+      ],
+      "warm_tps": [
+        {
+          "run": 1,
+          "ttft_s": 0.2558142499765381,
+          "total_s": 11.689111749990843,
+          "completion_tokens": 200,
+          "tokens_per_sec": 17.762891139233687,
+          "response": "The Renaissance was a pivotal period in European history that spanned from the 14th to the 17th century, marking a profound shift towards renewed interest in classical learning and wisdom. This cultural movement emphasized humanism, individual potential, and the value of secular achievements, which were reflected in art, literature, science, and philosophy. Artists like Leonardo da Vinci and Michelangelo embodied this spirit through their innovative techniques and detailed explorations of human anatomy and nature. The period also saw significant advancements in scientific inquiry, with figures such as Galileo Galilei challenging traditional views and contributing to the Scientific Revolution. Overall, the Renaissance was characterized by a revival of classical knowledge and a renewed focus on the potential of humanity, setting the stage for modern Western culture.\n\nThe cultural renaissance extended beyond Italy, influencing other parts of Europe through trade, intellectual exchange, and the spread of new ideas. The invention of the printing press by Johannes Gutenberg in the mid-15th century played a crucial role"
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.15624237502925098,
+          "total_s": 11.413172667031176,
+          "completion_tokens": 200,
+          "tokens_per_sec": 18.14964324171458,
+          "response": "The Renaissance was a pivotal period in European history that spanned from the 14th to the 17th century, marking a profound shift towards renewed interest in classical learning and wisdom. This cultural movement emphasized humanism, which focused on the potential and achievements of individuals, particularly in the realms of art, science, literature, and philosophy. Artists like Leonardo da Vinci and Michelangelo embodied this spirit through their groundbreaking works that showcased a deep understanding of anatomy, perspective, and light. The period also witnessed significant advancements in exploration, with figures such as Christopher Columbus leading voyages that expanded European knowledge of the world. This era not only transformed artistic expression but also laid the groundwork for modern scientific inquiry and democratic ideals, marking a transition from medieval to early modern times.\n\nThe Renaissance was characterized by a revival of interest in ancient Greek and Roman culture, which influenced various aspects of society. Scholars delved into classical texts, leading to new interpretations that challenged existing religious and philosophical doctrines. This intellectual awakening foster"
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.206099292030558,
+          "total_s": 11.825702292029746,
+          "completion_tokens": 200,
+          "tokens_per_sec": 17.623033059036526,
+          "response": "The Renaissance was a pivotal period in European history that spanned from the 14th to the 17th century, marking a profound shift towards renewed interest in classical learning and wisdom. This cultural movement emphasized humanism, which focused on the potential and achievements of individuals, particularly in the realms of art, science, literature, and philosophy. Artists like Leonardo da Vinci and Michelangelo embodied this spirit through their groundbreaking works that showcased a deep understanding of anatomy, perspective, and light. The period also witnessed significant advancements in exploration, with figures such as Christopher Columbus leading voyages that expanded European knowledge of the world. This era not only transformed artistic expression but also laid the groundwork for modern scientific inquiry and democratic ideals, marking a transition from medieval to early modern times.\n\nThe Renaissance was characterized by a revival of interest in ancient Greek and Roman culture, which influenced various aspects of society. Scholars delved into classical texts, leading to new interpretations that challenged existing religious and philosophical doctrines. This intellectual awakening foster"
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.17019866697955877,
+          "total_s": 12.937637957977131,
+          "completion_tokens": 200,
+          "tokens_per_sec": 16.24576891904504,
+          "response": "The Renaissance was a pivotal period in European history that spanned from the 14th to the 17th century, marking a profound shift towards renewed interest in classical learning and wisdom. This cultural movement emphasized humanism, which focused on the potential and achievements of individuals, particularly in the realms of art, science, literature, and philosophy. Artists like Leonardo da Vinci and Michelangelo embodied this spirit through their groundbreaking works that showcased a deep understanding of anatomy, perspective, and light. The period also witnessed significant advancements in exploration, with figures such as Christopher Columbus leading voyages that expanded European knowledge of the world. This era not only transformed artistic expression but also laid the groundwork for modern scientific inquiry and democratic ideals, marking a transition from medieval to early modern times.\n\nThe Renaissance was characterized by a revival of interest in ancient Greek and Roman culture, which influenced various aspects of society. Scholars delved into classical texts, leading to new interpretations that challenged existing religious and philosophical doctrines. This intellectual awakening foster"
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.2012974580284208,
+          "total_s": 14.448283250094391,
+          "completion_tokens": 200,
+          "tokens_per_sec": 14.37806600966381,
+          "response": "The Renaissance was a pivotal period in European history that spanned from the 14th to the 17th century, marking a profound shift towards renewed interest in classical learning and wisdom. This cultural movement emphasized humanism, which focused on the potential and achievements of individuals, particularly in the realms of art, science, literature, and philosophy. Artists like Leonardo da Vinci and Michelangelo embodied this spirit through their groundbreaking works that showcased a deep understanding of anatomy, perspective, and light. The period also witnessed significant advancements in exploration, with figures such as Christopher Columbus leading voyages that expanded European knowledge of the world. This era not only transformed artistic expression but also laid the groundwork for modern scientific inquiry and democratic ideals, marking a transition from medieval to early modern times.\n\nThe Renaissance was characterized by a revival of interest in ancient Greek and Roman culture, which influenced various aspects of society. Scholars delved into classical texts, leading to new interpretations that challenged existing religious and philosophical doctrines. This intellectual awakening foster"
+        }
+      ]
+    },
+    "squish_daemon": {
+      "label": "Squish daemon (warm)",
+      "peak_rss_bytes": 1788837888,
+      "rss_samples": 1598,
+      "ttft_first": [
+        {
+          "run": 1,
+          "prompt": "Once upon a time on a tiny island called H\u00f6ken\u00e4s, Write a single short sentence about its weather.",
+          "ttft_s": 0.5206294589443132,
+          "total_s": 0.5207112500211224,
+          "completion_tokens": 1,
+          "tokens_per_sec": 12226.272583905036,
+          "response": "H"
+        },
+        {
+          "run": 2,
+          "prompt": "Once upon a time on a tiny island called Lobamba, Write a single short sentence about its weather.",
+          "ttft_s": 0.5250969580374658,
+          "total_s": 0.5251990420510992,
+          "completion_tokens": 1,
+          "tokens_per_sec": 9795.853086173373,
+          "response": "L"
+        },
+        {
+          "run": 3,
+          "prompt": "Once upon a time on a tiny island called Mariehamn, Write a single short sentence about its weather.",
+          "ttft_s": 0.522042875061743,
+          "total_s": 0.522114917053841,
+          "completion_tokens": 1,
+          "tokens_per_sec": 13880.793282873006,
+          "response": "Mar"
+        },
+        {
+          "run": 4,
+          "prompt": "Once upon a time on a tiny island called Avarua, Write a single short sentence about its weather.",
+          "ttft_s": 0.6057148749241605,
+          "total_s": 0.6067687919130549,
+          "completion_tokens": 1,
+          "tokens_per_sec": 948.841332417549,
+          "response": "A"
+        },
+        {
+          "run": 5,
+          "prompt": "Once upon a time on a tiny island called Yaren, Write a single short sentence about its weather.",
+          "ttft_s": 0.5859684579772875,
+          "total_s": 0.5860290830023587,
+          "completion_tokens": 1,
+          "tokens_per_sec": 16494.838539456377,
+          "response": "Y"
+        }
+      ],
+      "ttft_repeat": [
+        {
+          "run": 1,
+          "ttft_s": 2.200666290940717,
+          "total_s": 2.2008569579338655,
+          "completion_tokens": 1,
+          "tokens_per_sec": 5244.746264082007,
+          "response": "The"
+        },
+        {
+          "run": 2,
+          "ttft_s": 1.243693209020421,
+          "total_s": 1.2437944170087576,
+          "completion_tokens": 1,
+          "tokens_per_sec": 9880.642985150167,
+          "response": "The"
+        },
+        {
+          "run": 3,
+          "ttft_s": 1.2030899160308763,
+          "total_s": 1.2032127910060808,
+          "completion_tokens": 1,
+          "tokens_per_sec": 8138.353626000485,
+          "response": "The"
+        },
+        {
+          "run": 4,
+          "ttft_s": 1.4691960000200197,
+          "total_s": 1.4692923750262707,
+          "completion_tokens": 1,
+          "tokens_per_sec": 10376.134216740855,
+          "response": "The"
+        },
+        {
+          "run": 5,
+          "ttft_s": 1.6047455420484766,
+          "total_s": 1.604851125041023,
+          "completion_tokens": 1,
+          "tokens_per_sec": 9471.222361516775,
+          "response": "The"
+        }
+      ],
+      "warm_tps": [
+        {
+          "run": 1,
+          "ttft_s": 1.0694987500319257,
+          "total_s": 39.56730762508232,
+          "completion_tokens": 192,
+          "tokens_per_sec": 4.987296825727427,
+          "response": "The Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        },
+        {
+          "run": 2,
+          "ttft_s": 1.5884263750631362,
+          "total_s": 23.772988665965386,
+          "completion_tokens": 192,
+          "tokens_per_sec": 8.654667037480293,
+          "response": "The Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        },
+        {
+          "run": 3,
+          "ttft_s": 1.3245368329808116,
+          "total_s": 17.84263033303432,
+          "completion_tokens": 192,
+          "tokens_per_sec": 11.623617459204842,
+          "response": "The Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        },
+        {
+          "run": 4,
+          "ttft_s": 1.0445949159329757,
+          "total_s": 16.85863495792728,
+          "completion_tokens": 192,
+          "tokens_per_sec": 12.141110019333613,
+          "response": "The Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.9343991669593379,
+          "total_s": 16.273534708074294,
+          "completion_tokens": 192,
+          "tokens_per_sec": 12.517002635863278,
+          "response": "The Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        }
+      ]
+    },
+    "squish_kv": {
+      "label": "Squish + disk KV cache",
+      "peak_rss_bytes": 2911993856,
+      "rss_samples": 1458,
+      "ttft_first": [
+        {
+          "run": 1,
+          "prompt": "Once upon a time on a tiny island called H\u00f6ken\u00e4s, Write a single short sentence about its weather.",
+          "ttft_s": 2.0454291669884697,
+          "total_s": 2.045926333987154,
+          "completion_tokens": 1,
+          "tokens_per_sec": 2011.3965783050378,
+          "response": "H"
+        },
+        {
+          "run": 2,
+          "prompt": "Once upon a time on a tiny island called Lobamba, Write a single short sentence about its weather.",
+          "ttft_s": 0.796568916994147,
+          "total_s": 0.796677083009854,
+          "completion_tokens": 1,
+          "tokens_per_sec": 9245.04793362457,
+          "response": "L"
+        },
+        {
+          "run": 3,
+          "prompt": "Once upon a time on a tiny island called Mariehamn, Write a single short sentence about its weather.",
+          "ttft_s": 0.4986096249194816,
+          "total_s": 0.49870204098988324,
+          "completion_tokens": 1,
+          "tokens_per_sec": 10820.628876056877,
+          "response": "Mar"
+        },
+        {
+          "run": 4,
+          "prompt": "Once upon a time on a tiny island called Avarua, Write a single short sentence about its weather.",
+          "ttft_s": 0.518287832965143,
+          "total_s": 0.5183783329557627,
+          "completion_tokens": 1,
+          "tokens_per_sec": 11049.724902204687,
+          "response": "A"
+        },
+        {
+          "run": 5,
+          "prompt": "Once upon a time on a tiny island called Yaren, Write a single short sentence about its weather.",
+          "ttft_s": 0.6325827500550076,
+          "total_s": 0.6326445000013337,
+          "completion_tokens": 1,
+          "tokens_per_sec": 16194.346060162736,
+          "response": "Y"
+        }
+      ],
+      "ttft_repeat": [
+        {
+          "run": 1,
+          "ttft_s": 0.9186602080008015,
+          "total_s": 0.9187815410550684,
+          "completion_tokens": 1,
+          "tokens_per_sec": 8241.777197831983,
+          "response": "The"
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.9096007919870317,
+          "total_s": 0.9097025839146227,
+          "completion_tokens": 1,
+          "tokens_per_sec": 9823.961719423687,
+          "response": "The"
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.0644710420165211,
+          "total_s": 0.06456254201475531,
+          "completion_tokens": 1,
+          "tokens_per_sec": 10928.961959543449,
+          "response": "The"
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.04834524996113032,
+          "total_s": 0.04860633297357708,
+          "completion_tokens": 1,
+          "tokens_per_sec": 3830.199409101408,
+          "response": "The"
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.06233004108071327,
+          "total_s": 0.06240645807702094,
+          "completion_tokens": 1,
+          "tokens_per_sec": 13086.094040830752,
+          "response": "The"
+        }
+      ],
+      "warm_tps": [
+        {
+          "run": 1,
+          "ttft_s": 0.511721667018719,
+          "total_s": 17.69375608302653,
+          "completion_tokens": 193,
+          "tokens_per_sec": 11.232662869083168,
+          "response": "TheThe Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.9313712089788169,
+          "total_s": 19.273374167038128,
+          "completion_tokens": 193,
+          "tokens_per_sec": 10.522296852819858,
+          "response": "TheThe Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.07534129195846617,
+          "total_s": 18.917132958071306,
+          "completion_tokens": 193,
+          "tokens_per_sec": 10.243187241429515,
+          "response": "TheThe Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.2079948749160394,
+          "total_s": 19.152212541899644,
+          "completion_tokens": 193,
+          "tokens_per_sec": 10.187805239187291,
+          "response": "TheThe Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.10967779101338238,
+          "total_s": 18.144342708052136,
+          "completion_tokens": 193,
+          "tokens_per_sec": 10.701612748993071,
+          "response": "TheThe Renaissance was a period of great cultural and intellectual rebirth that spanned from the 14th to the 17th century, primarily in Europe. Originating in Italy, it marked a significant shift from the medieval period, emphasizing humanism, individualism, and a renewed interest in classical learning and values. This era saw a flourishing of the arts, with notable advancements in painting, sculpture, and architecture. Artists like Leonardo da Vinci and Michelangelo embodied the Renaissance spirit, blending scientific inquiry with artistic expression. Their works, such as the Mona Lisa and the Sistine Chapel ceiling, showcased a new level of realism and depth, reflecting the era's fascination with human anatomy and the natural world. The Renaissance also witnessed significant developments in science, with figures like Galileo and Copernicus challenging traditional views and laying the groundwork for modern scientific thought. Overall, the Renaissance was a pivotal period that transformed European society, fostering a new era of enlightenment and progress."
+        }
+      ]
+    }
+  },
+  "summary": {
+    "ollama": {
+      "ttft_first_s": {
+        "n": 5,
+        "median": 0.26982816704548895,
+        "p95": 0.2800808340543881,
+        "min": 0.2651849159738049,
+        "max": 0.2865466249641031,
+        "stddev": 0.007854392103428774
+      },
+      "ttft_repeat_s": {
+        "n": 5,
+        "median": 0.13943091698456556,
+        "p95": 0.13497812498826534,
+        "min": 0.13497812498826534,
+        "max": 0.16558208304923028,
+        "stddev": 0.011339841599297686
+      },
+      "warm_tps": {
+        "n": 5,
+        "median": 17.623033059036526,
+        "p95": 16.24576891904504,
+        "min": 14.37806600966381,
+        "max": 18.14964324171458,
+        "stddev": 1.3852028128617744
+      },
+      "peak_rss_bytes": 4952866816
+    },
+    "squish_daemon": {
+      "ttft_first_s": {
+        "n": 5,
+        "median": 0.5250969580374658,
+        "p95": 0.6057148749241605,
+        "min": 0.5206294589443132,
+        "max": 0.6057148749241605,
+        "stddev": 0.03645380048530888
+      },
+      "ttft_repeat_s": {
+        "n": 5,
+        "median": 1.4691960000200197,
+        "p95": 1.4691960000200197,
+        "min": 1.2030899160308763,
+        "max": 2.200666290940717,
+        "stddev": 0.35969424350607243
+      },
+      "warm_tps": {
+        "n": 5,
+        "median": 11.623617459204842,
+        "p95": 12.141110019333613,
+        "min": 4.987296825727427,
+        "max": 12.517002635863278,
+        "stddev": 2.8457595614971423
+      },
+      "peak_rss_bytes": 1788837888
+    },
+    "squish_kv": {
+      "ttft_first_s": {
+        "n": 5,
+        "median": 0.6325827500550076,
+        "p95": 0.518287832965143,
+        "min": 0.4986096249194816,
+        "max": 2.0454291669884697,
+        "stddev": 0.5832704070764809
+      },
+      "ttft_repeat_s": {
+        "n": 5,
+        "median": 0.0644710420165211,
+        "p95": 0.04834524996113032,
+        "min": 0.04834524996113032,
+        "max": 0.9186602080008015,
+        "stddev": 0.41927575713376963
+      },
+      "warm_tps": {
+        "n": 5,
+        "median": 10.522296852819858,
+        "p95": 10.187805239187291,
+        "min": 10.187805239187291,
+        "max": 11.232662869083168,
+        "stddev": 0.3771781471004488
+      },
+      "peak_rss_bytes": 2911993856
+    }
+  },
+  "notes": [
+    "Squish daemon mode uses `python -m squish.server` directly. The new",
+    "`squishd` UDS daemon does not load mlx-native quantized models \u2014 see PRECHECK.md.",
+    "Phase 3 (spec decode) is not measured: the server crashes on --draft-model.",
+    "ttft_first uses a different prompt each run; ttft_repeat uses the same",
+    "prompt every run after a single cache-priming send."
+  ]
+}
