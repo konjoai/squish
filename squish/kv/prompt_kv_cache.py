@@ -309,14 +309,25 @@ class PromptKVStore:
 # ── mlx / numpy conversion helpers ────────────────────────────────────────────
 
 def _to_numpy(arr) -> np.ndarray:
-    """Convert an mlx array or numpy array to float16 numpy."""
+    """Convert an mlx array or numpy array to float16 numpy.
+
+    Routes mlx bfloat16 arrays through float32 first because numpy has no
+    native bf16 dtype — the direct buffer cast raises
+    "PEP 3118 buffer format string B does not match dtype B item size 1".
+    """
     if isinstance(arr, np.ndarray):
         return arr.astype(np.float16)
-    # mlx array — evaluate and convert
+    # mlx array — evaluate, then cast to a numpy-supported dtype before copy
     try:
         import mlx.core as mx
         mx.eval(arr)
-        return np.array(arr, dtype=np.float16)
+        # bf16 has no numpy equivalent; numpy raises RuntimeError on the buffer
+        # protocol mismatch ("Item size 2 ... format string B item size 1").
+        # Cast to f32 first for those dtypes.
+        try:
+            return np.array(arr, dtype=np.float16)
+        except (TypeError, RuntimeError):
+            return np.array(arr.astype(mx.float32), dtype=np.float16)
     except ImportError:
         raise TypeError(
             f"Cannot convert {type(arr)} to numpy — mlx not available"

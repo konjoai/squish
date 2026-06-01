@@ -185,6 +185,7 @@ except ImportError:  # pragma: no cover
 _kv_cache = None         # QuantizedKVCache | None — set in main() after model load
 _paged_kv_cache = None   # PagedKVCache | None — set in main() when --paged-attention
 _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-prompt-cache given
+_prompt_kv_store   = None  # PromptKVStore | None — set in main() when --prompt-kv-cache given (v4 wiring)
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
 
 # ── Deferred model-load state (--lazy / --preload-async) ─────────────────────
@@ -2124,13 +2125,98 @@ def _generate_tokens(  # pragma: no cover
             [stop] if isinstance(stop, str) else list(stop) if stop else []
         )
         _stop_text_maxlen = max((len(s) for s in _stop_strings), default=0) + 64
+
+        # ── v4.1 Fix 2: PromptKVStore lookup ──────────────────────────────────
+        # If a hit, restore KV state into a fresh mlx_lm prompt_cache. mlx_lm
+        # does NOT skip cached prefix when given the full prompt — it appends
+        # everything to the cache. The standard convention is to cache (n-1)
+        # tokens and pass only the last token as the prompt so mlx_lm prefills
+        # only that single token. We slice the cache to offset = prompt_len-1
+        # at store time so the saved state is reusable that way.
+        _pkv_entry = None
+        _pkv_cache = None
+        _pkv_was_hit = False
+        _pkv_eff_prompt: "str | list[int]" = prompt
+        if _prompt_kv_store is not None:
+            try:
+                from mlx_lm.models.cache import make_prompt_cache as _make_pc
+                from squish.kv.prompt_kv_cache import restore_kv_state as _rkv
+                _pkv_cache = _make_pc(model)
+                _pkv_entry = _prompt_kv_store.get(_orig_prompt)
+                if _pkv_entry is not None and _rkv(_pkv_cache, _pkv_entry):
+                    _pkv_was_hit = True
+                    # Re-tokenize and slice the prompt to just the tokens that
+                    # are NOT yet in the cache.  Stored offset = full_len - 1.
+                    _pkv_full_ids = (
+                        tokenizer.encode(prompt)
+                        if hasattr(tokenizer, "encode")
+                        else tokenizer(prompt, return_tensors="np")["input_ids"][0].tolist()
+                    )
+                    _pkv_eff_prompt = list(_pkv_full_ids[_pkv_entry.offset:]) or list(_pkv_full_ids[-1:])
+                    if _trace:
+                        _tlog(f"REQ {_rid}  prompt-kv-cache HIT  "
+                              f"offset={_pkv_entry.offset}  layers={_pkv_entry.n_layers}  "
+                              f"new_tokens={len(_pkv_eff_prompt)}")
+                else:
+                    _pkv_entry = None
+                    if _trace:
+                        _tlog(f"REQ {_rid}  prompt-kv-cache MISS  will-save")
+                _sg_kwargs["prompt_cache"] = _pkv_cache
+            except (ImportError, AttributeError, TypeError) as _pkv_err:
+                import logging as _pklog
+                _pklog.getLogger(__name__).warning(
+                    "[prompt-kv-cache] lookup skipped (%s) — running without cache",
+                    _pkv_err,
+                )
+                _pkv_cache = None
+                _pkv_entry = None
+                _pkv_eff_prompt = prompt
+
         gen = mlx_lm.stream_generate(
             model,
             tokenizer,
-            prompt     = prompt,
+            prompt     = _pkv_eff_prompt,
             max_tokens = max_tokens,
             **_sg_kwargs,
         )
+
+        def _pkv_save_if_miss(n_decoded: int) -> None:
+            """Save the prompt-prefix-minus-1 KV state for re-use on next hit.
+
+            We trim the decoded tokens AND one prompt token, so the saved
+            state corresponds to positions [0, prompt_len-1).  On a future hit
+            we restore that state and pass only the last prompt token to
+            stream_generate, which causes mlx_lm to prefill just that one
+            token (instead of the entire prompt).
+            """
+            if (_prompt_kv_store is None
+                    or _pkv_was_hit
+                    or _pkv_cache is None):
+                return
+            try:
+                # +1 reserves the last prompt token for re-prefill on hit
+                _trim_n = n_decoded + 1
+                for _layer in _pkv_cache:
+                    if hasattr(_layer, "trim"):
+                        _layer.trim(_trim_n)
+                from squish.kv.prompt_kv_cache import capture_kv_state as _ckv
+                _cap = _ckv(_pkv_cache)
+                if _cap is None:
+                    return
+                _k, _v, _off = _cap
+                if _off <= 0:
+                    # Prompt was 1 token or empty; nothing useful to cache
+                    return
+                _prompt_kv_store.put(_orig_prompt, _k, _v, _off)
+                if _trace:
+                    _tlog(f"REQ {_rid}  prompt-kv-cache STORED  "
+                          f"offset={_off}  layers={len(_k)}")
+            except Exception as _pkv_err:
+                import logging as _pkvlog
+                _pkvlog.getLogger(__name__).warning(
+                    "[prompt-kv-cache] store failed (%s) — entry not saved", _pkv_err,
+                )
+
         emitted = 0
         _stop_text_buf: str = ""
         _loop_text_buf: str = ""  # rolling window for repetition loop detection
@@ -2156,6 +2242,7 @@ def _generate_tokens(  # pragma: no cover
                     )
                     if cache_eligible and _cache_buf:
                         _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "repetition")
+                    _pkv_save_if_miss(emitted)
                     yield "", "repetition"
                     return
             # Track thinking tokens for diagnostics
@@ -2181,6 +2268,7 @@ def _generate_tokens(  # pragma: no cover
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  "
                               f"finish=stop(stop-seq)")
+                    _pkv_save_if_miss(emitted)
                     yield "", "stop"
                     return
 
@@ -2190,6 +2278,7 @@ def _generate_tokens(  # pragma: no cover
                     _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "length")
                 if _trace:
                     _tlog(f"REQ {_rid}  DONE  path=mlx_lm  tokens={emitted}  finish=length")
+                _pkv_save_if_miss(emitted)
                 yield tok_text, "length"
                 return
             if cache_eligible:
@@ -2199,6 +2288,7 @@ def _generate_tokens(  # pragma: no cover
             yield tok_text, None
         if cache_eligible and _cache_buf:
             _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "stop")
+        _pkv_save_if_miss(emitted)
         _logging.getLogger(__name__).info(
             "REQ %s  DONE  path=mlx_lm  tokens=%d  think_tokens=%d  finish=stop(eos)",
             _rid, emitted, _think_token_count,
@@ -3865,6 +3955,19 @@ Examples:
     ap.add_argument("--disk-prompt-cache-size", type=int, default=64,
                     metavar="N",
                     help="Max entries in the disk prompt cache (default 64)")
+    # v4 / v4.1 Fix 2: new disk-backed KV cache for the fp16 mlx_lm path.
+    # Distinct from --disk-prompt-cache, which requires --kv-cache-mode int8.
+    # This one works with the default fp16 kernels via mlx_lm prompt_cache.
+    ap.add_argument("--prompt-kv-cache", default="",
+                    metavar="DIR",
+                    help="Enable persistent prompt-keyed KV cache stored as per-layer\n"
+                         ".npy files under DIR (default ~/.cache/squish/prompt_kv/).\n"
+                         "Works with the DEFAULT --kv-cache-mode fp16 (unlike --disk-prompt-cache).\n"
+                         "SHA-256 hash of the full prompt; hit → mlx_lm skips prefill.\n"
+                         "LRU eviction at --prompt-kv-cache-max-gb GB total.")
+    ap.add_argument("--prompt-kv-cache-max-gb", type=float, default=1.0,
+                    metavar="GB",
+                    help="Soft cap on prompt-kv-cache disk usage in GB (default 1.0)")
     # Phase 3: persistent cross-session KV cache
     ap.add_argument("--session-cache-dir", default="",
                     metavar="DIR",
@@ -4321,6 +4424,29 @@ Examples:
         )
         if args.verbose:
             _info("disk-cache", f"{args.disk_prompt_cache}  {_C.DIM}(max {args.disk_prompt_cache_size} entries){_C.R}")
+
+    # ── Prompt-KV-cache init (v4.1 Fix 2 — wires PromptKVStore to fp16 path) ──
+    global _prompt_kv_store
+    _pkv_dir = getattr(args, "prompt_kv_cache", "")
+    if _pkv_dir and _state.model is not None:
+        try:
+            from squish.kv.prompt_kv_cache import PromptKVStore as _PKVS
+            import hashlib as _hl
+            _pkv_model_key = _hl.sha256(
+                str(getattr(args, "mlx_model_dir", "") or getattr(args, "model_dir", "")).encode()
+            ).hexdigest()[:16]
+            _prompt_kv_store = _PKVS(
+                cache_dir = _pkv_dir,
+                max_bytes = int(getattr(args, "prompt_kv_cache_max_gb", 1.0) * 1_000_000_000),
+                model_key = _pkv_model_key,
+            )
+            if args.verbose:
+                _info("prompt-kv", f"{_pkv_dir}  {_C.DIM}(model_key={_pkv_model_key}){_C.R}")
+        except ImportError as _pkv_imp_err:
+            import logging as _pkv_log
+            _pkv_log.getLogger(__name__).warning(
+                "[prompt-kv-cache] disabled: %s", _pkv_imp_err,
+            )
 
     # ── LazyLLM token-pruning init (Item 3) ──────────────────────────────────
     global _lazy_llm_state
