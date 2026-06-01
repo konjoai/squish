@@ -1417,6 +1417,10 @@ def cmd_run(args):  # pragma: no cover
         cmd += ["--signal-account", args.signal_account]
     if getattr(args, "signal_socket", "") and args.signal_socket != "127.0.0.1:7583":
         cmd += ["--signal-socket", args.signal_socket]
+    if getattr(args, "lazy", False):
+        cmd += ["--lazy"]
+    if getattr(args, "preload_async", False):
+        cmd += ["--preload-async"]
 
     try:
         # Strip macOS malloc-debugging env vars so child processes don't inherit them
@@ -6183,6 +6187,19 @@ Ollama drop-in:
                             ">0=cap reasoning at N tokens.")
     p_run.add_argument("--no-browser", action="store_true", default=False,
                        help="Do not auto-open the Squish Agent chat UI in a browser after startup.")
+    # ── Deferred model load (fair-comparison benchmark) ──────────────────────
+    p_run.add_argument(
+        "--lazy", action="store_true", default=False,
+        help="Bind the port immediately; defer model load until the first inference "
+             "request. First request blocks until load completes. Mutually exclusive "
+             "with --preload-async. Eager (default) loads before binding.",
+    )
+    p_run.add_argument(
+        "--preload-async", dest="preload_async", action="store_true", default=False,
+        help="Bind the port immediately AND start the model load in a background "
+             "thread. First request blocks only if the background load is still "
+             "in progress. Mutually exclusive with --lazy.",
+    )
     # ── Squash compliance ────────────────────────────────────────────────────
     p_run.add_argument("--strict-compliance", action="store_true", default=False,
                        help="Return HTTP 503 if model integrity or accuracy checks fail. "
@@ -6272,6 +6289,19 @@ Ollama drop-in:
                               ">0=cap reasoning at N tokens.")
     p_serve.add_argument("--no-browser", action="store_true", default=False,
                          help="Do not auto-open the Squish Agent chat UI in a browser after startup.")
+    # ── Deferred model load (fair-comparison benchmark) ──────────────────────
+    p_serve.add_argument(
+        "--lazy", action="store_true", default=False,
+        help="Bind the port immediately; defer model load until the first inference "
+             "request. First request blocks until load completes. Mutually exclusive "
+             "with --preload-async. Eager (default) loads before binding.",
+    )
+    p_serve.add_argument(
+        "--preload-async", dest="preload_async", action="store_true", default=False,
+        help="Bind the port immediately AND start the model load in a background "
+             "thread. First request blocks only if the background load is still "
+             "in progress. Mutually exclusive with --lazy.",
+    )
     # ── Squash compliance ────────────────────────────────────────────────────
     p_serve.add_argument("--strict-compliance", action="store_true", default=False,
                          help="Return HTTP 503 if model integrity or accuracy checks fail. "

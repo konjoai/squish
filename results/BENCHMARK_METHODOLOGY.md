@@ -137,3 +137,68 @@ The 160 MB is the Metal virtual-address delta measured during load (mmap, no CPU
 | Peak RSS | ~2,600 MB | 402 MB | **6×** |
 
 The 54× figure uses the pessimistic (slowest) squish run (0.53 s). The best observed run produces an 87× ratio. Both are real, reproducible numbers from `dev/results/v1_baseline.json`.
+
+---
+
+## Ollama Comparison Methodology (v9.14+)
+
+The Ollama-vs-Squish benchmark in `benchmarks/ollama_vs_squish/` measures
+**three** squish serving modes alongside Ollama on the same prompt and the
+same 7B-class model:
+
+| Mode                    | When does the model load? | Port bind time |
+|-------------------------|---------------------------|----------------|
+| Eager (default)         | Before the port binds     | ~5–8 s         |
+| Lazy (`--lazy`)         | On the first inference request | <500 ms |
+| Preload-async (`--preload-async`) | In a background thread, in parallel with port bind | <500 ms |
+
+Ollama is, in effect, always preload-async-like: its daemon binds the port
+quickly and loads the model when the first `/api/generate` arrives. So the
+fair comparison to "Squish vs Ollama on startup" is Squish lazy or
+preload-async — not eager.
+
+### Two cold-time metrics
+
+For every cold-phase run the harness records both:
+
+* **`cold_wall_s`** — wall time from `kill_all_serving()` returning to the
+  first streamed token. This is the *user-perspective* metric: "I typed
+  the command, when do I see output?" It includes server spawn, model
+  load, prefill, and the first decode step. **This is the headline metric
+  in `benchmarks/ollama_vs_squish/RESULTS.md`.**
+
+* **`cold_ttft_steady_s`** — time from "server-ready" (port responsive)
+  to first token. This is the metric used in the v1 RESULTS.md table. It
+  is kept for continuity but is **not the right comparison** when one
+  tool eagerly loads before binding and another loads on first request:
+  it favours eager-squish because eager has already paid the load cost
+  before "server-ready" is observed.
+
+### Why the v1 framing was misleading
+
+The v1 RESULTS.md headline ("Squish 2.46× faster cold TTFT") compared:
+
+* Squish eager — model already in memory by server-ready; TTFT = prefill + 1 decode
+* Ollama — model loads on first request; TTFT = load + prefill + 1 decode
+
+A user running `ollama serve && time ollama run qwen2.5:7b "..."` does
+not see a "2.46× advantage" for Squish. They see whatever the kill→first-
+token wall time is, which puts Ollama and Squish-eager on opposite ends
+of the same trade-off. The new RESULTS.md leads with `cold_wall_s` for
+exactly this reason.
+
+### Methodology details
+
+* Both tools are killed (`pkill -f ollama|squish`) between cold runs, with
+  a 3 s settle. macOS page cache is not flushed (no portable way), so
+  cold runs after the first hit a partially-warm cache. Mitigation:
+  median of 5 cold runs.
+* Peak RSS is sampled at 50 ms intervals across the **entire process
+  tree** of the launched server so Ollama's `ollama runner` subprocess
+  is counted.
+* Warm tokens/sec is the median of 3 requests against a server primed by
+  one throwaway request that is not counted.
+
+See `benchmarks/ollama_vs_squish/RESULTS.md` for the most recent run and
+`benchmarks/ollama_vs_squish/bench.py` for the executable spec.
+

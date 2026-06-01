@@ -1,0 +1,675 @@
+{
+  "timestamp": "20260601_124957",
+  "host": "Apple M3 MacBook Pro 16GB",
+  "prompt": "What is the capital of France? Answer in one sentence.",
+  "ollama_version": "ollama version is 0.18.2",
+  "squish_version": "squish 9.14.0",
+  "models": {
+    "ollama": {
+      "name": "qwen2.5:7b",
+      "disk_bytes": 4683086845
+    },
+    "squish": {
+      "path": "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4",
+      "disk_bytes": 4295828080
+    }
+  },
+  "configs": {
+    "ollama": {
+      "label": "Ollama",
+      "cold_runs_raw": [
+        {
+          "phase": "cold",
+          "run": 1,
+          "server_ready_s": 0.2826224159216508,
+          "cold_wall_s": 4.783424749970436,
+          "cold_ttft_steady_s": 4.500802334048785,
+          "wall_total_s": 5.196585124940611,
+          "peak_rss_bytes": 5114789888,
+          "rss_samples": 88,
+          "inference": {
+            "t_first": 752408.782862875,
+            "ttft_request_s": 4.500695750000887,
+            "total_request_s": 4.913824999937788,
+            "stream_chunks": 7,
+            "completion_tokens": 8,
+            "load_duration_s": 3.392172709,
+            "tokens_per_sec": 20.240838552437772,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 2,
+          "server_ready_s": 0.02423591702245176,
+          "cold_wall_s": 1.2839154590619728,
+          "cold_ttft_steady_s": 1.259679542039521,
+          "wall_total_s": 1.6777785000158474,
+          "peak_rss_bytes": 32768,
+          "rss_samples": 1,
+          "inference": {
+            "t_first": 752413.797739375,
+            "ttft_request_s": 1.2594927090685815,
+            "total_request_s": 1.6533280840376392,
+            "stream_chunks": 7,
+            "completion_tokens": 8,
+            "load_duration_s": 0.869515916,
+            "tokens_per_sec": 20.399479227814638,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 3,
+          "server_ready_s": 0.1449174169683829,
+          "cold_wall_s": 1.8282857090234756,
+          "cold_ttft_steady_s": 1.6833682920550928,
+          "wall_total_s": 2.2276150420075282,
+          "peak_rss_bytes": 5360451584,
+          "rss_samples": 38,
+          "inference": {
+            "t_first": 752419.230572875,
+            "ttft_request_s": 1.6832474590046331,
+            "total_request_s": 2.0825612499611452,
+            "stream_chunks": 7,
+            "completion_tokens": 8,
+            "load_duration_s": 0.785750541,
+            "tokens_per_sec": 20.6463934138005,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 4,
+          "server_ready_s": 0.023350875009782612,
+          "cold_wall_s": 1.1955170839792117,
+          "cold_ttft_steady_s": 1.1721662089694291,
+          "wall_total_s": 1.584807874984108,
+          "peak_rss_bytes": 32768,
+          "rss_samples": 1,
+          "inference": {
+            "t_first": 752424.164069875,
+            "ttft_request_s": 1.1720118750818074,
+            "total_request_s": 1.5612830830505118,
+            "stream_chunks": 7,
+            "completion_tokens": 8,
+            "load_duration_s": 0.798583708,
+            "tokens_per_sec": 20.68130912314486,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 5,
+          "server_ready_s": 0.18126512505114079,
+          "cold_wall_s": 1.6550052920356393,
+          "cold_ttft_steady_s": 1.4737401669844985,
+          "wall_total_s": 2.054591292049736,
+          "peak_rss_bytes": 5639979008,
+          "rss_samples": 34,
+          "inference": {
+            "t_first": 752429.374068958,
+            "ttft_request_s": 1.4736302919918671,
+            "total_request_s": 1.8732035419670865,
+            "stream_chunks": 7,
+            "completion_tokens": 8,
+            "load_duration_s": 0.794597708,
+            "tokens_per_sec": 20.407900773888514,
+            "response": "The capital of France is Paris."
+          }
+        }
+      ],
+      "warm_runs_raw": [
+        {
+          "phase": "warm",
+          "run": 1,
+          "inference": {
+            "t_first": 752434.87878775,
+            "ttft_request_s": 0.1410405000206083,
+            "total_request_s": 0.5255147500429302,
+            "stream_chunks": 7,
+            "completion_tokens": 8,
+            "load_duration_s": 0.082592166,
+            "tokens_per_sec": 20.97568168350066,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "warm",
+          "run": 2,
+          "inference": {
+            "t_first": 752435.40300475,
+            "ttft_request_s": 0.13953995902556926,
+            "total_request_s": 0.5304852089611813,
+            "stream_chunks": 7,
+            "completion_tokens": 8,
+            "load_duration_s": 0.080405625,
+            "tokens_per_sec": 20.622086745194213,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "warm",
+          "run": 3,
+          "inference": {
+            "t_first": 752435.926055916,
+            "ttft_request_s": 0.13190362497698516,
+            "total_request_s": 0.5703305419301614,
+            "stream_chunks": 7,
+            "completion_tokens": 8,
+            "load_duration_s": 0.073993417,
+            "tokens_per_sec": 18.678986927959293,
+            "response": "The capital of France is Paris."
+          }
+        }
+      ],
+      "cold_median": {
+        "cold_wall_s": 1.6550052920356393,
+        "cold_ttft_steady_s": 1.4737401669844985,
+        "server_ready_s": 0.1449174169683829,
+        "wall_total_s": 2.054591292049736,
+        "peak_rss_bytes": 5114789888.0,
+        "tokens_per_sec": 20.407900773888514,
+        "completion_tokens": 8.0
+      },
+      "warm_median": {
+        "ttft_request_s": 0.13953995902556926,
+        "total_request_s": 0.5304852089611813,
+        "tokens_per_sec": 20.622086745194213,
+        "completion_tokens": 8.0
+      }
+    },
+    "squish_eager": {
+      "label": "Squish (eager)",
+      "cold_runs_raw": [
+        {
+          "phase": "cold",
+          "run": 1,
+          "server_ready_s": 7.4586817499948665,
+          "cold_wall_s": 8.017142249969766,
+          "cold_ttft_steady_s": 0.558460499974899,
+          "wall_total_s": 8.442766458028927,
+          "peak_rss_bytes": 1766146048,
+          "rss_samples": 141,
+          "inference": {
+            "t_first": 752447.665865583,
+            "ttft_request_s": 0.5583084999816492,
+            "total_request_s": 0.9839090419700369,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 16.447347475866213,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 2,
+          "server_ready_s": 6.330733750015497,
+          "cold_wall_s": 6.862829125020653,
+          "cold_ttft_steady_s": 0.5320953750051558,
+          "wall_total_s": 7.279896249994636,
+          "peak_rss_bytes": 3362291712,
+          "rss_samples": 122,
+          "inference": {
+            "t_first": 752458.390664375,
+            "ttft_request_s": 0.5320179170230404,
+            "total_request_s": 0.9490779170300812,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 16.784155756682075,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 3,
+          "server_ready_s": 6.515866041998379,
+          "cold_wall_s": 7.050515000009909,
+          "cold_ttft_steady_s": 0.5346489580115303,
+          "wall_total_s": 7.467603042023256,
+          "peak_rss_bytes": 2850144256,
+          "rss_samples": 126,
+          "inference": {
+            "t_first": 752469.251244791,
+            "ttft_request_s": 0.5345149579225108,
+            "total_request_s": 0.9515860829269513,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 16.783708054412713,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 4,
+          "server_ready_s": 6.593213457963429,
+          "cold_wall_s": 7.124423875007778,
+          "cold_ttft_steady_s": 0.531210417044349,
+          "wall_total_s": 7.523905582958832,
+          "peak_rss_bytes": 3187736576,
+          "rss_samples": 123,
+          "inference": {
+            "t_first": 752480.218454625,
+            "ttft_request_s": 0.5309943750035018,
+            "total_request_s": 0.9304700830252841,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 17.522967878733464,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 5,
+          "server_ready_s": 6.223520832951181,
+          "cold_wall_s": 6.756771832937375,
+          "cold_ttft_steady_s": 0.5332509999861941,
+          "wall_total_s": 7.178504750016145,
+          "peak_rss_bytes": 2813689856,
+          "rss_samples": 121,
+          "inference": {
+            "t_first": 752490.808800916,
+            "ttft_request_s": 0.5331619159551337,
+            "total_request_s": 0.9548880830407143,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 16.598448344751386,
+            "response": "The capital of France is Paris."
+          }
+        }
+      ],
+      "warm_runs_raw": [
+        {
+          "phase": "warm",
+          "run": 1,
+          "inference": {
+            "t_first": 752502.290968875,
+            "ttft_request_s": 0.5030320840887725,
+            "total_request_s": 0.9059966669883579,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 17.371253695872145,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "warm",
+          "run": 2,
+          "inference": {
+            "t_first": 752503.198450208,
+            "ttft_request_s": 0.5044113328913227,
+            "total_request_s": 0.8906391659984365,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 18.124017483894452,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "warm",
+          "run": 3,
+          "inference": {
+            "t_first": 752504.0757585,
+            "ttft_request_s": 0.49093337496742606,
+            "total_request_s": 0.8906756659271196,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 17.511282039222163,
+            "response": "The capital of France is Paris."
+          }
+        }
+      ],
+      "cold_median": {
+        "cold_wall_s": 7.050515000009909,
+        "cold_ttft_steady_s": 0.5332509999861941,
+        "server_ready_s": 6.515866041998379,
+        "wall_total_s": 7.467603042023256,
+        "peak_rss_bytes": 2850144256.0,
+        "tokens_per_sec": 16.783708054412713,
+        "completion_tokens": 7.0
+      },
+      "warm_median": {
+        "ttft_request_s": 0.5030320840887725,
+        "total_request_s": 0.8906756659271196,
+        "tokens_per_sec": 17.511282039222163,
+        "completion_tokens": 7.0
+      }
+    },
+    "squish_lazy": {
+      "label": "Squish (lazy)",
+      "cold_runs_raw": [
+        {
+          "phase": "cold",
+          "run": 1,
+          "server_ready_s": 1.0677380410488695,
+          "cold_wall_s": 7.052497124997899,
+          "cold_ttft_steady_s": 5.9847590839490294,
+          "wall_total_s": 7.438201541081071,
+          "peak_rss_bytes": 3021471744,
+          "rss_samples": 127,
+          "inference": {
+            "t_first": 752514.95311375,
+            "ttft_request_s": 5.984678666922264,
+            "total_request_s": 6.370369749958627,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 18.14923991732533,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 2,
+          "server_ready_s": 1.0753937088884413,
+          "cold_wall_s": 6.772874333895743,
+          "cold_ttft_steady_s": 5.697480625007302,
+          "wall_total_s": 7.16849058389198,
+          "peak_rss_bytes": 3177250816,
+          "rss_samples": 122,
+          "inference": {
+            "t_first": 752525.60835225,
+            "ttft_request_s": 5.697395791998133,
+            "total_request_s": 6.093000375083648,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 17.694436058863523,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 3,
+          "server_ready_s": 1.074923584004864,
+          "cold_wall_s": 6.843509083962999,
+          "cold_ttft_steady_s": 5.768585499958135,
+          "wall_total_s": 7.233021541964263,
+          "peak_rss_bytes": 2917842944,
+          "rss_samples": 123,
+          "inference": {
+            "t_first": 752536.34542575,
+            "ttft_request_s": 5.768507209024392,
+            "total_request_s": 6.158003916963935,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 17.971910563841096,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 4,
+          "server_ready_s": 1.0765412909677252,
+          "cold_wall_s": 6.530160957947373,
+          "cold_ttft_steady_s": 5.453619666979648,
+          "wall_total_s": 6.922022250015289,
+          "peak_rss_bytes": 3272753152,
+          "rss_samples": 119,
+          "inference": {
+            "t_first": 752546.721821958,
+            "ttft_request_s": 5.453545750002377,
+            "total_request_s": 5.845391542068683,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 17.864170400011595,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 5,
+          "server_ready_s": 0.9582529999315739,
+          "cold_wall_s": 6.851729957968928,
+          "cold_ttft_steady_s": 5.893476958037354,
+          "wall_total_s": 7.247160916915163,
+          "peak_rss_bytes": 3404382208,
+          "rss_samples": 124,
+          "inference": {
+            "t_first": 752557.391879666,
+            "ttft_request_s": 5.89340537507087,
+            "total_request_s": 6.288827709038742,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 17.7025913780802,
+            "response": "The capital of France is Paris."
+          }
+        }
+      ],
+      "warm_runs_raw": [
+        {
+          "phase": "warm",
+          "run": 1,
+          "inference": {
+            "t_first": 752569.057127416,
+            "ttft_request_s": 0.5039658750174567,
+            "total_request_s": 0.9221529170172289,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 16.738921336553066,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "warm",
+          "run": 2,
+          "inference": {
+            "t_first": 752570.004172333,
+            "ttft_request_s": 0.5287721670465544,
+            "total_request_s": 0.9202541670529172,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 17.880771018555716,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "warm",
+          "run": 3,
+          "inference": {
+            "t_first": 752571.014088416,
+            "ttft_request_s": 0.6182462080614641,
+            "total_request_s": 1.467475250014104,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 8.242770388427648,
+            "response": "The capital of France is Paris."
+          }
+        }
+      ],
+      "cold_median": {
+        "cold_wall_s": 6.843509083962999,
+        "cold_ttft_steady_s": 5.768585499958135,
+        "server_ready_s": 1.074923584004864,
+        "wall_total_s": 7.233021541964263,
+        "peak_rss_bytes": 3177250816.0,
+        "tokens_per_sec": 17.864170400011595,
+        "completion_tokens": 7.0
+      },
+      "warm_median": {
+        "ttft_request_s": 0.5287721670465544,
+        "total_request_s": 0.9221529170172289,
+        "tokens_per_sec": 16.738921336553066,
+        "completion_tokens": 7.0
+      }
+    },
+    "squish_preload_async": {
+      "label": "Squish (preload-async)",
+      "cold_runs_raw": [
+        {
+          "phase": "cold",
+          "run": 1,
+          "server_ready_s": 1.0925763330888003,
+          "cold_wall_s": 6.9869480420602486,
+          "cold_ttft_steady_s": 5.894371708971448,
+          "wall_total_s": 7.369680917006917,
+          "peak_rss_bytes": 3083976704,
+          "rss_samples": 124,
+          "inference": {
+            "t_first": 752582.858960125,
+            "ttft_request_s": 5.89430312498007,
+            "total_request_s": 6.2770221249666065,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 18.29018156988873,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 2,
+          "server_ready_s": 0.9673253749497235,
+          "cold_wall_s": 6.826398708974011,
+          "cold_ttft_steady_s": 5.859073334024288,
+          "wall_total_s": 7.35505391692277,
+          "peak_rss_bytes": 2948464640,
+          "rss_samples": 124,
+          "inference": {
+            "t_first": 752593.511707625,
+            "ttft_request_s": 5.858998958952725,
+            "total_request_s": 6.387610291945748,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 13.242243522032831,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 3,
+          "server_ready_s": 1.0753815839998424,
+          "cold_wall_s": 7.642968166968785,
+          "cold_ttft_steady_s": 6.567586582968943,
+          "wall_total_s": 8.097259458969347,
+          "peak_rss_bytes": 3174154240,
+          "rss_samples": 135,
+          "inference": {
+            "t_first": 752605.708445083,
+            "ttft_request_s": 6.5675033329753205,
+            "total_request_s": 7.021780165960081,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 15.409106279991233,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 4,
+          "server_ready_s": 0.9618602499831468,
+          "cold_wall_s": 7.359875250025652,
+          "cold_ttft_steady_s": 6.398015000042506,
+          "wall_total_s": 7.801333375042304,
+          "peak_rss_bytes": 3222929408,
+          "rss_samples": 129,
+          "inference": {
+            "t_first": 752617.055771625,
+            "ttft_request_s": 6.397947167046368,
+            "total_request_s": 6.83939670806285,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 15.856851915355486,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "cold",
+          "run": 5,
+          "server_ready_s": 1.1879337090067565,
+          "cold_wall_s": 8.652685374952853,
+          "cold_ttft_steady_s": 7.464751665946096,
+          "wall_total_s": 9.098569500027224,
+          "peak_rss_bytes": 3087859712,
+          "rss_samples": 148,
+          "inference": {
+            "t_first": 752629.653651541,
+            "ttft_request_s": 7.464660207973793,
+            "total_request_s": 7.910532749956474,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 15.699553887917833,
+            "response": "The capital of France is Paris."
+          }
+        }
+      ],
+      "warm_runs_raw": [
+        {
+          "phase": "warm",
+          "run": 1,
+          "inference": {
+            "t_first": 752644.854611,
+            "ttft_request_s": 1.330395125085488,
+            "total_request_s": 2.097559166024439,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 9.124515261993414,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "warm",
+          "run": 2,
+          "inference": {
+            "t_first": 752646.871941083,
+            "ttft_request_s": 1.2495369999669492,
+            "total_request_s": 1.757679707952775,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 13.775657684327644,
+            "response": "The capital of France is Paris."
+          }
+        },
+        {
+          "phase": "warm",
+          "run": 3,
+          "inference": {
+            "t_first": 752648.492956291,
+            "ttft_request_s": 1.1127411249326542,
+            "total_request_s": 1.5815085839712992,
+            "stream_chunks": 7,
+            "completion_tokens": 7,
+            "prompt_tokens": null,
+            "tokens_per_sec": 14.93277714787562,
+            "response": "The capital of France is Paris."
+          }
+        }
+      ],
+      "cold_median": {
+        "cold_wall_s": 7.359875250025652,
+        "cold_ttft_steady_s": 6.398015000042506,
+        "server_ready_s": 1.0753815839998424,
+        "wall_total_s": 7.801333375042304,
+        "peak_rss_bytes": 3087859712.0,
+        "tokens_per_sec": 15.699553887917833,
+        "completion_tokens": 7.0
+      },
+      "warm_median": {
+        "ttft_request_s": 1.2495369999669492,
+        "total_request_s": 1.757679707952775,
+        "tokens_per_sec": 13.775657684327644,
+        "completion_tokens": 7.0
+      }
+    }
+  }
+}
