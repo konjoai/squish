@@ -447,8 +447,10 @@ def run_config(cfg_id: str) -> dict[str, Any]:
         for i in range(RUNS):
             d = cfg["stream"](WARM_TPS_PROMPT, max_tokens=100)
             warm_runs.append({"run": i + 1, **d})
-            log(f"  warm_tps run {i + 1}: {d['tokens_per_sec']:.1f} tok/s "
-                f"({d['completion_tokens']} tokens)")
+            _tps_v = d.get("tokens_per_sec")
+            _tps_str = f"{_tps_v:.1f}" if _tps_v else "    -"
+            log(f"  warm_tps run {i + 1}: {_tps_str} tok/s "
+                f"({d.get('completion_tokens', '-')} tokens)")
     finally:
         stop_server(proc, sampler)
 

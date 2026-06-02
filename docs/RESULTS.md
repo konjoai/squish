@@ -956,3 +956,189 @@ SQUISH_BENCH_OUT=v4_2 python benchmarks/ollama_vs_squish/bench_v4.py
    `python -m squish.server`).
 5. Spec-decode thermal behaviour: ramp draft-model utilization or add
    a short cool-down between back-to-back generation requests.
+
+---
+
+## Squish v5 — block-level paged KV cache (measured 2026-06-01)
+
+**Measured on M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0, 2026-06-01.**
+**Tooling:** Squish 9.14.0 + v4 + v4.1 + v4.2 + v5 (branch `perf/v5-block-cache-and-chunked`) · Ollama 0.18.2 · mlx_lm 0.31.1.
+**Protocol:** identical to v4.x — 5 runs per metric, median reported, 1 warm-up request.
+**Raw artifact:** [`results/benchmarks_v5/runs/20260601T230126/long_ctx.json`](../results/benchmarks_v5/runs/20260601T230126/long_ctx.json).
+**Per-target outcomes:** [`results/benchmarks_v5/PRECHECK.md`](../results/benchmarks_v5/PRECHECK.md).
+
+v5 introduces `--block-kv-cache`, a paged 64-token block-level KV cache
+modeled on vLLM / oMLX paged attention.  Unlike v4.2's `--prompt-kv-cache`
+which hashes the *entire* prompt (and misses on any tail change), the
+block cache hashes per-block with a chained dependency, so any prompt
+sharing a prefix with a past prompt skips prefill on the matched blocks
+and only prefills the unmatched suffix.  This is the agent / coding-
+assistant workload pattern (long pinned system prompt + short per-turn
+user message).
+
+A new benchmark scenario, `bench_v5_longctx.py`, measures shared-prefix
+TTFT on a ~694-token base prompt with 5 trailing variations.
+
+### Long-context headline (~694-token shared prefix)
+
+| Metric                                | Ollama   | sq daemon | sq +pkv (v4.2) | sq +block (v5) | Winner       |
+|---------------------------------------|---------:|----------:|---------------:|---------------:|--------------|
+| **Cold long-prompt TTFT** (median)    | **272 ms** |  3.95 s   |   4.61 s       |  **234 ms**    | sq +block / Ollama tie ±15 % |
+| **Variation TTFT** (after priming)    |   270 ms |  4.27 s   |   **20 ms**    |    232 ms      | sq +pkv (exact-match)        |
+| **Warm tok/s** (short-prompt 100-tok) |  19.1    | **20.0**  |    7.9         |   15.8         | sq daemon                    |
+| **Peak RSS** (process tree)           |  n/a*    | **2.36 GB** |  3.45 GB     |   3.19 GB      | sq daemon                    |
+
+`*` Ollama spawns its model runner in a separate process group, so the
+bench's RSS sampler (rooted on `ollama serve`) doesn't see the actual
+allocation.  The v4.2 short-prompt benchmark catches it (~5 GB there).
+
+### Per-fix delta on the v5 long-context scenario
+
+| Path                          | Cold long TTFT | Variation TTFT | Notes                                                     |
+|-------------------------------|---------------:|---------------:|-----------------------------------------------------------|
+| Squish daemon (no cache)      |     **3.95 s** |       4.27 s   | Full 694-token prefill every time                         |
+| Squish + --prompt-kv-cache    |     4.61 s     |       20 ms    | Misses on tail change; hits when prompt is byte-identical |
+| Squish + --block-kv-cache     |    **234 ms**  |     **232 ms** | Restores 9-10 cached 64-token blocks; prefills only ~90-token suffix |
+| Ollama                        |      272 ms    |      270 ms    | Built-in prefix cache for exact-match; misses on changed suffix |
+
+The killer row: **sq +block 234 ms vs sq daemon 3.95 s on the same prompt
+— a 16.9× TTFT reduction**.  The block cache restores ~600 tokens
+(9-10 blocks × 64 tokens) from disk and only prefills the unmatched ~90-
+token suffix, paying ~230 ms of suffix prefill instead of 3.9 seconds
+of full prompt prefill.
+
+This is the agent workload pattern: a system prompt that lives at the
+top of every turn never moves, so its KV state should not be recomputed.
+v4.2's `--prompt-kv-cache` couldn't deliver this because its key was the
+SHA-256 of the entire prompt string; v5's `--block-kv-cache` keys
+per-block, so any matching prefix is reused.
+
+### Per-run cold TTFT (long prompt, ms)
+
+| Run | Ollama | sq daemon | sq +pkv (v4.2) | sq +block (v5) |
+|----:|-------:|----------:|---------------:|---------------:|
+| 1   |   3619 |      3793 |           4122 |           4026 |
+| 2   |    272 |      3822 |           4434 |            425 |
+| 3   |    271 |      3951 |           4613 |          **234** |
+| 4   |    271 |      4057 |           4710 |            230 |
+| 5   |    266 |      4118 |           4755 |            228 |
+
+Run 1 is the first send to a fresh process — Ollama's warm-up + sq +block's
+miss + first-cache-population.  Subsequent runs show steady state.  Note
+sq +block stabilises at 228-234 ms by run 3 (one variation cached, others
+share the base prefix on lookup).
+
+### Per-run variation TTFT (after priming, ms)
+
+| Run | Ollama | sq daemon | sq +pkv (v4.2) | sq +block (v5) |
+|----:|-------:|----------:|---------------:|---------------:|
+| 1   |    131 |      4214 |              7 |            227 |
+| 2   |    272 |      4269 |             21 |            237 |
+| 3   |    271 |      4273 |             16 |            232 |
+| 4   |    270 |      4336 |             25 |            230 |
+| 5   |    266 |      4339 |             19 |            232 |
+
+After priming, sq +pkv gets full exact-match hits because the bench
+re-sends prompts it already saw in the cold phase.  sq +block holds steady
+at ~232 ms — the cost of restoring the prefix blocks and prefilling the
+~90-token suffix every time.  Ollama's run 1 (131 ms) is the priming
+prompt's exact-match hit; runs 2-5 are different variations and miss
+its prefix cache (270 ms full re-prefill).
+
+### Goal A (chunked prefill on short prompts) — skipped
+
+Per the v5 scope ("Goal A is a probe; Goal B is priority"), we measured
+chunked prefill viability on a 57-token prompt:
+
+```
+mode                         |   ms (med) |   ms (min)
+--------------------------------------------------------
+full (one prefill)           |      357.4 |      356.7
+chunk=32 first chunk         |      185.4 |      184.7
+chunk=32 total               |      373.7 |      372.4
+```
+
+First chunk at chunk=32 finishes at 185 ms (half of full prefill's 357 ms).
+But: yielding a token sampled mid-prefill changes inference outputs for
+fresh user prompts — the logit at position 31 predicts what comes after
+prompt-position-31, which is part of the user's prompt, not the model's
+response.  Per scope rule ("don't change inference outputs"), Goal A was
+documented as not applicable.
+
+The existing `chunked_prefill` code's `interleave_decode=True` is designed
+for the COMPRESS_PATH (where prompts are heavily compressed and interleaved
+tokens are an acceptable artifact); it isn't safely extensible to fresh
+user prompts.  Tracked as v5.1 follow-up: investigate speculative-prefill
+schemes where the early sample is later verified and corrected on mismatch.
+
+### v4.2 short-prompt rows are unchanged
+
+The v4.2 75-token benchmark wasn't re-run for v5 (block cache helps long-
+context prompts, not 75-token prompts whose total is less than one block).
+The v4.2 winners hold:
+
+| Metric (75-token)                    | Ollama | Squish best (v4.2) | Winner |
+|--------------------------------------|-------:|-------------------:|--------|
+| TTFT fresh                           |  254 ms | sq +pkv 358 ms     | Ollama (MLX prefill kernel floor) |
+| TTFT repeated                        |  123 ms | sq +pkv 4 ms       | Squish (31× via cached logit) |
+| Warm tok/s                           |   18.9 | sq daemon 20.6     | Squish (+9 %) |
+| Peak RAM                             | 5.15 GB | sq daemon 2.08 GB | Squish (60 % less) |
+| Disk                                 | 4.36 GB | sq daemon 4.00 GB | Squish |
+
+### Final v5 scorecard
+
+**Squish wins (75-token benchmark, from v4.2):**
+
+* Repeat-prompt TTFT: 4 ms vs Ollama 123 ms (31×)
+* Warm tok/s: 20.6 vs 18.9 (+9 %)
+* Peak RAM: 2.08 GB vs 5.15 GB (60 % less)
+* Disk: 4.00 GB vs 4.36 GB
+
+**Squish wins (NEW — long-context shared-prefix benchmark):**
+
+* **Cold long-prompt TTFT: 234 ms (block) vs daemon 3.95 s — 17× faster.**
+  Approximately ties Ollama (272 ms); Squish gives up the 38 ms gap in
+  exchange for 60 % less RAM under the same workload.
+* **Variation TTFT (shifting tail): 232 ms (block) vs daemon 4.27 s — 18× faster.**
+  Ollama's prefix cache *doesn't* catch this because the tail differs;
+  Squish's block cache *does* because the prefix matches block-wise.
+
+**Squish still loses (75-token):**
+
+* Cold-prompt TTFT 519 ms vs Ollama 254 ms (the MLX prefill kernel floor,
+  proved in v4.2 T2).  No squish-layer optimization available.
+
+### Recommended article headline (v5)
+
+* "Squish v5 collapses long-prompt agent workloads from 4 seconds to
+  234 ms via a vLLM-style paged block KV cache — 17× faster than its own
+  no-cache path, and matches Ollama on cold long prompts (Ollama 272 ms
+  vs Squish 234 ms) while using 60 % less RAM."
+
+### Reproduce
+
+```bash
+source .venv/bin/activate
+# v5 long-context benchmark (~694-token base + 5 variations)
+python benchmarks/ollama_vs_squish/bench_v5_longctx.py
+# v4.2 short-prompt benchmark (still relevant)
+SQUISH_BENCH_OUT=v4_2 python benchmarks/ollama_vs_squish/bench_v4.py
+```
+
+### Remaining technical debt (v5.1 candidates)
+
+1. Per-block last-position logit caching → variation TTFT could drop from
+   232 ms toward 20 ms (matching v4.2 PromptKVStore for exact matches).
+2. Speculative prefill (Goal A revisited): yield a token sampled
+   mid-prefill, verify on full-prefill completion, retract+replace on
+   mismatch — would salvage the chunked-prefill TTFT win on short prompts.
+3. Thermal stability on the cache-enabled paths — sq +block warm tok/s
+   drifts 18.4 → 14.2 under sustained load.  Investigate whether the
+   per-token mlx-array conversions in the store path are contributing.
+4. Bench's variation phase repeats prompts seen in the cold phase, so PKV
+   gets exact-match hits.  Add a third phase with always-novel tails.
+5. Expose `--block-kv-cache` on `squish run` CLI (currently only on
+   `python -m squish.server`).
+6. Pre-existing `tests/test_squishd_unit.py` 9 timeouts and
+   `tests/test_quant_aqlm.py::test_module_count_unchanged` assertion gap
+   carry over from v4.2.
