@@ -4324,7 +4324,7 @@ Examples:
     ap.add_argument("--compress-prompt", action="store_true", default=False,
                     help="Enable prompt compression before prefill.\\n"
                          "Uses TF-IDF sentence scoring by default; delegates to\\n"
-                         "LLMLingua if installed (pip install squish[llmlingua]).")
+                         "LLMLingua if installed (pip install squish-ai[llmlingua]).")
     ap.add_argument("--compress-ratio", type=float, default=0.5,
                     metavar="F",
                     help="Target compression fraction: 0.5 = compress to half the\\n"
