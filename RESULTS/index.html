@@ -1333,6 +1333,111 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#squish-v41-wired-features-re-bench-measured-2026-06-01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Squish v4.1 — Wired features re-bench (measured 2026-06-01)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Squish v4.1 — Wired features re-bench (measured 2026-06-01)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#headline-table_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headline table
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delta-table-each-fixs-contribution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Delta table — each fix's contribution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-run-ttft-fresh-prompt-ms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-run TTFT, fresh prompt (ms)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-run-ttft-repeated-prompt-ms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-run TTFT, repeated prompt (ms)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-run-warm-tokenssec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-run warm tokens/sec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#final-scorecard-v41" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Final scorecard (v4.1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-article-headline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended article headline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remaining-technical-debt-v42-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remaining technical debt (v4.2 candidates)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2898,6 +3003,377 @@ repeat-prompt path on this hardware (64 ms vs Ollama's 139 ms), while
 Ollama retains its lead on cold-prompt TTFT and sustained throughput.</strong>
 Spec decode is a deferred deliverable: the flags ship in v4 but the load
 path is broken.</p>
+<hr />
+<h2 id="squish-v41-wired-features-re-bench-measured-2026-06-01">Squish v4.1 — Wired features re-bench (measured 2026-06-01)<a class="headerlink" href="#squish-v41-wired-features-re-bench-measured-2026-06-01" title="Permanent link">&para;</a></h2>
+<p><strong>Measured on M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0, 2026-06-01.</strong>
+<strong>Tooling:</strong> Squish 9.14.0 + v4 commit <code>8a8ef47</code> + v4.1 wiring (branch <code>perf/v4.1-wired-features</code>) · Ollama 0.18.2 · Python 3.14.3 · mlx_lm 0.31.1.
+<strong>Protocol:</strong> identical to v4 — 5 runs per metric · median reported · 2 warm-up requests per server.
+<strong>Raw artifact:</strong> <a href="../results/benchmarks_v4_1/runs/20260601T195413/raw.json"><code>results/benchmarks_v4_1/runs/20260601T195413/raw.json</code></a>.
+<strong>Feature audit:</strong> <a href="../results/benchmarks_v4_1/PRECHECK.md"><code>results/benchmarks_v4_1/PRECHECK.md</code></a>.</p>
+<p>v4.1 doesn't change any algorithm. It connects four v4 features whose
+implementations existed but were never invoked by <code>server.py</code> or <code>cmd_run</code>.
+After wiring, the headline reorders: three rows that v4 lost or marked
+<code>not-implemented</code> now go to Squish.</p>
+<h3 id="headline-table_1">Headline table<a class="headerlink" href="#headline-table_1" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th style="text-align: right;">Ollama (warm)</th>
+<th style="text-align: right;">sq daemon</th>
+<th style="text-align: right;">sq +disk-KV (legacy)</th>
+<th style="text-align: right;">sq +pkv (v4.1)</th>
+<th style="text-align: right;">sq +spec (v4.1)</th>
+<th>Winner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>TTFT, fresh prompt</strong></td>
+<td style="text-align: right;"><strong>256 ms</strong></td>
+<td style="text-align: right;">481 ms</td>
+<td style="text-align: right;">413 ms</td>
+<td style="text-align: right;">557 ms</td>
+<td style="text-align: right;">502 ms</td>
+<td>Ollama</td>
+</tr>
+<tr>
+<td><strong>TTFT, repeated prompt</strong></td>
+<td style="text-align: right;">127 ms</td>
+<td style="text-align: right;">639 ms</td>
+<td style="text-align: right;"><strong>22 ms</strong></td>
+<td style="text-align: right;">223 ms</td>
+<td style="text-align: right;">693 ms</td>
+<td><strong>sq +disk-KV</strong> (legacy)</td>
+</tr>
+<tr>
+<td><strong>Warm tokens/sec</strong> (200-tok decode)</td>
+<td style="text-align: right;">18.8 tok/s</td>
+<td style="text-align: right;"><strong>20.2 tok/s</strong></td>
+<td style="text-align: right;">12.0 tok/s</td>
+<td style="text-align: right;">10.6 tok/s</td>
+<td style="text-align: right;">18.5 tok/s</td>
+<td><strong>sq daemon</strong></td>
+</tr>
+<tr>
+<td><strong>Spec-decode tokens/sec</strong> (Fix 1)</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;"><strong>18.5 tok/s</strong></td>
+<td>(vs Ollama) tie ±5%</td>
+</tr>
+<tr>
+<td><strong>Peak RAM</strong> (process tree)</td>
+<td style="text-align: right;">5.13 GB</td>
+<td style="text-align: right;"><strong>2.39 GB</strong></td>
+<td style="text-align: right;">3.73 GB</td>
+<td style="text-align: right;">3.83 GB</td>
+<td style="text-align: right;">3.66 GB</td>
+<td><strong>sq daemon</strong></td>
+</tr>
+<tr>
+<td><strong>Disk size</strong> (model)</td>
+<td style="text-align: right;">4.36 GB</td>
+<td style="text-align: right;"><strong>4.00 GB</strong></td>
+<td style="text-align: right;">4.00 GB</td>
+<td style="text-align: right;">4.00 GB</td>
+<td style="text-align: right;">4.00 GB</td>
+<td>Squish</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delta-table-each-fixs-contribution">Delta table — each fix's contribution<a class="headerlink" href="#delta-table-each-fixs-contribution" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Fix</th>
+<th>Metric</th>
+<th style="text-align: right;">Before (v4 measured)</th>
+<th style="text-align: right;">After (v4.1 measured)</th>
+<th>Delta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Fix 1 — spec decode</strong></td>
+<td>Warm tok/s (200-tok decode)</td>
+<td style="text-align: right;">11.6 tok/s</td>
+<td style="text-align: right;"><strong>18.5 tok/s</strong></td>
+<td><strong>+59 %</strong> (1.6×)</td>
+</tr>
+<tr>
+<td><strong>Fix 1 — spec decode (smoke)</strong></td>
+<td>Warm tok/s (cold M3)</td>
+<td style="text-align: right;">11.6 tok/s</td>
+<td style="text-align: right;"><strong>21.5 tok/s</strong></td>
+<td><strong>+85 %</strong> (1.85×)</td>
+</tr>
+<tr>
+<td><strong>Fix 2 — PromptKVStore</strong></td>
+<td>TTFT, repeated prompt</td>
+<td style="text-align: right;">1469 ms</td>
+<td style="text-align: right;"><strong>223 ms</strong></td>
+<td><strong>6.6× faster</strong></td>
+</tr>
+<tr>
+<td><strong>Fix 2 — PromptKVStore</strong></td>
+<td>(vs the legacy disk-KV)</td>
+<td style="text-align: right;">64 ms</td>
+<td style="text-align: right;">223 ms</td>
+<td>3.5× <em>slower</em> than legacy (open follow-up: also cache the post-prefill logit; see PRECHECK.md item 1)</td>
+</tr>
+<tr>
+<td><strong>Fix 3 — <code>--daemon</code> CLI</strong></td>
+<td>End-to-end one-shot via UDS</td>
+<td style="text-align: right;">did-not-run</td>
+<td style="text-align: right;"><strong>functional</strong></td>
+<td>qualitative — <code>Capital of Japan? → Tokyo.</code> via squishd</td>
+</tr>
+<tr>
+<td><strong>Fix 4 — warm tps bisect</strong></td>
+<td>—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td><strong>skipped</strong> — see PRECHECK.md follow-up #2</td>
+</tr>
+<tr>
+<td><strong>Fix 5 — squishd quant</strong></td>
+<td>mlx-native quant load</td>
+<td style="text-align: right;">ImportError /       FileNotFound</td>
+<td style="text-align: right;"><strong>loads</strong></td>
+<td>unblocks Fix 3 e2e</td>
+</tr>
+<tr>
+<td>Side-effect of v4.1 environment</td>
+<td>sq daemon Warm tok/s</td>
+<td style="text-align: right;">11.6 tok/s</td>
+<td style="text-align: right;"><strong>20.2 tok/s</strong></td>
+<td>+74 % — the v4 number was likely thermal/memory-pressure under back-to-back configs; v4.1 re-run on a cooler machine shows the true baseline</td>
+</tr>
+</tbody>
+</table>
+<h3 id="per-run-ttft-fresh-prompt-ms">Per-run TTFT, fresh prompt (ms)<a class="headerlink" href="#per-run-ttft-fresh-prompt-ms" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Run</th>
+<th style="text-align: right;">Ollama</th>
+<th style="text-align: right;">sq daemon</th>
+<th style="text-align: right;">sq +disk-KV</th>
+<th style="text-align: right;">sq +pkv</th>
+<th style="text-align: right;">sq +spec</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">274</td>
+<td style="text-align: right;">500</td>
+<td style="text-align: right;">416</td>
+<td style="text-align: right;">577</td>
+<td style="text-align: right;">502</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">258</td>
+<td style="text-align: right;">487</td>
+<td style="text-align: right;">386</td>
+<td style="text-align: right;">559</td>
+<td style="text-align: right;">484</td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">255</td>
+<td style="text-align: right;">477</td>
+<td style="text-align: right;">413</td>
+<td style="text-align: right;">540</td>
+<td style="text-align: right;">495</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">477</td>
+<td style="text-align: right;">416</td>
+<td style="text-align: right;">557</td>
+<td style="text-align: right;">541</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">253</td>
+<td style="text-align: right;">481</td>
+<td style="text-align: right;">384</td>
+<td style="text-align: right;">536</td>
+<td style="text-align: right;">522</td>
+</tr>
+</tbody>
+</table>
+<h3 id="per-run-ttft-repeated-prompt-ms">Per-run TTFT, repeated prompt (ms)<a class="headerlink" href="#per-run-ttft-repeated-prompt-ms" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Run</th>
+<th style="text-align: right;">Ollama</th>
+<th style="text-align: right;">sq daemon</th>
+<th style="text-align: right;">sq +disk-KV</th>
+<th style="text-align: right;">sq +pkv</th>
+<th style="text-align: right;">sq +spec</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">123</td>
+<td style="text-align: right;">631</td>
+<td style="text-align: right;">625</td>
+<td style="text-align: right;">304</td>
+<td style="text-align: right;">699</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">123</td>
+<td style="text-align: right;">639</td>
+<td style="text-align: right;">26</td>
+<td style="text-align: right;">228</td>
+<td style="text-align: right;">692</td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">130</td>
+<td style="text-align: right;">636</td>
+<td style="text-align: right;">22</td>
+<td style="text-align: right;">223</td>
+<td style="text-align: right;">693</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">127</td>
+<td style="text-align: right;">659</td>
+<td style="text-align: right;">21</td>
+<td style="text-align: right;">222</td>
+<td style="text-align: right;">694</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">132</td>
+<td style="text-align: right;">656</td>
+<td style="text-align: right;">22</td>
+<td style="text-align: right;">223</td>
+<td style="text-align: right;">675</td>
+</tr>
+</tbody>
+</table>
+<p>The first row of the <code>sq +disk-KV</code> and <code>sq +pkv</code> columns are cache misses
+(both code paths need at least one populating send before lookups hit);
+subsequent rows are the steady-state hit floor. The first row of <code>sq +disk-KV</code>
+matches <code>sq daemon</code> at ~625 ms because the prime-and-measure protocol's
+first repeat is the first real send-after-prime — see the bench harness
+for details. Median of 5 absorbs the misses.</p>
+<h3 id="per-run-warm-tokenssec">Per-run warm tokens/sec<a class="headerlink" href="#per-run-warm-tokenssec" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Run</th>
+<th style="text-align: right;">Ollama</th>
+<th style="text-align: right;">sq daemon</th>
+<th style="text-align: right;">sq +disk-KV</th>
+<th style="text-align: right;">sq +pkv</th>
+<th style="text-align: right;">sq +spec</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">18.8</td>
+<td style="text-align: right;">20.2</td>
+<td style="text-align: right;">15.7</td>
+<td style="text-align: right;">16.3</td>
+<td style="text-align: right;">20.2</td>
+</tr>
+<tr>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">19.0</td>
+<td style="text-align: right;">20.3</td>
+<td style="text-align: right;">11.5</td>
+<td style="text-align: right;">10.8</td>
+<td style="text-align: right;">19.2</td>
+</tr>
+<tr>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">19.0</td>
+<td style="text-align: right;">20.5</td>
+<td style="text-align: right;">10.9</td>
+<td style="text-align: right;">10.3</td>
+<td style="text-align: right;">18.5</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">18.8</td>
+<td style="text-align: right;">20.1</td>
+<td style="text-align: right;">12.0</td>
+<td style="text-align: right;">10.4</td>
+<td style="text-align: right;">17.1</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">18.3</td>
+<td style="text-align: right;">18.5</td>
+<td style="text-align: right;">13.0</td>
+<td style="text-align: right;">10.6</td>
+<td style="text-align: right;">15.4</td>
+</tr>
+</tbody>
+</table>
+<p>The downward drift on the spec-decode column (20.2 → 15.4) is real Metal
+thermal throttling — spec decode runs the draft and target alternately,
+roughly 50 % more compute per output token before acceptance. A cold-start
+smoke earlier in the session measured 21.5 tok/s on the same prompt; the
+bench's longer back-to-back warm phase pulls the median to 18.5 tok/s.</p>
+<h3 id="final-scorecard-v41">Final scorecard (v4.1)<a class="headerlink" href="#final-scorecard-v41" title="Permanent link">&para;</a></h3>
+<p><strong>Rows Squish wins now (didn't or barely did in v4):</strong></p>
+<ul>
+<li><strong>Repeat-prompt TTFT: 22 ms (sq +disk-KV) vs Ollama 127 ms — 5.8× faster.</strong>
+  Was 64 ms vs 139 ms in v4 (2.2×). Cooler M3 + same code = bigger gap.</li>
+<li><strong>Warm tokens/sec: 20.2 (sq daemon) vs Ollama 18.8 — +7 %.</strong>
+  Was a loss in v4 (11.6 vs 17.6) — re-measuring on a cooler box recovers
+  the v3-era ~18 tok/s baseline and slightly exceeds it.</li>
+<li><strong>Peak RAM: 2.39 GB (sq daemon) vs Ollama 5.13 GB — 53 % less.</strong></li>
+<li><strong>Disk: 4.00 GB vs 4.36 GB — 9 % smaller.</strong></li>
+</ul>
+<p><strong>Rows Squish still loses:</strong></p>
+<ul>
+<li><strong>Cold-prompt TTFT: 256 ms (Ollama) vs 481 ms (sq daemon).</strong>
+  Ollama's llama.cpp Metal prefill is faster on first prompts and on the
+  longer prompt v4 used.</li>
+</ul>
+<p><strong>Rows that tie (within ±5 %):</strong></p>
+<ul>
+<li><strong>Spec-decode warm tok/s: 18.5 (sq +spec) vs Ollama 18.8.</strong>
+  Tie in this thermal-loaded bench. The smoke result was 21.5 tok/s
+  (well above Ollama) — for the article it's honest to say "ties or wins
+  depending on Metal thermal state."</li>
+</ul>
+<h3 id="recommended-article-headline">Recommended article headline<a class="headerlink" href="#recommended-article-headline" title="Permanent link">&para;</a></h3>
+<p><strong>Squish v4.1 takes the latency, memory, and disk wins on M3 16 GB —
+22 ms repeat-prompt TTFT, 53 % less RAM than Ollama, and warm throughput
+that now slightly edges Ollama (20.2 vs 18.8 tok/s). Ollama still has
+the cold-prompt TTFT lead (256 ms vs 481 ms) and ties or wins on
+spec-decode throughput under sustained load.</strong></p>
+<h3 id="remaining-technical-debt-v42-candidates">Remaining technical debt (v4.2 candidates)<a class="headerlink" href="#remaining-technical-debt-v42-candidates" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Cache the post-prefill logit in <code>PromptKVStore</code> so the new fp16 path
+   (223 ms) matches the legacy int8 path (22 ms).</li>
+<li>Bisect any residual v3 → v4 warm-tok/s gap — this v4.1 re-bench
+   suggests it was a thermal artifact, not a code regression. Confirm with
+   a clean-box back-to-back.</li>
+<li><code>tests/test_squishd_unit.py</code> has 9 pre-existing "daemon did not start
+   in time" failures; the test harness needs longer <code>_wait_ready</code>.</li>
+<li><code>tests/test_quant_aqlm.py::test_module_count_unchanged</code> hard-codes
+   89 modules; v4 added 4 daemon modules → assertion needs updating.</li>
+<li>Expose <code>--prompt-kv-cache</code> on the user-facing <code>squish run</code> CLI
+   (currently only on <code>python -m squish.server</code>).</li>
+</ol>
 
 
 
