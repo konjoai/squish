@@ -5,6 +5,80 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.32.0] — 2026-06-02 — Realistic-deployment benchmark + recommended-default config
+
+The v5.1.1 realistic-deployment re-bench is the release headline. Recommended
+default is now both KV caches enabled. Full numbers and methodology in
+[`docs/RESULTS.md`](docs/RESULTS.md) (v5.1.1 section).
+
+### Added
+- **Block-level paged KV cache** (`--block-kv-cache`) for shifting-prefix
+  workloads. Persists KV state across daemon restarts via `.safetensors`
+  blocks. Default block size 64 tokens (`--block-kv-size`).
+- **Prompt KV cache** (`--prompt-kv-cache`) for exact-prompt repeats.
+  Single-digit-millisecond TTFT on cache hits.
+- **INT3 quantization** for compatible model families (Qwen3 within ~1pp of
+  FP16). Hard-block list refuses INT3 on families where it collapses
+  (Gemma-3 loses ~15pp on common benchmarks).
+- **Persistent `squishd` daemon** with UDS IPC.
+- **macOS LaunchAgent integration** (`squish daemon install` / `uninstall`).
+- **`--draft-model`, `--draft-depth` CLI flags** wiring speculative decoding.
+  Currently opt-in — investigation in
+  [`results/benchmarks_v5_2/SPEC_DECODE_DIAGNOSIS.md`](results/benchmarks_v5_2/SPEC_DECODE_DIAGNOSIS.md)
+  shows net-negative throughput on M3 INT4 with available draft models at
+  ≥2K context; runtime code was reverted but the diagnosis stays.
+- **Realistic-deployment benchmark harness**
+  (`benchmarks/ollama_vs_squish/bench_v5_1.py`) with five-run medians, prompt
+  sizes 75/500/2000/4000 tokens, full inter-token latency distribution.
+
+### Changed
+- **Recommended configuration is now `--block-kv-cache` + `--prompt-kv-cache`
+  combined** — best end-to-end completion time across prompt sizes.
+- Removed stale "54× cold load vs mlx_lm" headline framing. The mlx_lm
+  baseline was a development reference, not a production peer; current
+  numbers are vs Ollama (the realistic peer) in
+  [`docs/RESULTS.md`](docs/RESULTS.md).
+- README rewritten to match v5.1.1 measured reality.
+
+### Fixed
+- `mlx_lm` sklearn-stub import-side-effect (saves ~1.2 s cold-start;
+  upstream PR filed).
+- Daemon mode now correctly loads the mlx-native quant format (was
+  hardcoded to the compressed-loader path).
+- KV cache restore moved off the TTFT critical path.
+
+### Performance (vs Ollama 0.18.2 on M3 16 GB, five-run medians)
+- End-to-end response @ 4000-token prompt: **12.78 s** vs Ollama 69.63 s
+  (5.4× faster).
+- End-to-end response @ 75-token prompt: **5.50 s** vs Ollama 8.09 s
+  (1.5× faster).
+- Peak RAM: **3.36 GB** vs Ollama ~5 GB.
+- Disk size INT4: **4.00 GB** vs Ollama 4.36 GB.
+- Disk size INT3 (Qwen3): **3.56 GB** (Ollama: not supported).
+
+### Known limitations
+- **TTFT on short prompts: 279 ms vs Ollama 131 ms** — fundamental MLX
+  prefill kernel cost, not addressable in squish code. Replacing the
+  prefill kernel is a multi-month engineering project deliberately not
+  taken on for this release.
+- **Inter-token p95 jitter on long contexts is elevated vs Ollama**
+  (see [`JITTER_ANALYSIS.md`](results/benchmarks_v5_1_1/JITTER_ANALYSIS.md)).
+  Conscious tradeoff: deferred KV-restore work surfaces as elevated p95 in
+  the first 10–30 decoded tokens. Tracked as v5.2 follow-up.
+- **Combined-cache TTFT inherits block-cache class, not PKV's fast-hit
+  class** — lookup ordering puts block restore before PKV short-circuit.
+  Documented in
+  [`results/benchmarks_v5_1_1/DIAGNOSIS.md`](results/benchmarks_v5_1_1/DIAGNOSIS.md).
+  Reordering tracked as v5.2 follow-up.
+
+### Note on version numbering
+The originally-planned v9.15.0 tag for this work was already used by the
+Squash-extraction release on 2026-04-28 (see entry below). The
+realistic-deployment work lands as v9.32.0, the next minor after the
+v9.31.0 head.
+
+---
+
 ## [9.25.0] — 2026-05-12 — P1 sprint: attention sinks, precision_map, CompressionResult, HF SquishCache
 
 ### Added
