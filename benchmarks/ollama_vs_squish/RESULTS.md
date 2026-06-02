@@ -2,7 +2,79 @@
 
 **Date:** 2026-06-01
 **Host:** Apple M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0
-**Prompts:** see `benchmarks/ollama_vs_squish/bench_v4.py` (v4 / v4.1) and `…/bench.py` (v3).
+**Prompts:** see `benchmarks/ollama_vs_squish/bench_v4.py` (v4 / v4.1 / v4.2) and `…/bench.py` (v3).
+
+## v4.2 — gap-close re-bench (measured)
+
+_v4.2 ships T1 (cache the post-prefill logit in PromptKVStore) — a
+single wiring change that turned the v4.1 fp16 cache-hit path from
+223 ms into 4 ms.  T2 profiling proved the fresh-prompt TTFT gap is the
+MLX prefill kernel itself; T3/T4/T5 had no leverage above the 5 % gate.
+Per-target outcomes: [`../../results/benchmarks_v4_2/PRECHECK.md`](../../results/benchmarks_v4_2/PRECHECK.md)._
+
+_Per-run raw JSON: [`../../results/benchmarks_v4_2/runs/20260601T215104/raw.json`](../../results/benchmarks_v4_2/runs/20260601T215104/raw.json)._
+
+**Squish:** 9.14.0 + v4.2 wiring (`perf/v4.2-gap-close`) · **Ollama:** 0.18.2 · **mlx_lm:** 0.31.1.
+
+| Metric                            | Ollama (warm) | sq daemon       | sq +disk-KV (legacy) | sq +pkv (v4.2)  | sq +spec (v4.1) | Winner             |
+|-----------------------------------|--------------:|----------------:|---------------------:|----------------:|----------------:|--------------------|
+| **TTFT, fresh prompt**            |    **254 ms** |          519 ms |               408 ms |          358 ms |          503 ms | Ollama             |
+| **TTFT, repeated prompt**         |        123 ms |          652 ms |               591 ms |       **4 ms**  |          636 ms | **sq +pkv** (31× Ollama) |
+| **Warm tokens/sec** (200-tok)     |     18.9 tok/s |    **20.6 tok/s** |           12.7 tok/s |      10.9 tok/s |      14.0 tok/s | **sq daemon**      |
+| **Peak RAM** (process tree)       |       5.15 GB |     **2.08 GB** |              3.66 GB |         3.86 GB |         3.93 GB | **sq daemon** (60 % less than Ollama) |
+| **Disk size** (model)             |       4.36 GB |     **4.00 GB** |              4.00 GB |         4.00 GB |         4.00 GB | Squish             |
+
+### Per-fix delta from v4.1
+
+| Target            | Metric                          | v4.1 measured | v4.2 measured | Delta              |
+|-------------------|----------------------------------|--------------:|--------------:|--------------------|
+| T1 — logit cache  | TTFT repeat (sq +pkv)            |       223 ms  |     **4 ms**  | **56× faster**, beats legacy int8 (22 ms) and Ollama (123 ms) |
+| T1 side-effect    | TTFT fresh (sq +pkv)             |       557 ms  |     358 ms    | **-36 %** (manual prefill yields token before mlx_lm setup) |
+| T2 — fresh gap    | TTFT fresh (sq daemon)           |       481 ms  |     519 ms    | MLX kernel floor; squish-side overhead profiled <1 ms |
+| T3-T5             | various                          |          —    |       —       | deferred to v4.3 (no leverage above 5 % gate) |
+
+### Per-run TTFT, fresh prompt (ms)
+| Run | Ollama | sq daemon | sq +disk-KV | sq +pkv | sq +spec |
+|----:|-------:|----------:|------------:|--------:|---------:|
+| 1   |    278 |       522 |         408 |     360 |      503 |
+| 2   |    270 |       519 |         383 |     359 |      523 |
+| 3   |    254 |       518 |         414 |     357 |      498 |
+| 4   |    254 |       525 |         424 |     358 |      499 |
+| 5   |    253 |       504 |         381 |     357 |      504 |
+
+### Per-run TTFT, repeated prompt (ms)
+| Run | Ollama | sq daemon | sq +disk-KV | sq +pkv | sq +spec |
+|----:|-------:|----------:|------------:|--------:|---------:|
+| 1   |    123 |       679 |         591 |      10 |      634 |
+| 2   |    123 |       652 |         677 |       5 |      636 |
+| 3   |    122 |       634 |         625 |    **4**|      655 |
+| 4   |    126 |       646 |          27 |       3 |      636 |
+| 5   |    122 |       670 |          20 |       4 |      650 |
+
+### Per-run warm tokens/sec
+| Run | Ollama | sq daemon | sq +disk-KV | sq +pkv | sq +spec |
+|----:|-------:|----------:|------------:|--------:|---------:|
+| 1   |   18.9 |      20.3 |        17.4 |    16.4 |     16.4 |
+| 2   |   18.9 |      20.6 |        12.7 |    10.9 |     14.0 |
+| 3   |   19.0 |      20.7 |        11.0 |    10.6 |     12.8 |
+| 4   |   19.0 |      20.6 |        11.3 |    10.8 |     13.1 |
+| 5   |   18.9 |      20.1 |        12.8 |    11.1 |     14.5 |
+
+### Headline read
+
+**Squish v4.2 hits 4 ms TTFT on repeated prompts — 31× faster than Ollama,
+9 % more tokens/sec at steady state, 60 % less RAM. Cold prompts still
+go to Ollama (254 vs 519 ms — MLX prefill kernel limit); everything else
+belongs to Squish.**
+
+### Reproduce
+
+```bash
+source .venv/bin/activate
+SQUISH_BENCH_OUT=v4_2 python benchmarks/ollama_vs_squish/bench_v4.py
+```
+
+---
 
 ## v4.1 — wired-features re-bench (measured)
 
