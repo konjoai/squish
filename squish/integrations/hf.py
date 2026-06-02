@@ -2,7 +2,7 @@
 
 Install the optional extras for HF integration:
 
-    pip install squish[hf]   # installs transformers + tokenizers
+    pip install squish-ai[hf]   # installs transformers + tokenizers
 
 Public surface
 --------------

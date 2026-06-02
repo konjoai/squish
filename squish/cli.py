@@ -2291,11 +2291,8 @@ def cmd_doctor(args):
 
 def cmd_update(args):
     """Upgrade squish and its core dependencies to the latest published versions."""
-    try:
-        import importlib.metadata as _im
-        current_version = _im.version("squish")
-    except Exception:
-        current_version = "unknown"
+    from squish import __dist_name__, dist_version
+    current_version = dist_version()
 
     try:
         from squish.ui import console as _con, _RICH_AVAILABLE as _rich
@@ -2312,7 +2309,7 @@ def cmd_update(args):
         print(f"  squish update  (current: {current_version})")
         print()
 
-    packages = ["squish", "mlx", "mlx-lm", "huggingface_hub"]
+    packages = [__dist_name__, "mlx", "mlx-lm", "huggingface_hub"]
     if getattr(args, "all", False):
         # Include heavy optional deps when --all is passed
         packages += ["mlx-vlm", "transformers", "sentencepiece", "tiktoken"]
@@ -2338,14 +2335,10 @@ def cmd_update(args):
             for ln in (result.stderr or result.stdout).splitlines()[-5:]:
                 print(f"      {ln}")
 
-    try:
-        import importlib.metadata as _im2
-        new_version = _im2.version("squish")
-    except Exception:
-        new_version = "unknown"
+    new_version = dist_version()
 
     print()
-    if new_version != current_version and new_version != "unknown":
+    if new_version != current_version:
         print(f"  Squish upgraded: {current_version} → {new_version}")
     else:
         print(f"  Squish is up to date ({new_version})")
@@ -5701,11 +5694,8 @@ def cmd_version(args) -> None:  # noqa: ARG001
     """Print squish version and wave number."""
     from squish.ui import console as _con, _RICH_AVAILABLE as _rich
 
-    try:
-        import importlib.metadata as _im
-        ver = _im.version("squish")
-    except Exception:
-        from squish import __version__ as ver  # type: ignore[assignment]
+    from squish import dist_version
+    ver = dist_version()
     _wave = globals().get("_CURRENT_WAVE", "unknown")
 
     if _rich:
@@ -6127,10 +6117,8 @@ Ollama drop-in:
     )
     sub = ap.add_subparsers(dest="command")
 
-    try:
-        _ver = __import__('importlib.metadata', fromlist=['version']).version('squish')
-    except Exception:
-        _ver = __import__('squish').__version__
+    from squish import dist_version
+    _ver = dist_version()
     ap.add_argument(
         "--version", action="version",
         version=f"squish {_ver}",

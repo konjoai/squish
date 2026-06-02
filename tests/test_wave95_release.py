@@ -1,7 +1,7 @@
 """tests/test_wave95_release.py — Wave 95: Final public release audit tests.
 
 Verifies:
-- importlib.metadata.version("squish") returns a valid semver string
+- importlib.metadata.version("squish-ai") returns a valid semver string
 - squish version command runs and prints version + wave
 - CHANGELOG contains Wave 85
 - README has no "Coming soon" text
@@ -28,20 +28,22 @@ ROOT = Path(__file__).parent.parent
 class TestPackageVersion:
     def test_importlib_version_returns_string(self):
         import importlib.metadata as im
-        v = im.version("squish")
+        from squish import __dist_name__
+        v = im.version(__dist_name__)
         assert isinstance(v, str)
         assert len(v) > 0
 
     def test_version_is_semver_format(self):
         import importlib.metadata as im
-        v = im.version("squish")
+        from squish import __dist_name__
+        v = im.version(__dist_name__)
         # Accept X.Y.Z or X.Y format
         assert re.match(r"^\d+\.\d+(\.\d+)?", v), f"Not semver: {v!r}"
 
     def test_init_version_matches_metadata(self):
         import importlib.metadata as im
-        from squish import __version__
-        meta_version = im.version("squish")
+        from squish import __dist_name__, __version__
+        meta_version = im.version(__dist_name__)
         assert __version__ == meta_version
 
     def test_version_non_empty(self):
