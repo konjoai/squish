@@ -1,9 +1,0 @@
-{
-    "arc_challenge": {
-        "alias": "arc_challenge",
-        "acc,none": 0.18,
-        "acc_stderr,none": 0.017198592476314237,
-        "acc_norm,none": 0.25,
-        "acc_norm_stderr,none": 0.019384310743640384
-    }
-}
