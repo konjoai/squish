@@ -100,8 +100,13 @@ jobs:
           pip install -e . --quiet 2>/dev/null || true
       - name: Run mutation testing
         continue-on-error: true
+        timeout-minutes: 8
         run: |
-          mutmut run 2>&1 | tail -60 || true
+          # Cap the mutmut run at ~7 min so the step exits gracefully before
+          # the GitHub-Actions step timeout (8 min) sends SIGKILL. Without
+          # this cap mutmut runs until the runner kills it (exit 143), which
+          # is reported as job failure even with continue-on-error.
+          timeout 420 mutmut run 2>&1 | tail -60 || echo "mutmut terminated by timeout — partial results follow"
           mutmut results 2>/dev/null || true
 
   # ══════════════════════════════════════════════════════════════════════════
