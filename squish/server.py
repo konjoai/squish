@@ -186,6 +186,8 @@ _kv_cache = None         # QuantizedKVCache | None — set in main() after model
 _paged_kv_cache = None   # PagedKVCache | None — set in main() when --paged-attention
 _disk_prompt_cache = None  # DiskKVCache | None — set in main() when --disk-prompt-cache given
 _prompt_kv_store   = None  # PromptKVStore | None — set in main() when --prompt-kv-cache given (v4 wiring)
+_block_kv_cache    = None  # BlockKVCache | None — set in main() when --block-kv-cache given (v5)
+_block_kv_size     = 64    # set in main() — block_size used by _block_kv_cache
 _lazy_llm_state = None  # _PruneState | None — set in main() when --lazy-llm given
 
 # ── Deferred model-load state (--lazy / --preload-async) ─────────────────────
@@ -2126,6 +2128,100 @@ def _generate_tokens(  # pragma: no cover
         )
         _stop_text_maxlen = max((len(s) for s in _stop_strings), default=0) + 64
 
+        # ── v5: BlockKVCache lookup (block-level paged prefix cache) ──────────
+        # When --block-kv-cache is enabled, split the prompt into 64-token
+        # blocks, hash each chained against its predecessor, and find the
+        # longest cached prefix.  We restore those blocks' KV state into a
+        # fresh mlx_lm prompt cache, then prefill ONLY the suffix.  Unlike
+        # PromptKVStore (which hashes the entire prompt and misses on any
+        # change) this hits whenever the prompt shares a prefix with any past
+        # prompt — the workload pattern of agent / coding assistants.
+        _bkv_was_hit = False
+        _bkv_matched_blocks = 0
+        _bkv_matched_tokens = 0
+        _bkv_full_ids: "list[int] | None" = None
+        _bkv_cache_obj = None  # the mlx_lm prompt cache we'll reuse for stream_generate
+
+        if _block_kv_cache is not None:
+            try:
+                from mlx_lm.models.cache import make_prompt_cache as _make_pc_b
+                from squish.kv.block_kv_cache import (
+                    PrefixMatch as _PrefixMatch,
+                    restore_blocks_to_cache as _restore_blocks,
+                )
+                import mlx.core as _mx_b
+                import numpy as _np_b
+                _bkv_full_ids = (
+                    tokenizer.encode(prompt)
+                    if hasattr(tokenizer, "encode")
+                    else tokenizer(prompt, return_tensors="np")["input_ids"][0].tolist()
+                )
+                _bkv_n_tokens = len(_bkv_full_ids)
+                _match = _block_kv_cache.lookup_prefix(_bkv_full_ids)
+                _bs = _block_kv_size
+                _full_blocks_in_prompt = _bkv_n_tokens // _bs
+                # If the matched prefix already covers the ENTIRE prompt (rare
+                # — requires the prompt token count to be an exact multiple of
+                # block_size AND every block to be cached), drop the last
+                # matched block so we have at least one suffix to re-prefill.
+                # We don't cache per-block last-position logits yet; the suffix
+                # prefill gives us the logit for the first NEW token.
+                # Note: if _bkv_n_tokens is NOT a multiple of _bs, the natural
+                # suffix (the trailing partial block) already provides what we
+                # need — no drop required.
+                if (_match.matched_tokens == _bkv_n_tokens
+                        and _match.matched_tokens >= _bs):
+                    _match = _PrefixMatch(
+                        matched_blocks=_match.matched_blocks[:-1],
+                        matched_tokens=_match.matched_tokens - _bs,
+                    )
+                _bkv_cache_obj = _make_pc_b(model)
+                if _match.matched_tokens > 0:
+                    _restore_blocks(_bkv_cache_obj, _match.matched_blocks)
+                    _bkv_was_hit = True
+                    _bkv_matched_blocks = len(_match.matched_blocks)
+                    _bkv_matched_tokens = _match.matched_tokens
+                # Prefill the suffix manually so we can grab the last logit.
+                _suffix_ids = _bkv_full_ids[_match.matched_tokens:]
+                if _suffix_ids:
+                    _x_b = _mx_b.array(_suffix_ids, dtype=_mx_b.int32)[None]
+                    _logits_suffix = model(_x_b, cache=_bkv_cache_obj)
+                    _mx_b.eval(_logits_suffix)
+                    _bkv_last_logit = _logits_suffix[0, -1]
+                else:
+                    # No suffix to prefill — shouldn't happen after the drop above,
+                    # but guard anyway by re-prefilling the last block from scratch.
+                    _x_b = _mx_b.array(_bkv_full_ids[-_bs:], dtype=_mx_b.int32)[None]
+                    _logits_suffix = model(_x_b, cache=_bkv_cache_obj)
+                    _mx_b.eval(_logits_suffix)
+                    _bkv_last_logit = _logits_suffix[0, -1]
+                _bkv_first_token_id = _sample_mx(_bkv_last_logit, temperature, top_p)
+                _bkv_first_token_text = (
+                    tokenizer.decode([_bkv_first_token_id])
+                    if hasattr(tokenizer, "decode")
+                    else str(_bkv_first_token_id)
+                )
+                if _trace:
+                    _tlog(
+                        f"REQ {_rid}  block-kv-cache "
+                        f"{'HIT' if _bkv_was_hit else 'MISS'}  "
+                        f"matched_blocks={_bkv_matched_blocks}/"
+                        f"{_full_blocks_in_prompt}  "
+                        f"matched_tokens={_bkv_matched_tokens}/"
+                        f"{_bkv_n_tokens}  "
+                        f"suffix_prefilled={len(_suffix_ids)}"
+                    )
+            except (ImportError, AttributeError, TypeError, ValueError) as _bkv_err:
+                import logging as _bkvlog
+                _bkvlog.getLogger(__name__).warning(
+                    "[block-kv-cache] lookup skipped (%s) — running without it",
+                    _bkv_err,
+                )
+                _bkv_cache_obj = None
+                _bkv_first_token_id = None
+                _bkv_first_token_text = None
+                _bkv_full_ids = None
+
         # ── v4.2 Fix 1: PromptKVStore lookup with logit-skip-prefill ──────────
         # The cache now stores the post-prefill logit alongside KV state. On a
         # hit we sample the first generated token directly from the cached
@@ -2237,6 +2333,16 @@ def _generate_tokens(  # pragma: no cover
                 _pkv_captured_logit_np = None
                 _pkv_deferred_restore = None
 
+        # v5: if BlockKVCache produced a result and PromptKVStore didn't,
+        # route the block-cache state through the same yield-first-token +
+        # stream_generate continuation path used by the PKV miss path.
+        if _bkv_first_token_text is not None and _pkv_first_token_text is None:
+            _pkv_first_token_text = _bkv_first_token_text
+            _pkv_first_token_id   = _bkv_first_token_id
+            _pkv_eff_prompt       = [_bkv_first_token_id]
+            _pkv_cache            = _bkv_cache_obj
+            _sg_kwargs["prompt_cache"] = _bkv_cache_obj
+
         gen = mlx_lm.stream_generate(
             model,
             tokenizer,
@@ -2246,40 +2352,87 @@ def _generate_tokens(  # pragma: no cover
         )
 
         def _pkv_save_if_miss(n_decoded: int) -> None:
-            """Save the prompt-prefix KV state + post-prefill logit (v4.2)."""
-            if (_prompt_kv_store is None
-                    or _pkv_was_hit
-                    or _pkv_cache is None):
-                return
-            try:
-                # On the miss path we did a manual prefill (cache.offset = prompt_len)
-                # then stream_generate processed [first_token] + (n_decoded-1) more
-                # decoded tokens. Trim back to prompt_len so we cache just the
-                # prompt's KV state (the logit predicts the first new token).
-                _trim_n = n_decoded
-                for _layer in _pkv_cache:
-                    if hasattr(_layer, "trim"):
-                        _layer.trim(_trim_n)
-                from squish.kv.prompt_kv_cache import capture_kv_state as _ckv
-                _cap = _ckv(_pkv_cache)
-                if _cap is None:
-                    return
-                _k, _v, _off = _cap
-                if _off <= 0:
-                    return
-                _prompt_kv_store.put(
-                    _orig_prompt, _k, _v, _off,
-                    last_logit=_pkv_captured_logit_np,
-                )
-                if _trace:
-                    _tlog(f"REQ {_rid}  prompt-kv-cache STORED  "
-                          f"offset={_off}  layers={len(_k)}  "
-                          f"logit={'yes' if _pkv_captured_logit_np is not None else 'no'}")
-            except (RuntimeError, ValueError, TypeError) as _pkv_err:
-                import logging as _pkvlog
-                _pkvlog.getLogger(__name__).warning(
-                    "[prompt-kv-cache] store failed (%s) — entry not saved", _pkv_err,
-                )
+            """Save the prompt-prefix KV state + post-prefill logit (v4.2).
+
+            Also saves any new full blocks discovered during prefill for the
+            v5 BlockKVCache when --block-kv-cache is active.
+            """
+            # v4.2 PromptKVStore (whole-prompt hash) save
+            if (_prompt_kv_store is not None
+                    and not _pkv_was_hit
+                    and _pkv_cache is not None):
+                try:
+                    # On the miss path we did a manual prefill (cache.offset = prompt_len)
+                    # then stream_generate processed [first_token] + (n_decoded-1) more
+                    # decoded tokens. Trim back to prompt_len so we cache just the
+                    # prompt's KV state (the logit predicts the first new token).
+                    _trim_n = n_decoded
+                    for _layer in _pkv_cache:
+                        if hasattr(_layer, "trim"):
+                            _layer.trim(_trim_n)
+                    from squish.kv.prompt_kv_cache import capture_kv_state as _ckv
+                    _cap = _ckv(_pkv_cache)
+                    if _cap is not None:
+                        _k, _v, _off = _cap
+                        if _off > 0:
+                            _prompt_kv_store.put(
+                                _orig_prompt, _k, _v, _off,
+                                last_logit=_pkv_captured_logit_np,
+                            )
+                            if _trace:
+                                _tlog(f"REQ {_rid}  prompt-kv-cache STORED  "
+                                      f"offset={_off}  layers={len(_k)}  "
+                                      f"logit={'yes' if _pkv_captured_logit_np is not None else 'no'}")
+                except (RuntimeError, ValueError, TypeError) as _pkv_err:
+                    import logging as _pkvlog
+                    _pkvlog.getLogger(__name__).warning(
+                        "[prompt-kv-cache] store failed (%s) — entry not saved", _pkv_err,
+                    )
+
+            # v5 BlockKVCache (chained-block hash) save
+            if (_block_kv_cache is not None
+                    and _bkv_cache_obj is not None
+                    and _bkv_full_ids is not None):
+                try:
+                    from squish.kv.block_kv_cache import (
+                        slice_cache_into_blocks as _slice_blocks,
+                    )
+                    _bs = _block_kv_size
+                    _n_full_blocks = len(_bkv_full_ids) // _bs
+                    # Only save when we have at least one new full block to add.
+                    # (Re-storing already-cached blocks is a no-op but wastes I/O.)
+                    if _n_full_blocks > 0 and _n_full_blocks > _bkv_matched_blocks:
+                        # Trim the cache back to the prompt boundary so the
+                        # block slices line up with prompt token positions.
+                        # _trim_n_b accounts for decode tokens past prompt_len.
+                        # After v4.2 PKV trim above, _pkv_cache may have already
+                        # been trimmed; use _bkv_cache_obj's own state instead.
+                        _n_prompt = len(_bkv_full_ids)
+                        for _layer in _bkv_cache_obj:
+                            if hasattr(_layer, "offset") and hasattr(_layer, "trim"):
+                                _excess = _layer.offset - _n_prompt
+                                if _excess > 0:
+                                    _layer.trim(_excess)
+                        _per_b_k, _per_b_v = _slice_blocks(
+                            _bkv_cache_obj, _bs, _n_full_blocks,
+                            n_layers=len(_bkv_cache_obj),
+                        )
+                        if _per_b_k:
+                            _block_kv_cache.store_blocks(
+                                _bkv_full_ids, _per_b_k, _per_b_v,
+                            )
+                            if _trace:
+                                _tlog(
+                                    f"REQ {_rid}  block-kv-cache STORED  "
+                                    f"new_blocks={_n_full_blocks - _bkv_matched_blocks}/"
+                                    f"{_n_full_blocks}  block_size={_bs}"
+                                )
+                except (RuntimeError, ValueError, TypeError, OSError) as _bkv_err:
+                    import logging as _bkvlog
+                    _bkvlog.getLogger(__name__).warning(
+                        "[block-kv-cache] store failed (%s) — blocks not saved",
+                        _bkv_err,
+                    )
 
         # If we have a pre-sampled first token (fast-hit OR miss-with-prefill),
         # emit it BEFORE consuming from stream_generate so TTFT reflects the
@@ -4047,6 +4200,31 @@ Examples:
     ap.add_argument("--prompt-kv-cache-max-gb", type=float, default=1.0,
                     metavar="GB",
                     help="Soft cap on prompt-kv-cache disk usage in GB (default 1.0)")
+    # v5: block-level paged KV cache (longer-context, shifting-prefix workloads).
+    # Distinct from --prompt-kv-cache which keys on the full-prompt SHA-256 and
+    # misses on any prefix change.  Block cache splits the prompt into fixed
+    # 64-token blocks, hashes each chained against its predecessor, and reuses
+    # the longest matching prefix.  Hot tier = RAM, cold tier = SSD.
+    ap.add_argument("--block-kv-cache", default="",
+                    metavar="DIR",
+                    help="Enable block-level paged KV cache stored under DIR\n"
+                         "(default ~/.cache/squish/blocks/). Hot RAM tier + cold\n"
+                         "SSD tier. Splits prompts into 64-token blocks (override\n"
+                         "with --block-kv-size) and re-uses any matching prefix\n"
+                         "block-by-block. Aligns with vLLM / oMLX paged attention.\n"
+                         "Works alongside --prompt-kv-cache; block cache hit takes\n"
+                         "precedence when both match.")
+    ap.add_argument("--block-kv-size", type=int, default=64,
+                    metavar="N",
+                    help="Token block size for --block-kv-cache (default 64). "
+                         "Lower = finer-grained cache reuse but more files; "
+                         "higher = coarser reuse but lower lookup overhead.")
+    ap.add_argument("--block-kv-hot-gb", type=float, default=2.0,
+                    metavar="GB",
+                    help="Soft cap on block-kv-cache RAM tier in GB (default 2.0)")
+    ap.add_argument("--block-kv-cold-gb", type=float, default=8.0,
+                    metavar="GB",
+                    help="Soft cap on block-kv-cache disk tier in GB (default 8.0)")
     # Phase 3: persistent cross-session KV cache
     ap.add_argument("--session-cache-dir", default="",
                     metavar="DIR",
@@ -4525,6 +4703,32 @@ Examples:
             import logging as _pkv_log
             _pkv_log.getLogger(__name__).warning(
                 "[prompt-kv-cache] disabled: %s", _pkv_imp_err,
+            )
+
+    # ── Block-KV-cache init (v5 — paged block-level prefix cache) ────────────
+    global _block_kv_cache, _block_kv_size
+    _bkv_dir = getattr(args, "block_kv_cache", "")
+    _block_kv_size = int(getattr(args, "block_kv_size", 64))
+    if _bkv_dir and _state.model is not None:
+        try:
+            from squish.kv.block_kv_cache import BlockKVCache as _BKVC
+            import hashlib as _hl_b
+            _bkv_model_key = _hl_b.sha256(
+                str(getattr(args, "mlx_model_dir", "") or getattr(args, "model_dir", "")).encode()
+            ).hexdigest()[:16]
+            _block_kv_cache = _BKVC(
+                cache_dir      = _bkv_dir,
+                block_size     = _block_kv_size,
+                hot_max_bytes  = int(getattr(args, "block_kv_hot_gb",  2.0) * 1_000_000_000),
+                cold_max_bytes = int(getattr(args, "block_kv_cold_gb", 8.0) * 1_000_000_000),
+                model_key      = _bkv_model_key,
+            )
+            if args.verbose:
+                _info("block-kv", f"{_bkv_dir}  {_C.DIM}(block_size={_block_kv_size} model_key={_bkv_model_key}){_C.R}")
+        except ImportError as _bkv_imp_err:
+            import logging as _bkv_log
+            _bkv_log.getLogger(__name__).warning(
+                "[block-kv-cache] disabled: %s", _bkv_imp_err,
             )
 
     # ── LazyLLM token-pruning init (Item 3) ──────────────────────────────────
