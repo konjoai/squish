@@ -20,8 +20,6 @@ Usage::
 """
 from __future__ import annotations
 
-import importlib.metadata
-
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
@@ -38,11 +36,7 @@ def mount_localai(app: FastAPI, get_state) -> None:
         Zero-arg callable returning the ``_ModelState`` global.
     """
 
-    def _squish_version() -> str:
-        try:
-            return importlib.metadata.version("squish")
-        except importlib.metadata.PackageNotFoundError:
-            return "0.0.0-dev"
+    from squish import dist_version as _squish_version
 
     @app.get("/")
     async def localai_root():

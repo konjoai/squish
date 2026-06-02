@@ -11,7 +11,7 @@ TF-IDF (default, zero extra dependencies)
     TF-IDF term weights, then greedily keeps the top-scoring sentences until
     the *ratio* budget is reached.  Fast (~1 ms for 1 K-word prompts).
 
-LLMLingua (optional, ``pip install squish[llmlingua]``)
+LLMLingua (optional, ``pip install squish-ai[llmlingua]``)
     Delegates to ``llmlingua.PromptCompressor`` for token-level selective
     compression.  Falls back to TF-IDF if llmlingua is not installed.
 

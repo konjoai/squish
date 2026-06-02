@@ -598,12 +598,10 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
     # ── Stale (or absent) — return now, refresh asynchronously ───────────────
     def _background_fetch() -> None:  # pragma: no cover
         try:
-            import importlib.metadata as _imeta
             import ssl as _ssl
-            try:
-                _ver = _imeta.version("squish")
-            except Exception:
-                _ver = "0.0.0"
+
+            from squish import dist_version
+            _ver = dist_version()
             req = urllib.request.Request(
                 CATALOG_URL, headers={"User-Agent": f"squish/{_ver}"}
             )

@@ -33,7 +33,6 @@ References:
 from __future__ import annotations
 
 import asyncio
-import importlib.metadata
 import json
 import time
 from collections.abc import AsyncIterator
@@ -194,11 +193,8 @@ def mount_ollama(
     @app.get("/api/version")
     async def ollama_version():
         """Ollama version endpoint — tools check this to detect an Ollama server."""
-        try:
-            squish_ver = importlib.metadata.version("squish")
-        except importlib.metadata.PackageNotFoundError:
-            squish_ver = "0.0.0-dev"
-        return JSONResponse({"version": squish_ver})
+        from squish import dist_version
+        return JSONResponse({"version": dist_version()})
 
     @app.get("/api/tags")
     async def ollama_tags():

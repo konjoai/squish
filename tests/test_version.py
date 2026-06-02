@@ -5,7 +5,10 @@ Verify that squish.__version__ is consistent with the installed package
 metadata and the pinned expected version.
 
 Phase 5A Bug 3 requirement: add a CI test asserting:
-    squish.__version__ == importlib.metadata.version("squish")
+    squish.__version__ == importlib.metadata.version(squish.__dist_name__)
+
+The importable module is ``squish`` but the PyPI distribution is ``squish-ai``;
+metadata lookups must use the distribution name.
 """
 from __future__ import annotations
 
@@ -35,17 +38,18 @@ class TestVersionConsistency:
 
     def test_version_matches_package_metadata(self):
         """
-        When *squish* is installed (pip install -e . or pip install squish),
-        squish.__version__ must equal importlib.metadata.version("squish").
+        When *squish* is installed (pip install -e . or pip install squish-ai),
+        squish.__version__ must equal the installed distribution metadata.
 
-        Skipped if the package is not installed (e.g. raw source checkout
-        without an editable install).
+        The PyPI distribution is ``squish-ai`` (squish.__dist_name__), not
+        ``squish``. Skipped if the package is not installed (e.g. raw source
+        checkout without an editable install).
         """
-        try:
-            meta_version = importlib.metadata.version("squish")
-        except importlib.metadata.PackageNotFoundError:
-            pytest.skip("squish is not installed; skipping metadata version check")
         import squish
+        try:
+            meta_version = importlib.metadata.version(squish.__dist_name__)
+        except importlib.metadata.PackageNotFoundError:
+            pytest.skip("squish-ai is not installed; skipping metadata version check")
         assert squish.__version__ == meta_version, (
             f"squish.__version__ ({squish.__version__!r}) disagrees with "
             f"importlib.metadata ({meta_version!r}).  "
