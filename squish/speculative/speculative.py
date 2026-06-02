@@ -177,7 +177,7 @@ def _get_logits(model, ids: list[int]) -> np.ndarray:
     out    = model(x)                               # (1, seq_len, vocab)
     last   = out[0, -1]                             # (vocab,)
     mx.eval(last)
-    return np.array(last, dtype=np.float32)
+    return np.array(last.astype(mx.float32), dtype=np.float32)
 
 
 def _get_all_logits(model, ids: list[int], n_positions: int) -> np.ndarray:
@@ -268,7 +268,7 @@ def _prefill_cached(model, cache, ids: list[int]) -> np.ndarray:
     out = model(x, cache=cache)                  # (1, seq_len, vocab)
     last = out[0, -1]
     mx.eval(last)
-    return np.array(last, dtype=np.float32)
+    return np.array(last.astype(mx.float32), dtype=np.float32)
 
 
 def _decode_step_cached(model, cache, token_id: int) -> np.ndarray:
@@ -277,7 +277,7 @@ def _decode_step_cached(model, cache, token_id: int) -> np.ndarray:
     out = model(x, cache=cache)                   # (1, 1, vocab)
     last = out[0, -1]
     mx.eval(last)
-    return np.array(last, dtype=np.float32)
+    return np.array(last.astype(mx.float32), dtype=np.float32)
 
 
 def _decode_multi_cached(model, cache, token_ids: list[int]) -> np.ndarray:
@@ -291,7 +291,7 @@ def _decode_multi_cached(model, cache, token_ids: list[int]) -> np.ndarray:
     out = model(x, cache=cache)                       # (1, T, vocab)
     rows = out[0]
     mx.eval(rows)
-    return np.array(rows, dtype=np.float32)
+    return np.array(rows.astype(mx.float32), dtype=np.float32)
 
 
 # ── Phase 1A: N-gram in-context draft table ───────────────────────────────────
@@ -563,7 +563,7 @@ class EagleDraftHead:
             x_in = mx.array([[cur_tok]], dtype=mx.int32)
             logits = self._model(x_in, cache=self._cache)
             mx.eval(logits)
-            logit_np = np.array(logits[0, -1], dtype=np.float32)
+            logit_np = np.array(logits[0, -1].astype(mx.float32), dtype=np.float32)
             probs = _top_p_filter(_softmax_np(logit_np, temperature), top_p)
             tok   = _sample(probs)
             draft_ids.append(tok)
@@ -762,7 +762,7 @@ class SpeculativeGenerator:
         )
         last = out[0, -1]
         mx.eval(last)
-        return np.array(last, dtype=np.float32)
+        return np.array(last.astype(mx.float32), dtype=np.float32)
 
     def _verify_batch(self, token_ids: list[int]) -> np.ndarray:
         """Multi-token verify in a single forward pass using compiled fn.
@@ -918,6 +918,15 @@ class SpeculativeGenerator:
         # Phase 1A: track live context for n-gram updates
         context = list(ids)
 
+        # v5.2: greedy (temp≈0) uses deterministic argmax verification instead of
+        # stochastic rejection sampling. Int4 lm_heads routinely emit exact logit
+        # ties; softmax spreads probability across the tied ids and the rejection
+        # sampler would break the tie randomly, diverging from the non-spec greedy
+        # path (which argmax-breaks deterministically). Greedy-match verification
+        # — accept iff draft token == target argmax, else emit target argmax —
+        # is provably identical to non-spec greedy decoding.
+        greedy = temperature <= 1e-9
+
         while generated < max_tokens:
             base      = _cache_offset(self._target_cache)
             vocab_sz  = len(d_last)
@@ -946,9 +955,14 @@ class SpeculativeGenerator:
             for _ in range(n_neural):
                 if draft_ids and draft_ids[-1] == eos_id:
                     break
-                probs = _softmax_np(cur_d_logits, temperature)
-                probs = _top_p_filter(probs, top_p)
-                tok   = _sample(probs)
+                if greedy:
+                    tok   = _greedy(cur_d_logits)
+                    probs = np.zeros(vocab_sz, dtype=np.float32)
+                    probs[tok] = 1.0
+                else:
+                    probs = _softmax_np(cur_d_logits, temperature)
+                    probs = _top_p_filter(probs, top_p)
+                    tok   = _sample(probs)
                 draft_ids.append(tok)
                 draft_probs.append(probs)
                 if tok == eos_id:
@@ -980,11 +994,33 @@ class SpeculativeGenerator:
             target_rows = np.concatenate(
                 [t_last[np.newaxis], target_fwd], axis=0)  # (k+1, vocab)
 
+            # Draft and target lm_heads may pad the vocab dimension to different
+            # widths (e.g. Qwen2.5-7B→152064 vs 1.5B→151936); the padding ids are
+            # never real tokens. Align both to the common width so the per-token
+            # accept/reject arithmetic broadcasts. Real token ids (< tokenizer
+            # vocab) live below this bound, so greedy output is unaffected.
+            if target_rows.shape[1] != vocab_sz:
+                _vw = min(target_rows.shape[1], vocab_sz)
+                target_rows = target_rows[:, :_vw]
+                draft_probs = [p[:_vw] for p in draft_probs]
+
             # ── Step 3: sequential accept / reject ────────────────────────────
             new_tokens: list[int] = []
             accepted = 0
             for i, (d_tok, d_probs) in enumerate(
                     zip(draft_ids, draft_probs, strict=False)):
+                if greedy:
+                    # Deterministic greedy-match: accept iff the draft token is
+                    # the target's argmax (ties broken identically by argmax).
+                    t_argmax = _greedy(target_rows[i])
+                    if d_tok == t_argmax:
+                        new_tokens.append(d_tok)
+                        accepted += 1
+                    else:
+                        new_tokens.append(t_argmax)
+                        break
+                    continue
+
                 t_probs  = _softmax_np(target_rows[i], temperature)
                 t_probs  = _top_p_filter(t_probs, top_p)
                 p_target = float(t_probs[d_tok])
@@ -1009,9 +1045,12 @@ class SpeculativeGenerator:
 
             # ── Step 4: bonus token (all k accepted) ──────────────────────────
             if accepted == len(draft_ids):
-                bonus_probs = _softmax_np(target_rows[len(draft_ids)], temperature)
-                bonus_probs = _top_p_filter(bonus_probs, top_p)
-                new_tokens.append(_sample(bonus_probs))
+                if greedy:
+                    new_tokens.append(_greedy(target_rows[len(draft_ids)]))
+                else:
+                    bonus_probs = _softmax_np(target_rows[len(draft_ids)], temperature)
+                    bonus_probs = _top_p_filter(bonus_probs, top_p)
+                    new_tokens.append(_sample(bonus_probs))
 
             # ── Step 5: advance caches to end of accepted sequence ────────────
             # n_acc tokens before the "final" token (correction or bonus).

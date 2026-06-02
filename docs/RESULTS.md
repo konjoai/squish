@@ -80,6 +80,29 @@ optimization layer.
 
 ---
 
+## v5.2 — Speculative Decoding: investigated, reverted
+
+_Apple M3, 16 GB, June 2026. Target Qwen2.5-7B-int4, draft Qwen2.5-1.5B-int4
+(the only draft sharing the 7B tokenizer family on disk). temp=0, seed=42._
+
+Spec decode was wired into the greedy warm path and measured end-to-end. **It
+does not earn its keep on M3 int4 and was reverted to opt-in (`temperature > 0`).**
+
+| Context | K | Acceptance | net× vs greedy | Output identical |
+|--------:|--:|-----------:|---------------:|:----------------:|
+| 75      | 2 | 0.747      | 0.87×          | No |
+| 4039    | 2 | 0.633      | **0.16×**      | No |
+| 4039    | 4 | 0.417      | **0.06×**      | Yes |
+
+Acceptance is fine, but the verify cost scales with context length, so net
+throughput collapses in the long-context regime the warm benchmark targets. int4
+lm_head logit ties also break bit-identity between batched-verify and sequential
+greedy. Kept the underlying correctness fixes (bf16 cast, vocab align,
+greedy-match branch, `--draft-depth`); they're inert unless `--draft-model` is set.
+Full write-up: [`results/benchmarks_v5_2/PRECHECK.md`](../results/benchmarks_v5_2/PRECHECK.md).
+
+---
+
 ## Model Comparison Summary
 
 | Model | Tier | Load time | Throughput | Disk (squish) | Disk (original) |
