@@ -81,6 +81,9 @@ Requirements: macOS 13+, Apple Silicon (M1–M5), Python 3.10+.
 ## Quick Start
 
 ```bash
+# Pull a pre-quantised model from the catalog
+squish pull qwen2.5-7b-int4
+
 # Start the daemon with both caches enabled (recommended config)
 squish run qwen2.5-7b-int4 \
   --block-kv-cache ~/.cache/squish/blocks \
@@ -113,6 +116,10 @@ Install the macOS LaunchAgent so the daemon starts at login:
 ```bash
 squish daemon install
 ```
+
+The **SquishBar** menu-bar app (`apps/macos/SquishBar/`) ships alongside the
+daemon — model picker, load progress, and a global hotkey for the chat panel.
+Build it from Xcode or grab the signed `.app` from the GitHub release page.
 
 ---
 
@@ -211,7 +218,7 @@ BUSL-1.1 — see [LICENSE](LICENSE).
 
 ## Links
 
-- Article: _Local LLM Server That Wins End-to-End on Long Contexts_ — coming soon
+- Article: _Local LLM Server That Wins End-to-End on Long Contexts_ — in progress
 - Org: [konjoai](https://github.com/konjoai) · [konjoai.org](https://konjoai.org)
 - Related: [Kohaku](https://github.com/konjoai/kohaku), [Vectro](https://github.com/konjoai/vectro), [Squash](https://github.com/konjoai/squash) (EU AI Act compliance, extracted from squish in v9.15.0)
 - HuggingFace models: [huggingface.co/squish-community](https://huggingface.co/squish-community)
