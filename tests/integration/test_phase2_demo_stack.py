@@ -443,12 +443,17 @@ class TestEmbeddingsEndpoint:
 
     def _make_server_state(self, hidden_dim: int = 64, seq_len: int = 5):
         """Return (mock_model, mock_tokenizer) that produce real MLX tensors."""
+        import numpy as np
         mx = pytest.importorskip("mlx.core")
         from unittest.mock import MagicMock
 
         mock_model = MagicMock()
-        # model.model(x) returns (1, seq, hidden_dim) — non-zero so norm > 0
-        mock_model.model.return_value = mx.ones([1, seq_len, hidden_dim])
+        # Use mx.array(np_data) so the array is CPU-backed and safe to evaluate
+        # from TestClient background threads (mx.ones() creates a lazy Metal op
+        # that fails when materialized from a non-main thread on macOS).
+        mock_model.model.return_value = mx.array(
+            np.ones([1, seq_len, hidden_dim], dtype=np.float32)
+        )
 
         mock_tok = MagicMock()
         mock_tok.encode.return_value = list(range(1, seq_len + 1))
@@ -466,6 +471,8 @@ class TestEmbeddingsEndpoint:
         _srv._state.model      = mock_model
         _srv._state.tokenizer  = mock_tok
         _srv._state.model_name = "test-embed-model"
+        was_set = _srv._LOAD_COMPLETE.is_set()
+        _srv._LOAD_COMPLETE.set()
         try:
             client = TestClient(_srv.app, raise_server_exceptions=False)
             resp = client.post(
@@ -483,6 +490,8 @@ class TestEmbeddingsEndpoint:
             assert abs(norm_sq - 1.0) < 1e-4, f"Embedding not L2-normalized: norm²={norm_sq:.6f}"
         finally:
             _srv._state = orig
+            if not was_set:
+                _srv._LOAD_COMPLETE.clear()
 
     def test_batch_input(self):
         """Multiple strings in input → multiple embeddings returned."""
@@ -496,6 +505,8 @@ class TestEmbeddingsEndpoint:
         _srv._state.model      = mock_model
         _srv._state.tokenizer  = mock_tok
         _srv._state.model_name = "test-model"
+        was_set = _srv._LOAD_COMPLETE.is_set()
+        _srv._LOAD_COMPLETE.set()
         try:
             client = TestClient(_srv.app, raise_server_exceptions=False)
             resp = client.post(
@@ -509,6 +520,8 @@ class TestEmbeddingsEndpoint:
             assert indices == [0, 1, 2]
         finally:
             _srv._state = orig
+            if not was_set:
+                _srv._LOAD_COMPLETE.clear()
 
     def test_no_model_returns_503(self):
         """Endpoint returns 503 when no model is loaded."""

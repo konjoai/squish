@@ -370,24 +370,32 @@ def _to_numpy(arr) -> np.ndarray:
     Routes mlx bfloat16 arrays through float32 first because numpy has no
     native bf16 dtype — the direct buffer cast raises
     "PEP 3118 buffer format string B does not match dtype B item size 1".
+
+    Raises ``TypeError`` for anything that isn't an ndarray or an mlx.core
+    array — preventing dict / list / scalar values from silently entering
+    the conversion path and producing confusing downstream errors.
     """
     if isinstance(arr, np.ndarray):
         return arr.astype(np.float16)
     # mlx array — evaluate, then cast to a numpy-supported dtype before copy
     try:
         import mlx.core as mx
-        mx.eval(arr)
-        # bf16 has no numpy equivalent; numpy raises RuntimeError on the buffer
-        # protocol mismatch ("Item size 2 ... format string B item size 1").
-        # Cast to f32 first for those dtypes.
-        try:
-            return np.array(arr, dtype=np.float16)
-        except (TypeError, RuntimeError):
-            return np.array(arr.astype(mx.float32), dtype=np.float16)
     except ImportError:
         raise TypeError(
-            f"Cannot convert {type(arr)} to numpy — mlx not available"
+            f"Cannot convert {type(arr).__name__} to numpy — mlx not available"
         ) from None
+    if not isinstance(arr, mx.array):
+        raise TypeError(
+            f"_to_numpy expected np.ndarray or mlx.core.array, got {type(arr).__name__}"
+        )
+    mx.eval(arr)
+    # bf16 has no numpy equivalent; numpy raises RuntimeError on the buffer
+    # protocol mismatch ("Item size 2 ... format string B item size 1").
+    # Cast to f32 first for those dtypes.
+    try:
+        return np.array(arr, dtype=np.float16)
+    except (TypeError, RuntimeError):
+        return np.array(arr.astype(mx.float32), dtype=np.float16)
 
 
 def _touch(p: Path) -> None:
