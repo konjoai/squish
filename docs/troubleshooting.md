@@ -178,7 +178,7 @@ pip install sentencepiece
 
 **`tokenizers` Rust extension missing**
 
-If `pip install squish` ran in an environment without a Rust compiler and a pre-built wheel was
+If `pip install squish-ai` ran in an environment without a Rust compiler and a pre-built wheel was
 unavailable for your Python version, the `tokenizers` package may have fallen back to a pure-Python
 stub that is missing methods:
 
@@ -395,9 +395,9 @@ A valid response lists the locally cached models.
 | `ImportError: cannot import name 'quantize' from 'mlx.core'` | MLX version too old | `pip install --upgrade mlx mlx-lm` |
 | `AttributeError: module 'mlx.nn' has no attribute 'QuantizedLinear'` | MLX version too old | `pip install --upgrade mlx mlx-lm` |
 | `TypeError: forward() got an unexpected keyword argument 'cache'` | MLX / mlx-lm API mismatch | Pin matching versions: see [MLX version mismatches](#mlx-version-mismatches) |
-| Garbled or nonsensical output | MLX version mismatch producing silent wrong results | `pip install --upgrade --force-reinstall mlx mlx-lm squish` |
-| `pip install squish` fails with Rust/maturin error | Rust compiler not present and no pre-built wheel available | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` then retry |
-| `squish: command not found` after `pip install squish` | `~/.local/bin` not in `PATH` | Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` |
+| Garbled or nonsensical output | MLX version mismatch producing silent wrong results | `pip install --upgrade --force-reinstall mlx mlx-lm squish-ai` |
+| `pip install squish-ai` fails with Rust/maturin error | Rust compiler not present and no pre-built wheel available | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` then retry |
+| `squish: command not found` after `pip install squish-ai` | `~/.local/bin` not in `PATH` | Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` |
 | Requests to Squish return Ollama JSON format | Client is hitting port 11434 (Ollama) instead of 11435 (Squish) | Update `base_url` to `http://localhost:11435/v1` |
 
 ---

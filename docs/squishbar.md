@@ -18,7 +18,7 @@ local Squish inference server from your status bar, without needing a terminal.
 
 - macOS 13 Ventura or later (Apple Silicon or Intel)
 - Xcode 15+ / Swift 5.9+ for building from source
-- A working `squish` installation (`pip install squish`)
+- A working `squish` installation (`pip install squish-ai`)
 
 ## Build from Source
 

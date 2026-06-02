@@ -3,7 +3,7 @@
 **Local LLM inference for Apple Silicon. Faster end-to-end response on long contexts, less RAM, INT3 support.**
 
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-blue.svg)](LICENSE)
-[![PyPI version](https://img.shields.io/pypi/v/squish.svg)](https://pypi.org/project/squish/)
+[![PyPI version](https://img.shields.io/pypi/v/squish-ai.svg)](https://pypi.org/project/squish-ai/)
 [![CI](https://github.com/konjoai/squish/actions/workflows/ci.yml/badge.svg)](https://github.com/konjoai/squish/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/konjoai/squish)
 [![HuggingFace](https://img.shields.io/badge/🤗%20Models-squish--community-yellow)](https://huggingface.co/squish-community)
@@ -62,7 +62,7 @@ Designed for one developer on one machine. Not a production multi-tenant API.
 
 ```bash
 # PyPI
-pip install squish
+pip install squish-ai
 
 # Homebrew tap (coming with v9.32.0)
 brew tap konjoai/squish
@@ -73,6 +73,15 @@ git clone https://github.com/konjoai/squish
 cd squish
 pip install -e .
 ```
+
+> Note: The PyPI package is `squish-ai`. After installing, the Python module
+> and CLI are both named `squish`:
+>
+> ```bash
+> pip install squish-ai
+> squish run --version
+> python -c "import squish; print(squish.__version__)"
+> ```
 
 Requirements: macOS 13+, Apple Silicon (M1–M5), Python 3.10+.
 

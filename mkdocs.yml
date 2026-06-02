@@ -81,7 +81,7 @@ extra:
     - icon: fontawesome/brands/discord
       link: https://discord.gg/squish
     - icon: fontawesome/brands/python
-      link: https://pypi.org/project/squish/
+      link: https://pypi.org/project/squish-ai/
 
 extra_css:
   - stylesheets/extra.css

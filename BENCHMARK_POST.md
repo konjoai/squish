@@ -166,7 +166,7 @@ before the prompt finishes encoding.
 ## Try it
 
 ```bash
-pip install squish
+pip install squish-ai
 squish serve --model qwen-2.5-7b --kv-mode auto
 ```
 
