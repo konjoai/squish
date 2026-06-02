@@ -171,15 +171,21 @@ def test_tokenizer_runs_in_parallel_with_weights(mlx_fake, patched_warmup, tmp_p
     _srv.load_mlx_model(str(tmp_path), verbose=False)
     elapsed = time.perf_counter() - t0
 
-    assert elapsed < 0.29, (
-        f"load_mlx_model took {elapsed:.3f}s — tokenizer is not running "
-        "in parallel with the weights (expected closer to 0.15 s parallel "
-        "than 0.30 s serial)."
+    # Parallelism is proven by inter-completion drift: when both 0.15 s sleeps
+    # run in parallel their finish times are close together. When serial they
+    # are ~0.15 s apart. The wall-time check is kept as a soft upper bound,
+    # well below 2× serial, to catch a regression that drops parallelism
+    # entirely while still tolerating GitHub Actions scheduler jitter (we have
+    # observed up to 0.30 s wall on contended runners).
+    assert elapsed < 0.45, (
+        f"load_mlx_model took {elapsed:.3f}s — far beyond 0.15 s parallel "
+        "best case; tokenizer is likely not running in parallel with the weights."
     )
-    # Both finished within 0.15 s of each other (they sleep the same amount,
-    # so under parallel execution they end nearly simultaneously; runner
-    # scheduler jitter on GitHub Actions can stretch this to ~100 ms).
-    assert abs(mlx_fake.weights_done_at[0] - mlx_fake.tokenizer_done_at[0]) < 0.15
+    drift = abs(mlx_fake.weights_done_at[0] - mlx_fake.tokenizer_done_at[0])
+    assert drift < 0.10, (
+        f"weights and tokenizer finished {drift:.3f}s apart — under parallel "
+        "execution with equal 0.15 s sleeps they should finish within ~0.05 s."
+    )
 
 
 def test_tokenizer_error_propagates_to_caller(mlx_fake, patched_warmup, tmp_path):
