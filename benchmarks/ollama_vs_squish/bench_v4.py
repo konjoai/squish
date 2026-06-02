@@ -99,10 +99,10 @@ PROMPT_KV_DIR = "/tmp/squish_prompt_kv_v4_1"
 DRAFT_MODEL_PATH = "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-int4"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Results subdirectory: v4 for the original 3-config bench, v4_1 for the
-# wired-features re-run with --prompt-kv-cache and --draft-model added.
-_V4_1 = os.environ.get("SQUISH_BENCH_V4_1", "1") == "1"
-OUT_ROOT = REPO_ROOT / "results" / ("benchmarks_v4_1" if _V4_1 else "benchmarks_v4") / "runs"
+# Results subdirectory: v4 (3-config), v4_1 (+pkv +spec), v4_2 (+pkv with logit cache).
+# Pick via SQUISH_BENCH_OUT, default v4_2.
+_BENCH_OUT = os.environ.get("SQUISH_BENCH_OUT", "v4_2")
+OUT_ROOT = REPO_ROOT / "results" / f"benchmarks_{_BENCH_OUT}" / "runs"
 TS = time.strftime("%Y%m%dT%H%M%S")
 OUT_DIR = OUT_ROOT / TS
 OUT_DIR.mkdir(parents=True, exist_ok=True)
