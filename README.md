@@ -64,7 +64,7 @@ Designed for one developer on one machine. Not a production multi-tenant API.
 # PyPI
 pip install squish
 
-# Homebrew tap (coming with v9.32.0)
+# Homebrew tap
 brew tap konjoai/squish
 brew install squish
 
@@ -81,12 +81,18 @@ Requirements: macOS 13+, Apple Silicon (M1–M5), Python 3.10+.
 ## Quick Start
 
 ```bash
+# Pull pre-squished weights from the HuggingFace catalog
+squish pull qwen2.5-7b-int4
+
 # Start the daemon with both caches enabled (recommended config)
 squish run qwen2.5-7b-int4 \
   --block-kv-cache ~/.cache/squish/blocks \
   --prompt-kv-cache ~/.cache/squish/pkv \
   --port 8080
 ```
+
+For the macOS menu-bar app (SquishBar — start/stop the daemon, live tok/s,
+one-click model switch) see [`apps/macos/SquishBar/`](apps/macos/SquishBar/).
 
 Use it as an OpenAI-compatible client:
 
@@ -211,7 +217,7 @@ BUSL-1.1 — see [LICENSE](LICENSE).
 
 ## Links
 
-- Article: _Local LLM Server That Wins End-to-End on Long Contexts_ — coming soon
+- Article: _Local LLM Server That Wins End-to-End on Long Contexts_ — see [BENCHMARK_POST.md](BENCHMARK_POST.md)
 - Org: [konjoai](https://github.com/konjoai) · [konjoai.org](https://konjoai.org)
 - Related: [Kohaku](https://github.com/konjoai/kohaku), [Vectro](https://github.com/konjoai/vectro), [Squash](https://github.com/konjoai/squash) (EU AI Act compliance, extracted from squish in v9.15.0)
 - HuggingFace models: [huggingface.co/squish-community](https://huggingface.co/squish-community)
