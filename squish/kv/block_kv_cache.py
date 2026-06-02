@@ -57,19 +57,30 @@ _DEFAULT_BLOCK_SIZE   = 64
 _DEFAULT_CACHE_DIR    = Path.home() / ".cache" / "squish" / "blocks"
 _DEFAULT_HOT_MAX      = 2 * 1024 * 1024 * 1024   # 2 GiB
 _DEFAULT_COLD_MAX     = 8 * 1024 * 1024 * 1024   # 8 GiB
-_CACHE_VERSION        = 1
+_CACHE_VERSION        = 2  # bumped in v5.1 for last_logit field
 
 
 @dataclass
 class BlockEntry:
-    """One cached block's KV state and provenance."""
-    hash:       str
-    n_layers:   int
-    n_tokens:   int           # number of prompt tokens covered by this block
-    keys:       list[np.ndarray]   # one (1, n_heads, n_tokens, head_dim) per layer
-    values:     list[np.ndarray]
-    nbytes:     int           # total byte size for hot-tier accounting
-    last_used:  float = field(default_factory=time.time)
+    """One cached block's KV state + (v5.1) the block's last-position logit.
+
+    The ``last_logit`` is the model's prediction for the token at position
+    ``(absolute_block_end_index)`` — i.e. the token that would come
+    immediately AFTER this block.  When this is the LAST cached block of a
+    prompt and ``matched_tokens == prompt_tokens`` (no trailing partial
+    block), the caller can sample from this logit directly to emit the
+    first model-response token without running any forward pass.
+
+    Stored as float32; size = vocab_size * 4 bytes (~600 KB for Qwen2.5).
+    """
+    hash:        str
+    n_layers:    int
+    n_tokens:    int           # number of prompt tokens covered by this block
+    keys:        list[np.ndarray]   # one (1, n_heads, n_tokens, head_dim) per layer
+    values:      list[np.ndarray]
+    nbytes:      int           # total byte size for hot-tier accounting
+    last_logit:  "np.ndarray | None" = None  # v5.1: (vocab_size,) float32
+    last_used:   float = field(default_factory=time.time)
 
 
 @dataclass
@@ -201,13 +212,19 @@ class BlockKVCache:
             keys = [data[f"k_{i}"] for i in range(n_layers)]
             values = [data[f"v_{i}"] for i in range(n_layers)]
             n_tokens = int(data["n_tokens"])
+            # v5.1: optional per-block last logit (legacy v5 files don't have it)
+            last_logit: "np.ndarray | None" = None
+            if "last_logit" in data.files:
+                last_logit = data["last_logit"].astype(np.float32)
+            extra_bytes = last_logit.nbytes if last_logit is not None else 0
             entry = BlockEntry(
                 hash=h,
                 n_layers=n_layers,
                 n_tokens=n_tokens,
                 keys=keys,
                 values=values,
-                nbytes=sum(k.nbytes for k in keys) + sum(v.nbytes for v in values),
+                last_logit=last_logit,
+                nbytes=sum(k.nbytes for k in keys) + sum(v.nbytes for v in values) + extra_bytes,
             )
             try:
                 os.utime(entry_path, None)
@@ -226,16 +243,32 @@ class BlockKVCache:
         input_ids: "list[int]",
         per_block_keys:   "list[list[Any]]",   # outer = blocks, inner = layers
         per_block_values: "list[list[Any]]",
+        per_block_last_logits: "list[Any] | None" = None,  # v5.1: one per block
     ) -> None:
         """Persist any new full blocks from the prompt's prefill.
 
+        Parameters
+        ----------
+        input_ids : list[int]
+            Full token-id list of the prompt.  The first ``n // block_size``
+            blocks are eligible to store.
+        per_block_keys, per_block_values : list of list of arrays
+            Outer dim = blocks, inner = layers.  Each inner element is a
+            ``(1, n_heads, block_size, head_dim)`` tensor sliced from the
+            mlx_lm prompt cache.
+        per_block_last_logits : list of arrays, optional
+            v5.1: per-block last-position logit (vocab_size,).  Same outer
+            length as ``per_block_keys``.  When present, a full-prefix-match
+            lookup can sample the first response token directly from the
+            stored logit, skipping the suffix forward pass entirely.
+
         Caller is responsible for slicing the prompt-cache's per-layer KV
-        tensors into per-block chunks of shape (1, n_heads, block_size,
-        head_dim).  This method only handles hashing, hot/cold writes, and
+        tensors.  This method only handles hashing, hot/cold writes, and
         idempotency (existing hashes are skipped).
         """
         hashes = self.chain_hash(input_ids)
         n_full = len(input_ids) // self._block_size
+        n_with_logits = len(per_block_last_logits) if per_block_last_logits else 0
         for i in range(min(n_full, len(per_block_keys))):
             h = hashes[i]
             if self._has_block(h):
@@ -246,13 +279,25 @@ class BlockKVCache:
                 continue
             keys_np = [_to_numpy_f16(k) for k in block_keys]
             vals_np = [_to_numpy_f16(v) for v in block_vals]
+            logit_np: "np.ndarray | None" = None
+            if i < n_with_logits and per_block_last_logits[i] is not None:
+                try:
+                    logit_np = _to_numpy_f32(per_block_last_logits[i])
+                except (TypeError, ValueError, RuntimeError) as exc:
+                    logger.warning(
+                        "[block-kv-cache] block %d logit conversion failed (%s) — "
+                        "stored without logit", i, exc,
+                    )
+                    logit_np = None
+            extra_bytes = logit_np.nbytes if logit_np is not None else 0
             entry = BlockEntry(
                 hash=h,
                 n_layers=len(keys_np),
                 n_tokens=self._block_size,
                 keys=keys_np,
                 values=vals_np,
-                nbytes=sum(k.nbytes for k in keys_np) + sum(v.nbytes for v in vals_np),
+                last_logit=logit_np,
+                nbytes=sum(k.nbytes for k in keys_np) + sum(v.nbytes for v in vals_np) + extra_bytes,
             )
             self._add_to_hot(entry)
             self._write_cold(entry)
@@ -285,6 +330,9 @@ class BlockKVCache:
             for i, (k, v) in enumerate(zip(entry.keys, entry.values, strict=True)):
                 arrays[f"k_{i}"] = k
                 arrays[f"v_{i}"] = v
+            # v5.1: persist per-block last logit when present
+            if entry.last_logit is not None:
+                arrays["last_logit"] = entry.last_logit
             np.savez(str(tmp), **arrays)
             os.replace(str(tmp), str(entry_path))
         except (OSError, ValueError) as exc:
@@ -420,7 +468,52 @@ def _to_numpy_f16(arr) -> np.ndarray:
         ) from None
 
 
+def _to_numpy_f32(arr) -> np.ndarray:
+    """Convert mlx or numpy array to float32 numpy (for the per-block logit).
+
+    Float32 keeps the logit precise enough for stable sampling — the
+    logit is only used once per cache hit, not throughout decode.
+    """
+    if isinstance(arr, np.ndarray):
+        return arr.astype(np.float32)
+    try:
+        import mlx.core as mx
+        mx.eval(arr)
+        try:
+            return np.array(arr, dtype=np.float32)
+        except (TypeError, RuntimeError):
+            return np.array(arr.astype(mx.float32), dtype=np.float32)
+    except ImportError:
+        raise TypeError(
+            f"Cannot convert {type(arr)} to numpy — mlx not available"
+        ) from None
+
+
 # ── Slice/concat helpers used by server.py ────────────────────────────────────
+
+def per_block_last_logits_from_full_logits(
+    full_logits,  # mx.array, shape [1, n_tokens, vocab]
+    n_blocks: int,
+    block_size: int,
+) -> "list[Any]":
+    """Extract the last-position logit of each block from a full-prompt
+    forward pass.
+
+    The full forward pass on ``prompt_ids[:n_blocks*block_size]`` yields a
+    tensor of shape ``[1, n_blocks*block_size, vocab]``.  Block ``i``'s last
+    position is index ``(i + 1) * block_size - 1``; its logit predicts the
+    token that would come AFTER the block.  We slice those indices out and
+    return one ``(vocab,)`` array per block.
+
+    Returns mlx arrays; conversion to numpy happens inside
+    ``BlockKVCache.store_blocks`` via ``_to_numpy_f32``.
+    """
+    out: list[Any] = []
+    for i in range(n_blocks):
+        idx = (i + 1) * block_size - 1
+        out.append(full_logits[0, idx])
+    return out
+
 
 def slice_cache_into_blocks(
     cache,

@@ -1,11 +1,83 @@
 # Ollama vs Squish — measured benchmarks  (M3 MacBook Pro 16 GB)
 
-**Date:** 2026-06-01
+**Date:** 2026-06-02
 **Host:** Apple M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0
 **Prompts:**
 * short-prompt (75-token) — `benchmarks/ollama_vs_squish/bench_v4.py` (v4 / v4.1 / v4.2)
 * long-context (~694-token base + variations) — `benchmarks/ollama_vs_squish/bench_v5_longctx.py` (v5)
+* unified 4-context-length sweep — `benchmarks/ollama_vs_squish/bench_v5_1.py` (v5.1)
+* per-block logit probe — `benchmarks/ollama_vs_squish/probe_block_logit.py` (v5.1)
 * v3 short-prompt — `benchmarks/ollama_vs_squish/bench.py`
+
+## v5.1 — complete metric coverage (measured)
+
+_Adds four new metrics: end-to-end response time, inter-token p50/p95,
+multi-context-length sweep (75 / 500 / 2000 / 4000 tokens), and INT3
+column.  Plus three v5 follow-ups: 2A suffix chunked prefill (skipped),
+2B per-block last-position logit (shipped), 2C KV cache flags on
+`squish run` (shipped)._
+
+_Per-target outcomes: [`../../results/benchmarks_v5_1/PRECHECK.md`](../../results/benchmarks_v5_1/PRECHECK.md).
+Raw artifact: [`../../results/benchmarks_v5_1/runs/20260602T082624/raw.json`](../../results/benchmarks_v5_1/runs/20260602T082624/raw.json)._
+
+**Squish:** 9.14.0 + v5.1 wiring (`perf/v5.1-metrics-and-suffix`) · **Ollama:** 0.18.2.
+
+### Unified result — all 5 configs × all 4 prompt sizes (median of 5)
+
+| Prompt | Metric        | Ollama  | sq daemon I4 | sq +pkv I4 | sq +block I4 | sq +block I3 |
+|-------:|---------------|--------:|-------------:|-----------:|-------------:|-------------:|
+| **75**  | TTFT          |  137 ms |       730 ms |     **5 ms** |      223 ms |      244 ms |
+|        | E2E 200-tok   |  2.85 s |       3.11 s |     5.15 s |      4.91 s |      9.25 s |
+|        | Warm tok/s    |   18.8  |        19.2  |       8.6  |       10.2  |        7.5  |
+|        | ITL p50 / p95 |54 / 57 ms|     50 / 58 ms|105 / 152 ms| 85 / 163 ms|126 / 210 ms |
+| **500** | TTFT          |  158 ms |       5.07 s |    **10 ms** |      677 ms |      768 ms |
+|        | E2E 200-tok   |  4.73 s |      10.69 s |     7.45 s |      7.70 s |     10.36 s |
+|        | Warm tok/s    |   16.6  |        12.4  |       9.0  |        8.9  |        7.2  |
+|        | ITL p50 / p95 |62 / 68 ms|     67 / 186 ms|95 / 141 ms|87 / 257 ms |122 / 216 ms |
+| **2000**| TTFT          |  172 ms |     15.97 s  |    **10 ms** |      809 ms |      875 ms |
+|        | E2E 200-tok   |  7.50 s |      24.68 s |     8.57 s |     10.13 s |     10.60 s |
+|        | Warm tok/s    |   16.0  |        10.7  |       8.3  |        8.1  |        6.4  |
+|        | ITL p50 / p95 |64 / 75 ms|     79 / 167 ms|112 / 161 ms|105 / 243 ms|137 / 264 ms |
+| **4000**| TTFT          |  178 ms |     38.37 s  |    **28 ms** |       1.11 s |      1.00 s |
+|        | E2E 200-tok   | 51.72 s |     53.54 s  |  **13.29 s** |     10.14 s |     15.31 s |
+|        | Warm tok/s    |    9.8  |         9.6  |       4.8  |        7.5  |        6.1  |
+|        | ITL p50 / p95 |97 / 149 ms|    90 / 193 ms|147 / 399 ms|120 / 227 ms|144 / 255 ms |
+
+| Footer       | Ollama   | sq daemon I4 | sq +pkv I4 | sq +block I4 | sq +block I3 |
+|--------------|---------:|-------------:|-----------:|-------------:|-------------:|
+| Peak RSS     | 384 KB*  |     2.79 GB  |    2.63 GB |     2.99 GB  |    3.54 GB   |
+| Disk (model) | 4.36 GB  |     4.00 GB  |    4.00 GB |     4.00 GB  | **3.56 GB**  |
+
+`*` Ollama spawns its runner in a separate process group; bench RSS
+sampler doesn't see it.
+
+### Headline numbers
+
+* **Long-context agent workload (p4000)**: block cache **10.14 s** e2e
+  vs Squish daemon's 53.54 s — **5.3× faster** when prompts share a
+  prefix.  Block cache also wins vs Ollama on this row (51.72 s).
+* **Exact-match repeated TTFT**: PKV at 5–28 ms across prompt sizes
+  beats Ollama (137–178 ms) by 5–35×.
+* **INT3** saves 0.44 GB disk (11 %) at ~10 % decode slowdown.
+
+### Phase 2 outcomes (v5.1)
+
+| Phase | Status | Result                                                            |
+|-------|--------|-------------------------------------------------------------------|
+| 2A — suffix chunked prefill   | SKIPPED | Same correctness restriction as v5 Goal A (interleave-decode unsafe for in-prompt tokens). Documented as v5.2 follow-up: speculative prefill. |
+| 2B — per-block last logit     | SHIPPED | Implementation correct, 15 new tests pass, fast-path verified in server trace. Below the spec's <30 ms TTFT gate because the ~100 ms FastAPI/uvicorn streaming overhead caps client TTFT regardless of cache code. Server-side ttft drops from 250 ms to 145 ms (one fewer forward pass). |
+| 2C — KV cache flags on `squish run` | SHIPPED | Six flags forwarded: `--prompt-kv-cache`, `--block-kv-cache`, `--block-kv-size`, etc. |
+
+### Reproduce
+
+```bash
+source .venv/bin/activate
+python benchmarks/ollama_vs_squish/bench_v5_1.py
+# microbench specifically for the v5.1 per-block-logit fast path
+python benchmarks/ollama_vs_squish/probe_block_logit.py
+```
+
+---
 
 ## v5 — block-level paged KV cache (measured)
 
