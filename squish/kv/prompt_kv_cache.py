@@ -67,6 +67,10 @@ class KVCacheEntry:
     offset:      int                          # token count prefilled
     keys:        list[np.ndarray]             # one (1, n_heads, seq, head_dim) per layer
     values:      list[np.ndarray]             # same shape
+    # v4.2: post-prefill logit so callers can sample the first generated token
+    # without running another forward pass.  Float32, shape (vocab_size,).
+    # Optional for backwards compatibility with v4.1 entries.
+    last_logit:  "np.ndarray | None" = None
     model_key:   str = ""                     # model identifier (for multi-model safety)
     saved_at:    float = field(default_factory=time.time)
 
@@ -107,10 +111,20 @@ class PromptKVStore:
 
     # ── Read ──────────────────────────────────────────────────────────────────
 
-    def get(self, prompt: str) -> "KVCacheEntry | None":
+    def get(self, prompt: str, lazy_kv: bool = False) -> "KVCacheEntry | None":
         """Load a cached KV state for *prompt*.
 
         Returns None if not cached or the entry is stale/corrupt.
+
+        Parameters
+        ----------
+        lazy_kv : bool, default False
+            v4.2 fast-path: when True, only the metadata and ``last_logit`` are
+            read up-front (small).  The per-layer ``keys``/``values`` arrays
+            are populated lazily by ``restore_kv_state`` via
+            ``entry._lazy_kv_dir`` so a caller that emits the first token from
+            ``last_logit`` can yield BEFORE paying the ~5 ms of npy disk I/O
+            plus the ~100 ms numpy→mlx copies on KV restore.
         """
         h    = self.hash_prompt(prompt)
         d    = self._entry_dir(h)
@@ -121,7 +135,7 @@ class PromptKVStore:
         try:
             with open(meta) as f:
                 m = json.load(f)
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             logger.warning("corrupt meta for hash %s — evicting", h)
             self._remove_entry(d)
             return None
@@ -133,26 +147,47 @@ class PromptKVStore:
         if self._model_key and m.get("model_key") != self._model_key:
             return None
 
-        try:
-            keys   = [np.load(str(d / f"k_{i}.npy")) for i in range(m["n_layers"])]
-            values = [np.load(str(d / f"v_{i}.npy")) for i in range(m["n_layers"])]
-        except Exception:
-            logger.warning("corrupt npy arrays for hash %s — evicting", h)
-            self._remove_entry(d)
-            return None
+        # v4.2: optional last_logit (small — vocab-sized)
+        last_logit: "np.ndarray | None" = None
+        logit_path = d / "last_logit.npy"
+        if logit_path.exists():
+            try:
+                last_logit = np.load(str(logit_path)).astype(np.float32)
+            except (OSError, ValueError):
+                last_logit = None  # missing/corrupt logit — fall back to forward pass
+
+        # Per-layer KV arrays: eager by default, deferred when lazy_kv=True
+        keys: "list[np.ndarray] | list[None]"
+        values: "list[np.ndarray] | list[None]"
+        if lazy_kv:
+            keys   = [None] * m["n_layers"]
+            values = [None] * m["n_layers"]
+        else:
+            try:
+                keys   = [np.load(str(d / f"k_{i}.npy")) for i in range(m["n_layers"])]
+                values = [np.load(str(d / f"v_{i}.npy")) for i in range(m["n_layers"])]
+            except (OSError, ValueError):
+                logger.warning("corrupt npy arrays for hash %s — evicting", h)
+                self._remove_entry(d)
+                return None
 
         # Touch access time for LRU
         _touch(meta)
 
-        return KVCacheEntry(
+        entry = KVCacheEntry(
             prompt_hash = h,
             n_layers    = m["n_layers"],
             offset      = m["offset"],
             keys        = keys,
             values      = values,
+            last_logit  = last_logit,
             model_key   = m.get("model_key", ""),
             saved_at    = m.get("saved_at", 0.0),
         )
+        if lazy_kv:
+            # Stash the dir so restore_kv_state can demand-load the npy files.
+            entry._lazy_kv_dir = d  # type: ignore[attr-defined]
+        return entry
 
     # ── Write ─────────────────────────────────────────────────────────────────
 
@@ -162,6 +197,7 @@ class PromptKVStore:
         keys:    "list[Any]",   # mlx arrays or numpy arrays
         values:  "list[Any]",
         offset:  int,
+        last_logit: "Any | None" = None,
     ) -> None:
         """Save the KV state for *prompt* to disk.
 
@@ -175,6 +211,10 @@ class PromptKVStore:
             Per-layer value arrays (same shape as keys).
         offset : int
             Number of tokens that were prefilled (= len(tokenized prompt)).
+        last_logit : numpy or mlx array | None
+            (v4.2) Post-prefill final-position logit vector, shape (vocab_size,).
+            When present, ``get`` returns it on the entry so callers can sample
+            the first generated token without running another forward pass.
         """
         if len(keys) != len(values):
             raise ValueError("keys and values must have the same length")
@@ -195,11 +235,25 @@ class PromptKVStore:
 
         try:
             n_layers = len(keys)
-            for i, (k, v) in enumerate(zip(keys, values)):
+            for i, (k, v) in enumerate(zip(keys, values, strict=True)):
                 k_np = _to_numpy(k)
                 v_np = _to_numpy(v)
                 np.save(str(d / f"k_{i}.npy"), k_np)
                 np.save(str(d / f"v_{i}.npy"), v_np)
+
+            # v4.2: persist the post-prefill logit alongside the KV state.
+            # Stored as float32 for sampling stability (vocab dim only — small).
+            has_logit = False
+            if last_logit is not None:
+                try:
+                    logit_np = _to_numpy(last_logit).astype(np.float32)
+                    np.save(str(d / "last_logit.npy"), logit_np)
+                    has_logit = True
+                except (TypeError, ValueError, RuntimeError) as exc:
+                    logger.warning(
+                        "[prompt-kv-cache] last_logit save failed (%s) — "
+                        "entry stored without it", exc,
+                    )
 
             meta = {
                 "version":   _CACHE_VERSION,
@@ -208,10 +262,12 @@ class PromptKVStore:
                 "model_key": self._model_key,
                 "saved_at":  time.time(),
                 "prompt_len": len(prompt),
+                "has_logit": has_logit,
             }
             (d / "meta.json").write_text(json.dumps(meta))
 
-            logger.debug("KV cached: hash=%s offset=%d layers=%d", h, offset, n_layers)
+            logger.debug("KV cached: hash=%s offset=%d layers=%d logit=%s",
+                         h, offset, n_layers, has_logit)
         finally:
             try:
                 lock.unlink()
@@ -375,6 +431,12 @@ def restore_kv_state(cache, entry: KVCacheEntry) -> bool:
     """Write a cached KV entry back into an mlx_lm cache object.
 
     Returns True on success, False on type mismatch or error.
+
+    v4.2: if ``entry`` was produced by ``get(..., lazy_kv=True)``, the per-layer
+    npy files are loaded on demand from ``entry._lazy_kv_dir`` here instead of
+    in ``get()``.  Callers that emit a first token from ``last_logit`` can
+    defer this call until after the yield so the KV restore (~100 ms) stays
+    off the TTFT critical path.
     """
     if cache is None:
         return False
@@ -394,6 +456,22 @@ def restore_kv_state(cache, entry: KVCacheEntry) -> bool:
         except ImportError:
             return False
 
+        # v4.2 lazy-load: populate keys/values from disk now if get(lazy_kv=True)
+        lazy_dir = getattr(entry, "_lazy_kv_dir", None)
+        if lazy_dir is not None and entry.keys and entry.keys[0] is None:
+            try:
+                entry.keys = [
+                    np.load(str(lazy_dir / f"k_{i}.npy"))
+                    for i in range(entry.n_layers)
+                ]
+                entry.values = [
+                    np.load(str(lazy_dir / f"v_{i}.npy"))
+                    for i in range(entry.n_layers)
+                ]
+            except (OSError, ValueError):
+                logger.warning("KV restore: lazy-load failed for %s", lazy_dir)
+                return False
+
         for i, layer_cache in enumerate(cache):
             k_mlx = _mx.array(entry.keys[i])
             v_mlx = _mx.array(entry.values[i])
@@ -408,6 +486,6 @@ def restore_kv_state(cache, entry: KVCacheEntry) -> bool:
             if hasattr(layer_cache, "offset"):
                 layer_cache.offset = entry.offset
         return True
-    except Exception:
+    except (AttributeError, RuntimeError, ValueError):
         logger.warning("KV restore failed", exc_info=True)
         return False

@@ -2126,41 +2126,102 @@ def _generate_tokens(  # pragma: no cover
         )
         _stop_text_maxlen = max((len(s) for s in _stop_strings), default=0) + 64
 
-        # ── v4.1 Fix 2: PromptKVStore lookup ──────────────────────────────────
-        # If a hit, restore KV state into a fresh mlx_lm prompt_cache. mlx_lm
-        # does NOT skip cached prefix when given the full prompt — it appends
-        # everything to the cache. The standard convention is to cache (n-1)
-        # tokens and pass only the last token as the prompt so mlx_lm prefills
-        # only that single token. We slice the cache to offset = prompt_len-1
-        # at store time so the saved state is reusable that way.
+        # ── v4.2 Fix 1: PromptKVStore lookup with logit-skip-prefill ──────────
+        # The cache now stores the post-prefill logit alongside KV state. On a
+        # hit we sample the first generated token directly from the cached
+        # logit and emit it BEFORE running any model forward pass — TTFT drops
+        # from ~223 ms (v4.1's 1-token-prefill-on-hit) to ~50 ms (no model
+        # call at all before yield).  Matching the legacy DiskKVCache pattern
+        # at squish/kv/kv_cache.py:3148.
+        #
+        # On a miss we run a manual prefill (model(x, cache=...)) so we can
+        # capture the last-position logit.  That same logit predicts the first
+        # new token, so we emit it immediately and continue with stream_generate
+        # for tokens 2+. Total compute is comparable to v4.1's miss path; we've
+        # just exposed the prefill so we can grab the logit.
         _pkv_entry = None
         _pkv_cache = None
         _pkv_was_hit = False
         _pkv_eff_prompt: "str | list[int]" = prompt
+        _pkv_first_token_text: "str | None" = None
+        _pkv_first_token_id: "int | None" = None
+        _pkv_captured_logit_np = None  # set on miss path for later .put()
+        _pkv_full_token_count = 0
+        _pkv_deferred_restore: "callable | None" = None  # v4.2: lazy KV restore
         if _prompt_kv_store is not None:
             try:
                 from mlx_lm.models.cache import make_prompt_cache as _make_pc
                 from squish.kv.prompt_kv_cache import restore_kv_state as _rkv
                 _pkv_cache = _make_pc(model)
-                _pkv_entry = _prompt_kv_store.get(_orig_prompt)
-                if _pkv_entry is not None and _rkv(_pkv_cache, _pkv_entry):
-                    _pkv_was_hit = True
-                    # Re-tokenize and slice the prompt to just the tokens that
-                    # are NOT yet in the cache.  Stored offset = full_len - 1.
-                    _pkv_full_ids = (
-                        tokenizer.encode(prompt)
-                        if hasattr(tokenizer, "encode")
-                        else tokenizer(prompt, return_tensors="np")["input_ids"][0].tolist()
+                # v4.2: lazy_kv=True so the 28 keys/values npy files are loaded
+                # only inside restore_kv_state — on the fast-hit path that's
+                # deferred until AFTER the first chunk is yielded.
+                _pkv_entry = _prompt_kv_store.get(_orig_prompt, lazy_kv=True)
+                _pkv_full_ids = (
+                    tokenizer.encode(prompt)
+                    if hasattr(tokenizer, "encode")
+                    else tokenizer(prompt, return_tensors="np")["input_ids"][0].tolist()
+                )
+                _pkv_full_token_count = len(_pkv_full_ids)
+                if _pkv_entry is not None and _pkv_entry.last_logit is not None:
+                    # v4.2 fast hit: sample first token from cached logit WITHOUT
+                    # restoring KV state yet.  The numpy→mlx copy of 28 layers
+                    # costs ~100 ms; we defer it until AFTER the first chunk is
+                    # yielded so TTFT only pays for the logit sample.
+                    import mlx.core as _mx_lg
+                    _last_logit_mx = _mx_lg.array(
+                        _pkv_entry.last_logit, dtype=_mx_lg.float32
                     )
+                    _pkv_first_token_id = _sample_mx(_last_logit_mx, temperature, top_p)
+                    _pkv_first_token_text = (
+                        tokenizer.decode([_pkv_first_token_id])
+                        if hasattr(tokenizer, "decode")
+                        else str(_pkv_first_token_id)
+                    )
+                    _pkv_eff_prompt = [_pkv_first_token_id]
+                    _pkv_was_hit = True
+
+                    # Stash a closure so we can run restore after the yield.
+                    _pkv_entry_for_restore = _pkv_entry
+                    def _do_restore() -> None:
+                        _rkv(_pkv_cache, _pkv_entry_for_restore)
+                    _pkv_deferred_restore = _do_restore
+
+                    if _trace:
+                        _tlog(f"REQ {_rid}  prompt-kv-cache HIT-fast  "
+                              f"offset={_pkv_entry.offset}  layers={_pkv_entry.n_layers}  "
+                              f"logit=cached  → defer-restore")
+                elif _pkv_entry is not None and _rkv(_pkv_cache, _pkv_entry):
+                    # v4.1 legacy hit (no cached logit): slice prompt to
+                    # the trailing token only and let mlx_lm 1-token-prefill.
+                    _pkv_was_hit = True
                     _pkv_eff_prompt = list(_pkv_full_ids[_pkv_entry.offset:]) or list(_pkv_full_ids[-1:])
                     if _trace:
-                        _tlog(f"REQ {_rid}  prompt-kv-cache HIT  "
+                        _tlog(f"REQ {_rid}  prompt-kv-cache HIT-slow  "
                               f"offset={_pkv_entry.offset}  layers={_pkv_entry.n_layers}  "
-                              f"new_tokens={len(_pkv_eff_prompt)}")
+                              f"new_tokens={len(_pkv_eff_prompt)}  → legacy v4.1 path")
                 else:
+                    # Miss: manual prefill so we can capture the post-prefill logit.
                     _pkv_entry = None
+                    import mlx.core as _mx_pf
+                    import numpy as _np_pf
+                    _x_pf = _mx_pf.array(_pkv_full_ids, dtype=_mx_pf.int32)[None]
+                    _logits_full = model(_x_pf, cache=_pkv_cache)
+                    _mx_pf.eval(_logits_full)
+                    _last_logit_vec = _logits_full[0, -1]
+                    _pkv_captured_logit_np = _np_pf.array(
+                        _last_logit_vec.astype(_mx_pf.float32)
+                    )
+                    _pkv_first_token_id = _sample_mx(_last_logit_vec, temperature, top_p)
+                    _pkv_first_token_text = (
+                        tokenizer.decode([_pkv_first_token_id])
+                        if hasattr(tokenizer, "decode")
+                        else str(_pkv_first_token_id)
+                    )
+                    _pkv_eff_prompt = [_pkv_first_token_id]
                     if _trace:
-                        _tlog(f"REQ {_rid}  prompt-kv-cache MISS  will-save")
+                        _tlog(f"REQ {_rid}  prompt-kv-cache MISS  prefilled "
+                              f"{_pkv_full_token_count} tokens  → captured logit, will-save")
                 _sg_kwargs["prompt_cache"] = _pkv_cache
             except (ImportError, AttributeError, TypeError) as _pkv_err:
                 import logging as _pklog
@@ -2171,6 +2232,10 @@ def _generate_tokens(  # pragma: no cover
                 _pkv_cache = None
                 _pkv_entry = None
                 _pkv_eff_prompt = prompt
+                _pkv_first_token_text = None
+                _pkv_first_token_id = None
+                _pkv_captured_logit_np = None
+                _pkv_deferred_restore = None
 
         gen = mlx_lm.stream_generate(
             model,
@@ -2181,21 +2246,17 @@ def _generate_tokens(  # pragma: no cover
         )
 
         def _pkv_save_if_miss(n_decoded: int) -> None:
-            """Save the prompt-prefix-minus-1 KV state for re-use on next hit.
-
-            We trim the decoded tokens AND one prompt token, so the saved
-            state corresponds to positions [0, prompt_len-1).  On a future hit
-            we restore that state and pass only the last prompt token to
-            stream_generate, which causes mlx_lm to prefill just that one
-            token (instead of the entire prompt).
-            """
+            """Save the prompt-prefix KV state + post-prefill logit (v4.2)."""
             if (_prompt_kv_store is None
                     or _pkv_was_hit
                     or _pkv_cache is None):
                 return
             try:
-                # +1 reserves the last prompt token for re-prefill on hit
-                _trim_n = n_decoded + 1
+                # On the miss path we did a manual prefill (cache.offset = prompt_len)
+                # then stream_generate processed [first_token] + (n_decoded-1) more
+                # decoded tokens. Trim back to prompt_len so we cache just the
+                # prompt's KV state (the logit predicts the first new token).
+                _trim_n = n_decoded
                 for _layer in _pkv_cache:
                     if hasattr(_layer, "trim"):
                         _layer.trim(_trim_n)
@@ -2205,19 +2266,37 @@ def _generate_tokens(  # pragma: no cover
                     return
                 _k, _v, _off = _cap
                 if _off <= 0:
-                    # Prompt was 1 token or empty; nothing useful to cache
                     return
-                _prompt_kv_store.put(_orig_prompt, _k, _v, _off)
+                _prompt_kv_store.put(
+                    _orig_prompt, _k, _v, _off,
+                    last_logit=_pkv_captured_logit_np,
+                )
                 if _trace:
                     _tlog(f"REQ {_rid}  prompt-kv-cache STORED  "
-                          f"offset={_off}  layers={len(_k)}")
-            except Exception as _pkv_err:
+                          f"offset={_off}  layers={len(_k)}  "
+                          f"logit={'yes' if _pkv_captured_logit_np is not None else 'no'}")
+            except (RuntimeError, ValueError, TypeError) as _pkv_err:
                 import logging as _pkvlog
                 _pkvlog.getLogger(__name__).warning(
                     "[prompt-kv-cache] store failed (%s) — entry not saved", _pkv_err,
                 )
 
-        emitted = 0
+        # If we have a pre-sampled first token (fast-hit OR miss-with-prefill),
+        # emit it BEFORE consuming from stream_generate so TTFT reflects the
+        # cache shortcut. stream_generate will then yield tokens 2..N.
+        if _pkv_first_token_text is not None:
+            if cache_eligible:
+                _cache_buf.append(_pkv_first_token_text)
+            if _trace_tokens:
+                _tlog(f"REQ {_rid}  tok={_pkv_first_token_text!r}  (pkv-first)")
+            yield _pkv_first_token_text, None
+            # v4.2: deferred KV restore for the fast-hit path.  Runs AFTER the
+            # first chunk is flushed, so the numpy→mlx copy of 28 layers
+            # (~100 ms) is not on the TTFT critical path.
+            if _pkv_deferred_restore is not None:
+                _pkv_deferred_restore()
+
+        emitted = 1 if _pkv_first_token_text is not None else 0
         _stop_text_buf: str = ""
         _loop_text_buf: str = ""  # rolling window for repetition loop detection
         _think_token_count = 0   # tokens inside <think>...</think> blocks
