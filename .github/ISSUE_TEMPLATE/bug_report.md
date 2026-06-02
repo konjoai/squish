@@ -13,7 +13,7 @@ labels: bug
 | **Apple chip** | <!-- e.g. M3 Pro, M2 Max --> |
 | **Python version** | <!-- e.g. 3.12.2 --> |
 | **Model** | <!-- e.g. Qwen2.5-7B-Instruct-bf16-compressed --> |
-| **Install method** | <!-- pip install squish / pip install -e . / other --> |
+| **Install method** | <!-- pip install squish-ai / pip install -e . / other --> |
 
 ## What happened
 

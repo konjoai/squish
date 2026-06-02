@@ -39,6 +39,10 @@ default is now both KV caches enabled. Full numbers and methodology in
   numbers are vs Ollama (the realistic peer) in
   [`docs/RESULTS.md`](docs/RESULTS.md).
 - README rewritten to match v5.1.1 measured reality.
+- **PyPI distribution name changed from `squish` to `squish-ai`.** The Python
+  module (`import squish`) and CLI command (`squish`) are unchanged. Users
+  upgrading from a development install should switch to `pip install squish-ai`
+  for releases.
 
 ### Fixed
 - `mlx_lm` sklearn-stub import-side-effect (saves ~1.2 s cold-start;

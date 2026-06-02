@@ -22,16 +22,18 @@ brew upgrade squish
 ## Option 2 — pip
 
 ```bash
-pip install squish
+pip install squish-ai
 ```
 
 Requires Python 3.10+ and installs the `squish` CLI entry point automatically.
+The PyPI distribution is `squish-ai`, but the installed module and CLI are
+both `squish`.
 
 For a virtual environment (recommended):
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install squish
+pip install squish-ai
 ```
 
 ---
@@ -93,11 +95,11 @@ You should see version info and the command list.
 
 === "pip"
     ```bash
-    pip uninstall squish
+    pip uninstall squish-ai
     ```
 
 === "Source"
     ```bash
-    pip uninstall squish
+    pip uninstall squish-ai
     rm -rf /path/to/squish
     ```
