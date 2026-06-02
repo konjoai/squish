@@ -8,7 +8,7 @@ Tokens stream in real-time via the OpenAI-compatible API — no internet require
 - macOS 13+ with Apple Silicon (M1/M2/M3)
 - [Squish](https://github.com/squishai/squish) installed and a model loaded:
   ```bash
-  pip install squish
+  pip install squish-ai
   squish run qwen3:8b   # starts the server on port 11435
   ```
 
