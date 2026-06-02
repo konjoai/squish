@@ -51,10 +51,10 @@ jobs:
         run: |
           python -c "
           import importlib.metadata, squish
-          meta = importlib.metadata.version('squish')
+          meta = importlib.metadata.version(squish.__dist_name__)
           pkg  = squish.__version__
           assert meta == pkg, f'Version mismatch: metadata={meta!r} vs squish.__version__={pkg!r}'
-          print(f'squish version OK: {pkg}')
+          print(f'{squish.__dist_name__} version OK: {pkg}')
           "
 
       - name: Run tests
