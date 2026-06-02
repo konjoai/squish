@@ -74,7 +74,7 @@ all as CLI flags on `squish serve`.
 **Quick start:**
 
 ```bash
-pip install squish
+pip install squish-ai
 squish catalog          # browse 29 models
 squish pull qwen3:8b    # download + compress once
 squish run qwen3:8b     # serve on :11435
@@ -138,7 +138,7 @@ EAGLE-3, MEDUSA, SageAttn2, FlashMLA, FP8, INT3, continuous batching, multi-tena
 
 Quick start:
 
-pip install squish
+pip install squish-ai
 squish pull qwen3:8b   # one-time 5-min compression
 squish run qwen3:8b    # sub-second every boot
 
@@ -156,6 +156,6 @@ Paper: arxiv.org/abs/XXXX.XXXXX [when submitted]
 > Sub-second local LLM loading on Apple Silicon. 54× faster cold start, 15× less RAM,
 > statistically identical accuracy. Drop-in for OpenAI and Ollama.
 >
-> Install: `pip install squish`
+> Install: `pip install squish-ai`
 > Docs: https://github.com/wesleyscholl/squish
 > Pre-squished models: https://huggingface.co/squish-community

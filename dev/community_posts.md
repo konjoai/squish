@@ -95,7 +95,7 @@ squish serve qwen2.5:1.5b --flash-mla --hydra-spec --adaptive-batch --audit-log
 ## Get Started
 
 ```bash
-pip install squish
+pip install squish-ai
 
 # One-time setup (converts model)
 squish pull qwen2.5:1.5b
@@ -161,7 +161,7 @@ https://github.com/wesleyscholl/squish
 ```
 Get started with Squish in 3 lines:
 
-  pip install squish
+  pip install squish-ai
   squish pull qwen2.5:1.5b
   squish run qwen2.5:1.5b "..."
 
@@ -380,7 +380,7 @@ For multi-turn conversations it reuses cached context from previous turns so
 later replies come back in ~100 ms instead of several seconds.
 
 ```bash
-pip install squish
+pip install squish-ai
 squish pull qwen2.5:1.5b   # one-time download
 squish serve qwen2.5:1.5b  # start local server on port 11435
 ```
