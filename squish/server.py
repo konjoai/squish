@@ -2143,6 +2143,7 @@ def _generate_tokens(  # pragma: no cover
         _bkv_cache_obj = None  # the mlx_lm prompt cache we'll reuse for stream_generate
         _bkv_first_token_id: "int | None" = None
         _bkv_first_token_text: "str | None" = None
+        _bkv_deferred_restore: "callable | None" = None  # v5.1: lazy restore on fast hit
 
         if _block_kv_cache is not None:
             try:
@@ -2189,8 +2190,13 @@ def _generate_tokens(  # pragma: no cover
                         matched_tokens=_match.matched_tokens - _bs,
                     )
                 _bkv_cache_obj = _make_pc_b(model)
+                # v5.1: on the HIT-fast (logit) path we DEFER the actual KV
+                # restore until AFTER the first chunk is yielded — the numpy→mlx
+                # copy of 9-28 layers × 9 blocks of 64 tokens costs ~250 ms
+                # which would otherwise sit on the TTFT critical path.
+                # On the suffix-prefill path we MUST restore up-front because
+                # the suffix forward pass reads from the cache.
                 if _match.matched_tokens > 0:
-                    _restore_blocks(_bkv_cache_obj, _match.matched_blocks)
                     _bkv_was_hit = True
                     _bkv_matched_blocks = len(_match.matched_blocks)
                     _bkv_matched_tokens = _match.matched_tokens
@@ -2202,7 +2208,17 @@ def _generate_tokens(  # pragma: no cover
                     )
                     _suffix_ids = []  # no suffix to prefill
                     _bkv_full_logits_cap = None
+                    # Stash a deferred-restore closure; runs after first yield
+                    _bkv_match_for_restore = _match
+                    def _bkv_do_restore() -> None:
+                        _restore_blocks(_bkv_cache_obj, _bkv_match_for_restore.matched_blocks)
+                    _bkv_deferred_restore: "callable | None" = _bkv_do_restore
                 else:
+                    # Non-fast path: restore blocks up front before suffix
+                    # prefill needs them.
+                    _bkv_deferred_restore = None
+                    if _match.matched_tokens > 0:
+                        _restore_blocks(_bkv_cache_obj, _match.matched_blocks)
                     # Prefill the suffix manually so we can grab the last logit.
                     _suffix_ids = _bkv_full_ids[_match.matched_tokens:]
                     if _suffix_ids:
@@ -2500,11 +2516,16 @@ def _generate_tokens(  # pragma: no cover
             if _trace_tokens:
                 _tlog(f"REQ {_rid}  tok={_pkv_first_token_text!r}  (pkv-first)")
             yield _pkv_first_token_text, None
-            # v4.2: deferred KV restore for the fast-hit path.  Runs AFTER the
-            # first chunk is flushed, so the numpy→mlx copy of 28 layers
-            # (~100 ms) is not on the TTFT critical path.
+            # v4.2: deferred KV restore for the v4.2 PKV fast-hit path.  Runs
+            # AFTER the first chunk is flushed, so the numpy→mlx copy of 28
+            # layers (~100 ms) is not on the TTFT critical path.
             if _pkv_deferred_restore is not None:
                 _pkv_deferred_restore()
+            # v5.1: same trick for the block-cache fast-hit (logit) path.
+            # Restoring 9 blocks × 28 layers is ~250 ms; deferring it makes
+            # the cache hit a ~5-20 ms TTFT instead of ~250 ms.
+            if _bkv_deferred_restore is not None:
+                _bkv_deferred_restore()
 
         emitted = 1 if _pkv_first_token_text is not None else 0
         _stop_text_buf: str = ""

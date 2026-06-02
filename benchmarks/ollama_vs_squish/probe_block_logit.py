@@ -32,6 +32,7 @@ import urllib.request
 from pathlib import Path
 
 SQUISH_PY    = "/Users/wscholl/squish/.venv/bin/python"
+SQUISH_API_KEY = "squish"
 SQUISH_PORT  = 11437
 SQUISH_HOST  = "127.0.0.1"
 SQUISH_MODEL = "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
@@ -113,38 +114,56 @@ def _stream_text(prompt: str) -> str:
     return "".join(parts)
 
 
-def _build_aligned_prompt(target_tokens: int) -> str:
-    """Build a prompt whose tokenized length is exactly *target_tokens*."""
+def _build_aligned_user_msg(target_total_tokens: int) -> str:
+    """Build a user message whose CHAT-TEMPLATED tokenization equals
+    *target_total_tokens* (so the server-side block cache sees an
+    exact-block-aligned prompt).
+
+    The server applies the chat template (system + user + assistant prelude)
+    before tokenizing — that adds a fixed number of overhead tokens.  We
+    measure the overhead by templating an empty user message, then pad the
+    user content so total == target.
+    """
     from mlx_lm import load
     _, tok = load(SQUISH_MODEL)
-    chunk = ("The reviewer cares about correctness, performance, observability, "
-             "rollback safety, and test coverage. ")
+
+    def n_tokens(user_text: str) -> int:
+        templ = tok.apply_chat_template(
+            [{"role": "user", "content": user_text}],
+            tokenize=False, add_generation_prompt=True,
+        )
+        return len(tok.encode(templ))
+
+    overhead = n_tokens("")
+    need_user = target_total_tokens - overhead
+    if need_user <= 0:
+        raise ValueError(
+            f"target_total_tokens ({target_total_tokens}) <= chat-template overhead ({overhead})"
+        )
+    # Iteratively build a user message at exactly need_user tokens
+    chunk = ("The reviewer cares about correctness performance observability "
+             "rollback safety and test coverage. ")
+    text = ""
     while True:
-        text = chunk * 20  # generously over-shoot
-        ids = tok.encode(text)
-        if len(ids) >= target_tokens:
-            # Try shortening by trimming from the end of text until token count
-            # is at most target_tokens; then pad with " is" / " a" until exact.
-            chars = len(text)
-            while True:
-                ids = tok.encode(text)
-                if len(ids) <= target_tokens:
-                    break
-                chars = chars - 1
-                text = text[:chars]
-            # Now ids is at most target. Add a short token-by-token padding.
-            pad = " is a a a a a a a a a a a a a a a a a a a a"
-            while len(tok.encode(text + pad)) < target_tokens:
-                text += " is"
-            # Binary-search the right pad
-            for n in range(0, len(pad), 1):
-                cand = text + pad[:n]
-                if len(tok.encode(cand)) == target_tokens:
-                    return cand
-            # Fallback: just trim
-            ids2 = tok.encode(text)
-            return tok.decode(ids2[:target_tokens])
-        chunk = chunk * 2
+        ids = tok.encode(text + chunk)
+        if len(ids) > need_user:
+            break
+        text += chunk
+    # Trim toward target by adding short " a" tokens
+    while True:
+        total = n_tokens(text)
+        if total == target_total_tokens:
+            return text
+        if total > target_total_tokens:
+            # Trim last char
+            text = text[:-1]
+            continue
+        text += " a"
+
+
+def _build_aligned_prompt(target_tokens: int) -> str:
+    """Back-compat alias."""
+    return _build_aligned_user_msg(target_tokens)
 
 
 def _start_server() -> subprocess.Popen:
@@ -159,10 +178,10 @@ def _start_server() -> subprocess.Popen:
             "--port", str(SQUISH_PORT), "--host", SQUISH_HOST,
             "--block-kv-cache", CACHE_DIR,
             "--block-kv-size", str(BLOCK_SIZE),
-            "--log-level", "warning",
+            "--trace", "--log-level", "info",
         ],
         stdout=log, stderr=subprocess.STDOUT,
-        env={**os.environ, "SQUISH_API_KEY": "squish"},
+        env={**os.environ, "SQUISH_API_KEY": SQUISH_API_KEY},
     )
     # wait ready
     for _ in range(600):
@@ -187,13 +206,21 @@ def _stop_server(proc: subprocess.Popen) -> None:
 
 def main() -> None:
     target = TARGET_BLOCKS * BLOCK_SIZE
-    print(f"Building block-aligned prompt: target = {target} tokens "
-          f"({TARGET_BLOCKS} blocks of {BLOCK_SIZE})")
-    aligned = _build_aligned_prompt(target)
+    print(f"Building chat-templated block-aligned prompt: target = {target} "
+          f"tokens ({TARGET_BLOCKS} blocks of {BLOCK_SIZE})")
+    aligned_user = _build_aligned_user_msg(target)
     from mlx_lm import load
     _, tok = load(SQUISH_MODEL)
-    actual = len(tok.encode(aligned))
-    print(f"aligned prompt: {actual} tokens (chars={len(aligned)})")
+    user_only_tokens = len(tok.encode(aligned_user))
+    templ_total = len(tok.encode(tok.apply_chat_template(
+        [{"role": "user", "content": aligned_user}],
+        tokenize=False, add_generation_prompt=True,
+    )))
+    print(f"  user message: {user_only_tokens} tokens "
+          f"(chars={len(aligned_user)})")
+    print(f"  chat-templated total: {templ_total} tokens "
+          f"({'ALIGNED' if templ_total % BLOCK_SIZE == 0 else 'UNALIGNED'})")
+    aligned = aligned_user  # send the user message; server applies the template
 
     print()
     print("Starting squish.server (block cache)…")
@@ -217,7 +244,7 @@ def main() -> None:
         med = stats.median(ttfts)
         p95 = sorted(ttfts)[-1]
         print(f"\nHit-path TTFT: median = {med:.0f} ms, p95 = {p95:.0f} ms "
-              f"({TARGET_BLOCKS}-block-aligned prompt, {actual} tokens)")
+              f"({TARGET_BLOCKS}-block-aligned prompt, {templ_total} tokens)")
 
         # Correctness probe: first 4 tokens should be identical across two
         # back-to-back sends (cache hit both times).
