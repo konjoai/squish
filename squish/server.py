@@ -2162,17 +2162,28 @@ def _generate_tokens(  # pragma: no cover
                 _match = _block_kv_cache.lookup_prefix(_bkv_full_ids)
                 _bs = _block_kv_size
                 _full_blocks_in_prompt = _bkv_n_tokens // _bs
-                # If the matched prefix already covers the ENTIRE prompt (rare
-                # — requires the prompt token count to be an exact multiple of
-                # block_size AND every block to be cached), drop the last
-                # matched block so we have at least one suffix to re-prefill.
-                # We don't cache per-block last-position logits yet; the suffix
-                # prefill gives us the logit for the first NEW token.
-                # Note: if _bkv_n_tokens is NOT a multiple of _bs, the natural
-                # suffix (the trailing partial block) already provides what we
-                # need — no drop required.
+                # v5.1: full-prefix-match short-circuit.  If matched_tokens
+                # equals the prompt length AND the last matched block carries
+                # a cached last_logit, we can sample the first response token
+                # directly from that logit and skip suffix prefill entirely.
+                # This is the equivalent of v4.2 PromptKVStore's logit-skip
+                # trick, applied at block granularity.
+                _bkv_full_match_logit = None
                 if (_match.matched_tokens == _bkv_n_tokens
-                        and _match.matched_tokens >= _bs):
+                        and _match.matched_tokens >= _bs
+                        and _match.matched_blocks
+                        and _match.matched_blocks[-1].last_logit is not None):
+                    _bkv_full_match_logit = _match.matched_blocks[-1].last_logit
+
+                # If full-match AND no cached logit, drop the last matched
+                # block so we have one suffix block to re-prefill (legacy v5
+                # behaviour — gives us the logit via the suffix forward pass).
+                # If full-match AND we DO have a cached logit, skip the drop.
+                # If the prompt has a trailing partial block (n_tokens % bs > 0),
+                # the natural suffix already provides what we need.
+                if (_match.matched_tokens == _bkv_n_tokens
+                        and _match.matched_tokens >= _bs
+                        and _bkv_full_match_logit is None):
                     _match = _PrefixMatch(
                         matched_blocks=_match.matched_blocks[:-1],
                         matched_tokens=_match.matched_tokens - _bs,
@@ -2183,20 +2194,31 @@ def _generate_tokens(  # pragma: no cover
                     _bkv_was_hit = True
                     _bkv_matched_blocks = len(_match.matched_blocks)
                     _bkv_matched_tokens = _match.matched_tokens
-                # Prefill the suffix manually so we can grab the last logit.
-                _suffix_ids = _bkv_full_ids[_match.matched_tokens:]
-                if _suffix_ids:
-                    _x_b = _mx_b.array(_suffix_ids, dtype=_mx_b.int32)[None]
-                    _logits_suffix = model(_x_b, cache=_bkv_cache_obj)
-                    _mx_b.eval(_logits_suffix)
-                    _bkv_last_logit = _logits_suffix[0, -1]
+
+                # v5.1 fast path: full-match + cached logit → no forward pass.
+                if _bkv_full_match_logit is not None:
+                    _bkv_last_logit = _mx_b.array(
+                        _bkv_full_match_logit, dtype=_mx_b.float32,
+                    )
+                    _suffix_ids = []  # no suffix to prefill
+                    _bkv_full_logits_cap = None
                 else:
-                    # No suffix to prefill — shouldn't happen after the drop above,
-                    # but guard anyway by re-prefilling the last block from scratch.
-                    _x_b = _mx_b.array(_bkv_full_ids[-_bs:], dtype=_mx_b.int32)[None]
-                    _logits_suffix = model(_x_b, cache=_bkv_cache_obj)
-                    _mx_b.eval(_logits_suffix)
-                    _bkv_last_logit = _logits_suffix[0, -1]
+                    # Prefill the suffix manually so we can grab the last logit.
+                    _suffix_ids = _bkv_full_ids[_match.matched_tokens:]
+                    if _suffix_ids:
+                        _x_b = _mx_b.array(_suffix_ids, dtype=_mx_b.int32)[None]
+                        _logits_suffix = model(_x_b, cache=_bkv_cache_obj)
+                        _mx_b.eval(_logits_suffix)
+                        _bkv_last_logit = _logits_suffix[0, -1]
+                        _bkv_full_logits_cap = _logits_suffix
+                    else:
+                        # Defensive: re-prefill the last block (shouldn't reach here
+                        # given the case-C-with-logit branch above).
+                        _x_b = _mx_b.array(_bkv_full_ids[-_bs:], dtype=_mx_b.int32)[None]
+                        _logits_suffix = model(_x_b, cache=_bkv_cache_obj)
+                        _mx_b.eval(_logits_suffix)
+                        _bkv_last_logit = _logits_suffix[0, -1]
+                        _bkv_full_logits_cap = _logits_suffix
                 _bkv_first_token_id = _sample_mx(_bkv_last_logit, temperature, top_p)
                 _bkv_first_token_text = (
                     tokenizer.decode([_bkv_first_token_id])
@@ -2204,9 +2226,12 @@ def _generate_tokens(  # pragma: no cover
                     else str(_bkv_first_token_id)
                 )
                 if _trace:
+                    _path = (
+                        "HIT-fast (logit)" if _bkv_full_match_logit is not None
+                        else ("HIT" if _bkv_was_hit else "MISS")
+                    )
                     _tlog(
-                        f"REQ {_rid}  block-kv-cache "
-                        f"{'HIT' if _bkv_was_hit else 'MISS'}  "
+                        f"REQ {_rid}  block-kv-cache {_path}  "
                         f"matched_blocks={_bkv_matched_blocks}/"
                         f"{_full_blocks_in_prompt}  "
                         f"matched_tokens={_bkv_matched_tokens}/"
@@ -2223,6 +2248,7 @@ def _generate_tokens(  # pragma: no cover
                 _bkv_first_token_id = None
                 _bkv_first_token_text = None
                 _bkv_full_ids = None
+                _bkv_full_logits_cap = None
 
         # ── v4.2 Fix 1: PromptKVStore lookup with logit-skip-prefill ──────────
         # The cache now stores the post-prefill logit alongside KV state. On a
@@ -2391,7 +2417,9 @@ def _generate_tokens(  # pragma: no cover
                         "[prompt-kv-cache] store failed (%s) — entry not saved", _pkv_err,
                     )
 
-            # v5 BlockKVCache (chained-block hash) save
+            # v5 BlockKVCache (chained-block hash) save — now also persists
+            # per-block last-position logits (v5.1) when we captured the full
+            # suffix logits tensor during prefill above.
             if (_block_kv_cache is not None
                     and _bkv_cache_obj is not None
                     and _bkv_full_ids is not None):
@@ -2401,14 +2429,7 @@ def _generate_tokens(  # pragma: no cover
                     )
                     _bs = _block_kv_size
                     _n_full_blocks = len(_bkv_full_ids) // _bs
-                    # Only save when we have at least one new full block to add.
-                    # (Re-storing already-cached blocks is a no-op but wastes I/O.)
                     if _n_full_blocks > 0 and _n_full_blocks > _bkv_matched_blocks:
-                        # Trim the cache back to the prompt boundary so the
-                        # block slices line up with prompt token positions.
-                        # _trim_n_b accounts for decode tokens past prompt_len.
-                        # After v4.2 PKV trim above, _pkv_cache may have already
-                        # been trimmed; use _bkv_cache_obj's own state instead.
                         _n_prompt = len(_bkv_full_ids)
                         for _layer in _bkv_cache_obj:
                             if hasattr(_layer, "offset") and hasattr(_layer, "trim"):
@@ -2419,15 +2440,49 @@ def _generate_tokens(  # pragma: no cover
                             _bkv_cache_obj, _bs, _n_full_blocks,
                             n_layers=len(_bkv_cache_obj),
                         )
+                        # v5.1: extract per-block last logits from the suffix
+                        # forward pass.  Block i (absolute) ends at suffix
+                        # position ((i + 1) * bs - 1) - matched_tokens.
+                        # We can only persist a logit when that position lies
+                        # within the suffix tensor we captured.
+                        _per_b_logits: "list[Any] | None" = None
+                        if (_bkv_full_logits_cap is not None
+                                and _n_full_blocks > _bkv_matched_blocks):
+                            try:
+                                _full_logits = _bkv_full_logits_cap
+                                _per_b_logits_list: list[Any] = []
+                                for _bi in range(_n_full_blocks):
+                                    if _bi < _bkv_matched_blocks:
+                                        _per_b_logits_list.append(None)
+                                        continue
+                                    _suffix_pos = (_bi + 1) * _bs - 1 - _bkv_matched_tokens
+                                    # Only include if within the captured tensor
+                                    if 0 <= _suffix_pos < _full_logits.shape[1]:
+                                        _per_b_logits_list.append(_full_logits[0, _suffix_pos])
+                                    else:
+                                        _per_b_logits_list.append(None)
+                                _per_b_logits = _per_b_logits_list
+                            except (AttributeError, IndexError) as _lg_err:
+                                import logging as _lglog
+                                _lglog.getLogger(__name__).warning(
+                                    "[block-kv-cache] per-block logit extraction "
+                                    "failed (%s) — storing without logits", _lg_err,
+                                )
+                                _per_b_logits = None
                         if _per_b_k:
                             _block_kv_cache.store_blocks(
                                 _bkv_full_ids, _per_b_k, _per_b_v,
+                                per_block_last_logits=_per_b_logits,
                             )
                             if _trace:
+                                _have_logits = sum(
+                                    1 for x in (_per_b_logits or []) if x is not None
+                                )
                                 _tlog(
                                     f"REQ {_rid}  block-kv-cache STORED  "
                                     f"new_blocks={_n_full_blocks - _bkv_matched_blocks}/"
-                                    f"{_n_full_blocks}  block_size={_bs}"
+                                    f"{_n_full_blocks}  block_size={_bs}  "
+                                    f"with_logits={_have_logits}"
                                 )
                 except (RuntimeError, ValueError, TypeError, OSError) as _bkv_err:
                     import logging as _bkvlog

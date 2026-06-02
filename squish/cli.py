@@ -1425,6 +1425,15 @@ def cmd_run(args):  # pragma: no cover
     os.environ.setdefault("SQUISH_API_KEY", api_key)
     if args.draft_model:
         cmd += ["--draft-model", args.draft_model]
+    # v5.1 Fix 2C: forward KV-cache flags to the spawned server
+    if getattr(args, "prompt_kv_cache", ""):
+        cmd += ["--prompt-kv-cache", args.prompt_kv_cache,
+                "--prompt-kv-cache-max-gb", str(args.prompt_kv_cache_max_gb)]
+    if getattr(args, "block_kv_cache", ""):
+        cmd += ["--block-kv-cache", args.block_kv_cache,
+                "--block-kv-size",  str(args.block_kv_size),
+                "--block-kv-hot-gb", str(args.block_kv_hot_gb),
+                "--block-kv-cold-gb", str(args.block_kv_cold_gb)]
     if args.batch_scheduler:
         cmd += ["--batch-scheduler", "--batch-size", str(args.batch_size)]
     if args.kv_cache_mode and args.kv_cache_mode != "fp16":
@@ -6159,6 +6168,31 @@ Ollama drop-in:
     p_run.add_argument("--max-tokens",       type=int, default=256,
                        metavar="N",
                        help="Max tokens to generate in --prompt one-shot mode (default 256)")
+    # v5.1 Fix 2C: expose the v4.2 PromptKVStore + v5 BlockKVCache flags on
+    # `squish run` (previously only on `python -m squish.server`).
+    p_run.add_argument("--prompt-kv-cache", default="",
+                       metavar="DIR",
+                       help="Enable persistent prompt-keyed KV cache (v4.2).  "
+                            "Whole-prompt SHA-256 hash; ideal for exact-prompt "
+                            "repeats. Works alongside --block-kv-cache.")
+    p_run.add_argument("--prompt-kv-cache-max-gb", type=float, default=1.0,
+                       metavar="GB",
+                       help="Soft cap on --prompt-kv-cache disk usage (default 1.0)")
+    p_run.add_argument("--block-kv-cache", default="",
+                       metavar="DIR",
+                       help="Enable block-level paged KV cache (v5).  Splits "
+                            "prompts into fixed-size token blocks (default 64) "
+                            "and reuses any matching prefix block-by-block. "
+                            "Hot RAM + cold SSD two-tier; survives restarts.")
+    p_run.add_argument("--block-kv-size", type=int, default=64,
+                       metavar="N",
+                       help="Token block size for --block-kv-cache (default 64)")
+    p_run.add_argument("--block-kv-hot-gb", type=float, default=2.0,
+                       metavar="GB",
+                       help="Soft cap on --block-kv-cache RAM tier (default 2.0)")
+    p_run.add_argument("--block-kv-cold-gb", type=float, default=8.0,
+                       metavar="GB",
+                       help="Soft cap on --block-kv-cache disk tier (default 8.0)")
     p_run.add_argument("--batch-scheduler",  action="store_true",
                        help="Enable continuous batching (improves concurrent throughput)")
     p_run.add_argument("--batch-size",       type=int, default=8)
