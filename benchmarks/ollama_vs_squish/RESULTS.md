@@ -9,6 +9,37 @@
 * per-block logit probe — `benchmarks/ollama_vs_squish/probe_block_logit.py` (v5.1)
 * v3 short-prompt — `benchmarks/ollama_vs_squish/bench.py`
 
+## v5.2 — speculative decoding investigated → **REVERTED** (measured)
+
+_Question: can a 1.5B-int4 draft + verify lift warm tok/s on the 7B-int4 target?
+Answer: no — net throughput is negative at every context length, and int4 logit
+ties make greedy output non-identical. Draft/verify stays opt-in via
+`temperature > 0.0`; the default warm path is unchanged from v5.1.1._
+
+_Per-target outcomes + decision: [`../../results/benchmarks_v5_2/PRECHECK.md`](../../results/benchmarks_v5_2/PRECHECK.md).
+Raw artifact: [`../../results/benchmarks_v5_2/runs/20260602T123634/raw.json`](../../results/benchmarks_v5_2/runs/20260602T123634/raw.json)._
+
+**Target:** Qwen2.5-7B-Instruct-int4 · **Draft:** Qwen2.5-1.5B-Instruct-int4
+(only draft in `~/models` sharing the 7B tokenizer family — no 0.5B/3B).
+Decode `temp=0, seed=42, max_tokens=200`.
+
+| Context | config | acceptance | spec tok/s | baseline tok/s | **net×** | identical |
+|--------:|--------|-----------:|-----------:|---------------:|---------:|:---------:|
+| 75      | K=2    | 0.747      | 14.88      | 17.19          | **0.87** | False |
+| 75      | K=4    | 0.606      | 14.78      | 17.19          | **0.86** | False |
+| **4039**| K=2    | 0.633      | 1.16       | 7.13           | **0.16** | False |
+| **4039**| K=4    | 0.417      | 0.44       | 7.13           | **0.06** | True  |
+
+**Why it fails:** acceptance is healthy (0.63 at K=2, p4000), but the verify
+path's per-cycle cost scales with context length, so net throughput collapses to
+0.06–0.16× in the long-context regime the warm benchmark targets. int4 lm_head
+logit ties also make batched-verify `[1,K]` diverge from sequential greedy `[1,1]`
+— output is not bit-identical, a fundamental quant property. n-gram pre-fill made
+it worse (K=4 acceptance 0.606 → 0.323).
+
+**Kept** (harmless, only active when `--draft-model` is passed): bf16→float32
+logit cast, vocab-width alignment, greedy-match verify branch, `--draft-depth` flag.
+
 ## v5.1 — complete metric coverage (measured)
 
 _Adds four new metrics: end-to-end response time, inter-token p50/p95,

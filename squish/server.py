@@ -629,6 +629,7 @@ class _DraftState:
     model_dir  = ""
     generator  = None   # SpeculativeGenerator instance (created after both models load)
     eagle_head = None   # EagleDraftHead instance (Phase 1B)
+    depth      = 4      # K: draft tokens proposed per verify cycle (--draft-depth)
 
 _draft = _DraftState()
 
@@ -1326,6 +1327,7 @@ def _rebuild_spec_gen() -> None:  # pragma: no cover
         _state.model, _state.tokenizer,
         draft_model=_draft.model, draft_tokenizer=_draft.tokenizer,
         eagle_head=_draft.eagle_head,
+        k=_draft.depth,
     )
 
 
@@ -1592,8 +1594,12 @@ def _generate_tokens(  # pragma: no cover
             pass
 
     # ── Speculative decoding (Phase 0.2) ─────────────────────────────────────
-    # Use when a draft model is loaded AND temperature > 0 (greedy draft on
-    # temp==0 benchmarks offers less benefit and adds overhead).
+    # Gated on temperature>0. v5.2 investigated firing at greedy temp==0 with a
+    # 1.5B draft + verify; measured net throughput was <1.0× at short context
+    # and ~0.10× at p4000 (the verify path's per-cycle cost scales with context
+    # length on M3 int4), and int4 logit ties made batched-verify output
+    # non-identical to sequential greedy. Per the v5.2 ground rules that is an
+    # unconditional revert, so draft/verify stays opt-in via temperature>0 only.
     if _draft.generator is not None and temperature > 0.0:
         if _trace:
             _tlog(f"REQ {_rid}  dispatch → speculative-decoding")
@@ -4139,6 +4145,9 @@ Examples:
                          "with Qwen2.5-7B). Enables 1.8-2.5× throughput.")
     ap.add_argument("--draft-compressed", default="",
                     help="Compressed dir for the draft model (default: <draft-model>-compressed)")
+    ap.add_argument("--draft-depth", type=int, default=4,
+                    help="K: number of tokens the draft proposes per verify cycle "
+                         "(speculative decoding). Default 4; capped at 8.")
     ap.add_argument("--eagle-head-dir", default="",
                     help="Path to EAGLE-3 draft head directory (from `squish pull-head`). "
                          "Enables EAGLE-3 speculative decoding (~75-85%% acceptance rate). "
@@ -5059,6 +5068,7 @@ Examples:
 
     if args.draft_model:
         print()
+        _draft.depth = max(1, int(getattr(args, "draft_depth", 4)))
         load_draft_model(args.draft_model, args.draft_compressed, verbose=args.verbose)
 
     if getattr(args, "eagle_head_dir", ""):
