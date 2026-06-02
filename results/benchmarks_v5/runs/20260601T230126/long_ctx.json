@@ -1,0 +1,600 @@
+{
+  "timestamp": "20260601T230126",
+  "host": "Apple M3 MacBook Pro 16 GB",
+  "ollama_version": "ollama version is 0.18.2",
+  "squish_version": "squish 9.14.0",
+  "n_long_prompt_tokens": 694,
+  "runs_per_phase": 5,
+  "prompts": {
+    "long_base": "You are a senior staff engineer reviewing pull requests in a large monorepo.  The codebase has the following conventions: every public function must have a docstring; every test must be deterministic; every database migration must be reversible.  The team's CI runs the full test suite, a linter, a type-checker, and a mutation-testing pass. PRs are auto-merged when they pass review-mode and have two approvals. You have just been assigned to review a PR.  The PR description says: 'This change introduces a new Redis-backed session cache that wraps the existing session middleware.  The cache stores session tokens keyed by user ID with a TTL of 24 hours.  Sessions are evicted by LRU when the cache exceeds 100,000 entries.  On a cache miss the middleware falls back to the database lookup as before, then populates the cache.  Benchmarks: p50 session-lookup latency drops from 18ms to 1.2ms; p99 from 180ms to 9ms; cache hit rate at steady state is 94 percent.  Author confirms backwards compatibility \u2014 sessions created before the cache deployment are still readable.  No new dependencies beyond redis-py which is already pinned in requirements.txt.  Author has added unit tests covering: cache hit, cache miss, eviction under load, fallback when Redis is unreachable, and TTL expiry.  Integration tests verify multi-instance consistency.  Migration plan: deploy behind a feature flag at 10 percent traffic, monitor p99 and error rate for 24h, ramp to 50 percent then 100 percent over a week.'  The diff modifies these files: auth/middleware.py adds the cache wrapper; auth/session.py adds the create/read/invalidate methods with cache integration; auth/cache.py is a new module exposing a thin Redis client; tests/auth/test_middleware.py extends the existing test suite; tests/auth/test_cache.py is a new file covering the cache module in isolation; requirements.txt adds no new lines (redis-py already pinned); docs/architecture.md updates the auth flow diagram and the cache-coherency section; .env.example adds the REDIS_URL config variable.  Pay particular attention to: thread safety, TTL refresh under contention, fallback latency budget when Redis is slow, and the impact on session token rotation if a key is evicted mid-request.  The author's previous PR introduced a subtle bug where session.invalidate() removed only the local copy and not the cached one, so be alert to similar coherence issues.  Use the following review format: start with a one-sentence summary; then list strengths in bullet form; then list risks in bullet form ordered by severity; then list test gaps; then either approve, request changes, or comment.  Do not make assumptions about code you have not seen; ask questions when behavior is unclear.  When suggesting refactors, propose specific function signatures or class structures rather than vague advice.  Pay particular attention to: error handling around Redis timeouts and connection failures; the interaction between TTL expiry and session-token rotation; backwards compatibility for sessions created before the cache was deployed; and any failure modes when the cache is partially evicted under memory pressure.  Be concrete about which test cases you would expect to see added or strengthened.",
+    "variations": [
+      "  Now: summarize the most important risk in two sentences.",
+      "  Now: list the top three test gaps you would expect to see filled.",
+      "  Now: identify one place where thread-safety could be subtly wrong.",
+      "  Now: write a one-line approval comment if the PR meets bar.",
+      "  Now: propose one alternative naming for the cache module."
+    ],
+    "warm_tps": "Summarize the Renaissance in two paragraphs of 100 words each."
+  },
+  "configs": {
+    "ollama": {
+      "label": "Ollama (warm)",
+      "peak_rss_bytes": 32768,
+      "rss_samples": 1,
+      "cold_runs": [
+        {
+          "run": 1,
+          "ttft_s": 3.618898291955702,
+          "total_s": 3.6225872080540285,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.27299062500242144,
+          "total_s": 0.27475570898968726,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.2713601659052074,
+          "total_s": 0.2743437079479918,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.2716154169756919,
+          "total_s": 0.2733719169627875,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.26647970802150667,
+          "total_s": 0.26813229208346456,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        }
+      ],
+      "variation_runs": [
+        {
+          "run": 1,
+          "ttft_s": 0.13098979205824435,
+          "total_s": 0.13252679200377315,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.2718408340588212,
+          "total_s": 0.273389459005557,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.270898999995552,
+          "total_s": 0.2726250420091674,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.2699268748983741,
+          "total_s": 0.273672082927078,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.2659495839616284,
+          "total_s": 0.2676285420311615,
+          "completion_tokens": 1,
+          "tokens_per_sec": null
+        }
+      ],
+      "warm_runs": [
+        {
+          "run": 1,
+          "ttft_s": 0.2472400839906186,
+          "total_s": 5.5441799169639125,
+          "completion_tokens": 100,
+          "tokens_per_sec": 19.012415322616334
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.12443612504284829,
+          "total_s": 5.392601166968234,
+          "completion_tokens": 100,
+          "tokens_per_sec": 19.115059540917866
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.12533295806497335,
+          "total_s": 5.414451958029531,
+          "completion_tokens": 100,
+          "tokens_per_sec": 19.040760442396103
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.12694300001021475,
+          "total_s": 5.405378291965462,
+          "completion_tokens": 100,
+          "tokens_per_sec": 19.08005574203941
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.12332037498708814,
+          "total_s": 5.396334458957426,
+          "completion_tokens": 100,
+          "tokens_per_sec": 19.100392504375286
+        }
+      ]
+    },
+    "squish_daemon": {
+      "label": "Squish daemon (no cache)",
+      "peak_rss_bytes": 2362228736,
+      "rss_samples": 1258,
+      "cold_runs": [
+        {
+          "run": 1,
+          "ttft_s": 3.7932676669443026,
+          "total_s": 3.793357582995668,
+          "completion_tokens": 1,
+          "tokens_per_sec": 11121.484816274002
+        },
+        {
+          "run": 2,
+          "ttft_s": 3.8224684580927715,
+          "total_s": 3.822556125000119,
+          "completion_tokens": 1,
+          "tokens_per_sec": 11406.812790069225
+        },
+        {
+          "run": 3,
+          "ttft_s": 3.951659124926664,
+          "total_s": 3.9517585419816896,
+          "completion_tokens": 1,
+          "tokens_per_sec": 10058.63631488104
+        },
+        {
+          "run": 4,
+          "ttft_s": 4.056881165946834,
+          "total_s": 4.056974415900186,
+          "completion_tokens": 1,
+          "tokens_per_sec": 10723.865954400128
+        },
+        {
+          "run": 5,
+          "ttft_s": 4.118070375057869,
+          "total_s": 4.11815033305902,
+          "completion_tokens": 1,
+          "tokens_per_sec": 12506.565766982998
+        }
+      ],
+      "variation_runs": [
+        {
+          "run": 1,
+          "ttft_s": 4.2137290419777855,
+          "total_s": 4.21382383396849,
+          "completion_tokens": 1,
+          "tokens_per_sec": 10549.414487072263
+        },
+        {
+          "run": 2,
+          "ttft_s": 4.269304874935187,
+          "total_s": 4.269406583975069,
+          "completion_tokens": 1,
+          "tokens_per_sec": 9831.967749984547
+        },
+        {
+          "run": 3,
+          "ttft_s": 4.273419666918926,
+          "total_s": 4.273493208922446,
+          "completion_tokens": 1,
+          "tokens_per_sec": 13597.671427734713
+        },
+        {
+          "run": 4,
+          "ttft_s": 4.335841708001681,
+          "total_s": 4.335920250043273,
+          "completion_tokens": 1,
+          "tokens_per_sec": 12732.034713215775
+        },
+        {
+          "run": 5,
+          "ttft_s": 4.338756332988851,
+          "total_s": 4.3388616249430925,
+          "completion_tokens": 1,
+          "tokens_per_sec": 9497.40184045349
+        }
+      ],
+      "warm_runs": [
+        {
+          "run": 1,
+          "ttft_s": 0.491144375060685,
+          "total_s": 5.319836208014749,
+          "completion_tokens": 98,
+          "tokens_per_sec": 20.29535190694624
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.4886449169134721,
+          "total_s": 5.337289374903776,
+          "completion_tokens": 98,
+          "tokens_per_sec": 20.211834637308023
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.4822829170152545,
+          "total_s": 5.465964832925238,
+          "completion_tokens": 98,
+          "tokens_per_sec": 19.664176336604324
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.5899201660649851,
+          "total_s": 5.490806290996261,
+          "completion_tokens": 98,
+          "tokens_per_sec": 19.996383817502846
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.6325017919298261,
+          "total_s": 5.733847832889296,
+          "completion_tokens": 98,
+          "tokens_per_sec": 19.210616024308752
+        }
+      ]
+    },
+    "squish_pkv": {
+      "label": "Squish + --prompt-kv-cache (v4.2)",
+      "peak_rss_bytes": 3454468096,
+      "rss_samples": 1583,
+      "cold_runs": [
+        {
+          "run": 1,
+          "ttft_s": 4.122346291900612,
+          "total_s": 4.4625775419408455,
+          "completion_tokens": 2,
+          "tokens_per_sec": 5.878354794756494
+        },
+        {
+          "run": 2,
+          "ttft_s": 4.434449958032928,
+          "total_s": 4.776645832927898,
+          "completion_tokens": 2,
+          "tokens_per_sec": 5.844605814181319
+        },
+        {
+          "run": 3,
+          "ttft_s": 4.613294290960766,
+          "total_s": 4.940758540993556,
+          "completion_tokens": 2,
+          "tokens_per_sec": 6.107536928992199
+        },
+        {
+          "run": 4,
+          "ttft_s": 4.710139667033218,
+          "total_s": 5.026482291985303,
+          "completion_tokens": 2,
+          "tokens_per_sec": 6.322258975700568
+        },
+        {
+          "run": 5,
+          "ttft_s": 4.75552633299958,
+          "total_s": 5.078175165923312,
+          "completion_tokens": 2,
+          "tokens_per_sec": 6.198689708178047
+        }
+      ],
+      "variation_runs": [
+        {
+          "run": 1,
+          "ttft_s": 0.00664875004440546,
+          "total_s": 0.243779250071384,
+          "completion_tokens": 2,
+          "tokens_per_sec": 8.434174430418938
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.020932750077918172,
+          "total_s": 0.5148069580318406,
+          "completion_tokens": 2,
+          "tokens_per_sec": 4.049614188774556
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.016049541998654604,
+          "total_s": 0.4015865830006078,
+          "completion_tokens": 2,
+          "tokens_per_sec": 5.187568994155007
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.02521541598252952,
+          "total_s": 0.45307841594330966,
+          "completion_tokens": 2,
+          "tokens_per_sec": 4.674393439449845
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.01989287498872727,
+          "total_s": 0.42870141693856567,
+          "completion_tokens": 2,
+          "tokens_per_sec": 4.892265681291473
+        }
+      ],
+      "warm_runs": [
+        {
+          "run": 1,
+          "ttft_s": 0.3595181660493836,
+          "total_s": 9.7426803749986,
+          "completion_tokens": 98,
+          "tokens_per_sec": 10.4442402057733
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.014225958031602204,
+          "total_s": 20.277969958027825,
+          "completion_tokens": 98,
+          "tokens_per_sec": 4.836223750162767
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.3108401249628514,
+          "total_s": 16.76135029096622,
+          "completion_tokens": 98,
+          "tokens_per_sec": 5.957262055162693
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.021379999932833016,
+          "total_s": 12.41472458303906,
+          "completion_tokens": 98,
+          "tokens_per_sec": 7.907469960416255
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.05031712492927909,
+          "total_s": 10.284600334009156,
+          "completion_tokens": 98,
+          "tokens_per_sec": 9.57565840205147
+        }
+      ]
+    },
+    "squish_block": {
+      "label": "Squish + --block-kv-cache (v5)",
+      "peak_rss_bytes": 3191095296,
+      "rss_samples": 841,
+      "cold_runs": [
+        {
+          "run": 1,
+          "ttft_s": 4.025916374986991,
+          "total_s": 4.499058458022773,
+          "completion_tokens": 2,
+          "tokens_per_sec": 4.2270600559721245
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.42533650004770607,
+          "total_s": 0.664321625023149,
+          "completion_tokens": 2,
+          "tokens_per_sec": 8.368721694312613
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.23401408304926008,
+          "total_s": 0.47938237502239645,
+          "completion_tokens": 2,
+          "tokens_per_sec": 8.15101243896243
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.23040116601623595,
+          "total_s": 0.4831720410147682,
+          "completion_tokens": 2,
+          "tokens_per_sec": 7.912303978896356
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.22845491592306644,
+          "total_s": 0.4683262499747798,
+          "completion_tokens": 2,
+          "tokens_per_sec": 8.33780329736618
+        }
+      ],
+      "variation_runs": [
+        {
+          "run": 1,
+          "ttft_s": 0.22768612508662045,
+          "total_s": 0.4628211250528693,
+          "completion_tokens": 2,
+          "tokens_per_sec": 8.505752016020919
+        },
+        {
+          "run": 2,
+          "ttft_s": 0.23755312501452863,
+          "total_s": 0.4748624579515308,
+          "completion_tokens": 2,
+          "tokens_per_sec": 8.427818557523544
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.23241133301053196,
+          "total_s": 0.47354837495367974,
+          "completion_tokens": 2,
+          "tokens_per_sec": 8.294038874672497
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.23088870802894235,
+          "total_s": 0.47014325007330626,
+          "completion_tokens": 2,
+          "tokens_per_sec": 8.3592979381313
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.23292629199568182,
+          "total_s": 0.4772462919354439,
+          "completion_tokens": 2,
+          "tokens_per_sec": 8.18598559468364
+        }
+      ],
+      "warm_runs": [
+        {
+          "run": 1,
+          "ttft_s": 0.3596379579976201,
+          "total_s": 5.693007666035555,
+          "completion_tokens": 98,
+          "tokens_per_sec": 18.374874678630274
+        },
+        {
+          "run": 2,
+          "ttft_s": 1.3036257500061765,
+          "total_s": 7.169313292019069,
+          "completion_tokens": 98,
+          "tokens_per_sec": 16.707333845875112
+        },
+        {
+          "run": 3,
+          "ttft_s": 0.9898907080059871,
+          "total_s": 7.2107238749740645,
+          "completion_tokens": 98,
+          "tokens_per_sec": 15.753516831213052
+        },
+        {
+          "run": 4,
+          "ttft_s": 0.9226212910143659,
+          "total_s": 7.638996166060679,
+          "completion_tokens": 98,
+          "tokens_per_sec": 14.591204604154
+        },
+        {
+          "run": 5,
+          "ttft_s": 0.9951149158878252,
+          "total_s": 7.881599040934816,
+          "completion_tokens": 98,
+          "tokens_per_sec": 14.230774110632439
+        }
+      ]
+    }
+  },
+  "summary": {
+    "ollama": {
+      "cold_ttft_s": {
+        "n": 5,
+        "median": 0.2716154169756919,
+        "p95": 0.2716154169756919,
+        "min": 0.26647970802150667,
+        "max": 3.618898291955702,
+        "stddev": 1.3393165395729696
+      },
+      "variation_ttft_s": {
+        "n": 5,
+        "median": 0.2699268748983741,
+        "p95": 0.2699268748983741,
+        "min": 0.13098979205824435,
+        "max": 0.2718408340588212,
+        "stddev": 0.055501992261639786
+      },
+      "warm_tps": {
+        "n": 5,
+        "median": 19.08005574203941,
+        "p95": 19.08005574203941,
+        "min": 19.012415322616334,
+        "max": 19.115059540917866,
+        "stddev": 0.0380152198185425
+      },
+      "peak_rss_bytes": 32768
+    },
+    "squish_daemon": {
+      "cold_ttft_s": {
+        "n": 5,
+        "median": 3.951659124926664,
+        "p95": 4.056881165946834,
+        "min": 3.7932676669443026,
+        "max": 4.118070375057869,
+        "stddev": 0.12687914831554523
+      },
+      "variation_ttft_s": {
+        "n": 5,
+        "median": 4.273419666918926,
+        "p95": 4.335841708001681,
+        "min": 4.2137290419777855,
+        "max": 4.338756332988851,
+        "stddev": 0.04674887955622265
+      },
+      "warm_tps": {
+        "n": 5,
+        "median": 19.996383817502846,
+        "p95": 19.996383817502846,
+        "min": 19.210616024308752,
+        "max": 20.29535190694624,
+        "stddev": 0.39767769671870284
+      },
+      "peak_rss_bytes": 2362228736
+    },
+    "squish_pkv": {
+      "cold_ttft_s": {
+        "n": 5,
+        "median": 4.613294290960766,
+        "p95": 4.710139667033218,
+        "min": 4.122346291900612,
+        "max": 4.75552633299958,
+        "stddev": 0.23044354902819486
+      },
+      "variation_ttft_s": {
+        "n": 5,
+        "median": 0.01989287498872727,
+        "p95": 0.02521541598252952,
+        "min": 0.00664875004440546,
+        "max": 0.02521541598252952,
+        "stddev": 0.0062703035381447255
+      },
+      "warm_tps": {
+        "n": 5,
+        "median": 7.907469960416255,
+        "p95": 7.907469960416255,
+        "min": 4.836223750162767,
+        "max": 10.4442402057733,
+        "stddev": 2.1128458133658006
+      },
+      "peak_rss_bytes": 3454468096
+    },
+    "squish_block": {
+      "cold_ttft_s": {
+        "n": 5,
+        "median": 0.23401408304926008,
+        "p95": 0.23040116601623595,
+        "min": 0.22845491592306644,
+        "max": 4.025916374986991,
+        "stddev": 1.5004367606439162
+      },
+      "variation_ttft_s": {
+        "n": 5,
+        "median": 0.23241133301053196,
+        "p95": 0.23088870802894235,
+        "min": 0.22768612508662045,
+        "max": 0.23755312501452863,
+        "stddev": 0.0032024774460139233
+      },
+      "warm_tps": {
+        "n": 5,
+        "median": 15.753516831213052,
+        "p95": 14.591204604154,
+        "min": 14.230774110632439,
+        "max": 18.374874678630274,
+        "stddev": 1.502833076260336
+      },
+      "peak_rss_bytes": 3191095296
+    }
+  },
+  "notes": [
+    "cold_ttft_s measures the first send of each variation prompt (no shared prompt with prior runs, but cache configs may benefit from the shared 1500-token prefix even on a 'cold' run).",
+    "variation_ttft_s measures repeated sends of variation prompts after one priming send.  This is the agent workload \u2014 same long prefix, different short tail every turn.",
+    "warm_tps is unrelated to the long context; measures sustained decode on a short prompt."
+  ]
+}
