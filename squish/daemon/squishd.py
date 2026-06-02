@@ -387,15 +387,20 @@ class DaemonServer:
         # Use mlx_lm generate when available (lowest overhead, no HTTP roundtrip)
         try:
             from mlx_lm import generate as _mlx_generate
-            result = _mlx_generate(
-                loaded.model,
-                loaded.tokenizer,
-                prompt=prompt,
-                max_tokens=max_tokens,
-                temp=temperature,
-                top_p=top_p,
-                verbose=False,
-            )
+            # mlx_lm >= 0.21 replaced temp/top_p kwargs with a sampler callable.
+            # Always use make_sampler when present; legacy fall-through below.
+            _gen_kwargs: dict[str, Any] = {
+                "prompt":     prompt,
+                "max_tokens": max_tokens,
+                "verbose":    False,
+            }
+            try:
+                from mlx_lm.sample_utils import make_sampler as _ms
+                _gen_kwargs["sampler"] = _ms(temp=temperature, top_p=top_p)
+            except ImportError:
+                _gen_kwargs["temp"]  = temperature
+                _gen_kwargs["top_p"] = top_p
+            result = _mlx_generate(loaded.model, loaded.tokenizer, **_gen_kwargs)
             text = result if isinstance(result, str) else result.get("text", "")
             n_tok = len(loaded.tokenizer.encode(text)) if hasattr(loaded.tokenizer, "encode") else 1
             return text, n_tok
@@ -440,13 +445,23 @@ class DaemonServer:
         t0 = time.perf_counter()
         lm = _LoadedModel(key, model_dir, compressed_dir)
 
-        from squish.quant.compressed_loader import load_compressed_model
-        comp = compressed_dir or (model_dir + "-compressed")
-        lm.model, lm.tokenizer = load_compressed_model(
-            model_dir=model_dir,
-            npz_path=comp,
-            verbose=False,
-        )
+        # v4.1 Fix 5: detect mlx-native quantized models (config.json has a
+        # "quantization" field) and load them via mlx_lm.load() directly.
+        # The legacy compressed_loader path expects a `<model>-compressed/`
+        # dir with manifest.json — that only exists for the squish npy-dir
+        # format, so without this check squishd cannot load any mlx-native
+        # quantized model (e.g. mlx-community Qwen2.5-7B-Instruct-int4).
+        if _model_is_mlx_native_quant(model_dir):
+            from mlx_lm import load as _mlx_load
+            lm.model, lm.tokenizer = _mlx_load(model_dir)
+        else:
+            from squish.quant.compressed_loader import load_compressed_model
+            comp = compressed_dir or (model_dir + "-compressed")
+            lm.model, lm.tokenizer = load_compressed_model(
+                model_dir=model_dir,
+                npz_path=comp,
+                verbose=False,
+            )
         lm.loaded_at = time.time()
         lm.last_used = lm.loaded_at
 
@@ -471,6 +486,24 @@ def _model_key(model_dir: str) -> str:
     name = Path(model_dir).name
     h    = hashlib.sha1(model_dir.encode()).hexdigest()[:8]
     return f"{name}:{h}"
+
+
+def _model_is_mlx_native_quant(model_dir: str) -> bool:
+    """Return True if config.json declares this is an mlx-native quantized model.
+
+    mlx-community / mlx_lm.convert produce models with a ``quantization``
+    field in config.json (e.g. Qwen2.5-7B-Instruct-int4).  These must be
+    loaded via ``mlx_lm.load()`` — the squish ``compressed_loader`` only
+    handles the npy-dir format and crashes looking for ``manifest.json``.
+    """
+    cfg = Path(model_dir) / "config.json"
+    if not cfg.exists():
+        return False
+    try:
+        with open(cfg) as f:
+            return "quantization" in json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return False
 
 
 def _messages_to_prompt(messages: list[dict], tokenizer) -> str:

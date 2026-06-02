@@ -588,9 +588,16 @@ def load_draft_model(
     Returns (model, tokenizer).  Vocabulary must be compatible with the target
     (same tokeniser family — e.g. both Qwen2.5, both Llama…).
     """
-    from squish.quant.compressed_loader import load_compressed_model
+    model_dir_p = Path(model_dir).expanduser()
     comp_dir_p  = Path(compressed_dir).expanduser() if compressed_dir else \
                   Path(model_dir_p.parent / (model_dir_p.name + "-compressed"))
+
+    # mlx-native quant (e.g. mlx-community Qwen2.5-1.5B-Instruct-int4) has no
+    # squish manifest.json. Detect and route through mlx_lm.load() directly.
+    if not (comp_dir_p / "manifest.json").exists() \
+            and (model_dir_p / "model.safetensors").exists():
+        from mlx_lm import load as _mlx_load
+        return _mlx_load(str(model_dir_p))
 
     model, tokenizer = load_compressed_model(
         model_dir  = str(model_dir_p),
