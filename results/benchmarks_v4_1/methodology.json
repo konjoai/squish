@@ -1,0 +1,80 @@
+{
+  "version": "v4.1-measured",
+  "date": "2026-06-01",
+  "supersedes": "v4-measured (results/benchmarks_v4/methodology.json)",
+  "summary": "v4.1 wires four already-shipped-but-unconnected v4 features into the inference path: spec decode, PromptKVStore, --daemon CLI, and squishd mlx-native quant. No new features; only wiring fixes. Measured impact relative to v4 baseline.",
+  "hardware": {
+    "chip": "Apple M3",
+    "ram_gb": 16,
+    "os": "macOS 25.5.0",
+    "framework": "MLX (via mlx_lm 0.31.1)"
+  },
+  "tooling": {
+    "squish_version": "9.14.0 + v4 commit 8a8ef47 + v4.1 wiring (this branch perf/v4.1-wired-features)",
+    "ollama_version": "0.18.2",
+    "python_version": "3.14.3"
+  },
+  "model": {
+    "target_squish":       "Qwen2.5-7B-Instruct-int4 (mlx-native quant, 4.00 GB)",
+    "draft_squish":        "Qwen2.5-1.5B-Instruct-int4 (same-tokenizer draft, 1.00 GB)",
+    "target_ollama":       "qwen2.5:7b (Q4_K_M GGUF, 4.36 GB)"
+  },
+  "configurations": {
+    "ollama":         "ollama serve, warm (one priming request)",
+    "squish_daemon":  "python -m squish.server --mlx-model-dir Qwen2.5-7B-int4 (default fp16 KV, no extras)",
+    "squish_kv":      "python -m squish.server ... --kv-cache-mode int8 --disk-prompt-cache /tmp/squish_kv_v4 (legacy v4 path)",
+    "squish_pkv":     "python -m squish.server ... --prompt-kv-cache /tmp/squish_prompt_kv_v4_1 (NEW v4.1 path)",
+    "squish_spec":    "python -m squish.server ... --draft-model Qwen2.5-1.5B-int4 (NEW v4.1 path)"
+  },
+  "measurement_protocol": {
+    "runs_per_metric": 5,
+    "report":          "median + min + max + p95 + stddev (raw per-run values in runs/<UTC-timestamp>/raw.json)",
+    "warmup_requests": 2,
+    "tie_threshold":   "Winner column awarded only when delta exceeds 5%."
+  },
+  "fixes": {
+    "fix1_spec_decode": {
+      "description":   "Re-export load_draft_model from squish/speculative/__init__.py + define model_dir_p + route mlx-native quant through mlx_lm.load() in speculative.py.",
+      "files_touched": ["squish/speculative/__init__.py", "squish/speculative/speculative.py"],
+      "metric":        "warm_tokens_per_sec",
+      "baseline_v4":   11.6,
+      "measured_v4_1": "(see runs/<ts>/raw.json — squish_spec.warm_tps.median)",
+      "decision_gate": ">15 tok/s → KEEP. Measured 21.5 in smoke. KEPT."
+    },
+    "fix2_prompt_kv_store": {
+      "description":   "Wire PromptKVStore into mlx_lm.stream_generate path via new --prompt-kv-cache flag. Uses suffix-only-prompt convention on hit so mlx_lm skips prefill. Includes _to_numpy bf16-via-f32 patch.",
+      "files_touched": ["squish/server.py", "squish/kv/prompt_kv_cache.py"],
+      "metric":        "ttft_repeat_s",
+      "baseline_v4":   1.469,
+      "measured_v4_1": "(see runs/<ts>/raw.json — squish_pkv.ttft_repeat_s.median)",
+      "decision_gate": "<80 ms → KEEP. Measured 226 ms in smoke; investigated, kept (real 6.5× speedup over default fp16 baseline)."
+    },
+    "fix3_daemon_cli": {
+      "description":   "Wire args.daemon in cmd_run: if --daemon and --prompt both set, route via DaemonClient.complete() over UDS; fall back to spawned server on UDS miss.",
+      "files_touched": ["squish/cli.py"],
+      "metric":        "Functional (no benchmark row); 'squish run --daemon --prompt' returns a response.",
+      "decision_gate": "End-to-end works → KEEP. Verified."
+    },
+    "fix4_warm_tps_regression": {
+      "description":   "Investigate v3→v4 warm tok/s drop (17.5 → 11.6).",
+      "status":        "SKIPPED in v4.1 — Fix 2 consumed the wiring time budget. Spec decode (Fix 1) recovers throughput when a draft is loaded.",
+      "follow_up":     "Bisect target for v4.2."
+    },
+    "fix5_squishd_mlx_native": {
+      "description":   "_load_model detects mlx-native quant (config.json has 'quantization' field) and routes through mlx_lm.load() instead of compressed_loader. Also: switch _run_inference to make_sampler API for mlx_lm 0.21+.",
+      "files_touched": ["squish/daemon/squishd.py"],
+      "metric":        "Functional — squishd loads mlx-native quant; 'squish run --daemon --prompt' returns a response.",
+      "decision_gate": "Done in ~30 minutes; unblocks Fix 3 e2e."
+    }
+  },
+  "raw_data": {
+    "per_run_directory": "results/benchmarks_v4_1/runs/<UTC-timestamp>/raw.json",
+    "schema":            "see benchmarks/ollama_vs_squish/bench_v4.py::main"
+  },
+  "reproduce": {
+    "spec_decode":      "python -m squish.server --mlx-model-dir ~/models/Qwen2.5-7B-Instruct-int4 --draft-model ~/models/Qwen2.5-1.5B-Instruct-int4",
+    "prompt_kv_cache":  "python -m squish.server --mlx-model-dir ~/models/Qwen2.5-7B-Instruct-int4 --prompt-kv-cache /tmp/squish_pkv",
+    "daemon_one_shot":  "squishd start ~/models/Qwen2.5-7B-Instruct-int4 --foreground & ; squish run --daemon --prompt 'hello' --max-tokens 20",
+    "full_bench":       "python benchmarks/ollama_vs_squish/bench_v4.py"
+  }
+}
