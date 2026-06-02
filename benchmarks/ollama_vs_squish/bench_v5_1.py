@@ -61,8 +61,15 @@ PKV_CACHE_DIR     = "/tmp/squish_pkv_v5_1"
 BLOCK_CACHE_DIR   = "/tmp/squish_blocks_v5_1"
 BLOCK_CACHE_DIR_INT3 = "/tmp/squish_blocks_v5_1_int3"
 
+# v5.1.1 "recommended" configs run BOTH caches at once — separate dirs so the
+# combined run never shares on-disk state with the ablation rows.
+REC_PKV_DIR_INT4   = "/tmp/squish_rec_pkv_v5_1_1_int4"
+REC_BLOCK_DIR_INT4 = "/tmp/squish_rec_block_v5_1_1_int4"
+REC_PKV_DIR_INT3   = "/tmp/squish_rec_pkv_v5_1_1_int3"
+REC_BLOCK_DIR_INT3 = "/tmp/squish_rec_block_v5_1_1_int3"
+
 REPO_ROOT  = Path(__file__).resolve().parents[2]
-OUT_ROOT   = REPO_ROOT / "results" / "benchmarks_v5_1" / "runs"
+OUT_ROOT   = REPO_ROOT / "results" / "benchmarks_v5_1_1" / "runs"
 TS         = time.strftime("%Y%m%dT%H%M%S")
 OUT_DIR    = OUT_ROOT / TS
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -399,6 +406,49 @@ def start_squish_block_int3(log_path: Path) -> tuple[subprocess.Popen, RSSSample
     return proc, sampler
 
 
+def _start_recommended(
+    log_path: Path, model_path: str, pkv_dir: str, block_dir: str,
+) -> tuple[subprocess.Popen, RSSSampler]:
+    """v5.1.1: the 'recommended' production config — BOTH caches enabled.
+
+    block-kv-cache gives long-context prefix reuse across distinct prompts;
+    prompt-kv-cache gives single-digit-ms hits on exact-match repeats.  The
+    two flags coexist (independent `if` blocks in squish.cli.cmd_run and
+    independent argparse in squish.server; no mutual exclusion).  On an
+    exact-match repeat the PKV whole-prompt-hash path takes precedence at the
+    server's merge gate; block cache remains the generalization net for
+    shifting-prefix reuse.  See results/benchmarks_v5_1_1/DIAGNOSIS.md §5.
+    """
+    for d in (pkv_dir, block_dir):
+        if os.path.isdir(d):
+            shutil.rmtree(d)
+        os.makedirs(d, exist_ok=True)
+    proc = subprocess.Popen(
+        _squish_cmd(model_path, [
+            "--block-kv-cache", block_dir,
+            "--block-kv-size", "64",
+            "--prompt-kv-cache", pkv_dir,
+        ]),
+        stdout=open(log_path, "wb"), stderr=subprocess.STDOUT,
+        env={**os.environ, "SQUISH_API_KEY": SQUISH_API_KEY},
+    )
+    sampler = RSSSampler(proc.pid)
+    sampler.start()
+    return proc, sampler
+
+
+def start_squish_recommended_int4(log_path: Path) -> tuple[subprocess.Popen, RSSSampler]:
+    return _start_recommended(
+        log_path, SQUISH_MODEL_INT4, REC_PKV_DIR_INT4, REC_BLOCK_DIR_INT4,
+    )
+
+
+def start_squish_recommended_int3(log_path: Path) -> tuple[subprocess.Popen, RSSSampler]:
+    return _start_recommended(
+        log_path, SQUISH_MODEL_INT3, REC_PKV_DIR_INT3, REC_BLOCK_DIR_INT3,
+    )
+
+
 def stop_server(proc: subprocess.Popen, sampler: RSSSampler) -> None:
     sampler.stop()
     if proc.poll() is None:
@@ -440,6 +490,20 @@ CONFIGS: dict[str, dict[str, Any]] = {
         "start":     start_squish_block,
         "stream":    stream_squish,
         "quant":     "INT4",
+    },
+    "squish_recommended_int4": {
+        "label":     "Squish recommended INT4 (block+pkv)",
+        "ready_url": f"http://{SQUISH_HOST}:{SQUISH_PORT}/health",
+        "start":     start_squish_recommended_int4,
+        "stream":    stream_squish,
+        "quant":     "INT4",
+    },
+    "squish_recommended_int3": {
+        "label":     "Squish recommended INT3 (block+pkv)",
+        "ready_url": f"http://{SQUISH_HOST}:{SQUISH_PORT}/health",
+        "start":     start_squish_recommended_int3,
+        "stream":    stream_squish,
+        "quant":     "INT3",
     },
     "squish_block_int3": {
         "label":     "Squish +block INT3",
@@ -611,12 +675,13 @@ def main() -> None:
         "p4000": p4000,
     })
 
-    # Skip INT3 if the model isn't present.
+    # Skip INT3 rows if the model isn't present.
     if not os.path.isdir(SQUISH_MODEL_INT3):
-        del CONFIGS["squish_block_int3"]
-        log("INT3 column SKIPPED — model not on disk.")
+        for _int3_cfg in ("squish_recommended_int3", "squish_block_int3"):
+            CONFIGS.pop(_int3_cfg, None)
+        log("INT3 columns SKIPPED — model not on disk.")
     else:
-        log(f"INT3 column ENABLED — {SQUISH_MODEL_INT3}")
+        log(f"INT3 columns ENABLED — {SQUISH_MODEL_INT3}")
 
     ollama_disk = ollama_model_disk_size(OLLAMA_MODEL)
     int4_disk   = disk_size_bytes(Path(SQUISH_MODEL_INT4))
@@ -647,7 +712,9 @@ def main() -> None:
             "Each phase measures the same prompt at the named context length.",
             "TTFT runs use max_tokens=1 (5 runs). E2E runs use max_tokens=200 (5 runs).",
             "Inter-token latency excludes the first chunk (that's TTFT).",
-            "INT3 column appears only if Qwen2.5-7B-Instruct-int3 is on disk.",
+            "INT3 rows appear only if Qwen2.5-7B-Instruct-int3 is on disk.",
+            "squish_recommended_* = block-kv-cache + prompt-kv-cache together "
+            "(production default). daemon/pkv/block are ablation rows.",
         ],
     }
 
@@ -702,11 +769,13 @@ def print_summary(r: dict[str, Any]) -> None:
     print()
     cfg_order = list(r["configs"].keys())
     short_labels = {
-        "ollama":             "Ollama",
-        "squish_daemon":      "sq daemon I4",
-        "squish_pkv":         "sq +pkv I4",
-        "squish_block":       "sq +block I4",
-        "squish_block_int3":  "sq +block I3",
+        "ollama":                  "Ollama",
+        "squish_daemon":           "sq daemon I4",
+        "squish_pkv":              "sq +pkv I4",
+        "squish_block":            "sq +block I4",
+        "squish_recommended_int4": "sq rec I4",
+        "squish_recommended_int3": "sq rec I3",
+        "squish_block_int3":       "sq +block I3",
     }
 
     # Per-phase summary tables
@@ -739,11 +808,13 @@ def print_summary(r: dict[str, Any]) -> None:
     print(" | ".join([f"{'peak RSS':<32}"]
                     + [f"{fmt_bytes(s[c]['peak_rss_bytes']):>14}" for c in cfg_order]))
     disk_map = {
-        "ollama":            r["models"]["ollama"]["disk_bytes"],
-        "squish_daemon":     r["models"]["squish_int4"]["disk_bytes"],
-        "squish_pkv":        r["models"]["squish_int4"]["disk_bytes"],
-        "squish_block":      r["models"]["squish_int4"]["disk_bytes"],
-        "squish_block_int3": r["models"]["squish_int3"]["disk_bytes"],
+        "ollama":                  r["models"]["ollama"]["disk_bytes"],
+        "squish_daemon":           r["models"]["squish_int4"]["disk_bytes"],
+        "squish_pkv":              r["models"]["squish_int4"]["disk_bytes"],
+        "squish_block":            r["models"]["squish_int4"]["disk_bytes"],
+        "squish_recommended_int4": r["models"]["squish_int4"]["disk_bytes"],
+        "squish_recommended_int3": r["models"]["squish_int3"]["disk_bytes"],
+        "squish_block_int3":       r["models"]["squish_int3"]["disk_bytes"],
     }
     print(" | ".join([f"{'disk (model only)':<32}"]
                     + [f"{fmt_bytes(disk_map.get(c)):>14}" for c in cfg_order]))
