@@ -1,0 +1,8 @@
+[10:43:09] SQUISH  REQ 266ef469  block-kv-cache MISS  matched_blocks=0/1  matched_tokens=0/121  suffix_prefilled=121
+[10:43:09] SQUISH  REQ 266ef469  prompt-kv-cache MISS  prefilled 121 tokens  → captured logit, will-save
+[10:43:10] SQUISH  REQ 266ef469  prompt-kv-cache STORED  offset=121  layers=28  logit=yes
+[10:43:10] SQUISH  REQ 266ef469  block-kv-cache STORED  new_blocks=1/1  block_size=64  with_logits=1
+[10:43:10] SQUISH  REQ b037b637  block-kv-cache HIT  matched_blocks=1/1  matched_tokens=64/121  suffix_prefilled=57
+[10:43:10] SQUISH  REQ b037b637  prompt-kv-cache HIT-fast  offset=121  layers=28  logit=cached  → defer-restore
+[10:43:11] SQUISH  REQ 862f15b1  block-kv-cache HIT  matched_blocks=1/1  matched_tokens=64/121  suffix_prefilled=57
+[10:43:11] SQUISH  REQ 862f15b1  prompt-kv-cache HIT-fast  offset=121  layers=28  logit=cached  → defer-restore
