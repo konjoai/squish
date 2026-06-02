@@ -15,6 +15,28 @@ from __future__ import annotations
 
 __version__ = "9.32.0"
 
+#: PyPI distribution name. The importable module is ``squish`` but the
+#: published distribution is ``squish-ai`` (``pip install squish-ai``).
+#: Use this — never the literal ``"squish"`` — for any
+#: :mod:`importlib.metadata` lookup so a future rename touches one place.
+__dist_name__ = "squish-ai"
+
+
+def dist_version() -> str:
+    """Return the installed distribution version, or the pinned fallback.
+
+    Resolves :data:`__dist_name__` via :mod:`importlib.metadata`. Falls back
+    to the source-pinned :data:`__version__` when the distribution metadata is
+    absent (a raw source checkout with no ``pip install -e .``), so callers
+    never have to repeat the try/except themselves.
+    """
+    import importlib.metadata as _im
+    try:
+        return _im.version(__dist_name__)
+    except _im.PackageNotFoundError:
+        return __version__
+
+
 # ── Lazy import registry ───────────────────────────────────────────────────────
 # Every public name is loaded on first access via __getattr__.
 # This keeps `import squish` fast regardless of how many wave modules exist.
@@ -432,6 +454,8 @@ def __getattr__(name: str) -> object:
 
 
 __all__ = [
+    "__dist_name__",
     "__version__",
+    "dist_version",
     *_LAZY_IMPORTS,
 ]

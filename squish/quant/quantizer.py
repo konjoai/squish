@@ -6,7 +6,7 @@ Self-contained INT8/INT4 quantization engine — no external dependencies beyond
 numpy (+ optional squish_quant Rust extension for 4× throughput).
 
 This module replaces the vectro/python/interface.py dependency entirely so that
-squish installs and runs on any Apple Silicon machine with `pip install squish`
+squish installs and runs on any Apple Silicon machine with `pip install squish-ai`
 without needing a sibling ~/vectro checkout.
 
 Public API (mirrors vectro interface for drop-in compatibility):
@@ -21,7 +21,7 @@ Public API (mirrors vectro interface for drop-in compatibility):
     sqint2_residual_gemv(...)   — GIL-free SQINT2 low-rank residual GEMV (W103.4b)
 
 Backend priority (auto):
-    1. squish_quant  (Rust/Rayon/SIMD — 6+ GB/s, `pip install squish[quant]`)
+    1. squish_quant  (Rust/Rayon/SIMD — 6+ GB/s, `pip install squish-ai[quant]`)
     2. numpy vectorised broadcast (~1.5 GB/s, always available)
 """
 from __future__ import annotations
@@ -395,7 +395,7 @@ def quantize_int4(
         raise RuntimeError(
             "squish_quant Rust extension required for INT4.\n"
             "  Build: cd squish/squish_quant_rs && python3 -m maturin build --release\n"
-            "  Or:    pip install squish[quant]"
+            "  Or:    pip install squish-ai[quant]"
         )
     emb = np.ascontiguousarray(embeddings, dtype=np.float32)
     return _squish_quant.quantize_int4_grouped(emb, group_size)
@@ -423,7 +423,7 @@ def dequantize_int4(
         raise RuntimeError(
             "squish_quant Rust extension required for INT4 dequantization.\n"
             "  Build: cd squish/squish_quant_rs && python3 -m maturin build --release\n"
-            "  Or:    pip install squish[quant]"
+            "  Or:    pip install squish-ai[quant]"
         )
     return _squish_quant.dequantize_int4_grouped(
         np.ascontiguousarray(packed, dtype=np.uint8),
@@ -456,7 +456,7 @@ def quantize_int4_asymmetric(
         raise RuntimeError(
             "squish_quant Rust extension required for INT4 asymmetric.\n"
             "  Build: cd squish/squish_quant_rs && python3 -m maturin build --release\n"
-            "  Or:    pip install squish[quant]"
+            "  Or:    pip install squish-ai[quant]"
         )
     emb = np.ascontiguousarray(embeddings, dtype=np.float32)
     return _squish_quant.quantize_int4_asymmetric_grouped(emb, group_size)
@@ -483,7 +483,7 @@ def dequantize_int4_asymmetric(
         raise RuntimeError(
             "squish_quant Rust extension required for INT4 asymmetric dequantization.\n"
             "  Build: cd squish/squish_quant_rs && python3 -m maturin build --release\n"
-            "  Or:    pip install squish[quant]"
+            "  Or:    pip install squish-ai[quant]"
         )
     return _squish_quant.dequantize_int4_asymmetric_grouped(
         np.ascontiguousarray(packed,  dtype=np.uint8),
@@ -532,7 +532,7 @@ def quantize_int4_asymmetric_mse(
         raise RuntimeError(
             "squish_quant Rust extension required for INT4 asymmetric MSE.\n"
             "  Build: cd squish/squish_quant_rs && python3 -m maturin build --release\n"
-            "  Or:    pip install squish[quant]"
+            "  Or:    pip install squish-ai[quant]"
         )
     emb = np.ascontiguousarray(embeddings, dtype=np.float32)
     n, d = emb.shape

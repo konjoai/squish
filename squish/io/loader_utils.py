@@ -6,7 +6,7 @@ Model architecture instantiation and npy/npz decompression helpers.
 
 Previously these lived in the root compressed_loader.py and were imported via
 a sys.path hack.  Moving them here makes the squish package self-contained so
-that `pip install squish` works without a sibling ~/vectro or ~/squish checkout.
+that `pip install squish-ai` works without a sibling ~/vectro or ~/squish checkout.
 
 Public helpers (used by streaming.py and the npy-dir loader):
     _instantiate_model(model_dir)            → (model, mlx_type_str)
