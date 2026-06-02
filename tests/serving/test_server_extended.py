@@ -155,12 +155,14 @@ class TestTokenizeWithModel:
 class TestEmbeddingsZeroNorm:
     def test_zero_norm_embedding_not_normalized(self):
         """When model outputs all-zeros, norm=0 → skip normalization (line 1047→1050)."""
+        import numpy as np
         mx = pytest.importorskip("mlx.core")
         from fastapi.testclient import TestClient
 
         mock_model = MagicMock()
-        # Return an all-zero tensor → norm == 0 → normalization skipped
-        mock_model.model.return_value = mx.zeros([1, 3, 16])
+        # mx.array(np_data) is CPU-backed: safe to mx.eval() from a TestClient
+        # background thread (mx.zeros() lazy Metal op is not).
+        mock_model.model.return_value = mx.array(np.zeros([1, 3, 16], dtype=np.float32))
         mock_tok = MagicMock()
         mock_tok.encode.return_value = [1, 2, 3]
 
@@ -169,6 +171,8 @@ class TestEmbeddingsZeroNorm:
         _srv._state.model      = mock_model
         _srv._state.tokenizer  = mock_tok
         _srv._state.model_name = "test-zero-embed"
+        was_set = _srv._LOAD_COMPLETE.is_set()
+        _srv._LOAD_COMPLETE.set()
         try:
             client = TestClient(_srv.app, raise_server_exceptions=False)
             resp = client.post("/v1/embeddings", json={"input": "hello", "model": "test"})
@@ -180,6 +184,8 @@ class TestEmbeddingsZeroNorm:
             assert all(v == 0.0 for v in emb)
         finally:
             _srv._state = orig
+            if not was_set:
+                _srv._LOAD_COMPLETE.clear()
 
 
 # ── /v1/embeddings additional branch coverage ─────────────────────────────────
@@ -193,9 +199,13 @@ class TestEmbeddingsAdditionalBranches:
         self._orig = _srv._state
         _srv._state = _srv._ModelState()
         _srv._state.model_name = "test-branch-embed"
+        self._was_load_complete = _srv._LOAD_COMPLETE.is_set()
+        _srv._LOAD_COMPLETE.set()
 
     def teardown_method(self):
         _srv._state = self._orig
+        if not self._was_load_complete:
+            _srv._LOAD_COMPLETE.clear()
 
     def test_list_input_multiple_items(self):
         """isinstance(inputs, str) → False when input is a list."""
@@ -204,7 +214,7 @@ class TestEmbeddingsAdditionalBranches:
         from fastapi.testclient import TestClient
 
         mock_model = MagicMock()
-        mock_model.model.return_value = mx.zeros([1, 3, 16])
+        mock_model.model.return_value = mx.array(np.zeros([1, 3, 16], dtype=np.float32))
         mock_tok = MagicMock()
         mock_tok.encode.return_value = [1, 2, 3]
         _srv._state.model = mock_model
@@ -250,7 +260,7 @@ class TestEmbeddingsAdditionalBranches:
                 return {"input_ids": [np.array([1, 2, 3])]}
 
         mock_model = MagicMock()
-        mock_model.model.return_value = mx.zeros([1, 3, 16])
+        mock_model.model.return_value = mx.array(np.zeros([1, 3, 16], dtype=np.float32))
         _srv._state.model = mock_model
         _srv._state.tokenizer = _CallableTok()
 
