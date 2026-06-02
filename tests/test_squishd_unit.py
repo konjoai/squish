@@ -23,6 +23,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+def _short_sock(label: str = "sq") -> str:
+    """Return an AF_UNIX socket path short enough for macOS (limit: 104 chars).
+
+    pytest's ``tmp_path`` lands under ``~/Library/Caches/...`` on macOS CI
+    runners, easily blowing the 104-byte limit. ``/tmp`` keeps us under it.
+    """
+    return tempfile.mktemp(suffix=".sock", prefix=f"sqt_{label}_", dir="/tmp")
+
+
 # ── Wire protocol helpers ──────────────────────────────────────────────────────
 
 class TestFrameProtocol:
@@ -110,15 +119,19 @@ class TestIsRunning:
         fake_path = str(tmp_path / "squish_test.sock")
         assert is_running(fake_path) is False
 
-    def test_not_running_stale_socket(self, tmp_path):
+    def test_not_running_stale_socket(self):
         from squish.daemon.squishd import is_running
 
-        # Create a socket path with no listener
-        p = str(tmp_path / "stale.sock")
+        # Create a socket path with no listener (short path for macOS AF_UNIX)
+        p = _short_sock("stale")
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.bind(p)
         s.close()
-        assert is_running(p) is False
+        try:
+            assert is_running(p) is False
+        finally:
+            if os.path.exists(p):
+                os.unlink(p)
 
 
 # ── DaemonServer control commands ─────────────────────────────────────────────
@@ -240,31 +253,31 @@ class TestDaemonClient:
         c = DaemonClient(sock_path=str(tmp_path / "nope.sock"))
         assert c.available() is False
 
-    def test_chat_raises_when_unavailable(self, tmp_path):
+    def test_chat_raises_when_unavailable(self):
         from squish.daemon.client import DaemonClient
 
-        c = DaemonClient(sock_path=str(tmp_path / "nope.sock"))
+        c = DaemonClient(sock_path=_short_sock("nope"))
         with pytest.raises(ConnectionRefusedError):
             c.chat([{"role": "user", "content": "hi"}])
 
-    def test_complete_raises_when_unavailable(self, tmp_path):
+    def test_complete_raises_when_unavailable(self):
         from squish.daemon.client import DaemonClient
 
-        c = DaemonClient(sock_path=str(tmp_path / "nope.sock"))
+        c = DaemonClient(sock_path=_short_sock("nope"))
         with pytest.raises(ConnectionRefusedError):
             c.complete("Hello")
 
-    def test_ttft_raises_when_unavailable(self, tmp_path):
+    def test_ttft_raises_when_unavailable(self):
         from squish.daemon.client import DaemonClient
 
-        c = DaemonClient(sock_path=str(tmp_path / "nope.sock"))
+        c = DaemonClient(sock_path=_short_sock("nope"))
         with pytest.raises(ConnectionRefusedError):
             c.ttft([{"role": "user", "content": "hi"}])
 
-    def test_ping_raises_when_unavailable(self, tmp_path):
+    def test_ping_raises_when_unavailable(self):
         from squish.daemon.client import DaemonClient
 
-        c = DaemonClient(sock_path=str(tmp_path / "nope.sock"))
+        c = DaemonClient(sock_path=_short_sock("nope"))
         with pytest.raises(ConnectionRefusedError):
             c.ping()
 
@@ -297,10 +310,10 @@ class TestLiveSocketRoundtrip:
             time.sleep(0.05)
         return False
 
-    def test_ping_roundtrip(self, tmp_path):
+    def test_ping_roundtrip(self):
         from squish.daemon.squishd import DaemonServer, send_request
 
-        sock = str(tmp_path / "test.sock")
+        sock = _short_sock("ping")
         srv  = DaemonServer(sock_path=sock)
         t    = threading.Thread(target=self._run_server, args=(srv,), daemon=True)
         t.start()
@@ -314,10 +327,10 @@ class TestLiveSocketRoundtrip:
             srv.stop()
             t.join(timeout=2.0)
 
-    def test_status_roundtrip(self, tmp_path):
+    def test_status_roundtrip(self):
         from squish.daemon.squishd import DaemonServer, send_request
 
-        sock = str(tmp_path / "test2.sock")
+        sock = _short_sock("stat")
         srv  = DaemonServer(sock_path=sock)
         t    = threading.Thread(target=self._run_server, args=(srv,), daemon=True)
         t.start()
@@ -330,10 +343,10 @@ class TestLiveSocketRoundtrip:
             srv.stop()
             t.join(timeout=2.0)
 
-    def test_unknown_model_returns_error_frame(self, tmp_path):
+    def test_unknown_model_returns_error_frame(self):
         from squish.daemon.squishd import DaemonServer, send_request
 
-        sock = str(tmp_path / "test3.sock")
+        sock = _short_sock("unkn")
         srv  = DaemonServer(sock_path=sock)
         t    = threading.Thread(target=self._run_server, args=(srv,), daemon=True)
         t.start()
@@ -349,10 +362,10 @@ class TestLiveSocketRoundtrip:
             srv.stop()
             t.join(timeout=2.0)
 
-    def test_multiple_sequential_pings(self, tmp_path):
+    def test_multiple_sequential_pings(self):
         from squish.daemon.squishd import DaemonServer, send_request
 
-        sock = str(tmp_path / "test4.sock")
+        sock = _short_sock("mult")
         srv  = DaemonServer(sock_path=sock)
         t    = threading.Thread(target=self._run_server, args=(srv,), daemon=True)
         t.start()
