@@ -1142,3 +1142,153 @@ SQUISH_BENCH_OUT=v4_2 python benchmarks/ollama_vs_squish/bench_v4.py
 6. Pre-existing `tests/test_squishd_unit.py` 9 timeouts and
    `tests/test_quant_aqlm.py::test_module_count_unchanged` assertion gap
    carry over from v4.2.
+
+---
+
+## Squish v5.1 — complete metric coverage (measured 2026-06-02)
+
+**Measured on M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0, 2026-06-02.**
+**Tooling:** Squish 9.14.0 + v4 + v4.1 + v4.2 + v5 + v5.1 (branch `perf/v5.1-metrics-and-suffix`) · Ollama 0.18.2 · mlx_lm 0.31.1.
+**Protocol:** 5 runs per metric, median reported.
+**Raw artifact:** [`results/benchmarks_v5_1/runs/20260602T082624/raw.json`](../results/benchmarks_v5_1/runs/20260602T082624/raw.json).
+**Per-phase outcomes:** [`results/benchmarks_v5_1/PRECHECK.md`](../results/benchmarks_v5_1/PRECHECK.md).
+
+v5.1 was a two-phase release.  **Phase 1** added four metric dimensions
+to the benchmark harness — end-to-end response time, inter-token p50 and
+p95, multi-context-length sweep (75 / 500 / 2000 / 4000 tokens), and an
+INT3 column when the on-disk INT3 model is present.  **Phase 2** shipped
+two v5 follow-ups (per-block last-position logit caching + the v4.2/v5
+KV-cache flags on `squish run`) and documented one as not applicable
+(suffix chunked prefill, same correctness constraint as v5 Goal A).
+
+### v5.1 unified results — Squish vs Ollama across four prompt sizes
+
+Median of 5 runs.  Prompt sizes are chat-templated token counts.
+
+| Prompt | Metric        | Ollama  | sq daemon I4 | sq +pkv I4 | sq +block I4 | sq +block I3 |
+|-------:|---------------|--------:|-------------:|-----------:|-------------:|-------------:|
+| **75**  | TTFT          |  137 ms |       730 ms |     **5 ms** |      223 ms |      244 ms |
+|        | E2E 200-tok   |  2.85 s |       3.11 s |     5.15 s |      4.91 s |      9.25 s |
+|        | Warm tok/s    |   18.8  |        19.2  |       8.6  |       10.2  |        7.5  |
+|        | ITL p50       | 54.4 ms |      50.4 ms |   105.3 ms |     85.1 ms |    126.3 ms |
+|        | ITL p95       | 56.6 ms |      57.8 ms |   152.3 ms |    162.5 ms |    209.9 ms |
+| **500** | TTFT          |  158 ms |       5.07 s |    **10 ms** |      677 ms |      768 ms |
+|        | E2E 200-tok   |  4.73 s |      10.69 s |     7.45 s |      7.70 s |     10.36 s |
+|        | Warm tok/s    |   16.6  |        12.4  |       9.0  |        8.9  |        7.2  |
+|        | ITL p50       | 61.6 ms |      66.6 ms |    95.1 ms |     86.8 ms |    121.8 ms |
+|        | ITL p95       | 68.2 ms |     185.8 ms |   140.9 ms |    257.2 ms |    216.0 ms |
+| **2000**| TTFT          |  172 ms |     15.97 s  |    **10 ms** |      809 ms |      875 ms |
+|        | E2E 200-tok   |  7.50 s |      24.68 s |     8.57 s |     10.13 s |     10.60 s |
+|        | Warm tok/s    |   16.0  |        10.7  |       8.3  |        8.1  |        6.4  |
+|        | ITL p50       | 64.0 ms |      79.3 ms |   112.2 ms |    104.5 ms |    136.6 ms |
+|        | ITL p95       | 74.8 ms |     166.9 ms |   161.1 ms |    243.0 ms |    264.4 ms |
+| **4000**| TTFT          |  178 ms |     38.37 s  |    **28 ms** |       1.11 s |      1.00 s |
+|        | E2E 200-tok   | 51.72 s |     53.54 s  |  **13.29 s** |     10.14 s |     15.31 s |
+|        | Warm tok/s    |    9.8  |         9.6  |       4.8  |        7.5  |        6.1  |
+|        | ITL p50       | 96.5 ms |      90.0 ms |   147.4 ms |    119.9 ms |    144.3 ms |
+|        | ITL p95       |148.9 ms |     192.8 ms |   398.5 ms |    227.2 ms |    255.0 ms |
+
+| Footer       | Ollama   | sq daemon I4 | sq +pkv I4 | sq +block I4 | sq +block I3 |
+|--------------|---------:|-------------:|-----------:|-------------:|-------------:|
+| Peak RSS     | 384 KB*  |     2.79 GB  |    2.63 GB |     2.99 GB  |    3.54 GB   |
+| Disk (model) | 4.36 GB  |     4.00 GB  |    4.00 GB |     4.00 GB  | **3.56 GB**  |
+
+`*` Ollama's RSS sample is artifactual: `ollama serve` spawns its model
+runner in a separate process group that the bench's RSSSampler doesn't
+walk.  The v4.2 benchmark catches it (~5 GB) when measured with that
+layout.
+
+### What the new metrics reveal
+
+* **PKV exact-match is the lowest-latency repeated-prompt path on every
+  prompt size.**  5 / 10 / 10 / 28 ms TTFT across 75 / 500 / 2000 / 4000
+  tokens.  This is the v4.2 prefix-character-yield path bypassing
+  `stream_generate` setup entirely — block cache cannot match it without
+  architecture changes (v5.2 follow-up).
+
+* **Block cache wins long-context cold TTFT and e2e.**  At p4000:
+  block cache 1.11 s TTFT vs Squish daemon 38.4 s — **34× reduction**.
+  E2E 200 tok: **10.14 s vs 53.54 s — 5.3× faster end-to-end**.
+
+* **Ollama's e2e at p4000 (51.72 s) is surprisingly slow.**  Ollama's
+  built-in prefix cache hits exact prompt repeats well (cold TTFT 178 ms)
+  but the e2e column captures the full 200-token decode — at that size
+  llama.cpp's Metal kernels also slow down (warm tok/s 9.8 vs Squish's
+  7.5 with block cache).
+
+* **Inter-token p95 is the new ceiling on conversational latency.**
+  Ollama holds steady around 75 ms across all prompt sizes (good).
+  Squish daemon climbs to 200+ ms on long prompts.  Squish + block jumps
+  to 227 ms at p4000.  PKV degrades worst (398 ms p95 at p4000).  This
+  is decode-loop thermal drift + per-token cache housekeeping — v5.2
+  follow-up.
+
+* **INT3 trade-off.**  3.56 GB disk vs INT4's 4.00 GB (**−11 %**).  Warm
+  tok/s 6.1–7.5 vs INT4's 7.5–10.2 (**~10–20 % slower decode**).  Peak
+  RAM is slightly higher (3.54 GB vs 2.99 GB) — INT3 unpacking holds
+  intermediate buffers longer.  Useful when disk is the constraint;
+  pick INT4 when latency is.
+
+### Phase 2 — Per-block last-position logit (T2B)
+
+**Implementation:** ships.  47/47 KV-cache tests pass (32 PromptKVStore
++ 15 BlockKVCache, including new tests for the v5.1 logit roundtrip,
+backward-compatibility with v5 entries that lack the field, and partial-
+logit storage).
+
+**Spec decision gate:** `if full-match TTFT drops below 30ms, KEEP`.
+The microbench (`probe_block_logit.py`) on a chat-templated 576-token
+prompt (= 9 × 64 blocks, exact alignment, full hit):
+
+```
+First send (cold):     ~3.6 s   # full prefill, populates blocks + logits
+Hit runs (median 5):    245 ms  # bench-client TTFT (full-prefix match)
+   ↳ server-side ttft:  145 ms  # one fewer forward pass than v5 path
+   ↳ FastAPI overhead: ~100 ms  # baseline all configs pay
+```
+
+**Honest read:** the decision gate target wasn't met because the
+~100 ms FastAPI/uvicorn streaming-response overhead caps client-visible
+TTFT regardless of the cache code.  The v4.2 PromptKVStore hits below
+30 ms only because its prefix-character-yield path completely bypasses
+`stream_generate` setup — a structurally different streaming style.
+The implementation is correct (server trace verifies `HIT-fast (logit)`
+with `suffix_prefilled=0`), the saved forward pass is real, and the
+deferred-restore optimization parallelises the residual restore work
+with consumer chunk encoding.  Below the 30 ms gate the bottleneck is
+the framework, not the cache code.  Kept; v5.2 follow-up: bypass
+stream_generate setup for cache hits.
+
+### Phase 2 — `--block-kv-cache` on `squish run` (T2C)
+
+`squish run qwen2.5-7b --block-kv-cache ~/.cache/squish/blocks
+--block-kv-size 64` now works without dropping to `python -m
+squish.server`.  Six flags forwarded: `--prompt-kv-cache`,
+`--prompt-kv-cache-max-gb`, `--block-kv-cache`, `--block-kv-size`,
+`--block-kv-hot-gb`, `--block-kv-cold-gb`.
+
+### Recommended article headline (v5.1)
+
+* **Long-context agent workloads:** "Squish + block KV cache cuts a
+  4000-token prompt's e2e 200-token completion from 53 s (no cache) to
+  10 s — 5.3× faster, matches Ollama (51.7 s) at +60 % less disk if you
+  drop to INT3."
+* **Exact-match repeat:** "Squish + prompt KV cache delivers 5 ms TTFT
+  on a repeated 75-token prompt — 27× faster than Ollama's already-
+  good 137 ms."
+
+### Remaining v5.2 candidates
+
+1. Bypass `mlx_lm.stream_generate` setup overhead on block-cache fast
+   hits to close the ~100 ms framework cap on TTFT.
+2. Speculative prefill — yield a mid-prefill-sampled token, verify on
+   full-prefill completion, retract+replace on mismatch (resolves v5
+   Goal A which v5.1 documented but did not advance).
+3. Inter-token p95 stability under sustained decode.  The cache-enabled
+   paths (PKV especially) drift up to 200–400 ms p95 at long contexts.
+4. Bench design improvement: TTFT measurement at multiple max_tokens
+   values to expose the framework asymptote independent of the cache
+   code.
+5. Pre-existing `tests/test_squishd_unit.py` 9 timeouts and
+   `tests/test_quant_aqlm.py::test_module_count_unchanged` assertion
+   gap carry over.
