@@ -264,31 +264,5 @@ class TestServerSourcePatterns(unittest.TestCase):
         )
 
 
-# ==============================================================================
-# 5.  Benchmark script loadable
-# ==============================================================================
-
-class TestBenchmarkScript(unittest.TestCase):
-
-    def test_bench_wave99_importable(self):
-        bench_path = ROOT / "dev" / "benchmarks" / "bench_wave99_speed.py"
-        self.assertTrue(bench_path.exists(), "bench_wave99_speed.py must exist")
-
-    def test_bench_wave99_parseable(self):
-        import ast
-        bench_path = ROOT / "dev" / "benchmarks" / "bench_wave99_speed.py"
-        src = bench_path.read_text()
-        try:
-            ast.parse(src)
-        except SyntaxError as e:
-            self.fail(f"bench_wave99_speed.py has syntax error: {e}")
-
-    def test_bench_wave99_has_compare_function(self):
-        bench_path = ROOT / "dev" / "benchmarks" / "bench_wave99_speed.py"
-        src = bench_path.read_text()
-        self.assertIn("def compare(", src)
-        self.assertIn("def run_benchmark(", src)
-
-
 if __name__ == "__main__":
     unittest.main()

@@ -128,7 +128,7 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = [".", "dev/benchmarks"]
+pythonpath = ["."]
 addopts   = "-q --tb=short --import-mode=importlib"
 norecursedirs = ["tests/grammar", "tests/hardware"]
 markers   = [

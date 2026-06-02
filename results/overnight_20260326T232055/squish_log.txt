@@ -1,3 +1,0 @@
-SKIP  INT4  Qwen3-4B-int4  (OOM guard: bf16=8.1GB)
-OK    INT3  Qwen3-4B-int3  2.02GB  5s
-OK    INT2  Qwen3-4B-int2  1.27GB  6s
