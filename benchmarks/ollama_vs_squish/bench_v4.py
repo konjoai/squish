@@ -95,9 +95,14 @@ SQUISH_API_KEY = "squish"
 SQUISH_MODEL_PATH = "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
 
 KV_CACHE_DIR = "/tmp/squish_kv_v4"
+PROMPT_KV_DIR = "/tmp/squish_prompt_kv_v4_1"
+DRAFT_MODEL_PATH = "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-int4"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-OUT_ROOT = REPO_ROOT / "results" / "benchmarks_v4" / "runs"
+# Results subdirectory: v4 for the original 3-config bench, v4_1 for the
+# wired-features re-run with --prompt-kv-cache and --draft-model added.
+_V4_1 = os.environ.get("SQUISH_BENCH_V4_1", "1") == "1"
+OUT_ROOT = REPO_ROOT / "results" / ("benchmarks_v4_1" if _V4_1 else "benchmarks_v4") / "runs"
 TS = time.strftime("%Y%m%dT%H%M%S")
 OUT_DIR = OUT_ROOT / TS
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -354,6 +359,45 @@ def start_squish_kv(log_path: Path) -> tuple[subprocess.Popen, RSSSampler]:
     return proc, sampler
 
 
+def start_squish_pkv(log_path: Path) -> tuple[subprocess.Popen, RSSSampler]:
+    """v4.1 Fix 2: squish.server with the new --prompt-kv-cache flag (fp16 path)."""
+    if os.path.isdir(PROMPT_KV_DIR):
+        shutil.rmtree(PROMPT_KV_DIR)
+    os.makedirs(PROMPT_KV_DIR, exist_ok=True)
+    extra = [
+        "--prompt-kv-cache",
+        PROMPT_KV_DIR,
+        "--prompt-kv-cache-max-gb",
+        "1.0",
+    ]
+    proc = subprocess.Popen(
+        _squish_server_cmd(extra),
+        stdout=open(log_path, "wb"),
+        stderr=subprocess.STDOUT,
+        env={**os.environ, "SQUISH_API_KEY": SQUISH_API_KEY},
+    )
+    sampler = RSSSampler(proc.pid)
+    sampler.start()
+    return proc, sampler
+
+
+def start_squish_spec(log_path: Path) -> tuple[subprocess.Popen, RSSSampler]:
+    """v4.1 Fix 1: squish.server with --draft-model for speculative decoding."""
+    extra = [
+        "--draft-model",
+        DRAFT_MODEL_PATH,
+    ]
+    proc = subprocess.Popen(
+        _squish_server_cmd(extra),
+        stdout=open(log_path, "wb"),
+        stderr=subprocess.STDOUT,
+        env={**os.environ, "SQUISH_API_KEY": SQUISH_API_KEY},
+    )
+    sampler = RSSSampler(proc.pid)
+    sampler.start()
+    return proc, sampler
+
+
 def stop_server(proc: subprocess.Popen, sampler: RSSSampler) -> None:
     sampler.stop()
     if proc.poll() is None:
@@ -381,9 +425,23 @@ CONFIGS = {
         "stream": stream_squish,
     },
     "squish_kv": {
-        "label": "Squish + disk KV cache",
+        "label": "Squish + disk KV cache (legacy)",
         "ready_url": f"http://{SQUISH_HOST}:{SQUISH_PORT}/health",
         "start": start_squish_kv,
+        "stream": stream_squish,
+    },
+    # v4.1 Fix 2: new fp16 prompt-kv-cache path
+    "squish_pkv": {
+        "label": "Squish + --prompt-kv-cache (v4.1)",
+        "ready_url": f"http://{SQUISH_HOST}:{SQUISH_PORT}/health",
+        "start": start_squish_pkv,
+        "stream": stream_squish,
+    },
+    # v4.1 Fix 1: speculative decoding wired
+    "squish_spec": {
+        "label": "Squish + spec decode (v4.1)",
+        "ready_url": f"http://{SQUISH_HOST}:{SQUISH_PORT}/health",
+        "start": start_squish_spec,
         "stream": stream_squish,
     },
 }
@@ -598,92 +656,61 @@ def winner_or_tie(
 
 
 def print_summary(r: dict[str, Any]) -> None:
-    o = r["summary"]["ollama"]
-    sd = r["summary"]["squish_daemon"]
-    sk = r["summary"]["squish_kv"]
-
+    s = r["summary"]
     print()
-    print("# v4 measured benchmark — Squish vs Ollama (M3 16 GB)")
+    print("# v4.1 measured benchmark — Squish vs Ollama (M3 16 GB)")
     print(f"Ollama: {r['ollama_version']}    Squish: {r['squish_version']}")
     print(f"Squish target: {Path(r['models']['squish']['path']).name} (INT4 MLX)")
     print(f"Ollama target: {r['models']['ollama']['name']} (Q4_K_M GGUF)")
     print()
-    print(
-        f"{'Metric':<38} | {'Ollama':>14} | {'Squish daemon':>14} | "
-        f"{'Squish + KV':>14} | {'Winner':>14}"
-    )
-    print("-" * 110)
+    cfg_order = ["ollama", "squish_daemon", "squish_kv", "squish_pkv", "squish_spec"]
+    short_labels = {
+        "ollama":         "Ollama",
+        "squish_daemon":  "sq daemon",
+        "squish_kv":      "sq +disk-KV",
+        "squish_pkv":     "sq +pkv (v4.1)",
+        "squish_spec":    "sq +spec (v4.1)",
+    }
+    header = " | ".join([f"{'Metric':<38}"] + [f"{short_labels[c]:>15}" for c in cfg_order] + [f"{'Winner':>14}"])
+    print(header)
+    print("-" * len(header))
 
-    rows = [
-        (
-            "TTFT (fresh prompt)",
-            o["ttft_first_s"]["median"],
-            sd["ttft_first_s"]["median"],
-            sk["ttft_first_s"]["median"],
-            False,
-            fmt_s,
-        ),
-        (
-            "TTFT (repeated prompt, cache-hit)",
-            o["ttft_repeat_s"]["median"],
-            sd["ttft_repeat_s"]["median"],
-            sk["ttft_repeat_s"]["median"],
-            False,
-            fmt_s,
-        ),
-        (
-            "Warm tokens/sec (200-tok decode)",
-            o["warm_tps"]["median"],
-            sd["warm_tps"]["median"],
-            sk["warm_tps"]["median"],
-            True,
-            fmt_tps,
-        ),
-        (
-            "Peak RAM (process tree)",
-            o["peak_rss_bytes"],
-            sd["peak_rss_bytes"],
-            sk["peak_rss_bytes"],
-            False,
-            fmt_bytes,
-        ),
-        (
-            "Disk size (model)",
-            r["models"]["ollama"]["disk_bytes"],
-            r["models"]["squish"]["disk_bytes"],
-            r["models"]["squish"]["disk_bytes"],
-            False,
-            fmt_bytes,
-        ),
-    ]
-    for name, v_o, v_d, v_k, higher_better, fmt in rows:
-        winner = winner_or_tie(
-            [("Ollama", v_o), ("daemon", v_d), ("KV", v_k)],
-            higher_better=higher_better,
-        )
-        print(f"{name:<38} | {fmt(v_o):>14} | {fmt(v_d):>14} | {fmt(v_k):>14} | {winner:>14}")
+    def _row(name: str, key: str, higher_better: bool, fmt_fn) -> None:
+        vals = [s[c][key]["median"] if isinstance(s[c][key], dict) else s[c][key] for c in cfg_order]
+        winner = winner_or_tie(list(zip(cfg_order, vals)), higher_better=higher_better)
+        cells = [fmt_fn(v) for v in vals]
+        print(" | ".join([f"{name:<38}"] + [f"{c:>15}" for c in cells] + [f"{winner:>14}"]))
+
+    def _row_const(name: str, vals: list[float], higher_better: bool, fmt_fn) -> None:
+        winner = winner_or_tie(list(zip(cfg_order, vals)), higher_better=higher_better)
+        cells = [fmt_fn(v) for v in vals]
+        print(" | ".join([f"{name:<38}"] + [f"{c:>15}" for c in cells] + [f"{winner:>14}"]))
+
+    _row("TTFT (fresh prompt)",          "ttft_first_s",  False, fmt_s)
+    _row("TTFT (repeated prompt)",       "ttft_repeat_s", False, fmt_s)
+    _row("Warm tok/s (200-tok decode)",  "warm_tps",      True,  fmt_tps)
+    peak = [s[c]["peak_rss_bytes"] for c in cfg_order]
+    _row_const("Peak RAM (process tree)", peak, False, fmt_bytes)
+    disk = [r["models"]["ollama"]["disk_bytes"]] + [r["models"]["squish"]["disk_bytes"]] * 4
+    _row_const("Disk size (model)", disk, False, fmt_bytes)
 
     print()
-    print("Per-run TTFT (fresh prompt) — 5 runs:")
-    for label, key in [
-        ("Ollama", "ollama"),
-        ("Squish daemon", "squish_daemon"),
-        ("Squish + KV", "squish_kv"),
+    for phase_label, phase_key in [
+        ("Per-run TTFT (fresh prompt) — 5 runs",   "ttft_first"),
+        ("Per-run TTFT (repeated prompt) — 5 runs", "ttft_repeat"),
     ]:
-        ttfts = [run["ttft_s"] for run in r["configs"][key]["ttft_first"]]
-        ttft_str = " ".join(f"{t * 1000:.0f}ms" if t else "    -" for t in ttfts)
-        print(f"  {label:<16}  {ttft_str}")
+        print(phase_label + ":")
+        for c in cfg_order:
+            ttfts = [run["ttft_s"] for run in r["configs"][c][phase_key]]
+            ttft_str = " ".join(f"{t * 1000:.0f}ms" if t else "    -" for t in ttfts)
+            print(f"  {short_labels[c]:<16}  {ttft_str}")
+        print()
 
-    print()
-    print("Per-run TTFT (repeated prompt, cache-hit) — 5 runs:")
-    for label, key in [
-        ("Ollama", "ollama"),
-        ("Squish daemon", "squish_daemon"),
-        ("Squish + KV", "squish_kv"),
-    ]:
-        ttfts = [run["ttft_s"] for run in r["configs"][key]["ttft_repeat"]]
-        ttft_str = " ".join(f"{t * 1000:.0f}ms" if t else "    -" for t in ttfts)
-        print(f"  {label:<16}  {ttft_str}")
+    print("Per-run warm tok/s — 5 runs:")
+    for c in cfg_order:
+        tps = [run["tokens_per_sec"] for run in r["configs"][c]["warm_tps"]]
+        tps_str = " ".join(f"{t:.1f}" if t else "  -" for t in tps)
+        print(f"  {short_labels[c]:<16}  {tps_str}")
 
 
 if __name__ == "__main__":

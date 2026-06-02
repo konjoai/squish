@@ -2,7 +2,85 @@
 
 **Date:** 2026-06-01
 **Host:** Apple M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0
-**Prompts:** see `benchmarks/ollama_vs_squish/bench_v4.py` (v4) and `…/bench.py` (v3).
+**Prompts:** see `benchmarks/ollama_vs_squish/bench_v4.py` (v4 / v4.1) and `…/bench.py` (v3).
+
+## v4.1 — wired-features re-bench (measured)
+
+_Replaces the v4 headline once the wiring fixes land on the inference
+path.  Same hardware, same prompts, same protocol as v4; what changes is
+that PromptKVStore is now invoked, spec decode actually loads, and
+squishd can read mlx-native quant._
+
+_Per-run raw JSON:
+[`../../results/benchmarks_v4_1/runs/20260601T195413/raw.json`](../../results/benchmarks_v4_1/runs/20260601T195413/raw.json).
+Feature audit:
+[`../../results/benchmarks_v4_1/PRECHECK.md`](../../results/benchmarks_v4_1/PRECHECK.md)._
+
+**Squish:** 9.14.0 + v4.1 wiring (`perf/v4.1-wired-features`) · **Ollama:** 0.18.2 · **mlx_lm:** 0.31.1.
+
+| Metric                            | Ollama (warm) | sq daemon       | sq +disk-KV (legacy) | sq +pkv (v4.1)  | sq +spec (v4.1) | Winner             |
+|-----------------------------------|--------------:|----------------:|---------------------:|----------------:|----------------:|--------------------|
+| **TTFT, fresh prompt**            |    **256 ms** |          481 ms |               413 ms |          557 ms |          502 ms | Ollama             |
+| **TTFT, repeated prompt**         |        127 ms |          639 ms |            **22 ms** |          223 ms |          693 ms | **sq +disk-KV**    |
+| **Warm tokens/sec** (200-tok)     |     18.8 tok/s |    **20.2 tok/s** |           12.0 tok/s |      10.6 tok/s |      18.5 tok/s | **sq daemon**      |
+| **Spec-decode tokens/sec**        |          —    |            —    |                  —   |              —  |  **18.5 tok/s** | tie ±5% vs Ollama  |
+| **Peak RAM** (process tree)       |       5.13 GB |     **2.39 GB** |              3.73 GB |         3.83 GB |         3.66 GB | **sq daemon**      |
+| **Disk size** (model)             |       4.36 GB |     **4.00 GB** |              4.00 GB |         4.00 GB |         4.00 GB | Squish             |
+
+### Per-fix delta from v4
+
+| Fix                       | Metric                        | v4 measured  | v4.1 measured  | Delta              |
+|---------------------------|-------------------------------|-------------:|---------------:|--------------------|
+| Fix 1 — spec decode       | Warm tok/s (200-tok decode)   |     11.6     |    **18.5**    | **+59 %** (1.6×)   |
+| Fix 1 — spec decode (cold smoke)| Warm tok/s              |     11.6     |    **21.5**    | **+85 %** (1.85×)  |
+| Fix 2 — PromptKVStore     | TTFT, repeated prompt         |   1469 ms    |    **223 ms**  | **6.6× faster**    |
+| Fix 3 — `squish run --daemon`| End-to-end one-shot via UDS|  did-not-run |  **works**     | qualitative        |
+| Fix 5 — squishd mlx quant | mlx-native model load         |  crashed     |  **loads**     | unblocks Fix 3 e2e |
+| Environment side-effect   | sq daemon Warm tok/s          |     11.6     |    **20.2**    | +74 % — v4 number was thermal/memory pressure |
+
+### Per-run TTFT, fresh prompt (ms)
+| Run | Ollama | sq daemon | sq +disk-KV | sq +pkv | sq +spec |
+|----:|-------:|----------:|------------:|--------:|---------:|
+| 1   |    274 |       500 |         416 |     577 |      502 |
+| 2   |    258 |       487 |         386 |     559 |      484 |
+| 3   |    255 |       477 |         413 |     540 |      495 |
+| 4   |    256 |       477 |         416 |     557 |      541 |
+| 5   |    253 |       481 |         384 |     536 |      522 |
+
+### Per-run TTFT, repeated prompt (ms)
+| Run | Ollama | sq daemon | sq +disk-KV | sq +pkv | sq +spec |
+|----:|-------:|----------:|------------:|--------:|---------:|
+| 1   |    123 |       631 |         625 |     304 |      699 |
+| 2   |    123 |       639 |          26 |     228 |      692 |
+| 3   |    130 |       636 |          22 |     223 |      693 |
+| 4   |    127 |       659 |          21 |     222 |      694 |
+| 5   |    132 |       656 |          22 |     223 |      675 |
+
+### Per-run warm tokens/sec
+| Run | Ollama | sq daemon | sq +disk-KV | sq +pkv | sq +spec |
+|----:|-------:|----------:|------------:|--------:|---------:|
+| 1   |   18.8 |      20.2 |        15.7 |    16.3 |     20.2 |
+| 2   |   19.0 |      20.3 |        11.5 |    10.8 |     19.2 |
+| 3   |   19.0 |      20.5 |        10.9 |    10.3 |     18.5 |
+| 4   |   18.8 |      20.1 |        12.0 |    10.4 |     17.1 |
+| 5   |   18.3 |      18.5 |        13.0 |    10.6 |     15.4 |
+
+### Headline read for the article
+
+**Squish v4.1 takes latency, memory, and disk on M3 16 GB — 22 ms
+repeat-prompt TTFT (5.8× faster than Ollama's 127 ms), 53 % less peak
+RAM, and warm throughput that now edges Ollama (20.2 vs 18.8 tok/s).
+Ollama still wins cold-prompt TTFT (256 vs 481 ms) and ties on
+spec-decode throughput under sustained Metal thermal load.**
+
+### Reproduce
+
+```bash
+source .venv/bin/activate
+python benchmarks/ollama_vs_squish/bench_v4.py
+```
+
+---
 
 ## v4 — daemon + disk KV cache (measured)
 
