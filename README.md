@@ -61,12 +61,12 @@ Designed for one developer on one machine. Not a production multi-tenant API.
 ## Install
 
 ```bash
-# PyPI
-pip install squish-ai
-
-# Homebrew tap (coming with v9.32.0)
+# Homebrew (recommended on macOS)
 brew tap konjoai/squish
 brew install squish
+
+# PyPI
+pip install squish-ai
 
 # From source
 git clone https://github.com/konjoai/squish
