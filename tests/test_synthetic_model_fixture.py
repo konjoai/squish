@@ -21,16 +21,13 @@ import struct
 import pytest
 
 _FIXTURE_DIR = pathlib.Path(__file__).parent / "fixtures" / "synthetic_model"
-_GENERATE_SCRIPT = (
-    pathlib.Path(__file__).parent.parent / "dev" / "scripts" / "make_synthetic_model.py"
-)
 
 
 # ── Fixture presence ───────────────────────────────────────────────────────────
 
 class TestFixtureFilesExist:
     def test_fixture_dir_exists(self):
-        assert _FIXTURE_DIR.is_dir(), f"Fixture dir missing: {_FIXTURE_DIR}\nRun: python dev/scripts/make_synthetic_model.py"
+        assert _FIXTURE_DIR.is_dir(), f"Fixture dir missing: {_FIXTURE_DIR}"
 
     def test_config_json_exists(self):
         assert (_FIXTURE_DIR / "config.json").is_file()
@@ -40,9 +37,6 @@ class TestFixtureFilesExist:
 
     def test_tokenizer_config_exists(self):
         assert (_FIXTURE_DIR / "tokenizer_config.json").is_file()
-
-    def test_generation_script_exists(self):
-        assert _GENERATE_SCRIPT.is_file()
 
 
 # ── config.json validity ───────────────────────────────────────────────────────
