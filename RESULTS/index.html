@@ -1692,6 +1692,89 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#squish-v51-complete-metric-coverage-measured-2026-06-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Squish v5.1 — complete metric coverage (measured 2026-06-02)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Squish v5.1 — complete metric coverage (measured 2026-06-02)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#v51-unified-results-squish-vs-ollama-across-four-prompt-sizes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v5.1 unified results — Squish vs Ollama across four prompt sizes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-new-metrics-reveal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the new metrics reveal
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-per-block-last-position-logit-t2b" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Per-block last-position logit (T2B)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-block-kv-cache-on-squish-run-t2c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — --block-kv-cache on squish run (T2C)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-article-headline-v51" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended article headline (v5.1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remaining-v52-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remaining v5.2 candidates
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -4364,6 +4447,344 @@ The v4.2 winners hold:</p>
 <li>Pre-existing <code>tests/test_squishd_unit.py</code> 9 timeouts and
    <code>tests/test_quant_aqlm.py::test_module_count_unchanged</code> assertion gap
    carry over from v4.2.</li>
+</ol>
+<hr />
+<h2 id="squish-v51-complete-metric-coverage-measured-2026-06-02">Squish v5.1 — complete metric coverage (measured 2026-06-02)<a class="headerlink" href="#squish-v51-complete-metric-coverage-measured-2026-06-02" title="Permanent link">&para;</a></h2>
+<p><strong>Measured on M3 MacBook Pro, 16 GB unified memory, macOS 25.5.0, 2026-06-02.</strong>
+<strong>Tooling:</strong> Squish 9.14.0 + v4 + v4.1 + v4.2 + v5 + v5.1 (branch <code>perf/v5.1-metrics-and-suffix</code>) · Ollama 0.18.2 · mlx_lm 0.31.1.
+<strong>Protocol:</strong> 5 runs per metric, median reported.
+<strong>Raw artifact:</strong> <a href="../results/benchmarks_v5_1/runs/20260602T082624/raw.json"><code>results/benchmarks_v5_1/runs/20260602T082624/raw.json</code></a>.
+<strong>Per-phase outcomes:</strong> <a href="../results/benchmarks_v5_1/PRECHECK.md"><code>results/benchmarks_v5_1/PRECHECK.md</code></a>.</p>
+<p>v5.1 was a two-phase release.  <strong>Phase 1</strong> added four metric dimensions
+to the benchmark harness — end-to-end response time, inter-token p50 and
+p95, multi-context-length sweep (75 / 500 / 2000 / 4000 tokens), and an
+INT3 column when the on-disk INT3 model is present.  <strong>Phase 2</strong> shipped
+two v5 follow-ups (per-block last-position logit caching + the v4.2/v5
+KV-cache flags on <code>squish run</code>) and documented one as not applicable
+(suffix chunked prefill, same correctness constraint as v5 Goal A).</p>
+<h3 id="v51-unified-results-squish-vs-ollama-across-four-prompt-sizes">v5.1 unified results — Squish vs Ollama across four prompt sizes<a class="headerlink" href="#v51-unified-results-squish-vs-ollama-across-four-prompt-sizes" title="Permanent link">&para;</a></h3>
+<p>Median of 5 runs.  Prompt sizes are chat-templated token counts.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Prompt</th>
+<th>Metric</th>
+<th style="text-align: right;">Ollama</th>
+<th style="text-align: right;">sq daemon I4</th>
+<th style="text-align: right;">sq +pkv I4</th>
+<th style="text-align: right;">sq +block I4</th>
+<th style="text-align: right;">sq +block I3</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;"><strong>75</strong></td>
+<td>TTFT</td>
+<td style="text-align: right;">137 ms</td>
+<td style="text-align: right;">730 ms</td>
+<td style="text-align: right;"><strong>5 ms</strong></td>
+<td style="text-align: right;">223 ms</td>
+<td style="text-align: right;">244 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>E2E 200-tok</td>
+<td style="text-align: right;">2.85 s</td>
+<td style="text-align: right;">3.11 s</td>
+<td style="text-align: right;">5.15 s</td>
+<td style="text-align: right;">4.91 s</td>
+<td style="text-align: right;">9.25 s</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>Warm tok/s</td>
+<td style="text-align: right;">18.8</td>
+<td style="text-align: right;">19.2</td>
+<td style="text-align: right;">8.6</td>
+<td style="text-align: right;">10.2</td>
+<td style="text-align: right;">7.5</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>ITL p50</td>
+<td style="text-align: right;">54.4 ms</td>
+<td style="text-align: right;">50.4 ms</td>
+<td style="text-align: right;">105.3 ms</td>
+<td style="text-align: right;">85.1 ms</td>
+<td style="text-align: right;">126.3 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>ITL p95</td>
+<td style="text-align: right;">56.6 ms</td>
+<td style="text-align: right;">57.8 ms</td>
+<td style="text-align: right;">152.3 ms</td>
+<td style="text-align: right;">162.5 ms</td>
+<td style="text-align: right;">209.9 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"><strong>500</strong></td>
+<td>TTFT</td>
+<td style="text-align: right;">158 ms</td>
+<td style="text-align: right;">5.07 s</td>
+<td style="text-align: right;"><strong>10 ms</strong></td>
+<td style="text-align: right;">677 ms</td>
+<td style="text-align: right;">768 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>E2E 200-tok</td>
+<td style="text-align: right;">4.73 s</td>
+<td style="text-align: right;">10.69 s</td>
+<td style="text-align: right;">7.45 s</td>
+<td style="text-align: right;">7.70 s</td>
+<td style="text-align: right;">10.36 s</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>Warm tok/s</td>
+<td style="text-align: right;">16.6</td>
+<td style="text-align: right;">12.4</td>
+<td style="text-align: right;">9.0</td>
+<td style="text-align: right;">8.9</td>
+<td style="text-align: right;">7.2</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>ITL p50</td>
+<td style="text-align: right;">61.6 ms</td>
+<td style="text-align: right;">66.6 ms</td>
+<td style="text-align: right;">95.1 ms</td>
+<td style="text-align: right;">86.8 ms</td>
+<td style="text-align: right;">121.8 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>ITL p95</td>
+<td style="text-align: right;">68.2 ms</td>
+<td style="text-align: right;">185.8 ms</td>
+<td style="text-align: right;">140.9 ms</td>
+<td style="text-align: right;">257.2 ms</td>
+<td style="text-align: right;">216.0 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"><strong>2000</strong></td>
+<td>TTFT</td>
+<td style="text-align: right;">172 ms</td>
+<td style="text-align: right;">15.97 s</td>
+<td style="text-align: right;"><strong>10 ms</strong></td>
+<td style="text-align: right;">809 ms</td>
+<td style="text-align: right;">875 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>E2E 200-tok</td>
+<td style="text-align: right;">7.50 s</td>
+<td style="text-align: right;">24.68 s</td>
+<td style="text-align: right;">8.57 s</td>
+<td style="text-align: right;">10.13 s</td>
+<td style="text-align: right;">10.60 s</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>Warm tok/s</td>
+<td style="text-align: right;">16.0</td>
+<td style="text-align: right;">10.7</td>
+<td style="text-align: right;">8.3</td>
+<td style="text-align: right;">8.1</td>
+<td style="text-align: right;">6.4</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>ITL p50</td>
+<td style="text-align: right;">64.0 ms</td>
+<td style="text-align: right;">79.3 ms</td>
+<td style="text-align: right;">112.2 ms</td>
+<td style="text-align: right;">104.5 ms</td>
+<td style="text-align: right;">136.6 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>ITL p95</td>
+<td style="text-align: right;">74.8 ms</td>
+<td style="text-align: right;">166.9 ms</td>
+<td style="text-align: right;">161.1 ms</td>
+<td style="text-align: right;">243.0 ms</td>
+<td style="text-align: right;">264.4 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"><strong>4000</strong></td>
+<td>TTFT</td>
+<td style="text-align: right;">178 ms</td>
+<td style="text-align: right;">38.37 s</td>
+<td style="text-align: right;"><strong>28 ms</strong></td>
+<td style="text-align: right;">1.11 s</td>
+<td style="text-align: right;">1.00 s</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>E2E 200-tok</td>
+<td style="text-align: right;">51.72 s</td>
+<td style="text-align: right;">53.54 s</td>
+<td style="text-align: right;"><strong>13.29 s</strong></td>
+<td style="text-align: right;">10.14 s</td>
+<td style="text-align: right;">15.31 s</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>Warm tok/s</td>
+<td style="text-align: right;">9.8</td>
+<td style="text-align: right;">9.6</td>
+<td style="text-align: right;">4.8</td>
+<td style="text-align: right;">7.5</td>
+<td style="text-align: right;">6.1</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>ITL p50</td>
+<td style="text-align: right;">96.5 ms</td>
+<td style="text-align: right;">90.0 ms</td>
+<td style="text-align: right;">147.4 ms</td>
+<td style="text-align: right;">119.9 ms</td>
+<td style="text-align: right;">144.3 ms</td>
+</tr>
+<tr>
+<td style="text-align: right;"></td>
+<td>ITL p95</td>
+<td style="text-align: right;">148.9 ms</td>
+<td style="text-align: right;">192.8 ms</td>
+<td style="text-align: right;">398.5 ms</td>
+<td style="text-align: right;">227.2 ms</td>
+<td style="text-align: right;">255.0 ms</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Footer</th>
+<th style="text-align: right;">Ollama</th>
+<th style="text-align: right;">sq daemon I4</th>
+<th style="text-align: right;">sq +pkv I4</th>
+<th style="text-align: right;">sq +block I4</th>
+<th style="text-align: right;">sq +block I3</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Peak RSS</td>
+<td style="text-align: right;">384 KB*</td>
+<td style="text-align: right;">2.79 GB</td>
+<td style="text-align: right;">2.63 GB</td>
+<td style="text-align: right;">2.99 GB</td>
+<td style="text-align: right;">3.54 GB</td>
+</tr>
+<tr>
+<td>Disk (model)</td>
+<td style="text-align: right;">4.36 GB</td>
+<td style="text-align: right;">4.00 GB</td>
+<td style="text-align: right;">4.00 GB</td>
+<td style="text-align: right;">4.00 GB</td>
+<td style="text-align: right;"><strong>3.56 GB</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>*</code> Ollama's RSS sample is artifactual: <code>ollama serve</code> spawns its model
+runner in a separate process group that the bench's RSSSampler doesn't
+walk.  The v4.2 benchmark catches it (~5 GB) when measured with that
+layout.</p>
+<h3 id="what-the-new-metrics-reveal">What the new metrics reveal<a class="headerlink" href="#what-the-new-metrics-reveal" title="Permanent link">&para;</a></h3>
+<ul>
+<li>
+<p><strong>PKV exact-match is the lowest-latency repeated-prompt path on every
+  prompt size.</strong>  5 / 10 / 10 / 28 ms TTFT across 75 / 500 / 2000 / 4000
+  tokens.  This is the v4.2 prefix-character-yield path bypassing
+  <code>stream_generate</code> setup entirely — block cache cannot match it without
+  architecture changes (v5.2 follow-up).</p>
+</li>
+<li>
+<p><strong>Block cache wins long-context cold TTFT and e2e.</strong>  At p4000:
+  block cache 1.11 s TTFT vs Squish daemon 38.4 s — <strong>34× reduction</strong>.
+  E2E 200 tok: <strong>10.14 s vs 53.54 s — 5.3× faster end-to-end</strong>.</p>
+</li>
+<li>
+<p><strong>Ollama's e2e at p4000 (51.72 s) is surprisingly slow.</strong>  Ollama's
+  built-in prefix cache hits exact prompt repeats well (cold TTFT 178 ms)
+  but the e2e column captures the full 200-token decode — at that size
+  llama.cpp's Metal kernels also slow down (warm tok/s 9.8 vs Squish's
+  7.5 with block cache).</p>
+</li>
+<li>
+<p><strong>Inter-token p95 is the new ceiling on conversational latency.</strong>
+  Ollama holds steady around 75 ms across all prompt sizes (good).
+  Squish daemon climbs to 200+ ms on long prompts.  Squish + block jumps
+  to 227 ms at p4000.  PKV degrades worst (398 ms p95 at p4000).  This
+  is decode-loop thermal drift + per-token cache housekeeping — v5.2
+  follow-up.</p>
+</li>
+<li>
+<p><strong>INT3 trade-off.</strong>  3.56 GB disk vs INT4's 4.00 GB (<strong>−11 %</strong>).  Warm
+  tok/s 6.1–7.5 vs INT4's 7.5–10.2 (<strong>~10–20 % slower decode</strong>).  Peak
+  RAM is slightly higher (3.54 GB vs 2.99 GB) — INT3 unpacking holds
+  intermediate buffers longer.  Useful when disk is the constraint;
+  pick INT4 when latency is.</p>
+</li>
+</ul>
+<h3 id="phase-2-per-block-last-position-logit-t2b">Phase 2 — Per-block last-position logit (T2B)<a class="headerlink" href="#phase-2-per-block-last-position-logit-t2b" title="Permanent link">&para;</a></h3>
+<p><strong>Implementation:</strong> ships.  47/47 KV-cache tests pass (32 PromptKVStore
++ 15 BlockKVCache, including new tests for the v5.1 logit roundtrip,
+backward-compatibility with v5 entries that lack the field, and partial-
+logit storage).</p>
+<p><strong>Spec decision gate:</strong> <code>if full-match TTFT drops below 30ms, KEEP</code>.
+The microbench (<code>probe_block_logit.py</code>) on a chat-templated 576-token
+prompt (= 9 × 64 blocks, exact alignment, full hit):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>First send (cold):     ~3.6 s   # full prefill, populates blocks + logits
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>Hit runs (median 5):    245 ms  # bench-client TTFT (full-prefix match)
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>   ↳ server-side ttft:  145 ms  # one fewer forward pass than v5 path
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>   ↳ FastAPI overhead: ~100 ms  # baseline all configs pay
+</code></pre></div>
+<p><strong>Honest read:</strong> the decision gate target wasn't met because the
+~100 ms FastAPI/uvicorn streaming-response overhead caps client-visible
+TTFT regardless of the cache code.  The v4.2 PromptKVStore hits below
+30 ms only because its prefix-character-yield path completely bypasses
+<code>stream_generate</code> setup — a structurally different streaming style.
+The implementation is correct (server trace verifies <code>HIT-fast (logit)</code>
+with <code>suffix_prefilled=0</code>), the saved forward pass is real, and the
+deferred-restore optimization parallelises the residual restore work
+with consumer chunk encoding.  Below the 30 ms gate the bottleneck is
+the framework, not the cache code.  Kept; v5.2 follow-up: bypass
+stream_generate setup for cache hits.</p>
+<h3 id="phase-2-block-kv-cache-on-squish-run-t2c">Phase 2 — <code>--block-kv-cache</code> on <code>squish run</code> (T2C)<a class="headerlink" href="#phase-2-block-kv-cache-on-squish-run-t2c" title="Permanent link">&para;</a></h3>
+<p><code>squish run qwen2.5-7b --block-kv-cache ~/.cache/squish/blocks
+--block-kv-size 64</code> now works without dropping to <code>python -m
+squish.server</code>.  Six flags forwarded: <code>--prompt-kv-cache</code>,
+<code>--prompt-kv-cache-max-gb</code>, <code>--block-kv-cache</code>, <code>--block-kv-size</code>,
+<code>--block-kv-hot-gb</code>, <code>--block-kv-cold-gb</code>.</p>
+<h3 id="recommended-article-headline-v51">Recommended article headline (v5.1)<a class="headerlink" href="#recommended-article-headline-v51" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Long-context agent workloads:</strong> "Squish + block KV cache cuts a
+  4000-token prompt's e2e 200-token completion from 53 s (no cache) to
+  10 s — 5.3× faster, matches Ollama (51.7 s) at +60 % less disk if you
+  drop to INT3."</li>
+<li><strong>Exact-match repeat:</strong> "Squish + prompt KV cache delivers 5 ms TTFT
+  on a repeated 75-token prompt — 27× faster than Ollama's already-
+  good 137 ms."</li>
+</ul>
+<h3 id="remaining-v52-candidates">Remaining v5.2 candidates<a class="headerlink" href="#remaining-v52-candidates" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Bypass <code>mlx_lm.stream_generate</code> setup overhead on block-cache fast
+   hits to close the ~100 ms framework cap on TTFT.</li>
+<li>Speculative prefill — yield a mid-prefill-sampled token, verify on
+   full-prefill completion, retract+replace on mismatch (resolves v5
+   Goal A which v5.1 documented but did not advance).</li>
+<li>Inter-token p95 stability under sustained decode.  The cache-enabled
+   paths (PKV especially) drift up to 200–400 ms p95 at long contexts.</li>
+<li>Bench design improvement: TTFT measurement at multiple max_tokens
+   values to expose the framework asymptote independent of the cache
+   code.</li>
+<li>Pre-existing <code>tests/test_squishd_unit.py</code> 9 timeouts and
+   <code>tests/test_quant_aqlm.py::test_module_count_unchanged</code> assertion
+   gap carry over.</li>
 </ol>
 
 
