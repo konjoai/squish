@@ -2141,6 +2141,8 @@ def _generate_tokens(  # pragma: no cover
         _bkv_matched_tokens = 0
         _bkv_full_ids: "list[int] | None" = None
         _bkv_cache_obj = None  # the mlx_lm prompt cache we'll reuse for stream_generate
+        _bkv_first_token_id: "int | None" = None
+        _bkv_first_token_text: "str | None" = None
 
         if _block_kv_cache is not None:
             try:
