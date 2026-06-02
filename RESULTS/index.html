@@ -875,6 +875,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#v52-speculative-decoding-investigated-reverted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v5.2 — Speculative Decoding: investigated, reverted
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#model-comparison-summary" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1965,6 +1976,52 @@ Added the constrained-generation grammar engine (wave 25–26 bench): 5.5 μs co
 impact. Final module count reached 222. All accuracy benchmarks held at v1 baselines (ARC-Easy 73.5%,
 HellaSwag 62.0%, PIQA 76.5%, WinoGrande 67.0%) across all phases — no regression from any
 optimization layer.</p>
+<hr />
+<h2 id="v52-speculative-decoding-investigated-reverted">v5.2 — Speculative Decoding: investigated, reverted<a class="headerlink" href="#v52-speculative-decoding-investigated-reverted" title="Permanent link">&para;</a></h2>
+<p><em>Apple M3, 16 GB, June 2026. Target Qwen2.5-7B-int4, draft Qwen2.5-1.5B-int4
+(the only draft sharing the 7B tokenizer family on disk). temp=0, seed=42.</em></p>
+<p>Spec decode was wired into the greedy warm path and measured end-to-end. <strong>It
+does not earn its keep on M3 int4 and was reverted to opt-in (<code>temperature &gt; 0</code>).</strong></p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Context</th>
+<th style="text-align: right;">K</th>
+<th style="text-align: right;">Acceptance</th>
+<th style="text-align: right;">net× vs greedy</th>
+<th style="text-align: center;">Output identical</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.747</td>
+<td style="text-align: right;">0.87×</td>
+<td style="text-align: center;">No</td>
+</tr>
+<tr>
+<td style="text-align: right;">4039</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.633</td>
+<td style="text-align: right;"><strong>0.16×</strong></td>
+<td style="text-align: center;">No</td>
+</tr>
+<tr>
+<td style="text-align: right;">4039</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">0.417</td>
+<td style="text-align: right;"><strong>0.06×</strong></td>
+<td style="text-align: center;">Yes</td>
+</tr>
+</tbody>
+</table>
+<p>Acceptance is fine, but the verify cost scales with context length, so net
+throughput collapses in the long-context regime the warm benchmark targets. int4
+lm_head logit ties also break bit-identity between batched-verify and sequential
+greedy. Kept the underlying correctness fixes (bf16 cast, vocab align,
+greedy-match branch, <code>--draft-depth</code>); they're inert unless <code>--draft-model</code> is set.
+Full write-up: <a href="../results/benchmarks_v5_2/PRECHECK.md"><code>results/benchmarks_v5_2/PRECHECK.md</code></a>.</p>
 <hr />
 <h2 id="model-comparison-summary">Model Comparison Summary<a class="headerlink" href="#model-comparison-summary" title="Permanent link">&para;</a></h2>
 <table>
