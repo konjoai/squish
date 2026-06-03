@@ -3,8 +3,8 @@ class Squish < Formula
 
   desc "Local LLM server for Apple Silicon — paged KV cache, INT3 support"
   homepage "https://github.com/konjoai/squish"
-  url "https://files.pythonhosted.org/packages/4f/e5/ee45f0dc181afbcc43541adb068a210aac92be9451e5ae32fba6e6cfb9a5/squish_ai-9.33.1.tar.gz"
-  sha256 "e12efd7351c7b7e726b00ed7230a58820a32b4877b203c154ace68ee767d928c"
+  url "https://files.pythonhosted.org/packages/c9/f2/31a4274e633d73f67838a7ee8561857c5bb72e746e4d75b45c3d3fb11dd8/squish_ai-9.33.2.tar.gz"
+  sha256 "e189f9c042455bd35b8b8078ab18e25f1f449578ae9843a159e3fc30af3c5280"
   license "BUSL-1.1"
 
   depends_on "python@3.13"
