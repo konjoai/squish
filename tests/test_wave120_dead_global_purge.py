@@ -103,6 +103,6 @@ def test_no_new_dead_globals(server_text):
             assigned_non_none.add(var)
     dead = (init_none - assigned_non_none) - {"_lazy_expert", "_structured_sparsity"}
     assert not dead, (
-        f"New dead globals detected — add to Wave 120 or document why they're needed:\n"
+        "New dead globals detected — add to Wave 120 or document why they're needed:\n"
         + "\n".join(f"  {v}" for v in sorted(dead))
     )
