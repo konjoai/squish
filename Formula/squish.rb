@@ -5,6 +5,12 @@ class Squish < Formula
   homepage "https://github.com/konjoai/squish"
   url "https://files.pythonhosted.org/packages/c9/f2/31a4274e633d73f67838a7ee8561857c5bb72e746e4d75b45c3d3fb11dd8/squish_ai-9.33.2.tar.gz"
   sha256 "e189f9c042455bd35b8b8078ab18e25f1f449578ae9843a159e3fc30af3c5280"
+
+  bottle do
+    root_url "https://github.com/konjoai/squish/releases/download/v9.33.2"
+    rebuild 1
+    sha256 cellar: :any, arm64_tahoe: "14b8fdacf1d79448be34bd02ca0d3d05967c43328418e58ade8a61cc911ddb7c"
+  end
   license "BUSL-1.1"
 
   depends_on "python@3.13"
