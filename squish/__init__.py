@@ -13,7 +13,7 @@ Public API:
 """
 from __future__ import annotations
 
-__version__ = "9.32.0"
+__version__ = "9.33.3"
 
 #: PyPI distribution name. The importable module is ``squish`` but the
 #: published distribution is ``squish-ai`` (``pip install squish-ai``).
