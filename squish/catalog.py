@@ -1139,7 +1139,7 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
             except (OSError, RuntimeError, TypeError, ValueError):
                 pass
 
-        try:
+        def _download() -> Path:
             dest = hf_hub_download(
                 repo_id=repo,
                 filename=filename,
@@ -1147,13 +1147,35 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
                 token=token,
             )
             return Path(dest)
+
+        try:
+            return _download()
         except Exception as exc:
-            if _is_ssl_error(exc):
+            if not _is_ssl_error(exc):
+                raise
+            # Python 3.13 + Zscaler: env-var toggles don't disable verification
+            # because httpx builds its SSLContext at client-construction time
+            # (corporate MITM certs are missing the Authority Key Identifier
+            # extension, tripping Python 3.13's stricter chain validation).
+            # Retry with verify=False forced at the httpx layer.
+            print("  ⚠  SSL verification failed; retrying with insecure SSL fallback …")
+            if _hf_close_session is not None:
+                try:
+                    _hf_close_session()
+                except (OSError, RuntimeError, TypeError, ValueError):
+                    pass
+            try:
+                with _force_httpx_verify_false():
+                    return _download()
+            except Exception as retry_exc:
                 raise _SSLError(
                     f"SSL certificate verification failed while downloading {filename!r} from {repo!r}.\n"
-                    "Set REQUESTS_CA_BUNDLE=/path/ca.pem or SQUISH_VERIFY_SSL=false"
-                ) from exc
-            raise
+                    "Squish retried with insecure SSL fallback but the download still failed.\n"
+                    "Fix one of:\n"
+                    "  1. REQUESTS_CA_BUNDLE=/path/ca.pem squish pull ...\n"
+                    "  2. SQUISH_VERIFY_SSL=false squish pull ...\n"
+                    "  3. Trust your corporate CA in the system keychain."
+                ) from retry_exc
     except ImportError:
         raise ImportError(
             "huggingface_hub is required for `squish pull`.\n"
@@ -1162,7 +1184,15 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
 
 
 def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma: no cover
-    """Return all filenames in a HuggingFace repo (returns [] on error)."""
+    """
+    Return all filenames in a HuggingFace repo.
+
+    Returns ``[]`` only on non-SSL errors. SSL failures retry with
+    ``verify=False`` forced at the httpx layer before giving up — silently
+    skipping this check makes ``_has_squish_weights`` lie and pushes ``pull``
+    onto the slow local-compression path instead of fetching pre-squished
+    weights.
+    """
     _apply_ssl_env()
     try:
         from huggingface_hub import list_repo_files
@@ -1177,7 +1207,23 @@ def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma:
             except (OSError, RuntimeError, TypeError, ValueError):
                 pass
 
-        return list(list_repo_files(repo, token=token))
+        try:
+            return list(list_repo_files(repo, token=token))
+        except Exception as exc:
+            if not _is_ssl_error(exc):
+                return []
+            # Python 3.13 + Zscaler retry — see _force_httpx_verify_false()
+            # docstring for why env vars are insufficient here.
+            if _hf_close_session is not None:
+                try:
+                    _hf_close_session()
+                except (OSError, RuntimeError, TypeError, ValueError):
+                    pass
+            try:
+                with _force_httpx_verify_false():
+                    return list(list_repo_files(repo, token=token))
+            except Exception:
+                return []
     except Exception:
         return []
 
