@@ -5,6 +5,31 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.33.0] — Pull Resilience (partial-download guard + SSL fallback)
+
+### Fixed
+- `squish pull` now validates raw model directories before compression. If a prior
+  download was interrupted/canceled, the partial directory is removed and the model
+  is re-downloaded instead of attempting to squish incomplete weights.
+- Hugging Face downloads now retry once automatically with an insecure SSL fallback
+  when certificate verification fails on corporate/self-signed networks.
+- SSL fallback now resets the cached `huggingface_hub` HTTP session before retry,
+  and temporarily disables Xet/hf-transfer paths (`HF_HUB_DISABLE_XET=1`,
+  `HF_HUB_ENABLE_HF_TRANSFER=0`) for better compatibility on intercepted networks.
+- When network access fails but a complete local raw model is already present,
+  `squish pull` proceeds using the local copy rather than failing immediately.
+
+### Documentation
+- Added a `README.md` section for corporate-proxy/TLS-interception networks with
+  CA-export steps, certificate validation checks, and the recommended
+  `REQUESTS_CA_BUNDLE + HF_HUB_DISABLE_XET + HF_HUB_ENABLE_HF_TRANSFER` pull command.
+- Added an install-note in `README.md` documenting the Xcode Command Line Tools
+  prerequisite for Homebrew installs on macOS and what to do when tools are outdated.
+- Added Homebrew 5.x third-party tap trust guidance (`brew trust konjoai/squish`)
+  in the install steps to address the untrusted-tap warning.
+- Added an "Optional Performance Enhancements" section in `README.md` documenting
+  the `squish_quant_rs` Rust extension build/install command for faster quantization.
+
 ## [9.32.0] — 2026-06-02 — Realistic-deployment benchmark + recommended-default config
 
 The v5.1.1 realistic-deployment re-bench is the release headline. Recommended

@@ -873,6 +873,75 @@ def verify_hash(entry: CatalogEntry, compressed_dir: Path) -> tuple[bool, str]:
     )
 
 
+def _is_raw_model_dir_complete(raw_dir: Path) -> tuple[bool, str]:
+    """Return whether *raw_dir* looks complete enough for local compression.
+
+    This guards against interrupted HuggingFace downloads being reused as a
+    valid source directory on a later `squish pull` invocation.
+
+    Completeness rules:
+    - ``config.json`` must exist.
+    - No obvious temporary/partial download files are present.
+    - At least one non-empty weight file exists, either:
+      - ``model.safetensors.index.json`` with all referenced shards present, or
+      - one or more ``*.safetensors`` files, or
+      - one or more ``*.gguf`` files.
+    """
+    if not raw_dir.is_dir():
+        return False, "directory is missing"
+
+    cfg = raw_dir / "config.json"
+    if not cfg.is_file():
+        return False, "missing config.json"
+
+    temp_suffixes = (".incomplete", ".partial", ".part", ".tmp", ".lock")
+    for file_path in raw_dir.rglob("*"):
+        if file_path.is_file() and file_path.name.lower().endswith(temp_suffixes):
+            return False, f"temporary download file present ({file_path.name})"
+
+    index_path = raw_dir / "model.safetensors.index.json"
+    if index_path.is_file():
+        try:
+            index_data = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return False, f"invalid shard index ({exc})"
+
+        weight_map = index_data.get("weight_map")
+        if not isinstance(weight_map, dict) or not weight_map:
+            return False, "shard index missing weight_map entries"
+
+        shard_names = {name for name in weight_map.values() if isinstance(name, str) and name}
+        if not shard_names:
+            return False, "shard index has no shard file names"
+
+        for shard_name in sorted(shard_names):
+            shard_path = raw_dir / shard_name
+            if not shard_path.is_file():
+                return False, f"missing shard {shard_name}"
+            try:
+                if shard_path.stat().st_size <= 0:
+                    return False, f"empty shard {shard_name}"
+            except OSError as exc:
+                return False, f"cannot stat shard {shard_name} ({exc})"
+
+        return True, ""
+
+    safe_weight_files = sorted(raw_dir.glob("*.safetensors"))
+    if not safe_weight_files:
+        safe_weight_files = sorted(raw_dir.glob("*.gguf"))
+    if not safe_weight_files:
+        return False, "no weight files (*.safetensors or *.gguf) found"
+
+    for weight_file in safe_weight_files:
+        try:
+            if weight_file.stat().st_size <= 0:
+                return False, f"empty weight file {weight_file.name}"
+        except OSError as exc:
+            return False, f"cannot stat weight file {weight_file.name} ({exc})"
+
+    return True, ""
+
+
 def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None:  # pragma: no cover
     """
     Download a HuggingFace repo to ``local_dir``.
@@ -887,27 +956,102 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
     try:
         from huggingface_hub import snapshot_download
         try:
+            from huggingface_hub import close_session as _hf_close_session
+        except ImportError:
+            _hf_close_session = None
+
+        ignore_patterns = ["*.msgpack", "*.h5", "flax_model*", "tf_model*", "rust_model.ot", "*.ot"]
+
+        def _reset_hf_session() -> None:
+            # huggingface_hub caches a global HTTP client; when we toggle SSL
+            # flags for retry, reset the session so the new env takes effect.
+            if _hf_close_session is None:
+                return
+            try:
+                _hf_close_session()
+            except (OSError, RuntimeError, TypeError, ValueError):
+                return
+
+        def _snapshot() -> None:
             snapshot_download(
                 repo_id=repo,
                 local_dir=str(local_dir),
                 token=token,
-                ignore_patterns=["*.msgpack", "*.h5", "flax_model*", "tf_model*",
-                                 "rust_model.ot", "*.ot"],
+                ignore_patterns=ignore_patterns,
             )
+
+        try:
+            _reset_hf_session()
+            _snapshot()
+            return
         except Exception as exc:
-            if _is_ssl_error(exc):
+            ssl_failure = _is_ssl_error(exc)
+            local_ok, _ = _is_raw_model_dir_complete(local_dir)
+
+            # Network can be unavailable in some environments; if a complete
+            # local copy is already present, continue without forcing a re-fetch.
+            if local_ok:
+                print(f"  ⚠  Download unavailable for {repo!r}; using existing local copy at {local_dir}")
+                return
+
+            if not ssl_failure:
+                raise
+
+            # Automatic fallback for corporate/self-signed TLS interception.
+            print("  ⚠  SSL verification failed; retrying with insecure SSL fallback …")
+            old_hf_disable = os.environ.get("HF_HUB_DISABLE_SSL_VERIFICATION")
+            old_httpx_verify = os.environ.get("HTTPX_VERIFY")
+            old_hf_disable_xet = os.environ.get("HF_HUB_DISABLE_XET")
+            old_hf_transfer = os.environ.get("HF_HUB_ENABLE_HF_TRANSFER")
+            os.environ["HF_HUB_DISABLE_SSL_VERIFICATION"] = "1"
+            os.environ["HTTPX_VERIFY"] = "0"
+            # xet/hf-transfer paths can ignore Python TLS knobs on some setups.
+            os.environ["HF_HUB_DISABLE_XET"] = "1"
+            os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+            try:
+                _reset_hf_session()
+                _snapshot()
+                return
+            except Exception as retry_exc:
+                local_ok_retry, _ = _is_raw_model_dir_complete(local_dir)
+                if local_ok_retry:
+                    print(f"  ⚠  Using existing local copy at {local_dir}")
+                    return
                 raise _SSLError(
                     f"SSL certificate verification failed while downloading {repo!r}.\n\n"
-                    "This usually means your network uses a self-signed or corporate CA.\n"
+                    "Squish retried automatically with insecure SSL fallback, but the download still failed.\n"
+                    "This usually means your network blocks direct HF access or requires a custom CA.\n"
                     "Fix one of:\n"
                     "  1. Provide your CA bundle:  "
                     "REQUESTS_CA_BUNDLE=/path/to/ca.pem squish pull ...\n"
                     "  2. Trust system keychain cert (run once per CA install).\n"
-                    "  3. Disable verification (insecure):  "
+                    "  3. Force insecure mode (insecure):  "
                     "SQUISH_VERIFY_SSL=false squish pull ...\n"
-                    "  4. Set HF_HUB_DISABLE_SSL_VERIFICATION=1 (huggingface_hub flag)"
-                ) from exc
-            raise
+                    "  4. Set HF_HUB_DISABLE_SSL_VERIFICATION=1 (huggingface_hub flag)\n"
+                    "  5. Disable xet path: HF_HUB_DISABLE_XET=1 HF_HUB_ENABLE_HF_TRANSFER=0"
+                ) from retry_exc
+            finally:
+                if old_hf_disable is None:
+                    os.environ.pop("HF_HUB_DISABLE_SSL_VERIFICATION", None)
+                else:
+                    os.environ["HF_HUB_DISABLE_SSL_VERIFICATION"] = old_hf_disable
+
+                if old_httpx_verify is None:
+                    os.environ.pop("HTTPX_VERIFY", None)
+                else:
+                    os.environ["HTTPX_VERIFY"] = old_httpx_verify
+
+                if old_hf_disable_xet is None:
+                    os.environ.pop("HF_HUB_DISABLE_XET", None)
+                else:
+                    os.environ["HF_HUB_DISABLE_XET"] = old_hf_disable_xet
+
+                if old_hf_transfer is None:
+                    os.environ.pop("HF_HUB_ENABLE_HF_TRANSFER", None)
+                else:
+                    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = old_hf_transfer
+
+                _reset_hf_session()
     except ImportError:
         raise ImportError(
             "huggingface_hub is required for `squish pull`.\n"
@@ -921,6 +1065,17 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
     _apply_ssl_env()
     try:
         from huggingface_hub import hf_hub_download
+        try:
+            from huggingface_hub import close_session as _hf_close_session
+        except ImportError:
+            _hf_close_session = None
+
+        if _hf_close_session is not None:
+            try:
+                _hf_close_session()
+            except (OSError, RuntimeError, TypeError, ValueError):
+                pass
+
         try:
             dest = hf_hub_download(
                 repo_id=repo,
@@ -948,6 +1103,17 @@ def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma:
     _apply_ssl_env()
     try:
         from huggingface_hub import list_repo_files
+        try:
+            from huggingface_hub import close_session as _hf_close_session
+        except ImportError:
+            _hf_close_session = None
+
+        if _hf_close_session is not None:
+            try:
+                _hf_close_session()
+            except (OSError, RuntimeError, TypeError, ValueError):
+                pass
+
         return list(list_repo_files(repo, token=token))
     except Exception:
         return []
@@ -1064,9 +1230,30 @@ def pull(  # pragma: no cover
                 print(f"  ⚠  Pre-compressed download failed ({exc}); falling back …")
 
     # ── Download raw bf16 weights ─────────────────────────────────────────────
-    if not raw_dir.exists() or not any(raw_dir.iterdir()):
+    raw_ok, raw_reason = _is_raw_model_dir_complete(raw_dir)
+    if not raw_ok:
+        if raw_dir.exists():
+            try:
+                has_any_files = any(raw_dir.iterdir())
+            except OSError:
+                has_any_files = False
+            if has_any_files:
+                import shutil
+
+                print(
+                    f"  ⚠  Found incomplete raw model in {raw_dir} ({raw_reason}). "
+                    "Removing partial download and re-fetching …"
+                )
+                shutil.rmtree(raw_dir, ignore_errors=True)
+
         print(f"  Downloading {entry.hf_mlx_repo}  ({entry.size_gb:.1f} GB) …")
         _hf_download(entry.hf_mlx_repo, raw_dir, token=token)
+        raw_ok, raw_reason = _is_raw_model_dir_complete(raw_dir)
+        if not raw_ok:
+            raise RuntimeError(
+                f"Downloaded model appears incomplete at {raw_dir} ({raw_reason}). "
+                "Remove the directory and run `squish pull` again."
+            )
         print(f"  ✓  Downloaded to {raw_dir}")
     else:
         print(f"  ✓  Raw weights already in {raw_dir}")

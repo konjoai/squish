@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -218,3 +219,79 @@ class TestStaleCacheLoad:
             catalog = _cat._try_refresh_catalog({})
         # Should have loaded from stale cache
         assert "qwen3:8b" in catalog
+
+
+# ── _is_raw_model_dir_complete + partial raw dir recovery ───────────────────
+
+class TestRawModelCompleteness:
+    def test_complete_single_shard_model(self, tmp_path: Path):
+        (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "model.safetensors").write_bytes(b"ok")
+        ok, reason = _cat._is_raw_model_dir_complete(tmp_path)
+        assert ok is True
+        assert reason == ""
+
+    def test_missing_config_is_incomplete(self, tmp_path: Path):
+        (tmp_path / "model.safetensors").write_bytes(b"ok")
+        ok, reason = _cat._is_raw_model_dir_complete(tmp_path)
+        assert ok is False
+        assert "config.json" in reason
+
+    def test_transient_marker_marks_incomplete(self, tmp_path: Path):
+        (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "model.safetensors").write_bytes(b"ok")
+        (tmp_path / "weights.incomplete").write_text("partial", encoding="utf-8")
+        ok, reason = _cat._is_raw_model_dir_complete(tmp_path)
+        assert ok is False
+        assert "temporary download file" in reason
+
+    def test_sharded_index_with_missing_shard_is_incomplete(self, tmp_path: Path):
+        (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "model.safetensors.index.json").write_text(
+            json.dumps({"weight_map": {"x": "model-00001-of-00002.safetensors"}}),
+            encoding="utf-8",
+        )
+        ok, reason = _cat._is_raw_model_dir_complete(tmp_path)
+        assert ok is False
+        assert "missing shard" in reason
+
+
+class TestPullPartialRawRecovery:
+    def test_pull_removes_partial_raw_dir_and_redownloads(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        entry = _cat.CatalogEntry(
+            id="demo:1b",
+            name="Demo 1B",
+            hf_mlx_repo="mlx-community/Demo-1B-bf16",
+            size_gb=1.0,
+            params="1B",
+            context=4096,
+            squished_size_gb=0.4,
+            squish_repo=None,
+        )
+
+        raw_dir = tmp_path / entry.dir_name
+        raw_dir.mkdir(parents=True)
+        (raw_dir / "config.json").write_text("{}", encoding="utf-8")
+        (raw_dir / "weights.incomplete").write_text("partial", encoding="utf-8")
+
+        monkeypatch.setattr(_cat, "resolve", lambda name, refresh=False: entry)
+        monkeypatch.setattr(_cat, "_has_squish_weights", lambda repo, token=None: False)
+
+        download_calls = {"n": 0}
+
+        def _fake_hf_download(repo: str, local_dir: Path, token=None):
+            download_calls["n"] += 1
+            local_dir.mkdir(parents=True, exist_ok=True)
+            (local_dir / "config.json").write_text("{}", encoding="utf-8")
+            (local_dir / "model.safetensors").write_bytes(b"ok")
+
+        monkeypatch.setattr(_cat, "_hf_download", _fake_hf_download)
+        monkeypatch.setattr("subprocess.run", lambda *a, **k: types.SimpleNamespace(returncode=0))
+
+        _cat.pull("demo:1b", models_dir=tmp_path, int4=False, quant_mode="int8")
+
+        assert download_calls["n"] == 1
+        assert (raw_dir / "weights.incomplete").exists() is False
+        ok, reason = _cat._is_raw_model_dir_complete(raw_dir)
+        assert ok is True
+        assert reason == ""

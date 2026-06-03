@@ -1,0 +1,92 @@
+name: "Squash Scan"
+description: "Run squash scan on a model artifact and emit scan outputs for CI policy gates."
+author: "Konjo AI / Squish"
+
+inputs:
+  model-path:
+    description: "Path to model directory or file"
+    required: true
+  strict:
+    description: "When true, fail if non-safetensors weight files are present"
+    required: false
+    default: "false"
+  python-version:
+    description: "Python version used to run squash"
+    required: false
+    default: "3.11"
+  squish-version:
+    description: "Optional pinned squish version. Empty installs latest."
+    required: false
+    default: ""
+
+outputs:
+  scan-result:
+    description: "clean/issues/error"
+    value: ${{ steps.scan.outputs.scan-result }}
+  report-path:
+    description: "Path to the JSON scan report file"
+    value: ${{ steps.scan.outputs.report-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Squish
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -n "${{ inputs.squish-version }}" ]; then
+          pip install --quiet "squish[squash]==${{ inputs.squish-version }}"
+        else
+          pip install --quiet "squish[squash]"
+        fi
+
+    - name: Run squash scan
+      id: scan
+      shell: bash
+      env:
+        INPUT_MODEL_PATH: ${{ inputs.model-path }}
+        INPUT_STRICT: ${{ inputs.strict }}
+      run: |
+        set -euo pipefail
+
+        MODEL_PATH="${INPUT_MODEL_PATH}"
+        REPORT_PATH="${RUNNER_TEMP}/squash-scan-report.json"
+
+        if [ ! -e "$MODEL_PATH" ]; then
+          REPORT_PATH="$REPORT_PATH" INPUT_MODEL_PATH="$MODEL_PATH" python3 -c 'import json,os,pathlib; report={"status":"error","is_safe":False,"critical":0,"high":0,"error":"path does not exist: " + os.environ["INPUT_MODEL_PATH"]}; pathlib.Path(os.environ["REPORT_PATH"]).write_text(json.dumps(report, indent=2), encoding="utf-8")'
+          echo "scan-result=error" >> "$GITHUB_OUTPUT"
+          echo "report-path=${REPORT_PATH}" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+
+        if [[ "${INPUT_STRICT,,}" == "true" ]]; then
+          set +e
+          REPORT_PATH="$REPORT_PATH" INPUT_MODEL_PATH="$MODEL_PATH" python3 -c 'import json,os,pathlib,sys; p=pathlib.Path(os.environ["INPUT_MODEL_PATH"]); rp=pathlib.Path(os.environ["REPORT_PATH"]); bad={".bin",".pt",".pth",".pkl",".gguf",".onnx",".zip"}; files=[p] if p.is_file() else list(p.rglob("*")); blocked=[str(f) for f in files if f.is_file() and f.suffix.lower() in bad]; blocked and (rp.write_text(json.dumps({"status":"error","is_safe":False,"critical":0,"high":0,"error":"strict mode requires safetensors-only model artifacts","blocked_files":blocked}, indent=2), encoding="utf-8"), sys.exit(2))'
+          STRICT_RC=$?
+          set -e
+          if [ "$STRICT_RC" -ne 0 ]; then
+            echo "scan-result=error" >> "$GITHUB_OUTPUT"
+            echo "report-path=${REPORT_PATH}" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+        fi
+
+        SCAN_RC=0
+        set +e
+        squash scan "$MODEL_PATH" --json-result "$REPORT_PATH"
+        SCAN_RC=$?
+        set -e
+
+        SCAN_RESULT="$(REPORT_PATH="$REPORT_PATH" python3 -c 'import json,os,pathlib; p=pathlib.Path(os.environ["REPORT_PATH"]); data=json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}; status=str(data.get("status", "error")).lower() if isinstance(data, dict) else "error"; mapping={"clean":"clean","skipped":"clean","warning":"issues","unsafe":"issues","error":"error"}; print(mapping.get(status, "error"))' || echo error)"
+
+        echo "scan-result=${SCAN_RESULT}" >> "$GITHUB_OUTPUT"
+        echo "report-path=${REPORT_PATH}" >> "$GITHUB_OUTPUT"
+
+        if [ "$SCAN_RC" -eq 1 ] || [ "$SCAN_RESULT" = "error" ]; then
+          exit 1
+        fi
