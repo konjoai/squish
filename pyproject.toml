@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "squish-ai"
-version = "9.32.0"
+version = "9.33.0"
 description = "Local LLM inference server for Apple Silicon. Block-level paged KV cache for long-context workloads. 5.4× faster end-to-end on 4K-token prompts vs Ollama, less RAM, INT3 support for Qwen3. OpenAI-compatible API."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,7 +36,7 @@ dependencies = [
     "transformers>=4.40",
     "zstandard>=0.22",
     "rich>=13.0",
-    "orjson>=3.9",
+    "orjson>=3.9,<3.11",
 ]
 
 [project.optional-dependencies]
