@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import os
 import ssl
+import sys
+import types
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from squish.catalog import (
+    _hf_download,
     _apply_ssl_env,
     _is_ssl_error,
     _ssl_verify,
@@ -178,3 +182,103 @@ class TestSSLError:
         msg = "SSL verify failed for repo xyz"
         err = _SSLError(msg)
         assert msg in str(err)
+
+
+# ── _hf_download retry/fallback behavior ─────────────────────────────────────
+
+class TestHfDownloadFallback:
+    def test_retries_with_insecure_ssl_fallback(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        calls: list[dict[str, str]] = []
+        close_calls = {"n": 0}
+
+        monkeypatch.delenv("SQUISH_VERIFY_SSL", raising=False)
+        monkeypatch.delenv("HF_HUB_DISABLE_SSL_VERIFICATION", raising=False)
+        monkeypatch.delenv("HTTPX_VERIFY", raising=False)
+        monkeypatch.delenv("HF_HUB_DISABLE_XET", raising=False)
+        monkeypatch.delenv("HF_HUB_ENABLE_HF_TRANSFER", raising=False)
+
+        def _snapshot_download(**kwargs):
+            calls.append(
+                {
+                    "hf_disable_ssl": os.environ.get("HF_HUB_DISABLE_SSL_VERIFICATION", ""),
+                    "httpx_verify": os.environ.get("HTTPX_VERIFY", ""),
+                    "hf_disable_xet": os.environ.get("HF_HUB_DISABLE_XET", ""),
+                    "hf_transfer": os.environ.get("HF_HUB_ENABLE_HF_TRANSFER", ""),
+                }
+            )
+            if len(calls) == 1:
+                raise ssl.SSLCertVerificationError("CERTIFICATE_VERIFY_FAILED")
+            local_dir = kwargs["local_dir"]
+            with open(os.path.join(local_dir, "config.json"), "w", encoding="utf-8") as f:
+                f.write("{}")
+            with open(os.path.join(local_dir, "model.safetensors"), "wb") as f:
+                f.write(b"ok")
+            return local_dir
+
+        def _close_session() -> None:
+            close_calls["n"] += 1
+
+        fake_hf = types.SimpleNamespace(snapshot_download=_snapshot_download, close_session=_close_session)
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+        _hf_download("owner/model", tmp_path, token=None)
+
+        assert len(calls) == 2
+        assert calls[0]["hf_disable_ssl"] in ("", "0")
+        assert calls[1]["hf_disable_ssl"] == "1"
+        assert calls[1]["httpx_verify"] == "0"
+        assert calls[1]["hf_disable_xet"] == "1"
+        assert calls[1]["hf_transfer"] == "0"
+        # One reset before initial attempt, one before insecure retry,
+        # and one final reset after restoring env.
+        assert close_calls["n"] == 3
+        assert os.environ.get("HF_HUB_DISABLE_SSL_VERIFICATION") is None
+        assert os.environ.get("HTTPX_VERIFY") is None
+        assert os.environ.get("HF_HUB_DISABLE_XET") is None
+        assert os.environ.get("HF_HUB_ENABLE_HF_TRANSFER") is None
+
+    def test_uses_complete_local_copy_when_network_unavailable(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "model.safetensors").write_bytes(b"ok")
+
+        def _snapshot_download(**kwargs):
+            raise OSError("network unreachable")
+
+        fake_hf = types.SimpleNamespace(snapshot_download=_snapshot_download)
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+        # Should not raise because a complete local model already exists.
+        _hf_download("owner/model", tmp_path, token=None)
+
+    def test_raises_ssl_error_after_retry_when_no_local_copy(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        calls = {"n": 0}
+
+        monkeypatch.delenv("SQUISH_VERIFY_SSL", raising=False)
+        monkeypatch.delenv("HF_HUB_DISABLE_SSL_VERIFICATION", raising=False)
+        monkeypatch.delenv("HTTPX_VERIFY", raising=False)
+
+        def _snapshot_download(**kwargs):
+            calls["n"] += 1
+            raise ssl.SSLCertVerificationError("CERTIFICATE_VERIFY_FAILED")
+
+        fake_hf = types.SimpleNamespace(snapshot_download=_snapshot_download)
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+        with pytest.raises(_SSLError):
+            _hf_download("owner/model", tmp_path, token=None)
+
+        # First strict attempt + one insecure retry.
+        assert calls["n"] == 2
+
+    def test_non_ssl_failure_raises_when_local_copy_is_incomplete(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        # Incomplete local copy: config exists but no weights.
+        (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+
+        def _snapshot_download(**kwargs):
+            raise OSError("network unreachable")
+
+        fake_hf = types.SimpleNamespace(snapshot_download=_snapshot_download)
+        monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+        with pytest.raises(OSError):
+            _hf_download("owner/model", tmp_path, token=None)

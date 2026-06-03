@@ -60,9 +60,15 @@ Designed for one developer on one machine. Not a production multi-tenant API.
 
 ## Install
 
+> Prerequisite (macOS/Homebrew): Xcode Command Line Tools are required.
+> Install them with `xcode-select --install`.
+> If Homebrew reports "Command Line Tools are too outdated", update from
+> System Settings -> General -> Software Update, or reinstall CLT.
+
 ```bash
 # Homebrew (recommended on macOS)
 brew tap konjoai/squish
+brew trust konjoai/squish
 brew install squish
 
 # PyPI
@@ -83,7 +89,72 @@ pip install -e .
 > python -c "import squish; print(squish.__version__)"
 > ```
 
+## Optional Performance Enhancements
+
+**4x faster quantization** - install the Rust extension:
+
+```bash
+cd squish_quant_rs && python3 -m maturin build --release && pip install .
+```
+
 Requirements: macOS 13+, Apple Silicon (M1–M5), Python 3.10+.
+
+---
+
+## Corporate Networks / TLS Interception
+
+If your company network uses TLS interception (for example Zscaler or an internal
+proxy CA), `squish pull` may fail with SSL certificate errors unless Hugging Face
+downloads trust your corporate CA bundle.
+
+### 1. Export your corporate CA cert(s) to PEM
+
+```bash
+# Example: specific certificate
+security find-certificate -c "TWM-Root" -p > ~/TWM-root.pem
+
+# Example: collect all matching certs (works for many corporate setups)
+security find-certificate -a -p -c "TWM" /Library/Keychains/System.keychain > ~/TWM-all.pem
+```
+
+### 2. Verify cert validity dates
+
+```bash
+openssl x509 -in ~/TWM-root.pem -noout -subject -issuer -dates
+```
+
+If `notAfter` is in the past, the cert is expired and must be rotated/reinstalled
+by your IT/network team.
+
+### 3. Pull with CA bundle + transport compatibility flags
+
+This is the recommended command for corporate/proxy networks:
+
+```bash
+REQUESTS_CA_BUNDLE=~/TWM-all.pem \
+HF_HUB_DISABLE_XET=1 \
+HF_HUB_ENABLE_HF_TRANSFER=0 \
+squish pull llama3.2:3b
+```
+
+Notes:
+
+- `REQUESTS_CA_BUNDLE` tells Hugging Face/httpx which CA bundle to trust.
+- `HF_HUB_DISABLE_XET=1` and `HF_HUB_ENABLE_HF_TRANSFER=0` force a plain path
+  that is often more reliable behind TLS interception.
+
+### 4. Last resort (insecure)
+
+Only for temporary troubleshooting:
+
+```bash
+SQUISH_VERIFY_SSL=false \
+HF_HUB_DISABLE_XET=1 \
+HF_HUB_ENABLE_HF_TRANSFER=0 \
+squish pull llama3.2:3b
+```
+
+Prefer fixing CA trust over running insecure SSL mode.
 
 ---
 

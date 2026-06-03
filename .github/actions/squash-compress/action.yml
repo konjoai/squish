@@ -1,0 +1,128 @@
+name: "Squash Compress"
+description: "Compress a model artifact in CI and emit compression metrics."
+author: "Konjo AI / Squish"
+
+inputs:
+  model-path:
+    description: "Path to model directory or file"
+    required: true
+  method:
+    description: "Compression method selector: hqq, awq, or aqlm"
+    required: false
+    default: "hqq"
+  nbits:
+    description: "Target bit-width selector (supported: 3, 4, 8 for non-aqlm methods)"
+    required: false
+    default: "4"
+  python-version:
+    description: "Python version used to run squish"
+    required: false
+    default: "3.11"
+  squish-version:
+    description: "Optional pinned squish version. Empty installs latest."
+    required: false
+    default: ""
+
+outputs:
+  compression-ratio:
+    description: "source-bytes / compressed-bytes"
+    value: ${{ steps.compress.outputs.compression-ratio }}
+  bom-path:
+    description: "Path to cyclonedx-mlbom.json when produced"
+    value: ${{ steps.compress.outputs.bom-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Squish
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -n "${{ inputs.squish-version }}" ]; then
+          pip install --quiet "squish[squash]==${{ inputs.squish-version }}"
+        else
+          pip install --quiet "squish[squash]"
+        fi
+
+    - name: Run squash compress
+      id: compress
+      shell: bash
+      env:
+        INPUT_MODEL_PATH: ${{ inputs.model-path }}
+        INPUT_METHOD: ${{ inputs.method }}
+        INPUT_NBITS: ${{ inputs.nbits }}
+      run: |
+        set -euo pipefail
+
+        MODEL_PATH="${INPUT_MODEL_PATH}"
+        METHOD="$(echo "${INPUT_METHOD}" | tr '[:upper:]' '[:lower:]')"
+        NBITS="$(echo "${INPUT_NBITS}" | tr -d ' ')"
+
+        if [ ! -e "$MODEL_PATH" ]; then
+          echo "::error title=Squash::model-path does not exist: ${MODEL_PATH}"
+          exit 1
+        fi
+
+        SOURCE_BYTES="$(INPUT_MODEL_PATH="$MODEL_PATH" python3 -c 'import os,pathlib; p=pathlib.Path(os.environ["INPUT_MODEL_PATH"]); print(p.stat().st_size if p.is_file() else sum(f.stat().st_size for f in p.rglob("*") if f.is_file()))')"
+
+        OUTPUT_DIR="${RUNNER_TEMP}/squash-compress-${METHOD}-${NBITS//./_}-${GITHUB_RUN_ID:-local}-${RANDOM}"
+
+        FORMAT=""
+        EXTRA_FLAGS=()
+
+        case "$METHOD" in
+          aqlm)
+            FORMAT="aqlm"
+            ;;
+          hqq|awq)
+            case "$NBITS" in
+              3|3.0)
+                FORMAT="int3"
+                ;;
+              4|4.0)
+                FORMAT="int4"
+                ;;
+              8|8.0)
+                FORMAT="int8"
+                ;;
+              *)
+                echo "::error title=Squash::Unsupported nbits '${NBITS}'. Supported values: 3, 4, 8."
+                exit 1
+                ;;
+            esac
+            if [ "$FORMAT" = "int4" ]; then
+              if [ "$METHOD" = "hqq" ]; then
+                EXTRA_FLAGS+=(--no-awq)
+              else
+                EXTRA_FLAGS+=(--awq)
+              fi
+            fi
+            ;;
+          *)
+            echo "::error title=Squash::Unsupported method '${METHOD}'. Use hqq, awq, or aqlm."
+            exit 1
+            ;;
+        esac
+
+        CMD=(squish compress "$MODEL_PATH" --output "$OUTPUT_DIR" --format "$FORMAT")
+        if [ "${#EXTRA_FLAGS[@]}" -gt 0 ]; then
+          CMD+=("${EXTRA_FLAGS[@]}")
+        fi
+        "${CMD[@]}"
+
+        OUTPUT_BYTES="$(INPUT_MODEL_PATH="$OUTPUT_DIR" python3 -c 'import os,pathlib; p=pathlib.Path(os.environ["INPUT_MODEL_PATH"]); print(p.stat().st_size if p.is_file() else sum(f.stat().st_size for f in p.rglob("*") if f.is_file()))')"
+
+        COMPRESSION_RATIO="$(SOURCE_BYTES="$SOURCE_BYTES" OUTPUT_BYTES="$OUTPUT_BYTES" python3 -c 'import os; source=float(os.environ["SOURCE_BYTES"]); out=float(os.environ["OUTPUT_BYTES"]); print("0.000000" if out <= 0 else f"{source / out:.6f}")')"
+
+        BOM_PATH=""
+        if [ -f "$OUTPUT_DIR/cyclonedx-mlbom.json" ]; then
+          BOM_PATH="$OUTPUT_DIR/cyclonedx-mlbom.json"
+        fi
+
+        echo "compression-ratio=${COMPRESSION_RATIO}" >> "$GITHUB_OUTPUT"
+        echo "bom-path=${BOM_PATH}" >> "$GITHUB_OUTPUT"

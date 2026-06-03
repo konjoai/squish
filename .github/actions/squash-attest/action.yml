@@ -1,0 +1,102 @@
+name: "Squash Attest"
+description: "Run squash attest and emit attestation pass/fail outputs for CI policy gates."
+author: "Konjo AI / Squish"
+
+inputs:
+  model-path:
+    description: "Path to model directory or file"
+    required: true
+  policies:
+    description: "Comma-separated policy names (default: enterprise-strict)"
+    required: false
+    default: "enterprise-strict"
+  python-version:
+    description: "Python version used to run squash"
+    required: false
+    default: "3.11"
+  squish-version:
+    description: "Optional pinned squish version. Empty installs latest."
+    required: false
+    default: ""
+
+outputs:
+  passed:
+    description: "true/false pass verdict from squash attestation"
+    value: ${{ steps.attest.outputs.passed }}
+  attestation-path:
+    description: "Path to the emitted attestation JSON record"
+    value: ${{ steps.attest.outputs.attestation-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Squish
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -n "${{ inputs.squish-version }}" ]; then
+          pip install --quiet "squish[squash]==${{ inputs.squish-version }}"
+        else
+          pip install --quiet "squish[squash]"
+        fi
+
+    - name: Run squash attest
+      id: attest
+      shell: bash
+      env:
+        INPUT_MODEL_PATH: ${{ inputs.model-path }}
+        INPUT_POLICIES: ${{ inputs.policies }}
+      run: |
+        set -euo pipefail
+
+        MODEL_PATH="${INPUT_MODEL_PATH}"
+        ATTESTATION_PATH="${RUNNER_TEMP}/squash-attestation.json"
+
+        if [ ! -e "$MODEL_PATH" ]; then
+          echo "::error title=Squash::model-path does not exist: ${MODEL_PATH}"
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+          echo "attestation-path=" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+
+        IFS=',' read -r -a POLICY_ARRAY <<< "${INPUT_POLICIES}"
+        CMD=(squash attest "$MODEL_PATH" --json-result "$ATTESTATION_PATH")
+        for policy in "${POLICY_ARRAY[@]}"; do
+          policy="$(echo "$policy" | xargs)"
+          if [ -n "$policy" ]; then
+            CMD+=(--policy "$policy")
+          fi
+        done
+
+        set +e
+        "${CMD[@]}"
+        ATTEST_RC=$?
+        set -e
+
+        if [ ! -f "$ATTESTATION_PATH" ]; then
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+          echo "attestation-path=" >> "$GITHUB_OUTPUT"
+          echo "::error title=Squash::attestation output was not generated"
+          exit 1
+        fi
+
+        PASSED="false"
+        if grep -Eqi '"passed"[[:space:]]*:[[:space:]]*true' "$ATTESTATION_PATH"; then
+          PASSED="true"
+        fi
+
+        echo "passed=${PASSED}" >> "$GITHUB_OUTPUT"
+        echo "attestation-path=${ATTESTATION_PATH}" >> "$GITHUB_OUTPUT"
+
+        if [ "$ATTEST_RC" -eq 1 ] || [ "$ATTEST_RC" -gt 2 ]; then
+          exit "$ATTEST_RC"
+        fi
+
+        if [ "$ATTEST_RC" -eq 2 ]; then
+          echo "::warning title=Squash::attestation reported policy or scan violations (passed=false)"
+        fi
