@@ -2250,9 +2250,9 @@ def cmd_doctor(args):
     # squash (optional)
     try:
         import squash.sbom_builder  # noqa: F401
-        _check("squash-ai installed", True)
+        _check("squash-ai (optional — compliance & ML-BOM features)", True)
     except ImportError:
-        _check("squash-ai installed", False,
+        _check("squash-ai (optional — compliance & ML-BOM features)", False,
                'pip install squash-ai')
 
     print()
