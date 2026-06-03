@@ -63,3 +63,4 @@ docs/Squish_Paper_arXiv*.docx
 docs/Squish_Action_Plan*.docx
 "docs/Squish_Action_Plan*"
 docs/final/_media/
+.claude/worktrees/
