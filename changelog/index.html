@@ -836,6 +836,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#9330-pull-resilience-partial-download-guard-ssl-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [9.33.0] — Pull Resilience (partial-download guard + SSL fallback)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[9.33.0] — Pull Resilience (partial-download guard + SSL fallback)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#9320-2026-06-02-realistic-deployment-benchmark-recommended-default-config" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -870,7 +909,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed" class="md-nav__link">
+  <a href="#fixed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1147,7 +1186,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed_1" class="md-nav__link">
+  <a href="#fixed_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1480,6 +1519,32 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="9330-pull-resilience-partial-download-guard-ssl-fallback">[9.33.0] — Pull Resilience (partial-download guard + SSL fallback)<a class="headerlink" href="#9330-pull-resilience-partial-download-guard-ssl-fallback" title="Permanent link">&para;</a></h2>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>squish pull</code> now validates raw model directories before compression. If a prior
+  download was interrupted/canceled, the partial directory is removed and the model
+  is re-downloaded instead of attempting to squish incomplete weights.</li>
+<li>Hugging Face downloads now retry once automatically with an insecure SSL fallback
+  when certificate verification fails on corporate/self-signed networks.</li>
+<li>SSL fallback now resets the cached <code>huggingface_hub</code> HTTP session before retry,
+  and temporarily disables Xet/hf-transfer paths (<code>HF_HUB_DISABLE_XET=1</code>,
+  <code>HF_HUB_ENABLE_HF_TRANSFER=0</code>) for better compatibility on intercepted networks.</li>
+<li>When network access fails but a complete local raw model is already present,
+  <code>squish pull</code> proceeds using the local copy rather than failing immediately.</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added a <code>README.md</code> section for corporate-proxy/TLS-interception networks with
+  CA-export steps, certificate validation checks, and the recommended
+  <code>REQUESTS_CA_BUNDLE + HF_HUB_DISABLE_XET + HF_HUB_ENABLE_HF_TRANSFER</code> pull command.</li>
+<li>Added an install-note in <code>README.md</code> documenting the Xcode Command Line Tools
+  prerequisite for Homebrew installs on macOS and what to do when tools are outdated.</li>
+<li>Added Homebrew 5.x third-party tap trust guidance (<code>brew trust konjoai/squish</code>)
+  in the install steps to address the untrusted-tap warning.</li>
+<li>Added an "Optional Performance Enhancements" section in <code>README.md</code> documenting
+  the <code>squish_quant_rs</code> Rust extension build/install command for faster quantization.</li>
+</ul>
 <h2 id="9320-2026-06-02-realistic-deployment-benchmark-recommended-default-config">[9.32.0] — 2026-06-02 — Realistic-deployment benchmark + recommended-default config<a class="headerlink" href="#9320-2026-06-02-realistic-deployment-benchmark-recommended-default-config" title="Permanent link">&para;</a></h2>
 <p>The v5.1.1 realistic-deployment re-bench is the release headline. Recommended
 default is now both KV caches enabled. Full numbers and methodology in
@@ -1519,7 +1584,7 @@ default is now both KV caches enabled. Full numbers and methodology in
   upgrading from a development install should switch to <code>pip install squish-ai</code>
   for releases.</li>
 </ul>
-<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>mlx_lm</code> sklearn-stub import-side-effect (saves ~1.2 s cold-start;
   upstream PR filed).</li>
@@ -1885,7 +1950,7 @@ of <code>squish/</code>; the existing module-count gates in <code>tests/test_qua
 <li>Repr coverage: class name, dims, group_size, residual rank, sparse k (6 tests).</li>
 <li>Factory: returns correct type, accepts numpy/mx bias, no-bias default (4 tests).</li>
 </ul>
-<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>squish/cli.py</code> — <code>cmd_bench</code></strong>: INT4 bench no longer exits with code 1
@@ -2463,7 +2528,7 @@ sparse correction (for real transformer weight outliers) is W103.3 scope.</p>
   8 INT4 output structure checks, 2 INT8 output checks, 6 argument parsing roundtrip checks,
   invalid-format rejection.</li>
 </ul>
-<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_3">Fixed<a class="headerlink" href="#fixed_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>squish/cli.py</code> <code>build_parser()</code></strong> — <code>--version</code> argument previously called
   <code>importlib.metadata.version("squish")</code> at parse time without a try/except. Now wraps the
@@ -2812,7 +2877,7 @@ directly — require <code>pip install squish</code>; pass in Python 3.10 CI).</
   thread executor, returns <code>{ok, files_checked, summary, hits}</code>. Returns 400 on
   missing paths.</li>
 </ul>
-<h3 id="fixed_3">Fixed<a class="headerlink" href="#fixed_3" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_4">Fixed<a class="headerlink" href="#fixed_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>squish/cli.py</code> — mixed_attn calibration</strong> — <code>args.outlier_threshold</code> now
   set to <code>100.0</code> in the <code>--format mixed_attn</code> block, ensuring the AWQ INT4
@@ -3428,7 +3493,7 @@ Set <code>SQUASH_OFFLINE=1</code> or pass <code>--offline</code> to activate.</p
 </ul>
 <hr />
 <h2 id="unreleased-wave-42-bias-formula-fix-int4-awq-lm_eval-validation-arc_easy-pass">[Unreleased] — Wave 42: bias formula fix + INT4 AWQ lm_eval validation (arc_easy PASS)<a class="headerlink" href="#unreleased-wave-42-bias-formula-fix-int4-awq-lm_eval-validation-arc_easy-pass" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_4">Fixed<a class="headerlink" href="#fixed_4" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_5">Fixed<a class="headerlink" href="#fixed_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>squish/cli.py</code></strong> — Default <code>int4_group_size</code> changed 16 → 32 in 3 locations. MLX
@@ -4557,7 +4622,7 @@ not by feature overlap with existing modules.</p>
 </ul>
 <hr />
 <h2 id="9150-int3-group_size-correctly-fixed-to-32-tier-23-model-compressions">[9.15.0] — INT3 group_size correctly fixed to 32; Tier 2/3 model compressions<a class="headerlink" href="#9150-int3-group_size-correctly-fixed-to-32-tier-23-model-compressions" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_5">Fixed<a class="headerlink" href="#fixed_5" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_6">Fixed<a class="headerlink" href="#fixed_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>squish/cli.py</code>: <code>_INT3_GROUP_SIZE</code> corrected from 16 → 32.  <code>mlx.core.quantize()</code>
   only supports group sizes 32, 64, and 128; requesting 16 raised <code>ValueError</code>.
@@ -4574,7 +4639,7 @@ not by feature overlap with existing modules.</p>
   2026-03-28.  Fresh <code>gemma-3-4b-it-int3</code>, <code>gemma-3-4b-it-int2</code>, and
   <code>Llama-3.2-3B-Instruct-int2</code> compressed this session via <code>mlx_lm.convert</code>.</li>
 </ul>
-<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>SESSION.md</code>: corrected overnight bench group sizes (g=64 INT4, g=32 INT3, not g=16
   AWQ), documented squish npy-dir format discovery (INT4/mixed_attn not lm_evaluable),
@@ -5151,7 +5216,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 <li><strong>Removed empty ghost directories</strong>: <code>core/</code>, <code>format/</code>, <code>install/</code>, <code>packaging/</code>
   (only <code>__pycache__</code> remained after Wave 116 deletions).</li>
 </ul>
-<h3 id="fixed_6">Fixed<a class="headerlink" href="#fixed_6" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_7">Fixed<a class="headerlink" href="#fixed_7" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>astc_loader.py</code> bare import guarded</strong> — <code>from squish.compress.astc_encoder import</code>
   was a module-level bare import that raised <code>ModuleNotFoundError</code> on any direct
@@ -5208,7 +5273,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 </ul>
 <hr />
 <h2 id="920-wave-115-all-optimizations-flush-int3-load-path-dead-code">[9.2.0] — Wave 115 — All-Optimizations Flush + INT3 Load Path + Dead Code<a class="headerlink" href="#920-wave-115-all-optimizations-flush-int3-load-path-dead-code" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_7">Fixed<a class="headerlink" href="#fixed_7" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_8">Fixed<a class="headerlink" href="#fixed_8" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>--all-optimizations</code> TTFT spike eliminated</strong> — Wave modules (100+
@@ -7672,7 +7737,7 @@ continue passing; 188 new tests added (107 Wave 62a + 81 Wave 62b).</p>
 <li><code>squish/kernels/mojo/ouroboros_ngram_mojo.py</code> + <code>kernels/ouroboros_ngram.mojo</code></li>
 <li><code>squish/kernels/mojo/pyramid_kv_budget_mojo.py</code> + <code>kernels/pyramid_kv_budget.mojo</code></li>
 </ul>
-<h3 id="fixed_8">Fixed<a class="headerlink" href="#fixed_8" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_9">Fixed<a class="headerlink" href="#fixed_9" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>RustClusterKV.evict_mask</code> signature harmonised with <code>MojoClusterKV</code>:
   replaced positional <code>budget</code> (number of clusters to keep) with optional
@@ -7735,7 +7800,7 @@ All 11333 pre-Wave-61 tests continue passing; 140 new tests added
 <li><code>squish/kernels/mojo/jacobi_conv_mojo.py</code> + <code>kernels/jacobi_convergence.mojo</code></li>
 <li><code>squish/kernels/mojo/tree_verify_mojo.py</code> + <code>kernels/tree_verify.mojo</code></li>
 </ul>
-<h3 id="fixed_9">Fixed<a class="headerlink" href="#fixed_9" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_10">Fixed<a class="headerlink" href="#fixed_10" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Pre-existing <code>quarot_group_quant_f32</code> move-in-closure compile error in
   <code>squish_quant_rs/src/lib.rs</code>: introduced <code>let w_slice = &amp;w_flat[..]</code> before
@@ -10622,7 +10687,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 </ul>
 <hr />
 <h2 id="101-2026-03-04">[1.0.1] — 2026-03-04<a class="headerlink" href="#101-2026-03-04" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_10">Fixed<a class="headerlink" href="#fixed_10" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_11">Fixed<a class="headerlink" href="#fixed_11" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>eval_output/eval_report.md</code></strong> — Replaced physically impossible benchmark numbers
   (+14.1% ARC, +15.2% HellaSwag after lossy compression) with validated results from a
