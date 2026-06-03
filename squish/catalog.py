@@ -117,7 +117,66 @@ def _is_ssl_error(exc: BaseException) -> bool:
         or "SSLError" in msg
         or "ssl.SSLCertVerificationError" in msg
         or "ConnectError" in msg and "SSL" in msg
+        or "Missing Authority Key Identifier" in msg
     )
+
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def _force_httpx_verify_false():  # pragma: no cover
+    """
+    Monkey-patch ``httpx.Client.__init__`` (and ``AsyncClient.__init__``) to
+    default ``verify=False`` for the duration of the context.
+
+    Why this exists
+    ---------------
+    Python 3.13 tightened SSL chain validation: every cert must now carry the
+    Authority Key Identifier (AKI) extension. Corporate MITM proxies — Zscaler
+    is the canonical offender — re-sign HTTPS traffic with a cert that omits
+    AKI, producing ``ssl.SSLCertVerificationError: Missing Authority Key
+    Identifier``.
+
+    The usual escape hatches don't work here. ``HF_HUB_DISABLE_SSL_VERIFICATION=1``
+    and ``HTTPX_VERIFY=0`` are *ignored* on Python 3.13 because ``httpx.Client``
+    builds its ``SSLContext`` at construction time and never re-reads those
+    env vars. Resetting the cached HF session doesn't help either — the new
+    client still constructs a strict context.
+
+    The only reliable fix is to pass ``verify=False`` directly to the
+    ``httpx.Client`` constructor. We do that by patching ``__init__`` so every
+    client created during the retry inherits the insecure default, then we
+    restore the original constructor in ``finally`` so unrelated requests
+    later in the process remain validated.
+    """
+    try:
+        import httpx
+    except ImportError:
+        yield
+        return
+
+    original_init = httpx.Client.__init__
+    original_async_init = getattr(httpx, "AsyncClient", None)
+    original_async_init = original_async_init.__init__ if original_async_init else None
+
+    def _patched(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs.setdefault("verify", False)
+        return original_init(self, *args, **kwargs)
+
+    def _patched_async(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs.setdefault("verify", False)
+        return original_async_init(self, *args, **kwargs)  # type: ignore[misc]
+
+    httpx.Client.__init__ = _patched  # type: ignore[method-assign]
+    if original_async_init is not None:
+        httpx.AsyncClient.__init__ = _patched_async  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        httpx.Client.__init__ = original_init  # type: ignore[method-assign]
+        if original_async_init is not None:
+            httpx.AsyncClient.__init__ = original_async_init  # type: ignore[method-assign]
 
 
 # ── Directory naming helpers ─────────────────────────────────────────────────
@@ -1010,7 +1069,11 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
             os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
             try:
                 _reset_hf_session()
-                _snapshot()
+                # Python 3.13 + Zscaler: env vars alone don't disable verification
+                # because httpx builds its SSLContext at client-construction time.
+                # Force verify=False at the httpx layer for this retry only.
+                with _force_httpx_verify_false():
+                    _snapshot()
                 return
             except Exception as retry_exc:
                 local_ok_retry, _ = _is_raw_model_dir_complete(local_dir)
