@@ -8,7 +8,11 @@ from unittest.mock import patch
 import pytest
 
 from squish.cli import _pull_from_hf
-from squish.serving.local_model_scanner import LocalModelScanner, PreDownloadScanResult
+from squish.serving.local_model_scanner import (
+    LocalModelScanner,
+    PreDownloadScanResult,
+    scan_before_load,
+)
 
 pytest.importorskip("huggingface_hub")
 
@@ -19,7 +23,7 @@ def test_scan_before_load_flags_synthetic_malicious_pickle(tmp_path):
     # Synthetic malicious pickle payload (contains REDUCE opcode 0x52).
     (model_dir / "weights.pkl").write_bytes(b"\x80\x04\x52\x2e")
 
-    result = LocalModelScanner.scan_before_load(model_dir)
+    result = scan_before_load(model_dir)
     assert result.status == "unsafe"
     assert len(result.findings) >= 1
 
@@ -33,7 +37,7 @@ def test_pull_from_hf_runs_preload_scan(tmp_path):
     with patch("squish.cli._CATALOG_AVAILABLE", False):
         with patch("huggingface_hub.snapshot_download", return_value=str(downloaded)):
             with patch(
-                "squish.serving.local_model_scanner.LocalModelScanner.scan_before_load",
+                "squish.serving.local_model_scanner.scan_before_load",
                 return_value=clean,
             ) as scan_mock:
                 _pull_from_hf("org/model", tmp_path, token=None)

@@ -118,7 +118,7 @@ def test_load_qtip_checkpoint_logs_license_warning(tmp_path, caplog):
             "squish.squash.qtip_loader._import_transformers",
             return_value=(_FakeModelClass, _FakeTokenizerClass),
         ):
-            caplog.set_level("WARNING")
+            caplog.set_level("WARNING", logger="squish.squash.qtip_loader")
             load_qtip_checkpoint("org/model")
 
     assert "squish does not distribute GPL code" in caplog.text
