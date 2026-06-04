@@ -106,7 +106,7 @@ def test_load_qtip_checkpoint_empty_repo_raises_value_error():
         load_qtip_checkpoint("   ")
 
 
-def test_load_qtip_checkpoint_logs_license_warning(tmp_path, caplog):
+def test_load_qtip_checkpoint_logs_license_warning(tmp_path):
     target = tmp_path / "snapshot"
     target.mkdir()
 
@@ -118,7 +118,8 @@ def test_load_qtip_checkpoint_logs_license_warning(tmp_path, caplog):
             "squish.squash.qtip_loader._import_transformers",
             return_value=(_FakeModelClass, _FakeTokenizerClass),
         ):
-            caplog.set_level("WARNING", logger="squish.squash.qtip_loader")
-            load_qtip_checkpoint("org/model")
+            with patch("squish.squash.qtip_loader.log") as mock_log:
+                load_qtip_checkpoint("org/model")
 
-    assert "squish does not distribute GPL code" in caplog.text
+    mock_log.warning.assert_called_once()
+    assert "squish does not distribute GPL code" in mock_log.warning.call_args[0][0]
