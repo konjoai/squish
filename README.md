@@ -1,4 +1,7 @@
 # Squish
+## Squeeze the Most Out of Your Models
+
+<img src="assets/squish-logo-1.png" height="320" alt="Squish Logo"/>
 
 **Local LLM inference for Apple Silicon. Faster end-to-end response on long contexts, less RAM, INT3 support.**
 
@@ -7,8 +10,6 @@
 [![CI](https://github.com/konjoai/squish/actions/workflows/ci.yml/badge.svg)](https://github.com/konjoai/squish/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/konjoai/squish)
 [![HuggingFace](https://img.shields.io/badge/🤗%20Models-squish--community-yellow)](https://huggingface.co/squish-community)
-
-<img src="assets/squish-logo-1.png" height="320" alt="Squish Logo"/>
 
 ---
 
