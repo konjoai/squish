@@ -6,31 +6,42 @@ hide:
   - toc
 ---
 
-Squish compresses model weights into memory-mapped INT8 tensors that load in **milliseconds**, then serves them through a fully OpenAI-compatible REST API — all on Apple Silicon, no GPU required.
+**Local LLM inference for Apple Silicon. Faster end-to-end response on long contexts, less RAM, INT3 support.**
+
+Squish serves quantized models (INT4 / INT3) through a fully OpenAI-compatible REST API, with an Ollama-compatible endpoint for drop-in migration — all on Apple Silicon, no GPU required.
 
 ---
 
-## Why Squish?
+## The Numbers (v9.32.0 / bench v5.1.1)
 
-| | Ollama | LM Studio | **Squish** |
-|---|---|---|---|
-| Cold-start time | ~30 s | ~20 s | **< 2 s** |
-| RAM for 70B | ~40 GB | ~40 GB | **~18 GB** |
-| OpenAI API | ✅ | ✅ | ✅ |
-| Batch requests | ❌ | ❌ | **✅** |
-| Pre-compressed weights | ❌ | ❌ | **✅ HuggingFace** |
-| Quantisation format | GGUF | GGUF | **INT8 mmap** |
-| Platform | macOS/Linux | macOS/Windows | macOS (M1–M5) |
+Measured 2026-06-02 on Apple M3 MacBook Pro, 16 GB unified memory.
+Model: Qwen2.5-7B-Instruct. Quant: INT4 (squish) / Q4_K_M (Ollama).
+Five-run medians.
+
+| Metric | Ollama 0.18.2 | **Squish (recommended)** |
+|---|---:|---:|
+| **E2E response @ 4000-token prompt** | 69.63 s | **12.78 s** &nbsp;_(5.4× faster)_ |
+| **E2E response @ 75-token prompt** | 8.09 s | **5.50 s** &nbsp;_(1.5× faster)_ |
+| **Peak RAM during inference** | ~5 GB | **3.36 GB** |
+| **Disk size — INT4** | 4.36 GB | **4.00 GB** |
+| **Disk size — INT3 (Qwen3)** | not supported | **3.56 GB** |
+| **TTFT @ 75-token prompt** | **131 ms** | 279 ms &nbsp;_(honest loss)_ |
+
+**Squish wins end-to-end response time at every prompt size measured**, with the largest win on long contexts (5.4× at 4000 tokens), uses ~33% less RAM, and supports INT3 for compatible model families.
+
+**Ollama wins time-to-first-token at every prompt size**, and inter-token jitter on long contexts. If first-byte latency matters more than full-response latency, Ollama is the right tool.
+
+Full table, methodology, and ablation: see [Benchmark Results](RESULTS.md).
 
 ---
 
 ## Key Features
 
-- **Instant load** — memory-mapped weights skip all decoding overhead
-- **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/models`, `/v1/completions`
-- **Batch inference** — parallel requests in a single call
-- **INT8 + INT4** — two quantisation tiers for accuracy vs. size trade-offs (INT4 not recommended for models &lt; 3B)
-- **Zero-copy mmap** — model data never fully loaded into RAM
+- **Long-context wins** — 5.4× faster end-to-end response at 4000-token prompts vs Ollama
+- **OpenAI- and Ollama-compatible API** — `/v1/chat/completions`, `/v1/models`, `/v1/completions`, plus an Ollama-compatible endpoint for drop-in migration
+- **INT4 + INT3 quantization** — INT4 AWQ g=32 with a hard ≥70.6% arc_easy accuracy gate; INT3 for compatible model families (Qwen3)
+- **Lower memory** — ~33% less RAM than Ollama during inference (3.36 GB vs ~5 GB on Qwen2.5-7B INT4)
+- **Speculative decoding + KV cache management** — context-aware tiering (INT8/INT4/INT2) for long-context workloads
 - **CLI first** — `squish pull`, `squish run`, `squish serve`, `squish rm`, `squish search`
 
 ---
@@ -60,7 +71,7 @@ curl http://localhost:11435/v1/chat/completions \
 
 !!! warning "macOS + Apple Silicon only"
     Squish uses [Apple MLX](https://github.com/ml-explore/mlx) for inference and requires an M1–M5 chip.
-    Linux/CUDA support is on the roadmap — [watch the repo](https://github.com/wesleyscholl/squish) for updates.
+    Linux/CUDA support is on the roadmap — [watch the repo](https://github.com/konjoai/squish) for updates.
 
 ---
 
