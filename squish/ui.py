@@ -533,14 +533,14 @@ def startup_panel(
         console.print()
     else:  # pragma: no cover
         print()
-        print(f"  ┌──────────────────────────────────────┐")
-        print(f"  │  Squish — Local Inference Server      │")
+        print("  ┌──────────────────────────────────────┐")
+        print("  │  Squish — Local Inference Server      │")
         print(f"  │  Model    : {model:<26}│")
         print(f"  │  Endpoint : {endpoint:<26}│")
         print(f"  │  Web UI   : {web_ui:<26}│")
         print(f"  │  API key  : {api_key:<26}│")
-        print(f"  │  Press Ctrl+C to stop                 │")
-        print(f"  └──────────────────────────────────────┘")
+        print("  │  Press Ctrl+C to stop                 │")
+        print("  └──────────────────────────────────────┘")
         print()
 
 

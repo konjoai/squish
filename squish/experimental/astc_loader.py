@@ -94,7 +94,7 @@ _METAL_MAX_TEXTURE_DIM: int = 16384
 # Metal availability probe
 # ---------------------------------------------------------------------------
 
-_METAL_AVAILABLE: Optional[bool] = None
+_METAL_AVAILABLE: bool | None = None
 
 
 def _probe_metal() -> bool:
@@ -187,12 +187,12 @@ class ASTCWeightTexture:
     layer_name: str = ""
 
     @property
-    def original_shape(self) -> Tuple[int, ...]:
+    def original_shape(self) -> tuple[int, ...]:
         """Shape of the original weight tensor before encoding."""
         return self.encode_result.original_shape
 
     @property
-    def padded_shape(self) -> Tuple[int, int]:
+    def padded_shape(self) -> tuple[int, int]:
         """Shape after padding to ASTC 6×6 block boundaries."""
         return self.encode_result.padded_shape
 
@@ -229,7 +229,7 @@ class ASTCWeightTexture:
         # Fall back to simulation decode when readback is not implemented.
         return self._decode_simulation()
 
-    def texture_descriptor_dict(self) -> Dict[str, Any]:
+    def texture_descriptor_dict(self) -> dict[str, Any]:
         """Return a dict describing the Metal texture descriptor parameters."""
         pad_rows, pad_cols = self.padded_shape
         return {
@@ -254,10 +254,10 @@ class ASTCLoader:
         Loader configuration.
     """
 
-    def __init__(self, config: Optional[ASTCLoaderConfig] = None) -> None:
+    def __init__(self, config: ASTCLoaderConfig | None = None) -> None:
         self._config = config or ASTCLoaderConfig()
         self._metal_device: Any = None
-        self._metal_available: Optional[bool] = None
+        self._metal_available: bool | None = None
 
     @property
     def config(self) -> ASTCLoaderConfig:
@@ -310,7 +310,7 @@ class ASTCLoader:
 
     def load_from_file(
         self,
-        path: Union[str, Path],
+        path: str | Path,
         *,
         layer_offset: int = 0,
         layer_name: str = "",

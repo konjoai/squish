@@ -196,23 +196,23 @@ class SquishRuntime:
     def __init__(
         self,
         header: SquizdHeader,
-        weights: Optional[Dict[str, np.ndarray]] = None,
+        weights: dict[str, np.ndarray] | None = None,
         *,
         vocab_size: int = 32_000,
-        _path: Optional[Path] = None,
+        _path: Path | None = None,
     ) -> None:
         self.header = header
         self.weights = weights or {}
         self.vocab_size = vocab_size
         self._path = _path
-        self._dispatch_table: List[DispatchRecord] = self._build_dispatch_table()
+        self._dispatch_table: list[DispatchRecord] = self._build_dispatch_table()
 
     # ------------------------------------------------------------------
     # Class-level constructors
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_file(cls, path: Union[str, Path], **kwargs: Any) -> "SquishRuntime":
+    def from_file(cls, path: str | Path, **kwargs: Any) -> "SquishRuntime":
         """Load a :class:`SquishRuntime` from a ``.squizd`` file.
 
         For non-existent or non-SQUIZD files the method still succeeds by
@@ -233,7 +233,7 @@ class SquishRuntime:
     @classmethod
     def from_flags(
         cls,
-        flags: Union[SquizdFlags, int],
+        flags: SquizdFlags | int,
         layer_count: int = 32,
         vocab_size: int = 32_000,
     ) -> "SquishRuntime":
@@ -274,7 +274,7 @@ class SquishRuntime:
         return self.header.layer_count
 
     @property
-    def dispatch_table(self) -> List[DispatchRecord]:
+    def dispatch_table(self) -> list[DispatchRecord]:
         """Return the per-layer dispatch table (read-only view)."""
         return list(self._dispatch_table)
 
@@ -288,7 +288,7 @@ class SquishRuntime:
         *,
         max_new_tokens: int = 128,
         temperature: float = 1.0,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> str:
         """Generate a completion for *prompt* (non-streaming).
 
@@ -314,8 +314,8 @@ class SquishRuntime:
         *,
         max_new_tokens: int = 128,
         temperature: float = 1.0,
-        seed: Optional[int] = None,
-    ) -> Iterator[tuple[str, Optional[str]]]:
+        seed: int | None = None,
+    ) -> Iterator[tuple[str, str | None]]:
         """Yield ``(token_text, finish_reason_or_None)`` pairs.
 
         The simulated forward pass runs through the dispatch table, applying
@@ -353,10 +353,10 @@ class SquishRuntime:
     # Dispatch table construction
     # ------------------------------------------------------------------
 
-    def _build_dispatch_table(self) -> List[DispatchRecord]:
+    def _build_dispatch_table(self) -> list[DispatchRecord]:
         """Build the per-layer dispatch table from the header flags."""
         flags = self.header.flags
-        records: List[DispatchRecord] = []
+        records: list[DispatchRecord] = []
 
         for i in range(self.header.layer_count):
             stack = self._select_kernel(flags)
@@ -480,7 +480,7 @@ class SquishRuntime:
 
     @staticmethod
     def build_squizd_header(
-        flags: Union[SquizdFlags, int],
+        flags: SquizdFlags | int,
         layer_count: int = 32,
         arch_id: int = 0,
     ) -> bytes:

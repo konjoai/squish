@@ -195,7 +195,7 @@ class JacobiDecoder:
     each *input* position.
     """
 
-    def __init__(self, config: Optional[JacobiConfig] = None) -> None:
+    def __init__(self, config: JacobiConfig | None = None) -> None:
         self._cfg = config or JacobiConfig()
         self._rng = np.random.default_rng(self._cfg.seed)
         self.stats = JacobiStats()
@@ -206,10 +206,10 @@ class JacobiDecoder:
 
     def decode_step(
         self,
-        logits_fn: Callable[[List[int]], np.ndarray],
-        context_ids: List[int],
-        vocab_size: Optional[int] = None,
-    ) -> Tuple[List[int], int]:
+        logits_fn: Callable[[list[int]], np.ndarray],
+        context_ids: list[int],
+        vocab_size: int | None = None,
+    ) -> tuple[list[int], int]:
         """Execute one parallel Jacobi decode step.
 
         Parameters
@@ -235,7 +235,7 @@ class JacobiDecoder:
         # --- Initialize parallel positions --------------------------------
         if cfg.init == "uniform" and context_ids:
             # Start all N positions with the last context token
-            guesses: List[int] = [context_ids[-1]] * n
+            guesses: list[int] = [context_ids[-1]] * n
         elif cfg.init == "random" and vocab_size is not None:
             guesses = list(self._rng.integers(0, vocab_size, size=n))
         else:
@@ -288,7 +288,7 @@ class JacobiDecoder:
         ctx_len = len(context_ids)
         pos_logits = all_logits[ctx_len: ctx_len + n]
 
-        accepted: List[int] = []
+        accepted: list[int] = []
         for i in range(n):
             pred = _sample_token(pos_logits[i], cfg.temperature, self._rng)
             if pred == guesses[i]:
@@ -308,11 +308,11 @@ class JacobiDecoder:
 
     def _check_convergence(
         self,
-        logits_fn: Callable[[List[int]], np.ndarray],
-        context_ids: List[int],
-        guesses: List[int],
+        logits_fn: Callable[[list[int]], np.ndarray],
+        context_ids: list[int],
+        guesses: list[int],
         temperature: float,
-    ) -> Optional[List[int]]:
+    ) -> list[int] | None:
         """Return guesses if all positions are fixed points, else None."""
         full = list(context_ids) + guesses
         all_logits = logits_fn(full)

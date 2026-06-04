@@ -14,7 +14,7 @@
 
 ---
 
-## The Numbers (v9.32.0 / bench v5.1.1)
+## The Numbers (v9.33.5 / bench v5.1.1)
 
 Measured 2026-06-02 on Apple M3 MacBook Pro, 16 GB unified memory.
 Model: Qwen2.5-7B-Instruct. Quant: INT4 (squish) / Q4_K_M (Ollama).
@@ -69,9 +69,7 @@ Designed for one developer on one machine. Not a production multi-tenant API.
 
 ```bash
 # Homebrew (recommended on macOS)
-brew tap konjoai/squish
-brew trust konjoai/squish
-brew install squish
+brew install konjoai/squish/squish
 
 # PyPI
 pip install squish-ai

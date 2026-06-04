@@ -115,7 +115,7 @@ class OptimizationProfile:
         # Metal cache limit — only override when at its default of 256
         if int(getattr(args, "_blazing_metal_cache_mb", 256)) == 256:
             # Store on args so _cap_metal_cache() picks it up
-            setattr(args, "_blazing_metal_cache_mb", self.metal_cache_mb)
+            args._blazing_metal_cache_mb = self.metal_cache_mb
             self._sources["metal_cache_mb"] = "auto"
 
         # EAGLE-3 head — auto-load when file is present and --eagle-head-dir

@@ -63,7 +63,7 @@ class INT3LayerWeights:
     q_packed: np.ndarray            # (n_groups, group_size) uint8 — 3-bit values in low bits
     scales: np.ndarray              # (n_groups,) float32
     zeros: np.ndarray               # (n_groups,) float32
-    original_shape: Tuple[int, ...]
+    original_shape: tuple[int, ...]
     group_size: int
 
     @property
@@ -124,7 +124,7 @@ class INT3RuntimeLoader:
         q_packed: np.ndarray,
         scales: np.ndarray,
         zeros: np.ndarray,
-        original_shape: Tuple[int, ...],
+        original_shape: tuple[int, ...],
     ) -> INT3LayerWeights:
         """Construct INT3LayerWeights from raw numpy arrays.
 

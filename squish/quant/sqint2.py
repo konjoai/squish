@@ -519,7 +519,7 @@ def _round_up(n: int, multiple: int) -> int:
 
 def _nf2_quantise_groups(
     groups: np.ndarray, refine_iters: int
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Quantise (M, group_size) float32 groups onto NF2.
 
     Step 1 — per-group asymmetric scale + zero-point:
@@ -678,7 +678,7 @@ def _unpack_factor(arr: np.ndarray) -> np.ndarray:
 def _compute_stage3_residual(
     E: np.ndarray,
     cfg: "SQINT2Config",
-) -> "Tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None]":
+) -> "tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None]":
     """Compute the Stage-3 SVD + sparse residual correction from error matrix E.
 
     E is the reconstruction error in the Hadamard-rotated frame:
@@ -934,7 +934,7 @@ def _npy_safe_key(tensor_name: str) -> str:
 
 def _int3_quantize_numpy(
     W: np.ndarray, group_size: int = 32
-) -> "Tuple[np.ndarray, np.ndarray, np.ndarray]":
+) -> "tuple[np.ndarray, np.ndarray, np.ndarray]":
     """Pure-NumPy asymmetric INT3 group quantization (8 levels, codes 0–7).
 
     Convention (matches INT3Linear in squish/quant/int3_linear.py):
@@ -998,7 +998,7 @@ def _int3_dequantize_numpy(
 
 def _int4_quantize_numpy(
     W: np.ndarray, group_size: int = 32
-) -> "Tuple[np.ndarray, np.ndarray, np.ndarray]":
+) -> "tuple[np.ndarray, np.ndarray, np.ndarray]":
     """Pure-NumPy asymmetric INT4 group quantization (16 levels, nibble-packed).
 
     Convention:
@@ -1076,7 +1076,7 @@ def compress_weights_sqint2(
     sqint2_cfg: "SQINT2Config | None" = None,
     int3_group_size: int = 32,
     int4_group_size: int = 32,
-) -> "Tuple[dict[str, np.ndarray], dict[str, str], dict[str, int]]":
+) -> "tuple[dict[str, np.ndarray], dict[str, str], dict[str, int]]":
     """Route and compress all model weights using W103.3 mixed precision.
 
     Pure in-memory: reads from *weights* dict, returns compressed arrays ready
@@ -1233,7 +1233,7 @@ SQINT2_FORMAT_VERSION: float = 1.0
 
 # Tuple of suffixes (without the leading `{sk}`) — useful for tests and
 # discovery code that needs to enumerate or clean up SQINT2 layer files.
-SQINT2_SUFFIXES: Tuple[str, ...] = (
+SQINT2_SUFFIXES: tuple[str, ...] = (
     "__sqint2_idx.npy",
     "__sqint2_scales.npy",
     "__sqint2_zp.npy",

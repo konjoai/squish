@@ -172,7 +172,7 @@ class HQQQuantizer:
         config: :class:`HQQConfig` (optional; defaults to 4-bit, group=128).
     """
 
-    def __init__(self, config: Optional[HQQConfig] = None) -> None:
+    def __init__(self, config: HQQConfig | None = None) -> None:
         self.config: HQQConfig = config or HQQConfig()
 
     # ── Encode ────────────────────────────────────────────────────────────────

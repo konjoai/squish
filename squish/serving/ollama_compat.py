@@ -507,7 +507,7 @@ def mount_ollama(
 
         async def _stream():
             yield _ndjson({"status": "Squish does not support Modelfile-based model creation."})
-            yield _ndjson({"status": f"To create a squished model, run:"})
+            yield _ndjson({"status": "To create a squished model, run:"})
             yield _ndjson({"status": "  squish pull <model>   OR   squish compress <path>"})
             yield _ndjson({"status": "success"})
 
