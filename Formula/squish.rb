@@ -7,7 +7,8 @@ class Squish < Formula
   sha256 "46e838a2777931d1f5373fa13183221be4159825ca65f93f9b841e7d7940b14f"
   bottle do
     root_url "https://github.com/konjoai/squish/releases/download/v9.33.4"
-    sha256 cellar: :any, arm64_tahoe: "487a50356defd3acddb10f940056d4e61bb83c942b50544c20b77579bd9f27e9"
+    rebuild 1
+    sha256 cellar: :any, arm64_tahoe: "7a73c3e85b521477d0fe3e6e15e4367fc58b893fcfd5abf8b70dcca631843450"
   end
   license "BUSL-1.1"
 
