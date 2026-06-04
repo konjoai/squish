@@ -25,6 +25,10 @@ class Squish < Formula
     bin.install_symlink Dir["#{libexec}/bin/squish*"]
   end
 
+  def post_install
+    system libexec/"bin/python3", "-c", "import squish"
+  end
+
   test do
     assert_match version.to_s, shell_output("#{bin}/squish --version")
   end
