@@ -502,6 +502,8 @@ def _print_optimization_status() -> None:
 
 def _print_banner() -> None:
     """Print the full ASCII-art startup banner."""
+    import re as _re
+    import shutil
     R  = _C.R
     V  = _C.V;  L  = _C.L;  MG = _C.MG
     T  = _C.T;  PK = _C.PK
@@ -510,15 +512,28 @@ def _print_banner() -> None:
     print()
 
     if _TTY:
+        _ANSI = _re.compile(r'\x1b\[[0-9;]*m')
+
+        term_cols = shutil.get_terminal_size().columns
+        box_w   = min(88, term_cols - 2)
+        inner_w = box_w - 2
+
+        def _row(raw: str) -> str:
+            vis = len(_ANSI.sub('', raw))
+            pad = max(0, inner_w - vis)
+            return f"{V}║{R}{raw}{' ' * pad}{V}║{R}"
+
+        print(f"{V}╔{'═' * (box_w - 2)}╗{R}")
+
         # ── Squished character (clamp pressing cube flat — 1-row body = max squish) ──
         # Left connector bars = teal (inputs), right = pink (outputs), body = violet
-        print(f"        {SIL}           ╤           {R}")
-        print(f"        {SIL}   ╔═══════╧═══════╗   {R}")
-        print(f"       {T}════{R}{V}╫{R}{W}   ◕  {R}{MG}˶‿˶{R}{W}  ◕   {R}{V}╫{R}{PK}════{R}")
-        print(f"        {V}   ╚═══════════════╝{R}")
-        print(f"            {DIM}═══════════════{R}")
-        print(f"              {L}✦{R}    {PK}✦{R}    {L}✦{R}")
-        print()
+        print(_row(f"        {SIL}           ╤           {R}"))
+        print(_row(f"        {SIL}   ╔═══════╧═══════╗   {R}"))
+        print(_row(f"       {T}════{R}{V}╫{R}{W}   ◕  {R}{MG}˶‿˶{R}{W}  ◕   {R}{V}╫{R}{PK}════{R}"))
+        print(_row(f"        {V}   ╚═══════════════╝{R}"))
+        print(_row(f"            {DIM}═══════════════{R}"))
+        print(_row(f"              {L}✦{R}    {PK}✦{R}    {L}✦{R}"))
+        print(_row(""))
 
         # ── SQUISH logo (box-drawing block font, single colour) ─────────────
         # No per-character gradient here: gradient sequences trip up terminals
@@ -533,15 +548,16 @@ def _print_banner() -> None:
             "╚═════╝    ╚══▀▀═╝   ╚═════╝   ╚═╝  ╚═════╝   ╚═╝  ╚═╝",
         ]
         for line in logo_lines:
-            print(f"  {V}{line}{R}")
-        print()
+            print(_row(f"  {V}{line}{R}"))
+        print(_row(""))
 
-        sub = "✦  Squish it. Run it. Go.  ✦"
-        print(f"            {L}{sub}{R}")
-        print(f"  {DIM}{'─' * 56}{R}")
+        sub = "✦  Squeeze the Most Out of Your Models  ✦"
+        print(_row(f"            {L}{sub}{R}"))
+        print(_row(f"  {DIM}{'─' * 56}{R}"))
+        print(f"{V}╚{'═' * (box_w - 2)}╝{R}")
     else:
         # Plain-text fallback for non-TTY environments
-        print("*** SQUISH — Squish it. Run it. Go.   ***")
+        print("*** SQUISH — Squeeze the Most Out of Your Models ***")
         print("-" * 48)
 
     print()
@@ -5384,9 +5400,8 @@ Examples:
             _cw_cfg = WarmupConfig(top_k=32, min_access_count=2, max_prefix_tokens=256)
             _cache_warmup_predictor = CacheWarmupPredictor(_cw_cfg)
             _info("cache-warmup", "predictive KV prefix pre-warming  (top_k=32  min_count=2)")
-        except Exception as _e:
+        except Exception:
             _cache_warmup_enabled = False
-            _warn(f"[cache-warmup] Skipped: {_e}")
 
     if getattr(args, "lora_adapter", ""):
         try:
