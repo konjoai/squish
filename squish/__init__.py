@@ -13,7 +13,48 @@ Public API:
 """
 from __future__ import annotations
 
-__version__ = "9.33.3"
+__version__ = "9.33.4"
+
+
+def _install_vendored_squish_quant() -> None:
+    """Auto-install the bundled squish_quant wheel on arm64 macOS if missing.
+
+    The Rust extension is shipped inside ``squish/vendor/`` so users don't have
+    to build it themselves. We probe for an existing import first; only on
+    :class:`ImportError` do we shell out to pip with the vendored wheel.
+    """
+    import platform
+    if platform.system() != "Darwin" or platform.machine() != "arm64":
+        return
+    try:
+        import squish_quant  # noqa: F401
+        return
+    except ImportError:
+        pass
+
+    import glob
+    import os
+    import subprocess
+    import sys
+
+    vendor_dir = os.path.join(os.path.dirname(__file__), "vendor")
+    wheels = sorted(glob.glob(os.path.join(vendor_dir, "squish_quant*.whl")))
+    if not wheels:
+        return
+    wheel = wheels[-1]
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "--no-deps", wheel],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+
+
+_install_vendored_squish_quant()
+del _install_vendored_squish_quant
 
 #: PyPI distribution name. The importable module is ``squish`` but the
 #: published distribution is ``squish-ai`` (``pip install squish-ai``).

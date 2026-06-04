@@ -3,13 +3,12 @@ class Squish < Formula
 
   desc "Local LLM server for Apple Silicon — paged KV cache, INT3 support"
   homepage "https://github.com/konjoai/squish"
-  url "https://files.pythonhosted.org/packages/c9/f2/31a4274e633d73f67838a7ee8561857c5bb72e746e4d75b45c3d3fb11dd8/squish_ai-9.33.2.tar.gz"
-  sha256 "e189f9c042455bd35b8b8078ab18e25f1f449578ae9843a159e3fc30af3c5280"
-
+  url "https://files.pythonhosted.org/packages/17/bb/d46eb909b6ff8c0430fe2e7e70f4ffde55df7b60acbfa856da24298a8347/squish_ai-9.33.4.tar.gz"
+  sha256 "46e838a2777931d1f5373fa13183221be4159825ca65f93f9b841e7d7940b14f"
   bottle do
-    root_url "https://github.com/konjoai/squish/releases/download/v9.33.2"
+    root_url "https://github.com/konjoai/squish/releases/download/v9.33.4"
     rebuild 1
-    sha256 cellar: :any, arm64_tahoe: "14b8fdacf1d79448be34bd02ca0d3d05967c43328418e58ade8a61cc911ddb7c"
+    sha256 cellar: :any, arm64_tahoe: "7a73c3e85b521477d0fe3e6e15e4367fc58b893fcfd5abf8b70dcca631843450"
   end
   license "BUSL-1.1"
 
@@ -24,6 +23,10 @@ class Squish < Formula
     system libexec/"bin/pip", "install", "--upgrade", "pip"
     system libexec/"bin/pip", "install", "squish-ai==#{version}"
     bin.install_symlink Dir["#{libexec}/bin/squish*"]
+  end
+
+  def post_install
+    system libexec/"bin/python3", "-c", "import squish"
   end
 
   test do
