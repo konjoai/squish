@@ -438,7 +438,6 @@ def _box(lines: list[str]) -> None:
 def cmd_models(args):
     """List available local models with rich table formatting."""
     from squish.ui import console, make_table, hint, success, warn, _RICH_AVAILABLE
-    import rich.box as _rbox  # noqa: F401 (unused if rich absent)
 
     if not _MODELS_DIR.exists():
         warn(f"Models directory not found: {_MODELS_DIR}")
