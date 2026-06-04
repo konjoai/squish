@@ -111,9 +111,9 @@ class LayerHandle:
 
     def __init__(self, layer_idx: int) -> None:
         self.layer_idx = layer_idx
-        self.weights: Optional[Dict[str, Any]] = None
+        self.weights: dict[str, Any] | None = None
         self.ready = threading.Event()
-        self.error: Optional[Exception] = None
+        self.error: Exception | None = None
 
     def wait(self, timeout: float = 5.0) -> bool:
         """Block until ready or timeout.  Returns True if ready."""
@@ -184,13 +184,13 @@ class LayerOverlapLoader:
         Loader configuration.
     """
 
-    def __init__(self, config: Optional[LayerOverlapConfig] = None) -> None:
+    def __init__(self, config: LayerOverlapConfig | None = None) -> None:
         self._cfg = config or LayerOverlapConfig()
         self._n_layers: int = 0
-        self._load_fn: Optional[Callable[[int], Dict[str, Any]]] = None
-        self._cache: Dict[int, LayerHandle] = {}
+        self._load_fn: Callable[[int], dict[str, Any]] | None = None
+        self._cache: dict[int, LayerHandle] = {}
         self._lock = threading.Lock()
-        self._threads: List[threading.Thread] = []
+        self._threads: list[threading.Thread] = []
         self._stopped = False
         self.stats = LayerOverlapStats()
 
@@ -201,7 +201,7 @@ class LayerOverlapLoader:
     def start(
         self,
         n_layers: int,
-        load_fn: Callable[[int], Dict[str, Any]],
+        load_fn: Callable[[int], dict[str, Any]],
     ) -> None:
         """Initialise and prefetch the first few layers.
 
@@ -282,7 +282,7 @@ class LayerOverlapLoader:
     # Get
     # ------------------------------------------------------------------
 
-    def get_layer(self, layer_idx: int) -> Dict[str, Any]:
+    def get_layer(self, layer_idx: int) -> dict[str, Any]:
         """Return weights for ``layer_idx``, waiting if necessary.
 
         Parameters

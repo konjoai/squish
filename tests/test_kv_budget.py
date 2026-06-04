@@ -81,7 +81,7 @@ def test_estimate_returns_dataclass_with_all_fields():
     e = estimate_kv_memory(28, 8, 128, 1000, "int8")
     assert isinstance(e, KVMemoryEstimate)
     # Frozen dataclass — assignment must fail.
-    with pytest.raises(Exception):
+    with pytest.raises(AttributeError):
         e.mode = "int4"  # type: ignore[misc]
 
 

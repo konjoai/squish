@@ -102,7 +102,7 @@ class RouterRule:
     category:   RouterCategory
     pattern:    re.Pattern  # type: ignore[type-arg]
     priority:   int
-    model_hint: Optional[str] = None
+    model_hint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -124,8 +124,8 @@ class RouterDecision:
     """
 
     category:     RouterCategory
-    matched_rule: Optional[str]
-    model_hint:   Optional[str]
+    matched_rule: str | None
+    model_hint:   str | None
     confidence:   float
     reasoning:    str
 
@@ -189,7 +189,7 @@ class PromptRouter:
         print(decision.confidence)   # 1.0
     """
 
-    def __init__(self, config: Optional[RouterConfig] = None) -> None:
+    def __init__(self, config: RouterConfig | None = None) -> None:
         """Initialise with *config* or the built-in default rule set."""
         self._config = config if config is not None else RouterConfig()
         default_rules = _default_rules()
@@ -266,7 +266,7 @@ class PromptRouter:
     def _heuristic_decision(self, lowered: str) -> RouterDecision:
         """Apply keyword heuristics to *lowered* prompt; return RouterDecision."""
         words = set(re.findall(r"\b\w+\b", lowered))
-        best_cat: Optional[RouterCategory] = None
+        best_cat: RouterCategory | None = None
         best_count = 0
 
         for category, keywords in _HEURISTIC_KEYWORDS:
@@ -395,7 +395,7 @@ def _default_rules() -> list[RouterRule]:
     return sorted(rules, key=lambda r: r.priority, reverse=True)
 
 
-_default_router_singleton: Optional[PromptRouter] = None
+_default_router_singleton: PromptRouter | None = None
 
 
 def get_default_router() -> PromptRouter:

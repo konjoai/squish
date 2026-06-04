@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import argparse
-import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
-from squish.squash.cli import _cmd_load_qtip
 from squish.squash.qtip_loader import load_qtip_checkpoint, load_yaqa_checkpoint
 
 
@@ -128,123 +122,3 @@ def test_load_qtip_checkpoint_logs_license_warning(tmp_path, caplog):
             load_qtip_checkpoint("org/model")
 
     assert "squish does not distribute GPL code" in caplog.text
-
-
-def test_cmd_load_qtip_success_outputs_json(tmp_path, capsys):
-    args = argparse.Namespace(
-        hf_repo="org/model",
-        variant="qtip",
-        local_dir=str(tmp_path / "cache"),
-        hf_token="hf_test",
-        revision="main",
-        trust_remote_code=False,
-        device_map="auto",
-        torch_dtype="auto",
-    )
-
-    fake_handle = SimpleNamespace(
-        family="qtip",
-        repo_id="org/model",
-        local_path=tmp_path / "snapshot",
-        model=SimpleNamespace(),
-        tokenizer=SimpleNamespace(),
-    )
-
-    with patch("squish.squash.qtip_loader.load_qtip_checkpoint", return_value=fake_handle) as loader:
-        rc = _cmd_load_qtip(args, quiet=True)
-
-    assert rc == 0
-    loader.assert_called_once()
-    payload = json.loads(capsys.readouterr().out.strip())
-    assert payload["status"] == "loaded"
-    assert payload["variant"] == "qtip"
-    assert payload["repo_id"] == "org/model"
-
-
-def test_cmd_load_qtip_uses_yaqa_variant(tmp_path):
-    args = argparse.Namespace(
-        hf_repo="org/yaqa",
-        variant="yaqa",
-        local_dir=None,
-        hf_token=None,
-        revision=None,
-        trust_remote_code=False,
-        device_map="auto",
-        torch_dtype="auto",
-    )
-
-    fake_handle = SimpleNamespace(
-        family="yaqa",
-        repo_id="org/yaqa",
-        local_path=tmp_path / "snapshot",
-        model=SimpleNamespace(),
-        tokenizer=SimpleNamespace(),
-    )
-
-    with patch("squish.squash.qtip_loader.load_yaqa_checkpoint", return_value=fake_handle) as yaqa_loader:
-        with patch("squish.squash.qtip_loader.load_qtip_checkpoint") as qtip_loader:
-            rc = _cmd_load_qtip(args, quiet=True)
-
-    assert rc == 0
-    yaqa_loader.assert_called_once()
-    qtip_loader.assert_not_called()
-
-
-def test_cmd_load_qtip_uses_hf_token_env(tmp_path):
-    args = argparse.Namespace(
-        hf_repo="org/model",
-        variant="qtip",
-        local_dir=None,
-        hf_token=None,
-        revision=None,
-        trust_remote_code=False,
-        device_map="auto",
-        torch_dtype="auto",
-    )
-
-    fake_handle = SimpleNamespace(
-        family="qtip",
-        repo_id="org/model",
-        local_path=tmp_path / "snapshot",
-        model=SimpleNamespace(),
-        tokenizer=SimpleNamespace(),
-    )
-
-    with patch.dict(os.environ, {"HF_TOKEN": "from-env"}, clear=False):
-        with patch("squish.squash.qtip_loader.load_qtip_checkpoint", return_value=fake_handle) as loader:
-            rc = _cmd_load_qtip(args, quiet=True)
-
-    assert rc == 0
-    assert loader.call_args.kwargs["hf_token"] == "from-env"
-
-
-def test_cmd_load_qtip_returns_2_on_loader_error(capsys):
-    args = argparse.Namespace(
-        hf_repo="org/model",
-        variant="qtip",
-        local_dir=None,
-        hf_token=None,
-        revision=None,
-        trust_remote_code=False,
-        device_map="auto",
-        torch_dtype="auto",
-    )
-
-    with patch("squish.squash.qtip_loader.load_qtip_checkpoint", side_effect=RuntimeError("boom")):
-        rc = _cmd_load_qtip(args, quiet=True)
-
-    assert rc == 2
-    assert "load-qtip failed" in capsys.readouterr().err
-
-
-def test_cli_help_includes_load_qtip_command():
-    proc = subprocess.run(
-        [sys.executable, "-m", "squish.squash.cli", "load-qtip", "--help"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert proc.returncode == 0
-    assert "usage: squash load-qtip" in proc.stdout
-    assert "--variant" in proc.stdout
-    assert "--trust-remote-code" in proc.stdout

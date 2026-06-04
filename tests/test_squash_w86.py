@@ -8,8 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from squish.cli import _pull_from_hf
-from squish.serving.local_model_scanner import LocalModelScanner
-from squish.squash.scanner import ScanResult
+from squish.serving.local_model_scanner import LocalModelScanner, PreDownloadScanResult
 
 pytest.importorskip("huggingface_hub")
 
@@ -29,7 +28,7 @@ def test_pull_from_hf_runs_preload_scan(tmp_path):
     downloaded = tmp_path / "downloaded"
     downloaded.mkdir()
 
-    clean = ScanResult(scanned_path=str(downloaded), status="clean")
+    clean = PreDownloadScanResult(status="clean")
 
     with patch("squish.cli._CATALOG_AVAILABLE", False):
         with patch("huggingface_hub.snapshot_download", return_value=str(downloaded)):

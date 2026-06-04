@@ -143,7 +143,7 @@ class CoreMLPackage:
             False indicates NumPy simulation fallback.
     """
 
-    chunks: List[CoreMLChunk] = field(default_factory=list)
+    chunks: list[CoreMLChunk] = field(default_factory=list)
     config: CoreMLConversionConfig = field(default_factory=CoreMLConversionConfig)
     total_param_count: int = 0
     header_bit: int = SQUIZD_ANE_COREML_BIT
@@ -154,7 +154,7 @@ class CoreMLPackage:
         """Number of chunks in the package."""
         return len(self.chunks)
 
-    def manifest(self) -> Dict[str, Any]:
+    def manifest(self) -> dict[str, Any]:
         """Return a JSON-serialisable summary for embedding in the appendix."""
         return {
             "header_bit": self.header_bit,
@@ -191,7 +191,7 @@ class CoreMLConverter:
             :class:`CoreMLConversionConfig` with ``quantization="int4"``.
     """
 
-    def __init__(self, config: Optional[CoreMLConversionConfig] = None) -> None:
+    def __init__(self, config: CoreMLConversionConfig | None = None) -> None:
         self.config = config or CoreMLConversionConfig()
 
     # ------------------------------------------------------------------
@@ -200,9 +200,9 @@ class CoreMLConverter:
 
     def convert(
         self,
-        model_weights: Dict[str, np.ndarray],
+        model_weights: dict[str, np.ndarray],
         *,
-        layer_count: Optional[int] = None,
+        layer_count: int | None = None,
     ) -> CoreMLPackage:
         """Convert *model_weights* to a :class:`CoreMLPackage`.
 
@@ -274,7 +274,7 @@ class CoreMLConverter:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _infer_layer_count(weights: Dict[str, np.ndarray]) -> int:
+    def _infer_layer_count(weights: dict[str, np.ndarray]) -> int:
         """Heuristically infer transformer layer count from weight names."""
         layer_indices: set[int] = set()
         for name in weights:
@@ -286,11 +286,11 @@ class CoreMLConverter:
 
     def _plan_chunks(
         self,
-        weights: Dict[str, np.ndarray],
+        weights: dict[str, np.ndarray],
         *,
         n_layers: int,
         total_params: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Partition layers into chunks that fit within the ANE memory budget."""
         bytes_per_param = 2.0  # fp16 (conservative; INT4 halves this)
         if self.config.quantization == "int4":
@@ -303,7 +303,7 @@ class CoreMLConverter:
         bytes_per_layer = params_per_layer * bytes_per_param
         layers_per_chunk = max(1, int(budget_bytes / max(bytes_per_layer, 1)))
 
-        plans: List[Dict[str, Any]] = []
+        plans: list[dict[str, Any]] = []
         layer = 0
         idx = 0
         while layer < n_layers:
@@ -328,11 +328,11 @@ class CoreMLConverter:
 
     def _convert_coremltools(
         self,
-        weights: Dict[str, np.ndarray],
-        plans: List[Dict[str, Any]],
-    ) -> List[CoreMLChunk]:  # pragma: no cover — requires coremltools + macOS
+        weights: dict[str, np.ndarray],
+        plans: list[dict[str, Any]],
+    ) -> list[CoreMLChunk]:  # pragma: no cover — requires coremltools + macOS
         """Run actual CoreML conversion via ``coremltools``."""
-        chunks: List[CoreMLChunk] = []
+        chunks: list[CoreMLChunk] = []
         base_dir = (
             Path(self.config.output_dir)
             if self.config.output_dir
@@ -387,9 +387,9 @@ class CoreMLConverter:
 
     def _convert_numpy_simulation(
         self,
-        weights: Dict[str, np.ndarray],
-        plans: List[Dict[str, Any]],
-    ) -> List[CoreMLChunk]:
+        weights: dict[str, np.ndarray],
+        plans: list[dict[str, Any]],
+    ) -> list[CoreMLChunk]:
         """Simulate CoreML conversion with NumPy (no coremltools required)."""
         base_dir = (
             Path(self.config.output_dir)
@@ -397,7 +397,7 @@ class CoreMLConverter:
             else Path(tempfile.mkdtemp(prefix="squish_coreml_sim_"))
         )
         base_dir.mkdir(parents=True, exist_ok=True)
-        chunks: List[CoreMLChunk] = []
+        chunks: list[CoreMLChunk] = []
 
         for plan in plans:
             out_dir = base_dir / f"chunk_{plan['index']:03d}.mlpackage"

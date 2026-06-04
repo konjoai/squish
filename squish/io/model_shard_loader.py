@@ -98,7 +98,7 @@ class LayerShard:
 
     layer_idx: int
     tier: ShardTier
-    data: Optional[np.ndarray]
+    data: np.ndarray | None
     size_bytes: int
 
     @property
@@ -135,14 +135,14 @@ class ModelShardLoader:
 
     def __init__(self, config: ShardConfig) -> None:
         self.config = config
-        self._shards: Dict[int, LayerShard] = {}
+        self._shards: dict[int, LayerShard] = {}
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------
 
-    def load_model(self, layers: Dict[int, np.ndarray]) -> None:
+    def load_model(self, layers: dict[int, np.ndarray]) -> None:
         """Register all layers.  The first ``hot_layers`` go HOT; the next
         ``warm_layers`` go WARM; the rest start COLD.
         """
@@ -248,7 +248,7 @@ class ModelShardLoader:
             raise KeyError(f"Layer {layer_idx} not found.")
         return shard.tier
 
-    def prefetch(self, layer_indices: List[int]) -> None:
+    def prefetch(self, layer_indices: list[int]) -> None:
         """Prefetch multiple layers into WARM tier."""
         for idx in layer_indices:
             self.promote_to_warm(idx)
@@ -295,11 +295,11 @@ class ModelShardLoader:
     # Reporting
     # ------------------------------------------------------------------
 
-    def memory_report(self) -> Dict:
+    def memory_report(self) -> dict:
         """Return a summary of tier occupancy and byte usage."""
-        hot_layers: List[int] = []
-        warm_layers: List[int] = []
-        cold_layers: List[int] = []
+        hot_layers: list[int] = []
+        warm_layers: list[int] = []
+        cold_layers: list[int] = []
         hot_bytes = 0
         warm_bytes = 0
 
@@ -336,7 +336,7 @@ class ModelShardLoader:
     # Iteration helpers
     # ------------------------------------------------------------------
 
-    def iter_hot(self) -> Iterator[Tuple[int, np.ndarray]]:
+    def iter_hot(self) -> Iterator[tuple[int, np.ndarray]]:
         """Yield (layer_idx, data) for all HOT layers in index order."""
         with self._lock:
             hot = sorted(

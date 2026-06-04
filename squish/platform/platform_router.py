@@ -158,11 +158,11 @@ class PlatformRouter:
         print(backend.name)   # e.g. "cuda", "mlx", "cpu"
     """
 
-    def __init__(self, config: Optional[PlatformRouterConfig] = None) -> None:
+    def __init__(self, config: PlatformRouterConfig | None = None) -> None:
         self._cfg     = config or PlatformRouterConfig()
         self.stats    = PlatformRouterStats()
-        self._result: Optional[RoutedBackend] = None
-        self._chain:  Optional[List[BackendChainEntry]] = None
+        self._result: RoutedBackend | None = None
+        self._chain:  list[BackendChainEntry] | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -188,7 +188,7 @@ class PlatformRouter:
         self.stats.selected_name = self._result.name
         return self._result
 
-    def build_chain(self) -> List[BackendChainEntry]:
+    def build_chain(self) -> list[BackendChainEntry]:
         """Build and return the full priority chain (all backends, not filtered).
 
         This is useful for diagnostics — it shows every candidate even if
@@ -234,9 +234,9 @@ class PlatformRouter:
             latency_ms=0.0,
         )
 
-    def _build_backend_chain(self) -> List[BackendChainEntry]:
+    def _build_backend_chain(self) -> list[BackendChainEntry]:
         cfg   = self._cfg
-        chain: List[BackendChainEntry] = []
+        chain: list[BackendChainEntry] = []
 
         # --- ANE (Apple Neural Engine) ---
         chain.append(BackendChainEntry(

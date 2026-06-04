@@ -151,7 +151,7 @@ class CapabilityProbe:
         self._save_cache(caps)
         return caps
 
-    def load_cache(self) -> Optional[HardwareCapabilities]:
+    def load_cache(self) -> HardwareCapabilities | None:
         """Load cached capabilities from disk.
 
         Returns:
@@ -166,7 +166,7 @@ class CapabilityProbe:
         except (KeyError, ValueError, json.JSONDecodeError):
             return None
 
-    def cache(self, caps: HardwareCapabilities, path: Optional[Path] = None) -> None:
+    def cache(self, caps: HardwareCapabilities, path: Path | None = None) -> None:
         """Write *caps* to the JSON cache at *path* (or the default path).
 
         Args:
@@ -215,7 +215,7 @@ class CapabilityProbe:
             return AppleChipGeneration.UNKNOWN
 
     @staticmethod
-    def _confirm_ane() -> Optional[bool]:
+    def _confirm_ane() -> bool | None:
         """Return whether the Neural Engine is present via system_profiler.
 
         Returns ``None`` if the check cannot be completed (e.g. on non-macOS
@@ -240,7 +240,7 @@ class CapabilityProbe:
     def _save_cache(
         self,
         caps: HardwareCapabilities,
-        path: Optional[Path] = None,
+        path: Path | None = None,
     ) -> None:
         target = path or self._cache_path
         try:
@@ -257,7 +257,7 @@ class CapabilityProbe:
 # Module-level convenience
 # ---------------------------------------------------------------------------
 
-def get_capability_probe(cache_path: Optional[Path] = None) -> CapabilityProbe:
+def get_capability_probe(cache_path: Path | None = None) -> CapabilityProbe:
     """Return a :class:`CapabilityProbe` using the given (or default) cache path.
 
     Args:

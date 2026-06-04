@@ -97,7 +97,7 @@ class ChipProfile:
 # Static profile table
 # ---------------------------------------------------------------------------
 
-CHIP_PROFILES: Dict[AppleChipGeneration, ChipProfile] = {
+CHIP_PROFILES: dict[AppleChipGeneration, ChipProfile] = {
     AppleChipGeneration.M1: ChipProfile(
         generation=AppleChipGeneration.M1,
         memory_bandwidth_gbps=68.25,
@@ -180,14 +180,14 @@ class ChipDetector:
     gracefully to safe defaults.
     """
 
-    def __init__(self, _override: Optional[str] = None) -> None:
+    def __init__(self, _override: str | None = None) -> None:
         """
         Args:
             _override: chip string override for testing (e.g. "Apple M4 Pro").
             Not for production use.
         """
         self._override = _override
-        self._profile: Optional[ChipProfile] = None
+        self._profile: ChipProfile | None = None
 
     # ------------------------------------------------------------------
     # Detection

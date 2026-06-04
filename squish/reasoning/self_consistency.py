@@ -40,7 +40,7 @@ class SelfConsistencyConfig:
 
     k: int = 8
     temperature: float = 0.9
-    answer_pattern: Optional[str] = None
+    answer_pattern: str | None = None
     normalise_answers: bool = True
     seed: int = 0
 
@@ -63,9 +63,9 @@ class SelfConsistencyResult:
     """
 
     winner: str
-    vote_counts: Dict[str, int]
-    chains: List[str]
-    extracted_answers: List[str]
+    vote_counts: dict[str, int]
+    chains: list[str]
+    extracted_answers: list[str]
 
     @property
     def n_chains(self) -> int:
@@ -90,7 +90,7 @@ class SelfConsistencyVoter:
 
     def __init__(self, config: SelfConsistencyConfig) -> None:
         self.config = config
-        self._pattern: Optional[re.Pattern[str]] = (
+        self._pattern: re.Pattern[str] | None = (
             re.compile(config.answer_pattern, re.IGNORECASE)
             if config.answer_pattern
             else None
@@ -100,7 +100,7 @@ class SelfConsistencyVoter:
     # Primary API
     # ------------------------------------------------------------------
 
-    def vote(self, chains: List[str]) -> SelfConsistencyResult:
+    def vote(self, chains: list[str]) -> SelfConsistencyResult:
         """Aggregate *chains* into a majority-vote answer.
 
         Parameters
@@ -139,7 +139,7 @@ class SelfConsistencyVoter:
         raw = lines[-1] if lines else chain.strip()
         return self._normalise(raw)
 
-    def majority_vote(self, vote_counts: Dict[str, int]) -> str:
+    def majority_vote(self, vote_counts: dict[str, int]) -> str:
         """Return the answer with the most votes (ties broken alphabetically)."""
         if not vote_counts:
             raise ValueError("vote_counts must be non-empty")
@@ -149,8 +149,8 @@ class SelfConsistencyVoter:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _count_votes(self, answers: List[str]) -> Dict[str, int]:
-        counts: Dict[str, int] = {}
+    def _count_votes(self, answers: list[str]) -> dict[str, int]:
+        counts: dict[str, int] = {}
         for ans in answers:
             counts[ans] = counts.get(ans, 0) + 1
         return counts

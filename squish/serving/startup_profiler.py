@@ -135,7 +135,7 @@ class StartupTimer:
         self._report = report
         self._phase  = phase.value if isinstance(phase, StartupPhase) else str(phase)
         self._label  = label or self._phase
-        self._entry: Optional[_Entry] = None
+        self._entry: _Entry | None = None
 
     def __enter__(self) -> "StartupTimer":
         if self._report._enabled:

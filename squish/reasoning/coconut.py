@@ -71,7 +71,7 @@ class LatentThoughtState:
     latent: np.ndarray
     score: float = 0.0
     step: int = 0
-    history: List[np.ndarray] = field(default_factory=list)
+    history: list[np.ndarray] = field(default_factory=list)
 
     @property
     def depth(self) -> int:
@@ -93,7 +93,7 @@ class CoconutResult:
     answer: str
     n_latent_steps: int
     used_fallback: bool
-    best_beam: Optional[LatentThoughtState] = None
+    best_beam: LatentThoughtState | None = None
 
     @property
     def token_reduction_ratio(self) -> float:
@@ -131,8 +131,8 @@ class CoconutDecoder:
     def __init__(
         self,
         config: CoconutConfig,
-        projection_head: Optional[ProjectionHead] = None,
-        answer_decoder: Optional[AnswerDecoder] = None,
+        projection_head: ProjectionHead | None = None,
+        answer_decoder: AnswerDecoder | None = None,
     ) -> None:
         self.config = config
         self._projection_head = projection_head
@@ -151,7 +151,7 @@ class CoconutDecoder:
     def decode(
         self,
         prompt: str,
-        hidden_state: Optional[np.ndarray] = None,
+        hidden_state: np.ndarray | None = None,
     ) -> CoconutResult:
         """Run BFS latent search and decode the final answer.
 
@@ -199,7 +199,7 @@ class CoconutDecoder:
     def _initialise_latent(
         self,
         prompt: str,
-        hidden_state: Optional[np.ndarray],
+        hidden_state: np.ndarray | None,
     ) -> np.ndarray:
         """Return an initial latent vector from hidden state or a hash stub."""
         if hidden_state is not None:
@@ -215,11 +215,11 @@ class CoconutDecoder:
 
     def _bfs_search(self, initial: np.ndarray) -> LatentThoughtState:
         """Breadth-first search over latent space."""
-        beams: List[LatentThoughtState] = [
+        beams: list[LatentThoughtState] = [
             LatentThoughtState(latent=initial.copy(), score=0.0, step=0)
         ]
         for _ in range(self.config.max_latent_steps):
-            candidates: List[LatentThoughtState] = []
+            candidates: list[LatentThoughtState] = []
             for beam in beams:
                 assert self._projection_head is not None
                 next_latent = self._projection_head(initial, beam.latent)
