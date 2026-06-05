@@ -3,12 +3,11 @@ class Squish < Formula
 
   desc "Local LLM server for Apple Silicon — paged KV cache, INT3 support"
   homepage "https://github.com/konjoai/squish"
-  url "https://files.pythonhosted.org/packages/17/bb/d46eb909b6ff8c0430fe2e7e70f4ffde55df7b60acbfa856da24298a8347/squish_ai-9.33.4.tar.gz"
-  sha256 "46e838a2777931d1f5373fa13183221be4159825ca65f93f9b841e7d7940b14f"
+  url "https://files.pythonhosted.org/packages/80/82/71a12b87ddc4ca00d5a650427c11a0c2e12beb61518cfb55a3ec79c94843/squish_ai-9.33.5.tar.gz"
+  sha256 "7e399c3155bd16b03cc62d4774b60688ef31d18f473e0cd3338cb9c0a3a5b9ec"
   bottle do
-    root_url "https://github.com/konjoai/squish/releases/download/v9.33.4"
-    rebuild 1
-    sha256 cellar: :any, arm64_tahoe: "7a73c3e85b521477d0fe3e6e15e4367fc58b893fcfd5abf8b70dcca631843450"
+    root_url "https://github.com/konjoai/squish/releases/download/v9.33.5"
+    sha256 cellar: :any_skip_relocation, arm64_tahoe: "7d3b0f5cac08e178f6635a5581e02c7632882331b32d26c23c7ce13bad327937"
   end
   license "BUSL-1.1"
 
@@ -17,11 +16,7 @@ class Squish < Formula
   depends_on :macos
 
   def install
-    # Explicitly use brew Python, never system Python
-    py = Formula["python@3.13"].opt_bin/"python3.13"
-    virtualenv_create(libexec, py)
-    system libexec/"bin/pip", "install", "--upgrade", "pip"
-    system libexec/"bin/pip", "install", "squish-ai==#{version}"
+    virtualenv_install_with_resources
     bin.install_symlink Dir["#{libexec}/bin/squish*"]
   end
 
