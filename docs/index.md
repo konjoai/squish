@@ -14,7 +14,7 @@ Squish compresses model weights into memory-mapped INT8 tensors that load in **m
 
 | | Ollama | LM Studio | **Squish** |
 |---|---|---|---|
-| Cold-start time | ~30 s | ~20 s | **< 2 s** |
+| Cold-start time | ~30 s | ~20 s | **2–3 s** |
 | RAM for 70B | ~40 GB | ~40 GB | **~18 GB** |
 | OpenAI API | ✅ | ✅ | ✅ |
 | Batch requests | ❌ | ❌ | **✅** |
@@ -60,13 +60,12 @@ curl http://localhost:11435/v1/chat/completions \
 
 !!! warning "macOS + Apple Silicon only"
     Squish uses [Apple MLX](https://github.com/ml-explore/mlx) for inference and requires an M1–M5 chip.
-    Linux/CUDA support is on the roadmap — [watch the repo](https://github.com/wesleyscholl/squish) for updates.
+    Linux/CUDA support is on the roadmap — [watch the repo](https://github.com/konjoai/squish) for updates.
 
 ---
 
 ## Community
 
-- [Discord](https://discord.gg/squish) — get help, share benchmarks, discuss models  
-- [GitHub Discussions](https://github.com/squishai/squish/discussions) — Q&A, ideas, show & tell  
-- [HuggingFace](https://huggingface.co/squish-community) — pre-squished model weights  
+- [GitHub Discussions](https://github.com/konjoai/squish/discussions) — get help, share benchmarks, Q&A, ideas, show & tell  
+- [HuggingFace](https://huggingface.co/squishai) — pre-squished model weights  
 - [Contributing](contributing.md) — good first issues, dev setup, PR guidelines  

@@ -3,10 +3,10 @@
 #  Squish — One-Command Installer
 #
 #  Usage (recommended):
-#    curl -fsSL https://raw.githubusercontent.com/wesleyscholl/squish/main/install.sh | bash
+#    curl -fsSL https://raw.githubusercontent.com/konjoai/squish/main/install.sh | bash
 #
 #  Or clone and run locally:
-#    git clone https://github.com/wesleyscholl/squish.git
+#    git clone https://github.com/konjoai/squish
 #    bash squish/install.sh
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -153,6 +153,6 @@ ${BOLD}All models (29 available):${RESET}
 
 ${BOLD}Get help:${RESET}
   ${DIM}squish --help${RESET}
-  ${DIM}https://github.com/wesleyscholl/squish${RESET}
+  ${DIM}https://github.com/konjoai/squish${RESET}
 
 DONE

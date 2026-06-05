@@ -10,7 +10,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/squish-ai.svg)](https://pypi.org/project/squish-ai/)
 [![CI](https://github.com/konjoai/squish/actions/workflows/ci.yml/badge.svg)](https://github.com/konjoai/squish/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/konjoai/squish)
-[![HuggingFace](https://img.shields.io/badge/🤗%20Models-squish--community-yellow)](https://huggingface.co/squish-community)
+[![HuggingFace](https://img.shields.io/badge/🤗%20Models-squishai-yellow)](https://huggingface.co/squishai)
 
 ---
 
@@ -18,7 +18,7 @@
 
 Measured 2026-06-02 on Apple M3 MacBook Pro, 16 GB unified memory.
 Model: Qwen2.5-7B-Instruct. Quant: INT4 (squish) / Q4_K_M (Ollama).
-Five-run medians. Raw artifacts in [`results/benchmarks_v5_1_1/`](results/benchmarks_v5_1_1/).
+Five-run medians.
 
 | Metric | Ollama 0.18.2 | **Squish (recommended)** |
 |---|---:|---:|
@@ -37,8 +37,7 @@ and supports INT3 for compatible model families.
 jitter on long contexts. If first-byte latency matters more than full-response
 latency, Ollama is the right tool.
 
-Full table, methodology, and ablation: [`docs/RESULTS.md`](docs/RESULTS.md)
-(v5.1.1 section).
+Full methodology and ablation: [docs/benchmark_guide.md](docs/benchmark_guide.md)
 
 ---
 
@@ -91,13 +90,12 @@ pip install -e .
 
 ## Optional Performance Enhancements
 
-**4x faster quantization** - install the Rust extension:
+The squish_quant Rust extension is bundled and installs automatically.
+Verify it is active with squish doctor — you should see:
 
-```bash
-cd squish_quant_rs && python3 -m maturin build --release && pip install .
 ```
-
-Requirements: macOS 13+, Apple Silicon (M1–M5), Python 3.10+.
+✓  squish_quant Rust extension (6 GB/s quantizer)
+```
 
 ---
 
@@ -105,22 +103,19 @@ Requirements: macOS 13+, Apple Silicon (M1–M5), Python 3.10+.
 
 ```bash
 # Pull a pre-quantised model from the catalog
-squish pull qwen2.5-7b-int4
+squish pull qwen3:8b
 
-# Start the daemon with both caches enabled (recommended config)
-squish run qwen2.5-7b-int4 \
-  --block-kv-cache ~/.cache/squish/blocks \
-  --prompt-kv-cache ~/.cache/squish/pkv \
-  --port 8080
+# Start the daemon
+squish run qwen3:8b
 ```
 
 Use it as an OpenAI-compatible client:
 
 ```bash
-curl http://localhost:8080/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "qwen2.5-7b-int4",
+    "model": "qwen3:8b",
     "messages": [{"role": "user", "content": "Hello"}]
   }'
 ```
@@ -128,10 +123,10 @@ curl http://localhost:8080/v1/chat/completions \
 Or point any OpenAI / Ollama client at it:
 
 ```bash
-export OPENAI_BASE_URL=http://localhost:8080/v1
+export OPENAI_BASE_URL=http://localhost:11435/v1
 export OPENAI_API_KEY=squish
 # Ollama-compatible /api/* endpoints also work
-export OLLAMA_HOST=http://localhost:8080
+export OLLAMA_HOST=http://localhost:11435
 ```
 
 Install the macOS LaunchAgent so the daemon starts at login:
@@ -160,7 +155,7 @@ open SquishBar.app
 | `--block-kv-cache <DIR>` | Block-paged KV cache for shifting-prefix workloads (agents, multi-turn). Persists across daemon restarts via `.safetensors` blocks. |
 | `--prompt-kv-cache <DIR>` | Exact-prompt KV cache. Single-digit-millisecond TTFT on verbatim repeats. |
 | `--block-kv-size N` | Block size in tokens (default 64). |
-| `--draft-model <MODEL>` | Speculative-decode draft model (opt-in; see [v5.2 diagnosis](results/benchmarks_v5_2/SPEC_DECODE_DIAGNOSIS.md) for current status — net-negative on M3 INT4 with the draft models tested, kept off by default). |
+| `--draft-model <MODEL>` | Speculative-decode draft model (opt-in). |
 | `--draft-depth N` | Speculative decode depth K. |
 | `--no-spec`, `--no-cache` | Disable flags, intended for benchmark controls. |
 | `squish daemon install` / `uninstall` | macOS LaunchAgent integration. |
@@ -183,18 +178,15 @@ reordering is tracked as a v5.2 follow-up.
 
 ## Benchmarks
 
-Full table, methodology, ablation, jitter analysis, and raw per-run JSON:
+Full table, methodology, ablation, and raw per-run JSON:
 
-- [`docs/RESULTS.md`](docs/RESULTS.md) — v5.1.1 section is the source of truth
-- [`benchmarks/ollama_vs_squish/RESULTS.md`](benchmarks/ollama_vs_squish/RESULTS.md) — bench harness output
-- [`results/benchmarks_v5_1_1/DIAGNOSIS.md`](results/benchmarks_v5_1_1/DIAGNOSIS.md) — combined-cache ordering write-up
-- [`results/benchmarks_v5_1_1/JITTER_ANALYSIS.md`](results/benchmarks_v5_1_1/JITTER_ANALYSIS.md) — inter-token p95 explanation
-- [`results/benchmarks_v5_2/SPEC_DECODE_DIAGNOSIS.md`](results/benchmarks_v5_2/SPEC_DECODE_DIAGNOSIS.md) — why speculative decoding is currently opt-in
+- [`docs/benchmark_guide.md`](docs/benchmark_guide.md) — bench methodology and how to reproduce
+- [`benchmarks/ollama_vs_squish/RESULTS.md`](benchmarks/ollama_vs_squish/RESULTS.md) — raw results
 
 Reproduce locally:
 
 ```bash
-python benchmarks/ollama_vs_squish/bench_v5_1.py
+bash scripts/test_cli.sh
 ```
 
 ---
@@ -206,7 +198,7 @@ In the spirit of honesty:
 - **No GPU support outside Apple Silicon.** It's MLX-based. CUDA users should use vLLM or llama.cpp.
 - **No multi-user serving.** Designed for one developer, one machine — not a production API.
 - **No multimodal models.** Text only.
-- **Higher inter-token p95 on long prompts** than Ollama. Conscious tradeoff (deferred KV-cache restore off the TTFT critical path); details in [`JITTER_ANALYSIS.md`](results/benchmarks_v5_1_1/JITTER_ANALYSIS.md).
+- **Higher inter-token p95 on long prompts** than Ollama. Conscious tradeoff (deferred KV-cache restore off the TTFT critical path); details in JITTER_ANALYSIS.md.
 - **Slower first-token on short prompts** than Ollama. Fundamental MLX prefill kernel cost.
 - **Model conversion is slow and not user-friendly.** Squish needs models in its own format. Conversion takes time and isn't fully automated.
 
@@ -235,8 +227,6 @@ gate refuses — you can't accidentally ship a config that quietly degrades.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Issues, benchmarks, and PRs welcome.
-The bench harness lives in `benchmarks/ollama_vs_squish/`; if you re-run on
-different hardware, please share the raw JSON output.
 
 ---
 
@@ -251,5 +241,5 @@ BUSL-1.1 — see [LICENSE](LICENSE).
 - Article: _Local LLM Server That Wins End-to-End on Long Contexts_ — in progress
 - Org: [konjoai](https://github.com/konjoai) · [konjoai.org](https://konjoai.org)
 - Related: [Kohaku](https://github.com/konjoai/kohaku), [Vectro](https://github.com/konjoai/vectro), [Squash](https://github.com/konjoai/squash) (EU AI Act compliance, extracted from squish in v9.15.0)
-- HuggingFace models: [huggingface.co/squish-community](https://huggingface.co/squish-community)
+- HuggingFace models: [huggingface.co/squishai](https://huggingface.co/squishai)
 - Module reference: [MODULES.md](MODULES.md)
