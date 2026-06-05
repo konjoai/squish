@@ -178,12 +178,22 @@ jobs:
           "
           grep "url\|sha256" Formula/squish.rb | head -3
 
+      - name: Stage formula into local tap
+        id: tap
+        run: |
+          # Homebrew now requires formulae to live in a tap — create one locally
+          # on the runner and copy the updated formula in before build.
+          brew tap-new --no-git konjoai/local
+          TAP_DIR=$(brew --repo konjoai/local)
+          cp Formula/squish.rb "$TAP_DIR/Formula/squish.rb"
+          echo "ref=konjoai/local/squish" >> $GITHUB_OUTPUT
+
       - name: Install squish from updated formula
-        run: brew install --build-bottle ./Formula/squish.rb
+        run: brew install --build-bottle ${{ steps.tap.outputs.ref }}
 
       - name: Build bottle
         run: |
-          brew bottle ./Formula/squish.rb 2>&1 | tee /tmp/bottle_out.txt
+          brew bottle ${{ steps.tap.outputs.ref }} 2>&1 | tee /tmp/bottle_out.txt
           ls -la squish--*.tar.gz
 
       - name: Extract bottle metadata
