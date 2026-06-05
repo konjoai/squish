@@ -60,30 +60,52 @@ Designed for one developer on one machine. Not a production multi-tenant API.
 
 ## Install
 
-> Prerequisite (macOS/Homebrew): Xcode Command Line Tools are required.
-> Install them with `xcode-select --install`.
-> If Homebrew reports "Command Line Tools are too outdated", update from
-> System Settings -> General -> Software Update, or reinstall CLT.
+Requires Python 3.11–3.14 and macOS 13 (Ventura) or later on Apple Silicon.
+
+### Homebrew (recommended)
 
 ```bash
-# Homebrew (recommended on macOS)
-brew install konjoai/squish/squish
+brew tap konjoai/squish
+brew install squish
+squish doctor
+```
 
-# PyPI
+The Homebrew formula pins to Python 3.13 and pre-bundles all binary
+dependencies — no compilation, no network access during install.
+
+### pip / pipx
+
+```bash
+# pipx (manages isolation automatically)
+pipx install squish-ai --python python3.13
+squish doctor
+
+# or in a virtual environment
+python3.13 -m venv ~/.squish_env
+source ~/.squish_env/bin/activate
 pip install squish-ai
+squish doctor
+```
 
-# From source
+> **macOS Tahoe (26) users:** macOS 26 ships Python 3.14 as the default
+> `python3`. squish-ai 9.33.6+ supports Python 3.14 natively. For older
+> releases use `--python python3.13` with pipx, or create a venv with
+> `python3.13` explicitly (`brew install python@3.13` if needed).
+
+### From source
+
+```bash
 git clone https://github.com/konjoai/squish
 cd squish
 pip install -e .
 ```
 
-> Note: The PyPI package is `squish-ai`. After installing, the Python module
-> and CLI are both named `squish`:
+> **Package name vs CLI name:** The PyPI package is `squish-ai` but the CLI
+> and Python module are both `squish`:
 >
 > ```bash
 > pip install squish-ai
-> squish run --version
+> squish --version
 > python -c "import squish; print(squish.__version__)"
 > ```
 
