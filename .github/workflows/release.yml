@@ -150,161 +150,61 @@ jobs:
           done
           echo "ERROR: PyPI publish timed out" && exit 1
 
-  # ── Step 5: Build Homebrew bottle ─────────────────────────────────────────
-  homebrew-bottle:
-    name: Build and publish Homebrew bottle
+  # ── Step 5: Update Homebrew formula (source-install, no bottle) ──────────
+  update-formula:
+    name: Update Homebrew formula
     needs: wait-pypi
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     env:
       VERSION:  ${{ needs.wait-pypi.outputs.version }}
       SHA256:   ${{ needs.wait-pypi.outputs.sha256 }}
       TARBALL:  ${{ needs.wait-pypi.outputs.url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
-      - name: Update formula — URL and sha256
+      - name: Update formula URL and sha256
         run: |
-          sed -i '' "s|url \"https://files.pythonhosted.org.*\"|url \"${TARBALL}\"|" \
-            Formula/squish.rb
-          OLD_SHA=$(grep 'sha256 "[a-f0-9]\{64\}"' Formula/squish.rb | \
-                    head -1 | grep -o '"[a-f0-9]*"' | tr -d '"')
-          sed -i '' "s/sha256 \"${OLD_SHA}\"/sha256 \"${SHA256}\"/" \
-            Formula/squish.rb
-          python3 -c "
-          import re
-          path = 'Formula/squish.rb'
-          content = open(path).read()
-          content = re.sub(r'\n\s*bottle do\n.*?end\n', '\n', content, flags=re.DOTALL)
-          open(path, 'w').write(content)
-          "
-          grep "url\|sha256" Formula/squish.rb | head -3
-
-      - name: Pre-download all wheels before Homebrew sandbox
-        run: |
-          /opt/homebrew/opt/python@3.13/bin/python3.13 -m pip \
-            download "squish-ai==${VERSION}" \
-            --dest /tmp/squish_wheels \
-            --quiet
-          echo "Wheels downloaded: $(ls /tmp/squish_wheels | wc -l | tr -d ' ')"
-          ls /tmp/squish_wheels
-
-      - name: Patch formula to install from local wheels
-        run: |
-          sed -i '' \
-            's|"squish-ai==#{version}"|"--no-index", "--find-links=/tmp/squish_wheels", "squish-ai"|' \
-            Formula/squish.rb
-          grep -A8 "def install" Formula/squish.rb
-
-      - name: Stage formula into local tap
-        id: tap
-        run: |
-          brew tap-new --no-git konjoai/local
-          TAP_DIR=$(brew --repo konjoai/local)
-          cp Formula/squish.rb "$TAP_DIR/Formula/squish.rb"
-          echo "ref=konjoai/local/squish" >> $GITHUB_OUTPUT
-
-      - name: Install squish from updated formula
-        run: brew install --build-bottle ${{ steps.tap.outputs.ref }}
-
-      - name: Build bottle
-        run: |
-          brew bottle ${{ steps.tap.outputs.ref }} 2>&1 | tee /tmp/bottle_out.txt
-          ls -la squish--*.tar.gz
-
-      - name: Extract bottle metadata
-        id: bottle
-        run: |
-          BOTTLE_FILE=$(ls squish--${VERSION}.arm64_*.bottle*.tar.gz 2>/dev/null | head -1)
-          echo "Bottle file: $BOTTLE_FILE"
-          OS_TAG=$(ls squish--${VERSION}.arm64_*.bottle*.tar.gz 2>/dev/null | \
-                   head -1 | grep -o 'arm64_[a-z]*')
-          echo "OS tag: $OS_TAG"
-          BOTTLE_SHA=$(grep "$OS_TAG" /tmp/bottle_out.txt | \
-                       grep -o '"[a-f0-9]*"' | tr -d '"')
-          REBUILD=$(grep "rebuild" /tmp/bottle_out.txt | \
-                    awk '{print $2}' || echo "")
-          echo "file=$BOTTLE_FILE"   >> $GITHUB_OUTPUT
-          echo "sha=$BOTTLE_SHA"     >> $GITHUB_OUTPUT
-          echo "rebuild=$REBUILD"    >> $GITHUB_OUTPUT
-          echo "os_tag=$OS_TAG"      >> $GITHUB_OUTPUT
-
-      - name: Rename and upload bottle to GitHub release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OS_TAG: ${{ steps.bottle.outputs.os_tag }}
-        run: |
-          VERSION="${{ env.VERSION }}"
-          REBUILD="${{ steps.bottle.outputs.rebuild }}"
-          if [ -n "$REBUILD" ]; then
-            SINGLE="squish-${VERSION}.${OS_TAG}.bottle.${REBUILD}.tar.gz"
-          else
-            SINGLE="squish-${VERSION}.${OS_TAG}.bottle.tar.gz"
-          fi
-          cp "${{ steps.bottle.outputs.file }}" "$SINGLE"
-          gh release upload "v${VERSION}" "$SINGLE" --repo konjoai/squish
-
-      - name: Add bottle block to Formula/squish.rb
-        env:
-          OS_TAG: ${{ steps.bottle.outputs.os_tag }}
-        run: |
-          VERSION="${{ env.VERSION }}"
-          SHA="${{ steps.bottle.outputs.sha }}"
-          REBUILD="${{ steps.bottle.outputs.rebuild }}"
-          python3 - <<EOF
+          python3 - << 'EOF'
           import re, os
-          path = 'Formula/squish.rb'
-          sha256 = "$SHA"
-          rebuild = "$REBUILD"
-          version = "$VERSION"
-          os_tag = os.environ.get('OS_TAG', 'arm64_tahoe')
-          if rebuild:
-              block = f"""
-            bottle do
-              root_url "https://github.com/konjoai/squish/releases/download/v{version}"
-              rebuild {rebuild}
-              sha256 cellar: :any_skip_relocation, {os_tag}: "{sha256}"
-            end"""
-          else:
-              block = f"""
-            bottle do
-              root_url "https://github.com/konjoai/squish/releases/download/v{version}"
-              sha256 cellar: :any_skip_relocation, {os_tag}: "{sha256}"
-            end"""
-          content = open(path).read()
-          content = re.sub(
-              r'(  sha256 "[a-f0-9]{64}")',
-              r'\1' + block,
-              content, count=1
-          )
-          open(path, 'w').write(content)
+          url  = os.environ["TARBALL"]
+          sha  = os.environ["SHA256"]
+          ver  = os.environ["VERSION"]
+          for path in ["Formula/squish.rb"]:
+              c = open(path).read()
+              c = re.sub(r'url "[^"]*"', f'url "{url}"', c, count=1)
+              c = re.sub(r'(^  sha256 ")[a-f0-9]{64}(")',
+                         f'\\g<1>{sha}\\g<2>', c, flags=re.MULTILINE, count=1)
+              # Remove any stale bottle block
+              c = re.sub(r'\n\s*bottle do\n.*?end\n', '\n',
+                         c, flags=re.DOTALL)
+              open(path, "w").write(c)
+              print(f"Updated {path}")
           EOF
+          grep "url\|sha256" Formula/squish.rb | head -4
 
-      - name: Commit and push formula to konjoai/squish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit formula to konjoai/squish
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/squish.rb
-          git commit -m "release: squish-ai ${{ env.VERSION }} formula + bottle"
+          git commit -m "release: squish-ai ${{ env.VERSION }} formula update" \
+            || echo "No changes to commit"
           git push
 
       - name: Update konjoai/homebrew-squish
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
-          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/konjoai/homebrew-squish.git" /tmp/tap
+          git clone \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/konjoai/homebrew-squish.git" \
+            /tmp/tap
           cp Formula/squish.rb /tmp/tap/Formula/squish.rb
           cd /tmp/tap
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/squish.rb
-          git commit -m "release: squish-ai ${{ env.VERSION }} formula + bottle"
+          git commit -m "release: squish-ai ${{ env.VERSION }} formula update" \
+            || echo "No changes to commit"
           git push
-
-      - name: Final validation
-        run: |
-          brew uninstall squish 2>/dev/null || true
-          brew install squish
-          squish --version
-          squish doctor
