@@ -226,7 +226,7 @@ BUSL-1.1 — see [LICENSE](LICENSE).
 
 ## Links
 
-- Article: _I Tried Every Local LLM Tool. None of Them Were Fast Enough. So I Built My Own._ — coming soon
+- Article: _I Tried Every Local LLM Tool. None of Them Were Fast Enough. So I Built My Own._
 - Org: [konjoai](https://github.com/konjoai)
 - Related: [Kohaku](https://github.com/konjoai/kohaku), [Vectro](https://github.com/konjoai/vectro), [Squash](https://github.com/konjoai/squash) (EU AI Act compliance, extracted from squish in v9.15.0)
 - HuggingFace models: [huggingface.co/squishai](https://huggingface.co/squishai)
