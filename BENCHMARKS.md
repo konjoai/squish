@@ -21,7 +21,10 @@ Source: `README.md` headline numbers; reproduced via
 
 § Cold-start load = wall time for weights to be accessible in Metal
 unified memory (mmap, no dtype conversion). Run 4, 2026-03-21, 20/21
-models, M3 16 GB.
+models, M3 16 GB. The 0.33–0.53 s figure applies to the Qwen2.5-1.5B
+model on hardware with sufficient RAM to build the Tier 1 MLX safetensors
+cache (~34 GB required). On a standard 16 GB M3, Qwen3-8B INT4 loads in
+2.7 s via the lut_int2 path.
 ‡ TTFT = time from first request byte to first streamed token chunk,
 measured with `--all-optimizations` (default).
 † 160 MB = Apple Metal virtual-address delta during load (mmap, no CPU
@@ -33,7 +36,7 @@ heap). Peak RSS ~402 MB.
 
 Source: `README.md` model-size table; the squished column is what
 `squish pull <model>` actually downloads from the
-[squish-community](https://huggingface.co/squish-community) HF org.
+[squishai](https://huggingface.co/squishai) HF org.
 
 | Model          | Raw (bf16) | Squished (INT4) | Saved |
 |----------------|:----------:|:---------------:|:-----:|
@@ -196,6 +199,6 @@ lm_eval --model squish --model_args path=$MODEL_DIR --tasks arc_easy --limit 500
 ## 7. Live in the browser
 
 The KV-cache numbers from §4 are interactive at the
-[**squish-kv-quant** Hugging Face Space](https://huggingface.co/spaces/squish-community/squish-kv-quant).
+[**squish-kv-quant** Hugging Face Space](https://huggingface.co/spaces/squishai/squish-kv-quant).
 Pick a distribution, toggle Hadamard rotation, see SNR shift in real
 time. Source in [`spaces/`](spaces/).

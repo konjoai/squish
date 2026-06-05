@@ -7,8 +7,7 @@ Squish runs on **macOS with Apple Silicon (M1–M5)**. Pick the install method t
 ## Option 1 — Homebrew (recommended)
 
 ```bash
-brew tap wesleyscholl/squish
-brew install squish
+brew install konjoai/squish/squish
 ```
 
 Homebrew manages dependencies, creates the `squish` binary in your `PATH`, and makes upgrades easy:
@@ -41,18 +40,18 @@ pip install squish-ai
 ## Option 3 — curl installer
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/wesleyscholl/squish/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/konjoai/squish/main/install.sh | bash
 ```
 
 !!! warning "Review before running"
-    Piping `curl` to `bash` executes arbitrary code. Review [install.sh](https://github.com/wesleyscholl/squish/blob/main/install.sh) first.
+    Piping `curl` to `bash` executes arbitrary code. Review [install.sh](https://github.com/konjoai/squish/blob/main/install.sh) first.
 
 ---
 
 ## Option 4 — From source
 
 ```bash
-git clone https://github.com/wesleyscholl/squish.git
+git clone https://github.com/konjoai/squish
 cd squish
 pip install -e ".[dev]"
 ```
@@ -90,7 +89,7 @@ You should see version info and the command list.
 === "Homebrew"
     ```bash
     brew uninstall squish
-    brew untap wesleyscholl/squish
+    brew untap konjoai/squish
     ```
 
 === "pip"

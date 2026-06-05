@@ -33,7 +33,7 @@ and compression ratio at every tier. The "outlier-spiked, no rotation"
 example is the dramatic INT2 bin-collapse failure that motivated the W104
 codec design — flip rotation on and watch SNR jump 8-10 dB.
 
-**Memory Budgeter** — pick a real squish-community model preset (Qwen2.5
+**Memory Budgeter** — pick a real squishai model preset (Qwen2.5
 0.5B / 1.5B / 3B / 7B, Llama-3.1-8B), set a context length and a RAM
 budget, and see closed-form KV-cache memory at every tier with a "fits /
 over by N MB" verdict per row. The numbers are bit-identical to what

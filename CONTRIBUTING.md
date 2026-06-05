@@ -17,9 +17,9 @@ Look for issues tagged [`good first issue`](https://github.com/wesleyscholl/squi
 | `good first issue` | Add a new CLI flag, improve an error message, add a test |
 | `docs` | Fix a typo, add an example, improve the quickstart |
 | `bench` | Run a new model through `squish bench` and submit results |
-| `model-card` | Compress a model and upload to `squish-community` on HuggingFace |
+| `model-card` | Compress a model and upload to `squishai` on HuggingFace |
 
-If none of the open issues fit, open a [Discussion](https://github.com/wesleyscholl/squish/discussions/new?category=ideas) proposing your idea before you write code.
+If none of the open issues fit, open a [Discussion](https://github.com/konjoai/squish/discussions/new?category=ideas) proposing your idea before you write code.
 
 ---
 
