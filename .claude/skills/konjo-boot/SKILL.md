@@ -6,13 +6,13 @@ user-invocable: true
 # Konjo Session Boot — squish
 
 ## Step 1 — Read
-Read: CLAUDE.md, README.md, CHANGELOG.md, PLAN.md, MODULES.md, docs/.
+Read: CLAUDE.md, README.md, CHANGELOG.md, MODULES.md, docs/.
 
 ## Step 2 — Session Brief
 ```
 REPO         squish — local LLM inference server (MLX/PyTorch, speculative decoding, quantization, Ollama-compat API)
 LAST SHIPPED [most recent change from CHANGELOG.md]
-OPEN WORK    [current wave state from PLAN.md]
+OPEN WORK    [current sprint from CHANGELOG.md]
 BLOCKERS     [failing tests, broken modules, open issues]
 HEALTH       [Green / Yellow / Red]
 ```
@@ -21,6 +21,6 @@ HEALTH       [Green / Yellow / Red]
 Search: arXiv (quantization, speculative decoding, local inference), GitHub (MLX updates, llama.cpp, ollama), HuggingFace (model releases).
 
 ## Step 4 — Identify Work
-Load PLAN.md (wave state) + MODULES.md. Validate against codebase. Flag drift.
+Load MODULES.md. Check CHANGELOG.md for recent work. Validate against codebase. Flag drift.
 
 ## Invocation Keywords: `konjo` / `konjo squish` / `squish konjo` / `read KONJO_PROMPT.md and begin`

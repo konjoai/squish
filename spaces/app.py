@@ -171,7 +171,7 @@ def build_demo() -> gr.Blocks:
             with gr.Tab("Memory Budgeter"):
                 gr.Markdown(
                     "Closed-form KV-cache memory across context lengths "
-                    "and tiers, for real squish-community model presets. "
+                    "and tiers, for real squishai model presets. "
                     "Same numbers `squish` uses internally to pick a tier "
                     "via `make_kv_cache(..., planned_context=...)`."
                 )

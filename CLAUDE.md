@@ -45,7 +45,6 @@ squish compat                                 # backend compatibility check
 | `apps/macos/SquishBar/` | Swift macOS menu bar app (model picker, progress, hotkey) |
 
 ## Planning Docs
-- `PLAN.md` — current wave state and version history
 - `MODULES.md` — per-wave module reference (Waves 1–99+)
 - `CHANGELOG.md` — all notable changes
 

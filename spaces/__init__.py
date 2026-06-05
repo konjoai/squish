@@ -1,6 +1,6 @@
 """squish HF Space — KV-cache quantization demo.
 
-Source for the public Hugging Face Space `squish-community/squish-kv-quant`.
+Source for the public Hugging Face Space `squishai/squish-kv-quant`.
 Files in this directory are the *uploaded* contents of that Space; nothing
 here is part of the importable `squish` distribution. Gradio + the published
 `squish` wheel are the only runtime dependencies.
