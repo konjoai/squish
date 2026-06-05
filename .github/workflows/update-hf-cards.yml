@@ -1,0 +1,148 @@
+# Required secrets:
+#   HF_TOKEN — Hugging Face token with write access to the konjoai org.
+#   Create at https://huggingface.co/settings/tokens and add to:
+#   https://github.com/konjoai/squish/settings/secrets/actions
+
+name: Update HF Model Cards
+
+on:
+  workflow_dispatch:
+    inputs:
+      card_type:
+        description: "Which card(s) to update"
+        required: true
+        type: choice
+        options:
+          - org
+          - model
+          - all
+      model_id:
+        description: "Model ID to update (e.g. qwen3:8b) — only used when card_type is 'model'"
+        required: false
+        type: string
+      dry_run:
+        description: "Dry run — print what would happen without writing to HF"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  update-cards:
+    name: Update HF cards (${{ inputs.card_type }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install squish-ai "huggingface_hub>=0.23"
+
+      - name: Update org card
+        if: inputs.card_type == 'org' || inputs.card_type == 'all'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, sys
+          dry_run = os.environ["DRY_RUN"] == "true"
+          token = os.environ.get("HF_TOKEN", "")
+          if not dry_run and not token:
+              print("ERROR: HF_TOKEN secret is required for live updates.", file=sys.stderr)
+              sys.exit(1)
+
+          card_path = "docs/hf-org-card.md"
+          try:
+              with open(card_path, encoding="utf-8") as f:
+                  card_content = f.read()
+          except FileNotFoundError:
+              card_content = (
+                  "# konjoai\n\n"
+                  "Local LLM inference for Apple Silicon — [squish](https://github.com/konjoai/squish)\n"
+              )
+
+          print("── Org card preview (first 500 chars) ──────────────")
+          print(card_content[:500])
+          print("────────────────────────────────────────────────────")
+          if dry_run:
+              print("\nDRY RUN — nothing written to Hugging Face.")
+              sys.exit(0)
+
+          from huggingface_hub import HfApi
+          api = HfApi(token=token)
+          api.upload_file(
+              path_or_fileobj=card_content.encode("utf-8"),
+              path_in_repo="README.md",
+              repo_id="konjoai",
+              repo_type="org",
+              commit_message="chore: update org card via GitHub Actions",
+              token=token,
+          )
+          print("✓ Org card updated on Hugging Face.")
+          PYEOF
+
+      - name: Update model card
+        if: inputs.card_type == 'model' || inputs.card_type == 'all'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          MODEL_ID: ${{ inputs.model_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, sys, re
+          dry_run = os.environ["DRY_RUN"] == "true"
+          token = os.environ.get("HF_TOKEN", "")
+          model_id = os.environ.get("MODEL_ID", "").strip()
+          card_type_all = "${{ inputs.card_type }}" == "all"
+
+          if not model_id:
+              if card_type_all:
+                  print("No model_id supplied — skipping individual model card update.")
+                  sys.exit(0)
+              print("ERROR: model_id is required when card_type is 'model'.", file=sys.stderr)
+              sys.exit(1)
+
+          if not dry_run and not token:
+              print("ERROR: HF_TOKEN secret is required for live updates.", file=sys.stderr)
+              sys.exit(1)
+
+          # Convert "qwen3:8b" → "Qwen3-8B-squished" (HF repo naming convention)
+          slug = re.sub(r"[:\s]+", "-", model_id).strip("-")
+          parts = slug.split("-")
+          hf_name = "-".join(p.upper() if re.fullmatch(r"\d+[bBmMkK]", p) else p.capitalize() for p in parts)
+          hf_name = f"{hf_name}-squished"
+          repo_id = f"konjoai/{hf_name}"
+
+          # Build model card via publish_to_hf helper
+          sys.path.insert(0, "scripts")
+          from publish_to_hf import build_model_card
+          card = build_model_card(
+              hf_name=hf_name,
+              source_model_id=model_id,
+              quantization="INT4",
+              context_length=32768,
+              base_license="apache-2.0",
+          )
+
+          print(f"── Model card for {repo_id} ─────────────────────────")
+          print(card[:800])
+          print("────────────────────────────────────────────────────")
+          if dry_run:
+              print("\nDRY RUN — nothing written to Hugging Face.")
+              sys.exit(0)
+
+          from huggingface_hub import HfApi
+          api = HfApi(token=token)
+          api.upload_file(
+              path_or_fileobj=card.encode("utf-8"),
+              path_in_repo="README.md",
+              repo_id=repo_id,
+              repo_type="model",
+              commit_message=f"chore: update model card via GitHub Actions",
+              token=token,
+          )
+          print(f"✓ Model card updated: https://huggingface.co/{repo_id}")
+          PYEOF
