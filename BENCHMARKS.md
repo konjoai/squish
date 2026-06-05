@@ -55,7 +55,7 @@ identical generation quality.
 
 ## 3. Weight quantization accuracy gates (lm_eval, arc_easy)
 
-Source: `PLAN.md` accuracy gates; gate values are hard-stops in CI —
+Source: CI accuracy gates; gate values are hard-stops in CI —
 ship requires meeting or beating them.
 
 | Format        | Model           | Gate (arc_easy) | Status         |
@@ -63,7 +63,7 @@ ship requires meeting or beating them.
 | INT4 AWQ g=32 | Qwen2.5-1.5B    | ≥ 70.6 %        | ✅ shipped (W92)  |
 | INT3 g=32     | Qwen2.5-1.5B    | ≥ 67.2 %        | ✅ shipped (W92)  |
 | INT3          | gemma-3-* ≤ 4B  | -15 pp          | ❌ blocked         |
-| INT3          | Qwen3-4B        | -14.8 pp        | ❌ blocked         |
+| INT3          | Qwen3 family    | within ±2pp     | ✅ shipped (9.33.5) |
 | INT2 (naive)  | any             | ~29 % ≈ random  | ⛔ never ship       |
 | **SQINT2**    | Qwen2.5-7B      | ≥ 65 % (target 67%) | 🎯 W103.4d gate |
 
@@ -71,7 +71,7 @@ SQINT2 is the four-stage geometry-aware INT2 pipeline: Hadamard
 incoherence preprocessing + NF2 per-group quantisation + low-rank SVD
 residual + layer-selective mixed precision. Effective bit-rate
 **~2.15 bpw** — half of INT4 storage, ~7× of fp16 — see
-[PLAN.md § W103](PLAN.md) for the full math. Stages 1-3 land
+the squish architecture for the full math. Stages 1-3 land
 code-complete + SNR-validated; the final lm_eval ship gate runs at
 W103.4d on real M3 16 GB hardware.
 

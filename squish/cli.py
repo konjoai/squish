@@ -6604,7 +6604,7 @@ Ollama drop-in:
         default=False,
         help=(
             "Also download a pre-distilled EAGLE-3 draft head from "
-            "squish-community/eagle-heads on HuggingFace after pulling the "
+            "squishai/eagle-heads on HuggingFace after pulling the "
             "model weights.  Skipped if the head file already exists locally. "
             "Equivalent to running `squish pull-head <model>` separately."
         ),

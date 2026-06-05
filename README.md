@@ -238,8 +238,8 @@ BUSL-1.1 — see [LICENSE](LICENSE).
 
 ## Links
 
-- Article: _Local LLM Server That Wins End-to-End on Long Contexts_ — in progress
-- Org: [konjoai](https://github.com/konjoai) · [konjoai.org](https://konjoai.org)
+- Article: _I Tried Every Local LLM Tool. None of Them Were Fast Enough. So I Built My Own._ — coming soon
+- Org: [konjoai](https://github.com/konjoai)
 - Related: [Kohaku](https://github.com/konjoai/kohaku), [Vectro](https://github.com/konjoai/vectro), [Squash](https://github.com/konjoai/squash) (EU AI Act compliance, extracted from squish in v9.15.0)
 - HuggingFace models: [huggingface.co/squishai](https://huggingface.co/squishai)
 - Module reference: [MODULES.md](MODULES.md)

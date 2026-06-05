@@ -18,10 +18,10 @@ This file defines standing instructions for all AI and human contributors workin
 
 ## 🗂️ Planning First
 
-- **Always read `docs/planning/PLAN.md`, `ROADMAP.md`, or equivalent planning docs before starting any task.**
+- **Always read `README.md`, `CLAUDE.md`, and `CHANGELOG.md` to understand current project state before starting any task.**
 - Identify the relevant phase, step, or milestone before writing or modifying any code.
 - If no plan exists, create one before proceeding and ask for confirmation.
-- After completing work, update `PLAN.md`, `ROADMAP.md`, `README.md`, and any relevant docs to reflect what changed, what's done, and what's next.
+- After completing work, update `CHANGELOG.md`, `README.md`, and any relevant docs to reflect what changed, what's done, and what's next.
 - If a task deviates from the current plan, call it out explicitly before continuing.
 - If any ambiguity exists in requirements, ask clarifying questions before implementation.
 

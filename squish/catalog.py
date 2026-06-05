@@ -6,7 +6,7 @@ popular MLX-compatible models.  A remote catalog hosted at CATALOG_URL can updat
 it by being fetched into ~/.squish/catalog.json.
 
 Squish pre-compressed weights (``squish_weights.npz`` / npy-dir) are hosted under
-the ``squish-community`` HuggingFace organisation.  When available, ``pull`` skips
+the ``squishai`` HuggingFace organisation.  When available, ``pull`` skips
 compression and downloads the already-squished artefacts directly.
 
 Public API
@@ -15,7 +15,7 @@ Public API
 
     entry = resolve("qwen3:8b")
     entry.hf_mlx_repo    # "mlx-community/Qwen3-8B-bf16"
-    entry.squish_repo    # "squish-community/Qwen3-8B-squished", or None
+    entry.squish_repo    # "squishai/Qwen3-8B-squished", or None
     entry.size_gb        # raw model disk footprint (float)
 
     pull("qwen3:8b", models_dir=Path("~/models"))
@@ -36,7 +36,7 @@ from pathlib import Path
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 CATALOG_URL = (
-    "https://huggingface.co/datasets/squish-community/catalog/resolve/main/catalog.json"
+    "https://huggingface.co/datasets/squishai/catalog/resolve/main/catalog.json"
 )
 SQUISH_CACHE_DIR = Path.home() / ".squish"
 LOCAL_CATALOG_PATH = SQUISH_CACHE_DIR / "catalog.json"
@@ -1196,7 +1196,7 @@ def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma:
 
 def _has_squish_weights(repo: str, token: str | None = None) -> bool:
     """
-    Return True when the squish-community repo contains pre-compressed weights.
+    Return True when the squishai repo contains pre-compressed weights.
     Checks for either ``squish_weights.npz`` or a ``squish_npy/`` directory marker.
     """
     files = _hf_list_files(repo, token=token)

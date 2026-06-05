@@ -128,7 +128,7 @@ Results are written to `dev/results/quant_2bit_comparison.json`.
 
 ## See Also
 
-- [`PLAN.md`](../PLAN.md) — Phase 9 implementation roadmap
+- [`CHANGELOG.md`](../CHANGELOG.md) — version history and shipped phases
 - [`squish/vptq.py`](../squish/vptq.py) — VPTQ implementation
 - [`squish/quip_sharp.py`](../squish/quip_sharp.py) — QuIP# implementation
 - [`dev/results/quant_2bit_comparison.json`](../dev/results/quant_2bit_comparison.json) — Raw results

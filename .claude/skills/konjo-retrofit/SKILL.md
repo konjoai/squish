@@ -96,7 +96,7 @@ Coverage gates increment on a fixed schedule. Never move the gate backward.
 | Sprint N | 80% | Hard floor (production gate) |
 | Long-term | 95% | Target |
 
-Add to PLAN.md: the current coverage gate value. Never let anyone lower it.
+Add to CHANGELOG.md: the current coverage gate value. Never let anyone lower it.
 
 ---
 

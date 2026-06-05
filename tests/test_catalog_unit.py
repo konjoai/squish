@@ -46,7 +46,7 @@ class TestCatalogEntry:
         assert e.dir_name == "my-model-bf16"
 
     def test_has_prebuilt_true(self):
-        e = self._make(squish_repo="squish-community/test-squished")
+        e = self._make(squish_repo="squishai/test-squished")
         assert e.has_prebuilt is True
 
     def test_has_prebuilt_false(self):
@@ -66,7 +66,7 @@ class TestCatalogEntry:
         assert "28.2" in str(e) or "28" in str(e)
 
     def test_str_prebuilt_marker(self):
-        e = self._make(squish_repo="squish-community/x")
+        e = self._make(squish_repo="squishai/x")
         assert "prebuilt" in str(e)
 
     def test_repr_is_string(self):
@@ -118,7 +118,7 @@ class TestEntryFromDict:
         assert e.has_prebuilt is False
 
     def test_squish_repo_set(self):
-        e = _entry_from_dict(self._base_dict(squish_repo="squish-community/x"))
+        e = _entry_from_dict(self._base_dict(squish_repo="squishai/x"))
         assert e.has_prebuilt is True
 
     def test_tags_default_empty(self):
