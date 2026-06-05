@@ -53,6 +53,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import sys
 import logging as _logging
 import concurrent.futures
@@ -172,7 +173,7 @@ _require("fastapi")
 
 from fastapi import FastAPI, HTTPException, Request, Security  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
 
 try:
@@ -500,50 +501,202 @@ def _print_optimization_status() -> None:
     print()
 
 
-def _print_banner() -> None:
-    """Print the full ASCII-art startup banner."""
-    R  = _C.R
-    V  = _C.V;  L  = _C.L;  MG = _C.MG
-    T  = _C.T;  PK = _C.PK
-    W  = _C.W;  SIL = _C.SIL; DIM = _C.DIM
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _vlen(s: str) -> int:
+    """Visible character length of *s* with ANSI escapes stripped."""
+    return len(_ANSI_RE.sub("", s))
+
+
+def _print_banner(
+    model: str | None = None,
+    endpoint: str | None = None,
+    web_ui: str | None = None,
+    mode: str | None = None,
+    api_key: str | None = None,
+) -> None:
+    """Print the SQUISH startup box.
+
+    Unified bordered card with the wordmark + mascot on top and the info
+    panel (model / endpoint / API key / env vars) below.  All five parameters
+    fall back to runtime state when omitted, so the function can be called
+    bare from the test harness:
+
+        python3 -c "from squish.server import _print_banner; _print_banner()"
+    """
+    # Pull defaults from runtime state when caller passes None.
+    if model is None:
+        model = _state.model_name or _server_args.get("mlx_model_dir", "") \
+                or _server_args.get("compressed_dir", "") or "(loading)"
+        model = os.path.basename(model.rstrip(os.sep)) or model
+    host = _server_args.get("host", "127.0.0.1")
+    port = _server_args.get("port", "11435")
+    if endpoint is None:
+        endpoint = f"http://{host}:{port}/v1"
+    if web_ui is None:
+        web_ui = f"http://{host}:{port}/chat"
+    if mode is None:
+        if _server_args.get("stock") == "True":
+            mode = "stock (no optimizations)"
+        elif _server_args.get("agent") == "True":
+            mode = "agent + all optimizations"
+        else:
+            mode = "squish (all optimizations)"
+    if api_key is None:
+        api_key = _API_KEY or os.environ.get("SQUISH_API_KEY", "squish")
 
     print()
 
-    if _TTY:
-        # ── Squished character (clamp pressing cube flat — 1-row body = max squish) ──
-        # Left connector bars = teal (inputs), right = pink (outputs), body = violet
-        print(f"        {SIL}           ╤           {R}")
-        print(f"        {SIL}   ╔═══════╧═══════╗   {R}")
-        print(f"       {T}════{R}{V}╫{R}{W}   ◕  {R}{MG}˶‿˶{R}{W}  ◕   {R}{V}╫{R}{PK}════{R}")
-        print(f"        {V}   ╚═══════════════╝{R}")
-        print(f"            {DIM}═══════════════{R}")
-        print(f"              {L}✦{R}    {PK}✦{R}    {L}✦{R}")
+    if not _TTY:
+        # Plain-text fallback for non-TTY environments (CI logs, piped output).
+        print("=" * 70)
+        print("  SQUISH — Local Inference Server")
+        print("-" * 70)
+        print(f"  Model     {model}")
+        print(f"  Mode      {mode}")
+        print(f"  Endpoint  {endpoint}")
+        print(f"  Web UI    {web_ui}")
+        print(f"  API key   {api_key}")
+        print(f"  OpenAI    OPENAI_BASE_URL={endpoint}")
+        print(f"  Ollama    OLLAMA_HOST=http://{host}:{port}")
+        print(f"  Press Ctrl+C to stop")
+        print("=" * 70)
         print()
+        return
 
-        # ── SQUISH logo (box-drawing block font, single colour) ─────────────
-        # No per-character gradient here: gradient sequences trip up terminals
-        # that lie about 24-bit support, tmux without TC passthrough, etc.
-        # A single violet colour is consistent across all terminals.
-        logo_lines = [
-            " ██████╗   ██████╗  ██╗   ██╗  ██╗   ██████╗  ██╗  ██╗",
-            "██╔════╝  ██╔═══██╗ ██║   ██║  ██║  ██╔════╝  ██║  ██║",
-            "╚█████╗   ██║   ██║ ██║   ██║  ██║  ╚█████╗   ███████║",
-            " ╚═══██╗  ██║▄▄ ██║ ██║   ██║  ██║   ╚═══██╗  ██╔══██║",
-            "██████╔╝  ╚██████╔╝ ╚██████╔╝  ██║  ██████╔╝  ██║  ██║",
-            "╚═════╝    ╚══▀▀═╝   ╚═════╝   ╚═╝  ╚═════╝   ╚═╝  ╚═╝",
-        ]
-        for line in logo_lines:
-            print(f"  {V}{line}{R}")
-        print()
+    R = _C.R
+    # Local ANSI palette — the keys here match the names used in the C array.
+    COLORS = {
+        "B":   "38;2;167;139;250",  # violet  — character body (#A78BFA)
+        "BD":  "38;2;124;58;237",   # purple  — box border (#7C3AED)
+        "ct":  "38;2;34;211;238",   # teal    (#22D3EE)
+        "cy":  "38;2;251;191;36",   # amber   (#FBBF24)
+        "co":  "38;2;251;146;60",   # orange  (#FB923C)
+        "cp":  "38;2;236;72;153",   # pink    (#EC4899)
+        "cg":  "38;2;74;222;128",   # green   (#4ADE80)
+        "crd": "38;2;248;113;113",  # red     (#F87171)
+        "cbl": "38;2;96;165;250",   # blue    (#60A5FA)
+        "WT":  "38;2;240;240;255",  # near-white text
+        "DM":  "38;2;100;116;139",  # dim slate
+        "LK":  "38;2;165;243;252",  # light teal — links
+    }
 
-        sub = "✦  Squish it. Run it. Go.  ✦"
-        print(f"            {L}{sub}{R}")
-        print(f"  {DIM}{'─' * 56}{R}")
-    else:
-        # Plain-text fallback for non-TTY environments
-        print("*** SQUISH — Squish it. Run it. Go.   ***")
-        print("-" * 48)
+    def c(name: str, txt: str) -> str:
+        return f"\x1b[{COLORS[name]}m{txt}{R}"
 
+    # ── Left column: SQUISH wordmark + tagline ────────────────────────────
+    wordmark = [
+        "███████╗ ██████╗ ██╗   ██╗██╗███████╗██╗  ██╗",
+        "██╔════╝██╔═══██╗██║   ██║██║██╔════╝██║  ██║",
+        "███████╗██║   ██║██║   ██║██║███████╗███████║",
+        "╚════██║██║▄▄ ██║██║   ██║██║╚════██║██╔══██║",
+        "███████║╚██████╔╝╚██████╔╝██║███████║██║  ██║",
+        "╚══════╝ ╚══▀▀═╝  ╚═════╝ ╚═╝╚══════╝╚═╝  ╚═╝",
+    ]
+    tagline = "Squeeze the Most Out of Your Models"
+
+    W = [""]
+    W.extend(c("B", line) for line in wordmark)
+    W.extend(["", ""])
+    W.append("     " + c("WT", tagline))
+
+    # ── Right column: SQUISH character (user-supplied design) ─────────────
+    C = [
+        # Top sparkles — 7 symbols centred over the body (matches the bottom
+        # row's span so the character has symmetric top/bottom adornment).
+        ("       " + c("ct","✦") + "  " + c("cy","▲") + "   " + c("co","●") + "   " + c("cp","✦") + "  " + c("ct","◆") + "  " + c("cg","★") + "  " + c("co","▲") + "  "),
+        # Top ears — rounded outer corners that mirror the feet row at the
+        # bottom. ▀████▀▀ at the feet has its half-block at the upper half of
+        # the cell (looks like a foot toe); ▄████▄▄ at the head mirrors it
+        # with the half-block at the lower half (looks like a soft ear tip).
+        ("   " + c("B","▄████▄▄") + "                " + c("B","▄▄████▄")),
+        ("   " + c("B","██████████") + "          " + c("B","██████████")),
+        ("   " + c("B","██████████████████████████████")),
+        ("   " + c("B","██████████████████████████████")),
+        # Eyes — 7-block edges with a 12-block bridge keeps them clearly
+        # symmetric around the body's centre.
+        ("   " + c("B","███████") + "  " + c("B","████████████") + "  " + c("B","███████")),
+        ("    " + c("B","████████████████████████████")),
+        ("     " + c("B","██████████████████████████")),
+        ("      " + c("B","███████") + "          " + c("B","███████")),
+        ("      " + c("B","████████████████████████")),
+        ("  " + c("B","▄██████████████████████████████▄")),
+        ("  " + c("B","▀██████████████████████████████▀")),
+        ("      " + c("B","████████████████████████")),
+        ("     " + c("B","██████████████████████████")),
+        ("    " + c("B","████████████████████████████")),
+        ("   " + c("B","██████████████████████████████")),
+        # Feet — unchanged; the top ears now mirror this shape.
+        ("   " + c("B","▀████▀▀") + "                " + c("B","▀▀████▀")),
+        # Bottom sparkles — 7 symbols centred over the body.
+        ("       " + c("crd","●") + "  " + c("ct","◆") + "   " + c("cy","✦") + "   " + c("cp","●") + "  " + c("cbl","◇") + "  " + c("cg","✦") + "  " + c("co","▲") + "  "),
+    ]
+
+    # Equalize row counts so left+right align.
+    row_count = max(len(W), len(C))
+    W += [""] * (row_count - len(W))
+    C += [""] * (row_count - len(C))
+
+    # ── Column widths (visible chars only) ─────────────────────────────────
+    left_w  = max(_vlen(r) for r in W)
+    right_w = max(_vlen(r) for r in C)
+    GAP     = 5
+    LPAD    = 2
+    RPAD    = 2
+    inner_w = LPAD + left_w + GAP + right_w + RPAD
+
+    def border(s: str) -> str:
+        return c("BD", s)
+
+    def pad_visible(s: str, target: int) -> str:
+        return s + " " * max(0, target - _vlen(s))
+
+    # ── Top border + side-by-side rows ─────────────────────────────────────
+    print(border("╔" + "═" * inner_w + "╗"))
+    print(border("║") + " " * inner_w + border("║"))
+    for i in range(row_count):
+        left  = pad_visible(W[i],  left_w)
+        right = pad_visible(C[i],  right_w)
+        body  = (" " * LPAD) + left + (" " * GAP) + right + (" " * RPAD)
+        print(border("║") + body + border("║"))
+    print(border("║") + " " * inner_w + border("║"))
+
+    # ── Divider ────────────────────────────────────────────────────────────
+    print(border("╠" + "═" * inner_w + "╣"))
+
+    # ── Info panel ─────────────────────────────────────────────────────────
+    label_w = 9  # "Endpoint " etc.
+
+    def info_row(label: str, value: str) -> None:
+        lbl = c("DM", label.ljust(label_w))
+        body = (" " * LPAD) + lbl + " " + value
+        body = pad_visible(body, inner_w)
+        print(border("║") + body + border("║"))
+
+    def blank_row() -> None:
+        print(border("║") + " " * inner_w + border("║"))
+
+    blank_row()
+    info_row("Model",    c("cp", model))
+    info_row("Mode",     c("B",  mode))
+    info_row("Endpoint", c("ct", endpoint))
+    info_row("Web UI",   c("ct", web_ui))
+    info_row("API key",  c("DM", api_key))
+    blank_row()
+    info_row("OpenAI",   c("DM", f"OPENAI_BASE_URL={endpoint}"))
+    info_row("Ollama",   c("DM", f"OLLAMA_HOST=http://{host}:{port}"))
+
+    # Right-aligned "Press Ctrl+C to stop"
+    stop_text = c("DM", "Press Ctrl+C to stop")
+    visible_stop = _vlen(stop_text)
+    pad_left = inner_w - visible_stop - RPAD
+    body = (" " * max(0, pad_left)) + stop_text + (" " * RPAD)
+    body = pad_visible(body, inner_w)
+    print(border("║") + body + border("║"))
+
+    # ── Bottom border ──────────────────────────────────────────────────────
+    print(border("╚" + "═" * inner_w + "╝"))
     print()
 
 
@@ -2820,12 +2973,63 @@ if _STATIC_FILES_AVAILABLE:  # pragma: no branch
         app.mount("/static", _StaticFiles(directory=str(_static_dir)), name="static")
 
 @app.get("/chat")
-async def web_chat_ui():
-    """Serve the single-page web chat interface."""
+async def web_chat_ui(request: Request):
+    """Serve the single-page web chat interface.
+
+    Injects the active API key as ``window.SQUISH_DEFAULT_API_KEY`` so the
+    page can auth its /v1 fetches without the user manually pasting the key.
+    Only injected for loopback / private-network requests — never for remote
+    origins, where leaking the key to the browser would be a footgun.
+    """
     html_path = Path(__file__).parent / "static" / "index.html"
-    if html_path.exists():
+    if not html_path.exists():
+        return JSONResponse(
+            {"error": "Web UI not found. Is squish/static/index.html present?"},
+            status_code=404,
+        )  # pragma: no cover
+
+    client_host = request.client.host if request.client else ""
+    is_local = client_host in {"127.0.0.1", "::1", "localhost", ""} \
+        or client_host.startswith("192.168.") \
+        or client_host.startswith("10.") \
+        or client_host.startswith("172.")
+
+    if not is_local or not _API_KEY:
         return FileResponse(str(html_path), media_type="text/html")
-    return JSONResponse({"error": "Web UI not found. Is squish/static/index.html present?"}, status_code=404)  # pragma: no cover
+
+    # Inject the key as a JS global right after <head> so it's defined before
+    # any of the page's own scripts read localStorage. We also self-save it
+    # to localStorage so the page becomes bulletproof even on the next load
+    # if it was previously cached without injection.
+    html = html_path.read_text(encoding="utf-8")
+    safe_key = json.dumps(_API_KEY)  # escapes quotes/backslashes safely
+    inject = (
+        "<script>"
+        f"window.SQUISH_DEFAULT_API_KEY = {safe_key};"
+        "try {"
+        f'  if (!localStorage.getItem("squish_api_key")) {{'
+        f'    localStorage.setItem("squish_api_key", {safe_key});'
+        "  }"
+        "} catch (e) { /* localStorage may be blocked in private mode */ }"
+        "</script>"
+    )
+    if "<head>" in html:
+        html = html.replace("<head>", "<head>\n" + inject, 1)
+    else:
+        html = inject + html
+
+    # No-cache so browsers can't keep serving a stale index.html that pre-dates
+    # the injection. The page is tiny; the bandwidth cost is negligible and
+    # the support cost of "still getting 401, did I install correctly?" is real.
+    return HTMLResponse(
+        content=html,
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma":        "no-cache",
+            "Expires":       "0",
+        },
+    )
 
 
 @app.get("/v1/models")

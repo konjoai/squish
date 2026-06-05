@@ -98,7 +98,7 @@ where = ["."]
 include = ["squish*"]
 
 [tool.setuptools.package-data]
-squish = ["vendor/*.whl"]
+squish = ["vendor/*.whl", "static/*", "static/icon.png"]
 
 [tool.setuptools]
 

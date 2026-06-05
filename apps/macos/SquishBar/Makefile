@@ -12,12 +12,24 @@ VOL_NAME  = SquishBar
 
 all: $(APPNAME)
 
+ASSETS    = Sources/SquishBar/Assets.xcassets
+
 $(APPNAME):
 	swift build -c release 2>&1
 	@mkdir -p "$(APPNAME)/Contents/MacOS"
 	@mkdir -p "$(APPNAME)/Contents/Resources"
 	@cp "$(BUILD_DIR)/release/$(SCHEME)" "$(APPNAME)/Contents/MacOS/$(SCHEME)"
 	@cp "Resources/Info.plist" "$(APPNAME)/Contents/Info.plist"
+	@# Compile asset catalog → Assets.car + AppIcon.icns into the .app's Resources/
+	@xcrun actool "$(ASSETS)" \
+		--compile "$(APPNAME)/Contents/Resources" \
+		--platform macosx \
+		--minimum-deployment-target 13.0 \
+		--app-icon AppIcon \
+		--output-partial-info-plist "$(BUILD_DIR)/assetcatalog_generated_info.plist" \
+		--output-format human-readable-text \
+		> /dev/null
+	@echo "  Compiled Assets.car"
 	@echo "✓ Built $(APPNAME)"
 	@echo "  Open with:  open $(APPNAME)"
 
