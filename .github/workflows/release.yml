@@ -110,11 +110,13 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip_existing: true
 
   # ── Step 4: Wait for PyPI ─────────────────────────────────────────────────
   wait-pypi:
     name: Wait for PyPI squish-ai==${{ needs.tag.outputs.version }}
-    needs: [tag, publish-pypi]
+    needs: [tag]
     runs-on: ubuntu-latest
     outputs:
       version: ${{ needs.tag.outputs.version }}
