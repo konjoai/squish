@@ -667,7 +667,12 @@ let sessions   = JSON.parse(localStorage.getItem("squish_sessions") || "[]");
 let activeIdx  = -1;
 let abortCtrl  = null;
 let isStreaming = false;
-let apiKey     = localStorage.getItem("squish_api_key") ?? "";
+// API key resolution: explicit user setting wins, otherwise fall back to the
+// key the server injected for localhost requests (window.SQUISH_DEFAULT_API_KEY).
+// This makes the web UI work out-of-the-box when opened from the same machine
+// as the squish server — no manual "paste your API key" step required.
+let apiKey     = localStorage.getItem("squish_api_key")
+                 || (window.SQUISH_DEFAULT_API_KEY ?? "");
 
 // ── Agent mode state ─────────────────────────────────────────────────────────
 let agentMode    = false;

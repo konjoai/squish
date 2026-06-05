@@ -6,10 +6,16 @@
     <string>com.konjoai.SquishBar</string>
     <key>CFBundleName</key>
     <string>SquishBar</string>
+    <key>CFBundleDisplayName</key>
+    <string>SquishBar</string>
     <key>CFBundleVersion</key>
     <string>9.33.5</string>
     <key>CFBundleShortVersionString</key>
     <string>9.33.5</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>

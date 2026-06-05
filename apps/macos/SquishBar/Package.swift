@@ -8,9 +8,10 @@ let package = Package(
         .executableTarget(
             name: "SquishBar",
             path: "Sources/SquishBar",
+            resources: [
+                .process("Assets.xcassets")
+            ],
             linkerSettings: [
-                // Embed Info.plist so macOS treats the binary as a UI app
-                // (required for MenuBarExtra / NSStatusItem to work at runtime)
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",
