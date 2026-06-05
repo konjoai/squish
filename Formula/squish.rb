@@ -16,7 +16,12 @@ class Squish < Formula
   depends_on :macos
 
   def install
-    virtualenv_install_with_resources
+    py = Formula["python@3.13"].opt_bin/"python3.13"
+    virtualenv_create(libexec, py)
+    system libexec/"bin/python3", "-m", "ensurepip"
+    system libexec/"bin/pip", "install",
+           "--no-warn-script-location",
+           "squish-ai==#{version}"
     bin.install_symlink Dir["#{libexec}/bin/squish*"]
   end
 

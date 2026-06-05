@@ -178,6 +178,16 @@ jobs:
           "
           grep "url\|sha256" Formula/squish.rb | head -3
 
+      - name: Verify formula install method
+        run: |
+          if grep -q "virtualenv_install_with_resources" Formula/squish.rb; then
+            echo "ERROR: Formula still uses virtualenv_install_with_resources"
+            echo "This will produce an incomplete bottle without dependencies"
+            exit 1
+          fi
+          echo "✓ Formula uses pip install — deps will be bundled correctly"
+          grep -A 8 "def install" Formula/squish.rb
+
       - name: Stage formula into local tap
         id: tap
         run: |
@@ -188,7 +198,20 @@ jobs:
           cp Formula/squish.rb "$TAP_DIR/Formula/squish.rb"
           echo "ref=konjoai/local/squish" >> $GITHUB_OUTPUT
 
+      - name: Verify formula in tap
+        run: |
+          TAP_DIR=$(brew --repo konjoai/local)
+          echo "Formula at: $TAP_DIR/Formula/squish.rb"
+          ls -la "$TAP_DIR/Formula/squish.rb"
+          brew info konjoai/local/squish | head -5
+
       - name: Install squish from updated formula
+        env:
+          # Build-time network access for pip-install-from-PyPI inside the
+          # formula. Default is already "allow" but we set it explicitly in
+          # case Homebrew's defaults tighten. (HOMEBREW_DISABLE_SANDBOX is
+          # not a valid current env var — HOMEBREW_FORMULA_BUILD_NETWORK is.)
+          HOMEBREW_FORMULA_BUILD_NETWORK: "allow"
         run: brew install --build-bottle ${{ steps.tap.outputs.ref }}
 
       - name: Build bottle
@@ -238,13 +261,13 @@ jobs:
             bottle do
               root_url "https://github.com/konjoai/squish/releases/download/v{version}"
               rebuild {rebuild}
-              sha256 cellar: :any, arm64_tahoe: "{sha256}"
+              sha256 cellar: :any_skip_relocation, arm64_tahoe: "{sha256}"
             end"""
           else:
               block = f"""
             bottle do
               root_url "https://github.com/konjoai/squish/releases/download/v{version}"
-              sha256 cellar: :any, arm64_tahoe: "{sha256}"
+              sha256 cellar: :any_skip_relocation, arm64_tahoe: "{sha256}"
             end"""
           content = open(path).read()
           content = re.sub(
