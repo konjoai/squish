@@ -186,24 +186,11 @@ jobs:
 
       - name: Patch formula to install from local file
         run: |
-          python3 -c "
-          import re
-          path = 'Formula/squish.rb'
-          c = open(path).read()
-          old = 'system libexec/\"bin/pip\", \"install\",\n           \"--no-warn-script-location\",\n           \"squish-ai==\#{version}\"'
-          new = 'system libexec/\"bin/pip\", \"install\",\n           \"--no-warn-script-location\",\n           \"/tmp/squish_ai.tar.gz\"'
-          if old in c:
-              c = c.replace(old, new)
-              print(\"Patched: pip now installs from local file\")
-          else:
-              c = re.sub(
-                  r'system libexec/\"bin/pip\", \"install\",(.*?)\"squish-ai==\#\{version\}\"',
-                  'system libexec/\"bin/pip\", \"install\",\\1\"/tmp/squish_ai.tar.gz\"',
-                  c, flags=re.DOTALL
-              )
-              print(\"Patched via regex\")
-          open(path, 'w').write(c)
-          "
+          sed -i '' 's|"squish-ai==#{version}"|"/tmp/squish_ai.tar.gz"|' Formula/squish.rb
+          if ! grep -q '"/tmp/squish_ai.tar.gz"' Formula/squish.rb; then
+            echo "ERROR: pip install line was not patched to local file"
+            exit 1
+          fi
           grep -A6 "def install" Formula/squish.rb
 
       - name: Stage formula into local tap
