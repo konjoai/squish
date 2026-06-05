@@ -1132,12 +1132,12 @@ squish catalog. To use it as a custom model:</p>
 <ol>
 <li><strong>Start squish with agent mode:</strong></li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>squish<span class="w"> </span>serve<span class="w"> </span>~/models/deepseek-coder-v2-lite<span class="w"> </span>--agent<span class="w"> </span>--moe-lookahead<span class="w"> </span>--port<span class="w"> </span><span class="m">11434</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>squish<span class="w"> </span>serve<span class="w"> </span>~/models/deepseek-coder-v2-lite<span class="w"> </span>--agent<span class="w"> </span>--moe-lookahead<span class="w"> </span>--port<span class="w"> </span><span class="m">11435</span>
 </code></pre></div>
 <ol>
 <li><strong>Verify with a code generation request:</strong></li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>curl<span class="w"> </span>http://localhost:11434/v1/chat/completions<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>curl<span class="w"> </span>http://localhost:11435/v1/chat/completions<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model&quot;:&quot;squish&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;Write a Python quicksort.&quot;}],&quot;max_tokens&quot;:256}&#39;</span>
 </code></pre></div>

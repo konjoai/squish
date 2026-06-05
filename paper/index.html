@@ -1148,7 +1148,7 @@ Independent Research
 </tbody>
 </table>
 <p>The conversion from source <code>.safetensors</code> to Tier 0 is a one-time operation (≈5–19 min depending on model size) performed by <code>squish compress</code>. All subsequent loads read from the highest available tier.</p>
-<p>Tier 2 is the primary deployment artifact and the file published to the Hugging Face Hub under <code>squish-community/</code>. Users who pull pre-squished weights skip Tier 0 and 1 entirely and get sub-second load on first run.</p>
+<p>Tier 2 is the primary deployment artifact and the file published to the Hugging Face Hub under <code>squishai/</code>. Users who pull pre-squished weights skip Tier 0 and 1 entirely and get sub-second load on first run.</p>
 <h3 id="32-server-architecture">3.2 Server Architecture<a class="headerlink" href="#32-server-architecture" title="Permanent link">&para;</a></h3>
 <p>The Squish server is a single-process FastAPI application (<code>squish/server.py</code>) that:</p>
 <ul>

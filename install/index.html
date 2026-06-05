@@ -1066,8 +1066,7 @@
 <p>Squish runs on <strong>macOS with Apple Silicon (M1–M5)</strong>. Pick the install method that suits you.</p>
 <hr />
 <h2 id="option-1-homebrew-recommended">Option 1 — Homebrew (recommended)<a class="headerlink" href="#option-1-homebrew-recommended" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>brew<span class="w"> </span>tap<span class="w"> </span>wesleyscholl/squish
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>brew<span class="w"> </span>install<span class="w"> </span>squish
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>brew<span class="w"> </span>install<span class="w"> </span>konjoai/squish/squish
 </code></pre></div>
 <p>Homebrew manages dependencies, creates the <code>squish</code> binary in your <code>PATH</code>, and makes upgrades easy:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>brew<span class="w"> </span>upgrade<span class="w"> </span>squish
@@ -1085,15 +1084,15 @@ both <code>squish</code>.</p>
 </code></pre></div>
 <hr />
 <h2 id="option-3-curl-installer">Option 3 — curl installer<a class="headerlink" href="#option-3-curl-installer" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-sSL<span class="w"> </span>https://raw.githubusercontent.com/wesleyscholl/squish/main/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-sSL<span class="w"> </span>https://raw.githubusercontent.com/konjoai/squish/main/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
 </code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">Review before running</p>
-<p>Piping <code>curl</code> to <code>bash</code> executes arbitrary code. Review <a href="https://github.com/wesleyscholl/squish/blob/main/install.sh">install.sh</a> first.</p>
+<p>Piping <code>curl</code> to <code>bash</code> executes arbitrary code. Review <a href="https://github.com/konjoai/squish/blob/main/install.sh">install.sh</a> first.</p>
 </div>
 <hr />
 <h2 id="option-4-from-source">Option 4 — From source<a class="headerlink" href="#option-4-from-source" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/wesleyscholl/squish.git
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/konjoai/squish
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">cd</span><span class="w"> </span>squish
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
 </code></pre></div>
@@ -1146,7 +1145,7 @@ both <code>squish</code>.</p>
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>brew<span class="w"> </span>uninstall<span class="w"> </span>squish
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>brew<span class="w"> </span>untap<span class="w"> </span>wesleyscholl/squish
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>brew<span class="w"> </span>untap<span class="w"> </span>konjoai/squish
 </code></pre></div>
 </div>
 <div class="tabbed-block">
