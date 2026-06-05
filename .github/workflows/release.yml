@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    name: Check if version bumped
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      bumped:  ${{ steps.ver.outputs.bumped }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect version change
+        id: ver
+        run: |
+          NEW=$(grep '^version' pyproject.toml | head -1 | \
+                sed 's/version = "//;s/"//')
+          OLD=$(git show HEAD~1:pyproject.toml 2>/dev/null | \
+                grep '^version' | head -1 | \
+                sed 's/version = "//;s/"//' || echo "")
+          echo "version=$NEW" >> $GITHUB_OUTPUT
+          if [ "$NEW" != "$OLD" ] && [ -n "$OLD" ]; then
+            echo "bumped=true"  >> $GITHUB_OUTPUT
+          else
+            echo "bumped=false" >> $GITHUB_OUTPUT
+          fi
+
+  tag:
+    name: Create tag v${{ needs.check-version.outputs.version }}
+    needs: check-version
+    if: needs.check-version.outputs.bumped == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag and push
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+          echo "✓ Tagged v${VERSION} — PyPI publish and SquishBar DMG build now firing"

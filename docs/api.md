@@ -202,3 +202,29 @@ Each SSE event is a JSON delta. The stream ends with `data: [DONE]`.
 | `squish list` | List downloaded models |
 | `squish rm <model>` | Delete a model |
 | `squish search [query]` | Search the community hub |
+
+---
+
+## Server Flags
+
+| Flag | Purpose |
+|---|---|
+| `--block-kv-cache <DIR>` | Block-paged KV cache for shifting-prefix workloads (agents, multi-turn). Persists across daemon restarts via `.safetensors` blocks. |
+| `--prompt-kv-cache <DIR>` | Exact-prompt KV cache. Single-digit-millisecond TTFT on verbatim repeats. |
+| `--block-kv-size N` | Block size in tokens (default 64). |
+| `--draft-model <MODEL>` | Speculative-decode draft model (opt-in). |
+| `--draft-depth N` | Speculative decode depth K. |
+| `--no-spec`, `--no-cache` | Disable flags, intended for benchmark controls. |
+| `squish daemon install` / `uninstall` | macOS LaunchAgent integration. |
+
+Picking the right cache for your workload:
+
+- **Exact-prompt repeats** (cached scripts, fixed templates, automated jobs):
+  `--prompt-kv-cache` alone. ~9 ms TTFT on a cache hit.
+- **Shifting-prefix workloads** (agents, multi-turn conversations):
+  `--block-kv-cache` alone, or combined config.
+- **General use without knowing the workload**: combined config (both caches
+  enabled). Best end-to-end completion time across prompt sizes.
+
+The combined config currently doesn't inherit PKV's fast-hit TTFT due to a
+lookup ordering issue; reordering is tracked as a v5.2 follow-up.
