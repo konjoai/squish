@@ -170,9 +170,8 @@ jobs:
                     head -1 | grep -o '"[a-f0-9]*"' | tr -d '"')
           sed -i '' "s/sha256 \"${OLD_SHA}\"/sha256 \"${SHA256}\"/" \
             Formula/squish.rb
-          # Remove old bottle block
           python3 -c "
-          import re, sys
+          import re
           path = 'Formula/squish.rb'
           content = open(path).read()
           content = re.sub(r'\n\s*bottle do\n.*?end\n', '\n', content, flags=re.DOTALL)
@@ -180,40 +179,42 @@ jobs:
           "
           grep "url\|sha256" Formula/squish.rb | head -3
 
-      - name: Verify formula install method
+      - name: Download squish-ai tarball before sandbox
         run: |
-          if grep -q "virtualenv_install_with_resources" Formula/squish.rb; then
-            echo "ERROR: Formula still uses virtualenv_install_with_resources"
-            echo "This will produce an incomplete bottle without dependencies"
-            exit 1
-          fi
-          echo "✓ Formula uses pip install — deps will be bundled correctly"
-          grep -A 8 "def install" Formula/squish.rb
+          curl -fsSL "${TARBALL}" -o /tmp/squish_ai.tar.gz
+          echo "Downloaded: $(du -sh /tmp/squish_ai.tar.gz | cut -f1)"
+
+      - name: Patch formula to install from local file
+        run: |
+          python3 -c "
+          import re
+          path = 'Formula/squish.rb'
+          c = open(path).read()
+          old = 'system libexec/\"bin/pip\", \"install\",\n           \"--no-warn-script-location\",\n           \"squish-ai==\#{version}\"'
+          new = 'system libexec/\"bin/pip\", \"install\",\n           \"--no-warn-script-location\",\n           \"/tmp/squish_ai.tar.gz\"'
+          if old in c:
+              c = c.replace(old, new)
+              print(\"Patched: pip now installs from local file\")
+          else:
+              c = re.sub(
+                  r'system libexec/\"bin/pip\", \"install\",(.*?)\"squish-ai==\#\{version\}\"',
+                  'system libexec/\"bin/pip\", \"install\",\\1\"/tmp/squish_ai.tar.gz\"',
+                  c, flags=re.DOTALL
+              )
+              print(\"Patched via regex\")
+          open(path, 'w').write(c)
+          "
+          grep -A6 "def install" Formula/squish.rb
 
       - name: Stage formula into local tap
         id: tap
         run: |
-          # Homebrew now requires formulae to live in a tap — create one locally
-          # on the runner and copy the updated formula in before build.
           brew tap-new --no-git konjoai/local
           TAP_DIR=$(brew --repo konjoai/local)
           cp Formula/squish.rb "$TAP_DIR/Formula/squish.rb"
           echo "ref=konjoai/local/squish" >> $GITHUB_OUTPUT
 
-      - name: Verify formula in tap
-        run: |
-          TAP_DIR=$(brew --repo konjoai/local)
-          echo "Formula at: $TAP_DIR/Formula/squish.rb"
-          ls -la "$TAP_DIR/Formula/squish.rb"
-          brew info konjoai/local/squish | head -5
-
       - name: Install squish from updated formula
-        env:
-          # Build-time network access for pip-install-from-PyPI inside the
-          # formula. Default is already "allow" but we set it explicitly in
-          # case Homebrew's defaults tighten. (HOMEBREW_DISABLE_SANDBOX is
-          # not a valid current env var — HOMEBREW_FORMULA_BUILD_NETWORK is.)
-          HOMEBREW_FORMULA_BUILD_NETWORK: "allow"
         run: brew install --build-bottle ${{ steps.tap.outputs.ref }}
 
       - name: Build bottle
