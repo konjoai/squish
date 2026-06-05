@@ -4,7 +4,7 @@
 SCHEME    = SquishBar
 APPNAME   = SquishBar.app
 DMG_NAME  = SquishBar.dmg
-BUNDLE_ID = com.wesleyscholl.SquishBar
+BUNDLE_ID = com.konjoai.SquishBar
 BUILD_DIR = .build
 VOL_NAME  = SquishBar
 

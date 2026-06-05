@@ -141,8 +141,15 @@ squish daemon install
 ```
 
 The **SquishBar** menu-bar app (`apps/macos/SquishBar/`) ships alongside the
-daemon — model picker, load progress, and a global hotkey for the chat panel.
-Build it from Xcode or grab the signed `.app` from the GitHub release page.
+CLI and gives you a native menu bar icon with server status, tok/s display,
+and one-click model switching. Build locally with make (requires Xcode 15+
+and macOS 13+):
+
+```bash
+cd apps/macos/SquishBar
+make
+open SquishBar.app
+```
 
 ---
 
