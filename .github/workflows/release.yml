@@ -68,20 +68,53 @@ jobs:
       version: ${{ needs.detect-version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
       - name: Tag and push
         run: |
           VERSION="${{ needs.detect-version.outputs.version }}"
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # Skip if tag already exists (idempotent)
-          git tag "v${VERSION}" 2>/dev/null && \
-            git push origin "v${VERSION}" || \
+          if git ls-remote --tags origin | grep -q "refs/tags/v${VERSION}$"; then
             echo "Tag v${VERSION} already exists — skipping"
+          else
+            git tag "v${VERSION}"
+            git push origin "v${VERSION}"
+            echo "✓ Tagged v${VERSION} — publish.yml and build-squishbar.yml now firing"
+          fi
 
-  # ── Step 3: Wait for PyPI ─────────────────────────────────────────────────
+  # ── Step 3: Publish to PyPI ───────────────────────────────────────────────
+  publish-pypi:
+    name: Publish squish-ai to PyPI
+    needs: [detect-version, tag]
+    if: needs.detect-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.detect-version.outputs.version }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build distribution
+        run: |
+          pip install build --quiet
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # ── Step 4: Wait for PyPI ─────────────────────────────────────────────────
   wait-pypi:
     name: Wait for PyPI squish-ai==${{ needs.tag.outputs.version }}
-    needs: tag
+    needs: [tag, publish-pypi]
     runs-on: ubuntu-latest
     outputs:
       version: ${{ needs.tag.outputs.version }}
@@ -115,7 +148,7 @@ jobs:
           done
           echo "ERROR: PyPI publish timed out" && exit 1
 
-  # ── Step 4: Build Homebrew bottle ─────────────────────────────────────────
+  # ── Step 5: Build Homebrew bottle ─────────────────────────────────────────
   homebrew-bottle:
     name: Build and publish Homebrew bottle
     needs: wait-pypi
