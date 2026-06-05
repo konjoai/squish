@@ -65,7 +65,7 @@ ship requires meeting or beating them.
 | INT3          | gemma-3-* ≤ 4B  | -15 pp          | ❌ blocked         |
 | INT3          | Qwen3 family    | within ±2pp     | ✅ shipped (9.33.5) |
 | INT2 (naive)  | any             | ~29 % ≈ random  | ⛔ never ship       |
-| **SQINT2**    | Qwen2.5-7B      | ≥ 65 % (target 67%) | 🎯 W103.4d gate |
+| **SQINT2**    | Qwen2.5-7B      | ≥ 65 % (target 67%) | 🎯 in progress |
 
 SQINT2 is the four-stage geometry-aware INT2 pipeline: Hadamard
 incoherence preprocessing + NF2 per-group quantisation + low-rank SVD

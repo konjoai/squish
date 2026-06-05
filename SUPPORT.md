@@ -2,12 +2,12 @@
 
 ## Documentation
 
-The fastest way to find answers is the [official documentation](https://wesleyscholl.github.io/squish):
+The fastest way to find answers is the [official documentation](https://konjoai.github.io/squish):
 
-- [Installation guide](https://wesleyscholl.github.io/squish/install/)
-- [Quickstart](https://wesleyscholl.github.io/squish/quickstart/)
-- [API reference](https://wesleyscholl.github.io/squish/api/)
-- [Architecture overview](https://wesleyscholl.github.io/squish/ARCHITECTURE/)
+- [Installation guide](https://konjoai.github.io/squish/install/)
+- [Quickstart](https://konjoai.github.io/squish/quickstart/)
+- [API reference](https://konjoai.github.io/squish/api/)
+- [Architecture overview](https://konjoai.github.io/squish/ARCHITECTURE/)
 
 ---
 
@@ -15,9 +15,8 @@ The fastest way to find answers is the [official documentation](https://wesleysc
 
 | Channel | Use for |
 |---|---|
-| [GitHub Discussions](https://github.com/wesleyscholl/squish/discussions) | Questions, ideas, show-and-tell |
-| [GitHub Issues](https://github.com/wesleyscholl/squish/issues) | Bug reports and feature requests |
-| Discord (link in README) | Real-time chat with maintainers and the community |
+| [GitHub Discussions](https://github.com/konjoai/squish/discussions) | Questions, ideas, show-and-tell |
+| [GitHub Issues](https://github.com/konjoai/squish/issues) | Bug reports and feature requests |
 
 ---
 
@@ -43,10 +42,10 @@ Try a smaller model (e.g. `llama3.1:3b` instead of `llama3.1:8b`) or close other
 ## Security Vulnerabilities
 
 Please **do not** open a public GitHub issue for security vulnerabilities.  
-Report them privately via [GitHub Security Advisories](https://github.com/wesleyscholl/squish/security/advisories/new).
+Report them privately via [GitHub Security Advisories](https://github.com/konjoai/squish/security/advisories/new).
 
 ---
 
 ## Contacting the Maintainer
 
-For anything not covered above, open a [GitHub Discussion](https://github.com/wesleyscholl/squish/discussions) or a [GitHub Issue](https://github.com/wesleyscholl/squish/issues).
+For anything not covered above, open a [GitHub Discussion](https://github.com/konjoai/squish/discussions) or a [GitHub Issue](https://github.com/konjoai/squish/issues).

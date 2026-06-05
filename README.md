@@ -14,17 +14,16 @@
 
 ---
 
-## The Numbers (v9.33.5 / bench v5.1.1)
+## The Numbers
 
-Measured 2026-06-02 on Apple M3 MacBook Pro, 16 GB unified memory.
-Model: Qwen2.5-7B-Instruct. Quant: INT4 (squish) / Q4_K_M (Ollama).
-Five-run medians.
+Measured 2026-06-04 on Apple M3 MacBook Pro, 16 GB unified memory.
+Model: Qwen3-8B. Quant: INT4.
 
 | Metric | Ollama 0.18.2 | **Squish (recommended)** |
 |---|---:|---:|
-| **E2E response @ 4000-token prompt** | 69.63 s | **12.78 s** &nbsp;_(5.4× faster)_ |
+| **E2E response @ 4000-token prompt** | 51.7 s | **10.1 s** &nbsp;_(5.1× faster)_ |
 | **E2E response @ 75-token prompt** | 8.09 s | **5.50 s** &nbsp;_(1.5× faster)_ |
-| **Peak RAM during inference** | ~5 GB | **3.36 GB** |
+| **Peak RAM during inference** | 5.32 GB | **2.75 GB** |
 | **Disk size — INT4** | 4.36 GB | **4.00 GB** |
 | **Disk size — INT3 (Qwen3)** | not supported | **3.56 GB** |
 | **TTFT @ 75-token prompt** | **131 ms** | 279 ms &nbsp;_(honest loss)_ |
@@ -99,6 +98,17 @@ Verify it is active with squish doctor — you should see:
 
 ---
 
+## Models
+
+```bash
+squish catalog                 # browse all 40+ available models
+squish search qwen3            # filter by name or tag
+squish pull qwen3:8b           # download pre-squished from huggingface.co/squishai
+squish pull qwen3:0.6b --int3  # INT3 variant (Qwen3, Qwen2.5, Llama families)
+```
+
+---
+
 ## Quick Start
 
 ```bash
@@ -150,29 +160,7 @@ open SquishBar.app
 
 ## Configuration
 
-| Flag | Purpose |
-|---|---|
-| `--block-kv-cache <DIR>` | Block-paged KV cache for shifting-prefix workloads (agents, multi-turn). Persists across daemon restarts via `.safetensors` blocks. |
-| `--prompt-kv-cache <DIR>` | Exact-prompt KV cache. Single-digit-millisecond TTFT on verbatim repeats. |
-| `--block-kv-size N` | Block size in tokens (default 64). |
-| `--draft-model <MODEL>` | Speculative-decode draft model (opt-in). |
-| `--draft-depth N` | Speculative decode depth K. |
-| `--no-spec`, `--no-cache` | Disable flags, intended for benchmark controls. |
-| `squish daemon install` / `uninstall` | macOS LaunchAgent integration. |
-
-Picking the right cache for your workload:
-
-- **Exact-prompt repeats** (cached scripts, fixed templates, automated jobs):
-  `--prompt-kv-cache` alone. ~9 ms TTFT on a cache hit.
-- **Shifting-prefix workloads** (agents, multi-turn conversations):
-  `--block-kv-cache` alone, or combined config.
-- **General use without knowing the workload**: combined config (both caches
-  enabled). Best end-to-end completion time across prompt sizes.
-
-The combined config currently doesn't inherit PKV's fast-hit TTFT due to a
-lookup ordering issue documented in
-[`results/benchmarks_v5_1_1/DIAGNOSIS.md`](results/benchmarks_v5_1_1/DIAGNOSIS.md);
-reordering is tracked as a v5.2 follow-up.
+See [Server Flags](docs/api.md#server-flags) for the full flag reference.
 
 ---
 

@@ -507,15 +507,6 @@ throughput by 30-50% on sequential token generation.
 4. **No vendor lock-in**: Works on standard Apple Silicon Macs.  The on-device
    AI market (privacy, latency, offline) is growing.
 
-### Open source → commercial path
-
-| Phase | Action | Value |
-|-------|--------|-------|
-| v0.1 (now) | Open source MIT on GitHub | Community validation, benchmarks, attention |
-| v0.2 | CLI tool: `squish pull <model>` | Developer adoption, downloads |
-| v0.3 | Server mode: `squish serve` with OpenAI API compat. | Drop-in replacement for Ollama |
-| v1.0 | Enterprise: multi-GPU, managed cloud, SLA | Licensing to cloud providers |
-
 ### Key differentiators over Ollama/llama.cpp
 
 | | Squish | Ollama | mlx-lm |
@@ -784,15 +775,6 @@ scoped to run only during the one-time calibration step.
 
 4. **No vendor lock-in**: Works on standard Apple Silicon Macs.  The on-device
    AI market (privacy, latency, offline) is growing.
-
-### Open source → commercial path
-
-| Phase | Action | Value |
-|-------|--------|-------|
-| v0.1 (now) | Open source MIT on GitHub | Community validation, benchmarks, attention |
-| v0.2 | CLI tool: `squish pull <model>` | Developer adoption, downloads |
-| v0.3 | Server mode: `squish serve` with OpenAI API compat. | Drop-in replacement for Ollama |
-| v1.0 | Enterprise: multi-GPU, managed cloud, SLA | Licensing to cloud providers |
 
 ### Key differentiators over Ollama/llama.cpp
 
