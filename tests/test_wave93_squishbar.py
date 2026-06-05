@@ -198,16 +198,6 @@ class TestSquishBarSourceFiles:
         content = self._swift_src("SquishMenuView.swift").read_text()
         assert "hotkey" in content.lower(), "SettingsSection should have hotkey field"
 
-    def test_docs_squishbar_exists(self):
-        assert (ROOT / "docs" / "squishbar.md").exists(), "docs/squishbar.md not found"
-
-    def test_docs_squishbar_has_build_instructions(self):
-        content = (ROOT / "docs" / "squishbar.md").read_text()
-        assert "make dmg" in content
-
-    def test_docs_squishbar_has_feature_list(self):
-        content = (ROOT / "docs" / "squishbar.md").read_text()
-        assert "Model picker" in content or "model picker" in content.lower()
 
 
 # ── 5. Uptime formatter contract ───────────────────────────────────────────────

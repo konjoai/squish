@@ -438,7 +438,6 @@ def _box(lines: list[str]) -> None:
 def cmd_models(args):
     """List available local models with rich table formatting."""
     from squish.ui import console, make_table, hint, success, warn, _RICH_AVAILABLE
-    import rich.box as _rbox  # noqa: F401 (unused if rich absent)
 
     if not _MODELS_DIR.exists():
         warn(f"Models directory not found: {_MODELS_DIR}")
@@ -677,17 +676,17 @@ def cmd_lm(args) -> None:
                 if status.server_version:
                     print(f"     Version : {status.server_version}")
                 if status.loaded_models:
-                    print(f"     Loaded  :")
+                    print("     Loaded  :")
                     for mid in status.loaded_models:
                         print(f"       • {_C.P}{mid}{_C.R}")
                 else:
                     print(f"     {_C.MG}No model currently loaded into memory.{_C.R}")
-                    print(f"     Load a model in LM Studio, then Squish can forward requests to it.")
+                    print("     Load a model in LM Studio, then Squish can forward requests to it.")
             else:
                 print(f"  {_C.MG}○{_C.R}  LM Studio is  not running  ({status.base_url})")
                 print()
                 print(f"  {_C.DIM}Start LM Studio, load a model, then run:{_C.R}")
-                print(f"    squish lm              # re-check status")
+                print("    squish lm              # re-check status")
             print()
 
     # ── disk model inventory ─────────────────────────────────────────────────
@@ -726,8 +725,8 @@ def cmd_lm(args) -> None:
             _con.print()
         else:
             print(f"  {_C.MG}No LM Studio models found on disk.{_C.R}")
-            print(f"  Default scan dir : ~/.cache/lm-studio/models")
-            print(f"  Override via     : LMSTUDIO_MODELS_DIR=/your/path")
+            print("  Default scan dir : ~/.cache/lm-studio/models")
+            print("  Override via     : LMSTUDIO_MODELS_DIR=/your/path")
             print()
         return
 
@@ -985,7 +984,7 @@ def cmd_info(args):  # pragma: no cover
         s.connect(("127.0.0.1", _DEFAULT_PORT))
         rows.append(("Server", f"● running on :{_DEFAULT_PORT}"))
     except Exception:
-        rows.append(("Server", f"not running  (start with: squish run 7b)"))
+        rows.append(("Server", "not running  (start with: squish run 7b)"))
     finally:
         s.close()
 
@@ -1052,11 +1051,11 @@ def cmd_setup(args):  # pragma: no cover
         print(f"\n  {_C.V}ℹ{_C.R}  Non-Apple-Silicon platform detected.")
         print(f"      Inference backend : {_backend}")
         if _backend == "torch_cuda":
-            print(f"      Install:  pip install torch  (CUDA build)")
-            print(f"      Note: MLX-specific features (INT4 squish format) are not")
-            print(f"            available on CUDA — use safetensors models directly.")
+            print("      Install:  pip install torch  (CUDA build)")
+            print("      Note: MLX-specific features (INT4 squish format) are not")
+            print("            available on CUDA — use safetensors models directly.")
         elif _backend == "torch_cpu":
-            print(f"      Note: CPU-only inference is slow. A GPU is strongly recommended.")
+            print("      Note: CPU-only inference is slow. A GPU is strongly recommended.")
         print()
         # Continue to model recommendation — don't exit
 
@@ -1267,8 +1266,8 @@ def cmd_run(args):  # pragma: no cover
                 else:
                     # INT3 on sub-7B models produces degraded/incoherent output.
                     print(
-                        f"  ⚠  Model <7B — INT3 degrades quality at this scale. "
-                        f"Running INT4 instead."
+                        "  ⚠  Model <7B — INT3 degrades quality at this scale. "
+                        "Running INT4 instead."
                     )
 
     _quant_mode = (
@@ -2062,7 +2061,7 @@ def cmd_eval(args) -> None:
         if bom_path.exists():
             from squash.sbom_builder import EvalBinder
             EvalBinder.bind(bom_path, result_file, baseline_path)
-            print(f"  ✓ scores bound to sidecar")
+            print("  ✓ scores bound to sidecar")
         else:
             print(
                 "\n  ⚠  No sidecar found — scores saved but not bound.\n"
@@ -2559,8 +2558,8 @@ def cmd_compress(args):  # pragma: no cover
         print(f"  Format:    AQLM  K={_n_cb}  C={_cb_sz}  G={_g_sz}")
         print(f"  BPW est.:  {_n_cb * ((_cb_sz.bit_length() - 1) / _g_sz):.2f}")
         print(f"  Output:    {_aqlm_out_dir}")
-        print(f"  ⚠  AQLM is experimental. Runtime: ~5–10 min / 1.5B on M3 (sklearn).")
-        print(f"  ⚠  Without sklearn (pip install scikit-learn): 5–20× slower.\n")
+        print("  ⚠  AQLM is experimental. Runtime: ~5–10 min / 1.5B on M3 (sklearn).")
+        print("  ⚠  Without sklearn (pip install scikit-learn): 5–20× slower.\n")
 
         _aqlm_enc = AQLMEncoder(cfg=_aqlm_cfg)
         try:
@@ -2607,8 +2606,8 @@ def cmd_compress(args):  # pragma: no cover
         _INT3_GROUP_SIZE = 32
         print(f"  Quantization: INT3 q_group_size={_INT3_GROUP_SIZE} (mlx_lm.convert, ~46% of BF16 size)")
         print(f"  Output:      {_int3_out_dir}")
-        print(f"\n  ⚠  INT3 is experimental. For models < 3B, quality may be degraded vs INT4.")
-        print(f"     Recommended minimum: 3B+ parameters. INT4 is the production baseline.\n")
+        print("\n  ⚠  INT3 is experimental. For models < 3B, quality may be degraded vs INT4.")
+        print("     Recommended minimum: 3B+ parameters. INT4 is the production baseline.\n")
 
         # Always regenerate: compress is an explicit request for a fresh model.
         # This ensures q_group_size changes (or any other param changes) take effect.
@@ -2729,7 +2728,7 @@ def cmd_compress(args):  # pragma: no cover
         print(f"\n  ✓  SQINT2 compress complete → {_sq_out_dir}")
         print(f"     Tensors: {_sq_fmt_counts}")
         print(f"     Output:  {_sq_gb:.3f} GB")
-        print(f"     (Run with --format int4 to compare disk usage)")
+        print("     (Run with --format int4 to compare disk usage)")
         return  # standalone path — do NOT fall through to _cmd_compress_inner
 
     if _compress_format == "mixed_attn":
@@ -2773,7 +2772,7 @@ def cmd_compress(args):  # pragma: no cover
                 args.int4 = True
         except ImportError:
             print(
-                f"\n  Warning: ASTC loader unavailable; falling back to INT4.\n"
+                "\n  Warning: ASTC loader unavailable; falling back to INT4.\n"
             )
             _compress_format = "int4"
             args.int4 = True
@@ -3329,7 +3328,7 @@ def _pull_from_hf(hf_repo: str, models_dir: Path, token: str | None) -> None:  #
     _print_hf_scan_report(meta_scan)
 
     if meta_scan.status == "unsafe":
-        print(f"\n  ✗  Pre-download security scan FAILED — aborting.\n")
+        print("\n  ✗  Pre-download security scan FAILED — aborting.\n")
         for finding in meta_scan.findings:
             print(f"     {finding}")
         print()
@@ -4017,7 +4016,7 @@ def cmd_sparsity_trim(args):
 
     # ── Detect INT4 vs float ───────────────────────────────────────────────────
     # INT4 presence: up_proj.weight is uint32 dtype (MLX packed format)
-    _probe_key = f"model.layers.0.mlp.up_proj.weight"
+    _probe_key = "model.layers.0.mlp.up_proj.weight"
     is_int4 = (_probe_key in weights and weights[_probe_key].dtype == np.uint32)
     weight_type = "INT4" if is_int4 else "float"
     print(f"  Weight format  : {weight_type}")
@@ -5277,13 +5276,13 @@ def cmd_ps(args):
     models = data.get("models", [])
     if not models:
         if _rich:
-            _con.print(f"  [squish.warn]○[/]  [squish.white]No model loaded.[/]")
+            _con.print("  [squish.warn]○[/]  [squish.white]No model loaded.[/]")
             _con.print(f"  [squish.dim]Server is running at {base} but no model is active.[/]")
-            _con.print(f"  [squish.dim]Load with:[/]  [squish.lilac bold]squish run <model>[/]")
+            _con.print("  [squish.dim]Load with:[/]  [squish.lilac bold]squish run <model>[/]")
         else:
             print(f"  {_C.MG}No model loaded.{_C.R}")
             print(f"  Server is running at {base} but no model is active.")
-            print(f"  Load with: squish run <model>")
+            print("  Load with: squish run <model>")
     else:
         for m in models:
             name       = m.get("name", "unknown")
@@ -5453,7 +5452,7 @@ def cmd_trace(args):
                 raw = resp.read()
             Path(chrome_path).write_bytes(raw)
             print(f"  Chrome trace written to {chrome_path}")
-            print(f"  Open at https://speedscope.app  or  chrome://tracing")
+            print("  Open at https://speedscope.app  or  chrome://tracing")
         except (urllib.error.URLError, OSError) as e:
             _server_err(e)
         return
@@ -5521,7 +5520,7 @@ def cmd_trace(args):
                 col = _C.PK  # red/pink
             print(f"  {name:<40}  {col}{dur_ms:>8.1f}ms{_C.R}  {status:<10}")
     else:
-        print(f"  No spans collected yet.")
+        print("  No spans collected yet.")
 
     # Remediation report from obs-report
     try:
@@ -6605,7 +6604,7 @@ Ollama drop-in:
         default=False,
         help=(
             "Also download a pre-distilled EAGLE-3 draft head from "
-            "squish-community/eagle-heads on HuggingFace after pulling the "
+            "squishai/eagle-heads on HuggingFace after pulling the "
             "model weights.  Skipped if the head file already exists locally. "
             "Equivalent to running `squish pull-head <model>` separately."
         ),

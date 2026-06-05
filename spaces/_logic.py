@@ -230,7 +230,7 @@ EXAMPLES: tuple = (
 
 
 # Memory-budgeter presets — n_layers, n_kv_heads, head_dim sourced from
-# the public model configs of the squish-community catalogue. Kept small
+# the public model configs of the squishai catalogue. Kept small
 # (5 entries) so the dropdown stays scannable.
 MODEL_PRESETS: dict = {
     "Qwen2.5-0.5B   (24 layers, 2 KV heads, head_dim 64)":  (24, 2,  64),

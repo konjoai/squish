@@ -120,13 +120,13 @@ huggingface-cli download mlx-community/DeepSeek-Coder-V2-Lite-Instruct-4bit-mlx 
 2. **Start squish with agent mode:**
 
 ```bash
-squish serve ~/models/deepseek-coder-v2-lite --agent --moe-lookahead --port 11434
+squish serve ~/models/deepseek-coder-v2-lite --agent --moe-lookahead --port 11435
 ```
 
 3. **Verify with a code generation request:**
 
 ```bash
-curl http://localhost:11434/v1/chat/completions \
+curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"squish","messages":[{"role":"user","content":"Write a Python quicksort."}],"max_tokens":256}'
 ```

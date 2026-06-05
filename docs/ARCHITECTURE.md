@@ -7,6 +7,11 @@
 > baseline — while using **160 MB of peak additional RAM** versus the 2+ GB
 > typically consumed during a standard load.
 
+> **Note**: The Tier 2 MLX safetensors cache requires ~34 GB RAM to build and
+> is not built on 16 GB machines. On a standard 16 GB M3, Qwen3-8B INT4
+> loads in 2.7 seconds via the lut_int2 path. The 0.33 s figure applies to
+> the 1.5B model on hardware with sufficient RAM to build the Tier 2 cache.
+
 ---
 
 ## 1. The Problem with Status-Quo Model Distribution
@@ -33,53 +38,59 @@ consumer hardware.
 
 ## 2. The Squish Architecture
 
-Squish introduces a **three-tier weight management system**:
+Squish introduces a **five-path weight management system**:
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│  Tier 0a — Vectro INT8 compressed  (.npy-dir on disk)                    │
+│  Tier 0a — Native MLX model  (mlx_lm.load())                             │
 │                                                                           │
-│  249 quantized tensors × (int8 quantized + float32 row scales)           │
-│   89 passthrough tensors × float16  (already near-int8: embed/norm/lm_h) │
-│                                                                           │
-│  Disk: 2682 MB   Original: 3087 MB   Savings: 1.15×                     │
-│  Transport format — never loaded into RAM directly                        │
+│  Standard HuggingFace safetensors loaded via mlx_lm                      │
+│  Fallback path when no squish cache is present                            │
 └────────────────────────────────┬──────────────────────────────────────────┘
-                                 │ run save_int4_npy_dir() once — ~30s
+                                 │ squish compress — ~5–19 min
                                  ▼
 ┌───────────────────────────────────────────────────────────────────────────┐
-│  Tier 0b — INT4 nibble-packed cache  (.squish_int4_ready sentinel)       │
+│  Tier 0b — squish_4bit/  (4-bit safetensors, .squish_4bit_ready)         │
 │                                                                           │
-│  249 quantized tensors × (uint8 packed + float32 group scales)           │
-│  Each row nibble-packed: 2 weights per byte → 50% vs INT8                │
-│  Decompressed by Rust squish_quant (dequantize_int4_grouped) on load     │
+│  INT4 group-quantized safetensors shards                                  │
+│  Sentinel file: .squish_4bit_ready                                        │
+│  Decompressed by squish_quant Rust extension on load                     │
 │                                                                           │
-│  Disk: ~1341 MB (quantized tensors only, 50% of INT8)                   │
-│  Requires squish_quant Rust extension (maturin build)                    │
-│  Auto-selected in _dequantize_npy_dir() when __q4.npy present            │
+│  Disk: ~50% of native bf16                                                │
 └────────────────────────────────┬──────────────────────────────────────────┘
-                                 │ First-run: Vectro/Rust reconstruct → ~19s
+                                 │ squish compress --int3 — additional pass
                                  ▼
 ┌───────────────────────────────────────────────────────────────────────────┐
-│  Tier 1 — Finalized f16 .npy cache  (finalized/ subdirectory)            │
+│  Tier 0c — squish_3bit/  (INT3 safetensors, .squish_3bit_ready)          │
 │                                                                           │
-│  338 float16 .npy files, one per tensor, memory-mappable                 │
-│  Loaded via np.load(mmap_mode='r') → mx.array → bfloat16                │
-│  Built once during first Vectro load, ~1 min to produce                  │
+│  INT3 group-quantized safetensors shards                                  │
+│  Sentinel file: .squish_3bit_ready                                        │
+│  Only enabled for model families that pass accuracy gate (Qwen3, etc.)   │
 │                                                                           │
-│  Load time: ~4-5 s   (OS cold-cache bound)                               │
+│  Disk: ~37% of native bf16                                                │
 └────────────────────────────────┬──────────────────────────────────────────┘
-                                 │ First-run: saved post-load → ~2s extra
+                                 │ First-run: reconstruct + save → ~2s extra
                                  ▼
 ┌───────────────────────────────────────────────────────────────────────────┐
-│  Tier 2 — Squish MLX safetensors cache  (squish_weights.safetensors)       │
+│  Tier 1 — squish_weights.safetensors  (.squish_ready sentinel)            │
 │                                                                           │
-│  Single bf16 safetensors file in Apple Silicon MLX-native layout         │
+│  Single bf16 safetensors in Apple Silicon MLX-native layout               │
 │  Loaded by mx.load() → direct Metal memory mapping                       │
-│  Built once at end of first Vectro load                                  │
+│  Disabled on 16 GB machines for 8B+ models (RAM guard)                   │
 │                                                                           │
-│  Load time: 0.33 s   (6 × faster than mlx_lm baseline 1.96 s)          │
+│  Load time: 0.33 s   (Qwen2.5-1.5B on high-RAM hardware)                │
 │  RAM delta: 160 MB   (peak additional, vs 2+ GB baseline)                │
+└────────────────────────────────┬──────────────────────────────────────────┘
+                                 │ First-run: saved post-load
+                                 ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│  Tier 2 — finalized/ .npy cache                                           │
+│                                                                           │
+│  One float16 .npy file per tensor, memory-mappable                       │
+│  Loaded via np.load(mmap_mode='r') → mx.array → bfloat16                │
+│  Active path on 16 GB machines for 8B+ models (lut_int2 path)            │
+│                                                                           │
+│  Load time: ~2.7 s  (Qwen3-8B INT4 on M3 16 GB)                         │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -496,15 +507,6 @@ throughput by 30-50% on sequential token generation.
 4. **No vendor lock-in**: Works on standard Apple Silicon Macs.  The on-device
    AI market (privacy, latency, offline) is growing.
 
-### Open source → commercial path
-
-| Phase | Action | Value |
-|-------|--------|-------|
-| v0.1 (now) | Open source MIT on GitHub | Community validation, benchmarks, attention |
-| v0.2 | CLI tool: `squish pull <model>` | Developer adoption, downloads |
-| v0.3 | Server mode: `squish serve` with OpenAI API compat. | Drop-in replacement for Ollama |
-| v1.0 | Enterprise: multi-GPU, managed cloud, SLA | Licensing to cloud providers |
-
 ### Key differentiators over Ollama/llama.cpp
 
 | | Squish | Ollama | mlx-lm |
@@ -773,15 +775,6 @@ scoped to run only during the one-time calibration step.
 
 4. **No vendor lock-in**: Works on standard Apple Silicon Macs.  The on-device
    AI market (privacy, latency, offline) is growing.
-
-### Open source → commercial path
-
-| Phase | Action | Value |
-|-------|--------|-------|
-| v0.1 (now) | Open source MIT on GitHub | Community validation, benchmarks, attention |
-| v0.2 | CLI tool: `squish pull <model>` | Developer adoption, downloads |
-| v0.3 | Server mode: `squish serve` with OpenAI API compat. | Drop-in replacement for Ollama |
-| v1.0 | Enterprise: multi-GPU, managed cloud, SLA | Licensing to cloud providers |
 
 ### Key differentiators over Ollama/llama.cpp
 

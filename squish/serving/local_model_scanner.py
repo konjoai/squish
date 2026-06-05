@@ -98,8 +98,8 @@ class HFRepoScanResult:
     """
     status:                   str
     repo_id:                  str
-    findings:                 List[str]            = field(default_factory=list)
-    file_summary:             List[HFFileSummary]  = field(default_factory=list)
+    findings:                 list[str]            = field(default_factory=list)
+    file_summary:             list[HFFileSummary]  = field(default_factory=list)
     total_files:              int                  = 0
     total_size_bytes:         int                  = 0
     safe_weight_count:        int                  = 0
@@ -109,7 +109,7 @@ class HFRepoScanResult:
 
 def scan_hf_repo_metadata(
     repo_id: str,
-    token: Optional[str] = None,
+    token: str | None = None,
 ) -> HFRepoScanResult:
     """Pre-download safety scan using the HuggingFace API file listing.
 
@@ -138,7 +138,7 @@ def scan_hf_repo_metadata(
     HFRepoScanResult
     """
     url = f"{_HF_API_BASE}/{repo_id}?blobs=true"
-    headers: Dict[str, str] = {"Accept": "application/json"}
+    headers: dict[str, str] = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
@@ -167,7 +167,7 @@ def scan_hf_repo_metadata(
             findings=[f"HF API request failed for {repo_id!r}: {exc}"],
         )
 
-    siblings: List[Dict] = data.get("siblings", [])
+    siblings: list[dict] = data.get("siblings", [])
     if not isinstance(siblings, list):
         return HFRepoScanResult(
             status="error",
@@ -180,11 +180,11 @@ def scan_hf_repo_metadata(
 
 def _classify_hf_siblings(
     repo_id: str,
-    siblings: List[Dict],
+    siblings: list[dict],
 ) -> HFRepoScanResult:
     """Classify a file list returned by the HF API and build a scan result."""
-    findings: List[str] = []
-    file_summary: List[HFFileSummary] = []
+    findings: list[str] = []
+    file_summary: list[HFFileSummary] = []
     total_size = 0
     safe_weight_count = 0
     dangerous_count = 0
@@ -508,9 +508,9 @@ class LocalModelScanner:
 
     def __init__(
         self,
-        squish_models_dir: Optional[Path] = None,
-        ollama_manifests_dir: Optional[Path] = None,
-        lm_studio_dir: Optional[Path] = None,
+        squish_models_dir: Path | None = None,
+        ollama_manifests_dir: Path | None = None,
+        lm_studio_dir: Path | None = None,
     ) -> None:
         home = Path.home()
         self._squish_dir  = squish_models_dir   or (home / "models")

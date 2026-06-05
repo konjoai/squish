@@ -60,7 +60,7 @@ _GGML_TYPE_Q3_K = 11
 _GGML_TYPE_Q4_K = 12
 _GGML_TYPE_Q5_K = 13
 
-_GGML_TYPE_TO_STR: Dict[int, str] = {
+_GGML_TYPE_TO_STR: dict[int, str] = {
     _GGML_TYPE_F32: "F32",
     _GGML_TYPE_F16: "F16",
     _GGML_TYPE_Q4_0: "Q4_0",
@@ -75,7 +75,7 @@ _GGML_TYPE_TO_STR: Dict[int, str] = {
 }
 
 # Block sizes (elements per block) for each quantization type
-_BLOCK_SIZE: Dict[str, int] = {
+_BLOCK_SIZE: dict[str, int] = {
     "Q2_K": 256,
     "Q3_K": 256,
     "Q4_K": 256,
@@ -87,7 +87,7 @@ _BLOCK_SIZE: Dict[str, int] = {
 }
 
 # Bytes per block for each quantization type
-_BYTES_PER_BLOCK: Dict[str, int] = {
+_BYTES_PER_BLOCK: dict[str, int] = {
     "Q2_K": 84,
     "Q3_K": 110,
     "Q4_K": 144,
@@ -114,7 +114,7 @@ class GGUFConfig:
         seed: Unused; retained for API consistency.
     """
 
-    supported_qtypes: List[str] = field(
+    supported_qtypes: list[str] = field(
         default_factory=lambda: ["Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q8_0", "F16", "F32"]
     )
     device: str = "cpu"
@@ -149,7 +149,7 @@ class GGUFMetadata:
     version: int
     n_tensors: int
     n_kv: int
-    kv: Dict[str, Any]
+    kv: dict[str, Any]
 
 
 @dataclass
@@ -167,10 +167,10 @@ class GGUFTensor:
 
     name: str
     n_dims: int
-    shape: Tuple[int, ...]
+    shape: tuple[int, ...]
     dtype: str
     offset: int
-    data: Optional[np.ndarray] = None
+    data: np.ndarray | None = None
 
     @property
     def n_elements(self) -> int:
@@ -210,11 +210,11 @@ class GGUFNativeLoader:
     # Primary API
     # ------------------------------------------------------------------
 
-    def load(self, path: str) -> Dict[str, np.ndarray]:
+    def load(self, path: str) -> dict[str, np.ndarray]:
         """Parse *path* and return all tensors dequantized to float32."""
         path = str(path)
         meta, tensors = self._parse_file(path)
-        result: Dict[str, np.ndarray] = {}
+        result: dict[str, np.ndarray] = {}
         for t in tensors:
             if t.data is not None:
                 result[t.name] = t.data
@@ -225,7 +225,7 @@ class GGUFNativeLoader:
         meta, _ = self._parse_file(path, load_data=False)
         return meta
 
-    def list_tensors(self, path: str) -> List[GGUFTensor]:
+    def list_tensors(self, path: str) -> list[GGUFTensor]:
         """Return tensor descriptors (without dequantized data)."""
         _, tensors = self._parse_file(path, load_data=False)
         return tensors
@@ -254,7 +254,7 @@ class GGUFNativeLoader:
     @classmethod
     def make_synthetic(
         cls,
-        tensor_shapes: Dict[str, Tuple[int, ...]],
+        tensor_shapes: dict[str, tuple[int, ...]],
         qtype: str = "F32",
         seed: int = 0,
     ) -> "GGUFNativeLoader":
@@ -265,7 +265,7 @@ class GGUFNativeLoader:
         """
         loader = cls(GGUFConfig())
         rng = np.random.default_rng(seed)
-        loader._synthetic_tensors: Dict[str, np.ndarray] = {
+        loader._synthetic_tensors: dict[str, np.ndarray] = {
             name: rng.standard_normal(shape).astype(np.float32)
             for name, shape in tensor_shapes.items()
         }
@@ -277,7 +277,7 @@ class GGUFNativeLoader:
 
     def _parse_file(
         self, path: str, load_data: bool = True
-    ) -> Tuple[GGUFMetadata, List[GGUFTensor]]:
+    ) -> tuple[GGUFMetadata, list[GGUFTensor]]:
         """Parse a GGUF file from disk (real or synthetic)."""
         p = Path(path)
         if not p.exists():
@@ -323,8 +323,8 @@ class GGUFNativeLoader:
             kv=kv,
         )
 
-    def _read_kv_pairs(self, buf: io.BytesIO, n: int) -> Dict[str, Any]:
-        kv: Dict[str, Any] = {}
+    def _read_kv_pairs(self, buf: io.BytesIO, n: int) -> dict[str, Any]:
+        kv: dict[str, Any] = {}
         for _ in range(n):
             key = self._read_string(buf)
             (vtype,) = struct.unpack("<I", buf.read(4))
@@ -367,7 +367,7 @@ class GGUFNativeLoader:
 
     def _read_tensor_info(
         self, buf: io.BytesIO, n_tensors: int
-    ) -> List[GGUFTensor]:
+    ) -> list[GGUFTensor]:
         tensors = []
         for _ in range(n_tensors):
             name = self._read_string(buf)

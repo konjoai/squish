@@ -101,9 +101,9 @@ class MCPClient:
         self.server_id = server_id
         self.connect_timeout = connect_timeout
 
-        self._process: Optional[subprocess.Popen] = None  # STDIO only
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
+        self._process: subprocess.Popen | None = None  # STDIO only
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
         self._msg_id = 0
         self._connected = False
 

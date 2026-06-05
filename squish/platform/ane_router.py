@@ -68,7 +68,7 @@ ANE_PARAM_LIMIT: int = 8_000_000_000
 _ANE_MEMORY_BUDGET_GB_DEFAULT: float = 4.0  # GB, per ANE chunk
 
 # Per-chip ANE memory budgets (GB) based on empirical CoreML limits.
-_ANE_MEMORY_BUDGET_BY_GEN: Dict[int, float] = {
+_ANE_MEMORY_BUDGET_BY_GEN: dict[int, float] = {
     1: 2.0,   # M1 — 2 GB ANE accessible memory
     2: 2.0,   # M2
     3: 4.0,   # M3
@@ -118,12 +118,12 @@ class ANERouter:
 
     def __init__(
         self,
-        _detector_override: Optional[Any] = None,
-        _caps_path: Optional[Path] = None,
+        _detector_override: Any | None = None,
+        _caps_path: Path | None = None,
     ) -> None:
         self._caps_path: Path = _caps_path or _DEFAULT_CAPS_PATH
         self._lock = Lock()
-        self._cached_profile: Optional[Any] = None
+        self._cached_profile: Any | None = None
         self._caps_loaded: bool = False
 
         if _detector_override is not None:
@@ -173,7 +173,7 @@ class ANERouter:
         """Return the full :class:`ANERoutingPolicy` for *param_count*."""
         return self._build_policy(param_count)
 
-    def cache_caps(self, path: Optional[Path] = None) -> None:
+    def cache_caps(self, path: Path | None = None) -> None:
         """Persist detected hardware capabilities to a JSON file.
 
         Args:
@@ -182,14 +182,14 @@ class ANERouter:
         """
         target = path or self._caps_path
         target.parent.mkdir(parents=True, exist_ok=True)
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "chip_generation": self._chip_generation,
             "ane_budget_gb": self._ane_budget_gb,
             "ane_available": self.is_ane_available(),
         }
         target.write_text(json.dumps(payload, indent=2))
 
-    def load_caps(self, path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    def load_caps(self, path: Path | None = None) -> dict[str, Any] | None:
         """Load previously cached hardware capabilities from disk.
 
         Returns:
@@ -302,7 +302,7 @@ class ANERouter:
 # Module-level singleton
 # ---------------------------------------------------------------------------
 
-_router_instance: Optional[ANERouter] = None
+_router_instance: ANERouter | None = None
 _router_lock = Lock()
 
 

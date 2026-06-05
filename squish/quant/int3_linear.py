@@ -131,7 +131,7 @@ class INT3Linear(nn.Module):
         weight: mx.array,
         scales: mx.array,
         zeros: mx.array,
-        bias: Optional[mx.array] = None,
+        bias: mx.array | None = None,
     ) -> None:
         super().__init__()
         if weight.dtype != mx.uint8:

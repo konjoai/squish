@@ -5,6 +5,60 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.33.5] — RAM guard + CLI polish
+
+### Added
+- RAM guard in `compressed_loader.py`: skips squish_4bit cache build if
+  available RAM < required, preventing OOM on 16 GB machines for 8B+ models
+- GitHub Actions workflow to build SquishBar DMG on release
+
+### Changed
+- Silenced cache-warmup startup warning
+- Updated tagline to "Squeeze the Most Out of Your Models"
+- Wrapped server startup banner in double-line box
+- Updated SquishBar bundle ID to `com.konjoai.SquishBar`
+- README and docs cleanup: removed internal planning files, updated
+  org references
+
+---
+
+## [9.33.4] — Rust extension bundled
+
+### Added
+- `squish_quant` Rust extension (6 GB/s quantizer) now bundled in
+  `squish/vendor/` and auto-installs on first import
+- `post_install` block added to Homebrew formula
+- Homebrew bottle rebuilt
+
+---
+
+## [9.33.3] — SSL fix
+
+### Fixed
+- Python 3.13 Authority Key Identifier enforcement and Zscaler
+  compatibility: all three HuggingFace download paths now retry with
+  SSL verification disabled when the initial request fails
+- `_hf_list_files` silently returning `[]` on SSL failure, which caused
+  the pre-squished download path to be skipped
+
+---
+
+## [9.33.2] — Distribution cleanup
+
+### Changed
+- Removed `uvicorn[standard]` extras to eliminate watchfiles dylib warning
+- Updated stale repository org URLs to `konjoai` in `pyproject.toml`
+
+---
+
+## [9.33.1] — Docs and CI
+
+### Added
+- GitHub Actions integration guide and module count gate script
+- Bumped to 9.33.1 for docs and scripts inclusion
+
+---
+
 ## [9.33.0] — Pull Resilience (partial-download guard + SSL fallback)
 
 ### Fixed
@@ -289,7 +343,7 @@ Zero new files inside `squish/`. The `demo/` directory is a sibling of
 ### Added
 
 - **`spaces/`** — new top-level directory hosting the public Hugging Face
-  Space `squish-community/squish-kv-quant`. Self-contained (not part of
+  Space `squishai/squish-kv-quant`. Self-contained (not part of
   the `squish` wheel); designed to be uploaded verbatim to the HF Space
   repository.
 
@@ -5387,7 +5441,7 @@ orthogonal additions to the SQUIZD inference stack.
   `.squizd-eagle` appendix using `b"EAGL"` tag + JSON manifest + raw `.npy`
   weight streams.  `save_eagle_head` / `load_eagle_head` serialise/deserialise
   in a single pass.  `download_pretrained_head` downloads from
-  `squish-community/eagle-heads` on HuggingFace Hub (skips if already present).
+  `squishai/eagle-heads` on HuggingFace Hub (skips if already present).
 
 - **`squish/speculative/eagle_head.py`** — `EAGLEHeadRunner` with
   `generate_drafts`, `record_acceptance`, rolling 64-token acceptance-rate

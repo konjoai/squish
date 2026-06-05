@@ -71,10 +71,10 @@ class SquizdFormatError(ValueError):
         errors: List of human-readable error strings.
     """
 
-    def __init__(self, message: str, *, errors: Optional[List[str]] = None, path: Optional[Path] = None) -> None:
+    def __init__(self, message: str, *, errors: list[str] | None = None, path: Path | None = None) -> None:
         super().__init__(message)
-        self.errors: List[str] = errors or [message]
-        self.path: Optional[Path] = path
+        self.errors: list[str] = errors or [message]
+        self.path: Path | None = path
 
     def __str__(self) -> str:  # noqa: D105
         if len(self.errors) == 1:
@@ -108,7 +108,7 @@ class ValidationResult:
     layer_count_ok: bool
     sparsity_crc_ok: bool
     eagle_hash_ok: bool
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @classmethod
     def success(cls) -> "ValidationResult":
@@ -156,7 +156,7 @@ class SquizdFormatValidator:
     # Public API
     # ------------------------------------------------------------------
 
-    def validate(self, path: Union[str, Path]) -> ValidationResult:
+    def validate(self, path: str | Path) -> ValidationResult:
         """Validate *path* on disk.
 
         Args:
@@ -194,7 +194,7 @@ class SquizdFormatValidator:
         Returns:
             :class:`ValidationResult`.
         """
-        errors: List[str] = []
+        errors: list[str] = []
         flags = 0
         version = 0
         layer_count = 0
@@ -292,7 +292,7 @@ class SquizdFormatValidator:
             errors=errors,
         )
 
-    def assert_valid(self, path: Union[str, Path]) -> None:
+    def assert_valid(self, path: str | Path) -> None:
         """Validate *path* and raise :class:`SquizdFormatError` on failure.
 
         Args:
@@ -315,7 +315,7 @@ class SquizdFormatValidator:
 
     @staticmethod
     def _check_sparsity_crc(
-        data: bytes, stored: int, source: str, errors: List[str]
+        data: bytes, stored: int, source: str, errors: list[str]
     ) -> bool:
         """Verify CRC32 of the sparsity metadata block.
 
@@ -339,7 +339,7 @@ class SquizdFormatValidator:
 
     @staticmethod
     def _check_eagle_hash(
-        data: bytes, stored: int, source: str, errors: List[str]
+        data: bytes, stored: int, source: str, errors: list[str]
     ) -> bool:
         """Verify the FNV-1a-64 hash of the draft-head block.
 
@@ -366,7 +366,7 @@ class SquizdFormatValidator:
         layer_count_ok: bool,
         sparsity_crc_ok: bool,
         eagle_hash_ok: bool,
-        errors: List[str],
+        errors: list[str],
     ) -> ValidationResult:
         return ValidationResult(
             valid=False,

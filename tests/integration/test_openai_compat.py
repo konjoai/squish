@@ -217,7 +217,7 @@ class TestModelField:
         assert parsed["model"] == "some-unknown-model-xyz"
 
     def test_model_field_preserved_in_chunk(self):
-        model_name = "squish-community/Qwen2.5-1.5B-Instruct-int4"
+        model_name = "squishai/Qwen2.5-1.5B-Instruct-int4"
         chunk = server._make_chunk("text", model_name, "chatcmpl-001")
         parsed = json.loads(chunk[len("data: "):].strip())
         assert parsed["model"] == model_name

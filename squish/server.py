@@ -971,28 +971,28 @@ def _blazing_preset_defaults(
     The same *args* object, with fields mutated.
     """
     # ── KV cache: INT2 asymmetric (6× footprint reduction vs FP16) ──────────
-    setattr(args, "agent_kv", True)
+    args.agent_kv = True
 
     # ── Chunked prefill: TTFT-optimised size ────────────────────────────────
     ttft_chunk = 128
     if chip_profile is not None and hasattr(chip_profile, "recommended_chunk_prefill_ttft"):
         ttft_chunk = chip_profile.recommended_chunk_prefill_ttft
-    setattr(args, "chunk_prefill_size", ttft_chunk)
-    setattr(args, "no_chunk_prefill", False)  # ensure chunking is on
+    args.chunk_prefill_size = ttft_chunk
+    args.no_chunk_prefill = False  # ensure chunking is on
 
     # ── Fast-GELU approximation (Wave 28): x·sigmoid(1.702x) — no change in
     #    perceptible output quality but avoids trigonometric exact computation ─
-    setattr(args, "fast_gelu", True)
+    args.fast_gelu = True
 
     # ── Clamp KV context: 4096 is plenty for interactive chat; unclamped
     #    context on 16 GB eats 500 MB+ per request ────────────────────────────
     current_max_kv = getattr(args, "max_kv_size", None)
     if current_max_kv is None or current_max_kv > 4096:
-        setattr(args, "max_kv_size", 4096)
+        args.max_kv_size = 4096
 
     # ── Metal allocator pool: 64 MB covers normal weight-loading churn while
     #    releasing stale buffers aggressively on a 16 GB system ───────────────
-    setattr(args, "_blazing_metal_cache_mb", 64)
+    args._blazing_metal_cache_mb = 64
 
     return args
 
@@ -5588,9 +5588,8 @@ Examples:
             _cw_cfg = WarmupConfig(top_k=32, min_access_count=2, max_prefix_tokens=256)
             _cache_warmup_predictor = CacheWarmupPredictor(_cw_cfg)
             _info("cache-warmup", "predictive KV prefix pre-warming  (top_k=32  min_count=2)")
-        except Exception as _e:
+        except Exception:
             _cache_warmup_enabled = False
-            _warn(f"[cache-warmup] Skipped: {_e}")
 
     if getattr(args, "lora_adapter", ""):
         try:

@@ -21,7 +21,10 @@ Source: `README.md` headline numbers; reproduced via
 
 § Cold-start load = wall time for weights to be accessible in Metal
 unified memory (mmap, no dtype conversion). Run 4, 2026-03-21, 20/21
-models, M3 16 GB.
+models, M3 16 GB. The 0.33–0.53 s figure applies to the Qwen2.5-1.5B
+model on hardware with sufficient RAM to build the Tier 1 MLX safetensors
+cache (~34 GB required). On a standard 16 GB M3, Qwen3-8B INT4 loads in
+2.7 s via the lut_int2 path.
 ‡ TTFT = time from first request byte to first streamed token chunk,
 measured with `--all-optimizations` (default).
 † 160 MB = Apple Metal virtual-address delta during load (mmap, no CPU
@@ -33,7 +36,7 @@ heap). Peak RSS ~402 MB.
 
 Source: `README.md` model-size table; the squished column is what
 `squish pull <model>` actually downloads from the
-[squish-community](https://huggingface.co/squish-community) HF org.
+[squishai](https://huggingface.co/squishai) HF org.
 
 | Model          | Raw (bf16) | Squished (INT4) | Saved |
 |----------------|:----------:|:---------------:|:-----:|
@@ -52,7 +55,7 @@ identical generation quality.
 
 ## 3. Weight quantization accuracy gates (lm_eval, arc_easy)
 
-Source: `PLAN.md` accuracy gates; gate values are hard-stops in CI —
+Source: CI accuracy gates; gate values are hard-stops in CI —
 ship requires meeting or beating them.
 
 | Format        | Model           | Gate (arc_easy) | Status         |
@@ -60,15 +63,15 @@ ship requires meeting or beating them.
 | INT4 AWQ g=32 | Qwen2.5-1.5B    | ≥ 70.6 %        | ✅ shipped (W92)  |
 | INT3 g=32     | Qwen2.5-1.5B    | ≥ 67.2 %        | ✅ shipped (W92)  |
 | INT3          | gemma-3-* ≤ 4B  | -15 pp          | ❌ blocked         |
-| INT3          | Qwen3-4B        | -14.8 pp        | ❌ blocked         |
+| INT3          | Qwen3 family    | within ±2pp     | ✅ shipped (9.33.5) |
 | INT2 (naive)  | any             | ~29 % ≈ random  | ⛔ never ship       |
-| **SQINT2**    | Qwen2.5-7B      | ≥ 65 % (target 67%) | 🎯 W103.4d gate |
+| **SQINT2**    | Qwen2.5-7B      | ≥ 65 % (target 67%) | 🎯 in progress |
 
 SQINT2 is the four-stage geometry-aware INT2 pipeline: Hadamard
 incoherence preprocessing + NF2 per-group quantisation + low-rank SVD
 residual + layer-selective mixed precision. Effective bit-rate
 **~2.15 bpw** — half of INT4 storage, ~7× of fp16 — see
-[PLAN.md § W103](PLAN.md) for the full math. Stages 1-3 land
+the squish architecture for the full math. Stages 1-3 land
 code-complete + SNR-validated; the final lm_eval ship gate runs at
 W103.4d on real M3 16 GB hardware.
 
@@ -196,6 +199,6 @@ lm_eval --model squish --model_args path=$MODEL_DIR --tasks arc_easy --limit 500
 ## 7. Live in the browser
 
 The KV-cache numbers from §4 are interactive at the
-[**squish-kv-quant** Hugging Face Space](https://huggingface.co/spaces/squish-community/squish-kv-quant).
+[**squish-kv-quant** Hugging Face Space](https://huggingface.co/spaces/squishai/squish-kv-quant).
 Pick a distribution, toggle Hadamard rotation, see SNR shift in real
 time. Source in [`spaces/`](spaces/).

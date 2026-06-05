@@ -1,8 +1,8 @@
 site_name: Squish
 site_description: "Run 70B AI models on a MacBook in 2 seconds. Squish — The Local AI Agent Runtime."
 site_url: https://squish.run
-repo_url: https://github.com/squishai/squish
-repo_name: squishai/squish
+repo_url: https://github.com/konjoai/squish
+repo_name: konjoai/squish
 
 theme:
   name: material
@@ -77,7 +77,7 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/squishai/squish
+      link: https://github.com/konjoai/squish
     - icon: fontawesome/brands/discord
       link: https://discord.gg/squish
     - icon: fontawesome/brands/python

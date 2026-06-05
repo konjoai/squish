@@ -68,7 +68,7 @@ Squish organises cached weights in three tiers with increasing load speed:
 
 The conversion from source `.safetensors` to Tier 0 is a one-time operation (≈5–19 min depending on model size) performed by `squish compress`. All subsequent loads read from the highest available tier.
 
-Tier 2 is the primary deployment artifact and the file published to the Hugging Face Hub under `squish-community/`. Users who pull pre-squished weights skip Tier 0 and 1 entirely and get sub-second load on first run.
+Tier 2 is the primary deployment artifact and the file published to the Hugging Face Hub under `squishai/`. Users who pull pre-squished weights skip Tier 0 and 1 entirely and get sub-second load on first run.
 
 ### 3.2 Server Architecture
 

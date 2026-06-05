@@ -1,8 +1,7 @@
 # Troubleshooting / FAQ
 
 This page covers the most common issues encountered when running Squish on Apple Silicon Macs.
-If your issue is not listed here, open a [GitHub Discussion](https://github.com/wesleyscholl/squish/discussions)
-or ask in [Discord](https://discord.gg/squish).
+If your issue is not listed here, open a [GitHub Discussion](https://github.com/konjoai/squish/discussions).
 
 ---
 
@@ -18,7 +17,7 @@ python -c "import mlx; print(mlx.__version__)"
 Expected output (versions will differ):
 
 ```
-squish 0.9.2
+squish 9.33.5
 0.22.0
 ```
 
@@ -405,6 +404,5 @@ A valid response lists the locally cached models.
 ## Still stuck?
 
 1. Re-run the [Quick diagnostics](#quick-diagnostics) commands and copy the full output.
-2. Check [open GitHub issues](https://github.com/wesleyscholl/squish/issues) — your error may already have a fix.
-3. Open a [GitHub Discussion](https://github.com/wesleyscholl/squish/discussions) with the diagnostic output.
-4. Join [Discord](https://discord.gg/squish) for real-time help.
+2. Check [open GitHub issues](https://github.com/konjoai/squish/issues) — your error may already have a fix.
+3. Open a [GitHub Discussion](https://github.com/konjoai/squish/discussions) with the diagnostic output.

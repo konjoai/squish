@@ -1,0 +1,29 @@
+# Build SquishBar.dmg and attach it to the GitHub release.
+# The DMG is unsigned — users on macOS must right-click → Open the first time
+# to bypass Gatekeeper until the app is notarized.
+name: Build SquishBar
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-squishbar:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build SquishBar DMG
+        working-directory: apps/macos/SquishBar
+        run: make dmg
+
+      - name: Upload DMG to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apps/macos/SquishBar/SquishBar.dmg

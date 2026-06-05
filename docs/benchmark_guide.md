@@ -124,7 +124,7 @@ squish bench --track perf --model qwen3:8b
 
 | Name | Default URL | Notes |
 |------|-------------|-------|
-| `squish` | `http://localhost:11434` | Default squish server |
+| `squish` | `http://localhost:11435` | Default squish server |
 | `ollama` | `http://localhost:11434` | Ollama local server |
 | `lmstudio` | `http://localhost:1234` | LM Studio local server |
 | `mlxlm` | `http://localhost:8080` | mlx-lm server |

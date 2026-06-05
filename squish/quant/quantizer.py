@@ -753,7 +753,7 @@ class MixedPrecisionRouter:
     def boundary_layers(self) -> frozenset[int]:
         return self._boundary
 
-    def format_for(self, tensor_name: str) -> "Optional[str]":
+    def format_for(self, tensor_name: str) -> "str | None":
         if not tensor_name.endswith(".weight"):
             return None
 

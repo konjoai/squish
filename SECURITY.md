@@ -4,15 +4,15 @@
 
 | Version | Supported |
 |---|---|
-| 9.0.x | ✅ |
-| < 9.0 | ❌ |
+| 9.33.x | ✅ |
+| < 9.33  | ❌ |
 
 ## Reporting a Vulnerability
 
 **Please do not open a public GitHub issue for security vulnerabilities.**
 
 Report security issues privately using [GitHub Security Advisories](
-https://github.com/wesleyscholl/squish/security/advisories/new).  
+https://github.com/konjoai/squish/security/advisories/new).  
 This keeps the report confidential until a patch is ready.
 
 Alternatively, email the maintainer directly (address on the GitHub profile).

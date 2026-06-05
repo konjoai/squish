@@ -125,7 +125,7 @@ class AQLMLayer:
         self.indices: np.ndarray = np.zeros(
             (out_features, n_groups, cfg.n_codebooks), dtype=np.int32
         )
-        self.codebooks: List[AQLMCodebook] = [
+        self.codebooks: list[AQLMCodebook] = [
             AQLMCodebook() for _ in range(cfg.n_codebooks)
         ]
 
@@ -395,7 +395,7 @@ class AQLMEncoder:
 
     def __init__(
         self,
-        cfg: Optional[AQLMConfig] = None,
+        cfg: AQLMConfig | None = None,
         *,
         seed: int = 42,
         max_iter: int = 100,

@@ -11,7 +11,6 @@ user-invocable: true
 [ ] `ruff check` and `ruff format --check` clean
 [ ] Quantization accuracy gates verified if applicable
 [ ] CHANGELOG.md updated
-[ ] PLAN.md updated (wave state)
 [ ] MODULES.md updated if new modules added
 [ ] git add && git commit -m "type(scope): description" && git push
 ```

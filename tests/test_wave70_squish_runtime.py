@@ -35,7 +35,7 @@ def _build_header(
     layer_count: int = 32,
     arch_id: int = 0,
     version: int = CURRENT_VERSION,
-    override_magic: Optional[bytes] = None,
+    override_magic: bytes | None = None,
     sparsity_crc: int = 0,
     eagle_hash: int = 0,
 ) -> bytes:

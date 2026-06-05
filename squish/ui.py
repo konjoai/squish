@@ -69,20 +69,19 @@ except ImportError:  # pragma: no cover
 # terminals).  24-bit RGB can be remapped or mis-rendered by tmux, SSH
 # forwarding, or custom colour profiles, producing the coloured chaos shown in
 # the screenshot.
-_SQUISH_THEME = Theme({
-    "squish.purple":  "color(93)",    # #8700ff deep violet
-    "squish.violet":  "color(135)",   # #af5fff medium purple
-    "squish.lilac":   "color(183)",   # #d7afff plum / lavender
-    "squish.pink":    "color(205)",   # #ff5faf hot pink
-    "squish.teal":    "color(45)",    # #00d7ff turquoise
-    "squish.green":   "color(78)",    # #5fd787 sea green
-    "squish.white":   "default",      # honours the terminal's own default text
-    "squish.dim":     "color(241)",   # #626262 dim grey
-    "squish.warn":    "color(220)",   # #ffd700 gold
-    "squish.error":   "color(203)",   # #ff5f5f soft red
-})
-
 if _RICH_AVAILABLE:
+    _SQUISH_THEME = Theme({
+        "squish.purple":  "color(93)",    # #8700ff deep violet
+        "squish.violet":  "color(135)",   # #af5fff medium purple
+        "squish.lilac":   "color(183)",   # #d7afff plum / lavender
+        "squish.pink":    "color(205)",   # #ff5faf hot pink
+        "squish.teal":    "color(45)",    # #00d7ff turquoise
+        "squish.green":   "color(78)",    # #5fd787 sea green
+        "squish.white":   "default",      # honours the terminal's own default text
+        "squish.dim":     "color(241)",   # #626262 dim grey
+        "squish.warn":    "color(220)",   # #ffd700 gold
+        "squish.error":   "color(203)",   # #ff5f5f soft red
+    })
     # Force 256-colour mode.  This is more portable than 24-bit truecolor:
     # terminals that lie about truecolor support, or multiplex through tmux
     # without tc passthrough, will still render 256-colour indices correctly.
@@ -533,14 +532,14 @@ def startup_panel(
         console.print()
     else:  # pragma: no cover
         print()
-        print(f"  ┌──────────────────────────────────────┐")
-        print(f"  │  Squish — Local Inference Server      │")
+        print("  ┌──────────────────────────────────────┐")
+        print("  │  Squish — Local Inference Server      │")
         print(f"  │  Model    : {model:<26}│")
         print(f"  │  Endpoint : {endpoint:<26}│")
         print(f"  │  Web UI   : {web_ui:<26}│")
         print(f"  │  API key  : {api_key:<26}│")
-        print(f"  │  Press Ctrl+C to stop                 │")
-        print(f"  └──────────────────────────────────────┘")
+        print("  │  Press Ctrl+C to stop                 │")
+        print("  └──────────────────────────────────────┘")
         print()
 
 
