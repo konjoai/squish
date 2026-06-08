@@ -85,6 +85,45 @@ def _ssl_verify() -> bool | str:
     return True
 
 
+def _fetch_squishai_model_ids() -> set[str]:
+    """Return the set of model repo IDs currently live on huggingface.co/squishai.
+
+    Fetches https://huggingface.co/api/models?organization=squishai once per
+    process and caches the result. Returns an empty set on any network/SSL error
+    so the catalog degrades gracefully without crashing.
+    """
+    import urllib.request as _ur
+    import json as _js
+    import ssl as _ssl
+
+    if hasattr(_fetch_squishai_model_ids, "_cache"):
+        return _fetch_squishai_model_ids._cache
+
+    try:
+        url = "https://huggingface.co/api/models?author=squishai&limit=100"
+        req = _ur.Request(url, headers={"User-Agent": "squish-catalog/1.0"})
+        verify = _ssl_verify()
+        if verify is False:
+            ctx = _ssl._create_unverified_context()
+        elif isinstance(verify, str):
+            ctx = _ssl.create_default_context(cafile=verify)
+        else:
+            try:
+                import certifi as _certifi
+                ctx = _ssl.create_default_context(cafile=_certifi.where())
+            except ImportError:
+                ctx = _ssl.create_default_context()
+        with _ur.urlopen(req, context=ctx, timeout=5) as resp:
+            data = _js.loads(resp.read().decode())
+        ids: set[str] = {m["id"] for m in data if "id" in m}
+    except (OSError, ValueError):
+        # Network unreachable, SSL failure, malformed JSON — degrade gracefully.
+        ids = set()
+
+    _fetch_squishai_model_ids._cache = ids
+    return ids
+
+
 def _apply_ssl_env() -> None:
     """
     Push squish SSL settings into the env vars that huggingface_hub / httpx
@@ -265,7 +304,13 @@ class CatalogEntry:
     @property
     def has_prebuilt(self) -> bool:
         """True when a pre-compressed Squish repo exists on HuggingFace."""
-        return bool(self.squish_repo)
+        if not self.squish_repo:
+            return False
+        live = _fetch_squishai_model_ids()
+        if not live:
+            # Network unavailable (Zscaler etc.) — fall back to hardcoded field.
+            return True
+        return self.squish_repo in live
 
     def __str__(self) -> str:
         prebuilt = "⚡ prebuilt" if self.has_prebuilt else "  compress"

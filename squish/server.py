@@ -700,6 +700,64 @@ def _print_banner(
     print()
 
 
+def _print_ready_section(host: str, port: int) -> None:
+    """Print the 'Server ready' continuation box after model loads.
+
+    Matches the border style and width of _print_banner() so it looks
+    like a connected section below the startup banner.
+    """
+    R = _C.R
+
+    if not _TTY:
+        print(f"  Server ready!  http://{host}:{port}/v1")
+        print(f"  OPENAI_BASE_URL=http://{host}:{port}/v1")
+        print(f"  OPENAI_API_KEY=squish")
+        print()
+        return
+
+    BD = "\x1b[38;2;124;58;237m"   # #7C3AED — squish purple border
+    G  = "\x1b[38;2;74;222;128m"   # green
+    WT = "\x1b[38;2;240;240;255m"  # near-white
+    MG = "\x1b[38;2;196;86;255m"   # magenta
+    DM = "\x1b[38;2;100;116;139m"  # dim slate
+
+    endpoint = f"http://{host}:{port}/v1"
+
+    rows = [
+        f"  {G}✓{R}  {WT}Server ready!{R}",
+        "",
+        f"  {DM}Set in any OpenAI client:{R}",
+        f"    {MG}OPENAI_BASE_URL{R}={DM}{endpoint}{R}",
+        f"    {MG}OPENAI_API_KEY{R}={DM}squish{R}",
+    ]
+
+    _ANSI = re.compile(r'\x1b\[[0-9;]*m')
+
+    def vis(s: str) -> int:
+        return len(_ANSI.sub('', s))
+
+    inner_w = max(vis(r) for r in rows) + 4
+
+    def border(s: str) -> str:
+        return f"{BD}{s}{R}"
+
+    def row(s: str) -> str:
+        pad = inner_w - vis(s)
+        return border("║") + s + " " * max(0, pad) + border("║")
+
+    print()
+    print(border("╔" + "═" * inner_w + "╗"))
+    print(border("║") + " " * inner_w + border("║"))
+    for r in rows:
+        if r == "":
+            print(border("║") + " " * inner_w + border("║"))
+        else:
+            print(row(r))
+    print(border("║") + " " * inner_w + border("║"))
+    print(border("╚" + "═" * inner_w + "╝"))
+    print()
+
+
 # ── Verbose inference tracing ─────────────────────────────────────────────────
 _trace: bool       = False   # set True by --trace in main()
 _trace_tokens: bool = False  # set True by --trace-tokens in main()
@@ -5676,22 +5734,11 @@ Examples:
         _warmup_model(verbose=getattr(args, "verbose", False))
         _cap_metal_cache(verbose=False)
 
-    print()
-    _section("")
-    print(f"  {_C.B}{_gradient('  Server ready!', _LOGO_GRAD)}{_C.R}")
-    print()
-    _info("API endpoint",  f"{_C.T}http://{args.host}:{args.port}/v1{_C.R}")
-    _info("Web chat UI",   f"{_C.T}http://{args.host}:{args.port}/chat{_C.R}")
-    _info("Ollama compat", f"{_C.T}http://{args.host}:{args.port}/api/chat{_C.R}")
     if _wa_enabled:
         _info("WhatsApp",     f"{_C.T}http://{args.host}:{args.port}/webhook/whatsapp{_C.R}")
     if _signal_enabled:
         _info("Signal",       f"{_C.T}http://{args.host}:{args.port}/signal/status{_C.R}")
-    print()
-    print(f"  {_C.DIM}Set in any OpenAI client:{_C.R}")
-    print(f"    {_C.MG}OPENAI_BASE_URL{_C.R}=http://{args.host}:{args.port}/v1")
-    print(f"    {_C.MG}OPENAI_API_KEY{_C.R}=squish")
-    print()
+    _print_ready_section(host=args.host, port=args.port)
 
     # When --trace is active and --trace-output is set, print the trace tree
     # after startup (before blocking in uvicorn) so startup timing is visible.
