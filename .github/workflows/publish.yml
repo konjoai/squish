@@ -6,7 +6,7 @@ on:
       - "v*.*.*"
 
 permissions:
-  contents: write      # needed to create a GitHub Release
+  contents: write      # needed to create a GitHub Release and push formula update
   id-token: write      # needed for OIDC Trusted Publisher upload
 
 jobs:
@@ -40,3 +40,41 @@ jobs:
           files: dist/*
           generate_release_notes: true
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew formula URL and sha256
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          PYPI_URL="https://files.pythonhosted.org/packages/source/s/squish-ai/squish_ai-${VERSION}.tar.gz"
+
+          # Wait for PyPI CDN propagation (up to 60s)
+          for i in 1 2 3 4; do
+            sleep 15
+            HTTP=$(curl -sI "${PYPI_URL}" | head -1 | awk '{print $2}')
+            [ "${HTTP}" = "200" ] && break
+            echo "PyPI not yet propagated (attempt ${i}/4)..."
+          done
+
+          SHA256=$(curl -sL "${PYPI_URL}" | shasum -a 256 | awk '{print $1}')
+          if [ -z "${SHA256}" ]; then
+            echo "ERROR: Could not compute sha256 for ${PYPI_URL}" >&2
+            exit 1
+          fi
+
+          sed -i \
+            "s|url \"https://files.pythonhosted.org/packages/source/s/squish-ai/squish_ai-[0-9.]*\.tar\.gz\"|url \"${PYPI_URL}\"|" \
+            Formula/squish.rb
+          sed -i \
+            "/url.*squish_ai.*tar\.gz/{n;s|sha256 \"[a-f0-9]*\"|sha256 \"${SHA256}\"|}"\
+            Formula/squish.rb
+
+          # NOTE: Resource blocks for Python dependencies are NOT automatically
+          # updated here. If you bumped a dependency version (e.g. orjson), manually
+          # regenerate resource blocks before tagging:
+          #   pip install squish-ai homebrew-pypi-poet && poet squish-ai
+          # Then commit the updated Formula/squish.rb.
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/squish.rb
+          git commit -m "chore: bump formula to v${VERSION}" || echo "No formula changes to commit"
+          git push
