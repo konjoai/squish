@@ -2090,10 +2090,27 @@ def cmd_doctor(args):
     print()
 
     ok = True
+    _optional_missing = 0
     _results: list[dict] = []
 
-    def _check(label: str, passed: bool, fix: str = "") -> None:
-        nonlocal ok
+    def _check(label: str, passed: bool, fix: str = "", optional: bool = False) -> None:
+        nonlocal ok, _optional_missing
+        # Optional checks never fail the run. When unmet they render with a
+        # dim dash (—) instead of a red ✗, and are surfaced as "available to
+        # add" in the summary rather than as failures.
+        if optional and not passed:
+            _optional_missing += 1
+            if _rich:
+                _con.print(f"  [squish.dim]—[/]  [squish.dim]{label}[/]")
+                if fix:
+                    _con.print(f"       [squish.dim]Add:[/] [squish.white]{fix}[/]")
+            else:
+                print(f"  {_C.DIM}-{_C.R}  {_C.DIM}{label}{_C.R}")
+                if fix:
+                    print(f"       {_C.DIM}Add:{_C.R} {fix}")
+            _results.append({"label": label, "passed": False, "fix": fix, "optional": True})
+            return
+
         if _rich:
             sym = "[squish.green]✓[/]" if passed else "[squish.error]✗[/]"
             _con.print(f"  {sym}  {label}")
@@ -2108,7 +2125,7 @@ def cmd_doctor(args):
                 ok = False
                 if fix:
                     print(f"       {_C.DIM}Fix:{_C.R} {fix}")
-        _results.append({"label": label, "passed": passed, "fix": fix})
+        _results.append({"label": label, "passed": passed, "fix": fix, "optional": optional})
 
     # OS
     _check("macOS / Apple Silicon",
@@ -2130,7 +2147,7 @@ def cmd_doctor(args):
     def _try_import(pkg: str) -> tuple:
         try:
             return (pkg, importlib.import_module(pkg), None)
-        except ImportError as exc:
+        except Exception as exc:  # noqa: BLE001 — also capture Metal/init errors
             return (pkg, None, exc)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(_slow_pkgs)) as _pool:
@@ -2138,6 +2155,15 @@ def cmd_doctor(args):
             pkg: (mod, err)
             for pkg, mod, err in _pool.map(_try_import, _slow_pkgs)
         }
+
+    # mlx initialises its Metal context lazily and can fail to import inside a
+    # worker thread even when a direct main-thread import succeeds. Retry any
+    # failed import once on the main thread to avoid false-negative results.
+    for _pkg in _slow_pkgs:
+        _mod, _err = _pkg_cache[_pkg]
+        if _mod is None:
+            _, _retry_mod, _retry_err = _try_import(_pkg)
+            _pkg_cache[_pkg] = (_retry_mod, _retry_err)
 
     # MLX
     _mx_mod, _ = _pkg_cache["mlx.core"]
@@ -2249,18 +2275,26 @@ def cmd_doctor(args):
     # squash (optional)
     try:
         import squash.sbom_builder  # noqa: F401
-        _check("squash-ai (optional — compliance & ML-BOM features)", True)
+        _check("squash-ai (compliance & ML-BOM features)", True, optional=True)
     except ImportError:
-        _check("squash-ai (optional — compliance & ML-BOM features)", False,
-               'pip install squash-ai')
+        _check("squash-ai (compliance & ML-BOM features)", False,
+               'pip install squash-ai', optional=True)
 
     print()
     if ok:
+        if _optional_missing:
+            _opt_note = (
+                f"All required checks passed. squish is ready.  "
+                f"({_optional_missing} optional feature"
+                f"{'s' if _optional_missing != 1 else ''} available to add)"
+            )
+        else:
+            _opt_note = "All checks passed. squish is ready."
         if _rich:
-            _con.print("  [squish.green]✓[/]  [squish.white]All checks passed. squish is ready.[/]")
+            _con.print(f"  [squish.green]✓[/]  [squish.white]{_opt_note}[/]")
             _con.print()
         else:
-            print("  All checks passed. squish is ready.\n")
+            print(f"  {_opt_note}\n")
     else:
         if _rich:
             _con.print("  [squish.error]✗[/]  [squish.white]Some checks failed. See fixes above.[/]")
