@@ -515,6 +515,7 @@ def _print_banner(
     web_ui: str | None = None,
     mode: str | None = None,
     api_key: str | None = None,
+    load_status: str | None = None,
 ) -> None:
     """Print the SQUISH startup box.
 
@@ -585,6 +586,13 @@ def _print_banner(
     def c(name: str, txt: str) -> str:
         return f"\x1b[{COLORS[name]}m{txt}{R}"
 
+    # Determine terminal width so the unified box fills the screen.
+    import shutil as _shutil_b
+    term_cols = _shutil_b.get_terminal_size((100, 24)).columns
+    # Clamp to a sensible range so we don't render a tiny or absurdly wide box.
+    term_cols = max(80, min(term_cols, 160))
+    inner_w = term_cols - 2  # subtract the two vertical border chars
+
     # ── Left column: SQUISH wordmark + tagline ────────────────────────────
     wordmark = [
         "███████╗ ██████╗ ██╗   ██╗██╗███████╗██╗  ██╗",
@@ -601,36 +609,31 @@ def _print_banner(
     W.extend(["", ""])
     W.append("     " + c("WT", tagline))
 
-    # ── Right column: SQUISH character (user-supplied design) ─────────────
+    # ── Right column: SQUISH character — half-size, same proportions ─────
+    # Body sits at cols 3-20 (3 lead spaces + 18 blocks), so its centre is at
+    # col ~11.5.  Sparkle rows are 13 chars wide (5 syms + 4×2 gaps); leading
+    # 5 spaces puts their centre at col 11, dead-on over the body.
     C = [
-        # Top sparkles — 7 symbols centred over the body (matches the bottom
-        # row's span so the character has symmetric top/bottom adornment).
-        ("       " + c("ct","✦") + "  " + c("cy","▲") + "   " + c("co","●") + "   " + c("cp","✦") + "  " + c("ct","◆") + "  " + c("cg","★") + "  " + c("co","▲") + "  "),
-        # Top ears — rounded outer corners that mirror the feet row at the
-        # bottom. ▀████▀▀ at the feet has its half-block at the upper half of
-        # the cell (looks like a foot toe); ▄████▄▄ at the head mirrors it
-        # with the half-block at the lower half (looks like a soft ear tip).
-        ("   " + c("B","▄████▄▄") + "                " + c("B","▄▄████▄")),
-        ("   " + c("B","██████████") + "          " + c("B","██████████")),
-        ("   " + c("B","██████████████████████████████")),
-        ("   " + c("B","██████████████████████████████")),
-        # Eyes — 7-block edges with a 12-block bridge keeps them clearly
-        # symmetric around the body's centre.
-        ("   " + c("B","███████") + "  " + c("B","████████████") + "  " + c("B","███████")),
-        ("    " + c("B","████████████████████████████")),
-        ("     " + c("B","██████████████████████████")),
-        ("      " + c("B","███████") + "          " + c("B","███████")),
-        ("      " + c("B","████████████████████████")),
-        ("  " + c("B","▄██████████████████████████████▄")),
-        ("  " + c("B","▀██████████████████████████████▀")),
-        ("      " + c("B","████████████████████████")),
-        ("     " + c("B","██████████████████████████")),
-        ("    " + c("B","████████████████████████████")),
-        ("   " + c("B","██████████████████████████████")),
-        # Feet — unchanged; the top ears now mirror this shape.
-        ("   " + c("B","▀████▀▀") + "                " + c("B","▀▀████▀")),
-        # Bottom sparkles — 7 symbols centred over the body.
-        ("       " + c("crd","●") + "  " + c("ct","◆") + "   " + c("cy","✦") + "   " + c("cp","●") + "  " + c("cbl","◇") + "  " + c("cg","✦") + "  " + c("co","▲") + "  "),
+        # Top sparkles — 5 symbols centred over the body
+        ("     " + c("ct","✦") + "  " + c("co","●") + "  " + c("cp","✦") + "  " + c("ct","◆") + "  " + c("cg","★")),
+        # Ear tops — half-block caps mirroring the feet
+        ("   " + c("B","▄██▄") + "          " + c("B","▄██▄")),
+        # Head + ear bases blended
+        ("   " + c("B","██████████████████")),
+        # Eyes — solid edges with a centred bridge
+        ("   " + c("B","███") + "  " + c("B","████████") + "  " + c("B","███")),
+        # Face mid
+        ("   " + c("B","██████████████████")),
+        # Body bulge top
+        ("  " + c("B","▄██████████████████▄")),
+        # Body bulge bottom
+        ("  " + c("B","▀██████████████████▀")),
+        # Face bottom
+        ("   " + c("B","██████████████████")),
+        # Feet — mirror of ear tops
+        ("   " + c("B","▀██▀") + "          " + c("B","▀██▀")),
+        # Bottom sparkles — 5 symbols centred over the body
+        ("     " + c("crd","●") + "  " + c("ct","◆") + "  " + c("cp","✦") + "  " + c("cbl","◇") + "  " + c("cg","✦")),
     ]
 
     # Equalize row counts so left+right align.
@@ -641,10 +644,12 @@ def _print_banner(
     # ── Column widths (visible chars only) ─────────────────────────────────
     left_w  = max(_vlen(r) for r in W)
     right_w = max(_vlen(r) for r in C)
-    GAP     = 5
     LPAD    = 2
     RPAD    = 2
-    inner_w = LPAD + left_w + GAP + right_w + RPAD
+    # Centre the two columns inside the full-width box. Remaining space
+    # is distributed as LPAD … left_w … GAP … right_w … RPAD.
+    extra = inner_w - (left_w + right_w) - LPAD - RPAD
+    GAP = max(4, extra)
 
     def border(s: str) -> str:
         return c("BD", s)
@@ -652,18 +657,28 @@ def _print_banner(
     def pad_visible(s: str, target: int) -> str:
         return s + " " * max(0, target - _vlen(s))
 
-    # ── Top border + side-by-side rows ─────────────────────────────────────
-    print(border("╔" + "═" * inner_w + "╗"))
-    print(border("║") + " " * inner_w + border("║"))
+    # ── Top border with embedded title ────────────────────────────────────
+    title_plain = " Squish  Local Inference Server "
+    title_w = len(title_plain)
+    left_dashes = max(3, (inner_w - title_w) // 2)
+    right_dashes = max(3, inner_w - title_w - left_dashes)
+    title_colored = " " + c("B", "Squish") + "  " + c("DM", "Local Inference Server") + " "
+    print(
+        border("╭" + "─" * left_dashes)
+        + title_colored
+        + border("─" * right_dashes + "╮")
+    )
+    print(border("│") + " " * inner_w + border("│"))
     for i in range(row_count):
         left  = pad_visible(W[i],  left_w)
         right = pad_visible(C[i],  right_w)
-        body  = (" " * LPAD) + left + (" " * GAP) + right + (" " * RPAD)
-        print(border("║") + body + border("║"))
-    print(border("║") + " " * inner_w + border("║"))
+        body  = (" " * LPAD) + left + (" " * GAP) + right
+        body  = pad_visible(body, inner_w)
+        print(border("│") + body + border("│"))
+    print(border("│") + " " * inner_w + border("│"))
 
     # ── Divider ────────────────────────────────────────────────────────────
-    print(border("╠" + "═" * inner_w + "╣"))
+    print(border("├" + "─" * inner_w + "┤"))
 
     # ── Info panel ─────────────────────────────────────────────────────────
     label_w = 9  # "Endpoint " etc.
@@ -672,10 +687,10 @@ def _print_banner(
         lbl = c("DM", label.ljust(label_w))
         body = (" " * LPAD) + lbl + " " + value
         body = pad_visible(body, inner_w)
-        print(border("║") + body + border("║"))
+        print(border("│") + body + border("│"))
 
     def blank_row() -> None:
-        print(border("║") + " " * inner_w + border("║"))
+        print(border("│") + " " * inner_w + border("│"))
 
     blank_row()
     info_row("Model",    c("cp", model))
@@ -686,6 +701,9 @@ def _print_banner(
     blank_row()
     info_row("OpenAI",   c("DM", f"OPENAI_BASE_URL={endpoint}"))
     info_row("Ollama",   c("DM", f"OLLAMA_HOST=http://{host}:{port}"))
+    if load_status:
+        blank_row()
+        info_row("Status",   c("cg", "✓ ") + c("WT", load_status))
 
     # Right-aligned "Press Ctrl+C to stop"
     stop_text = c("DM", "Press Ctrl+C to stop")
@@ -693,10 +711,10 @@ def _print_banner(
     pad_left = inner_w - visible_stop - RPAD
     body = (" " * max(0, pad_left)) + stop_text + (" " * RPAD)
     body = pad_visible(body, inner_w)
-    print(border("║") + body + border("║"))
+    print(border("│") + body + border("│"))
 
     # ── Bottom border ──────────────────────────────────────────────────────
-    print(border("╚" + "═" * inner_w + "╝"))
+    print(border("╰" + "─" * inner_w + "╯"))
     print()
 
 
@@ -4927,7 +4945,9 @@ Examples:
             )
 
     _check_mlx_lm_version()
-    _print_banner()
+    # NOTE: banner is now deferred until after model load so the "loaded in
+    # X.Xs" status can be rendered inside the same unified box.  See the
+    # _print_banner(load_status=…) call further down in main().
 
     if getattr(args, "mlx_model_dir", ""):
         _info("model", f"{args.mlx_model_dir}  {_C.DIM}(mlx_lm INT4){_C.R}")
@@ -5702,15 +5722,22 @@ Examples:
         )
 
     # ── Wave 75/79: optimization status ─────────────────────────────────────────
+    _load_status_line: str | None = None
     _auto_prof = globals().get("_auto_profile")
     if _auto_prof is not None and _state.model is not None:
         # Wave 79: single-line status when auto-profile is active
         _model_label = getattr(_state, "model_name", "") or "model"
         _load_s = getattr(_state, "load_time_s", 0.0) or 0.0
-        _status = _auto_prof.status_line(_model_label, _load_s)
-        _ok(_status)
+        # status_line() prefixes with "squish  " — strip it for the in-box row.
+        _full_status = _auto_prof.status_line(_model_label, _load_s)
+        _load_status_line = _full_status.removeprefix("squish  ").strip()
     # No auto-profile: optimization table suppressed from default startup path.
     # (wave 107: call the print helper manually or pass --verbose to see it.)
+
+    # ── Unified startup banner ────────────────────────────────────────────────
+    # Deferred until here so the loaded-in-X.Xs status renders inside the box
+    # instead of as a separate line below it.
+    _print_banner(load_status=_load_status_line)
 
     # ── Wave 76: Initialise agent tool registry ───────────────────────────────
     global _agent_registry
@@ -5738,7 +5765,9 @@ Examples:
         _info("WhatsApp",     f"{_C.T}http://{args.host}:{args.port}/webhook/whatsapp{_C.R}")
     if _signal_enabled:
         _info("Signal",       f"{_C.T}http://{args.host}:{args.port}/signal/status{_C.R}")
-    _print_ready_section(host=args.host, port=args.port)
+    # NOTE: unified banner above already shows OPENAI_BASE_URL / OLLAMA_HOST;
+    # no separate "Server ready!" box — the load-status _ok() line above is
+    # the readiness signal.
 
     # When --trace is active and --trace-output is set, print the trace tree
     # after startup (before blocking in uvicorn) so startup timing is visible.

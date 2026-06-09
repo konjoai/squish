@@ -1387,18 +1387,8 @@ def cmd_run(args):  # pragma: no cover
             stacklevel=0,
         )
 
-    _mode_label = "stock (no optimizations)" if getattr(args, "stock", False) else (
-        "agent + all optimizations" if getattr(args, "agent", False)
-        else "squish (all optimizations)"
-    )
-    from squish.ui import startup_panel as _sp
-    _sp(
-        model=model_dir.name,
-        endpoint=f"http://{host}:{port}/v1",
-        web_ui=f"http://{host}:{port}/chat",
-        mode=_mode_label,
-        api_key=api_key,
-    )
+    # NOTE: startup info panel is now rendered by server.py's _print_banner()
+    # as the single unified box. Don't print a duplicate here.
 
     # When the model is already an MLX-native quantized format (INT3, INT4 from
     # mlx_lm), route through --mlx-model-dir so server.py uses mlx_lm.load()
