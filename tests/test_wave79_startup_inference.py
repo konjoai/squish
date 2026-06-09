@@ -33,7 +33,7 @@ class TestVersionConsistency(unittest.TestCase):
 
     def test_version_is_9_5_0(self):
         import squish
-        self.assertEqual(squish.__version__, "9.33.6")
+        self.assertEqual(squish.__version__, "9.33.8")
 
     def test_version_is_string(self):
         import squish

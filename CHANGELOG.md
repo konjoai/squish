@@ -5,6 +5,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.33.8] — Unified startup banner + partial-dir guard
+
+### Changed
+- `squish run`: collapsed the three separate startup panels (cli pre-launch
+  panel, server banner, ready-section) into a single full-width box rendered
+  after model load. Title `Squish  Local Inference Server` at the top,
+  wordmark + half-size mascot side-by-side, info panel + load status row
+  inside the same border. Sparkles centred over the mascot.
+
+### Fixed
+- `load_from_npy_dir()`: partial/interrupted compressed dirs (manifest
+  missing >5% of expected weights) now raise a clear `FileNotFoundError`
+  naming the offending directory and listing sample missing tensors,
+  instead of crashing inside `model.load_weights()` with a 200-line
+  "Missing N parameters" dump.
+- Synced `squish/__init__.py` version with `pyproject.toml` (drift from
+  9.33.7 release).
+
+---
+
 ## [9.33.5] — RAM guard + CLI polish
 
 ### Added
