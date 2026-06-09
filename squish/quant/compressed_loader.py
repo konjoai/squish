@@ -1663,6 +1663,37 @@ def load_from_npy_dir(  # pragma: no cover
         manifest = json.load(f)
     safe_to_original = {v: k for k, v in manifest.items()}
 
+    # ── Partial-build guard ─────────────────────────────────────────────────
+    # A previously-interrupted `squish compress` / `squish pull` can leave a
+    # manifest containing only a fraction of the model's weights.  Catching
+    # this here turns a 200-line "Missing N parameters" dump from
+    # ``model.load_weights()`` into a single actionable error.
+    try:
+        from mlx.utils import tree_flatten as _mlx_tree_flatten
+        _expected = {name for name, _ in _mlx_tree_flatten(model.parameters())}
+    except Exception:
+        _expected = set()
+    _manifest_names = set(safe_to_original.values())
+    _missing = _expected - _manifest_names
+    if _expected and len(_missing) > max(2, len(_expected) // 20):
+        # >5% (or >2) of expected weights have no manifest entry → partial build.
+        _sample = "\n        ".join(sorted(_missing)[:5])
+        raise FileNotFoundError(
+            f"\n  ⚠  Partial / corrupt compressed model at:\n"
+            f"        {dir_path}\n\n"
+            f"     Manifest has {len(_manifest_names)} entries but the model "
+            f"expects {len(_expected)} weights — {len(_missing)} missing.\n"
+            f"     This usually means a previous `squish pull` or "
+            f"`squish compress` was interrupted.\n\n"
+            f"     Examples of missing tensors:\n"
+            f"        {_sample}\n\n"
+            f"     To recover:\n"
+            f"        rm -rf {dir_path}\n"
+            f"        squish pull <model>          # re-download the compressed cache\n\n"
+            f"     Or point squish at a different models dir:\n"
+            f"        SQUISH_MODELS_DIR=~/models squish run <model>\n"
+        )
+
     # ── Single-pass tensor discovery (Phase 5B Opt 3) ─────────────────────────
     # os.scandir() collects all filenames in one syscall; tensors are then
     # sorted by _tensor_load_key so attention weights load before MLP weights
