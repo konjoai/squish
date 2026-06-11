@@ -15,14 +15,23 @@ import type {
   HealthResponse,
   CompressBenchResult,
   StreamedToken,
+  AgentEvent,
+  AgentTool,
+  TokenizeResult,
+  QualityReport,
 } from "./types";
 import { parseStreamChunk } from "./sse";
+import { parseAgentEvent } from "./agent";
 import { summarizeProm } from "./prom";
 import {
   MOCK_HEALTH,
   MOCK_PROM_TEXT,
+  MOCK_AGENT_TOOLS,
+  MOCK_QUALITY,
   buildMockChatStream,
   buildMockBenchmark,
+  buildMockAgentRun,
+  buildMockTokenize,
 } from "./mock";
 
 const SQUISH_API = (import.meta.env.VITE_SQUISH_API as string | undefined) ?? "";
@@ -156,6 +165,109 @@ export async function fetchMetrics(): Promise<{ raw: string; fromMock: boolean }
 }
 
 export function summarizeMetricsText(raw: string) { return summarizeProm(raw); }
+
+// ── Agent tool execution ────────────────────────────────────────────────────
+
+export async function fetchAgentTools(): Promise<{ tools: AgentTool[]; fromMock: boolean }> {
+  try {
+    const res = await fetch(SQUISH_API + "/v1/agent/tools", { headers: authHeaders() });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const body = (await res.json()) as { tools: AgentTool[] };
+    return { tools: body.tools ?? [], fromMock: false };
+  } catch {
+    return { tools: MOCK_AGENT_TOOLS, fromMock: true };
+  }
+}
+
+export interface AgentRunHandle {
+  cancel: () => void;
+  done: Promise<{ fromMock: boolean }>;
+}
+
+/**
+ * Run the multi-step agent loop over SSE. Each AgentEvent is delivered to
+ * `onEvent`. Falls back to a scripted mock run if the server is unreachable.
+ */
+export function agentRun(
+  body: { messages: { role: string; content: string }[]; max_steps?: number; max_tokens?: number; temperature?: number },
+  onEvent: (ev: AgentEvent, opts: { fromMock: boolean }) => void,
+): AgentRunHandle {
+  const ctrl = new AbortController();
+  let cancelled = false;
+
+  const done = (async () => {
+    try {
+      const res = await fetch(SQUISH_API + "/v1/agent/run", {
+        method: "POST",
+        headers: { ...authHeaders(), Accept: "text/event-stream" },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      if (!res.ok || !res.body) throw new Error(`http ${res.status}`);
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      while (!cancelled) {
+        const { value, done: end } = await reader.read();
+        if (end) break;
+        buf += dec.decode(value, { stream: true });
+        const { frames, rest } = parseStreamChunk(buf);
+        buf = rest;
+        for (const f of frames) {
+          if (f.done) continue;
+          const ev = parseAgentEvent(f.json);
+          if (ev) onEvent(ev, { fromMock: false });
+        }
+      }
+      return { fromMock: false };
+    } catch {
+      if (cancelled) return { fromMock: true };
+      for (const { ev, delayMs } of buildMockAgentRun(body.messages)) {
+        if (cancelled) break;
+        await sleep(delayMs);
+        onEvent(ev, { fromMock: true });
+      }
+      return { fromMock: true };
+    }
+  })();
+
+  return { cancel: () => { cancelled = true; ctrl.abort(); }, done };
+}
+
+// ── Tokenizer ─────────────────────────────────────────────────────────────────
+
+export async function tokenizeText(
+  text: string,
+): Promise<{ data: TokenizeResult; fromMock: boolean }> {
+  try {
+    const res = await fetch(SQUISH_API + "/v1/tokenize", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const data = (await res.json()) as TokenizeResult;
+    return { data, fromMock: false };
+  } catch {
+    return { data: buildMockTokenize(text), fromMock: true };
+  }
+}
+
+// ── Quality monitor ─────────────────────────────────────────────────────────
+
+export async function fetchQuality(
+  window = 3600,
+): Promise<{ data: QualityReport; fromMock: boolean }> {
+  try {
+    const res = await fetch(SQUISH_API + `/v1/quality?window=${window}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const data = (await res.json()) as QualityReport;
+    return { data, fromMock: false };
+  } catch {
+    return { data: MOCK_QUALITY, fromMock: true };
+  }
+}
 
 export async function benchmarkKV(ctx_len: number): Promise<{ data: CompressBenchResult; fromMock: boolean }> {
   try {

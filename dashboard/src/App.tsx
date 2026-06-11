@@ -9,13 +9,29 @@ import { LatencyWaterfall } from "./views/LatencyWaterfall";
 import { ThermalDial } from "./views/ThermalDial";
 import { ModelInfo } from "./views/ModelInfo";
 import { MetaInspector } from "./views/MetaInspector";
+import { AgentPlayground } from "./views/AgentPlayground";
+import { TokenizerLab } from "./views/TokenizerLab";
+import { QualityMonitor } from "./views/QualityMonitor";
+import { SectionNav } from "./components/SectionNav";
 import {
-  chatStream, fetchHealth, fetchMetrics, summarizeMetricsText,
+  chatStream, fetchHealth, fetchMetrics, fetchQuality, summarizeMetricsText,
 } from "./lib/api";
-import { MOCK_HEALTH, MOCK_PROM_TEXT } from "./lib/mock";
+import { MOCK_HEALTH, MOCK_PROM_TEXT, MOCK_QUALITY } from "./lib/mock";
 import type {
-  ChatTurn, HealthResponse, CockpitMetrics, KVMode,
+  ChatTurn, HealthResponse, CockpitMetrics, KVMode, QualityReport,
 } from "./lib/types";
+
+const NAV_ITEMS = [
+  { id: "chat", label: "chat" },
+  { id: "agent", label: "agent" },
+  { id: "kv", label: "kv cache" },
+  { id: "quant", label: "quant" },
+  { id: "tokenizer", label: "tokenizer" },
+  { id: "latency", label: "latency" },
+  { id: "quality", label: "quality" },
+  { id: "thermal", label: "power" },
+  { id: "model", label: "model" },
+];
 
 const EMPTY_METRICS: CockpitMetrics = summarizeMetricsText(MOCK_PROM_TEXT);
 
@@ -39,24 +55,30 @@ export default function App() {
 
   const [health, setHealth] = useState<HealthResponse>(MOCK_HEALTH);
   const [metrics, setMetrics] = useState<CockpitMetrics>(EMPTY_METRICS);
+  const [quality, setQuality] = useState<QualityReport>(MOCK_QUALITY);
   const [healthFromMock, setHealthFromMock] = useState<boolean>(true);
   const [metricsFromMock, setMetricsFromMock] = useState<boolean>(true);
   const [benchFromMock, setBenchFromMock] = useState<boolean>(true);
+  const [agentFromMock, setAgentFromMock] = useState<boolean>(true);
+  const [tokFromMock, setTokFromMock] = useState<boolean>(true);
+  const [qualityFromMock, setQualityFromMock] = useState<boolean>(true);
 
   const [liveTps, setLiveTps] = useState<number | undefined>();
 
   const cancelRef = useRef<(() => void) | null>(null);
 
-  // Poll /health and /v1/metrics every 5 seconds.
+  // Poll /health, /v1/metrics and /v1/quality every 5 seconds.
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
-      const [h, m] = await Promise.all([fetchHealth(), fetchMetrics()]);
+      const [h, m, q] = await Promise.all([fetchHealth(), fetchMetrics(), fetchQuality()]);
       if (cancelled) return;
       setHealth(h.data);
       setHealthFromMock(h.fromMock);
       setMetrics(summarizeMetricsText(m.raw));
       setMetricsFromMock(m.fromMock);
+      setQuality(q.data);
+      setQualityFromMock(q.fromMock);
     };
     void refresh();
     const id = setInterval(refresh, 5000);
@@ -159,8 +181,10 @@ export default function App() {
     >
       <Hero />
 
-      <div className="space-y-6 mt-10">
-        <section className="grid lg:grid-cols-[1fr_360px] gap-4 items-start">
+      <SectionNav items={NAV_ITEMS} />
+
+      <div className="space-y-12 mt-10">
+        <section id="chat" className="grid lg:grid-cols-[1fr_360px] gap-4 items-start scroll-mt-24">
           <div className="space-y-3">
             <ChatPanel turns={turns} active={active} />
             <PromptBar
@@ -175,16 +199,38 @@ export default function App() {
           <ThroughputCard health={health} liveTps={liveTps} />
         </section>
 
-        <KVCacheView metrics={metrics} mode={mode} />
+        <div className="scroll-mt-24">
+          <AgentPlayground onFromMockChange={setAgentFromMock} />
+        </div>
 
-        <QuantComparator serverMode={mode === "fp16" || mode === "unknown" ? "int4" : mode} onFromMockChange={setBenchFromMock} />
+        <div id="kv" className="scroll-mt-24">
+          <KVCacheView metrics={metrics} mode={mode} />
+        </div>
+
+        <div id="quant" className="scroll-mt-24">
+          <QuantComparator serverMode={mode === "fp16" || mode === "unknown" ? "int4" : mode} onFromMockChange={setBenchFromMock} />
+        </div>
+
+        <div className="scroll-mt-24">
+          <TokenizerLab onFromMockChange={setTokFromMock} />
+        </div>
 
         <section className="grid lg:grid-cols-2 gap-4">
-          <LatencyWaterfall turn={lastAssistantTurn} />
-          <ThermalDial health={health} />
+          <div id="latency" className="scroll-mt-24">
+            <LatencyWaterfall turn={lastAssistantTurn} />
+          </div>
+          <div id="thermal" className="scroll-mt-24">
+            <ThermalDial health={health} />
+          </div>
         </section>
 
-        <ModelInfo health={health} mode={mode} />
+        <div className="scroll-mt-24">
+          <QualityMonitor report={quality} fromMock={qualityFromMock} />
+        </div>
+
+        <div id="model" className="scroll-mt-24">
+          <ModelInfo health={health} mode={mode} />
+        </div>
 
         <MetaInspector
           health={health}
@@ -192,6 +238,9 @@ export default function App() {
           metricsFromMock={metricsFromMock}
           benchFromMock={benchFromMock}
           chatFromMock={chatFromMock}
+          agentFromMock={agentFromMock}
+          tokFromMock={tokFromMock}
+          qualityFromMock={qualityFromMock}
         />
 
         <Footer />
@@ -216,7 +265,7 @@ function Hero() {
         className="text-konjo-fg-muted mt-5 mx-auto"
         style={{ fontSize: 16, maxWidth: 640, lineHeight: 1.55 }}
       >
-        Real-time chat. KV cache live from <span className="text-konjo-mono">/v1/metrics</span>. Quantization comparator. Latency waterfall. Apple Silicon power telemetry. Everything the SquishBar shows you in 13px — now in cinema.
+        Real-time chat. A live agent that calls tools while you watch. Tokenizer lab. KV cache from <span className="text-konjo-mono">/v1/metrics</span>. Quantization comparator. Latency waterfall. P50/P95/P99 quality. Apple Silicon power telemetry. Everything squish does — now visible, live, in cinema.
       </p>
     </section>
   );
@@ -234,6 +283,12 @@ function Footer() {
           <span className="text-konjo-fg">@konjoai/ui</span>
           {" · "}
           <span className="text-konjo-fg">/v1/chat/completions</span>
+          {" · "}
+          <span className="text-konjo-fg">/v1/agent/run</span>
+          {" · "}
+          <span className="text-konjo-fg">/v1/tokenize</span>
+          {" · "}
+          <span className="text-konjo-fg">/v1/quality</span>
           {" · "}
           <span className="text-konjo-fg">/health</span>
           {" · "}
