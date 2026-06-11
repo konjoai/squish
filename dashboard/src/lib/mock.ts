@@ -1,7 +1,10 @@
 /**
  * Mock fixtures for offline development.
  */
-import type { HealthResponse, CompressBenchResult, ChatTurn, StreamedToken } from "./types";
+import type {
+  HealthResponse, CompressBenchResult, ChatTurn, StreamedToken,
+  AgentTool, AgentEvent, TokenizeResult, QualityReport,
+} from "./types";
 
 export const MOCK_HEALTH: HealthResponse = {
   status: "ok",
@@ -108,6 +111,147 @@ export function buildMockChatStream(): { tokens: StreamedToken[]; turn: ChatTurn
   };
   return { tokens, turn };
 }
+
+// ── Agent tool execution ────────────────────────────────────────────────────
+
+export const MOCK_AGENT_TOOLS: AgentTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "squish_read_file",
+      description: "Read lines from a text file on disk and return them as a string.",
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string", description: "Absolute path to the file." } },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "squish_list_dir",
+      description: "List the entries of a directory.",
+      parameters: {
+        type: "object",
+        properties: { path: { type: "string", description: "Directory to list." } },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "squish_run_shell",
+      description: "Run a shell command and capture stdout/stderr.",
+      parameters: {
+        type: "object",
+        properties: { command: { type: "string", description: "Command to run." } },
+        required: ["command"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "squish_python_repl",
+      description: "Execute a Python snippet and return the captured output.",
+      parameters: {
+        type: "object",
+        properties: { code: { type: "string", description: "Python source." } },
+        required: ["code"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "squish_web_search",
+      description: "Search the web and return ranked result snippets.",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "Search query." } },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "squish_fetch_url",
+      description: "Fetch a URL and return its text content.",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string", description: "URL to fetch." } },
+        required: ["url"],
+      },
+    },
+  },
+];
+
+/** A scripted agent run with realistic timing for offline demos. */
+export function buildMockAgentRun(
+  messages: { role: string; content: string }[],
+): { ev: AgentEvent; delayMs: number }[] {
+  const ask = messages[messages.length - 1]?.content ?? "the project";
+  const out: { ev: AgentEvent; delayMs: number }[] = [];
+  const say = (s: string) => {
+    for (const w of s.split(/(?=\s)/)) out.push({ ev: { type: "text_delta", delta: w }, delayMs: 22 });
+  };
+
+  say("I'll inspect the workspace to answer that.");
+  out.push({ ev: { type: "tool_call_start", call_id: "call_a1", tool_name: "squish_list_dir", arguments: { path: "/home/user/squish" } }, delayMs: 180 });
+  out.push({ ev: { type: "tool_call_result", call_id: "call_a1", tool_name: "squish_list_dir", result: "squish/  dashboard/  tests/  pyproject.toml  README.md  CHANGELOG.md", error: null, elapsed_ms: 4.2 }, delayMs: 320 });
+  out.push({ ev: { type: "step_complete", step: 1 }, delayMs: 120 });
+
+  say(" Now I'll read the project manifest.");
+  out.push({ ev: { type: "tool_call_start", call_id: "call_b2", tool_name: "squish_read_file", arguments: { path: "/home/user/squish/pyproject.toml" } }, delayMs: 200 });
+  out.push({ ev: { type: "tool_call_result", call_id: "call_b2", tool_name: "squish_read_file", result: "[project]\nname = \"squish\"\nversion = \"9.33.5\"", error: null, elapsed_ms: 2.7 }, delayMs: 280 });
+  out.push({ ev: { type: "step_complete", step: 2 }, delayMs: 120 });
+
+  say(` Done. Re: "${ask.slice(0, 48)}" — squish v9.33.5 is an MLX-accelerated local inference server. I confirmed the layout and manifest directly from disk.`);
+  out.push({ ev: { type: "done", total_steps: 3, total_tool_calls: 2 }, delayMs: 160 });
+  return out;
+}
+
+// ── Tokenizer ─────────────────────────────────────────────────────────────────
+
+/** Deterministic pseudo-tokenization (whitespace + punctuation) for offline mode. */
+export function buildMockTokenize(text: string): TokenizeResult {
+  const pieces = text.match(/\s*[\w']+|\s*[^\s\w]/g) ?? [];
+  let h = 2166136261;
+  const ids = pieces.map((p) => {
+    for (let i = 0; i < p.length; i++) { h ^= p.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0) % 151643;
+  });
+  return { token_ids: ids, token_count: ids.length, model: "qwen3:8b-q4 · mock bpe" };
+}
+
+// ── Quality monitor ─────────────────────────────────────────────────────────
+
+export const MOCK_QUALITY: QualityReport = {
+  window_seconds: 3600,
+  total_requests: 156,
+  generated_at: Date.now() / 1000,
+  models: [
+    {
+      model_id: "qwen3:8b-q4",
+      window_seconds: 3600,
+      n_requests: 156,
+      n_errors: 1,
+      error_rate: 0.0064,
+      latency_p50_ms: 612,
+      latency_p95_ms: 1480,
+      latency_p99_ms: 2210,
+      latency_mean_ms: 742,
+      tokens_per_sec_p50: 49.2,
+      tokens_per_sec_mean: 47.8,
+      ttft_p50_ms: 138,
+      ttft_p95_ms: 286,
+      generated_at: Date.now() / 1000,
+    },
+  ],
+};
 
 export function buildMockBenchmark(ctx_len = 2048): CompressBenchResult {
   const head_dim = 128;

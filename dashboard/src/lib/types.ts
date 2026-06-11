@@ -101,6 +101,94 @@ export interface CompressBenchResult {
   live: boolean;
 }
 
+// ── Agent tool execution (/v1/agent/tools + /v1/agent/run) ──────────────────
+
+/** A single tool exposed by the agent registry (OpenAI tools schema element). */
+export interface AgentTool {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: string;
+      properties?: Record<string, { type?: string; description?: string }>;
+      required?: string[];
+    };
+  };
+}
+
+/** SSE event types emitted by POST /v1/agent/run. */
+export type AgentEvent =
+  | { type: "text_delta"; delta: string }
+  | { type: "tool_call_start"; call_id: string; tool_name: string; arguments: Record<string, unknown> }
+  | {
+      type: "tool_call_result";
+      call_id: string;
+      tool_name: string;
+      result: string;
+      error: string | null;
+      elapsed_ms: number;
+    }
+  | { type: "step_complete"; step: number }
+  | { type: "done"; total_steps: number; total_tool_calls: number }
+  | { type: "error"; message: string };
+
+/** A tool call as rendered in the agent timeline (start + result merged). */
+export interface AgentToolCall {
+  callId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  result?: string;
+  error?: string | null;
+  elapsedMs?: number;
+  done: boolean;
+}
+
+/** A single step of an agent run: model thinking text + the tool calls it made. */
+export interface AgentStep {
+  step: number;
+  text: string;
+  calls: AgentToolCall[];
+  complete: boolean;
+}
+
+// ── Tokenizer (/v1/tokenize) ────────────────────────────────────────────────
+
+/** Response from POST /v1/tokenize. */
+export interface TokenizeResult {
+  token_ids: number[];
+  token_count: number;
+  model: string;
+}
+
+// ── Quality monitor (/v1/quality) ───────────────────────────────────────────
+
+/** Per-model rolling-window quality stats. */
+export interface QualityModel {
+  model_id: string;
+  window_seconds: number;
+  n_requests: number;
+  n_errors: number;
+  error_rate: number;
+  latency_p50_ms: number;
+  latency_p95_ms: number;
+  latency_p99_ms: number;
+  latency_mean_ms: number;
+  tokens_per_sec_p50: number;
+  tokens_per_sec_mean: number;
+  ttft_p50_ms: number;
+  ttft_p95_ms: number;
+  generated_at: number;
+}
+
+/** GET /v1/quality response. */
+export interface QualityReport {
+  window_seconds: number;
+  total_requests: number;
+  models: QualityModel[];
+  generated_at: number;
+}
+
 /** Aggregate cockpit metrics from /v1/metrics. */
 export interface CockpitMetrics {
   requests_total: number;
