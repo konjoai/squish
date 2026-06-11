@@ -12,13 +12,18 @@ import { MetaInspector } from "./views/MetaInspector";
 import { AgentPlayground } from "./views/AgentPlayground";
 import { TokenizerLab } from "./views/TokenizerLab";
 import { QualityMonitor } from "./views/QualityMonitor";
+import { EmbeddingsExplorer } from "./views/EmbeddingsExplorer";
+import { SystemPanel } from "./views/SystemPanel";
 import { SectionNav } from "./components/SectionNav";
 import {
-  chatStream, fetchHealth, fetchMetrics, fetchQuality, summarizeMetricsText,
+  chatStream, fetchHealth, fetchMetrics, fetchQuality, fetchSysStats, fetchModelStatus,
+  summarizeMetricsText,
 } from "./lib/api";
-import { MOCK_HEALTH, MOCK_PROM_TEXT, MOCK_QUALITY } from "./lib/mock";
+import {
+  MOCK_HEALTH, MOCK_PROM_TEXT, MOCK_QUALITY, MOCK_SYS_STATS, MOCK_MODEL_STATUS,
+} from "./lib/mock";
 import type {
-  ChatTurn, HealthResponse, CockpitMetrics, KVMode, QualityReport,
+  ChatTurn, HealthResponse, CockpitMetrics, KVMode, QualityReport, SysStats, ModelStatus,
 } from "./lib/types";
 
 const NAV_ITEMS = [
@@ -27,9 +32,11 @@ const NAV_ITEMS = [
   { id: "kv", label: "kv cache" },
   { id: "quant", label: "quant" },
   { id: "tokenizer", label: "tokenizer" },
+  { id: "embeddings", label: "embeddings" },
   { id: "latency", label: "latency" },
   { id: "quality", label: "quality" },
   { id: "thermal", label: "power" },
+  { id: "system", label: "system" },
   { id: "model", label: "model" },
 ];
 
@@ -56,22 +63,28 @@ export default function App() {
   const [health, setHealth] = useState<HealthResponse>(MOCK_HEALTH);
   const [metrics, setMetrics] = useState<CockpitMetrics>(EMPTY_METRICS);
   const [quality, setQuality] = useState<QualityReport>(MOCK_QUALITY);
+  const [sysStats, setSysStats] = useState<SysStats>(MOCK_SYS_STATS);
+  const [modelStatus, setModelStatus] = useState<ModelStatus>(MOCK_MODEL_STATUS);
   const [healthFromMock, setHealthFromMock] = useState<boolean>(true);
   const [metricsFromMock, setMetricsFromMock] = useState<boolean>(true);
   const [benchFromMock, setBenchFromMock] = useState<boolean>(true);
   const [agentFromMock, setAgentFromMock] = useState<boolean>(true);
   const [tokFromMock, setTokFromMock] = useState<boolean>(true);
   const [qualityFromMock, setQualityFromMock] = useState<boolean>(true);
+  const [embedFromMock, setEmbedFromMock] = useState<boolean>(true);
+  const [sysFromMock, setSysFromMock] = useState<boolean>(true);
 
   const [liveTps, setLiveTps] = useState<number | undefined>();
 
   const cancelRef = useRef<(() => void) | null>(null);
 
-  // Poll /health, /v1/metrics and /v1/quality every 5 seconds.
+  // Poll /health, /v1/metrics, /v1/quality, /sys-stats and /model/status every 5s.
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
-      const [h, m, q] = await Promise.all([fetchHealth(), fetchMetrics(), fetchQuality()]);
+      const [h, m, q, s, ms] = await Promise.all([
+        fetchHealth(), fetchMetrics(), fetchQuality(), fetchSysStats(), fetchModelStatus(),
+      ]);
       if (cancelled) return;
       setHealth(h.data);
       setHealthFromMock(h.fromMock);
@@ -79,6 +92,9 @@ export default function App() {
       setMetricsFromMock(m.fromMock);
       setQuality(q.data);
       setQualityFromMock(q.fromMock);
+      setSysStats(s.data);
+      setModelStatus(ms.data);
+      setSysFromMock(s.fromMock || ms.fromMock);
     };
     void refresh();
     const id = setInterval(refresh, 5000);
@@ -215,6 +231,10 @@ export default function App() {
           <TokenizerLab onFromMockChange={setTokFromMock} />
         </div>
 
+        <div className="scroll-mt-24">
+          <EmbeddingsExplorer onFromMockChange={setEmbedFromMock} />
+        </div>
+
         <section className="grid lg:grid-cols-2 gap-4">
           <div id="latency" className="scroll-mt-24">
             <LatencyWaterfall turn={lastAssistantTurn} />
@@ -223,6 +243,10 @@ export default function App() {
             <ThermalDial health={health} />
           </div>
         </section>
+
+        <div className="scroll-mt-24">
+          <SystemPanel stats={sysStats} status={modelStatus} fromMock={sysFromMock} />
+        </div>
 
         <div className="scroll-mt-24">
           <QualityMonitor report={quality} fromMock={qualityFromMock} />
@@ -241,6 +265,8 @@ export default function App() {
           agentFromMock={agentFromMock}
           tokFromMock={tokFromMock}
           qualityFromMock={qualityFromMock}
+          embedFromMock={embedFromMock}
+          sysFromMock={sysFromMock}
         />
 
         <Footer />
@@ -265,7 +291,7 @@ function Hero() {
         className="text-konjo-fg-muted mt-5 mx-auto"
         style={{ fontSize: 16, maxWidth: 640, lineHeight: 1.55 }}
       >
-        Real-time chat. A live agent that calls tools while you watch. Tokenizer lab. KV cache from <span className="text-konjo-mono">/v1/metrics</span>. Quantization comparator. Latency waterfall. P50/P95/P99 quality. Apple Silicon power telemetry. Everything squish does — now visible, live, in cinema.
+        Real-time chat. A live agent that calls tools while you watch. Tokenizer lab. Embedding similarity. KV cache from <span className="text-konjo-mono">/v1/metrics</span>. Quantization comparator. Latency waterfall. P50/P95/P99 quality. Power, disk &amp; load telemetry. Everything squish does — now visible, live, in cinema.
       </p>
     </section>
   );
@@ -288,7 +314,11 @@ function Footer() {
           {" · "}
           <span className="text-konjo-fg">/v1/tokenize</span>
           {" · "}
+          <span className="text-konjo-fg">/v1/embeddings</span>
+          {" · "}
           <span className="text-konjo-fg">/v1/quality</span>
+          {" · "}
+          <span className="text-konjo-fg">/sys-stats</span>
           {" · "}
           <span className="text-konjo-fg">/health</span>
           {" · "}

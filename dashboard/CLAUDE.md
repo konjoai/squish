@@ -26,7 +26,7 @@ npm run typecheck    # tsc -b --noEmit
 ## File Map
 | Path | Role |
 |------|------|
-| `src/App.tsx` | Composition + chat state machine + 5s health/metrics/quality polling + section nav |
+| `src/App.tsx` | Composition + chat state machine + 5s health/metrics/quality/sys-stats polling + section nav |
 | `src/views/ChatPanel.tsx` | Conversation with per-token latency hue on assistant turns |
 | `src/views/PromptBar.tsx` | Prompt textarea + send + clear |
 | `src/views/ThroughputCard.tsx` | tok/s dial + ttft + request stats |
@@ -34,19 +34,22 @@ npm run typecheck    # tsc -b --noEmit
 | `src/views/KVCacheView.tsx` | /v1/metrics aggregate + synthesized block grid |
 | `src/views/QuantComparator.tsx` | INT8/INT4/INT2 side-by-side via /api/benchmark |
 | `src/views/TokenizerLab.tsx` | Live token chips + IDs via /v1/tokenize (debounced) |
+| `src/views/EmbeddingsExplorer.tsx` | Cosine-similarity heatmap via /v1/embeddings |
 | `src/views/LatencyWaterfall.tsx` | Prefill vs decode + per-token bar strip |
 | `src/views/QualityMonitor.tsx` | P50/P95/P99 latency + TTFT + error rate via /v1/quality |
 | `src/views/ThermalDial.tsx` | Battery + mem pressure + power mode |
+| `src/views/SystemPanel.tsx` | Host load/RSS/disk via /sys-stats + load state via /model/status |
 | `src/views/ModelInfo.tsx` | Loaded model card (read-only) |
 | `src/views/MetaInspector.tsx` | Source labels for every pane (live vs mock) |
 | `src/components/AnimatedNumber.tsx` | Count-up tween for live telemetry values |
 | `src/components/SectionNav.tsx` | Sticky right-rail scroll-spy navigator |
-| `src/lib/types.ts` | TS mirrors of chat + health + metrics + benchmark + agent + tokenize + quality |
-| `src/lib/api.ts` | chatStream + fetchHealth + fetchMetrics + fetchQuality + benchmarkKV + agentRun + fetchAgentTools + tokenizeText |
+| `src/lib/types.ts` | TS mirrors of chat + health + metrics + benchmark + agent + tokenize + quality + embeddings + sys-stats |
+| `src/lib/api.ts` | chatStream + fetch{Health,Metrics,Quality,SysStats,ModelStatus} + benchmarkKV + agentRun + fetchAgentTools + tokenizeText + embedText |
 | `src/lib/agent.ts` | Pure AgentEvent → AgentStep[] reducer (testable) |
+| `src/lib/vector.ts` | Pure cosine-similarity + similarity matrix (testable) |
 | `src/lib/sse.ts` | SSE/NDJSON parser (auto-detect, keepalive-tolerant) |
 | `src/lib/prom.ts` | Prometheus exposition parser + summarizeProm |
-| `src/lib/mock.ts` | MOCK fixtures + buildMockChatStream/Benchmark/AgentRun/Tokenize |
+| `src/lib/mock.ts` | MOCK fixtures + buildMockChatStream/Benchmark/AgentRun/Tokenize/Embeddings |
 
 ## Backend integration
 - `POST /v1/chat/completions` — SSE streaming. OpenAI-compatible `chat.completion.chunk` frames; `data: [DONE]` sentinel. Bearer auth via `Authorization: Bearer <key>` if `--api-key` set.
@@ -55,7 +58,10 @@ npm run typecheck    # tsc -b --noEmit
 - `GET /v1/agent/tools` — built-in agent tool schemas (OpenAI tools array).
 - `POST /v1/agent/run` — SSE agent loop. Events: text_delta · tool_call_start · tool_call_result · step_complete · done · error.
 - `POST /v1/tokenize` — `{text}` → `{token_ids, token_count, model}`.
+- `POST /v1/embeddings` — `{input: string[]}` → OpenAI-compatible `{data:[{embedding}]}`. Mean-pooled last-hidden-state vectors; similarity computed client-side.
 - `GET /v1/quality` — rolling-window P50/P95/P99 latency + TTFT + error rate per model. Polled every 5s.
+- `GET /sys-stats` — stdlib host metrics (load avg, process RSS, disk). Polled every 5s.
+- `GET /model/status` — lightweight load-state probe (load_mode, model_loaded, load_time_s, load_error). Polled every 5s.
 - `POST /api/benchmark` (demo server) — INT8/INT4/INT2 KV-cache compression benchmark. Returns SNR, memory, elapsed.
 
 ## When extending
