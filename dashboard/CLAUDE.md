@@ -37,6 +37,7 @@ npm run typecheck    # tsc -b --noEmit
 | `src/views/EmbeddingsExplorer.tsx` | Cosine-similarity heatmap via /v1/embeddings |
 | `src/views/LatencyWaterfall.tsx` | Prefill vs decode + per-token bar strip |
 | `src/views/QualityMonitor.tsx` | P50/P95/P99 latency + TTFT + error rate via /v1/quality |
+| `src/views/ObservabilityPanel.tsx` | APM per-op latency + bottlenecks + span timeline via /v1/obs-report |
 | `src/views/ThermalDial.tsx` | Battery + mem pressure + power mode |
 | `src/views/SystemPanel.tsx` | Host load/RSS/disk via /sys-stats + load state via /model/status |
 | `src/views/ModelInfo.tsx` | Loaded model card (read-only) |
@@ -60,6 +61,7 @@ npm run typecheck    # tsc -b --noEmit
 - `POST /v1/tokenize` — `{text}` → `{token_ids, token_count, model}`.
 - `POST /v1/embeddings` — `{input: string[]}` → OpenAI-compatible `{data:[{embedding}]}`. Mean-pooled last-hidden-state vectors; similarity computed client-side.
 - `GET /v1/quality` — rolling-window P50/P95/P99 latency + TTFT + error rate per model. Polled every 5s.
+- `GET /v1/obs-report` — APM report: status, per-op latency stats, bottlenecks + hints, recent trace spans. Polled every 5s. Span timeline only populates when `--trace`/`SQUISH_TRACE=1` is set.
 - `GET /sys-stats` — stdlib host metrics (load avg, process RSS, disk). Polled every 5s.
 - `GET /model/status` — lightweight load-state probe (load_mode, model_loaded, load_time_s, load_error). Polled every 5s.
 - `POST /api/benchmark` (demo server) — INT8/INT4/INT2 KV-cache compression benchmark. Returns SNR, memory, elapsed.

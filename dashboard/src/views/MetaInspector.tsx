@@ -12,6 +12,7 @@ export interface MetaInspectorProps {
   qualityFromMock: boolean;
   embedFromMock: boolean;
   sysFromMock: boolean;
+  obsFromMock: boolean;
 }
 
 function StatBlock({
@@ -37,7 +38,7 @@ const warn = "var(--color-konjo-warm)";
 
 export function MetaInspector({
   health, healthFromMock, metricsFromMock, benchFromMock, chatFromMock,
-  agentFromMock, tokFromMock, qualityFromMock, embedFromMock, sysFromMock,
+  agentFromMock, tokFromMock, qualityFromMock, embedFromMock, sysFromMock, obsFromMock,
 }: MetaInspectorProps) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -48,6 +49,7 @@ export function MetaInspector({
       <StatBlock label="tokenize"   value={tokFromMock ? "mock bpe" : "live"} accent={tokFromMock ? warn : ok} />
       <StatBlock label="embeddings" value={embedFromMock ? "mock" : "live"} accent={embedFromMock ? warn : ok} />
       <StatBlock label="quality"    value={qualityFromMock ? "mock" : "live"} accent={qualityFromMock ? warn : ok} />
+      <StatBlock label="observability" value={obsFromMock ? "mock" : "live"} accent={obsFromMock ? warn : ok} />
       <StatBlock label="system"     value={sysFromMock ? "mock" : "live"} accent={sysFromMock ? warn : ok} />
       <StatBlock label="kv-bench"   value={benchFromMock ? "offline · mock" : "demo server"} accent={benchFromMock ? warn : "var(--color-konjo-violet)"} />
       <StatBlock label="kv-cache"   value="aggregate" accent="var(--color-konjo-violet)" />
