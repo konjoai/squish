@@ -22,6 +22,7 @@ import type {
   EmbeddingResponse,
   SysStats,
   ModelStatus,
+  ObsReport,
 } from "./types";
 import { parseStreamChunk } from "./sse";
 import { parseAgentEvent } from "./agent";
@@ -33,6 +34,7 @@ import {
   MOCK_QUALITY,
   MOCK_SYS_STATS,
   MOCK_MODEL_STATUS,
+  MOCK_OBS_REPORT,
   buildMockChatStream,
   buildMockBenchmark,
   buildMockAgentRun,
@@ -315,6 +317,21 @@ export async function fetchModelStatus(): Promise<{ data: ModelStatus; fromMock:
     return { data, fromMock: false };
   } catch {
     return { data: MOCK_MODEL_STATUS, fromMock: true };
+  }
+}
+
+// ── Observability / APM ───────────────────────────────────────────────────────
+
+export async function fetchObsReport(
+  thresholdMs = 200,
+): Promise<{ data: ObsReport; fromMock: boolean }> {
+  try {
+    const res = await fetch(SQUISH_API + `/v1/obs-report?threshold_ms=${thresholdMs}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const data = (await res.json()) as ObsReport;
+    return { data, fromMock: false };
+  } catch {
+    return { data: MOCK_OBS_REPORT, fromMock: true };
   }
 }
 

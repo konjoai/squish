@@ -243,3 +243,47 @@ export interface ModelStatus {
   load_time_s: number;
   load_error: string | null;
 }
+
+// ── Observability / APM (/v1/obs-report) ──────────────────────────────────────
+
+/** Per-operation latency statistics from the production profiler. */
+export interface OpStats {
+  n_samples: number;
+  mean_ms: number;
+  p50_ms: number;
+  p99_ms: number;
+  p999_ms: number;
+  min_ms: number;
+  max_ms: number;
+}
+
+/** A slow operation flagged above the p99 threshold. */
+export interface Bottleneck {
+  op: string;
+  p99_ms: number;
+  mean_ms: number;
+  n_samples: number;
+  hint: string;
+}
+
+/** A single trace span (from squish.telemetry). */
+export interface TraceSpan {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  start_ms: number;
+  end_ms: number | null;
+  duration_ms: number | null;
+  status: string;
+  error_type: string | null;
+  error_message: string | null;
+}
+
+/** GET /v1/obs-report response. */
+export interface ObsReport {
+  status: "ok" | "degraded" | "unavailable";
+  bottlenecks: Bottleneck[];
+  profile: Record<string, OpStats>;
+  profiler_ops: string[];
+  recent_spans: TraceSpan[];
+}

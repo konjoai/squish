@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildMockChatStream, buildMockBenchmark, MOCK_HEALTH,
   buildMockTokenize, buildMockAgentRun, MOCK_AGENT_TOOLS,
-  buildMockEmbeddings, MOCK_SYS_STATS, MOCK_MODEL_STATUS,
+  buildMockEmbeddings, MOCK_SYS_STATS, MOCK_MODEL_STATUS, MOCK_OBS_REPORT,
 } from "./mock";
 import { cosineSimilarity } from "./vector";
 
@@ -114,5 +114,18 @@ describe("MOCK_SYS_STATS / MOCK_MODEL_STATUS", () => {
     expect(MOCK_SYS_STATS.disk_used_pct).toBeGreaterThanOrEqual(0);
     expect(MOCK_MODEL_STATUS.model_loaded).toBe(true);
     expect(["eager", "lazy", "preload_async"]).toContain(MOCK_MODEL_STATUS.load_mode);
+  });
+});
+
+describe("MOCK_OBS_REPORT", () => {
+  it("has per-op profile stats with p50 ≤ p99", () => {
+    for (const stats of Object.values(MOCK_OBS_REPORT.profile)) {
+      expect(stats.p50_ms).toBeLessThanOrEqual(stats.p99_ms);
+      expect(stats.n_samples).toBeGreaterThan(0);
+    }
+  });
+  it("flags at least one bottleneck with a hint", () => {
+    expect(MOCK_OBS_REPORT.bottlenecks.length).toBeGreaterThan(0);
+    expect(MOCK_OBS_REPORT.bottlenecks[0].hint.length).toBeGreaterThan(0);
   });
 });
