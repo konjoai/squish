@@ -15,6 +15,7 @@ import { QualityMonitor } from "./views/QualityMonitor";
 import { EmbeddingsExplorer } from "./views/EmbeddingsExplorer";
 import { SystemPanel } from "./views/SystemPanel";
 import { ObservabilityPanel } from "./views/ObservabilityPanel";
+import { StartupProfile } from "./views/StartupProfile";
 import { SectionNav } from "./components/SectionNav";
 import {
   chatStream, fetchHealth, fetchMetrics, fetchQuality, fetchSysStats, fetchModelStatus,
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { id: "observability", label: "observability" },
   { id: "thermal", label: "power" },
   { id: "system", label: "system" },
+  { id: "startup", label: "startup" },
   { id: "model", label: "model" },
 ];
 
@@ -77,6 +79,7 @@ export default function App() {
   const [embedFromMock, setEmbedFromMock] = useState<boolean>(true);
   const [sysFromMock, setSysFromMock] = useState<boolean>(true);
   const [obsFromMock, setObsFromMock] = useState<boolean>(true);
+  const [startupFromMock, setStartupFromMock] = useState<boolean>(true);
 
   const [liveTps, setLiveTps] = useState<number | undefined>();
 
@@ -262,6 +265,10 @@ export default function App() {
           <ObservabilityPanel report={obsReport} fromMock={obsFromMock} />
         </div>
 
+        <div className="scroll-mt-24">
+          <StartupProfile onFromMockChange={setStartupFromMock} />
+        </div>
+
         <div id="model" className="scroll-mt-24">
           <ModelInfo health={health} mode={mode} />
         </div>
@@ -278,6 +285,7 @@ export default function App() {
           embedFromMock={embedFromMock}
           sysFromMock={sysFromMock}
           obsFromMock={obsFromMock}
+          startupFromMock={startupFromMock}
         />
 
         <Footer />
@@ -330,6 +338,8 @@ function Footer() {
           <span className="text-konjo-fg">/v1/quality</span>
           {" · "}
           <span className="text-konjo-fg">/v1/obs-report</span>
+          {" · "}
+          <span className="text-konjo-fg">/v1/startup-profile</span>
           {" · "}
           <span className="text-konjo-fg">/sys-stats</span>
           {" · "}

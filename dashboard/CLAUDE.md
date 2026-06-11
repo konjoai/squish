@@ -40,6 +40,7 @@ npm run typecheck    # tsc -b --noEmit
 | `src/views/ObservabilityPanel.tsx` | APM per-op latency + bottlenecks + span timeline via /v1/obs-report |
 | `src/views/ThermalDial.tsx` | Battery + mem pressure + power mode |
 | `src/views/SystemPanel.tsx` | Host load/RSS/disk via /sys-stats + load state via /model/status |
+| `src/views/StartupProfile.tsx` | Cold-start phase waterfall via /v1/startup-profile |
 | `src/views/ModelInfo.tsx` | Loaded model card (read-only) |
 | `src/views/MetaInspector.tsx` | Source labels for every pane (live vs mock) |
 | `src/components/AnimatedNumber.tsx` | Count-up tween for live telemetry values |
@@ -64,6 +65,7 @@ npm run typecheck    # tsc -b --noEmit
 - `GET /v1/obs-report` — APM report: status, per-op latency stats, bottlenecks + hints, recent trace spans. Polled every 5s. Span timeline only populates when `--trace`/`SQUISH_TRACE=1` is set.
 - `GET /sys-stats` — stdlib host metrics (load avg, process RSS, disk). Polled every 5s.
 - `GET /model/status` — lightweight load-state probe (load_mode, model_loaded, load_time_s, load_error). Polled every 5s.
+- `GET /v1/startup-profile` — cold-start phase timings (entries + slowest_5). Fetched once on mount. Only populated when `SQUISH_TRACE_STARTUP=1`.
 - `POST /api/benchmark` (demo server) — INT8/INT4/INT2 KV-cache compression benchmark. Returns SNR, memory, elapsed.
 
 ## When extending

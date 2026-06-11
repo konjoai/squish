@@ -3,6 +3,7 @@ import {
   buildMockChatStream, buildMockBenchmark, MOCK_HEALTH,
   buildMockTokenize, buildMockAgentRun, MOCK_AGENT_TOOLS,
   buildMockEmbeddings, MOCK_SYS_STATS, MOCK_MODEL_STATUS, MOCK_OBS_REPORT,
+  MOCK_STARTUP_PROFILE,
 } from "./mock";
 import { cosineSimilarity } from "./vector";
 
@@ -127,5 +128,16 @@ describe("MOCK_OBS_REPORT", () => {
   it("flags at least one bottleneck with a hint", () => {
     expect(MOCK_OBS_REPORT.bottlenecks.length).toBeGreaterThan(0);
     expect(MOCK_OBS_REPORT.bottlenecks[0].hint.length).toBeGreaterThan(0);
+  });
+});
+
+describe("MOCK_STARTUP_PROFILE", () => {
+  it("is enabled with phases summing to roughly total_ms", () => {
+    expect(MOCK_STARTUP_PROFILE.enabled).toBe(true);
+    const sum = (MOCK_STARTUP_PROFILE.entries ?? []).reduce((a, e) => a + e.elapsed_ms, 0);
+    expect(sum).toBeCloseTo(MOCK_STARTUP_PROFILE.total_ms!, 0);
+  });
+  it("ranks model_load as the slowest phase", () => {
+    expect(MOCK_STARTUP_PROFILE.slowest_5?.[0].phase).toBe("model_load");
   });
 });

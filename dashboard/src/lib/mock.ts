@@ -4,7 +4,7 @@
 import type {
   HealthResponse, CompressBenchResult, ChatTurn, StreamedToken,
   AgentTool, AgentEvent, TokenizeResult, QualityReport,
-  EmbeddingResponse, SysStats, ModelStatus, ObsReport,
+  EmbeddingResponse, SysStats, ModelStatus, ObsReport, StartupProfile,
 } from "./types";
 
 export const MOCK_HEALTH: HealthResponse = {
@@ -342,5 +342,28 @@ export const MOCK_OBS_REPORT: ObsReport = {
     { id: "s2", parent_id: "s1", name: "tokenizer.encode", start_ms: 2.0,   end_ms: 5.1,   duration_ms: 3.1,   status: "ok", error_type: null, error_message: null },
     { id: "s3", parent_id: "s1", name: "model.prefill",    start_ms: 5.5,   end_ms: 174.0, duration_ms: 168.5, status: "ok", error_type: null, error_message: null },
     { id: "s4", parent_id: "s1", name: "model.decode",     start_ms: 174.5, end_ms: 610.0, duration_ms: 435.5, status: "ok", error_type: null, error_message: null },
+  ],
+};
+
+// ── Startup profile ───────────────────────────────────────────────────────────
+
+export const MOCK_STARTUP_PROFILE: StartupProfile = {
+  enabled: true,
+  total_ms: 8423.6,
+  phase_count: 6,
+  entries: [
+    { phase: "imports",        label: "Import torch / mlx / transformers", elapsed_ms: 612.4 },
+    { phase: "platform_probe", label: "Detect Apple Silicon + memory",     elapsed_ms: 38.9 },
+    { phase: "weights_scan",   label: "Pre-scan HF file summary",          elapsed_ms: 144.2 },
+    { phase: "model_load",     label: "Load qwen3:8b-q4 weights",          elapsed_ms: 6892.1 },
+    { phase: "warmup",         label: "Warmup forward pass",               elapsed_ms: 681.0 },
+    { phase: "server_bind",    label: "Bind FastAPI + routes",             elapsed_ms: 55.0 },
+  ],
+  slowest_5: [
+    { phase: "model_load",   label: "Load qwen3:8b-q4 weights",          elapsed_ms: 6892.1 },
+    { phase: "warmup",       label: "Warmup forward pass",               elapsed_ms: 681.0 },
+    { phase: "imports",      label: "Import torch / mlx / transformers", elapsed_ms: 612.4 },
+    { phase: "weights_scan", label: "Pre-scan HF file summary",          elapsed_ms: 144.2 },
+    { phase: "server_bind",  label: "Bind FastAPI + routes",             elapsed_ms: 55.0 },
   ],
 };

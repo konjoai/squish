@@ -23,6 +23,7 @@ import type {
   SysStats,
   ModelStatus,
   ObsReport,
+  StartupProfile,
 } from "./types";
 import { parseStreamChunk } from "./sse";
 import { parseAgentEvent } from "./agent";
@@ -35,6 +36,7 @@ import {
   MOCK_SYS_STATS,
   MOCK_MODEL_STATUS,
   MOCK_OBS_REPORT,
+  MOCK_STARTUP_PROFILE,
   buildMockChatStream,
   buildMockBenchmark,
   buildMockAgentRun,
@@ -332,6 +334,17 @@ export async function fetchObsReport(
     return { data, fromMock: false };
   } catch {
     return { data: MOCK_OBS_REPORT, fromMock: true };
+  }
+}
+
+export async function fetchStartupProfile(): Promise<{ data: StartupProfile; fromMock: boolean }> {
+  try {
+    const res = await fetch(SQUISH_API + "/v1/startup-profile", { headers: authHeaders() });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const data = (await res.json()) as StartupProfile;
+    return { data, fromMock: false };
+  } catch {
+    return { data: MOCK_STARTUP_PROFILE, fromMock: true };
   }
 }
 

@@ -287,3 +287,22 @@ export interface ObsReport {
   profiler_ops: string[];
   recent_spans: TraceSpan[];
 }
+
+// ── Startup profile (/v1/startup-profile) ─────────────────────────────────────
+
+/** A single timed startup phase. */
+export interface StartupEntry {
+  phase: string;
+  label: string;
+  elapsed_ms: number;
+}
+
+/** GET /v1/startup-profile response (only populated when SQUISH_TRACE_STARTUP=1). */
+export interface StartupProfile {
+  enabled: boolean;
+  total_ms?: number;
+  phase_count?: number;
+  entries?: StartupEntry[];
+  slowest_5?: StartupEntry[];
+  message?: string;
+}
