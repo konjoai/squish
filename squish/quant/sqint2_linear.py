@@ -99,7 +99,7 @@ __all__ = ["SQINT2Linear", "sqint2_linear_from_layer"]
 # triggering Metal GPU initialization at module import time (causes SIGABRT
 # on macOS CI runners where the Metal context is not ready during the Python
 # import phase).  Access via module __getattr__ or directly as self._nf2_lut.
-_NF2_LUT_CACHE: "Optional[object]" = None  # mx.array once initialized
+_NF2_LUT_CACHE: "object | None" = None  # mx.array once initialized
 
 
 def _get_nf2_lut() -> "object":
@@ -155,12 +155,12 @@ class SQINT2Linear:
         in_features: int,
         out_features: int,
         group_size: int = 32,
-        residual_L: "Optional[np.ndarray]" = None,
-        residual_R: "Optional[np.ndarray]" = None,
-        sparse_rows: "Optional[np.ndarray]" = None,
-        sparse_cols: "Optional[np.ndarray]" = None,
-        sparse_vals: "Optional[np.ndarray]" = None,
-        bias: "Optional[object]" = None,
+        residual_L: "np.ndarray | None" = None,
+        residual_R: "np.ndarray | None" = None,
+        sparse_rows: "np.ndarray | None" = None,
+        sparse_cols: "np.ndarray | None" = None,
+        sparse_vals: "np.ndarray | None" = None,
+        bias: "object | None" = None,
     ) -> None:
         import mlx.core as mx  # deferred — avoids Metal init at import time
 
@@ -221,25 +221,25 @@ class SQINT2Linear:
         # Stage 3 residual factors (optional, stored as numpy for Rust/NumPy GEMV).
         # The Rust/NumPy path operates on numpy arrays; we store them in np memory
         # rather than unified memory to avoid roundtrip mx→np at every forward call.
-        self._residual_L: "Optional[np.ndarray]" = (
+        self._residual_L: "np.ndarray | None" = (
             np.asarray(residual_L, dtype=np.float16)
             if residual_L is not None else None
         )
-        self._residual_R: "Optional[np.ndarray]" = (
+        self._residual_R: "np.ndarray | None" = (
             np.asarray(residual_R, dtype=np.float16)
             if residual_R is not None else None
         )
 
         # Sparse COO correction (optional, numpy for scatter).
-        self._sparse_rows: "Optional[np.ndarray]" = (
+        self._sparse_rows: "np.ndarray | None" = (
             np.asarray(sparse_rows, dtype=np.int32)
             if sparse_rows is not None else None
         )
-        self._sparse_cols: "Optional[np.ndarray]" = (
+        self._sparse_cols: "np.ndarray | None" = (
             np.asarray(sparse_cols, dtype=np.int32)
             if sparse_cols is not None else None
         )
-        self._sparse_vals: "Optional[np.ndarray]" = (
+        self._sparse_vals: "np.ndarray | None" = (
             np.asarray(sparse_vals, dtype=np.float16)
             if sparse_vals is not None else None
         )
@@ -367,7 +367,7 @@ class SQINT2Linear:
 
 def sqint2_linear_from_layer(
     layer: SQINT2Layer,
-    bias: "Optional[object]" = None,
+    bias: "object | None" = None,
 ) -> "SQINT2Linear":
     """Construct a SQINT2Linear from a deserialized SQINT2Layer.
 
@@ -393,7 +393,7 @@ def sqint2_linear_from_layer(
     scales_mx  = mx.array(layer.scales.astype(np.float32))   # mx.float32
     zp_mx      = mx.array(layer.zero_points.astype(np.float32))  # mx.float32
 
-    bias_mx: "Optional[object]" = None
+    bias_mx: "object | None" = None
     if bias is not None:
         if isinstance(bias, mx.array):
             bias_mx = bias

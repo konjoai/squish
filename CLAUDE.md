@@ -1,11 +1,11 @@
 # squish
 
-Local LLM inference server — MLX-accelerated on Apple Silicon, PyTorch on Linux, with speculative decoding, quantization (INT4/INT3/SQINT2), agent tool execution, Ollama/OpenAI-compatible API, and the macOS SquishBar.
+Local LLM inference server — MLX-accelerated on Apple Silicon, with speculative decoding, quantization (INT4/INT3/SQINT2), agent tool execution, Ollama/OpenAI-compatible API, and the macOS SquishBar.
 
-**v9.14.0** — squash compliance layer extracted to `konjoai/squash` (`pip install squash-ai`).
+**v9.33.5**
 
 ## Stack
-Python 3.10+ · MLX + mlx-lm (Apple Silicon) · PyTorch (Linux) · FastAPI · transformers · HuggingFace Hub · Swift (macOS SquishBar)
+Python 3.10+ · MLX + mlx-lm (Apple Silicon) · FastAPI · transformers · HuggingFace Hub · Swift (macOS SquishBar)
 
 ## Commands
 ```bash
@@ -45,7 +45,6 @@ squish compat                                 # backend compatibility check
 | `apps/macos/SquishBar/` | Swift macOS menu bar app (model picker, progress, hotkey) |
 
 ## Planning Docs
-- `PLAN.md` — current wave state and version history
 - `MODULES.md` — per-wave module reference (Waves 1–99+)
 - `CHANGELOG.md` — all notable changes
 

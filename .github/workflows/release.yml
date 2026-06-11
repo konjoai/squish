@@ -1,0 +1,210 @@
+# Required secrets:
+#   HOMEBREW_TAP_TOKEN — GitHub Personal Access Token with repo scope for both
+#   konjoai/squish and konjoai/homebrew-squish. Create at:
+#   https://github.com/settings/tokens and add to:
+#   https://github.com/konjoai/squish/settings/secrets/actions
+#
+# GITHUB_TOKEN is provided automatically by GitHub Actions (no setup needed).
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 9.33.5) — leave blank to auto-detect from pyproject.toml"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  # ── Step 1: Detect or accept version ──────────────────────────────────────
+  detect-version:
+    name: Detect version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      should_release: ${{ steps.ver.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Resolve version
+        id: ver
+        run: |
+          # Manual dispatch with explicit version
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Auto-detect from pyproject.toml diff
+          NEW=$(grep '^version' pyproject.toml | head -1 | sed 's/version = "//;s/"//')
+          OLD=$(git show HEAD~1:pyproject.toml 2>/dev/null | \
+                grep '^version' | head -1 | sed 's/version = "//;s/"//' || echo "")
+          echo "version=$NEW" >> $GITHUB_OUTPUT
+          if [ "$NEW" != "$OLD" ] && [ -n "$OLD" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Step 2: Tag ───────────────────────────────────────────────────────────
+  tag:
+    name: Create git tag
+    needs: detect-version
+    if: needs.detect-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ needs.detect-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Tag and push
+        run: |
+          VERSION="${{ needs.detect-version.outputs.version }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Skip if tag already exists (idempotent)
+          if git ls-remote --tags origin | grep -q "refs/tags/v${VERSION}$"; then
+            echo "Tag v${VERSION} already exists — skipping"
+          else
+            git tag "v${VERSION}"
+            git push origin "v${VERSION}"
+            echo "✓ Tagged v${VERSION} — publish.yml and build-squishbar.yml now firing"
+          fi
+
+  # ── Step 3: Publish to PyPI ───────────────────────────────────────────────
+  publish-pypi:
+    name: Publish squish-ai to PyPI
+    needs: [detect-version, tag]
+    if: needs.detect-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.detect-version.outputs.version }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build distribution
+        run: |
+          pip install build --quiet
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip_existing: true
+
+  # ── Step 4: Wait for PyPI ─────────────────────────────────────────────────
+  wait-pypi:
+    name: Wait for PyPI squish-ai==${{ needs.tag.outputs.version }}
+    needs: [tag]
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ needs.tag.outputs.version }}
+      sha256: ${{ steps.pypi.outputs.sha256 }}
+      url: ${{ steps.pypi.outputs.url }}
+    steps:
+      - name: Poll PyPI
+        id: pypi
+        run: |
+          VERSION="${{ needs.tag.outputs.version }}"
+          for i in $(seq 1 30); do
+            DATA=$(curl -s "https://pypi.org/pypi/squish-ai/${VERSION}/json" | \
+                   python3 -c "
+          import sys,json
+          d=json.loads(sys.stdin.read().encode('utf-8','replace').decode('utf-8'))
+          for f in d['urls']:
+              if f['packagetype']=='sdist':
+                  print(f['digests']['sha256'])
+                  print(f['url'])
+          " 2>/dev/null || echo "")
+            if [ -n "$DATA" ]; then
+              SHA256=$(echo "$DATA" | head -1)
+              URL=$(echo "$DATA" | tail -1)
+              echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+              echo "url=$URL"       >> $GITHUB_OUTPUT
+              echo "✓ squish-ai==${VERSION} confirmed on PyPI"
+              exit 0
+            fi
+            echo "Waiting for PyPI... attempt $i/30"
+            sleep 20
+          done
+          echo "ERROR: PyPI publish timed out" && exit 1
+
+  # ── Step 5: Update Homebrew formula (source-install, no bottle) ──────────
+  update-formula:
+    name: Update Homebrew formula
+    needs: wait-pypi
+    runs-on: ubuntu-latest
+    env:
+      VERSION:  ${{ needs.wait-pypi.outputs.version }}
+      SHA256:   ${{ needs.wait-pypi.outputs.sha256 }}
+      TARBALL:  ${{ needs.wait-pypi.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update formula URL and sha256
+        run: |
+          python3 - << 'EOF'
+          import re, os
+          url  = os.environ["TARBALL"]
+          sha  = os.environ["SHA256"]
+          ver  = os.environ["VERSION"]
+          for path in ["Formula/squish.rb"]:
+              c = open(path).read()
+              c = re.sub(r'url "[^"]*"', f'url "{url}"', c, count=1)
+              c = re.sub(r'(^  sha256 ")[a-f0-9]{64}(")',
+                         f'\\g<1>{sha}\\g<2>', c, flags=re.MULTILINE, count=1)
+              # Remove any stale bottle block
+              c = re.sub(r'\n\s*bottle do\n.*?end\n', '\n',
+                         c, flags=re.DOTALL)
+              open(path, "w").write(c)
+              print(f"Updated {path}")
+          EOF
+          grep "url\|sha256" Formula/squish.rb | head -4
+
+      - name: Commit formula to konjoai/squish
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/squish.rb
+          git commit -m "release: squish-ai ${{ env.VERSION }} formula update" \
+            || echo "No changes to commit"
+          git push
+
+      - name: Update konjoai/homebrew-squish
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/konjoai/homebrew-squish.git" \
+            /tmp/tap
+          cp Formula/squish.rb /tmp/tap/Formula/squish.rb
+          cd /tmp/tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/squish.rb
+          git commit -m "release: squish-ai ${{ env.VERSION }} formula update" \
+            || echo "No changes to commit"
+          git push

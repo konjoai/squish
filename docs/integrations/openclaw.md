@@ -2,7 +2,7 @@
 
 [OpenClaw](https://github.com/open-claw/openclaw) is an open-source AI agent framework for macOS that provides tool-use, memory, and multi-step reasoning on top of a local OpenAI-compatible endpoint.
 
-Squish exposes a fully OpenAI-compatible API at `http://localhost:3333/v1`, so OpenClaw can use any Squish-hosted model with zero code changes.
+Squish exposes a fully OpenAI-compatible API at `http://localhost:11435/v1`, so OpenClaw can use any Squish-hosted model with zero code changes.
 
 ---
 
@@ -14,7 +14,7 @@ Squish exposes a fully OpenAI-compatible API at `http://localhost:3333/v1`, so O
 squish serve qwen3:8b
 ```
 
-The server starts on `http://localhost:3333` by default. It exposes:
+The server starts on `http://localhost:11435` by default. It exposes:
 - `POST /v1/chat/completions`
 - `GET /v1/models`
 - `POST /v1/completions`
@@ -27,7 +27,7 @@ In your OpenClaw config file (usually `~/.openclaw/config.json` or the project-l
 {
   "agent": {
     "model": "openai/qwen3:8b",
-    "openaiBaseUrl": "http://localhost:3333/v1",
+    "openaiBaseUrl": "http://localhost:11435/v1",
     "apiKey": "squish"
   }
 }
@@ -62,13 +62,13 @@ Anything below 4B parameters has unreliable structured JSON / tool-call output. 
 ## Using a Custom Port
 
 ```bash
-squish serve qwen3:8b --port 8080
+squish run qwen3:8b
 ```
 
 ```json
 {
   "agent": {
-    "openaiBaseUrl": "http://localhost:8080/v1"
+    "openaiBaseUrl": "http://localhost:11435/v1"
   }
 }
 ```
@@ -84,7 +84,7 @@ squish serve qwen3:8b --api-key mysecretkey
 ```json
 {
   "agent": {
-    "openaiBaseUrl": "http://localhost:3333/v1",
+    "openaiBaseUrl": "http://localhost:11435/v1",
     "apiKey": "mysecretkey"
   }
 }
@@ -102,7 +102,7 @@ Squish supports server-sent events (SSE) streaming (`"stream": true`). OpenClaw 
 
 **"Connection refused"** — Squish is not running. Start it with `squish serve <model>`.
 
-**"model not found"** — The model ID in your OpenClaw config does not match the model Squish loaded. Use `curl http://localhost:3333/v1/models` to see the available model IDs, then update your config.
+**"model not found"** — The model ID in your OpenClaw config does not match the model Squish loaded. Use `curl http://localhost:11435/v1/models` to see the available model IDs, then update your config.
 
 **Slow first response** — On the first run after compression, Squish builds an optimised weight cache. Subsequent starts load in 3–5 seconds.
 

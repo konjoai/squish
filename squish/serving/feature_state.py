@@ -36,8 +36,8 @@ class FeatureState:
     """
 
     # ── Core model state ──────────────────────────────────────────────────
-    model:              Optional[Any] = None
-    tokenizer:          Optional[Any] = None
+    model:              Any | None = None
+    tokenizer:          Any | None = None
     model_id:           str           = ""
     model_path:         str           = ""
     model_loaded:       bool          = False
@@ -61,18 +61,18 @@ class FeatureState:
     blazing_preset:     str           = ""
 
     # ── KV cache ──────────────────────────────────────────────────────────
-    kv_cache:           Optional[Any] = None
+    kv_cache:           Any | None = None
     kv_cache_enabled:   bool          = True
     kv_cache_size:      int           = 0
 
     # ── Draft head / speculative decoding ─────────────────────────────────
-    draft_head:         Optional[Any] = None
+    draft_head:         Any | None = None
     draft_head_path:    str           = ""
 
     # ── Telemetry / profiling ──────────────────────────────────────────────
-    profiler:           Optional[Any] = None
-    tracer:             Optional[Any] = None
-    startup_report:     Optional[Any] = None
+    profiler:           Any | None = None
+    tracer:             Any | None = None
+    startup_report:     Any | None = None
 
     # ── Network ───────────────────────────────────────────────────────────
     host:               str           = "127.0.0.1"
@@ -95,8 +95,8 @@ class FeatureState:
     max_context_msgs:   int           = 40
 
     # ── Misc ──────────────────────────────────────────────────────────────
-    generation_lock:    Optional[Any] = None
-    hardware_info:      Optional[Any] = None
+    generation_lock:    Any | None = None
+    hardware_info:      Any | None = None
 
 
 # Module-level singleton — server.py imports this and mutates it at runtime.

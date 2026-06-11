@@ -70,7 +70,7 @@ class PlatformInfo:
     has_cuda:        bool
     has_rocm:        bool
     is_wsl:          bool
-    cuda_info:       Optional[CUDAInfo]
+    cuda_info:       CUDAInfo | None
     apple_chip:      str             # "Apple M3 Pro" or "" on non-Apple
     ram_gb:          float           # Total system RAM GB
 
@@ -143,7 +143,7 @@ class UnifiedPlatformDetector:
     """
 
     def __init__(self) -> None:
-        self._info:  Optional[PlatformInfo] = None
+        self._info:  PlatformInfo | None = None
         self.stats = PlatformDetectorStats()
 
     # ------------------------------------------------------------------
@@ -229,7 +229,7 @@ class UnifiedPlatformDetector:
             return False
 
     @staticmethod
-    def _check_cuda() -> Tuple[bool, Optional[CUDAInfo]]:
+    def _check_cuda() -> tuple[bool, CUDAInfo | None]:
         try:
             import torch  # type: ignore[import]
             if not torch.cuda.is_available():

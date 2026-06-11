@@ -6,7 +6,7 @@ popular MLX-compatible models.  A remote catalog hosted at CATALOG_URL can updat
 it by being fetched into ~/.squish/catalog.json.
 
 Squish pre-compressed weights (``squish_weights.npz`` / npy-dir) are hosted under
-the ``squish-community`` HuggingFace organisation.  When available, ``pull`` skips
+the ``squishai`` HuggingFace organisation.  When available, ``pull`` skips
 compression and downloads the already-squished artefacts directly.
 
 Public API
@@ -15,7 +15,7 @@ Public API
 
     entry = resolve("qwen3:8b")
     entry.hf_mlx_repo    # "mlx-community/Qwen3-8B-bf16"
-    entry.squish_repo    # "squish-community/Qwen3-8B-squished", or None
+    entry.squish_repo    # "squishai/Qwen3-8B-squished", or None
     entry.size_gb        # raw model disk footprint (float)
 
     pull("qwen3:8b", models_dir=Path("~/models"))
@@ -36,7 +36,7 @@ from pathlib import Path
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 CATALOG_URL = (
-    "https://huggingface.co/datasets/squish-community/catalog/resolve/main/catalog.json"
+    "https://huggingface.co/datasets/squishai/catalog/resolve/main/catalog.json"
 )
 SQUISH_CACHE_DIR = Path.home() / ".squish"
 LOCAL_CATALOG_PATH = SQUISH_CACHE_DIR / "catalog.json"
@@ -77,6 +77,45 @@ def _ssl_verify() -> bool | str:
     if ca_bundle:
         return ca_bundle
     return True
+
+
+def _fetch_squishai_model_ids() -> set[str]:
+    """Return the set of model repo IDs currently live on huggingface.co/squishai.
+
+    Fetches https://huggingface.co/api/models?organization=squishai once per
+    process and caches the result. Returns an empty set on any network/SSL error
+    so the catalog degrades gracefully without crashing.
+    """
+    import urllib.request as _ur
+    import json as _js
+    import ssl as _ssl
+
+    if hasattr(_fetch_squishai_model_ids, "_cache"):
+        return _fetch_squishai_model_ids._cache
+
+    try:
+        url = "https://huggingface.co/api/models?author=squishai&limit=100"
+        req = _ur.Request(url, headers={"User-Agent": "squish-catalog/1.0"})
+        verify = _ssl_verify()
+        if verify is False:
+            ctx = _ssl._create_unverified_context()
+        elif isinstance(verify, str):
+            ctx = _ssl.create_default_context(cafile=verify)
+        else:
+            try:
+                import certifi as _certifi
+                ctx = _ssl.create_default_context(cafile=_certifi.where())
+            except ImportError:
+                ctx = _ssl.create_default_context()
+        with _ur.urlopen(req, context=ctx, timeout=5) as resp:
+            data = _js.loads(resp.read().decode())
+        ids: set[str] = {m["id"] for m in data if "id" in m}
+    except (OSError, ValueError):
+        # Network unreachable, SSL failure, malformed JSON — degrade gracefully.
+        ids = set()
+
+    _fetch_squishai_model_ids._cache = ids
+    return ids
 
 
 def _apply_ssl_env() -> None:
@@ -159,6 +198,10 @@ class CatalogEntry:
     # HuggingFace repo with pre-compressed Squish weights (or None)
     squish_repo: str | None = None
 
+    # HuggingFace repo with pre-compressed INT3 Squish weights (or None).
+    # INT3 is not available for Gemma-3 family due to coherence degradation.
+    squish_repo_int3: str | None = None
+
     # approximate INT2-compressed size in GB (for 70B+ models where INT2 is the
     # recommended quality/size trade-off); None when not applicable
     squished_int2_size_gb: float | None = None
@@ -193,7 +236,13 @@ class CatalogEntry:
     @property
     def has_prebuilt(self) -> bool:
         """True when a pre-compressed Squish repo exists on HuggingFace."""
-        return bool(self.squish_repo)
+        if not self.squish_repo:
+            return False
+        live = _fetch_squishai_model_ids()
+        if not live:
+            # Network unavailable (Zscaler etc.) — fall back to hardcoded field.
+            return True
+        return self.squish_repo in live
 
     def __str__(self) -> str:
         prebuilt = "⚡ prebuilt" if self.has_prebuilt else "  compress"
@@ -211,11 +260,13 @@ _BUNDLED: list[dict] = [
     dict(id="qwen2.5:1.5b", name="Qwen2.5-1.5B-Instruct",
          hf_mlx_repo="mlx-community/Qwen2.5-1.5B-Instruct-bf16",
          squish_repo="squishai/Qwen2.5-1.5B-Instruct-bf16-squished",
+         squish_repo_int3="squishai/Qwen2.5-1.5B-int3",
          size_gb=3.1, squished_size_gb=2.1, params="1.5B", context=32768,
          tags=["small", "fast"], grammar_trigger="<tool_call>"),
     dict(id="qwen2.5:7b", name="Qwen2.5-7B-Instruct",
          hf_mlx_repo="mlx-community/Qwen2.5-7B-Instruct-bf16",
          squish_repo="squishai/Qwen2.5-7B-Instruct-bf16-squished",
+         squish_repo_int3="squishai/Qwen2.5-7B-int3",
          size_gb=14.4, squished_size_gb=9.6, params="7B", context=131072,
          tags=["balanced"], grammar_trigger="<tool_call>"),
     dict(id="qwen2.5:14b", name="Qwen2.5-14B-Instruct",
@@ -236,6 +287,7 @@ _BUNDLED: list[dict] = [
     dict(id="qwen3:0.6b", name="Qwen3-0.6B",
          hf_mlx_repo="mlx-community/Qwen3-0.6B-bf16",
          squish_repo="squishai/Qwen3-0.6B-bf16-squished",
+         squish_repo_int3="squishai/Qwen3-0.6B-int3",
          size_gb=1.3, squished_size_gb=0.9, params="0.6B", context=32768,
          tags=["small", "fast"], grammar_trigger="<tool_call>"),
     dict(id="qwen3:1.7b", name="Qwen3-1.7B",
@@ -246,11 +298,13 @@ _BUNDLED: list[dict] = [
     dict(id="qwen3:4b", name="Qwen3-4B",
          hf_mlx_repo="mlx-community/Qwen3-4B-bf16",
          squish_repo="squishai/Qwen3-4B-bf16-squished",
+         squish_repo_int3="squishai/Qwen3-4B-int3",
          size_gb=8.2, squished_size_gb=5.5, params="4B", context=32768,
          tags=["small", "fast"], grammar_trigger="<tool_call>"),
     dict(id="qwen3:8b", name="Qwen3-8B",
          hf_mlx_repo="mlx-community/Qwen3-8B-bf16",
          squish_repo="squishai/Qwen3-8B-bf16-squished",
+         squish_repo_int3="squishai/Qwen3-8B-int3",
          size_gb=16.4, squished_size_gb=11.0, params="8B", context=131072,
          tags=["balanced"], grammar_trigger="<tool_call>"),
     dict(id="qwen3:14b", name="Qwen3-14B",
@@ -275,11 +329,13 @@ _BUNDLED: list[dict] = [
     dict(id="llama3.2:1b", name="Llama-3.2-1B-Instruct",
          hf_mlx_repo="mlx-community/Llama-3.2-1B-Instruct-bf16",
          squish_repo="squishai/Llama-3.2-1B-Instruct-bf16-squished",
+         squish_repo_int3="squishai/Llama-3.2-1B-int3",
          size_gb=2.5, squished_size_gb=1.7, params="1B", context=128000,
          tags=["small", "fast"]),
     dict(id="llama3.2:3b", name="Llama-3.2-3B-Instruct",
          hf_mlx_repo="mlx-community/Llama-3.2-3B-Instruct-bf16",
          squish_repo="squishai/Llama-3.2-3B-Instruct-bf16-squished",
+         squish_repo_int3="squishai/Llama-3.2-3B-int3",
          size_gb=6.4, squished_size_gb=4.3, params="3B", context=128000,
          tags=["small"]),
     dict(id="llama3.1:8b", name="Llama-3.1-8B-Instruct",
@@ -531,6 +587,7 @@ def _entry_from_dict(d: dict) -> CatalogEntry:
         params=d["params"],
         context=d["context"],
         squish_repo=d.get("squish_repo"),
+        squish_repo_int3=d.get("squish_repo_int3"),
         tags=d.get("tags", []),
         notes=d.get("notes", ""),
         squished_int2_size_gb=d.get("squished_int2_size_gb"),
@@ -1079,7 +1136,7 @@ def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma:
 
 def _has_squish_weights(repo: str, token: str | None = None) -> bool:
     """
-    Return True when the squish-community repo contains pre-compressed weights.
+    Return True when the squishai repo contains pre-compressed weights.
     Checks for either ``squish_weights.npz`` or a ``squish_npy/`` directory marker.
     """
     files = _hf_list_files(repo, token=token)
@@ -1141,6 +1198,13 @@ def pull(  # pragma: no cover
         _mode = "int8"
     else:
         _mode = "int4"
+    # INT3 is blocked for Gemma-3 family — coherence degrades significantly
+    # at this bit-width; users must use INT4 instead.
+    if _mode == "int3" and entry.id.startswith("gemma"):
+        raise ValueError(
+            "INT3 is not supported for Gemma-3 family models due to coherence "
+            f"degradation. Use INT4 instead: squish pull {entry.id} --int4"
+        )
     # Compressed dir uses <model>-<quant> naming: e.g. Qwen3-8B-int4
     compressed_dir = models_dir / _quant_dir_name(entry.dir_name, _mode)
     _BPW = {"int4": 4.5, "int8": 8.5, "int3": 4.37, "int2": 3.00}
@@ -1154,13 +1218,16 @@ def pull(  # pragma: no cover
         return compressed_dir
 
     # ── Try pre-compressed weights first ──────────────────────────────────────
-    if entry.squish_repo:
-        print(f"  Checking for pre-compressed weights in {entry.squish_repo} …")
+    _prebuilt_repo = (
+        entry.squish_repo_int3 if _mode == "int3" else entry.squish_repo
+    )
+    if _prebuilt_repo:
+        print(f"  Checking for pre-compressed weights in {_prebuilt_repo} …")
         try:
-            if _has_squish_weights(entry.squish_repo, token=token):
+            if _has_squish_weights(_prebuilt_repo, token=token):
                 print("  ⚡ Pre-compressed weights found!  Downloading …")
                 squish_local = models_dir / (entry.dir_name + "-squish-src")
-                _hf_download(entry.squish_repo, squish_local, token=token)
+                _hf_download(_prebuilt_repo, squish_local, token=token)
 
                 # Move/detect: npy-dir or npz
                 npy_dir = squish_local / "squish_npy"

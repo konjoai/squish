@@ -91,11 +91,11 @@ class RequestMetric:
     timestamp: float
     model_id: str
     latency_ms: float
-    ttft_ms: Optional[float]
+    ttft_ms: float | None
     tokens_generated: int
     tokens_per_sec: float
     success: bool
-    error_type: Optional[str]
+    error_type: str | None
 
 
 @dataclass(frozen=True)
@@ -138,8 +138,8 @@ class QualityStats:
     tokens_per_sec_p50: float
     tokens_per_sec_mean: float
 
-    ttft_p50: Optional[float]
-    ttft_p95: Optional[float]
+    ttft_p50: float | None
+    ttft_p95: float | None
 
     generated_at: str
 
@@ -242,7 +242,7 @@ class QualityMonitor:
                 exc_info=True,
             )
 
-    def report(self, window_seconds: Optional[int] = None) -> QualityReport:
+    def report(self, window_seconds: int | None = None) -> QualityReport:
         """Compute per-model stats for *window_seconds* (default: self.window_seconds).
 
         Always returns a valid :class:`QualityReport`; empty stats are valid.
@@ -274,8 +274,8 @@ class QualityMonitor:
     def stats_for(
         self,
         model_id: str,
-        window_seconds: Optional[int] = None,
-    ) -> Optional[QualityStats]:
+        window_seconds: int | None = None,
+    ) -> QualityStats | None:
         """Return per-model stats, or ``None`` if no events for *model_id* in window."""
         win = window_seconds if window_seconds is not None else self._window_seconds
         now = time.monotonic()
@@ -361,7 +361,7 @@ def _compute_stats(
 
 # ── Module-level singleton ────────────────────────────────────────────────────
 
-_monitor_singleton: Optional[QualityMonitor] = None
+_monitor_singleton: QualityMonitor | None = None
 _singleton_lock = threading.Lock()
 
 

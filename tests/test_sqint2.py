@@ -538,9 +538,9 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 102, (
-            f"Module count = {count}, expected 102 after v9.33 streaming + speculative "
-            f"(89 post-W111 + 13 new modules). "
+        assert count == 103, (
+            f"Module count = {count}, expected 103 after v4 daemon + v5.1.1 perf "
+            f"+ KV P2 sprint (89 post-W111 + 11 new modules) + grammar/io/reasoning. "
             "If this number changed, update CLAUDE.md / SESSION.md too."
         )
         # Ceiling check stays well below 125.

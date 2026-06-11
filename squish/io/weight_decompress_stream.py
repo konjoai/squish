@@ -80,7 +80,7 @@ class WeightStreamHandle:
     layer_idx: int
     status: str = "pending"
 
-    _future: Optional["Future[np.ndarray]"] = field(default=None, repr=False, compare=False)
+    _future: "Future[np.ndarray]" | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.status not in ("pending", "ready", "consumed"):
@@ -191,11 +191,11 @@ class WeightDecompressStream:
 
     def prefetch_range(
         self,
-        layer_indices: List[int],
-        compressed_layers: Dict[int, np.ndarray],
-    ) -> List[WeightStreamHandle]:
+        layer_indices: list[int],
+        compressed_layers: dict[int, np.ndarray],
+    ) -> list[WeightStreamHandle]:
         """Submit a batch of layers and return handles in order."""
-        handles: List[WeightStreamHandle] = []
+        handles: list[WeightStreamHandle] = []
         for idx in layer_indices:
             if idx not in compressed_layers:
                 raise KeyError(
@@ -204,7 +204,7 @@ class WeightDecompressStream:
             handles.append(self.submit(idx, compressed_layers[idx]))
         return handles
 
-    def stats(self) -> Dict:
+    def stats(self) -> dict:
         """Return runtime statistics."""
         with self._lock:
             return {
@@ -299,7 +299,7 @@ class WeightDecompressStream:
     def decompress_weight(
         data: np.ndarray,
         bits: int,
-        shape: Optional[Tuple[int, ...]] = None,
+        shape: tuple[int, ...] | None = None,
     ) -> np.ndarray:
         """Dequantize a compressed weight produced by :meth:`compress_weight`.
 
@@ -340,7 +340,7 @@ class WeightDecompressStream:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _recover_shape(compressed: np.ndarray) -> Tuple[int, ...]:
+    def _recover_shape(compressed: np.ndarray) -> tuple[int, ...]:
         """Decode the shape stored in the compressed array header."""
         data = np.asarray(compressed, dtype=np.uint8)
         (n_dims,) = np.frombuffer(data[4:8], dtype=np.uint32)

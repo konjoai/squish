@@ -80,9 +80,9 @@ class FeatureRegistryStats:
 # ---------------------------------------------------------------------------
 
 # Lazily populated; keyed by PlatformKind
-_SUPPORT_TABLES: Dict[str, Dict[PlatformFeature, FeatureSupport]] = {}
+_SUPPORT_TABLES: dict[str, dict[PlatformFeature, FeatureSupport]] = {}
 
-_FALLBACK_HINTS: Dict[PlatformFeature, str] = {
+_FALLBACK_HINTS: dict[PlatformFeature, str] = {
     PlatformFeature.FLASH_ATTENTION:    "numpy_attention",
     PlatformFeature.METAL_DISPATCH:     "numpy_kernels",
     PlatformFeature.CUDA_GRAPHS:        "eager_cuda",
@@ -99,7 +99,7 @@ N  = FeatureSupport.NATIVE
 Em = FeatureSupport.EMULATED
 Un = FeatureSupport.UNSUPPORTED
 
-def _build_table(kind_name: str) -> Dict[PlatformFeature, FeatureSupport]:
+def _build_table(kind_name: str) -> dict[PlatformFeature, FeatureSupport]:
     """Return feature→support table for the given PlatformKind.name."""
     F = PlatformFeature
     if kind_name == "MACOS_APPLE_SILICON":
@@ -218,20 +218,20 @@ class PlatformFeatureRegistry:
             self.stats.unsupported_count += 1
         return level
 
-    def best_fallback(self, feature: PlatformFeature) -> Optional[str]:
+    def best_fallback(self, feature: PlatformFeature) -> str | None:
         """Return a hint string describing the best available fallback."""
         return _FALLBACK_HINTS.get(feature)
 
-    def supported_features(self) -> List[PlatformFeature]:
+    def supported_features(self) -> list[PlatformFeature]:
         """Return all features that are NATIVE or EMULATED on this platform."""
         return [f for f in PlatformFeature if self.is_supported(f)]
 
-    def native_features(self) -> List[PlatformFeature]:
+    def native_features(self) -> list[PlatformFeature]:
         """Return only NATIVE features."""
         return [f for f in PlatformFeature
                 if self._table.get(f) == FeatureSupport.NATIVE]
 
-    def summary(self) -> Dict[str, str]:
+    def summary(self) -> dict[str, str]:
         """Return a human-readable dict of feature → support level."""
         return {
             f.name: self._table.get(f, FeatureSupport.EMULATED).name

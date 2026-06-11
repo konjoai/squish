@@ -143,6 +143,31 @@ def _rss_mb_throttled(interval: float = 1.0) -> float:
     return _rss_last_v
 
 
+def _available_ram_gb() -> float:
+    """Available RAM (free + inactive) in gigabytes.
+
+    On Darwin, parse ``vm_stat`` for free and inactive page counts — inactive
+    pages are reclaimable on demand and effectively count as available.
+    On non-Darwin we return +inf so the caller's RAM guard never triggers
+    (the squish_4bit fast-load path is Apple-Silicon-only anyway).
+    """
+    if _platform.system() != "Darwin":
+        return float("inf")
+    import subprocess
+    try:
+        out = subprocess.check_output(["vm_stat"], text=True)
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return float("inf")
+    pages = {
+        k.strip(): int(v.strip().rstrip("."))
+        for k, v in re.findall(r"(.+?):\s+(\d+)", out)
+    }
+    page_size = 16384
+    free = pages.get("Pages free", 0) * page_size / 1e9
+    inactive = pages.get("Pages inactive", 0) * page_size / 1e9
+    return free + inactive
+
+
 # squish.quant.quantizer is the self-contained replacement for vectro/python/interface.py
 try:
     import mlx.core as mx  # noqa: E402
@@ -1638,6 +1663,37 @@ def load_from_npy_dir(  # pragma: no cover
         manifest = json.load(f)
     safe_to_original = {v: k for k, v in manifest.items()}
 
+    # ── Partial-build guard ─────────────────────────────────────────────────
+    # A previously-interrupted `squish compress` / `squish pull` can leave a
+    # manifest containing only a fraction of the model's weights.  Catching
+    # this here turns a 200-line "Missing N parameters" dump from
+    # ``model.load_weights()`` into a single actionable error.
+    try:
+        from mlx.utils import tree_flatten as _mlx_tree_flatten
+        _expected = {name for name, _ in _mlx_tree_flatten(model.parameters())}
+    except Exception:
+        _expected = set()
+    _manifest_names = set(safe_to_original.values())
+    _missing = _expected - _manifest_names
+    if _expected and len(_missing) > max(2, len(_expected) // 20):
+        # >5% (or >2) of expected weights have no manifest entry → partial build.
+        _sample = "\n        ".join(sorted(_missing)[:5])
+        raise FileNotFoundError(
+            f"\n  ⚠  Partial / corrupt compressed model at:\n"
+            f"        {dir_path}\n\n"
+            f"     Manifest has {len(_manifest_names)} entries but the model "
+            f"expects {len(_expected)} weights — {len(_missing)} missing.\n"
+            f"     This usually means a previous `squish pull` or "
+            f"`squish compress` was interrupted.\n\n"
+            f"     Examples of missing tensors:\n"
+            f"        {_sample}\n\n"
+            f"     To recover:\n"
+            f"        rm -rf {dir_path}\n"
+            f"        squish pull <model>          # re-download the compressed cache\n\n"
+            f"     Or point squish at a different models dir:\n"
+            f"        SQUISH_MODELS_DIR=~/models squish run <model>\n"
+        )
+
     # ── Single-pass tensor discovery (Phase 5B Opt 3) ─────────────────────────
     # os.scandir() collects all filenames in one syscall; tensors are then
     # sorted by _tensor_load_key so attention weights load before MLP weights
@@ -1681,50 +1737,76 @@ def load_from_npy_dir(  # pragma: no cover
                       "(expected ∈ {32,64,128}). Re-compress with `squish compress "
                       "--format int4` (new default is g=32). Falling back to BF16.")
         else:
-            if verbose:
-                print(f"  ⚡ INT4 asymmetric detected ({len(_q4a_sks)} layers, group_size={_gs})")
-                print("    Building squish_4bit/ cache (once — subsequent loads skip Vectro)")
-            try:
-                _build_squish_4bit_dir(
-                    dir_path=dir_path,
-                    tensor_dir=tensor_dir,
-                    base_keys=base_keys,
-                    safe_to_original=safe_to_original,
-                    model_dir=model_dir,
-                    group_size=_gs,
-                    verbose=verbose,
-                )
-                # Load the freshly-built INT4 model via mlx_lm.load()
-                import mlx_lm as _mlx_lm_4bit_new
-                _rss0 = _rss_mb()
-                _t0_4b = time.perf_counter()
-                _model_4b, _tok_4b, *_ = _mlx_lm_4bit_new.load(str(_four_bit_dir))
-                _load_s_4b = time.perf_counter() - _t0_4b
-                _rss1 = _rss_mb()
+            # RAM guard — _build_squish_4bit_dir() dequantizes every INT4 tensor
+            # back to BF16 in RAM before re-packing.  For an 8B model that peaks
+            # at ~34 GB and OOM-kills the loader on 16 GB Macs.  Estimate the
+            # peak as (sum of __q4a.npy bytes) × 4.0 (BF16-expansion factor) and
+            # skip the cache build when the machine doesn't have headroom.
+            _q4a_bytes = 0
+            for _sk in _q4a_sks:
+                try:
+                    _q4a_bytes += (tensor_dir / f"{_sk}__q4a.npy").stat().st_size
+                except OSError:
+                    continue
+            _required_ram_gb = _q4a_bytes * 4.0 / 1e9
+            _available_gb = _available_ram_gb()
+            if _available_gb < _required_ram_gb:
                 if verbose:
-                    print(f"  INT4 model loaded in {_load_s_4b:.2f}s  "
-                          f"(RAM Δ {_rss1 - _rss0:+.0f} MB)")
-                _stats_4b = {
-                    "loader": "squish-4bit-native",
-                    "decompression_time_s": _load_s_4b,
-                    "ram_delta_mb": _rss1 - _rss0,
-                    "ram_baseline_mb": _rss0,
-                }
-                if return_stats:
-                    return _model_4b, _tok_4b, _stats_4b
-                return _model_4b, _tok_4b
-            except Exception as _e4b:
+                    print(
+                        f"  ⚠  Skipping squish_4bit cache build — need "
+                        f"~{_required_ram_gb:.0f} GB, only "
+                        f"{_available_gb:.0f} GB available"
+                    )
+                    print(
+                        f"     Fast-load cache can be built on a machine "
+                        f"with >{_required_ram_gb:.0f} GB"
+                    )
+                # Fall through to the existing BF16 dequantization load path.
+            else:
                 if verbose:
-                    print(f"  WARNING: INT4 native build failed ({_e4b!r}); "
-                          f"falling back to BF16 dequantization path")
-                # Remove partial squish_4bit/ to avoid a corrupt partial state
-                import shutil as _shutil_4b
-                _squish4_partial = dir_path / "squish_4bit"
-                if _squish4_partial.exists():
-                    _shutil_4b.rmtree(str(_squish4_partial))
-                if _four_bit_ready.exists():
-                    _four_bit_ready.unlink()
-                # Fall through to the standard Vectro BF16 path below
+                    print(f"  ⚡ INT4 asymmetric detected ({len(_q4a_sks)} layers, group_size={_gs})")
+                    print("    Building squish_4bit/ cache (once — subsequent loads skip Vectro)")
+                try:
+                    _build_squish_4bit_dir(
+                        dir_path=dir_path,
+                        tensor_dir=tensor_dir,
+                        base_keys=base_keys,
+                        safe_to_original=safe_to_original,
+                        model_dir=model_dir,
+                        group_size=_gs,
+                        verbose=verbose,
+                    )
+                    # Load the freshly-built INT4 model via mlx_lm.load()
+                    import mlx_lm as _mlx_lm_4bit_new
+                    _rss0 = _rss_mb()
+                    _t0_4b = time.perf_counter()
+                    _model_4b, _tok_4b, *_ = _mlx_lm_4bit_new.load(str(_four_bit_dir))
+                    _load_s_4b = time.perf_counter() - _t0_4b
+                    _rss1 = _rss_mb()
+                    if verbose:
+                        print(f"  INT4 model loaded in {_load_s_4b:.2f}s  "
+                              f"(RAM Δ {_rss1 - _rss0:+.0f} MB)")
+                    _stats_4b = {
+                        "loader": "squish-4bit-native",
+                        "decompression_time_s": _load_s_4b,
+                        "ram_delta_mb": _rss1 - _rss0,
+                        "ram_baseline_mb": _rss0,
+                    }
+                    if return_stats:
+                        return _model_4b, _tok_4b, _stats_4b
+                    return _model_4b, _tok_4b
+                except Exception as _e4b:
+                    if verbose:
+                        print(f"  WARNING: INT4 native build failed ({_e4b!r}); "
+                              f"falling back to BF16 dequantization path")
+                    # Remove partial squish_4bit/ to avoid a corrupt partial state
+                    import shutil as _shutil_4b
+                    _squish4_partial = dir_path / "squish_4bit"
+                    if _squish4_partial.exists():
+                        _shutil_4b.rmtree(str(_squish4_partial))
+                    if _four_bit_ready.exists():
+                        _four_bit_ready.unlink()
+                    # Fall through to the standard Vectro BF16 path below
 
     # ── Tier 0d: INT3-native path — build squish_3bit/ from Q3 files ─────────
     # If __q3.npy files exist and squish_3bit/ hasn't been built yet, convert

@@ -77,7 +77,6 @@ curl http://localhost:11435/v1/chat/completions \
 
 ## Community
 
-- [Discord](https://discord.gg/squish) — get help, share benchmarks, discuss models  
-- [GitHub Discussions](https://github.com/squishai/squish/discussions) — Q&A, ideas, show & tell  
-- [HuggingFace](https://huggingface.co/squish-community) — pre-squished model weights  
+- [GitHub Discussions](https://github.com/konjoai/squish/discussions) — get help, share benchmarks, Q&A, ideas, show & tell  
+- [HuggingFace](https://huggingface.co/squishai) — pre-squished model weights  
 - [Contributing](contributing.md) — good first issues, dev setup, PR guidelines  

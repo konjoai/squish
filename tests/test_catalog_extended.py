@@ -70,12 +70,12 @@ class TestEntryFromDict:
 
     def test_with_optional_fields(self):
         d = self._base_dict(
-            squish_repo="squish-community/qwen3-8b",
+            squish_repo="squishai/qwen3-8b",
             tags=["instruct", "chat"],
             notes="Official Qwen3",
         )
         entry = _entry_from_dict(d)
-        assert entry.squish_repo == "squish-community/qwen3-8b"
+        assert entry.squish_repo == "squishai/qwen3-8b"
         assert "chat" in entry.tags
 
     def test_missing_required_key_raises(self):

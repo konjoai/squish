@@ -102,7 +102,7 @@ class CoreMLRuntime:
 
     def __init__(
         self,
-        mlpackage_paths: List[Path],
+        mlpackage_paths: list[Path],
         *,
         use_coreml: bool = False,
         vocab_size: int = 32_000,
@@ -110,7 +110,7 @@ class CoreMLRuntime:
         self._paths = mlpackage_paths
         self._use_coreml = use_coreml and _COREMLTOOLS_AVAILABLE
         self._vocab_size = vocab_size
-        self._models: List[Any] = []
+        self._models: list[Any] = []
         self._loaded = False
 
         if self._use_coreml:  # pragma: no cover — needs coremltools + macOS
@@ -209,14 +209,14 @@ class CoreMLLoader:
         config: :class:`CoreMLLoaderConfig`; uses safe defaults if omitted.
     """
 
-    def __init__(self, config: Optional[CoreMLLoaderConfig] = None) -> None:
+    def __init__(self, config: CoreMLLoaderConfig | None = None) -> None:
         self.config = config or CoreMLLoaderConfig()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def has_ane_appendix(self, squizd_path: Union[str, Path]) -> bool:
+    def has_ane_appendix(self, squizd_path: str | Path) -> bool:
         """Return ``True`` if the file contains an ANE_COREML appendix block.
 
         Args:
@@ -235,7 +235,7 @@ class CoreMLLoader:
         """Return ``True`` if GPU fallback is configured and available."""
         return self.config.fallback_to_gpu
 
-    def load(self, squizd_path: Union[str, Path]) -> CoreMLRuntime:
+    def load(self, squizd_path: str | Path) -> CoreMLRuntime:
         """Load a :class:`CoreMLRuntime` from *squizd_path*.
 
         If the ``ane_router`` in :attr:`config` routes the model to ``"gpu"``
@@ -298,7 +298,7 @@ class CoreMLLoader:
             return d
         return Path(tempfile.mkdtemp(prefix="squish_coreml_extract_"))
 
-    def _find_appendix_offset(self, path: Path) -> Optional[int]:
+    def _find_appendix_offset(self, path: Path) -> int | None:
         """Scan the file from the end for the ANML appendix tag."""
         size = path.stat().st_size
         if size < _APPENDIX_HEADER_SIZE:
@@ -314,7 +314,7 @@ class CoreMLLoader:
             return None
         return (size - scan_size) + idx
 
-    def _read_manifest(self, path: Path) -> Dict[str, Any]:
+    def _read_manifest(self, path: Path) -> dict[str, Any]:
         """Read and parse the JSON manifest from the appendix block."""
         offset = self._find_appendix_offset(path)
         if offset is None:
@@ -326,11 +326,11 @@ class CoreMLLoader:
         return json.loads(payload.decode())
 
     def _extract_chunks(
-        self, manifest: Dict[str, Any], extract_dir: Path
-    ) -> List[Path]:
+        self, manifest: dict[str, Any], extract_dir: Path
+    ) -> list[Path]:
         """Return paths for each chunk; create simulation dirs for testing."""
         chunks = manifest.get("chunks", [])
-        paths: List[Path] = []
+        paths: list[Path] = []
         for chunk in chunks:
             chunk_path = Path(chunk["path"])
             if chunk_path.exists():
