@@ -18,6 +18,13 @@ from squish.catalog import (
     resolve,
 )
 
+
+@pytest.fixture(autouse=True)
+def _stub_live_squishai_lookup(monkeypatch):
+    """has_prebuilt does a live HF lookup; force the offline-fallback path so
+    unit tests with fake squish_repo values don't depend on the network."""
+    monkeypatch.setattr("squish.catalog._fetch_squishai_model_ids", lambda: None)
+
 # ── CatalogEntry properties ────────────────────────────────────────────────────
 
 class TestCatalogEntry:
