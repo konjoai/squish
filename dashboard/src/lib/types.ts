@@ -102,7 +102,6 @@ export interface CompressBenchResult {
 }
 
 // ── Agent tool execution (/v1/agent/tools + /v1/agent/run) ──────────────────
-
 /** A single tool exposed by the agent registry (OpenAI tools schema element). */
 export interface AgentTool {
   type: "function";
@@ -206,4 +205,41 @@ export interface CockpitMetrics {
   spec_draft_loaded: boolean;
   kv_cache_tokens: number;
   kv_cache_memory_mb: number;
+}
+
+// ── Embeddings (/v1/embeddings) ───────────────────────────────────────────────
+
+export interface EmbeddingData {
+  object: "embedding";
+  embedding: number[];
+  index: number;
+}
+
+/** POST /v1/embeddings response (OpenAI-compatible). */
+export interface EmbeddingResponse {
+  object: "list";
+  model: string;
+  data: EmbeddingData[];
+  usage: { prompt_tokens: number; total_tokens: number };
+}
+
+// ── System telemetry (/sys-stats + /model/status) ────────────────────────────
+
+/** GET /sys-stats response (stdlib-only host metrics). */
+export interface SysStats {
+  load_avg: [number, number, number];
+  process_rss_mb: number;
+  disk_used_pct: number;
+  disk_free_gb: number;
+  disk_total_gb: number;
+  pid: number;
+}
+
+/** GET /model/status response (lightweight load-state probe). */
+export interface ModelStatus {
+  load_mode: "eager" | "lazy" | "preload_async";
+  model_loaded: boolean;
+  model: string | null;
+  load_time_s: number;
+  load_error: string | null;
 }

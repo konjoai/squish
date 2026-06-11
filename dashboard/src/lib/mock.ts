@@ -4,6 +4,7 @@
 import type {
   HealthResponse, CompressBenchResult, ChatTurn, StreamedToken,
   AgentTool, AgentEvent, TokenizeResult, QualityReport,
+  EmbeddingResponse, SysStats, ModelStatus,
 } from "./types";
 
 export const MOCK_HEALTH: HealthResponse = {
@@ -268,3 +269,56 @@ export function buildMockBenchmark(ctx_len = 2048): CompressBenchResult {
     ],
   };
 }
+
+// ── Embeddings ────────────────────────────────────────────────────────────────
+
+const MOCK_EMBED_DIM = 64;
+
+/**
+ * Deterministic hashed bag-of-words embeddings. Texts that share words land
+ * close in the space, so the cosine-similarity heatmap is meaningful offline.
+ */
+export function buildMockEmbeddings(inputs: string[]): EmbeddingResponse {
+  let total = 0;
+  const data = inputs.map((text, index) => {
+    const vec = new Array<number>(MOCK_EMBED_DIM).fill(0);
+    const words = text.toLowerCase().match(/[\w']+/g) ?? [];
+    total += words.length;
+    for (const w of words) {
+      let h = 2166136261;
+      for (let i = 0; i < w.length; i++) { h ^= w.charCodeAt(i); h = Math.imul(h, 16777619); }
+      vec[(h >>> 0) % MOCK_EMBED_DIM] += 1;
+    }
+    const norm = Math.sqrt(vec.reduce((a, x) => a + x * x, 0)) || 1;
+    return {
+      object: "embedding" as const,
+      embedding: vec.map((x) => x / norm),
+      index,
+    };
+  });
+  return {
+    object: "list",
+    model: "qwen3:8b-q4 · mock embed",
+    data,
+    usage: { prompt_tokens: total, total_tokens: total },
+  };
+}
+
+// ── System telemetry ──────────────────────────────────────────────────────────
+
+export const MOCK_SYS_STATS: SysStats = {
+  load_avg: [2.41, 2.18, 1.97],
+  process_rss_mb: 5234.6,
+  disk_used_pct: 62.4,
+  disk_free_gb: 348.2,
+  disk_total_gb: 994.7,
+  pid: 48213,
+};
+
+export const MOCK_MODEL_STATUS: ModelStatus = {
+  load_mode: "preload_async",
+  model_loaded: true,
+  model: "qwen3:8b-q4",
+  load_time_s: 8.42,
+  load_error: null,
+};

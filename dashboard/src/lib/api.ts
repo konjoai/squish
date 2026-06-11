@@ -19,6 +19,9 @@ import type {
   AgentTool,
   TokenizeResult,
   QualityReport,
+  EmbeddingResponse,
+  SysStats,
+  ModelStatus,
 } from "./types";
 import { parseStreamChunk } from "./sse";
 import { parseAgentEvent } from "./agent";
@@ -28,10 +31,13 @@ import {
   MOCK_PROM_TEXT,
   MOCK_AGENT_TOOLS,
   MOCK_QUALITY,
+  MOCK_SYS_STATS,
+  MOCK_MODEL_STATUS,
   buildMockChatStream,
   buildMockBenchmark,
   buildMockAgentRun,
   buildMockTokenize,
+  buildMockEmbeddings,
 } from "./mock";
 
 const SQUISH_API = (import.meta.env.VITE_SQUISH_API as string | undefined) ?? "";
@@ -266,6 +272,49 @@ export async function fetchQuality(
     return { data, fromMock: false };
   } catch {
     return { data: MOCK_QUALITY, fromMock: true };
+  }
+}
+
+// ── Embeddings ────────────────────────────────────────────────────────────────
+
+export async function embedText(
+  inputs: string[],
+): Promise<{ data: EmbeddingResponse; fromMock: boolean }> {
+  try {
+    const res = await fetch(SQUISH_API + "/v1/embeddings", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ input: inputs }),
+    });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const data = (await res.json()) as EmbeddingResponse;
+    return { data, fromMock: false };
+  } catch {
+    return { data: buildMockEmbeddings(inputs), fromMock: true };
+  }
+}
+
+// ── System telemetry ──────────────────────────────────────────────────────────
+
+export async function fetchSysStats(): Promise<{ data: SysStats; fromMock: boolean }> {
+  try {
+    const res = await fetch(SQUISH_API + "/sys-stats", { headers: authHeaders() });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const data = (await res.json()) as SysStats;
+    return { data, fromMock: false };
+  } catch {
+    return { data: MOCK_SYS_STATS, fromMock: true };
+  }
+}
+
+export async function fetchModelStatus(): Promise<{ data: ModelStatus; fromMock: boolean }> {
+  try {
+    const res = await fetch(SQUISH_API + "/model/status", { headers: authHeaders() });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const data = (await res.json()) as ModelStatus;
+    return { data, fromMock: false };
+  } catch {
+    return { data: MOCK_MODEL_STATUS, fromMock: true };
   }
 }
 
