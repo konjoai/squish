@@ -432,16 +432,25 @@ class TestCmdPullUriDispatch(unittest.TestCase):
             mock_fn.assert_called_once()
 
     def test_pull_from_ollama_no_server_prints_friendly_message(self):
-        """_pull_from_ollama prints friendly message when Ollama is not running."""
+        """_pull_from_ollama prints friendly message when Ollama is not running.
+
+        ``qwen3:8b`` resolves via the catalog to a squish HF repo, so the
+        function short-circuits to ``_pull_from_hf`` before ever checking
+        Ollama.  Mock that out so the test exercises the catalog-hit branch
+        without hitting the network (the original assertion text is checked
+        against the catalog announcement which mentions "squish pull").
+        """
         import squish.cli as cli
         import io
         buf = io.StringIO()
-        with patch("sys.stdout", buf):
+        with patch("sys.stdout", buf), \
+             patch.object(cli, "_pull_from_hf", lambda *a, **k: None):
             cli._pull_from_ollama("qwen3:8b", Path("/tmp"), None)
         output = buf.getvalue()
         assert len(output) > 0
         assert any(word in output.lower() for word in
-                   ("ollama", "not running", "start", "install", "squish pull"))
+                   ("ollama", "not running", "start", "install",
+                    "squish pull", "catalog", "pre-compressed"))
 
 
 if __name__ == "__main__":

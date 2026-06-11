@@ -3,8 +3,8 @@ class Squish < Formula
 
   desc "Local LLM inference server optimized for Apple Silicon"
   homepage "https://github.com/konjoai/squish"
-  url "https://files.pythonhosted.org/packages/48/ea/2a464510e954adf65724412d75817b40e94483cbfcda6fa7992ca6a01eb4/squish_ai-9.33.7.tar.gz"
-  sha256 "5ee3bef38e5041e31f76fa3812e27a36fc5b8803436908cd0f20fa992f453f5b"
+  url "https://files.pythonhosted.org/packages/b2/36/070890b9270803068f69a91b67db0c29522d0fdc17e052abfdc7d828d6f6/squish_ai-9.33.8.tar.gz"
+  sha256 "14c7a5300e429d4d66e339061e7d1169b946e2758a0d58d8afcbaf11a3e4c241"
   license "BUSL-1.1"
 
   depends_on "python@3.13"

@@ -3285,9 +3285,9 @@ def _pull_from_ollama(ollama_name: str, models_dir: Path, token: str | None) -> 
 
     # Check catalog for this model
     entry = _catalog_resolve(ollama_name)
-    if entry is not None and entry.squished_repo:
-        print(f"  Catalog match found — pulling pre-compressed: {entry.squished_repo}")
-        _pull_from_hf(entry.squished_repo, models_dir, token)
+    if entry is not None and entry.squish_repo:
+        print(f"  Catalog match found — pulling pre-compressed: {entry.squish_repo}")
+        _pull_from_hf(entry.squish_repo, models_dir, token)
     else:
         # Best-effort: map to mlx-community HF repo
         hf_guess = f"mlx-community/{ollama_name.replace(':', '-')}-bf16"
@@ -3323,8 +3323,8 @@ def _pull_from_hf(hf_repo: str, models_dir: Path, token: str | None) -> None:  #
         from squish.catalog import list_catalog as _list_catalog
         for entry in _list_catalog():
             if getattr(entry, "hf_mlx_repo", "") == hf_repo:
-                if entry.squished_repo:
-                    print(f"  Catalog match ({entry.id}) — downloading pre-squished from {entry.squished_repo}")
+                if entry.squish_repo:
+                    print(f"  Catalog match ({entry.id}) — downloading pre-squished from {entry.squish_repo}")
                     # Delegate to standard pull
                     import types
                     fake_args = types.SimpleNamespace(

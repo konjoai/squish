@@ -561,7 +561,7 @@ def _print_banner(
         print(f"  API key   {api_key}")
         print(f"  OpenAI    OPENAI_BASE_URL={endpoint}")
         print(f"  Ollama    OLLAMA_HOST=http://{host}:{port}")
-        print(f"  Press Ctrl+C to stop")
+        print("  Press Ctrl+C to stop")
         print("=" * 70)
         print()
         return
@@ -715,64 +715,6 @@ def _print_banner(
 
     # ── Bottom border ──────────────────────────────────────────────────────
     print(border("╰" + "─" * inner_w + "╯"))
-    print()
-
-
-def _print_ready_section(host: str, port: int) -> None:
-    """Print the 'Server ready' continuation box after model loads.
-
-    Matches the border style and width of _print_banner() so it looks
-    like a connected section below the startup banner.
-    """
-    R = _C.R
-
-    if not _TTY:
-        print(f"  Server ready!  http://{host}:{port}/v1")
-        print(f"  OPENAI_BASE_URL=http://{host}:{port}/v1")
-        print(f"  OPENAI_API_KEY=squish")
-        print()
-        return
-
-    BD = "\x1b[38;2;124;58;237m"   # #7C3AED — squish purple border
-    G  = "\x1b[38;2;74;222;128m"   # green
-    WT = "\x1b[38;2;240;240;255m"  # near-white
-    MG = "\x1b[38;2;196;86;255m"   # magenta
-    DM = "\x1b[38;2;100;116;139m"  # dim slate
-
-    endpoint = f"http://{host}:{port}/v1"
-
-    rows = [
-        f"  {G}✓{R}  {WT}Server ready!{R}",
-        "",
-        f"  {DM}Set in any OpenAI client:{R}",
-        f"    {MG}OPENAI_BASE_URL{R}={DM}{endpoint}{R}",
-        f"    {MG}OPENAI_API_KEY{R}={DM}squish{R}",
-    ]
-
-    _ANSI = re.compile(r'\x1b\[[0-9;]*m')
-
-    def vis(s: str) -> int:
-        return len(_ANSI.sub('', s))
-
-    inner_w = max(vis(r) for r in rows) + 4
-
-    def border(s: str) -> str:
-        return f"{BD}{s}{R}"
-
-    def row(s: str) -> str:
-        pad = inner_w - vis(s)
-        return border("║") + s + " " * max(0, pad) + border("║")
-
-    print()
-    print(border("╔" + "═" * inner_w + "╗"))
-    print(border("║") + " " * inner_w + border("║"))
-    for r in rows:
-        if r == "":
-            print(border("║") + " " * inner_w + border("║"))
-        else:
-            print(row(r))
-    print(border("║") + " " * inner_w + border("║"))
-    print(border("╚" + "═" * inner_w + "╝"))
     print()
 
 
