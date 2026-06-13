@@ -25,6 +25,7 @@ import {
 import {
   MOCK_HEALTH, MOCK_PROM_TEXT, MOCK_QUALITY, MOCK_SYS_STATS, MOCK_MODEL_STATUS, MOCK_OBS_REPORT,
 } from "./lib/mock";
+import { loadTurns, saveTurns, clearTurns } from "./lib/persist";
 import type {
   ChatTurn, HealthResponse, CockpitMetrics, KVMode, QualityReport, SysStats, ModelStatus, ObsReport,
 } from "./lib/types";
@@ -60,7 +61,8 @@ function inferKVMode(loader: string): KVMode {
 export default function App() {
   const [prompt, setPrompt] = useState<string>("Explain why an INT4 KV cache barely loses quality.");
 
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  // Restore any prior conversation from localStorage on first render.
+  const [turns, setTurns] = useState<ChatTurn[]>(() => loadTurns());
   const [active, setActive] = useState<ChatTurn | null>(null);
   const [streaming, setStreaming] = useState<boolean>(false);
   const [chatFromMock, setChatFromMock] = useState<boolean>(false);
@@ -110,6 +112,9 @@ export default function App() {
     const id = setInterval(refresh, 5000);
     return () => { cancelled = true; clearInterval(id); };
   }, []);
+
+  // Persist completed turns so the conversation survives a reload.
+  useEffect(() => { saveTurns(turns); }, [turns]);
 
   const send = () => {
     cancelRef.current?.();
@@ -187,6 +192,7 @@ export default function App() {
     setActive(null);
     setStreaming(false);
     setLiveTps(undefined);
+    clearTurns();
   };
 
   const mode = inferKVMode(health.loader);

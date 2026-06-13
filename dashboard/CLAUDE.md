@@ -47,6 +47,7 @@ npm run typecheck    # tsc -b --noEmit
 | `src/components/SectionNav.tsx` | Sticky right-rail scroll-spy navigator |
 | `src/components/CommandPalette.tsx` | ⌘K palette — fuzzy jump to any section / run actions |
 | `src/lib/fuzzy.ts` | Pure fuzzy subsequence matcher + ranker (testable) |
+| `src/lib/persist.ts` | localStorage conversation persistence (load/save/clear, validated) |
 | `src/lib/types.ts` | TS mirrors of chat + health + metrics + benchmark + agent + tokenize + quality + embeddings + sys-stats |
 | `src/lib/api.ts` | chatStream + fetch{Health,Metrics,Quality,SysStats,ModelStatus} + benchmarkKV + agentRun + fetchAgentTools + tokenizeText + embedText |
 | `src/lib/agent.ts` | Pure AgentEvent → AgentStep[] reducer (testable) |
