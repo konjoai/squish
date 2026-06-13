@@ -45,6 +45,8 @@ npm run typecheck    # tsc -b --noEmit
 | `src/views/MetaInspector.tsx` | Source labels for every pane (live vs mock) |
 | `src/components/AnimatedNumber.tsx` | Count-up tween for live telemetry values |
 | `src/components/SectionNav.tsx` | Sticky right-rail scroll-spy navigator |
+| `src/components/CommandPalette.tsx` | ⌘K palette — fuzzy jump to any section / run actions |
+| `src/lib/fuzzy.ts` | Pure fuzzy subsequence matcher + ranker (testable) |
 | `src/lib/types.ts` | TS mirrors of chat + health + metrics + benchmark + agent + tokenize + quality + embeddings + sys-stats |
 | `src/lib/api.ts` | chatStream + fetch{Health,Metrics,Quality,SysStats,ModelStatus} + benchmarkKV + agentRun + fetchAgentTools + tokenizeText + embedText |
 | `src/lib/agent.ts` | Pure AgentEvent → AgentStep[] reducer (testable) |

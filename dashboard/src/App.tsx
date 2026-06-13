@@ -17,6 +17,7 @@ import { SystemPanel } from "./views/SystemPanel";
 import { ObservabilityPanel } from "./views/ObservabilityPanel";
 import { StartupProfile } from "./views/StartupProfile";
 import { SectionNav } from "./components/SectionNav";
+import { CommandPalette, type Command } from "./components/CommandPalette";
 import {
   chatStream, fetchHealth, fetchMetrics, fetchQuality, fetchSysStats, fetchModelStatus,
   fetchObsReport, summarizeMetricsText,
@@ -192,6 +193,20 @@ export default function App() {
   const lastAssistantTurn: ChatTurn | null =
     active ?? [...turns].reverse().find((t) => t.role === "assistant") ?? null;
 
+  // Command palette (⌘K): every section + the key chat actions.
+  const commands: Command[] = [
+    ...NAV_ITEMS.map((it) => ({
+      id: `goto-${it.id}`,
+      title: `Go to ${it.label}`,
+      group: "section",
+      keywords: it.id,
+      run: () => document.getElementById(it.id)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    })),
+    { id: "act-send", title: "Send message", group: "action", keywords: "chat submit prompt", run: send },
+    { id: "act-clear", title: "Clear conversation", group: "action", keywords: "reset chat", run: clearConvo },
+    { id: "act-top", title: "Scroll to top", group: "action", keywords: "home hero", run: () => window.scrollTo({ top: 0, behavior: "smooth" }) },
+  ];
+
   return (
     <KonjoApp
       product="squish"
@@ -206,6 +221,7 @@ export default function App() {
     >
       <Hero />
 
+      <CommandPalette commands={commands} />
       <SectionNav items={NAV_ITEMS} />
 
       <div className="space-y-12 mt-10">
@@ -312,6 +328,14 @@ function Hero() {
       >
         Real-time chat. A live agent that calls tools while you watch. Tokenizer lab. Embedding similarity. KV cache from <span className="text-konjo-mono">/v1/metrics</span>. Quantization comparator. Latency waterfall. P50/P95/P99 quality. APM traces &amp; bottlenecks. Power, disk &amp; load telemetry. Everything squish does — now visible, live, in cinema.
       </p>
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new Event("konjo:cmdk"))}
+        className="mt-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-konjo border border-konjo-line/60 bg-konjo-surface/50 text-konjo-fg-muted hover:text-konjo-fg hover:border-konjo-violet/60 transition-colors"
+      >
+        <span className="text-konjo-mono text-[11px]">jump to anything</span>
+        <kbd className="text-konjo-mono text-[10px] text-konjo-violet border border-konjo-line/60 rounded px-1.5 py-0.5">⌘K</kbd>
+      </button>
     </section>
   );
 }
