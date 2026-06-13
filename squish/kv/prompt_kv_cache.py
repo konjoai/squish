@@ -409,6 +409,24 @@ def _touch(p: Path) -> None:
 
 # ── mlx_lm KV state capture helpers ───────────────────────────────────────────
 
+def infer_kv_dtype(model) -> "Any":
+    """Return the model's compute dtype (first floating parameter), or float16.
+
+    KV state is stored on disk as float16 (halves cache size) but must be
+    restored in the model's *native* KV dtype (bfloat16 for INT4 MLX builds).
+    Restoring as float16 makes attention read a mismatched-dtype cache — both a
+    slow mixed-dtype attention path AND, once mlx_lm's KVCache reallocs, an
+    ``float16 ⊕ bfloat16 → float32`` promotion that doubles per-step KV
+    bandwidth.  Restoring in the native dtype avoids both.
+    """
+    import mlx.core as mx
+    from mlx.utils import tree_flatten
+    for _name, p in tree_flatten(model.parameters()):
+        if isinstance(p, mx.array) and p.dtype in (mx.float16, mx.bfloat16, mx.float32):
+            return p.dtype
+    return mx.float16
+
+
 def capture_kv_state(cache) -> "tuple[list, list, int] | None":
     """Extract (keys, values, offset) from an mlx_lm KV cache object.
 
@@ -435,7 +453,7 @@ def capture_kv_state(cache) -> "tuple[list, list, int] | None":
     return None
 
 
-def restore_kv_state(cache, entry: KVCacheEntry) -> bool:
+def restore_kv_state(cache, entry: KVCacheEntry, target_dtype=None) -> bool:
     """Write a cached KV entry back into an mlx_lm cache object.
 
     Returns True on success, False on type mismatch or error.
@@ -445,6 +463,16 @@ def restore_kv_state(cache, entry: KVCacheEntry) -> bool:
     in ``get()``.  Callers that emit a first token from ``last_logit`` can
     defer this call until after the yield so the KV restore (~100 ms) stays
     off the TTFT critical path.
+
+    Parameters
+    ----------
+    target_dtype : mlx.core.Dtype | None
+        When supplied (the server passes the model's compute dtype via
+        ``infer_kv_dtype``), each restored K/V array is cast to it.  KV is kept
+        as float16 *on disk* but must be restored in the model's native dtype —
+        a float16 cache decodes ~1.4x slower (mixed-dtype attention) and
+        promotes to float32 on the first realloc.  Defaults to None
+        (legacy behaviour: restore in the on-disk float16 dtype).
     """
     if cache is None:
         return False
@@ -483,6 +511,9 @@ def restore_kv_state(cache, entry: KVCacheEntry) -> bool:
         for i, layer_cache in enumerate(cache):
             k_mlx = _mx.array(entry.keys[i])
             v_mlx = _mx.array(entry.values[i])
+            if target_dtype is not None:
+                k_mlx = k_mlx.astype(target_dtype)
+                v_mlx = v_mlx.astype(target_dtype)
             # Write into the layer cache's key/value slots
             # mlx_lm KVCache exposes .keys and .values as writable attributes
             # (or via update_and_fetch / direct assignment depending on version).

@@ -5,6 +5,66 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.33.9] — Restore prompt/block KV in model dtype (stop fp16→fp32 promotion, ~2x decode)
+
+### Fixed
+- **KV-cache restore decode regression.** Every `--prompt-kv-cache` /
+  `--block-kv-cache` config decoded at ~half the throughput of the plain
+  daemon. Root cause: both restore paths rebuilt the cache as **float16**
+  while the INT4 MLX model computes in **bfloat16**. A restored fp16 K/V cache
+  (a) hits a slow mixed-dtype attention path against the bf16 query, and
+  (b) promotes `float16 ⊕ bfloat16 → float32` on the first `KVCache`
+  realloc — doubling per-step KV bandwidth for the rest of generation.
+  Fix: restore each K/V array in the model's native compute dtype (kept fp16
+  *on disk* to halve cache size; cast to bf16 *on restore*). Backward
+  compatible — `target_dtype=None` preserves the legacy fp16 restore.
+  - `squish/kv/prompt_kv_cache.py`: new `infer_kv_dtype(model)`;
+    `restore_kv_state(cache, entry, target_dtype=None)` casts each array.
+  - `squish/kv/block_kv_cache.py`: `restore_blocks_to_cache(cache, blocks,
+    target_dtype=None)` casts each block **before** concat (same-dtype concat).
+  - `squish/server.py`: `_ModelState.kv_dtype` computed once after model load
+    via `_infer_kv_dtype_safe`; passed at all four restore call sites
+    (pkv deferred + legacy, block deferred + eager).
+
+### Pre-Flight kill-test gate (Qwen2.5-7B-Instruct INT4, M3 16 GB, mlx 0.31.0)
+- **G1 — model compute dtype: PASS.** All 537 float params `bfloat16`,
+  zero `float16` (`config.json torch_dtype: bfloat16`).
+- **G2 — promotion micro-repro: PASS.** `concatenate([fp16, bf16]) → float32`;
+  fix-path `concatenate([bf16, bf16]) → bfloat16`.
+- **G3 — live confirmation: DIVERGED from the original hypothesis, refined.**
+  - Block path: restore yields `offset == capacity` → realloc + mixed concat
+    on decode **step 0** → fp32 immediately (matches hypothesis).
+  - Prompt-kv path: server saves the **full padded buffer** (`trim()` only
+    decrements `offset`, never slices keys) → restored `cap=256 > offset` →
+    headroom → first step writes in place, **stays fp16**; promotion is
+    delayed to the first 256-boundary realloc (observed step 248), not step 1.
+  - Direct per-step latency measurement (offset ~105) reveals **two**
+    compounding penalties, not one: native bf16 **113.7 ms/tok** baseline;
+    restored **fp16 157.1 ms/tok = 1.38×** (mixed-dtype tax, present from
+    token 0 with NO promotion — this, not fp32, is what makes even small
+    prompts slow); promoted **fp32 138.6 ms/tok = 1.22×** (grows with context:
+    1.45× @254, trending to the observed ~1.9× at p500+); **bf16 fix
+    108.3 ms/tok = 0.95×** (full parity).
+
+### Verification gates
+- **V1 — dtype fixed: PASS.** With the fix, block restore stays `bfloat16`
+  after decode step 0; pkv restore stays `bfloat16` across 300 steps
+  (including the 256-realloc boundary). No fp32 anywhere.
+- **V3 — correctness: PASS.** Greedy `temp=0` token-id equality, full-prompt
+  vs restored-prompt, 50 tokens, 2 prompts — identical streams.
+- **V2 — throughput recovered (end-to-end server): PASS.**
+  daemon warm **10.3 tok/s** (TTFT 1170 ms) vs pkv warm **11.8 tok/s**
+  (TTFT **11.5 ms**) → ratio **1.15×** (pre-fix ~0.5×); pkv prefill-skip TTFT
+  advantage preserved.
+- **V5 — no collateral: PASS.** Daemon path untouched (passes no restore
+  dtype); 408 server/kv/serving tests green. (3 pre-existing
+  `test_catalog_unit.py` failures are unrelated — fail identically on clean
+  HEAD.)
+- **V4 — 30-run paired Wilcoxon:** not run; effect is unambiguous end-to-end
+  (V2) and at unit level (1.38×→0.95×). See NEXT_SESSION.
+
+---
+
 ## [9.33.8] — Unified startup banner + partial-dir guard
 
 ### Changed

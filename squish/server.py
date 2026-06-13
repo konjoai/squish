@@ -748,6 +748,10 @@ class _ModelState:
     loaded_at    = 0.0
     load_time_s  = 0.0
     loader_tag   = "squish"
+    # Model compute dtype (bfloat16 for INT4 MLX builds). KV cache is restored
+    # in this dtype so attention reads a matched-dtype cache — a float16 restore
+    # decodes ~1.4x slower and promotes to float32 on the first realloc.
+    kv_dtype     = None
     requests     = 0
     tokens_gen   = 0
     # Real-time performance tracking
@@ -1148,6 +1152,24 @@ def _apply_fast_gelu(model_dir: str) -> None:  # pragma: no cover
         pass   # never block startup on activation patching
 
 
+def _infer_kv_dtype_safe(model):
+    """Return the model's compute dtype for KV restore, or None on any failure.
+
+    None preserves the legacy float16 restore path (e.g. non-MLX models or if
+    mlx is unavailable) — the dtype-cast in the restore functions is a no-op
+    when target_dtype is None.
+    """
+    try:
+        from squish.kv.prompt_kv_cache import infer_kv_dtype
+        return infer_kv_dtype(model)
+    except (ImportError, AttributeError, TypeError, ValueError) as exc:
+        _logging.getLogger(__name__).warning(
+            "[kv] could not infer model compute dtype (%s) — KV restore will use "
+            "the legacy float16 path (slower decode on bf16 models)", exc,
+        )
+        return None
+
+
 def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> None:  # pragma: no cover
     """Load the Squish compressed model into global state.
 
@@ -1219,6 +1241,7 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
 
     _state.load_time_s = elapsed
     _state.loader_tag  = loader_tag
+    _state.kv_dtype    = _infer_kv_dtype_safe(model)
     if verbose:
         _ok(f"Model ready  ({elapsed:.2f}s  loader={loader_tag})")
 
@@ -1313,6 +1336,7 @@ def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma:
     _state.loaded_at  = time.time()
     _state.load_time_s = elapsed
     _state.loader_tag  = "mlx_lm"
+    _state.kv_dtype   = _infer_kv_dtype_safe(model)
     if verbose:
         _ok(f"Model ready  ({elapsed:.2f}s  loader=mlx_lm)")
 
@@ -2388,14 +2412,20 @@ def _generate_tokens(  # pragma: no cover
                     # Stash a deferred-restore closure; runs after first yield
                     _bkv_match_for_restore = _match
                     def _bkv_do_restore() -> None:
-                        _restore_blocks(_bkv_cache_obj, _bkv_match_for_restore.matched_blocks)
+                        _restore_blocks(
+                            _bkv_cache_obj, _bkv_match_for_restore.matched_blocks,
+                            target_dtype=_state.kv_dtype,
+                        )
                     _bkv_deferred_restore: "callable | None" = _bkv_do_restore
                 else:
                     # Non-fast path: restore blocks up front before suffix
                     # prefill needs them.
                     _bkv_deferred_restore = None
                     if _match.matched_tokens > 0:
-                        _restore_blocks(_bkv_cache_obj, _match.matched_blocks)
+                        _restore_blocks(
+                            _bkv_cache_obj, _match.matched_blocks,
+                            target_dtype=_state.kv_dtype,
+                        )
                     # Prefill the suffix manually so we can grab the last logit.
                     _suffix_ids = _bkv_full_ids[_match.matched_tokens:]
                     if _suffix_ids:
@@ -2501,14 +2531,17 @@ def _generate_tokens(  # pragma: no cover
                     # Stash a closure so we can run restore after the yield.
                     _pkv_entry_for_restore = _pkv_entry
                     def _do_restore() -> None:
-                        _rkv(_pkv_cache, _pkv_entry_for_restore)
+                        _rkv(_pkv_cache, _pkv_entry_for_restore,
+                             target_dtype=_state.kv_dtype)
                     _pkv_deferred_restore = _do_restore
 
                     if _trace:
                         _tlog(f"REQ {_rid}  prompt-kv-cache HIT-fast  "
                               f"offset={_pkv_entry.offset}  layers={_pkv_entry.n_layers}  "
                               f"logit=cached  → defer-restore")
-                elif _pkv_entry is not None and _rkv(_pkv_cache, _pkv_entry):
+                elif _pkv_entry is not None and _rkv(
+                    _pkv_cache, _pkv_entry, target_dtype=_state.kv_dtype
+                ):
                     # v4.1 legacy hit (no cached logit): slice prompt to
                     # the trailing token only and let mlx_lm 1-token-prefill.
                     _pkv_was_hit = True
