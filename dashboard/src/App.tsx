@@ -26,6 +26,7 @@ import {
   MOCK_HEALTH, MOCK_PROM_TEXT, MOCK_QUALITY, MOCK_SYS_STATS, MOCK_MODEL_STATUS, MOCK_OBS_REPORT,
 } from "./lib/mock";
 import { loadTurns, saveTurns, clearTurns } from "./lib/persist";
+import { conversationToMarkdown, conversationToJSON } from "./lib/export";
 import type {
   ChatTurn, HealthResponse, CockpitMetrics, KVMode, QualityReport, SysStats, ModelStatus, ObsReport,
 } from "./lib/types";
@@ -195,6 +196,22 @@ export default function App() {
     clearTurns();
   };
 
+  const copyMarkdown = () => {
+    if (turns.length === 0) return;
+    void navigator.clipboard?.writeText(conversationToMarkdown(turns));
+  };
+
+  const downloadJSON = () => {
+    if (turns.length === 0) return;
+    const blob = new Blob([conversationToJSON(turns)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `squish-conversation-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const mode = inferKVMode(health.loader);
   const lastAssistantTurn: ChatTurn | null =
     active ?? [...turns].reverse().find((t) => t.role === "assistant") ?? null;
@@ -210,6 +227,8 @@ export default function App() {
     })),
     { id: "act-send", title: "Send message", group: "action", keywords: "chat submit prompt", run: send },
     { id: "act-clear", title: "Clear conversation", group: "action", keywords: "reset chat", run: clearConvo },
+    { id: "act-copy-md", title: "Copy conversation as Markdown", group: "export", keywords: "share clipboard", run: copyMarkdown },
+    { id: "act-dl-json", title: "Download conversation as JSON", group: "export", keywords: "share save export", run: downloadJSON },
     { id: "act-top", title: "Scroll to top", group: "action", keywords: "home hero", run: () => window.scrollTo({ top: 0, behavior: "smooth" }) },
   ];
 
