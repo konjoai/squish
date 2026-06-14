@@ -254,6 +254,10 @@ def stream_squish(prompt: str, max_tokens: int = 1) -> dict[str, Any]:
         "model": "squish",
         "messages": [{"role": "user", "content": prompt}],
         "stream": True, "max_tokens": max_tokens, "temperature": 0.0,
+        # Request an authoritative token count in the terminal chunk so warm
+        # tok/s is measured from real completion_tokens, not the chunk count
+        # (chunk count would undercount once tokens are coalesced under backlog).
+        "stream_options": {"include_usage": True},
     }).encode()
     req = urllib.request.Request(
         f"http://{SQUISH_HOST}:{SQUISH_PORT}/v1/chat/completions",
