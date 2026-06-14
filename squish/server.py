@@ -286,6 +286,9 @@ _thinking_budget: int = -1            # -1=unlimited, 0=disable thinking, >0=tok
 _think_close_token_id: int | None = None  # ID of </think> token, resolved at model load
 # ── Phase A2: explicit MLX rotating KV cache size ────────────────────────────
 _max_kv_size: int | None = None       # None = mlx_lm default (4K); set to extend context
+_kv_bits: "int | None" = None          # native mlx_lm quantized KV cache (--kv-bits); GPU-side
+_kv_group_size: int = 64               # group size for native quantized KV (--kv-group-size)
+_quantized_kv_start: int = 0           # keep the first N tokens fp16 (--quantized-kv-start)
 # ── Phase A3: concise output mode ────────────────────────────────────────────
 _concise_responses: bool = False      # prepend concision prefix + EOS bias
 _CONCISION_PREFIX = (
@@ -2448,6 +2451,13 @@ def _generate_tokens(  # pragma: no cover
         _sg_kwargs = {}
         if _max_kv_size is not None:
             _sg_kwargs["max_kv_size"] = _max_kv_size
+        # Native mlx_lm quantized KV cache (GPU-side mx.quantize) — cuts KV
+        # bandwidth at long context.  Unlike --kv-cache-mode (squish's numpy
+        # path), this runs entirely on the GPU inside generate_step.
+        if _kv_bits is not None:
+            _sg_kwargs["kv_bits"]            = _kv_bits
+            _sg_kwargs["kv_group_size"]      = _kv_group_size
+            _sg_kwargs["quantized_kv_start"] = _quantized_kv_start
         # mlx_lm >= 0.21 replaced temp/top_p kwargs with a `sampler` callable.
         # Passing temp/top_p directly causes a TypeError in generate_step, which
         # would be silently caught below and fall through to the no-cache manual
@@ -4664,6 +4674,17 @@ Examples:
                     help="MLX rotating KV cache size in tokens.\n"
                          "MLX defaults to 4096, silently truncating contexts longer than 4K.\n"
                          "Set to 131072 for 128K context. Passed directly to mlx_lm.stream_generate.")
+    ap.add_argument("--kv-bits", type=int, default=None, metavar="N",
+                    help="Native mlx_lm quantized KV cache bit-width (use 8; 4 degrades\n"
+                         "output quality). A MEMORY lever — shrinks the KV cache so longer\n"
+                         "context fits in RAM. NOT a speed lever on Apple Silicon: decode is\n"
+                         "weight-bandwidth bound, so quantizing KV gives ~0 decode speedup\n"
+                         "(measured). None = fp16 KV (default). Distinct from --kv-cache-mode.")
+    ap.add_argument("--kv-group-size", type=int, default=64, metavar="N",
+                    help="Group size for --kv-bits quantization (default 64).")
+    ap.add_argument("--quantized-kv-start", type=int, default=0, metavar="N",
+                    help="Keep the first N tokens of KV in fp16 before quantizing\n"
+                         "(default 0). Larger values trade memory for early-token fidelity.")
     # ── Phase A3: concise responses ───────────────────────────────────────────
     ap.add_argument("--concise-responses", action="store_true", default=False,
                     help="Prepend a concision directive to every system message and apply\n"
@@ -5439,6 +5460,13 @@ Examples:
     _max_kv_size = getattr(args, "max_kv_size", None)
     if _max_kv_size is not None:
         _info("max-kv-size", f"{_max_kv_size} tokens")
+    global _kv_bits, _kv_group_size, _quantized_kv_start
+    _kv_bits = getattr(args, "kv_bits", None)
+    _kv_group_size = getattr(args, "kv_group_size", 64)
+    _quantized_kv_start = getattr(args, "quantized_kv_start", 0)
+    if _kv_bits is not None:
+        _info("kv-bits", f"{_kv_bits}-bit native KV (group={_kv_group_size}, "
+                         f"start={_quantized_kv_start})")
 
     # ── Phase A3: concise responses ───────────────────────────────────────────
     global _concise_responses
