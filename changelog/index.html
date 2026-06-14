@@ -836,6 +836,56 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#9339-restore-promptblock-kv-in-model-dtype-stop-fp16fp32-promotion-2x-decode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [9.33.9] — Restore prompt/block KV in model dtype (stop fp16→fp32 promotion, ~2x decode)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[9.33.9] — Restore prompt/block KV in model dtype (stop fp16→fp32 promotion, ~2x decode)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-flight-kill-test-gate-qwen25-7b-instruct-int4-m3-16-gb-mlx-0310" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-Flight kill-test gate (Qwen2.5-7B-Instruct INT4, M3 16 GB, mlx 0.31.0)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verification-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification gates
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#9338-unified-startup-banner-partial-dir-guard" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -859,7 +909,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed" class="md-nav__link">
+  <a href="#fixed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -954,7 +1004,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed_1" class="md-nav__link">
+  <a href="#fixed_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1038,7 +1088,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed_2" class="md-nav__link">
+  <a href="#fixed_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1099,7 +1149,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed_3" class="md-nav__link">
+  <a href="#fixed_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1376,7 +1426,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed_4" class="md-nav__link">
+  <a href="#fixed_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1709,6 +1759,67 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="9339-restore-promptblock-kv-in-model-dtype-stop-fp16fp32-promotion-2x-decode">[9.33.9] — Restore prompt/block KV in model dtype (stop fp16→fp32 promotion, ~2x decode)<a class="headerlink" href="#9339-restore-promptblock-kv-in-model-dtype-stop-fp16fp32-promotion-2x-decode" title="Permanent link">&para;</a></h2>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>KV-cache restore decode regression.</strong> Every <code>--prompt-kv-cache</code> /
+  <code>--block-kv-cache</code> config decoded at ~half the throughput of the plain
+  daemon. Root cause: both restore paths rebuilt the cache as <strong>float16</strong>
+  while the INT4 MLX model computes in <strong>bfloat16</strong>. A restored fp16 K/V cache
+  (a) hits a slow mixed-dtype attention path against the bf16 query, and
+  (b) promotes <code>float16 ⊕ bfloat16 → float32</code> on the first <code>KVCache</code>
+  realloc — doubling per-step KV bandwidth for the rest of generation.
+  Fix: restore each K/V array in the model's native compute dtype (kept fp16
+  <em>on disk</em> to halve cache size; cast to bf16 <em>on restore</em>). Backward
+  compatible — <code>target_dtype=None</code> preserves the legacy fp16 restore.</li>
+<li><code>squish/kv/prompt_kv_cache.py</code>: new <code>infer_kv_dtype(model)</code>;
+    <code>restore_kv_state(cache, entry, target_dtype=None)</code> casts each array.</li>
+<li><code>squish/kv/block_kv_cache.py</code>: <code>restore_blocks_to_cache(cache, blocks,
+    target_dtype=None)</code> casts each block <strong>before</strong> concat (same-dtype concat).</li>
+<li><code>squish/server.py</code>: <code>_ModelState.kv_dtype</code> computed once after model load
+    via <code>_infer_kv_dtype_safe</code>; passed at all four restore call sites
+    (pkv deferred + legacy, block deferred + eager).</li>
+</ul>
+<h3 id="pre-flight-kill-test-gate-qwen25-7b-instruct-int4-m3-16-gb-mlx-0310">Pre-Flight kill-test gate (Qwen2.5-7B-Instruct INT4, M3 16 GB, mlx 0.31.0)<a class="headerlink" href="#pre-flight-kill-test-gate-qwen25-7b-instruct-int4-m3-16-gb-mlx-0310" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>G1 — model compute dtype: PASS.</strong> All 537 float params <code>bfloat16</code>,
+  zero <code>float16</code> (<code>config.json torch_dtype: bfloat16</code>).</li>
+<li><strong>G2 — promotion micro-repro: PASS.</strong> <code>concatenate([fp16, bf16]) → float32</code>;
+  fix-path <code>concatenate([bf16, bf16]) → bfloat16</code>.</li>
+<li><strong>G3 — live confirmation: DIVERGED from the original hypothesis, refined.</strong></li>
+<li>Block path: restore yields <code>offset == capacity</code> → realloc + mixed concat
+    on decode <strong>step 0</strong> → fp32 immediately (matches hypothesis).</li>
+<li>Prompt-kv path: server saves the <strong>full padded buffer</strong> (<code>trim()</code> only
+    decrements <code>offset</code>, never slices keys) → restored <code>cap=256 &gt; offset</code> →
+    headroom → first step writes in place, <strong>stays fp16</strong>; promotion is
+    delayed to the first 256-boundary realloc (observed step 248), not step 1.</li>
+<li>Direct per-step latency measurement (offset ~105) reveals <strong>two</strong>
+    compounding penalties, not one: native bf16 <strong>113.7 ms/tok</strong> baseline;
+    restored <strong>fp16 157.1 ms/tok = 1.38×</strong> (mixed-dtype tax, present from
+    token 0 with NO promotion — this, not fp32, is what makes even small
+    prompts slow); promoted <strong>fp32 138.6 ms/tok = 1.22×</strong> (grows with context:
+    1.45× @254, trending to the observed ~1.9× at p500+); <strong>bf16 fix
+    108.3 ms/tok = 0.95×</strong> (full parity).</li>
+</ul>
+<h3 id="verification-gates">Verification gates<a class="headerlink" href="#verification-gates" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>V1 — dtype fixed: PASS.</strong> With the fix, block restore stays <code>bfloat16</code>
+  after decode step 0; pkv restore stays <code>bfloat16</code> across 300 steps
+  (including the 256-realloc boundary). No fp32 anywhere.</li>
+<li><strong>V3 — correctness: PASS.</strong> Greedy <code>temp=0</code> token-id equality, full-prompt
+  vs restored-prompt, 50 tokens, 2 prompts — identical streams.</li>
+<li><strong>V2 — throughput recovered (end-to-end server): PASS.</strong>
+  daemon warm <strong>10.3 tok/s</strong> (TTFT 1170 ms) vs pkv warm <strong>11.8 tok/s</strong>
+  (TTFT <strong>11.5 ms</strong>) → ratio <strong>1.15×</strong> (pre-fix ~0.5×); pkv prefill-skip TTFT
+  advantage preserved.</li>
+<li><strong>V5 — no collateral: PASS.</strong> Daemon path untouched (passes no restore
+  dtype); 408 server/kv/serving tests green. (3 pre-existing
+  <code>test_catalog_unit.py</code> failures are unrelated — fail identically on clean
+  HEAD.)</li>
+<li><strong>V4 — 30-run paired Wilcoxon:</strong> not run; effect is unambiguous end-to-end
+  (V2) and at unit level (1.38×→0.95×). See NEXT_SESSION.</li>
+</ul>
+<hr />
 <h2 id="9338-unified-startup-banner-partial-dir-guard">[9.33.8] — Unified startup banner + partial-dir guard<a class="headerlink" href="#9338-unified-startup-banner-partial-dir-guard" title="Permanent link">&para;</a></h2>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
 <ul>
@@ -1718,7 +1829,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
   wordmark + half-size mascot side-by-side, info panel + load status row
   inside the same border. Sparkles centred over the mascot.</li>
 </ul>
-<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>load_from_npy_dir()</code>: partial/interrupted compressed dirs (manifest
   missing &gt;5% of expected weights) now raise a clear <code>FileNotFoundError</code>
@@ -1756,7 +1867,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 </ul>
 <hr />
 <h2 id="9333-ssl-fix">[9.33.3] — SSL fix<a class="headerlink" href="#9333-ssl-fix" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Python 3.13 Authority Key Identifier enforcement and Zscaler
   compatibility: all three HuggingFace download paths now retry with
@@ -1780,7 +1891,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 </ul>
 <hr />
 <h2 id="9330-pull-resilience-partial-download-guard-ssl-fallback">[9.33.0] — Pull Resilience (partial-download guard + SSL fallback)<a class="headerlink" href="#9330-pull-resilience-partial-download-guard-ssl-fallback" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_3">Fixed<a class="headerlink" href="#fixed_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>squish pull</code> now validates raw model directories before compression. If a prior
   download was interrupted/canceled, the partial directory is removed and the model
@@ -1844,7 +1955,7 @@ default is now both KV caches enabled. Full numbers and methodology in
   upgrading from a development install should switch to <code>pip install squish-ai</code>
   for releases.</li>
 </ul>
-<h3 id="fixed_3">Fixed<a class="headerlink" href="#fixed_3" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_4">Fixed<a class="headerlink" href="#fixed_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>mlx_lm</code> sklearn-stub import-side-effect (saves ~1.2 s cold-start;
   upstream PR filed).</li>
@@ -2210,7 +2321,7 @@ of <code>squish/</code>; the existing module-count gates in <code>tests/test_qua
 <li>Repr coverage: class name, dims, group_size, residual rank, sparse k (6 tests).</li>
 <li>Factory: returns correct type, accepts numpy/mx bias, no-bias default (4 tests).</li>
 </ul>
-<h3 id="fixed_4">Fixed<a class="headerlink" href="#fixed_4" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_5">Fixed<a class="headerlink" href="#fixed_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>squish/cli.py</code> — <code>cmd_bench</code></strong>: INT4 bench no longer exits with code 1
@@ -2788,7 +2899,7 @@ sparse correction (for real transformer weight outliers) is W103.3 scope.</p>
   8 INT4 output structure checks, 2 INT8 output checks, 6 argument parsing roundtrip checks,
   invalid-format rejection.</li>
 </ul>
-<h3 id="fixed_5">Fixed<a class="headerlink" href="#fixed_5" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_6">Fixed<a class="headerlink" href="#fixed_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>squish/cli.py</code> <code>build_parser()</code></strong> — <code>--version</code> argument previously called
   <code>importlib.metadata.version("squish")</code> at parse time without a try/except. Now wraps the
@@ -3137,7 +3248,7 @@ directly — require <code>pip install squish</code>; pass in Python 3.10 CI).</
   thread executor, returns <code>{ok, files_checked, summary, hits}</code>. Returns 400 on
   missing paths.</li>
 </ul>
-<h3 id="fixed_6">Fixed<a class="headerlink" href="#fixed_6" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_7">Fixed<a class="headerlink" href="#fixed_7" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>squish/cli.py</code> — mixed_attn calibration</strong> — <code>args.outlier_threshold</code> now
   set to <code>100.0</code> in the <code>--format mixed_attn</code> block, ensuring the AWQ INT4
@@ -3753,7 +3864,7 @@ Set <code>SQUASH_OFFLINE=1</code> or pass <code>--offline</code> to activate.</p
 </ul>
 <hr />
 <h2 id="unreleased-wave-42-bias-formula-fix-int4-awq-lm_eval-validation-arc_easy-pass">[Unreleased] — Wave 42: bias formula fix + INT4 AWQ lm_eval validation (arc_easy PASS)<a class="headerlink" href="#unreleased-wave-42-bias-formula-fix-int4-awq-lm_eval-validation-arc_easy-pass" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_7">Fixed<a class="headerlink" href="#fixed_7" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_8">Fixed<a class="headerlink" href="#fixed_8" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>squish/cli.py</code></strong> — Default <code>int4_group_size</code> changed 16 → 32 in 3 locations. MLX
@@ -4882,7 +4993,7 @@ not by feature overlap with existing modules.</p>
 </ul>
 <hr />
 <h2 id="9150-int3-group_size-correctly-fixed-to-32-tier-23-model-compressions">[9.15.0] — INT3 group_size correctly fixed to 32; Tier 2/3 model compressions<a class="headerlink" href="#9150-int3-group_size-correctly-fixed-to-32-tier-23-model-compressions" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_8">Fixed<a class="headerlink" href="#fixed_8" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_9">Fixed<a class="headerlink" href="#fixed_9" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>squish/cli.py</code>: <code>_INT3_GROUP_SIZE</code> corrected from 16 → 32.  <code>mlx.core.quantize()</code>
   only supports group sizes 32, 64, and 128; requesting 16 raised <code>ValueError</code>.
@@ -5476,7 +5587,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 <li><strong>Removed empty ghost directories</strong>: <code>core/</code>, <code>format/</code>, <code>install/</code>, <code>packaging/</code>
   (only <code>__pycache__</code> remained after Wave 116 deletions).</li>
 </ul>
-<h3 id="fixed_9">Fixed<a class="headerlink" href="#fixed_9" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_10">Fixed<a class="headerlink" href="#fixed_10" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>astc_loader.py</code> bare import guarded</strong> — <code>from squish.compress.astc_encoder import</code>
   was a module-level bare import that raised <code>ModuleNotFoundError</code> on any direct
@@ -5533,7 +5644,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 </ul>
 <hr />
 <h2 id="920-wave-115-all-optimizations-flush-int3-load-path-dead-code">[9.2.0] — Wave 115 — All-Optimizations Flush + INT3 Load Path + Dead Code<a class="headerlink" href="#920-wave-115-all-optimizations-flush-int3-load-path-dead-code" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_10">Fixed<a class="headerlink" href="#fixed_10" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_11">Fixed<a class="headerlink" href="#fixed_11" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>--all-optimizations</code> TTFT spike eliminated</strong> — Wave modules (100+
@@ -7997,7 +8108,7 @@ continue passing; 188 new tests added (107 Wave 62a + 81 Wave 62b).</p>
 <li><code>squish/kernels/mojo/ouroboros_ngram_mojo.py</code> + <code>kernels/ouroboros_ngram.mojo</code></li>
 <li><code>squish/kernels/mojo/pyramid_kv_budget_mojo.py</code> + <code>kernels/pyramid_kv_budget.mojo</code></li>
 </ul>
-<h3 id="fixed_11">Fixed<a class="headerlink" href="#fixed_11" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_12">Fixed<a class="headerlink" href="#fixed_12" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>RustClusterKV.evict_mask</code> signature harmonised with <code>MojoClusterKV</code>:
   replaced positional <code>budget</code> (number of clusters to keep) with optional
@@ -8060,7 +8171,7 @@ All 11333 pre-Wave-61 tests continue passing; 140 new tests added
 <li><code>squish/kernels/mojo/jacobi_conv_mojo.py</code> + <code>kernels/jacobi_convergence.mojo</code></li>
 <li><code>squish/kernels/mojo/tree_verify_mojo.py</code> + <code>kernels/tree_verify.mojo</code></li>
 </ul>
-<h3 id="fixed_12">Fixed<a class="headerlink" href="#fixed_12" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_13">Fixed<a class="headerlink" href="#fixed_13" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Pre-existing <code>quarot_group_quant_f32</code> move-in-closure compile error in
   <code>squish_quant_rs/src/lib.rs</code>: introduced <code>let w_slice = &amp;w_flat[..]</code> before
@@ -10947,7 +11058,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 </ul>
 <hr />
 <h2 id="101-2026-03-04">[1.0.1] — 2026-03-04<a class="headerlink" href="#101-2026-03-04" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_13">Fixed<a class="headerlink" href="#fixed_13" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_14">Fixed<a class="headerlink" href="#fixed_14" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>eval_output/eval_report.md</code></strong> — Replaced physically impossible benchmark numbers
   (+14.1% ARC, +15.2% HellaSwag after lossy compression) with validated results from a
