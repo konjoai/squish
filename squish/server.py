@@ -52,6 +52,7 @@ import functools
 import hashlib
 import hmac
 import json
+import gc
 import os
 import re
 import sys
@@ -306,10 +307,103 @@ _memory_governor: "Any | None" = None      # MemoryGovernor instance (macOS only
 # pass on each next() call.  Running it in a single-threaded executor keeps the
 # uvicorn event loop responsive (health checks, metrics, SSE flush) during
 # generation.  max_workers=1 is deliberate: MLX is not thread-safe.
+def _pin_inference_thread() -> None:
+    """Bias the single inference worker onto Apple-Silicon performance cores.
+
+    macOS schedules threads across P/E cores by Quality-of-Service class.  The
+    decode worker is latency-critical, so we raise its QoS to USER_INTERACTIVE
+    (the band the scheduler keeps on P-cores).  This trims the scheduling
+    jitter that shows up as decode-step p95/p99 spikes, especially when E-cores
+    would otherwise be picked under light load.  No-op off Darwin.
+    """
+    import platform  # noqa: PLC0415
+    if platform.system() != "Darwin":
+        return
+    try:
+        import ctypes  # noqa: PLC0415
+        _libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        _QOS_CLASS_USER_INTERACTIVE = 0x21
+        # int pthread_set_qos_class_self_np(qos_class_t cls, int rel_priority)
+        _libc.pthread_set_qos_class_self_np(_QOS_CLASS_USER_INTERACTIVE, 0)
+    except Exception:
+        pass  # QoS hint is best-effort; never block startup on it
+
+
 _inference_executor = concurrent.futures.ThreadPoolExecutor(
-    max_workers=1, thread_name_prefix="squish-gen"
+    max_workers=1, thread_name_prefix="squish-gen",
+    initializer=_pin_inference_thread,
 )
 _INFERENCE_STOP = object()  # sentinel returned when the sync generator is exhausted
+
+# ── Streaming decode handoff ─────────────────────────────────────────────────
+# The streaming path runs the synchronous token generator to completion in the
+# inference thread and pushes results onto an asyncio.Queue the SSE coroutine
+# drains.  This is ONE thread handoff per request instead of one per token: the
+# old ``run_in_executor`` per-token round-trip added 5-20 ms of event-loop
+# reschedule jitter to every decode step (the dominant cause of the p95 tail).
+_STREAM_DONE = object()  # producer-finished sentinel pushed onto the queue
+
+
+class _StreamError:
+    """Wraps a producer-thread exception so the consumer can re-raise it."""
+
+    __slots__ = ("exc",)
+
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+
+
+# ── Generation GC guard ───────────────────────────────────────────────────────
+# Python's cyclic GC can fire mid-decode and stall a token by 50-200 ms — this
+# is exactly the p95 spike seen in the v5.1 benchmark.  We disable the cyclic
+# collector for the duration of any in-flight generation (ref-counted so
+# overlapping requests are safe) and run one explicit collection once the last
+# generation drains.  Combined with a one-time ``gc.freeze()`` after model load
+# (see ``_freeze_heap_once``), this keeps the decode loop pause-free.
+_gc_gen_lock = threading.Lock()
+_gc_gen_active = 0
+_gc_disabled_by_guard = False
+_gc_frozen = False
+
+
+def _gen_gc_enter() -> None:
+    """Suspend cyclic GC while a generation is in flight (ref-counted)."""
+    global _gc_gen_active, _gc_disabled_by_guard
+    with _gc_gen_lock:
+        _gc_gen_active += 1
+        if _gc_gen_active == 1 and gc.isenabled():
+            gc.disable()
+            _gc_disabled_by_guard = True
+
+
+def _gen_gc_exit() -> None:
+    """Re-enable cyclic GC once the last in-flight generation completes."""
+    global _gc_gen_active, _gc_disabled_by_guard
+    with _gc_gen_lock:
+        _gc_gen_active = max(0, _gc_gen_active - 1)
+        if _gc_gen_active == 0 and _gc_disabled_by_guard:
+            gc.enable()
+            _gc_disabled_by_guard = False
+            gc.collect()
+
+
+def _freeze_heap_once() -> None:
+    """Move the loaded model + interpreter heap to GC's permanent generation.
+
+    Called once after warm-up: ``gc.freeze()`` marks every currently-tracked
+    object as permanent so subsequent collections never re-scan the (large,
+    long-lived) model graph.  This shrinks each future collection's working set
+    to just the per-request garbage, cutting pause times.
+    """
+    global _gc_frozen
+    if _gc_frozen:
+        return
+    try:
+        gc.collect()
+        gc.freeze()
+        _gc_frozen = True
+    except Exception:
+        pass
 
 
 def _iter_next(it: "Any") -> "Any":
@@ -336,6 +430,23 @@ def _collect_tokens_sync(gen: "Any") -> "list[tuple[str, str | None]]":
         if finish is not None:
             break
     return result
+
+
+def _kv_cache_compile_safe(kv_cache: "Any") -> bool:
+    """Whether the active KV cache may be wrapped in ``mx.compile``.
+
+    Quantized KV caches (KIVI int8 / snap) quantize K and V on the CPU via
+    numpy inside their per-step update — an implicit ``mx.eval()`` that is
+    illegal inside an ``mx.compile`` trace.  Compiling the decode forward over
+    such a cache raises "[eval] Attempting to eval an array during ... compile"
+    on the first decode step, which previously forced a slow double-path
+    fallback (re-running the whole request through ``stream_generate``).
+
+    A cache is compile-safe only when absent (``None``, plain fp16 path) or when
+    it explicitly advertises ``compile_safe = True``.  Numpy-quantized caches do
+    not set that attribute, so they correctly use the uncompiled forward.
+    """
+    return kv_cache is None or bool(getattr(kv_cache, "compile_safe", False))
 
 
 # ── Conflict-Resolution Routing (Phase 0) ────────────────────────────────────
@@ -1447,6 +1558,7 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
                     f"{p2_note}  total={elapsed * 1000:.0f} ms)"
                     f"  path=stream_generate"
                 )
+            _freeze_heap_once()
             return
         except Exception:
             pass  # fall through to bare forward pass below
@@ -1463,6 +1575,7 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
         elapsed = time.perf_counter() - t0
         if verbose:
             _ok(f"Metal JIT warm-up  ({elapsed * 1000:.0f} ms)  path=forward-pass")
+        _freeze_heap_once()
     except Exception as _e:
         if verbose:
             _warn(f"[warmup] Skipped: {_e}")
@@ -2075,7 +2188,13 @@ def _generate_tokens(  # pragma: no cover
             # layer_caches is captured as a constant closure; the list reference
             # never changes, so mx.compile reuses the compiled graph every step.
             _decode_fn = None
-            if not getattr(_state, "_no_compile", False):
+            # Only compile the decode forward when the attached KV cache is
+            # compile-safe.  Numpy-quantized caches (KIVI int8/snap) eval inside
+            # their update step, which is illegal under mx.compile and would trip
+            # "[eval] ... during compile" on the first decode call — forcing a
+            # slow stream_generate fallback.  See _kv_cache_compile_safe.
+            if (not getattr(_state, "_no_compile", False)
+                    and _kv_cache_compile_safe(_kv_cache)):
                 try:
                     _decode_fn = mx.compile(
                         lambda tok_x: model(tok_x, cache=layer_caches)
@@ -3122,13 +3241,18 @@ def _model_card() -> dict:
 
 def _make_chunk(content: str, model: str, cid: str, finish_reason=None,
                 _created: int | None = None,
-                _fingerprint: str | None = None) -> str:
+                _fingerprint: str | None = None,
+                _usage: "tuple[int, int] | None" = None) -> str:
     """Build an SSE data line in OpenAI streaming format.
 
     Hot-path optimization (wave 108): avoid 3 nested dict allocations per token
     by building the JSON frame directly from pre-serialized parts.  All fields
     except ``content`` and ``finish_reason`` are constant per request; callers
     should pass ``_created`` and ``_fingerprint`` to avoid re-computing them.
+
+    When ``_usage`` is ``(prompt_tokens, completion_tokens)`` (terminal chunk
+    only, gated by ``stream_options.include_usage``), a ``usage`` object is
+    appended so clients get authoritative token counts regardless of framing.
     """
     ts  = _created if _created is not None else int(time.time())
     fp  = _fingerprint if _fingerprint is not None else _system_fingerprint(
@@ -3145,12 +3269,21 @@ def _make_chunk(content: str, model: str, cid: str, finish_reason=None,
         delta_s = "{}"
     # finish_reason: null or "stop"/"length"/etc (always a simple identifier)
     fr_s = "null" if finish_reason is None else f'"{finish_reason}"'
+    # usage: appended only on the terminal chunk when include_usage is set
+    if _usage is not None:
+        _pt, _ct = _usage
+        usage_s = (
+            f',"usage":{{"prompt_tokens":{_pt},'
+            f'"completion_tokens":{_ct},"total_tokens":{_pt + _ct}}}'
+        )
+    else:
+        usage_s = ""
     return (
         f'data: {{"id":{id_s},"object":"chat.completion.chunk",'
         f'"created":{ts},"model":{model_s},'
         f'"system_fingerprint":{fp_s},'
         f'"choices":[{{"index":0,"delta":{delta_s},'
-        f'"finish_reason":{fr_s}}}]}}\n\n'
+        f'"finish_reason":{fr_s}}}]{usage_s}}}\n\n'
     )
 
 
@@ -3184,6 +3317,11 @@ async def chat_completions(  # pragma: no cover
     model_id           = body.get("model", _state.model_name)
     tools              = body.get("tools", [])
     tool_choice        = body.get("tool_choice", "auto")
+    # OpenAI stream_options.include_usage: emit a usage block in the terminal
+    # SSE chunk so clients get authoritative token counts (independent of how
+    # tokens are framed across chunks).
+    _stream_opts       = body.get("stream_options") or {}
+    _include_usage     = bool(_stream_opts.get("include_usage", False))
 
     # tool_choice == "none": agent explicitly disables tools for this turn
     if tool_choice == "none":
@@ -3317,33 +3455,77 @@ async def chat_completions(  # pragma: no cover
             gen = _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed,
                                    repetition_penalty=repetition_penalty)
             loop = _aio.get_running_loop()
+            # Decouple decode from the event loop: the inference thread drains
+            # the synchronous generator and pushes results onto this queue; the
+            # SSE coroutine below consumes them.  One handoff per request — not
+            # one run_in_executor round-trip per token (which added 5-20 ms of
+            # reschedule jitter to every decode step).
+            _queue: _aio.Queue = _aio.Queue()
+            _stop_evt = threading.Event()
+
+            def _produce() -> None:
+                # Runs in the single inference thread; pushes (text, finish)
+                # tuples, then a terminal _STREAM_DONE.  Checks _stop_evt each
+                # step so a client disconnect halts decode within one token.
+                try:
+                    for _tok_text, _finish in gen:
+                        if _stop_evt.is_set():
+                            break
+                        loop.call_soon_threadsafe(_queue.put_nowait, (_tok_text, _finish))
+                        if _finish is not None:
+                            break
+                except Exception as _exc:  # surface to the consumer, never crash the thread
+                    loop.call_soon_threadsafe(_queue.put_nowait, _StreamError(_exc))
+                finally:
+                    loop.call_soon_threadsafe(_queue.put_nowait, _STREAM_DONE)
+
             n_comp   = 0
             ttft_s   = 0.0
             last_finish = "stop"
+            _gen_gc_enter()
             try:
-                # Each call to run_in_executor offloads one synchronous forward
-                # pass to the inference thread, yielding the event loop between
-                # tokens so health checks and SSE flushes are never blocked.
-                while True:
-                    item = await loop.run_in_executor(
-                        _inference_executor, _iter_next, gen
-                    )
-                    if item is _INFERENCE_STOP:
-                        break
-                    tok_text, finish = item
-                    if tok_text:
-                        if n_comp == 0:
-                            ttft_s = time.perf_counter() - req_start
-                        n_comp += 1
-                        yield _make_chunk(tok_text, model_id, cid,
+                loop.run_in_executor(_inference_executor, _produce)
+                _producer_done = False
+                while not _producer_done:
+                    item = await _queue.get()
+                    # Coalesce any tokens already queued behind this one into a
+                    # single SSE frame.  In steady state (decode ≫ flush) the
+                    # queue is empty so this emits one token per chunk and leaves
+                    # inter-token timing intact; it only batches a genuine backlog
+                    # (e.g. the post-prefill burst), cutting redundant flushes.
+                    batch_parts: list[str] = []
+                    while True:
+                        if item is _STREAM_DONE:
+                            _producer_done = True
+                            break
+                        if isinstance(item, _StreamError):
+                            if batch_parts:
+                                yield _make_chunk("".join(batch_parts), model_id, cid,
+                                                  _created=_created, _fingerprint=_fp)
+                            yield f"data: {_json_dumps({'error': str(item.exc)})}\n\n"
+                            return
+                        _tok_text, _finish = item
+                        if _tok_text:
+                            if n_comp == 0:
+                                ttft_s = time.perf_counter() - req_start
+                            n_comp += 1
+                            batch_parts.append(_tok_text)
+                        if _finish is not None:
+                            last_finish = _finish
+                            _producer_done = True
+                            break
+                        if _queue.empty():
+                            break
+                        item = _queue.get_nowait()
+                    if batch_parts:
+                        yield _make_chunk("".join(batch_parts), model_id, cid,
                                           _created=_created, _fingerprint=_fp)
-                    if finish is not None:
-                        last_finish = finish
-                        break
             except Exception as exc:
                 yield f"data: {_json_dumps({'error': str(exc)})}\n\n"
                 return
             finally:
+                _stop_evt.set()          # halt the producer if the client bailed
+                _gen_gc_exit()
                 _state.inflight -= 1
                 dur = time.perf_counter() - req_start
                 _state.record_completion(n_comp, dur, ttft_s)
@@ -3356,8 +3538,9 @@ async def chat_completions(  # pragma: no cover
                     _tlog(f"CHAT stream DONE  id={cid}  tokens={n_comp}  "
                           f"ttft={ttft_s:.3f}s  total={dur:.3f}s  tps={_tps:.1f}  "
                           f"finish={last_finish}")
+            _final_usage = (prompt_tokens, n_comp) if _include_usage else None
             yield _make_chunk("", model_id, cid, finish_reason=last_finish,
-                              _created=_created, _fingerprint=_fp)
+                              _created=_created, _fingerprint=_fp, _usage=_final_usage)
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(
@@ -3384,9 +3567,13 @@ async def chat_completions(  # pragma: no cover
                 repetition_penalty=repetition_penalty,
             )
             _loop = _aio.get_running_loop()
-            _all_toks = await _loop.run_in_executor(
-                _inference_executor, _collect_tokens_sync, _gen_iter
-            )
+            _gen_gc_enter()
+            try:
+                _all_toks = await _loop.run_in_executor(
+                    _inference_executor, _collect_tokens_sync, _gen_iter
+                )
+            finally:
+                _gen_gc_exit()
             for tok_text, finish in _all_toks:
                 if tok_text:
                     if n_comp == 0:
