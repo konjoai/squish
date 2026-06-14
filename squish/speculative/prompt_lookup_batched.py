@@ -96,3 +96,57 @@ def prompt_lookup_generate(
             cur = t
             if t in eos_ids or produced >= max_tokens:
                 return
+
+
+def stream_prompt_lookup(
+    model: "object",
+    tokenizer: "object",
+    prompt: str,
+    max_tokens: int,
+    stop: "list[str] | str | None",
+    eos_id: int,
+    cfg: "object",
+) -> Iterator[tuple[str, "str | None"]]:
+    """Server-facing adapter: stream ``(text_delta, finish_reason)`` tuples.
+
+    Wraps :func:`prompt_lookup_generate` with detokenization, EOS handling, text
+    stop-sequence truncation, and a terminal ``length`` finish — matching the
+    server's ``_generate_tokens`` contract.  Output text is identical to greedy.
+    """
+    eos_ids = {eos_id}
+    _extra = getattr(tokenizer, "eos_token_ids", None)
+    if _extra:
+        eos_ids.update(_extra)
+    stops = [stop] if isinstance(stop, str) else list(stop) if stop else []
+    ids = list(tokenizer.encode(prompt))
+
+    out: list[int] = []
+    buf = ""
+    for tid, _ in prompt_lookup_generate(
+        model, ids, max_tokens,
+        ngram_min=getattr(cfg, "ngram_min", 2),
+        ngram_max=getattr(cfg, "ngram_max", 3),
+        num_draft=getattr(cfg, "max_speculative", 4),
+        eos_ids=eos_ids,
+    ):
+        if tid in eos_ids:
+            yield "", "stop"
+            return
+        out.append(tid)
+        full = tokenizer.decode(out)
+        cut = None
+        for s in stops:
+            i = full.find(s)
+            if i != -1 and (cut is None or i < cut):
+                cut = i
+        if cut is not None:
+            delta = full[len(buf):cut]
+            if delta:
+                yield delta, None
+            yield "", "stop"
+            return
+        delta = full[len(buf):]
+        buf = full
+        if delta:
+            yield delta, None
+    yield "", "length"

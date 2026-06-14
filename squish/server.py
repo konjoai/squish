@@ -1860,6 +1860,39 @@ def _generate_tokens(  # pragma: no cover
             ) from exc
         return
 
+    # ── Prompt-lookup speculative decoding (greedy, opt-in via --prompt-lookup) ─
+    # Free n-gram speculation: a whole draft (looked up from the context) is
+    # verified in ONE batched forward and the KV cache rewound on rejection, so
+    # the output is token-for-token identical to greedy while repetitive text
+    # (code, JSON, repeated spans) decodes in fewer forwards.
+    #
+    # This is a standalone *pure-greedy* fast path: it manages its own cache and
+    # therefore BYPASSES babbling suppression, prefix/semantic/block caches, and
+    # the thinking-budget logic (acceptable perf/behaviour trade-offs, bounded by
+    # max_tokens).  It must NOT fire when a grammar constraint is required
+    # (tool-calling / structured output), so those are excluded below — otherwise
+    # output would be unconstrained.  Only deterministic, non-draft, non-compress
+    # requests qualify.
+    if (_prompt_lookup_decoder is not None and is_deterministic
+            and _draft.generator is None and not _on_compress_path
+            and _req_tool_schema is None and _structured_output_mode == "none"
+            and hasattr(tokenizer, "encode")):
+        try:
+            from squish.speculative.prompt_lookup_batched import (  # noqa: PLC0415
+                stream_prompt_lookup,
+            )
+            if _trace:
+                _tlog(f"REQ {_rid}  dispatch → prompt-lookup (ngram greedy)")
+            yield from stream_prompt_lookup(
+                model, tokenizer, prompt, max_tokens, stop, eos_id,
+                _prompt_lookup_decoder,
+            )
+            return
+        except Exception as _ple:
+            _logging.getLogger(__name__).warning(
+                "prompt-lookup path failed (%s); falling back to standard decode", _ple
+            )
+
     # ── Prefix cache lookup (Phase 1.4) ──────────────────────────────────────
     # Only cache deterministic outputs (temp==0 or seed fixed) so non-
     # deterministic completions never return stale cached text.
