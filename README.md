@@ -16,27 +16,37 @@
 
 ## The Numbers
 
-Measured 2026-06-04 on Apple M3 MacBook Pro, 16 GB unified memory.
-Model: Qwen3-8B. Quant: INT4.
+Measured 2026-06-14 on Apple M3 MacBook Pro, 16 GB unified memory.
+Model: Qwen2.5-7B-Instruct — Squish INT4 (g=32) vs Ollama `qwen2.5:7b` (Q4_K_M).
+**Thermally controlled**: each engine is measured from the same ~50 °C baseline
+(120 s cooldown per config), validated by a first-vs-last drift check (≤ 1.7 %)
+and live die-temperature logging — so the numbers reflect the engines, not the
+order they ran. Tested against **both Ollama 0.18.2 and 0.30.7**; the table
+shows 0.30.7 (current), with 0.18.2 within noise.
 
-| Metric | Ollama 0.18.2 | **Squish (recommended)** |
+| Metric | Ollama 0.30.7 | **Squish (recommended)** |
 |---|---:|---:|
-| **E2E response @ 4000-token prompt** | 51.7 s | **10.1 s** &nbsp;_(5.1× faster)_ |
-| **E2E response @ 75-token prompt** | 8.09 s | **5.50 s** &nbsp;_(1.5× faster)_ |
-| **Peak RAM during inference** | 5.32 GB | **2.75 GB** |
+| **E2E response @ 4000-token prompt** | 37.5 s | **3.8 s** &nbsp;_(9.8× faster)_ |
+| **E2E response @ 75-token prompt** | 2.68 s | **2.58 s** |
+| **Warm decode @ 75-token** | 20.3 tok/s | **20.5 tok/s** &nbsp;_(INT3: 24.0)_ |
+| **Inter-token p95 @ 75-token** | 52.4 ms | **48.4 ms** &nbsp;_(INT3: 42.7)_ |
+| **Peak RAM during inference** | 5.14 GB | **3.50 GB** |
 | **Disk size — INT4** | 4.36 GB | **4.00 GB** |
-| **Disk size — INT3 (Qwen3)** | not supported | **3.56 GB** |
-| **TTFT @ 75-token prompt** | **131 ms** | 279 ms &nbsp;_(honest loss)_ |
+| **Disk size — INT3** | not supported | **3.56 GB** |
+| **TTFT @ 75-token prompt** | **167 ms** | 192 ms &nbsp;_(honest loss)_ |
 
-**Squish wins end-to-end response time at every prompt size measured**, with
-the largest win on long contexts (5.4× at 4000 tokens), uses ~33% less RAM,
-and supports INT3 for compatible model families.
+**Squish wins end-to-end response time, decode throughput, inter-token tail
+latency, and RAM** — by far the largest win on long contexts (**9.8× at 4000
+tokens**, where Squish's block/prompt KV cache reuses the prefill instead of
+re-running it). INT3 adds another ~18 % decode (24 tok/s) at validated accuracy
+parity with INT4 (arc_easy acc_norm within noise).
 
-**Ollama wins time-to-first-token at every prompt size**, and inter-token
-jitter on long contexts. If first-byte latency matters more than full-response
-latency, Ollama is the right tool.
+**Ollama wins time-to-first-token** on a cold short prompt (167 ms vs 192 ms).
+If first-byte latency on novel prompts matters more than full-response latency,
+Ollama is the right tool.
 
-Full methodology and ablation: [docs/benchmark_guide.md](docs/benchmark_guide.md)
+Full methodology, thermal control, and ablation:
+[docs/benchmark_guide.md](docs/benchmark_guide.md)
 
 ---
 
