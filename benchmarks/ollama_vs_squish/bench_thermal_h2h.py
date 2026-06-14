@@ -22,14 +22,17 @@ longer confers an advantage.  Output: results/benchmarks_v5_1_1/thermal/<UTC>.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
 
 import bench_v5_1 as B
 
-# The true 0.18.2 binary (the /usr/local/bin app symlink auto-updated to 0.30.7).
-B.OLLAMA_BIN = "/opt/homebrew/bin/ollama"
+# Which ollama to benchmark against. Default = homebrew Cellar 0.18.2; set
+# BENCH_OLLAMA_BIN=/usr/local/bin/ollama for the 0.30.x app binary.
+B.OLLAMA_BIN = os.environ.get("BENCH_OLLAMA_BIN", "/opt/homebrew/bin/ollama")
 
 COOLDOWN_S    = 120     # idle before each config (servers down)
 SETTLE_S      = 25      # idle between phases (same server up)
@@ -37,7 +40,7 @@ PHASES        = ["p75", "p2000", "p4000"]
 
 # ollama_recheck reuses the ollama launcher/stream — the end-of-run drift probe.
 B.CONFIGS["ollama_recheck"] = {**B.CONFIGS["ollama"],
-                               "label": "Ollama 0.18.2 (recheck)"}
+                               "label": "Ollama (recheck)"}
 ORDER = ["ollama", "squish_daemon", "squish_recommended_int4",
          "squish_recommended_int3", "ollama_recheck"]
 
@@ -91,9 +94,13 @@ def main() -> None:
     B.log(f"prompt tokens: {toks}")
     B.log(f"thermal control: cooldown={COOLDOWN_S}s/config, settle={SETTLE_S}s/phase")
 
+    _ov = subprocess.run([B.OLLAMA_BIN, "--version"],
+                         capture_output=True, text=True).stdout.strip().replace("\n", " | ")
+    B.log(f"ollama binary: {B.OLLAMA_BIN}  ({_ov})")
     results: dict[str, Any] = {
         "timestamp": B.TS, "host": "Apple M3 16 GB",
-        "ollama_bin": B.OLLAMA_BIN, "cooldown_s": COOLDOWN_S, "settle_s": SETTLE_S,
+        "ollama_bin": B.OLLAMA_BIN, "ollama_version": _ov,
+        "cooldown_s": COOLDOWN_S, "settle_s": SETTLE_S,
         "prompt_token_counts": toks, "runs_per_metric": B.RUNS,
         "configs": {}, "summary": {},
     }
@@ -117,7 +124,10 @@ def _g(run, cfg, ph, key):
 
 
 def _summary(r: dict[str, Any]) -> None:
-    print("\n# Thermally-controlled head-to-head — ollama 0.18.2 vs squish (M3 16 GB)")
+    import re as _re
+    _m = _re.search(r"(\d+\.\d+\.\d+)", r.get("ollama_version", ""))
+    _ver = _m.group(1) if _m else "?"
+    print(f"\n# Thermally-controlled head-to-head — ollama {_ver} vs squish (M3 16 GB)")
     print(f"cooldown {r['cooldown_s']}s/config · settle {r['settle_s']}s/phase · "
           f"{r['runs_per_metric']} runs/metric\n")
     labels = {c: r["summary"][c].get("quant", "") for c in r["configs"]}
