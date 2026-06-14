@@ -173,7 +173,7 @@ class RSSSampler(threading.Thread):
     def __init__(self, root_pid: int) -> None:
         super().__init__(daemon=True)
         self.root_pid = root_pid
-        self._stop = threading.Event()
+        self._stop_evt = threading.Event()
         self.peak_bytes = 0
         self.samples = 0
 
@@ -182,7 +182,7 @@ class RSSSampler(threading.Thread):
             root = psutil.Process(self.root_pid)
         except psutil.NoSuchProcess:
             return
-        while not self._stop.is_set():
+        while not self._stop_evt.is_set():
             try:
                 tree = root.memory_info().rss
                 for child in root.children(recursive=True):
@@ -198,7 +198,7 @@ class RSSSampler(threading.Thread):
             time.sleep(0.05)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_evt.set()
         self.join(timeout=2)
 
 

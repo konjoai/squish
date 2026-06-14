@@ -553,11 +553,24 @@ def slice_cache_into_blocks(
 def restore_blocks_to_cache(
     cache,
     matched_blocks: "list[BlockEntry]",
+    target_dtype=None,
 ) -> "tuple[int, int] | None":
     """Concatenate per-block KV slices into a fresh mlx_lm prompt cache.
 
     Returns ``(n_layers, n_tokens_restored)`` on success, ``None`` if the
     cache type is unsupported or layer counts mismatch.
+
+    Parameters
+    ----------
+    target_dtype : mlx.core.Dtype | None
+        When supplied (the server passes the model's compute dtype via
+        ``squish.kv.prompt_kv_cache.infer_kv_dtype``), each block array is cast
+        to it *before* concatenation, so the concat is a same-dtype op.  Block
+        restore yields ``offset == capacity`` so the first decode step always
+        reallocs; with a float16 cache that realloc concatenates
+        ``float16 ⊕ bfloat16 → float32`` (whole cache becomes fp32 → ~2x decode
+        tax).  Restoring in the model dtype keeps it a no-promotion op.
+        Defaults to None (legacy: restore in the on-disk float16 dtype).
     """
     if not matched_blocks:
         return None
@@ -577,6 +590,9 @@ def restore_blocks_to_cache(
         # Concatenate all blocks' keys/values for this layer along the seq dim
         ks = [mx.array(b.keys[layer_idx])   for b in matched_blocks]
         vs = [mx.array(b.values[layer_idx]) for b in matched_blocks]
+        if target_dtype is not None:
+            ks = [k.astype(target_dtype) for k in ks]
+            vs = [v.astype(target_dtype) for v in vs]
         keys_full = mx.concatenate(ks, axis=2)
         vals_full = mx.concatenate(vs, axis=2)
         layer_cache = cache[layer_idx]
