@@ -570,8 +570,8 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 103, (
-            f"Module count changed: {count} != 103. "
+        assert count == 104, (
+            f"Module count changed: {count} != 104. "
             "Squash separation baseline = 83; W103.1 → 84; W103.4c → 85; "
             "W100/W110 integrations → 87; W110/W111 serving modules → 89; "
             "v4 daemon + v5.1.1 perf + KV P2 → 100; grammar/io/reasoning → 103. "

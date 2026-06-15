@@ -1,0 +1,98 @@
+{
+  "timestamp": "20260613T234332",
+  "host": "Apple M3 16 GB",
+  "runs": 4,
+  "ref": {
+    "ollama_p75_tps": 18.4,
+    "ollama_p75_p95": 61.5,
+    "int4_p75_tps": 20.0,
+    "int4_p75_p95": 51.2
+  },
+  "configs": {
+    "int4_pinned": {
+      "temperature": 0.0,
+      "extra": [],
+      "phases": {
+        "p75": {
+          "warm_tps": 21.48670610195574,
+          "itl_p50": 45.45175049952377,
+          "itl_p95": 48.29129199970339
+        },
+        "p2000": {
+          "warm_tps": 20.8311468499841,
+          "itl_p50": 47.13937500036991,
+          "itl_p95": 50.035208500958106
+        }
+      },
+      "peak_rss_bytes": 1638023168
+    },
+    "int3_pinned": {
+      "temperature": 0.0,
+      "extra": [],
+      "phases": {
+        "p75": {
+          "warm_tps": 24.540968418883708,
+          "itl_p50": 39.46375000032276,
+          "itl_p95": 44.039521500053525
+        },
+        "p2000": {
+          "warm_tps": 23.502492930028563,
+          "itl_p50": 41.54068699972413,
+          "itl_p95": 44.77483300070162
+        }
+      },
+      "peak_rss_bytes": 3594747904
+    },
+    "int4_qkv_int8": {
+      "temperature": 0.0,
+      "extra": [
+        "--kv-cache-mode",
+        "int8",
+        "--kv-cache-window",
+        "64"
+      ],
+      "phases": {
+        "p75": {
+          "warm_tps": 15.399727603738244,
+          "itl_p50": 46.773187500548374,
+          "itl_p95": 48.97114599953056
+        },
+        "p2000": {
+          "warm_tps": 2.6241618872287695,
+          "itl_p50": 57.65824949958187,
+          "itl_p95": 211.17475000028207
+        }
+      },
+      "peak_rss_bytes": 3438739456
+    },
+    "int4_t07_base": {
+      "temperature": 0.7,
+      "extra": [],
+      "phases": {
+        "p75": {
+          "warm_tps": 16.70085142872606,
+          "itl_p50": 48.57579200051987,
+          "itl_p95": 92.66495850079082
+        }
+      },
+      "peak_rss_bytes": 3538632704
+    },
+    "int4_t07_spec": {
+      "temperature": 0.7,
+      "extra": [
+        "--draft-model",
+        "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-int4",
+        "--draft-depth",
+        "4"
+      ],
+      "phases": {
+        "p75": {
+          "warm_tps": 7.281418871424185,
+          "itl_p50": 246.9827710001482,
+          "itl_p95": 291.14239550017373
+        }
+      },
+      "peak_rss_bytes": 3544530944
+    }
+  }
+}

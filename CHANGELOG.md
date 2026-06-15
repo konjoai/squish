@@ -5,6 +5,50 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.0] — Serving-layer decode wins, greedy-lossless prompt-lookup, validated Ollama head-to-head
+
+### Added
+- **Greedy-lossless prompt-lookup speculative decoding** (`--prompt-lookup`).
+  A whole n-gram draft from the context is verified in one batched forward with
+  KV-cache rollback on rejection (`squish/speculative/prompt_lookup_batched.py`).
+  Output is token-for-token identical to greedy; decode runs **1.58×** faster on
+  repetitive output. Replaces the prior non-functional `PromptLookupDecoder`
+  stub (which verified one forward per token and was never wired in). Excluded
+  from grammar/tool-calling and structured-output requests.
+- **Native quantized KV cache** (`--kv-bits` / `--kv-group-size` /
+  `--quantized-kv-start`), threading mlx_lm's GPU-side `QuantizedKVCache` into
+  the stream-generate path. A **memory** lever (longer context in fixed RAM) —
+  measured to give **no** decode speedup on Apple Silicon (decode is
+  weight-bandwidth bound); 4-bit degrades quality, use 8-bit. Documented as such.
+- **P-core QoS pinning** for the inference thread (`USER_INTERACTIVE`), trimming
+  decode-step scheduling jitter.
+- `usage` block in streaming responses under `stream_options.include_usage`.
+- Thermal benchmark harnesses (`bench_thermal_h2h.py`, `bench_cold_prefill.py`,
+  `bench_levers.py`, `bench_verify_serving.py`) with cooldown + drift-check +
+  macmon die-temperature logging.
+
+### Changed
+- **Streaming decode decoupled from the event loop.** A single inference-thread
+  producer drains tokens onto an `asyncio.Queue` the SSE coroutine consumes —
+  one handoff per request instead of a per-token `run_in_executor` round-trip.
+  Cyclic GC is suspended during generation (ref-counted) with a one-time
+  post-warmup `gc.freeze()`. Measured: short-context warm throughput
+  14.6 → 20.5 tok/s, inter-token p95 166 → 48 ms.
+- **INT3 is the recommended default** quant — arc_easy `acc_norm` 0.551 vs INT4
+  0.541 (within noise, n=1000) for +18 % decode. README benchmark table
+  refreshed with thermally-controlled Qwen2.5-7B numbers vs Ollama 0.18.2 and
+  0.30.7; paper gains §4.4 (end-to-end serving benchmarks).
+
+### Fixed
+- **Quantized-KV `--kv-cache-mode int8` compile crash.** The numpy-quantized KV
+  path tripped "[eval] … during compile" on first decode and fell back to a
+  slow path every request. `mx.compile` is now skipped for numpy-quantized
+  caches (`_kv_cache_compile_safe`).
+- Stale version-pin tests, a network-dependent catalog test, and the module-count
+  gate (now 104, for the new speculative module) — full suite green.
+
+---
+
 ## [9.33.9] — Restore prompt/block KV in model dtype (stop fp16→fp32 promotion, ~2x decode)
 
 ### Fixed
