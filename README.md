@@ -117,7 +117,7 @@ export OLLAMA_HOST=http://localhost:11435           # Ollama clients
 Browse models and start the daemon at login:
 
 ```bash
-squish catalog                 # 40+ models, 25 pre-squished on the Hub
+squish catalog                 # 40 models, 9 pre-squished on the Hub
 squish search qwen3
 squish pull qwen3:0.6b --int3  # INT3 variant (Qwen3, Qwen2.5, Llama families)
 squish daemon install          # macOS LaunchAgent — daemon starts at login
