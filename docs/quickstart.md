@@ -75,7 +75,7 @@ The server binds to `http://localhost:11435` by default and is **OpenAI-compatib
 
     client = OpenAI(
         base_url="http://localhost:11435/v1",
-        api_key="squish",  # squish requires this default API key
+        api_key="squish",  # any string works; no key is enforced unless you start with --api-key
     )
 
     response = client.chat.completions.create(

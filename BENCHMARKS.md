@@ -1,4 +1,4 @@
-# squish — Benchmarks
+# Squish — Benchmarks
 
 > Grounded numbers from the squish repository. Reproduce locally with the
 > commands at the bottom of each section. No marketing rounding —

@@ -49,7 +49,7 @@ Paste the output of all of the above when filing a bug.
 Apple Silicon's unified memory is shared between the CPU, the GPU (Metal), and the OS.
 On an 8 GB device, macOS reserves approximately 1.5–2 GB for the kernel and active apps,
 leaving roughly 6–6.5 GB for model weights and the inference runtime.
-A stock INT8 7B/8B model requires ~8 GB of weight data, which does not fit.
+A 7B/8B model at full bf16 is ~16 GB and will not fit; even INT8 is ~8 GB. Squish defaults to INT4 (~4 GB) and offers INT3 (~3.5 GB).
 
 ### Fixes
 
