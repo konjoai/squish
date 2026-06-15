@@ -942,58 +942,24 @@ consumer hardware.</p>
 <hr />
 <h2 id="2-the-squish-architecture">2. The Squish Architecture<a class="headerlink" href="#2-the-squish-architecture" title="Permanent link">&para;</a></h2>
 <p>Squish introduces a <strong>five-path weight management system</strong>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌───────────────────────────────────────────────────────────────────────────┐
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│  Tier 0a — Native MLX model  (mlx_lm.load())                             │
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│                                                                           │
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│  Standard HuggingFace safetensors loaded via mlx_lm                      │
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│  Fallback path when no squish cache is present                            │
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>└────────────────────────────────┬──────────────────────────────────────────┘
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                                 │ squish compress — ~5–19 min
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                                 ▼
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>┌───────────────────────────────────────────────────────────────────────────┐
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│  Tier 0b — squish_4bit/  (4-bit safetensors, .squish_4bit_ready)         │
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│                                                                           │
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│  INT4 group-quantized safetensors shards                                  │
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│  Sentinel file: .squish_4bit_ready                                        │
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│  Decompressed by squish_quant Rust extension on load                     │
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│                                                                           │
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>│  Disk: ~50% of native bf16                                                │
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>└────────────────────────────────┬──────────────────────────────────────────┘
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                                 │ squish compress --int3 — additional pass
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                                 ▼
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>┌───────────────────────────────────────────────────────────────────────────┐
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│  Tier 0c — squish_3bit/  (INT3 safetensors, .squish_3bit_ready)          │
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>│                                                                           │
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>│  INT3 group-quantized safetensors shards                                  │
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>│  Sentinel file: .squish_3bit_ready                                        │
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>│  Only enabled for model families that pass accuracy gate (Qwen3, etc.)   │
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>│                                                                           │
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│  Disk: ~37% of native bf16                                                │
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>└────────────────────────────────┬──────────────────────────────────────────┘
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>                                 │ First-run: reconstruct + save → ~2s extra
-<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>                                 ▼
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>┌───────────────────────────────────────────────────────────────────────────┐
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│  Tier 1 — squish_weights.safetensors  (.squish_ready sentinel)            │
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>│                                                                           │
-<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>│  Single bf16 safetensors in Apple Silicon MLX-native layout               │
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>│  Loaded by mx.load() → direct Metal memory mapping                       │
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>│  Disabled on 16 GB machines for 8B+ models (RAM guard)                   │
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>│                                                                           │
-<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>│  Load time: 0.33 s   (Qwen2.5-1.5B on high-RAM hardware)                │
-<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>│  RAM delta: 160 MB   (peak additional, vs 2+ GB baseline)                │
-<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>└────────────────────────────────┬──────────────────────────────────────────┘
-<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>                                 │ First-run: saved post-load
-<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>                                 ▼
-<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>┌───────────────────────────────────────────────────────────────────────────┐
-<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>│  Tier 2 — finalized/ .npy cache                                           │
-<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>│                                                                           │
-<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>│  One float16 .npy file per tensor, memory-mappable                       │
-<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>│  Loaded via np.load(mmap_mode=&#39;r&#39;) → mx.array → bfloat16                │
-<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>│  Active path on 16 GB machines for 8B+ models (lut_int2 path)            │
-<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>│                                                                           │
-<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>│  Load time: ~2.7 s  (8B INT4 on M3 16 GB)                         │
-<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>└───────────────────────────────────────────────────────────────────────────┘
-</code></pre></div>
+<pre class="mermaid"><code>flowchart TD
+    T0a["Tier 0a · Native MLX model&lt;br/&gt;mlx_lm.load()&lt;br/&gt;Standard HuggingFace safetensors via mlx_lm&lt;br/&gt;Fallback path — no squish cache present"]
+    T0b["Tier 0b · squish_4bit/&lt;br/&gt;INT4 group-quantized shards · sentinel .squish_4bit_ready&lt;br/&gt;Decompressed by the squish_quant Rust extension on load&lt;br/&gt;Disk ≈ 50% of native bf16"]
+    T0c["Tier 0c · squish_3bit/&lt;br/&gt;INT3 group-quantized shards · sentinel .squish_3bit_ready&lt;br/&gt;Only for families that pass the accuracy gate (Qwen3, …)&lt;br/&gt;Disk ≈ 37% of native bf16"]
+    T1["Tier 1 · squish_weights.safetensors&lt;br/&gt;Single bf16 in MLX-native layout · sentinel .squish_ready&lt;br/&gt;mx.load() → direct Metal memory-map&lt;br/&gt;Disabled on 16 GB for 8B+ models (RAM guard)&lt;br/&gt;Load 0.33 s · RAM delta 160 MB"]
+    T2["Tier 2 · finalized/ .npy cache&lt;br/&gt;One float16 .npy per tensor, memory-mappable&lt;br/&gt;np.load(mmap_mode='r') → mx.array → bf16&lt;br/&gt;Active path on 16 GB for 8B+ models&lt;br/&gt;Load ≈ 2.7 s (8B INT4, M3 16 GB)"]
+
+    T0a --&gt;|"squish compress · ~5–19 min"| T0b
+    T0b --&gt;|"squish compress --int3 · extra pass"| T0c
+    T0c --&gt;|"first run: reconstruct + save · ~2 s"| T1
+    T1 --&gt;|"first run: saved post-load"| T2
+
+    classDef native fill:#1e293b,stroke:#475569,color:#e2e8f0;
+    classDef quant fill:#312e3f,stroke:#7c3aed,color:#ede9fe;
+    classDef fast fill:#0f2e2a,stroke:#10b981,color:#d1fae5;
+    class T0a native;
+    class T0b,T0c quant;
+    class T1,T2 fast;</code></pre>
 <h3 id="why-does-tier-2-load-so-much-faster">Why does Tier 2 load so much faster?<a class="headerlink" href="#why-does-tier-2-load-so-much-faster" title="Permanent link">&para;</a></h3>
 <p><code>mx.load()</code> on a safetensors file performs a <strong>direct Metal memory-map</strong>: the
 weight bytes are mapped into the GPU address space without materialising an
@@ -1013,16 +979,16 @@ internally, so zero conversion occurs at load time.</p>
 <hr />
 <h2 id="3-the-vectro-int8-quantization-kernel">3. The Vectro INT8 Quantization Kernel<a class="headerlink" href="#3-the-vectro-int8-quantization-kernel" title="Permanent link">&para;</a></h2>
 <p>Vectro uses <strong>asymmetric per-row INT8 scalar quantization</strong>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>For each weight matrix W of shape (n_rows, n_cols):
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  For each row r in W:
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    scale[r]  = max(|W[r, :]|) / 127
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    q[r, :]   = round(W[r, :] / scale[r]).clip(-128, 127).astype(int8)
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>Storage: q  (int8,   n_rows × n_cols)
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>         s  (float32, n_rows)
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>Reconstruction:
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>  W_hat[r, :] = q[r, :].astype(float32) * scale[r]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>For each weight matrix W of shape (n_rows, n_cols):
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  For each row r in W:
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    scale[r]  = max(|W[r, :]|) / 127
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    q[r, :]   = round(W[r, :] / scale[r]).clip(-128, 127).astype(int8)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>Storage: q  (int8,   n_rows × n_cols)
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>         s  (float32, n_rows)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>Reconstruction:
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  W_hat[r, :] = q[r, :].astype(float32) * scale[r]
 </code></pre></div>
 <p>Compression ratio for a matrix with 4-byte float32 elements:
 - Original: 4 × n_rows × n_cols bytes
@@ -1038,30 +1004,30 @@ feed-forward (<code>gate_proj</code>, <code>up_proj</code>, <code>down_proj</cod
 introduce sub-0.02% cosine distance from the original — within training noise.</p>
 <hr />
 <h2 id="4-the-npy-dir-storage-format">4. The npy-dir Storage Format<a class="headerlink" href="#4-the-npy-dir-storage-format" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>{compressed_dir}/
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── manifest.json                      # safe_key → original_name mapping
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>├── tensors/
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>│   ├── {safe_key}__q.npy             # int8 quantised values  [n_rows, n_cols]  (Tier 0a)
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>│   ├── {safe_key}__s.npy             # float32 row scales     [n_rows]           (Tier 0a)
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>│   ├── {safe_key}__shape.npy         # original shape         [ndim]
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│   ├── {safe_key}__pt.npy            # passthrough float16    [...]              (all tiers)
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│   ├── {safe_key}__q4.npy            # uint8 nibble-packed    [n_rows, n_cols//2](Tier 0b INT4)
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│   ├── {safe_key}__s4.npy            # float32 group scales   [n_rows, n_groups] (Tier 0b INT4)
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>│   └── ...  (249 quantised × 3 q/s/shape + 89 PT + optional 249 q4/s4 pairs)
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>├── finalized/
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>│   ├── {original_name_dotted}.npy    # reconstructed float16  (Tier 1 cache)
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>│   └── .ready                        # sentinel: cache is complete
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>├── squish_weights.safetensors          # Tier 2: bf16 MLX safetensors
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>├── .squish_ready                      # sentinel: Tier 2 is complete
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>└── .squish_int4_ready                 # sentinel: INT4 conversion complete (Tier 0b)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>{compressed_dir}/
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── manifest.json                      # safe_key → original_name mapping
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>├── tensors/
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>│   ├── {safe_key}__q.npy             # int8 quantised values  [n_rows, n_cols]  (Tier 0a)
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>│   ├── {safe_key}__s.npy             # float32 row scales     [n_rows]           (Tier 0a)
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>│   ├── {safe_key}__shape.npy         # original shape         [ndim]
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>│   ├── {safe_key}__pt.npy            # passthrough float16    [...]              (all tiers)
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>│   ├── {safe_key}__q4.npy            # uint8 nibble-packed    [n_rows, n_cols//2](Tier 0b INT4)
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>│   ├── {safe_key}__s4.npy            # float32 group scales   [n_rows, n_groups] (Tier 0b INT4)
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>│   └── ...  (249 quantised × 3 q/s/shape + 89 PT + optional 249 q4/s4 pairs)
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>├── finalized/
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>│   ├── {original_name_dotted}.npy    # reconstructed float16  (Tier 1 cache)
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>│   └── .ready                        # sentinel: cache is complete
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>├── squish_weights.safetensors          # Tier 2: bf16 MLX safetensors
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>├── .squish_ready                      # sentinel: Tier 2 is complete
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>└── .squish_int4_ready                 # sentinel: INT4 conversion complete (Tier 0b)
 </code></pre></div>
 <p><strong>Converting INT8 → INT4</strong> (run once, ~30s):
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">compressed_loader</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_int4_npy_dir</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">result</span> <span class="o">=</span> <span class="n">save_int4_npy_dir</span><span class="p">(</span><span class="s1">&#39;/path/to/compressed_dir&#39;</span><span class="p">)</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># Saves {sk}__q4.npy + {sk}__s4.npy alongside existing INT8 files</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Writes .squish_int4_ready sentinel when complete</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># All subsequent loads auto-select INT4 via _dequantize_npy_dir() priority order</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Savings: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;savings_pct&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">compressed_loader</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_int4_npy_dir</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">result</span> <span class="o">=</span> <span class="n">save_int4_npy_dir</span><span class="p">(</span><span class="s1">&#39;/path/to/compressed_dir&#39;</span><span class="p">)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># Saves {sk}__q4.npy + {sk}__s4.npy alongside existing INT8 files</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Writes .squish_int4_ready sentinel when complete</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># All subsequent loads auto-select INT4 via _dequantize_npy_dir() priority order</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Savings: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;savings_pct&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">)</span>
 </code></pre></div></p>
 <p><strong>Why .npy over .npz</strong>:
 - <code>.npz</code> files apply zlib compression — takes 9 minutes to write and 9 seconds to
@@ -1078,18 +1044,18 @@ introduce sub-0.02% cosine distance from the original — within training noise.
 <hr />
 <h2 id="5-ram-efficiency">5. RAM Efficiency<a class="headerlink" href="#5-ram-efficiency" title="Permanent link">&para;</a></h2>
 <p>Standard <code>mlx_lm.load()</code> for a 1.5B model:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Baseline RSS:                      185 MB  (Python + MLX runtime)
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>Load weights (all in-memory):     +2400 MB  (all safetensors arrays alive at once)
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>model.load_weights():             weights transfer to GPU buffers
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>Garbage collect numpy arrays:     -2200 MB
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>Net delta:                        +2100-2500 MB
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Baseline RSS:                      185 MB  (Python + MLX runtime)
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>Load weights (all in-memory):     +2400 MB  (all safetensors arrays alive at once)
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>model.load_weights():             weights transfer to GPU buffers
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>Garbage collect numpy arrays:     -2200 MB
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>Net delta:                        +2100-2500 MB
 </code></pre></div></p>
 <p>Squish Tier 2 (forge-mlx cache):
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Baseline RSS:                      185 MB
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>mx.load() memory-map:              + 12 MB (mmap region, not RSS)
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>model.load_weights():              weights transfer to GPU buffers
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>mx.eval() / GC:                    + 148 MB net RSS increase
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>Net delta:                         +160 MB
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Baseline RSS:                      185 MB
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>mx.load() memory-map:              + 12 MB (mmap region, not RSS)
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>model.load_weights():              weights transfer to GPU buffers
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>mx.eval() / GC:                    + 148 MB net RSS increase
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>Net delta:                         +160 MB
 </code></pre></div></p>
 <p>The 13× RAM advantage during loading comes from Metal's memory mapping: the
 weight bytes are mapped into the GPU's virtual address space directly from the
@@ -1098,11 +1064,11 @@ performs.</p>
 <hr />
 <h2 id="6-accuracy-preservation">6. Accuracy Preservation<a class="headerlink" href="#6-accuracy-preservation" title="Permanent link">&para;</a></h2>
 <p>INT8 quantisation introduces bounded numerical error.  Per weight matrix:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>max absolute error = max(|W[r, :] - W_hat[r, :]|)
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>                   = max(scale[r]) × 0.5       (half-step rounding error)
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>cosine similarity ≥ 0.99995  (measured: 338 tensors on Qwen2.5-1.5B)
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>mean cosine sim   = 0.99999
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>max absolute error = max(|W[r, :] - W_hat[r, :]|)
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>                   = max(scale[r]) × 0.5       (half-step rounding error)
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>cosine similarity ≥ 0.99995  (measured: 338 tensors on Qwen2.5-1.5B)
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>mean cosine sim   = 0.99999
 </code></pre></div>
 <p>At the model-output level:
 - <strong>100% first-token agreement</strong> with the FP16 reference on a 5-prompt evaluation
@@ -1113,30 +1079,30 @@ delta vs the uncompressed model — within the random variance of different
 evaluation seeds.</p>
 <hr />
 <h2 id="7-three-tier-loading-strategy-decision-tree">7. Three-Tier Loading Strategy — Decision Tree<a class="headerlink" href="#7-three-tier-loading-strategy-decision-tree" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>load_compressed_model(compressed_dir, model_dir)
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>        │
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>        ├── .squish_4bit_ready exists?
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>        │         │
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        │         └── YES → mlx_lm.load(squish_4bit/)  ← Tier 3  (1.5-2s, large models)
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>        │
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>        ├── .squish_ready exists?
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>        │         │
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>        │         └── YES → _load_mlx_cache()           ← Tier 2  (0.3-2s)
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>        │
-<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>        ├── finalized/.ready exists?
-<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>        │         │
-<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>        │         └── YES → _load_finalized_cache()     ← Tier 1  (4-5s)
-<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a>        │
-<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>        └── (neither) → Vectro/Rust first load          ← Tier 0  (15-20s)
-<a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a>                  │
-<a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a>                  ├── auto-select per-tensor:
-<a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a>                  │     .squish_int4_ready + squish_quant → INT4 Rust dequantize
-<a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a>                  │     __q.npy/__s.npy present           → INT8 Vectro dequantize
-<a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a>                  │     __pt.npy present                  → float16 passthrough
-<a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a>                  ├── serial loop: decomp → save f16 .npy inline
-<a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a>                  ├── save squish_weights.safetensors (mx.save_safetensors)
-<a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a>                  ├── write .squish_ready
-<a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a>                  └── write finalized/.ready
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>load_compressed_model(compressed_dir, model_dir)
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>        │
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>        ├── .squish_4bit_ready exists?
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>        │         │
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>        │         └── YES → mlx_lm.load(squish_4bit/)  ← Tier 3  (1.5-2s, large models)
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>        │
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>        ├── .squish_ready exists?
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>        │         │
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>        │         └── YES → _load_mlx_cache()           ← Tier 2  (0.3-2s)
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>        │
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>        ├── finalized/.ready exists?
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>        │         │
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>        │         └── YES → _load_finalized_cache()     ← Tier 1  (4-5s)
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>        │
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>        └── (neither) → Vectro/Rust first load          ← Tier 0  (15-20s)
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>                  │
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>                  ├── auto-select per-tensor:
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>                  │     .squish_int4_ready + squish_quant → INT4 Rust dequantize
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>                  │     __q.npy/__s.npy present           → INT8 Vectro dequantize
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a>                  │     __pt.npy present                  → float16 passthrough
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>                  ├── serial loop: decomp → save f16 .npy inline
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>                  ├── save squish_weights.safetensors (mx.save_safetensors)
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>                  ├── write .squish_ready
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>                  └── write finalized/.ready
 </code></pre></div>
 <p>The first load is a one-time cost.  Every subsequent invocation — in any Python
 process on the same machine — hits Tier 2 and loads in sub-second time.</p>
@@ -1295,11 +1261,11 @@ of magnitude faster and using 15× less RAM during the load phase</strong> (agai
 <ul>
 <li><strong><a href="../paper/">The paper</a></strong> — full methodology, thermal-controlled benchmarks
   (§4.4), accuracy gates, and the decode-acceleration ablation.</li>
-<li><strong><a href="../BENCHMARKS.md">Benchmarks</a></strong> — reproducible numbers with commands.</li>
-<li><strong><a href="../MODULES.md">Module reference</a></strong> — the 100+ composable optimisation modules.</li>
+<li><strong><a href="https://github.com/konjoai/squish/blob/main/BENCHMARKS.md">Benchmarks</a></strong> — reproducible numbers with commands.</li>
+<li><strong><a href="https://github.com/konjoai/squish/blob/main/MODULES.md">Module reference</a></strong> — the 100+ composable optimisation modules.</li>
 </ul>
 <hr />
-<p><em>Squish is source-available under <a href="../LICENSE">BUSL-1.1</a> — free for personal and
+<p><em>Squish is source-available under <a href="https://github.com/konjoai/squish/blob/main/LICENSE">BUSL-1.1</a> — free for personal and
 non-production use.</em></p>
 
 
