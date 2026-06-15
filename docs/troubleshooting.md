@@ -17,7 +17,7 @@ python -c "import mlx; print(mlx.__version__)"
 Expected output (versions will differ):
 
 ```
-squish 9.34.0
+squish 9.34.1
 0.22.0
 ```
 

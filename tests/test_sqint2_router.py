@@ -414,9 +414,10 @@ class TestIntegration:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 102, (
-            f"Module count = {count}, expected 102 after (−dead modules) (＋prompt_lookup_batched.py) v4 daemon + v5.1.1 perf "
-            f"+ KV P2 sprint (89 post-W111 + 11 new modules) + grammar/io/reasoning."
+        assert count == 103, (
+            f"Module count = {count}, expected 103 after (−dead modules) (＋prompt_lookup_batched.py) v4 daemon + v5.1.1 perf "
+            f"+ KV P2 sprint (89 post-W111 + 11 new modules) + grammar/io/reasoning "
+            "+ restored super_weight_calibrator.py (issue #37)."
         )
         assert count <= 125
 

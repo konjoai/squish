@@ -5,6 +5,22 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.1] — Fix `squish pull` crash on INT4 compression (issue #37)
+
+### Fixed
+- **`squish pull` no longer crashes with `ModuleNotFoundError: squish.quant.super_weight_calibrator`.**
+  A prior "lean purge" deleted `squish/quant/super_weight_calibrator.py` but left
+  its three live callers: `convert.py` imports it, the `--super-weight` CLI flag
+  feeds it, and `catalog.py` appends `--super-weight` to **every** INT4 compress.
+  Any model without pre-squished weights (e.g. `squish pull gemma3:1b`) hit the
+  missing import mid-quantization. The module (super-weight detection per
+  Frantar et al. 2024 — protects coherence-critical outlier weights as FP16
+  during quantization) is restored, with a regression test that pins both the
+  calibrator's behaviour and the exact import `convert.py` performs so it cannot
+  be silently purged again.
+
+---
+
 ## [9.34.0] — Serving-layer decode wins, greedy-lossless prompt-lookup, validated Ollama head-to-head
 
 ### Added
