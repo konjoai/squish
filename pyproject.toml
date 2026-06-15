@@ -86,7 +86,7 @@ dev = [
 [project.urls]
 "Homepage" = "https://github.com/konjoai/squish"
 "Bug Tracker" = "https://github.com/konjoai/squish/issues"
-"Documentation" = "https://konjoai.github.io/squish"
+"Documentation" = "https://squish.run"
 
 [project.scripts]
 squish        = "squish.cli:main"

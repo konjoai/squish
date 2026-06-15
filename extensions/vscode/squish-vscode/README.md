@@ -5,7 +5,7 @@ Tokens stream in real-time via the OpenAI-compatible API — no internet require
 
 ## Requirements
 
-- macOS 13+ with Apple Silicon (M1/M2/M3)
+- macOS 13+ with Apple Silicon (M1–M5)
 - [Squish](https://github.com/konjoai/squish) installed and a model loaded:
   ```bash
   pip install squish-ai

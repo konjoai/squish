@@ -132,5 +132,5 @@ squish rm llama3.1:8b   # delete a model
 ## Next steps
 
 - [API Reference](api.md) — full endpoint documentation  
-- [Architecture](architecture.md) — how INT4/INT3 compression works  
+- [Architecture](ARCHITECTURE.md) — how INT4/INT3 compression works  
 - [Contributing](contributing.md) — add a model, fix a bug, write a test  
