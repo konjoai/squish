@@ -1843,12 +1843,13 @@
 <p><strong>One-sentence summary</strong>: Squish separates the <em>storage format</em> of a transformer's
 weight tensors from their <em>runtime format</em>, enabling aggressive compression at rest,
 lossless reconstruction on demand, and Metal-native caching that loads
-a Qwen2.5-1.5B model in <strong>0.33 seconds</strong> — 6× faster than <code>mlx_lm</code>'s
-baseline — while using <strong>160 MB of peak additional RAM</strong> versus the 2+ GB
-typically consumed during a standard load.</p>
+a Qwen2.5-1.5B model in <strong>0.33–0.53 seconds</strong> — <strong>54× faster</strong> than a cold
+<code>mlx_lm</code> load (28.8 s) and 3.7× faster than a warm one — while using
+<strong>160 MB of peak additional RAM</strong> versus the 2.4 GB typically consumed during
+a standard load.</p>
 <p><strong>Note</strong>: The Tier 2 MLX safetensors cache requires ~34 GB RAM to build and
-is not built on 16 GB machines. On a standard 16 GB M3, Qwen3-8B INT4
-loads in 2.7 seconds via the lut_int2 path. The 0.33 s figure applies to
+is not built on 16 GB machines. On a standard 16 GB M3, an 8B INT4 model
+loads in ~2.7 seconds via the lut_int2 path. The 0.33–0.53 s figure applies to
 the 1.5B model on hardware with sufficient RAM to build the Tier 2 cache.</p>
 </blockquote>
 <hr />
@@ -1939,7 +1940,7 @@ consumer hardware.</p>
 <a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>│  Loaded via np.load(mmap_mode=&#39;r&#39;) → mx.array → bfloat16                │
 <a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>│  Active path on 16 GB machines for 8B+ models (lut_int2 path)            │
 <a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>│                                                                           │
-<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>│  Load time: ~2.7 s  (Qwen3-8B INT4 on M3 16 GB)                         │
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>│  Load time: ~2.7 s  (8B INT4 on M3 16 GB)                         │
 <a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>└───────────────────────────────────────────────────────────────────────────┘
 </code></pre></div>
 <h3 id="why-does-tier-2-load-so-much-faster">Why does Tier 2 load so much faster?<a class="headerlink" href="#why-does-tier-2-load-so-much-faster" title="Permanent link">&para;</a></h3>

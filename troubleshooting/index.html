@@ -1489,9 +1489,9 @@ These are different ports, but conflicts can still occur if:</p>
 <a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="c1"># Ollama stays on 11434 (its default) — no change needed</span>
 </code></pre></div>
 <p>If port 11435 is already taken by something you cannot stop:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>squish<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">11436</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>squish<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">11435</span>
 </code></pre></div>
-<p>Then point your OpenAI-compatible client at <code>http://localhost:11436/v1</code>.</p>
+<p>Then point your OpenAI-compatible client at <code>http://localhost:11435/v1</code>.</p>
 <h3 id="prevent-ollama-from-auto-starting-at-login">Prevent Ollama from auto-starting at login<a class="headerlink" href="#prevent-ollama-from-auto-starting-at-login" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>brew<span class="w"> </span>services<span class="w"> </span>stop<span class="w"> </span>ollama
 <a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>brew<span class="w"> </span>services<span class="w"> </span>disable<span class="w"> </span>ollama<span class="w">   </span><span class="c1"># prevents restart on next login</span>
