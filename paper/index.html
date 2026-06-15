@@ -1002,6 +1002,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#44-end-to-end-serving-performance-versus-ollama" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 End-to-End Serving Performance versus Ollama
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1077,7 +1088,7 @@ Independent Research
 2026</p>
 <hr />
 <h2 id="abstract">Abstract<a class="headerlink" href="#abstract" title="Permanent link">&para;</a></h2>
-<p>We present <strong>Squish</strong>, a local large language model inference system optimised for Apple Silicon unified memory architecture. Squish introduces a three-tier weight caching format that decouples  weight <em>storage</em> from <em>runtime representation</em>, eliminating the dtype-conversion pass that dominates cold-start latency in systems based on the <code>.safetensors</code> format. On Apple Silicon M-series hardware with a Qwen2.5-1.5B-Instruct model, Squish achieves a <strong>0.33–0.53 s cold-start load time</strong> — a <strong>54× reduction</strong> versus cold <code>mlx_lm</code> load (28.81 s) and a <strong>3.7× reduction</strong> versus fully warm <code>mlx_lm</code> load (1.96 s) — while consuming only <strong>160 MB of RAM during the load phase</strong>, a <strong>15× reduction</strong> versus the standard loader's 2.4 GB. Four lm-evaluation-harness benchmarks on squeeshed weights confirm accuracy within measurement noise of the full-precision baseline (maximum delta: 1.5 pp, all within ±2 pp). Squish additionally ships a library of 100+ modular inference-optimisation techniques spanning KV cache compression, speculative decoding, quantisation, attention acceleration, and production serving, all implemented as composable flags on a single OpenAI/Ollama-compatible server.</p>
+<p>We present <strong>Squish</strong>, a local large language model inference system optimised for Apple Silicon unified memory architecture. Squish introduces a three-tier weight caching format that decouples  weight <em>storage</em> from <em>runtime representation</em>, eliminating the dtype-conversion pass that dominates cold-start latency in systems based on the <code>.safetensors</code> format. On Apple Silicon M-series hardware with a Qwen2.5-1.5B-Instruct model, Squish achieves a <strong>0.33–0.53 s cold-start load time</strong> — a <strong>54× reduction</strong> versus cold <code>mlx_lm</code> load (28.81 s) and a <strong>3.7× reduction</strong> versus fully warm <code>mlx_lm</code> load (1.96 s) — while consuming only <strong>160 MB of RAM during the load phase</strong>, a <strong>15× reduction</strong> versus the standard loader's 2.4 GB. Four lm-evaluation-harness benchmarks on squeeshed weights confirm accuracy within measurement noise of the full-precision baseline (maximum delta: 1.5 pp, all within ±2 pp). Squish additionally ships a library of 100+ modular inference-optimisation techniques spanning KV cache compression, speculative decoding, quantisation, attention acceleration, and production serving, all implemented as composable flags on a single OpenAI/Ollama-compatible server. Thermally-controlled end-to-end benchmarking against Ollama (Qwen2.5-7B, Apple M3) shows the production configuration matching or beating it on decode throughput and inter-token tail latency at every context length, and by <strong>9.8×</strong> on full-response latency for long prompts through prefix-cache reuse; the same methodology isolates which decode-acceleration techniques pay off on bandwidth-bound Apple-Silicon decode and which do not.</p>
 <hr />
 <h2 id="1-introduction">1. Introduction<a class="headerlink" href="#1-introduction" title="Permanent link">&para;</a></h2>
 <p>Local LLM inference on consumer hardware has reached an inflection point. Models that were unrunnable two years ago now fit comfortably in Apple Silicon unified memory. Yet the dominant distribution format — Hugging Face <code>.safetensors</code> — was designed to checkpoint training runs, not to serve as a local runtime weight store. Every boot pays the same conversion cost: allocate a CPU-side buffer, read the file, convert dtypes, transfer to the accelerator. For a 1.5B model this costs ~2–30 seconds of wall-clock time and ~2.4 GB of RAM, the vast majority of which is wasted on data that has not changed since the model was last used.</p>
@@ -1308,7 +1319,51 @@ Independent Research
 </tr>
 </tbody>
 </table>
-<p>All figures in these documents are <strong>CPU micro-benchmark latencies</strong> (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is the subject of ongoing measurement via <code>bench_eoe.py</code>.</p>
+<p>All figures in these documents are <strong>CPU micro-benchmark latencies</strong> (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is reported in §4.4.</p>
+<h3 id="44-end-to-end-serving-performance-versus-ollama">4.4 End-to-End Serving Performance versus Ollama<a class="headerlink" href="#44-end-to-end-serving-performance-versus-ollama" title="Permanent link">&para;</a></h3>
+<p>This section reports end-to-end, on-hardware throughput and latency — the live-server validation that §4.3's micro-benchmarks defer. All measurements are on an Apple M3 (16 GB unified memory) with <strong>Qwen2.5-7B-Instruct</strong>: Squish at INT4 (group size 32) versus Ollama serving <code>qwen2.5:7b</code> (Q4_K_M), the nearest-equivalent quantisation. Each engine streams the OpenAI/Ollama-compatible API; decode throughput excludes prefill and inter-token latency excludes the first token.</p>
+<p><strong>Thermal control.</strong> Apple Silicon throttles under sustained load — we observed the on-die temperature swing from 36 °C idle to 100 °C under benchmarking, and the <em>same</em> bare INT4 decode measured 20.8 tok/s when run first (cool) but 15.1 tok/s when run third (hot). Naïve back-to-back benchmarking therefore measures run <em>order</em>, not the engines. Each configuration is instead measured from a controlled ~48–52 °C baseline (a 120 s idle cooldown precedes every server), and Ollama is re-measured last as a drift probe; across runs the first-vs-last drift was ≤ 1.7 %. Die temperature is logged throughout (sudoless IOReport sampling) to confirm each configuration starts from the same thermal state.</p>
+<p><strong>Steady-state decode.</strong> Under thermal control, Squish's production configuration (INT4 with block- and prompt-level prefix caching) matches or beats Ollama on decode throughput and inter-token tail latency at every context length, against both Ollama 0.18.2 and 0.30.7 (0.30.7 shown):</p>
+<table>
+<thead>
+<tr>
+<th>Prompt length</th>
+<th style="text-align: right;">Ollama tok/s (p95)</th>
+<th style="text-align: right;">Squish INT4 tok/s (p95)</th>
+<th style="text-align: right;">Squish INT3 tok/s (p95)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>75 tokens</td>
+<td style="text-align: right;">20.3 (52.4 ms)</td>
+<td style="text-align: right;"><strong>20.5</strong> (48.4 ms)</td>
+<td style="text-align: right;"><strong>24.0</strong> (42.7 ms)</td>
+</tr>
+<tr>
+<td>2 000 tokens</td>
+<td style="text-align: right;">19.7 (52.9 ms)</td>
+<td style="text-align: right;"><strong>20.2</strong> (51.3 ms)</td>
+<td style="text-align: right;"><strong>22.6</strong> (45.4 ms)</td>
+</tr>
+<tr>
+<td>4 000 tokens</td>
+<td style="text-align: right;">17.0 (69.0 ms)</td>
+<td style="text-align: right;"><strong>19.1</strong> (53.7 ms)</td>
+<td style="text-align: right;"><strong>19.5</strong> (52.2 ms)</td>
+</tr>
+</tbody>
+</table>
+<p>Per-token decode (median inter-token latency) is 39–49 ms for Squish versus 50–57 ms for Ollama across all lengths; tail latency (p95) is uniformly tighter. These gains are <em>serving-layer</em> recoveries, not model differences: decoupling the decode loop from the event loop (one inference-thread handoff per request rather than per token), suspending cyclic garbage collection during generation with a one-time post-warmup heap freeze, and pinning the inference thread to performance cores via QoS together raised short-context throughput from 14.6 to 20.5 tok/s and cut the p95 tail from 166 ms to 48 ms.</p>
+<p><strong>Long-context end-to-end.</strong> The largest gap is full-response latency on long prompts. For a 200-token completion on a 4 000-token prompt, Ollama takes 37.5 s versus Squish's 3.8 s — a <strong>9.8×</strong> reduction — because Squish's KV cache reuses the prefill across requests where Ollama re-runs it. On a genuinely novel 4 000-token prompt (caches cold for both), prefill is compute-bound and the two engines are at parity (~26 s); Squish's advantage is architectural cache reuse, not faster cold prefill.</p>
+<p><strong>Decode-acceleration ablation.</strong> Decode on this hardware is <em>weight-bandwidth bound</em>: each token streams the full ~4 GB INT4 weight set from unified memory, giving a ~25 tok/s ceiling of which Squish reaches ~20–22. Two levers move that ceiling and two do not:</p>
+<ul>
+<li><strong>INT3 weights</strong> (fewer weight bytes): +18 % decode (24.0 vs 20.5 tok/s at 75 tokens) at no measured accuracy cost — arc_easy <code>acc_norm</code> 0.551 (INT3) versus 0.541 (INT4), within noise at n = 1 000.</li>
+<li><strong>Prompt-lookup speculation</strong> (fewer forwards per token): a whole n-gram draft drawn from the context is verified in one batched forward with KV-cache rollback on rejection. Output is provably greedy-identical (every emitted token is the model's argmax given the accepted prefix), and decode rises 1.58× (17.1 → 27.1 tok/s) on repetitive output (code, structured text), with no penalty on non-repetitive text.</li>
+<li><strong>Quantised KV cache</strong> (mlx_lm-native, GPU-side): <strong>no decode speedup</strong> at 4- or 8-bit (20.0 tok/s unchanged), because the KV cache is only ~10–15 % of per-token memory traffic and the dequantisation-during-attention cost offsets the bandwidth saved; 4-bit additionally degrades output. It is a <em>memory</em> lever (longer context in fixed RAM), not a throughput lever.</li>
+<li><strong>Draft-model speculative decoding</strong> (1.5 B draft for the 7 B target): net-negative at temperature 0 — acceptance is too low to offset the draft forwards, and the path was retained as opt-in only.</li>
+</ul>
+<p>The throughline is that on bandwidth-bound Apple-Silicon decode, the techniques that help are those that read fewer weight bytes per token (lower-bit quantisation) or emit more tokens per weight read (greedy-lossless speculation); techniques that compress only the KV cache or add a draft model do not. Squish's only measured loss against Ollama is time-to-first-token on a cold short prompt (192 ms vs 167 ms); it leads on decode throughput, tail latency, full-response latency, and RAM (3.5 GB vs 5.1 GB peak).</p>
 <hr />
 <h2 id="5-related-work">5. Related Work<a class="headerlink" href="#5-related-work" title="Permanent link">&para;</a></h2>
 <p><strong>MLX / mlx_lm.</strong> Apple's MLX framework [CITE] and its companion <code>mlx_lm</code> library provide the foundation for our Metal-based inference. Squish adds a caching layer on top of <code>mlx_lm.load()</code> rather than replacing the framework.</p>
@@ -1320,16 +1375,16 @@ Independent Research
 <p><strong>KV cache compression.</strong> DuoAttention [XIAO ET AL. 2024], ShadowKV [SUN ET AL. 2024], and PagedAttention [KWON ET AL. 2023] motivate our KV quantisation and retention modules. We implement the policy logic (token selection, quantisation, eviction) as composable Python modules.</p>
 <hr />
 <h2 id="6-limitations">6. Limitations<a class="headerlink" href="#6-limitations" title="Permanent link">&para;</a></h2>
-<p><strong>End-to-end hardware benchmarks are not yet published.</strong> The module micro-benchmarks measure algorithm latency in isolation (CPU/numpy). The impact of stacking modules on actual tokens-per-second throughput on a live server with a loaded model requires <code>bench_eoe.py</code> and has not yet been reported. Users should not interpret micro-benchmark numbers as end-to-end throughput improvements.</p>
+<p><strong>Single-stream only.</strong> §4.4 reports end-to-end, on-hardware throughput and latency for the production configuration against Ollama, but all measurements are single-stream. Behaviour under concurrent requests (continuous batching, queueing) is not characterised and is a setting where mature servers may currently lead. The §4.3 module micro-benchmarks remain isolated CPU/numpy latencies; the combined throughput effect of stacking many modules at once is still not exhaustively measured, and micro-benchmark numbers should not be read as end-to-end gains.</p>
 <p><strong>Apple Silicon only.</strong> The load-time and RAM improvements are specific to the MLX/Metal unified memory architecture. A PyTorch backend (<code>squish/backend.py: _TorchBackend</code>) is stubbed for Linux/CUDA but not benchmarked or production-ready.</p>
 <p><strong>MMLU not yet evaluated.</strong> Our accuracy table covers four tasks at n=200 samples. MMLU (57 tasks, 14042 questions) is a more demanding evaluation and is not included in the current results.</p>
 <p><strong>Module interactions.</strong> We have not systematically measured the combined effect of stacking multiple optimisation modules. Individual modules are tested in isolation; combinations may have additive, subadditive, or conflicting effects.</p>
 <hr />
 <h2 id="7-conclusion">7. Conclusion<a class="headerlink" href="#7-conclusion" title="Permanent link">&para;</a></h2>
-<p>Squish demonstrates that a simple format change — converting <code>.safetensors</code> weights once to a BF16 Metal-native layout — recovers 54× of cold-start latency and 15× of load-phase RAM on Apple Silicon, without any accuracy degradation. The resulting artifact is a self-contained local inference server with drop-in compatibility for both OpenAI and Ollama clients, a composable library of 100+ modular inference techniques, and pre-squished models on the Hugging Face Hub that let new users reach sub-second inference with a single <code>squish pull</code> command.</p>
+<p>Squish demonstrates that a simple format change — converting <code>.safetensors</code> weights once to a BF16 Metal-native layout — recovers 54× of cold-start latency and 15× of load-phase RAM on Apple Silicon, without any accuracy degradation. Beyond loading, thermally-controlled end-to-end benchmarking (§4.4) shows the production configuration matching or beating Ollama on decode throughput, inter-token tail latency, full-response latency on long prompts (9.8× via prefix-cache reuse), and RAM — the result of serving-layer engineering rather than model changes. That work also isolates which decode-acceleration techniques actually pay off on bandwidth-bound Apple-Silicon decode (lower-bit quantisation and greedy-lossless prompt-lookup speculation) and which do not (KV-cache quantisation, small-draft speculation), a distinction obscured without thermal control. The resulting artifact is a self-contained local inference server with drop-in compatibility for both OpenAI and Ollama clients, a composable library of 100+ modular inference techniques, and pre-squished models on the Hugging Face Hub that let new users reach sub-second inference with a single <code>squish pull</code> command.</p>
 <hr />
 <h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
-<p><em>[To be completed with formal citations for all techniques referenced. Key papers: MLX/Apple Silicon (2023), FlashAttention (Dao et al. 2022), Speculative Decoding (Leviathan et al. 2023), EAGLE (Li et al. 2024), MEDUSA (Cai et al. 2024), SageAttention (Zhang et al. 2024), DuoAttention (Xiao et al. 2024), ShadowKV (Sun et al. 2024), HellaSwag (Zellers et al. 2019), WinoGrande (Sakaguchi et al. 2021), PIQA (Bisk et al. 2020), ARC (Clark et al. 2018), lm-evaluation-harness (Gao et al. 2023).]</em></p>
+<p><em>[To be completed with formal citations for all techniques referenced. Key papers: MLX/Apple Silicon (2023), FlashAttention (Dao et al. 2022), Speculative Decoding (Leviathan et al. 2023), Prompt Lookup Decoding (Saxena 2023), EAGLE (Li et al. 2024), MEDUSA (Cai et al. 2024), SageAttention (Zhang et al. 2024), DuoAttention (Xiao et al. 2024), ShadowKV (Sun et al. 2024), HellaSwag (Zellers et al. 2019), WinoGrande (Sakaguchi et al. 2021), PIQA (Bisk et al. 2020), ARC (Clark et al. 2018), lm-evaluation-harness (Gao et al. 2023).]</em></p>
 
 
 
