@@ -350,7 +350,7 @@ function Footer() {
           <span className="text-konjo-fg">/api/benchmark</span>
         </span>
         <span className="text-konjo-fg-faint">
-          part of the KonjoAI portfolio · vectro · kyro · miru · kohaku · kairu · toki · squash
+          part of the KonjoAI portfolio
         </span>
       </div>
     </footer>
