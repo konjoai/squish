@@ -123,7 +123,7 @@ Reproducibility commands:
 
 ```bash
 pip install lm_eval
-python3 squish/squish_lm_eval.py \
+lm_eval --model squish \
   --model hf \
   --model_args "pretrained=Qwen/Qwen2.5-1.5B-Instruct,dtype=bfloat16" \
   --tasks arc_easy,hellaswag,winogrande,piqa \
@@ -132,20 +132,10 @@ python3 squish/squish_lm_eval.py \
 
 ### 4.3 Module Micro-Benchmarks
 
-CPU/numpy micro-benchmarks for all 100+ modules are reported in the wave benchmark documents:
+CPU/numpy micro-benchmarks for the 100+ modules are catalogued in
+[`MODULES.md`](../MODULES.md), the per-wave module reference.
 
-| Waves | Modules | Benchmark doc |
-|-------|--------:|---------------|
-| 12 | 7 | [`docs/benchmark_wave12.md`](benchmark_wave12.md) |
-| 13–14 | 26 | [`docs/benchmark_wave13_14.md`](benchmark_wave13_14.md) |
-| 15–16 | 21 | [`docs/benchmark_wave15_16.md`](benchmark_wave15_16.md) |
-| 17–18 | 28 | [`docs/benchmark_wave17_18.md`](benchmark_wave17_18.md) |
-| 19–20 | 28 | [`docs/benchmark_wave19_20.md`](benchmark_wave19_20.md) |
-| 21–22 | 28 | [`docs/benchmark_wave21_22.md`](benchmark_wave21_22.md) |
-| 23–24 | 28 | [`docs/benchmark_wave23_24.md`](benchmark_wave23_24.md) |
-| 25–26 | 28 | [`docs/benchmark_wave25_26.md`](benchmark_wave25_26.md) |
-
-All figures in these documents are **CPU micro-benchmark latencies** (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is reported in §4.4.
+Those figures are **CPU micro-benchmark latencies** (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is reported in §4.4.
 
 ### 4.4 End-to-End Serving Performance versus Ollama
 

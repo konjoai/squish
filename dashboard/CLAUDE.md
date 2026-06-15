@@ -73,6 +73,3 @@ npm run typecheck    # tsc -b --noEmit
 - New backend shape? Mirror types in [src/lib/types.ts](./src/lib/types.ts), add a mock fixture, then add the API method to [src/lib/api.ts](./src/lib/api.ts) with a mock fallback.
 - Future backend lift: when squish exposes per-token KV-mode flags or per-stage latency breakdown, the dashboard's typed slots are ready — only the wire format changes.
 - New design token? Add to `@konjoai/ui` (so all flagships inherit), not here.
-
-## Sprint context
-This is **Sprint 4** of the 10-sprint Konjo UI Initiative. Sprint 0 = `@konjoai/ui` foundation. Sprint 1 = squash Compliance Bridge. Sprint 2 = miru Mind of the Machine. Sprint 3 = kairu Speed Cockpit. Sprint 5 = kyro RAG Observatory (next).

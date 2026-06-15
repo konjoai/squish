@@ -9,7 +9,7 @@
 ## 1. Cold-start load time and TTFT
 
 Source: `README.md` headline numbers; reproduced via
-`scripts/bench_cold_load.sh` and `squish bench`.
+`benchmarks/ollama_vs_squish/bench_cold_prefill.py` and `squish bench`.
 
 | | mlx_lm (cold) | Ollama | **squish** |
 |---|:---:|:---:|:---:|
@@ -184,7 +184,7 @@ int4 --in-features 4096 --out-features 4096 --group-size 32 --iters
 
 ```bash
 # Cold load + TTFT
-scripts/bench_cold_load.sh
+benchmarks/ollama_vs_squish/bench_cold_prefill.py
 
 # Quantized GEMV throughput
 squish bench --format int4

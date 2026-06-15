@@ -48,14 +48,14 @@ OLLAMA_HOST  = "127.0.0.1"
 OLLAMA_PORT  = 11434
 OLLAMA_MODEL = "qwen2.5:7b"
 
-SQUISH_BIN  = "/Users/wscholl/squish/.venv/bin/squish"
-SQUISH_PY   = "/Users/wscholl/squish/.venv/bin/python"
+SQUISH_BIN  = os.path.expanduser("~/squish/.venv/bin/squish")
+SQUISH_PY   = os.path.expanduser("~/squish/.venv/bin/python")
 SQUISH_HOST = "127.0.0.1"
 SQUISH_PORT = 11435
 SQUISH_API_KEY    = "squish"
 
-SQUISH_MODEL_INT4 = "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
-SQUISH_MODEL_INT3 = "/Users/wscholl/models/Qwen2.5-7B-Instruct-int3"
+SQUISH_MODEL_INT4 = os.path.expanduser("~/models/Qwen2.5-7B-Instruct-int4")
+SQUISH_MODEL_INT3 = os.path.expanduser("~/models/Qwen2.5-7B-Instruct-int3")
 
 PKV_CACHE_DIR     = "/tmp/squish_pkv_v5_1"
 BLOCK_CACHE_DIR   = "/tmp/squish_blocks_v5_1"

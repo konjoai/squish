@@ -118,10 +118,10 @@ Results are written to `dev/results/quant_2bit_comparison.json`.
 
 | Phase | Method | Module | Status |
 |-------|--------|--------|--------|
-| Baseline | INT4 nibble | `squish/quantizer.py` | ✅ Complete |
-| Phase 7 | VPTQ | `squish/vptq.py` | ✅ Complete |
-| Phase 9A | AQLM 2-bit | `squish/aqlm.py` | ⏳ Not yet implemented |
-| Phase 9B | QuIP# 2-bit | `squish/quip_sharp.py` | ✅ Complete |
+| Baseline | INT4 nibble | `squish/quant/quantizer.py` | ✅ Complete |
+| Phase 7 | VPTQ | (experimental) | ✅ Complete |
+| Phase 9A | AQLM 2-bit | `squish/quant/aqlm.py` | ⏳ Not yet implemented |
+| Phase 9B | QuIP# 2-bit | (experimental) | ✅ Complete |
 | Phase 9C | This benchmark | `dev/benchmarks/bench_2bit.py` | ✅ Complete |
 
 ---
@@ -129,6 +129,5 @@ Results are written to `dev/results/quant_2bit_comparison.json`.
 ## See Also
 
 - [`CHANGELOG.md`](../CHANGELOG.md) — version history and shipped phases
-- [`squish/vptq.py`](../squish/vptq.py) — VPTQ implementation
-- [`squish/quip_sharp.py`](../squish/quip_sharp.py) — QuIP# implementation
-- [`dev/results/quant_2bit_comparison.json`](../dev/results/quant_2bit_comparison.json) — Raw results
+- VPTQ / QuIP# — experimental 2-bit paths, not in the shipped tree
+- Raw results: `dev/results/quant_2bit_comparison.json` (generated locally)
