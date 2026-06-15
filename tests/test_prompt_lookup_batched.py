@@ -13,7 +13,7 @@ import pytest
 
 mx = pytest.importorskip("mlx.core")
 
-_MODEL = "/Users/wscholl/models/Qwen3-0.6B-int4"
+_MODEL = os.environ.get("PL_TEST_MODEL", "")  # set to a local mlx model dir to run
 _pytestmark_model = pytest.mark.skipif(
     not os.path.isdir(_MODEL), reason=f"model not present: {_MODEL}"
 )

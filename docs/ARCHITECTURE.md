@@ -3,13 +3,14 @@
 > **One-sentence summary**: Squish separates the _storage format_ of a transformer's
 > weight tensors from their _runtime format_, enabling aggressive compression at rest,
 > lossless reconstruction on demand, and Metal-native caching that loads
-> a Qwen2.5-1.5B model in **0.33 seconds** — 6× faster than `mlx_lm`'s
-> baseline — while using **160 MB of peak additional RAM** versus the 2+ GB
-> typically consumed during a standard load.
+> a Qwen2.5-1.5B model in **0.33–0.53 seconds** — **54× faster** than a cold
+> `mlx_lm` load (28.8 s) and 3.7× faster than a warm one — while using
+> **160 MB of peak additional RAM** versus the 2.4 GB typically consumed during
+> a standard load.
 
 > **Note**: The Tier 2 MLX safetensors cache requires ~34 GB RAM to build and
-> is not built on 16 GB machines. On a standard 16 GB M3, Qwen3-8B INT4
-> loads in 2.7 seconds via the lut_int2 path. The 0.33 s figure applies to
+> is not built on 16 GB machines. On a standard 16 GB M3, an 8B INT4 model
+> loads in ~2.7 seconds via the lut_int2 path. The 0.33–0.53 s figure applies to
 > the 1.5B model on hardware with sufficient RAM to build the Tier 2 cache.
 
 ---
@@ -90,7 +91,7 @@ Squish introduces a **five-path weight management system**:
 │  Loaded via np.load(mmap_mode='r') → mx.array → bfloat16                │
 │  Active path on 16 GB machines for 8B+ models (lut_int2 path)            │
 │                                                                           │
-│  Load time: ~2.7 s  (Qwen3-8B INT4 on M3 16 GB)                         │
+│  Load time: ~2.7 s  (8B INT4 on M3 16 GB)                         │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 

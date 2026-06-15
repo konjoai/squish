@@ -47,7 +47,7 @@ OpenClaw will route all model calls through Squish.
 
 ## Recommended Model
 
-**Qwen3-8B INT4** is the recommended model for OpenClaw tool-use workflows:
+**Qwen2.5-7B INT3** is the recommended model for OpenClaw tool-use workflows:
 
 | Model | RAM | TTFT | Tool use |
 |-------|-----|------|----------|
