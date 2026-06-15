@@ -1,12 +1,12 @@
 # Squish — Local AI Chat for VS Code
 
-Chat with a locally running [Squish](https://github.com/squishai/squish) model directly from VS Code.
+Chat with a locally running [Squish](https://github.com/konjoai/squish) model directly from VS Code.
 Tokens stream in real-time via the OpenAI-compatible API — no internet required, no data leaves your machine.
 
 ## Requirements
 
 - macOS 13+ with Apple Silicon (M1/M2/M3)
-- [Squish](https://github.com/squishai/squish) installed and a model loaded:
+- [Squish](https://github.com/konjoai/squish) installed and a model loaded:
   ```bash
   pip install squish-ai
   squish run qwen3:8b   # starts the server on port 11435
