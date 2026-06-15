@@ -1,12 +1,12 @@
 ---
 template: home.html
-title: Squish — Run 70B models on a MacBook
+title: Squish — The fastest local LLMs on Apple Silicon
 hide:
   - navigation
   - toc
 ---
 
-Squish compresses model weights into memory-mapped tensors that load in **milliseconds**, then serves them through a fully OpenAI-compatible REST API — faster than Ollama, all on Apple Silicon, no GPU required.
+Squish compresses model weights into memory-mapped tensors that load in **milliseconds**, then serves them through a fully OpenAI-compatible REST API — faster than Ollama, all on Apple Silicon — no cloud, no API keys.
 
 ---
 
@@ -43,7 +43,7 @@ Squish compresses model weights into memory-mapped tensors that load in **millis
 
 ```bash
 # Install
-brew install squish-ai/squish
+brew install konjoai/squish/squish
 
 # Pull a compressed model from the community hub
 squish pull llama3.1:8b

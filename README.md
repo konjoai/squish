@@ -6,7 +6,7 @@
 
 **The fastest way to run local LLMs on Apple Silicon.**
 
-Sub-second model loads. Beats Ollama on throughput, tail latency, and full-response time. One OpenAI/Ollama-compatible daemon, no GPU, no cloud, no API keys.
+Sub-second model loads. Beats Ollama on throughput, tail latency, and full-response time. One OpenAI/Ollama-compatible daemon — no cloud, no API keys, fully offline.
 
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-blue.svg)](LICENSE)
 [![PyPI version](https://img.shields.io/pypi/v/squish-ai.svg)](https://pypi.org/project/squish-ai/)

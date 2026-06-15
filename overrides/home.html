@@ -297,16 +297,16 @@ body[data-md-color-scheme="default"] {
         <div class="sq-fade-l">
           <div class="sq-badge">
             <span class="sq-badge__dot"></span>
-            v47 &middot; Apple Silicon native
+            v9.34.0 &middot; Apple Silicon native
           </div>
           <h1 class="sq-hero__title"><span class="sq-grad">Squish</span><br>The Local AI<br>Agent Runtime.</h1>
-          <p class="sq-hero__sub">Run any AI model, fully local, on Apple Silicon. Squish loads models in under a second&mdash;<strong>54&times; faster</strong> than the standard path&mdash;and serves them faster than Ollama. <strong>No GPU, no cloud, no API keys.</strong></p>
+          <p class="sq-hero__sub">Run any AI model, fully local, on Apple Silicon. Squish loads models in under a second&mdash;<strong>54&times; faster</strong> than the standard path&mdash;and serves them faster than Ollama. <strong>No cloud, no API keys, fully offline.</strong></p>
           <div class="sq-hero__btns">
             <a href="install/" class="sq-btn sq-btn--primary">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
               Install Free
             </a>
-            <a href="https://github.com/squishai/squish" class="sq-btn sq-btn--ghost">
+            <a href="https://github.com/konjoai/squish" class="sq-btn sq-btn--ghost">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
               GitHub
             </a>
@@ -322,7 +322,7 @@ body[data-md-color-scheme="default"] {
             </span>
             <span class="sq-hero__pill">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              No GPU required
+              Runs fully offline
             </span>
           </div>
         </div>
@@ -348,8 +348,8 @@ body[data-md-color-scheme="default"] {
             </div>
             <div class="sq-term__body">
               <p class="t-cmt">Install once</p>
-              <p class="t-cmd">brew install squish-ai/squish</p>
-              <p class="t-ok">&nbsp;&nbsp;&#10003; squish 47.0.0 installed</p>
+              <p class="t-cmd">brew install konjoai/squish/squish</p>
+              <p class="t-ok">&nbsp;&nbsp;&#10003; squish 9.34.0 installed</p>
               <span class="t-sp"></span>
               <p class="t-cmt">One command does everything</p>
               <p class="t-cmd">squish run qwen2.5:7b</p>
@@ -408,7 +408,7 @@ body[data-md-color-scheme="default"] {
             <div class="sq-step__n">1</div>
             <div class="sq-step__t">Install Squish</div>
             <p class="sq-step__d">One Homebrew command. No Docker, no CUDA, no virtual environment setup.</p>
-            <code class="sq-step__cmd">brew install squish-ai/squish</code>
+            <code class="sq-step__cmd">brew install konjoai/squish/squish</code>
           </div>
           <div class="sq-arrow">&rarr;</div>
           <div class="sq-step">
@@ -467,7 +467,7 @@ body[data-md-color-scheme="default"] {
             <div class="sq-pcard__ico">&#x1F4C8;</div>
             <div>
               <div class="sq-pcard__t">Gets better every release</div>
-              <p class="sq-pcard__d">v10 ships 228 new optimisation modules. Each release improves TTFT and decode throughput, applied automatically.</p>
+              <p class="sq-pcard__d">Squish ships 100+ composable optimisation modules. Each release improves TTFT and decode throughput, applied automatically.</p>
             </div>
           </div>
         </div>
@@ -656,8 +656,8 @@ body[data-md-color-scheme="default"] {
 
         <div id="sq-p-install" class="sq-tabpanel on">
           <p class="tc">macOS via Homebrew (recommended)</p>
-          <p class="tp"><span class="ts">brew install squish-ai/squish</span></p>
-          <p class="to">&nbsp;&nbsp;&#10003; squish 47.0.0 installed</p>
+          <p class="tp"><span class="ts">brew install konjoai/squish/squish</span></p>
+          <p class="to">&nbsp;&nbsp;&#10003; squish 9.34.0 installed</p>
           <span class="t-sp"></span>
           <p class="tc">Or via pip (Python 3.10+)</p>
           <p class="tp"><span class="ts">pip install squish</span></p>
@@ -760,7 +760,7 @@ body[data-md-color-scheme="default"] {
             <p class="sq-comm-d">Chat with the team, get help, share benchmarks, and discuss the latest models.</p>
           </div>
         </a>
-        <a href="https://github.com/squishai/squish" class="sq-comm-card sq-fade sq-d2">
+        <a href="https://github.com/konjoai/squish" class="sq-comm-card sq-fade sq-d2">
           <div class="sq-comm-ico" style="background:rgba(139,79,255,.1);border:1px solid rgba(139,79,255,.2)">&#x2B50;</div>
           <div>
             <div class="sq-comm-t">GitHub</div>

@@ -348,10 +348,10 @@ squish serve --port 11435
 If port 11435 is already taken by something you cannot stop:
 
 ```bash
-squish serve --port 11436
+squish serve --port 11435
 ```
 
-Then point your OpenAI-compatible client at `http://localhost:11436/v1`.
+Then point your OpenAI-compatible client at `http://localhost:11435/v1`.
 
 ### Prevent Ollama from auto-starting at login
 
