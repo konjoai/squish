@@ -995,7 +995,7 @@ Independent Research
 </code></pre></div>
 <h3 id="43-module-micro-benchmarks">4.3 Module Micro-Benchmarks<a class="headerlink" href="#43-module-micro-benchmarks" title="Permanent link">&para;</a></h3>
 <p>CPU/numpy micro-benchmarks for the 100+ modules are catalogued in
-<a href="../MODULES.md"><code>MODULES.md</code></a>, the per-wave module reference.</p>
+<a href="https://github.com/konjoai/squish/blob/main/MODULES.md"><code>MODULES.md</code></a>, the per-wave module reference.</p>
 <p>Those figures are <strong>CPU micro-benchmark latencies</strong> (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is reported in §4.4.</p>
 <h3 id="44-end-to-end-serving-performance-versus-ollama">4.4 End-to-End Serving Performance versus Ollama<a class="headerlink" href="#44-end-to-end-serving-performance-versus-ollama" title="Permanent link">&para;</a></h3>
 <p>This section reports end-to-end, on-hardware throughput and latency — the live-server validation that §4.3's micro-benchmarks defer. All measurements are on an Apple M3 (16 GB unified memory) with <strong>Qwen2.5-7B-Instruct</strong>: Squish at INT4 (group size 32) versus Ollama serving <code>qwen2.5:7b</code> (Q4_K_M), the nearest-equivalent quantisation. Each engine streams the OpenAI/Ollama-compatible API; decode throughput excludes prefill and inter-token latency excludes the first token.</p>
