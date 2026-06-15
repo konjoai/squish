@@ -18,9 +18,37 @@ Sub-second model loads. Beats Ollama on throughput, tail latency, and full-respo
 
 ---
 
-```
-  54× faster cold start   ·   9.8× faster long-prompt response   ·   32% less RAM
-       0.33–0.53 s to load        24 tok/s decode (beats Ollama)        INT3 default
+```bash
+        +------------------------------------------------------------------------------------------------------+
+        |                            SQUISH - Local LLM Inference on Apple Silicon                             |
+        +------------------------------------------------------------------------------------------------------+
+        |     ███████╗██╗  ██╗██╗  ██╗          █████╗     █████╗ ██╗  ██╗         ██████╗ ██████╗ ██╗ ██╗     |
+        |     ██╔════╝██║  ██║╚██╗██╔╝         ██╔══██╗   ██╔══██╗╚██╗██╔╝         ╚════██╗╚════██╗╚═╝██╔╝     |
+        |     ███████╗███████║ ╚███╔╝          ╚██████║   ╚█████╔╝ ╚███╔╝           █████╔╝ █████╔╝  ██╔╝      |
+        |     ╚════██║╚════██║ ██╔██╗           ╚═══██║   ██╔══██╗ ██╔██╗           ╚═══██╗██╔═══╝  ██╔╝       |
+        |     ███████║     ██║██╔╝ ██╗          █████╔╝██╗╚█████╔╝██╔╝ ██╗         ██████╔╝███████╗██╔╝██╗     |
+        |     ╚══════╝     ╚═╝╚═╝  ╚═╝          ╚════╝ ╚═╝ ╚════╝ ╚═╝  ╚═╝         ╚═════╝ ╚══════╝╚═╝ ╚═╝     |
+        |                                                                                                      |
+        |        faster cold start                 faster long-prompts                    less RAM             |
+        |                                                                                                      |
+        |    ██████╗    ███████╗███████╗            ██████╗ ██╗  ██╗           ██╗███╗   ██╗████████╗██████╗   |
+        |   ██╔═████╗   ██╔════╝██╔════╝            ╚════██╗██║  ██║           ██║████╗  ██║╚══██╔══╝╚════██╗  |
+        |   ██║██╔██║   ███████╗███████╗             █████╔╝███████║           ██║██╔██╗ ██║   ██║    █████╔╝  |
+        |   ████╔╝██║   ╚════██║╚════██║            ██╔═══╝ ╚════██║           ██║██║╚██╗██║   ██║    ╚═══██╗  |
+        |   ╚██████╔╝██╗███████║███████║            ███████╗     ██║           ██║██║ ╚████║   ██║   ██████╔╝  |
+        |    ╚═════╝ ╚═╝╚══════╝╚══════╝            ╚══════╝     ╚═╝           ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚═════╝   |
+        |                                                                                                      |
+        |      cold load · 0.33-0.53s             tok/s · beats Ollama                 quant default           |
+        |                                                                                                      |
+        |    ██╗ ██╗███╗   ███╗███████╗         ███████╗██████╗ ██╗  ██╗            ██╗ ██████╗  ██████╗       |
+        |   ███║███║████╗ ████║██╔════╝         ╚════██║╚════██╗╚═╝ ██╔╝           ███║██╔═████╗██╔═████╗      |
+        |   ╚██║╚██║██╔████╔██║███████╗              ██╔╝ █████╔╝  ██╔╝            ╚██║██║██╔██║██║██╔██║      |
+        |    ██║ ██║██║╚██╔╝██║╚════██║             ██╔╝  ╚══██╗  ██╔╝              ██║████╔╝██║████╔╝██║      |
+        |    ██║ ██║██║ ╚═╝ ██║███████║            ██║  ██████╔╝ ██╔╝██╗            ██║╚██████╔╝╚██████╔╝      |
+        |    ╚═╝ ╚═╝╚═╝     ╚═╝╚══════╝            ╚═╝  ╚═════╝ ╚═╝  ╚═╝            ╚═╝ ╚═════╝  ╚═════╝       |
+        |                                                                                                      |
+        |       repeat TTFT · KV hit                smaller on disk                100+ inference modules      |
+        +------------------------------------------------------------------------------------------------------+
 ```
 
 Squish separates how a model's weights are *stored* from how they *run*. Store them compressed and Metal-native; map them straight into unified memory; skip the dtype-conversion pass that makes every other loader slow. The result: a model that's ready in **half a second**, served by a persistent daemon that out-decodes Ollama and never re-does work it's already done.
@@ -57,6 +85,12 @@ On a 16 GB Mac that workload fights the rest of your work. Ollama keeps ~5 GB re
 Designed for **one developer, one machine**. Not a multi-tenant production API — and the docs never pretend otherwise.
 
 ---
+
+<div align="center">
+
+<img src="assets/squish-pointing.png" height="300" alt="Squish Pointing"/>
+
+</div>
 
 ## Highlights
 
@@ -172,3 +206,10 @@ Squish exists because nothing else was fast enough, so we built it — and held 
 - **Models** — [huggingface.co/squishai](https://huggingface.co/squishai)
 - **Docs** — [Architecture](docs/ARCHITECTURE.md) · [Paper](docs/paper.md) · [Benchmarks](BENCHMARKS.md) · [Modules](MODULES.md)
 - **Org** — [konjoai](https://github.com/konjoai) · siblings: [Squash](https://github.com/konjoai/squash) (EU AI Act compliance), [Vectro](https://github.com/konjoai/vectro), [Kohaku](https://github.com/konjoai/kohaku)
+
+
+<div align="center">
+
+<img src="assets/squish-rocket.png" height="300" alt="Squish Rocket"/>
+
+</div>
