@@ -125,6 +125,12 @@ squish daemon install          # macOS LaunchAgent — daemon starts at login
 
 ---
 
+<div align="center">
+
+<img src="assets/squish-flying.png" height="300" alt="Squish"/>
+
+</div>
+
 ## How it's fast
 
 **Storage ≠ runtime.** Every standard loader pays the same boot tax: allocate a CPU buffer, read the safetensors, convert dtypes, copy to the accelerator — 2–30 s and ~2.4 GB of RAM, almost all of it wasted on bytes that never changed. Squish converts weights **once** into the exact bf16 Metal layout MLX uses, then `mmap`s them directly into the GPU address space. Zero conversion at load time.
