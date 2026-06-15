@@ -6,7 +6,7 @@ hide:
   - toc
 ---
 
-Squish compresses model weights into memory-mapped tensors that load in **milliseconds**, then serves them through a fully OpenAI-compatible REST API — faster than Ollama, all on Apple Silicon — no cloud, no API keys.
+Squish compresses model weights into memory-mapped tensors that load in **under a second**, then serves them through a fully OpenAI-compatible REST API — faster than Ollama, all on Apple Silicon — no cloud, no API keys.
 
 ---
 
@@ -22,15 +22,16 @@ Squish compresses model weights into memory-mapped tensors that load in **millis
 | Batch requests | ❌ | ❌ | **✅** |
 | Pre-compressed weights | ❌ | ❌ | **✅ HuggingFace** |
 | Quantisation | GGUF | GGUF | **INT4 / INT3 / INT8** |
+| Cold short-prompt TTFT | **167 ms** | — | 192 ms |
 | Platform | macOS/Linux | macOS/Windows | macOS (M1–M5) |
 
-<small>M3 16 GB, thermally controlled. Cold start: Qwen2.5-1.5B. Serving: Qwen2.5-7B INT3 vs Ollama 0.30.7.</small>
+<small>M3 16 GB, thermally controlled. Cold start: Qwen2.5-1.5B. Serving: Qwen2.5-7B INT3 vs Ollama 0.30.7. **The one place Ollama wins** is single-token latency on a cold, novel prompt (167 ms vs 192 ms) — Squish leads everywhere else.</small>
 
 ---
 
 ## Key Features
 
-- **Instant load** — memory-mapped weights skip all decoding overhead
+- **Sub-second load** — memory-mapped weights skip the dtype-conversion pass
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/models`, `/v1/completions`
 - **Batch inference** — parallel requests in a single call
 - **INT4 / INT3 / INT8** — quantisation tiers for accuracy vs. size trade-offs; INT3 is the recommended default (≈18% faster decode at no measured accuracy cost vs INT4)

@@ -199,7 +199,7 @@ Each SSE event is a JSON delta. The stream ends with `data: [DONE]`.
 | `squish run <model> --prompt "..."` | Single-turn inference |
 | `squish serve` | Start the API server |
 | `squish serve --port N` | Custom port |
-| `squish list` | List downloaded models |
+| `squish models` | List local models |
 | `squish rm <model>` | Delete a model |
 | `squish search [query]` | Search the community hub |
 
@@ -226,5 +226,5 @@ Picking the right cache for your workload:
 - **General use without knowing the workload**: combined config (both caches
   enabled). Best end-to-end completion time across prompt sizes.
 
-The combined config currently doesn't inherit PKV's fast-hit TTFT due to a
-lookup ordering issue; reordering is tracked as a v5.2 follow-up.
+With both caches enabled, an exact-match repeat is served by the prompt-KV fast
+path, while the block cache remains the generalization net for shifting prefixes.

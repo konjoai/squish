@@ -2299,8 +2299,9 @@ def cmd_doctor(args):
         _report_dir.mkdir(parents=True, exist_ok=True)
         _ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         _report_path = _report_dir / f"doctor-report-{_ts}.json"
+        from squish import __version__ as _sq_ver  # noqa: PLC0415
         _report = {
-            "squish_version": "9.0.0",
+            "squish_version": _sq_ver,
             "timestamp": _ts,
             "platform": _plat.platform(),
             "python": _plat.python_version(),

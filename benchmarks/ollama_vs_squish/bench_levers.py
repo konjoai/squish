@@ -28,7 +28,7 @@ from typing import Any
 
 import bench_v5_1 as B
 
-DRAFT_MODEL = "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-int4"
+DRAFT_MODEL = os.path.expanduser("~/models/Qwen2.5-1.5B-Instruct-int4")
 OUT_DIR = B.REPO_ROOT / "results" / "benchmarks_v5_1_1" / "levers"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 

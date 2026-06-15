@@ -8,7 +8,7 @@ Independent Research
 
 ## Abstract
 
-We present **Squish**, a local large language model inference system optimised for Apple Silicon unified memory architecture. Squish introduces a three-tier weight caching format that decouples  weight *storage* from *runtime representation*, eliminating the dtype-conversion pass that dominates cold-start latency in systems based on the `.safetensors` format. On Apple Silicon M-series hardware with a Qwen2.5-1.5B-Instruct model, Squish achieves a **0.33–0.53 s cold-start load time** — a **54× reduction** versus cold `mlx_lm` load (28.81 s) and a **3.7× reduction** versus fully warm `mlx_lm` load (1.96 s) — while consuming only **160 MB of RAM during the load phase**, a **15× reduction** versus the standard loader's 2.4 GB. Four lm-evaluation-harness benchmarks on squeeshed weights confirm accuracy within measurement noise of the full-precision baseline (maximum delta: 1.5 pp, all within ±2 pp). Squish additionally ships a library of 100+ modular inference-optimisation techniques spanning KV cache compression, speculative decoding, quantisation, attention acceleration, and production serving, all implemented as composable flags on a single OpenAI/Ollama-compatible server. Thermally-controlled end-to-end benchmarking against Ollama (Qwen2.5-7B, Apple M3) shows the production configuration matching or beating it on decode throughput and inter-token tail latency at every context length, and by **9.8×** on full-response latency for long prompts through prefix-cache reuse; the same methodology isolates which decode-acceleration techniques pay off on bandwidth-bound Apple-Silicon decode and which do not.
+We present **Squish**, a local large language model inference system optimised for Apple Silicon unified memory architecture. Squish introduces a three-tier weight caching format that decouples  weight *storage* from *runtime representation*, eliminating the dtype-conversion pass that dominates cold-start latency in systems based on the `.safetensors` format. On Apple Silicon M-series hardware with a Qwen2.5-1.5B-Instruct model, Squish achieves a **0.33–0.53 s cold-start load time** — a **54× reduction** versus cold `mlx_lm` load (28.81 s) and a **3.7× reduction** versus fully warm `mlx_lm` load (1.96 s) — while consuming only **160 MB of RAM during the load phase**, a **15× reduction** versus the standard loader's 2.4 GB. Four lm-evaluation-harness benchmarks on squished weights confirm accuracy within measurement noise of the full-precision baseline (maximum delta: 1.5 pp, all within ±2 pp). Squish additionally ships a library of 100+ modular inference-optimisation techniques spanning KV cache compression, speculative decoding, quantisation, attention acceleration, and production serving, all implemented as composable flags on a single OpenAI/Ollama-compatible server. Thermally-controlled end-to-end benchmarking against Ollama (Qwen2.5-7B, Apple M3) shows the production configuration matching or beating it on decode throughput and inter-token tail latency at every context length, and by **9.8×** on full-response latency for long prompts through prefix-cache reuse; the same methodology isolates which decode-acceleration techniques pay off on bandwidth-bound Apple-Silicon decode and which do not.
 
 ---
 
@@ -123,7 +123,7 @@ Reproducibility commands:
 
 ```bash
 pip install lm_eval
-python3 squish/squish_lm_eval.py \
+lm_eval --model squish \
   --model hf \
   --model_args "pretrained=Qwen/Qwen2.5-1.5B-Instruct,dtype=bfloat16" \
   --tasks arc_easy,hellaswag,winogrande,piqa \
@@ -132,20 +132,10 @@ python3 squish/squish_lm_eval.py \
 
 ### 4.3 Module Micro-Benchmarks
 
-CPU/numpy micro-benchmarks for all 100+ modules are reported in the wave benchmark documents:
+CPU/numpy micro-benchmarks for the 100+ modules are catalogued in
+[`MODULES.md`](../MODULES.md), the per-wave module reference.
 
-| Waves | Modules | Benchmark doc |
-|-------|--------:|---------------|
-| 12 | 7 | [`docs/benchmark_wave12.md`](benchmark_wave12.md) |
-| 13–14 | 26 | [`docs/benchmark_wave13_14.md`](benchmark_wave13_14.md) |
-| 15–16 | 21 | [`docs/benchmark_wave15_16.md`](benchmark_wave15_16.md) |
-| 17–18 | 28 | [`docs/benchmark_wave17_18.md`](benchmark_wave17_18.md) |
-| 19–20 | 28 | [`docs/benchmark_wave19_20.md`](benchmark_wave19_20.md) |
-| 21–22 | 28 | [`docs/benchmark_wave21_22.md`](benchmark_wave21_22.md) |
-| 23–24 | 28 | [`docs/benchmark_wave23_24.md`](benchmark_wave23_24.md) |
-| 25–26 | 28 | [`docs/benchmark_wave25_26.md`](benchmark_wave25_26.md) |
-
-All figures in these documents are **CPU micro-benchmark latencies** (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is reported in §4.4.
+Those figures are **CPU micro-benchmark latencies** (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is reported in §4.4.
 
 ### 4.4 End-to-End Serving Performance versus Ollama
 

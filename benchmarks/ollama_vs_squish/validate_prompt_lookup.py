@@ -20,10 +20,10 @@ if not os.environ.get("MLX_GPU"):
 from mlx_lm import load  # noqa: E402
 from mlx_lm.models import cache as _cache  # noqa: E402
 
-sys.path.insert(0, "/Users/wscholl/squish")
+sys.path.insert(0, os.path.expanduser("~/squish"))
 from squish.speculative.prompt_lookup_batched import prompt_lookup_generate  # noqa: E402
 
-MODEL = os.environ.get("PL_MODEL", "/Users/wscholl/models/Qwen2.5-1.5B-Instruct-int4")
+MODEL = os.environ.get("PL_MODEL", os.path.expanduser("~/models/Qwen2.5-1.5B-Instruct-int4"))
 MAX_TOKENS = 120
 
 

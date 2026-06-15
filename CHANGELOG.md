@@ -212,7 +212,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 The v5.1.1 realistic-deployment re-bench is the release headline. Recommended
 default is now both KV caches enabled. Full numbers and methodology in
-[`docs/RESULTS.md`](docs/RESULTS.md) (v5.1.1 section).
+the v5.1.1 benchmark run (v5.1.1 section).
 
 ### Added
 - **Block-level paged KV cache** (`--block-kv-cache`) for shifting-prefix
@@ -240,7 +240,7 @@ default is now both KV caches enabled. Full numbers and methodology in
 - Removed stale "54× cold load vs mlx_lm" headline framing. The mlx_lm
   baseline was a development reference, not a production peer; current
   numbers are vs Ollama (the realistic peer) in
-  [`docs/RESULTS.md`](docs/RESULTS.md).
+  the v5.1.1 benchmark run.
 - README rewritten to match v5.1.1 measured reality.
 - **PyPI distribution name changed from `squish` to `squish-ai`.** The Python
   module (`import squish`) and CLI command (`squish`) are unchanged. Users
