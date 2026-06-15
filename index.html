@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Run 70B AI models on a MacBook in 2 seconds. Squish — The Local AI Agent Runtime.">
+        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
       
       
       
@@ -334,26 +334,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="planning/PLAN.md" class="md-tabs__link">
-          
-  
-  
-  Planning
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -656,259 +636,6 @@
   
 
       </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Planning
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Planning
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="planning/PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="planning/MODULES.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Modules
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="planning/CROSS_PLATFORM_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cross-Platform
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="planning/CLI_REVAMP_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    CLI Revamp
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="planning/INT_QUANTIZATION_BENCHMARK_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    INT Quantization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="planning/LAUNCH_STATUS_v9.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Launch Status
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="planning/PHASE_3_4_COMPLETION_GUIDE.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Phase 3+4 Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
     </li>
   
 
@@ -1451,8 +1178,8 @@ body[data-md-color-scheme="default"] {
           <div class="sq-pcard">
             <div class="sq-pcard__ico">&#x26A1;</div>
             <div>
-              <div class="sq-pcard__t">Faster than any cloud API</div>
-              <p class="sq-pcard__d">No network round-trip means TTFT under 500ms &mdash; beating most hosted endpoints on raw latency.</p>
+              <div class="sq-pcard__t">No network round-trip</div>
+              <p class="sq-pcard__d">Everything runs on-device &mdash; no API rate limits, no per-token billing, no data leaving your Mac.</p>
             </div>
           </div>
           <div class="sq-pcard">
@@ -1465,8 +1192,8 @@ body[data-md-color-scheme="default"] {
           <div class="sq-pcard">
             <div class="sq-pcard__ico">&#x1F9E0;</div>
             <div>
-              <div class="sq-pcard__t">Statistically identical quality</div>
-              <p class="sq-pcard__d">Calibrated quantisation preserves benchmark accuracy to within statistical noise. Not a lossy compromise.</p>
+              <div class="sq-pcard__t">Accuracy within measurement noise</div>
+              <p class="sq-pcard__d">Calibrated quantisation holds benchmark accuracy to &le;1.5 pp across ARC-Easy, HellaSwag, WinoGrande, and PIQA at the tested sample size.</p>
             </div>
           </div>
           <div class="sq-pcard">
@@ -1505,8 +1232,8 @@ body[data-md-color-scheme="default"] {
         <div class="sq-card sq-fade sq-d3">
           <div class="sq-card__ico">&#x1F5DC;</div>
           <div class="sq-card__t">10x faster on repeat prompts.</div>
-          <p class="sq-card__d">Agents resend the same 10,000-token system prompt every turn. Squish's <strong>RadixTree Cache</strong> computes it exactly once&mdash;giving you instantaneous thought loops at any context depth.</p>
-          <div class="sq-card__metric">150ms TTFT on repetitive prompts</div>
+          <p class="sq-card__d">Agents resend the same long system prompt every turn. Squish's <strong>two-cache architecture</strong> reuses the prefill instead of re-running it&mdash;so a repeated prompt skips straight to decode.</p>
+          <div class="sq-card__metric">4&ndash;11 ms TTFT on a cache hit</div>
         </div>
         <div class="sq-card sq-fade sq-d4">
           <div class="sq-card__ico">&#x1F9E0;</div>
@@ -1522,7 +1249,7 @@ body[data-md-color-scheme="default"] {
         </div>
         <div class="sq-card sq-fade sq-d6">
           <div class="sq-card__ico">&#x1F4E6;</div>
-          <div class="sq-card__t">100 concurrent requests. One model.</div>
+          <div class="sq-card__t">Batch inference. One request.</div>
           <p class="sq-card__d">Process multiple prompts in a single request. Essential for evals, data pipelines, and bulk generation&mdash;a capability Ollama and LM Studio don't offer.</p>
           <div class="sq-card__metric">"batch": [req1, req2, &hellip;]</div>
         </div>
@@ -1665,12 +1392,12 @@ body[data-md-color-scheme="default"] {
           <p class="tp"><span class="ts">brew install konjoai/squish/squish</span></p>
           <p class="to">&nbsp;&nbsp;&#10003; squish 9.34.0 installed</p>
           <span class="t-sp"></span>
-          <p class="tc">Or via pip (Python 3.10+)</p>
-          <p class="tp"><span class="ts">pip install squish</span></p>
+          <p class="tc">Or via pip (Python 3.11–3.14)</p>
+          <p class="tp"><span class="ts">pip install squish-ai</span></p>
           <span class="t-sp"></span>
           <p class="tc">Verify installation</p>
           <p class="tp"><span class="ts">squish --version</span></p>
-          <p class="to">&nbsp;&nbsp;squish 9.0.0</p>
+          <p class="to">&nbsp;&nbsp;squish 9.34.0</p>
         </div>
 
         <div id="sq-p-run" class="sq-tabpanel">
@@ -1741,7 +1468,7 @@ body[data-md-color-scheme="default"] {
           <span class="t-sp"></span>
           <p class="tc">INT8 for near-lossless quality (~50% smaller)</p>
           <p class="tp"><span class="ts">squish pull meta-llama/Llama-3.3-70B-Instruct --int8</span></p>
-          <p class="to">&nbsp;&nbsp;&#10003; 18.2 GB &#x2192; 9.2 GB &nbsp;(statistically identical outputs)</p>
+          <p class="to">&nbsp;&nbsp;&#10003; 18.2 GB &#x2192; 9.2 GB &nbsp;(within measurement noise)</p>
           <span class="t-sp"></span>
           <p class="tc">Rust quantizer: 4-6x faster compression (optional)</p>
           <p class="ts">&nbsp;&nbsp;cargo build --release -p squish_quant_rs</p>
@@ -1773,7 +1500,7 @@ body[data-md-color-scheme="default"] {
             <p class="sq-comm-d">Star the repo, file issues, read the optimisation source, and send pull requests.</p>
           </div>
         </a>
-        <a href="https://huggingface.co/squish-community" class="sq-comm-card sq-fade sq-d3">
+        <a href="https://huggingface.co/squishai" class="sq-comm-card sq-fade sq-d3">
           <div class="sq-comm-ico" style="background:rgba(255,165,0,.1);border:1px solid rgba(255,165,0,.22)">&#x1F917;</div>
           <div>
             <div class="sq-comm-t">HuggingFace</div>
@@ -1791,7 +1518,7 @@ body[data-md-color-scheme="default"] {
       <div class="sq-cta__inner sq-fade">
         <img class="sq-cta__mascot" src="assets/squish-mascot.png" alt="Squish" />
         <h2 class="sq-cta__t">Reclaim your <span class="sq-grad">VRAM</span>.<br>Unleash your <span class="sq-grad-warm">Agents</span>.</h2>
-        <p class="sq-cta__s">Turn your MacBook into a production-grade AI agent server in under 60 seconds. No cloud, no API bills, no out-of-memory crashes.</p>
+        <p class="sq-cta__s">Turn your MacBook into a fast, private local AI runtime in under 60 seconds. No cloud, no API bills.</p>
         <div class="sq-cta__btns">
           <a href="install/" class="sq-btn sq-btn--primary">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>

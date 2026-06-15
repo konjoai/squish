@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Run 70B AI models on a MacBook in 2 seconds. Squish — The Local AI Agent Runtime.">
+        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
       
       
       
@@ -330,26 +330,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../planning/PLAN.md" class="md-tabs__link">
-          
-  
-  
-  Planning
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -552,259 +532,6 @@
   
 
       </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Planning
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Planning
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/MODULES.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Modules
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/CROSS_PLATFORM_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cross-Platform
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/CLI_REVAMP_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    CLI Revamp
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/INT_QUANTIZATION_BENCHMARK_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    INT Quantization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/LAUNCH_STATUS_v9.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Launch Status
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/PHASE_3_4_COMPLETION_GUIDE.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Phase 3+4 Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
     </li>
   
 
@@ -1088,7 +815,7 @@ Independent Research
 2026</p>
 <hr />
 <h2 id="abstract">Abstract<a class="headerlink" href="#abstract" title="Permanent link">&para;</a></h2>
-<p>We present <strong>Squish</strong>, a local large language model inference system optimised for Apple Silicon unified memory architecture. Squish introduces a three-tier weight caching format that decouples  weight <em>storage</em> from <em>runtime representation</em>, eliminating the dtype-conversion pass that dominates cold-start latency in systems based on the <code>.safetensors</code> format. On Apple Silicon M-series hardware with a Qwen2.5-1.5B-Instruct model, Squish achieves a <strong>0.33–0.53 s cold-start load time</strong> — a <strong>54× reduction</strong> versus cold <code>mlx_lm</code> load (28.81 s) and a <strong>3.7× reduction</strong> versus fully warm <code>mlx_lm</code> load (1.96 s) — while consuming only <strong>160 MB of RAM during the load phase</strong>, a <strong>15× reduction</strong> versus the standard loader's 2.4 GB. Four lm-evaluation-harness benchmarks on squeeshed weights confirm accuracy within measurement noise of the full-precision baseline (maximum delta: 1.5 pp, all within ±2 pp). Squish additionally ships a library of 100+ modular inference-optimisation techniques spanning KV cache compression, speculative decoding, quantisation, attention acceleration, and production serving, all implemented as composable flags on a single OpenAI/Ollama-compatible server. Thermally-controlled end-to-end benchmarking against Ollama (Qwen2.5-7B, Apple M3) shows the production configuration matching or beating it on decode throughput and inter-token tail latency at every context length, and by <strong>9.8×</strong> on full-response latency for long prompts through prefix-cache reuse; the same methodology isolates which decode-acceleration techniques pay off on bandwidth-bound Apple-Silicon decode and which do not.</p>
+<p>We present <strong>Squish</strong>, a local large language model inference system optimised for Apple Silicon unified memory architecture. Squish introduces a three-tier weight caching format that decouples  weight <em>storage</em> from <em>runtime representation</em>, eliminating the dtype-conversion pass that dominates cold-start latency in systems based on the <code>.safetensors</code> format. On Apple Silicon M-series hardware with a Qwen2.5-1.5B-Instruct model, Squish achieves a <strong>0.33–0.53 s cold-start load time</strong> — a <strong>54× reduction</strong> versus cold <code>mlx_lm</code> load (28.81 s) and a <strong>3.7× reduction</strong> versus fully warm <code>mlx_lm</code> load (1.96 s) — while consuming only <strong>160 MB of RAM during the load phase</strong>, a <strong>15× reduction</strong> versus the standard loader's 2.4 GB. Four lm-evaluation-harness benchmarks on squished weights confirm accuracy within measurement noise of the full-precision baseline (maximum delta: 1.5 pp, all within ±2 pp). Squish additionally ships a library of 100+ modular inference-optimisation techniques spanning KV cache compression, speculative decoding, quantisation, attention acceleration, and production serving, all implemented as composable flags on a single OpenAI/Ollama-compatible server. Thermally-controlled end-to-end benchmarking against Ollama (Qwen2.5-7B, Apple M3) shows the production configuration matching or beating it on decode throughput and inter-token tail latency at every context length, and by <strong>9.8×</strong> on full-response latency for long prompts through prefix-cache reuse; the same methodology isolates which decode-acceleration techniques pay off on bandwidth-bound Apple-Silicon decode and which do not.</p>
 <hr />
 <h2 id="1-introduction">1. Introduction<a class="headerlink" href="#1-introduction" title="Permanent link">&para;</a></h2>
 <p>Local LLM inference on consumer hardware has reached an inflection point. Models that were unrunnable two years ago now fit comfortably in Apple Silicon unified memory. Yet the dominant distribution format — Hugging Face <code>.safetensors</code> — was designed to checkpoint training runs, not to serve as a local runtime weight store. Every boot pays the same conversion cost: allocate a CPU-side buffer, read the file, convert dtypes, transfer to the accelerator. For a 1.5B model this costs ~2–30 seconds of wall-clock time and ~2.4 GB of RAM, the vast majority of which is wasted on data that has not changed since the model was last used.</p>
@@ -1260,66 +987,16 @@ Independent Research
 <p>All deltas are within ±2 percentage points, the expected measurement noise at n=200 samples. WinoGrande improved by 1.5 pp, consistent with INT8 quantisation noise being uncorrelated with task-specific variance. MMLU evaluation is planned for a future release (requires n=14042 samples for the full suite).</p>
 <p>Reproducibility commands:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>lm_eval
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>python3<span class="w"> </span>squish/squish_lm_eval.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>lm_eval<span class="w"> </span>--model<span class="w"> </span>squish<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>--model<span class="w"> </span>hf<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>--model_args<span class="w"> </span><span class="s2">&quot;pretrained=Qwen/Qwen2.5-1.5B-Instruct,dtype=bfloat16&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>--tasks<span class="w"> </span>arc_easy,hellaswag,winogrande,piqa<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span>--num_fewshot<span class="w"> </span><span class="m">0</span><span class="w"> </span>--limit<span class="w"> </span><span class="m">200</span>
 </code></pre></div>
 <h3 id="43-module-micro-benchmarks">4.3 Module Micro-Benchmarks<a class="headerlink" href="#43-module-micro-benchmarks" title="Permanent link">&para;</a></h3>
-<p>CPU/numpy micro-benchmarks for all 100+ modules are reported in the wave benchmark documents:</p>
-<table>
-<thead>
-<tr>
-<th>Waves</th>
-<th style="text-align: right;">Modules</th>
-<th>Benchmark doc</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>12</td>
-<td style="text-align: right;">7</td>
-<td><a href="benchmark_wave12.md"><code>docs/benchmark_wave12.md</code></a></td>
-</tr>
-<tr>
-<td>13–14</td>
-<td style="text-align: right;">26</td>
-<td><a href="benchmark_wave13_14.md"><code>docs/benchmark_wave13_14.md</code></a></td>
-</tr>
-<tr>
-<td>15–16</td>
-<td style="text-align: right;">21</td>
-<td><a href="benchmark_wave15_16.md"><code>docs/benchmark_wave15_16.md</code></a></td>
-</tr>
-<tr>
-<td>17–18</td>
-<td style="text-align: right;">28</td>
-<td><a href="benchmark_wave17_18.md"><code>docs/benchmark_wave17_18.md</code></a></td>
-</tr>
-<tr>
-<td>19–20</td>
-<td style="text-align: right;">28</td>
-<td><a href="benchmark_wave19_20.md"><code>docs/benchmark_wave19_20.md</code></a></td>
-</tr>
-<tr>
-<td>21–22</td>
-<td style="text-align: right;">28</td>
-<td><a href="benchmark_wave21_22.md"><code>docs/benchmark_wave21_22.md</code></a></td>
-</tr>
-<tr>
-<td>23–24</td>
-<td style="text-align: right;">28</td>
-<td><a href="benchmark_wave23_24.md"><code>docs/benchmark_wave23_24.md</code></a></td>
-</tr>
-<tr>
-<td>25–26</td>
-<td style="text-align: right;">28</td>
-<td><a href="benchmark_wave25_26.md"><code>docs/benchmark_wave25_26.md</code></a></td>
-</tr>
-</tbody>
-</table>
-<p>All figures in these documents are <strong>CPU micro-benchmark latencies</strong> (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is reported in §4.4.</p>
+<p>CPU/numpy micro-benchmarks for the 100+ modules are catalogued in
+<a href="../MODULES.md"><code>MODULES.md</code></a>, the per-wave module reference.</p>
+<p>Those figures are <strong>CPU micro-benchmark latencies</strong> (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is reported in §4.4.</p>
 <h3 id="44-end-to-end-serving-performance-versus-ollama">4.4 End-to-End Serving Performance versus Ollama<a class="headerlink" href="#44-end-to-end-serving-performance-versus-ollama" title="Permanent link">&para;</a></h3>
 <p>This section reports end-to-end, on-hardware throughput and latency — the live-server validation that §4.3's micro-benchmarks defer. All measurements are on an Apple M3 (16 GB unified memory) with <strong>Qwen2.5-7B-Instruct</strong>: Squish at INT4 (group size 32) versus Ollama serving <code>qwen2.5:7b</code> (Q4_K_M), the nearest-equivalent quantisation. Each engine streams the OpenAI/Ollama-compatible API; decode throughput excludes prefill and inter-token latency excludes the first token.</p>
 <p><strong>Thermal control.</strong> Apple Silicon throttles under sustained load — we observed the on-die temperature swing from 36 °C idle to 100 °C under benchmarking, and the <em>same</em> bare INT4 decode measured 20.8 tok/s when run first (cool) but 15.1 tok/s when run third (hot). Naïve back-to-back benchmarking therefore measures run <em>order</em>, not the engines. Each configuration is instead measured from a controlled ~48–52 °C baseline (a 120 s idle cooldown precedes every server), and Ollama is re-measured last as a drift probe; across runs the first-vs-last drift was ≤ 1.7 %. Die temperature is logged throughout (sudoless IOReport sampling) to confirm each configuration starts from the same thermal state.</p>

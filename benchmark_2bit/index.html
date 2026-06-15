@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Run 70B AI models on a MacBook in 2 seconds. Squish — The Local AI Agent Runtime.">
+        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
       
       
       
@@ -330,26 +330,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../planning/PLAN.md" class="md-tabs__link">
-          
-  
-  
-  Planning
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -552,259 +532,6 @@
   
 
       </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Planning
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Planning
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/MODULES.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Modules
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/CROSS_PLATFORM_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cross-Platform
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/CLI_REVAMP_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    CLI Revamp
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/INT_QUANTIZATION_BENCHMARK_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    INT Quantization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/LAUNCH_STATUS_v9.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Launch Status
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/PHASE_3_4_COMPLETION_GUIDE.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Phase 3+4 Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
     </li>
   
 
@@ -1149,25 +876,25 @@ For a high-fidelity comparison on large weight matrices, increase:</p>
 <tr>
 <td>Baseline</td>
 <td>INT4 nibble</td>
-<td><code>squish/quantizer.py</code></td>
+<td><code>squish/quant/quantizer.py</code></td>
 <td>✅ Complete</td>
 </tr>
 <tr>
 <td>Phase 7</td>
 <td>VPTQ</td>
-<td><code>squish/vptq.py</code></td>
+<td>(experimental)</td>
 <td>✅ Complete</td>
 </tr>
 <tr>
 <td>Phase 9A</td>
 <td>AQLM 2-bit</td>
-<td><code>squish/aqlm.py</code></td>
+<td><code>squish/quant/aqlm.py</code></td>
 <td>⏳ Not yet implemented</td>
 </tr>
 <tr>
 <td>Phase 9B</td>
 <td>QuIP# 2-bit</td>
-<td><code>squish/quip_sharp.py</code></td>
+<td>(experimental)</td>
 <td>✅ Complete</td>
 </tr>
 <tr>
@@ -1182,9 +909,8 @@ For a high-fidelity comparison on large weight matrices, increase:</p>
 <h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../CHANGELOG.md"><code>CHANGELOG.md</code></a> — version history and shipped phases</li>
-<li><a href="../squish/vptq.py"><code>squish/vptq.py</code></a> — VPTQ implementation</li>
-<li><a href="../squish/quip_sharp.py"><code>squish/quip_sharp.py</code></a> — QuIP# implementation</li>
-<li><a href="../dev/results/quant_2bit_comparison.json"><code>dev/results/quant_2bit_comparison.json</code></a> — Raw results</li>
+<li>VPTQ / QuIP# — experimental 2-bit paths, not in the shipped tree</li>
+<li>Raw results: <code>dev/results/quant_2bit_comparison.json</code> (generated locally)</li>
 </ul>
 
 

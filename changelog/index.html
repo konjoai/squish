@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Run 70B AI models on a MacBook in 2 seconds. Squish — The Local AI Agent Runtime.">
+        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
       
       
       
@@ -330,26 +330,6 @@
   
 
       
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
-        <a href="../planning/PLAN.md" class="md-tabs__link">
-          
-  
-  
-  Planning
-
-        </a>
-      </li>
-    
-  
-
-      
     </ul>
   </div>
 </nav>
@@ -552,259 +532,6 @@
   
 
       </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
-        
-          
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Planning
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_7">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Planning
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/MODULES.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Modules
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/CROSS_PLATFORM_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cross-Platform
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/CLI_REVAMP_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    CLI Revamp
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/INT_QUANTIZATION_BENCHMARK_PLAN.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    INT Quantization
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/LAUNCH_STATUS_v9.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Launch Status
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../planning/PHASE_3_4_COMPLETION_GUIDE.md" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Phase 3+4 Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
     </li>
   
 
@@ -2014,7 +1741,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <h2 id="9320-2026-06-02-realistic-deployment-benchmark-recommended-default-config">[9.32.0] — 2026-06-02 — Realistic-deployment benchmark + recommended-default config<a class="headerlink" href="#9320-2026-06-02-realistic-deployment-benchmark-recommended-default-config" title="Permanent link">&para;</a></h2>
 <p>The v5.1.1 realistic-deployment re-bench is the release headline. Recommended
 default is now both KV caches enabled. Full numbers and methodology in
-<a href="docs/RESULTS.md"><code>docs/RESULTS.md</code></a> (v5.1.1 section).</p>
+the v5.1.1 benchmark run (v5.1.1 section).</p>
 <h3 id="added_4">Added<a class="headerlink" href="#added_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Block-level paged KV cache</strong> (<code>--block-kv-cache</code>) for shifting-prefix
@@ -2043,7 +1770,7 @@ default is now both KV caches enabled. Full numbers and methodology in
 <li>Removed stale "54× cold load vs mlx_lm" headline framing. The mlx_lm
   baseline was a development reference, not a production peer; current
   numbers are vs Ollama (the realistic peer) in
-  <a href="docs/RESULTS.md"><code>docs/RESULTS.md</code></a>.</li>
+  the v5.1.1 benchmark run.</li>
 <li>README rewritten to match v5.1.1 measured reality.</li>
 <li><strong>PyPI distribution name changed from <code>squish</code> to <code>squish-ai</code>.</strong> The Python
   module (<code>import squish</code>) and CLI command (<code>squish</code>) are unchanged. Users
