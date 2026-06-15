@@ -8,47 +8,44 @@
 
 Sub-second model loads. Beats Ollama on throughput, tail latency, and full-response time. One OpenAI/Ollama-compatible daemon — no cloud, no API keys, fully offline.
 
-[![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-blue.svg)](LICENSE)
-[![PyPI version](https://img.shields.io/pypi/v/squish-ai.svg)](https://pypi.org/project/squish-ai/)
-[![CI](https://github.com/konjoai/squish/actions/workflows/ci.yml/badge.svg)](https://github.com/konjoai/squish/actions/workflows/ci.yml)
-[![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://github.com/konjoai/squish)
+[![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-2563eb?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyYTEgMSAwIDAgMSAxIDF2MS4xOGw2LjI0IDEuNTZhMSAxIDAgMSAxLS40OCAxLjk0TDEzIDYuMjhWMTloNGExIDEgMCAxIDEgMCAySDdhMSAxIDAgMSAxIDAtMmg0VjYuMjhMNS4yNCA3LjY4YTEgMSAwIDEgMS0uNDgtMS45NEwxMSA0LjE4VjNhMSAxIDAgMCAxIDEtMXoiLz48cGF0aCBkPSJNNC44IDguMiAxLjYgMTQuNWEzLjIgMy4yIDAgMCAwIDYuNCAwTDQuOCA4LjJ6bTE0LjQgMC0zLjIgNi4zYTMuMiAzLjIgMCAwIDAgNi40IDBsLTMuMi02LjN6Ii8%2BPC9zdmc%2B&logoColor=white)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/squish-ai.svg?logo=python&logoColor=white&label=PyPI)](https://pypi.org/project/squish-ai/)
+[![Python](https://img.shields.io/pypi/pyversions/squish-ai?logo=python&logoColor=white)](https://pypi.org/project/squish-ai/)
+[![Homebrew](https://img.shields.io/badge/homebrew-konjoai%2Fsquish-F8B23E?logo=homebrew&logoColor=white)](https://github.com/konjoai/homebrew-squish)
+[![Platform](https://img.shields.io/badge/Apple%20Silicon-M--series-111?logo=apple&logoColor=white)](https://github.com/konjoai/squish)
+[![CI](https://img.shields.io/github/actions/workflow/status/konjoai/squish/ci.yml?branch=main&logo=githubactions&logoColor=white&label=CI)](https://github.com/konjoai/squish/actions/workflows/ci.yml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Docs](https://img.shields.io/badge/docs-squish.run-8b5cf6?logo=materialformkdocs&logoColor=white)](https://squish.run)
 [![🤗 Models](https://img.shields.io/badge/🤗%20Models-squishai-yellow)](https://huggingface.co/squishai)
 
 </div>
 
 ---
 
-```bash
-+------------------------------------------------------------------------------------------------------+
-|                            SQUISH - Local LLM Inference on Apple Silicon                             |
-+------------------------------------------------------------------------------------------------------+
-|     ███████╗██╗  ██╗██╗  ██╗          █████╗     █████╗ ██╗  ██╗         ██████╗ ██████╗ ██╗ ██╗     |
-|     ██╔════╝██║  ██║╚██╗██╔╝         ██╔══██╗   ██╔══██╗╚██╗██╔╝         ╚════██╗╚════██╗╚═╝██╔╝     |
-|     ███████╗███████║ ╚███╔╝          ╚██████║   ╚█████╔╝ ╚███╔╝           █████╔╝ █████╔╝  ██╔╝      |
-|     ╚════██║╚════██║ ██╔██╗           ╚═══██║   ██╔══██╗ ██╔██╗           ╚═══██╗██╔═══╝  ██╔╝       |
-|     ███████║     ██║██╔╝ ██╗          █████╔╝██╗╚█████╔╝██╔╝ ██╗         ██████╔╝███████╗██╔╝██╗     |
-|     ╚══════╝     ╚═╝╚═╝  ╚═╝          ╚════╝ ╚═╝ ╚════╝ ╚═╝  ╚═╝         ╚═════╝ ╚══════╝╚═╝ ╚═╝     |
-|                                                                                                      |
-|        faster cold start                 faster long-prompts                    less RAM             |
-|                                                                                                      |
-|    ██████╗    ███████╗███████╗            ██████╗ ██╗  ██╗           ██╗███╗   ██╗████████╗██████╗   |
-|   ██╔═████╗   ██╔════╝██╔════╝            ╚════██╗██║  ██║           ██║████╗  ██║╚══██╔══╝╚════██╗  |
-|   ██║██╔██║   ███████╗███████╗             █████╔╝███████║           ██║██╔██╗ ██║   ██║    █████╔╝  |
-|   ████╔╝██║   ╚════██║╚════██║            ██╔═══╝ ╚════██║           ██║██║╚██╗██║   ██║    ╚═══██╗  |
-|   ╚██████╔╝██╗███████║███████║            ███████╗     ██║           ██║██║ ╚████║   ██║   ██████╔╝  |
-|    ╚═════╝ ╚═╝╚══════╝╚══════╝            ╚══════╝     ╚═╝           ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚═════╝   |
-|                                                                                                      |
-|      cold load · 0.33-0.53s             tok/s · beats Ollama                 quant default           |
-|                                                                                                      |
-|    ██╗ ██╗███╗   ███╗███████╗         ███████╗██████╗ ██╗  ██╗            ██╗ ██████╗  ██████╗       |
-|   ███║███║████╗ ████║██╔════╝         ╚════██║╚════██╗╚═╝ ██╔╝           ███║██╔═████╗██╔═████╗      |
-|   ╚██║╚██║██╔████╔██║███████╗              ██╔╝ █████╔╝  ██╔╝            ╚██║██║██╔██║██║██╔██║      |
-|    ██║ ██║██║╚██╔╝██║╚════██║             ██╔╝  ╚══██╗  ██╔╝              ██║████╔╝██║████╔╝██║      |
-|    ██║ ██║██║ ╚═╝ ██║███████║            ██║  ██████╔╝ ██╔╝██╗            ██║╚██████╔╝╚██████╔╝      |
-|    ╚═╝ ╚═╝╚═╝     ╚═╝╚══════╝            ╚═╝  ╚═════╝ ╚═╝  ╚═╝            ╚═╝ ╚═════╝  ╚═════╝       |
-|                                                                                                      |
-|       repeat TTFT · KV hit                smaller on disk                100+ inference modules      |
-+------------------------------------------------------------------------------------------------------+
+```
+ ███████╗██╗  ██╗██╗  ██╗   █████╗     █████╗ ██╗  ██╗  ██████╗ ██████╗ ██╗ ██╗
+ ██╔════╝██║  ██║╚██╗██╔╝  ██╔══██╗   ██╔══██╗╚██╗██╔╝  ╚════██╗╚════██╗╚═╝██╔╝
+ ███████╗███████║ ╚███╔╝   ╚██████║   ╚█████╔╝ ╚███╔╝    █████╔╝ █████╔╝  ██╔╝
+ ╚════██║╚════██║ ██╔██╗    ╚═══██║   ██╔══██╗ ██╔██╗    ╚═══██╗██╔═══╝  ██╔╝
+ ███████║     ██║██╔╝ ██╗   █████╔╝██╗╚█████╔╝██╔╝ ██╗  ██████╔╝███████╗██╔╝██╗
+ ╚══════╝     ╚═╝╚═╝  ╚═╝   ╚════╝ ╚═╝ ╚════╝ ╚═╝  ╚═╝  ╚═════╝ ╚══════╝╚═╝ ╚═╝
+    faster cold start          faster long-prompts              less RAM
+
+  ██████╗    ███████╗███████╗  ██████╗ ██╗  ██╗  ██╗███╗   ██╗████████╗██████╗
+ ██╔═████╗   ██╔════╝██╔════╝  ╚════██╗██║  ██║  ██║████╗  ██║╚══██╔══╝╚════██╗
+ ██║██╔██║   ███████╗███████╗   █████╔╝███████║  ██║██╔██╗ ██║   ██║    █████╔╝
+ ████╔╝██║   ╚════██║╚════██║  ██╔═══╝ ╚════██║  ██║██║╚██╗██║   ██║    ╚═══██╗
+ ╚██████╔╝██╗███████║███████║  ███████╗     ██║  ██║██║ ╚████║   ██║   ██████╔╝
+  ╚═════╝ ╚═╝╚══════╝╚══════╝  ╚══════╝     ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚═════╝
+    cold load · 0.33–0.53s     tok/s · beats Ollama          quant default
+
+ ██╗ ██╗███╗   ███╗███████╗  ██████╗    ███████╗ ██████╗    ██╗ ██████╗  ██████╗
+███║███║████╗ ████║██╔════╝  ╚════██╗   ██╔════╝██╔════╝   ███║██╔═████╗██╔═████╗
+╚██║╚██║██╔████╔██║███████╗   █████╔╝   ███████╗███████╗   ╚██║██║██╔██║██║██╔██║
+ ██║ ██║██║╚██╔╝██║╚════██║   ╚═══██╗   ╚════██║██╔═══██╗   ██║████╔╝██║████╔╝██║
+ ██║ ██║██║ ╚═╝ ██║███████║  ██████╔╝██╗███████║╚██████╔╝   ██║╚██████╔╝╚██████╔╝
+ ╚═╝ ╚═╝╚═╝     ╚═╝╚══════╝  ╚═════╝ ╚═╝╚══════╝ ╚═════╝    ╚═╝ ╚═════╝  ╚═════╝
+    repeat TTFT · KV hit         GB · smaller on disk        inference modules
 ```
 
 Squish separates how a model's weights are *stored* from how they *run*. Store them compressed and Metal-native; map them straight into unified memory; skip the dtype-conversion pass that makes every other loader slow. The result: a model that's ready in **half a second**, served by a persistent daemon that out-decodes Ollama and never re-does work it's already done.
@@ -201,6 +198,7 @@ Squish exists because nothing else was fast enough, so we built it — and held 
 
 ## Project
 
+- **Website** — [squish.run](https://squish.run) — full docs, guides, and the benchmark report.
 - **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md). Issues, benchmarks, and PRs welcome.
 - **License** — BUSL-1.1, see [LICENSE](LICENSE).
 - **Models** — [huggingface.co/squishai](https://huggingface.co/squishai)

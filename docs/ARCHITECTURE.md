@@ -41,58 +41,25 @@ consumer hardware.
 
 Squish introduces a **five-path weight management system**:
 
-```
-┌───────────────────────────────────────────────────────────────────────────┐
-│  Tier 0a — Native MLX model  (mlx_lm.load())                             │
-│                                                                           │
-│  Standard HuggingFace safetensors loaded via mlx_lm                      │
-│  Fallback path when no squish cache is present                            │
-└────────────────────────────────┬──────────────────────────────────────────┘
-                                 │ squish compress — ~5–19 min
-                                 ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│  Tier 0b — squish_4bit/  (4-bit safetensors, .squish_4bit_ready)         │
-│                                                                           │
-│  INT4 group-quantized safetensors shards                                  │
-│  Sentinel file: .squish_4bit_ready                                        │
-│  Decompressed by squish_quant Rust extension on load                     │
-│                                                                           │
-│  Disk: ~50% of native bf16                                                │
-└────────────────────────────────┬──────────────────────────────────────────┘
-                                 │ squish compress --int3 — additional pass
-                                 ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│  Tier 0c — squish_3bit/  (INT3 safetensors, .squish_3bit_ready)          │
-│                                                                           │
-│  INT3 group-quantized safetensors shards                                  │
-│  Sentinel file: .squish_3bit_ready                                        │
-│  Only enabled for model families that pass accuracy gate (Qwen3, etc.)   │
-│                                                                           │
-│  Disk: ~37% of native bf16                                                │
-└────────────────────────────────┬──────────────────────────────────────────┘
-                                 │ First-run: reconstruct + save → ~2s extra
-                                 ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│  Tier 1 — squish_weights.safetensors  (.squish_ready sentinel)            │
-│                                                                           │
-│  Single bf16 safetensors in Apple Silicon MLX-native layout               │
-│  Loaded by mx.load() → direct Metal memory mapping                       │
-│  Disabled on 16 GB machines for 8B+ models (RAM guard)                   │
-│                                                                           │
-│  Load time: 0.33 s   (Qwen2.5-1.5B on high-RAM hardware)                │
-│  RAM delta: 160 MB   (peak additional, vs 2+ GB baseline)                │
-└────────────────────────────────┬──────────────────────────────────────────┘
-                                 │ First-run: saved post-load
-                                 ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│  Tier 2 — finalized/ .npy cache                                           │
-│                                                                           │
-│  One float16 .npy file per tensor, memory-mappable                       │
-│  Loaded via np.load(mmap_mode='r') → mx.array → bfloat16                │
-│  Active path on 16 GB machines for 8B+ models (lut_int2 path)            │
-│                                                                           │
-│  Load time: ~2.7 s  (8B INT4 on M3 16 GB)                         │
-└───────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    T0a["Tier 0a · Native MLX model<br/>mlx_lm.load()<br/>Standard HuggingFace safetensors via mlx_lm<br/>Fallback path — no squish cache present"]
+    T0b["Tier 0b · squish_4bit/<br/>INT4 group-quantized shards · sentinel .squish_4bit_ready<br/>Decompressed by the squish_quant Rust extension on load<br/>Disk ≈ 50% of native bf16"]
+    T0c["Tier 0c · squish_3bit/<br/>INT3 group-quantized shards · sentinel .squish_3bit_ready<br/>Only for families that pass the accuracy gate (Qwen3, …)<br/>Disk ≈ 37% of native bf16"]
+    T1["Tier 1 · squish_weights.safetensors<br/>Single bf16 in MLX-native layout · sentinel .squish_ready<br/>mx.load() → direct Metal memory-map<br/>Disabled on 16 GB for 8B+ models (RAM guard)<br/>Load 0.33 s · RAM delta 160 MB"]
+    T2["Tier 2 · finalized/ .npy cache<br/>One float16 .npy per tensor, memory-mappable<br/>np.load(mmap_mode='r') → mx.array → bf16<br/>Active path on 16 GB for 8B+ models<br/>Load ≈ 2.7 s (8B INT4, M3 16 GB)"]
+
+    T0a -->|"squish compress · ~5–19 min"| T0b
+    T0b -->|"squish compress --int3 · extra pass"| T0c
+    T0c -->|"first run: reconstruct + save · ~2 s"| T1
+    T1 -->|"first run: saved post-load"| T2
+
+    classDef native fill:#1e293b,stroke:#475569,color:#e2e8f0;
+    classDef quant fill:#312e3f,stroke:#7c3aed,color:#ede9fe;
+    classDef fast fill:#0f2e2a,stroke:#10b981,color:#d1fae5;
+    class T0a native;
+    class T0b,T0c quant;
+    class T1,T2 fast;
 ```
 
 ### Why does Tier 2 load so much faster?
@@ -326,10 +293,10 @@ of magnitude faster and using 15× less RAM during the load phase** (against a t
 
 - **[The paper](paper.md)** — full methodology, thermal-controlled benchmarks
   (§4.4), accuracy gates, and the decode-acceleration ablation.
-- **[Benchmarks](../BENCHMARKS.md)** — reproducible numbers with commands.
-- **[Module reference](../MODULES.md)** — the 100+ composable optimisation modules.
+- **[Benchmarks](https://github.com/konjoai/squish/blob/main/BENCHMARKS.md)** — reproducible numbers with commands.
+- **[Module reference](https://github.com/konjoai/squish/blob/main/MODULES.md)** — the 100+ composable optimisation modules.
 
 ---
 
-*Squish is source-available under [BUSL-1.1](../LICENSE) — free for personal and
+*Squish is source-available under [BUSL-1.1](https://github.com/konjoai/squish/blob/main/LICENSE) — free for personal and
 non-production use.*
