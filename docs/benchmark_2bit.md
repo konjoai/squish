@@ -128,6 +128,6 @@ Results are written to `dev/results/quant_2bit_comparison.json`.
 
 ## See Also
 
-- [`CHANGELOG.md`](../CHANGELOG.md) — version history and shipped phases
+- [`CHANGELOG.md`](https://github.com/konjoai/squish/blob/main/CHANGELOG.md) — version history and shipped phases
 - VPTQ / QuIP# — experimental 2-bit paths, not in the shipped tree
 - Raw results: `dev/results/quant_2bit_comparison.json` (generated locally)

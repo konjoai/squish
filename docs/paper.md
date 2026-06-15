@@ -133,7 +133,7 @@ lm_eval --model squish \
 ### 4.3 Module Micro-Benchmarks
 
 CPU/numpy micro-benchmarks for the 100+ modules are catalogued in
-[`MODULES.md`](../MODULES.md), the per-wave module reference.
+[`MODULES.md`](https://github.com/konjoai/squish/blob/main/MODULES.md), the per-wave module reference.
 
 Those figures are **CPU micro-benchmark latencies** (no GPU, no model weights needed). They quantify algorithmic overhead only. The improvement numbers (e.g. "4.2× KV memory reduction") are technique-level estimates derived from the cited papers and represent what is achievable for the core technique under ideal conditions; full end-to-end validation on a running Squish server with a real model requires hardware and is reported in §4.4.
 
