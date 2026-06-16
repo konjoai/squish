@@ -18,9 +18,10 @@ import { ObservabilityPanel } from "./views/ObservabilityPanel";
 import { StartupProfile } from "./views/StartupProfile";
 import { SectionNav } from "./components/SectionNav";
 import {
-  chatStream, fetchHealth, fetchMetrics, fetchQuality, fetchSysStats, fetchModelStatus,
+  chatStream, agentRun, fetchHealth, fetchMetrics, fetchQuality, fetchSysStats, fetchModelStatus,
   fetchObsReport, summarizeMetricsText,
 } from "./lib/api";
+import { applyAgentEvent } from "./lib/agent";
 import {
   MOCK_HEALTH, MOCK_PROM_TEXT, MOCK_QUALITY, MOCK_SYS_STATS, MOCK_MODEL_STATUS, MOCK_OBS_REPORT,
 } from "./lib/mock";
@@ -63,6 +64,7 @@ export default function App() {
   const [active, setActive] = useState<ChatTurn | null>(null);
   const [streaming, setStreaming] = useState<boolean>(false);
   const [chatFromMock, setChatFromMock] = useState<boolean>(false);
+  const [agentMode, setAgentMode] = useState<boolean>(false);
 
   const [health, setHealth] = useState<HealthResponse>(MOCK_HEALTH);
   const [metrics, setMetrics] = useState<CockpitMetrics>(EMPTY_METRICS);
@@ -111,6 +113,7 @@ export default function App() {
   }, []);
 
   const send = () => {
+    if (agentMode) { sendAgent(); return; }
     cancelRef.current?.();
     if (prompt.trim().length === 0) return;
     const userTurn: ChatTurn = {
@@ -180,6 +183,55 @@ export default function App() {
     setPrompt("");
   };
 
+  // Agentic chat: route the prompt through POST /v1/agent/run so the model
+  // can call tools, and stream the live tool-execution timeline into the turn.
+  const sendAgent = () => {
+    cancelRef.current?.();
+    if (prompt.trim().length === 0) return;
+    const userTurn: ChatTurn = { id: `u-${Date.now()}`, role: "user", content: prompt.trim() };
+    const assistantTurn: ChatTurn = { id: `a-${Date.now()}`, role: "assistant", content: "", steps: [] };
+    setTurns((t) => [...t, userTurn]);
+    setActive(assistantTurn);
+    setStreaming(true);
+    setLiveTps(undefined);
+    const startedAt = performance.now();
+
+    const messages = [
+      ...turns.map((t) => ({ role: t.role, content: t.content })),
+      { role: userTurn.role, content: userTurn.content },
+    ];
+    const handle = agentRun(
+      { messages, max_steps: 8, max_tokens: 768, temperature: 0.4 },
+      (ev, opts) => {
+        setChatFromMock(opts.fromMock);
+        setAgentFromMock(opts.fromMock);
+        if (ev.type === "done" || ev.type === "error") return;
+        setActive((cur) => {
+          if (!cur) return cur;
+          const steps = applyAgentEvent(cur.steps ?? [], ev);
+          const totalS = (performance.now() - startedAt) / 1000;
+          return { ...cur, steps, totalS };
+        });
+      },
+    );
+    cancelRef.current = handle.cancel;
+    handle.done.then((res) => {
+      const totalS = (performance.now() - startedAt) / 1000;
+      setActive((cur) => {
+        if (!cur) return null;
+        // The model's final answer is the text of the last (tool-free) step.
+        const lastText = (cur.steps ?? []).filter((s) => s.calls.length === 0).map((s) => s.text).join("").trim();
+        const finalised: ChatTurn = { ...cur, content: lastText, totalS, fromMock: res.fromMock };
+        setTurns((arr) => [...arr, finalised]);
+        return null;
+      });
+      setStreaming(false);
+      setLiveTps(undefined);
+    }).catch(() => { setStreaming(false); setLiveTps(undefined); });
+
+    setPrompt("");
+  };
+
   const clearConvo = () => {
     cancelRef.current?.();
     setTurns([]);
@@ -218,7 +270,9 @@ export default function App() {
               onSubmit={send}
               onClear={clearConvo}
               disabled={streaming}
-              submitLabel={streaming ? "streaming…" : "send"}
+              submitLabel={streaming ? (agentMode ? "running…" : "streaming…") : agentMode ? "run agent" : "send"}
+              agentMode={agentMode}
+              onAgentModeChange={setAgentMode}
             />
           </div>
           <ThroughputCard health={health} liveTps={liveTps} />

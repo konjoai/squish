@@ -76,6 +76,11 @@ export interface ChatTurn {
   totalS?: number;
   finishReason?: string;
   fromMock?: boolean;
+  /**
+   * For agentic assistant turns (agent mode): the live tool-execution
+   * timeline streamed from POST /v1/agent/run. Rendered inline in the chat.
+   */
+  steps?: AgentStep[];
 }
 
 export type StreamState = "idle" | "streaming" | "done" | "error";
