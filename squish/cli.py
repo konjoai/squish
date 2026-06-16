@@ -1131,6 +1131,78 @@ def cmd_setup(args):  # pragma: no cover
 
 # ── squish run ────────────────────────────────────────────────────────────────
 
+_DOCTOR_MARKER = Path.home() / ".squish" / ".doctor_ok"
+
+
+def _first_run_health_gate(args) -> None:
+    """Run environment health checks once per installed version on `squish run`.
+
+    Decision table (``ok`` = no REQUIRED check failed; optional checks never
+    affect ``ok``, proceed, or the marker):
+
+    | marker state           | SKIP | checks run | proceeds | marker written |
+    |------------------------|------|------------|----------|----------------|
+    | absent                 | no   | yes        | iff ok   | iff ok         |
+    | == __version__         | no   | no         | yes      | unchanged      |
+    | != __version__ (stale) | no   | yes        | iff ok   | iff ok         |
+    | any                    | yes  | no         | yes      | unchanged      |
+
+    On a required-check failure this prints the failures + fixes and calls
+    ``_die`` (SystemExit) WITHOUT writing the marker. Bypass entirely with
+    ``--skip-doctor`` or ``SQUISH_SKIP_DOCTOR``.
+    """
+    if bool(os.environ.get("SQUISH_SKIP_DOCTOR")) or getattr(args, "skip_doctor", False):
+        return
+
+    from squish import __version__ as _sq_ver  # noqa: PLC0415
+
+    marker = _DOCTOR_MARKER
+    try:
+        marker_ver = marker.read_text().strip() if marker.exists() else ""
+    except OSError:
+        marker_ver = ""
+    if marker_ver == _sq_ver:
+        # Already health-checked on this exact version — zero check work.
+        return
+
+    ok, results = run_health_checks()
+    if not ok:
+        failed = [r for r in results if not r["passed"] and not r["optional"]]
+        print()
+        for r in failed:
+            print(f"  {_C.PK}✗{_C.R}  {r['label']}")
+            if r["fix"]:
+                print(f"       {_C.DIM}Fix:{_C.R} {r['fix']}")
+        print("\n  Run `squish doctor` for detail.\n")
+        # Do NOT write the marker on failure.
+        _die(
+            "Environment checks failed — fix the issues above, "
+            "or pass --skip-doctor / set SQUISH_SKIP_DOCTOR=1 to bypass"
+        )
+
+    # Full pass: a single dim one-liner, not the full doctor table.
+    try:
+        from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+    except Exception:  # pragma: no cover
+        _rich = False
+    _msg = f"Environment checks passed ({_sq_ver}) — run `squish doctor` for detail"
+    if _rich:
+        _con.print(f"  [squish.dim]✓ {_msg}[/]")
+    else:
+        print(f"  {_C.DIM}✓ {_msg}{_C.R}")
+
+    # Persist the marker atomically (tmp file + os.replace) so the checks never
+    # run again for this version.
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        tmp = marker.parent / f".doctor_ok.{os.getpid()}.tmp"
+        tmp.write_text(_sq_ver)
+        os.replace(tmp, marker)
+    except OSError as werr:
+        import logging
+        logging.warning("could not write doctor marker %s: %s", marker, werr)
+
+
 def cmd_run(args):  # pragma: no cover
     """Start the Squish inference server (or one-shot via squishd)."""
 
@@ -1173,6 +1245,12 @@ def cmd_run(args):  # pragma: no cover
                 file=sys.stderr,
             )
             # Fall through; the spawned server below will handle the request
+
+    # ── First-run health gate (folds `squish doctor` into `squish run`) ───────
+    # Runs the dependency / environment checks ONCE per installed version,
+    # BEFORE any model resolution / auto-pull / server spawn — so a broken
+    # environment fails fast, before downloading multi-GB weights.
+    _first_run_health_gate(args)
 
     # ── Detect other local AI services ───────────────────────────────────────
     _local_services = _detect_local_ai_services()
@@ -6267,6 +6345,9 @@ Ollama drop-in:
     p_run.add_argument("--min-accuracy-ratio", type=float, default=0.92,
                        help="Minimum accuracy ratio vs baseline before compliance fails "
                             "(default: 0.92 = 8pp drop). Example: squish run 7b --min-accuracy-ratio 0.90")
+    p_run.add_argument("--skip-doctor", dest="skip_doctor", action="store_true", default=False,
+                       help="Skip the first-run environment health check (also via "
+                            "SQUISH_SKIP_DOCTOR=1). Checks otherwise run once per version.")
     p_run.set_defaults(func=cmd_run)
 
     # ── serve (alias for run) ──
@@ -6369,6 +6450,9 @@ Ollama drop-in:
     p_serve.add_argument("--min-accuracy-ratio", type=float, default=0.92,
                          help="Minimum accuracy ratio vs baseline before compliance fails "
                               "(default: 0.92 = 8pp drop). Example: squish serve 7b --min-accuracy-ratio 0.90")
+    p_serve.add_argument("--skip-doctor", dest="skip_doctor", action="store_true", default=False,
+                         help="Skip the first-run environment health check (also via "
+                              "SQUISH_SKIP_DOCTOR=1). Checks otherwise run once per version.")
     p_serve.set_defaults(func=cmd_run)
 
     # ── chat ──

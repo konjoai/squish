@@ -5,6 +5,28 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.2] — First-run health gate folds `squish doctor` into `squish run`
+
+### Added
+- **`squish run` now runs the environment health checks once per installed
+  version on first invocation.** This collapses onboarding from
+  `brew install → squish doctor → squish run` to just `brew install → squish run`.
+  The checks run *before* any model resolution / auto-pull / server spawn, so a
+  broken environment fails fast — before downloading multi-GB weights. After a
+  successful check on a given version they never run again until the version
+  changes (tracked via `~/.squish/.doctor_ok`, written atomically on pass only).
+- **Bypass with `--skip-doctor` (on `run`/`serve`) or `SQUISH_SKIP_DOCTOR=1`.**
+  On a full pass the gate prints a single dim one-liner; on failure it lists the
+  failing checks + fixes and points to `squish doctor` for detail.
+
+### Changed
+- **Extracted `run_health_checks() -> (ok, results)` as the single source of
+  truth** for both `squish doctor` and the first-run gate. `squish doctor`
+  output is unchanged (byte-for-byte) — a pure refactor of where the check data
+  comes from, not what is shown.
+
+---
+
 ## [9.34.1] — Fix `squish pull` crash on INT4 compression (issue #37)
 
 ### Fixed
