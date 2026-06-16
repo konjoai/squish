@@ -21,13 +21,13 @@
   ],
   "links": {
     "home": { "uri": "https://squishai.com" },
-    "repository": { "uri": "https://github.com/squishai/squish" },
-    "issues": { "uri": "https://github.com/squishai/squish/issues" },
-    "license": { "uri": "https://github.com/squishai/squish/blob/main/LICENSE" }
+    "repository": { "uri": "https://github.com/konjoai/squish" },
+    "issues": { "uri": "https://github.com/konjoai/squish/issues" },
+    "license": { "uri": "https://github.com/konjoai/squish/blob/main/LICENSE" }
   },
   "repository": {
     "type": "git",
-    "uri": "https://github.com/squishai/squish"
+    "uri": "https://github.com/konjoai/squish"
   },
   "badges": [],
   "contributions": [

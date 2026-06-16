@@ -6,7 +6,7 @@ Get from zero to a running 8B chat model in under two minutes.
 
 ## 1. Pull a model
 
-Squish downloads pre-compressed INT8 weights from the [squishai](https://huggingface.co/squishai) HuggingFace org:
+Squish downloads pre-compressed weights from the [squishai](https://huggingface.co/squishai) HuggingFace org:
 
 ```bash
 squish pull llama3.1:8b
@@ -75,7 +75,7 @@ The server binds to `http://localhost:11435` by default and is **OpenAI-compatib
 
     client = OpenAI(
         base_url="http://localhost:11435/v1",
-        api_key="squish",  # squish requires this default API key
+        api_key="squish",  # any string works; no key is enforced unless you start with --api-key
     )
 
     response = client.chat.completions.create(
@@ -132,5 +132,5 @@ squish rm llama3.1:8b   # delete a model
 ## Next steps
 
 - [API Reference](api.md) — full endpoint documentation  
-- [Architecture](architecture.md) — how INT8 mmap compression works  
+- [Architecture](ARCHITECTURE.md) — how INT4/INT3 compression works  
 - [Contributing](contributing.md) — add a model, fix a bug, write a test  

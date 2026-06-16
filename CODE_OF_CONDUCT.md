@@ -59,7 +59,7 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement via the
-[GitHub Security contact page](https://github.com/wesleyscholl/squish/security/advisories/new)
+[GitHub Security contact page](https://github.com/konjoai/squish/security/advisories/new)
 or by emailing the maintainer directly. All complaints will be reviewed and
 investigated promptly and fairly.
 

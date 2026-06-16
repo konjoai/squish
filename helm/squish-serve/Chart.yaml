@@ -16,7 +16,7 @@ keywords:
   - openai
 maintainers:
   - name: Squish AI
-    url: https://github.com/squishai/squish
-home: https://github.com/squishai/squish
+    url: https://github.com/konjoai/squish
+home: https://github.com/konjoai/squish
 sources:
-  - https://github.com/squishai/squish
+  - https://github.com/konjoai/squish

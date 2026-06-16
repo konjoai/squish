@@ -216,7 +216,7 @@ def banner() -> None:
     try:
         from squish import __version__ as _ver
     except Exception:
-        _ver = "9.0.0"
+        _ver = "unknown"
 
     if _RICH_AVAILABLE:
         logo_image()

@@ -6,7 +6,7 @@ Implemented in Rust with Rayon parallel processing and PyO3 Python bindings.
 
 ## Performance
 
-- **8–12 GB/s** sustained quantization throughput (Apple Silicon M-series)
+- ~6 GB/s sustained quantization throughput (Apple Silicon M-series)
 - **5–8×** faster than vectorized numpy baseline (~1.5 GB/s)
 - 14B model (29.6 GB bf16): ~3s vs ~16s with numpy
 

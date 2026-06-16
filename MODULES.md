@@ -1,6 +1,8 @@
 # Squish Module Reference
 
-> Updated through Wave 95 (v68.0.0). For waves 1–28, see the historical record below.
+> Historical per-wave module log. "Wave" numbers and the old `vNN.0.0` scheme are
+> the internal development cadence; the current public release is **v9.34.1** (see
+> [CHANGELOG.md](CHANGELOG.md)). For waves 1–28, see the historical record below.
 
 ---
 
@@ -351,7 +353,7 @@ python dev/benchmarks/bench_wave27_28.py [--runs N] [--vocab N] [--output path]
 ```
 
 Results saved to `dev/results/wave27_28_bench.json`.
-Reference table: [docs/benchmark_wave27_28.md](docs/benchmark_wave27_28.md).
+Reference table: see the per-wave entries below.
 
 ---
 

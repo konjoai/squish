@@ -45,6 +45,10 @@ npm run typecheck    # tsc -b --noEmit
 | `src/views/MetaInspector.tsx` | Source labels for every pane (live vs mock) |
 | `src/components/AnimatedNumber.tsx` | Count-up tween for live telemetry values |
 | `src/components/SectionNav.tsx` | Sticky right-rail scroll-spy navigator |
+| `src/components/CommandPalette.tsx` | ⌘K palette — fuzzy jump to any section / run actions |
+| `src/lib/fuzzy.ts` | Pure fuzzy subsequence matcher + ranker (testable) |
+| `src/lib/persist.ts` | localStorage conversation persistence (load/save/clear, validated) |
+| `src/lib/export.ts` | Pure conversation exporters → Markdown / JSON (⌘K actions) |
 | `src/lib/types.ts` | TS mirrors of chat + health + metrics + benchmark + agent + tokenize + quality + embeddings + sys-stats |
 | `src/lib/api.ts` | chatStream + fetch{Health,Metrics,Quality,SysStats,ModelStatus} + benchmarkKV + agentRun + fetchAgentTools + tokenizeText + embedText |
 | `src/lib/agent.ts` | Pure AgentEvent → AgentStep[] reducer (testable) |
@@ -73,6 +77,3 @@ npm run typecheck    # tsc -b --noEmit
 - New backend shape? Mirror types in [src/lib/types.ts](./src/lib/types.ts), add a mock fixture, then add the API method to [src/lib/api.ts](./src/lib/api.ts) with a mock fallback.
 - Future backend lift: when squish exposes per-token KV-mode flags or per-stage latency breakdown, the dashboard's typed slots are ready — only the wire format changes.
 - New design token? Add to `@konjoai/ui` (so all flagships inherit), not here.
-
-## Sprint context
-This is **Sprint 4** of the 10-sprint Konjo UI Initiative. Sprint 0 = `@konjoai/ui` foundation. Sprint 1 = squash Compliance Bridge. Sprint 2 = miru Mind of the Machine. Sprint 3 = kairu Speed Cockpit. Sprint 5 = kyro RAG Observatory (next).

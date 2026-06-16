@@ -11,7 +11,7 @@ Squish exposes a fully OpenAI-compatible API at `http://localhost:11435/v1`, so 
 ### 1. Start Squish
 
 ```bash
-squish serve qwen3:8b
+squish serve qwen2.5:7b
 ```
 
 The server starts on `http://localhost:11435` by default. It exposes:
@@ -26,7 +26,7 @@ In your OpenClaw config file (usually `~/.openclaw/config.json` or the project-l
 ```json
 {
   "agent": {
-    "model": "openai/qwen3:8b",
+    "model": "openai/qwen2.5:7b",
     "openaiBaseUrl": "http://localhost:11435/v1",
     "apiKey": "squish"
   }
@@ -47,22 +47,22 @@ OpenClaw will route all model calls through Squish.
 
 ## Recommended Model
 
-**Qwen3-8B INT4** is the recommended model for OpenClaw tool-use workflows:
+**Qwen2.5-7B INT3** is the recommended model for OpenClaw tool-use workflows:
 
 | Model | RAM | TTFT | Tool use |
 |-------|-----|------|----------|
-| `qwen3:8b` INT4 | ~5.5 GB | < 600 ms | ✓ Reliable |
-| `qwen3:4b` INT4 | ~2.5 GB | < 300 ms | ✓ Good |
+| `qwen2.5:7b` INT4 | ~5.5 GB | < 600 ms | ✓ Reliable |
+| `qwen2.5:7b` INT4 | ~2.5 GB | < 300 ms | ✓ Good |
 | `qwen2.5:1.5b` INT4 | ~1.0 GB | < 200 ms | ~ Limited |
 
-Anything below 4B parameters has unreliable structured JSON / tool-call output. For multi-step agent loops requiring consistent tool-use, use `qwen3:8b` or larger.
+Anything below 4B parameters has unreliable structured JSON / tool-call output. For multi-step agent loops requiring consistent tool-use, use `qwen2.5:7b` or larger.
 
 ---
 
 ## Using a Custom Port
 
 ```bash
-squish run qwen3:8b
+squish run qwen2.5:7b
 ```
 
 ```json
@@ -78,7 +78,7 @@ squish run qwen3:8b
 ## Using a Private API Key
 
 ```bash
-squish serve qwen3:8b --api-key mysecretkey
+squish serve qwen2.5:7b --api-key mysecretkey
 ```
 
 ```json
@@ -106,4 +106,4 @@ Squish supports server-sent events (SSE) streaming (`"stream": true`). OpenClaw 
 
 **Slow first response** — On the first run after compression, Squish builds an optimised weight cache. Subsequent starts load in 3–5 seconds.
 
-**Tool calls return malformed JSON** — This is a model-capability issue, not a Squish or OpenClaw bug. Switch to `qwen3:8b` or a larger model. See [Model Capability Reality Checks](../ARCHITECTURE.md).
+**Tool calls return malformed JSON** — This is a model-capability issue, not a Squish or OpenClaw bug. Switch to `qwen2.5:7b` or a larger model. See [Model Capability Reality Checks](../ARCHITECTURE.md).

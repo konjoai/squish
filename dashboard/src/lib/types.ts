@@ -1,6 +1,6 @@
 /**
  * TypeScript types mirroring squish's API contract.
- * Source of truth lives in /Users/wesleyscholl/squish/squish/server.py.
+ * Source of truth lives in squish/server.py.
  */
 
 export type ChatRole = "system" | "user" | "assistant";

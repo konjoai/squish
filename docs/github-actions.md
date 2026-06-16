@@ -61,7 +61,7 @@ jobs:
 You can call these actions from external repositories by referencing this repo path and ref:
 
 ```yaml
-uses: squishai/squish/.github/actions/squash-attest@main
+uses: konjoai/squish/.github/actions/squash-attest@main
 ```
 
 Pin to a commit SHA or release tag in production workflows.

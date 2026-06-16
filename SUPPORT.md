@@ -2,12 +2,12 @@
 
 ## Documentation
 
-The fastest way to find answers is the [official documentation](https://konjoai.github.io/squish):
+The fastest way to find answers is the [official documentation](https://squish.run):
 
-- [Installation guide](https://konjoai.github.io/squish/install/)
-- [Quickstart](https://konjoai.github.io/squish/quickstart/)
-- [API reference](https://konjoai.github.io/squish/api/)
-- [Architecture overview](https://konjoai.github.io/squish/ARCHITECTURE/)
+- [Installation guide](https://squish.run/install/)
+- [Quickstart](https://squish.run/quickstart/)
+- [API reference](https://squish.run/api/)
+- [Architecture overview](https://squish.run/ARCHITECTURE/)
 
 ---
 

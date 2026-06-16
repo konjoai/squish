@@ -39,7 +39,7 @@ you can see SNR and memory at every tier — no model download, no GPU.
 - {KV_INT2_AUTO_THRESHOLD:,} – {KV_INT4_DEFAULT_THRESHOLD:,} tokens → **int4** (balanced, ~3.76× compression)
 - > {KV_INT4_DEFAULT_THRESHOLD:,} tokens → **int2** (long-context, ~7.11× compression)
 
-→ [GitHub](https://github.com/squishai/squish) · [PyPI](https://pypi.org/project/squish-ai/) · [Docs](https://squish.ai)
+→ [GitHub](https://github.com/konjoai/squish) · [PyPI](https://pypi.org/project/squish-ai/) · [Docs](https://squish.ai)
 """
 
 
@@ -221,7 +221,7 @@ def build_demo() -> gr.Blocks:
             "---\n"
             "Built with `squish.kv.kv_cache` — the same codecs that ship in "
             "`pip install squish`. Source: "
-            "[github.com/squishai/squish/tree/main/spaces](https://github.com/squishai/squish/tree/main/spaces)."
+            "[github.com/konjoai/squish/tree/main/spaces](https://github.com/konjoai/squish/tree/main/spaces)."
         )
 
     return demo

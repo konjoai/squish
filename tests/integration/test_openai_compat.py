@@ -7,7 +7,7 @@ Tests call squish.server functions directly (not via HTTP) to avoid needing
 a live server. Mocks/stubs are used where actual model inference is needed.
 
 Run with:
-    /Users/wscholl/.pyenv/versions/3.12.7/envs/squish/bin/pytest \
+    pytest \
         tests/integration/test_openai_compat.py -v --tb=short
 """
 from __future__ import annotations
