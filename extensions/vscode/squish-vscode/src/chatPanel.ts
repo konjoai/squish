@@ -397,10 +397,17 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const temperature: number = cfg.get('temperature', 0.7);
         const systemPrompt: string = cfg.get('systemPrompt', '');
 
-        // Build message list
+        // Build message list. The workspace-context message is injected fresh
+        // each turn (active file, selection, diagnostics, open tabs) and is NOT
+        // persisted to history — so the agent always sees the live editor state
+        // without bloating the saved conversation.
         const messages: ChatMessage[] = [];
         if (systemPrompt) {
             messages.push({ role: 'system', content: systemPrompt });
+        }
+        const ctx = this._workspaceContextMessage();
+        if (ctx) {
+            messages.push(ctx);
         }
         messages.push(...this._history);
         messages.push({ role: 'user', content: text });
@@ -429,6 +436,72 @@ export class ChatPanel implements vscode.WebviewViewProvider {
      * Execute the full agentic tool-calling loop.
      * The model may request 0 or more tool calls before producing a final answer.
      */
+    /**
+     * A system message describing the live editor state, so the agent reasons
+     * with the same context the user sees — active file, selection, the
+     * diagnostics on screen, and the other open tabs. Returns null when there's
+     * nothing useful to report (e.g. no editor open).
+     */
+    private _workspaceContextMessage(): ChatMessage | null {
+        // Auxiliary context — must never throw, even if an editor API is
+        // unavailable. Any failure simply yields no context.
+        try {
+            const parts: string[] = [];
+            const editor = vscode.window.activeTextEditor;
+            const folders = vscode.workspace.workspaceFolders;
+            const root = folders?.[0]?.uri.fsPath;
+            const rel = (uri: vscode.Uri): string =>
+                root ? path.relative(root, uri.fsPath) : uri.fsPath;
+
+            if (editor) {
+                const doc = editor.document;
+                parts.push(`Active file: ${rel(doc.uri)} (${doc.languageId})`);
+                const sel = editor.selection;
+                if (sel && !sel.isEmpty) {
+                    const selected = doc.getText(sel);
+                    const clipped = selected.length > 2000 ? selected.slice(0, 2000) + '\n…(truncated)' : selected;
+                    parts.push(`Selected (lines ${sel.start.line + 1}-${sel.end.line + 1}):\n\`\`\`${doc.languageId}\n${clipped}\n\`\`\``);
+                } else if (sel) {
+                    parts.push(`Cursor at line ${sel.active.line + 1}`);
+                }
+                const getDiagnostics = vscode.languages?.getDiagnostics;
+                const diags = (getDiagnostics ? getDiagnostics(doc.uri) : [])
+                    .filter((d) => d.severity <= vscode.DiagnosticSeverity.Warning)
+                    .slice(0, 10)
+                    .map((d) => {
+                        const sev = d.severity === vscode.DiagnosticSeverity.Error ? 'ERROR' : 'WARN';
+                        return `  [${sev} L${d.range.start.line + 1}] ${d.message}`;
+                    });
+                if (diags.length > 0) {
+                    parts.push(`Diagnostics:\n${diags.join('\n')}`);
+                }
+            }
+
+            const tabGroups = vscode.window.tabGroups?.all ?? [];
+            const openTabs = tabGroups
+                .flatMap((g) => g.tabs ?? [])
+                .map((t) => (t.input as { uri?: vscode.Uri } | undefined)?.uri)
+                .filter((u): u is vscode.Uri => u != null)
+                .map(rel);
+            const uniqueTabs = [...new Set(openTabs)].slice(0, 20);
+            if (uniqueTabs.length > 0) {
+                parts.push(`Open files: ${uniqueTabs.join(', ')}`);
+            }
+
+            if (parts.length === 0) {
+                return null;
+            }
+            return {
+                role: 'system',
+                content:
+                    'Current workspace context (live — use it to reason; call tools to act):\n' +
+                    parts.join('\n'),
+            };
+        } catch {
+            return null;
+        }
+    }
+
     private _runToolLoop(
         client: SquishClient,
         messages: ChatMessage[],
@@ -749,9 +822,44 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             if (answer !== 'Overwrite') {
                 return 'Cancelled.';
             }
+            // Live, undoable whole-document replace via WorkspaceEdit so an
+            // already-open editor stays in sync and the change can be undone.
+            const doc = await vscode.workspace.openTextDocument(abs);
+            const fullRange = new vscode.Range(
+                doc.positionAt(0),
+                doc.positionAt(doc.getText().length),
+            );
+            const we = new vscode.WorkspaceEdit();
+            we.replace(abs, fullRange, content);
+            const ok = await vscode.workspace.applyEdit(we);
+            if (!ok) {
+                throw new Error(`Edit to ${relativePath} was rejected by the editor`);
+            }
+            await doc.save();
+            await this._revealEdit(doc, doc.positionAt(0));
+            return `Updated (live, undoable): ${relativePath}`;
         }
-        await vscode.workspace.fs.writeFile(abs, Buffer.from(content, 'utf8'));
-        return exists ? `Updated: ${relativePath}` : `Created: ${relativePath}`;
+        // New file: create via WorkspaceEdit so it joins the undo stack, then reveal.
+        const we = new vscode.WorkspaceEdit();
+        we.createFile(abs, { overwrite: false, contents: Buffer.from(content, 'utf8') });
+        const ok = await vscode.workspace.applyEdit(we);
+        if (!ok) {
+            // Fall back to a plain write if the file appeared between stat and edit.
+            await vscode.workspace.fs.writeFile(abs, Buffer.from(content, 'utf8'));
+        }
+        const doc = await vscode.workspace.openTextDocument(abs);
+        await this._revealEdit(doc, doc.positionAt(0));
+        return `Created: ${relativePath}`;
+    }
+
+    /** Reveal a freshly-edited document so the user sees the change land. */
+    private async _revealEdit(doc: vscode.TextDocument, at: vscode.Position): Promise<void> {
+        try {
+            const editor = await vscode.window.showTextDocument(doc, { preview: false });
+            editor.revealRange(new vscode.Range(at, at), vscode.TextEditorRevealType.InCenter);
+        } catch {
+            /* revealing is best-effort — the edit already applied */
+        }
     }
 
     private async _toolListDirectory(relativePath: string): Promise<string> {
@@ -775,8 +883,9 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             throw new Error('No workspace open');
         }
         const abs = vscode.Uri.joinPath(folders[0].uri, relativePath);
-        const bytes = await vscode.workspace.fs.readFile(abs);
-        const src = Buffer.from(bytes).toString('utf8');
+        // Operate on the document model so an open editor updates live.
+        const doc = await vscode.workspace.openTextDocument(abs);
+        const src = doc.getText();
         const count = src.split(oldText).length - 1;
         if (count === 0) {
             throw new Error(`old_text not found in ${relativePath}`);
@@ -784,9 +893,17 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         if (count > 1) {
             throw new Error(`old_text is ambiguous — found ${count} occurrences in ${relativePath}`);
         }
-        const next = src.replace(oldText, newText);
-        await vscode.workspace.fs.writeFile(abs, Buffer.from(next, 'utf8'));
-        return `Applied edit to ${relativePath}`;
+        const idx = src.indexOf(oldText);
+        const range = new vscode.Range(doc.positionAt(idx), doc.positionAt(idx + oldText.length));
+        const we = new vscode.WorkspaceEdit();
+        we.replace(abs, range, newText);
+        const ok = await vscode.workspace.applyEdit(we);
+        if (!ok) {
+            throw new Error(`Edit to ${relativePath} was rejected by the editor`);
+        }
+        await doc.save();
+        await this._revealEdit(doc, doc.positionAt(idx));
+        return `Applied edit to ${relativePath} (live, undoable)`;
     }
 
     private async _toolSearchWorkspace(query: string, glob?: string, isRegex = false): Promise<string> {

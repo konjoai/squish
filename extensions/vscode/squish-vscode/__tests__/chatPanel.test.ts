@@ -492,11 +492,11 @@ describe('ChatPanel', () => {
         );
 
         const { workspace } = require('vscode') as typeof import('vscode') & {
-            workspace: { fs: { stat: jest.Mock; writeFile: jest.Mock }; _setWorkspaceFolders: (f: unknown[]) => void };
+            workspace: { fs: { stat: jest.Mock; writeFile: jest.Mock }; applyEdit: jest.Mock; _setWorkspaceFolders: (f: unknown[]) => void };
         };
         // stat throws → file does not exist (new file)
         workspace.fs.stat.mockRejectedValueOnce(new Error('not found'));
-        workspace.fs.writeFile.mockResolvedValueOnce(undefined);
+        workspace.applyEdit.mockResolvedValueOnce(true);
         workspace._setWorkspaceFolders([{ uri: { fsPath: '/ws', toString: () => '/ws' } }]);
 
         let callCount = 0;
@@ -525,12 +525,55 @@ describe('ChatPanel', () => {
         messageHandler?.({ type: 'userMessage', text: 'write file' });
         await new Promise(r => setTimeout(r, 50));
 
-        expect(workspace.fs.writeFile).toHaveBeenCalled();
+        // New files are now created via a live WorkspaceEdit (joins the undo
+        // stack) rather than a raw disk write.
+        expect(workspace.applyEdit).toHaveBeenCalled();
         const toolEndMsg = postMessage.mock.calls.find(
             ([m]: [{ type: string }]) => m.type === 'toolCallEnd'
         );
         expect(toolEndMsg).toBeDefined();
         expect(toolEndMsg![0].result).toContain('Created');
+    });
+
+    test('agent loop injects live workspace context as a system message', async () => {
+        const postMessage = jest.fn();
+        const panel = makePanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        const vsc = require('vscode') as unknown as {
+            workspace: { _setWorkspaceFolders: (f: unknown[]) => void };
+            window: { activeTextEditor: unknown };
+        };
+        vsc.workspace._setWorkspaceFolders([{ uri: { fsPath: '/ws', toString: () => '/ws' } }]);
+        vsc.window.activeTextEditor = {
+            document: { uri: { fsPath: '/ws/src/app.ts' }, languageId: 'typescript', getText: () => 'const x = 1;' },
+            selection: { isEmpty: false, start: { line: 0 }, end: { line: 0 }, active: { line: 0 } },
+        };
+
+        let capturedMsgs: Array<{ role: string; content: string | null }> = [];
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (msgs, _max, _temp, _model, onChunk, _onError) => {
+                capturedMsgs = msgs as unknown as Array<{ role: string; content: string | null }>;
+                onChunk({ delta: 'ok', done: false, finishReason: null });
+                onChunk({ delta: '', done: true, finishReason: 'stop' });
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'hi' });
+        await new Promise(r => setTimeout(r, 30));
+
+        const sys = capturedMsgs.filter((m) => m.role === 'system').map((m) => m.content ?? '').join('\n');
+        expect(sys).toContain('workspace context');
+        expect(sys).toContain('src/app.ts');
+        expect(sys).toContain('typescript');
+
+        vsc.window.activeTextEditor = undefined;
     });
 
     test('write_file tool shows confirmation before overwriting and cancels', async () => {

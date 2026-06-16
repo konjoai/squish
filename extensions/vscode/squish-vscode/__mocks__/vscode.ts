@@ -25,6 +25,7 @@ const _config: Record<string, unknown> = {
 };
 
 let _workspaceFolders: Array<{ uri: { fsPath: string } }> = [];
+let _openDocText = '';
 
 const _mockConfig = {
     get: jest.fn((key: string, defaultVal?: unknown) => {
@@ -49,6 +50,15 @@ export const workspace = {
         readFile:      jest.fn().mockResolvedValue(Buffer.from('')),
     },
     textDocuments: [] as Array<{ isUntitled: boolean; uri: { scheme: string; fsPath: string } }>,
+    applyEdit: jest.fn().mockResolvedValue(true),
+    openTextDocument: jest.fn(async (uri: { fsPath?: string } = {}) => ({
+        uri,
+        languageId: 'plaintext',
+        getText: () => _openDocText,
+        positionAt: (n: number) => new Position(0, n),
+        save: jest.fn().mockResolvedValue(true),
+    })),
+    _setOpenDocText: (t: string) => { _openDocText = t; },
 };
 
 export const window = {
@@ -65,6 +75,9 @@ export const window = {
     showErrorMessage: jest.fn().mockResolvedValue(undefined),
     showWarningMessage: jest.fn().mockResolvedValue(undefined),
     showQuickPick: jest.fn().mockResolvedValue(undefined),
+    showTextDocument: jest.fn().mockResolvedValue({ revealRange: jest.fn() }),
+    activeTextEditor: undefined as unknown,
+    tabGroups: { all: [] as Array<{ tabs: Array<{ input?: { uri?: unknown } }> }> },
 };
 
 export const commands = {
@@ -112,6 +125,15 @@ export class Range {
             this.end   = new Position(end as number ?? start, endCharacter ?? 0);
         }
     }
+}
+
+export const TextEditorRevealType = { Default: 0, InCenter: 1, InCenterIfOutsideViewport: 2, AtTop: 3 };
+
+export class WorkspaceEdit {
+    replace = jest.fn();
+    insert = jest.fn();
+    delete = jest.fn();
+    createFile = jest.fn();
 }
 
 export const InlineCompletionTriggerKind = { Automatic: 0, Invoke: 1 };
