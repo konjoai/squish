@@ -4,6 +4,7 @@
 import type {
   HealthResponse, CompressBenchResult, ChatTurn, StreamedToken,
   AgentTool, AgentEvent, TokenizeResult, QualityReport,
+  EmbeddingResponse, SysStats, ModelStatus, ObsReport, StartupProfile,
 } from "./types";
 
 export const MOCK_HEALTH: HealthResponse = {
@@ -268,3 +269,101 @@ export function buildMockBenchmark(ctx_len = 2048): CompressBenchResult {
     ],
   };
 }
+
+// ── Embeddings ────────────────────────────────────────────────────────────────
+
+const MOCK_EMBED_DIM = 64;
+
+/**
+ * Deterministic hashed bag-of-words embeddings. Texts that share words land
+ * close in the space, so the cosine-similarity heatmap is meaningful offline.
+ */
+export function buildMockEmbeddings(inputs: string[]): EmbeddingResponse {
+  let total = 0;
+  const data = inputs.map((text, index) => {
+    const vec = new Array<number>(MOCK_EMBED_DIM).fill(0);
+    const words = text.toLowerCase().match(/[\w']+/g) ?? [];
+    total += words.length;
+    for (const w of words) {
+      let h = 2166136261;
+      for (let i = 0; i < w.length; i++) { h ^= w.charCodeAt(i); h = Math.imul(h, 16777619); }
+      vec[(h >>> 0) % MOCK_EMBED_DIM] += 1;
+    }
+    const norm = Math.sqrt(vec.reduce((a, x) => a + x * x, 0)) || 1;
+    return {
+      object: "embedding" as const,
+      embedding: vec.map((x) => x / norm),
+      index,
+    };
+  });
+  return {
+    object: "list",
+    model: "qwen3:8b-q4 · mock embed",
+    data,
+    usage: { prompt_tokens: total, total_tokens: total },
+  };
+}
+
+// ── System telemetry ──────────────────────────────────────────────────────────
+
+export const MOCK_SYS_STATS: SysStats = {
+  load_avg: [2.41, 2.18, 1.97],
+  process_rss_mb: 5234.6,
+  disk_used_pct: 62.4,
+  disk_free_gb: 348.2,
+  disk_total_gb: 994.7,
+  pid: 48213,
+};
+
+export const MOCK_MODEL_STATUS: ModelStatus = {
+  load_mode: "preload_async",
+  model_loaded: true,
+  model: "qwen3:8b-q4",
+  load_time_s: 8.42,
+  load_error: null,
+};
+
+// ── Observability / APM ───────────────────────────────────────────────────────
+
+export const MOCK_OBS_REPORT: ObsReport = {
+  status: "degraded",
+  bottlenecks: [
+    { op: "model.prefill", p99_ms: 412.8, mean_ms: 168.4, n_samples: 156, hint: "Prefill p99 high — consider a draft model or shorter prompts." },
+  ],
+  profile: {
+    "model.prefill":     { n_samples: 156, mean_ms: 168.4, p50_ms: 142.1, p99_ms: 412.8, p999_ms: 511.0, min_ms: 88.2, max_ms: 540.1 },
+    "model.decode_step": { n_samples: 18924, mean_ms: 20.6, p50_ms: 19.4, p99_ms: 38.2, p999_ms: 61.7, min_ms: 12.1, max_ms: 92.0 },
+    "tokenizer.encode":  { n_samples: 156, mean_ms: 3.1, p50_ms: 2.8, p99_ms: 7.4, p999_ms: 9.9, min_ms: 1.2, max_ms: 12.0 },
+    "sampler.sample":    { n_samples: 18924, mean_ms: 1.4, p50_ms: 1.2, p99_ms: 3.1, p999_ms: 4.8, min_ms: 0.6, max_ms: 6.2 },
+  },
+  profiler_ops: ["model.prefill", "model.decode_step", "tokenizer.encode", "sampler.sample"],
+  recent_spans: [
+    { id: "s1", parent_id: null, name: "chat.completion", start_ms: 0.0,   end_ms: 612.0, duration_ms: 612.0, status: "ok", error_type: null, error_message: null },
+    { id: "s2", parent_id: "s1", name: "tokenizer.encode", start_ms: 2.0,   end_ms: 5.1,   duration_ms: 3.1,   status: "ok", error_type: null, error_message: null },
+    { id: "s3", parent_id: "s1", name: "model.prefill",    start_ms: 5.5,   end_ms: 174.0, duration_ms: 168.5, status: "ok", error_type: null, error_message: null },
+    { id: "s4", parent_id: "s1", name: "model.decode",     start_ms: 174.5, end_ms: 610.0, duration_ms: 435.5, status: "ok", error_type: null, error_message: null },
+  ],
+};
+
+// ── Startup profile ───────────────────────────────────────────────────────────
+
+export const MOCK_STARTUP_PROFILE: StartupProfile = {
+  enabled: true,
+  total_ms: 8423.6,
+  phase_count: 6,
+  entries: [
+    { phase: "imports",        label: "Import torch / mlx / transformers", elapsed_ms: 612.4 },
+    { phase: "platform_probe", label: "Detect Apple Silicon + memory",     elapsed_ms: 38.9 },
+    { phase: "weights_scan",   label: "Pre-scan HF file summary",          elapsed_ms: 144.2 },
+    { phase: "model_load",     label: "Load qwen3:8b-q4 weights",          elapsed_ms: 6892.1 },
+    { phase: "warmup",         label: "Warmup forward pass",               elapsed_ms: 681.0 },
+    { phase: "server_bind",    label: "Bind FastAPI + routes",             elapsed_ms: 55.0 },
+  ],
+  slowest_5: [
+    { phase: "model_load",   label: "Load qwen3:8b-q4 weights",          elapsed_ms: 6892.1 },
+    { phase: "warmup",       label: "Warmup forward pass",               elapsed_ms: 681.0 },
+    { phase: "imports",      label: "Import torch / mlx / transformers", elapsed_ms: 612.4 },
+    { phase: "weights_scan", label: "Pre-scan HF file summary",          elapsed_ms: 144.2 },
+    { phase: "server_bind",  label: "Bind FastAPI + routes",             elapsed_ms: 55.0 },
+  ],
+};

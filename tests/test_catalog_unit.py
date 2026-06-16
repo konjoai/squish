@@ -20,10 +20,18 @@ from squish.catalog import (
 
 
 @pytest.fixture(autouse=True)
-def _stub_live_squishai_lookup(monkeypatch):
-    """has_prebuilt does a live HF lookup; force the offline-fallback path so
-    unit tests with fake squish_repo values don't depend on the network."""
-    monkeypatch.setattr("squish.catalog._fetch_squishai_model_ids", lambda: None)
+def _offline_catalog(monkeypatch):
+    """Make has_prebuilt hermetic.
+
+    ``CatalogEntry.has_prebuilt`` consults a live HuggingFace fetch
+    (``_fetch_squishai_model_ids``); with the network up, fixture entries that
+    use placeholder repos resolve to ``False``, so these tests passed offline
+    and failed online. Force the documented offline fallback (empty live set →
+    field-based result) so the property is tested deterministically.
+    """
+    monkeypatch.setattr("squish.catalog._fetch_squishai_model_ids", lambda: set())
+
+
 
 # ── CatalogEntry properties ────────────────────────────────────────────────────
 

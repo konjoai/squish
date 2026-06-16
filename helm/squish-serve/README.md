@@ -1,6 +1,6 @@
 # squish-serve Helm Chart
 
-Deploys the [Squish](https://github.com/squishai/squish) private local-inference server on Kubernetes, with optional NVIDIA GPU support, a persistent volume for model weights, and KEDA or native HPA autoscaling.
+Deploys the [Squish](https://github.com/konjoai/squish) private local-inference server on Kubernetes, with optional NVIDIA GPU support, a persistent volume for model weights, and KEDA or native HPA autoscaling.
 
 ## Requirements
 

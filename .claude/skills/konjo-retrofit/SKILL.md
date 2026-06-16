@@ -156,7 +156,7 @@ Add `ANTHROPIC_API_KEY` to GitHub Actions secrets before enabling.
 - [ ] `.konjo/deny.toml` committed
 - [ ] `.github/workflows/konjo-gate.yml` active
 
-### Pure Python (squish, kyro, miru, kairu, squash)
+### Pure Python (squish, squash)
 - [ ] `ruff check` clean; `ruff format --check` clean
 - [ ] `mypy --strict` clean (or each `# type: ignore` justified)
 - [ ] `vulture` < 5% dead code

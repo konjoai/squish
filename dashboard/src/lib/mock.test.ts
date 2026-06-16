@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   buildMockChatStream, buildMockBenchmark, MOCK_HEALTH,
   buildMockTokenize, buildMockAgentRun, MOCK_AGENT_TOOLS,
+  buildMockEmbeddings, MOCK_SYS_STATS, MOCK_MODEL_STATUS, MOCK_OBS_REPORT,
+  MOCK_STARTUP_PROFILE,
 } from "./mock";
+import { cosineSimilarity } from "./vector";
 
 describe("MOCK_HEALTH", () => {
   it("reports a loaded model with sane defaults", () => {
@@ -77,5 +80,64 @@ describe("MOCK_AGENT_TOOLS", () => {
       expect(t.type).toBe("function");
       expect(t.function.name).toMatch(/^squish_/);
     }
+  });
+});
+
+describe("buildMockEmbeddings", () => {
+  it("returns one normalized vector per input", () => {
+    const r = buildMockEmbeddings(["hello world", "foo bar baz"]);
+    expect(r.data).toHaveLength(2);
+    for (const d of r.data) {
+      const norm = Math.sqrt(d.embedding.reduce((a, x) => a + x * x, 0));
+      expect(norm).toBeCloseTo(1, 5);
+    }
+  });
+
+  it("scores semantically-overlapping texts higher than unrelated ones", () => {
+    const r = buildMockEmbeddings([
+      "the cat sat on the mat",
+      "the cat sat on the rug",
+      "quantize the kv cache to int4",
+    ]);
+    const [a, b, c] = r.data.map((d) => d.embedding);
+    expect(cosineSimilarity(a, b)).toBeGreaterThan(cosineSimilarity(a, c));
+  });
+
+  it("is deterministic", () => {
+    expect(buildMockEmbeddings(["abc def"]).data[0].embedding)
+      .toEqual(buildMockEmbeddings(["abc def"]).data[0].embedding);
+  });
+});
+
+describe("MOCK_SYS_STATS / MOCK_MODEL_STATUS", () => {
+  it("expose plausible host + load-state shapes", () => {
+    expect(MOCK_SYS_STATS.load_avg).toHaveLength(3);
+    expect(MOCK_SYS_STATS.disk_used_pct).toBeGreaterThanOrEqual(0);
+    expect(MOCK_MODEL_STATUS.model_loaded).toBe(true);
+    expect(["eager", "lazy", "preload_async"]).toContain(MOCK_MODEL_STATUS.load_mode);
+  });
+});
+
+describe("MOCK_OBS_REPORT", () => {
+  it("has per-op profile stats with p50 ≤ p99", () => {
+    for (const stats of Object.values(MOCK_OBS_REPORT.profile)) {
+      expect(stats.p50_ms).toBeLessThanOrEqual(stats.p99_ms);
+      expect(stats.n_samples).toBeGreaterThan(0);
+    }
+  });
+  it("flags at least one bottleneck with a hint", () => {
+    expect(MOCK_OBS_REPORT.bottlenecks.length).toBeGreaterThan(0);
+    expect(MOCK_OBS_REPORT.bottlenecks[0].hint.length).toBeGreaterThan(0);
+  });
+});
+
+describe("MOCK_STARTUP_PROFILE", () => {
+  it("is enabled with phases summing to roughly total_ms", () => {
+    expect(MOCK_STARTUP_PROFILE.enabled).toBe(true);
+    const sum = (MOCK_STARTUP_PROFILE.entries ?? []).reduce((a, e) => a + e.elapsed_ms, 0);
+    expect(sum).toBeCloseTo(MOCK_STARTUP_PROFILE.total_ms!, 0);
+  });
+  it("ranks model_load as the slowest phase", () => {
+    expect(MOCK_STARTUP_PROFILE.slowest_5?.[0].phase).toBe("model_load");
   });
 });

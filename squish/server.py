@@ -52,6 +52,7 @@ import functools
 import hashlib
 import hmac
 import json
+import gc
 import os
 import re
 import sys
@@ -285,6 +286,9 @@ _thinking_budget: int = -1            # -1=unlimited, 0=disable thinking, >0=tok
 _think_close_token_id: int | None = None  # ID of </think> token, resolved at model load
 # ── Phase A2: explicit MLX rotating KV cache size ────────────────────────────
 _max_kv_size: int | None = None       # None = mlx_lm default (4K); set to extend context
+_kv_bits: "int | None" = None          # native mlx_lm quantized KV cache (--kv-bits); GPU-side
+_kv_group_size: int = 64               # group size for native quantized KV (--kv-group-size)
+_quantized_kv_start: int = 0           # keep the first N tokens fp16 (--quantized-kv-start)
 # ── Phase A3: concise output mode ────────────────────────────────────────────
 _concise_responses: bool = False      # prepend concision prefix + EOS bias
 _CONCISION_PREFIX = (
@@ -306,10 +310,103 @@ _memory_governor: "Any | None" = None      # MemoryGovernor instance (macOS only
 # pass on each next() call.  Running it in a single-threaded executor keeps the
 # uvicorn event loop responsive (health checks, metrics, SSE flush) during
 # generation.  max_workers=1 is deliberate: MLX is not thread-safe.
+def _pin_inference_thread() -> None:
+    """Bias the single inference worker onto Apple-Silicon performance cores.
+
+    macOS schedules threads across P/E cores by Quality-of-Service class.  The
+    decode worker is latency-critical, so we raise its QoS to USER_INTERACTIVE
+    (the band the scheduler keeps on P-cores).  This trims the scheduling
+    jitter that shows up as decode-step p95/p99 spikes, especially when E-cores
+    would otherwise be picked under light load.  No-op off Darwin.
+    """
+    import platform  # noqa: PLC0415
+    if platform.system() != "Darwin":
+        return
+    try:
+        import ctypes  # noqa: PLC0415
+        _libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        _QOS_CLASS_USER_INTERACTIVE = 0x21
+        # int pthread_set_qos_class_self_np(qos_class_t cls, int rel_priority)
+        _libc.pthread_set_qos_class_self_np(_QOS_CLASS_USER_INTERACTIVE, 0)
+    except Exception:
+        pass  # QoS hint is best-effort; never block startup on it
+
+
 _inference_executor = concurrent.futures.ThreadPoolExecutor(
-    max_workers=1, thread_name_prefix="squish-gen"
+    max_workers=1, thread_name_prefix="squish-gen",
+    initializer=_pin_inference_thread,
 )
 _INFERENCE_STOP = object()  # sentinel returned when the sync generator is exhausted
+
+# ── Streaming decode handoff ─────────────────────────────────────────────────
+# The streaming path runs the synchronous token generator to completion in the
+# inference thread and pushes results onto an asyncio.Queue the SSE coroutine
+# drains.  This is ONE thread handoff per request instead of one per token: the
+# old ``run_in_executor`` per-token round-trip added 5-20 ms of event-loop
+# reschedule jitter to every decode step (the dominant cause of the p95 tail).
+_STREAM_DONE = object()  # producer-finished sentinel pushed onto the queue
+
+
+class _StreamError:
+    """Wraps a producer-thread exception so the consumer can re-raise it."""
+
+    __slots__ = ("exc",)
+
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+
+
+# ── Generation GC guard ───────────────────────────────────────────────────────
+# Python's cyclic GC can fire mid-decode and stall a token by 50-200 ms — this
+# is exactly the p95 spike seen in the v5.1 benchmark.  We disable the cyclic
+# collector for the duration of any in-flight generation (ref-counted so
+# overlapping requests are safe) and run one explicit collection once the last
+# generation drains.  Combined with a one-time ``gc.freeze()`` after model load
+# (see ``_freeze_heap_once``), this keeps the decode loop pause-free.
+_gc_gen_lock = threading.Lock()
+_gc_gen_active = 0
+_gc_disabled_by_guard = False
+_gc_frozen = False
+
+
+def _gen_gc_enter() -> None:
+    """Suspend cyclic GC while a generation is in flight (ref-counted)."""
+    global _gc_gen_active, _gc_disabled_by_guard
+    with _gc_gen_lock:
+        _gc_gen_active += 1
+        if _gc_gen_active == 1 and gc.isenabled():
+            gc.disable()
+            _gc_disabled_by_guard = True
+
+
+def _gen_gc_exit() -> None:
+    """Re-enable cyclic GC once the last in-flight generation completes."""
+    global _gc_gen_active, _gc_disabled_by_guard
+    with _gc_gen_lock:
+        _gc_gen_active = max(0, _gc_gen_active - 1)
+        if _gc_gen_active == 0 and _gc_disabled_by_guard:
+            gc.enable()
+            _gc_disabled_by_guard = False
+            gc.collect()
+
+
+def _freeze_heap_once() -> None:
+    """Move the loaded model + interpreter heap to GC's permanent generation.
+
+    Called once after warm-up: ``gc.freeze()`` marks every currently-tracked
+    object as permanent so subsequent collections never re-scan the (large,
+    long-lived) model graph.  This shrinks each future collection's working set
+    to just the per-request garbage, cutting pause times.
+    """
+    global _gc_frozen
+    if _gc_frozen:
+        return
+    try:
+        gc.collect()
+        gc.freeze()
+        _gc_frozen = True
+    except Exception:
+        pass
 
 
 def _iter_next(it: "Any") -> "Any":
@@ -336,6 +433,23 @@ def _collect_tokens_sync(gen: "Any") -> "list[tuple[str, str | None]]":
         if finish is not None:
             break
     return result
+
+
+def _kv_cache_compile_safe(kv_cache: "Any") -> bool:
+    """Whether the active KV cache may be wrapped in ``mx.compile``.
+
+    Quantized KV caches (KIVI int8 / snap) quantize K and V on the CPU via
+    numpy inside their per-step update — an implicit ``mx.eval()`` that is
+    illegal inside an ``mx.compile`` trace.  Compiling the decode forward over
+    such a cache raises "[eval] Attempting to eval an array during ... compile"
+    on the first decode step, which previously forced a slow double-path
+    fallback (re-running the whole request through ``stream_generate``).
+
+    A cache is compile-safe only when absent (``None``, plain fp16 path) or when
+    it explicitly advertises ``compile_safe = True``.  Numpy-quantized caches do
+    not set that attribute, so they correctly use the uncompiled forward.
+    """
+    return kv_cache is None or bool(getattr(kv_cache, "compile_safe", False))
 
 
 # ── Conflict-Resolution Routing (Phase 0) ────────────────────────────────────
@@ -748,6 +862,10 @@ class _ModelState:
     loaded_at    = 0.0
     load_time_s  = 0.0
     loader_tag   = "squish"
+    # Model compute dtype (bfloat16 for INT4 MLX builds). KV cache is restored
+    # in this dtype so attention reads a matched-dtype cache — a float16 restore
+    # decodes ~1.4x slower and promotes to float32 on the first realloc.
+    kv_dtype     = None
     requests     = 0
     tokens_gen   = 0
     # Real-time performance tracking
@@ -1148,6 +1266,24 @@ def _apply_fast_gelu(model_dir: str) -> None:  # pragma: no cover
         pass   # never block startup on activation patching
 
 
+def _infer_kv_dtype_safe(model):
+    """Return the model's compute dtype for KV restore, or None on any failure.
+
+    None preserves the legacy float16 restore path (e.g. non-MLX models or if
+    mlx is unavailable) — the dtype-cast in the restore functions is a no-op
+    when target_dtype is None.
+    """
+    try:
+        from squish.kv.prompt_kv_cache import infer_kv_dtype
+        return infer_kv_dtype(model)
+    except (ImportError, AttributeError, TypeError, ValueError) as exc:
+        _logging.getLogger(__name__).warning(
+            "[kv] could not infer model compute dtype (%s) — KV restore will use "
+            "the legacy float16 path (slower decode on bf16 models)", exc,
+        )
+        return None
+
+
 def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> None:  # pragma: no cover
     """Load the Squish compressed model into global state.
 
@@ -1219,6 +1355,7 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
 
     _state.load_time_s = elapsed
     _state.loader_tag  = loader_tag
+    _state.kv_dtype    = _infer_kv_dtype_safe(model)
     if verbose:
         _ok(f"Model ready  ({elapsed:.2f}s  loader={loader_tag})")
 
@@ -1313,6 +1450,7 @@ def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma:
     _state.loaded_at  = time.time()
     _state.load_time_s = elapsed
     _state.loader_tag  = "mlx_lm"
+    _state.kv_dtype   = _infer_kv_dtype_safe(model)
     if verbose:
         _ok(f"Model ready  ({elapsed:.2f}s  loader=mlx_lm)")
 
@@ -1423,6 +1561,7 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
                     f"{p2_note}  total={elapsed * 1000:.0f} ms)"
                     f"  path=stream_generate"
                 )
+            _freeze_heap_once()
             return
         except Exception:
             pass  # fall through to bare forward pass below
@@ -1439,6 +1578,7 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
         elapsed = time.perf_counter() - t0
         if verbose:
             _ok(f"Metal JIT warm-up  ({elapsed * 1000:.0f} ms)  path=forward-pass")
+        _freeze_heap_once()
     except Exception as _e:
         if verbose:
             _warn(f"[warmup] Skipped: {_e}")
@@ -1722,6 +1862,39 @@ def _generate_tokens(  # pragma: no cover
                 headers={"Retry-After": "5"},
             ) from exc
         return
+
+    # ── Prompt-lookup speculative decoding (greedy, opt-in via --prompt-lookup) ─
+    # Free n-gram speculation: a whole draft (looked up from the context) is
+    # verified in ONE batched forward and the KV cache rewound on rejection, so
+    # the output is token-for-token identical to greedy while repetitive text
+    # (code, JSON, repeated spans) decodes in fewer forwards.
+    #
+    # This is a standalone *pure-greedy* fast path: it manages its own cache and
+    # therefore BYPASSES babbling suppression, prefix/semantic/block caches, and
+    # the thinking-budget logic (acceptable perf/behaviour trade-offs, bounded by
+    # max_tokens).  It must NOT fire when a grammar constraint is required
+    # (tool-calling / structured output), so those are excluded below — otherwise
+    # output would be unconstrained.  Only deterministic, non-draft, non-compress
+    # requests qualify.
+    if (_prompt_lookup_decoder is not None and is_deterministic
+            and _draft.generator is None and not _on_compress_path
+            and _req_tool_schema is None and _structured_output_mode == "none"
+            and hasattr(tokenizer, "encode")):
+        try:
+            from squish.speculative.prompt_lookup_batched import (  # noqa: PLC0415
+                stream_prompt_lookup,
+            )
+            if _trace:
+                _tlog(f"REQ {_rid}  dispatch → prompt-lookup (ngram greedy)")
+            yield from stream_prompt_lookup(
+                model, tokenizer, prompt, max_tokens, stop, eos_id,
+                _prompt_lookup_decoder,
+            )
+            return
+        except Exception as _ple:
+            _logging.getLogger(__name__).warning(
+                "prompt-lookup path failed (%s); falling back to standard decode", _ple
+            )
 
     # ── Prefix cache lookup (Phase 1.4) ──────────────────────────────────────
     # Only cache deterministic outputs (temp==0 or seed fixed) so non-
@@ -2051,7 +2224,13 @@ def _generate_tokens(  # pragma: no cover
             # layer_caches is captured as a constant closure; the list reference
             # never changes, so mx.compile reuses the compiled graph every step.
             _decode_fn = None
-            if not getattr(_state, "_no_compile", False):
+            # Only compile the decode forward when the attached KV cache is
+            # compile-safe.  Numpy-quantized caches (KIVI int8/snap) eval inside
+            # their update step, which is illegal under mx.compile and would trip
+            # "[eval] ... during compile" on the first decode call — forcing a
+            # slow stream_generate fallback.  See _kv_cache_compile_safe.
+            if (not getattr(_state, "_no_compile", False)
+                    and _kv_cache_compile_safe(_kv_cache)):
                 try:
                     _decode_fn = mx.compile(
                         lambda tok_x: model(tok_x, cache=layer_caches)
@@ -2272,6 +2451,13 @@ def _generate_tokens(  # pragma: no cover
         _sg_kwargs = {}
         if _max_kv_size is not None:
             _sg_kwargs["max_kv_size"] = _max_kv_size
+        # Native mlx_lm quantized KV cache (GPU-side mx.quantize) — cuts KV
+        # bandwidth at long context.  Unlike --kv-cache-mode (squish's numpy
+        # path), this runs entirely on the GPU inside generate_step.
+        if _kv_bits is not None:
+            _sg_kwargs["kv_bits"]            = _kv_bits
+            _sg_kwargs["kv_group_size"]      = _kv_group_size
+            _sg_kwargs["quantized_kv_start"] = _quantized_kv_start
         # mlx_lm >= 0.21 replaced temp/top_p kwargs with a `sampler` callable.
         # Passing temp/top_p directly causes a TypeError in generate_step, which
         # would be silently caught below and fall through to the no-cache manual
@@ -2388,14 +2574,20 @@ def _generate_tokens(  # pragma: no cover
                     # Stash a deferred-restore closure; runs after first yield
                     _bkv_match_for_restore = _match
                     def _bkv_do_restore() -> None:
-                        _restore_blocks(_bkv_cache_obj, _bkv_match_for_restore.matched_blocks)
+                        _restore_blocks(
+                            _bkv_cache_obj, _bkv_match_for_restore.matched_blocks,
+                            target_dtype=_state.kv_dtype,
+                        )
                     _bkv_deferred_restore: "callable | None" = _bkv_do_restore
                 else:
                     # Non-fast path: restore blocks up front before suffix
                     # prefill needs them.
                     _bkv_deferred_restore = None
                     if _match.matched_tokens > 0:
-                        _restore_blocks(_bkv_cache_obj, _match.matched_blocks)
+                        _restore_blocks(
+                            _bkv_cache_obj, _match.matched_blocks,
+                            target_dtype=_state.kv_dtype,
+                        )
                     # Prefill the suffix manually so we can grab the last logit.
                     _suffix_ids = _bkv_full_ids[_match.matched_tokens:]
                     if _suffix_ids:
@@ -2501,14 +2693,17 @@ def _generate_tokens(  # pragma: no cover
                     # Stash a closure so we can run restore after the yield.
                     _pkv_entry_for_restore = _pkv_entry
                     def _do_restore() -> None:
-                        _rkv(_pkv_cache, _pkv_entry_for_restore)
+                        _rkv(_pkv_cache, _pkv_entry_for_restore,
+                             target_dtype=_state.kv_dtype)
                     _pkv_deferred_restore = _do_restore
 
                     if _trace:
                         _tlog(f"REQ {_rid}  prompt-kv-cache HIT-fast  "
                               f"offset={_pkv_entry.offset}  layers={_pkv_entry.n_layers}  "
                               f"logit=cached  → defer-restore")
-                elif _pkv_entry is not None and _rkv(_pkv_cache, _pkv_entry):
+                elif _pkv_entry is not None and _rkv(
+                    _pkv_cache, _pkv_entry, target_dtype=_state.kv_dtype
+                ):
                     # v4.1 legacy hit (no cached logit): slice prompt to
                     # the trailing token only and let mlx_lm 1-token-prefill.
                     _pkv_was_hit = True
@@ -3089,13 +3284,18 @@ def _model_card() -> dict:
 
 def _make_chunk(content: str, model: str, cid: str, finish_reason=None,
                 _created: int | None = None,
-                _fingerprint: str | None = None) -> str:
+                _fingerprint: str | None = None,
+                _usage: "tuple[int, int] | None" = None) -> str:
     """Build an SSE data line in OpenAI streaming format.
 
     Hot-path optimization (wave 108): avoid 3 nested dict allocations per token
     by building the JSON frame directly from pre-serialized parts.  All fields
     except ``content`` and ``finish_reason`` are constant per request; callers
     should pass ``_created`` and ``_fingerprint`` to avoid re-computing them.
+
+    When ``_usage`` is ``(prompt_tokens, completion_tokens)`` (terminal chunk
+    only, gated by ``stream_options.include_usage``), a ``usage`` object is
+    appended so clients get authoritative token counts regardless of framing.
     """
     ts  = _created if _created is not None else int(time.time())
     fp  = _fingerprint if _fingerprint is not None else _system_fingerprint(
@@ -3112,12 +3312,21 @@ def _make_chunk(content: str, model: str, cid: str, finish_reason=None,
         delta_s = "{}"
     # finish_reason: null or "stop"/"length"/etc (always a simple identifier)
     fr_s = "null" if finish_reason is None else f'"{finish_reason}"'
+    # usage: appended only on the terminal chunk when include_usage is set
+    if _usage is not None:
+        _pt, _ct = _usage
+        usage_s = (
+            f',"usage":{{"prompt_tokens":{_pt},'
+            f'"completion_tokens":{_ct},"total_tokens":{_pt + _ct}}}'
+        )
+    else:
+        usage_s = ""
     return (
         f'data: {{"id":{id_s},"object":"chat.completion.chunk",'
         f'"created":{ts},"model":{model_s},'
         f'"system_fingerprint":{fp_s},'
         f'"choices":[{{"index":0,"delta":{delta_s},'
-        f'"finish_reason":{fr_s}}}]}}\n\n'
+        f'"finish_reason":{fr_s}}}]{usage_s}}}\n\n'
     )
 
 
@@ -3151,6 +3360,11 @@ async def chat_completions(  # pragma: no cover
     model_id           = body.get("model", _state.model_name)
     tools              = body.get("tools", [])
     tool_choice        = body.get("tool_choice", "auto")
+    # OpenAI stream_options.include_usage: emit a usage block in the terminal
+    # SSE chunk so clients get authoritative token counts (independent of how
+    # tokens are framed across chunks).
+    _stream_opts       = body.get("stream_options") or {}
+    _include_usage     = bool(_stream_opts.get("include_usage", False))
 
     # tool_choice == "none": agent explicitly disables tools for this turn
     if tool_choice == "none":
@@ -3284,33 +3498,77 @@ async def chat_completions(  # pragma: no cover
             gen = _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed,
                                    repetition_penalty=repetition_penalty)
             loop = _aio.get_running_loop()
+            # Decouple decode from the event loop: the inference thread drains
+            # the synchronous generator and pushes results onto this queue; the
+            # SSE coroutine below consumes them.  One handoff per request — not
+            # one run_in_executor round-trip per token (which added 5-20 ms of
+            # reschedule jitter to every decode step).
+            _queue: _aio.Queue = _aio.Queue()
+            _stop_evt = threading.Event()
+
+            def _produce() -> None:
+                # Runs in the single inference thread; pushes (text, finish)
+                # tuples, then a terminal _STREAM_DONE.  Checks _stop_evt each
+                # step so a client disconnect halts decode within one token.
+                try:
+                    for _tok_text, _finish in gen:
+                        if _stop_evt.is_set():
+                            break
+                        loop.call_soon_threadsafe(_queue.put_nowait, (_tok_text, _finish))
+                        if _finish is not None:
+                            break
+                except Exception as _exc:  # surface to the consumer, never crash the thread
+                    loop.call_soon_threadsafe(_queue.put_nowait, _StreamError(_exc))
+                finally:
+                    loop.call_soon_threadsafe(_queue.put_nowait, _STREAM_DONE)
+
             n_comp   = 0
             ttft_s   = 0.0
             last_finish = "stop"
+            _gen_gc_enter()
             try:
-                # Each call to run_in_executor offloads one synchronous forward
-                # pass to the inference thread, yielding the event loop between
-                # tokens so health checks and SSE flushes are never blocked.
-                while True:
-                    item = await loop.run_in_executor(
-                        _inference_executor, _iter_next, gen
-                    )
-                    if item is _INFERENCE_STOP:
-                        break
-                    tok_text, finish = item
-                    if tok_text:
-                        if n_comp == 0:
-                            ttft_s = time.perf_counter() - req_start
-                        n_comp += 1
-                        yield _make_chunk(tok_text, model_id, cid,
+                loop.run_in_executor(_inference_executor, _produce)
+                _producer_done = False
+                while not _producer_done:
+                    item = await _queue.get()
+                    # Coalesce any tokens already queued behind this one into a
+                    # single SSE frame.  In steady state (decode ≫ flush) the
+                    # queue is empty so this emits one token per chunk and leaves
+                    # inter-token timing intact; it only batches a genuine backlog
+                    # (e.g. the post-prefill burst), cutting redundant flushes.
+                    batch_parts: list[str] = []
+                    while True:
+                        if item is _STREAM_DONE:
+                            _producer_done = True
+                            break
+                        if isinstance(item, _StreamError):
+                            if batch_parts:
+                                yield _make_chunk("".join(batch_parts), model_id, cid,
+                                                  _created=_created, _fingerprint=_fp)
+                            yield f"data: {_json_dumps({'error': str(item.exc)})}\n\n"
+                            return
+                        _tok_text, _finish = item
+                        if _tok_text:
+                            if n_comp == 0:
+                                ttft_s = time.perf_counter() - req_start
+                            n_comp += 1
+                            batch_parts.append(_tok_text)
+                        if _finish is not None:
+                            last_finish = _finish
+                            _producer_done = True
+                            break
+                        if _queue.empty():
+                            break
+                        item = _queue.get_nowait()
+                    if batch_parts:
+                        yield _make_chunk("".join(batch_parts), model_id, cid,
                                           _created=_created, _fingerprint=_fp)
-                    if finish is not None:
-                        last_finish = finish
-                        break
             except Exception as exc:
                 yield f"data: {_json_dumps({'error': str(exc)})}\n\n"
                 return
             finally:
+                _stop_evt.set()          # halt the producer if the client bailed
+                _gen_gc_exit()
                 _state.inflight -= 1
                 dur = time.perf_counter() - req_start
                 _state.record_completion(n_comp, dur, ttft_s)
@@ -3323,8 +3581,9 @@ async def chat_completions(  # pragma: no cover
                     _tlog(f"CHAT stream DONE  id={cid}  tokens={n_comp}  "
                           f"ttft={ttft_s:.3f}s  total={dur:.3f}s  tps={_tps:.1f}  "
                           f"finish={last_finish}")
+            _final_usage = (prompt_tokens, n_comp) if _include_usage else None
             yield _make_chunk("", model_id, cid, finish_reason=last_finish,
-                              _created=_created, _fingerprint=_fp)
+                              _created=_created, _fingerprint=_fp, _usage=_final_usage)
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(
@@ -3351,9 +3610,13 @@ async def chat_completions(  # pragma: no cover
                 repetition_penalty=repetition_penalty,
             )
             _loop = _aio.get_running_loop()
-            _all_toks = await _loop.run_in_executor(
-                _inference_executor, _collect_tokens_sync, _gen_iter
-            )
+            _gen_gc_enter()
+            try:
+                _all_toks = await _loop.run_in_executor(
+                    _inference_executor, _collect_tokens_sync, _gen_iter
+                )
+            finally:
+                _gen_gc_exit()
             for tok_text, finish in _all_toks:
                 if tok_text:
                     if n_comp == 0:
@@ -4411,6 +4674,17 @@ Examples:
                     help="MLX rotating KV cache size in tokens.\n"
                          "MLX defaults to 4096, silently truncating contexts longer than 4K.\n"
                          "Set to 131072 for 128K context. Passed directly to mlx_lm.stream_generate.")
+    ap.add_argument("--kv-bits", type=int, default=None, metavar="N",
+                    help="Native mlx_lm quantized KV cache bit-width (use 8; 4 degrades\n"
+                         "output quality). A MEMORY lever — shrinks the KV cache so longer\n"
+                         "context fits in RAM. NOT a speed lever on Apple Silicon: decode is\n"
+                         "weight-bandwidth bound, so quantizing KV gives ~0 decode speedup\n"
+                         "(measured). None = fp16 KV (default). Distinct from --kv-cache-mode.")
+    ap.add_argument("--kv-group-size", type=int, default=64, metavar="N",
+                    help="Group size for --kv-bits quantization (default 64).")
+    ap.add_argument("--quantized-kv-start", type=int, default=0, metavar="N",
+                    help="Keep the first N tokens of KV in fp16 before quantizing\n"
+                         "(default 0). Larger values trade memory for early-token fidelity.")
     # ── Phase A3: concise responses ───────────────────────────────────────────
     ap.add_argument("--concise-responses", action="store_true", default=False,
                     help="Prepend a concision directive to every system message and apply\n"
@@ -5186,6 +5460,13 @@ Examples:
     _max_kv_size = getattr(args, "max_kv_size", None)
     if _max_kv_size is not None:
         _info("max-kv-size", f"{_max_kv_size} tokens")
+    global _kv_bits, _kv_group_size, _quantized_kv_start
+    _kv_bits = getattr(args, "kv_bits", None)
+    _kv_group_size = getattr(args, "kv_group_size", 64)
+    _quantized_kv_start = getattr(args, "quantized_kv_start", 0)
+    if _kv_bits is not None:
+        _info("kv-bits", f"{_kv_bits}-bit native KV (group={_kv_group_size}, "
+                         f"start={_quantized_kv_start})")
 
     # ── Phase A3: concise responses ───────────────────────────────────────────
     global _concise_responses

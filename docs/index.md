@@ -1,6 +1,6 @@
 ---
 template: home.html
-title: Squish — Run 70B models on a MacBook
+title: Squish — The fastest local LLMs on Apple Silicon
 hide:
   - navigation
   - toc
@@ -33,6 +33,8 @@ Five-run medians.
 
 Full table, methodology, and ablation: see [Benchmark Results](RESULTS.md).
 
+<small>M3 16 GB, thermally controlled. Cold start: Qwen2.5-1.5B. Serving: Qwen2.5-7B INT3 vs Ollama 0.30.7. **The one place Ollama wins** is single-token latency on a cold, novel prompt (167 ms vs 192 ms) — Squish leads everywhere else.</small>
+
 ---
 
 ## Key Features
@@ -50,7 +52,7 @@ Full table, methodology, and ablation: see [Benchmark Results](RESULTS.md).
 
 ```bash
 # Install
-brew install squish-ai/squish
+brew install konjoai/squish/squish
 
 # Pull a compressed model from the community hub
 squish pull llama3.1:8b

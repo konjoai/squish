@@ -1,6 +1,6 @@
 /**
  * TypeScript types mirroring squish's API contract.
- * Source of truth lives in /Users/wesleyscholl/squish/squish/server.py.
+ * Source of truth lives in squish/server.py.
  */
 
 export type ChatRole = "system" | "user" | "assistant";
@@ -102,7 +102,6 @@ export interface CompressBenchResult {
 }
 
 // ── Agent tool execution (/v1/agent/tools + /v1/agent/run) ──────────────────
-
 /** A single tool exposed by the agent registry (OpenAI tools schema element). */
 export interface AgentTool {
   type: "function";
@@ -206,4 +205,104 @@ export interface CockpitMetrics {
   spec_draft_loaded: boolean;
   kv_cache_tokens: number;
   kv_cache_memory_mb: number;
+}
+
+// ── Embeddings (/v1/embeddings) ───────────────────────────────────────────────
+
+export interface EmbeddingData {
+  object: "embedding";
+  embedding: number[];
+  index: number;
+}
+
+/** POST /v1/embeddings response (OpenAI-compatible). */
+export interface EmbeddingResponse {
+  object: "list";
+  model: string;
+  data: EmbeddingData[];
+  usage: { prompt_tokens: number; total_tokens: number };
+}
+
+// ── System telemetry (/sys-stats + /model/status) ────────────────────────────
+
+/** GET /sys-stats response (stdlib-only host metrics). */
+export interface SysStats {
+  load_avg: [number, number, number];
+  process_rss_mb: number;
+  disk_used_pct: number;
+  disk_free_gb: number;
+  disk_total_gb: number;
+  pid: number;
+}
+
+/** GET /model/status response (lightweight load-state probe). */
+export interface ModelStatus {
+  load_mode: "eager" | "lazy" | "preload_async";
+  model_loaded: boolean;
+  model: string | null;
+  load_time_s: number;
+  load_error: string | null;
+}
+
+// ── Observability / APM (/v1/obs-report) ──────────────────────────────────────
+
+/** Per-operation latency statistics from the production profiler. */
+export interface OpStats {
+  n_samples: number;
+  mean_ms: number;
+  p50_ms: number;
+  p99_ms: number;
+  p999_ms: number;
+  min_ms: number;
+  max_ms: number;
+}
+
+/** A slow operation flagged above the p99 threshold. */
+export interface Bottleneck {
+  op: string;
+  p99_ms: number;
+  mean_ms: number;
+  n_samples: number;
+  hint: string;
+}
+
+/** A single trace span (from squish.telemetry). */
+export interface TraceSpan {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  start_ms: number;
+  end_ms: number | null;
+  duration_ms: number | null;
+  status: string;
+  error_type: string | null;
+  error_message: string | null;
+}
+
+/** GET /v1/obs-report response. */
+export interface ObsReport {
+  status: "ok" | "degraded" | "unavailable";
+  bottlenecks: Bottleneck[];
+  profile: Record<string, OpStats>;
+  profiler_ops: string[];
+  recent_spans: TraceSpan[];
+}
+
+// ── Startup profile (/v1/startup-profile) ─────────────────────────────────────
+
+/** A single timed startup phase. */
+export interface StartupEntry {
+  phase: string;
+  label: string;
+  elapsed_ms: number;
+}
+
+/** GET /v1/startup-profile response (only populated when SQUISH_TRACE_STARTUP=1). */
+export interface StartupProfile {
+  enabled: boolean;
+  total_ms?: number;
+  phase_count?: number;
+  entries?: StartupEntry[];
+  slowest_5?: StartupEntry[];
+  message?: string;
 }

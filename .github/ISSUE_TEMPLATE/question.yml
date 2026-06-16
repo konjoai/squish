@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Have a question? We're happy to help. For faster answers, try
-        [GitHub Discussions](https://github.com/wesleyscholl/squish/discussions) first.
+        [GitHub Discussions](https://github.com/konjoai/squish/discussions) first.
 
   - type: textarea
     id: question

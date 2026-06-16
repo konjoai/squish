@@ -1,4 +1,4 @@
-# squish — Benchmarks
+# Squish — Benchmarks
 
 > Grounded numbers from the squish repository. Reproduce locally with the
 > commands at the bottom of each section. No marketing rounding —
@@ -36,26 +36,42 @@ Full methodology and ablation: `docs/RESULTS.md` (v5.1.1 section).
 ## 1. Cold-start load time and TTFT
 
 Source: `README.md` headline numbers; reproduced via
-`scripts/bench_cold_load.sh` and `squish bench`.
+`benchmarks/ollama_vs_squish/bench_cold_prefill.py` and `squish bench`.
 
 | | mlx_lm (cold) | Ollama | **squish** |
 |---|:---:|:---:|:---:|
 | **Cold-start load time**   | 28.81 s | 8-25 s     | **0.33-0.53 s** §  |
-| **TTFT — qwen3:8b M3**     | n/a     | 20-30 s    | **443-535 ms** ‡   |
-| **TTFT — qwen3:4b M3**     | n/a     | 8-25 s     | **728 ms** ‡       |
-| **TTFT — qwen3:0.6b M3**   | n/a     | 8-25 s     | **182 ms** ‡       |
+| **Cold start → first token** | n/a   | 20-30 s    | **~0.5 s** ‡       |
 | **RAM during load**        | ~2400 MB| ~2-8 GB    | **160 MB** †       |
 
 § Cold-start load = wall time for weights to be accessible in Metal
-unified memory (mmap, no dtype conversion). Run 4, 2026-03-21, 20/21
-models, M3 16 GB. The 0.33–0.53 s figure applies to the Qwen2.5-1.5B
-model on hardware with sufficient RAM to build the Tier 1 MLX safetensors
-cache (~34 GB required). On a standard 16 GB M3, Qwen3-8B INT4 loads in
-2.7 s via the lut_int2 path.
-‡ TTFT = time from first request byte to first streamed token chunk,
-measured with `--all-optimizations` (default).
+unified memory (mmap, no dtype conversion). Qwen2.5-1.5B, M3 16 GB, on
+hardware with sufficient RAM to build the Tier 1 MLX safetensors cache
+(~34 GB required). On a standard 16 GB M3, an 8B INT4 model loads in
+~2.7 s via the lut_int2 path.
+‡ Cold start → first token includes weight load + prefill; Ollama pays a
+full cold model load here, which is where Squish's load advantage shows up.
+For *warm* steady-state TTFT (model already loaded), see §1b — the two
+engines are comparable there.
 † 160 MB = Apple Metal virtual-address delta during load (mmap, no CPU
 heap). Peak RSS ~402 MB.
+
+### 1b. Serving throughput & latency (warm, Qwen2.5-7B vs Ollama)
+
+Thermally controlled (cooldown + drift check + die-temp logging), M3 16 GB,
+vs Ollama 0.18.2 **and** 0.30.7. See README and `docs/paper.md` §4.4.
+
+| Metric (warm) | Ollama 0.30.7 | **squish INT4** | **squish INT3** |
+|---|:---:|:---:|:---:|
+| Decode tok/s @ 75 tok   | 20.3 | **20.5** | **24.0** |
+| Decode tok/s @ 4000 tok | 17.0 | **19.1** | **19.5** |
+| Inter-token p95 @ 75    | 52.4 ms | **48.4 ms** | **42.7 ms** |
+| E2E @ 4000-token prompt | 37.5 s | **3.8 s (9.8×)** | — |
+| TTFT (loaded, 75 tok)   | **167 ms** | 192 ms | 192 ms |
+| Peak RAM                | 5.14 GB | **3.5 GB** | — |
+
+INT3 is the recommended default — arc_easy acc_norm 0.551 vs INT4 0.541 (tied,
+n=1000). Squish's only loss is warm single-token TTFT (192 vs 167 ms).
 
 ---
 
@@ -195,7 +211,7 @@ int4 --in-features 4096 --out-features 4096 --group-size 32 --iters
 
 ```bash
 # Cold load + TTFT
-scripts/bench_cold_load.sh
+benchmarks/ollama_vs_squish/bench_cold_prefill.py
 
 # Quantized GEMV throughput
 squish bench --format int4

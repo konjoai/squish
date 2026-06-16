@@ -290,8 +290,8 @@ describe('_findSquishBin() — tier 1: squish.venvPath setting', () => {
     test('resolves bin/squish inside venvPath directory', async () => {
         stubPortClosed();
         makeSpawnMock();
-        const venvDir = '/Users/wscholl/squish/.venv';
-        const expectedBin = '/Users/wscholl/squish/.venv/bin/squish';
+        const venvDir = '/tmp/squish/.venv';
+        const expectedBin = '/tmp/squish/.venv/bin/squish';
         (vscode.workspace as unknown as WorkspaceMock)._setConfig('venvPath', venvDir);
         mockFs.existsSync.mockImplementation((p) => p === venvDir || p === expectedBin);
         mockFs.statSync.mockImplementation((p) => ({
@@ -335,7 +335,7 @@ describe('_findSquishBin() — tier 3: workspace venv paths', () => {
     test('finds .venv/bin/squish in workspace folder', async () => {
         stubPortClosed();
         makeSpawnMock();
-        const wsRoot = '/Users/wscholl/squish';
+        const wsRoot = '/tmp/squish';
         const expectedBin = `${wsRoot}/.venv/bin/squish`;
         (vscode.workspace as unknown as WorkspaceMock)._setWorkspaceFolders([
             { uri: { fsPath: wsRoot } },

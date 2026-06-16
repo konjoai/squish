@@ -297,16 +297,16 @@ body[data-md-color-scheme="default"] {
         <div class="sq-fade-l">
           <div class="sq-badge">
             <span class="sq-badge__dot"></span>
-            v47 &middot; Apple Silicon native
+            v9.34.0 &middot; Apple Silicon native
           </div>
           <h1 class="sq-hero__title"><span class="sq-grad">Squish</span><br>The Local AI<br>Agent Runtime.</h1>
-          <p class="sq-hero__sub">Run any AI model, fully local, on Apple Silicon. Squish compresses 70B models to fit in 18&thinsp;GB and starts them in under 2 seconds&mdash;<strong>no GPU, no cloud, no API keys</strong>.</p>
+          <p class="sq-hero__sub">Run any AI model, fully local, on Apple Silicon. Squish loads models in under a second&mdash;<strong>54&times; faster</strong> than the standard path&mdash;and serves them faster than Ollama. <strong>No cloud, no API keys, fully offline.</strong></p>
           <div class="sq-hero__btns">
             <a href="install/" class="sq-btn sq-btn--primary">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
               Install Free
             </a>
-            <a href="https://github.com/squishai/squish" class="sq-btn sq-btn--ghost">
+            <a href="https://github.com/konjoai/squish" class="sq-btn sq-btn--ghost">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
               GitHub
             </a>
@@ -322,7 +322,7 @@ body[data-md-color-scheme="default"] {
             </span>
             <span class="sq-hero__pill">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              No GPU required
+              Runs fully offline
             </span>
           </div>
         </div>
@@ -348,12 +348,12 @@ body[data-md-color-scheme="default"] {
             </div>
             <div class="sq-term__body">
               <p class="t-cmt">Install once</p>
-              <p class="t-cmd">brew install squish-ai/squish</p>
-              <p class="t-ok">&nbsp;&nbsp;&#10003; squish 47.0.0 installed</p>
+              <p class="t-cmd">brew install konjoai/squish/squish</p>
+              <p class="t-ok">&nbsp;&nbsp;&#10003; squish 9.34.0 installed</p>
               <span class="t-sp"></span>
               <p class="t-cmt">One command does everything</p>
-              <p class="t-cmd">squish run qwen3:8b</p>
-              <p class="t-warn">&nbsp;&nbsp;&#8595; Pulling qwen3:8b &nbsp;&nbsp;4.4 GB</p>
+              <p class="t-cmd">squish run qwen2.5:7b</p>
+              <p class="t-warn">&nbsp;&nbsp;&#8595; Pulling qwen2.5:7b &nbsp;&nbsp;4.0 GB</p>
               <p class="t-ok">&nbsp;&nbsp;&#10003; Model ready &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.43s</p>
               <p class="t-url">&nbsp;&nbsp;&#10003; Chat open at http://localhost:11435 &#127760;</p>
               <p class="t-out">&nbsp;&nbsp;<span class="sq-cursor"></span></p>
@@ -408,14 +408,14 @@ body[data-md-color-scheme="default"] {
             <div class="sq-step__n">1</div>
             <div class="sq-step__t">Install Squish</div>
             <p class="sq-step__d">One Homebrew command. No Docker, no CUDA, no virtual environment setup.</p>
-            <code class="sq-step__cmd">brew install squish-ai/squish</code>
+            <code class="sq-step__cmd">brew install konjoai/squish/squish</code>
           </div>
           <div class="sq-arrow">&rarr;</div>
           <div class="sq-step">
             <div class="sq-step__n">2</div>
             <div class="sq-step__t">Run a Model</div>
             <p class="sq-step__d">Downloads the pre-optimised model if needed, loads in milliseconds, opens your chat UI in the browser.</p>
-            <code class="sq-step__cmd">squish run qwen3:8b</code>
+            <code class="sq-step__cmd">squish run qwen2.5:7b</code>
           </div>
         </div>
       </div>
@@ -445,8 +445,8 @@ body[data-md-color-scheme="default"] {
           <div class="sq-pcard">
             <div class="sq-pcard__ico">&#x26A1;</div>
             <div>
-              <div class="sq-pcard__t">Faster than any cloud API</div>
-              <p class="sq-pcard__d">No network round-trip means TTFT under 500ms &mdash; beating most hosted endpoints on raw latency.</p>
+              <div class="sq-pcard__t">No network round-trip</div>
+              <p class="sq-pcard__d">Everything runs on-device &mdash; no API rate limits, no per-token billing, no data leaving your Mac.</p>
             </div>
           </div>
           <div class="sq-pcard">
@@ -459,15 +459,15 @@ body[data-md-color-scheme="default"] {
           <div class="sq-pcard">
             <div class="sq-pcard__ico">&#x1F9E0;</div>
             <div>
-              <div class="sq-pcard__t">Statistically identical quality</div>
-              <p class="sq-pcard__d">Calibrated quantisation preserves benchmark accuracy to within statistical noise. Not a lossy compromise.</p>
+              <div class="sq-pcard__t">Accuracy within measurement noise</div>
+              <p class="sq-pcard__d">Calibrated quantisation holds benchmark accuracy to &le;1.5 pp across ARC-Easy, HellaSwag, WinoGrande, and PIQA at the tested sample size.</p>
             </div>
           </div>
           <div class="sq-pcard">
             <div class="sq-pcard__ico">&#x1F4C8;</div>
             <div>
               <div class="sq-pcard__t">Gets better every release</div>
-              <p class="sq-pcard__d">v10 ships 228 new optimisation modules. Each release improves TTFT and decode throughput, applied automatically.</p>
+              <p class="sq-pcard__d">Squish ships 100+ composable optimisation modules. Each release improves TTFT and decode throughput, applied automatically.</p>
             </div>
           </div>
         </div>
@@ -486,9 +486,9 @@ body[data-md-color-scheme="default"] {
       <div class="sq-cards">
         <div class="sq-card sq-fade sq-d1">
           <div class="sq-card__ico">&#x26A1;</div>
-          <div class="sq-card__t">2-second cold start. First token in 443ms.</div>
-          <p class="sq-card__d">Memory-mapped INT4 tensors load directly into Metal unified memory with zero dtype conversion. Cold start 0.4s, first token 443ms for an 8B model on M3.</p>
-          <div class="sq-card__metric">443ms TTFT &middot; qwen3:8b M3</div>
+          <div class="sq-card__t">Sub-second cold start.</div>
+          <p class="sq-card__d">Memory-mapped INT4 tensors load directly into Metal unified memory with zero dtype conversion. A 1.5B model is ready in <strong>0.33&ndash;0.53&thinsp;s</strong> &mdash; versus 28.8&thinsp;s for the standard loader, on 160&thinsp;MB of RAM.</p>
+          <div class="sq-card__metric">54&times; faster load &middot; M3</div>
         </div>
         <div class="sq-card sq-fade sq-d2">
           <div class="sq-card__ico">&#x1F50C;</div>
@@ -499,8 +499,8 @@ body[data-md-color-scheme="default"] {
         <div class="sq-card sq-fade sq-d3">
           <div class="sq-card__ico">&#x1F5DC;</div>
           <div class="sq-card__t">10x faster on repeat prompts.</div>
-          <p class="sq-card__d">Agents resend the same 10,000-token system prompt every turn. Squish's <strong>RadixTree Cache</strong> computes it exactly once&mdash;giving you instantaneous thought loops at any context depth.</p>
-          <div class="sq-card__metric">150ms TTFT on repetitive prompts</div>
+          <p class="sq-card__d">Agents resend the same long system prompt every turn. Squish's <strong>two-cache architecture</strong> reuses the prefill instead of re-running it&mdash;so a repeated prompt skips straight to decode.</p>
+          <div class="sq-card__metric">4&ndash;11 ms TTFT on a cache hit</div>
         </div>
         <div class="sq-card sq-fade sq-d4">
           <div class="sq-card__ico">&#x1F9E0;</div>
@@ -516,7 +516,7 @@ body[data-md-color-scheme="default"] {
         </div>
         <div class="sq-card sq-fade sq-d6">
           <div class="sq-card__ico">&#x1F4E6;</div>
-          <div class="sq-card__t">100 concurrent requests. One model.</div>
+          <div class="sq-card__t">Batch inference. One request.</div>
           <p class="sq-card__d">Process multiple prompts in a single request. Essential for evals, data pipelines, and bulk generation&mdash;a capability Ollama and LM Studio don't offer.</p>
           <div class="sq-card__metric">"batch": [req1, req2, &hellip;]</div>
         </div>
@@ -530,7 +530,7 @@ body[data-md-color-scheme="default"] {
       <div class="sq-header sq-fade">
         <div class="sq-tag">Comparison</div>
         <h2 class="sq-h2">Why <span class="sq-grad">Squish beats the rest</span></h2>
-        <p class="sq-sub">Real measurements, same hardware. qwen3:8b on M3 MacBook Pro, cold start, no caching.</p>
+        <p class="sq-sub">Real measurements, same hardware. Apple M3 MacBook Pro, 16&nbsp;GB &mdash; thermally controlled.</p>
       </div>
       <div class="sq-tbl-wrap sq-fade sq-d1">
         <table class="sq-tbl">
@@ -544,28 +544,40 @@ body[data-md-color-scheme="default"] {
           </thead>
           <tbody>
             <tr>
-              <td>TTFT &mdash; qwen3:8b cold</td>
+              <td>Cold start &mdash; load + first token</td>
               <td style="color:#FF8888">20&ndash;30 s</td>
               <td style="color:#FF8888">~18&ndash;28 s</td>
-              <td class="hl"><span class="sq-best">443 ms &#x2736;</span></td>
+              <td class="hl"><span class="sq-best">0.5 s &#x2736;</span></td>
             </tr>
             <tr>
-              <td>Cold-start load time</td>
-              <td style="color:#FF8888">~28 s</td>
-              <td style="color:#FF8888">~20 s</td>
-              <td class="hl"><span class="sq-best">0.4 s &#x2736;</span></td>
+              <td>Decode throughput &mdash; 7B</td>
+              <td>20.3 tok/s</td>
+              <td>&mdash;</td>
+              <td class="hl"><span class="sq-best">24.0 tok/s &#x2736;</span></td>
             </tr>
             <tr>
-              <td>RAM during load (8B)</td>
-              <td>~2.5 GB</td>
-              <td>~2.5 GB</td>
-              <td class="hl"><span class="sq-best">160 MB &#x2736;</span></td>
+              <td>Inter-token tail latency (p95)</td>
+              <td style="color:#FF8888">52 ms</td>
+              <td>&mdash;</td>
+              <td class="hl"><span class="sq-best">43 ms &#x2736;</span></td>
             </tr>
             <tr>
-              <td>Disk size &mdash; 8B model</td>
+              <td>Full response &mdash; 4000-token prompt</td>
+              <td style="color:#FF8888">37.5 s</td>
+              <td>&mdash;</td>
+              <td class="hl"><span class="sq-best">3.8 s &nbsp;9.8&times; &#x2736;</span></td>
+            </tr>
+            <tr>
+              <td>Peak RAM &mdash; serving</td>
+              <td>5.1 GB</td>
+              <td>&mdash;</td>
+              <td class="hl"><span class="sq-best">3.5 GB &#x2736;</span></td>
+            </tr>
+            <tr>
+              <td>Disk size &mdash; 7B INT4</td>
+              <td>4.4 GB (GGUF Q4)</td>
               <td>4.7 GB (GGUF Q4)</td>
-              <td>4.7 GB (GGUF Q4)</td>
-              <td class="hl"><span class="sq-best">4.4 GB INT4 &#x2736;</span></td>
+              <td class="hl"><span class="sq-best">4.0 GB INT4 &#x2736;</span></td>
             </tr>
             <tr>
               <td>OpenAI API</td>
@@ -583,7 +595,7 @@ body[data-md-color-scheme="default"] {
               <td>Pre-optimised weights (HuggingFace)</td>
               <td><span class="no">&#x2717;</span></td>
               <td><span class="no">&#x2717;</span></td>
-              <td class="hl"><span class="yes">&#x2713; 29 models</span></td>
+              <td class="hl"><span class="yes">&#x2713; 9 prebuilt</span></td>
             </tr>
             <tr>
               <td>Auto-open chat UI</td>
@@ -598,10 +610,10 @@ body[data-md-color-scheme="default"] {
               <td class="hl"><span class="yes">&#x2713;</span></td>
             </tr>
             <tr>
-              <td>10k-Token Loop TTFT (Agent Reprompt)</td>
-              <td style="color:#FF8888">5&ndash;8 s</td>
-              <td style="color:#FF8888">~4 s</td>
-              <td class="hl"><span class="sq-best">150 ms (RadixTree) &#x2736;</span></td>
+              <td>Repeat-prompt TTFT (KV cache hit)</td>
+              <td style="color:#FF8888">~160 ms</td>
+              <td>&mdash;</td>
+              <td class="hl"><span class="sq-best">4&ndash;11 ms &#x2736;</span></td>
             </tr>
             <tr>
               <td>Guaranteed JSON Syntax (FSM)</td>
@@ -619,8 +631,9 @@ body[data-md-color-scheme="default"] {
         </table>
       </div>
       <p style="text-align:center;font-size:.78rem;color:var(--sq-muted);margin-top:16px">
-        &#x2736; Measured on M3 16 GB &middot; qwen3:8b &middot; cold start &middot; Squish v9.0.
-        Ollama TTFT includes cold model load. RAM = peak during weight-loading phase.
+        &#x2736; M3 16 GB, thermally controlled. Cold start: Qwen2.5-1.5B. Serving (decode, tail,
+        E2E, RAM): Qwen2.5-7B INT3 vs Ollama 0.30.7. Squish v9.34.0. On a loaded model, single-token
+        TTFT is comparable (Ollama 167 ms / Squish 192 ms) &mdash; Squish&#x2019;s edge is everywhere else.
       </p>
     </div>
   </section>
@@ -643,21 +656,21 @@ body[data-md-color-scheme="default"] {
 
         <div id="sq-p-install" class="sq-tabpanel on">
           <p class="tc">macOS via Homebrew (recommended)</p>
-          <p class="tp"><span class="ts">brew install squish-ai/squish</span></p>
-          <p class="to">&nbsp;&nbsp;&#10003; squish 47.0.0 installed</p>
+          <p class="tp"><span class="ts">brew install konjoai/squish/squish</span></p>
+          <p class="to">&nbsp;&nbsp;&#10003; squish 9.34.0 installed</p>
           <span class="t-sp"></span>
-          <p class="tc">Or via pip (Python 3.10+)</p>
-          <p class="tp"><span class="ts">pip install squish</span></p>
+          <p class="tc">Or via pip (Python 3.11–3.14)</p>
+          <p class="tp"><span class="ts">pip install squish-ai</span></p>
           <span class="t-sp"></span>
           <p class="tc">Verify installation</p>
           <p class="tp"><span class="ts">squish --version</span></p>
-          <p class="to">&nbsp;&nbsp;squish 9.0.0</p>
+          <p class="to">&nbsp;&nbsp;squish 9.34.0</p>
         </div>
 
         <div id="sq-p-run" class="sq-tabpanel">
           <p class="tc">One command: pull, optimise, serve, open browser</p>
-          <p class="tp"><span class="ts">squish run qwen3:8b</span></p>
-          <p class="tw">&nbsp;&nbsp;&#8595; Pulling qwen3:8b &nbsp; 4.4 GB &nbsp;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588; 100%</p>
+          <p class="tp"><span class="ts">squish run qwen2.5:7b</span></p>
+          <p class="tw">&nbsp;&nbsp;&#8595; Pulling qwen2.5:7b &nbsp; 4.0 GB &nbsp;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588;&#x2588; 100%</p>
           <p class="to">&nbsp;&nbsp;&#10003; Model ready &nbsp;&nbsp;&nbsp; 0.43s</p>
           <p class="to">&nbsp;&nbsp;&#10003; Server &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; http://localhost:11435</p>
           <p class="to">&nbsp;&nbsp;&#10003; Chat UI &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; opening in browser... &#127760;</p>
@@ -665,7 +678,7 @@ body[data-md-color-scheme="default"] {
           <p class="tc">No model? Interactive picker appears</p>
           <p class="tp"><span class="ts">squish run</span></p>
           <p class="tw">&nbsp;&nbsp;? Choose a model:</p>
-          <p class="tw">&nbsp;&nbsp;&#62; qwen3:8b &nbsp;&nbsp;&nbsp;&nbsp; 4.4 GB &middot; INT4 &nbsp;(recommended)</p>
+          <p class="tw">&nbsp;&nbsp;&#62; qwen2.5:7b &nbsp;&nbsp;&nbsp;&nbsp; 4.0 GB &middot; INT4 &nbsp;(recommended)</p>
           <p class="tw">&nbsp;&nbsp; &nbsp;qwen3:4b &nbsp;&nbsp;&nbsp;&nbsp; 2.3 GB &middot; INT4</p>
           <p class="tw">&nbsp;&nbsp; &nbsp;llama3.2:3b &nbsp;1.5 GB &middot; INT4</p>
         </div>
@@ -675,7 +688,7 @@ body[data-md-color-scheme="default"] {
           <p class="ts">&nbsp;&nbsp;&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;</p>
           <p class="ts">&nbsp;&nbsp;&#x2502; &#x1F7E3; squish &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; localhost:11435 &nbsp;&#x2502;</p>
           <p class="ts">&nbsp;&nbsp;&#x251C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2524;</p>
-          <p class="ts">&nbsp;&nbsp;&#x2502; Model: qwen3:8b &#x25BE; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#x2502;</p>
+          <p class="ts">&nbsp;&nbsp;&#x2502; Model: qwen2.5:7b &#x25BE; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#x2502;</p>
           <p class="ts">&nbsp;&nbsp;&#x251C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2524;</p>
           <p class="ts">&nbsp;&nbsp;&#x2502; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#x2502;</p>
           <p class="ts">&nbsp;&nbsp;&#x2502; &#x1F7E2; Hi! Running on your Mac. &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#x2502;</p>
@@ -685,7 +698,7 @@ body[data-md-color-scheme="default"] {
           <p class="ts">&nbsp;&nbsp;&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</p>
           <span class="t-sp"></span>
           <p class="tc">Terminal chat (no browser)</p>
-          <p class="tp"><span class="ts">squish chat qwen3:8b</span></p>
+          <p class="tp"><span class="ts">squish chat qwen2.5:7b</span></p>
           <p class="to">&nbsp;&nbsp;Loading... 0.4s</p>
           <p class="tx">&nbsp;&nbsp;You: Hello!</p>
           <p class="to">&nbsp;&nbsp;AI: Hi! How can I help? &lt;streams instantly&gt;</p>
@@ -693,7 +706,7 @@ body[data-md-color-scheme="default"] {
 
         <div id="sq-p-api" class="sq-tabpanel">
           <p class="tc">squish run already starts a server; or start it manually</p>
-          <p class="tp"><span class="ts">squish serve qwen3:8b</span></p>
+          <p class="tp"><span class="ts">squish serve qwen2.5:7b</span></p>
           <p class="tx">&nbsp;&nbsp;&#x2192; http://localhost:11435 &nbsp;(OpenAI-compatible)</p>
           <span class="t-sp"></span>
           <p class="tc">Zero code changes from OpenAI SDK</p>
@@ -704,7 +717,7 @@ body[data-md-color-scheme="default"] {
           <p class="ts">&nbsp;&nbsp;&nbsp;&nbsp;api_key="local"</p>
           <p class="ts">)</p>
           <p class="ts">r = client.chat.completions.create(</p>
-          <p class="ts">&nbsp;&nbsp;&nbsp;&nbsp;model="qwen3:8b",</p>
+          <p class="ts">&nbsp;&nbsp;&nbsp;&nbsp;model="qwen2.5:7b",</p>
           <p class="ts">&nbsp;&nbsp;&nbsp;&nbsp;messages=[{"role":"user","content":"Hello!"}]</p>
           <p class="ts">)</p>
           <p class="ts">print(r.choices[0].message.content)</p>
@@ -722,7 +735,7 @@ body[data-md-color-scheme="default"] {
           <span class="t-sp"></span>
           <p class="tc">INT8 for near-lossless quality (~50% smaller)</p>
           <p class="tp"><span class="ts">squish pull meta-llama/Llama-3.3-70B-Instruct --int8</span></p>
-          <p class="to">&nbsp;&nbsp;&#10003; 18.2 GB &#x2192; 9.2 GB &nbsp;(statistically identical outputs)</p>
+          <p class="to">&nbsp;&nbsp;&#10003; 18.2 GB &#x2192; 9.2 GB &nbsp;(within measurement noise)</p>
           <span class="t-sp"></span>
           <p class="tc">Rust quantizer: 4-6x faster compression (optional)</p>
           <p class="ts">&nbsp;&nbsp;cargo build --release -p squish_quant_rs</p>
@@ -747,18 +760,18 @@ body[data-md-color-scheme="default"] {
             <p class="sq-comm-d">Chat with the team, get help, share benchmarks, and discuss the latest models.</p>
           </div>
         </a>
-        <a href="https://github.com/squishai/squish" class="sq-comm-card sq-fade sq-d2">
+        <a href="https://github.com/konjoai/squish" class="sq-comm-card sq-fade sq-d2">
           <div class="sq-comm-ico" style="background:rgba(139,79,255,.1);border:1px solid rgba(139,79,255,.2)">&#x2B50;</div>
           <div>
             <div class="sq-comm-t">GitHub</div>
             <p class="sq-comm-d">Star the repo, file issues, read the optimisation source, and send pull requests.</p>
           </div>
         </a>
-        <a href="https://huggingface.co/squish-community" class="sq-comm-card sq-fade sq-d3">
+        <a href="https://huggingface.co/squishai" class="sq-comm-card sq-fade sq-d3">
           <div class="sq-comm-ico" style="background:rgba(255,165,0,.1);border:1px solid rgba(255,165,0,.22)">&#x1F917;</div>
           <div>
             <div class="sq-comm-t">HuggingFace</div>
-            <p class="sq-comm-d">29 pre-squished models ready to pull. Skip compression &mdash; go from zero to chat in minutes.</p>
+            <p class="sq-comm-d">9 pre-squished models ready to pull. Skip compression &mdash; go from zero to chat in minutes.</p>
           </div>
         </a>
       </div>
@@ -772,7 +785,7 @@ body[data-md-color-scheme="default"] {
       <div class="sq-cta__inner sq-fade">
         <img class="sq-cta__mascot" src="assets/squish-mascot.png" alt="Squish" />
         <h2 class="sq-cta__t">Reclaim your <span class="sq-grad">VRAM</span>.<br>Unleash your <span class="sq-grad-warm">Agents</span>.</h2>
-        <p class="sq-cta__s">Turn your MacBook into a production-grade AI agent server in under 60 seconds. No cloud, no API bills, no out-of-memory crashes.</p>
+        <p class="sq-cta__s">Turn your MacBook into a fast, private local AI runtime in under 60 seconds. No cloud, no API bills.</p>
         <div class="sq-cta__btns">
           <a href="install/" class="sq-btn sq-btn--primary">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
