@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @EnvironmentObject var engine: SquishEngine
@@ -111,6 +112,23 @@ struct MessageBubble: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(SQ.textSecond)
                     .kerning(0.5)
+
+                // Attached files on a user turn.
+                if isUser && !message.attachments.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(message.attachments) { f in
+                            HStack(spacing: 4) {
+                                Image(systemName: f.isText ? "doc.text" : "doc")
+                                    .font(.system(size: 9))
+                                Text(f.name).font(.system(size: 10)).lineLimit(1)
+                            }
+                            .foregroundStyle(SQ.accentBright)
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(SQ.userBubble.opacity(0.6))
+                            .cornerRadius(6)
+                        }
+                    }
+                }
 
                 // Agentic turns: render each tool call as a live card.
                 if !isUser && !message.toolCalls.isEmpty {
@@ -294,45 +312,118 @@ struct InputBar: View {
     let onStop: () -> Void
     @EnvironmentObject var engine: SquishEngine
     @FocusState private var focused: Bool
+    @State private var showImporter = false
+    @State private var dropTargeted = false
+
+    private var canSend: Bool {
+        !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !engine.pendingAttachments.isEmpty
+    }
 
     var body: some View {
-        HStack(spacing: 10) {
-            TextField("Message squish…", text: $input, axis: .vertical)
-                .font(.system(size: 14))
-                .foregroundStyle(SQ.textPrimary)
-                .textFieldStyle(.plain)
-                .lineLimit(1...6)
-                .focused($focused)
-                .onSubmit {
-                    if !engine.isGenerating && !input.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
-                        onSend()
+        VStack(spacing: 8) {
+            if !engine.pendingAttachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(engine.pendingAttachments) { f in
+                            AttachChip(file: f) { engine.removeAttachment(f.id) }
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
-            if engine.isGenerating {
-                Button(action: onStop) {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(SQ.red)
+            HStack(spacing: 10) {
+                Button { showImporter = true } label: {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 15))
+                        .foregroundStyle(SQ.textSecond)
                 }
                 .buttonStyle(.plain)
-            } else {
-                Button(action: onSend) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 26))
-                        .foregroundStyle(
-                            input.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty
-                            ? SQ.textSecond : SQ.accent
-                        )
+                .help("Attach files for the agent to read")
+
+                TextField("Message squish… (or drop files)", text: $input, axis: .vertical)
+                    .font(.system(size: 14))
+                    .foregroundStyle(SQ.textPrimary)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...6)
+                    .focused($focused)
+                    .onSubmit {
+                        if !engine.isGenerating && canSend { onSend() }
+                    }
+
+                if engine.isGenerating {
+                    Button(action: onStop) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(SQ.red)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button(action: onSend) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundStyle(canSend ? SQ.accent : SQ.textSecond)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    .keyboardShortcut(.return, modifiers: .command)
                 }
-                .buttonStyle(.plain)
-                .disabled(input.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
-                .keyboardShortcut(.return, modifiers: .command)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .background(SQ.surface)
+        .overlay(
+            dropTargeted
+                ? RoundedRectangle(cornerRadius: 8).stroke(SQ.accent, style: StrokeStyle(lineWidth: 2, dash: [5]))
+                    .padding(6)
+                : nil
+        )
+        .onDrop(of: [UTType.fileURL], isTargeted: $dropTargeted, perform: handleDrop)
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            if case let .success(urls) = result { engine.addAttachments(urls) }
+        }
         .onAppear { focused = true }
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        var handled = false
+        for provider in providers where provider.canLoadObject(ofClass: URL.self) {
+            handled = true
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                Task { @MainActor in engine.addAttachments([url]) }
+            }
+        }
+        return handled
+    }
+}
+
+/// A removable chip for one staged attachment.
+struct AttachChip: View {
+    let file: AttachedFile
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: file.isText ? "doc.text" : "doc")
+                .font(.system(size: 10))
+                .foregroundStyle(SQ.accentBright)
+            Text(file.name)
+                .font(.system(size: 11))
+                .foregroundStyle(SQ.textPrimary)
+                .lineLimit(1)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(SQ.textSecond)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(SQ.asstBubble)
+        .cornerRadius(7)
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(SQ.border, lineWidth: 1))
     }
 }
 
