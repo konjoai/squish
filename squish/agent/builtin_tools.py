@@ -15,7 +15,7 @@ Security notes:
 - ``squish_fetch_url`` validates the scheme and blocks ``file://`` URLs.
 - ``squish_delete_file`` permanently removes a file — use with care.
 
-Call :func:`register_builtin_tools` to add all eleven tools to a registry::
+Call :func:`register_builtin_tools` to add all twelve tools to a registry::
 
     registry = ToolRegistry()
     register_builtin_tools(registry)
@@ -48,6 +48,7 @@ __all__ = [
     "squish_list_dir",
     "squish_move_file",
     "squish_python_repl",
+    "squish_read_document",
     "squish_read_file",
     "squish_run_shell",
     "squish_web_search",
@@ -66,6 +67,7 @@ _SEARCH_MAX_RESULTS = 10
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _safe_path(path: str) -> str:
     """Normalise and verify *path* does not contain null bytes."""
     if "\x00" in path:
@@ -76,6 +78,7 @@ def _safe_path(path: str) -> str:
 # ---------------------------------------------------------------------------
 # Tool functions
 # ---------------------------------------------------------------------------
+
 
 def squish_read_file(
     path: str,
@@ -209,18 +212,55 @@ def squish_python_repl(code: str, timeout: int = 10) -> str:
         raise ValueError("code must be a non-empty string")
 
     _ALLOWED = [
-        "print", "len", "range", "enumerate", "zip", "map", "filter",
-        "sorted", "reversed", "list", "dict", "set", "tuple", "int",
-        "float", "str", "bool", "bytes", "None", "True", "False",
-        "abs", "min", "max", "sum", "round", "type", "isinstance",
-        "issubclass", "repr", "hash", "id", "dir", "vars",
-        "getattr", "setattr", "hasattr", "callable",
-        "open", "Exception", "ValueError", "TypeError",
-        "KeyError", "IndexError", "AttributeError", "RuntimeError",
+        "print",
+        "len",
+        "range",
+        "enumerate",
+        "zip",
+        "map",
+        "filter",
+        "sorted",
+        "reversed",
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "int",
+        "float",
+        "str",
+        "bool",
+        "bytes",
+        "None",
+        "True",
+        "False",
+        "abs",
+        "min",
+        "max",
+        "sum",
+        "round",
+        "type",
+        "isinstance",
+        "issubclass",
+        "repr",
+        "hash",
+        "id",
+        "dir",
+        "vars",
+        "getattr",
+        "setattr",
+        "hasattr",
+        "callable",
+        "open",
+        "Exception",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "IndexError",
+        "AttributeError",
+        "RuntimeError",
     ]
     restricted_builtins = {
-        name: getattr(_builtins, name) for name in _ALLOWED
-        if hasattr(_builtins, name)
+        name: getattr(_builtins, name) for name in _ALLOWED if hasattr(_builtins, name)
     }
 
     namespace: dict[str, Any] = {"__builtins__": restricted_builtins}
@@ -232,8 +272,10 @@ def squish_python_repl(code: str, timeout: int = 10) -> str:
 
     # POSIX timeout via SIGALRM
     if hasattr(signal, "SIGALRM"):
+
         def _handler(signum: int, frame: Any) -> None:
             raise TimeoutError(f"Execution exceeded {timeout}s")
+
         old = signal.signal(signal.SIGALRM, _handler)
         signal.alarm(int(timeout))
     try:
@@ -265,8 +307,7 @@ def squish_fetch_url(url: str, max_bytes: int = _FETCH_MAX_BYTES) -> str:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(
-            f"squish_fetch_url only supports http/https URLs, "
-            f"got scheme: {parsed.scheme!r}"
+            f"squish_fetch_url only supports http/https URLs, got scheme: {parsed.scheme!r}"
         )
     if parsed.netloc == "":
         raise ValueError("URL must include a host")
@@ -285,11 +326,7 @@ def squish_fetch_url(url: str, max_bytes: int = _FETCH_MAX_BYTES) -> str:
 
     truncated = len(raw) > max_bytes
     content = raw[:max_bytes].decode("utf-8", errors="replace")
-    notice = (
-        f"\n\n[TRUNCATED at {max_bytes:,} bytes — full response larger]"
-        if truncated
-        else ""
-    )
+    notice = f"\n\n[TRUNCATED at {max_bytes:,} bytes — full response larger]" if truncated else ""
     return content + notice
 
 
@@ -387,9 +424,7 @@ def squish_create_file(path: str, content: str) -> str:
     """
     safe = _safe_path(path)
     if os.path.exists(safe):
-        raise FileExistsError(
-            f"File already exists: {safe}. Use squish_write_file to overwrite."
-        )
+        raise FileExistsError(f"File already exists: {safe}. Use squish_write_file to overwrite.")
     os.makedirs(os.path.dirname(safe) or ".", exist_ok=True)
     data = content.encode("utf-8")
     with open(safe, "wb") as fh:
@@ -464,9 +499,7 @@ def squish_apply_edit(path: str, old_text: str, new_text: str) -> str:
     if count == 0:
         raise ValueError(f"old_text not found in {safe}")
     if count > 1:
-        raise ValueError(
-            f"old_text is ambiguous — found {count} occurrences in {safe}"
-        )
+        raise ValueError(f"old_text is ambiguous — found {count} occurrences in {safe}")
 
     result = src.replace(old_text, new_text, 1)
     data = result.encode("utf-8")
@@ -475,12 +508,94 @@ def squish_apply_edit(path: str, old_text: str, new_text: str) -> str:
     return f"Applied edit to {safe}"
 
 
+# Maximum characters of extracted document text returned per call.
+_DOC_MAX_CHARS = 200_000
+
+
+def _extract_docx(path: str) -> str:
+    """Extract text from a .docx using only the standard library.
+
+    A .docx is a zip archive; the body lives in ``word/document.xml``. We strip
+    the XML tags and turn paragraph/break markers into newlines — no
+    ``python-docx`` dependency required.
+    """
+    import zipfile  # noqa: PLC0415
+
+    with zipfile.ZipFile(path) as zf:
+        xml = zf.read("word/document.xml").decode("utf-8", errors="replace")
+    # Paragraphs and line breaks → newlines, then drop the remaining tags.
+    xml = re.sub(r"</w:p>", "\n", xml)
+    xml = re.sub(r"<w:br[^>]*/>", "\n", xml)
+    text = re.sub(r"<[^>]+>", "", xml)
+    return html.unescape(text)
+
+
+def _extract_pdf(path: str) -> str:
+    """Extract text from a PDF when an optional parser is installed.
+
+    Tries ``pypdf`` then ``pdfplumber``; returns an actionable message when
+    neither is available rather than failing hard.
+    """
+    try:
+        from pypdf import PdfReader  # noqa: PLC0415
+
+        reader = PdfReader(path)
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
+    except ImportError:
+        pass
+    try:
+        import pdfplumber  # noqa: PLC0415
+
+        with pdfplumber.open(path) as pdf:
+            return "\n".join((p.extract_text() or "") for p in pdf.pages)
+    except ImportError:
+        return (
+            "[PDF text extraction requires `pypdf` or `pdfplumber` — install "
+            "one with `pip install pypdf`, then retry.]"
+        )
+
+
+def squish_read_document(path: str, max_chars: int = _DOC_MAX_CHARS) -> str:
+    """Extract readable text from a document so the agent can analyse it.
+
+    Handles PDF, DOCX, and every text-like format (code, Markdown, JSON, CSV,
+    plain text). Use this for uploaded files / attachments the user references.
+
+    Args:
+        path: Absolute path to the document.
+        max_chars: Cap on returned characters (default 200,000).
+    """
+    safe = _safe_path(path)
+    if not os.path.exists(safe):
+        raise FileNotFoundError(f"No such file: {path}")
+    if not os.path.isfile(safe):
+        raise ValueError(f"Not a file: {path}")
+
+    ext = os.path.splitext(safe)[1].lower()
+    size = os.path.getsize(safe)
+    cap = max(1, int(max_chars))
+
+    if ext == ".pdf":
+        body = _extract_pdf(safe)
+    elif ext == ".docx":
+        body = _extract_docx(safe)
+    else:
+        with open(safe, "rb") as fh:
+            raw = fh.read(cap * 4 + 8)
+        body = raw.decode("utf-8", errors="replace")
+
+    body = body[:cap]
+    header = f"# Document: {os.path.basename(safe)} ({ext or 'no-ext'}, {size:,} bytes)\n\n"
+    return header + (body if body.strip() else "[no extractable text found]")
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
+
 def register_builtin_tools(registry: ToolRegistry) -> None:
-    """Register all eleven built-in tools into *registry*.
+    """Register all twelve built-in tools into *registry*.
 
     Call this once during server or agent initialisation::
 
@@ -513,6 +628,30 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
                 "required": ["path"],
             },
             fn=squish_read_file,
+            source="builtin",
+        ),
+        ToolDefinition(
+            name="squish_read_document",
+            description=(
+                "Extract readable text from a document (PDF, DOCX, CSV, "
+                "Markdown, JSON, code, plain text) so you can analyse it. Use "
+                "this for uploaded files and attachments referenced by path."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the document.",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Max characters to return (default 200000).",
+                    },
+                },
+                "required": ["path"],
+            },
+            fn=squish_read_document,
             source="builtin",
         ),
         ToolDefinition(
@@ -563,9 +702,7 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
         ),
         ToolDefinition(
             name="squish_delete_file",
-            description=(
-                "Delete a file from disk. Irreversible — use with caution."
-            ),
+            description=("Delete a file from disk. Irreversible — use with caution."),
             parameters={
                 "type": "object",
                 "properties": {
