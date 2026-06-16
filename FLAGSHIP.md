@@ -44,8 +44,11 @@ The agent should see what you see.
 - ✅ **Document text extraction.** `squish_read_document` extracts text from PDF,
   DOCX (stdlib-only, no new dep), CSV, Markdown, JSON, code, plain text — so the
   agent can analyse any referenced file across every UI. *(+ tests, verified live)*
-- 🟡 **File upload → context.** Web UI reads text attachments client-side today.
-  *Remaining:* a binary-upload endpoint + macOS file picker/drag-drop.
+- ✅ **File upload → context (web + macOS).** Web UI reads text attachments
+  client-side. macOS attaches files via picker or drag-drop; small text is
+  inlined and any file is referenced by path so the agent reads it with
+  `squish_read_document` (the server runs on the same machine). *Remaining:* a
+  binary-upload endpoint for remote/non-local servers; VS Code @-mentions.
 - ⬜ **OpenAI-style content blocks in the chat API.** Accept
   `content: [{type:"text"}, {type:"image_url"}, …]` without breaking string
   content. *(squish/server.py)*
