@@ -66,6 +66,7 @@ body[data-md-color-scheme="default"] {
 
 /* Section header */
 .sq-header{text-align:center;margin-bottom:60px}
+.sq-header__char{width:148px;height:148px;object-fit:contain;display:block;margin:0 auto 18px;filter:drop-shadow(0 16px 34px rgba(139,79,255,.34));animation:mascot-float 6s ease-in-out infinite}
 .sq-tag{display:inline-block;background:rgba(139,79,255,0.12);border:1px solid rgba(139,79,255,0.3);color:#C09FFF;font-size:.69rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:4px 16px;border-radius:999px;margin-bottom:16px}
 .sq-h2{font-size:clamp(1.9rem,3.2vw,2.7rem);font-weight:800;letter-spacing:-.028em;line-height:1.12;margin:0 0 14px;color:var(--sq-text)!important;-webkit-text-fill-color:var(--sq-text)!important}
 .sq-h2 .sq-grad{-webkit-text-fill-color:transparent!important}
@@ -276,6 +277,7 @@ body[data-md-color-scheme="default"] {
   .sq-stat:nth-child(4){border-right:none}
 }
 @media(max-width:520px){
+  .sq-header__char{width:108px;height:108px}
   .sq-cards{grid-template-columns:1fr}
   .sq-stats__row{grid-template-columns:repeat(2,1fr)}
   .sq-wrap{padding:0 20px}
@@ -398,6 +400,7 @@ body[data-md-color-scheme="default"] {
   <section class="sq-section sq-section--tight">
     <div class="sq-wrap">
       <div class="sq-header sq-fade">
+        <img class="sq-header__char" src="assets/squish-rocket.png" alt="Squish rocket" />
         <div class="sq-tag">Getting started</div>
         <h2 class="sq-h2">Up and running in <span class="sq-grad">two steps</span></h2>
         <p class="sq-sub">Install once. Then <code style="font-size:.92em;background:rgba(139,79,255,.12);color:var(--sq-cyan);padding:2px 8px;border-radius:5px">squish run</code> handles pull, compress, serve, and opens your chat UI automatically.</p>
@@ -479,6 +482,7 @@ body[data-md-color-scheme="default"] {
   <section class="sq-section" style="padding-bottom:0">
     <div class="sq-wrap">
       <div class="sq-header sq-fade">
+        <img class="sq-header__char" src="assets/squish-flying.png" alt="Squish flying" />
         <div class="sq-tag">Features</div>
         <h2 class="sq-h2">Built for <span class="sq-grad">speed at every layer</span></h2>
         <p class="sq-sub">From storage format to HTTP serving, every decision is optimised for Apple Silicon unified memory.</p>
@@ -642,6 +646,7 @@ body[data-md-color-scheme="default"] {
   <section class="sq-section" style="padding-top:0">
     <div class="sq-wrap">
       <div class="sq-header sq-fade">
+        <img class="sq-header__char" src="assets/squish-pointing.png" alt="Squish pointing" />
         <div class="sq-tag">Quick Start</div>
         <h2 class="sq-h2">Everything you need, <span class="sq-grad">right here</span></h2>
       </div>
