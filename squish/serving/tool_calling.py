@@ -85,9 +85,9 @@ def format_tools_prompt(messages: list[dict], tools: list[dict]) -> list[dict]:
     schemas_parts: list[str] = []
     for t in tools:
         fn = t.get("function", t)  # handle both {type, function} and bare fn dict
-        name    = fn.get("name", "unknown")
-        desc    = fn.get("description", "")
-        params  = fn.get("parameters", {})
+        name = fn.get("name", "unknown")
+        desc = fn.get("description", "")
+        params = fn.get("parameters", {})
         schemas_parts.append(
             f"  {json.dumps({'name': name, 'description': desc, 'parameters': params})}"
         )
@@ -109,13 +109,13 @@ def format_tools_prompt(messages: list[dict], tools: list[dict]) -> list[dict]:
 # ── Output parsing ─────────────────────────────────────────────────────────────
 
 # Patterns to extract JSON from model output
-_FENCED_JSON  = re.compile(r"```(?:json)?\s*\n?([\s\S]*?)```", re.MULTILINE)
+_FENCED_JSON = re.compile(r"```(?:json)?\s*\n?([\s\S]*?)```", re.MULTILINE)
 # Qwen3 / Hermes native tool-call tags
 _TOOL_CALL_TAG = re.compile(r"<tool_call>\s*([\s\S]*?)\s*</tool_call>", re.MULTILINE)
 # Strategy 0.5 — opening tag only (closing tag consumed by stop string)
 _OPEN_TOOL_CALL_TAG = re.compile(r"<tool_call>\s*([\s\S]+)$", re.MULTILINE)
 # Think-block stripper (Qwen3 reasoning traces before the tool call)
-_THINK_BLOCK   = re.compile(r"<think>[\s\S]*?</think>", re.MULTILINE)
+_THINK_BLOCK = re.compile(r"<think>[\s\S]*?</think>", re.MULTILINE)
 
 
 def _extract_json_objects(text: str) -> list[str]:
@@ -124,16 +124,16 @@ def _extract_json_objects(text: str) -> list[str]:
     Returns a list of candidate JSON substrings (handles nested braces).
     """
     candidates = []
-    for opener, closer in (('{', '}'), ('[', ']')):
+    for opener, closer in (("{", "}"), ("[", "]")):
         depth = 0
         start = None
         in_string = False
-        escape    = False
+        escape = False
         for i, ch in enumerate(text):
             if escape:
                 escape = False
                 continue
-            if ch == '\\' and in_string:
+            if ch == "\\" and in_string:
                 escape = True
                 continue
             if ch == '"':
@@ -148,41 +148,172 @@ def _extract_json_objects(text: str) -> list[str]:
             elif ch == closer:
                 depth -= 1
                 if depth == 0 and start is not None:
-                    candidates.append(text[start:i+1])
+                    candidates.append(text[start : i + 1])
                     start = None
     return candidates
 
 
+def _repair_doubled_braces(text: str) -> str | None:
+    """Collapse the doubled outer braces some chat templates emit.
+
+    The Qwen2.5 tool-call template renders its example as
+    ``{{"name": ..., "arguments": ...}}`` (a Jinja-escaping artifact), so the
+    model copies the doubled braces and produces invalid JSON. When the outer
+    object is wrapped in ``{{ ... }}`` (and likewise ``[[ ... ]]``), peel one
+    layer so the payload parses. Returns ``None`` when no repair applies.
+    """
+    s = text.strip()
+    if s.startswith("{{") and s.endswith("}}"):
+        return "{" + s[2:-2] + "}"
+    if s.startswith("[[") and s.endswith("]]"):
+        return "[" + s[2:-2] + "]"
+    return None
+
+
 def _try_parse(text: str) -> Any | None:
-    """Try to parse `text` as JSON, return None on failure."""
+    """Try to parse `text` as JSON, return None on failure.
+
+    Falls back to a doubled-brace repair (see ``_repair_doubled_braces``) so
+    tool calls emitted with the Qwen2.5 template's escaped example braces still
+    parse instead of being treated as plain text.
+    """
     try:
         return json.loads(text.strip())
     except json.JSONDecodeError:
+        repaired = _repair_doubled_braces(text)
+        if repaired is not None:
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                return None
         return None
+
+
+# Argument keys seen across model families: "arguments" (OpenAI/Hermes),
+# "input" (Claude/Anthropic tool-use), "parameters" (Qwen2.5 native template).
+_ARG_KEYS = ("arguments", "input", "parameters")
+
+
+def _single_tool_call(x: Any) -> bool:
+    """A named-object tool call: ``{"name": ..., <arg key>: {...}}``."""
+    return isinstance(x, dict) and "name" in x and any(k in x for k in _ARG_KEYS)
+
+
+def _is_positional_call(x: Any) -> bool:
+    """A positional tuple tool call: ``["tool_name", {args}]``.
+
+    Some quantized models (e.g. Qwen2.5 int4) emit this compact form instead
+    of the named-object schema. Recognised only when the first element is a
+    string and the second is an arguments dict.
+    """
+    return isinstance(x, list) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], dict)
 
 
 def _is_tool_call(obj: Any) -> bool:
     """Return True if `obj` looks like a tool call or list of tool calls.
 
-    Accepts both ``"arguments"`` (OpenAI/Qwen format) and ``"input"``
-    (Claude/Anthropic tool-use format) as the arguments key.
+    Accepts ``"arguments"`` (OpenAI/Qwen3/Hermes), ``"input"``
+    (Claude/Anthropic tool-use), and ``"parameters"`` (Qwen2.5 native
+    template) as the arguments key, plus the positional ``["name", {args}]``
+    tuple form emitted by some quantized models.
     """
-    def _single(x: Any) -> bool:
-        return isinstance(x, dict) and "name" in x and ("arguments" in x or "input" in x)
     if isinstance(obj, dict):
-        return _single(obj)
+        return _single_tool_call(obj)
+    if _is_positional_call(obj):
+        return True
     if isinstance(obj, list):
-        return all(_single(x) for x in obj) and len(obj) > 0
+        return len(obj) > 0 and all(_single_tool_call(x) or _is_positional_call(x) for x in obj)
     return False
 
 
 def _normalise(obj: Any) -> list[dict]:
-    """Wrap single tool call in a list and normalize ``"input"`` → ``"arguments"``."""
-    items = [obj] if isinstance(obj, dict) else list(obj)
-    for item in items:
-        if isinstance(item, dict) and "input" in item and "arguments" not in item:
-            item["arguments"] = item.pop("input")
+    """Normalize any recognised tool-call shape into ``[{"name", "arguments"}]``.
+
+    Folds the ``"input"`` (Anthropic) and ``"parameters"`` (Qwen2.5) argument
+    keys, and the positional ``["name", {args}]`` tuple, into the canonical
+    ``{"name": ..., "arguments": {...}}`` form.
+    """
+    if _is_positional_call(obj):
+        raw_items: list[Any] = [obj]
+    elif isinstance(obj, dict):
+        raw_items = [obj]
+    else:
+        raw_items = list(obj)
+
+    items: list[dict] = []
+    for item in raw_items:
+        if _is_positional_call(item):
+            items.append({"name": item[0], "arguments": _coerce_args(item[1])})
+            continue
+        if not isinstance(item, dict):
+            continue
+        if "arguments" not in item:
+            for alt in ("input", "parameters"):
+                if alt in item:
+                    item["arguments"] = item.pop(alt)
+                    break
+        item["arguments"] = _coerce_args(item.get("arguments"))
+        items.append(item)
     return items
+
+
+def _coerce_args(args: Any) -> dict:
+    """Normalize a tool call's arguments to a dict.
+
+    The OpenAI wire format encodes ``arguments`` as a JSON *string*, and some
+    models emit it that way too. Parse it so tool execution always receives a
+    mapping (never a bare string, which would crash argument validation).
+    """
+    if isinstance(args, dict):
+        return args
+    if isinstance(args, str):
+        parsed = _try_parse(args)
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+class ToolCallStreamFilter:
+    """Suppress ``<tool_call>`` syntax from a streamed token sequence.
+
+    The agent loop streams reasoning text token-by-token, but the tool call
+    itself is rendered as a structured card by the client — so the raw
+    ``<tool_call>{...}`` JSON must never reach a chat bubble. Feed each token
+    in order; the filter returns only the genuine visible text that precedes a
+    tool call, then stays silent once a call begins.
+
+    A short holdback (one char less than the marker length) prevents leaking a
+    tag that arrives split across tokens (``"<tool"`` then ``"_call>"``).
+    """
+
+    MARK = "<tool_call>"
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._emitted = 0
+        self._suppressing = False
+
+    def feed(self, token: str, *, final: bool = False) -> str:
+        """Return the visible chunk to emit for this token (may be empty)."""
+        if token:
+            self._buf += token
+        if self._suppressing:
+            return ""
+        idx = self._buf.find(self.MARK)
+        if idx != -1:
+            chunk = self._buf[self._emitted : idx]
+            self._emitted = len(self._buf)
+            self._suppressing = True
+            return chunk
+        hold = len(self.MARK) - 1
+        safe_end = len(self._buf) if final else max(self._emitted, len(self._buf) - hold)
+        chunk = self._buf[self._emitted : safe_end]
+        self._emitted = safe_end
+        return chunk
+
+    @property
+    def suppressing(self) -> bool:
+        """True once a tool call has begun (no further visible text)."""
+        return self._suppressing
 
 
 def parse_tool_calls(text: str) -> list[dict] | None:
@@ -242,6 +373,7 @@ def parse_tool_calls(text: str) -> list[dict] | None:
 
 # ── Response building ──────────────────────────────────────────────────────────
 
+
 def build_tool_calls_response(raw_calls: list[dict]) -> list[dict]:
     """
     Convert raw tool-call dicts into the OpenAI `tool_calls` list format.
@@ -275,14 +407,16 @@ def build_tool_calls_response(raw_calls: list[dict]) -> list[dict]:
             args_str = args  # already serialised
         else:
             args_str = json.dumps(args)
-        result.append({
-            "id":       f"call_{uuid.uuid4().hex[:12]}",
-            "type":     "function",
-            "function": {
-                "name":      name,
-                "arguments": args_str,
-            },
-        })
+        result.append(
+            {
+                "id": f"call_{uuid.uuid4().hex[:12]}",
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": args_str,
+                },
+            }
+        )
     return result
 
 
@@ -323,15 +457,17 @@ async def stream_tool_calls_response(
 
     def _make_chunk(delta: dict, finish_reason: Any = None) -> str:
         payload = {
-            "id":      cid,
-            "object":  "chat.completion.chunk",
+            "id": cid,
+            "object": "chat.completion.chunk",
             "created": int(time.time()),
-            "model":   model_id,
-            "choices": [{
-                "index":         0,
-                "delta":         delta,
-                "finish_reason": finish_reason,
-            }],
+            "model": model_id,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": delta,
+                    "finish_reason": finish_reason,
+                }
+            ],
         }
         return f"data: {json.dumps(payload)}\n\n"
 
@@ -342,28 +478,36 @@ async def stream_tool_calls_response(
 
     for i, tc in enumerate(tc_list):
         # 2. Tool call start: announce id, name, empty arguments
-        yield _make_chunk({
-            "tool_calls": [{
-                "index":    i,
-                "id":       tc["id"],
-                "type":     "function",
-                "function": {
-                    "name":      tc["function"]["name"],
-                    "arguments": "",
-                },
-            }],
-        })
+        yield _make_chunk(
+            {
+                "tool_calls": [
+                    {
+                        "index": i,
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": "",
+                        },
+                    }
+                ],
+            }
+        )
         # 3. Stream arguments in small chunks
         args_str = tc["function"]["arguments"]
         for j in range(0, len(args_str), chunk_size):
-            yield _make_chunk({
-                "tool_calls": [{
-                    "index":    i,
-                    "function": {
-                        "arguments": args_str[j : j + chunk_size],
-                    },
-                }],
-            })
+            yield _make_chunk(
+                {
+                    "tool_calls": [
+                        {
+                            "index": i,
+                            "function": {
+                                "arguments": args_str[j : j + chunk_size],
+                            },
+                        }
+                    ],
+                }
+            )
 
     # 4. Final stop chunk
     yield _make_chunk({}, finish_reason="tool_calls")
@@ -372,6 +516,7 @@ async def stream_tool_calls_response(
 
 
 # ── Grammar-assisted parsing ───────────────────────────────────────────────────
+
 
 def parse_tool_calls_with_grammar(
     text: str,

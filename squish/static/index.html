@@ -377,30 +377,49 @@
   .slash-item .slash-desc { font-size: 12px; color: var(--text-dim); }
   #input-bar { position: relative; }
 
-  /* ── Tool call cards ────────────────────────────────────────────────────── */
+  /* ── Tool call cards — watch the agent work ─────────────────────────────── */
   .tool-card { background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 10px; margin: .5em 0; overflow: hidden; font-size: 13px; }
-  .tool-card-header { padding: 7px 12px; cursor: pointer; display: flex;
-    align-items: center; gap: 8px; user-select: none;
-    background: linear-gradient(90deg, rgba(139,92,246,.12), rgba(236,72,153,.06)); }
-  .tool-card-header:hover { background: linear-gradient(90deg, rgba(139,92,246,.2), rgba(236,72,153,.1)); }
-  .tool-card-icon { font-size: 14px; flex-shrink: 0; }
-  .tool-card-name { font-family: var(--font-mono); font-weight: 600; color: var(--accent);
-    font-size: 12px; flex: 1; }
-  .tool-card-elapsed { font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
-  .tool-card-status { font-size: 12px; flex-shrink: 0; }
+    border-radius: 10px; margin: .5em 0; overflow: hidden; font-size: 13px;
+    transition: border-color .25s ease, box-shadow .25s ease;
+    animation: toolCardIn .28s cubic-bezier(.22,1,.36,1); }
+  @keyframes toolCardIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .tool-card.pending { border-color: rgba(139,92,246,.5);
+    box-shadow: 0 0 0 1px rgba(139,92,246,.15), 0 0 18px -6px rgba(139,92,246,.5); }
+  .tool-card.done    { border-color: rgba(74,222,128,.28); }
+  .tool-card.error   { border-color: rgba(248,81,73,.4); }
+  .tool-card-header { padding: 8px 12px; cursor: pointer; display: flex;
+    align-items: center; gap: 9px; user-select: none;
+    background: linear-gradient(90deg, rgba(139,92,246,.1), rgba(236,72,153,.04)); }
+  .tool-card-header:hover { background: linear-gradient(90deg, rgba(139,92,246,.18), rgba(236,72,153,.08)); }
+  .tool-card-icon { font-size: 15px; flex-shrink: 0; line-height: 1; }
+  .tool-card-name { font-weight: 600; color: var(--text); font-size: 12.5px; flex-shrink: 0; }
+  .tool-card-arg-hint { font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .9; }
+  .tool-card-elapsed { font-size: 10px; color: var(--text-dim); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .tool-card-chevron { font-size: 9px; color: var(--text-dim); flex-shrink: 0;
+    transition: transform .2s ease; }
+  .tool-card.open .tool-card-chevron { transform: rotate(90deg); }
+  .tool-card-status { font-size: 12px; flex-shrink: 0; display: flex; align-items: center; }
+  .tc-spin { width: 11px; height: 11px; border-radius: 50%; display: inline-block;
+    border: 2px solid rgba(139,92,246,.25); border-top-color: var(--accent);
+    animation: tcSpin .7s linear infinite; }
+  @keyframes tcSpin { to { transform: rotate(360deg); } }
+  .tool-card-preview { padding: 0 12px 9px 36px; font-family: var(--font-mono); font-size: 11px;
+    color: var(--text-dim); white-space: pre; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%; }
   .tool-card-body { padding: 0; max-height: 0; overflow: hidden;
     transition: max-height .25s ease, padding .25s; }
-  .tool-card.open .tool-card-body { max-height: 600px; padding: 10px 12px; }
+  .tool-card.open .tool-card-body { max-height: 640px; padding: 4px 12px 11px; }
+  .tool-card.open .tool-card-preview { display: none; }
   .tool-card-section { margin-bottom: 8px; }
   .tool-card-section:last-child { margin-bottom: 0; }
   .tool-section-label { font-size: 10px; font-weight: 600; color: var(--text-dim);
     text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
   .tool-card-body pre { background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; padding: 7px 10px; font-size: 11px; overflow-x: auto;
-    white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
-  .tool-card.error .tool-card-header { background: linear-gradient(90deg, rgba(248,81,73,.12), rgba(248,81,73,.06)); }
-  .tool-card.error .tool-card-name { color: var(--danger); }
+    border-radius: 6px; padding: 8px 10px; font-size: 11px; overflow-x: auto;
+    white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow-y: auto;
+    color: var(--text); line-height: 1.5; }
+  .tool-card.error .tool-card-header { background: linear-gradient(90deg, rgba(248,81,73,.12), rgba(248,81,73,.05)); }
 </style>
 </head>
 <body>
@@ -820,29 +839,82 @@ function escHtml(s) {
           .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
 
-// ── Tool call card rendering ──────────────────────────────────────────────────
-function renderToolCard(toolName, args, result, errorMsg, elapsedMs) {
+// ── Tool call cards — friendly name + icon per built-in tool ──────────────────
+const TOOL_META = {
+  squish_list_dir:    { icon: "📂", label: "List directory" },
+  squish_read_file:   { icon: "📄", label: "Read file" },
+  squish_write_file:  { icon: "✏️", label: "Write file" },
+  squish_create_file: { icon: "✨", label: "Create file" },
+  squish_delete_file: { icon: "🗑️", label: "Delete file" },
+  squish_move_file:   { icon: "📦", label: "Move file" },
+  squish_apply_edit:  { icon: "✏️", label: "Edit file" },
+  squish_run_shell:   { icon: "⚡", label: "Run shell" },
+  squish_python_repl: { icon: "🐍", label: "Python" },
+  squish_fetch_url:   { icon: "🌐", label: "Fetch URL" },
+  squish_web_search:  { icon: "🔍", label: "Web search" },
+};
+function toolMeta(name) {
+  if (TOOL_META[name]) return TOOL_META[name];
+  const clean = String(name || "tool").replace(/^squish_/, "").replace(/_/g, " ");
+  return { icon: "🔧", label: clean.charAt(0).toUpperCase() + clean.slice(1) };
+}
+// The most telling argument to show inline (path, command, url, query…).
+function primaryArgHint(args) {
+  if (!args || typeof args !== "object") return "";
+  const v = args.path ?? args.command ?? args.url ?? args.query ?? args.src ?? args.code ?? Object.values(args)[0];
+  if (v == null) return "";
+  let s = String(v).replace(/\s+/g, " ").trim();
+  return s.length > 64 ? s.slice(0, 62) + "…" : s;
+}
+function _argsJson(args) {
+  return args && typeof args === "object" ? JSON.stringify(args, null, 2) : String(args ?? "");
+}
+
+// Create a pending tool card. Filled in later by updateToolCard (in place).
+function renderToolCard(toolName, args) {
+  const m = toolMeta(toolName);
   const card = document.createElement("div");
-  card.className = "tool-card" + (errorMsg ? " error" : "");
-  const icon = errorMsg ? "✗" : "✓";
-  const statusColor = errorMsg ? "var(--danger)" : "var(--success)";
-  const elapsedStr = elapsedMs != null ? ` ${(elapsedMs/1000).toFixed(2)}s` : "";
-  const argsStr = typeof args === "object" ? JSON.stringify(args, null, 2) : String(args);
-  const resultStr = errorMsg || (typeof result === "object" ? JSON.stringify(result, null, 2) : String(result ?? ""));
+  card.className = "tool-card pending";
   card.innerHTML =
     `<div class="tool-card-header" onclick="this.parentElement.classList.toggle('open')">`
-    + `<span class="tool-card-icon">🔧</span>`
-    + `<span class="tool-card-name">${escHtml(toolName)}</span>`
-    + `<span class="tool-card-elapsed">${elapsedStr}</span>`
-    + `<span class="tool-card-status" style="color:${statusColor}">${icon}</span>`
+    + `<span class="tool-card-icon">${m.icon}</span>`
+    + `<span class="tool-card-name">${escHtml(m.label)}</span>`
+    + `<span class="tool-card-arg-hint">${escHtml(primaryArgHint(args))}</span>`
+    + `<span class="tool-card-elapsed"></span>`
+    + `<span class="tool-card-chevron">▶</span>`
+    + `<span class="tool-card-status"><span class="tc-spin"></span></span>`
     + `</div>`
+    + `<div class="tool-card-preview"></div>`
     + `<div class="tool-card-body">`
     + `<div class="tool-card-section"><div class="tool-section-label">Arguments</div>`
-    + `<pre>${escHtml(argsStr)}</pre></div>`
-    + `<div class="tool-card-section"><div class="tool-section-label">${errorMsg ? "Error" : "Result"}</div>`
-    + `<pre>${escHtml(resultStr.slice(0, 4096))}</pre></div>`
+    + `<pre class="tc-args">${escHtml(_argsJson(args) || "—")}</pre></div>`
+    + `<div class="tool-card-section tc-result-section" style="display:none">`
+    + `<div class="tool-section-label tc-result-label">Result</div><pre class="tc-result"></pre></div>`
     + `</div>`;
   return card;
+}
+
+// Fill a pending card with its result (or error), in place.
+function updateToolCard(card, result, errorMsg, elapsedMs) {
+  if (!card) return;
+  card.classList.remove("pending");
+  card.classList.add(errorMsg ? "error" : "done");
+  const ok = !errorMsg;
+  card.querySelector(".tool-card-elapsed").textContent =
+    elapsedMs != null ? `${(elapsedMs / 1000).toFixed(2)}s` : "";
+  card.querySelector(".tool-card-status").innerHTML =
+    `<span style="color:${ok ? "var(--success)" : "var(--danger)"}">${ok ? "✓" : "✗"}</span>`;
+  const resultStr = errorMsg
+    || (typeof result === "object" ? JSON.stringify(result, null, 2) : String(result ?? ""));
+  const sec = card.querySelector(".tc-result-section");
+  sec.style.display = "";
+  card.querySelector(".tc-result-label").textContent = errorMsg ? "Error" : "Result";
+  card.querySelector(".tc-result").textContent = resultStr.slice(0, 8192);
+  // Always-visible one-line preview, so the output is discoverable un-clicked.
+  const firstLine = (resultStr.split("\n").find(l => l.trim()) || "").trim();
+  const prev = card.querySelector(".tool-card-preview");
+  prev.textContent = firstLine.length > 96 ? firstLine.slice(0, 94) + "…" : firstLine;
+  if (errorMsg) prev.style.color = "var(--danger)";
 }
 
 // Drag-and-drop on chat area
@@ -1410,19 +1482,16 @@ async function _doGenerate(sess) {
                 asstMsg.content += evt.delta;
                 _enqueueTokens(evt.delta);
               } else if (evt.type === "tool_call_start") {
-                // Attach a pending tool card to the message element
-                const card = renderToolCard(evt.tool_name, evt.arguments, null, null, null);
+                // Attach a live pending tool card to the message element
+                const card = renderToolCard(evt.tool_name, evt.arguments);
                 card.dataset.callId = evt.call_id;
                 const body = msgEl.querySelector(".msg-body");
                 if (body) body.appendChild(card);
                 scrollToBottom();
               } else if (evt.type === "tool_call_result") {
-                // Update the matching card with result
-                const card = msgEl.querySelector(`[data-call-id="${evt.call_id}"]`);
-                if (card) card.remove();
-                const updated = renderToolCard(evt.tool_name, null, evt.error ? null : evt.result, evt.error, evt.elapsed_ms);
-                const body2 = msgEl.querySelector(".msg-body");
-                if (body2) body2.appendChild(updated);
+                // Fill the matching card in place — keeps order + scroll position
+                const card = msgEl.querySelector(`[data-call-id="${(window.CSS && CSS.escape) ? CSS.escape(evt.call_id) : evt.call_id}"]`);
+                updateToolCard(card, evt.error ? null : evt.result, evt.error, evt.elapsed_ms);
                 scrollToBottom();
               } else if (evt.type === "error" && evt.message) {
                 // Server-side error during agent run — surface it to the user

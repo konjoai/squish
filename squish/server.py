@@ -3419,19 +3419,22 @@ async def chat_completions(  # pragma: no cover
         # the full output before deciding between text and tool_calls.
         stream = False
 
-        # Prefer native tokenizer tool-calling (Qwen3, Llama-3.1+).  If the
-        # tokenizer supports tools=, we skip the manual system-prompt injection
-        # so the model uses its trained format (e.g. <tool_call> tags for Qwen3).
-        # Fall back to format_tools_prompt for non-native tokenizers.
+        # Prefer native tokenizer tool-calling (Qwen2.5/3, Llama-3.1+).  If the
+        # tokenizer renders tools into the prompt, we skip the manual
+        # system-prompt injection so the model uses its trained format
+        # (e.g. <tool_call> tags for Qwen).  We detect this by rendering with
+        # tools and checking the schema was actually embedded — the MLX
+        # TokenizerWrapper proxies ``tools=`` so an argspec check is
+        # unreliable.  Fall back to format_tools_prompt otherwise.
         _tok = _state.tokenizer
         _supports_native = False
         if _tok is not None and hasattr(_tok, "apply_chat_template"):
             try:
-                import inspect as _inspect
-                _sig = _inspect.signature(_tok.apply_chat_template)
-                _supports_native = "tools" in _sig.parameters
+                _probe = _apply_chat_template(messages, _tok, tools=tools)
+                _first = tools[0].get("function", {}).get("name", "")
+                _supports_native = bool(_first) and _first in _probe
             except Exception:
-                pass
+                _supports_native = False
 
         if _supports_native:
             _native_tools = tools
@@ -4062,30 +4065,60 @@ async def agent_run(  # pragma: no cover
     ]
 
     async def _event_stream():
+        import re as _re  # noqa: PLC0415
+
         from squish.serving.tool_calling import (  # noqa: PLC0415
-            format_tools_prompt, parse_tool_calls,
+            ToolCallStreamFilter, format_tools_prompt, parse_tool_calls,
         )
+
+        # Prefer the tokenizer's native tool-calling template (Qwen2.5/3,
+        # Llama-3.1+, Mistral): it embeds the exact ``<tool_call>{...}`` format
+        # the model was trained on, which parse_tool_calls handles reliably.
+        # The manual JSON-injection prompt is only a fallback for templates
+        # that don't render tools — quantized models follow it far less
+        # consistently (they emit positional / name-dropped JSON).
+        _TOOL_TAG_RE = _re.compile(r"<tool_call>[\s\S]*$")
+        _first_tool_name = all_tools[0]["function"]["name"] if all_tools else ""
 
         current_messages = list(messages)
         total_tool_calls = 0
 
         for step in range(1, max_steps + 1):
-            # ── Inject tool schemas into the system prompt ─────────────────
-            augmented = format_tools_prompt(current_messages, all_tools)
-            prompt = _apply_chat_template(augmented, _state.tokenizer)
+            # ── Build the prompt with tool schemas ─────────────────────────
+            # Render with the native template, then verify the tools were
+            # actually embedded (the MLX TokenizerWrapper proxies ``tools=``
+            # so a signature check is unreliable). Fall back to manual
+            # injection only when the template ignored the tools.
+            prompt = _apply_chat_template(
+                current_messages, _state.tokenizer, tools=all_tools,
+            )
+            native_ok = bool(_first_tool_name) and _first_tool_name in prompt
+            if not native_ok:
+                augmented = format_tools_prompt(current_messages, all_tools)
+                prompt = _apply_chat_template(augmented, _state.tokenizer)
+            # Stop right after the closing tool-call tag so the model doesn't
+            # ramble after emitting a call (the open-tag parser handles the
+            # consumed closing tag).
+            agent_stop = ["</tool_call>"] if native_ok else None
 
-            # ── Run a non-streaming inference pass ─────────────────────────
+            # ── Stream genuine reasoning text only ─────────────────────────
+            # Emit text_delta for the model's reasoning, but suppress the
+            # ``<tool_call>`` syntax itself — clients render the structured tool
+            # card instead, so no raw JSON ever reaches a chat bubble.
             full_text = ""
+            _stream_filter = ToolCallStreamFilter()
             try:
                 for tok_text, finish in _generate_tokens(
-                    prompt, max_tokens, temperature, top_p, None, None,
+                    prompt, max_tokens, temperature, top_p, agent_stop, None,
                     repetition_penalty=repetition_penalty,
                 ):
                     if tok_text:
                         full_text += tok_text
+                    chunk = _stream_filter.feed(tok_text or "", final=finish is not None)
+                    if chunk:
                         yield (
                             "data: "
-                            + _json_dumps({"type": "text_delta", "delta": tok_text})
+                            + _json_dumps({"type": "text_delta", "delta": chunk})
                             + "\n\n"
                         )
                     if finish is not None:
@@ -4124,6 +4157,8 @@ async def agent_run(  # pragma: no cover
                 call_id   = f"call_{_uuid.uuid4().hex[:8]}"
                 tool_name = tc.get("name", "")
                 arguments = tc.get("arguments", {})
+                if not isinstance(arguments, dict):
+                    arguments = {}
 
                 yield (
                     "data: "
@@ -4136,14 +4171,21 @@ async def agent_run(  # pragma: no cover
                     + "\n\n"
                 )
 
-                result = _agent_registry.call(tool_name, arguments, call_id=call_id)
+                # A bad tool call must degrade into a tool *error* the agent can
+                # read and recover from — never crash the SSE stream.
+                _tc_err: str | None = None
+                try:
+                    result = _agent_registry.call(tool_name, arguments, call_id=call_id)
+                    result_text = (
+                        str(result.output) if result.ok else f"[ERROR] {result.error}"
+                    )
+                    _tc_err = None if result.ok else str(result.error)
+                    _elapsed = result.elapsed_ms
+                except Exception as _exc:  # noqa: BLE001
+                    result_text = f"[ERROR] {_exc}"
+                    _tc_err = str(_exc)
+                    _elapsed = 0.0
                 total_tool_calls += 1
-
-                result_text = (
-                    str(result.output)
-                    if result.ok
-                    else f"[ERROR] {result.error}"
-                )
 
                 yield (
                     "data: "
@@ -4152,8 +4194,8 @@ async def agent_run(  # pragma: no cover
                         "call_id":    call_id,
                         "tool_name":  tool_name,
                         "result":     result_text,
-                        "error":      result.error,
-                        "elapsed_ms": result.elapsed_ms,
+                        "error":      _tc_err,
+                        "elapsed_ms": _elapsed,
                     })
                     + "\n\n"
                 )
@@ -4173,9 +4215,13 @@ async def agent_run(  # pragma: no cover
                 })
 
             # ── Append turns to conversation history ──────────────────────
+            # Strip the raw tool-call tag/JSON from the assistant content so
+            # it isn't double-rendered alongside the structured tool_calls on
+            # the next turn (the native template renders tool_calls itself).
+            _assistant_content = _TOOL_TAG_RE.sub("", full_text).strip()
             current_messages.append({
                 "role":       "assistant",
-                "content":    full_text,
+                "content":    _assistant_content,
                 "tool_calls": assistant_tool_calls,
             })
             current_messages.extend(tool_result_messages)

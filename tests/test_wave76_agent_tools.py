@@ -48,6 +48,7 @@ ELEVEN_TOOL_NAMES = {
     "squish_list_dir",
     "squish_move_file",
     "squish_python_repl",
+    "squish_read_document",
     "squish_read_file",
     "squish_run_shell",
     "squish_web_search",
@@ -67,7 +68,7 @@ class TestRegisterBuiltinTools(unittest.TestCase):
         register_builtin_tools(self.registry)
 
     def test_tool_count_is_eleven(self):
-        self.assertEqual(len(self.registry), 11)
+        self.assertEqual(len(self.registry), 12)
 
     def test_all_expected_names_present(self):
         names = set(self.registry.names())
@@ -80,7 +81,7 @@ class TestRegisterBuiltinTools(unittest.TestCase):
 
     def test_all_tools_have_openai_schema(self):
         schemas = self.registry.to_openai_schemas()
-        self.assertEqual(len(schemas), 11)
+        self.assertEqual(len(schemas), 12)
         for s in schemas:
             self.assertEqual(s["type"], "function")
             self.assertIn("name", s["function"])
@@ -439,9 +440,9 @@ class TestAgentToolsEndpoint(unittest.TestCase):
         cls._srv._agent_registry = cls._orig_registry
 
     def test_returns_eleven_tools(self):
-        """to_openai_schemas() on the injected registry has 11 entries."""
+        """to_openai_schemas() on the injected registry has 12 entries."""
         schemas = self._srv._agent_registry.to_openai_schemas()
-        self.assertEqual(len(schemas), 11)
+        self.assertEqual(len(schemas), 12)
 
     def test_all_tool_names_present(self):
         schemas = self._srv._agent_registry.to_openai_schemas()
