@@ -2062,58 +2062,32 @@ def cmd_eval(args) -> None:
         print(f"\n  ⚠  {len(errors)} task(s) failed: {', '.join(errors)}", file=sys.stderr)
 
 
-def cmd_doctor(args):
-    """Check that all squish components are installed correctly."""
+def run_health_checks() -> tuple[bool, list[dict]]:
+    """Compute squish environment / dependency health checks without printing.
+
+    Single source of truth for both ``squish doctor`` (which renders these
+    results) and the first-run gate in ``squish run``. Returns ``(ok, results)``
+    where ``results`` is a list of ``{"label", "passed", "fix", "optional"}``
+    dicts in display order, and ``ok`` is ``False`` iff any REQUIRED
+    (non-optional) check failed. Optional checks never affect ``ok``.
+    """
     import concurrent.futures
     import importlib
     import platform as _platform
     import socket
 
-    from squish.ui import console as _con, _RICH_AVAILABLE as _rich
-
-    print()
-    if _rich:
-        _con.rule("[squish.violet bold]squish doctor[/]  [squish.dim]dependency check[/]", style="squish.dim")
-    else:
-        _box(["squish doctor — dependency check"])
-    print()
-
     ok = True
-    _optional_missing = 0
     _results: list[dict] = []
 
     def _check(label: str, passed: bool, fix: str = "", optional: bool = False) -> None:
-        nonlocal ok, _optional_missing
-        # Optional checks never fail the run. When unmet they render with a
-        # dim dash (—) instead of a red ✗, and are surfaced as "available to
-        # add" in the summary rather than as failures.
+        nonlocal ok
+        # Optional checks never fail the run; they are surfaced as "available to
+        # add" by the renderer rather than as failures.
         if optional and not passed:
-            _optional_missing += 1
-            if _rich:
-                _con.print(f"  [squish.dim]—[/]  [squish.dim]{label}[/]")
-                if fix:
-                    _con.print(f"       [squish.dim]Add:[/] [squish.white]{fix}[/]")
-            else:
-                print(f"  {_C.DIM}-{_C.R}  {_C.DIM}{label}{_C.R}")
-                if fix:
-                    print(f"       {_C.DIM}Add:{_C.R} {fix}")
             _results.append({"label": label, "passed": False, "fix": fix, "optional": True})
             return
-
-        if _rich:
-            sym = "[squish.green]✓[/]" if passed else "[squish.error]✗[/]"
-            _con.print(f"  {sym}  {label}")
-            if not passed:
-                ok = False
-                if fix:
-                    _con.print(f"       [squish.dim]Fix:[/] [squish.white]{fix}[/]")
-        else:
-            sym = f"{_C.G}✓{_C.R}" if passed else f"{_C.PK}✗{_C.R}"
-            print(f"  {sym}  {label}")
-            if not passed:
-                ok = False
-                if fix:
-                    print(f"       {_C.DIM}Fix:{_C.R} {fix}")
+        if not passed:
+            ok = False
         _results.append({"label": label, "passed": passed, "fix": fix, "optional": optional})
 
     # OS
@@ -2268,6 +2242,52 @@ def cmd_doctor(args):
     except ImportError:
         _check("squash-ai (compliance & ML-BOM features)", False,
                'pip install squash-ai', optional=True)
+
+    return ok, _results
+
+
+def cmd_doctor(args):
+    """Check that all squish components are installed correctly."""
+    from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+
+    print()
+    if _rich:
+        _con.rule("[squish.violet bold]squish doctor[/]  [squish.dim]dependency check[/]", style="squish.dim")
+    else:
+        _box(["squish doctor — dependency check"])
+    print()
+
+    ok, _results = run_health_checks()
+
+    # Render exactly as the historical inline ``_check`` closure did — same
+    # symbols, colours and ordering — so output stays byte-for-byte identical.
+    _optional_missing = 0
+    for _r in _results:
+        label = _r["label"]
+        passed = _r["passed"]
+        fix = _r["fix"]
+        optional = _r["optional"]
+        if optional and not passed:
+            _optional_missing += 1
+            if _rich:
+                _con.print(f"  [squish.dim]—[/]  [squish.dim]{label}[/]")
+                if fix:
+                    _con.print(f"       [squish.dim]Add:[/] [squish.white]{fix}[/]")
+            else:
+                print(f"  {_C.DIM}-{_C.R}  {_C.DIM}{label}{_C.R}")
+                if fix:
+                    print(f"       {_C.DIM}Add:{_C.R} {fix}")
+            continue
+        if _rich:
+            sym = "[squish.green]✓[/]" if passed else "[squish.error]✗[/]"
+            _con.print(f"  {sym}  {label}")
+            if not passed and fix:
+                _con.print(f"       [squish.dim]Fix:[/] [squish.white]{fix}[/]")
+        else:
+            sym = f"{_C.G}✓{_C.R}" if passed else f"{_C.PK}✗{_C.R}"
+            print(f"  {sym}  {label}")
+            if not passed and fix:
+                print(f"       {_C.DIM}Fix:{_C.R} {fix}")
 
     print()
     if ok:
