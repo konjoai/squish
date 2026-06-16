@@ -15,11 +15,25 @@ struct SquishHealth: Codable {
     var uptime_s: Double?
 }
 
+/// One tool invocation inside an agentic assistant turn — rendered as a card
+/// in the chat so the user can watch the agent call tools live.
+struct ToolCallRecord: Identifiable {
+    let id: String          // call_id from the server
+    let name: String
+    var arguments: String   // compact JSON
+    var result: String? = nil
+    var error: String? = nil
+    var elapsedMs: Double? = nil
+    var done: Bool = false
+}
+
 struct ChatMessage: Identifiable {
     let id = UUID()
     let role: String
     var content: String
     var isStreaming: Bool = false
+    /// Tool calls made during an agentic turn (agent mode), in execution order.
+    var toolCalls: [ToolCallRecord] = []
 }
 
 // ── Engine ────────────────────────────────────────────────────────────
@@ -30,6 +44,9 @@ final class SquishEngine: ObservableObject {
     @AppStorage("squish.apiKey") var apiKey: String = "squish"
     @AppStorage("squish.model")  var preferredModel: String = "qwen3:8b"
     @AppStorage("squish.hotkey") var hotkey: String = "⌘⌥S"
+    /// When on, chat prompts run through the tool-calling agent loop
+    /// (POST /v1/agent/run) instead of plain chat completions.
+    @AppStorage("squish.agentMode") var agentMode: Bool = false
     @AppStorage("squish.cachedModels") private var cachedModelsJSON: String = ""
 
     @Published var health:              SquishHealth? = nil
@@ -285,6 +302,7 @@ final class SquishEngine: ObservableObject {
 
     // ── Chat streaming ────────────────────────────────────────────────
     func sendMessage(_ text: String) {
+        if agentMode { sendAgentMessage(text); return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard serverRunning else { return }
 
@@ -346,6 +364,102 @@ final class SquishEngine: ObservableObject {
     }
 
     func clearChat() { messages = [] }
+
+    // ── Agentic chat (tool calling) ───────────────────────────────────
+    /// Run the prompt through the server's multi-step agent loop
+    /// (POST /v1/agent/run, SSE). The model can call tools (read/write files,
+    /// run shell, search the web …); each call streams into the assistant
+    /// turn as a live tool-call card.
+    func sendAgentMessage(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard serverRunning else { return }
+
+        messages.append(ChatMessage(role: "user", content: text))
+        let reply = ChatMessage(role: "assistant", content: "", isStreaming: true)
+        messages.append(reply)
+        let replyIdx = messages.count - 1
+        isGenerating = true
+        streamTask?.cancel()
+
+        let history = messages.dropLast().map { ["role": $0.role, "content": $0.content] }
+        let urlStr = "http://\(host):\(port)/v1/agent/run"
+        let key = apiKey
+
+        streamTask = Task {
+            defer {
+                Task { @MainActor in
+                    self.isGenerating = false
+                    if replyIdx < self.messages.count {
+                        self.messages[replyIdx].isStreaming = false
+                    }
+                }
+            }
+            guard let url = URL(string: urlStr) else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            let body: [String: Any] = [
+                "messages": history,
+                "max_steps": 8,
+                "max_tokens": 768,
+                "temperature": 0.4,
+            ]
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+            do {
+                let (bytes, _) = try await URLSession.shared.bytes(for: req)
+                for try await line in bytes.lines {
+                    if Task.isCancelled { break }
+                    guard line.hasPrefix("data: ") else { continue }
+                    let chunk = String(line.dropFirst(6))
+                    guard let d = chunk.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                          let type = json["type"] as? String else { continue }
+                    await MainActor.run { self.applyAgentEvent(type: type, json: json, replyIdx: replyIdx) }
+                    if type == "done" || type == "error" { break }
+                }
+            } catch { }
+        }
+    }
+
+    /// Fold one /v1/agent/run SSE event into the assistant message at `replyIdx`.
+    private func applyAgentEvent(type: String, json: [String: Any], replyIdx: Int) {
+        guard replyIdx < messages.count else { return }
+        switch type {
+        case "text_delta":
+            if let delta = json["delta"] as? String { messages[replyIdx].content += delta }
+        case "tool_call_start":
+            // The streamed text up to here was the tool-call syntax; replace it
+            // with a structured tool card so the bubble stays readable.
+            messages[replyIdx].content = ""
+            let callId = json["call_id"] as? String ?? UUID().uuidString
+            let name = json["tool_name"] as? String ?? "tool"
+            var argStr = ""
+            if let args = json["arguments"],
+               let data = try? JSONSerialization.data(withJSONObject: args),
+               let s = String(data: data, encoding: .utf8) { argStr = s }
+            messages[replyIdx].toolCalls.append(
+                ToolCallRecord(id: callId, name: name, arguments: argStr)
+            )
+        case "tool_call_result":
+            let callId = json["call_id"] as? String ?? ""
+            if let i = messages[replyIdx].toolCalls.firstIndex(where: { $0.id == callId }) {
+                messages[replyIdx].toolCalls[i].result = json["result"] as? String
+                messages[replyIdx].toolCalls[i].error = json["error"] as? String
+                messages[replyIdx].toolCalls[i].elapsedMs = json["elapsed_ms"] as? Double
+                messages[replyIdx].toolCalls[i].done = true
+            }
+        case "error":
+            let msg = json["message"] as? String ?? "agent error"
+            if messages[replyIdx].content.isEmpty {
+                messages[replyIdx].content = "⚠️ \(msg)"
+            }
+        default:
+            break  // step_complete / done: no visible state change
+        }
+    }
 
     // ── Server management ─────────────────────────────────────────────
 

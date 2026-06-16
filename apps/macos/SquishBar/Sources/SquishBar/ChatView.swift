@@ -16,11 +16,34 @@ struct ChatView: View {
                         .foregroundStyle(SQ.textSecond)
                 }
                 Spacer()
+                Button {
+                    engine.agentMode.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: engine.agentMode ? "bolt.fill" : "bolt")
+                            .font(.system(size: 10))
+                        Text("agent")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(engine.agentMode ? SQ.accentBright : SQ.textSecond)
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(engine.agentMode ? SQ.accent.opacity(0.18) : Color.clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(engine.agentMode ? SQ.accent.opacity(0.5) : SQ.border, lineWidth: 1)
+                    )
+                    .cornerRadius(7)
+                }
+                .buttonStyle(.plain)
+                .help(engine.agentMode
+                      ? "Agent mode: prompts call tools via /v1/agent/run"
+                      : "Chat mode: plain completions")
                 if !engine.messages.isEmpty {
                     Button("Clear") { engine.clearChat() }
                         .font(.system(size: 11))
                         .foregroundStyle(SQ.textSecond)
                         .buttonStyle(.plain)
+                        .padding(.leading, 4)
                 }
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
@@ -89,30 +112,43 @@ struct MessageBubble: View {
                     .foregroundStyle(SQ.textSecond)
                     .kerning(0.5)
 
-                Group {
-                    if message.content.isEmpty && message.isStreaming {
-                        TypingIndicator()
-                    } else if isUser {
-                        // User messages stay plain — no point parsing markdown
-                        // out of what the user just typed.
-                        Text(message.content)
-                            .font(.system(size: 14))
-                            .foregroundStyle(SQ.textPrimary)
-                            .textSelection(.enabled)
-                    } else {
-                        // Assistant output is markdown — render structure
-                        // (lists, headings, code blocks) plus inline bold/italic.
-                        MarkdownView(content: message.content)
-                            .textSelection(.enabled)
+                // Agentic turns: render each tool call as a live card.
+                if !isUser && !message.toolCalls.isEmpty {
+                    ForEach(message.toolCalls) { call in
+                        ToolCallCardView(call: call)
                     }
                 }
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(isUser ? SQ.userBubble : SQ.asstBubble)
-                .cornerRadius(12)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(isUser ? SQ.accent.opacity(0.3) : SQ.border, lineWidth: 1)
-                )
+
+                if message.content.isEmpty && message.isStreaming && message.toolCalls.isEmpty {
+                    TypingIndicator()
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(SQ.asstBubble)
+                        .cornerRadius(12)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(SQ.border, lineWidth: 1))
+                } else if !message.content.isEmpty {
+                    Group {
+                        if isUser {
+                            // User messages stay plain — no point parsing markdown
+                            // out of what the user just typed.
+                            Text(message.content)
+                                .font(.system(size: 14))
+                                .foregroundStyle(SQ.textPrimary)
+                                .textSelection(.enabled)
+                        } else {
+                            // Assistant output is markdown — render structure
+                            // (lists, headings, code blocks) plus inline bold/italic.
+                            MarkdownView(content: message.content)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(isUser ? SQ.userBubble : SQ.asstBubble)
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(isUser ? SQ.accent.opacity(0.3) : SQ.border, lineWidth: 1)
+                    )
+                }
             }
 
             if isUser {
@@ -129,6 +165,107 @@ struct MessageBubble: View {
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 4)
+    }
+}
+
+/// A single agent tool invocation, rendered live as it executes.
+struct ToolCallCardView: View {
+    let call: ToolCallRecord
+
+    private var accent: Color {
+        if call.done && call.error != nil { return SQ.red }
+        if call.done { return SQ.green }
+        return SQ.accentBright
+    }
+
+    /// SF Symbol + friendly label per built-in tool.
+    private var meta: (icon: String, label: String) {
+        switch call.name {
+        case "squish_list_dir":    return ("folder", "List directory")
+        case "squish_read_file":   return ("doc.text", "Read file")
+        case "squish_read_document": return ("doc.richtext", "Read document")
+        case "squish_write_file":  return ("square.and.pencil", "Write file")
+        case "squish_create_file": return ("doc.badge.plus", "Create file")
+        case "squish_delete_file": return ("trash", "Delete file")
+        case "squish_move_file":   return ("arrow.right.doc.on.clipboard", "Move file")
+        case "squish_apply_edit":  return ("pencil.line", "Edit file")
+        case "squish_run_shell":   return ("terminal", "Run shell")
+        case "squish_python_repl": return ("chevron.left.forwardslash.chevron.right", "Python")
+        case "squish_fetch_url":   return ("globe", "Fetch URL")
+        case "squish_web_search":  return ("magnifyingglass", "Web search")
+        default:
+            let clean = call.name
+                .replacingOccurrences(of: "squish_", with: "")
+                .replacingOccurrences(of: "_", with: " ")
+            return ("wrench.and.screwdriver", clean.capitalized)
+        }
+    }
+
+    /// The most telling argument (path/command/url/query) shown inline.
+    private var argHint: String {
+        guard let d = call.arguments.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+        else { return "" }
+        for k in ["path", "command", "url", "query", "src", "code"] {
+            if let v = obj[k] { return String(describing: v) }
+        }
+        return obj.values.first.map { String(describing: $0) } ?? ""
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                Image(systemName: meta.icon)
+                    .font(.system(size: 11))
+                    .foregroundStyle(accent)
+                Text(meta.label)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(SQ.textPrimary)
+                if !argHint.isEmpty {
+                    Text(argHint)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(accent.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                if !call.done {
+                    ProgressView().controlSize(.small).scaleEffect(0.6)
+                } else if let ms = call.elapsedMs {
+                    Text(String(format: "%.0f ms", ms))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(SQ.textSecond)
+                }
+                if call.done {
+                    Image(systemName: call.error != nil ? "xmark.circle.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(call.error != nil ? SQ.red : SQ.green)
+                }
+            }
+            if !call.arguments.isEmpty {
+                Text(call.arguments)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(SQ.textSecond)
+                    .textSelection(.enabled)
+                    .lineLimit(3)
+            }
+            if call.done, let out = call.error ?? call.result, !out.isEmpty {
+                Text(out)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(call.error != nil ? SQ.red : SQ.textPrimary)
+                    .textSelection(.enabled)
+                    .lineLimit(8)
+                    .padding(.top, 4)
+                    .overlay(Rectangle().fill(SQ.border).frame(height: 1), alignment: .top)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(SQ.asstBubble)
+        .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(accent.opacity(0.35), lineWidth: 1)
+        )
     }
 }
 
