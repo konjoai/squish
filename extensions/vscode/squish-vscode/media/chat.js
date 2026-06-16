@@ -410,6 +410,41 @@
 
     // ── Tool call UI ──────────────────────────────────────────────────────
 
+    // Friendly label + icon per VS Code agent tool (mirrors the web UI cards).
+    const TOOL_META = {
+        read_file:           ['\ud83d\udcc4', 'Read file'],
+        get_selection:       ['\u2702\ufe0f', 'Get selection'],
+        get_open_files:      ['\ud83d\udcd1', 'Open files'],
+        run_terminal:        ['\u26a1', 'Run terminal'],
+        insert_at_cursor:    ['\u2328\ufe0f', 'Insert at cursor'],
+        write_file:          ['\u270f\ufe0f', 'Write file'],
+        list_directory:      ['\ud83d\udcc2', 'List directory'],
+        get_diagnostics:     ['\ud83d\udd0d', 'Diagnostics'],
+        apply_edit:          ['\u270f\ufe0f', 'Edit file'],
+        search_workspace:    ['\ud83d\udd0e', 'Search workspace'],
+        create_file:         ['\u2728', 'Create file'],
+        delete_file:         ['\ud83d\uddd1\ufe0f', 'Delete file'],
+        get_git_status:      ['\ud83c\udf3f', 'Git status'],
+        get_symbol_at_cursor:['\ud83d\udd23', 'Symbol at cursor'],
+        web_search:          ['\ud83c\udf10', 'Web search'],
+    };
+    function _toolMeta(name) {
+        const m = TOOL_META[name];
+        if (m) { return { icon: m[0], label: m[1] }; }
+        const clean = String(name || 'tool').replace(/_/g, ' ');
+        return { icon: '\ud83d\udd27', label: clean.charAt(0).toUpperCase() + clean.slice(1) };
+    }
+    // The most telling argument to show inline (path, command, query, url\u2026).
+    function _primaryArgHint(args) {
+        if (!args || typeof args !== 'object') { return ''; }
+        const v = args.path ?? args.relativePath ?? args.command ?? args.url
+            ?? args.query ?? args.oldText ?? args.symbol ?? Object.values(args)[0];
+        if (v == null) { return ''; }
+        let s = typeof v === 'string' ? v : JSON.stringify(v);
+        s = s.replace(/\s+/g, ' ').trim();
+        return s.length > 60 ? s.slice(0, 58) + '\u2026' : s;
+    }
+
     function _onToolCallStart(id, name, argsJson) {
         if (!_currentBubble) { return; }
         _cancelAck();
@@ -417,65 +452,73 @@
         if (_currentAckEl)       { _currentAckEl.remove(); _currentAckEl = null; }
         _flushQueue();
 
+        let args;
+        try { args = JSON.parse(argsJson || '{}'); } catch { args = {}; }
+        const meta = _toolMeta(name);
+        const argsStr = Object.keys(args).length ? JSON.stringify(args, null, 2) : '';
+
         const card = document.createElement('div');
-        card.className = 'tool-card';
+        card.className = 'tool-card pending';
 
         const header = document.createElement('div');
         header.className = 'tool-header';
-
-        const spinner = document.createElement('div');
-        spinner.className = 'tool-spinner';
-
-        const nameEl = document.createElement('span');
-        nameEl.textContent = name;
-
-        const statusEl = document.createElement('span');
-        statusEl.style.cssText = 'margin-left:auto;font-size:10px;color:var(--text-dim)';
-        statusEl.textContent = 'running\u2026';
-
-        header.appendChild(spinner);
-        header.appendChild(nameEl);
-        header.appendChild(statusEl);
+        header.addEventListener('click', () => card.classList.toggle('open'));
+        header.innerHTML =
+            '<span class="tool-icon">' + meta.icon + '</span>'
+            + '<span class="tool-name">' + _esc(meta.label) + '</span>'
+            + '<span class="tool-arg-hint">' + _esc(_primaryArgHint(args)) + '</span>'
+            + '<span class="tool-chevron">\u25b6</span>'
+            + '<span class="tool-status"><span class="tool-spinner"></span></span>';
         card.appendChild(header);
 
-        let args;
-        try { args = JSON.parse(argsJson || '{}'); } catch { args = {}; }
-        const argsText = Object.entries(args)
-            .filter(([, v]) => v !== undefined && v !== null)
-            .map(([k, v]) => {
-                const s = typeof v === 'string' ? v : JSON.stringify(v);
-                return `${k}: ${s.length > 80 ? s.slice(0, 80) + '\u2026' : s}`;
-            })
-            .join('\n');
+        const preview = document.createElement('div');
+        preview.className = 'tool-preview';
+        card.appendChild(preview);
 
-        if (argsText) {
-            const pre = document.createElement('pre');
-            pre.className = 'tool-result';
-            pre.textContent = argsText;
-            card.appendChild(pre);
-        }
-
-        const resultEl = document.createElement('pre');
-        resultEl.className = 'tool-result';
-        resultEl.style.display = 'none';
-        card.appendChild(resultEl);
+        const body = document.createElement('div');
+        body.className = 'tool-body';
+        body.innerHTML =
+            '<div class="tool-section-label">Arguments</div>'
+            + '<pre class="tool-args">' + _esc(argsStr || '\u2014') + '</pre>'
+            + '<div class="tool-section-label tool-result-label" style="display:none">Result</div>'
+            + '<pre class="tool-result-pre" style="display:none"></pre>';
+        card.appendChild(body);
 
         _currentBubble.appendChild(card);
         messagesEl.scrollTop = messagesEl.scrollHeight;
-        _toolCards.set(id, { card, spinner, statusEl, resultEl });
+        _toolCards.set(id, { card, preview });
     }
 
     function _onToolCallEnd(id, result) {
         const entry = _toolCards.get(id);
         if (!entry) { return; }
-        const { spinner, statusEl, resultEl } = entry;
-        spinner.style.display = 'none';
-        statusEl.textContent = '\u2714 done';
-        statusEl.style.color = 'var(--success)';
-        if (result != null && String(result).length > 0) {
-            const s = String(result);
-            resultEl.textContent = s.length > 600 ? s.slice(0, 600) + '\n\u2026 (truncated)' : s;
-            resultEl.style.display = '';
+        const { card, preview } = entry;
+        const resultStr = result == null ? '' : String(result);
+        const errored = /^\s*(\[ERROR\]|Error:)/.test(resultStr);
+
+        card.classList.remove('pending');
+        card.classList.add(errored ? 'error' : 'done');
+        const statusEl = card.querySelector('.tool-status');
+        if (statusEl) {
+            statusEl.innerHTML = errored
+                ? '<span class="tool-x">\u2717</span>'
+                : '<span class="tool-check">\u2714</span>';
+        }
+
+        if (resultStr.length > 0) {
+            const label = card.querySelector('.tool-result-label');
+            const pre = card.querySelector('.tool-result-pre');
+            if (label) { label.style.display = ''; }
+            if (pre) {
+                pre.textContent = resultStr.length > 8192
+                    ? resultStr.slice(0, 8192) + '\n\u2026 (truncated)'
+                    : resultStr;
+                pre.style.display = '';
+            }
+            // Always-visible one-line preview, so output is discoverable un-clicked.
+            const firstLine = (resultStr.split('\n').find((l) => l.trim()) || '').trim();
+            preview.textContent = firstLine.length > 96 ? firstLine.slice(0, 94) + '\u2026' : firstLine;
+            if (errored) { preview.style.color = 'var(--danger, #f87171)'; }
         }
         messagesEl.scrollTop = messagesEl.scrollHeight;
     }
@@ -486,35 +529,87 @@
         return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    function _codeBlock(lang, code) {
+        const id = 'cb_' + Math.random().toString(36).slice(2, 9);
+        return '<div class="code-block">'
+            + '<div class="code-header">'
+            + '<span class="code-lang">' + _esc(lang || 'text') + '</span>'
+            + '<button class="copy-code-btn" data-id="' + id + '">Copy</button>'
+            + '</div>'
+            + '<pre><code id="' + id + '">' + _esc(code) + '</code></pre>'
+            + '</div>';
+    }
+
+    // If a block is bare JSON (an array/object the model emitted as plain text,
+    // like a tool list), pretty-print it so it renders as a formatted code block
+    // instead of an unreadable wrapped line.
+    function _tryPrettyJson(s) {
+        if (!/^[[{]/.test(s) || s.length > 50000) { return null; }
+        try {
+            const v = JSON.parse(s);
+            if (v && typeof v === 'object') { return JSON.stringify(v, null, 2); }
+        } catch { /* not JSON — fall through */ }
+        return null;
+    }
+
+    function _inline(escaped) {
+        return escaped
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*([^*]+?)\*/g, '<em>$1</em>')
+            .replace(/`([^`]+?)`/g, '<code>$1</code>');
+    }
+
+    // Render a non-fenced block: headings, ordered/unordered lists, paragraphs.
+    function _renderLines(block) {
+        const lines = block.split('\n');
+        const out = [];
+        let listType = null;
+        let items = [];
+        let para = [];
+        const flushList = () => {
+            if (items.length) { out.push('<' + listType + '>' + items.join('') + '</' + listType + '>'); items = []; }
+            listType = null;
+        };
+        const flushPara = () => {
+            if (para.length) { out.push('<p>' + _inline(_esc(para.join('\n'))).replace(/\n/g, '<br>') + '</p>'); para = []; }
+        };
+        for (const line of lines) {
+            const h = line.match(/^(#{1,6})\s+(.+)$/);
+            const ul = line.match(/^\s*[-*]\s+(.+)$/);
+            const ol = line.match(/^\s*\d+[.)]\s+(.+)$/);
+            if (h) {
+                flushList(); flushPara();
+                const lvl = Math.min(6, h[1].length + 2);
+                out.push('<h' + lvl + '>' + _inline(_esc(h[2])) + '</h' + lvl + '>');
+            } else if (ul) {
+                flushPara(); if (listType !== 'ul') { flushList(); } listType = 'ul';
+                items.push('<li>' + _inline(_esc(ul[1])) + '</li>');
+            } else if (ol) {
+                flushPara(); if (listType !== 'ol') { flushList(); } listType = 'ol';
+                items.push('<li>' + _inline(_esc(ol[1])) + '</li>');
+            } else {
+                flushList(); para.push(line);
+            }
+        }
+        flushList(); flushPara();
+        return out.join('');
+    }
+
     function _renderMarkdown(text) {
         const out = [];
         const parts = text.split(/(```[\s\S]*?```)/g);
         for (const part of parts) {
             const fenceMatch = part.match(/^```(\w*)\n?([\s\S]*?)```$/);
             if (fenceMatch) {
-                const lang = fenceMatch[1] || '';
-                const code = fenceMatch[2] || '';
-                const id = 'cb_' + Math.random().toString(36).slice(2, 9);
-                out.push(
-                    '<div class="code-block">'
-                    + '<div class="code-header">'
-                    + '<span class="code-lang">' + _esc(lang) + '</span>'
-                    + '<button class="copy-code-btn" data-id="' + id + '">Copy</button>'
-                    + '</div>'
-                    + '<pre><code id="' + id + '">' + _esc(code) + '</code></pre>'
-                    + '</div>',
-                );
-            } else {
-                const paragraphs = part.split(/\n{2,}/);
-                for (const para of paragraphs) {
-                    let s = _esc(para.trim());
-                    if (!s) { continue; }
-                    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-                    s = s.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
-                    s = s.replace(/`([^`]+?)`/g, '<code>$1</code>');
-                    s = s.replace(/\n/g, '<br>');
-                    out.push('<p>' + s + '</p>');
-                }
+                out.push(_codeBlock(fenceMatch[1] || '', fenceMatch[2] || ''));
+                continue;
+            }
+            for (const raw of part.split(/\n{2,}/)) {
+                const block = raw.replace(/^\n+|\s+$/g, '');
+                if (!block.trim()) { continue; }
+                const pretty = _tryPrettyJson(block.trim());
+                if (pretty !== null) { out.push(_codeBlock('json', pretty)); continue; }
+                out.push(_renderLines(block));
             }
         }
         return out.join('');
