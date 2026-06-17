@@ -80,6 +80,8 @@ from collections.abc import AsyncIterator
 
 import numpy as np
 
+from squish.serving.token_decode_cache import TokenDecodeCache
+
 log = logging.getLogger(__name__)
 
 # Sentinel value placed on a request's output queue when generation is done
@@ -224,6 +226,8 @@ class BatchScheduler:
 
         self._model          = model
         self._tokenizer      = tokenizer
+        # Memoize single-token decodes off the per-token generation hot path.
+        self._decode_cache   = TokenDecodeCache(tokenizer)
         self._max_batch      = max_batch_size
         self._window_ms      = batch_window_ms
         self._max_pending    = max_pending
@@ -618,7 +622,7 @@ class BatchScheduler:
 
                 next_id       = _sample_token(logit_row, req.temperature,
                                               req.top_p, self._rng)
-                tok_text      = self._tokenizer.decode([next_id])
+                tok_text      = self._decode_cache.decode(next_id)
 
                 req.generated_ids.append(next_id)
 
@@ -701,7 +705,7 @@ class BatchScheduler:
 
                 next_id  = _sample_token(logit_row, req.temperature,
                                          req.top_p, self._rng)
-                tok_text = self._tokenizer.decode([next_id])
+                tok_text = self._decode_cache.decode(next_id)
 
                 req.generated_ids.append(next_id)
 
@@ -849,7 +853,7 @@ class NestedWaitScheduler(BatchScheduler):
                 logit_row = logits_np[i, last_pos, :]
                 next_id   = _sample_token(logit_row, req.temperature,
                                           req.top_p, self._rng)
-                tok_text  = self._tokenizer.decode([next_id])
+                tok_text  = self._decode_cache.decode(next_id)
 
                 req.generated_ids.append(next_id)
 
