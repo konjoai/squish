@@ -108,7 +108,7 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B"]
+select = ["E", "F", "W", "I", "UP", "B", "BLE"]
 ignore = [
     "E501",   # line-length handled by formatter
     "B008",   # FastAPI Depends() calls in function args
@@ -129,6 +129,11 @@ ignore = [
     "UP035",  # deprecated typing imports (dead after UP006/UP045 auto-fix; kept for compat)
     "I001",   # import sort order — not enforced; try/except stubs use logical not alphabetical order
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use broad `except Exception` for failure-path assertions and
+# best-effort probes; BLE001 is enforced only on the squish/ package.
+"tests/**" = ["BLE001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
