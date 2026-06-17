@@ -21,6 +21,8 @@ import platform
 import subprocess
 from pathlib import Path
 
+from squish.config import squish_home
+
 _LOG = logging.getLogger("squish.daemon.launchagent")
 
 PLIST_LABEL = "ai.konjo.squishd"
@@ -58,7 +60,7 @@ def plist_content(
         Path for stdout/stderr logs (defaults to ~/.squish/daemon.log).
     """
     if not log_path:
-        log_path = str(Path.home() / ".squish" / "daemon.log")
+        log_path = str(squish_home() / "daemon.log")
 
     args_list = _xml_args(squishd_bin, model_dir, compressed_dir, sock_path, max_models)
 
@@ -152,7 +154,7 @@ def install(
             "Run 'pip install -e .' to create the entry point."
         )
 
-    log_path = str(Path.home() / ".squish" / "daemon.log")
+    log_path = str(squish_home() / "daemon.log")
     content = plist_content(
         squishd_bin=squishd_bin,
         model_dir=model_dir,

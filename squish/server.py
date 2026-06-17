@@ -480,60 +480,6 @@ _inference_backend   = "mlx-eager"  # overridden by --inference-backend in main(
 _agent_registry: "Any | None" = None   # ToolRegistry | None — set in main()
 _mcp_servers: dict = {}                # {server_id: MCPClient}
 
-# ── Phase F: Inference Backend Abstraction ───────────────────────────────────
-
-class _InferenceBackend:
-    """Base shim for inference backend dispatch.
-
-    Concrete subclasses override ``generate_stream``.  All generation paths
-    are hardware-bound and marked ``# pragma: no cover``.  The ``__init__``
-    constructors are testable (no hardware required).
-    """
-
-    def generate_stream(self, *args, **kwargs):  # pragma: no cover
-        raise NotImplementedError
-
-
-class _MLXEagerBackend(_InferenceBackend):
-    """Standard MLX Metal eager execution path.
-
-    Stores a reference to the loaded model and tokenizer so the dispatch
-    layer can route ``generate_stream`` calls without global lookups.
-    """
-
-    def __init__(self, model: "Any", tokenizer: "Any") -> None:
-        self._model = model
-        self._tokenizer = tokenizer
-
-    def generate_stream(self, *args, **kwargs):  # pragma: no cover
-        raise NotImplementedError("Route through _generate_tokens instead")
-
-
-class _MLCBackend(_InferenceBackend):
-    """MLC-LLM engine path for large-context requests.
-
-    Probes for ``mlc_llm`` at construction time and sets
-    :meth:`is_available` accordingly so callers can gate on its presence.
-    """
-
-    def __init__(self, model_path: str) -> None:
-        self._model_path = model_path
-        try:
-            import mlc_llm as _mlc  # noqa: F401,PLC0415
-            self._available = True
-        except ImportError:
-            self._available = False
-
-    def is_available(self) -> bool:
-        """Return ``True`` when ``mlc_llm`` was importable at construction time."""
-        return self._available
-
-    def generate_stream(self, *args, **kwargs):  # pragma: no cover
-        raise NotImplementedError("MLC backend not yet wired")
-
-
-_active_backend: "_InferenceBackend | None" = None  # set in main() when dispatching
-
 # ── Batch scheduler (Phase 2.1 — continuous batching) ───────────────────────
 _scheduler       = None  # BatchScheduler | None — set in main() when --batch-scheduler given
 _QueueFullError  = None  # QueueFullError class — imported alongside BatchScheduler
@@ -5482,9 +5428,10 @@ Examples:
     global _semantic_cache
     if getattr(args, "semantic_cache", False):
         try:
+            from squish.config import squish_home  # noqa: PLC0415
             from squish.semantic_cache import SquishSemanticCache  # noqa: PLC0415
             _sc_db = getattr(args, "semantic_cache_db", "") or \
-                     str(Path.home() / ".squish" / "response_cache.db")
+                     str(squish_home() / "response_cache.db")
             _semantic_cache = SquishSemanticCache(db_path=_sc_db)
             _info("semantic-cache", f"enabled  db={_sc_db}")
         except (ImportError, OSError, RuntimeError, ValueError, AttributeError) as exc:

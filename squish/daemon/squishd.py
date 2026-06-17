@@ -46,13 +46,15 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
+from squish.config import squish_home
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 SOCK_PATH: str = os.environ.get("SQUISH_SOCK", "/tmp/squish.sock")
-PID_FILE:  str = str(Path.home() / ".squish" / "daemon.pid")
-LOG_FILE:  str = str(Path.home() / ".squish" / "daemon.log")
+PID_FILE:  str = str(squish_home() / "daemon.pid")
+LOG_FILE:  str = str(squish_home() / "daemon.log")
 MAX_MODELS: int = int(os.environ.get("SQUISH_MAX_MODELS", "2"))
 
 # Maximum bytes per JSON frame (8 MB — large enough for any realistic prompt)
