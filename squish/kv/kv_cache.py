@@ -45,12 +45,15 @@ Low-level: create a cache and pass to generate():
 """
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
 import numpy as np
+
+_LOG = logging.getLogger("squish.kv.kv_cache")
 
 # ---------------------------------------------------------------------------
 # Lazy MLX import (module may be imported without Metal available, e.g. tests)
@@ -1510,7 +1513,8 @@ class KVLayerCache:
             return  # nothing to prefetch — recent window only, no INT8 tier
         try:
             self._prefetch_future = self._get_pool().submit(self.get_full_kv)
-        except Exception:  # pragma: no cover
+        except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
+            _LOG.debug("KV prefetch submit failed; skipping prefetch: %s", exc)
             self._prefetch_future = None  # never block generation
 
     def get_full_kv_prefetched(self) -> tuple:
@@ -1524,7 +1528,8 @@ class KVLayerCache:
             return self.get_full_kv()
         try:
             return future.result(timeout=0.5)
-        except Exception:  # pragma: no cover
+        except (TimeoutError, RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
+            _LOG.debug("KV prefetch result unavailable; recomputing synchronously: %s", exc)
             return self.get_full_kv()
 
     def get_as_mlx(self):
@@ -1589,8 +1594,8 @@ class KVLayerCache:
                     try:
                         import pathlib
                         pathlib.Path(p).unlink(missing_ok=True)
-                    except Exception:
-                        pass
+                    except OSError as exc:
+                        _LOG.debug("Failed to unlink KV disk-tier file %s: %s", p, exc)
             # Clear SVD calibration buffer but keep the fitted basis
             self._svd_buf_k = None
             self._svd_buf_v = None
@@ -2418,7 +2423,7 @@ class QuantizedKVCache:
                     [t.astype(np.float64).reshape(1, -1) for t in token_list],
                     axis=0,
                 )                           # (n_tokens, n_heads * head_dim)
-            except Exception as exc:
+            except (ValueError, TypeError) as exc:
                 raise ValueError(
                     f"auto_calibrate: layer {li} sample tensors could not be "
                     f"stacked — shapes may differ: {exc}"
@@ -2949,7 +2954,8 @@ def _n_layers(model) -> int:  # pragma: no cover
         return (getattr(cfg, "num_hidden_layers", None)
                 or getattr(cfg, "n_layers", None)
                 or 32)
-    except Exception:
+    except AttributeError as exc:
+        _LOG.debug("Could not infer layer count from model config; defaulting to 32: %s", exc)
         return 32
 
 
@@ -3165,11 +3171,13 @@ class DiskKVCache:
             # Touch mtime for LRU ordering
             entry.touch()
             return qkv, last_logit
-        except Exception:  # corrupted or schema mismatch — treat as miss  # pragma: no cover
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            # corrupted or schema mismatch — treat as miss  # pragma: no cover
+            _LOG.debug("DiskKVCache entry %s unreadable; treating as miss: %s", entry, exc)
             try:
                 entry.unlink(missing_ok=True)
-            except Exception:
-                pass
+            except OSError as unlink_exc:
+                _LOG.debug("Failed to remove corrupt cache entry %s: %s", entry, unlink_exc)
             return None
 
     def store(
@@ -3197,8 +3205,8 @@ class DiskKVCache:
                 np.savez_compressed(str(tmp), **arrays)
                 _os.replace(str(tmp), str(entry))
                 self._evict_if_needed()
-            except Exception:  # pragma: no cover
-                pass
+            except (OSError, ValueError, TypeError, RuntimeError) as exc:  # pragma: no cover
+                _LOG.debug("DiskKVCache background store failed; dropping: %s", exc)
 
         _threading.Thread(target=_worker, daemon=True).start()
 
@@ -3301,8 +3309,8 @@ class DiskKVCache:
             while len(entries) > self._max:
                 try:
                     entries.pop(0).unlink(missing_ok=True)
-                except Exception:  # pragma: no cover
-                    pass
+                except OSError as exc:  # pragma: no cover
+                    _LOG.debug("DiskKVCache eviction unlink failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -3369,11 +3377,12 @@ class SessionKVCache:
             qkv  = DiskKVCache._deserialise(data)
             entry.touch()   # update mtime for LRU ordering
             return qkv
-        except Exception:
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            _LOG.debug("SessionKVCache entry %s unreadable; treating as miss: %s", entry, exc)
             try:
                 entry.unlink(missing_ok=True)
-            except Exception:  # pragma: no cover
-                pass
+            except OSError as unlink_exc:  # pragma: no cover
+                _LOG.debug("Failed to remove corrupt session entry %s: %s", entry, unlink_exc)
             return None
 
     def save_session(
@@ -3399,8 +3408,8 @@ class SessionKVCache:
                 np.savez_compressed(str(tmp), **arrays)
                 _os.replace(str(tmp), str(entry))
                 self._evict_if_needed()
-            except Exception:  # pragma: no cover
-                pass
+            except (OSError, ValueError, TypeError, RuntimeError) as exc:  # pragma: no cover
+                _LOG.debug("SessionKVCache background save failed; dropping: %s", exc)
 
         _threading.Thread(target=_worker, daemon=True).start()
 
@@ -3422,8 +3431,8 @@ class SessionKVCache:
             while len(entries) > self._max:
                 try:
                     entries.pop(0).unlink(missing_ok=True)
-                except Exception:  # pragma: no cover
-                    pass
+                except OSError as exc:  # pragma: no cover
+                    _LOG.debug("SessionKVCache eviction unlink failed: %s", exc)
 
 
 # ── H2O: Heavy-Hitter Oracle KV-cache eviction ───────────────────────────────

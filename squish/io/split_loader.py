@@ -47,11 +47,14 @@ Notes
 
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+
+_LOG = logging.getLogger("squish.io.split_loader")
 
 # ---------------------------------------------------------------------------
 # Lazy MLX import (module imported in unit tests without Metal GPU)
@@ -76,7 +79,8 @@ def _get_metal_limit_bytes() -> int:  # pragma: no cover
     try:
         import mlx.core as mx
         return mx.metal.get_memory_limit()
-    except Exception:
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        _LOG.debug("Could not query Metal memory limit; defaulting to 16 GB: %s", exc)
         return 16 * 1024 ** 3
 
 
@@ -89,12 +93,13 @@ def _total_ram_bytes() -> int:
         sz  = ctypes.c_size_t(8)
         lib.sysctlbyname(b"hw.memsize", ctypes.byref(mem), ctypes.byref(sz), None, 0)
         return mem.value
-    except Exception:  # pragma: no cover
-        pass
+    except (OSError, AttributeError) as exc:  # pragma: no cover
+        _LOG.debug("sysctl hw.memsize unavailable; trying psutil: %s", exc)
     try:  # pragma: no cover
         import psutil
         return psutil.virtual_memory().total
-    except Exception:  # pragma: no cover
+    except (ImportError, OSError, AttributeError) as exc:  # pragma: no cover
+        _LOG.debug("psutil RAM query failed; defaulting to 16 GB: %s", exc)
         return 16 * 1024 ** 3
 
 
@@ -108,7 +113,8 @@ def _layer_weight_bytes(layer) -> int:  # pragma: no cover
     try:
         import mlx.core as mx
         params = layer.parameters()
-    except Exception:
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        _LOG.debug("Could not read layer parameters for byte accounting: %s", exc)
         return 0
 
     def _walk(obj) -> int:
@@ -214,8 +220,8 @@ class OffloadedLayer:  # pragma: no cover
             except AttributeError:
                 try:
                     mx.metal.clear_cache()  # older MLX API
-                except Exception:
-                    pass
+                except (AttributeError, RuntimeError) as exc:
+                    _LOG.debug("Metal cache clear unavailable on this MLX build: %s", exc)
 
             del mlx_w, zero_w
 
