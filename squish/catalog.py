@@ -693,6 +693,62 @@ def _bundled_catalog() -> dict[str, CatalogEntry]:
     return {d["id"]: _entry_from_dict(d) for d in _BUNDLED}
 
 
+# Bounded retry for the background catalog refresh. Transient network blips
+# (DNS, TLS handshake, read timeout) are common, so a couple of quick retries
+# materially improve the odds of a fresh catalog without ever blocking startup
+# (the fetch runs on a daemon thread and the bundled catalog stays in effect).
+_CATALOG_FETCH_ATTEMPTS = 3
+_CATALOG_FETCH_BACKOFF_BASE = 0.5  # seconds: 0.5, 1.0, 2.0 …
+
+
+def _catalog_ssl_context():
+    """Build an SSL context honouring squish's SSL env vars (or None for default)."""
+    import ssl as _ssl
+
+    _verify = _ssl_verify()
+    if _verify is False:
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        return ctx
+    if isinstance(_verify, str):
+        return _ssl.create_default_context(cafile=_verify)
+    return None  # use urllib default (system CAs)
+
+
+def _fetch_catalog_bytes(max_attempts: int = _CATALOG_FETCH_ATTEMPTS) -> bytes | None:
+    """Download the remote catalog, retrying transient failures with backoff.
+
+    Returns the raw bytes on success, or ``None`` if every attempt failed. Never
+    raises — callers fall back to the cached/bundled catalog. Retries are gated
+    on the transient errors (``OSError`` covers ``URLError``/timeouts); a
+    malformed-URL ``ValueError`` is not retried.
+    """
+    from squish import dist_version
+    req = urllib.request.Request(
+        CATALOG_URL, headers={"User-Agent": f"squish/{dist_version()}"}
+    )
+    ctx = _catalog_ssl_context()
+    for attempt in range(max_attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
+                return resp.read()
+        except OSError as exc:
+            last = attempt == max_attempts - 1
+            _LOG.debug(
+                "Catalog fetch from %s failed (attempt %d/%d): %s",
+                CATALOG_URL, attempt + 1, max_attempts, exc,
+            )
+            if last:
+                return None
+            time.sleep(_CATALOG_FETCH_BACKOFF_BASE * (2 ** attempt))
+        except ValueError as exc:
+            # Malformed URL / request — not transient, do not retry.
+            _LOG.debug("Catalog fetch from %s aborted (non-retryable): %s", CATALOG_URL, exc)
+            return None
+    return None
+
+
 def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogEntry]:
     """
     Merge the remote catalog over the bundled one.
@@ -744,35 +800,17 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
 
     # ── Stale (or absent) — return now, refresh asynchronously ───────────────
     def _background_fetch() -> None:  # pragma: no cover
+        raw = _fetch_catalog_bytes()
+        if raw is None:
+            return
         try:
-            import ssl as _ssl
-
-            from squish import dist_version
-            _ver = dist_version()
-            req = urllib.request.Request(
-                CATALOG_URL, headers={"User-Agent": f"squish/{_ver}"}
-            )
-            # Build an SSL context that respects squish SSL env vars
-            _verify = _ssl_verify()
-            if _verify is False:
-                _ctx = _ssl.create_default_context()
-                _ctx.check_hostname = False
-                _ctx.verify_mode = _ssl.CERT_NONE
-            elif isinstance(_verify, str):
-                _ctx = _ssl.create_default_context(cafile=_verify)
-            else:
-                _ctx = None  # use urllib default (system CAs)
-            with urllib.request.urlopen(req, timeout=5, context=_ctx) as resp:
-                raw = resp.read()
             SQUISH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
             # Atomic write: temp file + rename avoids partial reads on crash
             tmp = LOCAL_CATALOG_PATH.with_suffix(".tmp")
             tmp.write_bytes(raw)
             tmp.rename(LOCAL_CATALOG_PATH)
-        except (OSError, ValueError) as exc:
-            # Offline / unreachable — bundled catalog stays in effect. Expected
-            # when there is no network, so debug-level (not a user-facing problem).
-            _LOG.debug("Background catalog refresh from %s failed: %s", CATALOG_URL, exc)
+        except OSError as exc:
+            _LOG.debug("Could not persist refreshed catalog to %s: %s", LOCAL_CATALOG_PATH, exc)
 
     t = _threading.Thread(target=_background_fetch, daemon=True,
                           name="squish-catalog-refresh")
