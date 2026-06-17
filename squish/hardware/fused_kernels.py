@@ -63,7 +63,8 @@ except ImportError:  # pragma: no cover
 # _HAS_METAL_KERNEL probe above.
 try:
     from squish.hardware.metal_fusion import _METAL_FUSION_AVAILABLE  # noqa: F401
-except Exception:  # noqa: BLE001
+except (ImportError, AttributeError) as exc:
+    log.debug("metal_fusion unavailable (%s) — using _HAS_METAL_KERNEL probe", exc)
     _METAL_FUSION_AVAILABLE: bool = _HAS_METAL_KERNEL
 
 # ---------------------------------------------------------------------------
@@ -251,7 +252,7 @@ class FusedFFNGate:
                 output_names=["out"],
                 source=_FUSED_FFN_SOURCE,
             )
-        except Exception as exc:
+        except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
             log.debug("FusedFFNGate: metal_kernel compile failed (%s) — using fallback", exc)
             self._kernel = None
 
@@ -289,7 +290,7 @@ class FusedFFNGate:
                         output_dtypes  = [mx.float32],
                     )
                     return out.reshape(shape).astype(gate.dtype)
-                except Exception as exc:
+                except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
                     log.debug("FusedFFNGate kernel call failed (%s) — fallback", exc)
 
         # Fallback: standard mlx operations
@@ -338,8 +339,8 @@ def patch_model(model) -> int:  # pragma: no cover
                 # Mark as patched to avoid double-patching
                 attn._fused_attn_patched = True
                 patched += 1
-            except Exception:
-                pass
+            except (AttributeError, TypeError) as exc:
+                log.debug("fused-kernels: attention patch skipped (%s)", exc)
 
         # Patch MLP gate: replace the gate activation with FusedFFNGate
         if mlp is not None:
@@ -357,8 +358,8 @@ def patch_model(model) -> int:  # pragma: no cover
 
                 mlp.__class__.__call__ = _patched_mlp_call
                 patched += 1
-            except Exception:
-                pass
+            except (AttributeError, TypeError) as exc:
+                log.debug("fused-kernels: MLP patch skipped (%s)", exc)
 
     if patched > 0:
         log.info("fused-kernels: patched %d MLP layers", patched)
@@ -425,13 +426,13 @@ def patch_model_compiled_ffn(model, *, metal_fusion_kernels=None) -> int:
 
                     mlp.__class__.__call__ = _metal_mlp
                     patched += 1
-                except Exception:
-                    pass
+                except (AttributeError, TypeError) as exc:
+                    log.debug("fused-kernels: metal MLP patch skipped (%s)", exc)
 
             if patched > 0:
                 log.info("fused-kernels: metal-fusion compiled-ffn patched %d layers", patched)
             return patched
-        except Exception as exc:
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
             log.debug("patch_model_compiled_ffn metal path failed (%s) — fallback", exc)
 
     # Fallback: standard FusedFFNGate patch

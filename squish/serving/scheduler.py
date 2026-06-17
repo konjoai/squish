@@ -111,6 +111,19 @@ class _Request:
     done:          bool      = False
     finish_reason: str       = "stop"
 
+    # Cached 8-hex-char hash of the first 64 prompt tokens, used for prefix
+    # grouping. ``input_ids`` is immutable after submission, so this is computed
+    # once on first access instead of every batch-formation pass.
+    _prefix_key: str | None = dataclasses.field(default=None, repr=False)
+
+    def prefix_key(self) -> str:
+        """Return (and cache) the 64-token prefix hash used for batch grouping."""
+        if self._prefix_key is None:
+            self._prefix_key = hashlib.sha256(
+                np.array(self.input_ids[:64], dtype=np.int32).tobytes()
+            ).hexdigest()[:8]
+        return self._prefix_key
+
 
 # ---------------------------------------------------------------------------
 # Sampling helpers (numpy, CPU — fast enough for per-step sampling)
@@ -302,7 +315,8 @@ class BatchScheduler:
         """Tokenise prompt and build a _Request object."""
         try:
             input_ids = self._tokenizer.encode(prompt, add_special_tokens=True)
-        except Exception:
+        except (AttributeError, TypeError, ValueError) as exc:
+            log.debug("tokenizer.encode failed, falling back to __call__: %s", exc)
             input_ids = self._tokenizer(prompt)["input_ids"]
         return _Request(
             request_id  = request_id,
@@ -460,7 +474,7 @@ class BatchScheduler:
                     self._generate_batch(batch, mx)
                 else:
                     self._generate_batch_torch(batch)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — worker thread boundary, must not crash
                 log.error("Batch generation error: %s", exc, exc_info=True)
                 for req in batch:
                     if not req.done:
@@ -528,9 +542,7 @@ class BatchScheduler:
         groups: dict[str, list[_Request]] = {}
         order:  list[str] = []
         for req in pool:
-            key = hashlib.sha256(
-                np.array(req.input_ids[:64], dtype=np.int32).tobytes()
-            ).hexdigest()[:8]
+            key = req.prefix_key()
             if key not in groups:
                 groups[key] = []
                 order.append(key)
@@ -790,7 +802,7 @@ class NestedWaitScheduler(BatchScheduler):
                     self._generate_batch_nested(batch, mx)
                 else:
                     self._generate_batch_torch(batch)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — worker thread boundary, must not crash
                 log.error("NestedWait batch error: %s", exc, exc_info=True)
                 for req in batch:
                     if not req.done:

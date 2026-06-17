@@ -14,9 +14,12 @@ from __future__ import annotations
 __all__ = ["LMStudioStatus", "probe_lm_studio", "LMStudioClient"]
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Iterator
+
+_LOG = logging.getLogger("squish.experimental.lm_studio_bridge")
 
 
 # Default LM Studio OpenAI-compat endpoint
@@ -92,7 +95,8 @@ def probe_lm_studio(timeout: float = 0.8) -> LMStudioStatus:
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw: dict = json.loads(resp.read())
-    except Exception:
+    except (OSError, ValueError) as exc:
+        _LOG.debug("LM Studio status probe failed: %s", exc)
         return LMStudioStatus(running=False, base_url=base_url)
 
     # LM Studio returns {"data": [{"id": "...", ...}, ...]}
@@ -158,7 +162,8 @@ class LMStudioClient:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 raw = json.loads(resp.read())
             return raw.get("data") or raw.get("models") or []
-        except Exception:
+        except (OSError, ValueError) as exc:
+            _LOG.debug("LM Studio models query failed: %s", exc)
             return []
 
     def chat_completions(

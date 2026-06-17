@@ -404,7 +404,7 @@ def quantize_tensor(
                 "__lrb":   compensator.b,    # float32 low-rank B factor
                 "__shape": shape_arr,
             }
-        except Exception as _e:
+        except (RuntimeError, ValueError, TypeError, MemoryError) as _e:
             print(f"    [INT3] Warning: MiLo failed on {name}: {_e} — falling back to INT8")
 
     # ── INT2: WeightOnlyInt2Quant pack-4 asymmetric ───────────────────────────
@@ -417,7 +417,7 @@ def quantize_tensor(
                 "__z2":    zero2,     # float32 per-group zeros
                 "__shape": shape_arr,
             }
-        except Exception as _e:
+        except (RuntimeError, ValueError, TypeError, MemoryError) as _e:
             print(f"    [INT2] Warning: WOQ failed on {name}: {_e} — falling back to INT8")
 
     # ── AQLM: additive codebook quantization ─────────────────────────────────
@@ -449,7 +449,7 @@ def quantize_tensor(
                 "__aqlm_cb":  cb_flat,     # float32 (1 + n_codebooks*cb_size*gs,)
                 "__shape":    shape_arr,
             }
-        except Exception as _e:  # pragma: no cover
+        except (RuntimeError, ValueError, TypeError, MemoryError, ImportError) as _e:  # pragma: no cover
             print(f"    [AQLM] Warning: failed on {name}: {_e} — falling back to INT8")
 
     # ── NF4: quantize directly from FP32 (no INT8 intermediate step) ──────────
@@ -512,7 +512,7 @@ def load_mlx_weights_shard(shard_path: Path) -> dict:
             # Convert to float32 for quantization
             out[name] = arr.astype(np.float32)
         return out
-    except Exception:
+    except (OSError, ValueError, RuntimeError, TypeError, ImportError):
         if sys.platform == "darwin":
             # macOS fallback: use mlx on CPU to handle bfloat16 and other dtypes
             # that safetensors.numpy cannot parse.  Forcing mx.cpu avoids the
@@ -1093,7 +1093,7 @@ def main():
                 awq_scales = load_awq_scales(args.awq_scales)
                 n_awq = len(awq_scales)
                 print(f"  [AWQ] Loaded {n_awq} layer scales from {args.awq_scales}")
-            except Exception as e:
+            except (ImportError, OSError, ValueError, TypeError) as e:
                 print(f"  [AWQ] Warning: could not load scales: {e}  (continuing without AWQ)")
 
         t0 = time.time()
@@ -1123,7 +1123,7 @@ def main():
                 int2_group_size=args.int2_group_size,
                 min_free_gb=args.min_free_gb,
             )
-        except (RuntimeError, OSError, KeyboardInterrupt) as exc:
+        except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 — any conversion failure cleans partial output and exits
             # Remove partial output so the next run starts clean.
             if output_path.exists():
                 print(

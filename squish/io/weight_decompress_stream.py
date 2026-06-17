@@ -13,12 +13,15 @@ Reference:
 
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, Future
 
 import numpy as np
+
+_LOG = logging.getLogger("squish.io.weight_decompress_stream")
 
 __all__ = [
     "WeightStreamConfig",
@@ -237,8 +240,8 @@ class WeightDecompressStream:
     def __del__(self) -> None:
         try:
             self._executor.shutdown(wait=False)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError) as exc:
+            _LOG.debug("Executor shutdown during __del__ failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Static compress / decompress

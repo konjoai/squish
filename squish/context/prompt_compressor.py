@@ -26,7 +26,10 @@ Usage
 
 from __future__ import annotations
 
+import logging
 import re
+
+_LOG = logging.getLogger("squish.context.prompt_compressor")
 
 # ---------------------------------------------------------------------------
 # TF-IDF sentence scorer (pure Python + numpy)
@@ -179,11 +182,13 @@ def compress(
         return result.get("compressed_prompt", text)
     except ImportError:
         pass  # llmlingua not installed — fall through to TF-IDF
-    except Exception:
-        pass  # llmlingua failed — fall through
+    except (OSError, ValueError, TypeError, RuntimeError, AttributeError, KeyError) as exc:
+        # llmlingua failed — fall through to TF-IDF
+        _LOG.debug("LLMLingua compression failed; falling back to TF-IDF: %s", exc)
 
     # TF-IDF fallback
     try:
         return _tfidf_compress(text, ratio=ratio, preserve_tokens=preserve_tokens)
-    except Exception:
+    except (ValueError, TypeError, RuntimeError, IndexError, ZeroDivisionError) as exc:
+        _LOG.debug("TF-IDF compression failed; returning uncompressed text: %s", exc)
         return text  # never break the caller

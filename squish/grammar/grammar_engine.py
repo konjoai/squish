@@ -31,8 +31,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections import OrderedDict
 from typing import Any
+
+_LOG = logging.getLogger("squish.grammar.grammar_engine")
 
 _SCHEMA_CACHE_MAXSIZE: int = 32
 
@@ -76,8 +79,8 @@ class GrammarEngine:
             self._tok_info = _xgr.TokenizerInfo.from_huggingface(tokenizer)
             self._compiler = _xgr.GrammarCompiler(self._tok_info)
             self._available = True
-        except Exception:
-            pass
+        except (ImportError, AttributeError, ValueError, RuntimeError, TypeError) as exc:
+            _LOG.debug("xgrammar unavailable, entering no-op mode: %s", exc)
         if self._available:
             self._precompute_independent_mask()
 
@@ -119,10 +122,12 @@ class GrammarEngine:
                         word_idx = token_id >> 5
                         bit_idx  = token_id & 31
                         mask[0, word_idx] &= np.uint32(~(np.uint32(1) << np.uint32(bit_idx)))
-                except Exception:
-                    pass  # keep the token valid if decode fails
+                except (ValueError, TypeError, KeyError, IndexError, RuntimeError) as exc:
+                    _LOG.debug("token %d decode failed during mask precompute: %s",
+                               token_id, exc)  # keep the token valid if decode fails
             self._independent_mask = mask
-        except Exception:
+        except (ImportError, AttributeError, ValueError, RuntimeError, TypeError) as exc:
+            _LOG.debug("independent mask precompute disabled: %s", exc)
             self._independent_mask = None
 
     def _apply_combined_mask(self, logits_np: Any, state: Any) -> None:
@@ -242,7 +247,8 @@ class GrammarEngine:
             logits_np = np.array(logits_mx.astype(mx.float32))
             self._apply_combined_mask(logits_np, state)
             return mx.array(logits_np)
-        except Exception:
+        except (ImportError, AttributeError, ValueError, RuntimeError, TypeError) as exc:
+            _LOG.debug("constrain_logits masking failed, passing through: %s", exc)
             return logits_mx
 
     # ── FSM advancement ───────────────────────────────────────────────────────
@@ -267,8 +273,8 @@ class GrammarEngine:
             return state
         try:
             state.accept_token(token_id)
-        except Exception:
-            pass
+        except (AttributeError, ValueError, RuntimeError, TypeError) as exc:
+            _LOG.debug("FSM accept_token(%s) failed: %s", token_id, exc)
         return state
 
     def jump_forward_tokens(self, state: Any) -> list[int]:
@@ -296,7 +302,8 @@ class GrammarEngine:
                 return []
             ids = self._tokenizer.encode(fwd_str, add_special_tokens=False)
             return list(ids)
-        except Exception:
+        except (AttributeError, ValueError, RuntimeError, TypeError) as exc:
+            _LOG.debug("jump_forward_tokens failed: %s", exc)
             return []
 
     # ── TagDispatch factory ───────────────────────────────────────────────────
@@ -326,7 +333,9 @@ class GrammarEngine:
             trigger_ids: list[int] = list(
                 self._tokenizer.encode(trigger, add_special_tokens=False)
             )
-        except Exception:
+        except (AttributeError, ValueError, RuntimeError, TypeError) as exc:
+            _LOG.debug("trigger %r encode failed, dispatch will never activate: %s",
+                       trigger, exc)
             trigger_ids = []
         return TagDispatch(
             engine=self,
@@ -492,7 +501,8 @@ class DOMINOConstraint:
             try:
                 ids = self._tokenizer.encode(phrase, add_special_tokens=False)
                 self._deny_sets.append(set(ids[:1]))   # block the first token
-            except Exception:
+            except (AttributeError, ValueError, RuntimeError, TypeError) as exc:
+                _LOG.debug("DOMINO phrase %r encode failed: %s", phrase, exc)
                 self._deny_sets.append(set())
 
     def apply(self, logits_np: Any) -> Any:

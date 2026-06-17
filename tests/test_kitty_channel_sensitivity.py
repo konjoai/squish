@@ -468,11 +468,15 @@ class TestCheckMlxLmVersion:
         assert capsys.readouterr().out == ""
 
     def test_silent_when_mlx_lm_not_installed(self, capsys):
+        import importlib.metadata as _im
+
         from squish.server import _check_mlx_lm_version
+        # The realistic "not installed" signal is PackageNotFoundError
+        # (a subclass of ImportError), which the version probe swallows.
         with mock.patch("sys.platform", "darwin"):
             with mock.patch(
                 "importlib.metadata.version",
-                side_effect=Exception("not found"),
+                side_effect=_im.PackageNotFoundError("mlx-lm"),
             ):
                 _check_mlx_lm_version()
         assert capsys.readouterr().out == ""

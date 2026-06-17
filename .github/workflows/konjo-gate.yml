@@ -140,21 +140,27 @@ jobs:
           fi
           echo "Complexity: all functions grade C or better ✓"
       - name: File size gate
-        continue-on-error: true
         run: |
+          # BLOCKING for new files; existing oversized files are grandfathered
+          # via .konjo/oversized-allowlist.txt (one repo-relative path per line).
+          ALLOWLIST=".konjo/oversized-allowlist.txt"
           OVERSIZED=""
           while IFS= read -r -d '' f; do
+            rel="${f#./}"
             LC=$(wc -l < "$f")
             if [ "$LC" -gt 500 ]; then
-              OVERSIZED="${OVERSIZED}${f}: ${LC} lines\n"
+              if grep -qxF "$rel" "$ALLOWLIST" 2>/dev/null; then
+                continue  # grandfathered
+              fi
+              OVERSIZED="${OVERSIZED}${rel}: ${LC} lines\n"
             fi
           done < <(find . -name "*.py" | grep -v __pycache__ | grep -v ".venv" | grep -v "venv" | tr '\n' '\0')
           if [ -n "$OVERSIZED" ]; then
-            printf "Files exceeding 500-line limit:\n%b" "$OVERSIZED"
-            echo "::error::Files exceeding 500-line limit found."
+            printf "New files exceeding 500-line limit (not grandfathered):\n%b" "$OVERSIZED"
+            echo "::error::New file(s) exceed the 500-line limit. Split them or, with maintainer sign-off, add to $ALLOWLIST."
             exit 1
           fi
-          echo "File sizes: all within 500-line limit ✓"
+          echo "File sizes: all new files within 500-line limit ✓ (allowlisted legacy files exempt)"
       - name: DRY check
         continue-on-error: true
         run: |

@@ -397,10 +397,17 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const temperature: number = cfg.get('temperature', 0.7);
         const systemPrompt: string = cfg.get('systemPrompt', '');
 
-        // Build message list
+        // Build message list. The workspace-context message is injected fresh
+        // each turn (active file, selection, diagnostics, open tabs) and is NOT
+        // persisted to history — so the agent always sees the live editor state
+        // without bloating the saved conversation.
         const messages: ChatMessage[] = [];
         if (systemPrompt) {
             messages.push({ role: 'system', content: systemPrompt });
+        }
+        const ctx = this._workspaceContextMessage();
+        if (ctx) {
+            messages.push(ctx);
         }
         messages.push(...this._history);
         messages.push({ role: 'user', content: text });
@@ -429,6 +436,72 @@ export class ChatPanel implements vscode.WebviewViewProvider {
      * Execute the full agentic tool-calling loop.
      * The model may request 0 or more tool calls before producing a final answer.
      */
+    /**
+     * A system message describing the live editor state, so the agent reasons
+     * with the same context the user sees — active file, selection, the
+     * diagnostics on screen, and the other open tabs. Returns null when there's
+     * nothing useful to report (e.g. no editor open).
+     */
+    private _workspaceContextMessage(): ChatMessage | null {
+        // Auxiliary context — must never throw, even if an editor API is
+        // unavailable. Any failure simply yields no context.
+        try {
+            const parts: string[] = [];
+            const editor = vscode.window.activeTextEditor;
+            const folders = vscode.workspace.workspaceFolders;
+            const root = folders?.[0]?.uri.fsPath;
+            const rel = (uri: vscode.Uri): string =>
+                root ? path.relative(root, uri.fsPath) : uri.fsPath;
+
+            if (editor) {
+                const doc = editor.document;
+                parts.push(`Active file: ${rel(doc.uri)} (${doc.languageId})`);
+                const sel = editor.selection;
+                if (sel && !sel.isEmpty) {
+                    const selected = doc.getText(sel);
+                    const clipped = selected.length > 2000 ? selected.slice(0, 2000) + '\n…(truncated)' : selected;
+                    parts.push(`Selected (lines ${sel.start.line + 1}-${sel.end.line + 1}):\n\`\`\`${doc.languageId}\n${clipped}\n\`\`\``);
+                } else if (sel) {
+                    parts.push(`Cursor at line ${sel.active.line + 1}`);
+                }
+                const getDiagnostics = vscode.languages?.getDiagnostics;
+                const diags = (getDiagnostics ? getDiagnostics(doc.uri) : [])
+                    .filter((d) => d.severity <= vscode.DiagnosticSeverity.Warning)
+                    .slice(0, 10)
+                    .map((d) => {
+                        const sev = d.severity === vscode.DiagnosticSeverity.Error ? 'ERROR' : 'WARN';
+                        return `  [${sev} L${d.range.start.line + 1}] ${d.message}`;
+                    });
+                if (diags.length > 0) {
+                    parts.push(`Diagnostics:\n${diags.join('\n')}`);
+                }
+            }
+
+            const tabGroups = vscode.window.tabGroups?.all ?? [];
+            const openTabs = tabGroups
+                .flatMap((g) => g.tabs ?? [])
+                .map((t) => (t.input as { uri?: vscode.Uri } | undefined)?.uri)
+                .filter((u): u is vscode.Uri => u != null)
+                .map(rel);
+            const uniqueTabs = [...new Set(openTabs)].slice(0, 20);
+            if (uniqueTabs.length > 0) {
+                parts.push(`Open files: ${uniqueTabs.join(', ')}`);
+            }
+
+            if (parts.length === 0) {
+                return null;
+            }
+            return {
+                role: 'system',
+                content:
+                    'Current workspace context (live — use it to reason; call tools to act):\n' +
+                    parts.join('\n'),
+            };
+        } catch {
+            return null;
+        }
+    }
+
     private _runToolLoop(
         client: SquishClient,
         messages: ChatMessage[],
@@ -749,9 +822,44 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             if (answer !== 'Overwrite') {
                 return 'Cancelled.';
             }
+            // Live, undoable whole-document replace via WorkspaceEdit so an
+            // already-open editor stays in sync and the change can be undone.
+            const doc = await vscode.workspace.openTextDocument(abs);
+            const fullRange = new vscode.Range(
+                doc.positionAt(0),
+                doc.positionAt(doc.getText().length),
+            );
+            const we = new vscode.WorkspaceEdit();
+            we.replace(abs, fullRange, content);
+            const ok = await vscode.workspace.applyEdit(we);
+            if (!ok) {
+                throw new Error(`Edit to ${relativePath} was rejected by the editor`);
+            }
+            await doc.save();
+            await this._revealEdit(doc, doc.positionAt(0));
+            return `Updated (live, undoable): ${relativePath}`;
         }
-        await vscode.workspace.fs.writeFile(abs, Buffer.from(content, 'utf8'));
-        return exists ? `Updated: ${relativePath}` : `Created: ${relativePath}`;
+        // New file: create via WorkspaceEdit so it joins the undo stack, then reveal.
+        const we = new vscode.WorkspaceEdit();
+        we.createFile(abs, { overwrite: false, contents: Buffer.from(content, 'utf8') });
+        const ok = await vscode.workspace.applyEdit(we);
+        if (!ok) {
+            // Fall back to a plain write if the file appeared between stat and edit.
+            await vscode.workspace.fs.writeFile(abs, Buffer.from(content, 'utf8'));
+        }
+        const doc = await vscode.workspace.openTextDocument(abs);
+        await this._revealEdit(doc, doc.positionAt(0));
+        return `Created: ${relativePath}`;
+    }
+
+    /** Reveal a freshly-edited document so the user sees the change land. */
+    private async _revealEdit(doc: vscode.TextDocument, at: vscode.Position): Promise<void> {
+        try {
+            const editor = await vscode.window.showTextDocument(doc, { preview: false });
+            editor.revealRange(new vscode.Range(at, at), vscode.TextEditorRevealType.InCenter);
+        } catch {
+            /* revealing is best-effort — the edit already applied */
+        }
     }
 
     private async _toolListDirectory(relativePath: string): Promise<string> {
@@ -775,8 +883,9 @@ export class ChatPanel implements vscode.WebviewViewProvider {
             throw new Error('No workspace open');
         }
         const abs = vscode.Uri.joinPath(folders[0].uri, relativePath);
-        const bytes = await vscode.workspace.fs.readFile(abs);
-        const src = Buffer.from(bytes).toString('utf8');
+        // Operate on the document model so an open editor updates live.
+        const doc = await vscode.workspace.openTextDocument(abs);
+        const src = doc.getText();
         const count = src.split(oldText).length - 1;
         if (count === 0) {
             throw new Error(`old_text not found in ${relativePath}`);
@@ -784,9 +893,17 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         if (count > 1) {
             throw new Error(`old_text is ambiguous — found ${count} occurrences in ${relativePath}`);
         }
-        const next = src.replace(oldText, newText);
-        await vscode.workspace.fs.writeFile(abs, Buffer.from(next, 'utf8'));
-        return `Applied edit to ${relativePath}`;
+        const idx = src.indexOf(oldText);
+        const range = new vscode.Range(doc.positionAt(idx), doc.positionAt(idx + oldText.length));
+        const we = new vscode.WorkspaceEdit();
+        we.replace(abs, range, newText);
+        const ok = await vscode.workspace.applyEdit(we);
+        if (!ok) {
+            throw new Error(`Edit to ${relativePath} was rejected by the editor`);
+        }
+        await doc.save();
+        await this._revealEdit(doc, doc.positionAt(idx));
+        return `Applied edit to ${relativePath} (live, undoable)`;
     }
 
     private async _toolSearchWorkspace(query: string, glob?: string, isRegex = false): Promise<string> {
@@ -1038,21 +1155,12 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const styleUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._extensionUri, 'media', 'style.css'),
         );
+        // The canonical squish logo — the same icon.png the web UI serves and
+        // the extension ships as its marketplace icon, so every surface matches.
+        const iconUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this._extensionUri, 'media', 'icon.png'),
+        );
         const nonce = _nonce();
-
-        // SVG logo path (same squish character as before)
-        const logoSvg = `<svg viewBox="12 23 106 94" xmlns="http://www.w3.org/2000/svg" width="28" height="28">
-  <ellipse cx="22" cy="65" rx="8" ry="12" fill="#8B5CF6" stroke="#1A0B40" stroke-width="3" transform="rotate(15 22 65)"/>
-  <ellipse cx="108" cy="65" rx="8" ry="12" fill="#8B5CF6" stroke="#1A0B40" stroke-width="3" transform="rotate(-15 108 65)"/>
-  <ellipse cx="45" cy="105" rx="6" ry="10" fill="#8B5CF6" stroke="#1A0B40" stroke-width="3"/>
-  <ellipse cx="85" cy="105" rx="6" ry="10" fill="#8B5CF6" stroke="#1A0B40" stroke-width="3"/>
-  <path d="M35 25C25 25 20 35 20 45V85C20 95 25 105 35 105H95C105 105 110 95 110 85V45C110 35 105 25 95 25H35Z" fill="#8B5CF6" stroke="#1A0B40" stroke-width="4" stroke-linejoin="round"/>
-  <circle cx="48" cy="55" r="6" fill="black"/><circle cx="46" cy="53" r="2" fill="white"/>
-  <circle cx="80" cy="55" r="6" fill="black"/><circle cx="78" cy="53" r="2" fill="white"/>
-  <path d="M58 70C58 75 70 75 70 70H58Z" fill="#FF8A8A" stroke="#1A0B40" stroke-width="2"/>
-  <circle cx="40" cy="68" r="4" fill="#FFBABA" opacity="0.6"/>
-  <circle cx="88" cy="68" r="4" fill="#FFBABA" opacity="0.6"/>
-</svg>`;
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -1061,6 +1169,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
              style-src ${webview.cspSource} 'unsafe-inline';
+             img-src ${webview.cspSource};
              script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${styleUri}">
@@ -1086,7 +1195,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
   <div id="header">
     <button id="hist-toggle" title="Chat history" aria-label="Toggle history">&#x2630;</button>
     <div class="header-brand">
-      ${logoSvg}
+      <img class="header-logo" src="${iconUri}" width="26" height="26" alt="Squish" />
       <span class="header-name">Squish <span class="header-accent">Agent</span></span>
     </div>
     <div class="header-actions">

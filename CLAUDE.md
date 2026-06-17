@@ -2,7 +2,7 @@
 
 Local LLM inference server — MLX-accelerated on Apple Silicon, with speculative decoding, quantization (INT4/INT3/SQINT2), agent tool execution, Ollama/OpenAI-compatible API, and the macOS SquishBar.
 
-**v9.34.1**
+**v9.34.2**
 
 ## Stack
 Python 3.10+ · MLX + mlx-lm (Apple Silicon) · FastAPI · transformers · HuggingFace Hub · Swift (macOS SquishBar)
@@ -57,11 +57,13 @@ ruff lint, ruff format, bare-except scan, DRY check, TODO scan. Blocks the commi
 
 **Wall 2 — CI gate** (`.github/workflows/konjo-gate.yml`):
 Coverage ≥ 80% · mutation survival ≤ 10% · complexity ≤ 15 · file ≤ 500L · zero DRY violations. Blocks the merge.
+The 500L gate is blocking for **new** files; legacy oversized files are grandfathered in
+`.konjo/oversized-allowlist.txt` (split them to remove, don't grow the list).
 
 **Wall 3 — Adversarial review** (local only — disabled in CI):
 `git diff HEAD~1 | python3 .konjo/scripts/konjo_review.py`
 
-See `KONJO_QUALITY_FRAMEWORK.md` for the full specification.
+See the `konjo-quality` skill (`.claude/skills/konjo-quality/`) for the full specification.
 
 ## Skills
 See `.claude/skills/` — auto-loaded when relevant.

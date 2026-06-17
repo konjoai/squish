@@ -33,11 +33,14 @@ __all__ = [
 ]
 
 import json
+import logging
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
+
+_LOG = logging.getLogger("squish.serving.local_model_scanner")
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +470,8 @@ def _dir_size(path: Path) -> int:
     """Return total on-disk size of a directory tree in bytes."""
     try:
         return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
-    except Exception:
+    except OSError as exc:
+        _LOG.warning("Could not compute size of %s: %s; reporting 0 bytes", path, exc)
         return 0
 
 
@@ -562,8 +566,10 @@ class LocalModelScanner:
                     manifest = json.loads(tag_file.read_text(encoding="utf-8"))
                     for layer in manifest.get("layers", []):
                         size += layer.get("size", 0)
-                except Exception:
-                    pass
+                except (OSError, ValueError) as exc:
+                    _LOG.warning(
+                        "Could not read Ollama manifest %s: %s; reporting size 0", tag_file, exc
+                    )
                 models.append(LocalModel(
                     name=name,
                     path=tag_file,

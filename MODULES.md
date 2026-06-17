@@ -1,7 +1,7 @@
 # Squish Module Reference
 
 > Historical per-wave module log. "Wave" numbers and the old `vNN.0.0` scheme are
-> the internal development cadence; the current public release is **v9.34.1** (see
+> the internal development cadence; the current public release is **v9.34.2** (see
 > [CHANGELOG.md](CHANGELOG.md)). For waves 1–28, see the historical record below.
 
 ---

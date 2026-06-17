@@ -24,24 +24,26 @@ __all__ = [
 # Name mapping tables
 # ---------------------------------------------------------------------------
 
+# NOTE: every backend value MUST correspond to a tool registered by
+# ``squish.agent.builtin_tools.register_builtin_tools``. A mismatch means the
+# client tool silently fails to dispatch. ``tests/test_wave87_agent_tools.py``
+# asserts this invariant.
 VSCODE_TO_BACKEND: dict[str, str] = {
     # File operations
     "create_file":        "squish_create_file",
     "write_file":         "squish_write_file",
     "read_file":          "squish_read_file",
     "delete_file":        "squish_delete_file",
-    "rename_file":        "squish_rename_file",
+    "rename_file":        "squish_move_file",   # backend tool is move_file
     "apply_edit":         "squish_apply_edit",
     # Directory operations
-    "list_directory":     "squish_list_directory",
+    "list_directory":     "squish_list_dir",
     "create_directory":   "squish_create_directory",
     # Terminal / shell
-    "run_terminal":       "squish_run_terminal",
-    "run_command":        "squish_run_terminal",   # alias
+    "run_terminal":       "squish_run_shell",
+    "run_command":        "squish_run_shell",   # alias
     # Web / search
     "web_search":         "squish_web_search",
-    # Workspace
-    "get_workspace_info": "squish_get_workspace_info",
 }
 
 # Build the inverse automatically so normalize_for_client() stays in sync

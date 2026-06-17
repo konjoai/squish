@@ -15,11 +15,38 @@ struct SquishHealth: Codable {
     var uptime_s: Double?
 }
 
+/// One tool invocation inside an agentic assistant turn — rendered as a card
+/// in the chat so the user can watch the agent call tools live.
+struct ToolCallRecord: Identifiable {
+    let id: String          // call_id from the server
+    let name: String
+    var arguments: String   // compact JSON
+    var result: String? = nil
+    var error: String? = nil
+    var elapsedMs: Double? = nil
+    var done: Bool = false
+}
+
+/// A file the user attached to give the agent context. Lives on the local
+/// filesystem, so the agent can read it server-side via squish_read_document.
+struct AttachedFile: Identifiable {
+    let id = UUID()
+    let name: String
+    let path: String
+    /// Inline UTF-8 preview for small text files; nil for binary/large files.
+    let textPreview: String?
+    var isText: Bool { textPreview != nil }
+}
+
 struct ChatMessage: Identifiable {
     let id = UUID()
     let role: String
     var content: String
     var isStreaming: Bool = false
+    /// Tool calls made during an agentic turn (agent mode), in execution order.
+    var toolCalls: [ToolCallRecord] = []
+    /// Files attached to a user turn (shown as chips in the bubble).
+    var attachments: [AttachedFile] = []
 }
 
 // ── Engine ────────────────────────────────────────────────────────────
@@ -30,6 +57,9 @@ final class SquishEngine: ObservableObject {
     @AppStorage("squish.apiKey") var apiKey: String = "squish"
     @AppStorage("squish.model")  var preferredModel: String = "qwen3:8b"
     @AppStorage("squish.hotkey") var hotkey: String = "⌘⌥S"
+    /// When on, chat prompts run through the tool-calling agent loop
+    /// (POST /v1/agent/run) instead of plain chat completions.
+    @AppStorage("squish.agentMode") var agentMode: Bool = false
     @AppStorage("squish.cachedModels") private var cachedModelsJSON: String = ""
 
     @Published var health:              SquishHealth? = nil
@@ -42,6 +72,8 @@ final class SquishEngine: ObservableObject {
     @Published var messages:            [ChatMessage] = []
     @Published var isGenerating:        Bool          = false
     @Published var isSwitching:         Bool          = false
+    /// Files staged for the next message (cleared once sent).
+    @Published var pendingAttachments:  [AttachedFile] = []
 
     private var pollTask:   Task<Void, Never>? = nil
     private var serverProc: Process?           = nil
@@ -285,17 +317,20 @@ final class SquishEngine: ObservableObject {
 
     // ── Chat streaming ────────────────────────────────────────────────
     func sendMessage(_ text: String) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if agentMode { sendAgentMessage(text); return }
+        let attached = pendingAttachments
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attached.isEmpty else { return }
         guard serverRunning else { return }
 
-        messages.append(ChatMessage(role: "user", content: text))
+        pendingAttachments = []
+        messages.append(ChatMessage(role: "user", content: text, attachments: attached))
         let reply = ChatMessage(role: "assistant", content: "", isStreaming: true)
         messages.append(reply)
         let replyIdx = messages.count - 1
         isGenerating = true
         streamTask?.cancel()
 
-        let history = messages.dropLast().map { ["role": $0.role, "content": $0.content] }
+        let history = historyWithAttachments(attachmentPreamble(attached))
         let model = health?.model ?? preferredModel
         let urlStr = "http://\(host):\(port)/v1/chat/completions"
         let key = apiKey
@@ -346,6 +381,163 @@ final class SquishEngine: ObservableObject {
     }
 
     func clearChat() { messages = [] }
+
+    // ── File attachments ──────────────────────────────────────────────
+    /// Stage local files for the next message. Small text files are previewed
+    /// inline; everything else is referenced by path so the agent can read it
+    /// with squish_read_document.
+    func addAttachments(_ urls: [URL]) {
+        for url in urls {
+            // Security-scoped access is needed for files chosen via the picker
+            // or dropped from outside the sandbox container.
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            let name = url.lastPathComponent
+            let path = url.path
+            var preview: String? = nil
+            if let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+               data.count < 256 * 1024,
+               let text = String(data: data, encoding: .utf8) {
+                preview = String(text.prefix(16_384))
+            }
+            if !pendingAttachments.contains(where: { $0.path == path }) {
+                pendingAttachments.append(
+                    AttachedFile(name: name, path: path, textPreview: preview)
+                )
+            }
+        }
+    }
+
+    func removeAttachment(_ id: UUID) {
+        pendingAttachments.removeAll { $0.id == id }
+    }
+
+    /// Context block injected ahead of the user's text so the model sees the
+    /// attached files. Text previews are inlined; binary files are referenced
+    /// by path with a hint to read them via squish_read_document.
+    private func attachmentPreamble(_ files: [AttachedFile]) -> String {
+        guard !files.isEmpty else { return "" }
+        var blocks: [String] = []
+        for f in files {
+            if let t = f.textPreview {
+                blocks.append("File: \(f.path)\n```\n\(t)\n```")
+            } else {
+                blocks.append(
+                    "File (binary — use squish_read_document on this path if relevant): \(f.path)"
+                )
+            }
+        }
+        return "[Attached files]\n" + blocks.joined(separator: "\n\n") + "\n\n"
+    }
+
+    /// Build the request history, injecting the attachment preamble into the
+    /// last user turn so the displayed bubble stays clean while the model still
+    /// receives the file context.
+    private func historyWithAttachments(_ preamble: String) -> [[String: String]] {
+        var history = messages.dropLast().map { ["role": $0.role, "content": $0.content] }
+        if !preamble.isEmpty, let last = history.indices.last, history[last]["role"] == "user" {
+            history[last]["content"] = preamble + (history[last]["content"] ?? "")
+        }
+        return history
+    }
+
+    // ── Agentic chat (tool calling) ───────────────────────────────────
+    /// Run the prompt through the server's multi-step agent loop
+    /// (POST /v1/agent/run, SSE). The model can call tools (read/write files,
+    /// run shell, search the web …); each call streams into the assistant
+    /// turn as a live tool-call card.
+    func sendAgentMessage(_ text: String) {
+        let attached = pendingAttachments
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attached.isEmpty else { return }
+        guard serverRunning else { return }
+
+        pendingAttachments = []
+        messages.append(ChatMessage(role: "user", content: text, attachments: attached))
+        let reply = ChatMessage(role: "assistant", content: "", isStreaming: true)
+        messages.append(reply)
+        let replyIdx = messages.count - 1
+        isGenerating = true
+        streamTask?.cancel()
+
+        let history = historyWithAttachments(attachmentPreamble(attached))
+        let urlStr = "http://\(host):\(port)/v1/agent/run"
+        let key = apiKey
+
+        streamTask = Task {
+            defer {
+                Task { @MainActor in
+                    self.isGenerating = false
+                    if replyIdx < self.messages.count {
+                        self.messages[replyIdx].isStreaming = false
+                    }
+                }
+            }
+            guard let url = URL(string: urlStr) else { return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            let body: [String: Any] = [
+                "messages": history,
+                "max_steps": 8,
+                "max_tokens": 768,
+                "temperature": 0.4,
+            ]
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+            do {
+                let (bytes, _) = try await URLSession.shared.bytes(for: req)
+                for try await line in bytes.lines {
+                    if Task.isCancelled { break }
+                    guard line.hasPrefix("data: ") else { continue }
+                    let chunk = String(line.dropFirst(6))
+                    guard let d = chunk.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                          let type = json["type"] as? String else { continue }
+                    await MainActor.run { self.applyAgentEvent(type: type, json: json, replyIdx: replyIdx) }
+                    if type == "done" || type == "error" { break }
+                }
+            } catch { }
+        }
+    }
+
+    /// Fold one /v1/agent/run SSE event into the assistant message at `replyIdx`.
+    private func applyAgentEvent(type: String, json: [String: Any], replyIdx: Int) {
+        guard replyIdx < messages.count else { return }
+        switch type {
+        case "text_delta":
+            if let delta = json["delta"] as? String { messages[replyIdx].content += delta }
+        case "tool_call_start":
+            // The streamed text up to here was the tool-call syntax; replace it
+            // with a structured tool card so the bubble stays readable.
+            messages[replyIdx].content = ""
+            let callId = json["call_id"] as? String ?? UUID().uuidString
+            let name = json["tool_name"] as? String ?? "tool"
+            var argStr = ""
+            if let args = json["arguments"],
+               let data = try? JSONSerialization.data(withJSONObject: args),
+               let s = String(data: data, encoding: .utf8) { argStr = s }
+            messages[replyIdx].toolCalls.append(
+                ToolCallRecord(id: callId, name: name, arguments: argStr)
+            )
+        case "tool_call_result":
+            let callId = json["call_id"] as? String ?? ""
+            if let i = messages[replyIdx].toolCalls.firstIndex(where: { $0.id == callId }) {
+                messages[replyIdx].toolCalls[i].result = json["result"] as? String
+                messages[replyIdx].toolCalls[i].error = json["error"] as? String
+                messages[replyIdx].toolCalls[i].elapsedMs = json["elapsed_ms"] as? Double
+                messages[replyIdx].toolCalls[i].done = true
+            }
+        case "error":
+            let msg = json["message"] as? String ?? "agent error"
+            if messages[replyIdx].content.isEmpty {
+                messages[replyIdx].content = "⚠️ \(msg)"
+            }
+        default:
+            break  // step_complete / done: no visible state change
+        }
+    }
 
     // ── Server management ─────────────────────────────────────────────
 

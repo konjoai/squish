@@ -15,10 +15,13 @@ https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSy
 """
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import subprocess
 from pathlib import Path
+
+_LOG = logging.getLogger("squish.daemon.launchagent")
 
 PLIST_LABEL = "ai.konjo.squishd"
 PLIST_DIR   = Path.home() / "Library" / "LaunchAgents"
@@ -196,8 +199,8 @@ def uninstall() -> None:
                 check=False,
                 capture_output=True,
             )
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError) as exc:
+            _LOG.debug("launchctl unload failed: %s", exc)
         PLIST_PATH.unlink()
 
 

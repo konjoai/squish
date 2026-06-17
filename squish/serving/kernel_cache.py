@@ -117,8 +117,8 @@ def run_warmup_pass(model=None, tokenizer=None) -> float:
         try:
             out = model(dummy_ids)
             mx.eval(out)
-        except Exception:
-            pass
+        except (RuntimeError, ValueError, TypeError, AttributeError) as exc:
+            logger.debug("Metal warmup forward pass failed: %s", exc)
     except ImportError:
         pass
     elapsed = time.perf_counter() - t0

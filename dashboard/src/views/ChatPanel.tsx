@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ease } from "@konjoai/ui";
+import { AgentTimeline } from "./AgentTimeline";
 import type { ChatTurn } from "../lib/types";
 
 export interface ChatPanelProps {
@@ -44,9 +45,21 @@ export function ChatPanel({ turns, active }: ChatPanelProps) {
             className="mb-5 last:mb-0"
           >
             <RoleHeader turn={turn} streaming={active != null && idx === all.length - 1 && turn.id === active.id} />
-            {turn.role === "assistant" && turn.tokens && turn.tokens.length > 0
-              ? <AssistantBody turn={turn} />
-              : <SimpleBody content={turn.content} muted={turn.role === "user"} />}
+            {turn.role === "assistant" && turn.steps && turn.steps.length > 0 ? (
+              <div className="space-y-3">
+                <div className="space-y-3">
+                  <AgentTimeline
+                    steps={turn.steps}
+                    running={active != null && idx === all.length - 1 && turn.id === active.id}
+                  />
+                </div>
+                {turn.content.trim() && <SimpleBody content={turn.content} muted={false} />}
+              </div>
+            ) : turn.role === "assistant" && turn.tokens && turn.tokens.length > 0 ? (
+              <AssistantBody turn={turn} />
+            ) : (
+              <SimpleBody content={turn.content} muted={turn.role === "user"} />
+            )}
           </motion.div>
         ))}
       </AnimatePresence>
