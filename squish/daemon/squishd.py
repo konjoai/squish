@@ -70,13 +70,14 @@ def is_running(sock_path: str = SOCK_PATH) -> bool:
         _send_frame(s, {"_cmd": "ping"})
         data = _recv_frame(s)
         return bool(data and data.get("status") == "ok")
-    except Exception:
+    except (OSError, ValueError, RuntimeError) as exc:
+        logger.debug("Daemon ping probe failed: %s", exc)
         return False
     finally:
         try:
             s.close()
-        except Exception:
-            pass
+        except OSError as exc:
+            logger.debug("Socket close failed: %s", exc)
 
 
 def send_request(
@@ -109,8 +110,8 @@ def send_request(
     finally:
         try:
             s.close()
-        except Exception:
-            pass
+        except OSError as exc:
+            logger.debug("Socket close failed: %s", exc)
 
 
 def _send_frame(sock: socket.socket, obj: dict) -> None:
@@ -229,9 +230,9 @@ class DaemonServer:
                     self._default_model_dir,
                     self._default_comp_dir,
                 )
-            except Exception:
-                logger.exception("Failed to pre-load default model %s",
-                                 self._default_model_dir)
+            except (OSError, ValueError, RuntimeError, ImportError, KeyError) as exc:
+                logger.exception("Failed to pre-load default model %s: %s",
+                                 self._default_model_dir, exc)
 
         try:
             while self._running:
@@ -254,8 +255,8 @@ class DaemonServer:
                 pass
             try:
                 Path(PID_FILE).unlink(missing_ok=True)
-            except Exception:
-                pass
+            except OSError as exc:
+                logger.debug("PID file unlink failed: %s", exc)
             logger.info("squishd stopped")
 
     def stop(self) -> None:
@@ -264,8 +265,8 @@ class DaemonServer:
         if self._server_sock is not None:
             try:
                 self._server_sock.close()
-            except Exception:
-                pass
+            except OSError as exc:
+                logger.debug("Server socket close failed: %s", exc)
 
     # ── Connection handler ────────────────────────────────────────────────────
 
@@ -277,17 +278,17 @@ class DaemonServer:
                 return
             resp = self._dispatch(req)
             _send_frame(conn, resp)
-        except Exception:
+        except Exception:  # noqa: BLE001 — daemon boundary, must not crash
             logger.exception("Error handling connection")
             try:
                 _send_frame(conn, {"error": "internal server error"})
-            except Exception:
-                pass
+            except OSError as exc:
+                logger.debug("Failed to send error frame: %s", exc)
         finally:
             try:
                 conn.close()
-            except Exception:
-                pass
+            except OSError as exc:
+                logger.debug("Connection close failed: %s", exc)
 
     def _dispatch(self, req: dict[str, Any]) -> dict[str, Any]:
         # Control commands
@@ -318,7 +319,8 @@ class DaemonServer:
                 self._models.pop(key, None)
             self._load_model(key, model_dir, comp_dir)
             return {"status": "ok", "reloaded": key}
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError, ImportError, KeyError) as exc:
+            logger.warning("Reload failed for %s: %s", key, exc)
             return {"error": str(exc)}
 
     def _cmd_status(self) -> dict[str, Any]:
@@ -358,8 +360,8 @@ class DaemonServer:
             text, n_tok = self._run_inference(
                 loaded, prompt, max_tokens, temperature, top_p
             )
-        except Exception as exc:
-            logger.exception("Inference error for model %s", key)
+        except (RuntimeError, ValueError, TypeError, AttributeError, ImportError) as exc:
+            logger.exception("Inference error for model %s: %s", key, exc)
             return {"error": str(exc)}
         elapsed  = time.perf_counter() - t0
         tok_s    = n_tok / elapsed if elapsed > 0 else 0.0
@@ -435,8 +437,8 @@ class DaemonServer:
         try:
             lm = self._load_model(key, model_dir, compressed_dir)
             return lm
-        except Exception:
-            logger.exception("Failed to load model %s from %s", key, model_dir)
+        except (OSError, ValueError, RuntimeError, ImportError, KeyError) as exc:
+            logger.exception("Failed to load model %s from %s: %s", key, model_dir, exc)
             return None
 
     def _load_model(
@@ -518,8 +520,8 @@ def _messages_to_prompt(messages: list[dict], tokenizer) -> str:
                 tokenize=False,
                 add_generation_prompt=True,
             )
-    except Exception:
-        pass
+    except (AttributeError, ValueError, TypeError, KeyError) as exc:
+        logger.debug("chat_template apply failed, using fallback prompt: %s", exc)
     # Simple fallback: role-prefixed concatenation
     parts: list[str] = []
     for m in messages:
@@ -575,7 +577,8 @@ def main() -> None:  # pragma: no cover
                 print(f"  ✓  squishd running  (pid {resp.get('pid', '?')})")
                 for k, info in models.items():
                     print(f"     {k}: {info.get('n_requests', 0)} requests")
-            except Exception:
+            except (OSError, RuntimeError, ValueError) as exc:
+                logger.debug("Status query failed: %s", exc)
                 print("  ✓  squishd running")
         else:
             print("  ✗  squishd not running  (start with: squishd start <model>)")
@@ -607,7 +610,7 @@ def main() -> None:  # pragma: no cover
         try:
             resp = send_request({"_cmd": "reload"}, SOCK_PATH)
             print(f"  ✓  Reloaded: {resp.get('reloaded', '?')}")
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             print(f"  ✗  Reload failed: {exc}")
             sys.exit(1)
         return

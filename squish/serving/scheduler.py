@@ -315,7 +315,8 @@ class BatchScheduler:
         """Tokenise prompt and build a _Request object."""
         try:
             input_ids = self._tokenizer.encode(prompt, add_special_tokens=True)
-        except Exception:
+        except (AttributeError, TypeError, ValueError) as exc:
+            log.debug("tokenizer.encode failed, falling back to __call__: %s", exc)
             input_ids = self._tokenizer(prompt)["input_ids"]
         return _Request(
             request_id  = request_id,
@@ -473,7 +474,7 @@ class BatchScheduler:
                     self._generate_batch(batch, mx)
                 else:
                     self._generate_batch_torch(batch)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — worker thread boundary, must not crash
                 log.error("Batch generation error: %s", exc, exc_info=True)
                 for req in batch:
                     if not req.done:
@@ -801,7 +802,7 @@ class NestedWaitScheduler(BatchScheduler):
                     self._generate_batch_nested(batch, mx)
                 else:
                     self._generate_batch_torch(batch)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — worker thread boundary, must not crash
                 log.error("NestedWait batch error: %s", exc, exc_info=True)
                 for req in batch:
                     if not req.done:
