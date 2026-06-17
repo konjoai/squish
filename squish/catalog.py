@@ -34,6 +34,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from squish.config import squish_home
+
 _LOG = logging.getLogger("squish.catalog")
 
 
@@ -61,7 +63,7 @@ _HF_DOWNLOAD_ERRORS = _hf_download_errors()
 CATALOG_URL = (
     "https://huggingface.co/datasets/squishai/catalog/resolve/main/catalog.json"
 )
-SQUISH_CACHE_DIR = Path.home() / ".squish"
+SQUISH_CACHE_DIR = squish_home()
 LOCAL_CATALOG_PATH = SQUISH_CACHE_DIR / "catalog.json"
 
 # How often to refresh the remote catalog (seconds). Default: 24 h.
@@ -1362,7 +1364,7 @@ def pull(  # pragma: no cover
     """
 
     if models_dir is None:
-        models_dir = Path.home() / ".squish" / "models"
+        models_dir = squish_home() / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
 
     entry = resolve(name, refresh=refresh_catalog)

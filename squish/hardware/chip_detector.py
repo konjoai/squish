@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Dict, Optional
 
+from squish.config import squish_home
+
 _LOG = logging.getLogger("squish.hardware.chip_detector")
 
 # ---------------------------------------------------------------------------
@@ -35,7 +37,7 @@ _LOG = logging.getLogger("squish.hardware.chip_detector")
 # Cache key = platform.machine() + platform.version() — static per OS install.
 # Invalidated automatically when either changes (e.g. after macOS upgrade).
 
-_DISK_CACHE_PATH: pathlib.Path = pathlib.Path.home() / ".squish" / "hw_cache.json"
+_DISK_CACHE_PATH: pathlib.Path = squish_home() / "hw_cache.json"
 
 
 def _disk_cache_key() -> str:

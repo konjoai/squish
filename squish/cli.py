@@ -118,6 +118,7 @@ def _catalog_suggest(query: str, max_results: int = 3):
 # duplicate detection logic that previously lived in this file.
 # Respects NO_COLOR, SQUISH_DARK_BG, COLORFGBG, and FORCE_COLOR env vars.
 from squish._term import C as _C  # noqa: E402
+from squish.config import squish_home  # noqa: E402
 
 
 # ── Model registry ───────────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ def _resolve_models_dir() -> Path:
     if env_override:
         return Path(env_override).expanduser()
     # Check ~/.squish/models (canonical install location)
-    primary = Path.home() / ".squish" / "models"  # pragma: no cover
+    primary = squish_home() / "models"  # pragma: no cover
     if primary.exists():  # pragma: no cover
         return primary
     # Check <squish repo root>/models/ — works when running directly from the repo
@@ -1147,7 +1148,7 @@ def cmd_setup(args):  # pragma: no cover
 
 # ── squish run ────────────────────────────────────────────────────────────────
 
-_DOCTOR_MARKER = Path.home() / ".squish" / ".doctor_ok"
+_DOCTOR_MARKER = squish_home() / ".doctor_ok"
 
 
 def _first_run_health_gate(args) -> None:
@@ -2415,7 +2416,7 @@ def cmd_doctor(args):
     if getattr(args, "report", False):
         import datetime as _dt
         import platform as _plat
-        _report_dir = Path.home() / ".squish"
+        _report_dir = squish_home()
         _report_dir.mkdir(parents=True, exist_ok=True)
         _ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         _report_path = _report_dir / f"doctor-report-{_ts}.json"
@@ -2493,8 +2494,8 @@ def cmd_daemon(args):  # pragma: no cover
     """Start, stop, or check the Squish daemon (persistent background server)."""
     import signal
 
-    pid_file = Path.home() / ".squish" / "daemon.pid"
-    log_file = Path.home() / ".squish" / "daemon.log"
+    pid_file = squish_home() / "daemon.pid"
+    log_file = squish_home() / "daemon.log"
     pid_file.parent.mkdir(parents=True, exist_ok=True)
 
     def _read_pid() -> int | None:
@@ -3667,7 +3668,7 @@ def cmd_pull(args):  # pragma: no cover
             )
         else:
             slug = hf_repo.split("/")[-1].lower()
-            head_dir = Path.home() / ".squish" / "eagle-heads" / slug
+            head_dir = squish_home() / "eagle-heads" / slug
             if head_dir.exists() and any(head_dir.iterdir()):
                 print(f"  Draft head already present at {head_dir} — skipping download.")
             else:
@@ -4432,7 +4433,7 @@ def cmd_pull_head(args):  # pragma: no cover
         out_dir = Path(args.output).expanduser()
     else:
         slug = hf_repo.split("/")[-1].lower()
-        out_dir = Path.home() / ".squish" / "eagle-heads" / slug
+        out_dir = squish_home() / "eagle-heads" / slug
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -5457,7 +5458,7 @@ def cmd_logs(args):
     """View or stream the squish server log."""
     import collections
 
-    log_file = Path(getattr(args, "log_file", "") or (Path.home() / ".squish" / "daemon.log"))
+    log_file = Path(getattr(args, "log_file", "") or (squish_home() / "daemon.log"))
     n        = getattr(args, "tail", 50)
     follow   = getattr(args, "follow", False)
 

@@ -39,6 +39,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Optional
 
+from squish.config import squish_home
+
 _LOG = logging.getLogger("squish.platform.ane_router")
 
 # Inline-import guard so the module imports cleanly on Linux/Windows
@@ -79,7 +81,7 @@ _ANE_MEMORY_BUDGET_BY_GEN: dict[int, float] = {
     5: 8.0,   # M5 — Neural Accelerators extend budget
 }
 
-_DEFAULT_CAPS_PATH = Path.home() / ".squish" / "hardware_caps.json"
+_DEFAULT_CAPS_PATH = squish_home() / "hardware_caps.json"
 
 
 # ---------------------------------------------------------------------------
