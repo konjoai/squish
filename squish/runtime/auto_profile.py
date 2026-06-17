@@ -36,6 +36,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from squish.config import squish_home
+
 __all__ = [
     "OptimizationProfile",
     "ModelCapabilityDetector",
@@ -345,7 +347,7 @@ class ModelCapabilityDetector:
                 return
 
         # ── Pass 2: ~/.squish/eagle-heads/<slug>/ ────────────────────────────
-        eagle_heads_root = Path.home() / ".squish" / "eagle-heads"
+        eagle_heads_root = squish_home() / "eagle-heads"
         if not eagle_heads_root.exists():
             return
 
