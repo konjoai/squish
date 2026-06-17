@@ -520,7 +520,7 @@ def _messages_to_prompt(messages: list[dict], tokenizer) -> str:
                 tokenize=False,
                 add_generation_prompt=True,
             )
-    except (AttributeError, ValueError, TypeError, KeyError) as exc:
+    except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
         logger.debug("chat_template apply failed, using fallback prompt: %s", exc)
     # Simple fallback: role-prefixed concatenation
     parts: list[str] = []
