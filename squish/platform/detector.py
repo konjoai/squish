@@ -274,7 +274,8 @@ class UnifiedPlatformDetector:
         try:
             with open("/proc/version") as fh:
                 return "microsoft" in fh.read().lower()
-        except Exception:
+        except OSError as exc:
+            _LOG.debug("/proc/version read failed: %s", exc)
             import os
             return "WSL_DISTRO_NAME" in os.environ
 
@@ -288,8 +289,8 @@ class UnifiedPlatformDetector:
             )
             if r.returncode == 0 and r.stdout.strip():
                 return r.stdout.strip()
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError) as exc:
+            _LOG.debug("sysctl brand_string probe failed: %s", exc)
         return ""
 
     @staticmethod
@@ -312,8 +313,8 @@ class UnifiedPlatformDetector:
                     for line in fh:
                         if line.startswith("MemTotal"):
                             return round(int(line.split()[1]) / 1e6, 1)
-        except Exception:
-            pass
+        except (OSError, AttributeError, ValueError, IndexError) as exc:
+            _LOG.debug("RAM detection failed: %s", exc)
         return 0.0
 
     # ------------------------------------------------------------------

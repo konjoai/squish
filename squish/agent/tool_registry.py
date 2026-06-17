@@ -31,9 +31,12 @@ Usage::
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+_LOG = logging.getLogger("squish.agent.tool_registry")
 
 
 __all__ = [
@@ -328,8 +331,9 @@ class ToolRegistry:
                 output=output,
                 elapsed_ms=elapsed,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — boundary: arbitrary tool fn, error surfaced to agent
             elapsed = (time.perf_counter() - t0) * 1000
+            _LOG.debug("tool %r raised: %s", name, exc)
             return ToolResult(
                 tool_name=name,
                 call_id=cid,

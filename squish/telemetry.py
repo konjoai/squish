@@ -49,6 +49,7 @@ import asyncio
 import contextvars
 import functools
 import json
+import logging
 import os
 import threading
 import time
@@ -56,6 +57,8 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+_LOG = logging.getLogger("squish.telemetry")
 
 __all__ = [
     "Span",
@@ -294,7 +297,8 @@ class Tracer:
         """Return a JSON-serialisable trace summary."""
         try:
             from squish import __version__ as _ver
-        except Exception:
+        except (ImportError, AttributeError) as exc:
+            _LOG.debug("could not import squish.__version__: %s", exc)
             _ver = "unknown"
         return {
             "squish_version": _ver,
@@ -315,7 +319,8 @@ class Tracer:
         ]
         try:
             from squish import __version__ as _ver
-        except Exception:
+        except (ImportError, AttributeError) as exc:
+            _LOG.debug("could not import squish.__version__: %s", exc)
             _ver = "unknown"
         return {
             "traceEvents":     events,

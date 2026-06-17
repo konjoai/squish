@@ -17,6 +17,7 @@ Approach:
 from __future__ import annotations
 
 import json
+import logging
 import pathlib
 import platform
 import re
@@ -24,6 +25,8 @@ import subprocess
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Dict, Optional
+
+_LOG = logging.getLogger("squish.hardware.chip_detector")
 
 # ---------------------------------------------------------------------------
 # On-disk chip-detection cache
@@ -45,8 +48,8 @@ def _load_disk_cache() -> str | None:
         data = json.loads(_DISK_CACHE_PATH.read_text())
         if data.get("key") == _disk_cache_key():
             return data.get("chip_str", "")
-    except Exception:
-        pass
+    except (OSError, ValueError, TypeError) as exc:
+        _LOG.debug("hw_cache read failed: %s", exc)
     return None
 
 
@@ -57,8 +60,8 @@ def _save_disk_cache(chip_str: str) -> None:
         _DISK_CACHE_PATH.write_text(
             json.dumps({"key": _disk_cache_key(), "chip_str": chip_str})
         )
-    except Exception:
-        pass
+    except (OSError, ValueError, TypeError) as exc:
+        _LOG.debug("hw_cache write failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------

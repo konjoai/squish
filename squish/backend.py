@@ -34,8 +34,11 @@ Exported singleton
 """
 from __future__ import annotations
 
+import logging
 import sys
 from collections.abc import Iterator
+
+_LOG = logging.getLogger("squish.backend")
 
 # ── Platform detection ────────────────────────────────────────────────────────
 _IS_APPLE: bool = False
@@ -44,8 +47,8 @@ if sys.platform == "darwin":
         import mlx.core as _mlx_probe  # noqa: F401
         _mlx_probe.array([0], dtype=_mlx_probe.int32)  # ensure Metal is live
         _IS_APPLE = True
-    except Exception:  # pragma: no cover
-        pass
+    except (ImportError, RuntimeError, OSError, AttributeError) as _exc:  # pragma: no cover
+        _LOG.debug("MLX/Metal probe failed: %s", _exc)
 else:  # pragma: no cover
     pass  # non-macOS platform — _IS_APPLE stays False
 
@@ -166,8 +169,8 @@ class _AppleBackend:
             )
             if ret == 0:
                 mx.metal.set_memory_limit(int(memsize.value * fraction), relaxed=True)  # type: ignore[call-arg]
-        except Exception:
-            pass  # non-fatal
+        except (OSError, RuntimeError, AttributeError, ValueError) as exc:
+            _LOG.debug("metal memory-limit configuration skipped: %s", exc)  # non-fatal
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -251,7 +254,8 @@ class _TorchBackend:
         if load_in_4bit:
             try:
                 load_kw["load_in_4bit"] = True
-            except Exception:
+            except (KeyError, TypeError, RuntimeError) as exc:
+                _LOG.debug("load_in_4bit setup failed (%s) — using torch_dtype", exc)
                 load_kw["torch_dtype"] = torch_dtype
         else:
             load_kw["torch_dtype"] = torch_dtype
@@ -323,7 +327,8 @@ class _TorchBackend:
         try:
             from safetensors.torch import load_file as _lf
             return {k: v.float().numpy() for k, v in _lf(str(path)).items()}
-        except Exception:
+        except (ImportError, OSError, ValueError, RuntimeError) as exc:
+            _LOG.debug("safetensors.torch load failed (%s) — using numpy loader", exc)
             from safetensors.numpy import load_file as _nf
             return dict(_nf(str(path)))
 
@@ -335,8 +340,8 @@ class _TorchBackend:
             import torch
             if torch.cuda.is_available() and 0.0 < fraction <= 1.0:
                 torch.cuda.set_per_process_memory_fraction(fraction)
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, AttributeError) as exc:
+            _LOG.debug("CUDA memory-fraction configuration skipped: %s", exc)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

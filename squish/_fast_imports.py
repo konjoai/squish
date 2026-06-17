@@ -95,7 +95,12 @@ def _do_bg_mlx_lm_import() -> None:
         # apply_load_path_stubs() running before start_background_mlx_lm_import().
         import mlx_lm  # noqa: F401, PLC0415
         from mlx_lm.utils import load_model, load_tokenizer, load_config  # noqa: F401, PLC0415
-    except Exception as exc:  # noqa: BLE001
+    except (ImportError, RuntimeError, OSError, AttributeError, ValueError) as exc:
+        # Captured here and re-raised by await_mlx_lm_import() on the consumer thread.
+        import logging  # noqa: PLC0415 — kept lazy to avoid cold-start import overhead
+        logging.getLogger("squish._fast_imports").debug(
+            "background mlx_lm import failed: %s", exc
+        )
         _mlx_lm_import_error = f"{type(exc).__name__}: {exc}"
     finally:
         _mlx_lm_import_done.set()

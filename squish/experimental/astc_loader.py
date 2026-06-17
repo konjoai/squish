@@ -50,6 +50,7 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import os
 import struct
 from dataclasses import dataclass, field
@@ -57,6 +58,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
+
+_LOG = logging.getLogger("squish.experimental.astc_loader")
 
 try:
     from squish.compress.astc_encoder import (
@@ -353,8 +356,8 @@ class ASTCLoader:
             # Radeon and Intel integrated GPUs do not support ASTC
             non_astc = ("radeon", "intel", "amd")
             return not any(k in name for k in non_astc)
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, AttributeError, OSError) as exc:
+            _LOG.debug("ASTC capability probe failed: %s", exc)
         return False
 
     # ------------------------------------------------------------------
@@ -402,7 +405,8 @@ class ASTCLoader:
                 mtl_texture=buf,
                 layer_name=layer_name,
             )
-        except Exception:
+        except (ImportError, RuntimeError, AttributeError, OSError, ValueError) as exc:
+            _LOG.debug("Metal texture creation failed (%s) — using simulation", exc)
             return ASTCWeightTexture(
                 encode_result=encode_result,
                 backend="simulation",

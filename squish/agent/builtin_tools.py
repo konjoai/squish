@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import html
 import io
+import logging
 import os
 import re
 import subprocess
@@ -41,6 +42,8 @@ from contextlib import redirect_stdout
 from typing import Any
 
 from squish.agent.tool_registry import ToolDefinition, ToolRegistry
+
+_LOG = logging.getLogger("squish.agent.builtin_tools")
 
 
 __all__ = [
@@ -288,7 +291,8 @@ def squish_python_repl(code: str, timeout: int = 10) -> str:
             _run()
     except TimeoutError as exc:
         return f"[TIMEOUT] {exc}"
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — sandbox boundary: exec of arbitrary code
+        _LOG.debug("sandboxed exec raised: %s", exc)
         return f"[ERROR]\n{traceback.format_exc()}"
     finally:
         if hasattr(signal, "SIGALRM"):

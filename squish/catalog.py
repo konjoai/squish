@@ -36,6 +36,26 @@ from pathlib import Path
 
 _LOG = logging.getLogger("squish.catalog")
 
+
+def _hf_download_errors() -> tuple[type[BaseException], ...]:
+    """Network/download exception types raised by huggingface_hub backends.
+
+    ``requests``-based errors and ``HfHubHTTPError`` subclass ``OSError``, but
+    the ``httpx``/xet transport raises ``httpx.HTTPError`` (a bare ``Exception``
+    subclass).  Build the tuple lazily so a missing ``httpx`` never breaks import.
+    """
+    errs: list[type[BaseException]] = [OSError, ValueError, RuntimeError, ConnectionError]
+    try:
+        import httpx  # noqa: PLC0415
+
+        errs.append(httpx.HTTPError)
+    except ImportError as exc:
+        _LOG.debug("httpx unavailable for download-error tuple: %s", exc)
+    return tuple(errs)
+
+
+_HF_DOWNLOAD_ERRORS = _hf_download_errors()
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 CATALOG_URL = (
@@ -1118,7 +1138,7 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
             _reset_hf_session()
             _snapshot()
             return
-        except Exception as exc:
+        except _HF_DOWNLOAD_ERRORS as exc:
             ssl_failure = _is_ssl_error(exc)
             local_ok, _ = _is_raw_model_dir_complete(local_dir)
 
@@ -1150,7 +1170,7 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
                 with _force_httpx_verify_false():
                     _snapshot()
                 return
-            except Exception as retry_exc:
+            except _HF_DOWNLOAD_ERRORS as retry_exc:
                 local_ok_retry, _ = _is_raw_model_dir_complete(local_dir)
                 if local_ok_retry:
                     print(f"  ⚠  Using existing local copy at {local_dir}")
@@ -1222,7 +1242,7 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
                 token=token,
             )
             return Path(dest)
-        except Exception as exc:
+        except _HF_DOWNLOAD_ERRORS as exc:
             if _is_ssl_error(exc):
                 raise _SSLError(
                     f"SSL certificate verification failed while downloading {filename!r} from {repo!r}.\n"
@@ -1253,7 +1273,8 @@ def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma:
                 pass
 
         return list(list_repo_files(repo, token=token))
-    except Exception:
+    except (ImportError, *_HF_DOWNLOAD_ERRORS) as exc:
+        _LOG.debug("list_repo_files failed for %r: %s", repo, exc)
         return []
 
 
@@ -1373,7 +1394,8 @@ def pull(  # pragma: no cover
                 return compressed_dir
         except _SSLError:
             raise  # re-raise with the clear user-facing message — do not swallow
-        except Exception as exc:
+        except (*_HF_DOWNLOAD_ERRORS, KeyError, AttributeError, TypeError) as exc:
+            _LOG.debug("pre-compressed download failed for %r: %s", _prebuilt_repo, exc)
             if verbose:
                 print(f"  ⚠  Pre-compressed download failed ({exc}); falling back …")
 
@@ -1433,12 +1455,13 @@ def pull(  # pragma: no cover
             try:
                 import mlx.core as mx
                 mx.clear_cache()
-            except Exception:
-                pass
+            except (ImportError, RuntimeError, AttributeError) as exc:
+                _LOG.debug("mx.clear_cache after AWQ failed: %s", exc)
         except ImportError:
             # mlx-lm not installed — skip AWQ silently
             pass
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError, AttributeError, TypeError) as exc:
+            _LOG.debug("AWQ calibration failed: %s", exc)
             if verbose:
                 print(f"  ⚠  AWQ skipped — {exc}. Continuing without AWQ.")
 
