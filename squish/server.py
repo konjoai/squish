@@ -65,6 +65,9 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+# Module-level logger — used by exception handlers throughout this file.
+_LOG = _logging.getLogger(__name__)
+
 # ── Suppress macOS malloc-stack-logging noise in child processes ──────────────
 # When MallocStackLogging is set in the environment (e.g. from Instruments or
 # Xcode), macOS prints "can't turn off malloc stack logging because it was not
@@ -159,7 +162,8 @@ def _check_mlx_lm_version() -> None:
     try:
         import importlib.metadata as _im
         ver = _im.version("mlx-lm")
-    except Exception:
+    except ImportError as exc:
+        _LOG.debug("mlx-lm version probe failed: %s", exc)
         return  # not installed or metadata unavailable — not our problem
     if ver == _MLX_LM_BAD_VERSION:
         print(
@@ -328,8 +332,8 @@ def _pin_inference_thread() -> None:
         _QOS_CLASS_USER_INTERACTIVE = 0x21
         # int pthread_set_qos_class_self_np(qos_class_t cls, int rel_priority)
         _libc.pthread_set_qos_class_self_np(_QOS_CLASS_USER_INTERACTIVE, 0)
-    except Exception:
-        pass  # QoS hint is best-effort; never block startup on it
+    except (OSError, AttributeError, TypeError) as exc:
+        _LOG.debug("QoS thread-pin hint failed: %s", exc)  # best-effort; never block startup
 
 
 _inference_executor = concurrent.futures.ThreadPoolExecutor(
@@ -405,8 +409,8 @@ def _freeze_heap_once() -> None:
         gc.collect()
         gc.freeze()
         _gc_frozen = True
-    except Exception:
-        pass
+    except RuntimeError as exc:
+        _LOG.debug("gc.freeze() failed: %s", exc)
 
 
 def _iter_next(it: "Any") -> "Any":
@@ -850,8 +854,8 @@ def _tlog(msg: str) -> None:
         try:
             _trace_file.write(line_plain + "\n")
             _trace_file.flush()
-        except Exception:
-            pass
+        except (OSError, ValueError) as exc:
+            _LOG.debug("trace file write failed: %s", exc)
 
 # ── Model state ──────────────────────────────────────────────────────────────
 
@@ -1153,16 +1157,16 @@ def _configure_blazing_mode(args: "Any") -> None:
             ram_auto: float = 0.0
             try:
                 from squish.hardware.chip_detector import ChipDetector as _ACD  # noqa: PLC0415
-                _cd = _ACD.detect()
+                _cd = _ACD().detect()
                 chip_name = getattr(_cd, "chip_name", "") or ""
                 ram_auto  = _ACD.detect_ram_gb()
-            except Exception:  # noqa: BLE001
-                pass
+            except (ImportError, AttributeError, OSError, RuntimeError) as exc:
+                _LOG.debug("chip auto-detect failed: %s", exc)
             if _abe(chip_name, ram_auto):
                 args.blazing = True
                 _info("blazing", f"auto-enabled for {chip_name or 'M3/M4/M5'}  (disable with --no-blazing)")
-        except Exception:  # noqa: BLE001
-            pass
+        except (ImportError, AttributeError, OSError, RuntimeError) as exc:
+            _LOG.debug("blazing auto-eligibility check failed: %s", exc)
 
     if not getattr(args, "blazing", False):
         return
@@ -1174,8 +1178,8 @@ def _configure_blazing_mode(args: "Any") -> None:
     try:
         from squish.hardware.chip_detector import ChipDetector as _BlazCD  # noqa: PLC0415
         ram_gb = _BlazCD.detect_ram_gb()
-    except Exception:  # noqa: BLE001
-        pass
+    except (ImportError, AttributeError, OSError, RuntimeError) as exc:
+        _LOG.debug("blazing RAM detect failed: %s", exc)
 
     _blazing_preset_defaults(args, chip_profile=_chip_profile, ram_gb=ram_gb)
 
@@ -1262,8 +1266,8 @@ def _apply_fast_gelu(model_dir: str) -> None:  # pragma: no cover
             _info("fast-gelu",
                   f"patched {patched} FFN activation layers  "
                   f"({hidden_act} → x·sigmoid(1.702x))")
-    except Exception:
-        pass   # never block startup on activation patching
+    except (AttributeError, TypeError) as exc:
+        _LOG.debug("fast-gelu activation patch failed: %s", exc)  # never block startup
 
 
 def _infer_kv_dtype_safe(model):
@@ -1426,7 +1430,7 @@ def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma:
             tok_box["tokenizer"] = _mlx_load_tokenizer(
                 model_path, None, eos_token_ids=eos_token_ids
             )
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, RuntimeError, ImportError, TypeError) as exc:
             tok_box["error"] = exc
 
     tok_thread = threading.Thread(
@@ -1491,8 +1495,8 @@ def _cap_metal_cache(verbose: bool = False, limit_mb: int | None = None) -> None
             if verbose:
                 print(f"  {_C.DIM}◈  Metal buffer cache capped at {limit_mb} MB{_C.R}")
         gc.collect()
-    except Exception:
-        pass
+    except (RuntimeError, AttributeError, ValueError) as exc:
+        _LOG.debug("Metal cache-limit set failed: %s", exc)
 
 
 def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
@@ -1563,8 +1567,8 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
                 )
             _freeze_heap_once()
             return
-        except Exception:
-            pass  # fall through to bare forward pass below
+        except (RuntimeError, ValueError, AttributeError, ImportError) as exc:
+            _LOG.debug("stream_generate warm-up failed: %s", exc)  # fall through to bare pass
 
         # ── Fallback: bare single-token forward pass (no mlx_lm available) ────
         bos_id = None
@@ -1579,9 +1583,9 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
         if verbose:
             _ok(f"Metal JIT warm-up  ({elapsed * 1000:.0f} ms)  path=forward-pass")
         _freeze_heap_once()
-    except Exception as _e:
+    except Exception as exc:  # noqa: BLE001 — startup warm-up is best-effort, must never crash boot
         if verbose:
-            _warn(f"[warmup] Skipped: {_e}")
+            _warn(f"[warmup] Skipped: {exc}")
 
 
 def load_draft_model(draft_model_dir: str, draft_compressed_dir: str = "",  # pragma: no cover
@@ -1666,16 +1670,16 @@ def _apply_chat_template(
                     tokenize              = False,
                     add_generation_prompt = True,
                 )
-            except Exception:
-                pass  # tokenizer doesn't support tools= → fall through
+            except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
+                _LOG.debug("native tool chat-template failed: %s", exc)  # fall through
         try:
             return tokenizer.apply_chat_template(
                 messages,
                 tokenize              = False,
                 add_generation_prompt = True,
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
+            _LOG.debug("chat-template apply failed: %s", exc)
 
     # Manual fallback: Qwen / ChatML format
     parts = []
@@ -1694,7 +1698,8 @@ def _count_tokens(text: str) -> int:
         return len(text.split())
     try:
         return len(tok.encode(text))
-    except Exception:
+    except (ValueError, TypeError, AttributeError, RuntimeError) as exc:
+        _LOG.debug("token count encode failed: %s", exc)
         return len(text.split())
 
 
@@ -1711,8 +1716,8 @@ def _get_stop_ids(stop: list[str] | str | None) -> list[list[int]]:
             ids = tok.encode(s, add_special_tokens=False)
             if ids:
                 result.append(ids)
-        except Exception:
-            pass
+        except (ValueError, TypeError, AttributeError, RuntimeError) as exc:
+            _LOG.debug("stop-string encode failed: %s", exc)
     return result
 
 
@@ -1787,8 +1792,8 @@ def _generate_tokens(  # pragma: no cover
                     yield _ch, None
                 yield "", "stop"
                 return
-        except Exception:
-            pass  # never block generation on cache lookup failure
+        except (AttributeError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+            _LOG.debug("semantic cache lookup failed: %s", exc)  # never block generation
 
     # ── Phase 4: prompt compression ───────────────────────────────────────────
     # Compress long prompts before tokenization to reduce prefill cost.
@@ -1818,8 +1823,8 @@ def _generate_tokens(  # pragma: no cover
                         # Controlled by --compress-preserve-tokens (default 0 = disabled).
                         preserve_tokens=_compress_preserve_tokens,
                     )
-            except Exception:
-                pass  # never block generation on compression failure
+            except (ImportError, ValueError, RuntimeError, TypeError) as exc:
+                _LOG.debug("prompt compression failed: %s", exc)  # never block generation
 
     # ── Trace: log request entry ───────────────────────────────────────────────
     _rid = uuid.uuid4().hex[:8]          # short per-request ID for log correlation
@@ -1891,9 +1896,9 @@ def _generate_tokens(  # pragma: no cover
                 _prompt_lookup_decoder,
             )
             return
-        except Exception as _ple:
-            _logging.getLogger(__name__).warning(
-                "prompt-lookup path failed (%s); falling back to standard decode", _ple
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _LOG.warning(
+                "prompt-lookup path failed (%s); falling back to standard decode", exc
             )
 
     # ── Prefix cache lookup (Phase 1.4) ──────────────────────────────────────
@@ -1934,8 +1939,8 @@ def _generate_tokens(  # pragma: no cover
         try:
             import mlx.core as mx
             mx.random.seed(seed)
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, ValueError, TypeError) as exc:
+            _LOG.debug("mlx random seed set failed: %s", exc)
 
     # ── Speculative decoding (Phase 0.2) ─────────────────────────────────────
     # Gated on temperature>0. v5.2 investigated firing at greedy temp==0 with a
@@ -1976,10 +1981,9 @@ def _generate_tokens(  # pragma: no cover
             if cache_eligible and _cache_buf:
                 _prefix_cache.put(_orig_prompt, "".join(_cache_buf), _last_finish)
             return
-        except Exception as _spec_err:
-            import logging as _log
-            _log.getLogger(__name__).warning("Speculative decoding failed (%s); "
-                                             "falling back to standard generation", _spec_err)
+        except (RuntimeError, ValueError, AttributeError, TypeError, ImportError) as exc:
+            _LOG.warning("Speculative decoding failed (%s); "
+                         "falling back to standard generation", exc)
 
     # ── Wave 37: Jacobi parallel decode ─────────────────────────────────────────
     # Activated when --jacobi is set and NO draft model is loaded (the two
@@ -2018,7 +2022,8 @@ def _generate_tokens(  # pragma: no cover
                         _jd_context,
                         vocab_size=getattr(_jd_tokenizer, "vocab_size", 32000),
                     )
-                except Exception:
+                except (RuntimeError, ValueError, IndexError, AttributeError) as exc:
+                    _LOG.debug("jacobi decode_step failed: %s", exc)
                     break
                 if not _jd_accepted:
                     break
@@ -2069,10 +2074,9 @@ def _generate_tokens(  # pragma: no cover
                 _tlog(f"REQ {_rid}  DONE  path=jacobi  tokens={_jd_step}  finish=stop")
             yield "", "stop"
             return
-        except Exception as _jd_err:
-            import logging as _jdlog
-            _jdlog.getLogger(__name__).warning(
-                "[jacobi] decode failed (%s); falling back to standard path", _jd_err
+        except (RuntimeError, ValueError, IndexError, AttributeError, TypeError, ImportError) as exc:
+            _LOG.warning(
+                "[jacobi] decode failed (%s); falling back to standard path", exc
             )
 
     # ── Quantized KV cache generation path ─────────────────────────────────────
@@ -2111,8 +2115,8 @@ def _generate_tokens(  # pragma: no cover
                         else list(input_ids[:256]),
                         _cwtime.monotonic(),
                     )
-                except Exception:
-                    pass  # never block generation on warmup tracking failure
+                except (AttributeError, ValueError, TypeError, IndexError) as exc:
+                    _LOG.debug("warmup access tracking failed: %s", exc)
             # ── Phase 3: session KV cache lookup ───────────────────────────────
             # Restore KV state from a prior conversation if a matching session
             # exists.  Key is SHA-256 of the first 2 KB of the ORIGINAL prompt.
@@ -2128,7 +2132,8 @@ def _generate_tokens(  # pragma: no cover
                             _tlog(f"REQ {_rid}  session-cache HIT  key={_session_key}")
                     elif _trace:
                         _tlog(f"REQ {_rid}  session-cache MISS  key={_session_key}")
-                except Exception:
+                except (OSError, ValueError, AttributeError, RuntimeError, TypeError) as exc:
+                    _LOG.debug("session KV cache lookup failed: %s", exc)
                     _session_key = None  # never block generation on session error
             # ── Disk prompt-cache lookup (Item 2) ──────────────────────────────
             # On a hit, restore KV state from NVMe and skip prefill (O(n) → O(1))
@@ -2147,8 +2152,8 @@ def _generate_tokens(  # pragma: no cover
                                   f"orig_tokens={len(_orig_input_ids)}  → skipped prefill")
                     elif _trace:
                         _tlog(f"REQ {_rid}  disk-prompt-cache MISS  orig_tokens={len(_orig_input_ids)}")
-                except Exception:
-                    pass  # disk lookup error — fall through to normal prefill
+                except (OSError, ValueError, AttributeError, RuntimeError, KeyError) as exc:
+                    _LOG.debug("disk prompt-cache lookup failed: %s", exc)  # fall through to prefill
 
             if _disk_hit_logit is not None:
                 # Cache hit: use stored logit to sample first token; no prefill needed
@@ -2195,10 +2200,10 @@ def _generate_tokens(  # pragma: no cover
                                 yield _il_tok, None
                         if _trace:
                             _tlog(f"REQ {_rid}  chunked-prefill DONE")
-                    except Exception as _cpf_err:
-                        import logging as _cpflog
-                        _cpflog.getLogger(__name__).warning(
-                            "[chunk-prefill] failed (%s) — standard prefill", _cpf_err
+                    except (RuntimeError, ValueError, AttributeError, TypeError,
+                            IndexError, ImportError) as exc:
+                        _LOG.warning(
+                            "[chunk-prefill] failed (%s) — standard prefill", exc
                         )
                         _last_logit_vec = None  # fall through below
 
@@ -2217,8 +2222,8 @@ def _generate_tokens(  # pragma: no cover
                         _last_logit_np = np.array(_last_logit_vec.astype(mx.float32))
                         # Store under original token IDs for stable cache keys
                         _disk_prompt_cache.store(_orig_input_ids, _kv_cache, _last_logit_np)
-                    except Exception:
-                        pass
+                    except (OSError, ValueError, RuntimeError, AttributeError) as exc:
+                        _LOG.debug("disk prompt-cache store failed: %s", exc)
             stop_buf = [next_id]
             # Compile the single-token decode step for faster subsequent calls.
             # layer_caches is captured as a constant closure; the list reference
@@ -2235,8 +2240,8 @@ def _generate_tokens(  # pragma: no cover
                     _decode_fn = mx.compile(
                         lambda tok_x: model(tok_x, cache=layer_caches)
                     )
-                except Exception:
-                    pass  # mx.compile unavailable or incompatible — use plain call
+                except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
+                    _LOG.debug("mx.compile decode step failed: %s", exc)  # use plain call
             # Phase A1: thinking budget tracking state
             _in_think_block = False
             _think_step_count = 0
@@ -2286,8 +2291,8 @@ def _generate_tokens(  # pragma: no cover
                     if _semantic_cache is not None and _sc_buf:
                         try:
                             _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                        except Exception:
-                            pass
+                        except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                            _LOG.debug("semantic cache store failed: %s", exc)
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=kv-cache  tokens={step}  finish=stop(eos)")
                     yield tok_text, "stop"
@@ -2301,8 +2306,8 @@ def _generate_tokens(  # pragma: no cover
                             if _semantic_cache is not None and _sc_buf:
                                 try:
                                     _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                                except Exception:
-                                    pass
+                                except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                                    _LOG.debug("semantic cache store failed: %s", exc)
                             if _trace:
                                 _tlog(f"REQ {_rid}  DONE  path=kv-cache  "
                                       f"tokens={step}  finish=stop(stop-seq)")
@@ -2365,8 +2370,8 @@ def _generate_tokens(  # pragma: no cover
                                 if _semantic_cache is not None and _sc_buf:
                                     try:
                                         _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                                    except Exception:
-                                        pass
+                                    except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                                        _LOG.debug("semantic cache store failed: %s", exc)
                                 if _trace:
                                     _tlog(f"REQ {_rid}  babbling-eos  step={step}  p={_eos_prob:.3f}  task={_task_type}")
                                 yield "", "stop"
@@ -2385,7 +2390,8 @@ def _generate_tokens(  # pragma: no cover
                         _logit_np = (_logit_np_shared if _logit_np_shared is not None
                                      else np.array(_logit_vec.astype(mx.float32)))
                         next_id = _fused_sampler.sample(_logit_np)
-                    except Exception:
+                    except (ValueError, RuntimeError, IndexError, AttributeError, TypeError) as exc:
+                        _LOG.debug("fused sampler failed: %s", exc)
                         next_id = _sample_mx(_logit_vec, temperature, top_p)
                 else:
                     next_id = _sample_mx(_logit_vec, temperature, top_p)
@@ -2402,8 +2408,8 @@ def _generate_tokens(  # pragma: no cover
                                 if _semantic_cache is not None and _sc_buf:
                                     try:
                                         _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                                    except Exception:
-                                        pass
+                                    except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                                        _LOG.debug("semantic cache store failed: %s", exc)
                                 if _trace:
                                     _tlog(f"REQ {_rid}  babbling-grammar-terminal  step={step}")
                                 yield "", "stop"
@@ -2422,21 +2428,21 @@ def _generate_tokens(  # pragma: no cover
             if _semantic_cache is not None and _sc_buf:
                 try:
                     _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                except Exception:
-                    pass
+                except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                    _LOG.debug("semantic cache store failed: %s", exc)
             # Phase 3: persist KV state for future sessions (background thread)
             if _session_kv_cache is not None and _session_key is not None:
                 try:
                     _session_kv_cache.save_session(_session_key, _kv_cache)
-                except Exception:
-                    pass
+                except (OSError, ValueError, RuntimeError, AttributeError) as exc:
+                    _LOG.debug("session KV save failed: %s", exc)
             yield "", "stop"
             return
-        except Exception as _kv_err:
-            import logging as _kv_log
-            _kv_log.getLogger(__name__).warning(
+        except (RuntimeError, ValueError, AttributeError, TypeError, IndexError,
+                KeyError, ImportError, OSError) as exc:
+            _LOG.warning(
                 "Quantized KV cache path failed (%s); falling back to stream_generate",
-                _kv_err,
+                exc,
             )
             _kv_cache.reset()
 
@@ -3101,10 +3107,10 @@ def _do_model_load(args: "Any") -> None:
                     verbose=getattr(args, "verbose", False),
                 )
             _LOAD_COMPLETE.set()
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, RuntimeError, ImportError,
+                TypeError, AttributeError) as exc:
             _LOAD_ERROR = f"{type(exc).__name__}: {exc}"
-            import logging as _logging
-            _logging.getLogger(__name__).exception(
+            _LOG.exception(
                 "Deferred model load failed (mode=%s)", _LOAD_MODE
             )
             raise
@@ -3128,7 +3134,8 @@ def _ensure_loaded_blocking() -> None:
         raise HTTPException(503, f"Model load failed: {_LOAD_ERROR}")
     try:
         _do_model_load(_LOAD_ARGS)
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, RuntimeError, ImportError,
+            TypeError, AttributeError) as exc:
         raise HTTPException(503, f"Model load failed: {exc}") from exc
 
 
@@ -3433,7 +3440,8 @@ async def chat_completions(  # pragma: no cover
                 _probe = _apply_chat_template(messages, _tok, tools=tools)
                 _first = tools[0].get("function", {}).get("name", "")
                 _supports_native = bool(_first) and _first in _probe
-            except Exception:
+            except (ValueError, TypeError, KeyError, AttributeError, IndexError, ImportError) as exc:
+                _LOG.debug("native tool-calling probe failed: %s", exc)
                 _supports_native = False
 
         if _supports_native:
@@ -3520,8 +3528,9 @@ async def chat_completions(  # pragma: no cover
                         loop.call_soon_threadsafe(_queue.put_nowait, (_tok_text, _finish))
                         if _finish is not None:
                             break
-                except Exception as _exc:  # surface to the consumer, never crash the thread
-                    loop.call_soon_threadsafe(_queue.put_nowait, _StreamError(_exc))
+                except Exception as exc:  # noqa: BLE001 — top-level boundary, must not crash
+                    _LOG.warning("token producer thread error: %s", exc)
+                    loop.call_soon_threadsafe(_queue.put_nowait, _StreamError(exc))
                 finally:
                     loop.call_soon_threadsafe(_queue.put_nowait, _STREAM_DONE)
 
@@ -3566,7 +3575,8 @@ async def chat_completions(  # pragma: no cover
                     if batch_parts:
                         yield _make_chunk("".join(batch_parts), model_id, cid,
                                           _created=_created, _fingerprint=_fp)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — top-level boundary, must not crash
+                _LOG.warning("chat stream consumer error: %s", exc)
                 yield f"data: {_json_dumps({'error': str(exc)})}\n\n"
                 return
             finally:
@@ -3987,7 +3997,7 @@ async def agent_connect_mcp(
             "transport": transport,
             "tools_registered": registered,
         }
-    except Exception as exc:  # noqa: BLE001
+    except (ImportError, OSError, ValueError, RuntimeError, TypeError, AttributeError) as exc:
         raise HTTPException(500, f"MCP connect failed: {exc}") from exc
 
 
@@ -4004,8 +4014,8 @@ async def agent_disconnect_mcp(
     try:
         from squish.serving.mcp_client import MCPClient  # noqa: PLC0415
         await client.disconnect()
-    except Exception:  # noqa: BLE001
-        pass
+    except (ImportError, OSError, RuntimeError, AttributeError) as exc:
+        _LOG.debug("MCP disconnect failed: %s", exc)
     return {"disconnected": server_id}
 
 
@@ -4123,7 +4133,8 @@ async def agent_run(  # pragma: no cover
                         )
                     if finish is not None:
                         break
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 — top-level boundary, must not crash
+                _LOG.warning("agent stream generation error: %s", exc)
                 yield (
                     "data: "
                     + _json_dumps({"type": "error", "message": str(exc)})
@@ -4181,9 +4192,10 @@ async def agent_run(  # pragma: no cover
                     )
                     _tc_err = None if result.ok else str(result.error)
                     _elapsed = result.elapsed_ms
-                except Exception as _exc:  # noqa: BLE001
-                    result_text = f"[ERROR] {_exc}"
-                    _tc_err = str(_exc)
+                except Exception as exc:  # noqa: BLE001 — tool exec boundary, must not crash stream
+                    _LOG.warning("tool call %r failed: %s", tool_name, exc)
+                    result_text = f"[ERROR] {exc}"
+                    _tc_err = str(exc)
                     _elapsed = 0.0
                 total_tool_calls += 1
 
@@ -4422,7 +4434,8 @@ async def sys_stats():
     try:
         rss_raw = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
         rss_mb = round(rss_raw / 1024 / 1024 if sys.platform == "darwin" else rss_raw / 1024, 1)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — best-effort stats endpoint, must not 500 on probe failure
+        _LOG.debug("RSS memory probe failed: %s", exc)
         rss_mb = 0.0
 
     # Disk usage for root filesystem
@@ -4431,7 +4444,8 @@ async def sys_stats():
         disk_used_pct  = round(du.used / du.total * 100, 1)
         disk_free_gb   = round(du.free / 1024 ** 3, 1)
         disk_total_gb  = round(du.total / 1024 ** 3, 1)
-    except Exception:
+    except OSError as exc:
+        _LOG.debug("disk usage probe failed: %s", exc)
         disk_used_pct = 0.0
         disk_free_gb  = 0.0
         disk_total_gb = 0.0
@@ -4586,8 +4600,8 @@ async def tokenize(
     try:
         ids = tok.encode(text) if hasattr(tok, "encode") else \
               tok(text, return_tensors="np")["input_ids"][0].tolist()
-    except Exception as e:
-        raise HTTPException(500, f"Tokenization failed: {e}") from e
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RuntimeError) as exc:
+        raise HTTPException(500, f"Tokenization failed: {exc}") from exc
 
     return JSONResponse({
         "token_ids":   ids,
@@ -5149,7 +5163,8 @@ Examples:
                     args.max_kv_size = min(32768, int(_free_gb * 2048))
                 else:
                     args.max_kv_size = 8192
-            except Exception:  # noqa: BLE001
+            except (ImportError, OSError, RuntimeError, AttributeError, ValueError) as exc:
+                _LOG.debug("agent max-kv auto-size failed: %s", exc)
                 args.max_kv_size = 8192
         _info("agent-preset",
               f"active  agent-kv=True  chunk-prefill=True"
@@ -5200,10 +5215,9 @@ Examples:
                   f"{s['total_blocks']} blocks  "
                   f"({s['memory_mb']} MB  page={s['page_size']}tok  "
                   f"{s['n_layers']}L×{s['n_kv_heads']}H×{s['head_dim']}d)")
-        except Exception as _paged_err:
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
-                "[paged-attention] could not initialise (%s) — disabled", _paged_err
+        except (ImportError, RuntimeError, ValueError, AttributeError, OSError) as exc:
+            _LOG.warning(
+                "[paged-attention] could not initialise (%s) — disabled", exc
             )
 
     _check_mlx_lm_version()
@@ -5264,9 +5278,9 @@ Examples:
         def _bg_preload(args_: "Any" = args) -> None:
             try:
                 _do_model_load(args_)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 — top-level boundary, must not crash
                 # _do_model_load already logs + sets _LOAD_ERROR.
-                pass
+                _LOG.debug("background preload error (already recorded): %s", exc)
         threading.Thread(
             target=_bg_preload, name="squish-preload-async", daemon=True
         ).start()
@@ -5294,7 +5308,8 @@ Examples:
         try:
             _load_ns = _model_load_span.end_time_ns - _model_load_span.start_time_ns
             _load_ms = _load_ns / 1_000_000.0
-        except Exception:
+        except (AttributeError, TypeError) as exc:
+            _LOG.debug("model-load span timing unavailable: %s", exc)
             _load_ms = 0.0
         if _load_ms > 0:
             _profiler.record("model_load_ms", _load_ms)
@@ -5383,8 +5398,8 @@ Examples:
                 _info("lazy-llm", f"keep={args.lazy_llm_keep_ratio}  "
                       f"start_layer={args.lazy_llm_start_layer}  "
                       f"revive={args.lazy_llm_revive_window}")
-        except Exception as _llm_err:
-            _warn(f"[lazy_llm] Skipped: {_llm_err}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[lazy_llm] Skipped: {exc}")
 
     if _state.model is not None:
         try:
@@ -5393,18 +5408,18 @@ Examples:
             if _split_info:
                 _info("cpu/gpu split", f"{_split_info.cpu_count} layers offloaded  "
                       f"GPU={_split_info.gpu_gb:.2f}GB  CPU={_split_info.cpu_gb:.2f}GB")
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError, OSError) as exc:
             if args.verbose:
-                _warn(f"[split_loader] Skipped: {e}")
+                _warn(f"[split_loader] Skipped: {exc}")
 
     # ── Phase 2.3: Flash Attention status check ──────────────────────────────
     if _state.model is not None:
         try:
             from squish.attention.flash_attention import patch_model_attention
             patch_model_attention(_state.model, verbose=_VERBOSE)
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
             if args.verbose:
-                _warn(f"[flash_attention] Skipped: {e}")
+                _warn(f"[flash_attention] Skipped: {exc}")
 
     # ── Phase 1.3: attach quantized KV cache if requested ─────────────
     global _kv_cache
@@ -5420,10 +5435,9 @@ Examples:
                 verbose=True,
             )
             _info("kv-cache", f"ready ({args.kv_cache_mode})")
-        except Exception as e:
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
-                "[KV cache] could not attach (%s) — running without KV quantisation", e
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError, OSError) as exc:
+            _LOG.warning(
+                "[KV cache] could not attach (%s) — running without KV quantisation", exc
             )
 
     # ── Phase 3: persistent cross-session KV cache ────────────────────────────
@@ -5434,8 +5448,8 @@ Examples:
             from squish.kv.kv_cache import SessionKVCache as _SessionKVCache
             _session_kv_cache = _SessionKVCache(cache_dir=_session_cache_dir)
             _info("session-cache", f"{_session_cache_dir}")
-        except Exception as _e:
-            _warn(f"[session-cache] Could not enable: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError) as exc:
+            _warn(f"[session-cache] Could not enable: {exc}")
 
     # ── Phase 4: prompt compression settings ─────────────────────────────────
     global _compress_enabled, _compress_ratio, _compress_min_tokens, _compress_preserve_tokens
@@ -5473,8 +5487,8 @@ Examples:
                      str(Path.home() / ".squish" / "response_cache.db")
             _semantic_cache = SquishSemanticCache(db_path=_sc_db)
             _info("semantic-cache", f"enabled  db={_sc_db}")
-        except Exception as _sc_err:
-            _warn(f"[semantic-cache] Could not enable: {_sc_err}\n"
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError) as exc:
+            _warn(f"[semantic-cache] Could not enable: {exc}\n"
                   "Install sqlite-vec: pip install 'squish[cache]'")
 
     # ── Phase 3A: chunked prefill settings ───────────────────────────────────
@@ -5494,7 +5508,8 @@ Examples:
     if _thinking_budget >= 0 and _state.tokenizer is not None:
         try:
             _think_close_token_id = _state.tokenizer.convert_tokens_to_ids("</think>")
-        except Exception:
+        except (AttributeError, KeyError, ValueError, TypeError) as exc:
+            _LOG.debug("thinking-budget close-token lookup failed: %s", exc)
             _think_close_token_id = None
     if _thinking_budget == 0:
         _info("thinking-budget", "disabled (no_think mode)")
@@ -5582,8 +5597,8 @@ Examples:
             _info("memory-governor",
                   f"started  available={_memory_governor.available_gb:.1f} GB"
                   f"  pressure={_memory_governor.pressure_level}")
-        except Exception as _mg_exc:  # noqa: BLE001
-            _info("memory-governor", f"unavailable ({_mg_exc})")
+        except (ImportError, OSError, RuntimeError, AttributeError, ValueError) as exc:
+            _info("memory-governor", f"unavailable ({exc})")
 
     # ── Phase 0C: hardware inference backend ─────────────────────────────────
     _inference_backend = getattr(args, "inference_backend", "mlx-eager")
@@ -5610,10 +5625,9 @@ Examples:
             _info("batch-scheduler",
                   f"enabled  algo={getattr(args, 'scheduler', 'nested-wait')}  "
                   f"max_batch={args.batch_size}  window={args.batch_window_ms:.0f}ms")
-        except Exception as e:
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
-                "[Scheduler] could not start (%s) — falling back to sequential mode", e
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError, OSError) as exc:
+            _LOG.warning(
+                "[Scheduler] could not start (%s) — falling back to sequential mode", exc
             )
             _scheduler = None
 
@@ -5641,8 +5655,8 @@ Examples:
             # Store config now; decoder is instantiated on first generation call.
             _prompt_lookup_decoder = _plcfg  # type: ignore[assignment]
             _info("prompt-lookup", f"ngram_max={_plcfg.ngram_max}  max_speculative={_plcfg.max_speculative}")
-        except Exception as _e:
-            _warn(f"[prompt-lookup] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[prompt-lookup] Skipped: {exc}")
 
     # ── Wave 37: Wire Everything In ───────────────────────────────────────────
     # ChipDetector is always run at startup (no flag required).
@@ -5660,8 +5674,8 @@ Examples:
         if _chunk_prefill_enabled and getattr(args, "chunk_prefill_size", 512) == 512:
             _chunk_prefill_size = _chip_profile.recommended_chunk_prefill
             _info("chip-detector", f"→ chunk_prefill_size auto-tuned to {_chunk_prefill_size}")
-    except Exception as _cd_err:
-        _info("chip-detector", f"detection unavailable ({_cd_err})")
+    except (ImportError, OSError, RuntimeError, AttributeError, ValueError) as exc:
+        _info("chip-detector", f"detection unavailable ({exc})")
 
     # ── Wave 79: Auto-detect optimal settings from hardware + model files ─────
     if not getattr(args, "no_optimize", False):
@@ -5677,8 +5691,8 @@ Examples:
             )
             _auto_profile_inst.apply_defaults(args)
             globals()["_auto_profile"] = _auto_profile_inst
-        except Exception:  # noqa: BLE001
-            pass  # never block startup on auto-profile failure
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _LOG.debug("auto-profile failed: %s", exc)  # never block startup
 
     # ── Wave 82a: Auto-load EAGLE-3 head (detected by auto_profile) ──────────
     # load_eagle_head() at line ~4988 runs before the auto-profile block, so
@@ -5695,8 +5709,8 @@ Examples:
             load_eagle_head(_w82_prof.eagle3_head_dir, verbose=False)
             _info("eagle3-auto",
                   f"head auto-loaded from {_w82_prof.eagle3_head_dir}")
-        except Exception as _e82:  # noqa: BLE001
-            _warn(f"[eagle3-auto] Could not load: {_e82}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[eagle3-auto] Could not load: {exc}")
 
     # ── Wave 82b: Auto-load structured FFN sparsity masks ────────────────────
     if (
@@ -5716,7 +5730,7 @@ Examples:
                 f"  ratio={_sfn.mean_sparsity:.1%}"
                 f"  file={os.path.basename(_w82_prof.sparsity_mask_path)}",
             )
-        except Exception as _e82b:  # noqa: BLE001
+        except Exception as _e82b:  # noqa: BLE001 — optional sparse-ffn masks, must not crash boot
             _warn(f"[sparse-ffn] Could not load masks: {_e82b}")
 
     # ── Wave 83: Auto-enable MoE lazy expert loading (detected by auto_profile)
@@ -5741,8 +5755,8 @@ Examples:
                 "moe-lazy",
                 "JIT expert materialisation: auto-enabled for MoE model",
             )
-        except Exception as _e83:  # noqa: BLE001
-            _warn(f"[moe-lazy] Could not auto-enable: {_e83}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[moe-lazy] Could not auto-enable: {exc}")
 
     global _kvtc_manager
     if getattr(args, "kvtc", False) and _state.model is not None:
@@ -5762,8 +5776,8 @@ Examples:
             _info("kvtc",
                   f"rank={_kvtc_cfg.rank}  bits={_kvtc_cfg.quant_bits}"
                   f"  layers={_n_layers_kvtc}")
-        except Exception as _e:
-            _warn(f"[kvtc] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[kvtc] Skipped: {exc}")
 
     global _metal_flash_attn
     if getattr(args, "metal_flash_attn", False) and _state.model is not None:
@@ -5775,8 +5789,8 @@ Examples:
             _info("metal-flash-attn",
                   f"block_q={_mfa_cfg.block_q}  block_k={_mfa_cfg.block_k}"
                   f"  causal={_mfa_cfg.causal}")
-        except Exception as _e:
-            _warn(f"[metal-flash-attn] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[metal-flash-attn] Skipped: {exc}")
 
     global _deja_vu_sparse_ffn
     if getattr(args, "deja_vu", False) and _state.model is not None:
@@ -5790,8 +5804,8 @@ Examples:
             _info("deja-vu",
                   f"hidden={_dv_cfg.hidden_size}  ffn={_dv_cfg.ffn_size}"
                   f"  threshold={_dv_cfg.threshold}")
-        except Exception as _e:
-            _warn(f"[deja-vu] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[deja-vu] Skipped: {exc}")
 
     global _jacobi_decoder
     if getattr(args, "jacobi", False):
@@ -5807,8 +5821,8 @@ Examples:
             _info("jacobi",
                   f"n_tokens={_jd_cfg.n_tokens}  max_iter={_jd_cfg.max_iter}"
                   f"  variant={_jd_cfg.variant}")
-        except Exception as _e:
-            _warn(f"[jacobi] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[jacobi] Skipped: {exc}")
 
     global _layer_overlap_loader
     if getattr(args, "layer_overlap", False) and _state.model is not None:
@@ -5831,8 +5845,8 @@ Examples:
             )
             _info("layer-overlap",
                   f"prefetch_count={_lol_cfg.prefetch_count}  n_layers={_n_layers_lol}")
-        except Exception as _e:
-            _warn(f"[layer-overlap] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[layer-overlap] Skipped: {exc}")
 
     global _fused_qkv_proj
     if getattr(args, "fused_qkv", False) and _state.model is not None:
@@ -5853,8 +5867,8 @@ Examples:
             _info("fused-qkv",
                   f"d_model={_fqkv_cfg.d_model}  n_heads={_fqkv_cfg.n_heads}"
                   f"  n_kv_heads={_fqkv_cfg.n_kv_heads}  d_head={_fqkv_cfg.d_head}")
-        except Exception as _e:
-            _warn(f"[fused-qkv] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[fused-qkv] Skipped: {exc}")
 
     # ── Wave 50: Bigger-Than-Memory: SparseGPT, MoD, LeanKV, GGUF, etc. ──────
     global _gguf_loader
@@ -5864,8 +5878,8 @@ Examples:
             _gl_cfg = GGUFConfig()
             _gguf_loader = GGUFNativeLoader(_gl_cfg)
             _info("gguf-loader", "GGUF native loader: Q2_K/Q3_K/Q4_K/Q5_K/Q8_0 format parser")
-        except Exception as _e:
-            _warn(f"[gguf-loader] Skipped: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[gguf-loader] Skipped: {exc}")
 
     global _weight_stream
     if getattr(args, "weight_stream", False):
@@ -5874,8 +5888,8 @@ Examples:
             _ws_cfg = WeightStreamConfig()
             _weight_stream = WeightDecompressStream(_ws_cfg)
             _info("weight-stream", "weight decompress stream: overlapped CPU dequant + GPU compute")
-        except Exception as _e:
-            _warn(f"[weight-stream] Skipped: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[weight-stream] Skipped: {exc}")
 
     global _shard_loader
     if getattr(args, "shard_loader", False):
@@ -5884,8 +5898,8 @@ Examples:
             _sl_cfg = ShardConfig()
             _shard_loader = ModelShardLoader(_sl_cfg)
             _info("shard-loader", "model shard loader: 3-tier GPU-hot/CPU-warm/SSD-cold weight paging")
-        except Exception as _e:
-            _warn(f"[shard-loader] Skipped: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[shard-loader] Skipped: {exc}")
 
     # ── Wave 51: Test-Time Compute Scaling ────────────────────────────────────
     global _coconut_decoder
@@ -5895,8 +5909,8 @@ Examples:
             _coc_cfg = CoconutConfig()
             _coconut_decoder = CoconutDecoder(_coc_cfg)
             _info("coconut", "COCONUT: continuous latent reasoning decoder")
-        except Exception as _e:
-            _warn(f"[coconut] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[coconut] Skipped: {exc}")
 
     global _self_consistency
     if getattr(args, "self_consistency", False):
@@ -5905,8 +5919,8 @@ Examples:
             _sc2_cfg = SelfConsistencyConfig()
             _self_consistency = SelfConsistencyVoter(_sc2_cfg)
             _info("self-consistency", "self-consistency: majority voting over K reasoning chains")
-        except Exception as _e:
-            _warn(f"[self-consistency] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[self-consistency] Skipped: {exc}")
 
     # ── Wave 27: Inference velocity features ──────────────────────────────────
     # 1B — FusedSampler: replace multi-pass sampling with a single fused kernel
@@ -5922,9 +5936,9 @@ Examples:
             )
             _fused_sampler = FusedSampler(_fs_cfg)
             _info("fused-sampler", "single-pass temperature+top-k+top-p+rep-penalty  (~10% decode throughput)")
-        except Exception as _e:
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
             _fused_sampler_enabled = False
-            _warn(f"[fused-sampler] Skipped: {_e}")
+            _warn(f"[fused-sampler] Skipped: {exc}")
 
     # 1C — CacheWarmup: track prefix access patterns for TTFT reduction
     global _cache_warmup_predictor, _cache_warmup_enabled
@@ -5935,7 +5949,8 @@ Examples:
             _cw_cfg = WarmupConfig(top_k=32, min_access_count=2, max_prefix_tokens=256)
             _cache_warmup_predictor = CacheWarmupPredictor(_cw_cfg)
             _info("cache-warmup", "predictive KV prefix pre-warming  (top_k=32  min_count=2)")
-        except Exception:
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _LOG.debug("cache-warmup init failed: %s", exc)
             _cache_warmup_enabled = False
 
     if getattr(args, "lora_adapter", ""):
@@ -5944,8 +5959,8 @@ Examples:
             _lora_mgr = LoRAManager()
             _lora_mgr.load(args.lora_adapter)
             _info("lora-adapter", f"{args.lora_adapter}")
-        except Exception as _e:
-            _warn(f"[lora-adapter] Skipped: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[lora-adapter] Skipped: {exc}")
 
     # ── Signal bot ────────────────────────────────────────────────────────────
     import os as _os
@@ -6016,8 +6031,8 @@ Examples:
         _agent_registry = _ToolRegistry()
         _reg_tools(_agent_registry)
         _info("agent-registry", f"loaded  tools={len(_agent_registry)}")
-    except Exception as _ar_exc:  # noqa: BLE001
-        _warn(f"[agent-registry] Could not load built-in tools: {_ar_exc}")
+    except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+        _warn(f"[agent-registry] Could not load built-in tools: {exc}")
 
     # ── Wave 115: Flush all-optimizations lazy-init before first user request ─
     # When --all-optimizations activates 100+ wave flags, each module's

@@ -23,11 +23,14 @@ Usage::
 """
 from __future__ import annotations
 
+import logging
 import sys
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional, Tuple
+
+_LOG = logging.getLogger("squish.platform.detector")
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +228,8 @@ class UnifiedPlatformDetector:
             import mlx.core as mx  # type: ignore[import]
             mx.array([0], dtype=mx.int32)
             return True
-        except Exception:
+        except (ImportError, RuntimeError) as exc:
+            _LOG.debug("MLX probe failed: %s", exc)
             return False
 
     @staticmethod
@@ -246,7 +250,8 @@ class UnifiedPlatformDetector:
                 compute_capability = cc,
                 is_available       = True,
             )
-        except Exception:
+        except (ImportError, RuntimeError, AssertionError) as exc:
+            _LOG.debug("CUDA probe failed: %s", exc)
             return False, None
 
     @staticmethod
@@ -259,7 +264,8 @@ class UnifiedPlatformDetector:
                 and torch.version.hip is not None
                 and torch.cuda.is_available()
             )
-        except Exception:
+        except (ImportError, RuntimeError) as exc:
+            _LOG.debug("ROCm probe failed: %s", exc)
             return False
 
     @staticmethod
@@ -268,7 +274,8 @@ class UnifiedPlatformDetector:
         try:
             with open("/proc/version") as fh:
                 return "microsoft" in fh.read().lower()
-        except Exception:
+        except OSError as exc:
+            _LOG.debug("/proc/version read failed: %s", exc)
             import os
             return "WSL_DISTRO_NAME" in os.environ
 
@@ -282,8 +289,8 @@ class UnifiedPlatformDetector:
             )
             if r.returncode == 0 and r.stdout.strip():
                 return r.stdout.strip()
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError) as exc:
+            _LOG.debug("sysctl brand_string probe failed: %s", exc)
         return ""
 
     @staticmethod
@@ -306,8 +313,8 @@ class UnifiedPlatformDetector:
                     for line in fh:
                         if line.startswith("MemTotal"):
                             return round(int(line.split()[1]) / 1e6, 1)
-        except Exception:
-            pass
+        except (OSError, AttributeError, ValueError, IndexError) as exc:
+            _LOG.debug("RAM detection failed: %s", exc)
         return 0.0
 
     # ------------------------------------------------------------------

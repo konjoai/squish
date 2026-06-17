@@ -49,10 +49,13 @@ __all__ = [
     "calibrate_from_dir",
 ]
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
+_LOG = logging.getLogger("squish.quant.super_weight_calibrator")
 
 # ---------------------------------------------------------------------------
 # SuperWeightCoord — a single identified super weight
@@ -377,8 +380,10 @@ def _load_shard_f32(shard_path: Path) -> dict[str, np.ndarray]:
         from safetensors.numpy import load_file as _st_load
         raw = _st_load(str(shard_path))
         return {name: arr.astype(np.float32) for name, arr in raw.items()}
-    except Exception:
-        pass
+    except (ImportError, OSError, ValueError, TypeError) as exc:
+        # safetensors.numpy cannot parse some dtypes (e.g. BF16) — fall back to MLX.
+        _LOG.debug("safetensors.numpy load failed for %s; trying MLX CPU loader: %s",
+                   shard_path, exc)
 
     import mlx.core as mx
     prev = mx.default_device()

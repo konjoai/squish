@@ -1,0 +1,53 @@
+# Konjo file-size gate — grandfather allowlist.
+#
+# Files listed here predate the 500-line gate and are exempt from it. The gate
+# is BLOCKING for every other .py file: any NEW file over 500 lines fails CI.
+#
+# Rules:
+#   - One repo-relative path per line (no leading "./").
+#   - Lines starting with "#" and blank lines are ignored.
+#   - To remove an entry: split the file under 500 lines, then delete its line.
+#   - Do NOT add new entries without explicit maintainer sign-off — the point
+#     of the gate is to stop the list from growing.
+#
+# Generated during the v9.34.2 repo review (39 files). See
+# KONJO_QUALITY_FRAMEWORK.md for the gate specification.
+benchmarks/ollama_vs_squish/bench_v5_1.py
+demo/demo.py
+demo/server.py
+squish/agent/builtin_tools.py
+squish/catalog.py
+squish/cli.py
+squish/convert.py
+squish/daemon/squishd.py
+squish/grammar/grammar_engine.py
+squish/kv/block_kv_cache.py
+squish/kv/kv_cache.py
+squish/kv/prompt_kv_cache.py
+squish/quant/aqlm.py
+squish/quant/awq.py
+squish/quant/compressed_loader.py
+squish/quant/milo_quant.py
+squish/quant/quantizer.py
+squish/quant/sqint2.py
+squish/runtime/squish_runtime.py
+squish/server.py
+squish/serving/local_model_scanner.py
+squish/serving/ollama_compat.py
+squish/serving/scheduler.py
+squish/serving/tool_calling.py
+squish/speculative/speculative.py
+squish/telemetry.py
+squish/ui.py
+tests/grammar/test_schema_gen_unit.py
+tests/integration/test_phase2_demo_stack.py
+tests/quant/test_int3_linear_unit.py
+tests/serving/test_server_unit.py
+tests/test_backend_unit.py
+tests/test_quant_aqlm.py
+tests/test_sqint2.py
+tests/test_sqint2_linear.py
+tests/test_telemetry_unit.py
+tests/test_wave70_squish_runtime.py
+tests/test_wave76_agent_tools.py
+tests/test_wave78_perf_quality.py

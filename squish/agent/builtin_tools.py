@@ -15,7 +15,11 @@ Security notes:
 - ``squish_fetch_url`` validates the scheme and blocks ``file://`` URLs.
 - ``squish_delete_file`` permanently removes a file — use with care.
 
-Call :func:`register_builtin_tools` to add all twelve tools to a registry::
+Wave 99+: added ``create_directory`` so the VSCode-side ``create_directory``
+tool resolves to a real backend implementation (previously mapped to an
+unregistered name and failed at dispatch).
+
+Call :func:`register_builtin_tools` to add all thirteen tools to a registry::
 
     registry = ToolRegistry()
     register_builtin_tools(registry)
@@ -25,6 +29,7 @@ from __future__ import annotations
 
 import html
 import io
+import logging
 import os
 import re
 import subprocess
@@ -38,10 +43,13 @@ from typing import Any
 
 from squish.agent.tool_registry import ToolDefinition, ToolRegistry
 
+_LOG = logging.getLogger("squish.agent.builtin_tools")
+
 
 __all__ = [
     "register_builtin_tools",
     "squish_apply_edit",
+    "squish_create_directory",
     "squish_create_file",
     "squish_delete_file",
     "squish_fetch_url",
@@ -283,7 +291,8 @@ def squish_python_repl(code: str, timeout: int = 10) -> str:
             _run()
     except TimeoutError as exc:
         return f"[TIMEOUT] {exc}"
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — sandbox boundary: exec of arbitrary code
+        _LOG.debug("sandboxed exec raised: %s", exc)
         return f"[ERROR]\n{traceback.format_exc()}"
     finally:
         if hasattr(signal, "SIGALRM"):
@@ -430,6 +439,24 @@ def squish_create_file(path: str, content: str) -> str:
     with open(safe, "wb") as fh:
         fh.write(data)
     return f"Created {len(data):,} bytes at {safe}"
+
+
+def squish_create_directory(path: str) -> str:
+    """Create a directory, including any missing parent directories.
+
+    Idempotent: succeeds if the directory already exists.
+
+    Args:
+        path: Absolute path of the directory to create.
+
+    Returns:
+        Confirmation message.
+    """
+    safe = _safe_path(path)
+    if os.path.isfile(safe):
+        raise FileExistsError(f"Path exists and is a file, not a directory: {safe}")
+    os.makedirs(safe, exist_ok=True)
+    return f"Created directory: {safe}"
 
 
 def squish_delete_file(path: str) -> str:
@@ -698,6 +725,25 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
                 "required": ["path", "content"],
             },
             fn=squish_create_file,
+            source="builtin",
+        ),
+        ToolDefinition(
+            name="squish_create_directory",
+            description=(
+                "Create a directory, including any missing parents. "
+                "Succeeds if the directory already exists."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path of the directory to create.",
+                    },
+                },
+                "required": ["path"],
+            },
+            fn=squish_create_directory,
             source="builtin",
         ),
         ToolDefinition(

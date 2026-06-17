@@ -212,14 +212,14 @@ def _try_make_model_cache(model):
     try:
         from mlx_lm.models.cache import make_prompt_cache
         cache = make_prompt_cache(model)
-    except Exception:
-        pass
+    except (ImportError, RuntimeError, ValueError, AttributeError) as exc:
+        logger.debug("make_prompt_cache unavailable: %s", exc)
     if cache is None:
         try:
             import mlx_lm.utils as _u
             cache = _u.make_kv_caches(model)
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, ValueError, AttributeError) as exc:
+            logger.debug("make_kv_caches unavailable: %s", exc)
     if cache is None:
         return None
     # RotatingKVCache wraps around — offset truncation would corrupt state.
@@ -227,7 +227,8 @@ def _try_make_model_cache(model):
         for c in cache:
             if "rotating" in type(c).__name__.lower():
                 return None
-    except Exception:
+    except (TypeError, AttributeError) as exc:
+        logger.debug("cache introspection failed: %s", exc)
         return None
     return cache
 
@@ -236,7 +237,8 @@ def _cache_offset(cache) -> int:
     """Current token offset of the first cache entry (0 if unavailable)."""
     try:
         return cache[0].offset
-    except Exception:
+    except (IndexError, AttributeError, TypeError) as exc:
+        logger.debug("cache offset read failed: %s", exc)
         return 0
 
 
@@ -253,8 +255,8 @@ def _cache_set_offset(cache, offset: int) -> None:
     try:
         for c in cache:
             c.offset = offset
-    except Exception:
-        pass
+    except (AttributeError, TypeError) as exc:
+        logger.debug("cache offset rollback failed: %s", exc)
 
 
 def _prefill_cached(model, cache, ids: list[int]) -> np.ndarray:
@@ -720,8 +722,9 @@ class SpeculativeGenerator:
                 self._target_compiled = mx.compile(
                     lambda tok_x: _m4c(tok_x, cache=_tc)
                 )
-            except Exception:
-                pass  # mx.compile unavailable — fall back to uncompiled calls
+            except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
+                # mx.compile unavailable — fall back to uncompiled calls
+                logger.debug("mx.compile of target model failed: %s", exc)
         logger.debug(
             "speculative: %s KV caches  eagle=%s  ngram_max_n=%d  compiled=%s",
             "stateful" if _use_stateful else "stateless (fallback)",
@@ -808,8 +811,8 @@ class SpeculativeGenerator:
             np.random.seed(seed)
             try:
                 mx.random.seed(seed)
-            except Exception:
-                pass
+            except (RuntimeError, ValueError, AttributeError) as exc:
+                logger.debug("mx.random.seed failed: %s", exc)
 
         eos_id    = getattr(self._ttok, "eos_token_id", None) or 151645
         input_ids = list(self._ttok.encode(prompt))
@@ -1521,7 +1524,8 @@ class SpeculativeGenerator:
     def _tok_text(self, tok_id: int) -> str:
         try:
             return self._ttok.decode([tok_id])
-        except Exception:
+        except (RuntimeError, ValueError, TypeError, KeyError) as exc:
+            logger.debug("token decode failed for id=%s: %s", tok_id, exc)
             return ""
 
     # ── n-gram-only speculative stream (Phase 2.1 zero-cost fallback) ─────────

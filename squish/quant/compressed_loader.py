@@ -39,15 +39,19 @@ from __future__ import annotations
 import dataclasses
 import importlib
 import json
+import logging
 import os
 import re
 import resource
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import cast
 
 import numpy as np
+
+_LOG = logging.getLogger("squish.quant.compressed_loader")
 
 # ---------------------------------------------------------------------------
 # Optional Rust squish_quant extension — enables INT4 load path
@@ -214,8 +218,10 @@ def _configure_metal_memory() -> None:  # pragma: no cover
             return
         limit = int(memsize.value * fraction)
         mx.metal.set_memory_limit(limit, relaxed=True)  # type: ignore[call-arg]
-    except Exception:
-        pass   # non-fatal: non-Apple hardware or old MLX build
+    except (OSError, ValueError, AttributeError, RuntimeError, TypeError) as exc:
+        # non-fatal: non-Apple hardware, or MLX build whose set_memory_limit
+        # signature differs (e.g. no `relaxed=` kwarg → TypeError).
+        _LOG.debug("Could not configure Metal memory limit: %s", exc)
 
 _configure_metal_memory()
 
@@ -729,8 +735,10 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
                 aqlm_layer.codebooks[m].vectors = cb_vectors[m]
             arr_f32 = aqlm_dequantize(aqlm_layer).astype(np.float32)
             return arr_f32.reshape(original_shape)
-        except Exception:
-            pass  # fall through to other loaders if AQLM decode fails
+        except (ImportError, OSError, ValueError, RuntimeError,
+                AttributeError, IndexError) as exc:
+            # fall through to other loaders if AQLM decode fails
+            _LOG.debug("AQLM decode for %s failed; trying other loaders: %s", sk, exc)
 
     # ── SQINT2: Hadamard + NF2 + low-rank residual (W103.4a) ────────────────
     # Detection: presence of `{sk}__sqint2_idx.npy`. Reconstruction goes
@@ -1123,8 +1131,9 @@ def _build_squish_4bit_dir(  # pragma: no cover
             if _npy_exists(_shape_path):
                 try:
                     _orig_ndim = len(_load_npy_path(_shape_path, mmap_mode='r'))
-                except Exception:
-                    pass
+                except (OSError, ValueError, TypeError) as exc:
+                    _LOG.debug("Could not read shape file %s; assuming 2-D: %s",
+                               _shape_path, exc)
             if _orig_ndim < 2:
                 # 1-D vector: store as plain BF16, not QuantizedLinear
                 _arr_f32 = _dequantize_npy_dir(tensor_dir, sk)
@@ -1291,7 +1300,8 @@ def _build_squish_3bit_dir(  # pragma: no cover
 
                 del codes_2d, scales_2d, zeros_2d
                 _n_int3 += 1
-            except Exception as _e3:
+            except (OSError, ValueError, RuntimeError, AttributeError,
+                    KeyError, IndexError) as _e3:
                 if verbose:
                     print(f"  [INT3 skip] {sk}: {_e3!r} — falling back to BF16")
                 # Fall through to BF16 dequantization for this key
@@ -1620,7 +1630,8 @@ def load_from_npy_dir(  # pragma: no cover
             import subprocess as _sp
             _hw_bytes = int(_sp.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip())
             _MAX_BF16_GB = _hw_bytes / 1e9 * 0.75   # allow up to 75% of unified memory
-        except Exception:
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            _LOG.debug("Could not read hw.memsize; using 10 GB BF16 cap: %s", exc)
             _MAX_BF16_GB = 10.0                      # safe fallback for non-macOS CI
         if _est_bf16_gb > _MAX_BF16_GB and auto_quantize_bits is None:
             raise RuntimeError(
@@ -1671,7 +1682,9 @@ def load_from_npy_dir(  # pragma: no cover
     try:
         from mlx.utils import tree_flatten as _mlx_tree_flatten
         _expected = {name for name, _ in _mlx_tree_flatten(model.parameters())}
-    except Exception:
+    except (ImportError, AttributeError, RuntimeError, ValueError) as exc:
+        _LOG.debug("Could not enumerate expected model params; skipping partial-build "
+                   "guard: %s", exc)
         _expected = set()
     _manifest_names = set(safe_to_original.values())
     _missing = _expected - _manifest_names
@@ -1726,7 +1739,8 @@ def load_from_npy_dir(  # pragma: no cover
                 if _gs_cand in _MLX_VALID_GROUP_SIZES:
                     _gs = _gs_cand
                     break
-            except Exception:
+            except (OSError, ValueError, IndexError, AttributeError) as exc:
+                _LOG.debug("group_size probe for %s failed; skipping: %s", _sk_probe, exc)
                 continue
         if _gs is None:
             # No valid group_size found — squish_4bit is not buildable for this model.
@@ -1795,7 +1809,8 @@ def load_from_npy_dir(  # pragma: no cover
                     if return_stats:
                         return _model_4b, _tok_4b, _stats_4b
                     return _model_4b, _tok_4b
-                except Exception as _e4b:
+                except (OSError, ValueError, RuntimeError, AttributeError,
+                        KeyError, ImportError) as _e4b:
                     if verbose:
                         print(f"  WARNING: INT4 native build failed ({_e4b!r}); "
                               f"falling back to BF16 dequantization path")
@@ -1838,7 +1853,8 @@ def load_from_npy_dir(  # pragma: no cover
                 verbose=verbose,
                 return_stats=return_stats,
             )
-        except Exception as _e3b:
+        except (OSError, ValueError, RuntimeError, AttributeError,
+                KeyError, ImportError) as _e3b:
             if verbose:
                 print(f"  WARNING: INT3 squish_3bit build failed ({_e3b!r}); "
                       f"falling back to BF16 dequantization path")
@@ -1971,7 +1987,7 @@ def load_from_npy_dir(  # pragma: no cover
                     cache_mb = mlx_cache_path.stat().st_size / 1e6
                     print(f"  MLX safetensors cache saved ({cache_mb:.0f} MB, {save_cache_s:.1f}s)"
                           f" → next load will be reference-speed")
-            except Exception as _e:
+            except (OSError, ValueError, RuntimeError) as _e:
                 if verbose:
                     print(f"  WARNING: could not save MLX cache: {_e}")
 

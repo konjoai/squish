@@ -31,12 +31,15 @@ Usage::
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Optional
+
+_LOG = logging.getLogger("squish.platform.ane_router")
 
 # Inline-import guard so the module imports cleanly on Linux/Windows
 try:
@@ -224,7 +227,8 @@ class ANERouter:
             gen = profile.generation
             # Support both IntEnum and plain int
             return int(gen)
-        except Exception:  # pylint: disable=broad-except
+        except (AttributeError, ValueError, TypeError, RuntimeError) as exc:
+            _LOG.debug("chip generation detection failed: %s", exc)
             return 0
 
     def _build_policy(self, param_count: int) -> ANERoutingPolicy:

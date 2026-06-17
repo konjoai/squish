@@ -201,7 +201,26 @@ class TestToolNameMap(unittest.TestCase):
 
     def test_list_directory_mapping_present(self):
         from squish.agent.tool_name_map import normalize_for_backend
-        assert normalize_for_backend("list_directory") == "squish_list_directory"
+        # The backend tool is registered as ``squish_list_dir`` (not
+        # ``squish_list_directory``) — the map must point at the real name.
+        assert normalize_for_backend("list_directory") == "squish_list_dir"
+
+    def test_every_mapped_backend_name_is_registered(self):
+        """Regression: every VSCODE_TO_BACKEND value must resolve to a real
+        registered builtin tool. A dangling mapping silently breaks dispatch.
+        """
+        from squish.agent.tool_name_map import VSCODE_TO_BACKEND
+        from squish.agent.tool_registry import ToolRegistry
+        from squish.agent.builtin_tools import register_builtin_tools
+
+        registry = ToolRegistry()
+        register_builtin_tools(registry)
+        registered = set(registry.names())
+        for vscode, backend in VSCODE_TO_BACKEND.items():
+            assert backend in registered, (
+                f"VSCode tool {vscode!r} maps to {backend!r}, which is not a "
+                f"registered builtin tool. Registered: {sorted(registered)}"
+            )
 
 
 if __name__ == "__main__":

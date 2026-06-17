@@ -358,8 +358,8 @@ class PromptKVStore:
         import shutil
         try:
             shutil.rmtree(d)
-        except Exception:
-            pass
+        except OSError as exc:
+            logger.debug("Failed to remove KV cache entry dir %s: %s", d, exc)
 
 
 # ── mlx / numpy conversion helpers ────────────────────────────────────────────
@@ -448,8 +448,8 @@ def capture_kv_state(cache) -> "tuple[list, list, int] | None":
                 keys.append(k)
                 values.append(v)
             return keys, values, int(offset)
-    except Exception:
-        pass
+    except (AttributeError, TypeError, ValueError, IndexError) as exc:
+        logger.debug("Could not extract KV state from cache object: %s", exc)
     return None
 
 

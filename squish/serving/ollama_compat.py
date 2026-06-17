@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -41,6 +42,8 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
+_LOG = logging.getLogger("squish.serving.ollama_compat")
 
 
 def mount_ollama(
@@ -77,7 +80,8 @@ def mount_ollama(
             return 0
         try:
             return sum(f.stat().st_size for f in candidate.rglob("*") if f.is_file())
-        except Exception:  # pragma: no cover
+        except OSError as exc:  # pragma: no cover
+            _LOG.debug("model size scan failed for %s: %s", model_name, exc)
             return 0
 
     def _local_models() -> list[dict]:
@@ -107,7 +111,8 @@ def mount_ollama(
                         "quantization_level": "4-bit",
                     },
                 })
-        except Exception:
+        except (ImportError, OSError, AttributeError, ValueError) as exc:
+            _LOG.debug("LocalModelScanner failed, falling back to direct scan: %s", exc)
             # Fallback: scan squish models_dir directly
             if models_dir.exists():
                 for d in sorted(models_dir.iterdir()):
@@ -174,8 +179,8 @@ def mount_ollama(
                 return tok.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True
                 )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
+            _LOG.debug("chat_template apply failed, using fallback prompt: %s", exc)
         # Fallback: simple concatenation
         parts = []
         for m in messages:
@@ -293,7 +298,8 @@ def mount_ollama(
                             await asyncio.sleep(0)
                         if finish is not None:
                             break
-                except Exception as exc:  # pragma: no cover
+                except (RuntimeError, ValueError, TypeError, AttributeError) as exc:  # pragma: no cover
+                    _LOG.warning("ollama generate stream error: %s", exc)
                     yield _ndjson({"error": str(exc)})
                     return
 
@@ -385,7 +391,8 @@ def mount_ollama(
                             await asyncio.sleep(0)
                         if finish is not None:
                             break
-                except Exception as exc:  # pragma: no cover
+                except (RuntimeError, ValueError, TypeError, AttributeError) as exc:  # pragma: no cover
+                    _LOG.warning("ollama chat stream error: %s", exc)
                     yield _ndjson({"error": str(exc)})
                     return
                 elapsed_ns = int((time.perf_counter() - t0) * 1e9)

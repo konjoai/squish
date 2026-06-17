@@ -30,9 +30,12 @@ Public API
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import sys
 from typing import Generator, Sequence
+
+_LOG = logging.getLogger("squish.ui")
 
 # ── Rich availability check ──────────────────────────────────────────────────
 
@@ -215,7 +218,8 @@ def banner() -> None:
     """Print the Squish welcome banner: mascot + gradient wordmark + version rule."""
     try:
         from squish import __version__ as _ver
-    except Exception:
+    except (ImportError, AttributeError) as exc:
+        _LOG.debug("could not import squish.__version__: %s", exc)
         _ver = "unknown"
 
     if _RICH_AVAILABLE:
