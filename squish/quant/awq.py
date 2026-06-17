@@ -243,7 +243,9 @@ class _ActivationHook:
             import mlx.core as mx
             # Convert MLX array to numpy for statistics
             arr = np.array(x.astype(mx.float32))
-        except (ImportError, AttributeError, RuntimeError, ValueError) as exc:
+        except (ImportError, AttributeError, RuntimeError, ValueError, TypeError) as exc:
+            # TypeError: x is already a numpy array, so .astype(mx.float32) is
+            # invalid — the common path when the hook receives a numpy activation.
             _LOG.debug("MLX→numpy conversion failed; using np.asarray fallback: %s", exc)
             arr = np.asarray(x, dtype=np.float32)
 
