@@ -718,22 +718,30 @@ def _catalog_ssl_context():
     return None  # use urllib default (system CAs)
 
 
-def _fetch_catalog_bytes(max_attempts: int = _CATALOG_FETCH_ATTEMPTS) -> bytes | None:
+def _fetch_catalog_bytes(
+    max_attempts: int = _CATALOG_FETCH_ATTEMPTS, *, opener=None, sleeper=None
+) -> bytes | None:
     """Download the remote catalog, retrying transient failures with backoff.
 
     Returns the raw bytes on success, or ``None`` if every attempt failed. Never
     raises — callers fall back to the cached/bundled catalog. Retries are gated
     on the transient errors (``OSError`` covers ``URLError``/timeouts); a
     malformed-URL ``ValueError`` is not retried.
+
+    ``opener``/``sleeper`` are injectable for testing (defaulting to
+    ``urllib.request.urlopen`` / ``time.sleep``) so unit tests stay isolated
+    from the shared globals and any in-flight background-refresh thread.
     """
     from squish import dist_version
+    _open = opener or urllib.request.urlopen
+    _sleep = sleeper or time.sleep
     req = urllib.request.Request(
         CATALOG_URL, headers={"User-Agent": f"squish/{dist_version()}"}
     )
     ctx = _catalog_ssl_context()
     for attempt in range(max_attempts):
         try:
-            with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
+            with _open(req, timeout=5, context=ctx) as resp:
                 return resp.read()
         except OSError as exc:
             last = attempt == max_attempts - 1
@@ -743,7 +751,7 @@ def _fetch_catalog_bytes(max_attempts: int = _CATALOG_FETCH_ATTEMPTS) -> bytes |
             )
             if last:
                 return None
-            time.sleep(_CATALOG_FETCH_BACKOFF_BASE * (2 ** attempt))
+            _sleep(_CATALOG_FETCH_BACKOFF_BASE * (2 ** attempt))
         except ValueError as exc:
             # Malformed URL / request — not transient, do not retry.
             _LOG.debug("Catalog fetch from %s aborted (non-retryable): %s", CATALOG_URL, exc)

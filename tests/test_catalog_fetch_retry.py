@@ -2,10 +2,15 @@
 
 Covers ``squish.catalog._fetch_catalog_bytes`` — transient network errors are
 retried with backoff, non-transient errors are not, and success short-circuits.
+
+Both ``opener`` and ``sleeper`` are injected directly (rather than patching the
+shared globals ``urllib.request.urlopen`` / ``time.sleep``) so these tests are
+fully isolated from any in-flight background catalog-refresh daemon thread
+spawned by other tests.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from squish import catalog
 
@@ -20,44 +25,39 @@ def _resp(data: bytes):
 
 class TestFetchCatalogBytes:
     def test_success_first_try(self):
-        with patch("squish.catalog.urllib.request.urlopen", return_value=_resp(b"{}")) as uo, \
-             patch("squish.catalog.time.sleep") as slp:
-            out = catalog._fetch_catalog_bytes()
+        opener, sleeper = MagicMock(return_value=_resp(b"{}")), MagicMock()
+        out = catalog._fetch_catalog_bytes(opener=opener, sleeper=sleeper)
         assert out == b"{}"
-        assert uo.call_count == 1
-        slp.assert_not_called()  # no backoff when the first attempt works
+        assert opener.call_count == 1
+        sleeper.assert_not_called()  # no backoff when the first attempt works
 
     def test_retries_then_succeeds(self):
         # Two transient OSErrors, then success on the third attempt.
-        side = [OSError("dns"), OSError("timeout"), _resp(b'{"ok": 1}')]
-        with patch("squish.catalog.urllib.request.urlopen", side_effect=side) as uo, \
-             patch("squish.catalog.time.sleep") as slp:
-            out = catalog._fetch_catalog_bytes(max_attempts=3)
+        opener = MagicMock(side_effect=[OSError("dns"), OSError("timeout"), _resp(b'{"ok": 1}')])
+        sleeper = MagicMock()
+        out = catalog._fetch_catalog_bytes(max_attempts=3, opener=opener, sleeper=sleeper)
         assert out == b'{"ok": 1}'
-        assert uo.call_count == 3
-        assert slp.call_count == 2  # backoff slept between the three attempts
+        assert opener.call_count == 3
+        assert sleeper.call_count == 2  # backoff slept between the three attempts
 
     def test_exhausts_and_returns_none(self):
-        with patch("squish.catalog.urllib.request.urlopen", side_effect=OSError("down")) as uo, \
-             patch("squish.catalog.time.sleep") as slp:
-            out = catalog._fetch_catalog_bytes(max_attempts=3)
+        opener, sleeper = MagicMock(side_effect=OSError("down")), MagicMock()
+        out = catalog._fetch_catalog_bytes(max_attempts=3, opener=opener, sleeper=sleeper)
         assert out is None
-        assert uo.call_count == 3
-        assert slp.call_count == 2  # no sleep after the final failed attempt
+        assert opener.call_count == 3
+        assert sleeper.call_count == 2  # no sleep after the final failed attempt
 
     def test_value_error_not_retried(self):
-        with patch("squish.catalog.urllib.request.urlopen", side_effect=ValueError("bad url")) as uo, \
-             patch("squish.catalog.time.sleep") as slp:
-            out = catalog._fetch_catalog_bytes(max_attempts=3)
+        opener, sleeper = MagicMock(side_effect=ValueError("bad url")), MagicMock()
+        out = catalog._fetch_catalog_bytes(max_attempts=3, opener=opener, sleeper=sleeper)
         assert out is None
-        assert uo.call_count == 1  # non-transient: no retry
-        slp.assert_not_called()
+        assert opener.call_count == 1  # non-transient: no retry
+        sleeper.assert_not_called()
 
     def test_backoff_is_exponential(self):
-        side = [OSError("a"), OSError("b"), _resp(b"{}")]
-        with patch("squish.catalog.urllib.request.urlopen", side_effect=side), \
-             patch("squish.catalog.time.sleep") as slp:
-            catalog._fetch_catalog_bytes(max_attempts=3)
+        opener = MagicMock(side_effect=[OSError("a"), OSError("b"), _resp(b"{}")])
+        sleeper = MagicMock()
+        catalog._fetch_catalog_bytes(max_attempts=3, opener=opener, sleeper=sleeper)
         base = catalog._CATALOG_FETCH_BACKOFF_BASE
-        waited = [c.args[0] for c in slp.call_args_list]
+        waited = [c.args[0] for c in sleeper.call_args_list]
         assert waited == [base, base * 2]
