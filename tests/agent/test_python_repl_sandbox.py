@@ -38,7 +38,10 @@ class TestReplIsolated:
         with pytest.raises(ValueError):
             bt.squish_python_repl("   ")
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="RLIMIT_AS is POSIX-only")
+    @pytest.mark.skipif(
+        sys.platform != "linux",
+        reason="RLIMIT_AS is only enforced on Linux; macOS/Darwin accepts but ignores it",
+    )
     def test_memory_limit_enforced(self):
         # Allocating ~320 MB under a 64 MB cap must trip the memory limit
         # rather than exhausting the host.

@@ -217,6 +217,9 @@ _REPL_ALLOWED_BUILTINS: tuple[str, ...] = (
 # Default address-space cap for the isolated REPL child (MiB). A freshly
 # spawned child baselines at ~30 MiB, so this leaves ample headroom for normal
 # code while stopping an allocation bomb from exhausting the host process.
+# NOTE: RLIMIT_AS is enforced on Linux; macOS/Darwin accepts the call but does
+# not enforce it, so on macOS the memory cap is best-effort and protection
+# falls back to the CPU limit + wall-clock timeout + process isolation.
 _REPL_DEFAULT_MAX_MEMORY_MB = 512
 
 
@@ -358,10 +361,14 @@ def squish_python_repl(
     the host serving process. Falls back to in-process execution (timeout only,
     no memory cap) when process isolation is unavailable.
 
+    Note: ``RLIMIT_AS`` is enforced on Linux but not on macOS/Darwin (which
+    accepts the call yet ignores it); on macOS the runaway-loop and timeout
+    guards still apply, but the memory cap is best-effort.
+
     Args:
         code: Python source string to execute.
         timeout: Maximum wall-clock seconds before the child is terminated.
-        max_memory_mb: Child address-space cap in MiB (default 512).
+        max_memory_mb: Child address-space cap in MiB (default 512; Linux-enforced).
 
     Returns:
         Captured stdout, or an error / timeout / memory-limit message.
