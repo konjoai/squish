@@ -2,7 +2,7 @@
 
 Local LLM inference server — MLX-accelerated on Apple Silicon, with speculative decoding, quantization (INT4/INT3/SQINT2), agent tool execution, Ollama/OpenAI-compatible API, and the macOS SquishBar.
 
-**v9.34.1**
+**v9.34.2**
 
 ## Stack
 Python 3.10+ · MLX + mlx-lm (Apple Silicon) · FastAPI · transformers · HuggingFace Hub · Swift (macOS SquishBar)
