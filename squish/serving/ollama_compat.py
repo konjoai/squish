@@ -179,7 +179,7 @@ def mount_ollama(
                 return tok.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True
                 )
-        except (AttributeError, ValueError, TypeError, KeyError) as exc:
+        except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
             _LOG.debug("chat_template apply failed, using fallback prompt: %s", exc)
         # Fallback: simple concatenation
         parts = []

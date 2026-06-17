@@ -327,7 +327,7 @@ class _TorchBackend:
         try:
             from safetensors.torch import load_file as _lf
             return {k: v.float().numpy() for k, v in _lf(str(path)).items()}
-        except (ImportError, OSError, ValueError, RuntimeError) as exc:
+        except Exception as exc:  # noqa: BLE001 — any torch-load failure falls back to the numpy loader
             _LOG.debug("safetensors.torch load failed (%s) — using numpy loader", exc)
             from safetensors.numpy import load_file as _nf
             return dict(_nf(str(path)))

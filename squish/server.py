@@ -1670,7 +1670,7 @@ def _apply_chat_template(
                     tokenize              = False,
                     add_generation_prompt = True,
                 )
-            except (ValueError, TypeError, KeyError, AttributeError, ImportError) as exc:
+            except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
                 _LOG.debug("native tool chat-template failed: %s", exc)  # fall through
         try:
             return tokenizer.apply_chat_template(
@@ -1678,7 +1678,7 @@ def _apply_chat_template(
                 tokenize              = False,
                 add_generation_prompt = True,
             )
-        except (ValueError, TypeError, KeyError, AttributeError, ImportError) as exc:
+        except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
             _LOG.debug("chat-template apply failed: %s", exc)
 
     # Manual fallback: Qwen / ChatML format
@@ -4434,7 +4434,7 @@ async def sys_stats():
     try:
         rss_raw = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
         rss_mb = round(rss_raw / 1024 / 1024 if sys.platform == "darwin" else rss_raw / 1024, 1)
-    except (OSError, ValueError, AttributeError) as exc:
+    except Exception as exc:  # noqa: BLE001 — best-effort stats endpoint, must not 500 on probe failure
         _LOG.debug("RSS memory probe failed: %s", exc)
         rss_mb = 0.0
 

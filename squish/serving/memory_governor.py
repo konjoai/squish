@@ -114,7 +114,7 @@ def _run(cmd: list[str]) -> str:
             timeout=3,
         )
         return result.stdout
-    except (OSError, subprocess.SubprocessError) as exc:
+    except Exception as exc:  # noqa: BLE001 — best-effort metric probe, any failure → ""
         _LOG.debug("command %s failed: %s", cmd, exc)
         return ""
 

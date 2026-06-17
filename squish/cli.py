@@ -4888,7 +4888,7 @@ def cmd_convert_model(args):
             q_group_size=group_size,
             quant_predicate=quant_predicate,
         )
-    except (OSError, ValueError, RuntimeError, ImportError, AttributeError) as exc:
+    except Exception as exc:  # noqa: BLE001 — convert CLI: any conversion failure exits cleanly via _die
         _die(f"Quantization failed: {exc}")
     finally:
         if _hqq_tmp_dir is not None:

@@ -1123,7 +1123,7 @@ def main():
                 int2_group_size=args.int2_group_size,
                 min_free_gb=args.min_free_gb,
             )
-        except (RuntimeError, OSError, KeyboardInterrupt) as exc:
+        except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 — any conversion failure cleans partial output and exits
             # Remove partial output so the next run starts clean.
             if output_path.exists():
                 print(

@@ -218,8 +218,9 @@ def _configure_metal_memory() -> None:  # pragma: no cover
             return
         limit = int(memsize.value * fraction)
         mx.metal.set_memory_limit(limit, relaxed=True)  # type: ignore[call-arg]
-    except (OSError, ValueError, AttributeError, RuntimeError) as exc:
-        # non-fatal: non-Apple hardware or old MLX build
+    except (OSError, ValueError, AttributeError, RuntimeError, TypeError) as exc:
+        # non-fatal: non-Apple hardware, or MLX build whose set_memory_limit
+        # signature differs (e.g. no `relaxed=` kwarg → TypeError).
         _LOG.debug("Could not configure Metal memory limit: %s", exc)
 
 _configure_metal_memory()
