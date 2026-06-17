@@ -15,7 +15,11 @@ Security notes:
 - ``squish_fetch_url`` validates the scheme and blocks ``file://`` URLs.
 - ``squish_delete_file`` permanently removes a file — use with care.
 
-Call :func:`register_builtin_tools` to add all twelve tools to a registry::
+Wave 99+: added ``create_directory`` so the VSCode-side ``create_directory``
+tool resolves to a real backend implementation (previously mapped to an
+unregistered name and failed at dispatch).
+
+Call :func:`register_builtin_tools` to add all thirteen tools to a registry::
 
     registry = ToolRegistry()
     register_builtin_tools(registry)
@@ -42,6 +46,7 @@ from squish.agent.tool_registry import ToolDefinition, ToolRegistry
 __all__ = [
     "register_builtin_tools",
     "squish_apply_edit",
+    "squish_create_directory",
     "squish_create_file",
     "squish_delete_file",
     "squish_fetch_url",
@@ -432,6 +437,24 @@ def squish_create_file(path: str, content: str) -> str:
     return f"Created {len(data):,} bytes at {safe}"
 
 
+def squish_create_directory(path: str) -> str:
+    """Create a directory, including any missing parent directories.
+
+    Idempotent: succeeds if the directory already exists.
+
+    Args:
+        path: Absolute path of the directory to create.
+
+    Returns:
+        Confirmation message.
+    """
+    safe = _safe_path(path)
+    if os.path.isfile(safe):
+        raise FileExistsError(f"Path exists and is a file, not a directory: {safe}")
+    os.makedirs(safe, exist_ok=True)
+    return f"Created directory: {safe}"
+
+
 def squish_delete_file(path: str) -> str:
     """Delete a file from disk. Use with caution — this is irreversible.
 
@@ -698,6 +721,25 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
                 "required": ["path", "content"],
             },
             fn=squish_create_file,
+            source="builtin",
+        ),
+        ToolDefinition(
+            name="squish_create_directory",
+            description=(
+                "Create a directory, including any missing parents. "
+                "Succeeds if the directory already exists."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path of the directory to create.",
+                    },
+                },
+                "required": ["path"],
+            },
+            fn=squish_create_directory,
             source="builtin",
         ),
         ToolDefinition(

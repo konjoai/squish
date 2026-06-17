@@ -24,6 +24,7 @@ Public API
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
@@ -32,6 +33,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
+
+_LOG = logging.getLogger("squish.catalog")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -689,16 +692,22 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
         for entry in data.get("models", []):
             try:
                 catalog[entry["id"]] = _entry_from_dict(entry)
-            except (KeyError, TypeError):
-                pass
+            except (KeyError, TypeError) as exc:
+                _LOG.warning(
+                    "Skipping malformed catalog entry %r: %s", entry.get("id", "<no id>"), exc
+                )
 
     # ── Offline mode: skip all network activity ───────────────────────────────
     if os.environ.get("SQUISH_OFFLINE"):
         if LOCAL_CATALOG_PATH.exists():
             try:
                 _merge(json.loads(LOCAL_CATALOG_PATH.read_text()))
-            except Exception:
-                pass
+            except (OSError, ValueError) as exc:
+                _LOG.warning(
+                    "Offline catalog cache at %s unreadable: %s; using bundled catalog",
+                    LOCAL_CATALOG_PATH,
+                    exc,
+                )
         return catalog
 
     # ── Serve from warm local cache if fresh enough ───────────────────────────
@@ -708,8 +717,10 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
             try:
                 _merge(json.loads(LOCAL_CATALOG_PATH.read_text()))
                 return catalog
-            except Exception:
-                pass
+            except (OSError, ValueError) as exc:
+                _LOG.warning(
+                    "Warm catalog cache at %s unreadable: %s; refreshing", LOCAL_CATALOG_PATH, exc
+                )
 
     # ── Stale (or absent) — return now, refresh asynchronously ───────────────
     def _background_fetch() -> None:  # pragma: no cover
@@ -738,8 +749,10 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
             tmp = LOCAL_CATALOG_PATH.with_suffix(".tmp")
             tmp.write_bytes(raw)
             tmp.rename(LOCAL_CATALOG_PATH)
-        except Exception:
-            pass  # Offline / unreachable — bundled catalog stays in effect.
+        except (OSError, ValueError) as exc:
+            # Offline / unreachable — bundled catalog stays in effect. Expected
+            # when there is no network, so debug-level (not a user-facing problem).
+            _LOG.debug("Background catalog refresh from %s failed: %s", CATALOG_URL, exc)
 
     t = _threading.Thread(target=_background_fetch, daemon=True,
                           name="squish-catalog-refresh")
@@ -749,8 +762,13 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
     if LOCAL_CATALOG_PATH.exists():
         try:
             _merge(json.loads(LOCAL_CATALOG_PATH.read_text()))
-        except Exception:
-            pass
+        except (OSError, ValueError) as exc:
+            _LOG.warning(
+                "Stale catalog cache at %s unreadable: %s; "
+                "using bundled catalog while refresh runs",
+                LOCAL_CATALOG_PATH,
+                exc,
+            )
 
     return catalog
 

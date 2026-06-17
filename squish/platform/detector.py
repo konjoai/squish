@@ -23,11 +23,14 @@ Usage::
 """
 from __future__ import annotations
 
+import logging
 import sys
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Optional, Tuple
+
+_LOG = logging.getLogger("squish.platform.detector")
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +228,8 @@ class UnifiedPlatformDetector:
             import mlx.core as mx  # type: ignore[import]
             mx.array([0], dtype=mx.int32)
             return True
-        except Exception:
+        except (ImportError, RuntimeError) as exc:
+            _LOG.debug("MLX probe failed: %s", exc)
             return False
 
     @staticmethod
@@ -246,7 +250,8 @@ class UnifiedPlatformDetector:
                 compute_capability = cc,
                 is_available       = True,
             )
-        except Exception:
+        except (ImportError, RuntimeError, AssertionError) as exc:
+            _LOG.debug("CUDA probe failed: %s", exc)
             return False, None
 
     @staticmethod
@@ -259,7 +264,8 @@ class UnifiedPlatformDetector:
                 and torch.version.hip is not None
                 and torch.cuda.is_available()
             )
-        except Exception:
+        except (ImportError, RuntimeError) as exc:
+            _LOG.debug("ROCm probe failed: %s", exc)
             return False
 
     @staticmethod
