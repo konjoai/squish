@@ -55,6 +55,8 @@ class QuantizationResult(NamedTuple):
     zero_points: np.ndarray | None = None
                               # int32 zero-points for asymmetric quant (same shape
                               # as scales); None for symmetric (default).
+    group_size:  int = 0      # columns per group for grouped quant; 0 = per-row or
+                              # legacy result → reconstruction derives from dims.
 
 
 # ---------------------------------------------------------------------------
@@ -66,9 +68,10 @@ def _quantize_rust(embeddings: np.ndarray, group_size: int = 0) -> QuantizationR
     n, d = emb.shape
     if group_size <= 0 or group_size >= d:
         q, scales = _squish_quant.quantize_int8_f32(emb)
-    else:
-        q, scales = _squish_quant.quantize_int8_grouped(emb, group_size)
-    return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
+        return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
+    q, scales = _squish_quant.quantize_int8_grouped(emb, group_size)
+    return QuantizationResult(quantized=q, scales=scales, dims=d, n=n,
+                              group_size=group_size)
 
 
 def _reconstruct_rust(result: QuantizationResult) -> np.ndarray:
@@ -76,7 +79,7 @@ def _reconstruct_rust(result: QuantizationResult) -> np.ndarray:
     s = np.ascontiguousarray(result.scales, dtype=np.float32)
     if s.ndim == 1:
         return _squish_quant.dequantize_int8_f32(q, s)
-    group_size = result.dims // s.shape[1]
+    group_size = result.group_size or result.dims // s.shape[1]
     return _squish_quant.dequantize_int8_grouped(q, s, group_size)
 
 
@@ -191,7 +194,8 @@ def _quantize_numpy(embeddings: np.ndarray, group_size: int = 0) -> Quantization
         q_groups = np.clip(grouped, -127, 127).astype(np.int8)
         q      = q_groups.reshape(n, -1)[:, :d]                           # trim pad
         scales = gscale.reshape(n, n_groups).astype(np.float32)
-        return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
+        return QuantizationResult(quantized=q, scales=scales, dims=d, n=n,
+                                  group_size=group_size)
 
 
 def _quantize_numpy_asymmetric(embeddings: np.ndarray, group_size: int = 0) -> QuantizationResult:
@@ -242,7 +246,7 @@ def _quantize_numpy_asymmetric(embeddings: np.ndarray, group_size: int = 0) -> Q
         scales = gscale.reshape(n, n_groups).astype(np.float32)
         zps    = gzp.reshape(n, n_groups).astype(np.int32)
         return QuantizationResult(quantized=q, scales=scales, dims=d, n=n,
-                                  zero_points=zps)
+                                  zero_points=zps, group_size=group_size)
 
 
 def _reconstruct_numpy(result: QuantizationResult) -> np.ndarray:
@@ -256,10 +260,10 @@ def _reconstruct_numpy(result: QuantizationResult) -> np.ndarray:
             return scales[:, None] * (q - zp[:, None])
         n, d = q.shape
         n_groups  = scales.shape[1]
-        group_size = result.dims // n_groups
+        group_size = result.group_size or result.dims // n_groups
         pad = (-d) % group_size
         full_cols = n_groups * group_size
-        if pad:  # pragma: no cover
+        if pad:
             q  = np.pad(q,  ((0, 0), (0, pad)))
         q_shifted = (q[:, :full_cols].reshape(n, n_groups, group_size)
                      - zp[:, :, np.newaxis])
@@ -271,10 +275,10 @@ def _reconstruct_numpy(result: QuantizationResult) -> np.ndarray:
     # grouped symmetric: scales is (n, n_groups), q is (n, d)
     n, d = q.shape
     n_groups = scales.shape[1]
-    group_size = result.dims // n_groups
+    group_size = result.group_size or result.dims // n_groups
     pad = (-d) % group_size
     full_cols = n_groups * group_size
-    if pad:  # pragma: no cover
+    if pad:
         q = np.pad(q, ((0, 0), (0, pad)))
     # Reshape to (n, n_groups, group_size) then broadcast scales (n, n_groups, 1)
     recon = (q[:, :full_cols].reshape(n, n_groups, group_size)
