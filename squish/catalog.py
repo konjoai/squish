@@ -73,33 +73,27 @@ CATALOG_TTL = int(os.environ.get("SQUISH_CATALOG_TTL", str(24 * 3600)))
 # ── SSL verification helper ───────────────────────────────────────────────────
 # On networks that intercept HTTPS with a self-signed certificate (corporate
 # proxies, university VPNs, etc.) the default SSL verification will fail.
-# Users can override this with:
+# The secure fix is to trust the corporate CA via a custom CA bundle:
 #
-#   SQUISH_VERIFY_SSL=false          — disable verification entirely (not recommended)
 #   REQUESTS_CA_BUNDLE=/path/cert.pem — trust a custom CA bundle (preferred)
 #   CURL_CA_BUNDLE=/path/cert.pem    — same, curl-style name (also honoured)
-#   HF_HUB_DISABLE_SSL_VERIFICATION=1 — huggingface_hub's own flag
 #
 # These follow the same conventions used by requests, httpx, and the HF hub.
+# Squish never disables SSL verification — shipping insecure fallbacks would
+# expose users to MITM attacks on any network they download models from.
 
 def _ssl_verify() -> bool | str:
     """
     Return the value to pass as ``verify=`` to httpx / huggingface_hub calls.
 
     Returns one of:
-    - ``False``          — SSL disabled (SQUISH_VERIFY_SSL=false or HF_HUB_DISABLE_SSL_VERIFICATION=1)
     - ``"/path/ca.pem"`` — custom CA bundle path (REQUESTS_CA_BUNDLE or CURL_CA_BUNDLE)
     - ``True``           — default (system CAs)
+
+    SSL verification is never disabled. Users on networks with self-signed
+    certificates must provide a trusted CA bundle via REQUESTS_CA_BUNDLE or
+    CURL_CA_BUNDLE.
     """
-    # Explicit squish flag takes top priority
-    squish_flag = os.environ.get("SQUISH_VERIFY_SSL", "").strip().lower()
-    if squish_flag in ("0", "false", "no", "off"):
-        return False
-    if squish_flag in ("1", "true", "yes", "on"):
-        return True
-    # huggingface_hub's own flag
-    if os.environ.get("HF_HUB_DISABLE_SSL_VERIFICATION", "").strip() in ("1", "true"):
-        return False
     # Custom CA bundle (respects both requests and curl conventions)
     ca_bundle = (
         os.environ.get("REQUESTS_CA_BUNDLE", "")
@@ -156,11 +150,7 @@ def _apply_ssl_env() -> None:
     Called once at the start of any download function.
     """
     verify = _ssl_verify()
-    if verify is False:
-        os.environ.setdefault("HF_HUB_DISABLE_SSL_VERIFICATION", "1")
-        # httpx reads this env var directly
-        os.environ.setdefault("HTTPX_VERIFY", "0")
-    elif isinstance(verify, str):
+    if isinstance(verify, str):
         os.environ.setdefault("REQUESTS_CA_BUNDLE", verify)
         os.environ.setdefault("SSL_CERT_FILE", verify)
 
@@ -183,64 +173,6 @@ def _is_ssl_error(exc: BaseException) -> bool:
         or "ConnectError" in msg and "SSL" in msg
         or "Missing Authority Key Identifier" in msg
     )
-
-
-from contextlib import contextmanager
-
-
-@contextmanager
-def _force_httpx_verify_false():  # pragma: no cover
-    """
-    Monkey-patch ``httpx.Client.__init__`` (and ``AsyncClient.__init__``) to
-    default ``verify=False`` for the duration of the context.
-
-    Why this exists
-    ---------------
-    Python 3.13 tightened SSL chain validation: every cert must now carry the
-    Authority Key Identifier (AKI) extension. Corporate MITM proxies — Zscaler
-    is the canonical offender — re-sign HTTPS traffic with a cert that omits
-    AKI, producing ``ssl.SSLCertVerificationError: Missing Authority Key
-    Identifier``.
-
-    The usual escape hatches don't work here. ``HF_HUB_DISABLE_SSL_VERIFICATION=1``
-    and ``HTTPX_VERIFY=0`` are *ignored* on Python 3.13 because ``httpx.Client``
-    builds its ``SSLContext`` at construction time and never re-reads those
-    env vars. Resetting the cached HF session doesn't help either — the new
-    client still constructs a strict context.
-
-    The only reliable fix is to pass ``verify=False`` directly to the
-    ``httpx.Client`` constructor. We do that by patching ``__init__`` so every
-    client created during the retry inherits the insecure default, then we
-    restore the original constructor in ``finally`` so unrelated requests
-    later in the process remain validated.
-    """
-    try:
-        import httpx
-    except ImportError:
-        yield
-        return
-
-    original_init = httpx.Client.__init__
-    original_async_init = getattr(httpx, "AsyncClient", None)
-    original_async_init = original_async_init.__init__ if original_async_init else None
-
-    def _patched(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-        kwargs.setdefault("verify", False)
-        return original_init(self, *args, **kwargs)
-
-    def _patched_async(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-        kwargs.setdefault("verify", False)
-        return original_async_init(self, *args, **kwargs)  # type: ignore[misc]
-
-    httpx.Client.__init__ = _patched  # type: ignore[method-assign]
-    if original_async_init is not None:
-        httpx.AsyncClient.__init__ = _patched_async  # type: ignore[method-assign]
-    try:
-        yield
-    finally:
-        httpx.Client.__init__ = original_init  # type: ignore[method-assign]
-        if original_async_init is not None:
-            httpx.AsyncClient.__init__ = original_async_init  # type: ignore[method-assign]
 
 
 # ── Directory naming helpers ─────────────────────────────────────────────────
@@ -1153,8 +1085,8 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
     Prefers ``huggingface_hub.snapshot_download`` when available,
     otherwise raises ImportError with an install hint.
 
-    Respects SQUISH_VERIFY_SSL / REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE for
-    networks with self-signed certificates.
+    Respects REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE for networks with
+    self-signed certificates. SSL verification is never disabled.
     """
     _apply_ssl_env()
     try:
@@ -1167,8 +1099,8 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
         ignore_patterns = ["*.msgpack", "*.h5", "flax_model*", "tf_model*", "rust_model.ot", "*.ot"]
 
         def _reset_hf_session() -> None:
-            # huggingface_hub caches a global HTTP client; when we toggle SSL
-            # flags for retry, reset the session so the new env takes effect.
+            # huggingface_hub caches a global HTTP client; reset before the
+            # initial attempt so freshly-applied CA-bundle env vars take effect.
             if _hf_close_session is None:
                 return
             try:
@@ -1201,65 +1133,16 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
             if not ssl_failure:
                 raise
 
-            # Automatic fallback for corporate/self-signed TLS interception.
-            print("  ⚠  SSL verification failed; retrying with insecure SSL fallback …")
-            old_hf_disable = os.environ.get("HF_HUB_DISABLE_SSL_VERIFICATION")
-            old_httpx_verify = os.environ.get("HTTPX_VERIFY")
-            old_hf_disable_xet = os.environ.get("HF_HUB_DISABLE_XET")
-            old_hf_transfer = os.environ.get("HF_HUB_ENABLE_HF_TRANSFER")
-            os.environ["HF_HUB_DISABLE_SSL_VERIFICATION"] = "1"
-            os.environ["HTTPX_VERIFY"] = "0"
-            # xet/hf-transfer paths can ignore Python TLS knobs on some setups.
-            os.environ["HF_HUB_DISABLE_XET"] = "1"
-            os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
-            try:
-                _reset_hf_session()
-                # Python 3.13 + Zscaler: env vars alone don't disable verification
-                # because httpx builds its SSLContext at client-construction time.
-                # Force verify=False at the httpx layer for this retry only.
-                with _force_httpx_verify_false():
-                    _snapshot()
-                return
-            except _HF_DOWNLOAD_ERRORS as retry_exc:
-                local_ok_retry, _ = _is_raw_model_dir_complete(local_dir)
-                if local_ok_retry:
-                    print(f"  ⚠  Using existing local copy at {local_dir}")
-                    return
-                raise _SSLError(
-                    f"SSL certificate verification failed while downloading {repo!r}.\n\n"
-                    "Squish retried automatically with insecure SSL fallback, but the download still failed.\n"
-                    "This usually means your network blocks direct HF access or requires a custom CA.\n"
-                    "Fix one of:\n"
-                    "  1. Provide your CA bundle:  "
-                    "REQUESTS_CA_BUNDLE=/path/to/ca.pem squish pull ...\n"
-                    "  2. Trust system keychain cert (run once per CA install).\n"
-                    "  3. Force insecure mode (insecure):  "
-                    "SQUISH_VERIFY_SSL=false squish pull ...\n"
-                    "  4. Set HF_HUB_DISABLE_SSL_VERIFICATION=1 (huggingface_hub flag)\n"
-                    "  5. Disable xet path: HF_HUB_DISABLE_XET=1 HF_HUB_ENABLE_HF_TRANSFER=0"
-                ) from retry_exc
-            finally:
-                if old_hf_disable is None:
-                    os.environ.pop("HF_HUB_DISABLE_SSL_VERIFICATION", None)
-                else:
-                    os.environ["HF_HUB_DISABLE_SSL_VERIFICATION"] = old_hf_disable
-
-                if old_httpx_verify is None:
-                    os.environ.pop("HTTPX_VERIFY", None)
-                else:
-                    os.environ["HTTPX_VERIFY"] = old_httpx_verify
-
-                if old_hf_disable_xet is None:
-                    os.environ.pop("HF_HUB_DISABLE_XET", None)
-                else:
-                    os.environ["HF_HUB_DISABLE_XET"] = old_hf_disable_xet
-
-                if old_hf_transfer is None:
-                    os.environ.pop("HF_HUB_ENABLE_HF_TRANSFER", None)
-                else:
-                    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = old_hf_transfer
-
-                _reset_hf_session()
+            raise _SSLError(
+                f"SSL certificate verification failed while downloading {repo!r}.\n\n"
+                "This usually means your network intercepts HTTPS with a corporate\n"
+                "or self-signed CA (Zscaler, Netskope, university VPN, etc.).\n"
+                "Squish does not disable SSL verification — point it at your\n"
+                "trusted CA bundle instead:\n\n"
+                "    REQUESTS_CA_BUNDLE=/path/to/corp-ca.pem squish pull ...\n\n"
+                "Ask your IT team for the corporate root CA PEM if you don't\n"
+                "already have one, or export the system keychain trust store."
+            ) from exc
     except ImportError:
         raise ImportError(
             "huggingface_hub is required for `squish pull`.\n"
@@ -1284,7 +1167,7 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
             except (OSError, RuntimeError, TypeError, ValueError):
                 pass
 
-        try:
+        def _download() -> Path:
             dest = hf_hub_download(
                 repo_id=repo,
                 filename=filename,
@@ -1292,13 +1175,18 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
                 token=token,
             )
             return Path(dest)
-        except _HF_DOWNLOAD_ERRORS as exc:
-            if _is_ssl_error(exc):
-                raise _SSLError(
-                    f"SSL certificate verification failed while downloading {filename!r} from {repo!r}.\n"
-                    "Set REQUESTS_CA_BUNDLE=/path/ca.pem or SQUISH_VERIFY_SSL=false"
-                ) from exc
-            raise
+
+        try:
+            return _download()
+        except Exception as exc:
+            if not _is_ssl_error(exc):
+                raise
+            raise _SSLError(
+                f"SSL certificate verification failed while downloading {filename!r} from {repo!r}.\n"
+                "Squish does not disable SSL verification. Point it at your\n"
+                "trusted CA bundle instead:\n\n"
+                "    REQUESTS_CA_BUNDLE=/path/to/corp-ca.pem squish pull ...\n"
+            ) from exc
     except ImportError:
         raise ImportError(
             "huggingface_hub is required for `squish pull`.\n"
@@ -1307,7 +1195,15 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
 
 
 def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma: no cover
-    """Return all filenames in a HuggingFace repo (returns [] on error)."""
+    """
+    Return all filenames in a HuggingFace repo.
+
+    Returns ``[]`` on any error (network, missing repo, SSL). SSL verification
+    is never disabled — when a corporate proxy intercepts HTTPS, the user
+    must set REQUESTS_CA_BUNDLE to a trusted CA PEM. Returning [] here just
+    means ``_has_squish_weights`` falls back to the local compression path,
+    which is non-fatal.
+    """
     _apply_ssl_env()
     try:
         from huggingface_hub import list_repo_files
@@ -1322,9 +1218,11 @@ def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma:
             except (OSError, RuntimeError, TypeError, ValueError):
                 pass
 
-        return list(list_repo_files(repo, token=token))
-    except (ImportError, *_HF_DOWNLOAD_ERRORS) as exc:
-        _LOG.debug("list_repo_files failed for %r: %s", repo, exc)
+        try:
+            return list(list_repo_files(repo, token=token))
+        except Exception:
+            return []
+    except Exception:
         return []
 
 

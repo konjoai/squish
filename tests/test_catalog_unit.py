@@ -32,6 +32,7 @@ def _offline_catalog(monkeypatch):
     monkeypatch.setattr("squish.catalog._fetch_squishai_model_ids", lambda: set())
 
 
+
 # ── CatalogEntry properties ────────────────────────────────────────────────────
 
 class TestCatalogEntry:

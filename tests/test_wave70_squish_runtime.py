@@ -18,7 +18,6 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 

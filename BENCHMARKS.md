@@ -6,6 +6,33 @@
 
 ---
 
+## 0. Headline (v9.32.0 / bench v5.1.1)
+
+Source: `README.md` "The Numbers" section; raw artifacts in `results/benchmarks_v5_1_1/`.
+
+Measured 2026-06-02 on Apple M3 MacBook Pro, 16 GB unified memory.
+Model: Qwen2.5-7B-Instruct. Quant: INT4 (squish) / Q4_K_M (Ollama).
+Five-run medians.
+
+| Metric | Ollama 0.18.2 | **Squish** |
+|---|---:|---:|
+| **E2E response @ 4000-token prompt** | 69.63 s | **12.78 s** _(5.4× faster)_ |
+| **E2E response @ 75-token prompt** | 8.09 s | **5.50 s** _(1.5× faster)_ |
+| **Peak RAM during inference** | ~5 GB | **3.36 GB** |
+| **Disk size — INT4** | 4.36 GB | **4.00 GB** |
+| **Disk size — INT3 (Qwen3)** | not supported | **3.56 GB** |
+| **TTFT @ 75-token prompt** | **131 ms** | 279 ms _(honest loss)_ |
+
+Squish wins end-to-end response time at every prompt size measured
+(5.4× at 4000 tokens), uses ~33% less RAM, and supports INT3 for
+compatible model families. Ollama wins TTFT at every prompt size — if
+first-byte latency matters more than full-response latency, Ollama is
+the right tool.
+
+Full methodology and ablation: `docs/RESULTS.md` (v5.1.1 section).
+
+---
+
 ## 1. Cold-start load time and TTFT
 
 Source: `README.md` headline numbers; reproduced via

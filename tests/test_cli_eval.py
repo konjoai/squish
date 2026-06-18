@@ -60,7 +60,6 @@ class TestCmdEval(unittest.TestCase):
         """cmd_eval exits 1 with a clear message when config.json is absent (npy-dir format)."""
         cli = _import_cli()
         import tempfile
-        import os
         with tempfile.TemporaryDirectory() as td:
             # Create dir with only .npy files (squish npy-dir format — no config.json)
             (Path(td) / "layer0.npy").write_bytes(b"\x93NUMPY")

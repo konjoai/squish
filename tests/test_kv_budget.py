@@ -80,8 +80,9 @@ def test_per_head_zero_head_dim_raises():
 def test_estimate_returns_dataclass_with_all_fields():
     e = estimate_kv_memory(28, 8, 128, 1000, "int8")
     assert isinstance(e, KVMemoryEstimate)
-    # Frozen dataclass — assignment must fail.
-    with pytest.raises(AttributeError):
+    # Frozen dataclass — assignment must fail with FrozenInstanceError.
+    from dataclasses import FrozenInstanceError
+    with pytest.raises(FrozenInstanceError):
         e.mode = "int4"  # type: ignore[misc]
 
 
