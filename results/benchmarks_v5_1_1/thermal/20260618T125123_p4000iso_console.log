@@ -1,0 +1,30 @@
+[12:52:01] p4000 prompt tokens: 4053
+[12:52:01] isolation: cooldown=120s, settle=25s, phase=p4000 only, runs/metric=5
+[12:52:02] versions: 018=Warning: could not connect to a running Ollama instance | Warning: client version is 0.18.2
+[12:52:02] versions: 307=Warning: could not connect to a running Ollama instance | Warning: client version is 0.30.7
+[12:52:02] === ollama_018 (/opt/homebrew/bin/ollama) : cooldown → start ===
+[12:52:05]   ❄ cooldown 120s (idle, all servers down) …
+[12:54:12]   ⏸ settle 25s before p4000
+[12:54:37]   ── ollama_018 phase p4000 ──
+[12:57:57]     -> tps=16.14
+[12:57:57] === ollama_307 (/usr/local/bin/ollama) : cooldown → start ===
+[12:58:00]   ❄ cooldown 120s (idle, all servers down) …
+[13:00:03]   ⏸ settle 25s before p4000
+[13:00:28]   ── ollama_307 phase p4000 ──
+[13:04:35]     -> tps=10.56
+[13:04:35] === ollama_018_recheck (/opt/homebrew/bin/ollama) : cooldown → start ===
+[13:04:38]   ❄ cooldown 120s (idle, all servers down) …
+[13:06:40]   ⏸ settle 25s before p4000
+[13:07:05]   ── ollama_018_recheck phase p4000 ──
+[13:11:07]     -> tps=10.01
+[13:11:07] Wrote /Users/wscholl/squish/results/benchmarks_v5_1_1/thermal/20260618T125123_p4000iso.json
+
+# p4000 isolation — ollama 0.18.2 vs 0.30.7 (M3 16 GB), each from cold
+cooldown 120s · settle 25s · 5 runs/metric · p4000=4053 tok
+
+config                 warm tok/s  itl_p50   itl_p95  E2E-200  TTFT ms  peakRSS
+ollama_018                  16.14     62.1      72.8    39.74      141   3.40GB
+ollama_307                  10.56     97.0     109.1    53.39      199   4.94GB
+ollama_018_recheck          10.01     61.9     132.9    47.94      152   5.17GB
+
+DRIFT (0.18.2 first→recheck p4000): 16.14 → 10.01 tok/s (-38.0%) — small = cooldowns reset, 0.30.7 measured on equal thermal footing.

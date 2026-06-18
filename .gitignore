@@ -70,3 +70,14 @@ docs/final/_media/
 results/
 *.prof
 *_macmon.jsonl
+
+# Exception: the published Ollama 0.18.2-vs-0.30.7 thermal head-to-head raw outputs
+# ARE tracked, so the article's tables can be verified against actual benchmark data.
+!results/
+results/*
+!results/benchmarks_v5_1_1/
+results/benchmarks_v5_1_1/*
+!results/benchmarks_v5_1_1/thermal/
+results/benchmarks_v5_1_1/thermal/*
+!results/benchmarks_v5_1_1/thermal/*.json
+!results/benchmarks_v5_1_1/thermal/*.log
