@@ -1220,9 +1220,11 @@ def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma:
 
         try:
             return list(list_repo_files(repo, token=token))
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — HF listing; [] is a documented non-fatal fallback
+            _LOG.debug("list_repo_files(%s) failed: %s", repo, exc)
             return []
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — optional HF dependency/import; [] is non-fatal
+        _LOG.debug("HF repo file listing unavailable for %s: %s", repo, exc)
         return []
 
 

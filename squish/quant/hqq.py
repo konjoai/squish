@@ -284,18 +284,25 @@ class HQQQuantizer:
         else:
             dim_size = rows
             other_dim = cols
+            # encode() stores axis-1 codes transposed back to the original shape
+            # (rows, cols); undo that so the group reshape below operates along
+            # the quantized axis as (other_dim, dim_size).
+            codes = codes.T
 
         n_groups = tensor.scale.shape[-1]
-        group_size_actual = max(1, (dim_size + n_groups - 1) // n_groups)
+        # Use the group size encode actually used — recomputing it as
+        # ceil(dim_size / n_groups) is wrong whenever dim_size is not an exact
+        # multiple of group_size, misaligning every group against its scale/zero.
+        group_size = cfg.group_size if cfg.group_size != -1 else dim_size
 
-        padded = n_groups * group_size_actual
+        padded = n_groups * group_size
         if codes.shape[-1] < padded:
             codes_pad = np.zeros((other_dim, padded), dtype=np.float32)
             codes_pad[:, : codes.shape[-1]] = codes
         else:
             codes_pad = codes
 
-        codes_g = codes_pad.reshape(other_dim, n_groups, group_size_actual)
+        codes_g = codes_pad.reshape(other_dim, n_groups, group_size)
         scales = tensor.scale[:, :, np.newaxis]   # (O, G, 1)
         zeros = tensor.zero[:, :, np.newaxis]
         W_hat = codes_g * scales + zeros
