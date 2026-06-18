@@ -78,10 +78,15 @@ def _ensure_local_model(spec: str) -> str:
     """Resolve *spec* to a local model directory ``squish serve`` can load.
 
     ``squish serve`` only loads a catalogued model or an on-disk path — a bare
-    HuggingFace id (e.g. ``mlx-community/...``) is reported "Unknown model".  So
-    for an HF id we pre-pull it via ``squish pull hf:<id>`` (which also runs the
-    mandatory pre-download safety scan) into ``models/<basename>`` and return
-    that path.  An existing path/dir is used as-is.
+    HuggingFace id (e.g. ``mlx-community/...``) is reported "Unknown model".
+
+    For an HF id we (1) pre-pull via ``squish pull hf:<id>`` so the mandatory
+    pre-download safety scan runs (CLAUDE.md), then (2) resolve the concrete
+    on-disk snapshot path with ``huggingface_hub.snapshot_download`` (idempotent
+    — a cache hit after the pull).  Resolving via the snapshot path is robust
+    across environments: a bare ``squish pull`` does **not** always materialise a
+    ``models/<basename>`` copy (e.g. on a CI runner whose HF cache was restored).
+    An existing path/dir is used as-is.
     """
     if Path(spec).exists():
         return spec
@@ -91,15 +96,24 @@ def _ensure_local_model(spec: str) -> str:
     if target.exists():
         return str(target)
 
-    subprocess.run(  # noqa: S603 — fixed interpreter, no shell
-        [sys.executable, "-m", "squish", "pull", f"hf:{spec}"],
-        check=True,
-        timeout=900,
-        env={**os.environ, "HF_HUB_DISABLE_PROGRESS_BARS": "1"},
-    )
-    if not target.exists():
-        pytest.fail(f"`squish pull hf:{spec}` did not produce {target} — cannot serve model")
-    return str(target)
+    # Pre-scan + fetch (best-effort: snapshot resolution below is the source of
+    # truth, so a non-zero pull exit must not abort the whole session).
+    try:
+        subprocess.run(  # noqa: S603 — fixed interpreter, no shell
+            [sys.executable, "-m", "squish", "pull", f"hf:{spec}"],
+            check=False,
+            timeout=900,
+            env={**os.environ, "HF_HUB_DISABLE_PROGRESS_BARS": "1"},
+        )
+    except subprocess.TimeoutExpired:
+        pass  # fall through to snapshot_download (may already be cached)
+
+    from huggingface_hub import snapshot_download  # noqa: PLC0415
+
+    try:
+        return snapshot_download(repo_id=spec)
+    except Exception as exc:  # noqa: BLE001 — fail-fast with a clear message
+        pytest.fail(f"could not resolve model {spec!r} to a local path: {exc}")
 
 
 def _poll_health(url: str, api_key: str, log_path: str) -> None:
