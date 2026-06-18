@@ -39,7 +39,7 @@ squish/serving/tool_calling.py
 squish/speculative/speculative.py
 squish/telemetry.py
 squish/ui.py
-tests/grammar/test_schema_gen_unit.py
+tests/test_schema_gen_unit.py
 tests/integration/test_phase2_demo_stack.py
 tests/quant/test_int3_linear_unit.py
 tests/serving/test_server_unit.py

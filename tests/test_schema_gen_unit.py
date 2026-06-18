@@ -681,6 +681,35 @@ class TestFullJsonGeneration:
         # Should not raise; result is well-defined
         assert out.shape == (3,)
 
+    def test_constrain_keeps_string_char_masked_outside_string(self, monkeypatch):
+        """Defensive guard in constrain's else-branch: a ``string_char`` token
+        is never un-masked outside an open string literal, even if a
+        non-string state advertises it among its valid categories.
+
+        Registering ``string_char`` with a real vocab id makes the guard
+        observable — without the ``continue`` the token would be restored to
+        its original logit, so this asserts the contract that string content is
+        only ever valid inside ``_ST_SS``.
+        """
+        import squish.grammar.schema_gen as sg
+
+        # Give string_char a real, non-colliding vocab id (defaults use 0-10).
+        eng = SchemaGenEngine(vocab_size=16, special_tokens={sg._CAT_STRCHAR: 11})
+        # Force the object-key state (OK — a non-string state) to advertise
+        # string_char among its valid categories so the guard branch is reached.
+        patched = dict(sg._VALID_CATS)
+        patched[sg._ST_OK] = frozenset(patched[sg._ST_OK]) | {sg._CAT_STRCHAR}
+        monkeypatch.setattr(sg, "_VALID_CATS", patched)
+
+        state = SchemaState(stack=[sg._ST_OK], expected_tokens=set(), is_complete=False)
+        out = eng.constrain(np.ones(16, dtype=np.float32), state)
+
+        # The guard kept string_char masked despite it being "valid"...
+        assert out[eng._tok[sg._CAT_STRCHAR]] == -np.inf
+        # ...while the genuine structural tokens for OK stay un-masked.
+        assert out[eng._tok[sg._CAT_QUOTE]] == 1.0
+        assert out[eng._tok[sg._CAT_RBRACE]] == 1.0
+
 
 # ---------------------------------------------------------------------------
 # Helper functions to navigate to specific FSM states
