@@ -610,6 +610,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Running Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -731,6 +748,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Running Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coverage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -865,16 +899,27 @@ accuracy fidelity, or API compatibility are especially welcome.</p>
 </code></pre></div>
 <hr />
 <h2 id="running-tests">Running Tests<a class="headerlink" href="#running-tests" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-v
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-v<span class="w">          </span><span class="c1"># or:  make test</span>
 </code></pre></div>
 <p>The test suite does <strong>not</strong> require model weights — it uses mocked tensors and
 stub loaders.  Tests that do require weights are skipped automatically when
 <code>~/models/</code> is absent.</p>
+<h3 id="coverage">Coverage<a class="headerlink" href="#coverage" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>make<span class="w"> </span>coverage<span class="w">             </span><span class="c1"># terminal report (term-missing) + coverage.xml</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>make<span class="w"> </span>coverage-html<span class="w">        </span><span class="c1"># also writes htmlcov/index.html</span>
+</code></pre></div>
+<p>Coverage is <strong>measured on Apple Silicon</strong> so the MLX inference paths actually
+execute — the bulk of <code>squish/</code> cannot run on a Linux runner, so a Linux-only
+number understates real coverage.  The <code>make</code> targets set <code>CI=1</code> (which lifts
+the sandbox MLX-import guard) and exclude the handful of files that SIGABRT at
+collection under Metal.  CI runs the same measurement in the <strong>Coverage (Apple
+Silicon + MLX)</strong> job and uploads to <a href="https://codecov.io/gh/konjoai/squish">Codecov</a>;
+the badge at the top of the README reflects <code>main</code>.</p>
 <hr />
 <h2 id="linting">Linting<a class="headerlink" href="#linting" title="Permanent link">&para;</a></h2>
 <p>Squish uses <a href="https://docs.astral.sh/ruff/">ruff</a> with a line length of 100:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ruff<span class="w"> </span>check<span class="w"> </span>squish/<span class="w"> </span>tests/
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>ruff<span class="w"> </span>format<span class="w"> </span>squish/<span class="w"> </span>tests/
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>ruff<span class="w"> </span>check<span class="w"> </span>squish/<span class="w"> </span>tests/
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>ruff<span class="w"> </span>format<span class="w"> </span>squish/<span class="w"> </span>tests/
 </code></pre></div>
 <p>CI will fail if <code>ruff check</code> reports any errors.</p>
 <hr />
@@ -915,9 +960,9 @@ macOS version, and the model you were loading.</p>
 <hr />
 <h2 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h2>
 <p>The docs site is built with <a href="https://squidfunk.github.io/mkdocs-material/">MkDocs Material</a>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>mkdocs<span class="w"> </span>serve<span class="w">        </span><span class="c1"># live preview at http://127.0.0.1:8000</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>mkdocs<span class="w"> </span>build<span class="w">        </span><span class="c1"># generate static site in site/</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>mkdocs-material
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>mkdocs<span class="w"> </span>serve<span class="w">        </span><span class="c1"># live preview at http://127.0.0.1:8000</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>mkdocs<span class="w"> </span>build<span class="w">        </span><span class="c1"># generate static site in site/</span>
 </code></pre></div>
 <p>Docs source lives in <code>docs/</code>. The nav is configured in <code>mkdocs.yml</code>.</p>
 
