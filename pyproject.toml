@@ -164,6 +164,7 @@ skip_empty = true
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
     "raise NotImplementedError",
     "\\.\\.\\.",
     "pass",
