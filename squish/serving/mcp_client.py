@@ -103,7 +103,7 @@ class MCPClient:
 
         self._process: subprocess.Popen | None = None  # STDIO only
         self._reader: asyncio.StreamReader | None = None
-        self._writer: asyncio.StreamWriter | None = None
+        self._writer_pipe: asyncio.StreamWriter | None = None  # subprocess stdin
         self._msg_id = 0
         self._connected = False
 
@@ -132,10 +132,10 @@ class MCPClient:
 
     async def disconnect(self) -> None:
         """Close the connection and terminate any subprocess."""
-        if self._writer:
+        if self._writer_pipe:
             try:
-                self._writer.close()
-                await self._writer.wait_closed()
+                self._writer_pipe.close()
+                await self._writer_pipe.wait_closed()
             except (OSError, RuntimeError) as exc:
                 logger.debug("MCP writer close failed: %s", exc)
         if self._process:

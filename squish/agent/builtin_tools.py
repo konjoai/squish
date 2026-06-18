@@ -72,6 +72,54 @@ _READ_MAX_LINES = 400
 # Maximum web-search results returned
 _SEARCH_MAX_RESULTS = 10
 
+# DuckDuckGo Lite result-row patterns (compiled once). A row is an
+# <a class="result-link"> followed by an optional <td class="result-snippet">.
+_DDG_LINK_RE = re.compile(
+    r'<a[^>]+class="result-link"[^>]+href="([^"]*)"[^>]*>(.*?)</a>',
+    re.DOTALL | re.IGNORECASE,
+)
+_DDG_SNIPPET_RE = re.compile(
+    r'<td[^>]+class="result-snippet"[^>]*>(.*?)</td>',
+    re.DOTALL | re.IGNORECASE,
+)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_tags(fragment: str) -> str:
+    """Remove HTML tags and unescape entities from a fragment."""
+    return html.unescape(_HTML_TAG_RE.sub("", fragment).strip())
+
+
+def _parse_ddg_lite_results(page: str, limit: int) -> "list[tuple[str, str, str]]":
+    """Parse DuckDuckGo Lite HTML into ``(url, title, snippet)`` tuples.
+
+    Each link is paired with the snippet that follows it in document order, before
+    the next link — so a result row missing its snippet leaves that link's snippet
+    empty rather than shifting every later snippet onto the wrong link (which a
+    naive index-based zip of independent findall results would do).
+    """
+    link_matches = list(_DDG_LINK_RE.finditer(page))
+    snippet_matches = list(_DDG_SNIPPET_RE.finditer(page))
+    out: list[tuple[str, str, str]] = []
+    for idx, lm in enumerate(link_matches):
+        if idx >= limit:
+            break
+        href = lm.group(1)
+        title = _strip_tags(lm.group(2))
+        region_end = (
+            link_matches[idx + 1].start() if idx + 1 < len(link_matches) else len(page)
+        )
+        snippet = ""
+        for sm in snippet_matches:
+            if lm.end() <= sm.start() < region_end:
+                snippet = _strip_tags(sm.group(1))
+                break
+        # DDG Lite redirects through a tracking URL — recover the real target.
+        qs = urllib.parse.urlparse(href).query
+        real_url = urllib.parse.parse_qs(qs).get("uddg", [href])[0] or href
+        out.append((real_url, title, snippet))
+    return out
+
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -435,7 +483,9 @@ def squish_web_search(query: str, max_results: int = 5) -> str:
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must be a non-empty string")
 
-    n = min(int(max_results), _SEARCH_MAX_RESULTS)
+    # Clamp to [1, _SEARCH_MAX_RESULTS]; a non-positive value would otherwise make
+    # the fallback `any_links[:n]` a negative slice (returning trailing links).
+    n = max(1, min(int(max_results), _SEARCH_MAX_RESULTS))
     encoded = urllib.parse.urlencode({"q": query.strip()})
     url = f"https://lite.duckduckgo.com/lite/?{encoded}"
 
@@ -460,31 +510,7 @@ def squish_web_search(query: str, max_results: int = 5) -> str:
     # <a class="result-link" href="...">Title</a>
     # <td class="result-snippet">...snippet...</td>
     results: list[str] = []
-    # Extract result links and titles
-    link_pattern = re.compile(
-        r'<a[^>]+class="result-link"[^>]+href="([^"]*)"[^>]*>(.*?)</a>',
-        re.DOTALL | re.IGNORECASE,
-    )
-    snippet_pattern = re.compile(
-        r'<td[^>]+class="result-snippet"[^>]*>(.*?)</td>',
-        re.DOTALL | re.IGNORECASE,
-    )
-
-    links = link_pattern.findall(page)
-    snippets_raw = snippet_pattern.findall(page)
-    snippets = [re.sub(r"<[^>]+>", "", s).strip() for s in snippets_raw]
-    # Unescape HTML entities
-    snippets = [html.unescape(s) for s in snippets]
-
-    for i, (href, title) in enumerate(links):
-        if i >= n:
-            break
-        clean_title = html.unescape(re.sub(r"<[^>]+>", "", title).strip())
-        snippet = snippets[i] if i < len(snippets) else ""
-        # DDG Lite redirects through its own tracking URL — decode the real URL
-        qs = urllib.parse.urlparse(href).query
-        params = urllib.parse.parse_qs(qs)
-        real_url = params.get("uddg", [href])[0] or href
+    for i, (real_url, clean_title, snippet) in enumerate(_parse_ddg_lite_results(page, n)):
         results.append(f"[{i + 1}] {clean_title}\n    {real_url}\n    {snippet}")
 
     if not results:
