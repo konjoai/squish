@@ -146,6 +146,12 @@ class PromptKVStore:
             return None
         if self._model_key and m.get("model_key") != self._model_key:
             return None
+        # Required structural keys — a valid-JSON but incomplete meta is treated
+        # as corruption (clean miss) rather than crashing the lookup with KeyError.
+        if "n_layers" not in m or "offset" not in m:
+            logger.warning("incomplete meta (missing n_layers/offset) for hash %s — evicting", h)
+            self._remove_entry(d)
+            return None
 
         # v4.2: optional last_logit (small — vocab-sized)
         last_logit: "np.ndarray | None" = None

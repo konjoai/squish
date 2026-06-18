@@ -107,6 +107,8 @@ class PlatformInfo:
             return "Windows (WSL2)"
         if self.os_name == "win32":
             return "Windows (native)"
+        if self.os_name.startswith("linux"):
+            return f"Linux CPU ({self.arch})"
         return f"Unknown ({self.os_name}/{self.arch})"
 
 

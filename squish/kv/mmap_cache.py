@@ -128,8 +128,19 @@ class MMapKVLayer:
             except (json.JSONDecodeError, ValueError, OSError) as e:
                 log.warning("mmap_cache: meta load failed for %s: %s", self._root, e)
 
+        # meta.json can outlive the .bin files (crash / partial cleanup). If the
+        # data is gone we create fresh zeroed memmaps below, so any restored
+        # n_tokens is stale — reset it, otherwise get() would return all-zero K/V.
+        bins_present = self._k_path.exists() and self._v_path.exists()
+        if not bins_present and self._n_tokens > 0:
+            log.warning(
+                "mmap_cache: meta reports %d tokens but data files are missing in "
+                "%s; resetting to empty", self._n_tokens, self._root,
+            )
+            self._n_tokens = 0
+
         # Use mode="w+" if no existing data; otherwise "r+" to preserve.
-        mode = "r+" if (self._k_path.exists() and self._v_path.exists()) else "w+"
+        mode = "r+" if bins_present else "w+"
         self._k = np.memmap(self._k_path, dtype=self._dtype, mode=mode, shape=shape)
         self._v = np.memmap(self._v_path, dtype=self._dtype, mode=mode, shape=shape)
         self._write_meta()

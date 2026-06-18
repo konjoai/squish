@@ -696,10 +696,18 @@ def _dir_to_canonical(dir_name: str) -> str:
     """
     import re
     name = dir_name.lower()
-    # Strip common suffixes
-    for suffix in ("-bf16", "-int4", "-int2", "-int8", "-instruct", "-chat",
-                   "-squished", "-squish", "-mlx", "-gguf"):
-        name = name.replace(suffix, "")
+    # Strip common decorator suffixes — only from the END, and repeatedly so a
+    # chain like "-instruct-bf16" is fully removed. str.replace would also delete
+    # these tokens mid-string (e.g. corrupting "...-instruct-merge-8b").
+    suffixes = ("-bf16", "-int4", "-int2", "-int8", "-instruct", "-chat",
+                "-squished", "-squish", "-mlx", "-gguf")
+    stripped = True
+    while stripped:
+        stripped = False
+        for suffix in suffixes:
+            if name.endswith(suffix):
+                name = name[: -len(suffix)]
+                stripped = True
     # Replace last hyphen before a size pattern with colon
     name = re.sub(r"-(\d+\.?\d*b)(\b|$)", r":\1", name)
     # Clean up remaining hyphens between version/name parts → keep single hyphen
