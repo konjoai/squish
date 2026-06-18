@@ -16,6 +16,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   (DRY).
 - `squish/__main__.py`: `python -m squish …` now mirrors the `squish` console
   script (used by the e2e harness and CI).
+- **Code-coverage reporting**: a `Coverage (Apple Silicon + MLX)` CI job runs the
+  full suite where MLX paths execute and uploads to Codecov (badge in the
+  README, `codecov.yml` for informational, non-blocking PR status). `make
+  coverage` / `make coverage-html` reproduce it locally. (The pre-existing
+  konjo-gate coverage step produced no report — its `pytest -x` aborted before
+  `coverage.json` was written and both steps were `continue-on-error`; the new
+  job is the source of truth.)
 - `tests/e2e/` battle-test suite: a session-scoped `live_server` fixture boots a
   real MLX server (default `mlx-community/Qwen2.5-0.5B-Instruct-4bit`) and
   hammers every endpoint and CLI subcommand with valid + adversarial input.

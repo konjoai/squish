@@ -325,6 +325,64 @@ jobs:
             -v --tb=short
 
   # ---------------------------------------------------------------------------
+  # Code coverage on real Apple Silicon (MLX paths execute → representative %).
+  # Runs the full suite with coverage and uploads to Codecov, which renders the
+  # README badge and PR annotations.  Measured on macOS because the bulk of
+  # squish/ is MLX inference code that cannot run on a Linux runner.  The
+  # SIGABRT-at-collection Metal files are excluded (same list as the `test` job).
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: Coverage (Apple Silicon + MLX)
+    runs-on: macos-14
+    # Don't run on fork PRs (no Codecov upload context); main + same-repo PRs only.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies (including MLX)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install mlx mlx-lm
+
+      - name: Run test suite with coverage
+        # Same Metal-SIGABRT exclusions as the `test` job.  Coverage instruments
+        # add latency, so the per-test timeout is relaxed to 120s.  `|| true`
+        # keeps the upload step reachable even if a test fails (correctness is
+        # already gated by the `test` jobs); the badge always reflects reality.
+        run: |
+          pytest tests/ \
+            --ignore=tests/test_git_integration.py \
+            --ignore=tests/quant/test_int4_loader.py \
+            --ignore=tests/test_sqint2_linear.py \
+            --ignore=tests/test_backend_unit.py \
+            --ignore=tests/quant/test_int3_linear_unit.py \
+            --ignore=tests/hardware/test_fused_kernels_unit.py \
+            --cov=squish \
+            --cov-report=xml \
+            --cov-report=term \
+            --timeout=120 \
+            -q || true
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          flags: apple-silicon
+          name: squish-macos-mlx
+          fail_ci_if_error: false
+          # Public repo → tokenless upload works; a CODECOV_TOKEN secret is used
+          # automatically if present (recommended to avoid upstream rate limits).
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ---------------------------------------------------------------------------
   # Helm chart linting — validates chart structure and template syntax.
   # Runs on every push/PR.  Requires `helm` which is pre-installed on
   # ubuntu-latest runners.
