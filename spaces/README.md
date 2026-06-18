@@ -20,7 +20,7 @@ tags:
 # squish · KV-cache quantization demo
 
 A zero-install browser demo of the three KV-cache storage tiers shipped
-in [squish](https://github.com/squishai/squish): **INT8**, **INT4**, and
+in [squish](https://github.com/konjoai/squish): **INT8**, **INT4**, and
 **INT2** — plus the optional Hadamard rotation that makes the low-bit
 modes viable on real activations.
 
@@ -59,7 +59,7 @@ outlier-heavy activations and the cache is effectively destroyed.
 The Gradio app is `app.py` in this Space; the pure logic lives in
 `_logic.py` and is unit-tested in the squish repository's
 `tests/test_spaces_demo.py`. Both files mirror the source at
-[github.com/squishai/squish/tree/main/spaces](https://github.com/squishai/squish/tree/main/spaces).
+[github.com/konjoai/squish/tree/main/spaces](https://github.com/konjoai/squish/tree/main/spaces).
 
 ```python
 # This is the production code path — same module, same numbers:
@@ -72,4 +72,4 @@ cache = make_kv_cache(n_layers=28, planned_context=32_000)        # ready for ml
 ## License
 
 BUSL-1.1 — same as squish itself. See the
-[upstream LICENSE](https://github.com/squishai/squish/blob/main/LICENSE).
+[upstream LICENSE](https://github.com/konjoai/squish/blob/main/LICENSE).

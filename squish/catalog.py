@@ -24,6 +24,7 @@ Public API
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
@@ -33,12 +34,36 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from squish.config import squish_home
+
+_LOG = logging.getLogger("squish.catalog")
+
+
+def _hf_download_errors() -> tuple[type[BaseException], ...]:
+    """Network/download exception types raised by huggingface_hub backends.
+
+    ``requests``-based errors and ``HfHubHTTPError`` subclass ``OSError``, but
+    the ``httpx``/xet transport raises ``httpx.HTTPError`` (a bare ``Exception``
+    subclass).  Build the tuple lazily so a missing ``httpx`` never breaks import.
+    """
+    errs: list[type[BaseException]] = [OSError, ValueError, RuntimeError, ConnectionError]
+    try:
+        import httpx  # noqa: PLC0415
+
+        errs.append(httpx.HTTPError)
+    except ImportError as exc:
+        _LOG.debug("httpx unavailable for download-error tuple: %s", exc)
+    return tuple(errs)
+
+
+_HF_DOWNLOAD_ERRORS = _hf_download_errors()
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 CATALOG_URL = (
     "https://huggingface.co/datasets/squishai/catalog/resolve/main/catalog.json"
 )
-SQUISH_CACHE_DIR = Path.home() / ".squish"
+SQUISH_CACHE_DIR = squish_home()
 LOCAL_CATALOG_PATH = SQUISH_CACHE_DIR / "catalog.json"
 
 # How often to refresh the remote catalog (seconds). Default: 24 h.
@@ -670,6 +695,70 @@ def _bundled_catalog() -> dict[str, CatalogEntry]:
     return {d["id"]: _entry_from_dict(d) for d in _BUNDLED}
 
 
+# Bounded retry for the background catalog refresh. Transient network blips
+# (DNS, TLS handshake, read timeout) are common, so a couple of quick retries
+# materially improve the odds of a fresh catalog without ever blocking startup
+# (the fetch runs on a daemon thread and the bundled catalog stays in effect).
+_CATALOG_FETCH_ATTEMPTS = 3
+_CATALOG_FETCH_BACKOFF_BASE = 0.5  # seconds: 0.5, 1.0, 2.0 …
+
+
+def _catalog_ssl_context():
+    """Build an SSL context honouring squish's SSL env vars (or None for default)."""
+    import ssl as _ssl
+
+    _verify = _ssl_verify()
+    if _verify is False:
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        return ctx
+    if isinstance(_verify, str):
+        return _ssl.create_default_context(cafile=_verify)
+    return None  # use urllib default (system CAs)
+
+
+def _fetch_catalog_bytes(
+    max_attempts: int = _CATALOG_FETCH_ATTEMPTS, *, opener=None, sleeper=None
+) -> bytes | None:
+    """Download the remote catalog, retrying transient failures with backoff.
+
+    Returns the raw bytes on success, or ``None`` if every attempt failed. Never
+    raises — callers fall back to the cached/bundled catalog. Retries are gated
+    on the transient errors (``OSError`` covers ``URLError``/timeouts); a
+    malformed-URL ``ValueError`` is not retried.
+
+    ``opener``/``sleeper`` are injectable for testing (defaulting to
+    ``urllib.request.urlopen`` / ``time.sleep``) so unit tests stay isolated
+    from the shared globals and any in-flight background-refresh thread.
+    """
+    from squish import dist_version
+    _open = opener or urllib.request.urlopen
+    _sleep = sleeper or time.sleep
+    req = urllib.request.Request(
+        CATALOG_URL, headers={"User-Agent": f"squish/{dist_version()}"}
+    )
+    ctx = _catalog_ssl_context()
+    for attempt in range(max_attempts):
+        try:
+            with _open(req, timeout=5, context=ctx) as resp:
+                return resp.read()
+        except OSError as exc:
+            last = attempt == max_attempts - 1
+            _LOG.debug(
+                "Catalog fetch from %s failed (attempt %d/%d): %s",
+                CATALOG_URL, attempt + 1, max_attempts, exc,
+            )
+            if last:
+                return None
+            _sleep(_CATALOG_FETCH_BACKOFF_BASE * (2 ** attempt))
+        except ValueError as exc:
+            # Malformed URL / request — not transient, do not retry.
+            _LOG.debug("Catalog fetch from %s aborted (non-retryable): %s", CATALOG_URL, exc)
+            return None
+    return None
+
+
 def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogEntry]:
     """
     Merge the remote catalog over the bundled one.
@@ -689,16 +778,22 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
         for entry in data.get("models", []):
             try:
                 catalog[entry["id"]] = _entry_from_dict(entry)
-            except (KeyError, TypeError):
-                pass
+            except (KeyError, TypeError) as exc:
+                _LOG.warning(
+                    "Skipping malformed catalog entry %r: %s", entry.get("id", "<no id>"), exc
+                )
 
     # ── Offline mode: skip all network activity ───────────────────────────────
     if os.environ.get("SQUISH_OFFLINE"):
         if LOCAL_CATALOG_PATH.exists():
             try:
                 _merge(json.loads(LOCAL_CATALOG_PATH.read_text()))
-            except Exception:
-                pass
+            except (OSError, ValueError) as exc:
+                _LOG.warning(
+                    "Offline catalog cache at %s unreadable: %s; using bundled catalog",
+                    LOCAL_CATALOG_PATH,
+                    exc,
+                )
         return catalog
 
     # ── Serve from warm local cache if fresh enough ───────────────────────────
@@ -708,38 +803,24 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
             try:
                 _merge(json.loads(LOCAL_CATALOG_PATH.read_text()))
                 return catalog
-            except Exception:
-                pass
+            except (OSError, ValueError) as exc:
+                _LOG.warning(
+                    "Warm catalog cache at %s unreadable: %s; refreshing", LOCAL_CATALOG_PATH, exc
+                )
 
     # ── Stale (or absent) — return now, refresh asynchronously ───────────────
     def _background_fetch() -> None:  # pragma: no cover
+        raw = _fetch_catalog_bytes()
+        if raw is None:
+            return
         try:
-            import ssl as _ssl
-
-            from squish import dist_version
-            _ver = dist_version()
-            req = urllib.request.Request(
-                CATALOG_URL, headers={"User-Agent": f"squish/{_ver}"}
-            )
-            # Build an SSL context that respects squish SSL env vars
-            _verify = _ssl_verify()
-            if _verify is False:
-                _ctx = _ssl.create_default_context()
-                _ctx.check_hostname = False
-                _ctx.verify_mode = _ssl.CERT_NONE
-            elif isinstance(_verify, str):
-                _ctx = _ssl.create_default_context(cafile=_verify)
-            else:
-                _ctx = None  # use urllib default (system CAs)
-            with urllib.request.urlopen(req, timeout=5, context=_ctx) as resp:
-                raw = resp.read()
             SQUISH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
             # Atomic write: temp file + rename avoids partial reads on crash
             tmp = LOCAL_CATALOG_PATH.with_suffix(".tmp")
             tmp.write_bytes(raw)
             tmp.rename(LOCAL_CATALOG_PATH)
-        except Exception:
-            pass  # Offline / unreachable — bundled catalog stays in effect.
+        except OSError as exc:
+            _LOG.debug("Could not persist refreshed catalog to %s: %s", LOCAL_CATALOG_PATH, exc)
 
     t = _threading.Thread(target=_background_fetch, daemon=True,
                           name="squish-catalog-refresh")
@@ -749,8 +830,13 @@ def _try_refresh_catalog(catalog: dict[str, CatalogEntry]) -> dict[str, CatalogE
     if LOCAL_CATALOG_PATH.exists():
         try:
             _merge(json.loads(LOCAL_CATALOG_PATH.read_text()))
-        except Exception:
-            pass
+        except (OSError, ValueError) as exc:
+            _LOG.warning(
+                "Stale catalog cache at %s unreadable: %s; "
+                "using bundled catalog while refresh runs",
+                LOCAL_CATALOG_PATH,
+                exc,
+            )
 
     return catalog
 
@@ -1100,7 +1186,7 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
             _reset_hf_session()
             _snapshot()
             return
-        except Exception as exc:
+        except _HF_DOWNLOAD_ERRORS as exc:
             ssl_failure = _is_ssl_error(exc)
             local_ok, _ = _is_raw_model_dir_complete(local_dir)
 
@@ -1132,7 +1218,7 @@ def _hf_download(repo: str, local_dir: Path, token: str | None = None) -> None: 
                 with _force_httpx_verify_false():
                     _snapshot()
                 return
-            except Exception as retry_exc:
+            except _HF_DOWNLOAD_ERRORS as retry_exc:
                 local_ok_retry, _ = _is_raw_model_dir_complete(local_dir)
                 if local_ok_retry:
                     print(f"  ⚠  Using existing local copy at {local_dir}")
@@ -1204,7 +1290,7 @@ def _hf_file_download(repo: str, filename: str, local_dir: Path,  # pragma: no c
                 token=token,
             )
             return Path(dest)
-        except Exception as exc:
+        except _HF_DOWNLOAD_ERRORS as exc:
             if _is_ssl_error(exc):
                 raise _SSLError(
                     f"SSL certificate verification failed while downloading {filename!r} from {repo!r}.\n"
@@ -1235,7 +1321,8 @@ def _hf_list_files(repo: str, token: str | None = None) -> list[str]:  # pragma:
                 pass
 
         return list(list_repo_files(repo, token=token))
-    except Exception:
+    except (ImportError, *_HF_DOWNLOAD_ERRORS) as exc:
+        _LOG.debug("list_repo_files failed for %r: %s", repo, exc)
         return []
 
 
@@ -1285,7 +1372,7 @@ def pull(  # pragma: no cover
     """
 
     if models_dir is None:
-        models_dir = Path.home() / ".squish" / "models"
+        models_dir = squish_home() / "models"
     models_dir.mkdir(parents=True, exist_ok=True)
 
     entry = resolve(name, refresh=refresh_catalog)
@@ -1355,7 +1442,8 @@ def pull(  # pragma: no cover
                 return compressed_dir
         except _SSLError:
             raise  # re-raise with the clear user-facing message — do not swallow
-        except Exception as exc:
+        except (*_HF_DOWNLOAD_ERRORS, KeyError, AttributeError, TypeError) as exc:
+            _LOG.debug("pre-compressed download failed for %r: %s", _prebuilt_repo, exc)
             if verbose:
                 print(f"  ⚠  Pre-compressed download failed ({exc}); falling back …")
 
@@ -1415,12 +1503,13 @@ def pull(  # pragma: no cover
             try:
                 import mlx.core as mx
                 mx.clear_cache()
-            except Exception:
-                pass
+            except (ImportError, RuntimeError, AttributeError) as exc:
+                _LOG.debug("mx.clear_cache after AWQ failed: %s", exc)
         except ImportError:
             # mlx-lm not installed — skip AWQ silently
             pass
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError, AttributeError, TypeError) as exc:
+            _LOG.debug("AWQ calibration failed: %s", exc)
             if verbose:
                 print(f"  ⚠  AWQ skipped — {exc}. Continuing without AWQ.")
 

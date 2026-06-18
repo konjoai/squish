@@ -4,13 +4,13 @@ Thank you for your interest in contributing!  Squish is an Apple Silicon–only
 local LLM inference library.  Contributions that improve load-time performance,
 accuracy fidelity, or API compatibility are especially welcome.
 
-Not sure where to start? Jump into [Discord](https://discord.gg/squish) or browse [GitHub Discussions](https://github.com/wesleyscholl/squish/discussions) — we're friendly and responsive.
+Not sure where to start? Jump into [Discord](https://discord.gg/squish) or browse [GitHub Discussions](https://github.com/konjoai/squish/discussions) — we're friendly and responsive.
 
 ---
 
 ## Good First Issues
 
-Look for issues tagged [`good first issue`](https://github.com/wesleyscholl/squish/labels/good%20first%20issue) on GitHub.  Common entry points:
+Look for issues tagged [`good first issue`](https://github.com/konjoai/squish/labels/good%20first%20issue) on GitHub.  Common entry points:
 
 | Label | Examples |
 |---|---|
@@ -27,7 +27,7 @@ If none of the open issues fit, open a [Discussion](https://github.com/konjoai/s
 
 ```bash
 # 1. Clone and enter the repo
-git clone https://github.com/wesleyscholl/squish.git
+git clone https://github.com/konjoai/squish.git
 cd squish
 
 # 2. Create a virtual environment (Python 3.12 recommended)
@@ -83,7 +83,7 @@ CI will fail if `ruff check` reports any errors.
 
 ## Reporting Bugs
 
-Use [GitHub Issues](https://github.com/wesleyscholl/squish/issues) with the
+Use [GitHub Issues](https://github.com/konjoai/squish/issues) with the
 **Bug report** template.  Please include your chip generation (M1/M2/M3/M4),
 macOS version, and the model you were loading.
 

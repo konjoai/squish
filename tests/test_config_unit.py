@@ -28,6 +28,39 @@ def _tmp_config(tmp_path: Path):
 
 # ── config_path ───────────────────────────────────────────────────────────────
 
+class TestSquishHome:
+    def test_default_is_home_dot_squish(self):
+        cfg = _import_config()
+        env = os.environ.copy()
+        env.pop("SQUISH_HOME", None)
+        with patch.dict(os.environ, env, clear=True):
+            home = cfg.squish_home()
+        assert home == Path.home() / ".squish"
+
+    def test_squish_home_env_override(self, tmp_path):
+        cfg = _import_config()
+        with patch.dict(os.environ, {"SQUISH_HOME": str(tmp_path / "relocated")}):
+            assert cfg.squish_home() == tmp_path / "relocated"
+
+    def test_squish_home_expands_user(self):
+        cfg = _import_config()
+        with patch.dict(os.environ, {"SQUISH_HOME": "~/custom-squish"}):
+            assert cfg.squish_home() == Path.home() / "custom-squish"
+
+    def test_blank_env_falls_back_to_default(self):
+        cfg = _import_config()
+        with patch.dict(os.environ, {"SQUISH_HOME": "   "}):
+            assert cfg.squish_home() == Path.home() / ".squish"
+
+    def test_config_path_follows_squish_home(self, tmp_path):
+        cfg = _import_config()
+        env = os.environ.copy()
+        env.pop("SQUISH_CONFIG_DIR", None)
+        env["SQUISH_HOME"] = str(tmp_path / "h")
+        with patch.dict(os.environ, env, clear=True):
+            assert cfg.config_path() == tmp_path / "h" / "config.json"
+
+
 class TestConfigPath:
     def test_default_path_is_home_squish(self, tmp_path):
         cfg = _import_config()

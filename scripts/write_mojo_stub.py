@@ -1,3 +1,5 @@
+import os
+
 lines = [
     "# squish/kernels/mojo/kernels/magic_pig_score.mojo\n",
     "# MagicPIG LSH-bucketed attention score computation kernel.\n",
@@ -59,6 +61,6 @@ lines = [
     "    parallelize[process_head](h)\n",
 ]
 
-with open('/Users/wscholl/squish/squish/kernels/mojo/kernels/magic_pig_score.mojo', 'w') as f:
+with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'squish/kernels/mojo/kernels/magic_pig_score.mojo'), 'w') as f:
     f.writelines(lines)
 print('written ok')

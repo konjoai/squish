@@ -46,11 +46,14 @@ Or apply programmatically before quantizing a weight dict:
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
+
+_LOG = logging.getLogger("squish.quant.awq")
 
 # ---------------------------------------------------------------------------
 # Default calibration texts — mix of factual, reasoning, and conversational
@@ -194,7 +197,8 @@ def detect_model_family(model_dir: "Path | str") -> "str | None":
         return None
     try:
         data = _json.loads(cfg.read_text())
-    except Exception:
+    except (OSError, ValueError) as exc:
+        _LOG.debug("Could not read/parse config.json at %s: %s", cfg, exc)
         return None
 
     # Primary: model_type field (most reliable)
@@ -239,7 +243,10 @@ class _ActivationHook:
             import mlx.core as mx
             # Convert MLX array to numpy for statistics
             arr = np.array(x.astype(mx.float32))
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError, ValueError, TypeError) as exc:
+            # TypeError: x is already a numpy array, so .astype(mx.float32) is
+            # invalid — the common path when the hook receives a numpy activation.
+            _LOG.debug("MLX→numpy conversion failed; using np.asarray fallback: %s", exc)
             arr = np.asarray(x, dtype=np.float32)
 
         # arr shape: (..., in_features) — flatten all but last dim
@@ -390,8 +397,9 @@ def collect_activation_scales(  # pragma: no cover
         try:
             out = model(x)
             mx.eval(out)        # materialise lazy graph so hooks complete
-        except Exception:
-            pass                # some models need kv_cache — skip on error
+        except (RuntimeError, ValueError, TypeError, AttributeError) as exc:
+            # some models need kv_cache — skip on error
+            _LOG.debug("Calibration forward pass %d failed; skipping sample: %s", i, exc)
 
         if verbose and (i + 1) % 16 == 0:
             print(f"    [{i+1}/{n_samples}] calibrated …")
@@ -816,7 +824,7 @@ def main():  # pragma: no cover
     try:
         from mlx_lm import load as mlx_load
         model, tokenizer = mlx_load(args.model_dir)
-    except Exception as e:
+    except (ImportError, OSError, ValueError, RuntimeError) as e:
         sys.exit(f"Error loading model: {e}")
 
     # Calibrate

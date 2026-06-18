@@ -235,10 +235,10 @@ class QualityMonitor:
             with self._lock:
                 self._events.append(metric)
                 _trim_deque(self._events, cutoff)
-        except Exception:  # noqa: BLE001
+        except (AttributeError, TypeError, ValueError) as exc:
             import logging as _logging
             _logging.getLogger(__name__).warning(
-                "QualityMonitor.record() failed — metric dropped",
+                "QualityMonitor.record() failed — metric dropped: %s", exc,
                 exc_info=True,
             )
 
@@ -414,9 +414,10 @@ def record_completion_metric(
             success=True,
             error_type=None,
         ))
-    except Exception:  # noqa: BLE001
+    except (AttributeError, TypeError, ValueError) as exc:
         import logging as _log  # noqa: PLC0415
-        _log.getLogger(__name__).warning("Quality monitor metric dropped", exc_info=True)
+        _log.getLogger(__name__).warning(
+            "Quality monitor metric dropped: %s", exc, exc_info=True)
 
 
 def quality_response_dict(window: int, model_filter: str = "") -> dict:

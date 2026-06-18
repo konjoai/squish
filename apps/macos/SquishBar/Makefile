@@ -14,7 +14,12 @@ all: $(APPNAME)
 
 ASSETS    = Sources/SquishBar/Assets.xcassets
 
-$(APPNAME):
+SOURCES = $(shell find Sources -name '*.swift')
+
+# Depend on the Swift sources + Info.plist so editing them re-assembles the
+# bundle. Without prerequisites, make treats the existing .app directory as
+# up-to-date and silently ships a stale binary.
+$(APPNAME): $(SOURCES) Resources/Info.plist
 	swift build -c release 2>&1
 	@mkdir -p "$(APPNAME)/Contents/MacOS"
 	@mkdir -p "$(APPNAME)/Contents/Resources"

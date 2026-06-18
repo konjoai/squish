@@ -22,7 +22,7 @@ To wire to a live squish backend:
 squish run qwen3:8b --port 11435 --api-key squish
 
 # Terminal 2 — (optional) start the demo server for /api/benchmark on :8001
-cd /Users/wscholl/squish && python demo/server.py
+cd squish && python demo/server.py
 
 # Terminal 3 — start the dashboard
 cd dashboard

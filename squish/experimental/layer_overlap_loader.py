@@ -52,10 +52,13 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
+
+_LOG = logging.getLogger("squish.experimental.layer_overlap_loader")
 
 __all__ = [
     "LayerOverlapConfig",
@@ -256,7 +259,8 @@ class LayerOverlapLoader:
         try:
             weights = self._load_fn(layer_idx)  # type: ignore[misc]
             handle.weights = weights
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — thread boundary: re-raised on consumer
+            _LOG.debug("layer %d load worker failed: %s", layer_idx, exc)
             handle.error = exc
         finally:
             handle.ready.set()

@@ -1,6 +1,6 @@
 /**
  * TypeScript types mirroring squish's API contract.
- * Source of truth lives in /Users/wesleyscholl/squish/squish/server.py.
+ * Source of truth lives in squish/server.py.
  */
 
 export type ChatRole = "system" | "user" | "assistant";
@@ -76,6 +76,11 @@ export interface ChatTurn {
   totalS?: number;
   finishReason?: string;
   fromMock?: boolean;
+  /**
+   * For agentic assistant turns (agent mode): the live tool-execution
+   * timeline streamed from POST /v1/agent/run. Rendered inline in the chat.
+   */
+  steps?: AgentStep[];
 }
 
 export type StreamState = "idle" | "streaming" | "done" | "error";

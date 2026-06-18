@@ -22,7 +22,6 @@ Sub-commands
   squish doctor   [--report]        Check all dependencies
   squish daemon   start|stop|status Manage background server
   squish rotate   MODEL             SpinQuant Cayley-SGD rotation calibration
-  squish predict  [MODEL]           LIFE analytical performance prediction
   squish bench    [OPTIONS]         Benchmark quantized GEMV throughput (INT4/INT8)
   squish ps       [OPTIONS]         Show loaded model and server status
   squish logs     [OPTIONS]         View or stream the server log
@@ -46,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -53,6 +53,8 @@ import sys
 import time
 from pathlib import Path
 from typing import NoReturn
+
+_LOG = logging.getLogger("squish.cli")
 
 # Suppress macOS "can't turn off malloc stack logging" noise in child processes.
 # Must run before any subprocesses or uvicorn workers are spawned.  On macOS,
@@ -116,6 +118,7 @@ def _catalog_suggest(query: str, max_results: int = 3):
 # duplicate detection logic that previously lived in this file.
 # Respects NO_COLOR, SQUISH_DARK_BG, COLORFGBG, and FORCE_COLOR env vars.
 from squish._term import C as _C  # noqa: E402
+from squish.config import squish_home  # noqa: E402
 
 
 # ── Model registry ───────────────────────────────────────────────────────────
@@ -126,7 +129,7 @@ def _resolve_models_dir() -> Path:
     if env_override:
         return Path(env_override).expanduser()
     # Check ~/.squish/models (canonical install location)
-    primary = Path.home() / ".squish" / "models"  # pragma: no cover
+    primary = squish_home() / "models"  # pragma: no cover
     if primary.exists():  # pragma: no cover
         return primary
     # Check <squish repo root>/models/ — works when running directly from the repo
@@ -197,7 +200,8 @@ def _detect_ram_gb() -> float:
         import subprocess as _sp
         out = _sp.check_output(["sysctl", "-n", "hw.memsize"], stderr=_sp.DEVNULL)
         return int(out.strip()) / 1e9
-    except Exception:
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        _LOG.debug("RAM detection (sysctl hw.memsize) failed: %s", exc)
         return 0.0
 
 
@@ -256,7 +260,8 @@ def _detect_local_ai_services() -> list[dict]:
                 "models":      [m for m in models if m],
                 "model_count": len([m for m in models if m]),
             })
-        except Exception:
+        except (OSError, ValueError, TypeError) as exc:
+            _LOG.debug("Local AI service probe for %s failed: %s", name, exc)
             continue
     return detected
 
@@ -404,7 +409,8 @@ def _model_is_already_quantized(model_dir: Path) -> bool:
     try:
         with open(_cfg) as _f:
             return "quantization" in _json.load(_f)
-    except Exception:
+    except (OSError, ValueError) as exc:
+        _LOG.debug("Reading quantization flag from %s failed: %s", _cfg, exc)
         return False
 
 
@@ -422,8 +428,8 @@ def _box(lines: list[str]) -> None:
             body = "\n".join(f"[squish.white]{ln}[/]" for ln in lines)
             _con.print(Panel(body, box=_rbox.ROUNDED, border_style="squish.purple", padding=(0, 1)))
             return
-    except Exception:
-        pass
+    except (ImportError, AttributeError, ValueError) as exc:
+        _LOG.debug("Rich box rendering unavailable, using plain fallback: %s", exc)
     # Fallback: plain Unicode box with ANSI palette colours
     V = _C.V; W = _C.W; R = _C.R
     width = max(len(ln) for ln in lines) + 4
@@ -451,8 +457,8 @@ def cmd_models(args):
             from squish.catalog import list_catalog
             for _ce in list_catalog():
                 _catalog_by_dir[_ce.dir_name] = _ce
-        except Exception:  # noqa: BLE001
-            pass
+        except (ImportError, OSError, AttributeError) as exc:
+            _LOG.debug("Building catalog lookup for model listing failed: %s", exc)
 
         for d in sorted(_MODELS_DIR.iterdir()):
             if not d.is_dir():
@@ -465,7 +471,8 @@ def cmd_models(args):
             try:
                 total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
                 size_str = f"{total / 1e9:.1f} GB"
-            except Exception:
+            except OSError as exc:
+                _LOG.debug("Disk size estimate for %s failed: %s", d, exc)
                 size_str = "?"
             # MoE badge from catalog metadata
             _entry = _catalog_by_dir.get(d.name)
@@ -494,7 +501,8 @@ def cmd_models(args):
                         None,
                     )
                     _squash_str = f"✓ {_arc}%" if _arc is not None else "✓ sidecar"
-                except Exception:  # noqa: BLE001
+                except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+                    _LOG.debug("Parsing squash sidecar %s failed: %s", _bom, exc)
                     _squash_str = "✓ sidecar"
             else:
                 _squash_str = "—"
@@ -605,8 +613,8 @@ def cmd_models(args):
                     ) else ""
                     print(f"  {_m.source:<{_w_src+2}}  {_m.name:<{_w_name+2}}  {_sz:>8}  {_live}")
                 print()
-    except Exception:
-        pass
+    except (ImportError, OSError, AttributeError, ValueError, TypeError) as exc:
+        _LOG.debug("External model detection (Ollama/LM Studio) failed: %s", exc)
 
 
 # ── squish lm ─────────────────────────────────────────────────────────────────
@@ -626,7 +634,8 @@ def cmd_lm(args) -> None:
     from squish.serving.local_model_scanner import LocalModelScanner
     try:
         from squish.ui import console as _con, make_table as _mt, _RICH_AVAILABLE as _rich
-    except Exception:
+    except ImportError as exc:
+        _LOG.debug("Rich UI import for lm command failed: %s", exc)
         _rich = False
 
     action = getattr(args, "lm_action", "status") or "status"
@@ -828,7 +837,8 @@ def cmd_rm(args):  # pragma: no cover
             p = Path(name).expanduser()
             model_dir       = p if p.is_absolute() else _MODELS_DIR / name
             compressed_dir  = Path(str(model_dir) + _COMPRESSED_SUFFIX)
-    except Exception:
+    except (ImportError, OSError, AttributeError) as exc:
+        _LOG.debug("Catalog resolution for '%s' failed, falling back to path: %s", name, exc)
         p = Path(name).expanduser()
         model_dir       = p if p.is_absolute() else _MODELS_DIR / name
         compressed_dir  = Path(str(model_dir) + _COMPRESSED_SUFFIX)
@@ -858,7 +868,8 @@ def cmd_rm(args):  # pragma: no cover
     for label, path in targets:
         try:
             sz = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
-        except Exception:
+        except OSError as exc:
+            _LOG.debug("Disk size estimate for %s failed: %s", path, exc)
             sz = 0
         total_bytes += sz
         print(f"    [{label}]  {path}  ({sz / 1e9:.2f} GB)")
@@ -881,7 +892,8 @@ def cmd_rm(args):  # pragma: no cover
         try:
             shutil.rmtree(path)
             print("done.")
-        except Exception as exc:
+        except OSError as exc:
+            _LOG.warning("Failed to remove %s (%s): %s", label, path, exc)
             print(f"ERROR: {exc}")
 
     print()
@@ -941,8 +953,8 @@ def cmd_info(args):  # pragma: no cover
             ["sysctl", "-n", "machdep.cpu.brand_string"],
             text=True, stderr=sp.DEVNULL).strip()
         rows.append(("Chip", chip))
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError) as exc:
+        _LOG.debug("Chip detection (sysctl) failed: %s", exc)
 
     # Unified memory
     try:
@@ -951,8 +963,8 @@ def cmd_info(args):  # pragma: no cover
         mem_gb = mem_bytes / 1e9
         rows.append(("Unified RAM", f"{mem_gb:.0f} GB"))
         rows.append(("Metal budget", f"{mem_gb * 0.90:.1f} GB  (90% of RAM)"))
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        _LOG.debug("Unified memory detection (sysctl) failed: %s", exc)
 
     # Disk space
     m = _MODELS_DIR
@@ -966,7 +978,8 @@ def cmd_info(args):  # pragma: no cover
     try:
         import mlx.core as mx
         rows.append(("MLX", f"v{mx.__version__}  (Metal backend active)"))
-    except Exception:
+    except ImportError as exc:
+        _LOG.debug("MLX import failed: %s", exc)
         rows.append(("MLX", "not installed"))
     rows.append(("Python", sys.version.split()[0]))
 
@@ -983,7 +996,8 @@ def cmd_info(args):  # pragma: no cover
     try:
         s.connect(("127.0.0.1", _DEFAULT_PORT))
         rows.append(("Server", f"● running on :{_DEFAULT_PORT}"))
-    except Exception:
+    except OSError as exc:
+        _LOG.debug("Server port probe on :%d failed: %s", _DEFAULT_PORT, exc)
         rows.append(("Server", "not running  (start with: squish run 7b)"))
     finally:
         s.close()
@@ -1015,7 +1029,8 @@ def cmd_setup(args):  # pragma: no cover
 
     try:
         from squish.ui import console as _con, _RICH_AVAILABLE as _rich
-    except Exception:
+    except ImportError as exc:
+        _LOG.debug("Rich UI import for setup command failed: %s", exc)
         _rich = False
 
     if _rich:
@@ -1046,8 +1061,8 @@ def cmd_setup(args):  # pragma: no cover
             from squish.platform.platform_router import get_inference_backend
             from squish.platform.detector import detect_platform as _dp
             _backend = get_inference_backend(_dp())
-        except Exception:
-            pass
+        except (ImportError, OSError, AttributeError, RuntimeError) as exc:
+            _LOG.debug("Inference backend detection failed: %s", exc)
         print(f"\n  {_C.V}ℹ{_C.R}  Non-Apple-Silicon platform detected.")
         print(f"      Inference backend : {_backend}")
         if _backend == "torch_cuda":
@@ -1065,7 +1080,8 @@ def cmd_setup(args):  # pragma: no cover
     try:
         import shutil as _shutil
         disk_free_gb = _shutil.disk_usage(Path.home()).free / 1e9
-    except Exception:
+    except OSError as exc:
+        _LOG.debug("Disk free space detection failed: %s", exc)
         disk_free_gb = 999.0
     print(f"  {ok_sym}  Disk free   : {disk_free_gb:.1f} GB")
     print(f"  {ok_sym}  Recommended : {recommended}")
@@ -1132,6 +1148,79 @@ def cmd_setup(args):  # pragma: no cover
 
 # ── squish run ────────────────────────────────────────────────────────────────
 
+_DOCTOR_MARKER = squish_home() / ".doctor_ok"
+
+
+def _first_run_health_gate(args) -> None:
+    """Run environment health checks once per installed version on `squish run`.
+
+    Decision table (``ok`` = no REQUIRED check failed; optional checks never
+    affect ``ok``, proceed, or the marker):
+
+    | marker state           | SKIP | checks run | proceeds | marker written |
+    |------------------------|------|------------|----------|----------------|
+    | absent                 | no   | yes        | iff ok   | iff ok         |
+    | == __version__         | no   | no         | yes      | unchanged      |
+    | != __version__ (stale) | no   | yes        | iff ok   | iff ok         |
+    | any                    | yes  | no         | yes      | unchanged      |
+
+    On a required-check failure this prints the failures + fixes and calls
+    ``_die`` (SystemExit) WITHOUT writing the marker. Bypass entirely with
+    ``--skip-doctor`` or ``SQUISH_SKIP_DOCTOR``.
+    """
+    if bool(os.environ.get("SQUISH_SKIP_DOCTOR")) or getattr(args, "skip_doctor", False):
+        return
+
+    from squish import __version__ as _sq_ver  # noqa: PLC0415
+
+    marker = _DOCTOR_MARKER
+    try:
+        marker_ver = marker.read_text().strip() if marker.exists() else ""
+    except OSError:
+        marker_ver = ""
+    if marker_ver == _sq_ver:
+        # Already health-checked on this exact version — zero check work.
+        return
+
+    ok, results = run_health_checks()
+    if not ok:
+        failed = [r for r in results if not r["passed"] and not r["optional"]]
+        print()
+        for r in failed:
+            print(f"  {_C.PK}✗{_C.R}  {r['label']}")
+            if r["fix"]:
+                print(f"       {_C.DIM}Fix:{_C.R} {r['fix']}")
+        print("\n  Run `squish doctor` for detail.\n")
+        # Do NOT write the marker on failure.
+        _die(
+            "Environment checks failed — fix the issues above, "
+            "or pass --skip-doctor / set SQUISH_SKIP_DOCTOR=1 to bypass"
+        )
+
+    # Full pass: a single dim one-liner, not the full doctor table.
+    try:
+        from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+    except ImportError as exc:  # pragma: no cover
+        _LOG.debug("Rich UI import failed: %s", exc)
+        _rich = False
+    _msg = f"Environment checks passed ({_sq_ver}) — run `squish doctor` for detail"
+    if _rich:
+        _con.print(f"  [squish.dim]✓ {_msg}[/]")
+    else:
+        print(f"  {_C.DIM}✓ {_msg}{_C.R}")
+
+    # Persist the marker atomically (tmp file + os.replace) so the checks never
+    # run again for this version.
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        tmp = marker.parent / f".doctor_ok.{os.getpid()}.tmp"
+        tmp.write_text(_sq_ver)
+        os.replace(tmp, marker)
+    except OSError as werr:
+        import logging
+        logging.warning("could not write doctor marker %s: %s", marker, werr)
+
+
 def cmd_run(args):  # pragma: no cover
     """Start the Squish inference server (or one-shot via squishd)."""
 
@@ -1174,6 +1263,12 @@ def cmd_run(args):  # pragma: no cover
                 file=sys.stderr,
             )
             # Fall through; the spawned server below will handle the request
+
+    # ── First-run health gate (folds `squish doctor` into `squish run`) ───────
+    # Runs the dependency / environment checks ONCE per installed version,
+    # BEFORE any model resolution / auto-pull / server spawn — so a broken
+    # environment fails fast, before downloading multi-GB weights.
+    _first_run_health_gate(args)
 
     # ── Detect other local AI services ───────────────────────────────────────
     _local_services = _detect_local_ai_services()
@@ -1471,7 +1566,7 @@ def cmd_run(args):  # pragma: no cover
             _chat_url = f"http://{host}:{port}/chat"
             _open_browser_when_ready(_chat_url, port)
         os.execv(sys.executable, cmd)  # replace this process — clean signals
-    except Exception as e:
+    except OSError as e:
         _die(f"Failed to start server: {e}")
 
 
@@ -1503,7 +1598,8 @@ def cmd_chat(args):  # pragma: no cover
             s.connect((host, port))
             s.close()
             return True
-        except Exception:
+        except OSError as exc:
+            _LOG.debug("Server connectivity probe to %s:%d failed: %s", host, port, exc)
             return False
 
     if not _server_up():
@@ -1589,8 +1685,8 @@ def cmd_chat(args):  # pragma: no cover
                         if delta:
                             print(delta, end="", flush=True)
                             full += delta
-                    except Exception:
-                        pass
+                    except (ValueError, KeyError, IndexError, TypeError) as exc:
+                        _LOG.debug("Skipping malformed SSE chunk: %s", exc)
         except urllib.error.URLError as e:
             print(f"\n  {_C.PK}✗{_C.R}  Request failed: {e}")
         print()
@@ -1833,7 +1929,8 @@ def cmd_export(args) -> None:
             _s0 = _load_npy_path(tensor_dir / f"{_q4a_sks[0]}__s4a.npy", mmap_mode="r")
             group_size = int(_p0.shape[1] * 2 // _s0.shape[1]) if _s0.shape[1] > 0 else 16
             del _p0, _s0
-        except Exception:
+        except (OSError, ValueError, IndexError, AttributeError) as exc:
+            _LOG.debug("Group size auto-detection failed, defaulting to 16: %s", exc)
             group_size = 16
 
     print(f"\n  squish export  →  {model_dir.name}")
@@ -2063,58 +2160,32 @@ def cmd_eval(args) -> None:
         print(f"\n  ⚠  {len(errors)} task(s) failed: {', '.join(errors)}", file=sys.stderr)
 
 
-def cmd_doctor(args):
-    """Check that all squish components are installed correctly."""
+def run_health_checks() -> tuple[bool, list[dict]]:
+    """Compute squish environment / dependency health checks without printing.
+
+    Single source of truth for both ``squish doctor`` (which renders these
+    results) and the first-run gate in ``squish run``. Returns ``(ok, results)``
+    where ``results`` is a list of ``{"label", "passed", "fix", "optional"}``
+    dicts in display order, and ``ok`` is ``False`` iff any REQUIRED
+    (non-optional) check failed. Optional checks never affect ``ok``.
+    """
     import concurrent.futures
     import importlib
     import platform as _platform
     import socket
 
-    from squish.ui import console as _con, _RICH_AVAILABLE as _rich
-
-    print()
-    if _rich:
-        _con.rule("[squish.violet bold]squish doctor[/]  [squish.dim]dependency check[/]", style="squish.dim")
-    else:
-        _box(["squish doctor — dependency check"])
-    print()
-
     ok = True
-    _optional_missing = 0
     _results: list[dict] = []
 
     def _check(label: str, passed: bool, fix: str = "", optional: bool = False) -> None:
-        nonlocal ok, _optional_missing
-        # Optional checks never fail the run. When unmet they render with a
-        # dim dash (—) instead of a red ✗, and are surfaced as "available to
-        # add" in the summary rather than as failures.
+        nonlocal ok
+        # Optional checks never fail the run; they are surfaced as "available to
+        # add" by the renderer rather than as failures.
         if optional and not passed:
-            _optional_missing += 1
-            if _rich:
-                _con.print(f"  [squish.dim]—[/]  [squish.dim]{label}[/]")
-                if fix:
-                    _con.print(f"       [squish.dim]Add:[/] [squish.white]{fix}[/]")
-            else:
-                print(f"  {_C.DIM}-{_C.R}  {_C.DIM}{label}{_C.R}")
-                if fix:
-                    print(f"       {_C.DIM}Add:{_C.R} {fix}")
             _results.append({"label": label, "passed": False, "fix": fix, "optional": True})
             return
-
-        if _rich:
-            sym = "[squish.green]✓[/]" if passed else "[squish.error]✗[/]"
-            _con.print(f"  {sym}  {label}")
-            if not passed:
-                ok = False
-                if fix:
-                    _con.print(f"       [squish.dim]Fix:[/] [squish.white]{fix}[/]")
-        else:
-            sym = f"{_C.G}✓{_C.R}" if passed else f"{_C.PK}✗{_C.R}"
-            print(f"  {sym}  {label}")
-            if not passed:
-                ok = False
-                if fix:
-                    print(f"       {_C.DIM}Fix:{_C.R} {fix}")
+        if not passed:
+            ok = False
         _results.append({"label": label, "passed": passed, "fix": fix, "optional": optional})
 
     # OS
@@ -2128,7 +2199,8 @@ def cmd_doctor(args):
             def _to_tuple(v: str):
                 return tuple(int(x) for x in v.split("+")[0].split(".") if x.isdigit())
             return _to_tuple(found) >= _to_tuple(required)
-        except Exception:  # pragma: no cover
+        except (ValueError, AttributeError, TypeError) as exc:  # pragma: no cover
+            _LOG.debug("Version comparison %r vs %r failed: %s", found, required, exc)
             return True  # unknown format → assume ok
 
     # Pre-import all slow packages in parallel to reduce wall-clock time.
@@ -2137,7 +2209,8 @@ def cmd_doctor(args):
     def _try_import(pkg: str) -> tuple:
         try:
             return (pkg, importlib.import_module(pkg), None)
-        except Exception as exc:  # noqa: BLE001 — also capture Metal/init errors
+        except (ImportError, OSError, RuntimeError, ValueError) as exc:
+            _LOG.debug("Optional package %s import failed: %s", pkg, exc)
             return (pkg, None, exc)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(_slow_pkgs)) as _pool:
@@ -2225,7 +2298,7 @@ def cmd_doctor(args):
         sim = mean_cosine_similarity(emb, rec)
         _check(f"squish.quant.quantizer round-trip  (cosine={sim:.5f})", sim > 0.999,
                "Run: python3 -m squish.quant.quantizer")
-    except Exception as e:  # pragma: no cover
+    except (ImportError, RuntimeError, ValueError, AttributeError) as e:  # pragma: no cover
         _check(f"squish.quant.quantizer self-test: {e}", False)
 
     # Models directory
@@ -2248,8 +2321,8 @@ def cmd_doctor(args):
             _free_gb >= 5.0,
             "Free at least 5 GB of disk space before pulling a model",
         )
-    except Exception:  # pragma: no cover
-        pass  # non-fatal
+    except OSError as exc:  # pragma: no cover
+        _LOG.debug("Disk space check failed: %s", exc)  # non-fatal
 
     # Server status
     s = socket.socket()
@@ -2257,7 +2330,8 @@ def cmd_doctor(args):
     try:
         s.connect(("127.0.0.1", _DEFAULT_PORT))
         _check(f"server running on :{_DEFAULT_PORT}", True)  # pragma: no cover
-    except Exception:  # pragma: no cover
+    except OSError as exc:  # pragma: no cover
+        _LOG.debug("Server port probe failed: %s", exc)
         _check("server not running (optional)", True)  # not an error
     finally:
         s.close()
@@ -2269,6 +2343,52 @@ def cmd_doctor(args):
     except ImportError:
         _check("squash-ai (compliance & ML-BOM features)", False,
                'pip install squash-ai', optional=True)
+
+    return ok, _results
+
+
+def cmd_doctor(args):
+    """Check that all squish components are installed correctly."""
+    from squish.ui import console as _con, _RICH_AVAILABLE as _rich
+
+    print()
+    if _rich:
+        _con.rule("[squish.violet bold]squish doctor[/]  [squish.dim]dependency check[/]", style="squish.dim")
+    else:
+        _box(["squish doctor — dependency check"])
+    print()
+
+    ok, _results = run_health_checks()
+
+    # Render exactly as the historical inline ``_check`` closure did — same
+    # symbols, colours and ordering — so output stays byte-for-byte identical.
+    _optional_missing = 0
+    for _r in _results:
+        label = _r["label"]
+        passed = _r["passed"]
+        fix = _r["fix"]
+        optional = _r["optional"]
+        if optional and not passed:
+            _optional_missing += 1
+            if _rich:
+                _con.print(f"  [squish.dim]—[/]  [squish.dim]{label}[/]")
+                if fix:
+                    _con.print(f"       [squish.dim]Add:[/] [squish.white]{fix}[/]")
+            else:
+                print(f"  {_C.DIM}-{_C.R}  {_C.DIM}{label}{_C.R}")
+                if fix:
+                    print(f"       {_C.DIM}Add:{_C.R} {fix}")
+            continue
+        if _rich:
+            sym = "[squish.green]✓[/]" if passed else "[squish.error]✗[/]"
+            _con.print(f"  {sym}  {label}")
+            if not passed and fix:
+                _con.print(f"       [squish.dim]Fix:[/] [squish.white]{fix}[/]")
+        else:
+            sym = f"{_C.G}✓{_C.R}" if passed else f"{_C.PK}✗{_C.R}"
+            print(f"  {sym}  {label}")
+            if not passed and fix:
+                print(f"       {_C.DIM}Fix:{_C.R} {fix}")
 
     print()
     if ok:
@@ -2296,12 +2416,13 @@ def cmd_doctor(args):
     if getattr(args, "report", False):
         import datetime as _dt
         import platform as _plat
-        _report_dir = Path.home() / ".squish"
+        _report_dir = squish_home()
         _report_dir.mkdir(parents=True, exist_ok=True)
         _ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         _report_path = _report_dir / f"doctor-report-{_ts}.json"
+        from squish import __version__ as _sq_ver  # noqa: PLC0415
         _report = {
-            "squish_version": "9.0.0",
+            "squish_version": _sq_ver,
             "timestamp": _ts,
             "platform": _plat.platform(),
             "python": _plat.python_version(),
@@ -2319,7 +2440,8 @@ def cmd_update(args):
 
     try:
         from squish.ui import console as _con, _RICH_AVAILABLE as _rich
-    except Exception:
+    except ImportError as exc:
+        _LOG.debug("Rich UI import for update command failed: %s", exc)
         _rich = False
 
     if _rich:
@@ -2372,14 +2494,15 @@ def cmd_daemon(args):  # pragma: no cover
     """Start, stop, or check the Squish daemon (persistent background server)."""
     import signal
 
-    pid_file = Path.home() / ".squish" / "daemon.pid"
-    log_file = Path.home() / ".squish" / "daemon.log"
+    pid_file = squish_home() / "daemon.pid"
+    log_file = squish_home() / "daemon.log"
     pid_file.parent.mkdir(parents=True, exist_ok=True)
 
     def _read_pid() -> int | None:
         try:
             return int(pid_file.read_text().strip())
-        except Exception:
+        except (OSError, ValueError) as exc:
+            _LOG.debug("Reading daemon pid file %s failed: %s", pid_file, exc)
             return None
 
     def _is_running(pid: int) -> bool:
@@ -2411,7 +2534,7 @@ def cmd_daemon(args):  # pragma: no cover
                     os.kill(pid, signal.SIGKILL)
                 pid_file.unlink(missing_ok=True)
                 print(f"\n  ✓  Daemon stopped  (pid {pid})\n")
-            except Exception as e:
+            except OSError as e:
                 _die(f"Could not stop daemon: {e}")
         else:
             print("\n  Daemon is not running.\n")
@@ -2472,8 +2595,8 @@ def cmd_daemon(args):  # pragma: no cover
                 s.close()
                 print(f"  ✓  Daemon ready  (pid {proc.pid})\n")
                 return
-            except Exception:
-                pass
+            except OSError as exc:
+                _LOG.debug("Daemon readiness probe to %s:%s failed: %s", host, port, exc)
         print(f"  ⚠  Daemon started (pid {proc.pid}) but hasn't responded yet.")
         print(f"     Check logs: tail -f {log_file}\n")
 
@@ -2486,7 +2609,7 @@ def cmd_daemon(args):  # pragma: no cover
         try:
             resp = _uds_req({"_cmd": "reload"}, sock)
             print(f"\n  ✓  Reloaded: {resp.get('reloaded', '?')}\n")
-        except Exception as e:
+        except (OSError, ValueError, KeyError, TypeError) as e:
             _die(f"Reload failed: {e}")
 
     if action == "install":  # pragma: no cover
@@ -2498,8 +2621,8 @@ def cmd_daemon(args):  # pragma: no cover
                 _mdir, _cdir = _resolve_model(args.model)
                 model_dir_str = str(_mdir)
                 comp_dir_str  = str(_cdir)
-            except Exception:
-                pass
+            except (OSError, ValueError, ImportError, AttributeError) as exc:
+                _LOG.debug("Resolving model %r for install failed: %s", args.model, exc)
         sock = getattr(args, "sock", "") or "/tmp/squish.sock"
         try:
             plist = _la_install(
@@ -2588,7 +2711,7 @@ def cmd_compress(args):  # pragma: no cover
         _aqlm_enc = AQLMEncoder(cfg=_aqlm_cfg)
         try:
             _aqlm_enc.compress_dir(_aqlm_model_dir, _aqlm_out_dir, progress=True)
-        except Exception as _aqlm_compress_err:
+        except (OSError, ValueError, RuntimeError, ImportError) as _aqlm_compress_err:
             _die(f"AQLM compression failed: {_aqlm_compress_err}")
         return
 
@@ -2655,7 +2778,7 @@ def cmd_compress(args):  # pragma: no cover
             ) / 1e9
             print(f"     Disk size: {_out_size_gb:.2f} GB  "
                   f"(vs {sum(f.stat().st_size for f in _int3_model_dir.rglob('*') if f.is_file()) / 1e9:.2f} GB BF16)")
-        except Exception as _int3_err:
+        except (ImportError, OSError, ValueError, RuntimeError) as _int3_err:
             _die(
                 f"INT3 compression failed: {_int3_err}\n"
                 f"  Ensure mlx_lm ≥ 0.18.0 is installed: pip install -U mlx-lm"
@@ -2898,8 +3021,8 @@ def _ram_available_gb() -> tuple[float, float]:
                 _info = {l.split(":")[0]: int(l.split()[1]) for l in _f if ":" in l}
             total = _info.get("MemTotal", 0) / 1e6
             free  = (_info.get("MemFree", 0) + _info.get("MemAvailable", 0)) / 2e6
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError) as exc:
+        _LOG.debug("System memory detection failed: %s", exc)
     return total, free
 
 
@@ -2939,8 +3062,8 @@ def _max_tensor_gb_from_shards(shard_files: list) -> float:
                     nbytes *= _dtype_bytes.get(dtype_str, 2)
                     if nbytes > max_bytes:
                         max_bytes = nbytes
-        except Exception:
-            pass
+        except (OSError, ValueError, KeyError, AttributeError) as exc:
+            _LOG.debug("Reading safetensors shard %s metadata failed: %s", shard, exc)
     if max_bytes == 0:
         return max(f.stat().st_size for f in shard_files) / 1e9 * 0.25
     return max_bytes / 1e9
@@ -3095,11 +3218,12 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
             try:
                 import mlx.core as mx
                 mx.clear_cache()
-            except Exception:
-                pass
+            except (ImportError, RuntimeError, AttributeError) as exc:
+                _LOG.debug("Clearing MLX cache after AWQ failed: %s", exc)
         except ImportError as _e:
             print(f"  Warning: AWQ skipped — {_e}. Install mlx-lm to enable AWQ.")
-        except Exception as _e:
+        except (RuntimeError, ValueError, OSError, AttributeError) as _e:
+            _LOG.warning("AWQ calibration failed: %s", _e)
             print(f"  Warning: AWQ calibration failed — {_e}. Continuing without AWQ.")
 
     cmd = [
@@ -3220,7 +3344,8 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         print(f"  ✓  ML-BOM sidecar → {_sidecar.relative_to(output_dir.parent)}")
     except ImportError:
         pass  # squash-ai not installed — skip silently
-    except Exception as _sbom_err:
+    except (OSError, ValueError, AttributeError, KeyError) as _sbom_err:
+        _LOG.warning("SBOM generation failed (non-fatal): %s", _sbom_err)
         print(f"  ⚠  SBOM generation failed (non-fatal): {_sbom_err}")
 
     # ── Lineage event (squash-ai — optional, non-fatal) ─────────────────
@@ -3240,7 +3365,8 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         print(f"  ✓  Lineage event recorded → {output_dir / _LineageChain.CHAIN_FILENAME}")
     except ImportError:
         pass  # squash-ai not installed — skip silently
-    except Exception as _ln_err:
+    except (OSError, ValueError, AttributeError, KeyError) as _ln_err:
+        _LOG.warning("Lineage recording failed (non-fatal): %s", _ln_err)
         print(f"  ⚠  Lineage recording failed (non-fatal): {_ln_err}")
 
     print(f"     Run with: squish run {model_dir}\n")
@@ -3436,7 +3562,8 @@ def cmd_pull(args):  # pragma: no cover
 
     try:
         from squish.ui import console as _con, _RICH_AVAILABLE as _rich
-    except Exception:
+    except ImportError as exc:
+        _LOG.debug("Rich UI import for pull command failed: %s", exc)
         _rich = False
 
     name = args.model
@@ -3541,7 +3668,7 @@ def cmd_pull(args):  # pragma: no cover
             )
         else:
             slug = hf_repo.split("/")[-1].lower()
-            head_dir = Path.home() / ".squish" / "eagle-heads" / slug
+            head_dir = squish_home() / "eagle-heads" / slug
             if head_dir.exists() and any(head_dir.iterdir()):
                 print(f"  Draft head already present at {head_dir} — skipping download.")
             else:
@@ -3617,7 +3744,8 @@ def cmd_catalog(args):
 
     try:
         from squish.ui import console as _con, make_table as _mt, _RICH_AVAILABLE as _rich
-    except Exception:
+    except ImportError as exc:
+        _LOG.debug("Rich UI import for catalog command failed: %s", exc)
         _rich = False
 
     if _rich:
@@ -3796,7 +3924,7 @@ def cmd_gen_masks(args):
             comp_dir = _candidates[0].path
             if not comp_dir.is_dir():
                 comp_dir = comp_dir.parent
-        except Exception as _rmp_exc:
+        except (ImportError, OSError, AttributeError) as _rmp_exc:
             _die(
                 f"Cannot resolve model {model_arg!r} to a local directory.\n"
                 f"Pass a local path or a model alias (e.g. qwen3:8b).\n"
@@ -3867,7 +3995,8 @@ def cmd_gen_masks(args):
             inp = mx.array([toks])
             model(inp)
             mx.eval()
-        except Exception as _ce:
+        except (RuntimeError, ValueError, AttributeError) as _ce:
+            _LOG.warning("Calibration prompt %d failed: %s", idx, _ce)
             print(f"  ⚠  Prompt {idx} failed: {_ce}", file=sys.stderr)
         if (idx + 1) % 10 == 0:
             print(f"  … {idx + 1}/{len(prompts)} prompts done")
@@ -3999,7 +4128,7 @@ def cmd_sparsity_trim(args):
             model_dir = _candidates[0].path
             if not model_dir.is_dir():
                 model_dir = model_dir.parent
-        except Exception as _e:
+        except (ImportError, OSError, AttributeError) as _e:
             _die(
                 f"Cannot resolve model {model_arg!r}: {_e}\n"
                 "Pass a local directory path."
@@ -4304,7 +4433,7 @@ def cmd_pull_head(args):  # pragma: no cover
         out_dir = Path(args.output).expanduser()
     else:
         slug = hf_repo.split("/")[-1].lower()
-        out_dir = Path.home() / ".squish" / "eagle-heads" / slug
+        out_dir = squish_home() / "eagle-heads" / slug
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -4350,7 +4479,7 @@ def cmd_pull_head(args):  # pragma: no cover
             )
         except ImportError:
             _die("mlx_lm is required for conversion. Install with: pip install mlx-lm")
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError) as exc:
             _die(f"Conversion failed: {exc}")
 
     # Clean up raw download directory
@@ -4456,7 +4585,7 @@ def _preoptimize_weights_with_hqq(
             _mx.save_safetensors(str(dest_shard), modified_weights)
 
         print(f"  [hqq] pre-optimised {total_optimized} FFN weight tensors → {tmp_dir.name}")
-    except Exception:
+    except (OSError, ValueError, RuntimeError, AttributeError):
         _shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
 
@@ -4579,8 +4708,9 @@ def cmd_convert_model(args):
             import mlx.core as mx
             mx.set_default_device(mx.cpu)
             print("  [cpu mode] MLX device set to CPU (avoids Metal GPU timeout)")
-        except Exception:
-            pass  # non-fatal — falls back to GPU if MLX is not importable here
+        except (ImportError, RuntimeError, AttributeError) as exc:
+            # non-fatal — falls back to GPU if MLX is not importable here
+            _LOG.debug("Forcing MLX CPU device failed: %s", exc)
 
     ffn_bits: int = args.ffn_bits
     embed_bits: int = args.embed_bits
@@ -4618,8 +4748,8 @@ def cmd_convert_model(args):
                         2 * _n_l * (3 * _h_dim * _i_dim)
                         + _cfg2.get("vocab_size", 32000) * _h_dim
                     ) if _h_dim > 0 and _n_l > 0 else None
-                except Exception:
-                    pass
+                except (OSError, ValueError, TypeError) as exc:
+                    _LOG.debug("Estimating param count from %s failed: %s", _cfg_path2, exc)
         if _param_count is not None and _param_count < 1_000_000_000:
             _pc_b = _param_count / 1e9
             print(
@@ -4658,8 +4788,8 @@ def cmd_convert_model(args):
                     _num_layers = _json.loads(_cfg_path.read_text()).get(
                         "num_hidden_layers", 32
                     )
-                except Exception:
-                    pass
+                except (OSError, ValueError, TypeError) as exc:
+                    _LOG.debug("Reading num_hidden_layers from %s failed: %s", _cfg_path, exc)
         _nl = _num_layers
 
         def quant_predicate(path: str, _module) -> dict:
@@ -4759,7 +4889,7 @@ def cmd_convert_model(args):
             q_group_size=group_size,
             quant_predicate=quant_predicate,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — convert CLI: any conversion failure exits cleanly via _die
         _die(f"Quantization failed: {exc}")
     finally:
         if _hqq_tmp_dir is not None:
@@ -5022,7 +5152,7 @@ def cmd_train_adapter(args):
             num_epochs=args.epochs,
             gradient_checkpointing=True,
         )
-    except Exception as exc:
+    except (OSError, ValueError, RuntimeError, AttributeError) as exc:
         _die(f"LoRA training failed: {exc}")
 
     # Apply DARE sparsification to the produced adapter weights
@@ -5108,7 +5238,7 @@ def cmd_merge_model(args):
         try:
             st_path = _find_adapter_safetensors(ap)
             w = load_file(str(st_path))
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             _die(f"Failed to load adapter {domain!r}: {exc}")
         all_weights.append(w)
 
@@ -5201,59 +5331,6 @@ def cmd_rotate(args):  # pragma: no cover
     )
     print(f"\n  Rotated model saved to: {output_dir}")
     print(f"  Load with: squish run {output_dir}")
-
-
-# ── squish predict ─────────────────────────────────────────────────────────────
-
-def cmd_predict(args):  # pragma: no cover
-    """
-    Run the LIFE analytical performance predictor.
-
-    Prints predicted TTFT, TPOT, and throughput for the given model and
-    hardware configuration, derived from the LIFE analytical model
-    (memory-bandwidth, compute, and overhead terms).
-
-    Under the hood this calls :mod:`squish.life_model.predict`.
-    """
-    try:
-        from squish.life_model import predict as _life_predict
-    except ImportError as exc:
-        print(f"\n  Error: could not import squish.life_model — {exc}")
-        print("  Make sure the squish package is installed.")
-        sys.exit(1)
-
-    model_arg  = args.model or ""
-    model_dir  = _resolve_model(model_arg) if model_arg else None
-
-    result = _life_predict(
-        model_dir  = model_dir,
-        batch_size = args.batch_size,
-        seq_len    = args.seq_len,
-        output_len = args.output_len,
-    )
-
-    if args.json_output:
-        print(json.dumps(result, indent=2))
-        return
-
-    w = 28
-    print()
-    print(f"  {'LIFE Performance Prediction':^{w}}")
-    print(f"  {'─' * w}")
-    if model_dir:
-        print(f"  {'Model':<16}: {Path(model_dir).name}")
-    print(f"  {'Batch size':<16}: {args.batch_size}")
-    print(f"  {'Seq len (input)':<16}: {args.seq_len}")
-    print(f"  {'Output len':<16}: {args.output_len}")
-    print(f"  {'─' * w}")
-    print(f"  {'TTFT (prefill)':<16}: {result.get('ttft_ms', 0):.1f} ms")
-    print(f"  {'TPOT (per tok)':<16}: {result.get('tpot_ms', 0):.2f} ms")
-    print(f"  {'Throughput':<16}: {result.get('tokens_per_sec', 0):.1f} tok/s")
-    print(f"  {'Memory (KV)':<16}: {result.get('kv_memory_gb', 0):.2f} GB")
-    print()
-    if result.get("bottleneck"):
-        print(f"  Bottleneck: {result['bottleneck']}")
-        print()
 
 
 # ── squish ps ────────────────────────────────────────────────────────────────
@@ -5371,8 +5448,8 @@ def cmd_ps(args):
                     bar = "█" * max(1, int(ms / 50))
                     print(f"    {phase:<30} {ms:>7.0f} ms  {_C.DIM}{bar}{_C.R}")
             print()
-        except Exception:
-            pass  # startup-profile is best-effort
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            _LOG.debug("Startup profile fetch/render failed (best-effort): %s", exc)
 
 
 # ── squish logs ───────────────────────────────────────────────────────────────
@@ -5381,7 +5458,7 @@ def cmd_logs(args):
     """View or stream the squish server log."""
     import collections
 
-    log_file = Path(getattr(args, "log_file", "") or (Path.home() / ".squish" / "daemon.log"))
+    log_file = Path(getattr(args, "log_file", "") or (squish_home() / "daemon.log"))
     n        = getattr(args, "tail", 50)
     follow   = getattr(args, "follow", False)
 
@@ -5555,8 +5632,8 @@ def cmd_trace(args):
             for b in bottlenecks:
                 if b.get("hint"):
                     print(f"    {_C.T}{b['op']}{_C.R}: {b['hint']}")
-    except Exception:
-        pass  # obs-report is best-effort
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        _LOG.debug("Obs-report fetch/render failed (best-effort): %s", exc)
 
     print()
 
@@ -5650,8 +5727,8 @@ def cmd_welcome():
                         ram_gb = _gb if "GB" in _unit else _gb // 1024
                         break
                 break
-    except Exception:  # noqa: BLE001
-        pass
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError) as exc:
+        _LOG.debug("RAM detection (system_profiler) failed: %s", exc)
 
     # Choose a sensible default recommendation
     if ram_gb >= 64:
@@ -5730,16 +5807,16 @@ def cmd_version(args) -> None:  # noqa: ARG001
         try:
             import platform as _pl
             _con.print(f"  [squish.dim]Platform:[/] {_pl.system()} {_pl.machine()}")
-        except Exception:
-            pass
+        except (ImportError, AttributeError) as exc:
+            _LOG.debug("Platform info detection failed: %s", exc)
     else:
         print(f"squish {ver}  (Wave {_wave})")
         print(f"  Python : {sys.version.split()[0]}")
         try:
             import platform as _pl
             print(f"  Platform: {_pl.system()} {_pl.machine()}")
-        except Exception:
-            pass
+        except (ImportError, AttributeError) as exc:
+            _LOG.debug("Platform info detection failed: %s", exc)
 
 
 def cmd_bench(args) -> None:
@@ -6300,6 +6377,9 @@ Ollama drop-in:
     p_run.add_argument("--min-accuracy-ratio", type=float, default=0.92,
                        help="Minimum accuracy ratio vs baseline before compliance fails "
                             "(default: 0.92 = 8pp drop). Example: squish run 7b --min-accuracy-ratio 0.90")
+    p_run.add_argument("--skip-doctor", dest="skip_doctor", action="store_true", default=False,
+                       help="Skip the first-run environment health check (also via "
+                            "SQUISH_SKIP_DOCTOR=1). Checks otherwise run once per version.")
     p_run.set_defaults(func=cmd_run)
 
     # ── serve (alias for run) ──
@@ -6402,6 +6482,9 @@ Ollama drop-in:
     p_serve.add_argument("--min-accuracy-ratio", type=float, default=0.92,
                          help="Minimum accuracy ratio vs baseline before compliance fails "
                               "(default: 0.92 = 8pp drop). Example: squish serve 7b --min-accuracy-ratio 0.90")
+    p_serve.add_argument("--skip-doctor", dest="skip_doctor", action="store_true", default=False,
+                         help="Skip the first-run environment health check (also via "
+                              "SQUISH_SKIP_DOCTOR=1). Checks otherwise run once per version.")
     p_serve.set_defaults(func=cmd_run)
 
     # ── chat ──
@@ -7076,24 +7159,6 @@ Ollama drop-in:
                           help="Random seed for calibration (default 42).")
     p_rotate.set_defaults(func=cmd_rotate)
 
-    # ── squish predict ─────────────────────────────────────────────────────────
-    p_predict = sub.add_parser(
-        "predict",
-        help="Run the LIFE analytical performance predictor on a model / hardware combo",
-    )
-    p_predict.add_argument("model", nargs="?", default="",
-                           metavar="MODEL",
-                           help="Model directory or shorthand (optional; uses running "
-                                "server config when omitted).")
-    p_predict.add_argument("--batch-size", type=int, default=1, metavar="N",
-                           help="Concurrent request count to model (default 1).")
-    p_predict.add_argument("--seq-len", type=int, default=512, metavar="N",
-                           help="Input sequence length for TTFT estimate (default 512).")
-    p_predict.add_argument("--output-len", type=int, default=128, metavar="N",
-                           help="Output token count for TPOT estimate (default 128).")
-    p_predict.add_argument("--json", action="store_true", dest="json_output",
-                           help="Print results as JSON instead of a human-readable table.")
-    p_predict.set_defaults(func=cmd_predict)
 
     # ── squish ps ─────────────────────────────────────────────────────────────
     p_ps = sub.add_parser(
@@ -7359,10 +7424,10 @@ def main():
     try:
         from squish.logging_config import configure_logging as _configure_logging
         _configure_logging(level=getattr(args, "log_level", "warning"))
-    except (ImportError, ValueError, OSError) as exc:
+    except (ImportError, OSError, ValueError, AttributeError) as exc:
         # Never block CLI startup on logging config failure — but don't swallow
-        # it silently either.
-        print(f"  warning: logging setup failed: {exc}", file=sys.stderr)
+        # it silently either (logged, visible at --log-level debug).
+        _LOG.debug("Logging configuration failed: %s", exc)
 
     if not args.command:
         # No subcommand — show interactive welcome instead of raw argparse help

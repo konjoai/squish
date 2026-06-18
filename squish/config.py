@@ -34,7 +34,23 @@ from typing import Any
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 _CONFIG_DIR_ENV = "SQUISH_CONFIG_DIR"
+_HOME_DIR_ENV = "SQUISH_HOME"
 _CONFIG_FILENAME = "config.json"
+
+
+def squish_home() -> Path:
+    """Return the Squish home directory (``~/.squish`` by default).
+
+    Honours the ``SQUISH_HOME`` environment variable so the entire on-disk
+    footprint (models, caches, daemon pid/log, eagle heads, hardware caches)
+    can be relocated with a single setting. This is the canonical base path —
+    all modules should derive their paths from it rather than recomputing
+    ``Path.home() / ".squish"`` inline.
+    """
+    env = os.environ.get(_HOME_DIR_ENV, "").strip()
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / ".squish"
 
 _DEFAULTS: dict[str, Any] = {
     "port": 11435,
@@ -61,7 +77,7 @@ def config_path() -> Path:
     if config_dir_env:
         base = Path(config_dir_env).expanduser()
     else:
-        base = Path.home() / ".squish"
+        base = squish_home()
     return base / _CONFIG_FILENAME
 
 

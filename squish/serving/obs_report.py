@@ -18,7 +18,10 @@ from __future__ import annotations
 
 __all__ = ["detect_bottlenecks", "generate_report"]
 
+import logging
 from typing import Any
+
+_LOG = logging.getLogger("squish.serving.obs_report")
 
 # ---------------------------------------------------------------------------
 # Remediation hints keyed on operation / span-name prefix
@@ -135,7 +138,8 @@ def generate_report(
         try:
             profile = profiler.to_json_dict()
             profiler_ops = profiler.operations
-        except Exception:
+        except (AttributeError, TypeError, ValueError, KeyError) as exc:
+            _LOG.debug("profiler report unavailable: %s", exc)
             profile = {}
             profiler_ops = []
 
@@ -144,7 +148,8 @@ def generate_report(
         try:
             slowest = tracer.slowest_spans(n=10)
             recent_spans = [s.to_dict() for s in slowest]
-        except Exception:
+        except (AttributeError, TypeError, ValueError, KeyError) as exc:
+            _LOG.debug("tracer spans unavailable: %s", exc)
             recent_spans = []
 
     return {

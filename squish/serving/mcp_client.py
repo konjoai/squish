@@ -136,14 +136,14 @@ class MCPClient:
             try:
                 self._writer.close()
                 await self._writer.wait_closed()
-            except Exception:  # noqa: BLE001
-                pass
+            except (OSError, RuntimeError) as exc:
+                logger.debug("MCP writer close failed: %s", exc)
         if self._process:
             try:
                 self._process.terminate()
                 self._process.wait(timeout=3)
-            except Exception:  # noqa: BLE001
-                pass
+            except (OSError, subprocess.SubprocessError) as exc:
+                logger.debug("MCP subprocess terminate failed: %s", exc)
         self._connected = False
         logger.debug("MCPClient(%s) disconnected", self.server_id)
 

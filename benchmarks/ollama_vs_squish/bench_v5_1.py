@@ -48,14 +48,14 @@ OLLAMA_HOST  = "127.0.0.1"
 OLLAMA_PORT  = 11434
 OLLAMA_MODEL = "qwen2.5:7b"
 
-SQUISH_BIN  = "/Users/wscholl/squish/.venv/bin/squish"
-SQUISH_PY   = "/Users/wscholl/squish/.venv/bin/python"
+SQUISH_BIN  = os.path.expanduser("~/squish/.venv/bin/squish")
+SQUISH_PY   = os.path.expanduser("~/squish/.venv/bin/python")
 SQUISH_HOST = "127.0.0.1"
 SQUISH_PORT = 11435
 SQUISH_API_KEY    = "squish"
 
-SQUISH_MODEL_INT4 = "/Users/wscholl/models/Qwen2.5-7B-Instruct-int4"
-SQUISH_MODEL_INT3 = "/Users/wscholl/models/Qwen2.5-7B-Instruct-int3"
+SQUISH_MODEL_INT4 = os.path.expanduser("~/models/Qwen2.5-7B-Instruct-int4")
+SQUISH_MODEL_INT3 = os.path.expanduser("~/models/Qwen2.5-7B-Instruct-int3")
 
 PKV_CACHE_DIR     = "/tmp/squish_pkv_v5_1"
 BLOCK_CACHE_DIR   = "/tmp/squish_blocks_v5_1"
@@ -173,7 +173,7 @@ class RSSSampler(threading.Thread):
     def __init__(self, root_pid: int) -> None:
         super().__init__(daemon=True)
         self.root_pid = root_pid
-        self._stop = threading.Event()
+        self._stop_evt = threading.Event()
         self.peak_bytes = 0
         self.samples = 0
 
@@ -182,7 +182,7 @@ class RSSSampler(threading.Thread):
             root = psutil.Process(self.root_pid)
         except psutil.NoSuchProcess:
             return
-        while not self._stop.is_set():
+        while not self._stop_evt.is_set():
             try:
                 tree = root.memory_info().rss
                 for child in root.children(recursive=True):
@@ -198,7 +198,7 @@ class RSSSampler(threading.Thread):
             time.sleep(0.05)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_evt.set()
         self.join(timeout=2)
 
 
@@ -254,6 +254,10 @@ def stream_squish(prompt: str, max_tokens: int = 1) -> dict[str, Any]:
         "model": "squish",
         "messages": [{"role": "user", "content": prompt}],
         "stream": True, "max_tokens": max_tokens, "temperature": 0.0,
+        # Request an authoritative token count in the terminal chunk so warm
+        # tok/s is measured from real completion_tokens, not the chunk count
+        # (chunk count would undercount once tokens are coalesced under backlog).
+        "stream_options": {"include_usage": True},
     }).encode()
     req = urllib.request.Request(
         f"http://{SQUISH_HOST}:{SQUISH_PORT}/v1/chat/completions",

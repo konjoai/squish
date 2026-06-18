@@ -25,6 +25,14 @@ Memory footprint (1.5B model, gs=64):
     scales + biases     ≈ 45 MB  (float16, same as before)
     Total ≈ ~326 MB vs ~3 GB BF16 → ~9× reduction; no per-token spike.
 
+Platform gate
+-------------
+MLX (``mlx-lm``) is Apple Silicon-only. This module must not be imported on
+Linux. A hard guard at the module level raises ``ImportError`` on non-darwin
+platforms, so callers cannot accidentally import it on Linux CI or x86 hosts
+(mirrors ``squish/quant/sqint2_linear.py``). CLAUDE.md: "MLX imports must be
+gated behind platform check — never imported on Linux paths."
+
 API:
     INT3Linear is a drop-in for mlx.nn.Linear.  The ``weight`` attribute stores
     either MLX-native uint32 packed codes (fast path) or raw uint8 codes (fallback).
@@ -32,10 +40,22 @@ API:
 """
 from __future__ import annotations
 
-from typing import Optional
+import platform
+import sys
 
-import mlx.core as mx
-import mlx.nn as nn
+# Platform guard — hard fail on non-Apple-Silicon before any MLX import.
+# CLAUDE.md: "MLX imports must be gated behind platform check — never imported
+# on Linux paths."
+if sys.platform != "darwin" or platform.machine() != "arm64":
+    raise ImportError(
+        "squish.quant.int3_linear is Apple Silicon (darwin/arm64) only. "
+        "It must not be imported on Linux or x86 hosts. "
+        "Check `sys.platform == 'darwin' and platform.machine() == 'arm64'` "
+        "before importing this module."
+    )
+
+import mlx.core as mx  # noqa: E402 — must follow the platform guard above
+import mlx.nn as nn  # noqa: E402 — must follow the platform guard above
 
 __all__ = ["INT3Linear"]
 

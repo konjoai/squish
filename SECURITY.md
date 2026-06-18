@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 9.33.x | ✅ |
-| < 9.33  | ❌ |
+| 9.34.x | ✅ |
+| < 9.34  | ❌ |
 
 ## Reporting a Vulnerability
 

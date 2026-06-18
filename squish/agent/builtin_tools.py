@@ -11,11 +11,17 @@ The tools require no external dependencies beyond the Python standard library.
 Security notes:
 - ``squish_run_shell`` executes arbitrary commands — only enable in trusted
   environments, or set ``auto_approve=False`` and confirm per-call.
-- ``squish_python_repl`` restricts the global namespace but is not a sandbox.
+- ``squish_python_repl`` restricts the global namespace and runs in a spawned
+  subprocess with memory (RLIMIT_AS) and CPU (RLIMIT_CPU) limits; it is a
+  resource sandbox, not a security sandbox (``open`` is still exposed).
 - ``squish_fetch_url`` validates the scheme and blocks ``file://`` URLs.
 - ``squish_delete_file`` permanently removes a file — use with care.
 
-Call :func:`register_builtin_tools` to add all eleven tools to a registry::
+Wave 99+: added ``create_directory`` so the VSCode-side ``create_directory``
+tool resolves to a real backend implementation (previously mapped to an
+unregistered name and failed at dispatch).
+
+Call :func:`register_builtin_tools` to add all thirteen tools to a registry::
 
     registry = ToolRegistry()
     register_builtin_tools(registry)
@@ -25,6 +31,7 @@ from __future__ import annotations
 
 import html
 import io
+import logging
 import os
 import re
 import subprocess
@@ -38,16 +45,20 @@ from typing import Any
 
 from squish.agent.tool_registry import ToolDefinition, ToolRegistry
 
+_LOG = logging.getLogger("squish.agent.builtin_tools")
+
 
 __all__ = [
     "register_builtin_tools",
     "squish_apply_edit",
+    "squish_create_directory",
     "squish_create_file",
     "squish_delete_file",
     "squish_fetch_url",
     "squish_list_dir",
     "squish_move_file",
     "squish_python_repl",
+    "squish_read_document",
     "squish_read_file",
     "squish_run_shell",
     "squish_web_search",
@@ -66,6 +77,7 @@ _SEARCH_MAX_RESULTS = 10
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _safe_path(path: str) -> str:
     """Normalise and verify *path* does not contain null bytes."""
     if "\x00" in path:
@@ -76,6 +88,7 @@ def _safe_path(path: str) -> str:
 # ---------------------------------------------------------------------------
 # Tool functions
 # ---------------------------------------------------------------------------
+
 
 def squish_read_file(
     path: str,
@@ -190,58 +203,144 @@ def squish_run_shell(command: str, timeout: int = 30) -> str:
     return "\n".join(parts)
 
 
-def squish_python_repl(code: str, timeout: int = 10) -> str:
-    """Execute Python *code* in an isolated namespace and capture stdout.
+# Builtin names exposed inside the REPL's restricted namespace.
+_REPL_ALLOWED_BUILTINS: tuple[str, ...] = (
+    "print", "len", "range", "enumerate", "zip", "map", "filter", "sorted",
+    "reversed", "list", "dict", "set", "tuple", "int", "float", "str", "bool",
+    "bytes", "None", "True", "False", "abs", "min", "max", "sum", "round",
+    "type", "isinstance", "issubclass", "repr", "hash", "id", "dir", "vars",
+    "getattr", "setattr", "hasattr", "callable", "open", "Exception",
+    "ValueError", "TypeError", "KeyError", "IndexError", "AttributeError",
+    "RuntimeError",
+)
 
-    Args:
-        code: Python source string to execute.
-        timeout: Maximum seconds (enforced via ``signal.alarm`` on POSIX;
-            best-effort on Windows).
+# Default address-space cap for the isolated REPL child (MiB). A freshly
+# spawned child baselines at ~30 MiB, so this leaves ample headroom for normal
+# code while stopping an allocation bomb from exhausting the host process.
+# NOTE: RLIMIT_AS is enforced on Linux; macOS/Darwin accepts the call but does
+# not enforce it, so on macOS the memory cap is best-effort and protection
+# falls back to the CPU limit + wall-clock timeout + process isolation.
+_REPL_DEFAULT_MAX_MEMORY_MB = 512
 
-    Returns:
-        Captured stdout, or an error traceback.
-    """
+
+def _repl_namespace() -> "dict[str, Any]":
+    """Build the restricted global namespace shared by both REPL execution paths."""
     import builtins as _builtins
+    restricted = {
+        name: getattr(_builtins, name)
+        for name in _REPL_ALLOWED_BUILTINS
+        if hasattr(_builtins, name)
+    }
+    return {"__builtins__": restricted}
+
+
+def _repl_isolated_worker(code: str, mem_mb: int, cpu_s: int, conn) -> None:  # pragma: no cover - runs in child process
+    """Execute *code* in a spawned child with hard memory/CPU rlimits.
+
+    Sends ``(status, output)`` back over *conn* where status is ``"ok"`` /
+    ``"mem"`` (memory limit hit) / ``"err"`` (any other failure). Runs in a
+    fresh interpreter, so the parent's loaded model is never inherited and the
+    RLIMIT_AS cap is meaningful.
+    """
+    import io as _io
+    import textwrap as _tw
+    import traceback as _tb
+    from contextlib import redirect_stdout as _rso
+
+    try:
+        import resource as _res
+        if mem_mb > 0:
+            _b = mem_mb * 1024 * 1024
+            _res.setrlimit(_res.RLIMIT_AS, (_b, _b))
+        if cpu_s > 0:
+            _res.setrlimit(_res.RLIMIT_CPU, (cpu_s, cpu_s))
+    except (ImportError, ValueError, OSError):
+        pass  # limits are best-effort; execution still proceeds
+
+    buf = _io.StringIO()
+    try:
+        with _rso(buf):
+            exec(_tw.dedent(code), _repl_namespace())  # noqa: S102
+        conn.send(("ok", buf.getvalue()))
+    except MemoryError:
+        conn.send(("mem", buf.getvalue()))
+    except Exception:  # noqa: BLE001 — sandbox boundary: report any exec failure to the parent
+        conn.send(("err", buf.getvalue() + _tb.format_exc()))
+    finally:
+        conn.close()
+
+
+def _repl_run_isolated(code: str, timeout: int, max_memory_mb: int) -> "str | None":
+    """Run *code* in a spawned, rlimit-capped child process.
+
+    Returns the result string, or ``None`` if process isolation is unavailable
+    (caller then falls back to in-process execution).
+    """
+    try:
+        import multiprocessing as _mp
+        ctx = _mp.get_context("spawn")
+    except (ImportError, ValueError) as exc:
+        _LOG.debug("REPL isolation unavailable (%s)", exc)
+        return None
+
+    recv_conn, send_conn = ctx.Pipe(duplex=False)
+    proc = ctx.Process(
+        target=_repl_isolated_worker,
+        # CPU limit backstops the wall-clock join; give it 1s of headroom.
+        args=(code, max_memory_mb, int(timeout) + 1, send_conn),
+        daemon=True,
+    )
+    try:
+        proc.start()
+    except (OSError, ValueError, RuntimeError) as exc:
+        _LOG.debug("REPL subprocess spawn failed (%s); falling back in-process", exc)
+        return None
+    send_conn.close()  # parent keeps only the receive end → EOF on child exit
+
+    proc.join(timeout + 2)
+    if proc.is_alive():
+        proc.terminate()
+        proc.join()
+        return f"[TIMEOUT] Execution exceeded {timeout}s"
+
+    terminated = "[ERROR] sandboxed process terminated (memory or CPU limit exceeded)"
+    if recv_conn.poll():
+        try:
+            status, out = recv_conn.recv()
+        except EOFError:
+            # poll() reports readable on EOF too — child was killed before sending.
+            return terminated
+        if status == "mem":
+            return (out + "\n" if out else "") + "[MEMORY LIMIT EXCEEDED]"
+        if status == "err":
+            return f"[ERROR]\n{out}"
+        return out if out else "[no output]"
+
+    # Child exited without a message — killed by RLIMIT_CPU, the OOM killer, or sys.exit().
+    return terminated
+
+
+def _repl_run_in_process(code: str, timeout: int) -> str:
+    """In-process REPL execution (SIGALRM timeout, no memory cap). Fallback path."""
     import signal
     import traceback
 
-    if not isinstance(code, str) or not code.strip():
-        raise ValueError("code must be a non-empty string")
-
-    _ALLOWED = [
-        "print", "len", "range", "enumerate", "zip", "map", "filter",
-        "sorted", "reversed", "list", "dict", "set", "tuple", "int",
-        "float", "str", "bool", "bytes", "None", "True", "False",
-        "abs", "min", "max", "sum", "round", "type", "isinstance",
-        "issubclass", "repr", "hash", "id", "dir", "vars",
-        "getattr", "setattr", "hasattr", "callable",
-        "open", "Exception", "ValueError", "TypeError",
-        "KeyError", "IndexError", "AttributeError", "RuntimeError",
-    ]
-    restricted_builtins = {
-        name: getattr(_builtins, name) for name in _ALLOWED
-        if hasattr(_builtins, name)
-    }
-
-    namespace: dict[str, Any] = {"__builtins__": restricted_builtins}
-
+    namespace = _repl_namespace()
     buf = io.StringIO()
-
-    def _run() -> None:
-        exec(textwrap.dedent(code), namespace)  # noqa: S102
-
-    # POSIX timeout via SIGALRM
     if hasattr(signal, "SIGALRM"):
+
         def _handler(signum: int, frame: Any) -> None:
             raise TimeoutError(f"Execution exceeded {timeout}s")
+
         old = signal.signal(signal.SIGALRM, _handler)
         signal.alarm(int(timeout))
     try:
         with redirect_stdout(buf):
-            _run()
+            exec(textwrap.dedent(code), namespace)  # noqa: S102
     except TimeoutError as exc:
         return f"[TIMEOUT] {exc}"
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — sandbox boundary: exec of arbitrary code
+        _LOG.debug("sandboxed exec raised: %s", exc)
         return f"[ERROR]\n{traceback.format_exc()}"
     finally:
         if hasattr(signal, "SIGALRM"):
@@ -250,6 +349,39 @@ def squish_python_repl(code: str, timeout: int = 10) -> str:
 
     result = buf.getvalue()
     return result if result else "[no output]"
+
+
+def squish_python_repl(
+    code: str, timeout: int = 10, max_memory_mb: int = _REPL_DEFAULT_MAX_MEMORY_MB
+) -> str:
+    """Execute Python *code* in a restricted namespace and capture stdout.
+
+    Runs in a spawned child process with hard memory (``RLIMIT_AS``) and CPU
+    (``RLIMIT_CPU``) limits so an allocation bomb or runaway loop cannot exhaust
+    the host serving process. Falls back to in-process execution (timeout only,
+    no memory cap) when process isolation is unavailable.
+
+    Note: ``RLIMIT_AS`` is enforced on Linux but not on macOS/Darwin (which
+    accepts the call yet ignores it); on macOS the runaway-loop and timeout
+    guards still apply, but the memory cap is best-effort.
+
+    Args:
+        code: Python source string to execute.
+        timeout: Maximum wall-clock seconds before the child is terminated.
+        max_memory_mb: Child address-space cap in MiB (default 512; Linux-enforced).
+
+    Returns:
+        Captured stdout, or an error / timeout / memory-limit message.
+    """
+    if not isinstance(code, str) or not code.strip():
+        raise ValueError("code must be a non-empty string")
+
+    isolated = _repl_run_isolated(code, timeout, max_memory_mb)
+    if isolated is not None:
+        return isolated
+
+    _LOG.warning("Isolated REPL unavailable; running in-process without a memory cap")
+    return _repl_run_in_process(code, timeout)
 
 
 def squish_fetch_url(url: str, max_bytes: int = _FETCH_MAX_BYTES) -> str:
@@ -265,8 +397,7 @@ def squish_fetch_url(url: str, max_bytes: int = _FETCH_MAX_BYTES) -> str:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(
-            f"squish_fetch_url only supports http/https URLs, "
-            f"got scheme: {parsed.scheme!r}"
+            f"squish_fetch_url only supports http/https URLs, got scheme: {parsed.scheme!r}"
         )
     if parsed.netloc == "":
         raise ValueError("URL must include a host")
@@ -285,11 +416,7 @@ def squish_fetch_url(url: str, max_bytes: int = _FETCH_MAX_BYTES) -> str:
 
     truncated = len(raw) > max_bytes
     content = raw[:max_bytes].decode("utf-8", errors="replace")
-    notice = (
-        f"\n\n[TRUNCATED at {max_bytes:,} bytes — full response larger]"
-        if truncated
-        else ""
-    )
+    notice = f"\n\n[TRUNCATED at {max_bytes:,} bytes — full response larger]" if truncated else ""
     return content + notice
 
 
@@ -387,14 +514,30 @@ def squish_create_file(path: str, content: str) -> str:
     """
     safe = _safe_path(path)
     if os.path.exists(safe):
-        raise FileExistsError(
-            f"File already exists: {safe}. Use squish_write_file to overwrite."
-        )
+        raise FileExistsError(f"File already exists: {safe}. Use squish_write_file to overwrite.")
     os.makedirs(os.path.dirname(safe) or ".", exist_ok=True)
     data = content.encode("utf-8")
     with open(safe, "wb") as fh:
         fh.write(data)
     return f"Created {len(data):,} bytes at {safe}"
+
+
+def squish_create_directory(path: str) -> str:
+    """Create a directory, including any missing parent directories.
+
+    Idempotent: succeeds if the directory already exists.
+
+    Args:
+        path: Absolute path of the directory to create.
+
+    Returns:
+        Confirmation message.
+    """
+    safe = _safe_path(path)
+    if os.path.isfile(safe):
+        raise FileExistsError(f"Path exists and is a file, not a directory: {safe}")
+    os.makedirs(safe, exist_ok=True)
+    return f"Created directory: {safe}"
 
 
 def squish_delete_file(path: str) -> str:
@@ -464,9 +607,7 @@ def squish_apply_edit(path: str, old_text: str, new_text: str) -> str:
     if count == 0:
         raise ValueError(f"old_text not found in {safe}")
     if count > 1:
-        raise ValueError(
-            f"old_text is ambiguous — found {count} occurrences in {safe}"
-        )
+        raise ValueError(f"old_text is ambiguous — found {count} occurrences in {safe}")
 
     result = src.replace(old_text, new_text, 1)
     data = result.encode("utf-8")
@@ -475,12 +616,94 @@ def squish_apply_edit(path: str, old_text: str, new_text: str) -> str:
     return f"Applied edit to {safe}"
 
 
+# Maximum characters of extracted document text returned per call.
+_DOC_MAX_CHARS = 200_000
+
+
+def _extract_docx(path: str) -> str:
+    """Extract text from a .docx using only the standard library.
+
+    A .docx is a zip archive; the body lives in ``word/document.xml``. We strip
+    the XML tags and turn paragraph/break markers into newlines — no
+    ``python-docx`` dependency required.
+    """
+    import zipfile  # noqa: PLC0415
+
+    with zipfile.ZipFile(path) as zf:
+        xml = zf.read("word/document.xml").decode("utf-8", errors="replace")
+    # Paragraphs and line breaks → newlines, then drop the remaining tags.
+    xml = re.sub(r"</w:p>", "\n", xml)
+    xml = re.sub(r"<w:br[^>]*/>", "\n", xml)
+    text = re.sub(r"<[^>]+>", "", xml)
+    return html.unescape(text)
+
+
+def _extract_pdf(path: str) -> str:
+    """Extract text from a PDF when an optional parser is installed.
+
+    Tries ``pypdf`` then ``pdfplumber``; returns an actionable message when
+    neither is available rather than failing hard.
+    """
+    try:
+        from pypdf import PdfReader  # noqa: PLC0415
+
+        reader = PdfReader(path)
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
+    except ImportError:
+        pass
+    try:
+        import pdfplumber  # noqa: PLC0415
+
+        with pdfplumber.open(path) as pdf:
+            return "\n".join((p.extract_text() or "") for p in pdf.pages)
+    except ImportError:
+        return (
+            "[PDF text extraction requires `pypdf` or `pdfplumber` — install "
+            "one with `pip install pypdf`, then retry.]"
+        )
+
+
+def squish_read_document(path: str, max_chars: int = _DOC_MAX_CHARS) -> str:
+    """Extract readable text from a document so the agent can analyse it.
+
+    Handles PDF, DOCX, and every text-like format (code, Markdown, JSON, CSV,
+    plain text). Use this for uploaded files / attachments the user references.
+
+    Args:
+        path: Absolute path to the document.
+        max_chars: Cap on returned characters (default 200,000).
+    """
+    safe = _safe_path(path)
+    if not os.path.exists(safe):
+        raise FileNotFoundError(f"No such file: {path}")
+    if not os.path.isfile(safe):
+        raise ValueError(f"Not a file: {path}")
+
+    ext = os.path.splitext(safe)[1].lower()
+    size = os.path.getsize(safe)
+    cap = max(1, int(max_chars))
+
+    if ext == ".pdf":
+        body = _extract_pdf(safe)
+    elif ext == ".docx":
+        body = _extract_docx(safe)
+    else:
+        with open(safe, "rb") as fh:
+            raw = fh.read(cap * 4 + 8)
+        body = raw.decode("utf-8", errors="replace")
+
+    body = body[:cap]
+    header = f"# Document: {os.path.basename(safe)} ({ext or 'no-ext'}, {size:,} bytes)\n\n"
+    return header + (body if body.strip() else "[no extractable text found]")
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
+
 def register_builtin_tools(registry: ToolRegistry) -> None:
-    """Register all eleven built-in tools into *registry*.
+    """Register all twelve built-in tools into *registry*.
 
     Call this once during server or agent initialisation::
 
@@ -513,6 +736,30 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
                 "required": ["path"],
             },
             fn=squish_read_file,
+            source="builtin",
+        ),
+        ToolDefinition(
+            name="squish_read_document",
+            description=(
+                "Extract readable text from a document (PDF, DOCX, CSV, "
+                "Markdown, JSON, code, plain text) so you can analyse it. Use "
+                "this for uploaded files and attachments referenced by path."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to the document.",
+                    },
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Max characters to return (default 200000).",
+                    },
+                },
+                "required": ["path"],
+            },
+            fn=squish_read_document,
             source="builtin",
         ),
         ToolDefinition(
@@ -562,10 +809,27 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             source="builtin",
         ),
         ToolDefinition(
-            name="squish_delete_file",
+            name="squish_create_directory",
             description=(
-                "Delete a file from disk. Irreversible — use with caution."
+                "Create a directory, including any missing parents. "
+                "Succeeds if the directory already exists."
             ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path of the directory to create.",
+                    },
+                },
+                "required": ["path"],
+            },
+            fn=squish_create_directory,
+            source="builtin",
+        ),
+        ToolDefinition(
+            name="squish_delete_file",
+            description=("Delete a file from disk. Irreversible — use with caution."),
             parameters={
                 "type": "object",
                 "properties": {
@@ -674,8 +938,9 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
         ToolDefinition(
             name="squish_python_repl",
             description=(
-                "Execute Python code in an isolated namespace. "
-                "Returns captured stdout or an error traceback."
+                "Execute Python code in a restricted namespace, isolated in a "
+                "memory- and CPU-limited subprocess. Returns captured stdout or "
+                "an error / timeout / memory-limit message."
             ),
             parameters={
                 "type": "object",
@@ -686,7 +951,11 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
                     },
                     "timeout": {
                         "type": "integer",
-                        "description": "Maximum seconds (default 10).",
+                        "description": "Maximum wall-clock seconds (default 10).",
+                    },
+                    "max_memory_mb": {
+                        "type": "integer",
+                        "description": "Child address-space cap in MiB (default 512).",
                     },
                 },
                 "required": ["code"],

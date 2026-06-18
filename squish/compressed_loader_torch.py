@@ -29,11 +29,14 @@ Notes
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+
+_LOG = logging.getLogger("squish.compressed_loader_torch")
 
 if TYPE_CHECKING:
     import torch
@@ -171,9 +174,10 @@ def load_compressed_model_torch(
                         .to(device=device, dtype=torch_dtype)
                     )
                     patched += 1
-                except Exception as exc:
+                except (OSError, ValueError, TypeError, RuntimeError, KeyError) as exc:
                     if verbose:
                         print(f"  [compressed_loader_torch] WARN: {hf_key}: {exc}")
+                    _LOG.debug("Failed to patch weight %s; leaving original: %s", hf_key, exc)
 
         if patched_sd:
             result = model.load_state_dict(patched_sd, strict=False)

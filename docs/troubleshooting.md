@@ -17,7 +17,7 @@ python -c "import mlx; print(mlx.__version__)"
 Expected output (versions will differ):
 
 ```
-squish 9.33.5
+squish 9.34.1
 0.22.0
 ```
 
@@ -49,7 +49,7 @@ Paste the output of all of the above when filing a bug.
 Apple Silicon's unified memory is shared between the CPU, the GPU (Metal), and the OS.
 On an 8 GB device, macOS reserves approximately 1.5–2 GB for the kernel and active apps,
 leaving roughly 6–6.5 GB for model weights and the inference runtime.
-A stock INT8 7B/8B model requires ~8 GB of weight data, which does not fit.
+A 7B/8B model at full bf16 is ~16 GB and will not fit; even INT8 is ~8 GB. Squish defaults to INT4 (~4 GB) and offers INT3 (~3.5 GB).
 
 ### Fixes
 
@@ -348,10 +348,10 @@ squish serve --port 11435
 If port 11435 is already taken by something you cannot stop:
 
 ```bash
-squish serve --port 11436
+squish serve --port 11435
 ```
 
-Then point your OpenAI-compatible client at `http://localhost:11436/v1`.
+Then point your OpenAI-compatible client at `http://localhost:11435/v1`.
 
 ### Prevent Ollama from auto-starting at login
 

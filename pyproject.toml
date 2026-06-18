@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "squish-ai"
-version = "9.34.0"
+version = "9.34.3"
 description = "Local LLM inference server for Apple Silicon. Block-level paged KV cache for long-context workloads. 5.4× faster end-to-end on 4K-token prompts vs Ollama, less RAM, INT3 support for Qwen3. OpenAI-compatible API."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -86,7 +86,7 @@ dev = [
 [project.urls]
 "Homepage" = "https://github.com/konjoai/squish"
 "Bug Tracker" = "https://github.com/konjoai/squish/issues"
-"Documentation" = "https://konjoai.github.io/squish"
+"Documentation" = "https://squish.run"
 
 [project.scripts]
 squish        = "squish.cli:main"
@@ -108,7 +108,7 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B"]
+select = ["E", "F", "W", "I", "UP", "B", "BLE"]
 ignore = [
     "E501",   # line-length handled by formatter
     "B008",   # FastAPI Depends() calls in function args
@@ -129,6 +129,11 @@ ignore = [
     "UP035",  # deprecated typing imports (dead after UP006/UP045 auto-fix; kept for compat)
     "I001",   # import sort order — not enforced; try/except stubs use logical not alphabetical order
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use broad `except Exception` for failure-path assertions and
+# best-effort probes; BLE001 is enforced only on the squish/ package.
+"tests/**" = ["BLE001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

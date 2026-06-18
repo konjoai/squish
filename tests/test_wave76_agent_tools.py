@@ -6,7 +6,7 @@ Covers:
 - squish_delete_file: removes existing file, refuses missing
 - squish_move_file: moves to new path, refuses existing dst, refuses missing src
 - squish_web_search: parses DuckDuckGo HTML, handles network error, clamps results
-- register_builtin_tools: registers exactly eleven tools with expected names
+- register_builtin_tools: registers exactly thirteen tools with expected names
 - /v1/agent/tools endpoint: returns tool list JSON
 - /v1/agent/run endpoint: streams SSE, dispatches a real builtin tool call
 - /v1/agent/mcp endpoint: validates request body, error on bad transport
@@ -40,14 +40,16 @@ from squish.agent.builtin_tools import (
 # Helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
-ELEVEN_TOOL_NAMES = {
+BUILTIN_TOOL_NAMES = {
     "squish_apply_edit",
+    "squish_create_directory",
     "squish_create_file",
     "squish_delete_file",
     "squish_fetch_url",
     "squish_list_dir",
     "squish_move_file",
     "squish_python_repl",
+    "squish_read_document",
     "squish_read_file",
     "squish_run_shell",
     "squish_web_search",
@@ -60,18 +62,18 @@ ELEVEN_TOOL_NAMES = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestRegisterBuiltinTools(unittest.TestCase):
-    """register_builtin_tools registers exactly eleven tools."""
+    """register_builtin_tools registers exactly thirteen tools."""
 
     def setUp(self):
         self.registry = ToolRegistry()
         register_builtin_tools(self.registry)
 
-    def test_tool_count_is_eleven(self):
-        self.assertEqual(len(self.registry), 11)
+    def test_tool_count(self):
+        self.assertEqual(len(self.registry), 13)
 
     def test_all_expected_names_present(self):
         names = set(self.registry.names())
-        self.assertEqual(names, ELEVEN_TOOL_NAMES)
+        self.assertEqual(names, BUILTIN_TOOL_NAMES)
 
     def test_all_tools_have_builtin_source(self):
         for name in self.registry.names():
@@ -80,7 +82,7 @@ class TestRegisterBuiltinTools(unittest.TestCase):
 
     def test_all_tools_have_openai_schema(self):
         schemas = self.registry.to_openai_schemas()
-        self.assertEqual(len(schemas), 11)
+        self.assertEqual(len(schemas), 13)
         for s in schemas:
             self.assertEqual(s["type"], "function")
             self.assertIn("name", s["function"])
@@ -438,19 +440,19 @@ class TestAgentToolsEndpoint(unittest.TestCase):
     def tearDownClass(cls):
         cls._srv._agent_registry = cls._orig_registry
 
-    def test_returns_eleven_tools(self):
-        """to_openai_schemas() on the injected registry has 11 entries."""
+    def test_returns_all_tools(self):
+        """to_openai_schemas() on the injected registry has 13 entries."""
         schemas = self._srv._agent_registry.to_openai_schemas()
-        self.assertEqual(len(schemas), 11)
+        self.assertEqual(len(schemas), 13)
 
     def test_all_tool_names_present(self):
         schemas = self._srv._agent_registry.to_openai_schemas()
         names = {s["function"]["name"] for s in schemas}
-        self.assertEqual(names, ELEVEN_TOOL_NAMES)
+        self.assertEqual(names, BUILTIN_TOOL_NAMES)
 
     def test_registry_names_method_works(self):
         names = set(self._srv._agent_registry.names())
-        self.assertEqual(names, ELEVEN_TOOL_NAMES)
+        self.assertEqual(names, BUILTIN_TOOL_NAMES)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

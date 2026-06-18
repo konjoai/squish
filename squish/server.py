@@ -52,6 +52,7 @@ import functools
 import hashlib
 import hmac
 import json
+import gc
 import os
 import platform
 import re
@@ -64,6 +65,9 @@ import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+
+# Module-level logger — used by exception handlers throughout this file.
+_LOG = _logging.getLogger(__name__)
 
 # ── Suppress macOS malloc-stack-logging noise in child processes ──────────────
 # When MallocStackLogging is set in the environment (e.g. from Instruments or
@@ -159,7 +163,8 @@ def _check_mlx_lm_version() -> None:
     try:
         import importlib.metadata as _im
         ver = _im.version("mlx-lm")
-    except Exception:
+    except ImportError as exc:
+        _LOG.debug("mlx-lm version probe failed: %s", exc)
         return  # not installed or metadata unavailable — not our problem
     if ver == _MLX_LM_BAD_VERSION:
         print(
@@ -295,6 +300,9 @@ _thinking_budget: int = -1            # -1=unlimited, 0=disable thinking, >0=tok
 _think_close_token_id: int | None = None  # ID of </think> token, resolved at model load
 # ── Phase A2: explicit MLX rotating KV cache size ────────────────────────────
 _max_kv_size: int | None = None       # None = mlx_lm default (4K); set to extend context
+_kv_bits: "int | None" = None          # native mlx_lm quantized KV cache (--kv-bits); GPU-side
+_kv_group_size: int = 64               # group size for native quantized KV (--kv-group-size)
+_quantized_kv_start: int = 0           # keep the first N tokens fp16 (--quantized-kv-start)
 # ── Phase A3: concise output mode ────────────────────────────────────────────
 _concise_responses: bool = False      # prepend concision prefix + EOS bias
 _CONCISION_PREFIX = (
@@ -316,10 +324,103 @@ _memory_governor: "Any | None" = None      # MemoryGovernor instance (macOS only
 # pass on each next() call.  Running it in a single-threaded executor keeps the
 # uvicorn event loop responsive (health checks, metrics, SSE flush) during
 # generation.  max_workers=1 is deliberate: MLX is not thread-safe.
+def _pin_inference_thread() -> None:
+    """Bias the single inference worker onto Apple-Silicon performance cores.
+
+    macOS schedules threads across P/E cores by Quality-of-Service class.  The
+    decode worker is latency-critical, so we raise its QoS to USER_INTERACTIVE
+    (the band the scheduler keeps on P-cores).  This trims the scheduling
+    jitter that shows up as decode-step p95/p99 spikes, especially when E-cores
+    would otherwise be picked under light load.  No-op off Darwin.
+    """
+    import platform  # noqa: PLC0415
+    if platform.system() != "Darwin":
+        return
+    try:
+        import ctypes  # noqa: PLC0415
+        _libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        _QOS_CLASS_USER_INTERACTIVE = 0x21
+        # int pthread_set_qos_class_self_np(qos_class_t cls, int rel_priority)
+        _libc.pthread_set_qos_class_self_np(_QOS_CLASS_USER_INTERACTIVE, 0)
+    except (OSError, AttributeError, TypeError) as exc:
+        _LOG.debug("QoS thread-pin hint failed: %s", exc)  # best-effort; never block startup
+
+
 _inference_executor = concurrent.futures.ThreadPoolExecutor(
-    max_workers=1, thread_name_prefix="squish-gen"
+    max_workers=1, thread_name_prefix="squish-gen",
+    initializer=_pin_inference_thread,
 )
 _INFERENCE_STOP = object()  # sentinel returned when the sync generator is exhausted
+
+# ── Streaming decode handoff ─────────────────────────────────────────────────
+# The streaming path runs the synchronous token generator to completion in the
+# inference thread and pushes results onto an asyncio.Queue the SSE coroutine
+# drains.  This is ONE thread handoff per request instead of one per token: the
+# old ``run_in_executor`` per-token round-trip added 5-20 ms of event-loop
+# reschedule jitter to every decode step (the dominant cause of the p95 tail).
+_STREAM_DONE = object()  # producer-finished sentinel pushed onto the queue
+
+
+class _StreamError:
+    """Wraps a producer-thread exception so the consumer can re-raise it."""
+
+    __slots__ = ("exc",)
+
+    def __init__(self, exc: BaseException) -> None:
+        self.exc = exc
+
+
+# ── Generation GC guard ───────────────────────────────────────────────────────
+# Python's cyclic GC can fire mid-decode and stall a token by 50-200 ms — this
+# is exactly the p95 spike seen in the v5.1 benchmark.  We disable the cyclic
+# collector for the duration of any in-flight generation (ref-counted so
+# overlapping requests are safe) and run one explicit collection once the last
+# generation drains.  Combined with a one-time ``gc.freeze()`` after model load
+# (see ``_freeze_heap_once``), this keeps the decode loop pause-free.
+_gc_gen_lock = threading.Lock()
+_gc_gen_active = 0
+_gc_disabled_by_guard = False
+_gc_frozen = False
+
+
+def _gen_gc_enter() -> None:
+    """Suspend cyclic GC while a generation is in flight (ref-counted)."""
+    global _gc_gen_active, _gc_disabled_by_guard
+    with _gc_gen_lock:
+        _gc_gen_active += 1
+        if _gc_gen_active == 1 and gc.isenabled():
+            gc.disable()
+            _gc_disabled_by_guard = True
+
+
+def _gen_gc_exit() -> None:
+    """Re-enable cyclic GC once the last in-flight generation completes."""
+    global _gc_gen_active, _gc_disabled_by_guard
+    with _gc_gen_lock:
+        _gc_gen_active = max(0, _gc_gen_active - 1)
+        if _gc_gen_active == 0 and _gc_disabled_by_guard:
+            gc.enable()
+            _gc_disabled_by_guard = False
+            gc.collect()
+
+
+def _freeze_heap_once() -> None:
+    """Move the loaded model + interpreter heap to GC's permanent generation.
+
+    Called once after warm-up: ``gc.freeze()`` marks every currently-tracked
+    object as permanent so subsequent collections never re-scan the (large,
+    long-lived) model graph.  This shrinks each future collection's working set
+    to just the per-request garbage, cutting pause times.
+    """
+    global _gc_frozen
+    if _gc_frozen:
+        return
+    try:
+        gc.collect()
+        gc.freeze()
+        _gc_frozen = True
+    except RuntimeError as exc:
+        _LOG.debug("gc.freeze() failed: %s", exc)
 
 
 def _iter_next(it: "Any") -> "Any":
@@ -348,6 +449,23 @@ def _collect_tokens_sync(gen: "Any") -> "list[tuple[str, str | None]]":
     return result
 
 
+def _kv_cache_compile_safe(kv_cache: "Any") -> bool:
+    """Whether the active KV cache may be wrapped in ``mx.compile``.
+
+    Quantized KV caches (KIVI int8 / snap) quantize K and V on the CPU via
+    numpy inside their per-step update — an implicit ``mx.eval()`` that is
+    illegal inside an ``mx.compile`` trace.  Compiling the decode forward over
+    such a cache raises "[eval] Attempting to eval an array during ... compile"
+    on the first decode step, which previously forced a slow double-path
+    fallback (re-running the whole request through ``stream_generate``).
+
+    A cache is compile-safe only when absent (``None``, plain fp16 path) or when
+    it explicitly advertises ``compile_safe = True``.  Numpy-quantized caches do
+    not set that attribute, so they correctly use the uncompiled forward.
+    """
+    return kv_cache is None or bool(getattr(kv_cache, "compile_safe", False))
+
+
 # ── Conflict-Resolution Routing (Phase 0) ────────────────────────────────────
 # Two exclusive request paths prevent incompatible optimizations firing together:
 #
@@ -371,60 +489,6 @@ _inference_backend   = "mlx-eager"  # overridden by --inference-backend in main(
 # _mcp_servers maps server_id → MCPClient instance (lazily connected).
 _agent_registry: "Any | None" = None   # ToolRegistry | None — set in main()
 _mcp_servers: dict = {}                # {server_id: MCPClient}
-
-# ── Phase F: Inference Backend Abstraction ───────────────────────────────────
-
-class _InferenceBackend:
-    """Base shim for inference backend dispatch.
-
-    Concrete subclasses override ``generate_stream``.  All generation paths
-    are hardware-bound and marked ``# pragma: no cover``.  The ``__init__``
-    constructors are testable (no hardware required).
-    """
-
-    def generate_stream(self, *args, **kwargs):  # pragma: no cover
-        raise NotImplementedError
-
-
-class _MLXEagerBackend(_InferenceBackend):
-    """Standard MLX Metal eager execution path.
-
-    Stores a reference to the loaded model and tokenizer so the dispatch
-    layer can route ``generate_stream`` calls without global lookups.
-    """
-
-    def __init__(self, model: "Any", tokenizer: "Any") -> None:
-        self._model = model
-        self._tokenizer = tokenizer
-
-    def generate_stream(self, *args, **kwargs):  # pragma: no cover
-        raise NotImplementedError("Route through _generate_tokens instead")
-
-
-class _MLCBackend(_InferenceBackend):
-    """MLC-LLM engine path for large-context requests.
-
-    Probes for ``mlc_llm`` at construction time and sets
-    :meth:`is_available` accordingly so callers can gate on its presence.
-    """
-
-    def __init__(self, model_path: str) -> None:
-        self._model_path = model_path
-        try:
-            import mlc_llm as _mlc  # noqa: F401,PLC0415
-            self._available = True
-        except ImportError:
-            self._available = False
-
-    def is_available(self) -> bool:
-        """Return ``True`` when ``mlc_llm`` was importable at construction time."""
-        return self._available
-
-    def generate_stream(self, *args, **kwargs):  # pragma: no cover
-        raise NotImplementedError("MLC backend not yet wired")
-
-
-_active_backend: "_InferenceBackend | None" = None  # set in main() when dispatching
 
 # ── Batch scheduler (Phase 2.1 — continuous batching) ───────────────────────
 _scheduler       = None  # BatchScheduler | None — set in main() when --batch-scheduler given
@@ -746,8 +810,8 @@ def _tlog(msg: str) -> None:
         try:
             _trace_file.write(line_plain + "\n")
             _trace_file.flush()
-        except Exception:
-            pass
+        except (OSError, ValueError) as exc:
+            _LOG.debug("trace file write failed: %s", exc)
 
 # ── Model state ──────────────────────────────────────────────────────────────
 
@@ -758,6 +822,10 @@ class _ModelState:
     loaded_at    = 0.0
     load_time_s  = 0.0
     loader_tag   = "squish"
+    # Model compute dtype (bfloat16 for INT4 MLX builds). KV cache is restored
+    # in this dtype so attention reads a matched-dtype cache — a float16 restore
+    # decodes ~1.4x slower and promotes to float32 on the first realloc.
+    kv_dtype     = None
     requests     = 0
     tokens_gen   = 0
     # Real-time performance tracking
@@ -1045,16 +1113,16 @@ def _configure_blazing_mode(args: "Any") -> None:
             ram_auto: float = 0.0
             try:
                 from squish.hardware.chip_detector import ChipDetector as _ACD  # noqa: PLC0415
-                _cd = _ACD.detect()
+                _cd = _ACD().detect()
                 chip_name = getattr(_cd, "chip_name", "") or ""
                 ram_auto  = _ACD.detect_ram_gb()
-            except Exception:  # noqa: BLE001
-                pass
+            except (ImportError, AttributeError, OSError, RuntimeError) as exc:
+                _LOG.debug("chip auto-detect failed: %s", exc)
             if _abe(chip_name, ram_auto):
                 args.blazing = True
                 _info("blazing", f"auto-enabled for {chip_name or 'M3/M4/M5'}  (disable with --no-blazing)")
-        except Exception:  # noqa: BLE001
-            pass
+        except (ImportError, AttributeError, OSError, RuntimeError) as exc:
+            _LOG.debug("blazing auto-eligibility check failed: %s", exc)
 
     if not getattr(args, "blazing", False):
         return
@@ -1066,8 +1134,8 @@ def _configure_blazing_mode(args: "Any") -> None:
     try:
         from squish.hardware.chip_detector import ChipDetector as _BlazCD  # noqa: PLC0415
         ram_gb = _BlazCD.detect_ram_gb()
-    except Exception:  # noqa: BLE001
-        pass
+    except (ImportError, AttributeError, OSError, RuntimeError) as exc:
+        _LOG.debug("blazing RAM detect failed: %s", exc)
 
     _blazing_preset_defaults(args, chip_profile=_chip_profile, ram_gb=ram_gb)
 
@@ -1154,8 +1222,26 @@ def _apply_fast_gelu(model_dir: str) -> None:  # pragma: no cover
             _info("fast-gelu",
                   f"patched {patched} FFN activation layers  "
                   f"({hidden_act} → x·sigmoid(1.702x))")
-    except Exception:
-        pass   # never block startup on activation patching
+    except (AttributeError, TypeError) as exc:
+        _LOG.debug("fast-gelu activation patch failed: %s", exc)  # never block startup
+
+
+def _infer_kv_dtype_safe(model):
+    """Return the model's compute dtype for KV restore, or None on any failure.
+
+    None preserves the legacy float16 restore path (e.g. non-MLX models or if
+    mlx is unavailable) — the dtype-cast in the restore functions is a no-op
+    when target_dtype is None.
+    """
+    try:
+        from squish.kv.prompt_kv_cache import infer_kv_dtype
+        return infer_kv_dtype(model)
+    except (ImportError, AttributeError, TypeError, ValueError) as exc:
+        _logging.getLogger(__name__).warning(
+            "[kv] could not infer model compute dtype (%s) — KV restore will use "
+            "the legacy float16 path (slower decode on bf16 models)", exc,
+        )
+        return None
 
 
 def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> None:  # pragma: no cover
@@ -1229,6 +1315,7 @@ def load_model(model_dir: str, compressed_dir: str, verbose: bool = True) -> Non
 
     _state.load_time_s = elapsed
     _state.loader_tag  = loader_tag
+    _state.kv_dtype    = _infer_kv_dtype_safe(model)
     if verbose:
         _ok(f"Model ready  ({elapsed:.2f}s  loader={loader_tag})")
 
@@ -1299,7 +1386,7 @@ def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma:
             tok_box["tokenizer"] = _mlx_load_tokenizer(
                 model_path, None, eos_token_ids=eos_token_ids
             )
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, RuntimeError, ImportError, TypeError) as exc:
             tok_box["error"] = exc
 
     tok_thread = threading.Thread(
@@ -1323,6 +1410,7 @@ def load_mlx_model(mlx_model_dir: str, verbose: bool = True) -> None:  # pragma:
     _state.loaded_at  = time.time()
     _state.load_time_s = elapsed
     _state.loader_tag  = "mlx_lm"
+    _state.kv_dtype   = _infer_kv_dtype_safe(model)
     if verbose:
         _ok(f"Model ready  ({elapsed:.2f}s  loader=mlx_lm)")
 
@@ -1363,8 +1451,8 @@ def _cap_metal_cache(verbose: bool = False, limit_mb: int | None = None) -> None
             if verbose:
                 print(f"  {_C.DIM}◈  Metal buffer cache capped at {limit_mb} MB{_C.R}")
         gc.collect()
-    except Exception:
-        pass
+    except (RuntimeError, AttributeError, ValueError) as exc:
+        _LOG.debug("Metal cache-limit set failed: %s", exc)
 
 
 def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
@@ -1433,9 +1521,10 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
                     f"{p2_note}  total={elapsed * 1000:.0f} ms)"
                     f"  path=stream_generate"
                 )
+            _freeze_heap_once()
             return
-        except Exception:
-            pass  # fall through to bare forward pass below
+        except (RuntimeError, ValueError, AttributeError, ImportError) as exc:
+            _LOG.debug("stream_generate warm-up failed: %s", exc)  # fall through to bare pass
 
         # ── Fallback: bare single-token forward pass (no mlx_lm available) ────
         bos_id = None
@@ -1449,9 +1538,10 @@ def _warmup_model(verbose: bool = False) -> None:  # pragma: no cover
         elapsed = time.perf_counter() - t0
         if verbose:
             _ok(f"Metal JIT warm-up  ({elapsed * 1000:.0f} ms)  path=forward-pass")
-    except Exception as _e:
+        _freeze_heap_once()
+    except Exception as exc:  # noqa: BLE001 — startup warm-up is best-effort, must never crash boot
         if verbose:
-            _warn(f"[warmup] Skipped: {_e}")
+            _warn(f"[warmup] Skipped: {exc}")
 
 
 def load_draft_model(draft_model_dir: str, draft_compressed_dir: str = "",  # pragma: no cover
@@ -1536,16 +1626,16 @@ def _apply_chat_template(
                     tokenize              = False,
                     add_generation_prompt = True,
                 )
-            except Exception:
-                pass  # tokenizer doesn't support tools= → fall through
+            except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
+                _LOG.debug("native tool chat-template failed: %s", exc)  # fall through
         try:
             return tokenizer.apply_chat_template(
                 messages,
                 tokenize              = False,
                 add_generation_prompt = True,
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
+            _LOG.debug("chat-template apply failed: %s", exc)
 
     # Manual fallback: Qwen / ChatML format
     parts = []
@@ -1564,7 +1654,8 @@ def _count_tokens(text: str) -> int:
         return len(text.split())
     try:
         return len(tok.encode(text))
-    except Exception:
+    except (ValueError, TypeError, AttributeError, RuntimeError) as exc:
+        _LOG.debug("token count encode failed: %s", exc)
         return len(text.split())
 
 
@@ -1581,8 +1672,8 @@ def _get_stop_ids(stop: list[str] | str | None) -> list[list[int]]:
             ids = tok.encode(s, add_special_tokens=False)
             if ids:
                 result.append(ids)
-        except Exception:
-            pass
+        except (ValueError, TypeError, AttributeError, RuntimeError) as exc:
+            _LOG.debug("stop-string encode failed: %s", exc)
     return result
 
 
@@ -1657,8 +1748,8 @@ def _generate_tokens(  # pragma: no cover
                     yield _ch, None
                 yield "", "stop"
                 return
-        except Exception:
-            pass  # never block generation on cache lookup failure
+        except (AttributeError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+            _LOG.debug("semantic cache lookup failed: %s", exc)  # never block generation
 
     # ── Phase 4: prompt compression ───────────────────────────────────────────
     # Compress long prompts before tokenization to reduce prefill cost.
@@ -1688,8 +1779,8 @@ def _generate_tokens(  # pragma: no cover
                         # Controlled by --compress-preserve-tokens (default 0 = disabled).
                         preserve_tokens=_compress_preserve_tokens,
                     )
-            except Exception:
-                pass  # never block generation on compression failure
+            except (ImportError, ValueError, RuntimeError, TypeError) as exc:
+                _LOG.debug("prompt compression failed: %s", exc)  # never block generation
 
     # ── Trace: log request entry ───────────────────────────────────────────────
     _rid = uuid.uuid4().hex[:8]          # short per-request ID for log correlation
@@ -1733,6 +1824,39 @@ def _generate_tokens(  # pragma: no cover
             ) from exc
         return
 
+    # ── Prompt-lookup speculative decoding (greedy, opt-in via --prompt-lookup) ─
+    # Free n-gram speculation: a whole draft (looked up from the context) is
+    # verified in ONE batched forward and the KV cache rewound on rejection, so
+    # the output is token-for-token identical to greedy while repetitive text
+    # (code, JSON, repeated spans) decodes in fewer forwards.
+    #
+    # This is a standalone *pure-greedy* fast path: it manages its own cache and
+    # therefore BYPASSES babbling suppression, prefix/semantic/block caches, and
+    # the thinking-budget logic (acceptable perf/behaviour trade-offs, bounded by
+    # max_tokens).  It must NOT fire when a grammar constraint is required
+    # (tool-calling / structured output), so those are excluded below — otherwise
+    # output would be unconstrained.  Only deterministic, non-draft, non-compress
+    # requests qualify.
+    if (_prompt_lookup_decoder is not None and is_deterministic
+            and _draft.generator is None and not _on_compress_path
+            and _req_tool_schema is None and _structured_output_mode == "none"
+            and hasattr(tokenizer, "encode")):
+        try:
+            from squish.speculative.prompt_lookup_batched import (  # noqa: PLC0415
+                stream_prompt_lookup,
+            )
+            if _trace:
+                _tlog(f"REQ {_rid}  dispatch → prompt-lookup (ngram greedy)")
+            yield from stream_prompt_lookup(
+                model, tokenizer, prompt, max_tokens, stop, eos_id,
+                _prompt_lookup_decoder,
+            )
+            return
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _LOG.warning(
+                "prompt-lookup path failed (%s); falling back to standard decode", exc
+            )
+
     # ── Prefix cache lookup (Phase 1.4) ──────────────────────────────────────
     # Only cache deterministic outputs (temp==0 or seed fixed) so non-
     # deterministic completions never return stale cached text.
@@ -1771,8 +1895,8 @@ def _generate_tokens(  # pragma: no cover
         try:
             import mlx.core as mx
             mx.random.seed(seed)
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, ValueError, TypeError) as exc:
+            _LOG.debug("mlx random seed set failed: %s", exc)
 
     # ── Speculative decoding (Phase 0.2) ─────────────────────────────────────
     # Gated on temperature>0. v5.2 investigated firing at greedy temp==0 with a
@@ -1813,10 +1937,9 @@ def _generate_tokens(  # pragma: no cover
             if cache_eligible and _cache_buf:
                 _prefix_cache.put(_orig_prompt, "".join(_cache_buf), _last_finish)
             return
-        except Exception as _spec_err:
-            import logging as _log
-            _log.getLogger(__name__).warning("Speculative decoding failed (%s); "
-                                             "falling back to standard generation", _spec_err)
+        except (RuntimeError, ValueError, AttributeError, TypeError, ImportError) as exc:
+            _LOG.warning("Speculative decoding failed (%s); "
+                         "falling back to standard generation", exc)
 
     # ── Wave 37: Jacobi parallel decode ─────────────────────────────────────────
     # Activated when --jacobi is set and NO draft model is loaded (the two
@@ -1855,7 +1978,8 @@ def _generate_tokens(  # pragma: no cover
                         _jd_context,
                         vocab_size=getattr(_jd_tokenizer, "vocab_size", 32000),
                     )
-                except Exception:
+                except (RuntimeError, ValueError, IndexError, AttributeError) as exc:
+                    _LOG.debug("jacobi decode_step failed: %s", exc)
                     break
                 if not _jd_accepted:
                     break
@@ -1906,10 +2030,9 @@ def _generate_tokens(  # pragma: no cover
                 _tlog(f"REQ {_rid}  DONE  path=jacobi  tokens={_jd_step}  finish=stop")
             yield "", "stop"
             return
-        except Exception as _jd_err:
-            import logging as _jdlog
-            _jdlog.getLogger(__name__).warning(
-                "[jacobi] decode failed (%s); falling back to standard path", _jd_err
+        except (RuntimeError, ValueError, IndexError, AttributeError, TypeError, ImportError) as exc:
+            _LOG.warning(
+                "[jacobi] decode failed (%s); falling back to standard path", exc
             )
 
     # ── Quantized KV cache generation path ─────────────────────────────────────
@@ -1948,8 +2071,8 @@ def _generate_tokens(  # pragma: no cover
                         else list(input_ids[:256]),
                         _cwtime.monotonic(),
                     )
-                except Exception:
-                    pass  # never block generation on warmup tracking failure
+                except (AttributeError, ValueError, TypeError, IndexError) as exc:
+                    _LOG.debug("warmup access tracking failed: %s", exc)
             # ── Phase 3: session KV cache lookup ───────────────────────────────
             # Restore KV state from a prior conversation if a matching session
             # exists.  Key is SHA-256 of the first 2 KB of the ORIGINAL prompt.
@@ -1965,7 +2088,8 @@ def _generate_tokens(  # pragma: no cover
                             _tlog(f"REQ {_rid}  session-cache HIT  key={_session_key}")
                     elif _trace:
                         _tlog(f"REQ {_rid}  session-cache MISS  key={_session_key}")
-                except Exception:
+                except (OSError, ValueError, AttributeError, RuntimeError, TypeError) as exc:
+                    _LOG.debug("session KV cache lookup failed: %s", exc)
                     _session_key = None  # never block generation on session error
             # ── Disk prompt-cache lookup (Item 2) ──────────────────────────────
             # On a hit, restore KV state from NVMe and skip prefill (O(n) → O(1))
@@ -1984,8 +2108,8 @@ def _generate_tokens(  # pragma: no cover
                                   f"orig_tokens={len(_orig_input_ids)}  → skipped prefill")
                     elif _trace:
                         _tlog(f"REQ {_rid}  disk-prompt-cache MISS  orig_tokens={len(_orig_input_ids)}")
-                except Exception:
-                    pass  # disk lookup error — fall through to normal prefill
+                except (OSError, ValueError, AttributeError, RuntimeError, KeyError) as exc:
+                    _LOG.debug("disk prompt-cache lookup failed: %s", exc)  # fall through to prefill
 
             if _disk_hit_logit is not None:
                 # Cache hit: use stored logit to sample first token; no prefill needed
@@ -2032,10 +2156,10 @@ def _generate_tokens(  # pragma: no cover
                                 yield _il_tok, None
                         if _trace:
                             _tlog(f"REQ {_rid}  chunked-prefill DONE")
-                    except Exception as _cpf_err:
-                        import logging as _cpflog
-                        _cpflog.getLogger(__name__).warning(
-                            "[chunk-prefill] failed (%s) — standard prefill", _cpf_err
+                    except (RuntimeError, ValueError, AttributeError, TypeError,
+                            IndexError, ImportError) as exc:
+                        _LOG.warning(
+                            "[chunk-prefill] failed (%s) — standard prefill", exc
                         )
                         _last_logit_vec = None  # fall through below
 
@@ -2054,20 +2178,26 @@ def _generate_tokens(  # pragma: no cover
                         _last_logit_np = np.array(_last_logit_vec.astype(mx.float32))
                         # Store under original token IDs for stable cache keys
                         _disk_prompt_cache.store(_orig_input_ids, _kv_cache, _last_logit_np)
-                    except Exception:
-                        pass
+                    except (OSError, ValueError, RuntimeError, AttributeError) as exc:
+                        _LOG.debug("disk prompt-cache store failed: %s", exc)
             stop_buf = [next_id]
             # Compile the single-token decode step for faster subsequent calls.
             # layer_caches is captured as a constant closure; the list reference
             # never changes, so mx.compile reuses the compiled graph every step.
             _decode_fn = None
-            if not getattr(_state, "_no_compile", False):
+            # Only compile the decode forward when the attached KV cache is
+            # compile-safe.  Numpy-quantized caches (KIVI int8/snap) eval inside
+            # their update step, which is illegal under mx.compile and would trip
+            # "[eval] ... during compile" on the first decode call — forcing a
+            # slow stream_generate fallback.  See _kv_cache_compile_safe.
+            if (not getattr(_state, "_no_compile", False)
+                    and _kv_cache_compile_safe(_kv_cache)):
                 try:
                     _decode_fn = mx.compile(
                         lambda tok_x: model(tok_x, cache=layer_caches)
                     )
-                except Exception:
-                    pass  # mx.compile unavailable or incompatible — use plain call
+                except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
+                    _LOG.debug("mx.compile decode step failed: %s", exc)  # use plain call
             # Phase A1: thinking budget tracking state
             _in_think_block = False
             _think_step_count = 0
@@ -2117,8 +2247,8 @@ def _generate_tokens(  # pragma: no cover
                     if _semantic_cache is not None and _sc_buf:
                         try:
                             _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                        except Exception:
-                            pass
+                        except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                            _LOG.debug("semantic cache store failed: %s", exc)
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=kv-cache  tokens={step}  finish=stop(eos)")
                     yield tok_text, "stop"
@@ -2132,8 +2262,8 @@ def _generate_tokens(  # pragma: no cover
                             if _semantic_cache is not None and _sc_buf:
                                 try:
                                     _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                                except Exception:
-                                    pass
+                                except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                                    _LOG.debug("semantic cache store failed: %s", exc)
                             if _trace:
                                 _tlog(f"REQ {_rid}  DONE  path=kv-cache  "
                                       f"tokens={step}  finish=stop(stop-seq)")
@@ -2196,8 +2326,8 @@ def _generate_tokens(  # pragma: no cover
                                 if _semantic_cache is not None and _sc_buf:
                                     try:
                                         _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                                    except Exception:
-                                        pass
+                                    except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                                        _LOG.debug("semantic cache store failed: %s", exc)
                                 if _trace:
                                     _tlog(f"REQ {_rid}  babbling-eos  step={step}  p={_eos_prob:.3f}  task={_task_type}")
                                 yield "", "stop"
@@ -2216,7 +2346,8 @@ def _generate_tokens(  # pragma: no cover
                         _logit_np = (_logit_np_shared if _logit_np_shared is not None
                                      else np.array(_logit_vec.astype(mx.float32)))
                         next_id = _fused_sampler.sample(_logit_np)
-                    except Exception:
+                    except (ValueError, RuntimeError, IndexError, AttributeError, TypeError) as exc:
+                        _LOG.debug("fused sampler failed: %s", exc)
                         next_id = _sample_mx(_logit_vec, temperature, top_p)
                 else:
                     next_id = _sample_mx(_logit_vec, temperature, top_p)
@@ -2233,8 +2364,8 @@ def _generate_tokens(  # pragma: no cover
                                 if _semantic_cache is not None and _sc_buf:
                                     try:
                                         _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                                    except Exception:
-                                        pass
+                                    except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                                        _LOG.debug("semantic cache store failed: %s", exc)
                                 if _trace:
                                     _tlog(f"REQ {_rid}  babbling-grammar-terminal  step={step}")
                                 yield "", "stop"
@@ -2253,21 +2384,21 @@ def _generate_tokens(  # pragma: no cover
             if _semantic_cache is not None and _sc_buf:
                 try:
                     _semantic_cache.store(_orig_prompt, "".join(_sc_buf), _task_type)
-                except Exception:
-                    pass
+                except (OSError, ValueError, RuntimeError, AttributeError, TypeError) as exc:
+                    _LOG.debug("semantic cache store failed: %s", exc)
             # Phase 3: persist KV state for future sessions (background thread)
             if _session_kv_cache is not None and _session_key is not None:
                 try:
                     _session_kv_cache.save_session(_session_key, _kv_cache)
-                except Exception:
-                    pass
+                except (OSError, ValueError, RuntimeError, AttributeError) as exc:
+                    _LOG.debug("session KV save failed: %s", exc)
             yield "", "stop"
             return
-        except Exception as _kv_err:
-            import logging as _kv_log
-            _kv_log.getLogger(__name__).warning(
+        except (RuntimeError, ValueError, AttributeError, TypeError, IndexError,
+                KeyError, ImportError, OSError) as exc:
+            _LOG.warning(
                 "Quantized KV cache path failed (%s); falling back to stream_generate",
-                _kv_err,
+                exc,
             )
             _kv_cache.reset()
 
@@ -2282,6 +2413,13 @@ def _generate_tokens(  # pragma: no cover
         _sg_kwargs = {}
         if _max_kv_size is not None:
             _sg_kwargs["max_kv_size"] = _max_kv_size
+        # Native mlx_lm quantized KV cache (GPU-side mx.quantize) — cuts KV
+        # bandwidth at long context.  Unlike --kv-cache-mode (squish's numpy
+        # path), this runs entirely on the GPU inside generate_step.
+        if _kv_bits is not None:
+            _sg_kwargs["kv_bits"]            = _kv_bits
+            _sg_kwargs["kv_group_size"]      = _kv_group_size
+            _sg_kwargs["quantized_kv_start"] = _quantized_kv_start
         # mlx_lm >= 0.21 replaced temp/top_p kwargs with a `sampler` callable.
         # Passing temp/top_p directly causes a TypeError in generate_step, which
         # would be silently caught below and fall through to the no-cache manual
@@ -2398,14 +2536,20 @@ def _generate_tokens(  # pragma: no cover
                     # Stash a deferred-restore closure; runs after first yield
                     _bkv_match_for_restore = _match
                     def _bkv_do_restore() -> None:
-                        _restore_blocks(_bkv_cache_obj, _bkv_match_for_restore.matched_blocks)
+                        _restore_blocks(
+                            _bkv_cache_obj, _bkv_match_for_restore.matched_blocks,
+                            target_dtype=_state.kv_dtype,
+                        )
                     _bkv_deferred_restore: "callable | None" = _bkv_do_restore
                 else:
                     # Non-fast path: restore blocks up front before suffix
                     # prefill needs them.
                     _bkv_deferred_restore = None
                     if _match.matched_tokens > 0:
-                        _restore_blocks(_bkv_cache_obj, _match.matched_blocks)
+                        _restore_blocks(
+                            _bkv_cache_obj, _match.matched_blocks,
+                            target_dtype=_state.kv_dtype,
+                        )
                     # Prefill the suffix manually so we can grab the last logit.
                     _suffix_ids = _bkv_full_ids[_match.matched_tokens:]
                     if _suffix_ids:
@@ -2511,14 +2655,17 @@ def _generate_tokens(  # pragma: no cover
                     # Stash a closure so we can run restore after the yield.
                     _pkv_entry_for_restore = _pkv_entry
                     def _do_restore() -> None:
-                        _rkv(_pkv_cache, _pkv_entry_for_restore)
+                        _rkv(_pkv_cache, _pkv_entry_for_restore,
+                             target_dtype=_state.kv_dtype)
                     _pkv_deferred_restore = _do_restore
 
                     if _trace:
                         _tlog(f"REQ {_rid}  prompt-kv-cache HIT-fast  "
                               f"offset={_pkv_entry.offset}  layers={_pkv_entry.n_layers}  "
                               f"logit=cached  → defer-restore")
-                elif _pkv_entry is not None and _rkv(_pkv_cache, _pkv_entry):
+                elif _pkv_entry is not None and _rkv(
+                    _pkv_cache, _pkv_entry, target_dtype=_state.kv_dtype
+                ):
                     # v4.1 legacy hit (no cached logit): slice prompt to
                     # the trailing token only and let mlx_lm 1-token-prefill.
                     _pkv_was_hit = True
@@ -2916,10 +3063,10 @@ def _do_model_load(args: "Any") -> None:
                     verbose=getattr(args, "verbose", False),
                 )
             _LOAD_COMPLETE.set()
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, RuntimeError, ImportError,
+                TypeError, AttributeError) as exc:
             _LOAD_ERROR = f"{type(exc).__name__}: {exc}"
-            import logging as _logging
-            _logging.getLogger(__name__).exception(
+            _LOG.exception(
                 "Deferred model load failed (mode=%s)", _LOAD_MODE
             )
             raise
@@ -2943,7 +3090,8 @@ def _ensure_loaded_blocking() -> None:
         raise HTTPException(503, f"Model load failed: {_LOAD_ERROR}")
     try:
         _do_model_load(_LOAD_ARGS)
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, RuntimeError, ImportError,
+            TypeError, AttributeError) as exc:
         raise HTTPException(503, f"Model load failed: {exc}") from exc
 
 
@@ -3099,13 +3247,18 @@ def _model_card() -> dict:
 
 def _make_chunk(content: str, model: str, cid: str, finish_reason=None,
                 _created: int | None = None,
-                _fingerprint: str | None = None) -> str:
+                _fingerprint: str | None = None,
+                _usage: "tuple[int, int] | None" = None) -> str:
     """Build an SSE data line in OpenAI streaming format.
 
     Hot-path optimization (wave 108): avoid 3 nested dict allocations per token
     by building the JSON frame directly from pre-serialized parts.  All fields
     except ``content`` and ``finish_reason`` are constant per request; callers
     should pass ``_created`` and ``_fingerprint`` to avoid re-computing them.
+
+    When ``_usage`` is ``(prompt_tokens, completion_tokens)`` (terminal chunk
+    only, gated by ``stream_options.include_usage``), a ``usage`` object is
+    appended so clients get authoritative token counts regardless of framing.
     """
     ts  = _created if _created is not None else int(time.time())
     fp  = _fingerprint if _fingerprint is not None else _system_fingerprint(
@@ -3122,12 +3275,21 @@ def _make_chunk(content: str, model: str, cid: str, finish_reason=None,
         delta_s = "{}"
     # finish_reason: null or "stop"/"length"/etc (always a simple identifier)
     fr_s = "null" if finish_reason is None else f'"{finish_reason}"'
+    # usage: appended only on the terminal chunk when include_usage is set
+    if _usage is not None:
+        _pt, _ct = _usage
+        usage_s = (
+            f',"usage":{{"prompt_tokens":{_pt},'
+            f'"completion_tokens":{_ct},"total_tokens":{_pt + _ct}}}'
+        )
+    else:
+        usage_s = ""
     return (
         f'data: {{"id":{id_s},"object":"chat.completion.chunk",'
         f'"created":{ts},"model":{model_s},'
         f'"system_fingerprint":{fp_s},'
         f'"choices":[{{"index":0,"delta":{delta_s},'
-        f'"finish_reason":{fr_s}}}]}}\n\n'
+        f'"finish_reason":{fr_s}}}]{usage_s}}}\n\n'
     )
 
 
@@ -3161,6 +3323,11 @@ async def chat_completions(  # pragma: no cover
     model_id           = body.get("model", _state.model_name)
     tools              = body.get("tools", [])
     tool_choice        = body.get("tool_choice", "auto")
+    # OpenAI stream_options.include_usage: emit a usage block in the terminal
+    # SSE chunk so clients get authoritative token counts (independent of how
+    # tokens are framed across chunks).
+    _stream_opts       = body.get("stream_options") or {}
+    _include_usage     = bool(_stream_opts.get("include_usage", False))
 
     # tool_choice == "none": agent explicitly disables tools for this turn
     if tool_choice == "none":
@@ -3215,19 +3382,23 @@ async def chat_completions(  # pragma: no cover
         # the full output before deciding between text and tool_calls.
         stream = False
 
-        # Prefer native tokenizer tool-calling (Qwen3, Llama-3.1+).  If the
-        # tokenizer supports tools=, we skip the manual system-prompt injection
-        # so the model uses its trained format (e.g. <tool_call> tags for Qwen3).
-        # Fall back to format_tools_prompt for non-native tokenizers.
+        # Prefer native tokenizer tool-calling (Qwen2.5/3, Llama-3.1+).  If the
+        # tokenizer renders tools into the prompt, we skip the manual
+        # system-prompt injection so the model uses its trained format
+        # (e.g. <tool_call> tags for Qwen).  We detect this by rendering with
+        # tools and checking the schema was actually embedded — the MLX
+        # TokenizerWrapper proxies ``tools=`` so an argspec check is
+        # unreliable.  Fall back to format_tools_prompt otherwise.
         _tok = _state.tokenizer
         _supports_native = False
         if _tok is not None and hasattr(_tok, "apply_chat_template"):
             try:
-                import inspect as _inspect
-                _sig = _inspect.signature(_tok.apply_chat_template)
-                _supports_native = "tools" in _sig.parameters
-            except Exception:
-                pass
+                _probe = _apply_chat_template(messages, _tok, tools=tools)
+                _first = tools[0].get("function", {}).get("name", "")
+                _supports_native = bool(_first) and _first in _probe
+            except (ValueError, TypeError, KeyError, AttributeError, IndexError, ImportError) as exc:
+                _LOG.debug("native tool-calling probe failed: %s", exc)
+                _supports_native = False
 
         if _supports_native:
             _native_tools = tools
@@ -3294,33 +3465,79 @@ async def chat_completions(  # pragma: no cover
             gen = _generate_tokens(prompt, max_tokens, temperature, top_p, stop, seed,
                                    repetition_penalty=repetition_penalty)
             loop = _aio.get_running_loop()
+            # Decouple decode from the event loop: the inference thread drains
+            # the synchronous generator and pushes results onto this queue; the
+            # SSE coroutine below consumes them.  One handoff per request — not
+            # one run_in_executor round-trip per token (which added 5-20 ms of
+            # reschedule jitter to every decode step).
+            _queue: _aio.Queue = _aio.Queue()
+            _stop_evt = threading.Event()
+
+            def _produce() -> None:
+                # Runs in the single inference thread; pushes (text, finish)
+                # tuples, then a terminal _STREAM_DONE.  Checks _stop_evt each
+                # step so a client disconnect halts decode within one token.
+                try:
+                    for _tok_text, _finish in gen:
+                        if _stop_evt.is_set():
+                            break
+                        loop.call_soon_threadsafe(_queue.put_nowait, (_tok_text, _finish))
+                        if _finish is not None:
+                            break
+                except Exception as exc:  # noqa: BLE001 — top-level boundary, must not crash
+                    _LOG.warning("token producer thread error: %s", exc)
+                    loop.call_soon_threadsafe(_queue.put_nowait, _StreamError(exc))
+                finally:
+                    loop.call_soon_threadsafe(_queue.put_nowait, _STREAM_DONE)
+
             n_comp   = 0
             ttft_s   = 0.0
             last_finish = "stop"
+            _gen_gc_enter()
             try:
-                # Each call to run_in_executor offloads one synchronous forward
-                # pass to the inference thread, yielding the event loop between
-                # tokens so health checks and SSE flushes are never blocked.
-                while True:
-                    item = await loop.run_in_executor(
-                        _inference_executor, _iter_next, gen
-                    )
-                    if item is _INFERENCE_STOP:
-                        break
-                    tok_text, finish = item
-                    if tok_text:
-                        if n_comp == 0:
-                            ttft_s = time.perf_counter() - req_start
-                        n_comp += 1
-                        yield _make_chunk(tok_text, model_id, cid,
+                loop.run_in_executor(_inference_executor, _produce)
+                _producer_done = False
+                while not _producer_done:
+                    item = await _queue.get()
+                    # Coalesce any tokens already queued behind this one into a
+                    # single SSE frame.  In steady state (decode ≫ flush) the
+                    # queue is empty so this emits one token per chunk and leaves
+                    # inter-token timing intact; it only batches a genuine backlog
+                    # (e.g. the post-prefill burst), cutting redundant flushes.
+                    batch_parts: list[str] = []
+                    while True:
+                        if item is _STREAM_DONE:
+                            _producer_done = True
+                            break
+                        if isinstance(item, _StreamError):
+                            if batch_parts:
+                                yield _make_chunk("".join(batch_parts), model_id, cid,
+                                                  _created=_created, _fingerprint=_fp)
+                            yield f"data: {_json_dumps({'error': str(item.exc)})}\n\n"
+                            return
+                        _tok_text, _finish = item
+                        if _tok_text:
+                            if n_comp == 0:
+                                ttft_s = time.perf_counter() - req_start
+                            n_comp += 1
+                            batch_parts.append(_tok_text)
+                        if _finish is not None:
+                            last_finish = _finish
+                            _producer_done = True
+                            break
+                        if _queue.empty():
+                            break
+                        item = _queue.get_nowait()
+                    if batch_parts:
+                        yield _make_chunk("".join(batch_parts), model_id, cid,
                                           _created=_created, _fingerprint=_fp)
-                    if finish is not None:
-                        last_finish = finish
-                        break
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — top-level boundary, must not crash
+                _LOG.warning("chat stream consumer error: %s", exc)
                 yield f"data: {_json_dumps({'error': str(exc)})}\n\n"
                 return
             finally:
+                _stop_evt.set()          # halt the producer if the client bailed
+                _gen_gc_exit()
                 _state.inflight -= 1
                 dur = time.perf_counter() - req_start
                 _state.record_completion(n_comp, dur, ttft_s)
@@ -3333,8 +3550,9 @@ async def chat_completions(  # pragma: no cover
                     _tlog(f"CHAT stream DONE  id={cid}  tokens={n_comp}  "
                           f"ttft={ttft_s:.3f}s  total={dur:.3f}s  tps={_tps:.1f}  "
                           f"finish={last_finish}")
+            _final_usage = (prompt_tokens, n_comp) if _include_usage else None
             yield _make_chunk("", model_id, cid, finish_reason=last_finish,
-                              _created=_created, _fingerprint=_fp)
+                              _created=_created, _fingerprint=_fp, _usage=_final_usage)
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(
@@ -3361,9 +3579,13 @@ async def chat_completions(  # pragma: no cover
                 repetition_penalty=repetition_penalty,
             )
             _loop = _aio.get_running_loop()
-            _all_toks = await _loop.run_in_executor(
-                _inference_executor, _collect_tokens_sync, _gen_iter
-            )
+            _gen_gc_enter()
+            try:
+                _all_toks = await _loop.run_in_executor(
+                    _inference_executor, _collect_tokens_sync, _gen_iter
+                )
+            finally:
+                _gen_gc_exit()
             for tok_text, finish in _all_toks:
                 if tok_text:
                     if n_comp == 0:
@@ -3747,7 +3969,7 @@ async def agent_connect_mcp(
             "transport": transport,
             "tools_registered": registered,
         }
-    except Exception as exc:  # noqa: BLE001
+    except (ImportError, OSError, ValueError, RuntimeError, TypeError, AttributeError) as exc:
         raise HTTPException(500, f"MCP connect failed: {exc}") from exc
 
 
@@ -3764,8 +3986,8 @@ async def agent_disconnect_mcp(
     try:
         from squish.serving.mcp_client import MCPClient  # noqa: PLC0415
         await client.disconnect()
-    except Exception:  # noqa: BLE001
-        pass
+    except (ImportError, OSError, RuntimeError, AttributeError) as exc:
+        _LOG.debug("MCP disconnect failed: %s", exc)
     return {"disconnected": server_id}
 
 
@@ -3825,35 +4047,66 @@ async def agent_run(  # pragma: no cover
     ]
 
     async def _event_stream():
+        import re as _re  # noqa: PLC0415
+
         from squish.serving.tool_calling import (  # noqa: PLC0415
-            format_tools_prompt, parse_tool_calls,
+            ToolCallStreamFilter, format_tools_prompt, parse_tool_calls,
         )
+
+        # Prefer the tokenizer's native tool-calling template (Qwen2.5/3,
+        # Llama-3.1+, Mistral): it embeds the exact ``<tool_call>{...}`` format
+        # the model was trained on, which parse_tool_calls handles reliably.
+        # The manual JSON-injection prompt is only a fallback for templates
+        # that don't render tools — quantized models follow it far less
+        # consistently (they emit positional / name-dropped JSON).
+        _TOOL_TAG_RE = _re.compile(r"<tool_call>[\s\S]*$")
+        _first_tool_name = all_tools[0]["function"]["name"] if all_tools else ""
 
         current_messages = list(messages)
         total_tool_calls = 0
 
         for step in range(1, max_steps + 1):
-            # ── Inject tool schemas into the system prompt ─────────────────
-            augmented = format_tools_prompt(current_messages, all_tools)
-            prompt = _apply_chat_template(augmented, _state.tokenizer)
+            # ── Build the prompt with tool schemas ─────────────────────────
+            # Render with the native template, then verify the tools were
+            # actually embedded (the MLX TokenizerWrapper proxies ``tools=``
+            # so a signature check is unreliable). Fall back to manual
+            # injection only when the template ignored the tools.
+            prompt = _apply_chat_template(
+                current_messages, _state.tokenizer, tools=all_tools,
+            )
+            native_ok = bool(_first_tool_name) and _first_tool_name in prompt
+            if not native_ok:
+                augmented = format_tools_prompt(current_messages, all_tools)
+                prompt = _apply_chat_template(augmented, _state.tokenizer)
+            # Stop right after the closing tool-call tag so the model doesn't
+            # ramble after emitting a call (the open-tag parser handles the
+            # consumed closing tag).
+            agent_stop = ["</tool_call>"] if native_ok else None
 
-            # ── Run a non-streaming inference pass ─────────────────────────
+            # ── Stream genuine reasoning text only ─────────────────────────
+            # Emit text_delta for the model's reasoning, but suppress the
+            # ``<tool_call>`` syntax itself — clients render the structured tool
+            # card instead, so no raw JSON ever reaches a chat bubble.
             full_text = ""
+            _stream_filter = ToolCallStreamFilter()
             try:
                 for tok_text, finish in _generate_tokens(
-                    prompt, max_tokens, temperature, top_p, None, None,
+                    prompt, max_tokens, temperature, top_p, agent_stop, None,
                     repetition_penalty=repetition_penalty,
                 ):
                     if tok_text:
                         full_text += tok_text
+                    chunk = _stream_filter.feed(tok_text or "", final=finish is not None)
+                    if chunk:
                         yield (
                             "data: "
-                            + _json_dumps({"type": "text_delta", "delta": tok_text})
+                            + _json_dumps({"type": "text_delta", "delta": chunk})
                             + "\n\n"
                         )
                     if finish is not None:
                         break
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 — top-level boundary, must not crash
+                _LOG.warning("agent stream generation error: %s", exc)
                 yield (
                     "data: "
                     + _json_dumps({"type": "error", "message": str(exc)})
@@ -3887,6 +4140,8 @@ async def agent_run(  # pragma: no cover
                 call_id   = f"call_{_uuid.uuid4().hex[:8]}"
                 tool_name = tc.get("name", "")
                 arguments = tc.get("arguments", {})
+                if not isinstance(arguments, dict):
+                    arguments = {}
 
                 yield (
                     "data: "
@@ -3899,14 +4154,22 @@ async def agent_run(  # pragma: no cover
                     + "\n\n"
                 )
 
-                result = _agent_registry.call(tool_name, arguments, call_id=call_id)
+                # A bad tool call must degrade into a tool *error* the agent can
+                # read and recover from — never crash the SSE stream.
+                _tc_err: str | None = None
+                try:
+                    result = _agent_registry.call(tool_name, arguments, call_id=call_id)
+                    result_text = (
+                        str(result.output) if result.ok else f"[ERROR] {result.error}"
+                    )
+                    _tc_err = None if result.ok else str(result.error)
+                    _elapsed = result.elapsed_ms
+                except Exception as exc:  # noqa: BLE001 — tool exec boundary, must not crash stream
+                    _LOG.warning("tool call %r failed: %s", tool_name, exc)
+                    result_text = f"[ERROR] {exc}"
+                    _tc_err = str(exc)
+                    _elapsed = 0.0
                 total_tool_calls += 1
-
-                result_text = (
-                    str(result.output)
-                    if result.ok
-                    else f"[ERROR] {result.error}"
-                )
 
                 yield (
                     "data: "
@@ -3915,8 +4178,8 @@ async def agent_run(  # pragma: no cover
                         "call_id":    call_id,
                         "tool_name":  tool_name,
                         "result":     result_text,
-                        "error":      result.error,
-                        "elapsed_ms": result.elapsed_ms,
+                        "error":      _tc_err,
+                        "elapsed_ms": _elapsed,
                     })
                     + "\n\n"
                 )
@@ -3936,9 +4199,13 @@ async def agent_run(  # pragma: no cover
                 })
 
             # ── Append turns to conversation history ──────────────────────
+            # Strip the raw tool-call tag/JSON from the assistant content so
+            # it isn't double-rendered alongside the structured tool_calls on
+            # the next turn (the native template renders tool_calls itself).
+            _assistant_content = _TOOL_TAG_RE.sub("", full_text).strip()
             current_messages.append({
                 "role":       "assistant",
-                "content":    full_text,
+                "content":    _assistant_content,
                 "tool_calls": assistant_tool_calls,
             })
             current_messages.extend(tool_result_messages)
@@ -4139,7 +4406,8 @@ async def sys_stats():
     try:
         rss_raw = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
         rss_mb = round(rss_raw / 1024 / 1024 if sys.platform == "darwin" else rss_raw / 1024, 1)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — best-effort stats endpoint, must not 500 on probe failure
+        _LOG.debug("RSS memory probe failed: %s", exc)
         rss_mb = 0.0
 
     # Disk usage for root filesystem
@@ -4148,7 +4416,8 @@ async def sys_stats():
         disk_used_pct  = round(du.used / du.total * 100, 1)
         disk_free_gb   = round(du.free / 1024 ** 3, 1)
         disk_total_gb  = round(du.total / 1024 ** 3, 1)
-    except Exception:
+    except OSError as exc:
+        _LOG.debug("disk usage probe failed: %s", exc)
         disk_used_pct = 0.0
         disk_free_gb  = 0.0
         disk_total_gb = 0.0
@@ -4303,8 +4572,8 @@ async def tokenize(
     try:
         ids = tok.encode(text) if hasattr(tok, "encode") else \
               tok(text, return_tensors="np")["input_ids"][0].tolist()
-    except Exception as e:
-        raise HTTPException(500, f"Tokenization failed: {e}") from e
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError, RuntimeError) as exc:
+        raise HTTPException(500, f"Tokenization failed: {exc}") from exc
 
     return JSONResponse({
         "token_ids":   ids,
@@ -4437,6 +4706,17 @@ Examples:
                     help="MLX rotating KV cache size in tokens.\n"
                          "MLX defaults to 4096, silently truncating contexts longer than 4K.\n"
                          "Set to 131072 for 128K context. Passed directly to mlx_lm.stream_generate.")
+    ap.add_argument("--kv-bits", type=int, default=None, metavar="N",
+                    help="Native mlx_lm quantized KV cache bit-width (use 8; 4 degrades\n"
+                         "output quality). A MEMORY lever — shrinks the KV cache so longer\n"
+                         "context fits in RAM. NOT a speed lever on Apple Silicon: decode is\n"
+                         "weight-bandwidth bound, so quantizing KV gives ~0 decode speedup\n"
+                         "(measured). None = fp16 KV (default). Distinct from --kv-cache-mode.")
+    ap.add_argument("--kv-group-size", type=int, default=64, metavar="N",
+                    help="Group size for --kv-bits quantization (default 64).")
+    ap.add_argument("--quantized-kv-start", type=int, default=0, metavar="N",
+                    help="Keep the first N tokens of KV in fp16 before quantizing\n"
+                         "(default 0). Larger values trade memory for early-token fidelity.")
     # ── Phase A3: concise responses ───────────────────────────────────────────
     ap.add_argument("--concise-responses", action="store_true", default=False,
                     help="Prepend a concision directive to every system message and apply\n"
@@ -4855,7 +5135,8 @@ Examples:
                     args.max_kv_size = min(32768, int(_free_gb * 2048))
                 else:
                     args.max_kv_size = 8192
-            except Exception:  # noqa: BLE001
+            except (ImportError, OSError, RuntimeError, AttributeError, ValueError) as exc:
+                _LOG.debug("agent max-kv auto-size failed: %s", exc)
                 args.max_kv_size = 8192
         _info("agent-preset",
               f"active  agent-kv=True  chunk-prefill=True"
@@ -4906,10 +5187,9 @@ Examples:
                   f"{s['total_blocks']} blocks  "
                   f"({s['memory_mb']} MB  page={s['page_size']}tok  "
                   f"{s['n_layers']}L×{s['n_kv_heads']}H×{s['head_dim']}d)")
-        except Exception as _paged_err:
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
-                "[paged-attention] could not initialise (%s) — disabled", _paged_err
+        except (ImportError, RuntimeError, ValueError, AttributeError, OSError) as exc:
+            _LOG.warning(
+                "[paged-attention] could not initialise (%s) — disabled", exc
             )
 
     _check_mlx_lm_version()
@@ -4970,9 +5250,9 @@ Examples:
         def _bg_preload(args_: "Any" = args) -> None:
             try:
                 _do_model_load(args_)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 — top-level boundary, must not crash
                 # _do_model_load already logs + sets _LOAD_ERROR.
-                pass
+                _LOG.debug("background preload error (already recorded): %s", exc)
         threading.Thread(
             target=_bg_preload, name="squish-preload-async", daemon=True
         ).start()
@@ -5000,7 +5280,8 @@ Examples:
         try:
             _load_ns = _model_load_span.end_time_ns - _model_load_span.start_time_ns
             _load_ms = _load_ns / 1_000_000.0
-        except Exception:
+        except (AttributeError, TypeError) as exc:
+            _LOG.debug("model-load span timing unavailable: %s", exc)
             _load_ms = 0.0
         if _load_ms > 0:
             _profiler.record("model_load_ms", _load_ms)
@@ -5089,8 +5370,8 @@ Examples:
                 _info("lazy-llm", f"keep={args.lazy_llm_keep_ratio}  "
                       f"start_layer={args.lazy_llm_start_layer}  "
                       f"revive={args.lazy_llm_revive_window}")
-        except Exception as _llm_err:
-            _warn(f"[lazy_llm] Skipped: {_llm_err}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[lazy_llm] Skipped: {exc}")
 
     if _state.model is not None:
         try:
@@ -5099,18 +5380,18 @@ Examples:
             if _split_info:
                 _info("cpu/gpu split", f"{_split_info.cpu_count} layers offloaded  "
                       f"GPU={_split_info.gpu_gb:.2f}GB  CPU={_split_info.cpu_gb:.2f}GB")
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError, OSError) as exc:
             if args.verbose:
-                _warn(f"[split_loader] Skipped: {e}")
+                _warn(f"[split_loader] Skipped: {exc}")
 
     # ── Phase 2.3: Flash Attention status check ──────────────────────────────
     if _state.model is not None:
         try:
             from squish.attention.flash_attention import patch_model_attention
             patch_model_attention(_state.model, verbose=_VERBOSE)
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
             if args.verbose:
-                _warn(f"[flash_attention] Skipped: {e}")
+                _warn(f"[flash_attention] Skipped: {exc}")
 
     # ── Phase 1.3: attach quantized KV cache if requested ─────────────
     global _kv_cache
@@ -5126,10 +5407,9 @@ Examples:
                 verbose=True,
             )
             _info("kv-cache", f"ready ({args.kv_cache_mode})")
-        except Exception as e:
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
-                "[KV cache] could not attach (%s) — running without KV quantisation", e
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError, OSError) as exc:
+            _LOG.warning(
+                "[KV cache] could not attach (%s) — running without KV quantisation", exc
             )
 
     # ── Phase 3: persistent cross-session KV cache ────────────────────────────
@@ -5140,8 +5420,8 @@ Examples:
             from squish.kv.kv_cache import SessionKVCache as _SessionKVCache
             _session_kv_cache = _SessionKVCache(cache_dir=_session_cache_dir)
             _info("session-cache", f"{_session_cache_dir}")
-        except Exception as _e:
-            _warn(f"[session-cache] Could not enable: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError) as exc:
+            _warn(f"[session-cache] Could not enable: {exc}")
 
     # ── Phase 4: prompt compression settings ─────────────────────────────────
     global _compress_enabled, _compress_ratio, _compress_min_tokens, _compress_preserve_tokens
@@ -5174,13 +5454,14 @@ Examples:
     global _semantic_cache
     if getattr(args, "semantic_cache", False):
         try:
+            from squish.config import squish_home  # noqa: PLC0415
             from squish.semantic_cache import SquishSemanticCache  # noqa: PLC0415
             _sc_db = getattr(args, "semantic_cache_db", "") or \
-                     str(Path.home() / ".squish" / "response_cache.db")
+                     str(squish_home() / "response_cache.db")
             _semantic_cache = SquishSemanticCache(db_path=_sc_db)
             _info("semantic-cache", f"enabled  db={_sc_db}")
-        except Exception as _sc_err:
-            _warn(f"[semantic-cache] Could not enable: {_sc_err}\n"
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError) as exc:
+            _warn(f"[semantic-cache] Could not enable: {exc}\n"
                   "Install sqlite-vec: pip install 'squish[cache]'")
 
     # ── Phase 3A: chunked prefill settings ───────────────────────────────────
@@ -5200,7 +5481,8 @@ Examples:
     if _thinking_budget >= 0 and _state.tokenizer is not None:
         try:
             _think_close_token_id = _state.tokenizer.convert_tokens_to_ids("</think>")
-        except Exception:
+        except (AttributeError, KeyError, ValueError, TypeError) as exc:
+            _LOG.debug("thinking-budget close-token lookup failed: %s", exc)
             _think_close_token_id = None
     if _thinking_budget == 0:
         _info("thinking-budget", "disabled (no_think mode)")
@@ -5212,6 +5494,13 @@ Examples:
     _max_kv_size = getattr(args, "max_kv_size", None)
     if _max_kv_size is not None:
         _info("max-kv-size", f"{_max_kv_size} tokens")
+    global _kv_bits, _kv_group_size, _quantized_kv_start
+    _kv_bits = getattr(args, "kv_bits", None)
+    _kv_group_size = getattr(args, "kv_group_size", 64)
+    _quantized_kv_start = getattr(args, "quantized_kv_start", 0)
+    if _kv_bits is not None:
+        _info("kv-bits", f"{_kv_bits}-bit native KV (group={_kv_group_size}, "
+                         f"start={_quantized_kv_start})")
 
     # ── Phase A3: concise responses ───────────────────────────────────────────
     global _concise_responses
@@ -5281,8 +5570,8 @@ Examples:
             _info("memory-governor",
                   f"started  available={_memory_governor.available_gb:.1f} GB"
                   f"  pressure={_memory_governor.pressure_level}")
-        except Exception as _mg_exc:  # noqa: BLE001
-            _info("memory-governor", f"unavailable ({_mg_exc})")
+        except (ImportError, OSError, RuntimeError, AttributeError, ValueError) as exc:
+            _info("memory-governor", f"unavailable ({exc})")
 
     # ── Phase 0C: hardware inference backend ─────────────────────────────────
     _inference_backend = getattr(args, "inference_backend", "mlx-eager")
@@ -5309,10 +5598,9 @@ Examples:
             _info("batch-scheduler",
                   f"enabled  algo={getattr(args, 'scheduler', 'nested-wait')}  "
                   f"max_batch={args.batch_size}  window={args.batch_window_ms:.0f}ms")
-        except Exception as e:
-            import logging as _logging
-            _logging.getLogger(__name__).warning(
-                "[Scheduler] could not start (%s) — falling back to sequential mode", e
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError, OSError) as exc:
+            _LOG.warning(
+                "[Scheduler] could not start (%s) — falling back to sequential mode", exc
             )
             _scheduler = None
 
@@ -5340,8 +5628,8 @@ Examples:
             # Store config now; decoder is instantiated on first generation call.
             _prompt_lookup_decoder = _plcfg  # type: ignore[assignment]
             _info("prompt-lookup", f"ngram_max={_plcfg.ngram_max}  max_speculative={_plcfg.max_speculative}")
-        except Exception as _e:
-            _warn(f"[prompt-lookup] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[prompt-lookup] Skipped: {exc}")
 
     # ── Wave 37: Wire Everything In ───────────────────────────────────────────
     # ChipDetector is always run at startup (no flag required).
@@ -5359,8 +5647,8 @@ Examples:
         if _chunk_prefill_enabled and getattr(args, "chunk_prefill_size", 512) == 512:
             _chunk_prefill_size = _chip_profile.recommended_chunk_prefill
             _info("chip-detector", f"→ chunk_prefill_size auto-tuned to {_chunk_prefill_size}")
-    except Exception as _cd_err:
-        _info("chip-detector", f"detection unavailable ({_cd_err})")
+    except (ImportError, OSError, RuntimeError, AttributeError, ValueError) as exc:
+        _info("chip-detector", f"detection unavailable ({exc})")
 
     # ── Wave 79: Auto-detect optimal settings from hardware + model files ─────
     if not getattr(args, "no_optimize", False):
@@ -5376,8 +5664,8 @@ Examples:
             )
             _auto_profile_inst.apply_defaults(args)
             globals()["_auto_profile"] = _auto_profile_inst
-        except Exception:  # noqa: BLE001
-            pass  # never block startup on auto-profile failure
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _LOG.debug("auto-profile failed: %s", exc)  # never block startup
 
     # ── Wave 82a: Auto-load EAGLE-3 head (detected by auto_profile) ──────────
     # load_eagle_head() at line ~4988 runs before the auto-profile block, so
@@ -5394,8 +5682,8 @@ Examples:
             load_eagle_head(_w82_prof.eagle3_head_dir, verbose=False)
             _info("eagle3-auto",
                   f"head auto-loaded from {_w82_prof.eagle3_head_dir}")
-        except Exception as _e82:  # noqa: BLE001
-            _warn(f"[eagle3-auto] Could not load: {_e82}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[eagle3-auto] Could not load: {exc}")
 
     # ── Wave 82b: Auto-load structured FFN sparsity masks ────────────────────
     if (
@@ -5415,7 +5703,7 @@ Examples:
                 f"  ratio={_sfn.mean_sparsity:.1%}"
                 f"  file={os.path.basename(_w82_prof.sparsity_mask_path)}",
             )
-        except Exception as _e82b:  # noqa: BLE001
+        except Exception as _e82b:  # noqa: BLE001 — optional sparse-ffn masks, must not crash boot
             _warn(f"[sparse-ffn] Could not load masks: {_e82b}")
 
     # ── Wave 83: Auto-enable MoE lazy expert loading (detected by auto_profile)
@@ -5440,8 +5728,8 @@ Examples:
                 "moe-lazy",
                 "JIT expert materialisation: auto-enabled for MoE model",
             )
-        except Exception as _e83:  # noqa: BLE001
-            _warn(f"[moe-lazy] Could not auto-enable: {_e83}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[moe-lazy] Could not auto-enable: {exc}")
 
     global _kvtc_manager
     if getattr(args, "kvtc", False) and _state.model is not None:
@@ -5461,8 +5749,8 @@ Examples:
             _info("kvtc",
                   f"rank={_kvtc_cfg.rank}  bits={_kvtc_cfg.quant_bits}"
                   f"  layers={_n_layers_kvtc}")
-        except Exception as _e:
-            _warn(f"[kvtc] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[kvtc] Skipped: {exc}")
 
     global _metal_flash_attn
     if getattr(args, "metal_flash_attn", False) and _state.model is not None:
@@ -5474,8 +5762,8 @@ Examples:
             _info("metal-flash-attn",
                   f"block_q={_mfa_cfg.block_q}  block_k={_mfa_cfg.block_k}"
                   f"  causal={_mfa_cfg.causal}")
-        except Exception as _e:
-            _warn(f"[metal-flash-attn] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[metal-flash-attn] Skipped: {exc}")
 
     global _deja_vu_sparse_ffn
     if getattr(args, "deja_vu", False) and _state.model is not None:
@@ -5489,8 +5777,8 @@ Examples:
             _info("deja-vu",
                   f"hidden={_dv_cfg.hidden_size}  ffn={_dv_cfg.ffn_size}"
                   f"  threshold={_dv_cfg.threshold}")
-        except Exception as _e:
-            _warn(f"[deja-vu] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[deja-vu] Skipped: {exc}")
 
     global _jacobi_decoder
     if getattr(args, "jacobi", False):
@@ -5506,8 +5794,8 @@ Examples:
             _info("jacobi",
                   f"n_tokens={_jd_cfg.n_tokens}  max_iter={_jd_cfg.max_iter}"
                   f"  variant={_jd_cfg.variant}")
-        except Exception as _e:
-            _warn(f"[jacobi] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[jacobi] Skipped: {exc}")
 
     global _layer_overlap_loader
     if getattr(args, "layer_overlap", False) and _state.model is not None:
@@ -5530,8 +5818,8 @@ Examples:
             )
             _info("layer-overlap",
                   f"prefetch_count={_lol_cfg.prefetch_count}  n_layers={_n_layers_lol}")
-        except Exception as _e:
-            _warn(f"[layer-overlap] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[layer-overlap] Skipped: {exc}")
 
     global _fused_qkv_proj
     if getattr(args, "fused_qkv", False) and _state.model is not None:
@@ -5552,8 +5840,8 @@ Examples:
             _info("fused-qkv",
                   f"d_model={_fqkv_cfg.d_model}  n_heads={_fqkv_cfg.n_heads}"
                   f"  n_kv_heads={_fqkv_cfg.n_kv_heads}  d_head={_fqkv_cfg.d_head}")
-        except Exception as _e:
-            _warn(f"[fused-qkv] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[fused-qkv] Skipped: {exc}")
 
     # ── Wave 50: Bigger-Than-Memory: SparseGPT, MoD, LeanKV, GGUF, etc. ──────
     global _gguf_loader
@@ -5563,8 +5851,8 @@ Examples:
             _gl_cfg = GGUFConfig()
             _gguf_loader = GGUFNativeLoader(_gl_cfg)
             _info("gguf-loader", "GGUF native loader: Q2_K/Q3_K/Q4_K/Q5_K/Q8_0 format parser")
-        except Exception as _e:
-            _warn(f"[gguf-loader] Skipped: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[gguf-loader] Skipped: {exc}")
 
     global _weight_stream
     if getattr(args, "weight_stream", False):
@@ -5573,8 +5861,8 @@ Examples:
             _ws_cfg = WeightStreamConfig()
             _weight_stream = WeightDecompressStream(_ws_cfg)
             _info("weight-stream", "weight decompress stream: overlapped CPU dequant + GPU compute")
-        except Exception as _e:
-            _warn(f"[weight-stream] Skipped: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[weight-stream] Skipped: {exc}")
 
     global _shard_loader
     if getattr(args, "shard_loader", False):
@@ -5583,8 +5871,8 @@ Examples:
             _sl_cfg = ShardConfig()
             _shard_loader = ModelShardLoader(_sl_cfg)
             _info("shard-loader", "model shard loader: 3-tier GPU-hot/CPU-warm/SSD-cold weight paging")
-        except Exception as _e:
-            _warn(f"[shard-loader] Skipped: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[shard-loader] Skipped: {exc}")
 
     # ── Wave 51: Test-Time Compute Scaling ────────────────────────────────────
     global _coconut_decoder
@@ -5594,8 +5882,8 @@ Examples:
             _coc_cfg = CoconutConfig()
             _coconut_decoder = CoconutDecoder(_coc_cfg)
             _info("coconut", "COCONUT: continuous latent reasoning decoder")
-        except Exception as _e:
-            _warn(f"[coconut] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[coconut] Skipped: {exc}")
 
     global _self_consistency
     if getattr(args, "self_consistency", False):
@@ -5604,8 +5892,8 @@ Examples:
             _sc2_cfg = SelfConsistencyConfig()
             _self_consistency = SelfConsistencyVoter(_sc2_cfg)
             _info("self-consistency", "self-consistency: majority voting over K reasoning chains")
-        except Exception as _e:
-            _warn(f"[self-consistency] Skipped: {_e}")
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[self-consistency] Skipped: {exc}")
 
     # ── Wave 27: Inference velocity features ──────────────────────────────────
     # 1B — FusedSampler: replace multi-pass sampling with a single fused kernel
@@ -5621,9 +5909,9 @@ Examples:
             )
             _fused_sampler = FusedSampler(_fs_cfg)
             _info("fused-sampler", "single-pass temperature+top-k+top-p+rep-penalty  (~10% decode throughput)")
-        except Exception as _e:
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
             _fused_sampler_enabled = False
-            _warn(f"[fused-sampler] Skipped: {_e}")
+            _warn(f"[fused-sampler] Skipped: {exc}")
 
     # 1C — CacheWarmup: track prefix access patterns for TTFT reduction
     global _cache_warmup_predictor, _cache_warmup_enabled
@@ -5634,7 +5922,8 @@ Examples:
             _cw_cfg = WarmupConfig(top_k=32, min_access_count=2, max_prefix_tokens=256)
             _cache_warmup_predictor = CacheWarmupPredictor(_cw_cfg)
             _info("cache-warmup", "predictive KV prefix pre-warming  (top_k=32  min_count=2)")
-        except Exception:
+        except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _LOG.debug("cache-warmup init failed: %s", exc)
             _cache_warmup_enabled = False
 
     if getattr(args, "lora_adapter", ""):
@@ -5643,8 +5932,8 @@ Examples:
             _lora_mgr = LoRAManager()
             _lora_mgr.load(args.lora_adapter)
             _info("lora-adapter", f"{args.lora_adapter}")
-        except Exception as _e:
-            _warn(f"[lora-adapter] Skipped: {_e}")
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+            _warn(f"[lora-adapter] Skipped: {exc}")
 
     # ── Signal bot ────────────────────────────────────────────────────────────
     import os as _os
@@ -5715,8 +6004,8 @@ Examples:
         _agent_registry = _ToolRegistry()
         _reg_tools(_agent_registry)
         _info("agent-registry", f"loaded  tools={len(_agent_registry)}")
-    except Exception as _ar_exc:  # noqa: BLE001
-        _warn(f"[agent-registry] Could not load built-in tools: {_ar_exc}")
+    except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+        _warn(f"[agent-registry] Could not load built-in tools: {exc}")
 
     # ── Wave 115: Flush all-optimizations lazy-init before first user request ─
     # When --all-optimizations activates 100+ wave flags, each module's

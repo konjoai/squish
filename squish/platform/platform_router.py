@@ -28,10 +28,13 @@ Usage::
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Callable, List, Optional
+
+_LOG = logging.getLogger("squish.platform.platform_router")
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +218,8 @@ class PlatformRouter:
             self.stats.probes_fired += 1
             try:
                 available = entry.probe()
-            except Exception:
+            except (ImportError, RuntimeError, OSError, AttributeError) as exc:
+                _LOG.debug("Probe for %s raised: %s", entry.name, exc)
                 available = False
             if available:
                 return RoutedBackend(
@@ -294,7 +298,8 @@ class PlatformRouter:
             from squish.platform.ane_router import ANERouter
             router = ANERouter()
             return router.is_available() and self._cfg.ane_model_size_gb <= 8.0
-        except Exception:
+        except (ImportError, RuntimeError, OSError, AttributeError) as exc:
+            _LOG.debug("ANE probe failed: %s", exc)
             return False
 
     def _probe_cuda(self) -> bool:
@@ -302,7 +307,8 @@ class PlatformRouter:
             from squish.platform.cuda_backend import CUDABackend, CUDAConfig
             backend = CUDABackend(CUDAConfig(device_index=self._cfg.cuda_device_index))
             return backend.is_available()
-        except Exception:
+        except (ImportError, RuntimeError, OSError, AttributeError) as exc:
+            _LOG.debug("CUDA probe failed: %s", exc)
             return False
 
     def _probe_rocm(self) -> bool:
@@ -310,20 +316,18 @@ class PlatformRouter:
             from squish.platform.rocm_backend import ROCmBackend, ROCmConfig
             backend = ROCmBackend(ROCmConfig(device_index=self._cfg.rocm_device_index))
             return backend.is_available()
-        except Exception:
+        except (ImportError, RuntimeError, OSError, AttributeError) as exc:
+            _LOG.debug("ROCm probe failed: %s", exc)
             return False
 
     def _probe_mlx(self) -> bool:
         try:
             import mlx.core  # noqa: F401
             return True
-        except ImportError:
-            pass
-        try:
-            import sys
-            return sys.platform == "darwin"
-        except Exception:
-            return False
+        except ImportError as exc:
+            _LOG.debug("MLX import unavailable, falling back to platform check: %s", exc)
+        import sys
+        return sys.platform == "darwin"
 
     def _probe_directml(self) -> bool:
         try:
@@ -332,7 +336,8 @@ class PlatformRouter:
                 WindowsConfig(adapter_index=self._cfg.dml_adapter_index)
             )
             return backend.is_available()
-        except Exception:
+        except (ImportError, RuntimeError, OSError, AttributeError) as exc:
+            _LOG.debug("DirectML probe failed: %s", exc)
             return False
 
     def _cuda_kernel_hint(self) -> str:
@@ -341,8 +346,8 @@ class PlatformRouter:
             backend = CUDABackend(CUDAConfig(device_index=self._cfg.cuda_device_index))
             if backend.is_available():
                 return backend.get_kernel_path().name
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, OSError, AttributeError) as exc:
+            _LOG.debug("CUDA kernel hint probe failed: %s", exc)
         return "FP16_BASELINE"
 
     def __repr__(self) -> str:

@@ -25,10 +25,13 @@ Public API
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 
 __all__ = ["has_truecolor", "detect_dark_background", "C", "gradient", "LOGO_GRAD"]
+
+_LOG = logging.getLogger("squish._term")
 
 
 def has_truecolor(fd: int = 1) -> bool:
@@ -36,7 +39,8 @@ def has_truecolor(fd: int = 1) -> bool:
     true-colour TTY and NO_COLOR is not set."""
     try:
         is_tty = os.isatty(fd)
-    except Exception:
+    except (OSError, ValueError) as exc:
+        _LOG.debug("os.isatty(%s) failed: %s", fd, exc)
         return False
     return (
         is_tty
@@ -102,12 +106,14 @@ def detect_dark_background() -> bool:
 
 try:
     _stdout_fd = sys.stdout.fileno() if hasattr(sys.stdout, "fileno") else 1
-except Exception:
+except (OSError, ValueError, AttributeError) as exc:
+    _LOG.debug("sys.stdout.fileno() failed: %s", exc)
     _stdout_fd = 1
 
 try:
     _IS_TTY = os.isatty(_stdout_fd)
-except Exception:
+except (OSError, ValueError) as exc:
+    _LOG.debug("os.isatty(%s) failed: %s", _stdout_fd, exc)
     _IS_TTY = False
 
 _NO_COLOR       = "NO_COLOR" in os.environ

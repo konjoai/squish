@@ -39,11 +39,14 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Callable
+
+_LOG = logging.getLogger("squish.serving.memory_governor")
 
 __all__ = [
     "MemoryGovernor",
@@ -111,7 +114,8 @@ def _run(cmd: list[str]) -> str:
             timeout=3,
         )
         return result.stdout
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — best-effort metric probe, any failure → ""
+        _LOG.debug("command %s failed: %s", cmd, exc)
         return ""
 
 
@@ -259,8 +263,8 @@ class MemoryGovernor:
             for cb in list(self._callbacks):
                 try:
                     cb(level)
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 — poll-thread boundary, callback must not crash watcher
+                    _LOG.warning("memory-pressure callback raised: %s", exc)
 
     # ── Properties ────────────────────────────────────────────────────────
 
