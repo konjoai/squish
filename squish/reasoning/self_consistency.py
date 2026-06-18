@@ -140,10 +140,11 @@ class SelfConsistencyVoter:
         return self._normalise(raw)
 
     def majority_vote(self, vote_counts: dict[str, int]) -> str:
-        """Return the answer with the most votes (ties broken alphabetically)."""
+        """Return the answer with the most votes (ties broken alphabetically first)."""
         if not vote_counts:
             raise ValueError("vote_counts must be non-empty")
-        return max(vote_counts.keys(), key=lambda a: (vote_counts[a], a))
+        top = max(vote_counts.values())
+        return min(a for a, c in vote_counts.items() if c == top)
 
     # ------------------------------------------------------------------
     # Internal helpers
