@@ -80,21 +80,23 @@ class SinkStats:
     Attributes:
         n_tokens_seen: Total tokens added since last :meth:`SinkKVCache.reset`.
         n_evictions: Number of tokens evicted from the rolling window.
+        window_size: Rolling-window capacity, used as the util_fraction denominator.
     """
 
     n_tokens_seen: int = 0
     n_evictions: int = 0
+    window_size: int = 0
 
     @property
     def util_fraction(self) -> float:
         """Fraction of the rolling window currently occupied (0–1).
 
-        Returns 0.0 before any tokens are added.  Value is based on
-        ``n_tokens_seen`` relative to the window size, clamped to [0.0, 1.0].
-        This is a snapshot metric only — callers needing exact occupancy
-        should inspect :attr:`SinkKVCache.n_recent` directly.
+        Returns 0.0 before any tokens are added.  Value is ``n_tokens_seen``
+        relative to the window size, clamped to [0.0, 1.0]. This is a snapshot
+        metric only — callers needing exact occupancy should inspect
+        :attr:`SinkKVCache.n_recent` directly.
         """
-        return min(1.0, float(self.n_tokens_seen) / max(1, self.n_tokens_seen))
+        return min(1.0, float(self.n_tokens_seen) / max(1, self.window_size))
 
     @property
     def total_tokens_held(self) -> int:
@@ -237,6 +239,7 @@ class SinkKVCache:
         return SinkStats(
             n_tokens_seen=self._n_tokens_seen,
             n_evictions=self._n_evictions,
+            window_size=self._config.window_size,
         )
 
     # ------------------------------------------------------------ convenience
