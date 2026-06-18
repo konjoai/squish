@@ -910,10 +910,12 @@ def search(
 
 # ── Name normalisation ───────────────────────────────────────────────────────
 
-# Pattern for a size suffix like "7b", "8b", "14b", "1.5b", "30b-a3b", "235b-a22b".
-# Used to find the boundary where dash-separated model family ends and size begins.
+# Pattern for a size suffix like "7b", "8b", "14b", "1.5b", "135m", "360m",
+# "30b-a3b", "235b-a22b". Marks where the dash-separated family ends and the size
+# begins. Unit is b (billions) or m (millions); the active-params tail (-aNb) is
+# always in billions.
 _SIZE_SUFFIX_RE = re.compile(
-    r"[-_](\d+\.?\d*b(?:-a\d+\.?\d*b)?)"
+    r"[-_](\d+\.?\d*[bm](?:-a\d+\.?\d*b)?)"
     r"(?:[-_](?:int2|int3|int4|int8|q4|q8|bf16|fp16|fp32))?$",
     re.IGNORECASE,
 )
