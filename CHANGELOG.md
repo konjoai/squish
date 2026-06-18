@@ -5,6 +5,54 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.0] — API input-validation hardening + Apple-Silicon e2e battle-test
+
+### Added
+- `squish/api/validation.py`: shared, platform-safe request-parameter
+  validators (`parse_max_tokens`, `parse_max_steps`, `parse_temperature`,
+  `parse_top_p`, `parse_embedding_input`, `parse_json_body`). Every malformed
+  sampling parameter or body now yields a clean `HTTPException(400)` naming the
+  offending field instead of a 500 + traceback. Reused across every endpoint
+  (DRY).
+- `squish/__main__.py`: `python -m squish …` now mirrors the `squish` console
+  script (used by the e2e harness and CI).
+- `tests/e2e/` battle-test suite: a session-scoped `live_server` fixture boots a
+  real MLX server (default `mlx-community/Qwen2.5-0.5B-Instruct-4bit`) and
+  hammers every endpoint and CLI subcommand with valid + adversarial input.
+  Gated behind `SQUISH_E2E=1` / `--run-e2e`; skipped off Apple Silicon.
+  Suites: `test_server_battle.py`, `test_embeddings_e2e.py`,
+  `test_cli_clean_errors.py`, `test_agent_e2e.py`.
+- Linux-runnable unit tests covering the new source so the ≥80% coverage gate
+  holds where the e2e suite skips: `test_api_validation_unit.py`,
+  `test_cli_main_guard_unit.py`, `test_embeddings_guard_unit.py`.
+- CI: `e2e-apple-silicon` job (macos-14) running the battle-test on PRs with the
+  0.5B model; `workflow_dispatch` `e2e_model` input swaps to 1.5B.
+
+### Fixed
+- `/v1/embeddings`: the `import mlx.core` / `import numpy` were **unguarded** —
+  a CLAUDE.md violation. They are now gated behind a `platform.system()`
+  Darwin check (and a guarded `ImportError` fallback) that returns a clean
+  `503 "embeddings require the MLX backend (Apple Silicon)"` with a
+  `logging.warning` on non-MLX hosts. `input` is now validated (non-empty
+  str/list of non-empty str → else 400).
+- Raw `int()`/`float()` casts on caller-supplied `max_tokens` / `temperature` /
+  `top_p` / `max_steps` in `/v1/chat/completions`, `/v1/completions`,
+  `/v1/embeddings`, and `/v1/agent/run` no longer turn bad input into a 500;
+  they are range-checked and rejected with a 400.
+- Unguarded `await request.json()` across `/v1/chat/completions`,
+  `/v1/completions`, `/v1/embeddings`, `/v1/agent/run`, `/v1/agent/mcp`, and
+  `/v1/tokenize` (malformed JSON → 500) now returns a clean 400.
+- `squish` CLI: `main()` no longer lets an uncaught exception surface as a raw
+  Python traceback. Expected errors (`FileNotFoundError`/`ValueError`/`OSError`)
+  print a one-line message + non-zero exit; unexpected ones (including a missing
+  inference backend, e.g. `ImportError` for MLX/torch) are logged
+  (`--log-level debug` for the traceback) and converted to a clean exit;
+  `KeyboardInterrupt` exits 130. (squish serves on both Apple Silicon/MLX and
+  Linux/torch, so the CLI intentionally does **not** pre-gate commands on
+  platform — it lets the backend report a clean error instead.)
+
+---
+
 ## [9.33.8] — Unified startup banner + partial-dir guard
 
 ### Changed

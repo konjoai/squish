@@ -414,9 +414,10 @@ class TestIntegration:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 103, (
-            f"Module count = {count}, expected 103 after v4 daemon + v5.1.1 perf "
-            f"+ KV P2 sprint (89 post-W111 + 11 new modules) + grammar/io/reasoning."
+        assert count == 105, (
+            f"Module count = {count}, expected 105 after v4 daemon + v5.1.1 perf "
+            f"+ KV P2 sprint (89 post-W111 + 11 new modules) + grammar/io/reasoning "
+            f"+ api/validation.py & __main__.py (e2e battle-test hardening, v9.34.0)."
         )
         assert count <= 125
 

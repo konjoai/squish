@@ -7350,6 +7350,8 @@ Ollama drop-in:
 
 
 def main():
+    import logging as _logging
+
     ap = build_parser()
     args = ap.parse_args()
 
@@ -7357,15 +7359,42 @@ def main():
     try:
         from squish.logging_config import configure_logging as _configure_logging
         _configure_logging(level=getattr(args, "log_level", "warning"))
-    except Exception:
-        pass  # never block CLI startup on logging config failure
+    except (ImportError, ValueError, OSError) as exc:
+        # Never block CLI startup on logging config failure — but don't swallow
+        # it silently either.
+        print(f"  warning: logging setup failed: {exc}", file=sys.stderr)
 
     if not args.command:
         # No subcommand — show interactive welcome instead of raw argparse help
         cmd_welcome()
         sys.exit(0)
 
-    args.func(args)  # pragma: no cover
+    try:
+        args.func(args)
+    except KeyboardInterrupt:
+        print("\n  interrupted", file=sys.stderr)
+        raise SystemExit(130) from None
+    except SystemExit:
+        # argparse, _die() and explicit exits already carry a clean message.
+        raise
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        # Expected, actionable failures — show a clean one-line message.
+        _die(str(exc))
+    except Exception as exc:  # noqa: BLE001 — top-level guard: log + convert
+        # Unexpected failure: record the full traceback for diagnosis (visible
+        # at --log-level debug) and convert to a clean non-zero exit instead of
+        # dumping a raw Python traceback on the user.  This is log-and-convert,
+        # never a silent swallow.
+        _log = _logging.getLogger("squish.cli")
+        _log.error(
+            "unexpected error in '%s' command: %s: %s",
+            args.command, type(exc).__name__, exc,
+        )
+        _log.debug("traceback for '%s' command:", args.command, exc_info=True)
+        _die(
+            f"unexpected error ({type(exc).__name__}); "
+            f"rerun with --log-level debug for the full traceback."
+        )
 
 
 if __name__ == "__main__":

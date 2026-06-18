@@ -570,11 +570,12 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 103, (
-            f"Module count changed: {count} != 103. "
+        assert count == 105, (
+            f"Module count changed: {count} != 105. "
             "Squash separation baseline = 83; W103.1 → 84; W103.4c → 85; "
             "W100/W110 integrations → 87; W110/W111 serving modules → 89; "
-            "v4 daemon + v5.1.1 perf + KV P2 → 100; grammar/io/reasoning → 103. "
+            "v4 daemon + v5.1.1 perf + KV P2 → 100; grammar/io/reasoning → 103; "
+            "v9.34.0 e2e battle-test → 105 (api/validation.py + __main__.py). "
             "New modules require either deletion of an existing one or written "
             "justification per CLAUDE.md."
         )
