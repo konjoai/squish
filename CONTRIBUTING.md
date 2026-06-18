@@ -49,12 +49,27 @@ cd ..
 ## Running Tests
 
 ```bash
-pytest tests/ -v
+pytest tests/ -v          # or:  make test
 ```
 
 The test suite does **not** require model weights — it uses mocked tensors and
 stub loaders.  Tests that do require weights are skipped automatically when
 `~/models/` is absent.
+
+### Coverage
+
+```bash
+make coverage             # terminal report (term-missing) + coverage.xml
+make coverage-html        # also writes htmlcov/index.html
+```
+
+Coverage is **measured on Apple Silicon** so the MLX inference paths actually
+execute — the bulk of `squish/` cannot run on a Linux runner, so a Linux-only
+number understates real coverage.  The `make` targets set `CI=1` (which lifts
+the sandbox MLX-import guard) and exclude the handful of files that SIGABRT at
+collection under Metal.  CI runs the same measurement in the **Coverage (Apple
+Silicon + MLX)** job and uploads to [Codecov](https://codecov.io/gh/konjoai/squish);
+the badge at the top of the README reflects `main`.
 
 ---
 

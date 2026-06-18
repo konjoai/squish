@@ -54,6 +54,7 @@ import hmac
 import json
 import gc
 import os
+import platform
 import re
 import sys
 import logging as _logging
@@ -180,6 +181,15 @@ from fastapi import FastAPI, HTTPException, Request, Security  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
+
+from squish.api.validation import (  # noqa: E402
+    parse_embedding_input,
+    parse_json_body,
+    parse_max_steps,
+    parse_max_tokens,
+    parse_temperature,
+    parse_top_p,
+)
 
 try:
     from fastapi.staticfiles import StaticFiles as _StaticFiles
@@ -3301,11 +3311,11 @@ async def chat_completions(  # pragma: no cover
     if _state.model is None:
         raise HTTPException(503, "Model not loaded")
 
-    body: dict[str, Any] = await request.json()
+    body: dict[str, Any] = await parse_json_body(request)
     messages    = body.get("messages", [])
-    max_tokens         = int(body.get("max_tokens", 4096))
-    temperature        = float(body.get("temperature", 0.7))
-    top_p              = float(body.get("top_p", 0.9))
+    max_tokens         = parse_max_tokens(body.get("max_tokens"), 4096)
+    temperature        = parse_temperature(body.get("temperature"), 0.7)
+    top_p              = parse_top_p(body.get("top_p"), 0.9)
     repetition_penalty = float(body.get("repetition_penalty", 1.0))
     stream             = bool(body.get("stream", False))
     stop               = body.get("stop", None)
@@ -3691,11 +3701,11 @@ async def completions(  # pragma: no cover
     if _state.model is None:
         raise HTTPException(503, "Model not loaded")
 
-    body: dict[str, Any] = await request.json()
+    body: dict[str, Any] = await parse_json_body(request)
     prompt             = body.get("prompt", "")
-    max_tokens         = int(body.get("max_tokens", 4096))
-    temperature        = float(body.get("temperature", 0.7))
-    top_p              = float(body.get("top_p", 0.9))
+    max_tokens         = parse_max_tokens(body.get("max_tokens"), 4096)
+    temperature        = parse_temperature(body.get("temperature"), 0.7)
+    top_p              = parse_top_p(body.get("top_p"), 0.9)
     repetition_penalty = float(body.get("repetition_penalty", 1.0))
     stream             = bool(body.get("stream", False))
     stop               = body.get("stop", None)
@@ -3814,14 +3824,30 @@ async def embeddings(
     if _state.model is None:
         raise HTTPException(503, "Model not loaded")
 
-    import mlx.core as mx
-    import numpy as np
+    # MLX import must be gated behind a platform check — never imported on a
+    # non-Apple-Silicon host (CLAUDE.md constraint). Embeddings are computed via
+    # mlx.core, so on a host without MLX this endpoint cannot run.
+    if platform.system() != "Darwin":
+        _logging.getLogger(__name__).warning(
+            "embeddings requested on non-Darwin host — MLX backend unavailable"
+        )
+        raise HTTPException(
+            503, "embeddings require the MLX backend (Apple Silicon)"
+        )
+    try:
+        import mlx.core as mx  # noqa: PLC0415
+        import numpy as np  # noqa: PLC0415
+    except ImportError as exc:
+        _logging.getLogger(__name__).warning(
+            "embeddings requested but MLX is not importable: %s", exc
+        )
+        raise HTTPException(
+            503, "embeddings require the MLX backend (Apple Silicon)"
+        ) from exc
 
-    body: dict[str, Any] = await request.json()
-    inputs   = body.get("input", "")
+    body: dict[str, Any] = await parse_json_body(request)
+    inputs   = parse_embedding_input(body.get("input"))
     model_id = body.get("model", _state.model_name)
-    if isinstance(inputs, str):
-        inputs = [inputs]
 
     model     = _state.model
     tokenizer = _state.tokenizer
@@ -3918,7 +3944,7 @@ async def agent_connect_mcp(
     if _agent_registry is None:
         raise HTTPException(503, "Agent registry not initialised")
 
-    body: dict = await request.json()
+    body: dict = await parse_json_body(request)
     server_id = str(body.get("server_id", "mcp")).strip()
     command   = str(body.get("command", "")).strip()
     url       = str(body.get("url", "")).strip()
@@ -4000,13 +4026,13 @@ async def agent_run(  # pragma: no cover
     if _agent_registry is None:
         raise HTTPException(503, "Agent registry not initialised")
 
-    body: dict = await request.json()
+    body: dict = await parse_json_body(request)
     messages           = list(body.get("messages", []))
     extra_tools        = body.get("tools", [])
-    max_steps          = int(body.get("max_steps", 10))
-    max_tokens         = int(body.get("max_tokens", 2048))
-    temperature        = float(body.get("temperature", 0.7))
-    top_p              = float(body.get("top_p", 0.9))
+    max_steps          = parse_max_steps(body.get("max_steps"), 10)
+    max_tokens         = parse_max_tokens(body.get("max_tokens"), 2048)
+    temperature        = parse_temperature(body.get("temperature"), 0.7)
+    top_p              = parse_top_p(body.get("top_p"), 0.9)
     repetition_penalty = float(body.get("repetition_penalty", 1.0))
 
     if not messages:
@@ -4534,7 +4560,7 @@ async def tokenize(
     if _state.model is None:
         raise HTTPException(503, "Model not loaded")
 
-    body = await request.json()
+    body = await parse_json_body(request)
     if "messages" in body:
         text = _apply_chat_template(body["messages"], _state.tokenizer)
     elif "text" in body:

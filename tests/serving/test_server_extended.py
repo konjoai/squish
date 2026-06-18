@@ -269,7 +269,12 @@ class TestEmbeddingsAdditionalBranches:
         assert resp.status_code == 200
 
     def test_empty_list_input(self):
-        """Empty list → for-loop body never executes → returns empty data list."""
+        """Empty list is rejected with a clean 400 (v9.34.3 input validation).
+
+        Previously an empty list fell through to an empty data response; the
+        hardened embeddings contract (OpenAI-compatible) now requires a
+        non-empty input and returns 400 instead.
+        """
         mx = pytest.importorskip("mlx.core")
         from fastapi.testclient import TestClient
 
@@ -280,8 +285,7 @@ class TestEmbeddingsAdditionalBranches:
 
         client = TestClient(_srv.app, raise_server_exceptions=False)
         resp = client.post("/v1/embeddings", json={"input": []})
-        assert resp.status_code == 200
-        assert resp.json()["data"] == []
+        assert resp.status_code == 400
 
 
 # ── /v1/tokenize tokenizer-without-encode branch ──────────────────────────────

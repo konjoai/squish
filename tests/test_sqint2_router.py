@@ -414,11 +414,12 @@ class TestIntegration:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 104, (
-            f"Module count = {count}, expected 104 after (−dead modules) (＋prompt_lookup_batched.py) v4 daemon + v5.1.1 perf "
+        assert count == 106, (
+            f"Module count = {count}, expected 106 after (−dead modules) (＋prompt_lookup_batched.py) v4 daemon + v5.1.1 perf "
             f"+ KV P2 sprint (89 post-W111 + 11 new modules) + grammar/io/reasoning "
             "+ restored super_weight_calibrator.py (issue #37) "
-            "+ serving/token_decode_cache.py (hot-path detokenize LUT)."
+            "+ serving/token_decode_cache.py (hot-path detokenize LUT) "
+            "+ api/validation.py & __main__.py (e2e battle-test hardening, v9.34.3)."
         )
         assert count <= 125
 

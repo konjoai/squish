@@ -570,13 +570,14 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 104, (
-            f"Module count changed: {count} != 104. "
+        assert count == 106, (
+            f"Module count changed: {count} != 106. "
             "Squash separation baseline = 83; W103.1 → 84; W103.4c → 85; "
             "W100/W110 integrations → 87; W110/W111 serving modules → 89; "
             "v4 daemon + v5.1.1 perf + KV P2 → 100; grammar/io/reasoning → 102; "
             "restored super_weight_calibrator.py (issue #37) → 103; "
-            "serving/token_decode_cache.py (hot-path detokenize LUT) → 104. "
+            "serving/token_decode_cache.py (hot-path detokenize LUT) → 104; "
+            "v9.34.3 e2e battle-test → 106 (api/validation.py + __main__.py). "
             "New modules require either deletion of an existing one or written "
             "justification per CLAUDE.md."
         )

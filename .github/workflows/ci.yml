@@ -15,6 +15,10 @@ on:
         description: "HuggingFace model ID for hardware tests"
         type: string
         default: "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+      e2e_model:
+        description: "HuggingFace model ID for the Apple-Silicon e2e battle-test (bump to 1.5B for the full run)"
+        type: string
+        default: "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -266,6 +270,120 @@ jobs:
             --run-hardware \
             --model "${{ inputs.hardware_model || 'mlx-community/Qwen2.5-1.5B-Instruct-4bit' }}" \
             -v --tb=short
+
+  # ---------------------------------------------------------------------------
+  # End-to-end battle-test on real Apple Silicon: boots a live squish server
+  # against a small MLX model and hammers every endpoint + CLI command with
+  # valid and adversarial input.  Runs on PRs to main with the 0.5B model;
+  # use workflow_dispatch with e2e_model to swap to 1.5B for the full run.
+  # ---------------------------------------------------------------------------
+  e2e-apple-silicon:
+    name: E2E Battle-Test (Apple Silicon)
+    runs-on: macos-14            # Apple Silicon runner (M1)
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+
+    env:
+      E2E_MODEL: ${{ inputs.e2e_model || 'mlx-community/Qwen2.5-0.5B-Instruct-4bit' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies (including MLX)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install mlx mlx-lm
+
+      - name: Cache HuggingFace model weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-e2e-${{ env.E2E_MODEL }}
+
+      - name: Pre-warm + pre-scan model
+        env:
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+        run: |
+          # Pre-download scan runs at `squish pull hf:` time (CLAUDE.md constraint).
+          python -m squish pull "hf:${E2E_MODEL}"
+
+      - name: Run e2e battle-test
+        env:
+          SQUISH_E2E: "1"
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+        run: |
+          SQUISH_E2E=1 python -m pytest tests/e2e/ \
+            --run-e2e \
+            --model "${E2E_MODEL}" \
+            --timeout=300 \
+            -v --tb=short
+
+  # ---------------------------------------------------------------------------
+  # Code coverage on real Apple Silicon (MLX paths execute → representative %).
+  # Runs the full suite with coverage and uploads to Codecov, which renders the
+  # README badge and PR annotations.  Measured on macOS because the bulk of
+  # squish/ is MLX inference code that cannot run on a Linux runner.  The
+  # SIGABRT-at-collection Metal files are excluded (same list as the `test` job).
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: Coverage (Apple Silicon + MLX)
+    runs-on: macos-14
+    # Don't run on fork PRs (no Codecov upload context); main + same-repo PRs only.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies (including MLX)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install mlx mlx-lm pytest-cov
+
+      - name: Run test suite with coverage
+        # Same Metal-SIGABRT exclusions as the `test` job.  Coverage instruments
+        # add latency, so the per-test timeout is relaxed to 120s.  `|| true`
+        # keeps the upload step reachable even if a *test* fails (correctness is
+        # already gated by the `test` jobs); the badge always reflects reality.
+        # The guard fails the job if coverage.xml was NOT produced, so a setup
+        # error (e.g. a missing plugin) can't silently pass as it did before.
+        run: |
+          pytest tests/ \
+            --ignore=tests/test_git_integration.py \
+            --ignore=tests/quant/test_int4_loader.py \
+            --ignore=tests/test_sqint2_linear.py \
+            --ignore=tests/test_backend_unit.py \
+            --ignore=tests/quant/test_int3_linear_unit.py \
+            --ignore=tests/hardware/test_fused_kernels_unit.py \
+            --cov=squish \
+            --cov-report=xml \
+            --cov-report=term \
+            --timeout=120 \
+            -q || true
+          test -f coverage.xml || { echo "::error::coverage.xml was not generated"; exit 1; }
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          flags: apple-silicon
+          name: squish-macos-mlx
+          fail_ci_if_error: false
+          # Public repo → tokenless upload works; a CODECOV_TOKEN secret is used
+          # automatically if present (recommended to avoid upstream rate limits).
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   # ---------------------------------------------------------------------------
   # Helm chart linting — validates chart structure and template syntax.
