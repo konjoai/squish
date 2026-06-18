@@ -34,10 +34,22 @@ class TestPriorityAndConfig:
         assert c.cuda_device_index == 0 and c.dml_adapter_index == -1
 
 
+def _force_probes(router, *, ane=False, cuda=False, rocm=False, mlx=False, directml=False):
+    """Pin every probe deterministically so routing tests are host-independent
+    (the CI 'Test (Python 3.x)' jobs run on macOS where mlx/ANE are live)."""
+    router._probe_ane = lambda: ane
+    router._probe_cuda = (cuda if callable(cuda) else (lambda: cuda))
+    router._probe_rocm = lambda: rocm
+    router._probe_mlx = lambda: mlx
+    router._probe_directml = lambda: directml
+
+
 class TestRouting:
-    def test_cpu_fallback_on_linux(self):
-        # No GPU backends live in CI Linux → always resolves to CPU, never None.
-        b = PlatformRouter().route()
+    def test_cpu_fallback_when_no_backend_live(self):
+        # All probes unavailable → always resolves to CPU, never None.
+        r = PlatformRouter()
+        _force_probes(r)
+        b = r.route()
         assert isinstance(b, RoutedBackend)
         assert b.name == "cpu" and b.device == "cpu"
         assert b.priority == int(BackendPriority.CPU)
@@ -45,6 +57,7 @@ class TestRouting:
 
     def test_route_caches_result(self):
         r = PlatformRouter()
+        _force_probes(r)
         first = r.route()
         second = r.route()
         assert first is second
@@ -52,6 +65,7 @@ class TestRouting:
 
     def test_reset_forces_rerouting(self):
         r = PlatformRouter()
+        _force_probes(r)
         r.route()
         r.reset()
         assert r._result is None and r._chain is None
@@ -60,29 +74,24 @@ class TestRouting:
 
     def test_highest_priority_live_backend_wins(self):
         r = PlatformRouter()
-        # Force CUDA live; ANE (higher priority) stays unavailable.
-        r._probe_cuda = lambda: True
+        _force_probes(r, cuda=True)  # CUDA live; ANE (higher priority) unavailable
         b = r.route()
         assert b.name == "cuda" and b.priority == int(BackendPriority.CUDA)
         assert b.device == "cuda:0"
 
     def test_ane_outranks_cuda_when_both_live(self):
         r = PlatformRouter()
-        r._probe_ane = lambda: True
-        r._probe_cuda = lambda: True
+        _force_probes(r, ane=True, cuda=True)
         assert r.route().name == "ane"
 
     def test_probe_exception_is_treated_as_unavailable(self):
-        r = PlatformRouter()
-
         def _raise():
             raise RuntimeError("probe blew up")
 
-        r._probe_cuda = _raise
-        r._probe_rocm = lambda: True
-        b = r.route()
+        r = PlatformRouter()
+        _force_probes(r, cuda=_raise, rocm=True)
         # CUDA probe raised → skipped; ROCm (next priority) selected.
-        assert b.name == "rocm"
+        assert r.route().name == "rocm"
 
     def test_build_chain_lists_all_backends_and_caches(self):
         r = PlatformRouter()
@@ -94,7 +103,7 @@ class TestRouting:
     def test_stats_and_repr(self):
         r = PlatformRouter()
         assert repr(r) == "PlatformRouter(unresolved)"
-        r._probe_cuda = lambda: True
+        _force_probes(r, cuda=True)
         r.route()
         assert r.stats.selected_name == "cuda"
         assert r.stats.probes_fired >= 2  # ANE (miss) then CUDA (hit)
@@ -133,9 +142,20 @@ def _install_backend(monkeypatch, mod_name, cls_name, cfg_name, *, available, ke
 
 
 class TestMlxProbe:
-    def test_mlx_probe_false_on_linux(self):
-        # mlx absent + not darwin → False (exercises the ImportError + platform path).
+    def test_mlx_probe_false_without_mlx_and_non_darwin(self, monkeypatch):
+        # Force the ImportError path + non-darwin platform → deterministic False
+        # on any host (the macOS CI runners have real mlx installed).
+        import sys
+        monkeypatch.setitem(sys.modules, "mlx.core", None)  # import mlx.core → ImportError
+        monkeypatch.setattr(sys, "platform", "linux")
         assert PlatformRouter()._probe_mlx() is False
+
+    def test_mlx_probe_darwin_platform_fallback(self, monkeypatch):
+        # ImportError path but darwin → platform fallback returns True.
+        import sys
+        monkeypatch.setitem(sys.modules, "mlx.core", None)
+        monkeypatch.setattr(sys, "platform", "darwin")
+        assert PlatformRouter()._probe_mlx() is True
 
     def test_mlx_probe_true_when_mlx_importable(self, monkeypatch):
         import sys
@@ -170,6 +190,44 @@ class TestProbeBodiesWithStubBackends:
         _install_backend(monkeypatch, "squish.platform.windows_backend",
                          "WindowsBackend", "WindowsConfig", available=True)
         assert PlatformRouter()._probe_directml() is True
+
+    def test_real_probes_without_backends_return_false(self):
+        # cuda_backend / rocm_backend / windows_backend are not shipped (any OS),
+        # so the real probes hit the ImportError except path → False.
+        r = PlatformRouter()
+        assert r._probe_cuda() is False
+        assert r._probe_rocm() is False
+        assert r._probe_directml() is False
+        assert r._cuda_kernel_hint() == "FP16_BASELINE"  # except → fallback hint
+        # ane_router IS shipped → body runs; value is host-dependent (True on ANE).
+        assert isinstance(r._probe_ane(), bool)
+
+    def test_ane_probe_available_with_stub(self, monkeypatch):
+        import sys
+        import types
+        mod = types.ModuleType("squish.platform.ane_router")
+
+        class ANERouter:
+            def is_available(self):
+                return True
+
+        mod.ANERouter = ANERouter
+        monkeypatch.setitem(sys.modules, "squish.platform.ane_router", mod)
+        # default ane_model_size_gb (8.0) <= 8.0 → True
+        assert PlatformRouter()._probe_ane() is True
+
+    def test_ane_probe_handles_raising_router(self, monkeypatch):
+        import sys
+        import types
+        mod = types.ModuleType("squish.platform.ane_router")
+
+        class ANERouter:
+            def __init__(self):
+                raise RuntimeError("no ANE here")
+
+        mod.ANERouter = ANERouter
+        monkeypatch.setitem(sys.modules, "squish.platform.ane_router", mod)
+        assert PlatformRouter()._probe_ane() is False  # except path
 
 
 class TestGetInferenceBackend:
