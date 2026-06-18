@@ -288,7 +288,7 @@ class ModelShardLoader:
             if target in self._shards:
                 try:
                     self.promote_to_warm(target)
-                except (RuntimeError, KeyError):
+                except (RuntimeError, KeyError):  # pragma: no cover - defensive; target is guarded as present
                     pass
 
     # ------------------------------------------------------------------
@@ -367,7 +367,7 @@ class ModelShardLoader:
             hot_indices = sorted(
                 idx for idx, s in self._shards.items() if s.tier == ShardTier.HOT
             )
-            if not hot_indices:
+            if not hot_indices:  # pragma: no cover - defensive; loop only runs when HOT is non-empty
                 break
             oldest_idx = hot_indices[0]
             self._shards[oldest_idx].tier = ShardTier.WARM
@@ -379,7 +379,7 @@ class ModelShardLoader:
             warm_indices = sorted(
                 idx for idx, s in self._shards.items() if s.tier == ShardTier.WARM
             )
-            if not warm_indices:
+            if not warm_indices:  # pragma: no cover - defensive; loop only runs when WARM is non-empty
                 break
             oldest_idx = warm_indices[0]
             self._shards[oldest_idx].tier = ShardTier.COLD
