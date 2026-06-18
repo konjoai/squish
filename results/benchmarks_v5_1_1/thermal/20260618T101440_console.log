@@ -1,0 +1,85 @@
+[10:14:55] prompt tokens: {'p75': 57, 'p2000': 2001, 'p4000': 4053}
+[10:14:55] thermal control: cooldown=120s/config, settle=25s/phase
+[10:14:55] ollama binary: /opt/homebrew/bin/ollama  (Warning: could not connect to a running Ollama instance | Warning: client version is 0.18.2)
+[10:14:55] === ollama : cooldown → start ===
+[10:14:58]   ❄ cooldown 120s (idle, all servers down) …
+[10:17:05]   ⏸ settle 25s before p75
+[10:17:30]   ── phase p75 ──
+[10:17:44]     -> tps=20.3  itl_p50=50.5ms  itl_p95=52.3ms
+[10:17:44]   ⏸ settle 25s before p2000
+[10:18:09]   ── phase p2000 ──
+[10:18:38]     -> tps=19.7  itl_p50=51.7ms  itl_p95=54.0ms
+[10:18:38]   ⏸ settle 25s before p4000
+[10:19:03]   ── phase p4000 ──
+[10:21:54]     -> tps=18.4  itl_p50=55.3ms  itl_p95=63.2ms
+[10:21:54] === squish_daemon : cooldown → start ===
+[10:21:57]   ❄ cooldown 120s (idle, all servers down) …
+[10:24:27]   ⏸ settle 25s before p75
+[10:24:52]   ── phase p75 ──
+[10:25:08]     -> tps=21.4  itl_p50=45.5ms  itl_p95=49.6ms
+[10:25:08]   ⏸ settle 25s before p2000
+[10:25:33]   ── phase p2000 ──
+[10:27:41]     -> tps=20.4  itl_p50=47.7ms  itl_p95=54.5ms
+[10:27:41]   ⏸ settle 25s before p4000
+[10:28:06]   ── phase p4000 ──
+[10:33:31]     -> tps=12.5  itl_p50=69.0ms  itl_p95=164.3ms
+[10:33:31] === squish_recommended_int4 : cooldown → start ===
+[10:33:34]   ❄ cooldown 120s (idle, all servers down) …
+[10:35:43]   ⏸ settle 25s before p75
+[10:36:08]   ── phase p75 ──
+[10:36:24]     -> tps=19.4  itl_p50=48.0ms  itl_p95=51.7ms
+[10:36:24]   ⏸ settle 25s before p2000
+[10:36:49]   ── phase p2000 ──
+[10:37:36]     -> tps=19.9  itl_p50=47.5ms  itl_p95=53.6ms
+[10:37:36]   ⏸ settle 25s before p4000
+[10:38:01]   ── phase p4000 ──
+[10:39:07]     -> tps=15.7  itl_p50=51.8ms  itl_p95=94.7ms
+[10:39:07] === squish_recommended_int3 : cooldown → start ===
+[10:39:11]   ❄ cooldown 120s (idle, all servers down) …
+[10:41:17]   ⏸ settle 25s before p75
+[10:41:42]   ── phase p75 ──
+[10:42:00]     -> tps=23.5  itl_p50=39.8ms  itl_p95=44.4ms
+[10:42:00]   ⏸ settle 25s before p2000
+[10:42:25]   ── phase p2000 ──
+[10:43:06]     -> tps=22.0  itl_p50=42.0ms  itl_p95=47.3ms
+[10:43:06]   ⏸ settle 25s before p4000
+[10:43:31]   ── phase p4000 ──
+[10:44:35]     -> tps=16.8  itl_p50=50.6ms  itl_p95=84.7ms
+[10:44:35] === ollama_recheck : cooldown → start ===
+[10:44:38]   ❄ cooldown 120s (idle, all servers down) …
+[10:46:42]   ⏸ settle 25s before p75
+[10:47:07]   ── phase p75 ──
+[10:47:21]     -> tps=20.3  itl_p50=50.1ms  itl_p95=52.4ms
+[10:47:21]   ⏸ settle 25s before p2000
+[10:47:46]   ── phase p2000 ──
+[10:48:15]     -> tps=19.6  itl_p50=51.6ms  itl_p95=54.8ms
+[10:48:15]   ⏸ settle 25s before p4000
+[10:48:40]   ── phase p4000 ──
+[10:52:24]     -> tps=9.8  itl_p50=99.0ms  itl_p95=136.6ms
+[10:52:24] Wrote /Users/wscholl/squish/results/benchmarks_v5_1_1/thermal/20260618T101440.json
+
+# Thermally-controlled head-to-head — ollama 0.18.2 vs squish (M3 16 GB)
+cooldown 120s/config · settle 25s/phase · 5 runs/metric
+
+── p75 (57 tok) — warm tok/s | itl_p50 | itl_p95 ──
+   Ollama (warm)                     20.3 tok/s |  50.5 |   52.3 ms
+   Squish daemon INT4                21.4 tok/s |  45.5 |   49.6 ms
+   Squish recommended INT4 (block+pkv)  19.4 tok/s |  48.0 |   51.7 ms
+   Squish recommended INT3 (block+pkv)  23.5 tok/s |  39.8 |   44.4 ms
+   Ollama (recheck)                  20.3 tok/s |  50.1 |   52.4 ms
+
+── p2000 (2001 tok) — warm tok/s | itl_p50 | itl_p95 ──
+   Ollama (warm)                     19.7 tok/s |  51.7 |   54.0 ms
+   Squish daemon INT4                20.4 tok/s |  47.7 |   54.5 ms
+   Squish recommended INT4 (block+pkv)  19.9 tok/s |  47.5 |   53.6 ms
+   Squish recommended INT3 (block+pkv)  22.0 tok/s |  42.0 |   47.3 ms
+   Ollama (recheck)                  19.6 tok/s |  51.6 |   54.8 ms
+
+── p4000 (4053 tok) — warm tok/s | itl_p50 | itl_p95 ──
+   Ollama (warm)                     18.4 tok/s |  55.3 |   63.2 ms
+   Squish daemon INT4                12.5 tok/s |  69.0 |  164.3 ms
+   Squish recommended INT4 (block+pkv)  15.7 tok/s |  51.8 |   94.7 ms
+   Squish recommended INT3 (block+pkv)  16.8 tok/s |  50.6 |   84.7 ms
+   Ollama (recheck)                   9.8 tok/s |  99.0 |  136.6 ms
+
+DRIFT CHECK (p75 ollama first vs last): 20.3 → 20.3 tok/s (+0.4%) — small = cooldowns held, comparison is fair.
