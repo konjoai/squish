@@ -366,3 +366,64 @@ class TestProperties:
         c = self._cache_with_activity()
         s = c.stats()
         assert s.hit_rate == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------------------
+# Compiled-grammar LRU store — get_compiled / put_compiled
+# ---------------------------------------------------------------------------
+
+
+class TestCompiledGrammars:
+    def test_get_compiled_miss_returns_none(self):
+        c = GrammarCache()
+        assert c.get_compiled("deadbeef") is None
+
+    def test_put_then_get_roundtrip(self):
+        c = GrammarCache()
+        sentinel = object()
+        c.put_compiled("abc123", sentinel)
+        # get_compiled returns the exact stored object on a hit.
+        assert c.get_compiled("abc123") is sentinel
+
+    def test_put_empty_hash_raises(self):
+        c = GrammarCache()
+        with pytest.raises(ValueError, match="schema_hash must not be empty"):
+            c.put_compiled("", object())
+
+    def test_put_existing_key_updates_value_and_promotes_to_mru(self):
+        # maxsize=2: insert two keys, then re-put the first with a new value.
+        c = GrammarCache(compiled_maxsize=2)
+        first, second = object(), object()
+        c.put_compiled("k1", first)
+        c.put_compiled("k2", second)
+        replacement = object()
+        c.put_compiled("k1", replacement)
+        # Value was replaced (not duplicated)...
+        assert c.get_compiled("k1") is replacement
+        # ...and k1 is now MRU, so inserting a third key evicts k2 (the LRU),
+        # leaving k1 intact — proving move_to_end ran.
+        c.put_compiled("k3", object())
+        assert c.get_compiled("k1") is replacement
+        assert c.get_compiled("k2") is None
+
+    def test_eviction_drops_least_recently_used(self):
+        c = GrammarCache(compiled_maxsize=2)
+        a, b = object(), object()
+        c.put_compiled("a", a)
+        c.put_compiled("b", b)
+        # Third insert exceeds maxsize → oldest ("a") is evicted.
+        c.put_compiled("c", object())
+        assert c.get_compiled("a") is None
+        assert c.get_compiled("b") is b
+        assert c.get_compiled("c") is not None
+
+    def test_compiled_maxsize_floor_is_one(self):
+        # __init__ clamps maxsize to >= 1; a 0/negative request still stores one.
+        c = GrammarCache(compiled_maxsize=0)
+        c.put_compiled("only", object())
+        first = c.get_compiled("only")
+        assert first is not None
+        c.put_compiled("next", object())
+        # Capacity floored at 1 → the earlier entry is evicted.
+        assert c.get_compiled("only") is None
+        assert c.get_compiled("next") is not None
