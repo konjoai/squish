@@ -298,8 +298,8 @@ class JacobiDecoder:
                 accepted.append(pred)
                 break
 
-        if not accepted:
-            # Fallback: at least return the single AR token
+        if not accepted:  # pragma: no cover - unreachable: n>=1 (config-validated)
+            # so the loop above always appends at least one token. Defensive only.
             first_logits = all_logits[ctx_len]
             accepted = [_sample_token(first_logits, cfg.temperature, self._rng)]
 
