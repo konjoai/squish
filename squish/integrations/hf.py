@@ -48,7 +48,7 @@ _log = logging.getLogger(__name__)
 # ── Try to import HF DynamicCache for real subclassing ────────────────────────
 try:
     from transformers.cache_utils import DynamicCache as _HFDynamicCache  # type: ignore
-    _HF_AVAILABLE = True
+    _HF_AVAILABLE = True  # pragma: no cover - transformers >=5.x dropped cache_utils.DynamicCache
 except ImportError:
     _HFDynamicCache = object   # type: ignore[misc,assignment]
     _HF_AVAILABLE = False
@@ -103,7 +103,7 @@ class SquishCache(_HFDynamicCache):
         precision_map: "dict | None" = None,
         seed: int = 42,
     ) -> None:
-        if _HF_AVAILABLE:
+        if _HF_AVAILABLE:  # pragma: no cover - only with older transformers exposing DynamicCache
             super().__init__()
 
         _VALID = {"int8", "int4", "int2"}
