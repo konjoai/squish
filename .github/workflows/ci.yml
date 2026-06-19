@@ -326,15 +326,20 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Code coverage on real Apple Silicon (MLX paths execute → representative %).
-  # Runs the full suite with coverage and uploads to Codecov, which renders the
-  # README badge and PR annotations.  Measured on macOS because the bulk of
-  # squish/ is MLX inference code that cannot run on a Linux runner.  The
-  # SIGABRT-at-collection Metal files are excluded (same list as the `test` job).
+  # Runs the full suite with coverage and publishes a self-hosted SVG badge to
+  # the orphan `badges` branch (GITHUB_TOKEN only — no third-party service).
+  # Measured on macOS because the bulk of squish/ is MLX inference code that
+  # cannot run on a Linux runner.  The SIGABRT-at-collection Metal files are
+  # excluded (same list as the `test` job).
   # ---------------------------------------------------------------------------
   coverage:
     name: Coverage (Apple Silicon + MLX)
     runs-on: macos-14
-    # Don't run on fork PRs (no Codecov upload context); main + same-repo PRs only.
+    # Publishes the self-hosted coverage badge to the orphan `badges` branch
+    # using the built-in GITHUB_TOKEN (no third-party service / secret).
+    permissions:
+      contents: write
+    # Don't run on fork PRs (no write context); main + same-repo PRs only.
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
     steps:
@@ -374,16 +379,33 @@ jobs:
             -q || true
           test -f coverage.xml || { echo "::error::coverage.xml was not generated"; exit 1; }
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: ./coverage.xml
-          flags: apple-silicon
-          name: squish-macos-mlx
-          fail_ci_if_error: false
-          # Public repo → tokenless upload works; a CODECOV_TOKEN secret is used
-          # automatically if present (recommended to avoid upstream rate limits).
-          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Publish coverage badge
+        # Self-hosted badge: parse coverage.xml → SVG → commit to the orphan
+        # `badges` branch with the built-in GITHUB_TOKEN. No external service,
+        # no secret, nothing to pay for. README points at the raw SVG.
+        # Only on main pushes — PRs measure coverage but don't publish.
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          python3 scripts/make_coverage_badge.py coverage.xml /tmp/coverage.svg
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          work="$(mktemp -d)"
+          if git ls-remote --exit-code --heads origin badges >/dev/null 2>&1; then
+            git fetch --depth=1 origin badges
+            git worktree add -B badges "$work" origin/badges
+          else
+            git worktree add --detach "$work" HEAD
+            git -C "$work" checkout --orphan badges
+            git -C "$work" rm -rf . >/dev/null 2>&1 || true
+          fi
+          cp /tmp/coverage.svg "$work/coverage.svg"
+          git -C "$work" add coverage.svg
+          if git -C "$work" diff --cached --quiet; then
+            echo "Coverage badge unchanged — nothing to publish."
+          else
+            git -C "$work" commit -m "chore(badge): update coverage badge [skip ci]"
+            git -C "$work" push origin badges
+          fi
 
   # ---------------------------------------------------------------------------
   # Helm chart linting — validates chart structure and template syntax.
