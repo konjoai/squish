@@ -605,7 +605,7 @@ class LocalModelScanner:
 
         # ── GGUF single-file models ──────────────────────────────────────────
         for gguf in sorted(root.rglob("*.gguf")):
-            if gguf in seen_paths:
+            if gguf in seen_paths:  # pragma: no cover - rglob yields each path once; dedup is defensive
                 continue
             seen_paths.add(gguf)
             # Derive a human-readable name from the directory path relative
@@ -620,7 +620,7 @@ class LocalModelScanner:
                     lm_name = rel_parts[0]
                 else:
                     lm_name = gguf.stem.lower()
-            except ValueError:
+            except ValueError:  # pragma: no cover - gguf is under root (from rglob), relative_to cannot fail
                 lm_name = gguf.stem.lower()
 
             models.append(LocalModel(
@@ -651,7 +651,7 @@ class LocalModelScanner:
                     lm_name = rel_parts[0]
                 else:
                     lm_name = repo_dir.name.lower()
-            except ValueError:
+            except ValueError:  # pragma: no cover - repo_dir is under root (from rglob), relative_to cannot fail
                 lm_name = repo_dir.name.lower()
 
             models.append(LocalModel(
