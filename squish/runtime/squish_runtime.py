@@ -450,7 +450,7 @@ class SquishRuntime:
             version, flags, layer_count, arch_id = struct.unpack_from(
                 "<HI HH", raw, _VERSION_OFFSET
             )
-        except struct.error:
+        except struct.error:  # pragma: no cover - raw is a fixed 256-byte slice; the 14-byte unpack at offset 4 always fits
             return SquishRuntime._null_header()
 
         return SquizdHeader(
