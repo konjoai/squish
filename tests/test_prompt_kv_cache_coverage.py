@@ -196,20 +196,25 @@ def test_evict_lru_removes_oldest_until_under_budget(tmp_path):
 
 
 def test_evict_lru_skips_nondir_and_metaless(tmp_path):
-    store = _store(tmp_path, max_bytes=0)  # force eviction
+    # Put under a generous budget so put()'s 1-in-20 random eviction can't wipe
+    # the entry, then lower the budget to force eviction deterministically.
+    store = _store(tmp_path, max_bytes=10**12)
     k, v = _make_kv()
     store.put("real", k, v, offset=4)
     (tmp_path / "loose.txt").write_text("x")  # non-dir → skip (335)
     (tmp_path / "emptydir").mkdir()           # dir w/o meta → skip (338)
+    store._max_bytes = 0
     evicted = store._evict_lru()
     assert evicted == 1  # only the real entry was eligible and removed
     assert store.get("real") is None
 
 
 def test_evict_lru_swallows_atime_stat_error(tmp_path, monkeypatch):
-    store = _store(tmp_path, max_bytes=0)
+    # Generous budget during put() (avoids the random-eviction race), then 0.
+    store = _store(tmp_path, max_bytes=10**12)
     k, v = _make_kv()
     store.put("real", k, v, offset=4)
+    store._max_bytes = 0
     # Bypass total_bytes (keeps its own stats clean) and force the per-entry
     # atime read to fail so the 0.0 fallback runs (341-342). 1 > max_bytes(0)
     # so the early-return budget check is passed.
