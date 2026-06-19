@@ -614,7 +614,10 @@ def _nf2_quantise_groups(
         cb_lo = float(codebook[0])
         cb_hi = float(codebook[-1])
         cb_span = cb_hi - cb_lo
-        if cb_span > 0:
+        # no branch: the NF2-seeded 4-entry codebook always spans >0 after sort —
+        # nearest-neighbour assignment cannot collapse all four entries to one
+        # value, so the divide-by-zero guard's false arm is unreachable.
+        if cb_span > 0:  # pragma: no branch
             new_scale = (cb_span / 3.0) * scale
             # Avoid divide-by-zero when new_scale collapses for an all-equal group
             safe_new = new_scale > 0
