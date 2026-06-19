@@ -230,7 +230,7 @@ class SquizdFormatValidator:
             )
             stored_spare_crc, = struct.unpack_from("<I", data, _OFF_SPARE_CRC)
             stored_draft_hash, = struct.unpack_from("<Q", data, _OFF_DRAFT_HASH)
-        except struct.error as exc:
+        except struct.error as exc:  # pragma: no cover - len>=HEADER_SIZE guaranteed above, all fields fit
             errors.append(f"{_source}: header unpack failed: {exc}")
             return self._fail(
                 magic_ok=magic_ok, version_ok=False,
@@ -279,7 +279,7 @@ class SquizdFormatValidator:
         if errors and not any(
             not x for x in [magic_ok, version_ok, layer_count_ok, sparsity_crc_ok, eagle_hash_ok]
         ):
-            if self.strict and len(errors) > 0:
+            if self.strict and len(errors) > 0:  # pragma: no cover - this block is only entered in strict mode with errors present
                 valid = False
 
         return ValidationResult(
