@@ -380,9 +380,12 @@ jobs:
           test -f coverage.xml || { echo "::error::coverage.xml was not generated"; exit 1; }
 
       - name: Publish coverage badge
-        # Self-hosted badge: parse coverage.xml → SVG → commit to the orphan
-        # `badges` branch with the built-in GITHUB_TOKEN. No external service,
-        # no secret, nothing to pay for. README points at the raw SVG.
+        # Self-hosted badge: parse coverage.xml → coverage.json (+ .svg) and
+        # commit to the orphan `badges` branch with the built-in GITHUB_TOKEN.
+        # No external service, no secret, nothing to pay for. The README badge
+        # renders the JSON via shields.io's endpoint (img.shields.io URL →
+        # GitHub camo-proxies it, so it always displays). The .svg is kept for
+        # anyone who wants to <img> it directly.
         # Only on main pushes — PRs measure coverage but don't publish.
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
@@ -398,8 +401,8 @@ jobs:
             git -C "$work" checkout --orphan badges
             git -C "$work" rm -rf . >/dev/null 2>&1 || true
           fi
-          cp /tmp/coverage.svg "$work/coverage.svg"
-          git -C "$work" add coverage.svg
+          cp /tmp/coverage.svg /tmp/coverage.json "$work/"
+          git -C "$work" add coverage.svg coverage.json
           if git -C "$work" diff --cached --quiet; then
             echo "Coverage badge unchanged — nothing to publish."
           else
