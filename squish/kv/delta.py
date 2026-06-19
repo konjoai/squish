@@ -223,7 +223,7 @@ class KVCacheDelta:
             + ch.encode("ascii")
             + b"\x00"     # padding to 24 bytes
         )
-        if len(header) != _HEADER_LEN:
+        if len(header) != _HEADER_LEN:  # pragma: no cover - header is a fixed 24-byte layout; this guards against an accidental format edit
             raise RuntimeError(f"header length {len(header)} != {_HEADER_LEN}")
         if self.n_new == 0:
             return header
