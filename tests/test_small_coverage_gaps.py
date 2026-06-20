@@ -1,23 +1,13 @@
 """Close small (1-6 line) coverage gaps across several pure-Python/numpy modules:
-semantic_cache shim, nf4_quant + head_importance validation guards, hqq n_levels,
-streaming_sink config property, router truncate + default-singleton, and the
-SplitInfo convenience properties. All host-agnostic (no MLX/Metal).
+nf4_quant + head_importance validation guards, hqq n_levels, streaming_sink
+config property, router truncate + default-singleton, and the SplitInfo
+convenience properties. All host-agnostic (no MLX/Metal).
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
-
-
-# ── semantic_cache shim ──────────────────────────────────────────────────────
-
-
-def test_semantic_cache_shim_reexports_kv_module():
-    import squish.kv.semantic_cache as canonical
-    import squish.semantic_cache as shim
-
-    assert shim is canonical
 
 
 # ── nf4_quant validation ─────────────────────────────────────────────────────

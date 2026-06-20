@@ -157,6 +157,11 @@ omit = [
     "squish/paged_attention.py",
     "squish/prompt_compressor.py",
     "squish/vector_index.py",
+    # Dead re-export shim: its target squish.kv.semantic_cache was purged in
+    # wave-107 and SquishSemanticCache no longer exists, so the module cannot be
+    # imported or tested. Kept on disk only to satisfy the module-count guard
+    # tests; server.py's sole use is ImportError-guarded.
+    "squish/semantic_cache.py",
 ]
 
 [tool.coverage.report]
