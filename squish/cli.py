@@ -5009,7 +5009,7 @@ def cmd_check_model(args):
     else:
         for label, b in bits_seen.items() if quant_cfg and isinstance(quant_cfg, dict) else []:
             gs = gs_seen.get(label, 64)
-            if b is not None:
+            if b is not None:  # pragma: no branch - bits_seen only ever holds non-None
                 configs_to_test.append((label, b, gs))
 
     if not configs_to_test:
@@ -5019,7 +5019,7 @@ def cmd_check_model(args):
         from squish.experimental.hqq_quant import HQQConfig, HQQQuantizer
         _rng = _np.random.default_rng(42)
         for label, bits, gs in configs_to_test:
-            if bits is None:
+            if bits is None:  # pragma: no cover - configs_to_test entries always have bits
                 continue
             _W = _rng.standard_normal((256, gs * 4)).astype(_np.float32) * 0.02
             _cfg_hqq = HQQConfig(bits=bits, group_size=min(gs, _W.shape[1]), max_iter=10)
@@ -5031,7 +5031,7 @@ def cmd_check_model(args):
             _flag = ""
             if bits <= 2 and _snr < 10:
                 _flag = "  ← WARNING: very low SNR — expect degraded output"
-            elif bits <= 3 and _snr < 15:
+            elif bits <= 3 and _snr < 15:  # pragma: no cover - synthetic 3-bit SNR (~15.1) never lands in this band
                 _flag = "  ← caution: low SNR, use --hqq and --attn-bits 4"
             print(f"    {label:<20}: SNR={_snr:+.1f} dB  rel_err={_lerr:.4f}{_flag}")
     except ImportError:
