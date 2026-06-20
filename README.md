@@ -10,7 +10,7 @@ Sub-second model loads. Beats Ollama on throughput, tail latency, and full-respo
 
 [![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-2563eb?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyYTEgMSAwIDAgMSAxIDF2MS4xOGw2LjI0IDEuNTZhMSAxIDAgMSAxLS40OCAxLjk0TDEzIDYuMjhWMTloNGExIDEgMCAxIDEgMCAySDdhMSAxIDAgMSAxIDAtMmg0VjYuMjhMNS4yNCA3LjY4YTEgMSAwIDEgMS0uNDgtMS45NEwxMSA0LjE4VjNhMSAxIDAgMCAxIDEtMXoiLz48cGF0aCBkPSJNNC44IDguMiAxLjYgMTQuNWEzLjIgMy4yIDAgMCAwIDYuNCAwTDQuOCA4LjJ6bTE0LjQgMC0zLjIgNi4zYTMuMiAzLjIgMCAwIDAgNi40IDBsLTMuMi02LjN6Ii8%2BPC9zdmc%2B&logoColor=white)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/squish-ai.svg?logo=python&logoColor=white&label=PyPI)](https://pypi.org/project/squish-ai/)
-[![Python](https://img.shields.io/badge/python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://pypi.org/project/squish-ai/)
+[![Python](https://img.shields.io/pypi/pyversions/squish-ai?logo=python&logoColor=white&label=Python)](https://pypi.org/project/squish-ai/)
 [![Homebrew](https://img.shields.io/badge/homebrew-konjoai%2Fsquish-F8B23E?logo=homebrew&logoColor=white)](https://github.com/konjoai/homebrew-squish)
 [![Platform](https://img.shields.io/badge/Apple%20Silicon-M--series-111?logo=apple&logoColor=white)](https://github.com/konjoai/squish)
 [![CI](https://img.shields.io/github/actions/workflow/status/konjoai/squish/ci.yml?branch=main&logo=githubactions&logoColor=white&label=CI)](https://github.com/konjoai/squish/actions/workflows/ci.yml)
@@ -19,6 +19,8 @@ Sub-second model loads. Beats Ollama on throughput, tail latency, and full-respo
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Docs](https://img.shields.io/badge/docs-squish.run-8b5cf6?logo=materialformkdocs&logoColor=white)](https://squish.run)
 [![🤗 Models](https://img.shields.io/badge/🤗%20Models-squishai-yellow)](https://huggingface.co/squishai)
+[![OpenAI API compatible](https://img.shields.io/badge/OpenAI%20API-compatible-412991?logo=openai&logoColor=white)](https://squish.run)
+[![Ollama compatible](https://img.shields.io/badge/Ollama-compatible-000000?logo=ollama&logoColor=white)](https://squish.run)
 [![Stars](https://img.shields.io/github/stars/konjoai/squish?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyLjVsMi45NSA1Ljk4IDYuNi45Ni00Ljc3IDQuNjUgMS4xMyA2LjU3TDEyIDE3LjU2bC01LjkgMy4xIDEuMTMtNi41N0wyLjQ1IDkuNDRsNi42LS45NnoiLz48L3N2Zz4%3D&logoColor=white&label=Stars&color=ffd33d)](https://github.com/konjoai/squish/stargazers)
 
 </div>
