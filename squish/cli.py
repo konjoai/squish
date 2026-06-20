@@ -3892,7 +3892,7 @@ def cmd_gen_masks(args):
 
     try:
         import numpy as np
-    except ImportError:
+    except ImportError:  # pragma: no cover - numpy is a hard dependency
         _die("numpy is required. Install with: pip install numpy")
 
     model_arg: str = args.model
@@ -4088,7 +4088,7 @@ def cmd_sparsity_trim(args):
 
     try:
         import numpy as np
-    except ImportError:
+    except ImportError:  # pragma: no cover - numpy is a hard dependency
         _die("numpy is required. Install with: pip install numpy")
 
     try:
