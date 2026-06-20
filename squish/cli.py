@@ -5278,7 +5278,7 @@ def cmd_merge_model(args):
 
         merged[key] = merged_delta.astype(deltas[0].dtype)
 
-    if total_keys:
+    if total_keys:  # pragma: no branch - adapters always have >=1 key (save_file rejects empty)
         conflict_rate = sign_conflicts / total_keys
         print(
             f"  Sign conflict rate: {conflict_rate:.3f} "
