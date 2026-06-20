@@ -5850,7 +5850,7 @@ def cmd_bench(args) -> None:
         )
         try:
             packed, scales, offsets = quantize_int4_asymmetric(W, group_size=gs)
-            _has_rust_int4 = True
+            _has_rust_int4 = True  # pragma: no cover - needs squish_quant Rust ext (not built in CI)
         except RuntimeError:
             # Rust extension not built — fall back to pure-NumPy INT4 codec
             # (squish/quant/sqint2.py::_int4_quantize_numpy / _int4_dequantize_numpy)
@@ -5858,7 +5858,7 @@ def cmd_bench(args) -> None:
             packed, scales, offsets = _int4_quantize_numpy(W, group_size=gs)
             _has_rust_int4 = False
 
-        if _has_rust_int4:
+        if _has_rust_int4:  # pragma: no cover - Rust matmul path (ext not built in CI)
             def _run() -> np.ndarray:
                 return quantized_matmul_int4(packed, scales, offsets, x, group_size=gs)
         else:
@@ -6025,9 +6025,9 @@ def cmd_benchmark(args) -> None:  # noqa: C901
         rf = r.astype(np.float64)
         sig = float(np.mean(sf * sf))
         err = float(np.mean((sf - rf) ** 2))
-        if sig == 0:
+        if sig == 0:  # pragma: no cover - all-zero signal can't occur with random KV
             return 0.0
-        if err == 0:
+        if err == 0:  # pragma: no cover - lossy quant never reconstructs exactly
             return float("inf")
         return 10.0 * math.log10(sig / err)
 
