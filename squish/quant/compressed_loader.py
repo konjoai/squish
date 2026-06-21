@@ -760,12 +760,20 @@ def _dequantize_npy_dir(tensor_dir: Path, sk: str) -> np.ndarray:  # pragma: no 
 
     pt_path = tensor_dir / f"{sk}__pt.npy"
     if _npy_exists(pt_path):
-        arr = _load_npy_path(pt_path)                      # float16, possibly mmap'd
+        # Passthrough tensors are stored on-disk as float16. The historical
+        # ``np.array(arr, dtype=np.float32)`` upcast every tensor into a fresh
+        # float32 host buffer (2× the bytes) only for callers to immediately
+        # round it back down via ``mx.array(...).astype(bfloat16)`` (or
+        # ``.astype(float16)``). f16→bf16 is bit-identical to f16→f32→bf16 —
+        # both round the same float16 value — so returning the float16 array is
+        # a behaviour-preserving copy + peak-RAM elimination on the npy-dir
+        # first-load path (TestDequantizeNpyDirPassthrough exercises this).
+        arr = _load_npy_path(pt_path)  # float16, mmap or zst
         if _npy_exists(shape_path):
             original_shape = tuple(_load_npy_path(shape_path).tolist())
         else:
             original_shape = arr.shape
-        return np.array(arr, dtype=np.float32).reshape(original_shape)
+        return np.asarray(arr).reshape(original_shape)
 
     # Quantized path: int8 + float32 scales
     q = _load_npy_path(tensor_dir / f"{sk}__q.npy")
