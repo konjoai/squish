@@ -11,7 +11,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from squish.kv.kv_cache import KVLayerCache, QuantizedKVCache, _snap_evict
+from squish.kv.kv_cache import (
+    KVLayerCache,
+    QuantizedKVCache,
+    _compute_layer_budgets,
+    _snap_evict,
+)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -211,3 +216,86 @@ class TestSnapEvictDirect:
     def test_evict_on_empty_layer_is_safe(self):
         layer = KVLayerCache(window=4)
         _snap_evict(layer, budget=8)  # should not raise
+
+
+# ── PyramidKV — per-layer budget allocation ────────────────────────────────────
+
+class TestComputeLayerBudgets:
+    def test_uniform_is_flat(self):
+        assert _compute_layer_budgets(8, 1000, "uniform") == [1000] * 8
+
+    def test_pyramid_conserves_total_memory(self):
+        budgets = _compute_layer_budgets(8, 1000, "pyramid", 0.5, floor=32)
+        # Same total KV memory as uniform (within integer rounding).
+        assert abs(sum(budgets) - 8 * 1000) <= 8
+
+    def test_pyramid_monotonic_lower_gets_more(self):
+        budgets = _compute_layer_budgets(12, 2048, "pyramid", 0.5, floor=32)
+        assert all(budgets[i] >= budgets[i + 1] for i in range(len(budgets) - 1))
+        assert budgets[0] > budgets[-1]
+        assert budgets[0] > 2048 > budgets[-1]  # straddles the uniform value
+
+    def test_pyramid_respects_floor(self):
+        # Steep ramp on a small budget would push upper layers below the floor.
+        budgets = _compute_layer_budgets(16, 100, "pyramid", 0.9, floor=64)
+        assert min(budgets) >= 64
+
+    def test_beta_zero_equals_uniform(self):
+        assert _compute_layer_budgets(6, 500, "pyramid", 0.0) == [500] * 6
+
+    def test_single_layer_returns_budget(self):
+        assert _compute_layer_budgets(1, 777, "pyramid", 0.5) == [777]
+
+    def test_zero_layers_empty(self):
+        assert _compute_layer_budgets(0, 100, "pyramid") == []
+
+    def test_unknown_schedule_raises(self):
+        with pytest.raises(ValueError, match="budget_schedule"):
+            _compute_layer_budgets(4, 100, "bogus")
+
+    def test_beta_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="pyramid_beta"):
+            _compute_layer_budgets(4, 100, "pyramid", 1.5)
+        with pytest.raises(ValueError, match="pyramid_beta"):
+            _compute_layer_budgets(4, 100, "pyramid", -0.1)
+
+
+class TestPyramidCacheEviction:
+    def _fill(self, cache, n_layers, n_per_layer, n_heads=2, head_dim=8, seed=1):
+        rng = np.random.default_rng(seed)
+        for layer in range(n_layers):
+            for _ in range(n_per_layer):
+                k = rng.standard_normal((n_heads, head_dim)).astype(np.float16)
+                v = rng.standard_normal((n_heads, head_dim)).astype(np.float16)
+                cache.update(layer, k, v)
+
+    def test_cache_exposes_per_layer_budgets(self):
+        cache = QuantizedKVCache(n_layers=4, mode="snap", window=4, budget=16,
+                                 budget_schedule="pyramid", pyramid_beta=0.5,
+                                 snap_window=4)
+        assert len(cache._layer_budgets) == 4
+        assert cache._layer_budgets[0] > cache._layer_budgets[-1]
+
+    def test_uniform_default_unchanged(self):
+        cache = QuantizedKVCache(n_layers=4, mode="snap", budget=16)
+        assert cache._layer_budgets == [16, 16, 16, 16]
+
+    def test_pyramid_evicts_lower_layers_to_larger_budget(self):
+        """At the snap point each layer is capped to its OWN budget."""
+        nl, budget = 4, 16
+        cache = QuantizedKVCache(n_layers=nl, mode="snap", window=4, budget=budget,
+                                 budget_schedule="pyramid", pyramid_beta=0.5,
+                                 snap_window=4)
+        # Append exactly budget+1 tokens per layer → triggers a single snap to
+        # that layer's budget, before any extra decode growth.
+        for layer in range(nl):
+            lb = cache._layer_budgets[layer]
+            rng = np.random.default_rng(layer)
+            for _ in range(lb + 1):
+                k = rng.standard_normal((2, 8)).astype(np.float16)
+                v = rng.standard_normal((2, 8)).astype(np.float16)
+                cache.update(layer, k, v)
+            assert cache._snapped[layer]
+            # Lower layer retains strictly more tokens than an upper layer.
+            assert cache._layers[layer].n_tokens <= lb
+        assert cache._layers[0].n_tokens > cache._layers[nl - 1].n_tokens

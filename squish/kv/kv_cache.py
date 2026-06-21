@@ -1983,6 +1983,50 @@ class KVLayerCache:
 
 
 # ---------------------------------------------------------------------------
+# PyramidKV — per-layer SnapKV budget allocation
+# ---------------------------------------------------------------------------
+
+def _compute_layer_budgets(
+    n_layers: int,
+    budget: int,
+    schedule: str = "uniform",
+    pyramid_beta: float = 0.5,
+    floor: int = 0,
+) -> list[int]:
+    """Per-layer SnapKV token budgets.
+
+    ``"uniform"`` — every layer keeps ``budget`` tokens (classic SnapKV).
+
+    ``"pyramid"`` — PyramidKV (arXiv:2406.02069): lower layers attend broadly
+        and keep MORE tokens, upper layers attend narrowly and keep FEWER. The
+        budget ramps linearly from ``budget*(1+pyramid_beta)`` at layer 0 down to
+        ``budget*(1-pyramid_beta)`` at the last layer; the mean stays ``budget``,
+        so total KV memory is unchanged vs uniform — the budget is *redistributed*
+        to where attention is more diffuse. Each layer is floored at ``floor``
+        (the recent importance window must always survive).
+
+    ``pyramid_beta`` ∈ [0, 1) sets the steepness; 0 collapses pyramid to uniform.
+    A single-layer model always returns ``[budget]``.
+    """
+    if n_layers <= 0:
+        return []
+    if schedule == "uniform" or n_layers == 1:
+        return [budget] * n_layers
+    if schedule != "pyramid":
+        raise ValueError(
+            f"budget_schedule must be 'uniform' or 'pyramid', got {schedule!r}"
+        )
+    if not 0.0 <= pyramid_beta < 1.0:
+        raise ValueError(f"pyramid_beta must be in [0, 1), got {pyramid_beta}")
+    hi = budget * (1.0 + pyramid_beta)
+    lo = budget * (1.0 - pyramid_beta)
+    return [
+        max(int(round(hi - (hi - lo) * (i / (n_layers - 1)))), floor, 1)
+        for i in range(n_layers)
+    ]
+
+
+# ---------------------------------------------------------------------------
 # SnapKV eviction (importance-based position selection)
 # ---------------------------------------------------------------------------
 
@@ -2118,6 +2162,8 @@ class QuantizedKVCache:
         mode: str = "int8",                 # "fp16" | "int8" | "snap" | "int4" | "int2"
         budget: int = 4096,
         snap_window: int = 32,
+        budget_schedule: str = "uniform",   # PyramidKV: "uniform" | "pyramid"
+        pyramid_beta: float = 0.5,          # pyramid steepness ∈ [0, 1)
         svd_rank: int = 0,                  # Phase 1: 0 = off; set to rank < head_dim
         comm_vq_bits: int = 0,              # CommVQ: 0 = off; 2 for 2-bit, 4 for 4-bit
         # Phase 3: Q-Filters geometric KV eviction
@@ -2191,6 +2237,14 @@ class QuantizedKVCache:
         self.n_layers         = n_layers
         self.sink_token_count = sink_token_count
 
+        # PyramidKV: per-layer SnapKV budgets (uniform → all equal `budget`).
+        # Floored at snap_window so the importance-scoring window always survives.
+        self.budget_schedule  = budget_schedule
+        self.pyramid_beta     = pyramid_beta
+        self._layer_budgets   = _compute_layer_budgets(
+            n_layers, budget, budget_schedule, pyramid_beta, floor=snap_window,
+        )
+
         # ── Per-layer mode assignment ─────────────────────────────────────────
         # Default: cache-level mode propagated to all layers.
         layer_mode = mode if mode in ("int4", "int2") else "int8"
@@ -2256,15 +2310,17 @@ class QuantizedKVCache:
     def update(self, layer_idx: int, key_np: np.ndarray, value_np: np.ndarray) -> None:
         """
         Append key/value for ``layer_idx``.  Applies SnapKV eviction once the
-        cache exceeds ``budget`` tokens (first call after prefill).
+        cache exceeds this layer's budget (first call after prefill). Under the
+        PyramidKV schedule the budget varies per layer; uniform keeps it flat.
         """
         layer = self._layers[layer_idx]
         layer.append(key_np, value_np)
 
+        layer_budget = self._layer_budgets[layer_idx]
         if (self.mode == "snap"
                 and not self._snapped[layer_idx]
-                and layer.n_tokens > self.budget):
-            _snap_evict(layer, self.budget, self.snap_window)
+                and layer.n_tokens > layer_budget):
+            _snap_evict(layer, layer_budget, self.snap_window)
             self._snapped[layer_idx] = True
 
     def get_kv_mlx(self, layer_idx: int):
@@ -2965,6 +3021,8 @@ def make_quantized_cache(  # pragma: no cover
     window: int = 64,
     budget: int = 4096,
     snap_window: int = 32,
+    budget_schedule: str = "uniform",
+    pyramid_beta: float = 0.5,
     svd_rank: int = 0,
     comm_vq_bits: int = 0,
     qfilter_rank: int = 0,
@@ -2997,6 +3055,7 @@ def make_quantized_cache(  # pragma: no cover
     return QuantizedKVCache(
         n_layers=n, window=window, mode=mode,
         budget=budget, snap_window=snap_window,
+        budget_schedule=budget_schedule, pyramid_beta=pyramid_beta,
         svd_rank=svd_rank, comm_vq_bits=comm_vq_bits,
         qfilter_rank=qfilter_rank, qfilter_budget=qfilter_budget,
         qfilter_anchor=qfilter_anchor, qfilter_evict_every=qfilter_evict_every,
@@ -3010,6 +3069,8 @@ def patch_model_kv_cache(  # pragma: no cover
     window: int = 64,
     budget: int = 4096,
     snap_window: int = 32,
+    budget_schedule: str = "uniform",
+    pyramid_beta: float = 0.5,
     svd_rank: int = 0,
     comm_vq_bits: int = 0,
     qfilter_rank: int = 0,
@@ -3044,6 +3105,7 @@ def patch_model_kv_cache(  # pragma: no cover
     cache = make_quantized_cache(
         model, mode=mode, window=window,
         budget=budget, snap_window=snap_window,
+        budget_schedule=budget_schedule, pyramid_beta=pyramid_beta,
         svd_rank=svd_rank, comm_vq_bits=comm_vq_bits,
         qfilter_rank=qfilter_rank, qfilter_budget=qfilter_budget,
         qfilter_anchor=qfilter_anchor, qfilter_evict_every=qfilter_evict_every,
@@ -3058,9 +3120,11 @@ def patch_model_kv_cache(  # pragma: no cover
                          if qfilter_rank > 0 else "")
         fw_info       = (f"  fast_weight_lr={fast_weight_lr}"
                          if fast_weight_lr > 0.0 else "")
+        sched_info = (f"  schedule={budget_schedule}(β={pyramid_beta})"
+                      if mode == "snap" and budget_schedule != "uniform" else "")
         print(f"  [KV cache] mode={mode}  window={window}  "
               f"budget={budget if mode == 'snap' else '—'}  "
-              f"layers={n}{svd_info}{commvq_info}{qfilter_info}{fw_info}")
+              f"layers={n}{sched_info}{svd_info}{commvq_info}{qfilter_info}{fw_info}")
 
     # Store on the model so server.py can retrieve it
     model._squish_kv_cache = cache

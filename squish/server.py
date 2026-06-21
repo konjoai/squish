@@ -4757,6 +4757,16 @@ Examples:
                     help="Recent-token FP16 window for int8/snap modes (default 64)")
     ap.add_argument("--kv-cache-budget", type=int, default=4096,
                     help="Max K/V positions in snap mode (default 4096)")
+    ap.add_argument("--kv-cache-budget-schedule",
+                    choices=["uniform", "pyramid"], default="uniform",
+                    help="Per-layer SnapKV budget allocation (snap mode):\n"
+                         "  uniform — same budget every layer (default)\n"
+                         "  pyramid — PyramidKV: more budget to lower layers,\n"
+                         "            less to upper, same total memory")
+    ap.add_argument("--kv-cache-pyramid-beta", type=float, default=0.5,
+                    metavar="B",
+                    help="Pyramid steepness in [0, 1) (default 0.5); "
+                         "0 = uniform, 0.5 = layer0 keeps 1.5× / last 0.5×")
     # Phase 1 SVD compression
     ap.add_argument("--kv-cache-svd-rank", type=int, default=0,
                     metavar="N",
@@ -5403,6 +5413,8 @@ Examples:
                 mode=args.kv_cache_mode,
                 window=args.kv_cache_window,
                 budget=args.kv_cache_budget,
+                budget_schedule=getattr(args, "kv_cache_budget_schedule", "uniform"),
+                pyramid_beta=getattr(args, "kv_cache_pyramid_beta", 0.5),
                 svd_rank=getattr(args, "kv_cache_svd_rank", 0),
                 verbose=True,
             )
