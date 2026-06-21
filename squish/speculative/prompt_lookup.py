@@ -78,6 +78,7 @@ class PromptLookupConfig:
     ngram_min:       int = 2
     ngram_max:       int = 5
     max_speculative: int = 5
+    reuse_prefix:    bool = True   # in-memory prompt-prefix KV reuse (TTFT)
 
     def __post_init__(self) -> None:
         if self.ngram_min < 1:
