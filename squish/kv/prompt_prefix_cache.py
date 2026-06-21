@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import threading
 
-import mlx.core as mx
-from mlx_lm.models import cache as _cache
+# NOTE: mlx / mlx_lm are imported lazily inside `prefill_with_reuse` only — the
+# slot logic (borrow/store/prefix-match) is pure Python so this module stays
+# importable on non-Apple-Silicon (Linux) paths per the MLX-gating rule.
 
 
 def _common_prefix_len(a: "list[int]", b: "list[int]") -> int:
@@ -96,6 +97,9 @@ def prefill_with_reuse(
 
     With ``prefix_cache`` None this is a plain cold prefill.
     """
+    import mlx.core as mx
+    from mlx_lm.models import cache as _cache
+
     cache, shared = (prefix_cache.borrow(prompt_ids) if prefix_cache else (None, 0))
     if cache is None:
         cache = _cache.make_prompt_cache(model)
