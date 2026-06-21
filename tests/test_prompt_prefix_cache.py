@@ -50,6 +50,18 @@ def test_store_then_borrow_roundtrip():
     assert pc.borrow([10, 11, 12]) == (a, 2)
 
 
+def test_reuse_safe_only_for_plain_kvcache():
+    """Reuse must be allowed for plain KVCache and disabled for windowed/hybrid
+    caches (RotatingKVCache) whose rolling window would drop prefix tokens."""
+    pytest.importorskip("mlx.core")
+    from mlx_lm.models.cache import KVCache, RotatingKVCache
+
+    from squish.kv.prompt_prefix_cache import _caches_reuse_safe
+    assert _caches_reuse_safe([KVCache(), KVCache()]) is True
+    assert _caches_reuse_safe([KVCache(), RotatingKVCache(max_size=8, keep=2)]) is False
+    assert _caches_reuse_safe([]) is False
+
+
 @_needs_model
 def test_reuse_is_byte_identical_to_cold():
     """A prompt that extends a recent one reuses its prefix and yields the exact
