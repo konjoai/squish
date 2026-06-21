@@ -249,6 +249,61 @@ class TestDequantize:
         np.testing.assert_allclose(result, arr, rtol=1e-5)
 
 
+# ── _dequantize_npy_dir passthrough (PR-B item 4) ──────────────────────────────
+
+
+class TestDequantizeNpyDirPassthrough:
+    """The npy-dir ``__pt.npy`` tier returns native float16, not a float32 upcast.
+
+    On-disk passthrough tensors are float16; the loader used to upcast each to a
+    fresh float32 host buffer (2× the bytes) only for every caller to round it
+    straight back down via ``mx.array(...).astype(bfloat16)``. Returning float16
+    is behaviour-preserving (f16→bf16 == f16→f32→bf16) and halves the host copy.
+    """
+
+    def _write_pt(self, tmp_path: Path, sk: str, arr: np.ndarray, with_shape: bool = True) -> Path:
+        d = tmp_path / "tensors"
+        d.mkdir(exist_ok=True)
+        np.save(str(d / f"{sk}__pt.npy"), arr)
+        if with_shape:
+            np.save(str(d / f"{sk}__shape.npy"),
+                    np.array(arr.shape, dtype=np.int64))
+        return d
+
+    def test_pt_returns_float16_without_upcast(self, tmp_path: Path):
+        from squish.quant.compressed_loader import _dequantize_npy_dir
+        sk = "model.embed"
+        arr = np.random.default_rng(11).standard_normal((4, 32)).astype(np.float16)
+        d = self._write_pt(tmp_path, sk, arr)
+        result = _dequantize_npy_dir(d, sk)
+        assert result.dtype == np.float16          # no float32 upcast
+        assert result.shape == (4, 32)
+        np.testing.assert_array_equal(result, arr)  # values byte-preserved
+
+    def test_pt_without_shape_returns_float16(self, tmp_path: Path):
+        from squish.quant.compressed_loader import _dequantize_npy_dir
+        sk = "t"
+        arr = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float16)
+        d = self._write_pt(tmp_path, sk, arr, with_shape=False)
+        result = _dequantize_npy_dir(d, sk)
+        assert result.dtype == np.float16
+        assert result.shape == (2, 2)
+        np.testing.assert_array_equal(result, arr)
+
+    def test_pt_bf16_bit_identical_to_legacy_f32_path(self, tmp_path: Path):
+        """The consumer's bf16 is identical whether or not float32 is interposed."""
+        ml_dtypes = pytest.importorskip("ml_dtypes")
+        from squish.quant.compressed_loader import _dequantize_npy_dir
+        sk = "w"
+        arr = (np.random.default_rng(3).standard_normal((8, 16)) * 4).astype(np.float16)
+        d = self._write_pt(tmp_path, sk, arr)
+        result = _dequantize_npy_dir(d, sk)
+        via_f16 = result.astype(ml_dtypes.bfloat16)
+        via_f32 = result.astype(np.float32).astype(ml_dtypes.bfloat16)
+        np.testing.assert_array_equal(
+            via_f16.view(np.uint16), via_f32.view(np.uint16))
+
+
 # ── _collect_tensor_keys ───────────────────────────────────────────────────────
 
 class TestCollectTensorKeys:
