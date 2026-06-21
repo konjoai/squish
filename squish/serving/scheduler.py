@@ -12,43 +12,50 @@ spends ~95% of that time with the GPU fully occupied — but *only for one reque
 Concurrent users queue behind that request and see latencies that scale linearly
 with queue depth.
 
-Solution: Static Batching with a Coalescing Window
----------------------------------------------------
+Solution: Coalesced Batching with Per-Request KV Caches
+-------------------------------------------------------
 Instead of processing one request at a time, the scheduler:
 
   1. Collects all requests that arrive within a ``batch_window_ms`` window
      (default 20 ms — typically catches 2–8 requests at moderate load).
 
-  2. Tokenises each prompt and pads the batch to the longest sequence
-     (same strategy as Phase 1.5 padded batch evaluation).
+  2. Prefills each request's prompt ONCE into its own incremental KV cache
+     (``mlx_lm`` ``make_prompt_cache``), sampling that request's first token.
 
-  3. Runs the padded batch through the model in ONE forward pass → gets logits
-     for ALL requests simultaneously.
+  3. Decodes round-robin: each step forwards only the NEW token per request
+     through its cache (O(1) per step), samples the next token (respecting each
+     request's temperature, top_p, seed, and stop sequences), and streams it.
 
-  4. Samples the next token per request (respecting each request's temperature,
-     top_p, seed, and stop sequences).
+  4. Removes completed requests (EOS / max_tokens); per-request caches make this
+     a plain list drop — no batch-padding surgery.
 
-  5. Removes completed requests (EOS / max_tokens) from the batch, yields their
-     final tokens, and starts accepting new requests for the next window.
+Why per-request caches (not one padded batched forward)
+-------------------------------------------------------
+The earlier design re-ran the whole right-padded ``(B, max_len)`` sequence
+through the model on EVERY decode step (no KV cache), so per-step cost grew with
+sequence length — O(seq) per token, O(seq²) per request. Worse, padding + the
+full-attention reduction order made greedy output diverge from the single-stream
+path on near-tie logits.
 
-Throughput gain
----------------
-For a batch of N requests, one forward pass costs roughly the same latency as a
-single-request pass (memory-bandwidth-bound → throughput, not latency-bound on
-Apple Silicon unified memory).  So N concurrent requests yield ~N× the token
-throughput at similar per-request latency.
+Per-request KV caches forward only the new token each step (O(1)), and reuse the
+exact ``model(x, cache=...)`` mechanism the single-stream path uses — so batched
+greedy output is now *bit-identical to single-stream*. A shared batched cache
+would instead need per-row RoPE positions / padding masks that the stock mlx_lm
+models don't expose; sequential per-request decode sidesteps that and, at the
+batch sizes local serving sees (2–8) on memory-bound Apple Silicon, the removed
+re-forward dwarfs any lost cross-request GEMM batching.
 
 Limitations
 -----------
-- This is *static* batching (not continuous / paged attention).  New requests
-  that arrive mid-batch must wait for the current batch to complete before joining.
-  True continuous batching would require paged KV cache management (a larger
-  future item).
-- Maximum effective batch size is limited by unified memory; the scheduler
-  enforces ``max_batch_size`` (default 8) to prevent OOM.
-- Variable output lengths mean SOME requests will finish early while the batch
-  continues.  Completed slots are freed and their prompt padding is removed for
-  subsequent steps.
+- Decode is sequential across the batch (one small forward per active request
+  per step), not a single fused batched GEMM. Eliminating the O(seq²) re-forward
+  is the dominant win; fusing the per-request single-token forwards into one
+  batched call (needs per-row cache offsets) is a possible future item.
+- Each active request holds its own KV cache, so peak memory scales with batch
+  size × context; ``max_batch_size`` (default 8) bounds it to prevent OOM.
+- temperature=0 (greedy) decode is deterministic and matches single-stream;
+  for temperature>0 the per-request RNG-draw order differs from the old batched
+  order (the old order was itself single-stream-inconsistent).
 
 Usage
 -----
@@ -112,6 +119,13 @@ class _Request:
     stop_buf:      list[int] = dataclasses.field(default_factory=list)
     done:          bool      = False
     finish_reason: str       = "stop"
+
+    # Incremental-decode state (KV-cached batch path). ``kv_cache`` is this
+    # request's own mlx_lm prompt cache (one per request — see _decode_loop);
+    # ``pending_id`` is the next token to emit, already sampled from the last
+    # forward pass. Both are MLX-only and stay None on the torch / CPU paths.
+    kv_cache:   object | None = dataclasses.field(default=None, repr=False)
+    pending_id: int | None    = dataclasses.field(default=None, repr=False)
 
     # Cached 8-hex-char hash of the first 64 prompt tokens, used for prefix
     # grouping. ``input_ids`` is immutable after submission, so this is computed
@@ -578,76 +592,92 @@ class BatchScheduler:
         prefill = [r for r in batch if not r.generated_ids]
         return decode + prefill
 
-    def _generate_batch(self, batch: list[_Request], mx) -> None:  # pragma: no cover
-        """
-        Run the autoregressive generation loop for a batch of requests.
+    def _prefill_request(self, req: "_Request", mx) -> None:  # pragma: no cover
+        """Forward a request's prompt once, build its KV cache, sample token #1.
 
-        Each step:
-        1. Build padded (B, max_len) input array from current sequence states.
-        2. Forward pass → (B, max_len, vocab) logits.
-        3. Extract last logit row per request → sample next token.
-        4. Append token, check EOS/stop, stream to out_queue.
-        5. Remove completed requests.
+        Each request gets its OWN mlx_lm prompt cache, so subsequent decode
+        steps forward only the new token (O(1) per step) instead of re-running
+        the whole padded batch (the old O(seq_len) re-forward). This makes the
+        per-request output bit-identical to the single-stream path, which uses
+        the same incremental ``model(x, cache=...)`` mechanism.
         """
-        # We generate into each request's input_ids + generated_ids combined,
-        # so the attention window always sees the full context.
-        active    = list(batch)
-        step      = 0
-        max_steps = max(r.max_tokens for r in active)
+        from mlx_lm.models.cache import make_prompt_cache
+
+        req.kv_cache = make_prompt_cache(self._model)
+        logits = self._model(mx.array([req.input_ids], dtype=mx.int32),
+                             cache=req.kv_cache)
+        mx.eval(logits)
+        logit_row = np.array(logits[0, -1, :].astype(mx.float32))
+        req.pending_id = _sample_token(logit_row, req.temperature, req.top_p,
+                                       self._rng)
+
+    def _advance_request(self, req: "_Request", mx) -> None:  # pragma: no cover
+        """Forward the just-emitted token through ``req``'s cache → next token."""
+        logits = self._model(mx.array([[req.pending_id]], dtype=mx.int32),
+                             cache=req.kv_cache)
+        mx.eval(logits)
+        logit_row = np.array(logits[0, -1, :].astype(mx.float32))
+        req.pending_id = _sample_token(logit_row, req.temperature, req.top_p,
+                                       self._rng)
+
+    def _emit_token(self, req: "_Request") -> bool:  # pragma: no cover
+        """Emit ``req.pending_id``; return True if the request stays active.
+
+        Mirrors the stop/EOS/length finish logic of the original batch loop.
+        """
+        next_id  = req.pending_id
+        tok_text = self._decode_cache.decode(next_id)
+        req.generated_ids.append(next_id)
+
+        is_eos  = (next_id == self._eos_id)
+        is_stop = _check_stop(req, next_id)
+        is_max  = (len(req.generated_ids) >= req.max_tokens)
+
+        if is_eos or is_stop:
+            req.out_queue.put((tok_text, "stop"))
+            req.out_queue.put(_DONE)
+            req.done = True
+            return False
+        if is_max:
+            req.out_queue.put((tok_text, "length"))
+            req.out_queue.put(_DONE)
+            req.done = True
+            return False
+        req.out_queue.put((tok_text, None))
+        return True
+
+    def _decode_loop(self, batch: list["_Request"], mx, *,
+                     nested: bool) -> None:  # pragma: no cover
+        """KV-cached autoregressive loop shared by both scheduler algorithms.
+
+        Each active request carries its own KV cache (built in
+        ``_prefill_request``); a decode step forwards only the new token per
+        request. When ``nested`` is True, newly-prepared requests are merged in
+        at each step boundary — which, with per-request caches, needs no batch
+        padding surgery: a merged request is simply prefilled into its own cache.
+        """
+        active: list[_Request] = []
+        for req in batch:
+            self._prefill_request(req, mx)
+            active.append(req)
+        step       = 0
+        max_steps  = max(r.max_tokens for r in active) if active else 0
 
         while active and step < max_steps:
-            # ── Build padded batch ───────────────────────────────────────────
-            seqs    = [r.input_ids + r.generated_ids for r in active]
-            lengths = [len(s) for s in seqs]
-            max_len = max(lengths)
-
-            # Right-pad with pad_token_id
-            padded = np.full((len(active), max_len), self._pad_id, dtype=np.int32)
-            for i, seq in enumerate(seqs):
-                padded[i, :len(seq)] = seq
-
-            # ── Forward pass ─────────────────────────────────────────────────
-            ids_batch = mx.array(padded, dtype=mx.int32)   # (B, max_len)
-            logits_all = self._model(ids_batch)            # (B, max_len, vocab)
-            mx.eval(logits_all)                            # materialise before numpy
-
-            logits_np = np.array(logits_all.astype(mx.float32))  # CPU numpy
-
-            # ── Sample + stream per request ──────────────────────────────────
             still_active: list[_Request] = []
-            for i, req in enumerate(active):
-                # Logits at the position of the LAST real token for this request
-                last_pos      = lengths[i] - 1
-                logit_row     = logits_np[i, last_pos, :]       # (vocab,)
-
-                next_id       = _sample_token(logit_row, req.temperature,
-                                              req.top_p, self._rng)
-                tok_text      = self._decode_cache.decode(next_id)
-
-                req.generated_ids.append(next_id)
-
-                # Check EOS
-                is_eos  = (next_id == self._eos_id)
-                is_stop = _check_stop(req, next_id)
-                is_max  = (len(req.generated_ids) >= req.max_tokens)
-
-                with self._lock:
-                    self.total_tokens_gen += 1
-
-                if is_eos or is_stop:
-                    req.out_queue.put((tok_text, "stop"))
-                    req.out_queue.put(_DONE)
-                    req.done = True
-                elif is_max:
-                    req.out_queue.put((tok_text, "length"))
-                    req.out_queue.put(_DONE)
-                    req.done = True
-                else:
-                    req.out_queue.put((tok_text, None))
+            tokens_this_step = 0
+            for req in active:
+                tokens_this_step += 1
+                if self._emit_token(req):
+                    self._advance_request(req, mx)   # only if not finished
                     still_active.append(req)
-
             active = still_active
             step  += 1
+            with self._lock:                          # one lock acquire per step
+                self.total_tokens_gen += tokens_this_step
+
+            if nested:
+                max_steps = self._merge_prepared(active, step, max_steps, mx)
 
         # Any requests still running have hit the global max_steps cap
         for req in active:
@@ -655,6 +685,41 @@ class BatchScheduler:
                 req.out_queue.put(("", "length"))
                 req.out_queue.put(_DONE)
                 req.done = True
+
+    def _merge_prepared(self, active: list["_Request"], step: int,
+                        max_steps: int, mx) -> int:  # pragma: no cover
+        """Nested-wait merge: pull newly-prepared requests into ``active``.
+
+        Returns the (possibly extended) ``max_steps``. Excess requests beyond a
+        free slot are re-queued. Each merged request is prefilled into its own
+        cache, so no batched-cache resizing is required.
+        """
+        free_slots = self._max_batch - len(active)
+        if free_slots <= 0 or self._stop_event.is_set():
+            return max_steps
+        try:
+            new_batch = self._prepared_queue.get_nowait()
+        except queue.Empty:
+            return max_steps
+        if len(new_batch) > free_slots:
+            for _excess in new_batch[free_slots:]:
+                self._pending.put(_excess)
+            new_batch = new_batch[:free_slots]
+        for req in new_batch:
+            self._prefill_request(req, mx)
+            active.append(req)
+        if new_batch:
+            max_steps = max(max_steps,
+                            step + max(r.max_tokens for r in new_batch))
+            with self._lock:
+                self.total_requests += len(new_batch)
+            log.debug("NestedWait merged %d new request(s) at step %d "
+                      "(active_batch=%d)", len(new_batch), step, len(active))
+        return max_steps
+
+    def _generate_batch(self, batch: list[_Request], mx) -> None:  # pragma: no cover
+        """Static-batch generation — per-request KV-cached decode (see _decode_loop)."""
+        self._decode_loop(batch, mx, nested=False)
 
     def _generate_batch_torch(self, batch: list[_Request]) -> None:  # pragma: no cover
         """
@@ -818,98 +883,14 @@ class NestedWaitScheduler(BatchScheduler):
     def _generate_batch_nested(  # pragma: no cover
         self, batch: list[_Request], mx
     ) -> None:
+        """Nested-wait generation — per-request KV-cached decode with mid-loop
+        merge of newly-prepared requests (see :meth:`_decode_loop`).
+
+        At each step boundary the worker non-blocking-polls ``_prepared_queue``
+        and prefills any new request into its own cache, eliminating the
+        inter-batch GPU idle gap of static batching.
         """
-        Autoregressive decode loop with per-step merge of new prepared requests.
-
-        At each step boundary the worker non-blocking-polls ``_prepared_queue``.
-        If a new prepared batch is available and there are free slots, the new
-        requests are merged into ``active`` immediately — eliminating the
-        inter-batch GPU idle gap characteristic of static batching.
-        """
-        active:   list[_Request] = list(batch)
-        step:     int            = 0
-        max_steps: int           = max(r.max_tokens for r in active)
-
-        while active and step < max_steps:
-            # ── Build padded batch ───────────────────────────────────────────
-            seqs    = [r.input_ids + r.generated_ids for r in active]
-            lengths = [len(s) for s in seqs]
-            max_len = max(lengths)
-
-            padded = np.full((len(active), max_len), self._pad_id, dtype=np.int32)
-            for i, seq in enumerate(seqs):
-                padded[i, :len(seq)] = seq
-
-            # ── Forward pass ─────────────────────────────────────────────────
-            ids_batch  = mx.array(padded, dtype=mx.int32)
-            logits_all = self._model(ids_batch)
-            mx.eval(logits_all)
-            logits_np  = np.array(logits_all.astype(mx.float32))
-
-            # ── Sample + stream per request ──────────────────────────────────
-            still_active: list[_Request] = []
-            for i, req in enumerate(active):
-                last_pos  = lengths[i] - 1
-                logit_row = logits_np[i, last_pos, :]
-                next_id   = _sample_token(logit_row, req.temperature,
-                                          req.top_p, self._rng)
-                tok_text  = self._decode_cache.decode(next_id)
-
-                req.generated_ids.append(next_id)
-
-                is_eos  = (next_id == self._eos_id)
-                is_stop = _check_stop(req, next_id)
-                is_max  = (len(req.generated_ids) >= req.max_tokens)
-
-                with self._lock:
-                    self.total_tokens_gen += 1
-
-                if is_eos or is_stop:
-                    req.out_queue.put((tok_text, "stop"))
-                    req.out_queue.put(_DONE)
-                    req.done = True
-                elif is_max:
-                    req.out_queue.put((tok_text, "length"))
-                    req.out_queue.put(_DONE)
-                    req.done = True
-                else:
-                    req.out_queue.put((tok_text, None))
-                    still_active.append(req)
-
-            active = still_active
-            step  += 1
-
-            # ── Nested WAIT merge: pull in any newly-prepared requests ────────
-            free_slots = self._max_batch - len(active)
-            if free_slots > 0 and not self._stop_event.is_set():
-                try:
-                    new_batch = self._prepared_queue.get_nowait()
-                    # Respect max_batch_size — re-queue excess requests
-                    if len(new_batch) > free_slots:
-                        for _excess in new_batch[free_slots:]:
-                            self._pending.put(_excess)
-                        new_batch = new_batch[:free_slots]
-                    active.extend(new_batch)
-                    # Extend max_steps if new requests need more tokens
-                    if new_batch:
-                        max_steps = max(max_steps,
-                                        step + max(r.max_tokens for r in new_batch))
-                        with self._lock:
-                            self.total_requests += len(new_batch)
-                        log.debug(
-                            "NestedWait merged %d new request(s) at step %d "
-                            "(active_batch=%d)",
-                            len(new_batch), step, len(active),
-                        )
-                except queue.Empty:
-                    pass  # no new work ready — continue with current batch
-
-        # Drain any requests still running at the global step cap
-        for req in active:
-            if not req.done:
-                req.out_queue.put(("", "length"))
-                req.out_queue.put(_DONE)
-                req.done = True
+        self._decode_loop(batch, mx, nested=True)
 
 
 
