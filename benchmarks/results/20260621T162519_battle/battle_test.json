@@ -1,0 +1,113 @@
+{
+  "tag": "battle",
+  "stamp": "20260621T162519",
+  "hardware": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "machine": "arm64",
+    "python": "3.12.8",
+    "chip": "Apple M3",
+    "ram_gb": 16.0,
+    "mlx": "0.31.0"
+  },
+  "passed": 7,
+  "failed": 0,
+  "warned": 1,
+  "cases": [
+    {
+      "name": "prompt-lookup speculative",
+      "pr": "#155",
+      "metric": "decode tok/s",
+      "baseline": 72.4867370787656,
+      "optimized": 118.10375795072643,
+      "speedup": 1.6293154128650105,
+      "lossless": true,
+      "verdict": "PASS",
+      "detail": "copy-heavy decode; greedy-identity on repeat prompt=True",
+      "extra": {}
+    },
+    {
+      "name": "adaptive accept guard",
+      "pr": "#155",
+      "metric": "chat tok/s",
+      "baseline": 77.3083176544778,
+      "optimized": 84.28898345878976,
+      "speedup": 1.0902964391944394,
+      "lossless": null,
+      "verdict": "PASS",
+      "detail": "p95 base=13.1ms opt=11.9ms (\u2264+5% required) \u2192 ok",
+      "extra": {}
+    },
+    {
+      "name": "async cooldown pipelining",
+      "pr": "#155",
+      "metric": "chat tok/s",
+      "baseline": 83.64549731014374,
+      "optimized": 82.67347057908263,
+      "speedup": 0.9883792103302704,
+      "lossless": true,
+      "verdict": "PASS",
+      "detail": "sync vs mx.async_eval cooldown block",
+      "extra": {}
+    },
+    {
+      "name": "prompt-prefix KV reuse",
+      "pr": "#155",
+      "metric": "prefill ms",
+      "baseline": 220.34341702237725,
+      "optimized": 16.561707947403193,
+      "speedup": 13.304389723701545,
+      "lossless": true,
+      "verdict": "PASS",
+      "detail": "167-tok extending prompt; warm=suffix-only prefill",
+      "extra": {}
+    },
+    {
+      "name": "detok memoization",
+      "pr": "#59",
+      "metric": "decodes/sec",
+      "baseline": 493018.1281247648,
+      "optimized": 17372425.144299414,
+      "speedup": 35.23688917966743,
+      "lossless": true,
+      "verdict": "PASS",
+      "detail": "TokenDecodeCache vs raw tokenizer.decode on repeated ids",
+      "extra": {}
+    },
+    {
+      "name": "fp16 npy-dir passthrough",
+      "pr": "#152",
+      "metric": "bytes/elem",
+      "baseline": 4.0,
+      "optimized": 2.0,
+      "speedup": 2.0,
+      "lossless": true,
+      "verdict": "PASS",
+      "detail": "dtype=float16 (want float16); bf16 bit-identical=True",
+      "extra": {}
+    },
+    {
+      "name": "PyramidKV layer budget",
+      "pr": "#154",
+      "metric": "L0/Ln ratio",
+      "baseline": 1.0,
+      "optimized": 3.0,
+      "speedup": 3.0,
+      "lossless": true,
+      "verdict": "PASS",
+      "detail": "mean\u2248budget=True taper=True floor=True; L0=3072 Ln=1024",
+      "extra": {}
+    },
+    {
+      "name": "batched decode (scheduler)",
+      "pr": "#153",
+      "metric": "aggregate tok/s",
+      "baseline": 73.15851698440085,
+      "optimized": 66.45280271053551,
+      "speedup": 0.908339937026127,
+      "lossless": null,
+      "verdict": "WARN",
+      "detail": "batch=8 vs sequential; matches single-stream 8/8 (GPU near-ties; exact identity gated on CPU)",
+      "extra": {}
+    }
+  ]
+}
