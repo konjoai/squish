@@ -97,6 +97,11 @@ def test_configure_memory_rejects_out_of_range_fraction(fake_mx):
     assert not hasattr(fake_mx, "_memlimit")
 
 
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="exercises the off-macOS OSError branch; on macOS libSystem loads and "
+    "the sysctl-success path runs instead (covered by test_backend_unit.py)",
+)
 def test_configure_memory_swallows_non_macos_sysctl_failure(fake_mx):
     # On Linux ctypes.CDLL("libSystem.dylib") raises OSError; configure_memory
     # must swallow it rather than propagate (the except branch).
