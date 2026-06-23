@@ -194,3 +194,83 @@ def test_reuse_is_byte_identical_to_cold():
     warm = gen(p2, 16, reuse=True)  # reuses the shared prefix
     cold = gen(p2, 16, reuse=False)  # full cold prefill (truth)
     assert warm == cold
+
+
+def _install_fake_mlx_runtime(monkeypatch):
+    """Inject fake ``mlx.core`` + ``mlx_lm.models.cache`` so prefill_with_reuse
+    runs without Apple Silicon. Returns (calls dict) recording model/trim use."""
+    import sys
+    import types
+
+    calls = {"model": [], "trim": [], "eval": 0}
+
+    class _Arr:
+        def __init__(self, data):
+            self.data = data
+
+        def __getitem__(self, _key):
+            return ("BATCHED", self.data)
+
+    mx = types.ModuleType("mlx.core")
+    mx.uint32 = "u32"
+    mx.array = lambda data, dtype=None: _Arr(data)
+    mx.eval = lambda *a: calls.__setitem__("eval", calls["eval"] + 1)
+    mlx_pkg = types.ModuleType("mlx")
+    mlx_pkg.core = mx
+    monkeypatch.setitem(sys.modules, "mlx", mlx_pkg)
+    monkeypatch.setitem(sys.modules, "mlx.core", mx)
+
+    cache_mod = types.ModuleType("mlx_lm.models.cache")
+
+    class KVCache:
+        pass
+
+    cache_mod.KVCache = KVCache
+    cache_mod.make_prompt_cache = lambda model: [types.SimpleNamespace(offset=0, state=())]
+    cache_mod.trim_prompt_cache = lambda cache, drop: calls["trim"].append(drop)
+    models = types.ModuleType("mlx_lm.models")
+    models.cache = cache_mod
+    mlx_lm = types.ModuleType("mlx_lm")
+    mlx_lm.models = models
+    monkeypatch.setitem(sys.modules, "mlx_lm", mlx_lm)
+    monkeypatch.setitem(sys.modules, "mlx_lm.models", models)
+    monkeypatch.setitem(sys.modules, "mlx_lm.models.cache", cache_mod)
+    return calls
+
+
+def test_prefill_cold_when_no_prefix_cache(monkeypatch):
+    from squish.kv.prompt_prefix_cache import prefill_with_reuse
+
+    calls = _install_fake_mlx_runtime(monkeypatch)
+    model = lambda x, cache=None: calls["model"].append(x) or "out"  # noqa: E731
+    cache = prefill_with_reuse(model, [1, 2, 3, 4], None)
+    assert isinstance(cache, list)
+    assert calls["model"] and calls["eval"] == 1  # suffix prefilled + evaluated
+
+
+def test_prefill_reuses_shared_prefix_and_trims(monkeypatch):
+    import types
+
+    from squish.kv.prompt_prefix_cache import PromptPrefixCache, prefill_with_reuse
+
+    calls = _install_fake_mlx_runtime(monkeypatch)
+    pc = PromptPrefixCache(min_prefix=2)
+    # stored cache covers more tokens (offset=4) than the shared prefix (3) → trim.
+    pc.store([1, 2, 3, 9], [types.SimpleNamespace(offset=4, state=())])
+    model = lambda x, cache=None: "out"  # noqa: E731
+    prefill_with_reuse(model, [1, 2, 3, 7, 8], pc)
+    assert calls["trim"] == [1]  # offset(4) - keep(min(3,4,4)=3) == 1
+
+
+def test_prefill_reuse_with_no_suffix_skips_model(monkeypatch):
+    import types
+
+    from squish.kv.prompt_prefix_cache import PromptPrefixCache, prefill_with_reuse
+
+    calls = _install_fake_mlx_runtime(monkeypatch)
+    pc = PromptPrefixCache(min_prefix=2)
+    pc.store([1, 2, 3], [types.SimpleNamespace(offset=2, state=())])
+    model = lambda x, cache=None: calls["model"].append(x)  # noqa: E731
+    # prompt_ids[:-1] == [1,2]; keep=min(2,2,2)=2 → start=2 → suffix empty
+    prefill_with_reuse(model, [1, 2, 3], pc)
+    assert calls["model"] == [] and calls["eval"] == 0

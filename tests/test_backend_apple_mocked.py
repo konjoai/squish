@@ -12,6 +12,7 @@ import types
 
 import numpy as np
 import pytest
+from unittest.mock import MagicMock, patch
 
 
 @pytest.fixture()
@@ -105,6 +106,120 @@ def test_configure_memory_rejects_out_of_range_fraction(fake_mx):
 def test_configure_memory_swallows_non_macos_sysctl_failure(fake_mx):
     # On Linux ctypes.CDLL("libSystem.dylib") raises OSError; configure_memory
     # must swallow it rather than propagate (the except branch).
+    be = _apple()
+    be.configure_memory(0.9)
+    assert not hasattr(fake_mx, "_memlimit")
+
+
+def test_configure_memory_sets_limit_on_sysctl_success(fake_mx, monkeypatch):
+    """When libSystem loads and sysctlbyname succeeds (the macOS path), the Metal
+    memory limit is set. Mock ctypes.CDLL so this branch runs on any OS."""
+    import ctypes
+
+    class _FakeLibc:
+        def sysctlbyname(self, *_args):
+            return 0  # success; leaves memsize at 0, which is fine for the test
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda _name: _FakeLibc())
+    be = _apple()
+    be.configure_memory(0.9)
+    assert hasattr(fake_mx, "_memlimit")
+
+
+# ── _TorchBackend / create_backend (mocked torch) ──────────────────────────────
+
+
+def _torch_mock(cuda: bool = False) -> MagicMock:
+    m = MagicMock(name="torch")
+    m.cuda.is_available.return_value = cuda
+    m.device.side_effect = lambda s: s
+    m.float16 = "f16"
+    return m
+
+
+def _save_file_recorder():
+    recorded = {}
+    mod = types.ModuleType("safetensors.torch")
+    mod.save_file = lambda d, p: recorded.update({"dict": d, "path": p})
+    mod.load_file = lambda p: {}
+    return mod, recorded
+
+
+def test_save_tensors_routes_tensor_and_numpy(monkeypatch, tmp_path):
+    mock_torch = _torch_mock()
+
+    class _T:  # stand-in for torch.Tensor
+        def __init__(self, v):
+            self.v = v
+
+        def contiguous(self):
+            return ("CONTIG", self.v)
+
+    mock_torch.Tensor = _T
+    mock_torch.from_numpy = lambda a: ("FROMNP", a)
+    st_mod, recorded = _save_file_recorder()
+    monkeypatch.setitem(sys.modules, "torch", mock_torch)
+    monkeypatch.setitem(sys.modules, "safetensors.torch", st_mod)
+
+    from squish.backend import _TorchBackend
+
+    tb = _TorchBackend()
+    tb.save_tensors(str(tmp_path / "w.safetensors"), {"a": _T(1), "b": [1.0, 2.0]})
+    # tensor → .contiguous(); non-tensor → from_numpy
+    assert recorded["dict"]["a"] == ("CONTIG", 1)
+    assert recorded["dict"]["b"][0] == "FROMNP"
+
+
+def test_create_backend_returns_apple_when_is_apple(monkeypatch):
+    from squish import backend as be_mod
+
+    monkeypatch.setattr(be_mod, "_IS_APPLE", True)
+    assert isinstance(be_mod.create_backend(), be_mod._AppleBackend)
+
+
+def test_create_backend_cpu_and_cuda_paths(monkeypatch):
+    from squish import backend as be_mod
+
+    monkeypatch.setattr(be_mod, "_IS_APPLE", False)
+    monkeypatch.setitem(sys.modules, "torch", _torch_mock(cuda=True))
+    cpu = be_mod.create_backend(device="cpu")
+    assert cpu.device == "cpu"
+    cuda = be_mod.create_backend(device="cuda")
+    assert cuda.device == "cuda"
+
+
+def test_create_backend_cuda_requested_but_unavailable_raises(monkeypatch):
+    from squish import backend as be_mod
+
+    monkeypatch.setattr(be_mod, "_IS_APPLE", False)
+    monkeypatch.setitem(sys.modules, "torch", _torch_mock(cuda=False))
+    # _TorchBackend builds (cpu), then the explicit cuda request fails the guard.
+    with pytest.raises(RuntimeError, match="cuda requested"):
+        be_mod.create_backend(device="cuda")
+
+
+def test_create_backend_falls_back_to_stub_without_torch(monkeypatch):
+    from squish import backend as be_mod
+
+    monkeypatch.setattr(be_mod, "_IS_APPLE", False)
+    # Force `import torch` inside _TorchBackend.__init__ to fail.
+    monkeypatch.setitem(sys.modules, "torch", None)
+    stub = be_mod.create_backend()
+    assert isinstance(stub, be_mod._StubBackend)
+    with pytest.raises(RuntimeError, match="no compute backend"):
+        stub.array([1])
+
+
+def test_configure_memory_skips_limit_when_sysctl_fails(fake_mx, monkeypatch):
+    """If sysctlbyname returns non-zero, the Metal limit is not set (the
+    ``ret == 0`` guard's false branch)."""
+    import ctypes
+
+    class _FailLibc:
+        def sysctlbyname(self, *_args):
+            return 1  # non-zero → failure
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda _name: _FailLibc())
     be = _apple()
     be.configure_memory(0.9)
     assert not hasattr(fake_mx, "_memlimit")
