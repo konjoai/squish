@@ -42,7 +42,7 @@ _LOG = logging.getLogger("squish.backend")
 
 # ── Platform detection ────────────────────────────────────────────────────────
 _IS_APPLE: bool = False
-if sys.platform == "darwin":
+if sys.platform == "darwin":  # pragma: no cover — import-time platform probe; runs only on macOS
     try:
         import mlx.core as _mlx_probe  # noqa: F401
         _mlx_probe.array([0], dtype=_mlx_probe.int32)  # ensure Metal is live
@@ -254,7 +254,7 @@ class _TorchBackend:
         if load_in_4bit:
             try:
                 load_kw["load_in_4bit"] = True
-            except (KeyError, TypeError, RuntimeError) as exc:
+            except (KeyError, TypeError, RuntimeError) as exc:  # pragma: no cover — defensive; dict assignment above cannot raise these
                 _LOG.debug("load_in_4bit setup failed (%s) — using torch_dtype", exc)
                 load_kw["torch_dtype"] = torch_dtype
         else:
@@ -409,7 +409,7 @@ def create_backend(
         return _StubBackend()
 
 
-if _IS_APPLE:
+if _IS_APPLE:  # pragma: no cover — import-time singleton selection is platform-bound
     BE = _AppleBackend()
 else:  # pragma: no cover
     try:
