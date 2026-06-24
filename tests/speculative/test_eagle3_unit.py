@@ -19,6 +19,7 @@ Coverage for branches in squish/eagle3.py not covered by test_wave19_server_wiri
     - mean_feature_similarity with n_verifications == 0 → 0.0
     - acceptance_rate with n_verifications == 0 → 0.0
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -166,3 +167,27 @@ class TestEagle3StatsZeroVerifications:
         )
         assert st.mean_feature_similarity == pytest.approx(0.75)
         assert st.acceptance_rate == pytest.approx(0.3)
+
+
+class TestEagle3CoverageRemainder:
+    def test_config_rejects_nonpositive_hidden_dim(self):
+        with pytest.raises(ValueError, match="hidden_dim"):
+            Eagle3Config(hidden_dim=0)
+
+    def test_config_rejects_acceptance_threshold_out_of_range(self):
+        with pytest.raises(ValueError, match="acceptance_threshold"):
+            Eagle3Config(acceptance_threshold=1.5)
+        with pytest.raises(ValueError, match="acceptance_threshold"):
+            Eagle3Config(acceptance_threshold=0.0)
+
+    def test_stats_accessors_after_verifications(self):
+        decoder = Eagle3Decoder(
+            Eagle3Config(hidden_dim=32, vocab_size=64, acceptance_threshold=0.5)
+        )
+        decoder._n_total = 4
+        decoder._n_accepted = 3
+        assert decoder.n_accepted == 3
+        assert decoder.acceptance_rate == 0.75  # n_total > 0 branch
+        stats = decoder.get_stats()
+        assert stats.total_draft_steps == 4
+        assert stats.total_accepted == 3
