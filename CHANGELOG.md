@@ -5,7 +5,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [9.34.4] — Repetition-loop guard on every decode path + UI offline/socket fixes
+## [9.34.5] — Repetition-loop guard on every decode path + UI offline/socket fixes
 
 ### Fixed
 - **Runaway repetition on small models** (`llama3.2:1b`, `qwen2.5:1.5b` looping a
