@@ -175,7 +175,7 @@ def _available_ram_gb() -> float:
 # squish.quant.quantizer is the self-contained replacement for vectro/python/interface.py
 try:
     import mlx.core as mx  # noqa: E402
-    _MLX_AVAILABLE = True
+    _MLX_AVAILABLE = True  # pragma: no cover — import-time MLX probe; the True path runs only where mlx is installed (macOS)
 except ImportError:  # pragma: no cover
     mx = None  # type: ignore[assignment]
     _MLX_AVAILABLE = False
