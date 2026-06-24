@@ -563,6 +563,45 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#9344-repetition-loop-guard-on-every-decode-path-ui-offlinesocket-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [9.34.4] — Repetition-loop guard on every decode path + UI offline/socket fixes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[9.34.4] — Repetition-loop guard on every decode path + UI offline/socket fixes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#9344-k8v4-quantized-disk-kv-cache-persistence" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -625,7 +664,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed" class="md-nav__link">
+  <a href="#fixed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -692,7 +731,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed_1" class="md-nav__link">
+  <a href="#fixed_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -742,7 +781,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed_2" class="md-nav__link">
+  <a href="#fixed_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -770,7 +809,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed_3" class="md-nav__link">
+  <a href="#fixed_4" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -831,7 +870,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed_4" class="md-nav__link">
+  <a href="#fixed_5" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -926,7 +965,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed_5" class="md-nav__link">
+  <a href="#fixed_6" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1010,7 +1049,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed_6" class="md-nav__link">
+  <a href="#fixed_7" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1071,7 +1110,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed_7" class="md-nav__link">
+  <a href="#fixed_8" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1348,7 +1387,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#fixed_8" class="md-nav__link">
+  <a href="#fixed_9" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -1681,6 +1720,38 @@
 <p>All notable changes to Squish are documented here.
 This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</p>
 <hr />
+<h2 id="9344-repetition-loop-guard-on-every-decode-path-ui-offlinesocket-fixes">[9.34.4] — Repetition-loop guard on every decode path + UI offline/socket fixes<a class="headerlink" href="#9344-repetition-loop-guard-on-every-decode-path-ui-offlinesocket-fixes" title="Permanent link">&para;</a></h2>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Runaway repetition on small models</strong> (<code>llama3.2:1b</code>, <code>qwen2.5:1.5b</code> looping a
+  paragraph forever). Two gaps closed:</li>
+<li><code>_detect_loop</code> (<code>squish/server.py</code>) only scanned repeating units up to 80
+    chars inside a 400-char window with an exact <code>unit * reps == tail</code> test, so a
+    repeating <em>paragraph</em> (period &gt; 80) was invisible. It now scans up to a full
+    paragraph (<code>_LOOP_MAX_PERIOD = 300</code>, <code>_LOOP_WIN = 1200</code>) and compares
+    per-character against the text one period earlier — phase-robust and tolerant
+    of a single drifting char (<code>_LOOP_MATCH_RATIO</code>). Block-sized units need only
+    <code>_LOOP_BLOCK_REPS = 2</code> reps; short fragments still need 4.</li>
+<li>The Wave-114 guard lived only in the <code>mlx_lm.stream_generate</code> path. The
+    quantized-KV-cache decode loop and the fallback manual-sampling loop had
+    <strong>no</strong> loop detection, so degenerate loops ran all the way to <code>max_tokens</code>
+    ("squish caught one model but not the other"). Extracted the detector into a
+    shared <code>_LoopGuard</code> and wired it into all three decode paths.</li>
+<li><strong>Web-UI "offline" banner flashing while a model is thinking.</strong> A <code>/v1/models</code>
+  poll can time out when prefill briefly starves the event loop; the chat is
+  actively streaming, so it is not offline. <code>loadModels()</code> now suppresses the
+  banner while <code>isStreaming</code> is set (<code>squish/static/index.html</code>).</li>
+<li><strong><code>socket.send() raised exception.</code> log spam</strong> when a client closes the tab
+  mid-stream. <code>/v1/completions</code> and the Ollama <code>/api/generate</code> + <code>/api/chat</code>
+  streamers now stop decoding on <code>request.is_disconnected()</code> instead of writing
+  to a dead socket (also stops wasting GPU on an abandoned request).</li>
+</ul>
+<h3 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>All loop-guard changes are greedy-lossless: they only abort already-degenerate
+  output. <code>repetition_penalty</code> default stays <code>1.0</code> (no behavioural change to
+  healthy generations); the guard is the deterministic safety net.</li>
+</ul>
 <h2 id="9344-k8v4-quantized-disk-kv-cache-persistence">[9.34.4] — K8V4 quantized disk KV-cache persistence<a class="headerlink" href="#9344-k8v4-quantized-disk-kv-cache-persistence" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
@@ -1733,7 +1804,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 <li>CI: <code>e2e-apple-silicon</code> job (macos-14) running the battle-test on PRs with the
   0.5B model; <code>workflow_dispatch</code> <code>e2e_model</code> input swaps to 1.5B.</li>
 </ul>
-<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>/v1/embeddings</code>: the <code>import mlx.core</code> / <code>import numpy</code> were <strong>unguarded</strong> —
   a CLAUDE.md violation. They are now gated behind a <code>platform.system()</code>
@@ -1781,7 +1852,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 </ul>
 <hr />
 <h2 id="9341-fix-squish-pull-crash-on-int4-compression-issue-37">[9.34.1] — Fix <code>squish pull</code> crash on INT4 compression (issue #37)<a class="headerlink" href="#9341-fix-squish-pull-crash-on-int4-compression-issue-37" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>squish pull</code> no longer crashes with <code>ModuleNotFoundError: squish.quant.super_weight_calibrator</code>.</strong>
   A prior "lean purge" deleted <code>squish/quant/super_weight_calibrator.py</code> but left
@@ -1830,7 +1901,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
   refreshed with thermally-controlled Qwen2.5-7B numbers vs Ollama 0.18.2 and
   0.30.7; paper gains §4.4 (end-to-end serving benchmarks).</li>
 </ul>
-<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_3">Fixed<a class="headerlink" href="#fixed_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Quantized-KV <code>--kv-cache-mode int8</code> compile crash.</strong> The numpy-quantized KV
   path tripped "[eval] … during compile" on first decode and fell back to a
@@ -1841,7 +1912,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 </ul>
 <hr />
 <h2 id="9339-restore-promptblock-kv-in-model-dtype-stop-fp16fp32-promotion-2x-decode">[9.33.9] — Restore prompt/block KV in model dtype (stop fp16→fp32 promotion, ~2x decode)<a class="headerlink" href="#9339-restore-promptblock-kv-in-model-dtype-stop-fp16fp32-promotion-2x-decode" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_3">Fixed<a class="headerlink" href="#fixed_3" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_4">Fixed<a class="headerlink" href="#fixed_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>KV-cache restore decode regression.</strong> Every <code>--prompt-kv-cache</code> /
   <code>--block-kv-cache</code> config decoded at ~half the throughput of the plain
@@ -1910,7 +1981,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
   wordmark + half-size mascot side-by-side, info panel + load status row
   inside the same border. Sparkles centred over the mascot.</li>
 </ul>
-<h3 id="fixed_4">Fixed<a class="headerlink" href="#fixed_4" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_5">Fixed<a class="headerlink" href="#fixed_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>load_from_npy_dir()</code>: partial/interrupted compressed dirs (manifest
   missing &gt;5% of expected weights) now raise a clear <code>FileNotFoundError</code>
@@ -1948,7 +2019,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 </ul>
 <hr />
 <h2 id="9333-ssl-fix">[9.33.3] — SSL fix<a class="headerlink" href="#9333-ssl-fix" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_5">Fixed<a class="headerlink" href="#fixed_5" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_6">Fixed<a class="headerlink" href="#fixed_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Python 3.13 Authority Key Identifier enforcement and Zscaler
   compatibility: all three HuggingFace download paths now retry with
@@ -1972,7 +2043,7 @@ This project adheres to <a href="https://semver.org/">Semantic Versioning</a>.</
 </ul>
 <hr />
 <h2 id="9330-pull-resilience-partial-download-guard-ssl-fallback">[9.33.0] — Pull Resilience (partial-download guard + SSL fallback)<a class="headerlink" href="#9330-pull-resilience-partial-download-guard-ssl-fallback" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_6">Fixed<a class="headerlink" href="#fixed_6" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_7">Fixed<a class="headerlink" href="#fixed_7" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>squish pull</code> now validates raw model directories before compression. If a prior
   download was interrupted/canceled, the partial directory is removed and the model
@@ -2036,7 +2107,7 @@ the v5.1.1 benchmark run (v5.1.1 section).</p>
   upgrading from a development install should switch to <code>pip install squish-ai</code>
   for releases.</li>
 </ul>
-<h3 id="fixed_7">Fixed<a class="headerlink" href="#fixed_7" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_8">Fixed<a class="headerlink" href="#fixed_8" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>mlx_lm</code> sklearn-stub import-side-effect (saves ~1.2 s cold-start;
   upstream PR filed).</li>
@@ -2402,7 +2473,7 @@ of <code>squish/</code>; the existing module-count gates in <code>tests/test_qua
 <li>Repr coverage: class name, dims, group_size, residual rank, sparse k (6 tests).</li>
 <li>Factory: returns correct type, accepts numpy/mx bias, no-bias default (4 tests).</li>
 </ul>
-<h3 id="fixed_8">Fixed<a class="headerlink" href="#fixed_8" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_9">Fixed<a class="headerlink" href="#fixed_9" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>squish/cli.py</code> — <code>cmd_bench</code></strong>: INT4 bench no longer exits with code 1
@@ -2980,7 +3051,7 @@ sparse correction (for real transformer weight outliers) is W103.3 scope.</p>
   8 INT4 output structure checks, 2 INT8 output checks, 6 argument parsing roundtrip checks,
   invalid-format rejection.</li>
 </ul>
-<h3 id="fixed_9">Fixed<a class="headerlink" href="#fixed_9" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_10">Fixed<a class="headerlink" href="#fixed_10" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>squish/cli.py</code> <code>build_parser()</code></strong> — <code>--version</code> argument previously called
   <code>importlib.metadata.version("squish")</code> at parse time without a try/except. Now wraps the
@@ -3280,7 +3351,7 @@ directly — require <code>pip install squish</code>; pass in Python 3.10 CI).</
 <li><strong><code>GET /cloud/policy-stats</code></strong> — global cross-tenant policy pass/fail aggregate; no tenant auth required.</li>
 <li><strong><code>tests/test_squash_w58.py</code></strong> — 17 tests: <code>TestCloudDBReads</code> (7), <code>TestCloudAPIReads</code> (8), <code>TestAQLMLoader</code> (2).</li>
 </ul>
-<h3 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h3>
+<h3 id="notes_1">Notes<a class="headerlink" href="#notes_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>AQLM loader (<code>squish/quant/compressed_loader.py</code> lines 659–691) was wired in W56; W58 adds mock-based unit tests confirming the detection branch.</li>
 <li><code># lm_eval-waiver: hardware not available this session</code></li>
@@ -3329,7 +3400,7 @@ directly — require <code>pip install squish</code>; pass in Python 3.10 CI).</
   thread executor, returns <code>{ok, files_checked, summary, hits}</code>. Returns 400 on
   missing paths.</li>
 </ul>
-<h3 id="fixed_10">Fixed<a class="headerlink" href="#fixed_10" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_11">Fixed<a class="headerlink" href="#fixed_11" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>squish/cli.py</code> — mixed_attn calibration</strong> — <code>args.outlier_threshold</code> now
   set to <code>100.0</code> in the <code>--format mixed_attn</code> block, ensuring the AWQ INT4
@@ -3421,7 +3492,7 @@ directly — require <code>pip install squish</code>; pass in Python 3.10 CI).</
   count gate.</p>
 </li>
 </ul>
-<h3 id="notes_1">Notes<a class="headerlink" href="#notes_1" title="Permanent link">&para;</a></h3>
+<h3 id="notes_2">Notes<a class="headerlink" href="#notes_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong>Accuracy gate (lm_eval-waiver):</strong> AQLM is a K-means codebook scheme, not
@@ -3540,7 +3611,7 @@ directly — require <code>pip install squish</code>; pass in Python 3.10 CI).</
   (<code>&lt;=</code>), status assertions now accept <code>under_investigation</code> for the certifi entry,
   <code>CVE-2023-27534</code> product PURL check updated to unversioned <code>pkg:pypi/squish</code>.</li>
 </ul>
-<h3 id="notes_2">Notes<a class="headerlink" href="#notes_2" title="Permanent link">&para;</a></h3>
+<h3 id="notes_3">Notes<a class="headerlink" href="#notes_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Module count: 125 (unchanged — no new Python modules added).</li>
 <li>All 5272 tests pass (52 net-new from W52, 7 W33 tests updated).</li>
@@ -3759,7 +3830,7 @@ Set <code>SQUASH_OFFLINE=1</code> or pass <code>--offline</code> to activate.</p
   missing manifest, glob filter, hash stability, json output, API routes.</p>
 </li>
 </ul>
-<h3 id="notes_3">Notes<a class="headerlink" href="#notes_3" title="Permanent link">&para;</a></h3>
+<h3 id="notes_4">Notes<a class="headerlink" href="#notes_4" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Module count: 123 (+1, pre-authorised in Wave 47 scope: "Use remaining slot
   after W45 deletion").</li>
@@ -3904,7 +3975,7 @@ Set <code>SQUASH_OFFLINE=1</code> or pass <code>--offline</code> to activate.</p
   <code>TestRunSquashPs1</code> (9), <code>TestRunSquashSh</code> (10).
   Pure-unit + file-structure; no network, no model weights, no ADO SDK.</li>
 </ul>
-<h3 id="notes_4">Notes<a class="headerlink" href="#notes_4" title="Permanent link">&para;</a></h3>
+<h3 id="notes_5">Notes<a class="headerlink" href="#notes_5" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>azure_devops.py</code> is module #122 (above the 100-file non-experimental ceiling).
   Justification: completes the Fortune 500 Microsoft-stack CI/CD coverage matrix
@@ -3935,7 +4006,7 @@ Set <code>SQUASH_OFFLINE=1</code> or pass <code>--offline</code> to activate.</p
   <code>TestPublishOrbWorkflow</code> (4), <code>TestPublishHelmWorkflow</code> (4). No I/O beyond local file
   reads; no network, no model weights.</li>
 </ul>
-<h3 id="notes_5">Notes<a class="headerlink" href="#notes_5" title="Permanent link">&para;</a></h3>
+<h3 id="notes_6">Notes<a class="headerlink" href="#notes_6" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Zero Python modules added. Module count unchanged at 121 (no regression to the
   non-experimental ceiling; documented in MODULES.md).</li>
@@ -3945,7 +4016,7 @@ Set <code>SQUASH_OFFLINE=1</code> or pass <code>--offline</code> to activate.</p
 </ul>
 <hr />
 <h2 id="unreleased-wave-42-bias-formula-fix-int4-awq-lm_eval-validation-arc_easy-pass">[Unreleased] — Wave 42: bias formula fix + INT4 AWQ lm_eval validation (arc_easy PASS)<a class="headerlink" href="#unreleased-wave-42-bias-formula-fix-int4-awq-lm_eval-validation-arc_easy-pass" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_11">Fixed<a class="headerlink" href="#fixed_11" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_12">Fixed<a class="headerlink" href="#fixed_12" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>squish/cli.py</code></strong> — Default <code>int4_group_size</code> changed 16 → 32 in 3 locations. MLX
@@ -4119,7 +4190,7 @@ mlx_lm.convert INT4 g=64 baseline of <strong>70.6%</strong> (SESSION.md 2026-03-
     <code>vertex_ai</code> mentioned in integrations <code>__init__</code> docstring.</li>
 <li>Updated <code>squish/squash/integrations/__init__.py</code> to document the new <code>vertex_ai</code> adapter.</li>
 </ul>
-<h3 id="notes_6">Notes<a class="headerlink" href="#notes_6" title="Permanent link">&para;</a></h3>
+<h3 id="notes_7">Notes<a class="headerlink" href="#notes_7" title="Permanent link">&para;</a></h3>
 <ul>
 <li>GCP label key prefix is <code>squash_</code> (not <code>squash:</code> — colons violate GCP label grammar).</li>
 <li>Closes the "GCP Vertex AI integration" gap; was zero prior to this wave.</li>
@@ -4142,7 +4213,7 @@ mlx_lm.convert INT4 g=64 baseline of <strong>70.6%</strong> (SESSION.md 2026-03-
 <li>Updated per-format status table INT3 row to note gemma family and Qwen3-4B UNSAFE classifications.</li>
 <li>Updated INT2 bullet: confirmed incoherent across all families 0.6B–7B (~27–30% arc_easy ≈ random).</li>
 </ul>
-<h3 id="notes_7">Notes<a class="headerlink" href="#notes_7" title="Permanent link">&para;</a></h3>
+<h3 id="notes_8">Notes<a class="headerlink" href="#notes_8" title="Permanent link">&para;</a></h3>
 <ul>
 <li>No code changes — docs only. No new files.</li>
 <li>Test suite: 4562 passed, 4 pre-existing wave12x failures (unrelated), 25 skipped.</li>
@@ -4168,7 +4239,7 @@ mlx_lm.convert INT4 g=64 baseline of <strong>70.6%</strong> (SESSION.md 2026-03-
 <li>Module count: 107 (justified — closes existing stub dependency introduced
   in Wave 30).</li>
 </ul>
-<h3 id="notes_8">Notes<a class="headerlink" href="#notes_8" title="Permanent link">&para;</a></h3>
+<h3 id="notes_9">Notes<a class="headerlink" href="#notes_9" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>aqlm.py</code> is a <strong>decode-only</strong> module (dequantisation for loading
   externally-trained AQLM weights). AQLM quantisation training
@@ -4238,7 +4309,7 @@ mlx_lm.convert INT4 g=64 baseline of <strong>70.6%</strong> (SESSION.md 2026-03-
   to the written SPDX JSON artifact. Total suite: 4507 passed, 4 pre-existing
   line-count failures (wave12x), 0 new failures.</li>
 </ul>
-<h3 id="notes_9">Notes<a class="headerlink" href="#notes_9" title="Permanent link">&para;</a></h3>
+<h3 id="notes_10">Notes<a class="headerlink" href="#notes_10" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code># lm_eval-waiver: mixed_attn validation deferred — no hardware available this session</code></li>
 <li><code># expected-delta: n/a — no quantization path changed in this wave</code></li>
@@ -5038,7 +5109,7 @@ not by feature overlap with existing modules.</p>
 <li>SBOM column shows <code>—</code> when no sidecar.</li>
 <li>SBOM column shows <code>✓ sidecar</code> when sidecar has no bound scores.</li>
 </ul>
-<h3 id="notes_10">Notes<a class="headerlink" href="#notes_10" title="Permanent link">&para;</a></h3>
+<h3 id="notes_11">Notes<a class="headerlink" href="#notes_11" title="Permanent link">&para;</a></h3>
 <ul>
 <li>No new <code>squish/</code> modules added (still 97/100).</li>
 <li>No quantisation logic touched.</li>
@@ -5067,14 +5138,14 @@ not by feature overlap with existing modules.</p>
 <li><code>tests/test_cli_sbom.py</code>: 7 pure-unit tests covering all four sub-actions,
   missing-sidecar exit-1 paths, verify hash mismatch, and sigstore-absent warning.</li>
 </ul>
-<h3 id="notes_11">Notes<a class="headerlink" href="#notes_11" title="Permanent link">&para;</a></h3>
+<h3 id="notes_12">Notes<a class="headerlink" href="#notes_12" title="Permanent link">&para;</a></h3>
 <ul>
 <li>No new <code>squish/</code> modules added (still 97/100).</li>
 <li>No quantisation logic touched — lm_eval-waiver applies.</li>
 </ul>
 <hr />
 <h2 id="9150-int3-group_size-correctly-fixed-to-32-tier-23-model-compressions">[9.15.0] — INT3 group_size correctly fixed to 32; Tier 2/3 model compressions<a class="headerlink" href="#9150-int3-group_size-correctly-fixed-to-32-tier-23-model-compressions" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_12">Fixed<a class="headerlink" href="#fixed_12" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_13">Fixed<a class="headerlink" href="#fixed_13" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>squish/cli.py</code>: <code>_INT3_GROUP_SIZE</code> corrected from 16 → 32.  <code>mlx.core.quantize()</code>
   only supports group sizes 32, 64, and 128; requesting 16 raised <code>ValueError</code>.
@@ -5668,7 +5739,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 <li><strong>Removed empty ghost directories</strong>: <code>core/</code>, <code>format/</code>, <code>install/</code>, <code>packaging/</code>
   (only <code>__pycache__</code> remained after Wave 116 deletions).</li>
 </ul>
-<h3 id="fixed_13">Fixed<a class="headerlink" href="#fixed_13" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_14">Fixed<a class="headerlink" href="#fixed_14" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>astc_loader.py</code> bare import guarded</strong> — <code>from squish.compress.astc_encoder import</code>
   was a module-level bare import that raised <code>ModuleNotFoundError</code> on any direct
@@ -5725,7 +5796,7 @@ behind after <code>--agent-kv-sink</code> / <code>--agent-kv-window</code> were 
 </ul>
 <hr />
 <h2 id="920-wave-115-all-optimizations-flush-int3-load-path-dead-code">[9.2.0] — Wave 115 — All-Optimizations Flush + INT3 Load Path + Dead Code<a class="headerlink" href="#920-wave-115-all-optimizations-flush-int3-load-path-dead-code" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_14">Fixed<a class="headerlink" href="#fixed_14" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_15">Fixed<a class="headerlink" href="#fixed_15" title="Permanent link">&para;</a></h3>
 <ul>
 <li>
 <p><strong><code>--all-optimizations</code> TTFT spike eliminated</strong> — Wave modules (100+
@@ -8189,7 +8260,7 @@ continue passing; 188 new tests added (107 Wave 62a + 81 Wave 62b).</p>
 <li><code>squish/kernels/mojo/ouroboros_ngram_mojo.py</code> + <code>kernels/ouroboros_ngram.mojo</code></li>
 <li><code>squish/kernels/mojo/pyramid_kv_budget_mojo.py</code> + <code>kernels/pyramid_kv_budget.mojo</code></li>
 </ul>
-<h3 id="fixed_15">Fixed<a class="headerlink" href="#fixed_15" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_16">Fixed<a class="headerlink" href="#fixed_16" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>RustClusterKV.evict_mask</code> signature harmonised with <code>MojoClusterKV</code>:
   replaced positional <code>budget</code> (number of clusters to keep) with optional
@@ -8252,7 +8323,7 @@ All 11333 pre-Wave-61 tests continue passing; 140 new tests added
 <li><code>squish/kernels/mojo/jacobi_conv_mojo.py</code> + <code>kernels/jacobi_convergence.mojo</code></li>
 <li><code>squish/kernels/mojo/tree_verify_mojo.py</code> + <code>kernels/tree_verify.mojo</code></li>
 </ul>
-<h3 id="fixed_16">Fixed<a class="headerlink" href="#fixed_16" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_17">Fixed<a class="headerlink" href="#fixed_17" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Pre-existing <code>quarot_group_quant_f32</code> move-in-closure compile error in
   <code>squish_quant_rs/src/lib.rs</code>: introduced <code>let w_slice = &amp;w_flat[..]</code> before
@@ -11139,7 +11210,7 @@ TTFT, memory bandwidth, on-disk weight size, and per-token compute overheads.</p
 </ul>
 <hr />
 <h2 id="101-2026-03-04">[1.0.1] — 2026-03-04<a class="headerlink" href="#101-2026-03-04" title="Permanent link">&para;</a></h2>
-<h3 id="fixed_17">Fixed<a class="headerlink" href="#fixed_17" title="Permanent link">&para;</a></h3>
+<h3 id="fixed_18">Fixed<a class="headerlink" href="#fixed_18" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong><code>eval_output/eval_report.md</code></strong> — Replaced physically impossible benchmark numbers
   (+14.1% ARC, +15.2% HellaSwag after lossy compression) with validated results from a
