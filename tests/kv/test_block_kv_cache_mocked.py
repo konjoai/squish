@@ -92,11 +92,13 @@ def test_restore_blocks_unsupported_layer_returns_none(monkeypatch):
     assert bkc.restore_blocks_to_cache([object()], [_Block(1, 1)]) is None
 
 
-def test_to_numpy_import_error_raises():
-    # No fake mlx installed → `import mlx.core` raises, so both helpers re-raise as
-    # TypeError (a non-ndarray value can't be converted without mlx).
+def test_to_numpy_import_error_raises(monkeypatch):
+    # Force `import mlx.core` to fail on every host (real mlx exists on the macOS
+    # runners) → both helpers re-raise as TypeError for a non-ndarray value.
     import pytest
 
+    monkeypatch.setitem(sys.modules, "mlx", None)
+    monkeypatch.setitem(sys.modules, "mlx.core", None)
     with pytest.raises(TypeError, match="mlx not available"):
         bkc._to_numpy_f16([1.0, 2.0])
     with pytest.raises(TypeError, match="mlx not available"):

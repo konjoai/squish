@@ -81,7 +81,10 @@ def test_to_numpy_rejects_non_mlx_type(monkeypatch):
         pkc._to_numpy("not an array")
 
 
-def test_to_numpy_raises_when_mlx_unavailable():
+def test_to_numpy_raises_when_mlx_unavailable(monkeypatch):
+    # Force the no-mlx path on every host (real mlx exists on the macOS runners).
+    monkeypatch.setitem(sys.modules, "mlx", None)
+    monkeypatch.setitem(sys.modules, "mlx.core", None)
     with pytest.raises(TypeError, match="mlx not available"):
         pkc._to_numpy(object())
 
@@ -116,7 +119,10 @@ def test_restore_layer_count_mismatch():
     assert pkc.restore_kv_state([_Layer()], _entry(n_layers=2)) is False
 
 
-def test_restore_returns_false_without_mlx():
+def test_restore_returns_false_without_mlx(monkeypatch):
+    # Force the no-mlx path on every host (real mlx exists on the macOS runners).
+    monkeypatch.setitem(sys.modules, "mlx", None)
+    monkeypatch.setitem(sys.modules, "mlx.core", None)
     assert pkc.restore_kv_state([_Layer(), _Layer()], _entry(n_layers=2)) is False
 
 
