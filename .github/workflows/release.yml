@@ -122,33 +122,45 @@ jobs:
       version: ${{ needs.tag.outputs.version }}
       sha256: ${{ steps.pypi.outputs.sha256 }}
       url: ${{ steps.pypi.outputs.url }}
+      wheel_sha256: ${{ steps.pypi.outputs.wheel_sha256 }}
+      wheel_url: ${{ steps.pypi.outputs.wheel_url }}
     steps:
       - name: Poll PyPI
         id: pypi
         run: |
           VERSION="${{ needs.tag.outputs.version }}"
           for i in $(seq 1 30); do
+            # The Homebrew formula installs squish-ai from the WHEEL resource, so
+            # we must capture both sdist and wheel — bumping only the sdist
+            # (headline url) leaves the resource stale and brew installs the
+            # previous version. Python emits ready-to-append key=value lines.
             DATA=$(curl -s "https://pypi.org/pypi/squish-ai/${VERSION}/json" | \
                    python3 -c "
           import sys,json
-          d=json.loads(sys.stdin.read().encode('utf-8','replace').decode('utf-8'))
-          for f in d['urls']:
-              if f['packagetype']=='sdist':
-                  print(f['digests']['sha256'])
-                  print(f['url'])
+          try:
+              d=json.loads(sys.stdin.read().encode('utf-8','replace').decode('utf-8'))
+          except Exception:
+              sys.exit(0)
+          sd=wh=None
+          for f in d.get('urls',[]):
+              if f['packagetype']=='sdist':       sd=f
+              elif f['packagetype']=='bdist_wheel': wh=f
+          if sd and wh:
+              print('sha256='       + sd['digests']['sha256'])
+              print('url='          + sd['url'])
+              print('wheel_sha256=' + wh['digests']['sha256'])
+              print('wheel_url='    + wh['url'])
+              print('READY=1')
           " 2>/dev/null || echo "")
-            if [ -n "$DATA" ]; then
-              SHA256=$(echo "$DATA" | head -1)
-              URL=$(echo "$DATA" | tail -1)
-              echo "sha256=$SHA256" >> $GITHUB_OUTPUT
-              echo "url=$URL"       >> $GITHUB_OUTPUT
-              echo "✓ squish-ai==${VERSION} confirmed on PyPI"
+            if echo "$DATA" | grep -q '^READY=1$'; then
+              echo "$DATA" | grep -vE '^READY=1$' >> $GITHUB_OUTPUT
+              echo "✓ squish-ai==${VERSION} sdist+wheel confirmed on PyPI"
               exit 0
             fi
-            echo "Waiting for PyPI... attempt $i/30"
+            echo "Waiting for PyPI (sdist+wheel)... attempt $i/30"
             sleep 20
           done
-          echo "ERROR: PyPI publish timed out" && exit 1
+          echo "ERROR: PyPI publish timed out (sdist+wheel not both present)" && exit 1
 
   # ── Step 5: Update Homebrew formula (source-install, no bottle) ──────────
   update-formula:
@@ -156,33 +168,69 @@ jobs:
     needs: wait-pypi
     runs-on: ubuntu-latest
     env:
-      VERSION:  ${{ needs.wait-pypi.outputs.version }}
-      SHA256:   ${{ needs.wait-pypi.outputs.sha256 }}
-      TARBALL:  ${{ needs.wait-pypi.outputs.url }}
+      VERSION:      ${{ needs.wait-pypi.outputs.version }}
+      SHA256:       ${{ needs.wait-pypi.outputs.sha256 }}
+      TARBALL:      ${{ needs.wait-pypi.outputs.url }}
+      WHEEL_SHA256: ${{ needs.wait-pypi.outputs.wheel_sha256 }}
+      WHEEL_URL:    ${{ needs.wait-pypi.outputs.wheel_url }}
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
-      - name: Update formula URL and sha256
+      - name: Update formula URL, sha256, and squish_ai resource
         run: |
           python3 - << 'EOF'
           import re, os
-          url  = os.environ["TARBALL"]
-          sha  = os.environ["SHA256"]
-          ver  = os.environ["VERSION"]
+          url        = os.environ["TARBALL"]
+          sha        = os.environ["SHA256"]
+          wheel_url  = os.environ["WHEEL_URL"]
+          wheel_sha  = os.environ["WHEEL_SHA256"]
+          ver        = os.environ["VERSION"]
+
+          def bump_resource(text, name, r_url, r_sha):
+              """Rewrite the url + sha256 inside `resource "<name>" do ... end`.
+
+              The formula installs squish-ai from this wheel resource (not the
+              headline sdist url), so it MUST track the release version or brew
+              silently installs the previous one.
+              """
+              pat = re.compile(
+                  r'(resource "' + re.escape(name) + r'" do\n)(.*?)(\n  end)',
+                  re.DOTALL,
+              )
+              def repl(m):
+                  body = re.sub(r'url "[^"]*"', f'url "{r_url}"', m.group(2), count=1)
+                  body = re.sub(r'sha256 "[a-f0-9]{64}"',
+                                f'sha256 "{r_sha}"', body, count=1)
+                  return m.group(1) + body + m.group(3)
+              new, n = pat.subn(repl, text, count=1)
+              if n != 1:
+                  raise SystemExit(f"ERROR: resource \"{name}\" block not found — "
+                                   "formula structure changed, refusing to push a "
+                                   "half-updated formula")
+              return new
+
           for path in ["Formula/squish.rb"]:
               c = open(path).read()
+              # Headline sdist url + sha256 (2-space indent distinguishes it from
+              # the 4-space-indented resource shas).
               c = re.sub(r'url "[^"]*"', f'url "{url}"', c, count=1)
               c = re.sub(r'(^  sha256 ")[a-f0-9]{64}(")',
                          f'\\g<1>{sha}\\g<2>', c, flags=re.MULTILINE, count=1)
+              # The package itself — installed from this wheel resource.
+              c = bump_resource(c, "squish_ai", wheel_url, wheel_sha)
+              # Keep the "valid for squish-ai X.Y.Z" comment honest.
+              c = re.sub(r'(Resource blocks valid for squish-ai )\d+\.\d+\.\d+',
+                         f'\\g<1>{ver}', c, count=1)
               # Remove any stale bottle block
               c = re.sub(r'\n\s*bottle do\n.*?end\n', '\n',
                          c, flags=re.DOTALL)
               open(path, "w").write(c)
               print(f"Updated {path}")
           EOF
-          grep "url\|sha256" Formula/squish.rb | head -4
+          echo "── headline + squish_ai resource after bump ──"
+          grep -nE 'squish_ai-|^  url|^  sha256|resource "squish_ai"' Formula/squish.rb | head -8
 
       - name: Commit formula to konjoai/squish
         run: |
