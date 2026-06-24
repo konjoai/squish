@@ -5,7 +5,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [9.34.4] — Repetition-loop guard on every decode path + UI offline/socket fixes
+## [9.34.5] — Repetition-loop guard on every decode path + UI offline/socket fixes
 
 ### Fixed
 - **Runaway repetition on small models** (`llama3.2:1b`, `qwen2.5:1.5b` looping a
@@ -35,6 +35,27 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - All loop-guard changes are greedy-lossless: they only abort already-degenerate
   output. `repetition_penalty` default stays `1.0` (no behavioural change to
   healthy generations); the guard is the deterministic safety net.
+
+## [9.34.4] — K8V4 quantized disk KV-cache persistence
+
+### Added
+- `squish/kv/k8v4_codec.py`: a pure-NumPy codec that quantizes persisted KV
+  state to **INT8 keys / INT4 values** ("K8V4") with group-wise asymmetric
+  affine quantization along `head_dim` (INT4 values are nibble-packed). ~2.7×
+  smaller on-disk entries and faster restore I/O than float16, **lossless on
+  greedy decode**. The bit allocation is validated, not arbitrary: on an M3
+  (quantize → restore → greedy-decode vs float16), K8V8 and K8V4 both matched
+  40/40 tokens while K4V4 diverged at token 2 — INT4 *keys* destroy decode, so
+  `K_BITS` is fixed at 8 and never configurable.
+- `--prompt-kv-cache-quant {fp16,k8v4}` (server + `squish run`): selects the
+  on-disk format for `--prompt-kv-cache`. Defaults to `fp16` (byte-identical to
+  prior behaviour). Reads **auto-detect** the format per layer, so `fp16` and
+  `k8v4` entries coexist and existing caches keep loading after upgrade.
+
+### Changed
+- `PromptKVStore` gained a `quant="fp16"|"k8v4"` constructor arg. The read path
+  (`get`, `restore_kv_state` lazy-load) now resolves `.npz` (quantized) before
+  `.npy` (float16) per layer; a corrupt archive is treated as a clean miss.
 
 ## [9.34.3] — API input-validation hardening + Apple-Silicon e2e battle-test
 

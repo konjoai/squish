@@ -14,7 +14,7 @@ Public API:
 
 from __future__ import annotations
 
-__version__ = "9.34.4"
+__version__ = "9.34.5"
 
 
 def _install_vendored_squish_quant() -> None:
@@ -401,6 +401,9 @@ _LAZY_IMPORTS: dict[str, str] = {
     "PromptKVStore": "squish.kv.prompt_kv_cache",
     "capture_kv_state": "squish.kv.prompt_kv_cache",
     "restore_kv_state": "squish.kv.prompt_kv_cache",
+    # squish.kv.k8v4_codec — INT8-keys/INT4-values on-disk KV codec
+    "quantize_array": "squish.kv.k8v4_codec",
+    "dequantize_array": "squish.kv.k8v4_codec",
     # squish.serving.kernel_cache — MLX Metal kernel cache management
     "metal_cache_info": "squish.serving.kernel_cache",
     "ensure_kernel_cache_dir": "squish.serving.kernel_cache",

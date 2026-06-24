@@ -1512,7 +1512,8 @@ def cmd_run(args):  # pragma: no cover
     # v5.1 Fix 2C: forward KV-cache flags to the spawned server
     if getattr(args, "prompt_kv_cache", ""):
         cmd += ["--prompt-kv-cache", args.prompt_kv_cache,
-                "--prompt-kv-cache-max-gb", str(args.prompt_kv_cache_max_gb)]
+                "--prompt-kv-cache-max-gb", str(args.prompt_kv_cache_max_gb),
+                "--prompt-kv-cache-quant", getattr(args, "prompt_kv_cache_quant", "fp16")]
     if getattr(args, "block_kv_cache", ""):
         cmd += ["--block-kv-cache", args.block_kv_cache,
                 "--block-kv-size",  str(args.block_kv_size),
@@ -6266,6 +6267,11 @@ Ollama drop-in:
     p_run.add_argument("--prompt-kv-cache-max-gb", type=float, default=1.0,
                        metavar="GB",
                        help="Soft cap on --prompt-kv-cache disk usage (default 1.0)")
+    p_run.add_argument("--prompt-kv-cache-quant", default="fp16",
+                       choices=("fp16", "k8v4"),
+                       help="On-disk KV format for --prompt-kv-cache: 'fp16' "
+                            "(default) or 'k8v4' (INT8 keys/INT4 values, ~2.7x "
+                            "smaller, lossless on greedy decode).")
     p_run.add_argument("--block-kv-cache", default="",
                        metavar="DIR",
                        help="Enable block-level paged KV cache (v5).  Splits "

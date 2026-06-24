@@ -3,6 +3,7 @@ tests/test_config_unit.py
 
 Unit tests for squish/config.py — persistent user configuration.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,8 +17,10 @@ import pytest
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+
 def _import_config():
     import squish.config as cfg
+
     return cfg
 
 
@@ -27,6 +30,7 @@ def _tmp_config(tmp_path: Path):
 
 
 # ── config_path ───────────────────────────────────────────────────────────────
+
 
 class TestSquishHome:
     def test_default_is_home_dot_squish(self):
@@ -88,6 +92,7 @@ class TestConfigPath:
 
 # ── load ─────────────────────────────────────────────────────────────────────
 
+
 class TestLoad:
     def test_load_returns_defaults_when_no_file(self, tmp_path):
         cfg = _import_config()
@@ -111,9 +116,7 @@ class TestLoad:
 
     def test_load_deep_merges_nested_keys(self, tmp_path):
         cfg = _import_config()
-        (tmp_path / "config.json").write_text(json.dumps({
-            "whatsapp": {"access_token": "EAABxxx"}
-        }))
+        (tmp_path / "config.json").write_text(json.dumps({"whatsapp": {"access_token": "EAABxxx"}}))
         with _tmp_config(tmp_path):
             result = cfg.load()
         assert result["whatsapp"]["access_token"] == "EAABxxx"
@@ -150,6 +153,7 @@ class TestLoad:
 
 
 # ── save ─────────────────────────────────────────────────────────────────────
+
 
 class TestSave:
     def test_save_creates_file(self, tmp_path):
@@ -189,6 +193,7 @@ class TestSave:
 
 # ── get ───────────────────────────────────────────────────────────────────────
 
+
 class TestGet:
     def test_get_top_level_key(self, tmp_path):
         cfg = _import_config()
@@ -208,9 +213,7 @@ class TestGet:
 
     def test_get_dot_notation_nested(self, tmp_path):
         cfg = _import_config()
-        (tmp_path / "config.json").write_text(json.dumps({
-            "whatsapp": {"access_token": "EAABxxx"}
-        }))
+        (tmp_path / "config.json").write_text(json.dumps({"whatsapp": {"access_token": "EAABxxx"}}))
         with _tmp_config(tmp_path):
             assert cfg.get("whatsapp.access_token") == "EAABxxx"
 
@@ -236,6 +239,7 @@ class TestGet:
 
 
 # ── set ───────────────────────────────────────────────────────────────────────
+
 
 class TestSet:
     def test_set_top_level_persists(self, tmp_path):
@@ -283,6 +287,7 @@ class TestSet:
 
 # ── _deep_merge (internal) ────────────────────────────────────────────────────
 
+
 class TestDeepMerge:
     def test_deep_merge_nested_dict(self):
         cfg = _import_config()
@@ -309,6 +314,7 @@ class TestDeepMerge:
 
 
 # ── _dot_get / _dot_set (internal) ────────────────────────────────────────────
+
 
 class TestDotAccess:
     def test_dot_get_single_key(self):
@@ -340,3 +346,16 @@ class TestDotAccess:
         d = {"a": "not-a-dict"}
         cfg._dot_set(d, "a.b", 99)
         assert d["a"] == {"b": 99}
+
+
+class TestSaveError:
+    def test_save_raises_runtime_error_on_oserror(self, tmp_path):
+        """If the config file can't be written, save() re-raises as RuntimeError."""
+        cfg = _import_config()
+        blocker = tmp_path / "blocker"
+        blocker.write_text("x")  # a file, not a dir
+        # parent.mkdir(parents=True) under a file path → NotADirectoryError (OSError)
+        target = blocker / "sub" / "config.json"
+        with patch.object(cfg, "config_path", lambda: target):
+            with pytest.raises(RuntimeError, match="Could not write config"):
+                cfg.save({"port": 1234})
