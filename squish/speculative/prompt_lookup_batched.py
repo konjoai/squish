@@ -25,7 +25,7 @@ from collections.abc import Iterable, Iterator
 import mlx.core as mx
 from mlx_lm.models import cache as _cache
 
-from squish.kv.prompt_prefix_cache import default_prefix_cache, prefill_with_reuse
+from squish.kv.prompt_prefix_cache import default_prefix_cache, prefill_with_reuse, reuse_safe
 from squish.speculative.prompt_lookup import NGramIndex
 
 
@@ -115,7 +115,9 @@ def _setup_cache(
             model(mx.array(prompt_ids[:-1], mx.uint32)[None], cache=prompt_cache)
             mx.eval([c.state for c in prompt_cache])
         return prompt_cache, None
-    store_to = default_prefix_cache() if reuse_prefix else None
+    # Reuse only for plain-KVCache models — windowed/hybrid caches make it
+    # incorrect (see `reuse_safe`); store_to=None falls back to a cold prefill.
+    store_to = default_prefix_cache() if (reuse_prefix and reuse_safe(model)) else None
     return prefill_with_reuse(model, prompt_ids, store_to), store_to
 
 

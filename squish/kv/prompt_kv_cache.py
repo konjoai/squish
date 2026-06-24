@@ -88,6 +88,12 @@ class PromptKVStore:
     model_key : str
         Opaque key identifying the model (path hash or name).  Used to
         invalidate entries from a different model.
+    quant : str
+        On-disk KV format. ``"fp16"`` (default) stores raw float16 ``.npy``
+        arrays — byte-identical to legacy entries.  ``"k8v4"`` quantizes keys
+        to INT8 and values to INT4 (see :mod:`squish.kv.k8v4_codec`) for ~2.7x
+        smaller entries and faster restore I/O, lossless on greedy decode.
+        Reads auto-detect the format per layer, so the two can coexist.
     """
 
     def __init__(
@@ -95,10 +101,14 @@ class PromptKVStore:
         cache_dir: "Path | str" = _DEFAULT_CACHE_DIR,
         max_bytes: int = _DEFAULT_MAX_BYTES,
         model_key: str = "",
+        quant: str = "fp16",
     ) -> None:
+        if quant not in ("fp16", "k8v4"):
+            raise ValueError(f"quant must be 'fp16' or 'k8v4', got {quant!r}")
         self._dir      = Path(cache_dir)
         self._max_bytes = max_bytes
         self._model_key = model_key
+        self._quant     = quant
         self._dir.mkdir(parents=True, exist_ok=True)
         self._dir.chmod(0o700)
 
@@ -170,10 +180,11 @@ class PromptKVStore:
             values = [None] * m["n_layers"]
         else:
             try:
-                keys   = [np.load(str(d / f"k_{i}.npy")) for i in range(m["n_layers"])]
-                values = [np.load(str(d / f"v_{i}.npy")) for i in range(m["n_layers"])]
+                from squish.kv.k8v4_codec import load_layer_auto
+                keys   = [load_layer_auto(d, "k", i) for i in range(m["n_layers"])]
+                values = [load_layer_auto(d, "v", i) for i in range(m["n_layers"])]
             except (OSError, ValueError):
-                logger.warning("corrupt npy arrays for hash %s — evicting", h)
+                logger.warning("corrupt KV arrays for hash %s — evicting", h)
                 self._remove_entry(d)
                 return None
 
@@ -244,8 +255,13 @@ class PromptKVStore:
             for i, (k, v) in enumerate(zip(keys, values, strict=True)):
                 k_np = _to_numpy(k)
                 v_np = _to_numpy(v)
-                np.save(str(d / f"k_{i}.npy"), k_np)
-                np.save(str(d / f"v_{i}.npy"), v_np)
+                if self._quant == "k8v4":
+                    from squish.kv.k8v4_codec import K_BITS, V_BITS, save_quantized
+                    save_quantized(d / f"k_{i}.npz", k_np, K_BITS)
+                    save_quantized(d / f"v_{i}.npz", v_np, V_BITS)
+                else:
+                    np.save(str(d / f"k_{i}.npy"), k_np)
+                    np.save(str(d / f"v_{i}.npy"), v_np)
 
             # v4.2: persist the post-prefill logit alongside the KV state.
             # Stored as float32 for sampling stability (vocab dim only — small).
@@ -269,6 +285,7 @@ class PromptKVStore:
                 "saved_at":  time.time(),
                 "prompt_len": len(prompt),
                 "has_logit": has_logit,
+                "quant":     self._quant,
             }
             (d / "meta.json").write_text(json.dumps(meta))
 
@@ -502,13 +519,12 @@ def restore_kv_state(cache, entry: KVCacheEntry, target_dtype=None) -> bool:
         lazy_dir = getattr(entry, "_lazy_kv_dir", None)
         if lazy_dir is not None and entry.keys and entry.keys[0] is None:
             try:
+                from squish.kv.k8v4_codec import load_layer_auto
                 entry.keys = [
-                    np.load(str(lazy_dir / f"k_{i}.npy"))
-                    for i in range(entry.n_layers)
+                    load_layer_auto(lazy_dir, "k", i) for i in range(entry.n_layers)
                 ]
                 entry.values = [
-                    np.load(str(lazy_dir / f"v_{i}.npy"))
-                    for i in range(entry.n_layers)
+                    load_layer_auto(lazy_dir, "v", i) for i in range(entry.n_layers)
                 ]
             except (OSError, ValueError):
                 logger.warning("KV restore: lazy-load failed for %s", lazy_dir)

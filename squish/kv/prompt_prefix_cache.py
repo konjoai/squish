@@ -20,11 +20,15 @@ reuses the previous one.
 """
 from __future__ import annotations
 
+import logging
 import threading
 
-# NOTE: mlx / mlx_lm are imported lazily inside `prefill_with_reuse` only — the
+# NOTE: mlx / mlx_lm are imported lazily inside the functions that need them — the
 # slot logic (borrow/store/prefix-match) is pure Python so this module stays
 # importable on non-Apple-Silicon (Linux) paths per the MLX-gating rule.
+
+_LOG = logging.getLogger("squish.kv.prompt_prefix_cache")
+_reuse_safe_by_model: "dict[int, bool]" = {}
 
 
 def _common_prefix_len(a: "list[int]", b: "list[int]") -> int:
@@ -86,6 +90,42 @@ _DEFAULT = PromptPrefixCache()
 def default_prefix_cache() -> PromptPrefixCache:
     """The process-wide singleton used by the default decode path."""
     return _DEFAULT
+
+
+def _caches_reuse_safe(caches: list) -> bool:
+    """True only if every layer cache is a plain ``KVCache`` (no windowed/hybrid
+    cache whose rolling window would drop prefix tokens). Pure — unit-testable
+    without a model."""
+    from mlx_lm.models.cache import KVCache
+    return bool(caches) and all(isinstance(c, KVCache) for c in caches)
+
+
+def reuse_safe(model: "object") -> bool:
+    """Whether prompt-prefix KV reuse is *correct* for ``model``.
+
+    Reuse trims a stored cache to a shared token prefix and prefills only the
+    suffix — valid only for plain :class:`KVCache`. Sliding-window / hybrid models
+    use ``RotatingKVCache`` / ``ChunkedKVCache``, whose window discards old
+    positions, so a "restored prefix" would be missing tokens and silently
+    produce wrong output (and re-prefill would be O(prompt) anyway). Detect this
+    once per model, skip reuse for those, and warn so the behaviour is observable
+    rather than a silent correctness/latency surprise.
+    """
+    key = id(model)
+    cached = _reuse_safe_by_model.get(key)
+    if cached is not None:
+        return cached
+    from mlx_lm.models import cache as _cache
+    probe = _cache.make_prompt_cache(model)
+    safe = _caches_reuse_safe(probe)
+    _reuse_safe_by_model[key] = safe
+    if not safe:
+        kinds = ", ".join(sorted({type(c).__name__ for c in probe}))
+        _LOG.warning(
+            "prompt-prefix KV reuse disabled: model uses %s (windowed/hybrid "
+            "attention); shared-prefix reuse would be incorrect, so requests "
+            "re-prefill in full. Use --no-prefix-reuse to silence.", kinds)
+    return safe
 
 
 def prefill_with_reuse(

@@ -4906,6 +4906,12 @@ Examples:
     ap.add_argument("--prompt-kv-cache-max-gb", type=float, default=1.0,
                     metavar="GB",
                     help="Soft cap on prompt-kv-cache disk usage in GB (default 1.0)")
+    ap.add_argument("--prompt-kv-cache-quant", default="fp16",
+                    choices=("fp16", "k8v4"),
+                    help="On-disk KV format for --prompt-kv-cache.  'fp16' (default)\n"
+                         "stores raw float16; 'k8v4' quantizes keys INT8 / values INT4\n"
+                         "for ~2.7x smaller entries + faster restore, lossless on greedy\n"
+                         "decode.  Reads auto-detect, so formats can coexist.")
     # v5: block-level paged KV cache (longer-context, shifting-prefix workloads).
     # Distinct from --prompt-kv-cache which keys on the full-prompt SHA-256 and
     # misses on any prefix change.  Block cache splits the prompt into fixed
@@ -5415,13 +5421,15 @@ Examples:
             _pkv_model_key = _hl.sha256(
                 str(getattr(args, "mlx_model_dir", "") or getattr(args, "model_dir", "")).encode()
             ).hexdigest()[:16]
+            _pkv_quant = getattr(args, "prompt_kv_cache_quant", "fp16")
             _prompt_kv_store = _PKVS(
                 cache_dir = _pkv_dir,
                 max_bytes = int(getattr(args, "prompt_kv_cache_max_gb", 1.0) * 1_000_000_000),
                 model_key = _pkv_model_key,
+                quant     = _pkv_quant,
             )
             if args.verbose:
-                _info("prompt-kv", f"{_pkv_dir}  {_C.DIM}(model_key={_pkv_model_key}){_C.R}")
+                _info("prompt-kv", f"{_pkv_dir}  {_C.DIM}(model_key={_pkv_model_key}, quant={_pkv_quant}){_C.R}")
         except ImportError as _pkv_imp_err:
             import logging as _pkv_log
             _pkv_log.getLogger(__name__).warning(
