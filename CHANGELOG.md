@@ -5,6 +5,37 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.4] — Repetition-loop guard on every decode path + UI offline/socket fixes
+
+### Fixed
+- **Runaway repetition on small models** (`llama3.2:1b`, `qwen2.5:1.5b` looping a
+  paragraph forever). Two gaps closed:
+  - `_detect_loop` (`squish/server.py`) only scanned repeating units up to 80
+    chars inside a 400-char window with an exact `unit * reps == tail` test, so a
+    repeating *paragraph* (period > 80) was invisible. It now scans up to a full
+    paragraph (`_LOOP_MAX_PERIOD = 300`, `_LOOP_WIN = 1200`) and compares
+    per-character against the text one period earlier — phase-robust and tolerant
+    of a single drifting char (`_LOOP_MATCH_RATIO`). Block-sized units need only
+    `_LOOP_BLOCK_REPS = 2` reps; short fragments still need 4.
+  - The Wave-114 guard lived only in the `mlx_lm.stream_generate` path. The
+    quantized-KV-cache decode loop and the fallback manual-sampling loop had
+    **no** loop detection, so degenerate loops ran all the way to `max_tokens`
+    ("squish caught one model but not the other"). Extracted the detector into a
+    shared `_LoopGuard` and wired it into all three decode paths.
+- **Web-UI "offline" banner flashing while a model is thinking.** A `/v1/models`
+  poll can time out when prefill briefly starves the event loop; the chat is
+  actively streaming, so it is not offline. `loadModels()` now suppresses the
+  banner while `isStreaming` is set (`squish/static/index.html`).
+- **`socket.send() raised exception.` log spam** when a client closes the tab
+  mid-stream. `/v1/completions` and the Ollama `/api/generate` + `/api/chat`
+  streamers now stop decoding on `request.is_disconnected()` instead of writing
+  to a dead socket (also stops wasting GPU on an abandoned request).
+
+### Notes
+- All loop-guard changes are greedy-lossless: they only abort already-degenerate
+  output. `repetition_penalty` default stays `1.0` (no behavioural change to
+  healthy generations); the guard is the deterministic safety net.
+
 ## [9.34.3] — API input-validation hardening + Apple-Silicon e2e battle-test
 
 ### Added

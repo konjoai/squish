@@ -999,6 +999,10 @@ async function loadModels() {
     const ob = document.getElementById("offline-banner");
     if (ob) ob.remove();
   } catch {
+    // A poll can time out while the server is mid-generation (prefill holds the
+    // GIL and briefly starves the event loop). We're actively streaming from it,
+    // so it is NOT offline — don't flip the banner or reset the model list.
+    if (isStreaming) return;
     _loadModelsFails++;
     dot.className = "err";
     sel.innerHTML = `<option value="">Offline</option>`;

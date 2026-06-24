@@ -287,6 +287,11 @@ def mount_ollama(
                 try:
                     for tok_text, finish in _generate(prompt, max_tokens, temperature,
                                                       top_p, stop, seed):
+                        # Client disconnected mid-stream — stop decoding rather
+                        # than writing to a closed socket (avoids the asyncio
+                        # "socket.send() raised exception." log spam + wasted GPU).
+                        if await request.is_disconnected():
+                            break
                         if tok_text:
                             n_eval += 1
                             yield _ndjson({
@@ -379,6 +384,11 @@ def mount_ollama(
                 try:
                     for tok_text, finish in _generate(prompt, max_tokens, temperature,
                                                       top_p, stop, seed):
+                        # Client disconnected mid-stream — stop decoding rather
+                        # than writing to a closed socket (avoids the asyncio
+                        # "socket.send() raised exception." log spam + wasted GPU).
+                        if await request.is_disconnected():
+                            break
                         if tok_text:
                             n_eval += 1
                             full   += tok_text
