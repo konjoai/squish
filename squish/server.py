@@ -926,30 +926,89 @@ def __getattr__(name: str):
 
 
 # ── Repetition loop detection ────────────────────────────────────────────────
-_LOOP_WIN         = 400  # trailing chars of generated text to inspect
-_LOOP_CHECK_EVERY = 20   # analyse every N emitted tokens
-_LOOP_MIN_PERIOD  = 10   # smallest repeating unit (chars)
-_LOOP_MAX_PERIOD  = 80   # largest repeating unit (chars)
-_LOOP_MIN_REPS    = 4    # consecutive repetitions needed to declare a loop
+# A degenerate small model loops in two distinct ways:
+#   1. short n-gram run-ons   ("animals:cats, animals:cats, ...")
+#   2. whole-sentence / paragraph repeats (the model re-emits a 150-300 char
+#      block verbatim over and over)
+# The detector below catches BOTH.  Wave 114 only scanned periods up to 80 chars
+# with an exact ``unit * reps == tail`` test, so a repeating paragraph (period
+# well past 80) sailed straight through.  We now scan up to a full paragraph and
+# compare per-character against the text one period earlier: once enough of the
+# loop has accumulated, ``text[i] == text[i - period]`` holds across the whole
+# span regardless of where the 20-token check happens to land, making detection
+# phase-robust (and tolerant of a single drifting char such as a counter).
+_LOOP_WIN          = 1200  # trailing chars of generated text to inspect
+_LOOP_CHECK_EVERY  = 20    # analyse every N emitted tokens
+_LOOP_MIN_PERIOD   = 10    # smallest repeating unit (chars)
+_LOOP_MAX_PERIOD   = 300   # largest repeating unit (chars) — covers a paragraph
+_LOOP_MIN_REPS     = 4     # reps required for SHORT units (< _LOOP_BLOCK_PERIOD)
+_LOOP_BLOCK_PERIOD = 120   # at/above this period a unit counts as a "block"
+_LOOP_BLOCK_REPS   = 2     # reps required for block-sized units
+_LOOP_MATCH_RATIO  = 0.95  # fraction of the span that must repeat verbatim
+
+
+def _reps_for_period(period: int) -> int:
+    """Reps required before *period* counts as a loop.
+
+    Short fragments occur in legitimate prose and need many verbatim repetitions
+    before we trust them; whole-sentence blocks practically never repeat by
+    chance, so two is enough.
+    """
+    return _LOOP_BLOCK_REPS if period >= _LOOP_BLOCK_PERIOD else _LOOP_MIN_REPS
 
 
 def _detect_loop(text: str) -> bool:
-    """Return True when the tail of *text* ends with a verbatim repeating substring.
+    """Return True when the tail of *text* is a verbatim repeating substring.
 
-    Scans every candidate period in [_LOOP_MIN_PERIOD, _LOOP_MAX_PERIOD] and
-    declares a loop when ``period * _LOOP_MIN_REPS`` trailing characters consist
-    of the same ``period``-char pattern repeated exactly that many times.  Short
-    enough to run every 20 tokens with negligible overhead.
+    For each candidate period the trailing ``period * reps`` characters are
+    compared against the characters one period earlier; a loop is declared when
+    at least ``_LOOP_MATCH_RATIO`` of them match.  The early-exit keeps the scan
+    cheap on normal, non-looping text (it bails after a handful of mismatches).
     """
     n = len(text)
     for period in range(_LOOP_MIN_PERIOD, _LOOP_MAX_PERIOD + 1):
-        needed = period * _LOOP_MIN_REPS
-        if needed > n:
+        span = period * _reps_for_period(period)
+        if span > n:
             continue
-        tail = text[-needed:]
-        if tail[:period] * _LOOP_MIN_REPS == tail:
+        seg = text[-span:]
+        allowed = (span - period) - int((span - period) * _LOOP_MATCH_RATIO)
+        mism = 0
+        for i in range(period, span):
+            if seg[i] != seg[i - period]:
+                mism += 1
+                if mism > allowed:
+                    break
+        else:
             return True
     return False
+
+
+class _LoopGuard:
+    """Rolling-window repetition detector shared by every decode path.
+
+    ``feed`` accumulates emitted text and, every ``_LOOP_CHECK_EVERY`` non-empty
+    tokens, returns True when ``_detect_loop`` fires on the trailing window.
+    Centralising this means the stream, KV-cache and fallback decode loops all
+    get identical loop protection — Wave 114 guarded only the stream path, so
+    KV-cache decodes ran degenerate loops all the way to max_tokens.
+    """
+
+    __slots__ = ("_buf", "_emitted")
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._emitted = 0
+
+    def feed(self, tok_text: str) -> bool:
+        if not tok_text:
+            return False
+        self._emitted += 1
+        self._buf += tok_text
+        if len(self._buf) > _LOOP_WIN:
+            self._buf = self._buf[-_LOOP_WIN:]
+        if self._emitted % _LOOP_CHECK_EVERY != 0:
+            return False
+        return _detect_loop(self._buf)
 
 
 def _sample_mx(logits_row, temperature: float, top_p: float) -> int:  # pragma: no cover
@@ -2217,6 +2276,7 @@ def _generate_tokens(  # pragma: no cover
             # Pre-compute which layer caches support async prefetch so we avoid
             # a per-layer hasattr() check on every decode step.
             _prefetch_caches = [lc for lc in layer_caches if hasattr(lc, "start_prefetch")]
+            _loop_guard = _LoopGuard()  # repetition guard (Wave 114 missed this path)
             for step in range(max_tokens):
                 # ── Phase E1: Hard token cap (babbling suppression) ──────────────
                 if _bs_cap_inv > 0 and step >= _bs_cap_inv:
@@ -2277,6 +2337,15 @@ def _generate_tokens(  # pragma: no cover
                     if _trace:
                         _tlog(f"REQ {_rid}  DONE  path=kv-cache  tokens={step + 1}  finish=length")
                     yield tok_text, "length"
+                    return
+                if _loop_guard.feed(tok_text):
+                    if cache_eligible and _cache_buf:
+                        _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "repetition")
+                    _LOG.warning(
+                        "REQ %s  repetition loop detected at step %d (kv-cache) — stopping",
+                        _rid, step,
+                    )
+                    yield "", "repetition"
                     return
                 if cache_eligible:
                     _cache_buf.append(tok_text)
@@ -2863,7 +2932,7 @@ def _generate_tokens(  # pragma: no cover
 
         emitted = 1 if _pkv_first_token_text is not None else 0
         _stop_text_buf: str = ""
-        _loop_text_buf: str = ""  # rolling window for repetition loop detection
+        _loop_guard = _LoopGuard()  # shared rolling-window repetition detector
         _think_token_count = 0   # tokens inside <think>...</think> blocks
         _in_think_sg = False     # True while inside a thinking block
         _text_getter = None      # resolved on first item: avoids per-token hasattr
@@ -2875,20 +2944,16 @@ def _generate_tokens(  # pragma: no cover
             tok_text = _text_getter(item)
             emitted += 1
             # Repetition loop detection — runs every _LOOP_CHECK_EVERY tokens
-            if tok_text:
-                _loop_text_buf += tok_text
-                if len(_loop_text_buf) > _LOOP_WIN:
-                    _loop_text_buf = _loop_text_buf[-_LOOP_WIN:]
-                if emitted % _LOOP_CHECK_EVERY == 0 and _detect_loop(_loop_text_buf):
-                    _logging.getLogger(__name__).warning(
-                        "REQ %s  repetition loop detected at token %d — stopping",
-                        _rid, emitted,
-                    )
-                    if cache_eligible and _cache_buf:
-                        _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "repetition")
-                    _pkv_save_if_miss(emitted)
-                    yield "", "repetition"
-                    return
+            if _loop_guard.feed(tok_text):
+                _logging.getLogger(__name__).warning(
+                    "REQ %s  repetition loop detected at token %d — stopping",
+                    _rid, emitted,
+                )
+                if cache_eligible and _cache_buf:
+                    _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "repetition")
+                _pkv_save_if_miss(emitted)
+                yield "", "repetition"
+                return
             # Track thinking tokens for diagnostics
             if "<think>" in tok_text:
                 _in_think_sg = True
@@ -2981,6 +3046,7 @@ def _generate_tokens(  # pragma: no cover
 
     ids      = list(input_ids)
     stop_buf = []
+    _loop_guard = _LoopGuard()  # repetition guard for the fallback path too
     for step in range(max_tokens):
         x       = mx.array(ids, dtype=mx.int32)[None]
         logits  = model(x)
@@ -3011,6 +3077,15 @@ def _generate_tokens(  # pragma: no cover
             if _trace:
                 _tlog(f"REQ {_rid}  DONE  path=manual  tokens={step + 1}  finish=length")
             yield tok_text, "length"
+            return
+        if _loop_guard.feed(tok_text):
+            if cache_eligible and _cache_buf:
+                _prefix_cache.put(_orig_prompt, "".join(_cache_buf), "repetition")
+            _fb_log.getLogger(__name__).warning(
+                "REQ %s  repetition loop detected at step %d (manual) — stopping",
+                _rid, step,
+            )
+            yield "", "repetition"
             return
         if cache_eligible:
             _cache_buf.append(tok_text)
@@ -3740,6 +3815,12 @@ async def completions(  # pragma: no cover
                     prompt, max_tokens, temperature, top_p, stop, seed,
                     repetition_penalty=repetition_penalty,
                 ):
+                    # Client gone (tab closed / navigated away)? Stop decoding
+                    # instead of writing to a dead socket — that write is what
+                    # surfaces as "socket.send() raised exception." in the log.
+                    if await request.is_disconnected():
+                        last_finish = "abort"
+                        break
                     if tok_text:
                         if n_comp == 0:
                             ttft_s = time.perf_counter() - req_start

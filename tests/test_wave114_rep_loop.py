@@ -183,5 +183,104 @@ class TestCompletionsBodyParsing(unittest.TestCase):
         self.assertIn('"repetition_penalty", 1.0', src)
 
 
+# ==============================================================================
+# 5.  Paragraph / block-level loops (regression: KV-store run-on bug)
+# ==============================================================================
+
+# The exact shape a 1B/1.5B model emitted when it ran off the rails: a whole
+# ~220-char paragraph repeated verbatim. The original 80-char period cap could
+# never see this, so the loop ran to max_tokens.
+_KV_PARAGRAPH = (
+    "In the K-V store, the simplicity part is the flat file store, which is used "
+    "to store the past interactions. The efficiency part is the hash table, which "
+    "is used to store the necessary information for the model's response.\n\n"
+)
+
+
+class TestDetectLoopParagraph(unittest.TestCase):
+    """Block-sized verbatim repeats must be detected (period well past 80)."""
+
+    def test_paragraph_period_exceeds_old_cap(self):
+        # Guards the assumption behind this whole fix.
+        self.assertGreater(len(_KV_PARAGRAPH), 80)
+
+    def test_paragraph_repeated_is_a_loop(self):
+        self.assertTrue(_srv._detect_loop(_KV_PARAGRAPH * 5))
+
+    def test_paragraph_detection_is_phase_robust(self):
+        # Check may land mid-paragraph — detection must not depend on the tail
+        # ending exactly on a repeat boundary.
+        text = (_KV_PARAGRAPH * 5)[:-37]
+        self.assertTrue(_srv._detect_loop(text))
+
+    def test_single_paragraph_is_not_a_loop(self):
+        self.assertFalse(_srv._detect_loop(_KV_PARAGRAPH))
+
+    def test_block_reps_lower_than_short_reps(self):
+        # Blocks need fewer reps than short fragments to be trusted.
+        self.assertLess(_srv._LOOP_BLOCK_REPS, _srv._LOOP_MIN_REPS)
+
+    def test_reps_for_period_scales(self):
+        self.assertEqual(_srv._reps_for_period(_srv._LOOP_MIN_PERIOD), _srv._LOOP_MIN_REPS)
+        self.assertEqual(_srv._reps_for_period(_srv._LOOP_BLOCK_PERIOD), _srv._LOOP_BLOCK_REPS)
+
+
+# ==============================================================================
+# 6.  _LoopGuard — the shared rolling-window detector
+# ==============================================================================
+
+class TestLoopGuard(unittest.TestCase):
+    """The guard used by every decode path (stream, KV-cache, fallback)."""
+
+    def _feed(self, guard, text, chunk=5):
+        for i in range(0, len(text), chunk):
+            if guard.feed(text[i:i + chunk]):
+                return i
+        return None
+
+    def test_fires_on_repeating_block(self):
+        guard = _srv._LoopGuard()
+        fired = self._feed(guard, _KV_PARAGRAPH * 6)
+        self.assertIsNotNone(fired, "guard never fired on a clear paragraph loop")
+
+    def test_fires_on_short_runon(self):
+        guard = _srv._LoopGuard()
+        fired = self._feed(guard, ", animals:cats" * 40, chunk=3)
+        self.assertIsNotNone(fired)
+
+    def test_quiet_on_unique_prose(self):
+        guard = _srv._LoopGuard()
+        prose = (
+            "The river wound slowly through the valley as the sun dipped below the "
+            "distant hills, casting amber shadows across the quiet meadow. A heron "
+            "lifted from the reeds, wings creaking, and traced a slow arc toward the "
+            "far bank where willows leaned over the current. Somewhere a dog barked "
+            "twice, then thought better of it, and the evening settled into the kind "
+            "of stillness that makes a person remember names they had tried to forget."
+        )
+        self.assertIsNone(self._feed(guard, prose))
+
+    def test_empty_tokens_do_not_advance_cadence(self):
+        # Empty/whitespace-stripped tokens must not count toward the check cadence
+        # nor toward the buffer.
+        guard = _srv._LoopGuard()
+        for _ in range(100):
+            self.assertFalse(guard.feed(""))
+
+    def test_check_cadence_respected(self):
+        # The guard only inspects every _LOOP_CHECK_EVERY non-empty tokens, so a
+        # loop fed one char at a time is detected at a multiple of the cadence.
+        guard = _srv._LoopGuard()
+        fired_count = None
+        n = 0
+        for ch in _KV_PARAGRAPH * 6:
+            n += 1
+            if guard.feed(ch):
+                fired_count = n
+                break
+        self.assertIsNotNone(fired_count)
+        self.assertEqual(fired_count % _srv._LOOP_CHECK_EVERY, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
