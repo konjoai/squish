@@ -76,14 +76,23 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
         const client = new SquishClient(host, port, apiKey);
 
         let health: HealthInfo & { ram_gb?: number; gpu_pct?: number } = { loaded: false };
+        // Assume reachable until we get a hard connection refusal. /health can
+        // time out while ANY client's blocking prefill starves the event loop
+        // (e.g. a prompt running in the web UI) — the port still accepts, so the
+        // server is "busy", not "offline". Only ECONNREFUSED & friends mean down.
+        let reachable = true;
         try {
             health = await (client as unknown as { health(): Promise<typeof health> }).health() ?? { loaded: false };
-        } catch {
-            // server offline — send offline state
+        } catch (err) {
+            const code = String((err as NodeJS.ErrnoException)?.code ?? (err as Error)?.message ?? '');
+            reachable = !/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ECONNABORTED/i.test(code);
         }
 
         this._updateSparklines(health);
-        this._view?.webview.postMessage({ type: 'monitorUpdate', health, sparkTps: [...this._sparkTps], sparkReq: [...this._sparkReq] });
+        this._view?.webview.postMessage({
+            type: 'monitorUpdate', health, busy: SquishClient.busy, reachable,
+            sparkTps: [...this._sparkTps], sparkReq: [...this._sparkReq],
+        });
     }
 
     private _updateSparklines(health: HealthInfo): void {
@@ -140,9 +149,11 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
       margin-bottom:14px; text-transform:uppercase;
     }
     .status-badge.online  { background:rgba(63,185,80,.15); color:var(--success); border:1px solid rgba(63,185,80,.3); }
+    .status-badge.busy    { background:rgba(219,154,4,.15); color:#d9a406;        border:1px solid rgba(219,154,4,.3); }
     .status-badge.offline { background:rgba(248,81,73,.15); color:var(--danger);  border:1px solid rgba(248,81,73,.3); }
     .dot { width:6px; height:6px; border-radius:50%; }
     .dot.online  { background:var(--success); box-shadow:0 0 6px var(--success); }
+    .dot.busy    { background:#d9a406;         box-shadow:0 0 6px #d9a406; }
     .dot.offline { background:var(--danger);  box-shadow:0 0 6px var(--danger); }
 
     .metrics-grid {
@@ -258,17 +269,23 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
     // ── Message handler ─────────────────────────────────────────────────
 
     window.addEventListener('message', (e) => {
-      const { type, health, sparkTps, sparkReq } = e.data;
+      const { type, health, busy, reachable, sparkTps, sparkReq } = e.data;
       if (type !== 'monitorUpdate') return;
 
       const online = health.loaded === true;
+      // /health can time out while the server is busy generating (for us OR for
+      // another client like the web UI). Reachable-but-not-loaded = "Busy"; only
+      // a hard connection refusal (reachable === false) is a red "Offline".
+      const up     = online || busy || reachable === true;
+      const state  = online ? 'online' : (up ? 'busy' : 'offline');
+      const label  = online ? 'Online' : (up ? 'Busy'  : 'Offline');
       const badge  = document.getElementById('badge');
       const dot    = document.getElementById('dot');
       const st     = document.getElementById('status-text');
 
-      badge.className  = 'status-badge ' + (online ? 'online' : 'offline');
-      dot.className    = 'dot '          + (online ? 'online' : 'offline');
-      st.textContent   = online ? 'Online' : 'Offline';
+      badge.className  = 'status-badge ' + state;
+      dot.className    = 'dot '          + state;
+      st.textContent   = label;
 
       document.getElementById('tps').textContent =
         health.tps != null ? health.tps.toFixed(1) : '—';
@@ -294,10 +311,10 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
       const cons = document.getElementById('console');
       const line = document.createElement('div');
       const ts   = new Date().toLocaleTimeString();
-      line.className = 'console-line ' + (online ? 'ok' : 'err');
+      line.className = 'console-line ' + (online ? 'ok' : (up ? 'ok' : 'err'));
       line.textContent = ts + '  ' + (online
         ? ('model=' + (health.model||'?') + '  tps=' + (health.tps||0).toFixed(1) + '  req=' + (health.requests||0))
-        : 'server offline');
+        : (up ? 'server busy (generating)' : 'server offline'));
       cons.appendChild(line);
       // Keep last 50 lines
       while (cons.children.length > 50) cons.removeChild(cons.firstChild);

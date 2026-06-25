@@ -176,6 +176,79 @@ describe('MonitorPanel', () => {
         panel.dispose();
     });
 
+    test('poll reports busy (not offline) when a generation is in flight', async () => {
+        // Health times out during a blocking prefill, but a stream is active —
+        // the webview must receive busy:true so it shows "Busy", not "Offline".
+        MockSquishClient.prototype.health = jest.fn().mockImplementation(
+            () => Promise.reject(new Error('timed out'))
+        );
+        (MockSquishClient as unknown as { busy: boolean }).busy = true;
+
+        const postMessage = jest.fn();
+        const panel = new MonitorPanel(EXT_URI);
+        const view  = makeWebviewView(postMessage);
+        panel.resolveWebviewView(
+            view,
+            {} as vscode.WebviewViewResolveContext,
+            {} as vscode.CancellationToken,
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'monitorUpdate', busy: true }),
+        );
+        (MockSquishClient as unknown as { busy: boolean }).busy = false;
+        panel.dispose();
+    });
+
+    test('health timeout from ANOTHER client is reachable (web-UI prompt case)', async () => {
+        // The extension itself is idle (busy === false), but a prompt running in
+        // the web UI stalls the event loop. /health times out (not refused), so
+        // the server is reachable → webview shows "Busy", not "Offline".
+        MockSquishClient.prototype.health = jest.fn().mockImplementation(
+            () => Promise.reject(new Error('Health check timed out after 3000ms'))
+        );
+        (MockSquishClient as unknown as { busy: boolean }).busy = false;
+
+        const postMessage = jest.fn();
+        const panel = new MonitorPanel(EXT_URI);
+        panel.resolveWebviewView(
+            makeWebviewView(postMessage),
+            {} as vscode.WebviewViewResolveContext,
+            {} as vscode.CancellationToken,
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'monitorUpdate', reachable: true }),
+        );
+        panel.dispose();
+    });
+
+    test('connection refused is reported as unreachable (genuinely offline)', async () => {
+        const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+        MockSquishClient.prototype.health = jest.fn().mockImplementation(() => Promise.reject(refused));
+        (MockSquishClient as unknown as { busy: boolean }).busy = false;
+
+        const postMessage = jest.fn();
+        const panel = new MonitorPanel(EXT_URI);
+        panel.resolveWebviewView(
+            makeWebviewView(postMessage),
+            {} as vscode.WebviewViewResolveContext,
+            {} as vscode.CancellationToken,
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'monitorUpdate', reachable: false }),
+        );
+        panel.dispose();
+    });
+
     test('dispose stops polling', () => {
         const health = jest.fn().mockResolvedValue(makeHealthResponse());
         MockSquishClient.prototype.health = health;
