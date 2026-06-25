@@ -523,6 +523,12 @@
       <span class="sp-val" id="s-topp-v">0.9</span>
     </div>
     <div class="sp-row">
+      <label title="Discourages verbatim repetition. 1.0 = off; ~1.1 stops small models from looping.">Rep. penalty</label>
+      <input type="range" id="s-reppen" min="1" max="1.5" step="0.05" value="1.1"
+        oninput="document.getElementById('s-reppen-v').textContent=this.value" />
+      <span class="sp-val" id="s-reppen-v">1.1</span>
+    </div>
+    <div class="sp-row">
       <label>Max tokens</label>
       <input type="number" id="s-maxt" value="4096" min="64" max="32768" />
     </div>
@@ -1421,6 +1427,10 @@ async function _doGenerate(sess) {
   const max_tokens  = parseInt(document.getElementById("s-maxt").value, 10) || 4096;
   const seedVal     = document.getElementById("s-seed").value;
   const seed        = seedVal !== "" ? parseInt(seedVal, 10) : undefined;
+  // Default 1.1 (matches Ollama/llama.cpp) — keeps small models from running off
+  // into verbatim repetition loops. 1.0 disables it.
+  const repEl       = document.getElementById("s-reppen");
+  const repetition_penalty = repEl ? parseFloat(repEl.value) : 1.1;
 
   abortCtrl   = new AbortController();
   isStreaming  = true;
@@ -1447,6 +1457,7 @@ async function _doGenerate(sess) {
       temperature, top_p, max_tokens,
     };
     if (seed !== undefined) body.seed = seed;
+    if (repetition_penalty > 1.0) body.repetition_penalty = repetition_penalty;
 
     if (agentMode) {
       // ── Agent mode: use /v1/agent/run SSE endpoint ──────────────────────
