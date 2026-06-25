@@ -4,7 +4,7 @@ Thank you for your interest in contributing!  Squish is an Apple Silicon–only
 local LLM inference library.  Contributions that improve load-time performance,
 accuracy fidelity, or API compatibility are especially welcome.
 
-Not sure where to start? Jump into [Discord](https://discord.gg/squish) or browse [GitHub Discussions](https://github.com/konjoai/squish/discussions) — we're friendly and responsive.
+Not sure where to start? Jump into [Discord](https://discord.gg/squish) or browse [GitHub Discussions](https://github.com/konjoai/squish/discussions). Questions are welcome.
 
 ---
 
@@ -52,7 +52,7 @@ cd ..
 pytest tests/ -v          # or:  make test
 ```
 
-The test suite does **not** require model weights — it uses mocked tensors and
+The test suite does **not** require model weights: it uses mocked tensors and
 stub loaders.  Tests that do require weights are skipped automatically when
 `~/models/` is absent.
 
@@ -63,8 +63,8 @@ make coverage             # terminal report (term-missing) + coverage.xml
 make coverage-html        # also writes htmlcov/index.html
 ```
 
-Coverage is **measured on Apple Silicon** so the MLX inference paths actually
-execute — the bulk of `squish/` cannot run on a Linux runner, so a Linux-only
+Coverage is **measured on Apple Silicon** so the MLX inference paths
+execute: the bulk of `squish/` cannot run on a Linux runner, so a Linux-only
 number understates real coverage.  The `make` targets set `CI=1` (which lifts
 the sandbox MLX-import guard) and exclude the handful of files that SIGABRT at
 collection under Metal.  CI runs the same measurement in the **Coverage (Apple
@@ -88,10 +88,10 @@ CI will fail if `ruff check` reports any errors.
 
 ## What Makes a Good PR
 
-- **Focused** — one logical change per PR
-- **No hardcoded paths** — use `Path.home()` or environment variables
-- **Tests pass** — `pytest tests/` green before opening the PR
-- **No model weights committed** — `models/` is gitignored for a reason
+- **Focused**: one logical change per PR
+- **No hardcoded paths**: use `Path.home()` or environment variables
+- **Tests pass**: `pytest tests/` green before opening the PR
+- **No model weights committed**: `models/` is gitignored for a reason
 - **Performance-sensitive changes** include a before/after `squish bench` run
 
 ---

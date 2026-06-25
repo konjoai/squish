@@ -2,7 +2,7 @@
 
 ## Documentation
 
-The fastest way to find answers is the [official documentation](https://squish.run):
+The quickest way to find answers is the [official documentation](https://squish.run):
 
 - [Installation guide](https://squish.run/install/)
 - [Quickstart](https://squish.run/quickstart/)
@@ -26,7 +26,7 @@ The fastest way to find answers is the [official documentation](https://squish.r
 Make sure the pip scripts directory is in your `PATH`. For a virtual environment, activate it first (`source .venv/bin/activate`). For Homebrew, run `brew link squish`.
 
 **Model download is slow or interrupted**  
-Run `squish pull <model>` again — downloads resume automatically.
+Run `squish pull <model>` again; downloads resume automatically.
 
 **`ImportError: No module named 'mlx'`**  
 MLX only runs on Apple Silicon. Squish requires macOS 13+ on M1–M5 hardware.
