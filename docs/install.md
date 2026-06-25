@@ -4,7 +4,7 @@ Squish runs on **macOS with Apple Silicon (M1–M5)**. Pick the install method t
 
 ---
 
-## Option 1 — Homebrew (recommended)
+## Option 1: Homebrew (recommended)
 
 ```bash
 brew install konjoai/squish/squish
@@ -18,7 +18,7 @@ brew upgrade squish
 
 ---
 
-## Option 2 — pip
+## Option 2: pip
 
 ```bash
 pip install squish-ai
@@ -37,7 +37,7 @@ pip install squish-ai
 
 ---
 
-## Option 3 — curl installer
+## Option 3: curl installer
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/konjoai/squish/main/install.sh | bash
@@ -48,7 +48,7 @@ curl -sSL https://raw.githubusercontent.com/konjoai/squish/main/install.sh | bas
 
 ---
 
-## Option 4 — From source
+## Option 4: From source
 
 ```bash
 git clone https://github.com/konjoai/squish

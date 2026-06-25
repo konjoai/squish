@@ -1,4 +1,4 @@
-# Squish — Multi-Model Benchmark Results
+# Squish: Multi-Model Benchmark Results
 
 ## Load Time & Throughput
 
@@ -35,7 +35,7 @@ to recent 6% of tokens, INT8 to 19%, INT4 to 75%.
 | SageAttn | `--sage-attention` | — | — | **2.1×** attn |
 | SpargeAttn | `--sparge-attn` | — | — | **2.5–5×** attn |
 
-## Accuracy — Wave 12 (all models, Qwen2.5-1.5B representative)
+## Accuracy: Wave 12 (all models, Qwen2.5-1.5B representative)
 
 | Task | Squish v1 | + Wave 12 | Delta |
 |------|----------:|----------:|------:|

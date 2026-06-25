@@ -1,4 +1,4 @@
-# Squish — INT4 / INT3 / INT2 Quantization Benchmark
+# Squish: INT4 / INT3 / INT2 Quantization Benchmark
 
 > Last updated: 2026-03-19 07:02
 > Runs complete: 7 / 15 model×bit combinations
@@ -85,7 +85,7 @@
 
 ---
 
-## Throughput (T1 — tok/s)
+## Throughput (T1: tok/s)
 
 | Model | BF16 tok/s | INT4 tok/s | Δ INT4 | INT3 tok/s | Δ INT3 | INT2 tok/s | Δ INT2 |
 |-------|:----------:|:----------:|:------:|:----------:|:------:|:----------:|:------:|
@@ -103,7 +103,7 @@
 
 ---
 
-## Perplexity (T2 — wikitext-2, lower = better)
+## Perplexity (T2: wikitext-2, lower = better)
 
 | Model | BF16 PPL | INT4 PPL | Δ INT4 | INT3 PPL | Δ INT3 | INT2 PPL | Δ INT2 |
 |-------|:--------:|:--------:|:------:|:--------:|:------:|:--------:|:------:|
@@ -121,7 +121,7 @@
 
 ---
 
-## Accuracy (T3 — 0-shot, 200 samples)
+## Accuracy (T3: 0-shot, 200 samples)
 
 ### ARC-Easy (acc_norm)
 

@@ -1,10 +1,10 @@
-# Squish Architecture — Technical Deep Dive
+# Squish Architecture: Technical Deep Dive
 
 > **One-sentence summary**: Squish separates the _storage format_ of a transformer's
 > weight tensors from their _runtime format_, enabling aggressive compression at rest,
 > lossless reconstruction on demand, and Metal-native caching that loads
-> a Qwen2.5-1.5B model in **0.33–0.53 seconds** — **54× faster** than a cold
-> `mlx_lm` load (28.8 s) and 3.7× faster than a warm one — while using
+> a Qwen2.5-1.5B model in **0.33–0.53 seconds** (**54× faster** than a cold
+> `mlx_lm` load (28.8 s) and 3.7× faster than a warm one) while using
 > **160 MB of peak additional RAM** versus the 2.4 GB typically consumed during
 > a standard load.
 
@@ -17,7 +17,7 @@
 
 ## 1. The Problem with Status-Quo Model Distribution
 
-Every serious open-source model—Llama, Gemma, Mistral, Qwen, Falcon—ships as
+Every serious open-source model (Llama, Gemma, Mistral, Qwen, Falcon) ships as
 one or more **HuggingFace safetensors shards**.  The format is a flat binary blob:
 each tensor is stored in the dtype the training run used (typically bfloat16 or
 float16), preceded by a JSON header describing name, dtype, and shape.
@@ -77,10 +77,10 @@ The reference `mlx_lm.load()` path must:
 4. Apply dtype promotions for any mixed-precision shards
 
 Squish's `_load_mlx_cache()` path:
-1. `_instantiate_model()` — builds MLX graph skeleton from `config.json`
-2. `mx.load()` — single syscall, OS mmap, Metal GPU mapping
-3. `model.load_weights()` — inject by name
-4. `AutoTokenizer.from_pretrained()` — cached by transformers' local disk cache
+1. `_instantiate_model()`: builds MLX graph skeleton from `config.json`
+2. `mx.load()`: single syscall, OS mmap, Metal GPU mapping
+3. `model.load_weights()`: inject by name
+4. `AutoTokenizer.from_pretrained()`: cached by transformers' local disk cache
 
 ---
 
@@ -106,7 +106,7 @@ Compression ratio for a matrix with 4-byte float32 elements:
 - Compressed: 1 × n_rows × n_cols + 4 × n_rows ≈ 1 byte/element (for wide matrices)
 - Theoretical: 4× compression on eligible tensors
 
-**Why not all tensors are quantised** (89 passthrough):  
+**Why not all tensors are quantised** (89 passthrough):
 Embedding tables, output projection (`lm_head`), layer normalisation weights, and
 bias vectors are stored as-is (float16).  These tensors either have very few
 parameters (biases, norms) or are so sensitive to quantisation noise that any
@@ -114,7 +114,7 @@ distortion measurably degrades perplexity (`embed_tokens` with 151 936 rows).
 
 The 249 quantised tensors are the large attention (`q/k/v_proj`, `o_proj`) and
 feed-forward (`gate_proj`, `up_proj`, `down_proj`) matrices where INT8 rows
-introduce sub-0.02% cosine distance from the original — within training noise.
+introduce sub-0.02% cosine distance from the original, within training noise.
 
 ---
 
@@ -150,16 +150,16 @@ print(f"Savings: {result['savings_pct']:.0f}%")
 ```
 
 **Why .npy over .npz**:
-- `.npz` files apply zlib compression — takes 9 minutes to write and 9 seconds to
+- `.npz` files apply zlib compression: takes 9 minutes to write and 9 seconds to
   decompress at load time.
-- `.npy` files are raw binary with a tiny header — memory-mappable, zero
+- `.npy` files are raw binary with a tiny header: memory-mappable, zero
   decompression cost, and the per-file overhead is amortised over 338 tensors.
 - The INT8 quantisation already provides the compression; zlib on top of int8
   data yields negligible additional savings.
 
 **Memory-mapped loading** (`mmap_mode='r'`):
-- `np.load(path, mmap_mode='r')` returns a numpy memmap — the OS does not read
-  the file contents until a byte is actually accessed.
+- `np.load(path, mmap_mode='r')` returns a numpy memmap: the OS does not read
+  the file contents until a byte is accessed.
 - For non-Tier-2 loads, only the bytes needed to construct `mx.array()` are
   ever paged in, keeping peak RSS small.
 
@@ -210,12 +210,12 @@ At the model-output level:
   from INT8 noise compounds over a long sequence, similar to temperature > 0)
 
 Industry-standard benchmarks (ARC-Easy, HellaSwag, MMLU) show <2% accuracy
-delta vs the uncompressed model — within the random variance of different
+delta vs the uncompressed model, within the random variance of different
 evaluation seeds.
 
 ---
 
-## 7. Three-Tier Loading Strategy — Decision Tree
+## 7. Three-Tier Loading Strategy: Decision Tree
 
 ```
 load_compressed_model(compressed_dir, model_dir)
@@ -244,8 +244,8 @@ load_compressed_model(compressed_dir, model_dir)
                   └── write finalized/.ready
 ```
 
-The first load is a one-time cost.  Every subsequent invocation — in any Python
-process on the same machine — hits Tier 2 and loads in sub-second time.
+The first load is a one-time cost.  Every subsequent invocation, in any Python
+process on the same machine, hits Tier 2 and loads in sub-second time.
 
 ---
 
@@ -284,19 +284,19 @@ ARC-Easy and HellaSwag accuracy measured with lm-evaluation-harness v0.4.11, 200
 
 Key insight: **Squish achieves within 1–2% of reference accuracy while loading an order
 of magnitude faster and using 15× less RAM during the load phase** (against a true cold
-`mlx_lm` first boot — 28.8 s with a page-cache miss — the load speedup is 54×; see the
+`mlx_lm` first boot, 28.8 s with a page-cache miss, the load speedup is 54×; see the
 [paper](paper.md) §4.1).
 
 ---
 
 ## 10. Further reading
 
-- **[The paper](paper.md)** — full methodology, thermal-controlled benchmarks
+- **[The paper](paper.md)**: full methodology, thermal-controlled benchmarks
   (§4.4), accuracy gates, and the decode-acceleration ablation.
-- **[Benchmarks](https://github.com/konjoai/squish/blob/main/BENCHMARKS.md)** — reproducible numbers with commands.
-- **[Module reference](https://github.com/konjoai/squish/blob/main/MODULES.md)** — the 100+ composable optimisation modules.
+- **[Benchmarks](https://github.com/konjoai/squish/blob/main/BENCHMARKS.md)**: reproducible numbers with commands.
+- **[Module reference](https://github.com/konjoai/squish/blob/main/MODULES.md)**: the composable optimisation modules.
 
 ---
 
-*Squish is source-available under [BUSL-1.1](https://github.com/konjoai/squish/blob/main/LICENSE) — free for personal and
+*Squish is source-available under [BUSL-1.1](https://github.com/konjoai/squish/blob/main/LICENSE): free for personal and
 non-production use.*

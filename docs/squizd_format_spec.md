@@ -1,4 +1,4 @@
-# SQUIZD Binary Format Specification — v1.0
+# SQUIZD Binary Format Specification: v1.0
 
 **Status:** Finalised  
 **Introduced:** Squish v44 (Wave 70)  
@@ -23,7 +23,7 @@ single file may activate one or more of the following feature layers:
 | 6 | `ANE_COREML` | ANE CoreML operator appendix (Wave 69) |
 
 All active features are detected automatically from the header flags bitfield
-at load time — no user-level flags are required at serve time.
+at load time; no user-level flags are required at serve time.
 
 ---
 
@@ -95,12 +95,12 @@ may be set simultaneously.  Bits 7–31 are reserved and must be zero.
 
 Dispatch priority ordering (highest first):
 
-1. `ANE_COREML` (bit 6) — delegates entire inference to CoreML
-2. `ASTC` (bit 0) — hardware decode on Apple Silicon GPU
-3. `TCA_TBE` (bit 1) — bitmap lossless decode
-4. `INT2` (bit 5) — sub-4-bit hybrid blocks
-5. `INT4` (bit 2) — standard INT4 Metal GEMV
-6. NumPy fallback — always available (CI / non-Apple platforms)
+1. `ANE_COREML` (bit 6): delegates entire inference to CoreML
+2. `ASTC` (bit 0): hardware decode on Apple Silicon GPU
+3. `TCA_TBE` (bit 1): bitmap lossless decode
+4. `INT2` (bit 5): sub-4-bit hybrid blocks
+5. `INT4` (bit 2): standard INT4 Metal GEMV
+6. NumPy fallback: always available (CI / non-Apple platforms)
 
 The `SPARSE` (bit 3) and `EAGLE` (bit 4) flags augment the chosen kernel
 stack; they do not independently select a path.
@@ -266,7 +266,7 @@ unavailable.
 
 ---
 
-## 10. Appendix A — 2-Layer Toy Example
+## 10. Appendix A: 2-Layer Toy Example
 
 A minimal valid SQUIZD file (2 layers, INT4, no sparsity, no EAGLE):
 

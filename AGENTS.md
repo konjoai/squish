@@ -1,7 +1,7 @@
-# AGENTS.md — Konjo AI Project Conventions & Collaboration Guidelines
+# AGENTS.md: Konjo AI Project Conventions & Collaboration Guidelines
 
-> **ቆንጆ** — Beautiful. **根性** — Fighting spirit. **康宙** — Health of the universe.
-> *Make it konjo — build, ship, repeat.*
+> **ቆንጆ**: Beautiful. **根性**: Fighting spirit. **康宙**: Health of the universe.
+> *Make it konjo: build, ship, repeat.*
 
 This file defines standing instructions for all AI and human contributors working on projects in this repository. Read it fully before writing, modifying, or deleting any code or documentation. These are not suggestions.
 
@@ -11,7 +11,7 @@ This file defines standing instructions for all AI and human contributors workin
 "Konjo Mode" is a universal operating frequency applicable to any challenge, project, or interaction. It is the refusal to accept the mediocre, built on three cross-cultural pillars:
 
 * **The Drive (根性 - Japanese):** Relentless fighting spirit, grit, and determination. Approaching impossible problems with boldness and never surrendering to the "standard way" when a harder, superior path exists.
-* **The Output (ቆንጆ - Ethiopian):** Executing with absolute beauty and nobility. This requires *Yilugnta*—acting in a selfless, magnanimous, and incorruptible fashion for the ultimate good of the project—and *Sene Magber*—the social grace of doing things gracefully, respectfully, and beautifully.
+* **The Output (ቆንጆ - Ethiopian):** Executing with absolute beauty and nobility. This requires *Yilugnta* (acting in a selfless, magnanimous, and incorruptible fashion for the ultimate good of the project) and *Sene Magber* (the social grace of doing things gracefully, respectfully, and beautifully).
 * **The Impact (康宙 - Chinese):** Cultivating the "Health of the Universe" by building systems that are highly efficient, healthy, and in tune with their environments. It means eliminating waste, reducing bloat, and leaving the architecture fundamentally healthier than you found it.
 
 ---
@@ -33,9 +33,9 @@ This file defines standing instructions for all AI and human contributors workin
 
 **Propose Before Moving.** If you notice a directory becoming a junk drawer, propose a new taxonomy and confirm it with the user before executing bulk file moves.
 
-**Continuous Cleanup.** Delete dead code immediately. Do not comment it out and leave it — use version control for history.
+**Continuous Cleanup.** Delete dead code immediately. Do not comment it out and leave it; use version control for history.
 
-**No Graveyards.** Prototype code that is not being promoted must be deleted after the experiment concludes. The `experimental/` directory exists for research code awaiting validation — not for permanent storage. Each module in `experimental/` must have: (1) a concrete promotion criterion (a specific benchmark number it must hit) and (2) a named owner. If neither exists, the module is deleted immediately. The 90-day review clock starts when the promotion criterion is *written*, not when the file is moved. **squish/ must not grow above 100 active Python files.** Any addition requires a corresponding deletion or demotion to `experimental/`, or explicit written justification.
+**No Graveyards.** Prototype code that is not being promoted must be deleted after the experiment concludes. The `experimental/` directory exists for research code awaiting validation, not for permanent storage. Each module in `experimental/` must have: (1) a concrete promotion criterion (a specific benchmark number it must hit) and (2) a named owner. If neither exists, the module is deleted immediately. The 90-day review clock starts when the promotion criterion is *written*, not when the file is moved. **squish/ must not grow above 100 active Python files.** Any addition requires a corresponding deletion or demotion to `experimental/`, or explicit written justification.
 
 **Naming Conventions:** New modules, crates, or packages must match the established naming conventions strictly.
 
@@ -43,13 +43,13 @@ This file defines standing instructions for all AI and human contributors workin
 
 ## 🧱 Code Quality & Architecture
 
-- **Shatter the box.** We are solving problems that have not been solved before. Do not reach for the nearest familiar pattern or standard library if it compromises efficiency.
-- **Code must punch, kick, and break through barriers.** Clever code is not just welcome—it is required when it achieves leaps in performance. Correctness without elegance is a missed opportunity.
+- **Shatter the box.** I am solving problems that have not been solved before. Do not reach for the nearest familiar pattern or standard library if it compromises efficiency.
+- **Code must punch, kick, and break through barriers.** Clever code is not just welcome: it is required when it achieves leaps in performance. Correctness without elegance is a missed opportunity.
 - **Extreme Efficiency is mandatory.** Every architecture decision must minimize resource usage: less CPU, less RAM, less disk space, less compute for training, and faster inference. Treat resource optimization as a core design discipline.
 - **No Hallucinated Abstractions.** "Novel" does not mean "fake." When inventing new sub-transformer layers, quantization schemes, or memory management systems, do not hallucinate APIs or rely on "magic" functions. Ground your innovations in explicit tensor operations, raw mathematical formulations, and supported framework primitives.
 - **All written code must be production-grade at all times.** No placeholders, no "good enough for now," no TODOs left in shipped code.
 - Avoid code duplication. Extract shared logic into reusable utilities or modules.
-- Add inline comments only where intent is non-obvious. When implementing a novel algorithm, write the math — don't hide it.
+- Add inline comments only where intent is non-obvious. When implementing a novel algorithm, write the math; don't hide it.
 - Prefer removal over addition. Every new line of code must justify its existence. If a simpler, more efficient solution exists that requires fewer lines, it is the only acceptable solution.
 
 ---
@@ -71,13 +71,13 @@ This file defines standing instructions for all AI and human contributors workin
 
 ## 🧮 Numerical Correctness & Precision
 
-- **Always be explicit about dtype at every tensor/array boundary.** Never rely on implicit casting — annotate or assert the expected dtype.
+- **Always be explicit about dtype at every tensor/array boundary.** Never rely on implicit casting; annotate or assert the expected dtype.
 - **Track precision loss deliberately.** When downcasting (BF16 → INT8 → INT4 → sub-2-bit), document the expected accuracy delta and assert it in tests against a BF16 reference.
 - **NaN/Inf propagation is a silent killer.** Add NaN/Inf assertion checks at module boundaries during development. Never ship code that masks float overflow without a logged warning.
 - **Accumulation dtype matters.** For quantized matmuls, accumulate in FP32 unless there is a proven, benchmarked reason not to.
-- **Stochastic rounding and quantization noise:** when testing quantized kernels, use deterministic seeds and compare output distributions (mean, std, max abs error) — not just equality.
+- **Stochastic rounding and quantization noise:** when testing quantized kernels, use deterministic seeds and compare output distributions (mean, std, max abs error), not just equality.
 
-### Framework Primitives — Verify Before Claiming
+### Framework Primitives: Verify Before Claiming
 
 - **Never claim fusion without proof.** Statements like "MLX will fuse this into a single kernel" or "PyTorch will optimize this chain" must be verified with profiler output or the framework's documentation. Lazy evaluation ≠ kernel fusion. A computation graph node that is `(n_out, n_in)` in shape will materialize a tensor of that size when evaluated, regardless of how many ops built it.
 - **Use the right primitive.** For quantized matmul on MLX: use `mx.quantized_matmul()` or `nn.QuantizedLinear`. For quantized matmul on CUDA: use bitsandbytes or CUTLASS. Do not implement quantized matmul as "dequantize → matmul" in Python unless you have verified the framework fuses it in the Metal/CUDA shader.
@@ -92,7 +92,7 @@ This file defines standing instructions for all AI and human contributors workin
 - **Document hardware context completely** in every benchmark result: chip, total RAM, OS, driver/firmware version, thermal state, and process isolation method.
 - **Isolate the benchmark process.** Close background apps. Disable Spotlight indexing and other IO-heavy processes before a benchmark run.
 - **Statistical significance:** if comparing two implementations, run a paired t-test or Wilcoxon signed-rank test. Do not claim a win on mean alone if confidence intervals overlap.
-- Benchmark results must be saved to `benchmarks/results/` with a timestamp and full hardware metadata. Do not overwrite previous results — append or version them.
+- Benchmark results must be saved to `benchmarks/results/` with a timestamp and full hardware metadata. Do not overwrite previous results; append or version them.
 
 ---
 
@@ -100,7 +100,7 @@ This file defines standing instructions for all AI and human contributors workin
 
 - **Seed everything:** random, numpy, torch/mlx, and any stochastic ops. Log the seed in every experiment output.
 - **Capture full config at run start:** serialize the complete hyperparameter/config dict to JSON alongside experiment outputs.
-- **Experiment outputs live in `experiments/runs/<timestamp>_<name>/`**. Never overwrite a previous run — always create a new directory.
+- **Experiment outputs live in `experiments/runs/<timestamp>_<name>/`**. Never overwrite a previous run; always create a new directory.
 - If an experiment result contradicts a prior result, do not silently discard either. Document the discrepancy, check for environmental differences, and re-run under controlled conditions before drawing conclusions.
 
 ---
@@ -115,7 +115,7 @@ This file defines standing instructions for all AI and human contributors workin
   - **E2E / Full-Stack:** Any feature requiring full-stack calls must be tested end-to-end, simulating the entire request lifecycle.
   - **CLI:** New CLI flags must be fully tested for expected behavior, output, and failure modes.
   - **UI/UX:** User interface features must be tested strictly from the user's perspective, validating the actual human flow, not just DOM elements.
-- **The Anti-Mocking Rule for E2E:** E2E and Integration tests must test reality. For tests validating **inference correctness or quantization accuracy**, you are strictly forbidden from mocking the model inference engine — test the real pipeline. For **structural/integration tests** of server lifecycle, routing, and feature activation, mocking the model with a deterministic stub is acceptable and expected. Never mock the quantization pipeline when testing quantization correctness. Never mock the database in E2E tests.
+- **The Anti-Mocking Rule for E2E:** E2E and Integration tests must test reality. For tests validating **inference correctness or quantization accuracy**, you are strictly forbidden from mocking the model inference server: test the real pipeline. For **structural/integration tests** of server lifecycle, routing, and feature activation, mocking the model with a deterministic stub is acceptable and expected. Never mock the quantization pipeline when testing quantization correctness. Never mock the database in E2E tests.
 - All tests must pass in the CI/CD pipeline before committing. Never commit with known failing tests.
 - **For ML components:** include a numerical correctness test, a shape/dtype contract test, and at least one regression test against a known-good output snapshot.
 - Tests must include failure cases, not just success paths.
@@ -125,9 +125,9 @@ This file defines standing instructions for all AI and human contributors workin
 ## ⚡ Performance Regression Gates
 
 - **Define latency and memory baselines** for any hot path before merging changes to it.
-- A PR that regresses p95 latency by >5% or peak memory by >10% on any tracked workload is a **hard stop** — profile and fix before merging.
+- A PR that regresses p95 latency by >5% or peak memory by >10% on any tracked workload is a **hard stop**: profile and fix before merging.
 - **Memory leaks are bugs.** For long-running servers and streaming inference, run a memory growth test: make N requests in a loop and assert that RSS does not grow monotonically.
-- When optimizing, measure first — never guess. Attach profiler output to the PR or commit that introduces the optimization.
+- When optimizing, measure first; never guess. Attach profiler output to the PR or commit that introduces the optimization.
 
 ---
 
@@ -136,7 +136,7 @@ This file defines standing instructions for all AI and human contributors workin
 - **One feature in, one benchmark result out.** No feature merges to main without a benchmark proving it improves the target metric by ≥5% on the canonical hardware (M3 16GB for Squish; your primary target for other projects).
 - **Additive commits must not increase startup time or RSS.** Measure `time python3 -c "import <package>"` and peak RSS at server start before and after any commit that adds a new module. If either increases, the commit needs written justification in the PR description.
 - **No feature flags for broken features.** If a CLI flag activates a feature that produces wrong or broken output, remove the flag until the feature is ready. Silent failure is not acceptable.
-- **No bundling unrelated changes.** Each commit does one thing. Commits that bundle multiple unrelated features are forbidden — they make bisection and performance attribution impossible.
+- **No bundling unrelated changes.** Each commit does one thing. Commits that bundle multiple unrelated features are forbidden: they make bisection and performance attribution impossible.
 
 ---
 
@@ -162,7 +162,7 @@ This file defines standing instructions for all AI and human contributors workin
 
 - **Research/experimental code** lives in `research/`, `experiments/`, or is gated with a `RESEARCH_MODE` flag.
 - **Promotion to production** requires: full test coverage, benchmarks, documentation, and an explicit review step. Do not silently "graduate" an experiment into a hot path.
-- Prototype code that is not being promoted should be deleted after the experiment concludes — see "No Graveyards" above.
+- Prototype code that is not being promoted should be deleted after the experiment concludes (see "No Graveyards" above).
 
 ---
 
@@ -389,11 +389,11 @@ Do not proceed if:
 - **Boxes are made for the weak-minded.** The most dangerous question in frontier engineering is "how has this been done before?" The problems here are not known problems. Invent new approaches, find fresh angles, and design novel architectures.
 - **Speed and efficiency are moral imperatives.** Every unnecessary gigabyte of RAM, every wasted FLOP, every second of avoidable inference latency is compute that could be running something real for someone who can't afford a GPU cluster. Build lean. Build fast.
 - **Correctness is the floor, not the ceiling.** Code that is merely correct and passes tests has met the minimum. The ceiling is: correct, fast, efficient, elegant, and novel. Reach for the ceiling.
-- **Surface trade-offs — then make a call.** Don't present options and wait. Analyze, recommend, and commit. Bring the fighting spirit to decision-making.
-- **When a result looks surprisingly bad, don't accept it.** A negative result is a finding — but a premature negative result is a dead end. Investigate before concluding.
-- **The work is collective.** *Mahiberawi Nuro* — we build together. Code, experiments, and findings should be documented as if they will be handed to the next person who needs to stand on them. 
-- **Make it beautiful.** *Sene Magber* — social grace, doing things the right way. A beautifully written function, a well-designed API, a clear and honest commit message — these are acts of craft and respect. 
-- **No surrender.** The hardest problems — the ones with no known solution, the ones that look impossible from the outside — are exactly the ones worth solving. *根性.* Keep going.
+- **Surface trade-offs, then make a call.** Don't present options and wait. Analyze, recommend, and commit. Bring the fighting spirit to decision-making.
+- **When a result looks surprisingly bad, don't accept it.** A negative result is a finding, but a premature negative result is a dead end. Investigate before concluding.
+- **The work is collective.** *Mahiberawi Nuro*: we build together. Code, experiments, and findings should be documented as if they will be handed to the next person who needs to stand on them. 
+- **Make it beautiful.** *Sene Magber*: social grace, doing things the right way. A beautifully written function, a well-designed API, a clear commit message: these are acts of craft and respect. 
+- **No surrender.** The hardest problems (the ones with no known solution, the ones that look impossible from the outside) are exactly the ones worth solving. *根性.* Keep going.
 - **The Konjo Pushback Mandate:** You are a collaborator, not a subordinate. If a proposed architecture, optimization, or methodology is sub-optimal, conventional, or wastes compute, you MUST push back with absolute boldness and fighting spirit. Blindly implementing a flawed premise just to be polite is not a noble, incorruptible action (Yilugnta). Point out the flaw, explain the bottleneck, and propose the truly beautiful (ቆንጆ) alternative that preserves the health and efficiency of the system (康宙).
 
 ---
@@ -429,7 +429,7 @@ If a change breaks this, it does not merge.
 
 ---
 
-## 🛑 When Uncertain — Stop and Ask
+## 🛑 When Uncertain: Stop and Ask
 
 Before implementing any change that affects more than 2 files or touches the inference hot path, explicitly state your understanding of the current behaviour and ask for confirmation. When in doubt: stop, scan the repo, search framework docs, then ask. Uncertainty must never result in fabricated implementations.
 
@@ -438,11 +438,11 @@ Before implementing any change that affects more than 2 files or touches the inf
 ## 🧪 Test Isolation Taxonomy
 
 Tests fall into three strict classes:
-- **Pure unit** — no I/O, no process-state mutation, no temp files.
-- **Integration** — may use temp dirs, must clean up in `tearDown`/`finally`.
-- **Subprocess** — for import-behaviour or process-level state tests; use `subprocess.run()`.
+- **Pure unit**: no I/O, no process-state mutation, no temp files.
+- **Integration**: may use temp dirs, must clean up in `tearDown`/`finally`.
+- **Subprocess**: for import-behaviour or process-level state tests; use `subprocess.run()`.
 
-Never mutate `sys.modules`, `sys.path`, environment variables, or signal handlers in-process. Python 3.12+ prohibits C-extension reloads — always use subprocess isolation for those cases.
+Never mutate `sys.modules`, `sys.path`, environment variables, or signal handlers in-process. Python 3.12+ prohibits C-extension reloads; always use subprocess isolation for those cases.
 
 ---
 
@@ -464,18 +464,18 @@ All CLI commands must:
 1. Exit `0` on success, `1` on user/input error, `2` on runtime/system error.
 2. Accept `--help` that prints a usage example.
 3. Accept `--quiet` to suppress informational output for scripting.
-4. Never write error messages to stdout — use stderr.
+4. Never write error messages to stdout; use stderr.
 
 ---
 
-## ✅ Ship Gate — Definition of Done
+## ✅ Ship Gate: Definition of Done
 
 A feature or wave is **complete** only when all five conditions are met:
 1. `0` failing tests in the full test suite (`pytest --timeout=120`).
 2. Memory + latency contracts measured and within spec (or a written exception filed).
 3. `--help` text updated for any new or changed CLI flag.
 4. `CHANGELOG.md` entry written under the correct version heading.
-5. Module-count rule checked — if a file was added, a file was deleted or justification is written.
+5. Module-count rule checked: if a file was added, a file was deleted or justification is written.
 
 ---
 
