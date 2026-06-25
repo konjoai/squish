@@ -282,13 +282,12 @@ function _startHealthPoll(context: vscode.ExtensionContext): void {
                 statusBar.text = '$(loading~spin) squish: loading\u2026';
                 statusBar.backgroundColor = undefined;
             }
-        } catch (err: unknown) {
-            const code = (err as NodeJS.ErrnoException)?.code ?? (err as Error)?.message ?? '';
-            if (SquishClient.busy || code.includes('ETIMEDOUT') || code.includes('timed out')) {
-                _setBusy();
-            } else {
-                _setOffline();
-            }
+        } catch {
+            // We only get here after portOpen() succeeded, so the server IS up.
+            // A failed/slow /health means it's busy — e.g. another client's
+            // prefill (a prompt in the web UI) is starving the event loop — not
+            // offline.
+            _setBusy();
         }
     };
 

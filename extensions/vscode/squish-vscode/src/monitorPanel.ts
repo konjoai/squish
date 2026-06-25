@@ -76,16 +76,21 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
         const client = new SquishClient(host, port, apiKey);
 
         let health: HealthInfo & { ram_gb?: number; gpu_pct?: number } = { loaded: false };
+        // Assume reachable until we get a hard connection refusal. /health can
+        // time out while ANY client's blocking prefill starves the event loop
+        // (e.g. a prompt running in the web UI) — the port still accepts, so the
+        // server is "busy", not "offline". Only ECONNREFUSED & friends mean down.
+        let reachable = true;
         try {
             health = await (client as unknown as { health(): Promise<typeof health> }).health() ?? { loaded: false };
-        } catch {
-            // health may time out while a blocking prefill starves the server's
-            // event loop — that's "busy", not "offline" (see SquishClient.busy).
+        } catch (err) {
+            const code = String((err as NodeJS.ErrnoException)?.code ?? (err as Error)?.message ?? '');
+            reachable = !/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ECONNABORTED/i.test(code);
         }
 
         this._updateSparklines(health);
         this._view?.webview.postMessage({
-            type: 'monitorUpdate', health, busy: SquishClient.busy,
+            type: 'monitorUpdate', health, busy: SquishClient.busy, reachable,
             sparkTps: [...this._sparkTps], sparkReq: [...this._sparkReq],
         });
     }
@@ -264,14 +269,16 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
     // ── Message handler ─────────────────────────────────────────────────
 
     window.addEventListener('message', (e) => {
-      const { type, health, busy, sparkTps, sparkReq } = e.data;
+      const { type, health, busy, reachable, sparkTps, sparkReq } = e.data;
       if (type !== 'monitorUpdate') return;
 
       const online = health.loaded === true;
-      // A streaming generation can make /health time out (loaded:false) while
-      // the server is plainly up — show "Busy", never a red "Offline".
-      const state  = online ? 'online' : (busy ? 'busy' : 'offline');
-      const label  = online ? 'Online' : (busy ? 'Busy'  : 'Offline');
+      // /health can time out while the server is busy generating (for us OR for
+      // another client like the web UI). Reachable-but-not-loaded = "Busy"; only
+      // a hard connection refusal (reachable === false) is a red "Offline".
+      const up     = online || busy || reachable === true;
+      const state  = online ? 'online' : (up ? 'busy' : 'offline');
+      const label  = online ? 'Online' : (up ? 'Busy'  : 'Offline');
       const badge  = document.getElementById('badge');
       const dot    = document.getElementById('dot');
       const st     = document.getElementById('status-text');
@@ -304,10 +311,10 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
       const cons = document.getElementById('console');
       const line = document.createElement('div');
       const ts   = new Date().toLocaleTimeString();
-      line.className = 'console-line ' + (online ? 'ok' : (busy ? 'ok' : 'err'));
+      line.className = 'console-line ' + (online ? 'ok' : (up ? 'ok' : 'err'));
       line.textContent = ts + '  ' + (online
         ? ('model=' + (health.model||'?') + '  tps=' + (health.tps||0).toFixed(1) + '  req=' + (health.requests||0))
-        : (busy ? 'server busy (generating)' : 'server offline'));
+        : (up ? 'server busy (generating)' : 'server offline'));
       cons.appendChild(line);
       // Keep last 50 lines
       while (cons.children.length > 50) cons.removeChild(cons.firstChild);

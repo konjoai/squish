@@ -194,7 +194,7 @@ export class ServerManager {
     portOpen(host: string, port: number): Promise<boolean> {
         return new Promise((resolve) => {
             const sock = new net.Socket();
-            sock.setTimeout(1000);
+            sock.setTimeout(2000);
             sock.once('connect', () => { sock.destroy(); resolve(true); });
             sock.once('error', () => { sock.destroy(); resolve(false); });
             sock.once('timeout', () => { sock.destroy(); resolve(false); });

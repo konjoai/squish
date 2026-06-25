@@ -203,6 +203,52 @@ describe('MonitorPanel', () => {
         panel.dispose();
     });
 
+    test('health timeout from ANOTHER client is reachable (web-UI prompt case)', async () => {
+        // The extension itself is idle (busy === false), but a prompt running in
+        // the web UI stalls the event loop. /health times out (not refused), so
+        // the server is reachable → webview shows "Busy", not "Offline".
+        MockSquishClient.prototype.health = jest.fn().mockImplementation(
+            () => Promise.reject(new Error('Health check timed out after 3000ms'))
+        );
+        (MockSquishClient as unknown as { busy: boolean }).busy = false;
+
+        const postMessage = jest.fn();
+        const panel = new MonitorPanel(EXT_URI);
+        panel.resolveWebviewView(
+            makeWebviewView(postMessage),
+            {} as vscode.WebviewViewResolveContext,
+            {} as vscode.CancellationToken,
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'monitorUpdate', reachable: true }),
+        );
+        panel.dispose();
+    });
+
+    test('connection refused is reported as unreachable (genuinely offline)', async () => {
+        const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+        MockSquishClient.prototype.health = jest.fn().mockImplementation(() => Promise.reject(refused));
+        (MockSquishClient as unknown as { busy: boolean }).busy = false;
+
+        const postMessage = jest.fn();
+        const panel = new MonitorPanel(EXT_URI);
+        panel.resolveWebviewView(
+            makeWebviewView(postMessage),
+            {} as vscode.WebviewViewResolveContext,
+            {} as vscode.CancellationToken,
+        );
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'monitorUpdate', reachable: false }),
+        );
+        panel.dispose();
+    });
+
     test('dispose stops polling', () => {
         const health = jest.fn().mockResolvedValue(makeHealthResponse());
         MockSquishClient.prototype.health = health;
