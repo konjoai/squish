@@ -272,25 +272,57 @@ def _coerce_args(args: Any) -> dict:
     return {}
 
 
+# Markers that begin a native tool call, across model families:
+#   <tool_call>    — Qwen2.5 / Qwen3 / Hermes
+#   <|python_tag|> — Llama 3.1 / 3.2
+#   [TOOL_CALLS]   — Mistral / Mixtral
+_TOOL_CALL_MARKS = ("<tool_call>", "<|python_tag|>", "[TOOL_CALLS]")
+
+# Stop strings that terminate a tool call across model families. Added to the
+# decode stop set in tool/agent mode so the model halts after one call instead
+# of rambling on (or emitting the same call twice). ``</tool_call>`` closes the
+# Qwen/Hermes tag; ``<|eom_id|>``/``<|eot_id|>`` are Llama 3.x end-of-message /
+# end-of-turn markers emitted right after a tool call.
+TOOL_CALL_STOPS = ["</tool_call>", "<|eom_id|>", "<|eot_id|>"]
+
+
 class ToolCallStreamFilter:
-    """Suppress ``<tool_call>`` syntax from a streamed token sequence.
+    """Suppress native tool-call syntax from a streamed token sequence.
 
     The agent loop streams reasoning text token-by-token, but the tool call
-    itself is rendered as a structured card by the client — so the raw
-    ``<tool_call>{...}`` JSON must never reach a chat bubble. Feed each token
-    in order; the filter returns only the genuine visible text that precedes a
-    tool call, then stays silent once a call begins.
+    itself is rendered as a structured card by the client — so the raw call
+    (``<tool_call>{...}``, ``<|python_tag|>{...}``, ``[TOOL_CALLS][...]`` or a
+    bare ``{"name": ...}`` JSON object) must never reach a chat bubble. Feed each
+    token in order; the filter returns only the genuine visible text that
+    precedes a tool call, then stays silent once a call begins.
 
-    A short holdback (one char less than the marker length) prevents leaking a
+    A short holdback (one char less than the longest marker) prevents leaking a
     tag that arrives split across tokens (``"<tool"`` then ``"_call>"``).
     """
 
-    MARK = "<tool_call>"
+    MARKS = _TOOL_CALL_MARKS
 
     def __init__(self) -> None:
         self._buf = ""
         self._emitted = 0
         self._suppressing = False
+
+    def _marker_index(self) -> int:
+        """Earliest index at which a tool call begins in the buffer, or -1."""
+        idx = -1
+        for mark in self.MARKS:
+            j = self._buf.find(mark)
+            if j != -1 and (idx == -1 or j < idx):
+                idx = j
+        if idx != -1:
+            return idx
+        # Bare-JSON tool call (no marker): the reply opens with a JSON object/array
+        # and a ``"name"`` key has appeared. Requiring ``"name"`` avoids
+        # suppressing ordinary prose that merely happens to start with a brace.
+        lead = self._buf.lstrip()
+        if lead[:1] in ("{", "[") and '"name"' in self._buf:
+            return len(self._buf) - len(lead)
+        return -1
 
     def feed(self, token: str, *, final: bool = False) -> str:
         """Return the visible chunk to emit for this token (may be empty)."""
@@ -298,13 +330,13 @@ class ToolCallStreamFilter:
             self._buf += token
         if self._suppressing:
             return ""
-        idx = self._buf.find(self.MARK)
+        idx = self._marker_index()
         if idx != -1:
             chunk = self._buf[self._emitted : idx]
             self._emitted = len(self._buf)
             self._suppressing = True
             return chunk
-        hold = len(self.MARK) - 1
+        hold = max(len(m) for m in self.MARKS) - 1
         safe_end = len(self._buf) if final else max(self._emitted, len(self._buf) - hold)
         chunk = self._buf[self._emitted : safe_end]
         self._emitted = safe_end
@@ -314,6 +346,33 @@ class ToolCallStreamFilter:
     def suppressing(self) -> bool:
         """True once a tool call has begun (no further visible text)."""
         return self._suppressing
+
+
+def _parse_marker_envelope(stripped: str) -> list[dict] | None:
+    """Parse a Llama ``<|python_tag|>`` / Mistral ``[TOOL_CALLS]`` tool-call
+    envelope: strip the marker (and any trailing ``<|eom_id|>``/``<|eot_id|>``)
+    and parse the first balanced JSON object/array that follows, ignoring any
+    junk the model rambled afterwards. Returns None when no marker is present.
+    """
+    for marker in ("<|python_tag|>", "[TOOL_CALLS]"):
+        mi = stripped.find(marker)
+        if mi == -1:
+            continue
+        after = stripped[mi + len(marker):]
+        for end in ("<|eom_id|>", "<|eot_id|>"):
+            ei = after.find(end)
+            if ei != -1:
+                after = after[:ei]
+        obj = _try_parse(after.strip())
+        if obj is None or not _is_tool_call(obj):
+            obj = next(
+                (p for c in _extract_json_objects(after)
+                 if (p := _try_parse(c)) is not None and _is_tool_call(p)),
+                None,
+            )
+        if obj is not None and _is_tool_call(obj):
+            return _normalise(obj)
+    return None
 
 
 def parse_tool_calls(text: str) -> list[dict] | None:
@@ -350,6 +409,11 @@ def parse_tool_calls(text: str) -> list[dict] | None:
         obj = _try_parse(open_match.group(1).strip())
         if obj is not None and _is_tool_call(obj):
             return _normalise(obj)
+
+    # 0.6. Llama <|python_tag|> / Mistral [TOOL_CALLS] envelope
+    envelope = _parse_marker_envelope(stripped)
+    if envelope is not None:
+        return envelope
 
     # 1. Try fenced JSON blocks
     for m in _FENCED_JSON.finditer(stripped):

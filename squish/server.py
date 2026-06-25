@@ -3396,9 +3396,11 @@ async def chat_completions(  # pragma: no cover
 
         if _supports_native:
             _native_tools = tools
-            # Ensure generation stops right after the closing tag so the model
-            # doesn't append prose after its tool call.
-            _tc_stop = ["</tool_call>"]
+            # Stop right after a tool call (closing tag / Llama eom/eot) so the
+            # model doesn't append prose — across model families (see
+            # TOOL_CALL_STOPS).
+            from squish.serving.tool_calling import TOOL_CALL_STOPS  # noqa: PLC0415
+            _tc_stop = list(TOOL_CALL_STOPS)
             if stop is None:
                 stop = _tc_stop
             elif isinstance(stop, str):
@@ -4050,7 +4052,7 @@ async def agent_run(  # pragma: no cover
         import re as _re  # noqa: PLC0415
 
         from squish.serving.tool_calling import (  # noqa: PLC0415
-            ToolCallStreamFilter, format_tools_prompt, parse_tool_calls,
+            TOOL_CALL_STOPS, ToolCallStreamFilter, format_tools_prompt, parse_tool_calls,
         )
 
         # Prefer the tokenizer's native tool-calling template (Qwen2.5/3,
@@ -4078,10 +4080,9 @@ async def agent_run(  # pragma: no cover
             if not native_ok:
                 augmented = format_tools_prompt(current_messages, all_tools)
                 prompt = _apply_chat_template(augmented, _state.tokenizer)
-            # Stop right after the closing tool-call tag so the model doesn't
-            # ramble after emitting a call (the open-tag parser handles the
-            # consumed closing tag).
-            agent_stop = ["</tool_call>"] if native_ok else None
+            # Stop right after a tool call so the model doesn't ramble after
+            # emitting one — covers Qwen/Hermes </tool_call> and Llama eom/eot.
+            agent_stop = list(TOOL_CALL_STOPS) if native_ok else None
 
             # ── Stream genuine reasoning text only ─────────────────────────
             # Emit text_delta for the model's reasoning, but suppress the
