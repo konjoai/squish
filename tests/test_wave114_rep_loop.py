@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import squish.server as _srv
+from squish.serving import loop_guard as _lg  # _detect_loop / _LoopGuard live here
 
 
 # ==============================================================================
@@ -34,7 +35,7 @@ class TestDetectLoopPositive(unittest.TestCase):
     """_detect_loop must return True for clearly looping strings."""
 
     def _hit(self, text: str) -> None:
-        self.assertTrue(_srv._detect_loop(text), f"Expected loop in: {text!r}")
+        self.assertTrue(_lg._detect_loop(text), f"Expected loop in: {text!r}")
 
     def test_short_period_repeated_many_times(self):
         # 12-char period × 5 reps
@@ -61,8 +62,8 @@ class TestDetectLoopPositive(unittest.TestCase):
 
     def test_exact_min_reps(self):
         # Exactly _LOOP_MIN_REPS repetitions of a _LOOP_MIN_PERIOD-char unit
-        unit = "a" * _srv._LOOP_MIN_PERIOD
-        self._hit(unit * _srv._LOOP_MIN_REPS)
+        unit = "a" * _lg._LOOP_MIN_PERIOD
+        self._hit(unit * _lg._LOOP_MIN_REPS)
 
     def test_loop_at_tail_with_clean_prefix(self):
         # Loop must be detectable even when preceded by normal text
@@ -76,7 +77,7 @@ class TestDetectLoopNegative(unittest.TestCase):
 
     def _miss(self, text: str) -> None:
         preview = repr(text)[:80]
-        self.assertFalse(_srv._detect_loop(text), f"False positive on: {preview}")
+        self.assertFalse(_lg._detect_loop(text), f"False positive on: {preview}")
 
     def test_normal_sentence(self):
         self._miss(
@@ -94,7 +95,7 @@ class TestDetectLoopNegative(unittest.TestCase):
     def test_near_miss_three_reps(self):
         # _LOOP_MIN_REPS - 1 repetitions should NOT trigger
         unit = "animals:cats,"
-        text = unit * (_srv._LOOP_MIN_REPS - 1)
+        text = unit * (_lg._LOOP_MIN_REPS - 1)
         self._miss(text)
 
     def test_python_code_snippet(self):
@@ -113,22 +114,22 @@ class TestDetectLoopNegative(unittest.TestCase):
 class TestLoopConstants(unittest.TestCase):
 
     def test_loop_win_positive(self):
-        self.assertGreater(_srv._LOOP_WIN, 0)
+        self.assertGreater(_lg._LOOP_WIN, 0)
 
     def test_loop_min_period_lt_max(self):
-        self.assertLess(_srv._LOOP_MIN_PERIOD, _srv._LOOP_MAX_PERIOD)
+        self.assertLess(_lg._LOOP_MIN_PERIOD, _lg._LOOP_MAX_PERIOD)
 
     def test_loop_min_reps_at_least_3(self):
-        self.assertGreaterEqual(_srv._LOOP_MIN_REPS, 3)
+        self.assertGreaterEqual(_lg._LOOP_MIN_REPS, 3)
 
     def test_loop_check_every_positive(self):
-        self.assertGreater(_srv._LOOP_CHECK_EVERY, 0)
+        self.assertGreater(_lg._LOOP_CHECK_EVERY, 0)
 
     def test_loop_window_covers_min_detection(self):
         # _LOOP_WIN must be large enough to hold _LOOP_MAX_PERIOD * _LOOP_MIN_REPS chars
         self.assertGreaterEqual(
-            _srv._LOOP_WIN,
-            _srv._LOOP_MAX_PERIOD * _srv._LOOP_MIN_REPS,
+            _lg._LOOP_WIN,
+            _lg._LOOP_MAX_PERIOD * _lg._LOOP_MIN_REPS,
         )
 
 
@@ -205,24 +206,24 @@ class TestDetectLoopParagraph(unittest.TestCase):
         self.assertGreater(len(_KV_PARAGRAPH), 80)
 
     def test_paragraph_repeated_is_a_loop(self):
-        self.assertTrue(_srv._detect_loop(_KV_PARAGRAPH * 5))
+        self.assertTrue(_lg._detect_loop(_KV_PARAGRAPH * 5))
 
     def test_paragraph_detection_is_phase_robust(self):
         # Check may land mid-paragraph — detection must not depend on the tail
         # ending exactly on a repeat boundary.
         text = (_KV_PARAGRAPH * 5)[:-37]
-        self.assertTrue(_srv._detect_loop(text))
+        self.assertTrue(_lg._detect_loop(text))
 
     def test_single_paragraph_is_not_a_loop(self):
-        self.assertFalse(_srv._detect_loop(_KV_PARAGRAPH))
+        self.assertFalse(_lg._detect_loop(_KV_PARAGRAPH))
 
     def test_block_reps_lower_than_short_reps(self):
         # Blocks need fewer reps than short fragments to be trusted.
-        self.assertLess(_srv._LOOP_BLOCK_REPS, _srv._LOOP_MIN_REPS)
+        self.assertLess(_lg._LOOP_BLOCK_REPS, _lg._LOOP_MIN_REPS)
 
     def test_reps_for_period_scales(self):
-        self.assertEqual(_srv._reps_for_period(_srv._LOOP_MIN_PERIOD), _srv._LOOP_MIN_REPS)
-        self.assertEqual(_srv._reps_for_period(_srv._LOOP_BLOCK_PERIOD), _srv._LOOP_BLOCK_REPS)
+        self.assertEqual(_lg._reps_for_period(_lg._LOOP_MIN_PERIOD), _lg._LOOP_MIN_REPS)
+        self.assertEqual(_lg._reps_for_period(_lg._LOOP_BLOCK_PERIOD), _lg._LOOP_BLOCK_REPS)
 
 
 # ==============================================================================
@@ -239,17 +240,17 @@ class TestLoopGuard(unittest.TestCase):
         return None
 
     def test_fires_on_repeating_block(self):
-        guard = _srv._LoopGuard()
+        guard = _lg._LoopGuard()
         fired = self._feed(guard, _KV_PARAGRAPH * 6)
         self.assertIsNotNone(fired, "guard never fired on a clear paragraph loop")
 
     def test_fires_on_short_runon(self):
-        guard = _srv._LoopGuard()
+        guard = _lg._LoopGuard()
         fired = self._feed(guard, ", animals:cats" * 40, chunk=3)
         self.assertIsNotNone(fired)
 
     def test_quiet_on_unique_prose(self):
-        guard = _srv._LoopGuard()
+        guard = _lg._LoopGuard()
         prose = (
             "The river wound slowly through the valley as the sun dipped below the "
             "distant hills, casting amber shadows across the quiet meadow. A heron "
@@ -263,14 +264,14 @@ class TestLoopGuard(unittest.TestCase):
     def test_empty_tokens_do_not_advance_cadence(self):
         # Empty/whitespace-stripped tokens must not count toward the check cadence
         # nor toward the buffer.
-        guard = _srv._LoopGuard()
+        guard = _lg._LoopGuard()
         for _ in range(100):
             self.assertFalse(guard.feed(""))
 
     def test_check_cadence_respected(self):
         # The guard only inspects every _LOOP_CHECK_EVERY non-empty tokens, so a
         # loop fed one char at a time is detected at a multiple of the cadence.
-        guard = _srv._LoopGuard()
+        guard = _lg._LoopGuard()
         fired_count = None
         n = 0
         for ch in _KV_PARAGRAPH * 6:
@@ -279,7 +280,7 @@ class TestLoopGuard(unittest.TestCase):
                 fired_count = n
                 break
         self.assertIsNotNone(fired_count)
-        self.assertEqual(fired_count % _srv._LOOP_CHECK_EVERY, 0)
+        self.assertEqual(fired_count % _lg._LOOP_CHECK_EVERY, 0)
 
 
 if __name__ == "__main__":
