@@ -308,11 +308,15 @@ class TestOfflineStatusThreshold(unittest.TestCase):
 
 
 # ============================================================================
-# TestAgentAutoEnable — index.html auto-enables agent mode on startup
+# TestAgentModeOptIn — agent/tool mode is opt-in, NOT auto-enabled (Wave 129)
 # ============================================================================
 
-class TestAgentAutoEnable(unittest.TestCase):
-    """The UI init block must query /v1/agent/tools and auto-enable agent mode."""
+class TestAgentModeOptIn(unittest.TestCase):
+    """Agent mode must default off and only enable on an explicit toggle.
+
+    It used to auto-enable on startup whenever the server exposed tools, which
+    forced tool-calling on small models for plain chat (garbage + hard errors).
+    """
 
     def _read_html(self) -> str:
         html_path = os.path.join(
@@ -322,21 +326,20 @@ class TestAgentAutoEnable(unittest.TestCase):
         with open(html_path, encoding="utf-8") as f:
             return f.read()
 
-    def test_agent_tools_endpoint_queried_at_startup(self):
+    def test_agent_mode_defaults_off(self):
         html = self._read_html()
-        assert "/v1/agent/tools" in html
+        assert re.search(r"let agentMode\s*=\s*false", html)
 
-    def test_toggle_agent_mode_called_when_tools_present(self):
+    def test_manual_toggle_control_exists(self):
+        # A user-facing toggle (button) must still let power users opt in.
         html = self._read_html()
-        assert "toggleAgentMode()" in html
+        assert 'onclick="toggleAgentMode()"' in html
 
-    def test_auto_enable_guarded_by_tool_count(self):
+    def test_no_startup_auto_enable(self):
+        # The startup auto-enable (toggleAgentMode when the server exposes tools)
+        # must be gone.
         html = self._read_html()
-        assert "td.tools" in html or "(td.tools || []).length" in html
-
-    def test_auto_enable_only_when_agent_mode_off(self):
-        html = self._read_html()
-        assert "!agentMode" in html
+        assert "(td.tools || []).length > 0 && !agentMode" not in html
 
 
 if __name__ == "__main__":
