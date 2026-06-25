@@ -5,6 +5,35 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.6] — Small-model loop prevention, leaner server.py, VSCode "busy" status
+
+### Added
+- **Web-UI repetition-penalty control** (`squish/static/index.html`): a "Rep.
+  penalty" slider defaulting to **1.1** (the Ollama/llama.cpp default), sent on
+  every chat request when > 1.0. Small models (llama3.2:1b, qwen2.5:1.5b) were
+  still degenerating into verbatim repetition on some prompts; the decode-time
+  `_LoopGuard` is only a safety net (it stops a loop after several repeats leak),
+  so this adds real sampling-time prevention. The server already honoured
+  `repetition_penalty` per request — no server change.
+
+### Changed
+- **Repetition guard extracted** to `squish/serving/loop_guard.py` (`_LoopGuard`,
+  `_detect_loop`, constants) — one detector shared by the stream, KV-cache, and
+  fallback decode paths, and `server.py` drops back under its line-count ceiling.
+  No behaviour change.
+- **Release automation** now regenerates the Homebrew formula's `squish_ai`
+  wheel resource on every version bump, not just the headline url/sha — fixes
+  `brew install` shipping a stale package version.
+- Removed the "Built the Konjo way" marketing section from the README.
+
+### Fixed
+- **VSCode extension showed "offline" while a model was responding** — including
+  when the prompt was running in another client (the web UI). The status bar and
+  monitor panel now distinguish *busy* (port reachable, `/health` slow/timing out
+  while a prefill starves the event loop) from *offline* (connection refused),
+  showing an amber "Busy" instead of a red "Offline". (Ships with the extension,
+  not the PyPI package.)
+
 ## [9.34.5] — Repetition-loop guard on every decode path + UI offline/socket fixes
 
 ### Fixed

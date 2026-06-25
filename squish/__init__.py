@@ -14,7 +14,7 @@ Public API:
 
 from __future__ import annotations
 
-__version__ = "9.34.5"
+__version__ = "9.34.6"
 
 
 def _install_vendored_squish_quant() -> None:
