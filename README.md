@@ -84,7 +84,7 @@ Squish is built for the workload most local-LLM tools aren't tuned for: **the sa
 
 On a 16 GB Mac that workload fights the rest of your work. Ollama keeps ~5 GB resident and re-pays a long prefill on every new long prompt. Squish is a **persistent daemon**: the model loads once at login, and a two-cache architecture reuses prefill across requests — so an agent resending a 4,000-token system prompt every turn pays it **once**, not every turn.
 
-Designed for **one developer, one machine**. Not a multi-tenant production API — and the docs never pretend otherwise.
+Designed for **one developer, one machine**. Not a multi-tenant production API.
 
 ---
 
