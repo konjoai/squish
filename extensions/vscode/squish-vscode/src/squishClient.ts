@@ -59,6 +59,18 @@ export interface ChatChunk {
 export class SquishClient {
     private _activeReq?: http.ClientRequest;
 
+    // Process-wide count of in-flight streaming generations. The health poll
+    // uses this to avoid flashing "offline" while the model is busy: a blocking
+    // prefill can stall the server's TCP accept / health response past the poll
+    // timeout, which is NOT the server being down. Every streamChat below bumps
+    // this and clears it on the request's single 'close' event.
+    private static _inFlight = 0;
+
+    /** True while at least one streaming generation is in progress. */
+    static get busy(): boolean {
+        return SquishClient._inFlight > 0;
+    }
+
     constructor(
         private readonly host: string,
         private readonly port: number,
@@ -257,6 +269,12 @@ export class SquishClient {
         });
 
         req.on('error', (e: Error) => { this._activeReq = undefined; onError(e); });
+        // Mark generation in-flight; 'close' fires exactly once on completion,
+        // error, or abort()/destroy(), so it is the single safe decrement point.
+        SquishClient._inFlight++;
+        req.once('close', () => {
+            SquishClient._inFlight = Math.max(0, SquishClient._inFlight - 1);
+        });
         this._activeReq = req;
         req.write(payload);
         req.end();

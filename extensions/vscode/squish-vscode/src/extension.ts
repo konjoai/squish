@@ -254,10 +254,21 @@ function _startHealthPoll(context: vscode.ExtensionContext): void {
         const port: number = cfg.get('port', 11435);
         const apiKey: string = cfg.get('apiKey', 'squish');
 
-        const portUp = await serverManager.portOpen(host, port);
-        if (!portUp) {
+        // While a generation is streaming we KNOW the server is up, even if a
+        // blocking prefill stalls the port probe / health response past their
+        // timeouts. Never flip to "offline" in that window — show "busy" instead.
+        const _setBusy = () => {
+            statusBar.text = '$(sync~spin) squish: busy…';
+            statusBar.backgroundColor = undefined;
+        };
+        const _setOffline = () => {
             statusBar.text = '$(error) squish: offline';
             statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+        };
+
+        const portUp = await serverManager.portOpen(host, port);
+        if (!portUp) {
+            if (SquishClient.busy) { _setBusy(); } else { _setOffline(); }
             return;
         }
 
@@ -273,12 +284,10 @@ function _startHealthPoll(context: vscode.ExtensionContext): void {
             }
         } catch (err: unknown) {
             const code = (err as NodeJS.ErrnoException)?.code ?? (err as Error)?.message ?? '';
-            if (code.includes('ETIMEDOUT') || code.includes('timed out')) {
-                statusBar.text = '$(sync~spin) squish: busy\u2026';
-                statusBar.backgroundColor = undefined;
+            if (SquishClient.busy || code.includes('ETIMEDOUT') || code.includes('timed out')) {
+                _setBusy();
             } else {
-                statusBar.text = '$(error) squish: offline';
-                statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+                _setOffline();
             }
         }
     };
