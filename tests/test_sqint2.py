@@ -538,14 +538,15 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 109, (
-            f"Module count = {count}, expected 109 after (−dead modules) (＋prompt_lookup_batched.py) v4 daemon + v5.1.1 perf "
+        assert count == 110, (
+            f"Module count = {count}, expected 110 after (−dead modules) (＋prompt_lookup_batched.py) v4 daemon + v5.1.1 perf "
             f"+ KV P2 sprint (89 post-W111 + 11 new modules) + grammar/io/reasoning "
             "+ restored super_weight_calibrator.py (issue #37: wrongly purged, still imported by convert.py) "
             "+ serving/token_decode_cache.py (hot-path detokenize LUT) "
             "+ api/validation.py & __main__.py (e2e battle-test hardening, v9.34.3) "
             "+ quant/nf4_quant.py (implements the referenced --nf4 path) "
-            "+ kv/prompt_prefix_cache.py (in-memory prompt-prefix KV reuse, ~9x TTFT). "
+            "+ kv/prompt_prefix_cache.py (in-memory prompt-prefix KV reuse, ~9x TTFT) "
+            "+ serving/loop_guard.py (repetition guard extracted from server.py, v9.34.5). "
             "If this number changed, update CLAUDE.md / SESSION.md too."
         )
         # Ceiling check stays well below 125.

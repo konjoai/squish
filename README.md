@@ -193,14 +193,6 @@ Honesty is a feature. If any of these matter, Ollama or LM Studio is the right c
 
 ---
 
-## Built the Konjo way
-
-**KONJO — Know, Outline, Nail, Justify, Optimize.** ቆንጆ *(beautiful)* · 根性 *(grit)* · 건조 *(strip to the essence)*.
-
-Squish exists because nothing else was fast enough, so we built it — and held it to a higher floor than "it works." Every headline number is measured under thermal control. Every honest loss is printed next to the wins. Every line that isn't load-bearing is cut. Correctness is the floor; the ceiling is correct, fast, lean, and honest.
-
----
-
 ## Project
 
 - **Website** — [squish.run](https://squish.run) — full docs, guides, and the benchmark report.
