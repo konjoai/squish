@@ -31,9 +31,9 @@ if _repo_root not in sys.path:
 class TestVersionConsistency(unittest.TestCase):
     """squish.__version__ must match the pinned release and pyproject.toml."""
 
-    def test_version_is_9_34_7(self):
+    def test_version_is_9_34_8(self):
         import squish
-        self.assertEqual(squish.__version__, "9.34.7")
+        self.assertEqual(squish.__version__, "9.34.8")
 
     def test_version_is_string(self):
         import squish

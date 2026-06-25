@@ -297,6 +297,29 @@ def _open_browser_when_ready(url: str, port: int, timeout_s: int = 30) -> None:
     )
 
 
+def _resolve_presquished_dir(name: str | None, model_dir: Path, quant_mode: str) -> Path | None:
+    """Return the compressed ``<base>-<quant>`` dir for a pre-squished model.
+
+    ``squish pull`` only creates the compressed dir, never the raw bf16 dir, so
+    when the raw dir is absent resolve to the compressed dir directly (it is a
+    self-contained mlx quantized model with its own config.json). Prefers the
+    requested quant, then int4/int3/int8/int2. Returns ``None`` when no loadable
+    compressed dir is found. Mirrors pull's ``_quant_dir_name``.
+    """
+    if "/" in str(name):
+        return None
+    import re as _re_q
+
+    base = _re_q.sub(r"-(bf16|fp16|[0-9]+bit)(-mlx)?$", "", model_dir.name)
+    for mode in (quant_mode, "int4", "int3", "int8", "int2"):
+        cand = model_dir.parent / f"{base}-{mode}"
+        if cand.exists() and (cand / "config.json").exists():
+            if mode != quant_mode:
+                print(f"  ℹ  No {quant_mode.upper()} dir found; using {mode.upper()}: {cand.name}")
+            return cand
+    return None
+
+
 def _resolve_model(name: str | None, quant_mode: str = "int4") -> tuple[Path, Path]:  # pragma: no cover
     """
     Resolve MODEL shorthand / path to (model_dir, compressed_dir).
@@ -331,6 +354,11 @@ def _resolve_model(name: str | None, quant_mode: str = "int4") -> tuple[Path, Pa
         model_dir = Path(name).expanduser()
 
     if not model_dir.exists():
+        # Pre-squished models (squish pull) only create the compressed
+        # `<base>-<quant>` dir, never the raw bf16 dir — resolve to it directly.
+        _cand = _resolve_presquished_dir(name, model_dir, quant_mode)
+        if _cand is not None:
+            return _cand, _cand
         hint = name if (name and "/" not in str(name)) else "qwen3:8b"
         _die(
             f"Model directory not found: {model_dir}\n"
