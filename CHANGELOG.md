@@ -5,6 +5,29 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.7] — Tools opt-in by default + robust tool-calling for small models
+
+### Changed
+- **Agent/tool mode is now opt-in in the web UI.** It used to auto-enable on
+  startup whenever the server exposed tools, which forced tool-calling on small
+  models for plain chat — a 1B model would try to run a Python REPL for a
+  knowledge question and produce leaked tool-call JSON, off-topic degeneration,
+  and hard errors. Toggle agent mode from the UI when you actually want it.
+
+### Fixed
+- **Tool arguments are coerced to their JSON-schema type.** Small / quantized
+  models routinely emit scalars as strings (`"timeout": "10"`) or
+  JSON-stringified arrays/objects; `tool_registry.validate_call` now coerces
+  `"10" → 10`, `"true" → True`, etc. in place instead of failing with
+  `argument 'timeout': expected integer, got str`. Genuinely wrong types still
+  raise a clear error; `bool`/`int` are kept distinct.
+- **Native tool-call formats parsed across model families.** `parse_tool_calls`
+  and `ToolCallStreamFilter` now handle Llama `<|python_tag|>` and Mistral
+  `[TOOL_CALLS]` (in addition to Qwen/Hermes `<tool_call>`) plus bare-JSON
+  calls, so the raw call no longer leaks into the chat bubble. New
+  `TOOL_CALL_STOPS` (`</tool_call>`, `<|eom_id|>`, `<|eot_id|>`) halts the model
+  after one call instead of rambling or duplicating it.
+
 ## [9.34.6] — Small-model loop prevention, leaner server.py, VSCode "busy" status
 
 ### Added
