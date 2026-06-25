@@ -33,7 +33,7 @@ In your OpenClaw config file (usually `~/.openclaw/config.json` or the project-l
 }
 ```
 
-> **Note:** Squish does not require an API key by default. Set `"apiKey"` to any non-empty string — the value is ignored unless you started Squish with `--api-key`.
+> **Note:** Squish does not require an API key by default. Set `"apiKey"` to any non-empty string; the value is ignored unless you started Squish with `--api-key`.
 
 ### 3. Run OpenClaw
 
@@ -100,10 +100,10 @@ Squish supports server-sent events (SSE) streaming (`"stream": true`). OpenClaw 
 
 ## Troubleshooting
 
-**"Connection refused"** — Squish is not running. Start it with `squish serve <model>`.
+**"Connection refused"**: Squish is not running. Start it with `squish serve <model>`.
 
-**"model not found"** — The model ID in your OpenClaw config does not match the model Squish loaded. Use `curl http://localhost:11435/v1/models` to see the available model IDs, then update your config.
+**"model not found"**: The model ID in your OpenClaw config does not match the model Squish loaded. Use `curl http://localhost:11435/v1/models` to see the available model IDs, then update your config.
 
-**Slow first response** — On the first run after compression, Squish builds an optimised weight cache. Subsequent starts load in 3–5 seconds.
+**Slow first response**: On the first run after compression, Squish builds an optimised weight cache. Subsequent starts load in 3–5 seconds.
 
-**Tool calls return malformed JSON** — This is a model-capability issue, not a Squish or OpenClaw bug. Switch to `qwen2.5:7b` or a larger model. See [Model Capability Reality Checks](../ARCHITECTURE.md).
+**Tool calls return malformed JSON**: This is a model-capability issue, not a Squish or OpenClaw bug. Switch to `qwen2.5:7b` or a larger model. See [Model Capability Reality Checks](../ARCHITECTURE.md).

@@ -1,9 +1,9 @@
 # Squish Benchmark Guide
 
-**Phase 11 — 5-Track Cross-Engine Comparison Suite**
+**Phase 11: 5-Track Cross-Inference-Server Comparison Suite**
 
 The `squish bench --track <name>` command runs structured benchmarks against any
-OpenAI-compatible inference engine and saves results to `eval_output/` as JSON.
+OpenAI-compatible inference server and saves results to `eval_output/` as JSON.
 
 ---
 
@@ -27,7 +27,7 @@ squish bench --track perf --model qwen3:8b --report
 
 ## Tracks
 
-### Track A — Quality (`--track quality`)
+### Track A: Quality (`--track quality`)
 
 Evaluates factual accuracy and reasoning using standard NLP benchmarks via
 [lm-eval-harness](https://github.com/EleutherAI/lm-evaluation-harness).
@@ -47,7 +47,7 @@ Evaluates factual accuracy and reasoning using standard NLP benchmarks via
 squish bench --track quality --model qwen3:8b --limit 100
 ```
 
-### Track B — Code (`--track code`)
+### Track B: Code (`--track code`)
 
 Evaluates code generation quality using HumanEval and MBPP benchmarks.
 
@@ -64,15 +64,15 @@ squish bench --track code --model qwen3:8b
 squish bench --track code --model qwen3:8b --sandbox
 ```
 
-### Track C — Tool Use (`--track tool`)
+### Track C: Tool Use (`--track tool`)
 
 Tests function-calling accuracy against 20 canonical tool schemas (BFCL-style).
 
 Metrics:
-- `schema_compliance_pct` — response conforms to tool-call JSON schema
-- `function_name_match_pct` — correct function name selected
-- `exact_match_pct` — exact name + arguments match
-- `arg_match_pct` — fraction of expected arguments present
+- `schema_compliance_pct`: response conforms to tool-call JSON schema
+- `function_name_match_pct`: correct function name selected
+- `exact_match_pct`: exact name + arguments match
+- `arg_match_pct`: fraction of expected arguments present
 
 No extra dependencies required.
 
@@ -80,16 +80,16 @@ No extra dependencies required.
 squish bench --track tool --model qwen3:8b
 ```
 
-### Track D — Agent (`--track agent`)
+### Track D: Agent (`--track agent`)
 
 Runs 20 multi-turn agentic scenarios across four categories: file operations,
 data lookup, code tasks, and multi-step workflows.
 
 Metrics:
-- `completion_rate` — fraction of scenarios where the final answer was reached
-- `sequence_accuracy` — fraction of tool calls matching expected sequence
-- `mean_step_efficiency` — optimal steps / actual steps (1.0 = optimal)
-- `total_tokens_consumed` — sum of tokens across all turns
+- `completion_rate`: fraction of scenarios where the final answer was reached
+- `sequence_accuracy`: fraction of tool calls matching expected sequence
+- `mean_step_efficiency`: optimal steps / actual steps (1.0 = optimal)
+- `total_tokens_consumed`: sum of tokens across all turns
 
 No extra dependencies required.
 
@@ -97,7 +97,7 @@ No extra dependencies required.
 squish bench --track agent --model qwen3:8b
 ```
 
-### Track E — Performance (`--track perf`)
+### Track E: Performance (`--track perf`)
 
 Measures latency, throughput, and efficiency of a running inference server.
 
@@ -120,7 +120,7 @@ squish bench --track perf --model qwen3:8b
 
 ---
 
-## Supported Engines
+## Supported Inference Servers
 
 | Name | Default URL | Notes |
 |------|-------------|-------|
@@ -130,7 +130,7 @@ squish bench --track perf --model qwen3:8b
 | `mlxlm` | `http://localhost:8080` | mlx-lm server |
 | `llamacpp` | `http://localhost:8080` | llama.cpp server |
 
-Custom engines can be specified with `name=url` syntax:
+Custom inference servers can be specified with `name=url` syntax:
 
 ```bash
 squish bench --track perf --engines "custom=http://myhost:9000" --model qwen3:8b
@@ -172,7 +172,7 @@ File structure:
 
 ## Comparison and Reports
 
-After collecting results from multiple engines, generate a comparison table:
+After collecting results from multiple inference servers, generate a comparison table:
 
 ```bash
 squish bench --track perf --engines squish,ollama --model qwen3:8b --compare
@@ -216,14 +216,14 @@ record.save("eval_output/my_perf_result.json")
 
 ## Phase Gate Checklist (Phase 11)
 
-- [x] `squish/benchmarks/base.py` — EngineConfig, EngineClient, ResultRecord, BenchmarkRunner
-- [x] `squish/benchmarks/quality_bench.py` — Track A (MMLU/ARC/HellaSwag/WinoGrande/TruthfulQA/GSM8K)
-- [x] `squish/benchmarks/code_bench.py` — Track B (HumanEval/MBPP)
-- [x] `squish/benchmarks/tool_bench.py` — Track C (20 canonical tool schemas)
-- [x] `squish/benchmarks/agent_bench.py` — Track D (20 agentic scenarios)
-- [x] `squish/benchmarks/perf_bench.py` — Track E (TTFT/TPS/RAM/tokens-per-watt/batch)
-- [x] `squish/benchmarks/compare.py` — Cross-engine comparison table generator
-- [x] `squish/benchmarks/report.py` — Full benchmark report generator
-- [x] `squish/cli.py` — `squish bench --track` / `--engines` / `--model` / `--compare` / `--report` / `--limit`
-- [x] `eval_output/eval_meta.json` — Template metadata for benchmark runs
+- [x] `squish/benchmarks/base.py`: EngineConfig, EngineClient, ResultRecord, BenchmarkRunner
+- [x] `squish/benchmarks/quality_bench.py`: Track A (MMLU/ARC/HellaSwag/WinoGrande/TruthfulQA/GSM8K)
+- [x] `squish/benchmarks/code_bench.py`: Track B (HumanEval/MBPP)
+- [x] `squish/benchmarks/tool_bench.py`: Track C (20 canonical tool schemas)
+- [x] `squish/benchmarks/agent_bench.py`: Track D (20 agentic scenarios)
+- [x] `squish/benchmarks/perf_bench.py`: Track E (TTFT/TPS/RAM/tokens-per-watt/batch)
+- [x] `squish/benchmarks/compare.py`: Cross-inference-server comparison table generator
+- [x] `squish/benchmarks/report.py`: Full benchmark report generator
+- [x] `squish/cli.py`: `squish bench --track` / `--engines` / `--model` / `--compare` / `--report` / `--limit`
+- [x] `eval_output/eval_meta.json`: Template metadata for benchmark runs
 - [x] All Phase 11 unit tests pass

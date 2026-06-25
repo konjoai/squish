@@ -1,6 +1,6 @@
-# Squish — 2-bit Quantization Comparison Benchmark
+# Squish: 2-bit Quantization Comparison Benchmark
 
-> Phase 9C — sub-2-bit weight compression: INT4 vs VPTQ vs AQLM vs QuIP#
+> Phase 9C, sub-2-bit weight compression: INT4 vs VPTQ vs AQLM vs QuIP#
 > Weight-reconstruction metrics from synthetic 64×64 weight matrices.
 > Perplexity + TPS metrics require `--model-dir` (run on real hardware).
 
@@ -11,20 +11,20 @@
 This benchmark evaluates four near-2-bit weight-compression methods on the
 same weight matrix and reports:
 
-- **BPW** — bits per weight after compression (including index + scale overhead)
-- **SNR (dB)** — weight-reconstruction signal-to-noise ratio vs. original
-- **Compress ms** — wall-clock time for the offline compression step
-- **Decompress ms** — wall-clock time to reconstruct weights from compressed form
-- **Perplexity** — wikitext-2 perplexity (requires `--model-dir`, see below)
-- **TPS** — tokens/second during generation (requires `--model-dir`)
+- **BPW**: bits per weight after compression (including index + scale overhead)
+- **SNR (dB)**: weight-reconstruction signal-to-noise ratio vs. original
+- **Compress ms**: wall-clock time for the offline compression step
+- **Decompress ms**: wall-clock time to reconstruct weights from compressed form
+- **Perplexity**: wikitext-2 perplexity (requires `--model-dir`, see below)
+- **TPS**: tokens/second during generation (requires `--model-dir`)
 
 ---
 
-## Stage 1 — Weight Reconstruction (Synthetic 64×64 matrix)
+## Stage 1: Weight Reconstruction (Synthetic 64×64 matrix)
 
 > **Note:** The synthetic weight matrix (64×64 = 4096 parameters at σ=0.02)
 > matches the scale of a small linear layer.  BPW results are representative
-> of the compression scheme; SNR is a proxy for perplexity — higher is better.
+> of the compression scheme; SNR is a proxy for perplexity, higher is better.
 > Compress time for VPTQ reflects its k-means++ calibration cost (reduced
 > config for benchmark speed; production use targets k=256, group=8).
 
@@ -60,7 +60,7 @@ expected perplexity degradation relative to FP16 is:
 
 ---
 
-## Stage 2 — Model Evaluation (requires `--model-dir`)
+## Stage 2: Model Evaluation (requires `--model-dir`)
 
 Model-level perplexity and TPS have not been collected yet.
 To collect them, run with a downloaded model:
@@ -128,6 +128,6 @@ Results are written to `dev/results/quant_2bit_comparison.json`.
 
 ## See Also
 
-- [`CHANGELOG.md`](https://github.com/konjoai/squish/blob/main/CHANGELOG.md) — version history and shipped phases
-- VPTQ / QuIP# — experimental 2-bit paths, not in the shipped tree
+- [`CHANGELOG.md`](https://github.com/konjoai/squish/blob/main/CHANGELOG.md): version history and shipped phases
+- VPTQ / QuIP#: experimental 2-bit paths, not in the shipped tree
 - Raw results: `dev/results/quant_2bit_comparison.json` (generated locally)

@@ -1,5 +1,5 @@
 site_name: Squish
-site_description: "The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible."
+site_description: "Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible."
 site_url: https://squish.run
 repo_url: https://github.com/konjoai/squish
 repo_name: konjoai/squish

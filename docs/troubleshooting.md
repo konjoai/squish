@@ -35,7 +35,7 @@ Paste the output of all of the above when filing a bug.
 
 ---
 
-## 8 GB Mac — out of memory (OOM)
+## 8 GB Mac: out of memory (OOM)
 
 ### Symptoms
 
@@ -386,7 +386,7 @@ A valid response lists the locally cached models.
 | Error message | Likely cause | Fix |
 |---|---|---|
 | `Address already in use` on port 11435 | Another process (often a prior Squish instance) is bound to the port | `lsof -nP -iTCP:11435` → `kill <PID>` |
-| `jetsam` killed process | 8 GB OOM — model weights exceeded available unified memory | Switch to `--quant int4` or use a smaller model |
+| `jetsam` killed process | 8 GB OOM: model weights exceeded available unified memory | Switch to `--quant int4` or use a smaller model |
 | `MemoryError` during model load | Insufficient free unified memory | Close other apps; use `--quant int4 --ctx 2048` |
 | `RuntimeError: Tokenizer 'tiktoken' not found` | `tiktoken` package not installed | `pip install tiktoken` |
 | `OSError: Can't load tokenizer for '<model>'` | Incomplete model download | `squish rm <model>` → `squish pull <model>` |
@@ -404,5 +404,5 @@ A valid response lists the locally cached models.
 ## Still stuck?
 
 1. Re-run the [Quick diagnostics](#quick-diagnostics) commands and copy the full output.
-2. Check [open GitHub issues](https://github.com/konjoai/squish/issues) — your error may already have a fix.
+2. Check [open GitHub issues](https://github.com/konjoai/squish/issues): your error may already have a fix.
 3. Open a [GitHub Discussion](https://github.com/konjoai/squish/discussions) with the diagnostic output.

@@ -1,6 +1,6 @@
 # Using Squish as a Local Coding Agent in VS Code
 
-Run a fully offline LLM coding agent directly inside VS Code — no API keys, no data leaving your machine.
+Run a fully offline LLM coding agent directly inside VS Code: no API keys, no data leaving your machine.
 
 ---
 
@@ -16,7 +16,7 @@ Squish exposes an OpenAI-compatible API on `http://localhost:11435/v1`. Any VS C
 
 ---
 
-## Option 1 — Squish VS Code Extension (built-in)
+## Option 1: Squish VS Code Extension (built-in)
 
 The Squish repository ships a first-party VS Code extension at `extensions/vscode/squish-vscode/`.
 
@@ -33,7 +33,7 @@ npx vsce package          # produces squish-X.Y.Z.vsix
 code --install-extension squish-*.vsix
 ```
 
-Or open VS Code → `Ctrl+Shift+P` → **Extensions: Install from VSIX…** and select the `.vsix`.
+Or open VS Code, press `Ctrl+Shift+P`, choose **Extensions: Install from VSIX…**, and select the `.vsix`.
 
 ### First run
 
@@ -74,13 +74,13 @@ Open `settings.json` (or **Settings → Extensions → Squish**):
 
 ### Architecture note
 
-The extension runs entirely in the VS Code extension host — no webview-to-server direct calls. The host process fetches from `http://squish.host:squish.port`, relays streamed tokens to the webview via `postMessage`, and enforces a strict CSP (`default-src 'none'`). No network traffic leaves `localhost`.
+The extension runs entirely in the VS Code extension host: no webview-to-server direct calls. The host process fetches from `http://squish.host:squish.port`, relays streamed tokens to the webview via `postMessage`, and enforces a strict CSP (`default-src 'none'`). No network traffic leaves `localhost`.
 
 ---
 
-## Option 2 — Continue.dev (inline autocomplete + agent)
+## Option 2: Continue.dev (inline autocomplete + agent)
 
-[Continue.dev](https://continue.dev) is the most capable VS Code agent integration for local models.
+[Continue.dev](https://continue.dev) is a capable VS Code agent integration for local models.
 It provides:
 - Tab autocomplete (fills in code as you type)
 - `@codebase` context (indexes your repo for semantic search)
@@ -158,9 +158,9 @@ After configuring, open the Continue sidebar (default: `Ctrl+L`), then:
 
 ---
 
-## Option 3 — GitHub Copilot Chat with local Squish backend
+## Option 3: GitHub Copilot Chat with local Squish backend
 
-If you have GitHub Copilot installed, you can point it at Squish via VS Code's `languageModels` setting. This is the most experimental option but gives you the full Copilot UX with local inference.
+If you have GitHub Copilot installed, you can point it at Squish via VS Code's `languageModels` setting. This is the most experimental option, but it gives you the full Copilot UX with local inference.
 
 ### Setup
 
@@ -191,7 +191,7 @@ squish run qwen3:8b --agent
 
 ---
 
-## SquishBar — macOS Menu Bar App
+## SquishBar: macOS Menu Bar App
 
 The macOS menu bar app (`apps/macos/SquishBar`) handles the server lifecycle so you don't need a terminal open.
 
@@ -250,11 +250,11 @@ squish doctor --report  # saves shareable JSON snapshot to ~/.squish/
 
 ### Slow first response (TTFT)
 
-The first request after load includes model initialization. Subsequent requests are significantly faster due to the RadixTree prefix cache warming up. The `--agent` preset enables the Semantic Response Cache, which reduces TTFT by 40–60% on similar follow-up queries.
+The first request after load includes model initialization. Subsequent requests are faster as the RadixTree prefix cache warms up. The `--agent` preset enables the Semantic Response Cache, which reduces TTFT by 40–60% on similar follow-up queries.
 
 ### Model selector shows nothing
 
-The extension polls `/v1/models` — if the server is starting up, wait ~3 seconds and try again. Run `Squish: Select Model` again from `Ctrl+Shift+P`.
+The extension polls `/v1/models`. If the server is starting up, wait ~3 seconds and try again. Run `Squish: Select Model` again from `Ctrl+Shift+P`.
 
 ---
 
@@ -266,4 +266,4 @@ npm install
 npm test          # runs 26 Jest tests in <5 seconds, no server required
 ```
 
-All tests mock the HTTP layer — no live squish server needed for CI.
+All tests mock the HTTP layer, so no live squish server is needed for CI.

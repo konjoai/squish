@@ -1,6 +1,6 @@
 # MoE Models Guide
 
-Squish has first-class support for Mixture-of-Experts (MoE) models. These models
+Squish supports Mixture-of-Experts (MoE) models. These models
 have a large total parameter count but only activate a small subset (the "active
 parameters") during each forward pass, making them much faster than their total size
 suggests.
@@ -29,7 +29,7 @@ models so you can immediately identify them.
 A standard 30B dense model requires ~80 GB of VRAM and is not feasible on consumer
 hardware. `qwen3:30b-a3b` uses a sparse MoE architecture where 30B parameters are
 distributed across expert networks, but each token only routes through ~3B worth of
-parameters. At INT4 compression, the total weight size is ~5 GB — comparable to a
+parameters. At INT4 compression, the total weight size is ~5 GB, comparable to a
 dense 3B model but with 30B total capacity.
 
 ---
@@ -139,7 +139,7 @@ curl http://localhost:11435/v1/chat/completions \
 | INT4 + agent-kv | ~42 | ~6 GB |
 | INT4 + agent-kv + moe-lookahead | ~46 | ~6 GB |
 
-*(Simulated estimates — actual numbers depend on context length and model.)*
+*(Simulated estimates: actual numbers depend on context length and model.)*
 
 ---
 
