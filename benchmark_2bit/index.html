@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
+        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
       
       
       
@@ -23,7 +23,7 @@
     
     
       
-        <title>Squish — 2-bit Quantization Comparison Benchmark - Squish</title>
+        <title>Squish: 2-bit Quantization Comparison Benchmark - Squish</title>
       
     
     
@@ -109,7 +109,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Squish — 2-bit Quantization Comparison Benchmark
+              Squish: 2-bit Quantization Comparison Benchmark
             
           </span>
         </div>
@@ -577,12 +577,12 @@
   <a href="#stage-1-weight-reconstruction-synthetic-6464-matrix" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Stage 1 — Weight Reconstruction (Synthetic 64×64 matrix)
+        Stage 1: Weight Reconstruction (Synthetic 64×64 matrix)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Stage 1 — Weight Reconstruction (Synthetic 64×64 matrix)">
+    <nav class="md-nav" aria-label="Stage 1: Weight Reconstruction (Synthetic 64×64 matrix)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -616,7 +616,7 @@
   <a href="#stage-2-model-evaluation-requires-model-dir" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Stage 2 — Model Evaluation (requires --model-dir)
+        Stage 2: Model Evaluation (requires --model-dir)
       
     </span>
   </a>
@@ -687,9 +687,9 @@
   
 
 
-<h1 id="squish-2-bit-quantization-comparison-benchmark">Squish — 2-bit Quantization Comparison Benchmark<a class="headerlink" href="#squish-2-bit-quantization-comparison-benchmark" title="Permanent link">&para;</a></h1>
+<h1 id="squish-2-bit-quantization-comparison-benchmark">Squish: 2-bit Quantization Comparison Benchmark<a class="headerlink" href="#squish-2-bit-quantization-comparison-benchmark" title="Permanent link">&para;</a></h1>
 <blockquote>
-<p>Phase 9C — sub-2-bit weight compression: INT4 vs VPTQ vs AQLM vs QuIP#
+<p>Phase 9C, sub-2-bit weight compression: INT4 vs VPTQ vs AQLM vs QuIP#
 Weight-reconstruction metrics from synthetic 64×64 weight matrices.
 Perplexity + TPS metrics require <code>--model-dir</code> (run on real hardware).</p>
 </blockquote>
@@ -698,19 +698,19 @@ Perplexity + TPS metrics require <code>--model-dir</code> (run on real hardware)
 <p>This benchmark evaluates four near-2-bit weight-compression methods on the
 same weight matrix and reports:</p>
 <ul>
-<li><strong>BPW</strong> — bits per weight after compression (including index + scale overhead)</li>
-<li><strong>SNR (dB)</strong> — weight-reconstruction signal-to-noise ratio vs. original</li>
-<li><strong>Compress ms</strong> — wall-clock time for the offline compression step</li>
-<li><strong>Decompress ms</strong> — wall-clock time to reconstruct weights from compressed form</li>
-<li><strong>Perplexity</strong> — wikitext-2 perplexity (requires <code>--model-dir</code>, see below)</li>
-<li><strong>TPS</strong> — tokens/second during generation (requires <code>--model-dir</code>)</li>
+<li><strong>BPW</strong>: bits per weight after compression (including index + scale overhead)</li>
+<li><strong>SNR (dB)</strong>: weight-reconstruction signal-to-noise ratio vs. original</li>
+<li><strong>Compress ms</strong>: wall-clock time for the offline compression step</li>
+<li><strong>Decompress ms</strong>: wall-clock time to reconstruct weights from compressed form</li>
+<li><strong>Perplexity</strong>: wikitext-2 perplexity (requires <code>--model-dir</code>, see below)</li>
+<li><strong>TPS</strong>: tokens/second during generation (requires <code>--model-dir</code>)</li>
 </ul>
 <hr />
-<h2 id="stage-1-weight-reconstruction-synthetic-6464-matrix">Stage 1 — Weight Reconstruction (Synthetic 64×64 matrix)<a class="headerlink" href="#stage-1-weight-reconstruction-synthetic-6464-matrix" title="Permanent link">&para;</a></h2>
+<h2 id="stage-1-weight-reconstruction-synthetic-6464-matrix">Stage 1: Weight Reconstruction (Synthetic 64×64 matrix)<a class="headerlink" href="#stage-1-weight-reconstruction-synthetic-6464-matrix" title="Permanent link">&para;</a></h2>
 <blockquote>
 <p><strong>Note:</strong> The synthetic weight matrix (64×64 = 4096 parameters at σ=0.02)
 matches the scale of a small linear layer.  BPW results are representative
-of the compression scheme; SNR is a proxy for perplexity — higher is better.
+of the compression scheme; SNR is a proxy for perplexity, higher is better.
 Compress time for VPTQ reflects its k-means++ calibration cost (reduced
 config for benchmark speed; production use targets k=256, group=8).</p>
 </blockquote>
@@ -824,7 +824,7 @@ expected perplexity degradation relative to FP16 is:</p>
 </tbody>
 </table>
 <hr />
-<h2 id="stage-2-model-evaluation-requires-model-dir">Stage 2 — Model Evaluation (requires <code>--model-dir</code>)<a class="headerlink" href="#stage-2-model-evaluation-requires-model-dir" title="Permanent link">&para;</a></h2>
+<h2 id="stage-2-model-evaluation-requires-model-dir">Stage 2: Model Evaluation (requires <code>--model-dir</code>)<a class="headerlink" href="#stage-2-model-evaluation-requires-model-dir" title="Permanent link">&para;</a></h2>
 <p>Model-level perplexity and TPS have not been collected yet.
 To collect them, run with a downloaded model:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>python3<span class="w"> </span>dev/benchmarks/bench_2bit.py<span class="w"> </span><span class="se">\</span>
@@ -908,8 +908,8 @@ For a high-fidelity comparison on large weight matrices, increase:</p>
 <hr />
 <h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="https://github.com/konjoai/squish/blob/main/CHANGELOG.md"><code>CHANGELOG.md</code></a> — version history and shipped phases</li>
-<li>VPTQ / QuIP# — experimental 2-bit paths, not in the shipped tree</li>
+<li><a href="https://github.com/konjoai/squish/blob/main/CHANGELOG.md"><code>CHANGELOG.md</code></a>: version history and shipped phases</li>
+<li>VPTQ / QuIP#: experimental 2-bit paths, not in the shipped tree</li>
 <li>Raw results: <code>dev/results/quant_2bit_comparison.json</code> (generated locally)</li>
 </ul>
 

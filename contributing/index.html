@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
+        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
       
       
       
@@ -847,7 +847,7 @@
 <p>Thank you for your interest in contributing!  Squish is an Apple Silicon–only
 local LLM inference library.  Contributions that improve load-time performance,
 accuracy fidelity, or API compatibility are especially welcome.</p>
-<p>Not sure where to start? Jump into <a href="https://discord.gg/squish">Discord</a> or browse <a href="https://github.com/konjoai/squish/discussions">GitHub Discussions</a> — we're friendly and responsive.</p>
+<p>Not sure where to start? Jump into <a href="https://discord.gg/squish">Discord</a> or browse <a href="https://github.com/konjoai/squish/discussions">GitHub Discussions</a>. Questions are welcome.</p>
 <hr />
 <h2 id="good-first-issues">Good First Issues<a class="headerlink" href="#good-first-issues" title="Permanent link">&para;</a></h2>
 <p>Look for issues tagged <a href="https://github.com/konjoai/squish/labels/good%20first%20issue"><code>good first issue</code></a> on GitHub.  Common entry points:</p>
@@ -901,15 +901,15 @@ accuracy fidelity, or API compatibility are especially welcome.</p>
 <h2 id="running-tests">Running Tests<a class="headerlink" href="#running-tests" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-v<span class="w">          </span><span class="c1"># or:  make test</span>
 </code></pre></div>
-<p>The test suite does <strong>not</strong> require model weights — it uses mocked tensors and
+<p>The test suite does <strong>not</strong> require model weights: it uses mocked tensors and
 stub loaders.  Tests that do require weights are skipped automatically when
 <code>~/models/</code> is absent.</p>
 <h3 id="coverage">Coverage<a class="headerlink" href="#coverage" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>make<span class="w"> </span>coverage<span class="w">             </span><span class="c1"># terminal report (term-missing) + coverage.xml</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>make<span class="w"> </span>coverage-html<span class="w">        </span><span class="c1"># also writes htmlcov/index.html</span>
 </code></pre></div>
-<p>Coverage is <strong>measured on Apple Silicon</strong> so the MLX inference paths actually
-execute — the bulk of <code>squish/</code> cannot run on a Linux runner, so a Linux-only
+<p>Coverage is <strong>measured on Apple Silicon</strong> so the MLX inference paths
+execute: the bulk of <code>squish/</code> cannot run on a Linux runner, so a Linux-only
 number understates real coverage.  The <code>make</code> targets set <code>CI=1</code> (which lifts
 the sandbox MLX-import guard) and exclude the handful of files that SIGABRT at
 collection under Metal.  CI runs the same measurement in the <strong>Coverage (Apple
@@ -925,10 +925,10 @@ the badge at the top of the README reflects <code>main</code>.</p>
 <hr />
 <h2 id="what-makes-a-good-pr">What Makes a Good PR<a class="headerlink" href="#what-makes-a-good-pr" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Focused</strong> — one logical change per PR</li>
-<li><strong>No hardcoded paths</strong> — use <code>Path.home()</code> or environment variables</li>
-<li><strong>Tests pass</strong> — <code>pytest tests/</code> green before opening the PR</li>
-<li><strong>No model weights committed</strong> — <code>models/</code> is gitignored for a reason</li>
+<li><strong>Focused</strong>: one logical change per PR</li>
+<li><strong>No hardcoded paths</strong>: use <code>Path.home()</code> or environment variables</li>
+<li><strong>Tests pass</strong>: <code>pytest tests/</code> green before opening the PR</li>
+<li><strong>No model weights committed</strong>: <code>models/</code> is gitignored for a reason</li>
 <li><strong>Performance-sensitive changes</strong> include a before/after <code>squish bench</code> run</li>
 </ul>
 <hr />

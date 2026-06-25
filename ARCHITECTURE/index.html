@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
+        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
       
       
       
@@ -641,7 +641,7 @@
   <a href="#7-three-tier-loading-strategy-decision-tree" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Three-Tier Loading Strategy — Decision Tree
+        7. Three-Tier Loading Strategy: Decision Tree
       
     </span>
   </a>
@@ -829,7 +829,7 @@
   <a href="#7-three-tier-loading-strategy-decision-tree" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Three-Tier Loading Strategy — Decision Tree
+        7. Three-Tier Loading Strategy: Decision Tree
       
     </span>
   </a>
@@ -889,13 +889,13 @@
   
 
 
-<h1 id="squish-architecture-technical-deep-dive">Squish Architecture — Technical Deep Dive<a class="headerlink" href="#squish-architecture-technical-deep-dive" title="Permanent link">&para;</a></h1>
+<h1 id="squish-architecture-technical-deep-dive">Squish Architecture: Technical Deep Dive<a class="headerlink" href="#squish-architecture-technical-deep-dive" title="Permanent link">&para;</a></h1>
 <blockquote>
 <p><strong>One-sentence summary</strong>: Squish separates the <em>storage format</em> of a transformer's
 weight tensors from their <em>runtime format</em>, enabling aggressive compression at rest,
 lossless reconstruction on demand, and Metal-native caching that loads
-a Qwen2.5-1.5B model in <strong>0.33–0.53 seconds</strong> — <strong>54× faster</strong> than a cold
-<code>mlx_lm</code> load (28.8 s) and 3.7× faster than a warm one — while using
+a Qwen2.5-1.5B model in <strong>0.33–0.53 seconds</strong> (<strong>54× faster</strong> than a cold
+<code>mlx_lm</code> load (28.8 s) and 3.7× faster than a warm one) while using
 <strong>160 MB of peak additional RAM</strong> versus the 2.4 GB typically consumed during
 a standard load.</p>
 <p><strong>Note</strong>: The Tier 2 MLX safetensors cache requires ~34 GB RAM to build and
@@ -905,7 +905,7 @@ the 1.5B model on hardware with sufficient RAM to build the Tier 2 cache.</p>
 </blockquote>
 <hr />
 <h2 id="1-the-problem-with-status-quo-model-distribution">1. The Problem with Status-Quo Model Distribution<a class="headerlink" href="#1-the-problem-with-status-quo-model-distribution" title="Permanent link">&para;</a></h2>
-<p>Every serious open-source model—Llama, Gemma, Mistral, Qwen, Falcon—ships as
+<p>Every serious open-source model (Llama, Gemma, Mistral, Qwen, Falcon) ships as
 one or more <strong>HuggingFace safetensors shards</strong>.  The format is a flat binary blob:
 each tensor is stored in the dtype the training run used (typically bfloat16 or
 float16), preceded by a JSON header describing name, dtype, and shape.</p>
@@ -972,10 +972,10 @@ internally, so zero conversion occurs at load time.</p>
 3. Materialise all arrays into a Python dict before <code>model.load_weights()</code>
 4. Apply dtype promotions for any mixed-precision shards</p>
 <p>Squish's <code>_load_mlx_cache()</code> path:
-1. <code>_instantiate_model()</code> — builds MLX graph skeleton from <code>config.json</code>
-2. <code>mx.load()</code> — single syscall, OS mmap, Metal GPU mapping
-3. <code>model.load_weights()</code> — inject by name
-4. <code>AutoTokenizer.from_pretrained()</code> — cached by transformers' local disk cache</p>
+1. <code>_instantiate_model()</code>: builds MLX graph skeleton from <code>config.json</code>
+2. <code>mx.load()</code>: single syscall, OS mmap, Metal GPU mapping
+3. <code>model.load_weights()</code>: inject by name
+4. <code>AutoTokenizer.from_pretrained()</code>: cached by transformers' local disk cache</p>
 <hr />
 <h2 id="3-the-vectro-int8-quantization-kernel">3. The Vectro INT8 Quantization Kernel<a class="headerlink" href="#3-the-vectro-int8-quantization-kernel" title="Permanent link">&para;</a></h2>
 <p>Vectro uses <strong>asymmetric per-row INT8 scalar quantization</strong>:</p>
@@ -994,14 +994,14 @@ internally, so zero conversion occurs at load time.</p>
 - Original: 4 × n_rows × n_cols bytes
 - Compressed: 1 × n_rows × n_cols + 4 × n_rows ≈ 1 byte/element (for wide matrices)
 - Theoretical: 4× compression on eligible tensors</p>
-<p><strong>Why not all tensors are quantised</strong> (89 passthrough):<br />
+<p><strong>Why not all tensors are quantised</strong> (89 passthrough):
 Embedding tables, output projection (<code>lm_head</code>), layer normalisation weights, and
 bias vectors are stored as-is (float16).  These tensors either have very few
 parameters (biases, norms) or are so sensitive to quantisation noise that any
 distortion measurably degrades perplexity (<code>embed_tokens</code> with 151 936 rows).</p>
 <p>The 249 quantised tensors are the large attention (<code>q/k/v_proj</code>, <code>o_proj</code>) and
 feed-forward (<code>gate_proj</code>, <code>up_proj</code>, <code>down_proj</code>) matrices where INT8 rows
-introduce sub-0.02% cosine distance from the original — within training noise.</p>
+introduce sub-0.02% cosine distance from the original, within training noise.</p>
 <hr />
 <h2 id="4-the-npy-dir-storage-format">4. The npy-dir Storage Format<a class="headerlink" href="#4-the-npy-dir-storage-format" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>{compressed_dir}/
@@ -1030,15 +1030,15 @@ introduce sub-0.02% cosine distance from the original — within training noise.
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Savings: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;savings_pct&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">)</span>
 </code></pre></div></p>
 <p><strong>Why .npy over .npz</strong>:
-- <code>.npz</code> files apply zlib compression — takes 9 minutes to write and 9 seconds to
+- <code>.npz</code> files apply zlib compression: takes 9 minutes to write and 9 seconds to
   decompress at load time.
-- <code>.npy</code> files are raw binary with a tiny header — memory-mappable, zero
+- <code>.npy</code> files are raw binary with a tiny header: memory-mappable, zero
   decompression cost, and the per-file overhead is amortised over 338 tensors.
 - The INT8 quantisation already provides the compression; zlib on top of int8
   data yields negligible additional savings.</p>
 <p><strong>Memory-mapped loading</strong> (<code>mmap_mode='r'</code>):
-- <code>np.load(path, mmap_mode='r')</code> returns a numpy memmap — the OS does not read
-  the file contents until a byte is actually accessed.
+- <code>np.load(path, mmap_mode='r')</code> returns a numpy memmap: the OS does not read
+  the file contents until a byte is accessed.
 - For non-Tier-2 loads, only the bytes needed to construct <code>mx.array()</code> are
   ever paged in, keeping peak RSS small.</p>
 <hr />
@@ -1075,10 +1075,10 @@ performs.</p>
 - <strong>73–100% token agreement</strong> over 20-token sequences (natural output variation
   from INT8 noise compounds over a long sequence, similar to temperature &gt; 0)</p>
 <p>Industry-standard benchmarks (ARC-Easy, HellaSwag, MMLU) show &lt;2% accuracy
-delta vs the uncompressed model — within the random variance of different
+delta vs the uncompressed model, within the random variance of different
 evaluation seeds.</p>
 <hr />
-<h2 id="7-three-tier-loading-strategy-decision-tree">7. Three-Tier Loading Strategy — Decision Tree<a class="headerlink" href="#7-three-tier-loading-strategy-decision-tree" title="Permanent link">&para;</a></h2>
+<h2 id="7-three-tier-loading-strategy-decision-tree">7. Three-Tier Loading Strategy: Decision Tree<a class="headerlink" href="#7-three-tier-loading-strategy-decision-tree" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>load_compressed_model(compressed_dir, model_dir)
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>        │
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>        ├── .squish_4bit_ready exists?
@@ -1104,8 +1104,8 @@ evaluation seeds.</p>
 <a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>                  ├── write .squish_ready
 <a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>                  └── write finalized/.ready
 </code></pre></div>
-<p>The first load is a one-time cost.  Every subsequent invocation — in any Python
-process on the same machine — hits Tier 2 and loads in sub-second time.</p>
+<p>The first load is a one-time cost.  Every subsequent invocation, in any Python
+process on the same machine, hits Tier 2 and loads in sub-second time.</p>
 <hr />
 <h2 id="8-extension-points">8. Extension Points<a class="headerlink" href="#8-extension-points" title="Permanent link">&para;</a></h2>
 <table>
@@ -1254,18 +1254,18 @@ process on the same machine — hits Tier 2 and loads in sub-second time.</p>
 4-bit / GGUF accuracy estimates are from published benchmarks; exact numbers vary by implementation.</p>
 <p>Key insight: <strong>Squish achieves within 1–2% of reference accuracy while loading an order
 of magnitude faster and using 15× less RAM during the load phase</strong> (against a true cold
-<code>mlx_lm</code> first boot — 28.8 s with a page-cache miss — the load speedup is 54×; see the
+<code>mlx_lm</code> first boot, 28.8 s with a page-cache miss, the load speedup is 54×; see the
 <a href="../paper/">paper</a> §4.1).</p>
 <hr />
 <h2 id="10-further-reading">10. Further reading<a class="headerlink" href="#10-further-reading" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><a href="../paper/">The paper</a></strong> — full methodology, thermal-controlled benchmarks
+<li><strong><a href="../paper/">The paper</a></strong>: full methodology, thermal-controlled benchmarks
   (§4.4), accuracy gates, and the decode-acceleration ablation.</li>
-<li><strong><a href="https://github.com/konjoai/squish/blob/main/BENCHMARKS.md">Benchmarks</a></strong> — reproducible numbers with commands.</li>
-<li><strong><a href="https://github.com/konjoai/squish/blob/main/MODULES.md">Module reference</a></strong> — the 100+ composable optimisation modules.</li>
+<li><strong><a href="https://github.com/konjoai/squish/blob/main/BENCHMARKS.md">Benchmarks</a></strong>: reproducible numbers with commands.</li>
+<li><strong><a href="https://github.com/konjoai/squish/blob/main/MODULES.md">Module reference</a></strong>: the composable optimisation modules.</li>
 </ul>
 <hr />
-<p><em>Squish is source-available under <a href="https://github.com/konjoai/squish/blob/main/LICENSE">BUSL-1.1</a> — free for personal and
+<p><em>Squish is source-available under <a href="https://github.com/konjoai/squish/blob/main/LICENSE">BUSL-1.1</a>: free for personal and
 non-production use.</em></p>
 
 

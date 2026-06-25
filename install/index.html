@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
+        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
       
       
       
@@ -477,7 +477,7 @@
   <a href="#option-1-homebrew-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 1 — Homebrew (recommended)
+        Option 1: Homebrew (recommended)
       
     </span>
   </a>
@@ -488,7 +488,7 @@
   <a href="#option-2-pip" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 2 — pip
+        Option 2: pip
       
     </span>
   </a>
@@ -499,7 +499,7 @@
   <a href="#option-3-curl-installer" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 3 — curl installer
+        Option 3: curl installer
       
     </span>
   </a>
@@ -510,7 +510,7 @@
   <a href="#option-4-from-source" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 4 — From source
+        Option 4: From source
       
     </span>
   </a>
@@ -696,7 +696,7 @@
   <a href="#option-1-homebrew-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 1 — Homebrew (recommended)
+        Option 1: Homebrew (recommended)
       
     </span>
   </a>
@@ -707,7 +707,7 @@
   <a href="#option-2-pip" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 2 — pip
+        Option 2: pip
       
     </span>
   </a>
@@ -718,7 +718,7 @@
   <a href="#option-3-curl-installer" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 3 — curl installer
+        Option 3: curl installer
       
     </span>
   </a>
@@ -729,7 +729,7 @@
   <a href="#option-4-from-source" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 4 — From source
+        Option 4: From source
       
     </span>
   </a>
@@ -792,14 +792,14 @@
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
 <p>Squish runs on <strong>macOS with Apple Silicon (M1–M5)</strong>. Pick the install method that suits you.</p>
 <hr />
-<h2 id="option-1-homebrew-recommended">Option 1 — Homebrew (recommended)<a class="headerlink" href="#option-1-homebrew-recommended" title="Permanent link">&para;</a></h2>
+<h2 id="option-1-homebrew-recommended">Option 1: Homebrew (recommended)<a class="headerlink" href="#option-1-homebrew-recommended" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>brew<span class="w"> </span>install<span class="w"> </span>konjoai/squish/squish
 </code></pre></div>
 <p>Homebrew manages dependencies, creates the <code>squish</code> binary in your <code>PATH</code>, and makes upgrades easy:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>brew<span class="w"> </span>upgrade<span class="w"> </span>squish
 </code></pre></div>
 <hr />
-<h2 id="option-2-pip">Option 2 — pip<a class="headerlink" href="#option-2-pip" title="Permanent link">&para;</a></h2>
+<h2 id="option-2-pip">Option 2: pip<a class="headerlink" href="#option-2-pip" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span>squish-ai
 </code></pre></div>
 <p>Requires Python 3.10+ and installs the <code>squish</code> CLI entry point automatically.
@@ -810,7 +810,7 @@ both <code>squish</code>.</p>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>pip<span class="w"> </span>install<span class="w"> </span>squish-ai
 </code></pre></div>
 <hr />
-<h2 id="option-3-curl-installer">Option 3 — curl installer<a class="headerlink" href="#option-3-curl-installer" title="Permanent link">&para;</a></h2>
+<h2 id="option-3-curl-installer">Option 3: curl installer<a class="headerlink" href="#option-3-curl-installer" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-sSL<span class="w"> </span>https://raw.githubusercontent.com/konjoai/squish/main/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
 </code></pre></div>
 <div class="admonition warning">
@@ -818,7 +818,7 @@ both <code>squish</code>.</p>
 <p>Piping <code>curl</code> to <code>bash</code> executes arbitrary code. Review <a href="https://github.com/konjoai/squish/blob/main/install.sh">install.sh</a> first.</p>
 </div>
 <hr />
-<h2 id="option-4-from-source">Option 4 — From source<a class="headerlink" href="#option-4-from-source" title="Permanent link">&para;</a></h2>
+<h2 id="option-4-from-source">Option 4: From source<a class="headerlink" href="#option-4-from-source" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/konjoai/squish
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">cd</span><span class="w"> </span>squish
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>

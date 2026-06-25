@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
+        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
       
       
       
@@ -710,7 +710,7 @@
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">}</span>
 </code></pre></div>
 <blockquote>
-<p><strong>Note:</strong> Squish does not require an API key by default. Set <code>"apiKey"</code> to any non-empty string — the value is ignored unless you started Squish with <code>--api-key</code>.</p>
+<p><strong>Note:</strong> Squish does not require an API key by default. Set <code>"apiKey"</code> to any non-empty string; the value is ignored unless you started Squish with <code>--api-key</code>.</p>
 </blockquote>
 <h3 id="3-run-openclaw">3. Run OpenClaw<a class="headerlink" href="#3-run-openclaw" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>openclaw<span class="w"> </span>run<span class="w"> </span><span class="s2">&quot;Summarise the README in this repo&quot;</span>
@@ -776,10 +776,10 @@
 <p>Squish supports server-sent events (SSE) streaming (<code>"stream": true</code>). OpenClaw enables streaming by default and will receive tokens incrementally.</p>
 <hr />
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
-<p><strong>"Connection refused"</strong> — Squish is not running. Start it with <code>squish serve &lt;model&gt;</code>.</p>
-<p><strong>"model not found"</strong> — The model ID in your OpenClaw config does not match the model Squish loaded. Use <code>curl http://localhost:11435/v1/models</code> to see the available model IDs, then update your config.</p>
-<p><strong>Slow first response</strong> — On the first run after compression, Squish builds an optimised weight cache. Subsequent starts load in 3–5 seconds.</p>
-<p><strong>Tool calls return malformed JSON</strong> — This is a model-capability issue, not a Squish or OpenClaw bug. Switch to <code>qwen2.5:7b</code> or a larger model. See <a href="../../ARCHITECTURE/">Model Capability Reality Checks</a>.</p>
+<p><strong>"Connection refused"</strong>: Squish is not running. Start it with <code>squish serve &lt;model&gt;</code>.</p>
+<p><strong>"model not found"</strong>: The model ID in your OpenClaw config does not match the model Squish loaded. Use <code>curl http://localhost:11435/v1/models</code> to see the available model IDs, then update your config.</p>
+<p><strong>Slow first response</strong>: On the first run after compression, Squish builds an optimised weight cache. Subsequent starts load in 3–5 seconds.</p>
+<p><strong>Tool calls return malformed JSON</strong>: This is a model-capability issue, not a Squish or OpenClaw bug. Switch to <code>qwen2.5:7b</code> or a larger model. See <a href="../../ARCHITECTURE/">Model Capability Reality Checks</a>.</p>
 
 
 

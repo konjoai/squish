@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
+        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
       
       
       
@@ -577,12 +577,12 @@
   <a href="#option-1-squish-vs-code-extension-built-in" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 1 — Squish VS Code Extension (built-in)
+        Option 1: Squish VS Code Extension (built-in)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Option 1 — Squish VS Code Extension (built-in)">
+    <nav class="md-nav" aria-label="Option 1: Squish VS Code Extension (built-in)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -649,12 +649,12 @@
   <a href="#option-2-continuedev-inline-autocomplete-agent" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 2 — Continue.dev (inline autocomplete + agent)
+        Option 2: Continue.dev (inline autocomplete + agent)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Option 2 — Continue.dev (inline autocomplete + agent)">
+    <nav class="md-nav" aria-label="Option 2: Continue.dev (inline autocomplete + agent)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -710,12 +710,12 @@
   <a href="#option-3-github-copilot-chat-with-local-squish-backend" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 3 — GitHub Copilot Chat with local Squish backend
+        Option 3: GitHub Copilot Chat with local Squish backend
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Option 3 — GitHub Copilot Chat with local Squish backend">
+    <nav class="md-nav" aria-label="Option 3: GitHub Copilot Chat with local Squish backend">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -738,12 +738,12 @@
   <a href="#squishbar-macos-menu-bar-app" class="md-nav__link">
     <span class="md-ellipsis">
       
-        SquishBar — macOS Menu Bar App
+        SquishBar: macOS Menu Bar App
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="SquishBar — macOS Menu Bar App">
+    <nav class="md-nav" aria-label="SquishBar: macOS Menu Bar App">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -866,7 +866,7 @@
 
 
 <h1 id="using-squish-as-a-local-coding-agent-in-vs-code">Using Squish as a Local Coding Agent in VS Code<a class="headerlink" href="#using-squish-as-a-local-coding-agent-in-vs-code" title="Permanent link">&para;</a></h1>
-<p>Run a fully offline LLM coding agent directly inside VS Code — no API keys, no data leaving your machine.</p>
+<p>Run a fully offline LLM coding agent directly inside VS Code: no API keys, no data leaving your machine.</p>
 <hr />
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>Squish exposes an OpenAI-compatible API on <code>http://localhost:11435/v1</code>. Any VS Code extension that supports a custom LLM endpoint works as-is. Three paths are covered here, from simplest to most powerful:</p>
@@ -897,7 +897,7 @@
 </tbody>
 </table>
 <hr />
-<h2 id="option-1-squish-vs-code-extension-built-in">Option 1 — Squish VS Code Extension (built-in)<a class="headerlink" href="#option-1-squish-vs-code-extension-built-in" title="Permanent link">&para;</a></h2>
+<h2 id="option-1-squish-vs-code-extension-built-in">Option 1: Squish VS Code Extension (built-in)<a class="headerlink" href="#option-1-squish-vs-code-extension-built-in" title="Permanent link">&para;</a></h2>
 <p>The Squish repository ships a first-party VS Code extension at <code>extensions/vscode/squish-vscode/</code>.</p>
 <h3 id="install-from-source">Install from source<a class="headerlink" href="#install-from-source" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># 1. Build the extension package</span>
@@ -909,7 +909,7 @@
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># 2. Install in VS Code</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>code<span class="w"> </span>--install-extension<span class="w"> </span>squish-*.vsix
 </code></pre></div>
-<p>Or open VS Code → <code>Ctrl+Shift+P</code> → <strong>Extensions: Install from VSIX…</strong> and select the <code>.vsix</code>.</p>
+<p>Or open VS Code, press <code>Ctrl+Shift+P</code>, choose <strong>Extensions: Install from VSIX…</strong>, and select the <code>.vsix</code>.</p>
 <h3 id="first-run">First run<a class="headerlink" href="#first-run" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Start your model server:
@@ -967,10 +967,10 @@
 <a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="p">}</span>
 </code></pre></div>
 <h3 id="architecture-note">Architecture note<a class="headerlink" href="#architecture-note" title="Permanent link">&para;</a></h3>
-<p>The extension runs entirely in the VS Code extension host — no webview-to-server direct calls. The host process fetches from <code>http://squish.host:squish.port</code>, relays streamed tokens to the webview via <code>postMessage</code>, and enforces a strict CSP (<code>default-src 'none'</code>). No network traffic leaves <code>localhost</code>.</p>
+<p>The extension runs entirely in the VS Code extension host: no webview-to-server direct calls. The host process fetches from <code>http://squish.host:squish.port</code>, relays streamed tokens to the webview via <code>postMessage</code>, and enforces a strict CSP (<code>default-src 'none'</code>). No network traffic leaves <code>localhost</code>.</p>
 <hr />
-<h2 id="option-2-continuedev-inline-autocomplete-agent">Option 2 — Continue.dev (inline autocomplete + agent)<a class="headerlink" href="#option-2-continuedev-inline-autocomplete-agent" title="Permanent link">&para;</a></h2>
-<p><a href="https://continue.dev">Continue.dev</a> is the most capable VS Code agent integration for local models.
+<h2 id="option-2-continuedev-inline-autocomplete-agent">Option 2: Continue.dev (inline autocomplete + agent)<a class="headerlink" href="#option-2-continuedev-inline-autocomplete-agent" title="Permanent link">&para;</a></h2>
+<p><a href="https://continue.dev">Continue.dev</a> is a capable VS Code agent integration for local models.
 It provides:
 - Tab autocomplete (fills in code as you type)
 - <code>@codebase</code> context (indexes your repo for semantic search)
@@ -1039,8 +1039,8 @@ It provides:
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>/review Does this implementation handle the edge case where...
 </code></pre></div>
 <hr />
-<h2 id="option-3-github-copilot-chat-with-local-squish-backend">Option 3 — GitHub Copilot Chat with local Squish backend<a class="headerlink" href="#option-3-github-copilot-chat-with-local-squish-backend" title="Permanent link">&para;</a></h2>
-<p>If you have GitHub Copilot installed, you can point it at Squish via VS Code's <code>languageModels</code> setting. This is the most experimental option but gives you the full Copilot UX with local inference.</p>
+<h2 id="option-3-github-copilot-chat-with-local-squish-backend">Option 3: GitHub Copilot Chat with local Squish backend<a class="headerlink" href="#option-3-github-copilot-chat-with-local-squish-backend" title="Permanent link">&para;</a></h2>
+<p>If you have GitHub Copilot installed, you can point it at Squish via VS Code's <code>languageModels</code> setting. This is the most experimental option, but it gives you the full Copilot UX with local inference.</p>
 <h3 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h3>
 <p>Add to <code>settings.json</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
@@ -1063,7 +1063,7 @@ It provides:
 <p>Then configure VS Code to use the local endpoint as shown above.</p>
 </blockquote>
 <hr />
-<h2 id="squishbar-macos-menu-bar-app">SquishBar — macOS Menu Bar App<a class="headerlink" href="#squishbar-macos-menu-bar-app" title="Permanent link">&para;</a></h2>
+<h2 id="squishbar-macos-menu-bar-app">SquishBar: macOS Menu Bar App<a class="headerlink" href="#squishbar-macos-menu-bar-app" title="Permanent link">&para;</a></h2>
 <p>The macOS menu bar app (<code>apps/macos/SquishBar</code>) handles the server lifecycle so you don't need a terminal open.</p>
 <h3 id="build">Build<a class="headerlink" href="#build" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">cd</span><span class="w"> </span>apps/macos/SquishBar
@@ -1138,16 +1138,16 @@ It provides:
 <li>Restart VS Code after editing <code>~/.continue/config.json</code></li>
 </ol>
 <h3 id="slow-first-response-ttft">Slow first response (TTFT)<a class="headerlink" href="#slow-first-response-ttft" title="Permanent link">&para;</a></h3>
-<p>The first request after load includes model initialization. Subsequent requests are significantly faster due to the RadixTree prefix cache warming up. The <code>--agent</code> preset enables the Semantic Response Cache, which reduces TTFT by 40–60% on similar follow-up queries.</p>
+<p>The first request after load includes model initialization. Subsequent requests are faster as the RadixTree prefix cache warms up. The <code>--agent</code> preset enables the Semantic Response Cache, which reduces TTFT by 40–60% on similar follow-up queries.</p>
 <h3 id="model-selector-shows-nothing">Model selector shows nothing<a class="headerlink" href="#model-selector-shows-nothing" title="Permanent link">&para;</a></h3>
-<p>The extension polls <code>/v1/models</code> — if the server is starting up, wait ~3 seconds and try again. Run <code>Squish: Select Model</code> again from <code>Ctrl+Shift+P</code>.</p>
+<p>The extension polls <code>/v1/models</code>. If the server is starting up, wait ~3 seconds and try again. Run <code>Squish: Select Model</code> again from <code>Ctrl+Shift+P</code>.</p>
 <hr />
 <h2 id="development-extension-tests">Development: Extension Tests<a class="headerlink" href="#development-extension-tests" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nb">cd</span><span class="w"> </span>extensions/vscode/squish-vscode
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>npm<span class="w"> </span>install
 <a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>npm<span class="w"> </span><span class="nb">test</span><span class="w">          </span><span class="c1"># runs 26 Jest tests in &lt;5 seconds, no server required</span>
 </code></pre></div>
-<p>All tests mock the HTTP layer — no live squish server needed for CI.</p>
+<p>All tests mock the HTTP layer, so no live squish server is needed for CI.</p>
 
 
 

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
+        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
       
       
       
@@ -744,7 +744,7 @@
 
 
 <h1 id="moe-models-guide">MoE Models Guide<a class="headerlink" href="#moe-models-guide" title="Permanent link">&para;</a></h1>
-<p>Squish has first-class support for Mixture-of-Experts (MoE) models. These models
+<p>Squish supports Mixture-of-Experts (MoE) models. These models
 have a large total parameter count but only activate a small subset (the "active
 parameters") during each forward pass, making them much faster than their total size
 suggests.</p>
@@ -780,7 +780,7 @@ models so you can immediately identify them.</p>
 <p>A standard 30B dense model requires ~80 GB of VRAM and is not feasible on consumer
 hardware. <code>qwen3:30b-a3b</code> uses a sparse MoE architecture where 30B parameters are
 distributed across expert networks, but each token only routes through ~3B worth of
-parameters. At INT4 compression, the total weight size is ~5 GB — comparable to a
+parameters. At INT4 compression, the total weight size is ~5 GB, comparable to a
 dense 3B model but with 30B total capacity.</p>
 <hr />
 <h2 id="running-a-moe-model">Running a MoE Model<a class="headerlink" href="#running-a-moe-model" title="Permanent link">&para;</a></h2>
@@ -895,7 +895,7 @@ squish catalog. To use it as a custom model:</p>
 </tr>
 </tbody>
 </table>
-<p><em>(Simulated estimates — actual numbers depend on context length and model.)</em></p>
+<p><em>(Simulated estimates: actual numbers depend on context length and model.)</em></p>
 <hr />
 <h2 id="identifying-moe-models-programmatically">Identifying MoE Models Programmatically<a class="headerlink" href="#identifying-moe-models-programmatically" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">squish.catalog</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_catalog</span>

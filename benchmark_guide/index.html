@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
+        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
       
       
       
@@ -589,7 +589,7 @@
   <a href="#track-a-quality-track-quality" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Track A — Quality (--track quality)
+        Track A: Quality (--track quality)
       
     </span>
   </a>
@@ -600,7 +600,7 @@
   <a href="#track-b-code-track-code" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Track B — Code (--track code)
+        Track B: Code (--track code)
       
     </span>
   </a>
@@ -611,7 +611,7 @@
   <a href="#track-c-tool-use-track-tool" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Track C — Tool Use (--track tool)
+        Track C: Tool Use (--track tool)
       
     </span>
   </a>
@@ -622,7 +622,7 @@
   <a href="#track-d-agent-track-agent" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Track D — Agent (--track agent)
+        Track D: Agent (--track agent)
       
     </span>
   </a>
@@ -633,7 +633,7 @@
   <a href="#track-e-performance-track-perf" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Track E — Performance (--track perf)
+        Track E: Performance (--track perf)
       
     </span>
   </a>
@@ -646,10 +646,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#supported-engines" class="md-nav__link">
+  <a href="#supported-inference-servers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Supported Engines
+        Supported Inference Servers
       
     </span>
   </a>
@@ -732,9 +732,9 @@
 
 
 <h1 id="squish-benchmark-guide">Squish Benchmark Guide<a class="headerlink" href="#squish-benchmark-guide" title="Permanent link">&para;</a></h1>
-<p><strong>Phase 11 — 5-Track Cross-Engine Comparison Suite</strong></p>
+<p><strong>Phase 11: 5-Track Cross-Inference-Server Comparison Suite</strong></p>
 <p>The <code>squish bench --track &lt;name&gt;</code> command runs structured benchmarks against any
-OpenAI-compatible inference engine and saves results to <code>eval_output/</code> as JSON.</p>
+OpenAI-compatible inference server and saves results to <code>eval_output/</code> as JSON.</p>
 <hr />
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Start a local model server first</span>
@@ -751,7 +751,7 @@ OpenAI-compatible inference engine and saves results to <code>eval_output/</code
 </code></pre></div>
 <hr />
 <h2 id="tracks">Tracks<a class="headerlink" href="#tracks" title="Permanent link">&para;</a></h2>
-<h3 id="track-a-quality-track-quality">Track A — Quality (<code>--track quality</code>)<a class="headerlink" href="#track-a-quality-track-quality" title="Permanent link">&para;</a></h3>
+<h3 id="track-a-quality-track-quality">Track A: Quality (<code>--track quality</code>)<a class="headerlink" href="#track-a-quality-track-quality" title="Permanent link">&para;</a></h3>
 <p>Evaluates factual accuracy and reasoning using standard NLP benchmarks via
 <a href="https://github.com/EleutherAI/lm-evaluation-harness">lm-eval-harness</a>.</p>
 <table>
@@ -798,7 +798,7 @@ OpenAI-compatible inference engine and saves results to <code>eval_output/</code
 <p><strong>Requirements:</strong> <code>pip install lm-eval</code></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>squish<span class="w"> </span>bench<span class="w"> </span>--track<span class="w"> </span>quality<span class="w"> </span>--model<span class="w"> </span>qwen3:8b<span class="w"> </span>--limit<span class="w"> </span><span class="m">100</span>
 </code></pre></div>
-<h3 id="track-b-code-track-code">Track B — Code (<code>--track code</code>)<a class="headerlink" href="#track-b-code-track-code" title="Permanent link">&para;</a></h3>
+<h3 id="track-b-code-track-code">Track B: Code (<code>--track code</code>)<a class="headerlink" href="#track-b-code-track-code" title="Permanent link">&para;</a></h3>
 <p>Evaluates code generation quality using HumanEval and MBPP benchmarks.</p>
 <blockquote>
 <p><strong>Note:</strong> Running code execution requires <code>--sandbox</code>. Without it, predictions
@@ -811,28 +811,28 @@ are collected as JSON but not executed (safe default).</p>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># With execution sandbox</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>squish<span class="w"> </span>bench<span class="w"> </span>--track<span class="w"> </span>code<span class="w"> </span>--model<span class="w"> </span>qwen3:8b<span class="w"> </span>--sandbox
 </code></pre></div>
-<h3 id="track-c-tool-use-track-tool">Track C — Tool Use (<code>--track tool</code>)<a class="headerlink" href="#track-c-tool-use-track-tool" title="Permanent link">&para;</a></h3>
+<h3 id="track-c-tool-use-track-tool">Track C: Tool Use (<code>--track tool</code>)<a class="headerlink" href="#track-c-tool-use-track-tool" title="Permanent link">&para;</a></h3>
 <p>Tests function-calling accuracy against 20 canonical tool schemas (BFCL-style).</p>
 <p>Metrics:
-- <code>schema_compliance_pct</code> — response conforms to tool-call JSON schema
-- <code>function_name_match_pct</code> — correct function name selected
-- <code>exact_match_pct</code> — exact name + arguments match
-- <code>arg_match_pct</code> — fraction of expected arguments present</p>
+- <code>schema_compliance_pct</code>: response conforms to tool-call JSON schema
+- <code>function_name_match_pct</code>: correct function name selected
+- <code>exact_match_pct</code>: exact name + arguments match
+- <code>arg_match_pct</code>: fraction of expected arguments present</p>
 <p>No extra dependencies required.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>squish<span class="w"> </span>bench<span class="w"> </span>--track<span class="w"> </span>tool<span class="w"> </span>--model<span class="w"> </span>qwen3:8b
 </code></pre></div>
-<h3 id="track-d-agent-track-agent">Track D — Agent (<code>--track agent</code>)<a class="headerlink" href="#track-d-agent-track-agent" title="Permanent link">&para;</a></h3>
+<h3 id="track-d-agent-track-agent">Track D: Agent (<code>--track agent</code>)<a class="headerlink" href="#track-d-agent-track-agent" title="Permanent link">&para;</a></h3>
 <p>Runs 20 multi-turn agentic scenarios across four categories: file operations,
 data lookup, code tasks, and multi-step workflows.</p>
 <p>Metrics:
-- <code>completion_rate</code> — fraction of scenarios where the final answer was reached
-- <code>sequence_accuracy</code> — fraction of tool calls matching expected sequence
-- <code>mean_step_efficiency</code> — optimal steps / actual steps (1.0 = optimal)
-- <code>total_tokens_consumed</code> — sum of tokens across all turns</p>
+- <code>completion_rate</code>: fraction of scenarios where the final answer was reached
+- <code>sequence_accuracy</code>: fraction of tool calls matching expected sequence
+- <code>mean_step_efficiency</code>: optimal steps / actual steps (1.0 = optimal)
+- <code>total_tokens_consumed</code>: sum of tokens across all turns</p>
 <p>No extra dependencies required.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>squish<span class="w"> </span>bench<span class="w"> </span>--track<span class="w"> </span>agent<span class="w"> </span>--model<span class="w"> </span>qwen3:8b
 </code></pre></div>
-<h3 id="track-e-performance-track-perf">Track E — Performance (<code>--track perf</code>)<a class="headerlink" href="#track-e-performance-track-perf" title="Permanent link">&para;</a></h3>
+<h3 id="track-e-performance-track-perf">Track E: Performance (<code>--track perf</code>)<a class="headerlink" href="#track-e-performance-track-perf" title="Permanent link">&para;</a></h3>
 <p>Measures latency, throughput, and efficiency of a running inference server.</p>
 <table>
 <thead>
@@ -880,7 +880,7 @@ data lookup, code tasks, and multi-step workflows.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>squish<span class="w"> </span>bench<span class="w"> </span>--track<span class="w"> </span>perf<span class="w"> </span>--model<span class="w"> </span>qwen3:8b
 </code></pre></div>
 <hr />
-<h2 id="supported-engines">Supported Engines<a class="headerlink" href="#supported-engines" title="Permanent link">&para;</a></h2>
+<h2 id="supported-inference-servers">Supported Inference Servers<a class="headerlink" href="#supported-inference-servers" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -917,7 +917,7 @@ data lookup, code tasks, and multi-step workflows.</p>
 </tr>
 </tbody>
 </table>
-<p>Custom engines can be specified with <code>name=url</code> syntax:</p>
+<p>Custom inference servers can be specified with <code>name=url</code> syntax:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>squish<span class="w"> </span>bench<span class="w"> </span>--track<span class="w"> </span>perf<span class="w"> </span>--engines<span class="w"> </span><span class="s2">&quot;custom=http://myhost:9000&quot;</span><span class="w"> </span>--model<span class="w"> </span>qwen3:8b
 </code></pre></div>
 <hr />
@@ -947,7 +947,7 @@ data lookup, code tasks, and multi-step workflows.</p>
 </code></pre></div></p>
 <hr />
 <h2 id="comparison-and-reports">Comparison and Reports<a class="headerlink" href="#comparison-and-reports" title="Permanent link">&para;</a></h2>
-<p>After collecting results from multiple engines, generate a comparison table:</p>
+<p>After collecting results from multiple inference servers, generate a comparison table:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>squish<span class="w"> </span>bench<span class="w"> </span>--track<span class="w"> </span>perf<span class="w"> </span>--engines<span class="w"> </span>squish,ollama<span class="w"> </span>--model<span class="w"> </span>qwen3:8b<span class="w"> </span>--compare
 </code></pre></div>
 <p>Generate a full markdown report:</p>
@@ -975,16 +975,16 @@ data lookup, code tasks, and multi-step workflows.</p>
 <hr />
 <h2 id="phase-gate-checklist-phase-11">Phase Gate Checklist (Phase 11)<a class="headerlink" href="#phase-gate-checklist-phase-11" title="Permanent link">&para;</a></h2>
 <ul>
-<li>[x] <code>squish/benchmarks/base.py</code> — EngineConfig, EngineClient, ResultRecord, BenchmarkRunner</li>
-<li>[x] <code>squish/benchmarks/quality_bench.py</code> — Track A (MMLU/ARC/HellaSwag/WinoGrande/TruthfulQA/GSM8K)</li>
-<li>[x] <code>squish/benchmarks/code_bench.py</code> — Track B (HumanEval/MBPP)</li>
-<li>[x] <code>squish/benchmarks/tool_bench.py</code> — Track C (20 canonical tool schemas)</li>
-<li>[x] <code>squish/benchmarks/agent_bench.py</code> — Track D (20 agentic scenarios)</li>
-<li>[x] <code>squish/benchmarks/perf_bench.py</code> — Track E (TTFT/TPS/RAM/tokens-per-watt/batch)</li>
-<li>[x] <code>squish/benchmarks/compare.py</code> — Cross-engine comparison table generator</li>
-<li>[x] <code>squish/benchmarks/report.py</code> — Full benchmark report generator</li>
-<li>[x] <code>squish/cli.py</code> — <code>squish bench --track</code> / <code>--engines</code> / <code>--model</code> / <code>--compare</code> / <code>--report</code> / <code>--limit</code></li>
-<li>[x] <code>eval_output/eval_meta.json</code> — Template metadata for benchmark runs</li>
+<li>[x] <code>squish/benchmarks/base.py</code>: EngineConfig, EngineClient, ResultRecord, BenchmarkRunner</li>
+<li>[x] <code>squish/benchmarks/quality_bench.py</code>: Track A (MMLU/ARC/HellaSwag/WinoGrande/TruthfulQA/GSM8K)</li>
+<li>[x] <code>squish/benchmarks/code_bench.py</code>: Track B (HumanEval/MBPP)</li>
+<li>[x] <code>squish/benchmarks/tool_bench.py</code>: Track C (20 canonical tool schemas)</li>
+<li>[x] <code>squish/benchmarks/agent_bench.py</code>: Track D (20 agentic scenarios)</li>
+<li>[x] <code>squish/benchmarks/perf_bench.py</code>: Track E (TTFT/TPS/RAM/tokens-per-watt/batch)</li>
+<li>[x] <code>squish/benchmarks/compare.py</code>: Cross-inference-server comparison table generator</li>
+<li>[x] <code>squish/benchmarks/report.py</code>: Full benchmark report generator</li>
+<li>[x] <code>squish/cli.py</code>: <code>squish bench --track</code> / <code>--engines</code> / <code>--model</code> / <code>--compare</code> / <code>--report</code> / <code>--limit</code></li>
+<li>[x] <code>eval_output/eval_meta.json</code>: Template metadata for benchmark runs</li>
 <li>[x] All Phase 11 unit tests pass</li>
 </ul>
 

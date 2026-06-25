@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The fastest way to run local LLMs on Apple Silicon — sub-second model loads, faster than Ollama. OpenAI/Ollama-compatible.">
+        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
       
       
       
@@ -23,7 +23,7 @@
     
     
       
-        <title>SQUIZD Binary Format Specification — v1.0 - Squish</title>
+        <title>SQUIZD Binary Format Specification: v1.0 - Squish</title>
       
     
     
@@ -109,7 +109,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              SQUIZD Binary Format Specification — v1.0
+              SQUIZD Binary Format Specification: v1.0
             
           </span>
         </div>
@@ -793,7 +793,7 @@
   <a href="#10-appendix-a-2-layer-toy-example" class="md-nav__link">
     <span class="md-ellipsis">
       
-        10. Appendix A — 2-Layer Toy Example
+        10. Appendix A: 2-Layer Toy Example
       
     </span>
   </a>
@@ -831,7 +831,7 @@
   
 
 
-<h1 id="squizd-binary-format-specification-v10">SQUIZD Binary Format Specification — v1.0<a class="headerlink" href="#squizd-binary-format-specification-v10" title="Permanent link">&para;</a></h1>
+<h1 id="squizd-binary-format-specification-v10">SQUIZD Binary Format Specification: v1.0<a class="headerlink" href="#squizd-binary-format-specification-v10" title="Permanent link">&para;</a></h1>
 <p><strong>Status:</strong> Finalised<br />
 <strong>Introduced:</strong> Squish v44 (Wave 70)<br />
 <strong>Semver version:</strong> <code>1.0.0</code></p>
@@ -887,7 +887,7 @@ single file may activate one or more of the following feature layers:</p>
 </tbody>
 </table>
 <p>All active features are detected automatically from the header flags bitfield
-at load time — no user-level flags are required at serve time.</p>
+at load time; no user-level flags are required at serve time.</p>
 <hr />
 <h2 id="2-file-layout">2. File Layout<a class="headerlink" href="#2-file-layout" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌─────────────────────────────────────────────────────────┐
@@ -939,12 +939,12 @@ future specification revision raises the maximum).</p>
 may be set simultaneously.  Bits 7–31 are reserved and must be zero.</p>
 <p>Dispatch priority ordering (highest first):</p>
 <ol>
-<li><code>ANE_COREML</code> (bit 6) — delegates entire inference to CoreML</li>
-<li><code>ASTC</code> (bit 0) — hardware decode on Apple Silicon GPU</li>
-<li><code>TCA_TBE</code> (bit 1) — bitmap lossless decode</li>
-<li><code>INT2</code> (bit 5) — sub-4-bit hybrid blocks</li>
-<li><code>INT4</code> (bit 2) — standard INT4 Metal GEMV</li>
-<li>NumPy fallback — always available (CI / non-Apple platforms)</li>
+<li><code>ANE_COREML</code> (bit 6): delegates entire inference to CoreML</li>
+<li><code>ASTC</code> (bit 0): hardware decode on Apple Silicon GPU</li>
+<li><code>TCA_TBE</code> (bit 1): bitmap lossless decode</li>
+<li><code>INT2</code> (bit 5): sub-4-bit hybrid blocks</li>
+<li><code>INT4</code> (bit 2): standard INT4 Metal GEMV</li>
+<li>NumPy fallback: always available (CI / non-Apple platforms)</li>
 </ol>
 <p>The <code>SPARSE</code> (bit 3) and <code>EAGLE</code> (bit 4) flags augment the chosen kernel
 stack; they do not independently select a path.</p>
@@ -1053,7 +1053,7 @@ produced by the Wave 69 <code>convert_coreml</code> pipeline:</p>
 The main weight blocks are still present and used as fallback when ANE is
 unavailable.</p>
 <hr />
-<h2 id="10-appendix-a-2-layer-toy-example">10. Appendix A — 2-Layer Toy Example<a class="headerlink" href="#10-appendix-a-2-layer-toy-example" title="Permanent link">&para;</a></h2>
+<h2 id="10-appendix-a-2-layer-toy-example">10. Appendix A: 2-Layer Toy Example<a class="headerlink" href="#10-appendix-a-2-layer-toy-example" title="Permanent link">&para;</a></h2>
 <p>A minimal valid SQUIZD file (2 layers, INT4, no sparsity, no EAGLE):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>Offset  Bytes (hex)
 <a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>------  -----------
