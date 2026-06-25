@@ -72,7 +72,7 @@ Measured on an Apple **M3 MacBook Pro, 16 GB** — **thermally controlled** (eac
 | **Disk** — 7B INT4 / INT3 | 4.36 GB / — | **4.00 / 3.56 GB** |
 | **Cold short-prompt TTFT** | **167 ms** | 192 ms &nbsp;_(honest loss)_ |
 
-Squish wins decode throughput, inter-token tail latency, full-response time, and RAM — biggest on long contexts, where its KV cache **reuses the prefill instead of re-running it**. INT3 adds ~18 % decode over INT4 at **no measured accuracy cost** (arc_easy `acc_norm` 0.551 vs 0.541, tied). The one place Ollama wins is single-token latency on a *cold, novel* prompt — we say so plainly.
+Squish wins decode throughput, inter-token tail latency, full-response time, and RAM — biggest on long contexts, where its KV cache **reuses the prefill instead of re-running it**. INT3 adds ~18 % decode over INT4 at **no measured accuracy cost** (arc_easy `acc_norm` 0.551 vs 0.541, tied). The one place Ollama wins is single-token latency on a *cold, novel* prompt.
 
 → Methodology, thermal control, and the full ablation: [`docs/paper.md` §4.4](docs/paper.md) · [`BENCHMARKS.md`](BENCHMARKS.md)
 
