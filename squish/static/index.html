@@ -1949,16 +1949,10 @@ document.getElementById("settings-panel").addEventListener("click", e => {
     const tip = document.getElementById("first-run-tip");
     if (tip) tip.style.display = "block";
   }
-  // Auto-enable agent mode when the server exposes tools and agent mode is off
-  try {
-    const td = await fetch(`${BASE_URL}/v1/agent/tools`, {
-      headers: authHeaders(),
-      signal: AbortSignal.timeout(3000),
-    }).then(r => r.ok ? r.json() : null).catch(() => null);
-    if (td && (td.tools || []).length > 0 && !agentMode) {
-      toggleAgentMode();
-    }
-  } catch { /* server may not have agent tools — ignore */ }
+  // Agent / tool-calling mode is OPT-IN — toggle it from the UI. It used to
+  // auto-enable whenever the server exposed tools, which forced tool-calling on
+  // every chat. Small models (1–3B) then tried to call tools for plain
+  // questions and produced garbage, so the default is now off.
   // Refresh server status every 30s
   setInterval(loadModels, 30_000);
   // Scroll-to-bottom button: show when user scrolls up, hide at bottom

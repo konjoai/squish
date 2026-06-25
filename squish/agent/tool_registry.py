@@ -39,6 +39,79 @@ from typing import Any, Callable
 _LOG = logging.getLogger("squish.agent.tool_registry")
 
 
+# ── Argument coercion ────────────────────────────────────────────────────────
+# Small / quantized models routinely emit scalars as strings ("10", "true") or
+# JSON-stringified arrays/objects. Coerce to the declared JSON-schema type so a
+# recoverable call runs instead of hard-erroring; leave genuinely wrong types
+# untouched so validate_call still raises a clear error.
+_TRUE_STR = frozenset({"true", "1", "yes", "y", "on"})
+_FALSE_STR = frozenset({"false", "0", "no", "n", "off"})
+
+
+def _coerce_int(value: Any) -> Any:
+    if isinstance(value, bool):
+        return value  # bool is an int subclass — reject, don't silently accept
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        s = value.strip()
+        try:
+            return int(s)
+        except ValueError:
+            pass
+        try:
+            f = float(s)
+        except ValueError:
+            return value
+        return int(f) if f.is_integer() else value
+    return value
+
+
+def _coerce_number(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return value
+    return value
+
+
+def _coerce_bool(value: Any) -> Any:
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in _TRUE_STR:
+            return True
+        if low in _FALSE_STR:
+            return False
+    elif isinstance(value, int) and not isinstance(value, bool) and value in (0, 1):
+        return bool(value)
+    return value
+
+
+def _coerce_json(value: Any, opener: str) -> Any:
+    if isinstance(value, str) and value.strip()[:1] == opener:
+        try:
+            return json.loads(value.strip())
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+def _coerce_arg(value: Any, expected_type: str) -> Any:
+    """Best-effort coerce a model-supplied value to its JSON-schema type."""
+    if expected_type == "integer":
+        return _coerce_int(value)
+    if expected_type == "number":
+        return _coerce_number(value)
+    if expected_type == "boolean":
+        return _coerce_bool(value)
+    if expected_type == "array":
+        return _coerce_json(value, "[")
+    if expected_type == "object":
+        return _coerce_json(value, "{")
+    return value
+
+
 __all__ = [
     "ToolDefinition",
     "ToolResult",
@@ -258,11 +331,19 @@ class ToolRegistry:
             "array": list,
             "object": dict,
         }
-        for arg_name, value in arguments.items():
+        for arg_name, value in list(arguments.items()):
             schema = properties.get(arg_name, {})
             expected_type = schema.get("type")
             if expected_type and expected_type in _TYPE_MAP:
-                if not isinstance(value, _TYPE_MAP[expected_type]):
+                # Small models routinely emit scalars as strings ("10", "true")
+                # or JSON-stringified arrays/objects. Coerce to the declared type
+                # in place before validating, so a sloppy-but-recoverable call
+                # runs instead of hard-erroring. Only genuinely wrong types raise.
+                value = _coerce_arg(value, expected_type)
+                arguments[arg_name] = value
+                if not isinstance(value, _TYPE_MAP[expected_type]) or (
+                    expected_type != "boolean" and isinstance(value, bool)
+                ):
                     raise ToolCallError(
                         f"Tool {name!r} argument {arg_name!r}: expected "
                         f"{expected_type}, got {type(value).__name__}"
