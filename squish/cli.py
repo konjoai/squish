@@ -331,6 +331,24 @@ def _resolve_model(name: str | None, quant_mode: str = "int4") -> tuple[Path, Pa
         model_dir = Path(name).expanduser()
 
     if not model_dir.exists():
+        # Pre-squished models downloaded via `squish pull` only create the
+        # compressed `<base>-<quant>` dir — the raw bf16 dir is never fetched.
+        # Resolve directly to the compressed dir when present (it is a
+        # self-contained mlx quantized model with its own config.json), instead
+        # of failing on the missing bf16 dir. Mirrors pull's _quant_dir_name.
+        if name is not None and "/" not in str(name):
+            import re as _re_q
+
+            _qbase = _re_q.sub(r"-(bf16|fp16|[0-9]+bit)(-mlx)?$", "", model_dir.name)
+            for _mode in (quant_mode, "int4", "int3", "int8", "int2"):
+                _cand = model_dir.parent / f"{_qbase}-{_mode}"
+                if _cand.exists() and (_cand / "config.json").exists():
+                    if _mode != quant_mode:
+                        print(
+                            f"  ℹ  No {quant_mode.upper()} dir found; "
+                            f"using {_mode.upper()}: {_cand.name}"
+                        )
+                    return _cand, _cand
         hint = name if (name and "/" not in str(name)) else "qwen3:8b"
         _die(
             f"Model directory not found: {model_dir}\n"
