@@ -173,7 +173,7 @@ squish daemon install          # macOS LaunchAgent — daemon starts at login
 
 **The daemon never re-does work.** A block-paged KV cache persists fixed-size token blocks to disk and reconstructs partial-prefix matches for shifting context; a prompt KV cache catches exact repeats. An agent loop that resends the same long prompt every turn hits the cache instead of re-prefilling.
 
-**Decode is bandwidth-bound, so we attack the right thing.** On Apple Silicon each token streams the whole weight set from unified memory — a hard ceiling. The levers that move it are *fewer weight bytes* (INT3) and *fewer forwards per token* (greedy-lossless prompt-lookup). We measured the levers that *don't* help here (KV-cache quantization, small-draft speculation) and say so in the paper rather than shipping them as wins.
+**Decode is bandwidth-bound, so we attack the right thing.** On Apple Silicon each token streams the whole weight set from unified memory — a hard ceiling. The levers that move it are *fewer weight bytes* (INT3) and *fewer forwards per token* (greedy-lossless prompt-lookup). We measured the levers that *don't* help here (KV-cache quantization, small-draft speculation).
 
 **Accuracy gates are load-bearing.** INT3 holds within ~1 pp of FP16 on Qwen3/Qwen2.5; Gemma-3 collapses (~15 pp). Squish enables INT3 only where it's safe and **refuses** the rest — you can't accidentally ship a config that quietly degrades.
 
