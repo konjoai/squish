@@ -5,6 +5,22 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.8] — Fix `squish run` for pre-squished models (gemma3:4b and others)
+
+### Fixed
+- **`squish run <model>` now finds pre-squished weights.** Resolution looked for
+  the raw `<base>-bf16` directory and aborted with "Model directory not found:
+  …-bf16" when it was absent, even though `squish pull` had already downloaded
+  the compressed `<base>-int4` directory. `squish pull gemma3:4b` followed by
+  `squish run gemma3:4b` failed for exactly this reason: a pre-squished model
+  only ships the compressed weights, never the raw bf16 set. `_resolve_model`
+  now falls back to the compressed directory (preferring the requested quant,
+  then int4/int3/int8/int2), requires a `config.json` so it is a loadable MLX
+  model, and prints a note if it uses a different quant than requested instead
+  of failing silently. Adds `TestResolveModelCompressedFallback` (4 cases).
+
+---
+
 ## [9.34.7] — Tools opt-in by default + robust tool-calling for small models
 
 ### Changed
