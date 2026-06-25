@@ -79,11 +79,15 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
         try {
             health = await (client as unknown as { health(): Promise<typeof health> }).health() ?? { loaded: false };
         } catch {
-            // server offline — send offline state
+            // health may time out while a blocking prefill starves the server's
+            // event loop — that's "busy", not "offline" (see SquishClient.busy).
         }
 
         this._updateSparklines(health);
-        this._view?.webview.postMessage({ type: 'monitorUpdate', health, sparkTps: [...this._sparkTps], sparkReq: [...this._sparkReq] });
+        this._view?.webview.postMessage({
+            type: 'monitorUpdate', health, busy: SquishClient.busy,
+            sparkTps: [...this._sparkTps], sparkReq: [...this._sparkReq],
+        });
     }
 
     private _updateSparklines(health: HealthInfo): void {
@@ -140,9 +144,11 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
       margin-bottom:14px; text-transform:uppercase;
     }
     .status-badge.online  { background:rgba(63,185,80,.15); color:var(--success); border:1px solid rgba(63,185,80,.3); }
+    .status-badge.busy    { background:rgba(219,154,4,.15); color:#d9a406;        border:1px solid rgba(219,154,4,.3); }
     .status-badge.offline { background:rgba(248,81,73,.15); color:var(--danger);  border:1px solid rgba(248,81,73,.3); }
     .dot { width:6px; height:6px; border-radius:50%; }
     .dot.online  { background:var(--success); box-shadow:0 0 6px var(--success); }
+    .dot.busy    { background:#d9a406;         box-shadow:0 0 6px #d9a406; }
     .dot.offline { background:var(--danger);  box-shadow:0 0 6px var(--danger); }
 
     .metrics-grid {
@@ -258,17 +264,21 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
     // ── Message handler ─────────────────────────────────────────────────
 
     window.addEventListener('message', (e) => {
-      const { type, health, sparkTps, sparkReq } = e.data;
+      const { type, health, busy, sparkTps, sparkReq } = e.data;
       if (type !== 'monitorUpdate') return;
 
       const online = health.loaded === true;
+      // A streaming generation can make /health time out (loaded:false) while
+      // the server is plainly up — show "Busy", never a red "Offline".
+      const state  = online ? 'online' : (busy ? 'busy' : 'offline');
+      const label  = online ? 'Online' : (busy ? 'Busy'  : 'Offline');
       const badge  = document.getElementById('badge');
       const dot    = document.getElementById('dot');
       const st     = document.getElementById('status-text');
 
-      badge.className  = 'status-badge ' + (online ? 'online' : 'offline');
-      dot.className    = 'dot '          + (online ? 'online' : 'offline');
-      st.textContent   = online ? 'Online' : 'Offline';
+      badge.className  = 'status-badge ' + state;
+      dot.className    = 'dot '          + state;
+      st.textContent   = label;
 
       document.getElementById('tps').textContent =
         health.tps != null ? health.tps.toFixed(1) : '—';
@@ -294,10 +304,10 @@ export class MonitorPanel implements vscode.WebviewViewProvider {
       const cons = document.getElementById('console');
       const line = document.createElement('div');
       const ts   = new Date().toLocaleTimeString();
-      line.className = 'console-line ' + (online ? 'ok' : 'err');
+      line.className = 'console-line ' + (online ? 'ok' : (busy ? 'ok' : 'err'));
       line.textContent = ts + '  ' + (online
         ? ('model=' + (health.model||'?') + '  tps=' + (health.tps||0).toFixed(1) + '  req=' + (health.requests||0))
-        : 'server offline');
+        : (busy ? 'server busy (generating)' : 'server offline'));
       cons.appendChild(line);
       // Keep last 50 lines
       while (cons.children.length > 50) cons.removeChild(cons.firstChild);

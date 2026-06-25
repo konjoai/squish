@@ -176,6 +176,33 @@ describe('MonitorPanel', () => {
         panel.dispose();
     });
 
+    test('poll reports busy (not offline) when a generation is in flight', async () => {
+        // Health times out during a blocking prefill, but a stream is active —
+        // the webview must receive busy:true so it shows "Busy", not "Offline".
+        MockSquishClient.prototype.health = jest.fn().mockImplementation(
+            () => Promise.reject(new Error('timed out'))
+        );
+        (MockSquishClient as unknown as { busy: boolean }).busy = true;
+
+        const postMessage = jest.fn();
+        const panel = new MonitorPanel(EXT_URI);
+        const view  = makeWebviewView(postMessage);
+        panel.resolveWebviewView(
+            view,
+            {} as vscode.WebviewViewResolveContext,
+            {} as vscode.CancellationToken,
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'monitorUpdate', busy: true }),
+        );
+        (MockSquishClient as unknown as { busy: boolean }).busy = false;
+        panel.dispose();
+    });
+
     test('dispose stops polling', () => {
         const health = jest.fn().mockResolvedValue(makeHealthResponse());
         MockSquishClient.prototype.health = health;
