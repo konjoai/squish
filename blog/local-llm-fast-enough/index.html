@@ -1,0 +1,1326 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A local LLM inference server for Apple Silicon, up to 9.8× faster than Ollama on long prompts, with the honest benchmarks.">
+      
+      
+      
+        <link rel="canonical" href="https://squish.run/blog/local-llm-fast-enough/">
+      
+      
+      
+      
+        
+      
+      
+        <link rel="alternate" type="application/rss+xml" title="RSS feed" href="../../feed_rss_created.xml">
+        <link rel="alternate" type="application/rss+xml" title="RSS feed of updated content" href="../../feed_rss_updated.xml">
+      
+      <link rel="icon" href="../../assets/squish-logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own - Squish</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  
+  
+  
+    
+  
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Squish">
+  <meta property="og:title" content="I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own">
+  <meta property="og:description" content="A local LLM inference server for Apple Silicon, up to 9.8× faster than Ollama on long prompts, with the honest benchmarks.">
+  <meta property="og:url" content="https://squish.run/blog/local-llm-fast-enough/">
+  <meta property="og:image" content="https://squish.run/assets/blog/chart-speed.png">
+  <meta property="og:image:alt" content="I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own">
+
+  
+    <meta property="article:published_time" content="2026-06-26">
+    
+      <meta property="article:author" content="Wesley Scholl">
+    
+    
+      
+        <meta property="article:tag" content="local-llm">
+      
+        <meta property="article:tag" content="apple-silicon">
+      
+        <meta property="article:tag" content="mlx">
+      
+        <meta property="article:tag" content="rust">
+      
+        <meta property="article:tag" content="quantization">
+      
+        <meta property="article:tag" content="benchmarks">
+      
+    
+  
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own">
+  <meta name="twitter:description" content="A local LLM inference server for Apple Silicon, up to 9.8× faster than Ollama on long prompts, with the honest benchmarks.">
+  <meta name="twitter:image" content="https://squish.run/assets/blog/chart-speed.png">
+  <meta name="twitter:image:alt" content="I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#i-couldnt-find-a-local-llm-tool-fast-enough-so-i-built-my-own" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Squish" class="md-header__button md-logo" aria-label="Squish" data-md-component="logo">
+      
+  <img src="../../assets/squish-logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Squish
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/konjoai/squish" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    konjoai/squish
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../install/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../quickstart/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Quickstart
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../ARCHITECTURE/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Blog
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Squish" class="md-nav__button md-logo" aria-label="Squish" data-md-component="logo">
+      
+  <img src="../../assets/squish-logo.png" alt="logo">
+
+    </a>
+    Squish
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/konjoai/squish" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    konjoai/squish
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Blog
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Blog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Blog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_2" id="__nav_7_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../archive/2026/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2026
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_7_3" id="__nav_7_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Categories
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+    
+  
+  
+    <li class="md-nav__item">
+      <a href="../category/benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-squish-actually-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Squish Actually Is
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-benchmarking-methodology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Benchmarking Methodology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-honest-benchmark-comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Honest Benchmark Comparison
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-most-interesting-thing-i-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Most Interesting Thing I Found
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-you-actually-use-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How You Actually Use It
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-squish-doesnt-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Squish Doesn't Do
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-i-actually-use-it-for-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What I Actually Use It For Now
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+  <div class="md-content md-content--post" data-md-component="content">
+    <div class="md-sidebar md-sidebar--post" data-md-component="sidebar" data-md-type="navigation">
+      <div class="md-sidebar__scrollwrap">
+        <div class="md-sidebar__inner md-post">
+          <nav class="md-nav md-nav--primary">
+            <div class="md-post__back">
+              <div class="md-nav__title md-nav__container">
+                <a href="../" class="md-nav__link">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+                  <span class="md-ellipsis">
+                    Back to index
+                  </span>
+                </a>
+              </div>
+            </div>
+            
+              <div class="md-post__authors md-typeset">
+                
+                  <div class="md-profile md-post__profile">
+                    <span class="md-author md-author--long">
+                      <img src="https://squish.run/assets/squish-logo.png" alt="Wesley Scholl">
+                    </span>
+                    <span class="md-profile__description">
+                      <strong>
+                        
+                          Wesley Scholl
+                        
+                      </strong>
+                      <br>
+                      Creator of Squish
+                    </span>
+                  </div>
+                
+              </div>
+            
+            <ul class="md-post__meta md-nav__list">
+              <li class="md-nav__item md-nav__item--section">
+                <div class="md-post__title">
+                  <span class="md-ellipsis">
+                    Metadata
+                  </span>
+                </div>
+                <nav class="md-nav">
+                  <ul class="md-nav__list">
+                    <li class="md-nav__item">
+                      <div class="md-nav__link">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 19H5V8h14m-3-7v2H8V1H6v2H5c-1.11 0-2 .89-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-1V1m-1 11h-5v5h5z"/></svg>
+                        <time datetime="2026-06-26 00:00:00+00:00" class="md-ellipsis">June 26, 2026</time>
+                      </div>
+                    </li>
+                    
+                    
+                      <li class="md-nav__item">
+                        <div class="md-nav__link">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 3v15h3V3zm3 2 4 13 3-1-4-13zM5 5v13h3V5zM3 19v2h18v-2z"/></svg>
+                          <span class="md-ellipsis">
+                            in
+                            
+                              <a href="../category/benchmarks/">Benchmarks</a></span>
+                        </div>
+                      </li>
+                    
+                    
+                      
+                      <li class="md-nav__item">
+                        <div class="md-nav__link">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 20a8 8 0 0 0 8-8 8 8 0 0 0-8-8 8 8 0 0 0-8 8 8 8 0 0 0 8 8m0-18a10 10 0 0 1 10 10 10 10 0 0 1-10 10C6.47 22 2 17.5 2 12A10 10 0 0 1 12 2m.5 5v5.25l4.5 2.67-.75 1.23L11 13V7z"/></svg>
+                          <span class="md-ellipsis">
+                            
+                              12 min read
+                            
+                          </span>
+                        </div>
+                      </li>
+                    
+                  </ul>
+                </nav>
+              </li>
+            </ul>
+            
+          </nav>
+          
+        </div>
+      </div>
+    </div>
+    <article class="md-content__inner md-typeset">
+      
+        
+  
+
+
+
+  
+  
+
+
+<h1 id="i-couldnt-find-a-local-llm-tool-fast-enough-so-i-built-my-own">I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own<a class="headerlink" href="#i-couldnt-find-a-local-llm-tool-fast-enough-so-i-built-my-own" title="Permanent link">&para;</a></h1>
+<p><em>This requires Apple Silicon (M-series). If you're on Intel, Linux, or Windows, the numbers in this article will not apply to your hardware.</em></p>
+<p><strong>TL;DR:</strong> Squish is a local LLM inference server for Apple Silicon, up to 9.8× faster than Ollama on long prompts. <a href="#how-you-actually-use-it">Skip the story and install it →</a></p>
+<p>Since February, many of my commits have been written by a local AI in under two seconds. No API keys, no rate limits, no internet connection, and no data leaving my machine. Getting it working took considerable effort, but once it did, it's been very reliable across dozens of repositories. The local AI software I'm describing didn't exist, not without heavy modifications to source code you don't control, or building your own from scratch. So I built it, and it solved my problem. It may not solve yours, but you can clone it, fork it, take it apart, and have fun with it.</p>
+<p>It started with Gemini. I wired the API to a script I wrote that automates git commits and pushes. It was fast and intelligent, until you hit the hard free tier rate limits. In my case, I hit them every day. Sometimes on the second commit, sometimes on the first. Gemini returns a response message saying you've been rate-limited. Use it once, use it twice, and you're cut off. This was for simple stuff, maybe 500 to 1,000 tokens for a commit, a little more for a large diff. I put up with it for a while, but the annoying limits drove me to drop it. I searched around but couldn't find anything that could solve my problem.</p>
+<p>So I went local, off the cloud entirely, with no rate-limiting. I pointed the script at Ollama running Mistral and configured and tested it for weeks: built a custom Modelfile, iterated prompts, fine-tuned output until the commit messages described the diff accurately. The descriptions came out great. They also took too long. End to end, a response landed anywhere from seven to ten seconds on a normal commit, and north of a minute for a large diff. So I pulled every lever and turned every knob, but the adjustments failed to reduce the response time, and my problem was still unsolved. The slow and unpredictable responses were the hard wall. When the software is written by someone else, their speed limit is your speed limit. I wanted a coherent commit message in under five seconds, ideally under three. Ollama and the models it serves could not deliver. I thought about it for over a month and came to the conclusion that I had to build something myself. Something lean and elegant that doesn't just "work", it beats the baseline outright. That something is called Squish, a local AI inference server.</p>
+<h2 id="what-squish-actually-is">What Squish Actually Is<a class="headerlink" href="#what-squish-actually-is" title="Permanent link">&para;</a></h2>
+<p><strong>To be clear:</strong> I did not build a model. I built the server that runs models, a framework that quantizes and compresses them, and a local format that reduces how much memory they need to run. Squish is an MLX-based local inference server, and three architectural components set it apart from existing tools:</p>
+<p><strong>1. A persistent daemon that keeps the model awake.</strong> Ollama loads its model lazily, on the first request, and that first request pays for it: twenty to thirty seconds of cold start while the weights load, before a single token comes back. Worse, the model gets unloaded once it sits idle, so an intermittent workflow pays that toll over and over. Squish loads the model once, when the daemon starts, and keeps it resident for as long as it's running. The cost is paid a single time; every request after is warm. Load once, never load again.</p>
+<p><strong>2. A two-tier KV cache that remembers.</strong> Before a model can answer a prompt, it runs prefill. It reads the entire prompt and builds the internal attention state required in memory before producing a single token. That memory state is called the KV cache. Normally the KV cache is discarded once a response is completed, and on the next request it gets rebuilt from scratch. Squish retains the KV cache, in two layers.</p>
+<ul>
+<li><strong>The prompt cache</strong> handles exact repeats, an identical prompt sent again. If that prompt is resent, there's nothing to rebuild. Time-to-first-token (TTFT) drops to roughly 4 to 11 ms, versus about 192 ms to prefill from scratch.</li>
+<li><strong>The block cache</strong> handles prompts that partially overlap previous prompts. The cache stores KV state in fixed-size blocks on disk. A block is computed only once. Any future prompt that contains overlapping blocks reuses the stored copy. This ensures the model only computes tokens it hasn't seen before. Examples include agent loops that resend a long system prompt each turn, and multi-turn conversations.</li>
+</ul>
+<p><strong>3. INT3 quantization that genuinely works, on some models.</strong> A model's knowledge lives in its parameters, also called weights, the values it learned during training. Quantization stores each parameter at lower precision, like rounding a long decimal to a couple of places. It saves memory and adds speed, but can cost accuracy. Three-bit quantization (INT3) is aggressive enough that it usually breaks a model outright. However, for some model families, INT3 is stable, more on that below.</p>
+<h2 id="the-benchmarking-methodology">The Benchmarking Methodology<a class="headerlink" href="#the-benchmarking-methodology" title="Permanent link">&para;</a></h2>
+<p>Before I present any numbers, I'll share my benchmarking protocol. Plenty of "Ollama vs X" articles contain at least one apples-to-oranges measurement that favors the tool the author is selling. The most overlooked one is thermal. Run the favored tool first on a cool machine, then run the competing tool second once the machine is hot. This manufactures a win out of nothing but execution order. So I controlled for it. Each inference server was measured from the same 50°C baseline. A consistency check confirmed the first and last runs were taken at the same chip temperature and held to within 1.7%, so performance didn't degrade as things heated up. The temperature of the chip's silicon (its die) was logged live throughout the benchmark tests. These numbers reflect each inference server, not the benchmark order.</p>
+<p><strong>Hardware:</strong> Apple M3 MacBook Pro, 16 GB unified memory, running macOS 26 Tahoe, the current OS version. Normal hardware, controlled procedure: no external memory, SSD, or compute, and no fresh reboot to game the result.</p>
+<p><strong>Models:</strong> Qwen2.5-7B-Instruct for both, Q4_K_M on Ollama and INT4/INT3 on Squish. The two models are comparable in parameter count and quantization level. Ollama shipped a major version jump partway through this project, so I ran the full suite against both 0.18.2 and 0.30.7. They came out identical, matching to a tenth of a token per second at short and medium context, so the comparison below isn't pinned to a single convenient version. The numbers that follow use 0.30.7, the current release.</p>
+<p><strong>Protocol:</strong> I ran five runs per metric, reported the median result value, and used identical prompts and lengths for both Ollama and Squish. The benchmarks included prompt sizes of 75, 2000, and 4000 tokens. 75-token prompts are what most benchmarks publish. Coding agents and document Q&amp;A workloads are typically around 4000 tokens. The raw per-run JSON results are committed in the repo, and every number can be reproduced with an M3.</p>
+<h2 id="the-honest-benchmark-comparison">The Honest Benchmark Comparison<a class="headerlink" href="#the-honest-benchmark-comparison" title="Permanent link">&para;</a></h2>
+<p>With that protocol settled, here is how the two inference servers compare (apples-to-apples). Every number is reproducible from the repo via <code>benchmarks/ollama_vs_squish/bench_thermal_h2h.py</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th style="text-align: right;">Ollama 0.30.7</th>
+<th style="text-align: right;">Squish</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cold start: load + first token (1.5B)</td>
+<td style="text-align: right;">20–30 s</td>
+<td style="text-align: right;">≈0.5 s (54×)</td>
+</tr>
+<tr>
+<td>Full response @ 4000-token prompt</td>
+<td style="text-align: right;">37.5 s</td>
+<td style="text-align: right;">3.8 s (9.8×)</td>
+</tr>
+<tr>
+<td>Decode throughput @ 75 tokens</td>
+<td style="text-align: right;">20.3 tok/s</td>
+<td style="text-align: right;">24.0 tok/s (INT3)</td>
+</tr>
+<tr>
+<td>Inter-token tail p95 @ 75 tokens</td>
+<td style="text-align: right;">52.4 ms</td>
+<td style="text-align: right;">42.7 ms (INT3)</td>
+</tr>
+<tr>
+<td>Repeat-prompt TTFT (KV cache hit)</td>
+<td style="text-align: right;">~160 ms</td>
+<td style="text-align: right;">4–11 ms</td>
+</tr>
+<tr>
+<td>Peak RAM during inference</td>
+<td style="text-align: right;">5.14 GB</td>
+<td style="text-align: right;">3.50 GB</td>
+</tr>
+<tr>
+<td>Disk: 7B INT4 / INT3</td>
+<td style="text-align: right;">4.36 GB / n/a</td>
+<td style="text-align: right;">4.00 / 3.56 GB</td>
+</tr>
+<tr>
+<td>Cold short-prompt TTFT</td>
+<td style="text-align: right;">167 ms</td>
+<td style="text-align: right;">192 ms</td>
+</tr>
+</tbody>
+</table>
+<p><em>Ollama 0.18.2 was tested identically. Its decode throughput and latency matched 0.30.7 to within noise, with one exception: cold short-prompt TTFT, where 0.18.2 measured 126 ms.</em></p>
+<p>Ollama wins one category, TTFT on a cold, completely unique short prompt, measuring 167 milliseconds compared to 192 ms for Squish. I have to give props where props are due: Ollama 0.30.7's TTFT is 25 ms faster. I tried to beat it, but quickly realized that 25 ms is something the end user doesn't notice the way they notice end-to-end response time. Squish wins on end-to-end response time. That's the metric that actually matters for my commit message use case.</p>
+<p>So what is the trade-off for those 25 milliseconds? Let's say you have an agent resending the system prompt every turn. For a 4,000-token prompt, Ollama takes around 37.5 seconds to return a full response. Squish's full response returns in 3.8 seconds flat. It's 9.8× faster, and it's the difference between a tool that responds in a timely manner and one where users stare at the screen wondering why it hasn't responded yet.</p>
+<p><img alt="Bar chart comparing full-response time at a 4000-token prompt: Ollama 0.30.7 takes 37.5 seconds versus Squish at 3.8 seconds, which is 9.8 times faster." src="../../assets/blog/chart-speed.svg" /></p>
+<p><em>Full response at a 4000-token prompt. Squish returns in 3.8 s versus Ollama's 37.5 s, a 9.8× speedup on the thermally controlled run. Source: BENCHMARKS.md.</em></p>
+<p><img alt="Grouped bar chart of footprint, Ollama versus Squish: peak RAM during inference is 5.14 GB versus 3.50 GB, and 7B model disk size is 4.36 GB versus 3.56 GB." src="../../assets/blog/chart-footprint.svg" /></p>
+<p><em>Memory and disk footprint. Squish uses less peak RAM (3.50 vs 5.14 GB) and less disk for a 7B model (3.56 vs 4.36 GB). Source: BENCHMARKS.md.</em></p>
+<h2 id="the-most-interesting-thing-i-found">The Most Interesting Thing I Found<a class="headerlink" href="#the-most-interesting-thing-i-found" title="Permanent link">&para;</a></h2>
+<p>I wanted local models to run faster and use less memory. I started with INT4 quantization, which is well studied and a stable standard. But I wanted to know exactly how small the models would compress, so I tried quantizing using INT3. Most models broke. Qwen2.5-7B didn't. The INT3 quantized model remained stable, and tied INT4 on the arc_easy reasoning benchmark. The scores were 0.551 to 0.541, INT3 slightly ahead but within the margin of error. The INT3 model decodes roughly 18% faster and compresses the model from 4.00 GB to 3.56 GB on disk. The rest of the Qwen model family remained stable using INT3, remaining within roughly 1% of the original model's performance. I also quantized Gemma-3 using INT3, and it collapsed, a fifteen-point drop in accuracy.</p>
+<p>The Qwen model family could handle INT3, in some cases marginally beating INT4 within the margin of error. With that finding in hand, I wanted to find the actual floor, so I moved on to INT2. Qwen broke, and for good reason. The model I tested started spitting out gibberish in response to my prompt, "<code>IFYINGIFYIN</code>", completely incoherent, basically random. When a 16-bit model is crushed down to 2 bits, its intelligence is lost. Aggressive quantization has a hard floor, and eventually every model breaks. That breaking point is different for every model and every model family. That's why Squish has a quantization safety mechanism that blocks INT3 for the families it fails on and INT2 altogether. The result is a tool that compresses every model as far as it can safely go, and no further.</p>
+<p><img alt="Bar chart of Qwen2.5-7B arc_easy accuracy by precision: INT4 scores 0.541, INT3 scores 0.551, and INT2 scores 0.290, falling to the random baseline of 0.25." src="../../assets/blog/chart-accuracy.svg" /></p>
+<p><em>arc_easy acc_norm by precision. INT3 holds (0.551, tied with INT4 at 0.541); INT2 collapses to 0.290, at the random baseline. Source: BENCHMARKS.md.</em></p>
+<h2 id="how-you-actually-use-it">How You Actually Use It<a class="headerlink" href="#how-you-actually-use-it" title="Permanent link">&para;</a></h2>
+<p>There are many ways to use Squish, but at its most basic level it serves an OpenAI API on a local port (11435). I built it as a drop-in replacement for Ollama and for any application that speaks the OpenAI API endpoint spec.</p>
+<p>Installing Squish via Homebrew is recommended. Nothing compiles, and every dependency comes bundled:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>brew<span class="w"> </span>tap<span class="w"> </span>konjoai/squish
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>brew<span class="w"> </span>install<span class="w"> </span>squish
+</code></pre></div>
+<p>Or through Python:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>squish-ai<span class="w">    </span><span class="c1"># Python 3.11–3.14 required - OR</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pipx<span class="w"> </span>install<span class="w"> </span>squish-ai<span class="w"> </span>--python<span class="w"> </span>python3.13<span class="w">    </span><span class="c1"># Isolated in its own environment</span>
+</code></pre></div>
+<p>It runs on macOS 13 or later, and the Rust quantizer that does the heavy lifting installs itself.</p>
+<p>With Squish installed, start a model with <code>squish run</code>. Specifying a model is optional. With no argument, Squish pulls a default sized to your machine's RAM, so you get the largest model that comfortably fits.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>squish<span class="w"> </span>run<span class="w">    </span><span class="c1"># or specify a model, e.g. squish run qwen2.5:7b</span>
+</code></pre></div>
+<p>Behind the scenes on that first run, Squish pulls a pre-squished model from the Squish Hugging Face, the conversion and accuracy-gating already done, then loads and serves it. Once the model is loaded and ready, the web UI opens automatically.</p>
+<p>A caveat before you go looking for models: Squish doesn't run every model, only those in MLX format (fp16 or bf16 weights). More on that in the next section.</p>
+<p>With the server running, point any OpenAI client at it. Set your base URL to the local endpoint and use <code>squish</code> as the API key:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_BASE_URL</span><span class="o">=</span>http://localhost:11435/v1
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>squish
+</code></pre></div>
+<p>Ollama clients work too: point <code>OLLAMA_HOST</code> at the same port and they won't know the difference.</p>
+<p>From there, several ways to work with the running model:</p>
+<ul>
+<li><strong>The web UI</strong>, a chat client backed by a live instrument panel: the KV cache filling and reusing in real time, a quantization comparator, a latency waterfall splitting prefill from decode, and Apple Silicon power telemetry.</li>
+<li><strong>The VS Code extension</strong>, the same chat plus agentic features and repo access, right in your editor.</li>
+<li><strong>The macOS app</strong>, in two parts: a menu bar showing the Squish logo and live tokens per second, and a chat window for talking to the loaded model.</li>
+<li><strong>The command line</strong>, POSTing directly to the OpenAI API endpoint.</li>
+</ul>
+<p>Here are the basic Squish CLI commands:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>squish<span class="w"> </span>run<span class="w">        </span><span class="c1"># start the server (auto-picks a model for your RAM)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>squish<span class="w"> </span>pull<span class="w">       </span><span class="c1"># download and compress a model for your machine</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>squish<span class="w"> </span>doctor<span class="w">     </span><span class="c1"># check your environment is set up correctly</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>squish<span class="w"> </span>catalog<span class="w">    </span><span class="c1"># browse available models</span>
+</code></pre></div>
+<p>To keep the server always available, <code>squish daemon install</code> registers it to start at login. For the full command list, see the repo.</p>
+<h2 id="what-squish-doesnt-do">What Squish Doesn't Do<a class="headerlink" href="#what-squish-doesnt-do" title="Permanent link">&para;</a></h2>
+<p>Squish only runs on Apple Silicon (M-series). There is no support for CUDA, Intel, Windows, or Linux. These platforms, chips, and kernels are not on the roadmap. Squish's speed comes from the Mac's Metal and unified memory. If you're not on an M-series Mac, Squish will not work for you.</p>
+<p>Squish doesn't run every model on Hugging Face. It works with models already in MLX format, the fp16 or bf16 weights the <code>mlx-community</code> organization publishes, which is the layout Apple's MLX framework expects. If a model is already in that format, you can point Squish's convert command at it, and it quantizes and packs the weights into Squish's own format. What you can't do is hand it an arbitrary checkpoint in some other layout and expect it to work.</p>
+<h2 id="what-i-actually-use-it-for-now">What I Actually Use It For Now<a class="headerlink" href="#what-i-actually-use-it-for-now" title="Permanent link">&para;</a></h2>
+<p>When I first started building Squish, my goal was to get my commit messages written quickly and without rate limits. I accomplished that goal and then some. My commit and pull request scripts still run against Squish. However, my agents now write many of those commits and PRs themselves. Now my local Squish workflow has grown to include:</p>
+<ul>
+<li>Private and local chat, every prompt and response stays on the machine.</li>
+<li>Local code review and codebase Q&amp;A, the Squish agent reads my repo without a third party involved.</li>
+<li>A drop-in OpenAI endpoint for testing other applications against a real model, no API bill.</li>
+<li>Model benchmarking and inference metrics: TTFT, end-to-end latency, RAM/GPU utilization live in the web dashboard and VS Code extension.</li>
+</ul>
+<p>Your workflow may not look like mine; everyone is different. Squish solves my problems, and it may or may not solve yours. But if you have more than 16 GB RAM, Squish can run larger models than I've been able to while using significantly less RAM and hard disk space. If you want to modify it, the source is available and every benchmark number is reproducible from the repo.</p>
+<p>Thanks for taking the time to read this article. If you have any requests for models to add to the Squish Hugging Face, or any problems installing or running Squish, please open an issue on GitHub.</p>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+  
+
+
+
+      
+    </article>
+  </div>
+
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/konjoai/squish" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://discord.gg/squish" target="_blank" rel="noopener" title="discord.gg" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://pypi.org/project/squish-ai/" target="_blank" rel="noopener" title="pypi.org" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tabs", "navigation.top", "content.code.copy", "content.code.annotate", "search.suggest", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
