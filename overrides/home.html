@@ -6,7 +6,8 @@
    MkDocs layout reset for full-bleed home page
 ══════════════════════════════════════════════════════════════════════ */
 .md-main__inner,.md-content,.md-content__inner{padding:0!important;max-width:unset!important;margin:0!important}
-.md-sidebar{display:none!important}
+@media screen and (min-width:76.25em){.md-sidebar{display:none!important}}
+@media screen and (max-width:76.24em){.md-sidebar--secondary{display:none!important}}
 .md-typeset h1{display:none}
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -299,7 +300,7 @@ body[data-md-color-scheme="default"] {
         <div class="sq-fade-l">
           <div class="sq-badge">
             <span class="sq-badge__dot"></span>
-            v9.34.0 &middot; Apple Silicon native
+            v9.34.8 &middot; Apple Silicon native
           </div>
           <h1 class="sq-hero__title"><span class="sq-grad">Squish</span><br>The Local AI<br>Agent Runtime.</h1>
           <p class="sq-hero__sub">Run any AI model, fully local, on Apple Silicon. Squish loads models in under a second&mdash;<strong>54&times; faster</strong> than the standard path&mdash;and serves them faster than Ollama. <strong>No cloud, no API keys, fully offline.</strong></p>
@@ -351,7 +352,7 @@ body[data-md-color-scheme="default"] {
             <div class="sq-term__body">
               <p class="t-cmt">Install once</p>
               <p class="t-cmd">brew install konjoai/squish/squish</p>
-              <p class="t-ok">&nbsp;&nbsp;&#10003; squish 9.34.0 installed</p>
+              <p class="t-ok">&nbsp;&nbsp;&#10003; squish 9.34.8 installed</p>
               <span class="t-sp"></span>
               <p class="t-cmt">One command does everything</p>
               <p class="t-cmd">squish run qwen2.5:7b</p>
@@ -636,7 +637,7 @@ body[data-md-color-scheme="default"] {
       </div>
       <p style="text-align:center;font-size:.78rem;color:var(--sq-muted);margin-top:16px">
         &#x2736; M3 16 GB, thermally controlled. Cold start: Qwen2.5-1.5B. Serving (decode, tail,
-        E2E, RAM): Qwen2.5-7B INT3 vs Ollama 0.30.7. Squish v9.34.0. On a loaded model, single-token
+        E2E, RAM): Qwen2.5-7B INT3 vs Ollama 0.30.7. Squish v9.34.8. On a loaded model, single-token
         TTFT is comparable (Ollama 167 ms / Squish 192 ms) &mdash; Squish&#x2019;s edge is everywhere else.
       </p>
     </div>
@@ -662,14 +663,14 @@ body[data-md-color-scheme="default"] {
         <div id="sq-p-install" class="sq-tabpanel on">
           <p class="tc">macOS via Homebrew (recommended)</p>
           <p class="tp"><span class="ts">brew install konjoai/squish/squish</span></p>
-          <p class="to">&nbsp;&nbsp;&#10003; squish 9.34.0 installed</p>
+          <p class="to">&nbsp;&nbsp;&#10003; squish 9.34.8 installed</p>
           <span class="t-sp"></span>
           <p class="tc">Or via pip (Python 3.11–3.14)</p>
           <p class="tp"><span class="ts">pip install squish-ai</span></p>
           <span class="t-sp"></span>
           <p class="tc">Verify installation</p>
           <p class="tp"><span class="ts">squish --version</span></p>
-          <p class="to">&nbsp;&nbsp;squish 9.34.0</p>
+          <p class="to">&nbsp;&nbsp;squish 9.34.8</p>
         </div>
 
         <div id="sq-p-run" class="sq-tabpanel">

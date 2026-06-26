@@ -7,8 +7,8 @@ repo_name: konjoai/squish
 theme:
   name: material
   custom_dir: overrides
-  logo: assets/squish-logo.png
-  favicon: assets/squish-logo.png
+  logo: assets/squish-logo-1.png
+  favicon: assets/squish-logo-1.png
   font:
     text: Inter
     code: JetBrains Mono
@@ -80,8 +80,24 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - API Reference: api.md
-  - Benchmarks: RESULTS.md
+  - Benchmarks:
+      - Results: RESULTS.md
+      - Benchmark Guide: benchmark_guide.md
+      - Multi-Model: benchmark_multi_model.md
+      - INT4 / INT3 / INT2: benchmark_int_quant.md
+      - INT3 vs INT2: benchmark_int3_int2.md
+      - 2-bit Comparison: benchmark_2bit.md
+  - Guides:
+      - MoE Models: moe_guide.md
+      - VS Code Agent: vscode-agent.md
+      - GitHub Actions: github-actions.md
+      - Troubleshooting: troubleshooting.md
   - Architecture: ARCHITECTURE.md
+  - Integrations:
+      - OpenClaw: integrations/openclaw.md
+  - Reference:
+      - SQUIZD Format: squizd_format_spec.md
+      - Paper: paper.md
   - Contributing: contributing.md
   - Blog:
       - blog/index.md
