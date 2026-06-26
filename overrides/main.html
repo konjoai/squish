@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+<!--
+  Squish theme override.
+  - Material already emits <link rel="canonical" href="{{ page.canonical_url }}">
+    in base.html, so every page is self-canonical by default.
+  - Below we add Open Graph + Twitter Card metadata so shared links (the
+    launch article in particular) render a rich preview with a chart image.
+-->
+{% block extrahead %}
+  {{ super() }}
+
+  {#- Resolve the social/preview image: page front matter `image:` wins,
+      otherwise fall back to the launch speed chart. Make it absolute. -#}
+  {% set _img = (page.meta and page.meta.image) or "assets/blog/chart-speed.png" %}
+  {% set og_image = _img if _img.startswith("http") else (config.site_url ~ _img) %}
+
+  {#- Title / description with sensible fallbacks. -#}
+  {% set og_title = (page.meta and page.meta.title) or (page.title ~ " - " ~ config.site_name if page and page.title else config.site_name) %}
+  {% set og_desc = (page.meta and page.meta.description) or config.site_description %}
+
+  {#- Blog posts carry a `date`; treat those as articles. -#}
+  {% if page and page.meta and page.meta.date %}
+    {% set og_type = "article" %}
+  {% else %}
+    {% set og_type = "website" %}
+  {% endif %}
+
+  <meta property="og:type" content="{{ og_type }}">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ og_title }}">
+  <meta property="og:description" content="{{ og_desc }}">
+  <meta property="og:url" content="{{ page.canonical_url }}">
+  <meta property="og:image" content="{{ og_image }}">
+  <meta property="og:image:alt" content="{{ og_title }}">
+
+  {% if og_type == "article" %}
+    <meta property="article:published_time" content="{{ page.meta.date }}">
+    {% if page.meta.og_author %}
+      <meta property="article:author" content="{{ page.meta.og_author }}">
+    {% endif %}
+    {% if page.meta.tags %}
+      {% for tag in page.meta.tags %}
+        <meta property="article:tag" content="{{ tag }}">
+      {% endfor %}
+    {% endif %}
+  {% endif %}
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ og_title }}">
+  <meta name="twitter:description" content="{{ og_desc }}">
+  <meta name="twitter:image" content="{{ og_image }}">
+  <meta name="twitter:image:alt" content="{{ og_title }}">
+{% endblock %}

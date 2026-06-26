@@ -42,6 +42,19 @@ plugins:
       glob:
         - "final/**"
         - "*.docx"
+  - blog:
+      blog_dir: blog
+      blog_toc: true
+      post_url_format: "{slug}"
+      post_excerpt: optional
+      authors_file: "{blog}/.authors.yml"
+  - rss:
+      match_path: blog/posts/.*
+      date_from_meta:
+        as_creation: date
+      categories:
+        - categories
+        - tags
 
 markdown_extensions:
   - admonition
@@ -69,6 +82,8 @@ nav:
   - API Reference: api.md
   - Architecture: ARCHITECTURE.md
   - Contributing: contributing.md
+  - Blog:
+      - blog/index.md
 
 extra:
   social:
