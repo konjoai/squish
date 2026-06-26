@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
+        <meta name="description" content="Full Squish vs Ollama benchmark tables, methodology, and ablation, with every number reproducible from the repo.">
       
       
       
-        <link rel="canonical" href="https://squish.run/github-actions/">
+        <link rel="canonical" href="https://squish.run/RESULTS/">
       
       
-        <link rel="prev" href="../vscode-agent/">
+        <link rel="prev" href="../api/">
       
       
-        <link rel="next" href="../troubleshooting/">
+        <link rel="next" href="../benchmark_guide/">
       
       
         
@@ -30,7 +30,7 @@
     
     
       
-        <title>GitHub Actions - Squish</title>
+        <title>Benchmark Results - Squish</title>
       
     
     
@@ -72,19 +72,19 @@
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Squish">
-  <meta property="og:title" content="GitHub Actions - Squish">
-  <meta property="og:description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
-  <meta property="og:url" content="https://squish.run/github-actions/">
+  <meta property="og:title" content="Benchmark Results">
+  <meta property="og:description" content="Full Squish vs Ollama benchmark tables, methodology, and ablation, with every number reproducible from the repo.">
+  <meta property="og:url" content="https://squish.run/RESULTS/">
   <meta property="og:image" content="https://squish.run/assets/blog/chart-speed.png">
-  <meta property="og:image:alt" content="GitHub Actions - Squish">
+  <meta property="og:image:alt" content="Benchmark Results">
 
   
 
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="GitHub Actions - Squish">
-  <meta name="twitter:description" content="Fast local LLMs on Apple Silicon: sub-second model loads, faster than Ollama on long prompts. OpenAI and Ollama-compatible.">
+  <meta name="twitter:title" content="Benchmark Results">
+  <meta name="twitter:description" content="Full Squish vs Ollama benchmark tables, methodology, and ablation, with every number reproducible from the repo.">
   <meta name="twitter:image" content="https://squish.run/assets/blog/chart-speed.png">
-  <meta name="twitter:image:alt" content="GitHub Actions - Squish">
+  <meta name="twitter:image:alt" content="Benchmark Results">
 
   </head>
   
@@ -105,7 +105,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#github-actions-integration" class="md-skip">
+        <a href="#benchmark-results" class="md-skip">
           Skip to content
         </a>
       
@@ -138,7 +138,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              GitHub Actions
+              Benchmark Results
             
           </span>
         </div>
@@ -325,11 +325,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../RESULTS/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -345,12 +347,10 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
+      <li class="md-tabs__item">
         <a href="../moe_guide/" class="md-tabs__link">
           
   
@@ -617,24 +617,29 @@
       
   
   
+    
   
   
+  
     
     
     
     
-      
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
             
   
   
@@ -652,7 +657,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
@@ -667,10 +672,19 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../RESULTS/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -686,6 +700,7 @@
   
 
       </a>
+      
     </li>
   
 
@@ -842,29 +857,24 @@
       
   
   
-    
   
   
-  
     
     
     
     
       
-        
-        
-      
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
@@ -882,7 +892,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -953,37 +963,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    GitHub Actions
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../github-actions/" class="md-nav__link">
         
   
   
@@ -999,59 +982,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#reusable-actions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reusable Actions
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#end-to-end-example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        End-to-End Example
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reuse-from-another-repository" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reuse from Another Repository
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1627,47 +1557,6 @@
     
   
   
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#reusable-actions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reusable Actions
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#end-to-end-example" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        End-to-End Example
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reuse-from-another-repository" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reuse from Another Repository
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
 </nav>
                   </div>
                 </div>
@@ -1686,93 +1575,536 @@
   
 
 
-<h1 id="github-actions-integration">GitHub Actions Integration<a class="headerlink" href="#github-actions-integration" title="Permanent link">&para;</a></h1>
-<p>Wave 84 adds reusable composite GitHub Actions under <code>.github/actions/</code> so teams can run model
-security checks and governance gates with standard <code>uses:</code> steps.</p>
-<h2 id="reusable-actions">Reusable Actions<a class="headerlink" href="#reusable-actions" title="Permanent link">&para;</a></h2>
+<h1 id="benchmark-results">Benchmark Results<a class="headerlink" href="#benchmark-results" title="Permanent link">&para;</a></h1>
+<h1 id="squish-benchmarks">Squish — Benchmarks<a class="headerlink" href="#squish-benchmarks" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>Grounded numbers from the squish repository. Reproduce locally with the
+commands at the bottom of each section. No marketing rounding —
+everything here either runs in CI or is a single Python invocation away.</p>
+</blockquote>
+<hr />
+<h2 id="0-headline-v9320-bench-v511">0. Headline (v9.32.0 / bench v5.1.1)<a class="headerlink" href="#0-headline-v9320-bench-v511" title="Permanent link">&para;</a></h2>
+<p>Source: <code>README.md</code> "The Numbers" section; raw artifacts in <code>results/benchmarks_v5_1_1/</code>.</p>
+<p>Measured 2026-06-02 on Apple M3 MacBook Pro, 16 GB unified memory.
+Model: Qwen2.5-7B-Instruct. Quant: INT4 (squish) / Q4_K_M (Ollama).
+Five-run medians.</p>
 <table>
 <thead>
 <tr>
-<th>Action</th>
-<th>Purpose</th>
-<th>Required Inputs</th>
-<th>Key Outputs</th>
+<th>Metric</th>
+<th style="text-align: right;">Ollama 0.18.2</th>
+<th style="text-align: right;"><strong>Squish</strong></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>./.github/actions/squash-scan</code></td>
-<td>Run model security scan (<code>squash scan</code>)</td>
-<td><code>model-path</code></td>
-<td><code>scan-result</code>, <code>report-path</code></td>
+<td><strong>E2E response @ 4000-token prompt</strong></td>
+<td style="text-align: right;">69.63 s</td>
+<td style="text-align: right;"><strong>12.78 s</strong> <em>(5.4× faster)</em></td>
 </tr>
 <tr>
-<td><code>./.github/actions/squash-compress</code></td>
-<td>Compress model in CI (<code>squish compress</code>)</td>
-<td><code>model-path</code></td>
-<td><code>compression-ratio</code>, <code>bom-path</code></td>
+<td><strong>E2E response @ 75-token prompt</strong></td>
+<td style="text-align: right;">8.09 s</td>
+<td style="text-align: right;"><strong>5.50 s</strong> <em>(1.5× faster)</em></td>
 </tr>
 <tr>
-<td><code>./.github/actions/squash-attest</code></td>
-<td>Run policy attestation (<code>squash attest</code>)</td>
-<td><code>model-path</code></td>
-<td><code>passed</code>, <code>attestation-path</code></td>
+<td><strong>Peak RAM during inference</strong></td>
+<td style="text-align: right;">~5 GB</td>
+<td style="text-align: right;"><strong>3.36 GB</strong></td>
+</tr>
+<tr>
+<td><strong>Disk size — INT4</strong></td>
+<td style="text-align: right;">4.36 GB</td>
+<td style="text-align: right;"><strong>4.00 GB</strong></td>
+</tr>
+<tr>
+<td><strong>Disk size — INT3 (Qwen3)</strong></td>
+<td style="text-align: right;">not supported</td>
+<td style="text-align: right;"><strong>3.56 GB</strong></td>
+</tr>
+<tr>
+<td><strong>TTFT @ 75-token prompt</strong></td>
+<td style="text-align: right;"><strong>131 ms</strong></td>
+<td style="text-align: right;">279 ms <em>(honest loss)</em></td>
 </tr>
 </tbody>
 </table>
-<h2 id="end-to-end-example">End-to-End Example<a class="headerlink" href="#end-to-end-example" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">squash-compliance</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">on</span><span class="p">:</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">pull_request</span><span class="p">:</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">workflow_dispatch</span><span class="p">:</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nt">jobs</span><span class="p">:</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">compliance</span><span class="p">:</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Scan model artifact</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">        </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">scan</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./.github/actions/squash-scan</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">          </span><span class="nt">model-path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">models/qwen3-8b</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">          </span><span class="nt">strict</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Compress model artifact</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">        </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">compress</span>
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.scan.outputs.scan-result != &#39;error&#39; }}</span>
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./.github/actions/squash-compress</span>
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span>
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">          </span><span class="nt">model-path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">models/qwen3-8b</span>
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">          </span><span class="nt">method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">awq</span>
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">          </span><span class="nt">nbits</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run attestation</span>
-<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">        </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">attest</span>
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./.github/actions/squash-attest</span>
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span>
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">          </span><span class="nt">model-path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">models/qwen3-8b</span>
-<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">          </span><span class="nt">policies</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">enterprise-strict,eu-ai-act,nist-ai-rmf</span>
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Enforce pass gate</span>
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ steps.attest.outputs.passed != &#39;true&#39; }}</span>
-<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">          </span><span class="no">echo &quot;Attestation failed: ${{ steps.attest.outputs.attestation-path }}&quot;</span>
-<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">          </span><span class="no">exit 1</span>
+<p>Squish wins end-to-end response time at every prompt size measured
+(5.4× at 4000 tokens), uses ~33% less RAM, and supports INT3 for
+compatible model families. Ollama wins TTFT at every prompt size — if
+first-byte latency matters more than full-response latency, Ollama is
+the right tool.</p>
+<p>Full methodology and ablation: <code>docs/RESULTS.md</code> (v5.1.1 section).</p>
+<hr />
+<h2 id="1-cold-start-load-time-and-ttft">1. Cold-start load time and TTFT<a class="headerlink" href="#1-cold-start-load-time-and-ttft" title="Permanent link">&para;</a></h2>
+<p>Source: <code>README.md</code> headline numbers; reproduced via
+<code>benchmarks/ollama_vs_squish/bench_cold_prefill.py</code> and <code>squish bench</code>.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th style="text-align: center;">mlx_lm (cold)</th>
+<th style="text-align: center;">Ollama</th>
+<th style="text-align: center;"><strong>squish</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cold-start load time</strong></td>
+<td style="text-align: center;">28.81 s</td>
+<td style="text-align: center;">8-25 s</td>
+<td style="text-align: center;"><strong>0.33-0.53 s</strong> §</td>
+</tr>
+<tr>
+<td><strong>Cold start → first token</strong></td>
+<td style="text-align: center;">n/a</td>
+<td style="text-align: center;">20-30 s</td>
+<td style="text-align: center;"><strong>~0.5 s</strong> ‡</td>
+</tr>
+<tr>
+<td><strong>RAM during load</strong></td>
+<td style="text-align: center;">~2400 MB</td>
+<td style="text-align: center;">~2-8 GB</td>
+<td style="text-align: center;"><strong>160 MB</strong> †</td>
+</tr>
+</tbody>
+</table>
+<p>§ Cold-start load = wall time for weights to be accessible in Metal
+unified memory (mmap, no dtype conversion). Qwen2.5-1.5B, M3 16 GB, on
+hardware with sufficient RAM to build the Tier 1 MLX safetensors cache
+(~34 GB required). On a standard 16 GB M3, an 8B INT4 model loads in
+~2.7 s via the lut_int2 path.
+‡ Cold start → first token includes weight load + prefill; Ollama pays a
+full cold model load here, which is where Squish's load advantage shows up.
+For <em>warm</em> steady-state TTFT (model already loaded), see §1b — the two
+engines are comparable there.
+† 160 MB = Apple Metal virtual-address delta during load (mmap, no CPU
+heap). Peak RSS ~402 MB.</p>
+<h3 id="1b-serving-throughput-latency-warm-qwen25-7b-vs-ollama">1b. Serving throughput &amp; latency (warm, Qwen2.5-7B vs Ollama)<a class="headerlink" href="#1b-serving-throughput-latency-warm-qwen25-7b-vs-ollama" title="Permanent link">&para;</a></h3>
+<p>Thermally controlled (cooldown + drift check + die-temp logging), M3 16 GB,
+vs Ollama 0.18.2 <strong>and</strong> 0.30.7. See README and <code>docs/paper.md</code> §4.4.</p>
+<table>
+<thead>
+<tr>
+<th>Metric (warm)</th>
+<th style="text-align: center;">Ollama 0.30.7</th>
+<th style="text-align: center;"><strong>squish INT4</strong></th>
+<th style="text-align: center;"><strong>squish INT3</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Decode tok/s @ 75 tok</td>
+<td style="text-align: center;">20.3</td>
+<td style="text-align: center;"><strong>20.5</strong></td>
+<td style="text-align: center;"><strong>24.0</strong></td>
+</tr>
+<tr>
+<td>Decode tok/s @ 4000 tok</td>
+<td style="text-align: center;">17.0</td>
+<td style="text-align: center;"><strong>19.1</strong></td>
+<td style="text-align: center;"><strong>19.5</strong></td>
+</tr>
+<tr>
+<td>Inter-token p95 @ 75</td>
+<td style="text-align: center;">52.4 ms</td>
+<td style="text-align: center;"><strong>48.4 ms</strong></td>
+<td style="text-align: center;"><strong>42.7 ms</strong></td>
+</tr>
+<tr>
+<td>E2E @ 4000-token prompt</td>
+<td style="text-align: center;">37.5 s</td>
+<td style="text-align: center;"><strong>3.8 s (9.8×)</strong></td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>TTFT (loaded, 75 tok)</td>
+<td style="text-align: center;"><strong>167 ms</strong></td>
+<td style="text-align: center;">192 ms</td>
+<td style="text-align: center;">192 ms</td>
+</tr>
+<tr>
+<td>Peak RAM</td>
+<td style="text-align: center;">5.14 GB</td>
+<td style="text-align: center;"><strong>3.5 GB</strong></td>
+<td style="text-align: center;">—</td>
+</tr>
+</tbody>
+</table>
+<p>INT3 is the recommended default — arc_easy acc_norm 0.551 vs INT4 0.541 (tied,
+n=1000). Squish's only loss is warm single-token TTFT (192 vs 167 ms).</p>
+<hr />
+<h2 id="2-disk-size-raw-vs-squished">2. Disk size — raw vs. squished<a class="headerlink" href="#2-disk-size-raw-vs-squished" title="Permanent link">&para;</a></h2>
+<p>Source: <code>README.md</code> model-size table; the squished column is what
+<code>squish pull &lt;model&gt;</code> actually downloads from the
+<a href="https://huggingface.co/squishai">squishai</a> HF org.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align: center;">Raw (bf16)</th>
+<th style="text-align: center;">Squished (INT4)</th>
+<th style="text-align: center;">Saved</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>qwen3:0.6b</td>
+<td style="text-align: center;">1.3 GB</td>
+<td style="text-align: center;">0.4 GB</td>
+<td style="text-align: center;">69%</td>
+</tr>
+<tr>
+<td>qwen3:1.7b</td>
+<td style="text-align: center;">3.5 GB</td>
+<td style="text-align: center;">1.0 GB</td>
+<td style="text-align: center;">71%</td>
+</tr>
+<tr>
+<td>qwen3:4b</td>
+<td style="text-align: center;">8.2 GB</td>
+<td style="text-align: center;">2.2 GB</td>
+<td style="text-align: center;">73%</td>
+</tr>
+<tr>
+<td>qwen3:8b</td>
+<td style="text-align: center;">16.4 GB</td>
+<td style="text-align: center;">4.4 GB</td>
+<td style="text-align: center;">73%</td>
+</tr>
+<tr>
+<td>qwen3:14b</td>
+<td style="text-align: center;">28.7 GB</td>
+<td style="text-align: center;">7.6 GB</td>
+<td style="text-align: center;">74%</td>
+</tr>
+<tr>
+<td>llama3.1:8b</td>
+<td style="text-align: center;">16.1 GB</td>
+<td style="text-align: center;">4.3 GB</td>
+<td style="text-align: center;">73%</td>
+</tr>
+<tr>
+<td>deepseek-r1:7b</td>
+<td style="text-align: center;">14.4 GB</td>
+<td style="text-align: center;">3.9 GB</td>
+<td style="text-align: center;">73%</td>
+</tr>
+</tbody>
+</table>
+<p>Average: <strong>~73% smaller on disk</strong>, 3.7× compression, statistically
+identical generation quality.</p>
+<hr />
+<h2 id="3-weight-quantization-accuracy-gates-lm_eval-arc_easy">3. Weight quantization accuracy gates (lm_eval, arc_easy)<a class="headerlink" href="#3-weight-quantization-accuracy-gates-lm_eval-arc_easy" title="Permanent link">&para;</a></h2>
+<p>Source: CI accuracy gates; gate values are hard-stops in CI —
+ship requires meeting or beating them.</p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Model</th>
+<th style="text-align: center;">Gate (arc_easy)</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>INT4 AWQ g=32</td>
+<td>Qwen2.5-1.5B</td>
+<td style="text-align: center;">≥ 70.6 %</td>
+<td>✅ shipped (W92)</td>
+</tr>
+<tr>
+<td>INT3 g=32</td>
+<td>Qwen2.5-1.5B</td>
+<td style="text-align: center;">≥ 67.2 %</td>
+<td>✅ shipped (W92)</td>
+</tr>
+<tr>
+<td>INT3</td>
+<td>gemma-3-* ≤ 4B</td>
+<td style="text-align: center;">-15 pp</td>
+<td>❌ blocked</td>
+</tr>
+<tr>
+<td>INT3</td>
+<td>Qwen3 family</td>
+<td style="text-align: center;">within ±2pp</td>
+<td>✅ shipped (9.33.5)</td>
+</tr>
+<tr>
+<td>INT2 (naive)</td>
+<td>any</td>
+<td style="text-align: center;">~29 % ≈ random</td>
+<td>⛔ never ship</td>
+</tr>
+<tr>
+<td><strong>SQINT2</strong></td>
+<td>Qwen2.5-7B</td>
+<td style="text-align: center;">≥ 65 % (target 67%)</td>
+<td>🎯 in progress</td>
+</tr>
+</tbody>
+</table>
+<p>SQINT2 is the four-stage geometry-aware INT2 pipeline: Hadamard
+incoherence preprocessing + NF2 per-group quantisation + low-rank SVD
+residual + layer-selective mixed precision. Effective bit-rate
+<strong>~2.15 bpw</strong> — half of INT4 storage, ~7× of fp16 — see
+the squish architecture for the full math. Stages 1-3 land
+code-complete + SNR-validated; the final lm_eval ship gate runs at
+W103.4d on real M3 16 GB hardware.</p>
+<hr />
+<h2 id="4-kv-cache-quantization-w104-w105-w106">4. KV-cache quantization (W104 / W105 / W106)<a class="headerlink" href="#4-kv-cache-quantization-w104-w105-w106" title="Permanent link">&para;</a></h2>
+<p>Three storage tiers — INT8 (default ≤ 8 K), INT4 (8 K-16 K band),
+INT2 (&gt; 16 K). All three share the same <code>_quantize_*_per_channel</code> /
+<code>_dequantize_*_per_channel</code> codec contract; the only differences are
+the codebook and the bit-packing.</p>
+<h3 id="per-token-storage-head_dim-128">Per-token storage (head_dim = 128)<a class="headerlink" href="#per-token-storage-head_dim-128" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th style="text-align: center;">Code bytes</th>
+<th style="text-align: center;">Scale bytes</th>
+<th style="text-align: center;">Total per token</th>
+<th style="text-align: center;">Compression vs fp16</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fp16 (reference)</td>
+<td style="text-align: center;">256</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;"><strong>256 B</strong></td>
+<td style="text-align: center;">1.00×</td>
+</tr>
+<tr>
+<td>int8</td>
+<td style="text-align: center;">128</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;"><strong>132 B</strong></td>
+<td style="text-align: center;">1.94×</td>
+</tr>
+<tr>
+<td>int4</td>
+<td style="text-align: center;">64</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;"><strong>68 B</strong></td>
+<td style="text-align: center;">3.76×</td>
+</tr>
+<tr>
+<td>int2</td>
+<td style="text-align: center;">32</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;"><strong>36 B</strong></td>
+<td style="text-align: center;">7.11×</td>
+</tr>
+</tbody>
+</table>
+<h3 id="reconstruction-snr-fp16-n_tokens256-head_dim128-seed42">Reconstruction SNR (fp16, n_tokens=256, head_dim=128, seed=42)<a class="headerlink" href="#reconstruction-snr-fp16-n_tokens256-head_dim128-seed42" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Distribution</th>
+<th style="text-align: center;">Hadamard</th>
+<th style="text-align: center;">INT8 SNR</th>
+<th style="text-align: center;">INT4 SNR</th>
+<th style="text-align: center;">INT2 SNR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gaussian (σ=0.3)</td>
+<td style="text-align: center;">off</td>
+<td style="text-align: center;">43.89 dB</td>
+<td style="text-align: center;">19.25 dB</td>
+<td style="text-align: center;">5.20 dB</td>
+</tr>
+<tr>
+<td>Gaussian (σ=0.3)</td>
+<td style="text-align: center;">on</td>
+<td style="text-align: center;">43.82 dB</td>
+<td style="text-align: center;">19.27 dB</td>
+<td style="text-align: center;">5.27 dB</td>
+</tr>
+<tr>
+<td>Heavy-tailed (t, df=3)</td>
+<td style="text-align: center;">off</td>
+<td style="text-align: center;">37.79 dB</td>
+<td style="text-align: center;">12.90 dB</td>
+<td style="text-align: center;">-3.39 dB</td>
+</tr>
+<tr>
+<td>Heavy-tailed (t, df=3)</td>
+<td style="text-align: center;">on</td>
+<td style="text-align: center;">44.27 dB</td>
+<td style="text-align: center;">19.69 dB</td>
+<td style="text-align: center;">5.71 dB</td>
+</tr>
+<tr>
+<td>Outlier-spiked (1% @ ±5)</td>
+<td style="text-align: center;">off</td>
+<td style="text-align: center;">34.29 dB</td>
+<td style="text-align: center;">7.09 dB</td>
+<td style="text-align: center;">-8.61 dB</td>
+</tr>
+<tr>
+<td>Outlier-spiked (1% @ ±5)</td>
+<td style="text-align: center;">on</td>
+<td style="text-align: center;">47.70 dB</td>
+<td style="text-align: center;">23.18 dB</td>
+<td style="text-align: center;"><strong>+8.47 dB</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Read the bottom row carefully: <strong>without rotation, INT2 sits at
+−8.6 dB</strong> on outlier-spiked activations — the reconstruction error is
+literally seven times the signal, and the cache is destroyed. Apply the
+randomised Hadamard rotation (<code>HadamardKVCache</code>, free at runtime,
+seeded so it is deterministic) and SNR jumps <strong>17 dB</strong> to +8.5 dB.
+This is exactly the bin-collapse failure mode that motivated the
+W104 codec design — and exactly what the demo Space lets you click on.</p>
+<h3 id="qwen25-7b-kv-cache-memory-by-context-length">Qwen2.5-7B KV-cache memory by context length<a class="headerlink" href="#qwen25-7b-kv-cache-memory-by-context-length" title="Permanent link">&para;</a></h3>
+<p>n_layers=28, n_kv_heads=4, head_dim=128. Numbers below are
+<code>estimate_kv_memory(...).total_bytes / 1e6</code>, the same closed-form used by
+<code>make_kv_cache(planned_context=...)</code> to pick a tier.</p>
+<table>
+<thead>
+<tr>
+<th>Context tokens</th>
+<th style="text-align: right;">fp16</th>
+<th style="text-align: right;">int8</th>
+<th style="text-align: right;">int4</th>
+<th style="text-align: right;">int2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4 096</td>
+<td style="text-align: right;">234.9 MB</td>
+<td style="text-align: right;">121.1 MB</td>
+<td style="text-align: right;">62.4 MB</td>
+<td style="text-align: right;">33.0 MB</td>
+</tr>
+<tr>
+<td>8 192</td>
+<td style="text-align: right;">469.8 MB</td>
+<td style="text-align: right;">242.2 MB</td>
+<td style="text-align: right;">124.8 MB</td>
+<td style="text-align: right;">66.1 MB</td>
+</tr>
+<tr>
+<td>16 384</td>
+<td style="text-align: right;">939.5 MB</td>
+<td style="text-align: right;">484.4 MB</td>
+<td style="text-align: right;">249.6 MB</td>
+<td style="text-align: right;">132.1 MB</td>
+</tr>
+<tr>
+<td>32 768</td>
+<td style="text-align: right;">1 879.0 MB</td>
+<td style="text-align: right;">968.9 MB</td>
+<td style="text-align: right;">499.1 MB</td>
+<td style="text-align: right;">264.2 MB</td>
+</tr>
+<tr>
+<td>65 536</td>
+<td style="text-align: right;">3 758.1 MB</td>
+<td style="text-align: right;">1 937.8 MB</td>
+<td style="text-align: right;">998.2 MB</td>
+<td style="text-align: right;">528.5 MB</td>
+</tr>
+</tbody>
+</table>
+<p>Headroom story on M3 16 GB (≈ 15.5 GB usable Metal budget): a fp16
+KV cache for Qwen2.5-7B at 32 K tokens is 1.88 GB, on top of ~4.4 GB
+of INT4 weights, leaving only ~9 GB for everything else and OOMing
+around 10 K in practice. The same workload at INT2 KV is <strong>264 MB</strong> —
+7× smaller, fits 32 K cleanly, and 65 K stays under 530 MB.</p>
+<h3 id="recommended-mode-auto-selection">Recommended-mode auto-selection<a class="headerlink" href="#recommended-mode-auto-selection" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">squish.kv.kv_cache</span><span class="w"> </span><span class="kn">import</span> <span class="n">recommended_kv_mode_3tier</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">recommended_kv_mode_3tier</span><span class="p">(</span>   <span class="mi">4_000</span><span class="p">)</span>   <span class="c1"># → &quot;int8&quot;</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">recommended_kv_mode_3tier</span><span class="p">(</span>  <span class="mi">12_000</span><span class="p">)</span>   <span class="c1"># → &quot;int4&quot;</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">recommended_kv_mode_3tier</span><span class="p">(</span>  <span class="mi">32_000</span><span class="p">)</span>   <span class="c1"># → &quot;int2&quot;</span>
 </code></pre></div>
-<h2 id="reuse-from-another-repository">Reuse from Another Repository<a class="headerlink" href="#reuse-from-another-repository" title="Permanent link">&para;</a></h2>
-<p>You can call these actions from external repositories by referencing this repo path and ref:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">konjoai/squish/.github/actions/squash-attest@main</span>
+<p>Defaults: ≤ 8 K → int8, 8-16 K → int4, &gt; 16 K → int2.</p>
+<hr />
+<h2 id="5-throughput-quantized-gemv-w101-w102">5. Throughput — quantized GEMV (W101 / W102)<a class="headerlink" href="#5-throughput-quantized-gemv-w101-w102" title="Permanent link">&para;</a></h2>
+<p>INT4 group-32 GEMV, M3 16 GB, single-thread baseline numbers from
+<code>squish bench --format int4</code> on <code>(batch=1, in=4096, out=4096, group=32,
+iters=200, warmup=50)</code>. Rust path released the GIL via
+<code>py.allow_threads()</code> and parallelised across output features with
+Rayon; NumPy path kept as a portable fallback.</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th style="text-align: center;">p50 latency</th>
+<th style="text-align: center;">p95 latency</th>
+<th style="text-align: center;">GOPS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NumPy fallback</td>
+<td style="text-align: center;">reference</td>
+<td style="text-align: center;">reference</td>
+<td style="text-align: center;">1×</td>
+</tr>
+<tr>
+<td>Rust (<code>squish_quant_rs</code>)</td>
+<td style="text-align: center;">-2-3× faster</td>
+<td style="text-align: center;">-3-4× faster</td>
+<td style="text-align: center;">2-3×</td>
+</tr>
+</tbody>
+</table>
+<p>(Exact numbers depend on host; reproduce with <code>squish bench --format
+int4 --in-features 4096 --out-features 4096 --group-size 32 --iters
+200</code>.)</p>
+<hr />
+<h2 id="6-reproduce-these-numbers">6. Reproduce these numbers<a class="headerlink" href="#6-reproduce-these-numbers" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Cold load + TTFT</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>benchmarks/ollama_vs_squish/bench_cold_prefill.py
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Quantized GEMV throughput</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>squish<span class="w"> </span>bench<span class="w"> </span>--format<span class="w"> </span>int4
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>squish<span class="w"> </span>bench<span class="w"> </span>--format<span class="w"> </span>int8
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="c1"># KV codec SNR (the demo&#39;s numbers, exactly)</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="s2">from spaces._logic import make_synthetic_activations, apply_hadamard, run_all_tiers</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="s2">arr = make_synthetic_activations(256, 128, &#39;outlier&#39;, seed=42)</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="s2">for r in run_all_tiers(apply_hadamard(arr)):</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="s2">    print(f&#39;{r.mode}: SNR={r.snr_db:.2f} dB, {r.bytes_per_token} B/tok, {r.compression_vs_fp16:.2f}x&#39;)</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="s2">&quot;</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="c1"># KV memory for any model + context</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="s2">from squish.kv.kv_cache import estimate_kv_memory</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="s2">e = estimate_kv_memory(n_layers=28, n_kv_heads=4, head_dim=128,</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="s2">                       context_tokens=32_000, mode=&#39;int2&#39;, window=128)</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="s2">print(f&#39;total = {e.total_bytes/1e6:.1f} MB, ratio = {e.compression_ratio:.2f}x&#39;)</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="s2">&quot;</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="c1"># Full lm_eval gate (overnight, requires real model)</span>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>lm_eval<span class="w"> </span>--model<span class="w"> </span>squish<span class="w"> </span>--model_args<span class="w"> </span><span class="nv">path</span><span class="o">=</span><span class="nv">$MODEL_DIR</span><span class="w"> </span>--tasks<span class="w"> </span>arc_easy<span class="w"> </span>--limit<span class="w"> </span><span class="m">500</span>
 </code></pre></div>
-<p>Pin to a commit SHA or release tag in production workflows.</p>
+<hr />
+<h2 id="7-live-in-the-browser">7. Live in the browser<a class="headerlink" href="#7-live-in-the-browser" title="Permanent link">&para;</a></h2>
+<p>The KV-cache numbers from §4 are interactive at the
+<a href="https://huggingface.co/spaces/squishai/squish-kv-quant"><strong>squish-kv-quant</strong> Hugging Face Space</a>.
+Pick a distribution, toggle Hadamard rotation, see SNR shift in real
+time. Source in <a href="spaces/"><code>spaces/</code></a>.</p>
 
 
 
 
 
 
+
+  
+  
 
 
 
