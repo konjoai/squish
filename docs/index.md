@@ -12,37 +12,37 @@ Squish serves quantized models (INT4 / INT3) through a fully OpenAI-compatible R
 
 ---
 
-## The Numbers (v9.32.0 / bench v5.1.1)
+## The Numbers (v9.34.8 / bench v5.1.1)
 
-Measured 2026-06-02 on Apple M3 MacBook Pro, 16 GB unified memory.
-Model: Qwen2.5-7B-Instruct. Quant: INT4 (squish) / Q4_K_M (Ollama).
+Measured on Apple M3 MacBook Pro, 16 GB unified memory, thermally controlled.
+Model: Qwen2.5-7B-Instruct. Quant: INT3/INT4 (Squish) / Q4_K_M (Ollama 0.30.7).
 Five-run medians.
 
-| Metric | Ollama 0.18.2 | **Squish (recommended)** |
+| Metric | Ollama 0.30.7 | **Squish (recommended)** |
 |---|---:|---:|
-| **E2E response @ 4000-token prompt** | 69.63 s | **12.78 s** &nbsp;_(5.4× faster)_ |
-| **E2E response @ 75-token prompt** | 8.09 s | **5.50 s** &nbsp;_(1.5× faster)_ |
-| **Peak RAM during inference** | ~5 GB | **3.36 GB** |
-| **Disk size (INT4)** | 4.36 GB | **4.00 GB** |
-| **Disk size (INT3, Qwen3)** | not supported | **3.56 GB** |
-| **TTFT @ 75-token prompt** | **131 ms** | 279 ms &nbsp;_(honest loss)_ |
+| **Cold start: load + first token (1.5B)** | 20–30 s | **≈0.5 s** &nbsp;_(54×)_ |
+| **Full response @ 4000-token prompt** | 37.5 s | **3.8 s** &nbsp;_(9.8× faster)_ |
+| **Decode throughput @ 75 tokens** | 20.3 tok/s | **24.0 tok/s** &nbsp;_(INT3)_ |
+| **Inter-token tail p95 @ 75 tokens** | 52.4 ms | **42.7 ms** &nbsp;_(INT3)_ |
+| **Repeat-prompt TTFT (KV cache hit)** | ~160 ms | **4–11 ms** |
+| **Peak RAM during inference** | 5.14 GB | **3.50 GB** |
+| **Disk: 7B INT4 / INT3** | 4.36 GB / n/a | **4.00 / 3.56 GB** |
+| **Cold short-prompt TTFT** | **167 ms** | 192 ms &nbsp;_(honest loss)_ |
 
-**Squish wins end-to-end response time at every prompt size measured**, with the largest win on long contexts (5.4× at 4000 tokens), uses ~33% less RAM, and supports INT3 for compatible model families.
+**Squish wins end-to-end response time by 9.8× at 4000-token prompts**, uses less RAM (3.50 vs 5.14 GB), and supports INT3 quantization for compatible model families with accuracy within measurement noise.
 
-**Ollama wins time-to-first-token at every prompt size**, and inter-token jitter on long contexts. If first-byte latency matters more than full-response latency, Ollama is the right tool.
+**Ollama wins cold short-prompt TTFT** (167 ms vs 192 ms). If first-byte latency on a cold, novel short prompt matters most, that 25 ms goes to Ollama. Squish leads everywhere else.
 
 Full table, methodology, and ablation: see [Benchmark Results](RESULTS.md).
-
-<small>M3 16 GB, thermally controlled. Cold start: Qwen2.5-1.5B. Serving: Qwen2.5-7B INT3 vs Ollama 0.30.7. **The one place Ollama wins** is single-token latency on a cold, novel prompt (167 ms vs 192 ms). Squish leads everywhere else.</small>
 
 ---
 
 ## Key Features
 
-- **Long-context wins**: 5.4× faster end-to-end response at 4000-token prompts vs Ollama
+- **Long-context wins**: 9.8× faster end-to-end response at 4000-token prompts vs Ollama 0.30.7
 - **OpenAI- and Ollama-compatible API**: `/v1/chat/completions`, `/v1/models`, `/v1/completions`, plus an Ollama-compatible endpoint for drop-in migration
 - **INT4 + INT3 quantization**: INT4 AWQ g=32 with a hard ≥70.6% arc_easy accuracy gate; INT3 for compatible model families (Qwen3)
-- **Lower memory**: ~33% less RAM than Ollama during inference (3.36 GB vs ~5 GB on Qwen2.5-7B INT4)
+- **Lower memory**: 32% less RAM than Ollama during inference (3.50 GB vs 5.14 GB on Qwen2.5-7B)
 - **Speculative decoding + KV cache management**: context-aware tiering (INT8/INT4/INT2) for long-context workloads
 - **CLI first**: `squish pull`, `squish run`, `squish serve`, `squish rm`, `squish search`
 
