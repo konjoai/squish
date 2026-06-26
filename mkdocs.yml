@@ -80,6 +80,7 @@ nav:
   - Installation: install.md
   - Quickstart: quickstart.md
   - API Reference: api.md
+  - Benchmarks: RESULTS.md
   - Architecture: ARCHITECTURE.md
   - Contributing: contributing.md
   - Blog:
