@@ -124,6 +124,10 @@ def _system_to_dict(s: SystemCellResult) -> dict[str, Any]:
 
 # ── cell runner ───────────────────────────────────────────────────────────────
 
+# Sentinel run index for the cold-prefill reference prompt — far outside the real
+# run range (0..n) and the prefix seed (-1) so it shares no cache prefix with them.
+_COLD_REF_RUN_INDEX = 10_000_000
+
 
 class CellRunner:
     def __init__(
@@ -191,6 +195,7 @@ class CellRunner:
             if not S.wait_ready(sysdef.ready_url, timeout=300):
                 raise RuntimeError(f"{sysdef.name} did not become ready")
             scr.cold_start_s = self._cold_start(S, sysdef, prompts[0], t_proc_start)
+            self._measure_cold_prefill(S, sysdef, prompts[0].ctx_tokens)
             if 0.0 < reuse:  # prime the shared prefix for partial/exact reuse cells
                 S.wait_ready(sysdef.ready_url, timeout=10)
                 self._prime(S, sysdef, reuse, prompts[0])
@@ -229,7 +234,12 @@ class CellRunner:
 
         total_pt = pspec.measured_tokens
         if sysdef.name.startswith("ollama"):
-            measured, method = cache_probe.ollama_hit_fraction(e2e_res.done_chunk, total_pt)
+            measured, method = cache_probe.ollama_hit_fraction(
+                e2e_res.done_chunk,
+                total_pt,
+                prefill_cold_s=self._cold_prefill_ref(sysdef.name, pspec.ctx_tokens),
+                prefill_warm_s=ttft_res.ttft_s,
+            )
         else:
             cold_pf = ttft_res.ttft_s if intended <= 0 else None
             measured, method = cache_probe.squish_hit_fraction(
@@ -260,8 +270,26 @@ class CellRunner:
             error=(ttft_res.error or e2e_res.error),
         )
 
+    def _measure_cold_prefill(self, S, sysdef, ctx_tokens: int) -> None:
+        """Record an empty-cache prefill time per system+ctx.
+
+        Quantifying *partial* reuse needs a cold baseline: a unique prompt whose
+        prefix nothing has seen, prefilled with the model already resident. Both
+        engines then measure reuse by prefill-time collapse (``1 - warm/cold``),
+        independent of their asymmetric, unreliable cache counters. Measured after
+        ``_cold_start`` (model loaded) and before priming, on a reuse=0 prompt that
+        shares no prefix with the cell's primed block, so it cannot contaminate it.
+        """
+        if not hasattr(self, "_cold_prefill"):
+            self._cold_prefill = {}
+        cold = self.corpus.build_prompt(0.0, ctx_tokens, run_index=_COLD_REF_RUN_INDEX)
+        nctx = S.num_ctx_for(cold.measured_tokens)
+        res = sysdef.stream(cold.text, max_tokens=1, num_ctx=nctx)
+        if not res.failed and res.ttft_s:
+            self._cold_prefill[(sysdef.name, ctx_tokens)] = res.ttft_s
+
     def _cold_prefill_ref(self, system: str, ctx_tokens: int) -> float | None:
-        """Reference cold-prefill time for a system+ctx, for the squish ratio path."""
+        """Reference cold-prefill time for a system+ctx, for the prefill-ratio path."""
         return (
             self._cold_prefill.get((system, ctx_tokens)) if hasattr(self, "_cold_prefill") else None
         )

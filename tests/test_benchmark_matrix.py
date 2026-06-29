@@ -217,6 +217,23 @@ def test_ollama_hit_fraction_full_cache_absent_field():
     assert frac == 1.0 and "absent" in method
 
 
+def test_ollama_hit_fraction_prefill_ratio_when_count_unreliable():
+    # Build that reports the full prompt count despite real KV reuse: the count
+    # signal reads ~0% reuse, so the prefill-time collapse must take over.
+    frac, method = cache_probe.ollama_hit_fraction(
+        {"prompt_eval_count": 800}, 800, prefill_cold_s=1.0, prefill_warm_s=0.5
+    )
+    assert math.isclose(frac, 0.5) and "prefill_ratio" in method
+
+
+def test_ollama_hit_fraction_count_wins_when_reliable():
+    # A genuine partial count is trusted even if a cold ref is present.
+    frac, method = cache_probe.ollama_hit_fraction(
+        {"prompt_eval_count": 400}, 800, prefill_cold_s=1.0, prefill_warm_s=0.9
+    )
+    assert math.isclose(frac, 0.5) and "prompt_eval_count" in method
+
+
 def test_squish_hit_fraction_usage_cached_tokens():
     usage = {"prompt_tokens": 800, "prompt_tokens_details": {"cached_tokens": 600}}
     frac, method = cache_probe.squish_hit_fraction(usage, {}, {}, 800)

@@ -140,15 +140,15 @@ class TemperatureSampler(threading.Thread):
         self.label = label
         self.interval_s = interval_s
         self.reader = reader
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             self.log.record(self.reader(), self.label)
-            self._stop.wait(self.interval_s)
+            self._stop_event.wait(self.interval_s)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
         self.join(timeout=2)
 
 
