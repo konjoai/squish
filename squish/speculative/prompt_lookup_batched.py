@@ -255,8 +255,10 @@ def prompt_lookup_generate(
     finally:
         # Publish the (now-extended) cache for the next request to reuse its
         # prefix. Runs on every exit — EOS, max_tokens, or client disconnect.
+        # Pass the prompt length so reuse is capped to the chunk-prefilled prompt
+        # positions (decode/spec tokens beyond it were written off the chunk grid).
         if _store_to is not None:
-            _store_to.store(ctx, model_cache)
+            _store_to.store(ctx, model_cache, len(prompt_ids))
 
 
 def stream_prompt_lookup(
