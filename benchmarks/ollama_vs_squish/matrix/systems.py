@@ -254,7 +254,7 @@ def stream_squish(prompt: str, max_tokens: int, num_ctx: int) -> StreamResult:
 def squish_metrics() -> dict[str, float]:
     """Snapshot Squish's /metrics counters+gauges (for cache-hit measurement)."""
     try:
-        url = f"http://{SQUISH_HOST}:{SQUISH_PORT}/metrics"
+        url = f"http://{SQUISH_HOST}:{SQUISH_PORT}/v1/metrics"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {SQUISH_API_KEY}"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             return cache_probe.parse_prometheus(resp.read().decode())
