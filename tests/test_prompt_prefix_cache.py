@@ -186,14 +186,55 @@ def test_reuse_is_byte_identical_to_cold():
             t for t, _ in prompt_lookup_generate(model, ids, n, eos_ids=eos, reuse_prefix=reuse)
         ]
 
-    # >128 tokens so the prefix-reuse threshold engages on turn 2.
-    p1 = tok.encode("Background: " + "the river flows past the old stone bridge. " * 14)
+    # >=1 chunk (256 tokens) so the chunk-aligned prefix-reuse engages on turn 2.
+    p1 = tok.encode("Background: " + "the river flows past the old stone bridge. " * 60)
     g1 = gen(p1, 16, reuse=True)  # turn 1 populates the slot
     p2 = p1 + g1 + tok.encode(" Then answer briefly:")  # turn 2 extends turn 1
 
     warm = gen(p2, 16, reuse=True)  # reuses the shared prefix
     cold = gen(p2, 16, reuse=False)  # full cold prefill (truth)
     assert warm == cold
+
+
+@_needs_model
+def test_partial_reuse_byte_identical_across_chunk_grid():
+    """Partial reuse is byte-identical to a cold prefill at every shared-prefix
+    length — including lengths deliberately OFF the chunk grid. Absolute-position-
+    aligned chunked prefill makes the suffix forward shapes match cold, so bf16
+    rounding can no longer fork the output at a near-tie."""
+    import mlx.core as mx
+
+    mx.set_default_device(mx.gpu)
+    from mlx_lm import load
+
+    from squish.kv.prompt_prefix_cache import _PREFILL_CHUNK as C
+    from squish.kv.prompt_prefix_cache import PromptPrefixCache, prefill_with_reuse
+
+    model, tok = load(_MODEL)
+    base = tok.encode(
+        "Background: " + "the river flows past the old stone bridge while herons "
+        "watch the slow grey water turn beneath the willows. " * 60
+    )
+    assert len(base) > 2 * C + 40, "base corpus too short for the grid"
+    tail_a = tok.encode(" alpha summary.")
+    tail_b = tok.encode(" bravo detailed explanation please.")
+
+    def gen(cache, first, n=24):
+        out, y = [], first
+        for _ in range(n):
+            y = int(mx.argmax(model(mx.array([y], mx.uint32)[None], cache=cache)[0, -1]))
+            out.append(y)
+        return out
+
+    for k in (C - 1, C, C + 1, 2 * C - 1, 2 * C, 2 * C + 13):
+        a, b = base[:k] + tail_a, base[:k] + tail_b
+        if a[k] == b[k]:
+            continue  # keep the shared prefix exactly k tokens
+        cold = gen(prefill_with_reuse(model, b, None), b[-1])
+        slot = PromptPrefixCache(min_prefix=1)
+        slot.store(a, prefill_with_reuse(model, a, slot), len(a))
+        warm = gen(prefill_with_reuse(model, b, slot), b[-1])
+        assert warm == cold, f"partial reuse diverged from cold at shared={k}"
 
 
 def _install_fake_mlx_runtime(monkeypatch):
@@ -248,29 +289,46 @@ def test_prefill_cold_when_no_prefix_cache(monkeypatch):
     assert calls["model"] and calls["eval"] == 1  # suffix prefilled + evaluated
 
 
-def test_prefill_reuses_shared_prefix_and_trims(monkeypatch):
+def test_prefill_reuses_chunk_aligned_prefix_and_trims(monkeypatch):
     import types
 
-    from squish.kv.prompt_prefix_cache import PromptPrefixCache, prefill_with_reuse
+    from squish.kv.prompt_prefix_cache import (
+        _PREFILL_CHUNK as C,
+    )
+    from squish.kv.prompt_prefix_cache import (
+        PromptPrefixCache,
+        prefill_with_reuse,
+    )
 
     calls = _install_fake_mlx_runtime(monkeypatch)
     pc = PromptPrefixCache(min_prefix=2)
-    # stored cache covers more tokens (offset=4) than the shared prefix (3) → trim.
-    pc.store([1, 2, 3, 9], [types.SimpleNamespace(offset=4, state=())])
-    model = lambda x, cache=None: "out"  # noqa: E731
-    prefill_with_reuse(model, [1, 2, 3, 7, 8], pc)
-    assert calls["trim"] == [1]  # offset(4) - keep(min(3,4,4)=3) == 1
+    # Stored cache covers more than the shared prefix; reuse keeps a whole chunk
+    # (aligned DOWN to C) and trims the surplus above it.
+    stored = list(range(C + 300))
+    pc.store(stored, [types.SimpleNamespace(offset=C + 300, state=())], len(stored))
+    prompt = list(range(C + 44)) + [99999]  # shares C+44 tokens, then diverges
+    model = lambda x, cache=None: calls["model"].append(x)  # noqa: E731
+    prefill_with_reuse(model, prompt, pc)
+    assert calls["trim"] == [300]  # offset(C+300) - keep(C) == 300
+    assert len(calls["model"]) == 1  # the sub-C suffix past the chunk boundary
 
 
 def test_prefill_reuse_with_no_suffix_skips_model(monkeypatch):
     import types
 
-    from squish.kv.prompt_prefix_cache import PromptPrefixCache, prefill_with_reuse
+    from squish.kv.prompt_prefix_cache import (
+        _PREFILL_CHUNK as C,
+    )
+    from squish.kv.prompt_prefix_cache import (
+        PromptPrefixCache,
+        prefill_with_reuse,
+    )
 
     calls = _install_fake_mlx_runtime(monkeypatch)
     pc = PromptPrefixCache(min_prefix=2)
-    pc.store([1, 2, 3], [types.SimpleNamespace(offset=2, state=())])
+    stored = list(range(C + 1))  # offset covers prompt_ids[:-1] == range(C)
+    pc.store(stored, [types.SimpleNamespace(offset=C, state=())], len(stored))
     model = lambda x, cache=None: calls["model"].append(x)  # noqa: E731
-    # prompt_ids[:-1] == [1,2]; keep=min(2,2,2)=2 → start=2 → suffix empty
-    prefill_with_reuse(model, [1, 2, 3], pc)
+    # keep aligns to C == end → no suffix to prefill.
+    prefill_with_reuse(model, list(range(C + 1)), pc)
     assert calls["model"] == [] and calls["eval"] == 0
