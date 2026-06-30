@@ -396,6 +396,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         const maxTokens: number = cfg.get('maxTokens', 1024);
         const temperature: number = cfg.get('temperature', 0.7);
         const systemPrompt: string = cfg.get('systemPrompt', '');
+        // Agent mode (default off) decides whether tools are offered. Off =
+        // plain streaming chat, the fast path that matches the web UI and
+        // SquishBar; on = the multi-round tool-calling loop.
+        const agentMode: boolean = cfg.get('agentMode', false);
 
         // Build message list. The workspace-context message is injected fresh
         // each turn (active file, selection, diagnostics, open tabs) and is NOT
@@ -429,7 +433,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         // Signal start of assistant turn
         this._view.webview.postMessage({ type: 'streamStart' });
 
-        await this._runToolLoop(client, messages, maxTokens, temperature, model);
+        await this._runToolLoop(client, messages, maxTokens, temperature, model, agentMode);
     }
 
     /**
@@ -508,6 +512,7 @@ export class ChatPanel implements vscode.WebviewViewProvider {
         maxTokens: number,
         temperature: number,
         model: string,
+        agentMode: boolean,
     ): Promise<void> {
         return new Promise<void>((resolve) => {
             const MAX_TOOL_ROUNDS = 10;
@@ -549,8 +554,9 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                             // Some local models don't support structured tool_calls and instead
                             // emit the tool arguments as plain JSON text in the content field.
                             // Detect that pattern, clear the JSON from the webview, then route
-                            // to the normal tool execution path.
-                            if (!wantsTools) {
+                            // to the normal tool execution path. Only in agent mode — plain
+                            // chat must never reinterpret a JSON-looking reply as a tool call.
+                            if (!wantsTools && agentMode) {
                                 const extracted = extractTextModeToolCall(
                                     assistantReply.trim(),
                                     ChatPanel.TOOLS,
@@ -634,7 +640,10 @@ export class ChatPanel implements vscode.WebviewViewProvider {
                         });
                         resolve();
                     },
-                    ChatPanel.TOOLS,
+                    // Only offer tools in agent mode. Without tools the server
+                    // streams the reply (fast TTFT); with tools it must buffer
+                    // the whole generation to detect a tool call first.
+                    agentMode ? ChatPanel.TOOLS : undefined,
                 );
             };
 

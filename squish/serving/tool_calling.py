@@ -116,6 +116,30 @@ _TOOL_CALL_TAG = re.compile(r"<tool_call>\s*([\s\S]*?)\s*</tool_call>", re.MULTI
 _OPEN_TOOL_CALL_TAG = re.compile(r"<tool_call>\s*([\s\S]+)$", re.MULTILINE)
 # Think-block stripper (Qwen3 reasoning traces before the tool call)
 _THINK_BLOCK = re.compile(r"<think>[\s\S]*?</think>", re.MULTILINE)
+# Soft-switch reasoning directives (Qwen3): ``/think`` / ``/no_think`` /
+# ``/nothink``. These are prompt-control tokens that toggle the model's
+# reasoning mode — they must never surface in user-visible output. Some models
+# (non-Qwen, or aggressively quantized) echo them back; strip them defensively
+# from any generated text. Anchored to a slash + word boundary so legitimate
+# prose like "and/or think about it" is left untouched.
+_THINK_DIRECTIVE = re.compile(r"(?<![\w/])/(?:no[_-]?think|think)(?![\w/])", re.IGNORECASE)
+
+
+def strip_think_directives(text: str) -> str:
+    """Remove stray ``/think`` / ``/no_think`` / ``/nothink`` control directives.
+
+    The reasoning soft-switch is meant to be consumed by the chat template, not
+    emitted — but weaker models occasionally parrot it into their reply. Strip
+    the directive token (and any whitespace it leaves dangling) so it never
+    reaches a client, regardless of which model or endpoint produced it.
+    """
+    if "/" not in text:
+        return text
+    cleaned = _THINK_DIRECTIVE.sub("", text)
+    if cleaned == text:
+        return text
+    # Collapse the double space / leading space a removed directive can leave.
+    return re.sub(r"[ \t]{2,}", " ", cleaned).strip(" \t")
 
 
 def _extract_json_objects(text: str) -> list[str]:

@@ -186,6 +186,11 @@
           "default": false,
           "description": "Automatically start the Squish server when VS Code opens."
         },
+        "squish.agentMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run chat through the tool-calling agent loop. When off (default), chat streams plain responses for the fastest reply, matching the web UI and SquishBar. Turn on to let the model read files, run commands, and use editor tools."
+        },
         "squish.maxTokens": {
           "type": "number",
           "default": 4096,
