@@ -1595,14 +1595,10 @@ def _apply_chat_template(
     its trained tool-calling format (e.g. ``<tool_call>`` tags for Qwen3)
     rather than a manually-injected system-prompt JSON schema.
 
-    *enable_thinking* toggles Qwen3-style reasoning via the template's own
-    ``enable_thinking`` flag (the supported mechanism) instead of injecting a
-    literal ``/no_think`` string into the prompt — which weaker models echo
-    back into their reply. ``None`` leaves the template default untouched;
-    templates that don't recognise the kwarg simply ignore it.
+    *enable_thinking* toggles Qwen3-style reasoning via the template's own flag
+    instead of injecting a literal ``/no_think`` string that weaker models echo
+    back. ``None`` leaves the default; templates without the kwarg ignore it.
     """
-    # Only thread the kwarg through when explicitly set, so models whose
-    # templates predate ``enable_thinking`` keep their current behaviour.
     _extra: dict[str, bool] = {} if enable_thinking is None else {"enable_thinking": enable_thinking}
     if hasattr(tokenizer, "apply_chat_template"):
         # Try native tool calling first (Qwen3 / HF models with tools support)
@@ -3340,10 +3336,8 @@ async def chat_completions(  # pragma: no cover
         tools = []
 
     # ── Phase A1: /no_think mode (thinking_budget == 0) ──────────────────────
-    # Disable reasoning through the chat template's ``enable_thinking`` flag
-    # (resolved at prompt-build time) rather than injecting a literal
-    # ``/no_think`` string into the messages — models that don't honour the
-    # soft-switch echo that string straight back into their reply.
+    # Disable reasoning via the chat template's ``enable_thinking`` flag (below),
+    # not by injecting a literal ``/no_think`` string that models echo back.
     _enable_thinking: bool | None = False if _thinking_budget == 0 else None
 
     # ── Phase A3: concision prefix ────────────────────────────────────────────
@@ -3450,11 +3444,8 @@ async def chat_completions(  # pragma: no cover
     req_start      = time.perf_counter()
     _state.inflight += 1
 
-    # Sanitiser for any reasoning soft-switch directive the model echoes back
-    # (e.g. ``/no_think``); shared by the streaming and non-streaming paths.
-    from squish.serving.tool_calling import (  # noqa: PLC0415
-        strip_think_directives as _strip_think_directives,
-    )
+    # Strips any echoed ``/no_think`` directive; used by both paths below.
+    from squish.serving.tool_calling import strip_think_directives  # noqa: PLC0415
 
     if stream:
         # ── Streaming response ────────────────────────────────────────────
@@ -3540,11 +3531,8 @@ async def chat_completions(  # pragma: no cover
                             break
                         item = _queue.get_nowait()
                     if batch_parts:
-                        # Strip any echoed ``/no_think`` directive before it reaches
-                        # the client (best-effort: a directive split across batches
-                        # is rare — the producer coalesces queued tokens, and the
-                        # ``enable_thinking`` template flag prevents it at the source).
-                        _batch_text = _strip_think_directives("".join(batch_parts))
+                        # Strip any echoed ``/no_think`` before the client sees it.
+                        _batch_text = strip_think_directives("".join(batch_parts))
                         if _batch_text:
                             yield _make_chunk(_batch_text, model_id, cid,
                                               _created=_created, _fingerprint=_fp)
@@ -3630,9 +3618,8 @@ async def chat_completions(  # pragma: no cover
                     "…" if len(full_text) > 400 else "")
                 _tlog(f"CHAT  resp: {_resp_preview}")
 
-        # Defensively strip any reasoning soft-switch directive the model may
-        # have echoed (e.g. ``/no_think``) so it never reaches the client.
-        full_text   = _strip_think_directives(full_text)
+        # Strip any echoed reasoning soft-switch directive (e.g. ``/no_think``).
+        full_text   = strip_think_directives(full_text)
         comp_tokens = _count_tokens(full_text)
 
         # ── Tool calling: detect function call in output ──────────────────────
