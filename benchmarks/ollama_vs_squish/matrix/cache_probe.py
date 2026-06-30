@@ -77,11 +77,23 @@ def _clamp01(x: float) -> float:
 # ── per-system measurement ────────────────────────────────────────────────────
 
 
-def ollama_hit_fraction(done_chunk: dict, total_prompt_tokens: int) -> tuple[float, str]:
+def ollama_hit_fraction(
+    done_chunk: dict,
+    total_prompt_tokens: int,
+    *,
+    prefill_cold_s: float | None = None,
+    prefill_warm_s: float | None = None,
+) -> tuple[float, str]:
     """Measured reuse fraction for an Ollama run from its terminal chunk.
 
-    ``prompt_eval_count`` is the count of prompt tokens actually prefilled; a
-    fully cached prefix omits or zeroes it. Returns (fraction, method).
+    ``prompt_eval_count`` is the documented signal (tokens actually prefilled),
+    but some llama.cpp/Ollama builds report the *full* prompt length even when
+    the KV prefix was reused — verified on Ollama 0.x + qwen2.5:7b, where prefill
+    collapses ~5x across an identical repeat while ``prompt_eval_count`` stays
+    pinned at the full count. When the count shows no reuse but a cold-prefill
+    reference is available, fall back to the prefill-time collapse
+    ``1 - warm/cold`` — the same signal used for Squish's radix path, which keeps
+    the head-to-head apples-to-apples. Returns (fraction, method).
     """
     if total_prompt_tokens <= 0:
         return 0.0, "ollama:no_prompt_tokens"
@@ -89,8 +101,12 @@ def ollama_hit_fraction(done_chunk: dict, total_prompt_tokens: int) -> tuple[flo
     if evaluated is None:
         # llama.cpp omits the field when the entire prompt was served from cache.
         return 1.0, "ollama:prompt_eval_count_absent(full_cache)"
-    frac = 1.0 - (float(evaluated) / float(total_prompt_tokens))
-    return _clamp01(frac), "ollama:prompt_eval_count"
+    count_frac = _clamp01(1.0 - (float(evaluated) / float(total_prompt_tokens)))
+    if count_frac <= 0.05 and prefill_cold_s and prefill_warm_s and prefill_cold_s > 0:
+        ratio = _clamp01(1.0 - (prefill_warm_s / prefill_cold_s))
+        if ratio > 0.05:
+            return ratio, "ollama:prefill_ratio(count_unreliable)"
+    return count_frac, "ollama:prompt_eval_count"
 
 
 def squish_hit_fraction(
@@ -129,6 +145,14 @@ def squish_hit_fraction(
         return _clamp01(frac), "squish:radix_hit+prefill_ratio"
     if radix_hit:
         return float("nan"), "squish:radix_hit_event_only"
+    # Squish's reuse counters do not cover every reuse path (the on-disk prompt-kv
+    # store and the in-memory prefix slot bump different/no counters), so fall back
+    # to the prefill-time collapse 1 - warm/cold — the same apples-to-apples signal
+    # used for Ollama — whenever a cold-prefill reference is available.
+    if prefill_cold_s and prefill_warm_s and prefill_cold_s > 0:
+        ratio = _clamp01(1.0 - (prefill_warm_s / prefill_cold_s))
+        if ratio > 0.05:
+            return ratio, "squish:prefill_ratio(no_counter)"
     return 0.0, "squish:no_reuse_event"
 
 

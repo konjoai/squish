@@ -27,7 +27,7 @@ class RSSSampler(threading.Thread):
     def __init__(self, root_pid: int) -> None:
         super().__init__(daemon=True)
         self.root_pid = root_pid
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self.peak_bytes = 0
         self.samples = 0
 
@@ -40,7 +40,7 @@ class RSSSampler(threading.Thread):
             root = psutil.Process(self.root_pid)
         except psutil.NoSuchProcess:
             return
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 tree = root.memory_info().rss
                 for child in root.children(recursive=True):
@@ -55,7 +55,7 @@ class RSSSampler(threading.Thread):
             time.sleep(0.05)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
         self.join(timeout=2)
 
 
@@ -155,8 +155,8 @@ _OOM_MARKERS = (
 _GOVERNOR_MARKERS = (
     "memory pressure",
     "memory governor",
-    "compressed",
-    "swap",
+    "swapping",  # active swap verb; avoids matching benign "free_swap=0 B" log lines
+    "paged out",
     "jetsam",
 )
 

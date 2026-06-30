@@ -32,6 +32,13 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - hardware o
         help="Confirm the kill-test was reviewed and approved.",
     )
     ap.add_argument("--n-runs", type=int, default=30, help="paired runs per cell (>=30)")
+    ap.add_argument(
+        "--resume",
+        default="",
+        metavar="DIR",
+        help="Resume into an existing matrix dir: cells whose <cell_id>.json already "
+        "exists are loaded and skipped, the rest run. Makes the matrix crash-safe.",
+    )
     args = ap.parse_args(argv)
 
     if not args.i_have_approved:
@@ -42,9 +49,16 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - hardware o
         print("REFUSING: the methodology requires >=30 paired runs per cell.")
         return 2
 
-    ts = time.strftime("%Y%m%dT%H%M%S")
-    out_dir = OUT_ROOT / "matrix" / ts
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if args.resume:
+        out_dir = Path(args.resume)
+        if not out_dir.is_dir():
+            print(f"REFUSING: --resume dir does not exist: {out_dir}")
+            return 2
+        print(f"[matrix] RESUMING into {out_dir}")
+    else:
+        ts = time.strftime("%Y%m%dT%H%M%S")
+        out_dir = OUT_ROOT / "matrix" / ts
+        out_dir.mkdir(parents=True, exist_ok=True)
     print(f"[matrix] output dir: {out_dir}")
 
     ram = detect_ram_bytes()
@@ -55,9 +69,13 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - hardware o
 
     cells_out: list[dict] = []
     for ci, cell in enumerate(all_cells()):
+        cell_json = out_dir / f"{cell.cell_id}.json"
+        if cell_json.exists():
+            cells_out.append(json.loads(cell_json.read_text()))
+            print(f"[matrix] cell {cell.cell_id}: SKIP (already done)")
+            continue
         order = counterbalanced_order(list(systems.keys()), ci)
         result = runner.run(cell.reuse, cell.ctx_tokens, systems, order)
-        cell_json = out_dir / f"{cell.cell_id}.json"
         cell_json.write_text(json.dumps(result.to_dict(), indent=2, default=str))
         cells_out.append(result.to_dict())
         print(f"[matrix] cell {cell.cell_id}: status={result.status}")
