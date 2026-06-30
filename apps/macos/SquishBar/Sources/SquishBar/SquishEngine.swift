@@ -49,6 +49,65 @@ struct ChatMessage: Identifiable {
     var attachments: [AttachedFile] = []
 }
 
+// ── Reasoning filter ────────────────────────────────────────────────────
+/// Streaming filter that strips `<think>…</think>` reasoning blocks out of a
+/// token stream so the model's chain-of-thought never lands in the chat
+/// bubble — matching the web UI, which hides reasoning rather than dumping it
+/// inline. Buffers across token boundaries so a tag split between chunks is
+/// still caught.
+struct ThinkFilter {
+    private var buf = ""
+    private var inThink = false
+    private static let open  = "<think>"
+    private static let close = "</think>"
+
+    /// Feed a streamed delta; returns only the user-visible text (reasoning removed).
+    mutating func feed(_ delta: String) -> String {
+        buf += delta
+        var out = ""
+        while !buf.isEmpty {
+            if inThink {
+                guard let r = buf.range(of: ThinkFilter.close) else {
+                    // Still inside the block — keep only a tail in case the
+                    // closing tag is split across the next chunk.
+                    if buf.count > ThinkFilter.close.count {
+                        buf = String(buf.suffix(ThinkFilter.close.count))
+                    }
+                    break
+                }
+                inThink = false
+                buf = String(buf[r.upperBound...])
+                while buf.first == "\n" { buf.removeFirst() }
+            } else {
+                guard let r = buf.range(of: ThinkFilter.open) else {
+                    // No opening tag yet — emit everything but a possible
+                    // partial tag at the tail.
+                    let keep = ThinkFilter.open.count
+                    if buf.count > keep {
+                        let safeEnd = buf.index(buf.endIndex, offsetBy: -keep)
+                        out += buf[..<safeEnd]
+                        buf = String(buf[safeEnd...])
+                    }
+                    break
+                }
+                out += buf[..<r.lowerBound]
+                inThink = true
+                buf = String(buf[r.upperBound...])
+            }
+        }
+        return out
+    }
+
+    /// Emit any buffered tail once the stream ends (a held-back partial that
+    /// turned out not to be a tag). Anything still inside a think block is dropped.
+    mutating func flush() -> String {
+        if inThink { buf = ""; return "" }
+        let rest = buf
+        buf = ""
+        return rest
+    }
+}
+
 // ── Engine ────────────────────────────────────────────────────────────
 @MainActor
 final class SquishEngine: ObservableObject {
@@ -349,9 +408,17 @@ final class SquishEngine: ObservableObject {
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            let body: [String: Any] = ["model": model, "messages": history, "stream": true]
+            // Cap generation and pin temperature so plain chat responds as
+            // quickly and predictably as the web UI (which sends both).
+            let body: [String: Any] = [
+                "model": model, "messages": history, "stream": true,
+                "max_tokens": 1024, "temperature": 0.7,
+            ]
             req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
+            // Strip reasoning blocks from the streamed tokens before they reach
+            // the bubble, exactly like the web UI hides them.
+            var think = ThinkFilter()
             do {
                 let (bytes, _) = try await URLSession.shared.bytes(for: req)
                 for try await line in bytes.lines {
@@ -364,9 +431,19 @@ final class SquishEngine: ObservableObject {
                           let choices = json["choices"] as? [[String: Any]],
                           let delta = choices.first?["delta"] as? [String: Any],
                           let token = delta["content"] as? String else { continue }
+                    let visible = think.feed(token)
+                    guard !visible.isEmpty else { continue }
                     await MainActor.run {
                         if replyIdx < self.messages.count {
-                            self.messages[replyIdx].content += token
+                            self.messages[replyIdx].content += visible
+                        }
+                    }
+                }
+                let tail = think.flush()
+                if !tail.isEmpty {
+                    await MainActor.run {
+                        if replyIdx < self.messages.count {
+                            self.messages[replyIdx].content += tail
                         }
                     }
                 }

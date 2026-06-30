@@ -355,6 +355,46 @@ describe('ChatPanel', () => {
         expect(tools[0]).toMatchObject({ type: 'function' });
     });
 
+    test('plain chat mode (agentMode off): streams without tools', async () => {
+        const postMessage = jest.fn();
+        const panel = makePanel(extUri);
+        const view = makeWebviewView(postMessage);
+
+        // Opt out of agent mode → no tools should be offered, so the server
+        // can stream (fast path matching the web UI and SquishBar).
+        (vscode.workspace as unknown as {
+            _setConfig: (k: string, v: unknown) => void;
+        })._setConfig('agentMode', false);
+
+        let messageHandler: ((msg: unknown) => void) | undefined;
+        (view.webview.onDidReceiveMessage as jest.Mock).mockImplementation(
+            (cb: (msg: unknown) => void) => { messageHandler = cb; }
+        );
+
+        MockSquishClient.prototype.streamChat = jest.fn(
+            (_msgs, _max, _temp, _model, onChunk, _onError) => {
+                onChunk({ delta: 'hi there', done: false, finishReason: null });
+                onChunk({ delta: '', done: true, finishReason: 'stop' });
+            }
+        );
+
+        panel.resolveWebviewView(view, {} as vscode.WebviewViewResolveContext, {} as vscode.CancellationToken);
+        messageHandler?.({ type: 'userMessage', text: 'hi' });
+        await new Promise(r => setTimeout(r, 20));
+
+        // Restore the fixture default for subsequent tests.
+        (vscode.workspace as unknown as {
+            _setConfig: (k: string, v: unknown) => void;
+        })._setConfig('agentMode', true);
+
+        const call = (MockSquishClient.prototype.streamChat as jest.Mock).mock.calls[0];
+        // 7th argument (index 6) — tools — must be absent in plain chat mode.
+        expect(call[6]).toBeUndefined();
+        const types = postMessage.mock.calls.map(([m]: [{ type: string }]) => m.type);
+        expect(types).toContain('streamChunk');
+        expect(types).toContain('streamEnd');
+    });
+
     test('tool call loop: tool result appended to messages on second call', async () => {
         const postMessage = jest.fn();
         const panel = makePanel(extUri);

@@ -22,6 +22,10 @@ const _config: Record<string, unknown> = {
     'squish.systemPrompt':    '',
     'squish.thinkingBudget':  0,
     'squish.venvPath':        '',
+    // Most ChatPanel tests exercise the tool-calling agent path, so the
+    // fixture defaults agent mode ON. The real default is OFF (plain streaming
+    // chat) — that path is covered explicitly by a dedicated test.
+    'squish.agentMode':       true,
 };
 
 let _workspaceFolders: Array<{ uri: { fsPath: string } }> = [];

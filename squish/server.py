@@ -1586,6 +1586,7 @@ def _apply_chat_template(
     messages: list[dict[str, str]],
     tokenizer,
     tools: list[dict] | None = None,
+    enable_thinking: bool | None = None,
 ) -> str:
     """Apply chat template if available, fall back to manual formatting.
 
@@ -1593,7 +1594,16 @@ def _apply_chat_template(
     (Qwen3, Llama-3.1+), the tools list is passed directly so the model uses
     its trained tool-calling format (e.g. ``<tool_call>`` tags for Qwen3)
     rather than a manually-injected system-prompt JSON schema.
+
+    *enable_thinking* toggles Qwen3-style reasoning via the template's own
+    ``enable_thinking`` flag (the supported mechanism) instead of injecting a
+    literal ``/no_think`` string into the prompt — which weaker models echo
+    back into their reply. ``None`` leaves the template default untouched;
+    templates that don't recognise the kwarg simply ignore it.
     """
+    # Only thread the kwarg through when explicitly set, so models whose
+    # templates predate ``enable_thinking`` keep their current behaviour.
+    _extra: dict[str, bool] = {} if enable_thinking is None else {"enable_thinking": enable_thinking}
     if hasattr(tokenizer, "apply_chat_template"):
         # Try native tool calling first (Qwen3 / HF models with tools support)
         if tools:
@@ -1603,6 +1613,7 @@ def _apply_chat_template(
                     tools                 = tools,
                     tokenize              = False,
                     add_generation_prompt = True,
+                    **_extra,
                 )
             except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
                 _LOG.debug("native tool chat-template failed: %s", exc)  # fall through
@@ -1611,6 +1622,7 @@ def _apply_chat_template(
                 messages,
                 tokenize              = False,
                 add_generation_prompt = True,
+                **_extra,
             )
         except Exception as exc:  # noqa: BLE001 — chat template is arbitrary Jinja; any failure must fall back
             _LOG.debug("chat-template apply failed: %s", exc)
@@ -3328,18 +3340,11 @@ async def chat_completions(  # pragma: no cover
         tools = []
 
     # ── Phase A1: /no_think mode (thinking_budget == 0) ──────────────────────
-    if _thinking_budget == 0:
-        _msgs_copy = []
-        _found_sys = False
-        for _m in messages:
-            if _m.get("role") == "system" and not _found_sys:
-                _msgs_copy.append({**_m, "content": (_m.get("content", "") + " /no_think").strip()})
-                _found_sys = True
-            else:
-                _msgs_copy.append(_m)
-        if not _found_sys:
-            _msgs_copy = [{"role": "system", "content": "/no_think"}] + list(messages)
-        messages = _msgs_copy
+    # Disable reasoning through the chat template's ``enable_thinking`` flag
+    # (resolved at prompt-build time) rather than injecting a literal
+    # ``/no_think`` string into the messages — models that don't honour the
+    # soft-switch echo that string straight back into their reply.
+    _enable_thinking: bool | None = False if _thinking_budget == 0 else None
 
     # ── Phase A3: concision prefix ────────────────────────────────────────────
     if _concise_responses:
@@ -3387,7 +3392,9 @@ async def chat_completions(  # pragma: no cover
         _supports_native = False
         if _tok is not None and hasattr(_tok, "apply_chat_template"):
             try:
-                _probe = _apply_chat_template(messages, _tok, tools=tools)
+                _probe = _apply_chat_template(
+                    messages, _tok, tools=tools, enable_thinking=_enable_thinking,
+                )
                 _first = tools[0].get("function", {}).get("name", "")
                 _supports_native = bool(_first) and _first in _probe
             except (ValueError, TypeError, KeyError, AttributeError, IndexError, ImportError) as exc:
@@ -3435,11 +3442,19 @@ async def chat_completions(  # pragma: no cover
             if _grammar_engine is not None:
                 _req_tool_schema = _tc_schema
 
-    prompt         = _apply_chat_template(messages, _state.tokenizer, tools=_native_tools)
+    prompt         = _apply_chat_template(
+        messages, _state.tokenizer, tools=_native_tools, enable_thinking=_enable_thinking,
+    )
     prompt_tokens  = _count_tokens(prompt)
     cid            = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     req_start      = time.perf_counter()
     _state.inflight += 1
+
+    # Sanitiser for any reasoning soft-switch directive the model echoes back
+    # (e.g. ``/no_think``); shared by the streaming and non-streaming paths.
+    from squish.serving.tool_calling import (  # noqa: PLC0415
+        strip_think_directives as _strip_think_directives,
+    )
 
     if stream:
         # ── Streaming response ────────────────────────────────────────────
@@ -3525,8 +3540,14 @@ async def chat_completions(  # pragma: no cover
                             break
                         item = _queue.get_nowait()
                     if batch_parts:
-                        yield _make_chunk("".join(batch_parts), model_id, cid,
-                                          _created=_created, _fingerprint=_fp)
+                        # Strip any echoed ``/no_think`` directive before it reaches
+                        # the client (best-effort: a directive split across batches
+                        # is rare — the producer coalesces queued tokens, and the
+                        # ``enable_thinking`` template flag prevents it at the source).
+                        _batch_text = _strip_think_directives("".join(batch_parts))
+                        if _batch_text:
+                            yield _make_chunk(_batch_text, model_id, cid,
+                                              _created=_created, _fingerprint=_fp)
             except Exception as exc:  # noqa: BLE001 — top-level boundary, must not crash
                 _LOG.warning("chat stream consumer error: %s", exc)
                 yield f"data: {_json_dumps({'error': str(exc)})}\n\n"
@@ -3609,6 +3630,9 @@ async def chat_completions(  # pragma: no cover
                     "…" if len(full_text) > 400 else "")
                 _tlog(f"CHAT  resp: {_resp_preview}")
 
+        # Defensively strip any reasoning soft-switch directive the model may
+        # have echoed (e.g. ``/no_think``) so it never reaches the client.
+        full_text   = _strip_think_directives(full_text)
         comp_tokens = _count_tokens(full_text)
 
         # ── Tool calling: detect function call in output ──────────────────────

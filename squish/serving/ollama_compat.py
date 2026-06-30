@@ -43,6 +43,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from squish.serving.tool_calling import strip_think_directives
+
 _LOG = logging.getLogger("squish.serving.ollama_compat")
 
 
@@ -338,7 +340,7 @@ def mount_ollama(
             return JSONResponse({
                 "model":          model_name,
                 "created_at":     created_at,
-                "response":       full_text,
+                "response":       strip_think_directives(full_text),
                 "done":           True,
                 "done_reason":    "stop",
                 "total_duration": elapsed_ns,
@@ -434,7 +436,7 @@ def mount_ollama(
             return JSONResponse({
                 "model":          model_name,
                 "created_at":     created_at,
-                "message":        {"role": "assistant", "content": full_text},
+                "message":        {"role": "assistant", "content": strip_think_directives(full_text)},
                 "done":           True,
                 "done_reason":    "stop",
                 "total_duration": elapsed_ns,
