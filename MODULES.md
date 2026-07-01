@@ -429,3 +429,51 @@ Report B: server.py globals assigned only `None` (dead feature flags).
 | `tests/test_wave94_cross_platform.py` | 29 |
 | `tests/test_wave95_release.py` | TBD |
 
+### Wave 130: Multimodal Backend — Architecture Resolver + Text-Only Dispatch
+
+`mlx_lm` only implements text-only decoder architectures. `mlx-community` now
+hosts checkpoints declaring `model_type`s it doesn't know (Gemma 4's
+`gemma4_unified`, plus the VLM/omni long tail). Wave 130 adds `mlx_vlm` as a
+second, optional runtime backend and teaches Squish's existing SQUIZD load
+path to dispatch to it — reusing the quantization pipeline unchanged.
+
+- `squish/runtime/arch_resolver.py` (new): `resolve_runtime(model_dir)` reads
+  `config.json`'s `model_type` and probes `mlx_lm`'s model registry via a
+  cheap `importlib` import (no weights loaded). Falls back to `mlx_vlm` when
+  the `multimodal` extra is installed; raises `UnsupportedArchitectureError`
+  with an install hint when neither backend can load it. Caches the
+  resolution in a `.squish_runtime.json` sidecar next to the model dir.
+- `squish/backend.py`: `_AppleBackend.load_model`/`.stream_generate` dispatch
+  on the resolver. mlx_vlm's `load()` returns `(model, processor)` — a valid
+  drop-in for the `(model, tokenizer)` contract. Models loaded via mlx_vlm
+  are tagged `model.__squish_runtime__ = "mlx_vlm"` so `stream_generate` can
+  route to the right generator (kwarg name differs: mlx_lm's `temp` vs
+  mlx_vlm's `temperature`; both yield the same `GenerationResult`-shaped
+  objects otherwise).
+- `squish/quant/compressed_loader.py`: `_instantiate_model` (the real
+  integration point for `squish run` on Apple Silicon — `server.py`'s
+  `load_model()` calls this directly, not `BE.load_model`) now dispatches
+  through the resolver. `_instantiate_model_mlx_vlm` wraps mlx_vlm's own
+  `get_model_and_args` / `update_module_configs` /
+  `apply_generation_config_defaults` helpers rather than reimplementing
+  mlx_vlm's config normalization, matching mlx_vlm's own `load_model()`
+  skeleton-building steps.
+- `pyproject.toml`: new `multimodal` extra (`mlx-vlm>=0.5`, Darwin/arm64
+  only, lazy-imported everywhere — never a hard dependency).
+- `squish/catalog.py`: `gemma4:12b` entry (`mlx-community/gemma-4-12B-bf16`,
+  `model_type=gemma4_unified`, 11.96B params, 47.9 GB raw BF16 — live HF
+  metadata, not an estimate). `squish_repo` is `None` and `squished_size_gb`
+  is a Gemma-3-ratio placeholder pending Wave 131's real INT4 measurement.
+- Fixed a latent bug surfaced by the mlx-vlm install bumping `mlx` past
+  0.20: `mx.metal.set_memory_limit()` dropped its `relaxed=` kwarg
+  (`TypeError`, previously uncaught in `backend.py`). Both call sites
+  (`backend.py`, `compressed_loader.py`) now try the new signature first
+  and fall back to the old one.
+- Phase 1 explicit non-goals (deferred to Phase 2 / Wave 134+): no
+  image/audio HTTP surface, no `VisionFeatureCache` integration, no
+  multimodal-aware quant calibration, no new SQUIZD `arch_id` flag bit.
+
+| Test file | Tests |
+|-----------|------:|
+| `tests/test_wave130_vlm_backend_resolver.py` | 16 |
+

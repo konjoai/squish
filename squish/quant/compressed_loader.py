@@ -217,10 +217,14 @@ def _configure_metal_memory() -> None:  # pragma: no cover
         if ret != 0:
             return
         limit = int(memsize.value * fraction)
-        mx.metal.set_memory_limit(limit, relaxed=True)  # type: ignore[call-arg]
+        try:
+            mx.metal.set_memory_limit(limit, relaxed=True)  # type: ignore[call-arg]
+        except TypeError:
+            # mlx >= 0.20 dropped the `relaxed=` kwarg
+            mx.metal.set_memory_limit(limit)
     except (OSError, ValueError, AttributeError, RuntimeError, TypeError) as exc:
-        # non-fatal: non-Apple hardware, or MLX build whose set_memory_limit
-        # signature differs (e.g. no `relaxed=` kwarg → TypeError).
+        # non-fatal: non-Apple hardware, or an MLX build whose
+        # set_memory_limit signature differs in some other way.
         _LOG.debug("Could not configure Metal memory limit: %s", exc)
 
 _configure_metal_memory()
@@ -258,14 +262,58 @@ def _build_model_args(ModelArgs, config: dict):  # pragma: no cover
     return ModelArgs(**{k: v for k, v in config.items() if k in valid})
 
 
+def _instantiate_model_mlx_vlm(config: dict):  # pragma: no cover
+    """Build an mlx_vlm model skeleton (Wave 130 — text-only dispatch).
+
+    Mirrors ``mlx_vlm.utils.load_model``'s own config-normalization steps
+    (``get_model_and_args`` → ``ModelConfig.from_dict`` →
+    ``update_module_configs`` → ``apply_generation_config_defaults``) rather
+    than reimplementing them, so the skeleton matches what mlx_vlm's own
+    weight sanitization/loading expects. Returns (model, mlx_vlm_model_type).
+    """
+    try:
+        from mlx_vlm.utils import (
+            apply_generation_config_defaults,
+            get_model_and_args,
+            update_module_configs,
+        )
+    except ImportError as e:
+        raise ValueError(
+            "model_type is not supported by mlx_lm, and mlx_vlm is not "
+            "installed. Install it with: pip install 'squish-ai[multimodal]'"
+        ) from e
+
+    module, mlx_type = get_model_and_args(config=config)
+    config = dict(config)  # avoid mutating the caller's dict
+    config.setdefault("text_config", config.pop("llm_config", {}))
+    config.setdefault("vision_config", {})
+    config.setdefault("audio_config", {})
+    model_config = module.ModelConfig.from_dict(config)
+    model_config = update_module_configs(
+        model_config, module, config, ["text", "vision", "perceiver", "projector", "audio"]
+    )
+    model_config = apply_generation_config_defaults(model_config, config)
+    model = module.Model(model_config)
+    model.__squish_runtime__ = "mlx_vlm"  # read back by squish.backend.stream_generate
+    return model, mlx_type
+
+
 def _instantiate_model(model_dir: str):  # pragma: no cover
     """
     Build the MLX model object from config.json alone — no weights loaded.
     Returns (model, mlx_model_type_str).
+
+    Dispatches on :func:`squish.runtime.arch_resolver.resolve_runtime`: model
+    types mlx_lm doesn't know fall back to mlx_vlm's own registry (Wave 130).
     """
     config_path = Path(model_dir) / "config.json"
     with open(config_path) as f:
         config = json.load(f)
+
+    from squish.runtime.arch_resolver import resolve_runtime
+
+    if resolve_runtime(model_dir) == "mlx_vlm":
+        return _instantiate_model_mlx_vlm(config)
 
     hf_type = config.get("model_type", "").lower()
     mlx_type = _HF_TO_MLX_TYPE.get(hf_type, hf_type)
