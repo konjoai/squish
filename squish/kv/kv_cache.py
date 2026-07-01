@@ -1947,6 +1947,77 @@ class KVLayerCache:
         """Total tokens stored; used by mlx_lm for RoPE position encoding."""
         return self.n_tokens
 
+    # ── prompt-prefix KV reuse (trim / snapshot / restore) ───────────────────
+    # These power lossless in-memory prefix reuse: a request that extends a recent
+    # prompt restores the shared prefix's KV and prefills only the new suffix.
+    # Reuse is correct ONLY for a full-precision (fp16) layer — a quantized or
+    # evicted prefix is lossy, so a "restored prefix" would not be byte-identical
+    # to a cold prefill. ``is_trimmable`` gates that; trim/snapshot/restore assume
+    # it returned True.
+
+    def is_trimmable(self) -> bool:
+        """True iff this layer holds full-precision KV with no lossy/destructive
+        tier (fp16 mode; nothing quantized, evicted, spilled to disk, projected,
+        or pinned as a sink). Only then is trimmed-prefix reuse byte-identical to a
+        cold prefill. Also satisfies the mlx_lm ``trim_prompt_cache`` protocol."""
+        return (
+            self._kv_mode == "fp16"
+            and self.keys_old_q is None
+            and self._keys_old_q2 is None
+            and self._comm_vq_old_k is None
+            and self._svd_Vk is None
+            and self._qfilter is None
+            and self._disk_n == 0
+            and not self.keys_sink
+            and self._n_evicted == 0
+        )
+
+    def trim(self, n: int) -> int:
+        """Drop the last ``n`` tokens (newest first). Returns the count trimmed.
+
+        Implements the mlx_lm ``trim_prompt_cache`` protocol. Tokens live newest
+        last: the recent FP16 window holds the tail, the FP16 old tier the rest.
+        """
+        if n <= 0:
+            return 0
+        with self._lock:
+            n = min(int(n), self.n_tokens)
+            remaining = n
+            take = min(remaining, len(self.keys_recent))
+            if take:
+                del self.keys_recent[len(self.keys_recent) - take:]
+                del self.values_recent[len(self.values_recent) - take:]
+                remaining -= take
+            if remaining and self._fp16_old_k is not None:
+                keep = self._fp16_old_k.shape[0] - remaining
+                if keep <= 0:
+                    self._fp16_old_k = self._fp16_old_v = None
+                else:
+                    self._fp16_old_k = self._fp16_old_k[:keep].copy()
+                    self._fp16_old_v = self._fp16_old_v[:keep].copy()
+                remaining = 0
+            return n - remaining
+
+    def snapshot(self) -> tuple:
+        """Deep-copy the full-precision KV state for the reuse slot (decoupled from
+        this layer's later ``reset()``/append). Pairs with :meth:`restore`."""
+        with self._lock:
+            return (
+                [k.copy() for k in self.keys_recent],
+                [v.copy() for v in self.values_recent],
+                None if self._fp16_old_k is None else self._fp16_old_k.copy(),
+                None if self._fp16_old_v is None else self._fp16_old_v.copy(),
+            )
+
+    def restore(self, snap: tuple) -> None:
+        """Load a :meth:`snapshot` into this (freshly reset) layer."""
+        keys_recent, values_recent, fp16_old_k, fp16_old_v = snap
+        with self._lock:
+            self.keys_recent = [k.copy() for k in keys_recent]
+            self.values_recent = [v.copy() for v in values_recent]
+            self._fp16_old_k = None if fp16_old_k is None else fp16_old_k.copy()
+            self._fp16_old_v = None if fp16_old_v is None else fp16_old_v.copy()
+
     def update_and_fetch(self, keys, values):
         """
         mlx_lm attention-layer cache protocol.

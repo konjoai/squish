@@ -255,6 +255,14 @@ _cache_warmup_predictor = None  # CacheWarmupPredictor    — tracks prefix acce
 _cache_warmup_enabled   = True  # on by default; --no-cache-warmup to disable
 # Phase 3: cross-session persistent KV cache
 _session_kv_cache    = None   # SessionKVCache | None — set in main() when --session-cache-dir given
+# In-memory prompt-prefix KV reuse (wired into the standard prefill path).
+# A request that extends a recent prompt restores the shared prefix's KV and
+# prefills only the new suffix. One slot; gated on per-layer is_trimmable().
+_prefix_reuse_enabled = True   # disabled by --no-prefix-reuse
+# Mutable holder (mutated in the prefill path; avoids a `global` in the big
+# generate function). "slot": {"ids": list[int], "snaps": list[tuple]} | None
+_prefix_reuse_state   = {"slot": None}
+_PREFIX_REUSE_MIN     = 128    # min shared tokens to bother restoring + trimming
 # Phase 4: prompt compression settings (active when --compress-prompt is set)
 _compress_enabled         = False
 _compress_ratio           = 0.5
@@ -2142,12 +2150,59 @@ def _generate_tokens(  # pragma: no cover
                         _last_logit_vec = None  # fall through below
 
                 if _last_logit_vec is None:
-                    # Standard single-shot prefill (non-compress path or fallback)
-                    with _trace_span("gen.prefill", tokens=len(input_ids)):
-                        x = mx.array(input_ids, dtype=mx.int32)[None]
+                    # ── In-memory prompt-prefix KV reuse ──────────────────────
+                    # If this prompt extends the previous one, restore the shared
+                    # prefix's KV and prefill only the new suffix (TTFT O(prompt) →
+                    # O(new tokens)). Lossless: KV is positional+causal, so a
+                    # trimmed-and-restored prefix is byte-identical to a cold
+                    # prefill. Gated on every layer being is_trimmable() (fp16);
+                    # any failure falls back to a full cold prefill.
+                    _ids_list = (
+                        input_ids.tolist() if hasattr(input_ids, "tolist") else list(input_ids)
+                    )
+                    _reuse_n = 0
+                    _slot = _prefix_reuse_state["slot"]
+                    if (_prefix_reuse_enabled and _slot is not None
+                            and len(_ids_list) > 1
+                            and all(c.is_trimmable() for c in layer_caches)):
+                        try:
+                            from squish.kv.prompt_prefix_cache import _common_prefix_len
+                            _shared = _common_prefix_len(_ids_list, _slot["ids"])
+                            _shared = min(_shared, len(_ids_list) - 1)
+                            _snaps = _slot["snaps"]
+                            if _shared >= _PREFIX_REUSE_MIN and len(_snaps) == len(layer_caches):
+                                for _c, _snap in zip(layer_caches, _snaps):
+                                    _c.restore(_snap)
+                                    _drop = _c.n_tokens - _shared
+                                    if _drop > 0:
+                                        _c.trim(_drop)
+                                _reuse_n = _shared
+                        except (ImportError, RuntimeError, ValueError, AttributeError,
+                                TypeError, IndexError, KeyError) as exc:
+                            _LOG.debug("prefix-reuse restore failed: %s", exc)
+                            for _c in layer_caches:  # never prefill onto a partial restore
+                                _c.reset()
+                            _reuse_n = 0
+                    _suffix_ids = _ids_list[_reuse_n:]
+                    with _trace_span("gen.prefill", tokens=len(_suffix_ids)):
+                        x = mx.array(_suffix_ids, dtype=mx.int32)[None]
                         logits_full = model(x, cache=layer_caches)
                         mx.eval(logits_full)
                     _last_logit_vec = logits_full[0, -1]
+                    if _trace and _reuse_n > 0:
+                        _tlog(f"REQ {_rid}  prefix-reuse HIT  reused={_reuse_n}  "
+                              f"prefilled_suffix={len(_suffix_ids)}")
+                    # Publish this prompt's KV so the next request can extend it.
+                    if _prefix_reuse_enabled and all(c.is_trimmable() for c in layer_caches):
+                        try:
+                            _prefix_reuse_state["slot"] = {
+                                "ids": _ids_list,
+                                "snaps": [c.snapshot() for c in layer_caches],
+                            }
+                            if _reuse_n > 0 and _prefix_cache is not None:
+                                _prefix_cache.prefix_hits += 1
+                        except (RuntimeError, ValueError, AttributeError, TypeError) as exc:
+                            _LOG.debug("prefix-reuse snapshot failed: %s", exc)
 
                 next_id = _sample_mx(_last_logit_vec, temperature, top_p)
                 # Persist for future requests in background
@@ -5667,6 +5722,14 @@ Examples:
                   f"max_speculative={_plcfg.max_speculative}  prefix-reuse={_plcfg.reuse_prefix}")
         except (ImportError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
             _warn(f"[prompt-lookup] Skipped: {exc}")
+
+    # ── In-memory prompt-prefix KV reuse ──────────────────────────────────────
+    # ON by default; --no-prefix-reuse disables it. Per-request safety is decided
+    # at prefill time by each layer's is_trimmable() (fp16, lossless), so no model
+    # probe is needed here — quantized/evicting caches simply never reuse.
+    global _prefix_reuse_enabled
+    _prefix_reuse_enabled = not getattr(args, "no_prefix_reuse", False)
+    _info("prefix-reuse", "enabled" if _prefix_reuse_enabled else "disabled")
 
     # ── Wave 37: Wire Everything In ───────────────────────────────────────────
     # ChipDetector is always run at startup (no flag required).
