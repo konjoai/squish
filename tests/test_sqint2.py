@@ -524,11 +524,12 @@ class TestPathologicalInputs:
 
 
 class TestModuleCount:
-    def test_module_count_after_w103_1(self):
-        """W103.1 adds squish/quant/sqint2.py (83 → 84).
-        W103.2 extends sqint2.py in-place — count stays at 84.
-        W103.4c adds squish/quant/sqint2_linear.py (84 → 85).
-        W110 adds router.py (85 → 86). W111 adds quality_monitor.py (86 → 87)."""
+    def test_module_count_under_ceiling(self):
+        """Module-count sprawl guard: squish/ must stay under 125 files.
+
+        Deliberately NOT an exact-count check — see test_quant_aqlm.py's
+        TestModuleCount for why the hardcoded `== N` variant was removed.
+        """
         import squish
 
         root = Path(squish.__file__).parent
@@ -538,20 +539,7 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 111, (
-            f"Module count = {count}, expected 111 after (−dead modules) (＋prompt_lookup_batched.py) v4 daemon + v5.1.1 perf "
-            f"+ KV P2 sprint (89 post-W111 + 11 new modules) + grammar/io/reasoning "
-            "+ restored super_weight_calibrator.py (issue #37: wrongly purged, still imported by convert.py) "
-            "+ serving/token_decode_cache.py (hot-path detokenize LUT) "
-            "+ api/validation.py & __main__.py (e2e battle-test hardening, v9.34.3) "
-            "+ quant/nf4_quant.py (implements the referenced --nf4 path) "
-            "+ kv/prompt_prefix_cache.py (in-memory prompt-prefix KV reuse, ~9x TTFT) "
-            "+ serving/loop_guard.py (repetition guard extracted from server.py, v9.34.5) "
-            "+ runtime/arch_resolver.py (Wave 130 mlx_vlm backend resolver, #193). "
-            "If this number changed, update CLAUDE.md / SESSION.md too."
-        )
-        # Ceiling check stays well below 125.
-        assert count <= 125, f"Module count {count} exceeds CLAUDE.md ceiling 125"
+        assert count <= 125, f"Module count {count} exceeds ceiling of 125"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

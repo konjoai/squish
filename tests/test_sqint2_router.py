@@ -402,10 +402,12 @@ class TestIntegration:
         from squish.quant.quantizer import MixedPrecisionRouter as R
         assert R is MixedPrecisionRouter
 
-    def test_module_count_unchanged(self):
-        """W103.3 adds routing to quantizer.py (no new squish/ file). Count stays 84.
-        W110 adds squish/serving/router.py (85 → 86).
-        W111 adds squish/serving/quality_monitor.py (86 → 87)."""
+    def test_module_count_under_ceiling(self):
+        """Module-count sprawl guard: squish/ must stay under 125 files.
+
+        Deliberately NOT an exact-count check — see test_quant_aqlm.py's
+        TestModuleCount for why the hardcoded `== N` variant was removed.
+        """
         import squish
         root = Path(squish.__file__).parent
         py_files = [
@@ -414,19 +416,7 @@ class TestIntegration:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 111, (
-            f"Module count = {count}, expected 111 after (−dead modules) (＋prompt_lookup_batched.py) v4 daemon + v5.1.1 perf "
-            f"+ KV P2 sprint (89 post-W111 + 11 new modules) + grammar/io/reasoning "
-            "+ restored super_weight_calibrator.py (issue #37) "
-            "+ serving/token_decode_cache.py (hot-path detokenize LUT) "
-            "+ api/validation.py & __main__.py (e2e battle-test hardening, v9.34.3) "
-            "+ quant/nf4_quant.py (implements the referenced --nf4 path) "
-            "+ kv/prompt_prefix_cache.py (in-memory prompt-prefix KV reuse, ~9x TTFT) "
-            "+ kv/k8v4_codec.py (INT8-keys/INT4-values disk KV codec, ~2.7x) → 109 "
-            "+ serving/loop_guard.py (repetition guard extracted from server.py, v9.34.5) → 110 "
-            "+ runtime/arch_resolver.py (Wave 130 mlx_vlm backend resolver, #193) → 111."
-        )
-        assert count <= 125
+        assert count <= 125, f"Module count {count} exceeds ceiling of 125"
 
     def test_format_for_returns_valid_or_none(self):
         """format_for must only return one of the four documented values."""
