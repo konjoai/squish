@@ -477,3 +477,67 @@ path to dispatch to it — reusing the quantization pipeline unchanged.
 |-----------|------:|
 | `tests/test_wave130_vlm_backend_resolver.py` | 16 |
 
+### Wave 131: Delete-As-You-Go Raw Shard Cleanup
+
+`squish pull`/`squish compress` require raw + compressed model on disk
+simultaneously — for a 12B model that's ~24 GB raw + ~12–14 GB compressed
+≈ 36–38 GB peak, and the raw copy is never auto-deleted afterward. Wave 131
+closes the easy 80% of that gap with an opt-in `--delete-source` flag:
+delete each raw `.safetensors` shard the moment its tensors have been fully
+quantized and written, instead of leaving the whole raw model sitting on
+disk until the user manually runs `squish rm`.
+
+(Numbering note: this wave claims slot 131 rather than 130 — Wave 130 in
+this repo is the multimodal-backend wave, already shipped before this brief
+landed.)
+
+- `squish/convert.py::process_weights_streaming()` — already shard-streamed
+  (loads one shard, quantizes, writes `.npy`, frees RAM); this wave adds a
+  `delete_source: bool = False` parameter. After each shard's per-tensor
+  loop and its existing per-shard disk-space check, the shard's manifest
+  entries are committed to `manifest.json` on disk and a `completed_shards`
+  list is written to `_compress_progress.json` — both incrementally, per
+  shard, not once at the end of the run — *before* the raw shard is
+  unlinked (when `delete_source=True`). Manifest/progress being
+  incremental (not just the deletion) matters for diagnosability: a crash
+  at shard 6 of 10 still leaves an accurate on-disk record of shards 1–5.
+  The pre-flight disk estimate switches to
+  `compressed_estimate + largest_shard_size + min_free_gb` when
+  `delete_source=True` (vs. `compressed_estimate + min_free_gb` otherwise,
+  unchanged).
+- `squish/convert.py::main()` — new `--delete-source` flag (off by
+  default). The existing `except (Exception, KeyboardInterrupt)` handler's
+  "clean up partial output" behavior is skipped when `delete_source` was
+  active; instead it reads `_compress_progress.json` and prints exactly
+  which raw shards were deleted and are unrecoverable, points the user at
+  `squish pull <model> --force` to retry, and exits non-zero — deleting
+  the partial output in this mode would destroy the only local record of
+  how much work would need to be redone.
+- `squish/cli.py::cmd_compress` / `_cmd_compress_inner` — `--delete-source`
+  threaded through to the `squish.convert` subprocess invocation.
+- `squish/cli.py::cmd_pull` — `--delete-source` (alias `--reclaim-space`)
+  threaded through `_catalog_pull` to `squish/catalog.py::pull()`'s
+  subprocess invocation. The pre-flight box (Raw size / Compressed /
+  Context / Dest) gains a `Peak disk` line for *both* the flag-on and
+  flag-off paths — previously there was no peak-disk figure shown at all.
+- `squish/catalog.py::pull()` — new `delete_source: bool = False`
+  parameter, passed through to the `squish.convert` subprocess the same
+  way as the other quantization flags.
+- Default is opt-in (`False`) for both `squish compress` and `squish pull`
+  in this wave: `--delete-source` changes resumability — a raw shard
+  deleted mid-run cannot be recovered without re-downloading the model, so
+  it's a real tradeoff the user opts into, not a free win. Flipping the
+  default for `squish pull` (download + compress is one atomic user
+  intent there) is a plausible follow-up once real usage exists, but that
+  needs its own decision, not this wave's default.
+- Backlog (not this wave, logged for future scheduling): Option B
+  (two-pass true streaming pull — discard raw shards during AWQ
+  calibration too, ~2× network transfer) and Option C (single-pass
+  GPTQ-style sequential streaming — one network pass, requires a rewrite
+  of AWQ calibration to run layer-sequentially). Both build on this wave's
+  incremental progress tracking.
+
+| Test file | Tests |
+|-----------|------:|
+| `tests/test_wave131_streaming_delete_source.py` | 11 |
+

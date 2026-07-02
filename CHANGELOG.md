@@ -5,6 +5,52 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.13] — Delete-as-you-go raw shard cleanup (Wave 131)
+
+`squish pull`/`squish compress` required raw + compressed model on disk
+simultaneously — for a 12B model that's ~24 GB raw + ~12–14 GB compressed
+≈ 36–38 GB peak, with the raw copy never auto-deleted afterward. This
+release adds an opt-in `--delete-source` flag that deletes each raw
+`.safetensors` shard the moment its tensors are fully quantized and
+written, instead of leaving the whole raw model on disk until the user
+manually runs `squish rm`.
+
+### Added
+- `--delete-source` flag on `squish compress` / `python -m squish.convert`
+  and `squish pull` (alias `--reclaim-space` on `pull`). Off by default —
+  it changes resumability: a raw shard deleted mid-run can't be recovered
+  without re-downloading the model, so it's an explicit opt-in tradeoff,
+  not a free win.
+- `process_weights_streaming()` now writes `manifest.json` and a new
+  `_compress_progress.json` (`completed_shards`, `total_shards`,
+  `freed_bytes`) incrementally after each shard, not once at the end of
+  the run — so a crash partway through still leaves an accurate on-disk
+  record of what's done.
+- `squish pull`'s pre-flight box gains a `Peak disk` line for both the
+  flag-on and flag-off paths — previously there was no peak-disk figure
+  shown at all.
+- Pre-flight disk-space check uses a reduced-peak formula
+  (`compressed estimate + largest shard + safety margin`) when
+  `--delete-source` is active, instead of assuming the full raw model must
+  coexist with the full compressed output.
+
+### Changed
+- `convert.py::main()`'s failure handler no longer cleans up partial
+  output when `--delete-source` was active — doing so would destroy the
+  only local record of how much work would need to be redone. Instead it
+  prints exactly which raw shards were deleted and are unrecoverable and
+  points at `squish pull <model> --force` to retry. Behavior without the
+  flag is unchanged.
+
+### Tests
+- `tests/test_wave131_streaming_delete_source.py` (new, 11 cases):
+  shard deletion timing, `delete_source=False` regression guard,
+  incremental manifest/progress tracking, simulated mid-run failure
+  diagnostics, pre-flight disk formula per mode, and peak-disk-usage
+  reduction sampled via `shutil.disk_usage` during the run.
+
+---
+
 ## [9.34.12] — Memory governor: concurrency safety pass (Phase 5, sprint complete)
 
 **Sprint status: all 5 phases complete.** This closes out the

@@ -190,6 +190,43 @@ weight bytes are mapped into the GPU's virtual address space directly from the
 file, bypassing the CPU heap allocation that the standard numpy-based loader
 performs.
 
+### Peak disk during compression — `--delete-source`
+
+`process_weights_streaming()` already streams one raw `.safetensors` shard at
+a time (load → quantize → write `.npy` → free from RAM), so peak *RAM* is
+bounded regardless of model size. Peak *disk*, however, defaults to
+`raw model size + compressed output size` coexisting simultaneously — for a
+12B model that's roughly 24 GB raw + ~12–14 GB compressed ≈ 36–38 GB, and the
+raw copy is never deleted automatically.
+
+Passing `--delete-source` (`squish compress --delete-source`, or
+`squish pull <model> --delete-source` / `--reclaim-space`) unlinks each raw
+shard immediately after its tensors are quantized, written, and committed to
+an on-disk manifest — bounding peak disk to roughly
+`compressed output size + one raw shard in flight` (~19 GB for the 12B
+example above).
+
+**The tradeoff — resumability.** Without the flag, a failed or interrupted
+compression leaves the raw model directory untouched, so re-running
+`squish compress` just picks the raw weights back up from disk. With
+`--delete-source`, any raw shard whose compressed output was already
+committed is gone permanently once it's deleted. A mid-run failure means the
+already-deleted shards must be re-downloaded to retry — this release does not
+add per-shard re-fetch, so in practice a failure means re-pulling the whole
+model. This is why the flag is **off by default** for both `squish compress`
+and `squish pull`, and why `main()`'s failure handler does *not* clean up
+partial output when the flag was active: the partial `.npy` output plus the
+incremental `_compress_progress.json` / `manifest.json` are the only local
+record of how much work would need to be redone, and the diagnostic printed
+on failure names exactly which shards were lost so the user can decide
+whether to re-pull.
+
+Manifest and progress tracking are incremental regardless of the flag:
+`manifest.json` and `_compress_progress.json` (`completed_shards`,
+`total_shards`, `freed_bytes`) are rewritten after each shard commits, not
+once at the end of the run — so a crash at shard 6 of 10 still leaves an
+accurate on-disk record of shards 1–5.
+
 ---
 
 ## 6. Accuracy Preservation

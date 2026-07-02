@@ -585,6 +585,7 @@ def process_weights_streaming(
     use_int2: bool = False,
     int2_group_size: int = 64,
     min_free_gb: float = 10.0,
+    delete_source: bool = False,
 ) -> dict:
     """
     Streaming shard-by-shard compression — works for any model size.
@@ -597,6 +598,12 @@ def process_weights_streaming(
 
     Peak RAM ≈ 2× the size of one shard (typically 2-5 GB for 7B models,
     ~2 GB for sharded 7B), regardless of total model size.
+
+    When ``delete_source`` is set, each raw shard is unlinked immediately
+    after its tensors are quantized, written, and committed to the on-disk
+    manifest — trading resumability (a mid-run failure means the deleted
+    shards must be re-downloaded) for a peak-disk footprint bounded by
+    ``compressed output + one raw shard`` instead of ``raw + compressed``.
     """
     shard_files = sorted(model_dir.glob("*.safetensors"))
     if not shard_files:
@@ -615,23 +622,46 @@ def process_weights_streaming(
         use_nf4=use_nf4,
     )
     _free_bytes = _get_free_bytes(output_path)
-    if _free_bytes < _estimated_bytes + _min_safety_bytes:
-        raise RuntimeError(
-            f"Insufficient disk space: {_free_bytes / 1e9:.1f} GB free, "
-            f"need ~{_estimated_bytes / 1e9:.1f} GB for output "
-            f"+ {min_free_gb:.0f} GB safety margin "
-            f"({(_estimated_bytes + _min_safety_bytes) / 1e9:.1f} GB total required). "
-            f"Free up disk space or use --output on a larger volume."
+    if delete_source:
+        # Raw shards are freed as they're consumed, so peak disk is bounded by
+        # the compressed output plus one shard in flight — not the full raw
+        # model coexisting with the full compressed output.
+        _largest_shard_bytes = max(p.stat().st_size for p in shard_files)
+        _required_bytes = _estimated_bytes + _largest_shard_bytes + _min_safety_bytes
+        if _free_bytes < _required_bytes:
+            raise RuntimeError(
+                f"Insufficient disk space: {_free_bytes / 1e9:.1f} GB free, "
+                f"need ~{_estimated_bytes / 1e9:.1f} GB for output "
+                f"+ {_largest_shard_bytes / 1e9:.1f} GB for the largest in-flight shard "
+                f"+ {min_free_gb:.0f} GB safety margin "
+                f"({_required_bytes / 1e9:.1f} GB total required). "
+                f"Free up disk space or use --output on a larger volume."
+            )
+        print(
+            f"  Disk check (--delete-source): {_free_bytes / 1e9:.1f} GB free, "
+            f"estimated peak ~{(_estimated_bytes + _largest_shard_bytes) / 1e9:.1f} GB  ✓"
         )
-    print(
-        f"  Disk check: {_free_bytes / 1e9:.1f} GB free, "
-        f"estimated output ~{_estimated_bytes / 1e9:.1f} GB  ✓"
-    )
+    else:
+        if _free_bytes < _estimated_bytes + _min_safety_bytes:
+            raise RuntimeError(
+                f"Insufficient disk space: {_free_bytes / 1e9:.1f} GB free, "
+                f"need ~{_estimated_bytes / 1e9:.1f} GB for output "
+                f"+ {min_free_gb:.0f} GB safety margin "
+                f"({(_estimated_bytes + _min_safety_bytes) / 1e9:.1f} GB total required). "
+                f"Free up disk space or use --output on a larger volume."
+            )
+        print(
+            f"  Disk check: {_free_bytes / 1e9:.1f} GB free, "
+            f"estimated output ~{_estimated_bytes / 1e9:.1f} GB  ✓"
+        )
 
     manifest  = {}   # original_name → safe_key
     stats     = {"n_quantized": 0, "n_passthrough": 0,
                  "orig_f32_bytes": 0, "compressed_bytes": 0}
     total_tensors = 0
+    completed_shards: list[str] = []
+    freed_bytes = 0
+    progress_path = output_path / "_compress_progress.json"
 
     print(f"\n  Processing {len(shard_files)} shard(s) …  (streaming — peak RAM ≈ 1 shard)")
 
@@ -790,6 +820,25 @@ def process_weights_streaming(
         sp.stop(f"Shard {shard_idx} done  ({shard_tensors} tensors written)")
         del shard_weights
 
+        # ── Commit this shard's manifest entries + progress to disk ────────────
+        # Must land before any raw-shard deletion below: the on-disk state has
+        # to reflect "shard N is fully committed" before shard N's raw source
+        # can be safely removed.
+        with open(output_path / "manifest.json", "w") as f:
+            json.dump(manifest, f, indent=2)
+        completed_shards.append(shard.name)
+        with open(progress_path, "w") as f:
+            json.dump(
+                {
+                    "completed_shards": completed_shards,
+                    "total_shards": len(shard_files),
+                    "delete_source": delete_source,
+                    "freed_bytes": freed_bytes,
+                },
+                f,
+                indent=2,
+            )
+
         # ── Per-shard disk space check ────────────────────────────────────────
         _free_now = _get_free_bytes(output_path)
         if _free_now < _min_safety_bytes:
@@ -800,13 +849,22 @@ def process_weights_streaming(
                 f"Aborting to prevent filesystem corruption."
             )
 
-    # Write manifest
-    with open(output_path / "manifest.json", "w") as f:
-        json.dump(manifest, f, indent=2)
+        # ── Delete the raw shard now that its output is fully committed ────────
+        if delete_source:
+            _shard_bytes = shard.stat().st_size
+            shard.unlink()
+            freed_bytes += _shard_bytes
+            print(
+                f"  Freed {_shard_bytes / 1e9:.1f} GB — deleted raw shard {shard.name} "
+                f"(total freed: {freed_bytes / 1e9:.1f} GB)"
+            )
+
     # Sentinel for consistency with old npy-dir reader
     (tensor_dir / ".manifest_ready").touch()
 
     print(f"\n  Total tensors: {total_tensors}")
+    if delete_source:
+        print(f"  Total raw disk freed: {freed_bytes / 1e9:.1f} GB")
     return stats
 
 
@@ -1038,6 +1096,16 @@ def main():
              "The job aborts cleanly and removes partial output if free space "
              "drops below this threshold. Default: 10 GB.",
     )
+    ap.add_argument(
+        "--delete-source",
+        action="store_true",
+        default=False,
+        help="Delete each raw .safetensors shard immediately after its tensors "
+             "are quantized and written. Reduces peak disk from ~(raw + compressed) "
+             "to ~(compressed + one shard). WARNING: a failure partway through "
+             "means already-deleted shards must be re-downloaded to retry — this "
+             "does not support partial resume in this release. Off by default.",
+    )
     args = ap.parse_args()
 
     # ── --ultra implies nf4 + dfloat11 ────────────────────────────────────────
@@ -1122,8 +1190,38 @@ def main():
                 use_int2=args.int2,
                 int2_group_size=args.int2_group_size,
                 min_free_gb=args.min_free_gb,
+                delete_source=args.delete_source,
             )
         except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 — any conversion failure cleans partial output and exits
+            if args.delete_source:
+                # Raw shards deleted so far are gone permanently — cleaning up
+                # partial output here would destroy the only local record of how
+                # much work would need to be redone. Report and leave everything.
+                _deleted = []
+                _progress_file = output_path / "_compress_progress.json"
+                if _progress_file.exists():
+                    try:
+                        _deleted = json.loads(_progress_file.read_text()).get("completed_shards", [])
+                    except (OSError, ValueError) as _read_exc:
+                        print(f"  Warning: could not read progress file: {_read_exc}", file=sys.stderr)
+                print(
+                    f"\n  ✗  Compression failed with --delete-source active.\n"
+                    f"     {len(_deleted)} raw shard(s) were deleted and are unrecoverable locally:",
+                    file=sys.stderr,
+                )
+                for _name in _deleted:
+                    print(f"       - {_name}", file=sys.stderr)
+                print(
+                    f"     Partial output preserved at: {output_path}\n"
+                    f"     To retry, re-download the model, e.g.:\n"
+                    f"       squish pull <model> --force\n",
+                    file=sys.stderr,
+                )
+                if isinstance(exc, KeyboardInterrupt):
+                    print("\n  Interrupted by user.", flush=True)
+                    sys.exit(130)
+                print(f"\n  ERROR: {exc}", file=sys.stderr)
+                sys.exit(1)
             # Remove partial output so the next run starts clean.
             if output_path.exists():
                 print(
