@@ -2676,6 +2676,41 @@ def cmd_daemon(args):  # pragma: no cover
             _die(str(e))
 
 
+# model_type values that use Gemma 4's Per-Layer Embeddings (PLE) architecture.
+# PLE tensors get scaled by a runtime float multiplier before being added back
+# into the hidden state; standard INT4 quantization error is amplified by that
+# multiply, producing degenerate/garbage output (community-reported repeated-
+# token garbage). These tensor-name patterns must stay unquantized (FP16/BF16
+# passthrough) regardless of the requested compression --format.
+_GEMMA4_PLE_MODEL_TYPES = {"gemma4_unified", "gemma4"}
+_GEMMA4_PLE_PASSTHROUGH_PATTERNS = [
+    "per_layer_input_gate",
+    "per_layer_projection",
+    "embed_tokens_per_layer",
+    "per_layer_model_projection",
+]
+
+
+def _ple_safe_passthrough_patterns(model_dir: "Path") -> list[str]:
+    """Return PLE-safe passthrough patterns if model_dir is a Gemma 4 (PLE) model.
+
+    Reads config.json's ``model_type`` field. Returns an empty list for any
+    other architecture (or if config.json is missing/unreadable) so this is a
+    no-op for non-Gemma-4 models — no scope creep into unrelated quant paths.
+    """
+    cfg_path = model_dir / "config.json"
+    if not cfg_path.exists():
+        return []
+    try:
+        cfg = json.loads(cfg_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        _LOG.warning("Could not read config.json at %s for PLE detection: %s", cfg_path, exc)
+        return []
+    if cfg.get("model_type") in _GEMMA4_PLE_MODEL_TYPES:
+        return list(_GEMMA4_PLE_PASSTHROUGH_PATTERNS)
+    return []
+
+
 def cmd_compress(args):  # pragma: no cover
     """Compress a model directory to Squish npy-dir or .squizd format."""
     # ── Resolve explicit --format to bool flags for backward compat ──────────
@@ -2972,6 +3007,21 @@ def cmd_compress(args):  # pragma: no cover
 
     if not model_dir.exists():
         _die(f"Model directory not found: {model_dir}")
+
+    # ── Gemma 4 PLE-safe passthrough (architecture-specific, format-agnostic) ─
+    # Applies regardless of --format (int4, mixed_attn, etc.) since the PLE
+    # fragility is about the model's architecture, not the chosen compression
+    # scheme. Merge with any user- or format-supplied --passthrough patterns.
+    _ple_patterns = _ple_safe_passthrough_patterns(model_dir)
+    if _ple_patterns:
+        _existing_ple_pt = list(getattr(args, "passthrough", None) or [])
+        args.passthrough = _existing_ple_pt + [
+            p for p in _ple_patterns if p not in _existing_ple_pt
+        ]
+        print(
+            "  ⚠  Gemma 4 (PLE architecture) detected — auto-passthrough for "
+            f"{_ple_patterns} to avoid PLE-amplified quantization error."
+        )
 
     if args.output:
         output_dir = Path(args.output).expanduser()
