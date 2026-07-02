@@ -235,3 +235,64 @@ def test_block_entry_repr():
 def test_prefix_match_empty():
     m = PrefixMatch(matched_blocks=[], matched_tokens=0)
     assert m.matched_tokens == 0
+
+
+# ── Live-adjustable hot-tier budget (set_hot_max_bytes) ─────────────────────────
+
+
+def test_set_hot_max_bytes_evicts_immediately(tmp_cache_dir):
+    """Shrinking the budget below current usage evicts LRU blocks right away,
+    without waiting for the next store_blocks()/lookup call."""
+    cache = BlockKVCache(cache_dir=tmp_cache_dir, block_size=8, model_key="mk")
+    ids = list(range(0, 64))  # 8 blocks of 8 tokens
+    per_b_k, per_b_v = zip(
+        *[_fake_block_arrays(8) for _ in range(8)], strict=True,
+    )
+    cache.store_blocks(ids, list(per_b_k), list(per_b_v))
+    assert cache.stats()["hot_entries"] == 8
+    hot_bytes_before = cache.stats()["hot_bytes"]
+
+    # Shrink to a third of current usage — should evict immediately.
+    cache.set_hot_max_bytes(hot_bytes_before // 3)
+
+    stats = cache.stats()
+    assert stats["hot_max_bytes"] == hot_bytes_before // 3
+    assert stats["hot_bytes"] <= hot_bytes_before // 3
+    assert stats["hot_entries"] < 8
+
+
+def test_set_hot_max_bytes_keeps_at_least_one_entry(tmp_cache_dir):
+    cache = BlockKVCache(cache_dir=tmp_cache_dir, block_size=8, model_key="mk")
+    ids = list(range(0, 16))
+    per_b_k, per_b_v = zip(*[_fake_block_arrays(8) for _ in range(2)], strict=True)
+    cache.store_blocks(ids, list(per_b_k), list(per_b_v))
+
+    cache.set_hot_max_bytes(1)  # smaller than any single block
+
+    assert cache.stats()["hot_entries"] == 1
+
+
+def test_set_hot_max_bytes_restores_higher_budget(tmp_cache_dir):
+    """Raising the budget back up doesn't evict anything further and the new
+    ceiling is applied on subsequent stores."""
+    cache = BlockKVCache(cache_dir=tmp_cache_dir, block_size=8, model_key="mk")
+    ids = list(range(0, 32))
+    per_b_k, per_b_v = zip(*[_fake_block_arrays(8) for _ in range(4)], strict=True)
+    cache.store_blocks(ids, list(per_b_k), list(per_b_v))
+    original_max = cache.stats()["hot_max_bytes"]
+
+    cache.set_hot_max_bytes(1)
+    assert cache.stats()["hot_entries"] == 1
+
+    cache.set_hot_max_bytes(original_max)
+    assert cache.stats()["hot_max_bytes"] == original_max
+    # No further eviction happens just from raising the ceiling.
+    assert cache.stats()["hot_entries"] == 1
+
+
+def test_set_hot_max_bytes_rejects_non_positive(tmp_cache_dir):
+    cache = BlockKVCache(cache_dir=tmp_cache_dir, block_size=8, model_key="mk")
+    with pytest.raises(ValueError, match="hot_max_bytes"):
+        cache.set_hot_max_bytes(0)
+    with pytest.raises(ValueError, match="hot_max_bytes"):
+        cache.set_hot_max_bytes(-1)

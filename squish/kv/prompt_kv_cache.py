@@ -41,6 +41,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -109,6 +110,10 @@ class PromptKVStore:
         self._max_bytes = max_bytes
         self._model_key = model_key
         self._quant     = quant
+        # Guards _max_bytes — mutated both by request threads (via put()'s
+        # probabilistic eviction) and by the memory governor's polling thread
+        # (set_max_bytes).
+        self._max_bytes_lock = threading.Lock()
         self._dir.mkdir(parents=True, exist_ok=True)
         self._dir.chmod(0o700)
 
@@ -324,6 +329,11 @@ class PromptKVStore:
 
     # ── Size / stats ──────────────────────────────────────────────────────────
 
+    @property
+    def max_bytes(self) -> int:
+        """Current on-disk byte budget (see `set_max_bytes` to adjust it live)."""
+        return self._max_bytes
+
     def total_bytes(self) -> int:
         """Return total on-disk size of the cache in bytes."""
         total = 0
@@ -338,6 +348,21 @@ class PromptKVStore:
     def entry_count(self) -> int:
         """Return number of cached entries."""
         return sum(1 for d in self._dir.iterdir() if d.is_dir())
+
+    def set_max_bytes(self, n: int) -> None:
+        """Adjust the on-disk byte budget at runtime.
+
+        Evicts immediately (LRU) if the new budget is below current on-disk
+        usage, instead of waiting for ``put()``'s probabilistic eviction
+        check (~5% of writes) to happen to fire. Used by the memory governor
+        to shrink/restore the live budget in response to pressure-level
+        changes.
+        """
+        if n <= 0:
+            raise ValueError(f"max_bytes must be positive; got {n}")
+        with self._max_bytes_lock:
+            self._max_bytes = int(n)
+        self._evict_lru()
 
     # ── LRU eviction ─────────────────────────────────────────────────────────
 
