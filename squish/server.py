@@ -181,6 +181,7 @@ from fastapi import FastAPI, HTTPException, Request, Security  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
 from squish.api.validation import (  # noqa: E402
     parse_embedding_input,
@@ -428,6 +429,45 @@ def _effective_max_kv_size() -> "int | None":
     if _max_kv_size is None:
         return budget
     return min(_max_kv_size, budget)
+
+
+# Endpoints exempt from CRITICAL request shedding — pure observability, no
+# model inference. Kept deliberately small: everything else (chat/completions,
+# embeddings, agent, tokenize, the Ollama-compat routes, ...) is shed, per the
+# sprint's "simplest defensible version" instruction rather than maintaining
+# a denylist of every generation-triggering route.
+_CRITICAL_SHED_EXEMPT_PATHS = frozenset({"/health", "/v1/metrics"})
+
+
+class _MemoryPressureShedMiddleware(BaseHTTPMiddleware):
+    """Reject new requests with HTTP 503 while under CRITICAL memory pressure.
+
+    Phase 4 of the memory-governor eviction sprint. This is request
+    *shedding*, not queueing — a rejected request gets an immediate 503, it
+    is never held and retried server-side.
+
+    In-flight requests are never affected: middleware runs before route
+    dispatch for every request, so anything already past this point (an
+    in-progress generation) keeps running to completion. CRITICAL sheds NEW
+    work; it does not abort existing work.
+
+    ``/health`` and ``/v1/metrics`` are exempt (see
+    ``_CRITICAL_SHED_EXEMPT_PATHS``) so operators/orchestrators can still
+    observe the CRITICAL state instead of the process looking entirely down.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        if (
+            _memory_governor is not None
+            and request.url.path not in _CRITICAL_SHED_EXEMPT_PATHS
+        ):
+            from squish.serving.memory_governor import LEVEL_CRITICAL  # noqa: PLC0415
+            if _memory_governor.pressure_level == LEVEL_CRITICAL:
+                return JSONResponse(
+                    {"detail": "Server under critical memory pressure — request rejected. Try again shortly."},
+                    status_code=503,
+                )
+        return await call_next(request)
 
 
 # ── Inference thread pool ─────────────────────────────────────────────────────
@@ -3262,6 +3302,13 @@ app = FastAPI(
     description = "Local LLM inference via Squish compressed models",
     version     = "1.0.0",
 )
+
+# Phase 4: CRITICAL memory-pressure request shedding. Registered before
+# CORSMiddleware so CORS still wraps (and adds headers to) the 503 responses
+# this emits — added-middleware order matters in Starlette: the most
+# recently added middleware ends up outermost, so registering this first
+# keeps it innermost and CORS still gets a chance to touch every response.
+app.add_middleware(_MemoryPressureShedMiddleware)
 
 # Allow browser clients (e.g. Open WebUI) to call without CORS blocks
 app.add_middleware(

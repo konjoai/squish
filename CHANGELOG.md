@@ -5,6 +5,70 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.11] — Memory governor: CRITICAL request shedding (Phase 4)
+
+**One-way-door behavior change.** Requests that would previously have been
+accepted (and risked crashing the process under real memory exhaustion) can
+now be rejected outright with HTTP 503 while the host is at CRITICAL memory
+pressure. **Sprint status: Phase 4 complete.** Phase 5 (concurrency stress
+pass across all phases) remains — see `NEXT_SESSION_PROMPT.md`.
+
+### Added
+- **`squish/server.py::_MemoryPressureShedMiddleware`** — new Starlette
+  middleware, registered on `app` before `CORSMiddleware` (so CORS still
+  wraps and adds headers to the 503 responses this emits — added-middleware
+  order in Starlette makes the most-recently-added middleware outermost;
+  registering this one first keeps it innermost). Rejects every request
+  with `503 {"detail": "Server under critical memory pressure — request
+  rejected. Try again shortly."}` while `governor.pressure_level ==
+  LEVEL_CRITICAL`, except `/health` and `/v1/metrics` (see Ledger). This is
+  shedding, not queueing: a rejected request is never held or retried
+  server-side. Because it's a request-dispatch middleware, anything already
+  past it when CRITICAL is entered (an in-flight generation) is unaffected
+  — the middleware only runs once, at the start of each new request.
+
+### Tests
+- `tests/serving/test_critical_request_shedding.py` (new, 13 cases):
+  CRITICAL rejects chat/completions/embeddings with a 503 distinct from the
+  pre-existing "model not loaded" 503; `/health` and `/v1/metrics` stay
+  reachable under CRITICAL; NORMAL/WARNING/URGENT never shed (only cache
+  budgets/context size degrade, per Phases 2-3); the shed 503 still carries
+  CORS headers; and — the kill-test's explicit ask — an in-flight request
+  (mid-handler when pressure flips to CRITICAL, verified with a real
+  concurrent thread flipping the mocked governor's `pressure_level`
+  mid-request) completes normally with its original 200, while the very
+  next new request after the flip is correctly shed.
+
+### Ledger
+- **Reject, don't queue.** The sprint brief explicitly scoped queueing out
+  as "a separate, larger design question." A rejected request costs the
+  caller one retry; a queued request under real memory exhaustion risks the
+  queue itself becoming unbounded memory pressure, which is the exact
+  failure this phase exists to prevent. Simplest defensible version wins.
+- **In-flight requests finish; they are never aborted mid-generation.**
+  The middleware fires once per request, before dispatch — a request
+  already past it when CRITICAL is entered is architecturally invisible to
+  this middleware for the rest of its lifetime. No explicit cancellation
+  logic was added or considered; letting requests finish is the default
+  behavior of a before-dispatch check, not an extra mechanism to maintain.
+- **`/health` and `/v1/metrics` are exempt from shedding; everything else
+  is shed (allowlist, not a denylist of generation routes).** An
+  exhaustive denylist would need to track every generation-triggering
+  route across `/v1/*` and all Ollama-compat `/api/*` routes — exactly the
+  kind of scattered, easy-to-miss-a-route problem the middleware approach
+  was chosen to avoid in the first place. A small allowlist of the two
+  pure-observability endpoints is simpler and safer: if a new
+  generation-triggering route is added later, it's shed by default instead
+  of silently exempt. The tradeoff is that `/v1/models`, `/v1/tokenize`,
+  and other cheap-but-unlisted endpoints are also shed at CRITICAL even
+  though they don't risk OOM — acceptable for "simplest defensible
+  version"; revisit if that proves operationally annoying.
+- **`_effective_max_kv_size()` (Phase 3) still applies its ceiling at
+  CRITICAL too**, in addition to this phase's shedding. Belt-and-suspenders:
+  a CRITICAL request that reaches `/health`/`/v1/metrics` or arrives in the
+  brief window between a pressure-level poll and the next one still gets a
+  degraded context ceiling, not an unbounded one.
+
 ## [9.34.10] — Memory governor: URGENT shrink + budget_tokens() context ceiling
 
 **Sprint status: Phase 2 (URGENT half) + Phase 3 complete.** Continuation of
