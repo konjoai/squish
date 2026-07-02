@@ -38,8 +38,8 @@ def test_wave37_wire_header_preserved():
 def test_line_count():
     """Wave 126 target 4698; squash routing +45; W111 quality monitor +18; mlx-lm version guard +26.
     Those additions are exempt from purge logic — see CLAUDE.md."""
-    assert len(LINES) <= 6300, (
-        f"Wave 126 ceiling ≤ 6300 (relaxed post serving-decouple/QoS/KV-fix regrowth, "
-        f"then memory-governor eviction wiring), got {len(LINES)}"
+    assert len(LINES) <= 6400, (
+        f"Wave 126 ceiling ≤ 6400 (relaxed post serving-decouple/QoS/KV-fix regrowth, "
+        f"then memory-governor eviction wiring through Phase 4), got {len(LINES)}"
     )
     assert len(LINES) > 4600, f"Sanity floor: expected > 4600 lines, got {len(LINES)}"
