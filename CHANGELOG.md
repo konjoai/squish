@@ -5,6 +5,60 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.12] — Memory governor: concurrency safety pass (Phase 5, sprint complete)
+
+**Sprint status: all 5 phases complete.** This closes out the
+memory-governor eviction sprint (9.34.9-9.34.12): the module now actually
+drives eviction, context sizing, and request shedding across all four
+pressure levels, matching its own docstring intent.
+
+### Fixed
+- **`_on_memory_pressure_change` had a latent TOCTOU race** on
+  `_original_hot_max_bytes`/`_original_prompt_max_bytes`: two concurrent
+  invocations could both pass the "capture the baseline" `is None` check
+  before either wrote, so the second writer could capture an
+  already-shrunk value as the "original" instead of the true configured
+  size. Not reachable in today's actual call pattern (the governor's single
+  background polling thread is the only caller, after one synchronous call
+  at startup that always completes before that thread's first poll) — but
+  a "review every method touched in Phases 1-4 for thread safety" pass
+  found it, so it's fixed rather than left as a timing assumption. New
+  `_pressure_callback_lock` wraps the whole capture-and-branch body.
+
+### Tests
+- `tests/serving/test_phase5_concurrency_stress.py` (new, 2 cases):
+  - Fires a pressure storm through `_on_memory_pressure_change`
+    (`NORMAL → CRITICAL → WARNING → NORMAL → URGENT → CRITICAL → ...`,
+    including non-adjacent jumps, not just tidy escalate/de-escalate) on
+    one thread while 4 threads hammer `BlockKVCache.store_blocks`/
+    `lookup_prefix`, 4 hammer `PromptKVStore.put`, and 4 poll
+    `_effective_max_kv_size()` — all concurrently. Asserts no exceptions
+    from any thread, the hot-tier eviction invariant holds throughout, and
+    — the sharpest check — driving back to NORMAL afterward restores the
+    caches to their EXACT original configured budgets, proving the
+    baseline never drifted despite the storm.
+  - Fires the same storm against a real `TestClient` hitting a
+    `_MemoryPressureShedMiddleware`-wrapped app from 6 concurrent client
+    threads. Every one of the 180 resulting responses is asserted to be
+    EXACTLY one of two shapes (200 with the handler's body, or 503 with
+    the exact shed detail) — no 500s, no malformed bodies. This also
+    structurally proves no in-flight request is ever aborted mid-handler:
+    the middleware only ever short-circuits before `call_next` or returns
+    its result untouched, so there is no third code path that could
+    interrupt a request already past it.
+  - Both storms are driven by an uncapped `while not stop.is_set()` loop
+    joined *after* the bounded work/request threads finish (not a fixed
+    iteration count) — an earlier draft capped the storm at a fixed count
+    and it consistently finished before the slower HTTP/disk work even
+    got going, leaving pressure parked at one level for most of the test
+    instead of actually racing it.
+
+### Ledger
+- **No new functionality in this phase** — Phase 5 was scoped as
+  verification, not new behavior, per the sprint brief. The one production
+  change (`_pressure_callback_lock`) is a hardening fix uncovered by the
+  review, not a feature.
+
 ## [9.34.11] — Memory governor: CRITICAL request shedding (Phase 4)
 
 **One-way-door behavior change.** Requests that would previously have been
