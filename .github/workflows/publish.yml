@@ -33,6 +33,16 @@ jobs:
 
       - name: Publish to PyPI (Trusted Publisher / OIDC)
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # release.yml's own publish-pypi job (triggered by the push to main
+          # that bumped pyproject.toml) races this tag-push-triggered job and
+          # almost always finishes first, since it skips the twine check step
+          # above. Without skip_existing, PyPI's "file already exists" 400
+          # from that redundant upload fails this step — which then skips
+          # "Create GitHub Release" below, so no release notes ever get
+          # written. skip_existing makes the redundant upload a no-op instead
+          # of a failure, matching release.yml's own publish step.
+          skip_existing: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -77,4 +87,16 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/squish.rb
           git commit -m "chore: bump formula to v${VERSION}" || echo "No formula changes to commit"
-          git push
+
+          # release.yml's own update-formula job may push a formula commit to
+          # main around the same time (same trigger, same computed URL/sha256)
+          # — retry with a rebase instead of failing outright on a rejected
+          # push. If that commit already made the identical change, the
+          # rebase drops this one as empty and the push becomes a no-op.
+          for i in 1 2 3; do
+            git push && break
+            echo "Push rejected (attempt ${i}/3) — rebasing onto latest main..."
+            git fetch origin main
+            git rebase origin/main
+            sleep 3
+          done
