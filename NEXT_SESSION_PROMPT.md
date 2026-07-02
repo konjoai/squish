@@ -43,13 +43,6 @@ sprint brief asked for approval before building the riskier remaining pieces.
    not just "didn't crash").
 
 ## Also flagged, not acted on
-- `TestModuleCount` in `test_quant_aqlm.py` / `test_sqint2.py` /
-  `test_sqint2_router.py` already asserts 111 != expected 110 on this
-  branch's tip *before* this sprint (confirmed via `git stash`) — some
-  earlier commit added a module without updating the count/comment. Not
-  this sprint's regression; needs its own small fix (bump the expected
-  count + append a changelog-style note to the assertion message, matching
-  the existing pattern).
 - 10 benchmark-matrix cells (`r*_c16000`, `r*_c32000` in
   `benchmarks/ollama_vs_squish/matrix`) now measure stale behavior on
   memory-constrained hosts — see CHANGELOG 9.34.9 for the full list. Re-run

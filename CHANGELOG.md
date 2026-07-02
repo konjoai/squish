@@ -63,12 +63,15 @@ collapsing the prefix-cache hit rate — see the Ledger below.
 - `tests/test_wave95_release.py::TestPackageVersion` failures in this sandbox
   are an environment-only artifact (`squish-ai` not installed via
   `pip install -e .`), not a code issue — confirmed passing once installed.
-- **Not fixed, flagged as pre-existing and unrelated:**
-  `test_quant_aqlm.py`/`test_sqint2.py`/`test_sqint2_router.py`'s
-  `TestModuleCount` tests already assert 111 modules exist when they expect
-  110 on this branch's tip *before* this sprint's changes (confirmed via
-  `git stash`) — this sprint added zero new module files, so it isn't the
-  cause and fixing it is out of scope here.
+- **`TestModuleCount` in `test_quant_aqlm.py`/`test_sqint2.py`/
+  `test_sqint2_router.py`** expected 110 modules but the branch tip already
+  had 111 *before* this sprint's changes (confirmed via `git stash`) — CI
+  on this PR confirmed it's a real, blocking failure, not sandbox-only.
+  Root cause: `squish/runtime/arch_resolver.py`, added in Wave 130
+  (`#193`, merged before this sprint), was never accounted for in the
+  count. This sprint added zero new module files, so it isn't the cause,
+  but bumped the expected count 110 → 111 with the missing history line
+  since it was blocking merge and the fix is mechanical.
 
 ### Ledger
 - **WARNING shrink fraction = 50%.** Halves both budgets — enough to free

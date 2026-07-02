@@ -570,8 +570,8 @@ class TestModuleCount:
             and "__pycache__" not in f.parts
         ]
         count = len(py_files)
-        assert count == 110, (
-            f"Module count changed: {count} != 110. "
+        assert count == 111, (
+            f"Module count changed: {count} != 111. "
             "Squash separation baseline = 83; W103.1 → 84; W103.4c → 85; "
             "W100/W110 integrations → 87; W110/W111 serving modules → 89; "
             "v4 daemon + v5.1.1 perf + KV P2 → 100; grammar/io/reasoning → 102; "
@@ -581,7 +581,8 @@ class TestModuleCount:
             "quant/nf4_quant.py (implements --nf4) → 107; "
             "kv/prompt_prefix_cache.py (in-memory prompt-prefix KV reuse, ~9x TTFT) → 108; "
             "kv/k8v4_codec.py (INT8-keys/INT4-values disk KV codec, ~2.7x) → 109; "
-            "serving/loop_guard.py (repetition guard extracted from server.py, v9.34.5) → 110. "
+            "serving/loop_guard.py (repetition guard extracted from server.py, v9.34.5) → 110; "
+            "runtime/arch_resolver.py (Wave 130 mlx_vlm backend resolver, #193) → 111. "
             "New modules require either deletion of an existing one or written "
             "justification per CLAUDE.md."
         )
