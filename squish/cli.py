@@ -3280,6 +3280,8 @@ def _cmd_compress_inner(args, model_dir, output_dir, _use_int4, _no_awq, _run_aw
         cmd += ["--awq-scales", awq_scales_dir]
     if args.verbose:
         cmd.append("--verbose")
+    if getattr(args, "delete_source", False):
+        cmd.append("--delete-source")
 
     print("  Compressing weights — this may take 3–8 min for large models …")
     sys.stdout.flush()
@@ -3623,6 +3625,15 @@ def cmd_pull(args):  # pragma: no cover
         "int4"
     )
     quant_label = quant_mode.upper()
+    _delete_source = getattr(args, "delete_source", False)
+    # Local compression coexists with the raw download on disk unless shards are
+    # deleted as they're consumed; approximate the in-flight shard size at 5 GB
+    # (the common HF safetensors max-shard-size default) for the peak estimate.
+    _est_shard_gb = min(entry.size_gb, 5.0)
+    if _delete_source:
+        peak_line = f"~{entry.squished_size_gb + _est_shard_gb:.1f} GB (raw shards deleted as they compress)"
+    else:
+        peak_line = f"~{entry.size_gb + entry.squished_size_gb:.1f} GB (raw + compressed on disk simultaneously)"
     if _rich:
         _con.print()
         _con.rule(
@@ -3633,6 +3644,7 @@ def cmd_pull(args):  # pragma: no cover
         _con.print(f"  [squish.dim]Parameters:[/] {entry.params}")
         _con.print(f"  [squish.dim]Raw size  :[/] ~{entry.size_gb:.1f} GB")
         _con.print(f"  [squish.dim]Compressed:[/] ~{entry.squished_size_gb:.1f} GB  [squish.violet]({quant_label})[/]")
+        _con.print(f"  [squish.dim]Peak disk :[/] {peak_line}")
         _con.print(f"  [squish.dim]Context   :[/] {entry.context:,} tokens")
         _con.print(f"  [squish.dim]Dest      :[/] [squish.dim]{models_dir}[/]")
         _con.print()
@@ -3644,6 +3656,7 @@ def cmd_pull(args):  # pragma: no cover
             f"  Parameters : {entry.params}",
             f"  Raw size   : ~{entry.size_gb:.1f} GB",
             f"  Compressed : ~{entry.squished_size_gb:.1f} GB  ({quant_label})",
+            f"  Peak disk  : {peak_line}",
             f"  Context    : {entry.context:,} tokens",
             f"  Dest       : {models_dir}",
         ])
@@ -3658,6 +3671,7 @@ def cmd_pull(args):  # pragma: no cover
             refresh_catalog=args.refresh_catalog,
             verbose=args.verbose,
             quant_mode=quant_mode,
+            delete_source=_delete_source,
         )
     except ImportError as exc:
         _die(str(exc))
@@ -6683,6 +6697,17 @@ Ollama drop-in:
              "(MLX constraint). Default: 32 when AWQ is active, 64 otherwise.",
     )
     p_compress.add_argument(
+        "--delete-source",
+        action="store_true",
+        default=False,
+        dest="delete_source",
+        help="Delete each raw .safetensors shard immediately after it's quantized "
+             "and written. Reduces peak disk from ~(raw + compressed) to "
+             "~(compressed + one shard). WARNING: a failure partway through means "
+             "already-deleted shards must be re-downloaded to retry — this does "
+             "not support partial resume in this release. Off by default.",
+    )
+    p_compress.add_argument(
         "--format",
         choices=["int8", "int4", "int3", "astc", "hybrid", "mixed_attn", "aqlm", "sqint2"],
         default=None,
@@ -6739,6 +6764,18 @@ Ollama drop-in:
                         help=f"Override models directory (default: {_MODELS_DIR})")
     p_pull.add_argument("--refresh-catalog", action="store_true",
                         help="Force-refresh the online catalog before resolving")
+    p_pull.add_argument(
+        "--delete-source", "--reclaim-space",
+        action="store_true",
+        default=False,
+        dest="delete_source",
+        help="Delete each raw .safetensors shard immediately after it's quantized "
+             "during local compression. Reduces peak disk from ~(raw + compressed) "
+             "to ~(compressed + one shard). WARNING: a failure partway through "
+             "means already-deleted shards must be re-downloaded to retry — this "
+             "does not support partial resume in this release. Off by default. "
+             "No effect when pre-compressed weights are downloaded directly.",
+    )
     p_pull.add_argument(
         "--with-draft",
         action="store_true",

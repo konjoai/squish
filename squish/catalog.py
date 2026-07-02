@@ -1261,6 +1261,7 @@ def pull(  # pragma: no cover
     refresh_catalog: bool = False,
     verbose: bool = False,
     quant_mode: str = "int4",
+    delete_source: bool = False,
 ) -> Path:
     """
     Download and (if needed) compress a model.  Returns the compressed dir path.
@@ -1282,6 +1283,10 @@ def pull(  # pragma: no cover
                   Overrides the int4 flag when set to "int3" or "int2".
     token       : HuggingFace user access token (for gated models)
     verbose     : pass ``--verbose`` to the underlying compress step
+    delete_source : delete each raw .safetensors shard immediately after it's
+                  quantized (opt-in). Reduces peak disk from ~(raw + compressed)
+                  to ~(compressed + one shard); a failed run cannot resume and
+                  the deleted shards must be re-downloaded. Off by default.
     """
 
     if models_dir is None:
@@ -1443,6 +1448,8 @@ def pull(  # pragma: no cover
         cmd.extend(["--awq-scales", awq_scales_dir])
     if verbose:
         cmd.append("--verbose")
+    if delete_source:
+        cmd.append("--delete-source")
 
     import subprocess as _sp  # noqa
     result = _sp.run(cmd)
