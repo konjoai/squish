@@ -328,11 +328,15 @@ _power_monitor: "Any | None" = None        # PowerMonitor instance (auto mode on
 _power_mode: str = "performance"           # current effective mode name
 # ── Phase 13B: macOS Memory Governor ─────────────────────────────────────────
 _memory_governor: "Any | None" = None      # MemoryGovernor instance (macOS only)
-# WARNING shrinks live cache budgets to this fraction of their configured size.
-# 50% is a conservative first cut: halving still leaves a meaningful prefix
-# cache (so cache-hit rate doesn't collapse) while freeing real headroom before
-# pressure escalates to URGENT/CRITICAL. Revisit with real fleet telemetry.
+# Live cache budgets shrink to these fractions of their configured size as
+# pressure escalates. WARNING=50% is a conservative first cut: halving still
+# leaves a meaningful prefix cache (so cache-hit rate doesn't collapse) while
+# freeing real headroom. URGENT=20% is a harder squeeze — by this level the
+# kernel memory compressor is already active, so protecting the cache further
+# matters less than freeing bytes. Both are starting points, not derived from
+# fleet telemetry; revisit with real data.
 _PRESSURE_WARNING_FRACTION = 0.5
+_PRESSURE_URGENT_FRACTION  = 0.2
 _original_hot_max_bytes:    "int | None" = None  # BlockKVCache budget pre-shrink
 _original_prompt_max_bytes: "int | None" = None  # PromptKVStore budget pre-shrink
 
@@ -350,13 +354,19 @@ def _on_memory_pressure_change(level: int) -> None:
     Safe to call concurrently with in-flight requests: the underlying
     ``set_hot_max_bytes`` / ``set_max_bytes`` setters own their own locks.
 
-    Only NORMAL and WARNING are handled here — URGENT (further shrink +
-    ``budget_tokens()`` wiring) and CRITICAL (request shedding) are later,
-    separately-approved phases of this sprint.
+    NORMAL, WARNING, and URGENT are handled here (cache-budget shrink only).
+    CRITICAL request shedding is a separate, later-approved phase of this
+    sprint — this callback does not reject requests at any level; the
+    per-request context ceiling for elevated pressure is applied separately
+    by ``_effective_max_kv_size`` at generation time.
     """
     global _original_hot_max_bytes, _original_prompt_max_bytes
 
-    from squish.serving.memory_governor import LEVEL_NORMAL, LEVEL_WARNING  # noqa: PLC0415
+    from squish.serving.memory_governor import (  # noqa: PLC0415
+        LEVEL_NORMAL,
+        LEVEL_URGENT,
+        LEVEL_WARNING,
+    )
 
     # Capture the configured (pre-shrink) budgets the first time we see any
     # pressure event, so NORMAL always has a real baseline to restore to.
@@ -371,22 +381,53 @@ def _on_memory_pressure_change(level: int) -> None:
         if _prompt_kv_store is not None and _original_prompt_max_bytes is not None:
             _prompt_kv_store.set_max_bytes(_original_prompt_max_bytes)
         _info("memory-governor", "pressure NORMAL — cache budgets restored")
-    elif level == LEVEL_WARNING:
-        if _block_kv_cache is not None and _original_hot_max_bytes is not None:
-            _block_kv_cache.set_hot_max_bytes(
-                max(1, int(_original_hot_max_bytes * _PRESSURE_WARNING_FRACTION))
-            )
-        if _prompt_kv_store is not None and _original_prompt_max_bytes is not None:
-            _prompt_kv_store.set_max_bytes(
-                max(1, int(_original_prompt_max_bytes * _PRESSURE_WARNING_FRACTION))
-            )
-        _info("memory-governor",
-              f"pressure WARNING — cache budgets shrunk to "
-              f"{int(_PRESSURE_WARNING_FRACTION * 100)}% of configured size")
-    # URGENT / CRITICAL: intentionally unhandled pending sprint kill-test
-    # approval (see squish/server.py Phase 13B sprint notes) — no shrink, no
-    # request shedding yet. Falling through here is a deliberate no-op, not
-    # an oversight.
+        return
+
+    fraction = {
+        LEVEL_WARNING: _PRESSURE_WARNING_FRACTION,
+        LEVEL_URGENT:  _PRESSURE_URGENT_FRACTION,
+    }.get(level)
+    if fraction is None:
+        # CRITICAL: cache shrink stops at URGENT's floor; Phase 4 (request
+        # shedding) is the CRITICAL response, not a further cache squeeze.
+        return
+
+    if _block_kv_cache is not None and _original_hot_max_bytes is not None:
+        _block_kv_cache.set_hot_max_bytes(
+            max(1, int(_original_hot_max_bytes * fraction))
+        )
+    if _prompt_kv_store is not None and _original_prompt_max_bytes is not None:
+        _prompt_kv_store.set_max_bytes(
+            max(1, int(_original_prompt_max_bytes * fraction))
+        )
+    _level_name = "WARNING" if level == LEVEL_WARNING else "URGENT"
+    _info("memory-governor",
+          f"pressure {_level_name} — cache budgets shrunk to "
+          f"{int(fraction * 100)}% of configured size")
+
+
+def _effective_max_kv_size() -> "int | None":
+    """Per-request ``max_kv_size`` ceiling, degraded under memory pressure.
+
+    Returns the configured ``_max_kv_size`` unchanged when the memory
+    governor is absent or reporting NORMAL pressure — this never raises the
+    configured ceiling, only lowers it, and only when there's a reason to.
+    Under WARNING/URGENT/CRITICAL pressure, also caps it at
+    ``governor.budget_tokens()`` so new requests can't keep allocating a
+    full-size KV cache while the host is under memory pressure. When no
+    explicit ``--max-kv-size`` was configured (``_max_kv_size is None``,
+    meaning "use mlx_lm's default"), the pressure-derived budget becomes the
+    ceiling outright.
+    """
+    if _memory_governor is None:
+        return _max_kv_size
+    from squish.serving.memory_governor import LEVEL_NORMAL  # noqa: PLC0415
+    if _memory_governor.pressure_level == LEVEL_NORMAL:
+        return _max_kv_size
+    budget = _memory_governor.budget_tokens()
+    if _max_kv_size is None:
+        return budget
+    return min(_max_kv_size, budget)
 
 
 # ── Inference thread pool ─────────────────────────────────────────────────────
@@ -2523,8 +2564,9 @@ def _generate_tokens(  # pragma: no cover
         if _trace:
             _tlog(f"REQ {_rid}  dispatch → mlx_lm.stream_generate")
         _sg_kwargs = {}
-        if _max_kv_size is not None:
-            _sg_kwargs["max_kv_size"] = _max_kv_size
+        _req_max_kv_size = _effective_max_kv_size()
+        if _req_max_kv_size is not None:
+            _sg_kwargs["max_kv_size"] = _req_max_kv_size
         # Native mlx_lm quantized KV cache (GPU-side mx.quantize) — cuts KV
         # bandwidth at long context.  Unlike --kv-cache-mode (squish's numpy
         # path), this runs entirely on the GPU inside generate_step.

@@ -1,13 +1,13 @@
 """
 tests/serving/test_memory_governor_wiring.py
 
-Kill-test evidence for Phase 2 (WARNING half only) of the memory-governor
+Kill-test evidence for Phase 2 (WARNING + URGENT) of the memory-governor
 eviction sprint: proves the ``_on_memory_pressure_change`` callback registered
 in squish/server.py Phase 13B actually shrinks live BlockKVCache/PromptKVStore
-budgets on a WARNING transition, and restores them on NORMAL.
+budgets on WARNING/URGENT transitions, and restores them on NORMAL.
 
-URGENT and CRITICAL are intentionally NOT covered here — those are later,
-separately-approved phases of the same sprint (see squish/server.py's
+CRITICAL request shedding is intentionally NOT covered here — that's a later,
+separately-approved phase of the same sprint (see squish/server.py's
 ``_on_memory_pressure_change`` docstring).
 """
 from __future__ import annotations
@@ -131,6 +131,46 @@ class TestWarningShrinksRealCaches:
         assert real_block_cache.stats()["hot_entries"] < entries_before
 
 
+class TestUrgentShrinksRealCaches:
+    def test_urgent_shrinks_hot_tier_further_than_warning(self, real_block_cache):
+        _srv._block_kv_cache = real_block_cache
+        original_max = real_block_cache.stats()["hot_max_bytes"]
+
+        _srv._on_memory_pressure_change(LEVEL_URGENT)
+
+        new_max = real_block_cache.stats()["hot_max_bytes"]
+        assert new_max == max(1, int(original_max * 0.2))
+        assert new_max < original_max
+
+    def test_urgent_shrinks_prompt_cache_further_than_warning(self, real_prompt_store):
+        _srv._prompt_kv_store = real_prompt_store
+        original_max = real_prompt_store.max_bytes
+
+        _srv._on_memory_pressure_change(LEVEL_URGENT)
+
+        assert real_prompt_store.max_bytes == max(1, int(original_max * 0.2))
+        assert real_prompt_store.max_bytes < original_max
+
+    def test_urgent_then_normal_restores_hot_tier(self, real_block_cache):
+        _srv._block_kv_cache = real_block_cache
+        original_max = real_block_cache.stats()["hot_max_bytes"]
+
+        _srv._on_memory_pressure_change(LEVEL_URGENT)
+        assert real_block_cache.stats()["hot_max_bytes"] < original_max
+
+        _srv._on_memory_pressure_change(LEVEL_NORMAL)
+        assert real_block_cache.stats()["hot_max_bytes"] == original_max
+
+    def test_urgent_actually_evicts_more_than_warning(self, real_block_cache):
+        _srv._block_kv_cache = real_block_cache
+        entries_before = real_block_cache.stats()["hot_entries"]
+        assert entries_before == 8
+
+        _srv._on_memory_pressure_change(LEVEL_URGENT)
+
+        assert real_block_cache.stats()["hot_entries"] < entries_before
+
+
 # ── Precise call assertions via mocks ────────────────────────────────────────
 
 
@@ -168,9 +208,7 @@ class TestPressureCallbackMocked:
         _srv._on_memory_pressure_change(LEVEL_NORMAL)
         # No exception == pass
 
-    def test_urgent_and_critical_do_not_shrink_yet(self):
-        """URGENT/CRITICAL are unbuilt, separately-gated phases of this sprint —
-        the WARNING-only callback must not touch the budgets for them."""
+    def test_urgent_calls_setters_with_20_percent_of_original(self):
         mock_bkv = MagicMock()
         mock_bkv.stats.return_value = {"hot_max_bytes": 2_000_000_000}
         mock_pkv = MagicMock()
@@ -179,6 +217,47 @@ class TestPressureCallbackMocked:
         _srv._prompt_kv_store = mock_pkv
 
         _srv._on_memory_pressure_change(LEVEL_URGENT)
+
+        mock_bkv.set_hot_max_bytes.assert_called_once_with(400_000_000)
+        mock_pkv.set_max_bytes.assert_called_once_with(200_000_000)
+
+    def test_urgent_then_normal_restores_original_baseline(self):
+        mock_bkv = MagicMock()
+        mock_bkv.stats.return_value = {"hot_max_bytes": 2_000_000_000}
+        mock_pkv = MagicMock()
+        mock_pkv.max_bytes = 1_000_000_000
+        _srv._block_kv_cache  = mock_bkv
+        _srv._prompt_kv_store = mock_pkv
+
+        _srv._on_memory_pressure_change(LEVEL_URGENT)
+        _srv._on_memory_pressure_change(LEVEL_NORMAL)
+
+        mock_bkv.set_hot_max_bytes.assert_called_with(2_000_000_000)
+        mock_pkv.set_max_bytes.assert_called_with(1_000_000_000)
+
+    def test_warning_then_urgent_both_shrink_from_same_baseline(self):
+        """Escalating WARNING → URGENT must shrink from the ORIGINAL baseline
+        (2B * 0.2), not from the already-WARNING-shrunk value (1B * 0.2)."""
+        mock_bkv = MagicMock()
+        mock_bkv.stats.return_value = {"hot_max_bytes": 2_000_000_000}
+        _srv._block_kv_cache = mock_bkv
+
+        _srv._on_memory_pressure_change(LEVEL_WARNING)
+        mock_bkv.stats.return_value = {"hot_max_bytes": 1_000_000_000}  # now-shrunk size
+        _srv._on_memory_pressure_change(LEVEL_URGENT)
+
+        mock_bkv.set_hot_max_bytes.assert_called_with(400_000_000)
+
+    def test_critical_does_not_shrink_further(self):
+        """CRITICAL is request-shedding territory (a later, separately-approved
+        phase) — the cache-shrink callback must not touch budgets for it."""
+        mock_bkv = MagicMock()
+        mock_bkv.stats.return_value = {"hot_max_bytes": 2_000_000_000}
+        mock_pkv = MagicMock()
+        mock_pkv.max_bytes = 1_000_000_000
+        _srv._block_kv_cache  = mock_bkv
+        _srv._prompt_kv_store = mock_pkv
+
         _srv._on_memory_pressure_change(LEVEL_CRITICAL)
 
         mock_bkv.set_hot_max_bytes.assert_not_called()
