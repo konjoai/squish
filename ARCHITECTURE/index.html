@@ -1143,6 +1143,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="5. RAM Efficiency">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#peak-disk-during-compression-delete-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Peak disk during compression — --delete-source
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1792,6 +1809,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="5. RAM Efficiency">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#peak-disk-during-compression-delete-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Peak disk during compression — --delete-source
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2041,6 +2075,38 @@ introduce sub-0.02% cosine distance from the original, within training noise.</p
 weight bytes are mapped into the GPU's virtual address space directly from the
 file, bypassing the CPU heap allocation that the standard numpy-based loader
 performs.</p>
+<h3 id="peak-disk-during-compression-delete-source">Peak disk during compression — <code>--delete-source</code><a class="headerlink" href="#peak-disk-during-compression-delete-source" title="Permanent link">&para;</a></h3>
+<p><code>process_weights_streaming()</code> already streams one raw <code>.safetensors</code> shard at
+a time (load → quantize → write <code>.npy</code> → free from RAM), so peak <em>RAM</em> is
+bounded regardless of model size. Peak <em>disk</em>, however, defaults to
+<code>raw model size + compressed output size</code> coexisting simultaneously — for a
+12B model that's roughly 24 GB raw + ~12–14 GB compressed ≈ 36–38 GB, and the
+raw copy is never deleted automatically.</p>
+<p>Passing <code>--delete-source</code> (<code>squish compress --delete-source</code>, or
+<code>squish pull &lt;model&gt; --delete-source</code> / <code>--reclaim-space</code>) unlinks each raw
+shard immediately after its tensors are quantized, written, and committed to
+an on-disk manifest — bounding peak disk to roughly
+<code>compressed output size + one raw shard in flight</code> (~19 GB for the 12B
+example above).</p>
+<p><strong>The tradeoff — resumability.</strong> Without the flag, a failed or interrupted
+compression leaves the raw model directory untouched, so re-running
+<code>squish compress</code> just picks the raw weights back up from disk. With
+<code>--delete-source</code>, any raw shard whose compressed output was already
+committed is gone permanently once it's deleted. A mid-run failure means the
+already-deleted shards must be re-downloaded to retry — this release does not
+add per-shard re-fetch, so in practice a failure means re-pulling the whole
+model. This is why the flag is <strong>off by default</strong> for both <code>squish compress</code>
+and <code>squish pull</code>, and why <code>main()</code>'s failure handler does <em>not</em> clean up
+partial output when the flag was active: the partial <code>.npy</code> output plus the
+incremental <code>_compress_progress.json</code> / <code>manifest.json</code> are the only local
+record of how much work would need to be redone, and the diagnostic printed
+on failure names exactly which shards were lost so the user can decide
+whether to re-pull.</p>
+<p>Manifest and progress tracking are incremental regardless of the flag:
+<code>manifest.json</code> and <code>_compress_progress.json</code> (<code>completed_shards</code>,
+<code>total_shards</code>, <code>freed_bytes</code>) are rewritten after each shard commits, not
+once at the end of the run — so a crash at shard 6 of 10 still leaves an
+accurate on-disk record of shards 1–5.</p>
 <hr />
 <h2 id="6-accuracy-preservation">6. Accuracy Preservation<a class="headerlink" href="#6-accuracy-preservation" title="Permanent link">&para;</a></h2>
 <p>INT8 quantisation introduces bounded numerical error.  Per weight matrix:</p>
