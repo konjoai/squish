@@ -306,6 +306,67 @@ class TestLRUEviction:
         assert store.entry_count() == before
 
 
+# ── Live-adjustable budget (set_max_bytes) ───────────────────────────────────
+
+class TestSetMaxBytes:
+    def test_set_max_bytes_evicts_immediately(self, tmp_path):
+        """Shrinking the budget below current on-disk usage evicts LRU entries
+        right away, without waiting for put()'s probabilistic eviction check."""
+        from squish.kv.prompt_kv_cache import PromptKVStore
+
+        store = PromptKVStore(cache_dir=tmp_path, max_bytes=1024 * 1024 * 1024)
+        keys, values = _make_kv(n_layers=2)
+        for i in range(5):
+            store.put(f"prompt_{i}", keys, values, 1)
+        assert store.entry_count() == 5
+        size_before = store.total_bytes()
+
+        store.set_max_bytes(size_before // 3)
+
+        assert store._max_bytes == size_before // 3
+        assert store.total_bytes() <= size_before // 3
+        assert store.entry_count() < 5
+
+    def test_set_max_bytes_no_eviction_when_under_new_budget(self, tmp_path):
+        from squish.kv.prompt_kv_cache import PromptKVStore
+
+        store = PromptKVStore(cache_dir=tmp_path, max_bytes=1024 * 1024 * 1024)
+        keys, values = _make_kv(n_layers=1)
+        store.put("tiny_prompt", keys, values, 1)
+        before = store.entry_count()
+
+        store.set_max_bytes(1024 * 1024 * 1024)  # unchanged, still plenty of room
+
+        assert store.entry_count() == before
+
+    def test_set_max_bytes_restores_higher_budget(self, tmp_path):
+        from squish.kv.prompt_kv_cache import PromptKVStore
+
+        store = PromptKVStore(cache_dir=tmp_path, max_bytes=1024 * 1024 * 1024)
+        keys, values = _make_kv(n_layers=2)
+        for i in range(5):
+            store.put(f"prompt_{i}", keys, values, 1)
+        original_max = store._max_bytes
+
+        store.set_max_bytes(1)  # forces eviction of everything but the newest
+        shrunk_count = store.entry_count()
+        assert shrunk_count < 5
+
+        store.set_max_bytes(original_max)
+        assert store._max_bytes == original_max
+        # Raising the ceiling alone doesn't resurrect evicted entries.
+        assert store.entry_count() == shrunk_count
+
+    def test_set_max_bytes_rejects_non_positive(self, tmp_path):
+        from squish.kv.prompt_kv_cache import PromptKVStore
+
+        store = PromptKVStore(cache_dir=tmp_path)
+        with pytest.raises(ValueError, match="max_bytes"):
+            store.set_max_bytes(0)
+        with pytest.raises(ValueError, match="max_bytes"):
+            store.set_max_bytes(-1)
+
+
 # ── Thread safety ─────────────────────────────────────────────────────────────
 
 class TestThreadSafety:

@@ -41,6 +41,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -130,6 +131,10 @@ class BlockKVCache:
         # Hot tier: OrderedDict for O(1) LRU
         self._hot: "OrderedDict[str, BlockEntry]" = OrderedDict()
         self._hot_bytes: int = 0
+        # Guards _hot / _hot_bytes / _hot_max_bytes — mutated both by request
+        # threads (store_blocks/lookup_prefix) and by the memory governor's
+        # polling thread (set_hot_max_bytes).
+        self._hot_lock = threading.Lock()
         # Persist block_size + model_key in a manifest so we can detect a
         # mismatch on restart and clear if needed.
         self._manifest_path = self._dir / "manifest.json"
@@ -194,12 +199,13 @@ class BlockKVCache:
 
     def _get_block(self, h: str) -> "BlockEntry | None":
         # Hot first
-        if h in self._hot:
-            entry = self._hot[h]
-            entry.last_used = time.time()
-            self._hot.move_to_end(h)  # LRU bump
-            return entry
-        # Cold fallback
+        with self._hot_lock:
+            entry = self._hot.get(h)
+            if entry is not None:
+                entry.last_used = time.time()
+                self._hot.move_to_end(h)  # LRU bump
+                return entry
+        # Cold fallback (releases the lock first — disk I/O shouldn't hold it)
         return self._read_cold(h)
 
     def _read_cold(self, h: str) -> "BlockEntry | None":
@@ -306,17 +312,41 @@ class BlockKVCache:
         return h in self._hot or self._cold_path(h).exists()
 
     def _add_to_hot(self, entry: "BlockEntry") -> None:
-        if entry.hash in self._hot:
-            self._hot.move_to_end(entry.hash)
-            return
-        self._hot[entry.hash] = entry
-        self._hot_bytes += entry.nbytes
-        # Evict from hot down to budget; cold tier already has the data
-        # because we always write cold after add_to_hot OR the entry came
-        # from cold tier (which still has the file).
+        with self._hot_lock:
+            if entry.hash in self._hot:
+                self._hot.move_to_end(entry.hash)
+                return
+            self._hot[entry.hash] = entry
+            self._hot_bytes += entry.nbytes
+            # Evict from hot down to budget; cold tier already has the data
+            # because we always write cold after add_to_hot OR the entry came
+            # from cold tier (which still has the file).
+            self._evict_hot_locked()
+
+    def _evict_hot_locked(self) -> None:
+        """Evict hot-tier LRU entries down to ``_hot_max_bytes``.
+
+        Caller must hold ``_hot_lock``. Keeps at least one entry so a single
+        oversized block doesn't leave the hot tier permanently empty.
+        """
         while self._hot_bytes > self._hot_max_bytes and len(self._hot) > 1:
             _h, evicted = self._hot.popitem(last=False)
             self._hot_bytes -= evicted.nbytes
+
+    def set_hot_max_bytes(self, n: int) -> None:
+        """Adjust the hot-tier byte budget at runtime.
+
+        Evicts immediately (LRU) if the new budget is below current usage,
+        instead of waiting for the next ``store_blocks``/``_read_cold`` call.
+        Used by the memory governor to shrink/restore the live budget in
+        response to pressure-level changes. Thread-safe against concurrent
+        lookups/stores on other threads.
+        """
+        if n <= 0:
+            raise ValueError(f"hot_max_bytes must be positive; got {n}")
+        with self._hot_lock:
+            self._hot_max_bytes = int(n)
+            self._evict_hot_locked()
 
     def _write_cold(self, entry: "BlockEntry") -> None:
         entry_path = self._cold_path(entry.hash)
@@ -396,8 +426,9 @@ class BlockKVCache:
 
     def clear(self) -> None:
         """Wipe both tiers (test/admin use only)."""
-        self._hot.clear()
-        self._hot_bytes = 0
+        with self._hot_lock:
+            self._hot.clear()
+            self._hot_bytes = 0
         for sub in self._dir.iterdir():
             if sub.is_dir():
                 for f in sub.iterdir():

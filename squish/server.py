@@ -328,6 +328,67 @@ _power_monitor: "Any | None" = None        # PowerMonitor instance (auto mode on
 _power_mode: str = "performance"           # current effective mode name
 # ── Phase 13B: macOS Memory Governor ─────────────────────────────────────────
 _memory_governor: "Any | None" = None      # MemoryGovernor instance (macOS only)
+# WARNING shrinks live cache budgets to this fraction of their configured size.
+# 50% is a conservative first cut: halving still leaves a meaningful prefix
+# cache (so cache-hit rate doesn't collapse) while freeing real headroom before
+# pressure escalates to URGENT/CRITICAL. Revisit with real fleet telemetry.
+_PRESSURE_WARNING_FRACTION = 0.5
+_original_hot_max_bytes:    "int | None" = None  # BlockKVCache budget pre-shrink
+_original_prompt_max_bytes: "int | None" = None  # PromptKVStore budget pre-shrink
+
+
+def _on_memory_pressure_change(level: int) -> None:
+    """Memory-governor callback: shrink/restore live cache budgets on pressure change.
+
+    Registered with ``MemoryGovernor.add_callback`` in Phase 13B startup and
+    invoked once immediately after registration to cover the case where the
+    host is already under pressure at boot (the governor only calls
+    registered callbacks on a *change* in level, so a callback added after
+    an already-elevated first poll would otherwise never see it).
+
+    Runs on the governor's background polling thread, not a request thread.
+    Safe to call concurrently with in-flight requests: the underlying
+    ``set_hot_max_bytes`` / ``set_max_bytes`` setters own their own locks.
+
+    Only NORMAL and WARNING are handled here — URGENT (further shrink +
+    ``budget_tokens()`` wiring) and CRITICAL (request shedding) are later,
+    separately-approved phases of this sprint.
+    """
+    global _original_hot_max_bytes, _original_prompt_max_bytes
+
+    from squish.serving.memory_governor import LEVEL_NORMAL, LEVEL_WARNING  # noqa: PLC0415
+
+    # Capture the configured (pre-shrink) budgets the first time we see any
+    # pressure event, so NORMAL always has a real baseline to restore to.
+    if _block_kv_cache is not None and _original_hot_max_bytes is None:
+        _original_hot_max_bytes = _block_kv_cache.stats()["hot_max_bytes"]
+    if _prompt_kv_store is not None and _original_prompt_max_bytes is None:
+        _original_prompt_max_bytes = _prompt_kv_store.max_bytes
+
+    if level == LEVEL_NORMAL:
+        if _block_kv_cache is not None and _original_hot_max_bytes is not None:
+            _block_kv_cache.set_hot_max_bytes(_original_hot_max_bytes)
+        if _prompt_kv_store is not None and _original_prompt_max_bytes is not None:
+            _prompt_kv_store.set_max_bytes(_original_prompt_max_bytes)
+        _info("memory-governor", "pressure NORMAL — cache budgets restored")
+    elif level == LEVEL_WARNING:
+        if _block_kv_cache is not None and _original_hot_max_bytes is not None:
+            _block_kv_cache.set_hot_max_bytes(
+                max(1, int(_original_hot_max_bytes * _PRESSURE_WARNING_FRACTION))
+            )
+        if _prompt_kv_store is not None and _original_prompt_max_bytes is not None:
+            _prompt_kv_store.set_max_bytes(
+                max(1, int(_original_prompt_max_bytes * _PRESSURE_WARNING_FRACTION))
+            )
+        _info("memory-governor",
+              f"pressure WARNING — cache budgets shrunk to "
+              f"{int(_PRESSURE_WARNING_FRACTION * 100)}% of configured size")
+    # URGENT / CRITICAL: intentionally unhandled pending sprint kill-test
+    # approval (see squish/server.py Phase 13B sprint notes) — no shrink, no
+    # request shedding yet. Falling through here is a deliberate no-op, not
+    # an oversight.
+
+
 # ── Inference thread pool ─────────────────────────────────────────────────────
 # MLX .generate() is a synchronous generator that blocks for the full forward
 # pass on each next() call.  Running it in a single-threaded executor keeps the
@@ -5668,6 +5729,11 @@ Examples:
         try:
             from squish.serving.memory_governor import MemoryGovernor  # noqa: PLC0415
             _memory_governor = MemoryGovernor(poll_interval=5.0).start()
+            _memory_governor.add_callback(_on_memory_pressure_change)
+            # The governor only invokes callbacks on a level *change*; run it
+            # once now so an already-elevated pressure level at boot (not just
+            # a later transition) still shrinks the caches.
+            _on_memory_pressure_change(_memory_governor.pressure_level)
             _info("memory-governor",
                   f"started  available={_memory_governor.available_gb:.1f} GB"
                   f"  pressure={_memory_governor.pressure_level}")
