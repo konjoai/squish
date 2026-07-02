@@ -3,15 +3,15 @@ class Squish < Formula
 
   desc "Local LLM inference server optimized for Apple Silicon"
   homepage "https://github.com/konjoai/squish"
-  url "https://files.pythonhosted.org/packages/58/bf/85689680da5471cbdf4dde074473b3ff47aa4355b5bbe6f6e82969488544/squish_ai-9.34.12.tar.gz"
-  sha256 "cde04a0724af1f2b8343688c55662bafbfb3975efcfd3ff9b377efeb705edac3"
+  url "https://files.pythonhosted.org/packages/75/3d/2f028a7798411b4e0403f0fbcabcdc4c154e148e2a99bd187e1ad602b358/squish_ai-9.34.13.tar.gz"
+  sha256 "9eddbc5afbc5b0902552512e107af9a0164b415258979922a366bb266494ac06"
   license "BUSL-1.1"
 
   depends_on "python@3.13"
   depends_on arch: :arm64
   depends_on :macos => :ventura
 
-  # Resource blocks valid for squish-ai 9.34.12, Python 3.13, macOS arm64.
+  # Resource blocks valid for squish-ai 9.34.13, Python 3.13, macOS arm64.
   # Regenerate after version bumps that change dependencies:
   #   pip install squish-ai homebrew-pypi-poet && poet squish-ai
   # mlx/mlx-lm have no sdist — arm64 wheels sourced manually from PyPI.
@@ -132,8 +132,8 @@ class Squish < Formula
   end
 
   resource "squish_ai" do
-    url "https://files.pythonhosted.org/packages/56/89/ab454a0f2498d984b3dda347a9221af257550a0fbcb95639abc0d04e867f/squish_ai-9.34.12-py3-none-any.whl"
-    sha256 "13a2fc91a5f08a695ed7024537b27f46ee5c34f53f08e473f9f1c56ec9a59ca3"
+    url "https://files.pythonhosted.org/packages/af/36/5f3857153f9b4f3d382683c864dad04ae471e40aee81985d50bb64a85d42/squish_ai-9.34.13-py3-none-any.whl"
+    sha256 "377c6d44d7a4f294494b9fd72b44a18d7b5ce240924719d068ea8b23241499e9"
   end
 
   resource "numpy" do
