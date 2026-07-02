@@ -340,6 +340,16 @@ _PRESSURE_WARNING_FRACTION = 0.5
 _PRESSURE_URGENT_FRACTION  = 0.2
 _original_hot_max_bytes:    "int | None" = None  # BlockKVCache budget pre-shrink
 _original_prompt_max_bytes: "int | None" = None  # PromptKVStore budget pre-shrink
+# Guards _original_hot_max_bytes / _original_prompt_max_bytes. In normal
+# operation the governor's single background polling thread is the only
+# caller of _on_memory_pressure_change (plus one synchronous call at startup
+# that always completes before that thread's first poll), so this callback
+# is never actually invoked concurrently with itself today. The lock makes
+# that a guarantee instead of a timing assumption — Phase 5's concurrency
+# review flagged the capture-then-branch logic below as a real TOCTOU race
+# if that assumption were ever violated (e.g. a future refactor, multiple
+# governor instances, or a stress test driving it from several threads).
+_pressure_callback_lock = threading.Lock()
 
 
 def _on_memory_pressure_change(level: int) -> None:
@@ -354,6 +364,8 @@ def _on_memory_pressure_change(level: int) -> None:
     Runs on the governor's background polling thread, not a request thread.
     Safe to call concurrently with in-flight requests: the underlying
     ``set_hot_max_bytes`` / ``set_max_bytes`` setters own their own locks.
+    Also safe to call concurrently with itself (see ``_pressure_callback_lock``),
+    though that should never happen in practice.
 
     NORMAL, WARNING, and URGENT are handled here (cache-budget shrink only).
     CRITICAL request shedding is a separate, later-approved phase of this
@@ -369,42 +381,46 @@ def _on_memory_pressure_change(level: int) -> None:
         LEVEL_WARNING,
     )
 
-    # Capture the configured (pre-shrink) budgets the first time we see any
-    # pressure event, so NORMAL always has a real baseline to restore to.
-    if _block_kv_cache is not None and _original_hot_max_bytes is None:
-        _original_hot_max_bytes = _block_kv_cache.stats()["hot_max_bytes"]
-    if _prompt_kv_store is not None and _original_prompt_max_bytes is None:
-        _original_prompt_max_bytes = _prompt_kv_store.max_bytes
+    with _pressure_callback_lock:
+        # Capture the configured (pre-shrink) budgets the first time we see
+        # any pressure event, so NORMAL always has a real baseline to restore
+        # to. Guarded by the lock: two concurrent callers could otherwise both
+        # pass this None-check before either writes, and the second writer
+        # would capture an already-shrunk value as the "original".
+        if _block_kv_cache is not None and _original_hot_max_bytes is None:
+            _original_hot_max_bytes = _block_kv_cache.stats()["hot_max_bytes"]
+        if _prompt_kv_store is not None and _original_prompt_max_bytes is None:
+            _original_prompt_max_bytes = _prompt_kv_store.max_bytes
 
-    if level == LEVEL_NORMAL:
+        if level == LEVEL_NORMAL:
+            if _block_kv_cache is not None and _original_hot_max_bytes is not None:
+                _block_kv_cache.set_hot_max_bytes(_original_hot_max_bytes)
+            if _prompt_kv_store is not None and _original_prompt_max_bytes is not None:
+                _prompt_kv_store.set_max_bytes(_original_prompt_max_bytes)
+            _info("memory-governor", "pressure NORMAL — cache budgets restored")
+            return
+
+        fraction = {
+            LEVEL_WARNING: _PRESSURE_WARNING_FRACTION,
+            LEVEL_URGENT:  _PRESSURE_URGENT_FRACTION,
+        }.get(level)
+        if fraction is None:
+            # CRITICAL: cache shrink stops at URGENT's floor; Phase 4 (request
+            # shedding) is the CRITICAL response, not a further cache squeeze.
+            return
+
         if _block_kv_cache is not None and _original_hot_max_bytes is not None:
-            _block_kv_cache.set_hot_max_bytes(_original_hot_max_bytes)
+            _block_kv_cache.set_hot_max_bytes(
+                max(1, int(_original_hot_max_bytes * fraction))
+            )
         if _prompt_kv_store is not None and _original_prompt_max_bytes is not None:
-            _prompt_kv_store.set_max_bytes(_original_prompt_max_bytes)
-        _info("memory-governor", "pressure NORMAL — cache budgets restored")
-        return
-
-    fraction = {
-        LEVEL_WARNING: _PRESSURE_WARNING_FRACTION,
-        LEVEL_URGENT:  _PRESSURE_URGENT_FRACTION,
-    }.get(level)
-    if fraction is None:
-        # CRITICAL: cache shrink stops at URGENT's floor; Phase 4 (request
-        # shedding) is the CRITICAL response, not a further cache squeeze.
-        return
-
-    if _block_kv_cache is not None and _original_hot_max_bytes is not None:
-        _block_kv_cache.set_hot_max_bytes(
-            max(1, int(_original_hot_max_bytes * fraction))
-        )
-    if _prompt_kv_store is not None and _original_prompt_max_bytes is not None:
-        _prompt_kv_store.set_max_bytes(
-            max(1, int(_original_prompt_max_bytes * fraction))
-        )
-    _level_name = "WARNING" if level == LEVEL_WARNING else "URGENT"
-    _info("memory-governor",
-          f"pressure {_level_name} — cache budgets shrunk to "
-          f"{int(fraction * 100)}% of configured size")
+            _prompt_kv_store.set_max_bytes(
+                max(1, int(_original_prompt_max_bytes * fraction))
+            )
+        _level_name = "WARNING" if level == LEVEL_WARNING else "URGENT"
+        _info("memory-governor",
+              f"pressure {_level_name} — cache budgets shrunk to "
+              f"{int(fraction * 100)}% of configured size")
 
 
 def _effective_max_kv_size() -> "int | None":
