@@ -5,6 +5,67 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.10] — Memory governor: URGENT shrink + budget_tokens() context ceiling
+
+**Sprint status: Phase 2 (URGENT half) + Phase 3 complete.** Continuation of
+the 9.34.9 kill-test-gated sprint, now approved to proceed. CRITICAL request
+shedding (Phase 4) and the concurrency stress pass (Phase 5) remain for a
+separate, later approval — see `NEXT_SESSION_PROMPT.md`.
+
+### Added
+- **`squish/server.py::_on_memory_pressure_change`** now also handles
+  `LEVEL_URGENT`: shrinks `BlockKVCache`/`PromptKVStore` budgets to 20% of
+  their configured size (vs. 50% at WARNING). Escalating WARNING → URGENT
+  (or the reverse) always shrinks from the originally-captured baseline, not
+  from the already-shrunk value — covered by
+  `test_warning_then_urgent_both_shrink_from_same_baseline`. `LEVEL_CRITICAL`
+  still does not shrink further (see Ledger) — that's Phase 4's job, not a
+  bigger cache squeeze.
+- **`squish/server.py::_effective_max_kv_size()`** — new per-request ceiling
+  on `max_kv_size`, applied at the single chokepoint identified during
+  discovery (`_generate_tokens`'s `_sg_kwargs["max_kv_size"]` assignment,
+  shared by chat completions, completions, agent-run, and all Ollama-compat
+  routes). Returns the configured `_max_kv_size` unchanged when the governor
+  is absent or pressure is NORMAL (`budget_tokens()` isn't even called in
+  that case — no unconditional degradation). Under WARNING/URGENT/CRITICAL,
+  caps at `governor.budget_tokens()` too, never *raising* the configured
+  ceiling — only lowering it. When no explicit `--max-kv-size` was set
+  (`None` = "use mlx_lm's default"), the pressure-derived budget becomes an
+  explicit ceiling outright instead of leaving generation unbounded.
+
+### Tests
+- `tests/serving/test_memory_governor_wiring.py` — 7 new cases: URGENT
+  mocked-call assertions, URGENT-vs-WARNING baseline-consistency, CRITICAL
+  no-op, and a real-cache-instance `TestUrgentShrinksRealCaches` suite
+  mirroring the existing WARNING coverage (hot-tier shrink, prompt-cache
+  shrink, restore-on-NORMAL, actual eviction count).
+- `tests/serving/test_effective_max_kv_size.py` (new, 10 cases) — no
+  governor / NORMAL pass-through (including a `budget_tokens()`
+  not-even-called assertion), WARNING/URGENT/CRITICAL capping, the
+  never-raise-the-ceiling guarantee, the unconfigured-ceiling-adopts-budget
+  case, and one end-to-end case exercising a real `MemoryGovernor` with
+  only `_read_pressure_level`/`_read_vm_stat` mocked (matching the existing
+  governor test pattern) to prove a mocked low `available_gb` actually
+  reduces the effective per-request budget, not just computes and discards it.
+
+### Ledger
+- **URGENT shrink fraction = 20% of configured size.** By URGENT, the
+  kernel's memory compressor is already active — protecting cache-hit rate
+  matters less than freeing bytes, so the squeeze is harder than WARNING's
+  50%. Not derived from fleet telemetry; revisit with real data, same
+  caveat as the WARNING fraction.
+- **CRITICAL does not shrink the caches further.** The cache-budget knob
+  bottoms out at URGENT's 20%; CRITICAL's response is request shedding
+  (Phase 4, not yet built), not squeezing an already-squeezed cache harder.
+  Applying `_effective_max_kv_size()`'s ceiling at CRITICAL too (see below)
+  is a separate, narrower mitigation that doesn't require Phase 4 to exist.
+- **`_effective_max_kv_size()` applies at CRITICAL, not just WARNING/URGENT.**
+  The sprint brief's Phase 3 section says "apply when the governor is
+  present and not at NORMAL" — a superset of "at URGENT" from Phase 2's
+  framing. Until Phase 4 lands, CRITICAL requests are still accepted and
+  generate normally; leaving them fully unbounded while WARNING/URGENT
+  requests are capped would be a regression, not a matter of scope.
+
 ## [9.34.9] — Memory governor now shrinks live KV-cache budgets under WARNING pressure
 
 **Sprint status: Phase 1 + WARNING half of Phase 2 only, per the sprint's own

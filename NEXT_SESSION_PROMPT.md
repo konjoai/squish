@@ -1,33 +1,33 @@
 # Next session — memory governor eviction sprint, continuation
 
 ## Where this left off
-Phase 1 (live-adjustable cache-limit setters) and the WARNING half of Phase 2
-(wiring `MemoryGovernor` WARNING transitions to real hot-tier/prompt-cache
-shrink) are landed in v9.34.9. This was a deliberate kill-test gate: the
-sprint brief asked for approval before building the riskier remaining pieces.
+Phase 1, Phase 2 (both WARNING and URGENT halves), and Phase 3
+(`budget_tokens()` as a per-request context ceiling) are landed in v9.34.10.
+Phase 4 (CRITICAL request shedding) and Phase 5 (concurrency stress pass)
+remain — the sprint brief calls these out as the riskier, less mechanical
+pieces and asked for a checkpoint before them.
 
 ## What's built and verified
-- `BlockKVCache.set_hot_max_bytes(n)` — thread-safe, evicts immediately.
-- `PromptKVStore.set_max_bytes(n)` / `.max_bytes` — same, disk-backed.
+- `BlockKVCache.set_hot_max_bytes(n)` / `PromptKVStore.set_max_bytes(n)` —
+  thread-safe, evict immediately. (v9.34.9)
 - `squish/server.py::_on_memory_pressure_change` — registered as a
-  `MemoryGovernor` callback in Phase 13B startup (`squish/server.py` around
-  the `# ── Phase 13B: macOS Memory Governor` marker). Handles `LEVEL_NORMAL`
-  (restore) and `LEVEL_WARNING` (shrink to 50%) only. `LEVEL_URGENT` and
-  `LEVEL_CRITICAL` fall through to a deliberate no-op.
-- Kill-test evidence: `tests/serving/test_memory_governor_wiring.py` (10
-  cases, real cache instances) + unit tests for both new setters.
+  `MemoryGovernor` callback in Phase 13B startup. Handles `LEVEL_NORMAL`
+  (restore), `LEVEL_WARNING` (shrink to 50%), and `LEVEL_URGENT` (shrink to
+  20%) — both cache-budget knobs shrink from the same originally-captured
+  baseline regardless of how pressure escalates/de-escalates.
+  `LEVEL_CRITICAL` does not shrink the caches further (Ledger: that's
+  Phase 4's job).
+- `squish/server.py::_effective_max_kv_size()` — per-request ceiling on
+  `max_kv_size`, applied at the `_generate_tokens` chokepoint. Caps at
+  `governor.budget_tokens()` whenever pressure is not NORMAL (including
+  CRITICAL, since Phase 4 doesn't exist yet to reject those requests
+  another way). Never raises the configured ceiling, only lowers it.
+- Kill-test evidence: `tests/serving/test_memory_governor_wiring.py` (17
+  cases total) + `tests/serving/test_effective_max_kv_size.py` (10 cases,
+  new) + unit tests for both setters.
 
 ## What's next (needs approval before starting — see original sprint brief)
-1. **Phase 2 URGENT half**: shrink further (propose 20% of original —
-   confirm/adjust) and start calling `governor.budget_tokens()`.
-2. **Phase 3**: wire `budget_tokens()` as a ceiling on a new request's
-   context/KV size. The chokepoint is `squish/server.py:_generate_tokens`
-   (shared by chat completions, completions, agent-run, and the
-   Ollama-compat routes) — specifically the `_sg_kwargs["max_kv_size"] = ...`
-   assignment currently sourced only from the startup-computed `_max_kv_size`
-   global. Apply `min(_max_kv_size, governor.budget_tokens())` only when the
-   governor is present and not at NORMAL.
-3. **Phase 4**: CRITICAL request shedding (HTTP 503), reject-only (no
+1. **Phase 4**: CRITICAL request shedding (HTTP 503), reject-only (no
    queueing). In-flight requests must be allowed to finish. The cleanest
    single chokepoint found during discovery is a small `BaseHTTPMiddleware`
    registered on `app` (see the pattern at `squish/server.py:3172` — note
@@ -37,10 +37,13 @@ sprint brief asked for approval before building the riskier remaining pieces.
    naturally excludes anything already past dispatch (in-flight generation).
    The alternative — checking at each of the ~6 individual handler
    `_state.model is None` 503 sites — is more scattered and easy to miss a
-   route; prefer the middleware.
-4. **Phase 5**: concurrency stress test across all of the above (rapid
-   simulated pressure transitions racing concurrent mock requests, assertions
-   not just "didn't crash").
+   route; prefer the middleware. This is a one-way-door behavior change
+   (rejects requests that previously would have been accepted) — needs its
+   own version bump and explicit Ledger entries per the original brief.
+2. **Phase 5**: concurrency stress test across everything built so far
+   (rapid simulated pressure transitions racing concurrent mock requests,
+   assertions not just "didn't crash" — check cache-limit invariants hold
+   and `_effective_max_kv_size()` never observes a torn/inconsistent state).
 
 ## Also flagged, not acted on
 - 10 benchmark-matrix cells (`r*_c16000`, `r*_c32000` in
