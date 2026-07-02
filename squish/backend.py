@@ -106,8 +106,27 @@ class _AppleBackend:
     # ── Model loading ─────────────────────────────────────────────────────────
 
     def load_model(self, path: str, **kwargs):  # pragma: no cover
-        """Load model + tokenizer; returns (model, tokenizer)."""
+        """Load model + tokenizer; returns (model, tokenizer).
+
+        Dispatches on :func:`squish.runtime.arch_resolver.resolve_runtime`:
+        mlx_lm-known architectures use the unchanged fast/default path;
+        everything else falls back to mlx_vlm (loaded text-only — Phase 1
+        does not wire image/audio input) when the ``multimodal`` extra is
+        installed. mlx_vlm's ``load()`` returns ``(model, processor)``; the
+        processor exposes a ``.tokenizer``-compatible surface and is a valid
+        drop-in for the ``tokenizer`` half of this method's contract.
+        """
+        from squish.runtime.arch_resolver import resolve_runtime
+
+        runtime = resolve_runtime(path)
+        if runtime == "mlx_vlm":
+            import mlx_vlm
+
+            model, processor = mlx_vlm.load(path)
+            model.__squish_runtime__ = "mlx_vlm"  # read back by stream_generate
+            return model, processor
         import mlx_lm
+
         return mlx_lm.load(path)
 
     # ── Streaming inference ───────────────────────────────────────────────────
@@ -119,18 +138,36 @@ class _AppleBackend:
         prompt: str,
         **kwargs,
     ) -> Iterator[tuple[str, str | None]]:
-        """Yield (text_chunk, finish_reason) tuples."""
-        import mlx_lm
+        """Yield (text_chunk, finish_reason) tuples.
+
+        Dispatches to mlx_vlm's ``stream_generate`` when *model* was loaded
+        through the mlx_vlm backend (detected via the ``__squish_runtime__``
+        attribute :meth:`load_model`'s mlx_vlm branch tags the model with);
+        otherwise uses mlx_lm. Both return the same ``GenerationResult``-
+        shaped objects (``.text``, ``.finish_reason``), only the temperature
+        kwarg name differs (mlx_lm: ``temp``; mlx_vlm: ``temperature``).
+        """
         max_tokens = kwargs.get("max_tokens", 512)
         temp       = kwargs.get("temperature", 0.7)
         top_p      = kwargs.get("top_p", 0.9)
         max_kv     = kwargs.get("max_kv_size", None)
 
-        gen_kw: dict = dict(max_tokens=max_tokens, temp=temp, top_p=top_p)
-        if max_kv is not None:
-            gen_kw["max_kv_size"] = max_kv
+        if getattr(model, "__squish_runtime__", "mlx_lm") == "mlx_vlm":
+            import mlx_vlm
 
-        for result in mlx_lm.stream_generate(model, tokenizer, prompt, **gen_kw):
+            gen_kw: dict = dict(max_tokens=max_tokens, temperature=temp, top_p=top_p)
+            if max_kv is not None:
+                gen_kw["max_kv_size"] = max_kv
+            stream_fn = mlx_vlm.stream_generate
+        else:
+            import mlx_lm
+
+            gen_kw = dict(max_tokens=max_tokens, temp=temp, top_p=top_p)
+            if max_kv is not None:
+                gen_kw["max_kv_size"] = max_kv
+            stream_fn = mlx_lm.stream_generate
+
+        for result in stream_fn(model, tokenizer, prompt, **gen_kw):
             if hasattr(result, "text"):
                 yield result.text, getattr(result, "finish_reason", None)
             else:
@@ -168,7 +205,12 @@ class _AppleBackend:
                 None, 0,
             )
             if ret == 0:
-                mx.metal.set_memory_limit(int(memsize.value * fraction), relaxed=True)  # type: ignore[call-arg]
+                limit = int(memsize.value * fraction)
+                try:
+                    mx.metal.set_memory_limit(limit, relaxed=True)  # type: ignore[call-arg]
+                except TypeError:
+                    # mlx >= 0.20 dropped the `relaxed=` kwarg
+                    mx.metal.set_memory_limit(limit)
         except (OSError, RuntimeError, AttributeError, ValueError) as exc:
             _LOG.debug("metal memory-limit configuration skipped: %s", exc)  # non-fatal
 

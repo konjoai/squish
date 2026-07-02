@@ -70,6 +70,12 @@ linux = [
     # mlx/mlx-lm are Apple-only and intentionally excluded here.
     "torch>=2.0",
 ]
+multimodal = [
+    # mlx-vlm — VLM/omni runtime backend for architectures mlx_lm doesn't know
+    # (Gemma 4, Qwen-VL family, LLaVA, Idefics, Pixtral, PaliGemma, ...).
+    # Text-only dispatch in Wave 130; image/audio input lands in Phase 2.
+    "mlx-vlm>=0.5; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",

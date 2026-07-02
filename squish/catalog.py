@@ -398,6 +398,17 @@ _BUNDLED: list[dict] = [
          size_gb=54.0, squished_size_gb=36.2, params="27B", context=131072,
          tags=["large"]),
 
+    # ── Gemma 4 (Wave 130 — mlx_vlm backend, text-only in this release) ────────
+    dict(id="gemma4:12b", name="Gemma-4-12B-Instruct",
+         hf_mlx_repo="mlx-community/gemma-4-12B-bf16",
+         squish_repo=None,  # not yet published — Wave 131 measures the real INT4 size
+         size_gb=47.9, squished_size_gb=32.0, params="12B", context=262144,
+         tags=["balanced", "multimodal-text-only"],
+         notes="Loaded via mlx_vlm backend (model_type=gemma4_unified); "
+               "text-only in this release — image/audio input not yet supported. "
+               "squished_size_gb is a Gemma-3-ratio estimate pending Wave 131's "
+               "measured INT4 accuracy-gate run."),
+
     # ── DeepSeek-R1 ───────────────────────────────────────────────────────────
     dict(id="deepseek-r1:7b", name="DeepSeek-R1-Distill-Qwen-7B",
          hf_mlx_repo="mlx-community/DeepSeek-R1-Distill-Qwen-7B-bf16",
