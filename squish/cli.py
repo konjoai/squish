@@ -1091,18 +1091,23 @@ def cmd_quantize_remote(args):  # pragma: no cover
       (e.g. a single-file checkpoint too big for full-load, or an
       architecture without a dense-block adapter yet).
 
-    Full-load and streaming AWQ both need raw shards locally resident to
-    run calibration forward passes, so those two modes download the whole
-    raw model up front (as Wave 146 always did), then quantize with
+    Full-load AWQ needs every weight resident in unified memory for
+    ``mlx_lm.load`` anyway, so that mode downloads the whole raw model up
+    front (as Wave 146 always did), then quantizes with
     ``process_weights_streaming(..., delete_source=True)`` so shards are
     reclaimed as each one is consumed.
 
-    The no-AWQ mode (Wave 147a) instead never downloads the full raw model
-    at all: :func:`squish.quant.streaming_pull.pull_and_quantize_shard_by_shard`
-    fetches one weight shard, quantizes it, deletes it, then fetches the
-    next — peak disk is bounded by the compressed output plus one raw
-    shard in flight from the very first byte downloaded, not just during
-    the quantization pass.
+    The no-AWQ mode (Wave 147a) and the streaming-AWQ mode (Wave 147b)
+    both never download the full raw model at all: shards are fetched one
+    at a time, on demand, from HF — see
+    :func:`squish.quant.streaming_pull.pull_and_quantize_shard_by_shard`
+    (used by both) and, for streaming AWQ specifically,
+    :func:`squish.quant.awq_streaming.collect_activation_scales_streaming`'s
+    ``hf_repo``/``token`` fetch-on-demand params. Streaming AWQ does pay
+    for this with a second download of every shard (once for calibration,
+    once for quantization) — the trade this wave makes is bandwidth for
+    disk: peak disk stays bounded to the compressed output plus one raw
+    shard in flight across both passes, never the full raw model.
     """
     import re as _re
 
@@ -1160,9 +1165,11 @@ def cmd_quantize_remote(args):  # pragma: no cover
 
     if awq_mode == "none":
         _cmd_quantize_remote_streaming_pull(hf_repo, models_dir, out_dir, token, use_int4, args.verbose)
+    elif awq_mode == "streaming":
+        _cmd_quantize_remote_streaming_awq(hf_repo, models_dir, out_dir, token, use_int4, n_samples, args.verbose)
     else:
         _cmd_quantize_remote_full_download(
-            hf_repo, models_dir, out_dir, token, use_int4, n_samples, model_size_gb, awq_mode, args.verbose,
+            hf_repo, models_dir, out_dir, token, use_int4, n_samples, model_size_gb, args.verbose,
         )
     print(f"\n  ✓  Quantized model written to {out_dir}")
 
@@ -1185,20 +1192,20 @@ def _cmd_quantize_remote_streaming_pull(hf_repo, models_dir, out_dir, token, use
     print(f"  Local dir  : {model_dir}  (metadata only — weights streamed, never fully resident)")
     print(f"  Output     : {out_dir}\n")
     pull_and_quantize_shard_by_shard(
-        hf_repo, model_dir, out_dir, token=token, use_int4=use_int4, verbose=verbose or True,
+        hf_repo, model_dir, out_dir, token=token, use_int4=use_int4,
+        awq_scales=None, verbose=verbose or True,
     )
 
 
 def _cmd_quantize_remote_full_download(
-    hf_repo, models_dir, out_dir, token, use_int4, n_samples, model_size_gb, awq_mode, verbose,
+    hf_repo, models_dir, out_dir, token, use_int4, n_samples, model_size_gb, verbose,
 ):
-    """The full-load / streaming-AWQ paths: both need raw shards locally
-    resident for calibration, so the whole raw model is downloaded up
+    """The full-load AWQ path: ``mlx_lm.load`` needs every weight resident
+    in unified memory anyway, so the whole raw model is downloaded up
     front (Wave 146's original flow), then quantized with
     ``delete_source=True`` to reclaim shard space as each one is consumed."""
     import mlx.core as mx
     import mlx_lm
-    from mlx_lm.utils import load_tokenizer
 
     from squish.convert import _estimate_output_bytes, _get_free_bytes, process_weights_streaming
     from squish.quant.awq import (
@@ -1207,11 +1214,8 @@ def _cmd_quantize_remote_full_download(
         collect_activation_scales,
         detect_model_family,
     )
-    from squish.quant.awq_streaming import collect_activation_scales_streaming
-    from squish.quant.shard_index import load_shard_index
 
     model_dir = _download_source_for_quantize_remote(hf_repo, models_dir, token)
-    shard_index = load_shard_index(model_dir)
 
     _est_compressed_bytes = _estimate_output_bytes(model_dir, use_int4=use_int4)
     _largest_shard_bytes = max(
@@ -1237,40 +1241,77 @@ def _cmd_quantize_remote_full_download(
             return _MODEL_FAMILY_DEFAULTS[family]["alpha"]
         return _DEFAULT_AWQ_ALPHA
 
-    awq_scales = None
-    if awq_mode == "full":
-        print(f"  Loading full model for AWQ calibration ({model_size_gb:.1f} GB)…")
-        model, tokenizer = mlx_lm.load(str(model_dir))
-        family = detect_model_family(model_dir)
-        awq_scales = collect_activation_scales(
-            model, tokenizer, n_samples=n_samples, alpha=_resolve_alpha(family),
-            verbose=True, model_family=family,
-        )
-        del model
-        try:
-            mx.clear_cache()
-        except (RuntimeError, AttributeError) as exc:
-            _LOG.debug("Clearing MLX cache after full-load AWQ failed: %s", exc)
-    elif awq_mode == "streaming":
-        tokenizer = load_tokenizer(str(model_dir))
-        family = detect_model_family(model_dir)
-        awq_scales = collect_activation_scales_streaming(
-            model_dir, tokenizer, shard_index,
-            n_samples=n_samples, alpha=_resolve_alpha(family), verbose=True,
-            model_family=family, delete_source=False,
-        )
-        if awq_scales is None:
-            print(
-                "  ⚠  Streaming AWQ calibration could not run for this architecture "
-                "— continuing without AWQ."
-            )
+    print(f"  Loading full model for AWQ calibration ({model_size_gb:.1f} GB)…")
+    model, tokenizer = mlx_lm.load(str(model_dir))
+    family = detect_model_family(model_dir)
+    awq_scales = collect_activation_scales(
+        model, tokenizer, n_samples=n_samples, alpha=_resolve_alpha(family),
+        verbose=True, model_family=family,
+    )
+    del model
+    try:
+        mx.clear_cache()
+    except (RuntimeError, AttributeError) as exc:
+        _LOG.debug("Clearing MLX cache after full-load AWQ failed: %s", exc)
 
     print("\n  Quantizing (streaming, delete-source)…")
     process_weights_streaming(
         model_dir, out_dir, [], 20.0, verbose,
         awq_scales=awq_scales, use_int4=use_int4,
-        int4_group_size=32 if awq_scales else None,
+        int4_group_size=32,
         delete_source=True,
+    )
+
+
+def _cmd_quantize_remote_streaming_awq(hf_repo, models_dir, out_dir, token, use_int4, n_samples, verbose):
+    """The streaming-AWQ path (Wave 147b): layer-at-a-time AWQ calibration
+    with shards fetched on demand and deleted as each one is done
+    (``delete_source=True``), then a true per-shard quantization pass
+    (:func:`squish.quant.streaming_pull.pull_and_quantize_shard_by_shard`)
+    that re-fetches each shard to apply the computed AWQ scales and
+    quantize for real. Trades re-downloading every shard once (calibration
+    read, then quantization read) for keeping peak disk bounded to one
+    shard in flight across both passes — unlike the full-load path, this
+    never needs the whole raw model resident on disk at once."""
+    from mlx_lm.utils import load_tokenizer
+
+    from squish.quant.awq import _DEFAULT_AWQ_ALPHA, _MODEL_FAMILY_DEFAULTS, detect_model_family
+    from squish.quant.awq_streaming import collect_activation_scales_streaming
+    from squish.quant.shard_index import load_shard_index
+    from squish.quant.streaming_pull import fetch_repo_metadata, pull_and_quantize_shard_by_shard
+
+    model_dir = models_dir / hf_repo.split("/")[-1]
+    print(f"  Local dir  : {model_dir}  (metadata only — weights streamed, never fully resident)")
+    print(f"  Output     : {out_dir}\n")
+
+    fetch_repo_metadata(hf_repo, model_dir, token=token, verbose=verbose)
+    shard_index = load_shard_index(model_dir)
+    tokenizer = load_tokenizer(str(model_dir))
+    family = detect_model_family(model_dir)
+    alpha = (
+        _MODEL_FAMILY_DEFAULTS[family]["alpha"]
+        if family and family in _MODEL_FAMILY_DEFAULTS
+        else _DEFAULT_AWQ_ALPHA
+    )
+
+    print("  Calibrating (streaming AWQ, fetch-on-demand, delete-source)…")
+    awq_scales = collect_activation_scales_streaming(
+        model_dir, tokenizer, shard_index,
+        n_samples=n_samples, alpha=alpha, verbose=True,
+        model_family=family, delete_source=True,
+        hf_repo=hf_repo, token=token,
+    )
+    if awq_scales is None:
+        print(
+            "  ⚠  Streaming AWQ calibration could not run for this architecture "
+            "— continuing without AWQ."
+        )
+
+    print("\n  Quantizing (streaming, fetch-on-demand, delete-source)…")
+    pull_and_quantize_shard_by_shard(
+        hf_repo, model_dir, out_dir, token=token, use_int4=use_int4,
+        int4_group_size=32 if awq_scales else None,
+        awq_scales=awq_scales, verbose=verbose,
     )
 
 

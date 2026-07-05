@@ -33,6 +33,13 @@ guessing, and the caller is expected to fall back to plain (non-AWQ)
 streaming quantization (``process_weights_streaming`` with
 ``awq_scales=None``), per the "no adapter yet is a quality trade-off, not
 a hard failure" design.
+
+Wave 147b: optionally fetches each shard on demand from Hugging Face
+(``hf_repo``/``token`` params, via
+``squish.quant.streaming_pull.ensure_shard_local``) instead of assuming
+every shard already exists in ``model_dir`` — so streaming AWQ, combined
+with ``delete_source=True``, never requires the full raw model
+downloaded up front either, matching Wave 147a's non-AWQ streaming pull.
 """
 
 from __future__ import annotations
@@ -86,6 +93,8 @@ def collect_activation_scales_streaming(
     min_scale: float = 0.0,
     model_family: str | None = None,
     delete_source: bool = False,
+    hf_repo: str | None = None,
+    token: str | None = None,
 ) -> dict | None:
     """Sequential (layer-at-a-time) counterpart to
     :func:`squish.quant.awq.collect_activation_scales`.
@@ -122,12 +131,23 @@ def collect_activation_scales_streaming(
     ``process_weights_streaming``'s own documented tradeoff: a caller that
     falls back to plain quantization after a ``None`` here must re-pull
     the model first if any raw shards were already reclaimed.
+
+    If ``hf_repo`` is given (Wave 147b), each shard is fetched on demand
+    from that repo the first time it's needed (via
+    ``squish.quant.streaming_pull.ensure_shard_local``) rather than
+    assumed already present in ``model_dir`` — so this function alone
+    never requires the full raw model downloaded up front. Combined with
+    ``delete_source=True``, peak disk during calibration is bounded to one
+    shard in flight, same as ``pull_and_quantize_shard_by_shard``'s
+    quantization pass. When ``hf_repo`` is ``None`` (the default), behavior
+    is unchanged from before Wave 147b: shards must already exist locally.
     """
     import mlx.core as mx
     import mlx.nn as nn
     from mlx_lm.models.base import create_attention_mask
 
     from squish.convert import load_mlx_weights_shard
+    from squish.quant.streaming_pull import ensure_shard_local
 
     model_dir = Path(model_dir)
     config = json.loads((model_dir / "config.json").read_text())
@@ -166,7 +186,8 @@ def collect_activation_scales_streaming(
             print("  [streaming-AWQ] no embed_tokens tensor in weight_map — aborting.")
         return None
     embed_shard = shard_index.weight_map[embed_name]
-    embed_table = load_mlx_weights_shard(model_dir / embed_shard)[embed_name]
+    embed_shard_path = ensure_shard_local(embed_shard, model_dir, hf_repo=hf_repo, token=token)
+    embed_table = load_mlx_weights_shard(embed_shard_path)[embed_name]
 
     hidden_states = [mx.array(embed_table[ids][None, :, :]) for ids in sample_ids]
     del embed_table
@@ -212,7 +233,8 @@ def collect_activation_scales_streaming(
 
         layer_raw: dict[str, np.ndarray] = {}
         for shard_name in needed_shards:
-            shard_data = load_mlx_weights_shard(model_dir / shard_name)
+            shard_path = ensure_shard_local(shard_name, model_dir, hf_repo=hf_repo, token=token)
+            shard_data = load_mlx_weights_shard(shard_path)
             for name in tensor_names:
                 if name in shard_data:
                     layer_raw[name[len(prefix) :]] = shard_data[name]
