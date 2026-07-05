@@ -266,6 +266,86 @@ class _ActivationHook:
         return (self.channel_sum / self.channel_count).astype(np.float32)
 
 
+def _make_hooked_cls(base_cls: type, h: "_ActivationHook") -> type:
+    """Build a per-instance subclass whose __call__ records input activations
+    before delegating to the original implementation.
+
+    Python's special-method dispatch for ``obj(x)`` always resolves
+    ``__call__`` through the TYPE (``type(obj).__call__``), not the instance
+    dict, so plain instance-level monkey-patching of ``__call__`` is silently
+    ignored. Swapping the instance's ``__class__`` to a subclass that
+    overrides ``__call__`` at the type level works instead, and is safe here
+    because the original and new class share the same memory layout.
+    """
+
+    class _Hooked(base_cls):  # type: ignore[valid-type]
+        _awq_hook = h
+
+        def __call__(self, x, *args, **kwargs):
+            self._awq_hook(None, (x,), None)
+            return super().__call__(x, *args, **kwargs)
+
+    _Hooked.__name__ = f"_Hooked_{base_cls.__name__}"
+    _Hooked.__qualname__ = _Hooked.__name__
+    return _Hooked
+
+
+def _attach_activation_hooks(linear_layers: dict) -> tuple[dict, dict]:
+    """Class-swizzle every module in *linear_layers* to record its input
+    activations. Returns ``(hooks, orig_classes)`` — pass both to
+    :func:`_detach_activation_hooks` to restore the originals afterward.
+
+    Shared by both :func:`collect_activation_scales` (full-model, one pass)
+    and the sequential streaming path (one layer at a time) — the
+    instrumentation mechanism is identical either way, only what gets
+    passed through the hooked layers differs.
+    """
+    hooks: dict[str, _ActivationHook] = {}
+    orig_classes: dict[str, type] = {}
+    for name, module in linear_layers.items():
+        hook = _ActivationHook()
+        hooks[name] = hook
+        orig_cls = type(module)
+        orig_classes[name] = orig_cls
+        try:
+            module.__class__ = _make_hooked_cls(orig_cls, hook)
+        except TypeError:
+            # Fallback for C-backed types that disallow __class__ swizzling:
+            # fall through without instrumentation for this layer.
+            pass
+    return hooks, orig_classes
+
+
+def _detach_activation_hooks(linear_layers: dict, orig_classes: dict) -> None:
+    """Restore each module's original class after calibration completes."""
+    for name, module in linear_layers.items():
+        if name in orig_classes:
+            try:
+                module.__class__ = orig_classes[name]
+            except TypeError:
+                pass
+
+
+def _scales_from_hooks(hooks: dict, alpha: float, min_scale: float) -> dict:
+    """Compute AWQ scale vectors from collected per-layer activation hooks.
+
+    ``s[c] = mean_act[c] ** alpha`` (clipped to >= 1e-4 to avoid div-by-zero),
+    optionally floored at *min_scale*. Shared by the full-load and streaming
+    calibration paths — the math doesn't change, only how the activations
+    that feed it were produced.
+    """
+    scales: dict[str, np.ndarray] = {}
+    for name, hook in hooks.items():
+        mean_act = hook.mean_activation()
+        if mean_act.size == 0:
+            continue
+        s = np.clip(mean_act, 1e-4, None) ** alpha
+        if min_scale > 0.0:
+            s = np.maximum(s, min_scale)
+        scales[name] = s.astype(np.float32)
+    return scales
+
+
 def collect_activation_scales(  # pragma: no cover
     model,
     tokenizer,
@@ -318,21 +398,8 @@ def collect_activation_scales(  # pragma: no cover
     # Cycle the text list to reach n_samples
     sample_texts = [texts[i % len(texts)] for i in range(n_samples)]
 
-    # Collect all nn.Linear modules and attach hooks
-    hooks   = {}      # layer_name → _ActivationHook
-
-    # MLX module interception via __class__ swizzling.
-    #
-    # Python's special-method dispatch for obj(x) always resolves __call__
-    # through the TYPE (type(obj).__call__), not the instance dict, so simple
-    # instance-level monkey-patching of __call__ is silently ignored.
-    #
-    # The correct approach is to dynamically create a per-instance subclass
-    # that overrides __call__ at the type level, then swap the instance's
-    # __class__ to that subclass ("class swizzling").  This is safe because
-    # both the original and the new class share the same memory layout (same
-    # __slots__, same underlying C struct) — Python 3 allows the assignment
-    # when layout-compatible.
+    # Collect all nn.Linear modules and attach hooks (see _make_hooked_cls's
+    # docstring for why class-swizzling, not simple monkey-patching, is needed).
     import mlx.nn as nn
 
     linear_layers = {}
@@ -360,30 +427,7 @@ def collect_activation_scales(  # pragma: no cover
         print(f"  Found {len(linear_layers)} linear layers to calibrate")
 
     # Instrument each module via class swizzling
-    orig_classes: dict[str, type] = {}
-    for name, module in linear_layers.items():
-        hook = _ActivationHook()
-        hooks[name] = hook
-        orig_cls = type(module)
-        orig_classes[name] = orig_cls
-
-        # Create a unique subclass that captures input activations
-        def _make_hooked_cls(base_cls, h: "_ActivationHook") -> type:
-            class _Hooked(base_cls):  # type: ignore[valid-type]
-                _awq_hook = h
-                def __call__(self, x, *args, **kwargs):
-                    self._awq_hook(None, (x,), None)
-                    return super().__call__(x, *args, **kwargs)
-            _Hooked.__name__ = f"_Hooked_{base_cls.__name__}"
-            _Hooked.__qualname__ = _Hooked.__name__
-            return _Hooked
-
-        try:
-            module.__class__ = _make_hooked_cls(orig_cls, hook)
-        except TypeError:
-            # Fallback for C-backed types that disallow __class__ swizzling:
-            # fall through without instrumentation for this layer.
-            pass
+    hooks, orig_classes = _attach_activation_hooks(linear_layers)
 
     if verbose:
         print(f"  Running {n_samples} calibration forward passes ...")
@@ -409,24 +453,10 @@ def collect_activation_scales(  # pragma: no cover
         print(f"  Calibration done in {elapsed:.1f}s")
 
     # Restore original classes
-    for name, module in linear_layers.items():
-        if name in orig_classes:
-            try:
-                module.__class__ = orig_classes[name]
-            except TypeError:
-                pass
+    _detach_activation_hooks(linear_layers, orig_classes)
 
     # Compute AWQ scales from collected statistics
-    scales = {}
-    for name, hook in hooks.items():
-        mean_act = hook.mean_activation()
-        if mean_act.size == 0:
-            continue
-        # s[c] = mean_act[c]^alpha  (clipped to ≥ 1e-4 to avoid div-by-zero)
-        s = np.clip(mean_act, 1e-4, None) ** alpha
-        if min_scale > 0.0:
-            s = np.maximum(s, min_scale)
-        scales[name] = s.astype(np.float32)
+    scales = _scales_from_hooks(hooks, alpha, min_scale)
 
     if verbose:
         print(f"  Computed AWQ scales for {len(scales)} layers")
