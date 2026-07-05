@@ -1024,6 +1024,207 @@ def cmd_push(args):  # pragma: no cover
     print(f"\n  Pushed to https://huggingface.co/{repo_id}")
 
 
+# ── squish quantize-remote ───────────────────────────────────────────────────
+
+def _download_source_for_quantize_remote(hf_repo: str, models_dir: Path, token: str | None) -> Path:
+    """Download bf16 source weights for ``squish quantize-remote``.
+
+    Unlike ``squish pull``, always fetches the raw checkpoint directly rather
+    than checking the Squish catalog for a pre-squished match first —
+    ``quantize-remote`` exists specifically for models that don't have one.
+    Runs the same pre/post-download security scans as ``squish pull`` (W100).
+    """
+    from huggingface_hub import snapshot_download
+
+    from squish.serving.local_model_scanner import scan_before_load, scan_hf_repo_metadata
+
+    print(f"\n  Scanning HuggingFace metadata for {hf_repo} …")
+    meta_scan = scan_hf_repo_metadata(hf_repo, token=token)
+    _print_hf_scan_report(meta_scan)
+    if meta_scan.status == "unsafe":
+        _die(
+            "Pre-download security scan FAILED — aborting.\n"
+            + "\n".join(f"     {f}" for f in meta_scan.findings)
+        )
+    elif meta_scan.status == "error":
+        print("  ⚠  Metadata scan could not complete (API error). Proceeding with download.")
+    elif meta_scan.status == "warning":
+        print("  ⚠  Legacy pickle-format weights detected — will byte-scan after download.")
+
+    print(f"\n  Downloading from HuggingFace: {hf_repo}")
+    dest = Path(
+        snapshot_download(
+            repo_id=hf_repo,
+            local_dir=str(models_dir / hf_repo.split("/")[-1]),
+            token=token,
+        )
+    )
+
+    scan_result = scan_before_load(dest)
+    if scan_result.status == "unsafe":
+        _die(
+            f"Post-download security scan failed — {len(scan_result.findings)} finding(s):\n"
+            + "\n".join(f"     {f}" for f in scan_result.findings)
+            + f"\n  Downloaded files retained at: {dest}\n"
+            "  Remove them manually if you do not trust this model."
+        )
+    elif scan_result.scanned > 0:
+        print(f"  ✓  Post-download scan passed ({scan_result.scanned} file(s) checked)")
+    return dest
+
+
+def cmd_quantize_remote(args):  # pragma: no cover
+    """Download → quantize → (optionally) push a model end to end, choosing
+    the right AWQ strategy for models too large to fit in local RAM.
+
+    Unlike ``squish pull`` + ``squish compress`` (which requires the full
+    bf16 model to fit in unified memory for AWQ calibration via
+    ``mlx_lm.load``), this command picks, per model:
+
+    - full-load AWQ (``collect_activation_scales``) when the model
+      comfortably fits in RAM — fastest, most accurate calibration;
+    - layer-at-a-time streaming AWQ (``collect_activation_scales_streaming``)
+      when it doesn't — bounded RAM regardless of model size, using
+      ``ShardIndex`` to process one decoder layer's weights at a time;
+    - no AWQ at all, with ``--no-awq`` or when neither of the above applies
+      (e.g. a single-file checkpoint too big for full-load, or an
+      architecture without a dense-block adapter yet).
+
+    The quantization pass itself always runs streaming
+    (``process_weights_streaming``) with ``delete_source=True``, so raw
+    shards are reclaimed as each one is consumed — peak disk during that
+    pass is bounded by the compressed output plus one raw shard in flight,
+    not the full raw model coexisting with the full compressed output.
+    Calibration (whichever mode) runs first, with the raw shards left
+    intact, since the quantization pass still needs them afterward.
+    """
+    import re as _re
+
+    import mlx.core as mx
+    import mlx_lm
+    from mlx_lm.utils import load_tokenizer
+
+    from squish.convert import _estimate_output_bytes, _get_free_bytes, process_weights_streaming
+    from squish.quant.awq import (
+        _DEFAULT_AWQ_ALPHA,
+        _MODEL_FAMILY_DEFAULTS,
+        collect_activation_scales,
+        detect_model_family,
+    )
+    from squish.quant.awq_streaming import collect_activation_scales_streaming
+    from squish.quant.shard_index import load_shard_index
+
+    hf_repo = args.model
+    models_dir = Path(args.models_dir).expanduser() if args.models_dir else _MODELS_DIR
+    models_dir.mkdir(parents=True, exist_ok=True)
+    token = args.token or os.environ.get("HF_TOKEN") or None
+    use_int4 = not args.int8
+    n_samples = getattr(args, "awq_samples", 20)
+
+    model_dir = _download_source_for_quantize_remote(hf_repo, models_dir, token)
+
+    base_name = _re.sub(r"-(bf16|fp16)$", "", model_dir.name, flags=_re.IGNORECASE)
+    out_dir = Path(args.output).expanduser() if args.output else model_dir.parent / f"{base_name}-int4"
+
+    # ── Decide the AWQ strategy before doing any real work ──────────────────
+    model_size_gb, full_awq_peak_gb, _ = _peak_ram_estimate_gb(model_dir, run_awq=True)
+    total_ram_gb, _free_ram_gb = _ram_available_gb()
+    shard_index = load_shard_index(model_dir)
+
+    if args.no_awq:
+        awq_mode = "none"
+        awq_reason = "--no-awq requested"
+    elif total_ram_gb > 0 and full_awq_peak_gb <= total_ram_gb:
+        awq_mode = "full"
+        awq_reason = f"fits in RAM (peak ~{full_awq_peak_gb:.1f} GB of {total_ram_gb:.1f} GB total)"
+    elif shard_index is not None:
+        awq_mode = "streaming"
+        awq_reason = (
+            f"does NOT fit in RAM for full-load AWQ (peak ~{full_awq_peak_gb:.1f} GB "
+            f"of {total_ram_gb:.1f} GB total) — using layer-at-a-time streaming calibration"
+        )
+    else:
+        awq_mode = "none"
+        awq_reason = (
+            "does not fit in RAM and has no shard index (single-file checkpoint) — "
+            "streaming AWQ needs a sharded model; skipping AWQ"
+        )
+
+    _est_compressed_bytes = _estimate_output_bytes(model_dir, use_int4=use_int4)
+    _largest_shard_bytes = max(
+        (f.stat().st_size for f in model_dir.glob("*.safetensors")), default=0
+    )
+    _quant_peak_gb = (_est_compressed_bytes + _largest_shard_bytes) / 1e9 + 1.0
+    _free_gb = _get_free_bytes(out_dir) / 1e9
+
+    print("\n  squish quantize-remote")
+    print(f"  Source     : {hf_repo}")
+    print(f"  Local dir  : {model_dir}")
+    print(f"  Output     : {out_dir}")
+    print(f"  Model size : {model_size_gb:.1f} GB (bf16)")
+    print(f"  AWQ mode   : {awq_mode}  ({awq_reason})")
+    print(
+        f"  Quant pass : peak disk ~{_quant_peak_gb:.1f} GB "
+        f"(compressed output + one shard, delete-source) — {_free_gb:.1f} GB free\n"
+    )
+    if _quant_peak_gb > _free_gb:
+        _die(
+            f"Not enough disk space for the quantization pass: need ~{_quant_peak_gb:.1f} GB, "
+            f"only {_free_gb:.1f} GB free at {out_dir}."
+        )
+
+    def _resolve_alpha(family):
+        if family and family in _MODEL_FAMILY_DEFAULTS:
+            return _MODEL_FAMILY_DEFAULTS[family]["alpha"]
+        return _DEFAULT_AWQ_ALPHA
+
+    awq_scales = None
+    if awq_mode == "full":
+        print(f"  Loading full model for AWQ calibration ({model_size_gb:.1f} GB)…")
+        model, tokenizer = mlx_lm.load(str(model_dir))
+        family = detect_model_family(model_dir)
+        awq_scales = collect_activation_scales(
+            model, tokenizer, n_samples=n_samples, alpha=_resolve_alpha(family),
+            verbose=True, model_family=family,
+        )
+        del model
+        try:
+            mx.clear_cache()
+        except (RuntimeError, AttributeError) as exc:
+            _LOG.debug("Clearing MLX cache after full-load AWQ failed: %s", exc)
+    elif awq_mode == "streaming":
+        tokenizer = load_tokenizer(str(model_dir))
+        family = detect_model_family(model_dir)
+        awq_scales = collect_activation_scales_streaming(
+            model_dir, tokenizer, shard_index,
+            n_samples=n_samples, alpha=_resolve_alpha(family), verbose=True,
+            model_family=family, delete_source=False,
+        )
+        if awq_scales is None:
+            print(
+                "  ⚠  Streaming AWQ calibration could not run for this architecture "
+                "— continuing without AWQ."
+            )
+
+    print("\n  Quantizing (streaming, delete-source)…")
+    process_weights_streaming(
+        model_dir, out_dir, [], 20.0, args.verbose,
+        awq_scales=awq_scales, use_int4=use_int4,
+        int4_group_size=32 if awq_scales else None,
+        delete_source=True,
+    )
+    print(f"\n  ✓  Quantized model written to {out_dir}")
+
+    if args.push:
+        print(f"\n  Pushing to {args.push} …")
+        import types
+        push_args = types.SimpleNamespace(
+            local_dir=str(out_dir), repo_id=args.push, private=args.private,
+            commit_message=args.commit_message, dry_run=False,
+        )
+        cmd_push(push_args)
+
+
 # ── squish search ─────────────────────────────────────────────────────────────
 
 def cmd_search(args):
@@ -7204,6 +7405,44 @@ Ollama drop-in:
     p_push.add_argument("--dry-run", action="store_true",
                          help="Print what would be uploaded without making any network calls")
     p_push.set_defaults(func=cmd_push, private=False)  # pragma: no cover
+
+    p_quantize_remote = sub.add_parser(
+        "quantize-remote",
+        help="Download + quantize + (optionally) push a model, even beyond local RAM",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Quantize a model that may be too large to fit in local RAM, end to end.\n\n"
+            "Downloads bf16 weights from Hugging Face, chooses full-load or\n"
+            "layer-at-a-time streaming AWQ calibration based on available RAM\n"
+            "(or skips AWQ with --no-awq), quantizes with raw shards deleted as\n"
+            "they're consumed, and optionally uploads the result.\n\n"
+            "Examples:\n"
+            "  squish quantize-remote mlx-community/Llama-3.1-70B-bf16 --int4 "
+            "--push squishai/llama-3.1-70b-int4\n"
+            "  squish quantize-remote mlx-community/Qwen3-14B-bf16 --no-awq"
+        ),
+    )
+    p_quantize_remote.add_argument("model", help="HF repo id of the bf16 source model")
+    p_quantize_remote.add_argument("--int8", action="store_true",
+                                    help="Use INT8 group-64 compression instead of INT4 (default is INT4).")
+    p_quantize_remote.add_argument("--no-awq", action="store_true", dest="no_awq",
+                                    help="Skip AWQ calibration entirely (plain quantization).")
+    p_quantize_remote.add_argument("--awq-samples", type=int, default=20, metavar="N",
+                                    help="Number of calibration samples for AWQ (default: 20).")
+    p_quantize_remote.add_argument("--push", default=None, metavar="REPO_ID",
+                                    help="Upload the quantized result to this HF repo id, e.g. squishai/foo-int4.")
+    p_quantize_remote.add_argument("--private", action="store_true",
+                                    help="Push to a private repo (default: public). No effect without --push.")
+    p_quantize_remote.add_argument("--commit-message", default=None,
+                                    help="Commit message for --push's upload.")
+    p_quantize_remote.add_argument("--output", default=None,
+                                    help="Output directory for the quantized model (default: <model>-int4 next to the download).")
+    p_quantize_remote.add_argument("--token", default="",
+                                    help="HuggingFace access token (or set $HF_TOKEN)")
+    p_quantize_remote.add_argument("--models-dir", default="",
+                                    help=f"Override models directory (default: {_MODELS_DIR})")
+    p_quantize_remote.add_argument("--verbose", action="store_true")
+    p_quantize_remote.set_defaults(func=cmd_quantize_remote)  # pragma: no cover
 
     p_search = sub.add_parser("search", help="Search the model catalog")
     p_search.add_argument("query", help="Search query (matched against ID, tags, params, description)")
