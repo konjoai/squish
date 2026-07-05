@@ -541,3 +541,178 @@ landed.)
 |-----------|------:|
 | `tests/test_wave131_streaming_delete_source.py` | 11 |
 
+---
+
+### Waves 139–147b: `squish quantize-remote` — Quantizing Models Beyond Local RAM/Disk (v9.34.14)
+
+Wave 131 bounded peak disk during the *quantization* pass to one raw shard
+in flight, but AWQ calibration (`squish/quant/awq.py::collect_activation_scales`)
+still called `mlx_lm.load(model_dir)` — loading the entire bf16 model into
+unified memory to run real forward passes — so a model too large for local
+RAM couldn't be AWQ-calibrated at all, and the raw model still had to be
+downloaded in full before quantization could start. This wave sequence adds
+`squish quantize-remote <hf-repo>`, an end-to-end download → quantize →
+(optionally) push command that decides its strategy from HF metadata alone,
+before any bytes are downloaded, and — outside full-load mode, which
+genuinely needs the whole model resident for `mlx_lm.load` — never requires
+the model to fit in local RAM or on local disk beyond one shard at a time.
+
+#### Wave 139/141: Verifying the Non-AWQ Path Already Scales, Documenting the Real Wall
+
+Confirmed (not assumed) that `process_weights_streaming`'s existing
+shard-at-a-time loop already quantizes models far larger than local RAM
+today, with zero AWQ scales — real bf16 shards fail `numpy.load_file`
+(no native bfloat16 dtype) and fall through to the documented MLX-CPU
+fallback, and every quantization backend downstream operates on plain
+numpy with zero MLX/Metal involvement. `docs/ARCHITECTURE.md` section 11
+documents this finding plus the actual constraint: **AWQ calibration**,
+not the quantization pass itself, is the RAM wall. `--no-awq` documents
+the choice explicitly for a caller who wants that path on a big model
+today, ahead of the streaming-calibration rework below.
+
+#### Wave 140: `squish push`
+
+`squish push <local-dir> <repo-id>` — uploads a local squish-compressed
+model directory to a Hugging Face repo (`--private`, `--commit-message`,
+`--dry-run`), generating a model card from the directory's compression
+stats. `quantize-remote --push` (Wave 146) calls this directly as its
+final step.
+
+#### Wave 142: Shard-Aware Bookkeeping + Standalone Block Reconstruction
+
+Two building blocks the sequential-calibration rework (Wave 143) depends on:
+
+- **`squish/quant/shard_index.py`** (new): `ShardIndex`/`load_shard_index()`
+  parse `model.safetensors.index.json`'s `weight_map` into a layer-indexed
+  lookup — `tensors_for_layer()`, `shards_for_layer()`, `non_layer_tensors()`
+  (embed_tokens/lm_head/final norm), and `shard_to_layers()` (the reverse
+  map that drives delete-as-you-go eviction timing: a shard is safe to
+  release only once every layer index in its set has been processed).
+  Returns `None` for an unsharded single-file checkpoint rather than
+  erroring — callers fall back to treating the whole model as one unit.
+- A spike proving a standalone `mlx_lm` `TransformerBlock(args)` can be
+  constructed and run in isolation given just its own weights — the
+  foundation `awq_streaming.py` builds on to avoid `mlx_lm.load()`.
+
+#### Wave 143: `squish/quant/block_adapters.py` — Block-Kind Adapter Registry
+
+Resolves a model architecture to the right calibration adapter by decoder
+block *kind* (structural shape), not by architecture family name or class
+name — verified directly against installed `mlx_lm` 0.31.3 model files
+that class-name matching is unsafe in both directions (`olmoe.py` names its
+MoE block `TransformerBlock` too; `phi.py`'s dense block is named
+`PhiDecoderLayer`, not `TransformerBlock`).
+
+- `resolve_dense_architecture(model_type)` reuses `mlx_lm.utils.MODEL_REMAPPING`
+  — the same table `mlx_lm.utils._get_classes` itself uses — to resolve a
+  model_type to its `ModelArgs`/`TransformerBlock` classes, so any
+  architecture `mlx_lm` supports is covered automatically, no hand-maintained
+  list. Returns `None` for genuinely different block-shape families
+  (Mamba, etc.) — the caller falls back to plain non-AWQ quantization.
+- `is_standard_dense_block(block)` structurally verifies a *constructed
+  instance* has no MoE/SSM submodules, checking submodule *class* names
+  against marker lists (`Moe`/`MoE`/`Sparse`/`Expert`, `Mamba`/`SSM`/
+  `RGLRU`/`Recurrent`) — never attribute names, so a dense SwiGLU MLP's own
+  `gate_proj` linear doesn't false-positive against a naive "gate" check.
+- One "standard dense block" adapter covers Llama, Qwen2, Qwen3, Mistral,
+  Phi3, Starcoder2, and any future family sharing the same attention+MLP
+  shape — zero new code needed here for a new family name of the same kind.
+
+#### Wave 143/144: `squish/quant/awq_streaming.py` — Sequential AWQ Calibration
+
+`collect_activation_scales_streaming()` — the layer-at-a-time counterpart
+to `awq.py::collect_activation_scales`, never instantiating the full
+model. Processes one decoder layer at a time (construct block from
+`block_adapters`, load only that layer's raw weights via `ShardIndex`,
+run the forward pass, capture activations with the existing
+`_attach_activation_hooks`/`_scales_from_hooks` machinery, carry the
+hidden state forward), returning the same `layer_name -> np.ndarray` scale
+dict contract as the full-load function. Returns `None` — not an error —
+when the architecture doesn't resolve to the standard dense block adapter;
+the caller falls back to plain non-AWQ quantization.
+
+Wave 144 integrates delete-as-you-go (Wave 139's convention) directly into
+this loop: with `delete_source=True`, each raw shard is deleted once every
+layer that needs it (per `ShardIndex.shard_to_layers()`) has finished
+calibrating — handling the case where a shard is shared between
+embed_tokens and layer 0 (embed_tokens' one-time read happens before the
+per-layer loop, so the shard has no remaining consumers by the time layer 0
+completes). Deletion failures are logged as warnings, never raised.
+
+#### Wave 145: Accuracy Validation Gate — Finds and Fixes a Real Causal-Mask Bug
+
+`tests/test_wave145_calibration_accuracy_gate.py` compares
+`collect_activation_scales_streaming`'s scale vectors directly against
+`collect_activation_scales`'s full-load ground truth on a real ~2.5 GB
+model (`mlx-community/Llama-3.2-1B-Instruct-bf16`) — deliberately not a
+synthetic-weights test, since only a real forward pass through a real
+checkpoint has independent ground truth to diverge from. It caught a real
+bug: streaming calibration was passing `mask=None` unconditionally to each
+standalone block (no causal masking — every token could attend to every
+position, including future ones), which measured as low as 0.75
+correlation on some layers against ground truth. Fixed with
+`create_attention_mask(h)`, matching exactly what the full-load model
+applies per layer — brought all 112 compared layers to ≥0.9999
+correlation. Opt-in via `SQUISH_RUN_ACCURACY_GATE=1` (downloads a real
+model, ~30–60s per pass), so it doesn't run by default.
+
+#### Wave 146: `squish quantize-remote` — End-to-End Command
+
+`squish quantize-remote <hf-repo>` (`squish/cli.py`) — scans HF repo
+metadata (size, shard-index presence) before downloading anything, then
+picks between full-load AWQ, streaming AWQ, or no AWQ:
+
+- **full-load** when `model_size_gb * 2.0 + 2.0` (the full-load AWQ peak
+  estimate) fits under total local RAM — downloads the whole raw model
+  (required for `mlx_lm.load` regardless of any streaming path), then
+  quantizes with `process_weights_streaming(..., delete_source=True)`.
+- **streaming** when it doesn't fit but the repo has a shard index.
+- **none** (`--no-awq`, or automatically for an unsharded checkpoint too
+  big for full-load) — falls straight to Wave 147a's per-shard streaming pull.
+
+`--push <repo-id>` chains directly into `cmd_push` (Wave 140) after
+quantization. Runs the same pre/post-download security scans (Wave 100) as
+`squish pull`.
+
+#### Wave 147a: `squish/quant/streaming_pull.py` — True Per-Shard Streaming Pull
+
+`pull_and_quantize_shard_by_shard()` — fetch one raw shard from HF,
+quantize it, delete it, fetch the next. Never more than one raw weight
+shard resident on local disk at once, regardless of total model size —
+the local model directory ends up holding only non-weight files (config,
+tokenizer, shard index), so it still works as the config source for the
+compressed model. Reuses `convert.py`'s `quantize_tensor`/`safe_key`/
+`load_mlx_weights_shard` and `awq.py`'s AWQ-scale application unchanged, so
+output matches `process_weights_streaming`'s regardless of which path
+produced it. `fetch_repo_metadata()`/`ensure_shard_local()` run the same
+pre/post-download security scans (Wave 100) as every other pull path.
+
+#### Wave 147b: Fetch-on-Demand Folded Into Streaming AWQ Calibration
+
+`awq_streaming.py::collect_activation_scales_streaming` gains optional
+`hf_repo`/`token` params — when given, each shard is fetched on demand via
+`streaming_pull.ensure_shard_local()` the first time a layer needs it,
+instead of assuming it's already local. Combined with `delete_source=True`,
+streaming AWQ calibration alone never requires the full raw model
+downloaded up front, matching Wave 147a's non-AWQ path. The trade:
+streaming-AWQ mode downloads every shard twice — once for calibration,
+once for the quantization pass — in exchange for peak disk staying bounded
+to the compressed output plus one raw shard in flight across both passes,
+never the full raw model. When `hf_repo` is `None` (the default), behavior
+is unchanged: shards must already exist locally.
+
+| Test file | Tests |
+|-----------|------:|
+| `tests/test_wave139_delete_source_shards.py` | 8 |
+| `tests/test_wave140_push_command.py` | 15 |
+| `tests/test_wave141_no_awq_large_model_path.py` | 6 |
+| `tests/test_wave142_shard_index.py` | 13 |
+| `tests/test_wave142_single_layer_reconstruction.py` | 6 |
+| `tests/test_wave143_block_adapters.py` | 12 |
+| `tests/test_wave143_streaming_calibration.py` | 7 |
+| `tests/test_wave144_calibration_delete_source.py` | 7 |
+| `tests/test_wave145_calibration_accuracy_gate.py` | 2 (opt-in, `SQUISH_RUN_ACCURACY_GATE=1`) |
+| `tests/test_wave146_quantize_remote_e2e.py` | 9 |
+| `tests/test_wave147a_streaming_pull.py` | 6 |
+| `tests/test_wave147b_awq_streaming_pull.py` | 5 |
+

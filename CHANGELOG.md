@@ -5,6 +5,89 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [9.34.14] — `squish quantize-remote`: quantize models bigger than local RAM/disk (Waves 139–147b)
+
+Wave 131 bounded peak disk during quantization to one raw shard in flight,
+but AWQ calibration still called `mlx_lm.load()` — loading the entire
+bf16 model into unified memory — so any model too big for local RAM
+couldn't be AWQ-calibrated at all, and the raw model still had to be
+downloaded in full before quantization could start. This release adds
+`squish quantize-remote <hf-repo>`: an end-to-end download → quantize →
+(optionally) push command that picks the right strategy from HF metadata
+alone, before any bytes are downloaded, and never requires the model to
+fit in local RAM or on local disk beyond one shard at a time (outside
+full-load mode, which needs the whole model resident for `mlx_lm.load`
+regardless).
+
+### Added
+- `squish quantize-remote <hf-repo>` (`--int8`, `--no-awq`, `--awq-samples`,
+  `--push`, `--private`, `--commit-message`, `--output`, `--token`,
+  `--models-dir`) — reads HF repo metadata (size, shard index presence) to
+  choose one of three modes before downloading anything:
+  - **full-load AWQ** when the bf16 model comfortably fits in local RAM —
+    downloads the whole model (required for `mlx_lm.load`), calibrates,
+    then quantizes with `--delete-source` to reclaim shard space as it goes.
+  - **streaming AWQ** (Wave 147b) when it doesn't fit but the model is
+    sharded — layer-at-a-time calibration with shards fetched on demand
+    and deleted as each one finishes, then a second per-shard pass to
+    apply the computed scales and quantize. Trades a second download of
+    every shard for peak disk bounded to one shard in flight across both
+    passes.
+  - **no AWQ** (Wave 147a), via `--no-awq` or automatically for an
+    unsharded checkpoint too big for full-load — true per-shard streaming
+    pull: fetch one shard, quantize it, delete it, fetch the next.
+- `squish/quant/shard_index.py` (new): `ShardIndex`/`load_shard_index()` —
+  parses `model.safetensors.index.json` into a layer-indexed tensor→shard
+  lookup, so callers know which shard(s) a given decoder layer needs and
+  when a shard is safe to evict.
+- `squish/quant/block_adapters.py` (new): `resolve_dense_architecture()`/
+  `is_standard_dense_block()` — resolves an architecture to its standalone
+  `mlx_lm` `TransformerBlock`/`ModelArgs` classes via `mlx_lm`'s own
+  `MODEL_REMAPPING` table, and structurally verifies (by submodule class
+  name, not attribute name or block class name) that a constructed block
+  is a plain dense attention+MLP layer rather than MoE or SSM/recurrent.
+- `squish/quant/awq_streaming.py` (new):
+  `collect_activation_scales_streaming()` — sequential, layer-at-a-time
+  AWQ calibration that carries hidden state forward between layers instead
+  of loading the whole model, with optional `delete_source` shard cleanup
+  and optional `hf_repo`/`token` fetch-on-demand. Returns `None` (caller
+  falls back to non-AWQ quantization) for architectures with no dense-block
+  adapter yet.
+- `squish/quant/streaming_pull.py` (new):
+  `pull_and_quantize_shard_by_shard()`/`ensure_shard_local()`/
+  `fetch_repo_metadata()` — fetches one raw shard from HF, quantizes it,
+  deletes it, fetches the next; never more than one raw shard resident on
+  disk regardless of total model size. Runs the same pre/post-download
+  security scans (Wave 100) as `squish pull`.
+
+### Fixed
+- Streaming AWQ calibration passed `mask=None` unconditionally to each
+  reconstructed block — no causal masking, so every token could attend to
+  every position including future ones. Found by Wave 145's accuracy gate
+  (a real-model test comparing streaming scale vectors against full-load
+  ground truth, not a synthetic-weights test), which measured correlation
+  as low as 0.75 on some layers with the bug present. Fixed with
+  `create_attention_mask(h)`, matching exactly what the full-load model
+  applies per layer — brought all 112 compared layers to ≥0.9999
+  correlation.
+
+### Tests
+- `tests/test_wave139_delete_source_shards.py` (8),
+  `tests/test_wave140_push_command.py` (15),
+  `tests/test_wave141_no_awq_large_model_path.py` (6),
+  `tests/test_wave142_shard_index.py` (13),
+  `tests/test_wave142_single_layer_reconstruction.py` (6),
+  `tests/test_wave143_block_adapters.py` (12),
+  `tests/test_wave143_streaming_calibration.py` (7),
+  `tests/test_wave144_calibration_delete_source.py` (7),
+  `tests/test_wave145_calibration_accuracy_gate.py` (2, opt-in via
+  `SQUISH_RUN_ACCURACY_GATE=1` — downloads a real ~2.5 GB model),
+  `tests/test_wave146_quantize_remote_e2e.py` (9),
+  `tests/test_wave147a_streaming_pull.py` (6),
+  `tests/test_wave147b_awq_streaming_pull.py` (5).
+
+---
+
 ## [9.34.13] — Delete-as-you-go raw shard cleanup (Wave 131)
 
 `squish pull`/`squish compress` required raw + compressed model on disk
