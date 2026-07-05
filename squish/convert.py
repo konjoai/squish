@@ -1179,23 +1179,12 @@ def main():
     ap.add_argument(
         "--delete-source",
         action="store_true",
-        dest="delete_source",
-        help="Delete each raw .safetensors shard immediately after it has been "
-        "fully quantized and written. Bounds peak disk usage to roughly "
-        "one raw shard + the compressed output built so far, instead of "
-        "requiring the full raw model to coexist with the full compressed "
-        "output. Off by default — the raw model directory is left intact "
-        "unless this is passed.",
-    )
-    ap.add_argument(
-        "--delete-source",
-        action="store_true",
         default=False,
         help="Delete each raw .safetensors shard immediately after its tensors "
-             "are quantized and written. Reduces peak disk from ~(raw + compressed) "
-             "to ~(compressed + one shard). WARNING: a failure partway through "
-             "means already-deleted shards must be re-downloaded to retry — this "
-             "does not support partial resume in this release. Off by default.",
+        "are quantized and written. Reduces peak disk from ~(raw + compressed) "
+        "to ~(compressed + one shard). WARNING: a failure partway through "
+        "means already-deleted shards must be re-downloaded to retry — this "
+        "does not support partial resume in this release. Off by default.",
     )
     args = ap.parse_args()
 
@@ -1301,9 +1290,13 @@ def main():
                 _progress_file = output_path / "_compress_progress.json"
                 if _progress_file.exists():
                     try:
-                        _deleted = json.loads(_progress_file.read_text()).get("completed_shards", [])
+                        _deleted = json.loads(_progress_file.read_text()).get(
+                            "completed_shards", []
+                        )
                     except (OSError, ValueError) as _read_exc:
-                        print(f"  Warning: could not read progress file: {_read_exc}", file=sys.stderr)
+                        print(
+                            f"  Warning: could not read progress file: {_read_exc}", file=sys.stderr
+                        )
                 print(
                     f"\n  ✗  Compression failed with --delete-source active.\n"
                     f"     {len(_deleted)} raw shard(s) were deleted and are unrecoverable locally:",

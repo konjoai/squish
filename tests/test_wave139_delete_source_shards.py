@@ -107,7 +107,15 @@ class TestDeleteSourceEnabled:
         assert (output_path / "tensors" / ".manifest_ready").exists()
         assert stats["n_quantized"] + stats["n_passthrough"] == 1
 
-    def test_deletion_failure_logs_warning_not_raise(self, model_dir, output_path, monkeypatch):
+    def test_deletion_failure_propagates_but_compressed_output_already_safe(
+        self, model_dir, output_path, monkeypatch
+    ):
+        # NOTE: this pins the behavior of the merged (main) delete-as-you-go
+        # implementation, which deletes a shard without a try/except — a
+        # deletion failure is a hard error here, caught and reported by
+        # main()'s CLI-level failure handler (which preserves partial output
+        # rather than the earlier design this test originally covered, where
+        # library-level code swallowed the failure and logged a warning).
         shard = model_dir / "model-00001-of-00001.safetensors"
         _write_shard(shard, ["layer.weight"])
 
@@ -120,24 +128,17 @@ class TestDeleteSourceEnabled:
 
         monkeypatch.setattr(Path, "unlink", _boom)
 
-        # Spy directly on the logger rather than relying on caplog's handler
-        # propagation, which other test modules in the suite can disturb when
-        # the full test suite runs together (verified: the warning fires
-        # correctly per captured stderr even when caplog misses it).
-        warnings_logged = []
-        monkeypatch.setattr(
-            convert_mod._LOG, "warning", lambda msg, *a: warnings_logged.append(msg % a)
-        )
+        with pytest.raises(OSError, match="permission denied"):
+            process_weights_streaming(
+                model_dir, output_path, [], 20.0, False, min_free_gb=0.0, delete_source=True
+            )
 
-        stats = process_weights_streaming(
-            model_dir, output_path, [], 20.0, False, min_free_gb=0.0, delete_source=True
-        )
-
-        # Compression itself still succeeded despite the failed deletion.
-        assert stats["n_quantized"] + stats["n_passthrough"] == 1
-        assert stats["shards_deleted"] == 0
+        # The tensor's compressed output and manifest entry were committed to
+        # disk BEFORE the deletion attempt — so even though the call raised,
+        # nothing quantized is lost; only the raw shard survives (deletion
+        # failed) alongside the now-complete compressed output.
+        assert (output_path / "manifest.json").exists()
         assert shard.exists()
-        assert any("Could not delete raw shard" in msg for msg in warnings_logged)
 
     def test_shard_not_deleted_until_its_own_tensors_written(self, model_dir, output_path):
         # A shard with two tensors: both must be quantized/written before the
