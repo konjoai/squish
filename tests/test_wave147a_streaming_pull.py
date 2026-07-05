@@ -19,6 +19,12 @@ quantization math (`squish.convert.quantize_tensor`,
 `load_mlx_weights_shard`, `safe_key`) runs for real -- this is a
 mechanism test (shard sequencing, deletion timing, manifest
 correctness), not a mocked-everything wiring test.
+
+Uses ``use_int4=False`` (the default INT8 path, `quantize_embeddings` /
+`_quantize_numpy`) rather than INT4 -- INT4 asymmetric quantization
+hard-requires the `squish_quant` Rust extension with no numpy fallback,
+which CI's Linux test matrix doesn't build. The shard-sequencing
+invariant this file pins doesn't depend on which quant format is used.
 """
 
 from __future__ import annotations
@@ -145,7 +151,7 @@ class TestStreamingPullNeverHoldsMoreThanOneRawShard:
             patch("squish.serving.local_model_scanner.scan_before_load", byte_scan),
         ):
             stats = pull_and_quantize_shard_by_shard(
-                "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=True, verbose=False,
+                "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=False, verbose=False,
             )
 
         assert shard_counts_before_fetch == [0, 0], (
@@ -176,7 +182,7 @@ class TestStreamingPullNeverHoldsMoreThanOneRawShard:
             patch("squish.serving.local_model_scanner.scan_before_load", byte_scan),
         ):
             stats = pull_and_quantize_shard_by_shard(
-                "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=True, verbose=False,
+                "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=False, verbose=False,
             )
 
         manifest = json.loads((output_dir / "manifest.json").read_text())
@@ -200,7 +206,7 @@ class TestStreamingPullNeverHoldsMoreThanOneRawShard:
             patch("squish.serving.local_model_scanner.scan_before_load", byte_scan),
         ):
             stats = pull_and_quantize_shard_by_shard(
-                "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=True, verbose=False,
+                "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=False, verbose=False,
             )
 
         assert stats["shards_deleted"] == 1
@@ -229,7 +235,7 @@ class TestStreamingPullSecurityScans:
         ):
             with pytest.raises(RuntimeError, match="security scan"):
                 pull_and_quantize_shard_by_shard(
-                    "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=True, verbose=False,
+                    "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=False, verbose=False,
                 )
 
         assert not fake_hub.hf_hub_download_calls
@@ -256,7 +262,7 @@ class TestStreamingPullSecurityScans:
         ):
             with pytest.raises(RuntimeError, match="security scan"):
                 pull_and_quantize_shard_by_shard(
-                    "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=True, verbose=False,
+                    "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=False, verbose=False,
                 )
 
 
@@ -279,5 +285,5 @@ class TestStreamingPullNoWeightsFound:
         ):
             with pytest.raises(RuntimeError, match="No .safetensors"):
                 pull_and_quantize_shard_by_shard(
-                    "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=True, verbose=False,
+                    "fake/Fake-Model-bf16", model_dir, output_dir, use_int4=False, verbose=False,
                 )
