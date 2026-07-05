@@ -125,7 +125,9 @@ def collect_activation_scales_streaming(
     """
     import mlx.core as mx
     import mlx.nn as nn
-    from safetensors.numpy import load_file as st_load_numpy
+    from mlx_lm.models.base import create_attention_mask
+
+    from squish.convert import load_mlx_weights_shard
 
     model_dir = Path(model_dir)
     config = json.loads((model_dir / "config.json").read_text())
@@ -164,7 +166,7 @@ def collect_activation_scales_streaming(
             print("  [streaming-AWQ] no embed_tokens tensor in weight_map — aborting.")
         return None
     embed_shard = shard_index.weight_map[embed_name]
-    embed_table = st_load_numpy(str(model_dir / embed_shard))[embed_name].astype(np.float32)
+    embed_table = load_mlx_weights_shard(model_dir / embed_shard)[embed_name]
 
     hidden_states = [mx.array(embed_table[ids][None, :, :]) for ids in sample_ids]
     del embed_table
@@ -210,7 +212,7 @@ def collect_activation_scales_streaming(
 
         layer_raw: dict[str, np.ndarray] = {}
         for shard_name in needed_shards:
-            shard_data = st_load_numpy(str(model_dir / shard_name))
+            shard_data = load_mlx_weights_shard(model_dir / shard_name)
             for name in tensor_names:
                 if name in shard_data:
                     layer_raw[name[len(prefix) :]] = shard_data[name]
@@ -236,7 +238,15 @@ def collect_activation_scales_streaming(
         next_hidden_states = []
         for h in hidden_states:
             try:
-                out = block(h, mask=None, cache=None)
+                # create_attention_mask(h) matches exactly what the full-load
+                # model uses per-layer: "causal" for seq_len > 1, None for a
+                # single token. Passing mask=None unconditionally here was a
+                # real bug (caught by Wave 145's accuracy validation, not
+                # assumed) — every token could attend to every other token,
+                # including future ones, which is not what real causal
+                # attention does and measurably skewed activation statistics.
+                mask = create_attention_mask(h)
+                out = block(h, mask=mask, cache=None)
                 mx.eval(out)
             except (RuntimeError, ValueError, TypeError, AttributeError) as exc:
                 _LOG.debug(
