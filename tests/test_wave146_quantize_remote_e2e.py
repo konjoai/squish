@@ -25,6 +25,15 @@ import boundary:
 - `--push` delegates to the existing `cmd_push` machinery with the
   freshly quantized output directory
 
+As of Wave 147a, the AWQ-mode decision itself is made from Hugging Face
+API metadata alone (`scan_hf_repo_metadata`'s total_size_bytes for the
+RAM-fit estimate, `list_repo_files` for shard-index presence) -- no
+bytes are downloaded before the decision is made. Only the "full" and
+"streaming" AWQ modes then download the whole raw model up front (via
+`_download_source_for_quantize_remote`); the "none" mode is Wave 147a's
+true per-shard streaming pull and never downloads it at all (covered by
+tests/test_wave147a_streaming_pull.py, not here).
+
 Downloads, real model loads, and the real quantization pass are all
 mocked -- this is a control-flow/wiring test, not an accuracy test
 (Wave 145 already covers calibration fidelity against a real model).
@@ -86,10 +95,19 @@ def _args(model="mlx-community/Fake-Model-bf16", **overrides):
 
 class _PatchSet:
     """Bundles the mocks every scenario needs, so each test only overrides
-    the handful that differ (RAM numbers, shard index presence, --no-awq)."""
+    the handful that differ (RAM/size numbers, sharded-ness, --no-awq).
 
-    def __init__(self, tmp_path, monkeypatch, *, total_ram_gb, free_ram_gb, shard_index,
-                 full_awq_peak_gb=None, dir_name="Fake-Model-bf16"):
+    The AWQ-mode decision (Wave 147a) is driven entirely by HF metadata:
+    `model_size_gb` controls `scan_hf_repo_metadata`'s `total_size_bytes`
+    (peak full-load AWQ RAM = model_size_gb * 2.0 + 2.0), and
+    `is_sharded` controls whether `list_repo_files` reports
+    `model.safetensors.index.json`. Only once a mode requiring raw
+    shards ("full"/"streaming") is chosen does the code download
+    anything or call `load_shard_index` on the downloaded directory.
+    """
+
+    def __init__(self, tmp_path, monkeypatch, *, total_ram_gb, free_ram_gb, is_sharded,
+                 model_size_gb=None, dir_name="Fake-Model-bf16"):
         self.model_dir = _make_fake_model_dir(tmp_path, name=dir_name)
         self.out_dir = self.model_dir.parent / dir_name.replace("-bf16", "-int4")
         # A plain value (not object()) so two independently-constructed
@@ -99,23 +117,24 @@ class _PatchSet:
 
         monkeypatch.setattr(cli, "_MODELS_DIR", tmp_path)
 
-        # Full-load AWQ's peak RAM estimate is driven purely by real on-disk
-        # model size (see squish/cli.py:_peak_ram_estimate_gb) -- mocked
-        # directly here so "fits" vs "doesn't fit" is deterministic and
-        # independent of the tiny fixture file's actual byte size.
-        if full_awq_peak_gb is None:
-            full_awq_peak_gb = min(total_ram_gb, free_ram_gb) / 2  # comfortably fits by default
-        self.peak_ram_estimate = MagicMock(return_value=(2.0, full_awq_peak_gb, 1.0))
+        if model_size_gb is None:
+            # Comfortably fits by default: peak (model_size*2+2) well under total_ram.
+            model_size_gb = max((total_ram_gb - 4.0) / 2.0, 0.1)
+        self.model_size_gb = model_size_gb
 
         self.snapshot_download = MagicMock(return_value=str(self.model_dir))
         self.scan_meta = MagicMock(return_value=types.SimpleNamespace(
-            status="safe", findings=[], total_files=2,
+            status="safe", findings=[], total_files=2, total_size_bytes=model_size_gb * 1e9,
         ))
         self.scan_bytes = MagicMock(return_value=types.SimpleNamespace(
             status="safe", findings=[], scanned=2,
         ))
         self.ram = MagicMock(return_value=(total_ram_gb, free_ram_gb))
-        self.shard_index = MagicMock(return_value=shard_index)
+        repo_files = ["config.json", "model.safetensors"]
+        if is_sharded:
+            repo_files.append("model.safetensors.index.json")
+        self.list_repo_files = MagicMock(return_value=repo_files)
+        self.shard_index = MagicMock(return_value=MagicMock() if is_sharded else None)
         self.estimate_output_bytes = MagicMock(return_value=1_000_000)
         self.get_free_bytes = MagicMock(return_value=int(1e12))  # plenty of disk
 
@@ -124,14 +143,15 @@ class _PatchSet:
         self.collect_full = MagicMock(return_value=dict(self.fake_scales))
         self.collect_streaming = MagicMock(return_value=dict(self.fake_scales))
         self.process_weights = MagicMock(return_value={})
+        self.streaming_pull = MagicMock(return_value={})
         self.cmd_push = MagicMock()
 
         self._patches = [
             patch("huggingface_hub.snapshot_download", self.snapshot_download),
+            patch("huggingface_hub.list_repo_files", self.list_repo_files),
             patch("squish.serving.local_model_scanner.scan_hf_repo_metadata", self.scan_meta),
             patch("squish.serving.local_model_scanner.scan_before_load", self.scan_bytes),
             patch.object(cli, "_ram_available_gb", self.ram),
-            patch.object(cli, "_peak_ram_estimate_gb", self.peak_ram_estimate),
             patch("squish.quant.shard_index.load_shard_index", self.shard_index),
             patch("squish.convert._estimate_output_bytes", self.estimate_output_bytes),
             patch("squish.convert._get_free_bytes", self.get_free_bytes),
@@ -140,6 +160,7 @@ class _PatchSet:
             patch("squish.quant.awq.collect_activation_scales", self.collect_full),
             patch("squish.quant.awq_streaming.collect_activation_scales_streaming", self.collect_streaming),
             patch("squish.convert.process_weights_streaming", self.process_weights),
+            patch("squish.quant.streaming_pull.pull_and_quantize_shard_by_shard", self.streaming_pull),
             patch.object(cli, "cmd_push", self.cmd_push),
         ]
 
@@ -157,13 +178,14 @@ class TestQuantizeRemoteAWQModeSelection:
     def test_model_fits_in_ram_uses_full_load_awq(self, tmp_path, monkeypatch):
         with _PatchSet(
             tmp_path, monkeypatch,
-            total_ram_gb=64.0, free_ram_gb=40.0, shard_index=MagicMock(),
+            total_ram_gb=64.0, free_ram_gb=40.0, is_sharded=True,
         ) as p:
             cli.cmd_quantize_remote(_args())
 
             p.mlx_load.assert_called_once()
             p.collect_full.assert_called_once()
             p.collect_streaming.assert_not_called()
+            p.streaming_pull.assert_not_called()
             p.process_weights.assert_called_once()
             _, kwargs = p.process_weights.call_args
             assert kwargs["awq_scales"] == p.fake_scales
@@ -172,13 +194,14 @@ class TestQuantizeRemoteAWQModeSelection:
     def test_model_too_large_for_ram_uses_streaming_awq(self, tmp_path, monkeypatch):
         with _PatchSet(
             tmp_path, monkeypatch,
-            total_ram_gb=16.0, free_ram_gb=4.0, shard_index=MagicMock(),
-            full_awq_peak_gb=40.0,
+            total_ram_gb=16.0, free_ram_gb=4.0, is_sharded=True,
+            model_size_gb=40.0,  # peak = 40*2+2 = 82 GB, far over 16 GB total
         ) as p:
             cli.cmd_quantize_remote(_args())
 
             p.mlx_load.assert_not_called()
             p.collect_full.assert_not_called()
+            p.streaming_pull.assert_not_called()
             p.collect_streaming.assert_called_once()
             _, kwargs = p.collect_streaming.call_args
             assert kwargs["delete_source"] is False, (
@@ -195,11 +218,11 @@ class TestQuantizeRemoteAWQModeSelection:
         the whole point of this command is that the caller shouldn't have
         to pick a strategy themselves."""
         results = []
-        for i, (total_ram_gb, peak_gb) in enumerate([(64.0, 4.0), (16.0, 40.0)]):
+        for i, (total_ram_gb, model_size_gb) in enumerate([(64.0, 4.0), (16.0, 40.0)]):
             with _PatchSet(
                 tmp_path, monkeypatch,
-                total_ram_gb=total_ram_gb, free_ram_gb=4.0, shard_index=MagicMock(),
-                full_awq_peak_gb=peak_gb, dir_name=f"Fake-Model-{i}-bf16",
+                total_ram_gb=total_ram_gb, free_ram_gb=4.0, is_sharded=True,
+                model_size_gb=model_size_gb, dir_name=f"Fake-Model-{i}-bf16",
             ) as p:
                 cli.cmd_quantize_remote(_args(model=f"mlx-community/Fake-Model-{i}-bf16"))
                 _, kwargs = p.process_weights.call_args
@@ -207,45 +230,46 @@ class TestQuantizeRemoteAWQModeSelection:
 
         assert results[0] == results[1]
 
-    def test_no_awq_flag_skips_calibration_entirely(self, tmp_path, monkeypatch):
+    def test_no_awq_flag_routes_to_streaming_pull_not_full_download(self, tmp_path, monkeypatch):
         with _PatchSet(
             tmp_path, monkeypatch,
-            total_ram_gb=64.0, free_ram_gb=40.0, shard_index=MagicMock(),
+            total_ram_gb=64.0, free_ram_gb=40.0, is_sharded=True,
         ) as p:
             cli.cmd_quantize_remote(_args(no_awq=True))
 
+            p.snapshot_download.assert_not_called()
             p.mlx_load.assert_not_called()
             p.collect_full.assert_not_called()
             p.collect_streaming.assert_not_called()
-            p.process_weights.assert_called_once()
-            _, kwargs = p.process_weights.call_args
-            assert kwargs["awq_scales"] is None
-            assert kwargs["delete_source"] is True
+            p.process_weights.assert_not_called()
+            p.streaming_pull.assert_called_once()
+            _, kwargs = p.streaming_pull.call_args
+            assert kwargs["use_int4"] is True
 
-    def test_too_large_for_ram_and_no_shard_index_falls_back_to_plain(self, tmp_path, monkeypatch):
+    def test_too_large_for_ram_and_not_sharded_routes_to_streaming_pull(self, tmp_path, monkeypatch):
         """No shard index means a single-file checkpoint -- streaming AWQ
-        has nothing to stream over, so this must degrade to plain
-        quantization rather than crash or silently guess."""
+        has nothing to stream over, so this must degrade to the no-AWQ
+        streaming-pull path rather than crash or silently guess."""
         with _PatchSet(
             tmp_path, monkeypatch,
-            total_ram_gb=16.0, free_ram_gb=4.0, shard_index=None,
-            full_awq_peak_gb=40.0,
+            total_ram_gb=16.0, free_ram_gb=4.0, is_sharded=False,
+            model_size_gb=40.0,
         ) as p:
             cli.cmd_quantize_remote(_args())
 
+            p.snapshot_download.assert_not_called()
             p.mlx_load.assert_not_called()
             p.collect_full.assert_not_called()
             p.collect_streaming.assert_not_called()
-            p.process_weights.assert_called_once()
-            _, kwargs = p.process_weights.call_args
-            assert kwargs["awq_scales"] is None
+            p.process_weights.assert_not_called()
+            p.streaming_pull.assert_called_once()
 
 
 class TestQuantizeRemotePushIntegration:
     def test_push_delegates_to_cmd_push_with_quantized_output(self, tmp_path, monkeypatch):
         with _PatchSet(
             tmp_path, monkeypatch,
-            total_ram_gb=64.0, free_ram_gb=40.0, shard_index=MagicMock(),
+            total_ram_gb=64.0, free_ram_gb=40.0, is_sharded=True,
         ) as p:
             cli.cmd_quantize_remote(_args(push="squishai/fake-model-int4"))
 
@@ -257,7 +281,7 @@ class TestQuantizeRemotePushIntegration:
     def test_no_push_flag_does_not_call_cmd_push(self, tmp_path, monkeypatch):
         with _PatchSet(
             tmp_path, monkeypatch,
-            total_ram_gb=64.0, free_ram_gb=40.0, shard_index=MagicMock(),
+            total_ram_gb=64.0, free_ram_gb=40.0, is_sharded=True,
         ) as p:
             cli.cmd_quantize_remote(_args(push=None))
             p.cmd_push.assert_not_called()
@@ -267,7 +291,7 @@ class TestQuantizeRemoteDiskPreflight:
     def test_insufficient_disk_aborts_before_any_calibration(self, tmp_path, monkeypatch):
         with _PatchSet(
             tmp_path, monkeypatch,
-            total_ram_gb=64.0, free_ram_gb=40.0, shard_index=MagicMock(),
+            total_ram_gb=64.0, free_ram_gb=40.0, is_sharded=True,
         ) as p:
             p.get_free_bytes.return_value = 0  # no disk at all
             with pytest.raises(SystemExit):
@@ -282,13 +306,16 @@ class TestQuantizeRemoteSecurityScan:
     def test_unsafe_metadata_scan_aborts_before_download(self, tmp_path, monkeypatch):
         with _PatchSet(
             tmp_path, monkeypatch,
-            total_ram_gb=64.0, free_ram_gb=40.0, shard_index=MagicMock(),
+            total_ram_gb=64.0, free_ram_gb=40.0, is_sharded=True,
         ) as p:
             p.scan_meta.return_value = types.SimpleNamespace(
                 status="unsafe", findings=["fake dangerous pickle"], total_files=1,
+                total_size_bytes=0,
             )
             with pytest.raises(SystemExit):
                 cli.cmd_quantize_remote(_args())
 
             p.snapshot_download.assert_not_called()
+            p.list_repo_files.assert_not_called()
             p.process_weights.assert_not_called()
+            p.streaming_pull.assert_not_called()
