@@ -929,6 +929,101 @@ def cmd_rm(args):  # pragma: no cover
     print()
 
 
+# ── squish push ───────────────────────────────────────────────────────────────
+
+
+def _read_push_stats(local_dir: Path) -> dict | None:
+    """Read the stats.json sidecar written by convert.py's compression run.
+
+    Returns None if absent (older compressed dirs, or a directory that
+    wasn't produced by squish's own compress pipeline) — callers must
+    degrade gracefully rather than treating this as an error.
+    """
+    stats_path = local_dir / "stats.json"
+    if not stats_path.exists():
+        return None
+    try:
+        return json.loads(stats_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        _LOG.warning("Could not read %s: %s (model card will omit quant stats)", stats_path, exc)
+        return None
+
+
+def _generate_push_model_card(local_dir: Path, repo_id: str, stats: dict | None) -> str:
+    """Build a minimal model card from stats.json, if present."""
+    lines = [f"# {repo_id}", "", "Quantized with [Squish](https://github.com/konjoai/squish)."]
+    if stats:
+        base = stats.get("base_model_dir_name", "unknown")
+        orig_gb = stats.get("orig_f32_bytes", 0) / 1e9
+        comp_gb = stats.get("compressed_bytes", 0) / 1e9
+        ratio = stats.get("compression_ratio", 0.0)
+        lines += [
+            "",
+            "## Details",
+            f"- Base model: `{base}`",
+            f"- Quantization: {stats.get('quant_mode', 'unknown')}",
+            f"- Original size: {orig_gb:.2f} GB",
+            f"- Compressed size: {comp_gb:.2f} GB ({ratio:.2f}x ratio)",
+            f"- Tensors: {stats.get('n_quantized', '?')} quantized, "
+            f"{stats.get('n_passthrough', '?')} passthrough",
+        ]
+    else:
+        lines += [
+            "",
+            "No compression stats were found alongside this model "
+            f"(`{local_dir / 'stats.json'}` missing) — this directory may "
+            "predate the stats sidecar, or wasn't produced by `squish compress`.",
+        ]
+    lines.append("")
+    return "\n".join(lines)
+
+
+def cmd_push(args):  # pragma: no cover
+    """Upload a local compressed model directory to a Hugging Face repo."""
+    local_dir = Path(args.local_dir).expanduser()
+    if not local_dir.is_dir():
+        _die(f"Not a directory: {local_dir}")
+
+    repo_id = args.repo_id
+    stats = _read_push_stats(local_dir)
+
+    card_path = local_dir / "README.md"
+    card_generated = False
+    if not card_path.exists():
+        card_path.write_text(_generate_push_model_card(local_dir, repo_id, stats))
+        card_generated = True
+
+    files = sorted(p for p in local_dir.rglob("*") if p.is_file())
+    total_bytes = sum(p.stat().st_size for p in files)
+
+    print(f"  Local dir:   {local_dir}")
+    print(f"  Target repo: {repo_id}  ({'private' if args.private else 'public'})")
+    print(f"  Files:       {len(files)}  ({total_bytes / 1e9:.2f} GB)")
+    if card_generated:
+        print(f"  Generated README.md (no model card was present in {local_dir})")
+
+    if args.dry_run:
+        print("\n  --dry-run: no network calls made. Would upload:")
+        for p in files:
+            print(f"    {p.relative_to(local_dir)}  ({p.stat().st_size / 1e6:.1f} MB)")
+        return
+
+    from huggingface_hub import create_repo, upload_folder
+
+    try:
+        create_repo(repo_id, repo_type="model", exist_ok=True, private=args.private)
+        upload_folder(
+            folder_path=str(local_dir),
+            repo_id=repo_id,
+            repo_type="model",
+            commit_message=args.commit_message or "Upload squished model",
+        )
+    except Exception as exc:  # noqa: BLE001 — surface any HF Hub failure clearly, don't swallow it
+        _die(f"Upload failed: {exc}")
+
+    print(f"\n  Pushed to https://huggingface.co/{repo_id}")
+
+
 # ── squish search ─────────────────────────────────────────────────────────────
 
 def cmd_search(args):
@@ -2676,6 +2771,41 @@ def cmd_daemon(args):  # pragma: no cover
             _die(str(e))
 
 
+# model_type values that use Gemma 4's Per-Layer Embeddings (PLE) architecture.
+# PLE tensors get scaled by a runtime float multiplier before being added back
+# into the hidden state; standard INT4 quantization error is amplified by that
+# multiply, producing degenerate/garbage output (community-reported repeated-
+# token garbage). These tensor-name patterns must stay unquantized (FP16/BF16
+# passthrough) regardless of the requested compression --format.
+_GEMMA4_PLE_MODEL_TYPES = {"gemma4_unified", "gemma4"}
+_GEMMA4_PLE_PASSTHROUGH_PATTERNS = [
+    "per_layer_input_gate",
+    "per_layer_projection",
+    "embed_tokens_per_layer",
+    "per_layer_model_projection",
+]
+
+
+def _ple_safe_passthrough_patterns(model_dir: "Path") -> list[str]:
+    """Return PLE-safe passthrough patterns if model_dir is a Gemma 4 (PLE) model.
+
+    Reads config.json's ``model_type`` field. Returns an empty list for any
+    other architecture (or if config.json is missing/unreadable) so this is a
+    no-op for non-Gemma-4 models — no scope creep into unrelated quant paths.
+    """
+    cfg_path = model_dir / "config.json"
+    if not cfg_path.exists():
+        return []
+    try:
+        cfg = json.loads(cfg_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        _LOG.warning("Could not read config.json at %s for PLE detection: %s", cfg_path, exc)
+        return []
+    if cfg.get("model_type") in _GEMMA4_PLE_MODEL_TYPES:
+        return list(_GEMMA4_PLE_PASSTHROUGH_PATTERNS)
+    return []
+
+
 def cmd_compress(args):  # pragma: no cover
     """Compress a model directory to Squish npy-dir or .squizd format."""
     # ── Resolve explicit --format to bool flags for backward compat ──────────
@@ -2972,6 +3102,21 @@ def cmd_compress(args):  # pragma: no cover
 
     if not model_dir.exists():
         _die(f"Model directory not found: {model_dir}")
+
+    # ── Gemma 4 PLE-safe passthrough (architecture-specific, format-agnostic) ─
+    # Applies regardless of --format (int4, mixed_attn, etc.) since the PLE
+    # fragility is about the model's architecture, not the chosen compression
+    # scheme. Merge with any user- or format-supplied --passthrough patterns.
+    _ple_patterns = _ple_safe_passthrough_patterns(model_dir)
+    if _ple_patterns:
+        _existing_ple_pt = list(getattr(args, "passthrough", None) or [])
+        args.passthrough = _existing_ple_pt + [
+            p for p in _ple_patterns if p not in _existing_ple_pt
+        ]
+        print(
+            "  ⚠  Gemma 4 (PLE architecture) detected — auto-passthrough for "
+            f"{_ple_patterns} to avoid PLE-amplified quantization error."
+        )
 
     if args.output:
         output_dir = Path(args.output).expanduser()
@@ -7048,6 +7193,17 @@ Ollama drop-in:
     p_rm.add_argument("-y", "--yes", action="store_true",
                       help="Skip confirmation prompt")
     p_rm.set_defaults(func=cmd_rm, compressed_only=False, raw_only=False)  # pragma: no cover
+
+    p_push = sub.add_parser("push", help="Upload a local compressed model to Hugging Face")
+    p_push.add_argument("local_dir", help="Path to a local squish-compressed model directory")
+    p_push.add_argument("repo_id", help="Target HF repo id, e.g. squishai/gemma4-12b-int4")
+    p_push.add_argument("--private", action="store_true",
+                         help="Create/push to a private repo (default: public)")
+    p_push.add_argument("--commit-message", default=None,
+                         help="Commit message for the upload (default: 'Upload squished model')")
+    p_push.add_argument("--dry-run", action="store_true",
+                         help="Print what would be uploaded without making any network calls")
+    p_push.set_defaults(func=cmd_push, private=False)  # pragma: no cover
 
     p_search = sub.add_parser("search", help="Search the model catalog")
     p_search.add_argument("query", help="Search query (matched against ID, tags, params, description)")
