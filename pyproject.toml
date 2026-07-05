@@ -34,7 +34,16 @@ dependencies = [
     "uvicorn>=0.29",
     "sse-starlette>=1.8",
     "huggingface-hub>=0.23",
-    "transformers>=4.40",
+    # <5.13.0: transformers 5.13.0 tightened AutoTokenizer.register()'s type
+    # check (auto_factory.py's register() now requires config_class to have
+    # __module__, i.e. be a real class) in a way that breaks mlx-lm 0.31.3's
+    # own AutoTokenizer.register("NewlineTokenizer", fast_tokenizer_class=...)
+    # call in tokenizer_utils.py, which passes a string — an upstream mlx-lm
+    # bug, not something squish can fix here, but the resulting `import
+    # mlx_lm` crash breaks every mlx_lm-gated test. Confirmed: 5.12.1 works,
+    # 5.13.0 reproduces the crash exactly. Revisit this pin once mlx-lm ships
+    # a fixed release upstream.
+    "transformers>=4.40,<5.13.0",
     "zstandard>=0.22",
     "rich>=13.0",
     "orjson>=3.11.9",
