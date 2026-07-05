@@ -85,6 +85,7 @@ def collect_activation_scales_streaming(
     verbose: bool = True,
     min_scale: float = 0.0,
     model_family: str | None = None,
+    delete_source: bool = False,
 ) -> dict | None:
     """Sequential (layer-at-a-time) counterpart to
     :func:`squish.quant.awq.collect_activation_scales`.
@@ -94,11 +95,33 @@ def collect_activation_scales_streaming(
     sequences, in memory at once — unlike the full-load path, this works
     regardless of whether the model fits in unified memory.
 
+    If ``delete_source`` is set, each raw shard file is deleted once every
+    layer that needs it has finished calibrating — mirroring
+    ``process_weights_streaming``'s ``--delete-source`` safety rule
+    (Wave 139/141): a shard is only removed after its last consumer has
+    successfully completed, using :meth:`ShardIndex.shard_to_layers` to
+    know when that point is reached. A shard shared between embed_tokens
+    and layer 0 (shard boundaries don't always align with layer
+    boundaries) is handled correctly: embed_tokens' one-time read happens
+    before the layer loop, so by the time layer 0 finishes, the shard has
+    no remaining consumers. Deletion failures are logged as warnings, not
+    raised — losing cleanup for one shard isn't a reason to fail an
+    otherwise-successful calibration run.
+
     Returns the same ``layer_name -> np.ndarray`` scale dict contract as
     the full-load function, or ``None`` if the architecture doesn't
     resolve to the standard dense block adapter (the caller must fall
     back to plain non-AWQ quantization in that case, not treat this as a
     hard error).
+
+    Note for callers wiring this into a CLI: with ``delete_source=True``,
+    an early ``None`` return (unsupported block kind found partway through)
+    can still leave some already-processed layers' shards deleted — those
+    layers' scales are simply discarded along with everything else, but
+    the raw shards backing them are genuinely gone. This mirrors
+    ``process_weights_streaming``'s own documented tradeoff: a caller that
+    falls back to plain quantization after a ``None`` here must re-pull
+    the model first if any raw shards were already reclaimed.
     """
     import mlx.core as mx
     import mlx.nn as nn
@@ -145,6 +168,32 @@ def collect_activation_scales_streaming(
 
     hidden_states = [mx.array(embed_table[ids][None, :, :]) for ids in sample_ids]
     del embed_table
+
+    # ── Delete-as-you-go bookkeeping: remaining layer-consumers per shard ──
+    # embed_tokens' read above already happened, so a shard with no layer
+    # consumers left (never appears in shard_to_layers) is safe to delete
+    # right now; a shard shared with layer 0+ is deferred to the per-layer
+    # loop below, which correctly sees it as having no remaining consumers
+    # once its last layer finishes.
+    shards_deleted = 0
+    bytes_reclaimed = 0
+    shard_remaining_layers = shard_index.shard_to_layers()
+    if delete_source and embed_shard not in shard_remaining_layers:
+        try:
+            shard_path = model_dir / embed_shard
+            shard_bytes = shard_path.stat().st_size
+            shard_path.unlink()
+            shards_deleted += 1
+            bytes_reclaimed += shard_bytes
+            if verbose:
+                print(f"    [delete-source] removed {embed_shard} (embed_tokens-only shard)")
+        except OSError as exc:
+            _LOG.warning(
+                "Could not delete raw shard %s after embed_tokens read: %s "
+                "(calibration is unaffected; disk space was not reclaimed)",
+                embed_shard,
+                exc,
+            )
 
     if verbose:
         print(
@@ -207,10 +256,48 @@ def collect_activation_scales_streaming(
         hidden_states = next_hidden_states
         del layer_raw, block, hooks, orig_classes
 
+        # ── Delete-as-you-go: drop each needed shard once this layer (its
+        # last remaining consumer, or one of several) has finished. Runs
+        # only after scales for this layer are already merged into `scales`
+        # above — a shard is never removed until its calibration
+        # contribution is confirmed captured.
+        if delete_source:
+            for shard_name in needed_shards:
+                consumers = shard_remaining_layers.get(shard_name)
+                if consumers is None:
+                    continue  # not a layer-owned shard (shouldn't happen here)
+                consumers.discard(layer_idx)
+                if consumers:
+                    continue  # another later layer still needs this shard
+                try:
+                    shard_path = model_dir / shard_name
+                    shard_bytes = shard_path.stat().st_size
+                    shard_path.unlink()
+                    shards_deleted += 1
+                    bytes_reclaimed += shard_bytes
+                    if verbose:
+                        print(
+                            f"    [delete-source] removed {shard_name} "
+                            f"(last needed by layer {layer_idx})"
+                        )
+                except OSError as exc:
+                    _LOG.warning(
+                        "Could not delete raw shard %s after layer %d: %s "
+                        "(calibration is unaffected; disk space was not reclaimed)",
+                        shard_name,
+                        layer_idx,
+                        exc,
+                    )
+
         if verbose and (layer_idx + 1) % 8 == 0:
             print(f"    [{layer_idx + 1}/{shard_index.num_layers}] layers calibrated …")
 
     if verbose:
         print(f"  [streaming-AWQ] computed AWQ scales for {len(scales)} layers")
+        if delete_source:
+            print(
+                f"  [streaming-AWQ] delete-source: {shards_deleted} raw shard(s) removed, "
+                f"{bytes_reclaimed / 1e9:.2f} GB reclaimed"
+            )
 
     return scales
