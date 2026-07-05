@@ -6,37 +6,35 @@ too large for local RAM.
 
 This pins the core decision logic in `cmd_quantize_remote`
 (squish/cli.py) with every network- and MLX-touching stage mocked at its
-import boundary:
+import boundary. As of Wave 147a/147b, there are three distinct modes
+with three distinct downstream mechanisms:
 
-- when the model fits comfortably in RAM, full-load AWQ
-  (`collect_activation_scales` via `mlx_lm.load`) is used
-- when it doesn't (but the model is sharded), layer-at-a-time streaming
-  AWQ (`collect_activation_scales_streaming`) is used instead, with
-  `delete_source=False` during calibration (raw shards must survive
-  calibration -- the quantization pass right after still needs them)
-- `--no-awq` skips calibration entirely
-- a model with no shard index that also doesn't fit in RAM has no path
-  to AWQ at all and falls back to plain quantization rather than
-  guessing or crashing
-- regardless of which calibration path ran, `process_weights_streaming`
-  is always invoked exactly once, with `delete_source=True` -- the
-  caller (a human running the command) never needs to know which
-  calibration strategy was used to get a working, space-bounded result
-- `--push` delegates to the existing `cmd_push` machinery with the
-  freshly quantized output directory
+- **full** (fits in RAM): `mlx_lm.load` needs every weight anyway, so
+  the whole raw model is downloaded up front, then
+  `process_weights_streaming(..., delete_source=True)` quantizes it.
+- **streaming** (doesn't fit, but sharded): never downloads the full raw
+  model. `collect_activation_scales_streaming` fetches shards on demand
+  and deletes them as it goes (`delete_source=True`, `hf_repo`/`token`
+  passed through) to compute AWQ scales, then
+  `pull_and_quantize_shard_by_shard` fetches every shard *again* to
+  actually quantize it with those scales applied -- the shard sequencing
+  differs from `none` mode only in that it carries `awq_scales`.
+- **none** (`--no-awq`, or too large for RAM with no shard index):
+  `pull_and_quantize_shard_by_shard` alone, `awq_scales=None`.
 
-As of Wave 147a, the AWQ-mode decision itself is made from Hugging Face
-API metadata alone (`scan_hf_repo_metadata`'s total_size_bytes for the
-RAM-fit estimate, `list_repo_files` for shard-index presence) -- no
-bytes are downloaded before the decision is made. Only the "full" and
-"streaming" AWQ modes then download the whole raw model up front (via
-`_download_source_for_quantize_remote`); the "none" mode is Wave 147a's
-true per-shard streaming pull and never downloads it at all (covered by
-tests/test_wave147a_streaming_pull.py, not here).
+`--push` delegates to the existing `cmd_push` machinery with the
+freshly quantized output directory in every mode.
+
+The AWQ-mode decision itself is made from Hugging Face API metadata
+alone (`scan_hf_repo_metadata`'s total_size_bytes for the RAM-fit
+estimate, `list_repo_files` for shard-index presence) -- no weight
+bytes are downloaded before the decision is made.
 
 Downloads, real model loads, and the real quantization pass are all
 mocked -- this is a control-flow/wiring test, not an accuracy test
-(Wave 145 already covers calibration fidelity against a real model).
+(Wave 145 already covers calibration fidelity against a real model, and
+tests/test_wave147a_streaming_pull.py covers the streaming-pull
+mechanism itself against a real synthetic model).
 """
 
 from __future__ import annotations
@@ -101,9 +99,11 @@ class _PatchSet:
     `model_size_gb` controls `scan_hf_repo_metadata`'s `total_size_bytes`
     (peak full-load AWQ RAM = model_size_gb * 2.0 + 2.0), and
     `is_sharded` controls whether `list_repo_files` reports
-    `model.safetensors.index.json`. Only once a mode requiring raw
-    shards ("full"/"streaming") is chosen does the code download
-    anything or call `load_shard_index` on the downloaded directory.
+    `model.safetensors.index.json`. `fetch_repo_metadata` and
+    `load_shard_index` run for real (against the already-mocked
+    `snapshot_download`/`scan_*`/`list_repo_files`) since they're cheap,
+    real wiring, not the thing under test -- only the top-level
+    calibration/quantization functions are mocked wholesale.
     """
 
     def __init__(self, tmp_path, monkeypatch, *, total_ram_gb, free_ram_gb, is_sharded,
@@ -112,7 +112,7 @@ class _PatchSet:
         self.out_dir = self.model_dir.parent / dir_name.replace("-bf16", "-int4")
         # A plain value (not object()) so two independently-constructed
         # _PatchSets compare equal by value -- needed by the test that checks
-        # both AWQ strategies converge on the same downstream call shape.
+        # multiple modes converge on the same downstream call shape.
         self.fake_scales = {"model.layers.0.self_attn.q_proj": "fake-scale-vector"}
 
         monkeypatch.setattr(cli, "_MODELS_DIR", tmp_path)
@@ -173,6 +173,15 @@ class _PatchSet:
         for p in self._patches:
             p.stop()
 
+    def snapshot_download_ever_did_a_full_fetch(self) -> bool:
+        """True if any snapshot_download call would have fetched weight
+        shards (i.e. wasn't restricted to metadata-only via
+        ignore_patterns=["*.safetensors"])."""
+        return any(
+            call.kwargs.get("ignore_patterns") != ["*.safetensors"]
+            for call in self.snapshot_download.call_args_list
+        )
+
 
 class TestQuantizeRemoteAWQModeSelection:
     def test_model_fits_in_ram_uses_full_load_awq(self, tmp_path, monkeypatch):
@@ -190,8 +199,11 @@ class TestQuantizeRemoteAWQModeSelection:
             _, kwargs = p.process_weights.call_args
             assert kwargs["awq_scales"] == p.fake_scales
             assert kwargs["delete_source"] is True
+            assert p.snapshot_download_ever_did_a_full_fetch(), (
+                "full-load AWQ needs mlx_lm.load, which needs every shard resident"
+            )
 
-    def test_model_too_large_for_ram_uses_streaming_awq(self, tmp_path, monkeypatch):
+    def test_model_too_large_for_ram_uses_streaming_awq_never_fully_downloaded(self, tmp_path, monkeypatch):
         with _PatchSet(
             tmp_path, monkeypatch,
             total_ram_gb=16.0, free_ram_gb=4.0, is_sharded=True,
@@ -201,43 +213,52 @@ class TestQuantizeRemoteAWQModeSelection:
 
             p.mlx_load.assert_not_called()
             p.collect_full.assert_not_called()
-            p.streaming_pull.assert_not_called()
+            p.process_weights.assert_not_called()
+
             p.collect_streaming.assert_called_once()
             _, kwargs = p.collect_streaming.call_args
-            assert kwargs["delete_source"] is False, (
-                "streaming calibration must not delete shards -- the "
-                "quantization pass right after still needs them"
+            assert kwargs["delete_source"] is True, (
+                "streaming AWQ (Wave 147b) fetches shards on demand and must "
+                "delete them as it goes, or peak disk isn't bounded"
             )
-            p.process_weights.assert_called_once()
-            _, kwargs = p.process_weights.call_args
-            assert kwargs["awq_scales"] == p.fake_scales
-            assert kwargs["delete_source"] is True
+            assert kwargs["hf_repo"] == "mlx-community/Fake-Model-bf16"
 
-    def test_caller_does_not_need_to_know_which_path_ran(self, tmp_path, monkeypatch):
-        """Both AWQ strategies converge on the same downstream call shape --
-        the whole point of this command is that the caller shouldn't have
-        to pick a strategy themselves."""
+            p.streaming_pull.assert_called_once()
+            _, kwargs = p.streaming_pull.call_args
+            assert kwargs["awq_scales"] == p.fake_scales
+
+            assert not p.snapshot_download_ever_did_a_full_fetch(), (
+                "streaming AWQ (Wave 147b) must never fully download the raw model — "
+                "every snapshot_download call must be metadata-only"
+            )
+
+    def test_none_and_streaming_modes_both_use_the_disk_bounded_streaming_pull(self, tmp_path, monkeypatch):
+        """The two non-full-load modes converge on the same downstream
+        mechanism (pull_and_quantize_shard_by_shard) -- streaming AWQ
+        differs from no-AWQ only in the awq_scales it carries, not in
+        which function does the actual quantizing."""
         results = []
-        for i, (total_ram_gb, model_size_gb) in enumerate([(64.0, 4.0), (16.0, 40.0)]):
+        for i, (no_awq, model_size_gb) in enumerate([(True, 4.0), (False, 40.0)]):
             with _PatchSet(
                 tmp_path, monkeypatch,
-                total_ram_gb=total_ram_gb, free_ram_gb=4.0, is_sharded=True,
+                total_ram_gb=16.0, free_ram_gb=4.0, is_sharded=True,
                 model_size_gb=model_size_gb, dir_name=f"Fake-Model-{i}-bf16",
             ) as p:
-                cli.cmd_quantize_remote(_args(model=f"mlx-community/Fake-Model-{i}-bf16"))
-                _, kwargs = p.process_weights.call_args
-                results.append((kwargs["awq_scales"], kwargs["delete_source"], kwargs["use_int4"]))
+                cli.cmd_quantize_remote(_args(model=f"mlx-community/Fake-Model-{i}-bf16", no_awq=no_awq))
+                p.streaming_pull.assert_called_once()
+                p.process_weights.assert_not_called()
+                _, kwargs = p.streaming_pull.call_args
+                results.append(kwargs["use_int4"])
 
-        assert results[0] == results[1]
+        assert results[0] == results[1] is True
 
-    def test_no_awq_flag_routes_to_streaming_pull_not_full_download(self, tmp_path, monkeypatch):
+    def test_no_awq_flag_routes_to_streaming_pull_with_no_scales(self, tmp_path, monkeypatch):
         with _PatchSet(
             tmp_path, monkeypatch,
             total_ram_gb=64.0, free_ram_gb=40.0, is_sharded=True,
         ) as p:
             cli.cmd_quantize_remote(_args(no_awq=True))
 
-            p.snapshot_download.assert_not_called()
             p.mlx_load.assert_not_called()
             p.collect_full.assert_not_called()
             p.collect_streaming.assert_not_called()
@@ -245,8 +266,10 @@ class TestQuantizeRemoteAWQModeSelection:
             p.streaming_pull.assert_called_once()
             _, kwargs = p.streaming_pull.call_args
             assert kwargs["use_int4"] is True
+            assert kwargs["awq_scales"] is None
+            assert not p.snapshot_download_ever_did_a_full_fetch()
 
-    def test_too_large_for_ram_and_not_sharded_routes_to_streaming_pull(self, tmp_path, monkeypatch):
+    def test_too_large_for_ram_and_not_sharded_routes_to_streaming_pull_with_no_scales(self, tmp_path, monkeypatch):
         """No shard index means a single-file checkpoint -- streaming AWQ
         has nothing to stream over, so this must degrade to the no-AWQ
         streaming-pull path rather than crash or silently guess."""
@@ -257,12 +280,13 @@ class TestQuantizeRemoteAWQModeSelection:
         ) as p:
             cli.cmd_quantize_remote(_args())
 
-            p.snapshot_download.assert_not_called()
             p.mlx_load.assert_not_called()
             p.collect_full.assert_not_called()
             p.collect_streaming.assert_not_called()
             p.process_weights.assert_not_called()
             p.streaming_pull.assert_called_once()
+            _, kwargs = p.streaming_pull.call_args
+            assert kwargs["awq_scales"] is None
 
 
 class TestQuantizeRemotePushIntegration:
