@@ -335,5 +335,58 @@ of magnitude faster and using 15× less RAM during the load phase** (against a t
 
 ---
 
+## 11. Quantizing models larger than local RAM
+
+`squish compress`'s streaming path (`process_weights_streaming` in
+`squish/convert.py`) processes one `.safetensors` shard at a time — load,
+quantize, write, free — so peak RAM stays bounded to roughly one shard
+(a few GB) regardless of total model size. **This already works today,
+without AWQ, for a model far larger than local RAM** — a 70B+ model
+quantizes fine on a 16 GB machine as long as `--awq-scales` is never
+passed (or `--no-awq` is set explicitly to document that choice).
+
+Verified: real bf16 shards fail `safetensors.numpy.load_file` with a
+`TypeError` (numpy has no native bfloat16 dtype) and fall through to the
+documented MLX-CPU fallback, which forces `mx.set_default_device(mx.cpu)`
+before loading and restores the previous device afterward. Everything
+downstream — `quantize_tensor` and every quantization backend it
+dispatches to (INT4/INT8, NF4, VPTQ, QuIP#, AQLM, MiLo INT3, INT2-WOQ,
+super-weight scanning) — operates on plain numpy arrays with zero MLX
+involvement. Metal/GPU memory is never touched by this path at any model
+size.
+
+**AWQ calibration is the actual wall**, and it's a different one:
+`squish/quant/awq.py`'s `collect_activation_scales` calls
+`mlx_lm.load(model_dir)`, loading the *entire* bf16 model into unified
+memory to run real forward passes and capture per-channel activation
+statistics. There is currently no partial-load path for this — a model
+whose bf16 weights exceed available unified memory cannot go through AWQ
+calibration today, independent of disk space or anything about the
+streaming compression path above. A sequential, layer-at-a-time
+calibration rework that removes this limit is tracked separately (not
+part of this section) and isn't available yet for bigger-than-RAM models.
+
+**Disk, not RAM, is the binding constraint for the non-AWQ path** — the
+raw model and the compressed output currently have to coexist on disk
+(see `--delete-source`, which reclaims each raw shard's space immediately
+after it's quantized, for reducing that overlap).
+
+**Pre-flight disk estimate is size-safe at any realistic scale.** The
+disk pre-flight check (`_estimate_output_bytes` / `_get_free_bytes`) sums
+real file sizes as Python `int`s (arbitrary precision — no fixed-width
+overflow) and applies a flat per-format multiplier; verified this stays
+exact even at a simulated 400B-parameter model's byte count (well under
+float64's 2^53 exact-integer ceiling), so there's no size-class cliff to
+worry about as models grow.
+
+| | Non-AWQ streaming quantization | AWQ-calibrated quantization |
+|---|---|---|
+| Works today for models > local RAM? | Yes | No — needs the sequential-calibration rework |
+| Peak RAM | ~1 shard (a few GB), any model size | Full bf16 model (`mlx_lm.load()`) |
+| Peak disk | Raw model + compressed output (or less, with `--delete-source`) | Same |
+| Accuracy | Plain round-to-nearest; a modest hit vs. AWQ, most noticeable at INT3/INT2 | Better, especially at low bit-widths |
+
+---
+
 *Squish is source-available under [BUSL-1.1](https://github.com/konjoai/squish/blob/main/LICENSE): free for personal and
 non-production use.*

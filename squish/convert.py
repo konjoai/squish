@@ -22,10 +22,12 @@ Usage:
         [--outlier-threshold 20.0] \\
         [--verbose]
 """
+
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import shutil
 import sys
 import threading
@@ -33,6 +35,8 @@ import time
 from pathlib import Path
 
 import numpy as np
+
+_LOG = logging.getLogger("squish.convert")
 
 
 # ---------------------------------------------------------------------------
@@ -77,41 +81,49 @@ from squish.quant.quantizer import (  # noqa: E402
 # ---------------------------------------------------------------------------
 def _get_nf4():
     from squish.quant.nf4_quant import quantize_nf4
+
     return quantize_nf4
 
 
 def _get_vptq():
     from squish.quant.vptq import VPTQConfig, VPTQQuantizer
+
     return VPTQConfig, VPTQQuantizer
 
 
 def _get_dfloat11():
     from squish.quant.dfloat11 import DFloat11Compressor, DFloat11Config
+
     return DFloat11Config, DFloat11Compressor
 
 
 def _get_quip():
     from squish.quant.quip_sharp import QuIPSharpConfig, QuIPSharpQuantizer
+
     return QuIPSharpConfig, QuIPSharpQuantizer
 
 
 def _get_aqlm():
     from squish.quant.aqlm import AQLMConfig, AQLMQuantizer
+
     return AQLMConfig, AQLMQuantizer
 
 
 def _get_milo():
     from squish.quant.milo_quant import MiLoConfig, MiLoQuantizer
+
     return MiLoConfig, MiLoQuantizer
 
 
 def _get_woq():
     from squish.quant.weight_only_int2 import Int2QuantConfig, WeightOnlyInt2Quant
+
     return Int2QuantConfig, WeightOnlyInt2Quant
 
 
 # ---------------------------------------------------------------------------
 # ─── Disk-space guards ───────────────────────────────────────────────────────
+
 
 def _get_free_bytes(path: Path) -> int:
     """Return free bytes on the filesystem that contains *path*.
@@ -130,10 +142,10 @@ def _get_free_bytes(path: Path) -> int:
 _BPW_MULTIPLIERS: dict[str, float] = {
     # Multiplier relative to BF16 safetensors file size (2 bytes/weight).
     # Each value includes a 40 % safety buffer above the empirical ratio.
-    "int3": 0.38,   # ~4.37 bpw → (4.37/16) ≈ 0.27 actual
-    "int2": 0.26,   # ~3.0  bpw → (3.0/16)  ≈ 0.19 actual
-    "int4": 0.39,   # ~4.5  bpw → (4.5/16)  ≈ 0.28 actual
-    "int8": 1.32,   # ~INT8 with scale tensors ≈ 1.1× BF16
+    "int3": 0.38,  # ~4.37 bpw → (4.37/16) ≈ 0.27 actual
+    "int2": 0.26,  # ~3.0  bpw → (3.0/16)  ≈ 0.19 actual
+    "int4": 0.39,  # ~4.5  bpw → (4.5/16)  ≈ 0.28 actual
+    "int8": 1.32,  # ~INT8 with scale tensors ≈ 1.1× BF16
 }
 
 
@@ -177,6 +189,7 @@ def _clear_line() -> None:
 # Spinner
 # ---------------------------------------------------------------------------
 
+
 class Spinner:
     """
     Background-thread snake spinner.
@@ -190,15 +203,16 @@ class Spinner:
     When stdout is not a TTY (e.g. piped to tee), all \r-based overwriting is
     suppressed to avoid rendering artifacts in VS Code / other terminals.
     """
+
     _FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     def __init__(self, label: str = "", interval: float = 0.1):
-        self._label    = label
+        self._label = label
         self._interval = interval
-        self._suffix   = ""
+        self._suffix = ""
         self._stop_evt = threading.Event()
-        self._is_tty   = sys.stdout.isatty()
-        self._thread   = threading.Thread(target=self._spin, daemon=True)
+        self._is_tty = sys.stdout.isatty()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
 
     def _spin(self):
         if not self._is_tty:
@@ -208,13 +222,15 @@ class Spinner:
         i = 0  # pragma: no cover
         while not self._stop_evt.is_set():  # pragma: no cover
             frame = self._FRAMES[i % len(self._FRAMES)]  # pragma: no cover
-            line  = f"\r  {frame}  {self._label}  {self._suffix}"  # pragma: no cover
+            line = f"\r  {frame}  {self._label}  {self._suffix}"  # pragma: no cover
             sys.stdout.write(line)  # pragma: no cover
             sys.stdout.flush()  # pragma: no cover
             self._stop_evt.wait(self._interval)  # pragma: no cover
             i += 1  # pragma: no cover
         # clear the spinner line
-        sys.stdout.write("\r" + " " * (len(self._label) + len(self._suffix) + 10) + "\r")  # pragma: no cover
+        sys.stdout.write(
+            "\r" + " " * (len(self._label) + len(self._suffix) + 10) + "\r"
+        )  # pragma: no cover
         sys.stdout.flush()  # pragma: no cover
 
     def update(self, suffix: str):
@@ -319,6 +335,7 @@ def quantize_tensor(
     if skip:
         if use_dfloat11:
             import pickle
+
             DFloat11Config, DFloat11Compressor = _get_dfloat11()
             cfg = DFloat11Config(use_rans=True, use_context=True)
             comp = DFloat11Compressor(cfg)
@@ -348,33 +365,56 @@ def quantize_tensor(
         quant = VPTQQuantizer(cfg)
         layer = quant.compress(flat)
         # Serialize codebooks and indices as numpy arrays
-        pri_cb_data = np.concatenate([
-            layer.primary_cb.centroids.reshape(-1),
-            np.array([layer.primary_cb.n_codebook_entries,
-                      layer.primary_cb.group_size,
-                      layer.primary_cb.n_fit_iters], dtype=np.float32),
-        ]).astype(np.float32)
+        pri_cb_data = np.concatenate(
+            [
+                layer.primary_cb.centroids.reshape(-1),
+                np.array(
+                    [
+                        layer.primary_cb.n_codebook_entries,
+                        layer.primary_cb.group_size,
+                        layer.primary_cb.n_fit_iters,
+                    ],
+                    dtype=np.float32,
+                ),
+            ]
+        ).astype(np.float32)
         res_cb_data = np.zeros(1, dtype=np.float32)
         res_idx_data = np.zeros(1, dtype=np.int64)
         if layer.residual_cb is not None:
-            res_cb_data = np.concatenate([
-                layer.residual_cb.centroids.reshape(-1),
-                np.array([layer.residual_cb.n_codebook_entries,
-                          layer.residual_cb.group_size,
-                          layer.residual_cb.n_fit_iters], dtype=np.float32),
-            ]).astype(np.float32)
+            res_cb_data = np.concatenate(
+                [
+                    layer.residual_cb.centroids.reshape(-1),
+                    np.array(
+                        [
+                            layer.residual_cb.n_codebook_entries,
+                            layer.residual_cb.group_size,
+                            layer.residual_cb.n_fit_iters,
+                        ],
+                        dtype=np.float32,
+                    ),
+                ]
+            ).astype(np.float32)
             res_idx_data = layer.residual_indices.astype(np.int64)
-        col_scales = layer.col_scales if layer.col_scales is not None else np.array([], dtype=np.float32)
+        col_scales = (
+            layer.col_scales if layer.col_scales is not None else np.array([], dtype=np.float32)
+        )
         return {
-            "__vq_idx":   layer.primary_indices.astype(np.int64),
-            "__vq_cb":    pri_cb_data,
-            "__vq_res":   res_idx_data,
+            "__vq_idx": layer.primary_indices.astype(np.int64),
+            "__vq_cb": pri_cb_data,
+            "__vq_res": res_idx_data,
             "__vq_rescb": res_cb_data,
-            "__vq_cols":  col_scales.astype(np.float32),
-            "__vq_meta":  np.array([flat.shape[0], flat.shape[1],
-                                    cfg.group_size, cfg.n_codebook_entries,
-                                    cfg.n_residual_entries], dtype=np.int64),
-            "__shape":    shape_arr,
+            "__vq_cols": col_scales.astype(np.float32),
+            "__vq_meta": np.array(
+                [
+                    flat.shape[0],
+                    flat.shape[1],
+                    cfg.group_size,
+                    cfg.n_codebook_entries,
+                    cfg.n_residual_entries,
+                ],
+                dtype=np.int64,
+            ),
+            "__shape": shape_arr,
         }
 
     # ── QuIP# E8 lattice quantization ────────────────────────────────────────
@@ -386,10 +426,10 @@ def quantize_tensor(
             else np.zeros((0,), dtype=np.float16)
         )
         return {
-            "__quip_e8":  layer.e8_indices,          # uint8  (N,)
-            "__quip_res": layer.residual_scales,      # float16 (N,)
-            "__quip_rot": rot,                        # float16 (d_in, d_in) or empty
-            "__shape":    shape_arr,
+            "__quip_e8": layer.e8_indices,  # uint8  (N,)
+            "__quip_res": layer.residual_scales,  # float16 (N,)
+            "__quip_rot": rot,  # float16 (d_in, d_in) or empty
+            "__shape": shape_arr,
         }
 
     # ── INT3: MiLo 3-bit + low-rank compensator ──────────────────────────────
@@ -397,11 +437,11 @@ def quantize_tensor(
         try:
             q_packed, scales, zeros, compensator = milo_quantizer.quantize(flat, name=name)
             return {
-                "__q3":    q_packed,         # uint8 3-bit packed
-                "__s3":    scales,           # float32 per-group scales
-                "__z3":    zeros,            # float32 per-group zeros
-                "__lra":   compensator.a,    # float32 low-rank A factor
-                "__lrb":   compensator.b,    # float32 low-rank B factor
+                "__q3": q_packed,  # uint8 3-bit packed
+                "__s3": scales,  # float32 per-group scales
+                "__z3": zeros,  # float32 per-group zeros
+                "__lra": compensator.a,  # float32 low-rank A factor
+                "__lrb": compensator.b,  # float32 low-rank B factor
                 "__shape": shape_arr,
             }
         except (RuntimeError, ValueError, TypeError, MemoryError) as _e:
@@ -412,9 +452,9 @@ def quantize_tensor(
         try:
             packed2, scale2, zero2 = woq_quantizer.quantize(flat)
             return {
-                "__q2":    packed2,   # uint8 pack-4 (2-bit per weight)
-                "__s2":    scale2,    # float32 per-group scales
-                "__z2":    zero2,     # float32 per-group zeros
+                "__q2": packed2,  # uint8 pack-4 (2-bit per weight)
+                "__s2": scale2,  # float32 per-group scales
+                "__z2": zero2,  # float32 per-group zeros
                 "__shape": shape_arr,
             }
         except (RuntimeError, ValueError, TypeError, MemoryError) as _e:
@@ -432,8 +472,8 @@ def quantize_tensor(
             # Serialise codebooks: flat array with header
             # Layout: [scale, float(codebook_size), float(group_size), cb0_vectors..., cb1_vectors..., ...]
             n_codebooks = cfg.n_codebooks
-            cb_size     = cfg.codebook_size
-            gs          = cfg.group_size
+            cb_size = cfg.codebook_size
+            gs = cfg.group_size
             header_size = 3  # scale, codebook_size, group_size
             cb_flat = np.empty(header_size + n_codebooks * cb_size * gs, dtype=np.float32)
             cb_flat[0] = aqlm_layer.scale
@@ -442,14 +482,20 @@ def quantize_tensor(
             offset = header_size
             for m in range(n_codebooks):
                 vecs = aqlm_layer.codebooks[m].vectors.reshape(-1)  # (cb_size * gs,)
-                cb_flat[offset: offset + len(vecs)] = vecs
+                cb_flat[offset : offset + len(vecs)] = vecs
                 offset += len(vecs)
             return {
-                "__aqlm_idx": aqlm_idx,    # uint16 (out, n_groups, n_codebooks)
-                "__aqlm_cb":  cb_flat,     # float32 (1 + n_codebooks*cb_size*gs,)
-                "__shape":    shape_arr,
+                "__aqlm_idx": aqlm_idx,  # uint16 (out, n_groups, n_codebooks)
+                "__aqlm_cb": cb_flat,  # float32 (1 + n_codebooks*cb_size*gs,)
+                "__shape": shape_arr,
             }
-        except (RuntimeError, ValueError, TypeError, MemoryError, ImportError) as _e:  # pragma: no cover
+        except (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            MemoryError,
+            ImportError,
+        ) as _e:  # pragma: no cover
             print(f"    [AQLM] Warning: failed on {name}: {_e} — falling back to INT8")
 
     # ── NF4: quantize directly from FP32 (no INT8 intermediate step) ──────────
@@ -458,7 +504,7 @@ def quantize_tensor(
         gs_nf4 = _pick_int4_group_size(flat.shape[1])
         packed, scales_nf4 = quantize_nf4(flat, group_size=gs_nf4)
         return {
-            "__nf4":   packed,      # uint8 nibble-packed  (n, d//2)
+            "__nf4": packed,  # uint8 nibble-packed  (n, d//2)
             "__s_nf4": scales_nf4,  # float32              (n, d//gs_nf4)
             "__shape": shape_arr,
         }
@@ -479,17 +525,17 @@ def quantize_tensor(
         # use_dfloat11 is a no-op for asymmetric INT4: zero_points are already
         # compact (per-group float32) and DFloat11 adds negligible benefit.
         return {
-            "__q4a":   packed,       # uint8 nibble-packed  (n, d//2)
-            "__s4a":   scales4,      # float32 per-group scales  (n, d//gs)
-            "__z4a":   zero_points,  # float32 per-group zero-points (n, d//gs)
+            "__q4a": packed,  # uint8 nibble-packed  (n, d//2)
+            "__s4a": scales4,  # float32 per-group scales  (n, d//gs)
+            "__z4a": zero_points,  # float32 per-group zero-points (n, d//gs)
             "__shape": shape_arr,
         }
 
     # ── INT8 (default) ────────────────────────────────────────────────────────
     result: QuantizationResult = quantize_embeddings(flat, group_size=64)
     return {
-        "__q": result.quantized,   # int8  (grouped-64 per default)
-        "__s": result.scales,      # float32 (n_rows, n_groups) or (n_rows,)
+        "__q": result.quantized,  # int8  (grouped-64 per default)
+        "__s": result.scales,  # float32 (n_rows, n_groups) or (n_rows,)
         "__shape": shape_arr,
     }
 
@@ -505,6 +551,7 @@ def load_mlx_weights_shard(shard_path: Path) -> dict:
     """
     try:
         from safetensors.numpy import load_file as st_load_numpy
+
         raw = st_load_numpy(str(shard_path))
         # safetensors.numpy returns {name: np.ndarray} — may be float16 or bfloat16
         out = {}
@@ -518,6 +565,7 @@ def load_mlx_weights_shard(shard_path: Path) -> dict:
             # that safetensors.numpy cannot parse.  Forcing mx.cpu avoids the
             # Metal GPU command-buffer timeout that occurs on large shards.
             import mlx.core as mx
+
             _prev_device = mx.default_device()
             mx.set_default_device(mx.cpu)  # type: ignore[arg-type]
             try:
@@ -533,11 +581,9 @@ def load_mlx_weights_shard(shard_path: Path) -> dict:
             # torch is available in the [linux] extras; convert to float32 numpy.
             import torch
             from safetensors.torch import load_file as st_load_torch
+
             raw_torch = st_load_torch(str(shard_path))
-            return {
-                name: t.to(torch.float32).numpy()
-                for name, t in raw_torch.items()
-            }
+            return {name: t.to(torch.float32).numpy() for name, t in raw_torch.items()}
 
 
 def load_mlx_weights(model_dir: Path) -> dict:
@@ -655,9 +701,15 @@ def process_weights_streaming(
             f"estimated output ~{_estimated_bytes / 1e9:.1f} GB  ✓"
         )
 
-    manifest  = {}   # original_name → safe_key
-    stats     = {"n_quantized": 0, "n_passthrough": 0,
-                 "orig_f32_bytes": 0, "compressed_bytes": 0}
+    manifest = {}  # original_name → safe_key
+    stats = {
+        "n_quantized": 0,
+        "n_passthrough": 0,
+        "orig_f32_bytes": 0,
+        "compressed_bytes": 0,
+        "shards_deleted": 0,
+        "source_bytes_reclaimed": 0,
+    }
     total_tensors = 0
     completed_shards: list[str] = []
     freed_bytes = 0
@@ -671,6 +723,7 @@ def process_weights_streaming(
     if awq_scales:
         try:
             from squish.quant.awq import prepare_awq_application
+
             _awq_proj_apply, _awq_ln_apply = prepare_awq_application(awq_scales)
         except ImportError:
             pass
@@ -679,25 +732,29 @@ def process_weights_streaming(
     milo_quantizer = None
     if use_int3:
         MiLoConfig, MiLoQuantizer = _get_milo()
-        milo_quantizer = MiLoQuantizer(MiLoConfig(
-            target_bits=3,
-            max_rank=int3_max_rank,
-            min_rank=2,
-            group_size=int3_group_size,
-            snr_threshold_db=35.0,
-            adaptive_rank=True,
-        ))
+        milo_quantizer = MiLoQuantizer(
+            MiLoConfig(
+                target_bits=3,
+                max_rank=int3_max_rank,
+                min_rank=2,
+                group_size=int3_group_size,
+                snr_threshold_db=35.0,
+                adaptive_rank=True,
+            )
+        )
         print(f"  INT3-MiLo: group_size={int3_group_size}, max_rank={int3_max_rank}")
 
     # ── Build INT2 (WeightOnlyInt2Quant) quantizer once ───────────────────────
     woq_quantizer = None
     if use_int2:
         Int2QuantConfig, WeightOnlyInt2Quant = _get_woq()
-        woq_quantizer = WeightOnlyInt2Quant(Int2QuantConfig(
-            group_size=int2_group_size,
-            symmetric=False,
-            clip_threshold=0.99,
-        ))
+        woq_quantizer = WeightOnlyInt2Quant(
+            Int2QuantConfig(
+                group_size=int2_group_size,
+                symmetric=False,
+                clip_threshold=0.99,
+            )
+        )
         print(f"  INT2-WOQ: group_size={int2_group_size}, asymmetric")
 
     # ── Build QuIP# quantizer once; shared RNG advances across all tensors ───
@@ -713,10 +770,13 @@ def process_weights_streaming(
             SuperWeightCalibrator,
             SuperWeightConfig,
         )
-        _sw_calibrator = SuperWeightCalibrator(SuperWeightConfig(
-            threshold=100.0,
-            threshold_1d=1e9,   # 1D tensors (biases, layernorms) don't need INT4 super-weight protection
-        ))
+
+        _sw_calibrator = SuperWeightCalibrator(
+            SuperWeightConfig(
+                threshold=100.0,
+                threshold_1d=1e9,  # 1D tensors (biases, layernorms) don't need INT4 super-weight protection
+            )
+        )
 
     for shard_idx, shard in enumerate(shard_files, 1):
         print(f"\n  [{shard_idx}/{len(shard_files)}] {shard.name}")
@@ -731,7 +791,7 @@ def process_weights_streaming(
             if sw_tensor_names:
                 n_sw = len(sw_tensor_names)
                 listed = ", ".join(sorted(sw_tensor_names)[:4])
-                overflow = f" (+{n_sw-4} more)" if n_sw > 4 else ""
+                overflow = f" (+{n_sw - 4} more)" if n_sw > 4 else ""
                 print(f"    [super-weight] protecting {n_sw} tensor(s) as FP16: {listed}{overflow}")
 
         sp = Spinner(f"Shard {shard_idx}/{len(shard_files)}  ({shard_tensors} tensors)").start()
@@ -745,7 +805,10 @@ def process_weights_streaming(
                 arr_f32 = _apply_awq_single(name, arr_f32, _awq_proj_apply, _awq_ln_apply)
 
             sub = quantize_tensor(
-                name, arr_f32, outlier_threshold, passthrough_patterns,
+                name,
+                arr_f32,
+                outlier_threshold,
+                passthrough_patterns,
                 use_int4=use_int4,
                 use_nf4=use_nf4,
                 use_vptq=use_vptq,
@@ -781,7 +844,7 @@ def process_weights_streaming(
                 for sfx in sub
                 if not sfx.endswith("__shape")
             )
-            stats["orig_f32_bytes"]   += orig_bytes
+            stats["orig_f32_bytes"] += orig_bytes
             stats["compressed_bytes"] += comp_bytes
 
             if "__pt" in sub or "__pt_df11" in sub:
@@ -865,6 +928,8 @@ def process_weights_streaming(
     print(f"\n  Total tensors: {total_tensors}")
     if delete_source:
         print(f"  Total raw disk freed: {freed_bytes / 1e9:.1f} GB")
+        stats["shards_deleted"] = len(completed_shards)
+        stats["source_bytes_reclaimed"] = freed_bytes
     return stats
 
 
@@ -931,8 +996,23 @@ def main():
         metavar="DIR",
         default=None,
         help="Directory of .awq.npy scale files produced by 'python3 -m squish.quant.awq'. "
-             "When provided, AWQ scales are applied to each weight tensor before "
-             "quantization for improved INT8 accuracy.",
+        "When provided, AWQ scales are applied to each weight tensor before "
+        "quantization for improved INT8 accuracy.",
+    )
+    ap.add_argument(
+        "--no-awq",
+        action="store_true",
+        dest="no_awq",
+        help="Explicitly skip AWQ calibration. A no-op today (simply omitting "
+        "--awq-scales already skips it) — this flag exists so the choice is "
+        "visible in scripts/docs rather than an implicit default absence. "
+        "AWQ calibration (python3 -m squish.quant.awq) requires the entire "
+        "bf16 model resident in unified memory via mlx_lm.load(); this "
+        "streaming compression path never does, so quantizing a model "
+        "larger than local RAM already works today as long as this is set "
+        "(or --awq-scales is simply never passed). See "
+        "docs/ARCHITECTURE.md's 'Quantizing models larger than local RAM' "
+        "section.",
     )
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument(
@@ -940,17 +1020,17 @@ def main():
         action="store_true",
         default=False,
         help="Use INT4 nibble-packed quantization instead of INT8.  Halves disk usage "
-             "(~1.5 GB for 1.5B vs ~2.9 GB INT8) at ≤2%% accuracy delta.  "
-             "Requires squish_quant Rust extension (built with maturin).  "
-             "Recommended for 1.5B models where every GB matters.",
+        "(~1.5 GB for 1.5B vs ~2.9 GB INT8) at ≤2%% accuracy delta.  "
+        "Requires squish_quant Rust extension (built with maturin).  "
+        "Recommended for 1.5B models where every GB matters.",
     )
     ap.add_argument(
         "--int3",
         action="store_true",
         default=False,
         help="Use MiLo INT3 + low-rank compensator (~4.4 bpw, 73%% of INT4 size).  "
-             "Best quality-vs-size for memory-constrained hardware (e.g. M3 16GB).  "
-             "Pure numpy — no Rust extension required.",
+        "Best quality-vs-size for memory-constrained hardware (e.g. M3 16GB).  "
+        "Pure numpy — no Rust extension required.",
     )
     ap.add_argument(
         "--int3-group-size",
@@ -973,8 +1053,8 @@ def main():
         action="store_true",
         default=False,
         help="Use WeightOnlyInt2Quant pack-4 asymmetric 2-bit (~3 bpw).  "
-             "Smallest on-disk format; best for extreme memory constraints.  "
-             "Pure numpy — no Rust extension required.",
+        "Smallest on-disk format; best for extreme memory constraints.  "
+        "Pure numpy — no Rust extension required.",
     )
     ap.add_argument(
         "--int2-group-size",
@@ -989,15 +1069,15 @@ def main():
         action="store_true",
         default=False,
         help="Use NF4 (NormalFloat-4) quantization.  Better SNR than INT4 under "
-             "Gaussian weight distribution — exact QLoRA codebook from Dettmers et al. "
-             "(arXiv:2305.14314).  ~4 bpw, ~0.2 dB better SNR than INT4.",
+        "Gaussian weight distribution — exact QLoRA codebook from Dettmers et al. "
+        "(arXiv:2305.14314).  ~4 bpw, ~0.2 dB better SNR than INT4.",
     )
     ap.add_argument(
         "--vptq",
         action="store_true",
         default=False,
         help="Use VPTQ vector quantization (arXiv:2409.17066, NeurIPS 2025).  "
-             "~3 bpw with near-INT4 quality.  Slower to compress but best ratio.",
+        "~3 bpw with near-INT4 quality.  Slower to compress but best ratio.",
     )
     ap.add_argument(
         "--vptq-codebook-size",
@@ -1018,24 +1098,24 @@ def main():
         action="store_true",
         default=False,
         help="Apply DFloat11 lossless entropy compression with rANS + context model "
-             "to passthrough tensors and INT4 scales.  ~0.5-1 additional bpw savings "
-             "over raw quantization.  Zero quality impact (lossless).",
+        "to passthrough tensors and INT4 scales.  ~0.5-1 additional bpw savings "
+        "over raw quantization.  Zero quality impact (lossless).",
     )
     ap.add_argument(
         "--ultra",
         action="store_true",
         default=False,
         help="Ultra compression mode: enables --nf4 --dfloat11 and maximises entropy "
-             "coding.  Right at the near-lossless INT4-class compression limit.",
+        "coding.  Right at the near-lossless INT4-class compression limit.",
     )
     ap.add_argument(
         "--quip",
         action="store_true",
         default=False,
         help="Use QuIP# trellis-coded E8 lattice quantization (arXiv:2402.04396).  "
-             "Each 8-D weight block is projected onto one of 256 unit-sphere E8 "
-             "codewords plus a per-block float16 scale.  Enables incoherence "
-             "preprocessing via random Hadamard rotation.  ~2-3 bpw effective.",
+        "Each 8-D weight block is projected onto one of 256 unit-sphere E8 "
+        "codewords plus a per-block float16 scale.  Enables incoherence "
+        "preprocessing via random Hadamard rotation.  ~2-3 bpw effective.",
     )
     ap.add_argument(
         "--quip-bits",
@@ -1050,8 +1130,8 @@ def main():
         action="store_true",
         default=False,
         help="Use AQLM (Additive Quantization of Language Models, ICML 2024).  "
-             "Additive codebook lookup achieves ~2-bit effective precision with "
-             "beam-search calibration.  Pure numpy — no GPU required.",
+        "Additive codebook lookup achieves ~2-bit effective precision with "
+        "beam-search calibration.  Pure numpy — no GPU required.",
     )
     ap.add_argument(
         "--aqlm-codebooks",
@@ -1072,10 +1152,10 @@ def main():
         action="store_true",
         default=False,
         help="Protect super-weight tensors as FP16 passthrough during INT4/NF4 "
-             "compression.  Scans each shard for extreme outlier elements "
-             "(element/row-mean ratio > 100) before quantizing; tensors containing "
-             "super-weights are stored losslessly to prevent coherence collapse.  "
-             "Recommended for all INT4 conversions.",
+        "compression.  Scans each shard for extreme outlier elements "
+        "(element/row-mean ratio > 100) before quantizing; tensors containing "
+        "super-weights are stored losslessly to prevent coherence collapse.  "
+        "Recommended for all INT4 conversions.",
     )
     ap.add_argument(
         "--int4-group-size",
@@ -1084,7 +1164,7 @@ def main():
         dest="int4_group_size",
         metavar="N",
         help="Override per-group size for INT4 quantization (must be a power of two "
-             "that divides the weight matrix column count). Default: auto-select 32.",
+        "that divides the weight matrix column count). Default: auto-select 32.",
     )
     ap.add_argument(
         "--min-free-gb",
@@ -1093,8 +1173,19 @@ def main():
         dest="min_free_gb",
         metavar="GB",
         help="Minimum free disk space (GB) to keep throughout compression. "
-             "The job aborts cleanly and removes partial output if free space "
-             "drops below this threshold. Default: 10 GB.",
+        "The job aborts cleanly and removes partial output if free space "
+        "drops below this threshold. Default: 10 GB.",
+    )
+    ap.add_argument(
+        "--delete-source",
+        action="store_true",
+        dest="delete_source",
+        help="Delete each raw .safetensors shard immediately after it has been "
+        "fully quantized and written. Bounds peak disk usage to roughly "
+        "one raw shard + the compressed output built so far, instead of "
+        "requiring the full raw model to coexist with the full compressed "
+        "output. Off by default — the raw model directory is left intact "
+        "unless this is passed.",
     )
     ap.add_argument(
         "--delete-source",
@@ -1108,6 +1199,13 @@ def main():
     )
     args = ap.parse_args()
 
+    if args.no_awq and args.awq_scales:
+        print(
+            "\n  ERROR: --no-awq and --awq-scales are contradictory — pick one.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # ── --ultra implies nf4 + dfloat11 ────────────────────────────────────────
     if args.ultra:
         args.nf4 = True
@@ -1117,6 +1215,7 @@ def main():
     vptq_config = None
     if args.vptq:
         from squish.quant.vptq import VPTQConfig
+
         vptq_config = VPTQConfig(
             n_codebook_entries=args.vptq_codebook_size,
             group_size=args.vptq_group_size,
@@ -1158,6 +1257,7 @@ def main():
         if args.awq_scales:
             try:
                 from squish.quant.awq import load_awq_scales
+
                 awq_scales = load_awq_scales(args.awq_scales)
                 n_awq = len(awq_scales)
                 print(f"  [AWQ] Loaded {n_awq} layer scales from {args.awq_scales}")
@@ -1246,33 +1346,71 @@ def main():
         disk_ratio = stats["orig_f32_bytes"] / max(disk_bytes, 1)
         n_total = stats["n_quantized"] + stats["n_passthrough"]
 
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print("  Format:           npy-dir (streaming)")
         _int4_gs = getattr(args, "int4_group_size", None) or 32
         _mode_str = (
-            "ULTRA (NF4 + DFloat11 rANS)" if args.ultra else
-            "QuIP# E8 trellis-coded" if args.quip else
-            "AQLM additive codebook" if args.aqlm else
-            "INT3-MiLo (3-bit + low-rank compensator)" if args.int3 else
-            "INT2-WOQ (2-bit pack-4 asymmetric)" if args.int2 else
-            "NF4 (NormalFloat-4)" if args.nf4 else
-            "VPTQ (vector quantization)" if args.vptq else
-            f"INT4 nibble-packed (group-{_int4_gs})" if args.int4 else
-            "INT8 per-group-64"
+            "ULTRA (NF4 + DFloat11 rANS)"
+            if args.ultra
+            else "QuIP# E8 trellis-coded"
+            if args.quip
+            else "AQLM additive codebook"
+            if args.aqlm
+            else "INT3-MiLo (3-bit + low-rank compensator)"
+            if args.int3
+            else "INT2-WOQ (2-bit pack-4 asymmetric)"
+            if args.int2
+            else "NF4 (NormalFloat-4)"
+            if args.nf4
+            else "VPTQ (vector quantization)"
+            if args.vptq
+            else f"INT4 nibble-packed (group-{_int4_gs})"
+            if args.int4
+            else "INT8 per-group-64"
         )
         if args.dfloat11 and not args.ultra:
             _mode_str += " + DFloat11 entropy"
         print(f"  Quantization:     {_mode_str}")
-        _quant_label = "INT3" if args.int3 else "INT2" if args.int2 else "INT4" if args.int4 else "INT8"
+        _quant_label = (
+            "INT3" if args.int3 else "INT2" if args.int2 else "INT4" if args.int4 else "INT8"
+        )
         print(f"  Tensors:          {n_total} total")
         print(f"    Quantized ({_quant_label}): {stats['n_quantized']}")
         print(f"    Passthrough (f16 on disk): {stats['n_passthrough']}")
         print(f"  Original (f32):   {orig_gb:.3f} GB")
         print(f"  Quantized raw:    {comp_gb:.3f} GB  ({ratio:.2f}x ratio)")
         print(f"  On-disk (npy-dir): {disk_mb:.1f} MB  ({disk_ratio:.2f}x ratio)")
+        if args.delete_source:
+            reclaimed_gb = stats["source_bytes_reclaimed"] / 1e9
+            print(
+                f"  Delete-source:    {stats['shards_deleted']} raw shard(s) removed, "
+                f"{reclaimed_gb:.2f} GB reclaimed"
+            )
         print(f"  Total time:       {elapsed:.1f}s")
         print(f"  Manifest:         {output_path / 'manifest.json'}")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
+
+        # ── Persist a stats sidecar for later consumers (e.g. `squish push`) ────
+        # process_weights_streaming's stats dict only exists in-memory for this
+        # process; a separate, later `squish push` invocation needs it on disk,
+        # especially once --delete-source has removed the raw model this data
+        # was computed from.
+        _stats_record = {
+            "base_model_dir_name": model_dir.name,
+            "quant_mode": _mode_str,
+            "quant_label": _quant_label,
+            "n_quantized": stats["n_quantized"],
+            "n_passthrough": stats["n_passthrough"],
+            "orig_f32_bytes": stats["orig_f32_bytes"],
+            "compressed_bytes": stats["compressed_bytes"],
+            "on_disk_bytes": disk_bytes,
+            "compression_ratio": ratio,
+            "shards_deleted": stats["shards_deleted"],
+            "source_bytes_reclaimed": stats["source_bytes_reclaimed"],
+            "elapsed_s": elapsed,
+        }
+        with open(output_path / "stats.json", "w") as f:
+            json.dump(_stats_record, f, indent=2)
 
     else:
         # ── Legacy batch path (NPZ / small models) ────────────────────────────
@@ -1339,7 +1477,7 @@ def main():
         disk_mb = disk_bytes / 1e6
         disk_ratio = stats["orig_f32_bytes"] / max(disk_bytes, 1)
 
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print("  Format:           npz")
         print(f"  Tensors:          {len(weights)} total")
         print(f"    Quantized (Q8): {stats['n_quantized']}")
@@ -1350,7 +1488,7 @@ def main():
         print(f"  Write time:       {write_time:.1f}s")
         print(f"  Total time:       {elapsed:.1f}s")
         print(f"  Manifest:         {manifest_path}")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
 
 
 if __name__ == "__main__":
