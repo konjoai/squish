@@ -35,7 +35,15 @@
   <meta property="og:image:alt" content="{{ og_title }}">
 
   {% if og_type == "article" %}
-    <meta property="article:published_time" content="{{ page.meta.date }}">
+    {#- `date` is either a flat value or a {created, updated} mapping. -#}
+    {% if page.meta.date is mapping %}
+      <meta property="article:published_time" content="{{ page.meta.date.created }}">
+      {% if page.meta.date.updated %}
+        <meta property="article:modified_time" content="{{ page.meta.date.updated }}">
+      {% endif %}
+    {% else %}
+      <meta property="article:published_time" content="{{ page.meta.date }}">
+    {% endif %}
     {% if page.meta.og_author %}
       <meta property="article:author" content="{{ page.meta.og_author }}">
     {% endif %}
