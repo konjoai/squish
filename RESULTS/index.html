@@ -1733,6 +1733,74 @@ vs Ollama 0.18.2 <strong>and</strong> 0.30.7. See README and <code>docs/paper.md
 </table>
 <p>INT3 is the recommended default — arc_easy acc_norm 0.551 vs INT4 0.541 (tied,
 n=1000). Squish's only loss is warm single-token TTFT (192 vs 167 ms).</p>
+<h3 id="1c-coldunique-head-to-head-0-prefix-reuse-qwen25-7b-vs-ollama">1c. Cold/unique head-to-head (0% prefix reuse, Qwen2.5-7B vs Ollama)<a class="headerlink" href="#1c-coldunique-head-to-head-0-prefix-reuse-qwen25-7b-vs-ollama" title="Permanent link">&para;</a></h3>
+<p>The E2E@4000 row above sends the same prompt 5× per phase, so from the 2nd
+send on it measures squish's prefix-KV reuse (default-on) — a <strong>reuse
+ceiling</strong>, not a cold number. <code>bench_cold_unique_h2h.py</code> fills the
+complementary floor: every single request, on both systems, is a genuinely
+unique prompt (0% shared prefix, verified per-run via each engine's own
+counters — not assumed). Thermally controlled, M3 16 GB, Ollama 0.30.7.
+Full methodology and per-run cache-hit verification:
+<code>benchmarks/ollama_vs_squish/COLD_UNIQUE_H2H_METHODOLOGY.md</code>; full results:
+<code>benchmarks/ollama_vs_squish/COLD_UNIQUE_H2H_RESULTS.md</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Context</th>
+<th style="text-align: center;">Ollama TTFT</th>
+<th style="text-align: center;"><strong>squish TTFT</strong></th>
+<th style="text-align: center;">Ollama decode</th>
+<th style="text-align: center;"><strong>squish decode</strong></th>
+<th style="text-align: center;">Ollama E2E</th>
+<th style="text-align: center;"><strong>squish E2E</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>512</td>
+<td style="text-align: center;">3.90 s</td>
+<td style="text-align: center;"><strong>3.33 s</strong></td>
+<td style="text-align: center;">16.7 tok/s</td>
+<td style="text-align: center;"><strong>19.1 tok/s</strong></td>
+<td style="text-align: center;">16.27 s</td>
+<td style="text-align: center;"><strong>13.74 s (1.18×)</strong></td>
+</tr>
+<tr>
+<td>1024</td>
+<td style="text-align: center;">10.01 s</td>
+<td style="text-align: center;"><strong>8.59 s</strong></td>
+<td style="text-align: center;">10.8 tok/s</td>
+<td style="text-align: center;"><strong>14.8 tok/s</strong></td>
+<td style="text-align: center;">28.93 s</td>
+<td style="text-align: center;"><strong>21.98 s (1.32×)</strong></td>
+</tr>
+<tr>
+<td>2048</td>
+<td style="text-align: center;">19.79 s</td>
+<td style="text-align: center;"><strong>17.31 s</strong></td>
+<td style="text-align: center;">10.5 tok/s</td>
+<td style="text-align: center;"><strong>14.2 tok/s</strong></td>
+<td style="text-align: center;">38.84 s</td>
+<td style="text-align: center;"><strong>32.24 s (1.20×)</strong></td>
+</tr>
+<tr>
+<td>4096</td>
+<td style="text-align: center;">41.50 s</td>
+<td style="text-align: center;"><strong>36.14 s</strong></td>
+<td style="text-align: center;">9.4 tok/s</td>
+<td style="text-align: center;"><strong>11.9 tok/s</strong></td>
+<td style="text-align: center;">62.80 s</td>
+<td style="text-align: center;"><strong>52.93 s (1.19×)</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Squish wins TTFT, decode tok/s, and E2E at every length here — the opposite
+of the TTFT row in §1b, because that row measures a warm, already-loaded
+model on a repeated prompt while this measures a cold prefill on a prompt
+neither engine has seen. Read together: <strong>squish is ~1.2-1.3× faster with
+nothing to reuse, up to 9.8× faster when prompts repeat</strong> — quote the range,
+not a single number, depending on how much a given workload's prompts
+actually overlap.</p>
 <hr />
 <h2 id="2-disk-size-raw-vs-squished">2. Disk size — raw vs. squished<a class="headerlink" href="#2-disk-size-raw-vs-squished" title="Permanent link">&para;</a></h2>
 <p>Source: <code>README.md</code> model-size table; the squished column is what
