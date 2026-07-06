@@ -108,6 +108,12 @@ BASELINE_TARGET_C = 82.0
 DRIFT_CEILING_PCT = 8.0
 KILL_TEST_CONTEXTS = [1024]
 FULL_CONTEXTS = [512, 1024, 2048, 4096]
+# Supplemental short-prompt point, added after the 512-4096 sweep was already
+# settled (see BENCH_HANDOFF.md) to resolve the tension with bench_thermal_h2h.py's
+# same-prompt-5x 75-token row. Kept out of FULL_CONTEXTS/KILL_TEST_CONTEXTS
+# deliberately: --full must keep reproducing exactly the settled 4-point sweep,
+# not silently grow a 5th point every time it's rerun.
+CTX75_CONTEXTS = [75]
 BASE_SEED = (
     20260703  # distinct from matrix/corpus.py's 20260628 default — no cross-sprint seed collision
 )
@@ -318,11 +324,23 @@ def main() -> None:
         action="store_true",
         help="Required with --full — confirms the kill-test was reviewed.",
     )
+    ap.add_argument(
+        "--ctx75",
+        action="store_true",
+        help=(
+            "Run only ctx=75 (supplemental short-prompt point, additive to the "
+            "settled 512/1024/2048/4096 sweep). Mutually exclusive with --full."
+        ),
+    )
     args = ap.parse_args()
 
     if args.full and not args.i_have_approved:
         raise SystemExit("--full requires --i-have-approved (kill-test must be reviewed first)")
-    contexts = FULL_CONTEXTS if args.full else KILL_TEST_CONTEXTS
+    if args.full and args.ctx75:
+        raise SystemExit("--full and --ctx75 are mutually exclusive")
+    contexts = (
+        CTX75_CONTEXTS if args.ctx75 else (FULL_CONTEXTS if args.full else KILL_TEST_CONTEXTS)
+    )
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     log(f"Output dir: {OUT_DIR}")
