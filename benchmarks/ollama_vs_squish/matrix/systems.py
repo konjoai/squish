@@ -134,7 +134,14 @@ def _parse_ollama_line(raw: bytes, acc: _Acc, meta: dict[str, Any]) -> bool:
         d = json.loads(raw)
     except json.JSONDecodeError:
         return False
-    acc.add(d.get("response", ""))
+    # Reasoning models (e.g. qwen3) stream chain-of-thought in a separate
+    # "thinking" field with "response" empty for the whole reasoning phase —
+    # squish's OpenAI-compatible stream unifies both into plain `content`
+    # deltas, so treating only "response" as real output understated TTFT to
+    # None (no token ever seen) whenever num_predict was fully consumed by
+    # thinking. Falling back to "thinking" keeps both engines measuring
+    # time-to-first-generated-token consistently.
+    acc.add(d.get("response") or d.get("thinking") or "")
     if d.get("done"):
         meta["done"] = d
     return False

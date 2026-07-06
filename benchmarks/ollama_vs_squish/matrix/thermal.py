@@ -8,14 +8,16 @@ module keeps all of that and adds the sprint's requirements: a ~50 degC baseline
 gate, live die-temperature logging, and an explicit drift check with a 1.7%
 ceiling.
 
-Temperature reading degrades gracefully — if no sensor command is available
-(non-mac, or no sudo for powermetrics) it returns ``None`` and the harness logs
-"temp unavailable" rather than crashing. The drift arithmetic and the
-powermetrics parser are pure and unit-tested.
+Temperature reading prefers ``macmon`` (sudoless, works reliably on Apple
+Silicon) and degrades gracefully from there — if no sensor command is available
+at all (non-mac, macmon not installed, no sudo for powermetrics) it returns
+``None`` and the harness logs "temp unavailable" rather than crashing. The
+drift arithmetic and both sensor-output parsers are pure and unit-tested.
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
 import threading
 import time
@@ -44,13 +46,59 @@ def parse_powermetrics_temp(text: str) -> float | None:
     return None
 
 
+def parse_macmon_temp(text: str) -> float | None:
+    """Extract the max CPU/GPU die temperature (degC) from a ``macmon pipe`` JSON line.
+
+    ``macmon`` (https://github.com/vladkens/macmon) is a sudoless Apple Silicon
+    sensor CLI — the tool this project's earlier thermally-controlled head-to-head
+    (commit b9b5d8e) validated cooldowns against. Takes the max of cpu/gpu die temp
+    since either can be the throttling driver depending on workload.
+    """
+    line = text.strip().splitlines()[-1] if text.strip() else ""
+    if not line:
+        return None
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    temp = data.get("temp", {})
+    readings = [
+        v
+        for v in (temp.get("cpu_temp_avg"), temp.get("gpu_temp_avg"))
+        if isinstance(v, (int, float))
+    ]
+    return max(readings) if readings else None
+
+
+PLAUSIBLE_DIE_TEMP_RANGE_C = (5.0, 110.0)
+
+
+def _plausible_die_temp(t: float) -> bool:
+    """Reject readings outside a plausible CPU/GPU die temperature range.
+
+    Some sensor CLIs (e.g. ``osx-cpu-temp`` on Apple Silicon, where the
+    Intel-only SMC keys it reads don't exist) exit 0 and print a fixed
+    ``0.0`` rather than failing — a bogus reading, not a real one. Treating
+    that as valid would make ``wait_for_baseline`` pass instantly every time,
+    silently turning the thermal gate into a no-op. Better to fall through to
+    the next probe, or report "no sensor" honestly, than trust an implausible
+    number.
+    """
+    lo, hi = PLAUSIBLE_DIE_TEMP_RANGE_C
+    return lo <= t <= hi
+
+
 def read_die_temp_c() -> float | None:
     """Best-effort die temperature in degC, trying several mac sensor tools.
 
-    Order: powermetrics (needs sudo), osx-cpu-temp, istats. Any failure falls
-    through to the next; all-fail returns None.
+    Order: macmon (sudoless, reliable on Apple Silicon — preferred), powermetrics
+    (needs sudo), osx-cpu-temp, istats (the latter two read Intel-only SMC keys and
+    are unreliable/non-functional on Apple Silicon, kept only as a last resort on
+    Intel Macs). Any failure, or an implausible reading, falls through to the next;
+    all-fail returns None.
     """
     probes: list[list[str]] = [
+        ["macmon", "pipe", "-s", "1"],
         ["sudo", "-n", "powermetrics", "--samplers", "smc", "-n", "1", "-i", "1"],
         ["osx-cpu-temp"],
         ["istats", "cpu", "temp", "--value-only"],
@@ -62,15 +110,21 @@ def read_die_temp_c() -> float | None:
             continue
         if out.returncode != 0:
             continue
-        if cmd[0] in ("osx-cpu-temp", "istats"):
+        if cmd[0] == "macmon":
+            t = parse_macmon_temp(out.stdout)
+            if t is not None and _plausible_die_temp(t):
+                return t
+        elif cmd[0] in ("osx-cpu-temp", "istats"):
             for tok in out.stdout.replace("°C", " ").replace("C", " ").split():
                 try:
-                    return float(tok)
+                    t = float(tok)
                 except ValueError:
                     continue
+                if _plausible_die_temp(t):
+                    return t
         else:
             t = parse_powermetrics_temp(out.stdout)
-            if t is not None:
+            if t is not None and _plausible_die_temp(t):
                 return t
     return None
 

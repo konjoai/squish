@@ -21,6 +21,7 @@ from benchmarks.ollama_vs_squish.matrix import (
     memory,
     report,
     stats_ext,
+    systems,
     thermal,
 )
 from benchmarks.ollama_vs_squish.matrix.cell import _paired, inter_token_stats
@@ -206,6 +207,25 @@ def test_parse_prometheus():
     assert m["squish_kv_cache_memory_mb"] == 123.5
 
 
+def test_parse_ollama_line_falls_back_to_thinking_field():
+    # Reasoning models (e.g. qwen3) stream chain-of-thought via "thinking" with
+    # "response" empty for the whole reasoning phase — without the fallback,
+    # t_first never gets set and ttft_s comes back None for a real, successful
+    # generation.
+    acc = systems._Acc(t_req=0.0)
+    meta: dict = {}
+    systems._parse_ollama_line(b'{"response": "", "thinking": "Let me think"}', acc, meta)
+    assert acc.parts == ["Let me think"]
+    assert acc.t_first is not None
+
+
+def test_parse_ollama_line_prefers_response_over_thinking():
+    acc = systems._Acc(t_req=0.0)
+    meta: dict = {}
+    systems._parse_ollama_line(b'{"response": "hello", "thinking": "ignored"}', acc, meta)
+    assert acc.parts == ["hello"]
+
+
 def test_ollama_hit_fraction_partial():
     frac, method = cache_probe.ollama_hit_fraction({"prompt_eval_count": 400}, 800)
     assert math.isclose(frac, 0.5)
@@ -332,6 +352,30 @@ def test_kv_cache_mb_from_metrics():
 def test_parse_powermetrics_temp():
     text = "CPU die temperature: 47.8 C\nother: 1"
     assert thermal.parse_powermetrics_temp(text) == 47.8
+
+
+def test_parse_macmon_temp_takes_max_of_cpu_gpu():
+    line = '{"temp": {"cpu_temp_avg": 61.5, "gpu_temp_avg": 68.2}}'
+    assert thermal.parse_macmon_temp(line) == 68.2
+
+
+def test_parse_macmon_temp_uses_last_line_of_stream():
+    text = '{"temp": {"cpu_temp_avg": 40.0}}\n{"temp": {"cpu_temp_avg": 50.0}}'
+    assert thermal.parse_macmon_temp(text) == 50.0
+
+
+def test_parse_macmon_temp_malformed_or_empty_returns_none():
+    assert thermal.parse_macmon_temp("not json") is None
+    assert thermal.parse_macmon_temp("") is None
+    assert thermal.parse_macmon_temp('{"temp": {}}') is None
+
+
+def test_plausible_die_temp_rejects_bogus_zero():
+    # osx-cpu-temp on Apple Silicon reads Intel-only SMC keys and returns a
+    # fixed 0.0 rather than failing — must be rejected, not trusted.
+    assert thermal._plausible_die_temp(0.0) is False
+    assert thermal._plausible_die_temp(47.8) is True
+    assert thermal._plausible_die_temp(200.0) is False
 
 
 def test_drift_check_pass_and_fail():

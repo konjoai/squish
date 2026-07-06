@@ -73,6 +73,33 @@ vs Ollama 0.18.2 **and** 0.30.7. See README and `docs/paper.md` §4.4.
 INT3 is the recommended default — arc_easy acc_norm 0.551 vs INT4 0.541 (tied,
 n=1000). Squish's only loss is warm single-token TTFT (192 vs 167 ms).
 
+### 1c. Cold/unique head-to-head (0% prefix reuse, Qwen2.5-7B vs Ollama)
+
+The E2E@4000 row above sends the same prompt 5× per phase, so from the 2nd
+send on it measures squish's prefix-KV reuse (default-on) — a **reuse
+ceiling**, not a cold number. `bench_cold_unique_h2h.py` fills the
+complementary floor: every single request, on both systems, is a genuinely
+unique prompt (0% shared prefix, verified per-run via each engine's own
+counters — not assumed). Thermally controlled, M3 16 GB, Ollama 0.30.7.
+Full methodology and per-run cache-hit verification:
+`benchmarks/ollama_vs_squish/COLD_UNIQUE_H2H_METHODOLOGY.md`; full results:
+`benchmarks/ollama_vs_squish/COLD_UNIQUE_H2H_RESULTS.md`.
+
+| Context | Ollama TTFT | **squish TTFT** | Ollama decode | **squish decode** | Ollama E2E | **squish E2E** |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| 512  | 3.90 s  | **3.33 s**  | 16.7 tok/s | **19.1 tok/s** | 16.27 s | **13.74 s (1.18×)** |
+| 1024 | 10.01 s | **8.59 s**  | 10.8 tok/s | **14.8 tok/s** | 28.93 s | **21.98 s (1.32×)** |
+| 2048 | 19.79 s | **17.31 s** | 10.5 tok/s | **14.2 tok/s** | 38.84 s | **32.24 s (1.20×)** |
+| 4096 | 41.50 s | **36.14 s** | 9.4 tok/s  | **11.9 tok/s** | 62.80 s | **52.93 s (1.19×)** |
+
+Squish wins TTFT, decode tok/s, and E2E at every length here — the opposite
+of the TTFT row in §1b, because that row measures a warm, already-loaded
+model on a repeated prompt while this measures a cold prefill on a prompt
+neither engine has seen. Read together: **squish is ~1.2-1.3× faster with
+nothing to reuse, up to 9.8× faster when prompts repeat** — quote the range,
+not a single number, depending on how much a given workload's prompts
+actually overlap.
+
 ---
 
 ## 2. Disk size — raw vs. squished
