@@ -64,15 +64,17 @@ Measured on an Apple **M3 MacBook Pro, 16 GB** — **thermally controlled** (eac
 | Metric | Ollama | **Squish** |
 |---|---:|---:|
 | **Cold start** — load + first token (1.5B) | 20–30 s | **≈ 0.5 s** &nbsp;_(54× load)_ |
-| **Full response** @ 4000-token prompt | 37.5 s | **3.8 s** &nbsp;_(9.8× faster)_ |
+| **Full response** @ 4000-token prompt (repeated exactly)\* | 37.5 s | **3.8 s** &nbsp;_(9.8× faster)_ |
 | **Decode throughput** @ 75 tokens | 20.3 tok/s | **24.0 tok/s** &nbsp;_(INT3)_ |
 | **Inter-token tail (p95)** @ 75 tokens | 52.4 ms | **42.7 ms** &nbsp;_(INT3)_ |
 | **Repeat-prompt TTFT** (KV cache hit) | ~160 ms | **4–11 ms** |
 | **Peak RAM** during inference | 5.14 GB | **3.50 GB** |
 | **Disk** — 7B INT4 / INT3 | 4.36 GB / — | **4.00 / 3.56 GB** |
-| **Cold short-prompt TTFT** | **167 ms** | 192 ms &nbsp;_(honest loss)_ |
+| **Cold, unique-prompt TTFT** @ 75 tokens | 812 ms | **800 ms** &nbsp;_(1.15× faster)_ |
 
-Squish wins decode throughput, inter-token tail latency, full-response time, and RAM — biggest on long contexts, where its KV cache **reuses the prefill instead of re-running it**. INT3 adds ~18 % decode over INT4 at **no measured accuracy cost** (arc_easy `acc_norm` 0.551 vs 0.541, tied). The one place Ollama wins is single-token latency on a *cold, novel* prompt.
+\* The 9.8× figure is the reuse ceiling — an identical prompt resent exactly. On completely unique prompts with 0% cache reuse, Squish is still faster across every context length tested, but by a smaller **1.15–1.32×** margin; see [`docs/paper.md` §4.4](docs/paper.md) for the floor-to-ceiling curve.
+
+Squish wins decode throughput, inter-token tail latency, full-response time, RAM, and TTFT — including on cold, unique prompts, where an earlier draft of these numbers had mistakenly credited Ollama a win (167 ms vs 192 ms) from a flawed same-fixed-prompt methodology that was actually measuring Ollama's own cache hit. Under genuinely cold, unique-prompt conditions Squish leads at every length tested. The gains are biggest on long, repeated contexts, where Squish's KV cache **reuses the prefill instead of re-running it**. INT3 adds ~18 % decode over INT4 at **no measured accuracy cost** (arc_easy `acc_norm` 0.551 vs 0.541, tied).
 
 → Methodology, thermal control, and the full ablation: [`docs/paper.md` §4.4](docs/paper.md) · [`BENCHMARKS.md`](BENCHMARKS.md)
 
@@ -188,7 +190,6 @@ Honesty is a feature. If any of these matter, Ollama or LM Studio is the right c
 - **No GPU outside Apple Silicon.** It's MLX-based; CUDA users want vLLM or llama.cpp.
 - **No multi-user serving.** One developer, one machine — not a production API.
 - **No multimodal.** Text only.
-- **Slower first token on a cold, short prompt** than Ollama (192 ms vs 167 ms) — fundamental MLX prefill kernel cost. Squish's edge is everywhere *else*.
 - **Model conversion is slow.** Squish needs models in its own format; first-time conversion takes minutes (`squish pull` skips it with pre-squished weights).
 
 ---
