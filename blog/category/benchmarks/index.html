@@ -1731,8 +1731,13 @@
     overflow: auto;
   }
   .squish-diagram-zoom.squish-zoomed::after { content: "\2715"; top: 20px; right: 24px; font-size: 22px; }
-  .squish-diagram-zoom.squish-zoomed > div { max-width: 96vw !important; max-height: 92vh; }
-  .squish-diagram-zoom.squish-zoomed svg { width: 100%; height: auto; max-height: 92vh; }
+  .squish-diagram-zoom.squish-zoomed > div {
+    width: 92vw !important;
+    max-width: 1400px !important;
+    max-height: 92vh;
+    flex-shrink: 0;
+  }
+  .squish-diagram-zoom.squish-zoomed svg { display: block; width: 100% !important; height: auto !important; }
   body.squish-zoom-lock { overflow: hidden; }
   body.squish-zoom-lock .md-top,
   body.squish-zoom-lock .md-header,
