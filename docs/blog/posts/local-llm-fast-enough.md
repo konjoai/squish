@@ -355,10 +355,10 @@ Exact or partial prompts are processed once, never repeated.
   <text x="150" y="337" class="mono" font-size="9" fill="#f59e0b" text-anchor="middle">16 bits per weight</text>
 
   <text x="750" y="308" class="mono" font-size="10" fill="#9385b0" text-anchor="middle">AFTER &#183; INT3 stored</text>
-  <rect x="705" y="316" width="90" height="34" rx="4" fill="rgba(168,85,247,0.1)" stroke="#a855f7" stroke-width="1.4"/>
+  <rect x="680" y="316" width="140" height="34" rx="4" fill="rgba(168,85,247,0.1)" stroke="#a855f7" stroke-width="1.4"/>
   <text x="750" y="337" class="mono" font-size="9" fill="#a855f7" text-anchor="middle">3 bits per weight</text>
 
-  <path d="M234 333 L701 333" stroke="#6b5b8a" stroke-width="1.2" stroke-dasharray="3 3" fill="none" marker-end="url(#am)"/>
+  <path d="M234 333 L676 333" stroke="#6b5b8a" stroke-width="1.2" stroke-dasharray="3 3" fill="none" marker-end="url(#am)"/>
   <defs>
     <marker id="am" markerWidth="8" markerHeight="8" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#6b5b8a"/></marker>
   </defs>
