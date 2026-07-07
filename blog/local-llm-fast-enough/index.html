@@ -2508,7 +2508,7 @@
     transform: scale(1.06);
   }
 </style>
-<img class="squish-mascot" src="../../assets/blog/squish-flying.png" alt="Squish, taking off">
+<img class="squish-mascot" src="../../assets/blog/squish-fistpump.png" alt="Squish, celebrating">
 </div>
 
 <p>There are many ways to use Squish, but at its most basic level it serves an OpenAI API on a local port (11435). I built it as a drop-in replacement for Ollama and for any application that speaks the OpenAI API endpoint spec.</p>
@@ -2558,6 +2558,26 @@
 <p>Squish solves my problems, and it may or may not solve yours. But if you have more than 16 GB RAM, Squish can run larger models than I've been able to while using significantly less RAM and hard disk space. If you want to modify it, the source is available and every benchmark number is reproducible from the repo.</p>
 <p>I built Squish because I was tired of waiting. It keeps the model loaded, the cache warm, and answers before I've moved my hands. What I haven't seen is what it can do beyond my one machine.</p>
 <h2 id="join-the-squish-community">Join the Squish Community<a class="headerlink" href="#join-the-squish-community" title="Permanent link">&para;</a></h2>
+<div style="text-align:center; margin: 32px 0;">
+<style>
+  @keyframes squishFloat {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+  .squish-mascot {
+    animation: squishFloat 3.5s ease-in-out infinite;
+    transition: transform 0.25s ease;
+    max-width: 320px;
+    width: 100%;
+    height: auto;
+  }
+  .squish-mascot:hover {
+    transform: scale(1.06);
+  }
+</style>
+<img class="squish-mascot" src="../../assets/blog/squish-flying.png" alt="Squish, taking off">
+</div>
+
 <p>I've run and tested Squish on one machine, an M3 MacBook Pro with 16 GB of RAM. Every number in this article reflects that same laptop. I have no idea what Squish looks like on a Mac Studio with 128 GB, or what happens when you point it at a 70B model instead of a 7B one, and I'd like to find out.</p>
 <p>If you have access to a Mac with 32, 64, or 128+ GB of unified memory, running Squish against larger models and publishing what you find would answer questions I can't answer myself:</p>
 <ul>
@@ -2595,26 +2615,6 @@
 </div>
 
 <p>Every issue filed, PR opened, and benchmark reproduced is one more data point Squish didn't have before. Thanks for reading this far, now go break something.</p>
-<div style="text-align:center; margin: 32px 0;">
-<style>
-  @keyframes squishFloat {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-10px); }
-  }
-  .squish-mascot {
-    animation: squishFloat 3.5s ease-in-out infinite;
-    transition: transform 0.25s ease;
-    max-width: 320px;
-    width: 100%;
-    height: auto;
-  }
-  .squish-mascot:hover {
-    transform: scale(1.06);
-  }
-</style>
-<img class="squish-mascot" src="../../assets/blog/squish-fistpump.png" alt="Squish, celebrating">
-</div>
-
 <hr />
 <p>Requests for models to add to the squishai Hugging Face community, or trouble installing or running Squish? Open an issue on GitHub.</p>
 
