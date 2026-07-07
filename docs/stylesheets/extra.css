@@ -59,13 +59,21 @@ body[data-md-color-scheme="default"] .md-tabs__link:hover { color: #6B2FE7 !impo
   border-radius: 4px;
 }
 
-/* ── Full-width blog posts on desktop ───────────────────────────── */
+/* ── Wider blog posts on desktop (3/4 viewport) ─────────────────── */
 @media screen and (min-width: 76.25em) {
   body:has(.md-post) .md-grid {
-    max-width: 100%;
+    max-width: 75%;
     padding-left: 2.5rem;
     padding-right: 2.5rem;
   }
+}
+
+/* ── Smaller mascot images on desktop ────────────────────────────── */
+@media screen and (min-width: 76.25em) {
+  .squish-mascot[src*="squish-hero"] { max-width: 110px !important; }
+  .squish-mascot[src*="squish-flying"],
+  .squish-mascot[src*="squish-building"],
+  .squish-mascot[src*="squish-fistpump"] { max-width: 160px !important; }
 }
 
 /* ── Table text ─────────────────────────────────────────────────── */
