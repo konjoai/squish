@@ -6,30 +6,34 @@
 
 ---
 
-## 0. Headline (v9.32.0 / bench v5.1.1)
+## 0. Headline (v9.34.14)
 
-Source: `README.md` "The Numbers" section; raw artifacts in `results/benchmarks_v5_1_1/`.
+Source: `README.md` "The Numbers" section; see §1b/§1c below for the full
+breakdown this headline is drawn from.
 
-Measured 2026-06-02 on Apple M3 MacBook Pro, 16 GB unified memory.
-Model: Qwen2.5-7B-Instruct. Quant: INT4 (squish) / Q4_K_M (Ollama).
-Five-run medians.
+Measured on Apple M3 MacBook Pro, 16 GB unified memory, thermally
+controlled (same ~50 °C baseline, first-vs-last drift ≤ 1.7%).
+Model: Qwen2.5-7B-Instruct. Quant: INT4/INT3 (squish) / Q4_K_M (Ollama
+0.30.7, 0.18.2 within noise). Five-run medians.
 
-| Metric | Ollama 0.18.2 | **Squish** |
+| Metric | Ollama | **Squish** |
 |---|---:|---:|
-| **E2E response @ 4000-token prompt** | 69.63 s | **12.78 s** _(5.4× faster)_ |
-| **E2E response @ 75-token prompt** | 8.09 s | **5.50 s** _(1.5× faster)_ |
-| **Peak RAM during inference** | ~5 GB | **3.36 GB** |
+| **Cold start** — load + first token (1.5B) | 20–30 s | **≈0.5 s** _(54× load)_ |
+| **Full response @ 4000-token prompt** (repeated exactly) | 37.5 s | **3.8 s** _(9.8× faster)_ |
+| **Peak RAM during inference** | 5.14 GB | **3.50 GB** |
 | **Disk size — INT4** | 4.36 GB | **4.00 GB** |
 | **Disk size — INT3 (Qwen3)** | not supported | **3.56 GB** |
-| **TTFT @ 75-token prompt** | **131 ms** | 279 ms _(honest loss)_ |
+| **Cold, unique-prompt TTFT @ 75 tokens** | 812 ms | **800 ms** _(1.15× faster)_ |
 
-Squish wins end-to-end response time at every prompt size measured
-(5.4× at 4000 tokens), uses ~33% less RAM, and supports INT3 for
-compatible model families. Ollama wins TTFT at every prompt size — if
-first-byte latency matters more than full-response latency, Ollama is
-the right tool.
+Squish wins end-to-end response time at every prompt size measured —
+up to 9.8× on exactly-repeated long prompts (the reuse ceiling), and
+1.15–1.32× on completely unique prompts with nothing to reuse (§1c) —
+uses ~32% less RAM, and supports INT3 for compatible model families.
+Squish also wins TTFT, including on cold, unique prompts; see §1c for
+why an earlier round of these numbers had mistakenly credited Ollama a
+TTFT win.
 
-Full methodology and ablation: `docs/RESULTS.md` (v5.1.1 section).
+Full methodology and ablation: §1b/§1c below, and `docs/paper.md` §4.4.
 
 ---
 
@@ -67,11 +71,13 @@ vs Ollama 0.18.2 **and** 0.30.7. See README and `docs/paper.md` §4.4.
 | Decode tok/s @ 4000 tok | 17.0 | **19.1** | **19.5** |
 | Inter-token p95 @ 75    | 52.4 ms | **48.4 ms** | **42.7 ms** |
 | E2E @ 4000-token prompt | 37.5 s | **3.8 s (9.8×)** | — |
-| TTFT (loaded, 75 tok)   | **167 ms** | 192 ms | 192 ms |
 | Peak RAM                | 5.14 GB | **3.5 GB** | — |
 
 INT3 is the recommended default — arc_easy acc_norm 0.551 vs INT4 0.541 (tied,
-n=1000). Squish's only loss is warm single-token TTFT (192 vs 167 ms).
+n=1000). Squish has no measured loss on this table; see §1c for TTFT under
+cold, unique-prompt conditions (an earlier same-fixed-prompt-repeated-5×
+TTFT comparison here had mistakenly credited Ollama a 167 ms vs 192 ms win —
+retracted, see §1c).
 
 ### 1c. Cold/unique head-to-head (0% prefix reuse, Qwen2.5-7B vs Ollama)
 
@@ -87,18 +93,23 @@ Full methodology and per-run cache-hit verification:
 
 | Context | Ollama TTFT | **squish TTFT** | Ollama decode | **squish decode** | Ollama E2E | **squish E2E** |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
+| 75   | 812 ms  | **800 ms**  | 16.4 tok/s | **17.5 tok/s** | 14.12 s | **12.30 s (1.15×)** |
 | 512  | 3.90 s  | **3.33 s**  | 16.7 tok/s | **19.1 tok/s** | 16.27 s | **13.74 s (1.18×)** |
 | 1024 | 10.01 s | **8.59 s**  | 10.8 tok/s | **14.8 tok/s** | 28.93 s | **21.98 s (1.32×)** |
 | 2048 | 19.79 s | **17.31 s** | 10.5 tok/s | **14.2 tok/s** | 38.84 s | **32.24 s (1.20×)** |
 | 4096 | 41.50 s | **36.14 s** | 9.4 tok/s  | **11.9 tok/s** | 62.80 s | **52.93 s (1.19×)** |
 
-Squish wins TTFT, decode tok/s, and E2E at every length here — the opposite
-of the TTFT row in §1b, because that row measures a warm, already-loaded
-model on a repeated prompt while this measures a cold prefill on a prompt
-neither engine has seen. Read together: **squish is ~1.2-1.3× faster with
-nothing to reuse, up to 9.8× faster when prompts repeat** — quote the range,
-not a single number, depending on how much a given workload's prompts
-actually overlap.
+75-token row: `benchmarks/ollama_vs_squish/CTX75_SUPPLEMENT_RESULTS.md`,
+added specifically to settle whether the §1b-style short-prompt TTFT
+comparison held up under genuinely cold, unique-prompt conditions. It
+doesn't: squish wins TTFT, decode tok/s, and E2E at every length here,
+including 75 tokens, down to a thin but real 12 ms (~1.5%) margin. The
+retracted §1b number (167 ms vs 192 ms) was measuring Ollama's own
+cache hit on a resent prompt, not a cold-prefill advantage. Read
+together: **squish is ~1.15-1.32× faster with nothing to reuse, up to
+9.8× faster when prompts repeat** — quote the range, not a single
+number, depending on how much a given workload's prompts actually
+overlap.
 
 ---
 
