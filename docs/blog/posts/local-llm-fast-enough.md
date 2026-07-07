@@ -748,7 +748,7 @@ A few other ways to help, beyond high RAM benchmarking:
 - **Contribute to the model catalog.** If there's an MLX-format model on Hugging Face you think belongs in Squish's catalog, open an issue or a PR.
 - **Improve the docs.** If something in this article or the repo's docs confused you, it'll confuse someone else too.
 
-Open an issue or a PR on GitHub, whichever of these you want to take on. I built Squish alone, but I'd rather not be the only one who knows what it can do.
+Open an issue or a PR on GitHub, whichever of these you want to take on. I built Squish alone, but I'd rather not be the only one who knows what it can do. Break something and have fun.
 
 <div style="text-align:center; margin: 32px 0;">
 <style>
@@ -769,8 +769,6 @@ Open an issue or a PR on GitHub, whichever of these you want to take on. I built
 </style>
 <img class="squish-mascot" src="/assets/blog/squish-building.png" alt="Squish, building Squish">
 </div>
-
-Every issue filed, PR opened, and benchmark reproduced is one more data point Squish didn't have before. Thanks for reading this far, now go break something.
 
 ---
 
