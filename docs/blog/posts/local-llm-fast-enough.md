@@ -3,7 +3,7 @@ date:
   created: 2026-06-26
   updated: 2026-07-06
 slug: local-llm-fast-enough
-title: "I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own"
+title: "I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own Called Squish"
 subtitle: "Fast local LLM inference for Apple Silicon (M-series)."
 description: "A local LLM inference server for Apple Silicon, 1.15 to 14.7× faster than Ollama depending on how much your prompts repeat, with the honest benchmarks."
 authors:
@@ -21,7 +21,7 @@ tags:
 image: assets/blog/chart-speed.png
 ---
 
-# I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own
+# I Couldn't Find a Local LLM Tool Fast Enough, So I Built My Own Called Squish
 
 <div style="text-align:center; margin: 32px 0;">
 <style>
@@ -45,7 +45,7 @@ image: assets/blog/chart-speed.png
 
 *This requires Apple Silicon (M-series) and macOS 13 (Ventura) or later. If you're on Intel, Linux, or Windows, the numbers in this article will not apply to your hardware.*
 
-**TL;DR:** Squish is a local LLM inference server for Apple Silicon, 1.15 to 14.7× faster than Ollama depending on how much your prompts repeat. [Skip the story and install it →](#how-you-actually-use-it)
+**TL;DR:** Squish is a local LLM inference server for Apple Silicon, 1.15 to 14.7× faster than Ollama depending on how much your prompts repeat. [Skip the story and install it →](#how-you-use-it)
 
 Since February, many of my commits have been written by a local AI in under two seconds. No API keys, no rate limits, no internet connection, and no data leaving my machine. Getting it working took considerable effort, but once it did, it's been very reliable across dozens of repositories. The local AI software I'm describing didn't exist, not without heavy modifications to source code you don't control, or building your own from scratch. So I built it, and it solved my problem. It may not solve yours, but you can clone it, fork it, take it apart, and have fun with it.
 
@@ -53,11 +53,59 @@ It started with Gemini. I wired the API to a script I wrote that automates git c
 
 So I went local, off the cloud entirely, with no rate-limiting. I pointed the script at Ollama running Mistral and configured and tested it for weeks: built a custom Modelfile, iterated prompts, fine-tuned output until the commit messages described the diff accurately. The descriptions came out great. They also took too long. End to end, a response landed anywhere from seven to ten seconds on a normal commit, and north of a minute for a large diff. So I pulled every lever and turned every knob, but the adjustments failed to reduce the response time, and my problem was still unsolved. The slow and unpredictable responses were the hard wall. When the software is written by someone else, their speed limit is your speed limit. I wanted a coherent commit message in under five seconds, ideally under three. Ollama and the models it serves could not deliver. I thought about it for over a month and came to the conclusion that I had to build something myself. Something lean and elegant that doesn't just work, it beats the baseline outright. That something is called Squish, a local AI inference server.
 
-## What Squish Actually Is
+## What Squish Is
 
 **To be clear:** I did not build a model. I built the server that runs models, a framework that quantizes and compresses them, and a local format that reduces how much memory they need to run. Squish is an MLX-based local inference server, and five architectural components set it apart from existing tools:
 
-<div style="background:#000000; padding:24px 0; border-radius:10px; margin: 24px 0;">
+<style>
+  .squish-diagram-zoom { position: relative; cursor: zoom-in; }
+  .squish-diagram-zoom::after {
+    content: "\2922";
+    position: absolute;
+    top: 12px; right: 16px;
+    color: rgba(255,255,255,0.45);
+    font-size: 20px;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .squish-diagram-zoom.squish-zoomed {
+    position: fixed !important;
+    top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+    width: 100vw !important; height: 100vh !important;
+    margin: 0 !important;
+    padding: 24px !important;
+    border-radius: 0 !important;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+    background: rgba(0,0,0,0.97) !important;
+    overflow: auto;
+  }
+  .squish-diagram-zoom.squish-zoomed::after { content: "\2715"; top: 20px; right: 24px; font-size: 22px; }
+  .squish-diagram-zoom.squish-zoomed > div { max-width: 96vw !important; max-height: 92vh; }
+  .squish-diagram-zoom.squish-zoomed svg { width: 100%; height: auto; max-height: 92vh; }
+  body.squish-zoom-lock { overflow: hidden; }
+  body.squish-zoom-lock .md-top,
+  body.squish-zoom-lock .md-header,
+  body.squish-zoom-lock .md-tabs { display: none !important; }
+</style>
+<script>
+  function squishToggleZoom(el) {
+    el.classList.toggle('squish-zoomed');
+    document.body.classList.toggle('squish-zoom-lock', el.classList.contains('squish-zoomed'));
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('.squish-diagram-zoom.squish-zoomed').forEach(function (el) {
+      el.classList.remove('squish-zoomed');
+    });
+    document.body.classList.remove('squish-zoom-lock');
+  });
+</script>
+
+<div class="squish-diagram-zoom" onclick="squishToggleZoom(this)" style="background:#000000; padding:24px 0; border-radius:10px; margin: 24px 0;">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
   .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
@@ -199,7 +247,7 @@ Exact or partial prompts are processed once, never repeated.
 
 **3. INT3 quantization that genuinely works, on some models.** A model's knowledge lives in its parameters, also called weights, the values it learned during training. Quantization stores each parameter at lower precision, like rounding a long decimal to a couple of places. This saves memory, and on Apple Silicon it also makes the model faster. The reason is simple: the slow part of producing each token is not the math, it is moving the model's weights out of memory. Smaller weights mean less to move, and less to move means more tokens per second. The tradeoff is accuracy. Three-bit quantization (INT3) is aggressive enough that it usually breaks a model outright. However, for some model families, INT3 is stable, more on that below.
 
-<div style="background:#000000; padding:24px 0; border-radius:10px; margin: 24px 0;">
+<div class="squish-diagram-zoom" onclick="squishToggleZoom(this)" style="background:#000000; padding:24px 0; border-radius:10px; margin: 24px 0;">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
   .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
@@ -315,7 +363,7 @@ Exact or partial prompts are processed once, never repeated.
 
 **4. The optimization engine: where the speed and memory savings come from.** To generate each new token, the GPU works through every weight in the model. Most tools expand the rounded-off weights back to full precision in memory before the GPU can use them. Squish never expands the full model to full-size in memory, saving a significant amount of memory. To achieve this, the quantized model weights are streamed from memory in small blocks by the GPU. During this process, each quantized block is expanded to full-size, then processed, and the next block overwrites the previous block sequentially. Only a few blocks are expanded to full-size inside the GPU at a time. Squish runs the same computation as full precision, without expanding the model weights to full-size in memory. With this memory savings, fewer bytes move through memory, improving speed at the same time.
 
-<div style="background:#000000; padding:24px 0; border-radius:10px; margin: 24px 0;">
+<div class="squish-diagram-zoom" onclick="squishToggleZoom(this)" style="background:#000000; padding:24px 0; border-radius:10px; margin: 24px 0;">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
   .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
@@ -495,7 +543,7 @@ Agent loops and multi-turn conversations benefit heavily from increasing context
 
 I wanted local models to run faster and use less memory. I started with INT4 quantization, which is well studied and a stable standard. But I wanted to know exactly how small the models would compress, so I tried quantizing using INT3. Most models broke. Qwen2.5-7B didn't. The INT3 quantized model remained stable, and tied INT4 on the arc_easy reasoning benchmark. The scores were 0.551 to 0.541, INT3 slightly ahead but within the margin of error. The INT3 model decodes roughly 18% faster and compresses the model from 4.00 GB to 3.56 GB on disk. The other Qwen models I tested remained stable using INT3, within roughly 1% of the original model's performance. I also quantized Gemma-3 using INT3, and it collapsed, a fifteen-point drop in accuracy.
 
-<div style="background:#000000; padding:24px 0; border-radius:10px; margin: 24px 0;">
+<div class="squish-diagram-zoom" onclick="squishToggleZoom(this)" style="background:#000000; padding:24px 0; border-radius:10px; margin: 24px 0;">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
   .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
@@ -568,7 +616,27 @@ I wanted local models to run faster and use less memory. I started with INT4 qua
 
 The Qwen models I tested could handle INT3, in some cases marginally beating INT4 within the margin of error. With that finding in hand, I wanted to find the actual floor, so I moved on to INT2. Qwen broke, and for good reason. The model responded to my prompt with gibberish: `IFYINGIFYIN`, completely incoherent, basically random. When a 16-bit model is crushed down to 2 bits, its intelligence is lost. Aggressive quantization has a hard floor, and eventually every model breaks. That breaking point is different for every model and every model family. That's why Squish has a quantization safety mechanism that blocks INT3 for the families it fails on and INT2 altogether. The result is a tool that compresses every model as far as it can safely go, and no further.
 
-## How You Actually Use It
+## How You Use It
+
+<div style="text-align:center; margin: 32px 0;">
+<style>
+  @keyframes squishFloat {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+  .squish-mascot {
+    animation: squishFloat 3.5s ease-in-out infinite;
+    transition: transform 0.25s ease;
+    max-width: 320px;
+    width: 100%;
+    height: auto;
+  }
+  .squish-mascot:hover {
+    transform: scale(1.06);
+  }
+</style>
+<img class="squish-mascot" src="../../assets/blog/squish-flying.png" alt="Squish, taking off">
+</div>
 
 There are many ways to use Squish, but at its most basic level it serves an OpenAI API on a local port (11435). I built it as a drop-in replacement for Ollama and for any application that speaks the OpenAI API endpoint spec.
 
@@ -629,7 +697,7 @@ Squish only runs on Apple Silicon (M-series). There is no support for CUDA, Inte
 
 Squish doesn't run every model on Hugging Face. It works with models already in MLX format, the fp16 or bf16 weights the `mlx-community` organization publishes, which is the layout Apple's MLX framework expects. If a model is already in that format, you can point Squish's convert command at it, and it quantizes and packs the weights into Squish's own format. What you can't do is hand it an arbitrary checkpoint in some other layout and expect it to work.
 
-## What I Actually Use It For Now
+## What I Use It For Now
 
 When I first started building Squish, my goal was to get my commit messages written quickly and without rate limits. I accomplished that goal and then some. My commit and pull request scripts still run against Squish. However, my agents now write many of those commits and PRs themselves. Now my local Squish workflow has grown to include:
 
@@ -643,26 +711,6 @@ Squish solves my problems, and it may or may not solve yours. But if you have mo
 I built Squish because I was tired of waiting. It keeps the model loaded, the cache warm, and answers before I've moved my hands. What I haven't seen is what it can do beyond my one machine.
 
 ## Join the Squish Community
-
-<div style="text-align:center; margin: 32px 0;">
-<style>
-  @keyframes squishFloat {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-10px); }
-  }
-  .squish-mascot {
-    animation: squishFloat 3.5s ease-in-out infinite;
-    transition: transform 0.25s ease;
-    max-width: 320px;
-    width: 100%;
-    height: auto;
-  }
-  .squish-mascot:hover {
-    transform: scale(1.06);
-  }
-</style>
-<img class="squish-mascot" src="../../assets/blog/squish-flying.png" alt="Squish, taking off">
-</div>
 
 I've run and tested Squish on one machine, an M3 MacBook Pro with 16 GB of RAM. Every number in this article reflects that same laptop. I have no idea what Squish looks like on a Mac Studio with 128 GB, or what happens when you point it at a 70B model instead of a 7B one, and I'd like to find out.
 
