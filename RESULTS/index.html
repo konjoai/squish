@@ -1583,34 +1583,36 @@ commands at the bottom of each section. No marketing rounding —
 everything here either runs in CI or is a single Python invocation away.</p>
 </blockquote>
 <hr />
-<h2 id="0-headline-v9320-bench-v511">0. Headline (v9.32.0 / bench v5.1.1)<a class="headerlink" href="#0-headline-v9320-bench-v511" title="Permanent link">&para;</a></h2>
-<p>Source: <code>README.md</code> "The Numbers" section; raw artifacts in <code>results/benchmarks_v5_1_1/</code>.</p>
-<p>Measured 2026-06-02 on Apple M3 MacBook Pro, 16 GB unified memory.
-Model: Qwen2.5-7B-Instruct. Quant: INT4 (squish) / Q4_K_M (Ollama).
-Five-run medians.</p>
+<h2 id="0-headline-v93414">0. Headline (v9.34.14)<a class="headerlink" href="#0-headline-v93414" title="Permanent link">&para;</a></h2>
+<p>Source: <code>README.md</code> "The Numbers" section; see §1b/§1c below for the full
+breakdown this headline is drawn from.</p>
+<p>Measured on Apple M3 MacBook Pro, 16 GB unified memory, thermally
+controlled (same ~50 °C baseline, first-vs-last drift ≤ 1.7%).
+Model: Qwen2.5-7B-Instruct. Quant: INT4/INT3 (squish) / Q4_K_M (Ollama
+0.30.7, 0.18.2 within noise). Five-run medians.</p>
 <table>
 <thead>
 <tr>
 <th>Metric</th>
-<th style="text-align: right;">Ollama 0.18.2</th>
+<th style="text-align: right;">Ollama</th>
 <th style="text-align: right;"><strong>Squish</strong></th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>E2E response @ 4000-token prompt</strong></td>
-<td style="text-align: right;">69.63 s</td>
-<td style="text-align: right;"><strong>12.78 s</strong> <em>(5.4× faster)</em></td>
+<td><strong>Cold start</strong> — load + first token (1.5B)</td>
+<td style="text-align: right;">20–30 s</td>
+<td style="text-align: right;"><strong>≈0.5 s</strong> <em>(54× load)</em></td>
 </tr>
 <tr>
-<td><strong>E2E response @ 75-token prompt</strong></td>
-<td style="text-align: right;">8.09 s</td>
-<td style="text-align: right;"><strong>5.50 s</strong> <em>(1.5× faster)</em></td>
+<td><strong>Full response @ 4000-token prompt</strong> (repeated exactly)</td>
+<td style="text-align: right;">37.5 s</td>
+<td style="text-align: right;"><strong>3.8 s</strong> <em>(9.8× faster)</em></td>
 </tr>
 <tr>
 <td><strong>Peak RAM during inference</strong></td>
-<td style="text-align: right;">~5 GB</td>
-<td style="text-align: right;"><strong>3.36 GB</strong></td>
+<td style="text-align: right;">5.14 GB</td>
+<td style="text-align: right;"><strong>3.50 GB</strong></td>
 </tr>
 <tr>
 <td><strong>Disk size — INT4</strong></td>
@@ -1623,18 +1625,20 @@ Five-run medians.</p>
 <td style="text-align: right;"><strong>3.56 GB</strong></td>
 </tr>
 <tr>
-<td><strong>TTFT @ 75-token prompt</strong></td>
-<td style="text-align: right;"><strong>131 ms</strong></td>
-<td style="text-align: right;">279 ms <em>(honest loss)</em></td>
+<td><strong>Cold, unique-prompt TTFT @ 75 tokens</strong></td>
+<td style="text-align: right;">812 ms</td>
+<td style="text-align: right;"><strong>800 ms</strong> <em>(1.15× faster)</em></td>
 </tr>
 </tbody>
 </table>
-<p>Squish wins end-to-end response time at every prompt size measured
-(5.4× at 4000 tokens), uses ~33% less RAM, and supports INT3 for
-compatible model families. Ollama wins TTFT at every prompt size — if
-first-byte latency matters more than full-response latency, Ollama is
-the right tool.</p>
-<p>Full methodology and ablation: <code>docs/RESULTS.md</code> (v5.1.1 section).</p>
+<p>Squish wins end-to-end response time at every prompt size measured —
+up to 9.8× on exactly-repeated long prompts (the reuse ceiling), and
+1.15–1.32× on completely unique prompts with nothing to reuse (§1c) —
+uses ~32% less RAM, and supports INT3 for compatible model families.
+Squish also wins TTFT, including on cold, unique prompts; see §1c for
+why an earlier round of these numbers had mistakenly credited Ollama a
+TTFT win.</p>
+<p>Full methodology and ablation: §1b/§1c below, and <code>docs/paper.md</code> §4.4.</p>
 <hr />
 <h2 id="1-cold-start-load-time-and-ttft">1. Cold-start load time and TTFT<a class="headerlink" href="#1-cold-start-load-time-and-ttft" title="Permanent link">&para;</a></h2>
 <p>Source: <code>README.md</code> headline numbers; reproduced via
@@ -1718,12 +1722,6 @@ vs Ollama 0.18.2 <strong>and</strong> 0.30.7. See README and <code>docs/paper.md
 <td style="text-align: center;">—</td>
 </tr>
 <tr>
-<td>TTFT (loaded, 75 tok)</td>
-<td style="text-align: center;"><strong>167 ms</strong></td>
-<td style="text-align: center;">192 ms</td>
-<td style="text-align: center;">192 ms</td>
-</tr>
-<tr>
 <td>Peak RAM</td>
 <td style="text-align: center;">5.14 GB</td>
 <td style="text-align: center;"><strong>3.5 GB</strong></td>
@@ -1732,7 +1730,10 @@ vs Ollama 0.18.2 <strong>and</strong> 0.30.7. See README and <code>docs/paper.md
 </tbody>
 </table>
 <p>INT3 is the recommended default — arc_easy acc_norm 0.551 vs INT4 0.541 (tied,
-n=1000). Squish's only loss is warm single-token TTFT (192 vs 167 ms).</p>
+n=1000). Squish has no measured loss on this table; see §1c for TTFT under
+cold, unique-prompt conditions (an earlier same-fixed-prompt-repeated-5×
+TTFT comparison here had mistakenly credited Ollama a 167 ms vs 192 ms win —
+retracted, see §1c).</p>
 <h3 id="1c-coldunique-head-to-head-0-prefix-reuse-qwen25-7b-vs-ollama">1c. Cold/unique head-to-head (0% prefix reuse, Qwen2.5-7B vs Ollama)<a class="headerlink" href="#1c-coldunique-head-to-head-0-prefix-reuse-qwen25-7b-vs-ollama" title="Permanent link">&para;</a></h3>
 <p>The E2E@4000 row above sends the same prompt 5× per phase, so from the 2nd
 send on it measures squish's prefix-KV reuse (default-on) — a <strong>reuse
@@ -1756,6 +1757,15 @@ Full methodology and per-run cache-hit verification:
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>75</td>
+<td style="text-align: center;">812 ms</td>
+<td style="text-align: center;"><strong>800 ms</strong></td>
+<td style="text-align: center;">16.4 tok/s</td>
+<td style="text-align: center;"><strong>17.5 tok/s</strong></td>
+<td style="text-align: center;">14.12 s</td>
+<td style="text-align: center;"><strong>12.30 s (1.15×)</strong></td>
+</tr>
 <tr>
 <td>512</td>
 <td style="text-align: center;">3.90 s</td>
@@ -1794,13 +1804,17 @@ Full methodology and per-run cache-hit verification:
 </tr>
 </tbody>
 </table>
-<p>Squish wins TTFT, decode tok/s, and E2E at every length here — the opposite
-of the TTFT row in §1b, because that row measures a warm, already-loaded
-model on a repeated prompt while this measures a cold prefill on a prompt
-neither engine has seen. Read together: <strong>squish is ~1.2-1.3× faster with
-nothing to reuse, up to 9.8× faster when prompts repeat</strong> — quote the range,
-not a single number, depending on how much a given workload's prompts
-actually overlap.</p>
+<p>75-token row: <code>benchmarks/ollama_vs_squish/CTX75_SUPPLEMENT_RESULTS.md</code>,
+added specifically to settle whether the §1b-style short-prompt TTFT
+comparison held up under genuinely cold, unique-prompt conditions. It
+doesn't: squish wins TTFT, decode tok/s, and E2E at every length here,
+including 75 tokens, down to a thin but real 12 ms (~1.5%) margin. The
+retracted §1b number (167 ms vs 192 ms) was measuring Ollama's own
+cache hit on a resent prompt, not a cold-prefill advantage. Read
+together: <strong>squish is ~1.15-1.32× faster with nothing to reuse, up to
+9.8× faster when prompts repeat</strong> — quote the range, not a single
+number, depending on how much a given workload's prompts actually
+overlap.</p>
 <hr />
 <h2 id="2-disk-size-raw-vs-squished">2. Disk size — raw vs. squished<a class="headerlink" href="#2-disk-size-raw-vs-squished" title="Permanent link">&para;</a></h2>
 <p>Source: <code>README.md</code> model-size table; the squished column is what
