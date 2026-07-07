@@ -68,12 +68,18 @@ body[data-md-color-scheme="default"] .md-tabs__link:hover { color: #6B2FE7 !impo
   }
 }
 
-/* ── Smaller mascot images on desktop ────────────────────────────── */
+/* ── Responsive mascot images on desktop ─────────────────────────── */
 @media screen and (min-width: 76.25em) {
-  .squish-mascot[src*="squish-hero"] { max-width: 110px !important; }
+  .squish-mascot[src*="squish-hero"] {
+    max-width: clamp(220px, 22vw, 340px) !important;
+    max-height: 38vh;
+  }
   .squish-mascot[src*="squish-flying"],
   .squish-mascot[src*="squish-building"],
-  .squish-mascot[src*="squish-fistpump"] { max-width: 160px !important; }
+  .squish-mascot[src*="squish-fistpump"] {
+    max-width: clamp(320px, 32vw, 480px) !important;
+    max-height: 42vh;
+  }
 }
 
 /* ── Table text ─────────────────────────────────────────────────── */
