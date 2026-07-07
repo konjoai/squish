@@ -40,7 +40,7 @@ image: assets/blog/chart-speed.png
     transform: scale(1.06);
   }
 </style>
-<img class="squish-mascot" src="../../assets/blog/squish-hero.png" alt="Squish, the mascot">
+<img class="squish-mascot" src="/assets/blog/squish-hero.png" alt="Squish, the mascot">
 </div>
 
 *This requires Apple Silicon (M-series) and macOS 13 (Ventura) or later. If you're on Intel, Linux, or Windows, the numbers in this article will not apply to your hardware.*
@@ -635,7 +635,7 @@ The Qwen models I tested could handle INT3, in some cases marginally beating INT
     transform: scale(1.06);
   }
 </style>
-<img class="squish-mascot" src="../../assets/blog/squish-fistpump.png" alt="Squish, celebrating">
+<img class="squish-mascot" src="/assets/blog/squish-fistpump.png" alt="Squish, celebrating">
 </div>
 
 There are many ways to use Squish, but at its most basic level it serves an OpenAI API on a local port (11435). I built it as a drop-in replacement for Ollama and for any application that speaks the OpenAI API endpoint spec.
@@ -729,7 +729,7 @@ I built Squish because I was tired of waiting. It keeps the model loaded, the ca
     transform: scale(1.06);
   }
 </style>
-<img class="squish-mascot" src="../../assets/blog/squish-flying.png" alt="Squish, taking off">
+<img class="squish-mascot" src="/assets/blog/squish-flying.png" alt="Squish, taking off">
 </div>
 
 I've run and tested Squish on one machine, an M3 MacBook Pro with 16 GB of RAM. Every number in this article reflects that same laptop. I have no idea what Squish looks like on a Mac Studio with 128 GB, or what happens when you point it at a 70B model instead of a 7B one, and I'd like to find out.
@@ -767,7 +767,7 @@ Open an issue or a PR on GitHub, whichever of these you want to take on. I built
     transform: scale(1.06);
   }
 </style>
-<img class="squish-mascot" src="../../assets/blog/squish-building.png" alt="Squish, building Squish">
+<img class="squish-mascot" src="/assets/blog/squish-building.png" alt="Squish, building Squish">
 </div>
 
 Every issue filed, PR opened, and benchmark reproduced is one more data point Squish didn't have before. Thanks for reading this far, now go break something.
