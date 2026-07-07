@@ -59,6 +59,15 @@ body[data-md-color-scheme="default"] .md-tabs__link:hover { color: #6B2FE7 !impo
   border-radius: 4px;
 }
 
+/* ── Full-width blog posts on desktop ───────────────────────────── */
+@media screen and (min-width: 76.25em) {
+  body:has(.md-post) .md-grid {
+    max-width: 100%;
+    padding-left: 2.5rem;
+    padding-right: 2.5rem;
+  }
+}
+
 /* ── Table text ─────────────────────────────────────────────────── */
 .md-typeset table th,
 .md-typeset table td {
